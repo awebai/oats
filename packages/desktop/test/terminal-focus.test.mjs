@@ -12,6 +12,7 @@ import { fillEmptyGroup, requestSplit } from "../renderer/split-layout.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
 import { rowReasonLine, runtimeErrorLine } from "../renderer/speaker-line.mjs";
+import { otherIncarnation, terminalOrigin } from "../renderer/retired-tabs.mjs";
 import { MARKUP, CONTROL, DETAIL_WITHHELD, shown } from "./helpers/speaker-cases.mjs";
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -52,7 +53,7 @@ test("existing-terminal jumps focus input, fill an empty split without another a
       resolveTerminalOpen: () => ({ inst: {}, key: "selected" }),
       whenKeyFree: async () => { if (scenario === "workspace-changed") workspace = "workspace-b"; },
       selectTab: (id, options) => activated.push({ id, focusContent: options.focusContent }),
-      pendingTerms: new Set(),
+      pendingTerms: new Set(), panelReads: 0, otherIncarnation, terminalOrigin,
       openTerminalTabInner: () => assert.fail("an existing tab must not attach again"),
     };
     context.tabOpenIntents = createSelectionOwnership(context);

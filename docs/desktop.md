@@ -166,6 +166,16 @@ workspace on a server: `name — server`).
 - Tabs belong to their window: a workspace's terminals and tabs stay in the
   window they were opened in, and switching that window back to the
   workspace brings them back.
+- A tab's terminal ends ("session ended") when its instance's tmux window
+  goes, whatever your tmux `detach-on-destroy` setting: a tab never shows
+  another instance's terminal. Stopping an instance leaves its tab open.
+- When a roster read shows an instance retired, from the Desktop, the CLI,
+  another agent or another machine, every tab of that instance closes, in
+  every split. In each split the next tab (or else the previous one) becomes
+  active, and the focus moves to it only if it was in a closed tab. A
+  workspace that isn't shown closes them the next time its roster is read.
+  An instance respawned under the same name is a new instance: opening it
+  opens a new tab.
 
 ## Capabilities and spawning
 
@@ -441,6 +451,10 @@ the local CLI failing than the link. It also stops when the viewer ends with
 any other exit code. Closing the tab ends the reconnecting. Reconnecting
 never stops or restarts the agent on the server: only the local ssh viewer
 ends.
+
+A remote instance's tabs close only when its server answers without it
+(retired there, or gone from it), never because the server can't be reached
+or its roster read is out of date.
 
 ## Copy from a terminal
 
