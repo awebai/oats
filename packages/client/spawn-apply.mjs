@@ -28,10 +28,13 @@ const scopeKey = c => JSON.stringify([c?.workspace?.id, c?.workspace?.scope, c?.
  * CLI read); apply's --expect-decision is the drift guard. No held answer: a fresh read.
  *   exec  optional: the client's own execFile, passed to `invoke` as `invoke(cli, options, { exec })` for every
  *         apply (cli-adapter.mjs `runJson` has the rule); without it `invoke` is given no third argument and
- *         cliSpawnApply's own default runs. An apply is a change, and cliSpawnApply ends its child at the
- *         deadline through what exec returns (`child.kill`): a given exec must return the child. One that
- *         returns nothing leaves the apply of a worktree-event kernel unended at its deadline; there is no
- *         fallback here. */
+ *         cliSpawnApply's own default runs. An apply is a change: its options carry `detached: true`
+ *         whatever exec is given, which runs it in a session of its own (as execFileInSession does). On a
+ *         worktree-event kernel cliSpawnApply ends the child at the deadline through what exec returns
+ *         (`child.kill`): a given exec must return the child. One that returns nothing leaves that apply
+ *         unended at its deadline; there is no fallback here. On a kernel without worktree-event the options'
+ *         `timeout` is the apply's only deadline: exec must honour it as execFileInSession does, killing the
+ *         child when it passes and reporting `killed` even if the child then exits cleanly. */
 export function createSpawnApplyBoundary({ read, invoke = cliSpawnApply, exec,
   now = () => performance.now(), mint = () => randomBytes(32).toString('hex'), answerWithinMs = ANSWER_WITHIN_MS,
   timer = (fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); } } = {}) {

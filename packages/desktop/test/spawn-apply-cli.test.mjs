@@ -48,7 +48,7 @@ test('apply fixed argv, exact roots, tagged choices and original key/revision; p
     '--runtime', 'codex', '--launch-config', 'personal', '--backend', 'tmux', '--model', '@native-default', '--no-yolo', '--relation', 'child',
     '--relative-to', 'release-manager-race', '--relative-root', ROOT, '--expect-decision', input.decision.revision, '--idempotency-key', input.key,
     '--task-file', f.files[0].file, '--wake-file', f.files[1].file, '--json']);
-  assert.deepEqual(f.calls[0].opts, { cwd: DEPLOYMENT, env: { PATH: '/inert/bin', HOME: '/inert/home' }, shell: false, encoding: 'utf8', timeout: 60000, maxBuffer: 4194304 });
+  assert.deepEqual(f.calls[0].opts, { cwd: DEPLOYMENT, env: { PATH: '/inert/bin', HOME: '/inert/home' }, shell: false, encoding: 'utf8', detached: true, timeout: 60000, maxBuffer: 4194304 });
   assert.equal(f.files[0].text, input.task); assert.deepEqual(JSON.parse(f.files[1].text), wake);
   assert.ok(f.files.every(f => f.flags === 'wx' && f.mode === 0o600 && f.closed));
   assert.deepEqual([...f.removed].sort(), [...f.dirs].sort());
@@ -242,6 +242,7 @@ test('#802 (real subprocess): at our deadline a worktree-event CLI gets SIGTERM 
   assert.equal(result.started, true); assert.equal(result.envelope.error.code, 'E_INTERRUPTED');
   assert.match(result.envelope.error.message, /interrupted by SIGTERM/);
   assert.equal(f.calls[0].opts.timeout, undefined, 'not execFile\'s timeout, which destroys the output first');
+  assert.equal(f.calls[0].opts.detached, true, 'in a session of its own, whatever exec is given');
 });
 test('#802 (real subprocess): a complete success envelope printed after our SIGTERM is forwarded for the broker to qualify', async t => {
   const child = realChild(onTerm(ok), t), f = fixture({ exec: child.exec });

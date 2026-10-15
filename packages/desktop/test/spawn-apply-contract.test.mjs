@@ -129,7 +129,7 @@ test('kernel preview bytes cross the injected argv/boundary with the decision th
   assert.deepEqual(spawnPreparedData(response.data, response.target).decision, response.data.decision);
   assert.equal(kernel('apply-bound').result.decision.revision, raw.decision.revision, 'the captured apply bound this very decision');
 });
-test('a client\'s exec runs every read and apply, through the CLI callers: one call each; a read carries no detached and its 30 s deadline', async () => {
+test('a client\'s exec runs every read and apply, through the CLI callers: one call each; the apply carries detached, a read does not and keeps its 30 s deadline', async () => {
   const stored = kernel('preview-worktree-purpose'), raw = stored.result, selected = { soul: raw.subject.soul, agentsRoot: raw.subject.agentsRoot };
   const c = { workspace: { id: 'northwind', scope: raw.subject.dir }, cli: capable(), agents: [{ name: selected.soul, agentsRoot: selected.agentsRoot, work: raw.work }], instances: [] };
   const seen = [];
@@ -148,6 +148,7 @@ test('a client\'s exec runs every read and apply, through the CLI callers: one c
   await broker({ action: 'apply', spawnRef: prepared.spawnRef }, () => c);
   assert.equal(seen.length, 3, 'the apply');
   assert.ok(seen[2].argv.includes('--idempotency-key') && !seen[2].argv.includes('--preview'));
+  assert.equal(seen[2].options.detached, true, 'the apply is a change: a session of its own, whatever exec is given');
   for (const { argv, options } of seen.slice(0, 2)) {
     assert.ok(argv.includes('--preview'));
     assert.equal(Object.hasOwn(options, 'detached'), false, 'a read is a read: it ends with its caller');
