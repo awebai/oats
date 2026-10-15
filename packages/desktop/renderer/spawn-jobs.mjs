@@ -1,7 +1,7 @@
 /** Background spawns (Spec C): the spawn dialog closes on a confirmed press and hands its
- * transaction here. The store outlives the dialog: it runs the existing confirmed transaction
- * (prepare → the decision on screen → apply, and `result` for recovery) on the /api/spawn contract,
- * owns the roster's pending rows and the outcome notifications, and keeps the operator's draft
+ * transaction here. The store outlives the dialog: it runs the shared confirmed transaction
+ * (packages/client/spawn-transaction.mjs: prepare → the decision on screen → apply, and `result` for
+ * recovery) on the /api/spawn contract, turns each outcome into its notice, owns the roster's pending rows and the outcome notifications, and keeps the operator's draft
  * until the spawn completes or its failure is dismissed (Reopen spawn restores it).
  *
  * Truthfulness (the async-intent lesson): creation, roster presence and a live terminal are separate
@@ -40,8 +40,8 @@
  * A created spawn records its deployment as the view's last used (the spawn dialog's default).
  * `rehome(map)` moves owners onto views (workspace-rehome.mjs); a job's address never changes. */
 import { retainedSpawnMessage, differedLines, DIFFERED_IN_ACTIVITY, flagIgnoredNotice } from '../../client/launch-prompt-outcome.mjs';
-import { spawnApplyView, spawnApplyReason, SPAWN_APPLY_MS, ROLLED_BACK_CODES } from '../../client/spawn-apply-contract.mjs';
-import { sameSpawnDecision } from '../../client/spawn-decision.mjs';
+import { spawnApplyReason } from '../../client/spawn-apply-contract.mjs';
+import { createSpawnTransaction, RECOVER_POLL_MS, FOLLOW_MARGIN_MS, RECOVER_WITHIN_MS } from '../../client/spawn-transaction.mjs';
 import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from '../../client/spawn-messages.mjs';
 import { rememberSpawnDeployment } from './spawn-deployment-field.mjs';
 
@@ -50,13 +50,10 @@ import { rememberSpawnDeployment } from './spawn-deployment-field.mjs';
 export const SPAWN_VISIBLE_WITHIN_MS = 14000;
 export const DRIFT_TEXT = 'These values changed since you last looked. Reopen spawn to check them.';
 export const SPAWN_STORAGE_KEY = 'oats.spawnJobs.v1';
-/** A pending job reads `result` this often while the server says pending, until its deadline. */
-export const RECOVER_POLL_MS = 2000;
-/** A job's deadline is the broker's CLI deadline (applyWithinMs) plus this margin, from the press. */
-export const FOLLOW_MARGIN_MS = 30000;
-/** The CLI deadline of a spawn without `worktree` hooks: a reply without applyWithinMs, and a stored
- * job without a deadline (kept by an older Desktop), follow this. */
-export const RECOVER_WITHIN_MS = SPAWN_APPLY_MS + FOLLOW_MARGIN_MS;
+/** The transaction's own (packages/client/spawn-transaction.mjs): a pending job reads `result` every
+ * RECOVER_POLL_MS until its deadline, the broker's CLI deadline (applyWithinMs) plus FOLLOW_MARGIN_MS from
+ * the press; a stored job without a deadline (kept by an older Desktop) follows RECOVER_WITHIN_MS. */
+export { RECOVER_POLL_MS, FOLLOW_MARGIN_MS, RECOVER_WITHIN_MS };
 const PENDING_TEXT = 'The spawn is still running. Check result again in a moment; nothing else was started.';
 const FLIGHT = ['spawning', 'checking'];
 
@@ -91,6 +88,9 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
   storage = null, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), pollMs = RECOVER_POLL_MS, recoverWithinMs = RECOVER_WITHIN_MS,
   rememberDeployment = rememberSpawnDeployment } = {}) {
   let alive = true, serial = 0;
+  // The transaction (prepare → the decision on screen → apply, follow, check, recover) is the shared one; the
+  // store answers its requests for a job's deployment and turns each outcome into the notice it gives.
+  const transaction = createSpawnTransaction({ request: (body, tx) => post(tx.address, body), now, sleep, pollMs });
   const jobs = new Map(), tokens = new WeakSet(), listeners = new Set();
   // Spec E: rows of a complete spawn the operator was not taken to, which say New until first opened
   // (by workspace and home: the identity a roster row keeps). Desktop-local, never stored.
@@ -190,68 +190,38 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
     job.notice = { message: problem.text, options: details(problem), sticky: false, posted: false, handle: null };
     deliver(job);
   }
-  function settle(job, view) {
-    if (['complete', 'partial', 'incomplete'].includes(view.status)) return created(job, view);
-    // #802: still running in the broker: follow `result` until the job's deadline.
-    if (view.status === 'pending') return now() < job.deadline ? follow(job) : unknown(job, null, PENDING_TEXT);
-    if (view.status === 'unknown' && ROLLED_BACK_CODES.includes(view.reason?.code)) return owed(job, cleanupOwedProblem(view.reason, job.instance));
-    if (view.status === 'unknown') return unknown(job);
-    if (view.status === 'refused' && ROLLED_BACK_CODES.includes(view.reason?.code)) { const problem = rolledBackProblem(view.reason, job.instance); return refuse(job, problem.text, problem); }
-    if (view.status === 'prepared') return refuse(job, 'That spawn was never submitted. Reopen spawn to spawn with these values.');
-    // E_INTENT_EXPIRED: the record is gone (a backend restart): not proof of anything — stay unknown.
-    if (view.reason?.code === 'E_INTENT_EXPIRED' && job.submitted) return unknown(job, view.reason);
-    if (view.reason?.code === 'E_DECISION_STALE') return refuse(job, DRIFT_TEXT, spawnProblem(view.reason, 'spawn'));
-    refuseWith(job, spawnProblem(view.reason, 'spawn'));
+  /** An outcome of the transaction, as this store reports it. */
+  function settle(job, outcome) {
+    if (!outcome || !live(job)) return;
+    const { kind, view, reason } = outcome;
+    if (kind === 'created') return created(job, view);
+    // #802: still pending in the broker past the job's deadline.
+    if (kind === 'pending-expired') return unknown(job, null, PENDING_TEXT);
+    if (kind === 'cleanup-owed') return owed(job, cleanupOwedProblem(reason, job.instance));
+    // E_INTENT_EXPIRED once submitted: the record is gone (a backend restart): not proof of anything.
+    if (kind === 'unknown') return unknown(job, reason);
+    if (kind === 'rolled-back') { const problem = rolledBackProblem(reason, job.instance); return refuse(job, problem.text, problem); }
+    if (kind === 'never-submitted') return refuse(job, 'That spawn was never submitted. Reopen spawn to spawn with these values.');
+    // Drifted at prepare (the operator's decision is not the prepared one), or E_DECISION_STALE at apply.
+    if (kind === 'drifted') return reason ? refuse(job, DRIFT_TEXT, spawnProblem(reason, 'spawn')) : refuse(job, DRIFT_TEXT);
+    refuseWith(job, spawnProblem(reason, 'spawn'));
   }
 
-  // ── the transaction (the dialog's former run(), unchanged in substance)
-  async function request(job, body) {
-    const raw = await post(job.deployment, body);
-    if (!live(job)) return null;
-    const view = spawnApplyView(raw, { workspace: job.deployment, ref: body.spawnRef, selector: job.selector });
-    if (!view || view.preview && job.prepared && body.action !== 'prepare' && !sameSpawnDecision(view.preview.decision, job.prepared.preview.decision)) throw Object.assign(Error(), { code: 'E_CLI_PROTOCOL' });
-    return view;
-  }
-  async function run(job) {
-    try {
-      const prepared = await request(job, job.input);
-      if (!prepared) return;
-      if (prepared.status !== 'prepared') return refuseWith(job, spawnProblem(prepared.reason, 'spawn'));
-      // Apply only the decision the operator saw; the kernel's --expect-decision guards it again at apply.
-      if (!sameSpawnDecision(prepared.preview.decision, job.decision)) return refuse(job, DRIFT_TEXT);
-      job.prepared = prepared; job.spawnRef = prepared.spawnRef; job.submitted = true;
-      job.deadline = now() + (prepared.applyWithinMs ?? SPAWN_APPLY_MS) + FOLLOW_MARGIN_MS; save();
-      const view = await request(job, { action: 'apply', spawnRef: job.spawnRef });
-      if (view) settle(job, view);
-    } catch (error) {
+  // ── the transaction: the shared one, for this job
+  /** The transaction heard the job submitted (kept for a reload with its reference and deadline), or still pending. */
+  function progress(job) {
+    return (event, tx) => {
       if (!live(job)) return;
-      if (job.submitted) unknown(job);
-      else refuseWith(job, spawnProblem(spawnApplyReason(error?.code), 'spawn'));
-    }
+      if (event === 'submitted') { job.tx = tx; job.prepared = tx.prepared; job.spawnRef = tx.spawnRef; job.submitted = true; job.deadline = tx.deadline; save(); }
+      else if (event === 'pending' && job.state !== 'spawning') { job.state = 'spawning'; changed(); }
+    };
   }
-
-  /** A pending job (an apply that answered `pending`, or one recovered after a reload): read `result` every
-   * pollMs while the server says pending, until the job's deadline, then settle it. */
-  async function follow(job) {
-    if (job.state !== 'spawning') { job.state = 'spawning'; changed(); }
-    try {
-      for (;;) {
-        if (now() >= job.deadline) return unknown(job, null, PENDING_TEXT);
-        await sleep(pollMs);
-        if (!live(job)) return;
-        const view = await request(job, { action: 'result', spawnRef: job.spawnRef });
-        if (!view) return;
-        if (view.status !== 'pending') return settle(job, view);
-      }
-    } catch { if (live(job)) unknown(job); }
+  const call = job => ({ alive: () => live(job), progress: progress(job) });
+  async function run(job) {
+    settle(job, await transaction.submit({ address: job.deployment, selector: job.selector, input: job.input, decision: job.decision }, call(job)));
   }
   /** After a reload: read `result` at once; a pending one is followed to the stored deadline. */
-  async function recoverOne(job) {
-    try {
-      const view = await request(job, { action: 'result', spawnRef: job.spawnRef });
-      if (view) settle(job, view);
-    } catch { if (live(job)) unknown(job); }
-  }
+  async function recoverOne(job) { settle(job, await transaction.recover(job.tx, call(job))); }
   const text =(v, max = 4096) => typeof v === 'string' && v.length > 0 && v.length <= max;
 
   return {
@@ -291,12 +261,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
       const job = jobs.get(id);
       if (!job || job.state !== 'unknown' || !job.spawnRef) return;
       job.state = 'checking'; changed();
-      try {
-        let view = await request(job, { action: 'result', spawnRef: job.spawnRef });
-        if (!view) return;
-        if (view.status === 'unknown') { view = await request(job, { action: 'apply', spawnRef: job.spawnRef }); if (!view) return; }
-        settle(job, view);
-      } catch { if (live(job)) unknown(job); }
+      settle(job, await transaction.check(job.tx, call(job)));
     },
     /** The roster observed `workspace` (called on every paint of the current workspace): created rows that the
      * roster now reports become real, held notifications of this workspace are posted. */
@@ -351,6 +316,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
           flagSaid: e.flagSaid === true,
           // The deadline kept at the press (#802); an entry without one follows the ordinary apply's.
           deadline: Number.isFinite(e.deadline) ? e.deadline : now() + recoverWithinMs };
+        job.tx = { address: job.deployment, selector: job.selector, spawnRef: job.spawnRef, deadline: job.deadline, submitted: true, prepared: null };
         jobs.set(job.id, job); n++;
         void recoverOne(job);
       }

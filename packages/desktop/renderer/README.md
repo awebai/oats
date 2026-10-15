@@ -499,7 +499,8 @@ surface, not final K7 or native/rendered acceptance.
 `spawn-dialog.mjs` owns the form; `views/spawn.mjs` is a thin host (modal,
 focus trap, Esc/backdrop close, the `spawn.submit` binding and the handoff). In
 the shell a confirmed local press is handed to `spawn-jobs.mjs` (`ctx.spawnJobs`)
-and the dialog closes at once; the store runs the transaction, owns the roster's
+and the dialog closes at once; the store runs the shared transaction
+(`packages/client/spawn-transaction.mjs` `createSpawnTransaction`), owns the roster's
 pending row (`shell.mjs` `pendingSpawnRow`), the outcome notifications and the
 **New** marks, and keeps the draft for **Reopen spawn** (`preselectSpawn({…, draft})`).
 After the press the shell reveals the pending row without focus (`ctx.followSpawn`)
