@@ -1,7 +1,7 @@
 // Spec F: the command palette lists instances like the sidebar roster (same
 // relation groups, order and depth, from the sidebar's own builders), keeps
 // tree order under a query with non-matching ancestors as disabled context
-// rows, and cycles its rows with its own chord (⌘K / Ctrl+Shift+P) while open.
+// rows, and cycles its rows with its own chord (⌘K / Ctrl+Shift+K) while open.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
@@ -70,16 +70,17 @@ test("'>' restricts to commands, and commands keep their own cap after the insta
   assert.deepEqual(paletteRows(ROSTER, COMMANDS, ">theme").map(r => r.label), ["Theme: toggle"]);
 });
 
-test("the palette's chord cycles: Mod+K down, Shift down to up; Ctrl+Shift+P has no Shift form; rebinds follow", t => {
+test("the palette's chord cycles: Mod+K down, Shift down to up; Ctrl+Shift+K has no Shift form; rebinds follow", t => {
   t.after(() => resetBinding("app.palette"));
   const ev = (key, mods = {}) => ({ key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...mods });
-  assert.deepEqual(DEFAULT_KEYMAP["app.palette"], { mac: "Mod+K", other: "Ctrl+Shift+P" });
+  assert.deepEqual(DEFAULT_KEYMAP["app.palette"], { mac: "Mod+K", other: "Ctrl+Shift+K" });
   assert.equal(pickerCycleDirection(ev("k", { metaKey: true }), "app.palette", true), 1);
   assert.equal(pickerCycleDirection(ev("K", { metaKey: true, shiftKey: true }), "app.palette", true), -1);
   assert.equal(pickerCycleDirection(ev("j", { metaKey: true }), "app.palette", true), 0);
   assert.equal(pickerCycleDirection(ev("k", { ctrlKey: true }), "app.palette", true), 0, "⌃K is not ⌘K on macOS");
-  assert.equal(pickerCycleDirection(ev("P", { ctrlKey: true, shiftKey: true }), "app.palette", false), 1);
-  assert.equal(pickerCycleDirection(ev("p", { ctrlKey: true }), "app.palette", false), 0, "no reverse chord: ArrowUp moves up");
+  assert.equal(pickerCycleDirection(ev("K", { ctrlKey: true, shiftKey: true }), "app.palette", false), 1);
+  assert.equal(pickerCycleDirection(ev("k", { ctrlKey: true }), "app.palette", false), 0, "no reverse chord: ArrowUp moves up");
+  assert.equal(pickerCycleDirection(ev("P", { ctrlKey: true, shiftKey: true }), "app.palette", false), 0, "Ctrl+Shift+P is Quick Open's");
   setBinding("app.palette", "Mod+J");
   assert.equal(pickerCycleDirection(ev("k", { metaKey: true }), "app.palette", true), 0);
   assert.equal(pickerCycleDirection(ev("j", { metaKey: true }), "app.palette", true), 1);

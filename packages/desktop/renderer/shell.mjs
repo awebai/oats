@@ -2069,11 +2069,11 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
       && tabOpenIntents.ownsFocus(made.id),
     focusInput: () => tabOpenIntents.applyFocus(() => term.focus()),
     fit: () => fitTerminal(term, fit),
-    // Terminal-allowlisted shortcuts (engine policy: app.palette, tabs.next/
-    // prev/close, split.*, focus.leaveTerminal) must be intercepted BEFORE xterm
-    // writes to the pty — its handler consumes e.g. Ctrl+Shift+P or ⌘⇧F6 and
-    // stops propagation, so the bubble-phase window listener
-    // never sees it. matchEvent applies the allowlist (insideTerminal);
+    // Terminal-allowlisted shortcuts (engine policy: TERMINAL_ALLOWLIST, e.g.
+    // app.palette, tabs.next/prev/close, split.*, focus.leaveTerminal) must be
+    // intercepted BEFORE xterm writes to the pty — its handler consumes e.g.
+    // Ctrl+Shift+K or ⌘⇧F6 and stops propagation, so the bubble-phase window
+    // listener never sees it. matchEvent applies the allowlist (insideTerminal);
     // the action runs once on keydown, and every phase of a matched chord
     // is claimed so no control byte leaks to the attached program.
     interceptKey: (ev) => {
@@ -2176,7 +2176,7 @@ const palette = createPalette({
     return { instances: p.instances || [], deployments: panelDeployments(p), recent, activeId };
   },
   openTerminal: (name) => openTerminalTab(name),
-  // While open, ⌘K / Ctrl+Shift+P moves down and Shift + it up (live keymap); Esc closes, Enter opens.
+  // While open, ⌘K / Ctrl+Shift+K moves down and Shift + it up (live keymap); Esc closes, Enter opens.
   cycleKey: (e) => pickerCycleDirection(e, "app.palette", isMac),
   commands: [
     // View commands derive from the nav manifest so a new rail destination
@@ -2214,15 +2214,15 @@ const palette = createPalette({
   ],
 });
 
-// ── Quick Open for souls (Mod+P): find a soul, open its spawn dialog ──
+// ── Quick Open for souls (⌘P / Ctrl+Shift+P): find a soul, open its spawn dialog ──
 // Selection hands off to Workspace (preselectSpawn — consumed by the view's
 // next roster paint): the spawn dialog scoped to that soul, exactly as its
 // card's Spawn opens it. A soul that can't be spawned here (attached only,
 // refused, no verified CLI) opens its page instead, which says why.
 // Dismissing the dialog returns to where the operator was before Quick Open
 // (surface-return.mjs). Terminal policy (documented): app.quickOpenSouls is
-// NOT terminal-allowlisted — ⌘P fires inside xterm on macOS by the ⌘-chord
-// policy, but Ctrl+P inside xterm on Linux/Windows belongs to the shell's history.
+// terminal-allowlisted — ⌘P on macOS, Ctrl+Shift+P on Linux/Windows, a chord
+// xterm sends nothing for; plain Ctrl+P stays the shell's history.
 const quickOpen = createQuickOpen({
   loadSouls: async () => {
     const ws = currentWorkspace();
