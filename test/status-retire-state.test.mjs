@@ -222,6 +222,36 @@ test("status only reads: no file beside the home changes, and no process is sign
   assert.equal(holder.child.signalCode, null); assert.equal(completion.child.signalCode, null);
 });
 
+test("a retire recorded in instance.json never stands in for the one read beside the home", () => {
+  const live = liveProcess();
+  for (const recorded of [{ state: "running", since: CLAIMED, self: false }, null, { state: "not-a-state", since: null, self: 123 }, "retiring"]) {
+    const none = homeWith();
+    writeFileSync(join(none.home, "instance.json"), JSON.stringify({ instance: "dev-a", agent: "dev", retire: recorded }));
+    assert.equal(Object.hasOwn(rowOf(none), "retire"), false, `no marker, no claim: ${JSON.stringify(recorded)}`);
+    const marked = homeWith({ marker: { requestedAt: REQUESTED, completionPid: live.pid, completionStart: live.processStart } });
+    writeFileSync(join(marked.home, "instance.json"), JSON.stringify({ instance: "dev-a", agent: "dev", retire: recorded }));
+    assert.deepEqual(rowOf(marked).retire, { state: "running", since: REQUESTED, self: true }, `with a marker: ${JSON.stringify(recorded)}`);
+  }
+});
+
+const hasMkfifo = !spawnSync("mkfifo", ["--version"], { stdio: "ignore" }).error;
+test("a pipe or a directory at the claim or the result path is no value, and status does not hang on it", { skip: !hasMkfifo && "mkfifo is not installed" }, () => {
+  const holder = liveProcess();
+  const atClaim = homeWith(), atResult = homeWith({ marker: { requestedAt: REQUESTED, completionPid: holder.pid, completionStart: holder.processStart } });
+  const dirClaim = homeWith(), dirResult = homeWith({ marker: { requestedAt: REQUESTED, completionPid: holder.pid, completionStart: holder.processStart } });
+  mkdirSync(join(retireClaimPath(atClaim.home), ".."), { recursive: true });
+  for (const path of [retireClaimPath(atClaim.home), deferredRetireResultPath(atResult.home)]) assert.equal(spawnSync("mkfifo", [path]).status, 0);
+  mkdirSync(retireClaimPath(dirClaim.home), { recursive: true }); mkdirSync(deferredRetireResultPath(dirResult.home));
+  // In a child, bounded: a read that blocks on the pipe would never return to this test.
+  const script = `import { listInstances } from ${JSON.stringify(new URL("../lib/core.mjs", import.meta.url).href)};
+    const rows = (root) => listInstances(root, "oats-test-nosuch").find((a) => a.name === "dev").instances;
+    console.log(JSON.stringify(${JSON.stringify([atClaim.root, atResult.root, dirClaim.root, dirResult.root])}.map((r) => rows(r)[0].retire ?? null)));`;
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 15000 });
+  assert.equal(r.error, undefined, "status returned"); assert.equal(r.status, 0, r.stderr);
+  const running = { state: "running", since: REQUESTED, self: true };
+  assert.deepEqual(JSON.parse(r.stdout), [null, running, null, running], "a claim that is not a file is no claim; a result that is not a file is no result");
+});
+
 // ---- the read rule, on its own -----------------------------------------------------------------------
 
 test("readRetireState: since is required; code and message belong to failed only, strings or absent, never null", () => {
