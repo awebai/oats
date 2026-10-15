@@ -3,7 +3,7 @@
 - **A retire with a large work tree is about twice as fast
   ([#1247](https://github.com/awebai/oats/issues/1247)).** On a Linux
   laptop (btrfs on dm-crypt), the retire of a home holding about 400 MiB in
-  37,000 files under `work/` took 27–30 s and now takes 11–15 s. Every
+  37,000 files under `work/` took 18–30 s and now takes 10–17 s. Every
   recovery copy is still written and verified before the retire hooks run,
   and every safety rule is kept.
   - **Cold reads in parallel.** A digest reads its files one at a time, and
