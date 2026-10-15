@@ -102,6 +102,9 @@ const VIEWER = [process.execPath, "/opt/oats/bin/oats.mjs", "session", "attach",
  *  and window share their number): `status` empty when a signal ended it. */
 /** The dead-pane subscription's line for a viewer's window: its exit status, or the signal that
  *  ended it; neither while tmux has no status yet. */
+/** The panes the control client paused or continued, in order (`%1:pause`, …: THE OUTPUT OF A TAB
+ *  NOT DRAWN). */
+const flows = (world) => world.control().map((line) => /^refresh-client -A '(%\d+:(?:continue|pause))'$/.exec(line)?.[1]).filter(Boolean);
 const dead = (id, status = "", signal = "") => `%subscription-changed oats-tui-dead $0 ${id} ${id.slice(1)} %${id.slice(1)} : 1 ${status} ${signal}`;
 /** A panel with one viewer open and its first (fresh) capture drawn: everything settled. */
 async function opened(plan = {}, more = {}) {
@@ -863,16 +866,21 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.end();
   });
 
-  test("tabs: only the shown tab is captured; a hidden tab's output captures nothing and arms no tick, and tells onActivity once in each spell hidden (shown and hidden again, it may tell again); the shown tab's output is never activity, the panel hidden or not; a hidden window's layout change is nothing", async () => {
+  test("tabs: a hidden tab is heard until it prints: its first output marks it and pauses its pane, once in each spell hidden, and captures nothing; shown again it is continued before its capture; the shown tab's output is never activity; the panel hidden pauses the displayed tab and shown continues it before its capture; a hidden window's layout change is nothing", async () => {
     const activity = [];
     const { world, panel, timers, screens, heard } = await opened({}, { onActivity: (event) => activity.push(event) });
     await moreTabs(panel, 1);
     await waitFor("the second tab's first capture", () => screens.at(-1).id === "@2");
     const drawn = screens.length, asked = capturedPanes(world).length;
-    for (const n of [1, 2, 3]) world.emit(`%output %1 hidden ${n}`);
     world.emit("%layout-change @1 fa5e,72x20,0,0,1 fa5e,72x20,0,0,1 *");
     await waitFor("the panel to hear the hidden tab", () => heard().includes("%layout-change @1 "));
+    assert.deepEqual([activity, flows(world)], [[], []], "hidden and quiet: heard, not marked, not paused");
+    for (const n of [1, 2, 3]) world.emit(`%output %1 hidden ${n}`);
+    await waitFor("the panel to hear the last of it", () => heard().includes("%output %1 hidden 3\n"));
     assert.deepEqual(activity, [{ id: "@1" }], "once in the spell, whatever the output");
+    await waitFor("its pause", () => flows(world).length > 0);
+    await sleep(30);
+    assert.deepEqual(flows(world), ["%1:pause"], "paused at its first output, once");
     assert.equal(timers.count, 0, "no tick for a hidden tab");
     await sleep(30);
     assert.deepEqual([screens.length, capturedPanes(world).length], [drawn, asked], "nothing captured for it");
@@ -883,18 +891,26 @@ describe("the panel", { concurrency: 8 }, () => {
     timers.fire();
     await waitFor("the capture", () => screens.length === drawn + 1);
     assert.equal(screens.at(-1).id, "@2");
-    // Shown, then hidden again: a new spell.
+    // Shown: continued before its capture.
+    const before = world.control().length;
     panel.show("@1");
     await waitFor("the capture of @1", () => screens.at(-1).id === "@1");
+    const after = world.control().slice(before);
+    const continued = after.indexOf("refresh-client -A '%1:continue'");
+    assert.ok(continued >= 0 && continued < after.findIndex((line) => line.startsWith("capture-pane") && line.endsWith("-t %1")), `continued before the capture: ${after.join(" | ")}`);
     world.emit("%output %1 while shown");
     await waitFor("the panel to hear it", () => heard().includes("%output %1 while shown\n"));
+    // Hidden again: a new spell.
     panel.show("@2");
     world.emit("%output %1 hidden again");
     await waitFor("the second spell's activity", () => activity.length === 2);
     assert.deepEqual(activity, [{ id: "@1" }, { id: "@1" }]);
+    await waitFor("its second pause", () => flows(world).length === 3);
+    assert.deepEqual(flows(world), ["%1:pause", "%1:continue", "%1:pause"], "@2, shown and never marked, never paused");
     await waitFor("the capture of @2", () => screens.at(-1).id === "@2");
-    // The panel hidden as a whole: the shown tab's output only marks its screen stale.
+    // The panel hidden as a whole: the shown tab paused, its output only marks its screen stale.
     panel.setVisible(false);
+    await waitFor("the shown tab paused", () => flows(world).at(-1) === "%2:pause");
     world.emit("%output %2 behind another view");
     world.emit("%output %1 still the same spell");
     await waitFor("the panel to hear it", () => heard().includes("%output %1 still the same spell\n"));
@@ -904,6 +920,10 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.setVisible(true);
     await waitFor("one fresh capture of the shown tab", () => capturedPanes(world).length === hiddenAt + 1);
     assert.equal(capturedPanes(world).at(-1), "%2");
+    await waitFor("the shown tab continued", () => flows(world).at(-1) === "%2:continue");
+    const shownAt = world.control();
+    const resumed = shownAt.lastIndexOf("refresh-client -A '%2:continue'");
+    assert.ok(resumed > shownAt.lastIndexOf("refresh-client -A '%2:pause'") && resumed < shownAt.findLastIndex((line) => line.startsWith("capture-pane") && line.endsWith("-t %2")), "continued before its capture");
     panel.end();
   });
 
@@ -1200,22 +1220,27 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.end();
   });
 
-  test("two displayed: activity only for a tab not displayed, once in each spell: replaced by an open or a show it is marked once, displayed again it is not, and replaced again it may be marked again; the displayed ones never", async () => {
+  test("two displayed: activity only for a tab not displayed, once in each spell: replaced by an open or a show it is marked and paused at its first output, displayed again it is continued and not marked, and replaced again it may be marked again; the displayed ones never", async () => {
     const activity = [];
     const { world, panel, heard, second } = await twoDisplayed({}, { onActivity: (event) => activity.push(event) });
     const third = (await panel.open({ argv: VIEWER, cols: 50, rows: 10, instead: "@1" })).id;
     assert.deepEqual(panel.tabs.displayed, [second, third]);
+    const [p2, p3] = [second, third].map((id) => `%${id.slice(1)}`);
     for (const n of [1, 2, 3]) world.emit(`%output %1 unseen ${n}`);
-    world.emit(`%output %${second.slice(1)} seen`);
-    world.emit(`%output %${third.slice(1)} seen`);
-    await waitFor("the panel to hear them", () => heard().includes(`%output %${third.slice(1)} seen\n`));
+    world.emit(`%output ${p2} seen`);
+    world.emit(`%output ${p3} seen`);
+    await waitFor("the panel to hear them", () => heard().includes(`%output ${p3} seen\n`));
     assert.deepEqual(activity, [{ id: "@1" }], "once in the spell; the two displayed never");
+    await waitFor("its pause", () => flows(world).length > 0);
+    assert.deepEqual(flows(world), ["%1:pause"]);
     panel.show("@1", { instead: second });
     world.emit("%output %1 now displayed");
-    world.emit(`%output %${second.slice(1)} now not`);
+    world.emit(`%output ${p2} now not`);
     await waitFor("the second spell's mark", () => activity.length === 2);
-    await waitFor("the panel to hear it", () => heard().includes(`%output %${second.slice(1)} now not\n`));
+    await waitFor("the panel to hear it", () => heard().includes(`%output ${p2} now not\n`));
     assert.deepEqual(activity, [{ id: "@1" }, { id: second }]);
+    await waitFor("the replaced one paused", () => flows(world).length === 3);
+    assert.deepEqual(flows(world), ["%1:pause", "%1:continue", `${p2}:pause`]);
     panel.hide("@1");
     world.emit("%output %1 a new spell");
     await waitFor("the new spell's mark", () => activity.length === 3);

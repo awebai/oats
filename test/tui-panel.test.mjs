@@ -1034,6 +1034,49 @@ test("a move: a tab not displayed in one group is displayed in place of the othe
   assert.deepEqual(p.activity.filter((event) => event.id === other), [{ id: other }], "marked once");
 });
 
+/** A tab program that counts: `F` starts printing `count <n>` lines without pause, `S` stops. */
+const countProgram = join(base, "count-program.mjs");
+function writeCountProgram() {
+  writeFileSync(countProgram, `process.stdin.setRawMode(true);
+let n = 0, timer = null;
+process.stdin.on("data", (data) => {
+  if (data.includes(70) && timer === null) timer = setInterval(() => { for (let i = 0; i < 20; i++) process.stdout.write("count " + ++n + "\\n"); }, 1);
+  if (data.includes(83) && timer !== null) { clearInterval(timer); timer = null; process.stdout.write("stopped " + n + "\\n"); }
+});
+process.stdout.write(process.argv[2] + "-ready:\\n");
+`);
+}
+/** The last count a capture of the pane in window `id` shows, or null. */
+const lastCount = (text) => { const all = [...String(text).matchAll(/count (\d+)/g)]; return all.length ? Number(all.at(-1)[1]) : null; };
+
+test(`a hidden tab that floods is marked once and paused: its pane is still read, nothing of it is drawn, and shown again its first screen is the pane's current one, and it is drawn as it goes on (${TMUX_VERSION})`, { skip: NO_TMUX }, async (t) => {
+  writeCountProgram();
+  writeTabProgram();
+  const p = tabsPanel(t, "flood");
+  const { id: flood } = await p.panel.open({ argv: [process.execPath, countProgram, "flood"], cols: 60, rows: 10 });
+  await waitUntil(() => p.screens.some((screen) => screen.id === flood && screen.screen.includes("flood-ready:")), "the flooding tab drawn", budget(15000));
+  const { id: quiet } = await p.panel.open({ argv: [process.execPath, tabProgram, "quiet"], cols: 60, rows: 10, instead: flood });
+  await waitUntil(() => p.screens.some((screen) => screen.id === quiet && screen.screen.includes("quiet-ready:")), "the quiet tab drawn", budget(15000));
+  const pane = () => tmuxOn(p.socket, "capture-pane", "-p", "-t", flood);
+  const from = p.screens.length;
+  // Hidden, it floods: marked once, and its pane goes on (tmux still reads a paused pane).
+  tmuxOn(p.socket, "send-keys", "-t", flood, "-l", "F");
+  await waitUntil(() => p.activity.some((event) => event.id === flood), "the hidden tab marked", budget());
+  const early = lastCount(pane());
+  await waitUntil(() => (lastCount(pane()) ?? 0) > (early ?? 0) + 500, "its pane still read while paused", budget());
+  assert.deepEqual(p.activity, [{ id: flood }], "marked once, whatever it printed");
+  assert.deepEqual(screensOf(p, flood, from), [], "nothing drawn of it");
+  // Shown: its first screen is the pane's current one (no older count than the pane had just
+  // before), and it goes on being drawn.
+  const before = lastCount(pane()), shownFrom = p.screens.length;
+  p.panel.show(flood);
+  await waitUntil(() => screensOf(p, flood, shownFrom).length > 0, "a capture of the tab shown", budget());
+  const first = lastCount(screensOf(p, flood, shownFrom)[0].screen);
+  assert.ok(first !== null && first >= before, `the first screen is current: ${first} after ${before}`);
+  await waitUntil(() => (lastCount(screensOf(p, flood, shownFrom).at(-1).screen) ?? 0) > first + 500, "drawn as it goes on", budget());
+  tmuxOn(p.socket, "send-keys", "-t", flood, "-l", "S");
+});
+
 test("removing a group: one of the two displayed closed, its window goes, nothing is shown, the other still displayed and captured, and typed to after focus()", { skip: NO_TMUX }, async (t) => {
   writeTabProgram();
   const p = tabsPanel(t, "ungroup");

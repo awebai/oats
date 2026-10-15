@@ -1119,9 +1119,28 @@ with the Desktop (`packages/client/`).
   to two are displayed, each group's shown tab ([Splits](#splits)), and
   every tab has its group's size: a resize resizes each tab's window in the
   groups drawn. Only the displayed tabs' panes are captured, and only the
-  focused group's shown tab is typed into. tmux tells `oats tui` of every
-  pane's output: a hidden tab's output captures nothing, and only sets that
-  tab's mark, once until the tab is displayed and hidden again. The panel refuses a fifth open (`E_PANEL_FULL`, an open
+  focused group's shown tab is typed into.
+
+  **A tab that is not drawn sends no output, from its mark on.** A hidden
+  tab is heard until it prints: its first output captures nothing, sets its
+  mark, and pauses its pane for `oats tui`'s control client
+  (`refresh-client -A '%<pane>:pause'`, tmux 3.2 and later). From then on tmux sends none of
+  that pane's output until the tab is displayed again, so a hidden agent
+  that prints without pause costs one chunk of output each time its tab is
+  hidden, and a quiet one nothing. The panel hidden as a whole (another
+  view or an overlay over it, or the list alone under 80 columns) pauses
+  its displayed tabs the same way. A
+  paused pane is still read by the private server, so its screen stays
+  current and its viewer never waits. A tab displayed again is continued
+  (`:continue`) before it is captured: tmux restarts its output from where
+  the pane is then, so the first frame is the pane's screen as it is, and
+  nothing written meanwhile is replayed. `pause`, not `off`: from tmux 3.4
+  on, a pane the control client has turned off is no longer read at all, so
+  its viewer would stall and its screen go stale. Measured with a hidden tab
+  printing without pause, `oats tui` takes about 0.4% of a core instead of
+  11%, and the private server 9% instead of 14%.
+
+  The panel refuses a fifth open (`E_PANEL_FULL`, an open
   still under way counted) and a second open while one is under way
   (`E_PANEL_BUSY`); the TUI asks for neither, since it refuses such an open
   itself ([Tabs](#tabs)). It is closed with `kill-pane`, which hangs up
