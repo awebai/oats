@@ -208,7 +208,9 @@ async function tui(term, { shadow = false, stderr = "pane" } = {}) {
     /** The status the run ended with: the one read that showed it (a second read could meet the
      *  file being written again by a later `echo $? >`). */
     async ended(why) { let status = null; await until(term, () => (status = run.status()) !== null, `oats tui in ${term.id} to end ${why}`); return status; },
-    drawn() { const screen = term.screen(); return /^ oats {2}/.test(screen[0] ?? "") && / q quit$/.test(screen.at(-1) ?? ""); },
+    /** A frame is on the screen: the header names the fixture's workspace, and the footer ends
+     *  with `q quit`. */
+    drawn() { const screen = term.screen(); return /^ fixture {2}/.test(screen[0] ?? "") && / q quit$/.test(screen.at(-1) ?? ""); },
     /** The list of instances is on the screen: drawn, with the list's footer (`/ filter`) and no
      *  confirmation's buttons. A confirmation draws no list, so a row's absence means nothing then. */
     listed() { return run.drawn() && (term.screen().at(-1) ?? "").includes("/ filter") && run.buttons() === ""; },
