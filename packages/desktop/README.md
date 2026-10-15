@@ -187,7 +187,14 @@ boundary are factories: a client makes its own, with its own terms and its
 own `exec`, and two of them share nothing. The boundary holds nothing itself,
 so `server/capabilities.mjs` makes one per request around the backend's
 cache, and a provider operation (`run`, the Desktop's) is admitted by the
-boundary's own `capabilityAdmission`.
+boundary's own `capabilityAdmission`. It holds a spawn's two boundaries too:
+the preview (`spawn-preview.mjs` `createSpawnPreview`), which is the dialog's
+read, prepare's read and the settled answers they share, both reads within one
+budget of two flights; and the confirmed-spawn broker (`spawn-apply.mjs`
+`createSpawnApplyBoundary`), which prepares, applies and reads a result,
+prepares through a preview's `prepareRead`, and runs each apply's `oats spawn`
+in a process session of its own. Both refuse a remote workspace. The backend
+makes one of each and owns them.
 
 - **What it holds.** `.mjs` modules and nothing else, in one flat directory:
   no test, fixture, script or manifest, and no subdirectory. A module there
