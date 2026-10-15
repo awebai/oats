@@ -155,66 +155,60 @@ fixed Claude argument: argv, never consent, admission or receive. New
 compositions default to `development`; a home keeps the mode captured at spawn.
 There is no automatic fallback, flip-back or migration between modes.
 
+**The host procedure lives in oats.setup.** How an operator makes and checks
+a host's two delivery choices is the oats.setup skill `/oats-host-delivery`
+(oats.framework 1.11.0 and later; [source](https://github.com/awebai/oats/blob/main/oats-package/capabilities/oats-setup/skills/oats-host-delivery/SKILL.md)).
+Its Choice 1 covers Claude channel delivery:
+- the approved route's managed-settings file, its precedence and its
+  drop-ins;
+- the plugin in the launch's `CLAUDE_CONFIG_DIR`;
+- respawning homes;
+- the banner check and the failure banners.
+
+Its Choice 2 covers the host wake broker. This section states what the
+provider does with each choice, and the host steps only as a summary. For
+the procedure, follow `/oats-host-delivery`; report any disagreement between
+the two rather than choosing one.
+
 *Approved route (recommended for unattended Claude; version-independent).*
 `approved` passes `--channels plugin:aweb-channel@awebai-marketplace`, so Claude
 shows no development prompt. aweb-channel is not on Anthropic's default channel
-allowlist: Claude admits it when the managed policy lists it in
-`allowedChannelPlugins`, and API-key and Team/Enterprise accounts also need
-`channelsEnabled: true` there, so write both keys. On hosts without
-server-managed settings or MDM (Pro/Max and API-key accounts), that policy is a
-root-owned machine file. Host steps, once per machine:
+allowlist. Claude admits it only when the effective managed policy lists it in
+`allowedChannelPlugins`. API-key and Team/Enterprise accounts also need
+`channelsEnabled: true`. A human admin sets both; OATS never writes the
+policy. In an admitted pane, mail appears as `← aweb-channel: …`. A banner
+is still not receive: run the nonce exchange in "Receive verification and
+recovery" below.
 
-1. A human admin writes, as root (OATS never writes it):
-   - Linux: `/etc/claude-code/managed-settings.json`
-   - macOS: `/Library/Application Support/ClaudeCode/managed-settings.json`
+Host steps, once per machine. `/oats-host-delivery`, Choice 1, holds each
+step's exact commands and checks:
+
+1. A human admin writes these two keys into Claude's managed policy, as root.
+   On Linux it is `/etc/claude-code/managed-settings.json`; on macOS,
+   `/Library/Application Support/ClaudeCode/managed-settings.json`.
    ```json
    {"channelsEnabled": true, "allowedChannelPlugins": [{"plugin": "aweb-channel", "marketplace": "awebai-marketplace"}]}
    ```
-   Merge these keys into an existing file, or put them in their own drop-in,
-   `managed-settings.d/50-aweb.json` beside it (Claude merges the file first,
-   then the drop-ins alphabetically; lists combine). Setting
-   `allowedChannelPlugins` replaces Anthropic's default channel allowlist on that
-   host (on 2026-10-08: discord, telegram, fakechat and imessage from
-   `claude-plugins-official`); list any of those this host still uses.
+   - The admin merges them into an existing file, or uses a
+     `managed-settings.d/` drop-in.
+   - Setting `allowedChannelPlugins` replaces Anthropic's default channel
+     allowlist on that host. List any of its plugins this host still uses.
+   - On an account governed by server-managed settings or MDM, the
+     organization admin sets the keys there instead.
 2. `oats-local.yaml`: `settings.oats.aweb.claudeChannelMode: approved`, with
    `delivery: channel` (the default).
-3. Install and enable `aweb-channel@awebai-marketplace` in the Claude config
-   the launch uses: the launch config's `env.CLAUDE_CONFIG_DIR` in
-   `oats-local.yaml` when it sets one, else the launching user's default. With
-   that `CLAUDE_CONFIG_DIR`: `claude plugin marketplace add awebai/claude-plugins`,
-   `claude plugin install aweb-channel@awebai-marketplace`, then check
-   `claude plugin list` shows it enabled.
+3. `aweb-channel@awebai-marketplace` installed and enabled in the Claude
+   config the launch uses: its `CLAUDE_CONFIG_DIR`, else the launching user's
+   default.
 4. Respawn existing homes: they keep their captured mode until respawned.
 
-Verify each approved home in its pane. On Claude 2.1.293 darwin-arm64
-(2026-10-08) the admitted banner read, wrapped over two rows:
-`Channels (experimental) messages from plugin:aweb-channel@awebai-marketplace
-inject directly in this session · restart without --channels to stop`. No
-development prompt appears, and the scrollback contains none of "Loading
-development channels", "not on the approved channels allowlist", "not on your
-org's approved channels list", "blocked by org policy" or "plugin not installed".
-That is still not receive: run the nonce exchange in "Receive verification and
-recovery" below; an admitted channel presents mail in the pane as
-`← aweb-channel: …`.
-
 With provider 1.24.0 (#88, #89), an approved spawn or launch reads the machine
-file read-only and warns nothing when it admits the plugin, or one of the
-`claude-channel-policy-*` / `claude-channel-enrollment-unverified` verdicts in
-section 7's table when it does not; `oats readiness --home H --json` reports the same verdict,
-`claude-channel-policy-admitted` included. That is evidence about the file, not
-receive.
-
-| Startup shows | Remedy |
-|---|---|
-| "not on the approved channels allowlist" or "not on your org's approved channels list" | the effective policy does not list aweb-channel: admin fixes step 1, or the higher source below |
-| "blocked by org policy" | `channelsEnabled` is not `true` in the effective policy: admin adds it |
-| "plugin not installed", or `claude plugin list` (with the launch's `CLAUDE_CONFIG_DIR`) does not show aweb-channel enabled | step 3 |
-| the development-channels prompt | the home runs in development mode (the file does not suppress that prompt): set approved and respawn |
-
-**Precedence:** Claude reads the first managed source present: server-managed
-settings (Team/Enterprise admin console), then MDM (`com.anthropic.claudecode`),
-then the file. Where a higher source exists the file is ignored: the admin sets
-both keys in that source instead.
+file read-only. It warns nothing when the file admits the plugin. Otherwise it
+warns one of the `claude-channel-policy-*` /
+`claude-channel-enrollment-unverified` verdicts in section 7's table.
+`oats readiness --home H --json` reports the same verdict,
+`claude-channel-policy-admitted` included. That is evidence about the file,
+not receive.
 
 *Development fallback.* `development` passes
 `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`
@@ -252,6 +246,20 @@ needs separate explicit operator authorization.
 Where broker delivery is authorized, an operator may choose `delivery: session`
 for an unattended home instead, without overriding an explicit native-channel
 requirement.
+
+**The host wake broker** (`aw wake run`, one per host user) wakes every Codex
+home, every `delivery: session` home and every joined team. The provider
+registers a home at spawn and launch. `aw wake register` accepts a
+registration even while the daemon is down, and the registration takes
+effect when the daemon starts. Readiness reads the daemon's own status
+(section 7). Without a running daemon, every such home reads `unavailable`
+with `wake-daemon-not-running`, and each joined team adds
+`joined-team-poll-only`.
+
+The operator installs it as a per-user service with `oats aweb wake install`,
+run in their own shell (provider 1.28.0; section 8, "Host wake broker
+service"), and reruns it after every aw upgrade to restart it:
+`/oats-host-delivery`, Choice 2.
 
 **When woken:**
 
@@ -356,17 +364,18 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | Code | Meaning | Who fixes it |
 |---|---|---|
 | `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the default team | workspace owner, if a shared team was meant |
-| `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
-| `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | human: start the host wake daemon, or upgrade aw and restart it |
-| `wake-daemon-outdated` (warning) | the running host wake broker is older than the aw floor (1.36.33); it still receives, and readiness still checks your route | human: upgrade aw, then restart the host wake daemon |
+| `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; operator: install or start the broker (`/oats-host-delivery`, Choice 2); if readiness then shows `wake-target-missing`, restart the home with the operator's word |
+| `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | operator: install or start its service, or upgrade aw and restart it (`/oats-host-delivery`, Choice 2) |
+| `wake-daemon-outdated` (warning) | the running host wake broker is older than the aw floor (1.36.33); it still receives, and readiness still checks your route | operator: upgrade aw, then restart the broker's service (`/oats-host-delivery`, Choice 2) |
 | `channel-dev-confirmation` | the home runs in development mode: OATS confirms Claude's development-channel prompt at launch, and readiness warns until the last start recorded `launchPrompts.status: completed` | nobody, when the kernel confirms; to stop the prompt, operator: section 4's approved route or `settings.oats.aweb.delivery: session`, then respawn. A `blocked` start is explained by the kernel's `launch-prompt` item |
 | `claude-channels-unavailable` | development mode, readiness only: the home's last start recorded `launchPrompts.status: flag-ignored`. Claude ignored the development-channel flag, so the home has no channel delivery. Claude Code disables channels when its launch environment sets `DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, or when the account or organization has no channels | operator: remove the variable from the launch environment, an account with channels, or `settings.oats.aweb.delivery: session` (then respawn). Approved mode needs channels too |
 | `E_SPAWN_INCOMPLETE` / `launchPrompts` blocked or incomplete | home/target may still be live, even after a submitted Enter or with `launched:false` | inspect retained session first (section 4); no automatic input, replay, replacement or restart; no readiness inference |
-| `claude-channel-policy-admitted` | approved mode, readiness only (launch is silent): the machine managed-settings file admits aweb-channel. Evidence, not proof: server-managed settings or MDM would override it | nobody; section 4's startup check and the nonce exchange |
-| `claude-channel-policy-not-admitted` | approved mode: the machine file exists but does not set up the route as section 4 writes it; the message names the missing key (`channelsEnabled`, the entry, or the wrong marketplace). A missing `channelsEnabled` blocks API-key and Team/Enterprise accounts, not Pro/Max | admin: section 4 host step 1 |
-| `claude-channel-enrollment-unverified` | approved mode, admission not established. No machine file, unreadable, or an unsupported platform (launch and readiness; providers up to 1.23.2 warned this at every approved launch without reading the policy) | admin: section 4 host step 1 (or the higher managed source); then section 4's startup check and the nonce exchange |
+| `claude-channel-policy-admitted` | approved mode, readiness only (launch is silent): the machine managed-settings file admits aweb-channel. Evidence, not proof: server-managed settings or MDM would override it | nobody; the banner check of `/oats-host-delivery`, Choice 1, and the nonce exchange |
+| `claude-channel-policy-not-admitted` | approved mode: the machine file exists but does not set up the route as section 4 writes it; the message names the missing key (`channelsEnabled`, the entry, or the wrong marketplace). A missing `channelsEnabled` blocks API-key and Team/Enterprise accounts, not Pro/Max | admin: section 4 host step 1 (`/oats-host-delivery`, Choice 1) |
+| `claude-channel-enrollment-unverified` | approved mode, admission not established. No machine file, unreadable, or an unsupported platform (launch and readiness; providers up to 1.23.2 warned this at every approved launch without reading the policy) | admin: section 4 host step 1 (`/oats-host-delivery`, Choice 1), or the higher managed source; then the banner check and the nonce exchange |
 | `claude-channel-policy-malformed` | approved mode: a machine managed-settings file is not a JSON object; Claude Code documents that it refuses to start while a managed-settings file cannot be parsed (code.claude.com/docs/en/managed-settings.md) | admin: repair the file the message names |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
+| `claude-channel-mode-default` (warning, home readiness only) | a Claude `delivery: channel` home runs in development mode because nobody chose a mode: its captured settings have no `claudeChannelMode`, or have the manifest default (origin `manifest-default`). It can appear beside `channel-dev-confirmation`. Limit: a home whose record holds no setting origins (composed before OATS recorded them) cannot tell unset from an explicit `development`, so it stays silent | operator: set `settings.oats.aweb.claudeChannelMode` in `oats-local.yaml`, `approved` (the managed-settings route, `/oats-host-delivery`, Choice 1) or `development` explicitly, then respawn |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue. A never-ttl grant seat needs its custody to list `grant_never_ttl.v1`; an E2EE grant seat (the default) needs `mail_reply_continuation.v1`. "required custody operations are missing: <op>" for either means the custody runs code older than aw 1.36.32, where those ops arrived; the remedy names the client floor, 1.36.33. "custody status could not be read" means it could not be asked | human; for a missing op, restart the custody on aw 1.36.33 or later (upgrade aw, restart the custody service and the wake daemon, then `oats sync`) |
 | `grant-expiring` (warning, grant seats with a duration) | the grant recorded at the seat's last mint expires within 7 days; the message names the instant as recorded | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which renews a seat with a captured `identity.ttl` duration for another such duration (to stop it expiring, remove identity.ttl and respawn); respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
 | `grant-expired` (grant seats with a duration) | that grant's recorded expiry has passed: messaging is unavailable (aw reports `grant_expired`) | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which renews a seat with a captured `identity.ttl` duration for another such duration (to stop it expiring, remove identity.ttl and respawn); respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
@@ -384,6 +393,30 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
   session grant; joined teams need local identities. Report it.
 - "failed to leave team … kept …" — the release was not confirmed; the identity
   home was kept on purpose so leave can be retried. Retry later or report.
+
+**Errors from `oats aweb wake install|status|uninstall`** (section 8, "Host
+wake broker service"; the host procedure is `/oats-host-delivery`, Choice 2;
+full table in the package's `docs/wake-service.md`):
+
+- `E_WAKE_INSIDE_HOME` — run in an instance (`OATS_INSTANCE_HOME` set). The
+  operator runs it in their own shell; an agent reports it.
+- `E_WAKE_UNIT_CONFLICT` — another unit runs `aw wake run`, or a file at the
+  `ai.aweb.wake` path was not written by install. Retire it with the printed
+  steps, then rerun. It is never touched.
+- `E_WAKE_RUNNING_UNSUPERVISED` — a broker runs outside the unit, started by
+  hand. Stop it (the message names `daemon_pid`), then rerun.
+- `E_WAKE_PATH` — `aw`, `oats` or `node` is not on the shell's PATH.
+  `E_AW_FLOOR` — aw is below 1.36.33. `E_WAKE_STATE_DIR` — unset
+  `AW_WAKE_STATE_DIR` (the unit uses aw's default).
+- `E_WAKE_LINGER` — `--linger-required` with systemd lingering off: an
+  administrator runs `loginctl enable-linger <user>`. Without the flag,
+  install warns `wake-linger-off` instead.
+- `wake-tmux-missing` (warning) — no `tmux` on the shell's PATH, so the
+  broker cannot reach OATS sessions. Install tmux or fix PATH, then rerun
+  install.
+- `E_WAKE_NOT_RUNNING` — the unit is in place, but the daemon did not report
+  running on the installed aw's version within about 10 s. The unit is kept;
+  read the log the message names.
 
 **Other symptoms:**
 
@@ -425,6 +458,7 @@ These are source-qualified cards, not an installation or live-acceptance receipt
 | Released provider 1.25.1, OATS >=0.42, aw >=1.36.32 | Readiness warns only about what someone must act on: no `joined-team-receive` for a joined team that receives live. A start waits at most 10 s for the custody grant list; an aw call that never exits is reported as timed out or by its code or signal. |
 | Released provider 1.26.0, OATS >=0.42, aw >=1.36.33 | `oats aweb resident create <name>` creates or adopts a GLOBAL resident in an existing hosted team from the dashboard's API key, installs its per-user custody unit and records `residents.<name>` ("GLOBAL residents and grant seats" below). One aw client floor, 1.36.33. |
 | Provider 1.26.1, OATS >=0.48 for `resident create` | `resident create` maps the resident's team without `--team-label` (under the team's name) and makes it the default team where there is none; another default is kept and `oats teams default <label>` is printed as the first step. That step moves the whole deployment's default team (every later spawn of a soul without its own default goes to the resident's team), so it is the operator's decision: an agent prints it and asks, and never runs it on its own. A grant seat gets `AWID_REGISTRY_URL` from its resident's identity when that registry is not aw's default. |
+| Provider 1.28.0, OATS >=0.52.0, aw >=1.36.33 | `oats aweb wake install`, `status` and `uninstall` install the host wake broker as a per-user service ("Host wake broker service" below). Readiness warns `claude-channel-mode-default` for a Claude channel home whose mode nobody chose, and checks the broker at soul scope when the spawn will need it (section 7). |
 | Future provider #56 / #60 | Token-only setup and GLOBAL wider-team join are not installed procedures here. Stop at their named owner boundary. |
 
 `D` = selected absolute deployment, `S` = resolved messaging soul, `L` = label,
@@ -640,6 +674,23 @@ Setup has no `--global`; GLOBAL spawn consumes a provisioned resident and
 creates a scoped worker grant. Worker home has no root key; it is not keyless.
 LOCAL root/spawn-authority diagnostics are never a GLOBAL gate. Wider-team
 grant extension remains unsupported #60.
+
+### Host wake broker service
+
+The procedure for a host (when it needs the broker, the order, and how to
+check delivery) is oats.setup's `/oats-host-delivery`, Choice 2
+(oats.framework 1.11.0). This card is the command. It is provider 1.28.0, aw
+>=1.36.33, and runs in D, in the operator's own shell, as the user who runs
+the instances, never inside an instance.
+
+| Act | Command in D | Writes / success / one next step | Error → remedy |
+|---|---|---|---|
+| Install, or restart after an aw upgrade | `oats aweb wake install [--plan] [--linger-required] [--json]` | The per-user unit `ai.aweb.wake` (systemd `--user` on Linux, a LaunchAgent on macOS) running `<aw> wake run` with the shell's resolved `aw`, `oats` and `node`, then loads and (re)starts it. Success: `PASS wake broker <version> (<manager> unit <path>)`, verified by `aw wake status`. `--plan` prints the unit and actions and changes nothing. Next: `oats aweb wake status`. | Section 7's `E_WAKE_*` list. On Linux with lingering off it installs and warns `wake-linger-off`. |
+| Report | `oats aweb wake status [--json]` | Read-only. The unit (and whether its `aw` is still the one on PATH), the daemon (version, floor), and the deployment's homes that need the broker, each registered or not. Exit 0 even when something is wrong. | `homes.known: false` names why the homes could not be read. |
+| Remove | `oats aweb wake uninstall [--plan] [--json]` | Stops, disables and deletes only the unit install wrote. With none, `removed: false`. | A foreign unit is never touched (`E_WAKE_UNIT_CONFLICT`). |
+
+The unit's text, the JSON shapes and every error are in the package's
+`docs/wake-service.md`.
 
 ### Connecting a deployment on another machine
 
