@@ -132,9 +132,10 @@ invalidation keeps a spawn's own decision from being reused by the next one.
 `spawn-preview-max-age`, the dialog's reads pass `--max-age 60`, letting the
 kernel answer from member heads it observed within 60 s (its reply may carry an
 `observation {observedAt, reused, localRevision}` block, which the projection
-drops and never shows). Prepare's own uncached read and the apply never pass it,
-and a reusing read never coalesces with a live one (their flights are keyed
-apart). Without the feature, no read passes it.
+drops and never shows). Prepare's own uncached read never passes it, and a
+reusing read never coalesces with a live one (their flights are keyed apart).
+Without the feature, no read passes it. The apply has its own gate,
+`spawn-apply-max-age` ([Apply transport](#apply-transport-and-qualified-results)).
 
 Response: `{spawnPreviewViewApi:1,status,target,data,reason}`. Success requires
 API2, `preview:true`, byte-exact `subject{soul,agentsRoot,dir}` and consistent
@@ -241,10 +242,15 @@ Domain errors resolve with stable safe codes.
 
 ```text
 spawn <admitted-soul> --dir <admitted-context> --agents-root <admitted-root>
-  [original validated choices] --expect-decision <stored-revision>
+  [original validated choices] --expect-decision <stored-revision> [--max-age 60]
   --idempotency-key <stored-key> --task-file <owned-temp>
   [--wake-file <owned-temp>] --json
 ```
+
+`--max-age 60` goes only to a CLI that lists `spawn-apply-max-age` (#1246 K1): the
+kernel may then reuse deployment observations up to 60 s old instead of reading
+every member head again at the press; `--expect-decision` still refuses a
+drifted decision (`E_DECISION_STALE`, read as drifted).
 
 Private files are created0600 inside private directories; short writes refuse
 before CLI dispatch rather than launch with truncated instructions. Cleanup is

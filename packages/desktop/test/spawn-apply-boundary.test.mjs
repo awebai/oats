@@ -335,3 +335,38 @@ test('#802 review: the hook bound is the preview\'s module bound: 65 and 256 hoo
   f.c.cli.features = [...f.c.cli.features, 'worktree-event'];
   assert.notEqual((await f.send(prepare())).status, 'prepared');
 });
+
+// #1246 K1: the apply may let the kernel reuse its deployment observations (--max-age), only where the CLI says so.
+test('#1246 K1: the apply passes maxAge (60 by default) only when its CLI lists spawn-apply-max-age; null never', async () => {
+  for (const [why, features, options, expected] of [
+    ['the feature, the default', ['spawn-apply-max-age'], {}, 60],
+    ['the feature, a given age', ['spawn-apply-max-age'], { maxAge: 30 }, 30],
+    ['the feature, turned off', ['spawn-apply-max-age'], { maxAge: null }, undefined],
+    ['an older kernel', [], {}, undefined],
+  ]) {
+    const c = applyContext(), calls = [];
+    c.cli.features = [...c.cli.features, ...features];
+    let ids = 0;
+    const broker = createSpawnApplyBoundary({ ...options, mint: () => (++ids).toString(16).padStart(64, '0'),
+      read: async () => ({ status: 'available', data: applyPreview(target) }),
+      invoke: async (_cli, args) => { calls.push(structuredClone(args)); return { started: true, envelope: envelope(creation(applyPreview(args.target))) }; } });
+    const p = await broker(prepare(), () => c);
+    assert.equal((await broker({ action: 'apply', spawnRef: p.spawnRef }, () => c)).status, 'complete', why);
+    assert.equal(calls[0].maxAge, expected, why);
+    assert.equal(Object.hasOwn(calls[0], 'maxAge'), expected !== undefined, `${why}: no maxAge key at all without it`);
+  }
+});
+test('#1246 K1: a reusing apply the kernel refuses as E_DECISION_STALE answers exactly as before, and reads as drifted', async () => {
+  const { createSpawnTransaction } = await import('../../client/spawn-transaction.mjs');
+  const views = [];
+  for (const features of [['spawn-apply-max-age'], []]) {
+    const f = fixture({ invoke: (_cli, args) => ({ started: true, envelope: { schemaVersion: 1, ok: false, error: { code: 'E_DECISION_STALE', details: { decision: applyPreview(target).decision } } } }) });
+    f.c.cli.features = [...f.c.cli.features, ...features];
+    const tx = createSpawnTransaction({ request: body => f.send(body), sleep: async () => {} });
+    const outcome = await tx.submit({ address: 'northwind', selector, input: prepare(), decision: applyPreview(target).decision }, { alive: () => true, progress() {} });
+    assert.equal(f.calls[0].args.maxAge, features.length ? 60 : undefined);
+    assert.equal(outcome.kind, 'drifted'); assert.equal(outcome.reason.code, 'E_DECISION_STALE');
+    views.push({ ...outcome.view, spawnRef: null });
+  }
+  assert.deepEqual(views[0], views[1], 'the same view with or without --max-age');
+});
