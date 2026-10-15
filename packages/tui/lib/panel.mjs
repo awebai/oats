@@ -474,8 +474,13 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
           if (s) {
             lost(s);
             // What tmux said comes on stderr, which may still be on its way when stdout said
-            // `%exit`: the process's end is waited for (it was sent SIGTERM), bounded.
-            await Promise.race([s.closed, new Promise((resolve) => setTimeout(resolve, END_TIMEOUT_MS).unref?.())]);
+            // `%exit`: the process's end is waited for (it was sent SIGTERM), bounded. The bound's
+            // timer is kept referenced, and cleared once the end wins: the child is unref'd by
+            // lost(), and an unref'd timer would leave nothing holding the event loop, so a
+            // close that never comes would end the process with this await still pending.
+            let bound = null;
+            await Promise.race([s.closed, new Promise((resolve) => { bound = setTimeout(resolve, END_TIMEOUT_MS); })]);
+            clearTimeout(bound);
           }
           const said = (s?.startError.trim() || s?.stderr.trim()) ?? "";
           if (ended) throw refusal("E_PANEL_ENDED", "the panel has ended");
