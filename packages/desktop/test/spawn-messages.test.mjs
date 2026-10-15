@@ -50,7 +50,7 @@ test('a kernel code the Desktop has no sentence for reads as the general one, it
   assert.deepEqual(read.error, { code: CODE, message: SAID });
   const reason = previewFailure(read.error.code, null, read.error.message).reason;
   assert.deepEqual(reason, { code: CODE, message: SAID });
-  assert.deepEqual(spawnProblem(reason, 'preview'), { text: 'OATS couldn’t work out this soul’s defaults. Try again, or see Details.', code: CODE, detail: `${CODE} · ${SAID}` });
+  assert.deepEqual(spawnProblem(reason, 'preview'), { text: 'OATS couldn’t work out this soul’s defaults. Try again, or see Details.', fact: 'OATS couldn’t work out this soul’s defaults.', next: 'details', code: CODE, detail: `${CODE} · ${SAID}` });
   // A message that cannot travel leaves no code of the tables to fall back on: the general failure.
   assert.equal(previewFailure(CODE, null, `${SAID} ${'x'.repeat(2048)}`).reason.code, 'E_CLI_FAILED');
   // A press: no kernel text travels, and the code is in no table.
@@ -80,6 +80,9 @@ test('an invalid instance name says every rule, including the 64-character cap (
 /* ── E_LAUNCH_PREFERENCE_UNMATCHED (OATS 0.53.0, awebai/oats#1015): the Desktop's own sentence, and the kernel's
  *    two texts as parts for the client to quote. The texts here are this file's own, never a kernel sentence. ── */
 const OPENS = 'This machine’s launch preferences name a soul this workspace doesn’t offer, so OATS won’t choose a launch for this soul. To spawn now, pick a harness above, or a launch configuration in Developer settings. To fix it for every spawn, correct the preference (Details).';
+// The shared fact (#855, 6b-2): the sentence's lead where the Desktop goes on to name its controls; the whole
+// shorter sentence, which names none, everywhere else.
+const LEAD = 'This machine’s launch preferences name a soul this workspace doesn’t offer, so OATS won’t choose a launch for this soul.';
 const PRESSED = 'This machine’s launch preferences name a soul this workspace doesn’t offer, so OATS won’t choose a launch for this soul. To spawn now, pick a harness or a launch configuration for this spawn. To fix it for every spawn, correct the preference.';
 const TABLE = 'A launch preference on this machine names a soul the workspace does not offer, and this spawn names no launch.';
 const SAID = 'the file points "ghost" at a launch and no soul answers to that name', REMEDY = 'point the entry at a soul, then drop "ghost"';
@@ -95,18 +98,18 @@ test('an unmatched launch preference: the long sentence is read at the preview w
   plain(OPENS, UNMATCHED); plain(PRESSED, UNMATCHED);
   // As the dialog opens: the reason carries the kernel's message and its fix.
   const opens = spawnProblem({ code: UNMATCHED, message: SAID, fix: REMEDY }, 'preview');
-  assert.deepEqual(opens, { text: OPENS, code: UNMATCHED, detail: UNMATCHED, kernel: { message: SAID, fix: REMEDY } });
+  assert.deepEqual(opens, { text: OPENS, fact: LEAD, next: 'change-options', code: UNMATCHED, detail: UNMATCHED, kernel: { message: SAID, fix: REMEDY } });
   // The parts are the strings as they came: nothing trimmed, joined or taken out.
   const raw = spawnProblem({ code: UNMATCHED, message: `  ${SAID}\n${REMEDY}  `, fix: ` ${REMEDY} ` }, 'preview');
   assert.deepEqual(raw.kernel, { message: `  ${SAID}\n${REMEDY}  `, fix: ` ${REMEDY} ` });
   assert.equal(raw.detail, UNMATCHED, 'no kernel text in detail: no consumer of it may show one without its speaker');
   // A press: the table's sentence travelled, no fix; the shorter sentence, and Details as for any code.
   const pressed = spawnProblem(spawnApplyReason(UNMATCHED), 'spawn');
-  assert.deepEqual(pressed, { text: PRESSED, code: UNMATCHED, detail: `${UNMATCHED} · ${TABLE}` });
+  assert.deepEqual(pressed, { text: PRESSED, fact: PRESSED, next: null, code: UNMATCHED, detail: `${UNMATCHED} · ${TABLE}` });
   // "(Details)" never points at Details that hold no kernel text: at the preview without a fix, the shorter one.
-  assert.deepEqual(spawnProblem(previewFailure(UNMATCHED).reason, 'preview'), { text: PRESSED, code: UNMATCHED, detail: `${UNMATCHED} · ${TABLE}` });
-  assert.deepEqual(spawnProblem({ code: UNMATCHED, message: SAID }, 'preview'), { text: PRESSED, code: UNMATCHED, detail: `${UNMATCHED} · ${SAID}` });
-  assert.deepEqual(spawnProblem({ code: UNMATCHED }, 'preview'), { text: PRESSED, code: UNMATCHED, detail: UNMATCHED });
+  assert.deepEqual(spawnProblem(previewFailure(UNMATCHED).reason, 'preview'), { text: PRESSED, fact: PRESSED, next: null, code: UNMATCHED, detail: `${UNMATCHED} · ${TABLE}` });
+  assert.deepEqual(spawnProblem({ code: UNMATCHED, message: SAID }, 'preview'), { text: PRESSED, fact: PRESSED, next: null, code: UNMATCHED, detail: `${UNMATCHED} · ${SAID}` });
+  assert.deepEqual(spawnProblem({ code: UNMATCHED }, 'preview'), { text: PRESSED, fact: PRESSED, next: null, code: UNMATCHED, detail: UNMATCHED });
   // The stage's sentence at a press, whatever the reason carries.
   assert.equal(spawnProblem({ code: UNMATCHED, message: SAID, fix: REMEDY }, 'spawn').text, PRESSED);
 });
@@ -114,7 +117,7 @@ test('an unmatched launch preference: the long sentence is read at the preview w
 test('an unmatched launch preference: a reader stays tolerant of a fix that is not a usable string', () => {
   for (const fix of [undefined, null, '', '   ', 7, true, [REMEDY], { fix: REMEDY }]) {
     const problem = spawnProblem({ code: UNMATCHED, message: SAID, fix }, 'preview');
-    assert.deepEqual(problem, { text: PRESSED, code: UNMATCHED, detail: `${UNMATCHED} · ${SAID}` }, JSON.stringify(fix) ?? 'undefined');
+    assert.deepEqual(problem, { text: PRESSED, fact: PRESSED, next: null, code: UNMATCHED, detail: `${UNMATCHED} · ${SAID}` }, JSON.stringify(fix) ?? 'undefined');
   }
   // A message that is not a string, beside a fix: the fix is still the kernel's, and it is the part there is.
   assert.deepEqual(spawnProblem({ code: UNMATCHED, message: 7, fix: REMEDY }, 'preview').kernel, { message: '', fix: REMEDY });
