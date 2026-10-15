@@ -124,7 +124,7 @@ function observeWith(features, instance) {
   const fn = name => { const found = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`)); assert.ok(found, name); return found[0]; };
   const roster = { root: '/d/agents', agents: [{ name: 'dev', description: '', team: null, instances: [instance] }], withheld: [] };
   const context = {
-    snapshot: { byWs: new Map() }, cliState: { probedAt: 1, features }, admitted: new Set(['/d']), BACKGROUND_MAX_AGE: 60, observing: new Set(),
+    snapshot: { byWs: new Map() }, cliState: { probedAt: 1, features }, admitted: new Set(['/d']), BACKGROUND_MAX_AGE: 60, observing: new Set(), beginObserving() {}, endObserving() {},
     soulCatalog: { prefetch() {}, settle: () => ({ entry: null, pending: null }) }, capabilityCatalog: { prefetch() {}, ensure() {} },
     deploymentObserver: { observe: async () => ({ ok: true, roster, workspaceStatus: { workspace: {} }, observedAt: '2026-10-03T10:00:00.000Z' }) },
     soulCatalogKey: () => null, catalogProjection: () => null, attachCatalog() {},

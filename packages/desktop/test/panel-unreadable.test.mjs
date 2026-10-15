@@ -14,7 +14,7 @@ const fn = name => { const found = source.match(new RegExp(`(?:async )?function 
 
 function server(result) {
   const context = {
-    snapshot: { byWs: new Map() }, cliState: { probedAt: 1 }, admitted: new Set(['/d']), BACKGROUND_MAX_AGE: 60, observing: new Set(),
+    snapshot: { byWs: new Map() }, cliState: { probedAt: 1 }, admitted: new Set(['/d']), BACKGROUND_MAX_AGE: 60, observing: new Set(), beginObserving() {}, endObserving() {},
     soulCatalog: { prefetch() {} }, capabilityCatalog: { prefetch() {} }, deploymentObserver: { observe: async () => result() },
     // What a failed read becomes is the shared home's (deployment-panel.mjs), as the server imports it.
     pendingEntry, failedEntry, Date,

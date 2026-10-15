@@ -299,6 +299,12 @@ the spawn back.
   the CLI settled, else the `pending` view. The CLI keeps running in the broker,
   which owns the job by `spawnRef`; `result` reads its outcome when it settles, and
   the route refreshes the roster then.
+- **A created answer carries its roster.** A `complete`, `partial` or
+  `incomplete` answer (from `apply`, or from a `result` that found the apply
+  settled) is sent once a live read of that one deployment has published into
+  the roster, or after 5 s, never past the 50 s above
+  ([desktop-load-path.md](desktop-load-path.md), the post-spawn read): the
+  roster read that follows it usually shows the instance already.
 - **Concurrency.** At most 4 applies run at once backend-wide, one per workspace
   and soul, so one 30-minute spawn does not make every other spawn `E_BUSY`. The
   32-record and 8 MiB bounds stay.

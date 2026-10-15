@@ -49,6 +49,7 @@ import { existsSync, readFileSync, readdirSync, statSync, realpathSync, accessSy
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
+import { performance } from "node:perf_hooks";
 import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
 import { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from "../../client/deployment-observer.mjs";
@@ -69,7 +70,7 @@ import { createSpawnPreview } from '../../client/spawn-preview.mjs';
 import { teamsRequest, soulTeamsRequest, teamsFailure } from './teams.mjs';
 import { instanceEventsRequest } from './instance-events.mjs';
 import { eventsFailure } from '../../client/instance-events-contract.mjs';
-import { createSpawnApplyBoundary } from '../../client/spawn-apply.mjs';
+import { createSpawnApplyBoundary, ANSWER_WITHIN_MS } from '../../client/spawn-apply.mjs';
 import { spawnApplyFailure } from '../../client/spawn-apply-contract.mjs';
 import { previewFailure } from '../../client/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
@@ -509,12 +510,21 @@ const lifecycleRequest = createLifecycleBoundary({ terms: DESKTOP_TERMS });
 const spawnPreview = createSpawnPreview();
 const spawnApplyRequest = createSpawnApplyBoundary({ read: spawnPreview.prepareRead });
 const admitted = new Set();  // deployments with at least one successful observation under the current CLI
-const observing = new Set(); // deployments whose observation is in flight right now (/api/panel refreshing)
-const deploymentObserver = createDeploymentObserver({
-  // Only a registered local deployment, with the CURRENT accepted CLI. The
-  // probe generation is the revision: a real CLI change revokes pending reads.
-  getContext: (id) => ctxs.includes(id) ? { deployment: id, revision: cliProbeGeneration, cli: cliState } : null,
-});
+// Deployments whose observation is in flight right now (/api/panel refreshing: `observing.has`), with how many
+// reads of each: a cycle's and a post-spawn read may overlap (#1246 D2), and the deployment stays "refreshing"
+// until the last one ends.
+const observing = new Map();
+const beginObserving = (id) => { observing.set(id, (observing.get(id) ?? 0) + 1); };
+const endObserving = (id) => { const n = (observing.get(id) ?? 1) - 1; if (n > 0) observing.set(id, n); else observing.delete(id); };
+// Only a registered local deployment, with the CURRENT accepted CLI. The
+// probe generation is the revision: a real CLI change revokes pending reads.
+const observerContext = (id) => ctxs.includes(id) ? { deployment: id, revision: cliProbeGeneration, cli: cliState } : null;
+const deploymentObserver = createDeploymentObserver({ getContext: observerContext });
+// Post-spawn reads (#1246 D2): a second observer, made by the same factory over the same context and reads, used
+// only on demand, for the one deployment a created spawn changed (observeSpawned). It has no timer and no loop: the
+// refresh loop stays the one read loop. It never joins a cycle's read, which started before the apply answered, and
+// a busy cycle never refuses it: at most 2 targeted reads at once, beside the cycle's 2.
+const spawnObserver = createDeploymentObserver({ getContext: observerContext });
 /** Run the liveness collector over its input (deployment-panel.mjs `livenessInput`) and answer what it
  * printed, or null when it failed, timed out or could not start (`livenessAnswers` reads either). No
  * rows start no child. */
@@ -547,18 +557,18 @@ function catalogProjection(entry, refreshing) {
  * key when the workspace status is known (settle), and attached to the published entry
  * when it lands. The capabilities table follows the same cycle (prefetch, then ensure binds
  * it) and is re-read whenever its key moves, never on the request path. */
-async function observeDeployment(id, { live = false } = {}) {
+async function observeDeployment(id, { live = false, observer = deploymentObserver } = {}) {
   const previous = snapshot.byWs.get(id);
   // Before the first CLI probe settles there is no verdict to report.
   if (!cliState.probedAt) return pendingEntry(previous, new Date().toISOString());
   const cli = cliState, admission = !admitted.has(id);
   const maxAge = live || admission ? 0 : BACKGROUND_MAX_AGE;
-  observing.add(id);
+  beginObserving(id);
   try {
     // Cold: souls and the capabilities table start WITH the roster reads (unbound), and are bound to
     // this cycle's key once the workspace status lands. Warm: nothing starts here.
     soulCatalog.prefetch(id, cli, { maxAge }); capabilityCatalog.prefetch(id, cli, { maxAge });
-    const result = await deploymentObserver.observe(id, { maxAge });
+    const result = await observer.observe(id, { maxAge });
     // A busy or stale read keeps the entry held; an unreadable remote keeps the last observation, marked
     // with the failure; anything else is unavailable (packages/client/deployment-panel.mjs `failedEntry`).
     if (!result.ok) return failedEntry(previous, result.reason, new Date().toISOString());
@@ -582,7 +592,7 @@ async function observeDeployment(id, { live = false } = {}) {
     // published by then.
     if (pending) attachCatalog(id, pending, entry);
     return entry;
-  } finally { observing.delete(id); }
+  } finally { endObserving(id); }
 }
 /** Put a landed souls catalog on the entries that were read under its key: `entry` (a cycle's, possibly not yet
  * published) and whatever is published for the deployment by then. Only an entry read under the same key takes
@@ -670,12 +680,87 @@ async function readRemoteRoster(probe) {
   }
 }
 /* OATSWEB_REMOTEREAD_END */
+/* OATSWEB_SPAWNREAD_BEGIN — the post-spawn observation (#1246 D2), extracted by tests */
+/** Every observation is stamped with when it started; per deployment, the later start wins at publish (an older
+ * cycle's entry never replaces a targeted read that started after it). */
+let observationSeq = 0;
+const observationStart = new WeakMap(); // entry -> its observation's start stamp
+// A read that kept the held entry (busy, stale, no CLI verdict yet: deployment-panel.mjs `failedEntry`, `pendingEntry`)
+// answers that same object, which is never this read's: it keeps the stamp of the read that made it, if any.
+function observedFrom(started, entry, held) {
+  if (entry && typeof entry === "object" && entry !== held && !observationStart.has(entry)) observationStart.set(entry, started);
+  return entry;
+}
+/** One deployment's read (observeDeployment), stamped when it starts: `started`, and its panel entry, stamped
+ * with it unless the read kept the held entry. `observer` is the cycle's (deploymentObserver) or the post-spawn
+ * one (spawnObserver). */
+function observeStamped(id, options) {
+  const started = ++observationSeq, held = snapshot.byWs.get(id);
+  return { started, entry: observeDeployment(id, options).then((entry) => observedFrom(started, entry, held)) };
+}
+const stampOf = (entry) => (entry && observationStart.get(entry)) ?? 0;
+const newerThan = (entry, other) => !other || stampOf(entry) > stampOf(other);
+/** A successful observation: observed, and not a kept failure (whose `error` is a string). */
+const succeeded = (entry) => entry?.deployment?.status === "observed" && typeof entry.error !== "string";
+/** Publish a targeted read that started at `started`: only a successful observation of its own (never the held
+ * entry a busy read answers), only when it started after the one published. A failed read publishes nothing; the
+ * next cycle publishes as it always did. Answers whether the snapshot now holds a successful observation that
+ * started no earlier than this read: this one, or a newer one already published (a newer failure is not one). */
+function publishSpawned(id, entry, started) {
+  if (!succeeded(entry) || stampOf(entry) !== started) return false;
+  if (newerThan(entry, snapshot.byWs.get(id))) snapshot.byWs.set(id, entry);
+  const published = snapshot.byWs.get(id);
+  return succeeded(published) && stampOf(published) >= started;
+}
+/** A cycle's entries, as it publishes them: a deployment whose published entry started after this cycle's read of
+ * it (a post-spawn read) keeps that entry. */
+const cycleEntries = (entries) => new Map(entries.map(([id, entry]) => {
+  const published = snapshot.byWs.get(id);
+  return [id, newerThan(entry, published) ? entry : published];
+}));
+/** Observe one deployment now, through the post-spawn observer, and publish it when it lands. Per deployment one
+ * read runs and at most one waits: a request while one runs queues one read that starts after it (never joining a
+ * read that started earlier); a further request rides on the queued one, which starts after it too. Resolves once
+ * the read this request waits for has landed, with whether it published (publishSpawned); never rejects. */
+const spawnReads = new Map(); // deployment -> { running, queued }
+function observeSpawned(id) {
+  const held = spawnReads.get(id);
+  if (held?.queued) return held.queued;
+  const start = () => {
+    const { started, entry } = observeStamped(id, { live: true, observer: spawnObserver });
+    const running = entry
+      .then((landed) => publishSpawned(id, landed, started), () => false /* a failed read publishes nothing */)
+      .finally(() => { const slot = spawnReads.get(id); if (slot?.running === running && !slot.queued) spawnReads.delete(id); });
+    return running;
+  };
+  if (!held) { const running = start(); spawnReads.set(id, { running, queued: null }); return running; }
+  held.queued = held.running.then(() => { const running = start(); Object.assign(held, { running, queued: null }); return running; });
+  return held.queued;
+}
+/** A created spawn's answer waits until the targeted read of its deployment has published: at most
+ * CREATED_OBSERVE_WITHIN_MS, and never past ANSWER_WITHIN_MS since the request arrived (`arrivedAt`, on `now`'s
+ * clock). A read that lands without publishing (failed, unavailable, busy, a kept failure) ends nothing: the answer
+ * goes at the bound, and the next cycle publishes as it always did. */
+const CREATED_OBSERVE_WITHIN_MS = 5000;
+const CREATED_STATUSES = ["complete", "partial", "incomplete"];
+async function awaitSpawned(id, arrivedAt, now = () => performance.now()) {
+  const left = Math.min(CREATED_OBSERVE_WITHIN_MS, ANSWER_WITHIN_MS - (now() - arrivedAt));
+  const read = observeSpawned(id); // at once, whatever the wait
+  if (left <= 0) return;
+  let timer;
+  await new Promise((resolve) => {
+    timer = setTimeout(resolve, left);
+    read.then((published) => { if (published) resolve(); });
+  });
+  clearTimeout(timer);
+}
+/* OATSWEB_SPAWNREAD_END */
 /** One observation cycle over every registered deployment; the refresh loop owns when it runs. */
 async function observeAll({ live = false } = {}) {
   try {
     // At most as many deployments at once as the observer admits, so every one is read each cycle (#461).
-    const entries = await mapBounded(ctxs, MAX_DEPLOYMENT_OBSERVATIONS, async (id) => [id, await observeDeployment(id, { live })]);
-    const byWs = new Map(entries);
+    const entries = await mapBounded(ctxs, MAX_DEPLOYMENT_OBSERVATIONS, async (id) => [id, await observeStamped(id, { live }).entry]);
+    const byWs = cycleEntries(entries);
     for (const [id, panel] of snapshot.byWs) if (id.startsWith("remote:")) byWs.set(id, panel);
     snapshot = { at: Date.now(), byWs: mergeRemotePanels(byWs) };
   } catch (e) { if (DEBUG) console.log(`[snapshot] refresh failed: ${e.message}`); }
@@ -1396,6 +1481,7 @@ const server = createServer(async (req, res) => {
       return send(res, 200, servedCliStatus());
     }
     if (req.method === "POST" && path === "/api/spawn") {
+      const arrivedAt = performance.now(); // a created answer waits for its deployment's read, never past ANSWER_WITHIN_MS from here
       let body;
       try { body = await readStrictBody(req, 65536); }
       catch { const failure = spawnApplyFailure('E_BAD_ARGS'); return send(res, 400, { ...failure, code: failure.reason.code, error: failure.reason.message }); }
@@ -1415,7 +1501,14 @@ const server = createServer(async (req, res) => {
         // An apply that answered `pending` keeps its CLI running in the broker: refresh again when it settles.
         const refresh = () => { try { spawnPreview.cache.invalidate(url.searchParams.get('ws')); observeMutation(url.searchParams.get('ws')); } catch { /* a refresh must not erase a spawn receipt */ } };
         const result = await spawnApplyRequest(body, getContext, { settled: refresh });
+        // #1246 D2: a created outcome (the apply's, or a `result` that found a pending apply settled) is answered once
+        // its deployment's targeted read has published, or after the bounded wait. Local deployments only: the
+        // boundary admits no other.
+        const spawned = CREATED_STATUSES.includes(result?.status) ? deploymentFor(held(), url.searchParams.get('ws'), DESKTOP_TERMS) : null;
+        const observed = spawned && !spawned.remote && !spawned.server && ctxs.includes(spawned.id)
+          ? awaitSpawned(spawned.id, arrivedAt).catch(() => { /* never blocks the answer */ }) : null;
         if (body.action === 'apply') { try { observeMutation(url.searchParams.get('ws')); } catch { /* a refresh must not erase a spawn receipt */ } }
+        if (observed) await observed;
         return send(res, 200, result);
       }
       // Only an actual remote argv route exempts a fully capable CLI from the

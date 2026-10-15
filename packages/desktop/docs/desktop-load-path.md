@@ -167,6 +167,34 @@ interval **after** the previous completed — 5 s while a window is focused,
 twice at once and an idle app costs little. A cycle requested during a cycle
 (a mutation's follow-up) runs exactly once right after.
 
+**The post-spawn read (#1246).** A spawn's follow-up cycle waits behind the
+cycle in flight and reads every deployment, so a created instance used to reach
+the roster 1–3 s after the apply answered. When `/api/spawn` answers a created
+outcome (`complete`, `partial` or `incomplete`, from `apply` or from a `result`
+that found a pending apply settled), the backend also reads that one local
+deployment at once (`observeSpawned`, the `OATSWEB_SPAWNREAD` block): the same
+per-deployment read as a cycle (`oats status --max-age 0`, `oats workspace
+status`, the liveness child), live, through a second observer made by the same
+factory (`spawnObserver`). That observer is used only on demand: no timer, no
+loop, and it never joins a cycle's read, which started before the apply
+answered. The bound is at most 2 post-spawn reads at once beside the cycle's 2,
+and per deployment one running plus one queued: a further request rides on the
+queued read, which starts after the running one.
+
+- Every read is stamped when it starts, and per deployment the later start wins:
+  the post-spawn read publishes into the snapshot as soon as it lands, unless
+  the entry published started later, and a cycle that started before it keeps
+  it when the cycle publishes. A failed, unavailable or busy read, or a kept
+  failure (`failedEntry`), publishes nothing; a read that answers the held entry
+  keeps that entry's stamp.
+- The created answer is sent once that read has published (or found a newer
+  successful observation already published), or after
+  `CREATED_OBSERVE_WITHIN_MS` (5 s), whichever comes first: a read that
+  publishes nothing, or finds only a newer failure, ends no wait. Never past
+  `ANSWER_WITHIN_MS` (50 s) since the request arrived: an apply that answers at
+  49 s waits at most 1 s. The refresh loop's own follow-up (`observeMutation`)
+  still runs, and the next cycle runs as scheduled.
+
 The Electron main process posts `{ focused }` (a strict body: that key and
 nothing else) to `POST /api/window-state` when the reduction of its windows
 flips (`window-activity.mjs`: visible, not minimized, focused). Focus
