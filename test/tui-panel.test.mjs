@@ -17,10 +17,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { createPanel } from "../packages/tui/lib/panel.mjs";
+import { captureRows } from "../packages/tui/lib/term/capture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -454,6 +456,20 @@ test("a viewer that ends at once closes the terminal: the line says it could not
   assert.equal(run.status(), null, "oats tui still runs");
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
+});
+
+test("a viewer whose terminal hangs up before its process has exited keeps its exit status: tmux reports such a pane dead before it has the status (3.4), and the panel waits for it", { skip: NO_TMUX }, async (t) => {
+  const dir = mkdtempSync(join(base, "late-"));
+  const env = { ...process.env }; delete env.TMUX; delete env.TMUX_PANE;
+  const closed = [];
+  const panel = createPanel({ dir: () => dir, env, capture: captureRows, onClosed: (event) => closed.push(event) });
+  t.after(() => { panel.end(); rmSync(dir, { recursive: true, force: true }); });
+  // The process closes its terminal's files (the hang-up), ignores the SIGHUP tmux's closing of the
+  // pane then sends it, and exits 3 two seconds later: tmux marks the pane dead at the hang-up and
+  // has its status only once it reaps the process. A viewer that exits does the same in a moment.
+  await panel.open({ argv: ["/bin/sh", "-c", 'trap "" HUP; exec 0<&- 1>&- 2>&-; sleep 2; exit 3'], cols: 80, rows: 20 });
+  await waitUntil(() => closed.length === 1, "the viewer's end", 10000);
+  assert.equal(closed[0].status, 3, `the status it exited with: ${JSON.stringify(closed[0])}`);
 });
 
 // When a viewer's session outlives a way out, what explains it: the viewer's two files (linked

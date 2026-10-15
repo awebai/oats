@@ -4,9 +4,10 @@
 //                 command a control client was sent ({ pid, control })
 //   plan.json     what to do (optional): { version, newSession: { fail }, start: { failAt, hold },
 //                 startDelayMs, holdCapture, screen: [lines], cursor,
-//                 window: { status, stderr, closeAtOnce }, killPaneSilent }
+//                 window: { status, signal, stderr, closeAtOnce }, killPaneSilent }
 //                 (window.closeAtOnce: the viewer ends before new-window answers, heard as its
-//                 pane dead with window.status, as tmux's subscription says it; a test makes a
+//                 pane dead with window.status and window.signal, as tmux's subscription says it:
+//                 `1 <status> <signal>`, both empty when tmux has no status yet; a test makes a
 //                 viewer end later by emitting that line itself)
 //   state.json    the window counter, shared by the invocations of one test
 //   inject.txt    lines the test appends for the control client: `emit <line>` prints the line,
@@ -84,7 +85,7 @@ async function commandMode() {
       const step = plan.window ?? {};
       if (step.stderr !== undefined && e.E) writeFileSync(e.E, step.stderr);
       if (step.closeAtOnce) {
-        const line = `%subscription-changed oats-tui-dead $0 @${n} ${n} %${n} : 1 ${step.status ?? ""}`;
+        const line = `%subscription-changed oats-tui-dead $0 @${n} ${n} %${n} : 1 ${step.status ?? ""} ${step.signal ?? ""}`;
         inject(`emit ${line}`);
         for (let waited = 0; !emitted().includes(line) && waited < 3000; waited += 5) sleepSync(5);
       }
