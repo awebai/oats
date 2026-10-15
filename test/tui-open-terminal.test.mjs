@@ -32,7 +32,8 @@ const REAL_TMUX = hostTool("tmux");
 const NO_TMUX = REAL_TMUX ? false : "tmux is not on PATH: these tests drive `oats tui` and the kernel's viewer in a real tmux (test/tmux-in-ci.test.mjs fails for this in CI)";
 const STTY = REAL_TMUX ? systemExecutable("stty") : null; // not one of the fixture's tools: called by its path
 const base = fixtureBase("oats-to-"); // short: two socket paths live in it
-const restoreEnvironment = REAL_TMUX ? isolateSessionEnvironment(base) : () => {};
+/** Set by the setup (test.before below); test.after undoes what of it was done. */
+let restoreEnvironment = () => {}, fx = null;
 const AGENTS = join(base, "agents.sock");
 const TERM = join(base, "term.sock");
 const SESSION = "team";
@@ -71,9 +72,15 @@ function sweep() {
 // every byte it reads, control bytes in caret notation (C-\ is `^\`). A key that reaches the agent
 // is on its screen.
 const paneProgram = join(base, "agent-pane.mjs");
-const fx = REAL_TMUX ? v2Deployment() : null;
 const world = {};
-if (REAL_TMUX) {
+/** TERM as the setup left it, before any test (termServer below). */
+let TERM_BEFORE = null;
+// The setup runs in a hook: when a step of it fails, test.after still ends what the steps before it
+// made. A file that fails while it loads runs no hook at all.
+test.before(async () => {
+  if (!REAL_TMUX) return;
+  restoreEnvironment = isolateSessionEnvironment(base);
+  fx = v2Deployment();
   writeFileSync(paneProgram, `for (let i = 0; i < 50; i++) console.log("history " + i);
 process.stdin.setRawMode(true);
 process.stdin.on("data", (data) => process.stdout.write([...data].map((b) => (b < 32 ? "^" + String.fromCharCode(b + 64) : b === 127 ? "^?" : String.fromCharCode(b))).join("")));
@@ -98,7 +105,8 @@ process.stdout.write("pane-ready:");
   // A terminal's shell is started through this: the fixture's environment, then its arguments.
   world.enter = join(fx.base, "enter.sh");
   writeFileSync(world.enter, `#!/bin/sh\n${Object.entries(fx.env).map(([name, value]) => `export ${name}=${shq(value)}`).join("\n")}\nexec "$@"\n`);
-}
+  TERM_BEFORE = termServer();
+});
 const AGENT_TARGET = `=${SESSION}:=${NAME}`;
 /** What the agent's pane has read since it started, as it shows it; null before it reads, or with
  *  no window. */
@@ -127,7 +135,6 @@ function termServer() {
     window: tmuxOn(TERM, "show-options", "-w", "-t", "=hold:"),
   };
 }
-const TERM_BEFORE = REAL_TMUX ? termServer() : null;
 
 test.after(() => {
   if (REAL_TMUX) for (const socket of [TERM, AGENTS]) { try { execFileSync(REAL_TMUX, ["-S", socket, "kill-server"], { stdio: "ignore", timeout: 10000 }); } catch { /* not running */ } }

@@ -19,7 +19,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -39,10 +39,17 @@ const ORIGINAL_ENV = { ...process.env };
 function defaultSessions() {
   try { return execFileSync(REAL_TMUX, ["list-sessions", "-F", "#{session_name}"], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"], env: ORIGINAL_ENV }).split("\n").filter(Boolean).sort(); } catch { return []; }
 }
+/** Where that plain tmux keeps its sockets (tmux's own layout: TMUX_TMPDIR, else /tmp), and whether
+ *  it was there before. Under the root run it is this file's own temporary directory, and the probe
+ *  makes it: the file removes it at its end when the probe made it and it is empty, never one that
+ *  was there before or that holds a socket. */
+const PROBED = join(ORIGINAL_ENV.TMUX_TMPDIR || "/tmp", `tmux-${process.getuid()}`);
+const PROBED_BEFORE = existsSync(PROBED);
 const DEFAULT_BEFORE = REAL_TMUX ? defaultSessions() : [];
 for (const name of ["TMUX", "TMUX_PANE"]) delete process.env[name];
 const base = fixtureBase("oats-ta-"); // short: a socket path lives in it
-const restoreEnvironment = REAL_TMUX ? isolateSessionEnvironment(base) : () => {};
+/** Set by the setup (test.before below); test.after undoes what of it was done. */
+let restoreEnvironment = () => {}, fx = null;
 const TERM = join(base, "term.sock");
 
 /** Every test starts the real CLI or the copied TUI, which read the fixture with the real kernel,
@@ -61,11 +68,6 @@ const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (error
  *  instead, through a launch configuration that names it by its path (a declared path is never
  *  looked up again at a start). It runs until the kernel's stop sends it SIGTERM. */
 const STANDIN = join(base, "standin-harness");
-if (REAL_TMUX) {
-  writeFileSync(STANDIN, `#!/bin/sh\nexec ${shq(SLEEP)} 86400\n`);
-  chmodSync(STANDIN, 0o755);
-}
-const fx = REAL_TMUX ? v2Deployment({ local: { "launch-configs": { standin: { harness: "pi", executable: STANDIN } } } }) : null;
 const world = { homes: {} };
 const SHADOW = join(base, "shadow");
 const CONTROL = join(base, "control");
@@ -99,7 +101,14 @@ const wait = () => {
 };
 wait();
 `;
-if (REAL_TMUX) {
+// The setup runs in a hook: when a step of it fails, test.after still ends what the steps before it
+// made. A file that fails while it loads runs no hook at all.
+test.before(async () => {
+  if (!REAL_TMUX) return;
+  restoreEnvironment = isolateSessionEnvironment(base);
+  writeFileSync(STANDIN, `#!/bin/sh\nexec ${shq(SLEEP)} 86400\n`);
+  chmodSync(STANDIN, 0o755);
+  fx = v2Deployment({ local: { "launch-configs": { standin: { harness: "pi", executable: STANDIN } } } });
   // The TUI and the readers it shares, as the install holds them, under the fake kernel.
   for (const dir of ["tui", "client"]) cpSync(join(REPOSITORY, "packages", dir), join(SHADOW, "packages", dir), { recursive: true, filter: (from) => !from.includes(`${join("packages", dir, "test")}`) });
   mkdirSync(join(SHADOW, "bin"), { recursive: true });
@@ -122,7 +131,7 @@ if (REAL_TMUX) {
   writeFileSync(world.enter, `#!/bin/sh\n${Object.entries(fx.env).map(([name, value]) => `export ${name}=${shq(value)}`).join("\n")}\nunset TMUX TMUX_PANE\nexec "$@"\n`);
   tmuxOn("new-session", "-d", "-s", "hold", "-n", "hold", "-x", "100", "-y", "30", "-c", base, "cat");
   tmuxOn("set-option", "-g", "default-terminal", "screen");
-}
+});
 
 test.after(() => {
   // Every gate opened, so no fake waits for ever; then the terminals' server, by its socket.
@@ -130,12 +139,14 @@ test.after(() => {
   if (REAL_TMUX) quietly(() => execFileSync(REAL_TMUX, ["-S", TERM, "kill-server"], { stdio: "ignore", timeout: 10000 }));
   // The agents' sessions: the fixture's own `oats` server, in the private TMUX_TMPDIR (through the
   // fixture's tmux, which admits that server alone), before the fixture checks for its processes.
-  if (REAL_TMUX) quietly(() => execFileSync("tmux", ["-L", "oats", "kill-server"], { stdio: "ignore", timeout: 10000 }));
+  // Only once the setup has made the fixture: before that the environment may not be isolated yet.
+  if (fx) quietly(() => execFileSync("tmux", ["-L", "oats", "kill-server"], { stdio: "ignore", timeout: 10000 }));
   const errors = [];
   if (REAL_TMUX) { try { assertNoFixtureProcesses(base, { settleMs: 8000 }); } catch (error) { errors.push(error); } }
   try { fx?.cleanup(); } catch (error) { errors.push(error); }
   restoreEnvironment();
   rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  if (!PROBED_BEFORE) quietly(() => rmdirSync(PROBED));
   if (errors.length) throw errors[0];
 });
 function readdirSafe(dir) { try { return readdirSync(dir); } catch { return []; } }

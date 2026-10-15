@@ -456,7 +456,8 @@ test("live tmux: dedupe + cap 6 + baseline restoration on an isolated server", a
   const { createTerminalRegistry, terminalTargetKey } = await import("../packages/desktop/terminal-registry.mjs");
   const { mkdtempSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
-  const sock = join(mkdtempSync(join(tmpdir(), "oatsg-")), "s");
+  const dir = mkdtempSync(join(tmpdir(), "oatsg-")), sock = join(dir, "s");
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const tx = (args, out = false) => {
     const r = spawnSync("tmux", ["-S", sock, ...args], { encoding: "utf8", timeout: 5000 });
     if (r.status !== 0 && !out) throw new Error(`tmux ${args.join(" ")}: ${r.stderr}`);

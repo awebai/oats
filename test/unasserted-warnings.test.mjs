@@ -20,7 +20,7 @@ function rootRun(t, name, source, flags = []) {
   const root = fixtureBase("oats-uw-");
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "scripts"));
-  for (const script of ["run-tests.mjs", "desktop-test-deps.mjs", "test-warnings-reporter.mjs"]) cpSync(new URL(`../scripts/${script}`, import.meta.url), join(root, "scripts", script));
+  for (const script of ["run-tests.mjs", "desktop-test-deps.mjs", "test-warnings-reporter.mjs", "test-file-tmpdir.mjs"]) cpSync(new URL(`../scripts/${script}`, import.meta.url), join(root, "scripts", script));
   for (const dir of ["packages/pi", "test"]) mkdirSync(join(root, dir), { recursive: true });
   writeFileSync(join(root, "test", name), source);
   const env = inheritedEnv();

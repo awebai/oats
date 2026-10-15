@@ -6,22 +6,35 @@
 // on `home` (retire, inspect --home, the Desktop's file roots) inherits it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { listInstances } from "../lib/core.mjs";
+import { privateTmuxTmpdir, removeTmuxTmpdir } from "./helpers/host-fixture.mjs";
 
-function layout() {
-  const root = join(realpathSync(mkdtempSync(join(tmpdir(), "oats-home-"))), "agents");
+/** A deployment's agents root in a directory of the test, which is removed when the test has ended. */
+function layout(t) {
+  const made = realpathSync(mkdtempSync(join(tmpdir(), "oats-home-")));
+  t.after(() => rmSync(made, { recursive: true, force: true }));
+  const root = join(made, "agents");
   const instances = join(root, "worker", "instances");
   mkdirSync(join(root, "worker", "soul"), { recursive: true });
   writeFileSync(join(root, "worker", "soul", "soul.yaml"), "name: worker\n");
   return { root, instances };
 }
-const rowsOf = (root) => listInstances(root, `none-${process.pid}`).find((a) => a.name === "worker")?.instances || [];
+/** The listing asks tmux for the session's windows, in this process: with a TMUX_TMPDIR of this file for
+ *  the call, never tmux's default place, where a host's live deployment has its server. */
+const TMUX_TMPDIR = privateTmuxTmpdir();
+test.after(() => removeTmuxTmpdir(TMUX_TMPDIR));
+function rowsOf(root) {
+  const saved = process.env.TMUX_TMPDIR;
+  process.env.TMUX_TMPDIR = TMUX_TMPDIR;
+  try { return listInstances(root, `none-${process.pid}`).find((a) => a.name === "worker")?.instances || []; }
+  finally { if (saved === undefined) delete process.env.TMUX_TMPDIR; else process.env.TMUX_TMPDIR = saved; }
+}
 
-test("a hostile instance.json cannot relocate the reported home or rename the instance", () => {
-  const { root, instances } = layout();
+test("a hostile instance.json cannot relocate the reported home or rename the instance", (t) => {
+  const { root, instances } = layout(t);
   const dir = join(instances, "worker-1");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "instance.json"), JSON.stringify({ agent: "worker", instance: "someone-else", home: "/elsewhere/victim-home", work: "directory" }));
@@ -32,8 +45,8 @@ test("a hostile instance.json cannot relocate the reported home or rename the in
   assert.equal(row.recordedInstance, "someone-else");
 });
 
-test("a consistent instance.json reports exactly as before (no diagnostic keys)", () => {
-  const { root, instances } = layout();
+test("a consistent instance.json reports exactly as before (no diagnostic keys)", (t) => {
+  const { root, instances } = layout(t);
   const dir = join(instances, "worker-2");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "instance.json"), JSON.stringify({ agent: "worker", instance: "worker-2", home: dir, work: "directory", harness: "pi" }));

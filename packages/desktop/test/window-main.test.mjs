@@ -3,7 +3,7 @@
 // channels (claim in place, open, New Window), restore at launch, titles, and closing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -28,9 +28,14 @@ const FakeWindow = fakeWindowClass(RENDERER);
 FakeWindow.onClose = (quitting) => { main.quitStarted = quitting; };
 let main;
 
+/** Every directory tempDir() made, removed when the file has ended. */
+const made = [];
+function tempDir() { const dir = mkdtempSync(join(tmpdir(), 'oats-win-')); made.push(dir); return dir; }
+test.after(() => { for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true }); });
+
 function boot({ records = [], served = SERVED, reread = null, dirs = ['/d/oats', '/d/tsm'], displays = [{ workArea: { x: 0, y: 25, width: 1440, height: 875 } }] } = {}) {
   FakeWindow.all = [];
-  const handlers = new Map(), file = join(mkdtempSync(join(tmpdir(), 'oats-win-')), 'windows.json');
+  const handlers = new Map(), file = join(tempDir(), 'windows.json');
   const context = {
     ipcMain: { handle: (name, fn) => handlers.set(name, fn) }, app: { getPath: () => '/memory' }, join, HERE: '/memory',
     BrowserWindow: Object.assign(FakeWindow, { fromWebContents: (wc) => FakeWindow.all.find((w) => w.webContents === wc) }),

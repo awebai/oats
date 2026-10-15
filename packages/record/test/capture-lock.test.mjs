@@ -13,7 +13,8 @@ const CAPTURE = resolve(new URL("../bin/capture.mjs", import.meta.url).pathname)
 const LOCK_LIB = resolve(new URL("../lib/capture-lock.mjs", import.meta.url).pathname);
 
 test("capture lock: a lock it may not reclaim refuses (live, another host's dead owner, same pid, record-less); release removes only its own", () => {
-  const root = join(mkdtempSync(join(tmpdir(), "capture-lock-")), "o'dd $(echo x) `w` dir");
+  const made = mkdtempSync(join(tmpdir(), "capture-lock-"));
+  const root = join(made, "o'dd $(echo x) `w` dir");
   try {
     const a = acquireCaptureLock(root);
     assert.ok(a.release);
@@ -49,7 +50,7 @@ test("capture lock: a lock it may not reclaim refuses (live, another host's dead
     const e = acquireCaptureLock(root);
     writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: 424242, startedAt: new Date().toISOString() }));
     e.release(); assert.equal(existsSync(captureLockPath(root)), true, "another holder's lock is left alone");
-  } finally { rmSync(root, { recursive: true, force: true }); }
+  } finally { rmSync(made, { recursive: true, force: true }); }
 });
 
 test("capture lock: concurrent child processes never hold the lock at the same time", () => {

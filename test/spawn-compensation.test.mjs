@@ -10,6 +10,8 @@ import { CODEX_TASK_PROMPT } from "../lib/core.mjs";
 
 const CLI = fileURLToPath(new URL("../bin/oats.mjs", import.meta.url));
 const directories = [];
+/** Every fixture made: ended, not only removed, when the file has ended (fx.cleanup). */
+const fixtures = [];
 const write = (path, text, mode) => {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, text, mode ? { mode } : undefined);
@@ -49,7 +51,7 @@ else { rmSync(${JSON.stringify(resource)}); console.log(JSON.stringify({meta:{re
       },
     } },
   });
-  directories.push(fx.base);
+  fixtures.push(fx);
   const { base, dep, root, member: repo } = fx;
   const home = join(root, "dev", "instances", "dev-probe");
   // The login-shell seam stays: a server this suite's spawns start never runs the operator's login shell.
@@ -213,7 +215,13 @@ test("unsupported harness fails before provisioning external state", () => {
   assertClean(f);
 });
 
-test.after(() => { for (const dir of directories) rmSync(dir, { recursive: true, force: true }); });
+test.after(() => {
+  // Every fixture is ended, though one's cleanup throws (it names what it found left); then the first error.
+  const errors = [];
+  for (const fx of fixtures.splice(0)) { try { fx.cleanup(); } catch (e) { errors.push(e); } }
+  for (const dir of directories) rmSync(dir, { recursive: true, force: true });
+  if (errors.length) throw errors[0];
+});
 
 for (const harnessName of ["codex", "claude", "pi"]) {
   test(`shared yolo maps only permission bypass for ${harnessName}`, () => {

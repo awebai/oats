@@ -25,7 +25,11 @@ import { findAgent } from "../lib/core.mjs";
 import { LOCK_FILE } from "../lib/packages.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
-const temp = () => mkdtempSync(join(tmpdir(), "oats-cli-lifecycle-"));
+/** Every directory this file made. Each is removed when the file has ended: also the hermetic home,
+ *  and a base whose test failed before its own removal. */
+const temps = [];
+const temp = (prefix = "oats-cli-lifecycle-") => { const dir = mkdtempSync(join(tmpdir(), prefix)); temps.push(dir); return dir; };
+test.after(() => { for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 function write(path, content) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
 
 function gitify(dir) {
@@ -39,7 +43,7 @@ function gitify(dir) {
 
 /** Run the CLI hermetically: no HOME leak, no `OATS_*` / `PI_*` leak from a
  * hosting instance, and the package catalog bound to nothing. */
-const HERMETIC_HOME = mkdtempSync(join(tmpdir(), "oats-cli-lifecycle-home-"));
+const HERMETIC_HOME = temp("oats-cli-lifecycle-home-");
 function cli(argv, { cwd, env: extra } = {}) {
   const env = {};
   for (const [k, v] of Object.entries(process.env)) if (!/^(OATS|PI)_/.test(k)) env[k] = v;

@@ -65,7 +65,9 @@ test("commands OATS did not render are refused, never rewritten by substring", (
 // Every home here is recorded on the server OATS creates sessions on (`tmux -L oats`, in the fixture's
 // private TMUX_TMPDIR), so a window the kernel has to create again lands on the socket the home
 // recorded. A home recorded on ANOTHER server is test/tmux-own-server.test.mjs.
-const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-session-start-")));
+// short, and its OATS_HOME_DIR is <base>/h: that holds ssh's control socket (ssh/<40 hex>), which ssh needs
+// within 86 bytes, under the root run's directory of the file (docs/implementation.md, fixtures)
+const base = realpathSync(mkdtempSync(join(tmpdir(), "o-ss-")));
 const session = "t";
 const restoreEnvironment = isolateSessionEnvironment(base);
 const socket = oatsSocket();
@@ -403,7 +405,7 @@ test("the CLI advertises session-start and routes it only to a remote that adver
   const probe = JSON.parse(execFileSync(process.execPath, [bin, "version", "--json"], { encoding: "utf8" }));
   assert.ok(probe.features.includes("session-start"));
   assert.ok(probe.remote.includes("session-start"));
-  const oatsHome = join(base, "oats-home");
+  const oatsHome = join(base, "h");
   mkdirSync(oatsHome, { recursive: true });
   writeFileSync(join(oatsHome, "servers.json"), JSON.stringify({ servers: { s: { sshHost: "h", workspace: "/w" } } }));
   const prev = process.env.OATS_HOME_DIR;
