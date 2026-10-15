@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { DETACH_KEY_FEATURE, SESSION_DETACHED_EXIT, isDetachKey, prepareSessionViewer, requireDetachKey, tmuxHasClientFeatures } from "../lib/session-viewer.mjs";
 const target = { backend: "tmux", socket: "/tmp/owned.sock", session: "oats", window: "agent" };
 function fixture(failLink = false, { marker = "", version = "" } = {}) {
-  const calls = [];
-  return { calls, exec(bin, args) {
+  const calls = [], options = [];
+  return { calls, options, exec(bin, args, opts) {
     assert.equal(bin, "tmux");
     // The shared tmux helper forces UTF-8 (-u) ahead of the socket (a0b0e14).
     assert.deepEqual(args.slice(0, 3), ["-u", "-S", target.socket]);
-    const cmd = args.slice(3); calls.push(cmd);
+    const cmd = args.slice(3); calls.push(cmd); options.push(opts);
     if (cmd[0] === "list-panes") return "%1\t0\tcodex\t123\n";
     if (cmd[0] === "new-session") return "@98\n";
     if (cmd[0] === "link-window" && failLink) throw new Error("target disappeared");
@@ -41,6 +41,31 @@ test("the viewer's client leaves when the agent's window ends, never moved to an
   const set = io.calls.filter((c) => c[0] === "set-option" && c.includes("detach-on-destroy"));
   assert.deepEqual(set, [["set-option", "-t", name, "detach-on-destroy", "on"]], "on the viewer session only, never -g");
   assert.ok(io.calls.findIndex((c) => c.includes("detach-on-destroy")) > io.calls.findIndex((c) => c[0] === "kill-window"), "set once the viewer holds the agent's window alone");
+});
+test("every tmux call of the viewer runs in a session and process group of its own, so a signal to the attach's group cannot kill one in flight (#1243)", () => {
+  // list-panes is the shared inspection's, before any viewer exists; every call after it is the
+  // viewer's: preparation, the -V probe, the marker read and cleanup's kill-session and unbind-key.
+  const viewerCalls = (io) => io.calls.map((cmd, i) => [cmd[0], io.options[i]]).filter(([cmd]) => cmd !== "list-panes");
+  const ownGroup = (calls, what) => {
+    assert.ok(calls.length > 0, what);
+    for (const [cmd, opts] of calls) assert.equal(opts?.detached, true, `${what}: ${cmd}`);
+  };
+  for (const detachKey of [undefined, "C-\\"]) {
+    const io = fixture(false, { version: "tmux 3.7c\n", marker: "1\n" });
+    const viewer = prepareSessionViewer(target, { ...io, detachKey });
+    viewer.detached();
+    viewer.cleanup();
+    const calls = viewerCalls(io);
+    for (const cmd of ["new-session", "kill-window", "set-option", "-V", "kill-session"]) assert.ok(calls.some(([c]) => c === cmd), cmd);
+    if (detachKey !== undefined) for (const cmd of ["show-options", "bind-key"]) assert.ok(calls.some(([c]) => c === cmd), cmd);
+    assert.equal(io.calls.at(-1)[0], detachKey === undefined ? "kill-session" : "unbind-key");
+    ownGroup(calls, detachKey ?? "no key");
+  }
+  // And the cleanup of a preparation that failed.
+  const failed = fixture(true);
+  assert.throws(() => prepareSessionViewer(target, { ...failed, detachKey: "F12" }), /disappeared/);
+  assert.deepEqual(failed.calls.slice(-2).map((c) => c[0]), ["kill-session", "unbind-key"]);
+  ownGroup(viewerCalls(failed), "a failed preparation");
 });
 test("failed viewer allocation cleans its placeholder without touching source", () => {
   const io = fixture(true);

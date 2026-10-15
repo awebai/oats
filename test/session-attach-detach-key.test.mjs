@@ -1,4 +1,6 @@
-// `oats session attach --detach-key <key>` (awebai/oats#856): one key that leaves the viewer.
+// `oats session attach` in a real terminal: the viewer's lifetime there, from the session it makes
+// to its removal. `--detach-key <key>` (awebai/oats#856) is one key that leaves the viewer; a
+// hang-up, termination or interrupt, early or late, still removes it (awebai/oats#1243).
 //
 // Real tmux throughout, never the operator's (the conventions of test/tmux-own-server.test.mjs): the
 // fixture owns a private TMUX_TMPDIR and every server here is a socket inside the fixture. AGENTS is
@@ -121,13 +123,16 @@ function tmuxInFront(name, body) {
 let opened = 0;
 /** `oats session attach --home <home> [--detach-key <key>]`, the real CLI, in a new pane of TERM.
  *  Resolves once its client is attached to its viewer session (`attach: false`: at once). `front`
- *  is a directory put first on the command's PATH. */
-async function view(a, { key, front, attach = true } = {}) {
+ *  is a directory put first on the command's PATH. `group`: the command runs as a process group of
+ *  its own (the shell's job control), the terminal's foreground one, so that a signal to that group
+ *  leaves the pane's shell to record the status; and the shell catches INT (its children do not
+ *  inherit a handler), or bash would end itself with a job that INT ended, before recording it. */
+async function view(a, { key, front, attach = true, group = false } = {}) {
   const id = `v${++opened}`;
   const statusFile = join(base, `${id}.status`);
   const before = new Set(viewerSessions());
   const argv = [process.execPath, CLI, "session", "attach", "--home", a.home, ...(key === undefined ? [] : ["--detach-key", key])];
-  const script = `${front ? `PATH=${shq(`${front}:${process.env.PATH}`)}; export PATH; ` : ""}${argv.map(shq).join(" ")}; echo $? > ${shq(statusFile)}`;
+  const script = `${group ? "trap : INT; set -m; " : ""}${front ? `PATH=${shq(`${front}:${process.env.PATH}`)}; export PATH; ` : ""}${argv.map(shq).join(" ")}; echo $? > ${shq(statusFile)}`;
   const pane = tmuxOn(TERM, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=term:", "-n", id, "-c", base, script);
   const viewer = {
     id, pane, agent: a, session: null,
@@ -142,6 +147,17 @@ async function view(a, { key, front, attach = true } = {}) {
     isAttached() { return viewer.session !== null && attached().includes(viewer.session); },
     /** The `oats` process: the viewer session is named for it. */
     pid() { return Number(viewer.session.split("-")[1]); },
+    /** The process group of the `oats` process, for a viewer opened with `group`: its own, not the
+     *  pane shell's. */
+    group() {
+      const of = (pid) => Number(execFileSync("ps", ["-o", "pgid=", "-p", String(pid)], { encoding: "utf8", timeout: 10000 }).trim());
+      const own = of(viewer.pid());
+      assert.equal(own, viewer.pid(), `${id}: oats leads its own process group`);
+      assert.notEqual(own, of(Number(tmuxOn(TERM, "display-message", "-p", "-t", pane, "#{pane_pid}"))), `${id}: not the pane shell's group`);
+      return own;
+    },
+    /** The pid of its tmux client. */
+    clientPid() { return Number(lines(tmuxOn(AGENTS, "list-clients", "-t", `=${viewer.session}`, "-F", "#{client_pid}"))[0]); },
     async ended() { await waitUntil(() => viewer.status() !== null, `${id} has ended; its terminal shows: ${viewer.shows()}`); return viewer.status(); },
   };
   if (attach) {
@@ -423,4 +439,71 @@ test("a keyed attach that cannot go on leaves nothing: a refused key makes no tm
   assert.equal(calls().some((c) => c.includes(" attach-session ")), false);
   nothingLeft("a failed preparation");
   assert.equal(typed(a), "");
+});
+
+// ---- a hang-up, termination or interrupt, early or late (awebai/oats#1243) ----------------------
+// Under a wrapping shell or a terminal profile, a hang-up reaches the tmux client at once and the
+// attach only later, when the wrapper has died, as a signal to the attach's whole process group; a
+// C-c is one to that group too. Wherever it lands after the viewer session exists, the session
+// (and a keyed viewer's table) is removed. Each viewer here runs as its own group (`group`), and a
+// `tmux` in front times the signal against a call of the viewer's.
+
+/** What a `tmux` in front runs to send HUP to the group of its parent, the `oats` process. */
+const HUP_TO_GROUP = `pg=$(ps -o pgid= -p $PPID); kill -HUP -$((pg))`;
+/** The cleanup's kill-session (and only it: the preparation kills a window, not a session). */
+const AT_KILL_SESSION = `*" kill-session -t =oatsview-"*`;
+
+test("a hang-up, termination or interrupt that reaches the attach's process group after its client has exited, while the cleanup's kill-session runs, finds the attach still listening and the kill-session out of its group: nothing is left and the client's status stands", async (t) => {
+  t.after(sweep);
+  const a = await agent("late");
+  // The client goes first: a hang-up reaches it alone, as a pty's does, or it is detached.
+  const cases = [["SIGHUP", "hung up"], ["SIGTERM", "detached"], ["SIGINT", "detached"]];
+  for (const [sig, how] of cases) {
+    // The cleanup's kill-session waits until the signal has been sent (5 s at most), then runs.
+    const held = join(base, `late-${sig}.held`), go = join(base, `late-${sig}.go`);
+    const front = tmuxInFront(`late-${sig}`, `case " $* " in ${AT_KILL_SESSION}) : > ${shq(held)}; i=0; while [ ! -e ${shq(go)} ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done ;; esac`);
+    const viewer = await view(a, { front, group: true });
+    const group = viewer.group();
+    if (how === "hung up") process.kill(viewer.clientPid(), "SIGHUP");
+    else tmuxOn(AGENTS, "detach-client", "-s", `=${viewer.session}`);
+    await waitUntil(() => existsSync(held), `${sig}: the client has exited and the cleanup's kill-session has started; the terminal shows: ${viewer.shows()}`);
+    process.kill(-group, sig);
+    writeFileSync(go, "");
+    assert.equal(await viewer.ended(), how === "hung up" ? 1 : 0, `${sig}, client ${how}: ${viewer.shows()}`);
+    nothingLeft(`${sig} after the client ${how}`);
+  }
+});
+
+test("a hang-up to the attach's process group as the cleanup's kill-session starts does not kill that call: nothing is left, and a keyed viewer's table goes too, with the status the client produced (a leave by the key stays 20)", async (t) => {
+  t.after(sweep);
+  const a = await agent("at-cleanup");
+  for (const key of [undefined, "C-\\"]) {
+    const what = key === undefined ? "plain" : "keyed";
+    const front = tmuxInFront(`hup-at-cleanup-${what}`, `case " $* " in ${AT_KILL_SESSION}) ${HUP_TO_GROUP} ;; esac`);
+    const viewer = await view(a, { key, front, group: true });
+    viewer.group();
+    if (key === undefined) tmuxOn(AGENTS, "detach-client", "-s", `=${viewer.session}`);
+    else viewer.press(key);
+    assert.equal(await viewer.ended(), key === undefined ? 0 : SESSION_DETACHED_EXIT, `${what}: ${viewer.shows()}`);
+    nothingLeft(`HUP at the ${what} viewer's kill-session`);
+  }
+  assert.equal(typed(a), "", "the agent read nothing");
+});
+
+test("a hang-up to the attach's process group while the viewer is being prepared stops the attach before its client starts, with status 0, keyed or not: nothing is left and no client ever attached", async (t) => {
+  t.after(sweep);
+  const a = await agent("at-prepare");
+  for (const key of [undefined, "F12"]) {
+    const what = key === undefined ? "plain" : "keyed";
+    const log = join(base, `hup-at-prepare-${what}.log`);
+    const front = tmuxInFront(`hup-at-prepare-${what}`, `printf '%s\\n' "$*" >> ${shq(log)}\ncase " $* " in *" link-window "*) ${HUP_TO_GROUP} ;; esac`);
+    const viewer = await view(a, { key, front, group: true, attach: false });
+    // No client to set the marker: a keyed viewer stopped here ended without its key too.
+    assert.equal(await viewer.ended(), 0, `${what}: ${viewer.shows()}`);
+    const calls = lines(readFileSync(log, "utf8"));
+    assert.ok(calls.some((c) => c.includes(" link-window ")) && calls.some((c) => c.includes(" kill-session ")), `${what}: ${calls.join(" | ")}`);
+    assert.equal(calls.some((c) => c.includes(" attach-session ")), false, `${what}: the client was never started`);
+    nothingLeft(`HUP while the ${what} viewer is prepared`);
+  }
+  assert.equal(typed(a), "", "the agent read nothing");
 });

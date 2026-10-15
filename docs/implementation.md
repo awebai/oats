@@ -665,7 +665,13 @@ and acts on every existing session through its recorded socket
   (`test/session-attach-detach-key.test.mjs`). A mouse report is sent as the
   bytes a terminal sends (`send-keys -l`). A pane program that must show the
   keys it reads puts its terminal in raw mode first: in cooked mode a control
-  byte is a signal or an edit, not input.
+  byte is a signal or an edit, not input. A signal to the command's process
+  group (what a pty hang-up or a C-c delivers) needs the command to be a group
+  of its own: the pane's script starts `trap : INT; set -m`, so the shell
+  survives to record the status (bash would otherwise end itself after a job
+  that INT ended). A `tmux` first on the command's `PATH` times the signal
+  against one of the command's tmux calls; it finds the group with
+  `ps -o pgid= -p $PPID`.
 - A test of a full-screen program (`oats tui`) uses a pane of a private
   server as its terminal (`test/tui-terminal.test.mjs`): the real CLI is typed
   at an interactive shell in the pane, keys go in with `send-keys`, the screen
