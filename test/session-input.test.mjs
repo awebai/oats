@@ -317,3 +317,29 @@ test("slow post-Enter observation consumes the one shared deadline before anothe
   assert.equal(io.clock - named(io, "send-keys")[0].at, 1000);
   assert.equal(io.sleeps.at(-1), 200);
 });
+
+test("inspect size is read with the pane identity in one tmux call", () => {
+  const io = fixture("%12\t0\tcodex\t123\t137\t43\n");
+  assert.deepEqual(inspectSessionTarget(target, io, { includeSize: true }), {
+    backend: "tmux", present: true, state: "unknown", paneId: "%12", size: { cols: 137, rows: 43 },
+  });
+  assert.deepEqual(io.calls.map(c => c.args), [["list-panes", "-t", "=oats:=agent", "-F",
+    "#{pane_id}\t#{pane_dead}\t#{pane_current_command}\t#{pane_pid}\t#{window_width}\t#{window_height}"]]);
+});
+
+test("inspect size rejects malformed dimensions with the existing pane-response error", () => {
+  for (const bad of [undefined, "", "0", "-1", "1.5", "NaN", "Infinity", "80px", "1e2", " 80", "80 ", "9007199254740992"]) {
+    for (const dims of [[bad, "24"], ["80", bad]]) {
+      const io = fixture(["%12", "0", "codex", "123", ...dims].join("\t") + "\n");
+      assert.throws(() => inspectSessionTarget(target, io, { includeSize: true }), /^Error: invalid tmux pane response$/, JSON.stringify(dims));
+    }
+  }
+});
+
+test("inspect omits size for absent and retained dead panes", () => {
+  for (const output of ["", "%12\t1\tcodex\t123\t80\t24\n"]) {
+    const result = inspectSessionTarget(target, fixture(output), { includeSize: true });
+    assert.equal(result.present, false);
+    assert.equal(Object.hasOwn(result, "size"), false);
+  }
+});

@@ -1039,6 +1039,17 @@ oats session attach --home /abs/home --detach-key 'C-\'
   harness, `shell` for a fallback shell,
   `stopped` for an absent or dead terminal, or `not-launched`. An unavailable
   backend is an error (`E_SESSION_UNAVAILABLE`), never a stopped result.
+  With feature `session-inspect-size` in `oats version --json`, a present
+  terminal also reports `size: { cols, rows }`: positive integer window width
+  and height in cells. The kernel reads tmux's `window_width` and
+  `window_height` in the same call as the pane identity, so a viewer can open
+  its PTY at the window's current size without constructing a tmux target.
+  Split windows remain refused. `size` is absent when `present` is false,
+  including a retained dead pane. Malformed dimensions are an
+  `E_SESSION_UNAVAILABLE` error containing `invalid tmux pane response`.
+  `session inspect --server <id> --home <home> --json` relays the execution
+  host's size; check that host's feature list before relying on it. This is a
+  snapshot: inspect again to observe a resize.
   A home without its session receipt is refused with
   `E_RUNTIME_ENDPOINT_UNKNOWN`, naming the receipt path it looked for (and, for a
   spelling that differs from the on-disk one, the path a kernel before 0.49.0

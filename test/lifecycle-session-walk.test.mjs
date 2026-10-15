@@ -277,7 +277,9 @@ const STATES = [
       attach: { json: envelope("E_BAD_ARGS", ATTACH_JSON), text: says(1, "open terminal failed: not a terminal\n") },
       inspect: succeeds((result, { i, said }) => {
         assert.match(String(result.paneId), /^%\d+$/, said);
-        assert.deepEqual(result, { home: i.home, backend: "tmux", present: true, state: "shell", paneId: result.paneId, waitingOnYou: null }, said);
+        assert.deepEqual(result, { home: i.home, backend: "tmux", present: true, state: "shell", paneId: result.paneId, size: result.size, waitingOnYou: null }, said);
+        assert.ok(Number.isSafeInteger(result.size?.cols) && result.size.cols > 0, said);
+        assert.ok(Number.isSafeInteger(result.size?.rows) && result.size.rows > 0, said);
       }),
       input: refused("E_SESSION_INPUT_FAILED", "cannot submit session input: cannot submit input: session is shell"),
       upload: uploads, receive: receives, start: starts("pane"), restart: starts("pane"),
@@ -373,7 +375,12 @@ test("the kernel's own stop leaves a session as the walk's stopped state: the wi
   await waitUntil(() => !alive(pid), "the stopped harness to have exited");
 
   const other = await s.stopped("exits");
-  const facts = ({ home: _home, paneId, ...rest }) => { assert.match(String(paneId), /^%\d+$/); return rest; };
+  const facts = ({ home: _home, paneId, size, ...rest }) => {
+    assert.match(String(paneId), /^%\d+$/);
+    assert.ok(Number.isSafeInteger(size?.cols) && size.cols > 0);
+    assert.ok(Number.isSafeInteger(size?.rows) && size.rows > 0);
+    return rest;
+  };
   assert.deepEqual(facts(s.inspected(home)), { backend: "tmux", present: true, state: "shell", waitingOnYou: null }, "what the kernel's stop leaves");
   assert.deepEqual(facts(s.inspected(other.home)), facts(s.inspected(home)), "a session whose harness exited by itself reads the same");
 });
@@ -398,4 +405,51 @@ test("the answers of `oats session` that reach no session (a removed subcommand,
       answer[mode]({ r, doc, i: null, said: `${where}\n  exit status: ${r.status}\n  stdout: ${JSON.stringify(r.stdout)}\n  stderr: ${JSON.stringify(r.stderr)}` });
     }
   }
+});
+
+test("version advertises session-inspect-size", () => {
+  const probe = JSON.parse(execFileSync(process.execPath, [CLI, "version", "--json"], { encoding: "utf8" }));
+  assert.ok(probe.features.includes("session-inspect-size"));
+});
+
+test("session inspect reports current window size locally and through --server, and omits it when absent", { skip: NO_TMUX }, async (t) => {
+  const s = sessions(t), { fx } = s;
+  const home = await s.spawn("size");
+  assert.equal(Object.hasOwn(s.inspected(home), "size"), false, "not launched");
+  const i = s.start("size", home), target = `=${i.session}:=${i.name}`;
+  await waitUntil(() => s.inspected(home)?.state === "shell", "inert harness exits");
+
+  // SSH runs the real remote CLI locally; only its transport is a stand-in.
+  const sshDir = join(fx.base, "size-ssh");
+  mkdirSync(sshDir);
+  const ssh = join(sshDir, "ssh");
+  writeFileSync(ssh, '#!/bin/sh\nwhile [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done\n[ "$#" -ge 3 ] || exit 2\nshift; shift\nexec /bin/sh -c "$1"\n');
+  chmodSync(ssh, 0o755);
+  const remote = (argv) => fx.cli(argv, { env: { SHELL, PATH: `${sshDir}:${fx.env.PATH}` } });
+  const added = remote(["server", "add", "size-host", "--ssh", "fixture-host", "--workspace", fx.dep, "--oats", CLI, "--json"]);
+  assert.equal(added.status, 0, added.stdout + added.stderr);
+  const inspectRemote = () => {
+    const r = remote(["session", "inspect", "--server", "size-host", "--home", home, "--json"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const result = JSON.parse(r.stdout).result;
+    assert.equal(result.server, "size-host");
+    return result;
+  };
+  for (const [cols, rows] of [[137, 43], [91, 29]]) {
+    s.tmux("resize-window", "-t", target, "-x", String(cols), "-y", String(rows));
+    assert.equal(s.tmux("display-message", "-p", "-t", target, "#{window_width}x#{window_height}"), `${cols}x${rows}`);
+    const result = s.inspected(home);
+    assert.equal(result.present, true);
+    assert.deepEqual(result.size, { cols, rows });
+    assert.deepEqual(inspectRemote().size, { cols, rows });
+  }
+  s.tmux("set-option", "-w", "-t", target, "remain-on-exit", "on");
+  s.tmux("respawn-pane", "-k", "-t", target, "/bin/sh", "-c", "exit 0");
+  await waitUntil(() => s.inspected(home)?.state === "stopped", "retained dead pane");
+  assert.equal(s.inspected(home).present, false);
+  assert.equal(Object.hasOwn(s.inspected(home), "size"), false, "dead pane");
+  assert.equal(Object.hasOwn(inspectRemote(), "size"), false, "remote dead pane");
+  await s.killWindow(i);
+  assert.equal(Object.hasOwn(s.inspected(home), "size"), false, "absent window");
+  assert.equal(Object.hasOwn(inspectRemote(), "size"), false, "remote absent window");
 });
