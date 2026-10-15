@@ -2176,7 +2176,7 @@ const palette = createPalette({
     return { instances: p.instances || [], deployments: panelDeployments(p), recent, activeId };
   },
   openTerminal: (name) => openTerminalTab(name),
-  // While open, ⌘K / Ctrl+Shift+P moves down and Shift + it up (live keymap); Esc closes, Enter opens.
+  // While open, ⌘K / Ctrl+Shift+K moves down and Shift + it up (live keymap); Esc closes, Enter opens.
   cycleKey: (e) => pickerCycleDirection(e, "app.palette", isMac),
   commands: [
     // View commands derive from the nav manifest so a new rail destination
@@ -2221,8 +2221,8 @@ const palette = createPalette({
 // refused, no verified CLI) opens its page instead, which says why.
 // Dismissing the dialog returns to where the operator was before Quick Open
 // (surface-return.mjs). Terminal policy (documented): app.quickOpenSouls is
-// NOT terminal-allowlisted — ⌘P fires inside xterm on macOS by the ⌘-chord
-// policy, but Ctrl+P inside xterm on Linux/Windows belongs to the shell's history.
+// terminal-allowlisted — ⌘P on macOS, Ctrl+Shift+P on Linux/Windows, a chord
+// xterm sends nothing for; plain Ctrl+P stays the shell's history.
 const quickOpen = createQuickOpen({
   loadSouls: async () => {
     const ws = currentWorkspace();

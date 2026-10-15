@@ -86,7 +86,7 @@ test("overrides persist to localStorage and reset cleanly", () => {
   assert.equal(getBinding("tabs.close", false), null);
   resetBinding("app.palette");
   assert.equal(getBinding("app.palette", true), "Mod+K");
-  assert.equal(getBinding("app.palette", false), "Ctrl+Shift+P");
+  assert.equal(getBinding("app.palette", false), "Ctrl+Shift+K");
   resetAllBindings();
   assert.equal(getBinding("tabs.close", true), "Mod+W");
   assert.equal(getBinding("tabs.close", false), "Ctrl+Shift+W");
@@ -125,9 +125,11 @@ function withActions(t, actions) {
 test("matchEvent: global action fires on its default chord (mac + non-mac)", (t) => {
   withActions(t, [{ id: "app.palette", label: "Palette", context: "global", run: () => {} }]);
   assert.equal(matchEvent(ev("k", { metaKey: true }), { isMac: true, insideTerminal: false }), "app.palette");
-  // Linux/Windows: Ctrl+Shift+P (spec F); plain Ctrl+K is no longer the palette anywhere.
-  assert.equal(matchEvent(ev("P", { ctrlKey: true, shiftKey: true }), { isMac: false, insideTerminal: false }), "app.palette");
+  // Linux/Windows: Ctrl+Shift+K (#1217); plain Ctrl+K is the program's, and Ctrl+Shift+P, the
+  // palette's chord until #1217, is Quick Open's now.
+  assert.equal(matchEvent(ev("K", { ctrlKey: true, shiftKey: true }), { isMac: false, insideTerminal: false }), "app.palette");
   assert.equal(matchEvent(ev("k", { ctrlKey: true }), { isMac: false, insideTerminal: false }), null);
+  assert.equal(matchEvent(ev("P", { ctrlKey: true, shiftKey: true }), { isMac: false, insideTerminal: false }), null);
   assert.equal(matchEvent(ev("k"), { isMac: true, insideTerminal: false }), null);
   assert.equal(matchEvent(ev("k", { metaKey: true, shiftKey: true }), { isMac: true, insideTerminal: false }), null,
     "extra modifiers must not match");
@@ -302,7 +304,7 @@ test("registerAction defaultChord: folds into the effective keymap (addendum 3)"
   // static DEFAULT_KEYMAP wins over a registration default for the same id
   const off2 = registerAction({ id: "app.palette", label: "P", context: "global", run: () => {}, defaultChord: "Mod+9" });
   assert.equal(getBinding("app.palette", true), "Mod+K");
-  assert.equal(getBinding("app.palette", false), "Ctrl+Shift+P");
+  assert.equal(getBinding("app.palette", false), "Ctrl+Shift+K");
   off2();
   // …including a static "no default" on a platform: never the registration's chord.
   const off4 = registerAction({ id: "app.themeToggle", label: "T", context: "global", run: () => {}, defaultChord: "Mod+Shift+T" });

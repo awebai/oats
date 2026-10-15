@@ -338,7 +338,7 @@ test("shell wiring: the footer shortcuts button carries the clash marker, recomp
 
 // ── Spec A, PR 2: search, keycaps and markers ──────────────────────────────────────────────
 // Linux/Windows: the shipped defaults of these ids come from DEFAULT_KEYMAP (sidebar Ctrl+Shift+B,
-// Quick Open Ctrl+P, go to tab Alt+1, F6); focus mode has none.
+// Quick Open Ctrl+Shift+P, go to tab Alt+1, F6); focus mode has none.
 function setupLinux(t, { isMac = false, extra = [] } = {}) {
   const dom = new JSDOM("<!doctype html><body>");
   const doc = dom.window.document;
@@ -387,7 +387,9 @@ test("search: focused on open; filters by label, by group name and by the chord 
   }
   // The keys typed need not be all of the chord's: Ctrl+P also finds Ctrl+Shift+P.
   f.type("ctrl+p");
-  assert.deepEqual(f.shown(), ["Command palette", "Quick open a soul"]);
+  assert.deepEqual(f.shown(), ["Quick open a soul"]);
+  f.type("ctrl+shift+k");
+  assert.deepEqual(f.shown(), ["Command palette"]);
   f.type("f6");
   assert.deepEqual(f.shown(), ["Focus the next region"]);
   f.type("unbound");
@@ -523,20 +525,19 @@ test("terminal marker on Linux/Windows: the allowlisted actions, by id, so it fo
   f.editor.open();
   const marked = () => [...f.doc.querySelectorAll(".kb-row")].filter((r) => r.querySelector(".kb-mark-terminal"))
     .map((r) => r.querySelector(".kb-label").textContent).sort();
-  assert.deepEqual(marked(), ["Close tab", "Command palette", "Instance panel: show or hide", "Next tab", "Sidebar: show or hide"]);
+  assert.deepEqual(marked(), ["Close tab", "Command palette", "Instance panel: show or hide", "Next tab", "Quick open a soul", "Sidebar: show or hide"]);
   assert.equal(f.marks("Sidebar: show or hide", "terminal"), "terminal");
   assert.equal(f.rowFor("Sidebar: show or hide").querySelector(".kb-mark-terminal").title, "Works while a terminal has focus");
   // A rebind of an allowlisted action keeps the marker (the policy is by id), even to a plain Ctrl letter.
   setBinding("sidebar.toggle", "Ctrl+K");
   assert.equal(f.marks("Sidebar: show or hide", "terminal"), "terminal");
   // A non-allowlisted action never gets it, whatever it is bound to.
-  setBinding("app.quickOpenSouls", "Ctrl+Shift+Q");
   setBinding("app.focusMode", "Ctrl+Shift+U");
-  assert.equal(f.marks("Quick open a soul", "terminal"), null);
+  setBinding("tabs.goto1", "Ctrl+Shift+Q");
   assert.equal(f.marks("Focus mode: toggle", "terminal"), null);
   assert.equal(f.marks("Go to tab 1", "terminal"), null);
   assert.equal(f.marks("Focus the next region", "terminal"), null);
-  assert.doesNotMatch(f.rowFor("Quick open a soul").querySelector(".kb-chord").getAttribute("aria-label"), /terminal/);
+  assert.doesNotMatch(f.rowFor("Go to tab 1").querySelector(".kb-chord").getAttribute("aria-label"), /terminal/);
   // Unbound, an allowlisted action fires nothing: no marker.
   setBinding("panel.toggle", null);
   assert.equal(f.marks("Instance panel: show or hide", "terminal"), null);

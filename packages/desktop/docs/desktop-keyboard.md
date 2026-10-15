@@ -89,8 +89,8 @@ Show instance panel and the closed sidebar and panel).
 
 | Action (id) | macOS | Linux / Windows | Works in a terminal (Linux/Win) |
 |---|---|---|---|
-| Command palette (`app.palette`) | ⌘K | Ctrl+Shift+P | yes |
-| Quick open a soul (`app.quickOpenSouls`) | ⌘P | Ctrl+P | no (shell history) |
+| Command palette (`app.palette`) | ⌘K | Ctrl+Shift+K | yes (plain Ctrl+K, kill to the end of the line, stays the program's) |
+| Quick open a soul (`app.quickOpenSouls`) | ⌘P | Ctrl+Shift+P | yes (plain Ctrl+P, shell history, stays the program's) |
 | Spawn instance: choose a soul in Workspace (`app.chooseSoul`) | ⌘N | Ctrl+Shift+N | yes |
 | Close tab (`tabs.close`) | ⌘W | Ctrl+Shift+W | yes |
 | Next / previous tab (`tabs.next`, `tabs.prev`) | ⌃Tab / ⌃⇧Tab | Ctrl+Tab / Ctrl+Shift+Tab | yes |
@@ -114,7 +114,13 @@ Show instance panel and the closed sidebar and panel).
 | New window, with no workspace (`app.newWindow`) | ⌘⇧N (File → New Window, the menu's accelerator) | none (the palette's **Window: new window**) | – |
 | Cycle the app's windows | ⌘\` (macOS's own, Window menu) | none (the window manager's) | – |
 
-Changed in this release on Linux/Windows: the sidebar (was Ctrl+B) is
+Changed after 0.56.0 on Linux/Windows: the palette is Ctrl+Shift+K (was
+Ctrl+Shift+P), and Quick Open is Ctrl+Shift+P (was Ctrl+P) and now works from
+a terminal. Ctrl+Shift+P, which opened the palette since 0.30.3, opens Quick
+Open. A binding you set yourself is kept as it is; when it is a chord a
+default now takes, the shortcuts editor shows the clash.
+
+Changed in 0.56.0 on Linux/Windows: the sidebar (was Ctrl+B) is
 Ctrl+Shift+B, the instance panel (was Ctrl+I) Ctrl+Shift+I, and filter
 instances (was Ctrl+F) Ctrl+Shift+F; these, the stages (Ctrl+1/2/3), the
 shortcuts editor (Ctrl+,) and terminal zoom now work from a terminal. A
@@ -253,7 +259,7 @@ control.
 
 ## The command palette (⌘K)
 
-- **⌘K / Ctrl+Shift+P** opens the palette. With an empty query it starts with
+- **⌘K / Ctrl+Shift+K** opens the palette. With an empty query it starts with
   a **Recent** group: every instance of the window's workspace whose terminal
   has been focused (its tab became the active tab, by any path, or its
   terminal took keyboard focus), most recent first, flat, each with its
@@ -285,9 +291,10 @@ control.
   down, ⇧⌘K up, both wrapping past the ends. Releasing commits nothing:
   **Enter** opens the active row and **Esc** closes. The arrows move too and
   stop at the ends. The cycle follows a rebind of `app.palette`. A chord that
-  already holds Shift (Ctrl+Shift+P, the Linux/Windows default) has no Shift
+  already holds Shift (Ctrl+Shift+K, the Linux/Windows default) has no Shift
   form, so ArrowUp moves up there. A plain-key binding never cycles: typing
-  belongs to the input. Quick Open's ⌘P is unchanged: a second ⌘P closes it.
+  belongs to the input. Quick Open's chord does not cycle: a second ⌘P /
+  Ctrl+Shift+P closes it.
 - For assistive technology each relation group, and Recent, is a named
   `role=group` (announced once, on entry), and a nested or recent row's option
   reads "…, under <parent>" (visually hidden; a recent row's visible "under
@@ -296,7 +303,7 @@ control.
 
 ## Quick Open and the spawn dialog
 
-- **⌘P / Ctrl+P** finds a soul; picking it opens the spawn dialog scoped to that
+- **⌘P / Ctrl+Shift+P** finds a soul, from a terminal too; picking it opens the spawn dialog scoped to that
   soul, exactly as its card's Spawn does (the Workspace stage behind it). A soul
   that can't be spawned here (attached only, refused, no verified CLI) opens
   its soul page instead, which says why. Focus lands in Name.
@@ -402,7 +409,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Show instance panel (end of the main area's top bar, while the panel is closed and has something to show) | Tab, last in the Main region; closing the panel moves focus to it | Enter/Space: `panel.toggle`, then focus on the panel's selected tab |
 | Panel sections: soul link, copy, details, Open soul page, Teams, Git, lifecycle Restart…/Start…/Stop…/Retire… | Tab | Native buttons and summaries |
 | Spawn dialog | Spawn on a card, a soul page, Quick Open | See above |
-| Command palette, Quick Open | ⌘K / Ctrl+Shift+P, ⌘P / Ctrl+P | Type, arrows, Enter, Esc; Tab stays in the input; in the palette its chord cycles rows (⇧ + it: up), skipping context rows (see "The command palette") |
+| Command palette, Quick Open | ⌘K / Ctrl+Shift+K, ⌘P / Ctrl+Shift+P (from a terminal too) | Type, arrows, Enter, Esc; Tab stays in the input; in the palette its chord cycles rows (⇧ + it: up), skipping context rows (see "The command palette") |
 | Shortcuts editor | ⌘, / Ctrl+, (from a terminal too); focus starts in its search | Typing in the search filters by name, group or keys (`shift+b` and `ctrl shift b` find Ctrl+Shift+B), and the count is announced; Down enters the rows, Up/Down move between them, Up from the first returns to the search; Tab reaches each row's shortcut and Reset; Enter records, Esc cancels a recording, Backspace unbinds; Esc clears the search, then closes; trapped, the search its first stop. A row shows "terminal" when its shortcut works while a terminal has focus and "changed" when it differs from the default |
 | Settings (Connections, Terminal) | Footer settings | Trapped, through the Terminal size field too; the sign-in terminal has an explicit Shift+Tab exit; the font size stepper's − and + stay focusable at 9 and 28 (aria-disabled) and a typed size applies on Enter or on leaving the field |
 | Notifications | Tab (they come last in the document) | Open and Dismiss are buttons; focus moves on after dismissing |
