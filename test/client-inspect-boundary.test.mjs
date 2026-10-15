@@ -133,3 +133,23 @@ test('the admission is the same function for run: the same request is refused th
   const forInspect = capabilityAdmission({ action: 'inspect', selector: { home: HOME } }, CONTEXT), forRun = capabilityAdmission({ action: 'run', selector: { home: HOME } }, CONTEXT);
   assert.deepEqual({ ...forRun, action: 'inspect' }, forInspect);
 });
+
+test('a refusal carries the team labels its details name, bounded, whatever its code; the boundary names no code, and the Desktop keeps them for E_TEAM_CONFLICT', async () => {
+  const answer = error => async () => ({ schemaVersion: 1, ok: false, error });
+  const refusal = error => createInspectBoundary({ invoke: answer(error) }).inspect(SOUL, CONTEXT).then(() => assert.fail('admitted'), thrown => thrown);
+  const conflict = await refusal({ code: 'E_TEAM_CONFLICT', message: 'two teams', details: { labels: ['engineering', 'global'] } });
+  assert.deepEqual([conflict.code, conflict.message, conflict.labels], ['E_TEAM_CONFLICT', 'two teams', ['engineering', 'global']]);
+  assert.deepEqual((await refusal({ code: 'E_OTHER', message: 'x', details: { labels: ['a', 'b'] } })).labels, ['a', 'b'], 'any code');
+  for (const labels of [['a'], ['a', '-x'], 'a,b', Array.from({ length: 17 }, (_, i) => `t${i}`)]) {
+    assert.equal(Object.hasOwn(await refusal({ code: 'E_OTHER', message: 'x', details: { labels } }), 'labels'), false, JSON.stringify(labels));
+  }
+  const source = readFileSync(new URL('../packages/client/inspect-boundary.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /E_TEAM_CONFLICT/, 'the shared home writes no retired kernel code');
+  // The Desktop's capabilityRequest keeps the labels of E_TEAM_CONFLICT only, for an inspect and a run alike.
+  const desktop = (action, error) => capabilityRequest({ ...SOUL, action, ...(action === 'run' ? { operation: 'knowledge:sync', selector: { home: HOME } } : {}) },
+    { ...CONTEXT, invoke: answer(error) }).then(() => assert.fail('admitted'), thrown => thrown);
+  for (const action of ['inspect', 'run']) {
+    assert.deepEqual((await desktop(action, { code: 'E_TEAM_CONFLICT', message: 'c', details: { labels: ['a', 'b'] } })).labels, ['a', 'b'], action);
+    assert.equal(Object.hasOwn(await desktop(action, { code: 'E_OTHER', message: 'x', details: { labels: ['a', 'b'] } }), 'labels'), false, action);
+  }
+});

@@ -8,7 +8,15 @@ import { capabilityAdmission, capabilityCall, capabilityFailure, createInspectBo
     ctx.maxAge (seconds the kernel may reuse remote observations on a cache miss) are
     optional: without a cache every inspect reaches the CLI, as schedules.mjs expects.
     The boundary is made per call: it holds nothing, and the cache it reads is the backend's. */
-export async function capabilityRequest(request, { workspace, cli, agents = [], instances = [], localCwd, invoke = cliCapability, cache, catalogKey = null, maxAge }) {
+export async function capabilityRequest(request, ctx) {
+  try { return await capabilityAnswer(request, ctx); } catch (error) {
+    // The Desktop reads a refusal's team labels for E_TEAM_CONFLICT only (the teams contract's conflict, sent by
+    // kernels before 0.30): the boundary carries them from any refusal's details, and the Desktop keeps them for that one.
+    if (error?.code !== 'E_TEAM_CONFLICT') delete error?.labels;
+    throw error;
+  }
+}
+async function capabilityAnswer(request, { workspace, cli, agents = [], instances = [], localCwd, invoke = cliCapability, cache, catalogKey = null, maxAge }) {
   const context = { workspace, cli, agents, instances, localCwd, catalogKey };
   if (request?.action === 'inspect') return createInspectBoundary({ invoke, cache: cache ?? null, maxAge }).inspect(request, context);
   const admitted = capabilityAdmission(request, context);

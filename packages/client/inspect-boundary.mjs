@@ -13,7 +13,7 @@
  *   context  { workspace, cli, agents, instances, localCwd, catalogKey }
  *
  * It resolves the kernel's result with `observedAt` and `refreshing`, and throws an Error with a stable `code`
- * (and, for a host's refusal, a `reason`; for E_TEAM_CONFLICT, the two `labels`).
+ * (and, for a host's refusal, a `reason`; for a refusal whose details name team labels, those `labels`).
  *
  * The boundary HOLDS NOTHING: what it keeps between calls is the cache it is given, which the client owns. A
  * client may make one boundary and keep it (the TUI: its own exec and cache) or make one per call (the
@@ -122,9 +122,10 @@ export function capabilityFailure(envelope, { server, label }) {
   // kernel's message through the display filter (hostReason; null for a code not in the kernel's shape).
   const reason = server ? hostReason({ code, message: envelope.error?.message }, label, `${shownLabel(label, true)} refused this request.`) : null;
   if (reason) error.reason = reason;
-  // E_TEAM_CONFLICT (teams contract): the two disagreeing labels travel with the refusal, bounded.
+  // The team labels a refusal's details name (the teams contract's conflict, sent by kernels before 0.30) travel
+  // with it, bounded: 2 to 16, each a team label. Which codes a client reads them for is the client's own.
   const labels = envelope.error?.details?.labels;
-  if (code === 'E_TEAM_CONFLICT' && Array.isArray(labels) && labels.length >= 2 && labels.length <= 16
+  if (Array.isArray(labels) && labels.length >= 2 && labels.length <= 16
     && labels.every(l => typeof l === 'string' && TEAM_LABEL.test(l))) error.labels = [...labels];
   return error;
 }
