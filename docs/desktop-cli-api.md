@@ -2839,26 +2839,6 @@ its absence.
   carries `rollbackIncomplete`, where before it read `spawnInProgress: true`
   until the reap, and retire completes it. Absent otherwise, and from older
   kernels.
-- **`retire`** (feature `status-retire-state`), as the clients read it
-  (`packages/client/retire-state.mjs`): `{state, since, self, code?,
-  message?}`, absent while no retire of the home runs, is scheduled or is
-  owed. `state` is `running` (a retire holds the home with a live holder, or
-  a self-retire's completion is alive), `unknown` (that holder's liveness
-  can't be read), `failed` (a self-retire's completion recorded an error) or
-  `interrupted` (a scheduled completion is gone and left no outcome);
-  `since` is a string, `self` a boolean, `code` an `E_…` code
-  (`^E_[A-Z0-9_]+$`) and `message` a string; an optional field is absent or
-  a string, never `null`. Any other field is dropped. A value with any field out
-  of this shape is dropped whole, never repaired, and the row reads as if it
-  had none; it never fails the roster. `retirePending` is read on its own
-  and kept as reported. The Desktop and `oats tui` read `running` and
-  `unknown` as **Retiring…**, `failed` as **Retire failed** (its `message`
-  and `code` shown as OATS's words, through the display filter) and
-  `interrupted` as **Retire didn't finish**. A row with `retirePending` and
-  no `retire` (a kernel without the feature) reads **Retiring…**.
-  `rollbackIncomplete` and `spawnInProgress` are read before it. A remote
-  roster row's `retire` is relayed as the host reported it, read by the same
-  rule.
 - **`waitingOnYou`** (feature `waiting-on-you`): `{since, producer, reason,
   message}` when the row is `running: true` and a producer holds a live claim
   that the instance needs input from a human, else `null` (unknown, not "not
@@ -2904,6 +2884,20 @@ its absence.
   no `retire`, and its agent row's `retireFailures[]` holds the outcome, as
   before. A retire that was killed while it held the claim leaves a claim
   whose holder is gone, which reads absent.
+
+  **How the clients read it** (`packages/client/retire-state.mjs`): `since`
+  a string, `self` a boolean, `code` an `E_…` code and `message` a string,
+  each optional field absent or a string, never `null`. Any other field is
+  dropped. A value with any field out of this shape is dropped whole, never
+  repaired, and the row reads as if it had none; it never fails the roster.
+  `retirePending` is read on its own and kept as reported. The Desktop and
+  `oats tui` read `running` and `unknown` as **Retiring…**, `failed` as
+  **Retire failed** (its `message` and `code` shown as OATS's words, through
+  the display filter) and `interrupted` as **Retire didn't finish**. A row
+  with `retirePending` and no `retire` (a kernel without the feature) reads
+  **Retiring…**. `rollbackIncomplete` and `spawnInProgress` are read before
+  it. A remote roster row's `retire` is read by the same rule
+  ([remote rows](#remote-row-retire)).
 - **`modules`** becomes drift rows `{name, from, commit, current, status,
   reason?}` when the workspace was read. `status` is `current`, `moved` or
   `missing` (`reason`: `capability-absent`, `package-absent`, or the member's
@@ -3072,7 +3066,7 @@ route target:
   `producer`) is `null`, and an unknown `reason` or an invalid `message` is
   `null` inside a claim that still counts. As on a local row, the host
   reports a claim only for a running instance.
-- **`retire`** (feature `status-retire-state`, OATS 0.59.0) is on a row only
+- <a id="remote-row-retire"></a>**`retire`** (feature `status-retire-state`, OATS 0.59.0) is on a row only
   when the host's row has the key: a host whose kernel predates the feature,
   and a saved route the host did not list, carry none. When present it is
   passed through the [local row's](#row-retire) rule again on this side: a
