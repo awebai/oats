@@ -45,12 +45,22 @@ pi channel. So **the host needs the broker as soon as one home on it has a
 joined team, runs Codex, or uses `delivery: session`**:
 [Choice 2](#choice-2-the-host-wake-broker).
 
-**Record both choices** in the onboarding hand-back, each with its check:
+**Record both choices** in the onboarding hand-back, each with the result of
+its check:
 
 ```text
 Claude channel delivery: approved | development (chosen: <reason>) | session | no Claude seats here
-Host wake broker: installed (<manager> unit, aw <version>) | not needed (<why>) | declined (joined teams poll-only, accepted by <who>)
+Host wake broker: installed (<manager> unit, aw <version>) | not needed (<why>) | declined (<who> accepts wake-daemon-not-running and poll-only joined teams on <homes>)
 ```
+
+| Choice | Its check |
+|---|---|
+| approved | the approved route's **Success** list below, then the nonce exchange |
+| development | the home's readiness has neither `channel-dev-confirmation` (the last start recorded the confirmation `completed`) nor `claude-channels-unavailable`; then the nonce exchange |
+| session | Choice 2's **Check** |
+| broker installed | Choice 2's **Check** |
+| not needed, no Claude seats | nothing to check; revisit when the host gains such a home |
+| broker declined | the hand-back names the accepted readiness problem and who accepted it |
 
 ## Choice 1: Claude channel delivery
 
@@ -60,12 +70,12 @@ Pick one for the host's Claude seats:
 |---|---|---|
 | **approved** (default for unattended hosts) | `claudeChannelMode: approved` | Use it whenever a human admin can write the managed-settings file, or the organization admin can set its two keys. [Steps below](#claude-channel-delivery-approved-route). |
 | **development** (fallback) | `claudeChannelMode: development`, written explicitly | When the approved route is not available yet. Know its costs: [the development fallback](#the-development-fallback). |
-| **session** | `delivery: session` | When Claude should be woken like Codex, by the broker typing into its terminal. It uses no plugin and shows no prompt, and it needs [Choice 2](#choice-2-the-host-wake-broker). |
+| **session** | `delivery: session` | When Claude should be woken like Codex, by the broker typing into its terminal. It uses no plugin and shows no prompt, and it needs [Choice 2](#choice-2-the-host-wake-broker). `claudeChannelMode` is then unused. |
 
-Whatever you choose, write the key. A missing key is not a choice: it is how
-hosts end up in development mode by accident.
+For approved or development, write `claudeChannelMode`. A missing key is not
+a choice: it is how hosts end up in development mode by accident.
 
-## Claude channel delivery (approved route)
+### Claude channel delivery (approved route)
 
 With `claudeChannelMode: approved`, oats.aweb starts Claude with
 `--channels plugin:aweb-channel@awebai-marketplace`. Claude then shows no
@@ -91,7 +101,8 @@ console), then an MDM profile (`com.anthropic.claudecode` on macOS), then the
 file. On an account governed by server-managed settings or MDM the file is
 ignored: the organization admin sets the same two keys there instead, and
 steps 1–2 do not apply. Pro/Max accounts and plain API-key use have no
-server-managed settings, so the file applies.
+server-managed settings, so the file applies unless an MDM profile is
+installed.
 
 1. **Read what is there.** The file is `/etc/claude-code/managed-settings.json`
    on Linux and `/Library/Application Support/ClaudeCode/managed-settings.json`
@@ -110,8 +121,8 @@ server-managed settings, so the file applies.
    `managed-settings.d/50-aweb.json` beside it (Claude merges the file first,
    then the drop-ins in name order; lists combine). **Setting
    `allowedChannelPlugins` replaces Anthropic's default channel allowlist on
-   this host** (the official discord, telegram, fakechat and imessage
-   plugins): if the host uses any of them, list them too. Always
+   this host** (on 2026-10-08, the official discord, telegram, fakechat and
+   imessage plugins): if the host uses any of them, list them too. Always
    include `channelsEnabled: true`: API-key users need it whenever any managed
    policy exists, and so do Team/Enterprise subscribers; Pro/Max ignore it.
    When no file exists yet, on Linux:
@@ -182,6 +193,7 @@ as part of setup without the operator's word.
 | `not on your org's approved channels list` | the effective policy has an `allowedChannelPlugins` without this plugin and marketplace pair: the names in the file are wrong, or a higher source (server-managed settings or MDM) supplies its own list | fix the entry, or have the organization admin add it |
 | `blocked by org policy` (then “Inbound messages will be silently dropped”) | the effective policy lacks `channelsEnabled: true`, which Team/Enterprise subscribers need, and API-key use whenever any managed policy exists | add the key, or have the organization admin set it |
 | `plugin:aweb-channel@awebai-marketplace · plugin not installed` | the plugin is not installed in the launch's Claude config directory | step 3 |
+| no Channels banner at all, and no error | Claude disabled channels: a telemetry opt-out in the launch environment (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`), or an account or organization without channels | remove the variable from the launch configuration's environment, or use an account with channels |
 | the development prompt still appears | the home started in development mode, not approved: the host setting is missing, or the home was spawned before the change | step 4, then respawn the home |
 
 When unsure, check in order: the preview's mode; which managed-policy source
@@ -194,7 +206,7 @@ receive: `/oats-aweb` §4.
 account-level feature flag gates them on every route; neither is an OATS
 setting.
 
-## The development fallback
+### The development fallback
 
 `claudeChannelMode: development` makes oats.aweb start Claude with
 `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.
@@ -214,9 +226,9 @@ unattended host:
   `blocked` or `incomplete` leaves a session someone must inspect
   (`oats session inspect --home <home> --json`, and the kernel's
   `launch-prompt` readiness item) before anything is started again.
-- **Telemetry opt-outs disable it, as they do approved mode.** When Claude
-  ignores the flag, the home has no channel delivery at all, and readiness
-  warns `claude-channels-unavailable`.
+- **A telemetry opt-out leaves it silent.** Approved mode is disabled the
+  same way. Here, Claude ignores the flag, the home has no channel delivery,
+  and readiness warns `claude-channels-unavailable`.
 
 Choose it by writing `claudeChannelMode: development`, never by leaving the
 key out. To leave it later, set up the approved route, change the key, and
@@ -226,71 +238,91 @@ respawn the homes. A home keeps the mode it was spawned with.
 
 The broker is aw's daemon, `aw wake run`. Each host user runs one, and it
 serves every home registered with it. It types wakes into those homes'
-terminals: it runs the OATS CLI (`oats session inspect` / `oats session
-input`), and for each registration it runs a delivery child on Node. Homes
-register themselves at spawn and launch, so there is nothing to do per home.
-Its state lives in `~/.config/aw/wake` (or `AW_WAKE_STATE_DIR`).
+terminals by running the OATS CLI (`oats session inspect` / `oats session
+input`, which drive `tmux`). For each registration it also runs a delivery
+child on Node.
+
+Homes register themselves at spawn and launch, so there is nothing to do per
+home. A registration made while the broker is down is written to its state
+directory, and it takes effect when the broker starts. That directory is
+`~/.config/aw/wake`, or `AW_WAKE_STATE_DIR` when that is set; the hooks and
+the service must then see the same value.
 
 **When the host needs it:** some home on it has a joined team (any runtime),
-runs Codex, or uses `delivery: session`. Settle this at onboarding, before
-the first such home is spawned.
+runs Codex, or uses `delivery: session`. Settle this at onboarding, and
+revisit it whenever the host gains its first such home: a team join
+(`/oats-teams`), a Codex seat, or `delivery: session`.
 
 **What happens without it:**
 
-- a joined team's `receive` is recorded as `poll` (reason
-  `wake-daemon-not-running`), and readiness warns `joined-team-poll-only`;
-- a Codex or `delivery: session` home gets no wakes, and readiness reports
-  the problem `wake-daemon-not-running`.
+- every home that needs the broker reads `unavailable` in readiness, with
+  the problem `wake-daemon-not-running`;
+- each of its joined teams also gets the warning `joined-team-poll-only`, and
+  is reached only by polling its inbox;
+- a Codex or `delivery: session` home is never woken.
 
 **Who installs it.** The operator does, in their own terminal, as the user
-who runs the instances, outside every instance home. A per-user service
-starts with an almost empty PATH, so the unit has to name, by absolute path:
+who runs the instances, outside every instance home. Install it once aw
+meets the provider's floor: on a new host, after `/oats-onboarding` card 5,
+which can install aw, and before the first home that needs the broker
+starts.
 
-- `aw`;
-- `oats`, through `AW_WAKE_OATS_BIN`, the executable the broker runs;
-- the directories of `oats` and `node`, through `PATH`: `oats` is a Node
-  program, and the delivery child runs on Node.
+A per-user service starts with an almost empty PATH, so the unit names
+these by absolute path:
+- `aw` itself;
+- `oats`, through `AW_WAKE_OATS_BIN` (without it, the broker looks for `oats`
+  on PATH);
+- a `PATH` that reaches `oats`, `node` (`oats` and the delivery child are
+  Node programs) and `tmux`, followed by the host timer's list of usual
+  directories.
 
 Those paths must come from the operator's own shell. An agent's shell can
 carry a session's own PATH, which is the same reason the host timer is
 installed by the operator (`/oats-automations`, “One host timer, no
-daemon”). An agent hands over the steps below and checks
-the result afterwards. It never runs them itself.
+daemon”). An agent hands over the steps below and checks the result
+afterwards. It never runs them itself.
 
-**Before installing:**
-
-- `aw version` must meet the provider's floor (1.36.33 from oats.aweb
-  1.26.0).
-- `aw wake status --json` must not already show `daemon_running: true`. A
-  broker started by hand in some terminal would make the service's own start
-  exit at once ("A second start exits 0 reporting the running daemon"). Stop
-  that one first.
-- If a unit for `aw wake run` already exists on this host, keep it. Check
-  it against the unit below and use the restart and check steps below.
+### Before installing
 
 ```bash
-command -v aw oats node   # in the operator's terminal: the three absolute paths for the unit
-aw version
-aw wake status --json     # daemon_running must be false before the service takes over
+command -v aw oats node tmux   # in the operator's terminal: the absolute paths for the unit
+aw version                     # at least the provider's floor (1.36.33 from oats.aweb 1.26.0)
+aw wake status --json          # daemon_running must be false before the service takes over
+grep -l "wake run" ~/.config/systemd/user/*.service ~/Library/LaunchAgents/*.plist 2>/dev/null
 ```
 
-Prefer stable paths. A version manager's per-version directory changes when
-Node or aw is upgraded, and the unit then points at a path that is gone. If
-you use one, edit the unit after each upgrade (see “After an aw upgrade”).
+- **A broker already running** (`daemon_running: true`) with no unit was
+  started by hand. Stop it (`kill <daemon_pid>` from the status) and read
+  the status again. Otherwise the service's own start exits at once, because
+  a second `aw wake run` exits 0 when one is already running.
+- **A unit the `grep` finds** already supervises the broker. Keep it:
+  compare it with the unit below (its PATH especially), then use the restart
+  and check steps. Replacing it is the operator's decision, made explicitly:
+  stop and remove the old unit first.
+- **Paths.** Prefer stable ones. A version manager's per-version directory
+  changes when Node or aw is upgraded, and the unit then points at a path
+  that is gone. If you use one, edit the unit after each upgrade (see “After
+  an aw upgrade”).
 
-**Linux (systemd --user).** Write
-`~/.config/systemd/user/ai.aweb.wake.service`, replacing `<AW>`, `<OATS>`
-and `<NODE_DIR>` with the paths above. `<OATS_DIR>` is the directory that
-holds `oats`.
+In the units below:
+- `<AW>`, `<OATS>` and `<HOME>` are the absolute paths of `aw`, of `oats` and
+  of the user's home;
+- `<DIRS>` is the directories holding `aw`, `oats`, `node` and `tmux`, joined
+  with `:`;
+- `<FALLBACK>` is `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
+  the host timer's list.
+
+### Linux (systemd --user)
+
+Write `~/.config/systemd/user/ai.aweb.wake.service`:
 
 ```ini
 [Unit]
 Description=aweb host wake broker
-After=network-online.target
 
 [Service]
-ExecStart=<AW> wake run
-Environment="PATH=<OATS_DIR>:<NODE_DIR>:/usr/local/bin:/usr/bin:/bin"
+ExecStart="<AW>" wake run
+Environment="PATH=<DIRS>:<FALLBACK>"
 Environment="AW_WAKE_OATS_BIN=<OATS>"
 Restart=always
 RestartSec=10
@@ -299,7 +331,8 @@ RestartSec=10
 WantedBy=default.target
 ```
 
-systemd expands `%` in these values: write a literal `%` as `%%`. Then:
+systemd expands `%` in these values and `$` in `ExecStart`: write a literal
+`%` as `%%`, and a `$` in `ExecStart` as `$$`. Then:
 
 ```bash
 systemctl --user daemon-reload
@@ -311,9 +344,10 @@ loginctl show-user "$USER" -p Linger   # Linger=no: the service stops when the u
 On a host where nobody stays logged in, enable linger:
 `sudo loginctl enable-linger <user>`. That needs an admin.
 
-**macOS (launchd).** Write `~/Library/LaunchAgents/ai.aweb.wake.plist`.
-launchd does not expand `~`, so every path in it is absolute, the log path
-included. `<HOME>` is the user's home directory.
+### macOS (launchd)
+
+Write `~/Library/LaunchAgents/ai.aweb.wake.plist`. launchd does not expand
+`~`, so every path in it is absolute, the log path included.
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -325,7 +359,7 @@ included. `<HOME>` is the user's home directory.
   <array><string><AW></string><string>wake</string><string>run</string></array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key><string><OATS_DIR>:<NODE_DIR>:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string><DIRS>:<FALLBACK></string>
     <key>AW_WAKE_OATS_BIN</key><string><OATS></string>
   </dict>
   <key>RunAtLoad</key><true/>
@@ -336,73 +370,77 @@ included. `<HOME>` is the user's home directory.
 </plist>
 ```
 
+Run these from the Mac's own desktop login, not over ssh. The `gui/<uid>`
+domain exists only while that user is logged in at the Mac:
+
 ```bash
 plutil -lint ~/Library/LaunchAgents/ai.aweb.wake.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.aweb.wake.plist
 launchctl print gui/$(id -u)/ai.aweb.wake | grep -m1 state   # state = running
 ```
 
-A LaunchAgent runs only while that user is logged in, like the desktop
-session the OATS terminals run in.
+The agent runs while that login lasts. A Mac nobody logs into needs
+automatic login for that user, the macOS counterpart of linger.
 
-**After an aw upgrade, restart the broker.** A running daemon keeps the code
-it started with until it restarts. Readiness compares the daemon's own
-version with the floor and warns `wake-daemon-outdated` when it is behind.
-Restart it after every aw upgrade, and also after `oats` or Node moves (edit
-the unit's paths first):
+### After an aw upgrade
+
+A running daemon keeps the code it started with until it restarts. Restart it
+after every aw upgrade, and also after `oats`, Node or tmux moves (edit the
+unit's paths first):
 
 ```bash
 systemctl --user restart ai.aweb.wake.service           # Linux; after editing the unit: daemon-reload first
 launchctl kickstart -k gui/$(id -u)/ai.aweb.wake        # macOS; after editing the plist: bootout, then bootstrap
 ```
 
+Readiness warns `wake-daemon-outdated` only when the daemon is below the
+provider's floor. A daemon above the floor but older than the `aw` on PATH
+shows only in check 1 below, where `daemon_version` differs from `aw version`.
+
 A restart is safe at any time. The daemon re-reads its registrations, and
 mail that was not yet presented is raised again from the server's unread
 state.
 
-**Check** (the onboarding hand-back records these results):
+### Check
+
+The onboarding hand-back records these results.
 
 ```bash
 aw version
 aw wake status --json              # daemon_running, daemon_version_state, daemon_version, instances
-oats readiness --home H --json     # for each home that needs the broker
+oats readiness --home <abs home> --json   # for each home that needs the broker
 ```
-
 
 1. `aw wake status --json` shows `daemon_running: true`,
    `daemon_version_state: "reported"`, and a `daemon_version` equal to what
    `aw version` prints.
-2. For every home that needs the broker, `oats readiness --home H --json` has
-   none of `wake-daemon-not-running`, `wake-daemon-outdated`,
-   `wake-daemon-version-unknown` or `joined-team-poll-only`, and the home is
-   listed in the status's `instances`.
-3. Receive is proven only by a nonce exchange to one broker-woken identity: a
-   joined team's identity, or a Codex or session home (`/oats-aweb` §4
-   “Receive verification and recovery”). Readiness and status rows prove the
-   route, not delivery.
+2. For every home that needs the broker, readiness has:
+   - the oats.aweb item `ready`, with no `wake-*` or `receive-*` problem;
+   - none of the warnings `wake-daemon-outdated` or `joined-team-poll-only`;
+   - the home listed in the status's `instances`.
+3. Receive is proven only by a nonce exchange to one identity the broker
+   wakes: a joined team's identity, or a Codex or session home
+   (`/oats-aweb` §4, “Receive verification and recovery”). Readiness and
+   status rows prove the route, not delivery.
 
-A home that joined a team while the broker was down keeps `receive: poll`
-until it registers again. Its next start does that, and it is the operator's
-word that restarts it (`oats session restart --home H`).
-
-**A false warning on oats.aweb 1.27.2:** readiness reports
-`wake-status-stale` for every home that needs the broker, even while the
-broker runs and delivers
+**A false problem on oats.aweb 1.27.2.** Readiness reports `wake-status-stale`
+(and so `unavailable`, with `joined-team-poll-only`) for every home that
+needs the broker, even while the broker runs and delivers
 ([oats-aweb#116](https://github.com/awebai/oats-aweb/issues/116)). oats.aweb
-1.27.3 fixes it. On 1.27.2, move the pin (`/oats-package-pins`); don't
-chase the broker.
+1.27.3 fixes it. Move the pin (`/oats-package-pins`). Homes composed on
+1.27.2 keep the false problem until they are respawned.
 
-**Failure → cause → remedy:**
+### Failure → cause → remedy
 
 | What you see | Cause | Remedy |
 |---|---|---|
 | `wake-daemon-not-running` | no service, or it is crash-looping | install it; read its log: `journalctl --user -u ai.aweb.wake.service -n 50`, or `~/Library/Logs/ai.aweb.wake.log` |
-| `wake-daemon-outdated`, or `daemon_version` differs from `aw version` | aw was upgraded and the daemon was not restarted | restart it (above) |
+| `daemon_version` differs from `aw version`, or `wake-daemon-outdated` | aw was upgraded and the daemon was not restarted | restart it (above) |
 | `wake-daemon-version-unknown` | the running daemon is too old to report its version | upgrade aw, then restart |
-| the log says `oats` or `node` is not found | the unit's `AW_WAKE_OATS_BIN` or `PATH` is wrong, or points at a moved version | fix the paths, reload, restart |
-| the service restarts every few seconds and status names another `daemon_pid` | a broker started by hand is running | stop that one; the service then owns the broker |
-| status is running but one home gets no wakes | its registration or stream, not the server | read the daemon's log for that identity's path (stream-connected versus stream-unavailable); a status row proves absence, never its cause |
-| `joined-team-poll-only` with the broker running | the home registered while the broker was down | restart that home, with the operator's word |
+| the log says `oats`, `node` or `tmux` is not found, or session inspection fails | the unit's `PATH` or `AW_WAKE_OATS_BIN` misses it, or points at a moved version | fix the paths, reload, restart |
+| the service restarts every few seconds, and the status names a `daemon_pid` that is not the service's | a broker started by hand is running | stop that one; the service then owns the broker |
+| `joined-team-poll-only` with the broker running | the readiness problem beside it names the route's fault | `wake-target-missing`: restart the home (with the operator's word) so it registers again; `wake-target-paused`: `aw wake resume`; `wake-stream-unavailable`: the identity or its stream, see the daemon's log |
+| status is running but one home gets no wakes | its registration or stream, not the server | read the daemon's log for that identity's path (“stream connected” versus “stream unavailable”); a status row proves absence, never its cause |
 
 ## Never
 

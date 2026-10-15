@@ -21,21 +21,21 @@
     - **Choice 2, the host wake broker:** when a host needs it (a joined
       team, Codex, `delivery: session`); how the operator installs `aw wake
       run` as a per-user systemd or launchd service, with `AW_WAKE_OATS_BIN`
-      and `PATH`; the restart after an aw upgrade; the check (`aw wake status
+      and a `PATH` that reaches `oats`, `node` and `tmux`; the restart after an aw upgrade; the check (`aw wake status
       --json`, and readiness free of `wake-daemon-*` and
       `joined-team-poll-only`); and the false `wake-status-stale` of oats.aweb
       1.27.2 ([oats-aweb#116](https://github.com/awebai/oats-aweb/issues/116),
       fixed in 1.27.3).
   - **`/oats-onboarding`:**
-    - the intake asks for the host's delivery choices;
-    - card 4 requires both choices, and onboarding does not complete while
-      either is unmade;
-    - card 8 checks them, and the hand-back records them;
+    - card 4 requires both choices to be made and recorded: the broker is
+      installed once aw meets its floor, before the first spawn;
+    - card 8 checks each recorded choice, and the hand-back records both;
     - card 4 also requires Git that works without a terminal on a macOS
       host that another machine drives, linking
       [Git on a macOS host](../servers.md#git-on-a-macos-host).
   - **`/oats-setup-model`** names both host facts and answers “why didn't my
-    agent wake”.
+    agent wake”. `/oats-teams` reopens Choice 2 at a host's first joined
+    team.
   - Instruction text and one new skill: there is no hook, command, schema or
     provider contract change, and the capability floors are unchanged
     (oats.setup `>=0.30.0`).

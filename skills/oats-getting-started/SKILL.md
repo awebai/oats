@@ -184,7 +184,8 @@ plugin:aweb-channel@awebai-marketplace` (the default `delivery: channel`,
 `docs/configuration.md#the-development-channel-confirmation`. There is no
 consent setting. To keep the prompt for a person, set
 `settings.oats.aweb.delivery: session` or `claudeChannelMode: approved` in
-`oats-local.yaml`. An old `launchPromptAnswers` block is ignored with a warning
+`oats-local.yaml`. The approved route and the host wake broker are set up with
+oats.setup's `/oats-host-delivery`. An old `launchPromptAnswers` block is ignored with a warning
 (remove it); one with `awebDevelopmentChannel: false` is refused. Handle
 folder trust explicitly with `oats harness trust --dir D --harness claude --plan`,
 then the same command without `--plan` to apply. Run it on the target host with

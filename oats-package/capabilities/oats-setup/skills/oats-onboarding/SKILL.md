@@ -151,9 +151,9 @@ aliases; never substitute a central base owner or copy a running home.
 Use `/oats-workspace-config` for the selected host launch configuration. Clone selected work targets with
 the owner's Git credentials only for `worktree`/`checkout` souls: the kernel
 uses `--repo`, then the local `clones` map, then `D/<repo name>`.
-**Required:** both host delivery choices in `/oats-host-delivery`. A macOS host driven
-over `--server` needs Git without a terminal, verified from a session without one
-(the installed `docs/servers.md`, “Git on a macOS host”).
+**Required:** make and record both host delivery choices (`/oats-host-delivery`): write `claudeChannelMode`
+now; the operator installs the broker once aw meets its floor (card 5 can install aw), before card 7. A
+macOS host driven over `--server` or running Git in background jobs needs Git without a terminal (`docs/servers.md`, “Git on a macOS host”).
 
 **Commands (after the authorized edits):**
 
@@ -165,7 +165,7 @@ oats workspace status --dir D --json
 **Effects:** resolves packages and writes the lock; refreshes shared state.
 **Success:** status still reports `result.workspace.local` exactly
 `D/oats-local.yaml`; confirmed members, correct locked pins, required host
-bindings and clones are present; both host delivery choices made. **Next:** card 5.
+bindings and clones are present; both host delivery choices recorded. **Next:** card 5.
 **Error → remedy:** `E_PATH symlink not allowed` from a provider → select a
 real absolute host path within the authorized scope (on macOS `/private/tmp`
 rather than `/tmp`); preserve the failing output and rerun the provider check.
@@ -308,8 +308,8 @@ oats readiness --home H --json
 **Effects:** starts the scaffolded session and checks prerequisites.
 **Success:** the provider's delivery card proves a nonce message actually
 presented automatically and a receiver-verified reply for the exact message
-ID; the first task is done and its result consumed; `/oats-host-delivery`'s
-checks pass and the hand-back records both choices. Readiness, a send receipt
+ID; the first task is done and its result consumed; each recorded choice's check in
+`/oats-host-delivery` passes, and the hand-back records both. Readiness, a send receipt
 or unread inbox status alone is insufficient. Record tested versions, source
 and composed provenance, route, exact message IDs, safe receipts, timings and
 any explicit holds. A future authorized timed acceptance measures pasted
