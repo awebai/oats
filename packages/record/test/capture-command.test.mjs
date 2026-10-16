@@ -330,14 +330,17 @@ test("a status the reader cannot open fails the pass and stays in place", async 
   assert.deepEqual(asides(f), []);
 });
 
-test("an older moved-aside directory that cannot be removed is reported, not thrown", async t => {
+test("an older moved-aside directory is reported, never removed, and the next move completes", async t => {
   const f = fixture(t), older = join(f.root, `${STATUS}.invalid-20200101T000000Z`);
   await f.pass({ indexEnabled: true });
-  fs.mkdirSync(older); fs.writeFileSync(join(f.root, STATUS), "{ newer");
+  // Two directory copies: one already moved aside, one now at the status path.
+  fs.mkdirSync(older); fs.rmSync(join(f.root, STATUS)); fs.mkdirSync(join(f.root, STATUS));
   const { result, err } = await f.pass({ indexEnabled: true });
   assert.equal(typeof result.appended, "number");
   assert.equal(fs.statSync(older).isDirectory(), true, "unlink leaves a directory copy in place");
   assert.equal(asides(f).length, 2);
+  assert.ok(asides(f).every(name => fs.statSync(join(f.root, name)).isDirectory()));
+  assert.ok(readCaptureStatus(f.root)?.lastRun, "the second move completed and a new status was published");
   assert.ok(err.some(line => line.includes("older moved-aside copies could not be removed") && line.includes(older)), JSON.stringify(err));
 });
 
