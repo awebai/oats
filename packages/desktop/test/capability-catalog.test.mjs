@@ -1,4 +1,4 @@
-// The capability catalog (server/capability-catalog.mjs): the `oats
+// The capability catalog (packages/client/capability-catalog.mjs): the `oats
 // capabilities` table held per deployment and keyed by workspace state, and
 // the sync boundary answering reads from it. Fake invokes and a fake clock
 // only; no CLI, timer wait or process is involved.

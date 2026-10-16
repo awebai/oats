@@ -1144,6 +1144,10 @@ the panel on an instance.
 Every fact comes from the installed kernel; the Desktop parses no deployment
 file and resolves nothing itself (`workspace-discovery.mjs`, `workspace-catalog.mjs`,
 `workspace-sync-view.mjs`, server `server/workspace-sync.mjs`, `packages/client/workspace-cli.mjs`).
+A capability row's rules (its source and group, the sections, the search and
+who uses it) are the shared home's `packages/client/capability-rows.mjs`, and
+the capability page's facts and words its `capability-facts.mjs`;
+`workspace-catalog.mjs` and `capability-page.mjs` draw them.
 Gate: `version --json` advertises `workspace-v2` with `workspaceApi: 2`; a remote
 workspace is observed through its server and never synced from here.
 
@@ -1173,9 +1177,9 @@ workspace is observed through its server and never synced from here.
     whose `capabilities` is `null` (not spawnable) is not counted.
   - Without it: the souls whose instances record the module (`capabilityUse`).
 
-  The capability page's *Used by* section uses the same rule: one row per soul,
-  and its *Instances* column counts that soul's live instances carrying the
-  capability. A package soul's instances are matched by the roster's agent
+  The capability page's *Used by* section uses the same rule (`capabilityUsers`):
+  one row per soul, and its *Instances* column counts that soul's live instances
+  carrying the capability. A package soul's instances are matched by the roster's agent
   name, `rosterAgentName`: `<package>--<soul>`, the kernel's
   `packageSoulAgentName`. Opening a soul goes by its key. The whole row is one
   native button (Enter and Space are its own) named
@@ -1324,9 +1328,10 @@ section is the module map.
   control, unless the operator moved on.
 - **overlay-picker.mjs** — the shared overlay + fuzzy machinery behind the
   command palette and Quick Open: one input over a listbox
-  (arrows/Enter/Esc, aria option pattern), the house subsequence scorer
-  (`subsequenceScore`; `null` = no match — prefix bonuses make real scores
-  negative), and the stale-load generation guard. Rows may carry a tree shape:
+  (arrows/Enter/Esc, aria option pattern) and the stale-load generation guard.
+  Both filter with the house subsequence scorer, the shared home's
+  `packages/client/subsequence-score.mjs` `subsequenceScore` (`null` = no
+  match — prefix bonuses make real scores negative). Rows may carry a tree shape:
   consecutive rows sharing `group.key` sit in one named `role=group`, `depth`
   indents, `under` is visually hidden text read with the option, and a
   `context` row is `aria-disabled` and never active. An optional `cycleKey(e)`

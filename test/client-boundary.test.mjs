@@ -107,6 +107,13 @@ const SURFACE = Object.freeze({
   // (soul-colors.mjs; a row carries its colour already) are not on it.
   "soul-catalog.mjs": ["createSoulCatalog", "soulCatalogKey", "SOUL_CATALOG_RETRY_MS"],
   "soul-rows.mjs": ["soulRows"],
+  // 7a: a deployment's capabilities. A client makes its own table (a factory over the holding rules, as the soul
+  // catalog), and reads a row's source, group, sections, search and users, and its page's facts and words, with the
+  // rules the Desktop draws. What makes DOM (the rows, the pills, the chips) stays in the Desktop.
+  "capability-catalog.mjs": ["createCapabilityCatalog", "capabilityCatalogKey", "CAPABILITY_CATALOG_RETRY_MS"],
+  "capability-rows.mjs": ["memberNames", "capabilitySource", "capabilityGroup", "groupCapabilities", "hostKeyOf", "capabilitySections", "matchCapabilities",
+    "capabilityUse", "composes", "soulsUsing", "SOULS_CAPABILITIES_FEATURE", "soulsComposition", "rosterAgentName", "layerLabel", "capabilityUsers"],
+  "capability-facts.mjs": ["capabilityFacts", "fingerprint", "packageOrigin", "CAPABILITY_COPY"],
   // #1276: the house fuzzy matcher, one copy for the Desktop's palette and Quick Open and the TUI's palette. The
   // soul filter (soul-facts.mjs soulMatches) and a failed soul catalog read's sentence (spawn-messages.mjs
   // soulCatalogFailure) are one copy the same way.
@@ -476,7 +483,7 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 59);
+  assert.equal(Object.keys(SURFACE).length, 62);
   // The five modules 1b made are on it, with the names the TUI's first views take.
   for (const module of ["instance-tree.mjs", "roster-sections.mjs", "kernel-environment.mjs", "workspace-admission.mjs", "instance-acts.mjs"]) assert.ok(Object.hasOwn(SURFACE, module), module);
   // 1c: a second client says its own terms with clientTerms, and that is all it takes from that module.
@@ -503,6 +510,10 @@ test("the stable surface names what packages/client has: every listed module, ev
   // 6a: souls and inspect. The catalog's holding rules and the colours stay off; of the inspect boundary, only its
   // factory (the admission, the call and the refusal are the boundary's, and the Desktop's run's).
   for (const module of ["keyed-catalog.mjs", "soul-colors.mjs"]) assert.ok(!Object.hasOwn(SURFACE, module), module);
+  // 7a: the capability table is on it by its factory, key and retry window; the rows' and the page's rules by name.
+  assert.deepEqual(SURFACE["capability-catalog.mjs"], ["createCapabilityCatalog", "capabilityCatalogKey", "CAPABILITY_CATALOG_RETRY_MS"]);
+  assert.equal(SURFACE["capability-rows.mjs"].length, 15);
+  assert.deepEqual(SURFACE["capability-facts.mjs"], ["capabilityFacts", "fingerprint", "packageOrigin", "CAPABILITY_COPY"]);
   assert.deepEqual(SURFACE["inspect-boundary.mjs"], ["createInspectBoundary"]);
   assert.deepEqual(SURFACE["soul-facts.mjs"], ["soulFacts", "spawnRefusal", "desktopFacts", "soulMatches"]);
   // 6b-1: the spawn boundaries are on it, each by its factory alone; their raw CLI calls are not.

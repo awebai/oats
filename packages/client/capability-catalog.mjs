@@ -4,7 +4,12 @@
  * never on every poll or view open. The holding rules (one flight per
  * deployment, last good table kept with the failure next to it, retry after
  * RETRY_MS, unbound prefetch bound by the same cycle's settle) are
- * keyed-catalog.mjs's; this module is the kernel read, the key and the shape. */
+ * keyed-catalog.mjs's; this module is the kernel read, the key and the shape.
+ *
+ * A client makes its own catalog and owns it: nothing is held at module level, so two catalogs
+ * share no flight and no held entry. It takes the client's terms (client-terms.mjs), which the
+ * default kernel read words its refusals with, and an optional `exec` that read runs the CLI
+ * through (cli-adapter.mjs `runJson`'s `io.exec`). */
 import { cliWorkspace } from './workspace-cli.mjs';
 import { requireTerms } from './client-terms.mjs';
 import { capabilitiesData, observationData } from './deployment-data.mjs';
@@ -12,7 +17,7 @@ import { soulCatalogKey } from './soul-catalog.mjs';
 import { createKeyedCatalog } from './keyed-catalog.mjs';
 
 export const CAPABILITY_CATALOG_RETRY_MS = 60_000;
-/** Desktop-side transport/probe codes (workspace-cli.mjs); any other code on
+/** The client's own transport/probe codes (workspace-cli.mjs); any other code on
  * an ok:false result is the kernel's own refusal, reported verbatim. */
 const LOCAL_CODES = new Set(['E_CLI_UNAVAILABLE', 'E_WORKSPACE_FEATURE', 'E_CLI_FAILED', 'E_CLI_PROTOCOL', 'E_CLI_TIMEOUT', 'E_CLI_OUTPUT_LIMIT']);
 
