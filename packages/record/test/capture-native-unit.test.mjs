@@ -214,6 +214,24 @@ test("recovery after cache loss captures the records between the captured prefix
   assert.equal(rows.at(-1).result.setAside.offset,start);assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),0);f.assertContent(gap);
 });
 
+test("an invalid line before a recovered oversized record stays pending, not set aside, until the source is fixed",async t=>{
+  const captured=native(0)+native(1),f=fixture(t,captured);captureSessions(f.store,{owner:'fixture',files:[f.path]});
+  const big='x'.repeat(300)+'\n'+native(5),stop=Buffer.byteLength(captured+native(2));
+  fs.appendFileSync(f.path,Buffer.concat([Buffer.from(native(2)),Buffer.from([255,10]),Buffer.from(big)]));f.state(s=>s.delete('cc',f.key));
+  for(let n=0;n<2;n++){
+    const rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+    assert.equal(rows.at(-1).result.pending,true);assert.equal(rows.at(-1).result.reason,'invalid-utf8');
+    assert.equal(rows.at(-1).result.setAside,undefined);assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
+    assert.equal(f.state(s=>s.get('native-unit',f.key)).bytes,stop);
+  }
+  f.assertContent(captured+native(2));
+  const fixed=captured+native(2)+native(3),start=Buffer.byteLength(fixed);fs.writeFileSync(f.path,fixed+big);
+  let rows=[];
+  for(let n=0;n<5&&!rows.at(-1)?.result.setAside;n++)rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+  assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');assert.equal(rows.at(-1).result.setAside.offset,start);
+  f.assertContent(fixed);
+});
+
 test("an oversized record inside the captured prefix stays set aside on recovery with nothing appended or duplicated",async t=>{
   const text=native(0)+'x'.repeat(300)+'\n'+native(2),start=Buffer.byteLength(native(0)),f=fixture(t,text);
   captureSessions(f.store,{owner:'fixture',files:[f.path]});f.assertContent(text);

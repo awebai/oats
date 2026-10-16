@@ -72,6 +72,10 @@ export function advanceRecoverySnapshot(store, stream, key, path, start, {
       return invalidate("recovery-state-lost");
     }
     if (stage.generation !== generation) return invalidate("recovery-generation-changed");
+    // A caller narrowing the end (to an oversized record's start) never reuses a
+    // copy fixed beyond it. A larger requested end is ordinary later growth: the
+    // first observation stays this sweep's fixed end.
+    if (fixedEnd !== undefined && fixedEnd < stage.size) return invalidate("recovery-end-changed");
     // A public/outgoing writer may have captured a later source suffix between
     // workers. Comparing that longer journal with this old fixed end would
     // manufacture a missing-prefix conflict. Rebuild the source snapshot first;

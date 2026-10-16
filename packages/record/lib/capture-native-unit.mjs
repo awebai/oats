@@ -110,7 +110,9 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
       prepareRetainedCaptureCleanup(store, stream, key, start);
       return { ...result, cleanup: true, phase: "cleanup" };
     }
-    if (job?.waiting && job.end === version.size && sameVersion(job.version, version)) {
+    // A job fixed at an oversized record's start never reaches the source end;
+    // its earlier stop (invalid UTF-8 before that start) stays pending as is.
+    if (job?.waiting && (job.end === version.size || job.oversized) && sameVersion(job.version, version)) {
       return { ...result, pending: true, phase: job.scan ? "timestamp" : "capture", reason: job.waiting };
     }
     if (!job && !allocation && cursorValid && cursor.bytes === version.size) {
@@ -243,7 +245,9 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
       state.set("set-aside", key, row);
       return { ...result, setAside: row };
     };
-    if (job.waiting && job.oversized) return setAsideOversized();
+    // Only a walk that reached the oversized start sets the input aside; an
+    // earlier stop keeps the ordinary waiting path, restaging a changed source.
+    if (job.waiting && job.oversized && (job.bytes === job.end || job.scan?.bytes === job.end)) return setAsideOversized();
     if (job.waiting) {
       if (job.end === version.size) return { ...result, pending: true, phase: job.scan ? "timestamp" : "capture", reason: job.waiting };
       if (job.snapshot) {
