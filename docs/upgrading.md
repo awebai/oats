@@ -93,7 +93,14 @@ section, install its compatible Desktop first, then its CLI and matching pi
 bridge. Only **after installing that CLI**, run its setup conversion from the
 operator's shell for each deployment. That conversion is where an owned legacy
 watcher is replaced by the periodic service; foreign or disabled definitions
-require an explicit operator choice. A CLI install alone is not conversion.
+require an explicit operator choice. The conversion accepts `setup --root <dir>`
+and `--replace-service`; refusal prints a quoted command preserving owner/root.
+Choose `--no-service` to skip service files and manager operations entirely.
+`--dry-run` writes nothing and calls no manager, so disabled/registered state
+remains unexamined. Replaced definitions are backed up nonoverwriting under
+the selected record root; retain the reported backup and inspect any partial
+apply error before retrying. Replacement never waives unknown state or changed
+identities. A CLI install alone is not conversion.
 Use that release's capture health and doctor checks after conversion. Do not
 run forthcoming service diagnostics or conversion flags as prerequisites on
 0.56–0.58 binaries, or assume that an older health command proves periodic

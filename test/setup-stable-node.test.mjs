@@ -59,7 +59,7 @@ const dryRun = (node, path) => {
  *  and the script said, and it is still matched exactly. */
 const ownStderr = (stderr) => stderr.split("\n").filter((line) => !/^\(node:\d+\) ExperimentalWarning: /.test(line) && line !== "(Use `node --trace-warnings ...` to show where the warning was created)").join("\n");
 assert.equal(ownStderr("(node:3849) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\noats: warning: x\n"), "oats: warning: x\n");
-const WARNING = (node) => `oats: warning: the node path ${node} is not stable (no Homebrew opt link and no node on PATH resolves to it): the capture hooks and the capture watcher stop when it goes away; install a node with a stable path and run \`oats setup\` again`;
+const WARNING = (node) => `oats: warning: the node path ${node} is not stable (no Homebrew opt link and no node on PATH resolves to it): the capture hooks and the capture service stop when it goes away; install a node with a stable path and run \`oats setup\` again`;
 
 test("oats setup --dry-run reports the node of a PATH entry that is the node running the kernel, not the caller's variable", () => {
   const node = fakeNode(join(base, "versions", "22.1.0", "bin", "node"));

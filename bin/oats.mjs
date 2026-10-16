@@ -4076,12 +4076,12 @@ const EXPERIMENTAL_CMDS = new Set(["dress", "spawn", "segments", "mind"]);
 async function recordCmd(sub) {
   process.argv.splice(2, 1);
   if (sub === "setup") {
-    // setup writes a node into the user's Claude settings and into the capture watcher's unit,
+    // setup writes a node into the user's Claude settings and into the capture service's unit,
     // and nothing rewrites them but setup run again: it is handed the rule's answer for the node
     // running this kernel (docs/capabilities.md, "The node a hook writes down"). The script is
     // imported into this process, so the variable is set here, over whatever the caller's
     // environment held; packages/record imports nothing of the kernel.
-    const { node, warning } = stableNode({ consequence: "the capture hooks and the capture watcher stop when it goes away", remedy: "run `oats setup` again" });
+    const { node, warning } = stableNode({ consequence: "the capture hooks and the capture service stop when it goes away", remedy: "run `oats setup` again" });
     if (warning) console.error(`oats: warning: ${warning}`);
     process.env.OATS_NODE_BIN = node;
   }
@@ -5007,8 +5007,10 @@ The turn record (core — every conversation captured, searchable, replicated):
                                             captured as --home capture would
   oats recall [--kind k] [--thread t]        search the whole record — mail, chat,
       [--from f] [--show id] <query>        sessions — with exact turn provenance
-  oats setup [--owner <name>] [--dry-run]    install capture hooks + background watcher
-      [--no-service] [--no-hooks]           (launchd/systemd), then run the first pass
+  oats setup [--owner <name>] [--root <dir>] [--replace-service]
+      [--no-service] [--no-hooks] [--dry-run]
+                                          install hooks + periodic capture
+                                          (launchd/systemd), then run the first pass
 
   oats experimental <dress|spawn|segments|mind>   EXPERIMENTAL tools over the record —
                                             selection and agent synthesis; unproven by

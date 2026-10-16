@@ -5,8 +5,7 @@
 //   1. Stop + SessionEnd capture hooks into every ~/.claude*/settings.json
 //      that exists (merged, never clobbered; unparseable files are skipped
 //      loudly and left untouched);
-//   2. a background watcher service — launchd agent on macOS, systemd user
-//      unit on Linux (printed instructions elsewhere);
+//   2. a periodic bounded service — launchd on macOS, systemd user timer on Linux;
 //   3. then runs the first capture pass (the expensive one) unless --dry-run.
 //
 // Everything is derived from the running install: scripts resolved relative
@@ -16,26 +15,21 @@
 // an upgrade of Node), else process.execPath: see recordedNode().
 //
 //   --owner <name>   stream owner (default: LocalHostName on macOS, hostname)
+//   --root <dir>     explicit record root, also persisted into hooks/services
+//   --replace-service  explicitly replace foreign/disabled named capture service
 //   --no-hooks       skip step 1
 //   --no-service     skip step 2
 //   --dry-run        print what would change, change nothing
 
-import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readdirSync } from "node:fs";
 import { homedir, hostname, platform } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureDefaultRootPlan } from "../lib/capture-default-roots.mjs";
 import { captureCommandPass } from "../lib/capture-command-output.mjs";
 import { IgnoreError, loadIgnore } from "../lib/ignore.mjs";
-
-// Config files deserve the same crash safety as the store's objects:
-// write-then-rename, never a partial write in place.
-function writeFileAtomic(path, content) {
-  const tmp = path + ".tmp-" + process.pid;
-  writeFileSync(tmp, content);
-  renameSync(tmp, path);
-}
+import { preflightCaptureService, applyCaptureService, captureSetupSnapshot, recheckCaptureSetup, writeCaptureSetup } from "../lib/capture-service-install.mjs";
 
 // The node written into what outlives this process: the hooks and the
 // service. `oats setup` hands in the kernel's answer for a node that survives
@@ -51,12 +45,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const NODE = recordedNode();
 const CAPTURE = join(HERE, "capture.mjs");
 
-// Each path is written for the reader it has: a shell (the hook's command),
-// systemd (ExecStart) or an XML parser (the plist). A path of plain
-// characters is written bare by all three, so the files of an install that
-// needs no quoting do not change.
+// Hooks use POSIX shell words. The separate definition builder owns the
+// manager-specific XML/systemd representations.
 const SHELL_PLAIN = /^[A-Za-z0-9_./:@%+,-]+$/;
-const SYSTEMD_PLAIN = /^[A-Za-z0-9_./:@+,-]+$/;
 
 // A shell word: POSIX single quotes, a quote itself as '\''.
 function shellWord(value) {
@@ -103,29 +94,15 @@ function shellWords(command) {
   return words;
 }
 
-// A word of a systemd command line: `%` is a specifier (`%%`), a
-// double-quoted string protects spaces, backslash and double quote are
-// escaped. In an argument `${VAR}` is substituted and a literal dollar is
-// `$$`; the executable is not substituted, and `$$` there names another file.
-// (systemd itself starts no executable whose path holds a quote or a
-// backslash, however it is written: its refusal is what setup reports.)
-function systemdWord(value, { argument = false } = {}) {
-  if (SYSTEMD_PLAIN.test(value)) return value;
-  let v = value.replace(/%/g, "%%").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  if (argument) v = v.replace(/\$/g, "$$$$");
-  return `"${v}"`;
-}
-
-// Text of an XML element.
-function xmlText(value) {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
 function parseArgs(argv) {
   const args = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--owner") args.owner = argv[++i];
+    if (a === "--owner" || a === "--root") {
+      const value = argv[++i];
+      if (!value || value.startsWith("--") || value.includes("\0")) { console.error(`${a} requires a value`); process.exit(2); }
+      args[a.slice(2)] = value;
+    }
     else if (a.startsWith("--")) args[a.slice(2)] = true;
     else {
       console.error(`unknown argument ${a}`);
@@ -150,6 +127,7 @@ function defaultOwner() {
 const args = parseArgs(process.argv.slice(2));
 const owner = args.owner ?? defaultOwner();
 const dry = Boolean(args["dry-run"]);
+const root = resolve(args.root ?? process.env.TURN_RECORD_ROOT ?? join(homedir(), ".turn-record"));
 
 // The owner is interpolated into a persisted shell command, a launchd
 // plist, and a systemd unit. Restricting it to the stream-id character
@@ -162,7 +140,7 @@ if (!/^[A-Za-z0-9._-]+$/.test(owner)) {
   process.exit(2);
 }
 
-const hookCommand = `${shellWord(NODE)} ${shellWord(CAPTURE)} --owner ${owner} --quiet --hook`;
+const hookCommand = `${shellWord(NODE)} ${shellWord(CAPTURE)} --owner ${owner} --quiet --hook --root ${shellWord(root)}`;
 // The harness waits only for OS launch acknowledgement. Capture itself is
 // detached and owns no harness pipes; these are launcher, not worker limits.
 const HOOK = { type: "command", command: hookCommand, async: false, timeout: 10 };
@@ -175,19 +153,22 @@ console.log(`node:  ${NODE}`);
 function settingsFiles() {
   const home = homedir();
   const files = [];
-  for (const name of readdirSync(home).sort()) {
-    if (!name.startsWith(".claude")) continue;
-    const path = join(home, name, "settings.json");
-    if (existsSync(path)) files.push(path);
+  for (const entry of readdirSync(home, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) {
+    if (!entry.name.startsWith(".claude") || (!entry.isDirectory() && !entry.isSymbolicLink())) continue;
+    const path = join(home, entry.name, "settings.json");
+    if (captureSetupSnapshot(path).kind !== "absent") files.push(path);
   }
   return files;
 }
 
-function installHooks() {
+function prepareHooks() {
+  const edits = [];
   for (const path of settingsFiles()) {
+    const snapshot = captureSetupSnapshot(path);
+    if (snapshot.kind !== "file") throw new Error(`cannot safely read hook settings ${path}; preserve it and use --no-hooks`);
     let settings;
     try {
-      settings = JSON.parse(readFileSync(path, "utf8"));
+      settings = JSON.parse(snapshot.bytes.toString("utf8"));
     } catch (err) {
       console.error(`SKIP ${path}: not valid JSON (${err.message}) — fix it and re-run setup`);
       continue;
@@ -248,144 +229,43 @@ function installHooks() {
         changed = true;
       }
     }
-    if (!changed) {
-      console.log(`hooks: ${path} already installed`);
-    } else if (dry) {
-      console.log(`hooks: would install Stop+SessionEnd capture in ${path}`);
-    } else {
-      writeFileAtomic(path, JSON.stringify(settings, null, 2) + "\n");
-      console.log(`hooks: installed Stop+SessionEnd capture in ${path}`);
-    }
+    edits.push({ snapshot, contents: changed ? JSON.stringify(settings, null, 2) + "\n" : null });
   }
-}
-
-// ----------------------------------------------------------------- service
-
-function installServiceDarwin() {
-  const label = "ai.aweb.turn-record-capture";
-  const path = join(homedir(), "Library", "LaunchAgents", `${label}.plist`);
-  const logPath = join(homedir(), "Library", "Logs", "turn-record-capture.log");
-  const plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>${label}</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>${xmlText(NODE)}</string>
-    <string>${xmlText(CAPTURE)}</string>
-    <string>--watch</string>
-    <string>--owner</string>
-    <string>${owner}</string>
-  </array>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>ThrottleInterval</key>
-  <integer>60</integer>
-  <key>StandardOutPath</key>
-  <string>${xmlText(logPath)}</string>
-  <key>StandardErrorPath</key>
-  <string>${xmlText(logPath)}</string>
-</dict>
-</plist>
-`;
-  const current = existsSync(path) ? readFileSync(path, "utf8") : null;
-  if (current === plist) {
-    console.log(`service: ${path} already installed`);
-    return;
-  }
-  if (dry) {
-    console.log(`service: would ${current ? "update" : "install"} launchd agent at ${path}`);
-    return;
-  }
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileAtomic(path, plist);
-  const uid = process.getuid();
-  spawnSync("launchctl", ["bootout", `gui/${uid}/${label}`], { stdio: "ignore" });
-  const boot = spawnSync("launchctl", ["bootstrap", `gui/${uid}`, path], { encoding: "utf8" });
-  if (boot.status === 0) {
-    console.log(`service: launchd agent ${label} running (log: ${logPath})`);
-  } else {
-    console.error(
-      `service: wrote ${path} but launchctl bootstrap failed (${(boot.stderr || "").trim()}); ` +
-        `load it manually: launchctl bootstrap gui/${uid} ${shellWord(path)}`,
-    );
-  }
-}
-
-function installServiceLinux() {
-  const path = join(homedir(), ".config", "systemd", "user", "turn-record-capture.service");
-  const unit = `[Unit]
-Description=turn-record capture watcher
-
-[Service]
-ExecStart=${systemdWord(NODE)} ${systemdWord(CAPTURE, { argument: true })} --watch --owner ${owner}
-Restart=always
-RestartSec=60
-
-[Install]
-WantedBy=default.target
-`;
-  const current = existsSync(path) ? readFileSync(path, "utf8") : null;
-  if (current === unit) {
-    console.log(`service: ${path} already installed`);
-    return;
-  }
-  if (dry) {
-    console.log(`service: would ${current ? "update" : "install"} systemd user unit at ${path}`);
-    return;
-  }
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileAtomic(path, unit);
-  const enable = spawnSync(
-    "systemctl",
-    ["--user", "enable", "--now", "turn-record-capture.service"],
-    { encoding: "utf8" },
-  );
-  if (enable.status === 0) {
-    console.log("service: systemd user unit turn-record-capture running");
-  } else {
-    console.error(
-      `service: wrote ${path} but systemctl enable failed (${(enable.stderr || "").trim()}); ` +
-        "enable it manually: systemctl --user enable --now turn-record-capture.service",
-    );
-  }
-}
-
-function installService() {
-  const os = platform();
-  if (os === "darwin") installServiceDarwin();
-  else if (os === "linux") installServiceLinux();
-  else {
-    console.log(
-      `service: no service template for ${os}; run this in the background yourself:\n` +
-        `  ${shellWord(NODE)} ${shellWord(CAPTURE)} --watch --owner ${owner}`,
-    );
-  }
+  return edits;
 }
 
 // --------------------------------------------------------------------- run
-
-if (!args["no-hooks"]) installHooks();
-if (!args["no-service"]) installService();
-
-if (dry) {
-  console.log("dry run: no first capture pass");
-} else {
-  console.log("running first capture pass (the initial one can take minutes)...");
-  const root = process.env.TURN_RECORD_ROOT ?? join(homedir(), ".turn-record");
-  try {
-    // Keep the foreground privacy preflight before lock acquisition. Only the
-    // admitted worker resolves source roots and writes matching run receipts.
-    loadIgnore(root);
-    await captureCommandPass(root, { owner,
-      plan: captureDefaultRootPlan({ home: homedir(), cwd: process.cwd(), env: process.env }),
-      indexEnabled: true, trigger: "setup", retrySetAside: false });
-  } catch (error) {
-    console.error(error instanceof IgnoreError ? error.message : `capture pass failed: ${error.message}`);
-    process.exitCode = 1;
+let captureStarted = false;
+try {
+  const hooks = args["no-hooks"] ? [] : prepareHooks();
+  const plan = captureDefaultRootPlan({ home: homedir(), cwd: process.cwd(), env: process.env });
+  // Every target and applicable manager is inspected before hook/service or
+  // capture mutations. --no-service never even reads named service files.
+  let service = null;
+  if (!args["no-service"]) {
+    if (["darwin", "linux"].includes(platform())) service = preflightCaptureService({ platform: platform(), node: NODE,
+      request: { root, owner, plan }, setupPath: fileURLToPath(import.meta.url), dry, replace: Boolean(args["replace-service"]), noHooks: Boolean(args["no-hooks"]) });
+    else console.log(`service: no service template for ${platform()}; run this in the background yourself:\n` +
+      `  ${shellWord(NODE)} ${shellWord(CAPTURE)} --watch --owner ${owner} --root ${shellWord(root)}`);
   }
+  if (!dry) loadIgnore(root);
+  for (const hook of hooks) recheckCaptureSetup(hook.snapshot);
+  if (service) applyCaptureService(service);
+  for (const { snapshot, contents } of hooks) {
+    if (!contents) console.log(`hooks: ${snapshot.path} already installed`);
+    else if (dry) console.log(`hooks: would install Stop+SessionEnd capture in ${snapshot.path}`);
+    else { writeCaptureSetup(snapshot, contents); console.log(`hooks: installed Stop+SessionEnd capture in ${snapshot.path}`); }
+  }
+  if (dry) console.log("dry run: no first capture pass");
+  else {
+    console.log("running first capture pass (the initial one can take minutes)...");
+    captureStarted = true;
+    await captureCommandPass(root, { owner,
+      plan, indexEnabled: true, trigger: "setup", retrySetAside: false });
+  }
+} catch (error) {
+  console.error(error instanceof IgnoreError ? error.message : `${captureStarted ? "capture pass" : "setup"} failed: ${error.message}`);
+  if (!captureStarted && !(error instanceof IgnoreError) && !error.code?.startsWith("E_CAPTURE_SERVICE_"))
+    console.error(`setup recovery: inspect the reported files/manager state, then retry ${shellWord(NODE)} ${shellWord(fileURLToPath(import.meta.url))} --owner ${shellWord(owner)} --root ${shellWord(root)}${args["no-hooks"] ? " --no-hooks" : ""}${args["replace-service"] ? " --replace-service" : ""}; use --no-service to preserve the existing manager service`);
+  process.exitCode = 1;
 }

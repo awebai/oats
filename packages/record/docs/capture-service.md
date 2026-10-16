@@ -2,12 +2,12 @@
 
 The record package owns source cursors, journal validation, indexing and capture
 status. Ordinary/source-selected capture and explicit retry use the fixed
-supervised worker. Explicit hooks launch a detached supervisor. This does not
-migrate service scheduling, change root registration or implement service
-health/doctor diagnosis.
+supervised worker. Explicit hooks launch a detached supervisor. Setup migrates
+supported service definitions through the preflight/apply gate described below;
+root registration and service health/doctor diagnosis remain separate.
 
-The command integration described below is forthcoming service-A work, not
-an installed periodic manager. OATS 0.56.0, 0.57.0 and 0.58.0
+The integration described below is forthcoming service-A work; source and fake
+manager fixtures do not establish real manager qualification. OATS 0.56.0, 0.57.0 and 0.58.0
 shipped without the bounded periodic service. See
 [capture service release order](../../../docs/upgrading.md#capture-service-release-order)
 for the distinction between upgrading those releases and a future setup
@@ -969,7 +969,7 @@ does not poison a later success. Confirmed counts come only from their existing
 processing commits, never audit scans or reconstruction. Ordinary CLI dispatch
 uses this session. Protected exact-home/file operations retain their existing
 path; explicit hooks use a detached caller of the same session. Installed
-periodic service migration remains separate.
+periodic service migration uses the setup gate below.
 
 ### Append-only worker mode
 
@@ -1096,7 +1096,7 @@ The small-heap algorithm fixture invokes synchronous capture/index libraries
 directly: lowering the CLI parent's heap cannot lower its fixed-policy worker
 heap. Actual CLI fixtures separately cover worker routing, selected capture,
 append-only catch-up, recovery receipts, overlap and foreground scheduling.
-Installed service migration and health/doctor remain unfinished;
+Health/doctor remains unfinished;
 fresh-audit/parent metadata/storage/synchronization and full hosted manager and
 rollback qualification are still required before service acceptance.
 
@@ -1142,8 +1142,8 @@ fields are preserved; dry-run does not write settings. The install hint uses
 the same scheduling fields while retaining `--sessions-only --no-index`.
 This changes persisted settings from `async:true`/`timeout:120`; installing a
 CLI alone does not rewrite those settings. These forthcoming changes do not
-claim hook migration shipped in 0.56.0–0.58.0, nor complete periodic service
-migration.
+claim hook migration shipped in 0.56.0–0.58.0. Periodic service conversion uses
+the separate setup gate below.
 
 ### Setup first pass
 
@@ -1153,7 +1153,7 @@ all sources and indexing enabled. It copies caller home/cwd and native location
 environment; the admitted worker resolves source directories. The first pass
 uses the running `process.execPath`, not the stable Node pathname being written
 into future hooks or manager definitions. `--no-service` skips only manager
-installation; it does not skip this pass. `--dry-run` starts no worker and
+files and manager inspection/actions; it does not skip this pass. `--dry-run` starts no worker and
 creates no capture store, lock or status.
 
 Setup retains the foreground privacy-file preflight before lock acquisition.
@@ -1167,10 +1167,9 @@ The supervisor owns signal handling, child reaping and lock release; setup is
 not another status writer. Ordinary/retry text and JSON, protected exact-home/file
 receipts and public synchronous APIs retain their contracts.
 
-This first-pass routing does not convert the installed legacy watcher,
-establish disabled/foreign manager ownership or
-provide health/doctor acceptance. Those manager/conversion checks and hosted
-Linux/manager/rollback qualification remain required. The shared presentation
+First-pass routing follows the service migration gate when service installation
+is requested. It does not provide health/doctor acceptance or hosted
+Linux/manager/rollback qualification. The shared presentation
 adds no status transaction or counter reconstruction; existing source/audit
 allowance, reservation and actual storage/synchronization costs remain gates.
 
@@ -1203,12 +1202,75 @@ The macOS definition names `ai.aweb.turn-record-capture`, uses `RunAtLoad` and
 restart loop) with `turn-record-capture.timer` (`OnBootSec=1min`,
 `OnUnitActiveSec=15min`). A timer/schedule is not a permanent worker PID.
 
-These private definitions are not yet wired into setup's legacy installer.
-Constructing them proves neither installation nor enabled/registered scheduling.
-The installer switch still requires all-target file and manager preflight before
-any mutation, parsed ownership, disabled/foreign/unknown refusal, explicit
-replacement with nonoverwriting backup and identity recheck, safe activation
-and unchanged-schedule preservation. Health/doctor and real manager lifecycle
-qualification remain separate. Source-only argument-decoding fixtures do not
-replace hosted manager tests; this entry introduces no additional capture-state
-transactions beyond the existing fixed command path.
+Setup uses these definitions through the migration gate below. Constructing a
+definition alone proves neither installation nor enabled/registered scheduling.
+Source-only argument-decoding fixtures do not replace hosted manager tests;
+this entry introduces no additional capture-state transactions beyond the
+existing fixed command path.
+
+### Setup service migration
+
+`setup --root <dir> --owner <name>` persists the resolved root and owner in
+hooks and the service request, alongside explicit caller home/cwd/native
+location selection. The recorded stable Node is used for future launches;
+the first pass still uses the running Node. These are user-manager definitions,
+not deployment automation timers. No external wrapper is removed.
+
+The setup coordinator prepares hook edits in memory, then
+`capture-service-install.mjs` snapshots every named service target and inspects
+applicable manager state before any service/file/hook/capture mutation.
+Snapshots retain regular-file bytes and identity or the symlink's own identity
+and target, plus ancestor identities. Reads are limited to 1 MiB per target;
+unknown reads, nonregular targets and unsupported manager output refuse.
+`capture-service-ownership.mjs` parses only supported marked templates and
+the actual unmarked direct-Node `capture.mjs --watch --owner` templates with
+their known structure. Paths may name a moved or missing install; recognition
+does not execute them. A basename, shell mention, wrapper, unsupported marker,
+malformed file or extra directive is not ownership.
+
+Foreign files or registered identities produce `E_CAPTURE_SERVICE_FOREIGN`;
+installed disabled/masked state produces `E_CAPTURE_SERVICE_DISABLED`.
+Both refuse before mutation and print quoted recovery commands preserving the
+selected owner/root/Node: explicitly choose `--replace-service`, or
+`--no-service` to preserve the manager configuration. New absent definitions
+are not disabled. Replacement intent never waives unknown state, read errors,
+unsupported drop-ins, backup failure or identity changes. `--no-service`
+bypasses service target reads and manager calls entirely. `--dry-run` reads
+target files but writes nothing and calls no manager; unloaded/disabled state
+is explicitly unexamined.
+
+Apply rechecks file/ancestor identities and manager ownership/enablement.
+Replaced bytes or symlinks are saved nonoverwriting in a reported datable
+`<root>/service-backups/<date>-<unique-id>/` directory. Symlink backups
+preserve the link instead of reading or removing an external wrapper target.
+Each write uses a temporary file and another identity check before rename.
+An expected manager unmask can remove only the saved named `/dev/null` link;
+other observed replacements refuse. These checks detect observed races, not
+an OS-wide atomic transaction over files and managers.
+
+On macOS, changed/legacy registered jobs are booted out before replacement;
+missing registration is bootstrapped. An unchanged enabled registered periodic
+job receives no restart. On Linux, conversion stops the timer before the
+service, disables the legacy service's boot activation, writes the finite
+service and timer, reloads and enables/starts the timer. Explicit replacement
+can unmask only the named units. An unchanged enabled active timer preserves
+an in-flight pass; an inactive finite service between ticks is normal.
+Setup verifies registration/enablement and expected definitions before saying
+“periodic capture scheduled (every 15 minutes)”. It does not promise a permanent
+PID or infer worker completion. Manager and setup first passes can overlap;
+the capture root lock admits one.
+
+Manager commands have finite time/output limits. Failure reports the action,
+reason and recovery without inventing scheduling or capture results. Apply
+can leave backups, stopped jobs or written definitions before a later failure;
+there is no global atomic rollback. Inspect the reported state and rerun.
+An installed disabled timer after failed activation remains ambiguous with
+operator intent and requires explicit replacement. Hooks and the first pass
+follow successful service apply; capture receipts retain their own failure
+and partial meanings.
+
+Fake-manager and isolated CLI fixtures exercise this ordering and refusal
+contract. Real macOS/Linux manager lifecycle, active-pass preservation,
+rollback and quoting qualification remain guarded hosted obligations.
+Health/doctor, final schema delivery and full service acceptance remain
+separate; audit allowance/reservation/storage/synchronization gates are unchanged.

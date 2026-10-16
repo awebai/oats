@@ -31,6 +31,20 @@ oats status               # the instances on this machine, and their drift
 
 ## The relations
 
+Record capture setup is separate from workspace configuration and the host
+automation timer. The package owns its service policy and migration readers:
+consult `packages/record/docs/capture-service.md#setup-service-migration` and
+`docs/upgrading.md#capture-service-release-order` in the installed CLI.
+`oats setup` can change capture hooks and user-manager definitions and run a
+first pass; it is not a diagnostic to run implicitly. After installing a release
+that ships periodic service A, run conversion only with operator authorization.
+Preserve the selected `--owner`/`--root`; a foreign/disabled refusal offers
+explicit `--replace-service` or `--no-service`. Unknown state never permits
+replacement. `--dry-run` invokes no manager and cannot confirm enablement.
+An inactive finite worker between timer ticks is not evidence of an unhealthy
+schedule; do not promise a permanent PID or infer completion from hook launch.
+Releases 0.56–0.58 do not provide this conversion; follow their own instructions.
+
 ```
  GitHub account (a person, or a machine user)
    │  can read ──► member repos ──► its view of the workspace

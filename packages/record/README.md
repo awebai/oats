@@ -60,11 +60,11 @@ commands are `oats capture|recall|setup`.
 
 ```bash
 turn-record setup        # install Stop/SessionEnd hooks into every
-                         # ~/.claude*/settings.json, install the background
-                         # watcher (launchd on macOS, systemd user unit on
+                         # ~/.claude*/settings.json, install periodic capture
+                         # (launchd on macOS, systemd user service + timer on
                          # Linux), then run the first capture pass.
                          # Idempotent; --dry-run previews; --owner overrides
-                         # the machine name.
+                         # the machine name. --root selects the persisted store.
 
 turn-record capture                  # one reconciliation pass, then index update
 turn-record capture --watch          # pass now, on filesystem change, every 15 min
@@ -91,7 +91,7 @@ Store root: `--root`, else `$TURN_RECORD_ROOT`, else `~/.turn-record`.
 session event whose tombstone lives in another stream. It emits no turn payload
 and exits with status 1, as it does for a missing turn.
 
-**The `node` that `setup` writes down.** The hooks and the watcher's unit name
+**The `node` that `setup` writes down.** The hooks and the service's unit name
 a `node` by its path, and only `setup` run again rewrites them. Which path
 depends on how it is run:
 
@@ -108,7 +108,7 @@ runs under the `node` that runs `setup`.
 
 Each path is written for what reads it: a shell word in the hook's command,
 systemd's quoting in `ExecStart`, XML text in the launchd plist. A path of
-plain characters is written bare. A run finds the hooks of an earlier run by
+plain characters stays bare in hook commands. A run finds the hooks of an earlier run by
 their shape, quoted or not, and refreshes command, async and timeout fields; a command it cannot
 read as its own is left alone and a new hook is added beside it.
 Stream owner: `--owner`, else `$TURN_RECORD_OWNER`, else the short hostname.
@@ -127,13 +127,22 @@ never Claude's Stop-blocking exit two. Existing ordinary quiet argv remain
 manual. Setup's first pass awaits the fixed supervisor with explicit `setup`
 attribution and all sources/indexing enabled; `--no-service` still runs it,
 while `--dry-run` starts no pass. Partial and overlap exit zero without claiming
-completion; operational failures remain nonzero. Periodic manager migration
-remains separate service-A work; this does not describe already-released 0.58.0 behavior.
+completion; operational failures remain nonzero. Setup preflights named service
+files, manager state and hook edits before mutation, then converts supported
+legacy watchers to periodic capture. This does not describe already-released
+0.58.0 behavior.
 See [command routing and receipts](docs/capture-service.md#ordinary-cli-and-foreground-watch).
 See [detached hook launch limits](docs/capture-service.md#detached-hook-launcher).
-The private [finite service entry and definition builder](docs/capture-service.md#finite-service-entry-and-periodic-definitions)
-provide service attribution and periodic templates; setup does not yet install
-those definitions or establish their manager state.
+The [service migration gate](docs/capture-service.md#setup-service-migration)
+refuses foreign, disabled or masked definitions unless the operator explicitly
+chooses `--replace-service`; `--no-service` bypasses service inspection and
+actions while still installing requested hooks and running the first pass.
+Unknown/read errors always refuse. Replacement saves nonoverwriting backups
+under the selected root and rechecks file identity. `--dry-run` writes nothing
+and invokes no manager, so it reports manager state as unexamined.
+Healthy unchanged schedules preserve an active pass; successful setup reports
+verified periodic scheduling, not a permanent PID. Real-manager lifecycle,
+health/doctor and full service qualification remain separate gates.
 
 Transcript capture reads 64 KiB chunks and frames complete native records,
 including UTF-8 characters split across chunks. It flushes before adding a
