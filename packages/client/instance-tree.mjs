@@ -11,16 +11,25 @@ export function collapseKey(workspace, instance) {
   return `${workspace || ""}\u0000${instance}`;
 }
 
+/** An instance's explicit sibling link, as an array of instance names: the one reader of the kernel's
+ * `siblingInstance` (string | absent, set only when a sibling relation was declared against a ROOT
+ * instance — a sibling of a non-root simply shares the anchor's `parentInstance`). Normalized to an
+ * array so callers are shape-agnostic; self-links and non-strings are dropped. The sidebar's
+ * `instanceLinks`, `instanceSiblings` and the Desktop's Deployments graph all read the field here. */
+export function siblingLinksOf(instance) {
+  const raw = instance.siblingInstance;
+  if (typeof raw !== "string" || !raw || raw === instance.instance) return [];
+  return [raw];
+}
+
 /** Names an instance is directly related to (undirected edge endpoints):
- * its spawn parent plus its explicit sibling link. Kernel contract
- * (feature/agent-relations, final): `parentInstance` and `siblingInstance`
- * (string, only set when a sibling relation was declared against a ROOT
- * instance — a sibling of a non-root simply shares the anchor's parent).
- * Absent fields contribute no edges. */
+ * its spawn parent plus its explicit sibling link (`siblingLinksOf`). Kernel
+ * contract (feature/agent-relations, final): `parentInstance` and
+ * `siblingInstance`. Absent fields contribute no edges. */
 export function instanceLinks(instance) {
   const out = [];
   if (instance.parentInstance) out.push(instance.parentInstance);
-  if (instance.siblingInstance) out.push(instance.siblingInstance);
+  out.push(...siblingLinksOf(instance));
   return out.filter((name) => name && name !== instance.instance);
 }
 
@@ -63,6 +72,39 @@ export function resolveLinkId(fromInstance, name, byName) {
 function rosterOrder(a, b) {
   const ia = instanceId(a), ib = instanceId(b);
   return String(a.instance).localeCompare(String(b.instance)) || (ia < ib ? -1 : ia > ib ? 1 : 0);
+}
+
+/** Each instance's siblings by EXPLICIT link (#1312): Y is X's sibling when X's sibling link
+ * (`siblingLinksOf`) resolves to Y (`resolveLinkId` over `instances`), or Y's resolves to X. So both
+ * ends of a link name each other. Direct links only (a chain C→B→A gives B [A, C], A [B], C [B]; A and
+ * C are not inferred), self excluded, de-duplicated by instanceId, each list in the roster's order
+ * (`rosterOrder`). Instances that share a parent are not siblings here (their relation is "under
+ * <parent>"), and `relation`/`relativeTo` are not read: they record how an instance was spawned, not a
+ * current relation. Pass one deployment's FULL roster, never a filtered list: dropping rows can turn an
+ * ambiguous name into a false unique one. Returns Map<instanceId, instance[]>; an instance with no
+ * sibling is absent from the map. */
+export function instanceSiblings(instances) {
+  const byId = new Map(instances.map((i) => [instanceId(i), i]));
+  const byName = new Map();
+  for (const i of instances) {
+    if (!byName.has(i.instance)) byName.set(i.instance, []);
+    byName.get(i.instance).push(i);
+  }
+  const ids = new Map(); // id -> Set of sibling ids
+  const add = (a, b) => {
+    if (!ids.has(a)) ids.set(a, new Set());
+    ids.get(a).add(b);
+  };
+  for (const i of instances) {
+    const id = instanceId(i);
+    for (const name of siblingLinksOf(i)) {
+      const other = resolveLinkId(i, name, byName);
+      if (!other || other === id) continue;
+      add(id, other);
+      add(other, id);
+    }
+  }
+  return new Map([...ids].map(([id, set]) => [id, [...set].map((s) => byId.get(s)).sort(rosterOrder)]));
 }
 
 /** Group instances into agent CLUSTERS — connected components of the

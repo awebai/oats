@@ -45,14 +45,16 @@ export function joinPickerFocusReturn(doc, { opener, dismiss }) {
  *        reopened must not paint (generation-guarded here).
  * @param {(data: any, query: string) => Array<{label: string, detail?: string,
  *          dot?: boolean|null, run?: Function, depth?: number, under?: string,
- *          showUnder?: boolean, group?: {key: string, label: string},
+ *          showUnder?: boolean, sibling?: string, group?: {key: string, label: string},
  *          context?: boolean, initial?: boolean}>} spec.computeRows
  *        query → result rows, already scored/sorted/sliced by the caller.
  *        Optional tree shape (the palette's instances): consecutive rows sharing
  *        a group.key sit in one role=group named by group.label; depth indents
  *        (visual only); `under` is visually hidden text read with the option
  *        (with `showUnder` a flat row also shows it, quietly, aria-hidden so it is
- *        read once); the first selectable `initial` row is the active row a
+ *        read once); `sibling` is read the same way after it, and always shown
+ *        in that one quiet span (`under · sibling` when both are shown, the
+ *        under phrase shortening first); the first selectable `initial` row is the active row a
  *        render starts on (else the first selectable row);
  *        a `context` row is shown dimmed with aria-disabled="true" and is never
  *        active, so the arrows, the cycle chord and pointer hover skip it.
@@ -242,16 +244,28 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
         row.querySelector(".plabel").textContent = it.label;
         row.querySelector(".pdetail").textContent = it.detail || "";
         if (Number.isInteger(it.depth) && it.depth > 0) row.style.setProperty("--depth", String(it.depth));
-        if (it.under) {
-          const under = doc.createElement("span");
-          under.className = "sr-only"; under.textContent = `, ${it.under}`;
-          row.querySelector(".pdetail").append(under); // read as one phrase with the detail
-          if (it.showUnder) {
-            // Seen, not read twice: the visually hidden phrase above is the one read.
-            const shown = doc.createElement("span");
-            shown.className = "punder"; shown.setAttribute("aria-hidden", "true"); shown.textContent = it.under;
-            row.querySelector(".plabel").after(shown);
+        for (const phrase of [it.under, it.sibling].filter(Boolean)) {
+          const read = doc.createElement("span");
+          read.className = "sr-only"; read.textContent = `, ${phrase}`;
+          row.querySelector(".pdetail").append(read); // read as one phrase with the detail
+        }
+        const seen = [it.showUnder ? it.under : null, it.sibling].filter(Boolean);
+        if (seen.length) {
+          // Seen, not read twice: the visually hidden phrases above are the ones read.
+          const shown = doc.createElement("span");
+          shown.className = "punder"; shown.setAttribute("aria-hidden", "true");
+          if (seen.length === 1) shown.textContent = seen[0];
+          else {
+            // "under <parent> · sibling of <name>": each phrase ellipsizes on its own and a long parent gives
+            // way first, so the sibling, the row's new information, stays in sight (shell.css .punder-split).
+            shown.classList.add("punder-split");
+            for (const [cls, text] of [["punder-under", seen[0]], ["punder-sep", " · "], ["punder-sibling", seen[1]]]) {
+              const part = doc.createElement("span");
+              part.className = cls; part.textContent = text;
+              shown.append(part);
+            }
           }
+          row.querySelector(".plabel").after(shown);
         }
         // A match's ancestor, shown for its place in the tree: never active or run.
         if (it.context) { row.classList.add("context"); row.setAttribute("aria-disabled", "true"); }

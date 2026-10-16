@@ -1,8 +1,9 @@
 /* oats desktop — agent-cluster computation for the Deployments page (formerly the Active overview).
    Pure functions, no DOM: clusters are the connected components of the
    roster under parent/child (parentInstance) and sibling (siblingInstance)
-   links. ALL reading of sibling data goes through siblingLinksOf() — the
-   single seam for the kernel's field shape.
+   links. ALL reading of sibling data goes through siblingLinksOf()
+   (packages/client instance-tree.mjs) — the single seam for the kernel's
+   field shape, shared with the sidebar.
    IDENTITY: nodes are keyed by instanceId (composite identity from
    instance-tree.mjs), never bare name — duplicate instance names across
    agent dirs/team repos are legal, and a bare-name key would silently drop
@@ -11,20 +12,8 @@
    first, unique cross-root allowed, ambiguous → no edge (fail safe).
    Malformed data must never break the overview: unknown names are ignored,
    self-links are ignored, and cycles are harmless to a union-find. */
-import { instanceId, resolveLinkId } from "../../../client/instance-tree.mjs";
+import { instanceId, resolveLinkId, siblingLinksOf } from "../../../client/instance-tree.mjs";
 import { runtimeCounts } from "../../../client/instance-presentation.mjs";
-
-/** Sibling links of a roster instance, as an array of instance names.
-    ADAPTER: kernel contract (final, relayed by dev-coordinator-parallel) is
-    `siblingInstance`: string | absent — set only when a sibling relation
-    was declared against a ROOT instance (a sibling of a non-root simply
-    shares the anchor's parentInstance). Normalized to an array so callers
-    are shape-agnostic; self-links and non-strings are dropped. */
-export function siblingLinksOf(inst) {
-  const raw = inst.siblingInstance;
-  if (typeof raw !== "string" || !raw || raw === inst.instance) return [];
-  return [raw];
-}
 
 /** Connected components of the roster under parent/child + sibling links.
     Returns clusters sorted for stable rendering: multi-member clusters

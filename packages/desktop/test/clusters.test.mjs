@@ -2,7 +2,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-const { computeClusters, siblingEdges, siblingLinksOf } = await import("../renderer/views/clusters.mjs");
+const { computeClusters, siblingEdges } = await import("../renderer/views/clusters.mjs");
+const { siblingLinksOf } = await import("../../client/instance-tree.mjs");
 
 test("computeClusters: parent/child links form one cluster; strangers stay singletons", () => {
   const cs = computeClusters([

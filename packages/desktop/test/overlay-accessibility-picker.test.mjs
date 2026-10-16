@@ -413,3 +413,25 @@ test("current callers preserve instance identity, command handoffs and Quick Ope
   assert.equal(doc.activeElement, destination);
   assert.equal(openerFocuses, 0);
 });
+
+test("a row's sibling is read after its under, and shown with a shown under as one aria-hidden span", async (t) => {
+  const rows = [
+    { label: "tree", under: "under lead", sibling: "sibling of a and b", run() {} },
+    { label: "flat", under: "under lead", showUnder: true, sibling: "sibling of b", run() {} },
+    { label: "plain", under: "under lead", run() {} },
+  ];
+  const { doc, picker } = setup(t, { loadItems: async () => rows, computeRows: (data) => data });
+  await picker.open();
+  const option = (label) => [...doc.querySelectorAll('[role="option"]')].find((o) => o.querySelector(".plabel").textContent === label);
+  const shown = (label) => [...option(label).querySelectorAll(".punder")].map((s) => [s.textContent, s.getAttribute("aria-hidden")]);
+  const read = (label) => [...option(label).querySelectorAll(".pdetail .sr-only")].map((s) => s.textContent);
+  assert.deepEqual(shown("tree"), [["sibling of a and b", "true"]], "a tree row shows its sibling, not its under");
+  assert.deepEqual(read("tree"), [", under lead", ", sibling of a and b"]);
+  assert.deepEqual(shown("flat"), [["under lead · sibling of b", "true"]]);
+  assert.deepEqual([...option("flat").querySelectorAll(".punder.punder-split > span")].map((s) => [s.className, s.textContent]),
+    [["punder-under", "under lead"], ["punder-sep", " · "], ["punder-sibling", "sibling of b"]], "with both, each phrase is its own part");
+  assert.equal(option("tree").querySelector(".punder").children.length, 0, "one phrase: plain text, as before");
+  assert.deepEqual(read("flat"), [", under lead", ", sibling of b"]);
+  assert.deepEqual(shown("plain"), [], "no sibling, no shown under: as before");
+  assert.deepEqual(read("plain"), [", under lead"]);
+});

@@ -61,7 +61,7 @@ const SURFACE = Object.freeze({
     "soulsData", "soulCapabilitiesOf", "capabilitiesData"],
   "deployment-observer.mjs": ["createDeploymentObserver", "mapBounded", "MAX_DEPLOYMENT_OBSERVATIONS"],
   "refresh-loop.mjs": ["createRefreshLoop", "REFRESH_FOCUSED_MS", "REFRESH_BLURRED_MS"],
-  "instance-presentation.mjs": ["runtimeState", "runtimeCounts", "unsupportedSession", "originLead"],
+  "instance-presentation.mjs": ["runtimeState", "runtimeCounts", "unsupportedSession", "originLead", "siblingText"],
   "waiting-on-you.mjs": ["waitingClaim", "waitingLabel", "waitedText", "waitingClock", "waitingNames", "waitingBelowText", "waitingSentence"],
   "harness-names.mjs": ["HARNESSES", "HARNESS_NAMES", "harnessFeature", "harnessFlag", "harnessKey", "harnessOf", "harnessList"],
   "team-rows.mjs": ["teamRow", "teamRowsOf", "defaultTeamOf", "teamModelOf"],
@@ -69,7 +69,7 @@ const SURFACE = Object.freeze({
   "deployment-facts.mjs": ["memberLabel", "servedIdentityText", "deploymentUnavailableText"],
   "instance-admission.mjs": ["admitInstance", "instanceSelector"],
   "instance-tree.mjs": ["instanceId", "resolveLinkId", "clusterInstances", "rosterGroups", "waitingRollup", "instanceVisibleInTree",
-    "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome"],
+    "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome", "instanceSiblings"],
   "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES", "withoutInstanceVariables"],
   "client-terms.mjs": ["clientTerms"],
@@ -505,7 +505,7 @@ test("the stable surface names what packages/client has: every listed module, ev
   // 3a: a second client's switcher reads the rows; the two functions a row is made of are the Desktop's own importers'.
   assert.deepEqual(SURFACE["workspace-choices.mjs"], ["workspaceChoiceRows", "choiceMatches", "UNMATCHED_SECTION"]);
   // #982: the words that name who made a text are on it; how the shared home decides a speaker is not.
-  assert.deepEqual(SURFACE["instance-presentation.mjs"], ["runtimeState", "runtimeCounts", "unsupportedSession", "originLead"]);
+  assert.deepEqual(SURFACE["instance-presentation.mjs"], ["runtimeState", "runtimeCounts", "unsupportedSession", "originLead", "siblingText"]);
   assert.ok(!Object.hasOwn(SURFACE, "kernel-made.mjs") && !Object.hasOwn(SURFACE, "liveness.mjs"));
   // 5a-2: a client starts through the start rule; the start's CLI call and its argv are the rule's.
   assert.deepEqual(SURFACE["session-start.mjs"], ["startGate", "startInstance", "verifiedLocalHome"]);

@@ -15,6 +15,16 @@ export function byRuntimeState(a, b) {
   return RUNTIME_ORDER[runtimeState(a)] - RUNTIME_ORDER[runtimeState(b)] || String(a.instance).localeCompare(String(b.instance));
 }
 
+/** The words for an instance's siblings (#1312; the list `instanceSiblings` answers, instance-tree.mjs):
+ * null for none, else `sibling of a`, `sibling of a and b`, `sibling of a, b and c`, the names in the
+ * order given. The same in every client. */
+export function siblingText(siblings) {
+  const names = (siblings || []).map((s) => s.instance);
+  if (!names.length) return null;
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+  return `sibling of ${list}`;
+}
+
 /** The stand-in `unsupportedSession` writes for an older kernel's Herdr row: the one text of a row that is
  * this home's own sentence. Not on the stable surface. */
 export const HERDR_STAND_IN = `E_HERDR_REMOVED: ${HERDR_REMOVED}`;

@@ -281,3 +281,57 @@ test("several deployments: a parent name in another deployment is not a parent, 
   const queried = instanceRows(paletteRows(roster, [], "child", { openTerminal() {} }));
   assert.deepEqual(queried.map(r => [r.label, !!r.context]), [["child", false]], "D1's lead is not shown as context");
 });
+
+// #1312: a sibling of a root says "sibling of <name>" on both ends' rows, seen and read; matching is unchanged.
+const SIBLINGS = [
+  at("bea", { siblingInstance: "ada" }),
+  at("zed", { parentInstance: "ada" }),
+  at("ada"),
+  at("kid-1", { parentInstance: "lead" }),
+  at("kid-2", { parentInstance: "lead" }),
+  at("lead"),
+];
+const siblingOf = rows => instanceRows(rows).map(r => [r.label, r.sibling ?? null, !!r.context]);
+
+test("root siblings: with no query both rows carry their sibling; co-children of one parent carry none", () => {
+  const rows = instanceRows(paletteRows(SIBLINGS, [], "", { openTerminal() {} }));
+  assert.deepEqual(siblingOf(rows), [
+    ["ada", "sibling of bea", false], ["zed", null, false], ["bea", "sibling of ada", false],
+    ["lead", null, false], ["kid-1", null, false], ["kid-2", null, false],
+  ]);
+  assert.ok(rows.filter(r => r.sibling == null).every(r => !Object.hasOwn(r, "sibling")), "a row without a sibling has no sibling field");
+  assert.deepEqual(rows.filter(r => r.label.startsWith("kid")).map(r => r.under), ["under lead", "under lead"], "co-children read as under their parent");
+  assert.deepEqual(rows.map(r => [r.group.label, r.label, r.depth]),
+    rosterGroups(SIBLINGS, SIBLINGS).flatMap(g => g.clusters.flatMap(c => c.instances.map(i => [g.label, i.instance, i.depth]))), "order, groups and depth unchanged");
+});
+
+test("a match shown alone names its sibling; a context row too; a sibling's name does not match the other row", () => {
+  assert.deepEqual(siblingOf(paletteRows(SIBLINGS, [], "bea", {})), [["bea", "sibling of ada", false]], "the match alone, over the full roster");
+  assert.deepEqual(siblingOf(paletteRows(SIBLINGS, [], "ada", {})), [["ada", "sibling of bea", false]], "typing ada does not list bea");
+  assert.deepEqual(siblingOf(paletteRows(SIBLINGS, [], "zed", {})), [["ada", "sibling of bea", true], ["zed", null, false]], "a context row says it too");
+});
+
+test("several deployments: a sibling link resolves only inside its deployment", () => {
+  // D2's bea links to "ada": D1's ada (the only one) is never named, nor does it name bea.
+  const across = { instances: [inD(D1, "ada"), inD(D2, "bea", { siblingInstance: "ada" })], deployments: [D1, D2] };
+  assert.deepEqual(siblingOf(paletteRows(across, [], "", {})), [["ada", null, false], ["bea", null, false]]);
+  // With an ada in each deployment, bea names its own deployment's ada; D1's ada names nobody.
+  const both = { instances: [inD(D1, "ada"), inD(D2, "ada"), inD(D2, "bea", { siblingInstance: "ada" })], deployments: [D1, D2] };
+  assert.deepEqual(instanceRows(paletteRows(both, [], "", {})).map(r => [r.group.key.split("|")[0], r.label, r.sibling ?? null]),
+    [[D1.id, "ada", null], [D2.id, "ada", "sibling of bea"], [D2.id, "bea", "sibling of ada"]]);
+});
+
+test("rendered: a tree row's sibling is shown once, aria-hidden, and read once with the detail", async t => {
+  const p = palette(t, SIBLINGS);
+  await p.picker.open();
+  const option = [...p.doc.querySelectorAll('[role="option"]')].find(o => o.querySelector(".plabel").textContent === "bea");
+  const shown = option.querySelector(".punder");
+  assert.equal(shown.textContent, "sibling of ada", "seen beside the name");
+  assert.equal(shown.getAttribute("aria-hidden"), "true");
+  assert.equal(shown.previousElementSibling, option.querySelector(".plabel"), "right after the label");
+  assert.equal(option.querySelector(".pdetail .sr-only").textContent, ", sibling of ada", "read with the detail");
+  const read = node => [...node.childNodes].map(n => n.nodeType === 3 ? n.textContent : n.getAttribute("aria-hidden") === "true" ? "" : read(n)).join("");
+  assert.equal(read(option).split("sibling of ada").length - 1, 1, "read exactly once");
+  const kid = [...p.doc.querySelectorAll('[role="option"]')].find(o => o.querySelector(".plabel").textContent === "kid-1");
+  assert.equal(kid.querySelector(".punder"), null, "a tree row without a sibling shows nothing new");
+});
