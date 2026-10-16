@@ -7,29 +7,23 @@
 [![Node 22+](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-OATS—**Open Agent Team Specification**—is a completely free and open-source, provider- and harness-agnostic framework for building distributed agent teams. Its CLI and contracts set up agents that work together on one laptop, across machines or across a large organisation, as flexibly as you need.
+OATS—**Open Agent Team Specification**—is a provider- and harness-agnostic framework for building distributed agent teams: on one laptop, across machines or across a large organisation, as flexibly as you need. It is completely free and open source.
 
-**Each agent keeps the full power of its own harness**, whether Claude Code, Codex or pi. OATS connects them: agents on different harnesses and providers communicate and work together, while you keep control of their messaging, knowledge, coordination and anything else your team does.
+- **Every agent keeps the full power of its harness.** Claude Code, Codex or pi: OATS connects them, so agents on different harnesses and providers communicate and work together.
+- **The CLI and contracts set up the team; capabilities shape it.** Choose the agents, the tools you already use and how they coordinate. We ship opinionated defaults that we think work well, and you can change or replace any of them.
+- **You keep control** of messaging, knowledge, coordination and anything else your team does, so your knowledge, workflows and team structure outlast any model or platform.
+- **So you don't lose your head as the threads multiply,** there are two clients: **OATS Desktop**, a free, fully integrated ADE (an agentic IDE), and **`oats tui`** for the terminal (in preview).
+- **Built on what you already use:** Git, GitHub or GitLab, and your agent harnesses. No OATS account, central server or OATS-hosted database; integrations you choose may run their own.
 
-**Capabilities shape the team exactly the way you want it:** the agents, the tools you already use, and how they coordinate. We ship opinionated defaults that we think work well, and you can change or replace any of them.
+For example, a kernel expert, a UX expert and a customer-support expert can share capabilities for learning and coordination, while each has its own for its area. Through capabilities you decide:
 
-The [official catalog](docs/official-catalog.md) is the reviewed list of official packages; a workspace trusts a package by declaring it, and listing does not declare it for you.
+- which specialists make up the team;
+- which models and harnesses their instances use;
+- where their knowledge lives and how it grows;
+- which skills, tools and workflows they receive;
+- how they communicate and coordinate.
 
-For example, a kernel expert, a UX expert and a customer-support expert can share capabilities for learning and coordination, while each has specific capabilities for its own area of expertise.
-
-Through your capabilities, you remain in control of:
-
-- Which specialists make up the team.
-- Which models and harnesses their instances use.
-- Where their knowledge lives and how it develops.
-- Which skills, tools and workflows they receive.
-- How they communicate and coordinate.
-
-These choices determine how your team operates and where the value of its work accumulates. Keeping them under your control means your knowledge, workflows and team structure can outlast any particular model or platform.
-
-**So you don't lose your head as the threads multiply,** OATS gives you two clients that bring your team, its work and its agent sessions into one place: **OATS Desktop**, a free, fully integrated ADE (an agentic IDE), and **`oats tui`** for the terminal (in preview).
-
-OATS builds on tools you already use—**Git, GitHub or GitLab, and your preferred agent harnesses**. People can share agent definitions, knowledge and workflows across projects without an OATS account, a central OATS server or an OATS-hosted database. Selected integrations may use their own servers or databases; those are your choices, not a mandatory OATS service.
+The [official catalog](docs/official-catalog.md) is the reviewed list of official packages. A workspace trusts a package by declaring it; being listed doesn't declare it.
 
 ## Why OATS
 
