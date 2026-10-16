@@ -3463,7 +3463,13 @@ async function sessionCmd() {
       if (JSON_MODE) throw Object.assign(new Error("session attach is interactive; omit --json"), { code: "E_BAD_ARGS" });
       // --detach-key (feature session-attach-detach-key): the one key that leaves this viewer, with
       // status 20. Without it every key reaches the agent and there is no keyboard exit.
-      process.exitCode = await attachInstanceSession(home, { detachKey: valueFlag("detach-key") });
+      // What earlier attaches left (a viewer whose attach died without detaching): one line, on
+      // stderr, before the client takes the terminal, and only when something was removed.
+      const onSwept = ({ sessions, tables }) => {
+        const n = (count, what) => `${count} ${what}${count === 1 ? "" : "s"}`;
+        if (sessions + tables > 0) console.error(`oats: removed ${n(sessions, "leftover viewer session")} and ${n(tables, "key table")} of earlier attaches`);
+      };
+      process.exitCode = await attachInstanceSession(home, { detachKey: valueFlag("detach-key"), onSwept });
       return;
     }
     if (args[1] === "inspect") result = inspectInstanceSession(home);

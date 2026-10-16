@@ -213,11 +213,11 @@ test("the kernel's own viewer, prepared with a key: its table holds the two mous
     const viewer = prepareSessionViewer({ backend: "tmux", socket: AGENTS, session: SESSION, window: a.name }, { detachKey: key });
     try {
       const [session] = viewerSessions();
-      assert.equal(viewer.args.at(-1), `=${session}`);
+      assert.equal(viewer.session, session);
       assert.deepEqual(keyTables()[session], bindings(key), key);
       assert.equal(tmuxOn(AGENTS, "show-options", "-v", "-t", session, "key-table"), session);
       const binding = lines(tmuxOn(AGENTS, "list-keys")).find((line) => line.includes(`-T ${session} `) && !MOUSE_KEYS.some((m) => line.includes(m)));
-      assert.match(binding, /\sset-option @oats-detached 1 \\; detach-client$/, "one binding of two commands");
+      assert.match(binding, /\sset-option @oats-detached 1 \\; set-option destroy-unattached off \\; detach-client$/, "one binding of three commands");
       assert.equal(viewer.detached(), false, "prepared, never left");
       assert.equal(LOCKED in keyTables(), false, "a keyed viewer makes no locked table");
     } finally { viewer.cleanup(); }
@@ -506,4 +506,141 @@ test("a hang-up to the attach's process group while the viewer is being prepared
     nothingLeft(`HUP while the ${what} viewer is prepared`);
   }
   assert.equal(typed(a), "", "the agent read nothing");
+});
+
+// ---- an attach that dies without detaching (awebai/oats#1332) -----------------------------------
+// A cgroup-wide `systemctl kill`, a stop timeout, oomd or a killed ssh SIGKILLs the attach and its
+// client together: no cleanup of the attach's own runs. The tmux server removes the viewer itself,
+// and the next attach sweeps what an attach left before its client attached.
+
+/** A pid no process has: a child that has already exited. */
+function deadPid() {
+  const child = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8", timeout: 10000 });
+  return Number(child.stdout);
+}
+
+test("a viewer whose attach and client are SIGKILLed together leaves no session and no key table, keyed or not", async (t) => {
+  t.after(sweep);
+  const a = await agent("killed");
+  for (const key of [undefined, "F12"]) {
+    const what = key === undefined ? "plain" : "keyed";
+    const viewer = await view(a, { key });
+    const client = viewer.clientPid();
+    process.kill(viewer.pid(), "SIGKILL");
+    process.kill(client, "SIGKILL");
+    await waitUntil(() => viewerSessions().length === 0 && viewerTables().length === 0, `${what}: the killed viewer's session and table are gone; sessions ${viewerSessions()}, tables ${viewerTables()}`);
+    nothingLeft(`a SIGKILLed ${what} viewer`);
+  }
+  assert.equal(typed(a), "", "the agent read nothing");
+});
+
+test("an attach sweeps what a dead attach left: a viewer session with no client and the key tables whose session is gone; the agents' own sessions and the shared locked table are untouched", async (t) => {
+  t.after(sweep);
+  const a = await agent("sweep");
+  const dead = deadPid();
+  const orphan = `oatsview-${dead}-0badc0de`;
+  const tableOnly = `oatsview-${dead}-feedf00d`;
+  tmuxOn(AGENTS, "new-session", "-d", "-s", orphan);
+  for (const table of [orphan, tableOnly]) tmuxOn(AGENTS, "bind-key", "-T", table, "F12", "detach-client");
+  tmuxOn(AGENTS, "bind-key", "-T", LOCKED, "WheelUpPane", "send-keys -M");
+  assert.deepEqual(viewerSessions(), [orphan]);
+  assert.deepEqual(viewerTables().sort(), [orphan, tableOnly].sort());
+
+  const viewer = await view(a, { key: "C-\\" });
+  assert.deepEqual(viewerSessions(), [viewer.session], "only the new viewer's session is left");
+  assert.deepEqual(viewerTables(), [viewer.session], "only the new viewer's table is left");
+  assert.ok(LOCKED in keyTables(), "the locked table is shared by plain viewers and stays");
+  assert.ok(sessionsOf(AGENTS).includes(SESSION), "the agents' session stays");
+  viewer.press("C-\\");
+  assert.equal(await viewer.ended(), SESSION_DETACHED_EXIT, viewer.shows());
+  nothingLeft("after the sweeping attach left by its key");
+});
+
+test("the sweep never removes an attached viewer: a second attach leaves the first attached, its table bound and its key working", async (t) => {
+  t.after(sweep);
+  const a = await agent("both");
+  const first = await view(a, { key: "F12" });
+  const second = await view(a, { key: "F12" });
+  assert.ok(first.isAttached(), "the first viewer is still attached");
+  assert.deepEqual(viewerTables().sort(), [first.session, second.session].sort());
+  first.press("F12");
+  assert.equal(await first.ended(), SESSION_DETACHED_EXIT, first.shows());
+  assert.ok(second.isAttached());
+  second.press("F12");
+  assert.equal(await second.ended(), SESSION_DETACHED_EXIT, second.shows());
+  nothingLeft("both viewers left by their key");
+  assert.equal(typed(a), "", "the agent read nothing");
+});
+
+test("the preparation answers what it swept, and never a viewer whose attach is alive: a concurrent attach's session (its pid alive, no client yet) and its table stay", async (t) => {
+  t.after(sweep);
+  const a = await agent("counted");
+  const target = { backend: "tmux", socket: AGENTS, session: SESSION, window: a.name };
+  const dead = deadPid();
+  const orphan = `oatsview-${dead}-0badc0de`;
+  const tableOnly = `oatsview-${dead}-feedf00d`;
+  const preparing = `oatsview-${process.pid}-5ca1ab1e`;
+  for (const session of [orphan, preparing]) tmuxOn(AGENTS, "new-session", "-d", "-s", session);
+  for (const table of [orphan, tableOnly, preparing]) tmuxOn(AGENTS, "bind-key", "-T", table, "F12", "detach-client");
+
+  const viewer = prepareSessionViewer(target, { detachKey: "F12" });
+  try {
+    assert.deepEqual(viewer.swept, { sessions: 1, tables: 2 });
+    const own = viewer.session;
+    assert.deepEqual(viewerSessions().sort(), [own, preparing].sort(), "the dead attach's session went; the live one's stayed");
+    assert.deepEqual(viewerTables().sort(), [own, preparing].sort());
+  } finally { viewer.cleanup(); }
+
+  const again = prepareSessionViewer(target);
+  try { assert.deepEqual(again.swept, { sessions: 0, tables: 0 }, "nothing left to sweep"); }
+  finally { again.cleanup(); }
+  assert.deepEqual(viewerSessions(), [preparing]);
+  assert.deepEqual(viewerTables(), [preparing]);
+});
+
+/** The global session-closed entries of the agents' server, as tmux lists them. */
+const closedHooks = () => lines(tmuxOn(AGENTS, "show-hooks", "-g", "session-closed"));
+
+test("the one global hook entry the kernel owns, session-closed[900], is set once however many keyed viewers set it, and a viewer's close leaves an operator's own session-closed[0] and a table that is not a viewer's alone", async (t) => {
+  t.after(() => { sweep(); tmuxOn(AGENTS, "set-hook", "-g", "-u", "session-closed[0]"); tmuxOn(AGENTS, "set-option", "-g", "-u", "@operator-closed"); tmuxOn(AGENTS, "unbind-key", "-a", "-q", "-T", "operator"); });
+  const a = await agent("hooks");
+  const ran = () => tmuxOn(AGENTS, "show-options", "-gqv", "@operator-closed") === "1";
+  tmuxOn(AGENTS, "set-hook", "-g", "session-closed[0]", "set-option -g @operator-closed 1");
+  tmuxOn(AGENTS, "bind-key", "-T", "operator", "F12", "detach-client");
+  const first = await view(a, { key: "F12" });
+  const second = await view(a, { key: "F12" });
+  const hooks = closedHooks();
+  assert.equal(hooks.length, 2, hooks.join(" | "));
+  assert.match(hooks[0], /^session-closed\[0\] set-option -g @operator-closed 1$/);
+  assert.match(hooks[1], /^session-closed\[900\] if-shell -F /);
+  const client = first.clientPid();
+  process.kill(first.pid(), "SIGKILL");
+  process.kill(client, "SIGKILL");
+  await waitUntil(() => viewerTables().length === 1, `the killed viewer's table is gone; tables ${viewerTables()}`);
+  assert.deepEqual(viewerTables(), [second.session]);
+  second.press("F12");
+  assert.equal(await second.ended(), SESSION_DETACHED_EXIT, second.shows());
+  nothingLeft("both viewers closed");
+  await waitUntil(ran, "the operator's own session-closed[0] ran");
+  assert.ok("operator" in keyTables(), "a table that is not a viewer's stays");
+  assert.deepEqual(closedHooks(), hooks, "the entries are unchanged");
+});
+
+test("on a tmux where the hook does nothing (before 3.2, run-shell has no -C), a killed keyed viewer's table is removed by the next attach's sweep", async (t) => {
+  t.after(sweep);
+  const a = await agent("no-hook");
+  tmuxOn(AGENTS, "set-hook", "-g", "-u", "session-closed[900]");
+  const front = tmuxInFront("no-hook", `case " $* " in *" set-hook "*) exit 0 ;; esac`);
+  const killed = await view(a, { key: "F12", front });
+  assert.deepEqual(closedHooks().filter((h) => h.startsWith("session-closed[900]")), [], "no hook entry");
+  const client = killed.clientPid();
+  process.kill(killed.pid(), "SIGKILL");
+  process.kill(client, "SIGKILL");
+  await waitUntil(() => viewerSessions().length === 0, "the killed viewer's session is gone");
+  assert.deepEqual(viewerTables(), [killed.session], "its table is left");
+  const next = await view(a, { key: "F12", front });
+  assert.deepEqual(viewerTables(), [next.session], "the sweep removed it");
+  next.press("F12");
+  assert.equal(await next.ended(), SESSION_DETACHED_EXIT, next.shows());
+  nothingLeft("after the sweeping attach");
 });

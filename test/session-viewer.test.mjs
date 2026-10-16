@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DETACH_KEY_FEATURE, SESSION_DETACHED_EXIT, isDetachKey, prepareSessionViewer, requireDetachKey, tmuxHasClientFeatures } from "../lib/session-viewer.mjs";
+import { DETACH_KEY_FEATURE, SESSION_DETACHED_EXIT, VIEWER_CLOSED_HOOK_INDEX, isDetachKey, prepareSessionViewer, requireDetachKey, tmuxHasClientFeatures } from "../lib/session-viewer.mjs";
 const target = { backend: "tmux", socket: "/tmp/owned.sock", session: "oats", window: "agent" };
-function fixture(failLink = false, { marker = "", version = "" } = {}) {
+function fixture(failLink = false, { marker = "", version = "", sessions = "", keys = "" } = {}) {
   const calls = [], options = [];
   return { calls, options, exec(bin, args, opts) {
     assert.equal(bin, "tmux");
@@ -10,6 +10,8 @@ function fixture(failLink = false, { marker = "", version = "" } = {}) {
     assert.deepEqual(args.slice(0, 3), ["-u", "-S", target.socket]);
     const cmd = args.slice(3); calls.push(cmd); options.push(opts);
     if (cmd[0] === "list-panes") return "%1\t0\tcodex\t123\n";
+    if (cmd[0] === "list-keys") return keys;
+    if (cmd[0] === "list-sessions") return sessions;
     if (cmd[0] === "new-session") return "@98\n";
     if (cmd[0] === "link-window" && failLink) throw new Error("target disappeared");
     if (cmd[0] === "show-options") { if (marker instanceof Error) throw marker; return marker; }
@@ -18,6 +20,10 @@ function fixture(failLink = false, { marker = "", version = "" } = {}) {
   } };
 }
 const MOUSE = "#{||:#{pane_in_mode},#{mouse_any_flag}}";
+/** The one global hook entry the kernel owns: when a session whose name is a viewer's closes, its
+ *  key table is unbound. The name is matched before it is used in a command (a format inside
+ *  `#{...}` cannot hold `}`, so the 8 hex digits are spelled out). */
+const VIEWER_CLOSED_HOOK = `if-shell -F '#{m/r:^oatsview-([0-9]+)-${"[0-9a-f]".repeat(8)}$,#{hook_session_name}}' "run-shell -C 'unbind-key -a -q -T #{hook_session_name}'"`;
 test("tmux attach isolates one exact window and cleanup kills only the viewer", () => {
   const io = fixture();
   const viewer = prepareSessionViewer(target, io);
@@ -91,6 +97,8 @@ test("without a detach key the viewer's tmux calls are exactly these, in this or
   assert.match(name, /^oatsview-\d+-[0-9a-f]{8}$/);
   const prepared = [
     ["list-panes", "-t", "=oats:=agent", "-F", "#{pane_id}\t#{pane_dead}\t#{pane_current_command}\t#{pane_pid}"],
+    ["list-keys"],
+    ["list-sessions", "-F", "#{session_name}\t#{session_attached}"],
     ["new-session", "-d", "-s", name, "-P", "-F", "#{window_id}"],
     ["link-window", "-s", "=oats:=agent", "-t", `=${name}:`],
     ["kill-window", "-t", "@98"],
@@ -106,7 +114,9 @@ test("without a detach key the viewer's tmux calls are exactly these, in this or
     ["-V"],
   ];
   assert.deepEqual(io.calls, prepared);
-  assert.deepEqual(viewer.args, ["-u", "-S", target.socket, "attach-session", "-t", `=${name}`]);
+  assert.deepEqual(viewer.args, ["-u", "-S", target.socket, "attach-session", "-t", `=${name}`, ";", "set-option", "-t", `=${name}:`, "destroy-unattached", "on"]);
+  assert.equal(viewer.session, name);
+  assert.deepEqual(viewer.swept, { sessions: 0, tables: 0 });
   assert.equal(viewer.detached(), false, "a viewer without a key was never left by one");
   assert.deepEqual(io.calls, prepared, "and no tmux call asks");
   viewer.cleanup();
@@ -125,6 +135,8 @@ test("with a detach key the viewer reads a table of its own, named as its sessio
     assert.match(name, /^oatsview-\d+-[0-9a-f]{8}$/);
     assert.deepEqual(io.calls, [
       ["list-panes", "-t", "=oats:=agent", "-F", "#{pane_id}\t#{pane_dead}\t#{pane_current_command}\t#{pane_pid}"],
+      ["list-keys"],
+      ["list-sessions", "-F", "#{session_name}\t#{session_attached}"],
       ["new-session", "-d", "-s", name, "-P", "-F", "#{window_id}"],
       ["link-window", "-s", "=oats:=agent", "-t", `=${name}:`],
       ["kill-window", "-t", "@98"],
@@ -136,7 +148,8 @@ test("with a detach key the viewer reads a table of its own, named as its sessio
       ["unbind-key", "-a", "-q", "-T", name],
       ["bind-key", "-T", name, "WheelUpPane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -e; send-keys -M"],
       ["bind-key", "-T", name, "MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
-      ["bind-key", "-T", name, key, "set-option @oats-detached 1 ; detach-client"],
+      ["bind-key", "-T", name, key, "set-option @oats-detached 1 ; set-option destroy-unattached off ; detach-client"],
+      ["set-hook", "-g", "session-closed[900]", VIEWER_CLOSED_HOOK],
       ["set-option", "-t", name, "mouse", "on"],
       ["-V"],
     ], key);
@@ -229,6 +242,7 @@ test("the detach key grammar is closed: what it accepts and what it refuses, and
 test("the constants a caller reads: the feature name and the status of a leave by the key", () => {
   assert.equal(DETACH_KEY_FEATURE, "session-attach-detach-key");
   assert.equal(SESSION_DETACHED_EXIT, 20);
+  assert.equal(VIEWER_CLOSED_HOOK_INDEX, 900, "the index of session-closed the kernel owns on the agents' server");
 });
 
 // ---- synchronized output (awebai/oats#1193) ------------------------------------------------------
@@ -249,8 +263,9 @@ test("the viewer's client asks for synchronized output (-T sync, before the comm
     assert.equal(io.calls.filter((c) => c[0] === "-V").length, 1, "one probe");
     return viewer.args.map((a) => a.replace(name, "V"));
   };
-  const synced = ["-u", "-S", target.socket, "-T", "sync", "attach-session", "-t", "=V"];
-  const today = ["-u", "-S", target.socket, "attach-session", "-t", "=V"];
+  const attach = ["attach-session", "-t", "=V", ";", "set-option", "-t", "=V:", "destroy-unattached", "on"];
+  const synced = ["-u", "-S", target.socket, "-T", "sync", ...attach];
+  const today = ["-u", "-S", target.socket, ...attach];
   assert.deepEqual(args("tmux 3.7c\n"), synced);
   assert.deepEqual(args("tmux 3.2\n"), synced);
   assert.deepEqual(args("tmux 3.1c\n"), today);
@@ -267,4 +282,64 @@ test("the probe runs once per exec: later viewers reuse its answer, a failed one
     for (let i = 0; i < 2; i++) assert.equal(prepareSessionViewer(target, { ...io, detachKey: "F12" }).args.includes("sync"), first, String(version));
     assert.equal(io.calls.filter((c) => c[0] === "-V").length, 1, String(version));
   }
+});
+
+// ---- leftovers of an attach that died without detaching (awebai/oats#1332) ------------------------
+
+test("the sweep removes a viewer session only when no client is attached and the pid in its name is gone, and a key table only when no listed session has its name; it touches nothing else", () => {
+  const dead = 2147483646; // above every pid_max: no such process
+  const live = process.pid;
+  const sessions = [
+    `oatsview-${dead}-0badc0de\t0`, // a dead attach's session: removed
+    `oatsview-${dead}-a77ac4ed\t1`, // attached: a client holds it, whoever made it
+    `oatsview-${live}-5ca1ab1e\t0`, // a live attach before its client: kept
+    `oatsview-${dead}-NOTHEX00\t0`, // not a viewer's name
+    "oatsview-locked\t0",
+    "team\t0",
+  ].join("\n");
+  const keys = [
+    `bind-key    -T oatsview-${dead}-0badc0de F12 detach-client`, // its session is removed: removed
+    `bind-key    -T oatsview-${dead}-feedf00d F12 detach-client`, // no session: removed
+    `bind-key    -T oatsview-${dead}-feedf00d WheelUpPane send-keys -M`, // the same table, counted once
+    `bind-key -r -T oatsview-${dead}-a77ac4ed F12 detach-client`, // its session is attached: kept
+    `bind-key    -T oatsview-${live}-5ca1ab1e F12 detach-client`, // its session is kept: kept
+    "bind-key    -T oatsview-locked WheelUpPane send-keys -M", // shared by plain viewers: kept
+    "bind-key    -T prefix d detach-client",
+  ].join("\n");
+  const io = fixture(false, { sessions, keys });
+  const viewer = prepareSessionViewer(target, io);
+  assert.deepEqual(viewer.swept, { sessions: 1, tables: 2 });
+  const removals = io.calls.filter((c) => c[0] === "kill-session" || c[0] === "unbind-key" && c[4] !== "oatsview-locked");
+  assert.deepEqual(removals, [
+    ["kill-session", "-t", `=oatsview-${dead}-0badc0de`],
+    ["unbind-key", "-a", "-q", "-T", `oatsview-${dead}-0badc0de`],
+    ["unbind-key", "-a", "-q", "-T", `oatsview-${dead}-feedf00d`],
+  ]);
+  assert.ok(io.calls.findIndex((c) => c[0] === "list-keys") < io.calls.findIndex((c) => c[0] === "list-sessions"), "keys are listed first: a table seen there has its session in the later list");
+  assert.ok(io.calls.findIndex((c) => c[2] === `oatsview-${dead}-feedf00d`) < io.calls.findIndex((c) => c[0] === "new-session"), "swept before the viewer exists");
+});
+
+test("a sweep that tmux refuses is not the attach's failure: what it could not remove is not counted", () => {
+  const dead = 2147483646;
+  const calls = [];
+  const viewer = prepareSessionViewer(target, { exec(bin, args) {
+    const cmd = args.slice(3); calls.push(cmd);
+    if (cmd[0] === "list-panes") return "%1\t0\tcodex\t123\n";
+    if (cmd[0] === "list-keys") return `bind-key -T oatsview-${dead}-feedf00d F12 detach-client\nbind-key -T oatsview-${dead}-0badc0de F12 detach-client\n`;
+    if (cmd[0] === "list-sessions") return `oatsview-${dead}-0badc0de\t0\n`;
+    if (cmd[0] === "kill-session" || cmd[0] === "unbind-key" && cmd[4] !== "oatsview-locked") throw new Error("refused");
+    if (cmd[0] === "new-session") return "@98\n";
+    return "";
+  } });
+  assert.deepEqual(viewer.swept, { sessions: 0, tables: 0 });
+  assert.ok(calls.some((c) => c[0] === "new-session"));
+  assert.equal(calls.some((c) => c[0] === "unbind-key" && c[4] === `oatsview-${dead}-0badc0de`), false, "a session the sweep could not remove keeps its table");
+  const listing = prepareSessionViewer(target, { exec(bin, args) {
+    const cmd = args.slice(3);
+    if (cmd[0] === "list-panes") return "%1\t0\tcodex\t123\n";
+    if (cmd[0] === "list-keys") throw new Error("refused");
+    if (cmd[0] === "new-session") return "@98\n";
+    return "";
+  } });
+  assert.deepEqual(listing.swept, { sessions: 0, tables: 0 });
 });
