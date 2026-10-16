@@ -37,13 +37,19 @@ import { preflightCaptureService, applyCaptureService, captureSetupSnapshot, rec
 // an upgrade of Node, as OATS_NODE_BIN; this package has no such rule of its
 // own, so run alone it records the node it runs under. What runs at once (the
 // first capture pass) runs under process.execPath whatever is recorded.
-function recordedNode(env = process.env) {
+function handedNode(env = process.env) {
   const handed = env.OATS_NODE_BIN;
-  return typeof handed === "string" && isAbsolute(handed) ? handed : process.execPath;
+  return typeof handed === "string" && isAbsolute(handed) ? handed : null;
 }
+function recordedNode(env = process.env) { return handedNode(env) ?? process.execPath; }
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const NODE = recordedNode();
+// Recoveries name the command a person runs, never this file: only a rerun
+// through `oats setup` selects its stable node again. As with health's
+// remedies, the caller decides the words; `oats setup` is the one that hands
+// a node in.
+const SETUP_COMMAND = handedNode() ? "oats setup" : "turn-record setup";
 const CAPTURE = join(HERE, "capture.mjs");
 
 // Hooks use POSIX shell words. The separate definition builder owns the
@@ -194,7 +200,7 @@ try {
   let service = null;
   if (!args["no-service"]) {
     if (["darwin", "linux"].includes(platform())) service = preflightCaptureService({ platform: platform(), node: NODE,
-      request: { root, owner, plan }, setupPath: fileURLToPath(import.meta.url), dry, replace: Boolean(args["replace-service"]), noHooks: Boolean(args["no-hooks"]) });
+      request: { root, owner, plan }, setupCommand: SETUP_COMMAND, dry, replace: Boolean(args["replace-service"]), noHooks: Boolean(args["no-hooks"]) });
     else console.log(`service: no service template for ${platform()}; run this in the background yourself:\n` +
       `  ${shellWord(NODE)} ${shellWord(CAPTURE)} --watch --owner ${owner} --root ${shellWord(root)}`);
   }
@@ -217,6 +223,6 @@ try {
 } catch (error) {
   console.error(error instanceof IgnoreError ? error.message : `${captureStarted ? "capture pass" : "setup"} failed: ${error.message}`);
   if (!captureStarted && !(error instanceof IgnoreError) && !error.code?.startsWith("E_CAPTURE_SERVICE_"))
-    console.error(`setup recovery: inspect the reported files/manager state, then retry ${shellWord(NODE)} ${shellWord(fileURLToPath(import.meta.url))} --owner ${shellWord(owner)} --root ${shellWord(root)}${args["no-hooks"] ? " --no-hooks" : ""}${args["replace-service"] ? " --replace-service" : ""}; use --no-service to preserve the existing manager service`);
+    console.error(`setup recovery: inspect the reported files/manager state, then retry ${SETUP_COMMAND} --owner ${shellWord(owner)} --root ${shellWord(root)}${args["no-hooks"] ? " --no-hooks" : ""}${args["replace-service"] ? " --replace-service" : ""}; use --no-service to preserve the existing manager service`);
   process.exitCode = 1;
 }

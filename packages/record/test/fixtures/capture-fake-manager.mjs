@@ -27,7 +27,15 @@ export function fakeCaptureManager(home, command, args, callsPath = join(home, "
     };
     state.mac ??= fs.existsSync(path) ? read() : { registered: false, disabled: false };
     if (config.mac) Object.assign(state.mac, config.mac);
-    if (operation === "print-disabled") return ok(`disabled services = {\n "${label}" => ${state.mac.disabled ? "true" : "false"}\n}\n`);
+    // config.printDisabled: values "state" spells entries disabled/enabled
+    // rather than true/false; entries adds raw lines inside the block; block
+    // false omits it; trailing appends a login item associations block.
+    if (operation === "print-disabled") {
+      const listing = config.printDisabled ?? {}, [on, off] = listing.values === "state" ? ["disabled", "enabled"] : ["true", "false"];
+      const entries = [`\t"${label}" => ${state.mac.disabled ? on : off}`, ...(listing.entries ?? [])];
+      return ok(`${listing.block === false ? "" : `disabled services = {\n${entries.join("\n")}\n}\n`}${listing.trailing
+        ? `\nlogin item associations = {\n\t"com.example.app" => [\n\t\t"${label}"\n\t]\n}\n` : ""}`);
+    }
     if (operation === "print") return state.mac.registered ? ok(`${label} = {\n path = ${state.mac.path}\n arguments = {\n${state.mac.argv.map(arg => `  ${arg}`).join("\n")}\n }\n${state.mac.interval ? ` run interval = ${state.mac.interval} seconds\n` : ""}}\n`) :
       { status: 113, signal: null, stdout: "", stderr: "Could not find service in domain" };
     if (operation === "bootout") state.mac.registered = state.mac.active = false;

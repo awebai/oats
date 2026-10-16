@@ -11,6 +11,7 @@ import { captureServiceRequest, captureServiceDefinition } from "../lib/capture-
 import { readCaptureStatus } from "../lib/capture-status.mjs";
 import { acquireCaptureLock, captureLockPath } from "../lib/capture-lock.mjs";
 import { RecordStore } from "../lib/store.mjs";
+import { CAPTURE_POLICY } from "../lib/capture-budget.mjs";
 
 const entry = fileURLToPath(new URL("../lib/capture-service-runner.mjs", import.meta.url));
 const worker = fileURLToPath(new URL("../lib/capture-command-worker.mjs", import.meta.url));
@@ -138,6 +139,7 @@ test("pure periodic definitions preserve argv and literal manager expansion synt
       const plist = result.files[0].contents, array = /<array>(.*?)<\/array>/s.exec(plist)[1];
       const words = [...array.matchAll(/<string>(.*?)<\/string>/gs)].map(([, value]) => value.replace(/&#13;/g, "\r").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"));
       assert.deepEqual(words, result.argv); assert.match(plist, /<key>StartInterval<\/key><integer>900<\/integer>/);
+      assert.ok(plist.includes(`<key>StartInterval</key><integer>${CAPTURE_POLICY.intervalSeconds}</integer>`), "the schedule is the policy interval");
       assert.match(plist, /<key>RunAtLoad<\/key><true\/>/); assert.doesNotMatch(plist, /KeepAlive|--watch/);
       assert.equal(result.files[0].path, join(plan.home, "Library/LaunchAgents/ai.aweb.turn-record-capture.plist"));
     } else {
@@ -146,6 +148,7 @@ test("pure periodic definitions preserve argv and literal manager expansion synt
       assert.match(service, /^Type=exec$/m); assert.match(service, /^MemoryMax=2G$/m); assert.match(service, /^RuntimeMaxSec=300$/m);
       assert.doesNotMatch(service, /Restart|--watch|WantedBy/);
       assert.match(timer, /^OnBootSec=1min$/m); assert.match(timer, /^OnUnitActiveSec=15min$/m);
+      assert.equal(CAPTURE_POLICY.intervalSeconds, 15 * 60, "OnUnitActiveSec=15min is the policy interval");
       assert.match(timer, /^Unit=turn-record-capture.service$/m); assert.match(timer, /^WantedBy=timers.target$/m);
       assert.equal(result.files.length, 2);
     }

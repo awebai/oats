@@ -140,15 +140,18 @@ function linuxState(run, unit) {
 
 function darwinState(run, domain, target) {
   const disabledText = requireOk(run, "launchctl", ["print-disabled", domain]);
-  const body = /^\s*disabled services = \{([^]*)\}\s*$/.exec(disabledText);
-  if (!body) throw new Error("indeterminate launchctl disabled state");
+  // Only the one disabled-services block, closed by a brace on its own line, is
+  // the override DB. Other blocks (login item associations, for one) carry other
+  // syntax and no disable state. launchd has printed both value spellings.
+  const blocks = [...disabledText.matchAll(/^[ \t]*disabled services = \{(?:[ \t]*\n([^]*?)^)?[ \t]*\}[ \t]*$/gm)];
+  if (blocks.length !== 1) throw new Error("indeterminate launchctl disabled state");
   const disabled = new Map();
-  for (const line of body[1].split("\n").map(value => value.trim()).filter(Boolean)) {
-    const item = /^("(?:[^"\\]|\\.)*") => (true|false)\s*;?$/.exec(line);
+  for (const line of (blocks[0][1] ?? "").split("\n").map(value => value.trim()).filter(Boolean)) {
+    const item = /^("(?:[^"\\]|\\.)*") => (true|false|disabled|enabled)\s*;?$/.exec(line);
     if (!item) throw new Error("indeterminate launchctl disabled entry");
     const label = JSON.parse(item[1]);
     if (disabled.has(label)) throw new Error("duplicate launchctl disabled entry");
-    disabled.set(label, item[2] === "true");
+    disabled.set(label, item[2] === "true" || item[2] === "disabled");
   }
   const result = call(run, "launchctl", ["print", target]);
   if (result.status === 113 && /Could not find (?:specified )?service/.test(result.stderr ?? ""))
@@ -173,12 +176,16 @@ function stateIdentity(state, platform) {
   return JSON.stringify(Object.values(state).map(({ LoadState, UnitFileState, FragmentPath, DropInPaths, NeedDaemonReload }) =>
     ({ LoadState, UnitFileState, FragmentPath, DropInPaths, NeedDaemonReload })));
 }
-function refuse(plan, code, found) {
-  const recovery = `${serviceShellWord(plan.node)} ${serviceShellWord(plan.setupPath)} --owner ${serviceShellWord(plan.request.owner)} --root ${serviceShellWord(plan.request.root)}${plan.noHooks ? " --no-hooks" : ""}`;
-  throw Object.assign(new Error(`${code}: ${found}; replace only the named capture service with ${recovery} --replace-service, or keep it with ${recovery} --no-service`), { code });
+// The recovery is the command the person runs (setupCommand: `oats setup` or
+// `turn-record setup`), so a rerun selects its node the same way this run did.
+function refuse(plan, code, found, replaceable = true) {
+  const recovery = `${plan.setupCommand} --owner ${serviceShellWord(plan.request.owner)} --root ${serviceShellWord(plan.request.root)}${plan.noHooks ? " --no-hooks" : ""}`;
+  const replacement = replaceable ? `replace only the named capture service with ${recovery} --replace-service` :
+    `--replace-service replaces only the named capture plist; remove that registration yourself, then re-run ${recovery}`;
+  throw Object.assign(new Error(`${code}: ${found}; ${replacement}, or keep it with ${recovery} --no-service`), { code });
 }
 
-export function preflightCaptureService({ platform, node, request, setupPath, dry = false, replace = false,
+export function preflightCaptureService({ platform, node, request, setupCommand, dry = false, replace = false,
   noHooks = false, uid = process.getuid?.(), run = manager, log = console.log }) {
   const definition = captureServiceDefinition({ platform, node, request });
   // All targets are read before a refusal or mutation; no existsSync fallback
@@ -189,22 +196,34 @@ export function preflightCaptureService({ platform, node, request, setupPath, dr
       Buffer.from(snapshot.bytes.toString("utf8")).equals(snapshot.bytes) ? captureServiceOwnership(snapshot.bytes.toString("utf8"), kind) : "foreign";
     return { ...file, snapshot, ownership, changed: snapshot.kind !== "file" || !snapshot.bytes.equals(Buffer.from(file.contents)) };
   });
-  const plan = { platform, node, request: JSON.parse(definition.argv[2]), setupPath, dry, replace, noHooks, run, log, files,
+  const plan = { platform, node, request: JSON.parse(definition.argv[2]), setupCommand, dry, replace, noHooks, run, log, files,
     argv: definition.argv, domain: `gui/${uid}`, target: `gui/${uid}/${captureServiceLabel}` };
   if (platform === "darwin" && !Number.isSafeInteger(uid)) throw new Error("cannot determine launchd user domain");
   plan.state = dry ? null : inspect(plan);
+  // A label registered from any other plist is not a named file: booting it
+  // out would not remove that file, which can load it again, and the file is
+  // never setup's to unlink. Explicit replacement does not reach it.
+  if (platform === "darwin" && plan.state?.registered && plan.state.path !== files[0].path)
+    refuse(plan, "E_CAPTURE_SERVICE_FOREIGN", `launchd registration ${captureServiceLabel} is loaded from ${JSON.stringify(plan.state.path)}, not from the named capture plist ${JSON.stringify(files[0].path)}`, false);
   const foreign = files.filter(file => file.ownership === "foreign");
-  if (platform === "darwin" && plan.state?.registered &&
-      (plan.state.path !== files[0].path || captureServiceArgvOwnership(plan.state.argv) === "foreign")) foreign.push({ path: plan.target });
+  if (platform === "darwin" && plan.state?.registered && captureServiceArgvOwnership(plan.state.argv) === "foreign") foreign.push({ path: plan.target });
   if (platform === "linux" && plan.state) for (const [i, state] of Object.values(plan.state).entries()) {
     if (state.FragmentPath && state.FragmentPath !== files[i].path && state.LoadState !== "masked") foreign.push({ path: state.FragmentPath });
   }
   if (foreign.length && !replace) refuse(plan, "E_CAPTURE_SERVICE_FOREIGN", `unrecognized definition/registration at ${foreign.map(file => JSON.stringify(file.path)).join(", ")}`);
-  const disabled = platform === "darwin" ? plan.state?.disabled : files.some(file => file.ownership === "masked") || plan.state && Object.values(plan.state).some((state, i) =>
-    state.LoadState === "masked" || state.UnitFileState.startsWith("masked") ||
-    (state.UnitFileState === "disabled" && (files[i].snapshot.kind !== "absent" || state.LoadState !== "not-found")));
-  if (disabled && !replace) refuse(plan, "E_CAPTURE_SERVICE_DISABLED", "named capture schedule/service is explicitly disabled or masked");
-  plan.disabled = Boolean(disabled);
+  // Report what was observed, not a cause: a disabled unit file state alone
+  // does not tell an operator's disable from an incomplete earlier activation.
+  const disabled = [];
+  if (platform === "darwin") {
+    if (plan.state?.disabled) disabled.push(`launchctl print-disabled ${plan.domain} lists ${captureServiceLabel} as disabled (named plist ${files[0].snapshot.kind === "absent" ? "absent" : "present"}, label ${plan.state.registered ? "registered" : "not registered"})`);
+  } else {
+    for (const file of files) if (file.ownership === "masked") disabled.push(`${JSON.stringify(file.path)} links to /dev/null`);
+    if (plan.state) for (const [i, state] of Object.values(plan.state).entries()) if (state.LoadState === "masked" || state.UnitFileState.startsWith("masked") ||
+      (state.UnitFileState === "disabled" && (files[i].snapshot.kind !== "absent" || state.LoadState !== "not-found")))
+      disabled.push(`${[captureServiceUnit, captureServiceTimer][i]} LoadState=${state.LoadState} UnitFileState=${state.UnitFileState}`);
+  }
+  if (disabled.length && !replace) refuse(plan, "E_CAPTURE_SERVICE_DISABLED", `named capture service is not enabled: observed ${disabled.join(", ")}; setup enables it only when asked`);
+  plan.disabled = disabled.length > 0;
   plan.changed = files.some(file => file.changed) || (platform === "darwin" && plan.state?.registered &&
     (JSON.stringify(plan.state.argv) !== JSON.stringify(plan.argv) || plan.state.interval !== 900)) ||
     (platform === "linux" && plan.state && (Object.values(plan.state).some(state => state.NeedDaemonReload === "yes") ||

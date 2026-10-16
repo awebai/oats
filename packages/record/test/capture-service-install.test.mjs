@@ -23,7 +23,7 @@ function fixture(t, platform = "linux") {
   const definition = captureServiceDefinition({ platform, node: process.execPath, request });
   const logs = [], calls = join(home, ".manager-calls"), state = join(home, ".manager-state.json"), config = join(home, ".manager-config.json");
   const runManager = (command, args) => fakeCaptureManager(home, command, args);
-  const options = { platform, node: process.execPath, request, setupPath: setup, uid: 501, run: runManager, log: line => logs.push(line) };
+  const options = { platform, node: process.execPath, request, setupCommand: "turn-record setup", uid: 501, run: runManager, log: line => logs.push(line) };
   const guard = join(base, "guard.mjs");
   write(guard, `import os from 'node:os'; import cp from 'node:child_process'; import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
@@ -76,6 +76,15 @@ test("all-target foreign/read/manager refusals leave hooks, definitions and capt
     assert.ok(refused.stderr.includes(`--root ${serviceShellWord(f.root)}`)); assert.match(refused.stderr, /--replace-service.*--no-service/s);
     assert.equal(fs.readFileSync(target, "utf8"), foreign); assert.deepEqual(fs.readFileSync(f.settings), hook);
     assert.equal(fs.existsSync(f.root), false); assert.deepEqual(f.operations(), []);
+    // Recoveries are the command a person runs: `oats setup` when the kernel
+    // handed a node in, else `turn-record setup`; never this node and setup.mjs.
+    const recovery = `--owner fixture-owner --root ${serviceShellWord(f.root)}`;
+    assert.ok(refused.stderr.includes(`oats setup ${recovery} --replace-service`), refused.stderr);
+    assert.ok(refused.stderr.includes(`oats setup ${recovery} --no-service`)); assert.doesNotMatch(refused.stderr, /setup\.mjs/);
+    const standalone = f.cli(["--no-hooks"], { OATS_NODE_BIN: undefined }); assert.equal(standalone.status, 1, standalone.stdout);
+    assert.ok(standalone.stderr.includes(`turn-record setup ${recovery} --no-hooks --replace-service`), standalone.stderr);
+    assert.ok(standalone.stderr.includes(`turn-record setup ${recovery} --no-hooks --no-service`));
+    assert.doesNotMatch(standalone.stderr, /setup\.mjs|oats setup/); assert.deepEqual(f.operations(), []);
     const unreadable = f.cli(["--replace-service"], { FIXTURE_DENY_TARGET: target });
     assert.equal(unreadable.status, 1); assert.match(unreadable.stderr, /fixture target unreadable/);
     assert.equal(fs.existsSync(f.root), false); assert.deepEqual(f.operations(), []);
@@ -112,13 +121,23 @@ test("legacy and changed definitions stop old work, back up exact bytes and conv
     if (platform === "linux") {
       assert.deepEqual(operations.slice(0, 2), [`systemctl --user stop ${service}`, `systemctl --user disable ${service}`]);
       assert.match(operations.at(-1), /enable --now turn-record-capture.timer/);
-    } else { assert.match(operations[0], /bootout/); assert.match(operations[1], /bootstrap/); }
+      assert.deepEqual(operations, [`systemctl --user stop ${service}`, `systemctl --user disable ${service}`,
+        "systemctl --user daemon-reload", `systemctl --user enable --now ${timer}`]);
+      assert.equal(JSON.parse(fs.readFileSync(f.state)).units[service].ActiveState, "inactive", "no old watcher survives");
+    } else {
+      assert.match(operations[0], /bootout/); assert.match(operations[1], /bootstrap/);
+      assert.deepEqual(operations, ["launchctl bootout gui/501/ai.aweb.turn-record-capture", `launchctl bootstrap gui/501 ${target}`]);
+    }
     const backups = fs.readdirSync(join(f.root, "service-backups")); assert.equal(backups.length, 1);
     const backup = join(f.root, "service-backups", backups[0], platform === "linux" ? service : "ai.aweb.turn-record-capture.plist");
     assert.equal(fs.readFileSync(backup, "utf8"), old); assert.ok(f.logs.some(line => line.includes(backups[0])));
-    const previous = fs.readFileSync(target), changed = f.preflight({ node: "/new install/bin/node" }); applyCaptureService(changed);
+    const previous = fs.readFileSync(target), mark = f.operations().length, changed = f.preflight({ node: "/new install/bin/node" }); applyCaptureService(changed);
     assert.equal(fs.readdirSync(join(f.root, "service-backups")).length, 2); assert.equal(fs.readFileSync(backup, "utf8"), old);
     assert.notDeepEqual(fs.readFileSync(target), previous); assert.doesNotMatch(fs.readFileSync(target, "utf8"), /--watch|KeepAlive|Restart=always/);
+    // A changed periodic definition takes effect: stop, write, reload, start.
+    assert.deepEqual(f.operations().slice(mark), platform === "linux"
+      ? [`systemctl --user stop ${timer}`, `systemctl --user stop ${service}`, "systemctl --user daemon-reload", `systemctl --user enable --now ${timer}`]
+      : ["launchctl bootout gui/501/ai.aweb.turn-record-capture", `launchctl bootstrap gui/501 ${target}`]);
   }
 });
 
@@ -339,14 +358,107 @@ test("manager failure leaves partial apply visible and retry restores scheduling
     if (platform === "darwin") write(f.state, JSON.stringify({ mac: { registered: false, disabled: false } }));
     write(f.config, JSON.stringify({ fail: operation })); const before = fs.readFileSync(f.settings);
     const failed = f.cli(); assert.equal(failed.status, 1); assert.match(failed.stderr, /fixture manager refusal.*re-run setup/);
+    assert.ok(failed.stderr.includes(`setup recovery: inspect the reported files/manager state, then retry oats setup --owner fixture-owner --root ${serviceShellWord(f.root)}; use --no-service`), failed.stderr);
     assert.doesNotMatch(failed.stdout, /periodic capture scheduled|running first capture pass/);
     assert.deepEqual(fs.readFileSync(f.settings), before); assert.equal(fs.existsSync(join(f.root, "capture-status.json")), false);
     assert.ok(fs.existsSync(f.definition.files[0].path), "completed file writes remain, no false atomic rollback claim");
     fs.unlinkSync(f.config);
+    if (platform === "linux") {
+      // The plain rerun is refused on the timer state it observes, before any hook or pass.
+      const plain = f.cli(); assert.equal(plain.status, 1, plain.stdout);
+      assert.match(plain.stderr, /^setup failed: E_CAPTURE_SERVICE_DISABLED: named capture service is not enabled: observed turn-record-capture\.timer LoadState=loaded UnitFileState=disabled;/m);
+      assert.doesNotMatch(plain.stderr, /explicitly disabled|masked|setup recovery/);
+      assert.ok(plain.stderr.includes(`oats setup --owner fixture-owner --root ${serviceShellWord(f.root)} --replace-service`), plain.stderr);
+      assert.doesNotMatch(plain.stdout, /periodic capture scheduled|running first capture pass/);
+      assert.deepEqual(fs.readFileSync(f.settings), before); assert.equal(fs.existsSync(join(f.root, "capture-status.json")), false);
+    }
     // A now-installed disabled timer is ambiguous with operator intent. The
     // explicit replacement choice is required, not guessed from prior failure.
     const recovered = f.cli(platform === "linux" ? ["--replace-service"] : []); assert.equal(recovered.status, 0, recovered.stderr);
     assert.match(recovered.stdout, /periodic capture scheduled/); assert.equal(readCaptureStatus(f.root).lastRun.trigger, "setup");
+  }
+});
+
+test("a second failing run is nonzero, names the failing action and claims neither scheduling nor a pass", t => {
+  for (const platform of ["linux", "darwin"]) {
+    const f = fixture(t, platform), action = platform === "linux"
+      ? /systemctl --user enable --now turn-record-capture\.timer failed \(fixture manager refusal; exit 5\)/
+      : /launchctl bootstrap gui\/\d+ .* failed \(fixture manager refusal; exit 5\)/;
+    if (platform === "darwin") write(f.state, JSON.stringify({ mac: { registered: false, disabled: false } }));
+    write(f.config, JSON.stringify({ fail: platform === "linux" ? "enable" : "bootstrap" })); const hooks = fs.readFileSync(f.settings);
+    // Linux refuses a plain rerun over the disabled timer the first run left
+    // (pinned above), so its second attempt is the explicit replacement.
+    for (const args of [[], platform === "linux" ? ["--replace-service"] : []]) {
+      const failed = f.cli(args); assert.equal(failed.status, 1, failed.stdout); assert.match(failed.stderr, action);
+      assert.match(failed.stderr, /^setup recovery: .* retry oats setup --owner fixture-owner /m);
+      assert.doesNotMatch(failed.stdout, /periodic capture scheduled|running first capture pass/);
+      assert.deepEqual(fs.readFileSync(f.settings), hooks); assert.equal(fs.existsSync(join(f.root, "capture-status.json")), false);
+    }
+    assert.match(f.operations().at(-1), platform === "linux" ? /enable --now turn-record-capture.timer/ : /bootstrap/);
+  }
+});
+
+test("launchd print-disabled reads only its disabled-services block, in either value spelling", t => {
+  for (const values of ["boolean", "state"]) for (const trailing of [false, true]) {
+    const f = fixture(t, "darwin"); write(f.config, JSON.stringify({ printDisabled: { values, trailing } }));
+    install(f); assert.match(f.logs.at(-1), /periodic capture scheduled/, `${values} ${trailing}`);
+    const state = JSON.parse(fs.readFileSync(f.state)); state.mac.disabled = true; write(f.state, JSON.stringify(state));
+    const before = f.operations().length;
+    assert.throws(() => f.preflight(), /E_CAPTURE_SERVICE_DISABLED/); assert.equal(f.operations().length, before);
+    applyCaptureService(f.preflight({ replace: true })); assert.match(f.logs.at(-1), /periodic capture scheduled/);
+  }
+  for (const listing of [{ entries: ['\t"other.label" => maybe'] }, { values: "state", entries: ["\tunquoted => disabled"] }, { block: false, trailing: true }]) {
+    const f = fixture(t, "darwin"); write(f.config, JSON.stringify({ printDisabled: listing }));
+    assert.throws(() => f.preflight({ replace: true }), /indeterminate launchctl disabled/, JSON.stringify(listing));
+    assert.deepEqual(f.operations(), []); assert.equal(fs.existsSync(f.definition.files[0].path), false);
+  }
+});
+
+test("a launchd disabled entry for an absent, unregistered label is refused before writing and cleared only by explicit replacement", t => {
+  // The override DB outlives the plist; only an operator's disable writes it.
+  const f = fixture(t, "darwin"), plist = f.definition.files[0].path;
+  write(f.state, JSON.stringify({ mac: { registered: false, disabled: true } })); const hooks = fs.readFileSync(f.settings);
+  const refused = f.cli(); assert.equal(refused.status, 1, refused.stdout);
+  assert.match(refused.stderr, /^setup failed: E_CAPTURE_SERVICE_DISABLED: named capture service is not enabled: observed launchctl print-disabled gui\/\d+ lists ai\.aweb\.turn-record-capture as disabled \(named plist absent, label not registered\);/m);
+  assert.doesNotMatch(refused.stderr, /explicitly disabled/);
+  assert.equal(fs.existsSync(plist), false); assert.deepEqual(fs.readFileSync(f.settings), hooks);
+  assert.equal(fs.existsSync(f.root), false); assert.deepEqual(f.operations(), []);
+  const replaced = f.cli(["--replace-service"]); assert.equal(replaced.status, 0, replaced.stderr);
+  assert.deepEqual(f.operations().map(line => line.split(" ")[1]), ["enable", "bootstrap"]);
+  assert.match(replaced.stdout, /periodic capture scheduled/);
+});
+
+test("a label registered from another plist is foreign even under explicit replacement, never booted out or removed", t => {
+  for (const identical of [false, true]) {
+    const f = fixture(t, "darwin"), other = join(f.home, "Library", "LaunchAgents", "operator-copy.plist");
+    const argv = identical ? f.definition.argv : ["/old/node", "/old/package/bin/capture.mjs", "--watch", "--owner", "old-owner"];
+    write(other, "operator plist bytes\n");
+    write(f.state, JSON.stringify({ mac: { registered: true, disabled: false, active: true, path: other, argv, interval: identical ? 900 : null } }));
+    const state = fs.readFileSync(f.state), hooks = fs.readFileSync(f.settings);
+    assert.throws(() => f.preflight({ replace: true }), /E_CAPTURE_SERVICE_FOREIGN: launchd registration .* is loaded from/);
+    const refused = f.cli(["--replace-service"]); assert.equal(refused.status, 1, refused.stdout);
+    assert.match(refused.stderr, /^setup failed: E_CAPTURE_SERVICE_FOREIGN: launchd registration ai\.aweb\.turn-record-capture is loaded from /m);
+    assert.ok(refused.stderr.includes(JSON.stringify(other)), refused.stderr);
+    assert.match(refused.stderr, /--replace-service replaces only the named capture plist.*--no-service/);
+    assert.deepEqual(f.operations(), []); assert.equal(fs.readFileSync(other, "utf8"), "operator plist bytes\n");
+    assert.deepEqual(fs.readFileSync(f.state), state); assert.equal(fs.existsSync(f.definition.files[0].path), false);
+    assert.deepEqual(fs.readFileSync(f.settings), hooks); assert.equal(fs.existsSync(f.root), false);
+  }
+});
+
+test("dry-run over installed unchanged definitions invokes no manager and writes nothing", t => {
+  for (const platform of ["linux", "darwin"]) {
+    const f = fixture(t, platform), installed = f.cli(); assert.equal(installed.status, 0, installed.stderr);
+    fs.unlinkSync(f.calls); const status = join(f.root, "capture-status.json");
+    const files = f.definition.files.map(file => fs.readFileSync(file.path));
+    const settings = fs.readFileSync(f.settings), state = fs.readFileSync(f.state), receipt = fs.readFileSync(status);
+    const dry = f.cli(["--dry-run"]); assert.equal(dry.status, 0, dry.stderr);
+    assert.equal(fs.existsSync(f.calls), false, "no manager query or mutation");
+    for (const file of f.definition.files) assert.ok(dry.stdout.includes(`service: would keep ${file.path}`), dry.stdout);
+    assert.match(dry.stdout, /manager registration\/disabled state unexamined/); assert.match(dry.stdout, /dry run: no first capture pass/);
+    assert.deepEqual(f.definition.files.map(file => fs.readFileSync(file.path)), files);
+    assert.deepEqual(fs.readFileSync(f.settings), settings); assert.deepEqual(fs.readFileSync(f.state), state);
+    assert.deepEqual(fs.readFileSync(status), receipt);
   }
 });
 

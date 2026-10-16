@@ -23,6 +23,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { readCaptureStatus } from "../lib/capture-status.mjs";
+import { serviceShellWord } from "../lib/capture-service-install.mjs";
 
 const PKG = dirname(dirname(fileURLToPath(import.meta.url)));
 const OWNER = "fixture-owner";
@@ -346,6 +347,16 @@ test("launchctl refusal is nonzero and names the failing action without claiming
   const r = run(home, ["--no-hooks"], { platform: "darwin", node: join(base, "handed", "bin", "node"), status: 1 });
   assert.match(r.stderr, /launchctl bootstrap .*fixture manager refusal.*exit 5.*re-run setup/);
   assert.doesNotMatch(r.stdout, /periodic capture scheduled|running first capture pass/);
+  // The retry is the command a person runs: `oats setup` when a node was
+  // handed in, `turn-record setup` alone; the flags and quoted words survive.
+  const retry = (command, home, flags) => `then retry ${command} --owner ${OWNER} --root ${serviceShellWord(join(home, "record"))}${flags}; use --no-service`;
+  assert.ok(r.stderr.includes(retry("oats setup", home, " --no-hooks")), r.stderr);
+  const alone = newHome({}, `home ${HOSTILE} standalone`);
+  write(join(alone, ".manager-config.json"), JSON.stringify({ fail: "bootstrap" }));
+  const s = run(alone, ["--no-hooks", "--replace-service"], { platform: "darwin", status: 1 });
+  assert.ok(s.stderr.includes(retry("turn-record setup", alone, " --no-hooks --replace-service")), s.stderr);
+  for (const out of [r.stderr, s.stderr]) assert.doesNotMatch(out, /setup\.mjs/);
+  assert.doesNotMatch(s.stderr, /oats setup/);
 });
 
 // ---- a run over an earlier one's files -------------------------------------
