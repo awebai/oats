@@ -81,20 +81,40 @@ only the secrets, the logins and the two installs that capture their shell.
      record them in the hand-back. A tool is read by agents only if a
      capability for it is installed. Say so; don't promise more.
 6. **Messaging, when wanted:**
-   - `/oats-onboarding` card 5's act, through `/oats-aweb` §8. Its key or
-     invite is typed by the person, by route 2 or 3 of the briefing.
-   - Then `/oats-teams`.
+   - **If the workspace already has it,** the entry skill joined this
+     machine before your spawn (the hand-over says so). Check it with the
+     briefing's read-only aweb check (`member: true`, your own soul as
+     `S`), then go on from `/oats-teams`.
+   - **If it has none yet,** first a pull request for the `oats.aweb` pin
+     (`/oats-package-pins`) and `defaults.messaging`
+     (`/oats-workspace-config`). In an existing workspace, propose it to the
+     host's owner. Your soul takes that default: it empties no messaging
+     slot, so it stays the workspace's operator. After the merge,
+     `oats sync`.
+   - Then `/oats-onboarding` card 5's act, through `/oats-aweb` §8, with your
+     own soul as `S`. Its key or invite is typed by the person, by route 2
+     or 3 of the briefing.
+   - Then `/oats-teams`. Make your soul eligible for each team the workspace
+     declares, so it covers those teams too.
    - Then `/oats-host-delivery`'s two choices. The broker install is the
      person's one-line command.
-7. **Sync, check, first working soul:** `oats sync`, then `/oats-onboarding`
-   cards 6 to 8 for the first soul of step 4, with the first concrete task the
-   use case names. Card 6's operator checks (it resolves `oats.setup`, team
-   coverage) are for you, not for this soul: check that it resolves the
-   capabilities step 4 gave it. If its harness is `claude` or `codex` and
-   the entry skill did not trust `D` for that harness, run
+   - If you were spawned before the workspace had messaging, this session
+     has no mail; every setup expert spawned on this machine from now on
+     has it. Say so in the hand-back: when the person spawns a new one,
+     they retire this one (`oats retire <your name>`).
+7. **Sync, check, first working soul:** first, for Claude harnesses,
+   `/oats-agent-permissions`: the person chooses the Claude config and what
+   stays gated, and you write it with their yes. Then `oats sync`, then
+   `/oats-onboarding` cards 6 to 8 for the first soul of step 4, with the
+   first concrete task the use case names. Card 6's operator checks (it
+   resolves `oats.setup`, team coverage) are for you, not for this soul:
+   check that it resolves the capabilities step 4 gave it. If its harness
+   is `claude` or `codex` and the entry skill did not trust `D` for that
+   harness, run
    `oats harness trust --dir D --harness <harness>` with `--plan` first, then
    without.
-   Messaging, if any, is proved by card 8's exchange.
+   Messaging, if any, is proved by card 8's exchange, and permissions by
+   `/oats-agent-permissions`' check during card 8's task.
 8. **Hand back to the person**, in the session:
    - what is set up, with the versions;
    - which steps they typed into (the steps, never the values);

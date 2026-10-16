@@ -305,6 +305,15 @@ configuration is a host choice: a soul never names one.
   environment, command and preflight checks) and starts nothing.
 - The old key `runtime` is still read as `harness`, with a
   `deprecated-runtime-name` warning.
+- **Claude's permissions** are Claude's own settings, not OATS keys. They go
+  in the user settings of the Claude config a launch uses (its
+  `CLAUDE_CONFIG_DIR`, else `~/.claude`), or `--permission-mode` goes in a
+  configuration's `args`. Never in a home's `.claude/settings.json`: the
+  capabilities manage it at every start, and Claude ignores auto mode there.
+  oats.setup's `/oats-agent-permissions` (oats.framework 1.13.0) teaches the
+  setup: auto mode, narrow allow rules for the `oats` and `gh` reads,
+  `oats spawn` and reading `aw` mail and chat, and what stays gated.
+  `yolo` is separate and is meant for isolated machines.
 
 ### The harness default
 

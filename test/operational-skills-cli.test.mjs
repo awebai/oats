@@ -18,6 +18,7 @@ const SKILLS = [
   "oats-package/capabilities/oats-setup/skills/oats-setup-model/SKILL.md",
   "oats-package/capabilities/oats-setup/skills/oats-onboarding/SKILL.md",
   "oats-package/capabilities/oats-setup/skills/oats-setup-expert/SKILL.md",
+  "oats-package/capabilities/oats-setup/skills/oats-agent-permissions/SKILL.md",
   "oats-package/capabilities/oats-setup/skills/oats-host-delivery/SKILL.md",
   "oats-package/capabilities/oats-setup/skills/oats-workspace-config/SKILL.md",
   "oats-package/capabilities/oats-setup/skills/oats-teams/SKILL.md",
