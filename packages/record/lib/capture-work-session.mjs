@@ -116,7 +116,7 @@ export class CaptureWorkSession {
       retryFilter: retry => retry.stage === stage && (stage !== "capture" || this.sourceReady(this.queue.forStream(retry.stream))) };
     const result = stage === "capture"
       ? captureSourceWork(this.store, this.state, this.queue, this.run, this.start, { ...options, indexInventory: this.inventory ?? null })
-      : this.outcomes.advance(this.run, this.start, options);
+      : this.outcomes.advance(this.run, this.start, { ...options, memo: true });
     if (result.resetRequired) this.reset.request(this.start);
     // One independent bounded cleanup turn cannot change stream-stage rotation.
     // A throw retains the already-committed source/index counts and its own

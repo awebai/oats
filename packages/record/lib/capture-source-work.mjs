@@ -77,6 +77,9 @@ export function captureSourceWork(store, state, queue, run, start, {
     // Include every committed input, including replay with no new append.
     // Journal bytes may survive an earlier rolled-back source transaction.
     if (indexInventory) indexInventory.include(results.map(result => result.stream));
+    // An input that took the unchanged path touched neither its journal nor its
+    // checkpoint; every other one may have.
+    if (indexInventory) indexInventory.changed(results.filter(result => !result.unchanged).map(result => result.stream));
     return { selected: selection.members.length, results, cleanup };
   }, { state, admission: selection, admissionNow: now, batchBytes: maxBytes, check: () => budget.check() });
 }

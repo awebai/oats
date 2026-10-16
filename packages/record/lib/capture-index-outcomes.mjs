@@ -36,12 +36,19 @@ export class CaptureIndexOutcomes {
     return current !== null && JSON.stringify(JSON.parse(row.proof)) === JSON.stringify(current);
   }
 
-  *ready({ stopped = () => false, work } = {}) {
-    for (const stream of this.inventory.ordered({ stopped, work })) {
+  // With `memo`, a stream verified complete is not verified again in this
+  // worker's pass until the pass writes it, and a walk that ends with every row
+  // verified leaves the stage clean until then. Every pass verifies each row.
+  *ready({ stopped = () => false, work, memo = false } = {}) {
+    const verified = memo ? this.inventory.verified : null;
+    let pending = false;
+    for (const stream of this.inventory.ordered({ stopped, work, skip: verified && (name => verified.has(name)) })) {
       const row = this.state.db.prepare("SELECT stream,phase,proof FROM capture_index_inventory WHERE scope=? AND stream=?")
         .get(this.inventory.id, stream);
-      if (!this.complete(row)) yield stream;
+      if (this.complete(row)) verified?.add(stream);
+      else { pending = true; yield stream; }
     }
+    if (memo && !pending && !stopped()) this.inventory.clean = true;
   }
 
   resetRequired() {
@@ -67,17 +74,22 @@ export class CaptureIndexOutcomes {
       if (item.phase === "complete" && proof === null) throw new Error("index completion evidence changed before publication");
       const encoded = proof === null ? null : JSON.stringify(proof);
       update.run(item.phase, encoded, this.inventory.id, item.stream, item.phase, encoded);
+      // A complete outcome was just verified against current evidence; any
+      // other leaves work for a later walk.
+      if (item.phase === "complete") this.inventory.verified.add(item.stream);
+      else this.inventory.changed([item.stream]);
     }
   }
 
-  advance(run, start, options = {}) {
+  advance(run, start, { memo = false, ...options } = {}) {
     if (this.state.depth) throw new Error("index outcome scheduling must precede processing");
     if (start.budget.sample() !== null) return { selected: 0, stopped: true };
     // Reset is union-wide. A completed/failed detecting admission does not
     // authorize retrying reset in this worker or quietly dropping the request.
     if (this.resetRequired()) return { selected: 0, resetRequired: true };
-    return captureIndexWork(this.index, this.state, this.ready({ stopped: () => start.budget.sample() !== null }),
-      run, start, { ...options, outcomes: this });
+    // A clean stage offers no candidates; due retries are still selected.
+    const streams = memo && this.inventory.clean ? [] : this.ready({ stopped: () => start.budget.sample() !== null, memo });
+    return captureIndexWork(this.index, this.state, streams, run, start, { ...options, outcomes: this });
   }
 
   // Page completion is only the end of this audit's enumeration. The owning

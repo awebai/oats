@@ -16,6 +16,9 @@ export class CaptureIndexInventory {
   constructor(state, { id }) {
     if (state.depth || typeof id !== "string" || !id) throw new Error("invalid capture index inventory identity");
     this.state = state; this.id = id; this.directory = null;
+    // Streams whose index evidence this worker verified complete in its pass,
+    // and whether its last full walk found every row verified. Writes drop them.
+    this.verified = new Set(); this.clean = false;
     const present = state.db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type='table' AND name='capture_index_inventory'").get()?.found;
     if (!present) state.transaction(() => {
       state.db.exec(`CREATE TABLE IF NOT EXISTS capture_index_inventory (
@@ -133,13 +136,23 @@ export class CaptureIndexInventory {
       throw new Error("capture index membership requires a bounded processing transaction");
     this.current();
     const insert = this.state.db.prepare("INSERT OR IGNORE INTO capture_index_inventory(scope,stream) VALUES (?,?)");
-    for (const stream of streams) insert.run(this.id, stream);
+    // A new member has not been walked: the stage is no longer clean.
+    for (const stream of streams) if (Number(insert.run(this.id, stream).changes)) this.clean = false;
+  }
+
+  // This pass wrote these streams (journal, checkpoint or index cursor): their
+  // verification no longer holds, and the next walk must look again.
+  changed(streams) {
+    if (!streams.length) return;
+    for (const stream of streams) this.verified.delete(stream);
+    this.clean = false;
   }
 
   // One finite rotation of discovered names; admission owns the durable next
   // position. No row is omitted because a previous unit appeared complete:
   // this inventory alone cannot detect every external index reset or write.
-  *ordered({ stopped = () => false, work } = {}) {
+  // A caller may `skip` rows it verified itself earlier in the same pass.
+  *ordered({ stopped = () => false, work, skip = null } = {}) {
     this.current();
     const after = this.state.get("capture-schedule", "position:index")?.after ?? "";
     if (typeof after !== "string") throw new Error("invalid capture index inventory position");
@@ -153,6 +166,7 @@ export class CaptureIndexInventory {
         if (work) work.inventoryRows = (work.inventoryRows ?? 0) + rows.length;
         if (!rows.length) break;
         for (const row of rows) {
+          if (skip?.(row.stream)) { last = row.stream; continue; }
           if (stopped()) return;
           last = row.stream; yield row.stream;
         }

@@ -140,6 +140,23 @@ test('source commits register new streams after enumeration and invalidate stale
   assert.equal(f.outcomes.audit().pending, 0); assert.equal(run.publish({ pending: true }).lastRun.counts.turnsAppended, 2);
 });
 
+test('a stream verified complete earlier in a pass is indexed again when a later unit of the pass writes it', t => {
+  const f = fixture(t), first = join(f.root, 'a.jsonl'), second = join(f.root, 'b.jsonl'), stream = 'fixture~aw';
+  f.scope(); f.discover();
+  fs.writeFileSync(first, aw(1)); fs.writeFileSync(second, aw(2));
+  // Two logs feed one stream, as every AW account does.
+  const queue = new CaptureSourceQueue(f.state, { owner: 'fixture', selection: 'fixture' });
+  queue.add([{ source: 'aw', path: first, stream }, { source: 'aw', path: second, stream }], null, { complete: true });
+  const run = f.run('memo');
+  assert.equal(f.source(run, queue, { limit: 1 }).results[0].appended, 1);
+  assert.equal(f.advance(run, { memo: true }).turnsIndexed, 1);
+  // Verifies the stream complete; a memo would now skip it.
+  assert.equal(f.advance(run, { memo: true }).selected, 0);
+  assert.equal(f.source(run, queue, { limit: 1 }).results[0].appended, 1);
+  assert.equal(f.advance(run, { memo: true }).turnsIndexed, 1, 'the record from the second log is indexed in the same pass');
+  assert.equal(f.count(), 2); assert.equal(f.outcomes.audit().pending, 0);
+});
+
 test('source registration rollback leaves admission and replay registers surviving journal content without duplicate append counts', t => {
   const f = fixture(t), path = join(f.root, 'comm.jsonl'), stream = 'fixture~aw';
   f.scope(); f.discover(); fs.writeFileSync(path, aw(1));

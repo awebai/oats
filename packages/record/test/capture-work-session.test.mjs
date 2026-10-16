@@ -52,7 +52,7 @@ function fixture(t, specs = [], { discover = false } = {}) {
       }
       const session=new CaptureWorkSession(start,{owner:'fixture',selection:'fixture',now:()=>start.options.now,roots:start.options.roots??null,
         indexEnabled:start.options.indexEnabled??true,
-        unit:{limit:1,maxRecords:start.options.records??1,maxBytes:8388608,discoveryLimit:start.options.discoveryLimit??128}});
+        unit:{limit:start.options.limit??1,maxRecords:start.options.records??1,maxBytes:8388608,discoveryLimit:start.options.discoveryLimit??128}});
       if(start.options.indexEnabled===false && (session.index!==null||session.inventory||session.outcomes||session.reset))
         throw Error('append-only worker constructed index machinery');
       if(start.options.audit){
@@ -81,6 +81,16 @@ function fixture(t, specs = [], { discover = false } = {}) {
             return result;
           };
         }
+      }
+      // Each index-evidence check outside the completion audit, per run.
+      if(start.options.countChecks&&session.outcomes){
+        const outcomes=session.outcomes,audit=outcomes.audit.bind(outcomes),complete=outcomes.complete.bind(outcomes);let auditing=false;
+        outcomes.audit=options=>{auditing=true;try{return audit(options);}finally{auditing=false;}};
+        outcomes.complete=row=>{if(!auditing)fs.appendFileSync(join(start.root,'checks'),JSON.stringify({runId:session.run.id,stream:row.stream})+'\\n');return complete(row);};
+        // Inventory rows each scheduling walk pages, per run.
+        const inventory=session.inventory,ordered=inventory.ordered.bind(inventory);
+        inventory.ordered=function*(options={}){const work={};try{yield* ordered({...options,work});}
+          finally{fs.appendFileSync(join(start.root,'paged'),JSON.stringify({runId:session.run.id,rows:work.inventoryRows??0})+'\\n');}};
       }
       const append=session.store.appendUniqueBatch.bind(session.store);
       session.store.appendUniqueBatch=(stream,turns)=>{const n=append(stream,turns);
@@ -625,6 +635,40 @@ test(`default-root resolution death retains selection admission and permits inde
   assert.deepEqual(waited.lastFailure, status.lastFailure);
   assert.deepEqual(f.state(state => state.get('source-sweep', 'fixture').discovery.groups[0]), pending);
   assert.equal(fs.readFileSync(join(f.root, 'root-resolution-deaths'), 'utf8').trim().split('\n').length, 1);
+});
+
+test('a no-op pass checks the index evidence of each stream once outside its completion audit', async t => {
+  // More streams than one 128-stream group, as production schedules them.
+  const streams = 150, f = fixture(t, Array.from({ length: streams }, (_, n) => ['cc', `native-${n}`, native(n)]), { discover: true });
+  const pass = { audit: true, units: 200, limit: 128, records: 2000 };
+  const first = await f.run(pass);
+  assert.equal(first.outcome, 'complete', f.diagnostic(first));
+  const noop = await f.run({ ...pass, countChecks: true });
+  assert.equal(noop.outcome, 'complete', f.diagnostic(noop));
+  const runId = readCaptureStatus(f.root).lastRun.id, checks = {};
+  for (const line of fs.readFileSync(join(f.root, 'checks'), 'utf8').trim().split('\n')) {
+    const row = JSON.parse(line); if (row.runId === runId) checks[row.stream] = (checks[row.stream] ?? 0) + 1;
+  }
+  assert.equal(Object.keys(checks).length, streams);
+  assert.ok(Object.values(checks).every(n => n === 1), JSON.stringify(checks));
+  // Each group's walk pages about its own rows, and a rotation's wrap and the
+  // walk that finds the stage clean page each row once: about 3N plus a page.
+  // A clean stage is not walked again, where every step used to page all N.
+  const paged = fs.readFileSync(join(f.root, 'paged'), 'utf8').trim().split('\n').map(JSON.parse)
+    .filter(row => row.runId === runId).reduce((sum, row) => sum + row.rows, 0);
+  assert.ok(paged <= 3 * streams + 128, `the no-op paged ${paged} inventory rows over ${streams} streams`);
+});
+
+test('an index reset between passes is detected and repaired by the next pass', async t => {
+  const f = fixture(t, [['cc', 'native-a', native(1)], ['cc', 'native-b', native(2)]], { discover: true });
+  const first = await f.run({ audit: true, units: 40, records: 4 });
+  assert.equal(first.outcome, 'complete', f.diagnostic(first));
+  f.index(index => index.reset());
+  assert.equal(f.index(index => index.db.prepare('SELECT count(*) AS n FROM turns').get().n), 0);
+  const next = await f.run({ audit: true, units: 40, records: 4 });
+  assert.equal(next.outcome, 'complete', f.diagnostic(next));
+  assert.equal(readCaptureStatus(f.root).lastRun.counts.turnsIndexed, 2);
+  assert.equal(f.index(index => index.db.prepare('SELECT count(*) AS n FROM turns').get().n), 2);
 });
 
 test('mixed source/index units alternate across worker continuation without claiming all-stage completion', async t => {
