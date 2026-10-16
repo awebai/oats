@@ -50,7 +50,7 @@ order:
 
    ```text
    tmux split-window -P -F '#{pane_id}' -v -l 6 -t "$TMUX_PANE" -c D "env -u OATS_INSTANCE -u OATS_INSTANCE_HOME -u OATS_HOME -u PI_AGENT_INSTANCE -u PI_AGENT_HOME sh -c 'stty -echo; printf \"aweb API key: \"; read -r AWEB_API_KEY; stty echo; export AWEB_API_KEY; oats aweb setup --soul S'"
-   tmux split-window -P -F '#{pane_id}' -v -l 6 -t "$TMUX_PANE" -c D "env -u OATS_INSTANCE -u OATS_INSTANCE_HOME -u OATS_HOME -u PI_AGENT_INSTANCE -u PI_AGENT_HOME sh -c 'stty -echo; printf \"Invite token: \"; oats aweb setup --soul S --join L --invite-stdin --name A --service U; stty echo'"
+   tmux split-window -P -F '#{pane_id}' -v -l 6 -t "$TMUX_PANE" -c D "env -u OATS_INSTANCE -u OATS_INSTANCE_HOME -u OATS_HOME -u PI_AGENT_INSTANCE -u PI_AGENT_HOME sh -c 'stty -echo; printf \"Invite token: \"; read -r T; stty echo; printf \"%s\\n\" \"\$T\" | oats aweb setup --soul S --join L --invite-stdin --name A --service U'"
    ```
 
    - **Before you open it,** tell the person what to type there. Open it only
