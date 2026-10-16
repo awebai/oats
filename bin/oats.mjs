@@ -3664,8 +3664,8 @@ Next:
      names every member, so if any member is private the host must be a private repo that is not
      a public member; public contributors then get the standalone case (from: here + oats.core).
   3. ${setupExpert ? `Spawn ${setupExpert}, this workspace's OATS setup expert
-     (it holds ${OPERATOR_CAPABILITY}), to guide the rest:` : `No soul here holds ${OPERATOR_CAPABILITY} — add a ${conventional ?? `soul that declares ${OPERATOR_CAPABILITY}`}${conventional ? " soul" : ""}
-     (the oats-getting-started skill has the template), or spawn any listed soul:`}
+     (it holds ${OPERATOR_CAPABILITY}), to guide the rest:` : `No soul here holds ${OPERATOR_CAPABILITY} — add a ${conventional ? `${conventional} soul` : "soul"} that declares it,
+     or spawn any listed soul:`}
        ${spawnHint ?? anySoulHint}`);
 }
 

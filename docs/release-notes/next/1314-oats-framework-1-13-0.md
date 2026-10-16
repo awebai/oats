@@ -25,7 +25,8 @@
     fingerprint is the one recorded. Step 0 reads the global Git
     configuration's names only, and step 7's check runs as one block.
   - **`/oats-setup-expert` (new):** a workspace setup expert's first session.
-    It starts from the intake that the `oats-getting-started` skill hands it,
+    It starts from the intake that the `oats-getting-started` skill hands it
+    from OATS 0.62.0,
     covers a new or an existing workspace, and ends at a first working soul.
     `/oats-onboarding` points to it.
   - **`/oats-agent-permissions` (new): Claude Code's permissions for OATS
