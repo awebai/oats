@@ -19,6 +19,18 @@ export const measurementWorker = fileURLToPath(new URL("./qualify-worker.mjs", i
 export const headCli = fileURLToPath(new URL("../../../../bin/oats.mjs", import.meta.url));
 export const OWNER = "qualify";
 
+/** The runner's per-file bound on Linux: scripts/named-test-run.mjs SIGKILLs the
+ *  file's process group when it ends, and a killed file prints no diagnostics. */
+export const FILE_BOUND_MS = 20 * 60_000;
+/** node:test's timeout for a file's longest test: it fires before the group
+ *  kill, so a timed-out test still reports what it collected. */
+export const TEST_TIMEOUT_MS = FILE_BOUND_MS - 60_000;
+/** Kept free before a test's timeout for its own reporting. */
+export const REPORT_MARGIN_MS = 30_000;
+/** What one supervised pass may take once started: its deadline, plus start
+ *  and settle overhead. No pass starts without it left. */
+export const passReserveMs = (policy = CAPTURE_POLICY) => policy.deadlineSeconds * 1000 + 30_000;
+
 // The operator's measured population (#1108): first-upgrade volume is stated
 // against it with an explicit scale factor, never as a full-volume claim.
 export const OPERATOR = Object.freeze({ streams: 1315, journalBytes: 8.4e9, oversizedLines: 42, oversizedSessions: 5, largestLineBytes: 22_280_296 });
@@ -43,6 +55,7 @@ function fsType(path) {
 export function runnerFacts(t, paths) {
   const facts = { kernel: `${os.type()} ${os.release()}`, cpus: os.cpus().length, cpuModel: os.cpus()[0]?.model ?? null,
     memoryBytes: os.totalmem(), node: process.version,
+    counting: "sqliteCommits counts explicit COMMIT statements, a lower bound that excludes autocommit statements; SQLite's own fsyncs are not visible to the counting",
     filesystems: Object.fromEntries(Object.entries(paths).map(([name, path]) => [name, { path, type: fsType(path) }])) };
   report(t, "runner", facts);
   return facts;
@@ -104,15 +117,16 @@ export function appendSessions(synthetic, k, lines = 3) {
   return bytes;
 }
 
-// Counts files already summed, per record root, so no phase counts a worker twice.
-const summed = new Map();
-function sumCounts(directory, since) {
+const countsDirectory = root => `${root}.qualify-counts`;
+const countFiles = root => { try { return new Set(fs.readdirSync(countsDirectory(root))); } catch { return new Set(); } };
+/** The exit reports of the workers whose files are not in `before`. */
+function workerReports(root, before) {
+  return [...countFiles(root)].filter(name => !before.has(name)).map(name => JSON.parse(fs.readFileSync(join(countsDirectory(root), name), "utf8")));
+}
+function sumCounts(reports) {
   const total = { workers: 0, sqlite: { opens: 0, begins: 0, commits: 0 }, fsync: {}, rename: {}, mkdir: 0, opened: {}, io: {}, vmHwmBytes: 0 };
-  if (!fs.existsSync(directory)) return total;
-  for (const name of fs.readdirSync(directory)) {
-    if (since.has(name)) continue;
-    since.add(name);
-    const value = JSON.parse(fs.readFileSync(join(directory, name), "utf8")); total.workers++;
+  for (const value of reports) {
+    total.workers++;
     for (const key of ["opens", "begins", "commits"]) total.sqlite[key] += value.counts.sqlite[key];
     for (const group of ["fsync", "rename", "opened"]) for (const [k, n] of Object.entries(value.counts[group])) total[group][k] = (total[group][k] ?? 0) + n;
     total.mkdir += value.counts.mkdir;
@@ -124,24 +138,29 @@ function sumCounts(directory, since) {
 
 /** One ordinary supervised pass over `home` into `root` through the measurement
  *  worker, at `policy` (production unless a caps-off case passes another).
- *  → { result, wallMs, counts (this pass's workers), status } */
-export async function measuredPass(root, home, { policy = CAPTURE_POLICY, indexEnabled = true, seen } = {}) {
-  if (!seen) { if (!summed.has(root)) summed.set(root, new Set()); seen = summed.get(root); }
+ *  A worker killed at its hard deadline or by a heap abort writes no exit
+ *  report; result.starts minus counts.workers shows how many.
+ *  → { result, wallMs, counts (this pass's workers), reports (theirs, each), status } */
+export async function measuredPass(root, home, { policy = CAPTURE_POLICY, indexEnabled = true } = {}) {
+  const before = countFiles(root);
   const options = captureCommandOptions({ owner: OWNER, plan: captureDefaultRootPlan({ home, cwd: home, env: {} }), indexEnabled, trigger: "manual", retrySetAside: false });
   const began = performance.now();
   const result = await superviseCapturePass(root, options, { policy, workerPath: measurementWorker });
   const wallMs = Math.round(performance.now() - began);
-  return { result, wallMs, counts: sumCounts(`${root}.qualify-counts`, seen), status: readCaptureStatus(root) };
+  const reports = workerReports(root, before);
+  return { result, wallMs, counts: sumCounts(reports), reports, status: readCaptureStatus(root) };
 }
-/** Ordinary passes until one completes, within `budgetMs`. Never shortens the
- *  production deadline: on running out it returns the passes so far. Two
- *  consecutive partial passes that commit nothing are a stall, reported as such
- *  (`stalled`) rather than spending the rest of the budget. */
+/** Ordinary passes until one completes, all ending within `budgetMs`: a pass
+ *  starts only while a whole pass's reserve is left. Never shortens the
+ *  production deadline: on running out it returns the passes so far (none
+ *  when the budget held no pass). Two consecutive partial passes that commit
+ *  nothing are a stall, reported as such (`stalled`) rather than spending the
+ *  rest of the budget. */
 export async function untilComplete(root, home, { policy = CAPTURE_POLICY, budgetMs = 18 * 60_000, indexEnabled = true } = {}) {
   const passes = [], began = performance.now();
   const idle = pass => { const c = pass.status?.lastRun?.counts ?? {}; return !c.bytesCommitted && !c.turnsAppended && !c.turnsIndexed; };
   let stalled = false;
-  while (performance.now() - began < budgetMs) {
+  while (budgetMs - (performance.now() - began) >= passReserveMs(policy)) {
     const pass = await measuredPass(root, home, { policy, indexEnabled });
     passes.push(pass);
     if (pass.result.outcome === "complete" || pass.result.outcome === "failed") break;
@@ -152,7 +171,9 @@ export async function untilComplete(root, home, { policy = CAPTURE_POLICY, budge
 /** A pass's row for the human table and its JSON line. */
 export function passRow(label, pass) {
   const counts = pass.status?.lastRun?.counts ?? {};
-  return { label, outcome: pass.result.outcome, reason: pass.result.reason ?? "", wallMs: pass.wallMs, workers: pass.counts.workers,
+  const starts = pass.result.starts ?? null;
+  return { label, outcome: pass.result.outcome, reason: pass.result.reason ?? "", wallMs: pass.wallMs, starts, workers: pass.counts.workers,
+    uncounted: starts === null ? null : starts - pass.counts.workers,
     turnsAppended: counts.turnsAppended ?? null, turnsIndexed: counts.turnsIndexed ?? null, bytesCommitted: counts.bytesCommitted ?? null,
     filesVisited: counts.filesVisited ?? null, sqliteCommits: pass.counts.sqlite.commits, journalFsyncs: pass.counts.fsync.journal ?? 0,
     stagingFsyncs: pass.counts.fsync.staging ?? 0, renames: Object.values(pass.counts.rename).reduce((a, b) => a + b, 0),
@@ -175,11 +196,13 @@ export function installRelease(base, version) {
     throw new Error(`@awebai/oats@${version} install mismatch: version ${installed}, integrity ${integrity}`);
   return { cli: join(prefix, "node_modules", "@awebai", "oats", "bin", "oats.mjs"), version, integrity };
 }
-/** `oats capture` of a CLI over `home` into `root`, timed. */
-export function cliCapture(cli, root, home, args = [], { timeoutMs = 10 * 60_000 } = {}) {
+/** `oats capture` of a CLI over `home` into `root`, timed, killed with
+ *  `killSignal` at `timeoutMs`. */
+export function cliCapture(cli, root, home, args = [], { timeoutMs = 10 * 60_000, killSignal = "SIGTERM" } = {}) {
   const began = performance.now();
   const r = spawnSync(process.execPath, [cli, "capture", "--owner", OWNER, "--root", root, ...args],
-    { encoding: "utf8", timeout: timeoutMs, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, HOME: home, TURN_RECORD_ROOT: root } });
+    // A timeout of 0 would mean none.
+    { encoding: "utf8", timeout: Math.max(1, Math.round(timeoutMs)), killSignal, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, HOME: home, TURN_RECORD_ROOT: root } });
   return { status: r.status, signal: r.signal, timedOut: r.error?.code === "ETIMEDOUT", stdout: r.stdout, stderr: r.stderr, wallMs: Math.round(performance.now() - began) };
 }
 /** Remove the derived capture cache and index, keeping journals: a first upgrade. */

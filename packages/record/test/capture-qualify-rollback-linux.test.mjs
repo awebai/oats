@@ -34,6 +34,12 @@ function command(f, cli, args) {
 function lastRun(root) {
   try { return readCaptureStatus(root)?.lastRun ?? null; } catch (error) { return { unreadable: error.message }; }
 }
+// The receipt history a status keeps across runs; lastRun is the latest run's own.
+const HISTORY = ["lastSuccess", "lastFailure", "lastProgressAt"];
+function history(root) {
+  try { const status = readCaptureStatus(root); return Object.fromEntries(HISTORY.map(key => [key, status?.[key] ?? null])); }
+  catch (error) { return { unreadable: error.message }; }
+}
 function lockState(root) {
   const owner = readCaptureLockOwner(root);
   return owner ? { pid: owner.pid, worker: owner.worker?.pid ?? null } : fs.existsSync(captureLockPath(root)) ? "owner-less" : null;
@@ -106,21 +112,24 @@ function assertHeadReaders(r, label) {
 
 /** Capture with one version, then read the root with both and check every journal. */
 function step(t, f, label, version) {
-  const cli = version === "head" ? headCli : f.old.cli, captures = [];
+  const cli = version === "head" ? headCli : f.old.cli, captures = [], historyBefore = history(f.root);
   // A head command pass is bounded; a second or third finishes a deadline-partial first.
   for (let i = 0; i < (version === "head" ? 3 : 1); i++) {
     captures.push(cliCapture(cli, f.root, f.home));
     if (captures.at(-1).status !== 0 || lastRun(f.root)?.outcome === "complete") break;
   }
-  const run = lastRun(f.root), j = journals(f, label);
+  const run = lastRun(f.root), historyAfter = history(f.root), j = journals(f, label);
   const expected = { sessionStreams: f.synthetic.sessions.length, sessionTurns: f.synthetic.sessions.reduce((sum, s) => sum + s.lines, 0) };
   const old = readers(f, f.old.cli, j), head = readers(f, headCli, j), again = journals(f, `${label}-after-readers`);
   const findings = oldFindings(old);
   if (version !== "head" && captures.at(-1).status !== 0) findings.push(`${OLD} capture exited ${captures.at(-1).status}: ${tail(captures.at(-1).stderr)}`);
+  // An unreadable status is in the step's report and the readers' rows, not a clearing.
+  const cleared = historyBefore.unreadable || historyAfter.unreadable ? [] : HISTORY.filter(key => historyBefore[key] !== null && historyAfter[key] === null);
+  if (version !== "head" && cleared.length) findings.push(`${OLD} capture cleared the receipt history this head wrote: ${cleared.join(", ")}`);
   if (j.sessionStreams !== expected.sessionStreams || j.sessionTurns !== expected.sessionTurns)
     findings.push(`after ${version}'s capture the journals hold ${j.sessionTurns} session turns in ${j.sessionStreams} streams; the home has ${expected.sessionTurns} lines in ${expected.sessionStreams} sessions`);
   report(t, "rollback-step", { step: label, version, captures: captures.map(c => ({ exit: c.status, signal: c.signal, wallMs: c.wallMs, stderr: tail(c.stderr) })),
-    lastRun: run && (run.unreadable ? run : { trigger: run.trigger, outcome: run.outcome, reason: run.reason }), lock: lockState(f.root),
+    lastRun: run && (run.unreadable ? run : { trigger: run.trigger, outcome: run.outcome, reason: run.reason }), lock: lockState(f.root), history: { before: historyBefore, after: historyAfter },
     journals: { streams: j.streams, sessionStreams: j.sessionStreams, sessionTurns: j.sessionTurns, otherTurns: j.otherTurns, problems: j.problems.slice(0, 20) },
     expected, readers: { [OLD]: old, head }, afterReaders: { problems: again.problems.slice(0, 20) } });
   for (const what of findings) report(t, "rollback-finding", { finding: true, step: label, version, what });

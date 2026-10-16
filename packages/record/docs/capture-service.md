@@ -1524,6 +1524,7 @@ hook launcher latency. It runs the production operation under the real
 supervisor through the existing worker seam with the test counting patches;
 its assertions are structural, and its numbers are evidence only from an
 executed run.
+Quoting qualification remains a hosted obligation.
 Health/doctor runtime qualification, final schema delivery and full service
 acceptance remain separate; audit allowance/reservation/storage/synchronization
 gates are unchanged.

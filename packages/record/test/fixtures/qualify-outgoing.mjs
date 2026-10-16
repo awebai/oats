@@ -11,36 +11,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { readCaptureStatus } from "../../lib/capture-status.mjs";
-import { OWNER, dropDerived, headCli, installRelease, journalBytes, measuredPass, passRow, realManagerSkip, report, runnerFacts,
-  scratch, syntheticHome, table, untilComplete } from "./qualify.mjs";
+import { REPORT_MARGIN_MS, TEST_TIMEOUT_MS, cliCapture, dropDerived, headCli, installRelease, journalBytes, measuredPass, passReserveMs,
+  passRow, realManagerSkip, report, runnerFacts, scratch, syntheticHome, table, untilComplete } from "./qualify.mjs";
 
-const STREAMS = 1300, FILE_MS = 19 * 60_000;
+const STREAMS = 1300;
 // A head pass may run to its 300 s deadline once started; nothing starts
-// without that reserve before the file's end.
-const PASS_RESERVE_MS = 330_000;
+// without that reserve before the test's end.
+const PASS_RESERVE_MS = passReserveMs();
 const STEPS = ["first capture", "first upgrade", "no-op"];
 const tail = text => (text ?? "").trim().split("\n").slice(-3).join("\n").slice(-600);
-
-/** `oats capture` of a CLI exactly as cliCapture runs it, but killed at
- *  `timeoutMs` so an unbounded outgoing invocation cannot outlive the file's
- *  bound, and with room for a verbose CLI's output. */
-function capture(cli, root, home, timeoutMs) {
-  const began = performance.now();
-  const r = spawnSync(process.execPath, [cli, "capture", "--owner", OWNER, "--root", root],
-    { encoding: "utf8", timeout: Math.max(1, Math.round(timeoutMs)), killSignal: "SIGKILL", maxBuffer: 256 * 1024 * 1024,
-      env: { ...process.env, HOME: home, TURN_RECORD_ROOT: root } });
-  return { status: r.status, signal: r.signal, error: r.error?.code ?? null, stdout: r.stdout, stderr: r.stderr,
-    wallMs: Math.round(performance.now() - began) };
-}
+// Killed at what the test has left, so an unbounded outgoing invocation cannot
+// outlive the test's bound.
+const capture = (cli, root, home, timeoutMs) => cliCapture(cli, root, home, [], { timeoutMs, killSignal: "SIGKILL" });
 
 /** Registers the comparison of the published `version` with this head. */
 export function outgoingComparison(version) {
   const skip = realManagerSkip("linux") ?? false;
-  test(`Q1d v${version} beside this head: first capture, first upgrade and no-op over ${STREAMS} streams`, { skip, timeout: 20 * 60_000 }, async t => {
-    const began = performance.now(), end = began + FILE_MS, left = () => end - performance.now(), base = scratch(t, `qualify-outgoing-${version}-`);
+  test(`Q1d v${version} beside this head: first capture, first upgrade and no-op over ${STREAMS} streams`, { skip, timeout: TEST_TIMEOUT_MS }, async t => {
+    const began = performance.now(), end = began + TEST_TIMEOUT_MS - REPORT_MARGIN_MS, left = () => end - performance.now(), base = scratch(t, `qualify-outgoing-${version}-`);
     const roots = { head: join(base, "record-head"), old: join(base, `record-v${version}`), measured: join(base, "record-head-measured") };
     fs.mkdirSync(roots.head);
     runnerFacts(t, { root: roots.head, scratch: base });
@@ -53,7 +43,7 @@ export function outgoingComparison(version) {
     const step = (label, root, name, invocations) => {
       const last = invocations.at(-1), journals = journalBytes(root);
       const row = { version: label, step: name, invocations: invocations.length, wallMs: invocations.reduce((a, r) => a + r.wallMs, 0),
-        exit: last.status, signal: last.signal ?? "", error: last.error ?? "", outcome: label === "head" ? readCaptureStatus(root)?.lastRun?.outcome ?? null : "",
+        exit: last.status, signal: last.signal ?? "", timedOut: last.timedOut, outcome: label === "head" ? readCaptureStatus(root)?.lastRun?.outcome ?? null : "",
         journalStreams: journals.streams, journalBytes: journals.bytes };
       report(t, "outgoing-step", { ...row, exits: invocations.map(r => r.status), stdoutTail: tail(last.stdout), stderrTail: tail(last.stderr) });
       rows.push(row); return { row, invocations };
@@ -79,11 +69,8 @@ export function outgoingComparison(version) {
     for (const name of STEPS) {
       if (left() <= PASS_RESERVE_MS) { report(t, "outgoing-measured", { step: name, ran: false, reason: "file bound", leftMs: Math.round(left()) }); continue; }
       if (name === "first upgrade") dropDerived(roots.measured);
-      // Each step's counts start empty: measuredPass and untilComplete sum
-      // every worker file they have not seen, and each starts with none seen.
-      fs.rmSync(`${roots.measured}.qualify-counts`, { recursive: true, force: true });
       const passes = name === "no-op" ? [await measuredPass(roots.measured, synthetic.home)]
-        : (await untilComplete(roots.measured, synthetic.home, { budgetMs: Math.max(1, left() - PASS_RESERVE_MS) })).passes;
+        : (await untilComplete(roots.measured, synthetic.home, { budgetMs: left() })).passes;
       for (const [i, pass] of passes.entries()) {
         const row = passRow(`${name} pass ${i + 1}`, pass);
         report(t, "outgoing-measured", { step: name, ran: true, ...row }); measured.push(row);
@@ -92,7 +79,7 @@ export function outgoingComparison(version) {
     table(t, "Q1d this head, measured passes", measured);
 
     for (const { row, invocations } of headSteps) {
-      assert.deepEqual(invocations.map(r => r.status), invocations.map(() => 0), `head ${row.step}: exits ${JSON.stringify(invocations.map(r => [r.status, r.signal, r.error]))}`);
+      assert.deepEqual(invocations.map(r => r.status), invocations.map(() => 0), `head ${row.step}: exits ${JSON.stringify(invocations.map(r => [r.status, r.signal, r.timedOut]))}`);
       assert.equal(row.outcome, "complete", `head ${row.step} did not complete within the bound: ${row.invocations} invocations in ${row.wallMs} ms, journals ${row.journalStreams} streams ${row.journalBytes} bytes`);
     }
   });

@@ -4,7 +4,8 @@
 // same runCaptureWorker, after installing the existing test counting patches
 // (node:sqlite opens/begins/commits; fs fsync/rename/mkdir) in this process.
 // On exit it appends its counts and /proc samples beside, never inside, the
-// record root: `<root>.qualify-counts/<pid>.json`.
+// record root: `<root>.qualify-counts/<pid>-<worker nonce>.json`, a name a
+// reused pid cannot overwrite.
 import fs from "node:fs";
 import { createRequire, syncBuiltinESMExports } from "node:module";
 import { join, sep } from "node:path";
@@ -61,6 +62,6 @@ await runCaptureWorker(async start => {
   finally {
     const directory = `${start.root}.qualify-counts`;
     mkdirSync(directory, { recursive: true });
-    fs.writeFileSync(join(directory, `${process.pid}.json`), JSON.stringify({ pid: process.pid, counts, ...sample() }));
+    fs.writeFileSync(join(directory, `${process.pid}-${start.workerNonce}.json`), JSON.stringify({ pid: process.pid, counts, ...sample() }));
   }
 });

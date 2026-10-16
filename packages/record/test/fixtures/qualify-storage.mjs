@@ -6,34 +6,31 @@
 // append. Volume is a scaled run: F = journal bytes / the operator's, and no
 // full-volume time is claimed. Only completion, the no-op's bound and content
 // read, and the append's committed work are asserted; the rest is reported.
+// Every phase ends before the test's timeout: a pass starts only with a whole
+// pass's reserve left, and a phase without it is reported as not run.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { join } from "node:path";
-import { CAPTURE_POLICY } from "../../lib/capture-budget.mjs";
 import { CAPTURE_COUNT_FIELDS } from "../../lib/capture-status.mjs";
-import { OPERATOR, appendSessions, cliCapture, dropDerived, installRelease, journalBytes, measuredPass, passRow,
-  report, runnerFacts, scratch, syntheticHome, table, untilComplete } from "./qualify.mjs";
+import { OPERATOR, REPORT_MARGIN_MS, TEST_TIMEOUT_MS, appendSessions, cliCapture, dropDerived, installRelease, journalBytes,
+  measuredPass, passReserveMs, passRow, report, runnerFacts, scratch, syntheticHome, table, untilComplete } from "./qualify.mjs";
 
-/** The runner's per-file bound on the Linux platform. */
-export const FILE_BOUND_MS = 20 * 60_000;
 export const OUTGOING = "0.61.0";
-const PASS_MS = CAPTURE_POLICY.deadlineSeconds * 1000;
-// Expected cost of one later phase (a no-op or append pass) and of reporting,
-// not their worst case: the no-op's own assertion is the 300 s bound.
-const LATER_PHASE_MS = 120_000, MARGIN_MS = 30_000;
 const MB = 1e6;
+// A no-op may read, beyond what a pass over an empty home reads (modules,
+// SQLite, status), at most this fraction of the home's content.
+const NOOP_READ_FRACTION = 0.05;
 
-// measuredPass sums every worker file it has not seen; a phase starts with an
-// empty counts directory so it never re-sums an earlier phase's workers.
-const freshCounts = root => fs.rmSync(`${root}.qualify-counts`, { recursive: true, force: true });
 const sum = values => values.reduce((a, b) => a + b, 0);
 const addInto = (total, part) => { for (const [k, n] of Object.entries(part)) total[k] = (total[k] ?? 0) + n; return total; };
 
 /** Totals of the passes' worker counts and their receipts' committed counts. */
 function totals(passes) {
-  const t = { passes: passes.length, workers: 0, sqlite: { opens: 0, begins: 0, commits: 0 }, fsync: {}, rename: {}, mkdir: 0, io: {}, vmHwmBytes: 0,
+  const t = { passes: passes.length, starts: 0, workers: 0, uncounted: 0, sqlite: { opens: 0, begins: 0, commits: 0 }, fsync: {}, rename: {}, mkdir: 0, io: {}, vmHwmBytes: 0,
     receipt: Object.fromEntries(CAPTURE_COUNT_FIELDS.map(key => [key, 0])) };
-  for (const { counts, status } of passes) {
+  for (const { counts, status, result } of passes) {
+    // Workers killed without their exit report are missing from the sums below.
+    t.starts += result.starts ?? 0; t.uncounted += (result.starts ?? 0) - counts.workers;
     t.workers += counts.workers; t.mkdir += counts.mkdir; t.vmHwmBytes = Math.max(t.vmHwmBytes, counts.vmHwmBytes);
     addInto(t.sqlite, counts.sqlite); addInto(t.fsync, counts.fsync); addInto(t.rename, counts.rename); addInto(t.io, counts.io);
     // Each pass is its own run, so its receipt holds only that pass's counts.
@@ -53,9 +50,16 @@ const brief = rows => rows.map(r => `${r.label}: ${r.outcome}${r.reason ? `/${r.
 /** Q1 at `streams` streams; `append` adds the small-append case. */
 export async function qualifyStorage(t, { streams, append = false, k = 50, linesEach = 3 }) {
   const began = performance.now(), elapsed = () => Math.round(performance.now() - began);
+  const end = began + TEST_TIMEOUT_MS - REPORT_MARGIN_MS, left = () => end - performance.now(), reserve = passReserveMs();
   const base = scratch(t, `qualify-storage-${streams}-`), root = join(base, "record");
   fs.mkdirSync(root);
   runnerFacts(t, { root, scratch: base });
+
+  // What any pass reads with no content: an empty home into a fresh root.
+  const empty = join(base, "home-empty"), baselineRoot = join(base, "record-baseline");
+  fs.mkdirSync(empty); fs.mkdirSync(baselineRoot);
+  const baseline = await measuredPass(baselineRoot, empty), baselineRow = passRow("baseline", baseline);
+  report(t, "baseline", baselineRow);
 
   const synthetic = syntheticHome(base, { streams });
   const formats = Object.fromEntries(["cc", "codex", "pi"].map(f => [f, synthetic.sessions.filter(s => s.format === f).length]));
@@ -73,10 +77,11 @@ export async function qualifyStorage(t, { streams, append = false, k = 50, lines
   assert.ok(journals.bytes > 0, "the outgoing capture wrote no journals");
   dropDerived(root);
 
-  // First upgrade at production policy, within what the file bound leaves after
-  // the last pass's own deadline and the later phases.
-  const budgetMs = FILE_BOUND_MS - elapsed() - PASS_MS - (append ? 2 : 1) * LATER_PHASE_MS - MARGIN_MS;
-  assert.ok(budgetMs > 0, `setup used ${elapsed()}ms of the ${FILE_BOUND_MS}ms file bound; no first-upgrade budget is left`);
+  // First upgrade at production policy, leaving a whole pass for the no-op
+  // and, where asked, at least one for the append.
+  const budgetMs = Math.round(left() - (append ? 2 : 1) * reserve);
+  if (budgetMs < reserve) report(t, "first-upgrade", { streams, ran: false, reason: "file bound", leftMs: Math.round(left()), setupMs: elapsed() });
+  assert.ok(budgetMs >= reserve, `setup used ${elapsed()}ms of the ${TEST_TIMEOUT_MS}ms test bound; no first-upgrade pass fits`);
   const upgrade = await untilComplete(root, synthetic.home, { budgetMs });
   const rows = reportPasses(t, "first-upgrade", upgrade), sums = totals(upgrade.passes);
   const seconds = upgrade.wallMs / 1000, megabytes = journals.bytes / MB;
@@ -88,7 +93,7 @@ export async function qualifyStorage(t, { streams, append = false, k = 50, lines
     // Staged copies live under the record root: its filesystem type is the runner line's "root".
     stagingPath: join(root, ".capture-tmp"), ...scale, operator: OPERATOR,
     note: `scaled run (F = ${scale.F.toExponential(3)} of the operator's journal bytes): no full-volume completion time is claimed` });
-  table(t, "first-upgrade: totals", [{ streams, passes: sums.passes, wallMs: upgrade.wallMs, sqliteCommits: sums.sqlite.commits,
+  table(t, "first-upgrade: totals", [{ streams, passes: sums.passes, uncounted: sums.uncounted, wallMs: upgrade.wallMs, sqliteCommits: sums.sqlite.commits,
     journalFsyncs: sums.fsync.journal ?? 0, stagingFsyncs: sums.fsync.staging ?? 0, renames: sum(Object.values(sums.rename)),
     readBytes: sums.io.read_bytes ?? null, rchar: sums.io.rchar ?? null, journalBytes: journals.bytes, F: scale.F.toExponential(3),
     bytesPerSec: Math.round(journals.bytes / seconds), durabilityOpsPerMB: (sums.durabilityOps / megabytes).toFixed(2) }]);
@@ -96,29 +101,35 @@ export async function qualifyStorage(t, { streams, append = false, k = 50, lines
     `${upgrade.passes.length} passes in ${upgrade.wallMs}ms (${brief(rows)})`);
 
   // No-op over the completed state: content read must be ~0 beyond metadata.
-  freshCounts(root);
+  // The first upgrade's budget left it a whole pass.
   const noop = await measuredPass(root, synthetic.home), row = passRow("no-op", noop), counts = noop.status?.lastRun?.counts ?? {};
+  const read = { rchar: row.rchar, baselineRchar: baselineRow.rchar, excessRchar: row.rchar == null || baselineRow.rchar == null ? null : row.rchar - baselineRow.rchar,
+    thresholdBytes: Math.round(NOOP_READ_FRACTION * synthetic.bytes), fraction: NOOP_READ_FRACTION, sourceBytes: synthetic.bytes };
   report(t, "no-op", { streams, journalStreams: journals.streams, ...row, sqliteBegins: noop.counts.sqlite.begins,
     sqliteCommitsPerStream: row.sqliteCommits / journals.streams, sqliteBeginsPerStream: noop.counts.sqlite.begins / journals.streams,
-    rcharPerStream: row.rchar == null ? null : row.rchar / journals.streams, fsync: noop.counts.fsync, rename: noop.counts.rename });
-  table(t, "no-op", [row]);
+    rcharPerStream: row.rchar == null ? null : row.rchar / journals.streams, read, fsync: noop.counts.fsync, rename: noop.counts.rename });
+  table(t, "no-op", [row, baselineRow]);
   assert.equal(noop.result.outcome, "complete", `no-op outcome ${noop.result.outcome}/${noop.result.reason}`);
   assert.ok(noop.wallMs < 300_000, `no-op took ${noop.wallMs}ms at ${streams} streams`);
   assert.equal(counts.bytesCommitted, 0, "a no-op commits no content");
   assert.equal(counts.turnsAppended, 0, "a no-op appends no turns");
+  assert.ok(Number.isFinite(read.rchar) && Number.isFinite(read.baselineRchar),
+    `no /proc rchar for the no-op (${read.rchar}) or the baseline (${read.baselineRchar}): its content read is not evidenced`);
+  assert.ok(read.excessRchar < read.thresholdBytes, `the no-op read ${read.excessRchar} bytes beyond an empty pass's ${read.baselineRchar}, ` +
+    `over ${NOOP_READ_FRACTION * 100}% of the home's ${synthetic.bytes} content bytes`);
   if (!append) return;
 
   // A small append to k streams, captured by fresh passes: committed work is
   // exactly the appended source bytes and lines (ordinary cursor continuation).
-  freshCounts(root);
   const appendedBytes = appendSessions(synthetic, k, linesEach), appendedLines = k * linesEach;
-  const grown = await untilComplete(root, synthetic.home, { budgetMs: Math.max(1, FILE_BOUND_MS - elapsed() - PASS_MS - MARGIN_MS) });
+  if (left() < reserve) report(t, "append", { streams, ran: false, reason: "file bound", leftMs: Math.round(left()) });
+  const grown = await untilComplete(root, synthetic.home, { budgetMs: left() });
   const appendRows = reportPasses(t, "append", grown), work = totals(grown.passes);
   report(t, "append", { streams, k, appendedLines, appendedBytes, complete: grown.complete, wallMs: grown.wallMs, ...work,
     readBytesPerAppendedByte: work.io.read_bytes == null ? null : work.io.read_bytes / appendedBytes,
     rcharPerAppendedByte: work.io.rchar == null ? null : work.io.rchar / appendedBytes });
   table(t, "append: totals", [{ k, appendedLines, appendedBytes, turnsAppended: work.receipt.turnsAppended, bytesCommitted: work.receipt.bytesCommitted,
-    passes: work.passes, wallMs: grown.wallMs, sqliteCommits: work.sqlite.commits, journalFsyncs: work.fsync.journal ?? 0,
+    passes: work.passes, uncounted: work.uncounted, wallMs: grown.wallMs, sqliteCommits: work.sqlite.commits, journalFsyncs: work.fsync.journal ?? 0,
     readBytes: work.io.read_bytes ?? null, rchar: work.io.rchar ?? null }]);
   assert.ok(grown.complete, `the append did not complete: ${grown.passes.length} passes (${brief(appendRows)})`);
   assert.equal(work.receipt.turnsAppended, appendedLines, "one turn per appended line");

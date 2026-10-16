@@ -8,6 +8,7 @@ import fs from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { CAPTURE_POLICY } from "../../lib/capture-budget.mjs";
+import { readCaptureLockOwner } from "../../lib/capture-lock.mjs";
 import { captureSessions } from "../../lib/capture-cc.mjs";
 import { SESSION_FORMATS } from "../../lib/formats.mjs";
 import { RecordStore } from "../../lib/store.mjs";
@@ -144,22 +145,19 @@ export function sessionProgress(root, sessions) {
 
 const procText = path => { try { return fs.readFileSync(path, "utf8"); } catch { return null; } };
 const kB = (text, field) => { const m = new RegExp(`^${field}:\\s+(\\d+) kB$`, "m").exec(text ?? ""); return m ? Number(m[1]) * 1024 : null; };
-function childPids() {
-  const pids = new Set(), tasks = procText("/proc/self/stat") === null ? [] : fs.readdirSync("/proc/self/task");
-  for (const task of tasks)
-    for (const pid of (procText(`/proc/self/task/${task}/children`) ?? "").trim().split(/\s+/)) if (pid) pids.add(Number(pid));
-  return pids;
-}
-/** Samples this process's children (the supervised workers) every `ms`: their
- *  lifetime and peak VmHWM/VmRSS. It also covers a worker that dies without
- *  writing its own exit report, as on a heap abort. */
-export function watchWorkers(ms = 50) {
+/** Samples the worker this process supervises over `root`, as the root's lock
+ *  owner names it, every `ms`: each worker's lifetime and peak VmHWM/VmRSS.
+ *  It also covers a worker that dies without writing its own exit report, as
+ *  on a heap abort, and never a worker of another root, such as a pass an
+ *  earlier test left running. */
+export function watchWorkers(root, ms = 50) {
   const began = performance.now(), workers = new Map();
   const tick = () => {
-    const at = Math.round(performance.now() - began);
-    for (const pid of childPids()) {
+    const at = Math.round(performance.now() - began), owner = readCaptureLockOwner(root);
+    const pid = owner?.pid === process.pid ? owner.worker?.pid : undefined;
+    if (pid) {
       const status = procText(`/proc/${pid}/status`);
-      if (!status) continue;
+      if (!status) return;
       const worker = workers.get(pid) ?? { pid, firstMs: at, lastMs: at, vmHwmBytes: 0, vmRssBytes: 0 };
       worker.lastMs = at;
       worker.vmHwmBytes = Math.max(worker.vmHwmBytes, kB(status, "VmHWM") ?? 0);
@@ -170,13 +168,10 @@ export function watchWorkers(ms = 50) {
   const timer = setInterval(tick, ms);
   return { stop() { clearInterval(timer); tick(); return [...workers.values()]; } };
 }
-const countsDir = root => `${root}.qualify-counts`;
-const countFiles = root => { try { return new Set(fs.readdirSync(countsDir(root))); } catch { return new Set(); } };
 // A pass's workers: the sampled lifetime and peaks joined with each worker's
 // own exit report, which is absent when it died without one.
-function workerRows(root, before, sampled) {
-  const own = new Map([...countFiles(root)].filter(name => !before.has(name))
-    .map(name => JSON.parse(fs.readFileSync(join(countsDir(root), name), "utf8"))).map(value => [value.pid, value]));
+function workerRows(reports, sampled) {
+  const own = new Map(reports.map(value => [value.pid, value]));
   return [...new Set([...sampled.map(w => w.pid), ...own.keys()])].map(pid => {
     const seen = sampled.find(w => w.pid === pid), exit = own.get(pid);
     return { pid, startMs: seen?.firstMs ?? null, endMs: seen?.lastMs ?? null, exitReport: !!exit,
@@ -192,14 +187,14 @@ const max = values => values.reduce((a, v) => v === null || v === undefined ? a 
  *  continues, as untilComplete does. Each pass is reported as it ends, so a
  *  later timeout keeps its numbers. */
 export async function settle(t, label, root, home, { policy = CAPTURE_POLICY, maxPasses = 6, budgetMs = 10 * 60_000 } = {}) {
-  const passes = [], seen = new Set(), began = performance.now();
+  const passes = [], began = performance.now();
   while (passes.length < maxPasses && performance.now() - began < budgetMs) {
-    const before = countFiles(root), watch = watchWorkers();
+    const watch = watchWorkers(root);
     let pass, sampled;
-    try { pass = await measuredPass(root, home, { policy, seen }); } finally { sampled = watch.stop(); }
-    pass.workers = workerRows(root, before, sampled);
+    try { pass = await measuredPass(root, home, { policy }); } finally { sampled = watch.stop(); }
+    pass.workers = workerRows(pass.reports, sampled);
     passes.push(pass);
-    report(t, "frame-pass", { label, pass: passes.length, ...passRow(label, pass), starts: pass.result.starts ?? null,
+    report(t, "frame-pass", { label, pass: passes.length, ...passRow(label, pass),
       lastProgressAt: pass.status?.lastProgressAt ?? null, workers: pass.workers });
     const { outcome, reason } = pass.result;
     if (outcome === "complete" || outcome === "failed" || outcome === "partial" && reason === "input") break;

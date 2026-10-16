@@ -10,15 +10,15 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { join } from "node:path";
 import { CAPTURE_POLICY } from "../lib/capture-budget.mjs";
-import { nativeLine, passRow, realManagerSkip, report, runnerFacts, scratch, sessionPath, table, untilComplete } from "./fixtures/qualify.mjs";
+import { REPORT_MARGIN_MS, TEST_TIMEOUT_MS, nativeLine, passRow, realManagerSkip, report, runnerFacts, scratch, sessionPath, table,
+  untilComplete } from "./fixtures/qualify.mjs";
 
 const skip = realManagerSkip("linux") ?? false;
 const CAPS_OFF = Object.freeze({ ...CAPTURE_POLICY, heapMiB: 4096, rssBytes: 16 * 1024 ** 3 });
 const SIZES = [300, 1300, 3000], LINES = 20, LINE_BYTES = 400;
-// The file must fit the runner's 20-minute bound. A pass may run to its 300 s
-// deadline after untilComplete's budget check, so each N's budget leaves that
-// reserve before the file's end.
-const FILE_MS = 19 * 60_000, PASS_RESERVE_MS = 330_000;
+// Every N's passes end before the test's timeout: untilComplete starts a pass
+// only with a whole pass's reserve left, and an N it cannot start is reported
+// with no passes.
 
 /** N sessions of exactly LINES lines of about LINE_BYTES each (cc/codex/pi by
  *  n % 10 as 7/2/1): the same per-stream shape at every N.
@@ -43,7 +43,7 @@ function fit(points) {
   return { points: usable.length, slope: Math.round(slope), intercept: Math.round(my - slope * mx) };
 }
 
-test("Q1c caps disabled: peak RSS of a first capture at N = 300, 1,300 and 3,000 fixed-shape streams, and its slope", { skip, timeout: 20 * 60_000 }, async t => {
+test("Q1c caps disabled: peak RSS of a first capture at N = 300, 1,300 and 3,000 fixed-shape streams, and its slope", { skip, timeout: TEST_TIMEOUT_MS }, async t => {
   const began = performance.now(), base = scratch(t, "qualify-memory-");
   fs.mkdirSync(join(base, "record-300"));
   runnerFacts(t, { root: join(base, "record-300"), scratch: base });
@@ -51,7 +51,7 @@ test("Q1c caps disabled: peak RSS of a first capture at N = 300, 1,300 and 3,000
   const rows = [];
   for (const streams of SIZES) {
     const root = join(base, `record-${streams}`), synthetic = fixedHome(base, streams);
-    const budgetMs = Math.max(1, began + FILE_MS - performance.now() - PASS_RESERVE_MS);
+    const budgetMs = began + TEST_TIMEOUT_MS - REPORT_MARGIN_MS - performance.now();
     const run = await untilComplete(root, synthetic.home, { policy: CAPS_OFF, budgetMs });
     table(t, `Q1c N=${streams} passes`, run.passes.map((pass, i) => passRow(`pass ${i + 1}`, pass)));
     const row = { streams, homeBytes: synthetic.bytes, lines: synthetic.lines, complete: run.complete, passes: run.passes.length,
