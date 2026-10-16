@@ -115,9 +115,10 @@ oats status                  # souls, instances, and per instance: soul source +
 oats status --json
 ```
 
-`running` means the harness is running. After Stop, a window left at its
-fallback shell reads `running: false`, `runtimeState: "shell"`; a kept window
-alone does not mean the agent is running. An unreadable session stays unknown
+From OATS 0.60.0, `running` means the harness is running. After Stop, a
+window left at its fallback shell reads `running: false`, `runtimeState:
+"shell"`; a kept window alone does not mean the agent is running (an older
+kernel still reports such a window as running). An unreadable session stays unknown
 (`running: null`, `runtimeState: "unreachable"`).
 
 Per instance, status shows `soul: <name> from <member> @ <commit>` and each
