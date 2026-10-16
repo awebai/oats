@@ -340,7 +340,7 @@ test("CLI: waiting set/clear answer and idempotency; status rows carry waitingOn
   assert.equal(statusRows()["w-run"].waitingOnYou, null);
 });
 
-test("a running row whose harness is gone (a crash's fallback shell, a retained dead pane) shows no claim, as session inspect does", async () => {
+test("a kept window whose harness is gone (a crash's fallback shell, a retained dead pane) is not running and shows no claim, as session inspect does", async () => {
   tmux("new-window", "-d", "-t", "oats-agents:", "-n", "w-shell", "sh");
   tmux("set-option", "-g", "remain-on-exit", "on");
   tmux("new-window", "-d", "-t", "oats-agents:", "-n", "w-dead", "true");
@@ -349,7 +349,8 @@ test("a running row whose harness is gone (a crash's fallback shell, a retained 
   for (const home of [shell, dead]) setWaiting(home, { producer: "agent", waiting: true, reason: "attention", message: "old session question" });
   const rows = statusRows();
   for (const [name, home, state] of [["w-shell", shell, "shell"], ["w-dead", dead, "stopped"]]) {
-    assert.equal(rows[name].running, true, `${name}: the window is there`);
+    assert.equal(rows[name].running, false, `${name}: the window remains but the harness is gone`);
+    if (state === "shell") assert.equal(rows[name].runtimeState, "shell");
     assert.equal(rows[name].waitingOnYou, null, `${name}: no harness, no claim`);
     const inspected = cli(["session", "inspect", "--home", home, "--json"]).doc.result;
     assert.equal(inspected.state, state); assert.equal(inspected.waitingOnYou, null);
