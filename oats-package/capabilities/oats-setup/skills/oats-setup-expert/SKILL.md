@@ -102,15 +102,19 @@ only the secrets, the logins and the two installs that capture their shell.
      has no mail; every setup expert spawned on this machine from now on
      has it. Say so in the hand-back: when the person spawns a new one,
      they retire this one (`oats retire <your name>`).
-7. **Sync, check, first working soul:** `oats sync`, then `/oats-onboarding`
-   cards 6 to 8 for the first soul of step 4, with the first concrete task the
-   use case names. Card 6's operator checks (it resolves `oats.setup`, team
-   coverage) are for you, not for this soul: check that it resolves the
-   capabilities step 4 gave it. If its harness is `claude` or `codex` and
-   the entry skill did not trust `D` for that harness, run
+7. **Sync, check, first working soul:** first, for Claude harnesses,
+   `/oats-agent-permissions`: the person chooses the Claude config and what
+   stays gated, and you write it with their yes. Then `oats sync`, then
+   `/oats-onboarding` cards 6 to 8 for the first soul of step 4, with the
+   first concrete task the use case names. Card 6's operator checks (it
+   resolves `oats.setup`, team coverage) are for you, not for this soul:
+   check that it resolves the capabilities step 4 gave it. If its harness
+   is `claude` or `codex` and the entry skill did not trust `D` for that
+   harness, run
    `oats harness trust --dir D --harness <harness>` with `--plan` first, then
    without.
-   Messaging, if any, is proved by card 8's exchange.
+   Messaging, if any, is proved by card 8's exchange, and permissions by
+   `/oats-agent-permissions`' check during card 8's task.
 8. **Hand back to the person**, in the session:
    - what is set up, with the versions;
    - which steps they typed into (the steps, never the values);

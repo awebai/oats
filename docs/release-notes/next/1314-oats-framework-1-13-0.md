@@ -28,6 +28,21 @@
     It starts from the intake that the `oats-getting-started` skill hands it,
     covers a new or an existing workspace, and ends at a first working soul.
     `/oats-onboarding` points to it.
+  - **`/oats-agent-permissions` (new): Claude Code's permissions for OATS
+    instances.** The setup expert writes the user settings of the Claude
+    config the launches use, never the home's `.claude/settings.json`:
+    - auto mode, by `permissions.defaultMode` or `--permission-mode auto` in
+      a launch configuration's `args`;
+    - an `autoMode` block naming what the workspace trusts;
+    - narrow allow rules for the `oats` reads, `oats spawn` (with an `ask`
+      rule on `--yolo`, `--server` and `--wake-*`), reading `aw` mail and
+      chat, and `gh` reads.
+
+    Retire and stop (except `--plan`), `aw` sends, `git` beyond Claude's
+    built-in read-only forms, pushes, merges and the operator acts stay
+    with the classifier, or an `ask` rule. The person approves the
+    change. The check: no `waitingOnYou` with reason `permission` during the
+    first working soul's task. Claude only; Codex and pi are named.
   - **`/oats-setup-model` explains the per-workspace setup expert,** and how
     `oats onboard` finds it from OATS 0.61.0.
   - Instruction text only; the floors are unchanged. A deployment gets it by
