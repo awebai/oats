@@ -1,11 +1,12 @@
 # Capture algorithms and recovery
 
 The record package owns source cursors, journal validation, indexing and capture
-status. This version changes those algorithms; it does not install a bounded
-runner or change service scheduling, hooks, root registration or doctor.
+status. Ordinary/source-selected capture and explicit retry use the fixed
+supervised worker. This does not migrate service scheduling, detach hooks,
+change root registration or implement service health/doctor diagnosis.
 
-The private service foundations described below are not yet joined to the
-ordinary command or installed manager path. OATS 0.56.0, 0.57.0 and 0.58.0
+The command integration described below is forthcoming service-A work, not
+an installed periodic manager. OATS 0.56.0, 0.57.0 and 0.58.0
 shipped without the bounded periodic service. See
 [capture service release order](../../../docs/upgrading.md#capture-service-release-order)
 for the distinction between upgrading those releases and a future setup
@@ -46,12 +47,14 @@ Detected changes have two outcomes:
   from the physical last transcript turn, so appending a revised earlier line
   would make those writers duplicate the remaining history.
 
-Command prefix-conflict diagnostics name the refused input, conflicting stream
+Protected command prefix-conflict diagnostics name the refused input, conflicting stream
 and native line/source byte position. They say "establishing source path
 unavailable": the journal records native session and line, not that path.
 Current discovery and derived cursors cannot supply missing provenance, and a
 prefix mismatch does not itself prove that a second source exists. Native stream
 identity and traversal precedence remain unchanged.
+Ordinary supervised passes report confirmed appended counts and the worker
+outcome; `capture --health` supplies active set-aside locations and remedies.
 
 ## Operator recovery
 
@@ -74,10 +77,12 @@ For a conflicting native prefix, either:
    input from active set-aside entries. Removing the ignore rule later does not
    authorize the conflict.
 
-Retry takes the same nonblocking capture lock, marks all current entries eligible
-for revalidation, then performs one ordinary reconciliation while retaining the
-lock. An interruption after marking leaves the warning active. It is not yet a
-policy-bounded pass. Resetting cursors does not replace retry or clear a refusal.
+Retry takes the same nonblocking capture lock, prepares current entries for
+revalidation in durable bounded pages, then performs supervised reconciliation
+while retaining the lock across replacement workers. An interruption after
+marking leaves the warning active. The run-bound preparation cursor prevents
+repeating committed retry generations. Resetting cursors does not replace retry
+or clear a refusal. Public synchronous retry/reset APIs keep their contracts.
 
 `capture --status` keeps its existing store summary. `capture --health [--json]`
 reads current active set-aside rows from `index/capture.db`, without capturing,
@@ -607,7 +612,7 @@ new streams created by interleaved capture, reset admission and a fresh union
 sweep after reset. Replacing a sweep retires its exact scope; indexed cleanup
 deletes at most 128 obsolete rows per unit and refuses the active scope. Losing
 this private table restarts enumeration without clearing retries, journal
-checkpoints or the index. These primitives are not yet the full command runner.
+checkpoints or the index. These primitives alone are not the full command runner.
 
 `CaptureIndexOutcomes` records processing phases separately from membership in
 that private inventory. The index-work bridge publishes outcomes inside the
@@ -642,8 +647,8 @@ inventory sweep afterward. Outcome audit pages inspect at most 128 names and
 report how many still need work; their end-of-page `complete` flag is only audit
 enumeration completion. The caller must also account for unfinished discovery,
 new captures, retries, reset and other stages, and recheck after writes before
-finalizing a pass. These outcome/source connections do not yet implement that
-final mixed-stage decision or the ordinary command/service entry.
+finalizing a pass. These outcome/source connections supply evidence to the
+separate mixed-stage audit and owning command entry described below.
 
 The private `CaptureIndexReset` bridge persists a union-reset request only
 after an inventory outcome requires reset. The detecting worker publishes the
@@ -792,9 +797,10 @@ a list of matching profiles; this is proportional metadata cost, not a bounded
 memory claim or transcript parsing. Each selected format adds one admission and
 one publication transaction before its file pages; retries/reconciliation and
 directory identity stats add work as well. All belong in hosted allowance and
-storage/synchronization qualification. This private integration does not switch
-ordinary CLI, exact-home/file, hook, setup or installed service routing, and
-does not implement append-only `--no-index` command dispatch.
+storage/synchronization qualification. The ordinary CLI uses this plan, including
+append-only `--no-index`. Protected exact-home/file operations retain their
+separate synchronous path. Foreground watch may also enumerate roots in the
+parent for advisory notification hints; those hints cannot change this plan.
 
 Descriptors do not authorize access to protected captured history: existing
 path guards apply, and this ordinary-root bridge accepts no custody-proof
@@ -959,15 +965,14 @@ on a later sweep without being treated as successful in the earlier one.
 An empty healthy audit may publish complete. Current-pass failure still overrides
 healthy work and complete audit evidence; an older failure remains history and
 does not poison a later success. Confirmed counts come only from their existing
-processing commits, never audit scans or reconstruction. Default-root and ordinary
-command routing, protected exact-home/file entry points and service migration
-remain separate. The ordinary CLI, installed service and setup/hook entry points
-do not yet invoke this private session.
+processing commits, never audit scans or reconstruction. Ordinary CLI dispatch
+uses this session. Protected exact-home/file operations retain their existing
+path; detached hooks and installed periodic service migration remain separate.
 
 ### Append-only worker mode
 
-The private session's `indexEnabled: false` option prepares the supervised
-ordinary-command path for append-only capture. The default remains enabled.
+The private session's `indexEnabled: false` option implements the supervised
+ordinary-command path for `--no-index`. The default remains enabled.
 A disabled session never constructs or opens `RecordIndex`, including during
 replacement or finalization. It does not create `turns.db`, register new stream
 membership, instantiate/rebuild index inventory, dispatch/reconcile union reset,
@@ -999,11 +1004,9 @@ synchronization costs remain hosted storage-qualification obligations.
 Even an empty or fully visited append-only sweep remains pending/partial, or
 failed for a current-pass failure: it supplies no fresh index/all-stage proof.
 Prior success/failure history and confirmed counts remain distinct from that
-decision. No public synchronous API, CLI receipt, flag, trigger or command
-dispatch changes follow from this private option. Ordinary/source-selected
-`--no-index` routing, retry-set-aside handling, protected exact-home/file
-frontdoors and setup/hook/service integration still require their owning command
-work and qualification.
+decision. The ordinary CLI uses this mode without changing public synchronous
+APIs or protected exact-home/file receipts. Detached hook/setup/service
+integration and hosted qualification remain separate obligations.
 
 ### Fixed private command entry and issue preparation
 
@@ -1053,9 +1056,44 @@ generation updates; ignore loading/matching and total metadata scan/lock/sync
 costs remain hosted qualification obligations. Pages resume across workers,
 but preparation is not source enumeration or all-stage completion.
 
-The private entry is not yet wired into the ordinary CLI. Its caller still
-must preserve source flags, ordinary JSON usage rejection, recovery JSON and
-held-lock behavior, reset-only and protected exact-home/file paths, watch
-scheduling and explicit trigger attribution. Hook detachment and installed
-setup/service migration, health/doctor and final hosted qualification remain
-separate implementation gates.
+### Ordinary CLI and foreground watch
+
+Ordinary capture, `--sessions-only`, `--aw-only`, `--no-index` and
+`--retry-set-aside` await the fixed private entry. The CLI copies home, cwd and
+the selected native location environment into its plan. Quiet controls output,
+never trigger identity: ordinary and explicit retry use `manual`; the first
+foreground watch pass and later ticks use `watch`. Existing setup/hook callers
+that still invoke ordinary quiet argv therefore remain manual; this is not a
+claim of migrated trigger attribution. `--reset-cursors` remains reset-only;
+exact-home/file proofs and public synchronous libraries keep their paths.
+
+Ordinary `--json` remains a usage error. Retry JSON retains exactly
+`{appended, pending}` from the matching worker projection. No caller reads a
+later status snapshot to fill a missing projection. Operational failure exits
+nonzero; a missing projection explicitly says the appended count is unknown.
+Partial work exits zero without claiming completion. Ordinary lock overlap
+exits zero and preserves the existing receipt; recovery overlap instead reports
+that recovery was not performed and exits one. Lock reclamation, uncertain
+holders, initialization and release failures retain operator diagnostics.
+Nonquiet progress reports confirmed new turns and outcome; `index: updated`
+is emitted only for an enabled, fully completed pass, never a partial one.
+
+Foreground watch retains its two-second debounce and fifteen-minute fallback.
+Its parent may enumerate selected default directories to install best-effort
+filesystem notification hints. This metadata work is proportional to profile
+inventory and is not a worker memory/allowance claim. Neither a hint nor its
+absence selects capture inputs or grants custody; only the admitted saved plan
+does that. Enumeration/installation errors leave periodic reconciliation active.
+Notifications coalesce while a pass runs; at most one pass is active, with one
+pending rerun. Stop cancels timers and future work, closes watchers, and leaves
+an active supervisor responsible for child termination/reaping and lock release.
+A failed later tick reports the error and retains a nonzero eventual exit status
+while periodic scheduling continues. It cannot strand the queue as busy.
+
+The small-heap algorithm fixture invokes synchronous capture/index libraries
+directly: lowering the CLI parent's heap cannot lower its fixed-policy worker
+heap. Actual CLI fixtures separately cover worker routing, selected capture,
+append-only catch-up, recovery receipts, overlap and foreground scheduling.
+Hook detachment, setup/service migration and health/doctor remain unfinished;
+fresh-audit/parent metadata/storage/synchronization and full hosted manager and
+rollback qualification are still required before service acceptance.

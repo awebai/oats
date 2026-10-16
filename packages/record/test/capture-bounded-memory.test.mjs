@@ -1,19 +1,19 @@
-import { fixtureEnv } from "./fixture-env.mjs";
 // A capture pass runs in bounded memory, whatever the record's size (awebai/oats#456). On a host with a
 // 2.6 GB record, every pass under --max-old-space-size=256 died within seconds: the first append to a stream
 // parsed its whole journal, the aw dedupe read the whole aw journal, and each changed comm log was read whole.
-// Here a record several times the heap is captured, then a comm log and a session each grow by one
-// line, and every pass, the first capture of all of it included, must succeed under a small heap.
+// Here the synchronous library algorithms capture a record several times their heap,
+// then a comm log and session each grow by one line. Every call, including initial
+// capture, must succeed under a small heap. The ordinary CLI has its own fixed
+// supervised policy: changing its parent's heap cannot lower the worker's heap.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, createWriteStream, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, createWriteStream, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-const CAPTURE = new URL("../bin/capture.mjs", import.meta.url).pathname;
 const HEAP_MB = 64;
 const PAD = "x".repeat(1800);
 
@@ -28,7 +28,7 @@ const awEntry = (i, tag = "") => JSON.stringify({ ts: new Date(Date.UTC(2026, 0,
 const ccLine = (i) => JSON.stringify({ type: i % 2 ? "assistant" : "user", cwd: "/w", sessionId: "big", timestamp: new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString(),
   message: { role: i % 2 ? "assistant" : "user", content: [{ type: "text", text: `${i} ${PAD}` }] } });
 
-test(`a pass over a record several times the heap captures a grown comm log and session under --max-old-space-size=${HEAP_MB}`, async (t) => {
+test(`synchronous capture over a record several times the heap captures a grown comm log and session under --max-old-space-size=${HEAP_MB}`, async (t) => {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "turn-record-bounded-")));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const home = join(base, "home"), logs = join(home, ".config", "aw", "logs"), proj = join(home, ".claude", "projects", "-w");
@@ -38,8 +38,17 @@ test(`a pass over a record several times the heap captures a grown comm log and 
   await writeLines(join(logs, "acme-b.jsonl"), 40000, (i) => awEntry(i, "b"));
   await writeLines(join(proj, "big.jsonl"), 50000, ccLine);
   const root = join(base, "record");
-  const env = { ...fixtureEnv(), HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "host" };
-  const run = (heap) => spawnSync(process.execPath, [`--max-old-space-size=${heap}`, CAPTURE, "--quiet"], { encoding: "utf8", env, maxBuffer: 16 * 1024 * 1024 });
+  const env = { HOME: home, PATH: process.env.PATH, TMPDIR: base, XDG_CACHE_HOME: base, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "host" };
+  const driver = join(base, "capture-library.mjs"), url = name => JSON.stringify(new URL(`../lib/${name}.mjs`, import.meta.url).href);
+  writeFileSync(driver, `import {RecordStore} from ${url("store")};
+    import {captureAllSessions} from ${url("capture-cc")}; import {captureAwLogs} from ${url("capture-aw")};
+    import {RecordIndex} from ${url("index-db")}; import {loadIgnore} from ${url("ignore")};
+    const root=process.env.TURN_RECORD_ROOT, owner=process.env.TURN_RECORD_OWNER;
+    const store=new RecordStore(root,{owner}), ignore=loadIgnore(root);
+    for(const result of captureAllSessions(store,{owner,ignore,collectIssues:false})) if(!result.complete) throw new Error('native capture incomplete');
+    for(const result of captureAwLogs(store,{owner,ignore,collect:false})) if(result.failed) throw new Error('AW capture failed');
+    const index=new RecordIndex(store); try{index.update()}finally{index.close()}`);
+  const run = (heap) => spawnSync(process.execPath, [`--max-old-space-size=${heap}`, driver], { encoding: "utf8", env, maxBuffer: 16 * 1024 * 1024 });
   // The first capture of all of it (a host whose job was off) is itself under the small heap.
   const built = run(HEAP_MB);
   assert.equal(built.status, 0, built.stderr);

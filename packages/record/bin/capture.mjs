@@ -18,19 +18,21 @@ import { basename, join, resolve } from "node:path";
 import process from "node:process";
 
 import { RecordStore } from "../lib/store.mjs";
-import { captureAllSessions, captureSessions } from "../lib/capture-cc.mjs";
+import { captureSessions } from "../lib/capture-cc.mjs";
 import { sessionsForHome } from "../lib/sessions-for-home.mjs";
 import { SESSION_FORMATS } from "../lib/formats.mjs";
 import { cwdOfLine } from "../lib/sessions-for-home.mjs";
 import { stageSnapshot } from "../lib/session-snapshot.mjs";
 import { cleanupCaptureScratch } from "../lib/capture-scratch.mjs";
 import { bufferLines } from "../lib/file-lines.mjs";
-import { captureAwLogs, defaultCommLogDir } from "../lib/capture-aw.mjs";
 import { withReceiptSummaries } from "../lib/receipt-summary.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
 import { IgnoreError, ignoreFilePath, loadIgnore } from "../lib/ignore.mjs";
-import { CAPTURE_SOURCES, captureHealth, resetSourceCursors, retrySetAside, writeCaptureStatus } from "../lib/capture-state.mjs";
+import { CAPTURE_SOURCES, captureHealth, resetSourceCursors, writeCaptureStatus } from "../lib/capture-state.mjs";
 import { acquireCaptureLock } from "../lib/capture-lock.mjs";
+import { captureDefaultRootPlan, resolveCaptureDefaultRoots } from "../lib/capture-default-roots.mjs";
+import { runCaptureCommand } from "../lib/capture-command.mjs";
+import { captureWatchQueue } from "../lib/capture-watch.mjs";
 
 // Fail closed but actionably: an unreadable ignore file must stop capture,
 // as one clear line naming the file — never an uncaught stack trace.
@@ -208,7 +210,7 @@ if (args["reset-cursors"] || args["retry-set-aside"]) {
   try {
     const result = args["reset-cursors"]
       ? withCaptureLock(() => { resetSourceCursors(root, owner, args.source); return { reset: true, sources: args.source ? [args.source] : CAPTURE_SOURCES }; })
-      : pass({ retry: true });
+      : await pass({ retry: true });
     if (result.skipped) throw new Error("capture lock held; recovery was not performed");
     if (process.exitCode) throw new Error("recovery failed to release its capture lock");
     if (args.json) console.log(JSON.stringify(result));
@@ -252,6 +254,29 @@ function log(...parts) {
   if (!quiet) console.log(...parts);
 }
 
+function reportLockInitializationFailure(err) {
+  if (!err.lockCleanup) return;
+  const c = err.lockCleanup;
+  const outcome = c.removed ? "the initializing lock was removed"
+    : c.reason === "gone" ? "the initializing lock was already gone (removed by another party)"
+    : c.reason === "replaced" ? (c.owner
+      ? `the lock now belongs to pid ${c.owner.pid} (started ${c.owner.startedAt || "?"}) and was left alone`
+      : "the lock directory changed or its identity could not be verified, no owner record was readable, and it was left alone")
+    : `the initializing lock could NOT be removed${c.error ? ` (${c.error})` : ""}; ${c.recovery}`;
+  console.error(`capture: could not write the owner record of ${c.path}: ${err.message}; ${outcome}`);
+}
+
+function reportReclaimedLock(r) {
+  if (r) console.error(`capture: reclaimed ${r.path} from pid ${r.pid}, which died (started ${r.startedAt || "?"})`);
+}
+
+function releaseDetail(r) {
+  return r.reason === "gone" ? "it was already removed by another party (an operator recovery?); nothing to release"
+    : r.reason === "not-owner" ? `it now belongs to pid ${r.owner.pid} (started ${r.owner.startedAt || "?"}); left alone`
+    : r.reason === "unknown-owner" ? `its owner record is missing or unreadable, so it may be an operator removal in progress or a newer pass initializing; left alone; ${r.recovery}`
+    : `${r.error ? `${r.error}; ` : ""}${r.recovery}`;
+}
+
 /** Take the root's single-run lock, or say who holds it. A hook-triggered
  *  pass that finds it held exits 0: the holder's pass, or the next one,
  *  reconciles the same sessions.
@@ -269,16 +294,7 @@ function withCaptureLock(fn) {
     // died holding the lock is worth knowing about.
     if (lock.reclaimed) console.error(`capture: reclaimed ${lock.path} from pid ${lock.reclaimed.pid}, which died (started ${lock.reclaimed.startedAt || "?"})`);
   } catch (err) {
-    if (err.lockCleanup) {
-      const c = err.lockCleanup;
-      const outcome = c.removed ? "the initializing lock was removed"
-        : c.reason === "gone" ? "the initializing lock was already gone (removed by another party)"
-        : c.reason === "replaced" ? (c.owner
-          ? `the lock now belongs to pid ${c.owner.pid} (started ${c.owner.startedAt || "?"}) and was left alone`
-          : "the lock directory changed or its identity could not be verified, no owner record was readable, and it was left alone")
-        : `the initializing lock could NOT be removed${c.error ? ` (${c.error})` : ""}; ${c.recovery}`;
-      console.error(`capture: could not write the owner record of ${c.path}: ${err.message}; ${outcome}`);
-    }
+    reportLockInitializationFailure(err);
     throw err;
   }
   if (lock.held) {
@@ -305,72 +321,51 @@ function withCaptureLock(fn) {
     if (!r.released) {
       // Say what was observed: gone, unreadable (unknown), another owner, or
       // our own lock that would not go away; never a guess about liveness.
-      const detail = r.reason === "gone" ? "it was already removed by another party (an operator recovery?); nothing to release"
-        : r.reason === "not-owner" ? `it now belongs to pid ${r.owner.pid} (started ${r.owner.startedAt || "?"}); left alone`
-        : r.reason === "unknown-owner" ? `its owner record is missing or unreadable, so it may be an operator removal in progress or a newer pass initializing; left alone; ${r.recovery}`
-        : `${r.error ? `${r.error}; ` : ""}${r.recovery}`;
-      console.error(`capture: did not release ${lock.path} (${r.reason}): ${detail}`);
+      console.error(`capture: did not release ${lock.path} (${r.reason}): ${releaseDetail(r)}`);
       process.exitCode = 1;
     }
   }
 }
 
-function pass({ retry = false } = {}) {
+function commandPlan() {
+  // Copy caller selection before spawning; only the admitted worker resolves
+  // the capture roots. Both selection flags retain their existing empty union.
+  const sources = CAPTURE_SOURCES.filter(source => source === "aw" ? !args["sessions-only"] : !args["aw-only"]);
+  return captureDefaultRootPlan({ home: homedir(), cwd: process.cwd(), env: process.env, sources });
+}
+
+async function pass({ retry = false, trigger = "manual" } = {}) {
   // The privacy loader fails closed by exiting; it runs before the lock is
-  // taken so that exit never leaves the lock behind.
-  const ignore = loadIgnoreOrExit(root);
-  return withCaptureLock(() => {
-  if (retry) retrySetAside(root);
-  const out = { appended: 0, pending: false };
-  if (!args["aw-only"]) {
-    for (const r of captureAllSessions(store, { owner, ignore, collectIssues: false })) {
-      out.appended += r.appended;
-      out.pending ||= !r.complete;
-      const extras = [r.ignored ? `${r.ignored} ignored` : "", r.held ? `${r.held} held` : "", r.incomplete ? `${r.incomplete} incomplete` : ""]
-        .filter(Boolean)
-        .join(", ");
-      log(
-        `sessions: ${r.sessions} scanned, ${r.appended} new turns in ${r.streams} sessions${extras ? ` (${extras})` : ""} -> ${r.stream}`,
-      );
-    }
+  // taken so that exit never leaves the lock behind. The worker independently
+  // reloads privacy rules; this preflight supplies the existing actionable error.
+  loadIgnoreOrExit(root);
+  let result;
+  try {
+    result = await runCaptureCommand(root, { owner, plan: commandPlan(), indexEnabled: !args["no-index"], trigger, retrySetAside: retry });
+  } catch (error) {
+    // Acquisition and release failures retain their operator recovery, rather
+    // than being hidden behind an absent worker receipt.
+    reportLockInitializationFailure(error);
+    reportReclaimedLock(error.reclaimedLock);
+    if (error.release) console.error(`capture: did not release lock at ${root} (${error.release.reason}): ${releaseDetail(error.release)}`);
+    throw error;
   }
-  if (!args["sessions-only"]) {
-    let awEntries = 0;
-    let awAppended = 0;
-    let awFailed = 0;
-    let awFiles = 0;
-    let awIgnored = 0;
-    for (const r of captureAwLogs(store, { owner, ignore, collect: false })) {
-      if (r.ignored) {
-        awIgnored++;
-        continue;
-      }
-      awFiles++;
-      awEntries += r.entries;
-      awAppended += r.appended;
-      awFailed += r.failed;
-      out.pending ||= r.failed > 0;
-      out.appended += r.appended;
-      if (r.failed) console.error(`aw-log ${r.account}: ${r.failed} entries failed to project`);
-    }
-    const ignored = awIgnored ? `, ${awIgnored} ignored` : "";
-    log(`aw-logs: ${awFiles} files, ${awEntries} entries, ${awAppended} new, ${awFailed} failed${ignored}`);
+  reportReclaimedLock(result.reclaimedLock);
+  if (result.outcome === "overlap") {
+    const line = `capture: another pass holds ${root}: ${result.held.recovery}; skipping this pass`;
+    if (result.held.liveness === "alive") log(line); else console.error(line);
+    return { skipped: true };
   }
-  // Index whenever this pass may index, not only when THIS pass appended:
-  // an append-only pass (--no-index, the hook form) leaves turns behind
-  // that the next indexing pass must pick up. index.update() walks
-  // per-stream cursors, so a pass with nothing new is cheap.
-  if (!args["no-index"]) {
-    const index = new RecordIndex(store);
-    try {
-      index.update();
-      log("index: updated");
-    } finally {
-      index.close();
-    }
-  }
-  return out;
-  });
+  if (result.exitCode !== 0 || result.outcome === "failed")
+    throw new Error(`capture worker failed (${result.reason ?? "io"}); ${result.receipt ? "see capture health for confirmed progress" : "matching worker receipt unavailable; appended count is unknown"}`);
+  const receipt = result.receipt;
+  if (!receipt || !Number.isSafeInteger(receipt.appended) || receipt.appended < 0 || typeof receipt.pending !== "boolean")
+    throw new Error("matching worker receipt unavailable; appended count is unknown");
+  log(`capture: ${receipt.appended} new turns; ${result.outcome}${result.reason ? ` (${result.reason})` : ""}`);
+  if (!args["no-index"]) log(result.outcome === "complete" ? "index: updated" : "index: pending; see capture health");
+  // Recovery JSON keeps its existing small shape. Never read a later status
+  // file after releasing the lock to reconstruct this pass's counters.
+  return { appended: receipt.appended, pending: receipt.pending };
 }
 
 /** A final capture of exact files, one batch per format, under the lock: counts into `outcome`, issues into
@@ -631,7 +626,7 @@ if (args.home) {
 
 warnOnStrangerOwner();
 try {
-  pass();
+  await pass({ trigger: args.watch ? "watch" : "manual" });
 } catch (err) {
   // The lock's finally has run by now; one line, then the status.
   console.error(`capture pass failed: ${err.message}`);
@@ -639,31 +634,33 @@ try {
 }
 
 if (args.watch) {
-  const roots = [
-    ...Object.values(SESSION_FORMATS).flatMap((f) => f.defaultRoots()),
-    defaultCommLogDir(),
-  ];
-  let timer = null;
-  const schedule = () => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
-      timer = null;
-      try {
-        pass();
-      } catch (err) {
-        console.error(`capture pass failed: ${err.message}`);
-      }
-    }, 2000);
-  };
-  for (const dir of roots) {
+  const queue = captureWatchQueue(() => pass({ trigger: "watch" }), {
+    onError: err => { console.error(`capture pass failed: ${err.message}`); process.exitCode = 1; },
+  });
+  const watchers = [], plan = commandPlan();
+  // These are notification hints only. Their enumeration has parent metadata
+  // cost, supplies no capture authority, and may fail independently of a pass.
+  for (const source of plan.sources) {
     try {
-      watch(dir, { recursive: true }, schedule);
-      log(`watching ${dir}`);
-    } catch (err) {
-      console.error(`cannot watch ${dir}: ${err.message}`);
-    }
+      for (const dir of resolveCaptureDefaultRoots(plan, source)) {
+        try {
+          const watcher = watch(dir, { recursive: true }, () => queue.schedule());
+          watcher.on("error", err => { console.error(`cannot watch ${dir}: ${err.message}`); watcher.close(); });
+          watchers.push(watcher);
+          log(`watching ${dir}`);
+        } catch (err) { console.error(`cannot watch ${dir}: ${err.message}`); }
+      }
+    } catch (err) { console.error(`cannot select ${source} watch hints: ${err.message}`); }
   }
-  setInterval(schedule, 15 * 60 * 1000); // reconcile even if events were missed
+  const interval = setInterval(() => queue.schedule(), 15 * 60 * 1000);
+  const stop = () => {
+    queue.close(); clearInterval(interval);
+    for (const watcher of watchers) watcher.close();
+    process.off("SIGINT", stop); process.off("SIGTERM", stop);
+    // If a pass is active its supervisor also observes this signal and owns
+    // child termination/reaping and lock release. No new pass may start.
+  };
+  process.on("SIGINT", stop); process.on("SIGTERM", stop);
 }
 
 }

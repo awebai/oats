@@ -5,6 +5,7 @@ import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureDefaultRootPlan } from "./capture-default-roots.mjs";
 import { superviseCapturePass } from "./capture-pass.mjs";
+import { acquireCaptureLock } from "./capture-lock.mjs";
 import { validStreamId } from "./store.mjs";
 
 const triggers = new Set(["manual", "watch", "hook", "setup", "service"]);
@@ -29,7 +30,19 @@ export async function runCaptureCommand(root, options) {
   const selected = captureCommandOptions(options);
   // Resolve relative root spelling against the caller, never a child's cwd.
   const absolute = isAbsolute(root) ? root : resolve(selected.plan.cwd, root);
-  return superviseCapturePass(absolute, selected, {
+  let reclaimedLock = null;
+  let result;
+  try { result = await superviseCapturePass(absolute, selected, {
     workerPath: fileURLToPath(new URL("./capture-command-worker.mjs", import.meta.url)),
-  });
+    acquire: path => {
+      const lock = acquireCaptureLock(path);
+      if (lock.reclaimed) reclaimedLock = { path: lock.path, ...lock.reclaimed };
+      return lock;
+    },
+  }); } catch (error) {
+    if (reclaimedLock) error.reclaimedLock = reclaimedLock;
+    throw error;
+  }
+  // This is observed lock recovery, not worker accounting or completion.
+  return { ...result, reclaimedLock };
 }

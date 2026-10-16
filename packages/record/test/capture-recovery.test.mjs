@@ -116,11 +116,15 @@ test("health never creates an absent root; status caps deterministic issue sampl
   assert.equal(fs.statSync(join(f.root, "capture-status.json")).mode & 0o777, 0o600);
 });
 
-test("command status truthfully records pending unstamped input without inventing run evidence", t => {
+test("supervised command records pending unstamped input without inventing success", t => {
   const f = fixture(t); fs.writeFileSync(f.path, '{"unstamped":true}\n');
   const result = f.cli("--no-index", "--quiet"); assert.equal(result.status, 0, result.stderr);
   const status = JSON.parse(fs.readFileSync(join(f.root, "capture-status.json")));
-  assert.equal(status.backlog.pending, true); assert.equal(status.lastSuccess, null); assert.equal(status.policy, null);
+  assert.equal(status.backlog.pending, true); assert.equal(status.lastSuccess, null);
+  assert.equal(status.policy.deadlineSeconds, 300);
+  assert.equal(status.lastRun.outcome, "partial"); assert.equal(status.lastRun.trigger, "manual");
+  assert.equal(status.lastRun.counts.turnsAppended, 0); assert.equal(status.lastRun.counts.turnsIndexed, 0);
+  assert.ok(status.lastRun.finishedAt); assert.notEqual(status.lastRun.pid, process.pid);
 });
 
 test("ignored missing default root clears its set-aside warning on reconciliation", t => {

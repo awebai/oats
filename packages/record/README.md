@@ -113,11 +113,20 @@ their shape, quoted or not, and replaces their command; a command it cannot
 read as its own is left alone and a new hook is added beside it.
 Stream owner: `--owner`, else `$TURN_RECORD_OWNER`, else the short hostname.
 
+Ordinary/source-selected capture, explicit retry and foreground watch ticks use
+the fixed supervised worker. Partial passes exit zero with pending work;
+operational failures exit nonzero. `--no-index` never opens or mutates the
+derived search index and supplies no fresh all-stage success. Quiet does not
+imply a hook trigger. Detached hooks and periodic manager migration remain
+separate service-A work; this does not describe already-released 0.58.0 behavior.
+See [command routing and receipts](docs/capture-service.md#ordinary-cli-and-foreground-watch).
+
 Transcript capture reads 64 KiB chunks and frames complete native records,
-including UTF-8 characters split across chunks. It appends batches of at most
-8 MiB of source bytes plus the last record and checkpoints after each batch.
-One very large native record can still require memory proportional to that
-record; capture does not impose a new record-size policy.
+including UTF-8 characters split across chunks. It flushes before adding a
+record that would exceed an 8 MiB source batch and checkpoints after each batch.
+Public synchronous capture can still process a larger individual record, with
+memory proportional to that record; its resource contract is unchanged. The
+supervised worker separately applies the fixed service policy.
 Final, attributed and protected Pi capture stage the descriptor's snapshot on
 private scratch under `<root>/.capture-tmp` before the first append, preserving
 attribution and custody checks without retaining the source in process memory.
@@ -171,8 +180,10 @@ Name-only patterns apply across every capture source: a short or generic
 pattern meant for one aw account can also catch a session file's basename
 or id in any format. Prefer path patterns for anything short or generic.
 
-Ignored files are counted in each pass (`N ignored` in capture output;
-`capture --status` shows the active pattern count), never skipped silently.
+Ignored inputs are accounted for in worker run counts; exact synchronous
+receipts retain their ignored counts. `capture --status` shows the active
+pattern count. Ordinary text output summarizes confirmed appended turns and
+outcome; `capture --health` exposes active refusals and remedies.
 The file is per record root and is local policy, not record truth — the
 sync guidance below replicates only `streams/` and `objects/`, so each
 machine decides what its own capture refuses to read; sync the `ignore`
