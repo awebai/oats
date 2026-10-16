@@ -17,10 +17,21 @@ export function captureWorkerEnvironment(env = process.env) {
 
 const outcomes = new Set(["complete", "partial", "failed"]);
 const reasons = new Set([null, "deadline", "rss", "heap", "interrupted", "input", "io"]);
+const MESSAGE_LENGTH = 512, CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+// A failed worker's private one-line diagnostic for the supervising command's
+// stderr, never published status. Parser messages can quote input bytes, so a
+// SyntaxError is reduced to its class name.
+export function captureWorkerMessage(error) {
+  const text = error instanceof SyntaxError ? "SyntaxError" : error instanceof Error ? String(error.message) : "non-Error exception";
+  const message = text.replace(new RegExp(CONTROL.source + "+", "g"), " ").trim().slice(0, MESSAGE_LENGTH).replace(/[\ud800-\udbff]$/, "").trim();
+  return message || "unexplained operational failure";
+}
 export function validWorkerResult(value) {
   return value && outcomes.has(value.outcome) && reasons.has(value.reason) &&
     (value.outcome !== "complete" || value.reason === null) &&
     (value.outcome !== "failed" || value.reason !== null) &&
+    (value.message === undefined || value.outcome === "failed" && typeof value.message === "string" &&
+      value.message.length > 0 && value.message.length <= MESSAGE_LENGTH && !CONTROL.test(value.message)) &&
     (value.continuation === undefined || typeof value.continuation === "boolean") &&
     (value.resetRequired === undefined || value.resetRequired === true && value.outcome === "partial" && value.continuation === true) &&
     !(value.outcome === "complete" && value.continuation);

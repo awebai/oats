@@ -40,11 +40,19 @@ test('atomic private publication preserves old bytes on write/fsync/rename failu
  persistCaptureStatus(root,fixtureStatus(),{now});assert.deepEqual(readCaptureStatus(root,{now}),fixtureStatus());
 });
 
-test('receipt backlog refresh retains historical service facts without claiming a new run',t=>{
+test('receipt backlog refresh retains historical service facts without claiming a new run',async t=>{
  const root=fixture(t),status=fixtureStatus();persistCaptureStatus(root,status);
  const result=writeCaptureStatus(root,{pending:true});
  for(const key of ['policy','lastRun','lastSuccess','lastFailure','lastProgressAt'])assert.deepEqual(result[key],status[key]);
  assert.equal(result.backlog.pending,true);assert.deepEqual(readCaptureStatus(root),result);
+ // The published bytes conform to the shared schema (date-time strings are
+ // checked by validCaptureStatus itself), including its fixed policy consts.
+ const {default:Ajv2020}=await import('ajv/dist/2020.js');
+ const validate=new Ajv2020({strict:false,allowUnionTypes:true,validateFormats:false})
+  .compile(JSON.parse(fs.readFileSync(new URL('../docs/capture-status.schema.json',import.meta.url),'utf8')));
+ const published=JSON.parse(fs.readFileSync(join(root,'capture-status.json'),'utf8'));
+ assert.equal(validate(published),true,JSON.stringify(validate.errors));
+ assert.equal(validate({...published,policy:{...published.policy,rssBytes:1}}),false);
  const health=captureHealth(root, { home: root });assert.deepEqual(health.lastRun,status.lastRun);assert.deepEqual(health.lastSuccess,status.lastSuccess);
  assert.ok(!health.rows.some(row=>row.code==='capture-status-invalid'),'accepted history must survive the read-only health projection');
 });

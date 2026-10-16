@@ -42,7 +42,7 @@ export async function captureCommandPass(root, options, { log = console.log, err
     return { skipped: true };
   }
   if (result.exitCode !== 0 || result.outcome === "failed")
-    throw new Error(`capture worker failed (${result.reason ?? "io"}); ${result.receipt ? "see capture health for confirmed progress" : "matching worker receipt unavailable; appended count is unknown"}`);
+    throw new Error(`capture worker failed (${result.reason ?? "io"})${result.message ? `: ${result.message}` : ""}; ${result.receipt ? "see capture health for confirmed progress" : "matching worker receipt unavailable; appended count is unknown"}`);
   const receipt = result.receipt;
   if (!receipt || !Number.isSafeInteger(receipt.appended) || receipt.appended < 0 || typeof receipt.pending !== "boolean")
     throw new Error("matching worker receipt unavailable; appended count is unknown");

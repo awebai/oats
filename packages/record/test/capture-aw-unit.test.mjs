@@ -91,13 +91,21 @@ test('append failure and killed checkpoint never commit consumed whitespace or l
   const turns=f.store.readStream(stream);assert.equal(new Set(turns.map(t=>t.id)).size,2);
 });
 
-test('reset/replacement reprojects changed old entries; raw oversize is set aside, retry rechecks, and ignore wins before open',t=>{
+test('reset/replacement reprojects changed old entries; raw oversize is set aside after its prefix, retry rechecks, and ignore wins before open',t=>{
   const f=fixture(t,entry(0)+entry(1));f.finish();fs.unlinkSync(f.path);fs.writeFileSync(f.path,entry('changed')+entry(1));
   f.finish();assert.deepEqual(f.bodies(),['0','1','changed']);
-  fs.appendFileSync(f.path,'x'.repeat(5000)+'\n');const blocked=f.finish({maxRecordBytes:300}).at(-1);
-  assert.equal(blocked.result.setAside.offset,Buffer.byteLength(entry('changed')+entry(1)));assert.equal(blocked.result.setAside.reason,'record-too-large');
+  // The complete record before the oversized one shares its unit: it is
+  // appended and checkpointed once, and the input is set aside at the record.
+  const start=Buffer.byteLength(entry('changed')+entry(1)+entry(2));
+  fs.appendFileSync(f.path,entry(2)+'x'.repeat(5000)+'\n'+entry(3));const blocked=f.finish({maxRecordBytes:300}).at(-1);
+  assert.equal(blocked.result.appended,1);assert.equal(blocked.cursor.bytes,start);
+  assert.equal(blocked.result.setAside.offset,start);assert.equal(blocked.result.setAside.reason,'record-too-large');
+  assert.deepEqual(f.bodies(),['0','1','changed','2']);
   resetSourceCursors(f.root,'fixture','aw');assert.ok(f.step().result.setAside,'reset is not retry');
-  retrySetAside(f.root);assert.ok(f.finish({maxRecordBytes:300}).at(-1).result.setAside);
+  retrySetAside(f.root);const retried=f.finish({maxRecordBytes:300});
+  assert.equal(retried.at(-1).result.setAside.offset,start);assert.equal(retried.reduce((n,r)=>n+r.result.appended,0),0);
+  assert.equal(f.state(s=>s.get('set-aside',f.key)).offset,start);
+  assert.deepEqual(f.bodies(),['0','1','changed','2'],'retry neither duplicates the prefix nor passes the oversized record');
   fs.writeFileSync(f.path,entry('changed')+entry(1)+entry(2));retrySetAside(f.root);f.finish();
   assert.equal(f.state(s=>s.get('set-aside',f.key)),null);assert.deepEqual(f.bodies(),['0','1','changed','2']);
   fs.writeFileSync(join(f.root,'ignore'),f.path+'\n');fs.unlinkSync(f.path);assert.equal(f.step().result.ignored,true);

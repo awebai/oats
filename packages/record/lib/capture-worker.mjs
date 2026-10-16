@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { CaptureBudget, CaptureStop } from "./capture-budget.mjs";
 import { readCaptureLockOwner } from "./capture-lock.mjs";
-import { captureMonotonicMs, validWorkerResult } from "./capture-supervisor.mjs";
+import { captureMonotonicMs, captureWorkerMessage, validWorkerResult } from "./capture-supervisor.mjs";
 
 export async function runCaptureWorker(operation) {
   if (!process.send || !process.connected) throw new Error("capture worker requires its supervisor");
@@ -44,8 +44,10 @@ export async function runCaptureWorker(operation) {
   } catch (error) {
     // The operation owns failure receipts. Bootstrap never invents completed
     // progress or rewrites a receipt after an exception.
-    result = { outcome: "failed", reason: error instanceof CaptureStop ? error.reason :
-      budget.reason === "interrupted" ? "interrupted" : "io" };
+    const reason = error instanceof CaptureStop ? error.reason : budget.reason === "interrupted" ? "interrupted" : "io";
+    // An operational failure (status persistence among them) names its cause
+    // to the supervising command only; the run receipt keeps its fixed message.
+    result = { outcome: "failed", reason, ...(reason === "io" ? { message: captureWorkerMessage(error) } : {}) };
   }
   if (process.connected) {
     await new Promise(resolve => process.send({ type: "result", result }, () => resolve()));

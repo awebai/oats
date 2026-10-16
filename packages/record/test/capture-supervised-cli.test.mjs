@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { RecordStore } from "../lib/store.mjs";
@@ -38,6 +38,7 @@ test("ordinary CLI routes selected sources through workers, preserves append-onl
   assert.equal(status.lastRun.trigger, "manual"); assert.equal(status.lastRun.outcome, "partial");
   assert.equal(status.lastRun.counts.turnsAppended, 1); assert.equal(status.lastSuccess, null);
   assert.equal(status.policy.heapMiB, 256); assert.equal(status.policy.deadlineSeconds, 300);
+  assert.deepEqual(status.policy, { intervalSeconds: 900, heapMiB: 256, rssBytes: 2147483648, deadlineSeconds: 300, maxRecordBytes: 8388608 });
   assert.equal(f.store.readStream("fixture~cc.session").length, 1); assert.equal(f.store.readStream("fixture~aw").length, 0);
   assert.equal(fs.existsSync(join(f.root, "index/turns.db")), false);
   const selected = f.cli(["--aw-only", "--no-index"]); passed(selected);
@@ -113,6 +114,28 @@ test("CLI operational failure reports unavailable projection without fabricated 
   assert.equal(status.lastRun.outcome, "failed"); assert.equal(status.lastRun.trigger, "manual");
   assert.equal(status.lastRun.counts.turnsAppended, 2, "healthy native and AW work still commit");
   assert.equal(status.lastFailure.id, status.lastRun.id); assert.equal(status.lastSuccess, null);
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+});
+
+test("CLI reclaim of a dead lock publishes its evidence only for a valid past start", t => {
+  const f = fixture(t), dead = 999999999, past = "2026-01-01T00:00:00.000Z";
+  for (const [recorded, expected] of [[{ startedAt: new Date(Date.now() + 86400000).toISOString() }, null],
+    [{}, null], [{ startedAt: "yesterday" }, null], [{ startedAt: past }, { pid: dead, startedAt: past }]]) {
+    fs.mkdirSync(captureLockPath(f.root), { recursive: true });
+    fs.writeFileSync(join(captureLockPath(f.root), "owner.json"), JSON.stringify({ pid: dead, nonce: "n", host: hostname(), ...recorded }));
+    const result = f.cli(["--sessions-only", "--no-index"]); passed(result);
+    assert.match(result.stderr, new RegExp(`reclaimed .* from pid ${dead}, which died`), "the operator line is kept");
+    assert.deepEqual(readCaptureStatus(f.root).lastRun.reclaimedLock, expected, JSON.stringify(recorded));
+    assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+  }
+});
+
+test("CLI names a worker's operational status failure after its reason without publishing it", t => {
+  const f = fixture(t); fs.mkdirSync(join(f.root, "capture-status.json"), { recursive: true });
+  const result = f.cli(["--sessions-only", "--no-index"]);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /capture pass failed: capture worker failed \(io\): capture status is not a regular file within 1 MiB; matching worker receipt unavailable/);
+  assert.equal(fs.statSync(join(f.root, "capture-status.json")).isDirectory(), true);
   assert.equal(fs.existsSync(captureLockPath(f.root)), false);
 });
 

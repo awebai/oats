@@ -75,7 +75,7 @@ export function captureAwUnit(store, { owner, path, kind = "comm", selfName, wor
     };
     const project = kind === "comm" ? entry => projectCommLogEntry(entry, { selfName: account }) :
       entry => projectInteractionLogEntry(entry, { selfName, workspace });
-    let bytes = 0, records = 0, scanned = false;
+    let bytes = 0, records = 0, scanned = false, oversized = null;
     const turns = [], iterator = awLogLines(chunks(), { start: unitStart, maxBytes: maxRecordBytes });
     try {
       while (records < maxRecords && bytes < maxBytes && !stopped()) {
@@ -97,9 +97,10 @@ export function captureAwUnit(store, { owner, path, kind = "comm", selfName, wor
       }
     } catch (error) {
       if (!(error instanceof RecordSizeError)) throw error;
-      const row = { owner, source: "aw", path, offset: unitStart + error.offset, reason: "record-too-large", retry: false };
-      state.set("set-aside", key, row);
-      return { ...result, setAside: row };
+      // The raw record was rejected before allocation. Every complete record
+      // before it is still processable: commit them below, then set aside.
+      oversized = unitStart + error.offset;
+      if (oversized !== job.bytes) throw new Error("AW oversized record does not follow the consumed records");
     } finally { iterator.return(); }
     const after = observe();
     if (!sameVersion(version, after) && !(after.dev === version.dev && after.ino === version.ino &&
@@ -113,6 +114,13 @@ export function captureAwUnit(store, { owner, path, kind = "comm", selfName, wor
     if (blocked && (job.bytes > blocked.offset || atEnd)) state.delete("set-aside", key);
     if (scanned || atEnd) state.delete("aw-unit", key);
     else state.set("aw-unit", key, job);
+    if (oversized !== null) {
+      // Not captured past its exact start. Later records wait for an edited
+      // source or an ignore of the whole input.
+      const row = { owner, source: "aw", path, offset: oversized, reason: "record-too-large", retry: false };
+      state.set("set-aside", key, row);
+      return { ...result, setAside: row };
+    }
     return { ...result, complete: atEnd, phase: "capture" };
   } finally { closeSync(fd); }
 }

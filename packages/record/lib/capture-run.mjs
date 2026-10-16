@@ -3,7 +3,7 @@
 // A stale cache row cannot replace a finished file receipt or a different run.
 import { CAPTURE_POLICY } from "./capture-budget.mjs";
 import { readIssueBacklog } from "./capture-issues.mjs";
-import { CAPTURE_COUNT_FIELDS, emptyCaptureCounts, emptyCaptureStatus, readCaptureStatus, persistCaptureStatus } from "./capture-status.mjs";
+import { CAPTURE_COUNT_FIELDS, captureReclaimedLock, emptyCaptureCounts, emptyCaptureStatus, readCaptureStatus, persistCaptureStatus } from "./capture-status.mjs";
 
 const reasons = new Set(["deadline", "rss", "heap", "interrupted", "input", "io"]);
 const messages = Object.freeze({ deadline: "Capture worker exceeded its admitted time allowance.",
@@ -47,7 +47,7 @@ export class CaptureRun {
         if (cached?.run?.id === prior.lastRun.id) this.history.lastProgressAt = cached.progressAt;
       }
       run = { id, trigger, pid, startedAt: at, finishedAt: null, outcome: "running", reason: null,
-        counts: emptyCaptureCounts(), peakRssBytes: null, reclaimedLock };
+        counts: emptyCaptureCounts(), peakRssBytes: null, reclaimedLock: captureReclaimedLock(reclaimedLock) };
     }
     // Supervisor evidence is explicitly bound to this pass, even if its first
     // child died before publishing a receipt. It must not be attributed to an

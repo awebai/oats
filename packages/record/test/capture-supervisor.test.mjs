@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { superviseCapture, captureWorkerEnvironment } from '../lib/capture-supervisor.mjs';
+import { superviseCapture, captureWorkerEnvironment, captureWorkerMessage, validWorkerResult } from '../lib/capture-supervisor.mjs';
 import { acquireCaptureLock, captureLockPath, holderLiveness, readCaptureLockOwner } from '../lib/capture-lock.mjs';
 import { CAPTURE_POLICY } from '../lib/capture-budget.mjs';
 const workerURL = new URL('../lib/capture-worker.mjs', import.meta.url).href;
@@ -144,4 +144,16 @@ await superviseCapture(${JSON.stringify(f.root)}, {}, {workerPath:${JSON.stringi
     // signal a persisted/reused PID to clean up this fixture.
     if(workerPid)await until(()=>holderLiveness(workerPid)==='dead');
   }
+});
+
+test('worker diagnostics are one bounded line, never parser input, and only accompany failure', () => {
+  assert.equal(captureWorkerMessage(new Error('ENOSPC: no space left on device, write\r\n\u001b[0m\u2028next')), 'ENOSPC: no space left on device, write [0m next');
+  assert.equal(captureWorkerMessage(new SyntaxError('Unexpected token \'s\', "secret record" is not valid JSON')), 'SyntaxError');
+  assert.equal(captureWorkerMessage(new Error('x'.repeat(600))).length, 512);
+  assert.equal(captureWorkerMessage(new Error('\n\t')), 'unexplained operational failure');
+  assert.equal(captureWorkerMessage('thrown string'), 'non-Error exception');
+  assert.ok(validWorkerResult({ outcome: 'failed', reason: 'io', message: 'status write failed' }));
+  for (const value of [{ outcome: 'partial', reason: 'deadline', message: 'x' }, { outcome: 'failed', reason: 'io', message: '' },
+    { outcome: 'failed', reason: 'io', message: 'a\nb' }, { outcome: 'failed', reason: 'io', message: 'x'.repeat(513) },
+    { outcome: 'failed', reason: 'io', message: 7 }]) assert.equal(Boolean(validWorkerResult(value)), false, JSON.stringify(value));
 });

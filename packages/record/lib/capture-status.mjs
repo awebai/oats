@@ -20,6 +20,8 @@ const stamp = (value, now) => typeof value === "string" && Number.isFinite(Date.
   new Date(value).toISOString() === value && Date.parse(value) <= now;
 const peak = value => value === null || integer(value);
 const counts = value => exact(value, CAPTURE_COUNT_FIELDS) && CAPTURE_COUNT_FIELDS.every(key => integer(value[key]));
+const reclaimed = (value, now) => exact(value, ["pid", "startedAt"]) && Number.isSafeInteger(value.pid) && value.pid > 0 &&
+  stamp(value.startedAt, now);
 const identityKeys = ["id", "trigger", "pid", "startedAt"];
 const summaryKeys = [...identityKeys, "finishedAt", "counts", "peakRssBytes"];
 function identity(value, now) {
@@ -36,8 +38,7 @@ function run(value, now) {
   if (!exact(value, [...summaryKeys, "outcome", "reason", "reclaimedLock"]) || !identity(value, now) ||
       !counts(value.counts) || !peak(value.peakRssBytes) ||
       !["running", "complete", "partial", "failed"].includes(value.outcome) || value.reason !== null && !reasons.has(value.reason)) return false;
-  if (value.reclaimedLock !== null && !(exact(value.reclaimedLock, ["pid", "startedAt"]) &&
-      Number.isSafeInteger(value.reclaimedLock.pid) && value.reclaimedLock.pid > 0 && stamp(value.reclaimedLock.startedAt, now))) return false;
+  if (value.reclaimedLock !== null && !reclaimed(value.reclaimedLock, now)) return false;
   if (value.outcome === "running") return value.finishedAt === null && value.reason === null;
   return stamp(value.finishedAt, now) && value.startedAt <= value.finishedAt &&
     (value.outcome !== "complete" || value.reason === null) && (value.outcome !== "failed" || value.reason !== null);
@@ -65,6 +66,14 @@ export function validCaptureStatus(status, { now = Date.now() } = {}) {
   // Algorithm-phase nulls are valid absence of evidence; service facts cannot
   // be published as an unqualified null-policy algorithm snapshot.
   return status.policy !== null || [status.lastRun, status.lastSuccess, status.lastFailure, status.lastProgressAt].every(value => value === null);
+}
+
+// Reclaim evidence is optional. A dead owner record with a missing,
+// nonstandard or future start (clock step, skewed shared home) is published
+// as null rather than refusing this run's receipt.
+export function captureReclaimedLock(value, { now = Date.now() } = {}) {
+  const evidence = value ? { pid: value.pid, startedAt: value.startedAt } : null;
+  return evidence && reclaimed(evidence, now) ? evidence : null;
 }
 
 export function emptyCaptureStatus(backlog) {

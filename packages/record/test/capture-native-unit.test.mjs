@@ -178,10 +178,26 @@ test("torn and invalid UTF-8 suffixes stay pending; oversize is set aside before
   fs.appendFileSync(f.path,'true}\n');await f.finish();f.assertContent(text+'{"unfinished":true}\n');
   fs.appendFileSync(f.path,Buffer.from([255,10]));rows=await f.finish();assert.equal(rows.at(-1).result.reason,'invalid-utf8');
   fs.writeFileSync(f.path,text+'x'.repeat(300)+'\n');rows=await f.finish({maxRecordBytes:200});
-  assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');
+  assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');assert.equal(rows.at(-1).result.setAside.offset,Buffer.byteLength(text));
   const restored=text+'{"unfinished":true}\n';fs.writeFileSync(f.path,restored);
   retrySetAside(f.root);
   await f.finish();f.assertContent(restored);assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
+});
+
+test("complete lines before an oversized record are appended once and checkpointed; retry keeps its exact start",async t=>{
+  const prefix=native(0)+native(1),start=Buffer.byteLength(prefix),f=fixture(t,prefix+'x'.repeat(300)+'\n'+native(3));
+  let rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+  assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');assert.equal(rows.at(-1).result.setAside.offset,start);
+  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),2);assert.equal(rows.at(-1).cursor.bytes,start);f.assertContent(prefix);
+  const skipped=await f.step({maxRecordBytes:200,maxRecords:10});
+  assert.equal(skipped.result.setAside.offset,start);assert.equal(skipped.result.appended,0);
+  retrySetAside(f.root);rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+  assert.equal(rows.at(-1).result.setAside.offset,start);assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),0);
+  assert.equal(f.state(s=>s.get('set-aside',f.key)).offset,start);
+  f.assertContent(prefix);
+  // Later lines wait for an edited source (or an ignore of the whole input).
+  fs.writeFileSync(f.path,prefix+native(3));retrySetAside(f.root);
+  await f.finish({maxRecords:10});f.assertContent(prefix+native(3));assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
 });
 
 test("worker restart after allocation removal completes only its committed cleanup and preserves captured cursor",async t=>{

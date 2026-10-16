@@ -264,6 +264,7 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
       // batch after exhausting this unit's allowance.
       const turns = [], from = job.bytes, iterator = lines(from);
       scanStart = from;
+      let oversized = null;
       try {
         while (!stop()) {
           const next = iterator.next(); if (next.done) break;
@@ -273,12 +274,26 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
           job.bytes += line.bytes; job.line++; used += line.bytes; records++;
           turns.push(finishTurn(eventTurnCore({ owner, source: fmt.source, sessionId, line: line.text, lineNo: job.line, ts: job.lastTs })));
         }
+      } catch (error) {
+        if (!(error instanceof RecordSizeError)) throw error;
+        // The raw record was rejected before allocation/projection. Every
+        // complete stamped line before it is still processable: append and
+        // checkpoint them through the ordinary commit below, then set aside.
+        oversized = from + error.offset;
+        if (oversized !== job.bytes) throw new Error("native oversized record does not follow the consumed lines");
       } finally { iterator.return(); }
       verify();
       if (turns.length) result.appended = store.appendUniqueBatch(stream, turns);
       result.bytesCommitted = job.bytes - from;
       if (walk.reason) job.waiting = walk.reason;
       checkpoint();
+      if (oversized !== null) {
+        // Not captured past its exact start. Later lines wait for an edited
+        // source or an ignore of the whole input.
+        const row = { owner, source: fmt.source, path, offset: oversized, reason: "record-too-large", retry: false };
+        state.set("set-aside", key, row);
+        return { ...result, setAside: row };
+      }
       if (job.small && job.bytes < job.end && !records && stopped()) state.set("native-retain", key, true);
       if (job.bytes === job.end) {
         state.delete("native-unit", key); state.delete("native-retain", key); state.delete("small-stage", key);
@@ -292,8 +307,8 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
       return { ...result, phase: "capture", pending: !!walk.reason, reason: walk.reason ?? null };
     } catch (error) {
       if (!(error instanceof RecordSizeError)) throw error;
-      // The offending raw record was rejected before allocation/projection.
-      // Any pending turns in this unit were never appended or checkpointed.
+      // The offending raw record was rejected before allocation/projection
+      // while searching for the first timestamp: no turn precedes it here.
       const row = { owner, source: fmt.source, path, offset: scanStart + error.offset,
         reason: "record-too-large", retry: false };
       state.set("set-aside", key, row);

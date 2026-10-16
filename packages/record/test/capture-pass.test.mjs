@@ -6,8 +6,10 @@ import { tmpdir } from "node:os";
 import { superviseCapturePass } from "../lib/capture-pass.mjs";
 import { acquireCaptureLock, captureLockPath, holderLiveness, readCaptureLockOwner } from "../lib/capture-lock.mjs";
 import { CAPTURE_POLICY } from "../lib/capture-budget.mjs";
+import { captureCommandPass } from "../lib/capture-command-output.mjs";
 const workerUrl = new URL("../lib/capture-worker.mjs", import.meta.url).href;
 const lockUrl = new URL("../lib/capture-lock.mjs", import.meta.url).href;
+const scratchUrl = new URL("../lib/capture-scratch.mjs", import.meta.url).href;
 function fixture(t, body) {
   const root = fs.mkdtempSync(join(tmpdir(), "capture-pass-")), workerPath = join(root, "worker.mjs");
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -128,4 +130,50 @@ test("external interruption stops continuation and reaps the current owned worke
   assert.deepEqual(result, { outcome: "failed", reason: "interrupted", exitCode: 1, starts: 1 });
   assert.equal(holderLiveness(Number(fs.readFileSync(join(f.root, "pid")))), "dead");
   assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+});
+
+test("production policy and drain offset are the fixed published values", async t => {
+  assert.deepEqual(CAPTURE_POLICY, { intervalSeconds: 900, heapMiB: 256, rssBytes: 2147483648, deadlineSeconds: 300, maxRecordBytes: 8388608 });
+  const f = fixture(t, `await runCaptureWorker(({root,pass})=>{
+    fs.writeFileSync(join(root,'observed'),JSON.stringify(pass));return {outcome:'complete',reason:null};
+  });`);
+  const result = await superviseCapturePass(f.root, {}, { workerPath: f.workerPath });
+  assert.equal(result.outcome, "complete"); assert.equal(result.starts, 1);
+  const pass = JSON.parse(fs.readFileSync(join(f.root, "observed")));
+  assert.equal(pass.deadline - pass.started, 300000); assert.equal(pass.drainAt - pass.started, 295000);
+});
+
+test("scratch left by a killed worker is reclaimed by the next ordinary pass before its first child", async t => {
+  const f = fixture(t, `import {createCaptureScratch} from ${JSON.stringify(scratchUrl)};
+    await runCaptureWorker(({root,pass})=>{
+      const tmp=join(root,'.capture-tmp'),seen=fs.existsSync(tmp)?fs.readdirSync(tmp).filter(name=>name.startsWith('snapshot-')):[];
+      fs.appendFileSync(join(root,'seen'),JSON.stringify({attempt:pass.attempt,seen})+'\\n');
+      if(!fs.existsSync(join(root,'killed'))){fs.writeFileSync(join(root,'killed'),'');createCaptureScratch(root,'snapshot');process.kill(process.pid,'SIGKILL');}
+      return {outcome:'complete',reason:null};
+    });`);
+  const seen = () => fs.readFileSync(join(f.root, "seen"), "utf8").trim().split("\n").map(JSON.parse);
+  const killed = await superviseCapturePass(f.root, {}, { ...seams, workerPath: f.workerPath });
+  assert.equal(killed.outcome, "failed"); assert.equal(killed.starts, 2);
+  const leftover = fs.readdirSync(join(f.root, ".capture-tmp"));
+  assert.equal(leftover.length, 1); assert.match(leftover[0], /^snapshot-/);
+  assert.deepEqual(seen().map(row => row.seen), [[], leftover], "no scavenging while the pass may have a live child");
+  const next = await superviseCapturePass(f.root, {}, { ...seams, workerPath: f.workerPath });
+  assert.equal(next.outcome, "complete"); assert.equal(next.starts, 1);
+  assert.deepEqual(seen().at(-1), { attempt: 1, seen: [] });
+  assert.deepEqual(fs.readdirSync(join(f.root, ".capture-tmp")), []);
+  assert.equal(fs.existsSync(join(f.root, "capture-status.json")), false, "the supervisor still writes no status");
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+});
+
+test("a worker's operational failure carries one bounded private line to the command output", async t => {
+  const f = fixture(t, `await runCaptureWorker(({pass})=>{
+    if(pass.attempt===1)throw new Error('refusing invalid capture status publication\\n\\u001b[2Jspoof'+'x'.repeat(1000));
+    return {outcome:'complete',reason:null};
+  });`);
+  const result = await superviseCapturePass(f.root, {}, { ...seams, workerPath: f.workerPath });
+  const message = ("refusing invalid capture status publication [2Jspoof" + "x".repeat(1000)).slice(0, 512);
+  assert.deepEqual(result, { outcome: "failed", reason: "io", exitCode: 1, starts: 2, message });
+  assert.equal(fs.existsSync(join(f.root, "capture-status.json")), false, "the message is never published status");
+  await assert.rejects(captureCommandPass(f.root, {}, { run: async () => result, log() {}, error() {} }),
+    { message: `capture worker failed (io): ${message}; matching worker receipt unavailable; appended count is unknown` });
 });
