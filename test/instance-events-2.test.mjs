@@ -1,7 +1,7 @@
 // K7b — `instance-events-2`: the event read is bounded, addressed, incarnation-aware, and its integrity is reported independently of the window.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, symlinkSync, realpathSync, rmSync, openSync, writeSync, closeSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, symlinkSync, linkSync, realpathSync, rmSync, openSync, writeSync, closeSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -101,6 +101,8 @@ test("A′ — the lstat→open swap is closed: the open itself refuses to follo
   writeFileSync(logPath, good);
   const realLstat = (await import("node:fs")).lstatSync;
   const st = realLstat(logPath);
+  // Hold the first file's inode with a second link, so removing logPath cannot free it for reuse by the recreate below.
+  const hold = join(w.base, "first.hold"); linkSync(logPath, hold);
   rmSync(logPath); writeFileSync(join(w.base, "target.jsonl"), good); symlinkSync(join(w.base, "target.jsonl"), logPath);
   // The reader lstat's the symlink itself → refused before open (already covered). To exercise the open-time guard we
   // call the low-level path the same way the reader does: O_NOFOLLOW on a symlink must fail.
@@ -116,6 +118,7 @@ test("A′ — the lstat→open swap is closed: the open itself refuses to follo
   // own lstat and open are adjacent, so we assert the check's inputs are what it compares: identity, not just type.
   writeFileSync(logPath, good); const fd = o(logPath, c.O_RDONLY | c.O_NOFOLLOW); const f = fs(fd); cl(fd);
   assert.equal(f.ino, realLstat(logPath).ino); assert.notEqual(f.ino, st.ino, "a recreated file at the same path has a new inode — the identity check would refuse a swap");
+  rmSync(hold);
   const ok = readEvents(w.home); assert.equal(ok.integrity.sources[0].status, "ok"); assert.equal(ok.events.length, 1);
 });
 
