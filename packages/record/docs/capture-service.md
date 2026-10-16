@@ -4,7 +4,9 @@ The record package owns source cursors, journal validation, indexing and capture
 status. Ordinary/source-selected capture and explicit retry use the fixed
 supervised worker. Explicit hooks launch a detached supervisor. Setup migrates
 supported service definitions through the preflight/apply gate described below;
-root registration and service health/doctor diagnosis remain separate.
+the package also owns offline installation/receipt/issue diagnosis. Root
+registration, kernel doctor delegation and real-manager qualification remain
+separate.
 
 The integration described below is forthcoming service-A work; source and fake
 manager fixtures do not establish real manager qualification. OATS 0.56.0, 0.57.0 and 0.58.0
@@ -93,6 +95,68 @@ synchronous library calls update active issues but do not rewrite that snapshot
 or acquire an implicit root capture lock. Health gets historical run fields from
 the snapshot and never advances them from current issues. A database with no
 snapshot still exposes its active issues.
+
+### Offline installation and run diagnosis
+
+The package owns `captureHealth` and `turn-record capture --health [--json]`.
+Its existing `schemaVersion: 1` health envelope remains separate from the
+[status file schema](capture-status.schema.json): `rows` contains `{code,message}`,
+`lastRun`/`lastSuccess`/`lastFailure` retain historical receipt values, and
+`backlog` is the current issue projection. A warning diagnosis exits zero;
+an installation/issue reader failure exits nonzero, without an empty successful
+projection. No store is constructed on the health CLI branch.
+
+Installation evidence means any of:
+
+- The selected record root exists as a readable directory (`--root`, then
+  `TURN_RECORD_ROOT`, then `~/.turn-record`).
+- On macOS, `~/Library/LaunchAgents/ai.aweb.turn-record-capture.plist` parses as
+  a supported owned periodic or legacy definition. On Linux, the candidates
+  are `~/.config/systemd/user/turn-record-capture.service` and
+  `turn-record-capture.timer`. Health shares setup's strict template/argv
+  ownership reader; a basename, marker or mention alone is insufficient.
+- A `settings.json` in a top-level `~/.claude*` directory or directory symlink
+  has a recognized command in a Stop or SessionEnd hook group. Health shares
+  setup's unchanged tokenizer: script in the second word ending in
+  `/capture.mjs`, whole `--owner` and `--quiet` words, supported plain/single
+  quoted words, and no shell expansion, operator or second command.
+
+Readable foreign service files alone do not establish installation. No evidence
+means `ok`, no warnings and no root creation. Unreadable candidates, dangling
+links, malformed hook settings, observed changes or exceeded reader limits are
+unknown and fail diagnosis, even if another candidate establishes installation.
+Only named files and the top level of the caller home are inspected; source
+roots, journal content, network and managers are never visited. Definition bytes
+show installation evidence, **not** registered/enabled scheduling. Even an `ok`
+receipt diagnosis does not certify a manager schedule or a permanent service PID.
+
+Installation reads accept regular files up to 1 MiB each, with 16 MiB total,
+64 hook candidates, 4,096 home entries and 256 path components. These are private
+fail-closed reader guards, not capture policy or truncation-based absence proof.
+The reader uses a 15-second cooperative monotonic deadline between operations;
+the isolated issue reader retains its hard 10-second child deadline. Synchronous
+filesystem calls still depend on the host filesystem returning; kernel doctor
+will supply the separate finite command timeout at its delegation boundary.
+That kernel integration is a separate checkpoint, not provided by this reader.
+
+Installed but absent status produces `capture-status-missing` with a setup
+remedy; malformed, unsupported, unreadable or future-dated status produces
+`capture-status-invalid`. Valid older nullable receipts remain valid absence of
+run evidence. `capture-success-stale` means no recorded success or one **older
+than** 3,600 seconds, not exactly that age. It names the last success and committed
+progress, with an asleep/off-host caveat. Recent progress is not full success.
+A failure newer than success and current unresolved stream failures produce
+`capture-pass-failed` independently of current set-asides. An unfinished run
+beyond its recorded deadline also warns, without inventing its termination cause.
+Before that deadline, death evidence requires an unchanged local lock registration
+whose worker PID matches the receipt and whose acquisition predates the run,
+with both supervisor and worker positively dead. Missing/off-host/hostless,
+changed or uncertain registration and live/reused PIDs supply no death proof.
+The receipt is reread before accepting that observation; health never repairs,
+reclaims, signals termination, writes counters or invents a finished receipt.
+Owned legacy watcher definitions additionally produce `capture-setup-required`.
+Standalone remedies name `turn-record`; kernel doctor remedy mapping remains
+separate. All diagnosis is local observed evidence, not full service qualification.
 
 Both command snapshots and health use the same transactional count/sample
 projection. Source set-asides have `setAsideCount`, at most 100 deterministic

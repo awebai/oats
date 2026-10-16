@@ -45,7 +45,8 @@ for (const snapshot of [false, true]) test(`library refusal/resolution is curren
   assert.equal(JSON.parse(failed.stdout).backlog.setAsideCount, 1);
   assert.equal(JSON.parse(failed.stdout).lastRun, null);
   fs.writeFileSync(path, line(1)); retrySetAside(f.root); assert.equal(capture().complete, true);
-  const recovered = captureHealth(f.root); assert.equal(recovered.status, "ok"); assert.equal(recovered.backlog.setAsideCount, 0);
+  const recovered = captureHealth(f.root, { home: f.base }); assert.equal(recovered.status, "warning");
+  assert.deepEqual(recovered.rows.map(row => row.code), [...(snapshot ? [] : ["capture-status-missing"]), "capture-success-stale"]); assert.equal(recovered.backlog.setAsideCount, 0);
   assert.equal(recovered.lastSuccess, null);
   if (snapshot) assert.equal(fs.readFileSync(statusPath, "utf8"), before);
   else assert.equal(fs.existsSync(statusPath), false);
@@ -105,12 +106,12 @@ test("read-only database needs no file writes and a busy reader fails within its
     const started = performance.now(), result = f.cli(); assert.equal(result.status, 1);
     assert.match(JSON.parse(result.stdout).error, /locked|busy/);
     assert.ok(performance.now() - started < 5000);
-    assert.throws(() => captureHealth(f.root), /locked|busy/);
+    assert.throws(() => captureHealth(f.root, { home: f.base }), /locked|busy/);
     const contender = spawnSync(process.execPath, ["--input-type=module", "-e", `import {DatabaseSync} from 'node:sqlite';const db=new DatabaseSync(${JSON.stringify(dbPath)});db.exec('PRAGMA busy_timeout=50; BEGIN EXCLUSIVE');db.exec('ROLLBACK');db.close();`], { env: { HOME: f.base }, encoding: "utf8" });
     assert.notEqual(contender.status, 0, "health released the caller's SQLite lock");
     assert.match(contender.stderr, /locked|busy/);
   } finally { writer.db.exec("ROLLBACK"); writer.close(); }
-  assert.equal(captureHealth(f.root).backlog.setAsideCount, 1);
+  assert.equal(captureHealth(f.root, { home: f.base }).backlog.setAsideCount, 1);
   assert.deepEqual(inventory(f.root), before);
 });
 
@@ -135,12 +136,12 @@ test("count and sample share a read transaction when another writer changes acti
   try {
     const backlog = readIssueBacklog(reader, { validate: true }); assert.equal(inserted, true);
     assert.equal(backlog.setAsideCount, 1); assert.equal(backlog.setAside.length, 1);
-    assert.equal(captureHealth(f.root).backlog.setAsideCount, 1);
+    assert.equal(captureHealth(f.root, { home: f.base }).backlog.setAsideCount, 1);
   } finally {
     DatabaseSync.prototype.prepare = prepare;
     if (inserted) writer.db.exec("COMMIT"); reader.close(); writer.close();
   }
-  assert.equal(captureHealth(f.root).backlog.setAsideCount, 2);
+  assert.equal(captureHealth(f.root, { home: f.base }).backlog.setAsideCount, 2);
 });
 
 test("runtime feature boundaries are qualified before SQLite loads or opens", t => {
@@ -187,7 +188,7 @@ for (const failure of ["timeout", "signal", "overflow", "malformed", "spawn"]) t
       ["-e", source], { ...options, timeout: failure === "timeout" ? 300 : 5000 });
     return child;
   }; syncBuiltinESMExports();
-  try { assert.throws(() => captureHealth(f.root), /Cannot read current capture issues/); }
+  try { assert.throws(() => captureHealth(f.root, { home: f.base }), /Cannot read current capture issues/); }
   finally { childProcess.spawnSync = original; syncBuiltinESMExports(); }
   if (failure === "timeout") assert.equal(child.error?.code, "ETIMEDOUT");
   if (failure === "signal") assert.equal(child.signal, "SIGTERM");

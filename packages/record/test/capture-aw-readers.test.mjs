@@ -50,7 +50,7 @@ test('interleaved accounts retain exact projected IDs, per-account order, index 
   for(const turn of turns)assert.deepEqual(resolveTurn(f.store,index,turn.id),turn);
  }finally{index.close();}
  assert.match(f.cli('capture',['--status','--owner','fixture']),/fixture~aw: 6 turns/);
- const health=captureHealth(f.root);assert.equal(health.status,'ok');assert.equal(health.backlog.setAsideCount,0);
+ const health=captureHealth(f.root, { home: f.base });assert.deepEqual(health.rows.map(row=>row.code),['capture-status-missing','capture-success-stale']);assert.equal(health.backlog.setAsideCount,0);
 });
 
 test('JSON recall exposes the durable sequence; mixed-account ID windows survive later appends and fresh readers',t=>{

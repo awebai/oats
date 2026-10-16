@@ -21,7 +21,7 @@ function fixture(t) {
   const command = (...args) => spawnSync(process.execPath, [bin, "--root", root, ...args], {
     encoding: "utf8", env: { HOME: base, TMPDIR: base, PATH: process.env.PATH }, timeout: 15000,
   });
-  return { root, command };
+  return { base, root, command };
 }
 
 test("failure backoff counts actual attempts, caps at sixteen intervals and never changes a skipped row", () => {
@@ -49,14 +49,14 @@ test("both categories have independent coherent 100-entry samples and no private
       state.set("capture-failed", unit(n).stream, { ...failure(n), generation: "PRIVATE-GENERATION", admission: "PRIVATE-UNIT" });
     }
   }); state.close();
-  const snapshot = writeCaptureStatus(f.root), health = captureHealth(f.root);
+  const snapshot = writeCaptureStatus(f.root), health = captureHealth(f.root, { home: f.base });
   assert.deepEqual(health.backlog, snapshot.backlog);
   assert.equal(health.backlog.setAsideCount, 151); assert.equal(health.backlog.failedCount, 151);
   assert.equal(health.backlog.setAside.length, 100); assert.equal(health.backlog.failed.length, 100);
   assert.equal(health.backlog.truncated, true); assert.equal(health.backlog.failedTruncated, true);
   assert.deepEqual(health.backlog.failed[0], failure(0)); assert.equal(health.backlog.pending, true);
   assert.equal(health.lastSuccess, null); assert.equal(health.status, "warning");
-  assert.deepEqual(health.rows.map(row => row.code), ["capture-input-set-aside", "capture-pass-failed"]);
+  assert.deepEqual(health.rows.map(row => row.code), ["capture-input-set-aside", "capture-pass-failed", "capture-success-stale"]);
   assert.doesNotMatch(JSON.stringify(health), /PRIVATE/);
   const text = f.command("--health"); assert.equal(text.status, 0, text.stderr);
   assert.equal(text.stdout.split("\n").filter(line => line.includes("unit starting at byte")).length, 100);
@@ -73,7 +73,7 @@ test("operational failures survive reopen, reset and source retry; missing DB ca
   const result = f.command("--health", "--json"); assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout).backlog.failed, [failure(1)]);
   fs.unlinkSync(join(f.root, "index/capture.db"));
-  assert.throws(() => captureHealth(f.root), /missing.*active capture issues/);
+  assert.throws(() => captureHealth(f.root, { home: f.base }), /missing.*active capture issues/);
 });
 
 test("legacy snapshots omit all operational fields; incomplete new shapes do not pass validation", t => {
@@ -81,9 +81,9 @@ test("legacy snapshots omit all operational fields; incomplete new shapes do not
   const status = writeCaptureStatus(f.root), path = join(f.root, "capture-status.json");
   for (const key of ["failedCount", "failed", "failedTruncated"]) delete status.backlog[key];
   fs.writeFileSync(path, JSON.stringify(status));
-  assert.equal(captureHealth(f.root).status, "ok");
+  assert.deepEqual(captureHealth(f.root, { home: f.base }).rows.map(row => row.code), ["capture-success-stale"]);
   status.backlog.failedCount = 0; fs.writeFileSync(path, JSON.stringify(status));
-  assert.equal(captureHealth(f.root).rows[0].code, "capture-status-invalid");
+  assert.equal(captureHealth(f.root, { home: f.base }).rows[0].code, "capture-status-invalid");
 });
 
 test("malformed active operational evidence fails health rather than returning an empty inventory", t => {
@@ -120,5 +120,5 @@ test("both category counts and samples see one snapshot when a writer updates be
     DatabaseSync.prototype.prepare = prepare;
     if (writing) writer.db.exec("COMMIT"); reader.close(); writer.close();
   }
-  const b = captureHealth(f.root).backlog; assert.equal(b.setAsideCount, 2); assert.equal(b.failedCount, 2);
+  const b = captureHealth(f.root, { home: f.base }).backlog; assert.equal(b.setAsideCount, 2); assert.equal(b.failedCount, 2);
 });

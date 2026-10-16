@@ -45,6 +45,15 @@ An inactive finite worker between timer ticks is not evidence of an unhealthy
 schedule; do not promise a permanent PID or infer completion from hook launch.
 Releases 0.56–0.58 do not provide this conversion; follow their own instructions.
 
+For service A, the package's `turn-record capture --health [--json]` reads
+installation evidence, receipt freshness/failure and current issues without
+capture, repair or manager calls. Warning rows are valid diagnosis, not a command
+failure. Unreadable/unknown candidates fail closed. An `ok` result or definition
+file does not establish enabled scheduling; sleep/off-host execution can explain
+old receipts. Use the owning reference's exact evidence rules. Kernel doctor
+delegation remains a separate integration gate; do not claim it from package
+health or use these next-release diagnostics as 0.56–0.58 prerequisites.
+
 ```
  GitHub account (a person, or a machine user)
    │  can read ──► member repos ──► its view of the workspace

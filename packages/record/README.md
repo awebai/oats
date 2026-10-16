@@ -142,7 +142,7 @@ under the selected root and rechecks file identity. `--dry-run` writes nothing
 and invokes no manager, so it reports manager state as unexamined.
 Healthy unchanged schedules preserve an active pass; successful setup reports
 verified periodic scheduling, not a permanent PID. Real-manager lifecycle,
-health/doctor and full service qualification remain separate gates.
+kernel doctor delegation and full service qualification remain separate gates.
 
 Transcript capture reads 64 KiB chunks and frames complete native records,
 including UTF-8 characters split across chunks. It flushes before adding a
@@ -214,6 +214,14 @@ file yourself if you want one policy everywhere. Two honest limits: an
 ignore file that exists but cannot be read fails the pass loudly (a privacy
 control must not fail open), and ignoring is **forward-looking only** —
 turns already captured stay in the record; hide those with a tombstone.
+
+`turn-record capture --health [--json]` reads offline installation,
+receipt freshness/failure and current issue evidence without capture, repair,
+root creation or manager calls. Warnings exit zero; unavailable readers fail.
+A recent receipt or definition file does not certify enabled scheduling.
+See [health diagnosis](docs/capture-service.md#offline-installation-and-run-diagnosis)
+for exact installation candidates, nullable history, reader bounds and the
+asleep/off-host caveat. Kernel doctor delegation remains a separate integration.
 
 ## Multi-machine
 

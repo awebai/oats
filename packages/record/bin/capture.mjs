@@ -80,7 +80,7 @@ const USAGE = `capture — land sessions and aw client logs in the turn record.
   capture --watch              pass now, then re-pass on filesystem change
                                (debounced) and every 15 minutes regardless
   capture --status             show store/stream summary, capture nothing
-  capture --health [--json]    read capture set-aside diagnosis, capture nothing
+  capture --health [--json]    read offline installation, run and issue diagnosis
   capture --reset-cursors [--source aw|cc|pi|codex]
                                reset selected source cursors and exit; the next
                                pass reprocesses them with journal deduplication
@@ -201,7 +201,7 @@ const root = args.root ?? process.env.TURN_RECORD_ROOT ?? join(homedir(), ".turn
 const ownerExplicit = args.owner !== undefined || process.env.TURN_RECORD_OWNER !== undefined;
 const owner = args.owner ?? process.env.TURN_RECORD_OWNER ?? hostname().split(".")[0];
 const quiet = Boolean(args.quiet || args.json && (args["reset-cursors"] || args["retry-set-aside"]));
-const store = args.hook ? null : new RecordStore(root, { owner });
+const store = args.hook || args.health ? null : new RecordStore(root, { owner });
 
 if (args.health) {
   try {

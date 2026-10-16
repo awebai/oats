@@ -21,6 +21,7 @@
 //   --no-service     skip step 2
 //   --dry-run        print what would change, change nothing
 
+import { isCaptureHook } from "../lib/capture-hook-ownership.mjs";
 import { execFileSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { homedir, hostname, platform } from "node:os";
@@ -52,46 +53,6 @@ const SHELL_PLAIN = /^[A-Za-z0-9_./:@%+,-]+$/;
 // A shell word: POSIX single quotes, a quote itself as '\''.
 function shellWord(value) {
   return SHELL_PLAIN.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-// The words of a command as /bin/sh reads them, for what setup writes: plain
-// characters, single-quoted runs and \' for a quote, adjacent pieces joined
-// into one word, words apart by spaces or tabs. null when the command holds
-// anything else outside quotes (an expansion, an operator, a redirection, a
-// double quote, a newline, which ends a command) or a quote left open: the
-// shell would do more with it than run those words, so it is not read.
-//
-// Any character above U+007F is part of a word too, as an earlier setup
-// wrote it bare in a path (shellWord now quotes it). bash, dash and zsh end
-// a word only at a space, a tab, a newline or an operator, all ASCII, so a
-// command of such words carries nothing a rewrite would lose. POSIX lets a
-// shell end a word at any blank of its locale (U+3000, say): such a shell
-// would see one more argument of the same command, which a rewrite does not
-// lose either, so no character above U+007F is refused.
-function shellWords(command) {
-  const words = [];
-  let word = null;
-  for (let i = 0; i < command.length; ) {
-    const c = command[i];
-    if (c === " " || c === "\t") {
-      if (word !== null) words.push(word);
-      word = null;
-      i++;
-    } else if (c === "'") {
-      const end = command.indexOf("'", i + 1);
-      if (end < 0) return null;
-      word = (word ?? "") + command.slice(i + 1, end);
-      i = end + 1;
-    } else if (c === "\\" && command[i + 1] === "'") {
-      word = (word ?? "") + "'";
-      i += 2;
-    } else if (SHELL_PLAIN.test(c) || c > "\x7F") {
-      word = (word ?? "") + c;
-      i++;
-    } else return null;
-  }
-  if (word !== null) words.push(word);
-  return words;
 }
 
 function parseArgs(argv) {
@@ -196,17 +157,6 @@ function prepareHooks() {
     // every command written before paths were quoted, except one with `=`,
     // `~` or another ASCII character outside the plain set left bare in a
     // path, or with a space in one, which was split.
-    const ours = (h) => {
-      if (h?.type !== "command") return false;
-      const tokens = shellWords(String(h.command));
-      return (
-        tokens !== null &&
-        tokens.length >= 2 &&
-        tokens[1].endsWith("/capture.mjs") &&
-        tokens.includes("--owner") &&
-        tokens.includes("--quiet")
-      );
-    };
     for (const event of ["Stop", "SessionEnd"]) {
       const groups = (settings.hooks[event] = settings.hooks[event] ?? []);
       let found = false;
@@ -214,7 +164,7 @@ function prepareHooks() {
       // two in one event included: the shape is not proof of ownership.
       for (const group of groups) {
         for (const hook of group.hooks ?? []) {
-          if (!ours(hook)) continue;
+          if (!isCaptureHook(hook)) continue;
           found = true;
           if (hook.command !== hookCommand || hook.async !== HOOK.async || hook.timeout !== HOOK.timeout) {
             hook.command = hookCommand;

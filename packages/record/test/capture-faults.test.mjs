@@ -85,13 +85,13 @@ test("aweb observed replacements/shrinks/same-size edits and torn journals repro
 test("health rejects malformed/oversized/special status files without blocking", t => {
   const f = fixture(t); fs.mkdirSync(f.root); const path = join(f.root, "capture-status.json");
   for (const data of ["bad", " ".repeat(1024 * 1024 + 1)]) {
-    fs.writeFileSync(path, data); assert.equal(captureHealth(f.root).rows[0].code, "capture-status-invalid");
+    fs.writeFileSync(path, data); assert.equal(captureHealth(f.root, { home: f.base }).rows[0].code, "capture-status-invalid");
   }
-  fs.rmSync(path); fs.mkdirSync(path); assert.equal(captureHealth(f.root).status, "warning"); fs.rmdirSync(path);
+  fs.rmSync(path); fs.mkdirSync(path); assert.equal(captureHealth(f.root, { home: f.base }).status, "warning"); fs.rmdirSync(path);
   if (process.platform !== "win32") {
     const made = spawnSync("mkfifo", [path], { env: { PATH: process.env.PATH, HOME: f.base } });
     assert.equal(made.status, 0);
-    assert.equal(captureHealth(f.root).status, "warning");
+    assert.equal(captureHealth(f.root, { home: f.base }).status, "warning");
   }
 });
 

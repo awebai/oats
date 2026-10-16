@@ -43,7 +43,7 @@ for (const format of ["cc", "pi", "codex"]) test(`${format}: equal moved identit
   assert.deepEqual(fs.readFileSync(journal), before);
   retrySetAside(f.root); // interruption after marking retains active warning
   writeCaptureStatus(f.root);
-  assert.equal(captureHealth(f.root).backlog.setAsideCount, 1);
+  assert.equal(captureHealth(f.root, { home: f.base }).backlog.setAsideCount, 1);
   assert.equal(f.capture({ format }).appended, 0);
   fs.writeFileSync(f.path, original + line(2500));
   assert.equal(f.capture({ format }).appended, 0, "restoration alone does not waive retry");
@@ -61,7 +61,7 @@ test("ignore removes missing/unreadable set-aside entries before any open; unign
   fs.openSync = (p, ...args) => { assert.notEqual(p, f.path, "ignored source was opened"); return open(p, ...args); }; syncBuiltinESMExports();
   try { assert.equal(f.capture().ignored, 1); }
   finally { fs.openSync = open; syncBuiltinESMExports(); }
-  writeCaptureStatus(f.root); assert.equal(captureHealth(f.root).status, "ok");
+  writeCaptureStatus(f.root); assert.deepEqual(captureHealth(f.root, { home: f.base }).rows.map(row => row.code), ["capture-success-stale"]);
   fs.writeFileSync(f.path, line(2)); fs.writeFileSync(join(f.root, "ignore"), "");
   assert.equal(f.capture().complete, false);
 });
@@ -102,14 +102,14 @@ test("background aweb prefix edit outside the boundary requires reset and adds c
 
 test("health never creates an absent root; status caps deterministic issue samples and makes no run claim", t => {
   const f = fixture(t);
-  assert.equal(captureHealth(f.root).status, "ok"); assert.equal(fs.existsSync(f.root), false);
+  assert.equal(captureHealth(f.root, { home: f.base }).status, "ok"); assert.equal(fs.existsSync(f.root), false);
   const result = f.cli("--health", "--json"); assert.equal(result.status, 0); assert.equal(fs.existsSync(f.root), false);
   const state = new DerivedState(f.root);
   for (let i = 110; i >= 0; i--) state.set("set-aside", String(i), { source: "cc", path: `/fixture/${String(i).padStart(3, "0")}`, offset: i, line: i + 1, reason: "captured-prefix-changed" });
   state.close();
   const status = writeCaptureStatus(f.root);
   assert.equal(status.policy, null); assert.equal(status.lastSuccess, null); assert.equal(status.lastRun, null);
-  const health = captureHealth(f.root);
+  const health = captureHealth(f.root, { home: f.base });
   assert.equal(health.backlog.setAsideCount, 111); assert.equal(health.backlog.setAside.length, 100); assert.equal(health.backlog.truncated, true);
   assert.equal(health.backlog.setAside[0].path, "/fixture/000");
   assert.match(health.rows[0].message, /later turns.*will not be captured/);

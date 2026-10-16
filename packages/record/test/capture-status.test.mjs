@@ -45,7 +45,7 @@ test('receipt backlog refresh retains historical service facts without claiming 
  const result=writeCaptureStatus(root,{pending:true});
  for(const key of ['policy','lastRun','lastSuccess','lastFailure','lastProgressAt'])assert.deepEqual(result[key],status[key]);
  assert.equal(result.backlog.pending,true);assert.deepEqual(readCaptureStatus(root),result);
- const health=captureHealth(root);assert.deepEqual(health.lastRun,status.lastRun);assert.deepEqual(health.lastSuccess,status.lastSuccess);
+ const health=captureHealth(root, { home: root });assert.deepEqual(health.lastRun,status.lastRun);assert.deepEqual(health.lastSuccess,status.lastSuccess);
  assert.ok(!health.rows.some(row=>row.code==='capture-status-invalid'),'accepted history must survive the read-only health projection');
 });
 
@@ -55,7 +55,7 @@ test('bounded read rejects malformed, oversized and future status without creati
  for(const content of ['{bad',JSON.stringify({...fixtureStatus(),schemaVersion:2}),'x'.repeat(1024*1024+1),
   JSON.stringify({...fixtureStatus(),lastProgressAt:'9999-01-01T00:00:00.000Z'})]){
   fs.writeFileSync(path,content);assert.throws(()=>readCaptureStatus(root));
-  assert.equal(captureHealth(root).rows[0].code,'capture-status-invalid');
+  assert.equal(captureHealth(root, { home: root }).rows[0].code,'capture-status-invalid');
   assert.equal(fs.readFileSync(path,'utf8'),content);
  }
 });
