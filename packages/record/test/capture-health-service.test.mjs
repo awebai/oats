@@ -159,6 +159,19 @@ test("current issues and newer failure remain warnings beside recent older succe
   assert.deepEqual(recovered.lastFailure, saved.lastFailure); // history is retained, not an active issue
 });
 
+test("record-too-large set-asides get the edit-or-ignore-whole-input remedy, never prefix restoration", t => {
+  const f = fixture(t); f.save(status(60));
+  const state = new DerivedState(f.root);
+  state.set("set-aside", "big", { source: "cc", path: "/fixture/big", offset: 0, reason: "record-too-large" }); state.close();
+  const message = () => f.health().rows.find(row => row.code === "capture-input-set-aside").message;
+  const only = message();
+  assert.match(only, /^1 capture inputs set aside\. 1 listed as record-too-large: Edit the source so no record exceeds 8 MiB, leaving its captured prefix unchanged, then run turn-record capture --retry-set-aside; or add the whole input to .*\/ignore, which discards the whole input/);
+  assert.doesNotMatch(only, /Restore the captured prefix/);
+  const more = new DerivedState(f.root);
+  more.set("set-aside", "conflict", { source: "cc", path: "/fixture/conflict", offset: 10, reason: "captured-prefix-changed" }); more.close();
+  assert.match(message(), /^2 capture inputs set aside\. 1 listed as record-too-large: Edit the source .* The other 1: Restore the captured prefix and run turn-record capture --retry-set-aside/);
+});
+
 function unfinished(f, seconds = 20) {
   const saved = status(seconds + 100); saved.lastRun = { ...summary(seconds), id: "active-run", finishedAt: null, outcome: "running", reason: null, reclaimedLock: null };
   f.save(saved); return saved;

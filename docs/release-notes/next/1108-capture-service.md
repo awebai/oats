@@ -64,7 +64,12 @@
   complete records before it are captured, and the input is set aside at that
   record's start offset. Records after it stay pending until the operator edits
   the source or adds the whole input to `<root>/ignore`; `--retry-set-aside`
-  retries the input, but the oversized record still blocks it.
+  retries the input, but the oversized record still blocks it, in every case.
+  Two native cases set the input aside at the same offset without capturing
+  the records before it: an oversized line before the session's first
+  timestamped line, and one first met while recovery reproves the captured
+  prefix after cache loss or a rewritten source. `--health` names the
+  edit-or-ignore remedy for these entries.
 - Foreground `--watch` keeps its two-second debounce and 15-minute fallback,
   runs one pass at a time and coalesces notifications into one pending rerun.
 - **Hooks launch capture detached.** `capture --hook` starts the supervisor in

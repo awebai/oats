@@ -10,6 +10,12 @@ import { holderLiveness, readCaptureLockOwner, shellQuote } from "./capture-lock
 
 const setAsideRemedy = (command, root) => `Restore the captured prefix and run ${command} capture --retry-set-aside; or add the source to ${root}/ignore (later turns from that session will not be captured). Retry revalidates; it never authorizes a changed prefix.`;
 export const SET_ASIDE_REMEDY = setAsideRemedy("turn-record", "<root>");
+// Retry re-reads an unchanged oversized record and sets it aside again: only an
+// edited source or an ignore of the whole input moves past it.
+const oversizedRemedy = (command, root) => `Edit the source so no record exceeds 8 MiB, leaving its captured prefix unchanged, then run ${command} capture --retry-set-aside; or add the whole input to ${root}/ignore, which discards the whole input, its records after the oversized one included, and later turns from that session.`;
+// The one rule for remedy wording: the kernel's own entry points say `oats`,
+// the standalone package says `turn-record`. Each entry point states which it is.
+export const captureRemedyCommand = viaKernel => viaKernel ? "oats" : "turn-record";
 const emptyBacklog = () => ({ pending: false, setAsideCount: 0, setAside: [], truncated: false, ...emptyFailureBacklog() });
 const noHistory = () => ({ lastRun: null, lastSuccess: null, lastFailure: null, lastProgressAt: null, backlog: emptyBacklog() });
 const time = value => typeof value === "string" ? Date.parse(value) : NaN;
@@ -32,11 +38,11 @@ function deadExecution(root, run, host, liveness, now) {
 
 // Optional caller/clock/liveness context is for isolated readers and fixtures;
 // no CLI option selects an alternate reader, executable or resource policy.
-export function captureHealth(root, options = {}) { return diagnose(root, options, "turn-record"); }
+export function captureHealth(root, options = {}) { return diagnose(root, options, captureRemedyCommand(false)); }
 
 // Private kernel presentation: choose only authored command literals, before
 // interpolating paths/receipt data. Never replace words in completed messages.
-export function captureHealthForDoctor(root, options = {}) { return diagnose(root, options, "oats"); }
+export function captureHealthForDoctor(root, options = {}) { return diagnose(root, options, captureRemedyCommand(true)); }
 
 function diagnose(root, { home = homedir(), platform = hostPlatform(), now = Date.now(),
   host = hostname(), liveness = holderLiveness } = {}, command) {
@@ -65,8 +71,13 @@ function diagnose(root, { home = homedir(), platform = hostPlatform(), now = Dat
       throw new Error("capture.db is missing but the last command reported active capture issues");
   } catch (error) { throw new Error(`Cannot read current capture issues at ${join(root, "index", "capture.db")}: ${error.message}`, { cause: error }); }
   check(); backlog ??= emptyBacklog();
-  if (backlog.setAsideCount) rows.push({ code: "capture-input-set-aside", message:
-    `${backlog.setAsideCount} capture inputs set aside. ${setAsideRemedy(command, root)}` });
+  if (backlog.setAsideCount) {
+    // Remedies follow each named entry's reason; an unsampled entry keeps the general remedy.
+    const oversized = backlog.setAside.filter(entry => entry.reason === "record-too-large").length;
+    const others = backlog.setAsideCount - oversized;
+    rows.push({ code: "capture-input-set-aside", message: `${backlog.setAsideCount} capture inputs set aside. ` + (!oversized ? setAsideRemedy(command, root) :
+      `${oversized} listed as record-too-large: ${oversizedRemedy(command, root)}` + (others ? ` The other ${others}: ${setAsideRemedy(command, root)}` : "")) });
+  }
 
   const failures = [];
   if (backlog.failedCount) failures.push(`${backlog.failedCount} capture stream units failed. Deferred retries remain unresolved; offsets name unit starts, not exact failing frames.`);

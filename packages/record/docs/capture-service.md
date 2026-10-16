@@ -93,6 +93,9 @@ it: an oversized line before the session's first timestamped line, which the
 unstamped lines before it need, and an oversized record first met while staged
 recovery reproves the captured prefix (after cache loss or a rewritten source),
 which validates the whole fixed end before any append.
+`--health` gives each listed `record-too-large` entry this remedy (edit the
+source, then retry; or ignore the whole input, discarding it whole), never the
+prefix-restoration remedy above.
 
 Retry takes the same nonblocking capture lock, prepares current entries for
 revalidation in durable bounded pages, then performs supervised reconciliation

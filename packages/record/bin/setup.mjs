@@ -31,6 +31,7 @@ import { captureDefaultRootPlan } from "../lib/capture-default-roots.mjs";
 import { captureCommandPass } from "../lib/capture-command-output.mjs";
 import { IgnoreError, loadIgnore } from "../lib/ignore.mjs";
 import { preflightCaptureService, applyCaptureService, captureSetupSnapshot, recheckCaptureSetup, writeCaptureSetup } from "../lib/capture-service-install.mjs";
+import { captureRemedyCommand } from "../lib/capture-health.mjs";
 
 // The node written into what outlives this process: the hooks and the
 // service. `oats setup` hands in the kernel's answer for a node that survives
@@ -46,10 +47,9 @@ function recordedNode(env = process.env) { return handedNode(env) ?? process.exe
 const HERE = dirname(fileURLToPath(import.meta.url));
 const NODE = recordedNode();
 // Recoveries name the command a person runs, never this file: only a rerun
-// through `oats setup` selects its stable node again. As with health's
-// remedies, the caller decides the words; `oats setup` is the one that hands
-// a node in.
-const SETUP_COMMAND = handedNode() ? "oats setup" : "turn-record setup";
+// through `oats setup` selects its stable node again. Health's wording rule
+// decides the words; the kernel's setup entry is the one that hands a node in.
+const SETUP_COMMAND = `${captureRemedyCommand(Boolean(handedNode()))} setup`;
 const CAPTURE = join(HERE, "capture.mjs");
 
 // Hooks use POSIX shell words. The separate definition builder owns the
