@@ -1103,6 +1103,32 @@ oats session attach --home /abs/home --detach-key 'C-\'
   another session, another agent's terminal. Your own sessions keep your
   setting.
 
+  **An attach that dies without detaching leaves nothing behind.** A
+  cgroup-wide `systemctl kill`, a stop timeout, oomd or a killed ssh can end
+  `oats` and its tmux client together. `oats` itself then removes nothing, so
+  the tmux server does. Once its client has attached, the viewer's client
+  sets `destroy-unattached on` for the viewer session alone. It is set after
+  the attach and never before, so the session cannot be destroyed before its
+  client arrives. From then on, the server removes the viewer when its last
+  client goes, however the client went. A keyed viewer's key table (below)
+  belongs to the server, not to the session. A `client-detached` hook on the
+  viewer session unbinds the table when the viewer's client leaves.
+
+  Every attach also sweeps the server before it opens its viewer. It removes:
+
+  - a viewer session (`oatsview-<pid>-<8 hex>`) with no client attached,
+    whose attaching process, the pid in its name, no longer exists;
+  - a viewer key table whose session no longer exists.
+
+  The sweep keeps a viewer whose attach is alive, even with no client: its
+  client may not have attached yet. It also never removes an attached
+  viewer, anything not named as a viewer, or the `oatsview-locked` table
+  that every viewer without a key shares. When it removed something, the
+  attach prints one line on stderr before the viewer opens:
+  `oats: removed <n> leftover viewer session(s) and <m> key table(s) of
+  earlier attaches`. A failed sweep is not the attach's failure; the next
+  attach sweeps again.
+
   On tmux 3.2 and later the viewer's tmux client asks for synchronized
   output (`tmux -T sync`, for that client alone): tmux wraps each redraw in
   DEC mode 2026, so a terminal that receives a redraw in two pieces does not
@@ -1119,7 +1145,9 @@ oats session attach --home /abs/home --detach-key 'C-\'
   The key is taken from the agent's input: the agent never receives it while
   this viewer is attached. A keyed viewer reads a tmux key table of its own,
   named as its temporary session and removed with it, so the key is bound
-  for that viewer alone. Check the feature in `oats version --json` before
+  for that viewer alone. The key's binding also turns `destroy-unattached`
+  off for that session before it detaches: the session outlives its client
+  until `oats` has read that the key was used, and `oats` then removes it. Check the feature in `oats version --json` before
   passing the flag: a kernel without it ignores the flag and opens a viewer
   with no exit.
 
