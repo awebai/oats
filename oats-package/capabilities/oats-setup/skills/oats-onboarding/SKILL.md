@@ -15,8 +15,8 @@ description: >-
 # Onboarding a deployment
 
 This is the procedure for intake, ordering, operator composition and completion.
-Optional rationale: the operator knowledge node selected by this project's
-knowledge binding. It is not a prerequisite for executing these cards.
+A setup expert spawned by `oats-getting-started` starts at `/oats-setup-expert`.
+Optional rationale, not a prerequisite: the project's operator knowledge node.
 Contracts: `docs/workspaces.md` and `docs/configuration.md` under `oats root`.
 Team declarations belong to `/oats-teams`; provider identity, admission,
 custody and delivery procedures belong to the composed `/oats-aweb` skill.

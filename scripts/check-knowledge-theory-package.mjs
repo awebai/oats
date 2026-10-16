@@ -140,7 +140,7 @@ const OPERATIONAL_CAPABILITIES = [
     compatibility: ">=0.40.0",
     executable: { hooks: { spawn: "bin/oats-core.mjs spawn", launch: "bin/oats-core.mjs launch" }, launchPreview: true, files: ["bin/claude-waiting.sh", "bin/oats-core.mjs"] },
   },
-  { slug: "oats-setup", names: ["oats-setup-model", "oats-onboarding", "oats-host-delivery", "oats-git-setup", "oats-workspace-config", "oats-teams", "oats-package-pins", "oats-automations"], injection: "injects/setup.md", compatibility: ">=0.30.0" },
+  { slug: "oats-setup", names: ["oats-setup-model", "oats-onboarding", "oats-setup-expert", "oats-host-delivery", "oats-git-setup", "oats-workspace-config", "oats-teams", "oats-package-pins", "oats-automations"], injection: "injects/setup.md", compatibility: ">=0.30.0" },
   // 0.40.0: `oats instance attention`, which the skills use to ask the desk's human.
   { slug: "oats-support", names: ["support-intake", "support-safety", "support-ticket", "support-handoff", "support-relay"], injection: "injects/support.md", compatibility: ">=0.40.0" },
 ];
