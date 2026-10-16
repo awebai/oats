@@ -38,13 +38,15 @@ export function script(path, body) {
   return path;
 }
 
-/** A node wrapper recorded as the service's node: each start appends its pid
- *  to `starts`; while `hold` exists it waits, so a pass stays active for as
- *  long as a test needs, then it runs the real node with the same arguments. */
+/** A node wrapper recorded as the service's node: each start appends its
+ *  epoch second and pid to `starts`; while `hold` exists it waits, so a pass
+ *  stays active for as long as a test needs, then it runs the real node with
+ *  the same arguments. */
 export function nodeWrapper(base, name = "node-wrapper") {
   const starts = join(base, `${name}.starts`), hold = join(base, `${name}.hold`);
-  const path = script(join(base, name), `echo $$ >> '${starts}'\nwhile [ -e '${hold}' ]; do sleep 0.2; done\nexec '${process.execPath}' "$@"`);
-  return { path, starts, hold, pids: () => fs.existsSync(starts) ? fs.readFileSync(starts, "utf8").trim().split("\n").filter(Boolean).map(Number) : [] };
+  const path = script(join(base, name), `echo "$(date +%s) $$" >> '${starts}'\nwhile [ -e '${hold}' ]; do sleep 0.2; done\nexec '${process.execPath}' "$@"`);
+  const records = () => fs.existsSync(starts) ? fs.readFileSync(starts, "utf8").trim().split("\n").filter(Boolean).map(line => line.split(" ").map(Number)) : [];
+  return { path, starts, hold, records, pids: () => records().map(([, pid]) => pid) };
 }
 
 /** Setup as a person runs it: the package CLI, with `env` over this process's. */

@@ -115,8 +115,11 @@ test("the next idle trigger starts a fresh worker (short interval through the in
   if (!wrapper.pids().length && show(captureServiceUnit, "ActiveState").ActiveState !== "active") assert.equal(systemctl("start", "--no-block", captureServiceUnit).status, 0);
   await until(() => wrapper.pids().length >= 1, 30_000, "a first run");
   // The timer's default accuracy is one minute, so the next elapse can lag the interval.
-  await until(() => wrapper.pids().length >= 2, 150_000, "the interval-triggered run");
-  const [first, second] = wrapper.pids(); assert.notEqual(first, second, "a fresh worker per trigger");
+  // A start at least one interval after the first is the interval trigger; an
+  // earlier extra start (a boot elapse beside a manual start) does not count.
+  const later = () => { const [[firstAt], ...rest] = wrapper.records(); return rest.find(([at]) => at - firstAt >= intervalSeconds - 1); };
+  await until(later, 150_000, "the interval-triggered run");
+  const [[, first]] = wrapper.records(), [, second] = later(); assert.notEqual(first, second, "a fresh worker per trigger");
   await until(() => readCaptureStatus(f.root)?.lastRun?.finishedAt, 120_000, "a finished service receipt");
   assert.equal(readCaptureStatus(f.root).lastRun.trigger, "service");
 });

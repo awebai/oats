@@ -98,8 +98,11 @@ test("the next idle trigger starts a fresh worker (short interval through the in
   applyCaptureService(plan); t.diagnostic(lines.join("\n"));
   assert.equal(job().interval, intervalSeconds);
   await until(() => wrapper.pids().length >= 1, 30_000, "the load-time run");
-  await until(() => wrapper.pids().length >= 2, 90_000, "the interval-triggered run");
-  const [first, second] = wrapper.pids(); assert.notEqual(first, second, "a fresh worker per trigger");
+  // A start at least one interval after the load-time run is the interval
+  // trigger; any earlier extra start does not count.
+  const later = () => { const [[firstAt], ...rest] = wrapper.records(); return rest.find(([at]) => at - firstAt >= intervalSeconds - 1); };
+  await until(later, 90_000, "the interval-triggered run");
+  const [[, first]] = wrapper.records(), [, second] = later(); assert.notEqual(first, second, "a fresh worker per trigger");
   await until(() => readCaptureStatus(f.root)?.lastRun?.finishedAt, 120_000, "a finished service receipt");
   assert.equal(readCaptureStatus(f.root).lastRun.trigger, "service");
 });
