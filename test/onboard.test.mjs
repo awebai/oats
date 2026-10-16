@@ -269,6 +269,22 @@ test("#1314: next.spawn names the conventional <workspace>-oats-setup-expert fir
   r = empty.cli(["onboard", join(empty.base, "empty-text"), "--workspace", empty.ref], { cwd: empty.base });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /^ {2}3\. No soul here holds oats\.setup — add a bare-oats-setup-expert soul\n {5}\(the oats-getting-started skill has the template\), or spawn any listed soul:\n {7}oats spawn <soul> --dir \S*empty-text$/m);
+
+  // A shared name: two members whose repositories are both called ws.git each offer `guide`; only the
+  // first declares oats.setup. `guide` and `ws/guide` each name both, so the hint names it by its repo key,
+  // and that exact command spawns it.
+  const west = v2Deployment({ t, name: "west", souls: { guide: { soul: { capabilities: { "oats.setup": { from: "here" } } } } }, capabilities: { "oats.setup": { manifest: {} } } });
+  const east = v2Deployment({ t, name: "east", souls: { guide: {} } });
+  east.commit({ "oats-membership.yaml": { yaml: { schemaVersion: 2, workspace: west.ref } } }, "east joins west");
+  west.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "west", members: [west.ref, east.ref], defaults: { knowledge: "none", messaging: "none", tasks: "none" } } } }, "west lists east");
+  const shared = join(west.base, "shared");
+  r = west.cli(["onboard", shared, "--workspace", west.ref, "--json"], { cwd: west.base });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const res = r.json().result;
+  assert.ok(res.sync.members.every((m) => m.confirmed), JSON.stringify(res.sync.members));
+  assert.equal(res.next.spawn, `oats spawn ${west.key}/guide --dir ${shared}`);
+  r = west.cli(["spawn", `${west.key}/guide`, "--dir", shared, "--preview", "--json"]);
+  assert.equal(r.status, 0, `the suggested name spawns the chosen soul: ${r.stdout}${r.stderr}`);
 });
 
 // ---- lane 3 (0.25.2) ----

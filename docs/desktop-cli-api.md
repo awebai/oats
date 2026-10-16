@@ -912,8 +912,9 @@ same argument, given once). The ref is checked before anything is written.
   Only the soul's own declaration is read, not its resolved composition:
   `oats.setup` that reaches a soul only through the workspace's `defaults:`
   is not seen, and a declared `oats.setup` is not checked to resolve. A soul
-  whose name another listed soul shares is named by its qualified name
-  (`<member>/<soul>` or `<package>/<soul>`). The text output's step 3 names
+  whose name another listed soul shares is named so that `oats spawn` finds
+  it alone: `<member>/<soul>` or `<package>/<soul>`, else, when two members
+  share a repository name, `<member repo key>/<soul>`. The text output's step 3 names
   the same soul, or, with none, the conventional name to add.
   `next.souls` is the first three soul names, sorted.
 - Errors: `E_BAD_ARGS` (usage, no `--workspace`, a repeated directory, an

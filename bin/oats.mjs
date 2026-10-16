@@ -3675,7 +3675,8 @@ Next:
  *  else the first, by name, whose own soul.yaml declares `capability` (oats.setup) with `{ from: … }`,
  *  from any source (`off` is no declaration); else null. Only the soul's own declaration is read, never
  *  a resolution: oats.setup that reaches a soul through the workspace defaults alone is not seen. → the
- *  name to spawn it by: the bare name, or the qualified one when another soul shares that name. */
+ *  name to spawn it by: the bare name, else `<member>/<soul>` (`<package>/<soul>`), else
+ *  `<member repo key>/<soul>`, the first that names this soul alone. */
 function setupExpertOf(discovery, { conventional, capability }) {
   const candidates = soulCandidates(discovery);
   const declares = (entry) => {
@@ -3687,7 +3688,11 @@ function setupExpertOf(discovery, { conventional, capability }) {
   const entries = candidates.map((c) => c.entry).sort((a, b) => order(a.name, b.name) || order(qualifiedSoulName(a), qualifiedSoulName(b)));
   const chosen = (conventional && entries.find((e) => e.name === conventional)) || entries.find(declares);
   if (!chosen) return null;
-  return candidates.filter((c) => c.matches(chosen.name)).length > 1 ? qualifiedSoulName(chosen) : chosen.name;
+  // The shortest name a spawn resolves to exactly this soul: two members can share a repository
+  // basename (github.com/a/agents, github.com/b/agents), so the last form is the full repo key.
+  const forms = [chosen.name, qualifiedSoulName(chosen), ...(typeof chosen.package === "string" ? [] : [`${chosen.repoKey}/${chosen.name}`])];
+  const only = (name) => { const hits = candidates.filter((c) => c.matches(name)); return hits.length === 1 && hits[0].entry === chosen; };
+  return forms.find(only) ?? forms[forms.length - 1];
 }
 
 /** `oats onboard <dir> [--workspace <ref>] --check`: what onboarding <dir> here would meet, read-only (the
