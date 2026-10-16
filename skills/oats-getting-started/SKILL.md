@@ -30,7 +30,8 @@ work, in its own home and terminal. Each workspace has a setup expert soul,
 - **Secrets.** The person types only what you must never hold: passwords,
   tokens and logins. Before the spawn there are two ways for that: a browser
   device flow you start (the GitHub login, step 3), and the exact command
-  for their own terminal (a `sudo` or Homebrew password).
+  for their own terminal (a `sudo` or Homebrew password, an aweb invite
+  token).
   - Never ask for a secret in the conversation, and never write one to a file.
   - Never suggest Claude Code's `! <command>` for one: its command and output
     enter your context.
@@ -63,7 +64,8 @@ work, in its own home and terminal. Each workspace has a setup expert soul,
     `<workspace>-oats`. Refuse `agents`: OATS keeps instance homes in a
     folder of that name.
 - **Messaging between agents (aweb):** wanted or not. The setup expert sets it
-  up later.
+  up later. An existing workspace that already has it needs it on this
+  machine before the setup expert can spawn (step 7).
 - **The harness for the setup expert:** `claude`, `codex` or `pi`. Default:
   the one you are, if it is one of these.
 - **The deployment directory `D`:** where OATS lives on this machine. Any
@@ -283,8 +285,7 @@ description: The OATS setup expert for the acme workspace — onboards machines 
 work: worktree      # it changes this repository by pull request, on its own branch
 capabilities:
   oats.setup: { from: package }
-knowledge: none     # it must spawn on a machine before knowledge
-messaging: none     # and messaging are set up there
+knowledge: none     # so it spawns on a machine before knowledge is set up there
 launch: { harness: claude }     # the harness the person chose: claude, codex or pi
 ```
 
@@ -306,8 +307,11 @@ Change shared files only by pull request; the person reviews and merges them.
 
 **Keep the soul this thin.** Everything it knows comes from `oats.setup`, so
 it improves when the workspace's `oats.framework` pin moves. It has no
-knowledge or messaging of its own, so it can be spawned on any machine of
-the workspace before those are set up there.
+knowledge of its own, so it can be spawned on a machine before knowledge is
+set up there. It takes the workspace's messaging and doesn't empty that
+slot: a setup soul that empties the messaging slot the workspace fills is
+not the workspace's operator, and gets no mail. A new workspace has no
+messaging yet; the setup expert adds it.
 
 **Commit and push.**
 - This first commit goes straight to the new repository's default branch: it
@@ -363,6 +367,44 @@ one, clone the repository that holds `S` with the `git clone` line
 
 ## 7. Hand over to the setup expert
 
+**Messaging on this machine first, when the setup expert takes it.** Read
+`oats inspect --soul S --dir D --json`. If its `result.layers.messaging.id`
+is `oats.aweb`, the workspace has messaging, and the setup expert
+can't spawn on this machine until it has messaging too. Set it up now:
+1. **Install `aw`, and the harness's aweb channel** (Claude:
+   `claude plugin marketplace add awebai/claude-plugins && claude plugin install aweb-channel@awebai-marketplace`;
+   pi: `pi install npm:@awebai/pi`; Codex: nothing). Then:
+
+   ```bash
+   cd "D" && oats aweb setup --soul S --install-aw --check-only --json
+   ```
+
+   Its `aw.status` must be `ok` or `done`; stop on `failed` and tell the
+   person why. Its `defaultTeam.label` is `L`, the setup expert's team.
+2. **The person gets an invite token** from a member of `L`, who runs
+   `oats aweb invite --soul <their soul> --label L --json` in their own
+   deployment and passes the token to the person privately, never by
+   ordinary mail. They also give the aweb service URL `U`. Choose with the
+   person a name `A` for this machine's messaging root, such as
+   `<workspace>-<their machine>`. This works for a hosted team only: if the
+   invite is refused, or the join says the team is not hosted, stop, and
+   the workspace's owner decides.
+3. **The person joins in their own terminal,** typing the token at the
+   hidden prompt. Give them the line with `D`, `S`, `L`, `A` and `U` filled
+   in:
+
+   ```text
+   cd "D" && sh -c 'stty -echo; printf "Invite token: "; read -r T; stty echo; echo; printf "%s\n" "$T" | oats aweb setup --soul S --join L --invite-stdin --name A --service U'
+   ```
+4. **Check,** and expect `"member": true`:
+
+   ```bash
+   cd "D" && oats aweb setup --soul S --check-only --json
+   ```
+
+The setup expert does the rest of this machine's messaging
+(`/oats-host-delivery`).
+
 **Write the hand-over** to `D/.oats-handover.md`. It holds no secret.
 
 ```markdown
@@ -379,6 +421,8 @@ are cloned, knowledge tools, messaging wanted or not>
 - Installed: OATS <V> (oats version), OATS Desktop <V> | not installed (why)
 - GitHub: gh logged in over https as <login>; no SSH key or signing set up
 - New workspace only: repository <owner>/<repo> created, first commit pushed
+- Messaging: this machine joined L as root A (aw <version>, <harness>
+  channel installed) | not set up (the setup expert has no messaging)
 
 ## Left to you
 Everything else, starting with /oats-setup-expert.
@@ -407,8 +451,8 @@ oats spawn S --dir D --task-file D/.oats-handover.md --preview
 oats spawn S --dir D --task-file D/.oats-handover.md
 ```
 
-- **The preview** lists the modules (`oats.core`, `oats.setup`) and the
-  harness. If it reports a problem, stop and tell the person what it says.
+- **The preview** shows what the spawn would create. If it reports a
+  problem, stop and tell the person what it says.
 - **The spawn** prints the instance's home `H`. Then delete the hand-over
   file: the home has its copy as `TASK.md`.
 - **`E_SPAWN_INCOMPLETE`:** don't spawn again. Run `oats session inspect

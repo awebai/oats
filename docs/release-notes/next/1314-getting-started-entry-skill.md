@@ -16,9 +16,11 @@
   - **A new workspace** becomes a private repository holding the workspace
     file, its membership and one thin soul,
     `<workspace>-oats-setup-expert`, which holds `oats.setup` and has no
-    knowledge or messaging of its own, so it spawns on any machine before
-    those are set up. **An existing
-    workspace** is onboarded as it is.
+    knowledge of its own, so it spawns on a machine before knowledge is set
+    up there. It takes the workspace's messaging, so it stays the
+    workspace's operator. **An existing workspace** is onboarded as it is;
+    when it has messaging, the skill sets it up on the machine before the
+    spawn, with an invite token the person types in their own terminal.
   - **Then** the skill spawns the setup expert with the person's answers as
     its task, and the expert does the rest (`/oats-setup-expert`,
     oats.framework 1.13.0). An existing workspace without a setup soul gets
