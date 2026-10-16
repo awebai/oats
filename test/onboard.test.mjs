@@ -159,7 +159,7 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.match(r.stdout, /Members you will work IN need a clone/);
     assert.match(r.stdout, new RegExp(`git clone \\S+platform\\.git \\S*nw2/platform`));
     assert.match(r.stdout, new RegExp(`git clone \\S+agents\\.git \\S*nw2/agents-repo`));
-    assert.match(r.stdout, /^ {2}3\. No soul here holds oats\.setup — add a northwind-oats-setup-expert soul\n {5}\(the oats-getting-started skill has the template\), or spawn any listed soul:\n {7}oats spawn <soul> --dir \S*nw2 \(e\.g\. campaign-writer, data-analyst, platform-engineer\)$/m,
+    assert.match(r.stdout, /^ {2}3\. No soul here holds oats\.setup — add a northwind-oats-setup-expert soul that declares it,\n {5}or spawn any listed soul:\n {7}oats spawn <soul> --dir \S*nw2 \(e\.g\. campaign-writer, data-analyst, platform-engineer\)$/m,
       "no setup soul in this workspace → the conventional name to add, and any listed soul");
     assert.doesNotMatch(r.stdout, /setup expert/);
     assert.doesNotMatch(r.stdout, /approv/i, "next steps never mention approving");
@@ -277,7 +277,7 @@ test("#1314: among souls declaring oats.setup (never one that turns it off), nex
   assert.equal(next.spawn, null); assert.deepEqual(next.souls, []);
   r = empty.cli(["onboard", join(empty.base, "empty-text"), "--workspace", empty.ref], { cwd: empty.base });
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.stdout, /^ {2}3\. No soul here holds oats\.setup — add a bare-oats-setup-expert soul\n {5}\(the oats-getting-started skill has the template\), or spawn any listed soul:\n {7}oats spawn <soul> --dir \S*empty-text$/m);
+  assert.match(r.stdout, /^ {2}3\. No soul here holds oats\.setup — add a bare-oats-setup-expert soul that declares it,\n {5}or spawn any listed soul:\n {7}oats spawn <soul> --dir \S*empty-text$/m);
 
   // A shared name: two members whose repositories are both called ws.git each offer `guide`; only the
   // first declares oats.setup. `guide` and `ws/guide` each name both, so the hint names it by its repo key,
