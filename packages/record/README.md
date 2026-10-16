@@ -137,9 +137,14 @@ The [service migration gate](docs/capture-service.md#setup-service-migration)
 refuses foreign, disabled or masked definitions unless the operator explicitly
 chooses `--replace-service`; `--no-service` bypasses service inspection and
 actions while still installing requested hooks and running the first pass.
-Unknown/read errors always refuse. Replacement saves nonoverwriting backups
-under the selected root and rechecks file identity. `--dry-run` writes nothing
-and invokes no manager, so it reports manager state as unexamined.
+Refusals print that choice as the user-facing command (`oats setup …` under
+the kernel, `turn-record setup …` standalone) with the selected owner/root.
+Unknown/read errors always refuse, as does a macOS registration of the capture
+label from another plist path, even with `--replace-service`. A service
+refusal or failure exits 1 before hooks are written or the first pass runs.
+Replacement saves nonoverwriting backups under the selected root and rechecks
+file identity. `--dry-run` writes nothing and invokes no manager, so it reports
+manager state as unexamined.
 Healthy unchanged schedules preserve an active pass; successful setup reports
 verified periodic scheduling, not a permanent PID. Real-manager lifecycle
 and full service qualification remain separate gates.
@@ -149,7 +154,11 @@ including UTF-8 characters split across chunks. It flushes before adding a
 record that would exceed an 8 MiB source batch and checkpoints after each batch.
 Public synchronous capture can still process a larger individual record, with
 memory proportional to that record; its resource contract is unchanged. The
-supervised worker separately applies the fixed service policy.
+supervised worker separately applies the fixed service policy: it captures the
+complete records before a record over 8 MiB, then sets the input aside at that
+record's start. Later records stay pending until the source is edited or the
+whole input is ignored; `--retry-set-aside` cannot pass the oversized record
+([operator recovery](docs/capture-service.md#operator-recovery)).
 Final, attributed and protected Pi capture stage the descriptor's snapshot on
 private scratch under `<root>/.capture-tmp` before the first append, preserving
 attribution and custody checks without retaining the source in process memory.

@@ -5002,8 +5002,13 @@ Usage:
 
 The turn record (core — every conversation captured, searchable, replicated):
   oats capture [--watch|--status]            land Claude Code/pi/codex sessions and aw
-      [--owner <name>] [--root <dir>]       client logs in the record; reconciliation
-                                            is the capture
+      [--owner <name>] [--root <dir>]       client logs in the record: one bounded
+                                            supervised reconciliation pass; partial
+                                            passes exit 0 with work pending
+  oats capture --hook                        launch a detached pass; exit 0 means
+                                            capture launched, not completed
+  oats capture --health [--json]             offline installation, run and issue
+                                            diagnosis; captures nothing
   oats capture --file <path> --format cc|pi|codex --home <instance home> [--json]
                                             one session file (an archived session),
                                             captured as --home capture would

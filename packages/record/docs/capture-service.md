@@ -80,6 +80,20 @@ For a conflicting native prefix, either:
    input from active set-aside entries. Removing the ignore rule later does not
    authorize the conflict.
 
+**Oversized records.** The supervised worker never allocates, captures or
+modifies a raw source record larger than 8 MiB. It appends and checkpoints the
+complete records before that record through the normal unit commit, then sets
+the input aside (`record-too-large`) at the oversized record's start offset.
+Records after it stay pending until the operator edits the source or adds the
+whole input to `<root>/ignore`, which, as above, also stops later turns from
+that session. `--retry-set-aside` revalidates the input, appending no captured
+record twice, but the oversized record still blocks it. Two native cases set
+the input aside at the same exact offset without capturing the records before
+it: an oversized line before the session's first timestamped line, which the
+unstamped lines before it need, and an oversized record first met while staged
+recovery reproves the captured prefix (after cache loss or a rewritten source),
+which validates the whole fixed end before any append.
+
 Retry takes the same nonblocking capture lock, prepares current entries for
 revalidation in durable bounded pages, then performs supervised reconciliation
 while retaining the lock across replacement workers. An interruption after
@@ -614,8 +628,11 @@ bounded witness without staging historical content. The fixed end survives
 partial units; later growth is a later sweep. A separately checkpointed search
 frontier finds the first timestamp across units, then carries it backward while
 capturing the unstamped prefix. An unchanged unstamped or torn tail stays pending
-without repeatedly scanning it. Explicit retry generations persist separately
-from active issue rows, so clearing a resolved issue cannot restart its proof.
+without repeatedly scanning it. A record over the raw-record limit commits the
+unit's complete records before it, then sets the input aside at its start
+offset ([operator recovery](#operator-recovery)). Explicit retry generations
+persist separately from active issue rows, so clearing a resolved issue cannot
+restart its proof.
 Ignore is applied before source/custody access; retry still compares the complete
 captured prefix. The scheduler must account for pending/failed work and perform
 allocation cleanup after its deletion mark commits. These are unit interfaces,
@@ -628,7 +645,8 @@ durable append. A valid final object without its newline retains its starting
 offset and keeps the command pending; an unchanged snapshot does not repeatedly
 project that fragment. Replacement or explicit source reset reprojects through
 persistent journal-ID deduplication. Raw oversized input uses the same set-aside
-store and retry/ignore rules as native inputs; a projection refusal itself is
+store, prefix capture and retry/ignore rules as native inputs
+([operator recovery](#operator-recovery)); a projection refusal itself is
 consumed evidence and does not create a second issue mechanism.
 
 Public synchronous library calls do not implicitly enter this context or acquire
@@ -805,13 +823,13 @@ handoff separately from actual worker-death and hosted manager qualification.
 ## First-upgrade cost
 
 The first capture after upgrade must reconcile existing journals and rebuild the
-search index. Per-input capture checkpoints and per-stream index transactions
-still incur substantial synchronous commit costs on storage where sync is costly.
-Connection/transaction amortization is unresolved by these algorithm changes;
-bounded memory and incremental content work do not imply a cheap first pass.
-The bounded service must separately qualify first-upgrade and unchanged passes
-beside actual v0.53.0 on a Linux runner, including filesystem/runtime details,
-connection/transaction/sync counts, resumable prefix proof and deadline progress.
+search index. Capture and index groups amortize connections and transactions
+over their member streams ([internal transaction groups](#internal-transaction-groups)):
+a changed index group of several streams commits once per database, and an
+unchanged one begins no index transaction. The bounded service must separately
+qualify first-upgrade and unchanged passes beside actual v0.53.0 on a Linux
+runner, including filesystem/runtime details, connection/transaction/sync
+counts, resumable prefix proof and deadline progress.
 
 ## Downgrade and re-upgrade
 
@@ -1187,6 +1205,12 @@ Ordinary `--json` remains a usage error. Retry JSON retains exactly
 `{appended, pending}` from the matching worker projection. No caller reads a
 later status snapshot to fill a missing projection. Operational failure exits
 nonzero; a missing projection explicitly says the appended count is unknown.
+An `io` failure line (`capture worker failed (io): <message>`) carries the first
+failing worker's one-line diagnostic, bounded to 512 characters with control
+characters removed and parser errors reduced to their class; it reaches stderr
+only, never the published status, whose failure message stays fixed.
+A dead lock owner whose recorded start is missing, malformed or in the future
+is still reclaimed and reported on stderr, but published as `reclaimedLock: null`.
 Partial work exits zero without claiming completion. Ordinary lock overlap
 exits zero and preserves the existing receipt; recovery overlap instead reports
 that recovery was not performed and exits one. Lock reclamation, uncertain
@@ -1210,9 +1234,10 @@ The small-heap algorithm fixture invokes synchronous capture/index libraries
 directly: lowering the CLI parent's heap cannot lower its fixed-policy worker
 heap. Actual CLI fixtures separately cover worker routing, selected capture,
 append-only catch-up, recovery receipts, overlap and foreground scheduling.
-Health/doctor remains unfinished;
-fresh-audit/parent metadata/storage/synchronization and full hosted manager and
-rollback qualification are still required before service acceptance.
+Package health and [kernel doctor delegation](#kernel-doctor-delegation) are
+implemented; health/doctor runtime qualification, fresh-audit/parent
+metadata/storage/synchronization and full hosted manager and rollback
+qualification are still required before service acceptance.
 
 ### Detached hook launcher
 
@@ -1242,9 +1267,9 @@ handling, child reaping and lock release. Admitted worker receipts use trigger
 The launcher writes no receipt. Failure after OS spawn but before a worker can
 publish status may leave absent or older status, and ignored stderr cannot
 report that failure back to the completed harness call. Launch acknowledgement
-is therefore not a health check; current service health/doctor and hosted
-lifecycle qualification remain separate gates. No numeric launch latency is
-established by this implementation.
+is therefore not a health check: use `capture --health` or deployment doctor.
+Hosted lifecycle qualification remains a separate gate. No numeric launch
+latency is established by this implementation.
 
 Setup refreshes recognized owned Stop/SessionEnd entries to `--quiet --hook`,
 `async:false` and `timeout:10`, even when their command already matches. The
@@ -1343,12 +1368,24 @@ does not execute them. A basename, shell mention, wrapper, unsupported marker,
 malformed file or extra directive is not ownership.
 
 Foreign files or registered identities produce `E_CAPTURE_SERVICE_FOREIGN`;
-installed disabled/masked state produces `E_CAPTURE_SERVICE_DISABLED`.
-Both refuse before mutation and print quoted recovery commands preserving the
-selected owner/root/Node: explicitly choose `--replace-service`, or
-`--no-service` to preserve the manager configuration. New absent definitions
-are not disabled. Replacement intent never waives unknown state, read errors,
-unsupported drop-ins, backup failure or identity changes. `--no-service`
+installed disabled/masked state produces `E_CAPTURE_SERVICE_DISABLED`, whose
+message states the manager state observed. It does not claim the operator
+disabled the unit: a timer that setup wrote but failed to enable reads as
+disabled too. Both refuse before mutation and print quoted recovery commands
+in the user-facing form (`oats setup …` under the kernel, `turn-record setup …`
+standalone) preserving the selected owner/root: explicitly choose
+`--replace-service`, or `--no-service` to preserve the manager configuration.
+Other setup failures print the same form of retry command; none names the
+running Node or the package-internal setup script. New absent definitions
+are not disabled. A macOS `launchctl print-disabled` entry for the label is the
+exception: launchd keeps that override after the plist is gone and setup never
+writes one, so it is operator state and refuses even when the named plist is
+absent. Setup reads only the disabled-services block of that output, accepting
+both `true`/`false` and `disabled`/`enabled` values; any other entry refuses. Replacement intent never waives unknown state, read errors,
+unsupported drop-ins, backup failure or identity changes. On macOS, a
+registration of `ai.aweb.turn-record-capture` loaded from any plist other than
+the named one is foreign and is refused naming that path, even with
+`--replace-service`; setup never unlinks or boots out that file. `--no-service`
 bypasses service target reads and manager calls entirely. `--dry-run` reads
 target files but writes nothing and calls no manager; unloaded/disabled state
 is explicitly unexamined.
@@ -1390,8 +1427,9 @@ can leave backups, stopped jobs or written definitions before a later failure;
 there is no global atomic rollback. Inspect the reported state and rerun.
 An installed disabled timer after failed activation remains ambiguous with
 operator intent and requires explicit replacement. Hooks and the first pass
-follow successful service apply; capture receipts retain their own failure
-and partial meanings.
+follow successful service apply: a service refusal or failure exits 1 without
+writing hooks or running the first pass. Capture receipts retain their own
+failure and partial meanings.
 
 Fake-manager and isolated CLI fixtures exercise this ordering and refusal
 contract. Real macOS/Linux manager lifecycle, active-pass preservation,

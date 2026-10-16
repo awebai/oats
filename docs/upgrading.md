@@ -280,9 +280,9 @@ under npm's global prefix (`npm prefix -g`).
   removes the kernel with it. Four things name that kernel by its path: each
   instance home's own `oats` (`<home>/.oats/bin/oats`), the Claude Code hooks
   of a Claude instance, the host timer's unit, and what `oats setup` installs
-  (the turn record's capture hooks and its watcher, which name the capture
-  script inside the kernel). OATS cannot make a path inside a Node version
-  outlast that version.
+  (the turn record's capture hooks and its periodic capture service, which
+  name the capture scripts inside the kernel). OATS cannot make a path
+  inside a Node version outlast that version.
 
 Both layouts can exist on one host: check the prefix in the shell that
 installs the CLI.
@@ -295,7 +295,7 @@ record the `node` that runs them, by one rule
 - **On Homebrew**, the `opt` link (`<prefix>/opt/node/bin/node`) when it is
   the `node` running the kernel. `brew upgrade node` repoints it, so the
   recorded path outlasts the upgrade: the hooks, the timer and the capture
-  watcher need nothing done.
+  service need nothing done.
 - **Otherwise**, a `node` on `PATH` that is the same file as the one running
   the kernel. With mise that is the version's own install, which does not
   outlast the version (other version managers were not measured).
@@ -305,18 +305,26 @@ record the `node` that runs them, by one rule
 
 **What `oats setup` records is in your own files, not in an instance home:**
 the capture hooks (`Stop` and `SessionEnd`) in every `~/.claude*/settings.json`
-of the user who ran it, and the capture watcher's unit
-(`~/Library/LaunchAgents/ai.aweb.turn-record-capture.plist` on macOS,
-`~/.config/systemd/user/turn-record-capture.service` on Linux). No spawn,
-start or restart writes them: only `oats setup` run again does, and it
-replaces its own hooks and unit, it does not add a second one.
+of the user who ran it, and the periodic capture service's definitions. On
+macOS that is `~/Library/LaunchAgents/ai.aweb.turn-record-capture.plist`, a
+launchd job with `StartInterval` 900; on Linux, a finite
+`~/.config/systemd/user/turn-record-capture.service` started by
+`turn-record-capture.timer` every 15 minutes. Each start runs one bounded
+capture pass and exits. No spawn, start or restart writes them: only
+`oats setup` run again does. It replaces its own hooks and definitions, and
+converts a capture watcher an earlier setup installed; it does not add a
+second one. A definition it does not recognize as its own, or one found
+disabled or masked, is refused with a printed choice: `--replace-service` to
+replace it, or `--no-service` to keep it and skip service files and manager
+calls. `--dry-run` prints what setup would do and changes nothing
+([Capture service release order](#capture-service-release-order)).
 
 Once the recorded `node` no longer exists (an old version removed under a
 version manager, for example), the hooks fail without a message, so the
 instance stops reporting that it waits on you, and
 `oats schedule host status` reports `node-missing`. The capture hooks then
-fail at every stop of every Claude Code session of that user, and launchd or
-systemd keeps restarting a watcher that cannot start.
+fail at every stop of every Claude Code session of that user, and every
+15-minute start of the capture service fails.
 
 **A home spawned with an oats.core that does not read `OATS_NODE_BIN`** does
 not follow the rule. Its hooks record the path of the `node` its hook ran
