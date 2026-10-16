@@ -1,15 +1,17 @@
 # OATS: an open framework for specialised agent teams
 
-**Free, open source, provider-agnostic, and decentralised by design.**
+**Free, open source, provider- and harness-agnostic, and decentralised by design.**
 
 [![npm version](https://img.shields.io/npm/v/@awebai/oats.svg)](https://www.npmjs.com/package/@awebai/oats)
 [![Release](https://img.shields.io/github/v/release/awebai/oats?display_name=tag)](https://github.com/awebai/oats/releases)
 [![Node 22+](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-OATS—**Open Agent Team Specification**—is a framework for building, running and coordinating teams of specialised AI agents. You can organise your team however you need, choosing models, harnesses and capabilities without being tied to a particular provider or stack.
+OATS—**Open Agent Team Specification**—is a completely free and open-source, provider- and harness-agnostic framework for building distributed agent teams. Its CLI and contracts set up agents that work together on one laptop, across machines or across a large organisation, as flexibly as you need.
 
-**Capabilities are the building blocks of an OATS setup.** When you define an agent, you choose its capabilities. Each provides the know-how and tools for knowledge systems, messaging, task coordination or any other workflows, tools or ways of working. We provide defaults to get started, but you can adapt existing capabilities or create fully custom ones to shape how your agents work and which tools they use.
+**Each agent keeps the full power of its own harness**, whether Claude Code, Codex or pi. OATS connects them: agents on different harnesses and providers communicate and work together, while you keep control of their messaging, knowledge, coordination and anything else your team does.
+
+**Capabilities shape the team exactly the way you want it:** the agents, the tools you already use, and how they coordinate. We ship opinionated defaults that we think work well, and you can change or replace any of them.
 
 The [official catalog](docs/official-catalog.md) is the reviewed list of official packages; a workspace trusts a package by declaring it, and listing does not declare it for you.
 
@@ -25,7 +27,7 @@ Through your capabilities, you remain in control of:
 
 These choices determine how your team operates and where the value of its work accumulates. Keeping them under your control means your knowledge, workflows and team structure can outlast any particular model or platform.
 
-OATS also provides **OATS Desktop: a free, fully integrated ADE—an agentic IDE**. It brings your team, its work and its agent sessions into one place, making day-to-day collaboration with your agents clearer and more pleasant.
+**So you don't lose your head as the threads multiply,** OATS gives you two clients that bring your team, its work and its agent sessions into one place: **OATS Desktop**, a free, fully integrated ADE (an agentic IDE), and **`oats tui`** for the terminal (in preview).
 
 OATS builds on tools you already use—**Git, GitHub or GitLab, and your preferred agent harnesses**. People can share agent definitions, knowledge and workflows across projects without an OATS account, a central OATS server or an OATS-hosted database. Selected integrations may use their own servers or databases; those are your choices, not a mandatory OATS service.
 

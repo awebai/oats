@@ -269,7 +269,7 @@ test("the leader then Up or Down moves from the open terminal's instance, not fr
 
 // ── The palette ──────────────────────────────────────────────────────────────────────────────────
 
-test("the palette lists the instances that can be opened, the views, the acts the selected instance offers, then Spawn an agent, Workspaces, Refresh and Help; an instance's row carries its mark, name and machine", () => {
+test("the palette lists the instances that can be opened, the views, the acts the selected instance offers, then Spawn an agent, Workspaces, Refresh and Help; an instance's row carries its mark, name, machine and siblings", () => {
   const state = key(THREE(), "ctrl+k").state;
   assert.deepEqual(rows(state), [
     "instance dev-a", "instance dev-c",
@@ -278,7 +278,7 @@ test("the palette lists the instances that can be opened, the views, the acts th
     "command Spawn an agent", "command Workspaces", "command Refresh", "command Help",
   ]);
   const a = idOf(state, "dev-a");
-  assert.deepEqual(paletteItems(state).items[0], { key: `instance\u0000${a}`, kind: "instance", label: "dev-a", id: a, name: "dev-a", machine: null, mark: "running", text: "dev-a " });
+  assert.deepEqual(paletteItems(state).items[0], { key: `instance\u0000${a}`, kind: "instance", label: "dev-a", id: a, name: "dev-a", machine: null, mark: "running", sibling: null, text: "dev-a " });
   assert.deepEqual(paletteItems(state).items[5], { key: "act\u0000stop", kind: "act", label: "Stop", does: "stop", id: a, name: "dev-a", text: "Stop dev-a" });
   assert.equal(paletteItems(state).selected, `instance\u0000${a}`, "the first row is selected");
   // The acts are the selected instance's: dev-b is stopped, so it is started, not restarted.

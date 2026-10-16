@@ -149,7 +149,8 @@ const FIELDS = {
   "the branch": (value, options) => shownAs({ branch: value }, options),
   "the team": (value, options) => stateOf(inTeam([one()], value), options),
   "the parent": (value, options) => shownAs({ parentInstance: value }, options),
-  "the sibling": (value, options) => shownAs({ siblingInstance: value }, options),
+  // A sibling is named only when its name is an instance of the roster (#1315): row-1, selected, links to it.
+  "the sibling": (value, options) => Object.freeze({ ...stateOf(observed([one({ siblingInstance: value }), instanceRow("soul", value)]), options), selected: HOME }),
   "the runtime state of a stopped instance": (value, options) => shownAs({ running: false, runtimeState: value }, options),
   "the runtime state of an instance the kernel could not answer for": (value, options) => shownAs({ running: null, runtimeState: value }, options),
   "the runtime error": (value, options) => shownAs({ running: null, runtimeState: "unreachable", runtimeError: value }, options),
