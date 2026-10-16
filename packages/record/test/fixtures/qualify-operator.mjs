@@ -42,14 +42,16 @@ export async function qualifyOperatorShaped(t, { streams }) {
   const retainedBytes = retained.reduce((sum, path) => sum + fs.statSync(path).size, 0);
   const shape = { streams, largeSessions: large, largeBytes: LARGE_BYTES, largeLineBytes: LARGE_LINE_BYTES, retainedSources: retained.length,
     retainedBytes, tailSources: tail.length, tailBytes: synthetic.bytes - retainedBytes, sourceBytes: synthetic.bytes,
-    retainedShare: Math.round(retainedBytes / synthetic.bytes * 1000) / 1000, F: synthetic.bytes / OPERATOR.journalBytes, operator: OPERATOR };
+    retainedShare: Math.round(retainedBytes / synthetic.bytes * 1000) / 1000,
+    // Source bytes over the operator's journal bytes; F, as in Q1, is reported with the journals.
+    sourceRatio: synthetic.bytes / OPERATOR.journalBytes, operator: OPERATOR };
   report(t, "operator-shape", shape);
   assert.equal(retained.length, large, "every large session is over the retained-path threshold");
 
   const historical = performance.now();
   captureHistorical(root, synthetic.sessions);
-  const journals = journalBytes(root);
-  report(t, "operator-journals", { journalBytes: journals.bytes, journalStreams: journals.streams, wallMs: Math.round(performance.now() - historical),
+  const journals = journalBytes(root), F = journals.bytes / OPERATOR.journalBytes;
+  report(t, "operator-journals", { journalBytes: journals.bytes, journalStreams: journals.streams, F, wallMs: Math.round(performance.now() - historical),
     writer: "public synchronous captureSessions (no record limit)" });
   dropDerived(root);
 
@@ -63,12 +65,12 @@ export async function qualifyOperatorShaped(t, { streams }) {
   const summary = { streams, complete: upgrade.complete, stalled: upgrade.stalled, passes: upgrade.passes.length, wallMs: upgrade.wallMs,
     passDeadlineMs: CAPTURE_POLICY.deadlineSeconds * 1000, wallShareOfOnePass: Math.round(upgrade.wallMs / (CAPTURE_POLICY.deadlineSeconds * 1000) * 1000) / 1000,
     retained: amplification(files, retained), tail: amplification(files, tail), bytesRead, rchar,
-    bytesReadPerSourceByte: Math.round(bytesRead / synthetic.bytes * 100) / 100, journalBytes: journals.bytes, ...shape };
+    bytesReadPerSourceByte: Math.round(bytesRead / synthetic.bytes * 100) / 100, journalBytes: journals.bytes, F, ...shape };
   report(t, "operator-first-upgrade", summary);
   report(t, "operator-first-upgrade-reads", { streams, ...readBreakdown(reads, { bases: { home: synthetic.home, root } }) });
   table(t, `operator-shaped first upgrade at ${streams} streams (reported against the #1108 bars, not asserted)`, [{
     streams, passes: summary.passes, wallMs: summary.wallMs, wallShareOfOnePass: summary.wallShareOfOnePass,
-    retainedRatio: summary.retained.ratio, tailRatio: summary.tail.ratio, bytesRead, rchar, sourceBytes: synthetic.bytes, F: shape.F.toExponential(3) }]);
+    retainedRatio: summary.retained.ratio, tailRatio: summary.tail.ratio, bytesRead, rchar, sourceBytes: synthetic.bytes, F: F.toExponential(3) }]);
   assert.ok(upgrade.complete, `the operator-shaped first upgrade at ${streams} streams did not complete: ${upgrade.passes.length} passes in ${upgrade.wallMs} ms` +
     `${upgrade.stalled ? " (stalled)" : ""}, last ${rows.at(-1)?.outcome}/${rows.at(-1)?.reason}`);
 }

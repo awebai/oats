@@ -199,17 +199,19 @@ export async function measuredPass(root, home, { policy = CAPTURE_POLICY, indexE
  *  starts only while a whole pass's reserve is left. Never shortens the
  *  production deadline: on running out it returns the passes so far (none
  *  when the budget held no pass). Two consecutive partial passes that commit
- *  nothing are a stall, reported as such (`stalled`) rather than spending the
- *  rest of the budget. */
+ *  nothing and leave lastProgressAt where the pass before them left it are a
+ *  stall, reported as such (`stalled`) rather than spending the rest of the
+ *  budget. A proof or staging pass commits no bytes but does move progress. */
 export async function untilComplete(root, home, { policy = CAPTURE_POLICY, budgetMs = 18 * 60_000, indexEnabled = true } = {}) {
   const passes = [], began = performance.now();
-  const idle = pass => { const c = pass.status?.lastRun?.counts ?? {}; return !c.bytesCommitted && !c.turnsAppended && !c.turnsIndexed; };
+  const idle = (pass, previous) => { const c = pass.status?.lastRun?.counts ?? {};
+    return !c.bytesCommitted && !c.turnsAppended && !c.turnsIndexed && pass.status?.lastProgressAt === previous?.status?.lastProgressAt; };
   let stalled = false;
   while (budgetMs - (performance.now() - began) >= passReserveMs(policy)) {
     const pass = await measuredPass(root, home, { policy, indexEnabled });
     passes.push(pass);
     if (pass.result.outcome === "complete" || pass.result.outcome === "failed") break;
-    if (passes.length >= 2 && idle(pass) && idle(passes.at(-2))) { stalled = true; break; }
+    if (passes.length >= 3 && idle(pass, passes.at(-2)) && idle(passes.at(-2), passes.at(-3))) { stalled = true; break; }
   }
   return { passes, complete: passes.at(-1)?.result.outcome === "complete", stalled, wallMs: Math.round(performance.now() - began) };
 }
