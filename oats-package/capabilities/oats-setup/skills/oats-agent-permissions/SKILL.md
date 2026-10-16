@@ -128,7 +128,8 @@ mode.
       "Bash(oats launch-config preview *)", "Bash(oats okf index *)", "Bash(oats okf cat *)",
       "Bash(oats okf search *)", "Bash(oats okf ls *)", "Bash(oats okf links *)",
       "Bash(oats okf bases *)", "Bash(oats okf status *)",
-      "Bash(oats spawn *)", "Bash(oats instance attention *)", "Bash(oats worktree *)",
+      "Bash(oats instance attention *)", "Bash(oats worktree *)",
+      "Bash(oats spawn *)",
       "Bash(oats retire * --plan)", "Bash(oats retire * --plan *)",
       "Bash(oats instance stop * --plan)", "Bash(oats instance stop * --plan *)",
       "Bash(aw mail inbox *)", "Bash(aw mail show *)", "Bash(aw mail ack *)",
@@ -138,8 +139,10 @@ mode.
       "Bash(gh issue view *)", "Bash(gh issue list *)", "Bash(gh run view *)", "Bash(gh run list *)"
     ],
     "ask": [
-      "Bash(oats spawn *--yolo*)", "Bash(oats spawn *--server*)", "Bash(oats spawn *--wake-*)",
-      "Bash(aw *--server-name*)"
+      "Bash(aw *--server-name*)",
+      "Bash(oats spawn *--yolo*)",
+      "Bash(oats spawn *--server*)",
+      "Bash(oats spawn *--wake-*)"
     ]
   }
 }

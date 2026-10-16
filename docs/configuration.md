@@ -312,7 +312,8 @@ configuration is a host choice: a soul never names one.
   capabilities manage it at every start, and Claude ignores auto mode there.
   oats.setup's `/oats-agent-permissions` (oats.framework 1.13.0) teaches the
   setup: auto mode, narrow allow rules for the `oats` and `gh` reads,
-  `oats spawn` and reading `aw` mail and chat, and what stays gated. `yolo` is separate and is meant for isolated machines.
+  `oats spawn` and reading `aw` mail and chat, and what stays gated.
+  `yolo` is separate and is meant for isolated machines.
 
 ### The harness default
 
