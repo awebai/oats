@@ -4,6 +4,7 @@
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureCommandOptions } from "./capture-command.mjs";
+import { CAPTURE_POLICY } from "./capture-budget.mjs";
 
 export const captureServiceLabel = "ai.aweb.turn-record-capture";
 export const captureServiceUnit = "turn-record-capture.service";
@@ -45,9 +46,17 @@ function systemd(value, executable = false) {
   return `"${escaped}"`;
 }
 
-export function captureServiceDefinition({ platform, node, request } = {}) {
+// The schedule is the fixed policy interval. intervalSeconds is an internal
+// module seam for guarded real-manager tests only: no CLI, setting or caller
+// passes another value, and its default is the policy's 900 seconds.
+export function captureServiceIntervalText(intervalSeconds) {
+  return intervalSeconds % 60 ? `${intervalSeconds}s` : `${intervalSeconds / 60}min`;
+}
+
+export function captureServiceDefinition({ platform, node, request, intervalSeconds = CAPTURE_POLICY.intervalSeconds } = {}) {
   if (!["darwin", "linux"].includes(platform) || typeof node !== "string" ||
-      !isAbsolute(node) || /[\u0000-\u001f\u007f\ud800-\udfff]/u.test(node))
+      !isAbsolute(node) || /[\u0000-\u001f\u007f\ud800-\udfff]/u.test(node) ||
+      !Number.isSafeInteger(intervalSeconds) || intervalSeconds < 1)
     throw new Error("invalid capture service definition selection");
   const selected = captureServiceRequest(request);
   const argv = [node, entry, JSON.stringify(selected)];
@@ -60,7 +69,7 @@ export function captureServiceDefinition({ platform, node, request } = {}) {
   <key>Label</key><string>${captureServiceLabel}</string>
   <key>ProgramArguments</key><array>${argv.map(arg => `<string>${xml(arg)}</string>`).join("")}</array>
   <key>RunAtLoad</key><true/>
-  <key>StartInterval</key><integer>900</integer>
+  <key>StartInterval</key><integer>${intervalSeconds}</integer>
   <key>StandardOutPath</key><string>${xml(log)}</string>
   <key>StandardErrorPath</key><string>${xml(log)}</string>
 </dict></plist>
@@ -84,7 +93,7 @@ Description=turn-record periodic capture
 
 [Timer]
 OnBootSec=1min
-OnUnitActiveSec=15min
+OnUnitActiveSec=${captureServiceIntervalText(intervalSeconds)}
 Unit=${captureServiceUnit}
 
 [Install]

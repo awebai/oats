@@ -1494,8 +1494,20 @@ never as "nothing happened". Setup has no `--json` mode; a machine-readable
 rendering of the same value is follow-up awebai/oats#1330.
 
 Fake-manager and isolated CLI fixtures exercise this ordering and refusal
-contract. Real macOS/Linux manager lifecycle, active-pass preservation,
-rollback and quoting qualification remain guarded hosted obligations.
+contract. Real-manager cases live in `test/capture-service-real-darwin.test.mjs`
+(launchd) and `test/capture-service-real-linux.test.mjs` (systemd --user). They
+run only when `GITHUB_EVENT_NAME` is `workflow_dispatch`, `GITHUB_WORKFLOW`
+names their own workflow ("macOS tests" or "Linux tests") and the platform
+matches, and skip with that reason everywhere else, pull-request CI and any
+developer machine included; a skip is not evidence. They cover the real
+`print-disabled` output against setup's parser (first), first install,
+conversion from an owned legacy watcher with no surviving watcher, an
+unchanged rerun preserving an active pass, a changed definition taking effect,
+the #1099 failed-enable rerun, unloaded recovery, the next idle trigger, the
+effective `MemoryMax`/`RuntimeMaxSec`, and missing, failing or signalled
+managers. The idle-trigger case uses the definition's internal interval seam
+(default and production value 900 seconds; no CLI or setting reaches it).
+Rollback and quoting qualification remain hosted obligations.
 Health/doctor runtime qualification, final schema delivery and full service
 acceptance remain separate; audit allowance/reservation/storage/synchronization
 gates are unchanged.

@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { basename, dirname, isAbsolute, join } from "node:path";
+import { CAPTURE_POLICY } from "./capture-budget.mjs";
 import { capturePendingActivationName, captureServiceDefinition, captureServiceLabel, captureServiceUnit, captureServiceTimer } from "./capture-service-definition.mjs";
 import { captureServiceOwnership, captureServiceArgvOwnership } from "./capture-service-ownership.mjs";
 
@@ -186,17 +187,19 @@ function refuse(plan, code, found, replaceable = true) {
 }
 
 export function preflightCaptureService({ platform, node, request, setupCommand, dry = false, replace = false,
-  noHooks = false, uid = process.getuid?.(), run = manager, log = console.log }) {
-  const definition = captureServiceDefinition({ platform, node, request });
+  noHooks = false, uid = process.getuid?.(), run = manager, log = console.log, intervalSeconds = CAPTURE_POLICY.intervalSeconds }) {
+  // intervalSeconds is the definition module's internal seam for guarded
+  // real-manager tests; ownership and verification expect what was rendered.
+  const definition = captureServiceDefinition({ platform, node, request, intervalSeconds }), schedule = { intervalSeconds };
   // All targets are read before a refusal or mutation; no existsSync fallback
   // may turn EACCES, a dangling link, or an unreadable target into absence.
   const files = definition.files.map(file => {
     const snapshot = captureSetupSnapshot(file.path), kind = file.path.endsWith(".plist") ? "plist" : file.path.endsWith(".timer") ? "timer" : "service";
     const ownership = snapshot.kind === "absent" ? "absent" : platform === "linux" && snapshot.kind === "link" && snapshot.link === "/dev/null" ? "masked" : snapshot.kind === "file" &&
-      Buffer.from(snapshot.bytes.toString("utf8")).equals(snapshot.bytes) ? captureServiceOwnership(snapshot.bytes.toString("utf8"), kind) : "foreign";
+      Buffer.from(snapshot.bytes.toString("utf8")).equals(snapshot.bytes) ? captureServiceOwnership(snapshot.bytes.toString("utf8"), kind, schedule) : "foreign";
     return { ...file, snapshot, ownership, changed: snapshot.kind !== "file" || !snapshot.bytes.equals(Buffer.from(file.contents)) };
   });
-  const plan = { platform, node, request: JSON.parse(definition.argv[2]), setupCommand, dry, replace, noHooks, run, log, files,
+  const plan = { platform, node, request: JSON.parse(definition.argv[2]), setupCommand, dry, replace, noHooks, run, log, files, intervalSeconds,
     argv: definition.argv, domain: `gui/${uid}`, target: `gui/${uid}/${captureServiceLabel}` };
   if (platform === "darwin" && !Number.isSafeInteger(uid)) throw new Error("cannot determine launchd user domain");
   plan.state = dry ? null : inspect(plan);
@@ -234,7 +237,7 @@ export function preflightCaptureService({ platform, node, request, setupCommand,
   if (disabled.length && !replace) refuse(plan, "E_CAPTURE_SERVICE_DISABLED", `named capture service is not enabled: observed ${disabled.join(", ")}; setup enables it only when asked`);
   plan.disabled = disabled.length > 0;
   plan.changed = files.some(file => file.changed) || (platform === "darwin" && plan.state?.registered &&
-    (JSON.stringify(plan.state.argv) !== JSON.stringify(plan.argv) || plan.state.interval !== 900)) ||
+    (JSON.stringify(plan.state.argv) !== JSON.stringify(plan.argv) || plan.state.interval !== plan.intervalSeconds)) ||
     (platform === "linux" && plan.state && (Object.values(plan.state).some(state => state.NeedDaemonReload === "yes") ||
       ["enabled", "enabled-runtime"].includes(plan.state.service.UnitFileState)));
   return plan;
@@ -295,7 +298,7 @@ export function applyCaptureService(plan, createdParents = new Map()) {
     if (plan.disabled) command("launchctl", ["enable", plan.target]);
     if (plan.changed || !current.registered) command("launchctl", ["bootstrap", plan.domain, files[0].path]);
     const after = inspect(plan);
-    if (after.disabled || !after.registered || after.path !== files[0].path || after.interval !== 900 || JSON.stringify(after.argv) !== JSON.stringify(plan.argv))
+    if (after.disabled || !after.registered || after.path !== files[0].path || after.interval !== plan.intervalSeconds || JSON.stringify(after.argv) !== JSON.stringify(plan.argv))
       throw new Error("capture launchd registration verification failed; inspect the named job and re-run setup");
   } else {
     // Stop the timer first so it cannot launch the old service between writes.

@@ -2,7 +2,8 @@
 // written. Unsupported directives, expansions, markers or XML are foreign,
 // never permission inferred from a filename or a mention of capture.
 import { basename, isAbsolute, join } from "node:path";
-import { captureServiceLabel, captureServiceUnit, captureServiceRequest } from "./capture-service-definition.mjs";
+import { captureServiceIntervalText, captureServiceLabel, captureServiceUnit, captureServiceRequest } from "./capture-service-definition.mjs";
+import { CAPTURE_POLICY } from "./capture-budget.mjs";
 
 const owner = value => /^[A-Za-z0-9._-]+$/.test(value);
 const node = value => typeof value === "string" && isAbsolute(value) && ["node", "nodejs"].includes(basename(value));
@@ -105,7 +106,8 @@ function plist(text) {
   return values;
 }
 
-export function captureServiceOwnership(text, kind) {
+// intervalSeconds: the definition module's internal test seam, default the policy.
+export function captureServiceOwnership(text, kind, { intervalSeconds = CAPTURE_POLICY.intervalSeconds } = {}) {
   try {
     const markers = text.match(/oats-turn-record-service:[^\s<>]*/g) ?? [];
     if (markers.length > 1 || (markers.length && markers[0] !== "oats-turn-record-service:1")) return "foreign";
@@ -117,12 +119,12 @@ export function captureServiceOwnership(text, kind) {
       if (p.Label !== captureServiceLabel || p.RunAtLoad !== true || typeof p.StandardOutPath !== "string" ||
           p.StandardOutPath !== p.StandardErrorPath || !isAbsolute(p.StandardOutPath)) return "foreign";
       if (!marked && exactKeys(p, [...common, "KeepAlive", "ThrottleInterval"]) && p.KeepAlive === true && p.ThrottleInterval === 60 && legacy(p.ProgramArguments)) return "legacy";
-      const request = marked && exactKeys(p, [...common, "StartInterval"]) && p.StartInterval === 900 && periodic(p.ProgramArguments);
+      const request = marked && exactKeys(p, [...common, "StartInterval"]) && p.StartInterval === intervalSeconds && periodic(p.ProgramArguments);
       return request && p.StandardOutPath === join(request.plan.home, "Library", "Logs", "turn-record-capture.log") ? "periodic" : "foreign";
     }
     const p = ini(text);
     if (kind === "timer") return marked && exactKeys(p, ["Unit.Description", "Timer.OnBootSec", "Timer.OnUnitActiveSec", "Timer.Unit", "Install.WantedBy"]) &&
-      p["Unit.Description"] === "turn-record periodic capture" && p["Timer.OnBootSec"] === "1min" && p["Timer.OnUnitActiveSec"] === "15min" &&
+      p["Unit.Description"] === "turn-record periodic capture" && p["Timer.OnBootSec"] === "1min" && p["Timer.OnUnitActiveSec"] === captureServiceIntervalText(intervalSeconds) &&
       p["Timer.Unit"] === captureServiceUnit && p["Install.WantedBy"] === "timers.target" ? "periodic" : "foreign";
     const argv = serviceSystemdArgs(p["Service.ExecStart"] ?? "");
     if (!marked && exactKeys(p, ["Unit.Description", "Service.ExecStart", "Service.Restart", "Service.RestartSec", "Install.WantedBy"]) &&

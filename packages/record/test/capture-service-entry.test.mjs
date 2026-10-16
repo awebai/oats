@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureDefaultRootPlan } from "../lib/capture-default-roots.mjs";
 import { captureServiceRequest, captureServiceDefinition } from "../lib/capture-service-definition.mjs";
+import { captureServiceOwnership } from "../lib/capture-service-ownership.mjs";
 import { readCaptureStatus } from "../lib/capture-status.mjs";
 import { acquireCaptureLock, captureLockPath } from "../lib/capture-lock.mjs";
 import { RecordStore } from "../lib/store.mjs";
@@ -154,6 +155,26 @@ test("pure periodic definitions preserve argv and literal manager expansion synt
     }
   }
   assert.equal(fs.existsSync(plan.home), false); assert.equal(fs.existsSync(f.root), false);
+});
+
+test("the interval seam defaults to the policy's 900 seconds and production ownership accepts only that", () => {
+  const plan = captureDefaultRootPlan({ home: "/fixture/home", cwd: "/fixture", env: {} }), request = { root: "/fixture/record", owner: "fixture", plan };
+  for (const platform of ["darwin", "linux"]) {
+    const kinds = platform === "darwin" ? ["plist"] : ["service", "timer"];
+    const standard = captureServiceDefinition({ platform, node: "/fixture/node", request });
+    assert.deepEqual(captureServiceDefinition({ platform, node: "/fixture/node", request, intervalSeconds: 900 }), standard);
+    const short = captureServiceDefinition({ platform, node: "/fixture/node", request, intervalSeconds: 15 });
+    short.files.forEach((file, i) => {
+      assert.equal(captureServiceOwnership(standard.files[i].contents, kinds[i]), "periodic");
+      // Only the timer and plist carry the interval; a 15-second schedule is
+      // owned only where the same seam value is expected.
+      if (file.contents === standard.files[i].contents) return;
+      assert.equal(captureServiceOwnership(file.contents, kinds[i]), "foreign");
+      assert.equal(captureServiceOwnership(file.contents, kinds[i], { intervalSeconds: 15 }), "periodic");
+    });
+    assert.match(short.files.at(-1).contents, platform === "darwin" ? /<integer>15<\/integer>/ : /^OnUnitActiveSec=15s$/m);
+    for (const bad of [0, -1, 1.5, "900"]) assert.throws(() => captureServiceDefinition({ platform, node: "/fixture/node", request, intervalSeconds: bad }));
+  }
 });
 
 test("definition rendering rejects unsupported manager/executable encodings without filesystem work", t => {
