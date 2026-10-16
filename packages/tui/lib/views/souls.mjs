@@ -79,8 +79,9 @@ export function soulsListed(s) {
 }
 
 /** A line of the TUI's own on as many rows of `width` cells as it needs, broken at its spaces but
- *  never inside a command between backticks: a command cut in two cannot be typed. */
-function ownLines(text, width) {
+ *  never inside a command between backticks: a command cut in two cannot be typed. The Capabilities
+ *  view sets its own lines with it too. */
+export function ownLines(text, width) {
   const words = text.match(/`[^`]*`[^\s`]*|\S+/g) ?? [];
   return words.reduce((lines, word) => {
     const last = lines.at(-1);
@@ -92,8 +93,9 @@ function ownLines(text, width) {
 
 /** Units set on rows of `width` cells from column 0, `gap` cells between two: a unit is pieces
  *  (`{ text, width, style, glue }`) written together, one cell between two but before a glued one
- *  (a comma). A unit is never broken over two rows; one wider than a row is cut there. */
-function flowed(units, width, gap = 1) {
+ *  (a comma). A unit is never broken over two rows; one wider than a row is cut there. The
+ *  Capabilities view flows what a capability provides with it. */
+export function flowed(units, width, gap = 1) {
   const unitWidth = (unit) => unit.reduce((sum, piece, i) => sum + piece.width + (i > 0 && !piece.glue ? 1 : 0), 0);
   const rows = [];
   let row = [], used = 0;

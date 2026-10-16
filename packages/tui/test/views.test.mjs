@@ -14,13 +14,14 @@ import {
   originLead, panelInstances, primaryDeployment, remoteRosterState, rosterRows, rowReason, runtimeState, waitedText, waitingBelowText, waitingClock, waitingLabel, workspaceChoiceRows, workspaceChoices,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
-import { MORE_FOLDERS, NOT_BUILT, OFFERED_SECTION, ROSTER_FAILED, heldOf, model, paletteItems, panelOf, roster } from "../lib/model.mjs";
+import { MORE_FOLDERS, OFFERED_SECTION, ROSTER_FAILED, heldOf, model, paletteItems, panelOf, roster } from "../lib/model.mjs";
 import { reduce } from "../lib/store.mjs";
 import { captureRows } from "../lib/term/capture.mjs";
 import { createScreen } from "../lib/term/screen.mjs";
 import { PLAIN, isStyle, style } from "../lib/term/style.mjs";
 import { isSafeText, shown, textOf } from "../lib/term/text.mjs";
 import { textWidth } from "../lib/term/width.mjs";
+import { CAPABILITIES_TEXT } from "../lib/views/capabilities.mjs";
 import { LIST_BESIDE, MIN_SIZE, PANEL_MIN, WIDE, frame } from "../lib/views/frame.mjs";
 import { ACT_RULES, MACHINES, NOT_YET, VIEWS, keysLabel } from "../lib/views/help.mjs";
 import { EMPTY_TEXT, MARKS, cutNote, marksOf } from "../lib/views/instances.mjs";
@@ -1470,12 +1471,15 @@ test("the help lists the marks with their words, in UTF-8 and in ASCII: each mar
   }
 });
 
-test("the help says what each view holds, and what to run for what it does not do yet: the Capabilities view; the Souls view spawns now (n), so it names no command", () => {
+test("the help says what each view holds, and names no command for a view: the Souls view spawns now (n), and the Capabilities view lists the capabilities, a capability's skills and files being the one thing left to the kernel's command", () => {
   const lines = helpLines(golden());
   const line = (name) => lines.find((text) => text.trim().startsWith(name));
   assert.equal(line("2 Souls").includes("the souls of the open workspace") && line("2 Souls").includes("n an agent of the selected soul"), true);
   assert.equal(line("2 Souls").includes("oats spawn") || line("2 Souls").includes("not in this version"), false, "spawning is in this version: the Souls view names no command for it");
-  assert.equal(line("3 Capabilities").includes("oats capabilities"), true);
+  assert.equal(line("3 Capabilities").includes("the capabilities of the open workspace and their detail, Enter on a soul that uses one shows it in Souls"), true);
+  assert.equal(line("3 Capabilities").includes("oats capabilities") || line("3 Capabilities").includes("not in this version"), false, "the Capabilities view is in this version: it names no command");
+  assert.deepEqual(VIEWS.map((view) => view.commands), [[], [], []], "no view names a command");
+  assert.deepEqual(NOT_YET.filter((entry_) => entry_.command.startsWith("oats capabilities")), [{ what: "see a capability's skills and files", command: "oats capabilities show <name>" }], "what the view does not show is left to `oats capabilities show`");
   assert.equal(typeof line("1 Instances"), "string");
   for (const view of VIEWS) for (const command of view.commands) assert.equal(line(view.name).includes(command), true, `${view.name}: ${command}`);
   assert.deepEqual(VIEWS.map((view) => view.name), ["1 Instances", "2 Souls", "3 Capabilities"], "the views the frame names");
@@ -2540,12 +2544,12 @@ test("the help says every limit of this version: adding, checking and removing a
     assert.equal(text.find((line) => line.startsWith("1 Instances")).includes("on this machine"), false, `${at}: the Instances view is the open workspace's, not this machine's alone`);
   }
   // The three limits no command lifts, as the spec lists them: whose time a machine's rows carry,
-  // that nothing is kept on disk, and whose Souls and Capabilities will be shown.
+  // that nothing is kept on disk, and whose Souls and Capabilities are shown.
   assert.equal(MACHINES.length, 3);
   assert.match(MACHINES[0], /machine's rows are what it reported at the time on its heading/);
   assert.match(MACHINES[0], /in a view of one machine, in the header/);
   assert.match(MACHINES[1], /Nothing is kept on disk: a machine not reached in this run is listed by its own name/);
-  assert.match(MACHINES[2], /Souls and Capabilities, when they come, are this machine's/);
+  assert.equal(MACHINES[2], "Souls and Capabilities are this machine's.", "both views are built: no `when they come`");
   assert.equal(NOT_YET.some((entry_) => entry_.command === "oats server roster" || entry_.what === "other machines"), false);
   // The mark of the open workspace is listed with the others.
   for (const ascii of [false, true]) assert.equal(helpLines(reached({ ascii })).some((line) => line.trim().startsWith(`${OPEN_MARK}  `) && line.includes("workspaces")), true);
@@ -2793,9 +2797,11 @@ test("the help lists Enter once per view with what it does there, the keys of th
   assert.equal(text.includes("c close the shown terminal and show its neighbour; the agent keeps running"), true);
   assert.equal(pair(lines, "Enter", "open the selected workspace, in the switcher"), true);
   assert.equal(pair(lines, "Enter", "show the selected soul's detail, and from the detail its instances, in the Souls view"), true);
-  // The keys' table names Enter once per view; the spawn prompt's section has its own Enter, once per step.
+  assert.equal(text.includes("Enter show the selected capability's detail, and from the detail the marked soul that uses it, in the Capabilities view"), true, text);
+  // The keys' table names Enter once per view (the instances, the switcher, the Souls view and the
+  // Capabilities view); the spawn prompt's section has its own Enter, once per step.
   const keys = lines.slice(0, lines.indexOf("The leader"));
-  assert.equal(keys.filter((line) => line.startsWith("Enter ")).length, 3, "Enter three times, once per view");
+  assert.equal(keys.filter((line) => line.startsWith("Enter ")).length, 4, "Enter four times, once per view");
   for (const [key, label] of [["1", "instances"], ["2", "souls"], ["3", "capabilities"]]) assert.equal(pair(lines, key, label), true, key);
   assert.equal(lines.some((line) => line.includes("open an agent in its own tmux window") && line.includes("oats session attach --home <home>")), true);
   // The leader's section, after the keys and before the marks (the spawn prompt's section stands
@@ -3227,16 +3233,22 @@ const openView = (d) => d.cells[1].filter((cell) => cell.style.reverse).map((cel
 /** The body's text, its rows joined. */
 const bodyText = (d, sz) => d.lines.slice(3, sz.rows - 1).map((line) => line.trim()).filter(Boolean).join(" ");
 
-// The Souls view has its content now: test/souls-view.test.mjs draws it. Capabilities still says
-// what it will hold.
-test("the Capabilities view says what it will hold and what to run, as NOT_BUILT says, at every size; the header shows it open in reverse, reached with 3 in the list or after the leader, and the leader then 1 comes back", () => {
+// The Souls view has its content (souls-view.test.mjs draws it), and so has the Capabilities view
+// (capabilities-view.test.mjs draws its list and detail). Here: the view as the frame places it
+// before its table is read, and after a read that listed none.
+/** The loop telling the store it holds the fixture's capabilities table, read and listing none
+ *  (capability-catalog.mjs, its projected entry), as lib/main.mjs does. */
+const noCapabilities = (state) => reduce(state, { capabilities: { id: DEPLOYMENT, reading: false, entry: {
+  key: "key", capabilities: { capabilitiesApi: 1, workspace: { name: "acme-platform" }, capabilities: [], problems: [] }, reason: null, at: 0, observedAt: "2026-10-11T09:59:30.000Z", stale: false, refreshing: false } } }).state;
+
+test("the Capabilities view, before its table is read, says it is reading over the whole width at every size, with no panes; the header shows it open in reverse, reached with 3 in the list or after the leader, and the leader then 1 comes back", () => {
   for (const [key, view, name] of [["3", "capabilities", " Capabilities "]]) {
     for (const state of [press(golden(), [key]).state, leaderThen(golden(), key).state, leaderThen(panelIn("focus"), key).state]) {
       assert.equal(state.view, view);
       for (const sz of SIZES) {
         const d = draw(state, sz), at = `${view} ${sz.cols}x${sz.rows}`;
         assert.equal(openView(d), name, at);
-        assert.equal(bodyText(d, sz), NOT_BUILT[view].said.map((part) => part.own).join(""), at);
+        assert.equal(bodyText(d, sz), CAPABILITIES_TEXT.reading, at);
         assert.equal(d.lines[2], "─".repeat(sz.cols), `${at}: no joint, no panes`);
         assert.equal(d.terminal ?? null, null, `${at}: no terminal`);
         fits(d, sz, at);
@@ -3245,10 +3257,13 @@ test("the Capabilities view says what it will hold and what to run, as NOT_BUILT
     assert.equal(openView(draw(leaderThen(press(golden(), [key]).state, "1").state, S80)), " Instances ", `${view}: the leader then 1`);
   }
   const caps = draw(press(golden(), ["3"]).state, S80);
-  assert.deepEqual(caps.lines.slice(3, 7), ["", " This view will list the capabilities this machine has. It is not in this", " version: `oats capabilities` lists them.", ""]);
+  assert.deepEqual(caps.lines.slice(2, 5), ["─".repeat(80), "   Reading capabilities…", ""]);
+  assert.equal(draw(press(golden({ ascii: true }), ["3"]).state, S80).lines[3], "   Reading capabilities...", "the ellipsis is three dots in ASCII");
 });
 
-test("the Capabilities view's footer offers what applies there: Esc back to the list and the workspaces, then help and quit; Enter and the acts, which do nothing there, are not offered", () => {
+test("the Capabilities view's footer offers what applies there: the filter, a read again, Esc and the workspaces, given up from the workspaces on, then help and quit; before its table is read Enter has nothing to show and the acts do nothing there, and neither is offered", () => {
+  const all = `${LEAD}/ filter   r refresh   Esc close   w workspaces   ? help   q quit`;
+  const at = { 120: all, 80: all.replace("   w workspaces", ""), 60: all.replace("   r refresh", "").replace("   w workspaces", "") };
   for (const [key, view] of [["3", "capabilities"]]) {
     for (const base of [golden(), openable()]) {
       const state = press(base, [key]).state;
@@ -3256,18 +3271,20 @@ test("the Capabilities view's footer offers what applies there: Esc back to the 
         const step = press(state, [k]);
         assert.deepEqual([step.state.view, step.state.terminal, step.state.act ?? null, step.effects], [view, null, null, []], `${view}: ${k} does nothing`);
       }
-      for (const sz of [S60, S80, S120]) assert.equal(footer(draw(state, sz), sz), `${LEAD}Esc close   w workspaces   ? help   q quit`, `${view} at ${sz.cols}`);
+      for (const sz of [S60, S80, S120]) assert.equal(footer(draw(state, sz), sz), at[sz.cols], `${view} at ${sz.cols}`);
     }
   }
 });
 
-test("the Capabilities view names each command whole on one row at every width from 60 to 200 columns: a command cut in two cannot be typed", () => {
-  for (const [key, view] of [["3", VIEWS[2]]]) {
-    const state = press(golden(), [key]).state;
-    for (let cols = MIN_SIZE.cols; cols <= 200; cols++) {
-      const sz = size(cols, 24), lines = draw(state, sz).lines.slice(3, 23);
-      for (const command of view.commands) assert.equal(lines.some((line) => line.includes(`\`${command}\``)), true, `${command} at ${cols}: ${JSON.stringify(lines.filter(Boolean))}`);
-    }
+test("the Capabilities view of a table that lists none says so and names its command whole on one row at every width from 60 to 200 columns: a command cut in two cannot be typed", () => {
+  const state = noCapabilities(press(golden(), ["3"]).state);
+  assert.equal(bodyText(draw(state, S80), S80), CAPABILITIES_TEXT.none);
+  const command = CAPABILITIES_TEXT.none.match(/`[^`]+`/)[0];
+  assert.equal(command, "`oats capabilities`");
+  for (let cols = MIN_SIZE.cols; cols <= 200; cols++) {
+    const sz = size(cols, 24), d = draw(state, sz), lines = d.lines.slice(3, 23);
+    assert.equal(lines.some((line) => line.includes(command)), true, `${command} at ${cols}: ${JSON.stringify(lines.filter(Boolean))}`);
+    assert.equal(bodyText(d, sz), CAPABILITIES_TEXT.none, `${cols}: the whole sentence`);
   }
 });
 

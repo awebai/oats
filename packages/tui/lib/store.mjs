@@ -12,7 +12,7 @@
 import { ACTIONS, LEADER_KEYS, bindings } from "./actions.mjs";
 import { collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { DETACH_KEY } from "./config.mjs";
-import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher } from "./model.mjs";
+import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher } from "./model.mjs";
 import { backKeyId } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
 import { SPLIT_MIN, splitFits } from "./views/split.mjs";
@@ -32,6 +32,13 @@ const NO_FILTER = Object.freeze({ editing: false, query: "" });
  *  and whether a read of it is in flight), and the selection (a soul's name), the scroll, the focus
  *  and the filter of the view, kept when it is left and found again, for the run. */
 const NO_SOULS = Object.freeze({ wanted: false, held: new Map(), selected: null, top: 0, loose: false, focus: "list", detailTop: 0, filter: Object.freeze({ editing: false, query: "" }) });
+/** The Capabilities view's own (docs/tui.md, "The Capabilities view"; Spec 7), as the Souls view's:
+ *  whether its catalog was ever wanted, what the loop holds of each workspace's (`held`), and the
+ *  selection (a capability's key, lib/model.mjs capabilityKey), the list's scroll (`top`, `loose` as
+ *  the switcher's), the focus, the filter, and in the detail its scroll (`detailTop`, the row it was
+ *  last drawn from) and the mark on a soul of "Used by" (`mark`, an index of the listed souls;
+ *  `detailLoose` while the detail was scrolled away from it on purpose). Kept for the run. */
+const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected: null, top: 0, loose: false, focus: "list", detailTop: 0, detailLoose: false, mark: 0, filter: Object.freeze({ editing: false, query: "" }) });
 
 /** The state before the first answer. `deployment` is the one `oats tui` was started in or was
  *  told of, with its shared pending entry (lib/main.mjs makes it); null for a run started outside
@@ -97,7 +104,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     switcher: Object.freeze({ editing: false, query: "", selected: null, top: 0, loose: false, line: null, refused: null }),
     offered: Object.freeze({ offered: Object.freeze([]), limited: false }),
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
-    leaderKey: backKeyId(detachKey), leader: null, palette: null, recent: Object.freeze([]), souls: NO_SOULS,
+    leaderKey: backKeyId(detachKey), leader: null, palette: null, recent: Object.freeze([]), souls: NO_SOULS, capabilities: NO_CAPABILITIES,
     spawn: null, spawning: null, spawnCheck: null, arriving: null, previews: 0, tabs: Object.freeze([]), split: null, group: 0, aside: null,
   });
 }
@@ -258,6 +265,11 @@ const FIELDS = Object.freeze({
     put: (state, query) => (query === state.souls.filter.query ? state : soulsWith(state, { filter: Object.freeze({ ...state.souls.filter, query }), top: 0, loose: false, detailTop: 0 })),
     close: (state, query) => soulsWith(state, { filter: Object.freeze({ editing: false, query }), top: 0, loose: false }),
   }),
+  capabilities: Object.freeze({
+    query: (state) => state.capabilities.filter.query,
+    put: (state, query) => (query === state.capabilities.filter.query ? state : capabilitiesWith(state, { filter: Object.freeze({ ...state.capabilities.filter, query }), top: 0, loose: false, detailTop: 0, mark: 0 })),
+    close: (state, query) => capabilitiesWith(state, { filter: Object.freeze({ editing: false, query }), top: 0, loose: false }),
+  }),
   switcher: Object.freeze({
     query: (state) => state.switcher.query,
     put: (state, query) => (query === state.switcher.query ? state : next(state, { switcher: Object.freeze({ ...state.switcher, query, top: 0, loose: false }) })),
@@ -267,7 +279,8 @@ const FIELDS = Object.freeze({
 /** The filter field that is open now, or null. */
 const fieldOf = (state) => (state.view === "instances" && state.filter.editing ? FIELDS.instances
   : state.view === "switcher" && state.switcher.editing ? FIELDS.switcher
-  : state.view === "souls" && state.souls.filter.editing ? FIELDS.souls : null);
+  : state.view === "souls" && state.souls.filter.editing ? FIELDS.souls
+  : state.view === "capabilities" && state.capabilities.filter.editing ? FIELDS.capabilities : null);
 
 /** A key while a filter field is open. A key that is text is text, whatever the action table
  *  says, so `q` and `j` can be typed; Backspace removes one grapheme, Enter keeps the filter and
@@ -341,6 +354,100 @@ function inSouls(state, action, event, page, scrolled) {
       const to = Math.min(Math.max(0, at < 0 ? 0 : moved(action, at, s.rows.length, page)), s.rows.length - 1);
       const name = s.rows[to].name;
       return { state: soulsWith(state, { selected: name, loose: false, detailTop: name === s.selected?.name ? v.detailTop : 0 }), effect: null };
+    }
+    default: return stay;
+  }
+}
+
+/** The Souls view with the soul named `name` selected, as the palette's soul row and the Capabilities
+ *  view's "Used by" show it. A kept filter of the view that hides it is cleared: the soul chosen is
+ *  the one shown, and the one `i` acts on. */
+function soulChosen(state, name) {
+  const step = soulsShown(state), chosen = soulsWith(step.state, { selected: name, loose: false, detailTop: 0 });
+  const shown = soulsOf(chosen).selected?.name === name ? chosen : soulsWith(chosen, { filter: Object.freeze({ editing: false, query: "" }), top: 0 });
+  return { state: shown, effect: step.effect };
+}
+
+/** The Capabilities view's own state with what changes of it. */
+const capabilitiesWith = (state, changes) => next(state, { capabilities: Object.freeze({ ...state.capabilities, ...changes }) });
+
+/** The Capabilities view shown (docs/tui.md, "The Capabilities view"): from now on its catalog is
+ *  wanted, and so is the souls catalog its "Used by" reads, the same flag the Souls view and a spawn
+ *  set; the loop settles both for the open workspace (`capabilities: "settle"`, `souls: "settle"`),
+ *  each read only when nothing is held for the workspace as it is now (each its own key). */
+function capabilitiesShown(state) {
+  // Come back to from another view, it shows its list: what was selected and filtered stays.
+  const shown = state.view === "capabilities" ? state : next(state, { view: "capabilities", back: "capabilities", capabilities: Object.freeze({ ...state.capabilities, focus: "list" }) });
+  return { state: soulsWith(capabilitiesWith(shown, { wanted: true }), { wanted: true }), effect: { souls: "settle", capabilities: "settle" } };
+}
+
+/** What the loop holds of a workspace's capabilities catalog, told: `{ id, entry, reading }`, as
+ *  soulsHeard. Only a served workspace's is kept. */
+function capabilitiesHeard(state, { id, entry, reading }) {
+  if (!state.ctxs.includes(id)) return { state, effect: null };
+  return { state: capabilitiesWith(state, { held: new Map(state.capabilities.held).set(id, Object.freeze({ entry: entry ?? null, reading: reading === true })) }), effect: null };
+}
+
+/** The row the capability detail was drawn from, told by the loop once the frame is written (the
+ *  view keeps the marked soul in sight, so the store's `detailTop` may not be what was drawn): the
+ *  detail scrolls on from there. */
+function capabilitiesTop(state, top) {
+  if (state.view !== "capabilities" || !Number.isInteger(top) || top < 0 || state.capabilities.detailTop === top) return { state, effect: null };
+  return { state: capabilitiesWith(state, { detailTop: top }), effect: null };
+}
+
+/** A key in the Capabilities view (docs/tui.md, "The Capabilities view"). The list's keys move among
+ *  the capabilities the filter keeps, passing over the headings of the sections and the groups (the
+ *  switcher's way: what stands above the first comes into the pane with it, and with nothing further
+ *  to go to the list scrolls). Enter gives the detail the focus, its mark on the first soul of "Used
+ *  by"; there Up and Down move that mark among the listed souls, and Enter shows the marked soul in
+ *  the Souls view. Past the first or the last soul, with none listed, and for the other movement
+ *  keys, the detail scrolls. `/`
+ *  opens the view's own filter field; `r` reads the catalog again (`capabilities: "reread"`, which
+ *  starts nothing while a read is in flight); Esc closes the detail, then clears a kept filter, then
+ *  goes back to the instances (to the switcher when no workspace is open), as `1` does. */
+function inCapabilities(state, action, event, page, scrolled) {
+  const stay = { state, effect: null }, v = state.capabilities;
+  const c = capabilitiesOf(state), at = c.selected === null ? -1 : c.keys.indexOf(c.selected);
+  const back = () => ({ state: state.open === null ? toSwitcher(next(state, { back: "switcher" })) : next(state, { view: "instances", back: "instances" }), effect: null });
+  const put = (changes) => ({ state: capabilitiesWith(state, changes), effect: null });
+  const toDetail = { focus: "detail", mark: 0, detailTop: 0, detailLoose: false };
+  switch (action) {
+    case "instances": return back();
+    case "close":
+      if (v.focus === "detail") return put({ focus: "list" });
+      if (v.filter.query !== "") return put({ filter: Object.freeze({ editing: false, query: "" }), top: 0, loose: false });
+      return back();
+    case "filter": return c.local ? put({ focus: "list", filter: Object.freeze({ ...v.filter, editing: true }) }) : stay;
+    case "refresh": return c.local ? { state, effect: { capabilities: "reread" } } : stay;
+    case "open": {
+      if (at < 0) return stay;
+      if (v.focus !== "detail") return put(toDetail);
+      const listed = capabilityUsersOf(state, undefined, c.row).shown;
+      const soul = listed[Math.min(v.mark, listed.length - 1)]?.soul ?? null;
+      return soul === null ? stay : soulChosen(state, soul);
+    }
+    case "detail": return at < 0 ? stay : put(v.focus === "detail" ? { focus: "list" } : toDetail);
+    case "up": case "down": case "top": case "bottom": case "page-up": case "page-down": {
+      if (v.focus === "detail") {
+        const listed = at < 0 ? 0 : capabilityUsersOf(state, undefined, c.row).shown.length;
+        // The mark moves while it has a soul to go to; past the first or the last, the detail scrolls.
+        const to = Math.min(v.mark, listed - 1) + (action === "up" ? -1 : 1);
+        if (listed && (action === "up" || action === "down") && to >= 0 && to < listed) return put({ mark: to, detailLoose: false });
+        return put({ detailTop: scrolled(v.detailTop), detailLoose: true });
+      }
+      const count = c.items.length, height = capabilitiesHeight(c, page);
+      const drawn = windowOf({ top: v.top, count, height, keep: v.loose ? -1 : c.items.findIndex((item) => item.key !== undefined && item.key === c.selected) }).top;
+      const key = c.keys.length ? c.keys[Math.min(Math.max(0, moved(action, Math.max(0, at), c.keys.length, page)), c.keys.length - 1)] : null;
+      // No capability to go to in that direction: the rows scroll instead.
+      if (key === null || key === c.selected) {
+        const top = windowOf({ top: moved(action, drawn, count, height), count, height }).top;
+        return top === drawn ? stay : put({ top, loose: true });
+      }
+      const index = c.items.findIndex((item) => item.key === key);
+      // The headings above the first capability come into the pane with it, and what stands under the last one.
+      const top = windowOf({ top: key === c.keys[0] ? 0 : key === c.keys.at(-1) ? count : drawn, count, height, keep: index }).top;
+      return put({ selected: key, top, loose: false, detailTop: 0, mark: 0, detailLoose: false });
     }
     default: return stay;
   }
@@ -1003,11 +1110,12 @@ function ranFromPalette(state, item, event, keymap) {
   const from = state.palette.from;
   const settled = item.kind === "instance" || item.kind === "act" ? toInstances(state) : toList(state), shut = settled.state;
   const then = (step) => ({ state: step.state, effect: both(settled.effect, step.effect) });
-  // A soul: the Souls view, with it selected. A kept filter of the view that hides it is cleared:
-  // the soul chosen is the one shown, and the one `i` acts on.
-  if (item.kind === "soul") {
-    const step = soulsShown(shut), chosen = soulsWith(step.state, { selected: item.name, loose: false, detailTop: 0 });
-    const shown = soulsOf(chosen).selected?.name === item.name ? chosen : soulsWith(chosen, { filter: Object.freeze({ editing: false, query: "" }), top: 0 });
+  // A soul: the Souls view, with it selected (soulChosen).
+  if (item.kind === "soul") return then(soulChosen(shut, item.name));
+  // A capability: the Capabilities view, with it selected, as a soul is shown.
+  if (item.kind === "capability") {
+    const step = capabilitiesShown(shut), chosen = capabilitiesWith(step.state, { selected: item.capability, loose: false, detailTop: 0, mark: 0, detailLoose: false });
+    const shown = capabilitiesOf(chosen).selected === item.capability ? chosen : capabilitiesWith(chosen, { filter: Object.freeze({ editing: false, query: "" }), top: 0 });
     return then({ state: shown, effect: step.effect });
   }
   if (item.kind === "instance" || item.kind === "act") {
@@ -1045,6 +1153,8 @@ function reduced(state, event, keymap) {
   if (event.admitted !== undefined) return { state: admitted(state, event), effect: { refresh: { live: true } } };
   if (event.refused !== undefined) return { state: next(state, { switcher: Object.freeze({ ...state.switcher, refused: event.refused }) }), effect: null };
   if (event.souls !== undefined) return soulsHeard(state, event.souls);
+  if (event.capabilities !== undefined) return capabilitiesHeard(state, event.capabilities);
+  if (event.capabilitiesTop !== undefined) return capabilitiesTop(state, event.capabilitiesTop);
   if (event.spawnRead !== undefined) return spawnRead(state, event.spawnRead);
   if (event.spawnDrawn !== undefined) return spawnDrawn(state, event.spawnDrawn);
   if (event.spawnTop !== undefined) return spawnTop(state, event.spawnTop);
@@ -1074,25 +1184,21 @@ function reduced(state, event, keymap) {
   switch (action) {
     case "quit": case "suspend": case "redraw": return { state, effect: action };
     // In the switcher the folders of ~/Agents are listed again too.
-    // In the Souls view it reads the souls again, and nothing else.
-    case "refresh": return state.view === "souls" ? inSouls(state, action, event, page, scrolled) : { state, effect: { refresh: { live: true }, ...((state.view === "help" ? state.back : state.view) === "switcher" ? { offer: true } : {}) } };
+    // In the Souls view it reads the souls again, and nothing else; in the Capabilities view, the capabilities.
+    case "refresh": return state.view === "souls" ? inSouls(state, action, event, page, scrolled) : state.view === "capabilities" ? inCapabilities(state, action, event, page, scrolled) : { state, effect: { refresh: { live: true }, ...((state.view === "help" ? state.back : state.view) === "switcher" ? { offer: true } : {}) } };
     case "help": return { state: next(state, state.view === "help" ? { view: state.back } : { view: "help", back: state.view, helpTop: 0 }), effect: null };
     case "workspaces": return state.view === "switcher" ? stay : { state: toSwitcher(next(state, { back: "switcher" })), effect: { offer: true } };
     case "palette": return { state: paletteOpened(state, event, "list"), effect: null };
     // Souls and Capabilities are views of this machine, whatever workspace is open, or none.
     case "souls": return soulsShown(state);
-    case "capabilities": return { state: state.view === action ? state : next(state, { view: action, back: action }), effect: null };
+    case "capabilities": return capabilitiesShown(state);
     // A spawn starts from the list of instances or the Souls view (the leader reaches them from anywhere).
     case "spawn": case "spawn-another": return state.view === "instances" || state.view === "souls" ? spawnAsked(state, event, action, spawnTarget(state)) : stay;
     case "spawn-check": return spawnChecked(state);
     default:
   }
   if (state.view === "souls") return inSouls(state, action, event, page, scrolled);
-  if (state.view === "capabilities") {
-    // Esc and 1 go back to the instances, or to the switcher when no workspace is open.
-    if (action !== "close" && action !== "instances") return stay;
-    return { state: state.open === null ? toSwitcher(next(state, { back: "switcher" })) : next(state, { view: "instances", back: "instances" }), effect: null };
-  }
+  if (state.view === "capabilities") return inCapabilities(state, action, event, page, scrolled);
   if (state.view === "help") {
     if (action === "close") return { state: next(state, { view: state.back }), effect: null };
     if (action === "instances") return state.open === null ? stay : { state: next(state, { view: "instances", back: "instances" }), effect: null };

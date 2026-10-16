@@ -2,6 +2,7 @@
 // byte. It places the views: the header, the list of instances and the detail beside it (or as a
 // page of its own on a narrow terminal), an agent's open terminal in the detail's place (or over
 // the whole body, zoomed), the souls of the open workspace and a soul's detail in the same places,
+// and its capabilities and a capability's detail there too,
 // the switcher of workspaces over the whole body, the palette and the spawn prompt over the whole
 // body too, the help, and the footer. The TUI's own words are lit(); everything else is shown().
 // Meaning never rests on colour alone: what is dim or bold also says what it is in words or by a
@@ -16,6 +17,7 @@ import { instances, measured } from "./instances.mjs";
 import { textWidth } from "../term/width.mjs";
 import { palette } from "./palette.mjs";
 import { soulDetail, soulsList, soulsListed } from "./souls.mjs";
+import { capabilitiesList, capabilitiesListed, capabilityDetail } from "./capabilities.mjs";
 import { spawn } from "./spawn.mjs";
 import { splitFits, splitRegions } from "./split.mjs";
 import { switcher } from "./switcher.mjs";
@@ -218,7 +220,8 @@ function countSpans(counts, cols) {
  *  kept filter, the keys that show the tab before and after (`[/] tab`, with two tabs or more in
  *  the focused group), `detail`, the open terminal's `close-terminal` and `zoom`, `open` and last `filter`
  *  (`filter` before `open` while a filter is kept: its own `/` stands in the footer then); in the
- *  Souls view `workspaces`, `refresh`, `filter`, `close`, then `i` and last Enter. A row
+ *  Souls view `workspaces`, `refresh`, `filter`, `close`, then `i` and last Enter, and in the
+ *  Capabilities view the same without `i`. A row
  *  too narrow for the whole of a hint drops it. The views have no hint: the header names them.
  *  The palette's footer says how to work it: Enter, Up/Down and Esc; the spawn prompt's, how to
  *  work its step (spawnHints).
@@ -240,7 +243,10 @@ function footer(m, cols) {
   // Enter does (from the list it shows the detail, from the detail the soul's instances) stands
   // first, as `open` does in the list, so a kept filter leaves it its room.
   const soul = m.view === "souls" && m.souls ? m.souls : null;
-  const filter = soul ? soul.filter : m.filter;
+  // The Capabilities view's the same way: from the list Enter shows the detail, and from the detail
+  // the marked soul of "Used by" in the Souls view (no hint while none is marked).
+  const capability = m.view === "capabilities" && m.capabilities ? m.capabilities : null;
+  const filter = soul ? soul.filter : capability ? capability.filter : m.filter;
   // A filter is kept by its text, or in the list of instances by a soul (the Souls view's `i`):
   // drawn `soul <name>` where the text's `/` stands.
   const bySoul = !soul && m.view === "instances" && filter.soul && !filter.query ? filter.soul : null;
@@ -319,7 +325,8 @@ function footer(m, cols) {
   // An action with no key (tui.json may unbind one) has no hint: nothing stands first then. On the
   // row whose terminal is open, Enter goes to it.
   const first = (asking ? [["open", hint("close", "stop opening")]] : listing && m.onTerminal ? [["open", hint("open", "focus terminal")]] : listing && m.openable ? [["open", hint("open")]]
-    : soul?.detail ? [["open", hint("open", soul.focus === "detail" ? "instances" : "detail")]] : []).filter(([, h]) => h);
+    : soul?.detail ? [["open", hint("open", soul.focus === "detail" ? "instances" : "detail")]]
+    : capability?.detail ? (capability.focus !== "detail" ? [["open", hint("open", "detail")]] : capability.mark >= 0 ? [["open", hint("open", "soul")]] : []) : []).filter(([, h]) => h);
   // With a terminal open, the keys that zoom it and close it stand after `open`, kept as long;
   // with two tabs or more in the focused group, then the keys that show the tab before and after.
   const terminal = listing && m.terminal ? [["zoom", hint("zoom")], ["close-terminal", hint("close-terminal")], ...((m.tabs?.length ?? 0) > 1 ? [["tabs", tabsHint()]] : [])].filter(([, h]) => h) : [];
@@ -336,7 +343,10 @@ function footer(m, cols) {
     // help names n and N.
     : soul ? (soul.local === false ? [["close", "workspaces"], ["close", "workspaces"]]
       : [[...(soul.detail ? ["soul-instances"] : []), "filter", "refresh", "close", "workspaces"], ["open", "soul-instances", "close", "filter", "refresh", "workspaces"]])
-    : m.view === "capabilities" ? [["close", "workspaces"], ["close", "workspaces"]]
+    // The Capabilities view: the filter, a read again, Esc and the workspaces, given up from the
+    // workspaces on; Enter last. With no workspace of this machine, Esc and the workspaces only.
+    : capability ? (capability.local === false ? [["close", "workspaces"], ["close", "workspaces"]]
+      : [["filter", "refresh", "close", "workspaces"], ["open", "close", "filter", "refresh", "workspaces"]])
     // Esc closes the switcher only onto a view, and there is none before a workspace is opened.
     // A kept filter puts `close` before `refresh`, as in the list: the key that clears it is the hint to keep.
     : m.view === "switcher" ? [["open", "filter", ...(m.filter.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])])], null]
@@ -509,14 +519,6 @@ function framed(m, size) {
     return { rows, page: Math.max(1, g.body.rows), extent: 0, room: 1 };
   }
 
-  // The view of this machine not in this version says what it will hold, and what to run until
-  // then. The Souls view is drawn below, in the panes of the list.
-  if (m.view === "capabilities") {
-    rows[2] = rule(cols, m.ascii);
-    partRows(m.body?.said ?? [], cols - 2 * MARGIN, g.body.rows, { ascii: m.ascii }).forEach((spans, i) => { rows[g.body.top + 1 + i] = placed(spans, MARGIN); });
-    return { rows, page: Math.max(1, g.body.rows), extent: 0, room: 1 };
-  }
-
   // The state of a deployment that is not live, and on rows of its own the reason, which is the
   // shared home's sentence or the kernel's: nothing of the TUI's stands on a reason's row. Then
   // the note of the one deployment of a view without headings, the shared home's sentence too.
@@ -530,6 +532,7 @@ function framed(m, size) {
   for (const spans of g.outcome) said.push(placed(spans, MARGIN));
   said.slice(0, g.above).forEach((spans, i) => { rows[g.body.top + i] = spans; });
   if (m.view === "souls" && m.souls) return soulsFrame(m, size, g, rows);
+  if (m.view === "capabilities" && m.capabilities) return capabilitiesFrame(m, size, g, rows);
   const area = terminalAt(m, size, g);
   const zoomed = area !== null && area.whole;
   const paged = !zoomed && !g.wide && m.focus === "detail" && m.detail;
@@ -594,6 +597,32 @@ function soulsFrame(m, size, g, rows) {
     drawn.rows.forEach((spans, i) => { rows[g.panes.top + i] = [...rows[g.panes.top + i], ...bar, ...placed(spans, at)]; });
   }
   return { rows, page: Math.max(1, g.page), extent, room: Math.max(1, g.panes.rows) };
+}
+
+/** The Capabilities view in the panes of the list (views/capabilities.mjs), as the Souls view: the
+ *  capabilities in the list's place and width, and beside them the selected capability's detail;
+ *  under WIDE columns the list alone, and the detail in its place while it has the focus. A body of
+ *  one sentence has the whole width. `capabilitiesTop` is the row the detail was drawn from, which
+ *  the loop gives the store once the frame is written (it keeps the marked soul in sight). */
+function capabilitiesFrame(m, size, g, rows) {
+  const { cols } = size, c = m.capabilities;
+  const paged = !g.wide && c.focus === "detail" && Boolean(c.detail);
+  const split = g.wide && g.panes.rows > 0 && capabilitiesListed(c);
+  const joint = split ? { col: g.listCols } : null;
+  const opening = m.observed && g.above > 0 ? g.panes.top - 1 : 2;
+  rows[2] = rule(cols, m.ascii, opening === 2 ? joint : null);
+  if (opening !== 2 && opening < size.rows - 1) rows[opening] = rule(cols, m.ascii, joint);
+  if (!paged) capabilitiesList(m, { cols: split ? g.listCols : cols, rows: g.panes.rows }).forEach((spans, i) => { rows[g.panes.top + i] = spans; });
+  let extent = 0, top;
+  if (split || paged) {
+    const at = paged ? MARGIN : g.listCols + 2;
+    const bar = split ? [{ col: g.listCols, text: lit(m.ascii ? "|" : "│"), style: DIM, width: 1 }] : [];
+    const drawn = capabilityDetail(m, { cols: Math.max(0, cols - at - MARGIN), rows: g.panes.rows });
+    extent = drawn.extent;
+    top = drawn.top;
+    drawn.rows.forEach((spans, i) => { rows[g.panes.top + i] = [...rows[g.panes.top + i], ...bar, ...placed(spans, at)]; });
+  }
+  return { rows, page: Math.max(1, g.page), extent, room: Math.max(1, g.panes.rows), ...(top !== undefined ? { capabilitiesTop: top } : {}) };
 }
 
 /** Where the open terminal stands for a model and a size, or null while it is not shown (no

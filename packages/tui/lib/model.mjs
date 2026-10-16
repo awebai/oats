@@ -13,6 +13,8 @@ import {
   openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
   startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage, retiringRows, soulRows, soulFacts, spawnRefusal,
   defaultSpawnChoices, spawnProblem, outcomeWords, previewFacts, deploymentLabel, subsequenceScore, soulMatches, soulCatalogFailure,
+  memberNames, capabilitySource, groupCapabilities, hostKeyOf, capabilitySections, matchCapabilities, soulsComposition, rosterAgentName, layerLabel, capabilityUsers,
+  capabilityFacts, CAPABILITY_COPY,
 } from "./client.mjs";
 import { LEADER, keyLabel } from "./actions.mjs";
 import { ownEllipsis, shownLines } from "./term/text.mjs";
@@ -365,13 +367,8 @@ function groupsOf(state) {
     return { tabs, shown };
   });
 }
-/** The body of a view of this machine that is not in this version (Capabilities): what it will
- *  hold, and what to run until then, the help's commands (views/help.mjs VIEWS), in the TUI's own
- *  words; each command is whole, never broken over two rows. */
+/** A command in a line of the TUI's own: whole, never broken over two rows. */
 const command = (text) => Object.freeze({ own: `\`${text}\``, whole: true });
-export const NOT_BUILT = Object.freeze({
-  capabilities: Object.freeze({ said: Object.freeze([{ own: "This view will list the capabilities this machine has. It is not in this version: " }, command("oats capabilities"), { own: " lists them." }]), under: Object.freeze([]) }),
-});
 /** A sentence from outside (a reason of the shared home's, the preflight table's), as a text
  *  under the line: drawn as the detail draws a reason, wrapped on the reason's rows, never as one
  *  unbroken part (a part is a name). */
@@ -550,12 +547,12 @@ const PALETTE_ACTS = Object.freeze({ stop: "Stop", restart: "Restart", retire: "
 
 /** THE PALETTE'S ROWS (docs/tui.md, "The palette"), in this order: the instances that can be
  *  opened (the most recently opened in this run first, then the shared order), the souls of the
- *  open workspace once its catalog was read, the views, the acts
+ *  open workspace once its catalog was read, its capabilities once theirs was, the views, the acts
  *  the palette's instance offers (the open terminal's, when the palette came from its focus; else
  *  the selected one) and, once the catalog lists its soul, another of that soul, then spawning an
  *  agent, workspaces, refresh and help, and the split's that apply. With a query, each group keeps the rows the
  *  Desktop's subsequence score matches, the best first (a prefix first); a tie keeps that order.
- *  A row: `{ key, kind, label, does?, id?, name?, machine?, mark? }`; `selected` is the key the
+ *  A row: `{ key, kind, label, does?, id?, name?, machine?, mark?, capability?, source? }`; `selected` is the key the
  *  selection stands on (the first row when the palette's own is not listed). */
 export function paletteItems(state, at = new Date(0).toISOString()) {
   const p = state.palette;
@@ -574,6 +571,14 @@ export function paletteItems(state, at = new Date(0).toISOString()) {
   // The souls of the open workspace, once its catalog was read (the Souls view opened): choosing
   // one shows the Souls view with it selected. A palette never reads the catalog.
   groups.push(soulsOf(state).all.map((row) => ({ key: `soul\u0000${row.name}`, kind: "soul", label: row.name, name: row.name, text: row.name })));
+  // The capabilities of the open workspace, once its catalog was read (the Capabilities view opened):
+  // choosing one shows that view with it selected. Each says where it comes from (a package's and a
+  // member's may share a name).
+  const c = capabilitiesOf(state), names = memberNames(c.status);
+  groups.push(c.all.map((row) => {
+    const capability = capabilityKey(row, names);
+    return { key: `capability\u0000${capability}`, kind: "capability", label: row.name, name: row.name, capability, source: capabilitySource(row, names).label, text: row.name };
+  }));
   groups.push(PALETTE_VIEWS.map(([does, label]) => ({ key: `view\u0000${does}`, kind: "view", label, does, text: label })));
   const id = p.from === "terminal" && state.terminal !== null ? state.terminal.id : state.selected;
   const row = id === null || state.open === null ? null : roster(state, at).instances.find((each) => instanceId(each) === id) ?? null;
@@ -626,7 +631,7 @@ export function model(state, { page, now, at, cols }) {
   const common = {
     view: state.view, focus: state.focus, ascii: state.ascii, actions: state.actions,
     // The filter of the view shown: the Souls view has one of its own.
-    filter: state.view === "souls" ? state.souls.filter : state.filter,
+    filter: state.view === "souls" ? state.souls.filter : state.view === "capabilities" ? state.capabilities.filter : state.filter,
     workspace: r.workspace, machines: r.machines, here: r.here, machine: r.machine, counts: r.counts, readAt: r.readAt, notice: r.notice, note: r.note, empty: r.empty, observed: r.observed,
     detailTop: state.detailTop, helpTop: state.helpTop, open: state.open !== null,
     detachKey: state.detachKey, opening: state.opening, openable: false, actable: [],
@@ -639,8 +644,8 @@ export function model(state, { page, now, at, cols }) {
     act: state.view === "act" && state.act ? actView(state) : null,
     // The leader waits for its key (the footer is its hint), and the palette, while it is open.
     leader: state.leader?.waiting === true, palette: state.palette === null ? null : paletteView(state, page, at),
-    body: state.view === "capabilities" ? NOT_BUILT.capabilities : null,
     souls: state.view === "souls" ? soulsView(state, page, at) : null,
+    capabilities: state.view === "capabilities" ? capabilitiesView(state, page, at) : null,
     spawn: state.spawn === null ? null : spawnView(state, page, at),
     // The line above the panes: the last outcome, else a spawn under way (outcomeOf).
     outcome: outcomeOf(state),
@@ -874,9 +879,11 @@ export function actView(state) {
 // ── THE SOULS VIEW (docs/tui.md, "The Souls view") ───────────────────────────────────────────────
 
 /** The names an instance's soul (its row's `agent`) may carry for a soul row: its name, and for a
- *  package soul the kernel's key and its qualified name. The exact soul filter matches these. */
+ *  package soul the kernel's key, its qualified name and its name in the roster, `<package>--<soul>`
+ *  (the shared rosterAgentName: the agent directory a package soul's instances are made under). The
+ *  exact soul filter, the count of a soul's instances and "Used by" match these. */
 export function soulNames(row) {
-  return [...new Set([row.name, row.key, row.qualifiedName].filter(text))];
+  return [...new Set([row.name, row.key, row.qualifiedName, rosterAgentName(row)].filter(text))];
 }
 
 /** The souls of the open workspace as the store and the view read them: the shared rows
@@ -966,6 +973,125 @@ function soulsView(state, page, at) {
     // The heading has room for little of a failed re-read's sentence: the detail holds it whole,
     // as a machine's full reason stands in the detail of each of its rows.
     detail: s.selected ? { ...soulDetail(state, at, s.selected), failure: heading ? heading.short : null } : null,
+  };
+}
+
+// ── THE CAPABILITIES VIEW (docs/tui.md, "The Capabilities view"; Spec 7) ──────────────────────────
+
+/** A failed read of the capabilities catalog, as the soul catalog's says it (spawn-messages.mjs
+ *  soulCatalogFailure), with the noun "capabilities": the shared home names no sentence of its own for
+ *  it (the Desktop words it through its generic data-state controller). The message is the reason's,
+ *  text from outside, drawn through the display filter. */
+export function capabilityCatalogFailure(reason) {
+  const message = typeof reason?.message === "string" && reason.message ? reason.message : "";
+  return message ? `Couldn't read this workspace's capabilities: ${message}` : "Couldn't read this workspace's capabilities.";
+}
+
+/** A capability's identity in the view: its source's key and its name, since a package's capability
+ *  and a member's may share a name (Spec 7, Settled 8). */
+export const capabilityKey = (row, names) => `${capabilitySource(row, names).key}\u0000${row.name}`;
+
+/** The view's sections, in the order they stand (the Desktop's): Workspace owned, Repo owned, Packages. */
+const SECTION_ORDER = Object.freeze(["workspace", "repo", "packages"]);
+
+/** The capabilities of the open workspace as the store and the view read them: the rows of the
+ *  catalog the loop holds for it (`held`, `{ entry, reading }`), filtered by the view's own filter
+ *  (the shared matchCapabilities), in the shared sections (capabilitySections) and groups
+ *  (groupCapabilities), as `items` in drawn order: `{ section }` (a section's heading), `{ group, note }`
+ *  (a repository's or a package's), and `{ key, row }` (a capability). A section or a group with no
+ *  row is not listed. `keys` are the capabilities in order, `selected` the key the selection stands
+ *  on (the store's while it is listed, else the first) and `row` its row; `heading` whether a failed
+ *  re-read's heading stands above the rows. Only a workspace of this machine has them (`local`). */
+export function capabilitiesOf(state) {
+  const id = state.open, local = id !== null && state.ctxs.includes(id);
+  const entry = local ? state.entries.get(id) ?? null : null;
+  const deployment = entry?.deployment?.status === "observed" ? entry.deployment : null;
+  const held = local ? state.capabilities.held.get(id) ?? null : null;
+  const status = deployment?.workspaceStatus ?? null;
+  const listed = deployment !== null && Array.isArray(held?.entry?.capabilities?.capabilities);
+  const all = listed ? held.entry.capabilities.capabilities : [];
+  const names = memberNames(status), hostKey = hostKeyOf(status);
+  const sections = capabilitySections(matchCapabilities(all, state.capabilities.filter.query));
+  const items = [];
+  for (const section of SECTION_ORDER) {
+    if (!sections[section].length) continue;
+    items.push({ section });
+    for (const group of groupCapabilities(sections[section], names, hostKey)) {
+      items.push({ group: group.name, note: group.note });
+      for (const row of group.rows) items.push({ key: capabilityKey(row, names), row });
+    }
+  }
+  const keys = items.filter((item) => item.key !== undefined).map((item) => item.key);
+  const selected = keys.includes(state.capabilities.selected) ? state.capabilities.selected : keys[0] ?? null;
+  const row = selected === null ? null : items.find((item) => item.key === selected).row;
+  return { local, deployment, status, held, listed, all, items, keys, selected, row, heading: listed && Boolean(held.entry.reason) };
+}
+/** The rows the list of capabilities has in a pane `page` rows tall: a failed re-read's heading takes one. */
+export const capabilitiesHeight = (c, page) => Math.max(1, page - (c.heading ? 1 : 0));
+
+/** "Used by" of capability `row` (capability-rows.mjs capabilityUsers): with the kernel's
+ *  souls-capabilities, the souls of the open workspace's catalog whose composition includes it; before
+ *  it, the souls whose instances carry it. `instances` are this machine's rows of the open workspace.
+ *  Each user is drawn by its catalog row (soulOfAgent maps an instance's agent name to it): its name
+ *  and colour, and the soul Enter shows in the Souls view (`soul`, null when no row matches); `count`
+ *  its instances carrying the capability, and `behind` the shared words for those on an older
+ *  version, or null. Until the souls catalog is read the souls are not known (`reading`, or `failed`
+ *  with its sentence): nothing claims that no soul includes it. */
+export function capabilityUsersOf(state, at, row) {
+  const composition = soulsComposition(state.cli), souls = catalogOf(state, state.open), entry = souls.held?.entry ?? null;
+  const none = { shown: [], more: 0, count: null, empty: null, failure: null };
+  if (composition && !Array.isArray(entry?.souls)) return { ...none, state: entry?.reason && !souls.held.reading ? "failed" : "reading", failure: entry?.reason && !souls.held.reading ? soulCatalogFailure(entry.reason) : null };
+  const instances = roster(state, at).ordered.filter((each) => !elsewhere(each) && each.deployment?.id === state.open);
+  const users = capabilityUsers(row, { souls: souls.all, instances, composition }).map(({ soul, carrying, behind }) => {
+    const found = composition ? soul : soulOfAgent(state, state.open, soul.name);
+    return { name: found?.name ?? soul.name, color: found ? SOUL_COLOURS[found.color] ?? null : null, count: carrying.length, behind: behind > 0 ? CAPABILITY_COPY.behind(behind) : null, soul: found?.name ?? null };
+  });
+  return {
+    ...none, state: "known", shown: users.slice(0, INSTANCES_NAMED), more: Math.max(0, users.length - INSTANCES_NAMED), count: CAPABILITY_COPY.souls(users.length),
+    empty: users.length ? null : composition ? CAPABILITY_COPY.noSoul : CAPABILITY_COPY.noInstance,
+  };
+}
+
+/** The selected capability's detail, from its row and the shared facts (capability-facts.mjs
+ *  capabilityFacts) in the shared words (CAPABILITY_COPY): nothing of a capability is worded here. A
+ *  kind of Provides the kernel could not list (`names` null) says CAPABILITY_COPY.unlistable, and one
+ *  with no name CAPABILITY_COPY.none. `comesFrom` holds the facts' "Comes from" rows as `{ label,
+ *  value }`, the shortened value (not `origin`: in this package that names a reason's speaker, which
+ *  test/tui-boundary.test.mjs holds to originLead). */
+function capabilityDetail(state, at, c) {
+  const row = c.row, { origin, provides } = capabilityFacts(row, { status: c.status });
+  return {
+    name: row.name, layer: text(row.layer) ? layerLabel(row.layer) : null, description: row.description ?? "",
+    words: { comesFrom: CAPABILITY_COPY.comesFrom, provides: CAPABILITY_COPY.provides, usedBy: CAPABILITY_COPY.usedBy },
+    comesFrom: origin.map(([label, value]) => ({ label, value })),
+    provides: provides.map(([label, names]) => ({ label, names: names ?? [], said: names === null ? CAPABILITY_COPY.unlistable : names.length ? null : CAPABILITY_COPY.none })),
+    used: capabilityUsersOf(state, at, row),
+  };
+}
+
+/** What the Capabilities view draws, in a list pane `page` rows tall (views/capabilities.mjs): the
+ *  state of the catalog, the window of its items, and the selected capability's detail with the soul
+ *  of "Used by" that has the detail's mark (`mark`, an index of its listed souls). A failed re-read
+ *  keeps the rows it held, under a heading that says so, as the Souls view's does. */
+function capabilitiesView(state, page, at) {
+  const c = capabilitiesOf(state), v = state.capabilities;
+  const base = { local: c.local, failure: null, heading: null, list: [], above: 0, below: 0, focus: v.focus, filter: v.filter, detail: null, detailTop: v.detailTop, keep: !v.detailLoose, mark: v.mark };
+  if (!c.local) return { ...base, state: "none" };
+  const entry = c.held?.entry ?? null, reason = entry?.reason ?? null;
+  if (!c.listed) return reason && !c.held.reading ? { ...base, state: "failed", failure: capabilityCatalogFailure(reason) } : { ...base, state: "reading" };
+  const heading = c.heading ? { label: "Capabilities", path: null, state: null, short: capabilityCatalogFailure(reason), readAt: clockTime(entry.observedAt) } : null;
+  const state_ = !c.all.length ? "none" : !c.keys.length ? "nomatch" : "rows";
+  const at_ = c.items.findIndex((item) => item.key !== undefined && item.key === c.selected);
+  const win = windowOf({ top: v.top, count: c.items.length, height: capabilitiesHeight(c, page), keep: v.loose ? -1 : at_ });
+  const detail = c.row ? capabilityDetail(state, at, c) : null;
+  return {
+    ...base, state: state_, heading,
+    list: c.items.slice(win.top, win.top + win.size).map((item) => (item.key === undefined ? item
+      : { name: item.row.name, layer: text(item.row.layer) ? layerLabel(item.row.layer) : null, selected: item.key === c.selected })),
+    above: win.above, below: win.below,
+    detail: detail && { ...detail, failure: heading ? heading.short : null },
+    // The mark stands on a listed soul only: the store keeps it inside them.
+    mark: detail && v.focus === "detail" && detail.used.shown.length ? Math.min(v.mark, detail.used.shown.length - 1) : -1,
   };
 }
 

@@ -1,9 +1,9 @@
 // The palette (docs/tui.md, "The palette"): (model, area) -> rows of spans, over the whole body.
 // Pure: no IO, no clock, no escape byte. One input over a list: the query on the first row, then
 // the window of the rows lib/model.mjs paletteItems lists, the selected one in reverse with `>`.
-// An instance's or a soul's name, a machine and the query are text the TUI did not write and go
-// through shown(); the labels of the views, the acts and the commands are the TUI's own. Nothing
-// is told by colour alone: each row says in a word what kind it is.
+// An instance's, a soul's or a capability's name, a machine, where a capability comes from and the
+// query are text the TUI did not write and go through shown(); the labels of the views, the acts and the
+// commands are the TUI's own. Nothing is told by colour alone: each row says in a word what kind it is.
 import { lit, shown } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { cutNote, marksOf, measured } from "./instances.mjs";
@@ -13,7 +13,7 @@ const PROMPT = ">", PROMPT_CELLS = 2;
 /** The cells a row's text starts at: the selection mark, a gap, an instance's state mark, a gap. */
 const LEAD = 4;
 /** The word at a row's right edge that says what it is. */
-const KINDS = Object.freeze({ instance: "instance", soul: "soul", view: "view", act: "act", command: "command" });
+const KINDS = Object.freeze({ instance: "instance", soul: "soul", capability: "capability", view: "view", act: "act", command: "command" });
 /** The TUI's word before another machine's name. */
 const ON = "on";
 
@@ -37,6 +37,11 @@ function itemRow(item, cols, marks) {
     const name = measured(item.name);
     put(name.text, name.width, PLAIN);
     if (item.machine !== null && item.machine !== undefined) { put(lit(ON), ON.length, DIM); const where = measured(item.machine); put(where.text, where.width, DIM); }
+  } else if (item.kind === "capability") {
+    // A capability's name and, dim, where it comes from (its repository or package): text from outside.
+    const name = measured(item.name), where = measured(item.source);
+    put(name.text, name.width, PLAIN);
+    put(where.text, where.width, DIM);
   } else {
     put(lit(item.label), item.label.length, PLAIN);
     if (item.kind === "act") { const name = measured(item.name); put(name.text, name.width, DIM); }

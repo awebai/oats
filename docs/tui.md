@@ -109,9 +109,9 @@ runs.
   open them in the list, and [the leader](#the-leader) then `1`, `2` or `3`
   from anywhere; the leader's hint, [the palette](#the-palette) and the
   help name those keys. [The Souls view](#the-souls-view) lists the open
-  workspace's souls; the Capabilities view says what it will hold and what
-  to run until then, `oats capabilities`. On the right is the time of the
-  read of this machine that the screen shows: it moves with every read.
+  workspace's souls, and [the Capabilities view](#the-capabilities-view)
+  its capabilities. On the right is the time of the read of this machine
+  that the screen shows: it moves with every read.
 - **The footer** is one row of keys from the first column, with no rule
   above it. It names `C-\ commands` first, in every focus: the leader,
   which reaches every action. Then come the actions that apply now, as many
@@ -565,7 +565,9 @@ them, from the same code.
   nothing. `Esc` closes the detail, then clears a kept filter, then goes
   back to the instances.
 - **When it reads:** the first time the view is shown, never before: a run
-  that never shows it never runs `oats souls`. After that, a read of the
+  that never shows it, nor [the Capabilities
+  view](#the-capabilities-view) or [the spawn prompt](#spawning-an-agent),
+  which need the souls too, never runs `oats souls`. After that, a read of the
   workspace reads the souls again only when the workspace changed (its
   commit, a member's, its externals), and `r` does. While the first read is
   under way the view says `Reading souls…`. A read that fails says why,
@@ -579,6 +581,98 @@ them, from the same code.
 
 `n` or `N` spawns an agent of the selected soul: [Spawning an
 agent](#spawning-an-agent).
+
+## The Capabilities view
+
+`3`, or the leader then `3`, shows the capabilities of the open workspace:
+the ones its repositories and its packages offer, as the OATS Desktop lists
+them, from the same code.
+
+```
+ acme-platform                                                        3 running
+  Instances   Souls   Capabilities                                read 14:03:27
+──────────────────────────────────────┬─────────────────────────────────────────
+ Workspace owned                      │   aweb Messaging
+  oats · member repo · host           │   Messaging over aweb, mail and chat,
+>   aweb Messaging                    │   for every instance of the workspace.
+  tools · member repo                 │
+    notes                             │   Comes from
+ Packages                             │     Repository   oats
+  oats-okf · package · v1.2.0         │     Latest       bbbbbbb
+    okf-knowledge Knowledge           │     Path         capabilities/aweb
+                                      │
+                                      │   Provides
+                                      │     Skills    oats-aweb, aweb-messaging
+                                      │     Hooks     SessionStart
+                                      │
+                                      │   Used by  2 souls
+                                      │     ■ dev ·2 · 1 on an older version
+                                      │     ■ reviewer ·1
+```
+
+- **The list** is in the Desktop's sections: Workspace owned, Repo owned
+  and Packages. A section with no capability is not drawn, so Repo owned
+  stands only when the workspace has one. Under a section each repository
+  or package has a dim heading, its name and a note: `oats · member repo ·
+  host` (`-` in ASCII). A row is the capability's name, then its layer's
+  label, dim, when it has one: `Knowledge`, `Messaging`, `Tasks`. The list
+  keys move among the capabilities and pass over the headings. `/` filters
+  by name, and a group or a section the filter leaves empty is hidden. A
+  workspace with none says so, and that `oats capabilities` says why.
+- **The detail** beside it, top to bottom:
+  - the name, its layer's label and the description;
+  - **Comes from**, a label and a value a line: for a repository's
+    capability its repository, its latest commit, its path and its
+    fingerprint, and for a repo-owned one that it is that repository's
+    souls' only; for a package's, the package, the version it is pinned to
+    and where that comes from, the commit and the fingerprint;
+  - **Provides**: its skills, commands and hooks, each kind the kernel
+    reports with its names; a kind it could not list says `Not listable: a
+    spawn of it would refuse.`, and one with no name `None`;
+  - **Used by**, with the count of souls beside it: one line per soul, its
+    colour mark (as in the Souls view), its name, a dim count of its
+    instances on this machine that carry the capability, `·2` (`x2` in
+    ASCII; `·0` too), and, when some of them are on an older version of
+    it, `· 1 on an older version` in the warning style. Eight at most, then
+    `+n`. With an OATS that reports what each soul is composed of (the
+    `souls-capabilities` feature, 0.45.0), these are the souls that include
+    it, and with none it says `No soul here includes it.` With an older
+    OATS they are the souls whose instances carry it, and with none it says
+    `No instance carries it yet.` A soul the souls catalog does not list is
+    drawn uncoloured. With the feature, until the souls are read it says
+    `Reading souls…`, and a read of them that fails says why, in the
+    warning style.
+- **`Enter`** gives the detail the focus (under 80 columns it takes the
+  list's place), with a mark, `>` in reverse video, on the first soul of
+  Used by. `Up` and `Down` move the mark among the listed souls, and the
+  detail scrolls to keep it in sight. Past the first or the last soul, and
+  with the other movement keys, the detail scrolls; with no soul listed
+  every movement key scrolls it. `Enter` on the marked soul shows it in
+  [the Souls view](#the-souls-view), selected; on a soul the souls catalog
+  does not list it does nothing. `Tab` moves between the list and the
+  detail.
+- **`r`** reads the capabilities again; while a read is under way it starts
+  nothing. `Esc` closes the detail, then clears a kept filter, then goes
+  back to the instances.
+- **When it reads:** the first time the view is shown, never before: a run
+  that never shows it never runs `oats capabilities`. It reads the souls
+  too, for Used by, when they were not read yet. After that, a read of the
+  workspace reads the capabilities again only when the workspace changed
+  (its commit, a member's, its externals, its packages or its lock), and
+  `r` does. While the first read is under way the view says `Reading
+  capabilities…`. A read that fails says why, `Couldn't read this
+  workspace's capabilities:` and the message, with `r` to try again; one
+  that fails after a good one keeps the capabilities it had, under a
+  heading that says it failed and when they were read; the selected
+  capability's detail says why in full, under its name.
+- **What is kept:** the selected capability and the filter, when the view
+  is left and shown again, for the run.
+- **Only this machine's:** the view lists the capabilities of a workspace of
+  this machine. With none open it says so.
+
+[The palette](#the-palette) lists the capabilities once they are read,
+each with where it comes from; choosing one shows this view with it
+selected.
 
 ## The switcher
 
@@ -830,7 +924,7 @@ The line after leaving says so and names `oats status` to see it.
 | `r` | read now |
 | `1` | the Instances view |
 | `2` | [the Souls view](#the-souls-view); `Esc` or `1` goes back |
-| `3` | the Capabilities view, which says what it will hold and what to run until then; `Esc` or `1` goes back |
+| `3` | [the Capabilities view](#the-capabilities-view); `Esc` or `1` goes back |
 | `w` | opens [the switcher](#the-switcher) |
 | `Enter` | in the list of instances, opens the selected agent's terminal in a new [tab](#tabs) beside the list, or shows its tab when it has one, with the focus in it; in the switcher, opens the selected row; in a confirmation, presses the button with the focus |
 | `z` | gives the shown terminal the focus and the whole body |
@@ -922,15 +1016,19 @@ is open no terminal is drawn and the TUI reads the keys.
   recently opened or shown in this run first (when the first is the shown tab's,
   the second is selected as it opens), then the list's order, each with its
   state mark, its name and, for another machine, `on <machine>`; the souls
-  of the open workspace, once [the Souls view](#the-souls-view) has read
-  them (choosing one shows that view with it selected; the palette never
-  reads them); the views, Instances, Souls and Capabilities; the acts the
+  of the open workspace, once they were read (by [the Souls
+  view](#the-souls-view), the Capabilities view or a spawn), and choosing
+  one shows the Souls view with it selected; its capabilities, once [the
+  Capabilities view](#the-capabilities-view) has read them, each with where
+  it comes from, dim, and choosing one shows that view with it selected
+  (the palette never reads either); the views, Instances, Souls and
+  Capabilities; the acts the
   instance offers now (the shown terminal's when the palette was opened from
   its focus, else the selected one's), with `Spawn another <soul>` once the
   catalog lists its soul; then Spawn an agent, Workspaces, Refresh and Help, and [the split's](#splits)
   rows where each applies.
   Each row says at its right edge what kind it is: `instance`, `soul`,
-  `view`, `act` or `command`.
+  `capability`, `view`, `act` or `command`.
 - **Typing filters it** with the Desktop's subsequence match, a prefix
   first: each kind keeps the rows that match, the best first.
   `Backspace` removes a character, and a paste adds its first line.
@@ -1060,8 +1158,15 @@ with the Desktop (`packages/client/`).
   look again.
 - **The souls are one more read**, `oats souls --json` for the open
   workspace, by the same kernel, with 60 seconds and 4 MiB: only once [the
-  Souls view](#the-souls-view) was shown, then only when the workspace
-  changed, and on `r` there.
+  Souls view](#the-souls-view), [the Capabilities
+  view](#the-capabilities-view) or [the spawn prompt](#spawning-an-agent)
+  was shown, then only when the workspace changed, and on `r` in the Souls
+  view.
+- **The capabilities are one more read**, `oats capabilities --json` for
+  the open workspace, read as the souls are: by the same kernel, with 60
+  seconds and 4 MiB, only once [the Capabilities
+  view](#the-capabilities-view) was shown, then only when the workspace
+  changed (its packages and its lock count too), and on `r` there.
 - **A spawn's preview is one more read**, `oats spawn <soul> --preview
   --json` with the choices shown, by the same kernel, with 30 seconds: only
   while [the spawn prompt](#spawning-an-agent) is open, and again when a
@@ -1229,7 +1334,7 @@ with the Desktop (`packages/client/`).
 | start an agent with another harness or model | `oats session start --home <home>` with its options |
 | spawn an agent on another machine | `oats spawn <soul> --server <id>` |
 | spawn an agent with another harness, model or task | `oats spawn <soul>` with its options |
-| see capabilities | `oats capabilities` |
+| see a capability's skills and files | `oats capabilities show <name>` |
 | add a machine to this workspace | `oats server connect <id> --ssh <alias>` |
 | check a machine | `oats server check <id>` |
 | remove a machine | `oats server remove <id>` |
@@ -1250,8 +1355,8 @@ version:
   machine's heading when it is not the header's time. A view of one machine
   has no heading: there the header names the machine (`on garnet`) and
   carries the time.
-- The Souls view lists a workspace of this machine's souls, and
-  Capabilities, when it comes, is this machine's too.
+- The Souls and Capabilities views list a workspace of this machine's
+  souls and capabilities: both are this machine's.
 - There is no sorting and no mouse, and a deployment's heading cannot be
   folded. An open terminal has no scrollback but the viewer's own.
 - Up to four terminals are open at a time, as tabs, in at most two
