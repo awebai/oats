@@ -109,7 +109,7 @@ runs under the `node` that runs `setup`.
 Each path is written for what reads it: a shell word in the hook's command,
 systemd's quoting in `ExecStart`, XML text in the launchd plist. A path of
 plain characters is written bare. A run finds the hooks of an earlier run by
-their shape, quoted or not, and replaces their command; a command it cannot
+their shape, quoted or not, and refreshes command, async and timeout fields; a command it cannot
 read as its own is left alone and a new hook is added beside it.
 Stream owner: `--owner`, else `$TURN_RECORD_OWNER`, else the short hostname.
 
@@ -117,9 +117,17 @@ Ordinary/source-selected capture, explicit retry and foreground watch ticks use
 the fixed supervised worker. Partial passes exit zero with pending work;
 operational failures exit nonzero. `--no-index` never opens or mutates the
 derived search index and supplies no fresh all-stage success. Quiet does not
-imply a hook trigger. Detached hooks and periodic manager migration remain
-separate service-A work; this does not describe already-released 0.58.0 behavior.
+imply a hook trigger. Explicit `--hook` launches a detached supervisor and reports
+only “capture launched”, not initialization or completion. Owned Stop/SessionEnd
+settings use `--quiet --hook`, `async:false` and `timeout:10`: the harness waits
+for the launcher, while capture runs detached without its output pipes. Setup
+refreshes these fields even when the owned command already matches, preserving
+foreign hooks and unrelated fields. Hook errors, including usage, exit one,
+never Claude's Stop-blocking exit two. Existing ordinary quiet argv remain
+manual. Periodic manager and setup first-pass trigger migration remain separate
+service-A work; this does not describe already-released 0.58.0 behavior.
 See [command routing and receipts](docs/capture-service.md#ordinary-cli-and-foreground-watch).
+See [detached hook launch limits](docs/capture-service.md#detached-hook-launcher).
 
 Transcript capture reads 64 KiB chunks and frames complete native records,
 including UTF-8 characters split across chunks. It flushes before adding a

@@ -193,7 +193,9 @@ test("the node handed in is the node written: both hooks, the systemd unit, the 
     for (const event of ["Stop", "SessionEnd"]) {
       const [command, ...more] = commands(home, event);
       assert.deepEqual(more, [], `one capture hook for ${event}`);
-      assert.deepEqual(shellReads(command, node, home), [captureOf(), "--owner", OWNER, "--quiet"]);
+      assert.deepEqual(shellReads(command, node, home), [captureOf(), "--owner", OWNER, "--quiet", "--hook"]);
+      const hook = readSettings(home).hooks[event][0].hooks[0];
+      assert.equal(hook.async, false); assert.equal(hook.timeout, 10);
     }
     if (platform === "linux") {
       assert.deepEqual(systemdReads(execStart(home)), [node, captureOf(), "--watch", "--owner", OWNER]);
@@ -227,7 +229,7 @@ test("with no variable, an empty one or a path that is not absolute, the node wr
     const r = run(home, ["--no-service"], { node: handed });
     assert.match(r.stdout, new RegExp(`^node:  ${process.execPath}$`, "m"), JSON.stringify(handed));
     assert.equal(ownStderr(r.stderr), "", "and it says nothing of its own about it");
-    assert.equal(commands(home, "Stop")[0].endsWith(` ${captureOf()} --owner ${OWNER} --quiet`), true);
+    assert.equal(commands(home, "Stop")[0].endsWith(` ${captureOf()} --owner ${OWNER} --quiet --hook`), true);
     assert.equal(shellWordsOf(commands(home, "Stop")[0], home)[0], process.execPath, JSON.stringify(handed));
   }
 });
@@ -247,7 +249,7 @@ test("paths of plain characters are written bare, as before", () => {
   run(linux, ["--dry-run"], { node });
   run(linux, [], { node });
   for (const event of ["Stop", "SessionEnd"]) {
-    assert.deepEqual(commands(linux, event), [`${node} ${captureOf()} --owner ${OWNER} --quiet`]);
+    assert.deepEqual(commands(linux, event), [`${node} ${captureOf()} --owner ${OWNER} --quiet --hook`]);
   }
   assert.match(readFileSync(unitPath(linux), "utf8"), new RegExp(`^ExecStart=${node} ${captureOf()} --watch --owner ${OWNER}$`, "m"));
   const darwin = newHome();
@@ -281,7 +283,7 @@ test("a path with a space, a quote, %, $ or & reaches each reader whole", () => 
     for (const event of ["Stop", "SessionEnd"]) {
       const found = commands(home, event);
       assert.equal(found.length, 1);
-      assert.deepEqual(shellReads(found[0], node, home), [captureOf(pkg), "--owner", OWNER, "--quiet"], event);
+      assert.deepEqual(shellReads(found[0], node, home), [captureOf(pkg), "--owner", OWNER, "--quiet", "--hook"], event);
     }
     if (platform === "linux") {
       const line = execStart(home);
@@ -355,7 +357,7 @@ test("over the old form (unquoted, the keg's path) a run replaces the hooks and 
     const r = run(home, [], { platform, node });
     assert.match(r.stdout, /hooks: installed/);
     for (const event of ["Stop", "SessionEnd"]) {
-      assert.deepEqual(commands(home, event), [`'${node}' ${captureOf()} --owner ${OWNER} --quiet`], event);
+      assert.deepEqual(commands(home, event), [`'${node}' ${captureOf()} --owner ${OWNER} --quiet --hook`], event);
       assert.equal(readSettings(home).hooks[event].length, 1, "no group added");
     }
     assert.doesNotMatch(readFileSync(unit, "utf8"), /Cellar/);
@@ -374,7 +376,7 @@ test("an old command with a character above U+007F bare in a path is replaced, a
     "/opt/old\u3000node/bin/node", "/opt/old\ue000node/bin/node", "/opt/old\u200bnode/bin/node", "/opt/old\u0085node/bin/node",
   ];
   const node = join(base, "zo\u00eb", "bin", "node");
-  const current = `'${node}' ${captureOf()} --owner ${OWNER} --quiet`;
+  const current = `'${node}' ${captureOf()} --owner ${OWNER} --quiet --hook`;
   for (const old of olds) {
     const home = newHome({ hooks: { Stop: [{ hooks: [oldHook(old)] }], SessionEnd: [{ hooks: [oldHook(old, "/old/inst\u00e4ll/bin/capture.mjs")] }] } });
     run(home, ["--no-service"], { node });
@@ -399,7 +401,7 @@ test("over the new form (quoted, a path with a space) a run replaces the hooks a
     assert.ok(commands(home, "Stop")[0].startsWith(`'${first}' `), "the first run wrote the quoted form");
     run(home, [], { platform, node: second });
     for (const event of ["Stop", "SessionEnd"]) {
-      assert.deepEqual(commands(home, event), [`'${second}' ${captureOf()} --owner ${OWNER} --quiet`], event);
+      assert.deepEqual(commands(home, event), [`'${second}' ${captureOf()} --owner ${OWNER} --quiet --hook`], event);
       assert.equal(readSettings(home).hooks[event].length, 1, "no group added");
     }
     assert.equal(readFileSync(unit, "utf8").includes(first), false);
@@ -452,7 +454,7 @@ test("a command that is not provably setup's is left alone, and setup's own is a
   const after = readSettings(home);
   assert.equal(after.existing, "stuff");
   assert.deepEqual(after.hooks.Stop[0], settings.hooks.Stop[0], "every one of them kept as it was");
-  assert.deepEqual(after.hooks.Stop.slice(1), [{ hooks: [{ type: "command", command: `${node} ${captureOf()} --owner ${OWNER} --quiet`, async: true, timeout: 120 }] }]);
+  assert.deepEqual(after.hooks.Stop.slice(1), [{ hooks: [{ type: "command", command: `${node} ${captureOf()} --owner ${OWNER} --quiet --hook`, async: false, timeout: 10 }] }]);
   assert.equal(after.hooks.SessionEnd.length, 1);
 });
 
@@ -462,12 +464,37 @@ test("setup's hook twice in a file: both get the current command, neither is rem
   const settings = { hooks: { Stop: [{ hooks: [oldHook()] }, { matcher: "", hooks: [{ type: "command", command: "echo mine" }, oldHook("/usr/local/bin/node", "/old/install/bin/capture.mjs")] }] } };
   const home = newHome(settings);
   const node = join(base, "handed", "bin", "node");
-  const current = `${node} ${captureOf()} --owner ${OWNER} --quiet`;
+  const current = `${node} ${captureOf()} --owner ${OWNER} --quiet --hook`;
   run(home, ["--no-service"], { node });
   const stop = readSettings(home).hooks.Stop;
   assert.deepEqual(stop.map((g) => g.hooks.map((h) => h.command)), [[current], ["echo mine", current]]);
   assert.equal(stop[1].matcher, "");
   assert.deepEqual(commands(home, "SessionEnd"), [current]);
+});
+
+test("matching owned hook commands still refresh scheduling fields, preserving groups and foreign fields", () => {
+  const node = join(base, "handed", "bin", "node");
+  const command = `${node} ${captureOf()} --owner ${OWNER} --quiet --hook`;
+  const owned = { type: "command", command, async: true, timeout: 120, description: "keep mine" };
+  const foreign = { type: "command", command: "echo unrelated", async: true, timeout: 77, extra: "keep" };
+  const settings = { existing: "unchanged", hooks: {
+    Stop: [{ matcher: "kept", custom: 1, hooks: [owned, foreign] }],
+    SessionEnd: [{ hooks: [{ ...owned, async: undefined, timeout: undefined }] }],
+    OtherEvent: [{ hooks: [{ ...owned }] }],
+  } };
+  const home = newHome(settings), before = readFileSync(settingsPath(home), "utf8");
+  run(home, ["--no-service", "--dry-run"], { node });
+  assert.equal(readFileSync(settingsPath(home), "utf8"), before, "dry-run does not refresh persisted fields");
+  run(home, ["--no-service"], { node });
+  const after = readSettings(home), refreshed = { ...owned, async: false, timeout: 10 };
+  assert.deepEqual(after, { existing: "unchanged", hooks: {
+    Stop: [{ matcher: "kept", custom: 1, hooks: [refreshed, foreign] }],
+    SessionEnd: [{ hooks: [refreshed] }], OtherEvent: settings.hooks.OtherEvent,
+  } });
+  const once = readFileSync(settingsPath(home), "utf8");
+  const again = run(home, ["--no-service"], { node });
+  assert.equal(readFileSync(settingsPath(home), "utf8"), once);
+  assert.match(again.stdout, /hooks: .* already installed/);
 });
 
 test("--dry-run prints the node it would write, and writes and starts nothing", () => {

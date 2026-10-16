@@ -2,8 +2,9 @@
 
 The record package owns source cursors, journal validation, indexing and capture
 status. Ordinary/source-selected capture and explicit retry use the fixed
-supervised worker. This does not migrate service scheduling, detach hooks,
-change root registration or implement service health/doctor diagnosis.
+supervised worker. Explicit hooks launch a detached supervisor. This does not
+migrate service scheduling, change root registration or implement service
+health/doctor diagnosis.
 
 The command integration described below is forthcoming service-A work, not
 an installed periodic manager. OATS 0.56.0, 0.57.0 and 0.58.0
@@ -967,7 +968,8 @@ healthy work and complete audit evidence; an older failure remains history and
 does not poison a later success. Confirmed counts come only from their existing
 processing commits, never audit scans or reconstruction. Ordinary CLI dispatch
 uses this session. Protected exact-home/file operations retain their existing
-path; detached hooks and installed periodic service migration remain separate.
+path; explicit hooks use a detached caller of the same session. Installed
+periodic service migration remains separate.
 
 ### Append-only worker mode
 
@@ -1005,8 +1007,8 @@ Even an empty or fully visited append-only sweep remains pending/partial, or
 failed for a current-pass failure: it supplies no fresh index/all-stage proof.
 Prior success/failure history and confirmed counts remain distinct from that
 decision. The ordinary CLI uses this mode without changing public synchronous
-APIs or protected exact-home/file receipts. Detached hook/setup/service
-integration and hosted qualification remain separate obligations.
+APIs or protected exact-home/file receipts. Explicit hooks can select this mode;
+setup first-pass/service integration and hosted qualification remain separate obligations.
 
 ### Fixed private command entry and issue preparation
 
@@ -1062,9 +1064,9 @@ Ordinary capture, `--sessions-only`, `--aw-only`, `--no-index` and
 `--retry-set-aside` await the fixed private entry. The CLI copies home, cwd and
 the selected native location environment into its plan. Quiet controls output,
 never trigger identity: ordinary and explicit retry use `manual`; the first
-foreground watch pass and later ticks use `watch`. Existing setup/hook callers
-that still invoke ordinary quiet argv therefore remain manual; this is not a
-claim of migrated trigger attribution. `--reset-cursors` remains reset-only;
+foreground watch pass and later ticks use `watch`. Legacy quiet hook argv and
+the setup first-pass caller remain manual until explicitly migrated; quiet
+never invents hook attribution or a timeout cause. `--reset-cursors` remains reset-only;
 exact-home/file proofs and public synchronous libraries keep their paths.
 
 Ordinary `--json` remains a usage error. Retry JSON retains exactly
@@ -1094,6 +1096,51 @@ The small-heap algorithm fixture invokes synchronous capture/index libraries
 directly: lowering the CLI parent's heap cannot lower its fixed-policy worker
 heap. Actual CLI fixtures separately cover worker routing, selected capture,
 append-only catch-up, recovery receipts, overlap and foreground scheduling.
-Hook detachment, setup/service migration and health/doctor remain unfinished;
+Setup first-pass/service migration and health/doctor remain unfinished;
 fresh-audit/parent metadata/storage/synchronization and full hosted manager and
 rollback qualification are still required before service acceptance.
+
+### Detached hook launcher
+
+`capture --hook` copies owner, home/cwd, selected native location environment,
+source selection and index mode into the fixed package supervisor's argument.
+It performs argument validation and OS spawn only: no capture lock, status
+read/write, network, default-directory resolution or source scan. Root selection
+still belongs to the admitted worker. Caller options cannot replace the Node
+executable, package entry, worker or resource policy. The supervisor starts in
+its own session/process group with all three standard streams ignored and a
+filtered environment; it does not retain harness pipes or Node preload options.
+The launcher unrefs it after the spawn event and exits. Killing the launcher
+after spawn does not terminate that detached child.
+
+Exit zero means **capture launched**, not supervisor initialization, admission
+or capture completion. Nonquiet acknowledgement says so; quiet suppresses it.
+Spawn or argument failure prints one stderr line and exits one. Hook mode never
+uses exit two, including usage errors, because Claude interprets that status as
+Stop-blocking/model feedback. Ordinary usage errors outside hook mode retain
+their existing status. Proof, recovery, JSON, health, watch and reporting modes
+cannot be combined with `--hook`. Sessions-only/AW-only and append-only flags
+are copied explicitly, without resolving inputs in the launcher.
+
+The detached supervisor owns the usual root lock, registered workers, failure
+handling, child reaping and lock release. Admitted worker receipts use trigger
+`hook`; overlapping launches do not create another pass or overwrite history.
+The launcher writes no receipt. Failure after OS spawn but before a worker can
+publish status may leave absent or older status, and ignored stderr cannot
+report that failure back to the completed harness call. Launch acknowledgement
+is therefore not a health check; current service health/doctor and hosted
+lifecycle qualification remain separate gates. No numeric launch latency is
+established by this implementation.
+
+Setup refreshes recognized owned Stop/SessionEnd entries to `--quiet --hook`,
+`async:false` and `timeout:10`, even when their command already matches. The
+harness waits for the short launcher so its spawn result is ordered before
+harness shutdown; capture itself remains detached. The timeout applies to that
+launcher, not to the detached supervisor or its fixed worker allowance. The
+existing ownership recognition, duplicate groups, foreign commands and other
+fields are preserved; dry-run does not write settings. The install hint uses
+the same scheduling fields while retaining `--sessions-only --no-index`.
+This changes persisted settings from `async:true`/`timeout:120`; installing a
+CLI alone does not rewrite those settings. These forthcoming changes do not
+claim hook migration shipped in 0.56.0–0.58.0, nor complete periodic service or
+setup first-pass trigger migration.

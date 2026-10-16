@@ -33,6 +33,7 @@ import { acquireCaptureLock } from "../lib/capture-lock.mjs";
 import { captureDefaultRootPlan, resolveCaptureDefaultRoots } from "../lib/capture-default-roots.mjs";
 import { runCaptureCommand } from "../lib/capture-command.mjs";
 import { captureWatchQueue } from "../lib/capture-watch.mjs";
+import { launchCaptureHook } from "../lib/capture-hook.mjs";
 
 // Fail closed but actionably: an unreadable ignore file must stop capture,
 // as one clear line naming the file — never an uncaught stack trace.
@@ -53,6 +54,7 @@ function loadIgnoreOrExit(recordRoot) {
 // it does not understand before anything can be written.
 const VALUE_FLAGS = new Set(["root", "owner", "home", "file", "format", "source"]);
 const BOOL_FLAGS = new Set([
+  "hook",
   "reset-cursors",
   "retry-set-aside",
   "health",
@@ -73,6 +75,8 @@ const USAGE = `capture — land sessions and aw client logs in the turn record.
   capture                      one reconciliation pass (sessions + aw logs)
   capture --sessions-only      only session transcripts (Claude Code, pi, codex)
   capture --aw-only            only aw client comm logs
+  capture --hook               launch detached capture; exit 0 acknowledges
+                               launch only, never capture completion
   capture --watch              pass now, then re-pass on filesystem change
                                (debounced) and every 15 minutes regardless
   capture --status             show store/stream summary, capture nothing
@@ -134,6 +138,10 @@ Every invocation with no explicit subcommand WRITES. Reconciliation is the
 capture; hooks and watch only decide when to run it.`;
 
 class UsageError extends Error {}
+const hookRequested = process.argv.slice(2).some(arg => arg === "--hook" || arg.startsWith("--hook="));
+function hookLaunchError(error) {
+  console.error(`capture hook launch failed: ${String(error.message).replace(/[\r\n]+/g, " ")}`);
+}
 
 function parseArgs(argv) {
   const args = {};
@@ -146,7 +154,7 @@ function parseArgs(argv) {
     const name = a.slice(2);
     if (VALUE_FLAGS.has(name)) {
       const value = argv[++i];
-      if (value === undefined) throw new UsageError(`${a} needs a value`);
+      if (value === undefined || hookRequested && value.startsWith("--")) throw new UsageError(`${a} needs a value`);
       if (name === "file" && args.file !== undefined) throw new UsageError("one --file per call");
       args[name] = value;
     } else if (BOOL_FLAGS.has(name)) {
@@ -165,8 +173,16 @@ try {
   if (recovery.length > 1) throw new UsageError("choose one recovery or health operation");
   if (args.source !== undefined && (!args["reset-cursors"] || !CAPTURE_SOURCES.includes(args.source))) throw new UsageError("--source requires --reset-cursors and aw|cc|pi|codex");
   if (recovery.length && ["home", "file", "format", "watch", "status", "install-hint", "current-roots", "sessions-only", "aw-only"].some(key => args[key])) throw new UsageError("recovery/health cannot be combined with another capture mode");
+  if (args.hook && ["home", "file", "format", "watch", "status", "install-hint", "help", "current-roots", "json", ...recovery].some(key => args[key] !== undefined))
+    throw new UsageError("--hook cannot be combined with proof, recovery, JSON or another capture mode");
 } catch (err) {
   if (!(err instanceof UsageError)) throw err;
+  // Claude treats hook exit2 as blocking/model feedback. Explicit hook usage
+  // failures report launch failure on stderr/exit1, never that special status.
+  if (hookRequested) {
+    hookLaunchError(err);
+    process.exit(1);
+  }
   // --file --json answers JSON even for a usage error: it is for programs.
   if (process.argv.includes("--json")) {
     console.log(JSON.stringify({ status: "failed", complete: false, code: "E_USAGE", error: err.message }, null, 2));
@@ -185,7 +201,7 @@ const root = args.root ?? process.env.TURN_RECORD_ROOT ?? join(homedir(), ".turn
 const ownerExplicit = args.owner !== undefined || process.env.TURN_RECORD_OWNER !== undefined;
 const owner = args.owner ?? process.env.TURN_RECORD_OWNER ?? hostname().split(".")[0];
 const quiet = Boolean(args.quiet || args.json && (args["reset-cursors"] || args["retry-set-aside"]));
-const store = new RecordStore(root, { owner });
+const store = args.hook ? null : new RecordStore(root, { owner });
 
 if (args.health) {
   try {
@@ -220,6 +236,19 @@ if (args["reset-cursors"] || args["retry-set-aside"]) {
     else console.error(`capture: ${err.message}`);
     process.exitCode = 1;
   }
+  process.exit(process.exitCode ?? 0);
+}
+
+if (args.hook) {
+  try {
+    await launchCaptureHook(root, { owner, plan: commandPlan(), indexEnabled: !args["no-index"], trigger: "hook", retrySetAside: false });
+    log("capture launched; launch is not completion (see capture --health)");
+  } catch (error) {
+    hookLaunchError(error);
+    process.exitCode = 1;
+  }
+  // No capture work or discovery in the harness process. The detached owner
+  // takes the lock and retains the existing worker lifetime/reaping contract.
   process.exit(process.exitCode ?? 0);
 }
 
@@ -532,15 +561,19 @@ if (args["install-hint"]) {
 
 {
   "hooks": {
-    "Stop":       [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --no-index --quiet"}]}],
-    "SessionEnd": [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --no-index --quiet"}]}]
+    "Stop":       [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --no-index --quiet --hook", "async": false, "timeout": 10}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --no-index --quiet --hook", "async": false, "timeout": 10}]}]
   }
 }
 
-Hook passes append turns only (--no-index); the search index is updated by
+Hook acknowledgement means capture launched, not capture completed. The
+harness waits only for the launcher (async:false, timeout:10); its detached
+supervisor inherits no harness output pipes. Hook failures exit 1, never 2.
+These hook passes append turns only (--no-index); the search index is updated by
 capture --watch (every 15 minutes and on change) or by a plain capture pass.
-One pass runs per record root at a time: a hook pass that finds another
-running exits at once, and a dropped hook is recovered by any later pass.`);
+One pass runs per record root at a time: the detached supervisor skips an
+overlap; launch acknowledgement does not report that later decision. A dropped
+hook is recovered by any later pass.`);
   process.exit(0);
 }
 

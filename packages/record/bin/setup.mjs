@@ -159,8 +159,10 @@ if (!/^[A-Za-z0-9._-]+$/.test(owner)) {
   process.exit(2);
 }
 
-const hookCommand = `${shellWord(NODE)} ${shellWord(CAPTURE)} --owner ${owner} --quiet`;
-const HOOK = { type: "command", command: hookCommand, async: true, timeout: 120 };
+const hookCommand = `${shellWord(NODE)} ${shellWord(CAPTURE)} --owner ${owner} --quiet --hook`;
+// The harness waits only for OS launch acknowledgement. Capture itself is
+// detached and owns no harness pipes; these are launcher, not worker limits.
+const HOOK = { type: "command", command: hookCommand, async: false, timeout: 10 };
 
 console.log(`owner: ${owner}`);
 console.log(`node:  ${NODE}`);
@@ -224,14 +226,16 @@ function installHooks() {
     for (const event of ["Stop", "SessionEnd"]) {
       const groups = (settings.hooks[event] = settings.hooks[event] ?? []);
       let found = false;
-      // Every hook that is ours gets the current command and none is removed,
+      // Every hook that is ours gets the current command/scheduling fields; none is removed,
       // two in one event included: the shape is not proof of ownership.
       for (const group of groups) {
         for (const hook of group.hooks ?? []) {
           if (!ours(hook)) continue;
           found = true;
-          if (hook.command !== hookCommand) {
+          if (hook.command !== hookCommand || hook.async !== HOOK.async || hook.timeout !== HOOK.timeout) {
             hook.command = hookCommand;
+            hook.async = HOOK.async;
+            hook.timeout = HOOK.timeout;
             changed = true;
           }
         }

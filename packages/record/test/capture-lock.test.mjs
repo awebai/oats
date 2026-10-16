@@ -234,7 +234,14 @@ test("capture CLI: an unreadable ignore file stops the pass with one line and ex
 test("capture --install-hint recommends append-only hook passes", () => {
   const r = spawnSync(process.execPath, [CAPTURE, "--install-hint"], { encoding: "utf8" });
   assert.equal(r.status, 0);
-  assert.match(r.stdout, /--sessions-only --no-index --quiet/);
+  assert.match(r.stdout, /--sessions-only --no-index --quiet --hook/);
+  const hint = JSON.parse(r.stdout.slice(r.stdout.indexOf("{\n"), r.stdout.lastIndexOf("\n}") + 2));
+  for (const event of ["Stop", "SessionEnd"]) {
+    const hook = hint.hooks[event][0].hooks[0];
+    assert.equal(hook.async, false); assert.equal(hook.timeout, 10);
+    assert.match(hook.command, /--sessions-only --no-index --quiet --hook$/);
+  }
+  assert.match(r.stdout, /capture launched, not capture completed/);
   assert.match(r.stdout, /One pass runs per record root at a time/);
 });
 
