@@ -9,6 +9,7 @@ import { DerivedState } from '../lib/derived-state.mjs';
 import { RecordStore } from '../lib/store.mjs';
 import { RecordIndex } from '../lib/index-db.mjs';
 import { CaptureSourceQueue } from '../lib/capture-source-queue.mjs';
+import { CaptureSourceDiscovery } from '../lib/capture-source-discovery.mjs';
 import { CaptureRun } from '../lib/capture-run.mjs';
 import { commitCaptureAdmission } from '../lib/capture-admission.mjs';
 import { readCaptureStatus } from '../lib/capture-status.mjs';
@@ -109,6 +110,74 @@ test('worker discovery resumes across formats and workers without promoting enum
   assert.equal(g.state(state => state.get('source-sweep', 'fixture').discovery), null);
   assert.equal(g.state(state => state.db.prepare('SELECT count(*) AS n FROM capture_sources').get().n), 0);
   assert.equal(g.store.readStream('fixture~aw').length, 0);
+});
+
+test('persistent discovery refusal survives replacement while independent capture and indexing commit in the same pass', async t => {
+  const f = fixture(t, [['cc', 'blocked', native(1)], ['aw', 'a', aw(2)], ['aw', 'b', aw(3)]], { discover: true });
+  const ccRoot = f.roots.find(root => root.source === 'cc').path;
+  fs.writeFileSync(join(ccRoot, '0.txt'), 'irrelevant');
+  // Retain a selected native-directory identity and one queued healthy account;
+  // the other AW account still requires discovery by the owning worker.
+  const before = f.state(state => {
+    const queue = new CaptureSourceQueue(state, { owner: 'fixture', selection: 'fixture' });
+    const discovery = new CaptureSourceDiscovery(queue, f.roots);
+    try { discovery.advance({ limit: 1 }); discovery.advance({ limit: 1 }); return queue.current().discovery; }
+    finally { discovery.close(); }
+  });
+  fs.renameSync(ccRoot, ccRoot + '.saved'); fs.mkdirSync(ccRoot);
+  fs.writeFileSync(join(ccRoot, 'replacement.jsonl'), native(99));
+  f.store.appendBatch('fixture~existing', [turn(4)]);
+
+  const first = await f.run({ units: 2 });
+  assert.equal(first.outcome, 'failed', f.diagnostic(first)); assert.equal(first.reason, 'io'); assert.equal(first.exitCode, 1);
+  const status = readCaptureStatus(f.root), sweep = f.state(state => state.get('source-sweep', 'fixture'));
+  assert.equal(status.lastRun.counts.turnsAppended, 2); assert.equal(status.lastRun.counts.turnsIndexed, 3);
+  assert.equal(status.lastRun.counts.filesVisited, 2); assert.equal(status.lastSuccess, null);
+  assert.equal(status.lastFailure.id, status.lastRun.id); assert.equal(status.lastFailure.reason, 'io');
+  assert.equal(status.backlog.pending, true); assert.equal(sweep.discovered, false); assert.equal(sweep.finished, false);
+  const refused = sweep.discovery.groups[0];
+  assert.equal(refused.root, before.groups[0].root); assert.equal(refused.complete, false);
+  assert.deepEqual(refused.checkpoint, before.groups[0].checkpoint);
+  assert.equal(refused.failure.attempts, 1); assert.equal(refused.failure.runId, status.lastRun.id);
+  assert.equal(refused.failure.nextRetryAt, new Date(now + 30 * 60_000).toISOString());
+  assert.equal(sweep.discovery.groups[3].complete, true, 'safe format discovery finishes after the refused root');
+  assert.equal(f.store.readStream('fixture~aw').length, 2);
+  assert.equal(f.store.readStream('fixture~cc.replacement').length, 0);
+  const events = f.events();
+  assert.ok(events.every(event => event.attempt > 1), 'the initial discovery failure precedes all committed healthy work');
+  assert.ok(new Set(events.map(event => event.nonce)).size > 1, 'healthy work continues across replacement workers');
+  assert.equal(f.state(state => [...state.entries('capture-failed')].length), 0, 'root refusal invents no stream attribution');
+  assert.deepEqual(f.state(state => state.get('capture-discovery-failure', 'last')),
+    { runId: status.lastRun.id, reason: 'io', scope: sweep.id, source: 'cc', path: ccRoot });
+
+  f.store.appendBatch('fixture~existing', [turn(5)]);
+  const waiting = await f.run({ units: 2, now: now + 60_000 });
+  assert.equal(waiting.outcome, 'partial', f.diagnostic(waiting)); assert.equal(waiting.exitCode, 0);
+  const waited = readCaptureStatus(f.root);
+  assert.equal(waited.lastRun.counts.turnsAppended, 0); assert.equal(waited.lastRun.counts.turnsIndexed, 1);
+  assert.deepEqual(waited.lastFailure, status.lastFailure); assert.equal(waited.lastSuccess, null);
+  assert.deepEqual(f.state(state => state.get('source-sweep', 'fixture').discovery.groups[0]), refused);
+
+  f.store.appendBatch('fixture~existing', [turn(6)]);
+  const dueAt = now + 30 * 60_000, due = await f.run({ units: 2, now: dueAt });
+  assert.equal(due.outcome, 'failed', f.diagnostic(due)); assert.equal(due.reason, 'io');
+  const retried = readCaptureStatus(f.root), failedAgain = f.state(state => state.get('source-sweep', 'fixture').discovery.groups[0]);
+  assert.equal(retried.lastRun.counts.turnsIndexed, 1); assert.equal(retried.lastRun.counts.turnsAppended, 0);
+  assert.equal(retried.lastFailure.id, retried.lastRun.id); assert.notEqual(retried.lastRun.id, status.lastRun.id);
+  assert.equal(failedAgain.failure.attempts, 2);
+  assert.equal(failedAgain.failure.nextRetryAt, new Date(dueAt + 60 * 60_000).toISOString());
+  assert.deepEqual(failedAgain.checkpoint, before.groups[0].checkpoint);
+
+  // Only restoration of the selected directory permits resuming its checkpoint.
+  fs.rmSync(ccRoot, { recursive: true }); fs.renameSync(ccRoot + '.saved', ccRoot);
+  const restored = await f.run({ units: 2, now: dueAt + 60 * 60_000 });
+  assert.equal(restored.outcome, 'partial', f.diagnostic(restored));
+  const recovered = readCaptureStatus(f.root), finished = f.state(state => state.get('source-sweep', 'fixture'));
+  assert.equal(recovered.lastRun.counts.turnsAppended, 1); assert.equal(recovered.lastRun.counts.turnsIndexed, 1);
+  assert.deepEqual(recovered.lastFailure, retried.lastFailure); assert.equal(recovered.lastSuccess, null);
+  assert.equal(recovered.backlog.pending, true); assert.equal(finished.discovered, true); assert.equal(finished.finished, false);
+  assert.equal(finished.discovery.groups[0].failure, undefined);
+  assert.equal(f.store.readStream('fixture~cc.blocked').length, 1);
 });
 
 test('mixed source/index units alternate across worker continuation without claiming all-stage completion', async t => {

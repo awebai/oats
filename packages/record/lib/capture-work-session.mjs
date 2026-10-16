@@ -48,7 +48,8 @@ export class CaptureWorkSession {
       this.reset.reconcile(start, { reason: reasonFor(this.reset.current()?.attempt?.runId), now: now() });
       const prior = readCaptureStatus(start.root);
       const failures = [this.state.get("capture-run-failure", "last"),
-        this.state.get("capture-index-reset-failure", "last"), this.state.get("capture-cleanup-failure", "last")].filter(Boolean);
+        this.state.get("capture-index-reset-failure", "last"), this.state.get("capture-cleanup-failure", "last"),
+        this.state.get("capture-discovery-failure", "last")].filter(Boolean);
       const currentReason = start.pass.failure ?? failures.find(row => row.runId === start.pass.runId)?.reason ?? null;
       const previousReason = failures.find(row => row.runId === prior?.lastRun?.id)?.reason ??
         (prior?.lastRun?.id === start.pass.runId ? previous : null);
@@ -111,7 +112,7 @@ export class CaptureWorkSession {
     if (this.start.pass.finalize) return { finalize: true };
 
     const sourceDiscovery = this.sourceDiscovery && !this.queue.current().discovered
-      ? this.sourceDiscovery.advance({ stopped, limit: this.unit.discoveryLimit ?? 128 }) : null;
+      ? this.sourceDiscovery.advance({ stopped, limit: this.unit.discoveryLimit ?? 128, runId: this.run.id, now: this.now() }) : null;
     let discovery = null;
     if (this.inventory.current().phase !== "complete") discovery = this.inventory.discover(this.index, { stopped });
     if (stopped()) return { stopped: true, discovery, sourceDiscovery };
@@ -127,9 +128,10 @@ export class CaptureWorkSession {
     if (stopped()) return { stopped: true, discovery, sourceDiscovery };
     const cleanup = this.clean(false);
     if (cleanup.selected || !cleanup.complete) return { stage: "cleanup", ...cleanup, discovery, sourceDiscovery };
-    // Unknown discovery can still contain healthy work. Exhaust both healthy
-    // stages and discovery before considering any due single-stream retry.
-    if (!this.queue.current().discovered || this.inventory.current().phase !== "complete")
+    // Unknown eligible discovery can still contain healthy work. A refused
+    // root remains pending but cannot withhold unrelated due work indefinitely.
+    if ((this.sourceDiscovery ? this.sourceDiscovery.healthyPending() : !this.queue.current().discovered) ||
+        this.inventory.current().phase !== "complete")
       return { waitingForDiscovery: true, discovery, sourceDiscovery };
     const selection = selectCaptureWork(this.store, this.state, [], { runId: this.run.id, now: this.now(), stopped,
       retryFilter: retry => retry.stage === "index" ? !blockedIndex :
@@ -137,6 +139,12 @@ export class CaptureWorkSession {
     if (selection) return { ...this.process(selection.stage, true), discovery, sourceDiscovery };
     const cleanupRetry = this.clean(true);
     if (cleanupRetry.selected || !cleanupRetry.complete) return { stage: "cleanup", ...cleanupRetry, discovery, sourceDiscovery };
+    if (this.sourceDiscovery && !this.queue.current().discovered) {
+      if (sourceDiscovery?.source) return { waitingForDiscovery: true, discovery, sourceDiscovery };
+      const retried = this.sourceDiscovery.advance({ stopped, limit: this.unit.discoveryLimit ?? 128,
+        runId: this.run.id, now: this.now(), retry: true });
+      if (retried.source) return { waitingForDiscovery: true, discovery, sourceDiscovery: retried };
+    }
     return { idle: true, discovery, sourceDiscovery };
   }
 

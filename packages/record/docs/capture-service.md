@@ -761,6 +761,26 @@ Discovery completion means only enumeration ended; queued source processing,
 newly created streams, retries, cleanup and final index validation remain
 separate obligations.
 
+When the owning session supplies its run identity, a reader refusal commits
+private root-failure evidence and format rotation before propagating the error.
+The refused root keeps its exact checkpoint and stays incomplete. Its format
+cannot advance to later roots, but a replacement worker can discover other
+formats and process independent queued capture, index and cleanup work. The
+failure remains bound to the failed pass; later healthy work cannot clear it
+or invent a failed journal stream. Direct readers without owning-run context
+continue to throw without publishing failure state.
+
+Failed roots use the fixed 30/60/120/240-minute schedule and exclude the pass
+that attempted them. Due discovery follows independent healthy work and
+eligible stream/cleanup retries. One partial retry page per pass preserves its
+attempt/date and marks that pass attempted; only completing the refused root
+retires its pending failure. Restoring a selected directory permits recovery;
+a different directory never inherits its checkpoint. A deferred root keeps
+enumeration pending without blocking unrelated due work. These guarantees
+require functioning shared capture state: failure-evidence publication and
+page/checkpoint storage errors propagate, and cannot promise independent
+progress. They are not converted into isolated root failures.
+
 `capture-source-work.mjs` joins one selected source group to those queue
 checkpoints and `CaptureRun` accounting. Locks precede the admission commit and
 processing transaction. Each input/category contributes to its run's counters
@@ -793,23 +813,23 @@ With an explicit root plan, each dispatch step advances at most one bounded
 source-discovery page, one index-discovery page, one source or index group and
 one healthy cleanup turn after a selected group. Without a root plan, the
 caller supplies source pages as before. The last durable admission's stage
-determines which processing stage goes first next, including after a rolled-back group; no extra
-per-record or per-unit routing transaction is added. Source groups register new
+determines which processing stage goes first next, including after a rolled-back
+group; no extra per-record or per-unit routing transaction is added. Source groups register new
 streams in the current index inventory as part of their processing commit.
 Cleanup uses its own allocation admission and cursor transactions; it does not
 replace the durable source/index stage position or claim lower sync cost.
 
 Healthy selection in both processing stages suppresses retries. Only after both
-healthy stages and discovery are exhausted does the session route a due retry
-through its own stage as a single-stream admission. Retry filtering retains
+healthy stages and eligible discovery are exhausted does the session route a
+due retry through its own stage as a single-stream admission. Retry filtering retains
 unavailable capture inputs and other-stage work without changing their attempt
 or retry date, so they do not hide eligible source/index retries. Selection
 checks cooperative stop between bounded metadata pages/rows. Stage helpers keep
 their earlier default retry behavior when used without this dispatcher.
 
 When no healthy group is selected, the session advances healthy cleanup pages
-before due work. Due cleanup follows healthy source/index work, both discovery
-inventories and eligible source/index retries. Cleanup can progress without a
+before due work. Due cleanup follows healthy source/index work, eligible source
+and index discovery, and source/index retries. Cleanup can progress without a
 ready source. A cleanup exception leaves the already-committed group counts
 intact; replacement reconciliation applies backoff while independent healthy
 work remains eligible. A completed page or idle selection does not prove that

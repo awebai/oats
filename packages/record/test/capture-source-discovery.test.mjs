@@ -136,3 +136,58 @@ test('plan mismatch and stopped discovery cannot advance a queue; absent fresh r
     assert.equal(empty.state.get('capture-run', 'current'), null); assert.equal(fs.existsSync(join(g.root, 'capture-status.json')), false);
   } finally { close(empty); }
 });
+
+test('failed-root publication rolls back on storage failure and partial due recovery retains per-root precedence', t => {
+  const f = fixture(t);
+  for (const name of ['a', 'b', 'c']) f.put(`aw/${name}.jsonl`);
+  f.put('later/z.jsonl');
+  const path = join(f.base, 'aw'), opened = f.open([{ source: 'aw', path }, { source: 'aw', path: join(f.base, 'later') }]);
+  const now = Date.parse('2026-01-01T00:00:00.000Z');
+  try {
+    opened.discovery.advance({ limit: 1 });
+    const before = opened.queue.current(), set = opened.state.set.bind(opened.state);
+    fs.renameSync(path, path + '.saved'); f.put('aw/replacement.jsonl');
+    opened.state.set = (kind, key, value) => {
+      set(kind, key, value); if (kind === 'capture-discovery-failure') throw Error('injected failure-evidence storage error');
+    };
+    assert.throws(() => opened.discovery.advance({ runId: 'failed', now }), /failure-evidence storage error/);
+    assert.deepEqual(opened.queue.current(), before);
+    assert.equal(opened.state.get('capture-discovery-failure', 'last'), null);
+    assert.equal(opened.discovery.readers.size, 0);
+    opened.state.set = set;
+    assert.throws(() => opened.discovery.advance({ runId: 'failed', now }), /identity changed/);
+    const refused = opened.queue.current().discovery.groups[3], due = Date.parse(refused.failure.nextRetryAt);
+    assert.deepEqual(refused.checkpoint, before.discovery.groups[3].checkpoint);
+    assert.equal(opened.discovery.healthyPending(), false, 'later roots cannot bypass a refused root in their format');
+    assert.equal(opened.discovery.advance({ runId: 'failed', now: due, retry: true }).deferred, true);
+    assert.equal(opened.discovery.advance({ runId: 'early', now: due - 1, retry: true }).deferred, true);
+    fs.rmSync(path, { recursive: true }); fs.renameSync(path + '.saved', path);
+    assert.equal(opened.discovery.advance({ limit: 1, runId: 'recovery', now: due, retry: true }).added, 1);
+    const partial = opened.queue.current().discovery.groups[3];
+    assert.equal(partial.root, 0); assert.equal(partial.failure.attempts, 1);
+    assert.equal(partial.failure.nextRetryAt, refused.failure.nextRetryAt); assert.equal(partial.failure.attemptedRun, 'recovery');
+    assert.equal(opened.discovery.advance({ runId: 'recovery', now: due, retry: true }).deferred, true);
+    assert.equal(opened.discovery.advance({ limit: 1, runId: 'next-pass', now: due, retry: true }).added, 1);
+    assert.equal(opened.queue.current().discovery.groups[3].root, 1);
+    assert.equal(opened.queue.current().discovery.groups[3].failure, undefined);
+    assert.equal(opened.discovery.healthyPending(), true);
+    assert.equal(opened.discovery.advance({ runId: 'next-pass', now: due }).complete, true);
+    assert.deepEqual(rows(opened.state).map(row => row.path), ['a', 'b', 'c'].map(name => join(path, name + '.jsonl')).concat(join(f.base, 'later/z.jsonl')));
+    assert.equal(opened.state.get('capture-discovery-failure', 'last').runId, 'failed', 'recovery retains failure history');
+  } finally { close(opened); }
+});
+
+test('a root refused before its first checkpoint cannot become an absent optional root on retry', t => {
+  const f = fixture(t), path = f.put('not-directory');
+  const opened = f.open([{ source: 'aw', path }]), now = Date.parse('2026-01-01T00:00:00.000Z');
+  try {
+    assert.throws(() => opened.discovery.advance({ runId: 'first', now }), /identity changed/);
+    const failed = opened.queue.current().discovery.groups[3];
+    assert.equal(failed.checkpoint, null); assert.equal(failed.failure.attempts, 1);
+    fs.unlinkSync(path);
+    assert.throws(() => opened.discovery.advance({ runId: 'later', now: Date.parse(failed.failure.nextRetryAt), retry: true }), /ENOENT/);
+    const pending = opened.queue.current();
+    assert.equal(pending.discovered, false); assert.equal(pending.discovery.groups[3].root, 0);
+    assert.equal(pending.discovery.groups[3].failure.attempts, 2); assert.deepEqual(rows(opened.state), []);
+  } finally { close(opened); }
+});
