@@ -114,7 +114,7 @@ test("without a detach key the viewer's tmux calls are exactly these, in this or
     ["-V"],
   ];
   assert.deepEqual(io.calls, prepared);
-  assert.deepEqual(viewer.args, ["-u", "-S", target.socket, "attach-session", "-t", `=${name}`, ";", "set-option", "-t", `=${name}:`, "destroy-unattached", "on"]);
+  assert.deepEqual(viewer.args, ["-u", "-S", target.socket, "attach-session", "-t", `=${name}`, ";", "set-hook", "-t", `=${name}:`, "client-detached", `if-shell -F '#{==:#{session_attached},0}' 'kill-session -t =${name}'`]);
   assert.equal(viewer.session, name);
   assert.deepEqual(viewer.swept, { sessions: 0, tables: 0 });
   assert.equal(viewer.detached(), false, "a viewer without a key was never left by one");
@@ -148,11 +148,13 @@ test("with a detach key the viewer reads a table of its own, named as its sessio
       ["unbind-key", "-a", "-q", "-T", name],
       ["bind-key", "-T", name, "WheelUpPane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -e; send-keys -M"],
       ["bind-key", "-T", name, "MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
-      ["bind-key", "-T", name, key, "set-option @oats-detached 1 ; set-option destroy-unattached off ; detach-client"],
+      ["bind-key", "-T", name, key, "set-option @oats-detached 1 ; set-hook -u client-detached ; detach-client"],
       ["set-hook", "-g", "session-closed[900]", VIEWER_CLOSED_HOOK],
       ["set-option", "-t", name, "mouse", "on"],
       ["-V"],
     ], key);
+    // The hook unbinds the table itself: a session its kill-session ends runs no other hook.
+    assert.deepEqual(viewer.args, ["-u", "-S", target.socket, "attach-session", "-t", `=${name}`, ";", "set-hook", "-t", `=${name}:`, "client-detached", `if-shell -F '#{==:#{session_attached},0}' 'unbind-key -a -q -T ${name} ; kill-session -t =${name}'`], key);
     assert.deepEqual(io.calls.filter((c) => c[0] === "bind-key" && c[2] === name).map((c) => c[3]), ["WheelUpPane", "MouseDrag1Pane", key]);
     assert.equal(io.calls.some((c) => c.some((a) => a.includes("oatsview-locked"))), false, "no call names the locked table");
     const before = io.calls.length;
@@ -263,7 +265,7 @@ test("the viewer's client asks for synchronized output (-T sync, before the comm
     assert.equal(io.calls.filter((c) => c[0] === "-V").length, 1, "one probe");
     return viewer.args.map((a) => a.replace(name, "V"));
   };
-  const attach = ["attach-session", "-t", "=V", ";", "set-option", "-t", "=V:", "destroy-unattached", "on"];
+  const attach = ["attach-session", "-t", "=V", ";", "set-hook", "-t", "=V:", "client-detached", "if-shell -F '#{==:#{session_attached},0}' 'kill-session -t =V'"];
   const synced = ["-u", "-S", target.socket, "-T", "sync", ...attach];
   const today = ["-u", "-S", target.socket, ...attach];
   assert.deepEqual(args("tmux 3.7c\n"), synced);
