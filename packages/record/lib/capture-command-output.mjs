@@ -44,7 +44,7 @@ export async function captureCommandPass(root, options, { log = console.log, err
     throw failure;
   }
   reportReclaimedLock(result.reclaimedLock, error);
-  reportInvalidStatus(result.invalidStatus, error);
+  reportInvalidStatus(result.invalidStatus, error, { failed: result.exitCode !== 0 || result.outcome === "failed" });
   if (result.outcome === "overlap") {
     const line = `capture: another pass holds ${root}: ${result.held.recovery}; skipping this pass`;
     if (result.held.liveness === "alive") log(line); else error(line);
