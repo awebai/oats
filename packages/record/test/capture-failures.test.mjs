@@ -61,6 +61,7 @@ test("both categories have independent coherent 100-entry samples and no private
   const text = f.command("--health"); assert.equal(text.status, 0, text.stderr);
   assert.equal(text.stdout.split("\n").filter(line => line.includes("unit starting at byte")).length, 100);
   assert.match(text.stdout, /unit starting at byte 0 \(failing frame unknown\)/);
+  assert.match(text.stdout, /showing first 100 set-aside inputs/);
   assert.match(text.stdout, /showing first 100 failed stream units/);
   assert.doesNotMatch(text.stdout, /PRIVATE/);
 });

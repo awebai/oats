@@ -106,6 +106,18 @@ Its existing `schemaVersion: 1` health envelope remains separate from the
 an installation/issue reader failure exits nonzero, without an empty successful
 projection. No store is constructed on the health CLI branch.
 
+Capture CLI terminal branches return from a single command dispatch and retain
+their exit code while Node drains stdout and stderr naturally. Health cannot
+fall through into capture, including on reader failure. The same boundary
+applies to usage/help, recovery, hook launch reporting, explicit-file receipts,
+install hints, status and ordinary errors; exact-home receipts already finish
+naturally. It adds no stream closure or timed delay. Privacy failures print once
+and stop dispatch before admission; a later watch privacy failure closes future
+watch scheduling. Lock cleanup and admitted-child ownership remain with their
+existing owners; hook launch still unrefs its detached child, and foreground
+watch retains its signal lifecycle. Output delivery is distinct from diagnosis
+and durably confirmed processing counts.
+
 Installation evidence means any of:
 
 - The selected record root exists as a readable directory (`--root`, then

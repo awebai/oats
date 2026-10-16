@@ -37,12 +37,13 @@ import { launchCaptureHook } from "../lib/capture-hook.mjs";
 
 // Fail closed but actionably: an unreadable ignore file must stop capture,
 // as one clear line naming the file — never an uncaught stack trace.
-function loadIgnoreOrExit(recordRoot) {
+class PrintedCaptureFailure extends Error {}
+function loadIgnoreForCommand(recordRoot) {
   try {
     return loadIgnore(recordRoot);
   } catch (err) {
     console.error(err instanceof IgnoreError ? err.message : String(err));
-    process.exit(1);
+    throw new PrintedCaptureFailure();
   }
 }
 
@@ -166,6 +167,12 @@ function parseArgs(argv) {
   return args;
 }
 
+// Terminal branches return instead of forcing termination while stdout/stderr
+// may still contain queued pipe writes. Returning also prevents reporting from
+// falling through to capture. Lock/child owners finish before returning; watch
+// retains its signal lifecycle. No stream is closed or given an arbitrary delay.
+const finish = code => { process.exitCode = code; };
+async function main() {
 let args;
 try {
   args = parseArgs(process.argv.slice(2));
@@ -181,20 +188,20 @@ try {
   // failures report launch failure on stderr/exit1, never that special status.
   if (hookRequested) {
     hookLaunchError(err);
-    process.exit(1);
+    return finish(1);
   }
   // --file --json answers JSON even for a usage error: it is for programs.
   if (process.argv.includes("--json")) {
     console.log(JSON.stringify({ status: "failed", complete: false, code: "E_USAGE", error: err.message }, null, 2));
-    process.exit(2);
+    return finish(2);
   }
   console.error(`capture: ${err.message}\n\n${USAGE}`);
-  process.exit(2);
+  return finish(2);
 }
 
 if (args.help) {
   console.log(USAGE);
-  process.exit(0);
+  return finish(0);
 }
 
 const root = args.root ?? process.env.TURN_RECORD_ROOT ?? join(homedir(), ".turn-record");
@@ -220,7 +227,7 @@ if (args.health) {
     else console.error(`capture: ${err.message}`);
     process.exitCode = 1;
   }
-  process.exit(process.exitCode ?? 0);
+  return;
 }
 if (args["reset-cursors"] || args["retry-set-aside"]) {
   try {
@@ -232,11 +239,12 @@ if (args["reset-cursors"] || args["retry-set-aside"]) {
     if (args.json) console.log(JSON.stringify(result));
     else if (args["reset-cursors"]) log(`capture: reset source cursors (${result.sources.join(", ")})`);
   } catch (err) {
+    if (err instanceof PrintedCaptureFailure) throw err;
     if (args.json) console.log(JSON.stringify({ status: "failed", complete: false, error: err.message }));
     else console.error(`capture: ${err.message}`);
     process.exitCode = 1;
   }
-  process.exit(process.exitCode ?? 0);
+  return;
 }
 
 if (args.hook) {
@@ -249,7 +257,7 @@ if (args.hook) {
   }
   // No capture work or discovery in the harness process. The detached owner
   // takes the lock and retains the existing worker lifetime/reaping contract.
-  process.exit(process.exitCode ?? 0);
+  return;
 }
 
 // The owner decides the stream namespace, and turn ids hash it into the
@@ -341,10 +349,10 @@ function commandPlan() {
 }
 
 async function pass({ retry = false, trigger = "manual" } = {}) {
-  // The privacy loader fails closed by exiting; it runs before the lock is
-  // taken so that exit never leaves the lock behind. The worker independently
+  // Privacy refusal unwinds to the command boundary before the lock is
+  // taken, leaving no admitted child or lock. The worker independently
   // reloads privacy rules; this preflight supplies the existing actionable error.
-  loadIgnoreOrExit(root);
+  loadIgnoreForCommand(root);
   // Recovery JSON keeps its existing small shape. Never read a later status
   // file after releasing the lock to reconstruct this pass's counters.
   return captureCommandPass(root, { owner, plan: commandPlan(), indexEnabled: !args["no-index"], trigger, retrySetAside: retry }, { log });
@@ -506,7 +514,7 @@ function fileCapture() {
   } finally { pinned.close(); }
 }
 
-if (args.file !== undefined || args.format !== undefined || args.json) process.exit(fileCapture());
+if (args.file !== undefined || args.format !== undefined || args.json) return finish(fileCapture());
 
 if (args["install-hint"]) {
   const self = new URL(import.meta.url).pathname;
@@ -527,19 +535,19 @@ capture --watch (every 15 minutes and on change) or by a plain capture pass.
 One pass runs per record root at a time: the detached supervisor skips an
 overlap; launch acknowledgement does not report that later decision. A dropped
 hook is recovered by any later pass.`);
-  process.exit(0);
+  return finish(0);
 }
 
 if (args.status) {
   console.log(`root:  ${root}\nowner: ${owner}`);
-  const ignore = loadIgnoreOrExit(root);
+  const ignore = loadIgnoreForCommand(root);
   if (ignore.size > 0) {
     console.log(`ignore: ${ignore.size} pattern${ignore.size === 1 ? "" : "s"} (${ignoreFilePath(root)})`);
   }
   for (const streamId of store.listStreams()) {
     console.log(`  ${streamId}: ${store.readStream(streamId).length} turns`);
   }
-  process.exit(0);
+  return finish(0);
 }
 
 // One instance home: capture its own sessions and report them with exact
@@ -614,14 +622,21 @@ warnOnStrangerOwner();
 try {
   await pass({ trigger: args.watch ? "watch" : "manual" });
 } catch (err) {
+  if (err instanceof PrintedCaptureFailure) throw err;
   // The lock's finally has run by now; one line, then the status.
   console.error(`capture pass failed: ${err.message}`);
-  process.exit(1);
+  return finish(1);
 }
 
 if (args.watch) {
   const queue = captureWatchQueue(() => pass({ trigger: "watch" }), {
-    onError: err => { console.error(`capture pass failed: ${err.message}`); process.exitCode = 1; },
+    onError: err => {
+      process.exitCode = 1;
+      // A privacy refusal used to terminate immediately. It still stops the
+      // watch, before child admission, but lets its already printed error drain.
+      if (err instanceof PrintedCaptureFailure) { stop(); return; }
+      console.error(`capture pass failed: ${err.message}`);
+    },
   });
   const watchers = [], plan = commandPlan();
   // These are notification hints only. Their enumeration has parent metadata
@@ -649,4 +664,13 @@ if (args.watch) {
   process.on("SIGINT", stop); process.on("SIGTERM", stop);
 }
 
+}
+}
+
+try { await main(); }
+catch (error) {
+  if (!(error instanceof PrintedCaptureFailure)) throw error;
+  // Privacy already printed its one actionable error. No duplicate diagnostic
+  // and no later mode may run, but both output pipes can finish normally.
+  process.exitCode = 1;
 }
