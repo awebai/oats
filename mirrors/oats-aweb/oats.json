@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.28.0",
+  "version": "1.29.0",
   "compatibility": {
     "oats": ">=0.52.0"
   },
@@ -77,7 +77,8 @@
     "invite": "bin/oats-aweb.mjs invite",
     "resident": "bin/oats-aweb.mjs resident",
     "wake": "bin/oats-aweb.mjs wake",
-    "probe": "bin/oats-aweb-probe.mjs"
+    "probe": "bin/oats-aweb-probe.mjs",
+    "health": "bin/oats-aweb.mjs health"
   },
   "binding": {
     "version": 1,
@@ -170,6 +171,10 @@
     },
     "join": {
       "description": "comma-separated eligible team labels to join at spawn; values are workspace-defined labels and the default is absent. Joined teams receive live through the host wake broker where the runtime supports it, else by polling."
+    },
+    "health": {
+      "hostOnly": true,
+      "description": "Host-owned agent status publisher (aweb-acah.3), only in oats-local.yaml settings.oats.aweb.health: publish (true to publish every agent's status to aweb from the host timer once a minute; absent or false publishes nothing), language (BCP 47 tag for the status texts; en when absent or unknown), operator (the role named when a person must fix something, one line of at most 120 bytes; default \"Its operator\"). Set with `oats aweb health enable|disable`. Publishing needs aw >= 1.36.38; proving a channel home receives needs Claude channel 1.7.17 or pi extension 0.3.15."
     }
   },
   "retirement": {
