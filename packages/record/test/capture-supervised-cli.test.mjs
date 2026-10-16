@@ -28,6 +28,7 @@ function fixture(t) {
   return { base, home, root, cc, logs, env, store,
     cli(args = [], extra = {}) { return spawnSync(process.execPath, [bin, ...args], { cwd: base, encoding: "utf8", env: { ...env, ...extra }, timeout: 30000 }); },
   };
+}
 function passed(result) { assert.equal(result.status, 0, result.stderr + result.stdout); }
 
 test("ordinary CLI routes selected sources through workers, preserves append-only/index catch-up and manual quiet attribution", t => {
