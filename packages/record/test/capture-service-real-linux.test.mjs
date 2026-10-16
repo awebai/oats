@@ -11,6 +11,8 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { captureDefaultRootPlan } from "../lib/capture-default-roots.mjs";
+import { applyCaptureService, preflightCaptureService } from "../lib/capture-service-install.mjs";
 import { captureServiceTimer, captureServiceUnit } from "../lib/capture-service-definition.mjs";
 import { readCaptureStatus } from "../lib/capture-status.mjs";
 import { alive, captureScript, nodeWrapper, realManagerSkip, runSetup, scratch, script, until } from "./fixtures/real-manager.mjs";
@@ -102,6 +104,31 @@ test("an unchanged rerun preserves an active pass", { skip }, async t => {
   fs.rmSync(wrapper.hold);
   const receipt = await until(() => { const status = readCaptureStatus(f.root); return status?.lastRun?.trigger === "service" && status.lastRun.finishedAt && status; }, 120_000, "the service receipt");
   assert.ok(["complete", "partial"].includes(receipt.lastRun.outcome), JSON.stringify(receipt.lastRun));
+});
+
+test("the next idle trigger starts a fresh worker (short interval through the internal definition seam)", { skip }, async t => {
+  const f = isolated(t), wrapper = nodeWrapper(f.base), intervalSeconds = 15;
+  const request = { root: f.root, owner, plan: captureDefaultRootPlan({ home: homedir(), cwd: f.base, env: {} }) };
+  const lines = [], plan = preflightCaptureService({ platform: "linux", node: wrapper.path, request, setupCommand: "turn-record setup", intervalSeconds, log: line => lines.push(line) });
+  applyCaptureService(plan); t.diagnostic(lines.join("\n"));
+  assert.match(fs.readFileSync(timerPath, "utf8"), /^OnUnitActiveSec=15s$/m);
+  if (!wrapper.pids().length && show(captureServiceUnit, "ActiveState").ActiveState !== "active") assert.equal(systemctl("start", "--no-block", captureServiceUnit).status, 0);
+  await until(() => wrapper.pids().length >= 1, 30_000, "a first run");
+  // The timer's default accuracy is one minute, so the next elapse can lag the interval.
+  await until(() => wrapper.pids().length >= 2, 150_000, "the interval-triggered run");
+  const [first, second] = wrapper.pids(); assert.notEqual(first, second, "a fresh worker per trigger");
+  await until(() => readCaptureStatus(f.root)?.lastRun?.finishedAt, 120_000, "a finished service receipt");
+  assert.equal(readCaptureStatus(f.root).lastRun.trigger, "service");
+});
+
+test("stopped recovery: with the timer stopped but still enabled, a plain setup starts it again", { skip }, t => {
+  const f = isolated(t), first = f.setup(); log(t, first); assert.equal(first.status, 0);
+  assert.equal(systemctl("stop", captureServiceTimer).status, 0);
+  assert.deepEqual(show(captureServiceTimer, "UnitFileState", "ActiveState"), { UnitFileState: "enabled", ActiveState: "inactive" });
+  const again = f.setup(); log(t, again); assert.equal(again.status, 0);
+  assert.match(again.stdout, /manager action completed: systemctl --user enable --now turn-record-capture\.timer/);
+  assert.doesNotMatch(again.stdout, /systemctl --user stop /);
+  assert.deepEqual(show(captureServiceTimer, "UnitFileState", "ActiveState"), { UnitFileState: "enabled", ActiveState: "active" });
 });
 
 test("MemoryMax and RuntimeMaxSec are in the effective service", { skip }, t => {

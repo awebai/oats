@@ -27,7 +27,9 @@ export const captureScript = fileURLToPath(new URL("../../bin/capture.mjs", impo
 
 /** A scratch directory removed after the test, and a shell script in it. */
 export function scratch(t, prefix) {
-  const base = fs.mkdtempSync(join(tmpdir(), prefix));
+  // Canonical: macOS tmpdir is under the /var -> /private/var link, and setup
+  // compares launchd's reported plist path with the one it wrote.
+  const base = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), prefix)));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   return base;
 }
