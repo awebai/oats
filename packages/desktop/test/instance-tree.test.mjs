@@ -135,7 +135,7 @@ test("tree connectors start at the dots: a parent stem from its dot, solid elbow
   const kinds = Object.fromEntries(items.map((i) => [i.instance, treeConnectors(items, i, all).map((c) => `${c.kind}@${c.level}`)]));
   assert.deepEqual(kinds, {
     a: ["down@0", "link-out@0"],
-    a1: ["elbow@0", "down@0", "link-through@0"],
+    a1: ["elbow@0", "line@0", "link-through@0"],
     a2: ["elbow@0", "down@1", "link-through@0"],
     a2x: ["elbow@1", "link-through@0"],
     b: ["link-in@0"],
@@ -153,14 +153,20 @@ test("tree connectors: a root's children carry the dotted link through to a late
   const at = (name) => treeConnectors(items, items.find((i) => i.instance === name), all).map((c) => `${c.kind}@${c.level}`);
   assert.deepEqual(items.map((i) => i.instance), ["a", "a1", "a2", "b"]);
   assert.deepEqual(at("a"), ["down@0", "link-out@0"], "the root's dotted link leaves its dot beside its solid stem");
-  assert.deepEqual(at("a1"), ["elbow@0", "down@0", "link-through@0"], "a branch row (level 0 continues) still draws the link");
+  assert.deepEqual(at("a1"), ["elbow@0", "line@0", "link-through@0"], "a branch row (level 0 continues) still draws the link");
   assert.deepEqual(at("a2"), ["elbow@0", "link-through@0"], "the last child (level 0 ends) draws link-through, not link-out");
   assert.deepEqual(at("b"), ["link-in@0"]);
+
+  // The parent's vertical is whole through a non-last child's row: a full-height line beside the elbow
+  // (the elbow's rounded corner leaves it), never a half-height `down` that left a notch above the corner.
+  // The last child's row ends the vertical at its elbow.
+  assert.ok(at("a1").includes("line@0") && !at("a1").includes("down@0"), "a branch row's vertical spans the whole row");
+  assert.ok(!at("a2").some((c) => c.endsWith("@0") && /^(line|down)@/.test(c)), "the last child's vertical stops at its elbow");
 
   const parentOnly = [{ instance: "p" }, { instance: "p1", parentInstance: "p" }, { instance: "p2", parentInstance: "p" }];
   const lone = clusterInstances(parentOnly)[0].instances;
   assert.deepEqual(lone.map((i) => treeConnectors(lone, i, parentOnly).map((c) => c.kind)),
-    [["down"], ["elbow", "down"], ["elbow"]], "a lone root with children draws no dotted link");
+    [["down"], ["elbow", "line"], ["elbow"]], "a lone root with children draws no dotted link");
 
   const roots = [{ instance: "r1" }, { instance: "r2", siblingInstance: "r1" }, { instance: "r3", siblingInstance: "r1" }];
   const flat = clusterInstances(roots)[0].instances;

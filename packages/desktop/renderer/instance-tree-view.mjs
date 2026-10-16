@@ -22,7 +22,7 @@ export function clusterSeparator(doc, { label, count } = {}) {
 
 /** Design connectors for one visible row, drawn from the dots (Redesign v3):
  * solid parent→child elbows (rounded into the child dot), solid pass-through
- * lines for open ancestor branches, and a DOTTED dot-to-dot link joining the
+ * lines for open ancestor branches and beside a non-last child's elbow, and a DOTTED dot-to-dot link joining the
  * depth-0 members of one agent group (sibling relations). The dotted link
  * sits on the dot column and the solid lineage just right of it (shell.css
  * --tree-branch-offset), so a row between two roots draws its own
@@ -34,7 +34,9 @@ export function treeConnectors(items, item, allInstances = items) {
   const out = [];
   segments.forEach((segment, level) => {
     if (segment === "continue") out.push({ kind: "line", level });
-    else if (segment === "branch") out.push({ kind: "elbow", level }, { kind: "down", level });
+    // A branch keeps its vertical whole through the row: a full-height line beside the elbow, whose
+    // curve leaves it. A half-height `down` from 50% left a notch above the elbow's rounded corner.
+    else if (segment === "branch") out.push({ kind: "elbow", level }, { kind: "line", level });
     else if (segment === "end") out.push({ kind: "elbow", level });
   });
   // The stem: an expanded parent's own line leaves its dot downward to the

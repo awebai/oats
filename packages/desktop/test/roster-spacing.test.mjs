@@ -148,7 +148,8 @@ function assertConnectors(u) {
   assert.equal(u.rule(".ctx-guide").left, "calc(13.25px + var(--tree-branch-offset) + var(--guide-level) * var(--tree-step))",
     "the solid lineage sits on the offset column, right of the dot column");
   assert.equal(u.rule(".ctx-guide").borderLeft, "1.5px solid var(--tree-line)", "a visible, tokenized stroke");
-  assert.equal(u.rule(".ctx-guide.line").top, "0px"); assert.equal(u.rule(".ctx-guide.line").bottom, "0px");
+  assert.equal(u.rule(".ctx-guide.line").top, "0px", "a pass-through (and a branch row's vertical) spans the whole row: no notch at the elbow");
+  assert.equal(u.rule(".ctx-guide.line").bottom, "0px", "a pass-through (and a branch row's vertical) spans the whole row: no notch at the elbow");
   assert.equal(u.rule(".ctx-guide.elbow").height, "calc(50% + 2px)", "the elbow lands on the child dot's centre");
   assert.equal(u.rule(".ctx-guide.elbow").width, "calc(var(--tree-step) - var(--tree-branch-offset) - 4.25px)",
     "the elbow runs from the offset column to 1px under the child dot's ring (ring edge: dot centre - 6px)");
@@ -170,7 +171,7 @@ test("tree connectors (non-layout): lines leave the dots, no disclosure arrows",
   assert.equal(u.doc.querySelector(".ctx-disclosure"), null, "no disclosure arrows on rows");
   assert.deepEqual(u.rows.map(row => row.style.getPropertyValue("--depth")), ["0", "1", "2", "1", "2", "0"]);
   assert.deepEqual(u.rows.map(row => [...row.querySelectorAll(".ctx-guide")].map(g => `${g.className.replace("ctx-guide ", "")}@${g.style.getPropertyValue("--guide-level")}`)), [
-    ["down@0"], ["elbow@0", "down@0", "down@1"], ["line@0", "elbow@1"], ["elbow@0", "down@1"], ["elbow@1"], [],
+    ["down@0"], ["elbow@0", "line@0", "down@1"], ["line@0", "elbow@1"], ["elbow@0", "down@1"], ["elbow@1"], [],
   ]);
 });
 
@@ -237,6 +238,7 @@ for (const [label, before, after, check, message] of [
   ["sibling links off the dot column", "left: calc(13.25px + var(--guide-level)", "left: calc(8px + var(--guide-level)", assertConnectors, /dot centre column/],
   ["sibling links on the lineage column", "{ left: calc(13.25px + var(--guide-level) * var(--tree-step));", "{", assertConnectors, /dot centre column/],
   ["lineage back on the dot column", "left: calc(13.25px + var(--tree-branch-offset) + var(--guide-level)", "left: calc(13.25px + var(--guide-level)", assertConnectors, /offset column/],
+  ["notched branch verticals", ".ctx-guide.line { top: 0; bottom: 0; }", ".ctx-guide.line { top: 50%; bottom: 0; }", assertConnectors, /no notch/],
   ["elbows short of the child dot", "width: calc(var(--tree-step) - var(--tree-branch-offset) - 4.25px)", "width: 9px", assertConnectors, /child dot's ring/],
   ["square elbows", "border-bottom-left-radius: 5px", "border-bottom-left-radius: 0", assertConnectors, /rounded elbows/],
   ["opacity-hidden tools", "background: var(--row-solid); visibility: hidden; }", "background: var(--row-solid); opacity: 0; }", assertTools, /never opacity/],
