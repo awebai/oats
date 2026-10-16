@@ -4,7 +4,7 @@ import { basename, delimiter, isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
-import { selectClaudeChannel, recordedStart, expectedReceive, targetReceiveAssessment } from './wake-receive.mjs';
+import { selectClaudeChannel, recordedStart, expectedReceive, targetReceiveAssessment, wakeDaemonAssessment, claudeChannelModeUnset, CLAUDE_CHANNEL_MODE_DEFAULT } from './wake-receive.mjs';
 import { grantExpiryAssessment } from './grant-expiry.mjs';
 import { renewalGrantTTL, resolveGrantTTL } from './grant-duration.mjs';
 import { seatGrantLabel, strayGrants, teamGrants, unrevokedGrant } from './seat-grants.mjs';
@@ -281,7 +281,13 @@ const AW_INSTALL_COMMAND=`\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/
  *  search and the environment `aw version` runs in. */
 export async function awFloorMessage({env=process.env}={}){if(!onPath('aw',env))return `aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;const installed=await readAwVersion({env});if(!installed)return `aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;return semverLt(installed,AW_MIN)?`aw ${installed} is older than required ${AW_MIN}; upgrade with ${AW_INSTALL_COMMAND}`:undefined;}
 async function awFloorProblem(){const message=await awFloorMessage();return message?{code:'needs-configuration',message}:null;}
-async function workspaceReadinessPhase(req) {
+/** Whether a spawn from these soul-scope settings needs the host wake broker:
+ *  session delivery, or a joined team (a Codex launch is not visible here). */
+function soulNeedsBroker(settings) {return settings.delivery==='session' || (typeof settings.join==='string' && settings.join.split(',').some(label=>label.trim()));}
+/** The kernel's captured per-leaf settings origins for a home (JSON pointer to
+ *  {kind,at}); anything unparseable is no origin. */
+function settingsOrigins(env) {try {const origins=JSON.parse(env.OATS_SETTINGS_ORIGINS??'');return obj(origins)?origins:undefined;} catch {return undefined;}}
+async function workspaceReadinessPhase(req,{env=process.env}={}) {
   // Phase-start clock bounds the calls and judges the already-recorded grant.
   const now=Date.now(),deadline=now+28000;
   const localAw=(argv,cwd)=>runAw(argv,cwd,{timeout:Math.max(1,Math.min(5000,deadline-Date.now()))});
@@ -335,6 +341,8 @@ async function workspaceReadinessPhase(req) {
     warnings.push(...(expected.warnings||[]));
     if(!expected.problems.length) {
       if(expected.native) warnings.push({code:'native-receive-unproven',message:'native receive connection is unproven: plugin/extension configuration and confirmation do not establish connected receive'});
+      // req.settings is the home's captured payload, its origins the captured ones.
+      if(expected.capturedDelivery==='channel' && expected.runtime==='claude' && claudeChannelModeUnset(req.settings,settingsOrigins(env))) warnings.push({...CLAUDE_CHANNEL_MODE_DEFAULT});
       if(expected.brokerRequired) {
         let status;
         try {status=JSON.parse(localAw(['aw','wake','status','--json'],ctx.home));} catch { /* unavailable below */ }
@@ -350,6 +358,13 @@ async function workspaceReadinessPhase(req) {
         if(targetProblems.length) for(const joined of expected.joined) warnings.push({code:'joined-team-poll-only',message:`joined team ${joined.label} has unproven broker receive; check aw --identity-home ${joined.identityHome} mail inbox and chat pending at task boundaries`});
       }
     }
+  }
+  // Soul scope has no target row: only the daemon a spawn will need, read once.
+  if(!ctx.home && !problems.length && soulNeedsBroker(req.settings)) {
+    let status;
+    try {status=JSON.parse(localAw(['aw','wake','status','--json'],ctx.deployment));} catch { /* unavailable below */ }
+    const daemon=wakeDaemonAssessment(status,{minimumVersion:AW_MIN});
+    receiveProblems.push(...daemon.problems);warnings.push(...daemon.warnings);
   }
   const result=checkProblems(problems) || {status:receiveProblems.length?'unavailable':'ready',problems:[]};
   return {...result,problems:[...result.problems,...receiveProblems],warnings};
