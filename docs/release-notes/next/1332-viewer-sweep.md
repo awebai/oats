@@ -6,16 +6,18 @@
   to leave the `oatsview-*` session, and a keyed viewer's key table, on the
   agents' tmux server. Now the viewer's client sets a `client-detached` hook
   on its own session once it has attached, so the server removes the session
-  when the client's connection drops (`oats` and its client killed together,
-  a hang-up, a closed terminal), and with it a keyed viewer's key table. A
+  when the client's connection drops without a word from it (`oats` and its
+  client SIGKILLed together), and with it a keyed viewer's key table; a
+  client that ends any other way leaves the viewer to `oats`, or, if `oats`
+  has died, to the next attach's sweep. A
   viewer session that ends another way has its table unbound by one global
   hook entry, `session-closed[900]`, the only one OATS owns on the agents'
   server: keep your own `session-closed` hooks at other indexes (tmux 3.2 and
   later; before 3.2 the sweep removes the table). The viewer never uses tmux's
   `destroy-unattached`, which crashes a tmux 3.4 server when another client
   detaches the viewer ([#1336](https://github.com/awebai/oats/issues/1336)).
-  A global `client-detached` hook of yours does not run when a viewer's
-  client leaves: the viewer's own hook takes its place. Every attach also
+  A global `client-detached` hook of yours does not run for a viewer's
+  client whose connection dropped: the viewer's own hook takes its place. Every attach also
   sweeps what earlier attaches left before it opens its viewer.
   It removes a viewer session that has no client and whose attach is gone,
   and every viewer key table whose session is gone. When the sweep removed
