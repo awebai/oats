@@ -86,9 +86,10 @@ export async function qualifyStorage(t, { streams, append = false, k = 50, lines
   assert.ok(journals.bytes > 0, "the outgoing capture wrote no journals");
   dropDerived(root);
 
-  // First upgrade at production policy, leaving a whole pass each for the
-  // no-op and the cache probe and, where asked, at least one for the append.
-  const budgetMs = Math.round(left() - (append ? 3 : 2) * reserve);
+  // First upgrade at production policy, leaving a whole pass for the no-op
+  // and, where asked, at least one for the append. The cache probe is never
+  // reserved: it runs only on what the asserted phases leave.
+  const budgetMs = Math.round(left() - (append ? 2 : 1) * reserve);
   if (budgetMs < reserve) report(t, "first-upgrade", { streams, ran: false, reason: "file bound", leftMs: Math.round(left()), setupMs: elapsed() });
   assert.ok(budgetMs >= reserve, `setup used ${elapsed()}ms of the ${TEST_TIMEOUT_MS}ms test bound; no first-upgrade pass fits`);
   const upgrade = await untilComplete(root, synthetic.home, { budgetMs });
@@ -141,13 +142,18 @@ export async function qualifyStorage(t, { streams, append = false, k = 50, lines
   // enough for the derived databases. Reads that grow faster than the stream
   // count but turn linear here are page-cache misses; rows changed per pass
   // show whether a no-op rewrites per-stream bookkeeping.
-  const probe = await measuredPass(root, synthetic.home, { cacheSize: PROBE_CACHE_SIZE }), probeRow = passRow("no-op, large cache", probe);
-  const perStream = value => value == null ? null : Math.round(value / sourceStreams);
-  const compare = [row, probeRow].map(r => ({ label: r.label, outcome: r.outcome, wallMs: r.wallMs, rchar: r.rchar, rcharPerStream: perStream(r.rchar),
-    sqliteChanges: r.sqliteChanges, changesPerStream: r.sqliteChanges == null ? null : r.sqliteChanges / sourceStreams, sqliteCommits: r.sqliteCommits }));
-  report(t, "no-op-cache-probe", { streams, sourceStreams, cacheSize: { default: "operation's own (-2048)", probe: PROBE_CACHE_SIZE }, rows: compare,
-    probeBytesCommitted: probe.status?.lastRun?.counts?.bytesCommitted ?? null });
-  table(t, "no-op: default cache vs large cache (reported, not asserted)", compare);
+  // The asserted append keeps its reserve; the probe needs a whole pass more.
+  if (left() - (append ? reserve : 0) < reserve) {
+    report(t, "no-op-cache-probe", { streams, ran: false, reason: "file bound", leftMs: Math.round(left()) });
+  } else {
+    const probe = await measuredPass(root, synthetic.home, { cacheSize: PROBE_CACHE_SIZE }), probeRow = passRow("no-op, large cache", probe);
+    const perStream = value => value == null ? null : Math.round(value / sourceStreams);
+    const compare = [row, probeRow].map(r => ({ label: r.label, outcome: r.outcome, wallMs: r.wallMs, rchar: r.rchar, rcharPerStream: perStream(r.rchar),
+      sqliteChanges: r.sqliteChanges, changesPerStream: r.sqliteChanges == null ? null : r.sqliteChanges / sourceStreams, sqliteCommits: r.sqliteCommits }));
+    report(t, "no-op-cache-probe", { streams, sourceStreams, cacheSize: { default: "operation's own (-2048)", probe: PROBE_CACHE_SIZE }, rows: compare,
+      probeBytesCommitted: probe.status?.lastRun?.counts?.bytesCommitted ?? null });
+    table(t, "no-op: default cache vs large cache (reported, not asserted)", compare);
+  }
   if (!append) return;
 
   // A small append to k streams, captured by fresh passes: committed work is
