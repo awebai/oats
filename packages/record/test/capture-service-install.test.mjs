@@ -449,6 +449,81 @@ test("a stale pending-activation marker is removed and named and never authorize
   assert.throws(() => k.preflight(), /E_CAPTURE_SERVICE_DISABLED: named capture service is not enabled: observed turn-record-capture\.timer LoadState=loaded UnitFileState=disabled/);
 });
 
+test("launchd print-disabled reads only its disabled-services block, in either value spelling", t => {
+  for (const values of ["boolean", "state"]) for (const trailing of [false, true]) {
+    const f = fixture(t, "darwin"); write(f.config, JSON.stringify({ printDisabled: { values, trailing } }));
+    install(f); assert.match(f.logs.at(-1), /periodic capture scheduled/, `${values} ${trailing}`);
+    const state = JSON.parse(fs.readFileSync(f.state)); state.mac.disabled = true; write(f.state, JSON.stringify(state));
+    const before = f.operations().length;
+    assert.throws(() => f.preflight(), /E_CAPTURE_SERVICE_DISABLED/); assert.equal(f.operations().length, before);
+    applyCaptureService(f.preflight({ replace: true })); assert.match(f.logs.at(-1), /periodic capture scheduled/);
+  }
+  for (const listing of [{ entries: ['\t"other.label" => maybe'] }, { values: "state", entries: ["\tunquoted => disabled"] }, { block: false, trailing: true }]) {
+    const f = fixture(t, "darwin"); write(f.config, JSON.stringify({ printDisabled: listing }));
+    assert.throws(() => f.preflight({ replace: true }), /indeterminate launchctl disabled/, JSON.stringify(listing));
+    assert.deepEqual(f.operations(), []); assert.equal(fs.existsSync(f.definition.files[0].path), false);
+  }
+});
+
+test("a launchd disabled entry for an absent, unregistered label is refused before writing and cleared only by explicit replacement", t => {
+  // The override DB outlives the plist; only an operator's disable writes it.
+  const f = fixture(t, "darwin"), plist = f.definition.files[0].path;
+  write(f.state, JSON.stringify({ mac: { registered: false, disabled: true } })); const hooks = fs.readFileSync(f.settings);
+  const refused = f.cli(); assert.equal(refused.status, 1, refused.stdout);
+  assert.match(refused.stderr, /^setup failed: E_CAPTURE_SERVICE_DISABLED: named capture service is not enabled: observed launchctl print-disabled gui\/\d+ lists ai\.aweb\.turn-record-capture as disabled \(named plist absent, label not registered\);/m);
+  assert.doesNotMatch(refused.stderr, /explicitly disabled/);
+  assert.equal(fs.existsSync(plist), false); assert.deepEqual(fs.readFileSync(f.settings), hooks);
+  assert.equal(fs.existsSync(f.root), false); assert.deepEqual(f.operations(), []);
+  const replaced = f.cli(["--replace-service"]); assert.equal(replaced.status, 0, replaced.stderr);
+  assert.deepEqual(f.operations().map(line => line.split(" ")[1]), ["enable", "bootstrap"]);
+  assert.match(replaced.stdout, /periodic capture scheduled/);
+});
+
+test("a label registered from another plist is foreign even under explicit replacement, never booted out or removed", t => {
+  for (const identical of [false, true]) {
+    const f = fixture(t, "darwin"), other = join(f.home, "Library", "LaunchAgents", "operator-copy.plist");
+    const argv = identical ? f.definition.argv : ["/old/node", "/old/package/bin/capture.mjs", "--watch", "--owner", "old-owner"];
+    write(other, "operator plist bytes\n");
+    write(f.state, JSON.stringify({ mac: { registered: true, disabled: false, active: true, path: other, argv, interval: identical ? 900 : null } }));
+    const state = fs.readFileSync(f.state), hooks = fs.readFileSync(f.settings);
+    assert.throws(() => f.preflight({ replace: true }), /E_CAPTURE_SERVICE_FOREIGN: launchd registration .* is loaded from/);
+    const refused = f.cli(["--replace-service"]); assert.equal(refused.status, 1, refused.stdout);
+    assert.match(refused.stderr, /^setup failed: E_CAPTURE_SERVICE_FOREIGN: launchd registration ai\.aweb\.turn-record-capture is loaded from /m);
+    assert.ok(refused.stderr.includes(JSON.stringify(other)), refused.stderr);
+    assert.match(refused.stderr, /--replace-service replaces only the named capture plist.*--no-service/);
+    assert.deepEqual(f.operations(), []); assert.equal(fs.readFileSync(other, "utf8"), "operator plist bytes\n");
+    assert.deepEqual(fs.readFileSync(f.state), state); assert.equal(fs.existsSync(f.definition.files[0].path), false);
+    assert.deepEqual(fs.readFileSync(f.settings), hooks); assert.equal(fs.existsSync(f.root), false);
+  }
+});
+
+test("dry-run over installed unchanged definitions invokes no manager and writes nothing", t => {
+  for (const platform of ["linux", "darwin"]) {
+    const f = fixture(t, platform), installed = f.cli(); assert.equal(installed.status, 0, installed.stderr);
+    fs.unlinkSync(f.calls); const status = join(f.root, "capture-status.json");
+    const files = f.definition.files.map(file => fs.readFileSync(file.path));
+    const settings = fs.readFileSync(f.settings), state = fs.readFileSync(f.state), receipt = fs.readFileSync(status);
+    const dry = f.cli(["--dry-run"]); assert.equal(dry.status, 0, dry.stderr);
+    assert.equal(fs.existsSync(f.calls), false, "no manager query or mutation");
+    for (const file of f.definition.files) assert.ok(dry.stdout.includes(`service: would keep ${file.path}`), dry.stdout);
+    assert.match(dry.stdout, /manager registration\/disabled state unexamined/); assert.match(dry.stdout, /dry run: no first capture pass/);
+    assert.deepEqual(f.definition.files.map(file => fs.readFileSync(file.path)), files);
+    assert.deepEqual(fs.readFileSync(f.settings), settings); assert.deepEqual(fs.readFileSync(f.state), state);
+    assert.deepEqual(fs.readFileSync(status), receipt);
+  }
+});
+
+test("dry-run names a live pending-activation marker and still invokes no manager", t => {
+  for (const platform of ["linux", "darwin"]) {
+    const f = fixture(t, platform); install(f); const marker = join(f.root, "capture-service-pending.json");
+    write(marker, "{}\n"); fs.rmSync(f.calls, { force: true }); const before = fs.readFileSync(marker);
+    const dry = f.cli(["--dry-run"]); assert.equal(dry.status, 0, dry.stderr);
+    assert.ok(dry.stdout.includes(`service: pending-activation marker ${marker} is present; would retry activation`), dry.stdout);
+    assert.equal(fs.existsSync(f.calls), false); assert.deepEqual(fs.readFileSync(marker), before);
+    assert.doesNotMatch(dry.stdout, /setup summary/);
+  }
+});
+
 test("successful manager command without verified activation cannot claim scheduling", t => {
   for (const platform of ["linux", "darwin"]) {
     const f = fixture(t, platform);

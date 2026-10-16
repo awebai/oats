@@ -27,7 +27,7 @@
   already matches. Until setup runs, the persisted hooks keep the old fields.
 - A service refusal changes nothing. A service failure after preflight no
   longer skips capture: setup still writes the hooks and runs the first pass,
-  then exits 1 (where frozen #1102 exited 0) and ends with a fixed-format
+  then exits 1 and ends with a fixed-format
   setup summary naming the hooks written, the first pass's result, and the
   service failure with its remedy. Setup has no `--json`; see #1330.
 - A plain rerun finishes setup's own failed activation: setup records it in a
