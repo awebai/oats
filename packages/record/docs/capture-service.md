@@ -1512,7 +1512,18 @@ the #1099 failed-enable rerun, unloaded recovery, the next idle trigger, the
 effective `MemoryMax`/`RuntimeMaxSec`, and missing, failing or signalled
 managers. The idle-trigger case uses the definition's internal interval seam
 (default and production value 900 seconds; no CLI or setting reaches it).
-Rollback and quoting qualification remain hosted obligations.
+The qualification harness (`test/capture-qualify-*-linux.test.mjs`, helpers in
+`test/fixtures/qualify*.mjs`) runs under the same guard on the dispatched
+"Linux tests" runner only. It measures, and reports as JSON lines and tables,
+first upgrade and no-op at 1,300 and 3,000 synthetic streams (scaled against
+the operator's 1,315-stream, 8.4 GB population by a stated factor), caps-off
+memory scaling, the outgoing 0.61.0 and 0.53.0 releases side by side,
+8/16/22.3 MB journal frames and near-limit records under the capped worker,
+Codex in-prefix recovery, old-new-old-new rollback with released 0.61.0, and
+hook launcher latency. It runs the production operation under the real
+supervisor through the existing worker seam with the test counting patches;
+its assertions are structural, and its numbers are evidence only from an
+executed run.
 Health/doctor runtime qualification, final schema delivery and full service
 acceptance remain separate; audit allowance/reservation/storage/synchronization
 gates are unchanged.
