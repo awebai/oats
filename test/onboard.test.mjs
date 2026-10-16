@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import YAML from "yaml";
 import { buildNorthwind, moveMember } from "./fixtures/northwind/build.mjs";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 
@@ -88,8 +89,8 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.deepEqual(sync.problems, []);
 
     // Next steps: what the chosen directory now holds; clone members you work IN, then spawn. The setup-expert hint is
-    // CONDITIONAL (Phase C, M14): Northwind lists no soul named oats-operator-expert, so next.spawn is null and
-    // the first three listed souls are offered instead.
+    // CONDITIONAL (#1314): Northwind lists no northwind-oats-setup-expert and no soul declaring oats.setup, so
+    // next.spawn is null and the first three listed souls are offered instead.
     assert.equal(res.next.spawn, null);
     assert.deepEqual(res.next.souls, ["campaign-writer", "data-analyst", "platform-engineer"]);
     assert.ok(!Object.hasOwn(res, "standalone"), "a readable workspace is not standalone");
@@ -158,13 +159,13 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.match(r.stdout, /Members you will work IN need a clone/);
     assert.match(r.stdout, new RegExp(`git clone \\S+platform\\.git \\S*nw2/platform`));
     assert.match(r.stdout, new RegExp(`git clone \\S+agents\\.git \\S*nw2/agents-repo`));
-    assert.doesNotMatch(r.stdout, /oats spawn oats-operator-expert/, "no such soul in this workspace → no operator-expert hint");
-    assert.match(r.stdout, /No soul named oats-operator-expert is listed here/);
-    assert.match(r.stdout, new RegExp(`spawn any listed soul: oats spawn <soul> --dir \\S*nw2 \\(e\\.g\\. campaign-writer, data-analyst, platform-engineer\\)`));
+    assert.match(r.stdout, /^ {2}3\. No soul here holds oats\.setup — add a northwind-oats-setup-expert soul\n {5}\(the oats-getting-started skill has the template\), or spawn any listed soul:\n {7}oats spawn <soul> --dir \S*nw2 \(e\.g\. campaign-writer, data-analyst, platform-engineer\)$/m,
+      "no setup soul in this workspace → the conventional name to add, and any listed soul");
+    assert.doesNotMatch(r.stdout, /setup expert/);
     assert.doesNotMatch(r.stdout, /approv/i, "next steps never mention approving");
     assert.deepEqual(tree(dep2), ["agents/", "oats-local.yaml", "oats-lock.json"]);
 
-    // ---- M14, the positive branch: once a member lists a soul named oats-operator-expert, the hint appears ----
+    // ---- #1314 (c): a soul NAMED oats-operator-expert that does not declare oats.setup is not the setup expert ----
     await moveMember(fx, "data", async (work, { writeTree }) => {
       await writeTree({
         "souls/oats-operator-expert/soul.yaml": { yaml: { schemaVersion: 2, name: "oats-operator-expert", description: "Guides the setup of this workspace.", work: "directory", capabilities: {} } },
@@ -175,12 +176,12 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     r = oats(["onboard", dep2c, "--workspace", fx.refs.agents, "--json"], { cwd: base, env, base });
     assert.equal(r.status, 0, r.stderr);
     doc = envelope(r);
-    assert.equal(doc.result.next.spawn, `oats spawn oats-operator-expert --dir ${dep2c}`, "a discovered soul named oats-operator-expert enables the hint");
+    assert.equal(doc.result.next.spawn, null, "a soul's name alone (other than the conventional one) never makes it the setup expert");
+    assert.deepEqual(Object.keys(doc.result.next).sort(), ["clone", "souls", "spawn"], "onboardApi 2: no new field");
     r = oats(["onboard", join(base, "nw2d"), "--workspace", fx.refs.agents], { cwd: base, env, base });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /Spawn the operator expert to guide the rest/);
-    assert.match(r.stdout, new RegExp(`oats spawn oats-operator-expert --dir \\S*nw2d`));
-    assert.doesNotMatch(r.stdout, /spawn any listed soul/);
+    assert.match(r.stdout, /No soul here holds oats\.setup — add a northwind-oats-setup-expert soul/);
+    assert.doesNotMatch(r.stdout, /oats spawn oats-operator-expert/);
 
     // ---- a ref that is not a workspace host: refused, and the two files are rolled back ----
     const dep3 = join(base, "nw3");
@@ -212,9 +213,62 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.equal(r.status, 0);
     assert.match(r.stdout, /oats onboard \[<dir>\] --workspace <repo ref>/);
     assert.doesNotMatch(r.stdout, /--force-existing|setup expert from official/, "the v1 usage is gone");
+    assert.match(r.stdout, /setup expert \(the soul holding oats\.setup\)/);
+    assert.doesNotMatch(r.stdout, /oats-operator-expert/, "help names no soul (#1314)");
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
+});
+
+// ---- #1314: the setup expert next.spawn names ----
+// Among the souls onboarding lists: the one named `<workspace name>-oats-setup-expert`; else the first, by
+// name, whose own soul.yaml declares oats.setup (`{ from: … }`, any source; `off` does not count); else
+// none. Same JSON shape (onboardApi 2): text or null.
+test("#1314: next.spawn names the conventional <workspace>-oats-setup-expert first, else the first soul declaring oats.setup by name (never one that turns it off), else null", { timeout: 300_000 }, async (t) => {
+  const fx = v2Deployment({
+    t, name: "west",
+    souls: {
+      "a-off": { soul: { capabilities: { "oats.setup": "off" } } },     // sorts first, turns oats.setup off: not a holder
+      "b-guide": { soul: { capabilities: { "oats.setup": { from: "here" } } } },
+      "c-guide": { soul: { capabilities: { "oats.setup": { from: "package" } } } },
+      dev: {},
+    },
+    capabilities: { "oats.setup": { manifest: {} } },
+  });
+  const onboard = (name, json) => {
+    const dir = join(fx.base, name);
+    const r = fx.cli(["onboard", dir, "--workspace", fx.ref, ...(json ? ["--json"] : [])], { cwd: fx.base });
+    assert.equal(r.status, 0, `${name}: ${r.stdout}${r.stderr}`);
+    return { dir, r };
+  };
+
+  // (b) and (d): no west-oats-setup-expert, so the first holder by name; a-off sorts earlier but turns it off.
+  let { dir, r } = onboard("first-holder", true);
+  let next = r.json().result.next;
+  assert.equal(next.spawn, `oats spawn b-guide --dir ${dir}`);
+  assert.deepEqual(Object.keys(next).sort(), ["clone", "souls", "spawn"], "onboardApi 2: no new field");
+  ({ dir, r } = onboard("first-holder-text", false));
+  assert.match(r.stdout, /^ {2}3\. Spawn b-guide, this workspace's OATS setup expert\n {5}\(it holds oats\.setup\), to guide the rest:\n {7}oats spawn b-guide --dir \S*first-holder-text$/m);
+  assert.doesNotMatch(r.stdout, /No soul here holds|spawn any listed soul/);
+
+  // (a): the conventional name wins over holders that sort before it.
+  fx.commit({ "souls/west-oats-setup-expert/soul.yaml": { yaml: { schemaVersion: 2, name: "west-oats-setup-expert", description: "Sets up west.", work: "directory", capabilities: { "oats.setup": { from: "package" } } } },
+    "souls/west-oats-setup-expert/AGENTS.md": "# west-oats-setup-expert\n" }, "add the conventional setup expert");
+  ({ dir, r } = onboard("conventional", true));
+  assert.equal(r.json().result.next.spawn, `oats spawn west-oats-setup-expert --dir ${dir}`);
+  ({ r } = onboard("conventional-text", false));
+  assert.match(r.stdout, /3\. Spawn west-oats-setup-expert, this workspace's OATS setup expert/);
+
+  // (e): a workspace with no souls at all: no setup soul, and the any-soul hint without examples.
+  const empty = v2Deployment({ t, name: "bare", souls: {} });
+  const bareDir = join(empty.base, "empty");
+  r = empty.cli(["onboard", bareDir, "--workspace", empty.ref, "--json"], { cwd: empty.base });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  next = r.json().result.next;
+  assert.equal(next.spawn, null); assert.deepEqual(next.souls, []);
+  r = empty.cli(["onboard", join(empty.base, "empty-text"), "--workspace", empty.ref], { cwd: empty.base });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /^ {2}3\. No soul here holds oats\.setup — add a bare-oats-setup-expert soul\n {5}\(the oats-getting-started skill has the template\), or spawn any listed soul:\n {7}oats spawn <soul> --dir \S*empty-text$/m);
 });
 
 // ---- lane 3 (0.25.2) ----

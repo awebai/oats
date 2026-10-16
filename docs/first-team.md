@@ -69,6 +69,14 @@ runs before adding its pin. Then clone the
 member you will work in beside `oats-local.yaml` (only a soul's work target
 needs a clone — discovery and resolution run over the remotes).
 
+The last next step names the workspace's OATS setup expert to spawn: the soul
+named `<workspace name>-oats-setup-expert` (`acme-oats-setup-expert` for a
+workspace named `acme`), else the first soul by name that declares
+`oats.setup` in its own `soul.yaml`. With neither, it says so and suggests
+adding that conventional soul, or spawning any listed soul. The full rule and
+its limits are in
+[desktop-cli-api.md](desktop-cli-api.md#oats-onboard-onboardapi-2).
+
 `--json` returns `onboardApi: 2` (`local`, `dir`, `agents`, `lock`, the full
 `sync` report, `hosting`, `next.clone[]`, `next.spawn`); running it twice is
 `E_ALREADY_ONBOARDED` (use `oats sync`); a mistyped ref is `E_REPO_REF`, an

@@ -81,15 +81,15 @@ test("standalone: unreadable workspace host → sync locks only the oats.core pa
     assert.match(r.stdout, /^workspace standalone:data /m); assert.match(r.stdout, /\(standalone — the workspace of data cannot be read/);
     assert.match(r.stdout, /oats\.framework\s+1\.1\.3\s+catalog:oats\.framework/);
     // onboard (text) of a standalone deployment: workspaceName never dereferences a null workspace; the
-    // setup-expert hint is conditional (M14) — the member's own souls are offered instead.
+    // setup-expert hint is conditional (#1314): standalone has no workspace name, so no conventional
+    // <name>-oats-setup-expert, and no soul here declares oats.setup — the member's own souls are offered instead.
     const dep2 = join(base, "dep2"); mkdirSync(dep2);
     r = oats(["onboard", dep2, "--workspace", fx.refs.data], { base, env });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /^Onboarded .*dep2 into workspace standalone:data /m);
     assert.match(r.stdout, /standalone — the workspace of data cannot be read from here/);
-    assert.match(r.stdout, /No soul named oats-operator-expert is listed here/);
-    assert.match(r.stdout, /spawn any listed soul: oats spawn <soul> --dir \S*dep2 \(e\.g\. data-analyst\)/);
-    assert.doesNotMatch(r.stdout, /oats spawn oats-operator-expert/);
+    assert.match(r.stdout, /No soul here holds oats\.setup — add a soul that declares oats\.setup\n {5}\(the oats-getting-started skill has the template\), or spawn any listed soul:\n {7}oats spawn <soul> --dir \S*dep2 \(e\.g\. data-analyst\)$/m);
+    assert.doesNotMatch(r.stdout, /oats-setup-expert|setup expert/, "standalone: no conventional name is suggested");
     r = oats(["onboard", join(base, "dep3"), "--workspace", fx.refs.data, "--json"], { base, env });
     assert.equal(r.status, 0, r.stderr);
     const ob = envelope(r).result;

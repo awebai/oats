@@ -882,8 +882,8 @@ same argument, given once). The ref is checked before anything is written.
  "hosting":{"host":"github.com/acme/agents","hostIsMember":true,"rule":"If any member is private, host oats-workspace.yaml in a private repo …"},
  "next":{"clone":[{"key":"github.com/acme/agents","name":"agents","url":"https://github.com/acme/agents.git","dir":"/w/agents-repo","present":false,"host":true},
                   {"key":"github.com/acme/platform","name":"platform","url":"https://github.com/acme/platform.git","dir":"/w/platform","present":true,"host":false}],
-         "spawn":"oats spawn oats-operator-expert --dir /w",
-         "souls":["oats-operator-expert","platform-engineer","release-manager"]}}
+         "spawn":"oats spawn acme-oats-setup-expert --dir /w",
+         "souls":["acme-oats-setup-expert","platform-engineer","release-manager"]}}
 ```
 
 - `sync` is the full [`oats sync`](#oats-sync) report (abridged above).
@@ -895,9 +895,27 @@ same argument, given once). The ref is checked before anything is written.
   existing clone (the `clones:` entry, else `<dir>/<name>`), else where to
   clone it: `<dir>/<name>`, or `<dir>/agents-repo` for a member named
   `agents`. `url` is `null` when unknown.
-- `next.spawn` is `oats spawn oats-operator-expert --dir <dir>` when the
-  workspace has a soul by that name, else `null`. `next.souls` is the first
-  three soul names, sorted.
+- `next.spawn` is `oats spawn <soul> --dir <dir>` naming the workspace's
+  OATS setup expert, else `null` (OATS 0.61.0; before it, only a soul named
+  `oats-operator-expert` was named). Among the souls onboarding lists
+  (confirmed members', external and package souls; standalone, the
+  repository's own), the setup expert is:
+  1. the soul named `<workspace name>-oats-setup-expert`, where the
+     workspace name is the `name:` of `oats-workspace.yaml`
+     (`sync.workspace.name`); a standalone view has no workspace name, so
+     this step does not apply there;
+  2. otherwise the first soul by name whose own `soul.yaml` declares
+     `oats.setup` under `capabilities:` as `{ from: … }`, from any source
+     (`package`, `here` or a member key); `oats.setup: off` does not count;
+  3. otherwise none: `null`.
+
+  Only the soul's own declaration is read, not its resolved composition:
+  `oats.setup` that reaches a soul only through the workspace's `defaults:`
+  is not seen, and a declared `oats.setup` is not checked to resolve. A soul
+  whose name another listed soul shares is named by its qualified name
+  (`<member>/<soul>` or `<package>/<soul>`). The text output's step 3 names
+  the same soul, or, with none, the conventional name to add.
+  `next.souls` is the first three soul names, sorted.
 - Errors: `E_BAD_ARGS` (usage, no `--workspace`, a repeated directory, an
   unknown flag), `E_REPO_REF`, `E_ALREADY_ONBOARDED {local, dir}` (this
   directory already has `oats-local.yaml`), `E_ONBOARD_FAILED {dir}`. A

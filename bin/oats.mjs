@@ -44,7 +44,7 @@ import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlo
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
 import { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeyQuoted, launchKeysUnmatched, launchLayers, soulLaunchCommand, unmatchedKeyMessage } from "../lib/launch-preference.mjs";
 import { terminalText } from "../lib/refused-text.mjs";
-import { soulsOffered } from "../lib/instance-resolution.mjs";
+import { qualifiedSoulName, soulCandidates, soulsOffered } from "../lib/instance-resolution.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
 import { activateLocalInputs, localRevision } from "../lib/local-inputs.mjs";
@@ -3536,7 +3536,7 @@ async function tuiCmd() {
  * instance homes), then runs exactly the `oats sync` path — discover over the
  * remotes, confirm membership, resolve `packages:`, write `oats-lock.json`. Nothing is installed, no soul
  * is created, nothing is spawned, no `oats-config.yaml` is written: the member
- * clones and the operator expert are the operator's next steps, printed here. */
+ * clones and the workspace's setup expert are the operator's next steps, printed here. */
 async function onboardCmd() {
   const bail = (code, message, details) => (JSON_MODE ? jsonFail(code, message, details) : die(message));
   const usage = "usage: oats onboard [<dir>] --workspace <repo ref> [--json]   (or --dir <dir>)";
@@ -3615,12 +3615,15 @@ async function onboardCmd() {
   // (4) The taught layout as next steps (design doc §4), and the envelope.
   const standalone = synced.discovery.standalone === true;
   const members = synced.report.members;
-  // The operator expert is suggested only when THIS workspace lists a soul by that name (a
-  // confirmed member's or, standalone, the repo's own); otherwise any listed soul is spawnable.
+  // The setup expert is suggested only when THIS workspace lists one (setupExpertOf); otherwise
+  // any listed soul is spawnable.
   const soulNames = synced.items.souls.map((s) => s.name);
-  const setupExpert = soulNames.includes("oats-operator-expert");
-  const spawnHint = setupExpert ? `oats spawn oats-operator-expert --dir ${shortPath(dir)}` : null;
-  const anySoulHint = `spawn any listed soul: oats spawn <soul> --dir ${shortPath(dir)}${soulNames.length ? ` (e.g. ${soulNames.slice(0, 3).join(", ")})` : ""}`;
+  const { OPERATOR_CAPABILITY } = await import("../lib/operator-coverage.mjs");
+  const wsName = standalone ? null : synced.discovery.workspace?.name;
+  const conventional = typeof wsName === "string" && wsName ? `${wsName}-oats-setup-expert` : null;
+  const setupExpert = setupExpertOf(synced.discovery, { conventional, capability: OPERATOR_CAPABILITY });
+  const spawnHint = setupExpert ? `oats spawn ${setupExpert} --dir ${shortPath(dir)}` : null;
+  const anySoulHint = `oats spawn <soul> --dir ${shortPath(dir)}${soulNames.length ? ` (e.g. ${soulNames.slice(0, 3).join(", ")})` : ""}`;
   // A member's clone goes beside oats-local.yaml under its repo name; `agents/` is the instance
   // homes, so a member called "agents" is cloned as `agents-repo/` (design doc §4). The HOST is
   // listed exactly like any other member when it is one: a clone of it is needed only if someone
@@ -3660,8 +3663,31 @@ Next:
   2. Check who may read the host: ${synced.discovery.key}${hostIsMember ? " is itself a member" : " is a dedicated host"}. The workspace file
      names every member, so if any member is private the host must be a private repo that is not
      a public member; public contributors then get the standalone case (from: here + oats.core).
-  3. ${setupExpert ? "Spawn the operator expert to guide the rest (souls, teams, provider settings):" : "No soul named oats-operator-expert is listed here —"}
+  3. ${setupExpert ? `Spawn ${setupExpert}, this workspace's OATS setup expert
+     (it holds ${OPERATOR_CAPABILITY}), to guide the rest:` : `No soul here holds ${OPERATOR_CAPABILITY} — add a ${conventional ?? `soul that declares ${OPERATOR_CAPABILITY}`}${conventional ? " soul" : ""}
+     (the oats-getting-started skill has the template), or spawn any listed soul:`}
        ${spawnHint ?? anySoulHint}`);
+}
+
+/** The soul `oats onboard` names as the workspace's OATS setup expert (awebai/oats#1314), among the
+ *  souls a spawn can name (soulCandidates): the one named `conventional`
+ *  (`<workspace name>-oats-setup-expert`, null in a standalone view, which has no workspace name);
+ *  else the first, by name, whose own soul.yaml declares `capability` (oats.setup) with `{ from: … }`,
+ *  from any source (`off` is no declaration); else null. Only the soul's own declaration is read, never
+ *  a resolution: oats.setup that reaches a soul through the workspace defaults alone is not seen. → the
+ *  name to spawn it by: the bare name, or the qualified one when another soul shares that name. */
+function setupExpertOf(discovery, { conventional, capability }) {
+  const candidates = soulCandidates(discovery);
+  const declares = (entry) => {
+    const caps = entry.definition?.capabilities;
+    const choice = caps !== null && typeof caps === "object" && Object.hasOwn(caps, capability) ? caps[capability] : null;
+    return choice !== null && typeof choice === "object" && typeof choice.from === "string" && choice.from !== "";
+  };
+  const order = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  const entries = candidates.map((c) => c.entry).sort((a, b) => order(a.name, b.name) || order(qualifiedSoulName(a), qualifiedSoulName(b)));
+  const chosen = (conventional && entries.find((e) => e.name === conventional)) || entries.find(declares);
+  if (!chosen) return null;
+  return candidates.filter((c) => c.matches(chosen.name)).length > 1 ? qualifiedSoulName(chosen) : chosen.name;
 }
 
 /** `oats onboard <dir> [--workspace <ref>] --check`: what onboarding <dir> here would meet, read-only (the
@@ -4734,8 +4760,9 @@ Usage:
   oats onboard [<dir>] --workspace <repo ref> realize a workspace here: writes <dir>/oats-local.yaml
       [--json]                               and agents/, then runs the oats sync path (lock v3)
                                             and prints the
-                                            next steps (clone members you work IN, spawn
-                                            oats-operator-expert); creates no soul, spawns nothing
+                                            next steps (clone members you work IN, spawn the
+                                            workspace's setup expert (the soul holding oats.setup));
+                                            creates no soul, spawns nothing
       [--check]                             --check: write nothing; report <dir> (~ = this home),
                                             its state and whether Git reads the workspace remote
   oats session inspect|input|attach --home <absolute-home> [--text-file <path>] [--json]
