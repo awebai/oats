@@ -10,6 +10,7 @@
 import { displayLine } from './display-text.mjs';
 import { ROLLED_BACK_CODES } from './spawn-apply-contract.mjs';
 import { retainedSpawnMessage } from './launch-prompt-outcome.mjs';
+import { catalogFailure } from './catalog-messages.mjs';
 
 const UNMATCHED = 'E_LAUNCH_PREFERENCE_UNMATCHED';
 
@@ -125,11 +126,11 @@ export function spawnProblem(reason, stage = 'preview') {
   return { fact: words.fact, next: words.next, code, detail: message ? `${code} · ${message}` : code };
 }
 
-/** The sentence of a soul catalog read that failed (a held entry's `reason`), the same in every client. The
- * kernel's message in it is text from outside: a client draws it through its display filter. */
+/** The sentence of a soul catalog read that failed (a held entry's `reason`), the same in every client:
+ * catalog-messages.mjs's, with the noun "souls". The kernel's message in it is text from outside: a
+ * client draws it through its display filter. */
 export function soulCatalogFailure(reason) {
-  const message = typeof reason?.message === 'string' && reason.message ? reason.message : '';
-  return message ? `Couldn't read this workspace's souls: ${message}` : "Couldn't read this workspace's souls.";
+  return catalogFailure('souls', reason);
 }
 
 /** The spawn catalog's state, for the soul chooser. */
