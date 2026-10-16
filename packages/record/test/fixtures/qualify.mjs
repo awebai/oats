@@ -124,10 +124,10 @@ function workerReports(root, before) {
   return [...countFiles(root)].filter(name => !before.has(name)).map(name => JSON.parse(fs.readFileSync(join(countsDirectory(root), name), "utf8")));
 }
 function sumCounts(reports) {
-  const total = { workers: 0, sqlite: { opens: 0, begins: 0, commits: 0 }, fsync: {}, rename: {}, mkdir: 0, opened: {}, readBytes: {}, io: {}, vmHwmBytes: 0 };
+  const total = { workers: 0, sqlite: { opens: 0, begins: 0, commits: 0, changes: 0 }, fsync: {}, rename: {}, mkdir: 0, opened: {}, readBytes: {}, io: {}, vmHwmBytes: 0 };
   for (const value of reports) {
     total.workers++;
-    for (const key of ["opens", "begins", "commits"]) total.sqlite[key] += value.counts.sqlite[key];
+    for (const key of ["opens", "begins", "commits", "changes"]) total.sqlite[key] += value.counts.sqlite[key] ?? 0;
     for (const group of ["fsync", "rename", "opened", "readBytes"]) for (const [k, n] of Object.entries(value.counts[group])) total[group][k] = (total[group][k] ?? 0) + n;
     total.mkdir += value.counts.mkdir;
     for (const [k, n] of Object.entries(value.io ?? {})) total.io[k] = (total.io[k] ?? 0) + n;
@@ -139,13 +139,18 @@ function sumCounts(reports) {
 /** One ordinary supervised pass over `home` into `root` through the measurement
  *  worker, at `policy` (production unless a caps-off case passes another).
  *  A worker killed at its hard deadline or by a heap abort writes no exit
- *  report; result.starts minus counts.workers shows how many.
+ *  report; result.starts minus counts.workers shows how many. `cacheSize`
+ *  makes the worker replace each SQLite cache_size the operation sets (a
+ *  measurement, never a production setting).
  *  → { result, wallMs, counts (this pass's workers), reports (theirs, each), status } */
-export async function measuredPass(root, home, { policy = CAPTURE_POLICY, indexEnabled = true } = {}) {
-  const before = countFiles(root);
+export async function measuredPass(root, home, { policy = CAPTURE_POLICY, indexEnabled = true, cacheSize = null } = {}) {
+  const before = countFiles(root), config = `${root}.qualify-config.json`;
   const options = captureCommandOptions({ owner: OWNER, plan: captureDefaultRootPlan({ home, cwd: home, env: {} }), indexEnabled, trigger: "manual", retrySetAside: false });
+  if (cacheSize !== null) fs.writeFileSync(config, JSON.stringify({ cacheSize }));
   const began = performance.now();
-  const result = await superviseCapturePass(root, options, { policy, workerPath: measurementWorker });
+  let result;
+  try { result = await superviseCapturePass(root, options, { policy, workerPath: measurementWorker }); }
+  finally { fs.rmSync(config, { force: true }); }
   const wallMs = Math.round(performance.now() - began);
   const reports = workerReports(root, before);
   return { result, wallMs, counts: sumCounts(reports), reports, status: readCaptureStatus(root) };
@@ -175,7 +180,7 @@ export function passRow(label, pass) {
   return { label, outcome: pass.result.outcome, reason: pass.result.reason ?? "", wallMs: pass.wallMs, starts, workers: pass.counts.workers,
     uncounted: starts === null ? null : starts - pass.counts.workers,
     turnsAppended: counts.turnsAppended ?? null, turnsIndexed: counts.turnsIndexed ?? null, bytesCommitted: counts.bytesCommitted ?? null,
-    filesVisited: counts.filesVisited ?? null, sqliteCommits: pass.counts.sqlite.commits, journalFsyncs: pass.counts.fsync.journal ?? 0,
+    filesVisited: counts.filesVisited ?? null, sqliteCommits: pass.counts.sqlite.commits, sqliteChanges: pass.counts.sqlite.changes, journalFsyncs: pass.counts.fsync.journal ?? 0,
     stagingFsyncs: pass.counts.fsync.staging ?? 0, renames: Object.values(pass.counts.rename).reduce((a, b) => a + b, 0),
     sourceRead: pass.counts.readBytes.source ?? 0, journalRead: pass.counts.readBytes.journal ?? 0,
     readBytes: pass.counts.io.read_bytes ?? null, rchar: pass.counts.io.rchar ?? null, peakRssBytes: pass.status?.lastRun?.peakRssBytes ?? null,

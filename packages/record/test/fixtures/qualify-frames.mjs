@@ -127,6 +127,10 @@ function readDerived(root, name, read, absent) {
   const db = new DatabaseSync(path, { readOnly: true });
   try { return read(db); } finally { db.close(); }
 }
+/** Retained-copy chunk rows left in capture.db, per allocation. → { allocation: rows } */
+export const recoveryChunks = root => readDerived(root, "capture.db", db =>
+  db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type='table' AND name='recovery_chunks'").get()?.found === 1
+    ? Object.fromEntries(db.prepare("SELECT allocation, count(*) AS n FROM recovery_chunks GROUP BY allocation").all().map(row => [row.allocation, Number(row.n)])) : {}, {});
 /** capture.db state rows of one kind. → [{ key, value }] */
 export const stateRows = (root, kind) => readDerived(root, "capture.db", db =>
   db.prepare("SELECT key, value FROM state WHERE kind = ? ORDER BY key").all(kind).map(row => ({ key: row.key, value: JSON.parse(row.value) })), []);
@@ -188,7 +192,10 @@ const max = values => values.reduce((a, v) => v === null || v === undefined ? a 
  *  later timeout keeps its numbers. */
 export async function settle(t, label, root, home, { policy = CAPTURE_POLICY, maxPasses = 6, budgetMs = 10 * 60_000 } = {}) {
   const passes = [], began = performance.now();
-  while (passes.length < maxPasses && performance.now() - began < budgetMs) {
+  let stopReason = null;
+  while (!stopReason) {
+    if (passes.length >= maxPasses) { stopReason = "max-passes"; break; }
+    if (performance.now() - began >= budgetMs) { stopReason = "budget"; break; }
     const watch = watchWorkers(root);
     let pass, sampled;
     try { pass = await measuredPass(root, home, { policy }); } finally { sampled = watch.stop(); }
@@ -197,11 +204,12 @@ export async function settle(t, label, root, home, { policy = CAPTURE_POLICY, ma
     report(t, "frame-pass", { label, pass: passes.length, ...passRow(label, pass),
       lastProgressAt: pass.status?.lastProgressAt ?? null, workers: pass.workers });
     const { outcome, reason } = pass.result;
-    if (outcome === "complete" || outcome === "failed" || outcome === "partial" && reason === "input") break;
+    if (outcome === "complete" || outcome === "failed") stopReason = outcome;
+    else if (outcome === "partial" && reason === "input") stopReason = "partial-input";
   }
   const workers = passes.flatMap(pass => pass.workers);
   return { passes, complete: passes.at(-1)?.result.outcome === "complete", failed: passes.some(pass => pass.result.outcome === "failed"),
-    wallMs: Math.round(performance.now() - began), outcome: passes.at(-1)?.result.outcome ?? null, reason: passes.at(-1)?.result.reason ?? null,
+    wallMs: Math.round(performance.now() - began), stopReason, outcome: passes.at(-1)?.result.outcome ?? null, reason: passes.at(-1)?.result.reason ?? null,
     peakRssBytes: max(passes.map(pass => pass.status?.lastRun?.peakRssBytes)),
     vmHwmBytes: max(workers.flatMap(w => [w.sampledHwmBytes, w.reportedHwmBytes])),
     heapUsedAtExitBytes: max(workers.map(w => w.heapUsedAtExitBytes)), workers: workers.length,

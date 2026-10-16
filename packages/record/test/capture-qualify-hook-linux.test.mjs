@@ -62,18 +62,26 @@ function launch(f, root, { guard = false, oats = false } = {}) {
     atExit: { lock: fs.existsSync(captureLockPath(root)), status: fs.existsSync(join(root, "capture-status.json")) } };
 }
 
-// An orphan that has exited but is not yet reaped still answers kill(pid, 0).
-function running(pid) {
-  if (!alive(pid)) return false;
-  try { const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8"); return stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3) !== "Z"; }
-  catch { return false; }
+// An orphan that has exited still answers kill(pid, 0) while a zombie (Z) and
+// while its reaper releases it (X, or x on older kernels), so both count as
+// exited. probe → { running, state }.
+const EXITED = new Set(["Z", "X", "x"]);
+function probe(pid) {
+  if (!alive(pid)) return { running: false, state: null };
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8"), state = stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3);
+    return { running: !EXITED.has(state), state };
+  } catch { return { running: false, state: null }; }
 }
+const running = pid => probe(pid).running;
 
 /** Waits for the detached supervisor's hook receipt and its exit. The lock
- *  owner seen after the launcher exited is the supervisor's survival evidence. */
+ *  owner seen after the launcher exited is the supervisor's survival evidence.
+ *  Exit is the sample that ends the wait, never a second probe; times are
+ *  from the launcher's exit. */
 async function settle(root, launcherPid) {
-  const began = performance.now();
-  let supervisor = null, receipt = null;
+  const began = performance.now(), since = () => Math.round(performance.now() - began);
+  let supervisor = null, receipt = null, receiptMs = null;
   while (performance.now() - began < SETTLE_MS) {
     const owner = readCaptureLockOwner(root);
     if (owner?.pid && !supervisor) supervisor = { pid: owner.pid, alive: running(owner.pid), seenAfterExitMs: Math.round(performance.now() - began) };
@@ -82,13 +90,17 @@ async function settle(root, launcherPid) {
     const run = status?.lastRun;
     if (run?.trigger === "hook" && run.finishedAt && !fs.existsSync(captureLockPath(root))) {
       receipt = { outcome: run.outcome, reason: run.reason, pid: run.pid, turnsAppended: run.counts.turnsAppended };
+      receiptMs = since();
       break;
     }
     await delay(20);
   }
   // The supervisor exits after releasing the lock; the next launch must not overlap it.
-  while (supervisor && running(supervisor.pid) && performance.now() - began < SETTLE_MS) await delay(20);
-  return { supervisor, receipt, settleMs: Math.round(performance.now() - began), supervisorExited: !supervisor || !running(supervisor.pid), launcherPid };
+  let last = supervisor ? probe(supervisor.pid) : { running: false, state: null };
+  while (last.running && performance.now() - began < SETTLE_MS) { await delay(20); last = probe(supervisor.pid); }
+  const exitedMs = last.running ? null : since();
+  return { supervisor, receipt, receiptMs, exitedMs, exitAfterReceiptMs: exitedMs === null || receiptMs === null ? null : exitedMs - receiptMs,
+    lastState: last.state, settleMs: since(), supervisorExited: !last.running, launcherPid };
 }
 
 function stats(values) {
@@ -120,7 +132,7 @@ test(`hook launcher: ${RUNS} timed launches (cold, then warm), guarded launches,
     if (!options?.oats) { assert.equal(l.stdout, ""); assert.equal(l.stderr, ""); }
     assert.ok(s.receipt, `${mode} ${n}: no finished hook receipt within ${SETTLE_MS} ms of the launcher's exit`);
     assert.notEqual(s.receipt.pid, l.launcherPid, "the receipt is the detached run's, not the launcher's");
-    assert.ok(s.supervisorExited, `${mode} ${n}: the detached supervisor ${s.supervisor?.pid} is still alive after its receipt`);
+    assert.ok(s.supervisorExited, `${mode} ${n}: the detached supervisor ${s.supervisor?.pid} is still alive ${SETTLE_MS} ms after the launcher's exit (state ${s.lastState})`);
     return row;
   }
 
@@ -134,9 +146,10 @@ test(`hook launcher: ${RUNS} timed launches (cold, then warm), guarded launches,
   await one("oats", 1, { oats: true });
 
   const ms = mode => runs.filter(r => mode.includes(r.mode)).map(r => r.ms);
+  const exits = runs.map(r => r.exitAfterReceiptMs).filter(Number.isFinite);
   const summary = { cold: stats(ms(["cold"])), warm: stats(ms(["warm"])), all: stats(ms(["cold", "warm"])), guarded: stats(ms(["guarded"])), oats: stats(ms(["oats"])) };
   const observed = runs.filter(r => r.supervisor && r.supervisor.alive && r.supervisor.pid !== r.launcherPid).length;
-  report(t, "hook-latency", { ...summary, supervisorObservedAliveAfterLauncherExit: observed, launches: runs.length,
+  report(t, "hook-latency", { ...summary, exitAfterReceipt: exits.length ? stats(exits) : null, supervisorObservedAliveAfterLauncherExit: observed, launches: runs.length,
     childPresentAtExit: runs.filter(r => r.atExit.lock || r.atExit.status).length });
   table(t, "capture --hook spawn -> launcher exit (ms)", Object.entries(summary).map(([mode, s]) => ({ mode, ...s })));
   table(t, "capture --hook launches", runs.map(r => ({ mode: r.mode, run: r.run, ms: r.ms, exit: r.exit, supervisor: r.supervisor?.pid ?? "unseen",

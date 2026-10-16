@@ -26,6 +26,9 @@ const MB = 1e6;
 // boundary read happens only behind the journal (lib/index-capture.mjs:14,
 // lib/index-db.mjs:163); repairTail reads only on append (lib/store.mjs:652).
 const NOOP_CONTENT_BYTES_PER_STREAM = 0;
+// The cache-probe no-op's SQLite page cache: 256 MiB (negative is KiB), under
+// the production RSS cap. The operation's own setting is 2 MiB.
+const PROBE_CACHE_SIZE = -262144;
 
 const sum = values => values.reduce((a, b) => a + b, 0);
 const addInto = (total, part) => { for (const [k, n] of Object.entries(part)) total[k] = (total[k] ?? 0) + n; return total; };
@@ -83,9 +86,9 @@ export async function qualifyStorage(t, { streams, append = false, k = 50, lines
   assert.ok(journals.bytes > 0, "the outgoing capture wrote no journals");
   dropDerived(root);
 
-  // First upgrade at production policy, leaving a whole pass for the no-op
-  // and, where asked, at least one for the append.
-  const budgetMs = Math.round(left() - (append ? 2 : 1) * reserve);
+  // First upgrade at production policy, leaving a whole pass each for the
+  // no-op and the cache probe and, where asked, at least one for the append.
+  const budgetMs = Math.round(left() - (append ? 3 : 2) * reserve);
   if (budgetMs < reserve) report(t, "first-upgrade", { streams, ran: false, reason: "file bound", leftMs: Math.round(left()), setupMs: elapsed() });
   assert.ok(budgetMs >= reserve, `setup used ${elapsed()}ms of the ${TEST_TIMEOUT_MS}ms test bound; no first-upgrade pass fits`);
   const upgrade = await untilComplete(root, synthetic.home, { budgetMs });
@@ -128,6 +131,18 @@ export async function qualifyStorage(t, { streams, append = false, k = 50, lines
   assert.equal(counts.turnsAppended, 0, "a no-op appends no turns");
   assert.ok(read.source + read.journal <= read.boundBytes, `the no-op read ${read.source} source and ${read.journal} journal bytes ` +
     `over ${sourceStreams} unchanged sources (bound ${read.boundBytes}): ${JSON.stringify(read.byKind)}`);
+
+  // Cache probe, reported only: the same no-op with a SQLite page cache large
+  // enough for the derived databases. Reads that grow faster than the stream
+  // count but turn linear here are page-cache misses; rows changed per pass
+  // show whether a no-op rewrites per-stream bookkeeping.
+  const probe = await measuredPass(root, synthetic.home, { cacheSize: PROBE_CACHE_SIZE }), probeRow = passRow("no-op, large cache", probe);
+  const perStream = value => value == null ? null : Math.round(value / sourceStreams);
+  const compare = [row, probeRow].map(r => ({ label: r.label, outcome: r.outcome, wallMs: r.wallMs, rchar: r.rchar, rcharPerStream: perStream(r.rchar),
+    sqliteChanges: r.sqliteChanges, changesPerStream: r.sqliteChanges == null ? null : r.sqliteChanges / sourceStreams, sqliteCommits: r.sqliteCommits }));
+  report(t, "no-op-cache-probe", { streams, sourceStreams, cacheSize: { default: "operation's own (-2048)", probe: PROBE_CACHE_SIZE }, rows: compare,
+    probeBytesCommitted: probe.status?.lastRun?.counts?.bytesCommitted ?? null });
+  table(t, "no-op: default cache vs large cache (reported, not asserted)", compare);
   if (!append) return;
 
   // A small append to k streams, captured by fresh passes: committed work is

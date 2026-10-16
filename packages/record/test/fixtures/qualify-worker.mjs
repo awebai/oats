@@ -6,7 +6,11 @@
 // and counts the bytes lib reads, by path kind. lib reads files only through
 // readSync and readFileSync (no streams, promises or FileHandle reads), both
 // named imports that syncBuiltinESMExports rebinds; SQLite reads in C and is
-// never counted here.
+// never counted here. Each connection's SQLite total_changes() (rows inserted,
+// updated or deleted) is summed when it closes, or at exit if still open. A
+// pass may ask, through `<root>.qualify-config.json`, for a SQLite page cache
+// size that replaces each cache_size the operation sets: a measurement of the
+// cache's effect, never a production setting.
 // On exit it appends its counts and /proc samples beside, never inside, the
 // record root: `<root>.qualify-counts/<pid>-<worker nonce>.json`, a name a
 // reused pid cannot overwrite.
@@ -17,7 +21,7 @@ import { runCaptureWorker } from "../../lib/capture-worker.mjs";
 import { captureCommandOperation } from "../../lib/capture-command-operation.mjs";
 
 const require = createRequire(import.meta.url);
-const counts = { sqlite: { opens: 0, begins: 0, commits: 0 }, fsync: {}, rename: {}, mkdir: 0, opened: {}, readBytes: {} };
+const counts = { sqlite: { opens: 0, begins: 0, commits: 0, changes: 0 }, fsync: {}, rename: {}, mkdir: 0, opened: {}, readBytes: {} };
 const paths = new Map();
 // The record root and the captured home, each as given and as resolved, so
 // a path lib resolved still classifies.
@@ -40,15 +44,24 @@ function kind(path) {
 }
 const bump = (map, key, n = 1) => { map[key] = (map[key] ?? 0) + n; };
 
+let cacheSize = null;
+const open = new Set();
 const sqlite = require("node:sqlite"), Original = sqlite.DatabaseSync;
 sqlite.DatabaseSync = class extends Original {
-  constructor(...args) { super(...args); counts.sqlite.opens++; }
+  constructor(...args) { super(...args); counts.sqlite.opens++; open.add(this); }
   exec(sql) {
     if (/^\s*BEGIN/i.test(sql)) counts.sqlite.begins++;
     if (/^\s*COMMIT/i.test(sql)) counts.sqlite.commits++;
-    return super.exec(sql);
+    const result = super.exec(sql);
+    if (cacheSize !== null && /cache_size/i.test(sql)) super.exec(`PRAGMA cache_size = ${cacheSize}`);
+    return result;
   }
+  close() { changed(this); return super.close(); }
 };
+function changed(db) {
+  if (!open.delete(db)) return;
+  try { counts.sqlite.changes += Number(db.prepare("SELECT total_changes() AS n").get().n); } catch { /* already closed */ }
+}
 const { openSync, fsyncSync, fdatasyncSync, renameSync, mkdirSync, readSync, readFileSync } = fs;
 fs.openSync = (path, ...rest) => { const fd = openSync(path, ...rest); paths.set(fd, String(path)); bump(counts.opened, kind(String(path))); return fd; };
 fs.fsyncSync = fd => { bump(counts.fsync, kind(paths.get(fd))); return fsyncSync(fd); };
@@ -76,8 +89,10 @@ function sample() {
 
 await runCaptureWorker(async start => {
   roots = both(start.root); homes = both(start.options.plan.home);
+  try { cacheSize = JSON.parse(readFileSync(`${start.root}.qualify-config.json`, "utf8")).cacheSize ?? null; } catch { /* default policy */ }
   try { return await captureCommandOperation(start); }
   finally {
+    for (const db of [...open]) changed(db);
     const directory = `${start.root}.qualify-counts`;
     mkdirSync(directory, { recursive: true });
     fs.writeFileSync(join(directory, `${process.pid}-${start.workerNonce}.json`), JSON.stringify({ pid: process.pid, counts, ...sample() }));

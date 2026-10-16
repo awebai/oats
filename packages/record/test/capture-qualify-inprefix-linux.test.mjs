@@ -19,8 +19,8 @@ import { join } from "node:path";
 import { CAPTURE_POLICY } from "../lib/capture-budget.mjs";
 import { captureHealth } from "../lib/capture-state.mjs";
 import { dropDerived, OPERATOR, realManagerSkip, report, runnerFacts, scratch, sessionPath, table } from "./fixtures/qualify.mjs";
-import { captureHistorical, CODE, codexLine, exactLine, indexedCounts, journalShape, lastRecords, settle, smallLine,
-  streamOf, writeSession } from "./fixtures/qualify-frames.mjs";
+import { captureHistorical, CODE, codexLine, exactLine, indexedCounts, journalShape, lastRecords, recoveryChunks, settle, smallLine,
+  stateRows, stateValue, streamOf, writeSession } from "./fixtures/qualify-frames.mjs";
 
 const skip = realManagerSkip("linux") ?? false;
 // Captured native line sizes (body.line bytes), in source order.
@@ -63,14 +63,22 @@ test("Q2b Codex in-prefix recovery of captured lines up to 22,280,296 bytes unde
     vmHwmBytes: Math.max(0, ...pass.workers.map(w => Math.max(w.sampledHwmBytes ?? 0, w.reportedHwmBytes ?? 0))),
     rchar: pass.workers.reduce((a, w) => a + (w.rchar ?? 0), 0) }));
   table(t, "Q2b in-prefix recovery passes (capped worker, production policy)", passes);
+  // What the recovery left, printed before any assertion: why settle stopped,
+  // set-aside inputs, the source cursor, retained-copy cleanup still owed
+  // (allocation, stage, chunk rows) and the health rows.
+  const key = `${session.stream}:${path}`, afterRecovery = captureHealth(root, { home });
+  report(t, "inprefix-state", { stopReason: recovery.stopReason, setAside: afterRecovery.backlog.setAside, cursor: stateValue(root, "codex", key),
+    allocation: stateValue(root, "recovery-allocation", key), stage: stateValue(root, "recovery-stage", key), chunks: recoveryChunks(root),
+    failed: stateRows(root, "capture-failed").map(row => row.key), retries: stateRows(root, "capture-retry").map(row => row.key),
+    pending: afterRecovery.backlog.pending, healthRows: afterRecovery.rows.map(row => ({ code: row.code, message: row.message })) });
   const proof = { largestLineBytes: OPERATOR.largestLineBytes, largestFrameBytes: journal.largestFrameBytes, complete: recovery.complete,
-    outcome: recovery.outcome, reason: recovery.reason, passes: recovery.passes.length, wallMs: recovery.wallMs,
+    outcome: recovery.outcome, reason: recovery.reason, stopReason: recovery.stopReason, passes: recovery.passes.length, wallMs: recovery.wallMs,
     passWallMs: passes.map(p => p.wallMs), stalledPasses: stalled, restartSuspected: recovery.passes.length > 1 && stalled > 0,
     journalSidePeak: { vmHwmBytes: recovery.vmHwmBytes, statusPeakRssBytes: recovery.peakRssBytes, heapUsedAtExitBytes: recovery.heapUsedAtExitBytes, heapMiB: CAPTURE_POLICY.heapMiB },
     attribution: "pass and worker wall times; no seam isolates the proof of one line" };
   report(t, "inprefix-proof", proof);
   assert.equal(recovery.complete, true, `in-prefix recovery did not complete: ${JSON.stringify(proof)}`);
-  const recovered = journalShape(root, session.stream), issues = captureHealth(root, { home });
+  const recovered = journalShape(root, session.stream), issues = afterRecovery;
   assert.deepEqual(recovered, journal, "recovery rewrote or duplicated captured lines");
   assert.equal(indexedCounts(root).get(session.stream), lines);
   // Records already captured are not refused, whatever their size.
