@@ -22,24 +22,26 @@ const aw = n => JSON.stringify({ ts: '2026-01-01T00:00:00Z', ch: 'mail', dir: 'r
 const turn = n => finishTurn({ v: 1, ts: '2026-01-01T00:00:00Z', from: 'fixture', kind: 'mail',
   body: { text: `extra ${n}` }, provenance: { source: 'aw', fidelity: 'projected' } });
 
-function fixture(t, specs = []) {
+function fixture(t, specs = [], { discover = false } = {}) {
   const base = fs.mkdtempSync(join(tmpdir(), 'capture-work-session-')), root = join(base, 'record'), workerPath = join(base, 'worker.mjs');
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const store = new RecordStore(root, { owner: 'fixture' });
   const inputs = specs.map(([source, name, text]) => {
-    const path = join(base, name + '.jsonl'); fs.writeFileSync(path, text);
+    const directory = discover ? join(base, source) : base; fs.mkdirSync(directory, { recursive: true });
+    const path = join(directory, name + '.jsonl'); fs.writeFileSync(path, text);
     return { source, path, stream: source === 'aw' ? 'fixture~aw' : `fixture~${source}.${name}` };
   });
   const state = new DerivedState(root), queue = new CaptureSourceQueue(state, { owner: 'fixture', selection: 'fixture' });
-  queue.add(inputs, null, { complete: true }); state.close();
+  const roots = discover ? [...new Set(specs.map(([source]) => source))].map(source => ({ source, path: join(base, source) })) : null;
+  if (!discover) queue.add(inputs, null, { complete: true }); state.close();
   fs.writeFileSync(workerPath, `
     import fs from 'node:fs';import {join} from 'node:path';
     import {runCaptureWorker} from ${JSON.stringify(url('capture-worker'))};
     import {CaptureWorkSession} from ${JSON.stringify(url('capture-work-session'))};
     await runCaptureWorker(start=>{
       if(start.options.failBeforeReceipt && start.pass.attempt===1)throw Error('injected pre-receipt failure');
-      const session=new CaptureWorkSession(start,{owner:'fixture',selection:'fixture',now:()=>start.options.now,
-        unit:{limit:1,maxRecords:start.options.records??1,maxBytes:8388608}});
+      const session=new CaptureWorkSession(start,{owner:'fixture',selection:'fixture',now:()=>start.options.now,roots:start.options.roots??null,
+        unit:{limit:1,maxRecords:start.options.records??1,maxBytes:8388608,discoveryLimit:start.options.discoveryLimit??128}});
       const append=session.store.appendUniqueBatch.bind(session.store);
       session.store.appendUniqueBatch=(stream,turns)=>{const n=append(stream,turns);
         if(stream===start.options.crashStream)process.kill(process.pid,'SIGKILL');return n;};
@@ -53,7 +55,8 @@ function fixture(t, specs = []) {
           fs.appendFileSync(join(start.root,'events'),JSON.stringify({runId:session.run.id,attempt:start.pass.attempt,
             nonce:start.workerNonce,stage:result.stage??null,selected:result.selected??0,
             streams:(result.results??result.streams??[]).map(row=>row.stream),reset:result.reset??false,
-            recovered:result.recovered??false,resetRequired:result.resetRequired??false,finalize:result.finalize??false})+'\\n');
+            recovered:result.recovered??false,resetRequired:result.resetRequired??false,finalize:result.finalize??false,
+            sourceDiscovery:result.sourceDiscovery??null})+'\\n');
           if(result.resetRequired)return session.yieldWorker({resetRequired:true});
           if(result.finalize)return session.finish({reason:'deadline'});
           if(result.idle)return session.finish();
@@ -64,8 +67,8 @@ function fixture(t, specs = []) {
       finally{session.close();}
     });
   `);
-  return { root, store, inputs,
-    run: (options = {}, transport = {}) => superviseCapturePass(root, { now, ...options }, { workerPath,
+  return { root, store, inputs, roots,
+    run: (options = {}, transport = {}) => superviseCapturePass(root, { now, roots, ...options }, { workerPath,
       env: { HOME: base, TMPDIR: base, XDG_CACHE_HOME: base, PATH: process.env.PATH }, ...transport }),
     state(fn) { const state = new DerivedState(root); try { return fn(state); } finally { state.close(); } },
     index(fn) { const index = new RecordIndex(store); try { return fn(index); } finally { index.close(); } },
@@ -73,6 +76,40 @@ function fixture(t, specs = []) {
     diagnostic(result) { const path = join(root, 'worker-error'); return JSON.stringify(result) + (fs.existsSync(path) ? '\n' + fs.readFileSync(path, 'utf8') : ''); },
   };
 }
+
+test('worker discovery resumes across formats and workers without promoting enumeration to pass success', async t => {
+  const f = fixture(t, [['cc', 'native-a', native(1)], ['cc', 'native-b', native(2)],
+    ['aw', 'mail-a', aw(3)], ['aw', 'mail-b', aw(4)]], { discover: true });
+  const ccRoot = f.roots.find(root => root.source === 'cc').path;
+  for (let n = 0; n < 6; n++) fs.writeFileSync(join(ccRoot, `0${n}.txt`), 'irrelevant');
+  let appended = 0, indexed = 0, complete = false;
+  for (let pass = 0; pass < 3 && !complete; pass++) {
+    const result = await f.run({ units: 2, discoveryLimit: 1, records: 2 });
+    assert.equal(result.outcome, 'partial', f.diagnostic(result)); assert.equal(result.exitCode, 0);
+    const status = readCaptureStatus(f.root);
+    appended += status.lastRun.counts.turnsAppended; indexed += status.lastRun.counts.turnsIndexed;
+    assert.equal(status.lastSuccess, null); assert.equal(status.backlog.pending, true);
+    complete = indexed === 4 && f.state(state => state.get('source-sweep', 'fixture').discovered &&
+      !state.db.prepare("SELECT 1 AS found FROM capture_sources WHERE outcome!='complete' LIMIT 1").get()?.found);
+  }
+  assert.equal(complete, true); assert.equal(appended, 4); assert.equal(indexed, 4);
+  const events = f.events(), pages = events.filter(row => row.sourceDiscovery).map(row => row.sourceDiscovery);
+  assert.deepEqual(pages.slice(0, 2).map(page => page.source), ['cc', 'aw']);
+  assert.equal(pages.reduce((n, page) => n + page.visited, 0), 10);
+  assert.ok(pages.every(page => page.visited <= 1)); assert.ok(new Set(events.map(row => row.nonce)).size > 1);
+  const firstCapture = events.find(row => row.stage === 'capture' && row.selected);
+  assert.deepEqual(firstCapture.streams, ['fixture~aw'], 'AW capture need not wait for the larger native inventory');
+  assert.equal(f.store.readStream('fixture~aw').length, 2);
+  for (const name of ['native-a', 'native-b']) assert.equal(f.store.readStream(`fixture~cc.${name}`).length, 1);
+  assert.equal(f.state(state => state.get('source-sweep', 'fixture').finished), false, 'discovery cannot retire the sweep');
+
+  const g = fixture(t, [['aw', 'untouched', aw(5)]], { discover: true });
+  const final = await g.run({}, { policy: { intervalSeconds: 900, heapMiB: 256, rssBytes: 2147483648, deadlineSeconds: 10, maxRecordBytes: 8388608 } });
+  assert.equal(final.outcome, 'partial', g.diagnostic(final));
+  assert.equal(g.state(state => state.get('source-sweep', 'fixture').discovery), null);
+  assert.equal(g.state(state => state.db.prepare('SELECT count(*) AS n FROM capture_sources').get().n), 0);
+  assert.equal(g.store.readStream('fixture~aw').length, 0);
+});
 
 test('mixed source/index units alternate across worker continuation without claiming all-stage completion', async t => {
   const f = fixture(t, [['aw', 'mail-a', aw(1) + aw(2)], ['aw', 'mail-b', aw(3) + aw(4)]]);

@@ -731,6 +731,36 @@ not clear failure rows or treat a finished inventory containing pending,
 set-aside or failed inputs as a successful pass. Directory metadata work and
 queue metadata work remain separate from source/journal content work.
 
+`capture-source-discovery.mjs` connects an explicit ordered list of ordinary
+`{ source, path }` roots to that queue. A persisted plan identity rejects a
+changed root list within an unfinished sweep. Discovery rotates among cc, pi,
+codex and AW, retaining caller root order within each format. Native traversal
+uses the existing format layouts and stable `localeCompare` order; AW uses
+code-unit sorted basenames. Each unit visits at most 128 metadata entries,
+including irrelevant names, and inserts its selected files with the updated
+walk position in one capture-state transaction. Its `added` count describes
+the selected page, including any idempotent replay, not newly captured files
+or processing progress. A failed commit discards volatile walkers so the next
+unit reloads the durable checkpoint.
+
+Directory-name arrays remain proportional to the selected directories and may
+be rebuilt after worker replacement. Native walkers cache only active directory
+stacks; AW caches one directory per current root. These are metadata costs, not
+a bounded metadata-memory guarantee. Selected directory identities are checked
+on reopening and before each page, including cached native ancestors. A fresh
+missing optional root can enumerate as empty; a selected root cannot disappear
+or be replaced silently. AW resumes by basename even when its anchor vanishes;
+native traversal retains its conservative replay rule. Earlier arrivals can
+belong to a later sweep. Closing or failing the bridge releases its caches.
+
+The owning command still selects roots and the queue's selection identity.
+Descriptors do not authorize access to protected captured history: existing
+path guards apply, and this ordinary-root bridge accepts no custody-proof
+fields. Protected exact-home/file frontdoors retain their own proof contracts.
+Discovery completion means only enumeration ended; queued source processing,
+newly created streams, retries, cleanup and final index validation remain
+separate obligations.
+
 `capture-source-work.mjs` joins one selected source group to those queue
 checkpoints and `CaptureRun` accounting. Locks precede the admission commit and
 processing transaction. Each input/category contributes to its run's counters
@@ -759,11 +789,11 @@ remains distinct from failure in the current pass, including a child that died
 before publishing any receipt. Persisted reconciliation facts survive a second
 interruption before run publication.
 
-Each dispatch step advances at most one bounded index-discovery page, one
-source or index group and one healthy cleanup turn after a selected group.
-Source discovery pages still enter the session's source
-queue through its caller. The last durable admission's stage determines which
-processing stage goes first next, including after a rolled-back group; no extra
+With an explicit root plan, each dispatch step advances at most one bounded
+source-discovery page, one index-discovery page, one source or index group and
+one healthy cleanup turn after a selected group. Without a root plan, the
+caller supplies source pages as before. The last durable admission's stage
+determines which processing stage goes first next, including after a rolled-back group; no extra
 per-record or per-unit routing transaction is added. Source groups register new
 streams in the current index inventory as part of their processing commit.
 Cleanup uses its own allocation admission and cursor transactions; it does not
@@ -800,13 +830,13 @@ committed reset reopens the published pending inventory; an interrupted one is
 reconciled before processing. Detection requests a new worker rather than
 resetting in place. Deferred reset leaves independent source work eligible while
 index processing is blocked. Finalization can recover a committed reset's
-bounded metadata publication, but performs no source/index group, cleanup
-deletion or new reset.
+bounded metadata publication, but performs no discovery, source/index group,
+cleanup deletion or new reset.
 
 This session deliberately has no successful-completion path. Yielding publishes
 pending run facts; finishing an idle or finalization session reports partial,
 or failed when the current pass carries failure. Existing `lastSuccess` history
-is preserved. Source discovery wiring, final union
+is preserved. Default-root and ordinary command routing, final union
 audit and all-stage completion still belong to the remaining command runner;
 idle selection, reset completion and completed inventories do not substitute
 for those gates. The ordinary CLI, installed service and setup/hook entry points

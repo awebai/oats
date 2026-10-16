@@ -47,6 +47,13 @@ export class NativeCaptureDiscovery {
     if (this.closed || this.failed) throw new Error("capture discovery is closed or failed");
     const files = []; let visited = 0;
     try {
+      // Cached arrays do not qualify a replaced selected ancestor. Recheck the
+      // bounded active stack on every page, including within the same worker.
+      for (const frame of this.frames) if (frame.identity) {
+        guardCapturedPath(frame.path);
+        if (!sameIdentity(frame.identity, identityOf(statSync(frame.path, { bigint: true }))))
+          throw new Error("capture discovery directory identity changed");
+      }
       while (this.frames.length && visited < limit && !stopped()) {
         const frame = this.frames.at(-1);
         guardCapturedPath(frame.path);

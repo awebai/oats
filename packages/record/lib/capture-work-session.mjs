@@ -1,6 +1,6 @@
 // Private owning worker session. Bootstrap has already registered this worker
-// under the root lock and reaped its predecessor. Source discovery is caller-
-// fed; final completion and ordinary command routing remain separate.
+// under the root lock and reaped its predecessor. Root selection, final
+// completion and ordinary command routing remain separate.
 import { randomUUID } from "node:crypto";
 import { RecordStore } from "./store.mjs";
 import { RecordIndex } from "./index-db.mjs";
@@ -16,9 +16,10 @@ import { reconcileCaptureInterruption, selectCaptureWork } from "./capture-retry
 import { readCaptureAdmission } from "./capture-admission.mjs";
 import { FAILURE_REASONS } from "./capture-failures.mjs";
 import { CaptureCleanupQueue } from "./capture-cleanup-queue.mjs";
+import { CaptureSourceDiscovery } from "./capture-source-discovery.mjs";
 
 export class CaptureWorkSession {
-  constructor(start, { owner, selection, trigger = "manual", now = Date.now, unit = {} } = {}) {
+  constructor(start, { owner, selection, trigger = "manual", now = Date.now, unit = {}, roots = null } = {}) {
     if (typeof start?.root !== "string" || typeof start.workerNonce !== "string" || !start.workerNonce ||
         typeof start.pass?.runId !== "string" || !start.pass.runId ||
         typeof start.pass.finalize !== "boolean" || typeof start.pass.reset !== "boolean" || typeof now !== "function")
@@ -37,6 +38,7 @@ export class CaptureWorkSession {
       this.cleanup = new CaptureCleanupQueue(this.store, this.state);
       this.cleanup.reconcile(start, { reason: reasonFor(this.cleanup.active()?.runId), now: now() });
       this.queue = new CaptureSourceQueue(this.state, { owner, selection });
+      if (roots !== null) this.sourceDiscovery = new CaptureSourceDiscovery(this.queue, roots);
       // Retain a reset's scope even if derived inventory tables were lost.
       // Recreating membership may restart enumeration; it cannot erase reset
       // admission or the index token needed to recover a committed operation.
@@ -108,9 +110,11 @@ export class CaptureWorkSession {
     // source/index work nor new atomic reset may use finalization allowance.
     if (this.start.pass.finalize) return { finalize: true };
 
+    const sourceDiscovery = this.sourceDiscovery && !this.queue.current().discovered
+      ? this.sourceDiscovery.advance({ stopped, limit: this.unit.discoveryLimit ?? 128 }) : null;
     let discovery = null;
     if (this.inventory.current().phase !== "complete") discovery = this.inventory.discover(this.index, { stopped });
-    if (stopped()) return { stopped: true, discovery };
+    if (stopped()) return { stopped: true, discovery, sourceDiscovery };
     const blockedIndex = this.reset.current() !== null;
     // Reuse the last durable admission's stage. Failed groups rotate too, and
     // routing adds no separate per-record or per-unit scheduling transaction.
@@ -118,22 +122,22 @@ export class CaptureWorkSession {
     for (const stage of last === "capture" ? ["index", "capture"] : ["capture", "index"]) {
       if (stage === "index" && blockedIndex) continue;
       const result = this.process(stage, false);
-      if (result.selected || result.resetRequired || result.stopped) return { ...result, discovery };
+      if (result.selected || result.resetRequired || result.stopped) return { ...result, discovery, sourceDiscovery };
     }
-    if (stopped()) return { stopped: true, discovery };
+    if (stopped()) return { stopped: true, discovery, sourceDiscovery };
     const cleanup = this.clean(false);
-    if (cleanup.selected || !cleanup.complete) return { stage: "cleanup", ...cleanup, discovery };
+    if (cleanup.selected || !cleanup.complete) return { stage: "cleanup", ...cleanup, discovery, sourceDiscovery };
     // Unknown discovery can still contain healthy work. Exhaust both healthy
     // stages and discovery before considering any due single-stream retry.
     if (!this.queue.current().discovered || this.inventory.current().phase !== "complete")
-      return { waitingForDiscovery: true, discovery };
+      return { waitingForDiscovery: true, discovery, sourceDiscovery };
     const selection = selectCaptureWork(this.store, this.state, [], { runId: this.run.id, now: this.now(), stopped,
       retryFilter: retry => retry.stage === "index" ? !blockedIndex :
         retry.stage === "capture" && this.sourceReady(this.queue.forStream(retry.stream)) });
-    if (selection) return { ...this.process(selection.stage, true), discovery };
+    if (selection) return { ...this.process(selection.stage, true), discovery, sourceDiscovery };
     const cleanupRetry = this.clean(true);
-    if (cleanupRetry.selected || !cleanupRetry.complete) return { stage: "cleanup", ...cleanupRetry, discovery };
-    return { idle: true, discovery };
+    if (cleanupRetry.selected || !cleanupRetry.complete) return { stage: "cleanup", ...cleanupRetry, discovery, sourceDiscovery };
+    return { idle: true, discovery, sourceDiscovery };
   }
 
   // No complete path exists here: source discovery/visits, cleanup, retries,
@@ -154,6 +158,7 @@ export class CaptureWorkSession {
   }
 
   close() {
+    this.sourceDiscovery?.close();
     this.inventory?.close();
     try { this.index?.close(); } finally { this.state?.close(); }
     this.index = null; this.state = null;
