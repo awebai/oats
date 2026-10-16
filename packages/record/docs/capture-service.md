@@ -126,7 +126,10 @@ snapshot still exposes its active issues.
 A supervised pass that finds the snapshot unreadable, malformed or future-dated
 treats it as absent: under the root lock and before any worker, it moves the
 file aside, never overwriting it, to `capture-status.json.invalid-<UTC stamp>`
-(the root directory synced after the rename) and names that path on stderr.
+(the root directory synced after the rename). A foreground, setup, watch or
+service pass names that path on stderr; a hook pass, whose output is detached,
+leaves only the moved-aside file. A system error reading the snapshot
+(permission, I/O) fails the pass and leaves the file in place.
 The pass then publishes a new snapshot with no history: no success is carried
 over or invented. One moved-aside copy is kept; a newer one replaces it. A move
 that fails leaves the file in place and fails the pass.

@@ -96,6 +96,7 @@ export async function superviseCapturePass(root, options, {
   } finally {
     process.off("SIGINT", onSignal); process.off("SIGTERM", onSignal);
     const released = lock.release();
-    if (!released.released) throw Object.assign(new Error("capture pass could not release its lock"), { release: released });
+    if (!released.released) throw Object.assign(new Error("capture pass could not release its lock"), { release: released,
+      ...(invalidStatus ? { invalidStatus } : {}) });
   }
 }

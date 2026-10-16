@@ -113,7 +113,8 @@
   unfinished runs and owned capture watchers that need setup. It reads no source
   content or manager state and changes nothing. A capture pass that finds the
   status file unreadable moves it aside to `capture-status.json.invalid-<UTC
-  stamp>`, names it on stderr and writes a new status. Reader failures exit nonzero;
+  stamp>` and writes a new status; a foreground, setup, watch or service pass
+  names the moved-aside file on stderr, a hook pass leaves only the file. Reader failures exit nonzero;
   warnings exit 0. Reads are bounded, with a cooperative deadline.
 - **`oats doctor`** runs package capture health once, with a finite timeout and
   output bound, and turns its rows into warnings. A failed, timed-out or invalid

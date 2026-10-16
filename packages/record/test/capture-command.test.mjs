@@ -316,3 +316,16 @@ test("a newer moved-aside status replaces an older one", async t => {
   if (kept[0] === older) assert.ok(err.some(line => line.includes(kept[0])));
   else assert.equal(fs.existsSync(join(f.root, older)), false);
 });
+
+test("a status the reader cannot open fails the pass and stays in place", async t => {
+  // A system error says nothing about the status's content: no move-aside.
+  if (process.getuid?.() === 0) { t.skip("root opens any mode"); return; }
+  const f = fixture(t), path = join(f.root, STATUS);
+  await f.pass({ indexEnabled: true });
+  const bytes = fs.readFileSync(path, "utf8");
+  fs.chmodSync(path, 0o000);
+  try { await assert.rejects(f.pass({ indexEnabled: true }), /EACCES|permission/i); }
+  finally { fs.chmodSync(path, 0o600); }
+  assert.equal(fs.readFileSync(path, "utf8"), bytes);
+  assert.deepEqual(asides(f), []);
+});

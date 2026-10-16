@@ -21,7 +21,8 @@ export function reportReclaimedLock(r, error = console.error) {
 
 // A status this pass moved aside, said by the pass that moved it.
 function reportInvalidStatus(moved, error = console.error) {
-  if (moved) error(`capture: the capture status was unreadable (${moved.reason}); moved it aside to ${moved.path} and started a new status`);
+  if (moved) error(`capture: the capture status was unreadable (${moved.reason}); moved it aside to ${moved.path} and started a new status` +
+    (moved.stale ? `; older moved-aside copies could not be removed: ${moved.stale.join(", ")}` : ""));
 }
 
 export function releaseDetail(r) {
