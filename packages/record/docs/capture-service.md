@@ -753,7 +753,49 @@ or be replaced silently. AW resumes by basename even when its anchor vanishes;
 native traversal retains its conservative replay rule. Earlier arrivals can
 belong to a later sweep. Closing or failing the bridge releases its caches.
 
-The owning command still selects roots and the queue's selection identity.
+The owning caller still supplies the queue's selection identity and either
+explicit roots or a stable default-root plan. `capture-default-roots.mjs`
+constructs the latter without filesystem work: explicit caller home/cwd,
+selected formats, and only the native location environment keys. It does not
+forward unrelated environment, credentials or Node runtime options. The
+existing format selectors retain their configured-root refusal, relative-path,
+Pi tilde/override precedence and Claude profile order. AW retains its home-based
+log directory rather than inheriting XDG selection. The public synchronous
+selectors and capture library are unchanged.
+
+Default-root resolution is a separate owned discovery unit before file pages.
+Its durable attempt binds the same sweep/plan/run/worker and unresolved format
+group before the selector performs stat/readdir/sort. The private attempt's
+`roots` phase identifies selection, and its path is the caller home context,
+not an attributed journal or a claimed selected source path. Success commits
+the format's ordered root list and directory identities with attempt retirement;
+replacement reuses that list rather than rerunning selection. A new profile
+appearing afterward belongs to a later sweep. Changed caller configuration
+within an unfinished plan is refused. Excluded formats require no selector
+I/O. A default-root plan cannot resolve without owning-run/worker context;
+direct explicit-root readers retain their existing defaults.
+
+Caught resolution errors and killed attempts use the existing format rotation,
+pending failure/backoff and replacement reconciliation. An unresolved format
+keeps its original selection inputs, not an invented partial root list. A due
+resolution retry reruns that selector; successfully publishing the selection
+resolves that operation's private retry, not the later file enumeration or
+processing. The failed pass's failure evidence is retained. Publication rollback
+keeps the unresolved attempt recoverable. Shared storage errors still propagate.
+Once roots are published, their directory witnesses are carried into the first
+reader and checked on later pages: deletion or replacement cannot become an
+empty default merely because enumeration had not started. A fresh absent AW
+default remains optional. No selection result itself grants completion.
+
+Default-root selection may materialize and sort the home directory and retain
+a list of matching profiles; this is proportional metadata cost, not a bounded
+memory claim or transcript parsing. Each selected format adds one admission and
+one publication transaction before its file pages; retries/reconciliation and
+directory identity stats add work as well. All belong in hosted allowance and
+storage/synchronization qualification. This private integration does not switch
+ordinary CLI, exact-home/file, hook, setup or installed service routing, and
+does not implement append-only `--no-index` command dispatch.
+
 Descriptors do not authorize access to protected captured history: existing
 path guards apply, and this ordinary-root bridge accepts no custody-proof
 fields. Protected exact-home/file frontdoors retain their own proof contracts.

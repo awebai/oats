@@ -1,5 +1,5 @@
-// Private source-plan bridge. Root selection belongs to the owning command;
-// this module enumerates supplied roots without opening transcript/log content.
+// Private source-plan bridge. The caller supplies explicit roots or a stable
+// default-root selection. Resolution/enumeration never opens source content.
 // Pages and their positions commit together; enumeration never grants success.
 import { readdirSync, statSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
@@ -10,12 +10,15 @@ import { awStream } from "./capture-aw.mjs";
 import { guardCapturedPath } from "./native-history.mjs";
 import { FAILURE_REASONS, retryAfterAttempt } from "./capture-failures.mjs";
 import { CaptureStop } from "./capture-budget.mjs";
+import { captureDefaultRootPlan, resolveCaptureDefaultRoots } from "./capture-default-roots.mjs";
 
 const sources = ["cc", "pi", "codex", "aw"];
 const attemptsKind = "capture-discovery-attempt";
 const text = value => typeof value === "string" && value.length > 0;
 const identity = stat => ({ dev: String(stat.dev), ino: String(stat.ino) });
 const sameIdentity = (a, b) => a?.dev === b?.dev && a?.ino === b?.ino;
+const absolute = path => typeof path === "string" && isAbsolute(path) && !path.includes("\0");
+const validIdentity = value => value && typeof value.dev === "string" && typeof value.ino === "string";
 const validName = name => typeof name === "string" && name && name !== "." && name !== ".." && !/[\/\\\0]/.test(name);
 const validFailure = row => row && typeof row.runId === "string" && row.runId &&
   typeof row.attemptedRun === "string" && row.attemptedRun && FAILURE_REASONS.includes(row.reason) &&
@@ -79,13 +82,18 @@ class AwDiscovery {
 
 export class CaptureSourceDiscovery {
   constructor(queue, roots) {
-    if (!Array.isArray(roots) || roots.some(root => !root || !sources.includes(root.source) ||
-        typeof root.path !== "string" || !isAbsolute(root.path) || root.path.includes("\0") ||
-        Object.keys(root).some(key => !["source", "path"].includes(key))))
-      throw new Error("invalid capture discovery root plan");
+    if (roots?.kind === "default-roots") {
+      if (Object.keys(roots).some(key => !["kind", "home", "cwd", "env", "sources"].includes(key)))
+        throw new Error("invalid capture discovery root plan");
+      this.defaults = captureDefaultRootPlan(roots);
+    } else {
+      if (!Array.isArray(roots) || roots.some(root => !root || !sources.includes(root.source) ||
+          !absolute(root.path) || Object.keys(root).some(key => !["source", "path"].includes(key))))
+        throw new Error("invalid capture discovery root plan");
+      this.roots = sources.map(source => roots.filter(root => root.source === source).map(root => root.path));
+    }
     this.queue = queue;
-    this.roots = sources.map(source => roots.filter(root => root.source === source).map(root => root.path));
-    this.plan = createHash("sha256").update(JSON.stringify(this.roots)).digest("hex");
+    this.plan = createHash("sha256").update(JSON.stringify(this.defaults ?? this.roots)).digest("hex");
     this.readers = new Map();
     this.current();
   }
@@ -93,14 +101,14 @@ export class CaptureSourceDiscovery {
   current() {
     const sweep = this.queue.current();
     let row = sweep.discovery;
-    if (row === null && !sweep.discovered) row = { v: 1, plan: this.plan, next: 0,
-      groups: this.roots.map(roots => ({ root: 0, checkpoint: null, complete: roots.length === 0 })) };
-    if (!row || row.v !== 1 || row.plan !== this.plan || !Number.isSafeInteger(row.next) || row.next < 0 || row.next >= sources.length ||
-        !Array.isArray(row.groups) || row.groups.length !== sources.length || row.groups.some((group, index) =>
-          !group || !Number.isSafeInteger(group.root) || group.root < 0 || group.root > this.roots[index].length ||
-          group.complete !== (group.root === this.roots[index].length) ||
-          group.failure != null && (group.complete || !validFailure(group.failure)) ||
-          group.checkpoint !== null && (group.complete || typeof group.checkpoint !== "object")) ||
+    if (row === null && !sweep.discovered) row = { v: this.defaults ? 2 : 1, plan: this.plan, next: 0,
+      groups: sources.map((source, index) => this.defaults ?
+        { root: 0, checkpoint: null, complete: !this.defaults.sources.includes(source),
+          roots: this.defaults.sources.includes(source) ? null : [] } :
+        { root: 0, checkpoint: null, complete: this.roots[index].length === 0 }) };
+    if (!row || row.v !== (this.defaults ? 2 : 1) || row.plan !== this.plan ||
+        !Number.isSafeInteger(row.next) || row.next < 0 || row.next >= sources.length ||
+        !Array.isArray(row.groups) || row.groups.length !== sources.length || row.groups.some((group, index) => !this.validGroup(group, index)) ||
         sweep.discovered && row.groups.some(group => !group.complete))
       throw new Error("capture source discovery plan or checkpoint changed");
     return structuredClone(row);
@@ -108,14 +116,50 @@ export class CaptureSourceDiscovery {
 
   healthyPending() { return this.current().groups.some(group => !group.complete && !group.failure); }
 
+  validGroup(group, index) {
+    if (!group || !Number.isSafeInteger(group.root) || group.root < 0 ||
+        group.failure != null && (group.complete || !validFailure(group.failure)) ||
+        group.checkpoint !== null && (group.complete || typeof group.checkpoint !== "object")) return false;
+    if (this.defaults) {
+      if (group.roots === null) return this.defaults.sources.includes(sources[index]) &&
+        group.root === 0 && group.checkpoint === null && group.complete === false;
+      if (!Array.isArray(group.roots) || group.roots.some(root => !root || !absolute(root.path) ||
+          !(validIdentity(root.identity) || sources[index] === "aw" && root.identity === null)) ||
+          !this.defaults.sources.includes(sources[index]) && group.roots.length !== 0) return false;
+    }
+    const count = this.defaults ? group.roots.length : this.roots[index].length;
+    return group.root <= count && group.complete === (group.root === count);
+  }
+
+  pathFor(group, index) {
+    return this.defaults ? group.roots === null ? this.defaults.home : group.roots[group.root]?.path : this.roots[index][group.root];
+  }
+
+  // Resolving one format can enumerate/sort home-directory metadata. Keep it
+  // outside the admission transaction but inside the worker's bounded life.
+  resolveRoots(source) {
+    return resolveCaptureDefaultRoots(this.defaults, source).map(path => {
+      guardCapturedPath(path);
+      try {
+        const stat = statSync(path, { bigint: true });
+        if (!stat.isDirectory()) throw new Error("capture default root is not a directory");
+        return { path, identity: identity(stat) };
+      } catch (error) {
+        if (source === "aw" && error.code === "ENOENT") return { path, identity: null };
+        throw error;
+      }
+    });
+  }
+
   active() {
     const attempt = this.queue.state.get(attemptsKind, this.queue.owner);
     if (attempt !== null && (![attempt?.id, attempt?.runId, attempt?.workerNonce].every(text) ||
         attempt.scope !== this.queue.current().id || attempt.plan !== this.plan ||
         !Number.isSafeInteger(attempt.index) || attempt.index < 0 || attempt.index >= sources.length ||
-        attempt.source !== sources[attempt.index] || !text(attempt.path) || !attempt.group || attempt.group.complete !== false ||
-        !Number.isSafeInteger(attempt.group.root) || attempt.group.root < 0 || attempt.group.root >= this.roots[attempt.index].length ||
-        attempt.path !== this.roots[attempt.index][attempt.group.root]))
+        attempt.source !== sources[attempt.index] || !text(attempt.path) || !this.validGroup(attempt.group, attempt.index) ||
+        attempt.group.complete !== false ||
+        attempt.phase !== (this.defaults && attempt.group.roots === null ? "roots" : undefined) ||
+        attempt.path !== this.pathFor(attempt.group, attempt.index)))
       throw new Error("invalid capture discovery admission");
     return attempt;
   }
@@ -189,29 +233,55 @@ export class CaptureSourceDiscovery {
       this.queue.add([], row, { complete: true });
       return { visited: 0, added: 0, complete: true };
     }
-    const group = row.groups[index], source = sources[index], path = this.roots[index][group.root];
+    const group = row.groups[index], source = sources[index], path = this.pathFor(group, index);
+    const resolving = this.defaults && group.roots === null;
+    if (resolving && runId === null) throw new Error("capture default-root resolution requires owned discovery admission");
     const attempt = runId === null ? null : { id: randomUUID(), runId, workerNonce,
-      scope: this.queue.current().id, plan: this.plan, index, source, path, group: structuredClone(group) };
+      scope: this.queue.current().id, plan: this.plan, index, source, path, group: structuredClone(group),
+      ...(resolving ? { phase: "roots" } : {}) };
     if (attempt) this.queue.state.transaction(() => {
       if (this.active() || JSON.stringify(this.current()) !== JSON.stringify(row))
         throw new Error("capture discovery changed before admission");
       this.queue.state.set(attemptsKind, this.queue.owner, attempt);
     });
     try {
+      if (resolving) {
+        let resolved;
+        try { resolved = this.resolveRoots(source); }
+        catch (error) {
+          if (attempt && !(error instanceof CaptureStop)) this.failed(attempt, "io", now);
+          throw error;
+        }
+        group.roots = resolved; group.complete = resolved.length === 0;
+        delete group.failure;
+        row.next = (index + 1) % sources.length;
+        const complete = row.groups.every(group => group.complete);
+        this.publish([], row, complete, attempt);
+        return { source, resolvedRoots: true, visited: 0, added: 0, complete };
+      }
       let cached = this.readers.get(source);
       const checkpoint = JSON.stringify(group.checkpoint);
+      const selectedIdentity = this.defaults ? group.roots[group.root].identity : null;
       if (!cached || cached.root !== group.root || cached.checkpoint !== checkpoint) {
         cached?.reader.close();
-        const reader = source === "aw" ? new AwDiscovery(path, group.checkpoint) : new NativeCaptureDiscovery(source, path, group.checkpoint);
+        // Carry selection's witness into the first reader, not only a stat
+        // before construction: the reader also checks it around enumeration.
+        const initial = group.checkpoint ?? (selectedIdentity ? source === "aw" ?
+          { after: null, identity: selectedIdentity, complete: false } :
+          { format: source, root: path, complete: false, stack: [{ name: null, after: null, identity: selectedIdentity }] } : null);
+        const reader = source === "aw" ? new AwDiscovery(path, initial) : new NativeCaptureDiscovery(source, path, initial);
         cached = { root: group.root, checkpoint, reader }; this.readers.set(source, cached);
       }
       let result;
       try {
         // A previously refused root is not a fresh optional default, even when
         // its first page failed before establishing a directory identity.
-        if (retry) {
+        if (retry || selectedIdentity) {
           guardCapturedPath(path);
-          if (!statSync(path).isDirectory()) throw new Error("capture discovery failed root is not a directory");
+          const stat = statSync(path, { bigint: true });
+          if (!stat.isDirectory()) throw new Error("capture discovery failed root is not a directory");
+          if (selectedIdentity && !sameIdentity(selectedIdentity, identity(stat)))
+            throw new Error("capture default-root directory identity changed");
         }
         result = cached.reader.advance({ limit, stopped, work });
       }
@@ -227,7 +297,8 @@ export class CaptureSourceDiscovery {
       const inputs = result.files.map(path => ({ source, path,
         stream: source === "aw" ? awStream(this.queue.owner) : `${this.queue.owner}~${source}.${SESSION_FORMATS[source].sessionId(path)}` }));
       if (result.complete) {
-        group.root++; group.checkpoint = null; group.complete = group.root === this.roots[index].length;
+        group.root++; group.checkpoint = null;
+        group.complete = group.root === (this.defaults ? group.roots.length : this.roots[index].length);
         delete group.failure;
       } else group.checkpoint = result.checkpoint;
       // Partial retry remains pending and receives at most one unit per pass.

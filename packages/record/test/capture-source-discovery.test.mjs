@@ -7,6 +7,7 @@ import { DerivedState } from '../lib/derived-state.mjs';
 import { CaptureSourceQueue } from '../lib/capture-source-queue.mjs';
 import { CaptureSourceDiscovery } from '../lib/capture-source-discovery.mjs';
 import { SESSION_FORMATS } from '../lib/formats.mjs';
+import { captureDefaultRootPlan } from '../lib/capture-default-roots.mjs';
 
 function fixture(t) {
   const base = fs.mkdtempSync(join(tmpdir(), 'capture-source-discovery-')), root = join(base, 'record');
@@ -20,6 +21,126 @@ function fixture(t) {
 function close(open) { open.discovery.close(); open.state.close(); }
 const rows = state => state.db.prepare('SELECT source,path,stream,outcome FROM capture_sources ORDER BY position').all().map(row => ({ ...row }));
 const owned = runId => ({ runId, workerNonce: `worker-${runId}` });
+
+test('default-root selection freezes caller locations and ordered roots across replacement without reading content', t => {
+  const f = fixture(t);
+  for (const name of ['.claude-z/projects/p/z.jsonl', '.claude/projects/p/a.jsonl',
+    'pi-home/sessions/p.jsonl', 'pi-selected/p.jsonl', 'codex-home/sessions/y/c.jsonl', '.config/aw/logs/account.jsonl']) f.put(name);
+  const env = { PI_CODING_AGENT_DIR: '~/pi-home', PI_CODING_AGENT_SESSION_DIR: '~/pi-selected',
+    CODEX_HOME: './codex-home', XDG_CONFIG_HOME: '/unused', NODE_OPTIONS: '--unrelated', TOKEN: 'not-copied' };
+  const plan = captureDefaultRootPlan({ home: f.base, cwd: f.base, env });
+  assert.deepEqual(Object.keys(plan.env), ['PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR', 'CODEX_HOME']);
+  env.CODEX_HOME = '/changed-after-plan';
+  let opened = f.open(plan);
+  try {
+    assert.throws(() => opened.discovery.advance(), /requires owned/);
+    assert.equal(opened.queue.current().discovery, null);
+    const initial = opened.discovery.current();
+    for (const source of ['cc', 'pi', 'codex', 'aw']) {
+      const result = opened.discovery.advance(owned('select'));
+      assert.equal(result.source, source); assert.equal(result.resolvedRoots, true);
+      assert.equal(result.added, 0); assert.equal(result.visited, 0);
+    }
+    assert.deepEqual(rows(opened.state), [], 'root resolution is not file enumeration or capture');
+    const resolved = opened.discovery.current();
+    assert.notDeepEqual(resolved, initial); assert.equal(opened.queue.current().discovered, false);
+    const expected = [SESSION_FORMATS.cc.defaultRoots(f.base, {}), [join(f.base, 'pi-selected')],
+      [join(f.base, 'codex-home/sessions')], [join(f.base, '.config/aw/logs')]];
+    assert.deepEqual(resolved.groups.map(group => group.roots.map(root => root.path)), expected);
+    assert.ok(resolved.groups.every(group => group.roots.every(root => root.identity !== null)));
+    close(opened);
+    f.put('.claude-new/projects/p/later.jsonl');
+    opened = f.open(plan);
+    assert.deepEqual(opened.discovery.current(), resolved, 'replacement must not redo successful root selection');
+    opened.discovery.resolveRoots = () => { throw Error('unexpected repeated resolution'); };
+    let complete = false;
+    for (let n = 0; n < 100 && !complete; n++) complete = opened.discovery.advance({ ...owned('files'), limit: 1 }).complete;
+    assert.equal(complete, true);
+    const found = rows(opened.state);
+    for (const [index, source] of ['cc', 'pi', 'codex'].entries())
+      assert.deepEqual(found.filter(row => row.source === source).map(row => row.path), SESSION_FORMATS[source].listFiles(expected[index]));
+    assert.deepEqual(found.filter(row => row.source === 'aw').map(row => row.path), [join(f.base, '.config/aw/logs/account.jsonl')]);
+    assert.ok(found.every(row => row.outcome === 'ready'));
+    assert.equal(opened.state.get('capture-run', 'current'), null);
+    assert.throws(() => new CaptureSourceDiscovery(opened.queue,
+      captureDefaultRootPlan({ home: f.base, cwd: join(f.base, 'other'), env: plan.env })), /plan or checkpoint changed/);
+  } finally { close(opened); }
+});
+
+test('source selection avoids excluded formats and retains configured-root errors with before-due exclusion', t => {
+  const f = fixture(t); f.put('.config/aw/logs/account.jsonl');
+  const at = Date.parse('2026-01-01T00:00:00.000Z');
+  const plan = captureDefaultRootPlan({ home: f.base, cwd: f.base,
+    env: { CLAUDE_CONFIG_DIR: './missing' }, sources: ['aw', 'cc'] });
+  const opened = f.open(plan);
+  try {
+    assert.throws(() => opened.discovery.advance({ ...owned('failed'), now: at }), /configured session root does not exist/);
+    const failed = opened.discovery.current().groups[0];
+    assert.equal(failed.roots, null); assert.equal(failed.checkpoint, null); assert.equal(failed.complete, false);
+    assert.equal(failed.failure.attempts, 1); assert.equal(failed.failure.runId, 'failed');
+    for (let n = 0; n < 4; n++) opened.discovery.advance({ ...owned('failed'), now: at });
+    assert.deepEqual(rows(opened.state).map(row => row.source), ['aw']);
+    assert.deepEqual(opened.discovery.current().groups.slice(1, 3).map(group => group.roots), [[], []]);
+    assert.equal(opened.queue.current().discovered, false);
+    const due = Date.parse(failed.failure.nextRetryAt);
+    assert.equal(opened.discovery.advance({ ...owned('early'), now: due - 1, retry: true }).deferred, true);
+    assert.equal(opened.discovery.advance({ ...owned('failed'), now: due, retry: true }).deferred, true);
+    f.put('missing/projects/p/new.jsonl');
+    assert.equal(opened.discovery.advance({ ...owned('later'), now: due, retry: true }).resolvedRoots, true);
+    while (!opened.discovery.advance({ ...owned('later'), now: due }).complete) {}
+    assert.equal(opened.state.get('capture-discovery-failure', 'last').runId, 'failed');
+    assert.deepEqual(rows(opened.state).map(row => row.source), ['aw', 'cc']);
+  } finally { close(opened); }
+  const g = fixture(t), onlyAw = g.open(captureDefaultRootPlan({ home: g.base, cwd: g.base, sources: ['aw'],
+    env: { CLAUDE_CONFIG_DIR: '/unselected-missing' } }));
+  try {
+    assert.equal(onlyAw.discovery.advance(owned('aw')).resolvedRoots, true);
+    assert.equal(onlyAw.discovery.advance(owned('aw')).complete, true, 'fresh optional absent AW root remains empty');
+  } finally { close(onlyAw); }
+});
+
+test('resolved default roots refuse replacement before their first enumeration page', t => {
+  const f = fixture(t); f.put('.pi/agent/sessions/a.jsonl');
+  const plan = captureDefaultRootPlan({ home: f.base, cwd: f.base, sources: ['pi'] });
+  let opened = f.open(plan);
+  opened.discovery.advance(owned('resolve'));
+  const before = opened.discovery.current(), path = join(f.base, '.pi/agent/sessions');
+  close(opened); fs.renameSync(path, path + '.saved'); f.put('.pi/agent/sessions/replacement.jsonl'); opened = f.open(plan);
+  try {
+    assert.throws(() => opened.discovery.advance(owned('replaced')), /directory identity changed/);
+    const refused = opened.discovery.current().groups[1];
+    assert.deepEqual(refused.roots, before.groups[1].roots); assert.equal(refused.checkpoint, null);
+    assert.equal(refused.root, 0); assert.equal(refused.complete, false); assert.deepEqual(rows(opened.state), []);
+  } finally { close(opened); }
+});
+
+test('default-root admission precedes selectors and publication rollback retains unresolved intent across reopening', t => {
+  const f = fixture(t); f.put('.pi/agent/sessions/a.jsonl');
+  const plan = captureDefaultRootPlan({ home: f.base, cwd: f.base, sources: ['pi'] });
+  let opened = f.open(plan), calls = 0;
+  try {
+    const before = opened.queue.current(), set = opened.state.set.bind(opened.state), resolve = opened.discovery.resolveRoots.bind(opened.discovery);
+    opened.discovery.resolveRoots = source => { calls++; assert.equal(opened.state.depth, 0);
+      assert.equal(opened.discovery.active().phase, 'roots'); return resolve(source); };
+    opened.state.set = (kind, key, value) => { set(kind, key, value); if (kind === 'capture-discovery-attempt') throw Error('admission rollback'); };
+    assert.throws(() => opened.discovery.advance(owned('old')), /admission rollback/);
+    assert.equal(calls, 0); assert.equal(opened.discovery.active(), null); assert.deepEqual(opened.queue.current(), before);
+    opened.state.set = set;
+    const remove = opened.state.delete.bind(opened.state);
+    opened.state.delete = (kind, key) => { remove(kind, key); if (kind === 'capture-discovery-attempt') throw Error('retirement rollback'); };
+    assert.throws(() => opened.discovery.advance(owned('old')), /retirement rollback/);
+    assert.equal(calls, 1); assert.deepEqual(opened.queue.current(), before);
+    const attempt = opened.discovery.active();
+    assert.equal(attempt.phase, 'roots'); assert.equal(attempt.group.roots, null); assert.equal(attempt.path, f.base);
+    close(opened); opened = f.open(plan);
+    assert.deepEqual(opened.discovery.active(), attempt);
+    opened.discovery.reconcile({ workerNonce: 'replacement', pass: { runId: 'new' } });
+    const pending = opened.discovery.current().groups[1];
+    assert.equal(pending.roots, null); assert.equal(pending.failure.runId, 'old');
+    assert.equal(opened.discovery.active(), null); assert.deepEqual(rows(opened.state), []);
+    assert.equal(opened.state.get('capture-run', 'current'), null);
+  } finally { close(opened); }
+});
 
 test('format rotation and restart retain public file order within each format and native root precedence', t => {
   const f = fixture(t);

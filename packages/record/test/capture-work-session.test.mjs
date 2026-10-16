@@ -10,6 +10,7 @@ import { RecordStore } from '../lib/store.mjs';
 import { RecordIndex } from '../lib/index-db.mjs';
 import { CaptureSourceQueue } from '../lib/capture-source-queue.mjs';
 import { CaptureSourceDiscovery } from '../lib/capture-source-discovery.mjs';
+import { captureDefaultRootPlan } from '../lib/capture-default-roots.mjs';
 import { CaptureRun } from '../lib/capture-run.mjs';
 import { commitCaptureAdmission } from '../lib/capture-admission.mjs';
 import { readCaptureStatus } from '../lib/capture-status.mjs';
@@ -43,7 +44,7 @@ function fixture(t, specs = [], { discover = false } = {}) {
     import {DerivedState} from ${JSON.stringify(url('derived-state'))};
     await runCaptureWorker(start=>{
       if(start.options.failBeforeReceipt && start.pass.attempt===1)throw Error('injected pre-receipt failure');
-      if(start.options.killDiscovery){
+      if(start.options.killDiscovery||start.options.killRootResolution){
         const state=new DerivedState(start.root);
         try{const active=state.get('capture-discovery-attempt','fixture');
           if(active)fs.appendFileSync(join(start.root,'discovery-replacements'),JSON.stringify({active,workerNonce:start.workerNonce})+'\\n');}
@@ -99,6 +100,21 @@ function fixture(t, specs = [], { discover = false } = {}) {
             process.kill(process.pid,'SIGKILL');
           }
           return result;
+        };
+      }
+      if(start.options.killRootResolution){
+        const resolve=session.sourceDiscovery.resolveRoots.bind(session.sourceDiscovery);
+        session.sourceDiscovery.resolveRoots=source=>{
+          const active=session.state.get('capture-discovery-attempt','fixture');
+          if(!active||active.phase!=='roots'||session.state.depth!==0)throw Error('root selector has no committed admission');
+          const roots=resolve(source);
+          if(source==='cc'){
+            fs.appendFileSync(join(start.root,'root-resolution-deaths'),JSON.stringify({active,depth:session.state.depth,
+              discovery:session.queue.current().discovery,runId:session.run.id})+'\\n');
+            session.store.appendBatch('fixture~existing',[start.options.deathTurn]);
+            process.kill(process.pid,'SIGKILL');
+          }
+          return roots;
         };
       }
       try {
@@ -422,6 +438,66 @@ test(`discovery death before publication preserves admission and healthy replace
   assert.equal(waited.lastRun.counts.turnsAppended, 0); assert.equal(waited.backlog.pending, true);
   assert.deepEqual(f.state(state => state.get('source-sweep', 'fixture').discovery.groups[0]), pending);
   assert.equal(fs.readFileSync(join(f.root, 'discovery-deaths'), 'utf8').trim().split('\n').length, 1);
+});
+
+for (const retry of [false, true])
+test(`default-root resolution death retains selection admission and permits independent work (due retry: ${retry})`, async t => {
+  const f = fixture(t, [['aw', 'queued', aw(1)]], { discover: true }), home = join(f.root, '..');
+  const config = join(home, 'cc-config'), awRoot = join(home, '.config/aw/logs');
+  fs.mkdirSync(awRoot, { recursive: true }); fs.writeFileSync(join(awRoot, 'account.jsonl'), aw(2));
+  const plan = captureDefaultRootPlan({ home, cwd: home, env: { CLAUDE_CONFIG_DIR: './cc-config' }, sources: ['cc', 'aw'] });
+  f.state(state => new CaptureSourceQueue(state, { owner: 'fixture', selection: 'fixture' }).add(f.inputs, null));
+  f.store.appendBatch('fixture~existing', [turn(3)]);
+  let at = now, prior = null;
+  if (retry) {
+    const seed = await f.run({ roots: plan, units: 4, records: 4 });
+    assert.equal(seed.outcome, 'failed', f.diagnostic(seed)); assert.equal(seed.reason, 'io');
+    prior = readCaptureStatus(f.root);
+    assert.equal(prior.lastRun.counts.turnsAppended, 2); assert.equal(prior.lastRun.counts.turnsIndexed, 3);
+    at = Date.parse(f.state(state => state.get('source-sweep', 'fixture').discovery.groups[0].failure.nextRetryAt));
+  }
+  fs.mkdirSync(join(config, 'projects'), { recursive: true }); fs.writeFileSync(join(config, 'projects/blocked.jsonl'), native(5));
+  const before = f.state(state => state.get('source-sweep', 'fixture'));
+  const original = f.state(state => {
+    const discovery = new CaptureSourceDiscovery(new CaptureSourceQueue(state, { owner: 'fixture', selection: 'fixture' }), plan);
+    try { return discovery.current(); } finally { discovery.close(); }
+  });
+  const result = await f.run({ roots: plan, units: 4, records: 4, now: at, killRootResolution: true, deathTurn: turn(4) });
+  assert.equal(result.outcome, 'failed', f.diagnostic(result)); assert.equal(result.reason, 'interrupted'); assert.equal(result.exitCode, 1);
+  const status = readCaptureStatus(f.root), sweep = f.state(state => state.get('source-sweep', 'fixture'));
+  const deaths = fs.readFileSync(join(f.root, 'root-resolution-deaths'), 'utf8').trim().split('\n').map(JSON.parse);
+  const replacements = fs.readFileSync(join(f.root, 'discovery-replacements'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(deaths.length, 1); assert.equal(replacements.length, 1);
+  assert.equal(deaths[0].depth, 0); assert.equal(deaths[0].active.phase, 'roots');
+  assert.equal(deaths[0].active.runId, status.lastRun.id); assert.equal(deaths[0].active.scope, before.id);
+  assert.equal(deaths[0].active.plan, original.plan); assert.equal(deaths[0].active.path, home);
+  assert.deepEqual(deaths[0].active.group, original.groups[0]); assert.deepEqual(deaths[0].discovery, before.discovery);
+  assert.deepEqual(replacements[0].active, deaths[0].active);
+  assert.notEqual(replacements[0].workerNonce, deaths[0].active.workerNonce);
+  const pending = sweep.discovery.groups[0];
+  assert.equal(pending.roots, null); assert.equal(pending.root, 0); assert.equal(pending.checkpoint, null);
+  assert.equal(pending.complete, false); assert.equal(sweep.discovered, false); assert.equal(sweep.finished, false);
+  assert.equal(pending.failure.runId, status.lastRun.id); assert.equal(pending.failure.attemptedRun, status.lastRun.id);
+  assert.equal(pending.failure.attempts, retry ? 2 : 1); assert.equal(pending.failure.reason, 'interrupted');
+  assert.equal(pending.failure.nextRetryAt, new Date(at + (retry ? 60 : 30) * 60_000).toISOString());
+  assert.equal(f.state(state => state.get('capture-discovery-attempt', 'fixture')), null);
+  assert.equal(sweep.discovery.groups[3].complete, true);
+  assert.equal(status.lastRun.counts.turnsAppended, retry ? 0 : 2);
+  assert.equal(status.lastRun.counts.turnsIndexed, retry ? 1 : 4);
+  assert.equal(status.lastFailure.id, status.lastRun.id); assert.equal(status.lastSuccess, null);
+  assert.equal(status.backlog.pending, true); assert.equal(f.store.readStream('fixture~aw').length, 2);
+  assert.equal(f.store.readStream('fixture~cc.blocked').length, 0);
+  assert.ok(f.events().some(event => event.runId === status.lastRun.id && event.nonce === replacements[0].workerNonce &&
+    event.stage === 'index' && event.selected), 'replacement indexes growth committed just before selector death');
+  if (prior) assert.notEqual(status.lastFailure.id, prior.lastFailure.id);
+  f.store.appendBatch('fixture~existing', [turn(6)]);
+  const waiting = await f.run({ roots: plan, units: 4, records: 4, now: at + 60_000, killRootResolution: true, deathTurn: turn(7) });
+  assert.equal(waiting.outcome, 'partial', f.diagnostic(waiting)); assert.equal(waiting.exitCode, 0);
+  const waited = readCaptureStatus(f.root);
+  assert.equal(waited.lastRun.counts.turnsIndexed, 1); assert.equal(waited.lastRun.counts.turnsAppended, 0);
+  assert.deepEqual(waited.lastFailure, status.lastFailure);
+  assert.deepEqual(f.state(state => state.get('source-sweep', 'fixture').discovery.groups[0]), pending);
+  assert.equal(fs.readFileSync(join(f.root, 'root-resolution-deaths'), 'utf8').trim().split('\n').length, 1);
 });
 
 test('mixed source/index units alternate across worker continuation without claiming all-stage completion', async t => {
