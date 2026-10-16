@@ -6,7 +6,10 @@
 // and counts the bytes lib reads, by path kind. lib reads files only through
 // readSync and readFileSync (no streams, promises or FileHandle reads), both
 // named imports that syncBuiltinESMExports rebinds; SQLite reads in C and is
-// never counted here. Each connection's SQLite total_changes() (rows inserted,
+// never counted here. Each read is also attributed to its path class (the
+// path below the root or home, with numbers, hex runs and UUIDs replaced by
+// placeholders), to its call site (the first three lib frames of its stack),
+// and, for sources and journals, to its file. Each connection's SQLite total_changes() (rows inserted,
 // updated or deleted) is summed when it closes, or at exit if still open. A
 // pass may ask, through `<root>.qualify-config.json`, for a SQLite page cache
 // size that replaces each cache_size the operation sets: a measurement of the
@@ -44,6 +47,30 @@ function kind(path) {
 }
 const bump = (map, key, n = 1) => { map[key] = (map[key] ?? 0) + n; };
 
+const reads = { classes: {}, sites: {}, files: { source: {}, journal: {} } };
+const tally = (map, key, n) => { const entry = map[key] ??= { bytes: 0, reads: 0 }; entry.bytes += n; entry.reads++; };
+function pathClass(path, k) {
+  if (typeof path !== "string") return `${k}:unknown`;
+  const base = under(path, roots) ?? under(path, homes), rest = base ? path.slice(base.length + 1) : path;
+  return `${k}:${rest.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "<uuid>")
+    .replace(/[0-9a-f]{16,}/gi, "<hex>").replace(/\d+/g, "<n>")}`;
+}
+function callSite() {
+  const limit = Error.stackTraceLimit;
+  Error.stackTraceLimit = 12;
+  const stack = new Error().stack;
+  Error.stackTraceLimit = limit;
+  const frames = [...stack.matchAll(/\/packages\/record\/(?:lib|bin)\/([\w.-]+\.mjs):(\d+)/g)].slice(0, 3).map(m => `${m[1]}:${m[2]}`);
+  return frames.join(" < ") || "unknown";
+}
+function read(path, n) {
+  const k = kind(path);
+  bump(counts.readBytes, k, n);
+  tally(reads.classes, pathClass(path, k), n);
+  tally(reads.sites, `${k} ${callSite()}`, n);
+  if (reads.files[k]) tally(reads.files[k], path, n);
+}
+
 let cacheSize = null;
 const open = new Set();
 const sqlite = require("node:sqlite"), Original = sqlite.DatabaseSync;
@@ -68,11 +95,10 @@ fs.fsyncSync = fd => { bump(counts.fsync, kind(paths.get(fd))); return fsyncSync
 fs.fdatasyncSync = fd => { bump(counts.fsync, kind(paths.get(fd))); return fdatasyncSync(fd); };
 fs.renameSync = (from, to) => { bump(counts.rename, kind(String(to))); return renameSync(from, to); };
 fs.mkdirSync = (path, ...rest) => { counts.mkdir++; return mkdirSync(path, ...rest); };
-fs.readSync = (fd, ...rest) => { const n = readSync(fd, ...rest); bump(counts.readBytes, kind(paths.get(fd)), n); return n; };
+fs.readSync = (fd, ...rest) => { const n = readSync(fd, ...rest); read(paths.get(fd), n); return n; };
 fs.readFileSync = (path, options) => {
   const value = readFileSync(path, options), encoding = typeof options === "string" ? options : options?.encoding;
-  bump(counts.readBytes, kind(typeof path === "number" ? paths.get(path) : String(path)),
-    typeof value === "string" ? Buffer.byteLength(value, encoding ?? "utf8") : value.length);
+  read(typeof path === "number" ? paths.get(path) : String(path), typeof value === "string" ? Buffer.byteLength(value, encoding ?? "utf8") : value.length);
   return value;
 };
 syncBuiltinESMExports();
@@ -95,6 +121,6 @@ await runCaptureWorker(async start => {
     for (const db of [...open]) changed(db);
     const directory = `${start.root}.qualify-counts`;
     mkdirSync(directory, { recursive: true });
-    fs.writeFileSync(join(directory, `${process.pid}-${start.workerNonce}.json`), JSON.stringify({ pid: process.pid, counts, ...sample() }));
+    fs.writeFileSync(join(directory, `${process.pid}-${start.workerNonce}.json`), JSON.stringify({ pid: process.pid, counts, reads, ...sample() }));
   }
 });

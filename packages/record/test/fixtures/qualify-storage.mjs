@@ -13,7 +13,7 @@ import fs from "node:fs";
 import { join } from "node:path";
 import { CAPTURE_COUNT_FIELDS } from "../../lib/capture-status.mjs";
 import { OPERATOR, REPORT_MARGIN_MS, TEST_TIMEOUT_MS, appendSessions, cliCapture, dropDerived, installRelease, journalBytes,
-  measuredPass, passReserveMs, passRow, report, runnerFacts, scratch, syntheticHome, table, untilComplete } from "./qualify.mjs";
+  measuredPass, passReserveMs, passRow, readBreakdown, report, runnerFacts, scratch, sumReads, syntheticHome, table, untilComplete } from "./qualify.mjs";
 
 export const OUTGOING = "0.61.0";
 const MB = 1e6;
@@ -103,6 +103,10 @@ export async function qualifyStorage(t, { streams, append = false, k = 50, lines
     // Staged copies live under the record root: its filesystem type is the runner line's "root".
     stagingPath: join(root, ".capture-tmp"), ...scale, operator: OPERATOR,
     note: `scaled run (F = ${scale.F.toExponential(3)} of the operator's journal bytes): no full-volume completion time is claimed` });
+  // Where the first upgrade's reads went, reported only: path classes, call
+  // sites, and each source and journal file's bytes read over its size.
+  const bases = { home: synthetic.home, root };
+  report(t, "first-upgrade-reads", { streams, ...readBreakdown(sumReads(upgrade.passes.map(pass => pass.reads)), { bases }) });
   table(t, "first-upgrade: totals", [{ streams, passes: sums.passes, uncounted: sums.uncounted, wallMs: upgrade.wallMs, sqliteCommits: sums.sqlite.commits,
     journalFsyncs: sums.fsync.journal ?? 0, stagingFsyncs: sums.fsync.staging ?? 0, renames: sum(Object.values(sums.rename)),
     readBytes: sums.io.read_bytes ?? null, rchar: sums.io.rchar ?? null, journalBytes: journals.bytes, F: scale.F.toExponential(3),
@@ -125,6 +129,7 @@ export async function qualifyStorage(t, { streams, append = false, k = 50, lines
     sqliteCommitsPerStream: row.sqliteCommits / journals.streams, sqliteBeginsPerStream: noop.counts.sqlite.begins / journals.streams,
     rcharPerStream: row.rchar == null ? null : row.rchar / journals.streams, read, fsync: noop.counts.fsync, rename: noop.counts.rename });
   table(t, "no-op", [row, baselineRow]);
+  report(t, "no-op-reads", { streams, ...readBreakdown(noop.reads, { bases }) });
   assert.equal(noop.result.outcome, "complete", `no-op outcome ${noop.result.outcome}/${noop.result.reason}`);
   assert.ok(noop.wallMs < 300_000, `no-op took ${noop.wallMs}ms at ${streams} streams`);
   assert.equal(counts.bytesCommitted, 0, "a no-op commits no content");

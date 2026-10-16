@@ -123,6 +123,46 @@ const countFiles = root => { try { return new Set(fs.readdirSync(countsDirectory
 function workerReports(root, before) {
   return [...countFiles(root)].filter(name => !before.has(name)).map(name => JSON.parse(fs.readFileSync(join(countsDirectory(root), name), "utf8")));
 }
+/** Merges `from`'s { key: { bytes, reads } } entries into `into`. */
+function addReads(into, from) {
+  for (const [key, entry] of Object.entries(from ?? {})) {
+    const sum = into[key] ??= { bytes: 0, reads: 0 };
+    sum.bytes += entry.bytes; sum.reads += entry.reads;
+  }
+  return into;
+}
+/** Read attribution summed over workers' reports, or over passes' sums:
+ *  { classes, sites, files: { source, journal } }, each { key: { bytes, reads } }. */
+export function sumReads(parts) {
+  const total = { classes: {}, sites: {}, files: { source: {}, journal: {} } };
+  for (const part of parts) {
+    addReads(total.classes, part?.classes); addReads(total.sites, part?.sites);
+    for (const kind of ["source", "journal"]) addReads(total.files[kind], part?.files?.[kind]);
+  }
+  return total;
+}
+const top = (map, by, n = 10) => Object.entries(map).sort((a, b) => b[1][by] - a[1][by]).slice(0, n).map(([key, entry]) => ({ key, ...entry }));
+const AMPLIFICATION = [1, 2, 4, 8, 16];
+/** Where reads went: the top path classes by bytes and by count, the top
+ *  call sites, and, per source and journal file, bytes read over its size now
+ *  (a histogram and the most-read files), with paths below `base` shown
+ *  relative to it. */
+export function readBreakdown(reads, { bases = {} } = {}) {
+  const relative = path => { for (const [name, dir] of Object.entries(bases)) if (path.startsWith(dir + "/")) return `${name}/${path.slice(dir.length + 1)}`; return path; };
+  const amplification = Object.fromEntries(["source", "journal"].map(kind => {
+    const files = Object.entries(reads.files[kind]).map(([path, entry]) => {
+      let size = null; try { size = fs.statSync(path).size; } catch { /* gone: reported without a ratio */ }
+      return { path: relative(path), size, ...entry, ratio: size ? Math.round(entry.bytes / size * 100) / 100 : null };
+    });
+    const histogram = Object.fromEntries([...AMPLIFICATION.map((limit, i) => [`<${limit}`, files.filter(f => f.ratio !== null && f.ratio < limit && (i === 0 || f.ratio >= AMPLIFICATION[i - 1])).length]),
+      [`>=${AMPLIFICATION.at(-1)}`, files.filter(f => f.ratio !== null && f.ratio >= AMPLIFICATION.at(-1)).length], ["unknown", files.filter(f => f.ratio === null).length]]);
+    const bytes = files.reduce((a, f) => a + f.bytes, 0), size = files.reduce((a, f) => a + (f.size ?? 0), 0);
+    return [kind, { files: files.length, bytesRead: bytes, sizeBytes: size, ratio: size ? Math.round(bytes / size * 100) / 100 : null, histogram,
+      top: files.sort((a, b) => b.bytes - a.bytes).slice(0, 10) }];
+  }));
+  return { classesByBytes: top(reads.classes, "bytes"), classesByReads: top(reads.classes, "reads"), sitesByBytes: top(reads.sites, "bytes", 15),
+    sitesByReads: top(reads.sites, "reads", 15), amplification };
+}
 function sumCounts(reports) {
   const total = { workers: 0, sqlite: { opens: 0, begins: 0, commits: 0, changes: 0 }, fsync: {}, rename: {}, mkdir: 0, opened: {}, readBytes: {}, io: {}, vmHwmBytes: 0 };
   for (const value of reports) {
@@ -153,7 +193,7 @@ export async function measuredPass(root, home, { policy = CAPTURE_POLICY, indexE
   finally { fs.rmSync(config, { force: true }); }
   const wallMs = Math.round(performance.now() - began);
   const reports = workerReports(root, before);
-  return { result, wallMs, counts: sumCounts(reports), reports, status: readCaptureStatus(root) };
+  return { result, wallMs, counts: sumCounts(reports), reads: sumReads(reports.map(report => report.reads)), reports, status: readCaptureStatus(root) };
 }
 /** Ordinary passes until one completes, all ending within `budgetMs`: a pass
  *  starts only while a whole pass's reserve is left. Never shortens the
