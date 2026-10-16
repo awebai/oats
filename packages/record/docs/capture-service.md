@@ -791,6 +791,15 @@ locked validation/index work still owns processing authority. Outstanding
 retries keep the stream pending. Ordinary inventory enumeration retains all
 names, while outcome-aware selection skips only still-qualified completions.
 
+The scheduler requalifies each stream once per worker pass. A stream found
+qualified, or recorded complete by an index group, is not compared again by
+later steps of that pass, and a walk that finds every stream qualified leaves
+the index stage with no candidates. Each write the pass makes to a stream
+revokes that: a capture unit other than an unchanged one, or an index outcome
+other than complete. So does a new inventory member. A new worker, and so
+every pass, requalifies every stream once; due retries, the completion audit
+and other outcome reads always compare the evidence.
+
 The source-work bridge can join an active index inventory to its processing
 commit. It inserts every processed stream, including replay with no new append,
 so streams created after directory discovery are not omitted. Duplicate
