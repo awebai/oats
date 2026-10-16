@@ -4,16 +4,19 @@
  * 0.3.10 starts at session_start. Prints what reached the transcript as JSON.
  * Runs under `node --experimental-strip-types` (the bridge is TypeScript).
  *
- *   node --experimental-strip-types run-opening-scenario.mjs <scenario> <instance-home>
+ *   node --experimental-strip-types run-opening-scenario.mjs <scenario> <instance-home> [starts-run-first]
+ *
+ * With `starts-run-first` the PiHost models pi 1.2 and later.
  */
 import { PiHost } from "./pi-host.mjs";
 
-const [name, home] = process.argv.slice(2);
+const [name, home, model] = process.argv.slice(2);
 process.env.OATS_INSTANCE_HOME = home;
 const { default: bridge } = await import("../extension/index.ts");
 
 const TASK = "THE TASK";
 const host = new PiHost();
+host.startsRunFirst = model === "starts-run-first";
 // Fixtures registered before the bridge run their handlers ahead of its own;
 // those registered after, behind.
 const before = host.api();
@@ -30,9 +33,23 @@ function transformInput() {
   });
 }
 
+/** The abort an extension ahead of the bridge requested, settled or not. */
+let aborting = null;
+const abortOnce = times(1, () => { aborting = host.abort().then(() => true); });
+
 const scenarios = {
-  // The task is the session's first prompt and nothing else runs.
+  // The task is the session's first prompt, as an SDK sends it by default, and nothing else runs.
   "no-race": {},
+  // The task as pi's interactive mode sends the launch's @TASK.md (pi 1.3.0 modes/interactive/interactive-mode.js:896).
+  "interactive-opening": { prompt: () => host.prompt(TASK, { images: undefined }) },
+  // Another extension's prompt (source "extension") is running: it was not the opening task, which waits for it.
+  "extension-prompt-first": { start: () => after.sendUserMessage("EXTENSION PROMPT"), whileRunning: true },
+  // An abort while the task is held behind the welcome: it settles, and the task runs after the welcome.
+  "abort-while-held": { before: () => before.on("input", abortOnce), start: () => welcome() },
+  // The session shuts down while the task is held behind the welcome.
+  "shutdown-while-held": { before: () => before.on("input", () => { setImmediate(() => host.emit({ type: "session_shutdown" })); }), start: () => welcome() },
+  // An abort while the task's run starts: it settles, and so does the prompt.
+  "abort-during-start": { before: () => before.on("before_agent_start", abortOnce) },
   // The welcome turn is running when the task arrives.
   "welcome-first": { start: () => welcome() },
   // The welcome starts while the task's prompt is in preflight, before before_agent_start.
@@ -75,11 +92,13 @@ bridge({ ...bridgeApi, sendUserMessage: (content, options) => { bridgeSent.push(
 scenario.after?.();
 scenario.start?.();
 
+for (let i = 0; scenario.whileRunning && !host.streaming && i < 200; i++) await new Promise((resolve) => setImmediate(resolve));
 let promptError = null;
-await host.prompt(TASK).catch((e) => { promptError = e.message; });
+await (scenario.prompt ?? (() => host.prompt(TASK)))().catch((e) => { promptError = e.message; });
 await host.drain();
 
 const result = { transcript: [...host.transcript], bridgeSent, promptError, inputSources, extensionErrors: host.extensionErrors };
+if (aborting) result.abortSettled = await Promise.race([aborting, host.drain().then(() => false)]);
 if (name === "no-race") {
   // Later input is not the opening: a prompt during a running turn without
   // streamingBehavior meets pi's own refusal, as it would without the bridge.
