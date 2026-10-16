@@ -233,3 +233,47 @@ test("the sidebar roster keeps its stable order: recency reaches only the palett
   assert.match(shell, /function activateTab\([\s\S]*?instanceRecency\.record\(current\.workspace, recencyIdFromTerminalKey\(current\.workspace, current\.key\)\)[\s\S]*?\n\}/,
     "recorded at the one activation seam");
 });
+
+// #1312: a Recent row says its sibling as the tree's rows do; with a shown parent, as one quiet phrase.
+test("Recent rows carry their sibling: with no query both ends, with a query the match alone", () => {
+  const roster = [at("ada"), at("bea", { siblingInstance: "ada" }), at("solo")];
+  const recent = new Map([[instanceId(roster[1]), 2], [instanceId(roster[2]), 1]]);
+  const rows = instanceRows(paletteRows({ instances: roster, recent }, [], "", {}));
+  assert.deepEqual(rows.map(r => [r.group.label, r.label, r.sibling ?? null]),
+    [["Recent", "bea", "sibling of ada"], ["Recent", "solo", null], ["ada", "ada", "sibling of bea"]], "the tree row keeps its relation group");
+  assert.deepEqual(instanceRows(paletteRows({ instances: roster, recent }, [], "bea", {})).map(r => [r.group.label, r.label, r.sibling]),
+    [["Recent", "bea", "sibling of ada"]]);
+});
+
+test("rendered: a Recent row with a parent and a sibling reads \"under lead · sibling of beta\" visibly, each phrase read once", async t => {
+  const roster = [at("lead"), at("kid", { parentInstance: "lead", siblingInstance: "beta" }), at("beta")];
+  const p = palette(t, { instances: roster, deployments: [], recent: new Map([[instanceId(roster[1]), 1]]) });
+  await p.picker.open();
+  const option = p.doc.querySelector('[role="group"][aria-label="Recent"] [role="option"]');
+  const shown = option.querySelectorAll(".punder");
+  assert.equal(shown.length, 1, "one quiet span");
+  assert.equal(shown[0].textContent, "under lead · sibling of beta");
+  assert.equal(shown[0].getAttribute("aria-hidden"), "true");
+  assert.deepEqual([...option.querySelectorAll(".pdetail .sr-only")].map(s => s.textContent), [", under lead", ", sibling of beta"]);
+  const read = node => [...node.childNodes].map(n => n.nodeType === 3 ? n.textContent : n.getAttribute("aria-hidden") === "true" ? "" : read(n)).join("");
+  for (const phrase of ["under lead", "sibling of beta"]) assert.equal(read(option).split(phrase).length - 1, 1, `${phrase}: read once`);
+});
+
+test("a long parent never hides the sibling: the under phrase is its own part and gives way first (#1312)", async t => {
+  const parent = "oats-desktop-expert-palette-siblings";
+  const roster = [at(parent), at("kid", { parentInstance: parent, siblingInstance: "beta" }), at("beta")];
+  const p = palette(t, { instances: roster, deployments: [], recent: new Map([[instanceId(roster[1]), 1]]) });
+  await p.picker.open();
+  const shown = p.doc.querySelector('[role="group"][aria-label="Recent"] .punder');
+  assert.equal(shown.textContent, `under ${parent} · sibling of beta`);
+  assert.deepEqual([...shown.children].map(s => [s.className, s.textContent]),
+    [["punder-under", `under ${parent}`], ["punder-sep", " · "], ["punder-sibling", "sibling of beta"]]);
+  // jsdom has no layout: the rules that make the parts shrink are read from the stylesheet.
+  const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
+  const rule = sel => css.match(new RegExp(`${sel.replace(/[.>]/g, m => `\\${m}`)}\\s*\\{([^}]*)\\}`))?.[1] || "";
+  assert.match(rule(".palette-item .punder.punder-split"), /display:\s*flex/);
+  assert.match(rule(".palette-item .punder-split > span"), /min-width:\s*0[\s\S]*text-overflow:\s*ellipsis/);
+  const shrink = sel => Number(rule(sel).match(/flex-shrink:\s*(\d+)/)?.[1] ?? 1);
+  assert.ok(shrink(".palette-item .punder-split > .punder-under") > 100 * shrink(".palette-item .punder-split > .punder-sibling"),
+    "the under phrase shortens long before the sibling does");
+});
