@@ -108,7 +108,7 @@ test("the shared inventory holds token names only, covers the 16 ANSI colours, a
   assert.equal(new Set(pairs.map(pair => pair.join(" on "))).size, pairs.length, "no pair twice");
   assert.equal(ansi.length, 16);
   for (const token of ansi) assert.ok(pairs.some(([fg, bg]) => fg === token && bg === "term-bg"), `--${token} is held on --term-bg`);
-  assert.deepEqual(GRAPHIC_PAIRS, [["graph-edge", "bg"], ["graph-edge", "surface"], ["graph-edge", "surface-2"], ["muted", "surface"], ["muted", "surface-2"], ["term-sel", "term-bg"], ["accent", "surface"]]);
+  assert.deepEqual(GRAPHIC_PAIRS, [["graph-edge", "bg"], ["graph-edge", "surface"], ["graph-edge", "surface-2"], ["tree-link", "surface"], ["tree-link", "surface-2"], ["tree-link", "sel"], ["muted", "surface"], ["muted", "surface-2"], ["term-sel", "term-bg"], ["accent", "surface"]]);
   assert.deepEqual(PAINTED_OVER, [["md-code-bg", "bg"]]);
   assert.deepEqual(HOST_UNADJUSTED_PAIRS, ansi.map(token => [token, "term-bg"]), "the host theme's one exception: its terminal colours, unadjusted");
   assert.equal(TEXT_CONTRAST, 4.5); assert.equal(GRAPHIC_CONTRAST, 3);
@@ -262,7 +262,7 @@ for (const [name, palette] of palettes) test(`${name}: --graph-edge connectors, 
 // palettes (test/fixtures/host-theme/) go through the same inventory, with the same arithmetic, as
 // the built-in themes above. Derived colours are not pinned by value: the mixes may be tuned. What
 // is held: every pair, and the colours that pass through unchanged.
-const HOST_DECORATIVE = ["border", "tree-line", "tree-link", "sel-border", "attn-border", "attn-dot", "live", "graph-edge-coord"];
+const HOST_DECORATIVE = ["border", "tree-line", "sel-border", "attn-border", "attn-dot", "live", "graph-edge-coord"];
 for (const fixture of ["tokyo-night", "rose-pine", "hackerman", "legacy"]) test(`This computer (${fixture}): the derived palette on its base meets the whole inventory, and its terminal colours are the host's own`, () => {
   const state = hostState(fixture);
   const base = state.mode === "dark" ? dark : light;
