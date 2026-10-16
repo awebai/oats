@@ -4,6 +4,7 @@
 // working directory), so OATS writes the unit. It runs `aw custody serve` in
 // the resident's directory with PATH and HOME only: no key, no identity
 // selector. Elsewhere there is no unit, and the operator starts custody by hand.
+// The host wake broker's unit (wake-service.mjs) is built from the same parts.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -17,16 +18,30 @@ export function samePath(a, b) {
   try { return realpathSync(a) === realpathSync(b); } catch { return false; }
 }
 
-/** The unit's PATH: aw's directory (and its target's, for a linked aw), the
- *  directory of the node an npm-installed aw needs, and the system's. It
- *  uses the kernel-selected node path without resolving its stable link. Older
- *  kernels supply no OATS_NODE_BIN and keep the previous execPath fallback. */
-export function unitSearchPath(aw, env = process.env) {
-  let target = aw;
-  try { target = realpathSync(aw); } catch { /* aw itself is the target */ }
-  const node = typeof env.OATS_NODE_BIN === "string" && isAbsolute(env.OATS_NODE_BIN) ? env.OATS_NODE_BIN : process.execPath;
-  const dirs = [dirname(aw), dirname(target), dirname(node), "/usr/local/bin", "/usr/bin", "/bin"];
+/** The node a unit runs: the kernel-selected path, without resolving its
+ *  stable link. Older kernels supply no OATS_NODE_BIN and keep the previous
+ *  execPath fallback. */
+export function unitNode(env = process.env) {
+  return typeof env.OATS_NODE_BIN === "string" && isAbsolute(env.OATS_NODE_BIN) ? env.OATS_NODE_BIN : process.execPath;
+}
+
+/** A unit's PATH: each executable's directory (and its target's, for a linked
+ *  one), the directory of the node an npm-installed executable needs, the
+ *  directories of `after` (executables found where only their own directory
+ *  counts), then `fallback`, the system's. */
+export function searchPath(executables, env = process.env, { after = [], fallback = ["/usr/local/bin", "/usr/bin", "/bin"] } = {}) {
+  const dirs = executables.flatMap((file) => {
+    let target = file;
+    try { target = realpathSync(file); } catch { /* the file itself is the target */ }
+    return [dirname(file), dirname(target)];
+  });
+  dirs.push(dirname(unitNode(env)), ...after.map((file) => dirname(file)), ...fallback);
   return dirs.filter((d, i) => dirs.indexOf(d) === i).join(":");
+}
+
+/** The custody unit's PATH: aw's directories, node's and the system's. */
+export function unitSearchPath(aw, env = process.env) {
+  return searchPath([aw], env);
 }
 
 /** ai.aweb.custody.<namespace of the address>.<name> */
@@ -40,20 +55,20 @@ export function custodyLabel(address, name) {
 export function unitManager(platform) {
   return platform === "darwin" ? "launchd" : platform === "linux" ? "systemd" : null;
 }
-const unitDir = ({ platform, home, xdgConfigHome }) => platform === "darwin"
+export const unitDir = ({ platform, home, xdgConfigHome }) => platform === "darwin"
   ? join(home, "Library", "LaunchAgents")
   : join(xdgConfigHome || join(home, ".config"), "systemd", "user");
 export function unitPath(where, label) {
   return join(unitDir(where), `${label}${where.platform === "darwin" ? ".plist" : ".service"}`);
 }
 
-const xml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
-const unXml = (s) => String(s).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+export const xml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+export const unXml = (s) => String(s).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
 /** systemd expands % specifiers in every setting used here. It also expands
  *  $ variables in ExecStart= (written $$ for a literal $), but not in
  *  Environment= values, where $ has no special meaning (systemd.exec(5)). */
-const systemdValue = (s) => String(s).replace(/%/g, "%%");
-const systemdQuoted = (s) => `"${systemdValue(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+export const systemdValue = (s) => String(s).replace(/%/g, "%%");
+export const systemdQuoted = (s) => `"${systemdValue(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 
 /** The unit file's text. `path` and `home` are the only environment it sets. */
 export function renderUnit({ platform, label, aw, root, path, home, address }) {
@@ -157,7 +172,7 @@ export function foreignUnitMessage(unit, root, where) {
  *  systemctl --user and loginctl find the user's manager by. Never anything
  *  else, and none of it goes into the unit. */
 const MANAGER_ENV = ["PATH", "HOME", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"];
-function manage(env, cmd, args) {
+export function manage(env, cmd, args) {
   const managerEnv = Object.fromEntries(MANAGER_ENV.filter((k) => typeof env[k] === "string").map((k) => [k, env[k]]));
   try {
     return { ok: true, stdout: execFileSync(cmd, args, { env: managerEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30000 }) };
@@ -165,21 +180,30 @@ function manage(env, cmd, args) {
     return { ok: false, missing: e.code === "ENOENT", status: e.status, stderr: String(e.stderr || "").trim() };
   }
 }
-function managed(env, cmd, args) {
+/** manage, failing with `codes` ({unsupported, failed}) when the command is
+ *  missing or exits nonzero. */
+const RESIDENT_CODES = { unsupported: "E_RESIDENT_UNIT_UNSUPPORTED", failed: "E_RESIDENT_UNIT" };
+export function managed(env, cmd, args, codes = RESIDENT_CODES) {
   const r = manage(env, cmd, args);
-  if (r.missing) fail("E_RESIDENT_UNIT_UNSUPPORTED", `${cmd} is not available on this host`);
-  if (!r.ok) fail("E_RESIDENT_UNIT", `${cmd} ${args.join(" ")} failed${r.status != null ? ` (exit ${r.status})` : ""}${r.stderr ? `: ${r.stderr}` : ""}`);
+  if (r.missing) fail(codes.unsupported, `${cmd} is not available on this host`);
+  if (!r.ok) fail(codes.failed, `${cmd} ${args.join(" ")} failed${r.status != null ? ` (exit ${r.status})` : ""}${r.stderr ? `: ${r.stderr}` : ""}`);
   return r;
 }
 
 /** Why custody would not survive a logout on Linux, or undefined. Without
  *  systemd's lingering, a user's units stop when their last session ends. */
 export function lingerProblem({ platform, user, env }) {
+  if (lingerEnabled({ platform, user, env }) !== false) return undefined; // no systemd: the custody stage names the hand step
+  return `systemd lingering is off for ${user}, so the custody unit would stop when ${user} logs out: an administrator runs \`loginctl enable-linger ${user}\`, then rerun`;
+}
+
+/** Whether systemd keeps `user`'s units running with no session: true, false
+ *  (off, or loginctl could not say), or undefined off Linux or without loginctl. */
+export function lingerEnabled({ platform, user, env }) {
   if (platform !== "linux") return undefined;
   const r = manage(env, "loginctl", ["show-user", user, "--property=Linger"]);
-  if (r.missing) return undefined; // no systemd: the custody stage names the hand step
-  if (r.ok && /^Linger=yes$/m.test(r.stdout)) return undefined;
-  return `systemd lingering is off for ${user}, so the custody unit would stop when ${user} logs out: an administrator runs \`loginctl enable-linger ${user}\`, then rerun`;
+  if (r.missing) return undefined;
+  return r.ok && /^Linger=yes$/m.test(r.stdout);
 }
 
 /** Writes the unit when it is missing or differs, and makes sure it is loaded.
@@ -225,7 +249,7 @@ export function ensureCustodyUnit({ platform, label, aw, root, home, address, ui
 /** The pid of a unit's running process, or undefined when it is not running.
  *  Loaded is not running: a KeepAlive or Restart= unit that keeps exiting is
  *  loaded (launchd "spawn scheduled", systemd activating/auto-restart). */
-function runningPid(manager, env, uid, label) {
+export function runningPid(manager, env, uid, label) {
   if (manager === "launchd") {
     const r = manage(env, "launchctl", ["print", `gui/${uid}/${label}`]);
     // The job's own state and pid are its top-level (one-tab) lines.
