@@ -165,18 +165,21 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.doesNotMatch(r.stdout, /approv/i, "next steps never mention approving");
     assert.deepEqual(tree(dep2), ["agents/", "oats-local.yaml", "oats-lock.json"]);
 
-    // ---- #1314 (c): a soul NAMED oats-operator-expert that does not declare oats.setup is not the setup expert ----
+    // ---- #1314 (c): souls NAMED oats-operator-expert or northwind-oats-setup-expert that do not declare oats.setup
+    // are not the setup expert: with no holder, null ----
     await moveMember(fx, "data", async (work, { writeTree }) => {
       await writeTree({
         "souls/oats-operator-expert/soul.yaml": { yaml: { schemaVersion: 2, name: "oats-operator-expert", description: "Guides the setup of this workspace.", work: "directory", capabilities: {} } },
         "souls/oats-operator-expert/AGENTS.md": "# oats-operator-expert\n\nYou guide the setup.\n",
+        "souls/northwind-oats-setup-expert/soul.yaml": { yaml: { schemaVersion: 2, name: "northwind-oats-setup-expert", description: "Named by convention, holds nothing.", work: "directory", capabilities: {} } },
+        "souls/northwind-oats-setup-expert/AGENTS.md": "# northwind-oats-setup-expert\n",
       });
-    }, { message: "data: add oats-operator-expert" });
+    }, { message: "data: add oats-operator-expert and northwind-oats-setup-expert, neither holding oats.setup" });
     const dep2c = join(base, "nw2c");
     r = oats(["onboard", dep2c, "--workspace", fx.refs.agents, "--json"], { cwd: base, env, base });
     assert.equal(r.status, 0, r.stderr);
     doc = envelope(r);
-    assert.equal(doc.result.next.spawn, null, "a soul's name alone (other than the conventional one) never makes it the setup expert");
+    assert.equal(doc.result.next.spawn, null, "a soul's name alone, the conventional one included, never makes it the setup expert");
     assert.deepEqual(Object.keys(doc.result.next).sort(), ["clone", "souls", "spawn"], "onboardApi 2: no new field");
     r = oats(["onboard", join(base, "nw2d"), "--workspace", fx.refs.agents], { cwd: base, env, base });
     assert.equal(r.status, 0, r.stderr);
@@ -224,7 +227,7 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
 // Among the souls onboarding lists: the one named `<workspace name>-oats-setup-expert`; else the first, by
 // name, whose own soul.yaml declares oats.setup (`{ from: … }`, any source; `off` does not count); else
 // none. Same JSON shape (onboardApi 2): text or null.
-test("#1314: next.spawn names the conventional <workspace>-oats-setup-expert first, else the first soul declaring oats.setup by name (never one that turns it off), else null", { timeout: 300_000 }, async (t) => {
+test("#1314: among souls declaring oats.setup (never one that turns it off), next.spawn names the conventional <workspace>-oats-setup-expert first, else the first by name, else null; a name alone never counts", { timeout: 300_000 }, async (t) => {
   const fx = v2Deployment({
     t, name: "west",
     souls: {
@@ -251,9 +254,15 @@ test("#1314: next.spawn names the conventional <workspace>-oats-setup-expert fir
   assert.match(r.stdout, /^ {2}3\. Spawn b-guide, this workspace's OATS setup expert\n {5}\(it holds oats\.setup\), to guide the rest:\n {7}oats spawn b-guide --dir \S*first-holder-text$/m);
   assert.doesNotMatch(r.stdout, /No soul here holds|spawn any listed soul/);
 
-  // (a): the conventional name wins over holders that sort before it.
-  fx.commit({ "souls/west-oats-setup-expert/soul.yaml": { yaml: { schemaVersion: 2, name: "west-oats-setup-expert", description: "Sets up west.", work: "directory", capabilities: { "oats.setup": { from: "package" } } } },
-    "souls/west-oats-setup-expert/AGENTS.md": "# west-oats-setup-expert\n" }, "add the conventional setup expert");
+  // The conventional name alone does not count: a west-oats-setup-expert that does not declare oats.setup is skipped.
+  const conventionalSoul = (capabilities) => ({ "souls/west-oats-setup-expert/soul.yaml": { yaml: { schemaVersion: 2, name: "west-oats-setup-expert", description: "Sets up west.", work: "directory", capabilities } },
+    "souls/west-oats-setup-expert/AGENTS.md": "# west-oats-setup-expert\n" });
+  fx.commit(conventionalSoul({}), "add a conventionally named soul without oats.setup");
+  ({ dir, r } = onboard("conventional-undeclared", true));
+  assert.equal(r.json().result.next.spawn, `oats spawn b-guide --dir ${dir}`, "a name without the declaration falls through to the first holder");
+
+  // (a): the conventional name, declaring oats.setup, wins over holders that sort before it.
+  fx.commit(conventionalSoul({ "oats.setup": { from: "package" } }), "the conventional soul declares oats.setup");
   ({ dir, r } = onboard("conventional", true));
   assert.equal(r.json().result.next.spawn, `oats spawn west-oats-setup-expert --dir ${dir}`);
   ({ r } = onboard("conventional-text", false));

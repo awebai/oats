@@ -900,14 +900,18 @@ same argument, given once). The ref is checked before anything is written.
   `oats-operator-expert` was named). Among the souls onboarding lists
   (confirmed members', external and package souls; standalone, the
   repository's own), the setup expert is:
-  1. the soul named `<workspace name>-oats-setup-expert`, where the
-     workspace name is the `name:` of `oats-workspace.yaml`
-     (`sync.workspace.name`); a standalone view has no workspace name, so
-     this step does not apply there;
-  2. otherwise the first soul by name whose own `soul.yaml` declares
-     `oats.setup` under `capabilities:` as `{ from: … }`, from any source
-     (`package`, `here` or a member key); `oats.setup: off` does not count;
+  1. the soul named `<workspace name>-oats-setup-expert` that declares
+     `oats.setup`, where the workspace name is the `name:` of
+     `oats-workspace.yaml` (`sync.workspace.name`); a standalone view has no
+     workspace name, so this step does not apply there;
+  2. otherwise the first soul by name that declares `oats.setup`;
   3. otherwise none: `null`.
+
+  A soul declares `oats.setup` when its own `soul.yaml` names it under
+  `capabilities:` as `{ from: … }`, from any source (`package`, `here` or a
+  member key); `oats.setup: off` does not count. A soul is never chosen by
+  its name alone: one named `<workspace name>-oats-setup-expert` that does
+  not declare `oats.setup` falls through to step 2.
 
   Only the soul's own declaration is read, not its resolved composition:
   `oats.setup` that reaches a soul only through the workspace's `defaults:`

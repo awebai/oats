@@ -14,10 +14,11 @@
 
 - **OATS 0.61.0: `oats onboard` names the workspace's OATS setup expert**
   ([#1314](https://github.com/awebai/oats/issues/1314)). Its last next step,
-  and `next.spawn` in `--json`, name the soul called
-  `<workspace name>-oats-setup-expert`, else the first soul by name whose own
-  `soul.yaml` declares `oats.setup` (from any source; `off` does not count),
-  else none, when the text suggests adding that conventional soul. Only the
+  and `next.spawn` in `--json`, name a soul whose own `soul.yaml` declares
+  `oats.setup` (from any source; `off` does not count): the one called
+  `<workspace name>-oats-setup-expert`, else the first by name, else none,
+  when the text suggests adding that conventional soul. A name alone never
+  counts. Only the
   soul's own declaration is read: `oats.setup` given only through workspace
   defaults is not seen. A standalone view has no workspace name, so only
   the declaration counts there. `oats help` describes the step the same way

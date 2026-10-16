@@ -3670,10 +3670,10 @@ Next:
 }
 
 /** The soul `oats onboard` names as the workspace's OATS setup expert (awebai/oats#1314), among the
- *  souls a spawn can name (soulCandidates): the one named `conventional`
+ *  souls a spawn can name (soulCandidates) whose own soul.yaml declares `capability` (oats.setup) with
+ *  `{ from: … }`, from any source (`off` is no declaration): the one named `conventional`
  *  (`<workspace name>-oats-setup-expert`, null in a standalone view, which has no workspace name);
- *  else the first, by name, whose own soul.yaml declares `capability` (oats.setup) with `{ from: … }`,
- *  from any source (`off` is no declaration); else null. Only the soul's own declaration is read, never
+ *  else the first by name; else null. A soul is never chosen by its name alone. Only the soul's own declaration is read, never
  *  a resolution: oats.setup that reaches a soul through the workspace defaults alone is not seen. → the
  *  name to spawn it by: the bare name, else `<member>/<soul>` (`<package>/<soul>`), else
  *  `<member repo key>/<soul>`, the first that names this soul alone. */
@@ -3686,7 +3686,7 @@ function setupExpertOf(discovery, { conventional, capability }) {
   };
   const order = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
   const entries = candidates.map((c) => c.entry).sort((a, b) => order(a.name, b.name) || order(qualifiedSoulName(a), qualifiedSoulName(b)));
-  const chosen = (conventional && entries.find((e) => e.name === conventional)) || entries.find(declares);
+  const chosen = (conventional && entries.find((e) => e.name === conventional && declares(e))) || entries.find(declares);
   if (!chosen) return null;
   // The shortest name a spawn resolves to exactly this soul: two members can share a repository
   // basename (github.com/a/agents, github.com/b/agents), so the last form is the full repo key.
