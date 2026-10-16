@@ -66,6 +66,9 @@ function fixture(t, { healthy = false, dependentNative = false } = {}) {
       const session=new CaptureWorkSession(start,{owner:'fixture',selection:'fixture',now:()=>options.now,
         indexEnabled:options.indexEnabled??true,
         unit:{limit:1,maxRecords:options.records??1}});
+      // This fixture's discovery is the setup's empty, complete page. A later
+      // pass that starts a new sweep gets the same discovery here.
+      if(options.discover&&!session.queue.current().discovered)session.queue.add([],null,{complete:true});
       const transaction=session.state.transaction.bind(session.state);let logged=null;
       session.state.transaction=fn=>{
         const result=transaction(fn),admission=session.state.get('capture-admission','active');
@@ -84,25 +87,30 @@ function fixture(t, { healthy = false, dependentNative = false } = {}) {
         start.budget.sample=()=>{if(removed)start.budget.reason='deadline';return sample();};}
       if(options.stopAtLock || options.orphanAtLock)session.store.withStreamLock=()=>{
         start.budget.reason=options.orphanAtLock?'interrupted':'deadline';throw new CaptureStop(start.budget.reason);};
+      // A delete that reports a full batch but removes nothing: a unit that
+      // commits no progress while its allocation stays unfinished.
+      if(options.stuck){const prepare=session.state.db.prepare.bind(session.state.db);
+        session.state.db.prepare=sql=>/DELETE FROM (recovery_chunks|transcript_prefix)/.test(sql)?{run:(...args)=>({changes:args.at(-1)})}:prepare(sql);}
       if(options.failAccounting){const record=session.run.record.bind(session.run);
         session.run.record=(delta,options)=>{record(delta,options);throw Error('injected cleanup accounting failure');};}
       try{
         if(options.single){
           const result=session.cleanup.advance(session.run,start,{now:options.now,retry:options.retry??false,maxRecords:options.records??4});
           fs.appendFileSync(join(root,'units'),JSON.stringify(result)+'\\n');
-          if(options.repeat){const again=session.cleanup.advance(session.run,start,{now:options.now,retry:true,maxRecords:options.records??4});
+          if(options.repeat){const again=session.cleanup.advance(session.run,start,{now:options.now,retry:options.repeatRetry??true,maxRecords:options.records??4});
             fs.writeFileSync(join(root,'repeat'),JSON.stringify(again));}
           return session.finish({reason:result.stopped?'deadline':'input'});
         }
-        for(let n=0;n<4;n++){
+        for(let n=0;n<(options.steps??4);n++){
           const result=session.step();
           fs.appendFileSync(join(root,'events'),JSON.stringify({runId:session.run.id,stage:result.stage,
             selected:result.selected??0,cleanup:result.cleanupWork?.selected??0,
-            streams:(result.results??result.streams??[]).map(row=>row.stream)})+'\\n');
+            streams:[result.results,result.streams].find(Array.isArray)?.map(row=>row.stream)??[]})+'\\n');
           if(result.resetRequired)return session.yieldWorker({resetRequired:true});
           if(result.finalize)return session.finish({reason:'deadline'});
           if(result.stopped)return session.yieldWorker();
-          if(result.idle)return session.finish();
+          // An ordinary command pass decides completion on idle.
+          if(result.idle)return options.completeOnIdle?session.complete():session.finish();
         }
         return session.yieldWorker();
       }catch(error){fs.writeFileSync(join(root,'error'),error.stack);throw error;}
@@ -312,6 +320,46 @@ test('cooperative stop retires admission without backoff and finalization does n
   assert.equal(orphan.state(s => [...s.entries('capture-cleanup-retry')][0].value.attempts), 1);
 });
 
+test('one ordinary pass finishes a deleting allocation larger than one cleanup unit', async t => {
+  const f = fixture(t); assert.equal((await f.seed()).outcome, 'complete');
+  // Two chunk and two prefix rows per unit: 7 chunk rows need four units.
+  const result = await f.run({ records: 4, steps: 12, completeOnIdle: true });
+  assert.equal(result.outcome, 'complete', f.diagnostic(result));
+  assert.equal(f.rows(), 0);
+  assert.equal(f.state(s => s.get('recovery-allocation', 'a')), null);
+  assert.equal(f.state(s => s.get('recovery-stage', 'a')), null);
+  const status = readCaptureStatus(f.root), units = fs.readFileSync(join(f.root, 'events'), 'utf8').trim().split('\n').map(JSON.parse)
+    .filter(row => row.runId === status.lastRun.id && row.stage === 'cleanup' && row.selected);
+  assert.equal(units.length, 4);
+});
+
+test('a cursor past the only unfinished allocation reselects it in the same run', async t => {
+  const f = fixture(t); assert.equal((await f.seed()).outcome, 'complete');
+  const partial = await f.run({ single: true, repeat: true, repeatRetry: false, records: 4 });
+  assert.equal(partial.outcome, 'partial', f.diagnostic(partial));
+  const first = JSON.parse(fs.readFileSync(join(f.root, 'units'), 'utf8').trim()), again = JSON.parse(fs.readFileSync(join(f.root, 'repeat'), 'utf8'));
+  assert.equal(first.selected, 1); assert.equal(first.job.key, 'a');
+  assert.equal(again.selected, 1, JSON.stringify(again)); assert.equal(again.job.key, 'a');
+  assert.equal(f.rows(), 4);
+});
+
+test('a cleanup unit that commits no progress is not reselected in its pass, and is in the next', async t => {
+  const f = fixture(t); assert.equal((await f.seed()).outcome, 'complete');
+  const selections = runId => fs.readFileSync(join(f.root, 'events'), 'utf8').trim().split('\n').map(JSON.parse)
+    .filter(row => row.runId === runId && row.stage === 'cleanup' && row.selected).length;
+  // The first pass's first unit commits the prefix-proof deletion, its second
+  // commits nothing and ends that allocation's turn; the next pass, with the
+  // guard reset, tries it once. Each pass then goes idle with input pending.
+  for (const expected of [2, 1]) {
+    const result = await f.run({ stuck: true, discover: true, records: 4, steps: 12, completeOnIdle: true });
+    assert.equal(result.outcome, 'partial', f.diagnostic(result)); assert.equal(result.reason, 'input');
+    assert.equal(selections(readCaptureStatus(f.root).lastRun.id), expected);
+  }
+  assert.equal(f.rows(), 12);
+  assert.equal(f.state(s => s.get('recovery-allocation', 'a').phase), 'deleting');
+  assert.deepEqual(f.state(s => [...s.entries('capture-cleanup-retry')]), []);
+});
+
 test('cleanup cursor bounds active-allocation scans and wraps durably without progress or success', t => {
   const f = fixture(t);
   f.state(state => state.transaction(() => {
@@ -321,10 +369,12 @@ test('cleanup cursor bounds active-allocation scans and wraps durably without pr
   }));
   const start = { workerNonce: 'fixture-worker', pass: { runId: 'fixture-run', finalize: false },
     budget: { check() {}, sample: () => null } };
-  for (const count of [128, 128, 4, 128]) f.state(state => {
+  // The wrapping call also scans one page from the start for an unfinished
+  // allocation the cursor passed: 4 + 128 rows, still bounded.
+  for (const count of [128, 128, 4 + 128, 128]) f.state(state => {
     const queue = new CaptureCleanupQueue(f.store, state);
     const result = queue.advance({ state, id: 'fixture-run', record() { assert.fail('enumeration is not processing progress'); } }, start, { now });
-    assert.equal(result.scanned, count); assert.equal(result.selected, 0); assert.equal(result.complete, count === 4);
+    assert.equal(result.scanned, count); assert.equal(result.selected, 0); assert.equal(result.complete, count === 4 + 128);
     assert.equal(queue.active(), null);
   });
 });
