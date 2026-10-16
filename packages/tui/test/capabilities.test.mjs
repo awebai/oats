@@ -7,8 +7,8 @@ process.env.TZ = "UTC";
 // capabilities-view.test.mjs's.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { capabilitiesOf, capabilityCatalogFailure, model, paletteItems, soulsOf } from "../lib/model.mjs";
-import { CAPABILITY_COPY, observedEntry, panelInstances, rosterRows } from "../lib/client.mjs";
+import { capabilitiesOf, model, paletteItems, soulsOf } from "../lib/model.mjs";
+import { CAPABILITY_COPY, catalogFailure, observedEntry, panelInstances, rosterRows } from "../lib/client.mjs";
 import { reduce } from "../lib/store.mjs";
 import { CLI, DEPLOYMENT, catalogEntry, catalogSoul, instanceRow, rosterOf, soulsTold, stateOf } from "./helpers.mjs";
 
@@ -111,7 +111,7 @@ test("what the loop holds of the table decides what the view says: reading befor
   const reason = { code: "E_CLI_FAILED", message: "oats capabilities exited 1" };
   const failed = view(told(opened, capabilitiesEntry(null, { reason })));
   assert.deepEqual([failed.state, failed.failure, failed.list], ["failed", "Couldn't read this workspace's capabilities: oats capabilities exited 1", []]);
-  assert.equal(capabilityCatalogFailure({ code: "E_CLI_FAILED", message: "" }), "Couldn't read this workspace's capabilities.", "no message: the sentence ends in a full stop");
+  assert.equal(catalogFailure("capabilities", { code: "E_CLI_FAILED", message: "" }), "Couldn't read this workspace's capabilities.", "no message: the sentence ends in a full stop");
   assert.equal(view(told(opened, capabilitiesEntry(null, { reason }), { reading: true })).state, "reading", "a retry in flight after a failure");
   assert.equal(view(told(opened, capabilitiesEntry([]))).state, "none");
   const rows = view(shown());

@@ -1740,6 +1740,30 @@ test("the Souls view shown before the workspace was read waits for its first rea
   assert.equal(await r.status, 0);
 });
 
+test("r in the Souls view keeps the souls it holds while it reads, and a read that fails keeps them under the failure (#1301)", async () => {
+  const r = await started();
+  r.reader.answer(ENTRY);
+  r.stdin.type("2"); await settle();
+  r.soulReads[0].answer(soulsDocument(["held-soul"])); await settle();
+  assert.match(screenOf(r), /held-soul/);
+  r.stdin.type("r"); await settle();
+  assert.equal(r.soulReads.length, 2, "r: one read");
+  assert.match(screenOf(r), /held-soul/, "the souls stand while it reads");
+  assert.doesNotMatch(screenOf(r), /Reading souls…/);
+  assert.equal(r.soulReads[1].asked.maxAge, 0, "a live read");
+  r.stdin.type("r"); await settle();
+  assert.equal(r.soulReads.length, 2, "r while it reads starts nothing");
+  r.soulReads[1].answer({ ok: false, reason: { code: "E_CLI_FAILED", message: "re-read failed" } }); await settle();
+  const screen = screenOf(r);
+  assert.match(screen, /held-soul/, "the last good souls are kept");
+  // The failure's heading above the rows, and its sentence whole in the detail (wrapped there).
+  assert.match(screen, / Souls +Couldn't read… +read \d\d:\d\d:\d\d │/, "under the failure's heading");
+  assert.match(screen, /Couldn't read this workspace's souls:/);
+  assert.match(screen, /│ +re-read failed/);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
 // ── The Capabilities view's table (docs/tui.md, "The Capabilities view"; Spec 7, Done 1 and 4) ──────
 
 /** `oats capabilities --json` answering `names`, member capabilities of one repository, as the kernel prints it. */
