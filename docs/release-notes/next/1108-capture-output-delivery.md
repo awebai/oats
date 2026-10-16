@@ -1,4 +1,4 @@
-### Fixed
+## Fixed
 
 - Capture CLI reporting now finishes naturally so piped stdout and stderr can
   drain before exit. This preserves complete health samples, truncation banners,
