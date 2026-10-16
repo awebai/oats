@@ -44,9 +44,9 @@ order:
    never another instance's window. `oats session attach`, the TUI (OATS
    0.52.0 and later) and the Desktop show your whole window, so the new pane
    takes the person's keys. Give a deployment command `-c D`, and drop the
-   instance identity from its environment. `oats aweb setup` runs this way
-   for every act, secret or not, because it refuses to run inside an
-   instance. Two examples, aweb's API key and an invite token:
+   instance identity from its environment. `oats aweb setup` is an operator
+   act that runs in `D`, so run it this way for every act, secret or not.
+   Two examples, aweb's API key and an invite token:
 
    ```text
    tmux split-window -P -F '#{pane_id}' -v -l 6 -t "$TMUX_PANE" -c D "env -u OATS_INSTANCE -u OATS_INSTANCE_HOME -u OATS_HOME -u PI_AGENT_INSTANCE -u PI_AGENT_HOME sh -c 'stty -echo; printf \"aweb API key: \"; read -r AWEB_API_KEY; stty echo; export AWEB_API_KEY; oats aweb setup --soul S'"
@@ -54,7 +54,9 @@ order:
    ```
 
    - **Before you open it,** tell the person what to type there. Open it only
-     while they are at the screen.
+     while they are at the screen and already have your terminal open in the
+     Desktop, the TUI or `oats session attach`: the Desktop and the TUI
+     don't open a terminal on a split window.
    - **While it is open,** your window has two panes, and OATS refuses it:
      wakes and `oats session input` can't reach you, and status reports you
      `unreachable`. The pane closes when its command ends.
