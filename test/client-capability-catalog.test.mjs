@@ -42,3 +42,73 @@ test('the default kernel read words its refusals with the catalog\'s terms, and 
   assert.equal(entry.reason, null);
   assert.equal(entry.key, capabilityCatalogKey(CLI, WS));
 });
+
+const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+/** A catalog whose kernel read is counted, and answers when `gate` (if given) settles. */
+function catalog({ gate = null, answer = capabilities('one') } = {}) {
+  const calls = [];
+  const made = createCapabilityCatalog({ terms, invoke: async (cli, request) => { calls.push(request); if (gate) await gate.promise; return { ok: true, document: structuredClone(answer) }; } });
+  return { calls, catalog: made };
+}
+const names = entry => entry.capabilities.capabilities.map(row => row.name);
+
+test('settle answers { entry, pending } at once: on a cold key, nothing held and the projected read it started', async () => {
+  const gate = deferred(), { calls, catalog: made } = catalog({ gate });
+  const cold = made.settle(D, CLI, WS, { maxAge: 30 });
+  assert.deepEqual(Object.keys(cold), ['entry', 'pending']);
+  assert.equal(cold.entry, null, 'nothing is held');
+  assert.ok(cold.pending instanceof Promise, 'the read it started');
+  assert.deepEqual(calls, [{ action: 'capabilities', context: D, maxAge: 30 }]);
+  // A second settle for the same key, the read still in the air: it joins it, and reads nothing more.
+  const joined = made.settle(D, CLI, WS);
+  assert.equal(joined.entry, null);
+  assert.ok(joined.pending);
+  assert.equal(calls.length, 1);
+  gate.resolve();
+  const landed = await cold.pending;
+  // The projection is the read path's: the same fields, `refreshing` included.
+  assert.deepEqual(Object.keys(landed), ['key', 'capabilities', 'reason', 'at', 'observedAt', 'stale', 'refreshing']);
+  assert.deepEqual([landed.key, landed.reason, landed.stale, landed.refreshing, names(landed)], [capabilityCatalogKey(CLI, WS), null, false, false, ['one']]);
+  assert.deepEqual(await joined.pending, landed);
+});
+
+test('settle answers { entry, pending } at once: on a held key, the projected entry and nothing pending', async () => {
+  const { calls, catalog: made } = catalog();
+  await made.settle(D, CLI, WS).pending;
+  const held = made.settle(D, CLI, WS);
+  assert.equal(held.pending, null, 'nothing is read for a key it holds');
+  assert.equal(calls.length, 1);
+  assert.deepEqual([held.entry.key, held.entry.reason, held.entry.refreshing, names(held.entry)], [capabilityCatalogKey(CLI, WS), null, false, ['one']]);
+  assert.deepEqual(held.entry, made.held(D), 'the same projection as what is held');
+  // The state moved: the held entry (another key's) answers now, and the read for the new key is pending.
+  const moved = { ...WS, workspace: { key: 'oats', commit: 'c2' } };
+  const next = made.settle(D, CLI, moved);
+  assert.equal(next.entry.key, capabilityCatalogKey(CLI, WS), 'what is held is the old state\'s');
+  assert.equal(next.entry.refreshing, true, 'and a read is in the air');
+  assert.equal((await next.pending).key, capabilityCatalogKey(CLI, moved));
+  assert.equal(calls.length, 2);
+});
+
+test('two capability catalogs share nothing: no flight, no held entry', async () => {
+  const gate = deferred(), one = catalog({ gate, answer: capabilities('one') }), other = catalog({ answer: capabilities('two') });
+  // A flight of one is neither joined nor seen by the other.
+  const flying = one.catalog.settle(D, CLI, WS);
+  assert.ok(flying.pending);
+  assert.equal(one.catalog.refreshing(D), true);
+  assert.equal(other.catalog.refreshing(D), false, 'the other has nothing in the air');
+  const own = other.catalog.settle(D, CLI, WS);
+  assert.ok(own.pending, 'the other starts its own read');
+  assert.equal(other.calls.length, 1);
+  assert.deepEqual(names(await own.pending), ['two']);
+  assert.equal(one.catalog.held(D), null, 'the first holds nothing yet');
+  gate.resolve();
+  assert.deepEqual(names(await flying.pending), ['one']);
+  // Each serves its own held entry for the same key, without reading again.
+  assert.deepEqual(names(one.catalog.settle(D, CLI, WS).entry), ['one']);
+  assert.deepEqual(names(other.catalog.settle(D, CLI, WS).entry), ['two']);
+  assert.deepEqual([one.calls.length, other.calls.length], [1, 1]);
+  // Forgetting in one leaves the other's entry.
+  one.catalog.forgetAll();
+  assert.equal(one.catalog.held(D), null);
+  assert.deepEqual(names(other.catalog.held(D)), ['two']);
+});

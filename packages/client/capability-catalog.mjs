@@ -50,12 +50,19 @@ export function createCapabilityCatalog({ terms, exec, invoke = (cli, options) =
   const catalog = createKeyedCatalog({ read, retryMs: CAPABILITY_CATALOG_RETRY_MS, now });
   const project = (deployment, entry) => entry && { key: entry.key, capabilities: entry.value, reason: entry.reason, at: entry.at, observedAt: entry.observedAt, stale: entry.stale, refreshing: catalog.refreshing(deployment) };
   const key = (cli, workspaceStatus) => capabilityCatalogKey(cli, workspaceStatus);
+  /** Synchronous decision for this workspace state, as the soul catalog's: `entry` is what is held now and
+   * `pending` the read it started or joined (null when none), both projected. Never awaits. */
+  function settle(deployment, cli, workspaceStatus, options = {}) {
+    const { entry, pending } = catalog.settle(deployment, cli, key(cli, workspaceStatus), options);
+    return { entry: project(deployment, entry), pending: pending && pending.then(landed => project(deployment, landed)) };
+  }
   return {
     /** Cold cycle: start the read alongside the roster reads, before the key is known. */
     prefetch(deployment, cli, options = {}) { return catalog.prefetch(deployment, cli, options); },
     /** Bind this cycle's key: a read starts only when the held table is not for this state (or its
      * failure is old enough to retry) and none is in flight. Never awaits. */
     ensure(deployment, cli, workspaceStatus, options = {}) { catalog.settle(deployment, cli, key(cli, workspaceStatus), options); },
+    settle,
     /** The held table, immediately, whenever it is a healthy answer — a table past HELD_TTL_MS
      * included: then this request starts (or joins) one re-read behind it and the answer says
      * `refreshing` (stale-while-revalidate, request-driven: a Workspace-tab visit never waits for
