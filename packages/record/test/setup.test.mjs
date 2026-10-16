@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { readCaptureStatus } from "../lib/capture-status.mjs";
 
 const PKG = dirname(dirname(fileURLToPath(import.meta.url)));
 const OWNER = "fixture-owner";
@@ -221,6 +222,10 @@ test("the first capture pass runs under the node that runs setup, not under the 
   assert.match(r.stdout, /running first capture pass/);
   assert.equal(existsSync(join(dirname(node), "args.txt")), false, "the written node was not started");
   assert.ok(existsSync(join(home, "record")), "the pass ran, under process.execPath");
+  const status = readCaptureStatus(join(home, "record"));
+  assert.equal(status.lastRun.trigger, "setup");
+  assert.notEqual(status.lastRun.pid, r.pid, "the admitted worker, not setup, writes the receipt");
+  assert.equal(status.lastRun.outcome, "complete");
 });
 
 test("with no variable, an empty one or a path that is not absolute, the node written is process.execPath", () => {

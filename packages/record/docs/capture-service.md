@@ -1008,7 +1008,7 @@ failed for a current-pass failure: it supplies no fresh index/all-stage proof.
 Prior success/failure history and confirmed counts remain distinct from that
 decision. The ordinary CLI uses this mode without changing public synchronous
 APIs or protected exact-home/file receipts. Explicit hooks can select this mode;
-setup first-pass/service integration and hosted qualification remain separate obligations.
+installed service integration and hosted qualification remain separate obligations.
 
 ### Fixed private command entry and issue preparation
 
@@ -1064,8 +1064,8 @@ Ordinary capture, `--sessions-only`, `--aw-only`, `--no-index` and
 `--retry-set-aside` await the fixed private entry. The CLI copies home, cwd and
 the selected native location environment into its plan. Quiet controls output,
 never trigger identity: ordinary and explicit retry use `manual`; the first
-foreground watch pass and later ticks use `watch`. Legacy quiet hook argv and
-the setup first-pass caller remain manual until explicitly migrated; quiet
+foreground watch pass and later ticks use `watch`. Legacy quiet hook argv
+remains manual; the setup first pass explicitly uses `setup`. Quiet
 never invents hook attribution or a timeout cause. `--reset-cursors` remains reset-only;
 exact-home/file proofs and public synchronous libraries keep their paths.
 
@@ -1096,7 +1096,7 @@ The small-heap algorithm fixture invokes synchronous capture/index libraries
 directly: lowering the CLI parent's heap cannot lower its fixed-policy worker
 heap. Actual CLI fixtures separately cover worker routing, selected capture,
 append-only catch-up, recovery receipts, overlap and foreground scheduling.
-Setup first-pass/service migration and health/doctor remain unfinished;
+Installed service migration and health/doctor remain unfinished;
 fresh-audit/parent metadata/storage/synchronization and full hosted manager and
 rollback qualification are still required before service acceptance.
 
@@ -1142,5 +1142,34 @@ fields are preserved; dry-run does not write settings. The install hint uses
 the same scheduling fields while retaining `--sessions-only --no-index`.
 This changes persisted settings from `async:true`/`timeout:120`; installing a
 CLI alone does not rewrite those settings. These forthcoming changes do not
-claim hook migration shipped in 0.56.0–0.58.0, nor complete periodic service or
-setup first-pass trigger migration.
+claim hook migration shipped in 0.56.0–0.58.0, nor complete periodic service
+migration.
+
+### Setup first pass
+
+After its requested installation steps, non-dry setup awaits the same fixed
+private supervisor as ordinary capture, with explicit `setup` trigger,
+all sources and indexing enabled. It copies caller home/cwd and native location
+environment; the admitted worker resolves source directories. The first pass
+uses the running `process.execPath`, not the stable Node pathname being written
+into future hooks or manager definitions. `--no-service` skips only manager
+installation; it does not skip this pass. `--dry-run` starts no worker and
+creates no capture store, lock or status.
+
+Setup retains the foreground privacy-file preflight before lock acquisition.
+Shared foreground presentation uses only the matching worker projection for
+counts and pending state. Complete and partial return zero with their actual
+outcome; overlap returns zero with the holder/recovery and skip message without
+rewriting the holder's receipt. Operational failures and missing projections
+return nonzero; absent counts are unknown, never fabricated zero. Initialization,
+reclamation and release diagnostics retain their existing recovery guidance.
+The supervisor owns signal handling, child reaping and lock release; setup is
+not another status writer. Ordinary/retry text and JSON, protected exact-home/file
+receipts and public synchronous APIs retain their contracts.
+
+This first-pass routing does not convert the installed legacy watcher, implement
+periodic `service` attribution, establish disabled/foreign manager ownership or
+provide health/doctor acceptance. Those manager/conversion checks and hosted
+Linux/manager/rollback qualification remain required. The shared presentation
+adds no status transaction or counter reconstruction; existing source/audit
+allowance, reservation and actual storage/synchronization costs remain gates.

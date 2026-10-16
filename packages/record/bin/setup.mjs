@@ -25,6 +25,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFile
 import { homedir, hostname, platform } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { captureDefaultRootPlan } from "../lib/capture-default-roots.mjs";
+import { captureCommandPass } from "../lib/capture-command-output.mjs";
+import { IgnoreError, loadIgnore } from "../lib/ignore.mjs";
 
 // Config files deserve the same crash safety as the store's objects:
 // write-then-rename, never a partial write in place.
@@ -373,6 +376,16 @@ if (dry) {
   console.log("dry run: no first capture pass");
 } else {
   console.log("running first capture pass (the initial one can take minutes)...");
-  const pass = spawnSync(process.execPath, [CAPTURE, "--owner", owner], { stdio: "inherit" });
-  process.exit(pass.status ?? 1);
+  const root = process.env.TURN_RECORD_ROOT ?? join(homedir(), ".turn-record");
+  try {
+    // Keep the foreground privacy preflight before lock acquisition. Only the
+    // admitted worker resolves source roots and writes matching run receipts.
+    loadIgnore(root);
+    await captureCommandPass(root, { owner,
+      plan: captureDefaultRootPlan({ home: homedir(), cwd: process.cwd(), env: process.env }),
+      indexEnabled: true, trigger: "setup", retrySetAside: false });
+  } catch (error) {
+    console.error(error instanceof IgnoreError ? error.message : `capture pass failed: ${error.message}`);
+    process.exitCode = 1;
+  }
 }

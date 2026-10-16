@@ -31,7 +31,7 @@ import { IgnoreError, ignoreFilePath, loadIgnore } from "../lib/ignore.mjs";
 import { CAPTURE_SOURCES, captureHealth, resetSourceCursors, writeCaptureStatus } from "../lib/capture-state.mjs";
 import { acquireCaptureLock } from "../lib/capture-lock.mjs";
 import { captureDefaultRootPlan, resolveCaptureDefaultRoots } from "../lib/capture-default-roots.mjs";
-import { runCaptureCommand } from "../lib/capture-command.mjs";
+import { captureCommandPass, reportLockInitializationFailure, releaseDetail } from "../lib/capture-command-output.mjs";
 import { captureWatchQueue } from "../lib/capture-watch.mjs";
 import { launchCaptureHook } from "../lib/capture-hook.mjs";
 
@@ -283,29 +283,6 @@ function log(...parts) {
   if (!quiet) console.log(...parts);
 }
 
-function reportLockInitializationFailure(err) {
-  if (!err.lockCleanup) return;
-  const c = err.lockCleanup;
-  const outcome = c.removed ? "the initializing lock was removed"
-    : c.reason === "gone" ? "the initializing lock was already gone (removed by another party)"
-    : c.reason === "replaced" ? (c.owner
-      ? `the lock now belongs to pid ${c.owner.pid} (started ${c.owner.startedAt || "?"}) and was left alone`
-      : "the lock directory changed or its identity could not be verified, no owner record was readable, and it was left alone")
-    : `the initializing lock could NOT be removed${c.error ? ` (${c.error})` : ""}; ${c.recovery}`;
-  console.error(`capture: could not write the owner record of ${c.path}: ${err.message}; ${outcome}`);
-}
-
-function reportReclaimedLock(r) {
-  if (r) console.error(`capture: reclaimed ${r.path} from pid ${r.pid}, which died (started ${r.startedAt || "?"})`);
-}
-
-function releaseDetail(r) {
-  return r.reason === "gone" ? "it was already removed by another party (an operator recovery?); nothing to release"
-    : r.reason === "not-owner" ? `it now belongs to pid ${r.owner.pid} (started ${r.owner.startedAt || "?"}); left alone`
-    : r.reason === "unknown-owner" ? `its owner record is missing or unreadable, so it may be an operator removal in progress or a newer pass initializing; left alone; ${r.recovery}`
-    : `${r.error ? `${r.error}; ` : ""}${r.recovery}`;
-}
-
 /** Take the root's single-run lock, or say who holds it. A hook-triggered
  *  pass that finds it held exits 0: the holder's pass, or the next one,
  *  reconciles the same sessions.
@@ -368,33 +345,9 @@ async function pass({ retry = false, trigger = "manual" } = {}) {
   // taken so that exit never leaves the lock behind. The worker independently
   // reloads privacy rules; this preflight supplies the existing actionable error.
   loadIgnoreOrExit(root);
-  let result;
-  try {
-    result = await runCaptureCommand(root, { owner, plan: commandPlan(), indexEnabled: !args["no-index"], trigger, retrySetAside: retry });
-  } catch (error) {
-    // Acquisition and release failures retain their operator recovery, rather
-    // than being hidden behind an absent worker receipt.
-    reportLockInitializationFailure(error);
-    reportReclaimedLock(error.reclaimedLock);
-    if (error.release) console.error(`capture: did not release lock at ${root} (${error.release.reason}): ${releaseDetail(error.release)}`);
-    throw error;
-  }
-  reportReclaimedLock(result.reclaimedLock);
-  if (result.outcome === "overlap") {
-    const line = `capture: another pass holds ${root}: ${result.held.recovery}; skipping this pass`;
-    if (result.held.liveness === "alive") log(line); else console.error(line);
-    return { skipped: true };
-  }
-  if (result.exitCode !== 0 || result.outcome === "failed")
-    throw new Error(`capture worker failed (${result.reason ?? "io"}); ${result.receipt ? "see capture health for confirmed progress" : "matching worker receipt unavailable; appended count is unknown"}`);
-  const receipt = result.receipt;
-  if (!receipt || !Number.isSafeInteger(receipt.appended) || receipt.appended < 0 || typeof receipt.pending !== "boolean")
-    throw new Error("matching worker receipt unavailable; appended count is unknown");
-  log(`capture: ${receipt.appended} new turns; ${result.outcome}${result.reason ? ` (${result.reason})` : ""}`);
-  if (!args["no-index"]) log(result.outcome === "complete" ? "index: updated" : "index: pending; see capture health");
   // Recovery JSON keeps its existing small shape. Never read a later status
   // file after releasing the lock to reconstruct this pass's counters.
-  return { appended: receipt.appended, pending: receipt.pending };
+  return captureCommandPass(root, { owner, plan: commandPlan(), indexEnabled: !args["no-index"], trigger, retrySetAside: retry }, { log });
 }
 
 /** A final capture of exact files, one batch per format, under the lock: counts into `outcome`, issues into

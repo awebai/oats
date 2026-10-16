@@ -124,8 +124,11 @@ for the launcher, while capture runs detached without its output pipes. Setup
 refreshes these fields even when the owned command already matches, preserving
 foreign hooks and unrelated fields. Hook errors, including usage, exit one,
 never Claude's Stop-blocking exit two. Existing ordinary quiet argv remain
-manual. Periodic manager and setup first-pass trigger migration remain separate
-service-A work; this does not describe already-released 0.58.0 behavior.
+manual. Setup's first pass awaits the fixed supervisor with explicit `setup`
+attribution and all sources/indexing enabled; `--no-service` still runs it,
+while `--dry-run` starts no pass. Partial and overlap exit zero without claiming
+completion; operational failures remain nonzero. Periodic manager migration
+remains separate service-A work; this does not describe already-released 0.58.0 behavior.
 See [command routing and receipts](docs/capture-service.md#ordinary-cli-and-foreground-watch).
 See [detached hook launch limits](docs/capture-service.md#detached-hook-launcher).
 
