@@ -132,7 +132,7 @@ leaves only the moved-aside file. A system error reading the snapshot
 (permission, I/O) fails the pass and leaves the file in place.
 The pass then publishes a new snapshot with no history: no success is carried
 over or invented. One moved-aside copy is kept; a newer one replaces it. An
-older moved-aside copy that is not a regular file is not removed: each later
+older moved-aside copy that is a directory is not removed: each later
 move-aside reports it, and an operator removes it. A move that fails leaves the
 file in place and fails the pass.
 
