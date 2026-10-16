@@ -15,7 +15,8 @@
 // file, within the file's budget. The panel's tabs (up to four viewers, up to two of them displayed
 // at once, each in its own window at its own size, one of them shown) are proved on the panel
 // itself over the same real tmux, and every way out with four tabs open and two displayed under the
-// TUI's own guard (the tests after "the tabs" below).
+// TUI's own guard (the tests after "the tabs" below); q and kill -9 with four agents' terminals open
+// as tabs of the real `oats tui` close the file ("four agents, four tabs").
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile, execFileSync, spawn } from "node:child_process";
@@ -144,38 +145,47 @@ process.stdout.write("pane-ready:");
   tmuxOn(TERM, "set-option", "-g", "default-terminal", "screen");
 
   // The one instance: a real workspace-model home recorded as launched in the window `alpha` of
-  // AGENTS, receipt included. The kernel then reads it as running while that window is there, and
-  // its viewer attaches to that window.
-  const saved = process.env.PATH;
-  process.env.PATH = fx.env.PATH;
-  try { world.home = (await fx.spawn("dev", { name: NAME, harness: "claude" })).home; } finally { process.env.PATH = saved; }
-  const baselineOf = (home) => join(dirname(home), ".oats-retirement", "baselines", `${createHash("sha256").update(home).digest("hex")}.json`);
-  const { launch: _recipe, ...spawned } = readJson(join(world.home, "instance.json"));
-  const tmux = { session: SESSION, window: NAME, socket: AGENTS };
-  writeFileSync(join(world.home, "instance.json"), JSON.stringify({ ...spawned, tmux, command: "true", launched: true }, null, 2) + "\n");
-  writeFileSync(baselineOf(world.home), JSON.stringify({ ...readJson(baselineOf(world.home)), runtime: { launched: true, tmux } }, null, 2) + "\n", { mode: 0o600 });
+  // AGENTS (launchedAgent).
+  world.home = await launchedAgent(NAME);
   // A terminal's shell is started through this: the fixture's environment, then its arguments.
   world.enter = join(fx.base, "enter.sh");
   writeFileSync(world.enter, `#!/bin/sh\n${Object.entries(fx.env).map(([name, value]) => `export ${name}=${shq(value)}`).join("\n")}\nexec "$@"\n`);
   TERM_BEFORE = termServer();
 });
-const AGENT_TARGET = `=${SESSION}:=${NAME}`;
+/** A real workspace-model home spawned as `name`, recorded as launched in the window `name` of
+ *  AGENTS, receipt included. The kernel then reads it as running while that window is there, and
+ *  its viewer attaches to that window. Resolves with the home. */
+async function launchedAgent(name) {
+  const saved = process.env.PATH;
+  process.env.PATH = fx.env.PATH;
+  let home;
+  try { home = (await fx.spawn("dev", { name, harness: "claude" })).home; } finally { process.env.PATH = saved; }
+  const baselineOf = (h) => join(dirname(h), ".oats-retirement", "baselines", `${createHash("sha256").update(h).digest("hex")}.json`);
+  const { launch: _recipe, ...spawned } = readJson(join(home, "instance.json"));
+  const tmux = { session: SESSION, window: name, socket: AGENTS };
+  writeFileSync(join(home, "instance.json"), JSON.stringify({ ...spawned, tmux, command: "true", launched: true }, null, 2) + "\n");
+  writeFileSync(baselineOf(home), JSON.stringify({ ...readJson(baselineOf(home)), runtime: { launched: true, tmux } }, null, 2) + "\n", { mode: 0o600 });
+  return home;
+}
+// The agent is alpha unless a name is given (the agents beside it: "four agents, four tabs" below).
+const agentTarget = (name = NAME) => `=${SESSION}:=${name}`;
+const AGENT_TARGET = agentTarget();
 /** What the agent's pane has read since it started, as it shows it; null before it reads, or with
  *  no window. */
-function typed() {
+function typed(name = NAME) {
   let screen;
-  try { screen = tmuxOn(AGENTS, "capture-pane", "-p", "-J", "-t", AGENT_TARGET).replace(/\n/g, ""); } catch { return null; }
+  try { screen = tmuxOn(AGENTS, "capture-pane", "-p", "-J", "-t", agentTarget(name)).replace(/\n/g, ""); } catch { return null; }
   const at = screen.lastIndexOf("pane-ready:");
   return at < 0 ? null : screen.slice(at + "pane-ready:".length).trimEnd();
 }
-const agentWindowThere = () => { try { tmuxOn(AGENTS, "display-message", "-p", "-t", AGENT_TARGET, "#{window_id}"); return true; } catch { return false; } };
+const agentWindowThere = (name = NAME) => { try { tmuxOn(AGENTS, "display-message", "-p", "-t", agentTarget(name), "#{window_id}"); return true; } catch { return false; } };
 /** The agent's window, new: its screen holds the history and nothing it read. */
-async function agentWindow() {
-  try { tmuxOn(AGENTS, "kill-window", "-t", AGENT_TARGET); } catch { /* not there */ }
-  tmuxOn(AGENTS, "new-window", "-d", "-t", `=${SESSION}:`, "-n", NAME, "-c", base, `${shq(process.execPath)} ${shq(paneProgram)}`);
-  await waitUntil(() => typed() !== null, "the agent's pane reads its terminal", Math.min(10000, Math.max(1, FILE_DEADLINE - Date.now())));
+async function agentWindow(name = NAME) {
+  try { tmuxOn(AGENTS, "kill-window", "-t", agentTarget(name)); } catch { /* not there */ }
+  tmuxOn(AGENTS, "new-window", "-d", "-t", `=${SESSION}:`, "-n", name, "-c", base, `${shq(process.execPath)} ${shq(paneProgram)}`);
+  await waitUntil(() => typed(name) !== null, `the pane of ${name} reads its terminal`, Math.min(10000, Math.max(1, FILE_DEADLINE - Date.now())));
 }
-const killAgentWindow = () => tmuxOn(AGENTS, "kill-window", "-t", AGENT_TARGET);
+const killAgentWindow = (name = NAME) => tmuxOn(AGENTS, "kill-window", "-t", agentTarget(name));
 
 /** The terminals' server as a person's own tmux would notice a change in it: its sessions and
  *  windows, its key bindings and its options. */
@@ -1171,6 +1181,82 @@ for (const [how, end, expected] of [
     assert.deepEqual(viewerTableFaults(), [], `no viewer's own key table on the agents' server after ${how}, and the shared one holds only the mouse bindings`);
     assert.equal(agentWindowThere(), true, `the agent keeps running after ${how}`);
     assert.equal(existsSync(socket), how === "kill -9", how === "kill -9" ? "a run killed with no way to clean up leaves its socket for the sweep" : `the socket is removed after ${how}`);
+  });
+}
+
+// ---- four agents, four tabs ---------------------------------------------------------------------
+// q and kill -9 as with one terminal open (the tests after "on a terminal"), with the real `oats tui`
+// and four agents' terminals open, each a tab, opened as a person opens them: Enter on the first
+// agent, then the leader and Down from each shown terminal, which opens the next agent of the list
+// (docs/tui.md, "Tabs" and "The leader"). The three agents beside alpha are these tests' own: homes
+// recorded as launched in windows of AGENTS as alpha's is (launchedAgent), spawned at the first of
+// them, each window made new by each test and killed after it, so nothing after them lists those
+// agents running.
+const OTHERS = ["bravo", "charlie", "delta"];
+/** The four agents, in the order the list draws them (name order) and so the tabs are opened. */
+const FOUR = [NAME, ...OTHERS];
+let othersSpawned = null;
+/** The four agents' windows, new; the three others' homes spawned at the first call, and their
+ *  windows killed after the test. */
+async function fourAgents(t) {
+  othersSpawned ??= (async () => { for (const name of OTHERS) await launchedAgent(name); })();
+  await othersSpawned;
+  t.after(() => { for (const name of OTHERS) { try { killAgentWindow(name); } catch { /* gone */ } } });
+  for (const name of FOUR) await agentWindow(name);
+}
+/** The names in the tab strip, the panel's top row, in its order; a hidden tab's mark (`•`) dropped. */
+const stripNames = (run) => (run.panel()[3] ?? "").trim().split(/\s+/).filter(Boolean).map((name) => name.replace(/•$/, ""));
+/** The row of agent `name` is selected and running, read from the list's columns. */
+const selectedRunning = (term, name) => term.screen().some((text) => new RegExp(`^> +● ${name}$`).test([...text].slice(0, LIST_BESIDE).join("").trimEnd()));
+/** The tab of FOUR[k]: Enter on the selected agent for the first, then for each next one the leader
+ *  (its hint waited for: the next key counts only in a later read) and Down, from the terminal shown.
+ *  Resolves once its viewer's session is attached, its screen is in the panel with the focus in it,
+ *  its row is selected, and the strip names every agent opened so far, in the order opened. */
+async function openTab(term, run, k) {
+  const name = FOUR[k], before = new Set(viewerSessions());
+  if (k === 0) term.press("Enter");
+  else {
+    term.press("C-\\");
+    await until(term, () => run.footer().startsWith(LEADER_HINT), `the leader's hint, before the leader and Down open ${name}`);
+    term.press("Down");
+  }
+  const opened = FOUR.slice(0, k + 1);
+  await until(term, () => {
+    assert.equal(run.status(), null, `oats tui ended opening ${name}`);
+    const session = viewerSessions().find((s) => !before.has(s));
+    return session !== undefined && attached().includes(session) && run.beside() && run.footer() === BACK && selectedRunning(term, name) && JSON.stringify(stripNames(run)) === JSON.stringify(opened);
+  }, `the tab of ${name}: its viewer attached, its screen in the panel with the focus in it, its row selected, and the strip naming ${JSON.stringify(opened)}`,
+  () => [`the strip names ${JSON.stringify(stripNames(run))}`, `viewer sessions: ${JSON.stringify(viewerSessions())}, attached: ${JSON.stringify(attached())}`], 30000);
+}
+
+for (const [how, end, expected] of [
+  ["q", async (term, run) => { await run.back("before q"); await until(term, () => run.footer().startsWith(LIST_HINTS), "the list's focus before q"); term.press("q"); }, 0],
+  ["kill -9", (term, run) => process.kill(run.pid, "SIGKILL"), 137],
+]) {
+  test(`${how} with four agents' terminals open as tabs of the real oats tui: the private server is gone, no viewer session of any tab and no viewer's own key table is left on the agents' server, and every agent keeps running${how === "kill -9" ? "; the run directory is left for the next run's sweep" : "; the run directory is removed"}`, { skip: NO_TMUX }, async (t) => {
+    await fourAgents(t);
+    const term = await terminal(t);
+    const run = await tui(term);
+    for (let k = 0; k < FOUR.length; k++) await openTab(term, run, k);
+    const dir = run.dir(), socket = panelSocket(dir);
+    await until(term, () => viewerSessions().length === 4 && viewerSessions().every((session) => attached().includes(session)), "four viewer sessions, each attached", () => [`viewer sessions: ${JSON.stringify(viewerSessions())}, attached: ${JSON.stringify(attached())}`], 30000);
+    assert.equal(panelWindows(socket).length, 5, "the keeper and the four tabs");
+    assert.deepEqual(FOUR.map((name) => typed(name)), ["", "", "", ""], "no key of the leader's, nor Enter, reached an agent");
+    const kept = keepViewFiles(dir, `four${how.replace(/\W/g, "")}`), before = viewerProcesses();
+    await end(term, run);
+    assert.equal(await run.ended(`after ${how}`), expected, term.shows());
+    await until(term, () => !alive(run.pid), `the process ${run.pid} to be gone after ${how}`);
+    await until(term, () => !answers(socket), `the private server's socket to refuse after ${how}`);
+    await until(term, () => viewerSessions().length === 0, `no viewer session on the agents' server after ${how}`, () => [`viewer sessions: ${JSON.stringify(viewerSessions())}`, ...viewerFaults(kept, before)], 30000);
+    assert.deepEqual(viewerTableFaults(), [], `no viewer's own key table on the agents' server after ${how}, and the shared one holds only the mouse bindings`);
+    assert.deepEqual(FOUR.filter((name) => !agentWindowThere(name)), [], `every agent keeps running after ${how}`);
+    assert.deepEqual(FOUR.map((name) => typed(name)), ["", "", "", ""], "and nothing reached any of them");
+    if (how === "kill -9") {
+      assert.equal(existsSync(join(dir, "owner.json")), true, "a run killed with no way to clean up leaves its directory, owner.json in it");
+    } else {
+      assert.equal(existsSync(socket), false, `the socket is removed after ${how}`);
+      assert.equal(existsSync(dir), false, `the run directory is removed after ${how}`);
+    }
   });
 }
 

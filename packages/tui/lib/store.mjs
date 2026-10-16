@@ -1047,6 +1047,7 @@ function reduced(state, event, keymap) {
   if (event.souls !== undefined) return soulsHeard(state, event.souls);
   if (event.spawnRead !== undefined) return spawnRead(state, event.spawnRead);
   if (event.spawnDrawn !== undefined) return spawnDrawn(state, event.spawnDrawn);
+  if (event.spawnTop !== undefined) return spawnTop(state, event.spawnTop);
   if (event.spawnProgress !== undefined) return { state: state.spawning?.phase === "submitting" ? next(state, { spawning: Object.freeze({ ...state.spawning, phase: "spawning" }) }) : state, effect: null };
   if (event.spawnDone !== undefined) return spawnDone(state, event.spawnDone);
   // An action the leader or the palette runs comes as `{ action }`, with no key: whatever field or
@@ -1248,6 +1249,16 @@ function spawnDrawn(state, { n, read }) {
   const p = state.spawn;
   if (p === null || p.step !== "preview" || p.n !== n || p.shownIn !== null || !spawnReady(p) || !Number.isInteger(read)) return { state, effect: null };
   return { state: spawnWith(state, { shownIn: read }), effect: null };
+}
+
+/** The preview's window as a frame painted it (`{ n, top }`): it keeps the fold with the focus in
+ *  sight, so it may stand where `top` does not. Taken once for each frame painted, `top` is then
+ *  that window, and the movement keys go on from it, each from where the one before left it,
+ *  painted or not (round 1 of the polish's review). */
+function spawnTop(state, { n, top }) {
+  const p = state.spawn;
+  if (p === null || p.step !== "preview" || p.n !== n || !Number.isInteger(top) || top < 0 || p.top === top) return { state, effect: null };
+  return { state: spawnWith(state, { top }), effect: null };
 }
 
 /** The name field's text left as it is now: when it is not what the preview was read with, the

@@ -439,3 +439,17 @@ function reached() {
   const kept = observeIdentities({ memory: state.memory, notes: state.notes }, next.reported, at);
   return reduce(state, { roster: { remote: { remoteGroups: next.remoteGroups, rosterAnswered: next.rosterAnswered, rosterFailure: next.rosterFailure }, memory: kept.memory, notes: kept.notes, at } }).state;
 }
+
+test("the window a frame painted (`spawnTop`), which keeps a focused fold in sight, is the preview's `top` from then on: each movement key moves one row from where the one before left it; one for another preview, or no window, changes nothing", () => {
+  const s = previewOf();
+  assert.equal(s.spawn.top, 0);
+  const painted = reduce(s, { spawnTop: { n: s.spawn.n, top: 12 } }).state;
+  assert.equal(painted.spawn.top, 12, "the painted window is the top");
+  const down = (state) => reduce(state, { key: "down", read: ++reads, ...AT }).state;
+  assert.equal(down(painted).spawn.top, 13, "one row down from the window painted");
+  assert.equal(down(down(down(painted))).spawn.top, 15, "and each key from where the one before left it, with no frame between");
+  assert.equal(reduce(painted, { key: "up", read: ++reads, ...AT }).state.spawn.top, 11);
+  for (const event of [{ n: s.spawn.n + 1, top: 12 }, { n: s.spawn.n, top: -1 }, { n: s.spawn.n, top: 1.5 }, { n: s.spawn.n, top: 0 }]) {
+    assert.equal(reduce(s, { spawnTop: event }).state, s, `nothing for ${JSON.stringify(event)}`);
+  }
+});

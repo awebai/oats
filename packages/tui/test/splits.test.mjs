@@ -267,6 +267,10 @@ test("both strips drawn, the rule between: the focused group's shown tab in reve
   // One above the other: a rule row between.
   const down = draw(both("-"), S120);
   assert.equal(down.lines[3 + 18].slice(31), "─".repeat(89));
+  // Where it meets the list's bar, a joint: `├`, `+` in ASCII; zoomed, or with the whole body, no bar and no joint.
+  assert.equal(down.lines[3 + 18][30], "├");
+  assert.equal(draw({ ...both("-"), ascii: true }, S120).lines[3 + 18].slice(30, 33), "+--");
+  assert.equal(draw(both("-"), { cols: 70, rows: 30 }).lines.some((line) => line.includes("├")), false, "under 80 columns the panel has the whole body");
 });
 
 test("the empty group's hint: Enter on an agent opens it here, in reverse while it is focused, and the leader's keys for the groups", () => {

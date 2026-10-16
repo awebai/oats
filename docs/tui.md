@@ -402,7 +402,10 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
     it is asked, hold a place among the four. An instance that cannot be
     opened says why, as it does with no tab open.
 - **Switching.** `[` and `]` in the Instances view, from the list or the
-  detail, show the tab before or after the shown one. The leader then
+  detail, show the tab before or after the shown one; the footer names them
+  (`[/] tab`) after the terminal's keys while two tabs or more are open, and
+  gives them up after the acts, `workspaces`, `refresh` and `close`, before
+  `detail`. The leader then
   `Left` or `Right` does the same from any focus, and from another view
   goes to the Instances view first.
   - The strip does not wrap: on the first tab `[` does nothing, and on the

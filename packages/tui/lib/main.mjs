@@ -584,6 +584,9 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
       // This frame is written (the guard makes one only to write it): a ready preview on it is
       // seen, and Enter on Spawn is taken from the next read of input on (the paste guard).
       if (made.armed && state.spawn !== null) state = reduce(state, { spawnDrawn: { n: state.spawn.n, read: reads } }, keymap).state;
+      // The preview's window as painted, which keeps a focused fold in sight: the store's `top`
+      // from now on, so the next movement key goes on from what is on the screen.
+      if (made.drawnTop !== undefined && state.spawn !== null) state = reduce(state, { spawnTop: { n: state.spawn.n, top: made.drawnTop } }, keymap).state;
       return bytes;
     },
     onInput(bytes) {
