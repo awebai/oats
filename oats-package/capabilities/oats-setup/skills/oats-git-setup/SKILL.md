@@ -11,9 +11,10 @@ description: >-
   `gh auth status`). Also for keychain popups on macOS (the system
   `credential.helper osxkeychain` line), `Permission denied (publickey)`,
   `failed to write commit object`, and commits GitHub shows as Unverified.
-  `/oats-onboarding` sends a host here before its first Git read. Part of the
-  setup and config of an OATS workspace (oats.setup); day-to-day operation
-  inside an instance is oats.core.
+  The agent runs the steps; the person approves logins in the browser and
+  chooses their identity. `/oats-onboarding` sends a host here before its
+  first Git read. Part of the setup and config of an OATS workspace
+  (oats.setup); day-to-day operation inside an instance is oats.core.
 ---
 
 # Git and GitHub setup
@@ -32,28 +33,28 @@ with:
   global hook that still runs each repository's own hooks;
 - a check that proves all of it.
 
-**Who runs it.** The person runs every step in their own terminal, on the
-machine being set up: the login opens their browser, and the key, identity
-and sign-off are theirs. An agent helping them hands over one step at a
-time, reads back what the person saw, and runs only the read-only commands
-(step 0 and the check's read commands). It never runs the login, creates the
-key or writes the person's Git configuration itself.
+**Who runs it.** You, the agent, run every step on the person's machine and
+account (from oats.framework 1.13.0; earlier, the person ran each step). The
+key, identity and sign-off stay theirs. They do only what is marked
+**Person:**: approve each gh login in their browser, choose their name and
+email and the passphrase option, and type any password in their own
+terminal. No token, password or private key ever reaches you (this
+capability's briefing, on what the person types).
 
 **How to read a step.** Each says what to run, what you should see, and what
-to do when you see something else. Placeholders: `<Your Name>`, the name you
-sign your work with; `<email>`, an address verified on your GitHub account;
-`<login>`, your GitHub user name; `<this computer>`, a label for this machine.
+to do otherwise. Placeholders: `<Your Name>` and `<email>`, the person's
+name and an address verified on their GitHub account (step 5); `<login>`,
+their GitHub user name; `<this computer>`, a label for this machine.
 
 Why OATS needs each part:
 
 - **The kernel never prompts.** It runs Git with prompts turned off and ssh
   in batch mode. A `git:` reference in the workspace is read over `https://`,
-  so Git must get your GitHub token from `gh` (step 3). A `git@github.com:`
+  so Git must get the person's GitHub token from `gh` (step 3). A `git@github.com:`
   reference is read over SSH, so the key must work without a passphrase
   prompt (step 2), and GitHub must already be a known host (step 4).
-- **Agents commit as you.** Every commit an agent makes on this machine uses
-  this identity, is signed with this key and carries your sign-off. Set it
-  up knowing that.
+- **Agents commit as the person:** every agent commit here uses this
+  identity, key and sign-off. Tell the person before step 5.
 
 ## 0. Read what is there
 
@@ -71,7 +72,7 @@ gh auth status
 |---|---|
 | `command not found` for `git` or `gh` | install it: step 1 |
 | `git version` below 2.34 | too old for SSH signing: step 1 |
-| `~/.ssh/id_ed25519.pub` exists | you already have a key. Use it: skip the `ssh-keygen` line in step 2 |
+| `~/.ssh/id_ed25519.pub` exists | a key exists already. Use it: skip the `ssh-keygen` line in step 2 |
 | `user.name`, `user.email` or `gpg.format` already set | someone set up Git here before. Step 5 replaces these values: confirm with the person that it should |
 | `core.hookspath` already set | a global hooks setup exists. **Stop before step 6** (see step 6) |
 | `Logged in to github.com account <login>` | gh is logged in: step 3 uses `gh auth refresh` instead of `gh auth login` |
@@ -86,17 +87,18 @@ If `brew --version` prints a version, Homebrew is installed:
 brew install git gh
 ```
 
-If it is not, install Homebrew first: open <https://brew.sh>, paste the
-command shown under “Install Homebrew” into Terminal, and run the “Next
-steps” lines it prints at the end (they put `brew` on your PATH). Then run
-`brew install git gh`.
+If it is not, **Person:** install Homebrew in their own Terminal (it asks for
+their password): from <https://brew.sh>, the command under “Install
+Homebrew”, then the “Next steps” lines it prints (they put `brew` on the
+PATH). Then run `brew install git gh` yourself.
 
 Homebrew's Git sets a system credential helper that matters later: see
 [The macOS credential helper](#the-macos-credential-helper).
 
 ### Linux
 
-Use your distribution's packages:
+Use the distribution's packages. **Person:** run the line in their own
+terminal, since `sudo` asks for their password (unless `sudo -n true` works):
 
 ```bash
 sudo apt update && sudo apt install git gh openssh-client   # Debian, Ubuntu
@@ -121,30 +123,28 @@ gh ssh-key add --help | grep -e '--type'               # prints one line
 
 ## 2. Create the SSH key
 
-Skip the `ssh-keygen` line if step 0 found `~/.ssh/id_ed25519.pub` (if it
-asks `Overwrite (y/n)?`, answer `n`), and use the check below instead.
+Skip the `ssh-keygen` line if step 0 found `~/.ssh/id_ed25519.pub`: use the check below.
+
+**Person:** first, the passphrase choice. The line below makes a key with
+**no passphrase** (`-N ""`): agents sign commits and the kernel's ssh runs in
+batch mode, without a terminal, so nothing could type one. Only file
+permissions and disk encryption then protect it: turn on FileVault or disk
+encryption, and if the machine is lost, delete the key at
+<https://github.com/settings/keys>. The alternative is an agent-held key: the
+person makes a passphrase key in their own terminal and loads it into an
+ssh-agent every agent session reaches (outside this skill; without it,
+commits fail with `incorrect passphrase supplied to decrypt private key`).
+You then continue at step 3. A driven Mac: `docs/servers.md`, “Git on a
+macOS host”.
 
 ```bash
 mkdir -p ~/.ssh && chmod 700 ~/.ssh
-ssh-keygen -t ed25519 -C "<email>" -f ~/.ssh/id_ed25519
+ssh-keygen -t ed25519 -N "" -C "<email>" -f ~/.ssh/id_ed25519
 ```
 
-You should see `Generating public/private ed25519 key pair.`, then two
-passphrase questions.
-
-**The passphrase.** On a machine whose agents run without you at the
-keyboard, press Enter twice, for no passphrase: agents sign commits and the
-kernel reads over SSH without a terminal, so nothing could type it. With a
-passphrase their commits fail (`incorrect passphrase supplied to decrypt
-private key`, `failed to write commit object`) unless an ssh-agent every
-agent session reaches holds the key, a setup outside this skill. Without
-one, only file permissions and disk encryption protect the key: turn on
-FileVault (macOS) or disk encryption (Linux), and if the machine is lost,
-delete the key at <https://github.com/settings/keys>. This is the person's
-choice; `docs/servers.md`, “Git on a macOS host”, covers a driven Mac.
-
-Then `Your public key has been saved in` the `.ssh/id_ed25519.pub` of your
-home folder, and a fingerprint starting `SHA256:`.
+You should see `Generating public/private ed25519 key pair.`, no question,
+then `Your public key has been saved in` `~/.ssh/id_ed25519.pub` and a
+`SHA256:` fingerprint. Never print or copy the private key (no `.pub`).
 
 **Reusing an existing key?** If this prints `has a passphrase`, the
 paragraph above applies to it:
@@ -163,8 +163,11 @@ open the keychain (trade-off: `docs/servers.md`, “Git on a macOS host”).
 and `gh auth refresh` in this skill,** step 4's and the failure table's
 included: a refresh without it moves the token back into the keychain.
 
-If step 0 showed gh already logged in, run the `gh auth refresh` and
-`gh config set` lines instead of `gh auth login`:
+Run the login yourself, **in the background, without a terminal**: gh then
+prints a one-time code and a URL and waits for the person. They are not
+secrets (only the person's signed-in browser can use them); the token goes to
+gh's store, never to you. If step 0 showed gh logged in, run the
+`gh auth refresh` and `gh config set` lines instead, the same way:
 
 ```bash
 gh auth login --hostname github.com --git-protocol ssh --web --skip-ssh-key \
@@ -174,11 +177,12 @@ gh auth refresh --hostname github.com --scopes admin:public_key,admin:ssh_signin
 gh config set --host github.com git_protocol ssh
 ```
 
-gh prints a one-time code and opens your browser. Enter the code, approve,
-and come back. After `gh auth login` you should see `✓ Authentication
-complete.` and `✓ Logged in as <login>`; after `gh auth refresh`, only
-`✓ Authentication complete.`. The extra scopes let the next step add your
-key; step 4 removes the two `admin` ones again.
+For example `gh auth login … </dev/null >"$out" 2>&1 &`, `out` a new temporary
+file, which shows `! One-time code (XXXX-XXXX)` and the URL
+`https://github.com/login/device`. **Person:** open it, enter the code,
+approve. When the command exits, `gh auth status` shows the login; delete
+the file. The extra scopes let step 4 add the key; it then removes the two
+`admin` ones.
 
 Then let Git take its GitHub credentials from gh:
 
@@ -210,19 +214,17 @@ key twice, with `authentication` and `signing` in its `TYPE` column.
 | `needs the "admin:public_key" scope` or `"admin:ssh_signing_key"` | step 3's scopes are missing: run step 3's `gh auth refresh` line (with `--insecure-storage` if you chose the file), then this step again |
 | `key is already in use` | the key is already registered (perhaps on another account). Check `gh ssh-key list` shows it with both types on **this** account |
 
-Now connect to GitHub over SSH once, from your terminal:
+Now make GitHub a known host, which the kernel's batch-mode ssh cannot do
+itself. First compare GitHub's host key with its published fingerprint
+(<https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints>;
+ED25519: `SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU`). Run the
+second line only if the first prints that exact fingerprint; otherwise stop
+and tell the person:
 
 ```bash
-ssh -T git@github.com
+ssh-keyscan -t ed25519 github.com 2>/dev/null | ssh-keygen -lf -
+ssh -o StrictHostKeyChecking=accept-new -T git@github.com
 ```
-
-The first time, ssh shows GitHub's key fingerprint and asks `Are you sure
-you want to continue connecting (yes/no/[fingerprint])?`. Compare it with
-GitHub's published ones
-(<https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints>;
-ED25519: `SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU`). If they
-match, type `yes`; if not, stop and get help. This saves GitHub as a known
-host, which the kernel's batch-mode ssh cannot do itself.
 
 You should see `Hi <login>! You've successfully authenticated, but GitHub
 does not provide shell access.` The command exits with status 1: that is
@@ -234,29 +236,29 @@ normal.
 | `Hi <another login>!` | this key belongs to another GitHub account. Use a key of this account |
 
 Finally, remove the two admin scopes. Every agent on this machine uses this
-gh login, and none of them needs to add keys to your account:
+gh login, and none of them needs to add keys to the person's account:
 
 ```bash
 gh auth refresh --hostname github.com --remove-scopes admin:public_key,admin:ssh_signing_key
 ```
 
-With the file choice, add `--insecure-storage` here too. The browser opens
-again: enter the new code and approve, and you should see `✓ Authentication
-complete.`.
+With the file choice, add `--insecure-storage` here too. Run it as in step 3;
+**Person:** approve the new code. You should see `✓ Authentication complete.`.
 
 ## 5. Identity and commit signing
 
-Choose the email. It must be verified on your GitHub account:
+**Person:** choose the name and the email that their commits will carry.
+Show them the addresses verified on their GitHub account:
 
 ```bash
 gh api user/emails --jq '.[] | select(.verified) | .email'
 ```
 
-Use one of the addresses it prints. To keep your address private, use
-GitHub's no-reply address instead: it is shown on
+They pick one of the addresses it prints. To keep their address private,
+they use GitHub's no-reply address instead: it is shown on
 <https://github.com/settings/emails> under “Keep my email addresses private”,
 and it counts as verified. If that page has “Block command line pushes that
-expose my email” turned on, you must use the no-reply address.
+expose my email” turned on, they must use the no-reply address.
 
 ```bash
 git config --global user.name "<Your Name>"
@@ -269,7 +271,7 @@ grep -qxF "$line" ~/.ssh/allowed_signers 2>/dev/null || echo "$line" >> ~/.ssh/a
 git config --global gpg.ssh.allowedSignersFile "$HOME/.ssh/allowed_signers"
 ```
 
-The first five lines set who you are and sign every commit with your SSH key;
+The first five lines set who the person is and sign every commit with their SSH key;
 the rest let Git here check those signatures (step 7 uses it, and a rerun
 adds no duplicate line). They print nothing when they succeed.
 
@@ -278,8 +280,8 @@ adds no duplicate line). They print nothing when they succeed.
 A `Signed-off-by: <Your Name> <email>` line in a commit message certifies the
 Developer Certificate of Origin (<https://developercertificate.org>): that
 you have the right to submit the change. Many projects require it on every
-commit. A global hook adds it to every commit made on this machine, by you
-or by an agent.
+commit. A global hook adds it to every commit made on this machine, by the
+person or by an agent.
 
 **First, look for an existing global hooks setup:**
 
@@ -296,7 +298,7 @@ is a task for a developer.
 **Then look for repositories this hook cannot serve.** `push-to-checkout`
 and `proc-receive` change what Git does by merely existing, so the global
 hook leaves them out, and a repository with its own hook of either name
-would silently lose it. Look under your home folder, and any other folder
+would silently lose it. Look under the home folder, and any other folder
 holding repositories (this can take a minute):
 
 ```bash
@@ -368,8 +370,8 @@ What it does, and why:
 
 ## 7. Check
 
-Run this in a scratch folder. It makes one private test repository on your
-account, which you delete at the end.
+Run this in a scratch folder. It makes one private test repository on the
+person's account, which they delete at the end.
 
 ```bash
 cd "$(mktemp -d)"
@@ -385,13 +387,13 @@ You should see:
 1. `repository hook ran`: the global hook still runs the repository's own
    hooks.
 2. `Good "git" signature for <email> with ED25519 key SHA256:…`: the commit
-   is signed with your key.
+   is signed with the person's key.
 3. The message `Check Git setup`, then an empty line, then
    `Signed-off-by: <Your Name> <email>`.
 
-Now push it to GitHub, in the same terminal. The test repository gets a
-new name, with the date and time in it, so it never touches a repository you
-already have:
+Now push it to GitHub, from the same folder. The test repository gets a new
+name, with the date and time in it, so it never touches a repository the
+person already has:
 
 ```bash
 login=$(gh api user --jq .login)
@@ -433,16 +435,16 @@ env -u HOME -u XDG_CONFIG_HOME git config --show-origin --get-all credential.hel
    ending in `osxkeychain`, with the system file it comes from. Read the next
    section, and record the line in the hand-back.
 
-**Clean up:** delete the test repository this check created, and only that
-one: on the second address printed (its settings), “Delete this
+**Clean up. Person:** delete the test repository this check created, and only
+that one: on the second address printed (its settings), “Delete this
 repository”, at the bottom. Do not give gh the `delete_repo` scope to do it
-from the terminal: every agent here could then delete your repositories.
+from the terminal: every agent here could then delete the person's repositories.
 
 **Record** in the onboarding hand-back: the login, checks 4–6, and check 7's line or “none”.
 
 ## The macOS credential helper
 
-Git reads the system file, then `~/.gitconfig` in your home folder, then
+Git reads the system file, then `~/.gitconfig` in the home folder, then
 the repository's. On macOS, the system file of Homebrew's Git (and of
 Apple's) sets `credential.helper osxkeychain`: tokens in the keychain. With
 `HOME` set, step 3's empty `helper` line clears it for `https://github.com`
@@ -452,7 +454,7 @@ keychain popups on one host after an agent relaunched an app with an
 emptied environment. So:
 
 - **Leave credentials to gh or SSH.** `gh auth setup-git` (step 3) serves
-  `https://` remotes; your SSH key serves `git@github.com:` remotes, which use
+  `https://` remotes; the SSH key serves `git@github.com:` remotes, which use
   no credential helper at all.
 - **Check 7 shows whether a HOME-less Git would fall back to the keychain.**
   If it prints `osxkeychain`, Git is fine while every process has `HOME`.
@@ -473,13 +475,13 @@ emptied environment. So:
 | What you see | Cause | Remedy |
 |---|---|---|
 | `Permission denied (publickey)` on `ssh -T` or a push | the key is not an authentication key on this account, or ssh offered a different key | `gh ssh-key list` must show it with `authentication`; with several keys, add to `~/.ssh/config`: `Host github.com` then, indented, `IdentityFile ~/.ssh/id_ed25519` and `IdentitiesOnly yes` |
-| `Host key verification failed` (often from OATS, not from your terminal) | GitHub is not yet a known host, and batch-mode ssh cannot ask | run `ssh -T git@github.com` once in your terminal (step 4) |
+| `Host key verification failed` (often from OATS) | GitHub is not yet a known host, and batch-mode ssh cannot ask | step 4's fingerprint check, then its `accept-new` connection |
 | `incorrect passphrase supplied to decrypt private key` and `failed to write commit object` | the key has a passphrase and no ssh-agent holds it (an agent's session has no terminal to ask) | load the key in an ssh-agent the sessions reach, or use a key without a passphrase (step 2) |
 | `Couldn't load public key …` and `failed to write commit object` | `user.signingkey` points at a file that is not there | step 5's `user.signingkey` line, with the key's real path |
 | the verification `reason` is `unknown_key` | the key is not registered as a **signing** key | step 4's `--type signing` line |
 | `unverified_email` or `no_user` | the commit's email is not verified on the account, or belongs to no account | verify it on <https://github.com/settings/emails>, or use a verified address in step 5; then make a new commit |
 | `unsigned` | `commit.gpgsign` is off, or a repository turns it off | `git config --show-origin --get commit.gpgsign` shows which file; step 5 |
-| `GH007: Your push would publish a private email address` | the account blocks pushes with your private address | use the no-reply address (step 5), then `git commit --amend --reset-author --no-edit` and push again |
+| `GH007: Your push would publish a private email address` | the account blocks pushes with the person's private address | use the no-reply address (step 5), then `git commit --amend --reset-author --no-edit` and push again |
 | no `Signed-off-by` line | `core.hooksPath` is not the global hooks folder here (a repository sets its own), or `run-hook` is not executable | `git config --show-origin --get core.hooksPath` in that repository; `chmod +x ~/.config/git/hooks/run-hook` |
 | a repository's own hook stopped running | it is not executable, it is `push-to-checkout` or `proc-receive` (step 6's `find`), or it sits outside the repository's hooks folder | `ls -l "$(git rev-parse --git-common-dir)/hooks"` shows what the global hook will run |
 | `gh: … needs the "<scope>" scope` | gh's token lacks that scope | `gh auth refresh --hostname github.com --scopes <scope>`, with `--insecure-storage` if step 3 chose the file; remove admin scopes afterwards |
@@ -488,9 +490,8 @@ emptied environment. So:
 
 ## Never
 
-- Run `gh auth login`, create the key or write the person's Git
-  configuration from an agent's shell. Hand over the step; read back the
-  result.
+- Ask for, read, print or store a token, password or private key, or choose
+  the person's name, email or passphrase for them.
 - Overwrite an existing key, global hooks folder or `core.hooksPath`.
 - Put a name, email, login or key in a shared OATS file, or copy a private
   key between machines or into a message: each machine gets its own key.
