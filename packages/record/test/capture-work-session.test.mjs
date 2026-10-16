@@ -104,9 +104,18 @@ function fixture(t, specs = [], { discover = false } = {}) {
       try {
         for(let n=0;n<(start.options.units??3);n++){
           const result=session.step();
+          // Only admitted capture/index stages return per-stream rows. The
+          // inventory-cleanup stage returns numeric metadata deletion counts.
+          const streamRows=result.stage==='capture'?(result.results??(result.selected?null:[])):
+            result.stage==='index'?(result.streams??(result.selected?null:[])):[];
+          if(!Array.isArray(streamRows) || streamRows.some(row=>typeof row?.stream!=='string'))
+            throw Error('invalid fixture processing result');
+          const inventoryCleanup=result.stage==='inventory-cleanup'?{sources:result.sources,streams:result.streams}:null;
+          if(inventoryCleanup && !Object.values(inventoryCleanup).every(n=>Number.isSafeInteger(n)&&n>=0))
+            throw Error('invalid fixture inventory cleanup counts');
           fs.appendFileSync(join(start.root,'events'),JSON.stringify({runId:session.run.id,attempt:start.pass.attempt,
             nonce:start.workerNonce,stage:result.stage??null,selected:result.selected??0,
-            streams:(result.results??result.streams??[]).map(row=>row.stream),reset:result.reset??false,
+            streams:streamRows.map(row=>row.stream),inventoryCleanup,reset:result.reset??false,
             recovered:result.recovered??false,resetRequired:result.resetRequired??false,finalize:result.finalize??false,
             sourceDiscovery:result.sourceDiscovery??null})+'\\n');
           if(result.resetRequired)return session.yieldWorker({resetRequired:true});
@@ -143,6 +152,12 @@ test('fresh all-stage audit completes empty sweeps and renews both inventories o
   const b = readCaptureStatus(f.root);
   assert.notEqual(b.lastRun.id, a.lastRun.id); assert.equal(b.lastSuccess.id, b.lastRun.id);
   assert.equal(b.lastProgressAt, null, 'obsolete inventory cleanup is not capture/index progress');
+  const cleanup = f.events().filter(event => event.runId === b.lastRun.id && event.stage === 'inventory-cleanup');
+  assert.ok(cleanup.length > 0, 'renewal visits obsolete inventory even when it contains no rows');
+  for (const event of cleanup) {
+    assert.deepEqual(event.inventoryCleanup, { sources: 0, streams: 0 });
+    assert.deepEqual(event.streams, []); assert.equal(event.selected, 0);
+  }
   f.state(state => {
     assert.notEqual(state.get('source-sweep', 'fixture').id, before.source);
     assert.notEqual(state.get('index-inventory', 'current').id, before.index);
@@ -168,6 +183,10 @@ test('complete receipt follows mixed processing and next-sweep growth without du
   assert.equal(f.store.readStream('fixture~aw').length, 3);
   assert.equal(f.store.readStream('fixture~cc.native').length, 1);
   assert.equal(f.index(index => index.db.prepare('SELECT count(*) AS n FROM turns').get().n), 5);
+  const cleanup = f.events().filter(event => event.runId === status.lastRun.id && event.stage === 'inventory-cleanup');
+  assert.equal(cleanup.reduce((n, event) => n + event.inventoryCleanup.sources, 0), 2);
+  assert.equal(cleanup.reduce((n, event) => n + event.inventoryCleanup.streams, 0), 2);
+  for (const event of cleanup) { assert.deepEqual(event.streams, []); assert.equal(event.selected, 0); }
 });
 
 test('finalization-only allowance cannot initiate a completion audit even for an empty root plan', async t => {
