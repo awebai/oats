@@ -130,12 +130,16 @@ test("CLI reclaim of a dead lock publishes its evidence only for a valid past st
   }
 });
 
-test("CLI names a worker's operational status failure after its reason without publishing it", t => {
+// A worker's own status failure, which this directory used to provoke, is
+// pinned in capture-command.test.mjs: the supervisor now moves it aside first.
+test("CLI moves a non-regular capture status aside, names it and writes a new status", t => {
   const f = fixture(t); fs.mkdirSync(join(f.root, "capture-status.json"), { recursive: true });
-  const result = f.cli(["--sessions-only", "--no-index"]);
-  assert.equal(result.status, 1, result.stdout + result.stderr);
-  assert.match(result.stderr, /capture pass failed: capture worker failed \(io\): capture status is not a regular file within 1 MiB; matching worker receipt unavailable/);
-  assert.equal(fs.statSync(join(f.root, "capture-status.json")).isDirectory(), true);
+  const result = f.cli(["--sessions-only", "--no-index"]); passed(result);
+  const moved = fs.readdirSync(f.root).filter(name => name.startsWith("capture-status.json.invalid-"));
+  assert.equal(moved.length, 1, JSON.stringify(moved));
+  assert.equal(fs.statSync(join(f.root, moved[0])).isDirectory(), true);
+  assert.match(result.stderr, new RegExp(`capture status is not a regular file within 1 MiB\\); moved it aside to .*${moved[0]} and started a new status`));
+  assert.ok(readCaptureStatus(f.root)?.lastRun, "a new status was published");
   assert.equal(fs.existsSync(captureLockPath(f.root)), false);
 });
 

@@ -329,3 +329,33 @@ test("a status the reader cannot open fails the pass and stays in place", async 
   assert.equal(fs.readFileSync(path, "utf8"), bytes);
   assert.deepEqual(asides(f), []);
 });
+
+test("an older moved-aside directory that cannot be removed is reported, not thrown", async t => {
+  const f = fixture(t), older = join(f.root, `${STATUS}.invalid-20200101T000000Z`);
+  await f.pass({ indexEnabled: true });
+  fs.mkdirSync(older); fs.writeFileSync(join(f.root, STATUS), "{ newer");
+  const { result, err } = await f.pass({ indexEnabled: true });
+  assert.equal(typeof result.appended, "number");
+  assert.equal(fs.statSync(older).isDirectory(), true, "unlink leaves a directory copy in place");
+  assert.equal(asides(f).length, 2);
+  assert.ok(err.some(line => line.includes("older moved-aside copies could not be removed") && line.includes(older)), JSON.stringify(err));
+});
+
+test("a worker's own status failure is named after its reason and publishes nothing", async t => {
+  // The fault happens in the worker, after the supervisor found no status to
+  // move aside: the worker sees a directory where the status belongs.
+  const f = fixture(t), workerPath = join(f.base, "status-fault-worker.mjs");
+  fs.writeFileSync(workerPath, `import fs from 'node:fs'; import { join } from 'node:path';
+    import { runCaptureWorker } from ${JSON.stringify(url("capture-worker"))};
+    import { captureCommandOperation } from ${JSON.stringify(url("capture-command-operation"))};
+    await runCaptureWorker(start => { fs.mkdirSync(join(start.root, ${JSON.stringify(STATUS)}), { recursive: true }); return captureCommandOperation(start); });`);
+  fs.mkdirSync(f.root);
+  const err = [];
+  await assert.rejects(captureCommandPass(f.root, f.options(), { log: () => {}, error: line => err.push(line),
+    run: (root, options) => superviseCapturePass(root, captureCommandOptions(options), { workerPath,
+      env: { HOME: f.home, TMPDIR: f.base, XDG_CACHE_HOME: f.base, PATH: process.env.PATH } }) }),
+    /capture worker failed \(io\): capture status is not a regular file within 1 MiB; matching worker receipt unavailable/);
+  assert.equal(fs.statSync(join(f.root, STATUS)).isDirectory(), true, "no status was published over it");
+  assert.deepEqual(asides(f), [], "the supervisor saw no status to move aside");
+  assert.equal(fs.existsSync(join(f.root, ".capture.lock")), false);
+});
