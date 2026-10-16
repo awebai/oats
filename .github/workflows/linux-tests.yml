@@ -54,9 +54,9 @@ jobs:
   run:
     name: Named test files on Linux
     runs-on: ubuntu-24.04
-    # scripts/named-test-run.mjs: 10 files at 5 minutes each, the installs before them, and
-    # scripts/linux-tests.mjs's wait for the user manager.
-    timeout-minutes: 60
+    # scripts/linux-tests.mjs: 10 files at 20 minutes each, the installs before them and the
+    # waits for the user manager, under GitHub's 6 hours for a job.
+    timeout-minutes: 240
     steps:
       - name: Check out the workflow's own commit
         uses: actions/checkout@v4

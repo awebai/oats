@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { parseConfigData } from "../../lib/config-data.mjs";
-import { FILE_TIMEOUT_MS, JOB_TIMEOUT_MINUTES, MAX_FILES } from "../../scripts/named-test-run.mjs";
+import { MAX_FILES } from "../../scripts/named-test-run.mjs";
 
 const DIR = new URL("../../.github/workflows/", import.meta.url);
 const text = (name) => readFileSync(new URL(name, DIR), "utf8");
@@ -105,11 +105,13 @@ export function assertTwoTrees({ workflow, job, steps }, { script, request, cond
   return prepare;
 }
 
-/** A job timeout that holds the bounds (and `extraMs` more), and a concurrency group no run shares. */
-export function assertBoundsAndConcurrency({ file, workflow, job }, { prefix, extraMs = 0 }) {
-  assert.equal(job["timeout-minutes"], JOB_TIMEOUT_MINUTES);
-  assert.ok(MAX_FILES * FILE_TIMEOUT_MS + extraMs < JOB_TIMEOUT_MINUTES * 60_000, "the job outlasts a run of the most files, each at its timeout");
-  assert.deepEqual([MAX_FILES, FILE_TIMEOUT_MS, JOB_TIMEOUT_MINUTES], [10, 5 * 60_000, 60], "the bounds the maintainers agreed: a change comes with a measured reason");
+/** A job timeout that is the runner's constant and holds its bounds (and `extraMs` more), and a
+ *  concurrency group no run shares. */
+export function assertBoundsAndConcurrency({ file, workflow, job }, { prefix, fileTimeoutMs, jobTimeoutMinutes, extraMs = 0 }) {
+  assert.equal(job["timeout-minutes"], jobTimeoutMinutes);
+  assert.ok(MAX_FILES * fileTimeoutMs + extraMs < jobTimeoutMinutes * 60_000, "the job outlasts a run of the most files, each at its timeout");
+  // GitHub ends a job on a hosted runner after 6 hours whatever its timeout says.
+  assert.ok(jobTimeoutMinutes <= 360, "the job's timeout is within GitHub's limit for a job");
   // One group per run and no cancelling: a fixed group would let a third run cancel the pending second.
   assert.deepEqual(workflow.concurrency, { group: `${prefix}-\${{ github.run_id }}`, "cancel-in-progress": false });
   for (const name of readdirSync(DIR).filter((other) => other !== file)) {
@@ -119,9 +121,9 @@ export function assertBoundsAndConcurrency({ file, workflow, job }, { prefix, ex
 
 /** The page that owns the workflows states this one's bounds as the script has them, names its two
  *  steps and its job, and states its name as the guard contract. */
-export function assertPage({ workflow, job, steps }, { script }) {
+export function assertPage({ workflow, job, steps }, { script, fileTimeoutMs, jobTimeoutMinutes }) {
   const text = page();
-  for (const bound of [`at most ${MAX_FILES} files`, `${FILE_TIMEOUT_MS / 60_000} minutes`, `${JOB_TIMEOUT_MINUTES} minutes`, job["runs-on"]]) {
+  for (const bound of [`at most ${MAX_FILES} files`, `${fileTimeoutMs / 60_000} minutes`, `${jobTimeoutMinutes} minutes`, job["runs-on"]]) {
     assert.ok(text.includes(bound), `docs/named-test-runs.md does not state: ${bound}`);
   }
   // The page sends a reader to two steps of the log by name: the names are the workflow's.

@@ -8,6 +8,8 @@ import assert from "node:assert/strict";
 import {
   assertBoundsAndConcurrency, assertDispatchOnly, assertNoInputInShell, assertPage, assertReadOnly, assertTwoTrees, load, read,
 } from "./helpers/named-tests-workflow.mjs";
+import { MAX_FILES } from "../scripts/named-test-run.mjs";
+import { FILE_TIMEOUT_MS, JOB_TIMEOUT_MINUTES } from "../scripts/macos-tests.mjs";
 
 const macos = load("macos-tests.yml");
 const { workflow, job, steps } = macos;
@@ -48,9 +50,10 @@ test("macOS tests: a macOS runner, a job timeout that holds the bounds, and a co
     const images = Object.values(read(name).jobs).flatMap((j) => j.strategy?.matrix?.include ?? []).map((leg) => leg.os).filter((os) => os?.startsWith("macos-"));
     assert.ok(images.length && images.every((os) => os === job["runs-on"]), `${name} builds on ${[...new Set(images)].join(", ")}`);
   }
-  assertBoundsAndConcurrency(macos, { prefix: "macos-tests" });
+  assertBoundsAndConcurrency(macos, { prefix: "macos-tests", fileTimeoutMs: FILE_TIMEOUT_MS, jobTimeoutMinutes: JOB_TIMEOUT_MINUTES });
+  assert.deepEqual([MAX_FILES, FILE_TIMEOUT_MS, JOB_TIMEOUT_MINUTES], [10, 5 * 60_000, 60], "the bounds the maintainers agreed: a change comes with a measured reason");
 });
 
 test("macOS tests: the page that owns the workflow states its bounds as the script has them, and its name as the guard contract", () => {
-  assertPage(macos, { script: SCRIPT });
+  assertPage(macos, { script: SCRIPT, fileTimeoutMs: FILE_TIMEOUT_MS, jobTimeoutMinutes: JOB_TIMEOUT_MINUTES });
 });

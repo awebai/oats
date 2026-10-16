@@ -117,11 +117,15 @@ before any code of the ref has run. The header gives:
 - on Linux:
   - `XDG_RUNTIME_DIR`;
   - whether lingering is on for the runner user (`loginctl show-user`);
-  - **whether the user manager answered** and with which state.
-    `systemctl --user is-system-running --wait` is asked, and the step waits
-    for it at most 60 seconds. `running` and `degraded` count as an answer.
-    `degraded` is a running manager with a failed unit, which the image may
-    have of its own;
+  - **whether the user manager answered**, with which state, how many
+    times it was asked and how long that took. Lingering only queues the
+    manager's start, so the step waits for it, at most 60 seconds in all.
+    Until the manager's bus is there, `systemctl --user` answers at once
+    (`offline` or `unknown`), so the step asks again every half second.
+    Once the bus is there, `systemctl --user is-system-running --wait` waits
+    for the manager to finish starting. `running` and `degraded` count as an
+    answer. `degraded` is a running manager with a failed unit, which the
+    image may have of its own;
 - the Node version;
 - whether the file system is case-sensitive, measured there (a file is made,
   then looked for by another case);
@@ -230,14 +234,19 @@ is a convenience.
 
 These are constants of the scripts, not inputs:
 
-| bound | value |
-|---|---|
-| files in one run | at most 10 files |
-| time for one file | 5 minutes, then its process group is killed |
-| time for the job | 60 minutes |
-| wait for the user manager (Linux) | 60 seconds at the validation step |
-| macOS runner | `macos-14` (arm64), Node 22 |
-| Linux runner | `ubuntu-24.04` (x64), Node 22 |
+| bound | macOS | Linux |
+|---|---|---|
+| files in one run | at most 10 files | at most 10 files |
+| time for one file, then its process group is killed | 5 minutes | 20 minutes |
+| time for the job | 60 minutes | 240 minutes |
+| wait for the user manager | none | 60 seconds at the validation step |
+| runner | `macos-14` (arm64), Node 22 | `ubuntu-24.04` (x64), Node 22 |
+
+A Linux file gets 20 minutes because the files that qualify the record
+capture at scale ([#1108](https://github.com/awebai/oats/issues/1108)) run
+capture passes of up to 300 seconds, and a first upgrade may need several.
+The Linux job's 240 minutes hold ten such files and the installs, under
+GitHub's 6-hour limit for a job.
 
 The workflows' steps upload no artifact and save or restore no cache: the log
 and the summary are all they leave. The token can read the repository's
@@ -281,7 +290,7 @@ real systemd, but it runs on a hosted VM, not on a person's computer:
 - It is one distribution, one systemd version and one image: Ubuntu 24.04,
   as printed in the header. Another distribution's systemd or defaults are
   not covered.
-- Time is the VM's. A run shows what a timer does within the file's 5
+- Time is the VM's. A run shows what a timer does within the file's 20
   minutes. It does not show a timer's behaviour across a suspend, a reboot or
   days.
 
@@ -336,17 +345,20 @@ reach does not grow with root.
 
 The Linux workflow can only be proven by a run of it from `main`. Its first
 run, of an existing test file and a short check that `systemctl --user`
-works, shows four things:
+works, shows three things:
 
 - the workflow starts and validates as the macOS one does;
 - lingering and `XDG_RUNTIME_DIR` give that image a user manager that answers
-  within the bound, and the header states it;
-- the installs and a per-file run work on that image;
-- a guarded test sees `Linux tests`, `workflow_dispatch` and `linux`.
+  within the bound. The header states the answer, how many times the manager
+  was asked and how long it took: an answer at the first ask, well under the
+  bound, shows that image did not need the wait;
+- the installs and a per-file run work on that image.
 
-It does not show that a later test file drives its own units correctly. That
-is each test's own run. It also does not show that the next image still
-answers: every run's header says so again.
+It does not show what a guarded test sees, or does. The run's environment has
+the facts the [Guard contract](#guard-contract) names, but no test file of
+this repository guards on them yet. A guarded file's behaviour is shown when
+such a file is dispatched, by its own run. The first run also does not show
+that a later image still answers: every run's header says so again.
 
 ## The terms
 

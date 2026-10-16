@@ -3,9 +3,10 @@
 - **Named test files can be run by hand on a Linux runner whose user manager
   works** ([#1108](https://github.com/awebai/oats/issues/1108)). The workflow
   `Linux tests` (`linux-tests.yml`) is the Linux counterpart of `macOS tests`.
-  It runs named test files of a named ref, each alone, on `ubuntu-24.04`.
-  Before the header, it enables lingering for the runner user and waits at
-  most 60 seconds for `systemctl --user` to answer. The header says whether
+  It runs named test files of a named ref, each alone, on `ubuntu-24.04`:
+  at most 10 files, 20 minutes a file, 240 minutes a job. Before the
+  header, it enables lingering for the runner user and waits at most 60
+  seconds for `systemctl --user` to answer. The header says whether
   the manager answered, and a manager that did not answer fails the run
   before anything is installed. Its terms are the macOS workflow's:
   dispatch only, a read-only token, no secret, artifact or cache, and no

@@ -12,11 +12,18 @@
 
 import { html, imageLine, isCommandLine, main, outputOf, show } from "./named-test-run.mjs";
 
+/** What one file gets on macOS before its process group is killed. A bound, not an input. */
+export const FILE_TIMEOUT_MS = 5 * 60_000;
+/** The macOS job's `timeout-minutes` (test/macos-tests-workflow.test.mjs pins the workflow to it): room
+ *  for MAX_FILES files at FILE_TIMEOUT_MS each, and for the installs before them. */
+export const JOB_TIMEOUT_MINUTES = 60;
+
 /** The macOS runner: its version and build, read with sw_vers. It never refuses. */
 export const macos = {
   title: "macOS test run",
   script: "scripts/macos-tests.mjs",
   request: { ref: "MACOS_TESTS_REF", files: "MACOS_TESTS_FILES" },
+  fileTimeoutMs: FILE_TIMEOUT_MS,
   readFacts: () => ({
     macos: process.platform === "darwin" ? { version: outputOf("/usr/bin/sw_vers", ["-productVersion"]), build: outputOf("/usr/bin/sw_vers", ["-buildVersion"]) } : null,
   }),

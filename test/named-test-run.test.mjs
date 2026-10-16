@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { devNull, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -18,6 +18,7 @@ import {
 } from "../scripts/named-test-run.mjs";
 import { macos } from "../scripts/macos-tests.mjs";
 import { linuxPlatform } from "../scripts/linux-tests.mjs";
+import { fakeProgram } from "./helpers/host-fixture.mjs";
 
 const A = "a".repeat(40), B = "b".repeat(40);
 /** A writer that keeps what a step prints. */
@@ -236,6 +237,9 @@ const facts = (over = {}) => ({
   arch: "arm64", machine: "arm64", node: "v22.9.0", nodePath: "/usr/local/bin/node", fileSystem: "case-insensitive",
   tmux: { path: "/opt/homebrew/bin/tmux", version: "tmux 3.5a" }, tmuxSocket: { path: "/private/tmp/tmux-501/oats", there: false }, changed: [], ...over,
 });
+/** Not macOS, no tmux, not a workflow run, a name that is a branch and a tag, a file named twice, a
+ *  changed file. */
+const notAWorkflowRun = () => facts({ macos: null, system: "Linux 6.8", tmux: null, workflowRef: null, workflowSha: null, runUrl: null, imageOS: null, imageVersion: null, kinds: ["branch", "tag"], repeated: ["test/a.test.mjs"], changed: [" M package.json"] });
 test("named-test-run formatHeader: what the log says of the run", () => {
   const header = formatHeader(facts(), macos).join("\n");
   for (const line of [
@@ -248,7 +252,7 @@ test("named-test-run formatHeader: what the log says of the run", () => {
   ]) assert.ok(header.includes(line), `the header lacks: ${line}\n${header}`);
 
   // Not macOS, no tmux, not a workflow run: each is said, none is left out.
-  const local = formatHeader(facts({ macos: null, system: "Linux 6.8", tmux: null, workflowRef: null, workflowSha: null, runUrl: null, imageOS: null, imageVersion: null, kinds: ["branch", "tag"], repeated: ["test/a.test.mjs"], changed: [" M package.json"] }), macos).join("\n");
+  const local = formatHeader(notAWorkflowRun(), macos).join("\n");
   for (const line of ['macOS:               NOT macOS: "Linux 6.8"', "tmux on PATH:        no", "workflow ref:        (not set: not a workflow run)", "ImageOS (not set), ImageVersion (not set)", '"main" (a branch and a tag)', "(named more than once, runs once: test/a.test.mjs)", 'tracked files that differ from the commit: 1 (" M package.json")']) {
     assert.ok(local.includes(line), `the header lacks: ${line}\n${local}`);
   }
@@ -281,7 +285,7 @@ const BEFORE_THE_SHARED_SCRIPT = {
 };
 test("named-test-run macOS: the header, the summary, a refusal and the usage are byte for byte what the macOS script printed", async () => {
   const today = BEFORE_THE_SHARED_SCRIPT;
-  const local = facts({ macos: null, system: "Linux 6.8", tmux: null, workflowRef: null, workflowSha: null, runUrl: null, imageOS: null, imageVersion: null, kinds: ["branch", "tag"], repeated: ["test/a.test.mjs"], changed: [" M package.json"] });
+  const local = notAWorkflowRun();
   assert.equal(formatHeader(facts(), macos).join("\n"), today.header);
   assert.equal(formatHeader(local, macos).join("\n"), today.headerLocal);
   const runs = [ran(), ran({ file: "test/b.test.mjs", code: 1, counts: { tests: 2, pass: 1, fail: 1, cancelled: 0, skipped: 0, todo: 0 }, durationMs: 4321 })];
@@ -521,7 +525,7 @@ test("named-test-run prepare, then run: the commit goes to a second tree, the he
 
 // The Linux platform, through the same two steps. Its programs are fakes: nothing here asks this
 // host's own systemd, so the case runs the same on a Mac and on pull-request CI.
-const program = (name, body) => { const path = join(base, name); writeFileSync(path, `#!/bin/sh\n${body}\n`); chmodSync(path, 0o755); return path; };
+const program = (name, body) => fakeProgram(base, name, body);
 const linuxEnv = (extra = {}) => ({ ...process.env, LINUX_TESTS_REF: "feature/x", LINUX_TESTS_FILES: "test/a.test.mjs", MACOS_TESTS_MARKER: marker, TMUX_TMPDIR: join(base, "no-tmux-here"), XDG_RUNTIME_DIR: "/run/user/1001", GITHUB_STEP_SUMMARY: "", ...extra });
 test("named-test-run Linux: the header says the user manager answered, and the files run; one that did not answer fails both steps and runs nothing", async () => {
   if (existsSync(marker)) rmSync(marker);
@@ -543,11 +547,11 @@ test("named-test-run Linux: the header says the user manager answered, and the f
   rmSync(marker);
 
   // A manager that does not answer: the header says so, the step fails after it, and nothing runs.
-  const silent = linuxPlatform({ systemctl: program("systemctl-offline", "echo offline; exit 1"), loginctl });
+  const silent = linuxPlatform({ systemctl: program("systemctl-offline", "echo offline; exit 1"), loginctl, waitMs: 600, pauseMs: 50 });
   const unfit = join(base, "linux-unfit"), refusedSummary = join(base, "linux-refused.md");
   const refused = collect();
   assert.equal(prepare({ tree: unfit, platform: silent, repo: runner, env: linuxEnv({ GITHUB_STEP_SUMMARY: refusedSummary }), write: refused.write }), 2);
-  assert.match(refused.text(), /user manager: {8}did NOT answer: "offline" \(systemctl --user is-system-running --wait, /);
+  assert.match(refused.text(), /user manager: {8}did NOT answer: "offline" \(systemctl --user is-system-running --wait, asked \d+ times, \d+\.\ds of at most 0\.6s\)/);
   assert.match(refused.text(), /\n\nRefused: nothing was installed or run\.\n  the user manager: did not answer \("offline"\): `systemctl --user` cannot be relied on, so no file runs\n$/);
   assert.ok(!refused.text().includes("The request is valid"));
   assert.match(readFileSync(refusedSummary, "utf8"), /## Linux test run: refused/);

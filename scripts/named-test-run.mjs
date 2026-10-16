@@ -9,10 +9,12 @@
 //                                                     put the commit in <tree>
 //   node scripts/<runner>-tests.mjs run <tree>       validate again, run each file, print the table
 //
-// A platform is { title, script, request: { ref, files }, readFacts({ env, step }), headerLines(facts),
-// summary(facts), refusal(facts)? }: the header's title, the command line's path, the names of the
-// request's two environment variables, the facts and lines only that runner has, and, when the
-// runner can be unfit to run tests (Linux: its user manager did not answer), why.
+// A platform is { title, script, request: { ref, files }, fileTimeoutMs, readFacts({ env, step }),
+// headerLines(facts), summary(facts), refusal(facts)? }: the header's title, the command line's path,
+// the names of the request's two environment variables, the time one file gets on that runner, the
+// facts and lines only that runner has, and, when the runner can be unfit to run tests (Linux: its
+// user manager did not answer), why. The time a file gets, and the job's timeout that holds it, are
+// each runner's constants; the number of files a run takes is this file's.
 //
 // The request is two environment variables, <RUNNER>_TESTS_REF and <RUNNER>_TESTS_FILES. They
 // are a person's text and are treated as such:
@@ -54,15 +56,11 @@ import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 
 // ---- the bounds: constants, never inputs ---------------------------------------------------------
+// The time one file gets, and the job's timeout, are each runner's (FILE_TIMEOUT_MS and
+// JOB_TIMEOUT_MINUTES of scripts/macos-tests.mjs and scripts/linux-tests.mjs).
 
-/** Files one run takes. */
+/** Files one run takes, on either runner. */
 export const MAX_FILES = 10;
-/** What one file gets before its process group is killed. */
-export const FILE_TIMEOUT_MS = 5 * 60_000;
-/** Each job's `timeout-minutes` (test/macos-tests-workflow.test.mjs and test/linux-tests-workflow.test.mjs
- *  pin the workflows to it): room for MAX_FILES files at FILE_TIMEOUT_MS each, and for the installs
- *  before them. */
-export const JOB_TIMEOUT_MINUTES = 60;
 /** What a file's output pipes get to close after it ended, and again after its group was killed. */
 export const KILL_GRACE_MS = 2_000;
 /** How often, and how many times, a group that still has a member when its file ended is looked at
@@ -353,7 +351,7 @@ export function testEnv(env, requestVars = []) {
  *  file that ended leaves no process of its group behind either (`leftover` says there was one):
  *  the next file runs alone. `requestVars` go to testEnv. `command` is the tests' seam; the command
  *  line never passes it. */
-export function runFile(file, { cwd, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs = FILE_TIMEOUT_MS, graceMs = KILL_GRACE_MS, requestVars = [], command = [process.execPath, "--test"] } = {}) {
+export function runFile(file, { cwd, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs, graceMs = KILL_GRACE_MS, requestVars = [], command = [process.execPath, "--test"] } = {}) {
   return new Promise((done) => {
     const started = Date.now(), reader = countsReader();
     const result = { file, counts: null, code: null, signal: null, timedOut: false, durationMs: 0, leftover: false, error: null };
@@ -465,7 +463,7 @@ export function conclude(runs) {
 /** Run each file alone, one after another, and print each one's result → Promise of the runs. A
  *  failing or hung file does not stop the ones after it. With `tmuxSocket` (a path that is not
  *  there yet), the file after which it first exists gets `leak`. */
-export async function runFiles(files, { cwd, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs = FILE_TIMEOUT_MS, graceMs = KILL_GRACE_MS, tmuxSocket = null, requestVars = [], command } = {}) {
+export async function runFiles(files, { cwd, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs, graceMs = KILL_GRACE_MS, tmuxSocket = null, requestVars = [], command } = {}) {
   const runs = [];
   let watching = tmuxSocket !== null && !socketThere(tmuxSocket);
   for (const [i, file] of files.entries()) {
@@ -556,7 +554,7 @@ export function formatHeader(f, platform) {
     `  tmux default socket: ${show(f.tmuxSocket.path)} ${f.tmuxSocket.there ? "EXISTS before the first file: the leak check is skipped for this run" : "is not there (looked for again after each file)"}`,
   ];
   if (f.changed) lines.push(`  tracked files that differ from the commit: ${f.changed.length ? `${f.changed.length} (${f.changed.slice(0, 10).map(show).join(", ")}${f.changed.length > 10 ? ", ..." : ""})` : "none"}`);
-  lines.push(`  bounds:              at most ${MAX_FILES} files a run, ${FILE_TIMEOUT_MS / 60_000} minutes a file`);
+  lines.push(`  bounds:              at most ${MAX_FILES} files a run, ${platform.fileTimeoutMs / 60_000} minutes a file`);
   lines.push(`  files (${f.files.length}), each alone, in this order:`);
   for (const file of f.files) lines.push(`    ${file}`);
   for (const file of f.repeated) lines.push(`  (named more than once, runs once: ${file})`);
@@ -634,8 +632,9 @@ export function summaryLines(facts, runs, platform) {
   ];
 }
 
-/** Step two: validate again, run each file in `tree`, print the table → Promise of the exit status. */
-export async function run({ tree, platform, repo = REPO_ROOT, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs = FILE_TIMEOUT_MS }) {
+/** Step two: validate again, run each file in `tree`, print the table → Promise of the exit status.
+ *  Each file gets the platform's `fileTimeoutMs`; `timeoutMs` is the tests' seam. */
+export async function run({ tree, platform, repo = REPO_ROOT, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs = platform.fileTimeoutMs }) {
   const request = validateRequest(requestOf(platform, env), repo, env);
   if (!request.ok) return refuse(request.refusals, { write, env, platform, nothing: NO_FILE });
   const wrong = treeRefusal(tree, request, env);

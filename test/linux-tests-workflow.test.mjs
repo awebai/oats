@@ -8,7 +8,8 @@ import assert from "node:assert/strict";
 import {
   assertBoundsAndConcurrency, assertDispatchOnly, assertNoInputInShell, assertPage, assertReadOnly, assertTwoTrees, load,
 } from "./helpers/named-tests-workflow.mjs";
-import { USER_MANAGER_WAIT_MS } from "../scripts/linux-tests.mjs";
+import { MAX_FILES } from "../scripts/named-test-run.mjs";
+import { FILE_TIMEOUT_MS, JOB_TIMEOUT_MINUTES, USER_MANAGER_WAIT_MS } from "../scripts/linux-tests.mjs";
 
 const linux = load("linux-tests.yml");
 const { workflow, job, steps } = linux;
@@ -57,9 +58,12 @@ test("Linux tests: an Ubuntu runner, a job timeout that holds the bounds and the
   assert.equal(job["runs-on"], "ubuntu-24.04");
   assert.equal(job.name, "Named test files on Linux");
   // prepare waits for the user manager, and run asks it again under the same bound.
-  assertBoundsAndConcurrency(linux, { prefix: "linux-tests", extraMs: 2 * USER_MANAGER_WAIT_MS });
+  assertBoundsAndConcurrency(linux, { prefix: "linux-tests", fileTimeoutMs: FILE_TIMEOUT_MS, jobTimeoutMinutes: JOB_TIMEOUT_MINUTES, extraMs: 2 * USER_MANAGER_WAIT_MS });
+  // 20 minutes a file: the #1108 qualification files run capture passes of up to 300 s, and a first
+  // upgrade may need several. The job holds ten of them and the installs, under GitHub's 6 hours.
+  assert.deepEqual([MAX_FILES, FILE_TIMEOUT_MS, JOB_TIMEOUT_MINUTES], [10, 20 * 60_000, 240], "the bounds the maintainers agreed: a change comes with a measured reason");
 });
 
 test("Linux tests: the page that owns the workflow states its bounds as the script has them, and its name as the guard contract", () => {
-  assertPage(linux, { script: SCRIPT });
+  assertPage(linux, { script: SCRIPT, fileTimeoutMs: FILE_TIMEOUT_MS, jobTimeoutMinutes: JOB_TIMEOUT_MINUTES });
 });

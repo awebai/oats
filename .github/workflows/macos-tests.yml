@@ -58,7 +58,7 @@ jobs:
     name: Named test files on macOS
     # The image the repository's other macOS jobs use (release.yml, build-installers.yml).
     runs-on: macos-14
-    # scripts/named-test-run.mjs: 10 files at 5 minutes each, and the installs before them.
+    # scripts/macos-tests.mjs: 10 files at 5 minutes each, and the installs before them.
     timeout-minutes: 60
     steps:
       - name: Check out the workflow's own commit
