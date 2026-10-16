@@ -5,7 +5,7 @@ import {join, delimiter} from 'node:path';
 import {request as httpsRequest} from 'node:https';
 import {refuse, parseProbeJson, canonicalArgument} from './probe-runtime.mjs';
 import {readWorkspaceService} from './probe-service.mjs';
-import {AW_MIN} from './aw-floor.mjs';
+import {AW_MIN, stableVersion, versionAtLeast} from './aw-floor.mjs';
 
 // Maintainer declaration: oats-aweb#57, issuecomment-6077900224. The origins and
 // server floor are probe only; the CLI floor is the provider's single aw floor.
@@ -20,23 +20,12 @@ export function probeMetadataUrl(awebUrl) {
   if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || !['/', '/api', '/api/'].includes(url.pathname)) return null;
   return `${url.origin}/meta`;
 }
-function stableSemver(value) {
-  if (typeof value !== 'string' || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value)) return null;
-  const parts = value.split('.').map(Number);
-  return parts.every(Number.isSafeInteger) ? parts : null;
-}
-function atLeast(value, floor) {
-  const v = stableSemver(value), f = stableSemver(floor);
-  if (!v || !f) return false;
-  for (let i = 0; i < 3; i++) if (v[i] !== f[i]) return v[i] > f[i];
-  return true;
-}
 /** Pure admission projection; the I/O adapter below supplies bounded metadata
  * from this exact URL and a version observation of the selected executable. */
 export function projectProbeSupport({awebUrl, cliVersion, metadata, observedUrl, policy = PROBE_RELEASE_SUPPORT}) {
   const metadataUrl = probeMetadataUrl(awebUrl);
   const origin = metadataUrl ? new URL(metadataUrl).origin : null;
-  const supported = !!(metadataUrl && policy && Array.isArray(policy.origins) && policy.origins.includes(origin) && observedUrl === metadataUrl && atLeast(cliVersion, policy.cliFloor) && atLeast(metadata?.build?.aweb_version, policy.serverFloor));
+  const supported = !!(metadataUrl && policy && Array.isArray(policy.origins) && policy.origins.includes(origin) && observedUrl === metadataUrl && versionAtLeast(cliVersion, policy.cliFloor) && versionAtLeast(metadata?.build?.aweb_version, policy.serverFloor));
   return {supported, origin, metadataUrl, reason: supported ? null : `fresh-conversation support unknown/unsupported on ${origin ?? 'unknown origin'}`};
 }
 export function resolveProbeAw(pathValue) {
@@ -56,7 +45,7 @@ export function probeAwVersion(bytes) {
   // versionReport() emits text, even with --json. Only the anchored release
   // version line grants admission; dev, prerelease and malformed lines refuse.
   const match = /^aw ((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))\r?\n(?:  (?:commit:|built:) [^\r\n]*\r?\n)*$/.exec(text);
-  return match && stableSemver(match[1]) ? match[1] : null;
+  return match && stableVersion(match[1]) ? match[1] : null;
 }
 export function observeProbeMetadata(url, budget, request = httpsRequest) {
   const timeout = budget.cap(5000);
@@ -111,7 +100,7 @@ export async function qualifyProbeSupport({execute, target, budget, path, observ
   let awVersion;
   try { awVersion = probeAwVersion(await execute(awBinary, ['version'], 3000)); }
   catch { budget.check(); refuse('probe-cli-version-unavailable'); }
-  if (!atLeast(awVersion, PROBE_RELEASE_SUPPORT.cliFloor)) refuse('probe-cli-version-unsupported');
+  if (!versionAtLeast(awVersion, PROBE_RELEASE_SUPPORT.cliFloor)) refuse('probe-cli-version-unsupported');
   revalidate();
   let metadata;
   try { metadata = await observe(metadataUrl, budget); }

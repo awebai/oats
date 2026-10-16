@@ -1,14 +1,17 @@
 // Host-only provider settings in a deployment's oats-local.yaml: one entry of a
 // block-style map under settings.oats.aweb (`roots`: team id → minting root,
-// `residents`: resident name → custody directory). Only block-style YAML is
+// `residents`: resident name → custody directory, `health`: the status
+// publisher's settings). Only block-style YAML is
 // edited; anything else refuses with the exact line to add by hand.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 /** The singular a map's messages use for one of its entries. */
-const ENTRY_NOUN = { roots: "root", residents: "resident" };
+const ENTRY_NOUN = { roots: "root", residents: "resident", health: "health setting" };
 
 export const yamlQuote = (value) => JSON.stringify(String(value));
+/** A setting's YAML scalar: a boolean as itself, anything else quoted. */
+const yamlScalar = (value) => (typeof value === "boolean" ? String(value) : yamlQuote(value));
 function blockEnd(lines, start, indent) {
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) if (lines[i].trim() && !lines[i].startsWith(" ".repeat(indent + 1))) { end = i; break; }
@@ -28,7 +31,7 @@ export function atomicWrite(file, text) {
 }
 function basenameForTemp(file) { return file.split(/[\\/]/).pop() || "oats-local.yaml"; }
 function unsupportedLocalYaml(file, map, detail, key, value) {
-  throw new Error(`${file}: cannot safely update settings.oats.aweb.${map} automatically (${detail}); add this line by hand under block-style settings.oats.aweb.${map}: ${yamlQuote(key)}: ${yamlQuote(value)}`);
+  throw new Error(`${file}: cannot safely update settings.oats.aweb.${map} automatically (${detail}); add this line by hand under block-style settings.oats.aweb.${map}: ${yamlQuote(key)}: ${yamlScalar(value)}`);
 }
 function findBlockHeader(lines, start, end, indent, names) {
   const pad = " ".repeat(indent);
@@ -77,7 +80,7 @@ export function recordAwebSetting(map, entryKey, entryValue, { start = process.e
   if (typeof block === "object") unsupportedLocalYaml(file, map, `line ${block.unsupported + 1} is not a block-style ${map}: mapping`, entryKey, entryValue);
   if (block < 0) { block = ensureYamlBlock(lines, aweb, awebEnd, 4, map); awebEnd++; }
   const blockEndIndex = blockEnd(lines, block, 4);
-  const key = yamlQuote(entryKey), value = yamlQuote(entryValue), row = `      ${key}: ${value}`;
+  const key = yamlQuote(entryKey), value = yamlScalar(entryValue), row = `      ${key}: ${value}`;
   // The public kernel serializer may wrap a scalar value and may choose a
   // plain or single-quoted key. Replace the entire scalar entry,
   // not just its first line, so a tokenless resume remains valid YAML.

@@ -682,6 +682,9 @@ check delivery) is oats.setup's `/oats-host-delivery`, Choice 2
 (oats.framework 1.11.0). This card is the command. It is provider 1.28.0, aw
 >=1.36.33, and runs in D, in the operator's own shell, as the user who runs
 the instances, never inside an instance.
+On macOS, run `install` from the desktop login, not over ssh: an ssh session has
+no `gui/<uid>` domain, so the plist is written and then `launchctl bootstrap`
+fails (`E_WAKE_UNIT`); rerunning `install` from the desktop recovers.
 
 | Act | Command in D | Writes / success / one next step | Error → remedy |
 |---|---|---|---|
@@ -691,6 +694,27 @@ the instances, never inside an instance.
 
 The unit's text, the JSON shapes and every error are in the package's
 `docs/wake-service.md`.
+
+### Agent status publisher
+
+`oats aweb health` publishes a signed status for every agent of D to aweb once
+a minute (reachable or not, why, who fixes it), which aweb's dashboard shows
+instead of its own guess. It is provider 1.29.0 and needs aw >=1.36.38 to
+publish (server 1.27.24; Claude channel 1.7.17 or pi extension 0.3.15 to prove
+a channel home receives, stated but not checked). It is opt-in and host-only
+(`settings.oats.aweb.health`, only in `oats-local.yaml`), and runs in D, in the
+operator's own shell, never inside an instance.
+
+| Act | Command in D | Writes / success / one next step | Error → remedy |
+|---|---|---|---|
+| Turn on | `oats aweb health enable [--operator <role>] [--language <tag>] [--json]` | `health.publish: true` (and the words given) in `oats-local.yaml`, and one schedule job `oats-aweb-health` that runs `oats aweb health publish` every minute, registered once (a rerun only rewrites the words given). It never installs the host timer. Success: the status report. Next: `oats schedule host install` if it names the timer (an operator step). | Exit 1 with a `problem:` line until the timer runs; `E_HEALTH` for a setting that breaks its rules. |
+| Report | `oats aweb health status [--json]` | Read-only. Publishing on or off, ready or not, the last tick's counts, each `problem:` with its remedy, and the required releases. Exit 1 only when publishing is on and not ready. | Not an error: an aw below 1.36.38 is a `problem:` line (exit 1) → upgrade aw. |
+| Turn off | `oats aweb health disable [--json]` | Removes the job, records `publish: false`, keeps `operator` and `language`, and clears each designation it made (needs aw >=1.36.38), so aweb shows its own facts again. Next: `status` shows `publishing: off`. | Exit 1 when a designation is left on the server: each reason is a `designations not cleared: <why>` line (with aw below 1.36.38, every one: upgrade aw, rerun `disable`). It stays recorded, so a rerun retries it. |
+| One tick by hand | `oats aweb health publish [--json]` | What the job runs: designates each agent once, then publishes it. `--json` lists published, refused, skipped and failed per agent. | `E_HEALTH_AW` → upgrade aw. Server refusals are logged in `D/.oats-aweb/health/log.jsonl` and retried by the next tick. |
+
+Settings, outputs, files and errors are in the package's
+`docs/health-publisher.md`; why it works this way is in
+`docs/design/2026-10-14-agent-health-publisher.md`.
 
 ### Connecting a deployment on another machine
 
