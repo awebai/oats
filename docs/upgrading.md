@@ -114,9 +114,11 @@ capture state and index from the existing journals: it validates each journal,
 proves each session's captured prefix against a fresh staged copy of its
 source, and indexes every record. Later passes do no content work for
 unchanged sessions. This cost is paid once, and it grows linearly with the
-number of streams and their bytes: about **[measured time per 1,000 streams on
-the hosted Linux runner]**. It runs in bounded passes, each stopping at its
-deadline. A first upgrade that is interrupted or reaches its deadline resumes
+number of streams and their bytes. On the hosted Linux runner (4 CPUs) it took
+about 20 seconds per 1,000 streams of typical small sessions, and about 4
+minutes per GB of journals overall: a record of about 1,300 streams and 8 GB of
+journals needs roughly half an hour of capture work, spread over several
+bounded passes. Each pass stops at its deadline. A first upgrade that is interrupted or reaches its deadline resumes
 from its durable checkpoints on the next pass (journal validation, index
 cursors, the prefix proof and the staged copies of sources over 8 MiB) rather
 than starting over; a smaller session's staged copy is made again. Reducing the
