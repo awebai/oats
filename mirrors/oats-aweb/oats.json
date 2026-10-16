@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.27.3",
+  "version": "1.28.0",
   "compatibility": {
     "oats": ">=0.52.0"
   },
@@ -76,6 +76,7 @@
     "leave": "bin/oats-aweb.mjs leave",
     "invite": "bin/oats-aweb.mjs invite",
     "resident": "bin/oats-aweb.mjs resident",
+    "wake": "bin/oats-aweb.mjs wake",
     "probe": "bin/oats-aweb-probe.mjs"
   },
   "binding": {
