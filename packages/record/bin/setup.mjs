@@ -249,12 +249,13 @@ try {
       `  ${shellWord(NODE)} ${shellWord(CAPTURE)} --watch --owner ${owner} --root ${shellWord(root)}`);
   }
   if (!dry) loadIgnore(root);
-  for (const hook of hooks) recheckCaptureSetup(hook.snapshot);
-  if (service) applyCaptureService(service);
+  const createdParents = new Map();
+  for (const hook of hooks) recheckCaptureSetup(hook.snapshot, createdParents);
+  if (service) applyCaptureService(service, createdParents);
   for (const { snapshot, contents } of hooks) {
     if (!contents) console.log(`hooks: ${snapshot.path} already installed`);
     else if (dry) console.log(`hooks: would install Stop+SessionEnd capture in ${snapshot.path}`);
-    else { writeCaptureSetup(snapshot, contents); console.log(`hooks: installed Stop+SessionEnd capture in ${snapshot.path}`); }
+    else { writeCaptureSetup(snapshot, contents, createdParents); console.log(`hooks: installed Stop+SessionEnd capture in ${snapshot.path}`); }
   }
   if (dry) console.log("dry run: no first capture pass");
   else {

@@ -26,7 +26,7 @@ function parents(path) {
       // target must not turn a later retargeting into ordinary directory creation.
       records.push([directory, `${stat.dev}:${stat.ino}:${stat.mode}`, stat.isSymbolicLink() ? fs.readlinkSync(directory) : null,
         target ? `${target.dev}:${target.ino}:${target.mode}` : null]);
-    }
+    } else records.push([directory, null, null, null]);
     if (dirname(directory) === directory) return records;
   }
 }
@@ -52,26 +52,52 @@ export function captureSetupSnapshot(path) {
   return { path, kind: link === undefined ? "file" : "link", identity: before, bytes, link, parents: ancestry };
 }
 
-function recheckParents(snapshot, current) {
-  if (snapshot.parents.some(record => !current.parents.some(now => JSON.stringify(now) === JSON.stringify(record))))
+function recheckParents(snapshot, current, createdParents = new Map()) {
+  if (snapshot.parents.some(record => {
+    const expected = record[1] === null ? createdParents.get(record[0]) ?? record : record;
+    return !current.parents.some(now => JSON.stringify(now) === JSON.stringify(expected));
+  }))
     throw new Error(`setup target parent changed since preflight: ${snapshot.path}; re-run setup`);
 }
-export function recheckCaptureSetup(snapshot) {
+export function recheckCaptureSetup(snapshot, createdParents = new Map()) {
+  recheckParents(snapshot, { parents: parents(snapshot.path) }, createdParents);
   const current = captureSetupSnapshot(snapshot.path);
-  recheckParents(snapshot, current);
+  recheckParents(snapshot, current, createdParents);
   if (current.kind !== snapshot.kind || current.identity !== snapshot.identity || current.link !== snapshot.link ||
       (snapshot.bytes && !snapshot.bytes.equals(current.bytes))) throw new Error(`setup target changed since preflight: ${snapshot.path}; re-run setup`);
 }
 
-export function writeCaptureSetup(snapshot, contents) {
-  recheckCaptureSetup(snapshot);
-  fs.mkdirSync(dirname(snapshot.path), { recursive: true });
+export function writeCaptureSetup(snapshot, contents, createdParents = new Map()) {
+  recheckCaptureSetup(snapshot, createdParents);
+  // A missing ancestor is evidence, not permission to follow whatever appears
+  // there later. Create one level at a time, refusing EEXIST, and share only
+  // this apply's observed non-link directory identities with subsequent writes.
+  for (const record of [...snapshot.parents].reverse()) {
+    if (record[1] !== null || createdParents.has(record[0])) continue;
+    recheckCaptureSetup(snapshot, createdParents);
+    fs.mkdirSync(record[0]);
+    const stat = fs.lstatSync(record[0]);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`setup created parent changed: ${record[0]}; re-run setup`);
+    createdParents.set(record[0], [record[0], `${stat.dev}:${stat.ino}:${stat.mode}`, null, null]);
+  }
+  recheckCaptureSetup(snapshot, createdParents);
   const temporary = `${snapshot.path}.tmp-${randomUUID()}`;
+  let temporaryIdentity;
   try {
     fs.writeFileSync(temporary, contents, { flag: "wx", mode: 0o600 });
-    recheckCaptureSetup(snapshot);
+    temporaryIdentity = identity(fs.lstatSync(temporary));
+    recheckCaptureSetup(snapshot, createdParents);
     fs.renameSync(temporary, snapshot.path);
-  } finally { fs.rmSync(temporary, { force: true }); }
+  } finally {
+    // A refused ancestor replacement also revokes cleanup through that path.
+    // Leave the original scratch file rather than unlink an unrelated target.
+    let safe = false;
+    try {
+      recheckParents(snapshot, { parents: parents(snapshot.path) }, createdParents);
+      safe = temporaryIdentity !== undefined && identity(fs.lstatSync(temporary)) === temporaryIdentity;
+    } catch { /* absent scratch or changed ancestry: no pathname cleanup */ }
+    if (safe) fs.unlinkSync(temporary);
+  }
 }
 
 const detail = result => [result.error?.message, result.signal && `signal ${result.signal}`, result.stderr?.trim(),
@@ -186,14 +212,14 @@ export function preflightCaptureService({ platform, node, request, setupPath, dr
   return plan;
 }
 
-export function applyCaptureService(plan) {
+export function applyCaptureService(plan, createdParents = new Map()) {
   const { files, run, log } = plan;
   if (plan.dry) {
     for (const file of files) log(`service: would ${file.snapshot.kind === "absent" ? "install" : file.changed ? "update" : "keep"} ${file.path}`);
     log("service: manager registration/disabled state unexamined (--dry-run); no manager invoked");
     return;
   }
-  const recheck = () => files.forEach(file => recheckCaptureSetup(file.snapshot));
+  const recheck = () => files.forEach(file => recheckCaptureSetup(file.snapshot, createdParents));
   recheck();
   const current = inspect(plan);
   if (stateIdentity(current, plan.platform) !== stateIdentity(plan.state, plan.platform)) throw new Error("capture manager identity/enablement changed since preflight; re-run setup");
@@ -209,10 +235,18 @@ export function applyCaptureService(plan) {
     }
   }
   recheck();
-  const command = (name, args) => requireOk(run, name, args);
+  const command = (name, args) => {
+    requireOk(run, name, args);
+    log(`service: manager action completed: ${name} ${args.map(serviceShellWord).join(" ")}`);
+  };
+  const writeDefinition = file => {
+    writeCaptureSetup(file.snapshot, file.contents, createdParents);
+    log(`service: definition written: ${file.path}`);
+  };
   if (plan.platform === "darwin") {
     if (plan.changed && current.registered) command("launchctl", ["bootout", plan.target]);
-    for (const file of files) if (file.changed) writeCaptureSetup(file.snapshot, file.contents);
+    for (const file of files) if (file.changed) writeDefinition(file);
+    recheckParents(files[0].snapshot, { parents: parents(files[0].path) }, createdParents);
     fs.mkdirSync(join(plan.request.plan.home, "Library", "Logs"), { recursive: true });
     if (plan.disabled) command("launchctl", ["enable", plan.target]);
     if (plan.changed || !current.registered) command("launchctl", ["bootstrap", plan.domain, files[0].path]);
@@ -237,10 +271,10 @@ export function applyCaptureService(plan) {
     for (const file of files) {
       if (plan.disabled && file.snapshot.kind === "link" && file.snapshot.link === "/dev/null") {
         const now = captureSetupSnapshot(file.path);
-        recheckParents(file.snapshot, now);
+        recheckParents(file.snapshot, now, createdParents);
         if (now.kind === "absent") file.snapshot = now;
       }
-      if (file.changed) writeCaptureSetup(file.snapshot, file.contents);
+      if (file.changed) writeDefinition(file);
     }
     if (plan.changed || plan.disabled || current.service.LoadState !== "loaded" || current.timer.LoadState !== "loaded") command("systemctl", ["--user", "daemon-reload"]);
     if (plan.changed || plan.disabled || current.timer.UnitFileState !== "enabled" || current.timer.ActiveState !== "active")
@@ -254,6 +288,7 @@ export function applyCaptureService(plan) {
   }
   for (const file of files) {
     const final = captureSetupSnapshot(file.path);
+    recheckParents(file.snapshot, final, createdParents);
     if (final.kind !== "file" || !final.bytes.equals(Buffer.from(file.contents))) throw new Error(`capture definition changed during activation: ${file.path}; re-run setup`);
   }
   log(`service: periodic capture scheduled (every 15 minutes)${plan.changed ? "" : "; definitions already installed"}`);

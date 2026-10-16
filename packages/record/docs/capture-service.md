@@ -1220,7 +1220,7 @@ The setup coordinator prepares hook edits in memory, then
 `capture-service-install.mjs` snapshots every named service target and inspects
 applicable manager state before any service/file/hook/capture mutation.
 Snapshots retain regular-file bytes and identity or the symlink's own identity
-and target, plus ancestor identities. Reads are limited to 1 MiB per target;
+and target, plus ancestor identities and explicit missing-ancestor records. Reads are limited to 1 MiB per target;
 unknown reads, nonregular targets and unsupported manager output refuse.
 `capture-service-ownership.mjs` parses only supported marked templates and
 the actual unmarked direct-Node `capture.mjs --watch --owner` templates with
@@ -1243,7 +1243,16 @@ Apply rechecks file/ancestor identities and manager ownership/enablement.
 Replaced bytes or symlinks are saved nonoverwriting in a reported datable
 `<root>/service-backups/<date>-<unique-id>/` directory. Symlink backups
 preserve the link instead of reading or removing an external wrapper target.
-Each write uses a temporary file and another identity check before rename.
+An ancestor absent at preflight must remain absent until this apply creates it.
+Creation proceeds one directory at a time without recursive adoption of an
+existing path; each created non-link directory's identity is retained in a
+per-apply map shared by subsequent service and hook writes. Newly introduced
+directories or links are not accepted as extra ancestry. Existing ancestor
+identities and observed symlink targets remain binding. The extra metadata
+checks and directory creation do not establish an atomic filesystem operation.
+Each write uses a temporary file and another identity check before rename;
+cleanup also refuses changed ancestry instead of unlinking through a redirected
+path. An interrupted/refused write can leave its original temporary file.
 An expected manager unmask can remove only the saved named `/dev/null` link;
 other observed replacements refuse. These checks detect observed races, not
 an OS-wide atomic transaction over files and managers.
@@ -1260,7 +1269,8 @@ Setup verifies registration/enablement and expected definitions before saying
 PID or infer worker completion. Manager and setup first passes can overlap;
 the capture root lock admits one.
 
-Manager commands have finite time/output limits. Failure reports the action,
+Manager commands have finite time/output limits; completed mutation commands
+and definition writes are reported before subsequent steps. Failure reports the action,
 reason and recovery without inventing scheduling or capture results. Apply
 can leave backups, stopped jobs or written definitions before a later failure;
 there is no global atomic rollback. Inspect the reported state and rerun.

@@ -238,6 +238,101 @@ test("a dangling ancestor link cannot acquire an unrelated target after prefligh
   assert.equal(fs.readlinkSync(directory), external); assert.equal(fs.existsSync(f.root), false);
 });
 
+test("a missing ancestor replaced by a link after preflight refuses before any apply mutation", t => {
+  for (const platform of ["linux", "darwin"]) {
+    const f = fixture(t, platform), ancestor = join(f.home, platform === "linux" ? ".config" : "Library");
+    const external = join(f.base, "unrelated"); fs.mkdirSync(external);
+    const plan = f.preflight();
+    write(f.state, JSON.stringify(platform === "linux"
+      ? { units: { [service]: plan.state.service, [timer]: plan.state.timer } } : { mac: plan.state }));
+    const status = join(f.root, "capture-status.json"); write(status, "prior status bytes");
+    const state = fs.readFileSync(f.state), hooks = fs.readFileSync(f.settings), calls = fs.readFileSync(f.calls);
+    fs.symlinkSync(external, ancestor);
+    assert.throws(() => applyCaptureService(plan), /parent changed since preflight/);
+    assert.deepEqual(fs.readdirSync(external), []);
+    for (const file of f.definition.files) assert.equal(fs.existsSync(file.path), false);
+    assert.deepEqual(fs.readFileSync(f.settings), hooks); assert.deepEqual(fs.readFileSync(f.state), state);
+    assert.deepEqual(fs.readFileSync(f.calls), calls, "refusal precedes even apply manager inspection");
+    assert.equal(fs.readFileSync(status, "utf8"), "prior status bytes"); assert.deepEqual(f.operations(), []);
+    assert.deepEqual(f.logs, []); assert.equal(fs.existsSync(join(f.root, "service-backups")), false);
+  }
+});
+
+test("a missing ancestor linked after stopping an old registration prevents redirected writes and retains partial-apply evidence", t => {
+  for (const platform of ["linux", "darwin"]) {
+    const f = fixture(t, platform), ancestor = join(f.home, platform === "linux" ? ".config" : "Library");
+    const external = join(f.base, "unrelated"); fs.mkdirSync(external);
+    // The registered job can outlive its removed file. Stopping it is a
+    // completed apply step, not something a later identity refusal rolls back.
+    const absent = f.preflight();
+    write(f.state, JSON.stringify(platform === "linux" ? { units: {
+      [service]: { ...absent.state.service, LoadState: "loaded", UnitFileState: "static",
+        ActiveState: "active", FragmentPath: f.definition.files[0].path },
+      [timer]: absent.state.timer,
+    } } : { mac: { registered: true, disabled: false, active: true, path: f.definition.files[0].path,
+      argv: ["/old/node", "/old/package/bin/capture.mjs", "--watch", "--owner", "old-owner"], interval: null } }));
+    const plan = f.preflight(), run = plan.run, hooks = fs.readFileSync(f.settings);
+    const status = join(f.root, "capture-status.json"); write(status, "prior status bytes");
+    plan.run = (command, args) => {
+      const result = run(command, args);
+      if (args.includes(platform === "linux" ? "stop" : "bootout")) fs.symlinkSync(external, ancestor);
+      return result;
+    };
+    assert.throws(() => applyCaptureService(plan), /parent changed since preflight/);
+    assert.deepEqual(fs.readdirSync(external), []);
+    for (const file of f.definition.files) assert.equal(fs.existsSync(file.path), false);
+    assert.deepEqual(fs.readFileSync(f.settings), hooks); assert.equal(fs.readFileSync(status, "utf8"), "prior status bytes");
+    const state = JSON.parse(fs.readFileSync(f.state));
+    assert.equal(platform === "linux" ? state.units[service].ActiveState : state.mac.registered,
+      platform === "linux" ? "inactive" : false);
+    assert.equal(f.operations().length, 1); assert.match(f.logs.join("\n"), /manager action completed: .*(?:stop|bootout)/);
+    assert.doesNotMatch(f.logs.join("\n"), /periodic capture scheduled|rollback/);
+  }
+});
+
+test("directory identities created for the first named file remain binding for the second write", t => {
+  const f = fixture(t), directory = dirname(f.definition.files[0].path), external = join(f.base, "unrelated");
+  fs.mkdirSync(external); const plan = f.preflight(), rename = fs.renameSync;
+  const hooks = fs.readFileSync(f.settings);
+  fs.renameSync = (from, to) => {
+    rename(from, to);
+    if (to === f.definition.files[0].path) {
+      rename(directory, directory + ".saved");
+      fs.symlinkSync(external, directory);
+    }
+  };
+  try { assert.throws(() => applyCaptureService(plan), /parent changed since preflight/); }
+  finally { fs.renameSync = rename; }
+  assert.deepEqual(fs.readdirSync(external), []);
+  assert.equal(fs.readFileSync(join(directory + ".saved", service), "utf8"), f.definition.files[0].contents);
+  assert.equal(fs.existsSync(f.definition.files[1].path), false); assert.deepEqual(fs.readFileSync(f.settings), hooks);
+  assert.equal(fs.existsSync(join(f.root, "capture-status.json")), false); assert.deepEqual(f.operations(), []);
+  assert.ok(f.logs.includes(`service: definition written: ${f.definition.files[0].path}`));
+  assert.doesNotMatch(f.logs.join("\n"), /periodic capture scheduled|rollback/);
+});
+
+test("refusal after a temporary write does not clean up through replaced ancestry", t => {
+  const f = fixture(t), target = f.definition.files[0].path, directory = dirname(target);
+  const external = join(f.base, "unrelated"); fs.mkdirSync(external);
+  const plan = f.preflight(), writeFile = fs.writeFileSync;
+  let temporary;
+  fs.writeFileSync = (path, ...args) => {
+    writeFile(path, ...args);
+    if (typeof path === "string" && path.startsWith(target + ".tmp-")) {
+      temporary = path.slice(directory.length + 1);
+      fs.renameSync(directory, directory + ".saved");
+      writeFile(join(external, temporary), "unrelated temporary-name collision");
+      fs.symlinkSync(external, directory);
+    }
+  };
+  try { assert.throws(() => applyCaptureService(plan), /parent changed since preflight/); }
+  finally { fs.writeFileSync = writeFile; }
+  assert.ok(temporary); assert.equal(fs.readFileSync(join(external, temporary), "utf8"), "unrelated temporary-name collision");
+  assert.equal(fs.readFileSync(join(directory + ".saved", temporary), "utf8"), f.definition.files[0].contents);
+  assert.equal(fs.existsSync(target), false); assert.deepEqual(f.operations(), []);
+  assert.doesNotMatch(f.logs.join("\n"), /periodic capture scheduled|rollback/);
+});
+
 test("manager failure leaves partial apply visible and retry restores scheduling without invented pass results", t => {
   for (const platform of ["linux", "darwin"]) {
     const f = fixture(t, platform), operation = platform === "linux" ? "enable" : "bootstrap";
