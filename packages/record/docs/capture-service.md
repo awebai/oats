@@ -1167,9 +1167,48 @@ The supervisor owns signal handling, child reaping and lock release; setup is
 not another status writer. Ordinary/retry text and JSON, protected exact-home/file
 receipts and public synchronous APIs retain their contracts.
 
-This first-pass routing does not convert the installed legacy watcher, implement
-periodic `service` attribution, establish disabled/foreign manager ownership or
+This first-pass routing does not convert the installed legacy watcher,
+establish disabled/foreign manager ownership or
 provide health/doctor acceptance. Those manager/conversion checks and hosted
 Linux/manager/rollback qualification remain required. The shared presentation
 adds no status transaction or counter reconstruction; existing source/audit
 allowance, reservation and actual storage/synchronization costs remain gates.
+
+### Finite service entry and periodic definitions
+
+The private `capture-service-runner.mjs` entry takes one serialized request with
+explicit record root, owner and default-root plan. Relative record roots resolve
+against the copied caller cwd. Home, cwd and the four native location values
+come from that plan rather than the service process's ambient source selection.
+It requires all formats and fixes indexing enabled, retry preparation off and
+trigger `service`; the request cannot select an executable, worker or resource
+policy. After validation it reads the privacy policy before acquiring a lock,
+then uses the fixed supervisor and shared foreground presentation. Complete,
+partial, overlap, operational failure and absent receipt retain the setup/manual
+meanings above. There is no second status writer, repeated pass loop or manager
+operation in this entry.
+
+`capture-service-definition.mjs` constructs definitions without filesystem or
+manager access. Both formats carry `oats-turn-record-service:1`. The recorded
+absolute Node runs the fixed package entry with the explicit request as one
+argument, with XML/systemd-specific escaping and refusal of values the selected
+manager cannot represent safely. No shell evaluates the request. XML preserves
+literal carriage returns through character references; systemd arguments escape
+both specifier and environment expansion syntax. Unsupported executable quote
+or backslash spellings are refused for systemd rather than silently rewritten.
+
+The macOS definition names `ai.aweb.turn-record-capture`, uses `RunAtLoad` and
+`StartInterval` 900, and has no `KeepAlive` or watch argument. Linux pairs a finite
+`turn-record-capture.service` (`Type=exec`, `MemoryMax=2G`, `RuntimeMaxSec=300`, no
+restart loop) with `turn-record-capture.timer` (`OnBootSec=1min`,
+`OnUnitActiveSec=15min`). A timer/schedule is not a permanent worker PID.
+
+These private definitions are not yet wired into setup's legacy installer.
+Constructing them proves neither installation nor enabled/registered scheduling.
+The installer switch still requires all-target file and manager preflight before
+any mutation, parsed ownership, disabled/foreign/unknown refusal, explicit
+replacement with nonoverwriting backup and identity recheck, safe activation
+and unchanged-schedule preservation. Health/doctor and real manager lifecycle
+qualification remain separate. Source-only argument-decoding fixtures do not
+replace hosted manager tests; this entry introduces no additional capture-state
+transactions beyond the existing fixed command path.

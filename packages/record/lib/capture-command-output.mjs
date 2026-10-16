@@ -1,4 +1,4 @@
-// Private foreground command presentation shared by manual/watch and setup.
+// Private foreground command presentation shared by manual/watch, setup and service.
 // Only the still-held-lock worker projection supplies counts, never a later
 // status read or a guessed zero when transport failed before publication.
 import { runCaptureCommand } from "./capture-command.mjs";

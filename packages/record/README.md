@@ -131,6 +131,9 @@ completion; operational failures remain nonzero. Periodic manager migration
 remains separate service-A work; this does not describe already-released 0.58.0 behavior.
 See [command routing and receipts](docs/capture-service.md#ordinary-cli-and-foreground-watch).
 See [detached hook launch limits](docs/capture-service.md#detached-hook-launcher).
+The private [finite service entry and definition builder](docs/capture-service.md#finite-service-entry-and-periodic-definitions)
+provide service attribution and periodic templates; setup does not yet install
+those definitions or establish their manager state.
 
 Transcript capture reads 64 KiB chunks and frames complete native records,
 including UTF-8 characters split across chunks. It flushes before adding a

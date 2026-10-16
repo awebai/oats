@@ -119,8 +119,8 @@ test("setup operational discovery failure retains truthful worker failure with h
   assert.equal(fs.existsSync(captureLockPath(f.root)), false);
 });
 
-test("shared foreground presentation refuses missing projections and retains lock diagnostics for setup/manual", async () => {
-  for (const trigger of ["setup", "manual"]) {
+test("shared foreground presentation refuses missing projections and retains lock diagnostics for setup/manual/service", async () => {
+  for (const trigger of ["setup", "manual", "service"]) {
     const logs = [], errors = [], options = { trigger, indexEnabled: true };
     const call = run => captureCommandPass("/fixture/record", options, { run, log: line => logs.push(line), error: line => errors.push(line) });
     await assert.rejects(call(async () => ({ outcome: "complete", reason: null, exitCode: 0 })), /matching worker receipt unavailable; appended count is unknown/);
