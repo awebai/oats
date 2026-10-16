@@ -1857,6 +1857,35 @@ test("a spawn through the loop: n reads the catalog, the preview is read once pe
   assert.equal(r.log.some(([what, bytes]) => what === "panel" && bytes === "input"), true, "the q went to the agent: the terminal has the focus");
 });
 
+test("the preview scrolls on from where each movement key left it: three Downs in one read move three rows, and so do three reads while the output is blocked (round 1 of the polish's review)", async () => {
+  const r = await started({ columns: 60, rows: 15 });
+  r.reader.answer(ENTRY);
+  r.stdin.type("n"); await settle();
+  r.soulReads[0].answer(soulsDocument(["acme-expert", "acme-maintainer"])); await settle();
+  for (const ch of "expert") r.stdin.type(ch);
+  r.stdin.type("\r"); await settle();
+  const warnings = Array.from({ length: 12 }, (_, i) => `Warning number ${i + 1}.`);
+  r.spawn.reads.at(-1).answer({ spawnPreviewViewApi: 1, status: "available", target: null, data: { ...SPAWN_DATA, warnings }, reason: null }); await settle();
+  const above = () => Number(/(\d+) more above/.exec(wholeScreen(r))?.[1] ?? 0);
+  // Back from Spawn to the warnings' fold, opened, and on to Spawn again, which scrolls freely.
+  r.stdin.type("\x1b[Z"); await settle();
+  r.stdin.type("\r"); await settle();
+  r.stdin.type("\t"); await settle();
+  assert.match(wholeScreen(r), /> Spawn </);
+  const start = above();
+  r.stdin.type("\x1b[B\x1b[B\x1b[B"); await settle();
+  assert.equal(above(), start + 3, "three Downs in one read: three rows");
+  assert.match(wholeScreen(r), /more below/, "and room for three more");
+  r.stdout.accepts = false;
+  r.stdin.type("\x1b[B");
+  r.stdout.accepts = true;
+  r.stdin.type("\x1b[B"); r.stdin.type("\x1b[B"); await settle();
+  r.stdout.emit("drain"); await settle();
+  assert.equal(above(), start + 6, "three reads while blocked: three rows more");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
 test("a paste of n, a soul's name and two Enters in one read opens the picker and spawns nothing: no preview is read, nothing submitted", async () => {
   const r = await started();
   r.reader.answer(ENTRY);

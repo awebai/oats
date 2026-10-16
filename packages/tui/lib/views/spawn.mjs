@@ -273,8 +273,8 @@ const SCROLL_MIN = 3;
  *  the focus (the store scrolls only with the movement keys; Tab can land on a fold out of sight).
  *  The scrolling part's last row says what is cut off. `extent` and `room` are the scrolling
  *  part's, for the store's scroll, and `top` the row the window drawn starts at (which keeps the
- *  focused fold in sight, and so may stand where the model's `top` does not): the store scrolls
- *  from it; `armed` is whether the ready Spawn button is on the screen. */
+ *  focused fold in sight, and so may stand where the model's `top` does not), which the loop
+ *  gives the store once it is painted; `armed` is whether the ready Spawn button is on the screen. */
 function preview(s, size, ascii) {
   const rows = Array.from({ length: size.rows }, () => []);
   const fixed = previewRows(s, size.cols, ascii, { problemRows: 0 }).pinned.length;

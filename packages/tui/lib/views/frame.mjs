@@ -479,8 +479,8 @@ function framed(m, size) {
     return { rows, page: Math.max(1, g.body.rows), extent: 0, room: 1, cursor: { row: g.body.top, col: drawn.cursor } };
   }
   // The spawn prompt in the same place (the palette wins if both are ever set). `extent` and `room`
-  // are its preview's, which the store scrolls as it scrolls a confirmation, from `drawnTop`, the
-  // row its window was drawn from; `armed` says the ready
+  // are its preview's, which the store scrolls as it scrolls a confirmation; `drawnTop` the
+  // row its window was drawn from, which the loop gives the store once the frame is written; `armed` says the ready
   // Spawn button is drawn, which the loop tells the store once the frame is written.
   if (m.spawn) {
     rows[2] = rule(cols, m.ascii);
