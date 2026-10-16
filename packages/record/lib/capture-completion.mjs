@@ -45,6 +45,7 @@ export function auditCaptureSourceRetirement(session, { limit = 128, work } = {}
       !Number.isSafeInteger(limit) || limit < 1 || limit > 128)
     throw new Error("source retirement requires a normal append-only worker");
   const result = { complete: false, pending: true, needsWork: false, stopped: false, sourceTerminal: false };
+  if (session.issues && !session.issues.complete()) return { ...result, needsWork: true };
   const stopped = () => { if (start.budget.sample() === null) return false; result.stopped = true; return true; };
   if (stopped()) return result;
   return state.transaction(() => {
@@ -65,6 +66,7 @@ export function auditCaptureCompletion(session, { limit = 128, work } = {}) {
   if (state.depth || start.pass.finalize || !Number.isSafeInteger(limit) || limit < 1 || limit > 128)
     throw new Error("capture completion requires a normal worker outside processing");
   const result = { complete: false, pending: false, needsWork: false, stopped: false, sourceTerminal: false };
+  if (session.issues && !session.issues.complete()) return { ...result, pending: true, needsWork: true };
   const stopped = () => {
     if (start.budget.sample() === null) return false;
     result.stopped = true; result.pending = true; return true;

@@ -55,6 +55,9 @@ test('append-only retirement scans fresh source pages without index proof or acc
   const run = new CaptureRun(root, state, { id: 'append-run' }), start = { pass: { finalize: false }, budget: new CaptureBudget() };
   const session = { indexEnabled: false, index: null, state, queue, run, start }, before = run.current();
   const audit = options => auditCaptureSourceRetirement(session, options);
+  session.issues = { complete: () => false };
+  assert.equal(audit().needsWork, true); assert.equal(state.get("capture-sweep-retirement", "fixture"), null);
+  delete session.issues;
   const sample = start.budget.sample.bind(start.budget); let samples = 0;
   start.budget.sample = () => ++samples >= 40 ? 'deadline' : null;
   const stopped = audit({ limit: 16 });
@@ -118,6 +121,9 @@ test('fresh audit covers every outcome page without manufacturing committed coun
 
 test('all admission, retry, cleanup and issue families prevent success without being erased', t => {
   const f = fixture(t);
+  const preparing = auditCaptureCompletion({ ...f, issues: { complete: () => false } });
+  assert.equal(preparing.complete, false); assert.equal(preparing.pending, true); assert.equal(preparing.needsWork, true);
+  assert.equal(f.state.get('capture-sweep-retirement', 'fixture'), null);
   const blockers = [ ['capture-admission', 'active'], ['capture-cleanup', 'active'], ['capture-index-reset', 'current'],
     ['capture-discovery-attempt', 'fixture'], ['capture-retry', 'fixture~later'], ['capture-cleanup-retry', 'allocation'],
     ['recovery-allocation', 'input'], ['recovery-stage', 'input'], ['source-queue-garbage', 'old-source'],

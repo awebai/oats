@@ -18,9 +18,10 @@ import { FAILURE_REASONS } from "./capture-failures.mjs";
 import { CaptureCleanupQueue } from "./capture-cleanup-queue.mjs";
 import { CaptureSourceDiscovery } from "./capture-source-discovery.mjs";
 import { auditCaptureCompletion, auditCaptureSourceRetirement } from "./capture-completion.mjs";
+import { CaptureIssuePreparation } from "./capture-issue-preparation.mjs";
 
 export class CaptureWorkSession {
-  constructor(start, { owner, selection, trigger = "manual", now = Date.now, unit = {}, roots = null, indexEnabled = true } = {}) {
+  constructor(start, { owner, selection, trigger = "manual", now = Date.now, unit = {}, roots = null, indexEnabled = true, issues = null } = {}) {
     if (typeof start?.root !== "string" || typeof start.workerNonce !== "string" || !start.workerNonce ||
         typeof start.pass?.runId !== "string" || !start.pass.runId ||
         typeof start.pass.finalize !== "boolean" || typeof start.pass.reset !== "boolean" || typeof now !== "function" ||
@@ -58,6 +59,8 @@ export class CaptureWorkSession {
         this.sourceDiscovery = new CaptureSourceDiscovery(this.queue, roots);
         this.sourceDiscovery.reconcile(start, { reason: reasonFor(this.sourceDiscovery.active()?.runId), now: now() });
       }
+      if (issues !== null) this.issues = new CaptureIssuePreparation(this.state, this.queue,
+        { ...issues, runId: start.pass.runId });
       // Retain a reset's scope even if derived inventory tables were lost.
       // Recreating membership may restart enumeration; it cannot erase reset
       // admission or the index token needed to recover a committed operation.
@@ -150,6 +153,9 @@ export class CaptureWorkSession {
     // A committed reset token may finish bounded publication above. Neither
     // source/index work nor new atomic reset may use finalization allowance.
     if (this.start.pass.finalize) return { finalize: true };
+
+    if (this.issues && !this.issues.complete())
+      return { stage: "issue-preparation", ...this.issues.advance(this.start.root, { stopped }) };
 
     const sourceDiscovery = this.sourceDiscovery && !this.queue.current().discovered
       ? this.sourceDiscovery.advance({ stopped, limit: this.unit.discoveryLimit ?? 128,

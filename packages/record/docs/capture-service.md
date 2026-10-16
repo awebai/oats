@@ -1004,3 +1004,58 @@ dispatch changes follow from this private option. Ordinary/source-selected
 `--no-index` routing, retry-set-aside handling, protected exact-home/file
 frontdoors and setup/hook/service integration still require their owning command
 work and qualification.
+
+### Fixed private command entry and issue preparation
+
+`runCaptureCommand(root, options)` fixes the package worker entry and existing
+supervisor policy. Its private options require an owner, caller-bound default
+root plan, index-enabled boolean, explicit trigger and explicit retry boolean.
+Unknown options cannot supply a different worker path, executable, Node flags
+or timing/resource policy. Relative record roots resolve against the supplied
+caller cwd; source selectors still run only after worker admission. Triggers
+are manual, watch, hook, setup or service, never inferred from quiet output.
+The fixed worker requires the existing IPC/registered-lock bootstrap; direct
+invocation does not authorize capture.
+
+The operation constructs the owning session, dispatches its bounded units,
+yields for fresh reset/continuation allowance and requests the actual final
+audit on idle. Only the worker publishes run facts. A finalized matching
+receipt supplies the private IPC appended/pending projection while the
+supervisor still holds the root lock; the caller neither reconstructs missing
+counts nor reads another pass's later status as its own. Operational failures
+leave admissions and unfinished receipts for replacement, while cooperative
+stops retain the existing pending continuation behavior. Transport failure may
+return without that receipt projection and must not become a zero-count success.
+
+Before source enumeration/processing, the command session prepares issue rows
+in keyset pages of at most 128. Each page commits issue changes, any existing
+queued set-aside rows made ready, and its resume key together. The checkpoint
+binds owner, source sweep, run, selected formats and retry request. Replacement
+resumes committed pages; rollback keeps both the cursor and issue generations
+unchanged. Preparation supplies no capture/index counts or progress.
+
+Ordinary preparation retains the synchronous native reconciliation rule:
+selected-owner, selected-format ignored issues can be removed without opening
+their source, even if the default directory disappeared. Other owners/formats
+remain untouched by that exclusion. Explicit all-input retry requires the full
+format selection and marks the root's unresolved issues as the existing public
+retry operation does, including other owners' retry intent without capturing
+under another owner. The run identity is the stable private retry generation;
+once prepared, a refusal in the same run is not marked for retry again.
+Existing source/index/cleanup failure backoff is separate and never cleared.
+Public synchronous `retrySetAside` and `resetSourceCursors` are unchanged.
+
+Preparation finishes before content dispatch so newly refused inputs cannot
+re-enter its initial scan. Stop/finalization cannot start a page. Both completion
+audits refuse success/retirement while preparation is unfinished. This adds one
+capture-state transaction per page, including its checkpoint and per-issue
+generation updates; ignore loading/matching and total metadata scan/lock/sync
+costs remain hosted qualification obligations. Pages resume across workers,
+but preparation is not source enumeration or all-stage completion.
+
+The private entry is not yet wired into the ordinary CLI. Its caller still
+must preserve source flags, ordinary JSON usage rejection, recovery JSON and
+held-lock behavior, reset-only and protected exact-home/file paths, watch
+scheduling and explicit trigger attribution. Hook detachment and installed
+setup/service migration, health/doctor and final hosted qualification remain
+separate implementation gates.
