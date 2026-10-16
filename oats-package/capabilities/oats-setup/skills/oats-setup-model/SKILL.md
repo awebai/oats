@@ -38,7 +38,7 @@ consult `packages/record/docs/capture-service.md#setup-service-migration` and
 `oats setup` can change capture hooks and user-manager definitions and run a
 first pass; it is not a diagnostic to run implicitly.
 
-**A person-run step**, from the next release after 0.61.0 (periodic service A):
+**A person-run step**, from OATS 0.62.0 (periodic service A):
 the record `oats setup` capture conversion records the caller's `node` and
 writes the person's `~/.claude*/settings.json`, so it captures its own shell's
 environment, like the host wake broker and the host timer, and an agent's shell

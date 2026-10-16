@@ -5016,8 +5016,8 @@ The turn record (core — every conversation captured, searchable, replicated):
       [--from f] [--show id] <query>        sessions — with exact turn provenance
   oats setup [--owner <name>] [--root <dir>] [--replace-service]
       [--no-service] [--no-hooks] [--dry-run]
-                                          install hooks + periodic capture
-                                          (launchd/systemd), then run the first pass
+                                            install hooks + periodic capture
+                                            (launchd/systemd), then run the first pass
 
   oats experimental <dress|spawn|segments|mind>   EXPERIMENTAL tools over the record —
                                             selection and agent synthesis; unproven by

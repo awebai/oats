@@ -32,7 +32,7 @@ must never hold: passwords, tokens, API keys and interactive logins. They also
 run the installs that capture their own shell's environment, so you hand
 over each as its exact one-line command: the host wake broker
 (`/oats-host-delivery`, Choice 2), the host timer (`/oats-automations`) and,
-from the next release after 0.61.0, the record capture conversion
+from OATS 0.62.0, the record capture conversion
 `oats setup` (`/oats-setup-model`, "A person-run step").
 A secret reaches the command that needs it by one of these routes, in this
 order:
