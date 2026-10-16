@@ -68,14 +68,16 @@ work, in its own home and terminal. Each workspace has a setup expert soul,
   the one you are, if it is one of these.
 - **The deployment directory `D`:** where OATS lives on this machine. Any
   folder works. Suggest `~/Agents/<workspace>`: the Desktop and the TUI find
-  deployments directly inside `~/Agents` by themselves.
+  deployments directly inside `~/Agents` by themselves. Write `D` everywhere
+  below as an absolute path, with the home folder spelled out: never `~`,
+  which the shell does not expand inside quotes.
 - **OATS Desktop:** installed and started unless they decline. **The TUI**
   (`oats tui`, a terminal client, preview): opened for them or not.
 
 ## 2. Check, and install what is missing
 
 ```bash
-uname -s; node --version; git --version; tmux -V; gh --version; npm prefix -g
+uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
 ```
 
 - **Versions:** Node 22 or later; Git 2.45 or later is best (older works,
@@ -155,9 +157,10 @@ sysctl -n hw.optional.arm64 2>/dev/null   # macOS: 1 means ARCH=arm64, otherwise
 (the release's Desktop assets can lag its npm package), skip the Desktop,
 say so, and go on with the CLI. Never skip a check to make it install.
 
-**macOS.** In one block, with `V` and `ARCH` written in. `/Applications`
-needs an administrator; for a standard user, use `~/Applications`
-(`mkdir -p ~/Applications`):
+**macOS.** In one block, with `V` and `ARCH` written in. Install into
+`/Applications`, which needs an administrator; for a standard user, use
+`$HOME/Applications` (`mkdir -p "$HOME/Applications"`) in its place in every
+line below:
 
 ```bash
 cd "$(mktemp -d)" && pwd &&
@@ -214,7 +217,8 @@ Categories=Development;
 - **Without FUSE** (the AppImage fails with a FUSE message), add
   ` --appimage-extract-and-run` after the AppImage's path in `Exec=` and
   wherever you start it.
-- **Linux arm64** has no Desktop: say so and go on.
+- **Linux arm64** (`uname -m` says `aarch64`) has no Desktop: skip the
+  download, say so and go on.
 
 **Don't start the Desktop yet;** step 8 starts it on the new deployment.
 
@@ -354,7 +358,8 @@ oats onboard D --workspace W
 
 **The clone.** A soul with `work: worktree` needs a clone of its repository
 at `D/<repo name>`. A new workspace already has it (step 5). For an existing
-one, clone the host there if `oats onboard` listed it as missing.
+one, clone the repository that holds `S` with the `git clone` line
+`oats onboard` printed for it, if that line says it is missing.
 
 ## 7. Hand over to the setup expert
 
@@ -412,9 +417,8 @@ oats spawn S --dir D --task-file D/.oats-handover.md
 ## 8. Start the Desktop and the TUI, then hand over
 
 **The Desktop**, if installed, starts on the new deployment:
-- **macOS:** if it is not running,
-  `open -a "OATS Desktop" --args --dir D`. If it is already running, the
-  person picks `D` in its switcher (**Add local workspace… → Browse**).
+- **macOS:** `open -n -a "OATS Desktop" --args --dir D`. If the Desktop is
+  already running, the new launch hands `--dir` to it and exits.
 - **Linux:** the person opens **OATS Desktop** from their app launcher, so it
   starts with their own session's environment, not yours. Then they pick `D`
   in its switcher (**Add local workspace… → Browse**), unless `D` is
