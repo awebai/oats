@@ -122,6 +122,15 @@ const script = (name, body) => { writeFileSync(join(tree, name), body); return n
 const plain = { cwd: tree, command: [process.execPath], timeoutMs: 120_000 };
 const SUMMARY = ["tests 1", "suites 0", "pass 1", "fail 0", "cancelled 0", "skipped 0", "todo 0", "duration_ms 1"].map((line) => `# ${line}`).join("\\n");
 
+// The time a file gets is the runner's constant, passed in: without one, every file would be killed
+// at once and read as hung. A caller that forgets it is refused, and nothing is started.
+test("named-test-run runFile: a missing or non-positive timeout is refused before anything runs", async () => {
+  for (const timeoutMs of [undefined, 0, -1, Number.NaN, Number.POSITIVE_INFINITY, "300000"]) {
+    assert.throws(() => runFile(PASS, { cwd: tree, timeoutMs }), /^TypeError: runFile: timeoutMs must be a positive number of milliseconds, got /, String(timeoutMs));
+  }
+  await assert.rejects(runFiles([PASS], { cwd: tree, write: () => {} }), /runFile: timeoutMs must be a positive number of milliseconds, got undefined/);
+});
+
 test("named-test-run runFile: a file that prints no summary has unknown counts and fails with its exit status or signal", async () => {
   const cases = [
     [script("crash.mjs", 'console.error("boom"); process.exit(3);\n'), { code: 3, signal: null }, /^exit 3, and no summary was printed$/],

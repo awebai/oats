@@ -349,9 +349,11 @@ export function testEnv(env, requestVars = []) {
  *  group of its own → Promise of { file, counts, code, signal, timedOut, durationMs, leftover,
  *  error }. Its output goes to `write` as it comes. After `timeoutMs` the whole group is killed. A
  *  file that ended leaves no process of its group behind either (`leftover` says there was one):
- *  the next file runs alone. `requestVars` go to testEnv. `command` is the tests' seam; the command
- *  line never passes it. */
+ *  the next file runs alone. `timeoutMs` is required: a runner's constant, never a default here, and a
+ *  missing one throws rather than kill every file at once. `requestVars` go to testEnv. `command` is
+ *  the tests' seam; the command line never passes it. */
 export function runFile(file, { cwd, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs, graceMs = KILL_GRACE_MS, requestVars = [], command = [process.execPath, "--test"] } = {}) {
+  if (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new TypeError(`runFile: timeoutMs must be a positive number of milliseconds, got ${String(timeoutMs)}`);
   return new Promise((done) => {
     const started = Date.now(), reader = countsReader();
     const result = { file, counts: null, code: null, signal: null, timedOut: false, durationMs: 0, leftover: false, error: null };
