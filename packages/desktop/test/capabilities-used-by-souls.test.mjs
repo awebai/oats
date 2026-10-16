@@ -14,7 +14,8 @@ import { JSDOM } from 'jsdom';
 import { soulsData, capabilitiesData, soulCapabilitiesOf } from '../../client/deployment-data.mjs';
 import * as remote from '../../client/remote-roster.mjs';
 import { soulRows } from '../../client/soul-rows.mjs';
-import { catalogCSS, renderCapabilities, renderCapabilitySections, capabilitySections, composes, soulsUsing, rosterAgentName, soulsComposition, SOULS_CAPABILITIES_FEATURE } from '../renderer/workspace-catalog.mjs';
+import { catalogCSS, renderCapabilities, renderCapabilitySections } from '../renderer/workspace-catalog.mjs';
+import { capabilitySections, composes, soulsUsing, rosterAgentName, soulsComposition, SOULS_CAPABILITIES_FEATURE } from '../../client/capability-rows.mjs';
 import { renderCapabilityPage } from '../renderer/capability-page.mjs';
 import { SOULS_STALE_TITLE, ROSTER_STALE_TITLE } from '../renderer/loading.mjs';
 

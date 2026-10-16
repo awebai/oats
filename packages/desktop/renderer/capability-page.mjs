@@ -6,7 +6,8 @@
  * workspace status. Nothing here is inferred — unreported facts are not shown. */
 import { createSoulMark } from './identity-marks.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { capabilitySource, capabilityUse, capabilityRow, memberNames, layerLabel, sourceChip, soulsUsing, rosterAgentName } from './workspace-catalog.mjs';
+import { capabilityRow, sourceChip } from './workspace-catalog.mjs';
+import { capabilitySource, memberNames, layerLabel, capabilityUsers } from '../../client/capability-rows.mjs';
 import { skeleton, noticeElement, updateNotice, failedElement, updateFailed, isOldObservation, ROSTER_STALE_TITLE, SOULS_STALE_TITLE } from './loading.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 import { displayLine } from '../../client/display-text.mjs';
@@ -284,25 +285,21 @@ export function renderCapabilityPage(host, { row, status, instances, souls = [],
   // what is open in its reader survives a catalog repaint. In both forms: the catalog's and a soul's.
   if (contents) main.append(contents);
   // Used by: with `composition` (souls-capabilities) the souls whose composition includes it, each with its live
-  // instances carrying it; before, the souls whose instances carry it (roster module rows).
-  const use = composition ? { souls: soulsUsing(souls, row) } : capabilityUse(instances, row.name);
+  // instances carrying it; before, the souls whose instances carry it (roster module rows). capabilityUsers is the rule.
+  const users = capabilityUsers(row, { souls, instances, composition });
   const staleTitle = composition ? SOULS_STALE_TITLE : ROSTER_STALE_TITLE;
   // "Used by" derives from the souls list and the roster (one read): with none, the claim needs a settled good read.
   const rosterGood = rosterState === 'ready' || rosterState === 'empty';
-  const used = pageSection(doc, 'Used by', use.souls.length || rosterGood ? `${use.souls.length} soul${use.souls.length === 1 ? '' : 's'}` : '');
+  const used = pageSection(doc, 'Used by', users.length || rosterGood ? `${users.length} soul${users.length === 1 ? '' : 's'}` : '');
   const table = node('div', undefined, 'page-table'); table.setAttribute('role', 'table'); table.setAttribute('aria-label', `Souls using ${row.name}`);
   const head = node('div', undefined, 'page-table-row head used-row'); head.setAttribute('role', 'row');
   for (const label of ['Soul', 'Instances']) { const cell = node('span', label); cell.setAttribute('role', 'columnheader'); head.append(cell); }
   table.append(head);
-  if (!use.souls.length) {
+  if (!users.length) {
     if (rosterGood) table.append(node('p', composition ? 'No soul here includes it.' : 'No instance carries it yet.', 'page-note page-table-row'));
     else { const none = node('p', '—', 'page-note page-table-row used-unknown'); none.title = staleTitle; none.setAttribute('aria-description', staleTitle); none.dataset.rosterState = rosterState; table.append(none); }
   }
-  for (const soul of use.souls) {
-    // A soul's instances: the roster's agent name (a package soul's is `<package>--<soul>`) within its agents root.
-    const agent = composition ? rosterAgentName(soul) : soul.name;
-    const carrying = list(instances).filter(i => i.agent === agent && i.agentsRoot === soul.agentsRoot && moduleRow(i, row.name));
-    const behind = carrying.filter(i => moduleRow(i, row.name)?.status === 'moved').length;
+  for (const { soul, carrying, behind } of users) {
     const line = typeof openSoul === 'function' ? node('button', undefined, 'page-table-row used-row') : node('div', undefined, 'page-table-row used-row');
     line.setAttribute('role', 'row');
     // The tooltip and focus key name the soul by its key (two package souls may share a bare name).
@@ -425,11 +422,6 @@ export function fillTriggerSourcesRow(row, view) {
 export function fingerprint(integrity) {
   const m = /^sha256-([0-9a-f]{64})$/i.exec(integrity || '');
   return m ? `sha256:${m[1].slice(0, 4)}…${m[1].slice(-4)}` : text(integrity);
-}
-
-function moduleRow(instance, name) {
-  const rows = Array.isArray(instance.modules) ? instance.modules : Object.entries(instance.modules || {}).map(([key, row]) => ({ name: key, ...row }));
-  return rows.find(m => m?.name === name) || null;
 }
 
 /** The three core capabilities (a soul's `layers`), in the order every surface shows them. */

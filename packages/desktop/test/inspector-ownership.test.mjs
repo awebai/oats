@@ -16,7 +16,7 @@ import { iconElement } from '../renderer/shell-icons.mjs';
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from '../renderer/loading.mjs';
 import { coreEntries, coreNote, whyElement, isCoreCapability } from '../renderer/capability-page.mjs';
 import { desktopFacts } from '../../client/soul-facts.mjs';
-import { layerLabel } from '../renderer/workspace-catalog.mjs';
+import { layerLabel } from '../../client/capability-rows.mjs';
 import { buildState } from '../renderer/soul-inspector.mjs';
 import { createDeploymentScopeLine } from '../renderer/deployment-scope-line.mjs';
 
