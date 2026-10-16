@@ -47,8 +47,10 @@ function recordedNode(env = process.env) { return handedNode(env) ?? process.exe
 const HERE = dirname(fileURLToPath(import.meta.url));
 const NODE = recordedNode();
 // Recoveries name the command a person runs, never this file: only a rerun
-// through `oats setup` selects its stable node again. Health's wording rule
-// decides the words; the kernel's setup entry is the one that hands a node in.
+// through `oats setup` selects its stable node again. Health's wording function
+// decides the words; setup's input to it is whether a node was handed in
+// (OATS_NODE_BIN), which `oats setup` always does and instance shells also
+// carry, so either printed command records that same node.
 const SETUP_COMMAND = `${captureRemedyCommand(Boolean(handedNode()))} setup`;
 const CAPTURE = join(HERE, "capture.mjs");
 

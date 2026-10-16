@@ -87,12 +87,17 @@ the input aside (`record-too-large`) at the oversized record's start offset.
 Records after it stay pending until the operator edits the source or adds the
 whole input to `<root>/ignore`, which, as above, also stops later turns from
 that session. `--retry-set-aside` revalidates the input, appending no captured
-record twice, but the oversized record still blocks it. Two native cases set
-the input aside at the same exact offset without capturing the records before
-it: an oversized line before the session's first timestamped line, which the
-unstamped lines before it need, and an oversized record first met while staged
-recovery reproves the captured prefix (after cache loss or a rewritten source),
-which validates the whole fixed end before any append.
+record twice, but the oversized record still blocks it. Staged recovery (after
+cache loss, a reset, a retry or a rewritten source) validates its whole fixed
+end before any append. When it meets an oversized record beyond the captured
+prefix, it fixes a new end at that record's start, restages and proves the
+prefix as usual, captures the records between, then sets the input aside at
+that start. Two native cases still capture nothing before the oversized record:
+an oversized line before the session's first timestamped line, which the
+unstamped lines before it need; and, a known limitation pending a design
+decision, an oversized record inside the captured prefix (captured by a release
+without this limit), where every such recovery sets the already captured input
+aside and its later growth is not captured.
 `--health` gives each listed `record-too-large` entry this remedy (edit the
 source, then retry; or ignore the whole input, discarding it whole), never the
 prefix-restoration remedy above.
@@ -1375,8 +1380,10 @@ installed disabled/masked state produces `E_CAPTURE_SERVICE_DISABLED`, whose
 message states the manager state observed. It does not claim the operator
 disabled the unit: a timer that setup wrote but failed to enable reads as
 disabled too. Both refuse before mutation and print quoted recovery commands
-in the user-facing form (`oats setup …` under the kernel, `turn-record setup …`
-standalone) preserving the selected owner/root: explicitly choose
+in the user-facing form preserving the selected owner/root: `oats setup …`
+when a node was handed in through the kernel environment (`OATS_NODE_BIN`,
+which `oats setup` sets and instance shells also carry), otherwise
+`turn-record setup …`; both commands work and record the same node: explicitly choose
 `--replace-service`, or `--no-service` to preserve the manager configuration.
 Other setup failures print the same form of retry command; none names the
 running Node or the package-internal setup script. New absent definitions

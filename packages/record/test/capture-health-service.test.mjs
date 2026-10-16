@@ -170,6 +170,11 @@ test("record-too-large set-asides get the edit-or-ignore-whole-input remedy, nev
   const more = new DerivedState(f.root);
   more.set("set-aside", "conflict", { source: "cc", path: "/fixture/conflict", offset: 10, reason: "captured-prefix-changed" }); more.close();
   assert.match(message(), /^2 capture inputs set aside\. 1 listed as record-too-large: Edit the source .* The other 1: Restore the captured prefix and run turn-record capture --retry-set-aside/);
+  // Beyond the bounded sample, reasons are unknown: the remainder is not told one.
+  const many = new DerivedState(f.root);
+  for (let n = 0; n < 99; n++) many.set("set-aside", `more-${n}`, { source: "cc", path: `/fixture/more-${String(n).padStart(3, "0")}`, offset: 1, reason: "captured-prefix-changed" });
+  many.close();
+  assert.match(message(), /^101 capture inputs set aside\. 1 listed as record-too-large: Edit the source .* The other 100, including unlisted entries: see each entry's reason; record-too-large entries need the edit-or-ignore remedy above\. Otherwise: Restore the captured prefix/);
 });
 
 function unfinished(f, seconds = 20) {

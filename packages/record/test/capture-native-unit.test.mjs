@@ -200,6 +200,32 @@ test("complete lines before an oversized record are appended once and checkpoint
   await f.finish({maxRecords:10});f.assertContent(prefix+native(3));assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
 });
 
+test("recovery after cache loss captures the records between the captured prefix and an oversized record once, then sets it aside",async t=>{
+  const captured=native(0)+native(1),f=fixture(t,captured);captureSessions(f.store,{owner:'fixture',files:[f.path]});
+  const gap=captured+native(2),start=Buffer.byteLength(gap);fs.appendFileSync(f.path,native(2)+'x'.repeat(300)+'\n'+native(4));
+  f.state(s=>s.delete('cc',f.key));
+  let rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+  assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');assert.equal(rows.at(-1).result.setAside.offset,start);
+  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),1);f.assertContent(gap);
+  assert.equal(f.state(s=>s.get('native-oversized',f.key)),null);
+  const skipped=await f.step({maxRecordBytes:200,maxRecords:10});
+  assert.equal(skipped.result.setAside.offset,start);assert.equal(skipped.result.appended,0);
+  retrySetAside(f.root);rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+  assert.equal(rows.at(-1).result.setAside.offset,start);assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),0);f.assertContent(gap);
+});
+
+test("an oversized record inside the captured prefix stays set aside on recovery with nothing appended or duplicated",async t=>{
+  const text=native(0)+'x'.repeat(300)+'\n'+native(2),start=Buffer.byteLength(native(0)),f=fixture(t,text);
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.assertContent(text);
+  fs.appendFileSync(f.path,native(3));f.state(s=>s.delete('cc',f.key));
+  let rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+  assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');assert.equal(rows.at(-1).result.setAside.offset,start);
+  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),0);f.assertContent(text);
+  retrySetAside(f.root);rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+  assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');assert.equal(rows.at(-1).result.setAside.offset,start);
+  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),0);f.assertContent(text);
+});
+
 test("worker restart after allocation removal completes only its committed cleanup and preserves captured cursor",async t=>{
   const text=native(0)+native(1),f=fixture(t,text);captureSessions(f.store,{owner:'fixture',files:[f.path]});
   f.state(s=>{s.delete('cc',f.key);s.set('native-retain',f.key,true);});

@@ -72,11 +72,15 @@ function diagnose(root, { home = homedir(), platform = hostPlatform(), now = Dat
   } catch (error) { throw new Error(`Cannot read current capture issues at ${join(root, "index", "capture.db")}: ${error.message}`, { cause: error }); }
   check(); backlog ??= emptyBacklog();
   if (backlog.setAsideCount) {
-    // Remedies follow each named entry's reason; an unsampled entry keeps the general remedy.
+    // Remedies follow each listed entry's reason. Reasons beyond the bounded
+    // sample are unknown here, so a truncated list says so rather than guess.
     const oversized = backlog.setAside.filter(entry => entry.reason === "record-too-large").length;
-    const others = backlog.setAsideCount - oversized;
-    rows.push({ code: "capture-input-set-aside", message: `${backlog.setAsideCount} capture inputs set aside. ` + (!oversized ? setAsideRemedy(command, root) :
-      `${oversized} listed as record-too-large: ${oversizedRemedy(command, root)}` + (others ? ` The other ${others}: ${setAsideRemedy(command, root)}` : "")) });
+    const others = backlog.setAsideCount - oversized, general = setAsideRemedy(command, root);
+    const message = !oversized ? general + (backlog.truncated ? ` Unlisted entries: see each entry's reason; record-too-large entries need: ${oversizedRemedy(command, root)}` : "") :
+      `${oversized} listed as record-too-large: ${oversizedRemedy(command, root)}` + (!others ? "" : backlog.truncated ?
+        ` The other ${others}, including unlisted entries: see each entry's reason; record-too-large entries need the edit-or-ignore remedy above. Otherwise: ${general}` :
+        ` The other ${others}: ${general}`);
+    rows.push({ code: "capture-input-set-aside", message: `${backlog.setAsideCount} capture inputs set aside. ${message}` });
   }
 
   const failures = [];

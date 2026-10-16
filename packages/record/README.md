@@ -137,8 +137,9 @@ The [service migration gate](docs/capture-service.md#setup-service-migration)
 refuses foreign, disabled or masked definitions unless the operator explicitly
 chooses `--replace-service`; `--no-service` bypasses service inspection and
 actions while still installing requested hooks and running the first pass.
-Refusals print that choice as the user-facing command (`oats setup …` under
-the kernel, `turn-record setup …` standalone) with the selected owner/root.
+Refusals print that choice as the user-facing command with the selected
+owner/root: `oats setup …` when the kernel environment handed in a node
+(`OATS_NODE_BIN`, also set in instance shells), otherwise `turn-record setup …`.
 Unknown/read errors always refuse, as does a macOS registration of the capture
 label from another plist path, even with `--replace-service`. A service
 refusal or failure exits 1 before hooks are written or the first pass runs.

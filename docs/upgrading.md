@@ -316,7 +316,9 @@ converts a capture watcher an earlier setup installed; it does not add a
 second one. A definition it does not recognize as its own, or one found
 disabled or masked, is refused with a printed choice: `--replace-service` to
 replace it, or `--no-service` to keep it and skip service files and manager
-calls. `--dry-run` prints what setup would do and changes nothing
+calls. One exception on macOS: the capture label registered from another plist
+is refused even with `--replace-service`; remove that registration yourself,
+or keep it with `--no-service`. `--dry-run` prints what setup would do and changes nothing
 ([Capture service release order](#capture-service-release-order)).
 
 Once the recorded `node` no longer exists (an old version removed under a

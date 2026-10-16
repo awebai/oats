@@ -65,11 +65,14 @@
   record's start offset. Records after it stay pending until the operator edits
   the source or adds the whole input to `<root>/ignore`; `--retry-set-aside`
   retries the input, but the oversized record still blocks it, in every case.
-  Two native cases set the input aside at the same offset without capturing
-  the records before it: an oversized line before the session's first
-  timestamped line, and one first met while recovery reproves the captured
-  prefix after cache loss or a rewritten source. `--health` names the
-  edit-or-ignore remedy for these entries.
+  Native recovery (after cache loss, a reset, a retry or a rewritten source)
+  that meets an oversized record beyond the captured part captures the records
+  before it, then sets the input aside at its start. Known limitations: an
+  oversized line before a session's first timestamped line captures nothing
+  before it; and, pending a design decision, an oversized record inside the
+  already captured part (captured by a release without this limit) makes each
+  such recovery set the captured input aside, so its later growth is not
+  captured. `--health` names the edit-or-ignore remedy for these entries.
 - Foreground `--watch` keeps its two-second debounce and 15-minute fallback,
   runs one pass at a time and coalesces notifications into one pending rerun.
 - **Hooks launch capture detached.** `capture --hook` starts the supervisor in
@@ -95,8 +98,10 @@
   capture label from another plist path, refused naming that path even with
   `--replace-service`. `E_CAPTURE_SERVICE_DISABLED` states the manager state it
   observed, without claiming the operator disabled it. Refusals and failures
-  print the user-facing command (`oats setup …` under the kernel,
-  `turn-record setup …` standalone) with the selected `--owner` and `--root`.
+  print the user-facing command with the selected `--owner` and `--root`:
+  `oats setup …` when the kernel environment handed in a node (`OATS_NODE_BIN`,
+  also set in instance shells), otherwise `turn-record setup …`; both record
+  the same node.
 - Setup's first pass runs through the same supervisor with `setup` attribution,
   all sources and indexing, under the running Node; the hooks and service record
   a stable Node. `--no-service` still runs it and `--dry-run` starts none.
