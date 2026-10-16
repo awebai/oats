@@ -1120,14 +1120,15 @@ test("a line whose value is absent is left out of the detail", () => {
   assert.deepEqual(fact(unsaid, "harness").rows, ["claude, claude-opus-5-5"], "where the model came from only when the row says");
 });
 
-test("the detail's parent line holds the parent, and `sibling of <name>` for an instance spawned as a sibling", () => {
+test("the detail's parent line holds the parent, and `sibling of <names>` at both ends of a sibling link", () => {
   const rows = [instanceRow("soul", "root-a"), instanceRow("soul", "child", { parentInstance: "root-a" }), instanceRow("soul", "twin", { siblingInstance: "root-a" }), instanceRow("soul", "both", { parentInstance: "root-a", siblingInstance: "child" })];
   const state = stateOf(observed(rows));
-  assert.equal(fact(detailOf(selecting(state, "root-a")), "parent"), null);
-  assert.deepEqual(fact(detailOf(selecting(state, "child")), "parent").rows, ["root-a"]);
+  assert.deepEqual(fact(detailOf(selecting(state, "root-a")), "parent").rows, ["sibling of twin"], "the end that was linked to says so too");
   assert.deepEqual(fact(detailOf(selecting(state, "twin")), "parent").rows, ["sibling of root-a"]);
-  const both = fact(detailOf(selecting(state, "both")), "parent").rows.join(" ");
-  assert.equal(both.startsWith("root-a") && both.endsWith("sibling of child"), true);
+  for (const [name, sibling] of [["child", "both"], ["both", "child"]]) {
+    const line = fact(detailOf(selecting(state, name)), "parent").rows.join(" ");
+    assert.equal(line.startsWith("root-a, ") && line.endsWith(`sibling of ${sibling}`), true, `${name}: its parent, then its sibling`);
+  }
 });
 
 test("the detail's state line holds the kernel's own name for the state, or the shared label of the row's reason when the shared home gives one, and the kernel's runtimeError on the rows under it, after `OATS says:`", () => {
@@ -3222,6 +3223,62 @@ test("hostile text in an instance's name or in the query goes through shown(): n
         assert.equal(d.lines[3].startsWith(query ? "> " : ">"), true, at);
         fits(d, sz, at);
       }
+    }
+  }
+});
+
+// An instance's siblings in the palette (#1315): the shared words after the name and the machine.
+const PEER_LONG = `peer-long-${"0123456789".repeat(4)}zz`;
+/** An anchor with three instances linked to it, one of them named to fill a row. */
+const SIBLINGS = () => [instanceRow("dev", "anchor"), ...["peer-1", "peer-2", PEER_LONG].map((name) => instanceRow("dev", name, { siblingInstance: "anchor" }))];
+/** The drawn row of the palette for the instance `name` (the rows stand from the body's second row,
+ *  in paletteItems' order), and the row the spec draws for it: `text` after the selection and the
+ *  state marks, the kind at the right edge. */
+function paletteLine(state, sz, name, text) {
+  const d = draw(state, sz), list = paletteItems(state, AT), item = list.items.find((each) => each.kind === "instance" && each.name === name);
+  const r = 4 + list.items.indexOf(item);
+  return { d, r, drawn: d.lines[r], spec: edged(`${item.key === list.selected ? ">" : " "} ${marksOf(state.ascii)[item.mark]} ${text}`, "instance", sz.cols) };
+}
+
+test("the palette names an instance's siblings, both ends of each link, in the shared words after its name, dim; a query never matches them", () => {
+  const state = paletteOpen(stateOf(observed(SIBLINGS()))), list = paletteItems(state, AT);
+  const said = Object.fromEntries(list.items.filter((item) => item.kind === "instance").map((item) => [item.name, item.sibling]));
+  assert.deepEqual(said, { anchor: `sibling of peer-1, peer-2 and ${PEER_LONG}`, "peer-1": "sibling of anchor", "peer-2": "sibling of anchor", [PEER_LONG]: "sibling of anchor" });
+  // An instance with no sibling says nothing.
+  assert.equal(paletteItems(paletteOpen(golden()), AT).items.filter((item) => item.kind === "instance").every((item) => item.sibling === null), true);
+  // The query matches the name (and the machine), never the sibling's words.
+  const typed = (query) => paletteItems(Object.freeze({ ...state, palette: Object.freeze({ ...state.palette, query }) }), AT).items.filter((item) => item.kind === "instance").map((item) => item.name);
+  assert.deepEqual(typed("anchor"), ["anchor"]);
+  assert.deepEqual(typed("sibling"), []);
+  // Drawn: the name plain, the words dim, one cell after it.
+  const { d, r, drawn, spec } = paletteLine(state, S80, "peer-1", "peer-1 sibling of anchor");
+  assert.equal(drawn, spec);
+  for (const cell of d.cells[r].slice(4, 10)) assert.deepEqual(cell.style, PLAIN);
+  assert.deepEqual(d.cells[r][10].style, PLAIN, "the gap");
+  for (const cell of d.cells[r].slice(11, 11 + "sibling of anchor".length)) assert.deepEqual(cell.style, DIM);
+});
+
+test("the palette cuts an instance's siblings first: the name keeps the room, and the machine stands before them, at 80 and 60 columns, in UTF-8 and ASCII", () => {
+  for (const ascii of [false, true]) {
+    const state = paletteOpen(stateOf(observed(SIBLINGS()), { ascii })), all = `sibling of peer-1, peer-2 and ${PEER_LONG}`;
+    // 80 columns: 66 cells for the text before the kind's gap. 60 columns: 46.
+    for (const [sz, room] of [[S80, 66], [S60, 46]]) {
+      const at = `${sz.cols} columns${ascii ? ", ASCII" : ""}`;
+      const anchor = paletteLine(state, sz, "anchor", `anchor ${cutTo(all, room - "anchor ".length, ascii)}`);
+      assert.equal(anchor.drawn, anchor.spec, `${at}: the words are cut, the name whole`);
+      const peer = paletteLine(state, sz, "peer-2", "peer-2 sibling of anchor");
+      assert.equal(peer.drawn, peer.spec, `${at}: words that fit stand whole`);
+      // A name of 52 cells: at 80 columns the words get what is left; at 60 the name is cut and they get nothing.
+      const long = paletteLine(state, sz, PEER_LONG, room > PEER_LONG.length + 1 ? `${PEER_LONG} ${cutTo("sibling of anchor", room - PEER_LONG.length - 1, ascii)}` : cutTo(PEER_LONG, room, ascii));
+      assert.equal(long.drawn, long.spec, `${at}: the name wins the room`);
+      fits(long.d, sz, at);
+    }
+    // Another machine's instance: its name, `on <machine>`, then its siblings, of that machine.
+    const far = paletteOpen(heard(local({ ascii }), answered(group({ instances: [farRow(FAR_A), farRow(`${FAR_A}-twin`, { siblingInstance: FAR_A })] })), T1));
+    const words = `sibling of ${FAR_A}-twin`;
+    for (const [sz, room] of [[S80, 66], [S60, 46]]) {
+      const before = `${FAR_A} on garnet `, line = paletteLine(far, sz, FAR_A, `${before}${cutTo(words, room - before.length, ascii)}`);
+      assert.equal(line.drawn, line.spec, `${sz.cols} columns${ascii ? ", ASCII" : ""}: the machine before the words, which are cut first`);
     }
   }
 });

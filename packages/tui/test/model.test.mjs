@@ -10,7 +10,7 @@ import {
   filterInstanceTree, heldHome, rosterSections, deploymentState, rowStale, primaryDeployment, runtimeState as sharedState, runtimeCounts,
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs, rowReason,
   identityMemory, remoteRosterState, observeIdentities, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, isMultiDeployment,
-  cliRemoteRoster, originLead, displayLine, DETAIL_WITHHELD,
+  cliRemoteRoster, originLead, displayLine, DETAIL_WITHHELD, instanceSiblings, siblingText,
 } from "../lib/client.mjs";
 import { MORE_FOLDERS, OFFERED_SECTION, ROSTER_FAILED, SENTENCE_INDENT, WORD_MAX, clockTime, disclosure, heldOf as modelHeld, model, panelOf, roster, switcher } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
@@ -856,6 +856,35 @@ test("the detail's harness, work, parent and started lines: the model's origin i
   assert.equal(value({ startedAt: started }, "started"), "09:00");
 });
 
+test("the detail's parent line names the siblings the shared home resolves (#1315): both ends of a link, in its words; nothing for a name that resolves to no instance or to two; direct links only; whatever is filtered", () => {
+  const parentOf = (state, name, soul) => fact(view(on(state, name, soul)).detail, "parent")?.value ?? null;
+  const pair = stateOf(observed([instanceRow("dev", "anchor"), instanceRow("dev", "twin", { siblingInstance: "anchor" })]));
+  assert.equal(parentOf(pair, "twin"), "sibling of anchor");
+  assert.equal(parentOf(pair, "anchor"), "sibling of twin", "the other end of the link says so too");
+  // Three, in the roster's order and the shared words.
+  const three = stateOf(observed([instanceRow("dev", "anchor"), ...["peer-c", "peer-a", "peer-b"].map((name) => instanceRow("dev", name, { siblingInstance: "anchor" }))]));
+  assert.equal(parentOf(three, "anchor"), "sibling of peer-a, peer-b and peer-c");
+  assert.equal(parentOf(three, "anchor"), siblingText(instanceSiblings(sharedPanel(three).instances).get(panelRow(three, "anchor").id)));
+  assert.equal(parentOf(three, "peer-b"), "sibling of anchor", "peers linked to one anchor are not each other's siblings");
+  // The parent stays first.
+  const kid = stateOf(observed([instanceRow("dev", "lead"), instanceRow("dev", "kid", { parentInstance: "lead" }), instanceRow("dev", "twin", { siblingInstance: "kid" })]));
+  assert.equal(parentOf(kid, "kid"), "lead, sibling of twin");
+  assert.equal(parentOf(kid, "lead"), null);
+  // A name that resolves to no instance, or to two of one deployment: nothing, at either end.
+  const ghost = stateOf(observed([instanceRow("dev", "peer", { siblingInstance: "ghost" }), instanceRow("dev", "other")]));
+  assert.deepEqual([parentOf(ghost, "peer"), parentOf(ghost, "other")], [null, null]);
+  const two = stateOf(observed([instanceRow("soul-a", "coord"), instanceRow("soul-b", "coord"), instanceRow("dev", "peer", { siblingInstance: "coord" })]));
+  assert.deepEqual([parentOf(two, "peer"), parentOf(two, "coord", "soul-a"), parentOf(two, "coord", "soul-b")], [null, null, null]);
+  // A filter that hides one of the two names makes it no less ambiguous: the roster is the whole one.
+  const filtered = Object.freeze({ ...two, filter: Object.freeze({ editing: false, query: "peer" }) });
+  assert.deepEqual(roster(filtered).rows.map((item) => item.row.instance), ["peer"]);
+  assert.equal(parentOf(filtered, "peer"), null);
+  assert.equal(parentOf(Object.freeze({ ...pair, filter: Object.freeze({ editing: false, query: "twin" }) }), "twin"), "sibling of anchor", "a sibling filtered out is still named");
+  // A chain C→B→A: B has both, and A and C are not each other's.
+  const chain = stateOf(observed([instanceRow("dev", "a"), instanceRow("dev", "b", { siblingInstance: "a" }), instanceRow("dev", "c", { siblingInstance: "b" })]));
+  assert.deepEqual(["a", "b", "c"].map((name) => parentOf(chain, name)), ["sibling of b", "sibling of a and c", "sibling of b"]);
+});
+
 test("the detail is the selected instance's, and there is none when nothing is selected or the selection is not drawn", () => {
   const state = stateOf(observed(TREE));
   assert.equal(view(state).detail.title, "alpha", "the first row is selected by the first answer");
@@ -1522,6 +1551,15 @@ test("two deployments of this machine in one workspace are two sections, each un
   assert.deepEqual(shape(m.list), [`[${sections[0].label}]`, "a", `[${sections[1].label}]`, "b"]);
   assert.deepEqual([m.machines, m.workspace, m.note], [0, panel.workspace.name, null], "no other machine is in the view");
   assert.deepEqual(["a", "b"].map((name) => fact(detailOf(state, name), "machine").value), [TERMS.thisMachine, TERMS.thisMachine]);
+});
+
+test("siblings are read inside one deployment: a name that is an instance of the other deployment of the view is no sibling, and each deployment's own links stand (#1315)", () => {
+  const state = twoHere([instanceRow("dev", "a", { siblingInstance: "b" })], [instanceRow("dev", "b"), instanceRow("dev", "c", { siblingInstance: "b" })]);
+  const parentOf = (name) => fact(detailOf(state, name), "parent")?.value ?? null;
+  assert.equal(isMultiDeployment(sharedPanel(state).deployments), true);
+  // Over both rosters at once the name would resolve: the case reads the split, not a missing row.
+  assert.deepEqual(siblingText(instanceSiblings(sharedPanel(state).instances).get(panelRow(state, "a").id)), "sibling of b");
+  assert.deepEqual(["a", "b", "c"].map(parentOf), [null, "sibling of c", "sibling of b"]);
 });
 
 // --- A deployment's note ----------------------------------------------------------------
