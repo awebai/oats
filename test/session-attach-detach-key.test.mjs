@@ -534,6 +534,31 @@ test("a viewer whose attach and client are SIGKILLed together leaves no session 
   assert.equal(typed(a), "", "the agent read nothing");
 });
 
+test("a viewer detached by another client, whose own client has not yet answered the detach while other clients come and go, leaves the agents' server running and nothing behind, keyed or not (awebai/oats#1336)", async (t) => {
+  t.after(sweep);
+  const a = await agent("detached");
+  for (const key of [undefined, "F12"]) {
+    const what = key === undefined ? "plain" : "keyed";
+    const viewer = await view(a, { key });
+    // A stopped client cannot answer: the window between the detach and its answer stays open.
+    // tmux 3.4 is the release this kills: there a detached client keeps its session until it
+    // answers, but no longer counts as attached, so `destroy-unattached on` on the viewer would
+    // destroy the session under it when any other client goes, and the server's next loop
+    // dereferences the session's NULL current window (SIGSEGV). 3.2a, 3.3a, 3.5a and 3.8 survive.
+    const client = viewer.clientPid();
+    process.kill(client, "SIGSTOP");
+    t.after(() => { try { process.kill(client, "SIGCONT"); } catch { /* gone */ } });
+    tmuxOn(AGENTS, "detach-client", "-s", `=${viewer.session}`);
+    // Every call is a client that comes and goes.
+    for (let i = 0; i < 3; i++) assert.ok(sessionsOf(AGENTS).includes(SESSION), `${what}: the agents' server is running after the detach`);
+    process.kill(client, "SIGCONT");
+    assert.equal(await viewer.ended(), 0, `${what}: ${viewer.shows()}`);
+    await waitUntil(() => viewerSessions().length === 0 && viewerTables().length === 0, `${what}: the detached viewer's session and table are gone; sessions ${viewerSessions()}, tables ${viewerTables()}`);
+    nothingLeft(`a ${what} viewer detached by another client`);
+  }
+  assert.equal(typed(a), "", "the agent read nothing");
+});
+
 test("an attach sweeps what a dead attach left: a viewer session with no client and the key tables whose session is gone; the agents' own sessions and the shared locked table are untouched", async (t) => {
   t.after(sweep);
   const a = await agent("sweep");
