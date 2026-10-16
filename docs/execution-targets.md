@@ -51,8 +51,13 @@ deployment's `session.tmuxSession`, else `OATS_TMUX_SESSION`, else
 session it recorded, and `oats status` reads each home on its recorded tmux
 socket and session, never the caller's `$TMUX` server: a caller outside the
 agents' tmux (ssh, cron, a plain terminal) sees the same liveness as `session
-inspect`. A recorded server that cannot be read gives `running: null` with
-`runtimeState: "unreachable"`. The environment variables are read when the spawn runs, and `oats
+inspect`. `running` means the harness is running, not merely that its window
+exists. A fallback shell reads `running: false` with `runtimeState: "shell"`;
+a retained dead pane also reads `false`. A wrapper shell with a live non-shell
+descendant still reads `true`. Status shares session inspection's pane rule,
+with one batched pane read per socket/session and one lazy process scan across
+all shell panes. A recorded server or pane that cannot be read gives
+`running: null` with `runtimeState: "unreachable"`. The environment variables are read when the spawn runs, and `oats
 inspect --json` reports the session a new spawn would open in as `session`
 (`{tmuxSession}`). A spawn refuses an instance name that is a live window in the
 session it would open in, on the OATS tmux server (`E_INSTANCE_NAME_TAKEN`); a

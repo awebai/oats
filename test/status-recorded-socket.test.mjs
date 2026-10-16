@@ -8,6 +8,9 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { setWaiting } from "../lib/instance-events.mjs";
+import { listInstances } from "../lib/core.mjs";
+import { waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-status-socket-")));
@@ -88,4 +91,109 @@ test("a row whose recorded server cannot be read is unknown, never not-running, 
   assert.equal(text.status, 0, text.stdout + text.stderr);
   const line = text.stdout.split("\n").find((l) => l.includes("• server-unreadable"));
   assert.match(line, /• server-unreadable  unknown .*Not a directory/, "the text status says unknown and why, never idle");
+});
+
+
+test("stop leaves a fallback shell: status and session inspect agree, while another harness stays running", async () => {
+  const name = "stop-to-shell", session = "stop-test";
+  tmux(sockets.a, "new-session", "-d", "-s", session, "-n", name, "sleep 600; exec /bin/sh");
+  tmux(sockets.a, "new-window", "-t", `${session}:`, "-n", "still-running", "sleep 600");
+  const home = await recordedHome(name, sockets.a, session);
+  await recordedHome("still-running", sockets.a, session);
+  let plan;
+  await waitUntil(() => {
+    const r = fx.cli(["instance", "stop", name, "--plan", "--json"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    plan = r.json().result;
+    return plan.targets.every(t => t.session.present && t.session.state !== "shell");
+  }, "the stand-in harness to be running");
+  const stopped = fx.cli(["instance", "stop", name, "--apply", "--plan-revision", plan.planRevision,
+    "--idempotency-key", "status-shell", "--json"]);
+  assert.equal(stopped.status, 0, stopped.stdout + stopped.stderr);
+  assert.equal(stopped.json().result.results[0].stopped, true);
+  assert.equal(stopped.json().result.results[0].state, "shell");
+  const inspected = fx.cli(["session", "inspect", "--home", home, "--json"]);
+  assert.equal(inspected.status, 0, inspected.stdout + inspected.stderr);
+  assert.equal(inspected.json().result.state, "shell");
+  assert.ok(tmux(sockets.a, "list-windows", "-t", session, "-F", "#{window_name}").split("\n").includes(name));
+  const status = fx.cli(["status", "--json"]);
+  assert.equal(status.status, 0, status.stdout + status.stderr);
+  const rows = JSON.parse(status.stdout).agents.flatMap(a => a.instances);
+  const row = rows.find(i => i.home === home);
+  assert.deepEqual([row.running, row.runtimeState], [false, "shell"]);
+  assert.equal(rows.find(i => i.instance === "still-running").running, true);
+});
+
+test("status batches pane and process reads across windows, using lifecycle shell classification", async () => {
+  const session = "batch-test", names = ["batch-shell", "batch-wrapper", "batch-dead", "batch-split"];
+  for (const name of names) {
+    const home = await recordedHome(name, sockets.b, session);
+    setWaiting(home, { producer: "agent", waiting: true, reason: "attention", message: "Review needed" });
+  }
+  const calls = [];
+  const io = { exec(bin, args, opts) {
+    if (bin === "ps" && args.join(" ") === "-axo pid=,ppid=,comm=") {
+      calls.push({ bin, args });
+      return "101 1 sh\n102 1 zsh\n103 102 /bin/sh\n104 103 /bin/sleep\n";
+    }
+    if (bin === "tmux" && args.includes(`=${session}`)) {
+      calls.push({ bin, args });
+      if (args.includes("list-windows")) return names.join("\n") + "\n";
+      if (args.includes("list-panes")) return [
+        "batch-shell\t%1\t0\tsh\t101", "batch-wrapper\t%2\t0\tzsh\t102",
+        "batch-dead\t%3\t1\tsleep\t105", "batch-split\t%4\t0\tsleep\t106",
+        "batch-split\t%5\t0\tsh\t107",
+      ].join("\n") + "\n";
+      assert.fail(`unexpected tmux call ${args}`);
+    }
+    return execFileSync(bin, args, opts);
+  } };
+  const rows = (await fx.inEnv(() => listInstances(fx.root, undefined, io))).flatMap(a => a.instances);
+  const at = name => rows.find(i => i.instance === name);
+  assert.deepEqual([at("batch-shell").running, at("batch-shell").runtimeState], [false, "shell"]);
+  assert.equal(at("batch-wrapper").running, true, "a non-shell descendant keeps its wrapper running");
+  assert.equal(at("batch-shell").waitingOnYou, null);
+  assert.equal(at("batch-wrapper").waitingOnYou.message, "Review needed", "claims reuse the batch without a per-window read");
+  assert.equal(at("batch-dead").running, false);
+  assert.equal(at("batch-split").running, null, "lifecycle cannot inspect a split agent window");
+  assert.equal(at("batch-split").runtimeState, "unreachable");
+  assert.match(at("batch-split").runtimeError, /multiple panes/);
+  assert.equal(calls.filter(c => c.bin === "tmux" && c.args.includes("list-windows")).length, 1);
+  assert.equal(calls.filter(c => c.bin === "tmux" && c.args.includes("list-panes")).length, 1);
+  assert.equal(calls.filter(c => c.bin === "ps").length, 1);
+});
+
+
+test("unreadable batched panes and failed process scans stay unknown, with one failed scan for all shells", async () => {
+  const session = "read-failure", names = ["unread-shell-a", "unread-shell-b"];
+  for (const name of names) await recordedHome(name, sockets.b, session);
+  for (const failure of ["panes", "processes"]) {
+    let psCalls = 0, paneCalls = 0;
+    const io = { exec(bin, args, opts) {
+      if (bin === "ps" && args.join(" ") === "-axo pid=,ppid=,comm=") {
+        psCalls++;
+        throw new Error("process scan unavailable");
+      }
+      if (bin === "tmux" && args.includes(`=${session}`)) {
+        if (args.includes("list-windows")) return names.join("\n") + "\n";
+        if (args.includes("list-panes")) {
+          paneCalls++;
+          if (failure === "panes") throw Object.assign(new Error("tmux failed"), { stderr: "pane read denied" });
+          return names.map((name, i) => `${name}\t%${i + 1}\t0\tsh\t${101 + i}`).join("\n") + "\n";
+        }
+      }
+      return execFileSync(bin, args, opts);
+    } };
+    const rows = (await fx.inEnv(() => listInstances(fx.root, undefined, io))).flatMap(a => a.instances).filter(i => names.includes(i.instance));
+    assert.equal(rows.length, 2);
+    for (const row of rows) {
+      assert.equal(row.running, null);
+      assert.equal(row.runtimeState, "unreachable");
+      assert.equal(row.runtimeError, failure === "panes" ? "pane read denied" : "process scan unavailable");
+    }
+    assert.equal(paneCalls, 1);
+    // Other fixtures may contain fallback shells; even then a failing scan is attempted only once.
+    assert.ok(psCalls <= 1);
+    if (failure === "processes") assert.equal(psCalls, 1);
+  }
 });
