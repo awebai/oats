@@ -60,8 +60,8 @@ members:
   - git:github.com/acme/agents          # the host is a member too
   - git:github.com/acme/platform
 packages:
-  oats.framework: v1.12.0               # bare versions resolve through the official catalog
-  oats.okf: v5.2.0
+  oats.framework: v1.12.2               # bare versions resolve through the official catalog
+  oats.okf: v5.2.1
 defaults:
   capabilities: { oats.core: { from: package } }
   knowledge: { oats.okf: { from: package } }

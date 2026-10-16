@@ -6,7 +6,7 @@ kernel owns slot selection, composition and command dispatch; the capability
 owns its knowledge format, instructions and promotion procedure. The model is
 in [Knowledge, instances and evolving expertise](knowledge-theory.md).
 
-This is the operator guide for **oats.okf 5.2.0** (OATS **>=0.49.0**). Provider implementation and
+This is the operator guide for **oats.okf 5.2.1** (OATS **>=0.49.0**). Provider implementation and
 recovery details belong to the [oats-okf README](https://github.com/awebai/oats-okf).
 
 | Surface | What it holds |
@@ -25,7 +25,7 @@ recovery details belong to the [oats-okf README](https://github.com/awebai/oats-
 ```yaml
 # oats-workspace.yaml (excerpt)
 packages:
-  oats.okf: v5.2.0
+  oats.okf: v5.2.1
 defaults:
   knowledge: { oats.okf: { from: package } }
 stores:
@@ -50,10 +50,10 @@ settings:
 
 Upgrading from 4.x requires the ordered
 [5.0 cutover](release-notes/v0.49.0.md#oatsokf-50-cutover--order-matters), not
-just editing a version line. For 5.2.0, OATS >=0.49.0 remains required:
+just editing a version line. For 5.2.1, OATS >=0.49.0 remains required:
 that kernel first supports the public source-event lookup after retirement.
 
-**Upgrade:** pin `oats.okf: v5.2.0` and run `oats sync`. Only new spawns get
+**Upgrade:** pin `oats.okf: v5.2.1` and run `oats sync`. Only new spawns get
 the capability-owned harvest duty, skill and spawn-recorded policy. Existing
 homes keep their copied provider even after a session restart. Deployments
 whose briefings never mentioned harvesting now get knowledge proposals at
