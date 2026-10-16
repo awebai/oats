@@ -76,6 +76,18 @@ export function selectClaudeChannel(mode = 'development') {
   return {mode, argument: CLAUDE_CHANNEL_ARGUMENTS[mode]};
 }
 
+export const CLAUDE_CHANNEL_MODE_DEFAULT = {
+  code: 'claude-channel-mode-default',
+  message: 'this Claude home runs in development channel mode because settings.oats.aweb.claudeChannelMode is unset in oats-local.yaml; choose approved (the managed-settings route) or set development explicitly, then respawn',
+};
+/** Whether claudeChannelMode was unset when a home was composed: the captured
+ *  settings lack it, or the kernel's captured origin for it is the manifest
+ *  default it filled in. A present key with no recorded origin is not unset. */
+export function claudeChannelModeUnset(settings, origins) {
+  if (!Object.hasOwn(settings ?? {}, 'claudeChannelMode')) return true;
+  return origins?.['/claudeChannelMode']?.kind === 'manifest-default';
+}
+
 /** What a Claude start discloses for its mode: development always states the
  *  kernel's confirmation (a new start has no outcome yet); approved warns
  *  readiness's machine-policy verdict, and nothing
@@ -304,13 +316,13 @@ export function parseTimestamp(value) {
   return Date.parse(value);
 }
 
-/** Released aw status is a transport observation. Worker telemetry is absent at
- * the CLI floor; that is unknown, not permission to invent a healthy worker.
- * No generation/start witness is required or inferred from historical inputs. */
-export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime, capturedDelivery, primary, primaryTeam, bindings, incomplete = false}, {minimumVersion, now = Date.now()} = {}) {
+/** The host wake daemon alone, from `aw wake status --json`: running, with a
+ *  reported version. Home scope reads it after the status's instances list;
+ *  soul scope, which has no target row, reads only this. */
+export function wakeDaemonAssessment(status, {minimumVersion}) {
   const warnings = [];
   const fail = (code, message) => ({problems: [problem(code, message)], warnings});
-  if (!object(status) || !Array.isArray(status.instances)) return fail('wake-status-unavailable', 'aw wake status is unavailable or malformed');
+  if (!object(status)) return fail('wake-status-unavailable', 'aw wake status is unavailable or malformed');
   if (status.daemon_running !== true) return fail('wake-daemon-not-running', 'host wake daemon is not confirmed running');
   if (status.daemon_version_state !== 'reported' || typeof status.daemon_version !== 'string' || !/^\d+\.\d+\.\d+$/.test(status.daemon_version || '')) return fail('wake-daemon-version-unknown', 'host wake daemon compatibility is unproven');
   const version = status.daemon_version.split('.').map(Number), floor = minimumVersion.split('.').map(Number);
@@ -319,6 +331,19 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
   // senders outside the roster, so it is reported as a warning, and every
   // later check (and its fail) still carries that warning.
   if (difference < 0) warnings.push(problem('wake-daemon-outdated', `host wake daemon is running ${status.daemon_version}; required ${minimumVersion}: upgrade aw, then restart the host wake daemon`));
+  return {problems: [], warnings};
+}
+
+/** Released aw status is a transport observation. Worker telemetry is absent at
+ * the CLI floor; that is unknown, not permission to invent a healthy worker.
+ * No generation/start witness is required or inferred from historical inputs. */
+export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime, capturedDelivery, primary, primaryTeam, bindings, incomplete = false}, {minimumVersion, now = Date.now()} = {}) {
+  const warnings = [];
+  const fail = (code, message) => ({problems: [problem(code, message)], warnings});
+  if (!object(status) || !Array.isArray(status.instances)) return fail('wake-status-unavailable', 'aw wake status is unavailable or malformed');
+  const daemon = wakeDaemonAssessment(status, {minimumVersion});
+  warnings.push(...daemon.warnings);
+  if (daemon.problems.length) return {problems: daemon.problems, warnings};
   const rows = status.instances.filter(row => samePath(row?.home, home));
   if (rows.length !== 1) return fail('wake-target-missing', 'canonical home must have exactly one broker target row');
   const row = rows[0];
