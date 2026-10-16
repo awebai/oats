@@ -2851,10 +2851,12 @@ its absence.
   waiting"). Its rules are the events read's ([Waiting on you](#waiting-on-you)):
   one bounded read of the home's log per running row. A remote roster row
   carries what the remote kernel reports; an older kernel omits the field.
-  `running` is the window's presence, which a crashed harness's fallback
-  shell or a retained dead pane keeps, so a row with a claim is checked
-  against its session (as `oats session inspect` observes it) and reads
-  `null` unless a harness runs there.
+  From OATS 0.60.0 `running` is the harness's liveness, so a fallback shell
+  or a retained dead pane already reads `running: false` and carries no
+  claim; the claim still needs the home's session receipt to name a target.
+  An older kernel's `running` is the window's presence, and it checks a row
+  with a claim against its session (as `oats session inspect` observes it),
+  reading `null` unless a harness runs there.
 - <a id="row-retire"></a>**`retire`** (feature `status-retire-state`, OATS
   0.59.0): `{state, since, self, code?, message?}` while a retire of the home
   is running, scheduled or owed; absent otherwise, and from older kernels.
