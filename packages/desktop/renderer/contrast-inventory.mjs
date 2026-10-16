@@ -52,7 +52,7 @@ export const TEXT_PAIRS = Object.freeze([
  * terminal's selection fill is the one sign of what a copy will take (issue 672). */
 export const GRAPHIC_PAIRS = Object.freeze([
   ...["bg", "surface", "surface-2"].map(bg => Object.freeze(["graph-edge", bg])),
-  // The sidebar's dotted sibling link (shell.css .ctx-guide.link-*), the sibling cue alone on its column (#1312),
+  // The sidebar's dotted sibling link (shell.css .ctx-guide.link-*), the sibling cue alone on its column (issue 1312),
   // on every row fill: plain, hovered and selected.
   ...["surface", "surface-2", "sel"].map(bg => Object.freeze(["tree-link", bg])),
   // A native select's chevron (theme.css select.field): --muted, on the field and on a disabled field.
