@@ -12,7 +12,7 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
-import { TERMS, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
+import { TERMS, capabilityCatalogKey, createCapabilityCatalog, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
 import { loadConfig } from "./config.mjs";
 import { ACT_WORDS, actContext, actCwd, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
@@ -77,12 +77,13 @@ function errorLines(error) {
  *  run's private directory (the reader's change output and the panel's tmux server share it), and
  *  `removeDir` removes it on the way out once both have removed their files; `sweep` removes what
  *  runs that are gone left of theirs (lib/panel.mjs). `createSoulCatalog` is the shared home's
- *  catalog of a workspace's souls, replaceable so a test can count its reads; the three spawn
+ *  catalog of a workspace's souls, and `createCapabilityCatalog` its table of capabilities, each
+ *  replaceable so a test can count its reads; the three spawn
  *  factories are the shared home's preview, apply boundary and transaction, replaceable so a test
  *  can answer them. */
 const EFFECTS = Object.freeze({ loadConfig, findDeployment, probeKernel, createReader, offeredDeployments, admitDeployment, prepareRemoteTerm, createPanel, sweep,
   runDir: CHANGE_FILES.dir, removeDir: CHANGE_FILES.remove, realpath, tellable, startInstance, createLifecycleConfirmation, createLifecycleBoundary, createSoulCatalog,
-  createSpawnPreview, createSpawnApplyBoundary, createSpawnTransaction });
+  createCapabilityCatalog, createSpawnPreview, createSpawnApplyBoundary, createSpawnTransaction });
 
 /** The timers a run lends the shared spawn: the apply's deadline and its grace (the boundary's
  *  `applyTimer`), the boundary's wait for an answer (`timer`) and the transaction's polls
@@ -265,6 +266,35 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     settleSouls(id);
   }
 
+  // THE CAPABILITIES (docs/tui.md, "The Capabilities view"; Spec 7): as the souls, one table per run,
+  // the shared home's, over the reader's exec (its `oats capabilities` a read of kind "read", ended on
+  // every way out), settled for the open workspace with its own `workspace status`, so read only when
+  // nothing is held for the workspace as it is now (capabilityCatalogKey), and never before the
+  // Capabilities view was first shown. Its "Used by" reads the souls catalog above, settled with it.
+  const capabilities = effects.createCapabilityCatalog({ terms: TERMS, exec: reader.exec });
+  /** The table of workspace `id` settled now, and the store told what is held and whether a read is
+   *  in flight; once that read lands, told again, when it is of the workspace as it is now. */
+  function settleCapabilities(id) {
+    const deployment = state.entries.get(id)?.deployment;
+    if (ended || deployment?.status !== "observed") return;
+    let settled;
+    try { settled = capabilities.settle(id, probe.cli, deployment.workspaceStatus); } catch { return; } // the reader has stopped
+    const { entry, pending } = settled;
+    heard({ capabilities: { id, entry, reading: pending !== null } });
+    if (pending) pending.then((landed) => { if (landed?.key === capabilitiesKeyNow(id)) heard({ capabilities: { id, entry: landed, reading: capabilities.refreshing(id) } }); }, () => {});
+  }
+  /** The table's key for the workspace as the loop holds it now, or null when it is not observed. */
+  function capabilitiesKeyNow(id) {
+    const deployment = state.entries.get(id)?.deployment;
+    return deployment?.status === "observed" ? capabilityCatalogKey(probe.cli, deployment.workspaceStatus) : null;
+  }
+  /** `r` in the Capabilities view, as rereadSouls: one read, never a second while one is in flight. */
+  function rereadCapabilities(id) {
+    if (capabilities.refreshing(id)) return;
+    capabilities.forget(id);
+    settleCapabilities(id);
+  }
+
   // THE SPAWN (docs/tui.md, "Spawning an agent"; Spec 6-spawn). One preview, one apply boundary and
   // one transaction per run, the shared home's. The preview's kernel reads are reads (the reader's
   // exec, ended on every way out). The apply is a change (`detached: true`, the shared apply's
@@ -327,12 +357,14 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   }
 
   /** What the reader gave, into the state, and the screen after it. A read of the open workspace,
-   *  once the Souls view was shown, settles its catalog: read again only when the workspace moved. */
+   *  once the Souls view (or the Capabilities view, or a spawn) wanted its catalog, settles it, and
+   *  once the Capabilities view was shown its table: each read again only when its key moved. */
   function heard(event) {
     if (ended) return;
     guard.attempt(() => {
       if (took(reduce(state, event, keymap))) return;
       if (event.entry !== undefined && event.id === state.open && state.souls.wanted) settleSouls(event.id);
+      if (event.entry !== undefined && event.id === state.open && state.capabilities.wanted) settleCapabilities(event.id);
       guard.draw();
     });
   }
@@ -367,6 +399,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     if (effect.refresh) refresh(effect.refresh);
     if (effect.souls === "settle" && state.open !== null) settleSouls(state.open);
     if (effect.souls === "reread" && state.open !== null) rereadSouls(state.open);
+    if (effect.capabilities === "settle" && state.open !== null) settleCapabilities(state.open);
+    if (effect.capabilities === "reread" && state.open !== null) rereadCapabilities(state.open);
     if (effect.spawnPreview) previewRead(effect.spawnPreview);
     if (effect.spawn) spawnNow(effect.spawn);
     if (effect.spawnCheck) checkSpawn();
@@ -587,6 +621,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
       // The preview's window as painted, which keeps a focused fold in sight: the store's `top`
       // from now on, so the next movement key goes on from what is on the screen.
       if (made.drawnTop !== undefined && state.spawn !== null) state = reduce(state, { spawnTop: { n: state.spawn.n, top: made.drawnTop } }, keymap).state;
+      // The capability detail's window as painted, which keeps the marked soul in sight: the same.
+      if (made.capabilitiesTop !== undefined) state = reduce(state, { capabilitiesTop: made.capabilitiesTop }, keymap).state;
       return bytes;
     },
     onInput(bytes) {

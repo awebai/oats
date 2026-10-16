@@ -34,6 +34,8 @@ export const NOT_YET = Object.freeze([
   // choose, and no task: the rest is the kernel's command's (run on that machine for another).
   Object.freeze({ what: "spawn on another machine", command: "oats spawn <soul>" }),
   Object.freeze({ what: "spawn with a harness, model or task", command: "oats spawn <soul>" }),
+  // The Capabilities view lists them and their facts: a capability's skills' text and its files are the kernel's command's.
+  Object.freeze({ what: "see a capability's skills and files", command: "oats capabilities show <name>" }),
   Object.freeze({ what: "open an agent in its own tmux window", command: "oats session attach --home <home>" }),
   Object.freeze({ what: "start with another harness or model", command: "oats session start --home <home>" }),
   Object.freeze({ what: "add a machine to this workspace", command: "oats server connect <id> --ssh <alias>" }),
@@ -47,14 +49,14 @@ export const NOT_YET = Object.freeze([
 export const MACHINES = Object.freeze([
   "A machine's rows are what it reported at the time on its heading (in a view of one machine, in the header).",
   "Nothing is kept on disk: a machine not reached in this run is listed by its own name.",
-  "Souls and Capabilities, when they come, are this machine's.",
+  "Souls and Capabilities are this machine's.",
 ]);
-/** The views the frame names, what each holds, and what to run for what a view does not do yet:
- *  Capabilities is not built. The Souls view spawns an agent of the selected soul (n, N). */
+/** The views the frame names, what each holds, and what to run for what a view does not do yet.
+ *  The Souls view spawns an agent of the selected soul (n, N). */
 export const VIEWS = Object.freeze([
   Object.freeze({ name: "1 Instances", what: "the instances of the open workspace", commands: Object.freeze([]) }),
   Object.freeze({ name: "2 Souls", what: "the souls of the open workspace and their detail, i their instances, n an agent of the selected soul", commands: Object.freeze([]) }),
-  Object.freeze({ name: "3 Capabilities", what: "not in this version", commands: Object.freeze(["oats capabilities"]) }),
+  Object.freeze({ name: "3 Capabilities", what: "the capabilities of the open workspace and their detail, Enter on a soul that uses one shows it in Souls", commands: Object.freeze([]) }),
 ]);
 
 const words = (text) => text.split(" ");

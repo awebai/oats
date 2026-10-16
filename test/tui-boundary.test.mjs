@@ -108,6 +108,11 @@ const TAKEN = Object.freeze({
   // #1276: the house fuzzy matcher, the Desktop's palette's own (the TUI's palette and switcher filter with it).
   // #1276 also put the soul filter (soulMatches) and a failed catalog read's sentence (soulCatalogFailure) on the soul-facts.mjs and spawn-messages.mjs lines above.
   "subsequence-score.mjs": ["subsequenceScore"],
+  // Spec 7: the Capabilities view. The shared table (one per run, as the soul catalog), its sections, groups,
+  // sources, search, layer labels and "Used by", and a capability's facts in the Desktop's words.
+  "capability-catalog.mjs": ["createCapabilityCatalog", "capabilityCatalogKey"],
+  "capability-rows.mjs": ["memberNames", "capabilitySource", "groupCapabilities", "hostKeyOf", "capabilitySections", "matchCapabilities", "soulsComposition", "layerLabel", "capabilityUsers"],
+  "capability-facts.mjs": ["capabilityFacts", "CAPABILITY_COPY"],
 });
 /** Every clause of a source that takes names from a module of the shared home: [[module, names], …].
  *  A name taken under another name is read as the name the home gives it. */
@@ -246,7 +251,7 @@ test("the views are pure: they import only the TUI's own text, style and action 
   const views = filesUnder("packages/tui/lib/views");
   assert.equal(views.length >= 2, true);
   // The views and the window they share; the switcher of workspaces, the confirmation of an act and the palette are held to the rule like the rest.
-  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["act.mjs", "detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "palette.mjs", "scroll.mjs", "souls.mjs", "spawn.mjs", "split.mjs", "switcher.mjs"]);
+  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["act.mjs", "capabilities.mjs", "detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "palette.mjs", "scroll.mjs", "souls.mjs", "spawn.mjs", "split.mjs", "switcher.mjs"]);
   for (const path of views) {
     for (const name of staticImports(read(path))) assert.match(name, /^(\.\.\/actions\.mjs|\.\.\/term\/(text|style|width)\.mjs|\.\/[a-z-]+\.mjs)$/, `${path} imports ${name}`);
     assert.doesNotMatch(code(read(path)), /\b(process|Date|setTimeout|setInterval|performance|console|fetch|require)\b/, path);

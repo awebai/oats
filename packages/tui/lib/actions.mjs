@@ -25,7 +25,7 @@ export const ACTIONS = Object.freeze([
   { id: "workspaces", keys: ["w"], label: "workspaces" },
   // The palette (docs/tui.md, "The palette"): from every focus it is the leader and then `k`.
   { id: "palette", keys: ["ctrl+k"], label: "palette" },
-  { id: "open", keys: ["enter"], label: "open", views: [["instances", "open the selected agent's terminal as a tab beside the list, or show its tab when it has one, in the list of instances"], ["switcher", "open the selected workspace, in the switcher"], ["souls", "show the selected soul's detail, and from the detail its instances, in the Souls view"]] },
+  { id: "open", keys: ["enter"], label: "open", views: [["instances", "open the selected agent's terminal as a tab beside the list, or show its tab when it has one, in the list of instances"], ["switcher", "open the selected workspace, in the switcher"], ["souls", "show the selected soul's detail, and from the detail its instances, in the Souls view"], ["capabilities", "show the selected capability's detail, and from the detail the marked soul that uses it, in the Capabilities view"]] },
   // The Souls view (docs/tui.md, "The Souls view"): the selected soul's instances, in the
   // Instances view, filtered by that soul.
   { id: "soul-instances", keys: ["i"], label: "instances", views: [["souls", "the selected soul's instances, in the Instances view"]] },
