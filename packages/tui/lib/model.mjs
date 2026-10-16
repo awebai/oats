@@ -12,7 +12,7 @@ import {
   identityMemory, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath,
   openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
   startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage, retiringRows, soulRows, soulFacts, spawnRefusal,
-  defaultSpawnChoices, spawnProblem, outcomeWords, previewFacts, deploymentLabel, subsequenceScore, soulMatches, soulCatalogFailure,
+  defaultSpawnChoices, spawnProblem, outcomeWords, previewFacts, deploymentLabel, subsequenceScore, soulMatches, soulCatalogFailure, catalogFailure,
   memberNames, capabilitySource, groupCapabilities, hostKeyOf, capabilitySections, matchCapabilities, soulsComposition, rosterAgentName, layerLabel, capabilityUsers,
   capabilityFacts, CAPABILITY_COPY,
 } from "./client.mjs";
@@ -978,15 +978,6 @@ function soulsView(state, page, at) {
 
 // ── THE CAPABILITIES VIEW (docs/tui.md, "The Capabilities view"; Spec 7) ──────────────────────────
 
-/** A failed read of the capabilities catalog, as the soul catalog's says it (spawn-messages.mjs
- *  soulCatalogFailure), with the noun "capabilities": the shared home names no sentence of its own for
- *  it (the Desktop words it through its generic data-state controller). The message is the reason's,
- *  text from outside, drawn through the display filter. */
-export function capabilityCatalogFailure(reason) {
-  const message = typeof reason?.message === "string" && reason.message ? reason.message : "";
-  return message ? `Couldn't read this workspace's capabilities: ${message}` : "Couldn't read this workspace's capabilities.";
-}
-
 /** A capability's identity in the view: its source's key and its name, since a package's capability
  *  and a member's may share a name (Spec 7, Settled 8). */
 export const capabilityKey = (row, names) => `${capabilitySource(row, names).key}\u0000${row.name}`;
@@ -1078,8 +1069,8 @@ function capabilitiesView(state, page, at) {
   const base = { local: c.local, failure: null, heading: null, list: [], above: 0, below: 0, focus: v.focus, filter: v.filter, detail: null, detailTop: v.detailTop, keep: !v.detailLoose, mark: v.mark };
   if (!c.local) return { ...base, state: "none" };
   const entry = c.held?.entry ?? null, reason = entry?.reason ?? null;
-  if (!c.listed) return reason && !c.held.reading ? { ...base, state: "failed", failure: capabilityCatalogFailure(reason) } : { ...base, state: "reading" };
-  const heading = c.heading ? { label: "Capabilities", path: null, state: null, short: capabilityCatalogFailure(reason), readAt: clockTime(entry.observedAt) } : null;
+  if (!c.listed) return reason && !c.held.reading ? { ...base, state: "failed", failure: catalogFailure("capabilities", reason) } : { ...base, state: "reading" };
+  const heading = c.heading ? { label: "Capabilities", path: null, state: null, short: catalogFailure("capabilities", reason), readAt: clockTime(entry.observedAt) } : null;
   const state_ = !c.all.length ? "none" : !c.keys.length ? "nomatch" : "rows";
   const at_ = c.items.findIndex((item) => item.key !== undefined && item.key === c.selected);
   const win = windowOf({ top: v.top, count: c.items.length, height: capabilitiesHeight(c, page), keep: v.loose ? -1 : at_ });

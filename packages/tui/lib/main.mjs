@@ -258,12 +258,17 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     const deployment = state.entries.get(id)?.deployment;
     return deployment?.status === "observed" ? soulCatalogKey(probe.cli, deployment.workspaceStatus) : null;
   }
-  /** `r` in the Souls view: what is held for the workspace is forgotten and settled again, so one
-   *  read starts; never a second while one is in flight. */
+  /** `r` in the Souls view, as `r` in the Capabilities view: one live read, never a second while one
+   *  is in flight. What is held stays held beside it (the shared catalog's refresh), so a read that
+   *  fails keeps the last good souls under the failure, as a failed read of the workspace's moved key
+   *  does. */
   function rereadSouls(id) {
-    if (souls.refreshing(id)) return;
-    souls.forget(id);
-    settleSouls(id);
+    const deployment = state.entries.get(id)?.deployment;
+    if (ended || deployment?.status !== "observed" || souls.refreshing(id)) return;
+    let pending;
+    try { pending = souls.refresh(id, probe.cli, deployment.workspaceStatus); } catch { return; } // the reader has stopped
+    heard({ souls: { id, entry: souls.held(id), reading: true } });
+    pending.then((landed) => { if (landed?.key === soulsKeyNow(id)) heard({ souls: { id, entry: landed, reading: souls.refreshing(id) } }); }, () => {});
   }
 
   // THE CAPABILITIES (docs/tui.md, "The Capabilities view"; Spec 7): as the souls, one table per run,

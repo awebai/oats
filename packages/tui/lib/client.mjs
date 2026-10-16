@@ -42,6 +42,7 @@ export { defaultSpawnChoices } from "../../client/spawn-preview-contract.mjs";
 export { createSpawnApplyBoundary } from "../../client/spawn-apply.mjs";
 export { createSpawnTransaction } from "../../client/spawn-transaction.mjs";
 export { spawnProblem, outcomeWords, SPAWN_NEXT, soulCatalogFailure } from "../../client/spawn-messages.mjs";
+export { catalogFailure } from "../../client/catalog-messages.mjs";
 export { previewFacts } from "../../client/spawn-preview-facts.mjs";
 export { subsequenceScore } from "../../client/subsequence-score.mjs";
 export { createCapabilityCatalog, capabilityCatalogKey } from "../../client/capability-catalog.mjs";

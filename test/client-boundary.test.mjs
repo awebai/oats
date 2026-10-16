@@ -132,6 +132,9 @@ const SURFACE = Object.freeze({
   // outcome's shared facts with its own words for `next` (a closed set), and draws a preview's facts its own way.
   "spawn-transaction.mjs": ["createSpawnTransaction", "RECOVER_POLL_MS", "FOLLOW_MARGIN_MS"],
   "spawn-messages.mjs": ["spawnProblem", "outcomeWords", "catalogProblem", "SPAWN_NEXT", "soulCatalogFailure"],
+  // #1301: one sentence for a failed catalog read, the souls' and the capabilities' (soulCatalogFailure is it, with
+  // the noun "souls"); the noun is one of the two, so no client words a third catalog its own way.
+  "catalog-messages.mjs": ["catalogFailure"],
   "spawn-preview-facts.mjs": ["previewFacts"],
   "spawn-apply-contract.mjs": ["spawnApplySupported", "spawnApplyDeadlineMs", "spawnReference", "spawnCreationReceipt", "ROLLED_BACK_CODES", "spawnApplyReason", "spawnApplyFailure"],
   "launch-prompt-outcome.mjs": ["LAUNCH_INSPECTION", "LAUNCH_DIAGNOSTIC_BYTES", "launchPromptOutcome", "retainedSpawnDetails", "retainedSpawnMessage", "retainedStartMessage", "launchFlagIgnored", "flagIgnoredNotice"],
@@ -483,7 +486,7 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 62);
+  assert.equal(Object.keys(SURFACE).length, 63);
   // The five modules 1b made are on it, with the names the TUI's first views take.
   for (const module of ["instance-tree.mjs", "roster-sections.mjs", "kernel-environment.mjs", "workspace-admission.mjs", "instance-acts.mjs"]) assert.ok(Object.hasOwn(SURFACE, module), module);
   // 1c: a second client says its own terms with clientTerms, and that is all it takes from that module.
@@ -522,6 +525,8 @@ test("the stable surface names what packages/client has: every listed module, ev
   // 6b-2: the spawn's client half; its words are facts and `next` codes, and the Desktop's sentences stay in its renderer.
   assert.deepEqual(SURFACE["spawn-transaction.mjs"], ["createSpawnTransaction", "RECOVER_POLL_MS", "FOLLOW_MARGIN_MS"]);
   assert.deepEqual(SURFACE["spawn-messages.mjs"], ["spawnProblem", "outcomeWords", "catalogProblem", "SPAWN_NEXT", "soulCatalogFailure"]);
+  // #1301: a failed catalog read's one sentence, by its one function.
+  assert.deepEqual(SURFACE["catalog-messages.mjs"], ["catalogFailure"]);
   assert.deepEqual(SURFACE["spawn-preview-facts.mjs"], ["previewFacts"]); assert.ok(SURFACE["spawn-preview-contract.mjs"].includes("defaultSpawnChoices"));
   // Not on it: the two files nobody imports, and the terminal contract.
   for (const module of [ENVIRONMENT, COLLECTOR, "terminal-contract.mjs"]) assert.ok(!Object.hasOwn(SURFACE, module), module);

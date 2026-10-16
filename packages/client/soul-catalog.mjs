@@ -58,6 +58,13 @@ export function createSoulCatalog({ terms, exec, invoke = (cli, options) => exec
     const pending = catalog.revalidate(deployment, cli, key, options);
     return pending && pending.then(project);
   }
+  /** A LIVE read for this workspace state (maxAge 0), asked for by the user (the TUI's `r`): one read under
+   * the state's key, or the live same-key read in flight, joined. What is held stays held beside it, so a
+   * read that fails lands as the held souls with its `reason` next to them, as a failed read of a moved key
+   * does. Resolves with the landed, projected entry. */
+  function refresh(deployment, cli, workspaceStatus) {
+    return catalog.refresh(deployment, cli, soulCatalogKey(cli, workspaceStatus)).then(project);
+  }
   return {
     /** The catalog for this workspace state, reading it only when needed. */
     async observe(deployment, cli, workspaceStatus, options = {}) {
@@ -67,6 +74,7 @@ export function createSoulCatalog({ terms, exec, invoke = (cli, options) => exec
     /** Synchronous decision for this workspace state: what is held now, and what (if anything) is still coming. */
     settle,
     revalidate,
+    refresh,
     /** Start an unbound read when nothing usable is held and nothing is in flight; null when nothing started. */
     prefetch(deployment, cli, options = {}) { const flight = catalog.prefetch(deployment, cli, options); return flight && flight.then(project); },
     refreshing: catalog.refreshing,

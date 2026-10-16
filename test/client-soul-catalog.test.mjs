@@ -115,3 +115,103 @@ test('two keyed catalogs share nothing: cycles, unbound flights, held entries an
   assert.equal(other.made.held(D).key, 'k1');
   await tick();
 });
+
+// ── refresh (#1301): the user's live read, with what is held kept beside it ──────────────────────
+
+/** A catalog whose kernel reads answer, in turn, what `answers` gives (a souls document, or a refusal),
+ *  each when its own gate is opened. */
+function scripted() {
+  const reads = [];
+  const made = createSoulCatalog({ terms, invoke: (cli, request) => {
+    const read = { request, ...deferred() };
+    reads.push(read);
+    return read.promise;
+  } });
+  const answer = (index, value) => reads[index].resolve(value);
+  return { reads, catalog: made, answer };
+}
+const ok = (...names) => ({ ok: true, document: souls(...names) });
+const refused = message => ({ ok: false, reason: { code: 'E_CLI_FAILED', message } });
+const names = entry => entry.souls.map(soul => soul.name);
+
+test('refresh on a held key: one live read under the state\'s key, and its success replaces what is held', async () => {
+  const s = scripted();
+  const first = s.catalog.observe(D, CLI, WS);
+  s.answer(0, ok('dev')); await first;
+  const refreshing = s.catalog.refresh(D, CLI, WS);
+  assert.equal(s.reads.length, 2, 'one read');
+  assert.deepEqual([s.reads[1].request.action, s.reads[1].request.context, s.reads[1].request.maxAge], ['souls', D, 0], 'a live read: maxAge 0');
+  assert.equal(s.catalog.refreshing(D), true);
+  assert.deepEqual(names(s.catalog.held(D)), ['dev'], 'what is held stays held while it reads');
+  s.answer(1, ok('dev', 'ops'));
+  const landed = await refreshing;
+  assert.deepEqual([landed.key, landed.reason, landed.stale, names(landed)], [soulCatalogKey(CLI, WS), null, false, ['dev', 'ops']]);
+  assert.deepEqual(Object.keys(landed), Object.keys(s.catalog.held(D)), 'the projection is the held entry\'s');
+  assert.deepEqual(names(s.catalog.held(D)), ['dev', 'ops'], 'the landed souls are held');
+  assert.equal(s.catalog.refreshing(D), false);
+});
+
+test('refresh on a held key: a failure keeps the held souls, with the reason next to them, and the observation stamp they were read under', async () => {
+  let at = 1_000;
+  const reads = [];
+  const made = createSoulCatalog({ terms, now: () => at, invoke: async (cli, request) => { reads.push(request); return reads.length === 1 ? ok('dev') : refused('the lock is stale'); } });
+  const good = await made.observe(D, CLI, WS);
+  at = 2_000;
+  const landed = await made.refresh(D, CLI, WS);
+  assert.equal(reads.length, 2);
+  assert.deepEqual([landed.key, landed.reason, names(landed), landed.observedAt, landed.at], [soulCatalogKey(CLI, WS), { code: 'E_CLI_FAILED', message: 'the lock is stale' }, ['dev'], good.observedAt, 2_000]);
+  assert.deepEqual(made.held(D), { ...landed, stale: false }, 'held as it landed');
+  // As a failed read of a moved key does: the held souls under the failure.
+  const moved = { ...WS, workspace: { ...WS.workspace, commit: 'c2' } };
+  let count = 0;
+  const other = createSoulCatalog({ terms, invoke: async () => (++count === 1 ? ok('dev') : refused('the lock is stale')) });
+  await other.observe(D, CLI, WS);
+  const failedMove = await other.observe(D, CLI, moved);
+  assert.deepEqual([failedMove.reason, names(failedMove)], [landed.reason, names(landed)]);
+});
+
+test('refresh during a live flight joins it: a refresh beside a refresh, or beside a read of a kernel that reads live only, starts nothing', async () => {
+  const s = scripted();
+  const first = s.catalog.observe(D, CLI, WS);
+  s.answer(0, ok('dev')); await first;
+  const one = s.catalog.refresh(D, CLI, WS), two = s.catalog.refresh(D, CLI, WS);
+  assert.equal(s.reads.length, 2, 'the second refresh joins the first');
+  s.answer(1, ok('ops'));
+  assert.deepEqual([names(await one), names(await two)], [['ops'], ['ops']]);
+  // A CLI without observe-max-age reads live whatever it is asked: a moved key's settle is a live flight, joined.
+  const moved = { ...WS, workspace: { ...WS.workspace, commit: 'c2' } };
+  const { pending } = s.catalog.settle(D, CLI, moved);
+  assert.ok(pending, 'premise: the moved key started a read');
+  const joined = s.catalog.refresh(D, CLI, moved);
+  assert.equal(s.reads.length, 3, 'the refresh joins the settle\'s live read');
+  s.answer(2, ok('moved'));
+  assert.deepEqual([names(await pending), names(await joined)], [['moved'], ['moved']]);
+  // A kernel that honours maxAge: a background read in the air is not live, so the refresh reads beside it.
+  const aged = { ...CLI, features: [...CLI.features, 'observe-max-age'] };
+  const b = scripted();
+  const background = b.catalog.settle(D, aged, WS, { maxAge: 60 }).pending;
+  const live = b.catalog.refresh(D, aged, WS);
+  assert.deepEqual(b.reads.map(read => read.request.maxAge), [60, 0], 'a live read beside the background one');
+  b.answer(0, ok('old')); b.answer(1, ok('live'));
+  assert.deepEqual([names(await background), names(await live)], [['old'], ['live']]);
+  const again = b.catalog.refresh(D, aged, WS);
+  assert.equal(b.reads.length, 3, 'once landed, a refresh reads again');
+  b.answer(2, ok('again')); await again;
+});
+
+test('two soul catalogs share nothing on refresh: a refresh of one neither joins nor changes the other\'s flight or held entry', async () => {
+  const one = scripted(), other = scripted();
+  const a = one.catalog.observe(D, CLI, WS), b = other.catalog.observe(D, CLI, WS);
+  one.answer(0, ok('dev')); other.answer(0, ok('ops')); await a; await b;
+  const live = one.catalog.refresh(D, CLI, WS);
+  assert.equal(one.catalog.refreshing(D), true);
+  assert.equal(other.catalog.refreshing(D), false, 'the other has nothing in the air');
+  const beside = other.catalog.refresh(D, CLI, WS);
+  assert.deepEqual([one.reads.length, other.reads.length], [2, 2], 'each refresh reads its own');
+  one.answer(1, refused('one failed'));
+  assert.equal((await live).reason.message, 'one failed');
+  assert.deepEqual([other.catalog.held(D).reason, names(other.catalog.held(D))], [null, ['ops']], 'the other\'s held entry is untouched by one\'s failure');
+  other.answer(1, ok('ops', 'qa'));
+  assert.deepEqual(names(await beside), ['ops', 'qa']);
+  assert.deepEqual([one.catalog.held(D).reason.message, names(one.catalog.held(D))], ['one failed', ['dev']]);
+});

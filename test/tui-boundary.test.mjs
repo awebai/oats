@@ -104,6 +104,9 @@ const TAKEN = Object.freeze({
   "spawn-apply.mjs": ["createSpawnApplyBoundary"],
   "spawn-transaction.mjs": ["createSpawnTransaction"],
   "spawn-messages.mjs": ["spawnProblem", "outcomeWords", "SPAWN_NEXT", "soulCatalogFailure"],
+  // #1301: a failed catalog read's one sentence; the Capabilities view says it with the noun "capabilities"
+  // (the Souls view keeps soulCatalogFailure, the same sentence with "souls").
+  "catalog-messages.mjs": ["catalogFailure"],
   "spawn-preview-facts.mjs": ["previewFacts"],
   // #1276: the house fuzzy matcher, the Desktop's palette's own (the TUI's palette and switcher filter with it).
   // #1276 also put the soul filter (soulMatches) and a failed catalog read's sentence (soulCatalogFailure) on the soul-facts.mjs and spawn-messages.mjs lines above.
