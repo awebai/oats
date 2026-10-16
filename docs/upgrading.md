@@ -318,8 +318,12 @@ disabled or masked, is refused with a printed choice: `--replace-service` to
 replace it, or `--no-service` to keep it and skip service files and manager
 calls. One exception on macOS: the capture label registered from another plist
 is refused even with `--replace-service`; remove that registration yourself,
-or keep it with `--no-service`. `--dry-run` prints what setup would do and changes nothing
-([Capture service release order](#capture-service-release-order)).
+or keep it with `--no-service`. A service manager failure does not skip
+capture: setup still writes the hooks and runs the first pass, exits 1 and
+prints a setup summary of what changed; rerun the printed command, which
+finishes setup's own activation without a flag. Until then `oats doctor` warns
+`capture-service-pending`. `--dry-run` prints what setup would do and changes
+nothing ([Capture service release order](#capture-service-release-order)).
 
 Once the recorded `node` no longer exists (an old version removed under a
 version manager, for example), the hooks fail without a message, so the

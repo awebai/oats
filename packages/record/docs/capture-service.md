@@ -193,6 +193,15 @@ changed or uncertain registration and live/reused PIDs supply no death proof.
 The receipt is reread before accepting that observation; health never repairs,
 reclaims, signals termination, writes counters or invents a finished receipt.
 Owned legacy watcher definitions additionally produce `capture-setup-required`.
+Setup's pending-activation marker (`<root>/capture-service-pending.json`, see
+[setup service migration](#setup-service-migration)) produces
+`capture-service-pending` from file evidence only: beside setup's own marked
+definitions it says the periodic schedule's activation was not verified (hooks
+may be installed, the schedule is not confirmed), and with no such definition
+it names the marker as stale. Both say "not verified", never "not running": a
+crash after a verified activation can leave the marker until the next setup
+clears it. The remedy is a setup rerun; health never removes the marker. It is
+a warning and hides no other row.
 Standalone remedies name `turn-record`; the private doctor entry selects `oats`
 when constructing authored remedy literals, before interpolating paths/errors
 or receipt data. It never replaces substrings in completed messages. All diagnosis
@@ -1402,7 +1411,8 @@ the named one is foreign and is refused naming that path, even with
 `--replace-service`; setup never unlinks or boots out that file. `--no-service`
 bypasses service target reads and manager calls entirely. `--dry-run` reads
 target files but writes nothing and calls no manager; unloaded/disabled state
-is explicitly unexamined.
+is explicitly unexamined; a dry run also names a present pending-activation
+marker and whether a run would retry it or remove it as stale.
 
 Apply rechecks file/ancestor identities and manager ownership/enablement.
 Replaced bytes or symlinks are saved nonoverwriting in a reported datable
@@ -1439,11 +1449,49 @@ and definition writes are reported before subsequent steps. Failure reports the 
 reason and recovery without inventing scheduling or capture results. Apply
 can leave backups, stopped jobs or written definitions before a later failure;
 there is no global atomic rollback. Inspect the reported state and rerun.
-An installed disabled timer after failed activation remains ambiguous with
-operator intent and requires explicit replacement. Hooks and the first pass
-follow successful service apply: a service refusal or failure exits 1 without
-writing hooks or running the first pass. Capture receipts retain their own
-failure and partial meanings.
+
+**Pending activation.** Before its first manager change or definition write,
+setup writes a private (0600) pending-activation marker,
+`<root>/capture-service-pending.json`, and removes it only once activation is
+verified (`service: activation verified; pending-activation marker removed`).
+A failure in between leaves it. On a rerun, a loaded, unmasked disabled unit
+beside setup's own marked definitions and a live marker is setup's own
+unverified activation (on Linux, the timer a failed `enable --now` left): it is
+retried with no flag. Without the marker, the same state is an operator's
+disable and is refused with `E_CAPTURE_SERVICE_DISABLED` and both remedies. A
+marker with no unit, or beside a unit without setup's mark, is stale: setup
+removes it and names it, and it authorizes nothing. A verified activation,
+including an explicit `--replace-service`, removes the marker. The package has
+no service uninstall command. On macOS an unfinished activation leaves the
+plist unregistered, which a plain rerun already bootstraps; a launchd disable
+entry is always an operator's. `capture --health` reports a present marker as
+`capture-service-pending` ([offline diagnosis](#offline-installation-and-run-diagnosis)).
+
+**Service failure.** Preflight refusals (foreign, operator-disabled,
+indeterminate state) change nothing. When apply fails after preflight passed,
+setup still writes the hooks and runs the bounded first pass, then exits 1:
+capture is never skipped for a service failure, and the failure is never
+hidden in the exit status. Capture receipts retain their own failure and
+partial meanings. A rerun after the remedy changes nothing that is already
+right; it only completes the activation.
+
+**Setup summary.** Once setup starts changing things (every run but
+`--dry-run` and preflight refusals), it ends with one setup summary on stdout:
+fixed labels, one item per line, in this order on every run. With a nonzero
+exit it is the setup failure summary.
+
+```
+setup summary:
+  status: complete | incomplete (exit 1)
+  hooks written: <settings path>        (one line per file written, or "none")
+  first capture pass: appended <n>, pending yes|no | skipped: another pass holds the record root | failed: <reason> | not run
+  service: scheduled | failed: <reason> | skipped (--no-service) | no service template for <platform> | not changed
+  remedy: none | rerun <oats|turn-record> setup --owner <owner> --root <root> [flags] | inspect <oats|turn-record> capture --health --json, then rerun …
+```
+
+A caller reads a nonzero exit with this block as "these changes were made",
+never as "nothing happened". Setup has no `--json` mode; a machine-readable
+rendering of the same value is follow-up awebai/oats#1330.
 
 Fake-manager and isolated CLI fixtures exercise this ordering and refusal
 contract. Real macOS/Linux manager lifecycle, active-pass preservation,

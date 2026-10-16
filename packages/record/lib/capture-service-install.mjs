@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { basename, dirname, isAbsolute, join } from "node:path";
-import { captureServiceDefinition, captureServiceLabel, captureServiceUnit, captureServiceTimer } from "./capture-service-definition.mjs";
+import { capturePendingActivationName, captureServiceDefinition, captureServiceLabel, captureServiceUnit, captureServiceTimer } from "./capture-service-definition.mjs";
 import { captureServiceOwnership, captureServiceArgvOwnership } from "./capture-service-ownership.mjs";
 
 export const serviceShellWord = value => /^[A-Za-z0-9_./:@%+,-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
@@ -200,6 +200,12 @@ export function preflightCaptureService({ platform, node, request, setupCommand,
     argv: definition.argv, domain: `gui/${uid}`, target: `gui/${uid}/${captureServiceLabel}` };
   if (platform === "darwin" && !Number.isSafeInteger(uid)) throw new Error("cannot determine launchd user domain");
   plan.state = dry ? null : inspect(plan);
+  // The marker counts only beside setup's own marked definitions; with no
+  // unit, or one without setup's mark, it is stale and authorizes nothing.
+  const markerPath = join(plan.request.root, capturePendingActivationName), marker = captureSetupSnapshot(markerPath);
+  if (!["absent", "file"].includes(marker.kind)) throw new Error(`cannot safely read the pending-activation marker ${markerPath}`);
+  plan.pending = marker.kind === "absent" ? null :
+    { path: markerPath, snapshot: marker, stale: !files.every(file => file.ownership === "periodic") };
   // A label registered from any other plist is not a named file: booting it
   // out would not remove that file, which can load it again, and the file is
   // never setup's to unlink. Explicit replacement does not reach it.
@@ -218,8 +224,11 @@ export function preflightCaptureService({ platform, node, request, setupCommand,
     if (plan.state?.disabled) disabled.push(`launchctl print-disabled ${plan.domain} lists ${captureServiceLabel} as disabled (named plist ${files[0].snapshot.kind === "absent" ? "absent" : "present"}, label ${plan.state.registered ? "registered" : "not registered"})`);
   } else {
     for (const file of files) if (file.ownership === "masked") disabled.push(`${JSON.stringify(file.path)} links to /dev/null`);
+    // A loaded, unmasked disabled unit beside setup's live marker is setup's
+    // own unverified activation (a failed enable), not an operator's choice.
+    const ownPending = plan.pending && !plan.pending.stale;
     if (plan.state) for (const [i, state] of Object.values(plan.state).entries()) if (state.LoadState === "masked" || state.UnitFileState.startsWith("masked") ||
-      (state.UnitFileState === "disabled" && (files[i].snapshot.kind !== "absent" || state.LoadState !== "not-found")))
+      (state.UnitFileState === "disabled" && (files[i].snapshot.kind !== "absent" || state.LoadState !== "not-found") && !(ownPending && state.LoadState === "loaded")))
       disabled.push(`${[captureServiceUnit, captureServiceTimer][i]} LoadState=${state.LoadState} UnitFileState=${state.UnitFileState}`);
   }
   if (disabled.length && !replace) refuse(plan, "E_CAPTURE_SERVICE_DISABLED", `named capture service is not enabled: observed ${disabled.join(", ")}; setup enables it only when asked`);
@@ -235,6 +244,7 @@ export function applyCaptureService(plan, createdParents = new Map()) {
   const { files, run, log } = plan;
   if (plan.dry) {
     for (const file of files) log(`service: would ${file.snapshot.kind === "absent" ? "install" : file.changed ? "update" : "keep"} ${file.path}`);
+    if (plan.pending) log(`service: pending-activation marker ${plan.pending.path} is ${plan.pending.stale ? "stale; would remove it" : "present; would retry activation"}`);
     log("service: manager registration/disabled state unexamined (--dry-run); no manager invoked");
     return;
   }
@@ -242,6 +252,21 @@ export function applyCaptureService(plan, createdParents = new Map()) {
   recheck();
   const current = inspect(plan);
   if (stateIdentity(current, plan.platform) !== stateIdentity(plan.state, plan.platform)) throw new Error("capture manager identity/enablement changed since preflight; re-run setup");
+  const markerPath = join(plan.request.root, capturePendingActivationName);
+  if (plan.pending?.stale) {
+    recheckCaptureSetup(plan.pending.snapshot, createdParents); fs.rmSync(markerPath);
+    log(`service: removed stale pending-activation marker ${markerPath} (no setup-marked capture definition); it authorizes nothing`);
+  }
+  // Written before the first manager change or definition write, removed only
+  // after activation is verified: a failure in between leaves it for a rerun.
+  let marked = false;
+  const mark = () => {
+    if (marked) return;
+    fs.mkdirSync(plan.request.root, { recursive: true });
+    fs.writeFileSync(markerPath, JSON.stringify({ platform: plan.platform, startedAt: new Date().toISOString() }) + "\n", { mode: 0o600 });
+    fs.chmodSync(markerPath, 0o600); marked = true;
+    log(`service: pending-activation marker written: ${markerPath}`);
+  };
   const replaced = files.filter(file => file.changed && file.snapshot.kind !== "absent");
   if (replaced.length) {
     const directory = join(plan.request.root, "service-backups", `${new Date().toISOString().replace(/:/g, "-")}-${randomUUID()}`);
@@ -255,11 +280,11 @@ export function applyCaptureService(plan, createdParents = new Map()) {
   }
   recheck();
   const command = (name, args) => {
-    requireOk(run, name, args);
+    mark(); requireOk(run, name, args);
     log(`service: manager action completed: ${name} ${args.map(serviceShellWord).join(" ")}`);
   };
   const writeDefinition = file => {
-    writeCaptureSetup(file.snapshot, file.contents, createdParents);
+    mark(); writeCaptureSetup(file.snapshot, file.contents, createdParents);
     log(`service: definition written: ${file.path}`);
   };
   if (plan.platform === "darwin") {
@@ -309,6 +334,10 @@ export function applyCaptureService(plan, createdParents = new Map()) {
     const final = captureSetupSnapshot(file.path);
     recheckParents(file.snapshot, final, createdParents);
     if (final.kind !== "file" || !final.bytes.equals(Buffer.from(file.contents))) throw new Error(`capture definition changed during activation: ${file.path}; re-run setup`);
+  }
+  if (marked || plan.pending && !plan.pending.stale) {
+    fs.rmSync(markerPath, { force: true });
+    log(`service: activation verified; pending-activation marker removed: ${markerPath}`);
   }
   log(`service: periodic capture scheduled (every 15 minutes)${plan.changed ? "" : "; definitions already installed"}`);
 }

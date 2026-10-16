@@ -8,6 +8,10 @@ import { captureCommandOptions } from "./capture-command.mjs";
 export const captureServiceLabel = "ai.aweb.turn-record-capture";
 export const captureServiceUnit = "turn-record-capture.service";
 export const captureServiceTimer = "turn-record-capture.timer";
+// Setup's private record, under the record root, that it started activating
+// the service and has not verified it: a rerun tells its own unfinished step
+// from an operator's disable, and health reports the unverified schedule.
+export const capturePendingActivationName = "capture-service-pending.json";
 const marker = "oats-turn-record-service:1";
 const entry = fileURLToPath(new URL("./capture-service-runner.mjs", import.meta.url));
 

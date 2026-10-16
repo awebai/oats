@@ -25,13 +25,19 @@
   `~/.claude*/settings.json` from `async: true`, `timeout: 120` to
   `--quiet --hook` with `async: false`, `timeout: 10`, even where the command
   already matches. Until setup runs, the persisted hooks keep the old fields.
-- Setup applies the service before it writes hooks. A service refusal or
-  failure now exits 1, writes no hooks and skips the first capture pass.
-  Inspect the reported files and manager state, then run the printed command.
-  On Linux, a timer whose first activation failed reads as disabled, so a plain
-  rerun is refused with `E_CAPTURE_SERVICE_DISABLED`; choose `--replace-service`.
-  Apply has no atomic rollback: a manager failure can leave backups, stopped
-  jobs or written definitions in place.
+- A service refusal changes nothing. A service failure after preflight no
+  longer skips capture: setup still writes the hooks and runs the first pass,
+  then exits 1 (where frozen #1102 exited 0) and ends with a fixed-format
+  setup summary naming the hooks written, the first pass's result, and the
+  service failure with its remedy. Setup has no `--json`; see #1330.
+- A plain rerun finishes setup's own failed activation: setup records it in a
+  private `<root>/capture-service-pending.json` marker, removed once activation
+  is verified, so a timer its failed enable left disabled is retried without a
+  flag (#1099). A disabled unit without that marker is still the operator's
+  choice and needs `--replace-service` or `--no-service`. Until the rerun,
+  `capture --health` and `oats doctor` warn `capture-service-pending`: the
+  periodic schedule is not verified. Apply has no atomic rollback: a manager
+  failure can leave backups, stopped jobs or written definitions in place.
 - After conversion, check `oats capture --health` (or
   `turn-record capture --health`) against the intended root, and the capture
   warnings of `oats doctor`, keeping the same `HOME` and `TURN_RECORD_ROOT`.

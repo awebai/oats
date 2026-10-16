@@ -341,22 +341,23 @@ test("where there is no service template, the line to run by hand is one a shell
   assert.deepEqual(shellReads(line, node, home), [captureOf(), "--watch", "--owner", OWNER, "--root", join(home, "record")]);
 });
 
-test("launchctl refusal is nonzero and names the failing action without claiming scheduling", () => {
+test("launchctl refusal is nonzero, names the failing action and still runs the first pass, with the user-facing remedy", () => {
   const home = newHome({}, `home ${HOSTILE} by hand`);
   write(join(home, ".manager-config.json"), JSON.stringify({ fail: "bootstrap" }));
   const r = run(home, ["--no-hooks"], { platform: "darwin", node: join(base, "handed", "bin", "node"), status: 1 });
-  assert.match(r.stderr, /launchctl bootstrap .*fixture manager refusal.*exit 5.*re-run setup/);
-  assert.doesNotMatch(r.stdout, /periodic capture scheduled|running first capture pass/);
-  // The retry is the command a person runs: `oats setup` when a node was
+  assert.match(r.stderr, /setup: service failed: launchctl bootstrap .*fixture manager refusal.*exit 5.*re-run setup/);
+  assert.doesNotMatch(r.stdout, /periodic capture scheduled/); assert.match(r.stdout, /running first capture pass/);
+  // The remedy is the command a person runs: `oats setup` when a node was
   // handed in, `turn-record setup` alone; the flags and quoted words survive.
-  const retry = (command, home, flags) => `then retry ${command} --owner ${OWNER} --root ${serviceShellWord(join(home, "record"))}${flags}; use --no-service`;
-  assert.ok(r.stderr.includes(retry("oats setup", home, " --no-hooks")), r.stderr);
+  const remedy = (command, home, flags) => `\n  remedy: rerun ${command} --owner ${OWNER} --root ${serviceShellWord(join(home, "record"))}${flags}\n`;
+  assert.ok(r.stdout.includes(remedy("oats setup", home, " --no-hooks")), r.stdout);
+  assert.match(r.stdout, /\nsetup summary:\n {2}status: incomplete \(exit 1\)\n {2}hooks written: none\n {2}first capture pass: .*\n {2}service: failed: launchctl bootstrap /);
   const alone = newHome({}, `home ${HOSTILE} standalone`);
   write(join(alone, ".manager-config.json"), JSON.stringify({ fail: "bootstrap" }));
   const s = run(alone, ["--no-hooks", "--replace-service"], { platform: "darwin", status: 1 });
-  assert.ok(s.stderr.includes(retry("turn-record setup", alone, " --no-hooks --replace-service")), s.stderr);
-  for (const out of [r.stderr, s.stderr]) assert.doesNotMatch(out, /setup\.mjs/);
-  assert.doesNotMatch(s.stderr, /oats setup/);
+  assert.ok(s.stdout.includes(remedy("turn-record setup", alone, " --no-hooks --replace-service")), s.stdout);
+  for (const out of [r.stderr, r.stdout, s.stderr, s.stdout]) assert.doesNotMatch(out, /setup\.mjs/);
+  assert.doesNotMatch(s.stdout + s.stderr, /oats setup/);
 });
 
 // ---- a run over an earlier one's files -------------------------------------

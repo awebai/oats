@@ -141,8 +141,13 @@ Refusals print that choice as the user-facing command with the selected
 owner/root: `oats setup …` when the kernel environment handed in a node
 (`OATS_NODE_BIN`, also set in instance shells), otherwise `turn-record setup …`.
 Unknown/read errors always refuse, as does a macOS registration of the capture
-label from another plist path, even with `--replace-service`. A service
-refusal or failure exits 1 before hooks are written or the first pass runs.
+label from another plist path, even with `--replace-service`. A refusal
+changes nothing. A service failure after preflight still writes the hooks and
+runs the first pass, then exits 1 with the
+[setup summary](docs/capture-service.md#setup-service-migration) of what changed;
+setup's private pending-activation marker (`<root>/capture-service-pending.json`)
+lets a plain rerun finish its own activation, and `capture --health` reports it
+as `capture-service-pending`.
 Replacement saves nonoverwriting backups under the selected root and rechecks
 file identity. `--dry-run` writes nothing and invokes no manager, so it reports
 manager state as unexamined.

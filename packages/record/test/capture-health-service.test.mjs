@@ -159,6 +159,27 @@ test("current issues and newer failure remain warnings beside recent older succe
   assert.deepEqual(recovered.lastFailure, saved.lastFailure); // history is retained, not an active issue
 });
 
+test("capture-service-pending reports setup's unverified activation from file evidence, stale when no marked definition remains", t => {
+  for (const platform of ["linux", "darwin"]) {
+    const f = fixture(t, platform), marker = join(f.root, "capture-service-pending.json");
+    for (const file of f.definition.files) write(file.path, file.contents);
+    f.save(status(60)); assert.ok(!codes(f.health()).includes("capture-service-pending"), "no marker, no row");
+    write(marker, '{"platform":"fixture"}\n');
+    const before = bytesBelow(f.home), live = f.health(), row = live.rows.find(r => r.code === "capture-service-pending");
+    assert.equal(live.status, "warning");
+    assert.equal(row.message, `Setup started activating the periodic capture service and did not verify it (marker ${marker}): capture hooks may be installed, but the periodic schedule is not verified. Run turn-record setup --root '${f.root.replace(/'/g, `'\\''`)}' with your existing --owner to retry the activation.`);
+    assert.doesNotMatch(row.message, /not running/); assert.deepEqual(bytesBelow(f.home), before, "health never removes the marker");
+    assert.match(captureHealthForDoctor(f.root, f.options).rows.find(r => r.code === "capture-service-pending").message, /Run oats setup --root /);
+    fs.rmSync(f.definition.files[0].path);
+    assert.match(f.health().rows.find(r => r.code === "capture-service-pending").message, /^The pending-activation marker .* is stale: no setup-marked capture service definition remains\. Run turn-record setup /);
+    write(f.definition.files[0].path, legacy(platform));
+    assert.match(f.health().rows.find(r => r.code === "capture-service-pending").message, /is stale/);
+    // It never hides another row: beside a missing status, both show.
+    fs.rmSync(join(f.root, "capture-status.json"));
+    assert.ok(["capture-status-missing", "capture-service-pending"].every(code => codes(f.health()).includes(code)));
+  }
+});
+
 test("record-too-large set-asides get the edit-or-ignore-whole-input remedy, never prefix restoration", t => {
   const f = fixture(t); f.save(status(60));
   const state = new DerivedState(f.root);

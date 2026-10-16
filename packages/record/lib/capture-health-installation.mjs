@@ -3,7 +3,7 @@
 import { closeSync, constants, fstatSync, lstatSync, openSync, opendirSync, readSync, statSync } from "node:fs";
 import { join, parse, resolve, sep } from "node:path";
 import { captureServiceOwnership } from "./capture-service-ownership.mjs";
-import { captureServiceLabel, captureServiceUnit, captureServiceTimer } from "./capture-service-definition.mjs";
+import { capturePendingActivationName, captureServiceLabel, captureServiceUnit, captureServiceTimer } from "./capture-service-definition.mjs";
 import { isCaptureHook } from "./capture-hook-ownership.mjs";
 
 const same = (a, b) => a.dev === b.dev && a.ino === b.ino && a.mode === b.mode &&
@@ -62,11 +62,16 @@ export function captureInstallation(root, { home, platform, check = () => {} }) 
   const candidates = platform === "darwin" ? [[join(home, "Library/LaunchAgents", `${captureServiceLabel}.plist`), "plist"]]
     : platform === "linux" ? [[join(home, ".config/systemd/user", captureServiceUnit), "service"],
       [join(home, ".config/systemd/user", captureServiceTimer), "timer"]] : [];
+  let periodic = candidates.length > 0;
   for (const [path, kind] of candidates) {
-    const text = read(path); if (text === null) continue;
+    const text = read(path); if (text === null) { periodic = false; continue; }
     const ownership = captureServiceOwnership(text, kind);
-    installed ||= ownership !== "foreign"; legacy ||= ownership === "legacy";
+    installed ||= ownership !== "foreign"; legacy ||= ownership === "legacy"; periodic &&= ownership === "periodic";
   }
+  // File evidence only: setup's marker beside its own marked definitions is
+  // an unverified activation; with no such definition the marker is stale.
+  const markerPath = join(root, capturePendingActivationName);
+  const pending = selected && read(markerPath) !== null ? { path: markerPath, stale: !periodic } : null;
 
   const beforeHome = stat(home);
   if (beforeHome) {
@@ -98,5 +103,5 @@ export function captureInstallation(root, { home, platform, check = () => {} }) 
     const afterHome = stat(home);
     if (!afterHome || !same(beforeHome, afterHome)) throw new Error("installation home changed during enumeration");
   }
-  return { installed, legacy };
+  return { installed, legacy, pending };
 }

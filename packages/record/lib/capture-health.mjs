@@ -104,5 +104,11 @@ function diagnose(root, { home = homedir(), platform = hostPlatform(), now = Dat
     `Last successful capture: ${status.lastSuccess?.finishedAt ?? "none recorded"}; last committed progress: ${status.lastProgressAt ?? "none recorded"}. No success within 3600s. This may reflect a sleeping machine or off-host execution; recent progress is not full success. ${setup}` });
   if (installation.legacy) rows.push({ code: "capture-setup-required", message:
     `An owned legacy continuous-watch definition remains. ${setup} Definition files do not prove manager registration or enabled scheduling; health invokes no manager.` });
+  // Activation is "not verified", never "not running": a crash after a
+  // verified activation can leave the marker until the next setup clears it.
+  const retry = `Run ${command} setup --root ${shellQuote(root)} with your existing --owner`;
+  if (installation.pending) rows.push({ code: "capture-service-pending", message: installation.pending.stale
+    ? `The pending-activation marker ${installation.pending.path} is stale: no setup-marked capture service definition remains. ${retry}; it removes the stale marker and activates nothing on its account.`
+    : `Setup started activating the periodic capture service and did not verify it (marker ${installation.pending.path}): capture hooks may be installed, but the periodic schedule is not verified. ${retry} to retry the activation.` });
   check(); return result(backlog);
 }

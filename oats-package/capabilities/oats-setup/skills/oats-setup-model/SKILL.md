@@ -36,8 +36,16 @@ automation timer. The package owns its service policy and migration readers:
 consult `packages/record/docs/capture-service.md#setup-service-migration` and
 `docs/upgrading.md#capture-service-release-order` in the installed CLI.
 `oats setup` can change capture hooks and user-manager definitions and run a
-first pass; it is not a diagnostic to run implicitly. After installing a release
-that ships periodic service A, run conversion only with operator authorization.
+first pass; it is not a diagnostic to run implicitly.
+
+**A person-run step**, from <!-- version: set at the rebase checkpoint -->the
+OATS release that ships periodic service A<!-- end version -->: the record
+`oats setup` capture conversion records the caller's `node` and writes the
+person's `~/.claude*/settings.json`, so it captures its own shell's environment,
+like the host timer, and an agent's shell is not the person's login
+environment. The setup expert prints the exact command and says why the person
+runs it. A nonzero exit ends with a setup summary of what changed;
+`capture-service-pending` in health or `oats doctor` means: rerun that command.
 Preserve the selected `--owner`/`--root`; a foreign/disabled refusal offers
 explicit `--replace-service` or `--no-service`. Unknown state never permits
 replacement. `--dry-run` invokes no manager and cannot confirm enablement.

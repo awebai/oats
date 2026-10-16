@@ -50,6 +50,16 @@ syncBuiltinESMExports();
   return { fx, root, cli };
 }
 
+test("doctor shows setup's pending-activation row from the package reader without touching the marker", t => {
+  const f = fixture(t); mkdirSync(f.root); writeFileSync(join(f.root, "capture-service-pending.json"), '{"platform":"fixture"}\n');
+  const before = disk(f.root), result = f.cli(["--json"]);
+  assert.equal(result.status, 0, result.stderr); assert.equal(result.launches.length, 1);
+  const row = JSON.parse(result.stdout).warnings.find(warning => warning.code === "capture-service-pending");
+  // No capture definition exists under the fixture home, so the marker is stale.
+  assert.match(row.message, /^The pending-activation marker .*capture-service-pending\.json is stale: .* Run oats setup --root /);
+  assert.deepEqual(disk(f.root), before);
+});
+
 test("doctor delegates once with caller root/home and maps only package warning rows without mutation", t => {
   const f = fixture(t);
   const absent = f.cli(["--json"]);

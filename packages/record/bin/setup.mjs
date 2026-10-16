@@ -193,7 +193,19 @@ function prepareHooks() {
 }
 
 // --------------------------------------------------------------------- run
-let captureStarted = false;
+// Once setup starts changing things it ends with one setup summary: fixed
+// labels, one item per line, the same order on every run, so a nonzero exit
+// never reads as "nothing happened". It is held as one value; a machine
+// rendering is follow-up awebai/oats#1330.
+const oneLine = text => String(text).replace(/\s*[\r\n]+\s*/g, " ");
+const rerun = `${SETUP_COMMAND} --owner ${shellWord(owner)} --root ${shellWord(root)}${args["no-hooks"] ? " --no-hooks" : ""}${args["replace-service"] ? " --replace-service" : ""}`;
+const summary = { hooks: [], firstPass: "not run", service: "not changed", remedy: "none" };
+function printSummary(failed) {
+  console.log(["setup summary:", `  status: ${failed ? "incomplete (exit 1)" : "complete"}`,
+    ...(summary.hooks.length ? summary.hooks : ["none"]).map(path => `  hooks written: ${path}`),
+    `  first capture pass: ${summary.firstPass}`, `  service: ${summary.service}`, `  remedy: ${summary.remedy}`].join("\n"));
+}
+let captureStarted = false, changing = false, serviceFailure = null;
 try {
   const hooks = args["no-hooks"] ? [] : prepareHooks();
   const plan = captureDefaultRootPlan({ home: homedir(), cwd: process.cwd(), env: process.env });
@@ -203,28 +215,46 @@ try {
   if (!args["no-service"]) {
     if (["darwin", "linux"].includes(platform())) service = preflightCaptureService({ platform: platform(), node: NODE,
       request: { root, owner, plan }, setupCommand: SETUP_COMMAND, dry, replace: Boolean(args["replace-service"]), noHooks: Boolean(args["no-hooks"]) });
-    else console.log(`service: no service template for ${platform()}; run this in the background yourself:\n` +
-      `  ${shellWord(NODE)} ${shellWord(CAPTURE)} --watch --owner ${owner} --root ${shellWord(root)}`);
-  }
+    else {
+      console.log(`service: no service template for ${platform()}; run this in the background yourself:\n` +
+        `  ${shellWord(NODE)} ${shellWord(CAPTURE)} --watch --owner ${owner} --root ${shellWord(root)}`);
+      summary.service = `no service template for ${platform()}`;
+    }
+  } else summary.service = "skipped (--no-service)";
   if (!dry) loadIgnore(root);
   const createdParents = new Map();
   for (const hook of hooks) recheckCaptureSetup(hook.snapshot, createdParents);
-  if (service) applyCaptureService(service, createdParents);
+  changing = !dry;
+  // A service failure after preflight leaves hooks and the bounded first pass
+  // to run: capture is never skipped for it, and the exit still reports it.
+  if (service) {
+    try { applyCaptureService(service, createdParents); summary.service = "scheduled"; }
+    catch (error) {
+      if (dry) throw error;
+      serviceFailure = error; summary.service = `failed: ${oneLine(error.message)}`;
+      console.error(`setup: service failed: ${error.message}`);
+    }
+  }
   for (const { snapshot, contents } of hooks) {
     if (!contents) console.log(`hooks: ${snapshot.path} already installed`);
     else if (dry) console.log(`hooks: would install Stop+SessionEnd capture in ${snapshot.path}`);
-    else { writeCaptureSetup(snapshot, contents, createdParents); console.log(`hooks: installed Stop+SessionEnd capture in ${snapshot.path}`); }
+    else { writeCaptureSetup(snapshot, contents, createdParents); summary.hooks.push(snapshot.path); console.log(`hooks: installed Stop+SessionEnd capture in ${snapshot.path}`); }
   }
   if (dry) console.log("dry run: no first capture pass");
   else {
     console.log("running first capture pass (the initial one can take minutes)...");
     captureStarted = true;
-    await captureCommandPass(root, { owner,
-      plan, indexEnabled: true, trigger: "setup", retrySetAside: false });
+    try {
+      const pass = await captureCommandPass(root, { owner, plan, indexEnabled: true, trigger: "setup", retrySetAside: false });
+      summary.firstPass = pass.skipped ? "skipped: another pass holds the record root" : `appended ${pass.appended}, pending ${pass.pending ? "yes" : "no"}`;
+    } catch (error) { summary.firstPass = `failed: ${oneLine(error.message)}`; throw error; }
   }
+  if (serviceFailure) { summary.remedy = `rerun ${rerun}`; process.exitCode = 1; }
 } catch (error) {
   console.error(error instanceof IgnoreError ? error.message : `${captureStarted ? "capture pass" : "setup"} failed: ${error.message}`);
-  if (!captureStarted && !(error instanceof IgnoreError) && !error.code?.startsWith("E_CAPTURE_SERVICE_"))
-    console.error(`setup recovery: inspect the reported files/manager state, then retry ${SETUP_COMMAND} --owner ${shellWord(owner)} --root ${shellWord(root)}${args["no-hooks"] ? " --no-hooks" : ""}${args["replace-service"] ? " --replace-service" : ""}; use --no-service to preserve the existing manager service`);
+  if (changing) summary.remedy = captureStarted && !serviceFailure ? `inspect ${captureRemedyCommand(Boolean(handedNode()))} capture --health --json, then rerun ${rerun}` : `rerun ${rerun}`;
+  else if (!captureStarted && !(error instanceof IgnoreError) && !error.code?.startsWith("E_CAPTURE_SERVICE_"))
+    console.error(`setup recovery: inspect the reported files/manager state, then retry ${rerun}; use --no-service to preserve the existing manager service`);
   process.exitCode = 1;
 }
+if (changing) printSummary(Boolean(process.exitCode));
