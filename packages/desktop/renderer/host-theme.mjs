@@ -91,7 +91,7 @@ export function deriveHostTokens(colors, mode, base = () => undefined) {
     "term-bg": background, surface: background, bg: canvas,
     "surface-2": raised, "chip-bg": raised, "tag-bg": raised,
     border: mixHex(background, foreground, 0.14),
-    "tree-line": mixHex(background, foreground, 0.2), "tree-link": mixHex(background, foreground, 0.4),
+    "tree-line": mixHex(background, foreground, 0.2),
     sel: mixHex(background, accent, 0.18), "sel-border": mixHex(background, accent, 0.45),
     "attn-bg": mixHex(background, yellow, 0.16), "attn-border": mixHex(background, yellow, 0.4), "attn-dot": yellow,
   };
@@ -135,6 +135,8 @@ export function deriveHostTokens(colors, mode, base = () => undefined) {
   ];
   for (const [token, start] of text) if (!hold(token, start, TEXT_PAIRS, TEXT_CONTRAST)) return null;
   if (!hold("graph-edge", mixHex(background, foreground, 0.4), GRAPHIC_PAIRS, GRAPHIC_CONTRAST)) return null;
+  // The sidebar's dotted sibling link is the only mark on its column (#1312): a meaningful graphic too.
+  if (!hold("tree-link", mixHex(background, foreground, 0.4), GRAPHIC_PAIRS, GRAPHIC_CONTRAST)) return null;
   // The running dot and the lit graph path are the accent, as in the built-in themes.
   tokens.live = tokens["graph-edge-coord"] = tokens.accent;
   return Object.fromEntries(Object.entries(tokens).map(([token, value]) => [`--${token}`, value]));

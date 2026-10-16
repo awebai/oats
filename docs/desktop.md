@@ -529,6 +529,13 @@ has reached the execution host. Both CLI installations must advertise
 `session-upload`. A failed transfer leaves the draft unchanged and shows an
 error in the terminal. Each drop/paste accepts up to 16 files totaling 25 MB.
 
+## The sidebar's instance tree
+
+The sidebar lists a workspace's instances as a tree: a child sits one step
+right of its parent, and related instances are grouped together. Siblings are
+joined by a dotted line through their dots. A parent's line to its children
+runs just to the right of the dotted line, so the two never merge.
+
 ## Identity marks and harness badges
 
 Souls, capabilities and workspaces carry a coloured two-letter mark beside

@@ -23,8 +23,11 @@ export function clusterSeparator(doc, { label, count } = {}) {
 /** Design connectors for one visible row, drawn from the dots (Redesign v3):
  * solid parent→child elbows (rounded into the child dot), solid pass-through
  * lines for open ancestor branches, and a DOTTED dot-to-dot link joining the
- * depth-0 members of one agent group (sibling relations). Every line sits on
- * a dot's centre column. `items` is the rendered group order. */
+ * depth-0 members of one agent group (sibling relations). The dotted link
+ * sits on the dot column and the solid lineage just right of it (shell.css
+ * --tree-branch-offset), so a row between two roots draws its own
+ * `link-through` and never lets a solid line stand in for it (#1312).
+ * `items` is the rendered group order. */
 export function treeConnectors(items, item, allInstances = items) {
   const at = items.indexOf(item), depth = item.depth || 0;
   const segments = treeGuideSegments(items, item, allInstances);
@@ -43,10 +46,7 @@ export function treeConnectors(items, item, allInstances = items) {
   if (!depth) {
     if (rootBefore) out.push({ kind: "link-in", level: 0 });
     if (rootAfter) out.push({ kind: "link-out", level: 0 });
-  } else if (rootAfter) {
-    if (segments[0] === "none") out.push({ kind: "link-through", level: 0 });
-    else if (segments[0] === "end") out.push({ kind: "link-out", level: 0 });
-  }
+  } else if (rootAfter) out.push({ kind: "link-through", level: 0 });
   return out;
 }
 

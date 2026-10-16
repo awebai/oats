@@ -89,7 +89,7 @@
   --surface: #ffffff;
   --surface-2: #f8f8f6;
   --border: #e3e3df;
-  --tree-line: #cfcfca; --tree-link: #9a9a95; /* Redesign v3 tree connectors */
+  --tree-line: #cfcfca; --tree-link: #858580; /* tree connectors; the dotted link holds 3:1 on surface, surface-2, sel (#1312) */
   --fg: #1a1a18;
   --muted: #5f5f5a;
   --faint: #686862;
@@ -143,7 +143,7 @@
   --surface: #fdf6e3;
   --surface-2: #f0e9d2;
   --border: #ddd4bc;
-  --tree-line: #cfc6ab; --tree-link: #93a1a1;
+  --tree-line: #cfc6ab; --tree-link: #728384; /* the dotted link holds 3:1 on surface, surface-2, sel (#1312) */
   --fg: #37424a;
   --muted: #56676d;
   --faint: #55666b;

@@ -142,15 +142,22 @@ function assertConnectors(u) {
     "span the entire row, including the transparent gap borders, so lines stay continuous");
   assert.equal(u.rule(".ctx-guides").pointerEvents, "none");
   assert.equal(u.rule(".ctx-guide").position, "absolute");
-  assert.equal(u.rule(".ctx-guide").left, "calc(13.25px + var(--guide-level) * var(--tree-step))",
-    "every connector sits on a dot centre column (10px inset + 4px radius - half the stroke)");
+  // #1312: two columns per level. The dotted sibling link on the dot's centre column, the solid
+  // lineage --tree-branch-offset to its right, so the two never share a column.
+  assert.equal(u.rule(".ctx-tree-row").getPropertyValue("--tree-branch-offset"), "5px", "the lineage column's offset");
+  assert.equal(u.rule(".ctx-guide").left, "calc(13.25px + var(--tree-branch-offset) + var(--guide-level) * var(--tree-step))",
+    "the solid lineage sits on the offset column, right of the dot column");
   assert.equal(u.rule(".ctx-guide").borderLeft, "1.5px solid var(--tree-line)", "a visible, tokenized stroke");
   assert.equal(u.rule(".ctx-guide.line").top, "0px"); assert.equal(u.rule(".ctx-guide.line").bottom, "0px");
   assert.equal(u.rule(".ctx-guide.elbow").height, "calc(50% + 2px)", "the elbow lands on the child dot's centre");
+  assert.equal(u.rule(".ctx-guide.elbow").width, "calc(var(--tree-step) - var(--tree-branch-offset) - 4.25px)",
+    "the elbow runs from the offset column to 1px under the child dot's ring (ring edge: dot centre - 6px)");
   assert.equal(u.rule(".ctx-guide.elbow").borderBottomLeftRadius, "5px", "rounded elbows");
   assert.equal(u.rule(".ctx-guide.down").top, "50%", "a parent's line leaves from its own dot");
-  assert.equal(u.rule(".ctx-guide.link-in, .ctx-guide.link-out, .ctx-guide.link-through").borderLeft,
-    "1.5px dotted var(--tree-link)", "sibling links are dotted");
+  const link = u.rule(".ctx-guide.link-in, .ctx-guide.link-out, .ctx-guide.link-through");
+  assert.equal(link.left, "calc(13.25px + var(--guide-level) * var(--tree-step))",
+    "the sibling link sits on the dot centre column (10px inset + 4px radius - half the stroke)");
+  assert.equal(link.borderLeft, "1.5px dotted var(--tree-link)", "sibling links are dotted");
   assert.equal(u.rule(".ctx-dot").boxShadow, "0 0 0 2px var(--row-solid, var(--surface))",
     "the dot's ring hides the line under it, in the row's own solid colour");
 }
@@ -227,7 +234,10 @@ test("sidebar metadata uses reported branch/harness without claiming membership 
 for (const [label, before, after, check, message] of [
   ["fixed button height", "min-height: 44px; height: auto; display: flex", "min-height: 44px; height: 40px; display: flex", assertRoom, /fixed box/],
   ["cramped label gap", "align-items: flex-start; gap: 3px", "align-items: flex-start; gap: 0", assertRoom, /3px stack/],
-  ["connectors off the dot column", "left: calc(13.25px + var(--guide-level)", "left: calc(8px + var(--guide-level)", assertConnectors, /dot centre column/],
+  ["sibling links off the dot column", "left: calc(13.25px + var(--guide-level)", "left: calc(8px + var(--guide-level)", assertConnectors, /dot centre column/],
+  ["sibling links on the lineage column", "{ left: calc(13.25px + var(--guide-level) * var(--tree-step));", "{", assertConnectors, /dot centre column/],
+  ["lineage back on the dot column", "left: calc(13.25px + var(--tree-branch-offset) + var(--guide-level)", "left: calc(13.25px + var(--guide-level)", assertConnectors, /offset column/],
+  ["elbows short of the child dot", "width: calc(var(--tree-step) - var(--tree-branch-offset) - 4.25px)", "width: 9px", assertConnectors, /child dot's ring/],
   ["square elbows", "border-bottom-left-radius: 5px", "border-bottom-left-radius: 0", assertConnectors, /rounded elbows/],
   ["opacity-hidden tools", "background: var(--row-solid); visibility: hidden; }", "background: var(--row-solid); opacity: 0; }", assertTools, /never opacity/],
 ]) test(`roster CSS contract rejects ${label} (in-memory, non-layout)`, t => {

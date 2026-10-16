@@ -262,7 +262,7 @@ for (const [name, palette] of palettes) test(`${name}: --graph-edge connectors, 
 // palettes (test/fixtures/host-theme/) go through the same inventory, with the same arithmetic, as
 // the built-in themes above. Derived colours are not pinned by value: the mixes may be tuned. What
 // is held: every pair, and the colours that pass through unchanged.
-const HOST_DECORATIVE = ["border", "tree-line", "tree-link", "sel-border", "attn-border", "attn-dot", "live", "graph-edge-coord"];
+const HOST_DECORATIVE = ["border", "tree-line", "sel-border", "attn-border", "attn-dot", "live", "graph-edge-coord"];
 for (const fixture of ["tokyo-night", "rose-pine", "hackerman", "legacy"]) test(`This computer (${fixture}): the derived palette on its base meets the whole inventory, and its terminal colours are the host's own`, () => {
   const state = hostState(fixture);
   const base = state.mode === "dark" ? dark : light;
