@@ -1,0 +1,28 @@
+{
+  "nobody": "Stopped on purpose.",
+  "operator": "Its operator",
+  "reasons": {
+    "oats.retired": "It was retired.",
+    "oats.stopped": "It was stopped.",
+    "oats.not_started": "It has not been started.",
+    "oats.not_running": "It is not running.",
+    "oats.session_unobservable": "Its server cannot see its session.",
+    "oats.launch_prompt_waiting": "It is waiting at a startup prompt.",
+    "oats.channel_not_loaded": "Its message channel did not load.",
+    "oats.channel_stream_down": "Its message channel is not connected.",
+    "oats.readiness_unavailable": "Its server could not check it.",
+    "oats.needs_configuration": "Its setup is incomplete.",
+    "oats.authorization_required": "It needs authorization.",
+    "oats.custody_down": "Its key service is down.",
+    "oats.grant_expired": "Its connection expired.",
+    "oats.grant_revoked": "Its connection was revoked.",
+    "oats.wake_broker_down": "Its message service is down.",
+    "oats.wake_not_registered": "It is not registered for messages.",
+    "oats.wake_paused": "Its messages are paused.",
+    "oats.receive_unknown": "Its server cannot tell whether it receives messages.",
+    "oats.unclassified": "Its server reported a problem.",
+    "oats.grant_expiring": "Its connection expires within a day.",
+    "oats.joined_team_poll_only": "It checks for messages only now and then.",
+    "oats.receive_unproven": "Its message delivery is unconfirmed."
+  }
+}
