@@ -29,6 +29,16 @@ OATS also provides **OATS Desktop: a free, fully integrated ADE—an agentic IDE
 
 OATS builds on tools you already use—**Git, GitHub or GitLab, and your preferred agent harnesses**. People can share agent definitions, knowledge and workflows across projects without an OATS account, a central OATS server or an OATS-hosted database. Selected integrations may use their own servers or databases; those are your choices, not a mandatory OATS service.
 
+## Start here
+
+Give your coding agent (Claude Code, Codex, pi or any other) this skill:
+
+```text
+https://raw.githubusercontent.com/awebai/oats/main/skills/oats-getting-started/SKILL.md
+```
+
+It asks about your project, installs OATS and OATS Desktop, and either creates your workspace with its own setup expert or joins this machine to an existing workspace. It then hands over to that setup expert, an OATS agent that sets up the rest with you. You type only passwords and logins.
+
 ## Why OATS
 
 OATS grew from a practical need: we wanted control over our agent setups—not just which model answered a prompt, but also:
@@ -216,7 +226,7 @@ oats onboard ~/acme --workspace git:github.com/acme/agents   # this machine's de
 oats spawn <soul> --task "First concrete task"
 ```
 
-The [first-team guide](docs/first-team.md) walks through writing the workspace, its members and a first soul; the [release notes](docs/release-notes/) state the supported scope of each version.
+[Start here](#start-here) does all of this for you. The [first-team guide](docs/first-team.md) walks through writing the workspace, its members and a first soul; the [release notes](docs/release-notes/) state the supported scope of each version.
 
 Further documentation:
 

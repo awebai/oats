@@ -49,9 +49,8 @@ test("v2 preparation aligns standalone OKF and Git-only theory catalog pins", ()
     assert.equal(json(`${cap}/oats.json`).compatibility.oats, ">=0.49.0", `${cap}: OKF 5.2.1 requires the public gone-home event lookup released in 0.49.0; provider CI separately qualifies the real kernel`);
   }
   assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v5.2.1");
-  // The getting-started skill shows a workspace file: its package versions are the catalog's.
+  // The getting-started skill writes a workspace file pinning oats.framework only (#1314): that version is the catalog's.
   const gettingStarted = readFileSync(join(ROOT, "skills/oats-getting-started/SKILL.md"), "utf8");
-  assert.match(gettingStarted, /^  oats\.okf: v5\.2\.1$/m, "the getting-started skill shows the catalog's oats.okf version");
   assert.match(gettingStarted, /^  oats\.framework: v1\.12\.3\b/m, "the getting-started skill shows the catalog's oats.framework version");
   const catalog = json("package-catalog.json");
   const onboarding = readFileSync(join(ROOT, "oats-package/capabilities/oats-setup/skills/oats-onboarding/SKILL.md"), "utf8");
