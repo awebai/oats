@@ -2,12 +2,12 @@
 name: oats-getting-started
 description: >-
   The way into OATS (Open Agent Team Specification) for a person who has only
-  a coding agent. Asks about their project, installs OATS, OATS Desktop and
-  (if wanted) the TUI, then either creates a new workspace with its own setup
-  expert soul or joins this machine to an existing workspace. Ends by
-  spawning the workspace's setup expert, which does the rest. Use for "get
-  started with OATS", "set up / install / adopt OATS", "join our OATS
-  workspace", or when someone gives you this file or its URL.
+  a coding agent. Asks about their project, installs OATS and OATS Desktop,
+  then either creates a new workspace with its own setup expert soul or joins
+  this machine to an existing workspace, and ends by spawning the workspace's
+  setup expert, which does the rest. Offers the TUI. Use for "get started
+  with OATS", "set up / install / adopt OATS", "join our OATS workspace", or
+  when someone gives you this file or its URL.
 ---
 
 # Getting started with OATS
@@ -25,18 +25,25 @@ work, in its own home and terminal. Each workspace has a setup expert soul,
 `<workspace>-oats-setup-expert`, which holds the `oats.setup` capability.
 
 **How to work.**
-- Ask everything in one round (step 1), then run the steps yourself and read
-  back what each did.
-- The person types only what you must never hold: passwords, tokens and
-  logins. Before the spawn there are two ways for that: a browser device flow
-  you start (the GitHub login, step 3), and the exact command for their own
-  terminal (a `sudo` or Homebrew password).
-- Never ask for a secret in the conversation, never write one to a file, and
-  never use Claude Code's `! <command>` for one: its command and output
-  enter your context.
-- Touch nothing you were not asked to. Don't edit an existing deployment's
-  files (`oats-local.yaml`, `oats-lock.json`, `agents/`), and don't push to
-  a repository the person did not create in step 5.
+- **Ask first, then run.** Ask everything in one round (step 1), then run the
+  steps yourself and read back what each did.
+- **Secrets.** The person types only what you must never hold: passwords,
+  tokens and logins. Before the spawn there are two ways for that: a browser
+  device flow you start (the GitHub login, step 3), and the exact command
+  for their own terminal (a `sudo` or Homebrew password).
+  - Never ask for a secret in the conversation, and never write one to a file.
+  - Never suggest Claude Code's `! <command>` for one: its command and output
+    enter your context.
+- **Your shell may keep nothing between commands.** Many harnesses start each
+  command in a new shell, in the same starting folder.
+  - Run each fenced block below as one command.
+  - When a later block needs a value an earlier one found (`V`, `ARCH`, a
+    path), write that value in literally.
+- **Sandboxes.** If your harness sandboxes commands, these steps need network
+  access and writes in the home folder: ask the person to approve them.
+- **Touch nothing you were not asked to.** Don't edit an existing
+  deployment's files (`oats-local.yaml`, `oats-lock.json`, `agents/`), and
+  don't push to a repository the person did not create in step 5.
 
 ## 1. Ask, in one round
 
@@ -49,39 +56,53 @@ work, in its own home and terminal. Each workspace has a setup expert soul,
   - Existing: its repository reference, for example
     `git:github.com/acme/acme-oats`. They get it from whoever runs that
     workspace.
-  - New: the **workspace name**, lowercase letters, digits and `-` (for
-    example `acme`). Also the GitHub **owner** of its repository (their user
-    or an organisation they can create repositories in) and the repository's
-    name. Suggest `<workspace>-oats`.
+  - New: the **workspace name**: lowercase letters and digits, words joined
+    by single `-` (`^[a-z0-9]+(?:-[a-z0-9]+)*$`), for example `acme`. Also
+    the GitHub **owner** of its repository (their user, or an organisation
+    they can create repositories in) and the repository's name. Suggest
+    `<workspace>-oats`. Refuse `agents`: OATS keeps instance homes in a
+    folder of that name.
 - **Messaging between agents (aweb):** wanted or not. The setup expert sets it
   up later.
 - **The harness for the setup expert:** `claude`, `codex` or `pi`. Default:
   the one you are, if it is one of these.
-- **The deployment directory:** where OATS lives on this machine. There is no
-  required name; suggest the folder that already holds their clones.
+- **The deployment directory `D`:** where OATS lives on this machine. Any
+  folder works. Suggest `~/Agents/<workspace>`: the Desktop and the TUI find
+  deployments directly inside `~/Agents` by themselves.
 - **OATS Desktop:** installed and started unless they decline. **The TUI**
-  (`oats tui`, a terminal client, preview): ask.
+  (`oats tui`, a terminal client, preview): opened for them or not.
 
 ## 2. Check, and install what is missing
 
 ```bash
-uname -sm
-node --version        # 22 or later
-git --version         # 2.45 or later
-tmux -V
-gh --version
+uname -s; node --version; git --version; tmux -V; gh --version; npm prefix -g
 ```
 
+- **Versions:** Node 22 or later; Git 2.45 or later is best (older works,
+  fetching more); `gh` 2.49 or later (step 4 uses `gh attestation`).
 - **The harness** they chose must be installed and logged in (`claude
-  --version`, `codex --version`, `pi --version`). They are already using one;
-  the setup expert runs on the one they named.
-- **macOS:** `brew install node git tmux gh` when Homebrew is there (`brew
-  --version`). Without Homebrew, they install it in their own Terminal, since
-  it asks for their password: from <https://brew.sh>, the command under
-  “Install Homebrew”, then the “Next steps” lines it prints.
-- **Linux:** the distribution's packages (`node` 22 from NodeSource or a
-  version manager when the distribution's is older). A `sudo` line goes to
-  their own terminal, unless `sudo -n true` succeeds.
+  --version`, `codex --version` or `pi --version`).
+- **macOS:** with Homebrew (`brew --version`), `brew install node git tmux gh`.
+  - **Without Homebrew,** they install it in their own Terminal, since it asks
+    for their password: from <https://brew.sh>, the command under “Install
+    Homebrew”, then the “Next steps” lines it prints.
+  - Your running process does not see their new PATH. Start each later
+    command with `eval "$(/opt/homebrew/bin/brew shellenv)"`
+    (`/usr/local/bin/brew` on Intel), or ask them to restart you.
+- **Linux:**
+  - **Packages:** the distribution's, for git and tmux.
+  - **gh:** from GitHub's own apt or rpm repository
+    (<https://github.com/cli/cli/blob/trunk/docs/install_linux.md>), because
+    distributions ship versions too old for step 4.
+  - **Node 22:** from NodeSource or a version manager when the distribution's
+    is older.
+  - **Passwords:** a line that needs `sudo` goes to their own terminal,
+    unless `sudo -n true` succeeds.
+- **npm's global folder** (`npm prefix -g`) must be writable for step 4's
+  install (`test -w "$(npm prefix -g)/lib"`). If it is not (a system Node
+  under `/usr`), either they run that install with `sudo` in their own
+  terminal, or set a per-user prefix (`npm config set prefix ~/.local`, with
+  `~/.local/bin` on their PATH).
 - **Windows** is not supported.
 
 ## 3. Log in to GitHub
@@ -93,123 +114,134 @@ GitHub access. Check first:
 gh auth status
 ```
 
-If it is not logged in, run the login yourself, in the background, without a
-terminal. gh then prints a one-time code and a URL instead of opening a
-browser, and waits:
+If it is not logged in, start the login yourself, detached and without a
+terminal (use your harness's background mode if it has one). gh then prints
+a one-time code and a URL instead of opening a browser, and waits:
 
 ```bash
-out=$(mktemp)
-gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key </dev/null >"$out" 2>&1 &
-sleep 3; cat "$out"
+nohup gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key </dev/null >"$HOME/.oats-gh-login.txt" 2>&1 &
 ```
 
-Give the person the code and the URL (`https://github.com/login/device`). The
-code is not a secret: only their own signed-in browser can use it. They open
-the URL, enter the code and approve. When the background command has exited,
-check it and let Git use gh's login:
+In a separate command, a few seconds later, read the code and the URL:
 
 ```bash
-gh auth status
-gh auth setup-git
+cat "$HOME/.oats-gh-login.txt"
 ```
 
-Delete `$out`. The token stays in gh's store and never reaches you. SSH keys,
-commit signing and the DCO sign-off come later, from the setup expert.
+- **Give the person the code and the URL** (`https://github.com/login/device`).
+  The code is not a secret: only their own signed-in browser can use it. They
+  open the URL, enter the code and approve. A code expires after about 15
+  minutes; then start again.
+- **Once they say they approved,** check the login and let Git use it:
+
+```bash
+gh auth status && gh auth setup-git && rm -f "$HOME/.oats-gh-login.txt"
+```
+
+The token stays in gh's store and never reaches you. SSH keys, commit
+signing and the DCO sign-off come later, from the setup expert.
 
 ## 4. Install OATS Desktop, then the CLI, at the same version
 
 The Desktop accepts a band of CLI versions around its own, so install it
-first, then the CLI of the same version `V`:
+first, then the CLI of the same version `V`. Find `V`, and on macOS `ARCH`:
 
 ```bash
-V=$(npm view @awebai/oats version)
+npm view @awebai/oats version
+sysctl -n hw.optional.arm64 2>/dev/null   # macOS: 1 means ARCH=arm64, otherwise ARCH=x64
 ```
 
-**macOS.** `ARCH` is `arm64` on Apple silicon, `x64` on Intel (`uname -m`
-says `arm64` or `x86_64`).
+**Every step verifies before it installs.** If a download or a check fails
+(the release's Desktop assets can lag its npm package), skip the Desktop,
+say so, and go on with the CLI. Never skip a check to make it install.
+
+**macOS.** In one block, with `V` and `ARCH` written in. `/Applications`
+needs an administrator; for a standard user, use `~/Applications`
+(`mkdir -p ~/Applications`):
 
 ```bash
-tmp=$(mktemp -d) && cd "$tmp"
-gh release download "v$V" -R awebai/oats -p "oats-desktop-$V-mac-$ARCH.zip" -p SHA256SUMS.txt
-grep " oats-desktop-$V-mac-$ARCH.zip\$" SHA256SUMS.txt | shasum -a 256 -c -
-gh attestation verify "oats-desktop-$V-mac-$ARCH.zip" --repo awebai/oats
-ditto -x -k "oats-desktop-$V-mac-$ARCH.zip" .
-codesign --verify --deep --strict "OATS Desktop.app"
+cd "$(mktemp -d)" && pwd &&
+gh release download "vV" -R awebai/oats -p "oats-desktop-V-mac-ARCH.zip" -p SHA256SUMS.txt &&
+grep " oats-desktop-V-mac-ARCH.zip\$" SHA256SUMS.txt | shasum -a 256 -c - &&
+gh attestation verify "oats-desktop-V-mac-ARCH.zip" --repo awebai/oats &&
+ditto -x -k "oats-desktop-V-mac-ARCH.zip" . &&
+codesign --verify --deep --strict "OATS Desktop.app" &&
+defaults read "$PWD/OATS Desktop.app/Contents/Info" CFBundleIdentifier &&
+defaults read "$PWD/OATS Desktop.app/Contents/Info" CFBundleShortVersionString
 ```
 
+- **Expected:** `ai.oats.desktop` and `V`. The app is ad-hoc signed and not
+  notarized; `codesign --verify` passing is what to expect.
 - **Download with `gh`, never through a browser.** `gh` sets no quarantine
   on what it downloads, and that copy starts from Finder. A browser download
   would be quarantined.
-- The app is ad-hoc signed and not notarized. `codesign --verify` passing is
-  what to expect.
-- **Install it.** If the Desktop is running, ask the person to quit it. Then
-  replace `/Applications/OATS Desktop.app` with the new one and start it:
+- **Install it.** If the Desktop is running, ask the person to quit it. Then,
+  with the folder `pwd` printed:
 
   ```bash
-  rm -rf "/Applications/OATS Desktop.app" && ditto "OATS Desktop.app" "/Applications/OATS Desktop.app"
+  cd "<that folder>" && rm -rf "/Applications/OATS Desktop.app" && ditto "OATS Desktop.app" "/Applications/OATS Desktop.app" && defaults read "/Applications/OATS Desktop.app/Contents/Info" CFBundleShortVersionString
   xattr -p com.apple.quarantine "/Applications/OATS Desktop.app" 2>/dev/null && echo QUARANTINED
-  open -a "OATS Desktop"
   ```
 
-- If it prints `QUARANTINED`, tell the person. Remove the attribute only if
-  they agree (`xattr -dr com.apple.quarantine "/Applications/OATS
+- **If it prints `QUARANTINED`,** tell the person. Remove the attribute only
+  if they agree (`xattr -dr com.apple.quarantine "/Applications/OATS
   Desktop.app"`): never silently.
 
-**Linux x64.** It needs glibc 2.34 or later. It installs per user, without
-sudo, and shows in the app launcher:
+**Linux x64.** It needs glibc 2.34 or later (`ldd --version`). It installs
+per user, without sudo, and shows in the app launcher:
 
 ```bash
-tmp=$(mktemp -d) && cd "$tmp"
-gh release download "v$V" -R awebai/oats -p "oats-desktop-$V-linux-x86_64.AppImage" -p SHA256SUMS.txt
-grep " oats-desktop-$V-linux-x86_64.AppImage\$" SHA256SUMS.txt | sha256sum -c -
-gh attestation verify "oats-desktop-$V-linux-x86_64.AppImage" --repo awebai/oats
-mkdir -p ~/.local/opt/oats-desktop ~/.local/share/applications
-install -m 755 "oats-desktop-$V-linux-x86_64.AppImage" ~/.local/opt/oats-desktop/OATS-Desktop.AppImage
+cd "$(mktemp -d)" &&
+gh release download "vV" -R awebai/oats -p "oats-desktop-V-linux-x86_64.AppImage" -p SHA256SUMS.txt &&
+grep " oats-desktop-V-linux-x86_64.AppImage\$" SHA256SUMS.txt | sha256sum -c - &&
+gh attestation verify "oats-desktop-V-linux-x86_64.AppImage" --repo awebai/oats &&
+mkdir -p ~/.local/opt/oats-desktop ~/.local/share/applications &&
+install -m 755 "oats-desktop-V-linux-x86_64.AppImage" ~/.local/opt/oats-desktop/OATS-Desktop.AppImage
 ```
 
-Then write `~/.local/share/applications/oats-desktop.desktop`:
+Then write `~/.local/share/applications/oats-desktop.desktop`, with `<home>`
+their home directory's absolute path:
 
 ```text
 [Desktop Entry]
 Type=Application
 Name=OATS Desktop
-Exec=<home>/.local/opt/oats-desktop/OATS-Desktop.AppImage
+Exec=<home>/.local/opt/oats-desktop/OATS-Desktop.AppImage %U
 Terminal=false
 Categories=Development;
 ```
 
-- Write `<home>` as their home directory's absolute path.
 - **Without FUSE** (the AppImage fails with a FUSE message), add
-  ` --appimage-extract-and-run` to `Exec=` and to the start command below.
-- **Start it** with their own environment, detached:
-  `setsid -f ~/.local/opt/oats-desktop/OATS-Desktop.AppImage >/dev/null 2>&1 </dev/null`.
-  Without a display (an ssh session), don't start it; say where it is.
-- Linux arm64 has no Desktop: say so and go on.
-- Never start the Desktop with an emptied environment (`env -i`): it then
-  loses HOME, and Git loses the person's login.
+  ` --appimage-extract-and-run` after the AppImage's path in `Exec=` and
+  wherever you start it.
+- **Linux arm64** has no Desktop: say so and go on.
 
-**Then the CLI:**
+**Don't start the Desktop yet;** step 8 starts it on the new deployment.
+
+**Then the CLI, and for pi its bridge:**
 
 ```bash
-npm install -g "@awebai/oats@$V"
-oats version
+npm install -g "@awebai/oats@V" && oats version
+pi install "npm:@awebai/oats-pi@V"      # only when the harness is pi
 ```
 
 ## 5. The workspace
 
 **New workspace.** Create its repository, private, inside the deployment
-directory `D`, then write four files in it. Private is the safe default: the
-workspace file names every member, so whoever reads it sees the list.
+directory `D`, then write four files in it.
+- **Private** is the safe default: the workspace file names every member, so
+  whoever reads it sees the list.
+- **`D/<repo>` must not exist yet:** an existing folder's files would end up
+  in the first commit.
 
 ```bash
-mkdir -p "D" && cd "D"
-gh repo create "<owner>/<repo>" --private --clone
-cd "<repo>"
+mkdir -p "D" && cd "D" && test ! -e "<repo>" && gh repo create "<owner>/<repo>" --private --clone && ls -a "<repo>"
 ```
 
-Then write the four files below. They show a workspace named `acme`, in the
-repository `acme/acme-oats`, with Claude as the harness: write the person's
-own workspace name, repository and harness in their place.
+Then write the four files below in `D/<repo>`. They show a workspace named
+`acme`, in the repository `acme/acme-oats`, with Claude as the harness:
+write the person's own workspace name, repository and harness in their
+place.
 
 `oats-workspace.yaml`:
 
@@ -219,16 +251,17 @@ name: acme
 members:
   - git:github.com/acme/acme-oats     # the host is a member too
 packages:
-  oats.framework: v1.12.3             # from the official catalog: package-catalog.json in "$(oats root)"
+  oats.framework: v1.12.3             # the installed CLI's catalog version (below)
 defaults:
   capabilities:
     oats.core: { from: package }
 ```
 
-- Use the `oats.framework` version that the installed CLI's catalog names
-  (`"$(oats root)/package-catalog.json"`, `packages."oats.framework".ref`,
-  the part after `v`).
-- Add nothing else: knowledge, messaging and teams come with the setup expert.
+- **The `oats.framework` version** is the installed CLI's catalog's:
+  `"$(oats root)/package-catalog.json"`, `packages."oats.framework".ref`,
+  for example `oats-framework/v1.12.3`. Write the part after the `/`.
+- **Add nothing else:** knowledge, messaging and teams come with the setup
+  expert.
 
 `oats-membership.yaml`:
 
@@ -246,6 +279,8 @@ description: The OATS setup expert for the acme workspace — onboards machines 
 work: worktree      # it changes this repository by pull request, on its own branch
 capabilities:
   oats.setup: { from: package }
+knowledge: none     # it must spawn on a machine before knowledge
+messaging: none     # and messaging are set up there
 launch: { harness: claude }     # the harness the person chose: claude, codex or pi
 ```
 
@@ -259,26 +294,30 @@ You are the OATS setup expert for the acme workspace. You set up and keep
 working this workspace's OATS: its machines, members, souls, packages,
 knowledge, messaging and automations. The `oats.setup` capability is your
 toolkit: its briefing says what the person types and what you run, and its
-skills hold every procedure. Start with `/oats-setup-model`; when your task
-is a hand-over from the getting-started skill, follow `/oats-setup-expert`.
+skills hold every procedure. Start with `/oats-setup-model`. When your task
+is a hand-over from the getting-started skill, follow `/oats-setup-expert`,
+or `/oats-onboarding` if your `oats.setup` is older than 2.8.0 and lacks it.
 Change shared files only by pull request; the person reviews and merges them.
 ```
 
-Keep the soul this thin. Everything it knows comes from `oats.setup`, so it
-improves when the workspace's `oats.framework` pin moves.
+**Keep the soul this thin.** Everything it knows comes from `oats.setup`, so
+it improves when the workspace's `oats.framework` pin moves. It has no
+knowledge or messaging of its own, so it can be spawned on any machine of
+the workspace before those are set up there.
 
-Commit and push. This first commit goes straight to the new repository's
-default branch: it is the person's own, just created. Every later change is a
-pull request from the setup expert. If `git config user.email` prints
-nothing, the person's Git identity is not set up yet. Commit with `-c
-user.name="<their name>" -c user.email="<id>+<login>@users.noreply.github.com"`
-(`gh api user --jq '"\(.id)+\(.login)@users.noreply.github.com"'`), after the
-person confirms the name. The setup expert sets up their identity properly
-later.
+**Commit and push.**
+- This first commit goes straight to the new repository's default branch: it
+  is the person's own, just created. Every later change is a pull request
+  from the setup expert.
+- If `git config user.email` prints nothing, the person's Git identity is not
+  set up yet. After they confirm their name, commit with
+  `-c user.name="<their name>" -c user.email="<their noreply address>"`. The
+  noreply address comes from
+  `gh api user --jq '"\(.id)+\(.login)@users.noreply.github.com"'`. The
+  setup expert sets up their identity properly later.
 
 ```bash
-git add -A && git commit -m "OATS workspace acme: workspace, membership, setup expert"
-git push -u origin HEAD
+cd "D/<repo>" && git add -A && git commit -m "OATS workspace acme: workspace, membership, setup expert" && git push -u origin HEAD
 ```
 
 The workspace reference `W` is then `git:github.com/<owner>/<repo>`, here
@@ -295,11 +334,11 @@ oats onboard D --workspace W
 
 - **Effects:** it writes `D/oats-local.yaml` and `D/agents/`, reads every
   member over Git and locks the packages.
-- **Members:** each must be `confirmed`. A row with `cannot-read` is a GitHub
-  access problem (step 3), not a reason to edit anything.
+- **The host must be `confirmed`.** Another member with `cannot-read` is an
+  access question for the setup expert, not a reason to stop. A host that
+  can't be read is a GitHub access problem (step 3).
 - **`E_ALREADY_ONBOARDED`:** `D` already is a deployment. Stop and ask the
-  person whether to use it as it is (`oats souls --dir D` then shows its
-  souls) or choose another directory.
+  person whether to use it as it is or to choose another directory.
 
 **Find the setup expert soul, `S`.**
 - **From OATS 0.61.0,** the next step `oats onboard` prints names the soul
@@ -310,16 +349,16 @@ oats onboard D --workspace W
   `oats.setup`.
 - **An existing workspace with no such soul:** stop. Show the person the soul
   files from step 5 and say that the workspace's owner adds them by pull
-  request to its host repository. Then come back to step 7.
+  request to its host repository. Once that is merged, run
+  `oats sync --dir D` and look for `S` again.
 
-A soul with `work: worktree` needs a clone of its repository at
-`D/<repo name>`. A new workspace already has it (step 5). For an existing
+**The clone.** A soul with `work: worktree` needs a clone of its repository
+at `D/<repo name>`. A new workspace already has it (step 5). For an existing
 one, clone the host there if `oats onboard` listed it as missing.
 
 ## 7. Hand over to the setup expert
 
-Write the hand-over to a file outside every repository, for example
-`"$(mktemp -d)/handover.md"`. It holds no secret.
+**Write the hand-over** to `D/.oats-handover.md`. It holds no secret.
 
 ```markdown
 # Onboarding hand-over from the getting-started skill
@@ -340,39 +379,57 @@ are cloned, knowledge tools, messaging wanted or not>
 Everything else, starting with /oats-setup-expert.
 ```
 
-**Claude and Codex only:** trust the deployment directory first, so the
-first start does not stop at the harness's folder-trust question (pi needs
-nothing). Use `codex` for Codex:
+**Claude and Codex only: trust the deployment directory first,** so the first
+start doesn't stop at the harness's folder-trust question. pi needs
+nothing. Use `codex` for Codex:
 
 ```bash
 oats harness trust --dir D --harness claude --plan
 oats harness trust --dir D --harness claude
 ```
 
-Then preview the spawn, read it, and spawn:
+- **If either refuses a file** (on macOS, `~/.claude.json` can carry a mark
+  the writer refuses), don't edit the file or its attributes. The person
+  runs `cd D && claude` (or `codex`) in their own terminal, accepts the
+  harness's folder-trust question and exits.
+- **Then check** that the `harness-trust` item of
+  `oats readiness --soul S --dir D --json` passes.
+
+**Preview the spawn, read it, then spawn:**
 
 ```bash
-oats spawn S --dir D --task-file <handover file> --preview
-oats spawn S --dir D --task-file <handover file>
+oats spawn S --dir D --task-file D/.oats-handover.md --preview
+oats spawn S --dir D --task-file D/.oats-handover.md
 ```
 
 - **The preview** lists the modules (`oats.core`, `oats.setup`) and the
-  harness. Read it.
-- **The spawn** prints the instance's home `H`.
+  harness. If it reports a problem, stop and tell the person what it says.
+- **The spawn** prints the instance's home `H`. Then delete the hand-over
+  file: the home has its copy as `TASK.md`.
 - **`E_SPAWN_INCOMPLETE`:** don't spawn again. Run `oats session inspect
   --home H --json` and tell the person what it shows.
 
-## 8. The TUI, if wanted, and the hand-over
+## 8. Start the Desktop and the TUI, then hand over
+
+**The Desktop**, if installed, starts on the new deployment:
+- **macOS:** if it is not running,
+  `open -a "OATS Desktop" --args --dir D`. If it is already running, the
+  person picks `D` in its switcher (**Add local workspace… → Browse**).
+- **Linux:** the person opens **OATS Desktop** from their app launcher, so it
+  starts with their own session's environment, not yours. Then they pick `D`
+  in its switcher (**Add local workspace… → Browse**), unless `D` is
+  directly inside `~/Agents`.
+- **Never start it with an emptied environment** (`env -i`): it then loses
+  HOME, and Git loses the person's login.
 
 **The TUI**, if they wanted it, runs in a terminal of its own:
 - **macOS:** open a Terminal window with
   `osascript -e 'tell application "Terminal" to do script "oats tui --dir D"'`.
-- **Linux:** `x-terminal-emulator -e oats tui --dir D` when that exists;
-  otherwise give them the command.
+- **Linux:** give them `oats tui --dir D` for their terminal.
 
 **Tell the person how to reach the setup expert**, and that it continues
 from here:
-- the Desktop, where `D` is listed;
+- the Desktop;
 - `oats tui --dir D`;
 - `oats session attach --home H` in a terminal.
 
@@ -381,13 +438,13 @@ its own window when they need to type a secret. You are done.
 
 ## Never
 
-- **Ask for, read, print or store a secret,** or use `!` for one. If the
+- **Ask for, read, print or store a secret,** or suggest `!` for one. If the
   person pastes one into the conversation anyway, don't repeat it, and tell
   them to rotate it.
 - **Overwrite or re-onboard** a deployment, or push to a repository the
   person did not create in step 5.
-- **Download the Desktop through a browser,** strip quarantine without
-  asking, or start it with `env -i`.
-- **Put** an absolute path, an account or a credential in
+- **The Desktop:** never download it through a browser, skip a verification
+  step, strip quarantine without asking, or start it with `env -i`.
+- **Put an absolute path, an account or a credential** in
   `oats-workspace.yaml`, `oats-membership.yaml` or a soul.
-- **Spawn** before `oats onboard` reported every member confirmed.
+- **Spawn** before `oats onboard` confirmed the host.

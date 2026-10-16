@@ -31,11 +31,13 @@ OATS builds on tools you already use—**Git, GitHub or GitLab, and your preferr
 
 ## Start here
 
-Give your coding agent (Claude Code, Codex, pi or any other) this skill:
+Ask your coding agent (Claude Code, Codex, pi or any other) to download this skill verbatim and follow it:
 
-```text
-https://raw.githubusercontent.com/awebai/oats/main/skills/oats-getting-started/SKILL.md
+```bash
+curl -fsSL https://raw.githubusercontent.com/awebai/oats/main/skills/oats-getting-started/SKILL.md
 ```
+
+A web-fetch tool that summarises pages would lose its exact commands.
 
 It asks about your project, installs OATS and OATS Desktop, and either creates your workspace with its own setup expert or joins this machine to an existing workspace. It then hands over to that setup expert, an OATS agent that sets up the rest with you. You type only passwords and logins.
 
