@@ -50,9 +50,15 @@ installation evidence, receipt freshness/failure and current issues without
 capture, repair or manager calls. Warning rows are valid diagnosis, not a command
 failure. Unreadable/unknown candidates fail closed. An `ok` result or definition
 file does not establish enabled scheduling; sleep/off-host execution can explain
-old receipts. Use the owning reference's exact evidence rules. Kernel doctor
-delegation remains a separate integration gate; do not claim it from package
-health or use these next-release diagnostics as 0.56–0.58 prerequisites.
+old receipts. Use the owning reference's exact evidence rules. Deployment
+`oats doctor` delegates once with a finite timeout/output bound and maps package
+rows into warnings; `capture-health-unavailable` means the command/reader or
+response failed, not healthy empty evidence. `--soul` stays composition-only.
+Doctor uses the caller's HOME and `TURN_RECORD_ROOT` (default `~/.turn-record`),
+not its deployment argument as a record root. Remedies say `oats`, while
+standalone package remedies say `turn-record`; preserve quoted root and existing
+owner selection. No manager registration/health or full-service acceptance
+follows. Do not use these next-release diagnostics as 0.56–0.58 prerequisites.
 
 ```
  GitHub account (a person, or a machine user)

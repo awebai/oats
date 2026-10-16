@@ -230,6 +230,20 @@ at the version are left alone.
 
 ## What `oats doctor` reports
 
+In the forthcoming service-A release, deployment doctor also delegates once to
+the record package's offline health reader. Text and JSON carry its diagnosis
+as existing warning rows. `capture-health-unavailable` means the bounded command
+or reader failed, timed out, exceeded its output limit or returned an invalid
+envelope; inspect `oats capture --health --json` with the same root environment.
+Doctor retains its warning exit semantics. `TURN_RECORD_ROOT` selects the root,
+otherwise the caller's `~/.turn-record` applies; `--soul` remains composition-only.
+The kernel adds no status/DB/freshness parser or manager probe. Remedies use
+`oats`, preserving literal user paths and existing owner guidance. Neither no
+warnings nor definition bytes prove enabled scheduling. See the
+[owning boundary](../packages/record/docs/capture-service.md#kernel-doctor-delegation)
+for reader/transport limits and remaining qualification. This does not change
+the released 0.56–0.58 upgrade prerequisites above.
+
 `oats doctor` prints one warning per folder whose bridge is not the kernel's
 version, naming the folder and why it is looked at:
 

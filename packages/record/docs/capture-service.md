@@ -5,8 +5,8 @@ status. Ordinary/source-selected capture and explicit retry use the fixed
 supervised worker. Explicit hooks launch a detached supervisor. Setup migrates
 supported service definitions through the preflight/apply gate described below;
 the package also owns offline installation/receipt/issue diagnosis. Root
-registration, kernel doctor delegation and real-manager qualification remain
-separate.
+registration and real-manager qualification remain separate. Deployment doctor
+delegates to the package diagnosis through the bounded command boundary below.
 
 The integration described below is forthcoming service-A work; source and fake
 manager fixtures do not establish real manager qualification. OATS 0.56.0, 0.57.0 and 0.58.0
@@ -147,9 +147,9 @@ Installation reads accept regular files up to 1 MiB each, with 16 MiB total,
 fail-closed reader guards, not capture policy or truncation-based absence proof.
 The reader uses a 15-second cooperative monotonic deadline between operations;
 the isolated issue reader retains its hard 10-second child deadline. Synchronous
-filesystem calls still depend on the host filesystem returning; kernel doctor
-will supply the separate finite command timeout at its delegation boundary.
-That kernel integration is a separate checkpoint, not provided by this reader.
+filesystem calls still depend on the host filesystem returning. Deployment
+doctor supplies the separate finite command timeout described below; it does
+not turn the synchronous library's cooperative deadline into a hard one.
 
 Installed but absent status produces `capture-status-missing` with a setup
 remedy; malformed, unsupported, unreadable or future-dated status produces
@@ -167,8 +167,46 @@ changed or uncertain registration and live/reused PIDs supply no death proof.
 The receipt is reread before accepting that observation; health never repairs,
 reclaims, signals termination, writes counters or invents a finished receipt.
 Owned legacy watcher definitions additionally produce `capture-setup-required`.
-Standalone remedies name `turn-record`; kernel doctor remedy mapping remains
-separate. All diagnosis is local observed evidence, not full service qualification.
+Standalone remedies name `turn-record`; the private doctor entry selects `oats`
+when constructing authored remedy literals, before interpolating paths/errors
+or receipt data. It never replaces substrings in completed messages. All diagnosis
+is local observed evidence, not full service qualification.
+
+### Kernel doctor delegation
+
+Deployment `oats doctor` (text or JSON) starts exactly one fixed package health
+entry with `process.execPath`. `--soul` stays composition-only and starts none.
+The kernel maps validated package `{code,message}` rows into its existing
+`warnings` list; it does not read status, open the database, probe managers or
+reimplement installation/freshness/issue rules. The package validates its
+existing `schemaVersion: 1` envelope and reuses receipt/backlog validation.
+Nullable historical values remain absence of evidence. No doctor schema field
+or public capture option is added.
+
+The child keeps the caller cwd and HOME selection; `TURN_RECORD_ROOT` selects
+the root, otherwise `~/.turn-record` applies. A relative root is relative to the
+calling process cwd, not doctor's deployment positional argument. Only the
+reader's home/temp/cache/root environment and an explicit experimental SQLite
+Node flag are forwarded; no inherited Node options, worker/executable override
+or shell dispatch. The private entry constructs no store and exits naturally,
+so queued JSON output can drain.
+
+Transport uses a 20-second command timeout, SIGKILL on timeout/overflow and a
+1 MiB output cap. These are private fail-closed guards, not a response-time
+measurement or public tuning policy. The synchronous child transport waits for
+its direct child to terminate. The package's isolated SQLite reader retains its
+own 10-second timeout; if the outer reader is killed while that child is active,
+its existing finite lifetime still applies. OS scheduling/filesystem response
+and process termination remain host dependencies; no real-manager or storage
+qualification follows from these source guards.
+
+Timeout, launch/transport/reader failure, excessive output or invalid JSON/envelope
+produces `capture-health-unavailable`, never an empty successful diagnosis or
+rows reconstructed from partial output. Doctor retains its warning exit/output
+contract; standalone package reader failures remain nonzero. Valid package
+warnings are forwarded as diagnosis, not command failure. Text output applies
+the kernel's terminal escaping; JSON retains literal values. Even no warnings
+does not establish enabled/registered scheduling or a permanent service PID.
 
 Both command snapshots and health use the same transactional count/sample
 projection. Source set-asides have `setAsideCount`, at most 100 deterministic
@@ -1358,5 +1396,6 @@ and partial meanings.
 Fake-manager and isolated CLI fixtures exercise this ordering and refusal
 contract. Real macOS/Linux manager lifecycle, active-pass preservation,
 rollback and quoting qualification remain guarded hosted obligations.
-Health/doctor, final schema delivery and full service acceptance remain
-separate; audit allowance/reservation/storage/synchronization gates are unchanged.
+Health/doctor runtime qualification, final schema delivery and full service
+acceptance remain separate; audit allowance/reservation/storage/synchronization
+gates are unchanged.

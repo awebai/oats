@@ -141,8 +141,8 @@ Unknown/read errors always refuse. Replacement saves nonoverwriting backups
 under the selected root and rechecks file identity. `--dry-run` writes nothing
 and invokes no manager, so it reports manager state as unexamined.
 Healthy unchanged schedules preserve an active pass; successful setup reports
-verified periodic scheduling, not a permanent PID. Real-manager lifecycle,
-kernel doctor delegation and full service qualification remain separate gates.
+verified periodic scheduling, not a permanent PID. Real-manager lifecycle
+and full service qualification remain separate gates.
 
 Transcript capture reads 64 KiB chunks and frames complete native records,
 including UTF-8 characters split across chunks. It flushes before adding a
@@ -221,7 +221,11 @@ root creation or manager calls. Warnings exit zero; unavailable readers fail.
 A recent receipt or definition file does not certify enabled scheduling.
 See [health diagnosis](docs/capture-service.md#offline-installation-and-run-diagnosis)
 for exact installation candidates, nullable history, reader bounds and the
-asleep/off-host caveat. Kernel doctor delegation remains a separate integration.
+asleep/off-host caveat. Deployment `oats doctor` delegates once to package health
+with a finite command timeout/output bound and maps its rows into warnings.
+Command, reader or invalid-response failures yield `capture-health-unavailable`;
+`--soul` remains composition-only. Kernel remedies say `oats`; standalone package
+remedies say `turn-record`, without rewriting user paths or receipt data.
 
 ## Multi-machine
 

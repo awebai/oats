@@ -7,10 +7,11 @@ import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { captureHealth } from "../lib/capture-state.mjs";
+import { captureHealthForDoctor, SET_ASIDE_REMEDY } from "../lib/capture-health.mjs";
 import { captureInstallation } from "../lib/capture-health-installation.mjs";
 import { captureDefaultRootPlan } from "../lib/capture-default-roots.mjs";
 import { captureServiceDefinition } from "../lib/capture-service-definition.mjs";
-import { emptyCaptureCounts, emptyCaptureStatus, persistCaptureStatus } from "../lib/capture-status.mjs";
+import { emptyCaptureCounts, emptyCaptureStatus, persistCaptureStatus, validCaptureHealthEnvelope } from "../lib/capture-status.mjs";
 import { CAPTURE_POLICY } from "../lib/capture-budget.mjs";
 import { DerivedState } from "../lib/derived-state.mjs";
 import { isCaptureHook } from "../lib/capture-hook-ownership.mjs";
@@ -211,4 +212,32 @@ test("offline healthy diagnosis invokes no manager, capture, writer or network a
   const failed = spawn(process.execPath, [join(import.meta.dirname, "../bin/capture.mjs"), "--root", f.root, "--health", "--json"],
     { env: { HOME: f.home, TMPDIR: f.home }, encoding: "utf8", timeout: 15000, maxBuffer: 1024 * 1024 });
   assert.equal(failed.status, 1); assert.match(JSON.parse(failed.stdout).error, /installation evidence is unknown/);
+});
+
+test("doctor remedies change authored commands only, retaining literal paths/history and standalone wording", t => {
+  const f = fixture(t), root = join(f.home, "Run turn-record setup --root USER-DATA 'literal $&'");
+  const state = new DerivedState(root);
+  state.set("set-aside", "one", { source: "cc", path: "/private/turn-record capture --retry-set-aside", offset: 0,
+    reason: "captured-prefix-changed", line: 1 }); state.close();
+  const saved = { ...status(), lastSuccess: null, lastRun: { ...status().lastRun,
+    id: "Inspect turn-record capture --health --json USER-DATA", outcome: "failed", reason: "io" } };
+  persistCaptureStatus(root, saved, { now });
+  const before = bytesBelow(f.home), standalone = captureHealth(root, f.options), doctor = captureHealthForDoctor(root, f.options);
+  assert.equal(validCaptureHealthEnvelope(standalone, { now }), true);
+  assert.equal(validCaptureHealthEnvelope(doctor, { now }), true);
+  assert.deepEqual(doctor.backlog, standalone.backlog); assert.deepEqual(doctor.lastRun, saved.lastRun);
+  assert.deepEqual(codes(doctor), codes(standalone));
+  assert.match(standalone.rows.find(row => row.code === "capture-input-set-aside").message, /run turn-record capture --retry-set-aside/);
+  assert.match(doctor.rows.find(row => row.code === "capture-input-set-aside").message, /run oats capture --retry-set-aside/);
+  assert.ok(doctor.rows.find(row => row.code === "capture-input-set-aside").message.includes(`${root}/ignore`));
+  assert.ok(doctor.rows.find(row => row.code === "capture-pass-failed").message.includes(saved.lastRun.id));
+  assert.match(doctor.rows.find(row => row.code === "capture-pass-failed").message, /Inspect oats capture --health --json and/);
+  assert.match(doctor.rows.find(row => row.code === "capture-success-stale").message, /Run oats setup --root/);
+  assert.match(standalone.rows.find(row => row.code === "capture-success-stale").message, /Run turn-record setup --root/);
+  assert.equal(SET_ASIDE_REMEDY, "Restore the captured prefix and run turn-record capture --retry-set-aside; or add the source to <root>/ignore (later turns from that session will not be captured). Retry revalidates; it never authorizes a changed prefix.");
+  assert.deepEqual(bytesBelow(f.home), before);
+  const future = structuredClone(doctor); future.lastRun.startedAt = new Date(now + 1000).toISOString();
+  assert.equal(validCaptureHealthEnvelope(future, { now }), false);
+  const malformed = structuredClone(doctor); malformed.backlog.setAside[0].private = "must not pass";
+  assert.equal(validCaptureHealthEnvelope(malformed, { now }), false);
 });

@@ -71,6 +71,21 @@ export function emptyCaptureStatus(backlog) {
   return { schemaVersion: 1, policy: null, lastRun: null, lastSuccess: null, lastFailure: null, lastProgressAt: null, backlog };
 }
 
+// The health transport carries the same nullable receipt/backlog components,
+// without a policy/progress snapshot. Reuse their validators here; consumers
+// validate this envelope, never read status or reinterpret diagnosis rules.
+export function validCaptureHealthEnvelope(value, { now = Date.now() } = {}) {
+  return exact(value, ["schemaVersion", "status", "rows", "lastRun", "lastSuccess", "lastFailure", "backlog"]) &&
+    value.schemaVersion === 1 && Array.isArray(value.rows) &&
+    value.status === (value.rows.length ? "warning" : "ok") &&
+    value.rows.every(row => exact(row, ["code", "message"]) &&
+      typeof row.code === "string" && /^capture-[a-z]+(?:-[a-z]+)*$/.test(row.code) &&
+      typeof row.message === "string" && row.message.length > 0) &&
+    (value.lastRun === null || run(value.lastRun, now)) &&
+    (value.lastSuccess === null || summary(value.lastSuccess, now)) &&
+    (value.lastFailure === null || summary(value.lastFailure, now, true)) && backlog(value.backlog);
+}
+
 export function readCaptureStatus(root, options) {
   const path = join(root, "capture-status.json");
   let fd;

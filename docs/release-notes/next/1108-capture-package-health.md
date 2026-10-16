@@ -9,8 +9,8 @@
   The shared status schema and nullable old receipt history are unchanged.
 - Installation reads have finite candidate/byte guards and a cooperative deadline;
   the existing isolated SQLite reader keeps its timeout and fail-closed runtime,
-  busy, WAL and schema behavior. Kernel doctor delegation, real manager lifecycle
-  and full service/storage qualification remain separate gates. Definition files
+  busy, WAL and schema behavior. Kernel doctor uses a separate command boundary;
+  real manager lifecycle and full service/storage qualification remain gates. Definition files
   or an `ok` receipt diagnosis do not certify enabled scheduling.
 
 ## Upgrade

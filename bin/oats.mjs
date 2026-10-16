@@ -2,7 +2,7 @@
 /**
  * oats — the OATS command line.
  *
- *   oats doctor [dir] [--soul <s>] [--json] show the deployment; --soul: the instructions an instance of <s> would carry
+ *   oats doctor [dir] [--soul <s>] [--json] show deployment and offline capture warnings; --soul: composition only
  *   oats onboard [<dir>] --workspace <ref>  realize a workspace here (oats-local.yaml +
  *                                          agents/), then sync
  *   oats sync [--dir <d>] [--plan] [--json] discover the workspace, confirm membership,
@@ -25,6 +25,7 @@ import { constants as osConstants, homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
+import { doctorCaptureWarnings } from "../lib/doctor-capture.mjs";
 import { runtimeNameWarning, noteRuntimeName } from "../lib/deprecation.mjs";
 import { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect, spawnRefusalDetails } from "../lib/errors.mjs";
 import {
@@ -829,7 +830,7 @@ async function doctorWorkspaceJson(ctx, soulName, ws) {
     information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...localTeams.information, ...schedules.information, ...operator.information, ...launchPreferences.information, ...hookEvents.information, ...processScanInformation(), ...doctorRetained(ws).flat()],
     composedInstructions: composition?.text, instructionBlocks: composition?.blocks,
     ...(problems.length ? { problems } : {}),
-    warnings: hookEvents.warnings,
+    warnings: [...hookEvents.warnings, ...(soulName ? [] : doctorCaptureWarnings())],
   };
 }
 /** Kernel/bridge version skew (published in lockstep from one tag), in every pi folder a launch
@@ -876,6 +877,7 @@ async function doctor(dir) {
   for (const p of launchPreferences.problems) console.log(`\n! ${p.code}: ${p.message}\n  ${p.remedy}`);
   const hookEvents = composition ? { warnings: composition.warnings, information: [] } : await doctorHookWarnings(ws);
   for (const w of hookEvents.warnings) console.log(`\nwarning  ${w.code}  ${w.message}`);
+  if (!soulName) for (const w of doctorCaptureWarnings()) console.log(`\nwarning  ${w.code}  ${terminalText(w.message)}`);
   for (const line of [...localTeams.information, ...schedules.information, ...operator.information, ...launchPreferences.information, ...hookEvents.information, ...processScanInformation()]) console.log(`\nINFO: ${line}`);
   for (const block of doctorRetained(ws)) console.log(`\n${block.map((line) => `INFO: ${line}`).join("\n")}`);
   if (soulName) {
@@ -4891,8 +4893,8 @@ Usage:
       [--launch-config <name>|none]         command and preflight; read-only, nothing
       [--harness r] [--model m]             started; a named configuration is a unit, so
       [--yolo | --no-yolo] --json           a disagreeing --harness is refused
-  oats doctor [dir] [--soul <name>] [--json] resolved targets, trust, requirements;
-                                            --soul shows final composed AGENTS.md
+  oats doctor [dir] [--soul <name>] [--json] resolved targets and offline capture warnings;
+                                            --soul shows final composed AGENTS.md only
   oats update [--check] [--yes]              check npm for a newer kernel and move the pi bridge
       [--dir <deployment>]                  in every pi folder the deployment's launches use
                                             (docs/upgrading.md); then run oats doctor
