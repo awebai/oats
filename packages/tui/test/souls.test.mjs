@@ -41,12 +41,15 @@ function base(cli = FACTS_CLI) {
 /** The Souls view shown, its catalog held. */
 const shown = (souls = SOULS, options = {}) => soulsTold(key(base(), "2").state, catalogEntry(souls, options));
 
-test("the catalog is wanted only once the Souls view is shown: 2, the leader then 2, and the palette's Souls each show it and ask the loop to settle it; no other key does", () => {
+test("the catalog is wanted only once the Souls view is shown: 2, the leader then 2, and the palette's Souls each show it and ask the loop to settle it; 3 too, whose Used by reads it; no other key does", () => {
   const start = base();
   assert.equal(start.souls.wanted, false);
-  const quiet = keys(start, "j", "k", "/", "d", "enter", "escape", "3", "escape", "?", "escape", "w", "1");
-  assert.deepEqual(quiet.effects.filter((effect) => effect.souls !== undefined), [], "no key but the view's asks for the catalog");
+  const quiet = keys(start, "j", "k", "/", "d", "enter", "escape", "?", "escape", "w", "1");
+  assert.deepEqual(quiet.effects.filter((effect) => effect.souls !== undefined), [], "no key but the views' asks for the catalog");
   assert.equal(quiet.state.souls.wanted, false);
+  // The Capabilities view wants it too: its Used by names the souls (capabilities.test.mjs has the rest).
+  const three = key(start, "3");
+  assert.deepEqual([three.state.view, three.state.souls.wanted, three.effect], ["capabilities", true, { souls: "settle", capabilities: "settle" }]);
   const two = key(start, "2");
   assert.deepEqual([two.state.view, two.state.souls.wanted, two.effect], ["souls", true, { souls: "settle" }]);
   const led = key(key(start, start.leaderKey).state, "2");
@@ -149,9 +152,12 @@ test("i, or Enter in the detail, shows the selected soul's instances in the Inst
   assert.deepEqual([cleared.filter, listed(cleared).length], [{ editing: false, query: "" }, 3]);
   const replaced = key(fromList, "/").state;
   assert.deepEqual(replaced.filter, { editing: true, query: "" });
-  // A package soul's instances carry its qualified name.
+  // A package soul's instances carry its name in the roster, `<package>--<soul>` (the agent
+  // directory its instances are made under), or on an older kernel its qualified name.
   const pkg = shown([catalogSoul("dev", { kind: "package", package: "acme.souls", qualifiedName: "acme.souls/dev", key: "acme.souls/dev" })]);
-  assert.deepEqual(key(pkg, "i").state.filter.soul.names, ["dev", "acme.souls/dev"]);
+  assert.deepEqual(key(pkg, "i").state.filter.soul.names, ["dev", "acme.souls/dev", "acme-souls--dev"]);
+  const packaged = soulsTold(key(stateOf(observed([instanceRow("acme-souls--dev", "dev-p")]), { cli: FACTS_CLI }), "2").state, catalogEntry([catalogSoul("dev", { kind: "package", package: "acme.souls", qualifiedName: "acme.souls/dev", key: "acme.souls/dev" })]));
+  assert.deepEqual([view(packaged).list[0].count, roster(key(packaged, "i").state).rows.map((item) => item.row.instance)], [1, ["dev-p"]], "its instances here are counted and listed");
 });
 
 test("the selected soul and the filter are kept when the view is left and shown again, for the run; the view comes back with its list focused", () => {

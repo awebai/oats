@@ -161,7 +161,8 @@ export function capabilityDetailRows(m, cols) {
   /** Safe lines placed at `col`, each `width` cells, the first beside `first` when given. */
   const lines = (list, col, width, look, first = null) => list.forEach((line, i) => rows.push([...(i === 0 && first ? [first] : []), { col, text: line, width, ...(look ? { style: look } : {}) }]));
   /** Facts `{ label, value }` under a section's heading: the labels in a column of their own, and
-   *  each value beside its label, wrapped, or under it when the column leaves too few cells. */
+   *  each value beside its label, wrapped, or under it when the column leaves too few cells (and
+   *  none at all in a pane with no cell for it). */
   const facts = (list, value) => {
     const names = list.map((fact) => measured(fact.label));
     const column = Math.max(0, ...names.map((name) => name.width));
@@ -169,7 +170,7 @@ export function capabilityDetailRows(m, cols) {
     list.forEach((fact, i) => {
       const name = { col: INNER, text: names[i].text, style: DIM, width: Math.min(names[i].width, inner) };
       if (beside) value(fact, INNER + column + 2, inner - column - 2, name);
-      else { rows.push([name]); value(fact, INNER + 2, Math.max(0, inner - 2), null); }
+      else { rows.push([name]); if (inner - 2 >= 1) value(fact, INNER + 2, inner - 2, null); }
     });
   };
   const blank = () => rows.push([]);
@@ -188,7 +189,7 @@ export function capabilityDetailRows(m, cols) {
     rows.push([label(d.words.provides)]);
     const comma = { text: lit(","), width: 1, glue: true };
     facts(d.provides, (kind, col, width, name) => {
-      if (kind.said) { const said = measured(kind.said); rows.push([...(name ? [name] : []), { col, text: said.text, style: DIM, width: Math.max(0, Math.min(said.width, width)) }]); return; }
+      if (kind.said) { lines(shownLines(kind.said, width, WRAP_ROWS, { ascii }), col, width, DIM, name); return; }
       const set = width < 1 ? [] : flowed(kind.names.map((each, i, all) => [measured(each), ...(i < all.length - 1 ? [comma] : [])]), width);
       if (!set.length) { if (name) rows.push([name]); return; }
       set.forEach((spans, i) => rows.push([...(i === 0 && name ? [name] : []), ...spans.map((span) => ({ ...span, col: span.col + col }))]));

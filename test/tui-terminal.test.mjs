@@ -59,6 +59,8 @@ const withPath = async (path, fn) => { const saved = process.env.PATH; process.e
 
 /** A fixture deployment (test/helpers/v2-deployment.mjs) with three instances that never ran:
  *  `alpha` and its child `beta` of the soul `dev`, and `gamma` of the soul `reviewer`, alone.
+ *  `souls` and `capabilities` are the fixture's (v2Deployment's options): a test that needs a
+ *  capability makes a world of its own with one.
  *  `enter` is a script that sets the fixture's environment and then becomes its arguments: a
  *  terminal's shell is started through it, so the TUI typed there reads this deployment with the
  *  fixture's home, cache and tools, as `fx.cli` does.
@@ -71,8 +73,8 @@ const withPath = async (path, fn) => { const saved = process.env.PATH; process.e
  *  `sleep` of half a minute, writes that pid to `held` and waits for it: a read that stays in
  *  flight. The sleep is in the collector's process group and outlives the four seconds the
  *  collector gives its tmux, so when it is gone long before its time, the TUI ended the group. */
-async function deployment(t) {
-  const fx = v2Deployment({ souls: { dev: {}, reviewer: {} }, t });
+async function deployment(t, { souls = { dev: {}, reviewer: {} }, capabilities = {} } = {}) {
+  const fx = v2Deployment({ souls, capabilities, t });
   const world = { fx, dep: fx.dep, enter: join(fx.base, "enter.sh"), holdFile: join(fx.base, "hold"), heldFile: join(fx.base, "held"), seenFile: join(fx.base, "collector-tmux.env") };
   world.spawn = (soul, options) => withPath(fx.env.PATH, () => fx.spawn(soul, { harness: "claude", ...options }));
   world.home = (await world.spawn("dev", { name: "alpha" })).home;
@@ -1210,15 +1212,15 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   const run = await tui(term, { footer: FOOTER.replace("q quit", "x quit") });
   term.press("q"); // no key now: read, and nothing happens
   term.press("?");
-  // At 80x24 the help's first page ends forty-eight rows above `quit`: the table holds the three
-  // views, `workspaces`, `open` three times with the agent's terminal in nine rows and the Souls
-  // view's in two, `soul-instances`, `zoom` in two, `close-terminal` in two, `tab-previous` and
-  // `tab-next`, the split's five in eight rows (`split-right`, `split-down` and `group-next` in two
-  // each, `tab-move` and `group-close` in one), the four acts in six rows with the two rules of a
-  // confirmation in four under them, and the spawn's three in nine rows (`spawn` in four,
-  // `spawn-another` in three, `spawn-check` in two) (HELP_KEYS); the movement keys scroll the help,
-  // and forty-eight rows down show it.
-  for (let i = 0; i < 48; i++) term.press("j");
+  // At 80x24 the help's first page ends fifty rows above `quit`: the table holds the three views,
+  // `workspaces`, `open` four times with the agent's terminal in nine rows and the Souls view's and
+  // the Capabilities view's in two each, `soul-instances`, `zoom` in two, `close-terminal` in two,
+  // `tab-previous` and `tab-next`, the split's five in eight rows (`split-right`, `split-down` and
+  // `group-next` in two each, `tab-move` and `group-close` in one), the four acts in six rows with
+  // the two rules of a confirmation in four under them, and the spawn's three in nine rows (`spawn`
+  // in four, `spawn-another` in three, `spawn-check` in two) (HELP_KEYS); the movement keys scroll
+  // the help, and fifty rows down show it.
+  for (let i = 0; i < 50; i++) term.press("j");
   await until(term, () => term.screen().some((row) => /^ *x {2,}quit$/.test(row)) && term.screen().at(-1) === HELP_FOOTER.replace("q quit", "x quit"), "the help with x as the quit key, after a q that did not quit");
   assert.equal(term.screen().some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
   term.press("Escape");
@@ -1338,6 +1340,41 @@ test("the Souls view, with the real `oats souls`: the leader then 2 shows the wo
   assert.doesNotMatch(shown(), /gamma/, "the reviewer's instance is not dev's");
   term.press("Escape");
   await until(term, () => /gamma/.test(shown()) && !footer().includes("soul dev"), "Esc clears the soul filter");
+  term.press("q");
+  assert.equal(await run.ended("after q"), 0, term.shows());
+});
+
+test("the Capabilities view, with the real `oats capabilities` and `oats souls`: the leader then 3 shows the workspace's capabilities under their section; Enter shows the selected capability's detail, the soul that uses it marked under Used by with its instances here counted; Enter on that soul shows it selected in the Souls view; q exits 0", { skip: NO_TMUX }, async (t) => {
+  // A world of its own: the soul dev composes the member capability acme.notes, so its instances
+  // alpha and beta carry it; reviewer composes none.
+  const world = await deployment(t, {
+    souls: { dev: { soul: { capabilities: { "acme.notes": { from: "here" } } } }, reviewer: {} },
+    capabilities: { "acme.notes": { manifest: { description: "Notes the fixture keeps." } } },
+  });
+  const term = await terminal(t, { world });
+  const run = await tui(term, {}, { world });
+  const footer = () => term.screen().at(-1) ?? "";
+  const list = () => term.screen().slice(3, -1).map((line) => line.split("│")[0].trimEnd());
+  const detail = () => term.screen().slice(3, -1).map((line) => (line.split("│")[1] ?? "").trimEnd());
+  term.press("C-\\");
+  await until(term, () => footer().startsWith("C-\\   k palette"), "the leader's hint");
+  term.press("3");
+  await until(term, () => list().some((line) => /^> +acme\.notes$/.test(line)), "the capabilities, read with `oats capabilities`, the first selected");
+  assert.equal(list()[0], " Workspace owned", `the section of the member's capabilities heads the list:\n${term.shows()}`);
+  assert.match(list()[1], /^ {2}\S.* · member repo · host$/, "then the group of its repository, the host's");
+  assert.equal(detail()[0], "   acme.notes", `the detail is the selected capability's:\n${term.shows()}`);
+  assert.equal(detail()[1], "   Notes the fixture keeps.", "its description");
+  term.press("Enter");
+  await until(term, () => footer().startsWith(`${LEAD}Enter soul`), "the detail holds the focus, a soul of Used by marked: Enter shows it");
+  assert.equal(detail()[0], " > acme.notes", `the detail has the focus:\n${term.shows()}`);
+  const used = detail().findIndex((line) => /^ {3}Used by\b/.test(line));
+  assert.ok(used > 0, `the detail says which souls use it:\n${term.shows()}`);
+  assert.deepEqual(detail().slice(used + 1).filter(Boolean), ["   > ■ dev ·2"], `dev uses it, marked, with alpha and beta carrying it; reviewer does not:\n${term.shows()}`);
+  term.press("Enter");
+  const soul = (name) => list().find((line) => new RegExp(`^[> ] ■ ${name}\\b`).test(line)) ?? null;
+  await until(term, () => footer().startsWith(`${LEAD}Enter detail   i instances`) && soul("dev") !== null, "the Souls view");
+  assert.match(soul("dev"), /^> ■ dev ·2(?: |$)/, `dev is selected in the Souls view:\n${term.shows()}`);
+  assert.equal(soul("reviewer")?.startsWith(" "), true, "and reviewer is not");
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
 });

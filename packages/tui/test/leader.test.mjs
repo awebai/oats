@@ -349,11 +349,11 @@ test("an instance run from the palette opened from a terminal opens it as a tab 
   assert.deepEqual([own.state.palette, own.state.terminal, own.effect], [null, state.terminal, null]);
 });
 
-test("a view run from the palette switches to it, and from a terminal gives the list the focus; Souls asks the loop to settle its catalog", () => {
+test("a view run from the palette switches to it, and from a terminal gives the list the focus; Souls asks the loop to settle its catalog, and Capabilities its table and the souls catalog its Used by reads", () => {
   const ran = keys(key(THREE(), "ctrl+k").state, "s", "o", "u", "l", "s", "enter");
   assert.deepEqual([ran.state.palette, ran.state.view, ran.state.back, ran.effect], [null, "souls", "souls", { souls: "settle" }]);
   const fromTerminal = keys(leaderThen(opened(THREE(), "dev-a"), "k", AT).state, "c", "a", "p", "enter");
-  assert.deepEqual([fromTerminal.state.palette, fromTerminal.state.view, fromTerminal.state.terminal.focus, fromTerminal.effect], [null, "capabilities", "list", null]);
+  assert.deepEqual([fromTerminal.state.palette, fromTerminal.state.view, fromTerminal.state.terminal.focus, fromTerminal.effect], [null, "capabilities", "list", { souls: "settle", capabilities: "settle" }]);
   const instances = keys(key(key(THREE(), "2").state, "ctrl+k").state, "i", "n", "s", "enter");
   assert.deepEqual([instances.state.view, instances.state.palette], ["instances", null]);
 });
@@ -407,8 +407,9 @@ test("Ctrl+K opens the palette from the list and Ctrl+K again closes it; Esc clo
 // ── The views of this machine ────────────────────────────────────────────────────────────────────
 
 /** What showing a view asks of the loop: Souls, that its catalog be settled (docs/tui.md, "The
- *  Souls view"); Capabilities, nothing. */
-const SHOWN_ASKS = Object.freeze({ souls: { souls: "settle" }, capabilities: null });
+ *  Souls view"); Capabilities, that its table be settled and the souls catalog its Used by reads
+ *  (docs/tui.md, "The Capabilities view"). */
+const SHOWN_ASKS = Object.freeze({ souls: { souls: "settle" }, capabilities: { souls: "settle", capabilities: "settle" } });
 
 test("2 and 3, plain or after the leader, show Souls and Capabilities from the list; Esc, 1 and the leader then 1 go back to the instances, the selection as it was", () => {
   const state = on(THREE(), "dev-c");

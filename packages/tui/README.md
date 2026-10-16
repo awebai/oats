@@ -36,7 +36,7 @@ never does.
 | `lib/term/through.mjs` | the bytes typed while a terminal has the focus: the back key's grammar and bytes, and the scanner that takes the back key and a bracketed paste out of them |
 | `lib/term/screen.mjs` | the cell buffer and the bytes of a frame |
 | `lib/term/tty.mjs` | the guard: enter, leave, signals, suspend, resize, one write per frame |
-| `lib/views/` | pure functions from the model and a size to rows of spans: the frame, the list, the detail, the switcher, the help, the confirmation of an act (`act.mjs`), the spawn prompt (`spawn.mjs`), the split's geometry (`split.mjs`) |
+| `lib/views/` | pure functions from the model and a size to rows of spans: the frame, the list, the detail, the Capabilities view (`capabilities.mjs`), the switcher, the help, the confirmation of an act (`act.mjs`), the spawn prompt (`spawn.mjs`), the split's geometry (`split.mjs`) |
 
 Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
 

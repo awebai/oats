@@ -2417,25 +2417,32 @@ test("whatever shows another view than the instances gives the focus back to the
   assert.deepEqual([switched.terminal.focus, switched.terminal.zoom, switched.terminal.id], ["list", false, zoomed.terminal.id]);
 });
 
-test("2 shows the Souls view (souls.test.mjs has its own) and 3 the Capabilities view, which says what to run for now; Esc and 1 go back to the instances, the selection and the terminal as they were", () => {
+test("2 shows the Souls view (souls.test.mjs has its own) and 3 the Capabilities view (capabilities.test.mjs has its own), each reading before its catalog is held and asking the loop to settle it, the Capabilities view the souls catalog too; Esc and 1 go back to the instances, the selection and the terminal as they were", () => {
   const state = on(TWO(), "dev-a");
   const two = key(state, "2");
-  assert.deepEqual([two.state.view, two.effect, view(two.state).body, view(two.state).souls.state], ["souls", { souls: "settle" }, null, "reading"]);
+  assert.deepEqual([two.state.view, two.effect, view(two.state).capabilities, view(two.state).souls.state], ["souls", { souls: "settle" }, null, "reading"]);
   for (const out of ["escape", "1"]) assert.deepEqual([key(two.state, out).state.view, key(two.state, out).state.selected], ["instances", state.selected], `2 then ${out}`);
-  for (const [k, shows, words] of [["3", "capabilities", "This view will list the capabilities this machine has. It is not in this version: `oats capabilities` lists them."]]) {
-    const after = key(state, k);
-    assert.equal(after.effect, null, k);
-    assert.deepEqual([after.state.view, after.state.outcome, after.state.selected], [shows, null, state.selected], k);
-    const body = view(after.state).body;
-    assert.deepEqual([body.said.map((part) => part.own).join(""), body.under], [words, []], `${k}: the view's body`);
-    assert.deepEqual(body.said.filter((part) => part.whole).map((part) => part.own), words.match(/`[^`]+`/g), `${k}: each command a whole part, never broken over two rows`);
-    for (const out of ["escape", "1"]) assert.deepEqual([key(after.state, out).state.view, key(after.state, out).state.selected], ["instances", state.selected], `${k} then ${out}`);
+  const three = key(state, "3");
+  assert.deepEqual([three.state.view, three.effect, three.state.capabilities.wanted, three.state.souls.wanted], ["capabilities", { souls: "settle", capabilities: "settle" }, true, true]);
+  assert.deepEqual([three.state.outcome, three.state.selected], [null, state.selected]);
+  const shown = view(three.state);
+  assert.deepEqual([shown.souls, shown.capabilities.local, shown.capabilities.state, shown.capabilities.list, shown.capabilities.detail], [null, true, "reading", [], null], "3: reading, nothing listed yet");
+  assert.equal("body" in shown, false, "the placeholder's body is gone");
+  for (const out of ["escape", "1"]) assert.deepEqual([key(three.state, out).state.view, key(three.state, out).state.selected], ["instances", state.selected], `3 then ${out}`);
+  // An open terminal stays as it was, behind either view.
+  const open = leaderTwice(key(state, "enter").state).state;
+  for (const k of ["2", "3"]) {
+    const back = key(key(open, k).state, "1").state;
+    assert.deepEqual([back.view, back.selected, back.terminal], ["instances", open.selected, open.terminal], `${k}, then back: the terminal as it was`);
   }
-  // With no workspace open they show from the switcher too, and go back there.
+  // With no workspace open they show from the switcher too, and go back there: the Capabilities
+  // view has no workspace of this machine to list.
   const none = initialState({ deployment: null, cli: CLI, home: "/home/u" });
   assert.equal(none.view, "switcher");
   const souls = key(none, "2").state;
   assert.deepEqual([souls.view, key(souls, "escape").state.view], ["souls", "switcher"]);
+  const capabilities = key(none, "3").state;
+  assert.deepEqual([capabilities.view, view(capabilities).capabilities.local, view(capabilities).capabilities.state, key(capabilities, "escape").state.view], ["capabilities", false, "none", "switcher"]);
 });
 
 test("the leader twice always returns to the list with the panel, unzoomed: also when the terminal was opened or zoomed from the detail's focus (round 1 of the review)", () => {

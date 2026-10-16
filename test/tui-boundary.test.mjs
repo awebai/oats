@@ -109,9 +109,10 @@ const TAKEN = Object.freeze({
   // #1276 also put the soul filter (soulMatches) and a failed catalog read's sentence (soulCatalogFailure) on the soul-facts.mjs and spawn-messages.mjs lines above.
   "subsequence-score.mjs": ["subsequenceScore"],
   // Spec 7: the Capabilities view. The shared table (one per run, as the soul catalog), its sections, groups,
-  // sources, search, layer labels and "Used by", and a capability's facts in the Desktop's words.
+  // sources, search, layer labels and "Used by", and a capability's facts in the Desktop's words. rosterAgentName
+  // is a package soul's name in the roster (`<package>--<soul>`), one of the names lib/model.mjs soulNames matches.
   "capability-catalog.mjs": ["createCapabilityCatalog", "capabilityCatalogKey"],
-  "capability-rows.mjs": ["memberNames", "capabilitySource", "groupCapabilities", "hostKeyOf", "capabilitySections", "matchCapabilities", "soulsComposition", "layerLabel", "capabilityUsers"],
+  "capability-rows.mjs": ["memberNames", "capabilitySource", "groupCapabilities", "hostKeyOf", "capabilitySections", "matchCapabilities", "soulsComposition", "rosterAgentName", "layerLabel", "capabilityUsers"],
   "capability-facts.mjs": ["capabilityFacts", "CAPABILITY_COPY"],
 });
 /** Every clause of a source that takes names from a module of the shared home: [[module, names], …].

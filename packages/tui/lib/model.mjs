@@ -13,7 +13,7 @@ import {
   openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
   startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage, retiringRows, soulRows, soulFacts, spawnRefusal,
   defaultSpawnChoices, spawnProblem, outcomeWords, previewFacts, deploymentLabel, subsequenceScore, soulMatches, soulCatalogFailure,
-  memberNames, capabilitySource, groupCapabilities, hostKeyOf, capabilitySections, matchCapabilities, soulsComposition, layerLabel, capabilityUsers,
+  memberNames, capabilitySource, groupCapabilities, hostKeyOf, capabilitySections, matchCapabilities, soulsComposition, rosterAgentName, layerLabel, capabilityUsers,
   capabilityFacts, CAPABILITY_COPY,
 } from "./client.mjs";
 import { LEADER, keyLabel } from "./actions.mjs";
@@ -879,9 +879,11 @@ export function actView(state) {
 // ── THE SOULS VIEW (docs/tui.md, "The Souls view") ───────────────────────────────────────────────
 
 /** The names an instance's soul (its row's `agent`) may carry for a soul row: its name, and for a
- *  package soul the kernel's key and its qualified name. The exact soul filter matches these. */
+ *  package soul the kernel's key, its qualified name and its name in the roster, `<package>--<soul>`
+ *  (the shared rosterAgentName: the agent directory a package soul's instances are made under). The
+ *  exact soul filter, the count of a soul's instances and "Used by" match these. */
 export function soulNames(row) {
-  return [...new Set([row.name, row.key, row.qualifiedName].filter(text))];
+  return [...new Set([row.name, row.key, row.qualifiedName, rosterAgentName(row)].filter(text))];
 }
 
 /** The souls of the open workspace as the store and the view read them: the shared rows

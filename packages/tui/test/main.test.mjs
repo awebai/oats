@@ -2,7 +2,7 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS, bindings, keyLabel } from "../lib/actions.mjs";
-import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
+import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, createCapabilityCatalog, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
 import { NO_TERMINAL, USAGE, main, noDeployment, noKernel, parseArgs } from "../lib/main.mjs";
 import { shown, textOf as textShown } from "../lib/term/text.mjs";
@@ -92,10 +92,11 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
   // `panel`: the run's panel, faked (what the loop asked of it, and a way to answer as the panel
   // does); `preflights`: every preflight it began, each with what it was handed and a way to answer it.
   // `soulReads`: every `oats souls` the run's catalog asked for, with a way to answer it; `soulExec`
-  // the exec the loop made the catalog with.
+  // the exec the loop made the catalog with. `capabilityReads` and `capabilityExec`: the same of
+  // the run's capabilities table (`oats capabilities`).
   // `spawn`: what the run made of the three shared spawn factories, faked: the preview's reads and
   // the transaction's submits and checks, each with a way to answer; what the boundary was made with.
-  const r = { stdin, stdout, proc, timers, errors, log, offered, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, tick(ms) { clock += ms; },
+  const r = { stdin, stdout, proc, timers, errors, log, offered, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
     spawn: { preview: null, previewExec: null, reads: [], applyRead: null, applyExec: null, applyCalls: [], request: null, submits: [], checks: [] } };
   let up;
   r.up = new Promise((resolve) => { up = resolve; });
@@ -124,6 +125,11 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
     createSoulCatalog(options) {
       r.soulExec = options.exec;
       return createSoulCatalog({ ...options, invoke: (cli, asked) => new Promise((resolve) => { log.push(["souls", asked.action]); r.soulReads.push({ asked, answer: resolve }); }) });
+    },
+    // The capabilities: the shared table itself, over a kernel read the test answers.
+    createCapabilityCatalog(options) {
+      r.capabilityExec = options.exec;
+      return createCapabilityCatalog({ ...options, invoke: (cli, asked) => new Promise((resolve) => { log.push(["capabilities", asked.action]); r.capabilityReads.push({ asked, answer: resolve }); }) });
     },
     // The spawn: the shared preview, apply boundary and transaction, faked.
     createSpawnPreview(options) {
@@ -1670,10 +1676,11 @@ const soulsDocument = (names) => ({ ok: true, document: { schemaVersion: 1, ok: 
 /** The entry of the fixture's deployment with its workspace at `commit`: a move of the catalog's key. */
 const atCommit = (entry, commit) => ({ ...entry, deployment: { ...entry.deployment, workspaceStatus: { ...entry.deployment.workspaceStatus, workspace: { ...entry.deployment.workspaceStatus.workspace, commit } } } });
 
-test("a run that never shows the Souls view never runs `oats souls`, however many reads of the workspace it takes", async () => {
+test("a run that never shows the Souls view or the Capabilities view never runs `oats souls`, however many reads of the workspace it takes", async () => {
   const r = await started();
   for (let i = 0; i < 3; i++) r.reader.answer(atCommit(ENTRY, `c${i}`));
-  r.stdin.type("3"); r.stdin.type("1"); await settle();
+  // Another view (the help) reads nothing: the Capabilities view would read the souls, its Used by's.
+  r.stdin.type("?"); r.stdin.type("?"); await settle();
   assert.deepEqual(r.soulReads.length, 0);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
@@ -1729,6 +1736,78 @@ test("the Souls view shown before the workspace was read waits for its first rea
   r.stdin.type("r"); await settle();
   assert.equal(r.soulReads.length, 2, "and none beside it");
   assert.equal(readerDid(r).filter(([what]) => what === "request").length, 0, "r in the Souls view asks no read of the workspace");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+// ── The Capabilities view's table (docs/tui.md, "The Capabilities view"; Spec 7, Done 1 and 4) ──────
+
+/** `oats capabilities --json` answering `names`, member capabilities of one repository, as the kernel prints it. */
+const capabilitiesDocument = (names) => ({ ok: true, document: { schemaVersion: 1, ok: true, result: { capabilitiesApi: 1, workspace: { name: "acme-platform" }, problems: [], capabilities: names.map((name) => ({ name, origin: "member", kind: "member", repoKey: "acme/oats", description: `The ${name} capability.` })) } } });
+
+test("a run that never shows the Capabilities view never runs `oats capabilities`, however many reads of the workspace it takes, the Souls view's included", async () => {
+  const r = await started();
+  for (let i = 0; i < 3; i++) r.reader.answer(atCommit(ENTRY, `c${i}`));
+  r.stdin.type("2"); r.stdin.type("1"); r.stdin.type("?"); r.stdin.type("?"); await settle();
+  r.reader.answer(atCommit(ENTRY, "c9")); await settle();
+  assert.equal(r.capabilityReads.length, 0);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("the first show of the Capabilities view reads its table once, over the reader's own exec, and the souls catalog its Used by reads; it says Reading capabilities… until the read lands, then lists them; reads of the workspace as it was read nothing, one that moved its key reads once", async () => {
+  const r = await started();
+  r.reader.answer(ENTRY);
+  r.stdin.type("3"); await settle();
+  assert.deepEqual([r.capabilityReads.length, r.soulReads.length], [1, 1], "one read of each at the first show");
+  assert.equal(r.capabilityReads[0].asked.action, "capabilities");
+  assert.equal(r.capabilityExec, r.reader.exec, "the reader's exec: a read of kind \"read\", ended on every way out");
+  assert.match(textOf(written(r)), /Reading capabilities…/);
+  r.capabilityReads[0].answer(capabilitiesDocument(["aweb", "notes"])); await settle();
+  assert.match(screenOf(r), /\bnotes\b/);
+  r.reader.answer(ENTRY); r.reader.answer(ENTRY); r.stdin.type("1"); r.stdin.type("3"); await settle();
+  assert.equal(r.capabilityReads.length, 1, "the workspace as it was: nothing read");
+  r.reader.answer(atCommit(ENTRY, "b2")); await settle();
+  assert.equal(r.capabilityReads.length, 2, "its key moved: one read");
+  r.reader.answer(atCommit(ENTRY, "b2")); await settle();
+  assert.equal(r.capabilityReads.length, 2);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  assert.deepEqual(readerDid(r).at(-1), ["stop"], "the reader is stopped on the way out, the table's read with it");
+});
+
+test("a read of the capabilities that a newer key replaced is never shown: the newer read lands first, the older after it, and the screen keeps the newer capabilities", async () => {
+  const r = await started();
+  r.reader.answer(ENTRY);
+  r.stdin.type("3"); await settle();
+  assert.equal(r.capabilityReads.length, 1, "the read at key A");
+  r.reader.answer(atCommit(ENTRY, "b2")); await settle();
+  assert.equal(r.capabilityReads.length, 2, "the read at key B");
+  r.capabilityReads[1].answer(capabilitiesDocument(["new-catalog-cap"])); await settle();
+  assert.match(screenOf(r), /new-catalog-cap/);
+  r.capabilityReads[0].answer(capabilitiesDocument(["old-catalog-cap"])); await settle();
+  assert.match(screenOf(r), /new-catalog-cap/, "the newer table stays");
+  assert.doesNotMatch(screenOf(r), /old-catalog-cap/, "the replaced read is not shown");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("the Capabilities view shown before the workspace was read waits for its first read; r reads the table again, once, and never while a read is in flight; it reads neither the souls nor the workspace", async () => {
+  const r = await started();
+  r.stdin.type("3"); await settle();
+  assert.equal(r.capabilityReads.length, 0, "no workspace status yet: nothing to settle with");
+  r.reader.answer(ENTRY); await settle();
+  assert.equal(r.capabilityReads.length, 1, "its first read settles the table");
+  const souls = r.soulReads.length;
+  r.stdin.type("r"); r.stdin.type("r"); await settle();
+  assert.equal(r.capabilityReads.length, 1, "r while the read is in flight starts nothing");
+  r.capabilityReads[0].answer(capabilitiesDocument(["aweb"])); await settle();
+  r.stdin.type("r"); await settle();
+  assert.equal(r.capabilityReads.length, 2, "r after it landed: one read");
+  r.stdin.type("r"); await settle();
+  assert.equal(r.capabilityReads.length, 2, "and none beside it");
+  assert.equal(r.soulReads.length, souls, "r reads the capabilities only, not the souls");
+  assert.equal(readerDid(r).filter(([what]) => what === "request").length, 0, "r in the Capabilities view asks no read of the workspace");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
