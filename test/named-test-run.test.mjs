@@ -257,10 +257,28 @@ test("named-test-run formatHeader: what the log says of the run", () => {
   assert.match(formatHeader(facts({ tmuxSocket: { path: "/private/tmp/tmux-501/oats", there: true } }), macos).join("\n"), /EXISTS before the first file: the leak check is skipped for this run/);
 });
 
-// What the macOS runner printed before its code became named-test-run.mjs's, captured from the script
-// at fc8a91ad with the facts and runs of this file: the header, the step summary, a refusal and the
-// usage line. Its printed evidence is unchanged, and this says so by comparing whole texts.
-const BEFORE_THE_SHARED_SCRIPT = FIXTURE_PLACEHOLDER;
+// What the macOS runner printed before its code became named-test-run.mjs's, captured once by running
+// scripts/macos-tests.mjs as it was at fc8a91ad, with the facts and runs of this file. The macOS
+// runner's printed evidence is unchanged, and this says so by comparing whole texts.
+//   * `header` and `headerLocal` are that script's formatHeader output, `refused` its prepare's
+//     output, exit status and step summary for a refused request, and `usage` its main's usage line:
+//     real output of the code at fc8a91ad.
+//   * `summary` and `summaryLocal` are not: that code wrote the step summary inside run(), from files
+//     it had just run, with no seam for given facts and runs. They were built from run()'s summary
+//     expression, copied verbatim into the capture and fed this file's facts and runs. So they pin
+//     summaryLines to that expression's text, not to a recorded run's summary.
+const BEFORE_THE_SHARED_SCRIPT = {
+  "header": "macOS test run\n  commit under test:   aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n  ref asked for:       \"main\" (a branch)\n  workflow ref:        \"awebai/oats/.github/workflows/macos-tests.yml@refs/heads/main\"\n  workflow commit:     \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\n  script's commit:     bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb (the workflow's)\n  run:                 \"https://github.com/awebai/oats/actions/runs/1\", attempt \"1\"\n  macOS:               \"14.7.1\" (build \"23H222\")\n  runner image:        ImageOS \"macos14\", ImageVersion \"20261001.1\"\n  architecture:        arm64 (machine \"arm64\")\n  node:                v22.9.0 (\"/usr/local/bin/node\")\n  file system:         case-insensitive (measured beside the tree: a file made, then looked for by another case)\n  tmux on PATH:        \"/opt/homebrew/bin/tmux\", \"tmux 3.5a\"\n  tmux default socket: \"/private/tmp/tmux-501/oats\" is not there (looked for again after each file)\n  tracked files that differ from the commit: none\n  bounds:              at most 10 files a run, 5 minutes a file\n  files (2), each alone, in this order:\n    test/a.test.mjs\n    test/b.test.mjs",
+  "headerLocal": "macOS test run\n  commit under test:   aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n  ref asked for:       \"main\" (a branch and a tag)\n  workflow ref:        (not set: not a workflow run)\n  workflow commit:     (not set: not a workflow run)\n  script's commit:     bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n  run:                 (not set: not a workflow run)\n  macOS:               NOT macOS: \"Linux 6.8\"\n  runner image:        ImageOS (not set), ImageVersion (not set)\n  architecture:        arm64 (machine \"arm64\")\n  node:                v22.9.0 (\"/usr/local/bin/node\")\n  file system:         case-insensitive (measured beside the tree: a file made, then looked for by another case)\n  tmux on PATH:        no\n  tmux default socket: \"/private/tmp/tmux-501/oats\" is not there (looked for again after each file)\n  tracked files that differ from the commit: 1 (\" M package.json\")\n  bounds:              at most 10 files a run, 5 minutes a file\n  files (2), each alone, in this order:\n    test/a.test.mjs\n    test/b.test.mjs\n  (named more than once, runs once: test/a.test.mjs)",
+  "summary": "## macOS test run: FAILED\n\n- Commit under test: <code>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</code>, asked for as <code>\"main\"</code>.\n- Workflow: <code>\"awebai/oats/.github/workflows/macos-tests.yml@refs/heads/main\"</code> at <code>\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"</code>.\n- macOS \"14.7.1\", arm64, node v22.9.0, case-insensitive file system, tmux \"tmux 3.5a\".\n\n| file | result | tests | passed | failed | skipped | cancelled | todo | exit | duration | note |\n| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n| test/a.test.mjs | passed | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 1.2s |  |\n| test/b.test.mjs | FAILED | 2 | 1 | 1 | 0 | 0 | 0 | 1 | 4.3s |  |\n\n- 2 files: 1 without a failure, 1 failed or timed out.\n- Result: FAILED\n\nThe step's log has the full header and each file's output; it is the evidence, not this summary.\n",
+  "summaryLocal": "## macOS test run: passed\n\n- Commit under test: <code>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</code>, asked for as <code>\"main\"</code>.\n- Workflow: <code>\"not a workflow run\"</code> at <code>\"-\"</code>.\n- NOT macOS, arm64, node v22.9.0, case-insensitive file system, tmux not on PATH.\n\n| file | result | tests | passed | failed | skipped | cancelled | todo | exit | duration | note |\n| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n| test/a.test.mjs | passed | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 1.2s |  |\n\n- 1 file: 1 without a failure, 0 failed or timed out.\n- Result: passed\n\nThe step's log has the full header and each file's output; it is the evidence, not this summary.\n",
+  "refused": {
+    "code": 2,
+    "out": "Refused: nothing was checked out, installed or run.\n  ref \"-x\": starts with `-`\n  file \"../y\": has a `..` segment\n",
+    "summary": "## macOS test run: refused\n\nRefused: nothing was checked out, installed or run.\n\n<pre>\nref \"-x\": starts with `-`\nfile \"../y\": has a `..` segment\n</pre>\n\n"
+  },
+  "usage": "usage: node scripts/macos-tests.mjs <prepare|run> <tree>   (the request: MACOS_TESTS_REF, MACOS_TESTS_FILES)\n"
+};
 test("named-test-run macOS: the header, the summary, a refusal and the usage are byte for byte what the macOS script printed", async () => {
   const today = BEFORE_THE_SHARED_SCRIPT;
   const local = facts({ macos: null, system: "Linux 6.8", tmux: null, workflowRef: null, workflowSha: null, runUrl: null, imageOS: null, imageVersion: null, kinds: ["branch", "tag"], repeated: ["test/a.test.mjs"], changed: [" M package.json"] });
