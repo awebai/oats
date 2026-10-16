@@ -109,6 +109,20 @@ older binaries, which do not have them, or assume that an older health command
 proves periodic activation. The [capture reference](../packages/record/docs/capture-service.md)
 distinguishes the implemented foundation from an installed service.
 
+The first capture after that upgrade rebuilds the record root's derived
+capture state and index from the existing journals: it validates each journal,
+proves each session's captured prefix against a fresh staged copy of its
+source, and indexes every record. Later passes do no content work for
+unchanged sessions. This cost is paid once, and it grows linearly with the
+number of streams and their bytes: about **[measured time per 1,000 streams on
+the hosted Linux runner]**. It runs in bounded passes, each stopping at its
+deadline. A first upgrade that is interrupted or reaches its deadline resumes
+from its durable checkpoints on the next pass (journal validation, index
+cursors, the prefix proof and the staged copies of sources over 8 MiB) rather
+than starting over; a smaller session's staged copy is made again. Reducing the
+repeated source reads of small sessions is tracked in
+[#1337](https://github.com/awebai/oats/issues/1337).
+
 ## Which pi folders
 
 pi keeps its packages in one folder: `~/.pi/agent`, or the folder
