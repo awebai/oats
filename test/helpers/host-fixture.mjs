@@ -544,3 +544,12 @@ export async function killTmuxServer(socket, tmux = "tmux", timeoutMs = 5000) {
   try { run("kill-server"); } catch { /* it exited meanwhile */ }
   await waitUntil(() => { try { process.kill(pid, 0); return false; } catch (e) { return e.code === "ESRCH"; } }, `the tmux server on ${socket} to exit`, timeoutMs);
 }
+
+/** A fake program: an executable shell script `name` in `dir` that runs `body` → its path. For a
+ *  test that gives code a program to call (`systemctl`, `loginctl`) without the host's own. */
+export function fakeProgram(dir, name, body) {
+  const path = join(dir, name);
+  writeFileSync(path, `#!/bin/sh\n${body}\n`);
+  chmodSync(path, 0o755);
+  return path;
+}
