@@ -1112,7 +1112,13 @@ oats session attach --home /abs/home --detach-key 'C-\'
   client arrives. From then on, the server removes the viewer when its last
   client goes, however the client went. A keyed viewer's key table (below)
   belongs to the server, not to the session. A `client-detached` hook on the
-  viewer session unbinds the table when the viewer's client leaves.
+  viewer session unbinds the table when the viewer's client ends (killed or
+  hung up) or leaves by its key. A client that another client detaches
+  (`tmux detach-client -t <tty>`) does not run it: its table is removed by
+  the attach's cleanup, or by the next attach's sweep. That session hook
+  replaces, for a keyed viewer's client alone, a global `client-detached`
+  hook of your own (`set-hook -g` in `~/.tmux.conf`), as the viewer's own
+  `prefix`, `status`, `key-table` and `detach-on-destroy` replace yours.
 
   Every attach also sweeps the server before it opens its viewer. It removes:
 
@@ -1147,9 +1153,9 @@ oats session attach --home /abs/home --detach-key 'C-\'
   named as its temporary session and removed with it, so the key is bound
   for that viewer alone. The key's binding also turns `destroy-unattached`
   off for that session before it detaches: the session outlives its client
-  until `oats` has read that the key was used, and `oats` then removes it. Check the feature in `oats version --json` before
-  passing the flag: a kernel without it ignores the flag and opens a viewer
-  with no exit.
+  until `oats` has read that the key was used, and `oats` then removes it.
+  Check the feature in `oats version --json` before passing the flag: a
+  kernel without it ignores the flag and opens a viewer with no exit.
 
   The key is one of these, spelled exactly (case-sensitive):
 

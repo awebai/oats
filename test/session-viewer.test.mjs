@@ -320,7 +320,7 @@ test("a sweep that tmux refuses is not the attach's failure: what it could not r
   const viewer = prepareSessionViewer(target, { exec(bin, args) {
     const cmd = args.slice(3); calls.push(cmd);
     if (cmd[0] === "list-panes") return "%1\t0\tcodex\t123\n";
-    if (cmd[0] === "list-keys") return `bind-key -T oatsview-${dead}-feedf00d F12 detach-client\n`;
+    if (cmd[0] === "list-keys") return `bind-key -T oatsview-${dead}-feedf00d F12 detach-client\nbind-key -T oatsview-${dead}-0badc0de F12 detach-client\n`;
     if (cmd[0] === "list-sessions") return `oatsview-${dead}-0badc0de\t0\n`;
     if (cmd[0] === "kill-session" || cmd[0] === "unbind-key" && cmd[4] !== "oatsview-locked") throw new Error("refused");
     if (cmd[0] === "new-session") return "@98\n";
@@ -328,6 +328,7 @@ test("a sweep that tmux refuses is not the attach's failure: what it could not r
   } });
   assert.deepEqual(viewer.swept, { sessions: 0, tables: 0 });
   assert.ok(calls.some((c) => c[0] === "new-session"));
+  assert.equal(calls.some((c) => c[0] === "unbind-key" && c[4] === `oatsview-${dead}-0badc0de`), false, "a session the sweep could not remove keeps its table");
   const listing = prepareSessionViewer(target, { exec(bin, args) {
     const cmd = args.slice(3);
     if (cmd[0] === "list-panes") return "%1\t0\tcodex\t123\n";
