@@ -86,7 +86,7 @@ export function sessionPath(home, format, n) {
 /** A synthetic home with `streams` native sessions (about 70% cc, 20% codex,
  *  10% pi), each 5-40 lines of about 200-600 bytes, plus `large` sessions of
  *  `largeBytes` in lines of `largeLineBytes`, plus `accounts` aw comm logs of
- *  `awLines` entries. → { home, sessions: [{ format, path, lines }], bytes } */
+ *  `awLines` entries. → { home, sessions: [{ format, path, lines }], logs (aw log count), bytes } */
 export function syntheticHome(base, { streams, large = 5, largeBytes = 4 * 1024 * 1024, largeLineBytes = 4096,
   accounts = 3, awLines = 200, seed = 1108 } = {}) {
   const home = join(base, `home-${streams}`), next = random(seed), sessions = [];
@@ -105,7 +105,7 @@ export function syntheticHome(base, { streams, large = 5, largeBytes = 4 * 1024 
     for (let i = 0; i < awLines; i++) lines.push(JSON.stringify({ ts: stamp(i), dir: i % 2 ? "recv" : "send", ch: "mail", msg_id: `${a}-${i}`, from: i % 2 ? "peer" : OWNER, to: i % 2 ? OWNER : "peer", body: `message ${i}` }) + "\n");
     write(join(home, ".config", "aw", "logs", `account-${a}.jsonl`), lines.join(""));
   }
-  return { home, sessions, bytes };
+  return { home, sessions, logs: accounts, bytes };
 }
 /** Append `lines` small lines to the first `k` sessions. → bytes appended */
 export function appendSessions(synthetic, k, lines = 3) {
@@ -124,11 +124,11 @@ function workerReports(root, before) {
   return [...countFiles(root)].filter(name => !before.has(name)).map(name => JSON.parse(fs.readFileSync(join(countsDirectory(root), name), "utf8")));
 }
 function sumCounts(reports) {
-  const total = { workers: 0, sqlite: { opens: 0, begins: 0, commits: 0 }, fsync: {}, rename: {}, mkdir: 0, opened: {}, io: {}, vmHwmBytes: 0 };
+  const total = { workers: 0, sqlite: { opens: 0, begins: 0, commits: 0 }, fsync: {}, rename: {}, mkdir: 0, opened: {}, readBytes: {}, io: {}, vmHwmBytes: 0 };
   for (const value of reports) {
     total.workers++;
     for (const key of ["opens", "begins", "commits"]) total.sqlite[key] += value.counts.sqlite[key];
-    for (const group of ["fsync", "rename", "opened"]) for (const [k, n] of Object.entries(value.counts[group])) total[group][k] = (total[group][k] ?? 0) + n;
+    for (const group of ["fsync", "rename", "opened", "readBytes"]) for (const [k, n] of Object.entries(value.counts[group])) total[group][k] = (total[group][k] ?? 0) + n;
     total.mkdir += value.counts.mkdir;
     for (const [k, n] of Object.entries(value.io ?? {})) total.io[k] = (total.io[k] ?? 0) + n;
     total.vmHwmBytes = Math.max(total.vmHwmBytes, value.vmHwmBytes ?? 0);
@@ -177,6 +177,7 @@ export function passRow(label, pass) {
     turnsAppended: counts.turnsAppended ?? null, turnsIndexed: counts.turnsIndexed ?? null, bytesCommitted: counts.bytesCommitted ?? null,
     filesVisited: counts.filesVisited ?? null, sqliteCommits: pass.counts.sqlite.commits, journalFsyncs: pass.counts.fsync.journal ?? 0,
     stagingFsyncs: pass.counts.fsync.staging ?? 0, renames: Object.values(pass.counts.rename).reduce((a, b) => a + b, 0),
+    sourceRead: pass.counts.readBytes.source ?? 0, journalRead: pass.counts.readBytes.journal ?? 0,
     readBytes: pass.counts.io.read_bytes ?? null, rchar: pass.counts.io.rchar ?? null, peakRssBytes: pass.status?.lastRun?.peakRssBytes ?? null,
     vmHwmBytes: pass.counts.vmHwmBytes };
 }

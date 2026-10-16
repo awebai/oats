@@ -17,22 +17,28 @@ import { OPERATOR, REPORT_MARGIN_MS, TEST_TIMEOUT_MS, appendSessions, cliCapture
 
 export const OUTGOING = "0.61.0";
 const MB = 1e6;
-// A no-op may read, beyond what a pass over an empty home reads (modules,
-// SQLite, status), at most this fraction of the home's content.
-const NOOP_READ_FRACTION = 0.05;
+// Source and journal bytes a no-op over unchanged, completed inputs may read
+// per stream: none. A native unit returns unchanged before any source or
+// journal read (lib/capture-native-unit.mjs:97 compares versions without a
+// probe, :117 returns); an AW unit's journal validation returns its complete
+// checkpoint unread (lib/store.mjs:473, from lib/capture-aw-unit.mjs:43), and
+// it returns unchanged without a witness read (:52, :63); the index's one-byte
+// boundary read happens only behind the journal (lib/index-capture.mjs:14,
+// lib/index-db.mjs:163); repairTail reads only on append (lib/store.mjs:652).
+const NOOP_CONTENT_BYTES_PER_STREAM = 0;
 
 const sum = values => values.reduce((a, b) => a + b, 0);
 const addInto = (total, part) => { for (const [k, n] of Object.entries(part)) total[k] = (total[k] ?? 0) + n; return total; };
 
 /** Totals of the passes' worker counts and their receipts' committed counts. */
 function totals(passes) {
-  const t = { passes: passes.length, starts: 0, workers: 0, uncounted: 0, sqlite: { opens: 0, begins: 0, commits: 0 }, fsync: {}, rename: {}, mkdir: 0, io: {}, vmHwmBytes: 0,
+  const t = { passes: passes.length, starts: 0, workers: 0, uncounted: 0, sqlite: { opens: 0, begins: 0, commits: 0 }, fsync: {}, rename: {}, mkdir: 0, readBytes: {}, io: {}, vmHwmBytes: 0,
     receipt: Object.fromEntries(CAPTURE_COUNT_FIELDS.map(key => [key, 0])) };
   for (const { counts, status, result } of passes) {
     // Workers killed without their exit report are missing from the sums below.
     t.starts += result.starts ?? 0; t.uncounted += (result.starts ?? 0) - counts.workers;
     t.workers += counts.workers; t.mkdir += counts.mkdir; t.vmHwmBytes = Math.max(t.vmHwmBytes, counts.vmHwmBytes);
-    addInto(t.sqlite, counts.sqlite); addInto(t.fsync, counts.fsync); addInto(t.rename, counts.rename); addInto(t.io, counts.io);
+    addInto(t.sqlite, counts.sqlite); addInto(t.fsync, counts.fsync); addInto(t.rename, counts.rename); addInto(t.readBytes, counts.readBytes); addInto(t.io, counts.io);
     // Each pass is its own run, so its receipt holds only that pass's counts.
     for (const key of CAPTURE_COUNT_FIELDS) t.receipt[key] += status?.lastRun?.counts?.[key] ?? 0;
   }
@@ -84,8 +90,9 @@ export async function qualifyStorage(t, { streams, append = false, k = 50, lines
   assert.ok(budgetMs >= reserve, `setup used ${elapsed()}ms of the ${TEST_TIMEOUT_MS}ms test bound; no first-upgrade pass fits`);
   const upgrade = await untilComplete(root, synthetic.home, { budgetMs });
   const rows = reportPasses(t, "first-upgrade", upgrade), sums = totals(upgrade.passes);
+  const contentRead = { source: sums.readBytes.source ?? 0, journal: sums.readBytes.journal ?? 0, byKind: sums.readBytes };
   const seconds = upgrade.wallMs / 1000, megabytes = journals.bytes / MB;
-  report(t, "first-upgrade", { streams, complete: upgrade.complete, budgetMs, wallMs: upgrade.wallMs, ...sums,
+  report(t, "first-upgrade", { streams, complete: upgrade.complete, budgetMs, wallMs: upgrade.wallMs, ...sums, contentRead,
     journalBytes: journals.bytes, journalBytesPerSecond: Math.round(journals.bytes / seconds),
     readBytesPerSecond: sums.io.read_bytes == null ? null : Math.round(sums.io.read_bytes / seconds),
     rcharPerSecond: sums.io.rchar == null ? null : Math.round(sums.io.rchar / seconds),
@@ -99,12 +106,18 @@ export async function qualifyStorage(t, { streams, append = false, k = 50, lines
     bytesPerSec: Math.round(journals.bytes / seconds), durabilityOpsPerMB: (sums.durabilityOps / megabytes).toFixed(2) }]);
   assert.ok(upgrade.complete, `first upgrade at ${streams} streams did not complete within ${budgetMs}ms: ` +
     `${upgrade.passes.length} passes in ${upgrade.wallMs}ms (${brief(rows)})`);
+  // The read counters see the operation: a first upgrade reads sources and journals.
+  assert.ok(contentRead.source > 0 && contentRead.journal > 0, `the read counters saw no first-upgrade source or journal bytes: ${JSON.stringify(contentRead.byKind)}`);
 
-  // No-op over the completed state: content read must be ~0 beyond metadata.
+  // No-op over the completed state: it reads no content, only metadata.
   // The first upgrade's budget left it a whole pass.
   const noop = await measuredPass(root, synthetic.home), row = passRow("no-op", noop), counts = noop.status?.lastRun?.counts ?? {};
-  const read = { rchar: row.rchar, baselineRchar: baselineRow.rchar, excessRchar: row.rchar == null || baselineRow.rchar == null ? null : row.rchar - baselineRow.rchar,
-    thresholdBytes: Math.round(NOOP_READ_FRACTION * synthetic.bytes), fraction: NOOP_READ_FRACTION, sourceBytes: synthetic.bytes };
+  const sourceStreams = synthetic.sessions.length + synthetic.logs;
+  const read = { source: row.sourceRead, journal: row.journalRead, byKind: noop.counts.readBytes,
+    boundBytes: NOOP_CONTENT_BYTES_PER_STREAM * sourceStreams, perStream: NOOP_CONTENT_BYTES_PER_STREAM, sourceStreams,
+    // rchar also holds SQLite's page reads, which the spec allows: reported, not asserted.
+    rchar: row.rchar, baselineRchar: baselineRow.rchar, excessRchar: row.rchar == null || baselineRow.rchar == null ? null : row.rchar - baselineRow.rchar,
+    sourceBytes: synthetic.bytes };
   report(t, "no-op", { streams, journalStreams: journals.streams, ...row, sqliteBegins: noop.counts.sqlite.begins,
     sqliteCommitsPerStream: row.sqliteCommits / journals.streams, sqliteBeginsPerStream: noop.counts.sqlite.begins / journals.streams,
     rcharPerStream: row.rchar == null ? null : row.rchar / journals.streams, read, fsync: noop.counts.fsync, rename: noop.counts.rename });
@@ -113,10 +126,8 @@ export async function qualifyStorage(t, { streams, append = false, k = 50, lines
   assert.ok(noop.wallMs < 300_000, `no-op took ${noop.wallMs}ms at ${streams} streams`);
   assert.equal(counts.bytesCommitted, 0, "a no-op commits no content");
   assert.equal(counts.turnsAppended, 0, "a no-op appends no turns");
-  assert.ok(Number.isFinite(read.rchar) && Number.isFinite(read.baselineRchar),
-    `no /proc rchar for the no-op (${read.rchar}) or the baseline (${read.baselineRchar}): its content read is not evidenced`);
-  assert.ok(read.excessRchar < read.thresholdBytes, `the no-op read ${read.excessRchar} bytes beyond an empty pass's ${read.baselineRchar}, ` +
-    `over ${NOOP_READ_FRACTION * 100}% of the home's ${synthetic.bytes} content bytes`);
+  assert.ok(read.source + read.journal <= read.boundBytes, `the no-op read ${read.source} source and ${read.journal} journal bytes ` +
+    `over ${sourceStreams} unchanged sources (bound ${read.boundBytes}): ${JSON.stringify(read.byKind)}`);
   if (!append) return;
 
   // A small append to k streams, captured by fresh passes: committed work is
