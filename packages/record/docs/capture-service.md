@@ -478,10 +478,14 @@ facts and metadata deletion together, even if the directory is already absent.
 
 `CaptureCleanupQueue` supplies private worker scheduling for deleting claims.
 Healthy and retry enumeration have independent durable keyset cursors; each
-turn inspects at most 128 references and processes at most one allocation under
-the shared hash-row allowance. Reaching the end wraps that cursor for later
-work. A scan endpoint describes enumeration only: partial jobs or newly added
-earlier keys can still need work on the next rotation.
+turn inspects at most one page of 128 references past its cursor and processes
+at most one allocation under the shared hash-row allowance. When that page ends
+the list without a job, the turn inspects one more page from the start, so an
+unfinished allocation the cursor has passed continues in the same pass; with
+no job there either, the cursor wraps for later work. A cleanup unit that
+commits no metadata progress is not selected again in its pass; the next pass
+tries it again. A scan endpoint describes enumeration only: partial jobs or
+newly added earlier keys can still need work on the next rotation.
 
 Before filesystem work, the queue commits an allocation-bound admission and
 the next cursor. The cleanup unit must still acquire the stream lock, prove
