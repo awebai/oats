@@ -19,9 +19,10 @@ export function reportReclaimedLock(r, error = console.error) {
   if (r) error(`capture: reclaimed ${r.path} from pid ${r.pid}, which died (started ${r.startedAt || "?"})`);
 }
 
-// A status this pass moved aside, said by the pass that moved it.
-function reportInvalidStatus(moved, error = console.error) {
-  if (moved) error(`capture: the capture status was unreadable (${moved.reason}); moved it aside to ${moved.path} and started a new status` +
+// A status this pass moved aside, said by the pass that moved it. A pass that
+// then failed has not written the new status.
+function reportInvalidStatus(moved, error = console.error, { failed = false } = {}) {
+  if (moved) error(`capture: the capture status was unreadable (${moved.reason}); moved it aside to ${moved.path}${failed ? "" : " and started a new status"}` +
     (moved.stale ? `; older moved-aside copies could not be removed: ${moved.stale.join(", ")}` : ""));
 }
 
@@ -38,7 +39,7 @@ export async function captureCommandPass(root, options, { log = console.log, err
   catch (failure) {
     reportLockInitializationFailure(failure, error);
     reportReclaimedLock(failure.reclaimedLock, error);
-    reportInvalidStatus(failure.invalidStatus, error);
+    reportInvalidStatus(failure.invalidStatus, error, { failed: true });
     if (failure.release) error(`capture: did not release lock at ${root} (${failure.release.reason}): ${releaseDetail(failure.release)}`);
     throw failure;
   }

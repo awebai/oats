@@ -141,8 +141,14 @@ export function setAsideInvalidCaptureStatus(root, { now = Date.now() } = {}) {
   const path = join(root, "capture-status.json");
   const aside = join(root, INVALID_PREFIX + new Date(now).toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z"));
   const older = readdirSync(root).filter(name => name.startsWith(INVALID_PREFIX)).map(name => join(root, name)).filter(name => name !== aside);
-  try { renameSync(path, aside); syncDirectory(root); }
+  try { renameSync(path, aside); }
   catch (error) { throw new Error(`capture status ${path} is unreadable (${reason}) and could not be moved aside: ${error.message}; it was left in place`); }
+  // Moved but not confirmed durable: the error says where the status now is.
+  try { syncDirectory(root); }
+  catch (error) {
+    throw Object.assign(new Error(`capture status ${path} is unreadable (${reason}); it was moved aside to ${aside}, but syncing ${root} failed (${error.message}), so the move may not be durable`),
+      { invalidStatus: { path: aside, reason } });
+  }
   // The new copy is already safe: an older one that cannot go stays, reported.
   const stale = older.filter(name => { try { unlinkSync(name); return false; } catch (error) { return error.code !== "ENOENT"; } });
   if (older.length > stale.length) try { syncDirectory(root); } catch { /* the removals are diagnostics housekeeping */ }
