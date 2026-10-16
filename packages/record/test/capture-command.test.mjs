@@ -14,6 +14,7 @@ import { readCaptureStatus } from "../lib/capture-status.mjs";
 import { superviseCapturePass } from "../lib/capture-pass.mjs";
 import { acquireCaptureLock } from "../lib/capture-lock.mjs";
 import { captureSessions } from "../lib/capture-cc.mjs";
+import { captureCommandPass } from "../lib/capture-command-output.mjs";
 
 const url = name => new URL(`../lib/${name}.mjs`, import.meta.url).href;
 const formats = ["cc", "pi", "codex", "aw"];
@@ -30,6 +31,13 @@ function fixture(t) {
       for (const [key, value] of Object.entries(env)) { old[key] = process.env[key]; process.env[key] = value; }
       try { return await runCaptureCommand(recordRoot, options(extra)); }
       finally { for (const key of Object.keys(env)) if (old[key] === undefined) delete process.env[key]; else process.env[key] = old[key]; }
+    },
+    // The foreground command over the same entry, with its stdout and stderr lines.
+    async pass(extra = {}) {
+      const out = [], err = [];
+      const result = await captureCommandPass(root, options(extra), { log: line => out.push(line), error: line => err.push(line),
+        run: recordRoot => this.run(extra, recordRoot) });
+      return { result, out, err };
     },
   };
 }
@@ -253,4 +261,58 @@ for (const boundary of ["before", "after"]) test(`actual issue-page death ${boun
     for (const key of keys) assert.equal(state.get("source-retry", key), death.runId); });
   assert.equal(new RecordStore(f.root, { owner: "fixture" }).readStream("fixture~aw").length, 1);
   assert.equal(fs.existsSync(join(f.root, "index/turns.db")), false);
+});
+
+// An unreadable or future-dated status gives no evidence and must not block
+// every later pass: it is moved aside, one copy kept, and the pass starts a
+// new status with no history.
+const STATUS = "capture-status.json";
+const asides = f => fs.readdirSync(f.root).filter(name => name.startsWith(`${STATUS}.invalid-`));
+async function invalidStatusRecovers(t, corrupt) {
+  const f = fixture(t), logs = join(f.home, ".config", "aw", "logs");
+  // One captured comm log gives the first pass progress, the history to lose.
+  fs.mkdirSync(logs, { recursive: true }); fs.writeFileSync(join(logs, "account.jsonl"), aw);
+  await f.pass({ indexEnabled: true });
+  const before = readCaptureStatus(f.root);
+  assert.ok(before.lastRun && before.lastProgressAt, "the first pass left history to lose");
+  const bytes = corrupt(fs.readFileSync(join(f.root, STATUS), "utf8"));
+  fs.writeFileSync(join(f.root, STATUS), bytes);
+  assert.throws(() => readCaptureStatus(f.root));
+  // The pass ends in a defined state instead of failing: captureCommandPass
+  // throws on a failed worker.
+  const { result, err } = await f.pass({ indexEnabled: true });
+  assert.equal(typeof result.appended, "number");
+  const status = readCaptureStatus(f.root);
+  assert.notEqual(status.lastRun.id, before.lastRun.id);
+  assert.equal(status.lastFailure, null);
+  assert.ok(status.lastSuccess === null || status.lastSuccess.id === status.lastRun.id, "no history survives the unreadable status");
+  const kept = asides(f);
+  assert.equal(kept.length, 1);
+  assert.equal(fs.readFileSync(join(f.root, kept[0]), "utf8"), bytes, "the moved-aside copy holds the original bytes");
+  assert.ok(err.some(line => line.includes(join(f.root, kept[0]))), `stderr names the moved-aside file: ${JSON.stringify(err)}`);
+  return f;
+}
+
+test("a future-dated capture status is moved aside and the pass writes a new status", async t => {
+  await invalidStatusRecovers(t, text => {
+    const status = JSON.parse(text);
+    status.lastProgressAt = new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString();
+    return JSON.stringify(status) + "\n";
+  });
+});
+
+test("a malformed capture status is moved aside and the pass writes a new status", async t => {
+  await invalidStatusRecovers(t, () => "{ not json");
+});
+
+test("a newer moved-aside status replaces an older one", async t => {
+  const f = await invalidStatusRecovers(t, () => "{ first");
+  const older = asides(f)[0];
+  fs.writeFileSync(join(f.root, STATUS), "{ second");
+  const { err } = await f.pass({ indexEnabled: true });
+  const kept = asides(f);
+  assert.equal(kept.length, 1, JSON.stringify(kept));
+  assert.equal(fs.readFileSync(join(f.root, kept[0]), "utf8"), "{ second");
+  if (kept[0] === older) assert.ok(err.some(line => line.includes(kept[0])));
+  else assert.equal(fs.existsSync(join(f.root, older)), false);
 });

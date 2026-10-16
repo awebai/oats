@@ -19,6 +19,11 @@ export function reportReclaimedLock(r, error = console.error) {
   if (r) error(`capture: reclaimed ${r.path} from pid ${r.pid}, which died (started ${r.startedAt || "?"})`);
 }
 
+// A status this pass moved aside, said by the pass that moved it.
+function reportInvalidStatus(moved, error = console.error) {
+  if (moved) error(`capture: the capture status was unreadable (${moved.reason}); moved it aside to ${moved.path} and started a new status`);
+}
+
 export function releaseDetail(r) {
   return r.reason === "gone" ? "it was already removed by another party (an operator recovery?); nothing to release"
     : r.reason === "not-owner" ? `it now belongs to pid ${r.owner.pid} (started ${r.owner.startedAt || "?"}); left alone`
@@ -32,10 +37,12 @@ export async function captureCommandPass(root, options, { log = console.log, err
   catch (failure) {
     reportLockInitializationFailure(failure, error);
     reportReclaimedLock(failure.reclaimedLock, error);
+    reportInvalidStatus(failure.invalidStatus, error);
     if (failure.release) error(`capture: did not release lock at ${root} (${failure.release.reason}): ${releaseDetail(failure.release)}`);
     throw failure;
   }
   reportReclaimedLock(result.reclaimedLock, error);
+  reportInvalidStatus(result.invalidStatus, error);
   if (result.outcome === "overlap") {
     const line = `capture: another pass holds ${root}: ${result.held.recovery}; skipping this pass`;
     if (result.held.liveness === "alive") log(line); else error(line);

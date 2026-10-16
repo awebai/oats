@@ -2,7 +2,7 @@
 // nor infers success from counters. Only admitted command workers publish run
 // facts; exact receipt commands may refresh backlog while retaining history.
 import { randomUUID } from "node:crypto";
-import { closeSync, constants, fstatSync, fsyncSync, openSync, readSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, fsyncSync, openSync, readdirSync, readSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CAPTURE_POLICY } from "./capture-budget.mjs";
 import { validFailureBacklog } from "./capture-failures.mjs";
@@ -116,6 +116,32 @@ export function readCaptureStatus(root, options) {
   try { parsed = JSON.parse(text); } catch { throw new Error("malformed capture status JSON"); }
   if (!validCaptureStatus(parsed, options)) throw new Error("unsupported, malformed or future-dated capture status");
   return parsed;
+}
+
+const INVALID_PREFIX = "capture-status.json.invalid-";
+function syncDirectory(path) {
+  const fd = openSync(path, constants.O_RDONLY);
+  try { fsyncSync(fd); } finally { closeSync(fd); }
+}
+
+/** An unreadable, malformed or future-dated status is no evidence and would
+ *  stop every pass that reads it. It is moved aside, never overwritten, to
+ *  `capture-status.json.invalid-<UTC stamp>` (the root directory synced after
+ *  the rename), so the next publication starts from an empty status with no
+ *  history; one moved-aside copy is kept. A failed rename throws and leaves
+ *  the original in place. → { path, reason } of the moved-aside copy, or null
+ *  when the status is absent or readable. */
+export function setAsideInvalidCaptureStatus(root, { now = Date.now() } = {}) {
+  let reason;
+  try { readCaptureStatus(root, { now }); return null; } catch (error) { reason = error.message; }
+  const path = join(root, "capture-status.json");
+  const aside = join(root, INVALID_PREFIX + new Date(now).toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z"));
+  const older = readdirSync(root).filter(name => name.startsWith(INVALID_PREFIX)).map(name => join(root, name)).filter(name => name !== aside);
+  try { renameSync(path, aside); syncDirectory(root); }
+  catch (error) { throw new Error(`capture status ${path} is unreadable (${reason}) and could not be moved aside: ${error.message}; it was left in place`); }
+  for (const name of older) try { unlinkSync(name); } catch (error) { if (error.code !== "ENOENT") throw error; }
+  if (older.length) syncDirectory(root);
+  return { path: aside, reason };
 }
 
 export function persistCaptureStatus(root, status, options) {

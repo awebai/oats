@@ -123,6 +123,14 @@ or acquire an implicit root capture lock. Health gets historical run fields from
 the snapshot and never advances them from current issues. A database with no
 snapshot still exposes its active issues.
 
+A supervised pass that finds the snapshot unreadable, malformed or future-dated
+treats it as absent: under the root lock and before any worker, it moves the
+file aside, never overwriting it, to `capture-status.json.invalid-<UTC stamp>`
+(the root directory synced after the rename) and names that path on stderr.
+The pass then publishes a new snapshot with no history: no success is carried
+over or invented. One moved-aside copy is kept; a newer one replaces it. A move
+that fails leaves the file in place and fails the pass.
+
 ### Offline installation and run diagnosis
 
 The package owns `captureHealth` and `turn-record capture --health [--json]`.
@@ -180,8 +188,9 @@ not turn the synchronous library's cooperative deadline into a hard one.
 
 Installed but absent status produces `capture-status-missing` with a setup
 remedy; malformed, unsupported, unreadable or future-dated status produces
-`capture-status-invalid`. Valid older nullable receipts remain valid absence of
-run evidence. `capture-success-stale` means no recorded success or one **older
+`capture-status-invalid` until the next supervised pass moves it aside and
+writes a new status, as the setup remedy's pass does. Valid older nullable
+receipts remain valid absence of run evidence. `capture-success-stale` means no recorded success or one **older
 than** 3,600 seconds, not exactly that age. It names the last success and committed
 progress, with an asleep/off-host caveat. Recent progress is not full success.
 A failure newer than success and current unresolved stream failures produce

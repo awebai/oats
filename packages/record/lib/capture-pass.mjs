@@ -1,10 +1,12 @@
 // Private continuation transport. Reconciliation, durable fairness, failure
 // attribution and status remain worker responsibilities. The parent never
-// promotes a transient result into journal/checkpoint evidence.
+// promotes a transient result into journal/checkpoint evidence; it only moves
+// an unreadable status aside, under the lock and before any worker.
 import { randomUUID } from "node:crypto";
 import { CAPTURE_POLICY } from "./capture-budget.mjs";
 import { acquireCaptureLock } from "./capture-lock.mjs";
 import { cleanupCaptureScratch } from "./capture-scratch.mjs";
+import { setAsideInvalidCaptureStatus } from "./capture-status.mjs";
 import { captureMonotonicMs, superviseCapture } from "./capture-supervisor.mjs";
 
 // Internal scheduling choices, not public tuning or portable timing promises.
@@ -50,12 +52,16 @@ export async function superviseCapturePass(root, options, {
     return response;
   };
   // A worker's private diagnostic accompanies only the first failure it explains.
+  // A status moved aside by this pass is reported with whatever it returns.
+  let invalidStatus = null;
   const failed = () => ({ outcome: "failed", reason: firstFailure, exitCode: 1, starts,
-    ...(failureMessage ? { message: failureMessage } : {}) });
+    ...(failureMessage ? { message: failureMessage } : {}), ...(invalidStatus ? { invalidStatus } : {}) });
+  const ended = value => invalidStatus ? { ...value, invalidStatus } : value;
   try {
     // Under the root lock and before this pass starts any child: reclaim
     // per-call scratch whose allocating process is proven dead (killed workers).
     cleanupCaptureScratch(root, lock);
+    invalidStatus = setAsideInvalidCaptureStatus(root);
     process.on("SIGINT", onSignal); process.on("SIGTERM", onSignal);
     // Keep one start and time for a worker to reconcile/write final facts.
     // A normal child is admitted only with its full allowance; in particular,
@@ -68,7 +74,7 @@ export async function superviseCapturePass(root, options, {
       // result needs no idle retries; an unexplained crash still continues.
       if (result.outcome === "complete" || result.outcome === "partial" && !result.continuation ||
           result.outcome === "failed" && result.continuation === false) {
-        return firstFailure ? failed() : { ...result, starts };
+        return firstFailure ? failed() : ended({ ...result, starts });
       }
       // On a crash the next child reconciles durable admission, then selects
       // independent ready work. There is NO same-pass retry/diagnostic class.
@@ -81,9 +87,12 @@ export async function superviseCapturePass(root, options, {
         result = { outcome: "failed", reason: "io", exitCode: 1 }; firstFailure ??= "io";
       }
     }
-    if (interrupted) return { outcome: "failed", reason: "interrupted", exitCode: 1, starts };
+    if (interrupted) return ended({ outcome: "failed", reason: "interrupted", exitCode: 1, starts });
     if (firstFailure) return failed();
-    return { ...result, starts };
+    return ended({ ...result, starts });
+  } catch (error) {
+    if (invalidStatus) error.invalidStatus ??= invalidStatus;
+    throw error;
   } finally {
     process.off("SIGINT", onSignal); process.off("SIGTERM", onSignal);
     const released = lock.release();
