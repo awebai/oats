@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DETACH_KEY_FEATURE, SESSION_DETACHED_EXIT, isDetachKey, prepareSessionViewer, requireDetachKey, tmuxHasClientFeatures } from "../lib/session-viewer.mjs";
+import { DETACH_KEY_FEATURE, SESSION_DETACHED_EXIT, VIEWER_CLOSED_HOOK_INDEX, isDetachKey, prepareSessionViewer, requireDetachKey, tmuxHasClientFeatures } from "../lib/session-viewer.mjs";
 const target = { backend: "tmux", socket: "/tmp/owned.sock", session: "oats", window: "agent" };
 function fixture(failLink = false, { marker = "", version = "", sessions = "", keys = "" } = {}) {
   const calls = [], options = [];
@@ -20,6 +20,10 @@ function fixture(failLink = false, { marker = "", version = "", sessions = "", k
   } };
 }
 const MOUSE = "#{||:#{pane_in_mode},#{mouse_any_flag}}";
+/** The one global hook entry the kernel owns: when a session whose name is a viewer's closes, its
+ *  key table is unbound. The name is matched before it is used in a command (a format inside
+ *  `#{...}` cannot hold `}`, so the 8 hex digits are spelled out). */
+const VIEWER_CLOSED_HOOK = `if-shell -F '#{m/r:^oatsview-[0-9]+-${"[0-9a-f]".repeat(8)}$,#{hook_session_name}}' "run-shell -C 'unbind-key -a -q -T #{hook_session_name}'"`;
 test("tmux attach isolates one exact window and cleanup kills only the viewer", () => {
   const io = fixture();
   const viewer = prepareSessionViewer(target, io);
@@ -145,7 +149,7 @@ test("with a detach key the viewer reads a table of its own, named as its sessio
       ["bind-key", "-T", name, "WheelUpPane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -e; send-keys -M"],
       ["bind-key", "-T", name, "MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
       ["bind-key", "-T", name, key, "set-option @oats-detached 1 ; set-option destroy-unattached off ; detach-client"],
-      ["set-hook", "-t", name, "client-detached", `unbind-key -a -q -T ${name}`],
+      ["set-hook", "-g", "session-closed[900]", VIEWER_CLOSED_HOOK],
       ["set-option", "-t", name, "mouse", "on"],
       ["-V"],
     ], key);
@@ -238,6 +242,7 @@ test("the detach key grammar is closed: what it accepts and what it refuses, and
 test("the constants a caller reads: the feature name and the status of a leave by the key", () => {
   assert.equal(DETACH_KEY_FEATURE, "session-attach-detach-key");
   assert.equal(SESSION_DETACHED_EXIT, 20);
+  assert.equal(VIEWER_CLOSED_HOOK_INDEX, 900, "the index of session-closed the kernel owns on the agents' server");
 });
 
 // ---- synchronized output (awebai/oats#1193) ------------------------------------------------------

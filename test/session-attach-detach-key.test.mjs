@@ -597,3 +597,50 @@ test("the preparation answers what it swept, and never a viewer whose attach is 
   assert.deepEqual(viewerSessions(), [preparing]);
   assert.deepEqual(viewerTables(), [preparing]);
 });
+
+/** The global session-closed entries of the agents' server, as tmux lists them. */
+const closedHooks = () => lines(tmuxOn(AGENTS, "show-hooks", "-g", "session-closed"));
+
+test("the one global hook entry the kernel owns, session-closed[900], is set once however many keyed viewers set it, and a viewer's close leaves an operator's own session-closed[0] and a table that is not a viewer's alone", async (t) => {
+  t.after(() => { sweep(); tmuxOn(AGENTS, "set-hook", "-g", "-u", "session-closed[0]"); tmuxOn(AGENTS, "set-option", "-g", "-u", "@operator-closed"); tmuxOn(AGENTS, "unbind-key", "-a", "-q", "-T", "operator"); });
+  const a = await agent("hooks");
+  const ran = () => tmuxOn(AGENTS, "show-options", "-gqv", "@operator-closed") === "1";
+  tmuxOn(AGENTS, "set-hook", "-g", "session-closed[0]", "set-option -g @operator-closed 1");
+  tmuxOn(AGENTS, "bind-key", "-T", "operator", "F12", "detach-client");
+  const first = await view(a, { key: "F12" });
+  const second = await view(a, { key: "F12" });
+  const hooks = closedHooks();
+  assert.equal(hooks.length, 2, hooks.join(" | "));
+  assert.match(hooks[0], /^session-closed\[0\] set-option -g @operator-closed 1$/);
+  assert.match(hooks[1], /^session-closed\[900\] if-shell -F /);
+  const client = first.clientPid();
+  process.kill(first.pid(), "SIGKILL");
+  process.kill(client, "SIGKILL");
+  await waitUntil(() => viewerTables().length === 1, `the killed viewer's table is gone; tables ${viewerTables()}`);
+  assert.deepEqual(viewerTables(), [second.session]);
+  second.press("F12");
+  assert.equal(await second.ended(), SESSION_DETACHED_EXIT, second.shows());
+  nothingLeft("both viewers closed");
+  await waitUntil(ran, "the operator's own session-closed[0] ran");
+  assert.ok("operator" in keyTables(), "a table that is not a viewer's stays");
+  assert.deepEqual(closedHooks(), hooks, "the entries are unchanged");
+});
+
+test("on a tmux where the hook does nothing (before 3.2, run-shell has no -C), a killed keyed viewer's table is removed by the next attach's sweep", async (t) => {
+  t.after(sweep);
+  const a = await agent("no-hook");
+  tmuxOn(AGENTS, "set-hook", "-g", "-u", "session-closed[900]");
+  const front = tmuxInFront("no-hook", `case " $* " in *" set-hook "*) exit 0 ;; esac`);
+  const killed = await view(a, { key: "F12", front });
+  assert.deepEqual(closedHooks().filter((h) => h.startsWith("session-closed[900]")), [], "no hook entry");
+  const client = killed.clientPid();
+  process.kill(killed.pid(), "SIGKILL");
+  process.kill(client, "SIGKILL");
+  await waitUntil(() => viewerSessions().length === 0, "the killed viewer's session is gone");
+  assert.deepEqual(viewerTables(), [killed.session], "its table is left");
+  const next = await view(a, { key: "F12", front });
+  assert.deepEqual(viewerTables(), [next.session], "the sweep removed it");
+  next.press("F12");
+  assert.equal(await next.ended(), SESSION_DETACHED_EXIT, next.shows());
+  nothingLeft("after the sweeping attach");
+});

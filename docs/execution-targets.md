@@ -1111,14 +1111,15 @@ oats session attach --home /abs/home --detach-key 'C-\'
   the attach and never before, so the session cannot be destroyed before its
   client arrives. From then on, the server removes the viewer when its last
   client goes, however the client went. A keyed viewer's key table (below)
-  belongs to the server, not to the session. A `client-detached` hook on the
-  viewer session unbinds the table when the viewer's client ends (killed or
-  hung up) or leaves by its key. A client that another client detaches
-  (`tmux detach-client -t <tty>`) does not run it: its table is removed by
-  the attach's cleanup, or by the next attach's sweep. That session hook
-  replaces, for a keyed viewer's client alone, a global `client-detached`
-  hook of your own (`set-hook -g` in `~/.tmux.conf`), as the viewer's own
-  `prefix`, `status`, `key-table` and `detach-on-destroy` replace yours.
+  belongs to the server, not to the session. A keyed viewer sets one global
+  hook entry on the agents' server, `session-closed[900]`: when a session
+  whose name is a viewer's closes, however it closed, the entry unbinds the
+  key table of that name. It is the only global hook entry OATS owns there.
+  Every keyed viewer sets the same entry again, which leaves it unchanged,
+  and no other index is touched. Keep your own `session-closed` hooks
+  (`set-hook -g` in `~/.tmux.conf`) at other indexes: an entry of yours at
+  900 is replaced. The entry needs `run-shell -C`, which tmux has from 3.2.
+  Before 3.2 it does nothing, and the next attach's sweep removes the table.
 
   Every attach also sweeps the server before it opens its viewer. It removes:
 

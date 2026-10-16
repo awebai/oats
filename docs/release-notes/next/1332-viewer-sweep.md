@@ -7,7 +7,10 @@
   agents' tmux server. Now the viewer's client sets tmux's
   `destroy-unattached on` for its own session once it has attached, so the
   server removes the session when its last client goes, however the client
-  went. A keyed viewer's table is unbound when its client leaves. Every
+  went. A keyed viewer's table is unbound when its session closes, by one
+  global hook entry, `session-closed[900]`, the only one OATS owns on the
+  agents' server: keep your own `session-closed` hooks at other indexes
+  (tmux 3.2 and later; before 3.2 the sweep removes the table). Every
   attach also sweeps what earlier attaches left before it opens its viewer.
   It removes a viewer session that has no client and whose attach is gone,
   and every viewer key table whose session is gone. When the sweep removed
