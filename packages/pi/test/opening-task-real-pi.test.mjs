@@ -11,7 +11,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileS
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SCENARIOS, assertScenario } from "./opening-scenarios.mjs";
+import { SCENARIOS, assertScenario, expected } from "./opening-scenarios.mjs";
 
 const RUNNER = fileURLToPath(new URL("./run-opening-scenario-real-pi.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -48,6 +48,9 @@ function findPi() {
 const PI = findPi();
 const skip = PI.root ? false : `pi SDK not found: ${PI.reason}`;
 if (PI.root) console.log(`# real pi: ${PI_PACKAGE} ${PI.version} at ${PI.root}`);
+// pi 1.2 and later count a run as active from before its before_agent_start (awebai/oats#1322).
+const [major, minor] = (PI.version ?? "0.0").split(".").map(Number);
+const startsRunFirst = major > 1 || (major === 1 && minor >= 2);
 
 function run(t, scenario) {
   const home = mkdtempSync(join(tmpdir(), "oats-pi-opening-real-"));
@@ -59,4 +62,7 @@ function run(t, scenario) {
   assert.equal(r.status, 0, r.stderr);
   return JSON.parse(r.stdout);
 }
-for (const scenario of SCENARIOS.filter((s) => !s.hostOnly)) test(`real pi, ${scenario.title}`, { skip }, (t) => assertScenario(run(t, scenario.name), scenario));
+for (const scenario of SCENARIOS.filter((s) => !s.hostOnly)) {
+  const want = expected(scenario, startsRunFirst);
+  test(`real pi, ${want.title}`, { skip }, (t) => assertScenario(run(t, scenario.name), want));
+}

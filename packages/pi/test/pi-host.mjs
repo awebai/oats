@@ -3,9 +3,10 @@
  * only what decides whether a prompt reaches the transcript: when pi's
  * prompt() refuses, queues or runs a message. Each rule cites the
  * @earendil-works/pi-coding-agent 0.85.1 source it copies (paths under the
- * package's dist/), so a later pi can be checked against it. Model replies,
- * tools, compaction and retries are not modelled: a run answers each message
- * with one assistant message, a macrotask later.
+ * package's dist/), so a later pi can be checked against it; `startsRunFirst`
+ * models pi 1.2 and later, citing 1.3.0. Model replies, tools, compaction and
+ * retries are not modelled: a run answers each message with one assistant
+ * message, a macrotask later.
  */
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -25,6 +26,13 @@ export class PiHost {
    *  (pi 0.80.3 core/agent-session.js:533-534, :685-696, :1814). */
   withoutAgentSettled = false;
   get streaming() { return this.withoutAgentSettled ? this.agentRunActive : this.sessionRunActive; }
+  /** pi 1.2 and later: a run counts as active from before its before_agent_start, which also fires for a
+   *  triggerTurn message's run and names the message type (pi 1.3.0 core/agent-session.js:1392-1397, :1449-1456). */
+  startsRunFirst = false;
+  /** AgentSession._agentRunAbortRequested, and the agent's own abort. */
+  abortRequested = false;
+  agentAborted = false;
+  idleWaiters = [];
 
   /** The ExtensionAPI subset the bridge and the race fixtures use. */
   api() {
@@ -62,10 +70,29 @@ export class PiHost {
       this.followUps.push({ role: "user", text });
       return;
     }
+    // pi 1.3.0 core/agent-session.js:1664: the run starts, then its preflight (_prepareRun's compaction check).
+    if (this.startsRunFirst) return this.startRun({ role: "user", text }, { messageType: "user", prompt: text, images: options.images });
     await this.preflight();
     // core/agent-session.js:915: before_agent_start, then _runAgentPrompt (core/agent-session.js:949).
     await this.emit({ type: "before_agent_start", prompt: text, images: options.images });
     await this.runAgentPrompt({ role: "user", text });
+  }
+
+  /** pi 1.3.0 core/agent-session.js:1392-1443 (_startRun) and :1449-1456 (_prepareRun): the run flag is set before
+   *  the preflight and before_agent_start, and cleared, with agent_settled, in finally. Not modelled: a preflight
+   *  that throws (pi clears the flag without agent_settled). */
+  async startRun(message, event) {
+    this.sessionRunActive = true;
+    this.abortRequested = false;
+    try {
+      await this.preflight();
+      await this.emit({ type: "before_agent_start", ...event });
+      await this.agentPrompt(message);
+    } finally {
+      this.sessionRunActive = false;
+      await this.emit({ type: "agent_settled" });
+      this.resolveIdle();
+    }
   }
 
   /** core/agent-session.js:1161-1185: an extension's user message is a prompt with source "extension". */
@@ -74,16 +101,20 @@ export class PiHost {
     return this.prompt(text, { expandPromptTemplates: options.expandPromptTemplates ?? false, streamingBehavior: options.deliverAs, source: "extension" });
   }
 
-  /** core/agent-session.js:1099-1133: a triggerTurn custom message queues while streaming, else starts a run at once. */
+  /** core/agent-session.js:1099-1133: a triggerTurn custom message queues while streaming, else starts a run at once
+   *  (pi 1.3.0 core/agent-session.js:1828-1841, a run that goes through before_agent_start). Steer and follow-up
+   *  share one queue here: the fixtures send follow-ups only. */
   sendCustomMessage(message, options = {}) {
     const entry = { role: "custom", text: message.content };
     if (this.streaming && options.triggerTurn !== false) { this.followUps.push(entry); return; }
+    if (options.triggerTurn && this.startsRunFirst) { this.startRun(entry, { messageType: "custom", message: entry }); return; }
     if (options.triggerTurn) { this.runAgentPrompt(entry); return; }
     this.transcript.push(entry);
   }
 
   /** core/agent-session.js:772-786 and :347-356: the run flag is set first and cleared, with agent_settled, in finally. */
   async runAgentPrompt(message) {
+    this.abortRequested = false;
     if (this.withoutAgentSettled) return this.agentPrompt(message);
     this.sessionRunActive = true;
     try {
@@ -91,25 +122,39 @@ export class PiHost {
     } finally {
       this.sessionRunActive = false;
       await this.emit({ type: "agent_settled" });
+      this.resolveIdle();
     }
   }
+
+  /** pi 1.1.0 core/agent-session.js:1909-1928, 1.3.0 :1942-1960: abort marks a session run, aborts the agent's, and
+   *  waits for the session to be idle. An abort requested before the agent's run starts aborts it then (1.3.0 :711-713). */
+  async abort() {
+    if (this.sessionRunActive) this.abortRequested = true;
+    if (this.agentRunActive) this.agentAborted = true;
+    if (!this.streaming) return;
+    await new Promise((resolve) => this.idleWaiters.push(resolve));
+  }
+  resolveIdle() { if (!this.streaming) for (const resolve of this.idleWaiters.splice(0)) resolve(); }
 
   /** pi-agent-core dist/agent.js:226-229: a prompt during an active run is refused; the loop drains follow-ups before
    *  agent_end, and the run is released after agent_end's listeners (dist/agent.js:326-347, :366-372). */
   async agentPrompt(message) {
     if (this.agentRunActive) throw new Error("Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion.");
     this.agentRunActive = true;
+    this.agentAborted = this.abortRequested;
     await this.emit({ type: "agent_start" });
     let next = message;
     while (next) {
       this.transcript.push(next);
       await this.emit({ type: "message_start", message: { role: next.role } });
       await tick();
-      this.transcript.push({ role: "assistant", text: `reply to ${next.text}` });
-      next = this.followUps.shift();
+      this.transcript.push({ role: "assistant", text: this.agentAborted ? "aborted" : `reply to ${next.text}` });
+      next = this.agentAborted ? undefined : this.followUps.shift();
     }
     await this.emit({ type: "agent_end" });
     this.agentRunActive = false;
+    this.agentAborted = false;
+    this.resolveIdle();
   }
 
   /** Let every pending run, queue and send finish. */
