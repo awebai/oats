@@ -6,10 +6,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { workspaceStatusData, capabilitiesData } from '../../client/deployment-data.mjs';
-import { createCapabilityCatalog, capabilityCatalogKey, CAPABILITY_CATALOG_RETRY_MS } from '../server/capability-catalog.mjs';
+import { createCapabilityCatalog, capabilityCatalogKey, CAPABILITY_CATALOG_RETRY_MS } from '../../client/capability-catalog.mjs';
 import { soulCatalogKey } from '../../client/soul-catalog.mjs';
 import { HELD_TTL_MS } from '../../client/keyed-catalog.mjs';
 import { createWorkspaceSyncBoundary, syncFailure } from '../server/workspace-sync.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 
 const facts = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/desktop-facts/${name}.json`, import.meta.url), 'utf8'));
 const f2 = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8'));
@@ -24,7 +25,7 @@ const settle = () => new Promise(r => setImmediate(r));
 function harness() {
   let clock = 1_700_000_000_000, next = () => ({ ok: true, document: CAPS() });
   const calls = [], gates = [];
-  const catalog = createCapabilityCatalog({ now: () => clock, invoke: async (cli, request) => {
+  const catalog = createCapabilityCatalog({ terms: DESKTOP_TERMS, now: () => clock, invoke: async (cli, request) => {
     calls.push(request);
     if (gates.length) await gates.shift();
     return next();
@@ -154,7 +155,7 @@ test('a first read that fails holds no table; local, protocol and thrown failure
   h.tick(CAPABILITY_CATALOG_RETRY_MS); h.answer(() => ({ ok: true, document: { ...CAPS(), result: { capabilitiesApi: 9 } } }));
   h.catalog.ensure(deployment, CLI, move(ws => { ws.stale = ['x']; })); await settle();
   assert.deepEqual(h.catalog.held(deployment).reason, { code: 'E_CLI_PROTOCOL', message: '', kernel: false });
-  const thrown = createCapabilityCatalog({ invoke: async () => { throw new Error('spawn ENOENT'); } });
+  const thrown = createCapabilityCatalog({ terms: DESKTOP_TERMS, invoke: async () => { throw new Error('spawn ENOENT'); } });
   assert.deepEqual((await thrown.read(deployment, CLI, WS)).reason, { code: 'E_CLI_FAILED', message: '', kernel: false });
   thrown.forget(deployment); assert.equal(thrown.held(deployment), null); assert.equal(thrown.refreshing(deployment), false);
 });
@@ -230,7 +231,7 @@ function boundary({ observed = () => WS, maxAge, answers = [] } = {}) {
     return typeof step === 'function' ? step(options) : step;
   };
   let clock = 1_700_000_000_000;
-  const catalog = createCapabilityCatalog({ invoke, now: () => clock });
+  const catalog = createCapabilityCatalog({ terms: DESKTOP_TERMS, invoke, now: () => clock });
   return { catalog, calls, answers, now: ms => { clock = 1_700_000_000_000 + ms; }, request: createWorkspaceSyncBoundary({ invoke, catalog, observed, maxAge }) };
 }
 

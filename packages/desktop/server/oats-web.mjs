@@ -57,7 +57,7 @@ import { createMachines } from "./machines.mjs";
 import { createServerForget, forgetNotRun } from "./server-forget.mjs";
 import { machinesGated } from "../../client/machine-contract.mjs";
 import { createSoulCatalog, soulCatalogKey } from "../../client/soul-catalog.mjs";
-import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
+import { createCapabilityCatalog, capabilityCatalogKey } from "../../client/capability-catalog.mjs";
 import { capabilityShowRequest, createCapabilityShowCache } from "./capability-show.mjs";
 import { createInspectCache } from "../../client/inspect-cache.mjs";
 import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from "../../client/refresh-loop.mjs";
@@ -494,7 +494,7 @@ const BACKGROUND_MAX_AGE = 60;
 // The collector's entry is in the shared home too, beside app.asar in the package.
 const LIVENESS = join(HERE, "..", "..", "client", "liveness-main.mjs");
 const soulCatalog = createSoulCatalog({ terms: DESKTOP_TERMS });
-const capabilityCatalog = createCapabilityCatalog();
+const capabilityCatalog = createCapabilityCatalog({ terms: DESKTOP_TERMS });
 const inspectCache = createInspectCache();
 // What a capability ships, per (deployment, row, commit[, file]): content at one commit never moves.
 const capabilityShowCache = createCapabilityShowCache();

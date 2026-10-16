@@ -5,11 +5,11 @@
  * deployment, last good table kept with the failure next to it, retry after
  * RETRY_MS, unbound prefetch bound by the same cycle's settle) are
  * keyed-catalog.mjs's; this module is the kernel read, the key and the shape. */
-import { cliWorkspace } from '../../client/workspace-cli.mjs';
-import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
-import { capabilitiesData, observationData } from '../../client/deployment-data.mjs';
-import { soulCatalogKey } from '../../client/soul-catalog.mjs';
-import { createKeyedCatalog } from '../../client/keyed-catalog.mjs';
+import { cliWorkspace } from './workspace-cli.mjs';
+import { requireTerms } from './client-terms.mjs';
+import { capabilitiesData, observationData } from './deployment-data.mjs';
+import { soulCatalogKey } from './soul-catalog.mjs';
+import { createKeyedCatalog } from './keyed-catalog.mjs';
 
 export const CAPABILITY_CATALOG_RETRY_MS = 60_000;
 /** Desktop-side transport/probe codes (workspace-cli.mjs); any other code on
@@ -34,7 +34,8 @@ export function capabilityCatalogKey(cli, workspaceStatus) {
     ws.lock ? [ws.lock.path ?? null, ws.lock.lockfileVersion ?? null] : null]);
 }
 
-export function createCapabilityCatalog({ invoke = (cli, options) => cliWorkspace(cli, options, DESKTOP_TERMS), now = () => Date.now() } = {}) {
+export function createCapabilityCatalog({ terms, exec, invoke = (cli, options) => exec ? cliWorkspace(cli, options, terms, { exec }) : cliWorkspace(cli, options, terms), now = () => Date.now() } = {}) {
+  requireTerms(terms, 'createCapabilityCatalog');
   async function read(deployment, cli, options) {
     let result;
     try { result = await invoke(cli, { action: 'capabilities', context: deployment, ...options }); }
