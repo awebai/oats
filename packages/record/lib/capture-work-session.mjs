@@ -38,7 +38,10 @@ export class CaptureWorkSession {
       this.cleanup = new CaptureCleanupQueue(this.store, this.state);
       this.cleanup.reconcile(start, { reason: reasonFor(this.cleanup.active()?.runId), now: now() });
       this.queue = new CaptureSourceQueue(this.state, { owner, selection });
-      if (roots !== null) this.sourceDiscovery = new CaptureSourceDiscovery(this.queue, roots);
+      if (roots !== null) {
+        this.sourceDiscovery = new CaptureSourceDiscovery(this.queue, roots);
+        this.sourceDiscovery.reconcile(start, { reason: reasonFor(this.sourceDiscovery.active()?.runId), now: now() });
+      }
       // Retain a reset's scope even if derived inventory tables were lost.
       // Recreating membership may restart enumeration; it cannot erase reset
       // admission or the index token needed to recover a committed operation.
@@ -112,7 +115,8 @@ export class CaptureWorkSession {
     if (this.start.pass.finalize) return { finalize: true };
 
     const sourceDiscovery = this.sourceDiscovery && !this.queue.current().discovered
-      ? this.sourceDiscovery.advance({ stopped, limit: this.unit.discoveryLimit ?? 128, runId: this.run.id, now: this.now() }) : null;
+      ? this.sourceDiscovery.advance({ stopped, limit: this.unit.discoveryLimit ?? 128,
+        runId: this.run.id, workerNonce: this.start.workerNonce, now: this.now() }) : null;
     let discovery = null;
     if (this.inventory.current().phase !== "complete") discovery = this.inventory.discover(this.index, { stopped });
     if (stopped()) return { stopped: true, discovery, sourceDiscovery };
@@ -142,7 +146,7 @@ export class CaptureWorkSession {
     if (this.sourceDiscovery && !this.queue.current().discovered) {
       if (sourceDiscovery?.source) return { waitingForDiscovery: true, discovery, sourceDiscovery };
       const retried = this.sourceDiscovery.advance({ stopped, limit: this.unit.discoveryLimit ?? 128,
-        runId: this.run.id, now: this.now(), retry: true });
+        runId: this.run.id, workerNonce: this.start.workerNonce, now: this.now(), retry: true });
       if (retried.source) return { waitingForDiscovery: true, discovery, sourceDiscovery: retried };
     }
     return { idle: true, discovery, sourceDiscovery };

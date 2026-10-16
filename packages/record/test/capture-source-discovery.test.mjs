@@ -19,6 +19,7 @@ function fixture(t) {
 }
 function close(open) { open.discovery.close(); open.state.close(); }
 const rows = state => state.db.prepare('SELECT source,path,stream,outcome FROM capture_sources ORDER BY position').all().map(row => ({ ...row }));
+const owned = runId => ({ runId, workerNonce: `worker-${runId}` });
 
 test('format rotation and restart retain public file order within each format and native root precedence', t => {
   const f = fixture(t);
@@ -150,28 +151,35 @@ test('failed-root publication rolls back on storage failure and partial due reco
     opened.state.set = (kind, key, value) => {
       set(kind, key, value); if (kind === 'capture-discovery-failure') throw Error('injected failure-evidence storage error');
     };
-    assert.throws(() => opened.discovery.advance({ runId: 'failed', now }), /failure-evidence storage error/);
+    assert.throws(() => opened.discovery.advance({ ...owned('failed'), now }), /failure-evidence storage error/);
     assert.deepEqual(opened.queue.current(), before);
     assert.equal(opened.state.get('capture-discovery-failure', 'last'), null);
     assert.equal(opened.discovery.readers.size, 0);
+    const retained = opened.discovery.active();
+    assert.equal(retained.runId, 'failed'); assert.deepEqual(retained.group, before.discovery.groups[3]);
     opened.state.set = set;
-    assert.throws(() => opened.discovery.advance({ runId: 'failed', now }), /identity changed/);
+    assert.throws(() => opened.discovery.advance({ ...owned('failed'), now }), /unreconciled/);
+    assert.throws(() => opened.discovery.reconcile({ workerNonce: 'worker-failed', pass: { runId: 'failed' } }, { now }), /not been replaced/);
+    opened.discovery.reconcile({ workerNonce: 'replacement', pass: { runId: 'failed' } }, { now, reason: 'io' });
+    assert.equal(opened.discovery.active(), null);
     const refused = opened.queue.current().discovery.groups[3], due = Date.parse(refused.failure.nextRetryAt);
     assert.deepEqual(refused.checkpoint, before.discovery.groups[3].checkpoint);
     assert.equal(opened.discovery.healthyPending(), false, 'later roots cannot bypass a refused root in their format');
-    assert.equal(opened.discovery.advance({ runId: 'failed', now: due, retry: true }).deferred, true);
-    assert.equal(opened.discovery.advance({ runId: 'early', now: due - 1, retry: true }).deferred, true);
+    assert.equal(opened.discovery.advance({ ...owned('failed'), now: due, retry: true }).deferred, true);
+    assert.equal(opened.discovery.advance({ ...owned('early'), now: due - 1, retry: true }).deferred, true);
     fs.rmSync(path, { recursive: true }); fs.renameSync(path + '.saved', path);
-    assert.equal(opened.discovery.advance({ limit: 1, runId: 'recovery', now: due, retry: true }).added, 1);
+    assert.equal(opened.discovery.advance({ limit: 1, ...owned('recovery'), now: due, retry: true }).added, 1);
+    assert.equal(opened.discovery.active(), null);
     const partial = opened.queue.current().discovery.groups[3];
     assert.equal(partial.root, 0); assert.equal(partial.failure.attempts, 1);
     assert.equal(partial.failure.nextRetryAt, refused.failure.nextRetryAt); assert.equal(partial.failure.attemptedRun, 'recovery');
-    assert.equal(opened.discovery.advance({ runId: 'recovery', now: due, retry: true }).deferred, true);
-    assert.equal(opened.discovery.advance({ limit: 1, runId: 'next-pass', now: due, retry: true }).added, 1);
+    assert.equal(opened.discovery.advance({ ...owned('recovery'), now: due, retry: true }).deferred, true);
+    assert.equal(opened.discovery.advance({ limit: 1, ...owned('next-pass'), now: due, retry: true }).added, 1);
     assert.equal(opened.queue.current().discovery.groups[3].root, 1);
     assert.equal(opened.queue.current().discovery.groups[3].failure, undefined);
     assert.equal(opened.discovery.healthyPending(), true);
-    assert.equal(opened.discovery.advance({ runId: 'next-pass', now: due }).complete, true);
+    assert.equal(opened.discovery.advance({ ...owned('next-pass'), now: due }).complete, true);
+    assert.equal(opened.discovery.active(), null);
     assert.deepEqual(rows(opened.state).map(row => row.path), ['a', 'b', 'c'].map(name => join(path, name + '.jsonl')).concat(join(f.base, 'later/z.jsonl')));
     assert.equal(opened.state.get('capture-discovery-failure', 'last').runId, 'failed', 'recovery retains failure history');
   } finally { close(opened); }
@@ -181,13 +189,49 @@ test('a root refused before its first checkpoint cannot become an absent optiona
   const f = fixture(t), path = f.put('not-directory');
   const opened = f.open([{ source: 'aw', path }]), now = Date.parse('2026-01-01T00:00:00.000Z');
   try {
-    assert.throws(() => opened.discovery.advance({ runId: 'first', now }), /identity changed/);
+    assert.throws(() => opened.discovery.advance({ ...owned('first'), now }), /identity changed/);
     const failed = opened.queue.current().discovery.groups[3];
     assert.equal(failed.checkpoint, null); assert.equal(failed.failure.attempts, 1);
     fs.unlinkSync(path);
-    assert.throws(() => opened.discovery.advance({ runId: 'later', now: Date.parse(failed.failure.nextRetryAt), retry: true }), /ENOENT/);
+    assert.throws(() => opened.discovery.advance({ ...owned('later'), now: Date.parse(failed.failure.nextRetryAt), retry: true }), /ENOENT/);
     const pending = opened.queue.current();
     assert.equal(pending.discovered, false); assert.equal(pending.discovery.groups[3].root, 0);
     assert.equal(pending.discovery.groups[3].failure.attempts, 2); assert.deepEqual(rows(opened.state), []);
+  } finally { close(opened); }
+});
+
+test('owned page admission and atomic retirement survive publication rollback and reopen', t => {
+  const f = fixture(t); f.put('aw/a.jsonl');
+  const roots = [{ source: 'aw', path: join(f.base, 'aw') }], now = Date.parse('2026-01-01T00:00:00.000Z');
+  let opened = f.open(roots);
+  try {
+    const before = opened.queue.current(), set = opened.state.set.bind(opened.state), work = {};
+    opened.state.set = (kind, key, value) => {
+      set(kind, key, value); if (kind === 'capture-discovery-attempt') throw Error('injected admission rollback');
+    };
+    assert.throws(() => opened.discovery.advance({ ...owned('old'), now, work }), /admission rollback/);
+    assert.equal(opened.discovery.active(), null); assert.deepEqual(work, {});
+    assert.equal(opened.discovery.readers.size, 0, 'no reader work precedes admission commit');
+    assert.deepEqual(opened.queue.current(), before); assert.deepEqual(rows(opened.state), []);
+    opened.state.set = set;
+    const remove = opened.state.delete.bind(opened.state);
+    opened.state.delete = (kind, key) => {
+      remove(kind, key); if (kind === 'capture-discovery-attempt') throw Error('injected retirement rollback');
+    };
+    assert.throws(() => opened.discovery.advance({ ...owned('old'), now }), /retirement rollback/);
+    const attempt = opened.discovery.active();
+    assert.equal(attempt.runId, 'old'); assert.equal(attempt.workerNonce, 'worker-old');
+    assert.equal(attempt.group.checkpoint, null); assert.equal(attempt.scope, before.id);
+    assert.deepEqual(opened.queue.current(), before); assert.deepEqual(rows(opened.state), []);
+    close(opened); opened = f.open(roots);
+    assert.deepEqual(opened.discovery.active(), attempt);
+    opened.discovery.reconcile({ workerNonce: 'new-worker', pass: { runId: 'new-pass' } }, { now });
+    const pending = opened.queue.current().discovery.groups[3];
+    assert.equal(pending.failure.runId, 'old', 'replacement cannot relabel an older admission as a current-pass failure');
+    assert.equal(pending.failure.attemptedRun, 'old'); assert.equal(pending.failure.reason, 'interrupted');
+    assert.equal(pending.checkpoint, null); assert.equal(pending.complete, false);
+    assert.equal(opened.discovery.active(), null); assert.deepEqual(rows(opened.state), []);
+    assert.equal(opened.state.get('capture-run', 'current'), null, 'intent and reconciliation invent no processing counts');
+    assert.equal(opened.discovery.advance({ ...owned('new-pass'), now, retry: true }).deferred, true);
   } finally { close(opened); }
 });

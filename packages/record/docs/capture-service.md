@@ -761,8 +761,21 @@ Discovery completion means only enumeration ended; queued source processing,
 newly created streams, retries, cleanup and final index validation remain
 separate obligations.
 
-When the owning session supplies its run identity, a reader refusal commits
-private root-failure evidence and format rotation before propagating the error.
+When the owning session supplies its run and registered worker identity, each
+selected discovery unit first commits an attempt bound to that worker, run,
+sweep, plan, format/root and original checkpoint. This intent is not enumeration
+or processing progress. Reader work runs outside that transaction. Successful
+page/checkpoint publication retires the exact attempt in the same transaction;
+publication rollback preserves both the original checkpoint and the attempt.
+Before scheduling or opening run accounting, the registered replacement
+reconciles an ended predecessor's attempt into private pending root failure and
+backoff. The original run owns that failure; an observed current-pass process
+failure cannot be assigned to an older admission. Same-worker reconciliation
+and changed scope/plan/checkpoint are refused. This relies on the owning
+bootstrap ending the predecessor before registering its replacement.
+
+A caught reader refusal likewise commits private root-failure evidence and
+format rotation while retiring its attempt before propagating the error.
 The refused root keeps its exact checkpoint and stays incomplete. Its format
 cannot advance to later roots, but a replacement worker can discover other
 formats and process independent queued capture, index and cleanup work. The
@@ -779,7 +792,12 @@ a different directory never inherits its checkpoint. A deferred root keeps
 enumeration pending without blocking unrelated due work. These guarantees
 require functioning shared capture state: failure-evidence publication and
 page/checkpoint storage errors propagate, and cannot promise independent
-progress. They are not converted into isolated root failures.
+progress. An unfinished attempt can be reconciled only once the shared state
+is usable again. Owned discovery adds one admission transaction per selected
+page; page publication and retirement share the existing page transaction
+(with its nested queue savepoint). Final storage accounting must include these
+commits, retry/reconciliation transactions and actual synchronization cost;
+no lower fsync-cost claim follows from connection reuse.
 
 `capture-source-work.mjs` joins one selected source group to those queue
 checkpoints and `CaptureRun` accounting. Locks precede the admission commit and

@@ -2,21 +2,23 @@
 // this module enumerates supplied roots without opening transcript/log content.
 // Pages and their positions commit together; enumeration never grants success.
 import { readdirSync, statSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 import { NativeCaptureDiscovery } from "./capture-discovery.mjs";
 import { SESSION_FORMATS } from "./formats.mjs";
 import { awStream } from "./capture-aw.mjs";
 import { guardCapturedPath } from "./native-history.mjs";
-import { retryAfterAttempt } from "./capture-failures.mjs";
+import { FAILURE_REASONS, retryAfterAttempt } from "./capture-failures.mjs";
 import { CaptureStop } from "./capture-budget.mjs";
 
 const sources = ["cc", "pi", "codex", "aw"];
+const attemptsKind = "capture-discovery-attempt";
+const text = value => typeof value === "string" && value.length > 0;
 const identity = stat => ({ dev: String(stat.dev), ino: String(stat.ino) });
 const sameIdentity = (a, b) => a?.dev === b?.dev && a?.ino === b?.ino;
 const validName = name => typeof name === "string" && name && name !== "." && name !== ".." && !/[\/\\\0]/.test(name);
 const validFailure = row => row && typeof row.runId === "string" && row.runId &&
-  typeof row.attemptedRun === "string" && row.attemptedRun && row.reason === "io" &&
+  typeof row.attemptedRun === "string" && row.attemptedRun && FAILURE_REASONS.includes(row.reason) &&
   Number.isSafeInteger(row.attempts) && row.attempts > 0 && typeof row.nextRetryAt === "string" &&
   Number.isFinite(Date.parse(row.nextRetryAt)) && new Date(row.nextRetryAt).toISOString() === row.nextRetryAt;
 
@@ -106,14 +108,71 @@ export class CaptureSourceDiscovery {
 
   healthyPending() { return this.current().groups.some(group => !group.complete && !group.failure); }
 
+  active() {
+    const attempt = this.queue.state.get(attemptsKind, this.queue.owner);
+    if (attempt !== null && (![attempt?.id, attempt?.runId, attempt?.workerNonce].every(text) ||
+        attempt.scope !== this.queue.current().id || attempt.plan !== this.plan ||
+        !Number.isSafeInteger(attempt.index) || attempt.index < 0 || attempt.index >= sources.length ||
+        attempt.source !== sources[attempt.index] || !text(attempt.path) || !attempt.group || attempt.group.complete !== false ||
+        !Number.isSafeInteger(attempt.group.root) || attempt.group.root < 0 || attempt.group.root >= this.roots[attempt.index].length ||
+        attempt.path !== this.roots[attempt.index][attempt.group.root]))
+      throw new Error("invalid capture discovery admission");
+    return attempt;
+  }
+
+  admitted(attempt) {
+    if (JSON.stringify(this.active()) !== JSON.stringify(attempt) ||
+        JSON.stringify(this.current().groups[attempt.index]) !== JSON.stringify(attempt.group))
+      throw new Error("capture discovery admission or checkpoint changed");
+  }
+
+  failed(attempt, reason, now) {
+    if (!FAILURE_REASONS.includes(reason)) throw new Error("invalid discovery interruption reason");
+    this.queue.state.transaction(() => {
+      this.admitted(attempt);
+      const row = this.current(), group = row.groups[attempt.index];
+      const attempts = (group.failure?.attempts ?? 0) + 1;
+      group.failure = { runId: attempt.runId, attemptedRun: attempt.runId, reason,
+        attempts, nextRetryAt: retryAfterAttempt(attempts, now) };
+      row.next = (attempt.index + 1) % sources.length;
+      this.queue.add([], row);
+      this.queue.state.set("capture-discovery-failure", "last", { runId: attempt.runId, reason,
+        scope: attempt.scope, source: attempt.source, path: attempt.path });
+      this.queue.state.delete(attemptsKind, this.queue.owner);
+    });
+  }
+
+  // Owning bootstrap has registered the new worker and ended its predecessor.
+  // Never infer stream/frame attribution from this metadata-only operation.
+  reconcile(start, { reason = "interrupted", now = Date.now() } = {}) {
+    if (this.queue.state.depth || !text(start?.workerNonce) || !text(start.pass?.runId) ||
+        !Number.isSafeInteger(now) || now < 0) throw new Error("invalid discovery replacement");
+    const attempt = this.active();
+    if (!attempt) return null;
+    if (attempt.workerNonce === start.workerNonce) throw new Error("capture discovery worker has not been replaced");
+    this.failed(attempt, reason, now);
+    this.clear();
+    return attempt;
+  }
+
+  publish(inputs, row, complete, attempt) {
+    if (!attempt) return this.queue.add(inputs, row, { complete });
+    this.queue.state.transaction(() => {
+      this.admitted(attempt);
+      this.queue.add(inputs, row, { complete });
+      this.queue.state.delete(attemptsKind, this.queue.owner);
+    });
+  }
+
   // Only the owning session supplies run identity. Direct readers keep their
   // refusal/rollback contract; discovery errors never become stream failures.
-  advance({ limit = 128, stopped = () => false, work, runId = null, now = Date.now(), retry = false } = {}) {
+  advance({ limit = 128, stopped = () => false, work, runId = null, workerNonce = null, now = Date.now(), retry = false } = {}) {
     if (this.closed || this.queue.state.depth || !Number.isSafeInteger(limit) || limit < 1 || limit > 128 || typeof stopped !== "function")
       throw new Error("invalid capture source discovery unit");
-    if (typeof retry !== "boolean" || runId !== null && (typeof runId !== "string" || !runId) ||
+    if (typeof retry !== "boolean" || (runId === null ? workerNonce !== null : !text(runId) || !text(workerNonce)) ||
         retry && runId === null || !Number.isSafeInteger(now) || now < 0)
       throw new Error("invalid capture discovery failure context");
+    if (this.active()) throw new Error("unreconciled capture discovery admission");
     if (stopped()) return { visited: 0, added: 0, stopped: true, complete: false };
     const row = this.current();
     if (this.queue.current().discovered) return { visited: 0, added: 0, complete: true };
@@ -131,6 +190,13 @@ export class CaptureSourceDiscovery {
       return { visited: 0, added: 0, complete: true };
     }
     const group = row.groups[index], source = sources[index], path = this.roots[index][group.root];
+    const attempt = runId === null ? null : { id: randomUUID(), runId, workerNonce,
+      scope: this.queue.current().id, plan: this.plan, index, source, path, group: structuredClone(group) };
+    if (attempt) this.queue.state.transaction(() => {
+      if (this.active() || JSON.stringify(this.current()) !== JSON.stringify(row))
+        throw new Error("capture discovery changed before admission");
+      this.queue.state.set(attemptsKind, this.queue.owner, attempt);
+    });
     try {
       let cached = this.readers.get(source);
       const checkpoint = JSON.stringify(group.checkpoint);
@@ -150,18 +216,11 @@ export class CaptureSourceDiscovery {
         result = cached.reader.advance({ limit, stopped, work });
       }
       catch (error) {
-        if (runId !== null && !(error instanceof CaptureStop)) {
+        if (attempt && !(error instanceof CaptureStop)) {
           // Keep the exact rejected checkpoint/root. Publishing the failure and
           // rotation together lets a replacement reach safe independent work.
           // A storage failure here still propagates: it is not a root refusal.
-          const attempts = (group.failure?.attempts ?? 0) + 1;
-          group.failure = { runId, attemptedRun: runId, reason: "io", attempts, nextRetryAt: retryAfterAttempt(attempts, now) };
-          row.next = (index + 1) % sources.length;
-          this.queue.state.transaction(() => {
-            this.queue.add([], row);
-            this.queue.state.set("capture-discovery-failure", "last", { runId, reason: "io",
-              scope: this.queue.current().id, source, path });
-          });
+          this.failed(attempt, "io", now);
         }
         throw error;
       }
@@ -177,7 +236,7 @@ export class CaptureSourceDiscovery {
       const complete = row.groups.every(group => group.complete);
       // A transaction failure must discard the advanced volatile walker. The
       // next attempt reloads the last durable page, with idempotent insertion.
-      this.queue.add(inputs, row, { complete });
+      this.publish(inputs, row, complete, attempt);
       cached.checkpoint = JSON.stringify(group.checkpoint);
       if (result.complete) { cached.reader.close(); this.readers.delete(source); }
       return { source, visited: result.visited, added: inputs.length, complete };
