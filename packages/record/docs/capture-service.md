@@ -1508,8 +1508,7 @@ setup summary:
 ```
 
 A caller reads a nonzero exit with this block as "these changes were made",
-never as "nothing happened". Setup has no `--json` mode; a machine-readable
-rendering of the same value is follow-up awebai/oats#1330.
+never as "nothing happened". Setup has no `--json` mode.
 
 Fake-manager and isolated CLI fixtures exercise this ordering and refusal
 contract. Real-manager cases live in `test/capture-service-real-darwin.test.mjs`

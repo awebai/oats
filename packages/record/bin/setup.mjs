@@ -195,8 +195,7 @@ function prepareHooks() {
 // --------------------------------------------------------------------- run
 // Once setup starts changing things it ends with one setup summary: fixed
 // labels, one item per line, the same order on every run, so a nonzero exit
-// never reads as "nothing happened". It is held as one value; a machine
-// rendering is follow-up awebai/oats#1330.
+// never reads as "nothing happened". It is held as one value.
 const oneLine = text => String(text).replace(/\s*[\r\n]+\s*/g, " ");
 const rerun = `${SETUP_COMMAND} --owner ${shellWord(owner)} --root ${shellWord(root)}${args["no-hooks"] ? " --no-hooks" : ""}${args["replace-service"] ? " --replace-service" : ""}`;
 const summary = { hooks: [], firstPass: "not run", service: "not changed", remedy: "none" };
