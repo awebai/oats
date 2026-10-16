@@ -7,7 +7,7 @@ import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
 import { capabilityRow } from "../workspace-catalog.mjs";
 import { renderCapabilityPage, renderSoulCapabilities, renderSoulCore, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, catalogNotice, catalogNoticeKind, updateCatalogNotice } from "../capability-page.mjs";
-import { spawnRefusal, cantSpawnLine } from "../../../client/soul-facts.mjs";
+import { spawnRefusal, cantSpawnLine, soulMatches } from "../../../client/soul-facts.mjs";
 import { createCapabilityContents, capabilityContentsCSS } from "../capability-contents.mjs";
 import { sourceQuoteCSS } from "../source-quote.mjs";
 import { soulInstructionsCSS } from "../soul-instructions.mjs";
@@ -19,7 +19,7 @@ import { DESKTOP_TERMS } from "../desktop-terms.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
 import { SPAWN_DIALOG_KEYS, SPAWN_JUMPS, registerSpawnDialogKeys, ariaKeyShortcuts } from "../spawn-dialog-keys.mjs";
 import { pendingPlacement } from "../spawn-jobs.mjs";
-import { spawnProblem, catalogProblem } from "../../../client/spawn-messages.mjs";
+import { spawnProblem, catalogProblem, soulCatalogFailure } from "../../../client/spawn-messages.mjs";
 import { spawnText } from "../spawn-words.mjs";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../identity-marks.mjs";
 import { shownLaunch, launchHarnessName } from "../../../client/launch-view.mjs";
@@ -794,15 +794,11 @@ function settleGridState(s, souls) {
     // data already on screen only fail() runs — succeed() first would rebuild the line under a focused
     // Retry and announce the failure again on every poll (the hierarchy's rule).
     if (agents.length && !load.hasData) load.succeed({ observedAt });
-    load.fail({ message: catalogReasonText(reason), code: typeof reason.code === "string" ? reason.code : null }, { observedAt }); return;
+    load.fail({ message: soulCatalogFailure(reason), code: typeof reason.code === "string" ? reason.code : null }, { observedAt }); return;
   }
   if (s.deployment && s.deployment.status !== "observed") { load.defer(); return; }
   if (!agents.length && souls.refreshing === true) { load.defer({ keepSkeleton: true }); return; }
   load.succeed({ observedAt, empty: !agents.length });
-}
-function catalogReasonText(reason) {
-  const message = typeof reason?.message === "string" && reason.message ? reason.message : "";
-  return message ? `Couldn't read this workspace's souls: ${message}` : "Couldn't read this workspace's souls.";
 }
 /** Pending: one group's worth of card skeletons at the real card size — one row plus one. */
 function gridSkeleton(s) {
@@ -819,8 +815,7 @@ function gridSkeleton(s) {
 
 function matches(s, a) {
   if (!s.filterText) return true;
-  const t = s.filterText.toLowerCase();
-  return [a.name, a.description, a.repoName].some((v) => String(v || "").toLowerCase().includes(t));
+  return soulMatches(a, s.filterText);
 }
 
 function renderGrid(s, { restoreFocus = true } = {}) {

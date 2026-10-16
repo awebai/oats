@@ -1,7 +1,7 @@
 /** POST /api/workspace-sync — the Desktop's workspace-v2 sync surface.
  *   { action: "read", refresh? } → `oats capabilities` (the catalog table)
  *   { action: "sync" }           → `oats sync` (resolve, fetch and write the lock)
- * A read answers from the capability catalog (server/capability-catalog.mjs)
+ * A read answers from the capability catalog (packages/client/capability-catalog.mjs)
  * when one is given and the deployment's workspace status is already
  * observed: the held table comes back at once, with `observedAt` (when the
  * kernel observed the remotes) and `refreshing` (a re-read is running behind

@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { identityCSS } from '../renderer/identity-marks.mjs';
-import { catalogCSS, renderCapabilities, renderCapabilitySections, capabilitySections, syncCapabilityNav } from '../renderer/workspace-catalog.mjs';
+import { catalogCSS, renderCapabilities, renderCapabilitySections, syncCapabilityNav } from '../renderer/workspace-catalog.mjs';
+import { capabilitySections } from '../../client/capability-rows.mjs';
 
 const themeCSS = readFileSync(new URL('../renderer/theme.css', import.meta.url), 'utf8');
 

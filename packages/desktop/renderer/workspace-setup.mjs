@@ -8,7 +8,7 @@
  * and team defaults as declared; each is shown only when reported. */
 import { iconElement } from './shell-icons.mjs';
 import { memberState, MEMBER_PROBLEMS } from './workspace-catalog.mjs';
-import { packageOrigin } from './capability-page.mjs';
+import { packageOrigin } from '../../client/capability-facts.mjs';
 
 export const setupCSS = `
 /* Type scale (spec "Type hierarchy", shared with the Teams tab): screen title 24/700, section 18/650,

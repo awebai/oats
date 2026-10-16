@@ -18,7 +18,7 @@ import { soulTeams } from './teams-panel.mjs';
 import { memberLabel } from '../../client/deployment-facts.mjs';
 import { compositionEntries, coreEntries, coreNote, whyTag } from './capability-page.mjs';
 import { desktopFacts } from '../../client/soul-facts.mjs';
-import { layerLabel } from './workspace-catalog.mjs';
+import { layerLabel } from '../../client/capability-rows.mjs';
 import { createDataState, statusLine, captureFocusState } from './loading.mjs';
 import { instanceStatusIdentity } from './instance-status-identity.mjs';
 import { readingFrom, relayedFailure, remoteInspectBlock, serverLabel } from '../../client/remote-address.mjs';

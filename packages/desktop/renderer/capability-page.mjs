@@ -6,7 +6,9 @@
  * workspace status. Nothing here is inferred — unreported facts are not shown. */
 import { createSoulMark } from './identity-marks.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { capabilitySource, capabilityUse, capabilityRow, memberNames, layerLabel, sourceChip, soulsUsing, rosterAgentName } from './workspace-catalog.mjs';
+import { capabilityRow, sourceChip } from './workspace-catalog.mjs';
+import { memberNames, layerLabel, capabilityUsers } from '../../client/capability-rows.mjs';
+import { capabilityFacts, CAPABILITY_COPY } from '../../client/capability-facts.mjs';
 import { skeleton, noticeElement, updateNotice, failedElement, updateFailed, isOldObservation, ROSTER_STALE_TITLE, SOULS_STALE_TITLE } from './loading.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 import { displayLine } from '../../client/display-text.mjs';
@@ -135,7 +137,6 @@ export const soulCapabilitiesCSS = `
 
 const text = v => typeof v === 'string' && v ? v : null;
 const list = v => Array.isArray(v) ? v : [];
-const short = v => typeof v === 'string' && /^[0-9a-f]{40}$/i.test(v) ? v.slice(0, 7) : v;
 
 function el(doc, tag, value, cls) {
   const node = doc.createElement(tag);
@@ -194,14 +195,6 @@ export function pageFacts(doc, entries) {
 const LAYER_ICONS = { knowledge: 'knowledge', messaging: 'mail', tasks: 'tasks' };
 /** A core capability's icon (book, mail, checklist), else package or repository. */
 export const capabilityIcon = row => LAYER_ICONS[row?.layer] || (row?.kind === 'package' ? 'package' : 'repo');
-
-/** Where a package comes from, in workspace status terms: the official catalog or a git source. */
-export function packageOrigin(source) {
-  if (!text(source)) return null;
-  if (source.startsWith('catalog:')) return 'official catalog';
-  const git = /^git:(?:[a-z]+:\/\/)?(?:[^@/]+@)?([^/:@]+)/i.exec(source);
-  return git ? `git · ${git[1]}` : source;
-}
 
 /** Which age line a page mirroring the catalog's controller shows: 'stale' (the read failed: Retry, the
  * cause behind Details), 'observed' (an old observation) or null (current). `state`: the controller's
@@ -269,8 +262,10 @@ export function renderCapabilityPage(host, { row, status, instances, souls = [],
   if (text(row.description)) copy.append(node('p', row.description, 'page-lede'));
   else if (catalogPending) { const lede = skeleton(doc, 'line', { width: '55%' }); lede.classList.add('page-lede'); copy.append(lede); }
   identity.append(glyph, copy); main.append(identity);
+  // What the catalog reports about it (capability-facts.mjs): Comes from, and what it provides.
+  const reported = capabilityFacts(row, { status });
   // Kernel #217: what it provides, by name (the manifest's skills, commands and hooks).
-  let kinds = [['Skills', row.skills], ['Commands', row.commands], ['Hooks', row.hooks]].filter(([, v]) => v !== undefined);
+  let kinds = reported.provides;
   // Provides: the commands the resolved capability declares (inspect operations), when opened from a soul.
   if (from && resolved) {
     const commands = list(resolved.operations).map(op => list(op.argv).filter(part => typeof part === 'string' && part).join(' ') || op.name).filter(Boolean);
@@ -284,52 +279,38 @@ export function renderCapabilityPage(host, { row, status, instances, souls = [],
   // what is open in its reader survives a catalog repaint. In both forms: the catalog's and a soul's.
   if (contents) main.append(contents);
   // Used by: with `composition` (souls-capabilities) the souls whose composition includes it, each with its live
-  // instances carrying it; before, the souls whose instances carry it (roster module rows).
-  const use = composition ? { souls: soulsUsing(souls, row) } : capabilityUse(instances, row.name);
+  // instances carrying it; before, the souls whose instances carry it (roster module rows). capabilityUsers is the rule.
+  const users = capabilityUsers(row, { souls, instances, composition });
   const staleTitle = composition ? SOULS_STALE_TITLE : ROSTER_STALE_TITLE;
   // "Used by" derives from the souls list and the roster (one read): with none, the claim needs a settled good read.
   const rosterGood = rosterState === 'ready' || rosterState === 'empty';
-  const used = pageSection(doc, 'Used by', use.souls.length || rosterGood ? `${use.souls.length} soul${use.souls.length === 1 ? '' : 's'}` : '');
+  const used = pageSection(doc, CAPABILITY_COPY.usedBy, users.length || rosterGood ? CAPABILITY_COPY.souls(users.length) : '');
   const table = node('div', undefined, 'page-table'); table.setAttribute('role', 'table'); table.setAttribute('aria-label', `Souls using ${row.name}`);
   const head = node('div', undefined, 'page-table-row head used-row'); head.setAttribute('role', 'row');
   for (const label of ['Soul', 'Instances']) { const cell = node('span', label); cell.setAttribute('role', 'columnheader'); head.append(cell); }
   table.append(head);
-  if (!use.souls.length) {
-    if (rosterGood) table.append(node('p', composition ? 'No soul here includes it.' : 'No instance carries it yet.', 'page-note page-table-row'));
+  if (!users.length) {
+    if (rosterGood) table.append(node('p', composition ? CAPABILITY_COPY.noSoul : CAPABILITY_COPY.noInstance, 'page-note page-table-row'));
     else { const none = node('p', '—', 'page-note page-table-row used-unknown'); none.title = staleTitle; none.setAttribute('aria-description', staleTitle); none.dataset.rosterState = rosterState; table.append(none); }
   }
-  for (const soul of use.souls) {
-    // A soul's instances: the roster's agent name (a package soul's is `<package>--<soul>`) within its agents root.
-    const agent = composition ? rosterAgentName(soul) : soul.name;
-    const carrying = list(instances).filter(i => i.agent === agent && i.agentsRoot === soul.agentsRoot && moduleRow(i, row.name));
-    const behind = carrying.filter(i => moduleRow(i, row.name)?.status === 'moved').length;
+  for (const { soul, carrying, behind } of users) {
     const line = typeof openSoul === 'function' ? node('button', undefined, 'page-table-row used-row') : node('div', undefined, 'page-table-row used-row');
     line.setAttribute('role', 'row');
     // The tooltip and focus key name the soul by its key (two package souls may share a bare name).
     if (line.tagName === 'BUTTON') { line.type = 'button'; line.addEventListener('click', () => openSoul(soul)); line.title = `Open ${soul.key || soul.name}`; line.dataset.focusKey = `used:${soul.key || soul.name}:${soul.agentsRoot || ''}`; }
     const who = node('span', undefined, 'used-soul'); who.setAttribute('role', 'cell'); who.append(createSoulMark(doc, soul), node('span', soul.name, 'used-name'));
-    const meta = node('span', `${carrying.length}${behind ? ` · ${behind} on an older version` : ''}`, `used-meta${behind ? ' warn' : ''}`); meta.setAttribute('role', 'cell');
+    const meta = node('span', `${carrying.length}${behind ? ` · ${CAPABILITY_COPY.behind(behind)}` : ''}`, `used-meta${behind ? ' warn' : ''}`); meta.setAttribute('role', 'cell');
     line.append(who, meta); table.append(line);
   }
   used.append(table); main.append(used);
   // Comes from: what workspace status and the catalog report about its source.
-  const names = memberNames(status), source = capabilitySource(row, names);
-  const pkg = row.kind === 'package' ? list(status?.packages).find(p => p.id === row.package) : null;
-  const origin = pageCard(doc, 'Comes from', { icon: row.kind === 'package' ? 'package' : 'repo' });
+  const origin = pageCard(doc, CAPABILITY_COPY.comesFrom, { icon: row.kind === 'package' ? 'package' : 'repo' });
   if (catalogPending && row.kind !== 'package') {
     // The catalog's facts (Latest, Path, Fingerprint, File) are not read yet: a facts-sized block, filled in place when they land.
     const facts = node('div', undefined, 'page-facts-skeleton'); facts.setAttribute('aria-hidden', 'true'); facts.dataset.skeleton = 'facts';
     for (let i = 0; i < 4; i++) facts.append(skeleton(doc, 'line'));
     origin.card.append(facts);
-  } else origin.card.append(pageFacts(doc, row.kind === 'package' ? [
-    ['Package', row.package], ['Pinned', [row.version, packageOrigin(pkg?.source)].filter(Boolean).join(' · ')],
-    ['Commit', short(row.commit), row.commit], ['Fingerprint', fingerprint(pkg?.integrity || row.resolved?.from?.integrity), pkg?.integrity || row.resolved?.from?.integrity],
-  ] : [
-    ['Repository', source.label, row.repoKey], ['Latest', short(row.commit), row.commit], ['Path', row.path],
-    // Kernel #217: a member capability's fingerprint is the Git tree of its directory.
-    ['Fingerprint', short(row.tree), row.tree],
-    ...(row.private === true ? [['Owned', 'this repo\'s souls only']] : []),
-  ]));
+  } else origin.card.append(pageFacts(doc, reported.origin));
   // Kernel #217: its manifest file, as a web page when the repository has one, else its path.
   if (row.file && text(row.file.path) && !(catalogPending && row.kind !== 'package')) {
     const web = typeof row.file.url === 'string' && /^https:\/\//.test(row.file.url) ? row.file.url : null;
@@ -370,15 +351,15 @@ export function renderCapabilityPage(host, { row, status, instances, souls = [],
  * names null when not listable (a spawn of it would refuse) or [] for none. `last`: a row built elsewhere
  * (the Trigger sources row), appended after them. */
 function providesSection(doc, kinds, last = null) {
-  const section = pageSection(doc, 'Provides');
+  const section = pageSection(doc, CAPABILITY_COPY.provides);
   const card = el(doc, 'dl', null, 'page-card provides-card');
   for (const [label, names] of kinds) {
     const row = el(doc, 'div', null, 'provides-row'); row.dataset.provides = label.toLowerCase();
     const term = el(doc, 'dt', null, 'provides-kind'); term.append(el(doc, 'span', label));
     if (Array.isArray(names)) term.append(el(doc, 'span', String(names.length), 'provides-count'));
     const value = el(doc, 'dd', null, 'provides-items');
-    if (names === null) value.append(el(doc, 'span', 'Not listable: a spawn of it would refuse.', 'page-note'));
-    else if (!names.length) value.append(el(doc, 'span', 'None', 'page-note'));
+    if (names === null) value.append(el(doc, 'span', CAPABILITY_COPY.unlistable, 'page-note'));
+    else if (!names.length) value.append(el(doc, 'span', CAPABILITY_COPY.none, 'page-note'));
     else for (const name of names) value.append(el(doc, 'code', name, 'provides-chip'));
     row.append(term, value); card.append(row);
   }
@@ -421,17 +402,6 @@ export function fillTriggerSourcesRow(row, view) {
   }
   row.replaceChildren(term, value);
 }
-/** sha256-<64 hex> → sha256:9f2c…a71e (the full value stays in the title). */
-export function fingerprint(integrity) {
-  const m = /^sha256-([0-9a-f]{64})$/i.exec(integrity || '');
-  return m ? `sha256:${m[1].slice(0, 4)}…${m[1].slice(-4)}` : text(integrity);
-}
-
-function moduleRow(instance, name) {
-  const rows = Array.isArray(instance.modules) ? instance.modules : Object.entries(instance.modules || {}).map(([key, row]) => ({ name: key, ...row }));
-  return rows.find(m => m?.name === name) || null;
-}
-
 /** The three core capabilities (a soul's `layers`), in the order every surface shows them. */
 export const CORE_SLOTS = Object.freeze(['knowledge', 'messaging', 'tasks']);
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);

@@ -202,7 +202,21 @@ each make and drive; a problem's and an outcome's words (`spawn-messages.mjs`:
 a shared `fact` and a `next` code, which `renderer/spawn-words.mjs` says in the
 Desktop's words); the preview's facts (`spawn-preview-facts.mjs`
 `previewFacts`); and the untouched choices (`spawn-preview-contract.mjs`
-`defaultSpawnChoices`).
+`defaultSpawnChoices`). Two of a soul's rules sit beside them, so the page can
+load them: the soul filter (`soul-facts.mjs` `soulMatches`) and the sentence of
+a failed catalog read (`spawn-messages.mjs` `soulCatalogFailure`).
+
+It holds a deployment's capabilities as every client reads them: the
+capability table (`capability-catalog.mjs` `createCapabilityCatalog`, over the
+same holding rules: a factory made with the client's terms and an optional
+`exec`, whose `settle` answers what is held and what is still coming), a
+capability row's rules (`capability-rows.mjs`: its source and group, the
+sections and the search, and who uses it, `capabilityUsers`), and its facts as
+the capability page shows them (`capability-facts.mjs` `capabilityFacts`, with
+the page's own words in `CAPABILITY_COPY`). The backend makes the table and owns
+it; the page loads the other two. And it holds the house fuzzy matcher
+(`subsequence-score.mjs` `subsequenceScore`), one copy for the Desktop's palette
+and Quick Open and the TUI's palette and switcher.
 
 - **What it holds.** `.mjs` modules and nothing else, in one flat directory:
   no test, fixture, script or manifest, and no subdirectory. A module there

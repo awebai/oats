@@ -31,8 +31,8 @@ published as `observed` with no instances, never left `pending`. For each:
 
 The holding rules live once, in the shared home's `keyed-catalog.mjs`
 (`packages/client/`), and the two catalogs are thin wrappers over it
-(`packages/client/soul-catalog.mjs`, which every client makes with its own
-terms, and the Desktop's `server/capability-catalog.mjs`). Each is a factory
+(`packages/client/soul-catalog.mjs` and `packages/client/capability-catalog.mjs`,
+which every client makes with its own terms). Each is a factory
 the client owns: nothing is held at module level, so two catalogs share no
 flight and no held entry:
 

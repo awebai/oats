@@ -31,7 +31,7 @@ import { teamsAnswer } from './computer-teams.mjs';
 import { relayedFailure, serverLabel } from '../../client/remote-address.mjs';
 import { ageText } from './age-text.mjs';
 import { pageBar, pageCard, pageSection, isCoreCapability, compositionEntries, coreEntries, coreNote, whyElement, renderSoulCore } from './capability-page.mjs';
-import { layerLabel } from './workspace-catalog.mjs';
+import { layerLabel } from '../../client/capability-rows.mjs';
 import { launchHarnessName, launchModelText, launchFromText, declaredText } from '../../client/launch-view.mjs';
 import { soulFacts, desktopFacts, workText, cantSpawnLine } from '../../client/soul-facts.mjs';
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from './loading.mjs';

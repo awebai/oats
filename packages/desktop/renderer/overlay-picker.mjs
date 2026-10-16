@@ -3,28 +3,11 @@
 // Enter runs the active row, Esc/backdrop closes. Extracted from palette.mjs
 // so Quick Open (⌘P / Ctrl+Shift+P) and the palette (⌘K / Ctrl+Shift+K) share ONE overlay + fuzzy
 // implementation instead of duplicating chrome, a11y roles, and the
-// stale-load generation guard.
-//
-// The house fuzzy matcher: simple subsequence scoring — lower is better,
-// null means no match, a prefix match gets a strong (negative) bonus.
-// (No-match is null, NOT -1: the prefix bonus makes real scores negative,
-// and the palette's legacy `sc < 0` no-match filter silently dropped exact
-// prefix matches — fixed with this extraction.)
+// stale-load generation guard. The fuzzy matcher both filter with is the
+// shared home's subsequenceScore (packages/client/subsequence-score.mjs).
 import { captureFocusReturn } from "./focus-return.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { icon } from "./shell-icons.mjs";
-
-export function subsequenceScore(text, query) {
-  const t = String(text).toLowerCase();
-  const s = String(query).toLowerCase();
-  let ti = 0, gaps = 0;
-  for (const ch of s) {
-    const found = t.indexOf(ch, ti);
-    if (found < 0) return null;
-    gaps += found - ti; ti = found + 1;
-  }
-  return gaps + (t.startsWith(s) ? -100 : 0);
-}
 
 let nextPickerId = 0;
 // A document has one picker lifetime, not a stack of modal focus traps.

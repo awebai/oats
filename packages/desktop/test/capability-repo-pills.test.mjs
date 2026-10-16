@@ -6,8 +6,9 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import * as catalog from '../renderer/workspace-catalog.mjs';
 import { groupHeading, groupHeadingCSS } from '../renderer/group-heading.mjs';
+import { groupCapabilities, capabilitySections, memberNames } from '../../client/capability-rows.mjs';
 
-const { catalogCSS, renderRepoPills, repoChoices, groupCapabilities, filterCapabilities, renderCapabilitySections, capabilitySections, memberNames } = catalog;
+const { catalogCSS, renderRepoPills, repoChoices, filterCapabilities, renderCapabilitySections } = catalog;
 const themeCSS = readFileSync(new URL('../renderer/theme.css', import.meta.url), 'utf8');
 const spawnSource = readFileSync(new URL('../renderer/views/spawn.mjs', import.meta.url), 'utf8');
 

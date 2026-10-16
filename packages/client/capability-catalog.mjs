@@ -4,15 +4,20 @@
  * never on every poll or view open. The holding rules (one flight per
  * deployment, last good table kept with the failure next to it, retry after
  * RETRY_MS, unbound prefetch bound by the same cycle's settle) are
- * keyed-catalog.mjs's; this module is the kernel read, the key and the shape. */
-import { cliWorkspace } from '../../client/workspace-cli.mjs';
-import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
-import { capabilitiesData, observationData } from '../../client/deployment-data.mjs';
-import { soulCatalogKey } from '../../client/soul-catalog.mjs';
-import { createKeyedCatalog } from '../../client/keyed-catalog.mjs';
+ * keyed-catalog.mjs's; this module is the kernel read, the key and the shape.
+ *
+ * A client makes its own catalog and owns it: nothing is held at module level, so two catalogs
+ * share no flight and no held entry. It takes the client's terms (client-terms.mjs), which the
+ * default kernel read words its refusals with, and an optional `exec` that read runs the CLI
+ * through (cli-adapter.mjs `runJson`'s `io.exec`). */
+import { cliWorkspace } from './workspace-cli.mjs';
+import { requireTerms } from './client-terms.mjs';
+import { capabilitiesData, observationData } from './deployment-data.mjs';
+import { soulCatalogKey } from './soul-catalog.mjs';
+import { createKeyedCatalog } from './keyed-catalog.mjs';
 
 export const CAPABILITY_CATALOG_RETRY_MS = 60_000;
-/** Desktop-side transport/probe codes (workspace-cli.mjs); any other code on
+/** The client's own transport/probe codes (workspace-cli.mjs); any other code on
  * an ok:false result is the kernel's own refusal, reported verbatim. */
 const LOCAL_CODES = new Set(['E_CLI_UNAVAILABLE', 'E_WORKSPACE_FEATURE', 'E_CLI_FAILED', 'E_CLI_PROTOCOL', 'E_CLI_TIMEOUT', 'E_CLI_OUTPUT_LIMIT']);
 
@@ -34,7 +39,8 @@ export function capabilityCatalogKey(cli, workspaceStatus) {
     ws.lock ? [ws.lock.path ?? null, ws.lock.lockfileVersion ?? null] : null]);
 }
 
-export function createCapabilityCatalog({ invoke = (cli, options) => cliWorkspace(cli, options, DESKTOP_TERMS), now = () => Date.now() } = {}) {
+export function createCapabilityCatalog({ terms, exec, invoke = (cli, options) => exec ? cliWorkspace(cli, options, terms, { exec }) : cliWorkspace(cli, options, terms), now = () => Date.now() } = {}) {
+  requireTerms(terms, 'createCapabilityCatalog');
   async function read(deployment, cli, options) {
     let result;
     try { result = await invoke(cli, { action: 'capabilities', context: deployment, ...options }); }
@@ -49,12 +55,19 @@ export function createCapabilityCatalog({ invoke = (cli, options) => cliWorkspac
   const catalog = createKeyedCatalog({ read, retryMs: CAPABILITY_CATALOG_RETRY_MS, now });
   const project = (deployment, entry) => entry && { key: entry.key, capabilities: entry.value, reason: entry.reason, at: entry.at, observedAt: entry.observedAt, stale: entry.stale, refreshing: catalog.refreshing(deployment) };
   const key = (cli, workspaceStatus) => capabilityCatalogKey(cli, workspaceStatus);
+  /** Synchronous decision for this workspace state, as the soul catalog's: `entry` is what is held now and
+   * `pending` the read it started or joined (null when none), both projected. Never awaits. */
+  function settle(deployment, cli, workspaceStatus, options = {}) {
+    const { entry, pending } = catalog.settle(deployment, cli, key(cli, workspaceStatus), options);
+    return { entry: project(deployment, entry), pending: pending && pending.then(landed => project(deployment, landed)) };
+  }
   return {
     /** Cold cycle: start the read alongside the roster reads, before the key is known. */
     prefetch(deployment, cli, options = {}) { return catalog.prefetch(deployment, cli, options); },
     /** Bind this cycle's key: a read starts only when the held table is not for this state (or its
      * failure is old enough to retry) and none is in flight. Never awaits. */
     ensure(deployment, cli, workspaceStatus, options = {}) { catalog.settle(deployment, cli, key(cli, workspaceStatus), options); },
+    settle,
     /** The held table, immediately, whenever it is a healthy answer — a table past HELD_TTL_MS
      * included: then this request starts (or joins) one re-read behind it and the answer says
      * `refreshing` (stale-while-revalidate, request-driven: a Workspace-tab visit never waits for

@@ -6,7 +6,8 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS } from "../lib/actions.mjs";
-import { catalogFailure, model, paletteItems, roster, soulsOf } from "../lib/model.mjs";
+import { model, paletteItems, roster, soulsOf } from "../lib/model.mjs";
+import { soulCatalogFailure } from "../lib/client.mjs";
 import { reduce } from "../lib/store.mjs";
 import { CLI, DEPLOYMENT, catalogEntry, catalogSoul, instanceRow, observed, soulsTold, stateOf } from "./helpers.mjs";
 
@@ -65,7 +66,7 @@ test("what the loop holds of the catalog decides what the view says: reading bef
   const reason = { code: "E_CLI_FAILED", message: "oats souls exited 1" };
   const failed = view(soulsTold(opened, catalogEntry(null, { reason })));
   assert.deepEqual([failed.state, failed.failure, failed.list], ["failed", "Couldn't read this workspace's souls: oats souls exited 1", []]);
-  assert.equal(catalogFailure({ code: "E_CLI_FAILED", message: "" }), "Couldn't read this workspace's souls.");
+  assert.equal(soulCatalogFailure({ code: "E_CLI_FAILED", message: "" }), "Couldn't read this workspace's souls.");
   assert.equal(view(soulsTold(opened, catalogEntry(null, { reason }), { reading: true })).state, "reading", "a retry in flight after a failure");
   assert.equal(view(soulsTold(opened, catalogEntry([]))).state, "none");
   const rows = view(shown());
