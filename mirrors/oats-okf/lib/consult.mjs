@@ -45,26 +45,29 @@ const shown = p => '/' + p;
 export const cacheDir = (bindings, base) => join(bindings.stateDir, 'cache', `${identifier(base.id)}.git`);
 export const cacheLock = (bindings, base) => join(bindings.stateDir, 'cache', `${base.id}.lock`);
 const stateFile = cache => join(cache, 'okf-consult.json');
-function gitRun(cwd, args, { input, timeout = LOCAL_GIT_MS, maxBuffer = TEXT_BYTES, encoding = 'utf8' } = {}) {
+// GIT_ALLOW_PROTOCOL also blocks implicit promisor fetches on Git versions
+// predating GIT_NO_LAZY_FETCH. Offline checks must never turn into network I/O.
+const readEnv = offline => offline ? { ...gitEnv(), GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '' } : gitEnv();
+function gitRun(cwd, args, { input, timeout = LOCAL_GIT_MS, maxBuffer = TEXT_BYTES, encoding = 'utf8', offline = false } = {}) {
   return spawnSync('git', ['--no-replace-objects', '--literal-pathspecs', '-c', 'core.hooksPath=/dev/null', '-c', 'protocol.ext.allow=never', '-C', cwd, ...args],
-    { cwd, env: gitEnv(), input, timeout, maxBuffer, encoding });
+    { cwd, env: readEnv(offline), input, timeout, maxBuffer, encoding });
 }
 const gitError = r => Object.assign(new Error(`git failed: ${r.error?.message || r.stderr || `exit ${r.status}`}`), { code: r.error?.code === 'ETIMEDOUT' ? 'ETIMEDOUT' : 'E_COMMAND' });
-export function acceptedCommit(cache, base) {
-  const r = gitRun(cache, ['rev-parse', '--verify', '--quiet', `refs/heads/${base.acceptedBranch}^{commit}`]);
+export function acceptedCommit(cache, base, { offline = false } = {}) {
+  const r = gitRun(cache, ['rev-parse', '--verify', '--quiet', `refs/heads/${base.acceptedBranch}^{commit}`], { offline });
   const oid = r.status === 0 ? r.stdout.trim() : '';
   return /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(oid) ? oid : null;
 }
 /** The cache's bookkeeping, or null when the cache is absent or belongs to a
  *  different repository/branch (then it is rebuilt, never reinterpreted). */
-export function usableCache(cache, base) {
+export function usableCache(cache, base, { offline = false } = {}) {
   if (!fs.existsSync(cache)) return null;
   safePath(cache);
   let state;
   try { state = readJSON(stateFile(cache)); } catch { return null; }
   if (!obj(state) || state.version !== 1 || state.repository !== base.repository || state.acceptedBranch !== base.acceptedBranch) return null;
   try { verifyRemote(base, cache); } catch { return null; }
-  return acceptedCommit(cache, base) ? state : null;
+  return acceptedCommit(cache, base, { offline }) ? state : null;
 }
 function cloneCache(base, alias, dest) {
   preflightLocalRepository(base, alias);
@@ -89,24 +92,28 @@ function fetchAccepted(base, alias, cache) {
   try { requireNotShallow(base, alias, cache); } catch (e) { if (e.code === 'E_BASE_SHALLOW') throw e; unavailable(base, alias, 'fetch', e); }
   verifyRemote(base, cache);
 }
-function gitContext(bindings, alias, base, cache, state) {
-  const commit = acceptedCommit(cache, base);
+function gitContext(bindings, alias, base, cache, state, { offline = false } = {}) {
+  const commit = acceptedCommit(cache, base, { offline });
   if (!commit) unavailable(base, alias, 'fetch', new Error('cached accepted branch is missing'));
   const receipt = { base: alias, id: base.id, kind: 'git', commit, fetchedAt: state.fetchedAt, stale: !!state.error };
   if (state.error) receipt.reason = state.error;
   return { alias, base, bindings, kind: 'git', cache, commit, receipt };
 }
-function resolveGit(bindings, alias, base, { fresh = false } = {}) {
+function resolveGit(bindings, alias, base, { fresh = false, preferCached = false } = {}) {
   const cache = cacheDir(bindings, base), lock = cacheLock(bindings, base);
   fs.mkdirSync(dirname(cache), { recursive: true, mode: 0o700 });
   const due = s => fresh || Date.now() - Math.max(Date.parse(s.fetchedAt) || 0, Date.parse(s.attemptedAt) || 0) >= consultMaxAgeMs();
-  let state = usableCache(cache, base);
-  if (state && !due(state)) return gitContext(bindings, alias, base, cache, state);
+  const cachedContext = state => ({ ...gitContext(bindings, alias, base, cache, state, { offline: preferCached }), ...(preferCached ? { offline: true, refreshDue: due(state) } : {}) });
+  let state = usableCache(cache, base, { offline: preferCached });
+  // Spawn reuses the last accepted commit without renewing its freshness or
+  // clearing a failed-fetch receipt. A due node/owner resolution failure may
+  // retry normal resolution; successful spawns leave freshness to consultation.
+  if (state && (preferCached || !due(state))) return cachedContext(state);
   clearDeadCacheLock(lock);
   try {
     return withLock(lock, () => {
-      state = usableCache(cache, base);
-      if (state && !due(state)) return gitContext(bindings, alias, base, cache, state); // a peer just fetched
+      state = usableCache(cache, base, { offline: preferCached });
+      if (state && (preferCached || !due(state))) return cachedContext(state); // a peer just fetched
       const now = new Date().toISOString();
       if (!state) {
         const temp = join(dirname(cache), `.${base.id}.git.tmp-${randomUUID()}`);
@@ -152,7 +159,7 @@ export function clearDeadCacheLock(lock) {
 const repoPath = (ctx, p) => ctx.base.root === '.' ? p : (p ? `${ctx.base.root}/${p}` : ctx.base.root);
 const basePathOf = (ctx, p) => ctx.base.root === '.' ? p : p.slice(ctx.base.root.length + 1);
 function lsTree(ctx, p, { recursive = false } = {}) {
-  const r = gitRun(ctx.cache, ['ls-tree', '-z', ...(recursive ? ['-r'] : []), `${ctx.commit}:${repoPath(ctx, p)}`]);
+  const r = gitRun(ctx.cache, ['ls-tree', '-z', ...(recursive ? ['-r'] : []), `${ctx.commit}:${repoPath(ctx, p)}`], { offline: !!ctx.offline });
   if (r.status !== 0) throw gitError(r);
   return r.stdout.split('\0').filter(Boolean).map(line => {
     const tab = line.indexOf('\t'), [mode, type, oid] = line.slice(0, tab).split(' ');
@@ -233,10 +240,10 @@ function requireFile(ctx, p) {
 /** Run fn against one base at its accepted state. Git: the host cache (fetched
  *  per freshness rules). Directory: in place, under the base lock, refusing a
  *  pending publication exactly as staging does. */
-export function withBase(bindings, alias, { fresh = false } = {}, fn) {
+export function withBase(bindings, alias, { fresh = false, preferCached = false } = {}, fn) {
   if (typeof alias !== 'string' || !Object.hasOwn(bindings.bases, alias)) fail('E_BASE_UNKNOWN', `unknown base ${JSON.stringify(alias ?? null)}; bound bases: ${Object.keys(bindings.bases).join(', ')}`);
   const base = bindings.bases[alias];
-  if (base.kind === 'git') return fn(resolveGit(bindings, alias, base, { fresh }));
+  if (base.kind === 'git') return fn(resolveGit(bindings, alias, base, { fresh, preferCached }));
   noGit(base.path);
   return withLock(baseLock(base), () => {
     if (fs.existsSync(journalPath(base))) fail('E_RECOVERY', `publication pending: ${journalPath(base)}; retry its recorded run before reading`);
@@ -265,6 +272,50 @@ export function containedTarget(root, name) {
   if (target === resolve(root) || !within(root, target)) fail('E_PATH', `tree entry escapes its materialization root: ${JSON.stringify(name).slice(0, 200)}`);
   return safePath(target);
 }
+/** Read all validated tree entries with one Git process. Spool its raw output
+ *  outside the materialized tree: neither a whole-base Buffer nor a maxBuffer
+ *  cap may change which blob sizes validate. Batch framing is byte-oriented,
+ *  including newlines, NULs and multibyte UTF-8 inside object bodies. */
+function materializeBatch(ctx, rows, spool) {
+  if (!rows.length) return;
+  const output = fs.openSync(spool, 'wx', 0o600);
+  let result;
+  try {
+    result = spawnSync('git', ['--no-replace-objects', '-c', 'core.hooksPath=/dev/null', '-c', 'protocol.ext.allow=never', '-C', ctx.cache, 'cat-file', '--batch'], {
+      env: readEnv(!!ctx.offline), input: rows.map(r => r.oid).join('\n') + '\n',
+      timeout: gitTimeoutMs(), stdio: ['pipe', output, 'pipe']
+    });
+  } finally { fs.closeSync(output); }
+  if (result.error || result.status !== 0) unavailable(ctx.base, ctx.alias, 'read', gitError(result));
+  const fd = fs.openSync(spool, 'r'), header = Buffer.alloc(128), chunk = Buffer.alloc(64 * 1024);
+  let position = 0;
+  const malformed = () => unavailable(ctx.base, ctx.alias, 'read', new Error('invalid git cat-file batch response'));
+  try {
+    const total = fs.fstatSync(fd).size;
+    for (const row of rows) {
+      const n = fs.readSync(fd, header, 0, header.length, position);
+      const end = header.subarray(0, n).indexOf(10);
+      if (end < 0) malformed();
+      const match = /^([0-9a-f]{40}|[0-9a-f]{64}) blob (0|[1-9][0-9]*)$/.exec(header.subarray(0, end).toString('latin1'));
+      if (!match || match[1] !== row.oid) malformed();
+      const size = Number(match[2]); position += end + 1;
+      if (!Number.isSafeInteger(size) || size > total - position - 1) malformed();
+      fs.mkdirSync(dirname(row.target), { recursive: true });
+      const target = fs.openSync(row.target, 'wx', 0o600);
+      try {
+        let remaining = size;
+        while (remaining) {
+          const count = fs.readSync(fd, chunk, 0, Math.min(chunk.length, remaining), position);
+          if (!count) malformed();
+          for (let written = 0; written < count;) written += fs.writeSync(target, chunk, written, count - written);
+          position += count; remaining -= count;
+        }
+      } finally { fs.closeSync(target); }
+      if (fs.readSync(fd, header, 0, 1, position++) !== 1 || header[0] !== 10) malformed();
+    }
+    if (position !== total) malformed();
+  } finally { fs.closeSync(fd); }
+}
 const VALIDATION_CODES = new Set(['E_VALIDATION', 'E_BASE', 'E_PATH', 'E_ID', 'E_CONFIG']);
 /** Whether the accepted state is a valid OKF base. Git verdicts are cached per
  *  commit inside the host cache; computing one materializes the base root into
@@ -279,28 +330,27 @@ export function verdict(ctx, { fetchMissing = true, saveResult = true } = {}) {
   const file = validationFile(ctx);
   if (fs.existsSync(file)) { const cached = readJSON(file); if (cached?.version === 1 && cached.commit === ctx.commit && cached.root === ctx.base.root) return cached; }
   const scratch = fs.mkdtempSync(join(saveResult ? dirname(ctx.cache) : fs.realpathSync(tmpdir()), saveResult ? '.validate-' : 'okf-validate-'));
+  const root = join(scratch, 'tree');
+  // Also used by offline inspection: never lazy-fetch while checking objects.
+  if (!fetchMissing) ctx = { ...ctx, offline: true };
   try {
+    fs.mkdirSync(root);
     const result = judge(() => {
       const rows = lsTree(ctx, '', { recursive: true });
       // Every entry is judged before anything is written: the first bad name or
       // mode refuses the whole base, and nothing lands outside the scratch.
       for (const r of rows) {
         if (!['100644', '100755'].includes(r.mode) || r.type !== 'blob') fail('E_PATH', 'symlink or submodule in knowledge base is not allowed');
-        r.target = containedTarget(scratch, r.name);
+        r.target = containedTarget(root, r.name);
       }
       if (fetchMissing) prefetch(ctx, '');
       else {
-        const missing = gitRun(ctx.cache, ['rev-list', '--objects', '--missing=print', `${ctx.commit}:${repoPath(ctx, '')}`]);
+        const missing = gitRun(ctx.cache, ['rev-list', '--objects', '--missing=print', `${ctx.commit}:${repoPath(ctx, '')}`], { offline: true });
         if (missing.status !== 0) throw gitError(missing);
         if (missing.stdout.split('\n').some(line => line.startsWith('?'))) unavailable(ctx.base, ctx.alias, 'read', new Error('cached validation needs missing objects'));
       }
-      for (const r of rows) {
-        const target = r.target; fs.mkdirSync(dirname(target), { recursive: true });
-        const fd = fs.openSync(target, 'wx', 0o600);
-        let w; try { w = spawnSync('git', ['--no-replace-objects', '-c', 'core.hooksPath=/dev/null', '-C', ctx.cache, 'cat-file', 'blob', r.oid], { env: gitEnv(), timeout: gitTimeoutMs(), stdio: ['ignore', fd, 'pipe'] }); } finally { fs.closeSync(fd); }
-        if (w.error || w.status !== 0) unavailable(ctx.base, ctx.alias, 'read', gitError(w));
-      }
-      return validateBase(scratch, ctx.base);
+      materializeBatch(ctx, rows, join(scratch, 'objects'));
+      return validateBase(root, ctx.base);
     });
     if (saveResult) save(file, { ...result, commit: ctx.commit, root: ctx.base.root, at: new Date().toISOString() });
     return result;
