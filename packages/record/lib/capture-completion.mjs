@@ -17,6 +17,49 @@ function directoryVersion(path) {
   } catch (error) { if (error.code === "ENOENT") return null; throw error; }
 }
 
+function sourceVisits(state, sweep, { limit, stopped, work, admitted }) {
+  let position = 0, terminalSources = sweep.discovered && !admitted, pending = false;
+  while (true) {
+    if (stopped()) return { terminal: false, pending: true };
+    const rows = state.db.prepare(`SELECT position,outcome FROM capture_sources
+      WHERE scope=? AND position>? ORDER BY position LIMIT ?`).all(sweep.id, position, limit);
+    if (work) work.sourceRows = (work.sourceRows ?? 0) + rows.length;
+    for (const row of rows) {
+      if (stopped()) return { terminal: false, pending: true };
+      if (row.outcome !== "ready" && !terminal.has(row.outcome)) throw new Error("invalid capture source outcome");
+      if (row.outcome === "ready") terminalSources = false;
+      if (row.outcome !== "complete" && row.outcome !== "ignored") pending = true;
+      position = row.position;
+    }
+    if (rows.length < limit) break;
+  }
+  return { terminal: terminalSources, pending };
+}
+
+// Append-only mode cannot qualify index evidence or full completion. It only
+// permits terminal source visits to be rediscovered after a final receipt.
+// Index requests/inventory/bindings survive this source-only retirement.
+export function auditCaptureSourceRetirement(session, { limit = 128, work } = {}) {
+  const { state, queue, sourceDiscovery, start, run } = session;
+  if (session.indexEnabled !== false || session.index || session.inventory || state.depth || start.pass.finalize ||
+      !Number.isSafeInteger(limit) || limit < 1 || limit > 128)
+    throw new Error("source retirement requires a normal append-only worker");
+  const result = { complete: false, pending: true, needsWork: false, stopped: false, sourceTerminal: false };
+  const stopped = () => { if (start.budget.sample() === null) return false; result.stopped = true; return true; };
+  if (stopped()) return result;
+  return state.transaction(() => {
+    const sweep = queue.current();
+    const admitted = state.get("capture-admission", "active") !== null || state.get("capture-cleanup", "active") !== null ||
+      state.db.prepare("SELECT 1 AS found FROM state WHERE kind='capture-discovery-attempt' LIMIT 1").get()?.found === 1;
+    const sources = sourceVisits(state, sweep, { limit, stopped, work, admitted });
+    if (stopped()) return result;
+    result.sourceTerminal = sources.terminal && !sourceDiscovery?.current().groups.some(group => !group.complete || group.failure);
+    if (result.sourceTerminal) state.set("capture-sweep-retirement", queue.owner,
+      { runId: run.id, sourceScope: sweep.id, indexScope: null });
+    return result;
+  });
+}
+
 export function auditCaptureCompletion(session, { limit = 128, work } = {}) {
   const { state, index, queue, inventory, outcomes, sourceDiscovery, start, run } = session;
   if (state.depth || start.pass.finalize || !Number.isSafeInteger(limit) || limit < 1 || limit > 128)
@@ -44,21 +87,10 @@ export function auditCaptureCompletion(session, { limit = 128, work } = {}) {
       const hasKind = state.db.prepare("SELECT 1 AS found FROM state WHERE kind=? LIMIT 1");
       for (const kind of blockedKinds) if (hasKind.get(kind)?.found === 1) result.pending = true;
 
-      let position = 0, sourcesDone = sweep.discovered && !admission;
-      while (true) {
-        if (stopped()) return result;
-        const rows = state.db.prepare(`SELECT position,outcome FROM capture_sources
-          WHERE scope=? AND position>? ORDER BY position LIMIT ?`).all(sweep.id, position, limit);
-        if (work) work.sourceRows = (work.sourceRows ?? 0) + rows.length;
-        for (const row of rows) {
-          if (stopped()) return result;
-          if (row.outcome !== "ready" && !terminal.has(row.outcome)) throw new Error("invalid capture source outcome");
-          if (row.outcome === "ready") sourcesDone = false;
-          if (row.outcome !== "complete" && row.outcome !== "ignored") result.pending = true;
-          position = row.position;
-        }
-        if (rows.length < limit) break;
-      }
+      const sources = sourceVisits(state, sweep, { limit, stopped, work, admitted: admission });
+      if (result.stopped) return result;
+      const sourcesDone = sources.terminal;
+      if (sources.pending) result.pending = true;
       result.sourceTerminal = sourcesDone;
 
       // Reconcile names that arrived after discovery (including before its

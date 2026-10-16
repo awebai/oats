@@ -861,7 +861,7 @@ budget, reconcile unfinished admissions, and publish the actual run outcome.
 `CaptureWorkSession` joins source/index processing, reset handoff and run
 accounting inside an already registered supervisor worker. Its bootstrap caller
 must own the root lock and have ended the predecessor before construction. The
-session shares one capture-state connection and one search-index connection,
+index-enabled session shares one capture-state connection and one search-index connection,
 reconciles durable stream, cleanup and union-reset admissions, then opens current run
 accounting. A recorded failure is bound to its run identity: an observed failure
 in the new pass cannot diagnose an older abandoned admission. Prior history
@@ -963,3 +963,44 @@ processing commits, never audit scans or reconstruction. Default-root and ordina
 command routing, protected exact-home/file entry points and service migration
 remain separate. The ordinary CLI, installed service and setup/hook entry points
 do not yet invoke this private session.
+
+### Append-only worker mode
+
+The private session's `indexEnabled: false` option prepares the supervised
+ordinary-command path for append-only capture. The default remains enabled.
+A disabled session never constructs or opens `RecordIndex`, including during
+replacement or finalization. It does not create `turns.db`, register new stream
+membership, instantiate/rebuild index inventory, dispatch/reconcile union reset,
+retire index inventory or modify its source binding. Existing index/reset
+requests, retries and outcome evidence remain for a later enabled pass. Common
+stream-admission reconciliation still records an abandoned index group in
+capture state; its deferred index retry is not processed or erased by capture.
+
+Source/default-root discovery, source capture, retained-allocation cleanup and
+their eligible retries keep their admission, dependency, backoff and fairness
+rules. Index/reset work cannot block independent healthy capture. Housekeeping
+collects only obsolete source scopes, leaving index garbage and inventory intact.
+Source-sweep renewal does not invalidate that retained index evidence; an
+enabled session subsequently reconciles its source binding and discovers all
+live/indexed names before claiming completion.
+
+Append-only `complete()` performs a fresh source-only retirement audit, never
+the all-stage/index audit. It checks terminal visits and source discovery,
+refuses retirement while source/stream, cleanup or discovery admission remains,
+and publishes an intent bound to the source scope and run with no index scope.
+An unfinished or failed discovery group prevents this intent. As with full
+audits, terminal unsuccessful input visits may be renewed only after a final
+receipt, and interruption before that receipt retains the same scope/counters.
+This audit adds one capture-state transaction, paged source-row inspection and
+an optional retirement write, with no index reservation. A stopped scan provides
+no reusable proof. Its normal-worker allowance, reservation duration and actual
+synchronization costs remain hosted storage-qualification obligations.
+
+Even an empty or fully visited append-only sweep remains pending/partial, or
+failed for a current-pass failure: it supplies no fresh index/all-stage proof.
+Prior success/failure history and confirmed counts remain distinct from that
+decision. No public synchronous API, CLI receipt, flag, trigger or command
+dispatch changes follow from this private option. Ordinary/source-selected
+`--no-index` routing, retry-set-aside handling, protected exact-home/file
+frontdoors and setup/hook/service integration still require their owning command
+work and qualification.

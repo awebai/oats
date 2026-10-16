@@ -64,6 +64,7 @@ function fixture(t, { healthy = false, dependentNative = false } = {}) {
         }finally{state.close();}
       }
       const session=new CaptureWorkSession(start,{owner:'fixture',selection:'fixture',now:()=>options.now,
+        indexEnabled:options.indexEnabled??true,
         unit:{limit:1,maxRecords:options.records??1}});
       const transaction=session.state.transaction.bind(session.state);let logged=null;
       session.state.transaction=fn=>{
@@ -230,6 +231,37 @@ test(`a ready native cleanup dependency cannot suppress due cleanup or independe
   assert.equal(f.state(s => s.get('capture-retry', f.nativeStream)), null);
   assert.deepEqual(f.state(s => s.get('capture-retry', unrelated.stream)), unrelated);
   assert.deepEqual(status.lastFailure, oldFailure); assert.equal(status.lastSuccess, null); assert.equal(status.backlog.pending, true);
+});
+
+test('append-only dispatch preserves cleanup backoff and resumes a dependent native input without index work', async t => {
+  const f = fixture(t, { healthy: true, dependentNative: true });
+  assert.equal((await f.seed()).outcome, 'complete');
+  const allocation = f.state(s => s.get('recovery-allocation', f.nativeKey).id);
+  const failed = await f.run({ indexEnabled: false, crashAfterRemove: true, records: 4 });
+  assert.equal(failed.outcome, 'failed', f.diagnostic(failed)); assert.ok(failed.starts > 1);
+  const status = readCaptureStatus(f.root), retry = f.state(s => s.get('capture-cleanup-retry', allocation));
+  assert.equal(status.lastFailure.id, status.lastRun.id);
+  assert.equal(status.lastRun.counts.turnsAppended, 2); assert.equal(status.lastRun.counts.turnsIndexed, 0);
+  assert.equal(fs.existsSync(f.path('a')), false); assert.equal(f.rows(), 12);
+  assert.equal(retry.attemptedRun, status.lastRun.id); assert.equal(retry.attempts, 1);
+  const beforeDue = await f.run({ indexEnabled: false, now: now + 1 });
+  assert.equal(beforeDue.outcome, 'partial', f.diagnostic(beforeDue));
+  assert.deepEqual(f.state(s => s.get('capture-cleanup-retry', allocation)), retry);
+  assert.equal(f.store.readStream(f.nativeStream).length, 0);
+  const due = await f.run({ indexEnabled: false, now: Date.parse(retry.nextRetryAt), records: 2000 });
+  assert.equal(due.outcome, 'partial', f.diagnostic(due)); assert.equal(due.exitCode, 0);
+  const done = readCaptureStatus(f.root);
+  assert.equal(done.lastRun.counts.turnsAppended, 1); assert.equal(done.lastRun.counts.turnsIndexed, 0);
+  assert.deepEqual(done.lastFailure, status.lastFailure); assert.equal(done.lastSuccess, null); assert.equal(done.backlog.pending, true);
+  assert.equal(f.state(s => s.get('recovery-allocation', f.nativeKey)), null);
+  assert.equal(f.state(s => s.get('capture-cleanup-retry', allocation)), null); assert.equal(f.rows(), 0);
+  assert.equal(f.store.readStream(f.nativeStream).length, 1); assert.equal(f.store.readStream('fixture~aw').length, 2);
+  assert.equal(fs.existsSync(join(f.root, 'index/turns.db')), false);
+  const events = fs.readFileSync(join(f.root, 'events'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.ok(events.every(row => !['index', 'reset'].includes(row.stage)));
+  const selected = events.filter(row => row.runId === done.lastRun.id && row.selected);
+  assert.equal(selected[0].stage, 'cleanup');
+  assert.ok(selected.slice(1).some(row => row.stage === 'capture' && row.streams.includes(f.nativeStream)));
 });
 
 test('cleanup accounting rollback retains metadata/admission evidence and only a later due commit records progress', async t => {

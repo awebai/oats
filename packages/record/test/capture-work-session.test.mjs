@@ -51,7 +51,10 @@ function fixture(t, specs = [], { discover = false } = {}) {
         finally{state.close();}
       }
       const session=new CaptureWorkSession(start,{owner:'fixture',selection:'fixture',now:()=>start.options.now,roots:start.options.roots??null,
+        indexEnabled:start.options.indexEnabled??true,
         unit:{limit:1,maxRecords:start.options.records??1,maxBytes:8388608,discoveryLimit:start.options.discoveryLimit??128}});
+      if(start.options.indexEnabled===false && (session.index!==null||session.inventory||session.outcomes||session.reset))
+        throw Error('append-only worker constructed index machinery');
       if(start.options.audit){
         fs.appendFileSync(join(start.root,'audit-workers'),JSON.stringify({runId:session.run.id,scope:session.queue.current().id,
           counts:session.run.current().run.counts,retirement:session.state.get('capture-sweep-retirement','fixture')})+'\\n');
@@ -82,10 +85,12 @@ function fixture(t, specs = [], { discover = false } = {}) {
       const append=session.store.appendUniqueBatch.bind(session.store);
       session.store.appendUniqueBatch=(stream,turns)=>{const n=append(stream,turns);
         if(stream===start.options.crashStream)process.kill(process.pid,'SIGKILL');return n;};
-      const exec=session.index.db.exec.bind(session.index.db);
-      session.index.db.exec=sql=>{if(sql==='DROP TABLE turn_text')fs.appendFileSync(join(start.root,'resets'),start.workerNonce+'\\n');return exec(sql);};
-      const restart=session.inventory.restart.bind(session.inventory);
-      session.inventory.restart=id=>{restart(id);if(start.options.crashPublication && start.pass.reset)process.kill(process.pid,'SIGKILL');};
+      if(session.index){
+        const exec=session.index.db.exec.bind(session.index.db);
+        session.index.db.exec=sql=>{if(sql==='DROP TABLE turn_text')fs.appendFileSync(join(start.root,'resets'),start.workerNonce+'\\n');return exec(sql);};
+        const restart=session.inventory.restart.bind(session.inventory);
+        session.inventory.restart=id=>{restart(id);if(start.options.crashPublication && start.pass.reset)process.kill(process.pid,'SIGKILL');};
+      }
       if(start.options.killDiscovery){
         const advance=NativeCaptureDiscovery.prototype.advance;
         NativeCaptureDiscovery.prototype.advance=function(options){
@@ -154,6 +159,127 @@ function fixture(t, specs = [], { discover = false } = {}) {
   };
 }
 
+test('append-only sweeps capture growth without creating an index and an enabled pass catches up without duplicates', async t => {
+  const f = fixture(t, [['cc', 'native', native(1)], ['aw', 'mail', aw(2) + aw(3)]], { discover: true });
+  const db = join(f.root, 'index/turns.db');
+  assert.equal(fs.existsSync(db), false);
+  const first = await f.run({ indexEnabled: false, audit: true, units: 2, records: 2 });
+  assert.equal(first.outcome, 'partial', f.diagnostic(first)); assert.equal(first.exitCode, 0); assert.ok(first.starts > 1);
+  const a = readCaptureStatus(f.root), scope = f.state(state => state.get('source-sweep', 'fixture').id);
+  assert.equal(a.lastRun.counts.turnsAppended, 3); assert.equal(a.lastRun.counts.turnsIndexed, 0);
+  assert.equal(a.lastSuccess, null); assert.equal(a.backlog.pending, true);
+  assert.equal(fs.existsSync(db), false);
+  f.state(state => {
+    assert.equal(state.get('index-inventory', 'current'), null); assert.equal(state.get('capture-index-source', 'fixture'), null);
+    assert.notEqual(state.db.prepare("SELECT 1 AS found FROM sqlite_master WHERE name='capture_index_inventory'").get()?.found, 1);
+    assert.deepEqual(state.get('capture-sweep-retirement', 'fixture'), { runId: a.lastRun.id, sourceScope: scope, indexScope: null });
+  });
+  fs.appendFileSync(f.inputs.find(input => input.source === 'aw').path, aw(4));
+  const second = await f.run({ indexEnabled: false, audit: true, units: 20, records: 4 });
+  assert.equal(second.outcome, 'partial', f.diagnostic(second)); assert.equal(second.exitCode, 0);
+  const b = readCaptureStatus(f.root);
+  assert.equal(b.lastRun.counts.turnsAppended, 1); assert.equal(b.lastRun.counts.turnsIndexed, 0);
+  assert.equal(b.lastRun.counts.filesVisited, 2); assert.equal(b.lastSuccess, null); assert.equal(b.backlog.pending, true);
+  assert.notEqual(f.state(state => state.get('source-sweep', 'fixture').id), scope);
+  assert.equal(fs.existsSync(db), false);
+  assert.ok(f.events().every(event => !['index', 'reset'].includes(event.stage)));
+  const indexed = await f.run({ audit: true, units: 20, records: 4 });
+  assert.equal(indexed.outcome, 'complete', f.diagnostic(indexed)); assert.equal(indexed.exitCode, 0);
+  const c = readCaptureStatus(f.root);
+  assert.equal(c.lastRun.counts.turnsAppended, 0); assert.equal(c.lastRun.counts.turnsIndexed, 4);
+  assert.equal(c.lastSuccess.id, c.lastRun.id); assert.equal(c.backlog.pending, false);
+  assert.equal(f.store.readStream('fixture~aw').length, 3); assert.equal(f.store.readStream('fixture~cc.native').length, 1);
+  assert.equal(f.index(index => index.db.prepare('SELECT count(*) AS n FROM turns').get().n), 4);
+});
+
+test('append-only replacement and renewal preserve existing index bytes, inventory and deferred reset/retry evidence', async t => {
+  const f = fixture(t, [['aw', 'mail', aw(1)]], { discover: true });
+  const seed = await f.run({ audit: true, units: 20 });
+  assert.equal(seed.outcome, 'complete', f.diagnostic(seed));
+  const prior = readCaptureStatus(f.root), dir = join(f.root, 'index');
+  const indexBytes = () => Object.fromEntries(fs.readdirSync(dir).filter(name => name.startsWith('turns.db')).sort()
+    .map(name => [name, fs.readFileSync(join(dir, name))]));
+  const bytes = indexBytes();
+  const evidence = state => ({ inventory: state.get('index-inventory', 'current'),
+    binding: state.get('capture-index-source', 'fixture'), garbage: state.get('index-inventory-garbage', 'obsolete'),
+    reset: state.get('capture-index-reset', 'current'), retry: state.get('capture-retry', 'fixture~deferred'),
+    rows: state.db.prepare('SELECT * FROM capture_index_inventory ORDER BY scope,stream').all().map(row => ({ ...row })) });
+  const before = f.state(state => {
+    const scope = state.get('index-inventory', 'current').id;
+    state.transaction(() => {
+      state.set('index-inventory-garbage', 'obsolete', true);
+      state.db.prepare("INSERT INTO capture_index_inventory(scope,stream,phase,proof) VALUES (?,?,?,?)")
+        .run('obsolete', 'fixture~obsolete', 'ready', null);
+      state.set('capture-index-reset', 'current', { id: 'reset', scope, nextScope: 'later-reset', requestedBy: 'old-worker',
+        attempts: 0, attemptedRun: 'old-run', nextRetryAt: null, attempt: { workerNonce: 'old-worker', runId: 'old-run' } });
+      state.set('capture-retry', 'fixture~deferred', { stream: 'fixture~deferred', stage: 'index', unitId: 'old-unit',
+        attemptedRun: 'old-run', generation: null, offset: 0, nextRetryAt: new Date(now).toISOString() });
+    });
+    return evidence(state);
+  });
+  for (const n of [2, 3]) {
+    fs.appendFileSync(f.inputs[0].path, aw(n));
+    const result = await f.run({ indexEnabled: false, audit: true, units: 2, records: 4 });
+    assert.equal(result.outcome, 'partial', f.diagnostic(result)); assert.equal(result.exitCode, 0); assert.ok(result.starts > 1);
+    const status = readCaptureStatus(f.root);
+    assert.equal(status.lastRun.counts.turnsAppended, 1); assert.equal(status.lastRun.counts.turnsIndexed, 0);
+    assert.equal(status.backlog.pending, true); assert.deepEqual(status.lastSuccess, prior.lastSuccess);
+    assert.deepEqual(status.lastFailure, prior.lastFailure); assert.deepEqual(indexBytes(), bytes);
+    assert.deepEqual(f.state(evidence), before, 'renewing source scopes cannot consume reserved index/reset evidence');
+    assert.ok(f.events().filter(event => event.runId === status.lastRun.id).every(event => !['index', 'reset'].includes(event.stage)));
+  }
+  assert.equal(f.store.readStream('fixture~aw').length, 3);
+});
+
+test('append-only supervised source death preserves confirmed healthy work and never opens an index', async t => {
+  const f = fixture(t, [['cc', 'crash', native(1)], ['aw', 'healthy', aw(2) + aw(3)]], { discover: true });
+  const result = await f.run({ indexEnabled: false, audit: true, units: 20, records: 4, crashStream: 'fixture~cc.crash' });
+  assert.equal(result.outcome, 'failed', f.diagnostic(result)); assert.equal(result.exitCode, 1); assert.ok(result.starts > 1);
+  const status = readCaptureStatus(f.root);
+  assert.equal(status.lastFailure.id, status.lastRun.id); assert.equal(status.lastSuccess, null); assert.equal(status.backlog.pending, true);
+  assert.equal(status.lastRun.counts.turnsAppended, 2); assert.equal(status.lastRun.counts.turnsIndexed, 0);
+  assert.equal(f.store.readStream('fixture~cc.crash').length, 1, 'physical unconfirmed append is not reconstructed into counters');
+  assert.equal(f.store.readStream('fixture~aw').length, 2);
+  assert.equal(fs.existsSync(join(f.root, 'index/turns.db')), false);
+  const retry = f.state(state => state.get('capture-retry', 'fixture~cc.crash'));
+  assert.equal(retry.stage, 'capture'); assert.equal(retry.attemptedRun, status.lastRun.id);
+  assert.ok(f.events().some(event => event.runId === status.lastRun.id && event.attempt > 1 &&
+    event.stage === 'capture' && event.streams.includes('fixture~aw')));
+  assert.ok(f.events().every(event => !['index', 'reset'].includes(event.stage)));
+  const due = await f.run({ indexEnabled: false, audit: true, units: 20, records: 4, now: Date.parse(retry.nextRetryAt) });
+  assert.equal(due.outcome, 'partial', f.diagnostic(due)); assert.equal(due.exitCode, 0);
+  const recovered = readCaptureStatus(f.root);
+  assert.equal(recovered.lastRun.counts.turnsAppended, 0, 'replayed unconfirmed bytes are deduped, never recounted');
+  assert.equal(recovered.lastRun.counts.turnsIndexed, 0); assert.deepEqual(recovered.lastFailure, status.lastFailure);
+  assert.equal(recovered.lastSuccess, null); assert.equal(recovered.backlog.pending, true);
+  assert.equal(f.state(state => state.get('capture-retry', 'fixture~cc.crash')), null);
+  assert.equal(f.store.readStream('fixture~cc.crash').length, 1); assert.equal(f.store.readStream('fixture~aw').length, 2);
+  assert.equal(fs.existsSync(join(f.root, 'index/turns.db')), false);
+});
+
+test('append-only death after retirement intent keeps the same sweep and confirmed counts until its receipt', async t => {
+  const f = fixture(t, [['aw', 'mail', aw(1) + aw(2)]], { discover: true });
+  const failed = await f.run({ indexEnabled: false, audit: true, killBeforeReceipt: true, units: 20, records: 4 });
+  assert.equal(failed.outcome, 'failed', f.diagnostic(failed)); assert.equal(failed.exitCode, 1); assert.ok(failed.starts > 1);
+  const status = readCaptureStatus(f.root), death = JSON.parse(fs.readFileSync(join(f.root, 'audit-death'), 'utf8'));
+  const workers = fs.readFileSync(join(f.root, 'audit-workers'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(status.lastRun.id, death.runId); assert.equal(status.lastFailure.id, death.runId);
+  assert.deepEqual(status.lastRun.counts, death.counts);
+  assert.equal(status.lastRun.counts.filesVisited, 1); assert.equal(status.lastRun.counts.turnsAppended, 2);
+  assert.equal(status.lastRun.counts.turnsIndexed, 0); assert.equal(status.backlog.pending, true);
+  const replacement = workers.find(row => row.retirement?.runId === death.runId);
+  assert.ok(replacement); assert.equal(replacement.retirement.indexScope, null);
+  assert.deepEqual(replacement.counts, death.counts); assert.ok(workers.every(row => row.scope === death.scope));
+  const next = await f.run({ indexEnabled: false, audit: true, units: 20, records: 4 });
+  assert.equal(next.outcome, 'partial', f.diagnostic(next)); assert.equal(next.exitCode, 0);
+  const recovered = readCaptureStatus(f.root);
+  assert.deepEqual(recovered.lastFailure, status.lastFailure); assert.equal(recovered.lastSuccess, null);
+  assert.equal(recovered.lastRun.counts.turnsAppended, 0); assert.equal(recovered.lastRun.counts.turnsIndexed, 0);
+  assert.equal(recovered.lastRun.counts.filesVisited, 1); assert.equal(f.store.readStream('fixture~aw').length, 2);
+  assert.notEqual(f.state(state => state.get('source-sweep', 'fixture').id), death.scope);
+  assert.equal(fs.existsSync(join(f.root, 'index/turns.db')), false);
+});
+
 test('fresh all-stage audit completes empty sweeps and renews both inventories on the next pass', async t => {
   const f = fixture(t, [], { discover: true });
   const first = await f.run({ audit: true, units: 20 });
@@ -205,14 +331,15 @@ test('complete receipt follows mixed processing and next-sweep growth without du
   for (const event of cleanup) { assert.deepEqual(event.streams, []); assert.equal(event.selected, 0); }
 });
 
-test('finalization-only allowance cannot initiate a completion audit even for an empty root plan', async t => {
+for (const indexEnabled of [true, false]) test(`finalization-only allowance cannot initiate an audit (index enabled: ${indexEnabled})`, async t => {
   const f = fixture(t, [], { discover: true });
-  const result = await f.run({ audit: true }, { policy: { intervalSeconds: 900, heapMiB: 256,
+  const result = await f.run({ audit: true, indexEnabled }, { policy: { intervalSeconds: 900, heapMiB: 256,
     rssBytes: 2147483648, deadlineSeconds: 10, maxRecordBytes: 8388608 } });
   assert.equal(result.outcome, 'partial', f.diagnostic(result)); assert.equal(result.starts, 1);
   assert.equal(readCaptureStatus(f.root).lastSuccess, null);
   assert.equal(f.state(state => state.get('capture-sweep-retirement', 'fixture')), null);
   assert.equal(f.state(state => state.get('source-sweep', 'fixture').discovered), false);
+  if (!indexEnabled) assert.equal(fs.existsSync(join(f.root, 'index/turns.db')), false);
 });
 
 test('terminal incomplete input stays partial and is revisited by a new sweep after its line completes', async t => {
@@ -585,7 +712,7 @@ test('pre-receipt failure remains current while a finalization-only worker never
   assert.equal(g.store.readStream('fixture~aw').length, 0);
 });
 
-test('a new pre-receipt failure cannot diagnose an older unreconciled admission', async t => {
+for (const indexEnabled of [true, false]) test(`a new pre-receipt failure cannot diagnose an older admission (index enabled: ${indexEnabled})`, async t => {
   const f = fixture(t, [['aw', 'healthy', aw(1)]]);
   f.state(state => {
     new CaptureRun(f.root, state, { id: 'older-unfinished' }).publish({ pending: true });
@@ -593,7 +720,7 @@ test('a new pre-receipt failure cannot diagnose an older unreconciled admission'
       next: { stage: 'index', after: 'fixture~lost' },
       members: [{ stream: 'fixture~lost', generation: null, offset: 0 }] }, new Set(['fixture~lost']), { now });
   });
-  const result = await f.run({ failBeforeReceipt: true, units: 4 });
+  const result = await f.run({ failBeforeReceipt: true, units: 4, indexEnabled });
   assert.equal(result.outcome, 'failed', f.diagnostic(result)); assert.equal(result.reason, 'io');
   const old = f.state(state => state.get('capture-run-failure', 'last'));
   assert.equal(old.runId, 'older-unfinished'); assert.equal(old.reason, 'interrupted');
@@ -602,4 +729,10 @@ test('a new pre-receipt failure cannot diagnose an older unreconciled admission'
   assert.notEqual(status.lastRun.id, old.runId); assert.equal(status.lastFailure.id, status.lastRun.id);
   assert.equal(status.lastFailure.reason, 'io'); assert.equal(status.lastRun.counts.turnsAppended, 1);
   assert.equal(status.lastSuccess, null);
+  const retry = f.state(state => state.get('capture-retry', 'fixture~lost'));
+  assert.equal(retry.stage, 'index'); assert.equal(retry.attemptedRun, 'older-unfinished');
+  if (!indexEnabled) {
+    assert.equal(fs.existsSync(join(f.root, 'index/turns.db')), false);
+    assert.equal(status.lastRun.counts.turnsIndexed, 0);
+  }
 });

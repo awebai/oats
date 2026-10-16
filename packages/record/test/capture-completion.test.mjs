@@ -13,7 +13,7 @@ import { CaptureIndexInventory } from '../lib/capture-index-inventory.mjs';
 import { CaptureIndexOutcomes } from '../lib/capture-index-outcomes.mjs';
 import { CaptureRun } from '../lib/capture-run.mjs';
 import { CaptureBudget } from '../lib/capture-budget.mjs';
-import { auditCaptureCompletion } from '../lib/capture-completion.mjs';
+import { auditCaptureCompletion, auditCaptureSourceRetirement } from '../lib/capture-completion.mjs';
 import { finishTurn } from '../lib/canonical.mjs';
 
 const turn = n => finishTurn({ v: 1, ts: '2026-01-01T00:00:00Z', from: 'fixture', kind: 'mail',
@@ -41,6 +41,63 @@ function fixture(t, count = 0) {
   process();
   return { ...session, root, store, process, audit: options => auditCaptureCompletion(session, options) };
 }
+
+test('append-only retirement scans fresh source pages without index proof or accounting, and rolls back its intent', t => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'capture-source-retirement-'));
+  const state = new DerivedState(root), queue = new CaptureSourceQueue(state, { owner: 'fixture', selection: 'fixture' });
+  t.after(() => { state.close(); fs.rmSync(root, { recursive: true, force: true }); });
+  const inputs = Array.from({ length: 260 }, (_, n) => ({ source: 'aw', path: join(root, `input-${n}.jsonl`), stream: 'fixture~aw' }));
+  for (let offset = 0; offset < inputs.length; offset += 128)
+    queue.add(inputs.slice(offset, offset + 128), null, { complete: offset + 128 >= inputs.length });
+  state.transaction(() => {
+    for (let position = 1; position <= inputs.length; position++) queue.mark(position, 'complete');
+  });
+  const run = new CaptureRun(root, state, { id: 'append-run' }), start = { pass: { finalize: false }, budget: new CaptureBudget() };
+  const session = { indexEnabled: false, index: null, state, queue, run, start }, before = run.current();
+  const audit = options => auditCaptureSourceRetirement(session, options);
+  const sample = start.budget.sample.bind(start.budget); let samples = 0;
+  start.budget.sample = () => ++samples >= 40 ? 'deadline' : null;
+  const stopped = audit({ limit: 16 });
+  assert.equal(stopped.stopped, true); assert.equal(stopped.sourceTerminal, false);
+  assert.equal(state.get('capture-sweep-retirement', 'fixture'), null);
+  start.budget.sample = sample;
+  // A fresh scan must see a later pending input, not reuse the stopped prefix.
+  state.transaction(() => queue.mark(1, 'ready'));
+  assert.equal(audit({ limit: 16 }).sourceTerminal, false);
+  assert.equal(state.get('capture-sweep-retirement', 'fixture'), null);
+  state.transaction(() => queue.mark(1, 'pending'));
+  for (const [kind, key] of [['capture-admission', 'active'], ['capture-cleanup', 'active'], ['capture-discovery-attempt', 'fixture']]) {
+    state.transaction(() => state.set(kind, key, { retained: true }));
+    assert.equal(audit().sourceTerminal, false, kind);
+    assert.equal(state.get('capture-sweep-retirement', 'fixture'), null);
+    assert.deepEqual(state.get(kind, key), { retained: true });
+    state.transaction(() => state.delete(kind, key));
+  }
+  session.sourceDiscovery = { current: () => ({ groups: [{ complete: false, failure: { reason: 'io' } }] }) };
+  assert.equal(audit().sourceTerminal, false);
+  assert.equal(state.get('capture-sweep-retirement', 'fixture'), null);
+  delete session.sourceDiscovery;
+  const set = state.set.bind(state);
+  state.set = (kind, key, value) => { set(kind, key, value); if (kind === 'capture-sweep-retirement') throw Error('retirement rollback'); };
+  assert.throws(() => audit(), /retirement rollback/);
+  assert.equal(state.get('capture-sweep-retirement', 'fixture'), null);
+  assert.equal(state.depth, 0); assert.equal(queue.current().finished, false); assert.deepEqual(run.current(), before);
+  state.set = set;
+  const work = {}, sql = [], exec = state.db.exec.bind(state.db);
+  state.db.exec = statement => { sql.push(statement); return exec(statement); };
+  const result = audit({ limit: 16, work });
+  state.db.exec = exec;
+  assert.deepEqual(sql, ['BEGIN IMMEDIATE', 'COMMIT']);
+  assert.equal(work.sourceRows, 260); assert.equal(result.sourceTerminal, true);
+  assert.equal(result.complete, false); assert.equal(result.pending, true); assert.equal(result.needsWork, false);
+  assert.deepEqual(run.current(), before);
+  assert.deepEqual(state.get('capture-sweep-retirement', 'fixture'),
+    { runId: run.id, sourceScope: queue.current().id, indexScope: null });
+  assert.equal(queue.current().finished, false, 'terminal visits still require a final receipt before renewal');
+  assert.equal(fs.existsSync(join(root, 'index/turns.db')), false);
+  start.pass.finalize = true;
+  assert.throws(() => audit(), /normal append-only worker/);
+});
 
 test('fresh audit covers every outcome page without manufacturing committed counts or progress', t => {
   const f = fixture(t, 260), work = {}, before = f.run.current();

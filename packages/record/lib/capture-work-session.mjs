@@ -17,20 +17,23 @@ import { readCaptureAdmission } from "./capture-admission.mjs";
 import { FAILURE_REASONS } from "./capture-failures.mjs";
 import { CaptureCleanupQueue } from "./capture-cleanup-queue.mjs";
 import { CaptureSourceDiscovery } from "./capture-source-discovery.mjs";
-import { auditCaptureCompletion } from "./capture-completion.mjs";
+import { auditCaptureCompletion, auditCaptureSourceRetirement } from "./capture-completion.mjs";
 
 export class CaptureWorkSession {
-  constructor(start, { owner, selection, trigger = "manual", now = Date.now, unit = {}, roots = null } = {}) {
+  constructor(start, { owner, selection, trigger = "manual", now = Date.now, unit = {}, roots = null, indexEnabled = true } = {}) {
     if (typeof start?.root !== "string" || typeof start.workerNonce !== "string" || !start.workerNonce ||
         typeof start.pass?.runId !== "string" || !start.pass.runId ||
-        typeof start.pass.finalize !== "boolean" || typeof start.pass.reset !== "boolean" || typeof now !== "function")
+        typeof start.pass.finalize !== "boolean" || typeof start.pass.reset !== "boolean" || typeof now !== "function" ||
+        typeof indexEnabled !== "boolean")
       throw new Error("capture work session requires a supervised pass");
-    this.start = start; this.now = now; this.unit = unit;
+    this.start = start; this.now = now; this.unit = unit; this.indexEnabled = indexEnabled;
     try {
       start.budget.check();
       this.store = new RecordStore(start.root, { owner });
       this.state = new DerivedState(start.root);
-      this.index = new RecordIndex(this.store);
+      // Append-only workers must not even open an existing index: construction
+      // can migrate/rebuild it before any scheduling decision is made.
+      this.index = indexEnabled ? new RecordIndex(this.store) : null;
       const prior = readCaptureStatus(start.root);
       if (prior?.lastRun?.id === start.pass.runId && prior.lastRun.outcome !== "running")
         throw new Error("capture run identity already finished");
@@ -58,12 +61,14 @@ export class CaptureWorkSession {
       // Retain a reset's scope even if derived inventory tables were lost.
       // Recreating membership may restart enumeration; it cannot erase reset
       // admission or the index token needed to recover a committed operation.
-      const previousSource = this.state.get("capture-index-source", owner);
-      const scope = this.state.get("capture-index-reset", "current")?.scope ??
-        (previousSource && previousSource.sourceScope !== this.queue.current().id ? randomUUID() :
-          this.state.get("index-inventory", "current")?.id ?? randomUUID());
-      this.openIndexScope(scope);
-      this.reset.reconcile(start, { reason: reasonFor(this.reset.current()?.attempt?.runId), now: now() });
+      if (indexEnabled) {
+        const previousSource = this.state.get("capture-index-source", owner);
+        const scope = this.state.get("capture-index-reset", "current")?.scope ??
+          (previousSource && previousSource.sourceScope !== this.queue.current().id ? randomUUID() :
+            this.state.get("index-inventory", "current")?.id ?? randomUUID());
+        this.openIndexScope(scope);
+        this.reset.reconcile(start, { reason: reasonFor(this.reset.current()?.attempt?.runId), now: now() });
+      }
       const failures = [this.state.get("capture-run-failure", "last"),
         this.state.get("capture-index-reset-failure", "last"), this.state.get("capture-cleanup-failure", "last"),
         this.state.get("capture-discovery-failure", "last")].filter(Boolean);
@@ -77,6 +82,7 @@ export class CaptureWorkSession {
   }
 
   openIndexScope(id) {
+    if (!this.indexEnabled) throw new Error("append-only capture cannot open index inventory");
     this.inventory?.close();
     this.inventory = new CaptureIndexInventory(this.state, { id });
     this.outcomes = new CaptureIndexOutcomes(this.index, this.inventory);
@@ -100,11 +106,13 @@ export class CaptureWorkSession {
   }
 
   process(stage, allowRetry) {
+    if (stage !== "capture" && (stage !== "index" || !this.indexEnabled))
+      throw new Error("capture stage is not enabled");
     const options = { ...this.unit, now: this.now(), allowRetry,
       inputReady: input => this.sourceReady(input),
       retryFilter: retry => retry.stage === stage && (stage !== "capture" || this.sourceReady(this.queue.forStream(retry.stream))) };
     const result = stage === "capture"
-      ? captureSourceWork(this.store, this.state, this.queue, this.run, this.start, { ...options, indexInventory: this.inventory })
+      ? captureSourceWork(this.store, this.state, this.queue, this.run, this.start, { ...options, indexInventory: this.inventory ?? null })
       : this.outcomes.advance(this.run, this.start, options);
     if (result.resetRequired) this.reset.request(this.start);
     // One independent bounded cleanup turn cannot change stream-stage rotation.
@@ -120,10 +128,11 @@ export class CaptureWorkSession {
   }
 
   collect() {
-    if (this.state.db.prepare("SELECT 1 AS found FROM state WHERE kind IN ('source-queue-garbage','index-inventory-garbage') LIMIT 1").get()?.found !== 1)
+    if (this.state.db.prepare("SELECT 1 AS found FROM state WHERE kind='source-queue-garbage' OR (? AND kind='index-inventory-garbage') LIMIT 1")
+      .get(Number(this.indexEnabled))?.found !== 1)
       return null;
     return this.state.transaction(() => {
-      const sources = this.queue.cleanup(), streams = this.inventory.cleanup();
+      const sources = this.queue.cleanup(), streams = this.inventory?.cleanup() ?? 0;
       // Retiring obsolete enumeration is bookkeeping, not new capture/index
       // progress. In particular it must not refresh every no-op pass's history.
       return { stage: "inventory-cleanup", sources, streams };
@@ -133,7 +142,7 @@ export class CaptureWorkSession {
   step() {
     const stopped = () => this.start.budget.sample() !== null;
     if (stopped()) return { stopped: true };
-    if (this.reset.current()) {
+    if (this.reset?.current()) {
       const result = this.reset.advance(this.run, this.start, { now: this.now() });
       if (result.reset) { this.openIndexScope(result.scope); return { stage: "reset", ...result }; }
       if (!this.start.pass.finalize && result.needsFreshWorker) return { resetRequired: true };
@@ -146,9 +155,9 @@ export class CaptureWorkSession {
       ? this.sourceDiscovery.advance({ stopped, limit: this.unit.discoveryLimit ?? 128,
         runId: this.run.id, workerNonce: this.start.workerNonce, now: this.now() }) : null;
     let discovery = null;
-    if (this.inventory.current().phase !== "complete") discovery = this.inventory.discover(this.index, { stopped });
+    if (this.inventory && this.inventory.current().phase !== "complete") discovery = this.inventory.discover(this.index, { stopped });
     if (stopped()) return { stopped: true, discovery, sourceDiscovery };
-    const blockedIndex = this.reset.current() !== null;
+    const blockedIndex = !this.indexEnabled || this.reset.current() !== null;
     // Reuse the last durable admission's stage. Failed groups rotate too, and
     // routing adds no separate per-record or per-unit scheduling transaction.
     const last = this.state.get("capture-schedule", "position")?.stage;
@@ -166,7 +175,7 @@ export class CaptureWorkSession {
     // Unknown eligible discovery can still contain healthy work. A refused
     // root remains pending but cannot withhold unrelated due work indefinitely.
     if ((this.sourceDiscovery ? this.sourceDiscovery.healthyPending() : !this.queue.current().discovered) ||
-        this.inventory.current().phase !== "complete")
+        this.inventory && this.inventory.current().phase !== "complete")
       return { waitingForDiscovery: true, discovery, sourceDiscovery };
     const selection = selectCaptureWork(this.store, this.state, [], { runId: this.run.id, now: this.now(), stopped,
       retryFilter: retry => retry.stage === "index" ? !blockedIndex :
@@ -202,7 +211,7 @@ export class CaptureWorkSession {
   complete(options) {
     if (this.start.pass.finalize || this.start.budget.sample() !== null)
       return this.finish({ reason: this.start.budget.reason ?? "deadline" });
-    const audit = auditCaptureCompletion(this, options);
+    const audit = this.indexEnabled ? auditCaptureCompletion(this, options) : auditCaptureSourceRetirement(this, options);
     if (audit.stopped || audit.needsWork) return this.yieldWorker();
     // Normally these facts entered the run during replacement construction.
     // Also retain a caught failure if an owning caller continues in this worker.
