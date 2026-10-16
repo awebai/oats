@@ -1,32 +1,38 @@
-// scripts/macos-tests.mjs, the script of the hand-started macOS test runs: what it accepts and
-// what it refuses. The request is a person's text and the workflow runs a branch's code, so every
-// refusal of docs/macos-test-runs.md has its case here: first the pure parts, then the whole
-// validation against a checkout whose `origin` is a local bare repository. The runs themselves are
-// in macos-tests-run.test.mjs, the workflow's terms in macos-tests-workflow.test.mjs.
+// scripts/named-test-run.mjs, the one implementation of the hand-started test runs: what it accepts
+// and what it refuses. The request is a person's text and the workflows run a branch's code, so every
+// refusal of docs/named-test-runs.md has its case here: first the pure parts, then the whole
+// validation against a checkout whose `origin` is a local bare repository, through the macOS
+// platform. The runs themselves are in named-test-run-files.test.mjs, the Linux platform in
+// linux-tests.test.mjs, the workflows' terms in macos-tests-workflow.test.mjs and
+// linux-tests-workflow.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { devNull, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   MAX_FILES, boundsRefusal, buildMarkdownTable, buildTable, chooseCommit, conclude, countsReader, defaultTmuxSocket, fileShapeRefusal,
-  formatHeader, main, measureCase, parseFileList, prepare, readCounts, refCandidates, refShapeRefusal, resolveRef, run, show, testEnv,
+  formatHeader, main, measureCase, parseFileList, prepare, readCounts, refCandidates, refShapeRefusal, resolveRef, run, show, summaryLines, testEnv,
   treeEntryRefusal, unknownRefReason, validateRequest, verdict,
-} from "../scripts/macos-tests.mjs";
+} from "../scripts/named-test-run.mjs";
+import { macos } from "../scripts/macos-tests.mjs";
+import { linuxPlatform } from "../scripts/linux-tests.mjs";
 
 const A = "a".repeat(40), B = "b".repeat(40);
+/** A writer that keeps what a step prints. */
+const collect = () => { const chunks = []; return { write: (chunk) => chunks.push(String(chunk)), text: () => chunks.join("") }; };
 
 // ---- the pure parts ------------------------------------------------------------------------------
 
-test("macos-tests parseFileList: commas, spaces and newlines in any mix; a trailing separator names nothing; a file named twice is listed once", () => {
+test("named-test-run parseFileList: commas, spaces and newlines in any mix; a trailing separator names nothing; a file named twice is listed once", () => {
   assert.deepEqual(parseFileList("test/a.test.mjs, test/b.test.mjs\n\ttest/c.test.mjs ,,\n"), { files: ["test/a.test.mjs", "test/b.test.mjs", "test/c.test.mjs"], repeated: [] });
   assert.deepEqual(parseFileList(" ,test/a.test.mjs,"), { files: ["test/a.test.mjs"], repeated: [] });
   assert.deepEqual(parseFileList("test/a.test.mjs test/b.test.mjs test/a.test.mjs test/a.test.mjs"), { files: ["test/a.test.mjs", "test/b.test.mjs"], repeated: ["test/a.test.mjs"] });
   for (const empty of ["", " \n,", undefined, null]) assert.deepEqual(parseFileList(empty), { files: [], repeated: [] });
 });
 
-test("macos-tests fileShapeRefusal: test/**/*.test.mjs and packages/<name>/test/**/*.test.mjs over plain segments, and nothing else", () => {
+test("named-test-run fileShapeRefusal: test/**/*.test.mjs and packages/<name>/test/**/*.test.mjs over plain segments, and nothing else", () => {
   for (const ok of ["test/a.test.mjs", "test/sub/dir/a-b_c.1.test.mjs", "packages/tui/test/a.test.mjs", "packages/tui/test/deep/a.test.mjs", "packages/test/test/a.test.mjs"]) {
     assert.equal(fileShapeRefusal(ok), null, ok);
   }
@@ -45,7 +51,7 @@ test("macos-tests fileShapeRefusal: test/**/*.test.mjs and packages/<name>/test/
   for (const [why, entries] of Object.entries(refused)) for (const entry of entries) assert.ok(fileShapeRefusal(entry)?.includes(why), `${JSON.stringify(entry)} → ${fileShapeRefusal(entry)}`);
 });
 
-test("macos-tests boundsRefusal: one run takes at least one file and at most MAX_FILES", () => {
+test("named-test-run boundsRefusal: one run takes at least one file and at most MAX_FILES", () => {
   const files = (n) => Array.from({ length: n }, (_, i) => `test/f${i}.test.mjs`);
   assert.equal(MAX_FILES, 10);
   assert.match(boundsRefusal([]), /no test file was named/);
@@ -54,7 +60,7 @@ test("macos-tests boundsRefusal: one run takes at least one file and at most MAX
   assert.match(boundsRefusal(files(MAX_FILES + 1)), /11 files were named; one run takes at most 10/);
 });
 
-test("macos-tests refShapeRefusal: a branch name, a tag name or a full commit id of a plain shape", () => {
+test("named-test-run refShapeRefusal: a branch name, a tag name or a full commit id of a plain shape", () => {
   // `2026` and `pull/7/head` are names a branch may have: only a name nothing answers to is taken for a pull request.
   for (const ok of ["main", "release/0.24", "v0.53.0", "agents/oats-kernel-developer-macos-test-workflow", "feature_x", A, "a.b", "x".repeat(255), "2026", "pull/7/head", "0".repeat(40)]) assert.equal(refShapeRefusal(ok), null, ok);
   const refused = {
@@ -71,7 +77,7 @@ test("macos-tests refShapeRefusal: a branch name, a tag name or a full commit id
   assert.match(refShapeRefusal("feature#1"), /give the commit's full id \(40 characters\) instead/);
 });
 
-test("macos-tests chooseCommit: every reading of the name must hold, and all must be one commit", () => {
+test("named-test-run chooseCommit: every reading of the name must hold, and all must be one commit", () => {
   const refs = { branches: new Map([["main", A], ["both", A], ["clash", A], [B, A]]), tags: new Map([["v1", B], ["both", "tagobject"], ["clash", B]]) };
   assert.deepEqual(refCandidates("main", refs), [{ kind: "branch", object: A }]);
   assert.deepEqual(refCandidates("v1", refs), [{ kind: "tag", object: B }]);
@@ -98,7 +104,7 @@ test("macos-tests chooseCommit: every reading of the name must hold, and all mus
   assert.match(unknownRefReason("no-such-branch"), /is no branch or tag that was fetched from origin/);
 });
 
-test("macos-tests treeEntryRefusal: a regular file of the commit, not a link, a directory or a submodule", () => {
+test("named-test-run treeEntryRefusal: a regular file of the commit, not a link, a directory or a submodule", () => {
   assert.equal(treeEntryRefusal({ mode: "100644", type: "blob" }), null);
   assert.equal(treeEntryRefusal({ mode: "100755", type: "blob" }), null);
   assert.match(treeEntryRefusal(undefined), /is not a file at that commit/);
@@ -108,7 +114,7 @@ test("macos-tests treeEntryRefusal: a regular file of the commit, not a link, a 
 });
 
 const summary = (mark, n) => ["tests", "suites", "pass", "fail", "cancelled", "skipped", "todo", "duration_ms"].map((key, i) => `${mark} ${key} ${n[i]}`).join("\n");
-test("macos-tests readCounts: the runner's own summary, from either reporter, and not a look-alike in a test's output", () => {
+test("named-test-run readCounts: the runner's own summary, from either reporter, and not a look-alike in a test's output", () => {
   const counts = { tests: 5, pass: 2, fail: 1, cancelled: 1, skipped: 1, todo: 0 };
   const numbers = [5, 2, 2, 1, 1, 1, 0, "73.773915"];
   // The spec reporter (a terminal, and every Node after 22), and TAP (Node 22 writing to a pipe).
@@ -133,7 +139,7 @@ test("macos-tests readCounts: the runner's own summary, from either reporter, an
   assert.deepEqual(readCounts(`ℹ tests 1\nℹ suites 1\n${summary("ℹ", numbers)}\n`), counts);
 });
 
-test("macos-tests countsReader: the summary is read as the output streams, whatever the chunks", () => {
+test("named-test-run countsReader: the summary is read as the output streams, whatever the chunks", () => {
   const output = Buffer.from(`${"x".repeat(5000)}\n✔ a test\n${"y".repeat(700)}${summary("ℹ", [3, 0, 3, 0, 0, 0, 0, 12])}\n`);
   // The long line before the block has no newline of its own: the block's first line is part of it, so no block.
   const whole = countsReader(); whole.push(output);
@@ -147,7 +153,7 @@ test("macos-tests countsReader: the summary is read as the output streams, whate
 });
 
 const ran = (over = {}) => ({ file: "test/a.test.mjs", counts: { tests: 3, pass: 3, fail: 0, cancelled: 0, skipped: 0, todo: 0 }, code: 0, signal: null, timedOut: false, durationMs: 1234, leftover: false, leak: false, error: null, ...over });
-test("macos-tests verdict: the exit status decides, and the counts must agree with it", () => {
+test("named-test-run verdict: the exit status decides, and the counts must agree with it", () => {
   assert.deepEqual(verdict(ran()), { ok: true, label: "passed", why: "exit 0" });
   const fails = [
     [ran({ code: 1, counts: { tests: 3, pass: 2, fail: 1, cancelled: 0, skipped: 0, todo: 0 } }), "FAILED", /^exit 1$/],
@@ -174,7 +180,7 @@ test("macos-tests verdict: the exit status decides, and the counts must agree wi
   }
 });
 
-test("macos-tests buildTable: one row a file, with its counts, its exit status and its duration; a failure fails the run", () => {
+test("named-test-run buildTable: one row a file, with its counts, its exit status and its duration; a failure fails the run", () => {
   const runs = [
     ran(),
     ran({ file: "test/longer-name.test.mjs", code: 1, counts: { tests: 12, pass: 10, fail: 1, cancelled: 0, skipped: 1, todo: 0 }, durationMs: 65_432 }),
@@ -207,7 +213,7 @@ test("macos-tests buildTable: one row a file, with its counts, its exit status a
   assert.equal(markdown[2], "| test/a.test.mjs | passed | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 1.2s |  |");
 });
 
-test("macos-tests show: a value of unknown content cannot start a line, hide a character or flood the log", () => {
+test("named-test-run show: a value of unknown content cannot start a line, hide a character or flood the log", () => {
   assert.equal(show("main"), '"main"');
   assert.equal(show("a\nb\u001b[31m\u0000"), '"a\\nb\\u001b[31m\\u0000"');
   assert.equal(show("‮gnp.exe\u007f"), '"\\u202egnp.exe\\u007f"');
@@ -215,9 +221,11 @@ test("macos-tests show: a value of unknown content cannot start a line, hide a c
   assert.equal(show("x".repeat(300)), `"${"x".repeat(200)}" (cut: 300 characters)`);
 });
 
-test("macos-tests testEnv: a test file gets this process's environment, less the request, the runner's command files and the nested-run marker", () => {
+test("named-test-run testEnv: a test file gets this process's environment, less the request, the runner's command files and the nested-run marker", () => {
   const env = { PATH: "/bin", CI: "true", GITHUB_ACTIONS: "true", TMUX_TMPDIR: "/t", MACOS_TESTS_REF: "main", MACOS_TESTS_FILES: "test/a.test.mjs", GITHUB_ENV: "/e", GITHUB_OUTPUT: "/o", GITHUB_PATH: "/p", GITHUB_STATE: "/s", GITHUB_STEP_SUMMARY: "/m", NODE_TEST_CONTEXT: "child-v8" };
-  assert.deepEqual(testEnv(env), { PATH: "/bin", CI: "true", GITHUB_ACTIONS: "true", TMUX_TMPDIR: "/t" });
+  assert.deepEqual(testEnv(env, Object.values(macos.request)), { PATH: "/bin", CI: "true", GITHUB_ACTIONS: "true", TMUX_TMPDIR: "/t" });
+  // Each runner drops its own request's names.
+  assert.deepEqual(testEnv({ PATH: "/bin", LINUX_TESTS_REF: "main", LINUX_TESTS_FILES: "test/a.test.mjs", XDG_RUNTIME_DIR: "/run/user/1001" }, Object.values(linuxPlatform().request)), { PATH: "/bin", XDG_RUNTIME_DIR: "/run/user/1001" });
 });
 
 const facts = (over = {}) => ({
@@ -228,8 +236,8 @@ const facts = (over = {}) => ({
   arch: "arm64", machine: "arm64", node: "v22.9.0", nodePath: "/usr/local/bin/node", fileSystem: "case-insensitive",
   tmux: { path: "/opt/homebrew/bin/tmux", version: "tmux 3.5a" }, tmuxSocket: { path: "/private/tmp/tmux-501/oats", there: false }, changed: [], ...over,
 });
-test("macos-tests formatHeader: what the log says of the run", () => {
-  const header = formatHeader(facts()).join("\n");
+test("named-test-run formatHeader: what the log says of the run", () => {
+  const header = formatHeader(facts(), macos).join("\n");
   for (const line of [
     `commit under test:   ${A}`, 'ref asked for:       "main" (a branch)',
     'workflow ref:        "awebai/oats/.github/workflows/macos-tests.yml@refs/heads/main"', `workflow commit:     "${B}"`, `script's commit:     ${B} (the workflow's)`,
@@ -240,13 +248,35 @@ test("macos-tests formatHeader: what the log says of the run", () => {
   ]) assert.ok(header.includes(line), `the header lacks: ${line}\n${header}`);
 
   // Not macOS, no tmux, not a workflow run: each is said, none is left out.
-  const local = formatHeader(facts({ macos: null, system: "Linux 6.8", tmux: null, workflowRef: null, workflowSha: null, runUrl: null, imageOS: null, imageVersion: null, kinds: ["branch", "tag"], repeated: ["test/a.test.mjs"], changed: [" M package.json"] })).join("\n");
+  const local = formatHeader(facts({ macos: null, system: "Linux 6.8", tmux: null, workflowRef: null, workflowSha: null, runUrl: null, imageOS: null, imageVersion: null, kinds: ["branch", "tag"], repeated: ["test/a.test.mjs"], changed: [" M package.json"] }), macos).join("\n");
   for (const line of ['macOS:               NOT macOS: "Linux 6.8"', "tmux on PATH:        no", "workflow ref:        (not set: not a workflow run)", "ImageOS (not set), ImageVersion (not set)", '"main" (a branch and a tag)', "(named more than once, runs once: test/a.test.mjs)", 'tracked files that differ from the commit: 1 (" M package.json")']) {
     assert.ok(local.includes(line), `the header lacks: ${line}\n${local}`);
   }
-  assert.match(formatHeader(facts({ scriptCommit: A })).join("\n"), /NOT the workflow's commit/);
-  assert.match(formatHeader(facts({ kinds: ["commit id"] })).join("\n"), /\(a commit id\)/);
-  assert.match(formatHeader(facts({ tmuxSocket: { path: "/private/tmp/tmux-501/oats", there: true } })).join("\n"), /EXISTS before the first file: the leak check is skipped for this run/);
+  assert.match(formatHeader(facts({ scriptCommit: A }), macos).join("\n"), /NOT the workflow's commit/);
+  assert.match(formatHeader(facts({ kinds: ["commit id"] }), macos).join("\n"), /\(a commit id\)/);
+  assert.match(formatHeader(facts({ tmuxSocket: { path: "/private/tmp/tmux-501/oats", there: true } }), macos).join("\n"), /EXISTS before the first file: the leak check is skipped for this run/);
+});
+
+// What the macOS runner printed before its code became named-test-run.mjs's, captured from the script
+// at fc8a91ad with the facts and runs of this file: the header, the step summary, a refusal and the
+// usage line. Its printed evidence is unchanged, and this says so by comparing whole texts.
+const BEFORE_THE_SHARED_SCRIPT = FIXTURE_PLACEHOLDER;
+test("named-test-run macOS: the header, the summary, a refusal and the usage are byte for byte what the macOS script printed", async () => {
+  const today = BEFORE_THE_SHARED_SCRIPT;
+  const local = facts({ macos: null, system: "Linux 6.8", tmux: null, workflowRef: null, workflowSha: null, runUrl: null, imageOS: null, imageVersion: null, kinds: ["branch", "tag"], repeated: ["test/a.test.mjs"], changed: [" M package.json"] });
+  assert.equal(formatHeader(facts(), macos).join("\n"), today.header);
+  assert.equal(formatHeader(local, macos).join("\n"), today.headerLocal);
+  const runs = [ran(), ran({ file: "test/b.test.mjs", code: 1, counts: { tests: 2, pass: 1, fail: 1, cancelled: 0, skipped: 0, todo: 0 }, durationMs: 4321 })];
+  assert.equal(summaryLines(facts(), runs, macos).join("\n"), today.summary);
+  assert.equal(summaryLines(local, [ran()], macos).join("\n"), today.summaryLocal);
+  const dir = mkdtempSync(join(tmpdir(), "oats-named-test-run-today-")), file = join(dir, "summary.md"), out = collect();
+  try {
+    const code = prepare({ tree: join(dir, "never"), platform: macos, repo: dir, env: { MACOS_TESTS_REF: "-x", MACOS_TESTS_FILES: "test/a.test.mjs ../y", GITHUB_STEP_SUMMARY: file }, write: out.write });
+    assert.deepEqual({ code, out: out.text(), summary: readFileSync(file, "utf8") }, today.refused);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+  const usage = collect();
+  await main(macos, [], {}, usage.write);
+  assert.equal(usage.text(), today.usage);
 });
 
 // ---- against a checkout: a local bare repository as origin ---------------------------------------
@@ -305,7 +335,7 @@ const { runner } = fixture;
 const request = (ref, files = "test/a.test.mjs") => validateRequest({ ref, files }, runner);
 const why = (result) => result.refusals.map(({ entry, why: reason }) => `${entry}: ${reason}`).join("\n");
 
-test("macos-tests resolveRef: a branch, a tag and a full commit id of origin resolve to their commit", () => {
+test("named-test-run resolveRef: a branch, a tag and a full commit id of origin resolve to their commit", () => {
   const { first, main, feature } = fixture;
   assert.deepEqual(resolveRef("main", runner), { asked: "main", ok: true, commit: main, kinds: ["branch"] });
   assert.deepEqual(resolveRef("feature/x", runner), { asked: "feature/x", ok: true, commit: feature, kinds: ["branch"] });
@@ -321,7 +351,7 @@ test("macos-tests resolveRef: a branch, a tag and a full commit id of origin res
   assert.match(clash.why, new RegExp(`the branch is ${main}, the tag is ${first}`));
 });
 
-test("macos-tests resolveRef: what is not a commit of origin's branches and tags is refused", () => {
+test("named-test-run resolveRef: what is not a commit of origin's branches and tags is refused", () => {
   const { main, gone, dangling, localOnly } = fixture;
   const refused = [
     [gone, /is no commit of what was fetched from origin \(a commit on no branch or tag, or a fork's, is not accepted\)/],
@@ -362,7 +392,7 @@ test("macos-tests resolveRef: what is not a commit of origin's branches and tags
   assert.deepEqual(resolveRef(undefined, runner), { ok: false, asked: "", why: "no ref was given" });
 });
 
-test("macos-tests validateRequest: files are checked against the commit's own tree", () => {
+test("named-test-run validateRequest: files are checked against the commit's own tree", () => {
   const { main, first, feature } = fixture;
   assert.deepEqual(request("main", "test/a.test.mjs, test/sub/b.test.mjs\npackages/p/test/c.test.mjs test/a.test.mjs"), {
     ok: true, asked: "main", commit: main, kinds: ["branch"], files: ["test/a.test.mjs", "test/sub/b.test.mjs", "packages/p/test/c.test.mjs"], repeated: ["test/a.test.mjs"],
@@ -388,7 +418,7 @@ test("macos-tests validateRequest: files are checked against the commit's own tr
   }
 });
 
-test("macos-tests validateRequest: a refusal names every entry it refuses, and why", () => {
+test("named-test-run validateRequest: a refusal names every entry it refuses, and why", () => {
   const result = request("pull/7/head", "test/a.test.mjs ../etc/passwd test/missing.test.mjs lib/core.mjs");
   assert.deepEqual(result, { ok: false, refusals: [
     { entry: 'ref "pull/7/head"', why: "is no branch or tag, and a pull request is not accepted (a fork's head is not this repository's commit): name a branch or a tag of this repository, or give a commit's full id" },
@@ -399,10 +429,9 @@ test("macos-tests validateRequest: a refusal names every entry it refuses, and w
   assert.deepEqual(files.refusals.map(({ entry }) => entry), ['file "-rf"', 'file "test/link.test.mjs"', 'file "test/missing.test.mjs"']);
 });
 
-const collect = () => { const chunks = []; return { write: (chunk) => chunks.push(String(chunk)), text: () => chunks.join("") }; };
 const stepEnv = (ref, files, extra = {}) => ({ ...process.env, MACOS_TESTS_REF: ref, MACOS_TESTS_FILES: files, MACOS_TESTS_MARKER: marker, TMUX_TMPDIR: join(base, "no-tmux-here"), GITHUB_STEP_SUMMARY: "", ...extra });
 
-test("macos-tests prepare: a refused request checks nothing out and runs nothing", () => {
+test("named-test-run prepare: a refused request checks nothing out and runs nothing", () => {
   const { gone, dangling } = fixture;
   for (const [i, [ref, files, reason]] of [
     [gone, "test/a.test.mjs", /is no commit of what was fetched from origin/],
@@ -414,7 +443,7 @@ test("macos-tests prepare: a refused request checks nothing out and runs nothing
     ["42", "test/a.test.mjs ../x", /a pull request is not accepted[^]*has a `\.\.` segment/],
   ].entries()) {
     const tree = join(base, `refused-${i}`), out = collect(), summary = join(base, `refused-${i}.md`);
-    assert.equal(prepare({ tree, repo: runner, env: stepEnv(ref, files, { GITHUB_STEP_SUMMARY: summary }), write: out.write }), 2, `${ref} ${files}`);
+    assert.equal(prepare({ tree, platform: macos, repo: runner, env: stepEnv(ref, files, { GITHUB_STEP_SUMMARY: summary }), write: out.write }), 2, `${ref} ${files}`);
     assert.match(out.text(), /^Refused: nothing was checked out, installed or run\.\n/);
     assert.match(out.text(), reason);
     assert.ok(!existsSync(tree), "nothing was checked out");
@@ -425,12 +454,12 @@ test("macos-tests prepare: a refused request checks nothing out and runs nothing
   assert.equal(git(runner, "worktree", "list", "--porcelain").match(/^worktree /gm).length, 1, "no tree was added to the checkout");
 });
 
-test("macos-tests prepare, then run: the commit goes to a second tree, the header says what was resolved, and each file runs there", async () => {
+test("named-test-run prepare, then run: the commit goes to a second tree, the header says what was resolved, and each file runs there", async () => {
   const { feature } = fixture;
   const tree = join(base, "tested"), summary = join(base, "summary.md");
   const env = stepEnv("feature/x", "test/only-feature.test.mjs, test/a.test.mjs", { GITHUB_STEP_SUMMARY: summary, GITHUB_WORKFLOW_REF: "o/r/.github/workflows/macos-tests.yml@refs/heads/main", GITHUB_SHA: fixture.main });
   const prepared = collect();
-  assert.equal(prepare({ tree, repo: runner, env, write: prepared.write }), 0, prepared.text());
+  assert.equal(prepare({ tree, platform: macos, repo: runner, env, write: prepared.write }), 0, prepared.text());
   assert.equal(git(tree, "rev-parse", "HEAD"), feature);
   assert.equal(git(tree, "rev-parse", "--abbrev-ref", "HEAD"), "HEAD", "detached: no branch of the checkout moves");
   assert.equal(git(runner, "rev-parse", "HEAD"), fixture.main, "the script's own tree stays where it was");
@@ -443,10 +472,10 @@ test("macos-tests prepare, then run: the commit goes to a second tree, the heade
   assert.match(prepared.text(), /\nEverything above this line was printed before any code of the ref ran\.\n$/);
   assert.ok(!existsSync(marker), "prepare runs nothing of the ref");
   // A second prepare does not write over a tree that is there.
-  assert.equal(prepare({ tree, repo: runner, env, write: collect().write }), 2);
+  assert.equal(prepare({ tree, platform: macos, repo: runner, env, write: collect().write }), 2);
 
   const out = collect();
-  assert.equal(await run({ tree, repo: runner, env, write: out.write, timeoutMs: 120_000 }), 0, out.text());
+  assert.equal(await run({ tree, platform: macos, repo: runner, env, write: out.write, timeoutMs: 120_000 }), 0, out.text());
   assert.equal(readFileSync(marker, "utf8"), "ran\nran\n", "each file ran once");
   const text = out.text();
   assert.ok(text.indexOf(`commit under test:   ${feature}`) < text.indexOf("=== 1/2 test/only-feature.test.mjs: node --test test/only-feature.test.mjs ==="), "the header comes before the first file");
@@ -464,18 +493,56 @@ test("macos-tests prepare, then run: the commit goes to a second tree, the heade
   rmSync(marker);
   for (const [ref, files, reason] of [["main", "test/a.test.mjs", /the tree at .* is not at /], ["feature/x", "test/missing.test.mjs", /is not a file at that commit/], ["", "test/a.test.mjs", /no ref was given/]]) {
     const refused = collect();
-    assert.equal(await run({ tree, repo: runner, env: stepEnv(ref, files), write: refused.write }), 2);
+    assert.equal(await run({ tree, platform: macos, repo: runner, env: stepEnv(ref, files), write: refused.write }), 2);
     assert.match(refused.text(), /^Refused: no file was run\./);
     assert.match(refused.text(), reason);
   }
-  assert.equal(await run({ tree: join(base, "no-such-tree"), repo: runner, env, write: collect().write }), 2);
+  assert.equal(await run({ tree: join(base, "no-such-tree"), platform: macos, repo: runner, env, write: collect().write }), 2);
   assert.ok(!existsSync(marker), "nothing ran");
 });
 
-test("macos-tests main: on a workflow run nothing it prints is read as a workflow command", async () => {
+// The Linux platform, through the same two steps. Its programs are fakes: nothing here asks this
+// host's own systemd, so the case runs the same on a Mac and on pull-request CI.
+const program = (name, body) => { const path = join(base, name); writeFileSync(path, `#!/bin/sh\n${body}\n`); chmodSync(path, 0o755); return path; };
+const linuxEnv = (extra = {}) => ({ ...process.env, LINUX_TESTS_REF: "feature/x", LINUX_TESTS_FILES: "test/a.test.mjs", MACOS_TESTS_MARKER: marker, TMUX_TMPDIR: join(base, "no-tmux-here"), XDG_RUNTIME_DIR: "/run/user/1001", GITHUB_STEP_SUMMARY: "", ...extra });
+test("named-test-run Linux: the header says the user manager answered, and the files run; one that did not answer fails both steps and runs nothing", async () => {
+  if (existsSync(marker)) rmSync(marker);
+  const loginctl = program("loginctl", "echo yes");
+  const answering = linuxPlatform({ systemctl: program("systemctl-running", "echo running"), loginctl });
+  const tree = join(base, "linux-tested"), summary = join(base, "linux-summary.md");
+  const prepared = collect();
+  assert.equal(prepare({ tree, platform: answering, repo: runner, env: linuxEnv({ GITHUB_STEP_SUMMARY: summary }), write: prepared.write }), 0, prepared.text());
+  assert.match(prepared.text(), /^Linux test run\n  commit under test:   /);
+  for (const line of ['XDG_RUNTIME_DIR:     "/run/user/1001"', 'lingering:           "yes" (loginctl show-user', 'user manager:        answered "running" (systemctl --user is-system-running --wait, ', "of at most 60.0s)"]) {
+    assert.ok(prepared.text().includes(line), `prepare did not print: ${line}\n${prepared.text()}`);
+  }
+  assert.match(prepared.text(), /\nEverything above this line was printed before any code of the ref ran\.\n$/);
+  const out = collect();
+  assert.equal(await run({ tree, platform: answering, repo: runner, env: linuxEnv({ GITHUB_STEP_SUMMARY: summary }), write: out.write, timeoutMs: 120_000 }), 0, out.text());
+  assert.match(out.text(), /user manager: {8}answered "running" \(systemctl --user is-system-running, read again, /);
+  assert.equal(readFileSync(marker, "utf8"), "ran\n");
+  assert.match(readFileSync(summary, "utf8"), /## Linux test run: passed\n\n[^]*, user manager "running", /);
+  rmSync(marker);
+
+  // A manager that does not answer: the header says so, the step fails after it, and nothing runs.
+  const silent = linuxPlatform({ systemctl: program("systemctl-offline", "echo offline; exit 1"), loginctl });
+  const unfit = join(base, "linux-unfit"), refusedSummary = join(base, "linux-refused.md");
+  const refused = collect();
+  assert.equal(prepare({ tree: unfit, platform: silent, repo: runner, env: linuxEnv({ GITHUB_STEP_SUMMARY: refusedSummary }), write: refused.write }), 2);
+  assert.match(refused.text(), /user manager: {8}did NOT answer: "offline" \(systemctl --user is-system-running --wait, /);
+  assert.match(refused.text(), /\n\nRefused: nothing was installed or run\.\n  the user manager: did not answer \("offline"\): `systemctl --user` cannot be relied on, so no file runs\n$/);
+  assert.ok(!refused.text().includes("The request is valid"));
+  assert.match(readFileSync(refusedSummary, "utf8"), /## Linux test run: refused/);
+  const again = collect();
+  assert.equal(await run({ tree: unfit, platform: silent, repo: runner, env: linuxEnv(), write: again.write, timeoutMs: 120_000 }), 2);
+  assert.match(again.text(), /\nRefused: no file was run\.\n  the user manager: did not answer/);
+  assert.ok(!existsSync(marker), "nothing ran");
+});
+
+test("named-test-run main: on a workflow run nothing it prints is read as a workflow command", async () => {
   const out = collect(), tree = join(base, "never");
   // Refused on its shape, before the checkout is read at all.
-  assert.equal(await main(["prepare", tree], stepEnv("::error::x", "::add-mask::failed", { GITHUB_ACTIONS: "true" }), out.write), 2);
+  assert.equal(await main(macos, ["prepare", tree], stepEnv("::error::x", "::add-mask::failed", { GITHUB_ACTIONS: "true" }), out.write), 2);
   const lines = out.text().trimEnd().split("\n");
   const token = /^::stop-commands::([0-9a-f]{32})$/.exec(lines[0])?.[1];
   assert.ok(token, `the first line stops workflow commands: ${lines[0]}`);
@@ -486,16 +553,16 @@ test("macos-tests main: on a workflow run nothing it prints is read as a workflo
   assert.ok(!existsSync(tree));
   // Not a workflow run: no command lines at all.
   const local = collect();
-  assert.equal(await main(["prepare", tree], stepEnv("-x", "test/a.test.mjs", { GITHUB_ACTIONS: "" }), local.write), 2);
+  assert.equal(await main(macos, ["prepare", tree], stepEnv("-x", "test/a.test.mjs", { GITHUB_ACTIONS: "" }), local.write), 2);
   assert.ok(!local.text().includes("::stop-commands::"));
   for (const argv of [[], ["prepare"], ["check", tree], ["run", tree, "extra"]]) {
     const usage = collect();
-    assert.equal(await main(argv, stepEnv("main", "test/a.test.mjs"), usage.write), 2);
+    assert.equal(await main(macos, argv, stepEnv("main", "test/a.test.mjs"), usage.write), 2);
     assert.match(usage.text(), /^usage: node scripts\/macos-tests\.mjs <prepare\|run> <tree>/);
   }
 });
 
-test("macos-tests measureCase: measured, by a file made and looked for by another case", () => {
+test("named-test-run measureCase: measured, by a file made and looked for by another case", () => {
   const dir = mkdtempSync(join(base, "case-"));
   const measured = measureCase(dir);
   writeFileSync(join(dir, "probe"), "");
@@ -504,7 +571,7 @@ test("macos-tests measureCase: measured, by a file made and looked for by anothe
   assert.match(measureCase(join(base, "no-such-directory")), /^unknown \(ENOENT\)$/);
 });
 
-test("macos-tests defaultTmuxSocket: tmux's own place for the server named oats", () => {
+test("named-test-run defaultTmuxSocket: tmux's own place for the server named oats", () => {
   const uid = process.getuid();
   assert.equal(defaultTmuxSocket({ TMUX_TMPDIR: "/some/dir" }), `/some/dir/tmux-${uid}/oats`);
   // /tmp is a link on macOS: tmux resolves it, and so does this.

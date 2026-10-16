@@ -79,7 +79,7 @@ and the rules its tests pin.
 | `souls/` | this repository's own souls (a workspace member) |
 | `docs/` | the reference pages, schemas, design records and release notes |
 | `packages/` | the pi adapter, the Desktop, the terminal client (`tui/`), the readers both clients share (`client/`), the turn-record package and experiments |
-| `scripts/` | the test runner (`run-tests.mjs`), its reporter of unasserted warnings and the preload that gives each test file a temporary directory of its own, the session-inheritance check (`test-session-inheritance.mjs`), validators, packaging checks, the release lane and the assembly of release-notes entries |
+| `scripts/` | the test runner (`run-tests.mjs`), its reporter of unasserted warnings and the preload that gives each test file a temporary directory of its own, the session-inheritance check (`test-session-inheritance.mjs`), validators, packaging checks, the release lane, the assembly of release-notes entries, and the hand-started named test runs on macOS and Linux (`named-test-run.mjs`, with `macos-tests.mjs` and `linux-tests.mjs`: [named test runs](named-test-runs.md)) |
 | `test/` | the kernel and CLI suites, with their fixtures |
 
 ## Kernel modules

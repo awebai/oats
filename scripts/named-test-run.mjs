@@ -1,13 +1,20 @@
-#!/usr/bin/env node
-// The script of the hand-started macOS test runs (.github/workflows/macos-tests.yml,
-// docs/macos-test-runs.md): it runs named test files of a named ref, each alone, and
-// prints what a reader of the run needs beside GitHub's own record of it.
+// The one implementation of the hand-started test runs on a hosted runner: macOS
+// (.github/workflows/macos-tests.yml, scripts/macos-tests.mjs) and Linux
+// (.github/workflows/linux-tests.yml, scripts/linux-tests.mjs), both owned by
+// docs/named-test-runs.md. It runs named test files of a named ref, each alone, and prints what
+// a reader of the run needs beside GitHub's own record of it. Each runner's script is a small
+// platform object and a command line:
 //
-//   node scripts/macos-tests.mjs prepare <tree>   validate the request, print the header,
-//                                                 put the commit in <tree>
-//   node scripts/macos-tests.mjs run <tree>       validate again, run each file, print the table
+//   node scripts/<runner>-tests.mjs prepare <tree>   validate the request, print the header,
+//                                                     put the commit in <tree>
+//   node scripts/<runner>-tests.mjs run <tree>       validate again, run each file, print the table
 //
-// The request is two environment variables, MACOS_TESTS_REF and MACOS_TESTS_FILES. They
+// A platform is { title, script, request: { ref, files }, readFacts({ env, step }), headerLines(facts),
+// summary(facts), refusal(facts)? }: the header's title, the command line's path, the names of the
+// request's two environment variables, the facts and lines only that runner has, and, when the
+// runner can be unfit to run tests (Linux: its user manager did not answer), why.
+//
+// The request is two environment variables, <RUNNER>_TESTS_REF and <RUNNER>_TESTS_FILES. They
 // are a person's text and are treated as such:
 //
 //   * Neither is ever part of a shell line: every child is started with an argument array.
@@ -17,14 +24,15 @@
 //   * A file is checked against a plain pattern, then against the commit's own tree
 //     (`git ls-tree`), before anything of the ref is checked out.
 //
-// Two trees. The workflow checks out its own commit and runs this script from it; the ref
+// Two trees. The workflow checks out its own commit and runs its script from it; the ref
 // under test goes to <tree>, a second directory (`git worktree add --detach`). A ref that
 // predates the workflow has no script, and the code that validates and decides is the
-// workflow's, not the tested branch's. Nothing is installed in the script's tree, so this file imports
-// node's built-in modules only: not the kernel (`lib/`), not a package.
+// workflow's, not the tested branch's. Nothing is installed in the scripts' tree, so this file
+// and the runners' scripts import node's built-in modules only: not the kernel (`lib/`), not a
+// package.
 //
 // What is protected, and what is not. All of it holds for a run whose workflow commit is the
-// default branch's: started from another branch, the workflow and this script are that
+// default branch's: started from another branch, the workflow and these scripts are that
 // branch's, and so is every line they print, the header's `workflow ref` included. Where a
 // run ran from is read in GitHub's record of the run, never in its log.
 //
@@ -35,13 +43,13 @@
 // carried between steps, which guards against an accident and not against a commit that sets
 // out to forge its result. The two trees are no boundary either: they let a ref older than
 // the workflow be tested, and keep an honest branch from changing the runner by accident
-// (docs/macos-test-runs.md).
+// (docs/named-test-runs.md).
 
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { accessSync, appendFileSync, constants, existsSync, lstatSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { devNull, machine, release, type } from "node:os";
-import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 
@@ -51,8 +59,9 @@ import { fileURLToPath } from "node:url";
 export const MAX_FILES = 10;
 /** What one file gets before its process group is killed. */
 export const FILE_TIMEOUT_MS = 5 * 60_000;
-/** The job's `timeout-minutes` (test/macos-tests-workflow.test.mjs pins the workflow to it): room
- *  for MAX_FILES files at FILE_TIMEOUT_MS each, and for the installs before them. */
+/** Each job's `timeout-minutes` (test/macos-tests-workflow.test.mjs and test/linux-tests-workflow.test.mjs
+ *  pin the workflows to it): room for MAX_FILES files at FILE_TIMEOUT_MS each, and for the installs
+ *  before them. */
 export const JOB_TIMEOUT_MINUTES = 60;
 /** What a file's output pipes get to close after it ended, and again after its group was killed. */
 export const KILL_GRACE_MS = 2_000;
@@ -72,7 +81,8 @@ export function show(text) {
   const quoted = JSON.stringify(s.slice(0, SHOWN)).replace(/[^\x20-\x7e]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
   return s.length > SHOWN ? `${quoted} (cut: ${s.length} characters)` : quoted;
 }
-const html = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+/** Text for the step summary's HTML: `&`, `<` and `>` escaped. */
+export const html = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 // ---- the list of files ---------------------------------------------------------------------------
 
@@ -331,9 +341,9 @@ function killGroup(pid) {
  *  summary and the next steps' environment are the workflow's to write: this keeps a test from
  *  writing them by accident and is no boundary, the files are the same user's) and node's marker of
  *  a nested test run, which would make the file report in the runner's wire format when this
- *  script is itself under test. */
-export function testEnv(env) {
-  const dropped = new Set(["MACOS_TESTS_REF", "MACOS_TESTS_FILES", "GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_PATH", "GITHUB_STATE", "GITHUB_STEP_SUMMARY", "NODE_TEST_CONTEXT"]);
+ *  script is itself under test. `requestVars` are the names of the request's two variables. */
+export function testEnv(env, requestVars = []) {
+  const dropped = new Set([...requestVars, "GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_PATH", "GITHUB_STATE", "GITHUB_STEP_SUMMARY", "NODE_TEST_CONTEXT"]);
   return Object.fromEntries(Object.entries(env).filter(([key]) => !dropped.has(key)));
 }
 
@@ -341,13 +351,14 @@ export function testEnv(env) {
  *  group of its own → Promise of { file, counts, code, signal, timedOut, durationMs, leftover,
  *  error }. Its output goes to `write` as it comes. After `timeoutMs` the whole group is killed. A
  *  file that ended leaves no process of its group behind either (`leftover` says there was one):
- *  the next file runs alone. `command` is the tests' seam; the command line never passes it. */
-export function runFile(file, { cwd, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs = FILE_TIMEOUT_MS, graceMs = KILL_GRACE_MS, command = [process.execPath, "--test"] } = {}) {
+ *  the next file runs alone. `requestVars` go to testEnv. `command` is the tests' seam; the command
+ *  line never passes it. */
+export function runFile(file, { cwd, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs = FILE_TIMEOUT_MS, graceMs = KILL_GRACE_MS, requestVars = [], command = [process.execPath, "--test"] } = {}) {
   return new Promise((done) => {
     const started = Date.now(), reader = countsReader();
     const result = { file, counts: null, code: null, signal: null, timedOut: false, durationMs: 0, leftover: false, error: null };
     let child;
-    try { child = spawn(command[0], [...command.slice(1), file], { cwd, env: testEnv(env), detached: true, stdio: ["ignore", "pipe", "pipe"] }); }
+    try { child = spawn(command[0], [...command.slice(1), file], { cwd, env: testEnv(env, requestVars), detached: true, stdio: ["ignore", "pipe", "pipe"] }); }
     catch (error) { done({ ...result, error: error.message }); return; }
     let settled = false, closed = false, wait = null;
     const settle = () => {
@@ -454,12 +465,12 @@ export function conclude(runs) {
 /** Run each file alone, one after another, and print each one's result → Promise of the runs. A
  *  failing or hung file does not stop the ones after it. With `tmuxSocket` (a path that is not
  *  there yet), the file after which it first exists gets `leak`. */
-export async function runFiles(files, { cwd, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs = FILE_TIMEOUT_MS, graceMs = KILL_GRACE_MS, tmuxSocket = null, command } = {}) {
+export async function runFiles(files, { cwd, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs = FILE_TIMEOUT_MS, graceMs = KILL_GRACE_MS, tmuxSocket = null, requestVars = [], command } = {}) {
   const runs = [];
   let watching = tmuxSocket !== null && !socketThere(tmuxSocket);
   for (const [i, file] of files.entries()) {
     write(`\n=== ${i + 1}/${files.length} ${file}: node --test ${file} ===\n`);
-    const run = await runFile(file, { cwd, env, write, timeoutMs, graceMs, ...(command ? { command } : {}) });
+    const run = await runFile(file, { cwd, env, write, timeoutMs, graceMs, requestVars, ...(command ? { command } : {}) });
     run.leak = watching && socketThere(tmuxSocket);
     if (run.leak) watching = false;
     runs.push(run);
@@ -490,7 +501,8 @@ export function measureCase(dir) {
   finally { if (probe) rmSync(probe, { recursive: true, force: true }); }
 }
 
-const one = (file, args) => { try { return execFileSync(file, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30_000 }).trim(); } catch { return null; } };
+/** What a program prints, trimmed → text, or null when it could not be run or failed. Never a shell. */
+export const outputOf = (file, args) => { try { return execFileSync(file, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30_000 }).trim(); } catch { return null; } };
 function onPath(name, env) {
   for (const dir of String(env.PATH ?? "").split(delimiter).filter(isAbsolute)) {
     try { accessSync(join(dir, name), constants.X_OK); if (statSync(join(dir, name)).isFile()) return join(dir, name); } catch { /* next */ }
@@ -498,8 +510,9 @@ function onPath(name, env) {
   return null;
 }
 
-/** The facts of the header, read from this host → an object for formatHeader. */
-export function readFacts({ request, tree, repo = REPO_ROOT, env = process.env }) {
+/** The facts of the header, read from this host → an object for formatHeader: the runners' common
+ *  facts, and the platform's own (`step` is "prepare" or "run"). */
+export function readFacts({ request, tree, platform, step, repo = REPO_ROOT, env = process.env }) {
   const tmux = onPath("tmux", env), parent = dirname(tree);
   const sameDevice = existsSync(tree) && statSync(tree).dev === statSync(parent).dev;
   const changed = existsSync(tree) ? git(tree, ["status", "--porcelain", "--untracked-files=no"], env) : null;
@@ -509,31 +522,33 @@ export function readFacts({ request, tree, repo = REPO_ROOT, env = process.env }
     scriptCommit: git(repo, ["rev-parse", "--verify", "--quiet", "HEAD"], env).out.trim() || null,
     runUrl: env.GITHUB_SERVER_URL && env.GITHUB_REPOSITORY && env.GITHUB_RUN_ID ? `${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}` : null,
     runAttempt: env.GITHUB_RUN_ATTEMPT ?? null,
-    macos: process.platform === "darwin" ? { version: one("/usr/bin/sw_vers", ["-productVersion"]), build: one("/usr/bin/sw_vers", ["-buildVersion"]) } : null,
     system: `${type()} ${release()}`,
     imageOS: env.ImageOS ?? null, imageVersion: env.ImageVersion ?? null,
     arch: process.arch, machine: machine(),
     node: process.version, nodePath: process.execPath,
     fileSystem: sameDevice ? measureCase(parent) : "unknown (the tree is not there, or not on its parent's file system)",
-    tmux: tmux ? { path: tmux, version: one(tmux, ["-V"]) } : null,
+    tmux: tmux ? { path: tmux, version: outputOf(tmux, ["-V"]) } : null,
     tmuxSocket: { path: defaultTmuxSocket(env), there: socketThere(defaultTmuxSocket(env)) },
     changed: changed?.ok ? changed.out.split("\n").filter(Boolean) : null,
+    ...platform.readFacts({ env, step }),
   };
 }
 
 const unset = "(not set: not a workflow run)";
-/** The header as text lines. Every value that is not this script's own goes through show(). */
-export function formatHeader(f) {
+/** The header's line for the runner image, which every hosted runner names the same way. */
+export const imageLine = (f) => `  runner image:        ImageOS ${f.imageOS ? show(f.imageOS) : "(not set)"}, ImageVersion ${f.imageVersion ? show(f.imageVersion) : "(not set)"}`;
+/** The header as text lines: the platform's title and its own lines among the common ones. Every
+ *  value that is not this script's own goes through show(). */
+export function formatHeader(f, platform) {
   const lines = [
-    "macOS test run",
+    platform.title,
     `  commit under test:   ${f.commit}`,
     `  ref asked for:       ${show(f.asked)} (${f.kinds.map((k) => (k === "commit id" ? "a commit id" : `a ${k}`)).join(" and ")})`,
     `  workflow ref:        ${f.workflowRef ? show(f.workflowRef) : unset}`,
     `  workflow commit:     ${f.workflowSha ? show(f.workflowSha) : unset}`,
     `  script's commit:     ${f.scriptCommit ?? "unknown"}${f.workflowSha && f.scriptCommit ? (f.scriptCommit === f.workflowSha ? " (the workflow's)" : " (NOT the workflow's commit)") : ""}`,
     `  run:                 ${f.runUrl ? `${show(f.runUrl)}, attempt ${show(f.runAttempt ?? "?")}` : unset}`,
-    `  macOS:               ${f.macos ? `${show(f.macos.version ?? "unknown")} (build ${show(f.macos.build ?? "unknown")})` : `NOT macOS: ${show(f.system)}`}`,
-    `  runner image:        ImageOS ${f.imageOS ? show(f.imageOS) : "(not set)"}, ImageVersion ${f.imageVersion ? show(f.imageVersion) : "(not set)"}`,
+    ...platform.headerLines(f),
     `  architecture:        ${f.arch} (machine ${show(f.machine)})`,
     `  node:                ${f.node} (${show(f.nodePath)})`,
     `  file system:         ${f.fileSystem} (measured beside the tree: a file made, then looked for by another case)`,
@@ -552,10 +567,10 @@ export function formatHeader(f) {
 
 const NOTHING_YET = "nothing was checked out, installed or run", NO_FILE = "no file was run";
 /** Print a refusal, every entry of it → the exit status. `nothing` says how far the job had come. */
-function refuse(refusals, { write, env, nothing = NOTHING_YET }) {
+function refuse(refusals, { write, env, platform, nothing = NOTHING_YET }) {
   write(`Refused: ${nothing}.\n`);
   for (const { entry, why } of refusals) write(`  ${entry}: ${why}\n`);
-  summarize(env, ["## macOS test run: refused", "", `Refused: ${nothing}.`, "", "<pre>", ...refusals.map(({ entry, why }) => html(`${entry}: ${why}`)), "</pre>", ""]);
+  summarize(env, [`## ${platform.title}: refused`, "", `Refused: ${nothing}.`, "", "<pre>", ...refusals.map(({ entry, why }) => html(`${entry}: ${why}`)), "</pre>", ""]);
   return 2;
 }
 function summarize(env, lines) {
@@ -584,57 +599,74 @@ function treeRefusal(tree, request, env) {
 const BEFORE_THE_REF = "Everything above this line was printed before any code of the ref ran.";
 const AFTER_THE_INSTALLS = "This header was read again after the ref's install scripts ran, and all that follows is printed while its code runs.\nThe header to rely on is the validation step's, printed before any code of the ref ran: the two should agree.";
 
-/** Step one: validate the request, put its commit in `tree`, print the header → the exit status. */
-export function prepare({ tree, repo = REPO_ROOT, env = process.env, write = (chunk) => process.stdout.write(chunk) }) {
-  const request = validateRequest({ ref: env.MACOS_TESTS_REF, files: env.MACOS_TESTS_FILES }, repo, env);
-  if (!request.ok) return refuse(request.refusals, { write, env });
-  if (existsSync(tree)) return refuse([{ entry: `the tree ${show(tree)}`, why: "is there already" }], { write, env });
+const INSTALLED_NOTHING = "nothing was installed or run";
+/** The request a step reads: the platform's two environment variables. */
+const requestOf = (platform, env) => ({ ref: env[platform.request.ref], files: env[platform.request.files] });
+
+/** Step one: validate the request, put its commit in `tree`, print the header → the exit status. A
+ *  runner the platform finds unfit (its `refusal`) is refused after the header, which says why. */
+export function prepare({ tree, platform, repo = REPO_ROOT, env = process.env, write = (chunk) => process.stdout.write(chunk) }) {
+  const request = validateRequest(requestOf(platform, env), repo, env);
+  if (!request.ok) return refuse(request.refusals, { write, env, platform });
+  if (existsSync(tree)) return refuse([{ entry: `the tree ${show(tree)}`, why: "is there already" }], { write, env, platform });
   const added = git(repo, ["worktree", "add", "--detach", tree, request.commit], env);
-  if (!added.ok) return refuse([{ entry: `commit ${request.commit}`, why: `could not be checked out: ${added.err}` }], { write, env });
+  if (!added.ok) return refuse([{ entry: `commit ${request.commit}`, why: `could not be checked out: ${added.err}` }], { write, env, platform });
   const wrong = treeRefusal(tree, request, env);
-  if (wrong) return refuse([{ entry: `commit ${request.commit}`, why: wrong }], { write, env });
-  write(`${formatHeader(readFacts({ request, tree, repo, env })).join("\n")}\n\nThe request is valid. ${request.commit} is checked out at ${tree}.\n${BEFORE_THE_REF}\n`);
+  if (wrong) return refuse([{ entry: `commit ${request.commit}`, why: wrong }], { write, env, platform });
+  const facts = readFacts({ request, tree, platform, step: "prepare", repo, env });
+  const unfit = platform.refusal?.(facts);
+  write(`${formatHeader(facts, platform).join("\n")}\n\n`);
+  if (unfit) return refuse([unfit], { write, env, platform, nothing: INSTALLED_NOTHING });
+  write(`The request is valid. ${request.commit} is checked out at ${tree}.\n${BEFORE_THE_REF}\n`);
   return 0;
 }
 
-/** Step two: validate again, run each file in `tree`, print the table → Promise of the exit status. */
-export async function run({ tree, repo = REPO_ROOT, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs = FILE_TIMEOUT_MS }) {
-  const request = validateRequest({ ref: env.MACOS_TESTS_REF, files: env.MACOS_TESTS_FILES }, repo, env);
-  if (!request.ok) return refuse(request.refusals, { write, env, nothing: NO_FILE });
-  const wrong = treeRefusal(tree, request, env);
-  if (wrong) return refuse([{ entry: `commit ${request.commit}`, why: wrong }], { write, env, nothing: NO_FILE });
-  const facts = readFacts({ request, tree, repo, env });
-  write(`${formatHeader(facts).join("\n")}\n\n${AFTER_THE_INSTALLS}\n`);
-  // Read once, before the first file: a socket that is there already is not a file's doing.
-  const runs = await runFiles(request.files, { cwd: tree, env, write, timeoutMs, tmuxSocket: facts.tmuxSocket.there ? null : facts.tmuxSocket.path });
+/** The step summary of a run that ran its files → lines of Markdown. */
+export function summaryLines(facts, runs, platform) {
   const { ok, lines } = conclude(runs);
-  write(`\n${buildTable(runs).join("\n")}\n\n${lines.join("\n")}\n`);
-  summarize(env, [
-    `## macOS test run: ${ok ? "passed" : "FAILED"}`, "",
+  return [
+    `## ${platform.title}: ${ok ? "passed" : "FAILED"}`, "",
     `- Commit under test: <code>${html(facts.commit)}</code>, asked for as <code>${html(show(facts.asked))}</code>.`,
     `- Workflow: <code>${html(show(facts.workflowRef ?? "not a workflow run"))}</code> at <code>${html(show(facts.workflowSha ?? "-"))}</code>.`,
-    `- ${facts.macos ? `macOS ${html(show(facts.macos.version ?? "unknown"))}` : "NOT macOS"}, ${html(facts.arch)}, node ${html(facts.node)}, ${html(facts.fileSystem)} file system, tmux ${facts.tmux ? html(show(facts.tmux.version ?? "version unknown")) : "not on PATH"}.`,
+    `- ${platform.summary(facts)}, ${html(facts.arch)}, node ${html(facts.node)}, ${html(facts.fileSystem)} file system, tmux ${facts.tmux ? html(show(facts.tmux.version ?? "version unknown")) : "not on PATH"}.`,
     "", ...buildMarkdownTable(runs), "", ...lines.map((line) => `- ${html(line)}`), "",
     "The step's log has the full header and each file's output; it is the evidence, not this summary.", "",
-  ]);
+  ];
+}
+
+/** Step two: validate again, run each file in `tree`, print the table → Promise of the exit status. */
+export async function run({ tree, platform, repo = REPO_ROOT, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs = FILE_TIMEOUT_MS }) {
+  const request = validateRequest(requestOf(platform, env), repo, env);
+  if (!request.ok) return refuse(request.refusals, { write, env, platform, nothing: NO_FILE });
+  const wrong = treeRefusal(tree, request, env);
+  if (wrong) return refuse([{ entry: `commit ${request.commit}`, why: wrong }], { write, env, platform, nothing: NO_FILE });
+  const facts = readFacts({ request, tree, platform, step: "run", repo, env });
+  const unfit = platform.refusal?.(facts);
+  write(`${formatHeader(facts, platform).join("\n")}\n\n${AFTER_THE_INSTALLS}\n`);
+  if (unfit) return refuse([unfit], { write, env, platform, nothing: NO_FILE });
+  // Read once, before the first file: a socket that is there already is not a file's doing.
+  const runs = await runFiles(request.files, { cwd: tree, env, write, timeoutMs, tmuxSocket: facts.tmuxSocket.there ? null : facts.tmuxSocket.path, requestVars: Object.values(platform.request) });
+  const { ok, lines } = conclude(runs);
+  write(`\n${buildTable(runs).join("\n")}\n\n${lines.join("\n")}\n`);
+  summarize(env, summaryLines(facts, runs, platform));
   return ok ? 0 : 1;
 }
 
-/** The command line → Promise of the exit status. On a workflow run, what this step prints is kept
- *  from being read as workflow commands (`::error::`, `::add-mask::`): most of it is a test's output. */
-export async function main(argv, env = process.env, write = (chunk) => process.stdout.write(chunk)) {
+/** A runner's command line → Promise of the exit status. On a workflow run, what this step prints is
+ *  kept from being read as workflow commands (`::error::`, `::add-mask::`): most of it is a test's
+ *  output. */
+export async function main(platform, argv, env = process.env, write = (chunk) => process.stdout.write(chunk)) {
   const [step, treeArg] = argv;
   if (argv.length !== 2 || !["prepare", "run"].includes(step)) {
-    write("usage: node scripts/macos-tests.mjs <prepare|run> <tree>   (the request: MACOS_TESTS_REF, MACOS_TESTS_FILES)\n");
+    write(`usage: node ${platform.script} <prepare|run> <tree>   (the request: ${platform.request.ref}, ${platform.request.files})\n`);
     return 2;
   }
   const tree = resolve(treeArg), token = env.GITHUB_ACTIONS === "true" ? randomBytes(16).toString("hex") : null;
   if (token) write(`::stop-commands::${token}\n`);
-  try { return step === "prepare" ? prepare({ tree, env, write }) : await run({ tree, env, write }); }
-  catch (error) { write(`macos-tests: ${error.stack ?? error}\n`); return 2; }
+  try { return step === "prepare" ? prepare({ tree, platform, env, write }) : await run({ tree, platform, env, write }); }
+  catch (error) { write(`${basename(platform.script, ".mjs")}: ${error.stack ?? error}\n`); return 2; }
   finally { if (token) write(`\n::${token}::\n`); }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  process.exitCode = await main(process.argv.slice(2));
-}
+/** Whether a runner's script was started as the command line, from its `import.meta.url`. */
+export const isCommandLine = (url) => Boolean(process.argv[1]) && resolve(process.argv[1]) === fileURLToPath(url);

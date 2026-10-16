@@ -1,6 +1,6 @@
 # Run named test files of a named ref on a macOS runner. Started by hand, never by a push or a
-# pull request. docs/macos-test-runs.md owns it: what a run is evidence of, how to start one, the
-# bounds, and what a run does not show.
+# pull request. docs/named-test-runs.md owns it: what a run is evidence of, how to start one, the
+# bounds, what a run does not show, and the workflow's name as the contract test files guard on.
 #
 # The terms, each pinned by test/macos-tests-workflow.test.mjs:
 #
@@ -22,6 +22,9 @@
 # All of this is of a run whose workflow commit is the default branch's. Started from another
 # branch, this file and the script are that branch's, and so is every line the run prints: where
 # a run ran from is read in GitHub's record of it, never in its log.
+#
+# The name below is a contract: test files that need macOS's own behaviour can guard on
+# GITHUB_WORKFLOW being this name, GITHUB_EVENT_NAME being `workflow_dispatch` and the platform.
 name: macOS tests
 
 on:
@@ -55,7 +58,7 @@ jobs:
     name: Named test files on macOS
     # The image the repository's other macOS jobs use (release.yml, build-installers.yml).
     runs-on: macos-14
-    # scripts/macos-tests.mjs: 10 files at 5 minutes each, and the installs before them.
+    # scripts/named-test-run.mjs: 10 files at 5 minutes each, and the installs before them.
     timeout-minutes: 60
     steps:
       - name: Check out the workflow's own commit
