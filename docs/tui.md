@@ -145,9 +145,13 @@ runs.
   shown in quotation marks, and names nobody. A reason that is withheld is
   `[withheld]` alone. Then it shows what it needs from you with how long
   it has waited and its own message, harness and model, work mode and
-  branch, team, parent, when it last started, and its home. From 80
-  columns up it stands beside the list; on a narrower terminal `Tab` opens
-  it as a page.
+  branch, team, parent and siblings, when it last started, and its home.
+  The siblings are the instances at the other end of an explicit sibling
+  link, either way, as the Desktop reads them: `sibling of a`, `sibling of
+  a and b`, `sibling of a, b and c`. They are read inside the instance's
+  own deployment, and a name that is no instance there, or two of them, is
+  not shown. From 80 columns up it stands beside the list; on a narrower
+  terminal `Tab` opens it as a page.
 - **Opening an agent.** `Enter` on an instance that runs opens its terminal
   beside the list, where the detail was, as a tab: see
   [Open an agent's terminal](#open-an-agents-terminal) and [Tabs](#tabs).
@@ -1015,7 +1019,9 @@ is open no terminal is drawn and the TUI reads the keys.
 - **It lists, in this order:** the instances that can be opened, the most
   recently opened or shown in this run first (when the first is the shown tab's,
   the second is selected as it opens), then the list's order, each with its
-  state mark, its name and, for another machine, `on <machine>`; the souls
+  state mark, its name, for another machine `on <machine>`, and, dim, its
+  siblings as the detail names them (`sibling of <names>`), which are cut
+  first when the row is short and are never matched by a query; the souls
   of the open workspace, once they were read (by [the Souls
   view](#the-souls-view), the Capabilities view or a spawn), and choosing
   one shows the Souls view with it selected; its capabilities, once [the

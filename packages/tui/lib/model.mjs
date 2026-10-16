@@ -7,7 +7,7 @@
 // in. What it adds is the TUI's: the window, the clock times, and which fact stands on which line.
 import {
   TERMS, panelData, displayLine, DETAIL_WITHHELD, originLead, instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree,
-  hasInstanceChildren, heldHome, rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts,
+  hasInstanceChildren, heldHome, instanceSiblings, siblingText, rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts,
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs, rowReason,
   identityMemory, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath,
   openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
@@ -129,6 +129,12 @@ function build(state, at) {
   const sectionOf = new Map(), ordered = [];
   for (const part of rosterSections(instances, instances, deployments, TERMS)) for (const group of part.groups) for (const cluster of group.clusters) for (const row of cluster.instances) { sectionOf.set(instanceId(row), part.deployment?.id ?? null); ordered.push(row); }
   const section = (row) => sectionOf.get(instanceId(row)) ?? null;
+  // Each instance's siblings by explicit link, both ends, as the shared home resolves them (#1312):
+  // asked of each section's full roster on its own, whatever is filtered or folded, so a name never
+  // resolves to an instance of another deployment, nor a dropped row makes an ambiguous name unique.
+  const bySection = new Map();
+  for (const row of instances) { const key = section(row); if (!bySection.has(key)) bySection.set(key, []); bySection.get(key).push(row); }
+  const siblings = new Map([...bySection.values()].flatMap((own) => [...instanceSiblings(own)]));
   const matched = soul !== null ? filterInstanceTree(instances, soul.name, (row) => soul.names.includes(row.agent)) : filterInstanceTree(instances, query);
   const visible = matched.filter((i) => instanceVisibleInTree(i, instances, state.collapsed, state.open, filtering, { section }));
   const sections = rosterSections(instances, visible, deployments, TERMS);
@@ -213,7 +219,7 @@ function build(state, at) {
   // observed, nor for a machine that is not live and has no row kept. Each has only its reason.
   const observed = panel !== null && !gone && (local ? status === "observed" : live || instances.length > 0);
   return {
-    panel, gone, instances, ordered, deployments, multi, parts, rows, filtering, stale, section, live, observed, folded,
+    panel, gone, instances, ordered, deployments, multi, parts, rows, filtering, stale, section, siblings, live, observed, folded,
     below: waitingRollup(instances, state.collapsed, state.open, { filtering, stale, section }),
     status,
     workspace: text(panel?.workspace?.name) ? panel.workspace.name : "",
@@ -490,7 +496,7 @@ function detailOf(state, r, item, now, acts) {
   add("harness", `${[row.harness, row.model].filter(text).join(", ")}${text(row.model) && text(row.modelFrom) ? ` (${row.modelFrom})` : ""}`);
   add("work", [row.work, row.branch].filter(text).join(", "));
   add("team", row.team);
-  add("parent", [row.parentInstance, text(row.siblingInstance) ? `sibling of ${row.siblingInstance}` : null].filter(text).join(", "));
+  add("parent", [row.parentInstance, siblingText(r.siblings.get(item.id))].filter(text).join(", "));
   if (text(row.startedAt)) add("started", waitingClock(row.startedAt, now));
   add("home", row.home, "end");
   return { title: row.instance, facts };
@@ -552,7 +558,7 @@ const PALETTE_ACTS = Object.freeze({ stop: "Stop", restart: "Restart", retire: "
  *  the selected one) and, once the catalog lists its soul, another of that soul, then spawning an
  *  agent, workspaces, refresh and help, and the split's that apply. With a query, each group keeps the rows the
  *  Desktop's subsequence score matches, the best first (a prefix first); a tie keeps that order.
- *  A row: `{ key, kind, label, does?, id?, name?, machine?, mark?, capability?, source? }`; `selected` is the key the
+ *  A row: `{ key, kind, label, does?, id?, name?, machine?, mark?, sibling?, capability?, source? }`; `selected` is the key the
  *  selection stands on (the first row when the palette's own is not listed). */
 export function paletteItems(state, at = new Date(0).toISOString()) {
   const p = state.palette;
@@ -565,7 +571,11 @@ export function paletteItems(state, at = new Date(0).toISOString()) {
     const openable = r.ordered.filter((row) => openDecision(state, row, instanceActs(row)).open);
     groups.push(openable.map((row, i) => ({ row, i })).sort((a, b) => rank(a.row) - rank(b.row) || a.i - b.i).map(({ row }) => {
       const machine = elsewhere(row) ? row.deployment?.machine ?? row.server : null;
-      return { key: `instance\u0000${instanceId(row)}`, kind: "instance", label: row.instance, id: instanceId(row), name: row.instance, machine, mark: markOf(row), text: `${row.instance} ${machine ?? ""}` };
+      // `sibling`: the shared words for its siblings, or null; never part of what a query matches.
+      return {
+        key: `instance\u0000${instanceId(row)}`, kind: "instance", label: row.instance, id: instanceId(row), name: row.instance, machine, mark: markOf(row),
+        sibling: siblingText(r.siblings.get(instanceId(row))), text: `${row.instance} ${machine ?? ""}`,
+      };
     }));
   }
   // The souls of the open workspace, once its catalog was read (the Souls view opened): choosing
