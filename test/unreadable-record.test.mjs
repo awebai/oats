@@ -196,12 +196,15 @@ for (const shape of SHAPES.filter((s) => !s.edge)) {
     if (HAS_TMUX) {
       const started = answered(fx.cli(["session", "start", "--home", d.homes.good, "--json"]), "session start of the other instance").json();
       assert.equal(started.ok, true);
-      assert.equal(d.rows().good.running, true, "status reads the started session, beside the unreadable record");
       // The inert harness exits at once: plan once the session has settled into its fallback shell, so
       // that the apply finds what the plan read (a session still starting would make the plan stale).
       await waitUntil(() => existsSync(join(d.homes.good, ".oats-start-exited"))
         && answered(fx.cli(["session", "inspect", "--home", d.homes.good, "--json"]), "session inspect of the started instance").json().result.state === "shell",
       "the started session's harness to exit to its fallback shell");
+      const observed = answered(fx.cli(["session", "inspect", "--home", d.homes.good, "--json"]), "the fallback shell beside the unreadable record").json().result;
+      assert.equal(observed.present, true, "the started window remains after the inert harness exits");
+      const row = d.rows().good;
+      assert.deepEqual([row.running, row.runtimeState], [false, "shell"], "status agrees with inspection beside the unreadable record");
       const plan = answered(fx.cli(["instance", "stop", "good", "--plan", "--json"]), "stop --plan of the started instance").json();
       const again = answered(fx.cli(["instance", "stop", "good", "--apply", "--plan-revision", plan.result.planRevision, "--idempotency-key", "k2", "--json"]), "stop --apply of the started instance").json();
       assert.equal(again.result.ok, true);

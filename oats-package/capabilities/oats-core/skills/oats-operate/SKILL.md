@@ -115,6 +115,11 @@ oats status                  # souls, instances, and per instance: soul source +
 oats status --json
 ```
 
+`running` means the harness is running. After Stop, a window left at its
+fallback shell reads `running: false`, `runtimeState: "shell"`; a kept window
+alone does not mean the agent is running. An unreadable session stays unknown
+(`running: null`, `runtimeState: "unreachable"`).
+
 Per instance, status shows `soul: <name> from <member> @ <commit>` and each
 module's recorded source. An unmarked row is current; otherwise it is marked
 `[member moved since (now @ …)]` (a package module: package moved since),

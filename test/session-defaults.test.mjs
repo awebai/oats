@@ -3,32 +3,40 @@
 // home.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { listInstances, retireInstance, sessionDefaults } from "../lib/core.mjs";
 import { validateLocal } from "../lib/workspace.mjs";
+import { privateTmuxTmpdir } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-session-backend-")));
 test.after(() => rmSync(base, { recursive: true, force: true }));
 
-/** A fake tmux on PATH: sessions → window names; every call is logged. */
+/** A fake tmux on PATH: sessions → live harness windows and panes; every call is logged. */
 function fakeTmux(dir, sessions) {
   mkdirSync(dir, { recursive: true });
   const log = join(dir, "tmux-calls.log");
   writeFileSync(log, "");
   const cases = Object.entries(sessions).map(([name, windows]) => `    ${name}) printf '%s\\n' ${windows.map((w) => `'${w}'`).join(" ")};;`).join("\n");
+  const panes = Object.entries(sessions).map(([name, windows]) => `    ${name}) printf '%s\\n' ${windows.map((w, i) => `'${w}\t%${i + 1}\t0\tsleep\t${100 + i}'`).join(" ")};;`).join("\n");
   writeFileSync(join(dir, "tmux"), `#!/bin/sh
 printf '%s\\n' "$*" >> ${JSON.stringify(log)}
 target=""; prev=""
 for a in "$@"; do [ "$prev" = "-t" ] && target="$a"; prev="$a"; done
+[ "$1" = "-u" ] && shift
+target="\${target#=}"
 case "$1" in
   has-session) case "$target" in ${Object.keys(sessions).join("|") || "__none__"}) exit 0;; *) exit 1;; esac;;
   list-windows) case "$target" in
 ${cases}
     *) exit 1;; esac;;
+  list-panes) case "$target" in
+${panes}
+    *) exit 0;; esac;;
 esac
 exit 0
 `);
@@ -97,7 +105,41 @@ test("status reads each tmux home in the session it recorded: a pre-0.31 pi-agen
     assert.deepEqual(rows.map((r) => [r.instance, r.running]).sort(), [["gone-1", false], ["new-1", true], ["old-1", true]]);
     const listed = readFileSync(log, "utf8").split("\n").filter((l) => l.startsWith("list-windows"));
     assert.equal(listed.length, 2, "each recorded session is listed once");
+    const paneReads = readFileSync(log, "utf8").split("\n").filter(l => l.startsWith("-u list-panes"));
+    assert.equal(paneReads.length, 2, "each recorded session's panes are read once");
+    assert.ok(paneReads.some(l => l.includes("-t =pi-agents ")), "the pane read targets the legacy session exactly");
   } finally { process.env.PATH = path; fx.cleanup(); }
+});
+
+test("real private default server: legacy and current sessions report live harnesses and fallback shells", async (t) => {
+  const fx = v2Deployment({ t }), privateDir = privateTmuxTmpdir();
+  const socket = join(privateDir, `tmux-${process.getuid()}`, "default");
+  const env = { ...fx.env, TMUX: undefined, TMUX_TMPDIR: privateDir };
+  const tmux = (...args) => execFileSync("tmux", ["-f", "/dev/null", "-u", ...args], {
+    env, encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+  // Explicit private socket on cleanup: never address the operator's default server.
+  fx.beforeCleanup(() => {
+    try { tmux("-S", socket, "kill-server"); } catch { /* absent */ }
+    rmSync(privateDir, { recursive: true, force: true });
+  });
+  for (const [session, live, shell] of [["pi-agents", "legacy-live", "legacy-shell"], ["oats-agents", "current-live", "current-shell"]]) {
+    tmux("new-session", "-d", "-s", session, "-n", live, "sleep 600");
+    tmux("new-window", "-d", "-t", `=${session}:`, "-n", shell, "/bin/sh");
+    for (const name of [live, shell]) {
+      const { home } = await fx.spawn("dev", { name });
+      const file = join(home, "instance.json"), meta = JSON.parse(readFileSync(file, "utf8"));
+      // Legacy homes have no socket; both status reads must use the private default server.
+      writeFileSync(file, JSON.stringify({ ...meta, tmux: { session, window: name } }));
+    }
+  }
+  const result = fx.cli(["status", "--json"], { env });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const rows = JSON.parse(result.stdout).agents.flatMap(a => a.instances);
+  assert.deepEqual(rows.map(r => [r.instance, r.running, r.runtimeState ?? null]).sort(), [
+    ["current-live", true, null], ["current-shell", false, "shell"],
+    ["legacy-live", true, null], ["legacy-shell", false, "shell"],
+  ]);
 });
 
 test("a self-retire that keeps its directory kills the window the home recorded, not one in the new default session", async () => {
