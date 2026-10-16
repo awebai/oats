@@ -288,11 +288,16 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     const deployment = state.entries.get(id)?.deployment;
     return deployment?.status === "observed" ? capabilityCatalogKey(probe.cli, deployment.workspaceStatus) : null;
   }
-  /** `r` in the Capabilities view, as rereadSouls: one read, never a second while one is in flight. */
+  /** `r` in the Capabilities view: one live read, never a second while one is in flight. What is
+   *  held stays held beside it (the shared catalog's refresh), so a read that fails keeps the last
+   *  good table under the failure, as a failed read of the workspace's moved key does. */
   function rereadCapabilities(id) {
-    if (capabilities.refreshing(id)) return;
-    capabilities.forget(id);
-    settleCapabilities(id);
+    const deployment = state.entries.get(id)?.deployment;
+    if (ended || deployment?.status !== "observed" || capabilities.refreshing(id)) return;
+    let pending;
+    try { pending = capabilities.read(id, probe.cli, deployment.workspaceStatus, { refresh: true }); } catch { return; } // the reader has stopped
+    heard({ capabilities: { id, entry: capabilities.held(id), reading: true } });
+    pending.then((landed) => { if (landed?.key === capabilitiesKeyNow(id)) heard({ capabilities: { id, entry: landed, reading: capabilities.refreshing(id) } }); }, () => {});
   }
 
   // THE SPAWN (docs/tui.md, "Spawning an agent"; Spec 6-spawn). One preview, one apply boundary and

@@ -1812,6 +1812,26 @@ test("the Capabilities view shown before the workspace was read waits for its fi
   assert.equal(await r.status, 0);
 });
 
+test("r in the Capabilities view keeps the table it holds while it reads, and a read that fails keeps it under the failure", async () => {
+  const r = await started();
+  r.reader.answer(ENTRY);
+  r.stdin.type("3"); await settle();
+  r.capabilityReads[0].answer(capabilitiesDocument(["held-capability"])); await settle();
+  assert.match(screenOf(r), /held-capability/);
+  r.stdin.type("r"); await settle();
+  assert.equal(r.capabilityReads.length, 2, "r: one read");
+  assert.match(screenOf(r), /held-capability/, "the table stands while it reads");
+  r.capabilityReads[1].answer({ ok: false, reason: { code: "E_CLI_FAILED", message: "re-read failed" } }); await settle();
+  const screen = screenOf(r);
+  assert.match(screen, /held-capability/, "the last good table is kept");
+  // The failure's heading above the rows, and its sentence whole in the detail (wrapped there).
+  assert.match(screen, / Capabilities +read \d\d:\d\d:\d\d │/, "under the failure's heading");
+  assert.match(screen, /Couldn't read this workspace's/);
+  assert.match(screen, /capabilities: re-read failed/);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
 // ── This run's retires in flight (#1247): the loop's one tracker, its marks and what lets a row go ──
 
 /** The word of a retiring row, as the shared home gives it, and whether the screen shows one now. */
