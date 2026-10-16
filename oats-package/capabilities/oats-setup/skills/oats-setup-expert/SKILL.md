@@ -31,13 +31,24 @@ It holds:
 
 It holds no secret, and none ever goes into one.
 
+**A new workspace or an existing one.** The hand-over says which.
+- **New:** the person created the host repository through the entry skill.
+  It is private and theirs, so they review and merge its pull requests.
+- **Existing:** someone else may own the host and the members. Read the host's
+  visibility (`gh repo view <owner>/<repo> --json visibility,viewerPermission`).
+  Steps 3 and 4 then become proposals to the host's owner: a public host
+  takes no private member (`/oats-onboarding` card 3). Name who merges. This
+  machine's own steps (2, 5's host settings, 6 and 7) are yours to do with
+  the person.
+
 Do the steps below in order. In each, apply this capability's rule on what
 the person types (its briefing): run the step yourself, and hand the person
 only the secrets, the logins and the two installs that capture their shell.
 
-1. **Read the deployment** (`/oats-onboarding` card 2). A new workspace has
-   the host as its only member, `oats.framework` pinned, `oats.core` as a
-   default, and you as its one soul:
+1. **Read the deployment** (`/oats-onboarding` card 2). The entry skill's gh
+   login over https is enough for these reads; step 2 completes Git. A new
+   workspace has the host as its only member, `oats.framework` pinned,
+   `oats.core` as a default, and you as its one soul:
 
    ```bash
    oats workspace status --dir D --json
@@ -77,7 +88,12 @@ only the secrets, the logins and the two installs that capture their shell.
      person's one-line command.
 7. **Sync, check, first working soul:** `oats sync`, then `/oats-onboarding`
    cards 6 to 8 for the first soul of step 4, with the first concrete task the
-   use case names.
+   use case names. Card 6's operator checks (it resolves `oats.setup`, team
+   coverage) are for you, not for this soul: check that it resolves the
+   capabilities step 4 gave it. If its harness is `claude` or `codex` and
+   the entry skill did not trust `D` for that harness, run
+   `oats harness trust --dir D --harness <harness>` with `--plan` first, then
+   without.
    Messaging, if any, is proved by card 8's exchange.
 8. **Hand back to the person**, in the session:
    - what is set up, with the versions;
@@ -85,8 +101,8 @@ only the secrets, the logins and the two installs that capture their shell.
    - the pull requests waiting for their review or merge;
    - what is still open, and who decides it.
 
-   Also tell them how to reach you again: the Desktop, `oats tui`, or
-   `oats session attach --home <your home>`.
+   Also tell them how to reach you again: the Desktop, `oats tui` (OATS
+   0.52.0 and later), or `oats session attach --home <your home>`.
 
 These steps need oats.framework 1.13.0. With a kernel older than OATS
 0.61.0, `oats onboard` does not name you as the next step; nothing here

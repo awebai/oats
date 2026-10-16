@@ -100,11 +100,12 @@ repository's `oats-getting-started` skill creates it for a new workspace, with
 nothing else in it. All its knowledge comes from this capability, so a
 workspace's setup expert improves with the `oats.framework` pin, not by edits
 to the soul. From OATS 0.61.0, `oats onboard` names it as the next step. It
-finds the soul by what the soul holds: the conventional name first, then the
-first soul by name whose `soul.yaml` declares `oats.setup`. A workspace may
-already have an older setup soul under another name, and that one serves the
-same way (the OATS project's own workspace has `oats-setup-admin`, and its
-`oats-operator-expert` also holds the operator knowledge).
+finds the soul by what the soul holds: among the souls whose own `soul.yaml`
+declares `oats.setup`, the one with the conventional name, else the first by
+name. A workspace may already have an older setup soul under another name,
+and that one serves the same way. The OATS project's own workspace has two:
+`oats-setup-admin`, and `oats-operator-expert`, which also holds the operator
+knowledge. Its onboard step names `oats-operator-expert`, the first by name.
 
 **Souls** are durable roles: `souls/<name>/` in a member, in a package
 (`<package>/<soul>`), or borrowed through `external:`. **Composition** is

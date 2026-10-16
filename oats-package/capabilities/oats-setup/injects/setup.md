@@ -38,30 +38,45 @@ order:
 1. **A browser device flow you start.** For example, `gh auth login --web` run
    without a terminal prints a one-time code and a URL. Give both to the
    person, who approves in their browser (`/oats-git-setup`, step 3).
-2. **A no-echo prompt in a pane of your own window.** Start the command in a
-   split of your own pane (`-t "$TMUX_PANE"`), never in another instance's
-   window. Every OATS viewer (`oats session attach`, the Desktop, the TUI)
-   shows your whole window, and the new pane takes the person's keys. Give a
-   deployment command the deployment directory (`-c D`) and drop the instance
-   identity from its environment. For example, aweb's API key:
+2. **A no-echo prompt in a pane of your own window.** Use this only when
+   `[ -n "$TMUX_PANE" ] && tmux display -p -t "$TMUX_PANE" '#{pane_id}'`
+   succeeds; otherwise use route 3. Split your own pane (`-t "$TMUX_PANE"`),
+   never another instance's window. `oats session attach`, the TUI (OATS
+   0.52.0 and later) and the Desktop show your whole window, so the new pane
+   takes the person's keys. Give a deployment command `-c D`, and drop the
+   instance identity from its environment. `oats aweb setup` runs this way
+   for every act, secret or not, because it refuses to run inside an
+   instance. Two examples, aweb's API key and an invite token:
 
    ```text
-   tmux split-window -v -l 8 -t "$TMUX_PANE" -c D "env -u OATS_INSTANCE -u OATS_INSTANCE_HOME -u OATS_HOME -u PI_AGENT_INSTANCE -u PI_AGENT_HOME sh -c 'stty -echo; printf \"aweb API key: \"; read -r AWEB_API_KEY; stty echo; echo; export AWEB_API_KEY; oats aweb setup --soul S; printf \"\nPress Enter to close.\"; read -r _'"
+   tmux split-window -P -F '#{pane_id}' -v -l 6 -t "$TMUX_PANE" -c D "env -u OATS_INSTANCE -u OATS_INSTANCE_HOME -u OATS_HOME -u PI_AGENT_INSTANCE -u PI_AGENT_HOME sh -c 'stty -echo; printf \"aweb API key: \"; read -r AWEB_API_KEY; stty echo; export AWEB_API_KEY; oats aweb setup --soul S'"
+   tmux split-window -P -F '#{pane_id}' -v -l 6 -t "$TMUX_PANE" -c D "env -u OATS_INSTANCE -u OATS_INSTANCE_HOME -u OATS_HOME -u PI_AGENT_INSTANCE -u PI_AGENT_HOME sh -c 'stty -echo; printf \"Invite token: \"; oats aweb setup --soul S --join L --invite-stdin --name A --service U; stty echo'"
    ```
 
-   Tell the person the pane is open and what to type there. Never read the
-   pane (`capture-pane` included) and never type into it.
+   - **Before you open it,** tell the person what to type there. Open it only
+     while they are at the screen.
+   - **While it is open,** your window has two panes, and OATS refuses it:
+     wakes and `oats session input` can't reach you, and status reports you
+     `unreachable`. The pane closes when its command ends.
+   - **Before you go on,** check that `tmux list-panes -t "$TMUX_PANE"`
+     lists one pane. If the person can't finish, close it with
+     `tmux kill-pane -t <the id split-window printed>`.
+   - **Never read the pane** (`capture-pane` included) and never type into it.
+   - **If the person doesn't see the pane,** for example in a viewer that
+     shows one pane only, close it and use route 3.
 3. **The person's own terminal.** Give them the exact command. Use this when
-   your session is not in tmux, for a `sudo` password, and whenever the routes
-   above fail.
+   you are not in tmux, for a `sudo` password, and whenever the routes above
+   fail.
 
 The secret never reaches you: not your context, your files, a task file or a
-message. Never ask for one in the conversation. Never use Claude Code's
-`! <command>` for one, because its command and output enter the transcript.
-If a person pastes a secret to you, don't repeat it or store it, and tell them
-to rotate it. Check each route's result only with a read-only command
-(`gh auth status`, `aw whoami`, the provider's `--check-only`), never by
-reading the pane.
+message. Never ask for one in the conversation, and never suggest Claude
+Code's `! <command>` for one: the command and its output enter the
+transcript. If a person pastes a secret to you, don't repeat it or store it,
+and tell them to rotate it.
+
+**Check each route's result only with a read-only command,** never by
+reading the pane. For example `gh auth status`, or, for aweb, from `D` with
+the same `env -u` list: `oats aweb setup --soul S --check-only --json`.
 
 **Read what the change needs** (use `--json` when you parse). Workspace status,
 souls/capabilities, trigger/schedule lists and spawn previews answer different

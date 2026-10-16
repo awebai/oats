@@ -63,7 +63,7 @@ Run these first. They change nothing.
 ```bash
 git --version
 gh --version
-git config --global --list --show-origin
+git config --global --name-only --list --show-origin   # names only: values can hold tokens
 ls -l ~/.ssh
 gh auth status
 ```
@@ -155,7 +155,7 @@ ssh-keygen -y -P "" -f ~/.ssh/id_ed25519 >/dev/null 2>&1 && echo "no passphrase"
 
 ## 3. Log in to GitHub with gh
 
-**First choose where gh keeps its token:** the system's keychain (the
+**Person:** first choose where gh keeps its token: the system's keychain (the
 default), or gh's own file on a Mac that another machine drives (`oats
 server add`) or that runs Git from background jobs, whose sessions cannot
 open the keychain (trade-off: `docs/servers.md`, “Git on a macOS host”).
@@ -178,9 +178,10 @@ gh config set --host github.com git_protocol ssh
 ```
 
 For example `gh auth login … </dev/null >"$out" 2>&1 &`, `out` a new temporary
-file, which shows `! One-time code (XXXX-XXXX)` and the URL
-`https://github.com/login/device`. **Person:** open it, enter the code,
-approve. When the command exits, `gh auth status` shows the login; delete
+file, which shows the code (`! First copy your one-time code: XXXX-XXXX`, or
+`… copied to clipboard`) and the URL `https://github.com/login/device`.
+**Person:** open it, enter the code, approve; a code expires after about 15
+minutes (then rerun). When the command exits, `gh auth status` shows the login; delete
 the file. The extra scopes let step 4 add the key; it then removes the two
 `admin` ones.
 
@@ -197,7 +198,7 @@ git-credential`: the empty line clears earlier helpers, so Git asks only gh.
 ## 4. Register the key on GitHub, twice
 
 The same public key goes on the account once as an authentication key (to
-push and pull over SSH) and once as a signing key (so GitHub can verify your
+push and pull over SSH) and once as a signing key (so GitHub can verify the person's
 commits):
 
 ```bash
@@ -211,19 +212,25 @@ key twice, with `authentication` and `signing` in its `TYPE` column.
 
 | What you see instead | What to do |
 |---|---|
-| `needs the "admin:public_key" scope` or `"admin:ssh_signing_key"` | step 3's scopes are missing: run step 3's `gh auth refresh` line (with `--insecure-storage` if you chose the file), then this step again |
+| `needs the "admin:public_key" scope` or `"admin:ssh_signing_key"` | step 3's scopes are missing: run step 3's `gh auth refresh` line (with `--insecure-storage` with the file choice), then this step again |
 | `key is already in use` | the key is already registered (perhaps on another account). Check `gh ssh-key list` shows it with both types on **this** account |
 
 Now make GitHub a known host, which the kernel's batch-mode ssh cannot do
 itself. First compare GitHub's host key with its published fingerprint
 (<https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints>;
-ED25519: `SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU`). Run the
-second line only if the first prints that exact fingerprint; otherwise stop
-and tell the person:
+ED25519: `SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU`), and keep
+exactly the key you checked:
 
 ```bash
-ssh-keyscan -t ed25519 github.com 2>/dev/null | ssh-keygen -lf -
-ssh -o StrictHostKeyChecking=accept-new -T git@github.com
+ssh-keyscan -t ed25519 github.com 2>/dev/null > ~/.ssh/github.keyscan && ssh-keygen -lf ~/.ssh/github.keyscan
+```
+
+Only if it printed that exact fingerprint (otherwise stop and tell the
+person), add that key and connect:
+
+```bash
+cat ~/.ssh/github.keyscan >> ~/.ssh/known_hosts && rm ~/.ssh/github.keyscan
+ssh -T git@github.com
 ```
 
 You should see `Hi <login>! You've successfully authenticated, but GitHub
@@ -370,16 +377,26 @@ What it does, and why:
 
 ## 7. Check
 
-Run this in a scratch folder. It makes one private test repository on the
-person's account, which they delete at the end.
+Run this as one block, in one shell (a later command needs the earlier
+ones' folder and variables). It makes one private test repository on the
+person's account, with the date and time in its name, so it never touches
+one they have; they delete it at the end. The push runs only if `CREATED`
+was printed.
 
 ```bash
-cd "$(mktemp -d)"
-git init -b main
+cd "$(mktemp -d)" && git init -b main
 printf '#!/bin/sh\necho "repository hook ran"\n' > .git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit
 git commit --allow-empty -m "Check Git setup"
 git log -1 --show-signature --format=%B
+login=$(gh api user --jq .login); repo="oats-git-check-$(date +%Y%m%d-%H%M%S)"
+gh repo create "$repo" --private && echo "CREATED $login/$repo" &&
+  git remote add origin "git@github.com:$login/$repo.git" && git push -u origin main
+gh api "repos/$login/$repo/commits/main" --jq '.commit.verification | {verified, reason}'
+echo "https://github.com/$login/$repo/commits/main"
+echo "https://github.com/$login/$repo/settings"
+ssh -T git@github.com
+gh auth status
 ```
 
 You should see:
@@ -390,31 +407,6 @@ You should see:
    is signed with the person's key.
 3. The message `Check Git setup`, then an empty line, then
    `Signed-off-by: <Your Name> <email>`.
-
-Now push it to GitHub, from the same folder. The test repository gets a new
-name, with the date and time in it, so it never touches a repository the
-person already has:
-
-```bash
-login=$(gh api user --jq .login)
-repo="oats-git-check-$(date +%Y%m%d-%H%M%S)"
-gh repo create "$repo" --private && echo "CREATED $login/$repo"
-```
-
-**Go on only if it printed `CREATED`;** otherwise nothing was created: fix the error, rerun.
-
-```bash
-git remote add origin "git@github.com:$login/$repo.git"
-git push -u origin main
-gh api "repos/$login/$repo/commits/main" --jq '.commit.verification | {verified, reason}'
-echo "https://github.com/$login/$repo/commits/main"
-echo "https://github.com/$login/$repo/settings"
-ssh -T git@github.com
-gh auth status
-```
-
-You should see:
-
 4. The push succeeds, then `{"reason":"valid","verified":true}`. The first
    address printed, the commit page, shows the commit as **Verified**.
 5. `Hi <login>! You've successfully authenticated…` from ssh.
@@ -475,7 +467,7 @@ emptied environment. So:
 | What you see | Cause | Remedy |
 |---|---|---|
 | `Permission denied (publickey)` on `ssh -T` or a push | the key is not an authentication key on this account, or ssh offered a different key | `gh ssh-key list` must show it with `authentication`; with several keys, add to `~/.ssh/config`: `Host github.com` then, indented, `IdentityFile ~/.ssh/id_ed25519` and `IdentitiesOnly yes` |
-| `Host key verification failed` (often from OATS) | GitHub is not yet a known host, and batch-mode ssh cannot ask | step 4's fingerprint check, then its `accept-new` connection |
+| `Host key verification failed` (often from OATS), or `REMOTE HOST IDENTIFICATION HAS CHANGED` | GitHub is not yet a known host, and batch-mode ssh cannot ask; or an old GitHub key is recorded | `ssh-keygen -R github.com`, then step 4's host-key lines |
 | `incorrect passphrase supplied to decrypt private key` and `failed to write commit object` | the key has a passphrase and no ssh-agent holds it (an agent's session has no terminal to ask) | load the key in an ssh-agent the sessions reach, or use a key without a passphrase (step 2) |
 | `Couldn't load public key …` and `failed to write commit object` | `user.signingkey` points at a file that is not there | step 5's `user.signingkey` line, with the key's real path |
 | the verification `reason` is `unknown_key` | the key is not registered as a **signing** key | step 4's `--type signing` line |
