@@ -1,15 +1,12 @@
 ## Upgrade
 
-<!-- release order: restate at rebase checkpoint -->
-- The bounded periodic capture service follows the already released 0.56.0,
-  0.57.0 and 0.58.0; none of those versions ships it. Until a release explicitly
-  includes the service, follow the installed version's Upgrade section. For
-  the service release, install its compatible Desktop before its CLI, update
-  the pi bridge, then run that CLI's setup conversion in each deployment from
-  the operator's shell. Do not use these flags/diagnostics as pre-upgrade
-  prerequisites on 0.56–0.58. See
+- The bounded periodic capture service ships in this release; 0.56.0 through
+  0.61.0 do not include it. Upgrade in this order: install this release's
+  compatible Desktop first, then this CLI and the matching pi bridge, then run
+  this CLI's setup conversion in each deployment from the operator's shell,
+  then its health and doctor checks. Do not use these flags or diagnostics as
+  pre-upgrade checks on 0.61.0 or older binaries, which do not have them. See
   [capture service release order](../upgrading.md#capture-service-release-order).
-<!-- end release order -->
 - Run `oats setup` (standalone: `turn-record setup`) once per deployment, from
   the operator's shell, with the deployment's owner and root. Installing the CLI
   alone converts nothing: persisted hooks and manager definitions change only

@@ -129,8 +129,8 @@ attribution and all sources/indexing enabled; `--no-service` still runs it,
 while `--dry-run` starts no pass. Partial and overlap exit zero without claiming
 completion; operational failures remain nonzero. Setup preflights named service
 files, manager state and hook edits before mutation, then converts supported
-legacy watchers to periodic capture. This does not describe already-released
-0.58.0 behavior.
+legacy watchers to periodic capture, from the next release after 0.61.0;
+0.56.0–0.61.0 shipped without it.
 See [command routing and receipts](docs/capture-service.md#ordinary-cli-and-foreground-watch).
 See [detached hook launch limits](docs/capture-service.md#detached-hook-launcher).
 The [service migration gate](docs/capture-service.md#setup-service-migration)

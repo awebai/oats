@@ -8,9 +8,10 @@ the package also owns offline installation/receipt/issue diagnosis. Root
 registration and real-manager qualification remain separate. Deployment doctor
 delegates to the package diagnosis through the bounded command boundary below.
 
-The integration described below is forthcoming service-A work; source and fake
-manager fixtures do not establish real manager qualification. OATS 0.56.0, 0.57.0 and 0.58.0
-shipped without the bounded periodic service. See
+The integration described below is service A, which ships in the next release
+after 0.61.0; source and fake manager fixtures do not establish real manager
+qualification. OATS 0.56.0 through 0.61.0 shipped without the bounded periodic
+service. See
 [capture service release order](../../../docs/upgrading.md#capture-service-release-order)
 for the distinction between upgrading those releases and a future setup
 conversion after installing a release that ships service A.
@@ -1298,11 +1299,15 @@ harness waits for the short launcher so its spawn result is ordered before
 harness shutdown; capture itself remains detached. The timeout applies to that
 launcher, not to the detached supervisor or its fixed worker allowance. The
 existing ownership recognition, duplicate groups, foreign commands and other
-fields are preserved; dry-run does not write settings. The install hint uses
+fields are preserved; dry-run does not write settings. The same user
+`settings.json` (the person's `~/.claude`, or the Claude config a launch uses)
+has a second writer, oats.setup's `/oats-agent-permissions`, which merges only
+`permissions` and the `autoMode` block after keeping a `.before-oats` copy;
+setup touches only the capture `hooks` entries, so the two do not conflict. The install hint uses
 the same scheduling fields while retaining `--sessions-only --no-index`.
 This changes persisted settings from `async:true`/`timeout:120`; installing a
-CLI alone does not rewrite those settings. These forthcoming changes do not
-claim hook migration shipped in 0.56.0–0.58.0. Periodic service conversion uses
+CLI alone does not rewrite those settings. No release from 0.56.0 through 0.61.0
+shipped this hook migration. Periodic service conversion uses
 the separate setup gate below.
 
 ### Setup first pass

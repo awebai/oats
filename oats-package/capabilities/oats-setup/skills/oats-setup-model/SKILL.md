@@ -38,20 +38,21 @@ consult `packages/record/docs/capture-service.md#setup-service-migration` and
 `oats setup` can change capture hooks and user-manager definitions and run a
 first pass; it is not a diagnostic to run implicitly.
 
-**A person-run step**, from <!-- version: set at the rebase checkpoint -->the
-OATS release that ships periodic service A<!-- end version -->: the record
-`oats setup` capture conversion records the caller's `node` and writes the
-person's `~/.claude*/settings.json`, so it captures its own shell's environment,
-like the host timer, and an agent's shell is not the person's login
-environment. The setup expert prints the exact command and says why the person
-runs it. A nonzero exit ends with a setup summary of what changed;
+**A person-run step**, from the next release after 0.61.0 (periodic service A):
+the record `oats setup` capture conversion records the caller's `node` and
+writes the person's `~/.claude*/settings.json`, so it captures its own shell's
+environment, like the host wake broker and the host timer, and an agent's shell
+is not the person's login environment. It is the third of the person-run
+installs the setup briefing lists; every other step the setup expert runs
+itself. The setup expert prints the exact command and says why the person runs
+it. A nonzero exit ends with a setup summary of what changed;
 `capture-service-pending` in health or `oats doctor` means: rerun that command.
 Preserve the selected `--owner`/`--root`; a foreign/disabled refusal offers
 explicit `--replace-service` or `--no-service`. Unknown state never permits
 replacement. `--dry-run` invokes no manager and cannot confirm enablement.
 An inactive finite worker between timer ticks is not evidence of an unhealthy
 schedule; do not promise a permanent PID or infer completion from hook launch.
-Releases 0.56–0.58 do not provide this conversion; follow their own instructions.
+Releases 0.56–0.61 do not provide this conversion; follow their own instructions.
 
 For service A, the package's `turn-record capture --health [--json]` reads
 installation evidence, receipt freshness/failure and current issues without
@@ -66,7 +67,7 @@ Doctor uses the caller's HOME and `TURN_RECORD_ROOT` (default `~/.turn-record`),
 not its deployment argument as a record root. Remedies say `oats`, while
 standalone package remedies say `turn-record`; preserve quoted root and existing
 owner selection. No manager registration/health or full-service acceptance
-follows. Do not use these next-release diagnostics as 0.56–0.58 prerequisites.
+follows. Do not use these diagnostics as prerequisites on 0.61.0 or older binaries.
 
 ```
  GitHub account (a person, or a machine user)

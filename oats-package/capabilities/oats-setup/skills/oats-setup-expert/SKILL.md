@@ -43,7 +43,7 @@ It holds no secret, and none ever goes into one.
 
 Do the steps below in order. In each, apply this capability's rule on what
 the person types (its briefing): run the step yourself, and hand the person
-only the secrets, the logins and the two installs that capture their shell.
+only the secrets, the logins and the installs that capture their shell.
 
 1. **Read the deployment** (`/oats-onboarding` card 2). The entry skill's gh
    login over https is enough for these reads; step 2 completes Git. A new
