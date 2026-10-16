@@ -40,6 +40,13 @@ export function spawnRefusal(agent, cli) {
 }
 /** The line a soul a spawn here would refuse carries, beside its disabled Spawn. */
 export const cantSpawnLine = refusal => `Can't spawn here · ${refusal}`;
+/** Whether a soul row matches a client's soul filter: its name, its description or where it comes from
+ * (`repoName`) contains the query, case aside. An empty query matches every row; whether to trim it is the
+ * client's. */
+export function soulMatches(row, query) {
+  const needle = String(query).toLowerCase();
+  return [row.name, row.description, row.repoName].some((value) => String(value || '').toLowerCase().includes(needle));
+}
 
 /** What a launch problem of a soul's report means, in the client's words: the report is the launch a spawn
  * that names none would get, and each problem is what the kernel reports of that spawn: why it would be

@@ -8,7 +8,8 @@
 // engine's TERMINAL_ALLOWLIST. On macOS ⌘P fires inside xterm by the ⌘-chord
 // policy; on Linux/Windows its default is Ctrl+Shift+P, which xterm sends
 // nothing for, so plain Ctrl+P (shell history) still reaches the pty.
-import { createOverlayPicker, subsequenceScore } from "./overlay-picker.mjs";
+import { createOverlayPicker } from "./overlay-picker.mjs";
+import { subsequenceScore } from "../../client/subsequence-score.mjs";
 
 /** Pure row computation — exported for tests. Attached-mode souls are shown
  * (they exist) but marked: selection still routes to the Spawn view, whose

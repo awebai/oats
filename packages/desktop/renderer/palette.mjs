@@ -10,13 +10,15 @@
    recent first, in a flat Recent group (Spec C; the record is
    instance-recency.mjs, the sidebar roster keeps its stable order). While open, the palette's own chord moves the
    active row down (Shift + the chord: up), skipping context rows.
-   Overlay chrome + fuzzy machinery live in overlay-picker.mjs (shared with
-   Quick Open); this module owns only the palette's row semantics. */
+   Overlay chrome lives in overlay-picker.mjs (shared with Quick Open), the fuzzy
+   matcher in packages/client/subsequence-score.mjs (shared with the TUI); this
+   module owns only the palette's row semantics. */
 import { runtimeState } from "../../client/instance-presentation.mjs";
 import { filterInstanceTree, instanceId } from "../../client/instance-tree.mjs";
 import { rosterSections, splitByDeployment, isMultiDeployment } from "../../client/roster-sections.mjs";
 import { DESKTOP_TERMS } from "./desktop-terms.mjs";
-import { createOverlayPicker, subsequenceScore } from "./overlay-picker.mjs";
+import { createOverlayPicker } from "./overlay-picker.mjs";
+import { subsequenceScore } from "../../client/subsequence-score.mjs";
 
 /** Commands listed at most (after every instance row; the instance list scrolls). */
 export const PALETTE_COMMAND_CAP = 12;

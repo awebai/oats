@@ -12,7 +12,7 @@ import {
   identityMemory, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath,
   openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
   startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage, retiringRows, soulRows, soulFacts, spawnRefusal,
-  defaultSpawnChoices, spawnProblem, outcomeWords, previewFacts, deploymentLabel,
+  defaultSpawnChoices, spawnProblem, outcomeWords, previewFacts, deploymentLabel, subsequenceScore, soulMatches, soulCatalogFailure,
 } from "./client.mjs";
 import { LEADER, keyLabel } from "./actions.mjs";
 import { ownEllipsis, shownLines } from "./term/text.mjs";
@@ -538,22 +538,6 @@ export function switcher(state, at = new Date(0).toISOString()) {
   };
 }
 
-/** The house fuzzy matcher of the Desktop's palette, the same function
- *  (packages/desktop/renderer/overlay-picker.mjs subsequenceScore): the TUI cannot import the
- *  Desktop's renderer, and test/tui-palette.test.mjs holds the two to the same answers. Lower is
- *  better, null is no match, and a prefix match gets a strong (negative) bonus. */
-export function subsequenceScore(text, query) {
-  const t = String(text).toLowerCase();
-  const s = String(query).toLowerCase();
-  let ti = 0, gaps = 0;
-  for (const ch of s) {
-    const found = t.indexOf(ch, ti);
-    if (found < 0) return null;
-    gaps += found - ti; ti = found + 1;
-  }
-  return gaps + (t.startsWith(s) ? -100 : 0);
-}
-
 /** The palette's views and commands, each a row's label and the action it runs. */
 const PALETTE_VIEWS = Object.freeze([["instances", "Instances"], ["souls", "Souls"], ["capabilities", "Capabilities"]]);
 const PALETTE_COMMANDS = Object.freeze([["spawn", "Spawn an agent"], ["workspaces", "Workspaces"], ["refresh", "Refresh"], ["help", "Help"]]);
@@ -889,23 +873,11 @@ export function actView(state) {
 
 // ── THE SOULS VIEW (docs/tui.md, "The Souls view") ───────────────────────────────────────────────
 
-/** The sentence of a catalog read that failed: the Desktop's own (packages/desktop/renderer/views/
- *  spawn.mjs catalogReasonText), copied until the shared home has it; the kernel's message in it is
- *  text from outside, which the view draws through the display filter. */
-export function catalogFailure(reason) {
-  const message = typeof reason?.message === "string" && reason.message ? reason.message : "";
-  return message ? `Couldn't read this workspace's souls: ${message}` : "Couldn't read this workspace's souls.";
-}
-
 /** The names an instance's soul (its row's `agent`) may carry for a soul row: its name, and for a
  *  package soul the kernel's key and its qualified name. The exact soul filter matches these. */
 export function soulNames(row) {
   return [...new Set([row.name, row.key, row.qualifiedName].filter(text))];
 }
-
-/** Whether a soul row matches the Souls view's filter: its name, its description or where it comes
- *  from contains the text, case aside, as the Desktop's soul grid filters (views/spawn.mjs). */
-const soulMatches = (row, needle) => [row.name, row.description, row.repoName].some((value) => String(value || "").toLowerCase().includes(needle));
 
 /** The souls of the open workspace as the store and the view read them: the shared rows
  *  (soul-rows.mjs soulRows) of the catalog the loop holds for it, filtered by the view's own
@@ -914,8 +886,9 @@ const soulMatches = (row, needle) => [row.name, row.description, row.repoName].s
  *  row the selection stands on: the store's, while it is listed, else the first. */
 export function soulsOf(state) {
   const { local, deployment, held, all } = catalogOf(state, state.open);
-  const needle = state.souls.filter.query.trim().toLowerCase();
-  const rows = needle ? all.filter((row) => soulMatches(row, needle)) : all;
+  // The Souls view's filter is the Desktop's soul grid's (soulMatches), on the trimmed text.
+  const query = state.souls.filter.query.trim();
+  const rows = query ? all.filter((row) => soulMatches(row, query)) : all;
   const selected = rows.find((row) => row.name === state.souls.selected) ?? rows[0] ?? null;
   return { local, deployment, held, all, rows, selected };
 }
@@ -976,9 +949,9 @@ function soulsView(state, page, at) {
   const entry = s.held?.entry ?? null, reason = entry?.reason ?? null;
   if (!Array.isArray(entry?.souls)) {
     // Nothing held: the first read is in flight (or the deployment not read yet), or it failed.
-    return reason && !s.held.reading ? { ...base, state: "failed", failure: catalogFailure(reason) } : { ...base, state: "reading" };
+    return reason && !s.held.reading ? { ...base, state: "failed", failure: soulCatalogFailure(reason) } : { ...base, state: "reading" };
   }
-  const heading = reason ? { label: "Souls", path: null, state: null, short: catalogFailure(reason), readAt: clockTime(entry.observedAt) } : null;
+  const heading = reason ? { label: "Souls", path: null, state: null, short: soulCatalogFailure(reason), readAt: clockTime(entry.observedAt) } : null;
   const state_ = !s.all.length ? "none" : !s.rows.length ? "nomatch" : "rows";
   const height = Math.max(1, page - (heading ? 1 : 0));
   const at_ = s.selected ? s.rows.indexOf(s.selected) : -1;
@@ -1145,7 +1118,7 @@ function spawnView(state, page, at) {
       rows: list.items.slice(win.top, win.top + win.size).map((item) => ({ name: item.name, refused: item.refused, refusal: item.refused ? soulFacts(item.row, null, state.cli, TERMS).refusalLine : null, selected: item.name === list.selected })),
       above: win.above, below: win.below,
       state: failed ? "failed" : reading ? "reading" : !c.all.length ? "none" : !list.items.length ? "nomatch" : "rows",
-      failure: failed ? catalogFailure(entry.reason) : null,
+      failure: failed ? soulCatalogFailure(entry.reason) : null,
     };
   }
   const facts = spawnFacts(state, p, at), ring = spawnRing(p);

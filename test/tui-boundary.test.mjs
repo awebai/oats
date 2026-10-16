@@ -97,14 +97,17 @@ const TAKEN = Object.freeze({
   "workspace-admission.mjs": ["validateWorkspace", "deploymentsInside"],
   "soul-catalog.mjs": ["createSoulCatalog", "soulCatalogKey"],
   "soul-rows.mjs": ["soulRows"],
-  "soul-facts.mjs": ["soulFacts", "spawnRefusal"],
+  "soul-facts.mjs": ["soulFacts", "spawnRefusal", "soulMatches"],
   // The spawn (Spec 6-spawn): the shared preview, apply boundary and transaction, and their words.
   "spawn-preview.mjs": ["createSpawnPreview"],
   "spawn-preview-contract.mjs": ["defaultSpawnChoices"],
   "spawn-apply.mjs": ["createSpawnApplyBoundary"],
   "spawn-transaction.mjs": ["createSpawnTransaction"],
-  "spawn-messages.mjs": ["spawnProblem", "outcomeWords", "SPAWN_NEXT"],
+  "spawn-messages.mjs": ["spawnProblem", "outcomeWords", "SPAWN_NEXT", "soulCatalogFailure"],
   "spawn-preview-facts.mjs": ["previewFacts"],
+  // #1276: the house fuzzy matcher, the Desktop's palette's own (the TUI's palette and switcher filter with it).
+  // #1276 also put the soul filter (soulMatches) and a failed catalog read's sentence (soulCatalogFailure) on the soul-facts.mjs and spawn-messages.mjs lines above.
+  "subsequence-score.mjs": ["subsequenceScore"],
 });
 /** Every clause of a source that takes names from a module of the shared home: [[module, names], …].
  *  A name taken under another name is read as the name the home gives it. */

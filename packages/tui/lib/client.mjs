@@ -36,13 +36,14 @@ export { INSTANCE_VARIABLES } from "../../client/kernel-environment.mjs";
 export { validateWorkspace, deploymentsInside } from "../../client/workspace-admission.mjs";
 export { createSoulCatalog, soulCatalogKey } from "../../client/soul-catalog.mjs";
 export { soulRows } from "../../client/soul-rows.mjs";
-export { soulFacts, spawnRefusal } from "../../client/soul-facts.mjs";
+export { soulFacts, spawnRefusal, soulMatches } from "../../client/soul-facts.mjs";
 export { createSpawnPreview } from "../../client/spawn-preview.mjs";
 export { defaultSpawnChoices } from "../../client/spawn-preview-contract.mjs";
 export { createSpawnApplyBoundary } from "../../client/spawn-apply.mjs";
 export { createSpawnTransaction } from "../../client/spawn-transaction.mjs";
-export { spawnProblem, outcomeWords, SPAWN_NEXT } from "../../client/spawn-messages.mjs";
+export { spawnProblem, outcomeWords, SPAWN_NEXT, soulCatalogFailure } from "../../client/spawn-messages.mjs";
 export { previewFacts } from "../../client/spawn-preview-facts.mjs";
+export { subsequenceScore } from "../../client/subsequence-score.mjs";
 
 /** The words a shared sentence uses where it names the client that shows it (client-terms.mjs).
  *  Made once, here: every shared function that takes `terms` is passed this constant, and refuses
