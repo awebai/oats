@@ -106,26 +106,32 @@ function sessionHeader(file: string, head: Buffer): { type?: unknown; cwd?: unkn
 /**
  * The opening task runs once, after any turn another extension starts, as
  * pi's input processing made it. pi sends the launch's `@TASK.md` as the
- * session's first prompt with no streamingBehavior (pi 0.85.1
- * modes/interactive/interactive-mode.js:816) and refuses it while another
- * extension's run (the @awebai/pi welcome) is active. The bridge never sends
- * or alters a message: it holds that prompt on pi's own path, in its input
- * handler and again in before_agent_start (a run can start during the
- * prompt's preflight), until no run is active. A run that an extension behind
- * the bridge starts (or that starts while one awaits) in its own input or
- * before_agent_start handling of the prompt can still make pi refuse it, and
- * pi says nothing an extension could act on. Every later prompt is left to pi.
+ * session's first prompt with no streamingBehavior (pi 1.3.0
+ * modes/interactive/interactive-mode.js:894-897, as an SDK session.prompt()
+ * does) and refuses it while another extension's run (the @awebai/pi welcome)
+ * is active. The bridge never sends or alters a message: it holds that prompt
+ * on pi's own path, in its input handler and again in before_agent_start (a
+ * run can start during the prompt's preflight), until no run is active.
+ * pi 1.2 and later count the prompt's own run as active from before its
+ * before_agent_start (core/agent-session.js:1392-1397) and queue a message
+ * sent meanwhile into that run; their event carries messageType, and there
+ * only the input handler holds. A run that an extension behind the bridge starts (or that starts
+ * while one awaits) in its own input handling of the prompt, or on a pi
+ * before 1.2 in its before_agent_start, can still make pi refuse it, and pi
+ * says nothing an extension could act on. Every later prompt is left to pi.
+ * A session that shuts down releases the hold.
  */
 function holdOpeningTask(pi: ExtensionAPI) {
   let taken = false;
   // The opening prompt has yet to reach before_agent_start.
   let awaitingStart = false;
   const waiters: (() => void)[] = [];
+  let shutDown = false;
   // pi refuses a prompt while pi-agent-core holds a run (ctx.signal is that
   // run's), and one with no streamingBehavior while the session is not idle.
   const busy = (ctx: ExtensionContext) => ctx.signal !== undefined || !ctx.isIdle();
   const untilFree = async (ctx: ExtensionContext) => {
-    while (busy(ctx)) await new Promise<void>((resolve) => waiters.push(resolve));
+    while (!shutDown && busy(ctx)) await new Promise<void>((resolve) => waiters.push(resolve));
   };
   const wake = () => { for (const resume of waiters.splice(0)) resume(); };
   // Waiters re-check on agent_settled (pi 0.80.4 and later). A pi without it
@@ -148,12 +154,14 @@ function holdOpeningTask(pi: ExtensionAPI) {
     await untilFree(ctx);
     return { action: "continue" };
   });
-  pi.on("before_agent_start", async (_event, ctx) => {
-    if (!awaitingStart) return;
+  pi.on("before_agent_start", async (event, ctx) => {
+    // On pi 1.2 and later (messageType) the session's run is the prompt's own.
+    if (!awaitingStart || event.messageType !== undefined) return;
     awaitingStart = false;
     await untilFree(ctx);
   });
   pi.on("agent_start", stopRechecking);
   pi.on("agent_end", () => { stopRechecking(); recheck = setTimeout(recheckWaiters, 0); });
   pi.on("agent_settled", () => { stopRechecking(); wake(); });
+  pi.on("session_shutdown", () => { shutDown = true; stopRechecking(); wake(); });
 }

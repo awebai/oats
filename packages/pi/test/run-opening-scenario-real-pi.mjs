@@ -44,8 +44,15 @@ const transformInput = () => {
 
 // pi has no hook inside prompt()'s preflight: a welcome there is one started
 // ahead of the bridge's before_agent_start handler, the last step of it.
+let aborting = null;
+const abortOnce = times(1, () => { aborting = session.abort().then(() => true); });
 const scenarios = {
   "no-race": {},
+  // pi 1.3.0 modes/interactive/interactive-mode.js:896.
+  "interactive-opening": { prompt: () => session.prompt(TASK, { images: undefined }) },
+  "extension-prompt-first": { start: () => { fixtureSending = true; behind.sendUserMessage("EXTENSION PROMPT"); fixtureSending = false; }, whileRunning: true },
+  "abort-while-held": { start: () => { hooks.input = abortOnce; welcome(); } },
+  "abort-during-start": { start: () => { hooks.beforeAgentStart = abortOnce; } },
   "welcome-first": { start: () => welcome() },
   "welcome-in-preflight": { start: () => { hooks.beforeAgentStart = times(1, welcome); } },
   "welcome-in-preflight-slow-agent-start": {
@@ -73,16 +80,20 @@ await loader.reload();
 const { session } = await pi.createAgentSession({ cwd: home, agentDir: join(home, "agent"), model: faux.getModel(), modelRuntime, sessionManager: pi.SessionManager.inMemory(), resourceLoader: loader });
 await session.bindExtensions({});
 // The bridge's pi.sendUserMessage reaches AgentSession.sendUserMessage (core/agent-session.js:2020-2021);
-// the fixtures never call it.
+// a fixture's own call is not counted.
 const bridgeSent = [];
+let fixtureSending = false;
 const sendUserMessage = session.sendUserMessage.bind(session);
-session.sendUserMessage = (content, options) => { bridgeSent.push(content); return sendUserMessage(content, options); };
-scenarios[name].start?.();
+session.sendUserMessage = (content, options) => { if (!fixtureSending) bridgeSent.push(content); return sendUserMessage(content, options); };
+const scenario = scenarios[name];
+scenario.start?.();
+for (let i = 0; scenario.whileRunning && !session.isStreaming && i < 200; i++) await new Promise((resolve) => setTimeout(resolve, 5));
 
 let promptError = null;
-await session.prompt(TASK).catch((e) => { promptError = e.message; });
+await (scenario.prompt ?? (() => session.prompt(TASK)))().catch((e) => { promptError = e.message; });
 const text = (m) => typeof m.content === "string" ? m.content : m.content.filter((c) => c.type === "text").map((c) => c.text).join("");
-const snapshot = () => session.messages.map((m) => ({ role: m.role, text: m.role === "assistant" ? "reply" : text(m) }));
+// pi 1.x records the system prompt in the transcript; nobody sent it.
+const snapshot = () => session.messages.filter((m) => m.role !== "system").map((m) => ({ role: m.role, text: m.role === "assistant" ? "reply" : text(m) }));
 // Settled: idle, with an unchanged transcript for half a second.
 for (let last = "", stable = 0; stable < 5;) {
   await new Promise((resolve) => setTimeout(resolve, 100));
@@ -90,5 +101,6 @@ for (let last = "", stable = 0; stable < 5;) {
   stable = session.isIdle && now === last ? stable + 1 : 0;
   last = now;
 }
-console.log(JSON.stringify({ transcript: snapshot(), bridgeSent, promptError, inputSources }));
+const abortSettled = aborting ? await Promise.race([aborting, new Promise((resolve) => setTimeout(resolve, 2000, false))]) : undefined;
+console.log(JSON.stringify({ transcript: snapshot(), bridgeSent, promptError, inputSources, abortSettled }));
 process.exit(0);
