@@ -7,7 +7,7 @@
 [![Node 22+](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-OATS—**Open Agent Team Specification**—is a completely free and open-source, provider- and harness-agnostic framework for building distributed agent teams. Its CLI and contracts set up agents that work together on one laptop, across machines or across a large organisation, as flexibly as you need.
+OATS—**Open Agent Team Specification**—is a provider- and harness-agnostic framework for building distributed agent teams. Its CLI and contracts set up agents that work together on one laptop, across machines or across a large organisation, as flexibly as you need. It is completely free and open source.
 
 **Each agent keeps the full power of its own harness**, whether Claude Code, Codex or pi. OATS connects them: agents on different harnesses and providers communicate and work together, while you keep control of their messaging, knowledge, coordination and anything else your team does.
 
