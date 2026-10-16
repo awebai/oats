@@ -31,7 +31,7 @@ import { IgnoreError, ignoreFilePath, loadIgnore } from "../lib/ignore.mjs";
 import { CAPTURE_SOURCES, captureHealth, resetSourceCursors, writeCaptureStatus } from "../lib/capture-state.mjs";
 import { acquireCaptureLock } from "../lib/capture-lock.mjs";
 import { captureDefaultRootPlan, resolveCaptureDefaultRoots } from "../lib/capture-default-roots.mjs";
-import { captureCommandPass, reportLockInitializationFailure, releaseDetail } from "../lib/capture-command-output.mjs";
+import { captureCommandPass, reportLockInitializationFailure, reportReclaimedLock, releaseDetail } from "../lib/capture-command-output.mjs";
 import { captureWatchQueue } from "../lib/capture-watch.mjs";
 import { launchCaptureHook } from "../lib/capture-hook.mjs";
 
@@ -306,7 +306,7 @@ function withCaptureLock(fn) {
     lock = acquireCaptureLock(root);
     // Said by the pass that removed it, never quiet, whether or not it then took the lock: a pass that
     // died holding the lock is worth knowing about.
-    if (lock.reclaimed) console.error(`capture: reclaimed ${lock.path} from pid ${lock.reclaimed.pid}, which died (started ${lock.reclaimed.startedAt || "?"})`);
+    if (lock.reclaimed) reportReclaimedLock({ path: lock.path, ...lock.reclaimed });
   } catch (err) {
     reportLockInitializationFailure(err);
     throw err;

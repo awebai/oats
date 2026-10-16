@@ -34,11 +34,6 @@ export function failureAfterAttempt(previous, { stream, offset, reason }, now = 
   return next;
 }
 
-export function failureReady(row, now = Date.now()) {
-  if (!validFailure(row) || !Number.isSafeInteger(now) || now < 0) throw new Error("invalid capture failure retry");
-  return now >= Date.parse(row.nextRetryAt);
-}
-
 export function validFailureBacklog(backlog, { legacy = false } = {}) {
   if (!backlog || typeof backlog !== "object") return false;
   if (legacy && !["failedCount", "failed", "failedTruncated"].some(key => Object.hasOwn(backlog, key))) return true;

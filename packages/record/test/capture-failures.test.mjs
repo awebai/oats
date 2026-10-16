@@ -8,7 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { DerivedState } from "../lib/derived-state.mjs";
 import { captureHealth, resetSourceCursors, retrySetAside, writeCaptureStatus } from "../lib/capture-state.mjs";
 import { readIssueBacklog } from "../lib/capture-issues.mjs";
-import { failureAfterAttempt, failureReady } from "../lib/capture-failures.mjs";
+import { failureAfterAttempt } from "../lib/capture-failures.mjs";
 
 const now = Date.parse("2026-01-01T00:00:00.000Z");
 const unit = n => ({ stream: `fixture~cc.${String(n).padStart(4, "0")}`, offset: n * 100, reason: "interrupted" });
@@ -24,16 +24,12 @@ function fixture(t) {
   return { base, root, command };
 }
 
-test("failure backoff counts actual attempts, caps at sixteen intervals and never changes a skipped row", () => {
+test("failure backoff counts actual attempts and caps at sixteen intervals", () => {
   let prior = null, stamp = now;
   for (const minutes of [30, 60, 120, 240, 240, 240]) {
     const next = failureAfterAttempt(prior, unit(0), stamp);
     assert.equal(next.attempts, (prior?.attempts ?? 0) + 1);
     assert.equal(Date.parse(next.nextRetryAt) - stamp, minutes * 60000);
-    const before = JSON.stringify(next);
-    assert.equal(failureReady(next, Date.parse(next.nextRetryAt) - 1), false);
-    assert.equal(failureReady(next, Date.parse(next.nextRetryAt)), true);
-    assert.equal(JSON.stringify(next), before);
     prior = next; stamp = Date.parse(next.nextRetryAt);
   }
   assert.throws(() => failureAfterAttempt(prior, unit(1), now), /previous/);

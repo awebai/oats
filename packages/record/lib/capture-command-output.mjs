@@ -15,7 +15,7 @@ export function reportLockInitializationFailure(err, error = console.error) {
   error(`capture: could not write the owner record of ${c.path}: ${err.message}; ${outcome}`);
 }
 
-function reportReclaimedLock(r, error = console.error) {
+export function reportReclaimedLock(r, error = console.error) {
   if (r) error(`capture: reclaimed ${r.path} from pid ${r.pid}, which died (started ${r.startedAt || "?"})`);
 }
 
