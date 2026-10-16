@@ -23,7 +23,7 @@ const MOUSE = "#{||:#{pane_in_mode},#{mouse_any_flag}}";
 /** The one global hook entry the kernel owns: when a session whose name is a viewer's closes, its
  *  key table is unbound. The name is matched before it is used in a command (a format inside
  *  `#{...}` cannot hold `}`, so the 8 hex digits are spelled out). */
-const VIEWER_CLOSED_HOOK = `if-shell -F '#{m/r:^oatsview-[0-9]+-${"[0-9a-f]".repeat(8)}$,#{hook_session_name}}' "run-shell -C 'unbind-key -a -q -T #{hook_session_name}'"`;
+const VIEWER_CLOSED_HOOK = `if-shell -F '#{m/r:^oatsview-([0-9]+)-${"[0-9a-f]".repeat(8)}$,#{hook_session_name}}' "run-shell -C 'unbind-key -a -q -T #{hook_session_name}'"`;
 test("tmux attach isolates one exact window and cleanup kills only the viewer", () => {
   const io = fixture();
   const viewer = prepareSessionViewer(target, io);
