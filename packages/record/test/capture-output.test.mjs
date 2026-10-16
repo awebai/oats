@@ -12,20 +12,46 @@ import { failureAfterAttempt } from "../lib/capture-failures.mjs";
 import { captureLockPath } from "../lib/capture-lock.mjs";
 
 const bin = resolve(import.meta.dirname, "../bin/capture.mjs");
-function fixture(t, { watchPrivacy = false } = {}) {
+function fixture(t, { watchPrivacy = false, watchFailure = false } = {}) {
   const home = fs.mkdtempSync(join(tmpdir(), "capture-output-")), root = join(home, "record");
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const driver = join(home, "gated.mjs");
+  const hint = join(home, ".config", "aw", "logs"), watchEvidence = join(home, "watch-evidence.json");
+  if (watchPrivacy) fs.mkdirSync(hint, { recursive: true });
   fs.writeFileSync(driver, `
 ${watchPrivacy ? `import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const evidence = { hints: [], watcherClosed: 0, intervalClosed: 0, postCloseTimers: 0 };
+let stopped = false, periodic;
+const timeout = globalThis.setTimeout, clear = globalThis.clearInterval;
+globalThis.setTimeout = (...args) => { if (stopped) evidence.postCloseTimers++; return timeout(...args); };
+fs.watch = (dir, options, notify) => {
+  evidence.hints.push({ dir, options });
+  if (dir !== ${JSON.stringify(hint)}) throw new Error('unexpected watch hint');
+  if (${watchFailure}) throw new Error('fixture watch unavailable');
+  return { on() { return this; }, close() {
+    evidence.watcherClosed++; notify(); // A notification after queue.close must not admit work.
+  } };
+};
+syncBuiltinESMExports();
+globalThis.clearInterval = handle => {
+  clear(handle); evidence.intervalClosed++; stopped = true;
+  periodic(); // Even a queued periodic notification cannot reopen a closed queue.
+};
 const interval = globalThis.setInterval;
 globalThis.setInterval = (callback, delay, ...args) => {
   const handle = interval(callback, delay, ...args);
-  if (delay === 15 * 60 * 1000) setImmediate(() => {
-    fs.mkdirSync(${JSON.stringify(join(root, "ignore"))}); callback(...args);
-  });
+  if (delay === 15 * 60 * 1000) {
+    periodic = () => callback(...args);
+    setImmediate(() => {
+      evidence.initialStatus = fs.readFileSync(${JSON.stringify(join(root, "capture-status.json"))}, 'utf8');
+      fs.mkdirSync(${JSON.stringify(join(root, "ignore"))}); periodic();
+    });
+  }
   return handle;
-};` : ""}
+};
+process.once('beforeExit', () => fs.writeFileSync(${JSON.stringify(watchEvidence)}, JSON.stringify(evidence)));
+` : ""}
 const queues = {}, released = new Set();
 for (const name of ['stdout', 'stderr']) {
   const stream = process[name], write = stream.write.bind(stream);
@@ -50,7 +76,7 @@ process.argv.splice(1, 1);
 await import(${JSON.stringify(pathToFileURL(bin).href)});
 process.send({ type: 'ready', stdout: queues.stdout.entries.length, stderr: queues.stderr.entries.length });
 `);
-  return { home, root, driver, env: { HOME: home, TMPDIR: home, XDG_CACHE_HOME: home, NODE_NO_WARNINGS: "1" } };
+  return { home, root, driver, hint, watchEvidence, env: { HOME: home, TMPDIR: home, XDG_CACHE_HOME: home, NODE_NO_WARNINGS: "1" } };
 }
 
 async function command(f, args, gated = false) {
@@ -184,15 +210,25 @@ test("other terminal CLI branches preserve delayed output and usage/privacy exit
   }
 });
 
-test("privacy refusal on a later foreground watch pass closes scheduling after one diagnostic", async t => {
-  const f = fixture(t, { watchPrivacy: true });
+for (const watchFailure of [false, true]) test(`privacy refusal on a later foreground watch pass closes scheduling (${watchFailure ? "advisory hint failure" : "installed hint"})`, async t => {
+  // Keep all sources selected. Watch hints are independent of privacy; control
+  // their installation instead of counting an OS-dependent advisory as privacy.
+  const f = fixture(t, { watchPrivacy: true, watchFailure });
   const result = await command(f, ["--watch", "--owner", "fixture", "--no-index"], true);
   assert.equal(result.code, 1);
-  assert.match(result.stdout, /capture: 0 new turns; partial \(input\)/);
-  assert.equal(result.stderr.trim().split("\n").length, 1);
+  assert.equal(result.stdout, `capture: 0 new turns; partial (input)\n${watchFailure ? "" : `watching ${f.hint}\n`}`);
+  const advisory = watchFailure ? `cannot watch ${f.hint}: fixture watch unavailable\n` : "";
+  assert.equal(result.stderr, advisory + `cannot read capture ignore file ${join(f.root, "ignore")} (EISDIR); capture refuses to run with an unreadable privacy control — make it a readable text file of patterns, or remove it\n`);
   assert.match(result.stderr, /ignore/); assert.doesNotMatch(result.stderr, /capture pass failed|PrintedCaptureFailure/);
   assert.equal(fs.existsSync(captureLockPath(f.root)), false);
-  const saved = JSON.parse(fs.readFileSync(join(f.root, "capture-status.json"), "utf8"));
+  const status = fs.readFileSync(join(f.root, "capture-status.json"), "utf8");
+  const evidence = JSON.parse(fs.readFileSync(f.watchEvidence, "utf8"));
+  assert.equal(status, evidence.initialStatus, "privacy refusal cannot overwrite the committed run or confirmed counters");
+  assert.deepEqual(evidence.hints, [{ dir: f.hint, options: { recursive: true } }]);
+  assert.equal(evidence.intervalClosed, 1);
+  assert.equal(evidence.watcherClosed, watchFailure ? 0 : 1);
+  assert.equal(evidence.postCloseTimers, 0, "post-close hint/periodic notifications cannot schedule another pass");
+  const saved = JSON.parse(status);
   assert.equal(saved.lastRun.trigger, "watch"); assert.equal(saved.lastRun.outcome, "partial");
   assert.equal(saved.lastRun.counts.turnsAppended, 0);
 });
