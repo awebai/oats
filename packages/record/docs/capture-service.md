@@ -871,11 +871,53 @@ index processing is blocked. Finalization can recover a committed reset's
 bounded metadata publication, but performs no discovery, source/index group,
 cleanup deletion or new reset.
 
-This session deliberately has no successful-completion path. Yielding publishes
-pending run facts; finishing an idle or finalization session reports partial,
-or failed when the current pass carries failure. Existing `lastSuccess` history
-is preserved. Default-root and ordinary command routing, final union
-audit and all-stage completion still belong to the remaining command runner;
-idle selection, reset completion and completed inventories do not substitute
-for those gates. The ordinary CLI, installed service and setup/hook entry points
+Yielding publishes pending run facts. `finish()` is a conservative stop receipt,
+including for a finalization-only worker; it does not infer success from idle
+selection. The owning normal worker calls `complete()` for the separate final
+decision. `capture-completion.mjs` verifies source enumeration and outcomes,
+discovery/root failures, stream/cleanup/reset/discovery admissions, retries,
+retained allocations/stages, issue rows and obsolete inventory cleanup. Only
+complete or ignored source outcomes can contribute to success. Every current
+index outcome is checked against its journal generation, validation and index
+cursor evidence again. A fresh index-name/live-name union check adds missing
+members as ready work, including journals arriving before an earlier discovery
+cursor; they require processing before a later audit can succeed. Neither idle,
+reset publication nor a completed enumeration is a completion certificate.
+
+The audit uses SQL pages of at most 128 rows and cooperative checks between
+metadata entries. Sorted live directory names retain the existing metadata-array
+cost qualification. Capture-state then index write reservations prevent supported
+database writers from changing the checked state during the audit. It acquires
+no stream locks and reads no journal content while holding those reservations.
+Journal evidence retains its per-stream metadata qualification; this is not a
+root-wide instantaneous filesystem snapshot or a new historical integrity proof
+against arbitrary raw file edits. Directory identity replacement is refused;
+observed directory changes or newly discovered members leave pending work.
+
+Audit progress is worker-local: an interruption or deadline cannot turn a saved
+partial scan into later completion authority. A replacement verifies afresh.
+Source/content/index recovery and discovery retain their resumable checkpoints.
+The final metadata audit must fit one admitted normal worker; its lock duration,
+directory metadata memory and 1,300/thousands-stream completion time remain
+explicit hosted Linux/storage qualification gates. No measured bound or final
+service qualification follows from this private implementation. Each audit adds
+one capture-state transaction and an index reservation released without index
+mutation. Missing memberships or a retirement intent can add capture-state
+writes; include their real synchronization cost in storage accounting.
+
+Terminal source visits can request retirement even when a torn, set-aside or
+failed input makes the receipt partial. The intent is bound to the source scope
+and run. It takes effect only on a later normal construction that sees that run's
+published final receipt; death before publication preserves the same source
+scope and confirmed counters. The next source sweep also renews index discovery.
+Old source/index inventories retire in bounded pages after healthy work, without
+manufacturing capture/index progress or counts. Pending inputs are thus revisited
+on a later sweep without being treated as successful in the earlier one.
+
+An empty healthy audit may publish complete. Current-pass failure still overrides
+healthy work and complete audit evidence; an older failure remains history and
+does not poison a later success. Confirmed counts come only from their existing
+processing commits, never audit scans or reconstruction. Default-root and ordinary
+command routing, protected exact-home/file entry points and service migration
+remain separate. The ordinary CLI, installed service and setup/hook entry points
 do not yet invoke this private session.

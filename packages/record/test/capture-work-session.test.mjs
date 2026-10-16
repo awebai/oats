@@ -1,5 +1,5 @@
 // Supervised fixture intentions for the private session, not ordinary-command,
-// cleanup completion, manager or full-service qualification.
+// manager or full-service qualification.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -51,6 +51,33 @@ function fixture(t, specs = [], { discover = false } = {}) {
       }
       const session=new CaptureWorkSession(start,{owner:'fixture',selection:'fixture',now:()=>start.options.now,roots:start.options.roots??null,
         unit:{limit:1,maxRecords:start.options.records??1,maxBytes:8388608,discoveryLimit:start.options.discoveryLimit??128}});
+      if(start.options.audit){
+        fs.appendFileSync(join(start.root,'audit-workers'),JSON.stringify({runId:session.run.id,scope:session.queue.current().id,
+          counts:session.run.current().run.counts,retirement:session.state.get('capture-sweep-retirement','fixture')})+'\\n');
+        const finish=session.run.finish.bind(session.run);
+        session.run.finish=options=>{
+          if(start.options.killBeforeReceipt && !fs.existsSync(join(start.root,'audit-death')) &&
+              session.state.get('capture-sweep-retirement','fixture')){
+            fs.writeFileSync(join(start.root,'audit-death'),JSON.stringify({scope:session.queue.current().id,
+              runId:session.run.id,counts:session.run.current().run.counts}));
+            process.kill(process.pid,'SIGKILL');
+          }
+          return finish(options);
+        };
+        if(start.options.killAudit){
+          const audit=session.outcomes.audit.bind(session.outcomes);
+          session.outcomes.audit=options=>{
+            const result=audit(options);
+            fs.appendFileSync(join(start.root,'audit-pages'),JSON.stringify({nonce:start.workerNonce,after:options.after,
+              retirement:session.state.get('capture-sweep-retirement','fixture')})+'\\n');
+            if(result.checked && !fs.existsSync(join(start.root,'audit-scan-death'))){
+              fs.writeFileSync(join(start.root,'audit-scan-death'),session.run.id);
+              process.kill(process.pid,'SIGKILL');
+            }
+            return result;
+          };
+        }
+      }
       const append=session.store.appendUniqueBatch.bind(session.store);
       session.store.appendUniqueBatch=(stream,turns)=>{const n=append(stream,turns);
         if(stream===start.options.crashStream)process.kill(process.pid,'SIGKILL');return n;};
@@ -83,8 +110,8 @@ function fixture(t, specs = [], { discover = false } = {}) {
             recovered:result.recovered??false,resetRequired:result.resetRequired??false,finalize:result.finalize??false,
             sourceDiscovery:result.sourceDiscovery??null})+'\\n');
           if(result.resetRequired)return session.yieldWorker({resetRequired:true});
-          if(result.finalize)return session.finish({reason:'deadline'});
-          if(result.idle)return session.finish();
+          if(result.finalize)return start.options.audit?session.complete():session.finish({reason:'deadline'});
+          if(result.idle)return start.options.audit?session.complete({limit:start.options.auditLimit??128}):session.finish();
           if(result.stopped)return session.yieldWorker();
         }
         return session.yieldWorker();
@@ -101,6 +128,111 @@ function fixture(t, specs = [], { discover = false } = {}) {
     diagnostic(result) { const path = join(root, 'worker-error'); return JSON.stringify(result) + (fs.existsSync(path) ? '\n' + fs.readFileSync(path, 'utf8') : ''); },
   };
 }
+
+test('fresh all-stage audit completes empty sweeps and renews both inventories on the next pass', async t => {
+  const f = fixture(t, [], { discover: true });
+  const first = await f.run({ audit: true, units: 20 });
+  assert.equal(first.outcome, 'complete', f.diagnostic(first)); assert.equal(first.exitCode, 0);
+  const a = readCaptureStatus(f.root), before = f.state(state => ({ source: state.get('source-sweep', 'fixture').id,
+    index: state.get('index-inventory', 'current').id }));
+  assert.equal(a.lastSuccess.id, a.lastRun.id); assert.equal(a.backlog.pending, false);
+  assert.equal(a.lastRun.counts.turnsAppended, 0); assert.equal(a.lastRun.counts.turnsIndexed, 0);
+  assert.equal(a.lastProgressAt, null);
+  const second = await f.run({ audit: true, units: 20 });
+  assert.equal(second.outcome, 'complete', f.diagnostic(second));
+  const b = readCaptureStatus(f.root);
+  assert.notEqual(b.lastRun.id, a.lastRun.id); assert.equal(b.lastSuccess.id, b.lastRun.id);
+  assert.equal(b.lastProgressAt, null, 'obsolete inventory cleanup is not capture/index progress');
+  f.state(state => {
+    assert.notEqual(state.get('source-sweep', 'fixture').id, before.source);
+    assert.notEqual(state.get('index-inventory', 'current').id, before.index);
+    for (const kind of ['source-queue-garbage', 'index-inventory-garbage'])
+      assert.notEqual(state.db.prepare('SELECT 1 AS found FROM state WHERE kind=? LIMIT 1').get(kind)?.found, 1);
+  });
+});
+
+test('complete receipt follows mixed processing and next-sweep growth without duplicate appends', async t => {
+  const f = fixture(t, [['cc', 'native', native(1)], ['aw', 'mail', aw(2) + aw(3)]], { discover: true });
+  const first = await f.run({ audit: true, units: 2, records: 2 });
+  assert.equal(first.outcome, 'complete', f.diagnostic(first)); assert.ok(first.starts > 1);
+  let status = readCaptureStatus(f.root);
+  assert.equal(status.lastRun.counts.filesVisited, 2); assert.equal(status.lastRun.counts.turnsAppended, 3);
+  assert.equal(status.lastRun.counts.turnsIndexed, 3); assert.equal(status.backlog.pending, false);
+  assert.equal(status.lastSuccess.id, status.lastRun.id); assert.equal(status.lastFailure, null);
+  fs.appendFileSync(f.inputs.find(input => input.source === 'aw').path, aw(4));
+  f.store.append('fixture~new-journal', turn(5));
+  const second = await f.run({ audit: true, units: 20, records: 4 });
+  assert.equal(second.outcome, 'complete', f.diagnostic(second)); status = readCaptureStatus(f.root);
+  assert.equal(status.lastRun.counts.turnsAppended, 1); assert.equal(status.lastRun.counts.turnsIndexed, 2);
+  assert.equal(status.lastRun.counts.filesVisited, 2); assert.equal(status.backlog.pending, false);
+  assert.equal(f.store.readStream('fixture~aw').length, 3);
+  assert.equal(f.store.readStream('fixture~cc.native').length, 1);
+  assert.equal(f.index(index => index.db.prepare('SELECT count(*) AS n FROM turns').get().n), 5);
+});
+
+test('finalization-only allowance cannot initiate a completion audit even for an empty root plan', async t => {
+  const f = fixture(t, [], { discover: true });
+  const result = await f.run({ audit: true }, { policy: { intervalSeconds: 900, heapMiB: 256,
+    rssBytes: 2147483648, deadlineSeconds: 10, maxRecordBytes: 8388608 } });
+  assert.equal(result.outcome, 'partial', f.diagnostic(result)); assert.equal(result.starts, 1);
+  assert.equal(readCaptureStatus(f.root).lastSuccess, null);
+  assert.equal(f.state(state => state.get('capture-sweep-retirement', 'fixture')), null);
+  assert.equal(f.state(state => state.get('source-sweep', 'fixture').discovered), false);
+});
+
+test('terminal incomplete input stays partial and is revisited by a new sweep after its line completes', async t => {
+  const f = fixture(t, [['aw', 'mail', aw(1).slice(0, -2)]], { discover: true });
+  const first = await f.run({ audit: true, units: 20 });
+  assert.equal(first.outcome, 'partial', f.diagnostic(first)); assert.equal(first.exitCode, 0);
+  const pending = readCaptureStatus(f.root);
+  assert.equal(pending.backlog.pending, true); assert.equal(pending.lastSuccess, null);
+  assert.equal(pending.lastRun.counts.inputsPending, 1); assert.equal(pending.lastRun.counts.turnsAppended, 0);
+  const scope = f.state(state => state.get('source-sweep', 'fixture').id);
+  fs.appendFileSync(f.inputs[0].path, '}\n');
+  const second = await f.run({ audit: true, units: 20 });
+  assert.equal(second.outcome, 'complete', f.diagnostic(second));
+  const done = readCaptureStatus(f.root);
+  assert.equal(done.lastRun.counts.inputsPending, 0); assert.equal(done.lastRun.counts.turnsAppended, 1);
+  assert.equal(done.lastRun.counts.turnsIndexed, 1); assert.equal(done.backlog.pending, false);
+  assert.notEqual(f.state(state => state.get('source-sweep', 'fixture').id), scope);
+});
+
+test('death after final audit before receipt retains the same sweep and counts, then a later pass may succeed', async t => {
+  const f = fixture(t, [['aw', 'mail', aw(1) + aw(2)]], { discover: true });
+  const failed = await f.run({ audit: true, killBeforeReceipt: true, units: 20, records: 4 });
+  assert.equal(failed.outcome, 'failed', f.diagnostic(failed)); assert.equal(failed.exitCode, 1);
+  assert.ok(failed.starts > 1);
+  const status = readCaptureStatus(f.root), death = JSON.parse(fs.readFileSync(join(f.root, 'audit-death'), 'utf8'));
+  const workers = fs.readFileSync(join(f.root, 'audit-workers'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(status.lastRun.id, death.runId); assert.equal(status.lastFailure.id, death.runId);
+  assert.equal(status.lastSuccess, null); assert.deepEqual(status.lastRun.counts, death.counts);
+  assert.equal(status.lastRun.counts.filesVisited, 1); assert.equal(status.lastRun.counts.turnsAppended, 2);
+  assert.equal(status.lastRun.counts.turnsIndexed, 2);
+  const replacement = workers.find(row => row.retirement?.runId === death.runId);
+  assert.ok(replacement); assert.equal(replacement.scope, death.scope); assert.deepEqual(replacement.counts, death.counts);
+  assert.ok(workers.every(row => row.scope === death.scope));
+  const next = await f.run({ audit: true, units: 20, records: 4 });
+  assert.equal(next.outcome, 'complete', f.diagnostic(next));
+  const recovered = readCaptureStatus(f.root);
+  assert.deepEqual(recovered.lastFailure, status.lastFailure); assert.equal(recovered.lastSuccess.id, recovered.lastRun.id);
+  assert.equal(recovered.lastRun.counts.turnsAppended, 0); assert.equal(recovered.lastRun.counts.turnsIndexed, 0);
+  assert.equal(recovered.lastRun.counts.filesVisited, 1); assert.equal(f.store.readStream('fixture~aw').length, 2);
+});
+
+test('actual death during final metadata audit discards partial proof and retains current-pass failure', async t => {
+  const f = fixture(t, [], { discover: true });
+  for (const [n, name] of ['a', 'b'].entries()) f.store.append(`fixture~${name}`, turn(n));
+  const result = await f.run({ audit: true, killAudit: true, auditLimit: 1, units: 20 });
+  assert.equal(result.outcome, 'failed', f.diagnostic(result)); assert.ok(result.starts > 1);
+  const status = readCaptureStatus(f.root);
+  assert.equal(status.lastRun.counts.turnsIndexed, 2); assert.equal(status.lastRun.counts.turnsAppended, 0);
+  assert.equal(status.lastFailure.id, status.lastRun.id); assert.equal(status.lastSuccess, null);
+  const pages = fs.readFileSync(join(f.root, 'audit-pages'), 'utf8').trim().split('\n').map(JSON.parse);
+  const starts = pages.filter(row => row.after === '');
+  assert.equal(starts.length, 2); assert.notEqual(starts[0].nonce, starts[1].nonce);
+  assert.equal(starts[0].retirement, null); assert.equal(starts[1].retirement, null);
+  assert.equal(f.index(index => index.db.prepare('SELECT count(*) AS n FROM turns').get().n), 2);
+});
 
 test('worker discovery resumes across formats and workers without promoting enumeration to pass success', async t => {
   const f = fixture(t, [['cc', 'native-a', native(1)], ['cc', 'native-b', native(2)],

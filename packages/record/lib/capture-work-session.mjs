@@ -1,6 +1,6 @@
 // Private owning worker session. Bootstrap has already registered this worker
-// under the root lock and reaped its predecessor. Root selection, final
-// completion and ordinary command routing remain separate.
+// under the root lock and reaped its predecessor. Root selection and ordinary
+// command routing remain separate; completion requires a fresh all-stage audit.
 import { randomUUID } from "node:crypto";
 import { RecordStore } from "./store.mjs";
 import { RecordIndex } from "./index-db.mjs";
@@ -17,6 +17,7 @@ import { readCaptureAdmission } from "./capture-admission.mjs";
 import { FAILURE_REASONS } from "./capture-failures.mjs";
 import { CaptureCleanupQueue } from "./capture-cleanup-queue.mjs";
 import { CaptureSourceDiscovery } from "./capture-source-discovery.mjs";
+import { auditCaptureCompletion } from "./capture-completion.mjs";
 
 export class CaptureWorkSession {
   constructor(start, { owner, selection, trigger = "manual", now = Date.now, unit = {}, roots = null } = {}) {
@@ -30,6 +31,9 @@ export class CaptureWorkSession {
       this.store = new RecordStore(start.root, { owner });
       this.state = new DerivedState(start.root);
       this.index = new RecordIndex(this.store);
+      const prior = readCaptureStatus(start.root);
+      if (prior?.lastRun?.id === start.pass.runId && prior.lastRun.outcome !== "running")
+        throw new Error("capture run identity already finished");
       const previous = start.pass.previous?.outcome === "failed" ? start.pass.previous.reason : null;
       // An observed child failure belongs to this pass. It cannot diagnose an
       // older abandoned admission merely because this child reconciles it.
@@ -38,6 +42,15 @@ export class CaptureWorkSession {
       this.cleanup = new CaptureCleanupQueue(this.store, this.state);
       this.cleanup.reconcile(start, { reason: reasonFor(this.cleanup.active()?.runId), now: now() });
       this.queue = new CaptureSourceQueue(this.state, { owner, selection });
+      const retirement = this.state.get("capture-sweep-retirement", owner);
+      if (!start.pass.finalize && retirement?.sourceScope === this.queue.current().id &&
+          retirement.runId === prior?.lastRun?.id && prior.lastRun.outcome !== "running") {
+        this.state.transaction(() => {
+          this.queue.finish();
+          this.state.delete("capture-sweep-retirement", owner);
+        });
+        this.queue = new CaptureSourceQueue(this.state, { owner, selection });
+      }
       if (roots !== null) {
         this.sourceDiscovery = new CaptureSourceDiscovery(this.queue, roots);
         this.sourceDiscovery.reconcile(start, { reason: reasonFor(this.sourceDiscovery.active()?.runId), now: now() });
@@ -45,11 +58,12 @@ export class CaptureWorkSession {
       // Retain a reset's scope even if derived inventory tables were lost.
       // Recreating membership may restart enumeration; it cannot erase reset
       // admission or the index token needed to recover a committed operation.
+      const previousSource = this.state.get("capture-index-source", owner);
       const scope = this.state.get("capture-index-reset", "current")?.scope ??
-        this.state.get("index-inventory", "current")?.id ?? randomUUID();
+        (previousSource && previousSource.sourceScope !== this.queue.current().id ? randomUUID() :
+          this.state.get("index-inventory", "current")?.id ?? randomUUID());
       this.openIndexScope(scope);
       this.reset.reconcile(start, { reason: reasonFor(this.reset.current()?.attempt?.runId), now: now() });
-      const prior = readCaptureStatus(start.root);
       const failures = [this.state.get("capture-run-failure", "last"),
         this.state.get("capture-index-reset-failure", "last"), this.state.get("capture-cleanup-failure", "last"),
         this.state.get("capture-discovery-failure", "last")].filter(Boolean);
@@ -67,6 +81,9 @@ export class CaptureWorkSession {
     this.inventory = new CaptureIndexInventory(this.state, { id });
     this.outcomes = new CaptureIndexOutcomes(this.index, this.inventory);
     this.reset = new CaptureIndexReset(this.index, this.inventory);
+    const binding = { sourceScope: this.queue.current().id, indexScope: id };
+    if (JSON.stringify(this.state.get("capture-index-source", this.queue.owner)) !== JSON.stringify(binding))
+      this.state.transaction(() => this.state.set("capture-index-source", this.queue.owner, binding));
   }
 
   sourceReady(input) {
@@ -102,6 +119,17 @@ export class CaptureWorkSession {
       maxRecords: Math.max(2, this.unit.maxRecords ?? 2000) });
   }
 
+  collect() {
+    if (this.state.db.prepare("SELECT 1 AS found FROM state WHERE kind IN ('source-queue-garbage','index-inventory-garbage') LIMIT 1").get()?.found !== 1)
+      return null;
+    return this.state.transaction(() => {
+      const sources = this.queue.cleanup(), streams = this.inventory.cleanup();
+      // Retiring obsolete enumeration is bookkeeping, not new capture/index
+      // progress. In particular it must not refresh every no-op pass's history.
+      return { stage: "inventory-cleanup", sources, streams };
+    });
+  }
+
   step() {
     const stopped = () => this.start.budget.sample() !== null;
     if (stopped()) return { stopped: true };
@@ -132,6 +160,9 @@ export class CaptureWorkSession {
     if (stopped()) return { stopped: true, discovery, sourceDiscovery };
     const cleanup = this.clean(false);
     if (cleanup.selected || !cleanup.complete) return { stage: "cleanup", ...cleanup, discovery, sourceDiscovery };
+    if (stopped()) return { stopped: true, discovery, sourceDiscovery };
+    const collected = this.collect();
+    if (collected) return { ...collected, discovery, sourceDiscovery };
     // Unknown eligible discovery can still contain healthy work. A refused
     // root remains pending but cannot withhold unrelated due work indefinitely.
     if ((this.sourceDiscovery ? this.sourceDiscovery.healthyPending() : !this.queue.current().discovered) ||
@@ -152,9 +183,8 @@ export class CaptureWorkSession {
     return { idle: true, discovery, sourceDiscovery };
   }
 
-  // No complete path exists here: source discovery/visits, cleanup, retries,
-  // new streams and the final index audit still need all-stage reconciliation.
-  // Even an idle session must leave backlog.pending true until that gate exists.
+  // Yield/stop never infer completion. The owning worker calls complete() only
+  // when it wants a final all-stage decision; idle is merely a scheduling hint.
   yieldWorker({ resetRequired = false } = {}) {
     if (this.start.pass.finalize) return this.finish({ reason: "deadline" });
     if (this.start.budget.reason === "interrupted") return this.finish({ reason: "interrupted" });
@@ -166,6 +196,21 @@ export class CaptureWorkSession {
   finish({ reason = "input" } = {}) {
     const snapshot = this.run.finish({ outcome: reason === "interrupted" ? "failed" : "partial", reason,
       pending: true, peakRssBytes: this.start.budget.peakRssBytes });
+    return { outcome: snapshot.lastRun.outcome, reason: snapshot.lastRun.reason, continuation: false };
+  }
+
+  complete(options) {
+    if (this.start.pass.finalize || this.start.budget.sample() !== null)
+      return this.finish({ reason: this.start.budget.reason ?? "deadline" });
+    const audit = auditCaptureCompletion(this, options);
+    if (audit.stopped || audit.needsWork) return this.yieldWorker();
+    // Normally these facts entered the run during replacement construction.
+    // Also retain a caught failure if an owning caller continues in this worker.
+    const failure = ["capture-run-failure", "capture-index-reset-failure", "capture-cleanup-failure", "capture-discovery-failure"]
+      .map(kind => this.state.get(kind, "last")).find(row => row?.runId === this.run.id);
+    const snapshot = this.run.finish({ outcome: failure ? "failed" : audit.complete ? "complete" : "partial",
+      reason: failure?.reason ?? (audit.complete ? null : "input"),
+      pending: audit.pending, peakRssBytes: this.start.budget.peakRssBytes });
     return { outcome: snapshot.lastRun.outcome, reason: snapshot.lastRun.reason, continuation: false };
   }
 

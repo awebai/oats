@@ -83,14 +83,18 @@ export class CaptureIndexOutcomes {
   // Page completion is only the end of this audit's enumeration. The owning
   // scheduler must include unfinished discovery, retries, newly captured
   // streams, reset and other stages in its final decision. Recheck after writes.
-  audit({ after = "", limit = 128 } = {}) {
-    if (typeof after !== "string" || !Number.isSafeInteger(limit) || limit < 1 || limit > 128)
+  audit({ after = "", limit = 128, stopped = () => false } = {}) {
+    if (typeof after !== "string" || !Number.isSafeInteger(limit) || limit < 1 || limit > 128 || typeof stopped !== "function")
       throw new Error("invalid capture index outcome audit page");
     this.inventory.current();
     const rows = this.state.db.prepare(`SELECT stream,phase,proof FROM capture_index_inventory
       WHERE scope=? AND stream>? ORDER BY stream LIMIT ?`).all(this.inventory.id, after, limit);
-    let pending = 0;
-    for (const row of rows) if (!this.complete(row)) pending++;
+    let pending = 0, checked = 0;
+    for (const row of rows) {
+      if (stopped()) return { checked, pending, after, complete: false, stopped: true };
+      if (!this.complete(row)) pending++;
+      checked++; after = row.stream;
+    }
     return { checked: rows.length, pending, after: rows.at(-1)?.stream ?? after,
       complete: rows.length < limit, discovered: this.inventory.current().phase === "complete", resetRequired: this.resetRequired() };
   }

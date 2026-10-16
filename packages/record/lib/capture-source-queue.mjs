@@ -189,6 +189,7 @@ export class CaptureSourceQueue {
     if (!this.state.depth) throw new Error("capture source cleanup requires a transaction");
     const obsolete = this.state.db.prepare("SELECT key FROM state WHERE kind='source-queue-garbage' ORDER BY key LIMIT 1").get()?.key;
     if (obsolete == null) return 0;
+    if (obsolete === this.current().id) throw new Error("active capture source inventory cannot be deleted");
     const count = Number(this.state.db.prepare(`DELETE FROM capture_sources WHERE rowid IN (
       SELECT rowid FROM capture_sources WHERE scope=? ORDER BY position LIMIT ${pageSize})`).run(obsolete).changes);
     if (!this.state.db.prepare("SELECT 1 AS found FROM capture_sources WHERE scope=? LIMIT 1").get(obsolete)?.found)
