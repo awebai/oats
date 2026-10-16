@@ -128,12 +128,14 @@ export function advanceTranscriptPrefix(store, stream, { key, snapshot, lines, m
           break;
         }
         const record = next.value;
-        if (typeof record.text !== "string" || !Number.isSafeInteger(record.bytes) || record.bytes < 1 ||
+        // A line arrives as its streamed digest, or as text a caller decoded.
+        const hash = typeof record.hash === "string" ? record.hash : typeof record.text === "string" ? digest(Buffer.from(record.text)) : null;
+        if (hash === null || !Number.isSafeInteger(record.bytes) || record.bytes < 1 ||
             proof.bytes + record.bytes > snapshot.size) throw new Error("invalid staged prefix line");
         const expected = get.get(key, proof.line + 1);
         records++; bytes += record.bytes;
         if (work) { work.sourceRecords = (work.sourceRecords ?? 0) + 1; work.sourceBytes = (work.sourceBytes ?? 0) + record.bytes; }
-        if (expected?.hash != null && expected.hash !== digest(Buffer.from(record.text))) {
+        if (expected?.hash != null && expected.hash !== hash) {
           proof.phase = "conflict";
           proof.conflict = { line: proof.line + 1, offset: proof.bytes, reason: "captured-prefix-changed" };
           break;

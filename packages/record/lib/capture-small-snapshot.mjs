@@ -11,10 +11,8 @@ import { fileChunks } from "./file-lines.mjs";
 
 export const SMALL_SNAPSHOT_BYTES = 8388608;
 
-export function smallCommandSnapshot(root, fd, path, size, { capturedPi, stopped = () => false,
-  maxRecordBytes = SMALL_SNAPSHOT_BYTES, work } = {}) {
-  if (!Number.isSafeInteger(size) || size < 0 || size > SMALL_SNAPSHOT_BYTES ||
-      !Number.isSafeInteger(maxRecordBytes) || maxRecordBytes < 1 || maxRecordBytes > SMALL_SNAPSHOT_BYTES) {
+export function smallCommandSnapshot(root, fd, path, size, { capturedPi, stopped = () => false, work } = {}) {
+  if (!Number.isSafeInteger(size) || size < 0 || size > SMALL_SNAPSHOT_BYTES) {
     throw new Error("small command snapshot exceeds its total fixed-end eligibility");
   }
   const observe = () => {
@@ -34,7 +32,7 @@ export function smallCommandSnapshot(root, fd, path, size, { capturedPi, stopped
   try {
     stagedFd = openSync(join(scratch.path, "snapshot"), "wx+", 0o600);
     const hash = createHash("sha256");
-    let copied = 0, lineBytes = 0, lineStart = 0, lines = 0;
+    let copied = 0;
     const iterator = sourceChunks(fd, 0, size, path, capturedPi);
     try {
       while (copied < size) {
@@ -43,14 +41,8 @@ export function smallCommandSnapshot(root, fd, path, size, { capturedPi, stopped
         if (next.done) throw new Error("small snapshot short read");
         const bytes = next.value;
         if (work) work.sourceBytes = (work.sourceBytes ?? 0) + bytes.length;
-        for (let from = 0; from < bytes.length;) {
-          const newline = bytes.indexOf(10, from), end = newline < 0 ? bytes.length : newline + 1;
-          if (lineBytes + end - from > maxRecordBytes) return { complete: false,
-            issue: { offset: lineStart, line: lines + 1, reason: "record-too-large", limit: maxRecordBytes } };
-          lineBytes += end - from;
-          if (newline >= 0) { lineStart += lineBytes; lineBytes = 0; lines++; }
-          from = end;
-        }
+        // Bytes are copied, never joined into lines: a captured record of any
+        // size stages; the raw-record limit belongs to capture beyond the prefix.
         hash.update(bytes);
         for (let written = 0; written < bytes.length;) {
           const count = writeSync(stagedFd, bytes, written, bytes.length - written, copied + written);

@@ -80,24 +80,28 @@ For a conflicting native prefix, either:
    input from active set-aside entries. Removing the ignore rule later does not
    authorize the conflict.
 
-**Oversized records.** The supervised worker never allocates, captures or
-modifies a raw source record larger than 8 MiB. It appends and checkpoints the
-complete records before that record through the normal unit commit, then sets
-the input aside (`record-too-large`) at the oversized record's start offset.
-Records after it stay pending until the operator edits the source or adds the
-whole input to `<root>/ignore`, which, as above, also stops later turns from
-that session. `--retry-set-aside` revalidates the input, appending no captured
-record twice, but the oversized record still blocks it. Staged recovery (after
-cache loss, a reset, a retry or a rewritten source) validates its whole fixed
-end before any append. When it meets an oversized record beyond the captured
-prefix, it fixes a new end at that record's start, restages and proves the
-prefix as usual, captures the records between, then sets the input aside at
-that start. Two native cases still capture nothing before the oversized record:
-an oversized line before the session's first timestamped line, which the
-unstamped lines before it need; and, a known limitation pending a design
-decision, an oversized record inside the captured prefix (captured by a release
-without this limit), where every such recovery sets the already captured input
-aside and its later growth is not captured.
+**Oversized records.** The 8 MiB raw-record limit applies to capture beyond
+the captured prefix. The supervised worker never allocates, captures or
+modifies a new raw source record larger than 8 MiB. It appends and checkpoints
+the complete records before that record through the normal unit commit, then
+sets the input aside (`record-too-large`) at the oversized record's start
+offset. Records after it stay pending until the operator edits the source or
+adds the whole input to `<root>/ignore`, which, as above, also stops later
+turns from that session. `--retry-set-aside` revalidates the input, appending
+no captured record twice, but the oversized record still blocks it.
+
+Records already captured (by a release without this limit) are not refused.
+Staged recovery (after cache loss, a reset, a retry or a rewritten source)
+copies the source in chunks without joining lines, and proves the captured
+prefix by a SHA-256 digest of each staged line streamed over those chunks,
+compared with the journal's line; a captured line of any size is compared
+without being held whole, and a changed byte refuses the prefix as usual. The
+journal side of that proof, like exact-version journal validation, still reads
+each journal record whole: the largest captured journal record bounds recovery
+memory, which the large-frame qualification measures in this recovery shape.
+One native case still captures nothing before an oversized record: an
+oversized line before the session's first timestamped line, which the
+unstamped lines before it need.
 `--health` gives each listed `record-too-large` entry this remedy (edit the
 source, then retry; or ignore the whole input, discarding it whole), never the
 prefix-restoration remedy above.

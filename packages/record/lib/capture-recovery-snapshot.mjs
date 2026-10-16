@@ -5,7 +5,6 @@
 import { closeSync, constants, fstatSync, fsyncSync, ftruncateSync, openSync, readSync, writeSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { captureContext } from "./capture-context.mjs";
-import { CAPTURE_POLICY } from "./capture-budget.mjs";
 import { createRetainedCaptureScratch, openRetainedCaptureScratch } from "./capture-retained-scratch.mjs";
 import { statVersion, fileVersion, sameVersion } from "./derived-state.mjs";
 import { assertProtectedDescriptor, digest } from "./session-snapshot.mjs";
@@ -23,13 +22,11 @@ function readExact(fd, position, size) {
 }
 
 export function advanceRecoverySnapshot(store, stream, key, path, start, {
-  capturedPi, generation = "", fixedEnd, maxBytes = 8 * 1024 * 1024, maxRecordBytes = CAPTURE_POLICY.maxRecordBytes,
-  stopped = () => false, work,
+  capturedPi, generation = "", fixedEnd, maxBytes = 8 * 1024 * 1024, stopped = () => false, work,
 } = {}) {
   const context = captureContext(store), state = context?.state;
   if (!state?.depth || !context.held.has(stream)) throw new Error("recovery snapshot requires its stream work group");
-  if (typeof generation !== "string" || !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 8 * 1024 * 1024 ||
-      !Number.isSafeInteger(maxRecordBytes) || maxRecordBytes < 1 || maxRecordBytes > CAPTURE_POLICY.maxRecordBytes) throw new Error("invalid recovery snapshot budget");
+  if (typeof generation !== "string" || !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 8 * 1024 * 1024) throw new Error("invalid recovery snapshot budget");
   // The scheduling caller applies ignore before entering this helper. Custody
   // checks still precede every protected source open/read and final verification.
   guardCapturedPath(path, capturedPi);
@@ -66,14 +63,13 @@ export function advanceRecoverySnapshot(store, stream, key, path, start, {
     if (!existing) {
       if (typeof stage?.allocation === "string") state.set("recovery-garbage", stage.allocation, true);
       stage = { epoch, generation, journalVersion, allocation: allocation.claim.id, path, sourceVersion: version, observedVersion: version,
-        size: fixedEnd ?? version.size, copied: 0, checked: 0, rawLineBytes: 0, lineStart: 0, lines: 0,
+        size: fixedEnd ?? version.size, copied: 0, checked: 0,
         witness: digest(Buffer.alloc(0)), payloadVersion: statVersion(fstatSync(allocation.fd, { bigint: true })), phase: "copy" };
     } else if (!stage || stage.epoch !== epoch || stage.allocation !== allocation.claim.id || stage.path !== path) {
       return invalidate("recovery-state-lost");
     }
     if (stage.generation !== generation) return invalidate("recovery-generation-changed");
-    // A caller narrowing the end (to an oversized record's start) never reuses a
-    // copy fixed beyond it. A larger requested end is ordinary later growth: the
+    // A caller narrowing the end never reuses a copy fixed beyond it. A larger requested end is ordinary later growth: the
     // first observation stays this sweep's fixed end.
     if (fixedEnd !== undefined && fixedEnd < stage.size) return invalidate("recovery-end-changed");
     // A public/outgoing writer may have captured a later source suffix between
@@ -82,8 +78,8 @@ export function advanceRecoverySnapshot(store, stream, key, path, start, {
     // the append-only source witness never qualifies a changed journal version.
     if (!sameVersion(stage.journalVersion, journalVersion)) return invalidate("recovery-journal-changed");
     if (!["copy", "validate", "ready"].includes(stage.phase) ||
-        !["size", "copied", "checked", "rawLineBytes", "lineStart", "lines"].every(k => Number.isSafeInteger(stage[k]) && stage[k] >= 0) ||
-        stage.copied > stage.size || stage.checked > stage.copied || stage.lineStart + stage.rawLineBytes !== stage.copied) {
+        !["size", "copied", "checked"].every(k => Number.isSafeInteger(stage[k]) && stage[k] >= 0) ||
+        stage.copied > stage.size || stage.checked > stage.copied) {
       return invalidate("recovery-state-invalid");
     }
     const witness = end => {
@@ -128,16 +124,8 @@ export function advanceRecoverySnapshot(store, stream, key, path, start, {
         assertProtectedDescriptor(sourceFd, path, capturedPi); allocation.verify();
         const bytes = readExact(sourceFd, stage.copied, Math.min(CHUNK, maxBytes - used, stage.size - stage.copied));
         if (work) work.sourceBytes = (work.sourceBytes ?? 0) + bytes.length;
-        for (let from = 0; from < bytes.length;) {
-          const newline = bytes.indexOf(10, from), end = newline < 0 ? bytes.length : newline + 1;
-          if (stage.rawLineBytes + end - from > maxRecordBytes) {
-            const issue = { offset: stage.lineStart, line: stage.lines + 1, reason: "record-too-large", limit: maxRecordBytes };
-            invalidate("record-too-large"); return { complete: false, cleanup: true, issue };
-          }
-          stage.rawLineBytes += end - from;
-          if (newline >= 0) { stage.lineStart += stage.rawLineBytes; stage.rawLineBytes = 0; stage.lines++; }
-          from = end;
-        }
+        // Copying never joins a line, so a record of any size stages in chunks;
+        // the raw-record limit applies to capture beyond the proven prefix.
         for (let written = 0; written < bytes.length;) {
           const n = writeSync(allocation.fd, bytes, written, bytes.length - written, stage.copied + written);
           if (!n) throw new Error("short write of recovery snapshot"); written += n;

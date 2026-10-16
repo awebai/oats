@@ -21,6 +21,7 @@
 // un-ignoring a file later makes the next pass capture it normally.
 
 import { isUtf8 } from "node:buffer";
+import { createHash } from "node:crypto";
 import { closeSync, constants, fstatSync, openSync } from "node:fs";
 import { basename } from "node:path";
 
@@ -120,6 +121,31 @@ export function* completeNativeLines(chunks, walk, { maxBytes = Infinity } = {})
     walk.scanned = scanned;
     yield { text, ts, bytes: lineBytes };
   }
+}
+
+// The digests of completeNativeLines' lines, for proving an already captured
+// prefix: SHA-256 of each line without its newline, streamed over the chunks
+// with no join, no decode to a string and no size limit, so a captured record
+// of any size is compared without being held whole. Stops exactly where
+// completeNativeLines stops, with the same walk.reason.
+export function* completeNativeLineDigests(chunks, walk) {
+  let hash = createHash("sha256"), utf8 = new TextDecoder("utf-8", { fatal: true }), bytes = 0, scanned = 0, valid = true;
+  const check = (piece, stream) => { if (valid) try { utf8.decode(piece, { stream }); } catch { valid = false; } };
+  walk.scanned = 0;
+  for (const chunk of chunks) {
+    for (let from = 0; from < chunk.length;) {
+      const newline = chunk.indexOf(10, from), end = newline < 0 ? chunk.length : newline;
+      const piece = chunk.subarray(from, end);
+      hash.update(piece); check(piece, true); bytes += piece.length;
+      if (newline < 0) break;
+      check(undefined, false);
+      if (!valid) { walk.reason = "invalid-utf8"; return; }
+      scanned += bytes + 1; walk.scanned = scanned;
+      yield { hash: hash.digest("hex"), bytes: bytes + 1 };
+      hash = createHash("sha256"); utf8 = new TextDecoder("utf-8", { fatal: true }); bytes = 0; from = newline + 1;
+    }
+  }
+  if (bytes > 0) walk.reason = "torn-tail";
 }
 
 const completeLines = completeNativeLines;

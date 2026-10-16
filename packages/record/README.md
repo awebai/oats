@@ -155,9 +155,10 @@ including UTF-8 characters split across chunks. It flushes before adding a
 record that would exceed an 8 MiB source batch and checkpoints after each batch.
 Public synchronous capture can still process a larger individual record, with
 memory proportional to that record; its resource contract is unchanged. The
-supervised worker separately applies the fixed service policy: it captures the
-complete records before a record over 8 MiB, then sets the input aside at that
-record's start. Later records stay pending until the source is edited or the
+supervised worker separately applies the fixed service policy beyond what is
+already captured: it captures the complete records before a new record over
+8 MiB, then sets the input aside at that record's start. Records captured
+earlier, of any size, are proved on recovery by streamed digests, not refused. Later records stay pending until the source is edited or the
 whole input is ignored; `--retry-set-aside` cannot pass the oversized record
 ([operator recovery](docs/capture-service.md#operator-recovery)).
 Final, attributed and protected Pi capture stage the descriptor's snapshot on

@@ -144,12 +144,14 @@ test("lost chunk cache and modified payload cannot qualify prior stage; bounded 
   assert.equal((await f.finish()).at(-1).proof.complete,true);assert.equal(f.store.readStream(stream).length,8);
 });
 
-test("oversized raw record is identified during chunk copying before whole-record allocation or append", async t => {
+test("a raw record of any size stages in bounded chunks: the copy raises no size issue", async t => {
+  // The raw-record limit governs capture beyond the proven prefix, so staging
+  // copies a long record whole, each byte read once, in budgeted chunks.
   const f = fixture(t), offset=fs.statSync(f.source).size;fs.appendFileSync(f.source,'x'.repeat(8192)+'\n');
-  const rows=await f.finish({maxBytes:128,maxRecordBytes:200}), last=rows.at(-1);
-  assert.deepEqual(last.issue,{offset,line:9,reason:'record-too-large',limit:200});
-  assert.ok(rows.reduce((n,r)=>n+(r.work.sourceBytes??0),0)<offset+8192);
-  assert.equal(f.store.readStream(stream).length,8);assert.equal(f.state(s=>s.get('recovery-allocation',key)),null);
+  const rows=await f.finish({maxBytes:4096,maxRecordBytes:200}), last=rows.at(-1);
+  assert.ok(rows.every(row=>row.issue===null));assert.equal(last.size,offset+8193);assert.equal(last.proof.complete,true);
+  assert.equal(rows.reduce((n,r)=>n+(r.work.sourceBytes??0),0),offset+8193);
+  assert.ok(rows.filter(row=>row.work.sourceBytes).length>2,'copying spans bounded units');
 });
 
 test("reset generation rejects a prior partial snapshot and reveals a rewrite outside its growth witness", async t => {

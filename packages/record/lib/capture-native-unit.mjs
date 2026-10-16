@@ -7,7 +7,7 @@ import { basename } from "node:path";
 import { randomUUID } from "node:crypto";
 import { captureContext } from "./capture-context.mjs";
 import { CAPTURE_POLICY } from "./capture-budget.mjs";
-import { completeNativeLines, eventTurnCore } from "./capture-cc.mjs";
+import { completeNativeLineDigests, completeNativeLines, eventTurnCore } from "./capture-cc.mjs";
 import { finishTurn } from "./canonical.mjs";
 import { SESSION_FORMATS } from "./formats.mjs";
 import { loadIgnore } from "./ignore.mjs";
@@ -110,9 +110,7 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
       prepareRetainedCaptureCleanup(store, stream, key, start);
       return { ...result, cleanup: true, phase: "cleanup" };
     }
-    // A job fixed at an oversized record's start never reaches the source end;
-    // its earlier stop (invalid UTF-8 before that start) stays pending as is.
-    if (job?.waiting && (job.end === version.size || job.oversized) && sameVersion(job.version, version)) {
+    if (job?.waiting && job.end === version.size && sameVersion(job.version, version)) {
       return { ...result, pending: true, phase: job.scan ? "timestamp" : "capture", reason: job.waiting };
     }
     if (!job && !allocation && cursorValid && cursor.bytes === version.size) {
@@ -128,27 +126,18 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
       if (!sameVersion(version, after) && !(version.dev === after.dev && version.ino === after.ino &&
           after.size > version.size && probe(version.size) === unitWitness)) throw new Error("native source changed during unit");
     };
-    // An oversized record found by staging fixes the next staged end at its
-    // start, a complete-record boundary, while this source and journal hold.
-    let truncated = state.get("native-oversized", key);
-    if (truncated && !(truncated.generation === generation && sameVersion(truncated.journalVersion, journalVersion) &&
-        nonnegative(truncated.offset) && truncated.offset > 0 && truncated.offset < version.size &&
-        truncated.issue?.offset === truncated.offset && matchesSource({ ...truncated, bytes: truncated.offset }))) {
-      state.delete("native-oversized", key); truncated = null;
-    }
     if (recover || allocation || job?.snapshot) {
       let small = state.get("small-stage", key);
       if (!small || small.generation !== generation || !sameVersion(small.journalVersion, journalVersion) ||
           !nonnegative(small.size) || small.size > SMALL_SNAPSHOT_BYTES || small.size > version.size ||
-          typeof small.id !== "string" || !matchesSource({ ...small, bytes: small.size }) ||
-          !job && truncated && small.size !== truncated.offset) small = null;
-      const end = job?.end ?? truncated?.offset ?? small?.size ?? version.size;
+          typeof small.id !== "string" || !matchesSource({ ...small, bytes: small.size })) small = null;
+      const end = job?.end ?? small?.size ?? version.size;
       // A killed unit has durable admission/retry evidence but cannot have
       // published an in-memory small-copy outcome. Its next due single-stream
       // retry uses retained copying rather than repeating that overhead forever.
       const retain = allocation || state.get("native-retain", key) || context.admission?.retry || end > SMALL_SNAPSHOT_BYTES;
       if (retain) {
-        staged = advanceRecoverySnapshot(store, stream, key, path, start, { capturedPi, generation, fixedEnd: end, maxBytes, maxRecordBytes, stopped, work });
+        staged = advanceRecoverySnapshot(store, stream, key, path, start, { capturedPi, generation, fixedEnd: end, maxBytes, stopped, work });
       } else {
         // This observation fixes the sweep end even if copying cannot finish.
         // It is NOT a digest/proof checkpoint: reuse below always requires a
@@ -156,31 +145,17 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
         small ??= { id: randomUUID(), size: end };
         small = { ...small, generation, journalVersion, version, witness: probe(end) };
         state.set("small-stage", key, small);
-        staged = smallCommandSnapshot(store.root, fd, path, end, { capturedPi, maxRecordBytes, stopped, work });
+        staged = smallCommandSnapshot(store.root, fd, path, end, { capturedPi, stopped, work });
         if (staged.complete) {
           // The nonce binds source observation/reset history; digest+size bind
           // bytes. Equal content under a changed identity still restarts proof.
           staged.snapshot.id = `${small.id}:${staged.snapshot.id}`;
         }
-        if (!staged.issue && (!staged.complete || stopped())) {
+        if (!staged.complete || stopped()) {
           state.set("native-retain", key, true);
           state.delete("native-unit", key);
           return { ...result, phase: "snapshot", retainedFallback: true };
         }
-      }
-      if (staged.issue) {
-        // Records before it may lie beyond the captured prefix: restage only
-        // up to its start, prove and capture those, then set the input aside.
-        if (staged.issue.offset > 0 && !job && truncated?.offset !== staged.issue.offset) {
-          state.set("native-oversized", key, { issue: staged.issue, offset: staged.issue.offset, generation, journalVersion,
-            version, witness: probe(staged.issue.offset) });
-          state.delete("small-stage", key);
-          return { ...result, cleanup: Boolean(staged.cleanup), phase: "snapshot" };
-        }
-        state.delete("native-oversized", key);
-        const row = { owner, source: fmt.source, path, ...staged.issue, retry: false };
-        state.set("set-aside", key, row);
-        return { ...result, cleanup: Boolean(staged.cleanup), setAside: row };
       }
       if (!staged.complete) {
         if (staged.cleanup) state.delete("native-unit", key);
@@ -188,22 +163,18 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
       }
       if (!job || job.snapshot !== staged.snapshot.id) {
         const priorProof = state.get("prefix-proof", key);
+        // The captured prefix is proved by streamed per-line digests, so a
+        // record captured before the raw-record limit existed is compared, not
+        // refused. The limit applies to capture beyond the proven prefix.
         const proof = advanceTranscriptPrefix(store, stream, { key, snapshot: staged.snapshot, maxRecords, maxBytes, stopped,
-          work: work?.prefix, lines: from => completeNativeLines(stagedChunks(from), {}, { maxBytes: maxRecordBytes }) });
+          work: work?.prefix, lines: from => completeNativeLineDigests(stagedChunks(from), {}) });
         staged.verify();
         if (proof.conflict) {
           // Journals preserve session/line, not the path that first supplied
           // those bytes. A mismatch can also be a rewrite of this same file;
           // neither a cursor nor today's discovery proves a second source.
           const reason = `${proof.conflict.reason}: refused input ${JSON.stringify(path)} conflicts with stream ${JSON.stringify(stream)} at native line ${proof.conflict.line}, source byte ${proof.conflict.offset}; establishing source path unavailable`;
-          // A journal longer than the records before the oversized one means
-          // that record is inside the captured prefix: it stays set aside as
-          // oversized, with nothing appended.
-          const inside = truncated && staged.snapshot.size === truncated.offset &&
-            proof.conflict.reason === "captured-prefix-missing" && proof.conflict.offset === truncated.offset;
-          state.delete("native-oversized", key);
-          const row = inside ? { owner, source: fmt.source, path, ...truncated.issue, retry: false } :
-            { owner, source: fmt.source, path, ...proof.conflict, reason, retry: false };
+          const row = { owner, source: fmt.source, path, ...proof.conflict, reason, retry: false };
           state.set("set-aside", key, row);
           const cleanup = !staged.small;
           staged.close(); staged = null;
@@ -221,8 +192,7 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
           return { ...result, phase: "prefix" };
         }
         job = { bytes: proof.bytes, line: proof.line, lastTs: proof.lastTs, end: staged.snapshot.size,
-          snapshot: staged.snapshot.id, small: Boolean(staged.small), generation, journalVersion, version, witness: stagedWitness(proof.bytes),
-          ...(!job && truncated && staged.snapshot.size === truncated.offset ? { oversized: truncated.issue } : {}) };
+          snapshot: staged.snapshot.id, small: Boolean(staged.small), generation, journalVersion, version, witness: stagedWitness(proof.bytes) };
         state.delete("set-aside", key);
       }
     } else if (!job) {
@@ -231,23 +201,21 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
         generation, journalVersion, version, witness: probe(cursor.bytes) };
     }
     if (staged) { read = stagedChunks; verify = staged.verify; }
-    // A job fixed at an oversized record's start ends there: once nothing
-    // before it can be captured, the input is set aside at that start.
-    const setAsideOversized = () => {
+    // A raw record over the limit is set aside at its exact start, after the
+    // complete records before it were committed. Later records wait for an
+    // edited source or an ignore of the whole input. A staged job's copy and
+    // fixed end retire with it; a retry reproves and returns here.
+    const setAsideOversized = offset => {
       state.delete("native-unit", key); state.delete("native-retain", key); state.delete("small-stage", key);
-      state.delete("native-oversized", key);
       if (job.snapshot && !job.small) {
         staged.close(); staged = null;
         prepareRetainedCaptureCleanup(store, stream, key, start);
         result.cleanup = true;
       }
-      const row = { owner, source: fmt.source, path, ...job.oversized, retry: false };
+      const row = { owner, source: fmt.source, path, offset, reason: "record-too-large", retry: false };
       state.set("set-aside", key, row);
       return { ...result, setAside: row };
     };
-    // Only a walk that reached the oversized start sets the input aside; an
-    // earlier stop keeps the ordinary waiting path, restaging a changed source.
-    if (job.waiting && job.oversized && (job.bytes === job.end || job.scan?.bytes === job.end)) return setAsideOversized();
     if (job.waiting) {
       if (job.end === version.size) return { ...result, pending: true, phase: job.scan ? "timestamp" : "capture", reason: job.waiting };
       if (job.snapshot) {
@@ -300,7 +268,6 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
           job.scan = scan;
           if (scan.bytes === job.end || walk.reason) job.waiting = walk.reason ?? "unstamped";
           checkpoint();
-          if (job.oversized && scan.bytes === job.end) return setAsideOversized();
           // No stamp yet is pending, not a successful empty capture. Preserve
           // the scan frontier so later growth does not rescan this prefix.
           return { ...result, phase: "timestamp", pending: scan.bytes === job.end || !!walk.reason, reason: walk.reason ?? "unstamped" };
@@ -333,15 +300,8 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
       result.bytesCommitted = job.bytes - from;
       if (walk.reason) job.waiting = walk.reason;
       checkpoint();
-      if (oversized !== null) {
-        // Not captured past its exact start. Later lines wait for an edited
-        // source or an ignore of the whole input.
-        const row = { owner, source: fmt.source, path, offset: oversized, reason: "record-too-large", retry: false };
-        state.set("set-aside", key, row);
-        return { ...result, setAside: row };
-      }
+      if (oversized !== null) return setAsideOversized(oversized);
       if (job.small && job.bytes < job.end && !records && stopped()) state.set("native-retain", key, true);
-      if (job.bytes === job.end && job.oversized) return setAsideOversized();
       if (job.bytes === job.end) {
         state.delete("native-unit", key); state.delete("native-retain", key); state.delete("small-stage", key);
         if (job.snapshot && !job.small) {
@@ -356,10 +316,7 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
       if (!(error instanceof RecordSizeError)) throw error;
       // The offending raw record was rejected before allocation/projection
       // while searching for the first timestamp: no turn precedes it here.
-      const row = { owner, source: fmt.source, path, offset: scanStart + error.offset,
-        reason: "record-too-large", retry: false };
-      state.set("set-aside", key, row);
-      return { ...result, setAside: row };
+      return setAsideOversized(scanStart + error.offset);
     }
   } finally { try { staged?.close?.(); } finally { closeSync(fd); } }
 }

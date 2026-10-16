@@ -65,14 +65,13 @@
   record's start offset. Records after it stay pending until the operator edits
   the source or adds the whole input to `<root>/ignore`; `--retry-set-aside`
   retries the input, but the oversized record still blocks it, in every case.
-  Native recovery (after cache loss, a reset, a retry or a rewritten source)
-  that meets an oversized record beyond the captured part captures the records
-  before it, then sets the input aside at its start. Known limitations: an
-  oversized line before a session's first timestamped line captures nothing
-  before it; and, pending a design decision, an oversized record inside the
-  already captured part (captured by a release without this limit) makes each
-  such recovery set the captured input aside, so its later growth is not
-  captured. `--health` names the edit-or-ignore remedy for these entries.
+  The limit applies only beyond what is already captured: native recovery
+  (after cache loss, a reset, a retry or a rewritten source) proves captured
+  records of any size by streamed per-line digests, so sessions that already
+  hold records over 8 MiB keep capturing their later growth. Known limitation:
+  an oversized line before a session's first timestamped line captures
+  nothing before it. `--health` names the edit-or-ignore remedy for these
+  entries.
 - Foreground `--watch` keeps its two-second debounce and 15-minute fallback,
   runs one pass at a time and coalesces notifications into one pending rerun.
 - **Hooks launch capture detached.** `capture --hook` starts the supervisor in

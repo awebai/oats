@@ -47,12 +47,13 @@ test("total fixed end includes exactly 8MiB, streams copy/hash, and rejects one 
   staged.close(); staged.close(); f.empty();
 });
 
-test("interrupted copy publishes no snapshot; failure and oversize remove only owned scratch", t => {
+test("interrupted copy publishes no snapshot; failure removes only owned scratch; a long line stages whole", t => {
   const f = fixture(t, 131072); let ticks = 0; const work = {};
   const partial = smallCommandSnapshot(f.root, f.fd, f.path, 131072, { stopped: () => ++ticks > 2, work });
   assert.equal(partial.complete, false); assert.equal(partial.snapshot, undefined); assert.equal(work.sourceBytes, 65536); f.empty();
-  const issue = smallCommandSnapshot(f.root, f.fd, f.path, 131072, { maxRecordBytes: 65535 });
-  assert.equal(issue.issue.offset, 0); assert.equal(issue.issue.reason, "record-too-large"); f.empty();
+  const whole = smallCommandSnapshot(f.root, f.fd, f.path, 131072);
+  assert.equal(whole.complete, true); assert.equal(whole.issue, undefined); assert.equal(whole.snapshot.size, 131072);
+  whole.close(); f.empty();
   const write = fs.writeSync, open = fs.openSync; let stagedFd;
   fs.openSync = (path, ...args) => { const fd = open(path, ...args); if (String(path).endsWith("/snapshot")) stagedFd = fd; return fd; };
   fs.writeSync = (fd, ...args) => { if (fd === stagedFd) throw Error("injected staged write"); return write(fd, ...args); }; syncBuiltinESMExports();

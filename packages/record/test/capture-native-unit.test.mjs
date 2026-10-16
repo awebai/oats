@@ -8,15 +8,21 @@ import { cleanupCaptureScratch } from "../lib/capture-scratch.mjs";
 import { superviseCapture } from "../lib/capture-supervisor.mjs";
 import { RecordStore } from "../lib/store.mjs";
 import { DerivedState } from "../lib/derived-state.mjs";
-import { captureSessions } from "../lib/capture-cc.mjs";
+import { captureSessions, completeNativeLineDigests, completeNativeLines } from "../lib/capture-cc.mjs";
+import { digest } from "../lib/session-snapshot.mjs";
+import { RecordSizeError } from "../lib/file-lines.mjs";
 import { reconcileCaptureInterruption } from "../lib/capture-retry.mjs";
 import { retrySetAside } from "../lib/capture-state.mjs";
 const url = name => new URL(`../lib/${name}.mjs`, import.meta.url).href;
-const stamp = "2026-01-01T00:00:00Z", stream = "fixture~cc.session";
+const stamp = "2026-01-01T00:00:00Z", streamCc = "fixture~cc.session";
 const native = n => JSON.stringify({ timestamp: stamp, text: String(n) }) + "\n";
 
-function fixture(t, text) {
-  const base = fs.mkdtempSync(join(tmpdir(), "native-unit-")), root = join(base, "record"), path = join(base, "session.jsonl"), workerPath = join(base, "worker.mjs");
+function fixture(t, text, format = "cc") {
+  const base = fs.mkdtempSync(join(tmpdir(), "native-unit-")), root = join(base, "record"), workerPath = join(base, "worker.mjs");
+  // Codex names a session by the uuid ending its rollout file name.
+  const codex = "0193a000-0000-7000-8000-000000000001";
+  const path = join(base, format === "codex" ? `rollout-2026-01-01T00-00-00-${codex}.jsonl` : "session.jsonl");
+  const stream = format === "codex" ? `fixture~codex.${codex}` : streamCc;
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   fs.writeFileSync(path, text);
   const store = new RecordStore(root, { owner: "fixture" }), key = `${stream}:${path}`;
@@ -48,7 +54,7 @@ function fixture(t, text) {
           generation:fileVersion(store.journalPath(stream)),next:{stage:'prefix',after:stream}}],{runId:'fixture-'+process.pid,now:options.now}):undefined;
         if(options.admit&&!admission)throw Error('fixture unit is not due');
         let ticks=0;
-        const result=withCaptureGroup(store,[stream],()=>captureNativeUnit(store,{owner:'fixture',path:options.path,start,
+        const result=withCaptureGroup(store,[stream],()=>captureNativeUnit(store,{owner:'fixture',path:options.path,format:${JSON.stringify(format)},start,
           maxRecords:options.maxRecords??2,maxBytes:options.maxBytes??8388608,maxRecordBytes:options.maxRecordBytes??8388608,
           stopped:()=>options.stopSourceBytes!==undefined&&(work.sourceBytes??0)>=options.stopSourceBytes ||
             options.stopAfter!==undefined&&++ticks>options.stopAfter,work}),{state,admission,admissionNow:options.now});
@@ -67,7 +73,7 @@ function fixture(t, text) {
       }catch(e){fs.writeFileSync(join(root,'error'),e.stack);throw e;}finally{state.close();}
     });
   `);
-  const f = { root, path, store, key,
+  const f = { root, path, store, key, source: format,
     state(fn) { const state = new DerivedState(root); try { return fn(state); } finally { state.close(); } },
     turns() { return store.readStream(stream); },
     async step(options = {}) {
@@ -153,11 +159,11 @@ test("same native ID conflict names refused input and stream without guessing an
   const firstDir=join(f.root,'original-source');fs.mkdirSync(firstDir,{recursive:true});
   const first=join(firstDir,'session.jsonl');fs.writeFileSync(first,old);
   captureSessions(f.store,{owner:'fixture',files:[first]});
-  assert.ok(f.state(s=>s.get('cc',`${stream}:${first}`)),'original source cursor exists but is not path authority');
+  assert.ok(f.state(s=>s.get('cc',`${streamCc}:${first}`)),'original source cursor exists but is not path authority');
   const rows=await f.finish(),issue=rows.at(-1).result.setAside;
   assert.equal(issue.path,f.path);assert.equal(issue.line,1);assert.equal(issue.offset,0);
   assert.ok(issue.reason.includes(JSON.stringify(f.path)));
-  assert.ok(issue.reason.includes(JSON.stringify(stream)));
+  assert.ok(issue.reason.includes(JSON.stringify(streamCc)));
   assert.match(issue.reason,/establishing source path unavailable/);
   assert.ok(!issue.reason.includes(first));f.assertContent(old);
   assert.equal(rows.reduce((n,row)=>n+row.result.appended,0),0);
@@ -172,13 +178,16 @@ test("durable append followed by killed source checkpoint revalidates and never 
   await f.finish({maxBytes:128});f.assertContent(text);
 });
 
-test("torn and invalid UTF-8 suffixes stay pending; oversize is set aside before append and can be retried after restoration",async t=>{
+test("torn and invalid UTF-8 suffixes stay pending; a rewritten captured line is refused as a prefix change and can be retried after restoration",async t=>{
   const text=native(0),f=fixture(t,text+'{"unfinished":');
   let rows=await f.finish();assert.equal(rows.at(-1).result.pending,true);f.assertContent(text);
   fs.appendFileSync(f.path,'true}\n');await f.finish();f.assertContent(text+'{"unfinished":true}\n');
   fs.appendFileSync(f.path,Buffer.from([255,10]));rows=await f.finish();assert.equal(rows.at(-1).result.reason,'invalid-utf8');
+  // The long rewrite replaces captured line 2: proof compares it (no size
+  // limit inside the captured prefix) and refuses the changed prefix.
   fs.writeFileSync(f.path,text+'x'.repeat(300)+'\n');rows=await f.finish({maxRecordBytes:200});
-  assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');assert.equal(rows.at(-1).result.setAside.offset,Buffer.byteLength(text));
+  assert.match(rows.at(-1).result.setAside.reason,/^captured-prefix-changed: .* at native line 2, source byte \d+; establishing source path unavailable$/);
+  assert.equal(rows.at(-1).result.setAside.offset,Buffer.byteLength(text));
   const restored=text+'{"unfinished":true}\n';fs.writeFileSync(f.path,restored);
   retrySetAside(f.root);
   await f.finish();f.assertContent(restored);assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
@@ -207,7 +216,6 @@ test("recovery after cache loss captures the records between the captured prefix
   let rows=await f.finish({maxRecordBytes:200,maxRecords:10});
   assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');assert.equal(rows.at(-1).result.setAside.offset,start);
   assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),1);f.assertContent(gap);
-  assert.equal(f.state(s=>s.get('native-oversized',f.key)),null);
   const skipped=await f.step({maxRecordBytes:200,maxRecords:10});
   assert.equal(skipped.result.setAside.offset,start);assert.equal(skipped.result.appended,0);
   retrySetAside(f.root);rows=await f.finish({maxRecordBytes:200,maxRecords:10});
@@ -232,16 +240,76 @@ test("an invalid line before a recovered oversized record stays pending, not set
   f.assertContent(fixed);
 });
 
-test("an oversized record inside the captured prefix stays set aside on recovery with nothing appended or duplicated",async t=>{
-  const text=native(0)+'x'.repeat(300)+'\n'+native(2),start=Buffer.byteLength(native(0)),f=fixture(t,text);
-  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.assertContent(text);
-  fs.appendFileSync(f.path,native(3));f.state(s=>s.delete('cc',f.key));
-  let rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+// A Codex session whose captured prefix holds several records over the seam
+// limit, one of them more than twice it (the shape of the >16 MiB host lines).
+const cap=200, oversizedPrefix=[native(0),'x'.repeat(250)+'\n',native(2),'y'.repeat(450)+'\n',native(4),'z'.repeat(220)+'\n'].join('');
+function codexCaptured(t){
+  const f=fixture(t,oversizedPrefix,'codex');
+  captureSessions(f.store,{owner:'fixture',files:[f.path],format:'codex'});f.assertContent(oversizedPrefix);
+  return f;
+}
+
+test("captured oversized records prove by streamed digests after cache loss; later growth is captured once",async t=>{
+  const f=codexCaptured(t);fs.appendFileSync(f.path,native(6));f.state(s=>s.delete('codex',f.key));
+  let rows=await f.finish({maxRecordBytes:cap,maxRecords:10});
+  assert.equal(rows.at(-1).result.complete,true);assert.equal(rows.at(-1).result.setAside,undefined);
+  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),1);f.assertContent(oversizedPrefix+native(6));
+  assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
+  fs.appendFileSync(f.path,native(7));rows=await f.finish({maxRecordBytes:cap,maxRecords:10});
+  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),1);f.assertContent(oversizedPrefix+native(6)+native(7));
+});
+
+test("an oversized record beyond a prefix holding captured oversized records is still set aside at its start",async t=>{
+  const f=codexCaptured(t),start=Buffer.byteLength(oversizedPrefix+native(6));
+  fs.appendFileSync(f.path,native(6)+'w'.repeat(300)+'\n'+native(8));f.state(s=>s.delete('codex',f.key));
+  const rows=await f.finish({maxRecordBytes:cap,maxRecords:10});
   assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');assert.equal(rows.at(-1).result.setAside.offset,start);
-  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),0);f.assertContent(text);
-  retrySetAside(f.root);rows=await f.finish({maxRecordBytes:200,maxRecords:10});
-  assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');assert.equal(rows.at(-1).result.setAside.offset,start);
-  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),0);f.assertContent(text);
+  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),1);f.assertContent(oversizedPrefix+native(6));
+});
+
+test("a changed byte inside a captured oversized record is refused as a prefix change",async t=>{
+  const f=codexCaptured(t),line4=Buffer.byteLength(native(0)+'x'.repeat(250)+'\n'+native(2));
+  const fd=fs.openSync(f.path,'r+');fs.writeSync(fd,Buffer.from('Y'),0,1,line4+300);fs.closeSync(fd);
+  f.state(s=>s.delete('codex',f.key));
+  const rows=await f.finish({maxRecordBytes:cap,maxRecords:10}),issue=rows.at(-1).result.setAside;
+  assert.match(issue.reason,/^captured-prefix-changed: refused input .* at native line 4, source byte \d+; establishing source path unavailable$/);
+  assert.equal(issue.offset,line4);assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),0);f.assertContent(oversizedPrefix);
+});
+
+test("invalid UTF-8 inside the captured prefix is reported as the parsed path reports it",async t=>{
+  // The parsed reader stops at an invalid line, so proof finds the captured
+  // prefix missing there; the streamed digest must not call it changed instead.
+  const text=native(0)+native(1)+native(2),f=fixture(t,text);captureSessions(f.store,{owner:'fixture',files:[f.path]});
+  const fd=fs.openSync(f.path,'r+');fs.writeSync(fd,Buffer.from([255]),0,1,Buffer.byteLength(native(0))+3);fs.closeSync(fd);
+  f.state(s=>s.delete('cc',f.key));
+  const issue=(await f.finish({maxRecords:10})).at(-1).result.setAside;
+  assert.match(issue.reason,/^captured-prefix-missing: .* at native line 2, source byte \d+;/);
+  assert.equal(issue.offset,Buffer.byteLength(native(0)));f.assertContent(text);
+});
+
+test("streamed line digests match the parsed reader's lines, stops and reasons, and never join a line",()=>{
+  const chunked=(bytes,size)=>function*(){for(let n=0;n<bytes.length;n+=size)yield bytes.subarray(n,n+size);};
+  const parsed=(bytes,size,maxBytes)=>{const walk={},lines=[...completeNativeLines(chunked(bytes,size)(),walk,{maxBytes})].map(line=>({hash:digest(Buffer.from(line.text)),bytes:line.bytes}));return {lines,walk};};
+  const streamed=(bytes,size)=>{const walk={},lines=[...completeNativeLineDigests(chunked(bytes,size)(),walk)];return {lines,walk};};
+  // A multibyte character split across chunks, an invalid line, then a torn tail.
+  for(const bytes of [Buffer.from(native('é€😀')+native(1)+'{"torn":'),Buffer.concat([Buffer.from(native(0)),Buffer.from([0xe2,0x82,10]),Buffer.from(native(2))])])
+    for(const size of [1,3,7,64]) assert.deepEqual(streamed(bytes,size),parsed(bytes,size,Infinity),`chunk ${size}`);
+  // Seam-sized boundary: a line just under the limit digests the same both
+  // ways; just over it, the parsed reader refuses while the streamed digest
+  // still equals the whole line's digest.
+  for(const length of [cap-1,cap+1]){
+    const text='q'.repeat(length-1),bytes=Buffer.from(text+'\n'),[line]=streamed(bytes,16).lines;
+    assert.deepEqual(line,{hash:digest(Buffer.from(text)),bytes:length});
+    if(length<cap)assert.deepEqual(parsed(bytes,16,cap).lines,[line]);
+    else assert.throws(()=>parsed(bytes,16,cap),RecordSizeError);
+  }
+  // Memory seam: a long line is hashed chunk by chunk; no reader joins it and
+  // no yielded record holds its bytes.
+  const concat=Buffer.concat;let joins=0;Buffer.concat=(...args)=>{joins++;return concat(...args);};
+  try{
+    const lines=[...completeNativeLineDigests(chunked(Buffer.from('L'.repeat(100000)+'\n'),64)(),{})];
+    assert.equal(joins,0);assert.deepEqual(Object.keys(lines[0]),['hash','bytes']);assert.equal(lines[0].bytes,100001);
+  }finally{Buffer.concat=concat;}
 });
 
 test("worker restart after allocation removal completes only its committed cleanup and preserves captured cursor",async t=>{
