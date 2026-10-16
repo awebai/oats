@@ -178,10 +178,10 @@ export function capabilityDetailRows(m, cols) {
   if (d.failure) lines(shownLines(d.failure, wide, WRAP_ROWS, { ascii }), LEFT, wide, WARN);
   lines(shownLines(d.description, wide, DESCRIPTION_ROWS, { ascii }), LEFT, wide);
 
-  if (d.origin.length) {
+  if (d.comesFrom.length) {
     blank();
     rows.push([label(d.words.comesFrom)]);
-    facts(d.origin, (fact, col, width, name) => lines(shownLines(fact.value, width, WRAP_ROWS, { ascii }), col, width, null, name));
+    facts(d.comesFrom, (fact, col, width, name) => lines(shownLines(fact.value, width, WRAP_ROWS, { ascii }), col, width, null, name));
   }
 
   if (d.provides.length) {

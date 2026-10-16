@@ -174,15 +174,15 @@ test("the detail is the selected capability's: its name, layer and description; 
   assert.deepEqual({ ...d, used: undefined }, {
     name: "aweb", layer: "Messaging", description: "Messaging over aweb.", failure: null, used: undefined,
     words: { comesFrom: CAPABILITY_COPY.comesFrom, provides: CAPABILITY_COPY.provides, usedBy: CAPABILITY_COPY.usedBy },
-    origin: [{ label: "Repository", value: "oats" }, { label: "Latest", value: "bbbbbbb" }, { label: "Path", value: "capabilities/aweb" }, { label: "Fingerprint", value: "ccccccc" }],
+    comesFrom: [{ label: "Repository", value: "oats" }, { label: "Latest", value: "bbbbbbb" }, { label: "Path", value: "capabilities/aweb" }, { label: "Fingerprint", value: "ccccccc" }],
     provides: [{ label: "Skills", names: ["oats-aweb", "aweb-messaging"], said: null }, { label: "Commands", names: [], said: CAPABILITY_COPY.none }, { label: "Hooks", names: ["SessionStart"], said: null }],
   });
   const notes = view(key(shown(), "j").state).detail;
   assert.deepEqual([notes.name, notes.layer, notes.description, notes.provides], ["notes", null, "", [{ label: "Skills", names: [], said: CAPABILITY_COPY.unlistable }]], "skills null: could not list; commands and hooks not reported: no row");
   const secret = view(keys(shown(), "j", "j").state).detail;
-  assert.deepEqual([secret.origin.at(-1), secret.provides], [{ label: "Owned", value: "this repo's souls only" }, []]);
+  assert.deepEqual([secret.comesFrom.at(-1), secret.provides], [{ label: "Owned", value: "this repo's souls only" }, []]);
   const pack = view(keys(shown(), "G").state).detail;
-  assert.deepEqual(pack.origin, [{ label: "Package", value: "acme-pack" }, { label: "Pinned", value: "1.2.0 · official catalog" }, { label: "Commit", value: "ddddddd" }, { label: "Fingerprint", value: "sha256:aaaa…aaaa" }]);
+  assert.deepEqual(pack.comesFrom, [{ label: "Package", value: "acme-pack" }, { label: "Pinned", value: "1.2.0 · official catalog" }, { label: "Commit", value: "ddddddd" }, { label: "Fingerprint", value: "sha256:aaaa…aaaa" }]);
 });
 
 test("Used by, with souls-capabilities: the souls whose composition includes the capability, each its colour, its instances here that carry it and those on an older version; before the souls are read it says so, never that no soul includes it", () => {

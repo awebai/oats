@@ -1055,14 +1055,16 @@ export function capabilityUsersOf(state, at, row) {
 /** The selected capability's detail, from its row and the shared facts (capability-facts.mjs
  *  capabilityFacts) in the shared words (CAPABILITY_COPY): nothing of a capability is worded here. A
  *  kind of Provides the kernel could not list (`names` null) says CAPABILITY_COPY.unlistable, and one
- *  with no name CAPABILITY_COPY.none. `origin` rows are `{ label, value }`: the shortened value. */
+ *  with no name CAPABILITY_COPY.none. `comesFrom` holds the facts' "Comes from" rows as `{ label,
+ *  value }`, the shortened value (not `origin`: in this package that names a reason's speaker, which
+ *  test/tui-boundary.test.mjs holds to originLead). */
 function capabilityDetail(state, at, c) {
-  const row = c.row, facts = capabilityFacts(row, { status: c.status });
+  const row = c.row, { origin, provides } = capabilityFacts(row, { status: c.status });
   return {
     name: row.name, layer: text(row.layer) ? layerLabel(row.layer) : null, description: row.description ?? "",
     words: { comesFrom: CAPABILITY_COPY.comesFrom, provides: CAPABILITY_COPY.provides, usedBy: CAPABILITY_COPY.usedBy },
-    origin: facts.origin.map(([label, value]) => ({ label, value })),
-    provides: facts.provides.map(([label, names]) => ({ label, names: names ?? [], said: names === null ? CAPABILITY_COPY.unlistable : names.length ? null : CAPABILITY_COPY.none })),
+    comesFrom: origin.map(([label, value]) => ({ label, value })),
+    provides: provides.map(([label, names]) => ({ label, names: names ?? [], said: names === null ? CAPABILITY_COPY.unlistable : names.length ? null : CAPABILITY_COPY.none })),
     used: capabilityUsersOf(state, at, row),
   };
 }

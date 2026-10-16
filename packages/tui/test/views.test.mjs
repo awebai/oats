@@ -2797,9 +2797,11 @@ test("the help lists Enter once per view with what it does there, the keys of th
   assert.equal(text.includes("c close the shown terminal and show its neighbour; the agent keeps running"), true);
   assert.equal(pair(lines, "Enter", "open the selected workspace, in the switcher"), true);
   assert.equal(pair(lines, "Enter", "show the selected soul's detail, and from the detail its instances, in the Souls view"), true);
-  // The keys' table names Enter once per view; the spawn prompt's section has its own Enter, once per step.
+  assert.equal(text.includes("Enter show the selected capability's detail, and from the detail the marked soul that uses it, in the Capabilities view"), true, text);
+  // The keys' table names Enter once per view (the instances, the switcher, the Souls view and the
+  // Capabilities view); the spawn prompt's section has its own Enter, once per step.
   const keys = lines.slice(0, lines.indexOf("The leader"));
-  assert.equal(keys.filter((line) => line.startsWith("Enter ")).length, 3, "Enter three times, once per view");
+  assert.equal(keys.filter((line) => line.startsWith("Enter ")).length, 4, "Enter four times, once per view");
   for (const [key, label] of [["1", "instances"], ["2", "souls"], ["3", "capabilities"]]) assert.equal(pair(lines, key, label), true, key);
   assert.equal(lines.some((line) => line.includes("open an agent in its own tmux window") && line.includes("oats session attach --home <home>")), true);
   // The leader's section, after the keys and before the marks (the spawn prompt's section stands

@@ -46,7 +46,7 @@ const LIST = () => [
 const DETAIL = () => ({
   name: "aweb", layer: "Messaging", description: "Messaging over aweb: mail and chat between the instances of the workspace, and its channel.", failure: null,
   words: { comesFrom: CAPABILITY_COPY.comesFrom, provides: CAPABILITY_COPY.provides, usedBy: CAPABILITY_COPY.usedBy },
-  origin: [{ label: "Repository", value: "oats" }, { label: "Latest", value: "bbbbbbb" }, { label: "Path", value: "capabilities/aweb" }, { label: "Fingerprint", value: "ccccccc" }],
+  comesFrom: [{ label: "Repository", value: "oats" }, { label: "Latest", value: "bbbbbbb" }, { label: "Path", value: "capabilities/aweb" }, { label: "Fingerprint", value: "ccccccc" }],
   provides: [{ label: "Skills", names: ["oats-aweb", "aweb-messaging", "aweb-identity", "aweb-team-membership"], said: null }, { label: "Commands", names: [], said: CAPABILITY_COPY.none }, { label: "Hooks", names: ["SessionStart"], said: null }],
   used: { state: "known", failure: null, count: CAPABILITY_COPY.souls(2), empty: null, more: 0, shown: [
     { name: "dev", color: "green", count: 2, behind: CAPABILITY_COPY.behind(1), soul: "dev" },
@@ -55,7 +55,7 @@ const DETAIL = () => ({
 });
 /** A detail with its name alone: no layer, no description, a kind the kernel could not list, and no soul using it. */
 const BARE = () => ({
-  name: "bare", layer: null, description: "", failure: null, words: DETAIL().words, origin: [],
+  name: "bare", layer: null, description: "", failure: null, words: DETAIL().words, comesFrom: [],
   provides: [{ label: "Skills", names: [], said: CAPABILITY_COPY.unlistable }],
   used: { state: "known", failure: null, count: CAPABILITY_COPY.souls(0), empty: CAPABILITY_COPY.noSoul, more: 0, shown: [] },
 });
@@ -290,7 +290,7 @@ test("the marked soul of Used by carries `>` and reverse video; the detail is dr
 test("text from outside goes through the display filter: a control character in a name, a note, a fact or a soul never reaches a cell", () => {
   const evil = "bad\x1b[31mname\u202e\x07";
   const list = [{ section: "workspace" }, { group: evil, note: evil }, { name: evil, layer: evil, selected: true }];
-  const detail = { ...DETAIL(), name: evil, layer: evil, description: evil, origin: [{ label: evil, value: evil }], provides: [{ label: evil, names: [evil], said: null }], used: { ...DETAIL().used, count: evil, shown: [{ name: evil, color: "green", count: 1, behind: evil, soul: "x" }] } };
+  const detail = { ...DETAIL(), name: evil, layer: evil, description: evil, comesFrom: [{ label: evil, value: evil }], provides: [{ label: evil, names: [evil], said: null }], used: { ...DETAIL().used, count: evil, shown: [{ name: evil, color: "green", count: 1, behind: evil, soul: "x" }] } };
   for (const sz of SIZES) {
     const d = drawModel(capsModel({ list, detail, failure: evil }), sz);
     for (const line of d.lines) assert.doesNotMatch(line, CONTROL, `${sz.cols}`);
