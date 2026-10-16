@@ -289,6 +289,13 @@ control.
   is listed under that group's name, not under independent. A context row is
   `aria-disabled`: the arrows, the chord and the pointer skip it, and it opens
   nothing.
+- **Siblings say so.** An instance declared a sibling of a root, and that
+  root, each say `sibling of <name>` on every row they have (tree, context and
+  Recent), as quiet text beside the name and read once with the option
+  (`…, sibling of <name>`); a Recent row with a parent reads
+  `under lead · sibling of beta`. Siblings under one parent read
+  `under <parent>`. Only direct links within one deployment count, and a
+  sibling's name does not match the row.
 - **While the palette is open, its own chord cycles**: ⌘K moves the active row
   down, ⇧⌘K up, both wrapping past the ends. Releasing commits nothing:
   **Enter** opens the active row and **Esc** closes. The arrows move too and

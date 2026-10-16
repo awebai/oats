@@ -6,15 +6,18 @@
    sections, relation groups, order and depth, from the sidebar's own builders
    (packages/client: rosterSections, roster-sections.mjs; rosterGroups, instance-tree.mjs);
    a query keeps tree order, showing each match with its non-matching ancestors
-   as disabled context rows. Instances whose terminal was focused lead, most
+   as disabled context rows. An instance at either end of an explicit sibling
+   link (#1312; packages/client instanceSiblings, resolved per deployment over
+   its full roster) says "sibling of <name>" on each of its rows, seen and read;
+   matching never reads it. Instances whose terminal was focused lead, most
    recent first, in a flat Recent group (Spec C; the record is
    instance-recency.mjs, the sidebar roster keeps its stable order). While open, the palette's own chord moves the
    active row down (Shift + the chord: up), skipping context rows.
    Overlay chrome lives in overlay-picker.mjs (shared with Quick Open), the fuzzy
    matcher in packages/client/subsequence-score.mjs (shared with the TUI); this
    module owns only the palette's row semantics. */
-import { runtimeState } from "../../client/instance-presentation.mjs";
-import { filterInstanceTree, instanceId } from "../../client/instance-tree.mjs";
+import { runtimeState, siblingText } from "../../client/instance-presentation.mjs";
+import { filterInstanceTree, instanceId, instanceSiblings } from "../../client/instance-tree.mjs";
 import { rosterSections, splitByDeployment, isMultiDeployment } from "../../client/roster-sections.mjs";
 import { DESKTOP_TERMS } from "./desktop-terms.mjs";
 import { createOverlayPicker } from "./overlay-picker.mjs";
@@ -38,7 +41,11 @@ const RECENT_GROUP = Object.freeze({ key: "\u0000recent", label: "Recent" });
  * and, for an ancestor shown only as a match's context, { context: true } and no
  * run. A recent row also carries { recent: true } and, with a parent, shows its
  * "under <parent>" ({ showUnder: true }); the row the palette opens on
- * when it is not the first, { initial: true }. */
+ * when it is not the first, { initial: true }. Every instance row (tree, context
+ * and Recent) of an instance with a sibling by explicit link carries
+ * { sibling: "sibling of <names>" } (siblingText over instanceSiblings, built per
+ * deployment over its full roster as the sidebar resolves relations, never over
+ * the listed rows); a row without one has no `sibling` field. */
 export function paletteRows(roster, commands, raw, { openTerminal } = {}) {
   const instances = (Array.isArray(roster) ? roster : roster?.instances) || [];
   const deployments = (Array.isArray(roster) ? null : roster?.deployments) || [];
@@ -52,7 +59,11 @@ export function paletteRows(roster, commands, raw, { openTerminal } = {}) {
     // match is the sidebar's (identity-aware filterInstanceTree).
     const matches = (inst) => !q || subsequenceScore(`${inst.instance} ${inst.agent || ""} ${inst.repoName || ""}`, q) != null;
     const isRecent = (inst) => recent.has(instanceId(inst));
-    const instanceRow = (inst, depth, group, parent) => ({
+    // Siblings resolve inside a deployment, over its full roster, as the sidebar's relations do.
+    const siblings = new Map(isMultiDeployment(deployments)
+      ? [...splitByDeployment(deployments)(instances).values()].flatMap((own) => [...instanceSiblings(own)])
+      : instanceSiblings(instances));
+    const instanceRow = (inst, depth, group, parent, said = siblingText(siblings.get(instanceId(inst)))) => ({
       label: inst.instance,
       detail: [inst.server, inst.agent, inst.branch, runtimeState(inst)].filter(Boolean).join(" · "),
       dot: inst.running === true ? true : inst.running === false ? false : null,
@@ -60,6 +71,7 @@ export function paletteRows(roster, commands, raw, { openTerminal } = {}) {
       group,
       // Depth reaches assistive technology as words (aria-level is not an option's).
       ...(parent ? { under: `under ${parent}` } : {}),
+      ...(said ? { sibling: said } : {}),
     });
     const opens = (inst) => () => openTerminal({ instance: inst.instance, home: inst.home, agentsRoot: inst.agentsRoot, ...(inst.server ? { server: inst.server } : {}) });
     // The sidebar's tree over the instances `keep` leaves of each deployment's
