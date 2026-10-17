@@ -1532,11 +1532,16 @@ setup summary:
   hooks written: <settings path>        (one line per file written, or "none")
   first capture pass: appended <n>, pending yes|no | skipped: another pass holds the record root | failed: <reason> | not run
   service: scheduled | failed: <reason> | skipped (--no-service) | no service template for <platform> | not changed
+  service changed: <change>             (after a service failure: one line per change it had already made)
   remedy: none | rerun <oats|turn-record> setup --owner <owner> --root <root> [flags] | inspect <oats|turn-record> capture --health --json, then rerun …
 ```
 
 A caller reads a nonzero exit with this block as "these changes were made",
-never as "nothing happened". Setup has no `--json` mode.
+never as "nothing happened". After a service failure, `service changed` lines
+name, in order, what the failed apply had already changed: the replacement
+backup directory, each manager action completed (units stopped, disabled or
+unmasked, a job booted out), each definition written, and the pending-activation
+marker written or a stale one removed. Setup has no `--json` mode.
 
 Fake-manager and isolated CLI fixtures exercise this ordering and refusal
 contract. Real-manager cases live in `test/capture-service-real-darwin.test.mjs`

@@ -33,8 +33,10 @@
 - A service refusal changes nothing. A service failure after preflight no
   longer skips capture: setup still writes the hooks and runs the first pass,
   then exits 1 and ends with a fixed-format
-  setup summary naming the hooks written, the first pass's result, and the
-  service failure with its remedy. Setup has no `--json`; see #1330.
+  setup summary naming the hooks written, the first pass's result, the
+  service failure, what that failed apply had already changed (the backup
+  directory, units stopped or disabled, definitions written, the pending
+  marker), and the remedy. Setup has no `--json`; see #1330.
 - A plain rerun finishes setup's own failed activation: setup records it in a
   private `<root>/capture-service-pending.json` marker, removed once activation
   is verified, so a timer its failed enable left disabled is retried without a

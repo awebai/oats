@@ -201,11 +201,13 @@ function prepareHooks() {
 // never reads as "nothing happened". It is held as one value.
 const oneLine = text => String(text).replace(/\s*[\r\n]+\s*/g, " ");
 const rerun = `${SETUP_COMMAND} --owner ${shellWord(owner)} --root ${shellWord(root)}${args["no-hooks"] ? " --no-hooks" : ""}${args["replace-service"] ? " --replace-service" : ""}`;
-const summary = { hooks: [], firstPass: "not run", service: "not changed", remedy: "none" };
+const summary = { hooks: [], firstPass: "not run", service: "not changed", serviceChanges: [], remedy: "none" };
 function printSummary(failed) {
   console.log(["setup summary:", `  status: ${failed ? "incomplete (exit 1)" : "complete"}`,
     ...(summary.hooks.length ? summary.hooks : ["none"]).map(path => `  hooks written: ${path}`),
-    `  first capture pass: ${summary.firstPass}`, `  service: ${summary.service}`, `  remedy: ${summary.remedy}`].join("\n"));
+    `  first capture pass: ${summary.firstPass}`, `  service: ${summary.service}`,
+    // What a failed service apply had already changed, in order.
+    ...summary.serviceChanges.map(change => `  service changed: ${oneLine(change)}`), `  remedy: ${summary.remedy}`].join("\n"));
 }
 let captureStarted = false, changing = false, serviceFailure = null;
 try {
@@ -233,7 +235,7 @@ try {
     try { applyCaptureService(service, createdParents); summary.service = "scheduled"; }
     catch (error) {
       if (dry) throw error;
-      serviceFailure = error; summary.service = `failed: ${oneLine(error.message)}`;
+      serviceFailure = error; summary.service = `failed: ${oneLine(error.message)}`; summary.serviceChanges = error.applied ?? [];
       console.error(`setup: service failed: ${error.message}`);
     }
   }

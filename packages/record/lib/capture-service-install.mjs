@@ -243,8 +243,17 @@ export function preflightCaptureService({ platform, node, request, setupCommand,
   return plan;
 }
 
+// Apply has no atomic rollback. A failure names, on the thrown error's
+// `applied`, every change made before it, as each was logged.
 export function applyCaptureService(plan, createdParents = new Map()) {
+  const applied = [];
+  try { return applyCaptureServiceSteps(plan, createdParents, applied); }
+  catch (error) { if (applied.length) error.applied = [...applied]; throw error; }
+}
+
+function applyCaptureServiceSteps(plan, createdParents, applied) {
   const { files, run, log } = plan;
+  const changed = text => { applied.push(text); log(`service: ${text}`); };
   if (plan.dry) {
     for (const file of files) log(`service: would ${file.snapshot.kind === "absent" ? "install" : file.changed ? "update" : "keep"} ${file.path}`);
     if (plan.pending) log(`service: pending-activation marker ${plan.pending.path} is ${plan.pending.stale ? "stale; would remove it" : "present; would retry activation"}`);
@@ -258,7 +267,7 @@ export function applyCaptureService(plan, createdParents = new Map()) {
   const markerPath = join(plan.request.root, capturePendingActivationName);
   if (plan.pending?.stale) {
     recheckCaptureSetup(plan.pending.snapshot, createdParents); fs.rmSync(markerPath);
-    log(`service: removed stale pending-activation marker ${markerPath} (no setup-marked capture definition); it authorizes nothing`);
+    changed(`removed stale pending-activation marker ${markerPath} (no setup-marked capture definition); it authorizes nothing`);
   }
   // Written before the first manager change or definition write, removed only
   // after activation is verified: a failure in between leaves it for a rerun.
@@ -268,13 +277,13 @@ export function applyCaptureService(plan, createdParents = new Map()) {
     fs.mkdirSync(plan.request.root, { recursive: true });
     fs.writeFileSync(markerPath, JSON.stringify({ platform: plan.platform, startedAt: new Date().toISOString() }) + "\n", { mode: 0o600 });
     fs.chmodSync(markerPath, 0o600); marked = true;
-    log(`service: pending-activation marker written: ${markerPath}`);
+    changed(`pending-activation marker written: ${markerPath}`);
   };
   const replaced = files.filter(file => file.changed && file.snapshot.kind !== "absent");
   if (replaced.length) {
     const directory = join(plan.request.root, "service-backups", `${new Date().toISOString().replace(/:/g, "-")}-${randomUUID()}`);
     fs.mkdirSync(dirname(directory), { recursive: true }); fs.mkdirSync(directory);
-    log(`service: replacement backups at ${directory}`);
+    changed(`replacement backups at ${directory}`);
     for (const file of replaced) {
       recheck(); const path = join(directory, basename(file.path));
       if (file.snapshot.kind === "link") fs.symlinkSync(file.snapshot.link, path);
@@ -284,11 +293,11 @@ export function applyCaptureService(plan, createdParents = new Map()) {
   recheck();
   const command = (name, args) => {
     mark(); requireOk(run, name, args);
-    log(`service: manager action completed: ${name} ${args.map(serviceShellWord).join(" ")}`);
+    changed(`manager action completed: ${name} ${args.map(serviceShellWord).join(" ")}`);
   };
   const writeDefinition = file => {
     mark(); writeCaptureSetup(file.snapshot, file.contents, createdParents);
-    log(`service: definition written: ${file.path}`);
+    changed(`definition written: ${file.path}`);
   };
   if (plan.platform === "darwin") {
     if (plan.changed && current.registered) command("launchctl", ["bootout", plan.target]);

@@ -363,8 +363,13 @@ test("a service failure still installs hooks and runs the first pass, then the s
     assert.ok(failed.stderr.includes(`setup: service failed: ${failure}`), failed.stderr);
     assert.doesNotMatch(failed.stderr, /setup recovery|E_CAPTURE_SERVICE/); assert.doesNotMatch(failed.stdout, /periodic capture scheduled/);
     assert.match(failed.stdout, /running first capture pass/);
+    // What the failed apply had already changed, as it logged each step, is
+    // named again in the summary block, in the same order.
+    const changes = [...failed.stdout.matchAll(/^service: ((?:replacement backups at|manager action completed:|definition written:|pending-activation marker written:|removed stale pending-activation marker) .*)$/gm)].map(m => m[1]);
+    assert.ok(changes.includes(`pending-activation marker written: ${marker}`), JSON.stringify(changes));
+    for (const file of f.definition.files) assert.ok(changes.includes(`definition written: ${file.path}`), JSON.stringify(changes));
     assert.ok(failed.stdout.endsWith(["setup summary:", "  status: incomplete (exit 1)", `  hooks written: ${f.settings}`,
-      "  first capture pass: appended 0, pending no", `  service: failed: ${failure}`,
+      "  first capture pass: appended 0, pending no", `  service: failed: ${failure}`, ...changes.map(change => `  service changed: ${change}`),
       `  remedy: rerun oats setup --owner fixture-owner --root ${serviceShellWord(f.root)}`].join("\n") + "\n"), failed.stdout);
     assert.match(fs.readFileSync(f.settings, "utf8"), /capture-hook\.mjs'? --owner \S+ --quiet --root /); assert.equal(readCaptureStatus(f.root).lastRun.trigger, "setup");
     assert.equal(fs.statSync(marker).mode & 0o777, 0o600, "the pending-activation marker stays for the rerun");
@@ -398,7 +403,7 @@ test("a failure followed by a failure keeps the marker, retries without a flag a
       assert.doesNotMatch(failed.stderr, /E_CAPTURE_SERVICE_DISABLED|setup recovery/);
       assert.doesNotMatch(failed.stdout, /periodic capture scheduled/);
       assert.match(failed.stdout, n ? /\n {2}hooks written: none\n/ : /\n {2}hooks written: .*settings\.json\n/);
-      assert.match(failed.stdout, /\n {2}service: failed: .*fixture manager refusal; exit 5.*\n {2}remedy: rerun oats setup --owner fixture-owner --root /);
+      assert.match(failed.stdout, /\n {2}service: failed: .*fixture manager refusal; exit 5.*\n(?: {2}service changed: .*\n)+ {2}remedy: rerun oats setup --owner fixture-owner --root /);
       assert.ok(fs.existsSync(marker)); assert.equal(readCaptureStatus(f.root).lastRun.trigger, "setup");
     }
     assert.match(f.operations().at(-1), platform === "linux" ? /enable --now turn-record-capture.timer/ : /bootstrap/);
