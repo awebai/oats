@@ -7,7 +7,7 @@ import { CAPTURE_POLICY } from "./capture-budget.mjs";
 import { acquireCaptureLock } from "./capture-lock.mjs";
 import { cleanupCaptureScratch } from "./capture-scratch.mjs";
 import { setAsideInvalidCaptureStatus } from "./capture-status.mjs";
-import { captureMonotonicMs, superviseCapture } from "./capture-supervisor.mjs";
+import { captureMonotonicMs, captureSignalPoll, superviseCapture } from "./capture-supervisor.mjs";
 
 // Internal scheduling choices, not public tuning or portable timing promises.
 const ALLOWANCES = Object.freeze({ workMs: 60_000, finalizeMs: 70_000, hardMs: 75_000,
@@ -23,11 +23,26 @@ export async function superviseCapturePass(root, options, {
       !Number.isSafeInteger(maxStarts) || maxStarts < 2 || maxStarts > 8) throw new Error("invalid internal capture scheduling allowances");
   const started = clock(), deadline = started + policy.deadlineSeconds * 1000;
   const drainAt = Math.max(started, deadline - drainSeconds * 1000), runId = randomUUID();
+  // TERM/INT is observed from before acquisition until after release: it ends
+  // admission of further workers; the current one is stopped by its supervisor.
+  let interrupted = false;
+  const onSignal = () => { interrupted = true; };
+  process.on("SIGINT", onSignal); process.on("SIGTERM", onSignal);
+  try {
+    return await superviseAcquiredPass(root, options, { policy, clock, acquire, allowances, transport,
+      started, deadline, drainAt, runId, interrupted: () => interrupted });
+  } finally { process.off("SIGINT", onSignal); process.off("SIGTERM", onSignal); }
+}
+
+async function superviseAcquiredPass(root, options, { policy, clock, acquire, allowances, transport,
+  started, deadline, drainAt, runId, interrupted: signalled }) {
+  const { workMs, finalizeMs, hardMs, finalReserveMs, finalDrainMs, maxStarts } = allowances;
   const lock = acquire(root);
   if (!lock.release) return { outcome: "overlap", reason: null, exitCode: 0, starts: 0, held: lock.held };
   let starts = 0, registered, publicationFailed = false, interrupted = false, firstFailure = null, failureMessage;
   let previous = null, result = { outcome: "partial", reason: "deadline", exitCode: 0 };
-  const onSignal = () => { interrupted = true; };
+  // A signal pending from synchronous preparation dispatches only at a poll.
+  const polled = async () => { await captureSignalPoll(); interrupted ||= signalled(); return interrupted; };
   const attempt = async finalize => {
     const launch = clock();
     starts++;
@@ -62,13 +77,12 @@ export async function superviseCapturePass(root, options, {
     // per-call scratch whose allocating process is proven dead (killed workers).
     cleanupCaptureScratch(root, lock);
     invalidStatus = setAsideInvalidCaptureStatus(root);
-    process.on("SIGINT", onSignal); process.on("SIGTERM", onSignal);
     // Keep one start and time for a worker to reconcile/write final facts.
     // A normal child is admitted only with its full allowance; in particular,
     // atomic reset must not be admitted as a shortened last-minute operation.
-    while (!interrupted && starts < maxStarts - 1 && clock() + hardMs + finalReserveMs <= deadline) {
+    while (!await polled() && starts < maxStarts - 1 && clock() + hardMs + finalReserveMs <= deadline) {
       result = await attempt(false);
-      if (publicationFailed || interrupted) break;
+      if (publicationFailed || await polled()) break;
       // A worker may finish an honestly failed pass after committing healthy
       // independent work and exhausting ready work. That explicit terminal
       // result needs no idle retries; an unexplained crash still continues.
@@ -79,7 +93,7 @@ export async function superviseCapturePass(root, options, {
       // On a crash the next child reconciles durable admission, then selects
       // independent ready work. There is NO same-pass retry/diagnostic class.
     }
-    if (!interrupted && !publicationFailed && starts < maxStarts && clock() < deadline) {
+    if (!await polled() && !publicationFailed && starts < maxStarts && clock() < deadline) {
       result = await attempt(true);
       // Finalization cannot certify a sweep that this continuation transport
       // stopped early. The worker likewise must not manufacture lastSuccess.
@@ -87,14 +101,14 @@ export async function superviseCapturePass(root, options, {
         result = { outcome: "failed", reason: "io", exitCode: 1 }; firstFailure ??= "io";
       }
     }
-    if (interrupted) return ended({ outcome: "failed", reason: "interrupted", exitCode: 1, starts });
+    // An earlier observed failure cause of this pass is kept, not replaced.
+    if (await polled() && !firstFailure) return ended({ outcome: "failed", reason: "interrupted", exitCode: 1, starts });
     if (firstFailure) return failed();
     return ended({ ...result, starts });
   } catch (error) {
     if (invalidStatus) error.invalidStatus ??= invalidStatus;
     throw error;
   } finally {
-    process.off("SIGINT", onSignal); process.off("SIGTERM", onSignal);
     const released = lock.release();
     if (!released.released) throw Object.assign(new Error("capture pass could not release its lock"), { release: released,
       ...(invalidStatus ? { invalidStatus } : {}) });

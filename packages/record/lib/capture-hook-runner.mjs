@@ -8,7 +8,7 @@ try {
   if (!request || Object.keys(request).some(key => !["root", "options"].includes(key))) throw new Error("invalid capture hook request");
   const options = captureCommandOptions(request.options);
   if (options.trigger !== "hook" || options.retrySetAside) throw new Error("invalid capture hook intent");
-  const result = await runCaptureCommand(request.root, options);
+  const result = await runCaptureCommand(request.root, options, { entry: "hook-runner" });
   process.exitCode = result.exitCode;
 } catch {
   // stdout/stderr are deliberately detached from the harness. Only admitted

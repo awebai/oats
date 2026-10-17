@@ -33,6 +33,8 @@ import { acquireCaptureLock } from "../lib/capture-lock.mjs";
 import { captureHealthForDoctor } from "../lib/capture-health.mjs";
 import { captureDefaultRootPlan, resolveCaptureDefaultRoots } from "../lib/capture-default-roots.mjs";
 import { captureCommandPass, reportLockInitializationFailure, reportReclaimedLock, releaseDetail } from "../lib/capture-command-output.mjs";
+import { captureCommandEntry } from "../lib/capture-command.mjs";
+import { captureSignalPoll } from "../lib/capture-supervisor.mjs";
 import { captureWatchQueue } from "../lib/capture-watch.mjs";
 import { launchCaptureHook } from "../lib/capture-hook.mjs";
 
@@ -242,7 +244,7 @@ if (args.health) {
 if (args["reset-cursors"] || args["retry-set-aside"]) {
   try {
     const result = args["reset-cursors"]
-      ? withCaptureLock(() => { resetSourceCursors(root, owner, args.source); return { reset: true, sources: args.source ? [args.source] : CAPTURE_SOURCES }; })
+      ? await observingSignals(() => withCaptureLock(() => { resetSourceCursors(root, owner, args.source); return { reset: true, sources: args.source ? [args.source] : CAPTURE_SOURCES }; }, "reset-cursors"))
       : await pass({ retry: true });
     if (result.skipped) throw new Error("capture lock held; recovery was not performed");
     if (process.exitCode) throw new Error("recovery failed to release its capture lock");
@@ -301,6 +303,29 @@ function log(...parts) {
   if (!quiet) console.log(...parts);
 }
 
+// The exact commands (--home, --file, --reset-cursors) run in this process.
+// TERM/INT while one runs is observed only at its safe points: before the
+// lock, after taking it, before each format's batch of exact files and before
+// the index update. Discovery, one format's batch, the index update and the
+// receipt summaries are synchronous and cannot be preempted, so a signal
+// waits for the segment it arrived in; no response time is promised. An
+// interruption at a safe point unwinds through the lock's release.
+class CaptureInterrupted extends Error {}
+let signalled = null;
+const onSignal = signal => { signalled ??= signal; };
+/** Run `fn` with TERM/INT observed, from before its lock until it returns. */
+async function observingSignals(fn) {
+  process.on("SIGTERM", onSignal); process.on("SIGINT", onSignal);
+  try { return await fn(); }
+  finally { process.off("SIGTERM", onSignal); process.off("SIGINT", onSignal); }
+}
+/** A safe point: a signal pending from synchronous work dispatches during
+ *  the poll this yields to, and an observed one ends the command here. */
+async function safePoint() {
+  await captureSignalPoll();
+  if (signalled) throw new CaptureInterrupted(`capture interrupted by ${signalled}`);
+}
+
 /** Take the root's single-run lock, or say who holds it. A hook-triggered
  *  pass that finds it held exits 0: the holder's pass, or the next one,
  *  reconciles the same sessions.
@@ -309,11 +334,12 @@ function log(...parts) {
  *  in the finally, and a release that did not happen is said so on stderr
  *  with the operator recovery and a nonzero exit status. Likewise an owner
  *  record that could not be written: the lock never silently outlives the
- *  pass that created it. */
-function withCaptureLock(fn) {
+ *  pass that created it. `command` labels the owner record. */
+async function withCaptureLock(fn, command) {
   let lock;
+  await safePoint();
   try {
-    lock = acquireCaptureLock(root);
+    lock = acquireCaptureLock(root, { command, caller: { entry: captureCommandEntry(), trigger: "manual" } });
     // Said by the pass that removed it, never quiet, whether or not it then took the lock: a pass that
     // died holding the lock is worth knowing about.
     if (lock.reclaimed) reportReclaimedLock({ path: lock.path, ...lock.reclaimed });
@@ -331,7 +357,7 @@ function withCaptureLock(fn) {
   }
   try {
     let result, failure;
-    try { cleanupCaptureScratch(root, lock); result = fn(); return result; }
+    try { cleanupCaptureScratch(root, lock); await safePoint(); result = await fn(); return result; }
     catch (err) { failure = err; throw err; }
     finally {
       try { writeCaptureStatus(root, { pending: Boolean(failure || result?.pending || result?.held || result?.incomplete || result?.failed) }); }
@@ -365,14 +391,15 @@ async function pass({ retry = false, trigger = "manual" } = {}) {
   loadIgnoreForCommand(root);
   // Recovery JSON keeps its existing small shape. Never read a later status
   // file after releasing the lock to reconstruct this pass's counters.
-  return captureCommandPass(root, { owner, plan: commandPlan(), indexEnabled: !args["no-index"], trigger, retrySetAside: retry }, { log });
+  return captureCommandPass(root, { owner, plan: commandPlan(), indexEnabled: !args["no-index"], trigger, retrySetAside: retry }, { log, entry: captureCommandEntry() });
 }
 
 /** A final capture of exact files, one batch per format, under the lock: counts into `outcome`, issues into
  *  `issues`, then the index unless --no-index. → withCaptureLock's answer (`outcome`, or a skip). */
-function captureUnderLock(recordStore, recordOwner, batches, ignore, outcome, issues) {
-  return withCaptureLock(() => {
+function captureUnderLock(recordStore, recordOwner, batches, ignore, outcome, issues, command) {
+  return withCaptureLock(async () => {
     for (const [format, files] of batches) {
+      await safePoint();
       const r = captureSessions(recordStore, { owner: recordOwner, files, format, ignore, final: true });
       outcome.appended += r.appended;
       outcome.held += r.held;
@@ -381,6 +408,7 @@ function captureUnderLock(recordStore, recordOwner, batches, ignore, outcome, is
       issues.push(...r.issues);
     }
     if (!args["no-index"]) { // an earlier append-only pass may have left unindexed turns
+      await safePoint();
       const index = new RecordIndex(recordStore);
       try {
         index.update();
@@ -389,7 +417,7 @@ function captureUnderLock(recordStore, recordOwner, batches, ignore, outcome, is
       }
     }
     return outcome;
-  });
+  }, command);
 }
 
 /** The outcome vocabulary: complete only with no failure, skip, hold or incomplete tail (and, for --home, no
@@ -437,7 +465,7 @@ function fileKind(stat) {
 }
 
 /** → the exit status. */
-function fileCapture() {
+async function fileCapture() {
   const json = Boolean(args.json);
   const fail = (code, error, extra = {}) => {
     if (json) console.log(JSON.stringify({ ...extra, status: "failed", complete: false, code, error }, null, 2));
@@ -502,10 +530,11 @@ function fileCapture() {
   const outcome = { appended: 0, skipped: false, held: 0, incomplete: 0, failed: 0, ignored: 0 };
   const issues = [];
   try {
-    Object.assign(outcome, captureUnderLock(fileStore, fileOwner, [[args.format, [{ path, pinned }]]], ignore, outcome, issues));
+    Object.assign(outcome, await captureUnderLock(fileStore, fileOwner, [[args.format, [{ path, pinned }]]], ignore, outcome, issues, "file"));
   } catch (err) {
     // A failed pass may have appended part of the file: never claim a count for it.
-    return fail("E_CAPTURE_FAILED", err.message || String(err), { ...where, sha256, appended: null });
+    // An interruption stops only between whole batches, so its count is confirmed.
+    return fail("E_CAPTURE_FAILED", err.message || String(err), { ...where, sha256, appended: err instanceof CaptureInterrupted ? outcome.appended : null });
   }
   if (process.exitCode) return fail("E_CAPTURE_FAILED", "capture lock release failed; see stderr for recovery", { ...where, sha256 });
 
@@ -524,7 +553,7 @@ function fileCapture() {
   } finally { pinned.close(); }
 }
 
-if (args.file !== undefined || args.format !== undefined || args.json) return finish(fileCapture());
+if (args.file !== undefined || args.format !== undefined || args.json) return finish(await observingSignals(fileCapture));
 
 if (args["install-hint"]) {
   const self = new URL("./capture-hook.mjs", import.meta.url).pathname;
@@ -565,7 +594,7 @@ if (args.status) {
 // as the OKF harvester can name what it read without timestamps, which tie
 // and which late capture appends behind. Output is JSON, always: this mode
 // exists for programs.
-if (args.home) {
+if (args.home) await observingSignals(async () => {
   warnOnStrangerOwner();
   const unattributed = [];
   let found = [];
@@ -588,7 +617,7 @@ if (args.home) {
       if (!formats.has(s.source)) formats.set(s.source, []);
       formats.get(s.source).push(s);
     }
-    Object.assign(outcome, captureUnderLock(store, owner, formats, ignore, outcome, issues));
+    Object.assign(outcome, await captureUnderLock(store, owner, formats, ignore, outcome, issues, "home"));
     withReceiptSummaries(store, summary => {
     for (const s of found) {
       const stream = `${owner}~${s.source}.${s.sessionId}`;
@@ -608,13 +637,19 @@ if (args.home) {
       });
     }
     });
+    // Summaries are synchronous: a signal that arrived during them is still a
+    // signal this command received before answering.
+    await captureSignalPoll();
+    if (signalled) throw new CaptureInterrupted(`capture interrupted by ${signalled}`);
   } catch (err) {
     error = err.message || String(err);
     console.error(`capture pass failed: ${error}`);
     outcome.failed++;
     // captureSessions can throw after appending part of a directory. Do not
     // claim zero (or a complete count) for a partially performed failed pass.
-    outcome.appended = null;
+    // An interruption stops only between whole format batches: its count of
+    // completed batches is confirmed.
+    if (!(err instanceof CaptureInterrupted)) outcome.appended = null;
     process.exitCode = 1;
   }
   if (process.exitCode && !outcome.failed) {
@@ -626,7 +661,7 @@ if (args.home) {
     ...(error ? { error } : {}), ...(issues.length ? { issues } : {}), ...(unattributed.length ? { unattributed } : {}),
   }, null, 2));
   // Let stdout drain naturally, including large session-boundary receipts.
-} else {
+}); else {
 
 warnOnStrangerOwner();
 try {

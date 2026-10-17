@@ -29,6 +29,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureDefaultRootPlan } from "../lib/capture-default-roots.mjs";
 import { captureCommandPass } from "../lib/capture-command-output.mjs";
+import { captureCommandEntry } from "../lib/capture-command.mjs";
 import { IgnoreError, loadIgnore } from "../lib/ignore.mjs";
 import { preflightCaptureService, applyCaptureService, captureSetupSnapshot, recheckCaptureSetup, writeCaptureSetup } from "../lib/capture-service-install.mjs";
 import { captureRemedyCommand } from "../lib/capture-health.mjs";
@@ -249,7 +250,7 @@ try {
     console.log("running first capture pass (the initial one can take minutes)...");
     captureStarted = true;
     try {
-      const pass = await captureCommandPass(root, { owner, plan, indexEnabled: true, trigger: "setup", retrySetAside: false });
+      const pass = await captureCommandPass(root, { owner, plan, indexEnabled: true, trigger: "setup", retrySetAside: false }, { entry: captureCommandEntry() });
       summary.firstPass = pass.skipped ? "skipped: another pass holds the record root" : `appended ${pass.appended}, pending ${pass.pending ? "yes" : "no"}`;
     } catch (error) { summary.firstPass = `failed: ${oneLine(error.message)}`; throw error; }
   }

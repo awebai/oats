@@ -11,7 +11,7 @@ try {
   // here: the registered worker resolves the explicit plan after admission.
   loadIgnore(request.root);
   await captureCommandPass(request.root, { owner: request.owner, plan: request.plan,
-    trigger: "service", indexEnabled: true, retrySetAside: false });
+    trigger: "service", indexEnabled: true, retrySetAside: false }, { entry: "service-runner" });
 } catch (error) {
   console.error(error instanceof IgnoreError ? error.message : `capture service failed: ${error.message}`);
   process.exitCode = 1;

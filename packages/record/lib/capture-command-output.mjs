@@ -33,9 +33,9 @@ export function releaseDetail(r) {
     : `${r.error ? `${r.error}; ` : ""}${r.recovery}`;
 }
 
-export async function captureCommandPass(root, options, { log = console.log, error = console.error, run = runCaptureCommand } = {}) {
+export async function captureCommandPass(root, options, { log = console.log, error = console.error, run = runCaptureCommand, entry } = {}) {
   let result;
-  try { result = await run(root, options); }
+  try { result = await run(root, options, { entry }); }
   catch (failure) {
     reportLockInitializationFailure(failure, error);
     reportReclaimedLock(failure.reclaimedLock, error);

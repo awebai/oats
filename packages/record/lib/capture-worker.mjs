@@ -26,15 +26,18 @@ export async function runCaptureWorker(operation) {
       if (error) { cleanup(); reject(new Error("capture worker could not announce readiness")); }
     });
   });
-  const alive = () => {
-    if (!process.connected || process.ppid !== parentPid) return false;
+  // The same owner read between bounded units also carries the supervisor's
+  // cooperative stop request; either way this worker stops as interrupted.
+  const owned = () => {
+    if (!process.connected || process.ppid !== parentPid) return null;
     const owner = readCaptureLockOwner(start.root);
     return owner?.pid === parentPid && owner.nonce === start.parent.nonce &&
-      owner.worker?.pid === process.pid && owner.worker.nonce === nonce;
+      owner.worker?.pid === process.pid && owner.worker.nonce === nonce ? owner : null;
   };
+  const alive = () => { const owner = owned(); return owner !== null && owner.stop !== true; };
   // Publication must already be durable before the first operation, including
   // its first status write. A callback must check again between bounded units.
-  if (!alive()) throw new Error("capture worker lock publication is missing");
+  if (!owned()) throw new Error("capture worker lock publication is missing");
   const budget = new CaptureBudget({ policy: start.policy, clock: captureMonotonicMs,
     drainAt: start.drainAt, supervisorAlive: alive });
   let result;

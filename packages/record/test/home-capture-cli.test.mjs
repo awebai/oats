@@ -7,9 +7,10 @@ import { DatabaseSync } from "node:sqlite";
 import { execFileSync, spawnSync } from "node:child_process";
 import { RecordStore } from "../lib/store.mjs";
 import { finishTurn } from "../lib/canonical.mjs";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 
 const CAPTURE = new URL("../bin/capture.mjs", import.meta.url).pathname;
@@ -177,6 +178,56 @@ test("capture --home failures answer JSON with unknown appended count, never a f
   r = run(); assert.equal(r.status, 1);
   out = JSON.parse(r.stdout); assert.equal(out.failed, 1); assert.equal(out.complete, false);
   assert.match(out.error, /ignore/); assert.doesNotMatch(r.stderr, /\n\s+at /);
+});
+
+// Exact-home capture stays in this process, and its work is synchronous: a
+// TERM is observed only at a safe point (before the lock, after taking it,
+// before each format's batch, before the index update). The preload sends the
+// fixture's own process TERM from inside a synchronous segment, by file open,
+// never by timing.
+function signalPreload(dir, file, root, when) {
+  const preload = join(dir, "signal-preload.mjs");
+  writeFileSync(preload, `import fs from "node:fs"; import { syncBuiltinESMExports } from "node:module";
+    const openSync = fs.openSync; let sent = false;
+    fs.openSync = (path, ...rest) => {
+      const locked = fs.existsSync(${JSON.stringify(join(root, ".capture.lock"))});
+      if (!sent && String(path) === ${JSON.stringify(file)} && locked === ${JSON.stringify(when === "batch")}) {
+        sent = true; process.kill(process.pid, "SIGTERM");
+      }
+      return openSync(path, ...rest);
+    };
+    syncBuiltinESMExports();`);
+  return pathToFileURL(preload).href;
+}
+
+test("capture --home TERM during discovery (non-preemptible) stops at the safe point before the lock: failed JSON, nothing appended, exit 1", (t) => {
+  const { home, root, file, run } = captureFixture(t);
+  writeFileSync(file, ccLine(home, "s1", "user", "first", "2026-09-13T10:00:00Z"));
+  const r = run(["--import", signalPreload(dirname(root), file, root, "discovery"), CAPTURE], []);
+  assert.equal(r.status, 1, r.stderr + r.stdout); assert.equal(r.signal, null);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.status, "failed"); assert.equal(out.complete, false); assert.equal(out.failed, 1);
+  assert.equal(out.error, "capture interrupted by SIGTERM"); assert.equal(out.appended, 0);
+  assert.deepEqual(out.sessions, []); assert.match(r.stderr, /capture pass failed: capture interrupted by SIGTERM/);
+  assert.equal(existsSync(join(root, ".capture.lock")), false);
+  assert.equal(new RecordStore(root, { owner: "tester" }).readStream("tester~cc.s1").length, 0);
+});
+
+test("capture --home TERM during a format batch (non-preemptible) is observed before the index update: confirmed count, lock released, exit 1", (t) => {
+  const { home, root, file, run } = captureFixture(t);
+  writeFileSync(file, ccLine(home, "s1", "user", "first", "2026-09-13T10:00:00Z") + ccLine(home, "s1", "assistant", "second", "2026-09-13T10:00:01Z"));
+  const r = run(["--import", signalPreload(dirname(root), file, root, "batch"), CAPTURE], []);
+  assert.equal(r.status, 1, r.stderr + r.stdout); assert.equal(r.signal, null);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.status, "failed"); assert.equal(out.complete, false);
+  assert.equal(out.error, "capture interrupted by SIGTERM");
+  assert.equal(out.appended, 2, "the whole batch completed before the safe point, so its count is confirmed");
+  assert.equal(new RecordStore(root, { owner: "tester" }).readStream("tester~cc.s1").length, 2);
+  assert.equal(existsSync(join(root, "index", "turns.db")), false, "the index update after the safe point did not run");
+  assert.equal(existsSync(join(root, ".capture.lock")), false);
+  // The next exact capture completes from the durable checkpoint, appending nothing twice.
+  const again = JSON.parse(run(undefined, []).stdout);
+  assert.equal(again.status, "complete"); assert.equal(again.appended, 0); assert.equal(again.sessions[0].turns, 2);
 });
 
 for (const [name, bin] of [["oats", "../../../bin/oats.mjs"], ["turn-record", "../bin/turn-record.mjs"]]) {

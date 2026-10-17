@@ -126,8 +126,120 @@ test("CLI reclaim of a dead lock publishes its evidence only for a valid past st
     const result = f.cli(["--sessions-only", "--no-index"]); passed(result);
     assert.match(result.stderr, new RegExp(`reclaimed .* from pid ${dead}, which died`), "the operator line is kept");
     assert.deepEqual(readCaptureStatus(f.root).lastRun.reclaimedLock, expected, JSON.stringify(recorded));
+    assert.equal(readCaptureStatus(f.root).lastFailure, null, "a death before any run receipt invents no old run");
     assert.equal(fs.existsSync(captureLockPath(f.root)), false);
   }
+});
+
+// TERM/INT handshakes inside the real production worker. A parent-only preload
+// adds a test hook to the fixed worker's node flags; the hook runs at the
+// worker's own budget samples (process.memoryUsage), so the signal lands after
+// a committed unit, never by timing. Only fixture-owned processes are signalled.
+function signalFixture(t, f, mode) {
+  const lib = new URL("../lib/", import.meta.url).href, dir = join(f.base, "hook");
+  fs.mkdirSync(dir);
+  const hook = join(dir, "worker-hook.mjs"), preload = join(dir, "cli-preload.mjs");
+  fs.writeFileSync(hook, `import fs from "node:fs"; import { join } from "node:path";
+    import { RecordStore } from ${JSON.stringify(lib + "store.mjs")};
+    const dir = ${JSON.stringify(dir)}, root = ${JSON.stringify(f.root)}, mode = ${JSON.stringify(mode)};
+    const lockOwner = join(root, ".capture.lock/owner.json"), parent = process.ppid;
+    const nap = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    fs.appendFileSync(join(dir, "starts"), process.pid + "\\n");
+    const memoryUsage = process.memoryUsage; let fired = false;
+    process.memoryUsage = function () {
+      if (!fired && new RecordStore(root, { owner: "fixture" }).readStream("fixture~cc.session").length >= 2) {
+        fired = true;
+        fs.copyFileSync(lockOwner, join(dir, "owner-seen.json"));
+        fs.writeFileSync(join(dir, "witness"), String(process.pid));
+        if (mode === "die") {
+          process.kill(parent, "SIGKILL");
+          while (process.ppid === parent) nap(10);
+          process.kill(process.pid, "SIGKILL");
+        }
+        process.kill(parent, "SIGTERM");
+        if (mode === "stall") for (;;) nap(50);
+        const until = Date.now() + 20000;
+        while (Date.now() < until) {
+          try { if (JSON.parse(fs.readFileSync(lockOwner, "utf8")).stop === true) break; } catch {}
+          nap(10);
+        }
+        fs.writeFileSync(join(dir, "stop-seen"), "");
+      }
+      return memoryUsage.call(process);
+    };`);
+  fs.writeFileSync(preload, `import cp from "node:child_process"; import { syncBuiltinESMExports } from "node:module";
+    const spawn = cp.spawn;
+    cp.spawn = (command, args, options) => spawn(command, String(args.at(-1)).endsWith("capture-command-worker.mjs")
+      ? [...args.slice(0, -1), "--import", ${JSON.stringify(pathToFileURL(hook).href)}, args.at(-1)] : args, options);
+    syncBuiltinESMExports();`);
+  return {
+    dir,
+    cli(args = []) { return spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, bin, ...args], { cwd: f.base, encoding: "utf8", env: f.env, timeout: 60000 }); },
+    starts() { return fs.readFileSync(join(dir, "starts"), "utf8").trim().split("\n").map(Number); },
+  };
+}
+
+test("CLI TERM during a production work unit stops cooperatively: interrupted receipt, durable counts and prior success kept, one worker reaped, lock released", t => {
+  const f = fixture(t); passed(f.cli());
+  const before = readCaptureStatus(f.root); assert.equal(before.lastRun.outcome, "complete");
+  fs.appendFileSync(f.cc, native(2)); fs.appendFileSync(f.logs, aw(2));
+  const s = signalFixture(t, f, "cooperate"), result = s.cli();
+  assert.equal(result.status, 1, result.stdout + result.stderr); assert.equal(result.signal, null);
+  assert.match(result.stderr, /capture pass failed: capture worker failed \(interrupted\)/);
+  assert.ok(fs.existsSync(join(s.dir, "stop-seen")), "the worker observed the nonce-bound stop request");
+  const status = readCaptureStatus(f.root);
+  assert.equal(status.lastRun.outcome, "failed"); assert.equal(status.lastRun.reason, "interrupted");
+  assert.ok(status.lastRun.finishedAt, "the worker finalized its own receipt");
+  assert.equal(status.lastRun.counts.turnsAppended >= 1, true, "the committed unit is counted");
+  assert.equal(status.lastFailure.id, status.lastRun.id); assert.equal(status.lastFailure.reason, "interrupted");
+  assert.deepEqual(status.lastSuccess, before.lastSuccess);
+  assert.equal(f.store.readStream("fixture~cc.session").length, 2);
+  assert.deepEqual(s.starts(), [Number(fs.readFileSync(join(s.dir, "witness"), "utf8"))], "no continuation or new worker after the stop");
+  assert.throws(() => process.kill(s.starts()[0], 0), { code: "ESRCH" }, "the worker was reaped");
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+  const owner = JSON.parse(fs.readFileSync(join(s.dir, "owner-seen.json"), "utf8"));
+  assert.equal(owner.command, "pass"); assert.deepEqual(owner.caller, { entry: "turn-record", trigger: "manual" });
+  assert.equal(owner.ppid, process.pid); assert.equal(owner.worker.pid, s.starts()[0]); assert.equal(Object.hasOwn(owner, "stop"), false);
+  passed(f.cli());
+  assert.equal(readCaptureStatus(f.root).lastRun.outcome, "complete"); assert.equal(f.store.readStream("fixture~aw").length, 2);
+});
+
+test("CLI TERM to a worker that cannot cooperate kills and reaps it after the grace; no finished receipt is invented and the next pass records the interruption", t => {
+  const f = fixture(t); passed(f.cli());
+  const before = readCaptureStatus(f.root);
+  fs.appendFileSync(f.cc, native(2));
+  const s = signalFixture(t, f, "stall"), result = s.cli();
+  assert.equal(result.status, 1, result.stdout + result.stderr); assert.match(result.stderr, /interrupted/);
+  const stalled = readCaptureStatus(f.root);
+  assert.equal(stalled.lastRun.outcome, "running", "a killed worker leaves its unfinished receipt");
+  assert.deepEqual(stalled.lastSuccess, before.lastSuccess);
+  assert.equal(s.starts().length, 1); assert.throws(() => process.kill(s.starts()[0], 0), { code: "ESRCH" });
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+  passed(f.cli());
+  const next = readCaptureStatus(f.root);
+  assert.equal(next.lastFailure.id, stalled.lastRun.id); assert.equal(next.lastFailure.reason, "interrupted");
+  assert.notEqual(next.lastRun.id, stalled.lastRun.id); assert.equal(next.lastRun.outcome, "complete");
+  assert.equal(f.store.readStream("fixture~cc.session").length, 2);
+});
+
+test("a supervisor killed with its worker leaves a lock the next ordinary pass reclaims, recording the interruption against the old run only", t => {
+  const f = fixture(t); passed(f.cli());
+  const before = readCaptureStatus(f.root);
+  fs.appendFileSync(f.cc, native(2));
+  const s = signalFixture(t, f, "die"), result = s.cli();
+  assert.equal(result.signal, "SIGKILL", result.stdout + result.stderr);
+  const killed = readCaptureStatus(f.root), owner = JSON.parse(fs.readFileSync(join(captureLockPath(f.root), "owner.json"), "utf8"));
+  assert.equal(killed.lastRun.outcome, "running"); assert.deepEqual(killed.lastSuccess, before.lastSuccess);
+  assert.equal(owner.command, "pass"); assert.equal(owner.worker.pid, s.starts()[0]);
+  const next = f.cli(); passed(next);
+  assert.match(next.stderr, new RegExp(`reclaimed .* from pid ${owner.pid}, which died`));
+  const status = readCaptureStatus(f.root);
+  assert.equal(status.lastFailure.id, killed.lastRun.id); assert.equal(status.lastFailure.reason, "interrupted");
+  assert.equal(status.lastFailure.counts.turnsAppended, killed.lastRun.counts.turnsAppended, "the old run keeps its confirmed counts");
+  assert.notEqual(status.lastRun.id, killed.lastRun.id); assert.equal(status.lastRun.outcome, "complete", "the new pass is not blamed");
+  assert.deepEqual(status.lastRun.reclaimedLock, { pid: owner.pid, startedAt: owner.startedAt });
+  assert.equal(f.store.readStream("fixture~cc.session").length, 2, "committed checkpoints are kept, nothing is duplicated");
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
 });
 
 // A worker's own status failure, which this directory used to provoke, is
