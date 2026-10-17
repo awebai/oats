@@ -40,7 +40,9 @@ is the default); `tmux` must be installed on the execution host. A launched
 home keeps the session it recorded: `session start` and `restart` never
 re-read the defaults. The session target is recorded twice: in
 `instance.json` and in an independent lifecycle receipt. Every session command
-checks that the two agree (`E_RUNTIME_AUTHORITY_MISMATCH` otherwise).
+checks that the two agree (`E_RUNTIME_AUTHORITY_MISMATCH` otherwise, with
+`details.fields` naming what differs; see [Inspect, input and
+attach](#inspect-input-and-attach)).
 
 ### tmux
 
@@ -1064,6 +1066,43 @@ oats session attach --home /abs/home --detach-key 'C-\'
   live claim that the instance needs input from a human, `{since, producer,
   reason, message}`, or `null`; it is non-null only for a running harness
   (docs/desktop-cli-api.md, "Waiting on you").
+  With feature `session-inspect-running`, every successful result also
+  carries `running`, a boolean read from the same pane observation by the
+  same rule `oats status --json` uses for a row's `running`: `true` for a live
+  non-shell process in the agent pane (`state: unknown`), a harness behind a
+  wrapper shell included; `false` for a fallback shell (`state: shell`, where
+  `present` stays `true`), an absent or dead pane or a missing home
+  (`stopped`) and a home that never launched (`not-launched`). It costs no
+  second observation: at most one process-table read, and only for a pane
+  whose own command is a shell. `running` is activity at the authorized
+  endpoint. It does not say the agent is generating, idle, healthy or ready
+  for input, nor that it consumed a wake, and it does not prove which
+  executable runs if a process inside the pane was replaced. When the
+  backend or the process table cannot be read, or the pane answer is
+  malformed or split, inspect is an error as before, never `running: false`.
+  That includes a tmux server that is gone (`no server running on` its
+  socket, as after a reboot): status reads that row as `running: false`, and
+  inspect answers `E_SESSION_UNAVAILABLE`. Wherever inspect answers, its
+  `running` is the one status reports.
+  A consumer that sees no `running` (an older kernel or an older remote host)
+  may read `state: unknown` on a successful result as running; a failed
+  inspect is unknown, never stopped.
+  `session inspect --server <id> --home <home> --json` relays the execution
+  host's `running`, or its absence, as the host answered.
+  A home whose `instance.json` disagrees with its session receipt is refused
+  with `E_RUNTIME_AUTHORITY_MISMATCH` before any pane or process is read; the
+  same refusal from any other session command, or in the answer of
+  `oats retire`, carries the same details (the record a deferred
+  `retire --self` leaves keeps only the code and message). Its `details.fields` names the differing fields, in this order, from this
+  vocabulary only: `launched`, `tmux.session`, `tmux.window`, `tmux.socket`
+  (the socket compared resolved, so a relative spelling of the same socket
+  agrees). It carries no paths, values or receipt content. `launched` is
+  listed unless a blocked or incomplete launch prompt explains
+  `launched: false`; such a retained prompt is still allowed while its
+  endpoint agrees, and only the endpoint fields that differ are named
+  otherwise. A missing or invalid receipt stays `E_RUNTIME_ENDPOINT_UNKNOWN`
+  and malformed metadata keeps its own refusal; neither carries
+  `details.fields`.
 - **input** sends UTF-8 text (stdin or `--text-file`, at most 256 KiB, no
   NUL) as exactly one bracketed paste followed by exactly one Enter. The text
   is never run by a shell. Existing endpoint authority, fallback-shell,
