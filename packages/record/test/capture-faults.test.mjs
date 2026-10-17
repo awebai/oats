@@ -8,6 +8,7 @@ import { test } from "node:test";
 import { RecordStore } from "../lib/store.mjs";
 import { captureSessions } from "../lib/capture-cc.mjs";
 import { captureAwLogs } from "../lib/capture-aw.mjs";
+import { writeCurrentHook } from "./fixtures/capture-hook-settings.mjs";
 import { DerivedState } from "../lib/derived-state.mjs";
 import { captureHealth, resetSourceCursors } from "../lib/capture-state.mjs";
 
@@ -84,6 +85,7 @@ test("aweb observed replacements/shrinks/same-size edits and torn journals repro
 
 test("health rejects malformed/oversized/special status files without blocking", t => {
   const f = fixture(t); fs.mkdirSync(f.root); const path = join(f.root, "capture-status.json");
+  writeCurrentHook(f.base); // the status files are diagnosed on an installed host
   for (const data of ["bad", " ".repeat(1024 * 1024 + 1)]) {
     fs.writeFileSync(path, data); assert.equal(captureHealth(f.root, { home: f.base }).rows[0].code, "capture-status-invalid");
   }

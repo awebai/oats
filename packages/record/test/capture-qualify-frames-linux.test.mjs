@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { CAPTURE_POLICY } from "../lib/capture-budget.mjs";
 import { captureHealth } from "../lib/capture-state.mjs";
 import { dropDerived, realManagerSkip, report, runnerFacts, scratch, sessionPath, table } from "./fixtures/qualify.mjs";
+import { writeCurrentHook } from "./fixtures/capture-hook-settings.mjs";
 import { awEntry, awStream, captureHistorical, codexLine, exactLine, HEAVY, indexedCounts, journalShape, lineForFrame,
   sessionProgress, settle, smallLine, smallSessions, stateRows, stateValue, streamOf, writeSession } from "./fixtures/qualify-frames.mjs";
 
@@ -37,7 +38,8 @@ const frameSession = (home, n, spec) => {
   const line = spec.frameBytes ? lineForFrame(build, HEAVY, spec.frameBytes) : exactLine(build, HEAVY, spec.lineBytes);
   return { format: "codex", path, stream: streamOf("codex", path), lines: 1, lineBytes: writeSession(path, [line]) - 1 };
 };
-const health = (root, home) => captureHealth(root, { home });
+// Health diagnoses an installed host: a record root alone is not one.
+const health = (root, home) => { writeCurrentHook(home); return captureHealth(root, { home }); };
 
 test("Q2a large historical frames: recovery, parse and index under the capped worker at 8, 16 and 22.3 MB", { skip, timeout: 9 * 60_000 }, async t => {
   const base = scratch(t, "qualify-frames-");

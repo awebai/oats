@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { doctorCaptureWarnings } from "../lib/doctor-capture.mjs";
 import { captureHealthForDoctor } from "../packages/record/lib/capture-health.mjs";
 import { validCaptureHealthEnvelope } from "../packages/record/lib/capture-status.mjs";
+import { writeCurrentHook } from "../packages/record/test/fixtures/capture-hook-settings.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const healthy = () => ({ schemaVersion: 1, status: "ok", rows: [], lastRun: null, lastSuccess: null,
@@ -52,6 +53,7 @@ syncBuiltinESMExports();
 
 test("doctor shows setup's pending-activation row from the package reader without touching the marker", t => {
   const f = fixture(t); mkdirSync(f.root); writeFileSync(join(f.root, "capture-service-pending.json"), '{"platform":"fixture"}\n');
+  writeCurrentHook(f.fx.env.HOME); // the marker is read on an installed host
   const before = disk(f.root), result = f.cli(["--json"]);
   assert.equal(result.status, 0, result.stderr); assert.equal(result.launches.length, 1);
   const row = JSON.parse(result.stdout).warnings.find(warning => warning.code === "capture-service-pending");
@@ -66,8 +68,11 @@ test("doctor delegates once with caller root/home and maps only package warning 
   assert.equal(absent.status, 0, absent.stderr); assert.equal(absent.launches.length, 1);
   assert.deepEqual(JSON.parse(absent.stdout).warnings.filter(row => row.code.startsWith("capture-")), []);
   assert.equal(existsSync(f.root), false); assert.equal(existsSync(join(f.fx.env.HOME, ".turn-record")), false);
+  // From here an installed host, so the mapped rows are not empty.
+  writeCurrentHook(f.fx.env.HOME);
   mkdirSync(f.root); writeFileSync(join(f.root, "sentinel"), "unchanged");
   const before = disk(f.root), expected = captureHealthForDoctor(f.root, { home: f.fx.env.HOME }).rows;
+  assert.ok(expected.length > 0);
   for (const args of [["--json"], []]) {
     const result = f.cli(args);
     assert.equal(result.status, 0, result.stderr); assert.equal(result.launches.length, 1);
@@ -92,6 +97,8 @@ test("doctor delegates once with caller root/home and maps only package warning 
 
 test("doctor preserves relative and default root selection and command failure differs from diagnosis", t => {
   const f = fixture(t), relative = "relative turn-record";
+  // Installed: hooks in a .claude profile other than the one broken below.
+  writeCurrentHook(f.fx.env.HOME, ".claude-capture");
   mkdirSync(join(f.fx.dep, relative));
   const selected = f.cli(["--json"], { TURN_RECORD_ROOT: relative });
   assert.equal(selected.status, 0);

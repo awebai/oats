@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { CAPTURE_POLICY } from "../lib/capture-budget.mjs";
 import { captureHealth } from "../lib/capture-state.mjs";
 import { dropDerived, OPERATOR, realManagerSkip, report, runnerFacts, scratch, sessionPath, table } from "./fixtures/qualify.mjs";
+import { writeCurrentHook } from "./fixtures/capture-hook-settings.mjs";
 import { captureHistorical, CODE, codexLine, exactLine, indexedCounts, journalShape, lastRecords, recoveryChunks, settle, smallLine,
   stateRows, stateValue, streamOf, writeSession } from "./fixtures/qualify-frames.mjs";
 
@@ -66,6 +67,7 @@ test("Q2b Codex in-prefix recovery of captured lines up to 22,280,296 bytes unde
   // What the recovery left, printed before any assertion: why settle stopped,
   // set-aside inputs, the source cursor, retained-copy cleanup still owed
   // (allocation, stage, chunk rows) and the health rows.
+  writeCurrentHook(home); // health diagnoses an installed host
   const key = `${session.stream}:${path}`, afterRecovery = captureHealth(root, { home });
   report(t, "inprefix-state", { stopReason: recovery.stopReason, setAside: afterRecovery.backlog.setAside, cursor: stateValue(root, "codex", key),
     allocation: stateValue(root, "recovery-allocation", key), stage: stateValue(root, "recovery-stage", key), chunks: recoveryChunks(root),

@@ -10,6 +10,7 @@ import { captureSessions } from "../lib/capture-cc.mjs";
 import { captureAwLogs } from "../lib/capture-aw.mjs";
 import { DerivedState } from "../lib/derived-state.mjs";
 import { captureHealth, resetSourceCursors, retrySetAside, writeCaptureStatus } from "../lib/capture-state.mjs";
+import { writeCurrentHook } from "./fixtures/capture-hook-settings.mjs";
 import { acquireCaptureLock } from "../lib/capture-lock.mjs";
 
 const bin = resolve(import.meta.dirname, "../bin/capture.mjs");
@@ -42,7 +43,7 @@ for (const format of ["cc", "pi", "codex"]) test(`${format}: equal moved identit
   assert.equal(result.issues[0].line, 2301);
   assert.deepEqual(fs.readFileSync(journal), before);
   retrySetAside(f.root); // interruption after marking retains active warning
-  writeCaptureStatus(f.root);
+  writeCaptureStatus(f.root); writeCurrentHook(f.base); // an installed host reports its backlog
   assert.equal(captureHealth(f.root, { home: f.base }).backlog.setAsideCount, 1);
   assert.equal(f.capture({ format }).appended, 0);
   fs.writeFileSync(f.path, original + line(2500));
@@ -61,7 +62,8 @@ test("ignore removes missing/unreadable set-aside entries before any open; unign
   fs.openSync = (p, ...args) => { assert.notEqual(p, f.path, "ignored source was opened"); return open(p, ...args); }; syncBuiltinESMExports();
   try { assert.equal(f.capture().ignored, 1); }
   finally { fs.openSync = open; syncBuiltinESMExports(); }
-  writeCaptureStatus(f.root); assert.deepEqual(captureHealth(f.root, { home: f.base }).rows.map(row => row.code), ["capture-success-stale"]);
+  writeCaptureStatus(f.root); writeCurrentHook(f.base);
+  assert.deepEqual(captureHealth(f.root, { home: f.base }).rows.map(row => row.code), ["capture-success-stale"]);
   fs.writeFileSync(f.path, line(2)); fs.writeFileSync(join(f.root, "ignore"), "");
   assert.equal(f.capture().complete, false);
 });
@@ -109,6 +111,7 @@ test("health never creates an absent root; status caps deterministic issue sampl
   state.close();
   const status = writeCaptureStatus(f.root);
   assert.equal(status.policy, null); assert.equal(status.lastSuccess, null); assert.equal(status.lastRun, null);
+  writeCurrentHook(f.base); // from here, an installed host
   const health = captureHealth(f.root, { home: f.base });
   assert.equal(health.backlog.setAsideCount, 111); assert.equal(health.backlog.setAside.length, 100); assert.equal(health.backlog.truncated, true);
   assert.equal(health.backlog.setAside[0].path, "/fixture/000");

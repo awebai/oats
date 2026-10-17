@@ -165,10 +165,8 @@ existing owners; hook launch still unrefs its detached child, and foreground
 watch retains its signal lifecycle. Output delivery is distinct from diagnosis
 and durably confirmed processing counts.
 
-Installation evidence means any of:
+Installation evidence means service definitions or hooks, any of:
 
-- The selected record root exists as a readable directory (`--root`, then
-  `TURN_RECORD_ROOT`, then `~/.turn-record`).
 - On macOS, `~/Library/LaunchAgents/ai.aweb.turn-record-capture.plist` parses as
   a supported owned periodic or legacy definition. On Linux, the candidates
   are `~/.config/systemd/user/turn-record-capture.service` and
@@ -177,10 +175,15 @@ Installation evidence means any of:
 - A `settings.json` in a top-level `~/.claude*` directory or directory symlink
   has a recognized command in a Stop or SessionEnd hook group. Health shares
   setup's unchanged tokenizer: script in the second word ending in
-  `/capture.mjs`, whole `--owner` and `--quiet` words, supported plain/single
+  `/capture-hook.mjs` (this release's hook entry) or `/capture.mjs` (earlier
+  releases' forms), whole `--owner` and `--quiet` words, supported plain/single
   quoted words, and no shell expansion, operator or second command.
 
-Readable foreign service files alone do not establish installation. No evidence
+A record root alone is not an installation: one `oats recall` or one manual
+capture creates it (with `index/`), and such a host has never set capture up.
+The selected root (`--root`, then `TURN_RECORD_ROOT`, then `~/.turn-record`)
+still has to be a directory when it exists, and setup's pending-activation
+marker is read from it. Readable foreign service files alone do not establish installation. No evidence
 means `ok`, no warnings and no root creation. Unreadable candidates, dangling
 links, malformed hook settings, observed changes or exceeded reader limits are
 unknown and fail diagnosis, even if another candidate establishes installation.

@@ -9,6 +9,7 @@ import { DerivedState } from "../lib/derived-state.mjs";
 import { captureHealth, resetSourceCursors, retrySetAside, writeCaptureStatus } from "../lib/capture-state.mjs";
 import { readIssueBacklog } from "../lib/capture-issues.mjs";
 import { failureAfterAttempt } from "../lib/capture-failures.mjs";
+import { writeCurrentHook } from "./fixtures/capture-hook-settings.mjs";
 
 const now = Date.parse("2026-01-01T00:00:00.000Z");
 const unit = n => ({ stream: `fixture~cc.${String(n).padStart(4, "0")}`, offset: n * 100, reason: "interrupted" });
@@ -18,6 +19,8 @@ const bin = resolve(import.meta.dirname, "../bin/capture.mjs");
 function fixture(t) {
   const base = fs.mkdtempSync(join(tmpdir(), "capture-failures-")), root = join(base, "record");
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  // Health here diagnoses an installed host: a record root alone is not one.
+  writeCurrentHook(base);
   const command = (...args) => spawnSync(process.execPath, [bin, "--root", root, ...args], {
     encoding: "utf8", env: { HOME: base, TMPDIR: base, PATH: process.env.PATH }, timeout: 15000,
   });

@@ -7,6 +7,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { CAPTURE_POLICY } from '../lib/capture-budget.mjs';
 import { emptyCaptureCounts, emptyCaptureStatus, validCaptureStatus, readCaptureStatus, persistCaptureStatus } from '../lib/capture-status.mjs';
 import { writeCaptureStatus, captureHealth } from '../lib/capture-state.mjs';
+import { writeCurrentHook } from './fixtures/capture-hook-settings.mjs';
 const at='2026-01-01T00:00:00.000Z',finish='2026-01-01T00:01:00.000Z',now=Date.parse('2026-01-02T00:00:00.000Z');
 const backlog=()=>({pending:false,setAsideCount:0,setAside:[],truncated:false,failedCount:0,failed:[],failedTruncated:false});
 const summary=()=>({id:'fixture-run',trigger:'manual',pid:123,startedAt:at,finishedAt:finish,counts:emptyCaptureCounts(),peakRssBytes:1024});
@@ -53,13 +54,14 @@ test('receipt backlog refresh retains historical service facts without claiming 
  const published=JSON.parse(fs.readFileSync(join(root,'capture-status.json'),'utf8'));
  assert.equal(validate(published),true,JSON.stringify(validate.errors));
  assert.equal(validate({...published,policy:{...published.policy,rssBytes:1}}),false);
+ writeCurrentHook(root); // health reads history only on an installed host
  const health=captureHealth(root, { home: root });assert.deepEqual(health.lastRun,status.lastRun);assert.deepEqual(health.lastSuccess,status.lastSuccess);
  assert.ok(!health.rows.some(row=>row.code==='capture-status-invalid'),'accepted history must survive the read-only health projection');
 });
 
 test('bounded read rejects malformed, oversized and future status without creating absent state',t=>{
  const root=fixture(t),absent=join(root,'absent');assert.equal(readCaptureStatus(absent),null);assert.equal(fs.existsSync(absent),false);
- const path=join(root,'capture-status.json');
+ const path=join(root,'capture-status.json');writeCurrentHook(root);
  for(const content of ['{bad',JSON.stringify({...fixtureStatus(),schemaVersion:2}),'x'.repeat(1024*1024+1),
   JSON.stringify({...fixtureStatus(),lastProgressAt:'9999-01-01T00:00:00.000Z'})]){
   fs.writeFileSync(path,content);assert.throws(()=>readCaptureStatus(root));

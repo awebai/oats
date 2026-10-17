@@ -11,11 +11,15 @@ import { DerivedState } from "../lib/derived-state.mjs";
 import { captureHealth, retrySetAside, writeCaptureStatus } from "../lib/capture-state.mjs";
 import { RecordStore } from "../lib/store.mjs";
 import { captureSessions } from "../lib/capture-cc.mjs";
+import { writeCurrentHook } from "./fixtures/capture-hook-settings.mjs";
 
 const bin = resolve(import.meta.dirname, "../bin/capture.mjs");
-function fixture(t) {
+// These tests diagnose an installed host unless they say otherwise: a record
+// root alone is not an installation, so the home carries a capture hook.
+function fixture(t, { hook = true } = {}) {
   const base = fs.mkdtempSync(join(tmpdir(), "capture-health-")), root = join(base, "record");
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  if (hook) writeCurrentHook(base);
   return { base, root, cli: () => spawnSync(process.execPath, [bin, "--root", root, "--health", "--json"],
     { encoding: "utf8", env: { HOME: base, TMPDIR: base, PATH: process.env.PATH } }) };
 }
@@ -78,7 +82,7 @@ for (const mutation of ["PRAGMA user_version = 999", "DROP TABLE state", "ALTER 
 });
 
 test("never-installed health leaves its absent root absent", t => {
-  const f = fixture(t), result = f.cli(); assert.equal(result.status, 0, result.stderr);
+  const f = fixture(t, { hook: false }), result = f.cli(); assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).status, "ok"); assert.equal(fs.existsSync(f.root), false);
 });
 

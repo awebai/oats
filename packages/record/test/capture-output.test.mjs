@@ -21,6 +21,7 @@ function fixture(t, { watchPrivacy = false, watchFailure = false } = {}) {
   fs.writeFileSync(driver, `
 ${watchPrivacy ? `import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
+import { writeCurrentHook } from './fixtures/capture-hook-settings.mjs';
 const evidence = { hints: [], watcherClosed: 0, intervalClosed: 0, postCloseTimers: 0 };
 let stopped = false, periodic;
 const timeout = globalThis.setTimeout, clear = globalThis.clearInterval;
@@ -134,6 +135,7 @@ function tree(root) {
 
 test("large piped health output delivers both complete samples, banners and JSON without mutation", async t => {
   const f = fixture(t), state = new DerivedState(f.root);
+  writeCurrentHook(f.home); // an installed host reports its backlog
   state.transaction(() => {
     for (let n = 150; n >= 0; n--) {
       // Long synthetic labels make each rendered category larger than a pipe

@@ -15,6 +15,7 @@ import { emptyCaptureCounts, emptyCaptureStatus, persistCaptureStatus, validCapt
 import { CAPTURE_POLICY } from "../lib/capture-budget.mjs";
 import { DerivedState } from "../lib/derived-state.mjs";
 import { isCaptureHook } from "../lib/capture-hook-ownership.mjs";
+import { writeCurrentHook } from "./fixtures/capture-hook-settings.mjs";
 
 const now = Date.parse("2026-10-01T12:00:00.000Z"), at = seconds => new Date(now - seconds * 1000).toISOString();
 const backlog = () => ({ pending: false, setAsideCount: 0, setAside: [], truncated: false, failedCount: 0, failed: [], failedTruncated: false });
@@ -32,7 +33,8 @@ function fixture(t, platform = "linux") {
   const request = { root, owner: "fixture", plan: captureDefaultRootPlan({ home, cwd: home, env: {} }) };
   const definition = captureServiceDefinition({ platform, node: "/fixture/node", request });
   const save = value => { fs.mkdirSync(root, { recursive: true }); persistCaptureStatus(root, value, { now }); };
-  return { home, root, options, definition, save, health: extra => captureHealth(root, { ...options, ...extra }) };
+  // Installation evidence for a test whose intent needs an installed host.
+  return { home, root, options, definition, save, hook: () => writeCurrentHook(home), health: extra => captureHealth(root, { ...options, ...extra }) };
 }
 function bytesBelow(root) {
   const files = {};
@@ -52,6 +54,10 @@ function legacy(platform) {
 for (const platform of ["linux", "darwin"]) test(`${platform}: absent/foreign files are not installation; supported bytes do not prove scheduling`, t => {
   const f = fixture(t, platform);
   assert.equal(f.health().status, "ok"); assert.equal(fs.existsSync(f.root), false);
+  // A record root alone, as one recall or manual capture leaves it, is not an installation.
+  fs.mkdirSync(join(f.root, "index"), { recursive: true });
+  const rootOnly = f.health(); assert.equal(rootOnly.status, "ok"); assert.deepEqual(rootOnly.rows, []);
+  fs.rmSync(f.root, { recursive: true });
   write(f.definition.files[0].path, "foreign mention of capture.mjs --watch\n");
   assert.equal(f.health().status, "ok");
   for (const file of f.definition.files) write(file.path, file.contents);
@@ -131,7 +137,7 @@ test("installation enumeration/read limits and observed changes refuse without p
 });
 
 for (const age of [3599, 3600, 3601]) test(`success age ${age}s preserves the strict freshness threshold`, t => {
-  const f = fixture(t), saved = status(age); saved.lastProgressAt = at(1); f.save(saved);
+  const f = fixture(t), saved = status(age); saved.lastProgressAt = at(1); f.save(saved); f.hook();
   const before = bytesBelow(f.home), health = f.health();
   assert.deepEqual(codes(health), age > 3600 ? ["capture-success-stale"] : []);
   assert.deepEqual(health.lastSuccess, saved.lastSuccess); assert.deepEqual(health.lastRun, saved.lastRun);
@@ -145,6 +151,7 @@ for (const age of [3599, 3600, 3601]) test(`success age ${age}s preserves the st
 
 test("missing, old null and invalid/future status stay distinct without invented run history", t => {
   const f = fixture(t); fs.mkdirSync(f.root);
+  f.hook();
   assert.deepEqual(codes(f.health()), ["capture-status-missing", "capture-success-stale"]);
   f.save(emptyCaptureStatus(backlog()));
   assert.deepEqual(codes(f.health()), ["capture-success-stale"]); assert.equal(f.health().lastRun, null);
@@ -157,6 +164,7 @@ test("missing, old null and invalid/future status stay distinct without invented
 
 test("current issues and newer failure remain warnings beside recent older success; stale command issues are historical only", t => {
   const f = fixture(t), saved = status(60);
+  f.hook();
   saved.lastFailure = { ...summary(30), id: "new-failure", reason: "io", message: "safe failure" }; f.save(saved);
   const state = new DerivedState(f.root);
   state.set("set-aside", "one", { source: "cc", path: "/fixture/session", offset: 10, reason: "captured-prefix-changed" }); state.close();
@@ -175,6 +183,7 @@ test("current issues and newer failure remain warnings beside recent older succe
 test("capture-service-pending reports setup's unverified activation from file evidence, stale when no marked definition remains", t => {
   for (const platform of ["linux", "darwin"]) {
     const f = fixture(t, platform), marker = join(f.root, "capture-service-pending.json");
+    f.hook();
     for (const file of f.definition.files) write(file.path, file.contents);
     f.save(status(60)); assert.ok(!codes(f.health()).includes("capture-service-pending"), "no marker, no row");
     write(marker, '{"platform":"fixture"}\n');
@@ -195,6 +204,7 @@ test("capture-service-pending reports setup's unverified activation from file ev
 
 test("record-too-large set-asides get the edit-or-ignore-whole-input remedy, never prefix restoration", t => {
   const f = fixture(t); f.save(status(60));
+  f.hook();
   const state = new DerivedState(f.root);
   state.set("set-aside", "big", { source: "cc", path: "/fixture/big", offset: 0, reason: "record-too-large" }); state.close();
   const message = () => f.health().rows.find(row => row.code === "capture-input-set-aside").message;
@@ -222,7 +232,8 @@ function lock(f, saved) {
 }
 
 test("unfinished overdeadline is a warning, not a guessed kill/timeout cause or stale success erasure", t => {
-  const f = fixture(t), saved = unfinished(f, 301); const before = bytesBelow(f.home), h = f.health();
+  const f = fixture(t), saved = unfinished(f, 301); f.hook();
+  const before = bytesBelow(f.home), h = f.health();
   assert.deepEqual(codes(h), ["capture-pass-failed"]); assert.match(h.rows[0].message, /does not identify why/);
   assert.deepEqual(h.lastRun, saved.lastRun); assert.equal(h.lastRun.reason, null); assert.equal(h.lastRun.finishedAt, null);
   assert.deepEqual(h.lastSuccess, saved.lastSuccess); assert.deepEqual(bytesBelow(f.home), before);
@@ -230,6 +241,7 @@ test("unfinished overdeadline is a warning, not a guessed kill/timeout cause or 
 
 test("early death requires unchanged matching local registration and both processes dead", t => {
   const f = fixture(t), saved = unfinished(f), owner = lock(f, saved), path = join(f.root, ".capture.lock/owner.json");
+  f.hook();
   const observed = [], liveness = pid => { observed.push(pid); return "dead"; };
   assert.deepEqual(codes(f.health({ liveness })), ["capture-pass-failed"]); assert.deepEqual(observed, [123, 321]);
   for (const mutate of [o => o.host = "off-host", o => delete o.host, o => o.worker.host = "off-host",
@@ -247,6 +259,7 @@ test("early death requires unchanged matching local registration and both proces
 
 test("offline healthy diagnosis invokes no manager, capture, writer or network and warning CLI exits zero", t => {
   const f = fixture(t); f.save(status());
+  f.hook();
   const before = bytesBelow(f.home), spawn = cp.spawnSync, mutations = {};
   cp.spawnSync = () => { throw new Error("unexpected child/manager"); };
   for (const key of ["mkdirSync", "writeFileSync", "renameSync", "unlinkSync", "rmSync"]) {
@@ -268,6 +281,7 @@ test("offline healthy diagnosis invokes no manager, capture, writer or network a
 
 test("doctor remedies change authored commands only, retaining literal paths/history and standalone wording", t => {
   const f = fixture(t), root = join(f.home, "Run turn-record setup --root USER-DATA 'literal $&'");
+  f.hook();
   const state = new DerivedState(root);
   state.set("set-aside", "one", { source: "cc", path: "/private/turn-record capture --retry-set-aside", offset: 0,
     reason: "captured-prefix-changed", line: 1 }); state.close();

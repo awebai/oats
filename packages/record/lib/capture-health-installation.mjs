@@ -57,11 +57,11 @@ export function captureInstallation(root, { home, platform, check = () => {} }) 
   // wrote, which this release's setup converts.
   let installed = false, legacy = false;
   const earlierHooks = new Set();
+  // A record root alone is not an installation: one recall or one manual
+  // capture creates it. Installation is owned or legacy service definitions
+  // or capture hooks, below.
   const selected = stat(root);
-  if (selected) {
-    if (!selected.isDirectory()) throw new Error(`selected record root is not a directory: ${root}`);
-    installed = true;
-  }
+  if (selected && !selected.isDirectory()) throw new Error(`selected record root is not a directory: ${root}`);
   const candidates = platform === "darwin" ? [[join(home, "Library/LaunchAgents", `${captureServiceLabel}.plist`), "plist"]]
     : platform === "linux" ? [[join(home, ".config/systemd/user", captureServiceUnit), "service"],
       [join(home, ".config/systemd/user", captureServiceTimer), "timer"]] : [];

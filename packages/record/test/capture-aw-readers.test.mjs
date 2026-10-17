@@ -14,6 +14,7 @@ import { captureAwLogs } from '../lib/capture-aw.mjs';
 import { projectCommLogEntry } from '../lib/project-aweb.mjs';
 import { captureHealth } from '../lib/capture-state.mjs';
 import { finishTurn } from '../lib/canonical.mjs';
+import { writeCurrentHook } from './fixtures/capture-hook-settings.mjs';
 const stream='fixture~aw', thread='aweb:conv:shared';
 const entry=(account,n)=>({ts:`2026-01-01T00:00:0${n}Z`,ch:'mail',dir:'recv',from:account,
   conversation_id:'shared',msg_id:`${account}-${n}`,body:`needle ${account} ${n}`});
@@ -50,6 +51,8 @@ test('interleaved accounts retain exact projected IDs, per-account order, index 
   for(const turn of turns)assert.deepEqual(resolveTurn(f.store,index,turn.id),turn);
  }finally{index.close();}
  assert.match(f.cli('capture',['--status','--owner','fixture']),/fixture~aw: 6 turns/);
+ // Diagnosed as an installed host: a record root alone is not one.
+ writeCurrentHook(f.base);
  const health=captureHealth(f.root, { home: f.base });assert.deepEqual(health.rows.map(row=>row.code),['capture-status-missing','capture-success-stale']);assert.equal(health.backlog.setAsideCount,0);
 });
 
