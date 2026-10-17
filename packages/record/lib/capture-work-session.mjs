@@ -202,8 +202,8 @@ export class CaptureWorkSession {
   // when it wants a final all-stage decision; idle is merely a scheduling hint.
   // An observed interruption ends the run as interrupted, finalization included.
   yieldWorker({ resetRequired = false } = {}) {
-    if (this.start.budget.reason === "interrupted") return this.finish({ reason: "interrupted" });
-    if (this.start.pass.finalize) return this.finish({ reason: "deadline" });
+    if (this.start.pass.finalize || this.start.budget.reason === "interrupted")
+      return this.finish({ reason: this.start.budget.reason ?? "deadline" });
     this.run.publish({ pending: true, peakRssBytes: this.start.budget.peakRssBytes });
     return { outcome: "partial", reason: this.start.budget.reason ?? "deadline", continuation: true,
       ...(resetRequired ? { resetRequired: true } : {}) };
