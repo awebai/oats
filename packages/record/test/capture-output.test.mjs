@@ -172,15 +172,13 @@ test("large piped health output delivers both complete samples, banners and JSON
     assert.doesNotMatch(text.stdout, /PRIVATE/);
     if (gated) {
       // The stress prerequisite, from the stream's measured behaviour: either
-      // the replayed writes queued past the high-water mark (an asynchronous
-      // pipe, Linux CI), or every one of them was delivered before it returned
-      // (a synchronous pipe, as macOS gives the child's stdout). 800 KB cannot
-      // fit a pipe buffer, so a synchronous pipe is the only way 200+ writes of
-      // it queue nothing; it never holds output to lose at exit. Writes that
-      // queued without crossing the mark satisfy neither.
+      // the replayed writes queued past the high-water mark (as on Linux CI),
+      // or none of 200+ writes of 800 KB+ left anything queued (as on macOS),
+      // so nothing was queued at exit and the drain path had nothing to lose.
+      // Writes that queued without crossing the mark satisfy neither.
       const drained = text.messages.find(row => row.type === "stdout-drained");
-      const synchronous = drained.queued === 0 && drained.writes >= 200 && drained.bytes >= 800_000;
-      assert.ok(drained.backpressured > 0 || synchronous, JSON.stringify(drained));
+      const nothingQueued = drained.queued === 0 && drained.writes >= 200 && drained.bytes >= 800_000;
+      assert.ok(drained.backpressured > 0 || nothingQueued, JSON.stringify(drained));
     }
     const json = await command(f, ["--health", "--json"], gated);
     assert.equal(json.code, 0); assert.equal(json.stderr, "");

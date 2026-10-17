@@ -104,8 +104,12 @@ test(`after going back to ${OLD} the hook exits 1, a service start fails, and ${
   report(t, "rollback-service-start", start);
   assert.notEqual(start.Result, "success", JSON.stringify(start));
 
-  // 0.61.0's own setup: its watcher and its hooks.
-  const back = spawnSync(process.execPath, [old.cli, "setup", "--owner", owner, "--root", root], { encoding: "utf8", timeout: 300_000, env: { ...process.env } });
+  // 0.61.0's own setup, as docs/upgrading.md step 2 gives it: it takes no
+  // --root, and its first pass reads TURN_RECORD_ROOT from setup's
+  // environment. Its watcher's unit sets no environment, so that watcher
+  // records where the runner's user manager environment points it
+  // (~/.turn-record unless that sets TURN_RECORD_ROOT).
+  const back = spawnSync(process.execPath, [old.cli, "setup", "--owner", owner], { encoding: "utf8", timeout: 300_000, env: { ...process.env, TURN_RECORD_ROOT: root } });
   t.diagnostic(`${OLD} setup exit ${back.status}\n${tail(back.stdout)}\n${tail(back.stderr)}`);
   const watcher = show(captureServiceUnit, "UnitFileState", "ActiveState", "FragmentPath", "ExecStart");
   const after = Object.fromEntries(["Stop", "SessionEnd"].map(event => [event, hooks(event)]));

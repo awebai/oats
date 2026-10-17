@@ -140,11 +140,19 @@ every trigger:
 To go back:
 
 1. Install 0.61.0: `npm install -g @awebai/oats@0.61.0`.
-2. From the same user's shell, run 0.61.0's `oats setup` with the same
-   `--owner` and `--root`. It installs its capture watcher (on Linux as
+2. From the same user's shell, run 0.61.0's setup with the same owner:
+   `oats setup --owner <owner>`. It installs its capture watcher (on Linux as
    `turn-record-capture.service`, on macOS under the same
    `ai.aweb.turn-record-capture` label) and adds its own `Stop` and
-   `SessionEnd` hooks.
+   `SessionEnd` hooks. 0.61.0's setup takes no `--root` (it refuses one):
+   everything it starts records into `$TURN_RECORD_ROOT` as that process sees
+   it, else `~/.turn-record`. Its first pass runs with setup's environment, so
+   `TURN_RECORD_ROOT=<root> oats setup --owner <owner>` points that pass at
+   another root; its hooks see Claude's environment; its watcher's service
+   sets none, so the watcher gets only the user manager's environment and
+   records into `~/.turn-record` unless the user manager itself sets
+   `TURN_RECORD_ROOT`. With any other root, the watcher and the record you
+   were using part ways.
 3. In each `~/.claude*/settings.json`, delete the hook entries under `Stop` and
    `SessionEnd` whose command names `capture-hook.mjs`: 0.61.0's setup does not
    recognize them and leaves them in place.
