@@ -108,7 +108,10 @@ are read without the limit, journal-id dedupe keeps them from being appended
 twice, and the limit applies at and beyond it. While a rescan is below its
 frontier, the cursor it writes carries the frontier and that offset's own
 witness, so a second invalidation between the rescan's units keeps the larger
-of the two proofs. A replaced or rewritten log has no frontier.
+of the two proofs. A replaced or rewritten log has no frontier. That is the
+price of never refusing a captured record: an already-captured AW record too
+large for the worker's 256 MiB heap fails the worker on every rescan
+(`capture-pass-failed`), and that stream does not advance.
 One native case still captures nothing before an oversized record: an
 oversized line before the session's first timestamped line, which the
 unstamped lines before it need.
@@ -188,7 +191,10 @@ A record root alone is not an installation: one `oats recall` or one manual
 capture creates it (with `index/`), and such a host has never set capture up.
 The selected root (`--root`, then `TURN_RECORD_ROOT`, then `~/.turn-record`)
 still has to be a directory when it exists. Readable foreign service files alone do not establish installation. No evidence
-means `ok`, no warnings and no root creation. Unreadable candidates, dangling
+means `ok`, no warnings and no root creation. That includes a host that runs
+capture by other means, or was set up with `--no-hooks --no-service`: health
+reads `ok` and withholds its history and backlog, even when a status file or
+set-aside inputs exist. Unreadable candidates, dangling
 links, malformed hook settings, observed changes or exceeded reader limits are
 unknown and fail diagnosis, even if another candidate establishes installation.
 Only named files and the top level of the caller home are inspected; source
