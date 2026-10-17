@@ -126,6 +126,21 @@ test('a rescan after the cursor stops qualifying does not refuse records already
   assert.equal(f.finish({maxRecordBytes:300}).at(-1).result.setAside.reason,'record-too-large');
 });
 
+test('the captured frontier survives a second invalidation between the units of a rescan',t=>{
+  const big=JSON.stringify({ts:stamp,dir:'recv',ch:'mail',msg_id:'big',from:'alice',to:'fixture',body:'z'.repeat(5000)})+'\n';
+  const f=fixture(t,entry(0)+entry(1)+big+entry(3));f.finish();assert.equal(f.bodies().length,4);
+  // The rescan runs one record per unit, so the cursor it writes stops short
+  // of the oversized record; a second reset then lands between its units.
+  resetSourceCursors(f.root,'fixture','aw');
+  const first=f.step({maxRecords:1,maxRecordBytes:300});assert.equal(first.result.complete,false);
+  assert.ok(first.cursor.bytes<Buffer.byteLength(entry(0)+entry(1)),'the cursor stops before the oversized record');
+  resetSourceCursors(f.root,'fixture','aw');
+  const rows=f.finish({maxRecords:1,maxRecordBytes:300});
+  assert.equal(rows.some(r=>r.result.setAside),false,JSON.stringify(rows.at(-1).result));
+  assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
+  assert.deepEqual(f.bodies(),['0','1','z'.repeat(5000),'3'],'nothing refused, nothing duplicated');
+});
+
 test('a 0.61.0-shaped cursor that no longer qualifies keeps its captured frontier',t=>{
   const big=JSON.stringify({ts:stamp,dir:'recv',ch:'mail',msg_id:'big',from:'alice',to:'fixture',body:'y'.repeat(5000)})+'\n';
   const f=fixture(t,entry(0)+big);f.finish();

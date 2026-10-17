@@ -65,12 +65,16 @@ export function captureAwUnit(store, { owner, path, kind = "comm", selfName, wor
       }
       // A cursor that no longer qualifies (new epoch, reset, retry, an older
       // release's shape) still proves what it captured from this same file:
-      // records before its bytes are rescanned without the record limit.
-      const frontier = !qualified && cursor && Number.isSafeInteger(cursor.bytes) && cursor.bytes > 0 &&
-        cursor.bytes <= version.size && cursor.version?.dev === version.dev && cursor.version?.ino === version.ino &&
-        typeof cursor.witness === "string" && witness(cursor.bytes) === cursor.witness ? cursor.bytes : 0;
+      // records before its bytes are rescanned without the record limit. A
+      // rescan's cursor also carries the frontier it is still below, so a
+      // second invalidation between its units keeps the larger proof.
+      const sameFile = cursor?.version?.dev === version.dev && cursor?.version?.ino === version.ino;
+      const proof = (bytes, mark) => sameFile && Number.isSafeInteger(bytes) && bytes > 0 && bytes <= version.size &&
+        typeof mark === "string" && witness(bytes) === mark ? [bytes, mark] : [0, undefined];
+      const [frontier, frontierWitness] = [qualified ? [0, undefined] : proof(cursor?.bytes, cursor?.witness),
+        proof(cursor?.frontier, cursor?.frontierWitness)].reduce((a, b) => b[0] > a[0] ? b : a);
       job = { bytes: qualified ? cursor.bytes : 0, end: version.size, version, generation, retryGeneration,
-        epoch: journal.epoch, projection, frontier };
+        epoch: journal.epoch, projection, frontier, frontierWitness };
     }
     const unitStart = job.bytes, boundary = witness(version.size);
     const chunks = function* () {
@@ -116,7 +120,8 @@ export function captureAwUnit(store, { owner, path, kind = "comm", selfName, wor
     job.version = version; job.witness = witness(job.bytes);
     const atEnd = job.bytes === job.end;
     state.set("aw", key, { bytes: job.bytes, version, witness: job.witness, generation, retryGeneration,
-      epoch: journal.epoch, projection, complete: (scanned || atEnd) && job.end === version.size });
+      epoch: journal.epoch, projection, complete: (scanned || atEnd) && job.end === version.size,
+      ...(job.frontier > job.bytes && job.frontierWitness ? { frontier: job.frontier, frontierWitness: job.frontierWitness } : {}) });
     if (blocked && (job.bytes > blocked.offset || atEnd)) state.delete("set-aside", key);
     if (scanned || atEnd) state.delete("aw-unit", key);
     else state.set("aw-unit", key, job);

@@ -156,7 +156,9 @@ To go back:
 After going back to 0.61.0, its `oats capture --health` reports the capture
 status file this release wrote as invalid, and a capture by 0.61.0 clears the
 run history in that file. A later capture with this release writes a fresh
-status.
+status. 0.61.0 ignores the captured frontier this release keeps in an AW log's
+cursor during a rescan and drops it when it rewrites that cursor; it reads that
+log without a record limit, so nothing is lost.
 
 ## Which pi folders
 

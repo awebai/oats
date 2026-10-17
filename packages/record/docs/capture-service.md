@@ -105,8 +105,10 @@ journal epoch, a reset, a retry, or an older release's cursor), the rescan keeps
 the cursor's byte offset as a captured frontier, provided the cursor names the
 same file and its boundary witness still matches. Records before that frontier
 are read without the limit, journal-id dedupe keeps them from being appended
-twice, and the limit applies at and beyond it. A replaced or rewritten log has
-no frontier.
+twice, and the limit applies at and beyond it. While a rescan is below its
+frontier, the cursor it writes carries the frontier and that offset's own
+witness, so a second invalidation between the rescan's units keeps the larger
+of the two proofs. A replaced or rewritten log has no frontier.
 One native case still captures nothing before an oversized record: an
 oversized line before the session's first timestamped line, which the
 unstamped lines before it need.
