@@ -1549,7 +1549,7 @@ The qualification harness (`test/capture-qualify-*-linux.test.mjs`, helpers in
 `test/fixtures/qualify*.mjs`) runs under the same guard on the dispatched
 "Linux tests" runner only. It measures, and reports as JSON lines and tables,
 first upgrade and no-op at 1,300 and 3,000 synthetic streams (scaled against
-the operator's 1,315-stream, 8.4 GB population by a stated factor), an
+a population of about 1,300 streams and 8.4 GB of journals by a stated factor), an
 operator-shaped first upgrade at both counts with most bytes in sessions over
 8 MiB on the retained path, caps-off
 memory scaling, the outgoing 0.61.0 and 0.53.0 releases side by side,

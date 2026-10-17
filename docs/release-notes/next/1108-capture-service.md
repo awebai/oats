@@ -7,8 +7,9 @@
   then its health and doctor checks. Do not use these flags or diagnostics as
   pre-upgrade checks on 0.61.0 or older binaries, which do not have them. See
   [capture service release order](../upgrading.md#capture-service-release-order).
-- Run `oats setup` (standalone: `turn-record setup`) once per deployment, from
-  the operator's shell, with the deployment's owner and root. Installing the CLI
+- Run `oats setup` (standalone: `turn-record setup`) once per user on each
+  host, from that user's shell, with the deployment's owner and root: setup
+  writes that user's `~/.claude*/settings.json` and user manager. Installing the CLI
   alone converts nothing: persisted hooks and manager definitions change only
   when setup runs. Owned capture watchers convert to the periodic service there.
   A foreign, disabled or masked definition is refused before any change, with
@@ -22,6 +23,10 @@
   `~/.claude*/settings.json` from `async: true`, `timeout: 120` to
   `--quiet --hook` with `async: false`, `timeout: 10`, even where the command
   already matches. Until setup runs, the persisted hooks keep the old fields.
+- Setup rewrites each `~/.claude*/settings.json` it changes with mode `0600`.
+- The capture status file keeps `schemaVersion: 1` while it gains fields, a
+  contract decision: 0.61.0 reads a status written by this release as invalid
+  (see the rollback note in the upgrade guide).
 - A service refusal changes nothing. A service failure after preflight no
   longer skips capture: setup still writes the hooks and runs the first pass,
   then exits 1 and ends with a fixed-format
@@ -38,8 +43,13 @@
 - After conversion, check `oats capture --health` (or
   `turn-record capture --health`) against the intended root, and the capture
   warnings of `oats doctor`, keeping the same `HOME` and `TURN_RECORD_ROOT`.
-  Definition files, an `ok` diagnosis or no warnings do not prove the schedule
-  is registered and enabled. A missing recent success can reflect sleep or an
+  The health rows are `capture-status-missing`, `capture-status-invalid`,
+  `capture-success-stale`, `capture-pass-failed`, `capture-input-set-aside`,
+  `capture-setup-required` (an owned capture watcher or hook that setup has
+  not converted) and `capture-service-pending` (setup's activation is not
+  verified); `oats doctor` reports a failed health command as
+  `capture-health-unavailable`. Definition files, an `ok` diagnosis or no
+  warnings do not prove the schedule is registered and enabled. A missing recent success can reflect sleep or an
   off-host machine; progress or cleared issues alone are not success. Update
   the CLI before relying on complete piped health output.
 

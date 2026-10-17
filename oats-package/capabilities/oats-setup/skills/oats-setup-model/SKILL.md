@@ -33,7 +33,8 @@ oats status               # the instances on this machine, and their drift
 
 Record capture setup is separate from workspace configuration and the host
 automation timer. The package owns its service policy and migration readers:
-consult `packages/record/docs/capture-service.md#setup-service-migration` and
+from OATS 0.62.0, consult
+`packages/record/docs/capture-service.md#setup-service-migration` and
 `docs/upgrading.md#capture-service-release-order` in the installed CLI.
 `oats setup` can change capture hooks and user-manager definitions and run a
 first pass; it is not a diagnostic to run implicitly.
@@ -54,7 +55,7 @@ An inactive finite worker between timer ticks is not evidence of an unhealthy
 schedule; do not promise a permanent PID or infer completion from hook launch.
 Releases 0.56–0.61 do not provide this conversion; follow their own instructions.
 
-For service A, the package's `turn-record capture --health [--json]` reads
+For service A, from OATS 0.62.0, the package's `turn-record capture --health [--json]` reads
 installation evidence, receipt freshness/failure and current issues without
 capture, repair or manager calls. Warning rows are valid diagnosis, not a command
 failure. Unreadable/unknown candidates fail closed. An `ok` result or definition
