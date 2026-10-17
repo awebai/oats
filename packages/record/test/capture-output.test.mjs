@@ -10,6 +10,7 @@ import { DerivedState } from "../lib/derived-state.mjs";
 import { captureHealth, writeCaptureStatus } from "../lib/capture-state.mjs";
 import { failureAfterAttempt } from "../lib/capture-failures.mjs";
 import { captureLockPath } from "../lib/capture-lock.mjs";
+import { writeCurrentHook } from "./fixtures/capture-hook-settings.mjs";
 
 const bin = resolve(import.meta.dirname, "../bin/capture.mjs");
 function fixture(t, { watchPrivacy = false, watchFailure = false } = {}) {
@@ -21,7 +22,6 @@ function fixture(t, { watchPrivacy = false, watchFailure = false } = {}) {
   fs.writeFileSync(driver, `
 ${watchPrivacy ? `import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
-import { writeCurrentHook } from './fixtures/capture-hook-settings.mjs';
 const evidence = { hints: [], watcherClosed: 0, intervalClosed: 0, postCloseTimers: 0 };
 let stopped = false, periodic;
 const timeout = globalThis.setTimeout, clear = globalThis.clearInterval;
