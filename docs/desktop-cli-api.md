@@ -5139,7 +5139,25 @@ answered before any effect and carries [`details.holder`](#busy-holder)). The
 codes a retire answers only before any effect are
 [one list](#before-effect-codes). A recovery whose Git status disagrees with
 the source's carries `details: {home, statusDisagreement: {repo, rows: [{path,
-source, recovery}], total}}` (the first 10 paths). Usage errors are text on
+source, recovery}], total}}` (the first 10 paths). A worktree recovery whose
+bytes disagree with the source's (`worktree recovery verification disagreed
+with the source`) carries `details: {home, recoveryDisagreement: {basis:
+"current", entries: [{path, kind}], complete, stoppedBy?}}`, and the message
+names its first 5 entries. The refusal itself is the exact digest comparison
+and is unchanged; this report is read only after it refused, from the source
+and the copy as they are then (`basis: "current"`), so a source that changed
+since its bytes were recorded can show other differences, or none. `kind` is
+one of `missing` (in the source, not the copy), `extra`, `type`, `mode`,
+`link-target` and `file-content`, nothing is listed below a `missing`,
+`extra` or `type` entry, and one path can carry several kinds. `path` is
+relative to the worktree, with the same Git paths left out as the
+comparison: each printable ASCII byte as itself, a backslash as `\\`, every
+other byte as `\xHH`. No content, link target or absolute path is reported,
+and no link is followed. The search is bounded: at most 20 entries, 200,000
+entries looked at, 64 MiB of file bytes read (files are compared in chunks,
+sizes first) and 5 seconds; when it stops early, `complete` is `false` and
+`stoppedBy` names why (`discrepancies`, `entries`, `bytes`, `time`, or
+`unreadable` when a tree could not be read). Usage errors are text on
 stderr, not envelopes.
 
 <a id="retire-reached"></a>
