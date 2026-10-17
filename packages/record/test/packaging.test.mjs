@@ -98,8 +98,10 @@ test("npm pack tarball installs and runs in a clean room", { timeout: 120_000 },
     foreignCommands,
     "every foreign hook kept verbatim, lookalikes included",
   );
-  assert.match(installed.hooks.Stop[1].hooks[0].command, /capture\.mjs --owner cleanroom/);
-  assert.match(installed.hooks.SessionEnd[0].hooks[0].command, /capture\.mjs --owner cleanroom/);
+  for (const command of [installed.hooks.Stop[1].hooks[0].command, installed.hooks.SessionEnd[0].hooks[0].command]) {
+    assert.match(command, /\/bin\/capture-hook\.mjs'? --owner cleanroom --quiet /, "hooks run the package's hook entry");
+    assert.doesNotMatch(command, /--hook/);
+  }
   assert.equal(setup(["--owner", "cleanroom"]).status, 0);
   assert.equal(readFileSync(settingsPath, "utf8"), once, "second run is a no-op");
 
