@@ -4,7 +4,7 @@ import childProcess, { spawnSync } from "node:child_process";
 import { syncBuiltinESMExports, createRequire } from "node:module";
 import { readCurrentIssueBacklog, readIssueBacklog, supportsReadOnlySqlite } from "../lib/capture-issues.mjs";
 import { readCaptureDatabase } from "../lib/capture-db-reader.mjs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
 import { DerivedState } from "../lib/derived-state.mjs";
@@ -90,6 +90,18 @@ test("capture --health under the kernel names oats remedies; standalone it names
   assert.doesNotMatch(viaKernel.stdout, /turn-record setup/);
   const alone = f.cli(); assert.equal(alone.status, 0, alone.stderr);
   assert.match(JSON.parse(alone.stdout).rows[0].message, /Run turn-record setup --root /);
+});
+
+test("capture --health through an npm-style oats symlink names oats remedies", t => {
+  // npm installs the kernel as a bin symlink named oats; node keeps that path
+  // in argv[1].
+  const f = fixture(t), link = join(f.base, "bin", "oats");
+  fs.mkdirSync(dirname(link)); fs.symlinkSync(resolve(import.meta.dirname, "../../../bin/oats.mjs"), link);
+  const viaLink = spawnSync(process.execPath, [link, "capture", "--health", "--root", f.root],
+    { encoding: "utf8", env: { HOME: f.base, TMPDIR: f.base, PATH: process.env.PATH } });
+  assert.equal(viaLink.status, 0, viaLink.stderr);
+  assert.match(viaLink.stdout, /capture-status-missing: .*Run oats setup --root /);
+  assert.doesNotMatch(viaLink.stdout, /turn-record setup/);
 });
 
 test("never-installed health leaves its absent root absent", t => {

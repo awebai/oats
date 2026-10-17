@@ -12,7 +12,7 @@
 // accounts) whose sources are never captured — see lib/ignore.mjs.
 // Reconciliation is the capture; hooks and watch only decide when to run it.
 
-import { closeSync, constants, fstatSync, openSync, readFileSync, watch } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync, watch } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import process from "node:process";
@@ -214,9 +214,14 @@ const store = args.hook || args.health ? null : new RecordStore(root, { owner })
 if (args.health) {
   try {
     // Remedies name the command the person has: `oats` when the kernel runs
-    // this script (it imports it, so argv[1] is the kernel's entry) or handed a
-    // node, as setup's remedies do; `turn-record` when run alone.
-    const viaKernel = basename(process.argv[1] ?? "") === "oats.mjs" || isAbsolute(process.env.OATS_NODE_BIN ?? "");
+    // this script (it imports it, so argv[1] is the kernel's entry, an npm bin
+    // symlink named oats included) or handed a node, as setup's remedies do;
+    // `turn-record` when run alone.
+    const entry = (() => {
+      try { return realpathSync(process.argv[1] ?? ""); }
+      catch (error) { if (error.code === "ENOENT") return process.argv[1] ?? ""; throw error; }
+    })();
+    const viaKernel = basename(entry) === "oats.mjs" || isAbsolute(process.env.OATS_NODE_BIN ?? "");
     const health = viaKernel ? captureHealthForDoctor(root) : captureHealth(root);
     if (args.json) console.log(JSON.stringify(health, null, 2));
     else {
