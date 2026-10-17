@@ -12,7 +12,7 @@ import { test } from "node:test";
 import { RecordStore } from "../lib/store.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
 import { DerivedState } from "../lib/derived-state.mjs";
-import { withCaptureGroup } from "../lib/capture-context.mjs";
+import { captureContext, withCaptureGroup } from "../lib/capture-context.mjs";
 import { finishTurn } from "../lib/canonical.mjs";
 
 const require = createRequire(import.meta.url);
@@ -206,12 +206,14 @@ test("tombstones and cross-stream duplicates appended after a warm pass agree wi
 
 test("inside a capture work group a warm stream outside the group still refuses", (t) => {
   const root = fixture(t), { store, index } = open(t, root);
-  const cursors = () => index.db.prepare(`SELECT s.stream, s.indexed_count, b.bytes, b.indexed_count AS byte_count, b.epoch
-    FROM index_state s LEFT JOIN index_bytes b ON s.stream = b.stream ORDER BY s.stream`).all();
-  const before = cursors(), state = new DerivedState(root);
-  t.after(() => state.close());
-  assert.throws(() => withCaptureGroup(store, [stream(0)], () => index.update(), { state }), /stream outside capture work group/);
-  assert.deepEqual(cursors(), before);
-  // The group's borrowed connection is still open: update never closes it.
-  assert.equal(state.get("journal", stream(0)).complete, true);
+  const evidence = () => ({ counts: index.counts(), cursors: index.db.prepare(`SELECT s.stream, s.indexed_count, b.bytes,
+    b.indexed_count AS byte_count, b.epoch FROM index_state s LEFT JOIN index_bytes b ON s.stream = b.stream ORDER BY s.stream`).all() });
+  const before = evidence();
+  const checkpoint = withCaptureGroup(store, [stream(0)], () => {
+    assert.throws(() => index.update(), /stream outside capture work group/);
+    // Read through the borrowed connection before the group ends: update never closes it.
+    return captureContext(store).state.get("journal", stream(0));
+  });
+  assert.equal(checkpoint.complete, true);
+  assert.deepEqual(evidence(), before);
 });
