@@ -7,7 +7,11 @@
   grace, capped by the pass's deadline. The worker writes its own
   `failed`/`interrupted` receipt and keeps its committed counts and the previous
   `lastSuccess`. A killed worker leaves its `running` receipt, which the next
-  pass records as interrupted. The lock is released and the command exits 1.
+  pass records as interrupted. The worker also catches a signal sent to the
+  caller's whole process group (Ctrl-C, `timeout`, a service manager), so it
+  is not killed mid-unit. An interrupted run's failure message now reads
+  "Capture execution was interrupted.", for a stop and for a later recovery
+  alike. The lock is released and the command exits 1.
   `capture --home`, `--file` and `--reset-cursors` still run in the calling
   process. They now stop at their safe points (before and after taking the
   lock, before each format's batch, before the index update), answer their
