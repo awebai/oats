@@ -1512,10 +1512,13 @@ reason and recovery without inventing scheduling or capture results. Apply
 can leave backups, stopped jobs or written definitions before a later failure;
 there is no global atomic rollback. Inspect the reported state and rerun.
 
-**Pending activation.** Before its first manager change or definition write,
-setup writes a private (0600) pending-activation marker,
-`<root>/capture-service-pending.json`, and removes it only once activation is
-verified (`service: activation verified; pending-activation marker removed`).
+**Pending activation.** Before its first replacement backup, manager change or
+definition write, setup writes a private (0600) pending-activation marker,
+`<root>/capture-service-pending.json`, the way it writes every setup target:
+against what preflight saw, refusing a marker or record root that was replaced,
+linked or created since (`setup target changed since preflight` / `setup target
+parent changed since preflight`; re-run setup). It removes the marker only once
+activation is verified (`service: activation verified; pending-activation marker removed`).
 A failure in between leaves it. On a rerun, a loaded, unmasked disabled unit
 beside setup's own marked definitions and a live marker is setup's own
 unverified activation (on Linux, the timer a failed `enable --now` left): it is

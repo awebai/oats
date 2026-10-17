@@ -277,6 +277,19 @@ test("a missing ancestor replaced by a link after preflight refuses before any a
   }
 });
 
+test("a pending-activation marker replaced by a link after preflight is refused, never followed", t => {
+  for (const platform of ["linux", "darwin"]) {
+    const f = fixture(t, platform), marker = join(f.root, "capture-service-pending.json"), outside = join(f.base, `outside-${platform}`);
+    fs.mkdirSync(f.root, { recursive: true }); write(outside, "not the marker");
+    const plan = f.preflight();
+    fs.symlinkSync(outside, marker);
+    assert.throws(() => applyCaptureService(plan), /setup target changed since preflight/);
+    assert.equal(fs.readFileSync(outside, "utf8"), "not the marker", "the write did not follow the link");
+    assert.equal(fs.lstatSync(marker).isSymbolicLink(), true);
+    assert.deepEqual(f.operations(), [], "refused before any manager change");
+  }
+});
+
 test("a missing ancestor linked after stopping an old registration prevents redirected writes and retains partial-apply evidence", t => {
   for (const platform of ["linux", "darwin"]) {
     const f = fixture(t, platform), ancestor = join(f.home, platform === "linux" ? ".config" : "Library");
@@ -290,8 +303,10 @@ test("a missing ancestor linked after stopping an old registration prevents redi
       [timer]: absent.state.timer,
     } } : { mac: { registered: true, disabled: false, active: true, path: f.definition.files[0].path,
       argv: ["/old/node", "/old/package/bin/capture.mjs", "--watch", "--owner", "old-owner"], interval: null } }));
-    const plan = f.preflight(), run = plan.run, hooks = fs.readFileSync(f.settings);
+    // The record root exists before preflight: one appearing after it is a
+    // changed marker parent, refused before any manager action.
     const status = join(f.root, "capture-status.json"); write(status, "prior status bytes");
+    const plan = f.preflight(), run = plan.run, hooks = fs.readFileSync(f.settings);
     plan.run = (command, args) => {
       const result = run(command, args);
       if (args.includes(platform === "linux" ? "stop" : "bootout")) fs.symlinkSync(external, ancestor);

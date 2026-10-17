@@ -207,6 +207,7 @@ export function preflightCaptureService({ platform, node, request, setupCommand,
   // unit, or one without setup's mark, it is stale and authorizes nothing.
   const markerPath = join(plan.request.root, capturePendingActivationName), marker = captureSetupSnapshot(markerPath);
   if (!["absent", "file"].includes(marker.kind)) throw new Error(`cannot safely read the pending-activation marker ${markerPath}`);
+  plan.marker = marker;
   plan.pending = marker.kind === "absent" ? null :
     { path: markerPath, snapshot: marker, stale: !files.every(file => file.ownership === "periodic") };
   // A label registered from any other plist is not a named file: booting it
@@ -265,8 +266,12 @@ function applyCaptureServiceSteps(plan, createdParents, applied) {
   const current = inspect(plan);
   if (stateIdentity(current, plan.platform) !== stateIdentity(plan.state, plan.platform)) throw new Error("capture manager identity/enablement changed since preflight; re-run setup");
   const markerPath = join(plan.request.root, capturePendingActivationName);
+  // The marker is written like every other setup target: against what
+  // preflight saw, never through a link or a replaced file.
+  let markerSnapshot = plan.marker;
   if (plan.pending?.stale) {
     recheckCaptureSetup(plan.pending.snapshot, createdParents); fs.rmSync(markerPath);
+    markerSnapshot = captureSetupSnapshot(markerPath);
     changed(`removed stale pending-activation marker ${markerPath} (no setup-marked capture definition); it authorizes nothing`);
   }
   // Written before the first manager change or definition write, removed only
@@ -274,13 +279,15 @@ function applyCaptureServiceSteps(plan, createdParents, applied) {
   let marked = false;
   const mark = () => {
     if (marked) return;
-    fs.mkdirSync(plan.request.root, { recursive: true });
-    fs.writeFileSync(markerPath, JSON.stringify({ platform: plan.platform, startedAt: new Date().toISOString() }) + "\n", { mode: 0o600 });
-    fs.chmodSync(markerPath, 0o600); marked = true;
+    writeCaptureSetup(markerSnapshot, JSON.stringify({ platform: plan.platform, startedAt: new Date().toISOString() }) + "\n", createdParents);
+    marked = true;
     changed(`pending-activation marker written: ${markerPath}`);
   };
   const replaced = files.filter(file => file.changed && file.snapshot.kind !== "absent");
   if (replaced.length) {
+    // Replacing definitions is activation work: the marker comes first, and its
+    // write creates a missing root as a recorded parent the backups then use.
+    mark();
     const directory = join(plan.request.root, "service-backups", `${new Date().toISOString().replace(/:/g, "-")}-${randomUUID()}`);
     fs.mkdirSync(dirname(directory), { recursive: true }); fs.mkdirSync(directory);
     changed(`replacement backups at ${directory}`);
