@@ -14,6 +14,9 @@
 import { closeSync, existsSync, mkdirSync, openSync, readSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { keysetRows } from "./sqlite-rows.mjs";
+import { captureContext } from "./capture-context.mjs";
+import { DerivedState, fileVersion, sameVersion } from "./derived-state.mjs";
+import { validJournalCheckpoint } from "./store.mjs";
 import { INDEX_SCHEMA_VERSION as SCHEMA_VERSION, TEXT_SCHEMA, resetIndexTables } from "./index-reset.mjs";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
@@ -138,10 +141,20 @@ export class RecordIndex {
     }
     this.db.exec(SCHEMA);
     this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    this.statements = new Map();
   }
 
   close() {
+    this.statements.clear();
     this.db.close();
+  }
+
+  // One prepared statement per SQL text for this connection. Only for
+  // statements run to completion (run/get/all), never left iterating.
+  statement(sql) {
+    let prepared = this.statements.get(sql);
+    if (!prepared) { prepared = this.db.prepare(sql); this.statements.set(sql, prepared); }
+    return prepared;
   }
 
   recordOwner() {
@@ -153,35 +166,86 @@ export class RecordIndex {
   // Old releases keep writing index_state's count. A separate cursor table
   // leaves that schema/writer compatible; differing counts invalidate our
   // cursor rather than trusting a byte position left behind by a downgrade.
+  //
+  // One capture.db connection serves the whole pass. A census without locks
+  // proves a stream current only when its complete validation checkpoint
+  // names the journal's exact current version and the search cursor agrees
+  // with it in bytes, count (both tables) and epoch; such a stream needs no
+  // lock and no validation. Every other stream is a candidate and is
+  // re-read under its stream lock. The census is not an atomic snapshot of
+  // concurrent writers: a change after a stream is observed is indexed by a
+  // later pass, as with any sequential pass.
   update() {
-    let reset = false;
-    for (const row of keysetRows(this.db, `SELECT s.stream, s.indexed_count, b.bytes,
+    const context = captureContext(this.store);
+    const state = context ? context.state : new DerivedState(this.store.root);
+    try {
+      // Skip evidence is read from this connection: it must still be the file.
+      if (!context) state.assertFile();
+      const current = this.#reconcile(state, !context);
+      this.#catchUp(state, !context, current);
+      if (!context) state.assertFile();
+    } finally { if (!context) state.close(); }
+  }
+
+  // Indexed streams whose evidence is incomplete are validated under their
+  // locks first: if any proves the union stale (missing or replaced journal,
+  // new epoch, invalid cursor, legacy count disagreement), the whole union
+  // resets before any stream catches up, and no stream is current against
+  // the new, empty generation. → the streams proven current, each with the
+  // search-cursor row its proof used.
+  #reconcile(state, owned) {
+    const current = new Map();
+    const rows = keysetRows(this.db, `SELECT s.stream, s.indexed_count, b.bytes,
       b.indexed_count AS byte_count, b.epoch FROM index_state s
-      LEFT JOIN index_bytes b ON s.stream = b.stream`, "stream")) {
-      const checkpoint = this.store.journalCheckpoint(row.stream);
+      LEFT JOIN index_bytes b ON s.stream = b.stream`, "stream");
+    for (const row of rows) {
+      const path = this.store.journalPath(row.stream);
+      if (proven(row, state.get("journal", row.stream), fileVersion(path))) { current.set(row.stream, row); continue; }
+      const checkpoint = this.store.withStreamLock(row.stream, () => {
+        if (owned) state.assertFile();
+        return this.store.validateJournal(row.stream, state);
+      });
       let boundary = true;
       if (Number.isSafeInteger(row.bytes) && row.bytes > 0 && row.bytes < checkpoint.bytes) {
-        const fd = openSync(this.store.journalPath(row.stream), "r"), byte = Buffer.alloc(1);
+        const fd = openSync(path, "r"), byte = Buffer.alloc(1);
         try { boundary = readSync(fd, byte, 0, 1, row.bytes - 1) === 1 && byte[0] === 10; }
         finally { closeSync(fd); }
       }
       if (!Number.isSafeInteger(row.bytes) || row.bytes < 0 || !boundary || row.indexed_count !== row.byte_count ||
           row.epoch !== checkpoint.epoch || row.bytes > checkpoint.bytes || row.byte_count > checkpoint.count) {
-        reset = true;
-        break;
+        // Deleting a stream or changing its history can change tombstone authority
+        // and cross-stream dedupe. Rebuild the derived union, not only its FTS rows.
+        this.reset();
+        return new Map();
       }
     }
-    // Deleting a stream or changing its history can change tombstone authority
-    // and cross-stream dedupe. Rebuild the derived union, not only its FTS rows.
-    if (reset) this.reset();
+    return current;
+  }
+
+  // Index the new bytes of every live stream not proven current, each under
+  // its stream lock, in bounded transactions that commit rows and cursors
+  // together. No transaction is open while the next stream lock is taken.
+  // A proof holds only for the cursor it read: another index connection may
+  // have reset the union or moved the cursor since, so the cursor is read
+  // again when the stream's turn comes and a changed one makes it a candidate.
+  #catchUp(state, owned, current) {
     const owner = this.store.owner;
     if (owner) this.db.prepare("INSERT INTO meta (key, value) VALUES ('owner', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(owner);
     const effectiveOwner = this.recordOwner();
-    const getState = this.db.prepare("SELECT * FROM index_bytes WHERE stream = ?");
-    const setCount = this.db.prepare("INSERT INTO index_state VALUES (?, ?) ON CONFLICT(stream) DO UPDATE SET indexed_count=excluded.indexed_count");
-    const setBytes = this.db.prepare("INSERT INTO index_bytes VALUES (?, ?, ?, ?) ON CONFLICT(stream) DO UPDATE SET bytes=excluded.bytes, indexed_count=excluded.indexed_count, epoch=excluded.epoch");
+    const getState = this.statement("SELECT * FROM index_bytes WHERE stream = ?");
+    const setCount = this.statement("INSERT INTO index_state VALUES (?, ?) ON CONFLICT(stream) DO UPDATE SET indexed_count=excluded.indexed_count");
+    const setBytes = this.statement("INSERT INTO index_bytes VALUES (?, ?, ?, ?) ON CONFLICT(stream) DO UPDATE SET bytes=excluded.bytes, indexed_count=excluded.indexed_count, epoch=excluded.epoch");
+    const cursor = this.statement(`SELECT s.indexed_count, b.bytes, b.indexed_count AS byte_count, b.epoch FROM index_state s
+      LEFT JOIN index_bytes b ON s.stream = b.stream WHERE s.stream = ?`);
     for (const streamId of this.store.iterateStreams()) {
-      this.store.withStreamLock(streamId, () => this.store.withDerived(state => {
+      const proof = current.get(streamId);
+      if (proof) {
+        const now = cursor.get(streamId);
+        if (now?.indexed_count === proof.indexed_count && now.bytes === proof.bytes &&
+            now.byte_count === proof.byte_count && now.epoch === proof.epoch) continue;
+      }
+      this.store.withStreamLock(streamId, () => {
+        if (owned) state.assertFile();
         const checkpoint = this.store.validateJournal(streamId, state);
         const row = getState.get(streamId);
         const previous = row?.stream != null ? row : null;
@@ -208,12 +272,13 @@ export class RecordIndex {
             } catch (err) { this.db.exec("ROLLBACK"); throw err; }
           }
         } finally { iterator.return(); }
-      }));
+      });
     }
   }
 
   // Full rebuild = reset + update from zero. Same code path as update().
   reset() {
+    this.statements.clear();
     this.db.exec("BEGIN");
     try {
       resetIndexTables(this.db);
@@ -231,20 +296,20 @@ export class RecordIndex {
   // streams: first seen wins.
   addTurn(turn, streamId, owner) {
     if (typeof turn.id !== "string") return;
-    const existing = this.db.prepare("SELECT stream FROM turns WHERE id = ?").get(turn.id);
+    const existing = this.statement("SELECT stream FROM turns WHERE id = ?").get(turn.id);
     if (existing) {
       // Duplicate id across streams. Keep attribution deterministic and in
       // agreement with RecordStore.readAll(): alphabetically first stream,
       // regardless of indexing order.
       if (streamId < existing.stream) {
-        this.db.prepare("UPDATE turns SET stream = ? WHERE id = ?").run(streamId, turn.id);
+        this.statement("UPDATE turns SET stream = ? WHERE id = ?").run(streamId, turn.id);
       }
       return;
     }
 
     const fromName = String(turn.from ?? "");
     // Hidden if a valid tombstone already arrived for this id.
-    const hidden = this.db.prepare("SELECT 1 AS found FROM tombstones WHERE ref = ? AND (from_name = ? OR from_name = ?) LIMIT 1")
+    const hidden = this.statement("SELECT 1 AS found FROM tombstones WHERE ref = ? AND (from_name = ? OR from_name = ?) LIMIT 1")
       .get(turn.id, fromName, owner ?? fromName)?.found === 1 ? 1 : 0;
 
     // Sessions are one turn per native event (no snapshots, nothing to
@@ -252,11 +317,10 @@ export class RecordIndex {
     const events = 0;
     const superseded = 0;
 
-    this.db
-      .prepare(
-        `INSERT INTO turns (id, ts, from_name, to_name, thread, kind, source, fidelity, stream, events, hidden, superseded)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
+    this.statement(
+      `INSERT INTO turns (id, ts, from_name, to_name, thread, kind, source, fidelity, stream, events, hidden, superseded)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
       .run(
         turn.id,
         String(turn.ts ?? ""),
@@ -275,24 +339,22 @@ export class RecordIndex {
     if (turn.kind === "tombstone") {
       for (const link of turn.links ?? []) {
         if (link.rel !== "tombstones" || typeof link.ref !== "string") continue;
-        this.db
-          .prepare("INSERT OR IGNORE INTO tombstones (ref, from_name) VALUES (?, ?)")
+        this.statement("INSERT OR IGNORE INTO tombstones (ref, from_name) VALUES (?, ?)")
           .run(link.ref, fromName);
         // Apply to a target that arrived first.
-        const target = this.db
-          .prepare("SELECT id, from_name FROM turns WHERE id = ? AND hidden = 0")
+        const target = this.statement("SELECT id, from_name FROM turns WHERE id = ? AND hidden = 0")
           .get(link.ref);
         if (target && (target.from_name === fromName || (owner && fromName === owner))) {
-          this.db.prepare("UPDATE turns SET hidden = 1 WHERE id = ?").run(target.id);
-          this.db.prepare("DELETE FROM turn_text WHERE turn_id = ?").run(target.id);
-          this.db.prepare("DELETE FROM segments WHERE note_id = ?").run(target.id);
-          this.db.prepare("DELETE FROM spawns WHERE note_id = ?").run(target.id);
+          this.statement("UPDATE turns SET hidden = 1 WHERE id = ?").run(target.id);
+          this.statement("DELETE FROM turn_text WHERE turn_id = ?").run(target.id);
+          this.statement("DELETE FROM segments WHERE note_id = ?").run(target.id);
+          this.statement("DELETE FROM spawns WHERE note_id = ?").run(target.id);
         }
       }
     }
 
     if (!hidden && !superseded) {
-      const insText = this.db.prepare(
+      const insText = this.statement(
         "INSERT INTO turn_text (turn_id, loc, role, text) VALUES (?, ?, ?, ?)",
       );
       for (const doc of this.extractText(turn)) {
@@ -323,26 +385,23 @@ export class RecordIndex {
       }
     }
     if (tag) {
-      this.db
-        .prepare(
-          "INSERT OR IGNORE INTO tags (tag_id, target_ref, about, acts, case_slug, note) VALUES (?, ?, ?, ?, ?, ?)",
-        )
+      this.statement(
+        "INSERT OR IGNORE INTO tags (tag_id, target_ref, about, acts, case_slug, note) VALUES (?, ?, ?, ?, ?, ?)",
+      )
         .run(turn.id, tag.target, JSON.stringify(tag.about), JSON.stringify(tag.acts), tag.caseSlug, tag.note);
     }
     const outfit = outfitParsed;
     if (outfit) {
-      this.db
-        .prepare("INSERT OR IGNORE INTO outfits (outfit_id, task, status, members) VALUES (?, ?, ?, ?)")
+      this.statement("INSERT OR IGNORE INTO outfits (outfit_id, task, status, members) VALUES (?, ?, ?, ?)")
         .run(turn.id, outfit.task, outfit.status, JSON.stringify(outfit.members));
     }
     if (segParsed && !hidden) {
       const locN = (r) => Number(/line:(\d+)/.exec(r ?? "")?.[1] ?? null);
       const tsMs = Date.parse(String(turn.ts ?? ""));
-      this.db
-        .prepare(
-          `INSERT OR IGNORE INTO segments (note_id, thread, start_n, end_n, type, outcome, about, established, lesson, ts, ts_ms)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
+      this.statement(
+        `INSERT OR IGNORE INTO segments (note_id, thread, start_n, end_n, type, outcome, about, established, lesson, ts, ts_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
         .run(
           turn.id,
           segParsed.thread,
@@ -357,15 +416,13 @@ export class RecordIndex {
           Number.isFinite(tsMs) ? tsMs : 0,
         );
       // Full established+lesson searchable under role "segment".
-      this.db
-        .prepare("INSERT INTO turn_text (turn_id, loc, role, text) VALUES (?, ?, ?, ?)")
+      this.statement("INSERT INTO turn_text (turn_id, loc, role, text) VALUES (?, ?, ?, ?)")
         .run(turn.id, "", "segment", segParsed.established + (segParsed.lesson ? "\n" + segParsed.lesson : ""));
     }
     if (spawnParsed && !hidden) {
-      this.db
-        .prepare(
-          "INSERT OR IGNORE INTO spawns (note_id, agent_thread, outfit_id, task, harness, grant_ref, ts) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        )
+      this.statement(
+        "INSERT OR IGNORE INTO spawns (note_id, agent_thread, outfit_id, task, harness, grant_ref, ts) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
         .run(turn.id, spawnParsed.agent, spawnParsed.outfit, spawnParsed.task, spawnParsed.harness, spawnParsed.grant, String(turn.ts ?? ""));
     }
   }
@@ -537,6 +594,16 @@ export function extractTurnText(turn) {
 // Claude Code text extraction, re-exported for compatibility; the
 // per-format extractors live in formats.mjs.
 export const extractSessionText = extractCcText;
+
+// A stream whose search cursor is complete against a complete validation of
+// the journal's exact current version. Anything missing, malformed, partial
+// or disagreeing is unproven, never a reason to skip.
+function proven(row, checkpoint, version) {
+  return version !== null && validJournalCheckpoint(checkpoint, version.size) && checkpoint.complete && !checkpoint.resetting &&
+    sameVersion(checkpoint.version, version) && row.epoch === checkpoint.epoch &&
+    Number.isSafeInteger(row.bytes) && row.bytes === checkpoint.bytes &&
+    row.byte_count === row.indexed_count && row.byte_count === checkpoint.count;
+}
 
 export function dropIndex(store) {
   rmSync(join(store.root, "index"), { recursive: true, force: true });

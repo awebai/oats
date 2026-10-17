@@ -89,6 +89,7 @@ export class CaptureIndexReset {
       // No capture.db transaction spans this atomic index operation. The token
       // commits with the reset, so recovery cannot erase index work performed
       // after that commit just because sweep publication subsequently failed.
+      this.index.statements.clear(); // prepared against the tables the reset recreates
       this.index.db.exec("BEGIN");
       try {
         resetIndexTables(this.index.db);
