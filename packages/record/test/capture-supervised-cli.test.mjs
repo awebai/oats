@@ -9,6 +9,7 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { RecordStore } from "../lib/store.mjs";
+import { DerivedState } from "../lib/derived-state.mjs";
 import { readCaptureStatus } from "../lib/capture-status.mjs";
 import { acquireCaptureLock, captureLockPath } from "../lib/capture-lock.mjs";
 import { captureSessions } from "../lib/capture-cc.mjs";
@@ -267,6 +268,25 @@ test("CLI TERM observed by the pass's finalization worker ends its run failed/in
   assert.equal(fs.existsSync(captureLockPath(f.root)), false);
 });
 
+test("CLI TERM during a cursor reset is answered after the committed reset, which it says was committed", t => {
+  const f = fixture(t), preload = join(f.base, "reset-preload.mjs");
+  // Self-TERM inside the reset's synchronous transaction (its generation ids).
+  fs.writeFileSync(preload, `import crypto from "node:crypto"; import fs from "node:fs"; import { syncBuiltinESMExports } from "node:module";
+    const randomUUID = crypto.randomUUID; let sent = false;
+    crypto.randomUUID = (...args) => {
+      if (!sent && fs.existsSync(${JSON.stringify(captureLockPath(f.root))})) { sent = true; process.kill(process.pid, "SIGTERM"); }
+      return randomUUID(...args);
+    };
+    syncBuiltinESMExports();`);
+  const result = spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, bin, "--reset-cursors", "--source", "cc", "--json"],
+    { cwd: f.base, encoding: "utf8", env: f.env, timeout: 30000 });
+  assert.equal(result.status, 1, result.stdout + result.stderr); assert.equal(result.signal, null);
+  assert.deepEqual(JSON.parse(result.stdout), { status: "failed", complete: false, error: "capture interrupted by SIGTERM after the cursor reset was committed" });
+  const state = new DerivedState(f.root), reset = state.get("reset", "fixture:cc"); state.close();
+  assert.match(String(reset), /^[0-9a-f-]{36}$/, "the reset is committed, not rolled back");
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+});
+
 test("CLI TERM to a worker that cannot cooperate kills and reaps it after the grace; no finished receipt is invented and the next pass records the interruption", t => {
   const f = fixture(t); passed(f.cli());
   const before = readCaptureStatus(f.root);
@@ -294,11 +314,15 @@ test("a supervisor killed with its worker leaves a lock the next ordinary pass r
   const killed = readCaptureStatus(f.root), owner = JSON.parse(fs.readFileSync(join(captureLockPath(f.root), "owner.json"), "utf8"));
   assert.equal(killed.lastRun.outcome, "running"); assert.deepEqual(killed.lastSuccess, before.lastSuccess);
   assert.equal(owner.command, "pass"); assert.equal(owner.worker.pid, s.starts()[0]);
+  // The killed worker committed a unit after its last published status: its
+  // confirmed counts are in the run's committed counter cache, not the file.
+  const state = new DerivedState(f.root), cached = state.get("capture-run", "current"); state.close();
+  assert.equal(cached.run.id, killed.lastRun.id); assert.equal(cached.run.counts.turnsAppended >= 1, true);
   const next = f.cli(); passed(next);
   assert.match(next.stderr, new RegExp(`reclaimed .* from pid ${owner.pid}, which died`));
   const status = readCaptureStatus(f.root);
   assert.equal(status.lastFailure.id, killed.lastRun.id); assert.equal(status.lastFailure.reason, "interrupted");
-  assert.equal(status.lastFailure.counts.turnsAppended, killed.lastRun.counts.turnsAppended, "the old run keeps its confirmed counts");
+  assert.deepEqual(status.lastFailure.counts, cached.run.counts, "the old run keeps its committed confirmed counts");
   assert.match(status.lastFailure.message, /^Capture execution was interrupted\. /);
   assert.notEqual(status.lastRun.id, killed.lastRun.id); assert.equal(status.lastRun.outcome, "complete", "the new pass is not blamed");
   assert.deepEqual(status.lastRun.reclaimedLock, { pid: owner.pid, startedAt: owner.startedAt });

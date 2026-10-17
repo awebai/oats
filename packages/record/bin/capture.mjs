@@ -50,6 +50,31 @@ function loadIgnoreForCommand(recordRoot) {
   }
 }
 
+// The exact commands (--home, --file, --reset-cursors) run in this process.
+// TERM/INT while one runs is observed only at its safe points: before the
+// lock, after taking it, before each format's batch of exact files and before
+// the index update. Discovery, one format's batch, the index update and the
+// receipt summaries are synchronous and cannot be preempted, so a signal
+// waits for the segment it arrived in; no response time is promised. An
+// interruption at a safe point unwinds through the lock's release.
+class CaptureInterrupted extends Error {}
+let signalled = null;
+const onSignal = signal => { signalled ??= signal; };
+/** Run `fn` with TERM/INT observed, from before its lock until it returns. */
+async function observingSignals(fn) {
+  process.on("SIGTERM", onSignal); process.on("SIGINT", onSignal);
+  try { return await fn(); }
+  finally { process.off("SIGTERM", onSignal); process.off("SIGINT", onSignal); }
+}
+/** A safe point: a signal pending from synchronous work dispatches during
+ *  the poll this yields to, and an observed one ends the command here.
+ *  `after` says what had already been done, so the answer never implies it
+ *  was not. */
+async function safePoint(after) {
+  await captureSignalPoll();
+  if (signalled) throw new CaptureInterrupted(`capture interrupted by ${signalled}${after ? ` after ${after}` : ""}`);
+}
+
 // Every flag this program understands. An unknown flag is rejected rather
 // than ignored, because the fall-through from argument parsing is pass() —
 // a WRITE. `capture --help` was once a full reconciliation pass under a
@@ -301,31 +326,6 @@ function warnOnStrangerOwner() {
 
 function log(...parts) {
   if (!quiet) console.log(...parts);
-}
-
-// The exact commands (--home, --file, --reset-cursors) run in this process.
-// TERM/INT while one runs is observed only at its safe points: before the
-// lock, after taking it, before each format's batch of exact files and before
-// the index update. Discovery, one format's batch, the index update and the
-// receipt summaries are synchronous and cannot be preempted, so a signal
-// waits for the segment it arrived in; no response time is promised. An
-// interruption at a safe point unwinds through the lock's release.
-class CaptureInterrupted extends Error {}
-let signalled = null;
-const onSignal = signal => { signalled ??= signal; };
-/** Run `fn` with TERM/INT observed, from before its lock until it returns. */
-async function observingSignals(fn) {
-  process.on("SIGTERM", onSignal); process.on("SIGINT", onSignal);
-  try { return await fn(); }
-  finally { process.off("SIGTERM", onSignal); process.off("SIGINT", onSignal); }
-}
-/** A safe point: a signal pending from synchronous work dispatches during
- *  the poll this yields to, and an observed one ends the command here.
- *  `after` says what had already been done, so the answer never implies it
- *  was not. */
-async function safePoint(after) {
-  await captureSignalPoll();
-  if (signalled) throw new CaptureInterrupted(`capture interrupted by ${signalled}${after ? ` after ${after}` : ""}`);
 }
 
 /** Take the root's single-run lock, or say who holds it. A hook-triggered
