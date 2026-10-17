@@ -639,8 +639,7 @@ if (args.home) await observingSignals(async () => {
     });
     // Summaries are synchronous: a signal that arrived during them is still a
     // signal this command received before answering.
-    await captureSignalPoll();
-    if (signalled) throw new CaptureInterrupted(`capture interrupted by ${signalled}`);
+    await safePoint();
   } catch (err) {
     error = err.message || String(err);
     console.error(`capture pass failed: ${error}`);

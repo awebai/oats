@@ -158,7 +158,10 @@ once. A started worker is asked to stop through its own lock owner record,
 which it already rereads between bounded units, so it stops at its next unit
 boundary and writes its own `failed`/`interrupted` receipt with the counts it
 committed; prior `lastSuccess` is kept. A worker that has already sent its
-result keeps it. Either way the worker gets one grace of 5 seconds, capped by
+result keeps it. The worker catches TERM/INT itself as well, so a signal sent
+to the caller's whole process group (a terminal's Ctrl-C, `timeout`, a service
+manager's control group) does not kill it mid-unit; it too ends the worker as
+interrupted at its next check. Either way the worker gets one grace of 5 seconds, capped by
 the pass's absolute deadline, and a worker still running then is killed and
 reaped; later signals neither shorten nor extend the grace. A killed worker
 leaves its unfinished `running` receipt, never a finished one, and the next
@@ -186,8 +189,8 @@ The lock's `owner.json` holds the owner's `pid`, a per-acquisition `nonce`,
 nonce, start and host. A lock taken by this release also says who took it:
 `command` (`pass`, `retry`, `home`, `file` or `reset-cursors`), `caller`
 (`entry`, the program: `oats`, `turn-record`, `hook-runner` or
-`service-runner`; `trigger`, from `manual`, `watch`, `hook`, `setup` and
-`service`) and `ppid`, the owner's immediate parent process. A cooperative stop
+`service-runner`, left out when the command runs in another program; `trigger`,
+from `manual`, `watch`, `hook`, `setup` and `service`) and `ppid`, the owner's immediate parent process. A cooperative stop
 adds `stop: true`. These are fixed labels and process facts. No argv,
 environment or shell text is recorded, and nothing names an external caller or
 why it stopped the command. The fields are diagnostic only: liveness, release

@@ -7,6 +7,19 @@ import { captureMonotonicMs, captureWorkerMessage, validWorkerResult } from "./c
 
 export async function runCaptureWorker(operation) {
   if (!process.send || !process.connected) throw new Error("capture worker requires its supervisor");
+  // TERM/INT sent to the caller's whole process group (a terminal's Ctrl-C,
+  // timeout(1), a service manager's control group) reaches this worker too.
+  // Caught, it cannot end the worker mid-unit; the supervisor, which received
+  // the same signal, owns the stop request and the grace. A signal this worker
+  // observes itself also ends it as interrupted at its next check.
+  let signalled = false;
+  const onSignal = () => { signalled = true; };
+  process.on("SIGTERM", onSignal); process.on("SIGINT", onSignal);
+  try { return await superviseOperation(operation, () => signalled); }
+  finally { process.off("SIGTERM", onSignal); process.off("SIGINT", onSignal); }
+}
+
+async function superviseOperation(operation, signalled) {
   const nonce = randomBytes(16).toString("hex"), parentPid = process.ppid;
   const start = await new Promise((resolve, reject) => {
     const disconnected = () => { cleanup(); reject(new Error("capture supervisor disconnected before start")); };
@@ -34,7 +47,7 @@ export async function runCaptureWorker(operation) {
     return owner?.pid === parentPid && owner.nonce === start.parent.nonce &&
       owner.worker?.pid === process.pid && owner.worker.nonce === nonce ? owner : null;
   };
-  const alive = () => { const owner = owned(); return owner !== null && owner.stop !== true; };
+  const alive = () => { if (signalled()) return false; const owner = owned(); return owner !== null && owner.stop !== true; };
   // Publication must already be durable before the first operation, including
   // its first status write. A callback must check again between bounded units.
   if (!owned()) throw new Error("capture worker lock publication is missing");

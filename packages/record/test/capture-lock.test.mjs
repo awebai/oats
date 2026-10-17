@@ -2,11 +2,12 @@ import { fixtureEnv } from "./fixture-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { acquireCaptureLock, captureLockPath, shellQuote } from "../lib/capture-lock.mjs";
 import { RecordStore } from "../lib/store.mjs";
+import { captureCommandEntry } from "../lib/capture-command.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
 
 const CAPTURE = resolve(new URL("../bin/capture.mjs", import.meta.url).pathname);
@@ -401,4 +402,21 @@ test("capture lock: records without attribution, and stop requests, change nothi
       rmSync(captureLockPath(root), { recursive: true, force: true });
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("capture lock: the caller entry is a fixed label only for known entry files, and is left out otherwise", () => {
+  const dir = mkdtempSync(join(tmpdir(), "capture-lock-entry-"));
+  try {
+    const record = resolve(new URL("../bin", import.meta.url).pathname);
+    assert.equal(captureCommandEntry(resolve(record, "../../../bin/oats.mjs")), "oats");
+    for (const name of ["turn-record.mjs", "capture.mjs", "setup.mjs"]) assert.equal(captureCommandEntry(join(record, name)), "turn-record", name);
+    // An npm bin is a symlink named after the command; its target decides.
+    symlinkSync(join(record, "turn-record.mjs"), join(dir, "turn-record"));
+    assert.equal(captureCommandEntry(join(dir, "turn-record")), "turn-record");
+    for (const other of [join(dir, "runner.mjs"), join(dir, "desktop-host.js"), "", join(dir, "oats")]) assert.equal(captureCommandEntry(other), undefined, other);
+    const lock = acquireCaptureLock(dir, { command: "home", caller: { entry: captureCommandEntry(join(dir, "embedder.mjs")), trigger: "manual" } });
+    const owner = JSON.parse(readFileSync(join(captureLockPath(dir), "owner.json"), "utf8"));
+    assert.equal(owner.command, "home"); assert.deepEqual(owner.caller, { trigger: "manual" });
+    assert.deepEqual(lock.release(), { released: true });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

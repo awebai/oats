@@ -27,17 +27,21 @@ export function captureCommandSelection(options) {
 }
 
 /** The fixed label of the program a command runs in: the kernel's `oats`
- *  (which imports the record bins) or the record's own `turn-record` bins.
- *  Only the entry's file name is compared; nothing of argv is recorded. */
+ *  (which imports the record bins) or one of the record's own bins,
+ *  `turn-record`; undefined for any other program (a test runner, an
+ *  embedding host), which is never guessed. Only the entry's file name is
+ *  compared; nothing of argv is recorded. */
+const RECORD_BINS = new Set(["turn-record.mjs", "capture.mjs", "setup.mjs"]);
 export function captureCommandEntry(entry = process.argv[1] ?? "") {
   let path = entry;
   try { path = realpathSync(entry); } catch { /* the name as given */ }
-  return basename(path) === "oats.mjs" ? "oats" : "turn-record";
+  const name = basename(path);
+  return name === "oats.mjs" ? "oats" : RECORD_BINS.has(name) ? "turn-record" : undefined;
 }
 
 /** `entry` labels the calling program in the lock owner record (see
- *  captureLockAttribution); without it the record carries no attribution. */
-export async function runCaptureCommand(root, options, { entry } = {}) {
+ *  captureLockAttribution); `attribute: false` leaves the record without. */
+export async function runCaptureCommand(root, options, { entry, attribute = entry !== undefined } = {}) {
   if (typeof root !== "string" || !root || root.includes("\0")) throw new Error("invalid capture command root");
   const selected = captureCommandOptions(options);
   // Resolve relative root spelling against the caller, never a child's cwd.
@@ -47,7 +51,7 @@ export async function runCaptureCommand(root, options, { entry } = {}) {
   try { result = await superviseCapturePass(absolute, selected, {
     workerPath: fileURLToPath(new URL("./capture-command-worker.mjs", import.meta.url)),
     acquire: path => {
-      const lock = acquireCaptureLock(path, entry === undefined ? {} : {
+      const lock = acquireCaptureLock(path, !attribute ? {} : {
         command: selected.retrySetAside ? "retry" : "pass", caller: { entry, trigger: selected.trigger } });
       if (lock.reclaimed) reclaimedLock = { path: lock.path, ...lock.reclaimed };
       return lock;

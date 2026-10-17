@@ -35,7 +35,8 @@ export function releaseDetail(r) {
 
 export async function captureCommandPass(root, options, { log = console.log, error = console.error, run = runCaptureCommand, entry } = {}) {
   let result;
-  try { result = await run(root, options, { entry }); }
+  // Every foreground command attributes its lock, naming its entry when known.
+  try { result = await run(root, options, { entry, attribute: true }); }
   catch (failure) {
     reportLockInitializationFailure(failure, error);
     reportReclaimedLock(failure.reclaimedLock, error);

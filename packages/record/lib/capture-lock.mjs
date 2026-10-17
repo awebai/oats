@@ -66,16 +66,17 @@ export const readCaptureLockOwner = root => readOwner(captureLockPath(root));
 // Diagnostic attribution in a fresh owner record: which command took the
 // lock, from which entry and trigger, and the immediate parent process. Fixed
 // labels and direct process facts only, never argv, environment or a guessed
-// external caller. It never confers authority: identity, liveness and reclaim
+// external caller; an entry that is not known is left out. It never confers authority: identity, liveness and reclaim
 // read only pid, nonce, startedAt, host and worker.
 const COMMANDS = new Set(["pass", "home", "file", "reset-cursors", "retry"]);
 const ENTRIES = new Set(["oats", "turn-record", "hook-runner", "service-runner"]);
 const TRIGGERS = new Set(["manual", "watch", "hook", "setup", "service"]);
 export function captureLockAttribution({ command, caller, ppid = process.ppid } = {}) {
   if (command === undefined && caller === undefined) return {};
-  if (!COMMANDS.has(command) || !ENTRIES.has(caller?.entry) || !TRIGGERS.has(caller?.trigger) ||
+  if (!COMMANDS.has(command) || caller?.entry !== undefined && !ENTRIES.has(caller.entry) || !TRIGGERS.has(caller?.trigger) ||
       Object.keys(caller).some(key => key !== "entry" && key !== "trigger")) throw new Error("invalid capture lock attribution");
-  return { command, caller: { entry: caller.entry, trigger: caller.trigger }, ...(validPid(ppid) ? { ppid } : {}) };
+  return { command, caller: { ...(caller.entry !== undefined ? { entry: caller.entry } : {}), trigger: caller.trigger },
+    ...(validPid(ppid) ? { ppid } : {}) };
 }
 
 function validPid(pid) { return Number.isInteger(pid) && pid > 0 && pid <= 2147483647; }
