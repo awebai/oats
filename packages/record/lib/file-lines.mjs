@@ -30,12 +30,14 @@ export class RecordSizeError extends Error {
   }
 }
 
-export function* bufferLines(chunks, { maxBytes = Infinity } = {}) {
+// A line that starts before `limitFrom` (an offset into these chunks) was
+// already captured and is not size-limited; the limit applies from there on.
+export function* bufferLines(chunks, { maxBytes = Infinity, limitFrom = 0 } = {}) {
   let pieces = [], size = 0, offset = 0;
   const append = piece => {
     // Enforce a bounded command's policy before joining or retaining the whole
     // offending record. Public callers retain their unlimited default.
-    if (size + piece.length > maxBytes) throw new RecordSizeError(maxBytes, offset);
+    if (offset >= limitFrom && size + piece.length > maxBytes) throw new RecordSizeError(maxBytes, offset);
     pieces.push(piece); size += piece.length;
   };
   for (const chunk of chunks) {

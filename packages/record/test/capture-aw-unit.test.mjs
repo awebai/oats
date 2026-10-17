@@ -111,6 +111,33 @@ test('reset/replacement reprojects changed old entries; raw oversize is set asid
   fs.writeFileSync(join(f.root,'ignore'),f.path+'\n');fs.unlinkSync(f.path);assert.equal(f.step().result.ignored,true);
 });
 
+test('a rescan after the cursor stops qualifying does not refuse records already captured, and captures what follows',t=>{
+  // Captured with no record limit, as a release without one would.
+  const big=JSON.stringify({ts:stamp,dir:'recv',ch:'mail',msg_id:'big',from:'alice',to:'fixture',body:'x'.repeat(5000)})+'\n';
+  const f=fixture(t,entry(0)+big);f.finish();assert.equal(f.bodies().length,2);
+  fs.appendFileSync(f.path,entry(2)+entry(3));
+  // A reset invalidates the cursor: the rescan starts at 0 under a 300-byte limit.
+  resetSourceCursors(f.root,'fixture','aw');const rows=f.finish({maxRecordBytes:300});
+  assert.equal(rows.some(r=>r.result.setAside),false,JSON.stringify(rows.at(-1).result));
+  assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
+  assert.deepEqual(f.bodies(),['0','x'.repeat(5000),'2','3'],'nothing refused, nothing duplicated');
+  // The limit still applies at and beyond the captured frontier.
+  fs.appendFileSync(f.path,big.replace('"big"','"later"'));
+  assert.equal(f.finish({maxRecordBytes:300}).at(-1).result.setAside.reason,'record-too-large');
+});
+
+test('a 0.61.0-shaped cursor that no longer qualifies keeps its captured frontier',t=>{
+  const big=JSON.stringify({ts:stamp,dir:'recv',ch:'mail',msg_id:'big',from:'alice',to:'fixture',body:'y'.repeat(5000)})+'\n';
+  const f=fixture(t,entry(0)+big);f.finish();
+  // The row exactly as 0.61.0 writes it (no projection or retry generation),
+  // from an older journal epoch: it no longer qualifies.
+  f.state(s=>{const c=s.get('aw',f.key);s.transaction(()=>s.set('aw',f.key,
+    {bytes:c.bytes,version:c.version,witness:c.witness,epoch:'epoch-from-0.61.0',generation:'',complete:true}));});
+  fs.appendFileSync(f.path,entry(2));const rows=f.finish({maxRecordBytes:300});
+  assert.equal(rows.some(r=>r.result.setAside),false,JSON.stringify(rows.at(-1).result));
+  assert.deepEqual(f.bodies(),['0','y'.repeat(5000),'2']);
+});
+
 test('shared group uses the owning projection and keeps source progress with its durable append',t=>{
   const f=fixture(t,entry(0)+entry(1)),state=new DerivedState(f.root);
   try{

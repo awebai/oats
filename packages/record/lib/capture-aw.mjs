@@ -60,9 +60,9 @@ function* logEntries(fd, start, end, onSkipped, onConsumed) {
 
 // Command units must account for every scanned line, including empty/malformed
 // ones. Public capture's wrapper above retains its existing entry counters.
-export function* awLogLines(chunks, { start = 0, maxBytes = Infinity } = {}) {
+export function* awLogLines(chunks, { start = 0, maxBytes = Infinity, frontier = 0 } = {}) {
   let offset = start;
-  for (const line of bufferLines(chunks, { maxBytes })) {
+  for (const line of bufferLines(chunks, { maxBytes, limitFrom: Math.max(0, frontier - start) })) {
     const lineStart = offset;
     offset += line.length;
     const final = line[line.length - 1] !== 10;

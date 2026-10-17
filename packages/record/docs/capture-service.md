@@ -100,6 +100,13 @@ without being held whole, and a changed byte refuses the prefix as usual. The
 journal side of that proof, like exact-version journal validation, still reads
 each journal record whole: the largest captured journal record bounds recovery
 memory, which the large-frame qualification measures in this recovery shape.
+An AW comm log has no prefix proof: when its cursor stops qualifying (a new
+journal epoch, a reset, a retry, or an older release's cursor), the rescan keeps
+the cursor's byte offset as a captured frontier, provided the cursor names the
+same file and its boundary witness still matches. Records before that frontier
+are read without the limit, journal-id dedupe keeps them from being appended
+twice, and the limit applies at and beyond it. A replaced or rewritten log has
+no frontier.
 One native case still captures nothing before an oversized record: an
 oversized line before the session's first timestamped line, which the
 unstamped lines before it need.

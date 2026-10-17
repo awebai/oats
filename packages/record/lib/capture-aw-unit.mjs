@@ -63,8 +63,14 @@ export function captureAwUnit(store, { owner, path, kind = "comm", selfName, wor
         return { ...result, unchanged: true, complete: cursor.bytes === version.size,
           pending: cursor.bytes < version.size, phase: "captured" };
       }
+      // A cursor that no longer qualifies (new epoch, reset, retry, an older
+      // release's shape) still proves what it captured from this same file:
+      // records before its bytes are rescanned without the record limit.
+      const frontier = !qualified && cursor && Number.isSafeInteger(cursor.bytes) && cursor.bytes > 0 &&
+        cursor.bytes <= version.size && cursor.version?.dev === version.dev && cursor.version?.ino === version.ino &&
+        typeof cursor.witness === "string" && witness(cursor.bytes) === cursor.witness ? cursor.bytes : 0;
       job = { bytes: qualified ? cursor.bytes : 0, end: version.size, version, generation, retryGeneration,
-        epoch: journal.epoch, projection };
+        epoch: journal.epoch, projection, frontier };
     }
     const unitStart = job.bytes, boundary = witness(version.size);
     const chunks = function* () {
@@ -76,7 +82,7 @@ export function captureAwUnit(store, { owner, path, kind = "comm", selfName, wor
     const project = kind === "comm" ? entry => projectCommLogEntry(entry, { selfName: account }) :
       entry => projectInteractionLogEntry(entry, { selfName, workspace });
     let bytes = 0, records = 0, scanned = false, oversized = null;
-    const turns = [], iterator = awLogLines(chunks(), { start: unitStart, maxBytes: maxRecordBytes });
+    const turns = [], iterator = awLogLines(chunks(), { start: unitStart, maxBytes: maxRecordBytes, frontier: job.frontier ?? 0 });
     try {
       while (records < maxRecords && bytes < maxBytes && !stopped()) {
         const next = iterator.next();
