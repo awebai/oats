@@ -65,12 +65,17 @@ for (const name of ['stdout', 'stderr']) {
 process.on('message', async name => {
   const queue = queues[name]; if (!queue || released.has(name)) throw new Error('bad release');
   released.add(name);
-  let backpressured = 0;
+  // backpressured: writes that returned false. queued: writes that left
+  // bytes in the stream's queue. A synchronous pipe delivers each write
+  // before it returns, so it queues nothing.
+  let backpressured = 0, queued = 0, bytes = 0;
   await Promise.all(queue.entries.map(args => new Promise((resolve, reject) => {
     const callback = typeof args.at(-1) === 'function' ? args.pop() : null;
+    bytes += Buffer.byteLength(args[0]);
     if (!queue.write(...args, error => { callback?.(error); error ? reject(error) : resolve(); })) backpressured++;
+    if (process[name].writableLength > 0) queued++;
   })));
-  process.send({ type: name + '-drained', writes: queue.entries.length, backpressured });
+  process.send({ type: name + '-drained', writes: queue.entries.length, backpressured, queued, bytes });
   if (released.size === 2) process.disconnect();
 });
 process.argv.splice(1, 1);
@@ -165,7 +170,18 @@ test("large piped health output delivers both complete samples, banners and JSON
     assert.match(text.stdout, /unit starting at byte 0 \(failing frame unknown\)/);
     assert.match(text.stdout, /showing first 100 set-aside inputs/); assert.match(text.stdout, /showing first 100 failed stream units\n$/);
     assert.doesNotMatch(text.stdout, /PRIVATE/);
-    if (gated) assert.ok(text.messages.find(row => row.type === "stdout-drained").backpressured > 0);
+    if (gated) {
+      // The stress prerequisite, from the stream's measured behaviour: either
+      // the replayed writes queued past the high-water mark (an asynchronous
+      // pipe, Linux CI), or every one of them was delivered before it returned
+      // (a synchronous pipe, as macOS gives the child's stdout). 800 KB cannot
+      // fit a pipe buffer, so a synchronous pipe is the only way 200+ writes of
+      // it queue nothing; it never holds output to lose at exit. Writes that
+      // queued without crossing the mark satisfy neither.
+      const drained = text.messages.find(row => row.type === "stdout-drained");
+      const synchronous = drained.queued === 0 && drained.writes >= 200 && drained.bytes >= 800_000;
+      assert.ok(drained.backpressured > 0 || synchronous, JSON.stringify(drained));
+    }
     const json = await command(f, ["--health", "--json"], gated);
     assert.equal(json.code, 0); assert.equal(json.stderr, "");
     assert.equal(json.stdout, JSON.stringify(health, null, 2) + "\n");
