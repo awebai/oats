@@ -143,6 +143,19 @@ test("CLI moves a non-regular capture status aside, names it and writes a new st
   assert.equal(fs.existsSync(captureLockPath(f.root)), false);
 });
 
+test("an earlier release's hook command, run against this release, is one quiet foreground pass", t => {
+  // The persisted hook before setup converts it: `<node> capture.mjs --owner X
+  // --quiet`, no --hook, which the harness ran asynchronously with 120 s. It is
+  // an ordinary supervised pass under the root lock (up to its 300 s deadline),
+  // attributed manual, printing nothing; health asks for setup meanwhile.
+  const f = fixture(t), result = f.cli(["--owner", "fixture", "--quiet"]); passed(result);
+  assert.equal(result.stdout, ""); assert.equal(result.stderr, "");
+  const run = readCaptureStatus(f.root).lastRun;
+  assert.equal(run.trigger, "manual"); assert.ok(["complete", "partial"].includes(run.outcome), run.outcome);
+  assert.ok(f.store.readStream("fixture~aw").length >= 1, "it captured");
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+});
+
 function timers() {
   let id = 0; const pending = new Map();
   return { setTimer(fn) { pending.set(++id, fn); return id; }, clearTimer(key) { pending.delete(key); },

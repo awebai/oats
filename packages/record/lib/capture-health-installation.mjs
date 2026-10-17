@@ -4,7 +4,7 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, opendirSync, read
 import { join, parse, resolve, sep } from "node:path";
 import { captureServiceOwnership } from "./capture-service-ownership.mjs";
 import { capturePendingActivationName, captureServiceLabel, captureServiceUnit, captureServiceTimer } from "./capture-service-definition.mjs";
-import { isCaptureHook } from "./capture-hook-ownership.mjs";
+import { isCaptureHook, isCurrentCaptureHook } from "./capture-hook-ownership.mjs";
 
 const same = (a, b) => a.dev === b.dev && a.ino === b.ino && a.mode === b.mode &&
   a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs;
@@ -53,7 +53,10 @@ export function captureInstallation(root, { home, platform, check = () => {} }) 
     } finally { if (fd !== undefined) closeSync(fd); }
   }
 
+  // Settings files holding an owned capture hook in a form earlier releases
+  // wrote, which this release's setup converts.
   let installed = false, legacy = false;
+  const earlierHooks = new Set();
   const selected = stat(root);
   if (selected) {
     if (!selected.isDirectory()) throw new Error(`selected record root is not a directory: ${root}`);
@@ -95,7 +98,11 @@ export function captureInstallation(root, { home, platform, check = () => {} }) 
           for (const group of groups) {
             if (!group || typeof group !== "object" || Array.isArray(group) || !Array.isArray(group.hooks ?? []))
               throw new Error(`invalid ${event} hook group: ${path}`);
-            for (const hook of group.hooks ?? []) installed ||= isCaptureHook(hook);
+            for (const hook of group.hooks ?? []) {
+              if (!isCaptureHook(hook)) continue;
+              installed = true;
+              if (!isCurrentCaptureHook(hook)) earlierHooks.add(path);
+            }
           }
         }
       }
@@ -103,5 +110,5 @@ export function captureInstallation(root, { home, platform, check = () => {} }) 
     const afterHome = stat(home);
     if (!afterHome || !same(beforeHome, afterHome)) throw new Error("installation home changed during enumeration");
   }
-  return { installed, legacy, pending };
+  return { installed, legacy, pending, earlierHooks: [...earlierHooks].sort() };
 }

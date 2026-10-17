@@ -69,16 +69,29 @@ for (const platform of ["linux", "darwin"]) test(`${platform}: absent/foreign fi
 test("hook evidence shares setup's exact tokenized recognition and event scope", t => {
   const f = fixture(t), path = join(f.home, ".claude-profile/settings.json");
   const command = "'/missing node' '/old quoted/package/capture.mjs' --owner fixture --quiet --hook";
-  for (const [text, owned] of [[command, true], [command + " && echo nope", false], ["echo " + command, false],
-    [command.replace("--owner", "--ownership"), false], ["echo capture.mjs --quiet --owner", false]]) {
+  // The hook entry this release's setup writes; any other owned form needs setup.
+  const current = "'/missing node' '/new quoted/package/bin/capture-hook.mjs' --owner fixture --quiet --root '/r'";
+  for (const [text, owned, setupRequired] of [[current, true, false], [command, true, true], [command + " && echo nope", false],
+    ["echo " + command, false], [command.replace("--owner", "--ownership"), false], ["echo capture.mjs --quiet --owner", false]]) {
     const hook = { type: "command", command: text }; assert.equal(isCaptureHook(hook), owned);
     write(path, JSON.stringify({ hooks: { Stop: [{ hooks: [hook] }], SessionEnd: [] }, kept: true }));
-    assert.deepEqual(codes(f.health()), owned ? ["capture-status-missing", "capture-success-stale"] : []);
+    assert.deepEqual(codes(f.health()), owned ? ["capture-status-missing", "capture-success-stale", ...(setupRequired ? ["capture-setup-required"] : [])] : []);
   }
   write(path, JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command }] }] } }));
   assert.equal(f.health().status, "ok");
   write(path, JSON.stringify({ hooks: { SessionEnd: [{ hooks: [{ type: "command", command }] }] } }));
   assert.equal(f.health().status, "warning"); assert.equal(fs.existsSync(f.root), false);
+});
+
+test("an earlier release's hook on a hooks-only install needs setup", t => {
+  const f = fixture(t), path = join(f.home, ".claude/settings.json");
+  // What setup wrote before this release: no --hook, a 120 s asynchronous hook.
+  const old = { type: "command", command: "/usr/local/bin/node /old/package/bin/capture.mjs --owner fixture --quiet", async: true, timeout: 120 };
+  write(path, JSON.stringify({ hooks: { Stop: [{ hooks: [old] }], SessionEnd: [{ hooks: [{ ...old }] }] } }));
+  const health = f.health(), row = health.rows.find(row => row.code === "capture-setup-required");
+  assert.ok(row, JSON.stringify(codes(health)));
+  assert.ok(row.message.includes(path), row.message);
+  assert.match(row.message, /Run turn-record setup/);
 });
 
 test("unknown/unreadable/oversized/dangling candidate evidence fails closed, never returning no installation", t => {

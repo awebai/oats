@@ -214,7 +214,17 @@ with both supervisor and worker positively dead. Missing/off-host/hostless,
 changed or uncertain registration and live/reused PIDs supply no death proof.
 The receipt is reread before accepting that observation; health never repairs,
 reclaims, signals termination, writes counters or invents a finished receipt.
-Owned legacy watcher definitions additionally produce `capture-setup-required`.
+Owned legacy watcher definitions additionally produce `capture-setup-required`,
+as does an owned capture hook whose entry is not this release's
+`bin/capture-hook.mjs` (the `capture.mjs` forms earlier releases' setup wrote),
+hooks-only installations included; the row names the settings files.
+Until setup converts it, the hook line from before this release,
+`<node> <package>/bin/capture.mjs --owner <owner> --quiet` run asynchronously
+with a 120-second timeout, still works against this release: it is one
+ordinary quiet foreground pass under the root lock, attributed `manual`, up to
+its 300-second deadline. A harness that stops it at 120 seconds signals the
+supervisor, which ends the pass as interrupted, records that, and releases the
+lock; the next trigger continues from the durable checkpoints.
 Setup's pending-activation marker (`<root>/capture-service-pending.json`, see
 [setup service migration](#setup-service-migration)) produces
 `capture-service-pending` from file evidence only: beside setup's own marked
