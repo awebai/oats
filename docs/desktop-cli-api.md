@@ -5153,9 +5153,11 @@ one of `missing` (in the source, not the copy), `extra`, `type`, `mode`,
 relative to the worktree, with the same Git paths left out as the
 comparison: each printable ASCII byte as itself, a backslash as `\\`, every
 other byte as `\xHH`. No content, link target or absolute path is reported,
-and no link is followed. The search is bounded: at most 20 entries, 200,000
-entries looked at, 64 MiB of file bytes read (files are compared in chunks,
-sizes first) and 5 seconds; when it stops early, `complete` is `false` and
+and no link is followed: a file is read only as the regular file it was
+listed as, else the search stops as `unreadable`. The search is bounded: at
+most 20 entries, 200,000 entries compared (each directory's listing is read
+whole, as the comparison's own walk reads it), 64 MiB of file bytes read
+(files are compared in chunks, sizes first) and 5 seconds; when it stops early, `complete` is `false` and
 `stoppedBy` names why (`discrepancies`, `entries`, `bytes`, `time`, or
 `unreadable` when a tree could not be read). Usage errors are text on
 stderr, not envelopes.

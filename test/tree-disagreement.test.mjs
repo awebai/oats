@@ -5,6 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs, { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { escapedPath, treeDisagreement, TREE_DISAGREEMENT_LIMITS } from "../lib/tree-copy.mjs";
@@ -129,6 +130,14 @@ test("every bound stops the search and says which; none hides a refusal or inven
   // Its time, by the clock it is given.
   let t = 0;
   assert.deepEqual(treeDisagreement(a, b, { clock: () => (t += 3000) }), { complete: false, stoppedBy: "time", entries: [] });
+});
+
+test("a FIFO in both trees is compared by its type and mode, never opened", () => {
+  const { a, b } = pair({});
+  for (const side of [a, b]) execFileSync("mkfifo", [join(side, "pipe")]);
+  chmodSync(join(a, "pipe"), 0o644); chmodSync(join(b, "pipe"), 0o600);
+  // An open of a FIFO with no writer would block: the answer coming back at all is the point.
+  assert.deepEqual(treeDisagreement(a, b), { complete: true, entries: [{ path: "pipe", kind: "mode" }] });
 });
 
 test("a tree that cannot be read answers unreadable, and never throws", () => {
