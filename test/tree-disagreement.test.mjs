@@ -4,7 +4,7 @@
 // escaped relative paths, no content, no link target, nothing outside the roots, and every bound.
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs, { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -130,6 +130,43 @@ test("every bound stops the search and says which; none hides a refusal or inven
   // Its time, by the clock it is given.
   let t = 0;
   assert.deepEqual(treeDisagreement(a, b, { clock: () => (t += 3000) }), { complete: false, stoppedBy: "time", entries: [] });
+});
+
+test("a wide directory's listing stops at the entry budget: it is not read whole first", () => {
+  const files = Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`f${String(i).padStart(3, "0")}`, "x\n"]));
+  const { a, b } = pair(files);
+  let read = 0;
+  const io = { lstat: lstatSync, opendir: (dir, options) => {
+    const d = fs.opendirSync(dir, options);
+    return { readSync: () => { const e = d.readSync(); if (e !== null) read++; return e; }, closeSync: () => d.closeSync() };
+  } };
+  assert.deepEqual(treeDisagreement(a, b, { io }), { entries: [], complete: true }, "the seam reads the trees as they are");
+  assert.equal(read, 400, "unbounded, both listings are read whole");
+  read = 0;
+  assert.deepEqual(treeDisagreement(a, b, { io, limits: { ...TREE_DISAGREEMENT_LIMITS, entries: 10 } }), { complete: false, stoppedBy: "entries", entries: [] });
+  assert.equal(read, 11, "the listing stopped at the entry past the budget, not after 200");
+});
+
+test("a directory replaced by a link to another directory while it is read stops the search; nothing outside the roots is read into an answer", () => {
+  const outside = join(base, `outside-${n++}`);
+  mkdirSync(outside); writeFileSync(join(outside, "secret-name"), "secret");
+  const { a, b } = pair({ "sub/inside": "x\n" });
+  const sub = Buffer.from(join(a, "sub"));
+  let swapped = false;
+  // The swap happens exactly between lstat saying "directory" and the listing: a deterministic boundary.
+  const io = { opendir: fs.opendirSync, lstat: (path) => {
+    const st = lstatSync(path);
+    if (!swapped && Buffer.from(path).equals(sub)) {
+      swapped = true;
+      renameSync(join(a, "sub"), join(a, "sub-moved"));
+      symlinkSync(outside, join(a, "sub"));
+    }
+    return st;
+  } };
+  const diff = treeDisagreement(a, b, { io });
+  assert.equal(swapped, true, "fixture premise: the swap happened");
+  assert.deepEqual(diff, { complete: false, stoppedBy: "unreadable", entries: [] });
+  assert.ok(!JSON.stringify(diff).includes("secret"), "no name from outside the roots");
 });
 
 test("a FIFO in both trees is compared by its type and mode, never opened", () => {
