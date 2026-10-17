@@ -52,7 +52,7 @@ test("v2 preparation aligns standalone OKF and Git-only theory catalog pins", ()
   // The getting-started skill shows a workspace file: its package versions are the catalog's.
   const gettingStarted = readFileSync(join(ROOT, "skills/oats-getting-started/SKILL.md"), "utf8");
   assert.match(gettingStarted, /^  oats\.okf: v5\.2\.1$/m, "the getting-started skill shows the catalog's oats.okf version");
-  assert.match(gettingStarted, /^  oats\.framework: v1\.13\.1\b/m, "the getting-started skill shows the catalog's oats.framework version");
+  assert.match(gettingStarted, /^  oats\.framework: v1\.13\.2\b/m, "the getting-started skill shows the catalog's oats.framework version");
   const catalog = json("package-catalog.json");
   const onboarding = readFileSync(join(ROOT, "oats-package/capabilities/oats-setup/skills/oats-onboarding/SKILL.md"), "utf8");
   const okfVersion = catalog.packages["oats.okf"].ref.slice(1);
