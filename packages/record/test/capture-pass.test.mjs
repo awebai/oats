@@ -154,9 +154,19 @@ test("a worker that cannot cooperate is killed and reaped after the grace; a sec
 });
 
 test("TERM before the child is started kills it at once; no operation runs", async t => {
+  // process.kill does not order the parent's dispatch of the signal before its
+  // read of the child's readiness: the child announces readiness only once the
+  // parent has observed the signal, witnessed by a file this test's own TERM
+  // listener writes. Every listener runs in that one emit, so the supervisor
+  // has handled the signal before it can read the readiness that follows.
   const f = fixture(t, `fs.writeFileSync(join(process.argv[1],'..','pid'),String(process.pid));
     process.kill(process.ppid,'SIGTERM');
+    const observed=join(process.argv[1],'..','observed');
+    while(!fs.existsSync(observed))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);
     await runCaptureWorker(({root})=>{fs.writeFileSync(join(root,'ran'),'');return {outcome:'complete',reason:null};});`);
+  const observe = () => fs.writeFileSync(join(f.root, "observed"), "");
+  process.once("SIGTERM", observe);
+  t.after(() => process.off("SIGTERM", observe));
   const result = await superviseCapturePass(f.root, {}, { ...seams, workerPath: f.workerPath, graceMs: 20000 });
   assert.deepEqual(result, { outcome: "failed", reason: "interrupted", exitCode: 1, starts: 1 });
   assert.equal(fs.existsSync(join(f.root, "ran")), false);
