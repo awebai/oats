@@ -81,6 +81,17 @@ for (const mutation of ["PRAGMA user_version = 999", "DROP TABLE state", "ALTER 
   assert.match(JSON.parse(result.stdout).error, /schema|version/i); assert.deepEqual(inventory(f.root), before);
 });
 
+test("capture --health under the kernel names oats remedies; standalone it names turn-record", t => {
+  const f = fixture(t), kernel = resolve(import.meta.dirname, "../../../bin/oats.mjs");
+  const viaKernel = spawnSync(process.execPath, [kernel, "capture", "--health", "--root", f.root],
+    { encoding: "utf8", env: { HOME: f.base, TMPDIR: f.base, PATH: process.env.PATH } });
+  assert.equal(viaKernel.status, 0, viaKernel.stderr);
+  assert.match(viaKernel.stdout, /capture-status-missing: .*Run oats setup --root /);
+  assert.doesNotMatch(viaKernel.stdout, /turn-record setup/);
+  const alone = f.cli(); assert.equal(alone.status, 0, alone.stderr);
+  assert.match(JSON.parse(alone.stdout).rows[0].message, /Run turn-record setup --root /);
+});
+
 test("never-installed health leaves its absent root absent", t => {
   const f = fixture(t, { hook: false }), result = f.cli(); assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).status, "ok"); assert.equal(fs.existsSync(f.root), false);

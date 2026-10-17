@@ -14,7 +14,7 @@
 
 import { closeSync, constants, fstatSync, openSync, readFileSync, watch } from "node:fs";
 import { homedir, hostname } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import process from "node:process";
 
 import { RecordStore } from "../lib/store.mjs";
@@ -30,6 +30,7 @@ import { RecordIndex } from "../lib/index-db.mjs";
 import { IgnoreError, ignoreFilePath, loadIgnore } from "../lib/ignore.mjs";
 import { CAPTURE_SOURCES, captureHealth, resetSourceCursors, writeCaptureStatus } from "../lib/capture-state.mjs";
 import { acquireCaptureLock } from "../lib/capture-lock.mjs";
+import { captureHealthForDoctor } from "../lib/capture-health.mjs";
 import { captureDefaultRootPlan, resolveCaptureDefaultRoots } from "../lib/capture-default-roots.mjs";
 import { captureCommandPass, reportLockInitializationFailure, reportReclaimedLock, releaseDetail } from "../lib/capture-command-output.mjs";
 import { captureWatchQueue } from "../lib/capture-watch.mjs";
@@ -212,7 +213,11 @@ const store = args.hook || args.health ? null : new RecordStore(root, { owner })
 
 if (args.health) {
   try {
-    const health = captureHealth(root);
+    // Remedies name the command the person has: `oats` when the kernel runs
+    // this script (it imports it, so argv[1] is the kernel's entry) or handed a
+    // node, as setup's remedies do; `turn-record` when run alone.
+    const viaKernel = basename(process.argv[1] ?? "") === "oats.mjs" || isAbsolute(process.env.OATS_NODE_BIN ?? "");
+    const health = viaKernel ? captureHealthForDoctor(root) : captureHealth(root);
     if (args.json) console.log(JSON.stringify(health, null, 2));
     else {
       console.log(`capture: ${health.status}`);

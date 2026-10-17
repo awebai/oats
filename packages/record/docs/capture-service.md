@@ -239,9 +239,10 @@ it names the marker as stale. Both say "not verified", never "not running": a
 crash after a verified activation can leave the marker until the next setup
 clears it. The remedy is a setup rerun; health never removes the marker. It is
 a warning and hides no other row.
-Standalone remedies name `turn-record`; the private doctor entry selects `oats`
-when constructing authored remedy literals, before interpolating paths/errors
-or receipt data. It never replaces substrings in completed messages. All diagnosis
+Standalone remedies name `turn-record`; the private doctor entry, and
+`capture --health` when the kernel runs it (`oats capture --health`) or a node
+was handed in (`OATS_NODE_BIN`, as for setup), select `oats` when constructing
+authored remedy literals, before interpolating paths/errors or receipt data. It never replaces substrings in completed messages. All diagnosis
 is local observed evidence, not full service qualification.
 
 ### Kernel doctor delegation
