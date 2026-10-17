@@ -203,6 +203,14 @@ exactly-once delivery; command errors may be uncertain after partial effects.
 `session-inspect-size` in `oats version --json`. Size is absent otherwise.
 With `--server <id>`, the execution host supplies it: check that host's feature
 list. Open a viewer PTY at that size; inspect again to observe a resize.
+From OATS 0.63.0 (feature `session-inspect-running`), every successful
+inspect also carries `running`. It is `true` for a live harness in the agent
+pane, a harness behind a wrapper shell included. It is `false` for a fallback
+shell, an absent or dead pane, a missing home and a home that never launched.
+That is activity at the endpoint, not health, readiness or idleness, and not
+proof that a wake was taken in. A failed inspect is an error, never
+`running: false`. Without the field (an older kernel or an older host), read
+`state: unknown` on a successful result as running.
 
 `oats session attach --home <abs-home>` has no keyboard exit (close the
 terminal); when `oats version --json` lists `session-attach-detach-key`, add
