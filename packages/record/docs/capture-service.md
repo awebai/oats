@@ -507,6 +507,34 @@ bounded transactions. Ordinary passes seek new journal bytes without parsing
 consumed prefixes. Inconsistent identities or cursors invalidate derived state;
 recovery can cost a historical scan. No journal format or turn ID changes.
 
+The synchronous index update (`RecordIndex.update`, run by `capture --home`,
+`--file` and `recall --reindex`) uses one `capture.db` connection for the pass.
+It first takes a census without locks. A stream is current, and is skipped
+without a stream lock or validation, only when all of the following hold:
+
+- its complete validation checkpoint names the journal's exact current version;
+- the search index's byte cursor and epoch match that checkpoint;
+- both count tables agree with it.
+
+Every other stream is a candidate. That includes a stream whose evidence is
+missing, partial or disagreeing, backlog left by `--no-index` passes, and
+streams that other writers changed. Each candidate is validated again under its
+stream lock before any write.
+
+A candidate that proves the union stale resets it atomically, and selection
+restarts against the empty index. Stale means the journal is missing or
+replaced, a new epoch, an invalid cursor, or a legacy count disagreement. A
+journal that changes between that check and catch-up refuses the pass with the
+existing retry error. A skipped stream's cursor is read again when its turn
+comes, so a reset by another index connection is caught up, not skipped. The
+pass refuses if `capture.db` was replaced or removed while it held the
+connection.
+
+The census is not an atomic snapshot of concurrent writers. A change made after
+a stream was observed is indexed by a later pass. A missing checkpoint still
+costs one historical validation of the stream, and the reset it implies then
+reindexes the union.
+
 Search-index reset remains one atomic transaction. Ordinary tables use SQLite's
 truncate clear; the content-storing FTS table is dropped and recreated using the
 owning schema instead of deleting text rows individually. Readers retain the

@@ -316,6 +316,16 @@ function describeHolder(held) {
   return `held by pid ${held.token.pid} on ${held.token.host} since ${held.token.acquiredAt}`;
 }
 
+/** A journal validation checkpoint whose fields can describe a journal of
+ *  `size` bytes. Shape only: whether it is complete and still names the
+ *  current file version is the caller's question. */
+export function validJournalCheckpoint(checkpoint, size) {
+  return Boolean(checkpoint) && Number.isSafeInteger(checkpoint.bytes) && checkpoint.bytes >= 0 && checkpoint.bytes <= size &&
+    Number.isSafeInteger(checkpoint.count) && checkpoint.count >= 0 && checkpoint.count <= checkpoint.bytes &&
+    typeof checkpoint.epoch === "string" && typeof checkpoint.complete === "boolean" &&
+    (checkpoint.resetting === undefined || typeof checkpoint.resetting === "boolean") && !(checkpoint.resetting && checkpoint.complete);
+}
+
 export class RecordStore {
   constructor(root, { owner, lockTimeoutMs = 10000, lockStaleMs = 30000 } = {}) {
     if (!root) throw new StoreError("record root is required");
@@ -466,10 +476,7 @@ export class RecordStore {
   validateJournal(streamId, state, { maxRecords = Infinity, maxBytes = Infinity, stopped = () => false, work } = {}) {
     const path = this.journalPath(streamId), version = fileVersion(path);
     let checkpoint = state.get("journal", streamId);
-    if (checkpoint && (!Number.isSafeInteger(checkpoint.bytes) || checkpoint.bytes < 0 || checkpoint.bytes > (version?.size ?? 0) ||
-        !Number.isSafeInteger(checkpoint.count) || checkpoint.count < 0 || checkpoint.count > checkpoint.bytes ||
-        typeof checkpoint.epoch !== "string" || typeof checkpoint.complete !== "boolean" ||
-        (checkpoint.resetting !== undefined && typeof checkpoint.resetting !== "boolean") || checkpoint.resetting && checkpoint.complete)) checkpoint = null;
+    if (checkpoint && !validJournalCheckpoint(checkpoint, version?.size ?? 0)) checkpoint = null;
     if (checkpoint && sameVersion(checkpoint.version, version) && checkpoint.complete) return checkpoint;
     if (!checkpoint || !sameVersion(checkpoint.version, version)) {
       checkpoint = { version, epoch: randomBytes(16).toString("hex"), bytes: 0, count: 0, complete: false, resetting: true };
@@ -482,14 +489,14 @@ export class RecordStore {
       if (recordsUsed >= maxRecords || stopped()) return checkpoint;
       state.transaction(() => {
         const limit = Math.min(2000, maxRecords - recordsUsed);
-        const removed = Number(state.db.prepare(`DELETE FROM journal_ids WHERE rowid IN
+        const removed = Number(state.statement(`DELETE FROM journal_ids WHERE rowid IN
           (SELECT rowid FROM journal_ids WHERE stream = ? LIMIT ?)`).run(streamId, limit).changes);
         recordsUsed += removed;
         if (work) work.deletedIds = (work.deletedIds ?? 0) + removed;
         if (removed < limit) { delete checkpoint.resetting; state.set("journal", streamId, checkpoint); }
       });
     }
-    const addId = state.db.prepare("INSERT OR IGNORE INTO journal_ids VALUES (?, ?)");
+    const addId = state.statement("INSERT OR IGNORE INTO journal_ids VALUES (?, ?)");
     const iterator = this.iterateJournal(streamId, { start: checkpoint.bytes, end: version?.size ?? 0,
       check: () => { stopped(); } });
     let done = false;

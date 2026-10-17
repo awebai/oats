@@ -23,12 +23,18 @@ export function fileVersion(path) {
   } catch (err) { if (err.code === "ENOENT") return null; throw err; }
 }
 export const sameVersion = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function fileIdentity(path) {
+  try { const st = statSync(path, { bigint: true }); return { dev: String(st.dev), ino: String(st.ino) }; }
+  catch (err) { if (err.code === "ENOENT") return null; throw err; }
+}
 
 export class DerivedState {
   constructor(root) {
     const { DatabaseSync } = require("node:sqlite");
     mkdirSync(join(root, "index"), { recursive: true });
-    this.db = new DatabaseSync(join(root, "index", "capture.db"));
+    this.path = join(root, "index", "capture.db");
+    const before = fileIdentity(this.path);
+    this.db = new DatabaseSync(this.path);
     try {
       this.db.exec("PRAGMA busy_timeout = 60000; PRAGMA cache_size = -2048; PRAGMA temp_store = FILE");
       // A healthy accelerator needs no schema write transaction on every open.
@@ -46,14 +52,36 @@ export class DerivedState {
           this.db.exec("COMMIT");
         } catch (err) { this.db.exec("ROLLBACK"); throw err; }
       }
+      // The file this connection writes, for callers that hold it across
+      // streams. SQLite does not expose the opened descriptor, so the path's
+      // identity binds the connection only when it is the same before the
+      // open and once the schema is on disk; otherwise it stays unbound and
+      // assertFile refuses.
+      const after = fileIdentity(this.path);
+      this.file = after && (!before || before.dev === after.dev && before.ino === after.ino) ? after : null;
       this.depth = 0;
+      this.statements = new Map();
       this.read = this.db.prepare("SELECT value FROM state WHERE kind = ? AND key = ?");
       this.write = this.db.prepare("INSERT INTO state VALUES (?, ?, ?) ON CONFLICT(kind,key) DO UPDATE SET value=excluded.value WHERE state.value != excluded.value");
     } catch (err) { this.db.close(); throw err; }
   }
   get(kind, key) { const row = this.read.get(kind, key); return row ? JSON.parse(row.value) : null; }
   set(kind, key, value) { this.write.run(kind, key, JSON.stringify(value)); }
-  delete(kind, key) { this.db.prepare("DELETE FROM state WHERE kind = ? AND key = ?").run(kind, key); }
+  delete(kind, key) { this.statement("DELETE FROM state WHERE kind = ? AND key = ?").run(kind, key); }
+  // One prepared statement per SQL text for this connection's lifetime. Only
+  // for statements run to completion (run/get/all), never left iterating.
+  statement(sql) {
+    let prepared = this.statements.get(sql);
+    if (!prepared) { prepared = this.db.prepare(sql); this.statements.set(sql, prepared); }
+    return prepared;
+  }
+  // A connection held across many streams must not publish checkpoint proof
+  // into a capture.db that was replaced or removed after it opened.
+  assertFile() {
+    const now = fileIdentity(this.path);
+    if (!now || !this.file || now.dev !== this.file.dev || now.ino !== this.file.ino)
+      throw new Error(`capture.db changed during the pass; retry: ${this.path}`);
+  }
   *entries(kind) {
     for (const row of keysetRows(this.db, "SELECT key, value FROM state WHERE kind = ?", "key", [kind])) {
       yield { key: row.key, value: JSON.parse(row.value) };
