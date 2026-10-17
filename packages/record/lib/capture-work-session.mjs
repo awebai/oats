@@ -200,9 +200,10 @@ export class CaptureWorkSession {
 
   // Yield/stop never infer completion. The owning worker calls complete() only
   // when it wants a final all-stage decision; idle is merely a scheduling hint.
+  // An observed interruption ends the run as interrupted, finalization included.
   yieldWorker({ resetRequired = false } = {}) {
-    if (this.start.pass.finalize) return this.finish({ reason: "deadline" });
-    if (this.start.budget.reason === "interrupted") return this.finish({ reason: "interrupted" });
+    if (this.start.pass.finalize || this.start.budget.reason === "interrupted")
+      return this.finish({ reason: this.start.budget.reason ?? "deadline" });
     this.run.publish({ pending: true, peakRssBytes: this.start.budget.peakRssBytes });
     return { outcome: "partial", reason: this.start.budget.reason ?? "deadline", continuation: true,
       ...(resetRequired ? { resetRequired: true } : {}) };
@@ -215,8 +216,10 @@ export class CaptureWorkSession {
   }
 
   complete(options) {
-    if (this.start.pass.finalize || this.start.budget.sample() !== null)
-      return this.finish({ reason: this.start.budget.reason ?? "deadline" });
+    // The sampled reason (interrupted, rss, deadline) is kept; finalization
+    // without one reports its allowance.
+    const stopped = this.start.budget.sample();
+    if (this.start.pass.finalize || stopped !== null) return this.finish({ reason: stopped ?? "deadline" });
     const audit = this.indexEnabled ? auditCaptureCompletion(this, options) : auditCaptureSourceRetirement(this, options);
     if (audit.stopped || audit.needsWork) return this.yieldWorker();
     // Normally these facts entered the run during replacement construction.

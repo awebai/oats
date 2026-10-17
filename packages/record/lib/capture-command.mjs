@@ -1,7 +1,8 @@
 // Private command caller. Root discovery runs only in the admitted worker;
 // callers cannot choose its executable, entry path, heap or pass allowances.
 import { createHash } from "node:crypto";
-import { isAbsolute, resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureDefaultRootPlan } from "./capture-default-roots.mjs";
 import { superviseCapturePass } from "./capture-pass.mjs";
@@ -25,7 +26,22 @@ export function captureCommandSelection(options) {
   return createHash("sha256").update(JSON.stringify(options.plan)).digest("hex");
 }
 
-export async function runCaptureCommand(root, options) {
+/** The fixed label of the program a command runs in: the kernel's `oats`
+ *  (which imports the record bins) or one of the record's own bins,
+ *  `turn-record`; undefined for any other program (a test runner, an
+ *  embedding host), which is never guessed. Only the entry's file name is
+ *  compared; nothing of argv is recorded. */
+const RECORD_BINS = new Set(["turn-record.mjs", "capture.mjs", "setup.mjs"]);
+export function captureCommandEntry(entry = process.argv[1] ?? "") {
+  let path = entry;
+  try { path = realpathSync(entry); } catch { /* the name as given */ }
+  const name = basename(path);
+  return name === "oats.mjs" ? "oats" : RECORD_BINS.has(name) ? "turn-record" : undefined;
+}
+
+/** `entry` labels the calling program in the lock owner record (see
+ *  captureLockAttribution); `attribute: false` leaves the record without. */
+export async function runCaptureCommand(root, options, { entry, attribute = entry !== undefined } = {}) {
   if (typeof root !== "string" || !root || root.includes("\0")) throw new Error("invalid capture command root");
   const selected = captureCommandOptions(options);
   // Resolve relative root spelling against the caller, never a child's cwd.
@@ -35,7 +51,8 @@ export async function runCaptureCommand(root, options) {
   try { result = await superviseCapturePass(absolute, selected, {
     workerPath: fileURLToPath(new URL("./capture-command-worker.mjs", import.meta.url)),
     acquire: path => {
-      const lock = acquireCaptureLock(path);
+      const lock = acquireCaptureLock(path, !attribute ? {} : {
+        command: selected.retrySetAside ? "retry" : "pass", caller: { entry, trigger: selected.trigger } });
       if (lock.reclaimed) reclaimedLock = { path: lock.path, ...lock.reclaimed };
       return lock;
     },

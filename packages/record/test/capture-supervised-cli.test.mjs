@@ -9,6 +9,7 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { RecordStore } from "../lib/store.mjs";
+import { DerivedState } from "../lib/derived-state.mjs";
 import { readCaptureStatus } from "../lib/capture-status.mjs";
 import { acquireCaptureLock, captureLockPath } from "../lib/capture-lock.mjs";
 import { captureSessions } from "../lib/capture-cc.mjs";
@@ -126,8 +127,207 @@ test("CLI reclaim of a dead lock publishes its evidence only for a valid past st
     const result = f.cli(["--sessions-only", "--no-index"]); passed(result);
     assert.match(result.stderr, new RegExp(`reclaimed .* from pid ${dead}, which died`), "the operator line is kept");
     assert.deepEqual(readCaptureStatus(f.root).lastRun.reclaimedLock, expected, JSON.stringify(recorded));
+    assert.equal(readCaptureStatus(f.root).lastFailure, null, "a death before any run receipt invents no old run");
     assert.equal(fs.existsSync(captureLockPath(f.root)), false);
   }
+});
+
+// TERM/INT handshakes inside the real production worker. A parent-only preload
+// adds a test hook to the fixed worker's node flags; the hook runs at the
+// worker's own budget samples (process.memoryUsage), so the signal lands after
+// a committed unit, never by timing. Only fixture-owned processes are signalled.
+function signalFixture(t, f, mode, signal = "SIGTERM") {
+  const lib = new URL("../lib/", import.meta.url).href, dir = join(f.base, "hook");
+  fs.mkdirSync(dir);
+  const hook = join(dir, "worker-hook.mjs"), preload = join(dir, "cli-preload.mjs");
+  fs.writeFileSync(hook, `import fs from "node:fs"; import { join } from "node:path";
+    import { RecordStore } from ${JSON.stringify(lib + "store.mjs")};
+    const dir = ${JSON.stringify(dir)}, root = ${JSON.stringify(f.root)}, mode = ${JSON.stringify(mode)}, signal = ${JSON.stringify(signal)};
+    const lockOwner = join(root, ".capture.lock/owner.json"), parent = process.ppid;
+    const nap = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    fs.appendFileSync(join(dir, "starts"), process.pid + "\\n");
+    const start = fs.readFileSync(join(dir, "starts"), "utf8").trim().split("\\n").length;
+    const ownReceipt = () => { try { return JSON.parse(fs.readFileSync(join(root, "capture-status.json"), "utf8")).lastRun?.pid === process.pid; } catch { return false; } };
+    const memoryUsage = process.memoryUsage; let fired = false;
+    process.memoryUsage = function () {
+      // "finalize": starts 1-7 report an RSS over the policy once their receipt
+      // is published (after start 1 commits the new turn), so each yields a
+      // continuation; start 8 is the pass's finalization worker.
+      if (mode === "finalize" && start < 8) {
+        const usage = memoryUsage.call(process);
+        return ownReceipt() && new RecordStore(root, { owner: "fixture" }).readStream("fixture~cc.session").length >= 2 ? { ...usage, rss: 2 ** 40 } : usage;
+      }
+      if (mode === "finalize" && !fired && !ownReceipt()) return memoryUsage.call(process);
+      if (!fired && new RecordStore(root, { owner: "fixture" }).readStream("fixture~cc.session").length >= 2) {
+        fired = true;
+        fs.copyFileSync(lockOwner, join(dir, "owner-seen.json"));
+        fs.writeFileSync(join(dir, "witness"), String(process.pid));
+        if (mode === "die") {
+          process.kill(parent, "SIGKILL");
+          while (process.ppid === parent) nap(10);
+          process.kill(process.pid, "SIGKILL");
+        }
+        // "group": the CLI leads its own test-owned process group; the signal
+        // reaches this worker too, as a terminal, timeout(1) or a cgroup would.
+        process.kill(mode === "group" ? -parent : parent, signal);
+        if (mode === "stall") for (;;) nap(50);
+        const until = Date.now() + 20000;
+        while (Date.now() < until) {
+          try { if (JSON.parse(fs.readFileSync(lockOwner, "utf8")).stop === true) break; } catch {}
+          nap(10);
+        }
+        fs.writeFileSync(join(dir, "stop-seen"), "");
+      }
+      return memoryUsage.call(process);
+    };`);
+  fs.writeFileSync(preload, `import cp from "node:child_process"; import { syncBuiltinESMExports } from "node:module";
+    const spawn = cp.spawn;
+    cp.spawn = (command, args, options) => spawn(command, String(args.at(-1)).endsWith("capture-command-worker.mjs")
+      ? [...args.slice(0, -1), "--import", ${JSON.stringify(pathToFileURL(hook).href)}, args.at(-1)] : args, options);
+    syncBuiltinESMExports();`);
+  return {
+    dir,
+    cli(args = []) { return spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, bin, ...args], { cwd: f.base, encoding: "utf8", env: f.env, timeout: 60000 }); },
+    // The CLI in a new process group of its own, signalled only through that group.
+    async groupCli(args = []) {
+      const child = spawn(process.execPath, ["--import", pathToFileURL(preload).href, bin, ...args],
+        { cwd: f.base, env: f.env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+      t.after(() => { try { process.kill(-child.pid, "SIGKILL"); } catch (error) { if (error.code !== "ESRCH") throw error; } });
+      let stdout = "", stderr = "";
+      child.stdout.on("data", bytes => { stdout += bytes; }); child.stderr.on("data", bytes => { stderr += bytes; });
+      const timeout = setTimeout(() => { try { process.kill(-child.pid, "SIGKILL"); } catch {} }, 60000);
+      const [status, signal] = await once(child, "close"); clearTimeout(timeout);
+      return { status, signal, stdout, stderr, pid: child.pid };
+    },
+    starts() { return fs.readFileSync(join(dir, "starts"), "utf8").trim().split("\n").map(Number); },
+  };
+}
+
+test("CLI TERM during a production work unit stops cooperatively: interrupted receipt, durable counts and prior success kept, one worker reaped, lock released", t => {
+  const f = fixture(t); passed(f.cli());
+  const before = readCaptureStatus(f.root); assert.equal(before.lastRun.outcome, "complete");
+  fs.appendFileSync(f.cc, native(2)); fs.appendFileSync(f.logs, aw(2));
+  const s = signalFixture(t, f, "cooperate"), result = s.cli();
+  assert.equal(result.status, 1, result.stdout + result.stderr); assert.equal(result.signal, null);
+  assert.match(result.stderr, /capture pass failed: capture worker failed \(interrupted\)/);
+  assert.ok(fs.existsSync(join(s.dir, "stop-seen")), "the worker observed the nonce-bound stop request");
+  const status = readCaptureStatus(f.root);
+  assert.equal(status.lastRun.outcome, "failed"); assert.equal(status.lastRun.reason, "interrupted");
+  assert.ok(status.lastRun.finishedAt, "the worker finalized its own receipt");
+  assert.equal(status.lastRun.counts.turnsAppended >= 1, true, "the committed unit is counted");
+  assert.equal(status.lastFailure.id, status.lastRun.id); assert.equal(status.lastFailure.reason, "interrupted");
+  assert.match(status.lastFailure.message, /^Capture execution was interrupted\. Counters report only durably confirmed unit accounting/);
+  assert.deepEqual(status.lastSuccess, before.lastSuccess);
+  assert.equal(f.store.readStream("fixture~cc.session").length, 2);
+  assert.deepEqual(s.starts(), [Number(fs.readFileSync(join(s.dir, "witness"), "utf8"))], "no continuation or new worker after the stop");
+  assert.throws(() => process.kill(s.starts()[0], 0), { code: "ESRCH" }, "the worker was reaped");
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+  const owner = JSON.parse(fs.readFileSync(join(s.dir, "owner-seen.json"), "utf8"));
+  assert.equal(owner.command, "pass"); assert.deepEqual(owner.caller, { entry: "turn-record", trigger: "manual" });
+  assert.equal(owner.ppid, process.pid); assert.equal(owner.worker.pid, s.starts()[0]); assert.equal(Object.hasOwn(owner, "stop"), false);
+  passed(f.cli());
+  assert.equal(readCaptureStatus(f.root).lastRun.outcome, "complete"); assert.equal(f.store.readStream("fixture~aw").length, 2);
+});
+
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  test(`CLI ${signal} delivered to the caller's whole process group still stops the worker cooperatively`, async t => {
+    const f = fixture(t); passed(f.cli());
+    const before = readCaptureStatus(f.root);
+    fs.appendFileSync(f.cc, native(2));
+    const s = signalFixture(t, f, "group", signal), result = await s.groupCli();
+    assert.equal(result.status, 1, result.stdout + result.stderr); assert.equal(result.signal, null);
+    assert.ok(fs.existsSync(join(s.dir, "stop-seen")), "the worker survived the group signal and saw the stop request");
+    const status = readCaptureStatus(f.root);
+    assert.equal(status.lastRun.outcome, "failed", "a worker killed by the default action would leave its receipt running");
+    assert.equal(status.lastRun.reason, "interrupted"); assert.ok(status.lastRun.finishedAt);
+    assert.equal(status.lastRun.counts.turnsAppended >= 1, true);
+    assert.match(status.lastFailure.message, /^Capture execution was interrupted\. /);
+    assert.deepEqual(status.lastSuccess, before.lastSuccess);
+    assert.equal(s.starts().length, 1);
+    assert.throws(() => process.kill(-result.pid, 0), { code: "ESRCH" }, "every process of the test-owned group was reaped");
+    assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+  });
+}
+
+test("CLI TERM observed by the pass's finalization worker ends its run failed/interrupted, not partial/deadline", t => {
+  const f = fixture(t); passed(f.cli());
+  const before = readCaptureStatus(f.root);
+  fs.appendFileSync(f.cc, native(2));
+  const s = signalFixture(t, f, "finalize"), result = s.cli();
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /capture worker failed \(interrupted\)/);
+  assert.ok(fs.existsSync(join(s.dir, "stop-seen")));
+  assert.equal(s.starts().length, 8, "seven continuations, then the finalization worker");
+  const status = readCaptureStatus(f.root);
+  assert.equal(status.lastRun.outcome, "failed"); assert.equal(status.lastRun.reason, "interrupted"); assert.ok(status.lastRun.finishedAt);
+  assert.equal(status.lastRun.pid, s.starts()[7], "the finalization worker finished the run");
+  assert.equal(status.lastRun.counts.turnsAppended >= 1, true, "the first worker's committed unit is still counted");
+  assert.equal(status.lastFailure.id, status.lastRun.id); assert.match(status.lastFailure.message, /^Capture execution was interrupted\. /);
+  assert.deepEqual(status.lastSuccess, before.lastSuccess);
+  for (const pid of s.starts()) assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+});
+
+test("CLI TERM during a cursor reset is answered after the committed reset, which it says was committed", t => {
+  const f = fixture(t), preload = join(f.base, "reset-preload.mjs");
+  // Self-TERM inside the reset's synchronous transaction (its generation ids).
+  fs.writeFileSync(preload, `import crypto from "node:crypto"; import fs from "node:fs"; import { syncBuiltinESMExports } from "node:module";
+    const randomUUID = crypto.randomUUID; let sent = false;
+    crypto.randomUUID = (...args) => {
+      if (!sent && fs.existsSync(${JSON.stringify(captureLockPath(f.root))})) { sent = true; process.kill(process.pid, "SIGTERM"); }
+      return randomUUID(...args);
+    };
+    syncBuiltinESMExports();`);
+  const result = spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, bin, "--reset-cursors", "--source", "cc", "--json"],
+    { cwd: f.base, encoding: "utf8", env: f.env, timeout: 30000 });
+  assert.equal(result.status, 1, result.stdout + result.stderr); assert.equal(result.signal, null);
+  assert.deepEqual(JSON.parse(result.stdout), { status: "failed", complete: false, error: "capture interrupted by SIGTERM after the cursor reset was committed" });
+  const state = new DerivedState(f.root), reset = state.get("reset", "fixture:cc"); state.close();
+  assert.match(String(reset), /^[0-9a-f-]{36}$/, "the reset is committed, not rolled back");
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+});
+
+test("CLI TERM to a worker that cannot cooperate kills and reaps it after the grace; no finished receipt is invented and the next pass records the interruption", t => {
+  const f = fixture(t); passed(f.cli());
+  const before = readCaptureStatus(f.root);
+  fs.appendFileSync(f.cc, native(2));
+  const s = signalFixture(t, f, "stall"), result = s.cli();
+  assert.equal(result.status, 1, result.stdout + result.stderr); assert.match(result.stderr, /interrupted/);
+  const stalled = readCaptureStatus(f.root);
+  assert.equal(stalled.lastRun.outcome, "running", "a killed worker leaves its unfinished receipt");
+  assert.deepEqual(stalled.lastSuccess, before.lastSuccess);
+  assert.equal(s.starts().length, 1); assert.throws(() => process.kill(s.starts()[0], 0), { code: "ESRCH" });
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+  passed(f.cli());
+  const next = readCaptureStatus(f.root);
+  assert.equal(next.lastFailure.id, stalled.lastRun.id); assert.equal(next.lastFailure.reason, "interrupted");
+  assert.notEqual(next.lastRun.id, stalled.lastRun.id); assert.equal(next.lastRun.outcome, "complete");
+  assert.equal(f.store.readStream("fixture~cc.session").length, 2);
+});
+
+test("a supervisor killed with its worker leaves a lock the next ordinary pass reclaims, recording the interruption against the old run only", t => {
+  const f = fixture(t); passed(f.cli());
+  const before = readCaptureStatus(f.root);
+  fs.appendFileSync(f.cc, native(2));
+  const s = signalFixture(t, f, "die"), result = s.cli();
+  assert.equal(result.signal, "SIGKILL", result.stdout + result.stderr);
+  const killed = readCaptureStatus(f.root), owner = JSON.parse(fs.readFileSync(join(captureLockPath(f.root), "owner.json"), "utf8"));
+  assert.equal(killed.lastRun.outcome, "running"); assert.deepEqual(killed.lastSuccess, before.lastSuccess);
+  assert.equal(owner.command, "pass"); assert.equal(owner.worker.pid, s.starts()[0]);
+  // The killed worker committed a unit after its last published status: its
+  // confirmed counts are in the run's committed counter cache, not the file.
+  const state = new DerivedState(f.root), cached = state.get("capture-run", "current"); state.close();
+  assert.equal(cached.run.id, killed.lastRun.id); assert.equal(cached.run.counts.turnsAppended >= 1, true);
+  const next = f.cli(); passed(next);
+  assert.match(next.stderr, new RegExp(`reclaimed .* from pid ${owner.pid}, which died`));
+  const status = readCaptureStatus(f.root);
+  assert.equal(status.lastFailure.id, killed.lastRun.id); assert.equal(status.lastFailure.reason, "interrupted");
+  assert.deepEqual(status.lastFailure.counts, cached.run.counts, "the old run keeps its committed confirmed counts");
+  assert.match(status.lastFailure.message, /^Capture execution was interrupted\. /);
+  assert.notEqual(status.lastRun.id, killed.lastRun.id); assert.equal(status.lastRun.outcome, "complete", "the new pass is not blamed");
+  assert.deepEqual(status.lastRun.reclaimedLock, { pid: owner.pid, startedAt: owner.startedAt });
+  assert.equal(f.store.readStream("fixture~cc.session").length, 2, "committed checkpoints are kept, nothing is duplicated");
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
 });
 
 // A worker's own status failure, which this directory used to provoke, is

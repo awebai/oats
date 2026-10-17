@@ -121,12 +121,54 @@ test("overlap starts no worker and never releases another owner; spawn failures 
   assert.equal(fs.existsSync(captureLockPath(f.root)), false);
 });
 
-test("external interruption stops continuation and reaps the current owned worker", async t => {
+test("TERM asks the started worker to stop through its owner record; it stops at its next check, no continuation starts, the lock is released", async t => {
+  const f = fixture(t, `await runCaptureWorker(({root,budget})=>{
+    fs.appendFileSync(join(root,'pids'),String(process.pid)+'\\n');
+    process.kill(process.ppid,'SIGTERM');
+    const nap=()=>Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);
+    try{for(;;){budget.check();nap();}}
+    catch(error){fs.writeFileSync(join(root,'stopped'),JSON.stringify({reason:error.reason,stop:readCaptureLockOwner(root).stop}));throw error;}
+  });`);
+  const result = await superviseCapturePass(f.root, {}, { ...seams, workerPath: f.workerPath, graceMs: 20000 });
+  assert.deepEqual(result, { outcome: "failed", reason: "interrupted", exitCode: 1, starts: 1 });
+  assert.deepEqual(JSON.parse(fs.readFileSync(join(f.root, "stopped"), "utf8")), { reason: "interrupted", stop: true });
+  const pids = fs.readFileSync(join(f.root, "pids"), "utf8").trim().split("\n");
+  assert.equal(pids.length, 1); assert.equal(holderLiveness(Number(pids[0])), "dead");
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+});
+
+test("a worker that cannot cooperate is killed and reaped after the grace; a second signal neither bypasses cleanup nor restarts the grace", async t => {
   const f = fixture(t, `await runCaptureWorker(({root})=>{
     fs.writeFileSync(join(root,'pid'),String(process.pid));
-    process.kill(process.ppid,'SIGTERM');while(true){}
+    process.kill(process.ppid,'SIGTERM');
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,300);
+    process.kill(process.ppid,'SIGINT');
+    while(true){}
   });`);
-  const result = await superviseCapturePass(f.root, {}, { ...seams, workerPath: f.workerPath });
+  const started = Date.now();
+  const result = await superviseCapturePass(f.root, {}, { ...seams, workerPath: f.workerPath, graceMs: 500 });
+  assert.deepEqual(result, { outcome: "failed", reason: "interrupted", exitCode: 1, starts: 1 });
+  assert.ok(Date.now() - started < 10000, "bounded by the first signal's grace, well inside the deadline");
+  assert.equal(holderLiveness(Number(fs.readFileSync(join(f.root, "pid")))), "dead");
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+});
+
+test("TERM before the child is started kills it at once; no operation runs", async t => {
+  const f = fixture(t, `fs.writeFileSync(join(process.argv[1],'..','pid'),String(process.pid));
+    process.kill(process.ppid,'SIGTERM');
+    await runCaptureWorker(({root})=>{fs.writeFileSync(join(root,'ran'),'');return {outcome:'complete',reason:null};});`);
+  const result = await superviseCapturePass(f.root, {}, { ...seams, workerPath: f.workerPath, graceMs: 20000 });
+  assert.deepEqual(result, { outcome: "failed", reason: "interrupted", exitCode: 1, starts: 1 });
+  assert.equal(fs.existsSync(join(f.root, "ran")), false);
+  assert.equal(holderLiveness(Number(fs.readFileSync(join(f.root, "pid")))), "dead");
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+});
+
+test("TERM after the worker sent its result still bounds the child's lifetime by the grace", async t => {
+  const f = fixture(t, `await runCaptureWorker(({root})=>{fs.writeFileSync(join(root,'pid'),String(process.pid));return {outcome:'complete',reason:null};});
+    process.kill(process.ppid,'SIGTERM');
+    while(true){}`);
+  const result = await superviseCapturePass(f.root, {}, { ...seams, workerPath: f.workerPath, graceMs: 500 });
   assert.deepEqual(result, { outcome: "failed", reason: "interrupted", exitCode: 1, starts: 1 });
   assert.equal(holderLiveness(Number(fs.readFileSync(join(f.root, "pid")))), "dead");
   assert.equal(fs.existsSync(captureLockPath(f.root)), false);

@@ -63,6 +63,22 @@ const readOwner = (dir) => {
 };
 export const readCaptureLockOwner = root => readOwner(captureLockPath(root));
 
+// Diagnostic attribution in a fresh owner record: which command took the
+// lock, from which entry and trigger, and the immediate parent process. Fixed
+// labels and direct process facts only, never argv, environment or a guessed
+// external caller; an entry that is not known is left out. It never confers authority: identity, liveness and reclaim
+// read only pid, nonce, startedAt, host and worker.
+const COMMANDS = new Set(["pass", "home", "file", "reset-cursors", "retry"]);
+const ENTRIES = new Set(["oats", "turn-record", "hook-runner", "service-runner"]);
+const TRIGGERS = new Set(["manual", "watch", "hook", "setup", "service"]);
+export function captureLockAttribution({ command, caller, ppid = process.ppid } = {}) {
+  if (command === undefined && caller === undefined) return {};
+  if (!COMMANDS.has(command) || caller?.entry !== undefined && !ENTRIES.has(caller.entry) || !TRIGGERS.has(caller?.trigger) ||
+      Object.keys(caller).some(key => key !== "entry" && key !== "trigger")) throw new Error("invalid capture lock attribution");
+  return { command, caller: { ...(caller.entry !== undefined ? { entry: caller.entry } : {}), trigger: caller.trigger },
+    ...(validPid(ppid) ? { ppid } : {}) };
+}
+
 function validPid(pid) { return Number.isInteger(pid) && pid > 0 && pid <= 2147483647; }
 function workerDead(owner, { host, liveness }) {
   if (!Object.hasOwn(owner, "worker")) return true;
@@ -141,8 +157,9 @@ export function recoveryInstruction(dir, owner, liveness) {
  *  operator recovery followed by a new pass in the same long-lived process).
  *
  *  `io` exists for fault injection in tests only. */
-export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, liveness = holderLiveness, host = hostname(), reclaimHostless = RECLAIM_HOSTLESS_RECORDS, io = {} } = {}) {
+export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, liveness = holderLiveness, host = hostname(), reclaimHostless = RECLAIM_HOSTLESS_RECORDS, io = {}, command, caller } = {}) {
   if (!validPid(pid)) throw new Error("capture lock owner must have a positive process ID");
+  const attribution = captureLockAttribution({ command, caller });
   const fs = { writeFileSync, rmSync, openSync, closeSync, lstatSync, fsyncSync, renameSync, ...io };
   const dir = captureLockPath(root);
   const nonce = randomBytes(8).toString("hex");
@@ -180,7 +197,7 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
     // a record-less replacement look like the directory we created.
     directoryFd = fs.openSync(dir, "r");
     identity = fstatSync(directoryFd);
-    fs.writeFileSync(join(dir, "owner.json"), JSON.stringify({ pid, nonce, startedAt: new Date(now()).toISOString(), host }), { mode: 0o600 });
+    fs.writeFileSync(join(dir, "owner.json"), JSON.stringify({ pid, nonce, startedAt: new Date(now()).toISOString(), host, ...attribution }), { mode: 0o600 });
   } catch (err) {
     // Ownership was proven by the mkdir, not by the moment of cleanup: the
     // directory is removed only if it is still ours (same inode) and holds
@@ -205,6 +222,44 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
   } finally {
     if (directoryFd !== undefined) fs.closeSync(directoryFd);
   }
+  const ownCurrent = message => {
+    const current = readOwner(dir), st = fs.lstatSync(dir);
+    if (st.dev !== identity.dev || st.ino !== identity.ino || current?.pid !== pid || current?.nonce !== nonce) throw new Error(message);
+    return current;
+  };
+  // Durably replace this acquisition's owner record with `next`, only while it
+  // is still exactly `current` in the directory this call created.
+  const replaceOwner = (current, next, what, label) => {
+    const temp = join(dir, `${label}-${nonce}.tmp`); let fd, dirFd, rootFd, temporary, published = false;
+    try {
+      dirFd = fs.openSync(dir, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const pinned = fstatSync(dirFd);
+      if (pinned.dev !== identity.dev || pinned.ino !== identity.ino) throw new Error(`capture lock changed before ${what}`);
+      fd = fs.openSync(temp, "wx", 0o600);
+      fs.writeFileSync(fd, JSON.stringify(next));
+      fs.fsyncSync(fd); temporary = fstatSync(fd, { bigint: true });
+      const again = readOwner(dir), named = fs.lstatSync(dir);
+      if (named.dev !== identity.dev || named.ino !== identity.ino || JSON.stringify(again) !== JSON.stringify(current) || !sameFile(temporary, fs.lstatSync(temp, { bigint: true }))) throw new Error(`capture lock changed during ${what}`);
+      fs.renameSync(temp, join(dir, "owner.json"));
+      published = true;
+      // Publish file bytes, their rename, and the lock directory's parent
+      // entry before GO. A failure is not permission to start the worker.
+      fs.fsyncSync(dirFd);
+      rootFd = fs.openSync(root, "r"); fs.fsyncSync(rootFd);
+    } finally {
+      // Never remove a path another caller replaced, even after a failed
+      // publication. An unpublished/unverifiable file is conservatively kept.
+      if (!published && temporary) {
+        try {
+          const named = fs.lstatSync(dir);
+          if (named.dev === identity.dev && named.ino === identity.ino && sameFile(temporary, fs.lstatSync(temp, { bigint: true }))) unlinkSync(temp);
+        } catch { /* absent or unknown: preserve */ }
+      }
+      if (fd !== undefined) fs.closeSync(fd);
+      if (rootFd !== undefined) fs.closeSync(rootFd);
+      if (dirFd !== undefined) fs.closeSync(dirFd);
+    }
+  };
   return {
     path: dir,
     nonce,
@@ -213,8 +268,7 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
     // A dead supervisor's lock cannot then be reclaimed while its worker lives.
     registerWorker(worker, { previous } = {}) {
       if (!validPid(worker?.pid) || worker.pid === pid || typeof worker.nonce !== "string" || !worker.nonce || worker.nonce.length > 128 || typeof worker.startedAt !== "string" || !Number.isFinite(Date.parse(worker.startedAt))) throw new Error("invalid capture worker identity");
-      const current = readOwner(dir), st = fs.lstatSync(dir);
-      if (st.dev !== identity.dev || st.ino !== identity.ino || current?.pid !== pid || current?.nonce !== nonce) throw new Error("capture lock changed before worker registration");
+      const current = ownCurrent("capture lock changed before worker registration");
       // Continuation never drops the root lock between children. Replace only
       // the caller's exact previous publication, after positive death proof;
       // reused PIDs and uncertain liveness preserve the old lock unchanged.
@@ -224,35 +278,15 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
           throw new Error("previous capture worker is not proven dead and unchanged");
         }
       } else if (previous) throw new Error("capture lock changed before worker continuation");
-      const temp = join(dir, `worker-${nonce}.tmp`); let fd, dirFd, rootFd, temporary, published = false;
-      try {
-        dirFd = fs.openSync(dir, constants.O_RDONLY | constants.O_NOFOLLOW);
-        const pinned = fstatSync(dirFd);
-        if (pinned.dev !== identity.dev || pinned.ino !== identity.ino) throw new Error("capture lock changed before worker registration");
-        fd = fs.openSync(temp, "wx", 0o600);
-        fs.writeFileSync(fd, JSON.stringify({ ...current, worker: { pid: worker.pid, nonce: worker.nonce, startedAt: worker.startedAt, host } }));
-        fs.fsyncSync(fd); temporary = fstatSync(fd, { bigint: true });
-        const again = readOwner(dir), named = fs.lstatSync(dir);
-        if (named.dev !== identity.dev || named.ino !== identity.ino || JSON.stringify(again) !== JSON.stringify(current) || !sameFile(temporary, fs.lstatSync(temp, { bigint: true }))) throw new Error("capture lock changed during worker registration");
-        fs.renameSync(temp, join(dir, "owner.json"));
-        published = true;
-        // Publish file bytes, their rename, and the lock directory's parent
-        // entry before GO. A failure is not permission to start the worker.
-        fs.fsyncSync(dirFd);
-        rootFd = fs.openSync(root, "r"); fs.fsyncSync(rootFd);
-      } finally {
-        // Never remove a path another caller replaced, even after a failed
-        // registration. An unpublished/unverifiable file is conservatively kept.
-        if (!published && temporary) {
-          try {
-            const named = fs.lstatSync(dir);
-            if (named.dev === identity.dev && named.ino === identity.ino && sameFile(temporary, fs.lstatSync(temp, { bigint: true }))) unlinkSync(temp);
-          } catch { /* absent or unknown: preserve */ }
-        }
-        if (fd !== undefined) fs.closeSync(fd);
-        if (rootFd !== undefined) fs.closeSync(rootFd);
-        if (dirFd !== undefined) fs.closeSync(dirFd);
-      }
+      replaceOwner(current, { ...current, worker: { pid: worker.pid, nonce: worker.nonce, startedAt: worker.startedAt, host } }, "worker registration", "worker");
+    },
+    // A cooperative stop request for this acquisition's worker, which reads the
+    // owner record between bounded units. It is not a lock release, changes no
+    // identity field and confers nothing: reclaim and release ignore it.
+    requestStop() {
+      const current = ownCurrent("capture lock changed before stop request");
+      if (current.stop === true) return;
+      replaceOwner(current, { ...current, stop: true }, "stop request", "stop");
     },
     release: () => {
       if (!existsSync(dir)) return { released: false, reason: "gone" };

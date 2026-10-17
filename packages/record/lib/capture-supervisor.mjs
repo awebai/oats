@@ -8,6 +8,9 @@ import { acquireCaptureLock } from "./capture-lock.mjs";
 // hrtime uses the same monotonic origin in both local processes. Startup and
 // lock publication consume this budget; the child never starts a new 300s clock.
 export const captureMonotonicMs = () => Number(process.hrtime.bigint() / 1000000n);
+// A signal received during synchronous work stays pending until a poll phase.
+// One setImmediate can resume before that phase; two hops allow one between.
+export const captureSignalPoll = () => new Promise(resolve => setImmediate(() => setImmediate(resolve)));
 export function captureWorkerEnvironment(env = process.env) {
   const out = {};
   for (const key of ["HOME", "PATH", "TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "LANG", "LC_ALL", "TZ", "USERPROFILE", "SYSTEMROOT"])
@@ -39,9 +42,15 @@ export function validWorkerResult(value) {
 
 /** Internal seams are for isolated tests, not public tuning. Only the worker
  * writes run/status facts. The supervisor owns admission, process lifetime and
- * its command result; a forced death leaves an unfinished worker receipt. */
+ * its command result; a forced death leaves an unfinished worker receipt.
+ *
+ * TERM/INT is a cooperative stop: a started worker is asked, through its own
+ * owner record, to stop at its next bounded check and write its interrupted
+ * receipt. The first signal starts one grace (`graceMs`, capped by the
+ * absolute deadline) after which the exact child is killed; later signals
+ * neither shorten nor extend it. A child not yet started is killed at once. */
 export async function superviseCapture(root, options, {
-  workerPath, policy = CAPTURE_POLICY, drainSeconds = 5,
+  workerPath, policy = CAPTURE_POLICY, drainSeconds = 5, graceMs = 5000,
   executable = process.execPath, env = process.env, clock = captureMonotonicMs,
   acquire = acquireCaptureLock, spawnChild = spawn,
   window, pass,
@@ -54,14 +63,23 @@ export async function superviseCapture(root, options, {
   const finalizeAt = Math.min(deadline, window?.finalizeAt ?? deadline);
   const lock = acquire(root);
   if (!lock.release) return { outcome: "overlap", reason: null, exitCode: 0, held: lock.held };
-  let child, timer, finish, forced, result, ready = false, diagnostics = "", outputBytes = 0;
+  let child, timer, grace, finish, forced, result, admitted = false, ready = false, diagnostics = "", outputBytes = 0;
   const stop = reason => {
     forced ??= reason;
     // ChildProcess owns this exact child until exit/reaping. Never derive a
     // process group, or signal a PID recovered from a persisted lock record.
     if (child?.pid > 0 && child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
   };
-  const interrupted = () => stop("interrupted");
+  const interrupted = () => {
+    if (grace !== undefined || forced) return;
+    if (!admitted) { stop("interrupted"); return; }
+    // A worker that already sent its result keeps it; it still must exit
+    // within the same grace.
+    if (!result) {
+      try { lock.requestStop(); } catch { stop("interrupted"); return; }
+    }
+    grace = setTimeout(() => stop("interrupted"), Math.max(0, Math.min(deadline, clock() + graceMs) - clock()));
+  };
   try {
     process.on("SIGTERM", interrupted); process.on("SIGINT", interrupted);
     child = spawnChild(executable, [`--max-old-space-size=${policy.heapMiB}`, "--no-warnings",
@@ -88,6 +106,7 @@ export async function superviseCapture(root, options, {
         try {
           lock.registerWorker(message);
           if (clock() >= deadline) { stop("deadline"); return; }
+          admitted = true;
           child.send({ type: "start", root, options, policy, parent: { pid: process.pid, nonce: lock.nonce },
             workerNonce: message.nonce, drainAt, finalizeAt, hardAt: deadline, pass,
             reclaimedLock: lock.reclaimed ?? null }, error => { if (error) stop("io"); });
@@ -108,7 +127,7 @@ export async function superviseCapture(root, options, {
     if (finish) await finish;
     return { outcome: "failed", reason: "io", exitCode: 1 };
   } finally {
-    clearTimeout(timer);
+    clearTimeout(timer); clearTimeout(grace);
     process.off("SIGTERM", interrupted); process.off("SIGINT", interrupted);
     const released = lock.release();
     // Cleanup failure is an operational error even after a successful worker.

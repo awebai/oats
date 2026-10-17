@@ -8,7 +8,7 @@ import { CAPTURE_COUNT_FIELDS, captureReclaimedLock, emptyCaptureCounts, emptyCa
 const reasons = new Set(["deadline", "rss", "heap", "interrupted", "input", "io"]);
 const messages = Object.freeze({ deadline: "Capture worker exceeded its admitted time allowance.",
   rss: "Capture worker exceeded its sampled memory allowance.", heap: "Capture worker aborted at its heap limit.",
-  interrupted: "Capture execution ended before its run receipt was finalized.",
+  interrupted: "Capture execution was interrupted.",
   input: "Capture inputs remain pending, set aside or failed.", io: "Capture could not complete an operational step." });
 const summarize = run => Object.fromEntries(["id", "trigger", "pid", "startedAt", "finishedAt", "counts", "peakRssBytes"].map(key => [key, structuredClone(run[key])]));
 const failureSummary = (run, reason, at) => ({ ...summarize({ ...run, finishedAt: at }), reason,

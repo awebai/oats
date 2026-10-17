@@ -2,11 +2,12 @@ import { fixtureEnv } from "./fixture-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { acquireCaptureLock, captureLockPath, shellQuote } from "../lib/capture-lock.mjs";
 import { RecordStore } from "../lib/store.mjs";
+import { captureCommandEntry } from "../lib/capture-command.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
 
 const CAPTURE = resolve(new URL("../bin/capture.mjs", import.meta.url).pathname);
@@ -356,4 +357,66 @@ test("capture lock: failure to verify removal cannot be reported as released", (
   assert.equal(removed, true, "failure is injected after actual removal");
   assert.equal(outcome.released, false); assert.equal(outcome.reason, "remove-failed");
   assert.match(outcome.error, /verification failure/); assert.match(outcome.recovery, /could not verify/);
+});
+
+test("capture lock: a fresh owner record carries bounded command and caller attribution, kept by worker registration and stop requests", () => {
+  const root = mkdtempSync(join(tmpdir(), "capture-lock-attribution-"));
+  try {
+    assert.throws(() => acquireCaptureLock(root, { command: "home", caller: { entry: "oats", trigger: "cron" } }), /invalid capture lock attribution/);
+    assert.throws(() => acquireCaptureLock(root, { command: "rm -rf", caller: { entry: "oats", trigger: "manual" } }), /invalid capture lock attribution/);
+    assert.throws(() => acquireCaptureLock(root, { command: "home", caller: { entry: "oats", trigger: "manual", argv: "x" } }), /invalid capture lock attribution/);
+    assert.equal(existsSync(captureLockPath(root)), false, "invalid attribution takes no lock");
+    const lock = acquireCaptureLock(root, { command: "pass", caller: { entry: "turn-record", trigger: "service" } });
+    const path = join(captureLockPath(root), "owner.json"), read = () => JSON.parse(readFileSync(path, "utf8"));
+    const fresh = read();
+    assert.deepEqual(Object.keys(fresh).sort(), ["caller", "command", "host", "nonce", "pid", "ppid", "startedAt"]);
+    assert.equal(fresh.command, "pass"); assert.deepEqual(fresh.caller, { entry: "turn-record", trigger: "service" });
+    assert.equal(fresh.ppid, process.ppid);
+    const dead = spawnSync(process.execPath, ["-e", "0"]).pid;
+    lock.registerWorker({ pid: dead, nonce: "w", startedAt: new Date().toISOString() });
+    lock.requestStop(); lock.requestStop();
+    const stopped = read();
+    assert.deepEqual({ ...stopped, worker: undefined, stop: undefined }, { ...fresh, worker: undefined, stop: undefined });
+    assert.equal(stopped.stop, true); assert.equal(stopped.worker.pid, dead);
+    assert.ok(readFileSync(path).length < 4096);
+    assert.deepEqual(lock.release(), { released: true });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("capture lock: records without attribution, and stop requests, change nothing about liveness or reclaim", () => {
+  const root = mkdtempSync(join(tmpdir(), "capture-lock-legacy-"));
+  try {
+    const dead = spawnSync(process.execPath, ["-e", "0"]).pid, startedAt = "2026-01-01T00:00:00.000Z";
+    for (const record of [{ pid: dead, nonce: "legacy", startedAt }, { pid: dead, nonce: "new", startedAt, command: "home", caller: { entry: "oats", trigger: "manual" }, ppid: 1, stop: true }]) {
+      mkdirSync(captureLockPath(root), { recursive: true });
+      writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ ...record, host: hostname() }));
+      const lock = acquireCaptureLock(root);
+      assert.deepEqual(lock.reclaimed, { pid: dead, startedAt }, JSON.stringify(record)); assert.ok(lock.release);
+      assert.deepEqual(lock.release(), { released: true });
+    }
+    for (const record of [{ pid: process.pid, nonce: "live" }, { pid: dead, nonce: "live-worker", worker: { pid: process.pid, nonce: "w", startedAt, host: hostname() } }]) {
+      mkdirSync(captureLockPath(root), { recursive: true });
+      writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ ...record, startedAt, host: hostname(), command: "pass", caller: { entry: "oats", trigger: "hook" }, stop: true }));
+      const held = acquireCaptureLock(root, { pid: 1 });
+      assert.ok(held.held, JSON.stringify(record)); assert.equal(held.reclaimed, undefined);
+      rmSync(captureLockPath(root), { recursive: true, force: true });
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("capture lock: the caller entry is a fixed label only for known entry files, and is left out otherwise", () => {
+  const dir = mkdtempSync(join(tmpdir(), "capture-lock-entry-"));
+  try {
+    const record = resolve(new URL("../bin", import.meta.url).pathname);
+    assert.equal(captureCommandEntry(resolve(record, "../../../bin/oats.mjs")), "oats");
+    for (const name of ["turn-record.mjs", "capture.mjs", "setup.mjs"]) assert.equal(captureCommandEntry(join(record, name)), "turn-record", name);
+    // An npm bin is a symlink named after the command; its target decides.
+    symlinkSync(join(record, "turn-record.mjs"), join(dir, "turn-record"));
+    assert.equal(captureCommandEntry(join(dir, "turn-record")), "turn-record");
+    for (const other of [join(dir, "runner.mjs"), join(dir, "desktop-host.js"), "", join(dir, "oats")]) assert.equal(captureCommandEntry(other), undefined, other);
+    const lock = acquireCaptureLock(dir, { command: "home", caller: { entry: captureCommandEntry(join(dir, "embedder.mjs")), trigger: "manual" } });
+    const owner = JSON.parse(readFileSync(join(captureLockPath(dir), "owner.json"), "utf8"));
+    assert.equal(owner.command, "home"); assert.deepEqual(owner.caller, { trigger: "manual" });
+    assert.deepEqual(lock.release(), { released: true });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

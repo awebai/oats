@@ -148,6 +148,58 @@ older moved-aside copy that is a directory is not removed: each later
 move-aside reports it, and an operator removes it. A move that fails leaves the
 file in place and fails the pass.
 
+### Stopping capture and the lock owner record
+
+SIGTERM and SIGINT stop a supervised pass (manual, watch, hook, setup, service
+and retry) cooperatively. They are observed from before the root lock is taken
+until after it is released. The first one ends admission: no further worker,
+continuation or finalization starts. A worker not yet started is killed at
+once. A started worker is asked to stop through its own lock owner record,
+which it already rereads between bounded units, so it stops at its next unit
+boundary and writes its own `failed`/`interrupted` receipt with the counts it
+committed; prior `lastSuccess` is kept. A worker that has already sent its
+result keeps it. The worker catches TERM/INT itself as well, so a signal sent
+to the caller's whole process group (a terminal's Ctrl-C, `timeout`, a service
+manager's control group) does not kill it mid-unit; it too ends the worker as
+interrupted at its next check. Either way the worker gets one grace of 5 seconds, capped by
+the pass's absolute deadline, and a worker still running then is killed and
+reaped; later signals neither shorten nor extend the grace. A killed worker
+leaves its unfinished `running` receipt, never a finished one, and the next
+pass records it as `lastFailure` `interrupted` and continues from the durable
+checkpoints. The command exits 1. An earlier failure cause observed in the
+same pass is reported instead of the interruption. SIGKILL, or any death that
+runs no cleanup, leaves the lock to the next pass's reclaim of a dead owner
+(see below); there is no cleanup guarantee for it.
+
+The exact commands, `--home`, `--file` and `--reset-cursors`, run in the
+calling process, and their work is synchronous. They observe SIGTERM and SIGINT
+only at safe points: before taking the lock, after taking it, before each
+format's batch of exact files, before the index update, and once the work
+under the lock (and the receipt summaries) is done, before any answer. Discovery, a whole
+format's batch, the index update and the receipt summaries cannot be
+preempted, so a signal waits for the segment it arrived in. No response time is
+promised, and these commands have no deadline. An interruption at a safe point
+releases the lock and answers the command's existing receipt, `failed` with the
+error `capture interrupted by SIGTERM` (or SIGINT) and exit 1. `appended`
+counts only the batches that completed, so it is confirmed; an interruption
+observed after all of them says `after every batch completed`, and one after a
+cursor reset says `after the cursor reset was committed`. These commands
+write no run receipt, so a killed exact command leaves no `running` run behind:
+the next pass reclaims its lock and records only `reclaimedLock`.
+
+The lock's `owner.json` holds the owner's `pid`, a per-acquisition `nonce`,
+`startedAt` and `host`, and, while a supervised pass runs, its `worker`'s pid,
+nonce, start and host. A lock taken by this release also says who took it:
+`command` (`pass`, `retry`, `home`, `file` or `reset-cursors`), `caller`
+(`entry`, the program: `oats`, `turn-record`, `hook-runner` or
+`service-runner`, left out when the command runs in another program; `trigger`,
+from `manual`, `watch`, `hook`, `setup` and `service`) and `ppid`, the owner's immediate parent process. A cooperative stop
+adds `stop: true`. These are fixed labels and process facts. No argv,
+environment or shell text is recorded, and nothing names an external caller or
+why it stopped the command. The fields are diagnostic only: liveness, release
+and reclaim read only the pid, nonce, start, host and worker, so records from
+earlier releases, without them, are read and reclaimed exactly as before.
+
 ### Offline installation and run diagnosis
 
 The package owns `captureHealth` and `turn-record capture --health [--json]`.
@@ -236,10 +288,12 @@ Until setup converts it, the hook line from before this release,
 with a 120-second timeout, still works against this release: it is one
 ordinary quiet foreground pass under the root lock, attributed `manual`, up to
 its 300-second deadline. A harness that stops it at 120 seconds with SIGTERM or
-SIGINT makes the supervisor kill its worker, end the pass as interrupted and
-release the lock; with SIGKILL the supervisor dies holding the lock, which the
-next pass reclaims as a dead owner. Either way the next pass records the
-interruption and continues from the durable checkpoints.
+SIGINT stops it cooperatively: the worker ends at its next unit boundary, or is
+killed after a 5-second grace, the pass ends as interrupted and the lock is
+released ([stopping capture](#stopping-capture-and-the-lock-owner-record)).
+With SIGKILL the supervisor dies holding the lock, which the next pass reclaims
+as a dead owner. Either way the next pass continues from the durable
+checkpoints.
 Setup's pending-activation marker (`<root>/capture-service-pending.json`, see
 [setup service migration](#setup-service-migration)) produces
 `capture-service-pending` from file evidence only: beside setup's own marked
@@ -734,7 +788,9 @@ after the owned child exits; signals target the spawned child handle, never a
 PID inferred from an abandoned lock or a process group. Continuation retains the
 same root lock: it replaces only the exact previously registered worker identity
 after positive death proof. Reused or uncertain PIDs prevent replacement.
-Workers check their parent and lock identity between work units. The supervisor never writes status
+Workers check their parent and lock identity between work units; the same read
+carries the supervisor's cooperative stop request, which the supervisor
+publishes into that owner record exactly as it publishes a worker. The supervisor never writes status
 on behalf of a crashed worker. A shared monotonic deadline includes process
 startup and lock publication, with a separate cooperative drain boundary.
 Launch arguments fix the heap policy and exclude inherited Node flags and
