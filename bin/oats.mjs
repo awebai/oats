@@ -2,7 +2,7 @@
 /**
  * oats — the OATS command line.
  *
- *   oats doctor [dir] [--soul <s>] [--json] show the deployment; --soul: the instructions an instance of <s> would carry
+ *   oats doctor [dir] [--soul <s>] [--json] show deployment and offline capture warnings; --soul: composition only
  *   oats onboard [<dir>] --workspace <ref>  realize a workspace here (oats-local.yaml +
  *                                          agents/), then sync
  *   oats sync [--dir <d>] [--plan] [--json] discover the workspace, confirm membership,
@@ -25,6 +25,7 @@ import { constants as osConstants, homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
+import { doctorCaptureWarnings } from "../lib/doctor-capture.mjs";
 import { runtimeNameWarning, noteRuntimeName } from "../lib/deprecation.mjs";
 import { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect, spawnRefusalDetails } from "../lib/errors.mjs";
 import {
@@ -829,7 +830,7 @@ async function doctorWorkspaceJson(ctx, soulName, ws) {
     information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...localTeams.information, ...schedules.information, ...operator.information, ...launchPreferences.information, ...hookEvents.information, ...processScanInformation(), ...doctorRetained(ws).flat()],
     composedInstructions: composition?.text, instructionBlocks: composition?.blocks,
     ...(problems.length ? { problems } : {}),
-    warnings: hookEvents.warnings,
+    warnings: [...hookEvents.warnings, ...(soulName ? [] : doctorCaptureWarnings())],
   };
 }
 /** Kernel/bridge version skew (published in lockstep from one tag), in every pi folder a launch
@@ -876,6 +877,7 @@ async function doctor(dir) {
   for (const p of launchPreferences.problems) console.log(`\n! ${p.code}: ${p.message}\n  ${p.remedy}`);
   const hookEvents = composition ? { warnings: composition.warnings, information: [] } : await doctorHookWarnings(ws);
   for (const w of hookEvents.warnings) console.log(`\nwarning  ${w.code}  ${w.message}`);
+  if (!soulName) for (const w of doctorCaptureWarnings()) console.log(`\nwarning  ${w.code}  ${terminalText(w.message)}`);
   for (const line of [...localTeams.information, ...schedules.information, ...operator.information, ...launchPreferences.information, ...hookEvents.information, ...processScanInformation()]) console.log(`\nINFO: ${line}`);
   for (const block of doctorRetained(ws)) console.log(`\n${block.map((line) => `INFO: ${line}`).join("\n")}`);
   if (soulName) {
@@ -4076,12 +4078,12 @@ const EXPERIMENTAL_CMDS = new Set(["dress", "spawn", "segments", "mind"]);
 async function recordCmd(sub) {
   process.argv.splice(2, 1);
   if (sub === "setup") {
-    // setup writes a node into the user's Claude settings and into the capture watcher's unit,
+    // setup writes a node into the user's Claude settings and into the capture service's unit,
     // and nothing rewrites them but setup run again: it is handed the rule's answer for the node
     // running this kernel (docs/capabilities.md, "The node a hook writes down"). The script is
     // imported into this process, so the variable is set here, over whatever the caller's
     // environment held; packages/record imports nothing of the kernel.
-    const { node, warning } = stableNode({ consequence: "the capture hooks and the capture watcher stop when it goes away", remedy: "run `oats setup` again" });
+    const { node, warning } = stableNode({ consequence: "the capture hooks and the capture service stop when it goes away", remedy: "run `oats setup` again" });
     if (warning) console.error(`oats: warning: ${warning}`);
     process.env.OATS_NODE_BIN = node;
   }
@@ -4891,8 +4893,8 @@ Usage:
       [--launch-config <name>|none]         command and preflight; read-only, nothing
       [--harness r] [--model m]             started; a named configuration is a unit, so
       [--yolo | --no-yolo] --json           a disagreeing --harness is refused
-  oats doctor [dir] [--soul <name>] [--json] resolved targets, trust, requirements;
-                                            --soul shows final composed AGENTS.md
+  oats doctor [dir] [--soul <name>] [--json] resolved targets and offline capture warnings;
+                                            --soul shows final composed AGENTS.md only
   oats update [--check] [--yes]              check npm for a newer kernel and move the pi bridge
       [--dir <deployment>]                  in every pi folder the deployment's launches use
                                             (docs/upgrading.md); then run oats doctor
@@ -5000,15 +5002,22 @@ Usage:
 
 The turn record (core — every conversation captured, searchable, replicated):
   oats capture [--watch|--status]            land Claude Code/pi/codex sessions and aw
-      [--owner <name>] [--root <dir>]       client logs in the record; reconciliation
-                                            is the capture
+      [--owner <name>] [--root <dir>]       client logs in the record: one bounded
+                                            supervised reconciliation pass; partial
+                                            passes exit 0 with work pending
+  oats capture --hook                        launch a detached pass; exit 0 means
+                                            capture launched, not completed
+  oats capture --health [--json]             offline installation, run and issue
+                                            diagnosis; captures nothing
   oats capture --file <path> --format cc|pi|codex --home <instance home> [--json]
                                             one session file (an archived session),
                                             captured as --home capture would
   oats recall [--kind k] [--thread t]        search the whole record — mail, chat,
       [--from f] [--show id] <query>        sessions — with exact turn provenance
-  oats setup [--owner <name>] [--dry-run]    install capture hooks + background watcher
-      [--no-service] [--no-hooks]           (launchd/systemd), then run the first pass
+  oats setup [--owner <name>] [--root <dir>] [--replace-service]
+      [--no-service] [--no-hooks] [--dry-run]
+                                            install hooks + periodic capture
+                                            (launchd/systemd), then run the first pass
 
   oats experimental <dress|spawn|segments|mind>   EXPERIMENTAL tools over the record —
                                             selection and agent synthesis; unproven by

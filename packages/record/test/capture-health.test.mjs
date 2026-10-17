@@ -4,18 +4,22 @@ import childProcess, { spawnSync } from "node:child_process";
 import { syncBuiltinESMExports, createRequire } from "node:module";
 import { readCurrentIssueBacklog, readIssueBacklog, supportsReadOnlySqlite } from "../lib/capture-issues.mjs";
 import { readCaptureDatabase } from "../lib/capture-db-reader.mjs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
 import { DerivedState } from "../lib/derived-state.mjs";
 import { captureHealth, retrySetAside, writeCaptureStatus } from "../lib/capture-state.mjs";
 import { RecordStore } from "../lib/store.mjs";
 import { captureSessions } from "../lib/capture-cc.mjs";
+import { writeCurrentHook } from "./fixtures/capture-hook-settings.mjs";
 
 const bin = resolve(import.meta.dirname, "../bin/capture.mjs");
-function fixture(t) {
+// These tests diagnose an installed host unless they say otherwise: a record
+// root alone is not an installation, so the home carries a capture hook.
+function fixture(t, { hook = true } = {}) {
   const base = fs.mkdtempSync(join(tmpdir(), "capture-health-")), root = join(base, "record");
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  if (hook) writeCurrentHook(base);
   return { base, root, cli: () => spawnSync(process.execPath, [bin, "--root", root, "--health", "--json"],
     { encoding: "utf8", env: { HOME: base, TMPDIR: base, PATH: process.env.PATH } }) };
 }
@@ -45,7 +49,8 @@ for (const snapshot of [false, true]) test(`library refusal/resolution is curren
   assert.equal(JSON.parse(failed.stdout).backlog.setAsideCount, 1);
   assert.equal(JSON.parse(failed.stdout).lastRun, null);
   fs.writeFileSync(path, line(1)); retrySetAside(f.root); assert.equal(capture().complete, true);
-  const recovered = captureHealth(f.root); assert.equal(recovered.status, "ok"); assert.equal(recovered.backlog.setAsideCount, 0);
+  const recovered = captureHealth(f.root, { home: f.base }); assert.equal(recovered.status, "warning");
+  assert.deepEqual(recovered.rows.map(row => row.code), [...(snapshot ? [] : ["capture-status-missing"]), "capture-success-stale"]); assert.equal(recovered.backlog.setAsideCount, 0);
   assert.equal(recovered.lastSuccess, null);
   if (snapshot) assert.equal(fs.readFileSync(statusPath, "utf8"), before);
   else assert.equal(fs.existsSync(statusPath), false);
@@ -76,8 +81,31 @@ for (const mutation of ["PRAGMA user_version = 999", "DROP TABLE state", "ALTER 
   assert.match(JSON.parse(result.stdout).error, /schema|version/i); assert.deepEqual(inventory(f.root), before);
 });
 
+test("capture --health under the kernel names oats remedies; standalone it names turn-record", t => {
+  const f = fixture(t), kernel = resolve(import.meta.dirname, "../../../bin/oats.mjs");
+  const viaKernel = spawnSync(process.execPath, [kernel, "capture", "--health", "--root", f.root],
+    { encoding: "utf8", env: { HOME: f.base, TMPDIR: f.base, PATH: process.env.PATH } });
+  assert.equal(viaKernel.status, 0, viaKernel.stderr);
+  assert.match(viaKernel.stdout, /capture-status-missing: .*Run oats setup --root /);
+  assert.doesNotMatch(viaKernel.stdout, /turn-record setup/);
+  const alone = f.cli(); assert.equal(alone.status, 0, alone.stderr);
+  assert.match(JSON.parse(alone.stdout).rows[0].message, /Run turn-record setup --root /);
+});
+
+test("capture --health through an npm-style oats symlink names oats remedies", t => {
+  // npm installs the kernel as a bin symlink named oats; node keeps that path
+  // in argv[1].
+  const f = fixture(t), link = join(f.base, "bin", "oats");
+  fs.mkdirSync(dirname(link)); fs.symlinkSync(resolve(import.meta.dirname, "../../../bin/oats.mjs"), link);
+  const viaLink = spawnSync(process.execPath, [link, "capture", "--health", "--root", f.root],
+    { encoding: "utf8", env: { HOME: f.base, TMPDIR: f.base, PATH: process.env.PATH } });
+  assert.equal(viaLink.status, 0, viaLink.stderr);
+  assert.match(viaLink.stdout, /capture-status-missing: .*Run oats setup --root /);
+  assert.doesNotMatch(viaLink.stdout, /turn-record setup/);
+});
+
 test("never-installed health leaves its absent root absent", t => {
-  const f = fixture(t), result = f.cli(); assert.equal(result.status, 0, result.stderr);
+  const f = fixture(t, { hook: false }), result = f.cli(); assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).status, "ok"); assert.equal(fs.existsSync(f.root), false);
 });
 
@@ -105,12 +133,12 @@ test("read-only database needs no file writes and a busy reader fails within its
     const started = performance.now(), result = f.cli(); assert.equal(result.status, 1);
     assert.match(JSON.parse(result.stdout).error, /locked|busy/);
     assert.ok(performance.now() - started < 5000);
-    assert.throws(() => captureHealth(f.root), /locked|busy/);
+    assert.throws(() => captureHealth(f.root, { home: f.base }), /locked|busy/);
     const contender = spawnSync(process.execPath, ["--input-type=module", "-e", `import {DatabaseSync} from 'node:sqlite';const db=new DatabaseSync(${JSON.stringify(dbPath)});db.exec('PRAGMA busy_timeout=50; BEGIN EXCLUSIVE');db.exec('ROLLBACK');db.close();`], { env: { HOME: f.base }, encoding: "utf8" });
     assert.notEqual(contender.status, 0, "health released the caller's SQLite lock");
     assert.match(contender.stderr, /locked|busy/);
   } finally { writer.db.exec("ROLLBACK"); writer.close(); }
-  assert.equal(captureHealth(f.root).backlog.setAsideCount, 1);
+  assert.equal(captureHealth(f.root, { home: f.base }).backlog.setAsideCount, 1);
   assert.deepEqual(inventory(f.root), before);
 });
 
@@ -122,7 +150,7 @@ test("count and sample share a read transaction when another writer changes acti
   let inserted = false;
   DatabaseSync.prototype.prepare = function(sql, ...args) {
     const statement = prepare.call(this, sql, ...args);
-    if (this !== writer.db && sql.includes("count(*) AS n FROM state")) {
+    if (this !== writer.db && sql.includes("count(*) AS n FROM state WHERE kind = 'set-aside'")) {
       const get = statement.get.bind(statement);
       statement.get = (...params) => {
         const result = get(...params);
@@ -135,12 +163,12 @@ test("count and sample share a read transaction when another writer changes acti
   try {
     const backlog = readIssueBacklog(reader, { validate: true }); assert.equal(inserted, true);
     assert.equal(backlog.setAsideCount, 1); assert.equal(backlog.setAside.length, 1);
-    assert.equal(captureHealth(f.root).backlog.setAsideCount, 1);
+    assert.equal(captureHealth(f.root, { home: f.base }).backlog.setAsideCount, 1);
   } finally {
     DatabaseSync.prototype.prepare = prepare;
     if (inserted) writer.db.exec("COMMIT"); reader.close(); writer.close();
   }
-  assert.equal(captureHealth(f.root).backlog.setAsideCount, 2);
+  assert.equal(captureHealth(f.root, { home: f.base }).backlog.setAsideCount, 2);
 });
 
 test("runtime feature boundaries are qualified before SQLite loads or opens", t => {
@@ -187,7 +215,7 @@ for (const failure of ["timeout", "signal", "overflow", "malformed", "spawn"]) t
       ["-e", source], { ...options, timeout: failure === "timeout" ? 300 : 5000 });
     return child;
   }; syncBuiltinESMExports();
-  try { assert.throws(() => captureHealth(f.root), /Cannot read current capture issues/); }
+  try { assert.throws(() => captureHealth(f.root, { home: f.base }), /Cannot read current capture issues/); }
   finally { childProcess.spawnSync = original; syncBuiltinESMExports(); }
   if (failure === "timeout") assert.equal(child.error?.code, "ETIMEDOUT");
   if (failure === "signal") assert.equal(child.signal, "SIGTERM");

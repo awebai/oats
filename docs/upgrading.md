@@ -74,6 +74,100 @@ Versions are compared as semver, so a prerelease is below its release:
 no other version: a local build `0.53.0+build.1` is `0.53.0`, and nothing is
 installed over it.
 
+## Capture service release order
+
+The bounded periodic capture service (service A) is **not shipped in
+[0.56.0](release-notes/v0.56.0.md) through [0.61.0](release-notes/v0.61.0.md)**
+([0.57.0](release-notes/v0.57.0.md), [0.57.1](release-notes/v0.57.1.md),
+[0.58.0](release-notes/v0.58.0.md), [0.59.0](release-notes/v0.59.0.md) and
+[0.60.0](release-notes/v0.60.0.md) included). Those releases retain the
+existing capture watcher, and upgrading to any of them does not install the
+periodic service. The capture algorithms and recovery commands already
+released do not prove that migration happened.
+
+For those released versions, follow their own Upgrade sections and the steps
+above. In particular, install the target Desktop before the CLI: the 0.61.0
+Desktop accepts CLIs `>=0.26.0 <0.62.0`, and a 0.60 Desktop refuses a 0.61.0 CLI.
+
+Service A ships in the next release after 0.61.0. Read that release's Upgrade
+section and keep this order: install its compatible Desktop first, then its CLI
+and matching pi bridge. Only **after installing that CLI**, run its setup
+conversion from the operator's shell for each deployment, then its health and
+doctor checks. That conversion is where an owned legacy
+watcher is replaced by the periodic service; foreign or disabled definitions
+require an explicit operator choice. The conversion accepts `setup --root <dir>`
+and `--replace-service`; refusal prints a quoted command preserving owner/root.
+Choose `--no-service` to skip service files and manager operations entirely.
+`--dry-run` writes nothing and calls no manager, so disabled/registered state
+remains unexamined. Replaced definitions are backed up nonoverwriting under
+the selected record root; retain the reported backup and inspect any partial
+apply error before retrying. Replacement never waives unknown state or changed
+identities. A CLI install alone is not conversion.
+Use that release's capture health and doctor checks after conversion. Do not
+run the service diagnostics or conversion flags as prerequisites on 0.61.0 or
+older binaries, which do not have them, or assume that an older health command
+proves periodic activation. The [capture reference](../packages/record/docs/capture-service.md)
+distinguishes the implemented foundation from an installed service.
+
+The first capture after that upgrade rebuilds the record root's derived
+capture state and index from the existing journals: it validates each journal,
+proves each session's captured prefix against a fresh staged copy of its
+source, and indexes every record. This cost is paid once, and it grows linearly with the
+number of streams and their bytes. On the hosted Linux runner (4 CPUs) it took
+about 20 seconds per 1,000 streams of typical small sessions, and about 4
+minutes per GB of journals overall: a record of about 1,300 streams and 8 GB of
+journals needs roughly half an hour of capture work in about seven bounded
+passes, which under the service's 15-minute interval is one to two hours of
+elapsed time. A later pass over unchanged sessions does no content work and
+costs about 2 ms per stream on the same runner (about 3 s at 1,300 streams),
+growing linearly with the number of streams. Each pass stops at its deadline. A first upgrade that is interrupted or reaches its deadline resumes
+from its durable checkpoints on the next pass (journal validation, index
+cursors, the prefix proof and the staged copies of sources over 8 MiB) rather
+than starting over; a smaller session's staged copy is made again. Reducing the
+repeated source reads of small sessions is tracked in
+[#1337](https://github.com/awebai/oats/issues/1337).
+
+**Going back to 0.61.0.** Until the steps below are done, two things fail at
+every trigger:
+
+- each `Stop` and `SessionEnd` hook this release's setup wrote exits 1,
+  because its command names `bin/capture-hook.mjs`, a file 0.61.0 does not
+  have; Claude does not block on it;
+- the periodic service's start fails every 15 minutes: on Linux
+  `turn-record-capture.timer` starts a unit whose runner 0.61.0 does not have,
+  and on macOS the `ai.aweb.turn-record-capture` job fails the same way.
+
+To go back:
+
+1. Install 0.61.0: `npm install -g @awebai/oats@0.61.0`.
+2. From the same user's shell, run 0.61.0's setup with the same owner:
+   `oats setup --owner <owner>`. It installs its capture watcher (on Linux as
+   `turn-record-capture.service`, on macOS under the same
+   `ai.aweb.turn-record-capture` label) and adds its own `Stop` and
+   `SessionEnd` hooks. 0.61.0's setup takes no `--root` (it refuses one):
+   everything it starts records into `$TURN_RECORD_ROOT` as that process sees
+   it, else `~/.turn-record`. Its first pass runs with setup's environment, so
+   `TURN_RECORD_ROOT=<root> oats setup --owner <owner>` points that pass at
+   another root; its hooks see Claude's environment; its watcher's service
+   sets none, so the watcher gets only the user manager's environment and
+   records into `~/.turn-record` unless the user manager itself sets
+   `TURN_RECORD_ROOT`. With any other root, the watcher and the record you
+   were using part ways.
+3. In each `~/.claude*/settings.json`, delete the hook entries under `Stop` and
+   `SessionEnd` whose command names `capture-hook.mjs`: 0.61.0's setup does not
+   recognize them and leaves them in place.
+4. On Linux, remove the timer:
+   `systemctl --user disable --now turn-record-capture.timer`, then delete
+   `~/.config/systemd/user/turn-record-capture.timer` and run
+   `systemctl --user daemon-reload`.
+
+After going back to 0.61.0, its `oats capture --health` reports the capture
+status file this release wrote as invalid, and a capture by 0.61.0 clears the
+run history in that file. A later capture with this release writes a fresh
+status. 0.61.0 ignores the captured frontier this release keeps in an AW log's
+cursor during a rescan and drops it when it rewrites that cursor; it reads that
+log without a record limit, so nothing is lost.
+
 ## Which pi folders
 
 pi keeps its packages in one folder: `~/.pi/agent`, or the folder
@@ -197,6 +291,20 @@ at the version are left alone.
 
 ## What `oats doctor` reports
 
+From the next release after 0.61.0 (service A), deployment doctor also delegates once to
+the record package's offline health reader. Text and JSON carry its diagnosis
+as existing warning rows. `capture-health-unavailable` means the bounded command
+or reader failed, timed out, exceeded its output limit or returned an invalid
+envelope; inspect `oats capture --health --json` with the same root environment.
+Doctor retains its warning exit semantics. `TURN_RECORD_ROOT` selects the root,
+otherwise the caller's `~/.turn-record` applies; `--soul` remains composition-only.
+The kernel adds no status/DB/freshness parser or manager probe. Remedies use
+`oats`, preserving literal user paths and existing owner guidance. Neither no
+warnings nor definition bytes prove enabled scheduling. See the
+[owning boundary](../packages/record/docs/capture-service.md#kernel-doctor-delegation)
+for reader/transport limits and remaining qualification. This does not change
+the released 0.56–0.61 upgrade prerequisites above.
+
 `oats doctor` prints one warning per folder whose bridge is not the kernel's
 version, naming the folder and why it is looked at:
 
@@ -233,9 +341,9 @@ under npm's global prefix (`npm prefix -g`).
   removes the kernel with it. Four things name that kernel by its path: each
   instance home's own `oats` (`<home>/.oats/bin/oats`), the Claude Code hooks
   of a Claude instance, the host timer's unit, and what `oats setup` installs
-  (the turn record's capture hooks and its watcher, which name the capture
-  script inside the kernel). OATS cannot make a path inside a Node version
-  outlast that version.
+  (the turn record's capture hooks and its periodic capture service, which
+  name the capture scripts inside the kernel). OATS cannot make a path
+  inside a Node version outlast that version.
 
 Both layouts can exist on one host: check the prefix in the shell that
 installs the CLI.
@@ -248,7 +356,7 @@ record the `node` that runs them, by one rule
 - **On Homebrew**, the `opt` link (`<prefix>/opt/node/bin/node`) when it is
   the `node` running the kernel. `brew upgrade node` repoints it, so the
   recorded path outlasts the upgrade: the hooks, the timer and the capture
-  watcher need nothing done.
+  service need nothing done.
 - **Otherwise**, a `node` on `PATH` that is the same file as the one running
   the kernel. With mise that is the version's own install, which does not
   outlast the version (other version managers were not measured).
@@ -258,18 +366,32 @@ record the `node` that runs them, by one rule
 
 **What `oats setup` records is in your own files, not in an instance home:**
 the capture hooks (`Stop` and `SessionEnd`) in every `~/.claude*/settings.json`
-of the user who ran it, and the capture watcher's unit
-(`~/Library/LaunchAgents/ai.aweb.turn-record-capture.plist` on macOS,
-`~/.config/systemd/user/turn-record-capture.service` on Linux). No spawn,
-start or restart writes them: only `oats setup` run again does, and it
-replaces its own hooks and unit, it does not add a second one.
+of the user who ran it, and the periodic capture service's definitions. On
+macOS that is `~/Library/LaunchAgents/ai.aweb.turn-record-capture.plist`, a
+launchd job with `StartInterval` 900; on Linux, a finite
+`~/.config/systemd/user/turn-record-capture.service` started by
+`turn-record-capture.timer` every 15 minutes. Each start runs one bounded
+capture pass and exits. No spawn, start or restart writes them: only
+`oats setup` run again does. It replaces its own hooks and definitions, and
+converts a capture watcher an earlier setup installed; it does not add a
+second one. A definition it does not recognize as its own, or one found
+disabled or masked, is refused with a printed choice: `--replace-service` to
+replace it, or `--no-service` to keep it and skip service files and manager
+calls. One exception on macOS: the capture label registered from another plist
+is refused even with `--replace-service`; remove that registration yourself,
+or keep it with `--no-service`. A service manager failure does not skip
+capture: setup still writes the hooks and runs the first pass, exits 1 and
+prints a setup summary of what changed; rerun the printed command, which
+finishes setup's own activation without a flag. Until then `oats doctor` warns
+`capture-service-pending`. `--dry-run` prints what setup would do and changes
+nothing ([Capture service release order](#capture-service-release-order)).
 
 Once the recorded `node` no longer exists (an old version removed under a
 version manager, for example), the hooks fail without a message, so the
 instance stops reporting that it waits on you, and
 `oats schedule host status` reports `node-missing`. The capture hooks then
-fail at every stop of every Claude Code session of that user, and launchd or
-systemd keeps restarting a watcher that cannot start.
+fail at every stop of every Claude Code session of that user, and every
+15-minute start of the capture service fails.
 
 **A home spawned with an oats.core that does not read `OATS_NODE_BIN`** does
 not follow the rule. Its hooks record the path of the `node` its hook ran

@@ -14,13 +14,9 @@
 import { closeSync, existsSync, mkdirSync, openSync, readSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { keysetRows } from "./sqlite-rows.mjs";
+import { INDEX_SCHEMA_VERSION as SCHEMA_VERSION, TEXT_SCHEMA, resetIndexTables } from "./index-reset.mjs";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-
-// Bump whenever the derived schema changes shape. The index is cache:
-// a version mismatch self-heals by deleting the database and rebuilding
-// from the record — never by in-place migration.
-const SCHEMA_VERSION = 1;
 
 import { extractCcText, extractSessionTextFor } from "./formats.mjs";
 import { parseOutfit, parseTag } from "./tags.mjs";
@@ -103,9 +99,7 @@ CREATE TABLE IF NOT EXISTS spawns (
   ts TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS spawns_agent ON spawns(agent_thread);
-CREATE VIRTUAL TABLE IF NOT EXISTS turn_text USING fts5(
-  turn_id UNINDEXED, loc UNINDEXED, role UNINDEXED, text
-);
+${TEXT_SCHEMA}
 `;
 
 export class RecordIndex {
@@ -222,15 +216,7 @@ export class RecordIndex {
   reset() {
     this.db.exec("BEGIN");
     try {
-      this.db.exec("DELETE FROM turns");
-      this.db.exec("DELETE FROM turn_text");
-      this.db.exec("DELETE FROM tombstones");
-      this.db.exec("DELETE FROM tags");
-      this.db.exec("DELETE FROM outfits");
-      this.db.exec("DELETE FROM segments");
-      this.db.exec("DELETE FROM spawns");
-      this.db.exec("DELETE FROM index_state");
-      this.db.exec("DELETE FROM index_bytes");
+      resetIndexTables(this.db);
       this.db.exec("COMMIT");
     } catch (err) {
       this.db.exec("ROLLBACK");

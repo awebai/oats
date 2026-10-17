@@ -1,0 +1,468 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { acquireCaptureLock } from "../lib/capture-lock.mjs";
+import { cleanupCaptureScratch } from "../lib/capture-scratch.mjs";
+import { superviseCapture } from "../lib/capture-supervisor.mjs";
+import { RecordStore } from "../lib/store.mjs";
+import { DerivedState } from "../lib/derived-state.mjs";
+import { captureSessions, completeNativeLineDigests, completeNativeLines } from "../lib/capture-cc.mjs";
+import { digest } from "../lib/session-snapshot.mjs";
+import { RecordSizeError } from "../lib/file-lines.mjs";
+import { reconcileCaptureInterruption } from "../lib/capture-retry.mjs";
+import { retrySetAside } from "../lib/capture-state.mjs";
+const url = name => new URL(`../lib/${name}.mjs`, import.meta.url).href;
+const stamp = "2026-01-01T00:00:00Z", streamCc = "fixture~cc.session";
+const native = n => JSON.stringify({ timestamp: stamp, text: String(n) }) + "\n";
+
+function fixture(t, text, format = "cc") {
+  const base = fs.mkdtempSync(join(tmpdir(), "native-unit-")), root = join(base, "record"), workerPath = join(base, "worker.mjs");
+  // Codex names a session by the uuid ending its rollout file name.
+  const codex = "0193a000-0000-7000-8000-000000000001";
+  const path = join(base, format === "codex" ? `rollout-2026-01-01T00-00-00-${codex}.jsonl` : "session.jsonl");
+  const stream = format === "codex" ? `fixture~codex.${codex}` : streamCc;
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  fs.writeFileSync(path, text);
+  const store = new RecordStore(root, { owner: "fixture" }), key = `${stream}:${path}`;
+  fs.writeFileSync(workerPath, `
+    import fs from 'node:fs';import {join} from 'node:path';import {syncBuiltinESMExports} from 'node:module';
+    import {runCaptureWorker} from ${JSON.stringify(url("capture-worker"))};
+    import {RecordStore} from ${JSON.stringify(url("store"))};
+    import {DerivedState,fileVersion} from ${JSON.stringify(url("derived-state"))};
+    import {selectCaptureWork} from ${JSON.stringify(url("capture-retry"))};
+    import {withCaptureGroup} from ${JSON.stringify(url("capture-context"))};
+    import {captureNativeUnit} from ${JSON.stringify(url("capture-native-unit"))};
+    import {removeRetainedCaptureScratch} from ${JSON.stringify(url("capture-retained-scratch"))};
+    import {discardRecoveryChunks} from ${JSON.stringify(url("capture-recovery-snapshot"))};
+    import {discardTranscriptPrefix} from ${JSON.stringify(url("transcript-prefix"))};
+    await runCaptureWorker(start=>{
+      const {root,options}=start,store=new RecordStore(root,{owner:'fixture'}),state=new DerivedState(root);
+      const stream=${JSON.stringify(stream)},key=${JSON.stringify(key)},work={journal:{},prefix:{}};
+      try{
+        const append=store.appendUniqueBatch.bind(store);
+        store.appendUniqueBatch=(id,turns)=>{const n=append(id,turns);if(options.crashAppend)process.kill(process.pid,'SIGKILL');return n;};
+        const originalSet=state.set.bind(state);
+        state.set=(kind,key,value)=>{originalSet(kind,key,value);if(options.crashProof&&kind==='prefix-proof')process.kill(process.pid,'SIGKILL');};
+        const originalOpen=fs.openSync,originalWrite=fs.writeSync,originalSync=fs.fsyncSync;
+        let snapshotFd,fsyncs=0;
+        fs.openSync=(name,...args)=>{const fd=originalOpen(name,...args);if(String(name).endsWith('/snapshot'))snapshotFd=fd;return fd;};
+        fs.writeSync=(fd,...args)=>{const n=originalWrite(fd,...args);if(options.crashSmall&&fd===snapshotFd)process.kill(process.pid,'SIGKILL');return n;};
+        fs.fsyncSync=(...args)=>{fsyncs++;return originalSync(...args);};syncBuiltinESMExports();
+        const admission=options.admit?selectCaptureWork(store,state,[{stream,stage:'prefix',offset:0,
+          generation:fileVersion(store.journalPath(stream)),next:{stage:'prefix',after:stream}}],{runId:'fixture-'+process.pid,now:options.now}):undefined;
+        if(options.admit&&!admission)throw Error('fixture unit is not due');
+        let ticks=0;
+        const result=withCaptureGroup(store,[stream],()=>captureNativeUnit(store,{owner:'fixture',path:options.path,format:${JSON.stringify(format)},start,
+          maxRecords:options.maxRecords??2,maxBytes:options.maxBytes??8388608,maxRecordBytes:options.maxRecordBytes??8388608,
+          stopped:()=>options.stopSourceBytes!==undefined&&(work.sourceBytes??0)>=options.stopSourceBytes ||
+            options.stopAfter!==undefined&&++ticks>options.stopAfter,work}),{state,admission,admissionNow:options.now});
+        if(result.cleanup){
+          const claim=state.get('recovery-allocation',key);
+          removeRetainedCaptureScratch(root,state,key,start);
+          if(options.crashCleanup)process.kill(process.pid,'SIGKILL');
+          withCaptureGroup(store,[stream],()=>{
+            state.set('recovery-garbage',claim.id,true);discardRecoveryChunks(state,claim.id);
+            discardTranscriptPrefix(store,stream,key);
+            state.delete('recovery-allocation',key);state.delete('recovery-stage',key);
+          },{state});
+        }
+        fs.writeFileSync(join(root,'result'),JSON.stringify({result,work,fsyncs,job:state.get('native-unit',key),cursor:state.get('cc',key)}));
+        return {outcome:result.complete?'complete':'partial',reason:result.complete?null:'deadline'};
+      }catch(e){fs.writeFileSync(join(root,'error'),e.stack);throw e;}finally{state.close();}
+    });
+  `);
+  const f = { root, path, store, key, source: format,
+    state(fn) { const state = new DerivedState(root); try { return fn(state); } finally { state.close(); } },
+    turns() { return store.readStream(stream); },
+    async step(options = {}) {
+      const outcome = await superviseCapture(root, { path, ...options }, { workerPath });
+      if ((options.crashAppend || options.crashCleanup || options.crashSmall || options.crashProof) && outcome.outcome === "failed") return { crashed: true };
+      assert.notEqual(outcome.outcome, "failed", fs.existsSync(join(root,"error")) ? fs.readFileSync(join(root,"error"),"utf8") : JSON.stringify(outcome));
+      return JSON.parse(fs.readFileSync(join(root,"result")));
+    },
+    async finish(options = {}) {
+      const rows = [];
+      for (let n = 0; n < 100; n++) {
+        const row = await f.step(options); rows.push(row);
+        if (row.result.complete || row.result.pending || row.result.setAside) return rows;
+      }
+      assert.fail("finite native input did not finish over bounded workers");
+    },
+    assertContent(text) {
+      const turns = f.turns();
+      assert.equal(turns.map(t => t.body.line + "\n").join(""), text);
+      assert.equal(new Set(turns.map(t => t.id)).size, turns.length);
+      assert.deepEqual(turns.map(t=>t.provenance.origin.line),turns.map((_,i)=>i+1));
+    },
+  };
+  return f;
+}
+
+test("first capture timestamps unstamped prefixes backward over restarted bounded units; fresh no-op reads no content", async t => {
+  const text = Array.from({length:9},(_,n)=>JSON.stringify({text:n})+'\n').join('')+native('stamp')+'\n'+native('last');
+  const f=fixture(t,text),rows=await f.finish();
+  assert.ok(rows.filter(r=>r.result.phase==='timestamp').length>=4);
+  assert.ok(rows.every(r=>r.result.appended<=2));f.assertContent(text);
+  assert.ok(f.turns().every(t=>t.ts===stamp));
+  const noop=await f.step();assert.equal(noop.result.unchanged,true);assert.equal(noop.work.sourceBytes??0,0);assert.equal(noop.work.journal.bytes??0,0);
+  fs.appendFileSync(f.path,native('growth'));const growth=await f.finish();f.assertContent(text+native('growth'));
+  assert.equal(growth.reduce((n,r)=>n+r.result.appended,0),1);
+  assert.equal(growth.reduce((n,r)=>n+(r.work.journal.bytes??0),0),0);
+});
+
+test("timestamp scan frontier survives pending EOF and later growth without rescanning the unstamped prefix", async t=>{
+  const prefix=Array.from({length:20},(_,n)=>JSON.stringify({text:n})+'\n').join(''),f=fixture(t,prefix);
+  const initial=await f.finish();assert.equal(initial.at(-1).result.pending,true);assert.equal(f.turns().length,0);
+  const noop=await f.step();assert.equal(noop.result.pending,true);assert.equal(noop.work.sourceBytes??0,0);
+  fs.appendFileSync(f.path,native('new'));
+  const found=await f.step({maxRecords:1});assert.equal(found.job.lastTs,stamp);
+  assert.equal(found.work.sourceBytes,Buffer.byteLength(native('new')),'stamp search seeks to the old frontier');
+  await f.finish();f.assertContent(prefix+native('new'));
+});
+
+test("fixed source end yields before appended growth, with complete reconstruction on the next sweep",async t=>{
+  const text=Array.from({length:8},(_,n)=>native(n)).join(''),f=fixture(t,text);
+  await f.step();fs.appendFileSync(f.path,native('next sweep'));
+  await f.finish();f.assertContent(text);
+  await f.finish();f.assertContent(text+native('next sweep'));
+});
+
+test("cache-loss recovery compares all captured prefix before bounded new appends and keeps its stage after own appends",async t=>{
+  const old=Array.from({length:9},(_,n)=>native(n)).join(''),f=fixture(t,old);
+  assert.equal(captureSessions(f.store,{owner:'fixture',files:[f.path]}).appended,9);
+  f.state(s=>s.delete('cc',f.key));const added=Array.from({length:7},(_,n)=>native('extra'+n)).join('');fs.appendFileSync(f.path,added);
+  const rows=await f.finish({maxBytes:128});assert.ok(rows.length>10);f.assertContent(old+added);
+  const firstAppend=rows.findIndex(r=>r.result.appended>0);assert.ok(firstAppend>5);
+  assert.equal(rows.reduce((n,r)=>n+(r.work.prefix.journalRecords??0),0),9,'own appends must not restart prefix proof');
+  assert.equal(rows.reduce((n,r)=>n+(r.work.prefix.sourceRecords??0),0),9);
+  assert.equal(f.state(s=>s.get('recovery-allocation',f.key)),null);
+});
+
+test("late rewritten-prefix conflict after many workers forbids suffix; retry never waives conflict; ignore precedes missing source open",async t=>{
+  const old=Array.from({length:9},(_,n)=>native(n)).join(''),f=fixture(t,old);captureSessions(f.store,{owner:'fixture',files:[f.path]});
+  fs.writeFileSync(f.path,old.replace('"8"','"changed"')+native('new'));
+  let rows=await f.finish({maxBytes:128});assert.equal(rows.at(-1).result.setAside.line,9);f.assertContent(old);
+  assert.ok(rows.at(-1).result.setAside.reason.includes(JSON.stringify(f.path)));
+  assert.match(rows.at(-1).result.setAside.reason,/fixture~cc\.session.*native line 9.*establishing source path unavailable/);
+  retrySetAside(f.root);
+  rows=await f.finish({maxBytes:128});assert.equal(rows.at(-1).result.setAside.line,9);f.assertContent(old);
+  fs.writeFileSync(join(f.root,'ignore'),f.path+'\n');fs.unlinkSync(f.path);
+  const ignored=await f.step();assert.equal(ignored.result.ignored,true);assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
+  fs.writeFileSync(join(f.root,'ignore'),'');fs.writeFileSync(f.path,old.replace('"8"','"changed"'));
+  assert.equal((await f.finish({maxBytes:128})).at(-1).result.setAside.line,9);
+});
+
+test("same native ID conflict names refused input and stream without guessing an establishing path from cursors",async t=>{
+  const old=native('established'),f=fixture(t,native('different'));
+  const firstDir=join(f.root,'original-source');fs.mkdirSync(firstDir,{recursive:true});
+  const first=join(firstDir,'session.jsonl');fs.writeFileSync(first,old);
+  captureSessions(f.store,{owner:'fixture',files:[first]});
+  assert.ok(f.state(s=>s.get('cc',`${streamCc}:${first}`)),'original source cursor exists but is not path authority');
+  const rows=await f.finish(),issue=rows.at(-1).result.setAside;
+  assert.equal(issue.path,f.path);assert.equal(issue.line,1);assert.equal(issue.offset,0);
+  assert.ok(issue.reason.includes(JSON.stringify(f.path)));
+  assert.ok(issue.reason.includes(JSON.stringify(streamCc)));
+  assert.match(issue.reason,/establishing source path unavailable/);
+  assert.ok(!issue.reason.includes(first));f.assertContent(old);
+  assert.equal(rows.reduce((n,row)=>n+row.result.appended,0),0);
+  const healthy=join(firstDir,'healthy.jsonl');fs.writeFileSync(healthy,native('healthy'));
+  assert.equal(captureSessions(f.store,{owner:'fixture',files:[healthy]}).appended,1,'refusal does not block an independent input');
+});
+
+test("durable append followed by killed source checkpoint revalidates and never duplicates physical turns",async t=>{
+  const text=Array.from({length:6},(_,n)=>native(n)).join(''),f=fixture(t,text);
+  assert.equal((await f.step({crashAppend:true,maxRecords:2})).crashed,true);assert.equal(f.turns().length,1);
+  assert.equal(f.state(s=>s.get('cc',f.key)),null);
+  await f.finish({maxBytes:128});f.assertContent(text);
+});
+
+test("torn and invalid UTF-8 suffixes stay pending; a rewritten captured line is refused as a prefix change and can be retried after restoration",async t=>{
+  const text=native(0),f=fixture(t,text+'{"unfinished":');
+  let rows=await f.finish();assert.equal(rows.at(-1).result.pending,true);f.assertContent(text);
+  fs.appendFileSync(f.path,'true}\n');await f.finish();f.assertContent(text+'{"unfinished":true}\n');
+  fs.appendFileSync(f.path,Buffer.from([255,10]));rows=await f.finish();assert.equal(rows.at(-1).result.reason,'invalid-utf8');
+  // The long rewrite replaces captured line 2: proof compares it (no size
+  // limit inside the captured prefix) and refuses the changed prefix.
+  fs.writeFileSync(f.path,text+'x'.repeat(300)+'\n');rows=await f.finish({maxRecordBytes:200});
+  assert.match(rows.at(-1).result.setAside.reason,/^captured-prefix-changed: .* at native line 2, source byte \d+; establishing source path unavailable$/);
+  assert.equal(rows.at(-1).result.setAside.offset,Buffer.byteLength(text));
+  const restored=text+'{"unfinished":true}\n';fs.writeFileSync(f.path,restored);
+  retrySetAside(f.root);
+  await f.finish();f.assertContent(restored);assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
+});
+
+test("complete lines before an oversized record are appended once and checkpointed; retry keeps its exact start",async t=>{
+  const prefix=native(0)+native(1),start=Buffer.byteLength(prefix),f=fixture(t,prefix+'x'.repeat(300)+'\n'+native(3));
+  let rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+  assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');assert.equal(rows.at(-1).result.setAside.offset,start);
+  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),2);assert.equal(rows.at(-1).cursor.bytes,start);f.assertContent(prefix);
+  const skipped=await f.step({maxRecordBytes:200,maxRecords:10});
+  assert.equal(skipped.result.setAside.offset,start);assert.equal(skipped.result.appended,0);
+  retrySetAside(f.root);rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+  assert.equal(rows.at(-1).result.setAside.offset,start);assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),0);
+  assert.equal(f.state(s=>s.get('set-aside',f.key)).offset,start);
+  f.assertContent(prefix);
+  // Later lines wait for an edited source (or an ignore of the whole input).
+  fs.writeFileSync(f.path,prefix+native(3));retrySetAside(f.root);
+  await f.finish({maxRecords:10});f.assertContent(prefix+native(3));assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
+});
+
+test("recovery after cache loss captures the records between the captured prefix and an oversized record once, then sets it aside",async t=>{
+  const captured=native(0)+native(1),f=fixture(t,captured);captureSessions(f.store,{owner:'fixture',files:[f.path]});
+  const gap=captured+native(2),start=Buffer.byteLength(gap);fs.appendFileSync(f.path,native(2)+'x'.repeat(300)+'\n'+native(4));
+  f.state(s=>s.delete('cc',f.key));
+  let rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+  assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');assert.equal(rows.at(-1).result.setAside.offset,start);
+  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),1);f.assertContent(gap);
+  const skipped=await f.step({maxRecordBytes:200,maxRecords:10});
+  assert.equal(skipped.result.setAside.offset,start);assert.equal(skipped.result.appended,0);
+  retrySetAside(f.root);rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+  assert.equal(rows.at(-1).result.setAside.offset,start);assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),0);f.assertContent(gap);
+});
+
+test("an invalid line before a recovered oversized record stays pending, not set aside, until the source is fixed",async t=>{
+  const captured=native(0)+native(1),f=fixture(t,captured);captureSessions(f.store,{owner:'fixture',files:[f.path]});
+  const big='x'.repeat(300)+'\n'+native(5),stop=Buffer.byteLength(captured+native(2));
+  fs.appendFileSync(f.path,Buffer.concat([Buffer.from(native(2)),Buffer.from([255,10]),Buffer.from(big)]));f.state(s=>s.delete('cc',f.key));
+  for(let n=0;n<2;n++){
+    const rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+    assert.equal(rows.at(-1).result.pending,true);assert.equal(rows.at(-1).result.reason,'invalid-utf8');
+    assert.equal(rows.at(-1).result.setAside,undefined);assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
+    assert.equal(f.state(s=>s.get('native-unit',f.key)).bytes,stop);
+  }
+  f.assertContent(captured+native(2));
+  const fixed=captured+native(2)+native(3),start=Buffer.byteLength(fixed);fs.writeFileSync(f.path,fixed+big);
+  let rows=[];
+  for(let n=0;n<5&&!rows.at(-1)?.result.setAside;n++)rows=await f.finish({maxRecordBytes:200,maxRecords:10});
+  assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');assert.equal(rows.at(-1).result.setAside.offset,start);
+  f.assertContent(fixed);
+});
+
+// A Codex session whose captured prefix holds several records over the seam
+// limit, one of them more than twice it (the shape of the >16 MiB host lines).
+const cap=200, oversizedPrefix=[native(0),'x'.repeat(250)+'\n',native(2),'y'.repeat(450)+'\n',native(4),'z'.repeat(220)+'\n'].join('');
+function codexCaptured(t){
+  const f=fixture(t,oversizedPrefix,'codex');
+  captureSessions(f.store,{owner:'fixture',files:[f.path],format:'codex'});f.assertContent(oversizedPrefix);
+  return f;
+}
+
+test("captured oversized records prove by streamed digests after cache loss; later growth is captured once",async t=>{
+  const f=codexCaptured(t);fs.appendFileSync(f.path,native(6));f.state(s=>s.delete('codex',f.key));
+  let rows=await f.finish({maxRecordBytes:cap,maxRecords:10});
+  assert.equal(rows.at(-1).result.complete,true);assert.equal(rows.at(-1).result.setAside,undefined);
+  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),1);f.assertContent(oversizedPrefix+native(6));
+  assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
+  fs.appendFileSync(f.path,native(7));rows=await f.finish({maxRecordBytes:cap,maxRecords:10});
+  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),1);f.assertContent(oversizedPrefix+native(6)+native(7));
+});
+
+test("an oversized record beyond a prefix holding captured oversized records is still set aside at its start",async t=>{
+  const f=codexCaptured(t),start=Buffer.byteLength(oversizedPrefix+native(6));
+  fs.appendFileSync(f.path,native(6)+'w'.repeat(300)+'\n'+native(8));f.state(s=>s.delete('codex',f.key));
+  const rows=await f.finish({maxRecordBytes:cap,maxRecords:10});
+  assert.equal(rows.at(-1).result.setAside.reason,'record-too-large');assert.equal(rows.at(-1).result.setAside.offset,start);
+  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),1);f.assertContent(oversizedPrefix+native(6));
+});
+
+test("a changed byte inside a captured oversized record is refused as a prefix change",async t=>{
+  const f=codexCaptured(t),line4=Buffer.byteLength(native(0)+'x'.repeat(250)+'\n'+native(2));
+  const fd=fs.openSync(f.path,'r+');fs.writeSync(fd,Buffer.from('Y'),0,1,line4+300);fs.closeSync(fd);
+  f.state(s=>s.delete('codex',f.key));
+  const rows=await f.finish({maxRecordBytes:cap,maxRecords:10}),issue=rows.at(-1).result.setAside;
+  assert.match(issue.reason,/^captured-prefix-changed: refused input .* at native line 4, source byte \d+; establishing source path unavailable$/);
+  assert.equal(issue.offset,line4);assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),0);f.assertContent(oversizedPrefix);
+});
+
+test("invalid UTF-8 inside the captured prefix is reported as the parsed path reports it",async t=>{
+  // The parsed reader stops at an invalid line, so proof finds the captured
+  // prefix missing there; the streamed digest must not call it changed instead.
+  const text=native(0)+native(1)+native(2),f=fixture(t,text);captureSessions(f.store,{owner:'fixture',files:[f.path]});
+  const fd=fs.openSync(f.path,'r+');fs.writeSync(fd,Buffer.from([255]),0,1,Buffer.byteLength(native(0))+3);fs.closeSync(fd);
+  f.state(s=>s.delete('cc',f.key));
+  const issue=(await f.finish({maxRecords:10})).at(-1).result.setAside;
+  assert.match(issue.reason,/^captured-prefix-missing: .* at native line 2, source byte \d+;/);
+  assert.equal(issue.offset,Buffer.byteLength(native(0)));f.assertContent(text);
+});
+
+test("streamed line digests match the parsed reader's lines, stops and reasons, and never join a line",()=>{
+  const chunked=(bytes,size)=>function*(){for(let n=0;n<bytes.length;n+=size)yield bytes.subarray(n,n+size);};
+  const parsed=(bytes,size,maxBytes)=>{const walk={},lines=[...completeNativeLines(chunked(bytes,size)(),walk,{maxBytes})].map(line=>({hash:digest(Buffer.from(line.text)),bytes:line.bytes}));return {lines,walk};};
+  const streamed=(bytes,size)=>{const walk={},lines=[...completeNativeLineDigests(chunked(bytes,size)(),walk)];return {lines,walk};};
+  // A multibyte character split across chunks, an invalid line, then a torn tail.
+  for(const bytes of [Buffer.from(native('é€😀')+native(1)+'{"torn":'),Buffer.concat([Buffer.from(native(0)),Buffer.from([0xe2,0x82,10]),Buffer.from(native(2))])])
+    for(const size of [1,3,7,64]) assert.deepEqual(streamed(bytes,size),parsed(bytes,size,Infinity),`chunk ${size}`);
+  // Seam-sized boundary: a line just under the limit digests the same both
+  // ways; just over it, the parsed reader refuses while the streamed digest
+  // still equals the whole line's digest.
+  for(const length of [cap-1,cap+1]){
+    const text='q'.repeat(length-1),bytes=Buffer.from(text+'\n'),[line]=streamed(bytes,16).lines;
+    assert.deepEqual(line,{hash:digest(Buffer.from(text)),bytes:length});
+    if(length<cap)assert.deepEqual(parsed(bytes,16,cap).lines,[line]);
+    else assert.throws(()=>parsed(bytes,16,cap),RecordSizeError);
+  }
+  // Memory seam: a long line is hashed chunk by chunk; no reader joins it and
+  // no yielded record holds its bytes.
+  const concat=Buffer.concat;let joins=0;Buffer.concat=(...args)=>{joins++;return concat(...args);};
+  try{
+    const lines=[...completeNativeLineDigests(chunked(Buffer.from('L'.repeat(100000)+'\n'),64)(),{})];
+    assert.equal(joins,0);assert.deepEqual(Object.keys(lines[0]),['hash','bytes']);assert.equal(lines[0].bytes,100001);
+  }finally{Buffer.concat=concat;}
+});
+
+test("worker restart after allocation removal completes only its committed cleanup and preserves captured cursor",async t=>{
+  const text=native(0)+native(1),f=fixture(t,text);captureSessions(f.store,{owner:'fixture',files:[f.path]});
+  f.state(s=>{s.delete('cc',f.key);s.set('native-retain',f.key,true);});
+  let crashed=false;
+  for(let n=0;n<30;n++){if((await f.step({maxBytes:64,crashCleanup:true})).crashed){crashed=true;break;}}
+  assert.equal(crashed,true);
+  const claim=f.state(s=>s.get('recovery-allocation',f.key));assert.equal(claim.phase,'deleting');
+  assert.equal(fs.existsSync(join(f.root,'.capture-tmp',claim.name)),false);
+  assert.equal((await f.step()).result.cleanup,true);await f.finish();f.assertContent(text);
+  assert.equal(f.state(s=>s.get('recovery-allocation',f.key)),null);
+});
+
+test("successful explicit retry keeps its generation after clearing the issue and finishes staged new suffix without repeating proof",async t=>{
+  const old=Array.from({length:5},(_,n)=>native(n)).join(''),f=fixture(t,old);
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});
+  fs.writeFileSync(f.path,old.replace('"4"','"changed"'));assert.ok((await f.finish({maxBytes:128})).at(-1).result.setAside);
+  const added=Array.from({length:9},(_,n)=>native('extra'+n)).join('');fs.writeFileSync(f.path,old+added);retrySetAside(f.root);
+  const generation=f.state(s=>s.get('source-retry',f.key));assert.equal(typeof generation,'string');
+  const rows=await f.finish({maxBytes:128});f.assertContent(old+added);
+  assert.equal(rows.reduce((n,r)=>n+(r.work.prefix.journalRecords??0),0),5);
+  assert.equal(rows.reduce((n,r)=>n+(r.work.prefix.sourceRecords??0),0),5);
+  assert.equal(f.state(s=>s.get('source-retry',f.key)),generation);
+  assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
+});
+
+test("killed staged append invalidates its journal generation, then revalidates rather than trusting the old ready proof",async t=>{
+  const old=native(0)+native(1),f=fixture(t,old);captureSessions(f.store,{owner:'fixture',files:[f.path]});
+  f.state(s=>s.delete('cc',f.key));const added=native(2)+native(3)+native(4);fs.appendFileSync(f.path,added);
+  let crashed=false;
+  for(let n=0;n<30;n++){if((await f.step({maxBytes:128,crashAppend:true})).crashed){crashed=true;break;}}
+  assert.equal(crashed,true);assert.equal(f.turns().length,4);
+  const after=await f.step({maxBytes:128});
+  // Validation can precede retirement, but the old stage must never append
+  // against the now-different exact journal generation.
+  assert.equal(after.result.appended,0);
+  await f.finish({maxBytes:128});f.assertContent(old+added);
+});
+
+test("retiring a changed payload revokes its private capture job before rebuilding or resuming a qualified cursor",async t=>{
+  const old=native(0)+native(1),f=fixture(t,old);captureSessions(f.store,{owner:'fixture',files:[f.path]});
+  f.state(s=>{s.delete('cc',f.key);s.set('native-retain',f.key,true);});const added=Array.from({length:6},(_,n)=>native('extra'+n)).join('');fs.appendFileSync(f.path,added);
+  let row;
+  for(let n=0;n<30;n++){row=await f.step({maxBytes:128});if(row.result.appended)break;}
+  assert.ok(row.job.snapshot);assert.ok(row.result.appended);
+  const claim=f.state(s=>s.get('recovery-allocation',f.key)),payload=join(f.root,'.capture-tmp',claim.name,'payload');
+  const fd=fs.openSync(payload,'r+');fs.writeSync(fd,Buffer.from('?'),0,1,0);fs.closeSync(fd);
+  const retired=await f.step({maxBytes:128});assert.equal(retired.result.cleanup,true);
+  assert.equal(f.state(s=>s.get('native-unit',f.key)),null);
+  await f.finish({maxBytes:128});f.assertContent(old+added);
+});
+
+
+test("matching small snapshots resume prefix progress across workers without durable staging syncs",async t=>{
+  const old=Array.from({length:9},(_,n)=>native(n)).join(''),f=fixture(t,old);
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+  const rows=await f.finish({maxRecords:2});f.assertContent(old);
+  const copies=rows.filter(r=>r.work.stagedWriteBytes);
+  assert.ok(copies.length>4);
+  assert.ok(copies.every(r=>r.work.sourceBytes===Buffer.byteLength(old)&&r.work.stagedWriteBytes===Buffer.byteLength(old)));
+  assert.equal(rows.reduce((n,r)=>n+(r.work.prefix.journalRecords??0),0),9);
+  assert.equal(rows.reduce((n,r)=>n+(r.work.prefix.sourceRecords??0),0),9);
+  assert.equal(rows.reduce((n,r)=>n+r.fsyncs,0),0,'all JS fsync calls are counted; SQLite internal syncs are separate');
+  assert.deepEqual(fs.readdirSync(join(f.root,'.capture-tmp')),[]);
+});
+
+test("small recovery digest change outside witness resets prior proof before append",async t=>{
+  const old=Array.from({length:9},(_,n)=>native(String(n)+'x'.repeat(1000))).join(''),f=fixture(t,old);
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+  let row;
+  for(let n=0;n<30;n++){row=await f.step();if(f.state(s=>s.get('prefix-proof',f.key))?.line>=2)break;}
+  assert.ok(f.state(s=>s.get('prefix-proof',f.key)).line>=2);
+  const id=f.state(s=>s.get('prefix-proof',f.key)).snapshotId;
+  fs.writeFileSync(f.path,old.replace('0x','Qx')+native('growth'));
+  const rows=await f.finish();assert.equal(rows.at(-1).result.setAside.line,1);
+  assert.notEqual(f.state(s=>s.get('prefix-proof',f.key)).snapshotId,id);f.assertContent(old);
+});
+
+test("journal generation changes between small snapshots restart proof before any append",async t=>{
+  const old=Array.from({length:7},(_,n)=>native(n)).join(''),f=fixture(t,old);
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+  await f.step();const first=f.state(s=>s.get('prefix-proof',f.key));assert.ok(first);
+  fs.appendFileSync(f.path,native('public'));
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+  fs.appendFileSync(f.path,native('command'));
+  const row=await f.step();assert.equal(row.result.appended,0);
+  const rows=await f.finish();f.assertContent(old+native('public')+native('command'));
+  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),1);
+});
+
+test("interrupted small restaging falls back once, keeps fixed end and completes over short restarted units",async t=>{
+  const old=Array.from({length:8},(_,n)=>native(String(n)+'x'.repeat(40000))).join(''),f=fixture(t,old);
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+  let row;
+  for(let n=0;n<30;n++){row=await f.step({stopSourceBytes:65536,maxBytes:65536});if(row.result.retainedFallback)break;}
+  assert.equal(row.result.retainedFallback,true);assert.equal(row.work.sourceBytes,65536);
+  assert.equal(f.state(s=>s.get('small-stage',f.key)).size,Buffer.byteLength(old));
+  fs.appendFileSync(f.path,native('later sweep'));
+  const rows=await f.finish({stopSourceBytes:65536,maxBytes:65536});f.assertContent(old);
+  assert.ok(rows.some(r=>r.fsyncs>0),'retained fallback accounts for payload/owner sync calls');
+  assert.ok(rows.every(r=>!r.result.retainedFallback));
+  await f.finish();f.assertContent(old+native('later sweep'));
+});
+
+test("killed small copy or proof commit cannot publish proof; due admitted retry uses retained recovery",async t=>{
+  for(const crash of ['crashSmall','crashProof']){
+    const old=Array.from({length:6},(_,n)=>native(n)).join(''),f=fixture(t,old);
+    captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+    const now=Date.parse('2026-01-01T00:00:00Z');
+    assert.equal((await f.step({[crash]:true,admit:true,now})).crashed,true);
+    assert.equal(f.state(s=>s.get('prefix-proof',f.key)),null);assert.equal(f.state(s=>s.get('small-stage',f.key)),null);
+    const lock=acquireCaptureLock(f.root);
+    try { assert.equal(cleanupCaptureScratch(f.root,lock),1); } finally { assert.equal(lock.release().released,true); }
+    f.state(s=>reconcileCaptureInterruption(s,{now,reason:'interrupted'}));
+    const resumed=await f.step({admit:true,now:now+30*60000,maxBytes:128});
+    assert.equal(resumed.result.appended,0);assert.ok(f.state(s=>s.get('recovery-allocation',f.key)));
+    await f.finish({maxBytes:128});f.assertContent(old);
+  }
+});
+
+
+test("same captured content under a new source identity restarts validation and appends nothing",async t=>{
+  const old=Array.from({length:7},(_,n)=>native(n)).join(''),f=fixture(t,old);
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+  await f.step();const first=f.state(s=>s.get('prefix-proof',f.key)).snapshotId;
+  fs.renameSync(f.path,f.path+'.old');fs.copyFileSync(f.path+'.old',f.path);
+  const next=await f.step();assert.equal(next.result.appended,0);
+  assert.notEqual(f.state(s=>s.get('prefix-proof',f.key)).snapshotId,first);
+  const rows=await f.finish();assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),0);f.assertContent(old);
+});
+
+test("command eligibility is total fixed end, inclusive at 8MiB, not a small unit allowance",async t=>{
+  for(const size of [8388608,8388609]){
+    const old=native(0),f=fixture(t,old);captureSessions(f.store,{owner:'fixture',files:[f.path]});
+    const chunk=Buffer.alloc(65536,97);chunk[65535]=10;
+    const fd=fs.openSync(f.path,'a');
+    try { for(let n=Buffer.byteLength(old);n<size;n+=65536)fs.writeSync(fd,chunk,0,Math.min(65536,size-n)); }
+    finally {fs.closeSync(fd);}
+    f.state(s=>s.delete('cc',f.key));
+    const row=await f.step({maxRecords:1,maxBytes:128});assert.equal(row.result.appended,0);
+    if(size===8388608){assert.equal(row.work.stagedWriteBytes,size);assert.equal(f.state(s=>s.get('recovery-allocation',f.key)),null);}
+    else{assert.equal(row.work.stagedWriteBytes,128);assert.ok(f.state(s=>s.get('recovery-allocation',f.key)));}
+  }
+});
+
+
+test("a pending recovered small snapshot does not restage unchanged bytes on subsequent workers",async t=>{
+  const old=Array.from({length:5},(_,n)=>native(n)).join(''),f=fixture(t,old);
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+  fs.appendFileSync(f.path,'{"torn":');
+  assert.equal((await f.finish()).at(-1).result.pending,true);f.assertContent(old);
+  const noop=await f.step();assert.equal(noop.result.pending,true);
+  assert.equal(noop.work.sourceBytes??0,0);assert.equal(noop.work.stagedWriteBytes??0,0);
+  fs.appendFileSync(f.path,'true}\n');await f.finish();f.assertContent(old+'{"torn":true}\n');
+});

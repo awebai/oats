@@ -2,7 +2,7 @@ import { fixtureEnv } from "./fixture-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { acquireCaptureLock, captureLockPath, shellQuote } from "../lib/capture-lock.mjs";
@@ -234,7 +234,14 @@ test("capture CLI: an unreadable ignore file stops the pass with one line and ex
 test("capture --install-hint recommends append-only hook passes", () => {
   const r = spawnSync(process.execPath, [CAPTURE, "--install-hint"], { encoding: "utf8" });
   assert.equal(r.status, 0);
-  assert.match(r.stdout, /--sessions-only --no-index --quiet/);
+  assert.match(r.stdout, /capture-hook\.mjs --sessions-only --no-index --quiet"/);
+  const hint = JSON.parse(r.stdout.slice(r.stdout.indexOf("{\n"), r.stdout.lastIndexOf("\n}") + 2));
+  for (const event of ["Stop", "SessionEnd"]) {
+    const hook = hint.hooks[event][0].hooks[0];
+    assert.equal(hook.async, false); assert.equal(hook.timeout, 10);
+    assert.match(hook.command, /\/capture-hook\.mjs --sessions-only --no-index --quiet$/);
+  }
+  assert.match(r.stdout, /capture launched, not capture completed/);
   assert.match(r.stdout, /One pass runs per record root at a time/);
 });
 
@@ -338,10 +345,15 @@ test("capture lock: a removal error is still a failure when the lock was removed
 test("capture lock: failure to verify removal cannot be reported as released", (t) => {
   const root = mkdtempSync(join(tmpdir(), "capture-lock-verify-remove-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const lock = acquireCaptureLock(root, { io: { lstatSync: () => {
-    throw Object.assign(new Error("simulated removal verification failure"), { code: "EACCES" });
+  let removed = false;
+  const lock = acquireCaptureLock(root, { io: { rmSync: (path, options) => {
+    rmSync(path, options); removed = true;
+  }, lstatSync: (...args) => {
+    if (removed) throw Object.assign(new Error("simulated removal verification failure"), { code: "EACCES" });
+    return lstatSync(...args);
   } } });
   const outcome = lock.release();
+  assert.equal(removed, true, "failure is injected after actual removal");
   assert.equal(outcome.released, false); assert.equal(outcome.reason, "remove-failed");
   assert.match(outcome.error, /verification failure/); assert.match(outcome.recovery, /could not verify/);
 });

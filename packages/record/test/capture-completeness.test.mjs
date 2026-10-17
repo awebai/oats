@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { RecordStore } from "../lib/store.mjs";
 import { captureSessions } from "../lib/capture-cc.mjs";
+import { readCaptureStatus } from "../lib/capture-status.mjs";
 
 const CAPTURE = new URL("../bin/capture.mjs", import.meta.url).pathname;
 const OATS = new URL("../../../bin/oats.mjs", import.meta.url).pathname;
@@ -69,7 +70,22 @@ for (const format of ["cc", "pi", "codex"]) {
     assert.doesNotMatch(JSON.stringify(out), /tail-only-private-marker/);
     const background = f.run({ background: true });
     assert.equal(background.status, 0, background.stderr);
-    assert.match(background.stdout, /incomplete/);
+    // Ordinary capture reports the supervised pass, not the exact-home receipt.
+    // Read it before another exact-home invocation refreshes the status backlog.
+    const status = readCaptureStatus(f.root), run = status.lastRun;
+    assert.equal(run.trigger, "manual");
+    assert.equal(run.outcome, "partial"); assert.equal(run.reason, "input");
+    assert.equal(typeof run.finishedAt, "string");
+    assert.notEqual(run.pid, background.pid, "the admitted worker owns the receipt");
+    assert.equal(status.backlog.pending, true); assert.equal(status.lastSuccess, null);
+    assert.equal(run.counts.turnsAppended, 0); assert.equal(run.counts.turnsIndexed, 0);
+    assert.equal(run.counts.filesVisited, 1); assert.equal(run.counts.inputsPending, 1);
+    assert.equal(run.counts.inputsFailed, 0); assert.equal(run.counts.inputsSetAside, 0);
+    assert.equal(background.stdout, `capture: ${run.counts.turnsAppended} new turns; partial (input)\n`);
+    assert.doesNotMatch(background.stdout + background.stderr, /tail-only-private-marker/);
+    const accepted = f.store.readStream(f.stream);
+    assert.equal(accepted.length, 1);
+    assert.equal(accepted.map(t => t.body.line).join("\n") + "\n", header);
     out = incomplete(f.run({ native: true }));
     assert.equal(out.appended, 0, "a retry cannot reinterpret the partial record as valid");
     assert.equal(f.store.readStream(f.stream).length, 1);

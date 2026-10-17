@@ -60,11 +60,11 @@ commands are `oats capture|recall|setup`.
 
 ```bash
 turn-record setup        # install Stop/SessionEnd hooks into every
-                         # ~/.claude*/settings.json, install the background
-                         # watcher (launchd on macOS, systemd user unit on
+                         # ~/.claude*/settings.json, install periodic capture
+                         # (launchd on macOS, systemd user service + timer on
                          # Linux), then run the first capture pass.
                          # Idempotent; --dry-run previews; --owner overrides
-                         # the machine name.
+                         # the machine name. --root selects the persisted store.
 
 turn-record capture                  # one reconciliation pass, then index update
 turn-record capture --watch          # pass now, on filesystem change, every 15 min
@@ -77,13 +77,21 @@ turn-record recall --show t1:<hex>              # print one turn
 turn-record recall --reindex                    # full rebuild of the derived index
 ```
 
+`recall --thread <thread> --json` lists a thread in capture sequence.
+For a thread spanning aweb accounts, cross-account sequence under the service
+is unspecified, and an ID window may contain turns from more than one account.
+`--after <id>` excludes its boundary; `--until <id>` includes its boundary.
+`--ids-only` uses the same window and reports IDs and output byte sizes. Later
+appends do not reorder an existing window; existing tombstone visibility rules
+still apply. Text thread listings without a query remain timestamp-sorted.
+
 Store root: `--root`, else `$TURN_RECORD_ROOT`, else `~/.turn-record`.
 
 `recall --show` refuses a turn hidden by its author's tombstone, including a
 session event whose tombstone lives in another stream. It emits no turn payload
 and exits with status 1, as it does for a missing turn.
 
-**The `node` that `setup` writes down.** The hooks and the watcher's unit name
+**The `node` that `setup` writes down.** The hooks and the service's unit name
 a `node` by its path, and only `setup` run again rewrites them. Which path
 depends on how it is run:
 
@@ -100,16 +108,66 @@ runs under the `node` that runs `setup`.
 
 Each path is written for what reads it: a shell word in the hook's command,
 systemd's quoting in `ExecStart`, XML text in the launchd plist. A path of
-plain characters is written bare. A run finds the hooks of an earlier run by
-their shape, quoted or not, and replaces their command; a command it cannot
+plain characters stays bare in hook commands. A run finds the hooks of an earlier run by
+their shape, quoted or not, and refreshes command, async and timeout fields; a command it cannot
 read as its own is left alone and a new hook is added beside it.
 Stream owner: `--owner`, else `$TURN_RECORD_OWNER`, else the short hostname.
 
+Ordinary/source-selected capture, explicit retry and foreground watch ticks use
+the fixed supervised worker. Partial passes exit zero with pending work;
+operational failures exit nonzero. `--no-index` never opens or mutates the
+derived search index and supplies no fresh all-stage success. Quiet does not
+imply a hook trigger. Explicit `--hook` launches a detached supervisor and reports
+only “capture launched”, not initialization or completion. Owned Stop/SessionEnd
+settings run the hook entry `bin/capture-hook.mjs` (the same launch as
+`--quiet --hook`, under a file a rolled-back release cannot load, so it can
+never return Claude's blocking exit two), `async:false` and `timeout:10`: the harness waits
+for the launcher, while capture runs detached without its output pipes. Setup
+refreshes these fields even when the owned command already matches, preserving
+foreign hooks and unrelated fields. Hook errors, including usage, exit one,
+never Claude's Stop-blocking exit two. Existing ordinary quiet argv remain
+manual. Setup's first pass awaits the fixed supervisor with explicit `setup`
+attribution and all sources/indexing enabled; `--no-service` still runs it,
+while `--dry-run` starts no pass. Partial and overlap exit zero without claiming
+completion; operational failures remain nonzero. Setup preflights named service
+files, manager state and hook edits before mutation, then converts supported
+legacy watchers to periodic capture, from the next release after 0.61.0;
+0.56.0–0.61.0 shipped without it.
+See [command routing and receipts](docs/capture-service.md#ordinary-cli-and-foreground-watch).
+See [detached hook launch limits](docs/capture-service.md#detached-hook-launcher).
+The [service migration gate](docs/capture-service.md#setup-service-migration)
+refuses foreign, disabled or masked definitions unless the operator explicitly
+chooses `--replace-service`; `--no-service` bypasses service inspection and
+actions while still installing requested hooks and running the first pass.
+Refusals print that choice as the user-facing command with the selected
+owner/root: `oats setup …` when the kernel environment handed in a node
+(`OATS_NODE_BIN`, also set in instance shells), otherwise `turn-record setup …`.
+Unknown/read errors always refuse, as does a macOS registration of the capture
+label from another plist path, even with `--replace-service`. A refusal
+changes nothing. A service failure after preflight still writes the hooks and
+runs the first pass, then exits 1 with the
+[setup summary](docs/capture-service.md#setup-service-migration) of what changed;
+setup's private pending-activation marker (`<root>/capture-service-pending.json`)
+lets a plain rerun finish its own activation, and `capture --health` reports it
+as `capture-service-pending`.
+Replacement saves nonoverwriting backups under the selected root and rechecks
+file identity. `--dry-run` writes nothing and invokes no manager, so it reports
+manager state as unexamined.
+Healthy unchanged schedules preserve an active pass; successful setup reports
+verified periodic scheduling, not a permanent PID. Real-manager lifecycle
+and full service qualification remain separate gates.
+
 Transcript capture reads 64 KiB chunks and frames complete native records,
-including UTF-8 characters split across chunks. It appends batches of at most
-8 MiB of source bytes plus the last record and checkpoints after each batch.
-One very large native record can still require memory proportional to that
-record; capture does not impose a new record-size policy.
+including UTF-8 characters split across chunks. It flushes before adding a
+record that would exceed an 8 MiB source batch and checkpoints after each batch.
+Public synchronous capture can still process a larger individual record, with
+memory proportional to that record; its resource contract is unchanged. The
+supervised worker separately applies the fixed service policy beyond what is
+already captured: it captures the complete records before a new record over
+8 MiB, then sets the input aside at that record's start. Records captured
+earlier, of any size, are proved on recovery by streamed digests, not refused. Later records stay pending until the source is edited or the
+whole input is ignored; `--retry-set-aside` cannot pass the oversized record
+([operator recovery](docs/capture-service.md#operator-recovery)).
 Final, attributed and protected Pi capture stage the descriptor's snapshot on
 private scratch under `<root>/.capture-tmp` before the first append, preserving
 attribution and custody checks without retaining the source in process memory.
@@ -163,8 +221,10 @@ Name-only patterns apply across every capture source: a short or generic
 pattern meant for one aw account can also catch a session file's basename
 or id in any format. Prefer path patterns for anything short or generic.
 
-Ignored files are counted in each pass (`N ignored` in capture output;
-`capture --status` shows the active pattern count), never skipped silently.
+Ignored inputs are accounted for in worker run counts; exact synchronous
+receipts retain their ignored counts. `capture --status` shows the active
+pattern count. Ordinary text output summarizes confirmed appended turns and
+outcome; `capture --health` exposes active refusals and remedies.
 The file is per record root and is local policy, not record truth — the
 sync guidance below replicates only `streams/` and `objects/`, so each
 machine decides what its own capture refuses to read; sync the `ignore`
@@ -172,6 +232,18 @@ file yourself if you want one policy everywhere. Two honest limits: an
 ignore file that exists but cannot be read fails the pass loudly (a privacy
 control must not fail open), and ignoring is **forward-looking only** —
 turns already captured stay in the record; hide those with a tombstone.
+
+`turn-record capture --health [--json]` reads offline installation,
+receipt freshness/failure and current issue evidence without capture, repair,
+root creation or manager calls. Warnings exit zero; unavailable readers fail.
+A recent receipt or definition file does not certify enabled scheduling.
+See [health diagnosis](docs/capture-service.md#offline-installation-and-run-diagnosis)
+for exact installation candidates, nullable history, reader bounds and the
+asleep/off-host caveat. Deployment `oats doctor` delegates once to package health
+with a finite command timeout/output bound and maps its rows into warnings.
+Command, reader or invalid-response failures yield `capture-health-unavailable`;
+`--soul` remains composition-only. Kernel remedies say `oats`; standalone package
+remedies say `turn-record`, without rewriting user paths or receipt data.
 
 ## Multi-machine
 
@@ -301,7 +373,9 @@ output inventories without suppressing error counts.
 
 Verified snapshots and prefix comparisons use private record-root scratch, which
 can expand with source size; journal and derived-index disk space also grow with
-captured content. Staging is cleaned on success and failure. No new heap, record
+captured content. Public per-call staging is cleaned on success and failure;
+internal command recovery can retain explicitly owned jobs across workers, as
+described in the [resource model](docs/capture-service.md#resource-model). No new heap, record
 size, elapsed-time or service policy limit is imposed by these algorithms.
 
 ## Known costs, accepted for v1

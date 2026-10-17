@@ -1,5 +1,5 @@
-// Private same-volume scratch for synchronous capture/receipt work. Allocations
-// are never transferred to subprocesses. Root-lock cleanup reclaims only proven
+// Private same-volume scratch for synchronous capture/receipt work. These
+// per-call allocations are never transferred to subprocesses. Cleanup reclaims only proven
 // dead local owners; an incomplete marker or reused PID remains conservative.
 import { closeSync, constants, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, opendirSync, readSync, rmSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
@@ -88,8 +88,12 @@ export function cleanupCaptureScratch(root, lock, { liveness = localLiveness } =
   const entries = opendirSync(base.path); let removed = 0;
   try {
     for (let entry; (entry = entries.readSync()) !== null;) {
-      const match = /^(snapshot|receipt)-[A-Za-z0-9]{6}$/.exec(entry.name);
+      const match = /^(snapshot|receipt|recovery)-[A-Za-z0-9]{6}$/.exec(entry.name);
       if (!match || !entry.isDirectory() || entry.isSymbolicLink()) continue;
+      // Retained command jobs cross worker lifetimes intentionally. This
+      // ordinary scavenger has no durable job reference and therefore cannot
+      // authorize removal, even when the previous allocator is proven dead.
+      if (match[1] === "recovery") continue;
       const path = join(base.path, entry.name); let stat;
       try { stat = directory(path); } catch { continue; }
       const candidate = marker(path), value = candidate?.value;
@@ -109,3 +113,8 @@ export function cleanupCaptureScratch(root, lock, { liveness = localLiveness } =
   } finally { entries.closeSync(); }
   return removed;
 }
+
+// Package-private filesystem checks shared with retained command allocations.
+// They do not grant adoption or cleanup authority on their own.
+export { privateRoot as captureScratchRoot, directory as captureScratchDirectory,
+  marker as readCaptureScratchMarker, sameMarker as sameCaptureScratchMarker };

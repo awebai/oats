@@ -3,14 +3,19 @@
 //
 //   recall <query...>                 FTS5 query over mail, chat, sessions
 //   recall --kind mail <query...>     filter by kind (mail|chat|session|note)
-//   recall --thread <thread> [query]  filter/list by thread
-//   recall --thread <thread> --json   the thread's turns in journal order,
+//   recall --thread <thread> [query]  filter/list by thread; text listings
+//                                     without a query are timestamp-sorted
+//   recall --thread <thread> --json   the thread's turns in capture sequence,
 //     [--after <id>] [--until <id>]   with extracted text; exact id bounds
 //     [--limit n] [--ids-only]        (after is exclusive, until inclusive);
 //                                     --ids-only lists id, ts and the bytes
 //                                     each turn occupies in the --json output
 //                                     (text extracted but not emitted), so a
-//                                     consumer can size a window it will read
+//                                     consumer can size a window it will read.
+//                                     For a thread spanning aw accounts the
+//                                     cross-account sequence is unspecified
+//                                     and an id window may hold turns from
+//                                     more than one account
 //   recall --from <name> <query...>   filter by speaker
 //   recall --limit N                  max results (default 20)
 //   recall --show <turn-id>           print one turn as JSON

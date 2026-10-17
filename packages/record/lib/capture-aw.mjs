@@ -20,6 +20,7 @@ import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { DerivedState, statVersion, sameVersion } from "./derived-state.mjs";
+import { captureContext } from "./capture-context.mjs";
 
 import {
   projectCommLogEntry,
@@ -50,32 +51,40 @@ export function listCommLogs(dir = defaultCommLogDir()) {
 // does not, it is a torn tail the client is still writing, never counted. An
 // interior bad line is skipped and counted (`onSkipped`), never fatal.
 function* logEntries(fd, start, end, onSkipped, onConsumed) {
+  for (const record of awLogLines(fileChunks(fd, { start, end, size: 65536 }), { start })) {
+    if (!record.final) onConsumed(record.end);
+    if (record.skipped) onSkipped();
+    if (record.parsed) yield record;
+  }
+}
+
+// Command units must account for every scanned line, including empty/malformed
+// ones. Public capture's wrapper above retains its existing entry counters.
+export function* awLogLines(chunks, { start = 0, maxBytes = Infinity, frontier = 0 } = {}) {
   let offset = start;
-  for (const line of bufferLines(fileChunks(fd, { start, end, size: 65536 }))) {
+  for (const line of bufferLines(chunks, { maxBytes, limitFrom: Math.max(0, frontier - start) })) {
     const lineStart = offset;
     offset += line.length;
     const final = line[line.length - 1] !== 10;
     // Even ignored whitespace is scanned progress when newline-terminated.
     // The caller persists it only after its pending append batch is durable.
-    if (!final) onConsumed(offset);
-    let entry;
+    const record = { start: lineStart, end: final ? lineStart : offset, bytes: line.length, final };
     try {
       // Inside the try: a line beyond V8's string limit is a bad line like any other.
       const text = line.toString("utf8");
-      if (text.trim() === "") continue;
-      entry = JSON.parse(text);
+      if (text.trim() === "") { yield record; continue; }
+      const entry = JSON.parse(text);
+      yield { ...record, entry, parsed: true };
     } catch {
-      if (!final) onSkipped();
-      continue;
+      yield { ...record, skipped: !final };
     }
-    yield { entry, start: lineStart, end: final ? lineStart : offset, bytes: line.length };
   }
 }
 
 const APPEND_BATCH = 2000;
 
 // Check only a bounded checkpoint boundary under the append-only source contract.
-function boundaryWitness(fd, offset) {
+export function awBoundaryWitness(fd, offset) {
   const size = Math.min(offset, 4096), bytes = Buffer.alloc(size);
   let done = 0;
   while (done < size) {
@@ -86,6 +95,8 @@ function boundaryWitness(fd, offset) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+const boundaryWitness = awBoundaryWitness;
+
 function captureLogFile(store, { streamId, path, project, knownIds, incremental = false }) {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
   let state;
@@ -93,7 +104,7 @@ function captureLogFile(store, { streamId, path, project, knownIds, incremental 
     const stat = fstatSync(fd, { bigint: true });
     if (!stat.isFile()) throw new Error(`log source is not a regular file: ${path}`);
     const version = statVersion(stat), end = version.size;
-    state = new DerivedState(store.root);
+    state = captureContext(store)?.state ?? new DerivedState(store.root);
     const generation = state.get("reset", streamId.split("~")[0] + ":aw") ?? "";
     const key = `${streamId}:${path}`;
     let previous = incremental ? state.get("aw", key) : null;
@@ -120,7 +131,15 @@ function captureLogFile(store, { streamId, path, project, knownIds, incremental 
       }
       checkpoint();
     };
+    const batchLimit = captureContext(store)?.batchBytes ?? 8 * 1024 * 1024;
     for (const record of logEntries(fd, start, end, () => skipped++, (offset) => { consumed = offset; })) {
+      if (batch.length && batchBytes + record.bytes > batchLimit) {
+        // The parser has reported this complete line as scanned, but it has
+        // not yet been appended. An earlier batch may checkpoint only up to
+        // this line's START, including intervening consumed blank lines.
+        const scanned = consumed; consumed = record.start;
+        flush(); consumed = scanned;
+      }
       entries++;
       let turn;
       // Projection refusal consumes this complete entry just like a skipped
@@ -131,14 +150,14 @@ function captureLogFile(store, { streamId, path, project, knownIds, incremental 
       catch { failed++; continue; }
       if (knownIds) { if (knownIds.has(turn.id)) continue; knownIds.add(turn.id); }
       batch.push(turn); batchBytes += record.bytes;
-      if (batch.length >= APPEND_BATCH || batchBytes >= 8 * 1024 * 1024) flush();
+      if (batch.length >= APPEND_BATCH || batchBytes >= batchLimit) flush();
     }
     // Complete refused/malformed/blank lines are consumed; an unfinished final
     // fragment keeps its starting boundary so later growth can finish it.
     complete = true;
     flush();
     return { entries, appended, skipped, failed };
-  } finally { try { state?.close(); } finally { closeSync(fd); } }
+  } finally { try { if (!captureContext(store)) state?.close(); } finally { closeSync(fd); } }
 }
 
 // Capture one comm-log file into `<owner>~aw`. The account name is the

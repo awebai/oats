@@ -12,34 +12,39 @@
 // accounts) whose sources are never captured — see lib/ignore.mjs.
 // Reconciliation is the capture; hooks and watch only decide when to run it.
 
-import { closeSync, constants, fstatSync, openSync, readFileSync, watch } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync, watch } from "node:fs";
 import { homedir, hostname } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import process from "node:process";
 
 import { RecordStore } from "../lib/store.mjs";
-import { captureAllSessions, captureSessions } from "../lib/capture-cc.mjs";
+import { captureSessions } from "../lib/capture-cc.mjs";
 import { sessionsForHome } from "../lib/sessions-for-home.mjs";
 import { SESSION_FORMATS } from "../lib/formats.mjs";
 import { cwdOfLine } from "../lib/sessions-for-home.mjs";
 import { stageSnapshot } from "../lib/session-snapshot.mjs";
 import { cleanupCaptureScratch } from "../lib/capture-scratch.mjs";
 import { bufferLines } from "../lib/file-lines.mjs";
-import { captureAwLogs, defaultCommLogDir } from "../lib/capture-aw.mjs";
 import { withReceiptSummaries } from "../lib/receipt-summary.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
 import { IgnoreError, ignoreFilePath, loadIgnore } from "../lib/ignore.mjs";
-import { CAPTURE_SOURCES, captureHealth, resetSourceCursors, retrySetAside, writeCaptureStatus } from "../lib/capture-state.mjs";
+import { CAPTURE_SOURCES, captureHealth, resetSourceCursors, writeCaptureStatus } from "../lib/capture-state.mjs";
 import { acquireCaptureLock } from "../lib/capture-lock.mjs";
+import { captureHealthForDoctor } from "../lib/capture-health.mjs";
+import { captureDefaultRootPlan, resolveCaptureDefaultRoots } from "../lib/capture-default-roots.mjs";
+import { captureCommandPass, reportLockInitializationFailure, reportReclaimedLock, releaseDetail } from "../lib/capture-command-output.mjs";
+import { captureWatchQueue } from "../lib/capture-watch.mjs";
+import { launchCaptureHook } from "../lib/capture-hook.mjs";
 
 // Fail closed but actionably: an unreadable ignore file must stop capture,
 // as one clear line naming the file — never an uncaught stack trace.
-function loadIgnoreOrExit(recordRoot) {
+class PrintedCaptureFailure extends Error {}
+function loadIgnoreForCommand(recordRoot) {
   try {
     return loadIgnore(recordRoot);
   } catch (err) {
     console.error(err instanceof IgnoreError ? err.message : String(err));
-    process.exit(1);
+    throw new PrintedCaptureFailure();
   }
 }
 
@@ -51,6 +56,7 @@ function loadIgnoreOrExit(recordRoot) {
 // it does not understand before anything can be written.
 const VALUE_FLAGS = new Set(["root", "owner", "home", "file", "format", "source"]);
 const BOOL_FLAGS = new Set([
+  "hook",
   "reset-cursors",
   "retry-set-aside",
   "health",
@@ -71,10 +77,12 @@ const USAGE = `capture — land sessions and aw client logs in the turn record.
   capture                      one reconciliation pass (sessions + aw logs)
   capture --sessions-only      only session transcripts (Claude Code, pi, codex)
   capture --aw-only            only aw client comm logs
+  capture --hook               launch detached capture; exit 0 acknowledges
+                               launch only, never capture completion
   capture --watch              pass now, then re-pass on filesystem change
                                (debounced) and every 15 minutes regardless
   capture --status             show store/stream summary, capture nothing
-  capture --health [--json]    read capture set-aside diagnosis, capture nothing
+  capture --health [--json]    read offline installation, run and issue diagnosis
   capture --reset-cursors [--source aw|cc|pi|codex]
                                reset selected source cursors and exit; the next
                                pass reprocesses them with journal deduplication
@@ -132,6 +140,10 @@ Every invocation with no explicit subcommand WRITES. Reconciliation is the
 capture; hooks and watch only decide when to run it.`;
 
 class UsageError extends Error {}
+const hookRequested = process.argv.slice(2).some(arg => arg === "--hook" || arg.startsWith("--hook="));
+function hookLaunchError(error) {
+  console.error(`capture hook launch failed: ${String(error.message).replace(/[\r\n]+/g, " ")}`);
+}
 
 function parseArgs(argv) {
   const args = {};
@@ -144,7 +156,7 @@ function parseArgs(argv) {
     const name = a.slice(2);
     if (VALUE_FLAGS.has(name)) {
       const value = argv[++i];
-      if (value === undefined) throw new UsageError(`${a} needs a value`);
+      if (value === undefined || hookRequested && value.startsWith("--")) throw new UsageError(`${a} needs a value`);
       if (name === "file" && args.file !== undefined) throw new UsageError("one --file per call");
       args[name] = value;
     } else if (BOOL_FLAGS.has(name)) {
@@ -156,6 +168,12 @@ function parseArgs(argv) {
   return args;
 }
 
+// Terminal branches return instead of forcing termination while stdout/stderr
+// may still contain queued pipe writes. Returning also prevents reporting from
+// falling through to capture. Lock/child owners finish before returning; watch
+// retains its signal lifecycle. No stream is closed or given an arbitrary delay.
+const finish = code => { process.exitCode = code; };
+async function main() {
 let args;
 try {
   args = parseArgs(process.argv.slice(2));
@@ -163,60 +181,93 @@ try {
   if (recovery.length > 1) throw new UsageError("choose one recovery or health operation");
   if (args.source !== undefined && (!args["reset-cursors"] || !CAPTURE_SOURCES.includes(args.source))) throw new UsageError("--source requires --reset-cursors and aw|cc|pi|codex");
   if (recovery.length && ["home", "file", "format", "watch", "status", "install-hint", "current-roots", "sessions-only", "aw-only"].some(key => args[key])) throw new UsageError("recovery/health cannot be combined with another capture mode");
+  if (args.hook && ["home", "file", "format", "watch", "status", "install-hint", "help", "current-roots", "json", ...recovery].some(key => args[key] !== undefined))
+    throw new UsageError("--hook cannot be combined with proof, recovery, JSON or another capture mode");
 } catch (err) {
   if (!(err instanceof UsageError)) throw err;
+  // Claude treats hook exit2 as blocking/model feedback. Explicit hook usage
+  // failures report launch failure on stderr/exit1, never that special status.
+  if (hookRequested) {
+    hookLaunchError(err);
+    return finish(1);
+  }
   // --file --json answers JSON even for a usage error: it is for programs.
   if (process.argv.includes("--json")) {
     console.log(JSON.stringify({ status: "failed", complete: false, code: "E_USAGE", error: err.message }, null, 2));
-    process.exit(2);
+    return finish(2);
   }
   console.error(`capture: ${err.message}\n\n${USAGE}`);
-  process.exit(2);
+  return finish(2);
 }
 
 if (args.help) {
   console.log(USAGE);
-  process.exit(0);
+  return finish(0);
 }
 
 const root = args.root ?? process.env.TURN_RECORD_ROOT ?? join(homedir(), ".turn-record");
 const ownerExplicit = args.owner !== undefined || process.env.TURN_RECORD_OWNER !== undefined;
 const owner = args.owner ?? process.env.TURN_RECORD_OWNER ?? hostname().split(".")[0];
 const quiet = Boolean(args.quiet || args.json && (args["reset-cursors"] || args["retry-set-aside"]));
-const store = new RecordStore(root, { owner });
+const store = args.hook || args.health ? null : new RecordStore(root, { owner });
 
 if (args.health) {
   try {
-    const health = captureHealth(root);
+    // Remedies name the command the person has: `oats` when the kernel runs
+    // this script (it imports it, so argv[1] is the kernel's entry, an npm bin
+    // symlink named oats included) or handed a node, as setup's remedies do;
+    // `turn-record` when run alone.
+    const entry = (() => {
+      try { return realpathSync(process.argv[1] ?? ""); }
+      catch (error) { if (error.code === "ENOENT") return process.argv[1] ?? ""; throw error; }
+    })();
+    const viaKernel = basename(entry) === "oats.mjs" || isAbsolute(process.env.OATS_NODE_BIN ?? "");
+    const health = viaKernel ? captureHealthForDoctor(root) : captureHealth(root);
     if (args.json) console.log(JSON.stringify(health, null, 2));
     else {
       console.log(`capture: ${health.status}`);
       for (const row of health.rows) console.log(`${row.code}: ${row.message}`);
       for (const entry of health.backlog.setAside) console.log(`${entry.source}: ${entry.path}:${entry.line ?? "?"} offset ${entry.offset}: ${entry.reason}`);
       if (health.backlog.truncated) console.log("showing first 100 set-aside inputs");
+      for (const entry of health.backlog.failed) console.log(`${entry.stream}: unit starting at byte ${entry.offset} (failing frame unknown): ${entry.reason}; attempts ${entry.attempts}; next retry ${entry.nextRetryAt}`);
+      if (health.backlog.failedTruncated) console.log("showing first 100 failed stream units");
     }
   } catch (err) {
     if (args.json) console.log(JSON.stringify({ status: "failed", error: err.message }));
     else console.error(`capture: ${err.message}`);
     process.exitCode = 1;
   }
-  process.exit(process.exitCode ?? 0);
+  return;
 }
 if (args["reset-cursors"] || args["retry-set-aside"]) {
   try {
     const result = args["reset-cursors"]
       ? withCaptureLock(() => { resetSourceCursors(root, owner, args.source); return { reset: true, sources: args.source ? [args.source] : CAPTURE_SOURCES }; })
-      : pass({ retry: true });
+      : await pass({ retry: true });
     if (result.skipped) throw new Error("capture lock held; recovery was not performed");
     if (process.exitCode) throw new Error("recovery failed to release its capture lock");
     if (args.json) console.log(JSON.stringify(result));
     else if (args["reset-cursors"]) log(`capture: reset source cursors (${result.sources.join(", ")})`);
   } catch (err) {
+    if (err instanceof PrintedCaptureFailure) throw err;
     if (args.json) console.log(JSON.stringify({ status: "failed", complete: false, error: err.message }));
     else console.error(`capture: ${err.message}`);
     process.exitCode = 1;
   }
-  process.exit(process.exitCode ?? 0);
+  return;
+}
+
+if (args.hook) {
+  try {
+    await launchCaptureHook(root, { owner, plan: commandPlan(), indexEnabled: !args["no-index"], trigger: "hook", retrySetAside: false });
+    log("capture launched; launch is not completion (see capture --health)");
+  } catch (error) {
+    hookLaunchError(error);
+    process.exitCode = 1;
+  }
+  // No capture work or discovery in the harness process. The detached owner
+  // takes the lock and retains the existing worker lifetime/reaping contract.
+  return;
 }
 
 // The owner decides the stream namespace, and turn ids hash it into the
@@ -265,18 +316,9 @@ function withCaptureLock(fn) {
     lock = acquireCaptureLock(root);
     // Said by the pass that removed it, never quiet, whether or not it then took the lock: a pass that
     // died holding the lock is worth knowing about.
-    if (lock.reclaimed) console.error(`capture: reclaimed ${lock.path} from pid ${lock.reclaimed.pid}, which died (started ${lock.reclaimed.startedAt || "?"})`);
+    if (lock.reclaimed) reportReclaimedLock({ path: lock.path, ...lock.reclaimed });
   } catch (err) {
-    if (err.lockCleanup) {
-      const c = err.lockCleanup;
-      const outcome = c.removed ? "the initializing lock was removed"
-        : c.reason === "gone" ? "the initializing lock was already gone (removed by another party)"
-        : c.reason === "replaced" ? (c.owner
-          ? `the lock now belongs to pid ${c.owner.pid} (started ${c.owner.startedAt || "?"}) and was left alone`
-          : "the lock directory changed or its identity could not be verified, no owner record was readable, and it was left alone")
-        : `the initializing lock could NOT be removed${c.error ? ` (${c.error})` : ""}; ${c.recovery}`;
-      console.error(`capture: could not write the owner record of ${c.path}: ${err.message}; ${outcome}`);
-    }
+    reportLockInitializationFailure(err);
     throw err;
   }
   if (lock.held) {
@@ -303,72 +345,27 @@ function withCaptureLock(fn) {
     if (!r.released) {
       // Say what was observed: gone, unreadable (unknown), another owner, or
       // our own lock that would not go away; never a guess about liveness.
-      const detail = r.reason === "gone" ? "it was already removed by another party (an operator recovery?); nothing to release"
-        : r.reason === "not-owner" ? `it now belongs to pid ${r.owner.pid} (started ${r.owner.startedAt || "?"}); left alone`
-        : r.reason === "unknown-owner" ? `its owner record is missing or unreadable, so it may be an operator removal in progress or a newer pass initializing; left alone; ${r.recovery}`
-        : `${r.error ? `${r.error}; ` : ""}${r.recovery}`;
-      console.error(`capture: did not release ${lock.path} (${r.reason}): ${detail}`);
+      console.error(`capture: did not release ${lock.path} (${r.reason}): ${releaseDetail(r)}`);
       process.exitCode = 1;
     }
   }
 }
 
-function pass({ retry = false } = {}) {
-  // The privacy loader fails closed by exiting; it runs before the lock is
-  // taken so that exit never leaves the lock behind.
-  const ignore = loadIgnoreOrExit(root);
-  return withCaptureLock(() => {
-  if (retry) retrySetAside(root);
-  const out = { appended: 0, pending: false };
-  if (!args["aw-only"]) {
-    for (const r of captureAllSessions(store, { owner, ignore, collectIssues: false })) {
-      out.appended += r.appended;
-      out.pending ||= !r.complete;
-      const extras = [r.ignored ? `${r.ignored} ignored` : "", r.held ? `${r.held} held` : "", r.incomplete ? `${r.incomplete} incomplete` : ""]
-        .filter(Boolean)
-        .join(", ");
-      log(
-        `sessions: ${r.sessions} scanned, ${r.appended} new turns in ${r.streams} sessions${extras ? ` (${extras})` : ""} -> ${r.stream}`,
-      );
-    }
-  }
-  if (!args["sessions-only"]) {
-    let awEntries = 0;
-    let awAppended = 0;
-    let awFailed = 0;
-    let awFiles = 0;
-    let awIgnored = 0;
-    for (const r of captureAwLogs(store, { owner, ignore, collect: false })) {
-      if (r.ignored) {
-        awIgnored++;
-        continue;
-      }
-      awFiles++;
-      awEntries += r.entries;
-      awAppended += r.appended;
-      awFailed += r.failed;
-      out.pending ||= r.failed > 0;
-      out.appended += r.appended;
-      if (r.failed) console.error(`aw-log ${r.account}: ${r.failed} entries failed to project`);
-    }
-    const ignored = awIgnored ? `, ${awIgnored} ignored` : "";
-    log(`aw-logs: ${awFiles} files, ${awEntries} entries, ${awAppended} new, ${awFailed} failed${ignored}`);
-  }
-  // Index whenever this pass may index, not only when THIS pass appended:
-  // an append-only pass (--no-index, the hook form) leaves turns behind
-  // that the next indexing pass must pick up. index.update() walks
-  // per-stream cursors, so a pass with nothing new is cheap.
-  if (!args["no-index"]) {
-    const index = new RecordIndex(store);
-    try {
-      index.update();
-      log("index: updated");
-    } finally {
-      index.close();
-    }
-  }
-  return out;
-  });
+function commandPlan() {
+  // Copy caller selection before spawning; only the admitted worker resolves
+  // the capture roots. Both selection flags retain their existing empty union.
+  const sources = CAPTURE_SOURCES.filter(source => source === "aw" ? !args["sessions-only"] : !args["aw-only"]);
+  return captureDefaultRootPlan({ home: homedir(), cwd: process.cwd(), env: process.env, sources });
+}
+
+async function pass({ retry = false, trigger = "manual" } = {}) {
+  // Privacy refusal unwinds to the command boundary before the lock is
+  // taken, leaving no admitted child or lock. The worker independently
+  // reloads privacy rules; this preflight supplies the existing actionable error.
+  loadIgnoreForCommand(root);
+  // Recovery JSON keeps its existing small shape. Never read a later status
+  // file after releasing the lock to reconstruct this pass's counters.
+  return captureCommandPass(root, { owner, plan: commandPlan(), indexEnabled: !args["no-index"], trigger, retrySetAside: retry }, { log });
 }
 
 /** A final capture of exact files, one batch per format, under the lock: counts into `outcome`, issues into
@@ -527,36 +524,40 @@ function fileCapture() {
   } finally { pinned.close(); }
 }
 
-if (args.file !== undefined || args.format !== undefined || args.json) process.exit(fileCapture());
+if (args.file !== undefined || args.format !== undefined || args.json) return finish(fileCapture());
 
 if (args["install-hint"]) {
-  const self = new URL(import.meta.url).pathname;
+  const self = new URL("./capture-hook.mjs", import.meta.url).pathname;
   console.log(`Add to Claude Code settings.json to capture on session stop/end:
 
 {
   "hooks": {
-    "Stop":       [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --no-index --quiet"}]}],
-    "SessionEnd": [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --no-index --quiet"}]}]
+    "Stop":       [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --no-index --quiet", "async": false, "timeout": 10}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --no-index --quiet", "async": false, "timeout": 10}]}]
   }
 }
 
-Hook passes append turns only (--no-index); the search index is updated by
+Hook acknowledgement means capture launched, not capture completed. The
+harness waits only for the launcher (async:false, timeout:10); its detached
+supervisor inherits no harness output pipes. Hook failures exit 1, never 2.
+These hook passes append turns only (--no-index); the search index is updated by
 capture --watch (every 15 minutes and on change) or by a plain capture pass.
-One pass runs per record root at a time: a hook pass that finds another
-running exits at once, and a dropped hook is recovered by any later pass.`);
-  process.exit(0);
+One pass runs per record root at a time: the detached supervisor skips an
+overlap; launch acknowledgement does not report that later decision. A dropped
+hook is recovered by any later pass.`);
+  return finish(0);
 }
 
 if (args.status) {
   console.log(`root:  ${root}\nowner: ${owner}`);
-  const ignore = loadIgnoreOrExit(root);
+  const ignore = loadIgnoreForCommand(root);
   if (ignore.size > 0) {
     console.log(`ignore: ${ignore.size} pattern${ignore.size === 1 ? "" : "s"} (${ignoreFilePath(root)})`);
   }
   for (const streamId of store.listStreams()) {
     console.log(`  ${streamId}: ${store.readStream(streamId).length} turns`);
   }
-  process.exit(0);
+  return finish(0);
 }
 
 // One instance home: capture its own sessions and report them with exact
@@ -629,39 +630,57 @@ if (args.home) {
 
 warnOnStrangerOwner();
 try {
-  pass();
+  await pass({ trigger: args.watch ? "watch" : "manual" });
 } catch (err) {
+  if (err instanceof PrintedCaptureFailure) throw err;
   // The lock's finally has run by now; one line, then the status.
   console.error(`capture pass failed: ${err.message}`);
-  process.exit(1);
+  return finish(1);
 }
 
 if (args.watch) {
-  const roots = [
-    ...Object.values(SESSION_FORMATS).flatMap((f) => f.defaultRoots()),
-    defaultCommLogDir(),
-  ];
-  let timer = null;
-  const schedule = () => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
-      timer = null;
-      try {
-        pass();
-      } catch (err) {
-        console.error(`capture pass failed: ${err.message}`);
-      }
-    }, 2000);
-  };
-  for (const dir of roots) {
+  const queue = captureWatchQueue(() => pass({ trigger: "watch" }), {
+    onError: err => {
+      process.exitCode = 1;
+      // A privacy refusal used to terminate immediately. It still stops the
+      // watch, before child admission, but lets its already printed error drain.
+      if (err instanceof PrintedCaptureFailure) { stop(); return; }
+      console.error(`capture pass failed: ${err.message}`);
+    },
+  });
+  const watchers = [], plan = commandPlan();
+  // These are notification hints only. Their enumeration has parent metadata
+  // cost, supplies no capture authority, and may fail independently of a pass.
+  for (const source of plan.sources) {
     try {
-      watch(dir, { recursive: true }, schedule);
-      log(`watching ${dir}`);
-    } catch (err) {
-      console.error(`cannot watch ${dir}: ${err.message}`);
-    }
+      for (const dir of resolveCaptureDefaultRoots(plan, source)) {
+        try {
+          const watcher = watch(dir, { recursive: true }, () => queue.schedule());
+          watcher.on("error", err => { console.error(`cannot watch ${dir}: ${err.message}`); watcher.close(); });
+          watchers.push(watcher);
+          log(`watching ${dir}`);
+        } catch (err) { console.error(`cannot watch ${dir}: ${err.message}`); }
+      }
+    } catch (err) { console.error(`cannot select ${source} watch hints: ${err.message}`); }
   }
-  setInterval(schedule, 15 * 60 * 1000); // reconcile even if events were missed
+  const interval = setInterval(() => queue.schedule(), 15 * 60 * 1000);
+  const stop = () => {
+    queue.close(); clearInterval(interval);
+    for (const watcher of watchers) watcher.close();
+    process.off("SIGINT", stop); process.off("SIGTERM", stop);
+    // If a pass is active its supervisor also observes this signal and owns
+    // child termination/reaping and lock release. No new pass may start.
+  };
+  process.on("SIGINT", stop); process.on("SIGTERM", stop);
 }
 
+}
+}
+
+try { await main(); }
+catch (error) {
+  if (!(error instanceof PrintedCaptureFailure)) throw error;
+  // Privacy already printed its one actionable error. No duplicate diagnostic
+  // and no later mode may run, but both output pipes can finish normally.
+  process.exitCode = 1;
 }

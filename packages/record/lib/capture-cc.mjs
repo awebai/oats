@@ -21,6 +21,7 @@
 // un-ignoring a file later makes the next pass capture it normally.
 
 import { isUtf8 } from "node:buffer";
+import { createHash } from "node:crypto";
 import { closeSync, constants, fstatSync, openSync } from "node:fs";
 import { basename } from "node:path";
 
@@ -33,6 +34,7 @@ import { bufferLines } from "./file-lines.mjs";
 import { DerivedState, fileVersion, sameVersion, statVersion } from "./derived-state.mjs";
 import { compareTranscriptPrefix } from "./transcript-prefix.mjs";
 import { isDeepStrictEqual } from "node:util";
+import { captureContext } from "./capture-context.mjs";
 
 export const SESSION_STREAM_SOURCE = "cc";
 
@@ -91,10 +93,10 @@ const FLUSH_BYTES = 8 * 1024 * 1024;
 // replacement characters would change both the verbatim line and its byte
 // offset, possibly treating a later fragment as a record) or a line beyond
 // V8's string limit.
-function* completeLines(chunks, walk) {
+export function* completeNativeLines(chunks, walk, { maxBytes = Infinity } = {}) {
   let scanned = 0;
   walk.scanned = 0;
-  for (const line of bufferLines(chunks)) {
+  for (const line of bufferLines(chunks, { maxBytes })) {
     if (line[line.length - 1] !== 10) { walk.reason = "torn-tail"; return; }
     const bytes = line.subarray(0, -1);
     if (!isUtf8(bytes)) { walk.reason = "invalid-utf8"; return; }
@@ -121,6 +123,33 @@ function* completeLines(chunks, walk) {
   }
 }
 
+// The digests of completeNativeLines' lines, for proving an already captured
+// prefix: SHA-256 of each line without its newline, streamed over the chunks
+// with no join, no decode to a string and no size limit, so a captured record
+// of any size is compared without being held whole. Stops exactly where
+// completeNativeLines stops, with the same walk.reason.
+export function* completeNativeLineDigests(chunks, walk) {
+  let hash = createHash("sha256"), utf8 = new TextDecoder("utf-8", { fatal: true }), bytes = 0, scanned = 0, valid = true;
+  const check = (piece, stream) => { if (valid) try { utf8.decode(piece, { stream }); } catch { valid = false; } };
+  walk.scanned = 0;
+  for (const chunk of chunks) {
+    for (let from = 0; from < chunk.length;) {
+      const newline = chunk.indexOf(10, from), end = newline < 0 ? chunk.length : newline;
+      const piece = chunk.subarray(from, end);
+      hash.update(piece); check(piece, true); bytes += piece.length;
+      if (newline < 0) break;
+      check(undefined, false);
+      if (!valid) { walk.reason = "invalid-utf8"; return; }
+      scanned += bytes + 1; walk.scanned = scanned;
+      yield { hash: hash.digest("hex"), bytes: bytes + 1 };
+      hash = createHash("sha256"); utf8 = new TextDecoder("utf-8", { fatal: true }); bytes = 0; from = newline + 1;
+    }
+  }
+  if (bytes > 0) walk.reason = "torn-tail";
+}
+
+const completeLines = completeNativeLines;
+
 // One reconciliation pass for one format: one turn per NEW complete line
 // of every session file under `roots`. Unstamped leading lines are held
 // until the file shows its first timestamp (then they carry it backward),
@@ -140,9 +169,9 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
   const fmt = SESSION_FORMATS[format];
   if (!fmt) throw new Error(`unknown session format ${format}`);
   const ign = ignore ?? loadIgnore(store.root);
-  const offsets = new DerivedState(store.root);
+  const context = captureContext(store), offsets = context?.state ?? new DerivedState(store.root);
   try {
-  offsets.db.exec("CREATE TEMP TABLE captured_streams (stream TEXT PRIMARY KEY)");
+  offsets.db.exec("CREATE TEMP TABLE IF NOT EXISTS captured_streams (stream TEXT PRIMARY KEY); DELETE FROM captured_streams");
   const markStream = offsets.db.prepare("INSERT OR IGNORE INTO captured_streams VALUES (?)");
   let sessions = 0;
   let appended = 0;
@@ -299,7 +328,11 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     let lineNo = state.line;
     let consumed = 0;
     const walk = {};
+    const batchBytes = context?.batchBytes ?? FLUSH_BYTES;
     for (const l of completeLines(chunks(state.bytes), walk)) {
+      // Commit the earlier batch BEFORE its cursor/timestamp can include the
+      // next record. Public callers still accept a larger individual record.
+      if (fresh.length && freshBytes + l.bytes > batchBytes) flush();
       if (l.ts) lastTs = l.ts;
       lineNo++;
       consumed += l.bytes;
@@ -311,7 +344,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
         ),
       );
       freshBytes += l.bytes;
-      if (fresh.length >= 2000 || freshBytes >= FLUSH_BYTES) flush();
+      if (fresh.length >= 2000 || freshBytes >= batchBytes) flush();
     }
     stopped(walk);
     flush();
@@ -331,7 +364,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     streams,
     stream: `${owner}~${fmt.source}.*`,
   };
-  } finally { offsets.close(); }
+  } finally { if (!context) offsets.close(); }
 }
 
 // One pass over every known format at its default roots. The ignore list

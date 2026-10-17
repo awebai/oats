@@ -29,9 +29,11 @@ Keep independent product improvements off the repair's critical path.
 **Run the setup yourself; the person types only secrets.** Run each step of
 these skills yourself and read back what it did. The person types only what you
 must never hold: passwords, tokens, API keys and interactive logins. They also
-run the two installs that capture their own shell's environment, so you hand
+run the installs that capture their own shell's environment, so you hand
 over each as its exact one-line command: the host wake broker
-(`/oats-host-delivery`, Choice 2) and the host timer (`/oats-automations`).
+(`/oats-host-delivery`, Choice 2), the host timer (`/oats-automations`) and,
+from OATS 0.62.0, the record capture conversion
+`oats setup` (`/oats-setup-model`, "A person-run step").
 A secret reaches the command that needs it by one of these routes, in this
 order:
 

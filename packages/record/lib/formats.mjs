@@ -58,12 +58,13 @@ function* parsedLines(bytes) {
 // Preserve the public inventory's per-directory localeCompare order and stable
 // ties for ordinary capture too. Path metadata grows with directory size;
 // source contents are streamed independently of this discovery inventory.
-function* directoryEntries(path, optional = false) {
+export function sortedSessionEntries(path, optional = false) {
   let entries;
   try { entries = readdirSync(path, { withFileTypes: true }); }
-  catch (err) { if (optional && err.code === "ENOENT") return; throw err; }
-  yield* entries.sort((a, b) => a.name.localeCompare(b.name));
+  catch (err) { if (optional && err.code === "ENOENT") return []; throw err; }
+  return entries.sort((a, b) => a.name.localeCompare(b.name));
 }
+function* directoryEntries(path, optional = false) { yield* sortedSessionEntries(path, optional); }
 function* iterateJsonlFiles(root, maxDepth, { strict = false } = {}, allowCaptured = false) {
   const capturedPi = typeof root === "object" && root !== null ? root.capturedPi : undefined;
   if (typeof root !== "string") {

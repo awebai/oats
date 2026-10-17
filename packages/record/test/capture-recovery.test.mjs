@@ -10,6 +10,7 @@ import { captureSessions } from "../lib/capture-cc.mjs";
 import { captureAwLogs } from "../lib/capture-aw.mjs";
 import { DerivedState } from "../lib/derived-state.mjs";
 import { captureHealth, resetSourceCursors, retrySetAside, writeCaptureStatus } from "../lib/capture-state.mjs";
+import { writeCurrentHook } from "./fixtures/capture-hook-settings.mjs";
 import { acquireCaptureLock } from "../lib/capture-lock.mjs";
 
 const bin = resolve(import.meta.dirname, "../bin/capture.mjs");
@@ -42,8 +43,8 @@ for (const format of ["cc", "pi", "codex"]) test(`${format}: equal moved identit
   assert.equal(result.issues[0].line, 2301);
   assert.deepEqual(fs.readFileSync(journal), before);
   retrySetAside(f.root); // interruption after marking retains active warning
-  writeCaptureStatus(f.root);
-  assert.equal(captureHealth(f.root).backlog.setAsideCount, 1);
+  writeCaptureStatus(f.root); writeCurrentHook(f.base); // an installed host reports its backlog
+  assert.equal(captureHealth(f.root, { home: f.base }).backlog.setAsideCount, 1);
   assert.equal(f.capture({ format }).appended, 0);
   fs.writeFileSync(f.path, original + line(2500));
   assert.equal(f.capture({ format }).appended, 0, "restoration alone does not waive retry");
@@ -61,7 +62,8 @@ test("ignore removes missing/unreadable set-aside entries before any open; unign
   fs.openSync = (p, ...args) => { assert.notEqual(p, f.path, "ignored source was opened"); return open(p, ...args); }; syncBuiltinESMExports();
   try { assert.equal(f.capture().ignored, 1); }
   finally { fs.openSync = open; syncBuiltinESMExports(); }
-  writeCaptureStatus(f.root); assert.equal(captureHealth(f.root).status, "ok");
+  writeCaptureStatus(f.root); writeCurrentHook(f.base);
+  assert.deepEqual(captureHealth(f.root, { home: f.base }).rows.map(row => row.code), ["capture-success-stale"]);
   fs.writeFileSync(f.path, line(2)); fs.writeFileSync(join(f.root, "ignore"), "");
   assert.equal(f.capture().complete, false);
 });
@@ -102,25 +104,30 @@ test("background aweb prefix edit outside the boundary requires reset and adds c
 
 test("health never creates an absent root; status caps deterministic issue samples and makes no run claim", t => {
   const f = fixture(t);
-  assert.equal(captureHealth(f.root).status, "ok"); assert.equal(fs.existsSync(f.root), false);
+  assert.equal(captureHealth(f.root, { home: f.base }).status, "ok"); assert.equal(fs.existsSync(f.root), false);
   const result = f.cli("--health", "--json"); assert.equal(result.status, 0); assert.equal(fs.existsSync(f.root), false);
   const state = new DerivedState(f.root);
   for (let i = 110; i >= 0; i--) state.set("set-aside", String(i), { source: "cc", path: `/fixture/${String(i).padStart(3, "0")}`, offset: i, line: i + 1, reason: "captured-prefix-changed" });
   state.close();
   const status = writeCaptureStatus(f.root);
   assert.equal(status.policy, null); assert.equal(status.lastSuccess, null); assert.equal(status.lastRun, null);
-  const health = captureHealth(f.root);
+  writeCurrentHook(f.base); // from here, an installed host
+  const health = captureHealth(f.root, { home: f.base });
   assert.equal(health.backlog.setAsideCount, 111); assert.equal(health.backlog.setAside.length, 100); assert.equal(health.backlog.truncated, true);
   assert.equal(health.backlog.setAside[0].path, "/fixture/000");
   assert.match(health.rows[0].message, /later turns.*will not be captured/);
   assert.equal(fs.statSync(join(f.root, "capture-status.json")).mode & 0o777, 0o600);
 });
 
-test("command status truthfully records pending unstamped input without inventing run evidence", t => {
+test("supervised command records pending unstamped input without inventing success", t => {
   const f = fixture(t); fs.writeFileSync(f.path, '{"unstamped":true}\n');
   const result = f.cli("--no-index", "--quiet"); assert.equal(result.status, 0, result.stderr);
   const status = JSON.parse(fs.readFileSync(join(f.root, "capture-status.json")));
-  assert.equal(status.backlog.pending, true); assert.equal(status.lastSuccess, null); assert.equal(status.policy, null);
+  assert.equal(status.backlog.pending, true); assert.equal(status.lastSuccess, null);
+  assert.equal(status.policy.deadlineSeconds, 300);
+  assert.equal(status.lastRun.outcome, "partial"); assert.equal(status.lastRun.trigger, "manual");
+  assert.equal(status.lastRun.counts.turnsAppended, 0); assert.equal(status.lastRun.counts.turnsIndexed, 0);
+  assert.ok(status.lastRun.finishedAt); assert.notEqual(status.lastRun.pid, process.pid);
 });
 
 test("ignored missing default root clears its set-aside warning on reconciliation", t => {
