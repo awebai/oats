@@ -200,7 +200,9 @@ export class RecordIndex {
       LEFT JOIN index_bytes b ON s.stream = b.stream`, "stream");
     for (const row of rows) {
       const path = this.store.journalPath(row.stream);
-      if (proven(row, state.get("journal", row.stream), fileVersion(path))) { current.set(row.stream, row); continue; }
+      // Inside a capture work group every stream still goes through the
+      // group's membership check: only a pass owning its connection skips.
+      if (owned && proven(row, state.get("journal", row.stream), fileVersion(path))) { current.set(row.stream, row); continue; }
       const checkpoint = this.store.withStreamLock(row.stream, () => {
         if (owned) state.assertFile();
         return this.store.validateJournal(row.stream, state);

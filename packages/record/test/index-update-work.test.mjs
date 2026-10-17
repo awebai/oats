@@ -12,6 +12,7 @@ import { test } from "node:test";
 import { RecordStore } from "../lib/store.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
 import { DerivedState } from "../lib/derived-state.mjs";
+import { withCaptureGroup } from "../lib/capture-context.mjs";
 import { finishTurn } from "../lib/canonical.mjs";
 
 const require = createRequire(import.meta.url);
@@ -201,4 +202,9 @@ test("tombstones and cross-stream duplicates appended after a warm pass agree wi
   assert.equal(index.db.prepare("SELECT stream FROM turns WHERE id = ?").get(target.id).stream, stream(1));
   assert.equal(index.db.prepare("SELECT hidden FROM turns WHERE id = ?").get(target.id).hidden, 1);
   agreesWithRebuild(index);
+});
+
+test("inside a capture work group a warm stream outside the group still refuses", (t) => {
+  const root = fixture(t), { store, index } = open(t, root);
+  assert.throws(() => withCaptureGroup(store, [stream(0)], () => index.update()), /stream outside capture work group/);
 });
