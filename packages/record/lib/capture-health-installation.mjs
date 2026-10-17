@@ -58,8 +58,8 @@ export function captureInstallation(root, { home, platform, check = () => {} }) 
   let installed = false, legacy = false;
   const earlierHooks = new Set();
   // A record root alone is not an installation: one recall or one manual
-  // capture creates it. Installation is owned or legacy service definitions
-  // or capture hooks, below.
+  // capture creates it. Installation is owned or legacy service definitions,
+  // capture hooks, or setup's pending marker, below.
   const selected = stat(root);
   if (selected && !selected.isDirectory()) throw new Error(`selected record root is not a directory: ${root}`);
   const candidates = platform === "darwin" ? [[join(home, "Library/LaunchAgents", `${captureServiceLabel}.plist`), "plist"]]
@@ -75,6 +75,9 @@ export function captureInstallation(root, { home, platform, check = () => {} }) 
   // an unverified activation; with no such definition the marker is stale.
   const markerPath = join(root, capturePendingActivationName);
   const pending = selected && read(markerPath) !== null ? { path: markerPath, stale: !periodic } : null;
+  // Only setup writes the marker, so it is setup evidence even beside nothing
+  // else (a setup that failed after writing it).
+  installed ||= pending !== null;
 
   const beforeHome = stat(home);
   if (beforeHome) {

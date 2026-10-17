@@ -58,6 +58,13 @@ for (const platform of ["linux", "darwin"]) test(`${platform}: absent/foreign fi
   fs.mkdirSync(join(f.root, "index"), { recursive: true });
   const rootOnly = f.health(); assert.equal(rootOnly.status, "ok"); assert.deepEqual(rootOnly.rows, []);
   fs.rmSync(f.root, { recursive: true });
+  // Setup's pending marker is setup evidence, not a recall's root: setup that
+  // failed after writing it (say with --no-hooks) is diagnosed, never ok.
+  write(join(f.root, "capture-service-pending.json"), '{"platform":"fixture"}\n');
+  const markerOnly = f.health(), pendingRow = markerOnly.rows.find(row => row.code === "capture-service-pending");
+  assert.equal(markerOnly.status, "warning");
+  assert.match(pendingRow?.message ?? "", /^The pending-activation marker .* is stale: no setup-marked capture service definition remains\. Run turn-record setup /);
+  fs.rmSync(f.root, { recursive: true });
   write(f.definition.files[0].path, "foreign mention of capture.mjs --watch\n");
   assert.equal(f.health().status, "ok");
   for (const file of f.definition.files) write(file.path, file.contents);

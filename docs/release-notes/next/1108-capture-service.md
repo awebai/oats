@@ -124,8 +124,8 @@
   a stable Node. `--no-service` still runs it and `--dry-run` starts none.
   Partial and overlapping passes exit 0 without claiming completion.
 - **`capture --health [--json]`** distinguishes no installation (no capture
-  service definition and no capture hook: a record root alone, as one recall
-  or manual capture leaves it, is not one), unknown
+  service definition, capture hook or setup pending marker: a record root
+  alone, as one recall or manual capture leaves it, is not one), unknown
   evidence, missing or invalid status, stale or absent success, newer failures,
   unfinished runs and owned capture watchers that need setup. It reads no source
   content or manager state and changes nothing. A capture pass that finds the
