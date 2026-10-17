@@ -206,5 +206,12 @@ test("tombstones and cross-stream duplicates appended after a warm pass agree wi
 
 test("inside a capture work group a warm stream outside the group still refuses", (t) => {
   const root = fixture(t), { store, index } = open(t, root);
-  assert.throws(() => withCaptureGroup(store, [stream(0)], () => index.update()), /stream outside capture work group/);
+  const cursors = () => index.db.prepare(`SELECT s.stream, s.indexed_count, b.bytes, b.indexed_count AS byte_count, b.epoch
+    FROM index_state s LEFT JOIN index_bytes b ON s.stream = b.stream ORDER BY s.stream`).all();
+  const before = cursors(), state = new DerivedState(root);
+  t.after(() => state.close());
+  assert.throws(() => withCaptureGroup(store, [stream(0)], () => index.update(), { state }), /stream outside capture work group/);
+  assert.deepEqual(cursors(), before);
+  // The group's borrowed connection is still open: update never closes it.
+  assert.equal(state.get("journal", stream(0)).complete, true);
 });
