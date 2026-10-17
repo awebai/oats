@@ -496,3 +496,16 @@ When the diff is not empty:
    not read it: it tags its own copy of `oats-package/`.) A green CI proves
    that the tag exists, not which commit it names: the pin's reviewer
    confirms on the remote that it names the first PR's merge commit.
+
+## Raising the Node version
+
+A pull request that raises the Node version the workflows run
+(`node-version` in `.github/workflows/`) also carries a macOS
+[named run](named-test-runs.md) of `test/recovery-link-mode.test.mjs` at its
+exact head. Every case in that file runs, with none skipped, and the run's
+test warnings are read. The copier keeps each symbolic link's own mode with
+`fs.lchmodSync`, which only macOS has and which Node lists as deprecated. If
+a Node version drops it, the copy of a link whose mode differs from the new
+link's must still be refused. Never take the link's mode out of the digest,
+and never follow the link or change its target's mode, to make the upgrade
+pass.
