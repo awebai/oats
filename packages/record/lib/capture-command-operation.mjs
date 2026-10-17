@@ -24,7 +24,7 @@ export function captureCommandOperation(start) {
     while (true) {
       const result = session.step();
       if (result.resetRequired) return receipt(session.yieldWorker({ resetRequired: true }));
-      if (result.finalize) return receipt(session.finish({ reason: start.budget.sample() === "interrupted" ? "interrupted" : "deadline" }));
+      if (result.finalize) return receipt(session.finish({ reason: start.budget.sample() ?? "deadline" }));
       if (result.stopped) return receipt(session.yieldWorker());
       if (result.idle) return receipt(session.complete());
     }

@@ -216,10 +216,10 @@ export class CaptureWorkSession {
   }
 
   complete(options) {
+    // The sampled reason (interrupted, rss, deadline) is kept; finalization
+    // without one reports its allowance.
     const stopped = this.start.budget.sample();
-    // Finalization reports its allowance, unless an interruption was observed.
-    if (this.start.pass.finalize) return this.finish({ reason: stopped === "interrupted" ? "interrupted" : "deadline" });
-    if (stopped !== null) return this.finish({ reason: stopped });
+    if (this.start.pass.finalize || stopped !== null) return this.finish({ reason: stopped ?? "deadline" });
     const audit = this.indexEnabled ? auditCaptureCompletion(this, options) : auditCaptureSourceRetirement(this, options);
     if (audit.stopped || audit.needsWork) return this.yieldWorker();
     // Normally these facts entered the run during replacement construction.
