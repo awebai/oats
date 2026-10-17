@@ -27,7 +27,13 @@ const receiptOf = (home) => join(dirname(home), ".oats-retirement", "baselines",
 /** A spawned home recorded as launched in SESSION:<name> on SOCKET, in instance.json and in its
  *  independent session receipt (or recorded as never launched, in both). */
 async function recordedHome(name, spawnOpts, { launched = true } = {}) {
-  const { home } = await fx.spawn("dev", { name, ...spawnOpts });
+  // Spawned with the fixture's inert claude, pi and codex first on PATH (inertHarnessDir), as
+  // session-start's makeHome does: fx.spawn keeps the test's own PATH, which holds no harness.
+  const path = process.env.PATH;
+  process.env.PATH = fx.env.PATH;
+  let spawned;
+  try { spawned = await fx.spawn("dev", { name, ...spawnOpts }); } finally { process.env.PATH = path; }
+  const { home } = spawned;
   const tmux = { session: SESSION, window: name, socket: SOCKET };
   const meta = { ...readJson(join(home, "instance.json")), launched, ...(launched ? { tmux } : {}) };
   writeFileSync(join(home, "instance.json"), JSON.stringify(meta, null, 2) + "\n");
