@@ -48,8 +48,9 @@ test("retire quiesces the exact tmux endpoint recorded at spawn, not ambient TMU
   assert.equal(existsSync(activeA), false, "retire left the spawn endpoint's managed window running");
 });
 
-test("retire refuses a mutable instance.json endpoint that disagrees with independent authority", () => {
-  const f = fixture();
+test("retire refuses a mutable instance.json endpoint that disagrees with independent authority, naming the field, before any hook or quiesce", () => {
+  const marker = "import { writeFileSync } from 'node:fs'; import { basename, dirname, join } from 'node:path'; const home = process.env.OATS_INSTANCE_HOME; writeFileSync(join(dirname(home), 'mismatch-hook-ran-' + basename(home)), 'ran\\n'); console.log(JSON.stringify({ meta: { retired: true } }));\n";
+  const f = fixture({ capabilities: hookCapability(marker) });
   const state = installFakeTmux(f);
   const socketA = join(f.base, "socket-authority-a");
   f.env.TMUX_FAKE_OATS = socketA;
@@ -65,9 +66,15 @@ test("retire refuses a mutable instance.json endpoint that disagrees with indepe
   write(metaPath, JSON.stringify(meta, null, 2) + "\n");
   const retired = cli(f, ["retire", "dev-endpoint-authority", "--json"]);
   assert.notEqual(retired.status, 0, "mutable child metadata redefined the endpoint authority");
-  assert.equal(JSON.parse(retired.stdout).error.code, "E_RUNTIME_AUTHORITY_MISMATCH", retired.stdout);
+  const error = JSON.parse(retired.stdout).error;
+  assert.equal(error.code, "E_RUNTIME_AUTHORITY_MISMATCH", retired.stdout);
+  assert.equal(error.message, "cannot quiesce dev-endpoint-authority: mutable instance metadata disagrees with independent runtime endpoint authority");
+  const { reached, ...diagnostic } = error.details;
+  assert.deepEqual(diagnostic, { fields: ["tmux.socket"] }, "the fixed label alone, no socket path");
+  if (reached) assert.deepEqual([reached.phase, reached.sessionStopAttempted, reached.hooksStarted], ["before-effects", false, false], "refused before any effect");
   assert.equal(existsSync(spawned.home), true, "authority disagreement did not fail before deletion");
   assert.equal(existsSync(activeA), true, "refusal unexpectedly mutated the independently recorded harness");
+  assert.equal(existsSync(join(dirname(spawned.home), `mismatch-hook-ran-${basename(spawned.home)}`)), false, "no retire hook ran");
 });
 
 test("production retire preserves untracked worktree and unknown home bytes in a reported recovery", () => {

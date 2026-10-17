@@ -391,6 +391,23 @@ test("foreign instances: every routed session command and retire reach a home wi
   assert.deepEqual(calls.map((c) => (c.includes("version --json") ? "probe" : c.includes("status --json") ? "status" : "inspect")), ["status", "probe", "inspect"]);
 });
 
+test("routed session inspect relays the execution host's running as it answered it, and never adds one an older host did not send", () => {
+  const live = homeOf("dev", "dev-a"), fallback = homeOf("dev", "twin"), older = homeOf("ops", "twin");
+  const { env } = foreignSetup("inspect-running", {
+    [`session inspect --home ${live} --json`]: ok({ home: live, backend: "tmux", present: true, state: "unknown", paneId: "%3", size: { cols: 80, rows: 24 }, running: true, waitingOnYou: null }),
+    [`session inspect --home ${fallback} --json`]: ok({ home: fallback, backend: "tmux", present: true, state: "shell", paneId: "%4", size: { cols: 80, rows: 24 }, running: false, waitingOnYou: null }),
+    // A host from before session-inspect-running (FULL_PROBE does not advertise it): the field is absent.
+    [`session inspect --home ${older} --json`]: ok({ home: older, backend: "tmux", present: true, state: "unknown", paneId: "%5", waitingOnYou: null }),
+  });
+  const inspected = (home) => { const r = cli(env, ["session", "inspect", "--server", "build", "--home", home, "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr); return r.json().result; };
+  assert.equal(inspected(live).running, true);
+  const shell = inspected(fallback);
+  assert.deepEqual([shell.state, shell.present, shell.running], ["shell", true, false]);
+  const old = inspected(older);
+  assert.equal(old.state, "unknown");
+  assert.equal(Object.hasOwn(old, "running"), false, "no running synthesized from an older host's state");
+});
+
 test("foreign instances: an ambiguous name lists its homes, an unknown one says the host lists none, a mismatched home is refused, the host's own refusal is relayed", () => {
   const bad = "/srv/elsewhere/x";
   const { env, sent } = foreignSetup("foreign-err", {

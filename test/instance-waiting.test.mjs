@@ -316,6 +316,8 @@ test("CLI: waiting set/clear answer and idempotency; status rows carry waitingOn
   assert.equal(rows["w-idle"].waitingOnYou, null, "not running: null whatever the log says");
   const inspected = cli(["session", "inspect", "--home", run, "--json"]).doc.result;
   assert.equal(inspected.present, true); assert.equal(inspected.state, "unknown", "the state enum is unchanged");
+  assert.equal(inspected.running, rows["w-run"].running, "inspect's running is the status row's");
+  assert.equal(cli(["session", "inspect", "--home", idle, "--json"]).doc.result.running, false);
   assert.equal(inspected.waitingOnYou.producer, "oats.core");
   assert.equal(cli(["session", "inspect", "--home", idle, "--json"]).doc.result.waitingOnYou, null);
 
@@ -354,6 +356,7 @@ test("a kept window whose harness is gone (a crash's fallback shell, a retained 
     assert.equal(rows[name].waitingOnYou, null, `${name}: no harness, no claim`);
     const inspected = cli(["session", "inspect", "--home", home, "--json"]).doc.result;
     assert.equal(inspected.state, state); assert.equal(inspected.waitingOnYou, null);
+    assert.equal(inspected.running, rows[name].running, `${name}: inspect's running is the status row's`);
   }
   assert.doesNotMatch(cli(["status"]).stdout, /old session question/);
 });

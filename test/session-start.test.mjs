@@ -208,11 +208,13 @@ test("a live harness is refused; a stopped instance starts in its recorded sessi
   const live = inspectInstanceSession(f.home);
   assert.equal(live.present, true);
   assert.equal(live.state, "unknown", "a running non-shell process is a harness");
+  assert.equal(live.running, true, "and it runs");
   // Explicitly finish the harness; the window drops to a fallback shell,
   // which is a stopped instance that restarts IN PLACE, never a second window.
   releaseHarness(f.home);
   await waitUntil(() => existsSync(join(f.home, ".oats-start-exited")) && inspectInstanceSession(f.home).state === "shell", "harness exit");
-  assert.equal(inspectInstanceSession(f.home).state, "shell");
+  const fallback = inspectInstanceSession(f.home);
+  assert.deepEqual([fallback.state, fallback.present, fallback.running], ["shell", true, false], "the fallback shell is present and not running");
   tmux("send-keys", "-t", `=${session}:=live`, `cd ${shq(base)}`, "Enter");
   await waitUntil(() => tmux("display-message", "-p", "-t", `=${session}:=live`, "#{pane_current_path}") === base, "fallback shell navigation");
   const again = startInstanceSession(f.home);
@@ -393,6 +395,7 @@ test("a pending target that cannot be observed is kept and the start refuses; a 
   const st = inspectInstanceSession(d.home);
   assert.equal(st.present, false);
   assert.equal(st.state, "stopped");
+  assert.equal(st.running, false);
   const r = startInstanceSession(d.home, { model: "claude-z" });
   assert.equal(r.reused, "pane");
   assert.deepEqual(windows().filter((w) => w === "deadpane"), ["deadpane"], "restarted in the retained pane, no second window");
