@@ -232,17 +232,34 @@ export function passRow(label, pass) {
 /** The published @awebai/oats at exactly `version`, installed with npm's
  *  integrity verification and no install scripts into `<base>/v<version>`.
  *  → { cli, version, integrity }; throws on any mismatch. */
-export function installRelease(base, version) {
-  const prefix = join(base, `v${version}`);
-  const r = spawnSync("npm", ["install", "--prefix", prefix, "--no-audit", "--no-fund", "--ignore-scripts", `@awebai/oats@${version}`],
+/** The published `@awebai/oats@<version>` installed with npm into `prefix`
+ *  (default `<base>/v<version>`), over whatever is there. The lock must show
+ *  the registry tarball and its sha512 integrity: the tested tree packs with
+ *  the same version number, so the version alone proves nothing. */
+export function installRelease(base, version, { prefix = join(base, `v${version}`) } = {}) {
+  const r = spawnSync("npm", ["install", "--prefix", prefix, "--no-audit", "--no-fund", "--ignore-scripts", "--save-exact", `@awebai/oats@${version}`],
     { encoding: "utf8", timeout: 300_000 });
   if (r.status !== 0) throw new Error(`npm install @awebai/oats@${version} failed: ${r.stderr || r.error?.message}`);
   const installed = JSON.parse(fs.readFileSync(join(prefix, "node_modules", "@awebai", "oats", "package.json"), "utf8")).version;
   const lock = JSON.parse(fs.readFileSync(join(prefix, "package-lock.json"), "utf8"));
-  const integrity = lock.packages?.["node_modules/@awebai/oats"]?.integrity;
-  if (installed !== version || typeof integrity !== "string" || !integrity.startsWith("sha512-"))
-    throw new Error(`@awebai/oats@${version} install mismatch: version ${installed}, integrity ${integrity}`);
-  return { cli: join(prefix, "node_modules", "@awebai", "oats", "bin", "oats.mjs"), version, integrity };
+  const { integrity, resolved } = lock.packages?.["node_modules/@awebai/oats"] ?? {};
+  if (installed !== version || typeof integrity !== "string" || !integrity.startsWith("sha512-") ||
+      typeof resolved !== "string" || !resolved.startsWith("https://"))
+    throw new Error(`@awebai/oats@${version} install mismatch: version ${installed}, integrity ${integrity}, resolved ${resolved}`);
+  return { cli: join(prefix, "node_modules", "@awebai", "oats", "bin", "oats.mjs"), version, integrity, resolved };
+}
+/** The tested tree, packed with npm and installed into `prefix` as the
+ *  package `@awebai/oats`, the way an operator's install lays it out. */
+export function installHead(base, prefix) {
+  const packed = spawnSync("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", base, fileURLToPath(new URL("../../../../", import.meta.url))],
+    { encoding: "utf8", timeout: 300_000 });
+  if (packed.status !== 0) throw new Error(`npm pack of the tested tree failed: ${packed.stderr || packed.error?.message}`);
+  const tarball = join(base, JSON.parse(packed.stdout)[0].filename);
+  const r = spawnSync("npm", ["install", "--prefix", prefix, "--no-audit", "--no-fund", "--ignore-scripts", tarball],
+    { encoding: "utf8", timeout: 300_000 });
+  if (r.status !== 0) throw new Error(`npm install of the tested tree's tarball failed: ${r.stderr || r.error?.message}`);
+  const lock = JSON.parse(fs.readFileSync(join(prefix, "package-lock.json"), "utf8"));
+  return { cli: join(prefix, "node_modules", "@awebai", "oats", "bin", "oats.mjs"), tarball, resolved: lock.packages?.["node_modules/@awebai/oats"]?.resolved };
 }
 /** `oats capture` of a CLI over `home` into `root`, timed, killed with
  *  `killSignal` at `timeoutMs`. */
