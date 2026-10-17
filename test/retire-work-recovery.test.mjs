@@ -71,7 +71,7 @@ test("retire refuses a mutable instance.json endpoint that disagrees with indepe
   assert.equal(error.message, "cannot quiesce dev-endpoint-authority: mutable instance metadata disagrees with independent runtime endpoint authority");
   const { reached, ...diagnostic } = error.details;
   assert.deepEqual(diagnostic, { fields: ["tmux.socket"] }, "the fixed label alone, no socket path");
-  if (reached) assert.deepEqual([reached.phase, reached.sessionStopAttempted, reached.hooksStarted], ["before-effects", false, false], "refused before any effect");
+  assert.deepEqual([reached.phase, reached.sessionStopAttempted, reached.hooksStarted], ["before-effects", false, false], "refused before any effect");
   assert.equal(existsSync(spawned.home), true, "authority disagreement did not fail before deletion");
   assert.equal(existsSync(activeA), true, "refusal unexpectedly mutated the independently recorded harness");
   assert.equal(existsSync(join(dirname(spawned.home), `mismatch-hook-ran-${basename(spawned.home)}`)), false, "no retire hook ran");

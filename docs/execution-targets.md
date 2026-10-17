@@ -1067,8 +1067,8 @@ oats session attach --home /abs/home --detach-key 'C-\'
   reason, message}`, or `null`; it is non-null only for a running harness
   (docs/desktop-cli-api.md, "Waiting on you").
   With feature `session-inspect-running`, every successful result also
-  carries `running`, a boolean read from the same observation by the same
-  rule `oats status --json` uses for a row's `running`: `true` for a live
+  carries `running`, a boolean read from the same pane observation by the
+  same rule `oats status --json` uses for a row's `running`: `true` for a live
   non-shell process in the agent pane (`state: unknown`), a harness behind a
   wrapper shell included; `false` for a fallback shell (`state: shell`, where
   `present` stays `true`), an absent or dead pane or a missing home
@@ -1080,6 +1080,10 @@ oats session attach --home /abs/home --detach-key 'C-\'
   executable runs if a process inside the pane was replaced. When the
   backend or the process table cannot be read, or the pane answer is
   malformed or split, inspect is an error as before, never `running: false`.
+  That includes a tmux server that is gone (`no server running on` its
+  socket, as after a reboot): status reads that row as `running: false`, and
+  inspect answers `E_SESSION_UNAVAILABLE`. Wherever inspect answers, its
+  `running` is the one status reports.
   A consumer that sees no `running` (an older kernel or an older remote host)
   may read `state: unknown` on a successful result as running; a failed
   inspect is unknown, never stopped.
@@ -1087,8 +1091,9 @@ oats session attach --home /abs/home --detach-key 'C-\'
   host's `running`, or its absence, as the host answered.
   A home whose `instance.json` disagrees with its session receipt is refused
   with `E_RUNTIME_AUTHORITY_MISMATCH` before any pane or process is read; the
-  same refusal from any other session command, or from retire, carries the
-  same details. Its `details.fields` names the differing fields, in this order, from this
+  same refusal from any other session command, or in the answer of
+  `oats retire`, carries the same details (the record a deferred
+  `retire --self` leaves keeps only the code and message). Its `details.fields` names the differing fields, in this order, from this
   vocabulary only: `launched`, `tmux.session`, `tmux.window`, `tmux.socket`
   (the socket compared resolved, so a relative spelling of the same socket
   agrees). It carries no paths, values or receipt content. `launched` is
