@@ -66,6 +66,14 @@ function measure(store, fn) {
   return work;
 }
 
+/** Appends `turns` to each of `streams`. → the journal bytes they added. */
+function grow(store, streams, turns) {
+  const size = (s) => fs.statSync(store.journalPath(s)).size;
+  let grown = 0;
+  for (const s of streams) { const before = size(s); store.appendBatch(s, turns(s)); grown += size(s) - before; }
+  return grown;
+}
+
 /** The incremental union equals a rebuild from the journals. */
 function agreesWithRebuild(index) {
   const incremental = index.counts();
@@ -88,11 +96,12 @@ test("a warm unchanged pass takes one capture.db connection and no lock, validat
 
 test("one appended turn locks and validates only its stream and reads only the new bytes", (t) => {
   const root = fixture(t), { store, index } = open(t, root);
-  store.append(stream(4), turn("appended", 0));
+  const grown = grow(store, [stream(4)], () => [turn("appended", 0)]);
   const work = measure(store, () => index.update());
   assert.equal(work.opens, 1);
   assert.ok(work.locks <= 2 && work.validations <= 2, `candidate work only: ${JSON.stringify(work)}`);
-  assert.ok(work.bytes < 65536, `no historical journal reads: ${work.bytes}`);
+  // The new bytes, plus the reset check's one byte at the old cursor.
+  assert.ok(work.bytes <= grown + 1, `no historical journal reads: ${work.bytes} of ${grown} new`);
   assert.equal(index.counts().turns, 3 * STREAMS + 1);
   assert.equal(index.search("appended").length, 1);
   agreesWithRebuild(index);
@@ -100,10 +109,11 @@ test("one appended turn locks and validates only its stream and reads only the n
 
 test("turns appended by earlier passes without the index are indexed as backlog", (t) => {
   const root = fixture(t), { store, index } = open(t, root);
-  for (const s of [1, 5, 9]) store.appendBatch(stream(s), [turn("backlog", s)]);
+  const grown = grow(store, [1, 5, 9].map(stream), (s) => [turn("backlog", s)]);
   const work = measure(store, () => index.update());
   assert.equal(work.opens, 1);
   assert.ok(work.locks <= 6 && work.validations <= 6, `candidate work only: ${JSON.stringify(work)}`);
+  assert.ok(work.bytes <= grown + 3, `no historical journal reads: ${work.bytes} of ${grown} new`);
   assert.equal(index.search("backlog").length, 3);
   agreesWithRebuild(index);
 });
@@ -177,6 +187,8 @@ test("a capture.db replaced during the pass refuses, on the skip path and around
   candidate.store.append(stream(0), turn("candidate", 0));
   candidate.store.withStreamLock = function (...args) { replace(); return lock.apply(this, args); };
   assert.throws(() => candidate.index.update(), /capture\.db changed during the pass/);
+  // Refused under the candidate's lock, before catch-up committed its turn.
+  assert.equal(candidate.index.search("candidate").length, 0);
 });
 
 test("tombstones and cross-stream duplicates appended after a warm pass agree with a rebuild", (t) => {
