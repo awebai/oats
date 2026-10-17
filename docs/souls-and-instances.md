@@ -570,7 +570,12 @@ parses it, so it copies the files Git reads:
   and `info/exclude`) and the settings that change what `git status` reports
   (`core.fileMode`, `core.ignoreCase`, `core.precomposeUnicode`,
   `core.symlinks`, `core.autocrlf`, `core.eol`);
-- the bytes and the permission bits of its files, Git metadata left out.
+- the bytes and the permission bits of its files, Git metadata left out, and
+  each symbolic link as itself: its raw target and its own permission bits.
+  A link is recreated with its target and then given its source's mode with
+  lchmod, on the link, never on what it points at; a platform that cannot
+  set a link's mode (no lchmod) refuses the copy where the new link's mode
+  differs, rather than keep a copy that differs from its source.
 
 The rule is that the work is unchanged only if everything its copy would
 carry is equal byte for byte, and anything that cannot be compared exactly
