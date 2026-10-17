@@ -188,10 +188,15 @@ test("capture --home failures answer JSON with unknown appended count, never a f
 function signalPreload(dir, file, root, when) {
   const preload = join(dir, "signal-preload.mjs");
   writeFileSync(preload, `import fs from "node:fs"; import { syncBuiltinESMExports } from "node:module";
-    const openSync = fs.openSync; let sent = false;
+    const openSync = fs.openSync, appendFileSync = fs.appendFileSync; let sent = false;
+    // "journal": inside the batch, as the store appends the captured turns.
+    fs.appendFileSync = (path, ...rest) => {
+      if (!sent && ${JSON.stringify(when === "journal")} && String(path).endsWith("/journal.jsonl")) { sent = true; process.kill(process.pid, "SIGTERM"); }
+      return appendFileSync(path, ...rest);
+    };
     fs.openSync = (path, ...rest) => {
       const locked = fs.existsSync(${JSON.stringify(join(root, ".capture.lock"))});
-      if (!sent && String(path) === ${JSON.stringify(file)} && locked === ${JSON.stringify(when === "batch")}) {
+      if (!sent && ${JSON.stringify(when !== "journal")} && String(path) === ${JSON.stringify(file)} && locked === ${JSON.stringify(when === "batch")}) {
         sent = true; process.kill(process.pid, "SIGTERM");
       }
       return openSync(path, ...rest);
@@ -228,6 +233,22 @@ test("capture --home TERM during a format batch (non-preemptible) is observed be
   // The next exact capture completes from the durable checkpoint, appending nothing twice.
   const again = JSON.parse(run(undefined, []).stdout);
   assert.equal(again.status, "complete"); assert.equal(again.appended, 0); assert.equal(again.sessions[0].turns, 2);
+});
+
+test("capture --file --no-index TERM during its only batch (non-preemptible) is answered by one failed receipt with the confirmed count, never a success", (t) => {
+  const { home, root, file } = captureFixture(t);
+  writeFileSync(join(home, "instance.json"), JSON.stringify({ instance: "dev-1" }));
+  writeFileSync(file, ccLine(home, "s1", "user", "first", "2026-09-13T10:00:00Z"));
+  const r = spawnSync(process.execPath, ["--import", signalPreload(dirname(root), file, root, "journal"), CAPTURE,
+    "--file", file, "--format", "cc", "--home", home, "--owner", "tester", "--no-index", "--json"],
+    { env: { ...fixtureEnv(), HOME: dirname(root), TURN_RECORD_ROOT: root }, cwd: home, encoding: "utf8" });
+  assert.equal(r.status, 1, r.stderr + r.stdout); assert.equal(r.signal, null);
+  const out = JSON.parse(r.stdout); // exactly one document: a second would not parse
+  assert.equal(out.status, "failed"); assert.equal(out.complete, false); assert.equal(out.code, "E_CAPTURE_FAILED");
+  assert.equal(out.error, "capture interrupted by SIGTERM after every batch completed");
+  assert.equal(out.appended, 1, "the batch committed before the safe point");
+  assert.equal(new RecordStore(root, { owner: "tester" }).readStream("tester~cc.s1").length, 1);
+  assert.equal(existsSync(join(root, ".capture.lock")), false);
 });
 
 for (const [name, bin] of [["oats", "../../../bin/oats.mjs"], ["turn-record", "../bin/turn-record.mjs"]]) {

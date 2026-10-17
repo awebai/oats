@@ -174,13 +174,16 @@ runs no cleanup, leaves the lock to the next pass's reclaim of a dead owner
 The exact commands, `--home`, `--file` and `--reset-cursors`, run in the
 calling process, and their work is synchronous. They observe SIGTERM and SIGINT
 only at safe points: before taking the lock, after taking it, before each
-format's batch of exact files and before the index update. Discovery, a whole
+format's batch of exact files, before the index update, and once the work
+under the lock (and the receipt summaries) is done, before any answer. Discovery, a whole
 format's batch, the index update and the receipt summaries cannot be
 preempted, so a signal waits for the segment it arrived in. No response time is
 promised, and these commands have no deadline. An interruption at a safe point
 releases the lock and answers the command's existing receipt, `failed` with the
 error `capture interrupted by SIGTERM` (or SIGINT) and exit 1. `appended`
-counts only the batches that completed, so it is confirmed. These commands
+counts only the batches that completed, so it is confirmed; an interruption
+observed after all of them says `after every batch completed`, and one after a
+cursor reset says `after the cursor reset was committed`. These commands
 write no run receipt, so a killed exact command leaves no `running` run behind:
 the next pass reclaims its lock and records only `reclaimedLock`.
 

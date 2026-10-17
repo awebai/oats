@@ -14,7 +14,8 @@
   alike. The lock is released and the command exits 1.
   `capture --home`, `--file` and `--reset-cursors` still run in the calling
   process. They now stop at their safe points (before and after taking the
-  lock, before each format's batch, before the index update), answer their
+  lock, before each format's batch, before the index update, and after the
+  work before answering), answer their
   existing `failed` receipt with `capture interrupted by SIGTERM` and a
   confirmed `appended`, release the lock and exit 1. Discovery, a format's
   batch and the index update cannot be preempted, so a signal waits for the

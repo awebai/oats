@@ -244,7 +244,7 @@ if (args.health) {
 if (args["reset-cursors"] || args["retry-set-aside"]) {
   try {
     const result = args["reset-cursors"]
-      ? await observingSignals(() => withCaptureLock(() => { resetSourceCursors(root, owner, args.source); return { reset: true, sources: args.source ? [args.source] : CAPTURE_SOURCES }; }, "reset-cursors"))
+      ? await observingSignals(() => withCaptureLock(() => { resetSourceCursors(root, owner, args.source); return { reset: true, sources: args.source ? [args.source] : CAPTURE_SOURCES }; }, "reset-cursors", "the cursor reset was committed"))
       : await pass({ retry: true });
     if (result.skipped) throw new Error("capture lock held; recovery was not performed");
     if (process.exitCode) throw new Error("recovery failed to release its capture lock");
@@ -320,10 +320,12 @@ async function observingSignals(fn) {
   finally { process.off("SIGTERM", onSignal); process.off("SIGINT", onSignal); }
 }
 /** A safe point: a signal pending from synchronous work dispatches during
- *  the poll this yields to, and an observed one ends the command here. */
-async function safePoint() {
+ *  the poll this yields to, and an observed one ends the command here.
+ *  `after` says what had already been done, so the answer never implies it
+ *  was not. */
+async function safePoint(after) {
   await captureSignalPoll();
-  if (signalled) throw new CaptureInterrupted(`capture interrupted by ${signalled}`);
+  if (signalled) throw new CaptureInterrupted(`capture interrupted by ${signalled}${after ? ` after ${after}` : ""}`);
 }
 
 /** Take the root's single-run lock, or say who holds it. A hook-triggered
@@ -334,8 +336,9 @@ async function safePoint() {
  *  in the finally, and a release that did not happen is said so on stderr
  *  with the operator recovery and a nonzero exit status. Likewise an owner
  *  record that could not be written: the lock never silently outlives the
- *  pass that created it. `command` labels the owner record. */
-async function withCaptureLock(fn, command) {
+ *  pass that created it. `command` labels the owner record; `done` names
+ *  what `fn` committed, for an interruption observed after it returned. */
+async function withCaptureLock(fn, command, done) {
   let lock;
   await safePoint();
   try {
@@ -357,7 +360,9 @@ async function withCaptureLock(fn, command) {
   }
   try {
     let result, failure;
-    try { cleanupCaptureScratch(root, lock); await safePoint(); result = await fn(); return result; }
+    // The callback's last segment is synchronous too: poll once more before
+    // its result can become a success answer.
+    try { cleanupCaptureScratch(root, lock); await safePoint(); result = await fn(); await safePoint(done); return result; }
     catch (err) { failure = err; throw err; }
     finally {
       try { writeCaptureStatus(root, { pending: Boolean(failure || result?.pending || result?.held || result?.incomplete || result?.failed) }); }
@@ -417,7 +422,7 @@ function captureUnderLock(recordStore, recordOwner, batches, ignore, outcome, is
       }
     }
     return outcome;
-  }, command);
+  }, command, "every batch completed");
 }
 
 /** The outcome vocabulary: complete only with no failure, skip, hold or incomplete tail (and, for --home, no
@@ -540,6 +545,9 @@ async function fileCapture() {
 
   const stream = `${fileOwner}~${fmt.source}.${sessionId}`;
   const turns = withReceiptSummaries(fileStore, summary => summary(stream));
+  // The summaries are synchronous: a signal during them is still answered.
+  try { await safePoint("every batch completed"); }
+  catch (err) { return fail("E_CAPTURE_FAILED", err.message, { ...where, sha256, appended: outcome.appended }); }
   const status = statusOf(outcome);
   const { lock: _lock, ...counts } = outcome;
   const receipt = {
@@ -639,7 +647,7 @@ if (args.home) await observingSignals(async () => {
     });
     // Summaries are synchronous: a signal that arrived during them is still a
     // signal this command received before answering.
-    await safePoint();
+    await safePoint("every batch completed");
   } catch (err) {
     error = err.message || String(err);
     console.error(`capture pass failed: ${error}`);

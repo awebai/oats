@@ -145,8 +145,18 @@ function signalFixture(t, f, mode, signal = "SIGTERM") {
     const lockOwner = join(root, ".capture.lock/owner.json"), parent = process.ppid;
     const nap = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
     fs.appendFileSync(join(dir, "starts"), process.pid + "\\n");
+    const start = fs.readFileSync(join(dir, "starts"), "utf8").trim().split("\\n").length;
+    const ownReceipt = () => { try { return JSON.parse(fs.readFileSync(join(root, "capture-status.json"), "utf8")).lastRun?.pid === process.pid; } catch { return false; } };
     const memoryUsage = process.memoryUsage; let fired = false;
     process.memoryUsage = function () {
+      // "finalize": starts 1-7 report an RSS over the policy once their receipt
+      // is published (after start 1 commits the new turn), so each yields a
+      // continuation; start 8 is the pass's finalization worker.
+      if (mode === "finalize" && start < 8) {
+        const usage = memoryUsage.call(process);
+        return ownReceipt() && new RecordStore(root, { owner: "fixture" }).readStream("fixture~cc.session").length >= 2 ? { ...usage, rss: 2 ** 40 } : usage;
+      }
+      if (mode === "finalize" && !fired && !ownReceipt()) return memoryUsage.call(process);
       if (!fired && new RecordStore(root, { owner: "fixture" }).readStream("fixture~cc.session").length >= 2) {
         fired = true;
         fs.copyFileSync(lockOwner, join(dir, "owner-seen.json"));
@@ -237,6 +247,25 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
     assert.equal(fs.existsSync(captureLockPath(f.root)), false);
   });
 }
+
+test("CLI TERM observed by the pass's finalization worker ends its run failed/interrupted, not partial/deadline", t => {
+  const f = fixture(t); passed(f.cli());
+  const before = readCaptureStatus(f.root);
+  fs.appendFileSync(f.cc, native(2));
+  const s = signalFixture(t, f, "finalize"), result = s.cli();
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /capture worker failed \(interrupted\)/);
+  assert.ok(fs.existsSync(join(s.dir, "stop-seen")));
+  assert.equal(s.starts().length, 8, "seven continuations, then the finalization worker");
+  const status = readCaptureStatus(f.root);
+  assert.equal(status.lastRun.outcome, "failed"); assert.equal(status.lastRun.reason, "interrupted"); assert.ok(status.lastRun.finishedAt);
+  assert.equal(status.lastRun.pid, s.starts()[7], "the finalization worker finished the run");
+  assert.equal(status.lastRun.counts.turnsAppended >= 1, true, "the first worker's committed unit is still counted");
+  assert.equal(status.lastFailure.id, status.lastRun.id); assert.match(status.lastFailure.message, /^Capture execution was interrupted\. /);
+  assert.deepEqual(status.lastSuccess, before.lastSuccess);
+  for (const pid of s.starts()) assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+  assert.equal(fs.existsSync(captureLockPath(f.root)), false);
+});
 
 test("CLI TERM to a worker that cannot cooperate kills and reaps it after the grace; no finished receipt is invented and the next pass records the interruption", t => {
   const f = fixture(t); passed(f.cli());
