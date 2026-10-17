@@ -158,11 +158,14 @@ test("TERM before the child is started kills it at once; no operation runs", asy
   // read of the child's readiness: the child announces readiness only once the
   // parent has observed the signal, witnessed by a file this test's own TERM
   // listener writes. Every listener runs in that one emit, so the supervisor
-  // has handled the signal before it can read the readiness that follows.
+  // has handled the signal before it can read the readiness that follows. The
+  // supervisor's deadline bounds the wait; a child whose parent died exits.
   const f = fixture(t, `fs.writeFileSync(join(process.argv[1],'..','pid'),String(process.pid));
-    process.kill(process.ppid,'SIGTERM');
+    const parent=process.ppid;
+    process.kill(parent,'SIGTERM');
     const observed=join(process.argv[1],'..','observed');
-    while(!fs.existsSync(observed))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);
+    while(!fs.existsSync(observed)&&process.ppid===parent)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);
+    if(process.ppid!==parent)process.exit(1);
     await runCaptureWorker(({root})=>{fs.writeFileSync(join(root,'ran'),'');return {outcome:'complete',reason:null};});`);
   const observe = () => fs.writeFileSync(join(f.root, "observed"), "");
   process.once("SIGTERM", observe);
