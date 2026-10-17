@@ -517,13 +517,13 @@ function fileCapture() {
 if (args.file !== undefined || args.format !== undefined || args.json) return finish(fileCapture());
 
 if (args["install-hint"]) {
-  const self = new URL(import.meta.url).pathname;
+  const self = new URL("./capture-hook.mjs", import.meta.url).pathname;
   console.log(`Add to Claude Code settings.json to capture on session stop/end:
 
 {
   "hooks": {
-    "Stop":       [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --no-index --quiet --hook", "async": false, "timeout": 10}]}],
-    "SessionEnd": [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --no-index --quiet --hook", "async": false, "timeout": 10}]}]
+    "Stop":       [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --no-index --quiet", "async": false, "timeout": 10}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --no-index --quiet", "async": false, "timeout": 10}]}]
   }
 }
 

@@ -119,7 +119,9 @@ operational failures exit nonzero. `--no-index` never opens or mutates the
 derived search index and supplies no fresh all-stage success. Quiet does not
 imply a hook trigger. Explicit `--hook` launches a detached supervisor and reports
 only “capture launched”, not initialization or completion. Owned Stop/SessionEnd
-settings use `--quiet --hook`, `async:false` and `timeout:10`: the harness waits
+settings run the hook entry `bin/capture-hook.mjs` (the same launch as
+`--quiet --hook`, under a file a rolled-back release cannot load, so it can
+never return Claude's blocking exit two), `async:false` and `timeout:10`: the harness waits
 for the launcher, while capture runs detached without its output pipes. Setup
 refreshes these fields even when the owned command already matches, preserving
 foreign hooks and unrelated fields. Hook errors, including usage, exit one,

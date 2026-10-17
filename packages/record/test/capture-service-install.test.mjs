@@ -366,7 +366,7 @@ test("a service failure still installs hooks and runs the first pass, then the s
     assert.ok(failed.stdout.endsWith(["setup summary:", "  status: incomplete (exit 1)", `  hooks written: ${f.settings}`,
       "  first capture pass: appended 0, pending no", `  service: failed: ${failure}`,
       `  remedy: rerun oats setup --owner fixture-owner --root ${serviceShellWord(f.root)}`].join("\n") + "\n"), failed.stdout);
-    assert.match(fs.readFileSync(f.settings, "utf8"), /--quiet --hook/); assert.equal(readCaptureStatus(f.root).lastRun.trigger, "setup");
+    assert.match(fs.readFileSync(f.settings, "utf8"), /capture-hook\.mjs'? --owner \S+ --quiet --root /); assert.equal(readCaptureStatus(f.root).lastRun.trigger, "setup");
     assert.equal(fs.statSync(marker).mode & 0o777, 0o600, "the pending-activation marker stays for the rerun");
     assert.ok(fs.existsSync(f.definition.files[0].path), "completed file writes remain, no false atomic rollback claim");
     fs.unlinkSync(f.config);

@@ -127,6 +127,32 @@ than starting over; a smaller session's staged copy is made again. Reducing the
 repeated source reads of small sessions is tracked in
 [#1337](https://github.com/awebai/oats/issues/1337).
 
+**Going back to 0.61.0.** Until the steps below are done, two things fail at
+every trigger:
+
+- each `Stop` and `SessionEnd` hook this release's setup wrote exits 1,
+  because its command names `bin/capture-hook.mjs`, a file 0.61.0 does not
+  have; Claude does not block on it;
+- the periodic service's start fails every 15 minutes: on Linux
+  `turn-record-capture.timer` starts a unit whose runner 0.61.0 does not have,
+  and on macOS the `ai.aweb.turn-record-capture` job fails the same way.
+
+To go back:
+
+1. Install 0.61.0: `npm install -g @awebai/oats@0.61.0`.
+2. From the same user's shell, run 0.61.0's `oats setup` with the same
+   `--owner` and `--root`. It installs its capture watcher (on Linux as
+   `turn-record-capture.service`, on macOS under the same
+   `ai.aweb.turn-record-capture` label) and adds its own `Stop` and
+   `SessionEnd` hooks.
+3. In each `~/.claude*/settings.json`, delete the hook entries under `Stop` and
+   `SessionEnd` whose command names `capture-hook.mjs`: 0.61.0's setup does not
+   recognize them and leaves them in place.
+4. On Linux, remove the timer:
+   `systemctl --user disable --now turn-record-capture.timer`, then delete
+   `~/.config/systemd/user/turn-record-capture.timer` and run
+   `systemctl --user daemon-reload`.
+
 After going back to 0.61.0, its `oats capture --health` reports the capture
 status file this release wrote as invalid, and a capture by 0.61.0 clears the
 run history in that file. A later capture with this release writes a fresh

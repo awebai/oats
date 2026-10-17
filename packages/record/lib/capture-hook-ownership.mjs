@@ -42,9 +42,17 @@ export function shellWords(command) {
   return words;
 }
 
+// A capture hook setup wrote, of any release: its script is the second word,
+// capture.mjs (earlier releases) or the hook entry capture-hook.mjs.
 export function isCaptureHook(hook) {
   if (hook?.type !== "command") return false;
   const tokens = shellWords(String(hook.command));
-  return tokens !== null && tokens.length >= 2 && tokens[1].endsWith("/capture.mjs") &&
+  return tokens !== null && tokens.length >= 2 && (tokens[1].endsWith("/capture.mjs") || tokens[1].endsWith("/capture-hook.mjs")) &&
     tokens.includes("--owner") && tokens.includes("--quiet");
+}
+
+// The form this release's setup writes: the hook entry, which an older
+// release cannot load. Any other capture hook needs setup.
+export function isCurrentCaptureHook(hook) {
+  return isCaptureHook(hook) && shellWords(String(hook.command))[1].endsWith("/capture-hook.mjs");
 }

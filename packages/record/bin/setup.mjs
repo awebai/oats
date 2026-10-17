@@ -53,6 +53,8 @@ const NODE = recordedNode();
 // carry, so either printed command records that same node.
 const SETUP_COMMAND = `${captureRemedyCommand(Boolean(handedNode()))} setup`;
 const CAPTURE = join(HERE, "capture.mjs");
+// The hooks run their own entry, which a rolled-back install lacks: see it.
+const CAPTURE_HOOK = join(HERE, "capture-hook.mjs");
 
 // Hooks use POSIX shell words. The separate definition builder owns the
 // manager-specific XML/systemd representations.
@@ -109,7 +111,7 @@ if (!/^[A-Za-z0-9._-]+$/.test(owner)) {
   process.exit(2);
 }
 
-const hookCommand = `${shellWord(NODE)} ${shellWord(CAPTURE)} --owner ${owner} --quiet --hook --root ${shellWord(root)}`;
+const hookCommand = `${shellWord(NODE)} ${shellWord(CAPTURE_HOOK)} --owner ${owner} --quiet --root ${shellWord(root)}`;
 // The harness waits only for OS launch acknowledgement. Capture itself is
 // detached and owns no harness pipes; these are launcher, not worker limits.
 const HOOK = { type: "command", command: hookCommand, async: false, timeout: 10 };
@@ -149,11 +151,12 @@ function prepareHooks() {
     let changed = false;
     settings.hooks = settings.hooks ?? {};
     // Ours = a command whose STRUCTURE matches what setup generates:
-    // "<node> <...>/capture.mjs ... --owner ... --quiet ...". Matching by
+    // "<node> <...>/capture.mjs ... --owner ... --quiet ...", or the hook
+    // entry capture-hook.mjs in place of capture.mjs. Matching by
     // shape rather than this install's absolute path means a moved install
     // (npm upgrade, checkout -> global) updates the old hook in place
     // instead of stacking a second one. The structural requirements (script
-    // is the second token and ends in /capture.mjs; both flags present as
+    // is the second token and ends in /capture.mjs or /capture-hook.mjs; both flags present as
     // whole tokens) keep it from firing on unrelated hooks that merely
     // mention similar words; when in doubt it errs toward appending a new
     // group, never toward overwriting someone else's command.

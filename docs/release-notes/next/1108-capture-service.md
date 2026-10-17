@@ -20,9 +20,12 @@
   `--dry-run` writes nothing and calls no manager. Keep the backups setup
   reports under `<root>/service-backups/`.
 - Setup rewrites the owned `Stop`/`SessionEnd` capture hooks in every
-  `~/.claude*/settings.json` from `async: true`, `timeout: 120` to
-  `--quiet --hook` with `async: false`, `timeout: 10`, even where the command
-  already matches. Until setup runs, the persisted hooks keep the old fields.
+  `~/.claude*/settings.json` from `async: true`, `timeout: 120` to the hook
+  entry `bin/capture-hook.mjs` with `async: false`, `timeout: 10`, even where
+  the command already matches. 0.61.0 cannot load that entry, so after a
+  rollback the hook exits 1 instead of blocking Claude's Stop; the upgrade
+  guide gives the rollback steps. Until setup runs, the persisted hooks keep
+  the old fields.
 - Setup rewrites each `~/.claude*/settings.json` it changes with mode `0600`.
 - The capture status file keeps `schemaVersion: 1` while it gains fields, a
   contract decision: 0.61.0 reads a status written by this release as invalid

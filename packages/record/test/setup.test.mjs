@@ -88,8 +88,11 @@ function run(home, args, { platform = "linux", node, pkg = PKG, managers = stand
 }
 
 const captureOf = (pkg = PKG) => join(pkg, "bin", "capture.mjs");
+// The hook's own entry, a file 0.61.0 lacks: after a rollback it fails to
+// load (exit 1, non-blocking) instead of rejecting a new flag with exit 2.
+const hookEntryOf = (pkg = PKG) => join(pkg, "bin", "capture-hook.mjs");
 const serviceOf = (pkg = PKG) => join(pkg, "lib", "capture-service-runner.mjs");
-const hookArgs = (home, pkg = PKG) => [captureOf(pkg), "--owner", OWNER, "--quiet", "--hook", "--root", join(home, "record")];
+const hookArgs = (home, pkg = PKG) => [hookEntryOf(pkg), "--owner", OWNER, "--quiet", "--root", join(home, "record")];
 function serviceArgs(args, node, home, pkg = PKG) {
   assert.equal(args.length, 3); assert.equal(args[0], node); assert.equal(args[1], serviceOf(pkg));
   const request = JSON.parse(args[2]); assert.equal(request.owner, OWNER); assert.equal(request.root, join(home, "record"));
@@ -264,7 +267,7 @@ test("plain hook words stay bare and periodic manager argv keep their literal va
   run(linux, ["--dry-run"], { node });
   run(linux, [], { node });
   for (const event of ["Stop", "SessionEnd"]) {
-    assert.deepEqual(commands(linux, event), [`${node} ${captureOf()} --owner ${OWNER} --quiet --hook --root ${join(linux, "record")}`]);
+    assert.deepEqual(commands(linux, event), [`${node} ${hookEntryOf()} --owner ${OWNER} --quiet --root ${join(linux, "record")}`]);
   }
   serviceArgs(systemdReads(execStart(linux)), node, linux);
   const darwin = newHome();
@@ -380,7 +383,7 @@ test("over the old form (unquoted, the keg's path) a run replaces the hooks and 
     const r = run(home, [], { platform, node });
     assert.match(r.stdout, /hooks: installed/);
     for (const event of ["Stop", "SessionEnd"]) {
-      assert.deepEqual(commands(home, event), [`'${node}' ${captureOf()} --owner ${OWNER} --quiet --hook --root ${join(home, "record")}`], event);
+      assert.deepEqual(commands(home, event), [`'${node}' ${hookEntryOf()} --owner ${OWNER} --quiet --root ${join(home, "record")}`], event);
       assert.equal(readSettings(home).hooks[event].length, 1, "no group added");
     }
     assert.doesNotMatch(readFileSync(unit, "utf8"), /Cellar/);
@@ -399,7 +402,7 @@ test("an old command with a character above U+007F bare in a path is replaced, a
     "/opt/old\u3000node/bin/node", "/opt/old\ue000node/bin/node", "/opt/old\u200bnode/bin/node", "/opt/old\u0085node/bin/node",
   ];
   const node = join(base, "zo\u00eb", "bin", "node");
-  const current = `'${node}' ${captureOf()} --owner ${OWNER} --quiet --hook`;
+  const current = `'${node}' ${hookEntryOf()} --owner ${OWNER} --quiet`;
   for (const old of olds) {
     const home = newHome({ hooks: { Stop: [{ hooks: [oldHook(old)] }], SessionEnd: [{ hooks: [oldHook(old, "/old/inst\u00e4ll/bin/capture.mjs")] }] } });
     run(home, ["--no-service"], { node });
@@ -424,7 +427,7 @@ test("over the new form (quoted, a path with a space) a run replaces the hooks a
     assert.ok(commands(home, "Stop")[0].startsWith(`'${first}' `), "the first run wrote the quoted form");
     run(home, [], { platform, node: second });
     for (const event of ["Stop", "SessionEnd"]) {
-      assert.deepEqual(commands(home, event), [`'${second}' ${captureOf()} --owner ${OWNER} --quiet --hook --root ${join(home, "record")}`], event);
+      assert.deepEqual(commands(home, event), [`'${second}' ${hookEntryOf()} --owner ${OWNER} --quiet --root ${join(home, "record")}`], event);
       assert.equal(readSettings(home).hooks[event].length, 1, "no group added");
     }
     assert.equal(readFileSync(unit, "utf8").includes(first), false);
@@ -477,8 +480,19 @@ test("a command that is not provably setup's is left alone, and setup's own is a
   const after = readSettings(home);
   assert.equal(after.existing, "stuff");
   assert.deepEqual(after.hooks.Stop[0], settings.hooks.Stop[0], "every one of them kept as it was");
-  assert.deepEqual(after.hooks.Stop.slice(1), [{ hooks: [{ type: "command", command: `${node} ${captureOf()} --owner ${OWNER} --quiet --hook --root ${join(home, "record")}`, async: false, timeout: 10 }] }]);
+  assert.deepEqual(after.hooks.Stop.slice(1), [{ hooks: [{ type: "command", command: `${node} ${hookEntryOf()} --owner ${OWNER} --quiet --root ${join(home, "record")}`, async: false, timeout: 10 }] }]);
   assert.equal(after.hooks.SessionEnd.length, 1);
+});
+
+test("the capture.mjs --hook form a run before this one wrote is replaced in place by the hook entry", () => {
+  const home = newHome(), node = join(base, "handed", "bin", "node");
+  const earlier = { type: "command", command: `${node} ${captureOf()} --owner ${OWNER} --quiet --hook --root ${join(home, "record")}`, async: false, timeout: 10 };
+  write(settingsPath(home), JSON.stringify({ hooks: { Stop: [{ hooks: [earlier] }], SessionEnd: [{ hooks: [{ ...earlier }] }] } }));
+  run(home, ["--no-service"], { node });
+  for (const event of ["Stop", "SessionEnd"]) {
+    assert.deepEqual(commands(home, event), [`${node} ${hookEntryOf()} --owner ${OWNER} --quiet --root ${join(home, "record")}`], event);
+    assert.equal(readSettings(home).hooks[event].length, 1, "replaced, not appended");
+  }
 });
 
 test("setup's hook twice in a file: both get the current command, neither is removed", () => {
@@ -487,7 +501,7 @@ test("setup's hook twice in a file: both get the current command, neither is rem
   const settings = { hooks: { Stop: [{ hooks: [oldHook()] }, { matcher: "", hooks: [{ type: "command", command: "echo mine" }, oldHook("/usr/local/bin/node", "/old/install/bin/capture.mjs")] }] } };
   const home = newHome(settings);
   const node = join(base, "handed", "bin", "node");
-  const current = `${node} ${captureOf()} --owner ${OWNER} --quiet --hook --root ${join(home, "record")}`;
+  const current = `${node} ${hookEntryOf()} --owner ${OWNER} --quiet --root ${join(home, "record")}`;
   run(home, ["--no-service"], { node });
   const stop = readSettings(home).hooks.Stop;
   assert.deepEqual(stop.map((g) => g.hooks.map((h) => h.command)), [[current], ["echo mine", current]]);
@@ -498,7 +512,7 @@ test("setup's hook twice in a file: both get the current command, neither is rem
 test("matching owned hook commands still refresh scheduling fields, preserving groups and foreign fields", () => {
   const node = join(base, "handed", "bin", "node");
   const home = newHome();
-  const command = `${node} ${captureOf()} --owner ${OWNER} --quiet --hook --root ${join(home, "record")}`;
+  const command = `${node} ${hookEntryOf()} --owner ${OWNER} --quiet --root ${join(home, "record")}`;
   const owned = { type: "command", command, async: true, timeout: 120, description: "keep mine" };
   const foreign = { type: "command", command: "echo unrelated", async: true, timeout: 77, extra: "keep" };
   const settings = { existing: "unchanged", hooks: {

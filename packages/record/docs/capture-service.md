@@ -1327,8 +1327,15 @@ is therefore not a health check: use `capture --health` or deployment doctor.
 Hosted lifecycle qualification remains a separate gate. No numeric launch
 latency is established by this implementation.
 
-Setup refreshes recognized owned Stop/SessionEnd entries to `--quiet --hook`,
-`async:false` and `timeout:10`, even when their command already matches. The
+Setup refreshes recognized owned Stop/SessionEnd entries to the hook entry,
+`<node> <package>/bin/capture-hook.mjs --owner <owner> --quiet --root <root>`
+(the same launch as `capture --quiet --hook`), with `async:false` and
+`timeout:10`, even when their command already matches. The hook runs its own
+entry because 0.61.0 and earlier releases do not have that file: after a
+rollback the persisted line fails to load with exit 1, which does not block
+Stop or SessionEnd, where an older `capture.mjs` would reject `--hook` with
+exit 2. Setup recognizes the `capture.mjs` forms earlier releases wrote and
+replaces them in place. The
 harness waits for the short launcher so its spawn result is ordered before
 harness shutdown; capture itself remains detached. The timeout applies to that
 launcher, not to the detached supervisor or its fixed worker allowance. The
@@ -1554,8 +1561,10 @@ operator-shaped first upgrade at both counts with most bytes in sessions over
 8 MiB on the retained path, caps-off
 memory scaling, the outgoing 0.61.0 and 0.53.0 releases side by side,
 8/16/22.3 MB journal frames and near-limit records under the capped worker,
-Codex in-prefix recovery, old-new-old-new rollback with released 0.61.0, and
-hook launcher latency. It runs the production operation under the real
+Codex in-prefix recovery, old-new-old-new rollback with released 0.61.0, the
+rollback of the hooks and the periodic service to 0.61.0 (the hook entry exits
+1, a service start fails, and 0.61.0's setup restores its watcher and hooks),
+and hook launcher latency. It runs the production operation under the real
 supervisor through the existing worker seam with the test counting patches;
 its assertions are structural, and its numbers are evidence only from an
 executed run.
