@@ -49,6 +49,7 @@ const fx = v2Deployment({
     renew: { soul: { capabilities: { "test.renew": { from: "here" } } } },
     req: { soul: { capabilities: { "test.req": { from: "here" } } } },
     teamed: { soul: { capabilities: { "test.teams": { from: "here" } } } },
+    seen: { soul: { capabilities: { "test.seen": { from: "here" } } } },
   },
   capabilities: {
     "test.extra": { manifest: { launchPreview: true, hooks: { launch: "bin/launch.mjs" }, environment: ["TEST_NEWVAR", "TEST_OLDVAR", "TEST_SHARED"], settings: { mode: { description: "m", default: "current" } } },
@@ -60,6 +61,9 @@ const fx = v2Deployment({
     // Records the teams its launch hook was given (team model v2).
     "test.teams": { manifest: { hooks: { launch: "bin/launch.mjs" }, environment: [], settings: {} },
       files: { "bin/launch.mjs": `import { writeFileSync } from "node:fs"; import { join } from "node:path";\nwriteFileSync(join(process.env.OATS_HOME, "teams-env.json"), JSON.stringify({ old: [process.env.OATS_TEAM_LABELS ?? null, process.env.OATS_TEAM_LABEL ?? null], def: process.env.OATS_DEFAULT_TEAM ?? null, source: process.env.OATS_TEAMS_SOURCE, teams: JSON.parse(process.env.OATS_TEAMS) }));\nprocess.stdout.write("{}\\n");\n` } },
+    // Records, per pass, the harness variables its launch hook was given and the harness PID still running.
+    "test.seen": { manifest: { launchPreview: true, hooks: { launch: "bin/launch.mjs" }, environment: [], settings: {} },
+      files: { "bin/launch.mjs": `import { appendFileSync, readFileSync } from "node:fs"; import { join } from "node:path";\nconst e = process.env; let alive = null;\ntry { const pid = Number(readFileSync(join(e.OATS_HOME, "pid.txt"), "utf8").trim()); if (pid > 1) { process.kill(pid, 0); alive = pid; } } catch { /* none running */ }\nappendFileSync(join(e.OATS_HOME, "seen.jsonl"), JSON.stringify({ preview: e.OATS_LAUNCH_PREVIEW ?? null, harness: e.OATS_HARNESS, runtime: e.OATS_RUNTIME, previousHarness: e.OATS_PREVIOUS_HARNESS, previousRuntime: e.OATS_PREVIOUS_RUNTIME, alive }) + "\\n");\nprocess.stdout.write("{}\\n");\n` } },
   },
   // Team model 3: teamed may join the shared night team (not created yet); the deployment's local teams are allowed.
   workspace: { teams: { global: { description: "Fixture team" }, night: { description: "Night shift" } }, localTeams: true, souls: { "ws/teamed": { teams: ["night"] } } },
@@ -67,6 +71,8 @@ const fx = v2Deployment({
     polite: { harness: "claude", executable: join(binDir, "polite"), args: ["--flag", "a b c"], env: { KEY: { fromEnv: "RESTART_TEST_SRC" }, LIT: "plain" }, model: "claude-opus-5" },
     stubborn: { harness: "claude", executable: join(binDir, "stubborn") },
     codexy: { harness: "codex", executable: join(binDir, "polite") },
+    // This host's codex default: a harness-only codex launch runs it, --launch-config none never does.
+    codexdef: { harness: "codex", default: true, executable: join(binDir, "polite"), args: ["--from-default"], env: { FROM_DEFAULT: "1" } },
   },
   // A local team: with localTeams: true, every soul may join it.
   teams: { mine: { team: "aweb:fixture.mine" } } },
@@ -207,6 +213,115 @@ test("a restart to another harness whose metadata write is interrupted is recove
   write(join(home, ".oats-start-pending.json"), JSON.stringify({ ...pending, launch: { ...pending.launch, version: 9 } }));
   assert.throws(() => startInstanceSession(home, { env: env() }), (e) => e.code === "E_SESSION_UNKNOWN" && /invalid receipt/.test(e.message));
   write(join(home, ".oats-start-pending.json"), JSON.stringify(pending));
+  process.kill(runningPid(home), "SIGTERM");
+});
+
+// #1345: a home recorded with a named claude configuration (its args, env and model), and what a start's records say.
+const namedClaudeRecipe = (home, name) => ({ ...recipeFor(home, name, { executable: join(binDir, "polite"), args: ["--flag", "a b c"], env: { LIT: "plain" } }), launchConfig: "polite", launchConfigSource: repo, model: "claude-opus-5" });
+const launchedRow = (home, startId) => {
+  const rows = readFileSync(join(home, ".oats-events.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.kind === "launched" && e.data?.startId === startId);
+  assert.equal(rows.length, 1, `one launched event for start ${startId}`);
+  return rows[0].data;
+};
+const seenRuns = (home) => existsSync(join(home, "seen.jsonl")) ? readFileSync(join(home, "seen.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+const paneEnvOf = (home) => Object.fromEntries(readFileSync(join(home, "env.txt"), "utf8").split("\n").filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
+const ensureSession = (home) => { try { tmux("has-session", "-t", session); } catch { tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", home); } };
+
+test("#1345 --launch-config none --harness codex from a named claude recipe restarts the bare codex, and the result, recipe, harness, restart receipt and launched event all say so; named starts keep their name", async () => {
+  const name = "seen-bare";
+  const home = homeOf(name, "seen");
+  await makeHome(name, { soul: "seen", command: renderFor(home, name, join(binDir, "polite")), launch: namedClaudeRecipe(home, name) });
+  ensureSession(home);
+  // Control: an unqualified start of the frozen named recipe keeps its name in every record.
+  const first = startInstanceSession(home, { env: env() });
+  assert.equal(first.launchConfig, "polite");
+  assert.equal(launchedRow(home, readJson(join(home, "instance.json")).startId).launchConfig, "polite");
+  assert.ok(await waitFor(() => runningPid(home) !== null), "the claude harness is up");
+  const oldPid = runningPid(home);
+  // Control: a named configuration that disagrees with an explicit harness refuses before any hook, stop or record.
+  rmSync(join(home, "seen.jsonl"), { force: true });
+  const metaBefore = readFileSync(join(home, "instance.json"), "utf8");
+  assert.throws(() => restartInstanceSession(home, { launchConfig: "polite", harness: "codex", env: env(), stopGraceMs: 5000 }), (e) => e.code === "E_LAUNCH_CONFIG_MISMATCH");
+  assert.deepEqual(seenRuns(home), [], "no launch hook ran");
+  assert.equal(runningPid(home), oldPid); assert.equal(existsSync(join(home, ".oats-restart.json")), false, "no stop was attempted");
+  assert.equal(readFileSync(join(home, "instance.json"), "utf8"), metaBefore);
+
+  const r = restartInstanceSession(home, { launchConfig: "none", harness: "codex", env: env(), stopGraceMs: 5000 });
+  assert.deepEqual([r.harness, r.launchConfig, r.model, r.stop.exited], ["codex", null, null, true]);
+  // The launch hook was told the target harness in its preview and its real pass, the real one before the stop.
+  const told = { harness: "codex", runtime: "codex", previousHarness: "claude", previousRuntime: "claude", alive: oldPid };
+  assert.deepEqual(seenRuns(home), [{ preview: "1", ...told }, { preview: null, ...told }]);
+  assert.ok(await waitFor(() => runningPid(home) !== null && runningPid(home) !== oldPid), "the codex harness is up");
+  const meta = readJson(join(home, "instance.json"));
+  assert.deepEqual([meta.harness, meta.launch.harness, meta.launch.launchConfig, meta.launch.launchConfigSource], ["codex", "codex", null, null]);
+  assert.deepEqual([meta.launch.executable, meta.launch.args, meta.launch.env, meta.launch.model, meta.launch.yolo], [join(binDir, "codex"), [], {}, null, true], "nothing of the named configuration; the recorded yolo as before");
+  assert.ok(!/polite|--flag|LIT=|claude-opus-5|--from-default/.test(meta.command), meta.command);
+  const argv = readFileSync(join(home, "argv.txt"), "utf8").split("\n");
+  assert.ok(!argv.includes("--flag") && !argv.includes("claude-opus-5") && !argv.includes("--from-default"), argv.join(" "));
+  assert.deepEqual([paneEnvOf(home).LIT, paneEnvOf(home).FROM_DEFAULT], [undefined, undefined]);
+  assert.deepEqual(readJson(join(home, ".oats-restart.json")).next, { harness: "codex", launchConfig: null, model: null });
+  assert.deepEqual(launchedRow(home, meta.startId), { harness: "codex", backend: "tmux", launchConfig: null, phase: "restart", startId: meta.startId });
+
+  // Control: on the same harness, --launch-config none stays bare: the host's codex default does not apply.
+  const codexPid = runningPid(home);
+  const bare = restartInstanceSession(home, { launchConfig: "none", env: env(), stopGraceMs: 5000 });
+  assert.deepEqual([bare.harness, bare.launchConfig], ["codex", null]);
+  assert.ok(await waitFor(() => runningPid(home) !== null && runningPid(home) !== codexPid), "the bare codex is up again");
+  const bareMeta = readJson(join(home, "instance.json"));
+  assert.deepEqual([bareMeta.launch.launchConfig, bareMeta.launch.executable, bareMeta.launch.args], [null, join(binDir, "codex"), []]);
+  assert.ok(!readFileSync(join(home, "argv.txt"), "utf8").split("\n").includes("--from-default"));
+  assert.equal(readJson(join(home, ".oats-restart.json")).next.launchConfig, null);
+  assert.equal(launchedRow(home, bareMeta.startId).launchConfig, null);
+  // Control: a harness-only start runs that default, and every record names it.
+  const barePid = runningPid(home);
+  const def = restartInstanceSession(home, { harness: "codex", env: env(), stopGraceMs: 5000 });
+  assert.deepEqual([def.harness, def.launchConfig], ["codex", "codexdef"]);
+  assert.ok(await waitFor(() => runningPid(home) !== null && runningPid(home) !== barePid), "the default's codex is up");
+  const defMeta = readJson(join(home, "instance.json"));
+  assert.deepEqual([defMeta.launch.launchConfig, defMeta.launch.args], ["codexdef", ["--from-default"]]);
+  assert.equal(readJson(join(home, ".oats-restart.json")).next.launchConfig, "codexdef");
+  assert.equal(launchedRow(home, defMeta.startId).launchConfig, "codexdef");
+  process.kill(runningPid(home), "SIGTERM");
+});
+
+test("#1345 an interrupted none+codex restart from a named claude recipe is adopted from its receipt's bare recipe: the recovered launched event keeps null, not the recorded name; a named receipt keeps its name; a receipt without a recipe falls back to the recorded one", async () => {
+  const name = "dev-bare-recover";
+  const home = homeOf(name);
+  const pendingPath = join(home, ".oats-start-pending.json"), metaPath = join(home, "instance.json");
+  await makeHome(name, { command: renderFor(home, name, join(binDir, "polite")), launch: namedClaudeRecipe(home, name) });
+  ensureSession(home);
+  startInstanceSession(home, { env: env() });
+  assert.ok(await waitFor(() => runningPid(home) !== null), "the claude harness is up");
+  const oldPid = runningPid(home);
+  assert.throws(() => restartInstanceSession(home, { launchConfig: "none", harness: "codex", env: env(), stopGraceMs: 5000, io: { failBeforeMetadataWrite: true } }), (e) => e.code === "E_SESSION_START_INCOMPLETE");
+  const pending = readJson(pendingPath);
+  assert.deepEqual([pending.harness, pending.launch.harness, pending.launch.launchConfig, pending.launch.args, pending.launch.env, pending.model], ["codex", "codex", null, [], {}, null], "the receipt carries the bare codex recipe");
+  const recorded = readFileSync(metaPath, "utf8");
+  assert.deepEqual([JSON.parse(recorded).harness, JSON.parse(recorded).launch.launchConfig], ["claude", "polite"], "metadata still names the recorded configuration");
+  // The interrupted start recorded its boundary and its restart receipt before the metadata: bare codex.
+  assert.deepEqual(launchedRow(home, pending.id), { harness: "codex", backend: "tmux", launchConfig: null, phase: "restart", startId: pending.id });
+  assert.deepEqual(readJson(join(home, ".oats-restart.json")).next, { harness: "codex", launchConfig: null, model: null });
+  assert.ok(await waitFor(() => runningPid(home) !== null && runningPid(home) !== oldPid, "replacement harness PID"), "the codex harness is up");
+  // An adoption completes a boundary no log holds. Each receipt below names its own start, which
+  // no log holds yet, over the same recorded metadata.
+  const adopt = (suffix, receipt) => {
+    write(metaPath, recorded);
+    const id = `${pending.id}-${suffix}`;
+    write(pendingPath, JSON.stringify({ ...receipt, id }));
+    const done = startInstanceSession(home, { env: env() });
+    assert.equal(done.reused, "adopted");
+    return { done, row: launchedRow(home, id) };
+  };
+  const { launch: _launch, harness: _harness, ...legacyReceipt } = pending;
+  const legacy = adopt("legacy", legacyReceipt);
+  assert.deepEqual([legacy.done.launchConfig, legacy.row.launchConfig, legacy.row.phase], ["polite", "polite", "recovered"], "a receipt without a recipe: the recorded configuration");
+  const named = adopt("named", { ...pending, launch: { ...pending.launch, launchConfig: "codexy" } });
+  assert.deepEqual([named.done.launchConfig, named.row.launchConfig], ["codexy", "codexy"], "a named receipt keeps its name");
+  const adopted = adopt("bare", pending);
+  assert.deepEqual([adopted.done.harness, adopted.done.launchConfig], ["codex", null]);
+  assert.deepEqual(adopted.row, { harness: "codex", backend: "tmux", launchConfig: null, phase: "recovered", startId: `${pending.id}-bare` });
+  const meta = readJson(metaPath);
+  assert.deepEqual([meta.harness, meta.launch.harness, meta.launch.launchConfig], ["codex", "codex", null]);
   process.kill(runningPid(home), "SIGTERM");
 });
 
