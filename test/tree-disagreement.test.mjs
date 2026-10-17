@@ -169,6 +169,31 @@ test("a directory replaced by a link to another directory while it is read stops
   assert.ok(!JSON.stringify(diff).includes("secret"), "no name from outside the roots");
 });
 
+test("an ancestor replaced after its checks and left replaced drops everything read below it, also when a budget stop unwinds through it", () => {
+  for (const limits of [TREE_DISAGREEMENT_LIMITS, { ...TREE_DISAGREEMENT_LIMITS, discrepancies: 1 }]) {
+    const outside = join(base, `outside-${n++}`);
+    mkdirSync(join(outside, "x"), { recursive: true });
+    writeFileSync(join(outside, "x", "secret-a"), "s"); writeFileSync(join(outside, "x", "secret-b"), "s");
+    const { a, b } = pair({ "sub/x": { dir: true } });
+    const grandchild = Buffer.from(join(a, "sub", "x"));
+    let swapped = false;
+    // sub has been listed and checked; the swap comes at the lstat of sub/x, which then resolves
+    // through the replacement to outside/x.
+    const io = { opendir: fs.opendirSync, lstat: (path) => {
+      if (!swapped && Buffer.from(path).equals(grandchild)) {
+        swapped = true;
+        renameSync(join(a, "sub"), join(a, "sub-moved"));
+        symlinkSync(outside, join(a, "sub"));
+      }
+      return lstatSync(path);
+    } };
+    const diff = treeDisagreement(a, b, { io, limits });
+    assert.equal(swapped, true, "fixture premise: the swap happened");
+    assert.deepEqual(diff, { complete: false, stoppedBy: "unreadable", entries: [] }, `discrepancies ${limits.discrepancies}`);
+    assert.ok(!JSON.stringify(diff).includes("secret"), "no name read through the replacement");
+  }
+});
+
 test("a FIFO in both trees is compared by its type and mode, never opened", () => {
   const { a, b } = pair({});
   for (const side of [a, b]) execFileSync("mkfifo", [join(side, "pipe")]);

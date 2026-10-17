@@ -5157,10 +5157,11 @@ and an entry that is a link is compared as a link, never followed. Every
 read is by path, so what is read is checked against what was listed: a file
 must be the regular file it was listed as (opened without following a link
 or waiting on a FIFO), and a directory the one it was listed as, before and
-after its listing and after its entries; otherwise the search stops as
-`unreadable`. A replacement undone between two checks, or of a directory
-above an entry while that entry is read, is not detected; only paths under
-the worktree are ever named. The search is bounded: at most 20 entries,
+after its listing and when the search leaves it; otherwise the search stops
+as `unreadable` and nothing found below that directory is reported. A
+replacement that is undone before the replaced directory is checked again is
+not detected: what was read through it can then be compared and named. Every
+path named is relative to the worktree. The search is bounded: at most 20 entries,
 200,000 directory entries read (counted as each listing is read, so no
 listing goes past the budget), 64 MiB of file bytes read (files are compared
 in chunks, sizes first) and 5 seconds, checked between filesystem calls; when it stops early, `complete` is `false` and
