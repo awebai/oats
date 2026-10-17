@@ -222,9 +222,11 @@ Until setup converts it, the hook line from before this release,
 `<node> <package>/bin/capture.mjs --owner <owner> --quiet` run asynchronously
 with a 120-second timeout, still works against this release: it is one
 ordinary quiet foreground pass under the root lock, attributed `manual`, up to
-its 300-second deadline. A harness that stops it at 120 seconds signals the
-supervisor, which ends the pass as interrupted, records that, and releases the
-lock; the next trigger continues from the durable checkpoints.
+its 300-second deadline. A harness that stops it at 120 seconds with SIGTERM or
+SIGINT makes the supervisor kill its worker, end the pass as interrupted and
+release the lock; with SIGKILL the supervisor dies holding the lock, which the
+next pass reclaims as a dead owner. Either way the next pass records the
+interruption and continues from the durable checkpoints.
 Setup's pending-activation marker (`<root>/capture-service-pending.json`, see
 [setup service migration](#setup-service-migration)) produces
 `capture-service-pending` from file evidence only: beside setup's own marked
