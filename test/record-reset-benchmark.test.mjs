@@ -11,6 +11,7 @@ import { RecordStore } from '../packages/record/lib/store.mjs';
 import { RecordIndex } from '../packages/record/lib/index-db.mjs';
 import { run as benchmark, reset, startProbe, SCHEMA, TABLES } from '../scripts/benchmark-record-reset.mjs';
 import { DatabaseSync } from 'node:sqlite';
+import { holdSharedUntilPending } from './fixtures/reset-probe-contention.mjs';
 const script=resolve(import.meta.dirname,'../scripts/benchmark-record-reset.mjs');
 function fixture(t){
  const root=fs.mkdtempSync(join(tmpdir(),'reset-benchmark-PRIVATE-'));
@@ -179,17 +180,21 @@ test('reset failure terminates and reaps the owned read probe before rejecting',
  }finally{DatabaseSync.prototype.exec=originalExec;childProcess.spawn=originalSpawn;syncBuiltinESMExports();}
 });
 
-test('separate-process read probes distinguish a reader-permitting reservation from observed reader exclusion',async t=>{
+test('separate-process read probes distinguish a reader-permitting reservation from observed reader exclusion',{timeout:15000},async t=>{
  const {path}=fixture(t),db=new DatabaseSync(path),probe=await startProbe(path);
+ let holder;
  try{
   db.exec('BEGIN IMMEDIATE');
   await new Promise(resolve=>setTimeout(resolve,80));
   db.exec('ROLLBACK');
+  holder=await holdSharedUntilPending(path,message=>t.diagnostic(message));
+  await holder.arm();
   // EXCLUSIVE is only a controlled test stimulus, never benchmark reset SQL.
   db.exec('BEGIN EXCLUSIVE');
+  await holder.released();
   await new Promise(resolve=>setTimeout(resolve,80));
   db.exec('ROLLBACK');
   const result=await probe.stop();
   assert.ok(result.readable>1);assert.ok(result.busy>1);assert.ok(result.longestObservedBusySpanMs>0);
- }finally{if(db.isTransaction)db.exec('ROLLBACK');await probe.terminate();db.close();}
+ }finally{if(db.isTransaction)db.exec('ROLLBACK');try{await holder?.terminate();}finally{await probe.terminate();db.close();}}
 });
