@@ -2523,6 +2523,9 @@ This field is informational attribution, not agent-authorship proof, an
 identity credential, a security boundary or an authorization input. There is
 no flag to choose it.
 
+For a remote spawn (`--server`), attribution uses the host-side caller context.
+Caller identity is not forwarded, so the origin is normally `operator`.
+
 Existing homes keep their recorded value, including the relation-based meaning
 recorded by earlier kernels; an absent value stays absent in local status.
 Idempotent spawn replay returns the recorded value. Remote rows relay the

@@ -416,6 +416,8 @@ caller records `instance` even without a relation. A shell inheriting valid
 instance context also records `instance`. This is informational attribution,
 not a security boundary or a permission check. Existing instances keep their
 recorded value, including the relation-based meaning recorded by older kernels.
+For a remote spawn (`--server`), attribution uses the host-side caller context;
+caller identity is not forwarded, so the origin is normally `operator`.
 See [the caller resolution rules](desktop-cli-api.md#spawn-origin).
 
 Agents spawning sub-agents should pass `--parent "$OATS_INSTANCE"` (or the

@@ -173,10 +173,13 @@ to an extant home in this deployment means `instance`; otherwise `operator`.
 A stopped home counts. Earlier homes retain their recorded meaning. This is
 informational attribution, not a permission check; see
 [the caller resolution rules](https://github.com/awebai/oats/blob/main/docs/desktop-cli-api.md#spawn-origin).
+A remote spawn uses the host-side caller context, normally `operator`;
+caller identity is not forwarded.
 
 For `--work worktree`, `--branch <b>` names the new branch and `--base <ref>`
-overrides its start point. By default it starts at the soul's repository commit
-observed by spawn, even when the local clone is behind.
+overrides its start point. When the clone is of the soul's repository, the
+default is the commit observed by spawn, even when the local clone is behind.
+A `--repo` that is not a clone of the soul's repository starts at its `HEAD`.
 
 **Naming.** `--purpose <slug>` names the instance `<soul>-<slug>`; `--name
 <slug>` gives an exact name instead. Without either the kernel numbers it.
