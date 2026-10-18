@@ -58,7 +58,7 @@ exists. A fallback shell reads `running: false` with `runtimeState: "shell"`;
 a retained dead pane also reads `false`. A wrapper shell with a live non-shell
 descendant still reads `true`. Status shares session inspection's pane rule,
 with one batched pane read per socket/session and one lazy process scan across
-all shell panes. A recorded server or pane that cannot be read gives
+all panes that need it. A recorded server or pane that cannot be read gives
 `running: null` with `runtimeState: "unreachable"`. The environment variables are read when the spawn runs, and `oats
 inspect --json` reports the session a new spawn would open in as `session`
 (`{tmuxSession}`). A spawn refuses an instance name that is a live window in the
@@ -1073,12 +1073,16 @@ oats session attach --home /abs/home --detach-key 'C-\'
   wrapper shell included; `false` for a fallback shell (`state: shell`, where
   `present` stays `true`), an absent or dead pane or a missing home
   (`stopped`) and a home that never launched (`not-launched`). It costs no
-  second observation: at most one process-table read, and only for a pane
-  whose own command is a shell. `running` is activity at the authorized
+  second observation: at most one process-table read, only for a pane whose
+  command is a shell, empty or the literal `unset`. An empty or `unset` label
+  uses the pane PID's own process name from that same scan to establish a shell
+  before checking descendants; an unreadable or non-shell own process stays
+  `unknown` (`running: true`). `running` is activity at the authorized
   endpoint. It does not say the agent is generating, idle, healthy or ready
   for input, nor that it consumed a wake, and it does not prove which
-  executable runs if a process inside the pane was replaced. When the
-  backend or the process table cannot be read, or the pane answer is
+  executable runs if a process inside the pane was replaced. When the backend
+  cannot be read, a required process-table read for an explicitly labelled
+  shell fails, or the pane answer is
   malformed or split, inspect is an error as before, never `running: false`.
   That includes a tmux server that is gone (`no server running on` its
   socket, as after a reboot): status reads that row as `running: false`, and
