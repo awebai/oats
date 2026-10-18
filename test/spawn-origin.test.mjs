@@ -12,7 +12,8 @@ const identity = (r) => ({ OATS_INSTANCE: r.instance, OATS_INSTANCE_HOME: r.home
 function cli(fx, args, env = {}) {
   const r = fx.cli([...args, "--json"], { env });
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  return r.json().result;
+  const doc = JSON.parse(r.stdout);
+  return doc.ok === true ? doc.result : doc;
 }
 const spawn = (fx, name, flags = [], env = {}) => cli(fx, ["spawn", "dev", "--name", name, "--no-launch", ...flags], env);
 const rows = (fx, env = {}) => cli(fx, ["status"], env).agents.flatMap((a) => a.instances);
