@@ -4,7 +4,7 @@
 // workflow's terms in linux-tests-workflow.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FILE_TIMEOUT_MS, RETRY_PAUSE_MS, USER_MANAGER_WAIT_MS, askUserManager, linux, linuxPlatform, notYetReachable, prettyName, userManagerAnswer } from "../scripts/linux-tests.mjs";
@@ -80,13 +80,39 @@ test("linux-tests askUserManager: a manager that cannot be reached yet is asked 
   assert.deepEqual({ ...askUserManager({ systemctl: once.systemctl, wait: false, waitMs: 10_000, env: process.env, pauseMs: 50 }), ms: 0 }, { answered: false, state: "unknown", waited: false, asks: 1, ms: 0 });
 });
 
-test("linux-tests askUserManager: a manager that never becomes reachable is refused at the bound, not at once", () => {
-  const { systemctl } = starting("systemctl-never", Number.MAX_SAFE_INTEGER);
+test("linux-tests askUserManager: a manager that never becomes reachable is refused at the bound, not at once", (t) => {
+  const trace = join(dir, "systemctl-never.trace"), source = join(dir, "systemctl-never.mjs");
+  // The third probe deliberately outlasts the entire bound. Its entry and missing completion
+  // witness a real spawnSync deadline crossing, rather than relying on a lucky final retry.
+  writeFileSync(source, `
+    import { appendFileSync, existsSync, readFileSync } from "node:fs";
+    const trace = ${JSON.stringify(trace)};
+    const ask = existsSync(trace) ? readFileSync(trace, "utf8").trim().split("\\n").length + 1 : 1;
+    appendFileSync(trace, JSON.stringify({ ask, pid: process.pid, entered: Date.now(), state: ask < 3 ? "unknown" : null }) + "\\n");
+    if (ask === 3) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1600);
+      appendFileSync(trace, JSON.stringify({ completed: Date.now() }) + "\\n");
+    }
+    console.log("unknown");
+    process.exitCode = 1;
+  `);
+  const quote = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
+  const systemctl = program("systemctl-never", `exec ${quote(process.execPath)} ${quote(source)}`);
+  const started = Date.now();
   const asked = askUserManager({ systemctl, wait: true, waitMs: 800, env: process.env, pauseMs: 50 });
+  const returned = Date.now(), entries = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  t.diagnostic(JSON.stringify({ started, deadline: started + 800, returned, entries, asked }));
+  assert.equal(entries.length, 3, "two unreachable replies, then an unfinished third probe");
+  assert.deepEqual(entries.map((entry) => entry.ask), [1, 2, 3]);
+  assert.deepEqual(entries.map((entry) => entry.state), ["unknown", "unknown", null]);
+  assert.ok(entries[2].entered < started + 800, "the third probe entered before the deadline");
+  assert.ok(returned >= started + 800, "the third probe straddled the deadline");
+  assert.equal(asked.asks, entries.length);
   assert.equal(asked.answered, false);
-  assert.equal(asked.state, "unknown");
   assert.ok(asked.asks > 2, `asked ${asked.asks} times`);
   assert.ok(asked.ms >= 800 - 50 && asked.ms < 5_000, `refused after ${asked.ms}ms`);
+  assert.equal(asked.state, "no answer within 0.8s", "the unfinished probe must hit the real timeout");
+  assert.equal(asked.state, "unknown");
 });
 
 const A = "a".repeat(40), B = "b".repeat(40);
