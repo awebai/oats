@@ -619,8 +619,8 @@ test("named-test-run Linux: a user manager probe at the deadline refuses prepare
     assert.equal(manager.waited, i === 0);
     assert.ok(manager.ms >= 600 - 50 && manager.ms < 5_000, `refused after ${manager.ms}ms`);
   }
-  assert.match(refused.text(), /user manager: {8}did NOT answer: "offline" \(systemctl --user is-system-running --wait, asked \d+ times, \d+\.\ds of at most 0\.6s\)/);
-  assert.match(refused.text(), /\n\nRefused: nothing was installed or run\.\n  the user manager: did not answer \("offline"\): `systemctl --user` cannot be relied on, so no file runs\n$/);
+  assert.match(refused.text(), /user manager: {8}did NOT answer: "no answer within 0\.6s" \(systemctl --user is-system-running --wait, asked \d+ times, \d+\.\ds of at most 0\.6s\)/);
+  assert.match(refused.text(), /\n\nRefused: nothing was installed or run\.\n  the user manager: did not answer \("no answer within 0\.6s"\): `systemctl --user` cannot be relied on, so no file runs\n$/);
 });
 
 test("named-test-run main: on a workflow run nothing it prints is read as a workflow command", async () => {
