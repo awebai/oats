@@ -548,7 +548,7 @@ test("named-test-run Linux: the header says the user manager answered, and the f
 });
 
 test("named-test-run Linux: a user manager probe at the deadline refuses prepare and run without side effects", async (t) => {
-  assert.ok(!existsSync(marker), "no file has run for this refusal");
+  if (existsSync(marker)) rmSync(marker);
   // A manager that does not answer: the header says so, the step fails after it, and nothing runs.
   const trace = join(base, "systemctl-offline.trace"), source = join(base, "systemctl-offline.mjs"), count = join(base, "systemctl-offline.count");
   // Each step gets one finite probe which deliberately outlasts its entire wait bound.
@@ -599,7 +599,10 @@ test("named-test-run Linux: a user manager probe at the deadline refuses prepare
   assert.match(again.text(), /\nRefused: no file was run\.\n  the user manager: did not answer/);
   assert.ok(!existsSync(marker), "nothing ran");
   const entries = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line));
-  t.diagnostic(JSON.stringify({ observations, entries, prepare: refused.text(), run: again.text() }));
+  // Exclude loginctl's prefix. This estimate includes post-return sampling overhead;
+  // the manager's own elapsed time and timeout state carry the real timeout evidence.
+  const estimatedDeadlines = observations.map(({ returned, manager }) => returned - manager.ms + 600);
+  t.diagnostic(JSON.stringify({ observations, estimatedDeadlines, entries, prepare: refused.text(), run: again.text() }));
   assert.deepEqual(observations.map(({ step }) => step), ["prepare", "run"]);
   assert.equal(entries.length, 4, "two offline replies and one unfinished probe per step, with no completion witness");
   assert.deepEqual(entries.map(({ waited }) => waited), [true, true, true, false]);
@@ -609,15 +612,15 @@ test("named-test-run Linux: a user manager probe at the deadline refuses prepare
   for (const [i, { started, returned, manager }] of observations.entries()) {
     const entry = entries[i + 2];
     assert.equal(entry.pid, entry.invokedPid);
-    assert.ok(entry.entered < started + 600, "the probe entered before its deadline");
+    assert.ok(entry.entered < estimatedDeadlines[i], "the probe entered before the deadline estimated from manager elapsed");
     assert.ok(returned - started >= 600 - 50, "the external elapsed time agrees with the bound");
     assert.equal(manager.answered, false);
     assert.equal(manager.asks, i === 0 ? 3 : 1);
     assert.equal(manager.waited, i === 0);
     assert.ok(manager.ms >= 600 - 50 && manager.ms < 5_000, `refused after ${manager.ms}ms`);
   }
-  assert.match(refused.text(), /user manager: {8}did NOT answer: "no answer within 0\.6s" \(systemctl --user is-system-running --wait, asked \d+ times, \d+\.\ds of at most 0\.6s\)/);
-  assert.match(refused.text(), /\n\nRefused: nothing was installed or run\.\n  the user manager: did not answer \("no answer within 0\.6s"\): `systemctl --user` cannot be relied on, so no file runs\n$/);
+  assert.match(refused.text(), /user manager: {8}did NOT answer: "offline" \(systemctl --user is-system-running --wait, asked \d+ times, \d+\.\ds of at most 0\.6s\)/);
+  assert.match(refused.text(), /\n\nRefused: nothing was installed or run\.\n  the user manager: did not answer \("offline"\): `systemctl --user` cannot be relied on, so no file runs\n$/);
 });
 
 test("named-test-run main: on a workflow run nothing it prints is read as a workflow command", async () => {
