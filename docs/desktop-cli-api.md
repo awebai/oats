@@ -2241,6 +2241,11 @@ containing them ships. For operator recovery, see
 
 ## Spawn
 
+Use `oats spawn --help` (also the spawn section of `oats help`) for the
+existing flag inventory, including compatibility and internal inputs. Help
+needs no deployment; the preview and apply contracts below govern confirmation
+and replay.
+
 ### The preview
 
 ```text
