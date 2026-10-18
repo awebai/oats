@@ -550,20 +550,38 @@ test("named-test-run Linux: the header says the user manager answered, and the f
 test("named-test-run Linux: a user manager probe at the deadline refuses prepare and run without side effects", async (t) => {
   assert.ok(!existsSync(marker), "no file has run for this refusal");
   // A manager that does not answer: the header says so, the step fails after it, and nothing runs.
-  const trace = join(base, "systemctl-offline.trace"), source = join(base, "systemctl-offline.mjs");
+  const trace = join(base, "systemctl-offline.trace"), source = join(base, "systemctl-offline.mjs"), count = join(base, "systemctl-offline.count");
   // Each step gets one finite probe which deliberately outlasts its entire wait bound.
   // exec keeps the sleeper in the owned process; an entry without completion witnesses its kill.
   writeFileSync(source, `
     import { appendFileSync } from "node:fs";
     const trace = ${JSON.stringify(trace)};
-    appendFileSync(trace, JSON.stringify({ pid: process.pid, invokedPid: Number(process.argv[2]), entered: Date.now(), waited: process.argv.includes("--wait") }) + "\\n");
+    appendFileSync(trace, JSON.stringify({ pid: process.pid, invokedPid: Number(process.argv[2]), ask: Number(process.argv[3]), state: null, entered: Date.now(), waited: process.argv.includes("--wait") }) + "\\n");
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1200);
     appendFileSync(trace, JSON.stringify({ completed: Date.now() }) + "\\n");
     console.log("offline");
     process.exitCode = 1;
   `);
   const quote = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
-  const systemctl = program("systemctl-offline", `exec ${quote(process.execPath)} ${quote(source)} "$$" "$@"`);
+  const systemctl = program("systemctl-offline", `
+    waited=false
+    for arg in "$@"; do
+      case "$arg" in --wait) waited=true ;; esac
+    done
+    n=1
+    if [ "$waited" = true ]; then
+      n=0
+      if [ -f ${quote(count)} ]; then read -r n < ${quote(count)}; fi
+      n=$((n + 1))
+      printf '%s\\n' "$n" > ${quote(count)}
+      if [ "$n" -lt 3 ]; then
+        printf '{"pid":%s,"ask":%s,"state":"offline","waited":true}\\n' "$$" "$n" >> ${quote(trace)}
+        echo offline
+        exit 1
+      fi
+    fi
+    exec ${quote(process.execPath)} ${quote(source)} "$$" "$n" "$@"
+  `);
   const silent = linuxPlatform({ systemctl, loginctl: program("loginctl-refusal", "echo yes"), waitMs: 600, pauseMs: 50 });
   const readFacts = silent.readFacts, observations = [];
   silent.readFacts = (args) => {
@@ -583,15 +601,18 @@ test("named-test-run Linux: a user manager probe at the deadline refuses prepare
   const entries = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line));
   t.diagnostic(JSON.stringify({ observations, entries, prepare: refused.text(), run: again.text() }));
   assert.deepEqual(observations.map(({ step }) => step), ["prepare", "run"]);
-  assert.equal(entries.length, 2, "one unfinished probe per step, with no completion witness");
-  assert.deepEqual(entries.map(({ waited }) => waited), [true, false]);
+  assert.equal(entries.length, 4, "two offline replies and one unfinished probe per step, with no completion witness");
+  assert.deepEqual(entries.map(({ waited }) => waited), [true, true, true, false]);
+  assert.deepEqual(entries.map(({ ask }) => ask), [1, 2, 3, 1]);
+  assert.deepEqual(entries.map(({ state }) => state), ["offline", "offline", null, null]);
   assert.equal(observations[1].manager.state, observations[0].manager.state);
   for (const [i, { started, returned, manager }] of observations.entries()) {
-    assert.equal(entries[i].pid, entries[i].invokedPid);
-    assert.ok(entries[i].entered < started + 600, "the probe entered before its deadline");
+    const entry = entries[i + 2];
+    assert.equal(entry.pid, entry.invokedPid);
+    assert.ok(entry.entered < started + 600, "the probe entered before its deadline");
     assert.ok(returned - started >= 600 - 50, "the external elapsed time agrees with the bound");
     assert.equal(manager.answered, false);
-    assert.equal(manager.asks, 1);
+    assert.equal(manager.asks, i === 0 ? 3 : 1);
     assert.equal(manager.waited, i === 0);
     assert.ok(manager.ms >= 600 - 50 && manager.ms < 5_000, `refused after ${manager.ms}ms`);
   }
