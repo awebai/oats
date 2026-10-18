@@ -4871,8 +4871,12 @@ Usage:
                                             on preview or --expect-decision apply only;
                                             refused with --server; decision binding still holds
       [--wake-file <json-file> | --wake-json <json-text>]  wake object: {cron, tz, message, enabled}
+                                            --wake-json wins over --wake-file; either overrides
+                                            --wake-every and --wake-cron
       [--wake-every <N> | --wake-cron <expr>]  alternative: cron */N minutes (1-59) or explicit cron
-      [--wake-tz <zone>]                     with --wake-message <text> or --wake-message-file <f>;
+                                            requires --wake-message <text> or --wake-message-file <f>;
+                                            --wake-message-file wins over --wake-message
+      [--wake-tz <zone>]                     optional for cron/every (default: local zone);
                                             saved after spawn, bound to the new home
       --runtime <harness>                    compatibility alias for --harness (deprecated)
       --instance <name>                      compatibility token for older routed hosts;
