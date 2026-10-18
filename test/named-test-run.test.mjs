@@ -527,7 +527,7 @@ test("named-test-run prepare, then run: the commit goes to a second tree, the he
 // host's own systemd, so the case runs the same on a Mac and on pull-request CI.
 const program = (name, body) => fakeProgram(base, name, body);
 const linuxEnv = (extra = {}) => ({ ...process.env, LINUX_TESTS_REF: "feature/x", LINUX_TESTS_FILES: "test/a.test.mjs", MACOS_TESTS_MARKER: marker, TMUX_TMPDIR: join(base, "no-tmux-here"), XDG_RUNTIME_DIR: "/run/user/1001", GITHUB_STEP_SUMMARY: "", ...extra });
-test("named-test-run Linux: the header says the user manager answered, and the files run; one that did not answer fails both steps and runs nothing", async () => {
+test("named-test-run Linux: the header says the user manager answered, and the files run", async () => {
   if (existsSync(marker)) rmSync(marker);
   const loginctl = program("loginctl", "echo yes");
   const answering = linuxPlatform({ systemctl: program("systemctl-running", "echo running"), loginctl });
@@ -545,20 +545,58 @@ test("named-test-run Linux: the header says the user manager answered, and the f
   assert.equal(readFileSync(marker, "utf8"), "ran\n");
   assert.match(readFileSync(summary, "utf8"), /## Linux test run: passed\n\n[^]*, user manager "running", /);
   rmSync(marker);
+});
 
+test("named-test-run Linux: a user manager probe at the deadline refuses prepare and run without side effects", async (t) => {
+  assert.ok(!existsSync(marker), "no file has run for this refusal");
   // A manager that does not answer: the header says so, the step fails after it, and nothing runs.
-  const silent = linuxPlatform({ systemctl: program("systemctl-offline", "echo offline; exit 1"), loginctl, waitMs: 600, pauseMs: 50 });
+  const trace = join(base, "systemctl-offline.trace"), source = join(base, "systemctl-offline.mjs");
+  // Each step gets one finite probe which deliberately outlasts its entire wait bound.
+  // exec keeps the sleeper in the owned process; an entry without completion witnesses its kill.
+  writeFileSync(source, `
+    import { appendFileSync } from "node:fs";
+    const trace = ${JSON.stringify(trace)};
+    appendFileSync(trace, JSON.stringify({ pid: process.pid, invokedPid: Number(process.argv[2]), entered: Date.now(), waited: process.argv.includes("--wait") }) + "\\n");
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1200);
+    appendFileSync(trace, JSON.stringify({ completed: Date.now() }) + "\\n");
+    console.log("offline");
+    process.exitCode = 1;
+  `);
+  const quote = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
+  const systemctl = program("systemctl-offline", `exec ${quote(process.execPath)} ${quote(source)} "$$" "$@"`);
+  const silent = linuxPlatform({ systemctl, loginctl: program("loginctl-refusal", "echo yes"), waitMs: 600, pauseMs: 50 });
+  const readFacts = silent.readFacts, observations = [];
+  silent.readFacts = (args) => {
+    const started = Date.now(), facts = readFacts(args);
+    observations.push({ step: args.step, started, returned: Date.now(), manager: facts.userManager });
+    return facts;
+  };
   const unfit = join(base, "linux-unfit"), refusedSummary = join(base, "linux-refused.md");
   const refused = collect();
   assert.equal(prepare({ tree: unfit, platform: silent, repo: runner, env: linuxEnv({ GITHUB_STEP_SUMMARY: refusedSummary }), write: refused.write }), 2);
-  assert.match(refused.text(), /user manager: {8}did NOT answer: "offline" \(systemctl --user is-system-running --wait, asked \d+ times, \d+\.\ds of at most 0\.6s\)/);
-  assert.match(refused.text(), /\n\nRefused: nothing was installed or run\.\n  the user manager: did not answer \("offline"\): `systemctl --user` cannot be relied on, so no file runs\n$/);
   assert.ok(!refused.text().includes("The request is valid"));
   assert.match(readFileSync(refusedSummary, "utf8"), /## Linux test run: refused/);
   const again = collect();
   assert.equal(await run({ tree: unfit, platform: silent, repo: runner, env: linuxEnv(), write: again.write, timeoutMs: 120_000 }), 2);
   assert.match(again.text(), /\nRefused: no file was run\.\n  the user manager: did not answer/);
   assert.ok(!existsSync(marker), "nothing ran");
+  const entries = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  t.diagnostic(JSON.stringify({ observations, entries, prepare: refused.text(), run: again.text() }));
+  assert.deepEqual(observations.map(({ step }) => step), ["prepare", "run"]);
+  assert.equal(entries.length, 2, "one unfinished probe per step, with no completion witness");
+  assert.deepEqual(entries.map(({ waited }) => waited), [true, false]);
+  assert.equal(observations[1].manager.state, observations[0].manager.state);
+  for (const [i, { started, returned, manager }] of observations.entries()) {
+    assert.equal(entries[i].pid, entries[i].invokedPid);
+    assert.ok(entries[i].entered < started + 600, "the probe entered before its deadline");
+    assert.ok(returned - started >= 600 - 50, "the external elapsed time agrees with the bound");
+    assert.equal(manager.answered, false);
+    assert.equal(manager.asks, 1);
+    assert.equal(manager.waited, i === 0);
+    assert.ok(manager.ms >= 600 - 50 && manager.ms < 5_000, `refused after ${manager.ms}ms`);
+  }
+  assert.match(refused.text(), /user manager: {8}did NOT answer: "offline" \(systemctl --user is-system-running --wait, asked \d+ times, \d+\.\ds of at most 0\.6s\)/);
+  assert.match(refused.text(), /\n\nRefused: nothing was installed or run\.\n  the user manager: did not answer \("offline"\): `systemctl --user` cannot be relied on, so no file runs\n$/);
 });
 
 test("named-test-run main: on a workflow run nothing it prints is read as a workflow command", async () => {
