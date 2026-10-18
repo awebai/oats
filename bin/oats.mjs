@@ -4828,32 +4828,66 @@ Usage:
                                             spawn hooks); --model replaces the recorded model
                                             for this and later starts; a live harness is refused
   oats spawn <agent> [--task <text> | --task-file <f>]  spawn an instance (tmux; --no-launch
-      [--purpose <slug>] [--repo <r>]       = scaffold only); the agent is a workspace
-      [--parent <instance>]                 soul or a capability-defined agent
-      [--relation child|sibling|parent|unrelated]    --relation + --relative-to anchor the
-      [--relative-to <instance>]            new instance to an existing one; --parent X
-      [--relative-root <agents-root>]       disambiguates same-named team anchors
-      [--work worktree|checkout|attached|workspace|directory]  = sugar for --relative-to X --relation
-      [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--base <ref>]  child (default: unrelated, top-level)
+      [--purpose <slug> | --name <slug>]    = scaffold only); the agent is a workspace
+      [--repo <path>]                       soul or a capability-defined agent
+                                            --purpose derives <agent>-<purpose>;
+                                            --name is exact (no prefix), unused in the
+                                            deployment, a slug and not a soul name
+      [--dir <scope>] [--agents-root <abs>] deployment scope; --agents-root must match
+                                            that deployment's agents root
+      [--parent <instance>]                 sugar for --relative-to X --relation child
+      [--relation child|sibling|parent|unrelated]  anchor with --relative-to (except unrelated);
+      [--relative-to <instance>]            default: unrelated, top-level
+      [--relative-root <agents-root>]       disambiguates same-named anchors
+      [--work worktree|checkout|attached|workspace|directory]  override the soul's work mode
+      [--work-dir <owner-work>]             attached: the owner's work tree (always a child)
+      [--branch <b>] [--base <ref>]          worktree branch and starting ref;
                                             --base: worktree only; defaults to the soul
                                             commit observed by spawn (#445)
-      [--no-launch] [--json]                 without --launch-config/--harness the launch is the
-                                            soul's preference: oats-local.yaml souls.launch.<soul>,
-                                            then souls.launch."*", then the soul's launch:, then pi
-                                            with team: declared, unknown souls
-                                            resolve across the team scope's repos
                                             directory: owned home/work, config context may
                                             be non-Git; rejects --work-dir and --branch
-      [--name <slug>]                        the exact instance name (no <agent>- prefix;
-                                            not with --purpose); must be a slug, not a
-                                            soul name, and unused in the deployment
+      [--harness pi|claude|codex] [--launch-config <name>|none]  explicit launch selection;
+                                            otherwise oats-local.yaml souls.launch.<soul>,
+                                            then souls.launch."*", then the soul's launch:, then pi;
+                                            a harness uses its host default configuration if set;
+                                            none selects the bare harness; a named configuration
+                                            is a unit (a conflicting --harness is refused)
+      [--model <id>|@native-default]        override the selected model; @native-default
+                                            selects the harness's own model default
+      [--backend tmux] [--yolo|--no-yolo]    session backend and launch permission option
+      [--no-launch] [--json]                 scaffold without launching; JSON result envelope
+      [--allow-child-spawns|--no-child-spawns]  this instance's child-spawn policy (default:
+                                            allowed); enforced by OATS, not an OS sandbox
       [--provider <capability> <key>=<value>]  a provider setting for this spawn only
                                             (repeatable; dotted keys nest; recorded in
                                             instance.json providers.<capability>)
-      [--preview [--max-age <s>]]           decide everything, create nothing; the JSON's
-                                            decision binds an apply (--expect-decision <rev>);
-                                            --max-age reuses recent heads, on a preview and
-                                            on an apply bound by --expect-decision only
+      [--preview]                           decide everything, create no instance; --json
+                                            includes the decision revision for confirmation
+      [--expect-decision <rev>]              bind apply to the previewed decision; drift refuses
+      [--idempotency-key <key>]              with --expect-decision, replay the completed receipt
+                                            for the same key and confirmed decision; a different
+                                            decision conflicts, an unfinished spawn refuses
+      [--max-age <s>]                       reuse heads up to <s> seconds old (0-86400; 0 live),
+                                            on preview or --expect-decision apply only;
+                                            refused with --server; decision binding still holds
+      [--wake-file <json-file> | --wake-json <json-text>]  wake object: {cron, tz, message, enabled}
+                                            --wake-json wins over --wake-file; either overrides
+                                            --wake-every and --wake-cron
+      [--wake-every <N> | --wake-cron <expr>]  alternative: cron */N minutes (1-59) or explicit cron
+                                            requires --wake-message <text> or --wake-message-file <f>;
+                                            --wake-message-file wins over --wake-message
+      [--wake-tz <zone>]                     optional for cron/every (default: local zone);
+                                            saved after spawn, bound to the new home
+      --runtime <harness>                    compatibility alias for --harness (deprecated)
+      --instance <name>                      compatibility token for older routed hosts;
+                                            refused locally: use --purpose or --name
+      --trigger-event <json-file>            internal trigger-runner event input, copied to
+                                            <home>/.oats/trigger-event.json, exposed through
+                                            OATS_TRIGGER_EVENT_FILE and recorded in
+                                            instance.json.trigger (docs/schedules.md)
+      [--help|-h]                            global help switches: show usage and exit
+  oats spawn <agent> ... --server <id>        routed spawn on the server's installed oats;
+                                            --server is consumed before the local flag scanner
   oats retire <instance> [--force]           retire an instance (window, hooks,
       [--self]                              worktree, home); --self = retire the
       [--keep-dir] [--json]                 CALLING instance: the window dies, then

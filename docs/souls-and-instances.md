@@ -306,6 +306,12 @@ soul would, run it from the deployment with `OATS_INSTANCE_HOME` and
 
 ### Spawn
 
+`oats spawn --help` lists the existing spawn flags and their conditions; the
+spawn section of `oats help` contains the same inventory. Both work outside a
+deployment. Compatibility and internal inputs are labelled, including the
+locally refused legacy instance selector. For preview confirmation and receipt
+replay, see the [spawn decision and apply contract](desktop-cli-api.md#the-decision).
+
 ```bash
 oats spawn release-manager --purpose cut-3.2 --task "…"            # a soul of a confirmed member
 oats spawn release-manager --preview --json                        # decide everything, create nothing
