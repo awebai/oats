@@ -21,7 +21,7 @@
     "parent": "dev-owner",
     "sibling": null,
     "relation": null,
-    "spawnOrigin": "instance",
+    "spawnOrigin": "operator",
     "attach": "oats session attach --home <base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mstub",
     "launchConfig": null,
     "launch": {

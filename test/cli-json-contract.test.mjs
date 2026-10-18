@@ -235,7 +235,7 @@ test("a proposal's actual no-launch harvester identity crosses the public CLI JS
   assert.equal(doc.result.instance, "okf-harvester-json");
   const meta = JSON.parse(readFileSync(join(doc.result.home, "instance.json"), "utf8"));
   assert.equal(meta.work, "directory"); assert.equal(meta.launched, false);
-  assert.equal(meta.parentInstance, undefined); assert.equal(meta.spawnOrigin, "operator");
+  assert.equal(meta.parentInstance, undefined); assert.equal(meta.spawnOrigin, "instance");
   assert.equal(existsSync(join(doc.result.home, "work/input.json")), false);
   assert.equal(existsSync(join(doc.result.home, "work/staging.json")), false);
   assert.ok(readFileSync(join(doc.result.home, "TASK.md"), "utf8").includes(readFileSync(file, "utf8").trim()));
