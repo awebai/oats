@@ -477,7 +477,8 @@ try {
   assert.equal(workerMeta.agent, "oats-okf--knowledge-harvester");
   assert.equal(dirname(dirname(realpathSync(requested.home))), realpathSync(join(agentsRoot, "oats-okf--knowledge-harvester")), "package-soul harvester homes under the agents root");
   for (const key of ["parentInstance", "siblingInstance", "relation", "relativeTo"]) assert.equal(workerMeta[key], undefined, `${key}: unrelated is top-level`);
-  assert.equal(workerMeta.spawnOrigin, "operator");
+  // The source home's caller identity supplies attribution independently of lineage.
+  assert.equal(workerMeta.spawnOrigin, "instance");
   assert.deepEqual(readFileSync(join(probeHome, "instance.json")), sourceBefore, "proposal spawn does not change source lineage");
   assert.equal(workerMeta.capabilityMeta?.["oats.okf-harvest"], undefined, "source gate creates no compensation debt");
   assert.deepEqual(Object.keys(workerMeta.modules), ["oats.okf-harvest"], "harvester is knowledge:none with its own capability");

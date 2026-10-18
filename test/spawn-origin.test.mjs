@@ -2,9 +2,10 @@
 // the deployment helper supplies private HOME/cache/tmux paths and inert harnesses.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { fixtureBase } from "./helpers/host-fixture.mjs";
 import { rosterGroups, writeServers } from "../lib/servers.mjs";
 
 const record = (r) => JSON.parse(readFileSync(join(r.home, "instance.json"), "utf8"));
@@ -123,6 +124,10 @@ test("recorded origins survive later observations and keyed replay; parent polic
 
 test("remote rows relay host origins including historical and absent values", async (t) => {
   const fx = v2Deployment({ t });
+  // The fake transport exercises row facts, so leave room for ssh's expanded socket name.
+  const remoteHome = fixtureBase("o-");
+  t.after(() => rmSync(remoteHome, { recursive: true, force: true }));
+  fx.env.OATS_HOME_DIR = remoteHome;
   await fx.inEnv(async () => {
     writeServers({ fixture: { sshHost: "fixture.invalid", workspace: "/remote" } });
     const instances = [
