@@ -321,7 +321,7 @@
           "launchAt": null,
           "launchDeclared": null,
           "parentInstance": "dev-owner",
-          "spawnOrigin": "instance",
+          "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {
               "allowed": true,

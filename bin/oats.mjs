@@ -2839,9 +2839,8 @@ async function spawnCmd() {
   // Lineage is explicit: --relation child|sibling|parent|unrelated anchors the new
   // instance to --relative-to <instance>. --parent X is sugar for
   // --relative-to X --relation child (agents spawning sub-agents pass their own
-  // name, e.g. --parent "$OATS_INSTANCE"). Without a relation, the spawn is
-  // operator-origin and lands top-level — ambient env vars in the shell are
-  // never treated as parentage.
+  // name, e.g. --parent "$OATS_INSTANCE"). Without a relation, the spawn lands
+  // top-level; caller attribution never supplies parentage.
   const parent = flag("parent");
   if (parent !== undefined && (parent === true || !String(parent).trim())) bail("E_BAD_ARGS", "--parent needs an instance name");
   let relation = flag("relation");
@@ -4835,7 +4834,9 @@ Usage:
       [--relative-to <instance>]            new instance to an existing one; --parent X
       [--relative-root <agents-root>]       disambiguates same-named team anchors
       [--work worktree|checkout|attached|workspace|directory]  = sugar for --relative-to X --relation
-      [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux] [--yolo|--no-yolo] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
+      [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--base <ref>]  child (default: unrelated, top-level)
+                                            --base: worktree only; defaults to the soul
+                                            commit observed by spawn (#445)
       [--no-launch] [--json]                 without --launch-config/--harness the launch is the
                                             soul's preference: oats-local.yaml souls.launch.<soul>,
                                             then souls.launch."*", then the soul's launch:, then pi

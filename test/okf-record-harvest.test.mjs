@@ -25,7 +25,7 @@ test('a checkpoint passes only the own proposal; no native transcript or note sn
   const proposal = fs.readFileSync(file, 'utf8'), sourceBefore = fs.readFileSync(join(f.home, 'instance.json'));
   const run = f.propose({ file }), meta = readJSON(join(run.home, 'instance.json'));
   assert.equal(meta.launched, false); assert.equal(meta.work, 'directory');
-  assert.equal(meta.parentInstance, undefined); assert.equal(meta.spawnOrigin, 'operator');
+  assert.equal(meta.parentInstance, undefined); assert.equal(meta.spawnOrigin, 'instance');
   assert.equal(fs.lstatSync(join(run.home, 'work')).isSymbolicLink(), false);
   assert.deepEqual(Object.keys(meta.modules), ['oats.okf-harvest']);
   const task = fs.readFileSync(join(run.home, 'TASK.md'), 'utf8');

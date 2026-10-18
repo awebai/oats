@@ -2287,7 +2287,8 @@ it to a temporary copy (`soulFetched: true`).
   ([Instance names](#instance-names)). `home` and `worktree` (worktree mode,
   else `null`) are canonical: never derive paths.
 - `repo`: `--repo`, else the `clones:` entry, else `<deployment>/<member>`.
-- `branch` defaults to `agents/<instance>` (`--branch` overrides); `base` is
+- In worktree mode, `branch` defaults to `agents/<instance>` (`--branch <b>`
+  overrides); `base` is
   `--base` resolved to `oid`. Without `--base`, when `repo` is a clone of the
   soul's repository, `base` is `{ref: <repo key>, oid: <the commit the spawn
   observed>}`, fetched into the clone at apply (`E_REMOTE_UNREADABLE` when it
@@ -2494,6 +2495,39 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
   `E_INSTANCE_NAME_TAKEN {instance, home, session?}`; a typed name never gets
   a silent `-2`.
 - The name is part of the decision.
+
+### Spawn origin
+
+For new instances from OATS 0.64.0, `spawnOrigin` describes the caller:
+`instance` when `OATS_INSTANCE` and/or `OATS_INSTANCE_HOME` identify an extant
+instance home in this deployment, otherwise `operator`. It is recorded in
+`instance.json` and reported unchanged by the spawn result and status JSON.
+
+- A home alone must be absolute and resolve canonically to a home here, with a
+  readable instance record whose name agrees with its directory.
+- A name alone must resolve uniquely to such a home here.
+- With both supplied, the name and canonical home must agree. An explicit
+  valid home can disambiguate a duplicated historical name.
+- Invalid, stale, foreign or contradictory supplied evidence records
+  `operator`, with no fallback to another signal. The working directory,
+  `OATS_HOME`, `PI_AGENT_*`, relation and attached ownership do not supply
+  caller identity. A stopped but extant home counts; no process or tmux
+  liveness check is made.
+
+A shell, Desktop or console caller without valid instance context records
+`operator`, even with `--parent`. A caller with valid instance context records
+`instance`, even without a relation. A shell that inherits that context also
+records `instance`. `parentInstance`, `relativeTo` and `relation` still describe
+lineage independently; existing child-spawn policy enforcement is unchanged.
+This field is informational attribution, not agent-authorship proof, an
+identity credential, a security boundary or an authorization input. There is
+no flag to choose it.
+
+Existing homes keep their recorded value, including the relation-based meaning
+recorded by earlier kernels; an absent value stays absent in local status.
+Idempotent spawn replay returns the recorded value. Remote rows relay the
+host's value unchanged, including historical values, and use `null` when the
+host does not supply one. Consumers must allow for those historical meanings.
 
 <a id="spawn-errors"></a>
 ### Spawn errors

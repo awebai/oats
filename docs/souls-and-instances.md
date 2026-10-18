@@ -384,8 +384,7 @@ Spawn lineage is **explicit** and relation-based:
 declares what the new instance IS to an existing one (`--parent <instance>` is
 sugar for `--relative-to <instance> --relation child`):
 
-- **child**: nests under the anchor: `parentInstance` = anchor,
-  `spawnOrigin: instance`.
+- **child**: nests under the anchor: `parentInstance` = anchor.
 - **parent**: the NEW instance becomes the anchor's parent: it inherits the
   anchor's old lineage slot, and the anchor's `instance.json` is re-pointed so
   its `parentInstance` is the new instance (a reviewer/maintainer of your work
@@ -400,15 +399,25 @@ sugar for `--relative-to <instance> --relation child`):
   when one exists; when the anchor is a root, the new instance records an
   explicit `siblingInstance` link so the cluster is still derivable from
   `oats status --json` (`parentInstance` + `siblingInstance` edges).
-- **unrelated** (default): no link, operator-origin, top-level.
+- **unrelated** (default): no link, top-level.
 
 Attached-mode spawns are ALWAYS children of the owner of the shared work tree
 (the instance in whose home the tree is, as its `work/` or as one of its
 extra trees: see [`attached`](#attached--another-instances-tree)),
 because an attached agent serves that owner; relation flags other than a
-redundant child-of-owner are rejected. Any other spawn, including one from a
-shell that inherited an agent's environment variables, is operator-origin and
-appears top-level.
+redundant child-of-owner are rejected.
+
+`spawnOrigin` records the caller independently of these links. For new spawns
+from OATS 0.64.0, it is `instance` when the caller's `OATS_INSTANCE` and/or
+`OATS_INSTANCE_HOME` resolve consistently to an extant home in this deployment;
+otherwise it is `operator`. A stopped home counts. A shell, Desktop or console
+caller without that context records `operator` even with `--parent`; an instance
+caller records `instance` even without a relation. A shell inheriting valid
+instance context also records `instance`. This is informational attribution,
+not a security boundary or a permission check. Existing instances keep their
+recorded value, including the relation-based meaning recorded by older kernels.
+See [the caller resolution rules](desktop-cli-api.md#spawn-origin).
+
 Agents spawning sub-agents should pass `--parent "$OATS_INSTANCE"` (or the
 relation that fits).
 
@@ -1622,6 +1631,9 @@ directory is for, not a place to settle in.
 as `--repo`, then `oats-local.yaml` `clones:`, then `<deployment>/<member name>`
 (`E_CLONE_MISSING` / `E_CLONE_MISMATCH` otherwise — see
 [configuration.md](configuration.md)).
+
+`--branch <b>` overrides the branch name; `--base <ref>` overrides its start
+point. These options apply to worktree mode.
 
 The branch starts at the commit of the soul's repository that the spawn
 observed (the one it resolved the soul at), not at what the clone has checked

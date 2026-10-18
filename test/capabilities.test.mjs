@@ -713,8 +713,8 @@ test("inject eject is a removed verb", () => {
 test("spawn lineage is explicit: ambient env never sets parent; --parent and attached owner do", async (t) => {
   const fx = v2(t, { souls: { dev: { soul: { work: "checkout" } } } });
   const env = { PATH: fakeHarnesses(fx.base) };
-  // 1. Env-polluted shell (a terminal opened inside an agent's tmux window) WITHOUT
-  //    --parent: operator origin, top-level, and the task still lands in TASK.md.
+  // 1. An unresolved caller name supplies no valid instance context: operator
+  //    origin, top-level without --parent, and the task still lands in TASK.md.
   const polluted = { ...env, OATS_INSTANCE: "dev-existing", PI_AGENT_INSTANCE: "dev-existing" };
   let r = fx.cli(["spawn", "dev", "--task", "manual human task", "--purpose", "manual", "--no-launch", "--json"], { env: polluted });
   assert.equal(r.status, 0, r.stderr);
@@ -732,26 +732,26 @@ test("spawn lineage is explicit: ambient env never sets parent; --parent and att
   assert.equal(r.status, 0, r.stderr);
   const child = jsonResult(r);
   assert.equal(child.parent, manual.instance);
-  assert.equal(child.spawnOrigin, "instance");
+  assert.equal(child.spawnOrigin, "operator");
   assert.match(readFileSync(join(child.home, "TASK.md"), "utf8"), /task from a file/);
   // 4. --task without a value fails loudly instead of writing a broken TASK.md.
   r = fx.cli(["spawn", "dev", "--task", "--purpose", "oops", "--no-launch"], { env });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /--task needs a value/);
-  // 5. Kernel: attached mode still nests under the work-tree OWNER (no env, no parent).
+  // 5. Kernel: attached ownership supplies lineage; the unresolved caller stays operator.
   process.env.PATH = fakeHarnesses(fx.base);
   const oldInst = process.env.OATS_INSTANCE; const oldPiInst = process.env.PI_AGENT_INSTANCE;
   process.env.OATS_INSTANCE = "dev-existing"; process.env.PI_AGENT_INSTANCE = "dev-existing";
   try {
     const attached = await fx.spawn("dev", { instance: "dev-svc", work: "attached", workDir: join(manual.home, "work"), task: "attached task" });
     assert.equal(attached.parentInstance, manual.instance, "attached fallback: work-tree owner is the parent");
-    assert.equal(attached.spawnOrigin, "instance");
+    assert.equal(attached.spawnOrigin, "operator");
     assert.match(readFileSync(join(attached.home, "TASK.md"), "utf8"), /attached task/);
-    // 6. Kernel: explicit o.parent wins even for non-attached spawns; env is ignored.
+    // 6. Kernel: explicit o.parent supplies lineage; caller attribution stays operator.
     const nested = await fx.spawn("dev", { instance: "dev-sub", parent: manual.instance, task: "sub task" });
     assert.equal(nested.parentInstance, manual.instance);
-    assert.equal(nested.spawnOrigin, "instance");
-    // 7. Kernel: no parent, no attached fallback → operator, despite polluted env.
+    assert.equal(nested.spawnOrigin, "operator");
+    // 7. Kernel: no relation stays top-level; the unresolved caller stays operator.
     const top = await fx.spawn("dev", { instance: "dev-top" });
     assert.equal(top.parentInstance, undefined);
     assert.equal(top.spawnOrigin, "operator");
@@ -818,7 +818,7 @@ test("spawn relations: child/sibling/parent/unrelated, sugar equivalence, valida
   const kid = jsonResult(r);
   assert.equal(kid.parent, anchor.instance);
   assert.equal(kid.relation, "child");
-  assert.equal(kid.spawnOrigin, "instance");
+  assert.equal(kid.spawnOrigin, "operator");
   r = spawn("--purpose", "kid-sugar", "--parent", anchor.instance);
   assert.equal(r.status, 0, r.stderr);
   const sugar = jsonResult(r);
