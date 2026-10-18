@@ -190,6 +190,8 @@ test('separate-process read probes distinguish a reader-permitting reservation f
   holder=await holdSharedUntilPending(path,message=>t.diagnostic(message));
   await holder.arm();
   // EXCLUSIVE is only a controlled test stimulus, never benchmark reset SQL.
+  // Let an in-flight reader finish before measuring reader exclusion.
+  db.exec('PRAGMA busy_timeout = 2000');
   db.exec('BEGIN EXCLUSIVE');
   await holder.released();
   await new Promise(resolve=>setTimeout(resolve,80));
