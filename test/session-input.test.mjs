@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
-import { inputSessionTarget, inspectSessionTarget } from "../lib/session-input.mjs";
+import { createSessionPaneInspector, inputSessionTarget, inspectSessionTarget } from "../lib/session-input.mjs";
 const target = { backend: "tmux", socket: "/tmp/original.sock", session: "oats", window: "agent" };
 // The fake tmux answers each look at the pane (pane size, capture-pane, pane
 // size, in one call) from `screen({ enters, captures })`: a string at 80x24,
@@ -30,6 +30,67 @@ function fixture(output = "%12\t0\tcodex\t123\n", processes = "123 1 zsh\n", { s
     } };
 }
 const named = (io, name) => io.calls.filter((c) => c.args[0] === name);
+
+// Missing tmux labels are resolved from the pane's own process, never from
+// an unrelated shell or from the absence of a known harness name.
+for (const command of ["unset", ""]) {
+  const label = command || "empty";
+  test(`1381: ${label} command with a bare shell is present at a fallback prompt`, () => {
+    const io = fixture(`%12\t0\t${command}\t123\n`, "123 1 zsh\n999 1 custom-worker\n");
+    assert.deepEqual(inspectSessionTarget(target, io), { backend: "tmux", present: true, state: "shell", paneId: "%12" });
+  });
+  test(`1381: ${label} command with a live generic descendant remains unknown`, () => {
+    const io = fixture(`%12\t0\t${command}\t123\n`, "125 124 /opt/custom-worker\n124 123 /bin/-sh\n123 1 /bin/-zsh\n");
+    assert.deepEqual(inspectSessionTarget(target, io), { backend: "tmux", present: true, state: "unknown", paneId: "%12" });
+  });
+  test(`1381: ${label} command accepts basename and login-shell names with only shell descendants`, () => {
+    const io = fixture(`%12\t0\t${command}\t123\n`, "125 124 /bin/dash\n124 123 -sh\n123 1 /bin/-bash\n");
+    assert.deepEqual(inspectSessionTarget(target, io), { backend: "tmux", present: true, state: "shell", paneId: "%12" });
+  });
+  test(`1381: ${label} command without a readable own shell remains unknown`, () => {
+    for (const processes of ["123 1 /opt/custom-worker\n", "999 1 zsh\n", "123 1\n", "123 invalid zsh\n", "123 1 -\n", "123 1 /\n", ""]) {
+      const io = fixture(`%12\t0\t${command}\t123\n`, processes);
+      assert.deepEqual(inspectSessionTarget(target, io), { backend: "tmux", present: true, state: "unknown", paneId: "%12" }, JSON.stringify(processes));
+    }
+    for (const pid of ["", "not-a-pid"]) {
+      const io = fixture(`%12\t0\t${command}\t${pid}\n`);
+      assert.deepEqual(inspectSessionTarget(target, io), { backend: "tmux", present: true, state: "unknown", paneId: "%12" });
+    }
+  });
+}
+test("1381: optional and required shell reads share one successful process scan across panes", () => {
+  let scans = 0;
+  const inspect = createSessionPaneInspector({ exec(binary) {
+    assert.equal(binary, "ps"); scans++;
+    return "123 1 /bin/-zsh\n456 1 bash\n789 1 sh\n790 789 /opt/custom-worker\n";
+  } });
+  for (const [command, pid, state] of [["unset", "123", "shell"], ["", "456", "shell"], ["sh", "789", "unknown"]]) {
+    assert.deepEqual(inspect([`%12\t0\t${command}\t${pid}`]), { backend: "tmux", present: true, state, paneId: "%12" });
+  }
+  assert.equal(scans, 1, "one snapshot resolves different pane PIDs and command labels");
+});
+test("1381: failed optional scans stay unknown and cache the error for required shell reads", () => {
+  let scans = 0;
+  const failure = new Error("ps denied");
+  const inspect = createSessionPaneInspector({ exec(binary) { assert.equal(binary, "ps"); scans++; throw failure; } });
+  for (const command of ["unset", ""]) {
+    assert.deepEqual(inspect([`%12\t0\t${command}\t123`]), { backend: "tmux", present: true, state: "unknown", paneId: "%12" });
+  }
+  assert.throws(() => inspect(["%12\t0\tzsh\t123"]), (error) => error === failure);
+  assert.equal(scans, 1);
+});
+test("1381: dead, malformed, split and other labelled panes retain their observation rules", () => {
+  const inspect = createSessionPaneInspector({ exec() { assert.fail("these observations need no process scan"); } });
+  for (const command of ["unset", "", "custom-worker", "UNSET", " unset", "unset "]) {
+    assert.deepEqual(inspect([`%12\t1\t${command}\t123`]), { backend: "tmux", present: false, state: "stopped", paneId: "%12" });
+  }
+  for (const command of ["custom-worker", "UNSET", " unset", "unset "]) {
+    assert.deepEqual(inspect([`%12\t0\t${command}\t123`]), { backend: "tmux", present: true, state: "unknown", paneId: "%12" });
+  }
+  assert.throws(() => inspect(["garbage"]), /invalid tmux pane response/);
+  assert.throws(() => inspect(["%12\t0\tunset\t123", "%13\t0\tunset\t456"]), /multiple panes/);
+  assert.throws(() => inspect(["%12\t0\tzsh\tbad"]), /no pane process id/);
+});
 function receipt(io, result, verified) {
   assert.deepEqual(result, { backend: "tmux", present: true, state: "unknown", paneId: "%12", submitted: true, verified });
   for (const command of ["load-buffer", "paste-buffer", "send-keys"]) {

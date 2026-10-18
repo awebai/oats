@@ -11,7 +11,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { inspectInstanceSession } from "../lib/core.mjs";
+import { inspectInstanceSession, listInstances } from "../lib/core.mjs";
 import { setWaiting } from "../lib/instance-events.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -61,6 +61,46 @@ const NOTHING_OBSERVED = { exec: (binary, args) => assert.fail(`refused before a
 const PANE_PID = "4242";
 const pane = (command, dead = "0") => `%7\t${dead}\t${command}\t${PANE_PID}\t120\t40\n`;
 const tmuxError = (stderr) => Object.assign(new Error("tmux failed"), { stderr });
+
+test("1381: inspect and status resolve missing command labels from the same pane facts", async (t) => {
+  const name = "missing-command";
+  const { home } = await recordedHome(name, { launchConfig: "codex-yolo" });
+  for (const facts of [
+    { label: "unset bare shell", command: "unset", ps: `${PANE_PID} 1 zsh\n`, state: "shell", running: false },
+    { label: "empty bare shell", command: "", ps: `${PANE_PID} 1 /bin/-bash\n`, state: "shell", running: false },
+    { label: "unset non-shell", command: "unset", ps: `${PANE_PID} 1 /opt/custom-worker\n`, state: "unknown", running: true },
+    { label: "empty live descendant", command: "", ps: `${PANE_PID} 1 zsh\n4300 ${PANE_PID} /opt/custom-worker\n`, state: "unknown", running: true },
+    { label: "unset live descendant", command: "unset", ps: `${PANE_PID} 1 zsh\n4300 ${PANE_PID} /opt/custom-worker\n`, state: "unknown", running: true },
+    { label: "unset missing own PID", command: "unset", ps: "9999 1 zsh\n", state: "unknown", running: true },
+    { label: "empty denied process scan", command: "", ps: new Error("ps denied"), state: "unknown", running: true },
+  ]) {
+    await t.test(facts.label, async () => {
+      const seen = observing({ panes: pane(facts.command), ps: facts.ps });
+      const inspected = await fx.inEnv(() => inspectInstanceSession(home, { io: seen.io }));
+      assert.equal(inspected.present, true);
+      assert.equal(inspected.state, facts.state);
+      assert.equal(inspected.running, facts.running);
+      assert.deepEqual(seen.calls, { tmux: 1, ps: 1 });
+
+      const calls = { windows: 0, panes: 0, ps: 0 };
+      const io = { exec(binary, args) {
+        if (binary === "ps") { calls.ps++; if (facts.ps instanceof Error) throw facts.ps; return facts.ps; }
+        assert.equal(binary, "tmux");
+        assert.deepEqual(args.slice(0, 3), ["-u", "-S", SOCKET]);
+        if (args.includes("list-windows")) { calls.windows++; return `${name}\n`; }
+        assert.ok(args.includes("list-panes"), "status only reads windows and panes");
+        calls.panes++;
+        return `${name}\t%7\t0\t${facts.command}\t${PANE_PID}\n`;
+      } };
+      const rows = await fx.inEnv(() => listInstances(fx.root, SESSION, io));
+      const row = rows.flatMap((soul) => soul.instances).find((r) => r.home === home);
+      assert.ok(row, "the actual status listing includes the spawned home");
+      assert.equal(row.running, facts.running);
+      assert.equal(row.runtimeState, facts.state === "shell" ? "shell" : undefined);
+      assert.deepEqual(calls, { windows: 1, panes: 1, ps: 1 });
+    });
+  }
+});
 
 // The three harnesses, each with the command name its pane shows when it is the pane's own process.
 const HARNESSES = [
