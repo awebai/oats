@@ -4,7 +4,9 @@
 // workflow's terms in linux-tests-workflow.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
+import childProcess, { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FILE_TIMEOUT_MS, RETRY_PAUSE_MS, USER_MANAGER_WAIT_MS, askUserManager, linux, linuxPlatform, notYetReachable, prettyName, userManagerAnswer } from "../scripts/linux-tests.mjs";
@@ -78,6 +80,46 @@ test("linux-tests askUserManager: a manager that cannot be reached yet is asked 
   // The second step reads the state once, and does not wait for a manager that is not there.
   const once = starting("systemctl-starting-once", 3);
   assert.deepEqual({ ...askUserManager({ systemctl: once.systemctl, wait: false, waitMs: 10_000, env: process.env, pauseMs: 50 }), ms: 0 }, { answered: false, state: "unknown", waited: false, asks: 1, ms: 0 });
+});
+
+test("linux-tests askUserManager: keeps unknown when the remaining budget cannot fit another retry", (t) => {
+  const now = Date.now, wait = Atomics.wait, spawn = childProcess.spawnSync;
+  const probes = [], pauses = [];
+  let clock = 0, reads = 0, asked;
+  // Only the probe and pause move this clock. The last answer leaves exactly one pause's
+  // budget: preserve that unknown rather than spend the budget before another probe starts.
+  try {
+    Date.now = () => { assert.ok(++reads <= 100, "bounded clock reads"); return clock; };
+    Atomics.wait = (array, index, value, ms) => {
+      assert.equal(ms, 30);
+      pauses.push(ms);
+      clock += ms;
+      return "timed-out";
+    };
+    childProcess.spawnSync = (command, args, options) => {
+      probes.push({ at: clock, timeout: options.timeout });
+      assert.ok(probes.length <= 3, "no extra probe after the retry pause would exhaust the budget");
+      assert.equal(command, "guard-fixture-systemctl");
+      assert.deepEqual(args, ["--user", "is-system-running", "--wait"]);
+      clock += 10;
+      return { status: 1, stdout: "unknown\n", stderr: "" };
+    };
+    syncBuiltinESMExports();
+    asked = askUserManager({ systemctl: "guard-fixture-systemctl", wait: true, waitMs: 120, pauseMs: 30, env: {} });
+  } finally {
+    Date.now = now;
+    Atomics.wait = wait;
+    childProcess.spawnSync = spawn;
+    syncBuiltinESMExports();
+  }
+  assert.equal(Date.now, now);
+  assert.equal(Atomics.wait, wait);
+  assert.equal(childProcess.spawnSync, spawn);
+  assert.equal(spawnSync, spawn, "the owning module's named builtin binding is restored too");
+  assert.deepEqual(asked, { answered: false, state: "unknown", waited: true, asks: 3, ms: 90 });
+  assert.deepEqual(probes, [{ at: 0, timeout: 120 }, { at: 40, timeout: 80 }, { at: 80, timeout: 40 }]);
+  assert.deepEqual(pauses, [30, 30]);
+  t.diagnostic(JSON.stringify({ asked, probes, pauses }));
 });
 
 test("linux-tests askUserManager: a manager that never becomes reachable is refused at the bound, not at once", (t) => {
