@@ -121,7 +121,7 @@ test("linux-tests askUserManager: a manager that never becomes reachable is refu
   assert.equal(asked.answered, false);
   assert.ok(asked.asks > 2, `asked ${asked.asks} times`);
   assert.ok(asked.ms >= 800 - 50 && asked.ms < 5_000, `refused after ${asked.ms}ms`);
-  assert.equal(asked.state, "unknown");
+  assert.equal(asked.state, "no answer within 0.8s");
 });
 
 const A = "a".repeat(40), B = "b".repeat(40);
