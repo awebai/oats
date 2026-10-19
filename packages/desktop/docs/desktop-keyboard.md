@@ -6,8 +6,8 @@ for the default chords, the rules that chose them, how focus moves between the
 window's regions, and how each interactive element is reached and operated.
 
 Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
-`TERMINAL_ALLOWLIST`, `SIDEBAR_KEYS`), `packages/client/keymap.mjs` (the leader,
-its table and the plain keys, the TUI's), `renderer/leader.mjs` (the
+`TERMINAL_ALLOWLIST`, `SIDEBAR_KEYS`, `CHORDS_READ`), `packages/client/keymap.mjs`
+(the leader, its table, the plain keys and the chords, the TUI's too), `renderer/leader.mjs` (the
 leader's wait), `renderer/leader-keys.mjs` (which rows apply, the Desktop's
 labels), `renderer/leader-dispatch.mjs` (what each key does),
 `renderer/leader-hint.mjs` (the hint), `renderer/focus-regions.mjs` (F6),
@@ -293,6 +293,16 @@ pull request.
 
 Rebinding applies everywhere a chord is shown: tooltips, the footer hints, the
 palette's command details and the spawn dialog's Spawn button.
+
+**Shared with the TUI.** Eight of these chords are written down once, in
+`CHORDS` in `packages/client/keymap.mjs`, and `DEFAULT_KEYMAP` reads them from
+there (`CHORDS_READ`): the palette, Quick open (a spawn, in the TUI), close
+tab, next and previous tab, filter instances, split right and split down. The
+TUI takes the same chords as extras, where the terminal lets them through
+(docs/tui.md, "Chords"); the leader stays the key that always works.
+`test/keymap-shared.test.mjs` pins the whole default keymap, so reading them
+from there changed no chord. The stages' ⌘1–⌘3 / Ctrl+1–Ctrl+3 are the
+Desktop's own and are not shared.
 
 ### Sidebar keys
 

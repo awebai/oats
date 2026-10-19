@@ -20,6 +20,7 @@ import { CHANGE_FILES, admitDeployment, createReader, findDeployment, leaveInsta
 import { initialState, reduce } from "./store.mjs";
 import { captureRows } from "./term/capture.mjs";
 import { createKeyParser, keyId } from "./term/keys.mjs";
+import { confirmed } from "./term/kitty.mjs";
 import { createScreen, glyphs } from "./term/screen.mjs";
 import { colorEnabled } from "./term/style.mjs";
 import { backKeySequences, createThrough } from "./term/through.mjs";
@@ -126,7 +127,15 @@ export function createRunTimers({ setTimer, clearTimer }) {
  *  the terminal; the user's tui.json; the deployment; the kernel it shipped with; and, for a start
  *  outside every deployment with no `--dir`, this computer's deployments list, read through that
  *  kernel. */
-export async function main({ argv, stdin, stdout, stderr, env, proc = process, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, cwd = () => process.cwd(), home = homedir(), effects: given = EFFECTS }) {
+/** How long a run waits for the terminal's answer to the kitty keyboard protocol's query, in
+ *  milliseconds, before it pops the protocol and reads keys as before for the rest of the run
+ *  (docs/tui.md, "Chords"). A terminal answers as it reads the query, before any key typed after
+ *  it, so the wait only bounds a terminal that never answers; it is long enough for a slow link. */
+export const KEYBOARD_WAIT_MS = 2000;
+
+/** `keyboard`: whether the run asks the terminal for the kitty keyboard protocol (term/tty.mjs PUSH,
+ *  QUERY). Every run does; a test of a terminal that is never asked passes false. */
+export async function main({ argv, stdin, stdout, stderr, env, proc = process, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, cwd = () => process.cwd(), home = homedir(), keyboard = true, effects: given = EFFECTS }) {
   const effects = given === EFFECTS ? EFFECTS : { ...EFFECTS, ...given };
   const { options, error } = parseArgs(argv);
   if (error) { stderr.write(`${error}\n`); return 1; }
@@ -154,14 +163,23 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   const clock = () => new Date(now()).toISOString();
   const look = glyphs(env, { ascii: options.ascii || config.ascii });
   const screen = createScreen({ ...look, color: colorEnabled(env) });
-  let parser = createKeyParser({ now });
-  let state = initialState({ deployment: found.ok ? found.deployment : null, cli: probe.cli, home, entry: found.ok ? pendingEntry(null, clock()) : null, actions: config.actions, ascii: look.ascii, detachKey: config.detachKey });
+  let state = initialState({ deployment: found.ok ? found.deployment : null, cli: probe.cli, home, entry: found.ok ? pendingEntry(null, clock()) : null, actions: config.actions, ascii: look.ascii, platform: proc.platform, detachKey: config.detachKey });
   const keymap = bindings(state.actions);
+  // THE KITTY KEYBOARD PROTOCOL (docs/tui.md, "Chords"): asked for as the terminal is taken (the
+  // guard's PUSH and QUERY), "asking" until it answers or KEYBOARD_WAIT_MS passes, then the flags
+  // it confirmed (flag 1 held), or null for the rest of the run. The key parser and the scanner
+  // below are made with it, and each reads the answer itself when it comes through it.
+  let kb = keyboard ? "asking" : null, kbTimer = null;
+  /** The clock time the wait for the answer ends: what may begin it is held up to then. */
+  const answerBy = keyboard ? now() + KEYBOARD_WAIT_MS : null;
+  const newParser = () => createKeyParser({ now, keyboard: kb, chords: state.chords, answerBy });
+  let parser = newParser();
   // While a terminal has the focus the bytes typed go to the agent: this scanner takes from them
-  // only the back key and a bracketed paste (term/through.mjs). A new one each time the terminal
-  // takes the focus, so nothing held from before is typed into it.
+  // only the back key, the chords and a bracketed paste (term/through.mjs). A new one each time the
+  // terminal takes the focus, so nothing held from before is typed into it.
   const backKey = backKeySequences(state.detachKey);
-  let through = createThrough({ sequences: backKey, now }), throughTimer = null;
+  const newThrough = () => createThrough({ sequences: backKey, now, keyboard: kb, leader: state.leaderKey, chords: state.chords, answerBy });
+  let through = newThrough(), throughTimer = null;
   if (listedAtStart) state = reduce(state, { listed: { rows: listedAtStart } }, keymap).state;
   // What the last frame drew, for the store: how tall the list pane is and how far the other
   // pane scrolls. The store holds no size of its own; the panel's room goes with each key as it
@@ -667,13 +685,35 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     for (const event of events) {
       if (event.input) { if (keysReady()) panel.input(event.input); }
       else if (event.paste !== undefined) { if (keysReady()) panel.paste(event.paste); }
+      else if (event.keyboard !== undefined) answered(event.keyboard);
       else if (event.back) {
-        parser = createKeyParser({ now });
+        parser = newParser();
         if (took(reduce(state, { back: true, read: ++reads, rest: event.rest.length > 0 }, keymap))) return;
+        guard.draw();
+      } else if (event.chord !== undefined) {
+        // A chord from the terminal's focus is the leader then its key (the store's `led`): it never
+        // reaches the agent, and the rest of its read is dropped, as after the leader's key.
+        parser = newParser();
+        if (took(reduce(state, { chord: event.chord, read: ++reads, ...drawn, panel: placed()?.panel ?? null }, keymap))) return;
         guard.draw();
       }
     }
     watchThrough();
+  }
+  /** The terminal's answer to the protocol's query (`flags`), or none in time (null): the protocol is
+   *  read from now on when the answer holds flag 1, and popped otherwise; an answer after that is
+   *  not taken. The parser or the scanner that read the answer reads the rest of its read as it
+   *  says; the other is made again. */
+  function answered(flags) {
+    if (kb !== "asking") return;
+    if (kbTimer !== null) { clearTimer(kbTimer); kbTimer = null; }
+    kb = confirmed(flags) ? flags : null;
+    guard.keyboardAnswered(kb !== null);
+    if (parser.keyboard === "asking") parser = newParser();
+    // What the scanner held as a possible beginning of the answer is the agent's after all.
+    const released = through.giveUp();
+    if (released.length && typing()) typed(released);
+    if (kb !== null) { state = reduce(state, { keyboard: kb }, keymap).state; guard.draw(); }
   }
   /** Whether the keys typed now reach the agent the state gives them to, the focused group's shown
    *  tab: the panel is fitted to the state first when it was not, also while no frame is written
@@ -694,7 +734,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     if (due !== null) throughTimer = setTimer(() => { throughTimer = null; guard.attempt(() => { if (typing()) typed(through.expire()); }); }, Math.max(0, due - now()));
   }
   const guard = createGuard({
-    stdin, stdout, proc, setTimer, clearTimer,
+    stdin, stdout, proc, setTimer, clearTimer, keyboard: kb === "asking",
     frame() {
       const { size, g, area, made } = composed();
       drawn = { page: made.page, extent: made.extent, room: made.room, cols: g.listCols, area };
@@ -754,10 +794,11 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   function act(events) {
     const read = ++reads;
     for (const event of events) {
+      if (event.keyboard !== undefined) { answered(event.keyboard); continue; }
       if (took(reduce(state, "paste" in event ? { paste: event.paste, read } : { key: keyId(event), ...(typeof event.text === "string" && !event.alt ? { text: event.text } : {}), read, ...drawn, panel: placed()?.panel ?? null }, keymap))) return;
       if (typing()) {
         if (escTimer !== null) { clearTimer(escTimer); escTimer = null; }
-        through = createThrough({ sequences: backKey, now });
+        through = newThrough();
         break;
       }
     }
@@ -771,6 +812,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   }
 
   guard.start();
+  // At the wait's end what the key parser kept as a possible beginning of the answer is read as typed.
+  if (kb === "asking" && !ended) kbTimer = setTimer(() => { kbTimer = null; guard.attempt(() => { const released = parser.giveUp(); answered(null); if (released.length && !typing()) act(released); watchEscape(); }); }, Math.max(0, answerBy - now()));
   guard.attempt(() => { if (!ended) Promise.resolve(reader.start()).catch(() => {}); });
   if (found.ok) guard.attempt(() => { if (!ended) listStart(found.deployment); });
   guard.attempt(() => guard.draw());
@@ -780,6 +823,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   const end = await guard.done;
   if (escTimer !== null) clearTimer(escTimer);
   if (throughTimer !== null) clearTimer(throughTimer);
+  if (kbTimer !== null) clearTimer(kbTimer);
   // After the alternate screen is left, so the message stays on the screen the user returns to.
   // One line per change still running, to a terminal or a file only; the status never depends on it.
   const running = reader.changes?.() ?? [];

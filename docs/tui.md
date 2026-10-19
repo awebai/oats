@@ -357,7 +357,9 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   key go to the agent exactly as typed, `Ctrl+C`, `Ctrl+Z`, `Esc` and `q`
   among them, but for **[the leader](#the-leader)** (`Alt+O`, `Ctrl+\` on
   macOS, unless [`tui.json`](#change-the-keys-tuijson) names another), the
-  one key the TUI takes from the agent. The leader then `Esc` gives the
+  one key the TUI takes from the agent, and the [chords](#chords) while your
+  terminal sends them. Under the kitty keyboard protocol every key reaches
+  the agent as the bytes it sends without it. The leader then `Esc` gives the
   focus to the list; the leader twice types the leader into the agent; the
   leader then another key does what that key does from anywhere. While the
   terminal has the focus the cheat sheet names those three:
@@ -1060,6 +1062,7 @@ The line after leaving says so and names `oats status` to see it.
 | `\|`, `-` | in the Instances view, [splits](#splits) the panel side by side or one above the other |
 | `Alt+O` (`Ctrl+\` on macOS) | [the leader](#the-leader), from every focus ([`tui.json`](#change-the-keys-tuijson) can name another key) |
 | `Ctrl+K` | opens [the palette](#the-palette); `Ctrl+K` again closes it |
+| `Ctrl+Shift+K`, `Ctrl+Tab` and the other [chords](#chords) | where your terminal sends them, what the leader then a key does, from every focus |
 | `X`, `D`, `S`, `R` | stop, retire, start, restart the selected agent, [after a confirmation](#stopping-starting-restarting-and-retiring) |
 | `n` | [spawns an agent](#spawning-an-agent): the soul picker, then the preview |
 | `N` | spawns another of the selected instance's soul: its preview |
@@ -1081,12 +1084,12 @@ instance can always be read, however many they are. The selection stays
 where it is, and the list returns to it at the next key that moves it.
 
 The help screen is generated from the table the program acts on, so it
-always lists the keys that work, the leader's among them, the palette's
-and the spawn prompt's, with the marks and with what this version does not
-do. Its top row has the time of the read and the count of withheld rows
+always lists the keys that work, the leader's among them, the chords while
+your terminal sends them, the palette's and the spawn prompt's, with the
+marks and with what this version does not do. Its top row has the time of the read and the count of withheld rows
 ([What it shows](#what-it-shows)). The movement keys scroll it. While
 a terminal has the focus the table's keys are the agent's: the leader alone
-is the TUI's.
+is the TUI's, with the chords while your terminal sends them.
 
 ### The leader
 
@@ -1140,7 +1143,9 @@ to use Option as Meta.
   two keys reaches the agent unchanged: in vim that is "leave insert mode,
   open a line". Over a slow link two keys typed apart can arrive in one
   read and act as the leader, and one `Alt+O` can arrive split and reach
-  the agent as `Esc` and `o`.
+  the agent as `Esc` and `o`. Under the kitty keyboard protocol
+  ([Chords](#chords)) there is no timing: `Alt+O` is one sequence and `Esc`
+  another, so each is told exactly, in a terminal and in the list.
 - **In the list no leader is needed:** the plain keys work as they always
   have, and the leader works there too.
 - **What was open under it is settled first,** from whatever view: a
@@ -1151,6 +1156,70 @@ to use Option as Meta.
   `w` do nothing with no terminal open.
 - **The table is fixed** in this version: `keys` in `tui.json` rebinds the
   plain keys, and `open.detachKey` the leader.
+
+### Chords
+
+Where your terminal lets them through, the OATS Desktop's Ctrl+Shift chords
+work in `oats tui` too, as extras: each does what the leader then a key
+does, from every focus, a terminal's too, and never reaches the agent. The
+leader stays the key that always works, and the cheat sheet does not name
+the chords.
+
+| Chord (Linux and Windows) | Does: the leader then |
+|---|---|
+| `Ctrl+Shift+K` | `k`, the palette |
+| `Ctrl+Shift+P` | `n`, spawn an agent |
+| `Ctrl+Tab`, `Ctrl+Shift+Tab` | `Right`, `Left`: the next or the previous tab |
+| `Ctrl+Shift+W` | `w`, close the shown terminal |
+| `Ctrl+Shift+F` | `/`, the filter |
+| `Ctrl+Shift+E`, `Ctrl+Shift+O` | `\|`, `-`: split right, split down |
+
+On macOS the Desktop's chords hold ⌘, which a terminal never passes to a
+program: there `Ctrl+Tab` and `Ctrl+Shift+Tab` are the only chords. The
+chords are the Desktop's (`CHORDS` in `packages/client/keymap.mjs`), and the
+TUI keeps no copy. The Desktop's Ctrl+1, Ctrl+2 and Ctrl+3 (its stages) are
+its own.
+
+- **Only where the terminal says it can.** A terminal sends these keys apart
+  from `Ctrl+K`, `Ctrl+P` and the others only under the kitty keyboard
+  protocol. As it takes the terminal, `oats tui` asks for the protocol with
+  flags 1 and 4 (`CSI > 5 u`) and asks the terminal which flags it has
+  (`CSI ? u`). Only when the answer holds flag 1 does it read the protocol,
+  take the chords and list them in the help. With no answer within 2
+  seconds, or one without flag 1, it pops the protocol, and the rest of the
+  run is as without it. The answer may come split and late over a slow
+  link, so until it comes (at most those 2 seconds) an `Esc` pressed on its
+  own may wait for the next key or for the wait's end, as it may begin the
+  answer. foot, Ghostty, kitty, Alacritty and WezTerm answer.
+  GNOME Terminal and the other VTE terminals, and Terminal.app, do not:
+  there the chords are absent.
+- **Your terminal may take some first.** foot takes Ctrl+Shift+C, V, R, N,
+  O, U, Z, X and Q for itself, so `Ctrl+Shift+O` never reaches `oats tui`
+  there. The help says so.
+- **Every other key reads as it does without the protocol.** `Ctrl+Shift+L`
+  is `Ctrl+L`, `Ctrl+Enter` is `Enter`, and so on: the protocol only adds
+  the chords, and tells `Alt+O` from `Esc` then `o` exactly
+  ([The leader](#the-leader)).
+- **An agent gets what it gets without the protocol.** Every key typed
+  into an agent's terminal is turned back into the bytes the same key sends
+  without it, the legacy encoding of xterm and the terminals that follow it:
+  text, Shift, Ctrl, Alt, Esc, Tab, Enter, Backspace, the arrows, the
+  function keys and the keypad, with their modifiers. The TUI types those
+  bytes into the agent's viewer (`tmux attach` on the agents' server). It
+  changes no tmux setting, `extended-keys` included, so the agent's program
+  gets the same bytes as before. A key that sends nothing without the
+  protocol (F13 and above, the media keys) is not typed.
+- **One limit: Shift with Alt or Ctrl on a key that is not a letter.** With
+  flag 4 the terminal says which character Shift makes on your layout, and
+  the TUI types exactly that. A terminal that confirms flag 1 alone does not
+  say, and then the TUI uses the US layout's character for the 21 keys that
+  are not letters (`Shift+Alt+2` is `Alt+@`), which your layout may not
+  make.
+- **It is always popped** (`CSI < u`): on every way out
+  ([below](#what-it-changes-in-your-terminal-and-restores)), at a suspend
+  (and pushed again on return), and before any other program is given the
+  terminal: the shell at a suspend is the only one `oats tui` ever gives
+  it to.
 
 ### The palette
 
@@ -1594,10 +1663,15 @@ This is the complete list. On start, in this order:
 2. the alternate screen (`CSI ?1049h`), so your scrollback is untouched;
 3. the cursor hidden (`CSI ?25l`);
 4. autowrap off (`CSI ?7l`);
-5. bracketed paste on (`CSI ?2004h`).
+5. bracketed paste on (`CSI ?2004h`);
+6. the kitty keyboard protocol pushed, with flags 1 and 4 (`CSI > 5 u`), and
+   the terminal asked which flags it has (`CSI ? u`); a terminal that does
+   not know the protocol ignores both. With no answer in 2 seconds it is
+   popped ([Chords](#chords)).
 
-On the way out, the reverse: bracketed paste off, autowrap on, the style
-reset (`CSI 0m`), the cursor shown, the alternate screen left, raw mode off.
+On the way out, the reverse: the protocol popped (`CSI < u`), bracketed
+paste off, autowrap on, the style reset (`CSI 0m`), the cursor shown, the
+alternate screen left, raw mode off.
 
 While it draws:
 
@@ -1664,10 +1738,11 @@ alone. The next run removes the directory that is left, with its `tmux`,
 ## What it never does
 
 - It switches on **no mouse reporting, no focus reporting, no keyboard
-  protocol and no keypad or cursor-key mode**, and leaves no synchronized
-  update on between frames.
+  protocol but the kitty one with flags 1 and 4 ([Chords](#chords)), and no
+  keypad or cursor-key mode**, and leaves no synchronized update on between
+  frames.
 - It writes **no window title, no clipboard sequence, no bell**, and no query
-  that expects the terminal to reply.
+  that expects the terminal to reply but the kitty keyboard protocol's.
 - **Its own words and marks use only your terminal's own sixteen colours**
   and bold, dim, underline and reverse: no 256-colour or RGB value and no
   background fill, so your theme stays the theme. An open terminal shows

@@ -18,11 +18,11 @@
 // same policy for the menu accelerators.
 // docs/desktop-keyboard.md is the keymap's reference.
 //
-// The leader and the plain keys the Desktop shares with the TUI are written down once, in
-// packages/client/keymap.mjs: DEFAULT_KEYMAP reads app.leader and the sidebar.key.* defaults
-// from there (chordFromKeyId), never a literal of its own.
+// The leader, the plain keys and the chords the Desktop shares with the TUI are written down once,
+// in packages/client/keymap.mjs: DEFAULT_KEYMAP reads app.leader, the sidebar.key.* defaults and
+// the chords of CHORDS_READ from there (chordFromKeyId), never a literal of its own.
 
-import { LEADER, PLAIN_KEYS } from "../../client/keymap.mjs";
+import { CHORDS, LEADER, PLAIN_KEYS } from "../../client/keymap.mjs";
 
 const STORAGE_KEY = "oats-desktop-keymap";
 
@@ -160,19 +160,22 @@ const NAMED_KEY_IDS = new Map([
 ]);
 
 /** A key id of the shared keymap (packages/client/keymap.mjs, the TUI's spelling: `alt+o`,
- * `ctrl+\\`, `N`, `?`) as this engine's canonical chord string (`Alt+O`, `Ctrl+\\`, `Shift+N`, `?`). */
+ * `ctrl+\\`, `N`, `?`, `ctrl+shift+k`, and `cmd+` for ⌘) as this engine's canonical chord string
+ * (`Alt+O`, `Ctrl+\\`, `Shift+N`, `?`, `Ctrl+Shift+K`, `Mod+K`). */
 export function chordFromKeyId(keyId) {
   let rest = String(keyId || "");
   const chord = { key: "", mod: false, ctrl: false, alt: false, shift: false };
   for (;;) {
-    if (rest.startsWith("ctrl+") && rest.length > 5) { chord.ctrl = true; rest = rest.slice(5); }
+    if (rest.startsWith("cmd+") && rest.length > 4) { chord.mod = true; rest = rest.slice(4); }
+    else if (rest.startsWith("ctrl+") && rest.length > 5) { chord.ctrl = true; rest = rest.slice(5); }
     else if (rest.startsWith("alt+") && rest.length > 4) { chord.alt = true; rest = rest.slice(4); }
+    else if (rest.startsWith("shift+") && rest.length > 6) { chord.shift = true; rest = rest.slice(6); }
     else break;
   }
   if (NAMED_KEY_IDS.has(rest)) chord.key = baseKey(NAMED_KEY_IDS.get(rest));
   else if ([...rest].length === 1) {
     chord.key = rest.toLowerCase();
-    chord.shift = rest !== chord.key; // a capital letter is Shift and the letter
+    chord.shift ||= rest !== chord.key; // a capital letter is Shift and the letter
   } else return null;
   return chordToString(settleChord(chord));
 }
@@ -229,6 +232,20 @@ export const SIDEBAR_KEYS = Object.freeze([
 
 const plainDefault = (does) => chordFromKeyId(PLAIN_KEYS.find((entry) => entry.does === does)?.keys[0]) ?? null;
 
+// The chords the Desktop shares with the TUI (packages/client/keymap.mjs CHORDS), by the action that
+// reads each and its `does`. One string where both platforms have the same chord.
+export const CHORDS_READ = Object.freeze([
+  ["app.palette", "palette"], ["app.quickOpenSouls", "spawn"],
+  ["tabs.next", "tab-next"], ["tabs.prev", "tab-previous"], ["tabs.close", "close-terminal"],
+  ["sidebar.focusFilter", "filter"], ["split.vertical", "split-right"], ["split.horizontal", "split-down"],
+].map(([id, does]) => Object.freeze({ id, does })));
+function chordDefault(does) {
+  const entry = CHORDS.find((each) => each.does === does);
+  const mac = chordFromKeyId(entry.mac), other = chordFromKeyId(entry.other);
+  return mac === other ? mac : { mac, other };
+}
+const chordOf = (id) => chordDefault(CHORDS_READ.find((each) => each.id === id).does);
+
 export const DEFAULT_KEYMAP = Object.freeze({
   // The leader (docs/desktop-keyboard.md, "The leader"): the TUI's, read from the shared keymap.
   // Ctrl+\ on macOS fires in a terminal by name (macStructuralChord); Alt+O on Linux/Windows is
@@ -239,8 +256,8 @@ export const DEFAULT_KEYMAP = Object.freeze({
   "split.focusNextGroup": null,
   // Ctrl+Shift+K / Ctrl+Shift+P on Linux/Windows: plain Ctrl+K and Ctrl+P are bytes a program
   // reads (readline's kill-line, shell history); the shifted chords are none.
-  "app.palette": { mac: "Mod+K", other: "Ctrl+Shift+K" },
-  "app.quickOpenSouls": { mac: "Mod+P", other: "Ctrl+Shift+P" },
+  "app.palette": chordOf("app.palette"),
+  "app.quickOpenSouls": chordOf("app.quickOpenSouls"),
   "app.chooseSoul": { mac: "Mod+N", other: "Ctrl+Shift+N" },
   "app.shortcuts": "Mod+,",
   // No default (spec F): ⌘⇧T is "reopen closed tab" in browsers and Ctrl+Shift+T "new tab" in
@@ -253,14 +270,14 @@ export const DEFAULT_KEYMAP = Object.freeze({
   "stage.hierarchy": "Mod+1",
   "stage.spawn": "Mod+2",
   "stage.automations": "Mod+3",
-  "tabs.next": "Ctrl+Tab",
-  "tabs.prev": "Ctrl+Shift+Tab",
+  "tabs.next": chordOf("tabs.next"),
+  "tabs.prev": chordOf("tabs.prev"),
   "tabs.nextPage": { mac: null, other: "Ctrl+PageDown" },
   "tabs.prevPage": { mac: null, other: "Ctrl+PageUp" },
   // ⌘⌥1–⌘⌥9 on macOS (⌘1–⌘3 are the stages; ⌃digits are control bytes a program reads);
   // Alt+1–Alt+9 elsewhere (GNOME Terminal, Firefox), outside a terminal only. 9 is the last tab.
   ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tabs.goto${i + 1}`, { mac: `Mod+Alt+${i + 1}`, other: `Alt+${i + 1}` }])),
-  "tabs.close": { mac: "Mod+W", other: "Ctrl+Shift+W" },
+  "tabs.close": chordOf("tabs.close"),
   // F6 / Shift+F6 cycle regions outside a terminal (mc, htop and nano read F6 in one);
   // ⌘⇧F6 / Ctrl+Shift+F6 leaves a terminal for the next region, after which F6 works.
   "focus.nextRegion": "F6",
@@ -268,11 +285,11 @@ export const DEFAULT_KEYMAP = Object.freeze({
   "focus.leaveTerminal": "Mod+Shift+F6",
   // Ctrl+Shift+F / Ctrl+Shift+B on Linux/Windows: plain Ctrl+F and Ctrl+B are bytes a program
   // reads (readline's forward-char, the tmux prefix); the shifted chords are none.
-  "sidebar.focusFilter": { mac: "Mod+F", other: "Ctrl+Shift+F" },
+  "sidebar.focusFilter": chordOf("sidebar.focusFilter"),
   "sidebar.toggle": { mac: "Mod+B", other: "Ctrl+Shift+B" },
   // Terminator / Tilix: Ctrl+Shift+E splits right, Ctrl+Shift+O splits down.
-  "split.vertical": { mac: "Mod+\\", other: "Ctrl+Shift+E" },
-  "split.horizontal": { mac: "Mod+Shift+\\", other: "Ctrl+Shift+O" },
+  "split.vertical": chordOf("split.vertical"),
+  "split.horizontal": chordOf("split.horizontal"),
   "split.close": { mac: "Mod+Alt+W", other: "Ctrl+Shift+Alt+W" },
   // The instance panel (the right-hand panel). Ctrl+Shift+I on Linux/Windows: plain Ctrl+I is
   // the Tab byte, which stays with the program.

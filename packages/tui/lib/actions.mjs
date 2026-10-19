@@ -9,7 +9,7 @@
 // takes its default keys from the shared keymap (packages/client/keymap.mjs PLAIN_KEYS), and the
 // leader's table is the shared one (LEADER, below). What only the TUI has (q, Ctrl+C, Ctrl+Z, Ctrl+L,
 // Ctrl+K, Tab, Esc, Delete, C, i) keeps its keys here. packages/tui/test/keymap.test.mjs pins both.
-import { LEADER_TABLE, plainKeys } from "./client.mjs";
+import { CHORDS, LEADER_TABLE, plainKeys } from "./client.mjs";
 import { isBackKey } from "./term/through.mjs";
 
 export const ACTIONS = Object.freeze([
@@ -99,6 +99,17 @@ export const LEADER_OWN = Object.freeze(["previous", "next", "list"]);
 export const leaderHandles = (does) => LEADER_OWN.includes(does) || ACTIONS.some((action) => action.id === does);
 /** key id -> what the leader then does (LEADER's `does`). */
 export const LEADER_KEYS = new Map(LEADER.flatMap((entry) => entry.keys.map((key) => [key, entry.does])));
+
+/** THE CHORDS (docs/tui.md, "Chords"): key id -> `does`, the shared ones (packages/client/keymap.mjs
+ *  CHORDS) on macOS (`isMac`) or elsewhere, each doing what the leader then its key does
+ *  (lib/store.mjs `led`). Read only while the terminal confirms the kitty keyboard protocol, which
+ *  alone sends them. Left out: a chord with `cmd+` (a terminal never passes macOS's Command to a
+ *  program), and one whose key an action of `actions` binds (a user's tui.json keeps its key).
+ *  Each `does` is one the TUI handles (leaderHandles): packages/tui/test/chords.test.mjs. */
+export function chordKeys(isMac, actions = ACTIONS) {
+  const bound = new Set(actions.flatMap((action) => action.keys));
+  return new Map(CHORDS.map((entry) => [isMac ? entry.mac : entry.other, entry.does]).filter(([key, does]) => !key.startsWith("cmd+") && !bound.has(key) && leaderHandles(does)));
+}
 
 /** key id -> action id. A key bound twice is a defect of the table, refused when it is read. */
 export function bindings(actions = ACTIONS) {

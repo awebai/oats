@@ -2,6 +2,7 @@
 // what was written to a terminal, and a reader of a view's rows. No test here needs a terminal.
 import { EventEmitter } from "node:events";
 import { textOf } from "../lib/term/text.mjs";
+import { KEYBOARD_FLAGS } from "../lib/term/kitty.mjs";
 
 /** A terminal's output side. `log` (shared with the input side) records the order of acts. */
 export function fakeStdout({ columns = 80, rows = 24, isTTY = true, log = [] } = {}) {
@@ -60,12 +61,13 @@ export function fakeTimers() {
 
 /** The sequences the TUI itself may write, each a full match of one CSI sequence's body
  *  (what follows `ESC [`): a position, the two erases, an SGR of the allowed parameters, the four
- *  private modes, and the synchronized update (DEC 2026) set and reset around every frame, a kind
- *  of its own. docs/tui.md states the same list for operators. An agent's own styles, drawn only in
+ *  private modes, the synchronized update (DEC 2026) set and reset around every frame, a kind
+ *  of its own, and the kitty keyboard protocol's push, query and pop (term/tty.mjs PUSH, QUERY, POP). docs/tui.md states the same list for operators. An agent's own styles, drawn only in
  *  the terminal panel, are no SGR of this list: a test of the panel reads them on their own. */
 const SGR_ALLOWED = new Set([0, 1, 2, 4, 7, ...Array.from({ length: 8 }, (_, i) => 30 + i), ...Array.from({ length: 8 }, (_, i) => 90 + i)]);
 export const OWN_MODES = Object.freeze([1049, 25, 7, 2004]);
 function ownSequence(body) {
+  if (body === `>${KEYBOARD_FLAGS}u` || body === "?u" || body === "<u") return "keyboard";
   if (/^[1-9]\d*;[1-9]\d*H$/.test(body)) return "position";
   if (body === "K" || body === "2J") return "erase";
   const sgr = /^(\d+(?:;\d+)*)m$/.exec(body);
@@ -83,7 +85,7 @@ export function readTerminalOutput(output) {
   let text = "";
   for (let i = 0; i < output.length; i++) {
     if (output[i] !== "\x1b") { text += output[i]; continue; }
-    const csi = /^\x1b\[([0-9;?]*[A-Za-z])/.exec(output.slice(i, i + 32));
+    const csi = /^\x1b\[([0-9;?<>]*[A-Za-z])/.exec(output.slice(i, i + 32));
     const kind = csi ? ownSequence(csi[1]) : null;
     if (!kind) { foreign.push(JSON.stringify(output.slice(i, i + 12))); continue; }
     sequences.push({ kind, body: csi[1] });

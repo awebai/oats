@@ -1,11 +1,13 @@
 // The guard: everything the TUI changes in the terminal, and the promise that it is put back.
-// With term/screen.mjs it is the only module that produces an ESC byte. docs/tui.md lists the
-// changes for operators; ENTER and LEAVE below are that list, and nothing else is ever switched on:
-// no mouse or focus reporting, no keyboard protocol, no keypad or cursor-key mode, no title, no
-// clipboard, no bell, no query that expects a reply.
+// With term/screen.mjs it is the only module that writes an ESC byte to the terminal. docs/tui.md
+// lists the changes for operators; ENTER and LEAVE below are that list, with the kitty keyboard
+// protocol (PUSH, QUERY, POP), and nothing else is ever switched on: no mouse or focus reporting, no
+// keypad or cursor-key mode, no title, no clipboard, no bell, and no query but the protocol's.
 //
 // Handing the terminal to someone else (the shell at a suspend) is leave() and enter(), and only
 // that pair. An agent's terminal is never handed the terminal: the TUI draws it (lib/panel.mjs).
+
+import { KEYBOARD_FLAGS } from "./kitty.mjs";
 
 const mode = (number, on) => `\x1b[?${number}${on ? "h" : "l"}`;
 /** After raw mode: the alternate screen, the cursor hidden, autowrap off, bracketed paste on.
@@ -15,6 +17,13 @@ const mode = (number, on) => `\x1b[?${number}${on ? "h" : "l"}`;
 export const ENTER = mode(1049, true) + mode(25, false) + mode(7, false) + mode(2004, true);
 /** The reverse, with the style reset; then raw mode off. */
 export const LEAVE = mode(2004, false) + mode(7, true) + "\x1b[0m" + mode(25, true) + mode(1049, false);
+/** The kitty keyboard protocol (term/kitty.mjs; docs/tui.md, "Chords"): pushed with the flags the TUI
+ *  asks for, on the alternate screen (a terminal keeps one stack of flags per screen), and asked
+ *  about; popped before the alternate screen is left, on every way out, at a suspend, and before any
+ *  other program is given the terminal. A terminal that does not know it ignores all three. */
+export const PUSH = `\x1b[>${KEYBOARD_FLAGS}u`;
+export const QUERY = "\x1b[?u";
+export const POP = "\x1b[<u";
 
 /** 128 + the signal's number, as a shell reports a process the signal ended. */
 export const SIGNAL_STATUS = Object.freeze({ SIGINT: 130, SIGTERM: 143, SIGHUP: 129, SIGQUIT: 131 });
@@ -28,8 +37,11 @@ export function isTerminal({ stdin, stdout, env }) {
   return stdin.isTTY === true && stdout.isTTY === true && typeof env.TERM === "string" && env.TERM !== "" && env.TERM !== "dumb";
 }
 
-/** The guard of one run. `frame()` answers the bytes of the newest frame when it is time to write
- *  one; `onInput(bytes)`, `onResize()` and `onRedraw()` (the screen must be drawn in full: after a
+/** The guard of one run. `keyboard` true asks for the kitty keyboard protocol: PUSH and QUERY after
+ *  ENTER; then `keyboardAnswered(true)` keeps it (it is pushed again after every LEAVE and ENTER),
+ *  and `keyboardAnswered(false)` (an answer without flag 1, or none in time) pops it and never
+ *  pushes it again. While pushed, every LEAVE is written after POP. `frame()` answers the bytes of
+ *  the newest frame when it is time to write one; `onInput(bytes)`, `onResize()` and `onRedraw()` (the screen must be drawn in full: after a
  *  suspend, after SIGCONT) are the events. `done` resolves once, with `{ status, error }`, after the
  *  terminal is restored and every listener is removed.
  *  Three more, for whoever started work that outlives a frame (the reads of lib/read.mjs), each
@@ -37,8 +49,15 @@ export function isTerminal({ stdin, stdout, env }) {
  *  the terminal is handed back and before the signal; `onResume(asked)` when it runs again, `asked`
  *  true after its own suspend and false when it was stopped and continued from outside; `onEnd()`
  *  once on every way out, after the terminal is restored and before `done` resolves. */
-export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onRedraw, onStop = null, onResume = null, onEnd = null, setTimer = setTimeout, clearTimer = clearTimeout }) {
+export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onRedraw, onStop = null, onResume = null, onEnd = null, keyboard = false, setTimer = setTimeout, clearTimer = clearTimeout }) {
   let entered = false, raw = false, modes = false;
+  /** The protocol: "asking" until the terminal answered, "on" once it did with flag 1, "off" without
+   *  it; and whether it is pushed now. */
+  let kb = keyboard ? "asking" : "off", pushed = false;
+  /** What is written after ENTER: the protocol pushed, and asked about while no answer came. */
+  const pushing = () => (kb === "off" ? "" : kb === "asking" ? PUSH + QUERY : PUSH);
+  /** What is written before LEAVE: the protocol popped, when it is pushed. */
+  const popping = () => { if (!pushed) return ""; pushed = false; return POP; };
   let suspended = false, stopTimer = null;
   let over = false, blocked = false, stale = false;
   let settle;
@@ -57,14 +76,23 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
     stdin.setRawMode(true);
     if (!entered) return; // left while entering: nothing more is switched on
     modes = true;
-    stdout.write(ENTER);
+    const push = pushing();
+    pushed = push !== "";
+    stdout.write(ENTER + push);
   }
   /** Put the terminal back. Idempotent; never throws. */
   function leave() {
     if (!entered) return;
     entered = false;
-    if (modes) { modes = false; quietly(() => stdout.write(LEAVE)); }
+    if (modes) { modes = false; const pop = popping(); quietly(() => stdout.write(pop + LEAVE)); }
     if (raw) { raw = false; quietly(() => stdin.setRawMode(false)); }
+  }
+  /** The terminal's answer to the protocol's query, or none in time (`false`): kept, or popped and
+   *  never pushed again in this run. An answer after either is not taken. */
+  function keyboardAnswered(on) {
+    if (kb !== "asking" || over) return;
+    kb = on ? "on" : "off";
+    if (!on && entered) { const pop = popping(); if (pop) quietly(() => stdout.write(pop)); }
   }
 
   /** The end of the run, by any way out: restore, stop listening, report once. */
@@ -133,11 +161,14 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
    *  write. Entering the alternate screen also saves the cursor, and a terminal that is still on
    *  it may take a second entry as a new save, over the shell's position: the prompt would then
    *  land on the wrong row at the end. Leaving first puts back the cursor the first entry saved,
-   *  so the second saves the same one. On a terminal that was reset, the leave changes nothing. */
+   *  so the second saves the same one. On a terminal that was reset, the leave changes nothing.
+   *  The kitty keyboard protocol goes with the modes: popped before LEAVE, pushed again after ENTER. */
   function reassert() {
     if (!entered || over) return;
     quietly(() => { stdin.setRawMode(false); stdin.setRawMode(true); });
-    quietly(() => stdout.write(LEAVE + ENTER));
+    const pop = popping(), push = pushing();
+    pushed = push !== "";
+    quietly(() => stdout.write(pop + LEAVE + ENTER + push));
     attempt(onRedraw);
   }
   /** SIGCONT. After our own suspend: come back. Otherwise the process was stopped and continued
@@ -180,5 +211,5 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
   /** The terminal's size now; 80x24 when the terminal does not say. */
   const size = () => ({ cols: Number.isInteger(stdout.columns) && stdout.columns > 0 ? stdout.columns : 80, rows: Number.isInteger(stdout.rows) && stdout.rows > 0 ? stdout.rows : 24 });
 
-  return { start, enter, leave, finish, suspend, reassert, attempt, draw, size, done, get entered() { return entered; } };
+  return { start, enter, leave, finish, suspend, reassert, attempt, draw, size, done, keyboardAnswered, get entered() { return entered; }, get keyboard() { return kb; } };
 }

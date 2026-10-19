@@ -1,18 +1,22 @@
-/** The keys both clients share: the leader, the table read after it, and the plain keys of the list
- * of instances. Written down once, here; the Desktop and the TUI read their defaults from it
- * (packages/tui/lib/actions.mjs LEADER is LEADER_TABLE, and the TUI's test
+/** The keys both clients share: the leader, the table read after it, the plain keys of the list
+ * of instances, and the chords. Written down once, here; the Desktop and the TUI read their defaults
+ * from it (packages/tui/lib/actions.mjs LEADER is LEADER_TABLE, and the TUI's test
  * packages/tui/test/keymap.test.mjs fails on a `does` the TUI does not handle).
  *
  * Pure data and readers: no state, no DOM, no imports. Every value is frozen.
  *
  * Key ids are the TUI's spelling (packages/tui/lib/term/keys.mjs keyId): one character as itself,
  * case kept (`n`, `N`, `|`, `?`, `/`, `-`); named keys `up` `down` `left` `right` `tab` `escape`
- * `space` `enter` `home` `end` `pageup` `pagedown`; modifiers as `ctrl+` / `alt+` prefixes.
+ * `space` `enter` `home` `end` `pageup` `pagedown`; modifiers as `ctrl+` / `alt+` / `shift+`
+ * prefixes, in that order. A chord adds two: `shift+` with Ctrl and a letter (`ctrl+shift+k`, which
+ * the TUI reads only under the kitty keyboard protocol), and `cmd+`, first, for macOS's Command
+ * (`cmd+k`, the Desktop's ⌘K), which a terminal never passes to a program.
  *
- *   leaderKey(isMac)  -> the leader's key id on that platform        "ctrl+\\" / "alt+o"
- *   leaderDoes(key)   -> what the leader then does for a key id, or null
- *   plainKeys(does)   -> the plain key ids of an action (empty when it has none)
- *   leaderRows()      -> LEADER_TABLE
+ *   leaderKey(isMac)        -> the leader's key id on that platform        "ctrl+\\" / "alt+o"
+ *   leaderDoes(key)         -> what the leader then does for a key id, or null
+ *   plainKeys(does)         -> the plain key ids of an action (empty when it has none)
+ *   leaderRows()            -> LEADER_TABLE
+ *   chordKey(does, isMac)   -> the chord's key id on that platform, or null
  *
  * `does` names an action, not a client's code: each client maps it to its own. */
 
@@ -82,6 +86,23 @@ export const PLAIN_KEYS = Object.freeze([
   { does: "help", keys: ["?"] },
 ].map((entry) => Object.freeze({ ...entry, keys: Object.freeze([...entry.keys]) })));
 
+/** The chords: one key that does what the leader then a key does, the Desktop's direct chords whose
+ * action the TUI has too, per platform (`mac`, `other`). The Desktop's DEFAULT_KEYMAP reads these
+ * entries from here (docs/desktop-keyboard.md). The TUI takes the `other` ones, and the `mac` ones
+ * without `cmd+`, while the terminal confirms the kitty keyboard protocol (docs/tui.md, "Chords"),
+ * as extras: the leader stays the key that always works. The Desktop's Ctrl+1/2/3 (the stages) are
+ * the Desktop's own and are not here. */
+export const CHORDS = Object.freeze([
+  { does: "palette", mac: "cmd+k", other: "ctrl+shift+k" },
+  { does: "spawn", mac: "cmd+p", other: "ctrl+shift+p" },
+  { does: "tab-next", mac: "ctrl+tab", other: "ctrl+tab" },
+  { does: "tab-previous", mac: "ctrl+shift+tab", other: "ctrl+shift+tab" },
+  { does: "close-terminal", mac: "cmd+w", other: "ctrl+shift+w" },
+  { does: "filter", mac: "cmd+f", other: "ctrl+shift+f" },
+  { does: "split-right", mac: "cmd+\\", other: "ctrl+shift+e" },
+  { does: "split-down", mac: "cmd+shift+\\", other: "ctrl+shift+o" },
+].map((entry) => Object.freeze({ ...entry })));
+
 const NONE = Object.freeze([]);
 
 /** The leader's key id on macOS (`true`) or elsewhere. */
@@ -103,4 +124,10 @@ export function plainKeys(does) {
 /** The leader's table, LEADER_TABLE itself. */
 export function leaderRows() {
   return LEADER_TABLE;
+}
+
+/** The key id of the chord that does `does` on macOS (`true`) or elsewhere, or null when none does. */
+export function chordKey(does, isMac) {
+  const entry = CHORDS.find((each) => each.does === does);
+  return entry === undefined ? null : isMac ? entry.mac : entry.other;
 }
