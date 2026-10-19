@@ -71,7 +71,7 @@ which is where a [macOS keychain](#git-on-a-macos-host) problem shows up.
 ## Connect a machine
 
 ```bash
-oats server connect altair-aweb --ssh altair --path /opt/homebrew/bin --install-oats
+oats server connect altair-aweb --ssh altair --dir ~/acme --path /opt/homebrew/bin --install-oats
 ```
 
 Run from a deployment, `server connect` puts that deployment's workspace on
@@ -81,8 +81,8 @@ missing, so after a human step you run the same command again.
 
 | Option | Default |
 |---|---|
+| `--dir <path>` | none, inside a deployment too: the folder on the host for this deployment, absolute or `~/…` (resolved by the host). Without it: `E_BAD_ARGS` "--dir <path on the host> is required: the folder on `<host>` for this deployment (absolute, or ~/… resolved there)". A registration made before it was required is unchanged |
 | `--workspace-ref <ref>` | this deployment's `oats-local.yaml` `workspace:` |
-| `--dir <path>` | `~/Agents/<this deployment's directory name>`; absolute or `~/…`, resolved by the host |
 | `--oats <path>`, `--path <dirs>`, `--label <text>` | as for `server add`; `--path` is where the host finds `npm`, `oats` and the harnesses |
 | `--install-oats` | off: a missing or older OATS is a human step |
 | `--replace` | off: an id registered for another host or directory is refused |

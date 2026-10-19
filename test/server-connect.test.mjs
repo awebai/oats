@@ -52,7 +52,7 @@ esac
   const servers = () => (existsSync(serversFile) ? JSON.parse(readFileSync(serversFile, "utf8")).servers : {});
   const npmCalls = () => (existsSync(npmLog) ? readFileSync(npmLog, "utf8").split("--\n").filter(Boolean).map((c) => c.trim().split("\n")) : []);
   const cleanup = () => { fx.cleanup(); rmSync(base, { recursive: true, force: true }); };
-  return { base, bin, log, fx, env, npmDir, oats, servers, serversFile, npmCalls, cleanup, defaultDir: join(env.HOME, "Agents", "deployment") };
+  return { base, bin, log, fx, env, npmDir, oats, servers, serversFile, npmCalls, cleanup, hostDir: join(env.HOME, "acme") };
 }
 const statuses = (res) => res.steps.map((s) => s.status);
 const stepOf = (res, name) => res.steps.find((s) => s.step === name);
@@ -61,7 +61,7 @@ test("a fresh host: no npm, then no oats, then installed, onboarded, registered 
   const s = setup();
   try {
     // No npm on the host's PATH: the human installs Node or names where it lives.
-    let r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--json"]);
+    let r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/acme", "--json"]);
     assert.equal(r.status, 0, r.stderr + r.stdout);
     let res = r.json().result;
     assert.equal(r.json().ok, true);
@@ -74,14 +74,14 @@ test("a fresh host: no npm, then no oats, then installed, onboarded, registered 
     assert.deepEqual(s.servers(), {}, "nothing registered");
 
     // npm there but no oats, without --install-oats: the exact command, for the human to run.
-    r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--path", s.npmDir, "--json"]);
+    r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/acme", "--path", s.npmDir, "--json"]);
     res = r.json().result;
     assert.deepEqual(statuses(res), ["ok", "needs-human", "skipped", "skipped", "skipped", "skipped"]);
     assert.equal(stepOf(res, "oats").remedy, `on box-host: \`npm install -g @awebai/oats@${VERSION}\` (or pass --install-oats)`);
     assert.deepEqual(s.npmCalls(), [["--version"]], "npm was asked its version, nothing installed");
 
     // --install-oats: installed exactly this kernel's version, then the rest in the same run.
-    r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--path", s.npmDir, "--install-oats", "--label", "Box", "--json"]);
+    r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/acme", "--path", s.npmDir, "--install-oats", "--label", "Box", "--json"]);
     assert.equal(r.status, 0, r.stderr + r.stdout);
     res = r.json().result;
     assert.deepEqual(statuses(res), ["ok", "done", "ok", "done", "done", "ok"], JSON.stringify(res.steps, null, 1));
@@ -89,23 +89,46 @@ test("a fresh host: no npm, then no oats, then installed, onboarded, registered 
     assert.deepEqual(s.npmCalls().slice(1), [["--version"], ["install", "-g", `@awebai/oats@${VERSION}`]], "argv fixed: exactly this kernel's version");
     assert.equal(res.ready, true);
     assert.deepEqual(res.human, []);
-    const registration = { sshHost: "box-host", workspace: s.defaultDir, path: s.npmDir, label: "Box", workspaceKey: s.fx.key };
+    const registration = { sshHost: "box-host", workspace: s.hostDir, path: s.npmDir, label: "Box", workspaceKey: s.fx.key };
     assert.deepEqual(res.registration, registration);
     assert.deepEqual(s.servers().box, registration);
-    assert.equal(existsSync(join(s.defaultDir, "oats-local.yaml")), true, "onboarded at ~/Agents/<this deployment's basename> on the host");
+    assert.equal(existsSync(join(s.hostDir, "oats-local.yaml")), true, "onboarded at --dir on the host");
 
     // Idempotent: every step re-checked, nothing done twice.
     const before = s.npmCalls().length;
-    r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--path", s.npmDir, "--install-oats", "--label", "Box", "--json"]);
+    r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/acme", "--path", s.npmDir, "--install-oats", "--label", "Box", "--json"]);
     res = r.json().result;
     assert.deepEqual(statuses(res), ["ok", "ok", "ok", "ok", "ok", "ok"], JSON.stringify(res.steps, null, 1));
     assert.equal(res.ready, true);
     assert.deepEqual(s.npmCalls().slice(before), [], "an up-to-date host never reaches npm");
 
     // Text mode prints the steps.
-    r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--path", s.npmDir]);
+    r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/acme", "--path", s.npmDir]);
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /ssh\s+ok/); assert.match(r.stdout, /readiness\s+ok/); assert.match(r.stdout, /ready/);
+  } finally { s.cleanup(); }
+});
+
+test("--dir is required, inside a deployment too: E_BAD_ARGS names the host, before ssh is asked anything; a registration made before stays as it is", () => {
+  const s = setup();
+  try {
+    const message = "--dir <path on the host> is required: the folder on box-host for this deployment (absolute, or ~/… resolved there)";
+    assert.equal(s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/acme", "--oats", CLI, "--json"]).status, 0);
+    const registered = s.servers();
+    assert.equal(registered.box.workspace, s.hostDir);
+    const calls = existsSync(s.log) ? readFileSync(s.log, "utf8") : "";
+    for (const cwd of [s.fx.dep, s.base]) {
+      const r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--workspace-ref", s.fx.repo, "--oats", CLI, "--json"], { cwd });
+      assert.equal(r.status, 1, cwd);
+      assert.deepEqual([r.json().error.code, r.json().error.message], ["E_BAD_ARGS", message], cwd);
+    }
+    const inside = s.oats(["server", "connect", "box", "--ssh", "box-host", "--oats", CLI, "--json"]);
+    assert.deepEqual([inside.status, inside.json().error.code, inside.json().error.message], [1, "E_BAD_ARGS", message], "the workspace ref still defaults from the deployment; the folder does not");
+    const text = s.oats(["server", "connect", "box", "--ssh", "box-host", "--oats", CLI]);
+    assert.equal(text.status, 1);
+    assert.ok(text.stderr.includes(message), text.stderr);
+    assert.equal(existsSync(s.log) ? readFileSync(s.log, "utf8") : "", calls, "ssh was asked nothing");
+    assert.deepEqual(s.servers(), registered, "the registration is unchanged");
   } finally { s.cleanup(); }
 });
 
@@ -130,7 +153,7 @@ test("git cannot read the workspace remote: needs-human at git, the rest waits; 
   try {
     const away = `${s.fx.repo}.away`;
     renameSync(s.fx.repo, away);
-    let r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--oats", CLI, "--json"]);
+    let r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/acme", "--oats", CLI, "--json"]);
     assert.equal(r.status, 0, r.stderr + r.stdout);
     let res = r.json().result;
     assert.deepEqual(statuses(res), ["ok", "ok", "needs-human", "skipped", "skipped", "skipped"]);
@@ -141,10 +164,10 @@ test("git cannot read the workspace remote: needs-human at git, the rest waits; 
     assert.ok(git.remedy.includes(`\`git ls-remote ${s.fx.repo}\``), `a runnable check in backticks: ${git.remedy}`);
     for (const name of ["deployment", "register", "readiness"]) assert.equal(stepOf(res, name).detail, "waits for git");
     assert.deepEqual(res.human, [git.remedy]);
-    assert.equal(existsSync(s.defaultDir), false, "nothing written on the host");
+    assert.equal(existsSync(s.hostDir), false, "nothing written on the host");
 
     renameSync(away, s.fx.repo);
-    r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--oats", CLI, "--json"]);
+    r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/acme", "--oats", CLI, "--json"]);
     res = r.json().result;
     assert.deepEqual(statuses(res), ["ok", "ok", "ok", "done", "done", "ok"], JSON.stringify(res.steps, null, 1));
     assert.equal(res.ready, true);
@@ -225,7 +248,7 @@ test("a failed npm install is relayed and ends the run", () => {
   const s = setup();
   try {
     writeFileSync(join(s.base, "npm-fails"), "");
-    const r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--path", s.npmDir, "--install-oats", "--json"]);
+    const r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/acme", "--path", s.npmDir, "--install-oats", "--json"]);
     assert.equal(r.status, 1);
     const { error } = r.json();
     assert.equal(error.code, "E_REMOTE_INSTALL");
@@ -238,7 +261,7 @@ test("an unreachable host fails at ssh", () => {
   const s = setup();
   try {
     writeFileSync(join(s.bin, "ssh"), "#!/bin/sh\necho 'ssh: Could not resolve hostname nowhere' >&2\nexit 255\n");
-    const r = s.oats(["server", "connect", "box", "--ssh", "nowhere", "--json"]);
+    const r = s.oats(["server", "connect", "box", "--ssh", "nowhere", "--dir", "~/acme", "--json"]);
     assert.equal(r.status, 1);
     assert.equal(r.json().error.code, "E_SSH");
     assert.deepEqual(r.json().error.details.steps.map((x) => [x.step, x.status]), [["ssh", "failed"]]);
