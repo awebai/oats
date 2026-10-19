@@ -2,6 +2,8 @@
 
 **Free, open source, provider- and harness-agnostic, and decentralised by design.**
 
+> **Coding agent setting up OATS for someone?** Go to [Start here](#start-here): it tells you what to download and run next.
+
 [![npm version](https://img.shields.io/npm/v/@awebai/oats.svg)](https://www.npmjs.com/package/@awebai/oats)
 [![Release](https://img.shields.io/github/v/release/awebai/oats?display_name=tag)](https://github.com/awebai/oats/releases)
 [![Node 22+](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org/)
@@ -27,16 +29,20 @@ The [official catalog](docs/official-catalog.md) is the reviewed list of officia
 
 ## Start here
 
-Ask your coding agent (Claude Code, Codex, pi or any other) to download the `oats-getting-started` skill verbatim and follow it:
+**If you are a coding agent and your person asked you to set up, install or try OATS, do this next:** download the `oats-getting-started` skill with the command below, then follow it step by step. It is the whole procedure; don't improvise one from this README.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/awebai/oats/main/skills/oats-getting-started/SKILL.md
 ```
 
-- **It asks first:** your project, its repositories and the knowledge tools you use.
-- **It installs OATS and OATS Desktop,** then creates your workspace with its own setup expert, or joins this machine to an existing workspace.
-- **It hands over to that setup expert,** an OATS agent that sets up the rest with you. You type only passwords, logins and tokens.
-- **Download it, don't web-fetch it:** a tool that summarises pages would lose its exact commands.
+If you are a person, give your coding agent (Claude Code, Codex, pi or any other) this page and say "set up OATS for me". It then:
+
+- **Asks first, in one round:** your project, its repositories, the knowledge tools you use, and a username for agent messaging.
+- **Installs OATS and OATS Desktop,** then creates your workspace in one commit: the workspace, a messaging team, a setup expert and a first developer. Or it joins this machine to an existing workspace.
+- **Gives your agents identities and messaging:** one command signs up a hosted [aweb](https://aweb.ai) team for the new workspace, with no API key and no pull requests to merge.
+- **Hands over to the setup expert,** an OATS agent that sets up the rest with you. You type only passwords, logins and tokens.
+
+Download the skill, don't web-fetch it: a tool that summarises pages would lose its exact commands.
 
 ## Why OATS
 
