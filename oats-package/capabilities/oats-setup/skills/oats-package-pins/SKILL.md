@@ -70,9 +70,10 @@ oats package add <id> <version|git:<repo>@<ref>>   # edits packages: when the ho
 oats package remove <id>
 ```
 
-Commit it by `oats.setup`'s rule: straight to the default branch of a
-workspace only the person uses, else a pull request. Once it is on the
-default branch, run `oats sync` on each deployment. A bump affects only new spawns; running instances keep what they
+Commit it as `/oats-workspace-config`, "Change a shared file" says
+(straight to the host's default branch only when its checks pass, else a pull
+request). Once it is on the default branch, run `oats sync` on each
+deployment. A bump affects only new spawns; running instances keep what they
 were given (`oats status` shows them as moved).
 
 ## Sync and the lock

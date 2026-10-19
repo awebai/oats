@@ -33,9 +33,10 @@ It holds no secret, and none ever goes into one.
 
 **A new workspace or an existing one.** The hand-over says which.
 - **New:** the person created the host repository through the entry skill.
-  It is private and theirs. While they are its only member, push your
-  changes to it straight to the default branch and tell them what changed;
-  once others share it, use pull requests (the briefing's rule).
+  It is private and theirs. While they are the only one with access to it,
+  push your changes to it straight to the default branch, once the checks in
+  `/oats-workspace-config`, "Change a shared file" pass, and tell them what changed;
+  otherwise use pull requests (the briefing's rule).
 - **Existing:** someone else may own the host and the members. Read the host's
   visibility (`gh repo view <owner>/<repo> --json visibility,viewerPermission`).
   Steps 3 and 4 then become proposals to the host's owner: a public host
@@ -49,8 +50,10 @@ only the secrets, the logins and the installs that capture their shell.
 
 1. **Read the deployment** (`/oats-onboarding` card 2). The entry skill's gh
    login over https is enough for these reads; step 2 completes Git. A new
-   workspace has the host as its only member, `oats.framework` pinned,
-   `oats.core` as a default, and you as its one soul:
+   workspace has the host as its only member repository, `oats.framework`
+   pinned, `oats.core` as a default and you as its setup soul; the entry
+   skill may also have added `oats.aweb` with a team, and a first developer
+   soul:
 
    ```bash
    oats workspace status --dir D --json
@@ -65,10 +68,11 @@ only the secrets, the logins and the installs that capture their shell.
    - an `oats-membership.yaml` in that repository;
    - its line under `members:` in `oats-workspace.yaml`, from your work tree.
 
-   Each goes in by the briefing's rule: straight to the default branch of a
-   repository only the person works in, else a pull request, which the
-   person merges because they own the repository. Then sync, and check that
-   each member is confirmed (`/oats-workspace-config`). The host is
+   Each goes in by the briefing's rule. The membership file is always a
+   pull request, which that repository's owner merges (name who). The
+   `members:` line may go straight to the host when the checks in
+   `/oats-workspace-config`, "Change a shared file", pass. Then sync, and
+   check that each member is confirmed (`/oats-workspace-config`). The host is
    private, so private members are fine (`/oats-onboarding` card 3's rule).
    Clones for the souls that work in a repository: `/oats-onboarding` card 4.
 4. **The first souls, for the use case.** Propose the smallest set of roles

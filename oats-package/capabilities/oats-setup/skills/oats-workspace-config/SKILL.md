@@ -134,10 +134,28 @@ broker (`aw wake run` as a per-user service). Both are taught in
 1. Read the state (above) and the contract section for the field.
 2. Write the change as a **diff** and show it to the human, with why and
    what it changes for which souls.
-3. Commit it on a branch of the repo that owns the file and open a pull
-   request. Never push to its default branch, and never edit a shared file
-   without a PR.
-4. After it merges, on each deployment: `oats sync`, then
+3. Commit it to the repo that owns the file, by one of two routes. Never
+   edit a shared file without one of them.
+   - **Straight to the default branch,** only when all of these hold,
+     checked right before the push:
+     - the repo is the workspace's host, created by the person as a new
+       workspace (the setup expert's hand-over says `new`);
+     - it belongs to their own GitHub account, not an organization:
+       `gh repo view <o>/<r> --json isInOrganization,owner` gives `false` and
+       their login (`gh api user --jq .login`);
+     - they are its only collaborator:
+       `gh api repos/<o>/<r>/collaborators --jq 'map(.login)'`;
+     - no rule guards its default branch: both
+       `gh api repos/<o>/<r>/branches/<branch> --jq .protected` (`false`) and
+       `gh api repos/<o>/<r>/rules/branches/<branch> --jq length` (`0`).
+
+     Then push, and tell the person what changed.
+   - **Otherwise a pull request** from a branch, which the repo's owner
+     merges (name who): every member repository, and every repository
+     others share. If a straight push is refused (by Git, GitHub or your
+     harness's permission check), or its output says a rule was bypassed,
+     open a pull request instead; never try another way.
+4. Once it is on the default branch, on each deployment: `oats sync`, then
    `oats workspace status` and `oats spawn <soul> --preview` for an affected
    soul. Confirm the new state is there by positive enumeration, not by the
    absence of errors.
@@ -157,9 +175,9 @@ reports this deployment's local file and lock.
 | `E_SOUL_AMBIGUOUS` | two souls share the bare name | use the qualified name it lists (`<member>/<soul>`, `<package>/<soul>`) |
 | `E_SOUL_DISABLED` | `souls.disabled` in this machine's `oats-local.yaml` | re-enable there, if the operator agrees |
 | `E_TEAM_UNKNOWN` | the local `defaultTeam` in `oats-local.yaml` is declared in neither file; the spawn is refused | `oats teams add` it, or `oats teams default` another label; see `/oats-teams` |
-| `E_TEAM_NOT_ELIGIBLE` | the provider refused to join a team the soul may not join | add the label to the soul's `souls:` entry by PR, or join another team; see `/oats-teams` |
+| `E_TEAM_NOT_ELIGIBLE` | the provider refused to join a team the soul may not join | add the label to the soul's `souls:` entry (a shared-file change), or join another team; see `/oats-teams` |
 | `E_TEAM_UNCONFIGURED` | messaging is active and the soul has no default team | commit `defaultTeam:` (or a `souls:` `default`) in `oats-workspace.yaml`; with `localTeams: true`, `oats teams add` (the first becomes the default) or `oats teams default <label>` |
-| `E_TEAM_IN_USE`, `E_TEAM_SHARED`, `E_TEAM_EXISTS` | `oats teams remove`/`add` refused: still the local default, shared (edit by PR), or already declared | see `/oats-teams` |
+| `E_TEAM_IN_USE`, `E_TEAM_SHARED`, `E_TEAM_EXISTS` | `oats teams remove`/`add` refused: still the local default, shared (a shared-file change), or already declared | see `/oats-teams` |
 | `E_HARNESS_UNAVAILABLE` | the harness a launch preference (or flag) chose is not installed here; `details.from`/`at` name the layer | install it, or pin the soul to another launch on this machine: `oats soul launch set <soul> --launch-config <name>` or `--harness <h>` (`'*'` for every soul without an entry), from OATS 0.53.0; on an older kernel, edit `souls.launch` in `oats-local.yaml` |
 | `E_LAUNCH_CONFIG_UNKNOWN` | `souls.launch` names a launch configuration this `oats-local.yaml` lacks, or `oats soul launch set --launch-config <name>` names one it lacks (nothing was written) | declare it (`oats launch-config set`), or pin another (`oats soul launch set <soul> --launch-config <name>`, from OATS 0.53.0; on an older kernel, change `souls.launch` in `oats-local.yaml`) |
 | `E_LAUNCH_PREFERENCE_UNKNOWN` | from OATS 0.53.0: `oats soul launch remove` named an entry `souls.launch` does not have; `details.keys` lists the entries it has | remove one of those: a soul's, `'*'`, or the exact text of a key (`oats soul launch remove <key>`) |
@@ -173,7 +191,7 @@ reports this deployment's local file and lock.
 | `E_CAPABILITY_PRIVATE` | a repo-owned capability used by another repo's soul | use it only from its own repo, or ask its owners to share it |
 | `E_PACKAGE_MISSING` | `from: package` but the lock lacks it, or the package is no longer declared | pin it (`/oats-package-pins`), then `oats sync` |
 | `E_PACKAGE_INTEGRITY` | a tag moved or the content changed under a pin | pin a new version; see `/oats-package-pins` |
-| `E_COMPATIBILITY` | a soul's `compatibility` floor is above the pinned version | bump the pin, or relax the floor, by PR |
+| `E_COMPATIBILITY` | a soul's `compatibility` floor is above the pinned version | bump the pin, or relax the floor, by a shared-file change |
 | `E_CAPABILITY_INCOMPATIBLE` | a module's `compatibility.oats` excludes this kernel | update the kernel (`oats update`) or pin a compatible version |
 | `E_SKILL_DUPLICATE` | two modules contribute a skill of the same name | drop one capability from the soul (`off`) |
 | `E_CLONE_MISSING`, `E_CLONE_MISMATCH` | a `worktree`/`checkout` soul has no clone of its repo here, or `clones:` points at the wrong repo | clone it at `<deployment>/<repo name>` or set `clones:` on this machine |
