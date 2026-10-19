@@ -1349,7 +1349,7 @@ section is the module map.
   `connectors` (`treeConnectors`) and `state`, then at most
   `PALETTE_COMMAND_CAP` commands. The shell hands it one panel snapshot,
   `{ instances, deployments, recent, activeId }`: with several deployments each one is filtered
-  and clustered on its own, in the panel's order, and a group's key and label
+  and clustered on its own, its sections by latest focus, then the panel's order, and a group's key and label
   carry its deployment, so no relation or query context crosses deployments. The shell passes
   `cycleKey` from `pickerCycleDirection(e, "app.palette")` (keybindings.mjs), so
   ⌘K cycles while open (Shift: up) and follows a rebind.
