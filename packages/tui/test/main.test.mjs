@@ -862,7 +862,7 @@ test("the roster of other machines: a read that began changes nothing on the scr
   r.reader.roster({ envelope: rosterAnswer([garnet()]) });
   assert.notEqual(r.stdout.take(), "", "the answer is drawn when it arrives");
   const two = screenOf(r);
-  assert.match(two, /^ acme-platform\s+\+1 machine\s+│.*This machine.*acme-expert-tui.*acme-maintainer-ops.*garnet\s+read 10:00:45.*● dev-far.*○ dev-he…/s);
+  assert.match(two, /^ acme-platform\s+\+1 machine\s+│.*This machine.*acme-expert-tui.*acme-maintainer-ops.*garnet\s+read 10:00:45.*● dev-far.*○ dev-held  not reachable on g…/s, "the name before its word: the word is cut to what the name leaves");
   assert.doesNotMatch(two, /\d+ (running|stopped)/, "no counts on the screen");
   // What the loop holds is what the shared rule made of the answer, and the reader is told it.
   const now = r.reader.options.getRoster(), made = rosterEvent(held, { envelope: rosterAnswer([garnet()]) }, "2026-10-11T10:00:45.000Z").roster;

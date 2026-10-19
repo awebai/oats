@@ -353,8 +353,9 @@ test("the stderr is compared with nothing: a row whose own text is tmux's same l
   // Made by hand: a running row that carries tmux's line as its own text, as a race can leave it.
   const state = on(stateOf(observed([instanceRow("dev", ALPHA, { runtimeError: TMUX })], { cli: KEYED }), { cli: KEYED }), ALPHA);
   const after = returned(state, 1, `${TMUX}\n`).state;
-  const screen = draw(after, S120).lines.join("\n");
-  assert.equal(screen.split(`"${TMUX}"`).length - 1 >= 1, true, "the stderr, quoted, under the sidebar's title");
+  // Wrapped to the sidebar's width, its rows read as one text beside the main area.
+  const said = above(after, S120).join(" ");
+  assert.equal(said.split(`"${TMUX}"`).length - 1, 1, "the stderr, quoted, under the sidebar's title");
   assertSaid(after, [words(OPEN_WORDS.failed(ALPHA)), `"${TMUX}"`], S120, "shown once there");
   assert.equal(model(after, { page: 30, now: 0, at: new Date(0).toISOString(), cols: 57 }).detail.facts.some((fact) => fact.value.includes(TMUX)), true, "and the detail still has the row's own reason");
 });
@@ -381,8 +382,10 @@ test("opening, terminal, outcome and detachKey are kept by the store and read by
   // outcome: a line under the sidebar's title.
   const said = reduce(asking, { prepared: { id: asking.opening.id, error: Object.assign(new Error("x"), { code: "E_TERM_PREPARE_TIMEOUT" }) } }).state;
   assert.notDeepEqual(draw(said).lines, draw({ ...said, outcome: null }).lines);
-  // terminal: the panel stands where the detail was.
-  const terminal = Object.freeze({ ...state, terminal: Object.freeze({ id: asking.opening.id, name: FAR_A, machine: "garnet", routed: true, focus: "terminal", zoom: false, status: "open" }) });
+  // terminal: the panel stands where the detail was. Its tab is the panel's (the loop and the
+  // layout read the sidebar's width from the tabs).
+  const shown = { id: asking.opening.id, name: FAR_A, machine: "garnet", routed: true, group: 0 };
+  const terminal = Object.freeze({ ...state, tabs: Object.freeze([Object.freeze({ ...shown, status: "open", activity: false })]), terminal: Object.freeze({ ...shown, focus: "terminal", zoom: false, status: "open" }) });
   assert.notDeepEqual(draw(terminal).lines, before);
   assert.equal(roster(terminal).instances, roster(state).instances, "the roster is the one already made");
   // detachKey: the cheat sheet names it, it then Esc, and it twice, while the terminal has the
