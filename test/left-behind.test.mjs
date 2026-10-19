@@ -10,9 +10,10 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { fixtureBase, inheritedEnv } from "./helpers/host-fixture.mjs";
 import { describeNestedTestFailure } from "./helpers/nested-test-failure.mjs";
-import { outsideTemporaryUnavailable } from "./helpers/outside-temporary.mjs";
+import { outsideTemporaryUnavailable, removeOutsideBase } from "./helpers/outside-temporary.mjs";
 
 const HOST_FIXTURE = fileURLToPath(new URL("./helpers/host-fixture.mjs", import.meta.url));
+const OUTSIDE_HELPER = fileURLToPath(new URL("./helpers/outside-temporary.mjs", import.meta.url));
 const HEAD = `import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -75,16 +76,28 @@ test("a passing test file that leaves a directory in the temporary directory fai
 });
 
 test("a base a file leaves in /var/tmp, named for the run and the file (test/helpers/outside-temporary.mjs), fails the run, which names the file and removes the base", { skip: outsideTemporaryUnavailable() ?? false }, (t) => {
-  const MAKES = `import { basename, dirname } from "node:path";\ntest("leaves a base outside the temporary directories", () => { const own = tmpdir(); const base = mkdtempSync(join("/var/tmp", "oats-deployments-test-" + basename(dirname(own)) + "." + basename(own) + "-")); writeFileSync(join(base, "file"), "x"); console.log("@@BASE " + base); });\n`;
+  const MAKES = `import { basename, dirname } from "node:path";\nimport { chmodSync } from "node:fs";\ntest("leaves a base outside the temporary directories", () => { const own = tmpdir(); const base = mkdtempSync(join("/var/tmp", "oats-deployments-test-" + basename(dirname(own)) + "." + basename(own) + "-")); writeFileSync(join(base, "file"), "x"); mkdirSync(join(base, "locked")); writeFileSync(join(base, "locked", "file"), "x"); chmodSync(join(base, "locked"), 0o500); console.log("@@BASE " + base); });\n`;
   const r = rootRun(t, { "outside.test.mjs": `${HEAD}${MAKES}`, "clean.test.mjs": `${HEAD}test("passes and leaves nothing", () => {});\n` });
   const base = r.stdout.match(/@@BASE (\S+)/)?.[1];
-  t.after(() => { if (base) rmSync(base, { recursive: true, force: true }); });
+  t.after(() => { if (base) removeOutsideBase(base); });
   assert.ok(base, says(r));
   assert.notEqual(r.status, 0, `the run fails though every test passed. ${says(r)}`);
   assert.match(r.stderr, /LEFT BEHIND: 1 test file left/);
   assert.deepEqual(leftBy(r, "test/outside.test.mjs"), { head: "  test/outside.test.mjs: 1 entry", entries: [`${base}/`] });
   assert.doesNotMatch(r.stderr, /clean\.test\.mjs/);
-  assert.equal(existsSync(base), false, "the run removes it");
+  assert.equal(existsSync(base), false, "the run removes it, a read-only directory in it included");
+});
+
+test("a base made with outsideTemporaryBase is removed when its test fails while a directory in it is read-only: the run names nothing left behind", { skip: outsideTemporaryUnavailable() ?? false }, (t) => {
+  const FAILS = `import { chmodSync } from "node:fs";\nimport { outsideTemporaryBase } from ${JSON.stringify(OUTSIDE_HELPER)};\ntest("fails with a read-only directory in its base", (t) => { const base = outsideTemporaryBase(t); console.log("@@BASE " + base); mkdirSync(join(base, "config")); writeFileSync(join(base, "config", "deployments.json"), "{}"); chmodSync(join(base, "config"), 0o500); assert.equal(1, 2); });\n`;
+  const r = rootRun(t, { "fails.test.mjs": `${HEAD}${FAILS}` });
+  const base = r.stdout.match(/@@BASE (\S+)/)?.[1];
+  t.after(() => { if (base) removeOutsideBase(base); });
+  assert.ok(base, says(r));
+  assert.equal(r.status, 1, says(r));
+  counts(r, 0, 1);
+  assert.doesNotMatch(r.stderr, /LEFT BEHIND/, says(r));
+  assert.equal(existsSync(base), false, "the test's own hook removed it");
 });
 
 test("a file that removes what it makes passes, and so does one that makes nothing; Node's compile cache is not counted, by its exact name only", (t) => {

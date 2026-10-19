@@ -71,7 +71,7 @@ which is where a [macOS keychain](#git-on-a-macos-host) problem shows up.
 ## Connect a machine
 
 ```bash
-oats server connect altair-aweb --ssh altair --dir ~/acme --path /opt/homebrew/bin --install-oats
+oats server connect altair-aweb --ssh altair --dir '~/acme' --path /opt/homebrew/bin --install-oats
 ```
 
 Run from a deployment, `server connect` puts that deployment's workspace on

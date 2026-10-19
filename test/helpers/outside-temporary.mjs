@@ -9,7 +9,7 @@
 // naming the file that left one (scripts/run-tests.mjs, awebai/oats#1025). Where /var/tmp is
 // missing, not writable, or itself under a temporary directory, outsideTemporaryUnavailable() says
 // why and such a test skips: it never falls back to /tmp, where it would pass for the wrong reason.
-import { accessSync, constants, existsSync, mkdtempSync, realpathSync, rmSync, statSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, lstatSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { underTemporaryDirectory } from "../../lib/deployments.mjs";
@@ -36,10 +36,21 @@ function runTag() {
   return /[/\\]ot-[^/\\]+[/\\]\d+$/.test(dir) && existsSync(`${dir}.file`) ? `${basename(dirname(dir))}.${basename(dir)}-` : "";
 }
 
-/** A new base outside the temporary directories, as its realpath, removed after `t`. */
+/** Remove `base` whatever a test left of its permissions: every directory under it is made
+ *  writable again first (a test that failed while a directory was read-only included). */
+export function removeOutsideBase(base) {
+  const writable = (p) => {
+    try { if (!lstatSync(p).isDirectory()) return; chmodSync(p, 0o700); for (const entry of readdirSync(p)) writable(join(p, entry)); } catch { /* gone */ }
+  };
+  writable(base);
+  rmSync(base, { recursive: true, force: true });
+}
+
+/** A new base outside the temporary directories, as its realpath, removed after `t` by the one hook
+ *  this registers (removeOutsideBase): the caller registers no removal of its own. */
 export function outsideTemporaryBase(t) {
   const base = realpathSync(mkdtempSync(join(OUTSIDE_TEMPORARY_PARENT, `${OUTSIDE_TEMPORARY_PREFIX}${runTag()}`)));
-  t.after(() => rmSync(base, { recursive: true, force: true }));
+  t.after(() => removeOutsideBase(base));
   if ((statSync(base).mode & 0o777) !== 0o700) throw new Error(`${base} is not 0700`);
   return base;
 }

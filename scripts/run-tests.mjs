@@ -22,7 +22,7 @@
 // Any extra arguments are forwarded to node --test.
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { chmodSync, lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 import {
@@ -109,6 +109,14 @@ const SHORT_TMPDIR = 20;
 // runs a copy of scripts/ alone).
 const OUTSIDE_TEMPORARY_PARENT = "/var/tmp";
 const OUTSIDE_TEMPORARY_PREFIX = "oats-deployments-test-";
+/** Remove a tree whatever a test left of its permissions: each directory is made writable first. */
+function removeWritable(path) {
+  const writable = (p) => {
+    try { if (!lstatSync(p).isDirectory()) return; chmodSync(p, 0o700); for (const entry of readdirSync(p)) writable(join(p, entry)); } catch { /* gone */ }
+  };
+  writable(path);
+  rmSync(path, { recursive: true, force: true });
+}
 const runDir = mkdtempSync(join(tmpdir().length > SHORT_TMPDIR ? "/tmp" : tmpdir(), "ot-"));
 const warningsFile = join(runDir, "warnings.jsonl");
 const guard = [`--test-reporter=${new URL("./test-warnings-reporter.mjs", import.meta.url).href}`, `--test-reporter-destination=${warningsFile}`];
@@ -154,7 +162,7 @@ try {
     let file = "(a file the run did not name)";
     try { file = readFileSync(join(runDir, `${name}.file`), "utf8") || file; } catch (e) { if (e.code !== "ENOENT") throw e; }
     left.push({ file, entries: [`${join(OUTSIDE_TEMPORARY_PARENT, entry)}/`] });
-    rmSync(join(OUTSIDE_TEMPORARY_PARENT, entry), { recursive: true, force: true });
+    removeWritable(join(OUTSIDE_TEMPORARY_PARENT, entry));
   }
 } finally { rmSync(runDir, { recursive: true, force: true }); }
 const warnings = found.split("\n").filter(Boolean).map((line) => JSON.parse(line));

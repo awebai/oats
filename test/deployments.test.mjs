@@ -29,7 +29,7 @@ const LOCAL_YAML = "schemaVersion: 2\nworkspace: github.com/example/acme-workspa
  *  (or must be seen not to list for a reason of its own); the test then skips with OUTSIDE. */
 function fixture(t, { outside = false } = {}) {
   const base = outside ? outsideTemporaryBase(t) : realpathSync(mkdtempSync(join(tmpdir(), "oats-deployments-")));
-  t.after(() => { chmodTree(base); rmSync(base, { recursive: true, force: true }); });
+  if (!outside) t.after(() => { chmodTree(base); rmSync(base, { recursive: true, force: true }); }); // an outside base removes itself
   const home = join(base, "home");
   mkdirSync(home);
   const oatsHome = join(base, "oats-home");
