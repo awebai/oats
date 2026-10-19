@@ -447,6 +447,12 @@ or unsupported selectors produce named warnings; absolute roots register even
 before the first spawn creates their directory. Warning-only coverage preserves
 exit 0 when independent setup steps succeed. Real registry/publication and
 unrelated setup failures retain nonzero exits and honest partial summaries.
+Capture completion and `lastSuccess` concern the known root union; unresolved
+configuration/map/identity warnings remain visible in health without failing
+every pass. Invalid inventory and actual root/discovery/storage failures still
+fail. The scoped forget command also accepts exact stored references made
+effectively retired by a proven absent or inode-replaced deployment; active or
+indeterminate identities refuse stored-current removal.
 
 Health uses `capture-roots-invalid` (inspect unsafe/corrupt/bounded inventory),
 `capture-roots-unavailable` (repair access/selectors or explicitly forget an

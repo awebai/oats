@@ -23,7 +23,8 @@ export function captureCommandOperation(start) {
     registered.push(root);
   }
   const selection = createHash('sha256').update(JSON.stringify([captureCommandSelection(options), inventory.fingerprint, facts])).digest('hex');
-  let session, coverageFailure = inventory.rows.length > 0;
+  const inventoryIncomplete = inventory.incomplete === true;
+  let session, coverageFailure = inventoryIncomplete;
   const receipt = result => {
     if (result.continuation) return result;
     const status = readCaptureStatus(start.root);
@@ -35,7 +36,7 @@ export function captureCommandOperation(start) {
       .some(kind => session.state.get(kind, 'last')?.runId === start.pass.runId);
     const discoveryFailure = session.state.get('capture-discovery-failure', 'last');
     const coverageOnly = result.outcome === 'failed' && result.reason === 'io' && !start.pass.failure && start.pass.previous?.outcome !== 'failed' &&
-      (coverageFailure || discoveryFailure?.runId === start.pass.runId && discoveryFailure.registered === true) &&
+      !inventoryIncomplete && (coverageFailure || discoveryFailure?.runId === start.pass.runId && discoveryFailure.registered === true) &&
       !otherFailure && (!discoveryFailure || discoveryFailure.runId !== start.pass.runId || discoveryFailure.registered === true) &&
       status.lastRun.counts.inputsFailed === 0;
     return { ...result, ...(coverageOnly ? { rootCoverageOnly: true } : {}), receipt: { appended: status.lastRun.counts.turnsAppended, pending: status.backlog.pending } };

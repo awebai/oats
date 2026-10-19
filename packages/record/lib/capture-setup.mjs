@@ -1,3 +1,6 @@
+// Setup flags: --owner <name>, --root <directory>, --replace-service,
+// --no-hooks, --no-service, --dry-run and --json. Only the typed package
+// entry accepts a deployment request; no public transcript-root flag exists.
 import { isCaptureHook } from "./capture-hook-ownership.mjs";
 import { execFileSync } from "node:child_process";
 import { readdirSync } from "node:fs";
@@ -270,8 +273,7 @@ try {
     } catch (err) {
       if (err.code !== 'E_CAPTURE_ROOTS_COVERAGE') { summary.firstPass = `failed: ${oneLine(err.message)}`; throw err; }
       summary.firstPass = 'root coverage incomplete; healthy independent work processed';
-      if (!summary.warnings.length) summary.warnings.push({ configuration: '(deployment)', selector: 'capture-roots', reason: 'unreadable',
-        remedy: 'Inspect capture --health --json; restore root access or refresh the affected deployment with oats setup.' });
+      summary.remedy = 'Inspect capture --health --json; restore root access or refresh the affected deployment with oats setup.';
     }
   }
   if (serviceFailure) { summary.remedy = `rerun ${rerun}`; exitCode = 1; }

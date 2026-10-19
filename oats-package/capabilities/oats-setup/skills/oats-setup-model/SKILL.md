@@ -82,6 +82,12 @@ Health's `capture-roots-invalid` requires inspection of the named inventory;
 or the exact scoped retired-root forget command printed by that row;
 `capture-roots-refresh-required` requires setup at an inode-recreated deployment.
 Refresh/forget never deletes capture history or grants native-history custody.
+Completion/`lastSuccess` certify the known default/registered root union;
+configuration/map/identity metadata warnings stay in health without failing
+every pass. Invalid inventory and actual root/discovery/storage failures still
+fail. The exact forget command can remove a stored current reference only when
+the deployment is proven absent or inode-replaced and rechecked under the lock;
+active or indeterminate identities refuse, and other references/history remain.
 Old binaries ignore the inventory and lose this additional coverage; upgrading
 and running setup again restores it. Differing frozen recipes and
 provider-generated locations remain outside the snapshot. Follow the installed

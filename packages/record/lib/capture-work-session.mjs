@@ -211,7 +211,8 @@ export class CaptureWorkSession {
   }
 
   finish({ reason = "input" } = {}) {
-    const snapshot = this.run.finish({ outcome: reason === "interrupted" ? "failed" : "partial", reason,
+    const snapshot = this.run.finish({ outcome: reason === "interrupted" || this.rootCoverageIncomplete ? "failed" : "partial",
+      reason: reason === "interrupted" ? reason : this.rootCoverageIncomplete ? "io" : reason,
       pending: true, peakRssBytes: this.start.budget.peakRssBytes });
     return { outcome: snapshot.lastRun.outcome, reason: snapshot.lastRun.reason, continuation: false };
   }

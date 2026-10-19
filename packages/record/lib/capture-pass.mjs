@@ -103,7 +103,7 @@ async function superviseAcquiredPass(root, options, { policy, clock, acquire, al
     }
     // An earlier observed failure cause of this pass is kept, not replaced.
     if (await polled() && !firstFailure) return ended({ outcome: "failed", reason: "interrupted", exitCode: 1, starts });
-    if (firstFailure) return failed();
+    if (firstFailure) return result.rootCoverageOnly === true ? ended({ ...result, starts }) : failed();
     return ended({ ...result, starts });
   } catch (error) {
     if (invalidStatus) error.invalidStatus ??= invalidStatus;

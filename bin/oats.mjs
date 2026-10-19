@@ -4183,6 +4183,7 @@ async function recordCmd(sub) {
     let result;
     try { result = await captureSetup({ argv, deploymentRequest, node }); }
     catch (error) {
+      if (error.code === 'E_USAGE') return JSON_MODE ? jsonFail(error.code, error.message, undefined, 2) : die(error.message, 2);
       return cmdFail(error.code ?? 'E_CAPTURE_SETUP_FAILED', error.message);
     }
     if (JSON_MODE) {

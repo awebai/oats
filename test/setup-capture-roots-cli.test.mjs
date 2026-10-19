@@ -14,7 +14,7 @@ function fixture(t) {
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const declaration = configurations => ({ schemaVersion: 2, workspace: 'file://' + join(base, 'nonexistent-workspace.git'), 'launch-configs': configurations });
   const put = (dir, configurations) => fs.writeFileSync(join(dir, 'oats-local.yaml'), JSON.stringify(declaration(configurations)));
-  const run = () => spawnSync(process.execPath, [cli, 'setup', '--dir', deployment, '--root', root, '--owner', 'fixture', '--no-hooks', '--no-service', '--dry-run', '--json'],
+  const run = (extra = [], json = true) => spawnSync(process.execPath, [cli, 'setup', '--dir', deployment, '--root', root, '--owner', 'fixture', '--no-hooks', '--no-service', '--dry-run', ...(json ? ['--json'] : []), ...extra],
     { cwd: home, env: { HOME: home, TMPDIR: join(base, 'tmp'), XDG_CACHE_HOME: join(base, 'cache'), PATH: join(base, 'bin'),
       PRIVATE_CODEX: join(base, 'codex'), SECRET: 'never-serialize-this' }, encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 });
   return { base, parent, deployment, root, put, run };
@@ -31,6 +31,15 @@ test('real kernel setup uses the effective deployment map, includes unselected n
   assert.deepEqual(value.summary.rootChanges.roots, [{ source: 'codex', path: join(f.base, 'codex/sessions') }, { source: 'pi', path: join(f.base, 'pi') }]);
   assert.equal(value.warnings[0].configuration, 'refused'); assert.equal(value.warnings[0].reason, 'relative');
   assert.doesNotMatch(result.stdout, /never-serialize-this|must-not-probe|wrong-cwd|shadowed/);
+  assert.equal(fs.existsSync(f.root), false);
+});
+
+for (const json of [false, true]) test(`kernel setup usage errors preserve exit2 (json: ${json})`, t => {
+  const f = fixture(t); f.put(f.deployment, {});
+  const result = f.run(['--bogus'], json);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+  if (json) assert.equal(JSON.parse(result.stdout).error.code, 'E_USAGE');
+  else assert.match(result.stderr, /unknown setup argument --bogus/);
   assert.equal(fs.existsSync(f.root), false);
 });
 

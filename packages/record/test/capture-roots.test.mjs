@@ -6,8 +6,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { syncBuiltinESMExports } from 'node:module';
+import { spawnSync } from 'node:child_process';
 import { preflightCaptureRoots, applyCaptureRoots, readCaptureRoots, forgetRetiredRoot } from '../lib/capture-roots.mjs';
-import { acquireCaptureLock, readCaptureLockOwner } from '../lib/capture-lock.mjs';
+import { acquireCaptureLock, readCaptureLockOwner, shellQuote } from '../lib/capture-lock.mjs';
 
 function fixture(t) {
   const base = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'capture-roots-'))), root = join(base, 'record');
@@ -20,6 +21,100 @@ function fixture(t) {
   return { base, root, deployment, other, entry, request, refresh };
 }
 const pi = path => ({ source: 'pi', path });
+
+test('configuration and deployment metadata warnings preserve a complete known union; corrupt inventory does not', t => {
+  const f = fixture(t);
+  f.refresh([], f.deployment, [{ configuration: 'relative', selector: 'CODEX_HOME', reason: 'relative' }]);
+  assert.equal(readCaptureRoots(f.root, { inspectRoots: false }).incomplete, false);
+  fs.renameSync(f.deployment, f.deployment + '-old'); fs.mkdirSync(f.deployment);
+  const replaced = readCaptureRoots(f.root, { inspectRoots: false });
+  assert.equal(replaced.rows[0].code, 'capture-roots-refresh-required'); assert.equal(replaced.incomplete, false);
+  fs.writeFileSync(f.entry(f.deployment), '{');
+  assert.equal(readCaptureRoots(f.root, { inspectRoots: false }).incomplete, true);
+});
+
+for (const lifecycle of ['absent', 'replaced']) test(`forget removes effectively retired stored roots for a ${lifecycle} deployment with exact scope and retained identity`, t => {
+  const f = fixture(t), path = join(f.base, 'dangling'), peer = pi(join(f.base, 'peer'));
+  fs.symlinkSync(join(f.base, 'missing-target'), path);
+  const warning = { configuration: 'named', selector: 'CODEX_HOME', reason: 'unreadable', path };
+  const unbound = { configuration: 'relative', selector: 'CODEX_HOME', reason: 'relative' };
+  f.refresh([pi(path), { source: 'cc', path }, peer], f.deployment, [warning, unbound]);
+  f.refresh([pi(path)], f.other);
+  const other = fs.readFileSync(f.entry(f.other)), original = JSON.parse(fs.readFileSync(f.entry(f.deployment)));
+  fs.renameSync(f.deployment, f.deployment + '-old');
+  if (lifecycle === 'replaced') fs.mkdirSync(f.deployment);
+  const rows = readCaptureRoots(f.root).rows;
+  assert.ok(rows.some(row => row.message.includes(f.deployment) && row.message.includes('--forget-retired-root') && row.message.includes('--source pi')));
+  const selected = { deployment: f.deployment, source: 'pi', path };
+  assert.equal(forgetRetiredRoot(f.root, selected).changed, true);
+  assert.equal(forgetRetiredRoot(f.root, selected).changed, false);
+  let value = JSON.parse(fs.readFileSync(f.entry(f.deployment)));
+  assert.deepEqual(value.roots, [{ source: 'cc', path }, peer]);
+  assert.deepEqual(value.unavailable, original.unavailable, 'the other source still binds the path diagnostic');
+  assert.equal(forgetRetiredRoot(f.root, { ...selected, source: 'cc' }).changed, true);
+  value = JSON.parse(fs.readFileSync(f.entry(f.deployment)));
+  assert.deepEqual(value.roots, [peer]); assert.deepEqual(value.unavailable, [unbound]);
+  assert.deepEqual(value.deploymentIdentity, original.deploymentIdentity);
+  assert.deepEqual(fs.readFileSync(f.entry(f.other)), other);
+  assert.equal(fs.lstatSync(path).isSymbolicLink(), true);
+  if (lifecycle === 'replaced') fs.rmdirSync(f.deployment);
+  fs.renameSync(f.deployment + '-old', f.deployment);
+  f.refresh([pi(path), peer]);
+  assert.ok(JSON.parse(fs.readFileSync(f.entry(f.deployment))).roots.some(root => root.source === 'pi' && root.path === path));
+});
+
+test('forget refuses indeterminate deployment identity and reappearance between observation and publication', t => {
+  const f = fixture(t), path = join(f.base, 'sessions'); f.refresh([pi(path)]);
+  const selected = { deployment: f.deployment, source: 'pi', path }, bytes = fs.readFileSync(f.entry(f.deployment));
+  fs.renameSync(f.deployment, f.deployment + '-old'); fs.symlinkSync(join(f.base, 'missing'), f.deployment);
+  assert.throws(() => forgetRetiredRoot(f.root, selected), /indeterminate/);
+  assert.deepEqual(fs.readFileSync(f.entry(f.deployment)), bytes);
+  fs.unlinkSync(f.deployment);
+  const lstat = fs.lstatSync; let checks = 0;
+  try {
+    fs.lstatSync = function(value, ...args) {
+      if (value === f.deployment && ++checks === 2) fs.renameSync(f.deployment + '-old', f.deployment);
+      return lstat.call(this, value, ...args);
+    };
+    syncBuiltinESMExports();
+    assert.throws(() => forgetRetiredRoot(f.root, selected), /identity changed/);
+  } finally { fs.lstatSync = lstat; syncBuiltinESMExports(); }
+  assert.ok(checks >= 2); assert.deepEqual(fs.readFileSync(f.entry(f.deployment)), bytes);
+  assert.throws(() => forgetRetiredRoot(f.root, selected), /current/);
+});
+
+test('the printed forget command resolves an absent-deployment dangling-root warning without deleting history', t => {
+  const f = fixture(t), path = join(f.base, 'dangling'), bin = join(f.base, 'bin');
+  fs.symlinkSync(join(f.base, 'missing-target'), path); f.refresh([pi(path)]);
+  fs.renameSync(f.deployment, f.deployment + '-old');
+  const message = readCaptureRoots(f.root).rows.find(row => row.message.includes('--forget-retired-root')).message;
+  const command = message.slice(message.indexOf('with: ') + 6, message.indexOf('. This deletes no history.'));
+  fs.mkdirSync(bin);
+  fs.writeFileSync(join(bin, 'turn-record'), `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(new URL('../bin/turn-record.mjs', import.meta.url).pathname)} "$@"\n`, { mode: 0o700 });
+  const history = join(f.root, 'history-witness'); fs.writeFileSync(history, 'retained');
+  const result = spawnSync('/bin/sh', ['-c', command], { cwd: f.base, env: { HOME: f.base, TMPDIR: f.base, XDG_CACHE_HOME: f.base, PATH: bin },
+    encoding: 'utf8', timeout: 5000, maxBuffer: 65536 });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.deepEqual(readCaptureRoots(f.root).rows, []);
+  assert.equal(fs.readFileSync(history, 'utf8'), 'retained'); assert.equal(fs.lstatSync(path).isSymbolicLink(), true);
+});
+
+test('forget refuses a missing record root without creating any directories', t => {
+  const f = fixture(t);
+  assert.throws(() => forgetRetiredRoot(f.root, { deployment: f.deployment, source: 'pi', path: join(f.base, 'sessions') }), /record root.*missing/);
+  assert.equal(fs.existsSync(f.root), false);
+});
+
+test('an unreadable root retains the supplied configuration labels without synthetic duplicate warnings', t => {
+  const f = fixture(t), path = join(f.base, 'dangling');
+  fs.symlinkSync(join(f.base, 'missing'), path);
+  const warning = { configuration: 'named', selector: 'PI_CODING_AGENT_SESSION_DIR', reason: 'unreadable', path };
+  const plan = preflightCaptureRoots(f.root, f.request([pi(path)], f.deployment, [warning]));
+  assert.equal(plan.warnings.length, 1); assert.equal(plan.warnings[0].configuration, 'named');
+  applyCaptureRoots(plan);
+  const rows = readCaptureRoots(f.root).rows;
+  assert.equal(rows.length, 1); assert.match(rows[0].message, /configuration named, selector PI_CODING_AGENT_SESSION_DIR/);
+});
 
 test('absent absolute roots register durably, idempotently and independently; empty refresh retires and re-add restores', t => {
   const f = fixture(t), shared = pi(join(f.base, 'not-yet-created'));
@@ -94,7 +189,8 @@ test('closed wire, corrupt/future entries, filename mismatch and nonregular entr
   const path = f.entry(f.deployment), original = fs.readFileSync(path), value = JSON.parse(original);
   for (const contents of ['{', JSON.stringify({ ...value, schemaVersion: 2 }), JSON.stringify({ ...value, extra: true }), ' '.repeat(1024 * 1024 + 1)]) {
     fs.writeFileSync(path, contents);
-    assert.equal(readCaptureRoots(f.root).rows[0].code, 'capture-roots-invalid');
+    const inventory = readCaptureRoots(f.root);
+    assert.equal(inventory.rows[0].code, 'capture-roots-invalid'); assert.equal(inventory.incomplete, true);
     assert.throws(() => preflightCaptureRoots(f.root, f.request([])));
   }
   fs.writeFileSync(path, original); fs.renameSync(path, join(f.root, 'capture-roots', '0'.repeat(64) + '.json'));

@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { dirname, isAbsolute, join, parse, resolve, sep } from 'node:path';
 import { CaptureStop } from './capture-budget.mjs';
 import { captureSetupSnapshot, prepareCaptureSetupParents, recheckCaptureSetup, writeCaptureSetup } from './capture-setup-write.mjs';
-import { acquireCaptureLock, readCaptureLockOwner, shellQuote } from './capture-lock.mjs';
+import { acquireCaptureLock, isCaptureLockCommand, readCaptureLockOwner, shellQuote } from './capture-lock.mjs';
 
 const formats = ['cc', 'pi', 'codex'];
 const reasons = ['relative', 'unresolved-reference', 'malformed', 'unreadable'];
@@ -93,14 +93,32 @@ function validateEntry(value, name) {
     throw invalid(`invalid, future or mismatched capture root entry: ${name}; inspect it and run setup in its deployment`);
   return value;
 }
+// One lifecycle observation for both inventory and exact-scope forgetting.
+// Indeterminate access throws; only proven absence or a different inode can
+// make a stored current reference eligible for inactive-reference removal.
+function deploymentState(entry, { check = () => {} } = {}) {
+  let stat;
+  try { stat = captureRootDirectory(entry.deployment, { check }); }
+  catch (error) {
+    if (error instanceof CaptureStop) throw error;
+    throw Object.assign(invalid(`deployment identity is indeterminate: ${entry.deployment}; restore directory access before refreshing or forgetting stored current references`), { cause: error });
+  }
+  if (!stat) return { state: 'absent', identity: null };
+  const observed = identity(stat);
+  return { state: JSON.stringify(observed) === JSON.stringify(entry.deploymentIdentity) ? 'active' : 'replaced', identity: observed };
+}
 function registryDirectory(root) {
   const path = join(root, 'capture-roots');
   // The inventory directory itself is private and must never be redirected.
   let stat;
   try { stat = fs.lstatSync(path); }
   catch (error) {
-    if (error.code === 'ENOENT' && captureRootDirectory(root) === null) return null;
-    if (error.code === 'ENOENT') return null;
+    if (error.code === 'ENOENT') {
+      // Prove a missing record root or validate its ancestry before accepting
+      // an absent inventory; a dangling ancestor must still refuse the read.
+      captureRootDirectory(root);
+      return null;
+    }
     throw error;
   }
   if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.mode & 0o077)) throw invalid(`unsafe capture roots directory: ${path}`);
@@ -135,11 +153,11 @@ function rootWarning(deployment, selected, retired, root) {
 // root lock. A bad entry never turns into a successful truncated inventory.
 export function readCaptureRoots(root, { check = () => {}, inspectRoots = true, sources = formats } = {}) {
   root = resolve(root);
-  const entries = [], rows = [], roots = new Map(); let names = 0, bytes = 0, installed = false, diagnostics = 0;
-  const push = row => { diagnostics++; if (rows.length < 100) rows.push(row); };
+  const entries = [], rows = [], roots = new Map(); let names = 0, bytes = 0, installed = false, diagnostics = 0, incomplete = false;
+  const push = (row, failed = false) => { incomplete ||= failed; diagnostics++; if (rows.length < 100) rows.push(row); };
   try {
     const directory = registryDirectory(root);
-    if (!directory) return { entries, roots: [], rows, installed: false, fingerprint: 'absent' };
+    if (!directory) return { entries, roots: [], rows, installed: false, incomplete: false, fingerprint: 'absent' };
     installed = true;
     const handle = fs.opendirSync(directory.path), selected = [];
     try {
@@ -155,21 +173,30 @@ export function readCaptureRoots(root, { check = () => {}, inspectRoots = true, 
       if (bytes + size > maxTotal) throw invalid('capture roots inventory exceeds 16 MiB; inspect registrations');
       bytes += size;
       try { const read = checkedEntry(path, check); entries.push(read.value); }
-      catch (error) { push({ code: 'capture-roots-invalid', message: `${path}: ${error.message}. Inspect this entry and run setup in its deployment.` }); }
+      catch (error) {
+        if (error instanceof CaptureStop) throw error;
+        push({ code: 'capture-roots-invalid', message: `${path}: ${error.message}. Inspect this entry and run setup in its deployment.` }, true);
+      }
     }
     if (!same(directory.stat, fs.lstatSync(directory.path))) throw invalid('capture roots inventory changed during read; retry after the current setup/forget pass');
-  } catch (error) { push({ code: 'capture-roots-invalid', message: `${join(root, 'capture-roots')}: ${error.message}. Inspect registrations and run setup in the affected deployment.` }); }
+  } catch (error) {
+    if (error instanceof CaptureStop) throw error;
+    push({ code: 'capture-roots-invalid', message: `${join(root, 'capture-roots')}: ${error.message}. Inspect registrations and run setup in the affected deployment.` }, true);
+  }
   // Keep independent valid entries available even when coverage is incomplete.
-  // No caller may interpret rows as successful exhaustive discovery.
+  // Metadata-only configuration/lifecycle warnings do not make the known
+  // discovery union incomplete. They remain health evidence until refreshed.
   for (const entry of entries) {
     check(); let active = false;
     try {
-      const stat = captureRootDirectory(entry.deployment, { check });
-      if (stat) {
-        active = JSON.stringify(identity(stat)) === JSON.stringify(entry.deploymentIdentity);
-        if (!active) push({ code: 'capture-roots-refresh-required', message: `${entry.deployment}: deployment directory identity changed; run oats setup there to refresh registration. Old roots remain retired for discovery.` });
-      }
-    } catch { push({ code: 'capture-roots-unavailable', message: `${entry.deployment}: deployment identity is unreadable; restore access and run oats setup there.` }); }
+      const lifecycle = deploymentState(entry, { check });
+      active = lifecycle.state === 'active';
+      if (lifecycle.state === 'replaced') push({ code: 'capture-roots-refresh-required', message: `${entry.deployment}: deployment directory identity changed; run oats setup there to refresh registration. Old roots remain retired for discovery.` });
+    } catch (error) {
+      if (error instanceof CaptureStop) throw error;
+      push({ code: 'capture-roots-unavailable', message: `${entry.deployment}: deployment identity is unreadable; restore access and run oats setup there.` });
+    }
+    const warnedPaths = new Set();
     if (active) for (const unavailable of entry.unavailable) {
       if (unavailable.path !== undefined) {
         if (!entry.roots.some(root => root.path === unavailable.path && sources.includes(root.source))) continue;
@@ -178,20 +205,25 @@ export function readCaptureRoots(root, { check = () => {}, inspectRoots = true, 
       }
       const warning = captureRootsWarning(unavailable);
       push({ code: 'capture-roots-unavailable', message: `${entry.deployment}: configuration ${warning.configuration}, selector ${warning.selector}: ${warning.reason}. ${warning.remedy}` });
+      if (unavailable.path !== undefined) warnedPaths.add(unavailable.path);
     }
     for (const [values, retired] of [[entry.roots, !active], [entry.retiredRoots, true]]) for (const selected of values.filter(root => sources.includes(root.source))) {
       const existing = roots.get(key(selected));
       roots.set(key(selected), { ...selected, current: !retired || existing?.current === true });
       if (inspectRoots) try { captureRootDirectory(selected.path, { readable: true, check }); }
-      catch { push(rootWarning(entry.deployment, selected, retired, root)); }
+      catch (error) {
+        if (error instanceof CaptureStop) throw error;
+        incomplete = true;
+        if (retired || !warnedPaths.has(selected.path)) push(rootWarning(entry.deployment, selected, retired, root));
+      }
     }
   }
   const total = diagnostics;
-  const bounded = rows.slice(0, 100);
+  const bounded = rows;
   if (total > 100) bounded.push({ code: 'capture-roots-unavailable', message: `${total - 100} additional root diagnostics omitted; inspect the capture-roots entries and repair or refresh their deployments.` });
   const selected = sortedRoots([...roots.values()]);
-  const fingerprint = createHash('sha256').update(JSON.stringify({ entries, rows: bounded, selected })).digest('hex');
-  return { entries, roots: selected, rows: bounded, installed, fingerprint };
+  const fingerprint = createHash('sha256').update(JSON.stringify({ entries, rows: bounded, selected, incomplete })).digest('hex');
+  return { entries, roots: selected, rows: bounded, installed, incomplete, fingerprint };
 }
 
 export function preflightCaptureRoots(root, request) {
@@ -206,7 +238,10 @@ export function preflightCaptureRoots(root, request) {
   const retiredRoots = sortedRoots([...(prior?.retiredRoots ?? []), ...(prior?.roots ?? [])].filter(selected => !currentKeys.has(key(selected))));
   const unavailable = [...request.unavailable];
   for (const selected of current) try { captureRootDirectory(selected.path, { readable: true }); }
-  catch { unavailable.push({ configuration: `(root:${selected.source})`, selector: 'transcript-root', reason: 'unreadable', path: selected.path }); }
+  catch {
+    if (!unavailable.some(row => row.path === selected.path))
+      unavailable.push({ configuration: `(root:${selected.source})`, selector: 'transcript-root', reason: 'unreadable', path: selected.path });
+  }
   const value = { schemaVersion: 1, deployment: request.deployment, deploymentIdentity: identity(fs.statSync(request.deployment, { bigint: true })),
     roots: current, retiredRoots, unavailable: sortedWarnings(unavailable) };
   const contents = JSON.stringify(value, null, 2) + '\n';
@@ -223,7 +258,7 @@ function underLock(root, command, entry, fn, { acquire = acquireCaptureLock, ens
   const lock = acquire(root, { ensureRoot, command, caller: { ...(entry ? { entry } : {}), trigger: command === 'setup-roots' ? 'setup' : 'manual' } });
   if (lock.held) {
     const owner = readCaptureLockOwner(root);
-    const attribution = owner?.pid === lock.held.pid && owner?.startedAt === lock.held.startedAt && ['pass', 'home', 'file', 'reset-cursors', 'retry', 'setup-roots', 'forget-retired-root'].includes(owner?.command) ? owner.command : 'unknown';
+    const attribution = owner?.pid === lock.held.pid && owner?.startedAt === lock.held.startedAt && isCaptureLockCommand(owner?.command) ? owner.command : 'unknown';
     throw Object.assign(new Error(`root registration refused: ${lock.held.recovery}; owning pass ${attribution}. Retry after the current pass finishes (automatic passes are bounded to 300s).`), { code: 'E_CAPTURE_ROOTS_BUSY' });
   }
   let result, failure;
@@ -280,17 +315,37 @@ export function forgetRetiredRoot(root, selected, { entry } = {}) {
   root = resolve(root);
   if (!closed(selected, ['deployment', 'source', 'path']) || !absolute(selected.deployment) || !absolute(selected.path) || !formats.includes(selected.source))
     throw invalid('forget-retired-root requires absolute --deployment, --forget-retired-root and --source cc|pi|codex');
-  return underLock(root, 'forget-retired-root', entry, () => {
+  const recordRoot = captureRootDirectory(root);
+  if (!recordRoot) throw invalid(`record root is missing: ${root}; check --root before forgetting a retired reference`);
+  const ensureRoot = () => {
+    const current = captureRootDirectory(root);
+    if (!current || JSON.stringify(identity(current)) !== JSON.stringify(identity(recordRoot)))
+      throw invalid('record root changed before forgetting a retired reference; check --root and retry explicitly');
+  };
+  return underLock(root, 'forget-retired-root', entry, lock => {
+    ensureRoot();
     const directory = registryDirectory(root);
     const snapshot = captureSetupSnapshot(entryPath(root, selected.deployment));
     if (snapshot.kind === 'absent') return { changed: false };
     if (snapshot.kind !== 'file') throw invalid('unsafe capture root entry');
     const value = validateEntry(JSON.parse(snapshot.bytes), filename(selected.deployment));
     const target = key(selected);
-    if (value.roots.some(root => key(root) === target)) throw invalid('cannot forget a current root; change configuration and run setup to retire it first');
+    const storedCurrent = value.roots.some(root => key(root) === target);
+    let lifecycle;
+    if (storedCurrent) {
+      lifecycle = deploymentState(value);
+      if (lifecycle.state === 'active') throw invalid('cannot forget a current root; change configuration and run setup to retire it first');
+    }
     const retiredRoots = value.retiredRoots.filter(root => key(root) !== target);
-    if (retiredRoots.length === value.retiredRoots.length) return { changed: false };
+    if (!storedCurrent && retiredRoots.length === value.retiredRoots.length) return { changed: false };
+    if (storedCurrent) {
+      value.roots = value.roots.filter(root => key(root) !== target);
+      value.unavailable = value.unavailable.filter(row => row.path === undefined || value.roots.some(root => root.path === row.path));
+    }
     value.retiredRoots = retiredRoots;
+    ensureRoot(); lock.checkOwned();
+    if (lifecycle && JSON.stringify(deploymentState(value)) !== JSON.stringify(lifecycle))
+      throw invalid('deployment identity changed during forget; inspect registration and retry explicitly');
     return publish({ root, snapshot, value, contents: JSON.stringify(value, null, 2) + '\n', changed: true, directory });
-  });
+  }, { ensureRoot });
 }

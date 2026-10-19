@@ -1779,8 +1779,13 @@ and invokes no manager.
 Coverage warnings alone preserve **exit 0** after independent setup work
 succeeds. Text and one-document JSON summaries name registration, hooks,
 service and first-pass effects, plus configuration/selector/reason/remedy
-warnings. An incomplete coverage pass cannot certify full discovery or refresh
-`lastSuccess`. Unrelated hook/service/capture failures retain a nonzero exit and
+warnings. A pass can complete the known, registered/default root union and
+refresh `lastSuccess` while configuration/map/identity metadata warnings remain
+in health. This certifies work over that known union, not coverage of unresolved
+selectors, provider-generated locations or all historical transcripts. Invalid
+or guarded inventory and actual root/discovery/storage failures cannot certify
+completion or refresh `lastSuccess`; invalid inventory is a genuine failure,
+not a warning-only setup result. Unrelated hook/service/capture failures retain a nonzero exit and
 the root warnings. Registry-lock overlap or unsafe publication refuses before
 other registry/hooks/service/capture mutations, names the owning pass, and asks for retry after that pass
 finishes (automatic passes are bounded to 300 seconds). Existing-root busy
@@ -1824,11 +1829,20 @@ turn-record capture --forget-retired-root /absolute/transcripts \
 ```
 
 `oats capture` delegates the same command. All three selectors are mandatory;
-`--root` retains its existing default. The command takes the same lock with
+`--root` retains its existing default and must name an existing record root;
+a missing or changed record root refuses without creating it. The command takes the same lock with
 `forget-retired-root`/manual attribution, removes only that exact format/path
-from that deployment's retired list, and uses the shared durable publisher. A
-current reference in that entry always refuses; a repeated forget is unchanged
-success. Other deployments and current references remain. The command never
+from that deployment's retired list, and uses the shared durable publisher.
+The reader and forget command use the same bounded deployment identity checker.
+A stored current reference can be removed only when that deployment is proven
+absent or replaced by a different inode; its exact lifecycle observation is
+rechecked under the root lock immediately before publication. Active or
+indeterminate deployment identity refuses removal of a stored current reference.
+Only path diagnostics orphaned by the exact removal are dropped; an other-source
+reference at the same path keeps its diagnostic. The recorded deployment identity,
+all other references and other deployments remain. A repeated forget is unchanged
+success; a reappearing deployment can register the path again through setup.
+The command never
 stats, reads, chmods or deletes the transcript directory or any capture history.
 A later explicit setup can register the path again. Ignore rules still match
 source files after root discovery and cannot dismiss root-discovery failures.
@@ -1847,8 +1861,10 @@ workers; the 300-second/256-MiB/2-GiB policy is unchanged.
 
 Registry readers limit each entry to 1 MiB, the inventory to 16 MiB and 4096
 entry names. Future/corrupt entries, filename/deployment mismatches, nonregular
-entries, changed identities and exceeded guards produce incomplete coverage;
-no truncated union can certify success. Health emits at most 100 root diagnostic
+entries, inventory races and exceeded guards produce incomplete coverage;
+no truncated union can certify success. Configuration/map and deployment identity
+warnings remain health-only when the known union itself can be enumerated.
+Health emits at most 100 root diagnostic
 rows plus one omission-count row in its existing schema-version-1 envelope:
 
 - `capture-roots-invalid`: unsafe, corrupt, future, mismatched or oversized

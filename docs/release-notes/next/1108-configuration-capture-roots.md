@@ -16,6 +16,13 @@
   matching warning on an observed readable or proven-absent path, without
   rewriting the inventory. Future consumers must
   render generic code/message rows without a root-code allow-list.
+- Capture completion and `lastSuccess` describe the known default/registered
+  root union. Configuration/map/identity metadata warnings remain in health
+  without failing every pass; invalid inventory and actual root/discovery/storage
+  failures still fail. The exact forget command also handles stored references
+  made effectively retired by a proven absent or replaced deployment, with a
+  shared bounded identity check and recheck; active/indeterminate identities
+  refuse stored-current removal. Other references, identity and history remain.
 
 ## Upgrade
 

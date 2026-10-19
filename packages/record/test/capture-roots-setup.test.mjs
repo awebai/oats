@@ -30,7 +30,7 @@ test('typed setup continues independent steps for a per-root warning, emits one 
   assert.equal(value.ok, true); assert.equal(value.summary.rootRegistration, 'refreshed');
   assert.equal(value.warnings[0].reason, 'relative'); assert.ok(value.warnings[0].remedy);
   assert.equal(value.summary.service, 'skipped (--no-service)');
-  assert.match(value.summary.firstPass, /coverage incomplete/);
+  assert.match(value.summary.firstPass, /appended 0, pending no/);
   assert.equal(readCaptureRoots(f.root).entries.length, 1);
   assert.equal(fs.existsSync(join(f.home, '.config/systemd')), false);
 });
