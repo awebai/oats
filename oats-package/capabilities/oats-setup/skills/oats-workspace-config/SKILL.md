@@ -147,14 +147,17 @@ broker (`aw wake run` as a per-user service). Both are taught in
         gives `active`, and the only owner,
         `gh api --paginate "orgs/<o>/members?role=admin" --jq '.[].login'`
         prints `L` alone. (An outside collaborator sees no org members in
-        the next list, so it would look complete when it isn't.)
+        the next list, so it would look complete when it isn't.) A 404 on
+        the membership means they are not a member: use a pull request, and
+        don't widen the token's scopes, whatever gh's hint says.
      3. `gh api --paginate repos/<o>/<r>/collaborators --jq '.[] | select(.permissions.push) | .login'`
         prints `L` alone. It counts base, team and direct permissions.
      4. No deploy key can write:
         `gh api repos/<o>/<r>/keys --jq '[.[] | select(.read_only | not)] | length'`
         gives `0`. GitHub Apps with write access can't be listed this way;
         this check does not cover them.
-     5. Nothing guards the default branch `<branch>` (`defaultBranchRef`):
+     5. Nothing guards the default branch `<branch>`, its
+        `defaultBranchRef.name`:
         `gh api repos/<o>/<r>/branches/<branch> --jq .protected` gives
         `false`, and `gh api repos/<o>/<r>/rules/branches/<branch> --jq length`
         gives `0`. A 403 there saying the feature needs an upgrade means the
