@@ -146,6 +146,7 @@ export function writeCaptureSetup(snapshot, contents, createdParents = new Map()
         throw error;
       }
     }
+    stage = "temporary recheck";
     recheck();
     temporary = `${snapshot.path}.tmp-${randomUUID()}`;
     stage = "temporary open";

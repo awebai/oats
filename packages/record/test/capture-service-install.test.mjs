@@ -772,3 +772,22 @@ test("setup durable publication: dry run never writes syncs or invokes a manager
   for (const file of f.definition.files) assert.equal(fs.existsSync(file.path), false);
   assert.match(result.stdout, /dry run: no first capture pass/);
 });
+
+test("setup durable publication: partial write removes owned scratch", t => {
+  const f = setupWriteFixture(t), primary = Object.assign(new Error("partial write refused"), { code: "EIO" });
+  let intermediateBytes = 0;
+  f.intercept(event => {
+    if (event.op !== "writeFileSync" || event.kind !== "file") return;
+    const fd = event.args[0];
+    assert.equal(fs.writeSync(fd, f.bytes, 0, 4096), 4096);
+    intermediateBytes = fs.fstatSync(fd).size;
+    assert.equal(intermediateBytes, 4096, "real owned scratch contains the partial write before EIO");
+    throw primary;
+  });
+  assert.throws(() => f.publish(), error => {
+    assert.equal(error.cause, primary); assert.equal(error.published, false); return true;
+  });
+  assert.equal(intermediateBytes, 4096, "partial-write fault was reached");
+  assert.equal(fs.readFileSync(f.target, "utf8"), "old bytes\n");
+  assert.deepEqual(f.scratch(), [], "remove only the owned partial scratch");
+});

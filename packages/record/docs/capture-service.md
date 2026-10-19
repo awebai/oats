@@ -1577,6 +1577,11 @@ Apply rechecks file/ancestor identities and manager ownership/enablement.
 Replaced bytes or symlinks are saved nonoverwriting in a reported datable
 `<root>/service-backups/<date>-<unique-id>/` directory. Symlink backups
 preserve the link instead of reading or removing an external wrapper target.
+Backup bytes and directory/symlink entries are not fsynced and cannot be relied
+on as power-loss-safe recovery. Durability of a replacement does not establish
+backup durability; this is tracked separately in
+[backup durability follow-up #1410](https://github.com/awebai/oats/issues/1410).
+
 An ancestor absent at preflight must remain absent until this apply creates it.
 Creation proceeds one directory at a time without recursive adoption of an
 existing path; each created non-link directory's identity is retained in a
