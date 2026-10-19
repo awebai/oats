@@ -87,8 +87,11 @@ souls/capabilities, trigger/schedule lists and spawn previews answer different
 questions; select the relevant reads rather than running an onboarding audit
 for every local repair. Recheck changed facts and material unknowns.
 
-**Change shared files only by pull request** to the repository that owns the
-file, never silently. Change host facts only on the machine they describe, with
+**Change shared files in the repository that owns them, never silently.** In
+a repository only the person works in (a workspace they created, while they
+are its only member), commit and push straight to its default branch and tell
+them what changed. In a repository others share, or where a direct push is
+refused, open a pull request. When you can't tell which, ask the person. Change host facts only on the machine they describe, with
 its operator's authorization, including authorization already given. Sync when
 the change requires package/workspace resolution; a local settings repair does
 not inherently require source publication or sync. Verify the requested behavior
