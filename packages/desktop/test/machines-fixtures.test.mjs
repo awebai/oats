@@ -68,6 +68,7 @@ test('the dialog over the real answers: the needs-human remedy verbatim, then Ch
   const ui = openAddMachineDialog(doc, { ctx, ws: 'ws:x', deployment: '/Users/j/Agents/deployment', onAdded: id => added.push(id) });
   t.after(() => { ui.close(); dom.window.close(); });
   const host = doc.querySelector('.machine-host'); host.value = 'altair'; host.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  const folder = doc.querySelector('.machine-folder'); folder.value = '~/deployment'; folder.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setImmediate(r)); };
   doc.querySelector('.machine-primary').click(); await settle();
   const git = doc.querySelector('[data-step="git"]');
@@ -102,6 +103,7 @@ test('the dialog over both real answers: connect ready, then messaging needing a
   const ui = openAddMachineDialog(doc, { ctx, ws: 'ws:x', deployment: '/Users/j/Agents/deployment', aweb: true, onAdded: id => added.push(id) });
   t.after(() => { ui.close(); dom.window.close(); });
   const host = doc.querySelector('.machine-host'); host.value = 'altair'; host.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  const folder = doc.querySelector('.machine-folder'); folder.value = '~/deployment'; folder.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setImmediate(r)); };
   doc.querySelector('.machine-primary').click(); await settle();
   const aw = doc.querySelector('[data-phase="aweb"] [data-step="aw"]');

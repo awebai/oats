@@ -1724,7 +1724,7 @@ for (const [name] of palettes) test(`${name}: the soul page's Instructions secti
 });
 
 // #517: Add a machine (every step status) and the Setup tab's Machines box (a row, its states and the Remove confirmation).
-import { openAddMachineDialog } from '../renderer/add-machine-dialog.mjs';
+import { openAddMachineDialog, addMachineCSS } from '../renderer/add-machine-dialog.mjs';
 import { createWorkspaceMachines, machinesCSS, resetMachineChecks } from '../renderer/workspace-machines.mjs';
 for (const [name] of palettes) test(`${name}: Add a machine and the Machines box meet computed AA without opacity`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div class="setup" id="setup"></div></div></body></html>`, { pretendToBeVisual: true });
@@ -1742,6 +1742,7 @@ for (const [name] of palettes) test(`${name}: Add a machine and the Machines box
   const dialog = openAddMachineDialog(doc, { ctx, ws: 'ws:x', deployment: '/Users/j/Agents/k' });
   t.after(() => { dialog.close(); box.dispose(); dom.window.close(); });
   const host = doc.querySelector('.machine-host'); host.value = 'altair'; host.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  const folder = doc.querySelector('.machine-folder'); folder.value = '~/k'; folder.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   doc.querySelector('.machine-primary').click();
   for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
   doc.querySelector('[data-machine="down"] .machine-remove').click();
@@ -1775,6 +1776,9 @@ for (const [name] of palettes) test(`${name}: Add a machine and the Machines box
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1', selector);
   }
+  // A placeholder is not computed here: the Folder hint (#1390) is painted with --muted, which .machine-lede holds on --surface above.
+  assert.match(addMachineCSS, /\.machine-dialog input\.field::placeholder \{ color:var\(--muted\); \}/);
+  assert.ok(doc.querySelector('.machine-folder').closest('.machine-dialog'), 'the hint sits on the dialog\'s --surface');
 });
 
 // #558: the terminal tab's Needs input glyph is a non-text graphic (the trigger's name says it): --warn

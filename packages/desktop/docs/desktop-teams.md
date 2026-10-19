@@ -129,7 +129,7 @@ The page, top to bottom:
 - **The team's card**: the board card's header, problems, facts, warnings, why Remove is off, actions
   and confirmation flows, with the label as the page's `h2` at 24px. It has no foot and opens nothing.
   The Workspace header is hidden with its scope line, so in a view of two or more deployments the card
-  says which one its actions edit under the label ("On This Mac · ~/Agents/oats"), from its own
+  says which one its actions edit under the label ("On This Mac · ~/acme"), from its own
   `createDeploymentScopeLine`, which lives as long as the page. A failed read of the document ("The teams
   on this computer could not be read.", or the kernel's refusal) shows in the card after its
   confirmation, as the board says it, so the page never shows stale facts silently; the add form's
@@ -188,7 +188,7 @@ The teams configuration is one deployment's: a view id is read as the view's pri
 (its first local one, else its first; see
 [workspace views](desktop-deployment-model.md#workspace-views-and-deployments)), and in a view of
 two or more deployments the configuration says which under its heading ("On This Mac ·
-~/Agents/oats"). A remote primary is `unsupported-remote-operation`: teams are edited on the
+~/acme"). A remote primary is `unsupported-remote-operation`: teams are edited on the
 computer that runs the deployment.
 They sit behind the server-wide Host and Origin guards (loopback only; a foreign, `null` or
 malformed `Origin` is 403 before any process), so a cross-origin page cannot rewrite the file.

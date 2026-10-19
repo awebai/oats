@@ -95,7 +95,10 @@ and is not selected.
 
 - Fields: **Machine** (an ssh host alias, free text), **Name** (defaults to
   `<host>-<deployment folder name>`, made a valid id, until edited), **Folder
-  on that machine** (`~/Agents/<deployment folder name>`), **Install OATS
+  on that machine** (starts empty and is required: the dialog suggests no
+  folder, #1390; its hint is "A path on that machine, starting with / or
+  ~/", and Add machine with it empty says so beside it and runs nothing; the
+  kernel's `oats server connect` requires `--dir` as well), **Install OATS
   there if it's missing** (on). It never asks for or shows a secret.
 - Each phase (connect, then messaging) is a box of rows, one per step the CLI
   sent: the step, its status in words (ok, done, needs you, waiting, failed),
