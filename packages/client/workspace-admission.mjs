@@ -12,7 +12,8 @@ export const deploymentCheck = (io) => (p) => { try { return io.isDeployment(p) 
 
 /** The deployments directly inside `dir`, sorted by name: at most PICK_SCAN_LIMIT entries read, a
  * link never followed, nothing parsed. An unreadable or missing `dir` holds none. Used for a picked
- * parent folder, and for ~/Agents, whose deployments the switcher offers unasked (#518).
+ * parent folder. The deployments the Desktop offers unasked come from this computer's deployments
+ * list, which the kernel keeps (deployment-list.mjs, #1390), not from a look inside a folder.
  * @param {string} dir
  * @param {object} io
  * @param {(dir: string, limit: number) => { entries: Array<{ name: string, isDirectory: boolean }>, limited: boolean }} io.list

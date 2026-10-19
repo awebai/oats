@@ -5,9 +5,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameS
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parsePorcelainV2, parseRemoteUrl } from "../lib/instance-git.mjs";
+import { deploymentsImported } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-instance-git-")));
+deploymentsImported(join(base, "oats-home"));
 test.after(() => rmSync(base, { recursive: true, force: true }));
 const write = (p, c) => { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); };
 const git = (cwd, ...a) => execFileSync("git", ["-C", cwd, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();

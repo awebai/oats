@@ -1,6 +1,7 @@
 // A window with no workspace lists the deployments on this computer in its switcher menu (#518): the
-// suggestions main makes (the deployments in ~/Agents, a saved one not served), each added and opened
-// in this window with one click. Its served choices follow what the server serves (#521).
+// suggestions main makes (this computer's deployments list, a saved one not served, #1390), each added
+// and opened in this window with one click. Its served choices follow what the server serves (#521).
+// The list's stale rows and Remove are workspace-switcher-list.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -10,7 +11,7 @@ import { createWorkspaceSwitcher, LOCAL_SECTION } from "../renderer/workspace-sw
 const html = readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
 const deferred = () => { let resolve, reject; const promise = new Promise((ok, no) => { resolve = ok; reject = no; }); return { promise, resolve, reject }; };
 const tick = () => new Promise((r) => setTimeout(r, 0));
-const found = (name) => ({ id: `/h/Agents/${name}`, path: `/h/Agents/${name}`, name, team: null, reason: "found in ~/Agents" });
+const found = (name) => ({ id: `/h/Agents/${name}`, path: `/h/Agents/${name}`, name, team: null, reason: "On this computer", state: "ok", removable: false });
 const FOUR = ["aweb", "jro", "oats", "tsm"].map(found);
 const REMOTE = { id: "ws:aaaaaaaaaaaaaaaaaaaa", name: "tsm", deployments: ["remote:altair:/srv/tsm"], machines: ["altair"] };
 

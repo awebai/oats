@@ -319,7 +319,7 @@ export function workspaceChoices(held, terms, model) {
     // before views, not as "not matched" (each deployment's own reason still says why).
     const unmatched = v.unattached && identityFeature(held);
     return { id: v.id, name: v.name, team: null, deployments: [...v.deployments],
-      // The deployments' labels, in the same order, for a view that is not on screen ("This Mac · ~/Agents/oats").
+      // The deployments' labels, in the same order, for a view that is not on screen ("This Mac · ~/acme").
       deploymentLabels: v.deployments.map((id) => deploymentLabel(model.infos.get(id), terms)),
       // The switcher's one-liner (UI spec, #482): the machines, in order and once each, and how many deployments aren't live.
       machines: [...new Set(v.deployments.map((id) => model.infos.get(id)?.machine).filter(Boolean))],

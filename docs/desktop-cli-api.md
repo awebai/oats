@@ -46,7 +46,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
              "lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel",
              "soul-launch","retire-plan-own-worktree","spawn-kernel-codes","soul-skills","roster-workspace-key","spawn-apply-max-age",
-             "status-retire-state","session-inspect-size","session-inspect-running"],
+             "status-retire-state","session-inspect-size","session-inspect-running","deployments-list"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -135,6 +135,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `spawn-kernel-codes` | `oats spawn`, apply and `--preview`, answers the kernel's own code, as raised, whatever stage of the spawn raised it; `E_SPAWN_FAILED` is for an error with no kernel code (with `details.cause`, as the lifecycle commands' general codes have it). A code says nothing about how far the spawn got: `details.unconfirmed` does. Details are those each code had before; OATS 0.56.0 ([spawn errors](#spawn-errors)). A kernel without it answers `E_SPAWN_FAILED` for most kernel codes its kernel stage raised: there, that code may hide one | |
 | `roster-workspace-key` | `oats server roster --workspace-key <key>`, repeatable: only the groups that can belong to one of the given workspaces are probed and returned (registered for one of them, registered with no known `workspaceKey`, or saved routes only); the answer's shape is unchanged, OATS 0.56.0 ([The remote roster](#roster-workspace-key)). Gate on the probe: a kernel without it ignores the flag and probes and answers every group | |
 | `spawn-apply-max-age` | `--max-age <s>` on a spawn apply bound by `--expect-decision <revision>`: the apply reuses member heads as the preview does, its decision fence unchanged, and its answer carries no `observation` block, OATS 0.58.0 ([Apply](#apply)). Gate on the probe: a kernel without it refuses the flag on an apply (`E_BAD_ARGS`) | |
+| `deployments-list` | `oats deployments [list]\|add\|remove\|import --json`, this computer's list of its deployments (`~/.oats/config/deployments.json`); `listed` on `oats onboard --json`; a kernel command run in an unlisted deployment lists it ([This computer's deployments](#this-computers-deployments-oats-deployments)). Gate on the probe: there is no fallback scan | `deploymentsApi: 1` |
 | `status-retire-state` | `retire` on `oats status --json` instance rows and on remote roster rows: whether a retire of the home is running, cannot be told, failed or was interrupted, read only from the files beside the home, OATS 0.59.0 ([`retire`](#row-retire)). `retirePending` is unchanged. Gate on the probe: a kernel without it never carries the field, so its absence there says nothing | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
@@ -884,7 +885,8 @@ same argument, given once). The ref is checked before anything is written.
  "next":{"clone":[{"key":"github.com/acme/agents","name":"agents","url":"https://github.com/acme/agents.git","dir":"/w/agents-repo","present":false,"host":true},
                   {"key":"github.com/acme/platform","name":"platform","url":"https://github.com/acme/platform.git","dir":"/w/platform","present":true,"host":false}],
          "spawn":"oats spawn acme-oats-setup-expert --dir /w",
-         "souls":["acme-oats-setup-expert","platform-engineer","release-manager"]}}
+         "souls":["acme-oats-setup-expert","platform-engineer","release-manager"]},
+ "listed":true}
 ```
 
 - `sync` is the full [`oats sync`](#oats-sync) report (abridged above).
@@ -922,12 +924,92 @@ same argument, given once). The ref is checked before anything is written.
   share a repository name, `<member repo key>/<soul>`. The text output's step 3 names
   the same soul, or, with none, the conventional name to add.
   `next.souls` is the first three soul names, sorted.
+- `listed` (feature `deployments-list`): `true` once the deployment is on this
+  computer's deployments list ([This computer's deployments](#this-computers-deployments-oats-deployments)),
+  else `{code, message}` with the list's error (`E_DEPLOYMENTS_*`). A failed
+  add never fails the onboard. `--check` lists nothing.
 - Errors: `E_BAD_ARGS` (usage, no `--workspace`, a repeated directory, an
   unknown flag), `E_REPO_REF`, `E_ALREADY_ONBOARDED {local, dir}` (this
   directory already has `oats-local.yaml`), `E_ONBOARD_FAILED {dir}`. A
   failure before the workspace was read removes what onboarding created and
   carries `details: {…, dir, rolledBack: true}`; a later failure keeps the
   files and carries `details: {…, dir, local}`.
+
+<a id="this-computers-deployments-oats-deployments"></a>
+### This computer's deployments (`oats deployments`)
+
+Feature `deployments-list`. The kernel's per-user list of the deployments on
+this computer ([workspaces.md](workspaces.md#this-computers-deployments)).
+Every verb runs from anywhere, needs no deployment, takes no `--server`
+(`E_BAD_ARGS`) and never routes to another machine. Each runs the first-use
+`~/Agents` import before it answers.
+
+```text
+oats deployments [list] --json
+oats deployments add [<dir>] [--via tui|desktop] --json
+oats deployments remove <path> --json
+oats deployments import --from desktop <path>... --json
+```
+
+Every answer is a closed key set ([Shapes are closed](#scope)):
+
+| Verb | `result` keys, exactly |
+|---|---|
+| `list` | `deploymentsApi`, `file`, `deployments`, `imports`; each row `path`, `name`, `state`, `addedAt`, `via` |
+| `add` | `path`, `added` |
+| `remove` | `path`, `removed` |
+| `import` | `imported`, `at`, `added` on the first run; `imported`, `at` on every later one |
+
+A key added to any of them later is a contract change: it is announced here
+first, and accepted by the readers in `packages/client/deployment-list.mjs`
+before a kernel that writes it ships. A change of meaning moves
+`deploymentsApi` to 2. A tombstone stays inside the file: its `removed` and
+`removedAt` never reach an answer, and a tombstoned row is never listed.
+
+**`list`** (the default verb):
+
+```json
+{"deploymentsApi":1,"file":"/home/me/.oats/config/deployments.json",
+ "deployments":[{"path":"/home/me/acme","name":"acme","state":"ok","addedAt":"2026-10-19T10:00:00.000Z","via":"onboard"}],
+ "imports":{"agents-dir":"2026-10-19T10:00:00.000Z"}}
+```
+
+- The answer is exactly these four keys, and each row exactly
+  `{path, name, state, addedAt, via}`. A row `remove` took out is never in
+  it, and fields of the file the answer does not name never reach it.
+- Rows are sorted by `path`. `name` is the last segment of `path`.
+- `state`: `ok`, `missing`, `not-a-deployment` or `unreadable`, from
+  existence checks only. A row is a suggestion: a client admits the
+  deployment again before it serves it.
+- `via`: `onboard`, `tui`, `desktop`, `cli`, `import:agents-dir` or
+  `import:desktop`, for information only.
+- `imports`: the one-time markers as stored (`agents-dir`, `desktop`), each
+  the time it ran.
+
+**`add`** lists the deployment at or above `<dir>` (default: the working
+directory), canonical, and clears a `remove`. → `{"path":"/home/me/acme","added":true}`;
+`added: false` when it was listed already, and nothing is written. `--via
+tui|desktop` names the client that adds it (default `cli`); any other value is
+`E_BAD_ARGS`. Outside every deployment: `E_LOCAL_MISSING {dir}`.
+
+**`remove`** takes the row whose stored path is `<path>` resolved (no walk up,
+so a row whose directory is gone can be removed); nothing on disk is touched.
+→ `{"path":"/home/me/acme","removed":true}`; `removed: false`, exit 0, when
+`<path>` is not listed. The row is kept as a tombstone: nothing but `add` or
+`onboard` lists that path again.
+
+**`import --from desktop`** is the Desktop's one-time migration of its own
+lists. The first run lists every absolute path given, whatever its state, and
+sets `imports.desktop`, in one write →
+`{"imported":true,"at":"<marker>","added":["/home/me/acme"]}` (`added`: the
+paths it listed; zero paths are accepted). Every later run changes nothing →
+`{"imported":false,"at":"<marker>"}`. A relative path is `E_BAD_ARGS` before
+anything is written. A path `remove` took out is not listed again.
+
+Errors of every verb: `E_DEPLOYMENTS_INVALID {file, reason}`,
+`E_DEPLOYMENTS_VERSION {file, schemaVersion}`, `E_DEPLOYMENTS_BUSY {file, lock}`,
+`E_DEPLOYMENTS_WRITE {file}`, `E_DEPLOYMENTS_IMPORT {dir}` ([the messages](workspaces.md#this-computers-deployments)),
+and `E_BAD_ARGS`.
 
 ### `oats sync`
 

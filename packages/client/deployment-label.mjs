@@ -23,7 +23,7 @@ export function shortPath(path, { home = null } = {}) {
   return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : shown;
 }
 
-/** The two halves of a deployment's label: `{ machine, path }` ("This Mac", "~/Agents/oats"; path ''
+/** The two halves of a deployment's label: `{ machine, path }` ("This Mac", "~/acme"; path ''
  * when none). Headings style them apart: a machine label may be uppercased, a path never. */
 export function deploymentLabelParts(deployment, terms) {
   requireTerms(terms, 'deploymentLabelParts');
@@ -32,7 +32,7 @@ export function deploymentLabelParts(deployment, terms) {
   return { machine, path };
 }
 
-/** `This Mac · ~/Agents/oats`, `altair · ~/Agents/tsm`. */
+/** `This Mac · ~/acme`, `altair · ~/northwind`. */
 export function deploymentLabel(deployment, terms) {
   requireTerms(terms, 'deploymentLabel');
   const { machine, path } = deploymentLabelParts(deployment, terms);

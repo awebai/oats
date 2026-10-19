@@ -493,6 +493,20 @@ const collapsedInstances = new Set();
 // Collapsed agent groups (sidebar group headers), keyed like instances.
 const desktopBridge = window.oatsDesktop;
 const unavailableWorkspaceService = () => Promise.reject(new Error("Workspace discovery is not available in this desktop service yet."));
+// An add that opened its workspace but that this computer's deployments list did not record (#1390): said
+// once, and the add is not undone. The window switches to the added workspace right after, which clears
+// the notifications, so it is said once that switch is made (or after 3 s, when no switch comes).
+const noteUnlisted = (result) => {
+  if (result?.ok && result.listed) {
+    const name = result.workspace?.name || result.workspace?.path || "the workspace";
+    const message = `Opened ${name}. This computer's list of deployments didn't record it: ${result.listed.message || result.listed.code}`;
+    let posted = false, timer = null;
+    const post = () => { if (posted) return; posted = true; off(); clearTimeout(timer); notifications.notify(message); };
+    const off = onWorkspaceChange(() => queueMicrotask(post));
+    timer = setTimeout(post, 3000);
+  }
+  return result;
+};
 const workspaceLabel = createWorkspaceSwitcher({
   document,
   // Main binds a switch first; a workspace another window has is focused there instead (#481).
@@ -502,9 +516,10 @@ const workspaceLabel = createWorkspaceSwitcher({
   // Feature-detected while tui-dev lands the approved privileged contract.
   // The final adapter names are intentionally isolated to these three lines.
   discoverSuggestions: desktopBridge.workspaceSuggestions || unavailableWorkspaceService,
-  addWorkspace: desktopBridge.workspaceAdd || unavailableWorkspaceService,
-  pickWorkspace: desktopBridge.workspacePick || unavailableWorkspaceService,
-  onboardWorkspace: desktopBridge.workspaceOnboard || null,
+  addWorkspace: desktopBridge.workspaceAdd ? (path) => desktopBridge.workspaceAdd(path).then(noteUnlisted) : unavailableWorkspaceService,
+  pickWorkspace: desktopBridge.workspacePick ? () => desktopBridge.workspacePick().then(noteUnlisted) : unavailableWorkspaceService,
+  onboardWorkspace: desktopBridge.workspaceOnboard ? (token, ref) => desktopBridge.workspaceOnboard(token, ref).then((result) => { noteUnlisted(result?.added); return result; }) : null,
+  removeListed: desktopBridge.workspaceRemoveListed || null,
   // After the kernel onboarded and the add selected the new deployment: land
   // on its Workspace view.
   onboarded: () => {
@@ -615,7 +630,7 @@ async function reAddRosterWorkspace(ws) {
   let result;
   try { result = await desktopBridge?.workspaceAdd?.(ws); } catch (error) { result = { ok: false, reason: error?.message }; }
   if (lease !== rosterReAddLease || generation !== workspaceGeneration() || currentWorkspace() !== ws) return;
-  if (result?.ok) { rosterPendingWatch.reset(); void refreshContextRoster({ user: true }); return; }
+  if (result?.ok) { noteUnlisted(result); rosterPendingWatch.reset(); void refreshContextRoster({ user: true }); return; }
   if (rosterState?.hasData) return; // a newer observation of this deployment stands
   const error = new Error(`Couldn't re-add ${ws}: ${result?.reason || "the add failed"}`); error.code = NOT_SERVED_CODE;
   contextInstances = []; rosterStale = false; rosterSignaturePainted = null;

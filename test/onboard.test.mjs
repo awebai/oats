@@ -10,7 +10,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import YAML from "yaml";
@@ -30,9 +30,14 @@ function fixtureBase() {
 function oats(args, { cwd, env = {}, base }) {
   return spawnSync(process.execPath, [CLI, ...args], {
     cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PI_AGENT_HOME: "", OATS_HOME: "", HOME: join(base, "home"), OATS_REMOTE_CACHE: join(base, "cache"), ...env },
+    env: { ...process.env, PI_AGENT_HOME: "", OATS_HOME: "", HOME: join(base, "home"), OATS_HOME_DIR: join(base, "home", ".oats"), OATS_REMOTE_CACHE: join(base, "cache"), ...env },
   });
 }
+/** This computer's deployments list of the fixture (awebai/oats#1390): its rows, tombstones included. */
+const listedRows = (base, oatsHome = join(base, "home", ".oats")) => {
+  const file = join(oatsHome, "config", "deployments.json");
+  return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).deployments : [];
+};
 /** stdout must be exactly one JSON envelope. */
 function envelope(r) {
   const doc = JSON.parse(r.stdout);
@@ -73,7 +78,10 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.equal(res.dir, dep);
     assert.equal(res.agents, join(dep, "agents"));
     assert.equal(res.lock, join(dep, "oats-lock.json"));
-    assert.deepEqual(Object.keys(res).sort(), ["agents", "dir", "hosting", "local", "lock", "next", "onboardApi", "sync"]);
+    assert.deepEqual(Object.keys(res).sort(), ["agents", "dir", "hosting", "listed", "local", "lock", "next", "onboardApi", "sync"]);
+    // awebai/oats#1390: what onboard created is on this computer's deployments list, via onboard.
+    assert.equal(res.listed, true);
+    assert.deepEqual(listedRows(base).filter((r) => r.via === "onboard").map((r) => r.path), [realpathSync(dep)]);
 
     // The embedded sync result IS the `oats sync --json` result (same code path).
     const sync = res.sync;
@@ -194,6 +202,7 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.equal(doc.error.code, "E_WORKSPACE_SCHEMA", doc.error.message);
     assert.equal(doc.error.details.rolledBack, true);
     assert.equal(existsSync(dep3), false, "a directory onboard created for a non-workspace is removed again");
+    assert.ok(!listedRows(base).some((row) => row.path.endsWith("/nw3")), "a failed onboard lists nothing");
     // A pre-existing directory stays (it is the operator's), only our files go.
     const dep4 = join(base, "nw4");
     mkdirSync(dep4);
@@ -212,6 +221,26 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.equal(existsSync(join(base, "nw5")), false);
     r = oats(["onboard", join(base, "nw5"), "--dir", join(base, "nw6"), "--workspace", fx.refs.agents, "--json"], { cwd: base, env, base });
     assert.equal(r.status, 1); assert.equal(envelope(r).error.code, "E_BAD_ARGS", "<dir> and --dir together is ambiguous");
+
+    // ---- awebai/oats#1390: --check lists nothing; a list that cannot be written never fails the onboard ----
+    const listBefore = JSON.stringify(listedRows(base));
+    r = oats(["onboard", join(base, "nw7"), "--workspace", fx.refs.agents, "--check", "--json"], { cwd: base, env, base });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(JSON.stringify(listedRows(base)), listBefore, "--check adds nothing");
+    const brokenHome = join(base, "broken-oats-home");
+    mkdirSync(join(brokenHome, "config"), { recursive: true });
+    writeFileSync(join(brokenHome, "config", "deployments.json"), "not json\n");
+    r = oats(["onboard", join(base, "nw8"), "--workspace", fx.refs.agents, "--json"], { cwd: base, env: { ...env, OATS_HOME_DIR: brokenHome }, base });
+    assert.equal(r.status, 0, `a failed list add never fails the onboard\n${r.stderr}`);
+    const listed = envelope(r).result.listed;
+    assert.deepEqual(Object.keys(listed).sort(), ["code", "message"]);
+    assert.equal(listed.code, "E_DEPLOYMENTS_INVALID");
+    assert.match(listed.message, /cannot be read as this computer's deployments list/);
+    assert.equal(readFileSync(join(brokenHome, "config", "deployments.json"), "utf8"), "not json\n", "the broken list is left as it is");
+    r = oats(["onboard", join(base, "nw9"), "--workspace", fx.refs.agents], { cwd: base, env: { ...env, OATS_HOME_DIR: brokenHome }, base });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /nw9 was onboarded, but not added to this computer's deployments list: .*cannot be read/);
+
     r = oats(["onboard", "--help"], { cwd: base, env, base });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /oats onboard \[<dir>\] --workspace <repo ref>/);

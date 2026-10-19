@@ -136,6 +136,17 @@ export function dropInherited(env) {
 /** A copy of this process's environment as it is now, less what a fixture never inherits: where
  *  every environment a helper builds starts. */
 export function inheritedEnv() { return dropInherited({ ...process.env }); }
+/** `oatsHome` (an OATS_HOME_DIR) with this computer's deployments list made, empty, and its ~/Agents
+ *  import marked done (awebai/oats#1390), unless one is there: a test that runs the CLI with an
+ *  OATS_HOME_DIR of its own and the person's HOME calls this, so that no kernel command it runs
+ *  reads the person's ~/Agents. → `oatsHome`. */
+export function deploymentsImported(oatsHome) {
+  const file = join(oatsHome, "config", "deployments.json");
+  if (existsSync(file)) return oatsHome;
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  writeFileSync(file, JSON.stringify({ schemaVersion: 1, deployments: [], imports: { "agents-dir": "2026-01-01T00:00:00.000Z" } }) + "\n", { mode: 0o600 });
+  return oatsHome;
+}
 /** HOME and the XDG base directories under `home`, and git that reads no host configuration file
  *  and never prompts. */
 function isolatedHomeAndGit(home) {
