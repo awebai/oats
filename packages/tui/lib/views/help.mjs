@@ -118,7 +118,7 @@ export const OPEN_RULES = Object.freeze([
 /** The rows under the line of `open`, in `room` cells: the leader then Esc, which takes the focus
  *  from the open terminal, and the leader twice, which types it into the terminal (tui.json's
  *  open.detachKey, text from outside), then OPEN_RULES, each sentence on as many rows as it needs. */
-function openRows(detachKey, room) {
+function openRows(detachKey, room, chorded = false) {
   const label = backKeyLabel(detachKey), esc = keyLabel(LEADER.find((entry) => entry.does === "list").keys[0]);
   const pair = (keys, said) => {
     const key = keyText(keys), lines = flow(words(said), Math.max(1, room - key.width - 1));
@@ -127,9 +127,11 @@ function openRows(detachKey, room) {
   return [
     ...pair(`${label} ${esc}`, "takes the focus from the terminal back to the list; the agent keeps running."),
     ...pair(`${label} ${label}`, "types the leader into the terminal."),
-    ...OPEN_RULES.flatMap((sentence) => flow(words(sentence), room).map((text) => [{ col: 0, text: lit(text) }])),
+    ...[...OPEN_RULES, ...(chorded ? [CHORD_OPEN_RULE] : [])].flatMap((sentence) => flow(words(sentence), room).map((text) => [{ col: 0, text: lit(text) }])),
   ];
 }
+/** Under OPEN_RULES, while the chords are listed: they too are the TUI's in a terminal. */
+export const CHORD_OPEN_RULE = "The chords (below) are taken there too: they never reach the agent.";
 /** The TUI's own sentences under the line of the last act: how a confirmation is worked, and that
  *  what it sent is never ended by the TUI. */
 export const ACT_RULES = Object.freeze([
@@ -147,6 +149,24 @@ const sentences = (list, cols) => list.flatMap((sentence) => {
 
 /** What the leader pressed again does, the last line of the leader's table. */
 export const LEADER_AGAIN = "the leader again: types it into the terminal that has the focus; with the list focused, closes the hint";
+
+/** THE CHORDS (docs/tui.md, "Chords"): listed only while the terminal confirms the kitty keyboard
+ *  protocol, which alone sends them, as extras: the leader is the key that always works. What a
+ *  terminal may take first is said, with foot's list. */
+export const CHORD_RULES = Object.freeze([
+  "Your terminal may take some of these first: foot takes Ctrl+Shift+C, V, R, N, O, U, Z, X and Q. The leader works in every terminal.",
+]);
+/** The chords' rows: `chords` are `[key id, does]`, each said as the leader's table says its `does`. */
+function chordRows(chords, cols) {
+  const said = (does) => LEADER.find((entry) => entry.does === does)?.label ?? does;
+  return [
+    heading("Chords"),
+    [],
+    ...sentences(["Your terminal sends these keys too: each does what the leader then its key does, from every focus, a terminal's too."], cols),
+    ...table(chords.map(([key, does]) => [keyLabel(key), words(said(does))]), cols, KEYS),
+    ...sentences(CHORD_RULES, cols),
+  ];
+}
 
 /** The palette's keys (docs/tui.md, "The palette"): it reads its keys itself, so they are fixed
  *  and the TUI's words. */
@@ -197,8 +217,10 @@ const spawnRows = (cols) => [heading("The spawn prompt"), [], ...table(SPAWN_KEY
  *  now. An action that does one thing in each view has a line per view, its key on each; under
  *  the line of opening an agent stand the back key (`detachKey`, tui.json's `open.detachKey`) and
  *  the rules of OPEN_RULES; under the line of the last act, ACT_RULES. After the leader's table,
- *  the palette's keys (PALETTE_KEYS) and the spawn prompt's (SPAWN_KEYS, SPAWN_RULES). */
-export function helpRows(actions, ascii, cols = 100, detachKey = null) {
+ *  the chords (`chords`, `[key id, does]`, or null while the terminal has not confirmed the kitty
+ *  keyboard protocol: then they are not listed), the palette's keys (PALETTE_KEYS) and the spawn
+ *  prompt's (SPAWN_KEYS, SPAWN_RULES). */
+export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = null) {
   const marks = marksOf(ascii);
   const closing = keyText(["close", "help"].map((id) => actions.find((action) => action.id === id)).filter((action) => action?.keys.length).map((action) => keyLabel(action.keys[0])).join(" or "));
   return [
@@ -207,10 +229,11 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null) {
     ...table(actions.flatMap((action) => {
       const left = action.keys.length ? keyText(keysLabel(action)) : "(no key)";
       if (!action.views) return [[left, words(action.label)]];
-      return action.views.map(([view, said]) => [left, words(said), action.id === "open" && view === "instances" && detachKey !== null ? (room) => openRows(detachKey, room)
+      return action.views.map(([view, said]) => [left, words(said), action.id === "open" && view === "instances" && detachKey !== null ? (room) => openRows(detachKey, room, chords !== null && chords.length > 0)
         : action.id === "restart" ? actRows : undefined]);
     }), cols, KEYS),
     ...(detachKey !== null ? [[], ...leaderRows(detachKey, cols)] : []),
+    ...(chords !== null && chords.length > 0 ? [[], ...chordRows(chords, cols)] : []),
     [],
     ...paletteRows(cols),
     [],
@@ -250,8 +273,8 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null) {
 
 /** `{ rows, extent }`: `size.rows` rows for an area `size.cols` wide, scrolled to `top`, and how
  *  many rows the whole help has. The movement keys scroll it. */
-export function help(actions, size, { top = 0, ascii = false, detachKey = null } = {}) {
-  const all = helpRows(actions, ascii, size.cols, detachKey);
+export function help(actions, size, { top = 0, ascii = false, detachKey = null, chords = null } = {}) {
+  const all = helpRows(actions, ascii, size.cols, detachKey, chords);
   const rows = Array.from({ length: size.rows }, () => []);
   const win = windowOf({ top, count: all.length, height: size.rows });
   all.slice(win.top, win.top + win.size).forEach((spans, i) => { rows[i] = spans; });

@@ -1,11 +1,14 @@
 /** The key parser of `oats tui`: raw terminal input bytes in, key events out.
- * Pure: no IO, no timers, no imports; the only clock is the injected `now`.
- * It reads escape sequences and never writes one.
+ * Pure: no IO, no timers; the only clock is the injected `now`. Its one import is the reading of
+ * the kitty keyboard protocol (term/kitty.mjs). It reads escape sequences and never writes one.
  *
- * Events are plain objects of exactly three shapes:
+ * Events are plain objects of exactly four shapes:
  *   a named key   { name, ctrl, alt, shift }
  *   a grapheme    { text }  or  { text, alt: true }
- *   a paste       { paste }  or  { paste: "", truncated: true } */
+ *   a paste       { paste }  or  { paste: "", truncated: true }
+ *   an answer     { keyboard: flags }: the terminal's answer to the protocol's query (`CSI ? flags u`),
+ *                 while the parser waits for one */
+import { confirmed, kittyId, kittyKey, legacyBytes } from "./kitty.mjs";
 
 export const ESC_TIMEOUT_MS = 50;
 export const PASTE_LIMIT = 1024 * 1024;
@@ -31,6 +34,7 @@ const TILDE_KEYS = Object.freeze({
 /** The Linux console sends F1..F5 as `ESC [ [ A` .. `ESC [ [ E`. */
 const LINUX_KEYS = Object.freeze({ __proto__: null, A: "f1", B: "f2", C: "f3", D: "f4", E: "f5" });
 const KEY_PARAMS = /^\d*(?:;\d*)?$/;
+const NO_CHORDS = new Map();
 const GRAPHEMES = new Intl.Segmenter("en", { granularity: "grapheme" });
 
 const named = (name, ctrl = false, alt = false, shift = false) => ({ name, ctrl, alt, shift });
@@ -121,16 +125,40 @@ function decodeLenient(bytes, length) {
   return text + String.fromCodePoint.apply(null, points);
 }
 
+/** The events a key's legacy bytes read as, whole: a fresh parser without the protocol, the Esc of a
+ *  lone ESC taken at once (the bytes are one key, nothing follows them). */
+export function legacyEvents(bytes) {
+  let t = 0;
+  const parser = createKeyParser({ now: () => t });
+  const events = parser.feed(bytes);
+  t = Infinity;
+  return [...events, ...parser.expire()];
+}
+
 /** `now` is the injected clock in milliseconds; the parser reads it once per
  * `feed` and once per `expire`, and nowhere else.
+ *
+ * `keyboard` is the kitty keyboard protocol (docs/tui.md, "Chords"): null, the default, without it;
+ * "asking" while the terminal's answer to the query is awaited; or the flags it answered once they
+ * hold flag 1. `chords` are the key ids the TUI binds as chords (packages/client/keymap.mjs CHORDS):
+ * a Map of key id to what it does, of which only the ids are read here. While asking, the answer `CSI ? flags u` is the event `{ keyboard: flags }`, and the bytes
+ * after it are read as it says: with flag 1 under the protocol, else as before. Under the protocol a `CSI … u` key is read as its legacy bytes are
+ * (term/kitty.mjs legacyBytes, legacyEvents above), so Ctrl+Shift+C is Ctrl+C as without it, and a
+ * chord as its own key id (`ctrl+shift+k`). An answer at any other time is dropped, as is a `u`
+ * key while not under the protocol.
  *
  *   feed(bytes)  the events of these bytes, in order. Text is never held back:
  *                a complete character is emitted by the feed that completes it.
  *   expire()     call when the clock reaches timeoutAt(): the Esc key, if a lone
  *                ESC has waited ESC_TIMEOUT_MS; else nothing.
- *   timeoutAt()  the clock time at which expire() is due, or null. */
-export function createKeyParser({ now } = {}) {
+ *   timeoutAt()  the clock time at which expire() is due, or null.
+ *   giveUp()     the answer is no longer awaited (none came in time): a late one is dropped.
+ *   keyboard     the protocol as it is now: null, "asking" or the confirmed flags. */
+export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS } = {}) {
   if (typeof now !== "function") throw new TypeError("createKeyParser needs an injected clock: { now: () => milliseconds }");
+  if (!(keyboard === null || keyboard === "asking" || confirmed(keyboard))) throw new TypeError("keyboard is null, \"asking\" or flags that hold flag 1");
+  if (!(chords instanceof Map)) throw new TypeError("chords is a Map of key ids");
+  let kb = keyboard;
   const utf8 = utf8Decoder();
   let state = GROUND, out = [], feedAt = 0, lastFeedAt = 0;
   let run = "";       // consecutive printable code points of this feed, not yet cut into graphemes
@@ -206,8 +234,28 @@ export function createKeyParser({ now } = {}) {
     else if (seq === "" && final === "[") state = LINUX;
     else if (seq === "" && final === "M") { state = MOUSE; mouse = 3; } // X10 mouse report: 3 raw bytes follow
     else if (seq === "200" && final === "~") state = PASTE;
+    else if (final === "u") { kittyEvents(seq); return; }
     else key = csiKey(seq, final);
     if (key) emit(key);
+  };
+
+  /** A `CSI … u`: the protocol's answer while it is awaited, or a key under the protocol. */
+  const kittyEvents = (seq) => {
+    const answer = seq === null ? null : /^\?(\d{1,3})$/.exec(seq);
+    if (answer) {
+      if (kb !== "asking") { flush(); return; }
+      const flags = Number(answer[1]);
+      kb = confirmed(flags) ? flags : null;
+      emit({ keyboard: flags });
+      return;
+    }
+    const key = kb === null || kb === "asking" ? null : kittyKey(seq);
+    if (key === null) { flush(); return; }
+    const id = kittyId(key);
+    if (id !== null && chords.has(id)) { emit(named(key.code === 9 ? "tab" : String.fromCharCode(key.code), true, key.alt, key.shift)); return; }
+    const bytes = legacyBytes(key, kb);
+    if (bytes === null) { flush(); return; }
+    for (const event of legacyEvents(bytes)) emit(event);
   };
 
   const endPaste = (truncated) => {
@@ -312,6 +360,8 @@ export function createKeyParser({ now } = {}) {
     timeoutAt() {
       return state === ESCAPE ? escAt + ESC_TIMEOUT_MS : null;
     },
+    giveUp() { if (kb === "asking") kb = null; },
+    get keyboard() { return kb; },
   };
 }
 

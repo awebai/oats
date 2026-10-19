@@ -4,10 +4,10 @@ import assert from "node:assert/strict";
 import { ACTIONS, bindings, keyLabel } from "../lib/actions.mjs";
 import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, createCapabilityCatalog, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
-import { NO_TERMINAL, USAGE, main, noDeployment, noDeploymentListed, noKernel, noList, parseArgs } from "../lib/main.mjs";
+import { KEYBOARD_WAIT_MS, NO_TERMINAL, USAGE, main, noDeployment, noDeploymentListed, noKernel, noList, parseArgs } from "../lib/main.mjs";
 import { LIST_WORDS } from "../lib/model.mjs";
 import { shown, textOf as textShown } from "../lib/term/text.mjs";
-import { ENTER, LEAVE } from "../lib/term/tty.mjs";
+import { ENTER, LEAVE, POP, PUSH, QUERY } from "../lib/term/tty.mjs";
 import { CLI, DEPLOYMENT, lifecycleSession, lifecycleWork, failed, fakeProcess, fakeStdin, fakeStdout, fakeTimers, instanceRow, modesOf, observed, readTerminalOutput, rosterOf } from "./helpers.mjs";
 
 /** One outcome of the roster read as an event for the store, made as lib/read.mjs `takeRoster`
@@ -81,9 +81,10 @@ function fakePanel(log, options) {
 }
 /** `oats tui` on a fake terminal: the run, its streams and what it wrote. Everything outside the
  *  terminal (the user's file, the deployment, the kernel, the reader) is the test's own. */
-function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false, detachKey: "C-\\" }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", listed = [], listAnswer = null, admit = (path) => ({ ok: true, deployment: path }), prepare = null, confirm = null, start = null, tellable = () => false } = {}) {
+function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false, detachKey: "C-\\" }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", listed = [], listAnswer = null, admit = (path) => ({ ok: true, deployment: path }), prepare = null, confirm = null, start = null, tellable = () => false, keyboard = false, platform } = {}) {
   const log = [];
   const stdin = fakeStdin({ log, isTTY: stdinTTY }), stdout = fakeStdout({ log, columns, rows, isTTY: stdoutTTY }), proc = fakeProcess(), timers = fakeTimers();
+  if (platform !== undefined) proc.platform = platform;
   const kill = proc.kill;
   proc.kill = (pid, signal) => { log.push(["kill", pid, signal]); return kill(pid, signal); };
   const errors = [];
@@ -173,7 +174,9 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
       };
     },
   };
-  r.status = main({ argv, stdin, stdout, stderr, env, proc, now: () => clock, setTimer: timers.setTimer, clearTimer: timers.clearTimer, cwd: () => cwd, home: "/home/u", effects });
+  // `keyboard`: a run asks for the kitty keyboard protocol (docs/tui.md, "Chords"); the tests of a
+  // terminal that is never asked, every one but the chords', pass false, the default here.
+  r.status = main({ argv, stdin, stdout, stderr, env, proc, now: () => clock, setTimer: timers.setTimer, clearTimer: timers.clearTimer, cwd: () => cwd, home: "/home/u", keyboard, effects });
   r.status.then(up);
   return r;
 }
@@ -1391,6 +1394,112 @@ test("the leader twice from the terminal's focus types the leader's own bytes in
   m.stdin.type("\x1b\x1b[I");
   m.stdin.type("q");
   assert.equal(await m.status, 0, "the leader then Esc, then q in the list");
+});
+
+// ── The chords (docs/tui.md, "Chords"): the kitty keyboard protocol asked for at the start, and read
+// only once the terminal answers with flag 1. packages/tui/test/chords.test.mjs has the modules'.
+const writes = (r) => r.log.filter(([what]) => what === "write").map(([, bytes]) => bytes);
+
+test("a run asks for the kitty keyboard protocol in the write that sets its modes; with no answer in its wait it pops it, and reads keys as without it for the rest of the run, a late answer and CSI u keys dropped", async () => {
+  const r = await started({ keyboard: true, platform: "linux", kernel: { ok: true, cli: KEYED }, config: KEY_CONFIG });
+  r.reader.answer(OPEN_ENTRY);
+  assert.equal(writes(r)[0], ENTER + PUSH + QUERY, "pushed and asked after the modes, in one write");
+  assert.equal(PUSH, "\x1b[>5u", "flags 1 and 4");
+  assert.deepEqual(r.timers.delays(), [KEYBOARD_WAIT_MS], "the wait is the one timer");
+  r.stdin.type("\x1b[107;6u");
+  assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/, "Ctrl+Shift+K before an answer is no key");
+  r.log.length = 0;
+  r.timers.fire();
+  assert.deepEqual(writes(r).filter((bytes) => bytes.includes("\x1b[<")), [POP], "popped at the wait's end");
+  r.stdin.type("\x1b[?5u");
+  r.stdin.type("\x1b[107;6u");
+  assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/, "an answer after the wait is not taken");
+  r.stdin.type("\x0b");
+  assert.match(wholeScreen(r), /acme-expert-tui +instance/, "Ctrl+K opens the palette, as without the protocol");
+  r.stdin.type("\x1b\x1b[I");
+  r.log.length = 0;
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  assert.deepEqual(writes(r), [LEAVE], "nothing pushed is left to pop");
+});
+
+test("once the terminal answers with flags 1 and 4, Ctrl+Shift+K opens the palette from the list and from a terminal's focus, where no byte of it reaches the agent; every other key reaches the agent as its legacy bytes; the help lists the chords; quit pops the protocol before the modes", async () => {
+  const r = await opening({ keyboard: true, platform: "linux" });
+  r.stdin.type("\x1b[?5u");
+  assert.deepEqual(r.timers.delays(), [], "the answer ends the wait");
+  assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/);
+  r.stdin.type("\x1b[107;6u");
+  assert.match(wholeScreen(r), /acme-expert-tui +instance/, "Ctrl+Shift+K: the palette");
+  r.stdin.type("\x1b[27u");
+  assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/, "Esc under the protocol: exact, no timer");
+  r.stdin.type("?");
+  let help = wholeScreen(r);
+  for (let page = 0; page < 40 && /more below/.test(help.slice(-40)); page++) { r.stdin.type("\x1b[6~"); help += wholeScreen(r); }
+  assert.match(help, /Chords/);
+  assert.match(help, /Ctrl\+Shift\+K +palette/);
+  // The rules under the table (what a terminal may take first) wrap with the width: chords.test.mjs reads them.
+  r.stdin.type("?");
+  r.stdin.type("\r");
+  await settle();
+  r.panel.opens[0].made("@1");
+  await settle();
+  r.log.length = 0;
+  // Ctrl+C, Esc and then o, Shift+Alt+2 with the shifted key reported: the agent's, as without the protocol.
+  r.stdin.type("a\x1b[99;5u\x1b[27uo\x1b[50:64;4u");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "input").map(([, bytes]) => bytes).join(""), "a\x03\x1bo\x1b@");
+  r.log.length = 0;
+  r.stdin.type("\x1b[107;6uzz");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "input" || what === "paste"), [], "the chord and the rest of its read reach nobody");
+  assert.match(wholeScreen(r), /acme-expert-tui +instance/, "the palette, from the terminal's focus");
+  r.stdin.type("\x1b[27u");
+  r.log.length = 0;
+  r.stdin.type("x");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [["input", "x"]], "closed, the palette gives the terminal its focus back");
+  r.log.length = 0;
+  // The leader (C-\ here) under the protocol is one sequence: no timing; then Esc, the list.
+  r.stdin.type("\x1b[92;5u");
+  r.stdin.type("\x1b[27u");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [], "the leader, Esc and q were the TUI's");
+  assert.equal(writes(r).at(-1), POP + LEAVE, "the protocol popped before the modes, in the one write that leaves");
+});
+
+test("with the protocol confirmed, a split chord typed in a terminal is the leader then its key: the panel splits as after the leader then |, and no byte reaches the agent", async () => {
+  const split = async (keys) => {
+    const r = await opening({ keyboard: true, platform: "linux", columns: 120, rows: 40 });
+    r.stdin.type("\x1b[?5u");
+    r.stdin.type("\r");
+    await settle();
+    r.panel.opens[0].made("@1");
+    await settle();
+    r.log.length = 0;
+    for (const key of keys) { r.stdin.type(key); await settle(); }
+    const did = panelDid(r).filter(([what]) => what !== "refresh");
+    r.stdin.type("\x1b[92;5u");
+    r.stdin.type("\x1b[27u");
+    r.stdin.type("q");
+    assert.equal(await r.status, 0);
+    return did;
+  };
+  const chorded = await split(["\x1b[101;6u"]);
+  assert.deepEqual(chorded, await split(["\x1b[92;5u", "|"]), "Ctrl+Shift+E is the leader then |");
+  assert.equal(chorded.some(([what]) => what === "resize"), true, "the panel was split");
+  assert.equal(chorded.some(([what]) => what === "input" || what === "paste"), false, "nothing reached the agent");
+});
+
+test("with the protocol confirmed, Ctrl+Z (a CSI u key) suspends: the protocol is popped with the modes before the stop, and pushed again with them on the return", async () => {
+  const r = await started({ keyboard: true, platform: "linux" });
+  r.stdin.type("\x1b[?5u");
+  r.stdout.take();
+  r.log.length = 0;
+  r.stdin.type("\x1b[122;5u");
+  assert.equal(r.stdout.take(), POP + LEAVE);
+  assert.deepEqual(r.log.filter(([what]) => what === "kill"), [["kill", 0, "SIGTSTP"]]);
+  r.proc.emit("SIGCONT", "SIGCONT");
+  assert.equal(r.stdout.take().startsWith(ENTER + PUSH), true, "pushed again, not asked again");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
 });
 
 // ── The leader and the palette from a terminal's focus (Spec T1b): the leader is the one key the

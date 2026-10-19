@@ -28,14 +28,15 @@ never does.
 | `lib/read.mjs` | the effects of reading: the deployment, the kernel record, the observer of every deployment opened in the run, the roster of other machines (`oats server roster --json`), the refresh loop, the liveness collector, ending every read, the changes (a stop or retire apply, a start or restart: never ended, their output in files of the run's private directory), the one look at the file system the switcher needs (whether a picked row is a deployment), and `startExec`, the exec of the list's read before the terminal is taken |
 | `lib/store.mjs` | the state and `reduce(state, event)`: pure. It holds the tabs' order, their groups, the shown one of each and the rule for the neighbour after a close (`TAB_LIMIT`, held to the panel's `MAX_TERMINALS` by a test) |
 | `lib/model.mjs` | from the state to the rows and the detail to draw, and to the switcher's rows, by calling the shared readers: pure, no cell position |
-| `lib/term/keys.mjs` | bytes to key events: a pure parser with an injected clock |
+| `lib/term/keys.mjs` | bytes to key events: a pure parser with an injected clock; under the kitty keyboard protocol it reads a `CSI … u` key as its legacy bytes read, a chord as its own id |
+| `lib/term/kitty.mjs` | the kitty keyboard protocol: the flags asked for, a `CSI … u` key read, and the bytes the same key sends without the protocol (`legacyBytes`), which is what an agent is typed |
 | `lib/term/width.mjs` | the cells a grapheme takes |
 | `lib/term/text.mjs` | safe text, the only thing the screen draws: `lit()` and `shown()` |
 | `lib/term/style.mjs` | style values: the TUI's own (the sixteen ANSI colours and four attributes) and an agent's (its colours, 256 and RGB included, and attributes, from a capture) |
 | `lib/term/capture.mjs` | a pane's capture (`capture-pane -e -N`) to rows of cells: characters and an allowlist of SGR, every other sequence and control dropped |
-| `lib/term/through.mjs` | the bytes typed while a terminal has the focus: the back key's grammar and bytes, and the scanner that takes the back key and a bracketed paste out of them |
+| `lib/term/through.mjs` | the bytes typed while a terminal has the focus: the back key's grammar and bytes, and the scanner that takes the back key, a chord and a bracketed paste out of them and, under the kitty keyboard protocol, types every other key as its legacy bytes |
 | `lib/term/screen.mjs` | the cell buffer and the bytes of a frame |
-| `lib/term/tty.mjs` | the guard: enter, leave, signals, suspend, resize, one write per frame |
+| `lib/term/tty.mjs` | the guard: enter, leave, signals, suspend, resize, one write per frame; the kitty keyboard protocol pushed, asked about and popped on every way out |
 | `lib/views/` | pure functions from the model and a size to rows of spans: the frame (the sidebar: its title, the accordion of the three views and the cheat sheet; the main area beside it), the list, the detail, the Capabilities view (`capabilities.mjs`), the switcher, the help, the confirmation of an act (`act.mjs`), the spawn prompt (`spawn.mjs`), the split's geometry (`split.mjs`) |
 
 Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
@@ -46,7 +47,7 @@ Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
   one dynamic import where `bin/oats.mjs` dispatches the word.
 - Only `term/screen.mjs` and `term/tty.mjs` write an ESC byte in a string,
   and only they write to the terminal. `term/through.mjs` (the back key's
-  bytes) and `lib/panel.mjs` (the paste marks it types into the agent's
+  bytes), `term/kitty.mjs` (a key's legacy bytes) and `lib/panel.mjs` (the paste marks it types into the agent's
   pane) hold theirs as numbers. Views are pure: no IO, no clock, no escape
   bytes.
 - No function of this package decodes a kernel answer, groups or orders

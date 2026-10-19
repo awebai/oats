@@ -9,7 +9,7 @@
 // removed, and nothing here decides what a failed read means or which view a deployment is in.
 // Selection is an identity (the shared `instanceId`), never an index, so it survives every read;
 // the rows it moves among are the model's, in drawn order.
-import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings } from "./actions.mjs";
+import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings, chordKeys } from "./actions.mjs";
 import { collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { defaultDetachKey } from "./config.mjs";
 import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, LIST_WORDS } from "./model.mjs";
@@ -81,6 +81,9 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  `platform`'s default, config.mjs defaultDetachKey), and `leaderKey` the key id it is read as
  *  where the TUI reads keys (term/through.mjs backKeyId).
  *  `leader`: `{ read, waiting }` from the leader's read on, or null (see `leading`).
+ *  `keyboard`: the flags the terminal confirmed for the kitty keyboard protocol (lib/main.mjs, the
+ *  event `{ keyboard }`), or null while it has not; `chords`: the chords of `platform`, key id ->
+ *  `does` (actions.mjs chordKeys), read only while `keyboard` is not null (see `leading`).
  *  `palette`: the palette while it is open (see `paletteOpened`), or null. `recent`: the ids of
  *  the instances opened in this run, the latest first.
  *  `act`: the confirmation open in the act view (see `actOpened`), or null; `acted` counts the
@@ -100,7 +103,7 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  agentsRoot, agent, reads, words }`, until its row is opened or two reads did not show it;
  *  `previews` the number of the last preview read asked in the run, so that an answer to a prompt
  *  already closed is never taken by the next one. */
-export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false, platform, detachKey = defaultDetachKey(platform) }) {
+export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false, platform = process.platform, detachKey = defaultDetachKey(platform) }) {
   return Object.freeze({
     view: deployment === null ? "switcher" : "instances", back: deployment === null ? "switcher" : "instances",
     ctxs: Object.freeze(deployment === null ? [] : [deployment]), open: deployment,
@@ -111,7 +114,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     switcher: NO_SWITCHER,
     listed: NO_LIST,
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
-    leaderKey: backKeyId(detachKey), leader: null, palette: null, recent: Object.freeze([]), souls: NO_SOULS, capabilities: NO_CAPABILITIES,
+    leaderKey: backKeyId(detachKey), leader: null, keyboard: null, chords: chordKeys(platform === "darwin", actions), palette: null, recent: Object.freeze([]), souls: NO_SOULS, capabilities: NO_CAPABILITIES,
     spawn: null, spawning: null, spawnCheck: null, arriving: null, previews: 0, tabs: Object.freeze([]), split: null, group: 0, aside: null,
     notice: null,
   });
@@ -1027,6 +1030,11 @@ function leading(state, event, keymap) {
     if (l !== null && l.waiting && !sameRead(l, event)) return twice(next(state, { leader: leaderAt(event.read, false) }));
     return { state: next(state, { leader: leaderAt(event.read, event.rest !== true) }), effect: null };
   }
+  // A chord typed in a terminal (term/through.mjs): the leader then its key, at once.
+  if (event.chord !== undefined) {
+    if (state.keyboard === null || state.terminal?.focus !== "terminal") return { state, effect: null };
+    return led(l === null ? state : next(state, { leader: null }), event.chord, event, keymap);
+  }
   if (typeof event.key !== "string" && !("paste" in event)) return { pass: state };
   if (l !== null && sameRead(l, event)) return { state: l.waiting ? next(state, { leader: leaderAt(l.read, false) }) : state, effect: null };
   if (l !== null && l.waiting) {
@@ -1037,6 +1045,11 @@ function leading(state, event, keymap) {
   }
   const plain = l === null ? state : next(state, { leader: null });
   if (event.key === state.leaderKey) return { state: next(plain, { leader: leaderAt(event.read, true) }), effect: null };
+  // THE CHORDS (docs/tui.md, "Chords"): while the terminal confirms the kitty keyboard protocol, a
+  // chord does what the leader then its key does, from whatever was open. While the leader waits it
+  // is a key not in the leader's table (above): it cancels the leader and is dropped.
+  const chord = state.keyboard === null || typeof event.key !== "string" ? undefined : state.chords.get(event.key);
+  if (chord !== undefined) return led(plain, chord, event, keymap);
   return { pass: plain };
 }
 
@@ -1247,6 +1260,8 @@ function reduced(state, event, keymap) {
   if (lead.pass === undefined) return lead;
   state = lead.pass;
   const stay = { state, effect: null };
+  // The terminal confirmed the kitty keyboard protocol (lib/main.mjs): the chords are read from now on.
+  if (event.keyboard !== undefined) return { state: next(state, { keyboard: event.keyboard }), effect: null };
   if (event.acted !== undefined) return acted(state, event.acted);
   if (event.prepared !== undefined) return prepared(state, event.prepared);
   if (event.given !== undefined) return state.opening?.phase === "preflight" ? { state: next(state, { opening: null }), effect: null } : stay;

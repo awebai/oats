@@ -678,6 +678,8 @@ export function model(state, { page, body = page, now, at, cols, area = cols }) 
     workspace: r.workspace, machines: r.machines, here: r.here, machine: r.machine, counts: r.counts, readAt: r.readAt, notice: r.notice, note: r.note, empty: r.empty, observed: r.observed,
     detailTop: state.detailTop, helpTop: state.helpTop, open: state.open !== null,
     detachKey: state.detachKey, opening: state.opening, openable: false,
+    // The chords, `[key id, does]`, while the terminal confirms the kitty keyboard protocol; else null.
+    chords: state.keyboard === null ? null : [...state.chords],
     terminal: state.terminal, onTerminal: false,
     // The panel's groups (views/frame.mjs), the split and the focused group; the panel stands while
     // any tab is open. `tabs` is the focused group's strip: each tab in order, the shown one marked,

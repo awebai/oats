@@ -539,7 +539,7 @@ function framed(m, size) {
   }
   // The help, under its top row (readRow).
   if (m.view === "help") {
-    const drawn = help(m.actions, { cols: main.cols, rows: size.rows - 1 }, { top: m.helpTop, ascii: m.ascii, detachKey: m.detachKey });
+    const drawn = help(m.actions, { cols: main.cols, rows: size.rows - 1 }, { top: m.helpTop, ascii: m.ascii, detachKey: m.detachKey, chords: m.chords ?? null });
     overlay([readRow(m), ...drawn.rows]);
     return { rows, page: Math.max(1, g.page), extent: drawn.extent, room: Math.max(1, size.rows - 1) };
   }
