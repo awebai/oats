@@ -17,10 +17,12 @@
     under the feature `deployments-list`.
   - **The list fills itself.** `oats onboard` lists what it creates (`listed`
     in its result; a failed add never fails the onboard). Any kernel command
-    run in a deployment that is not listed yet (`status`, `spawn`, `sync`,
-    `doctor` and the others that read a deployment) lists it, silently; once
-    listed, a command reads the list without a lock and writes nothing. A
-    command routed with `--server` lists nothing.
+    that resolves a deployment that is not listed yet (`status`, `spawn`,
+    `sync`, `doctor` and the others that read a deployment) lists it,
+    silently. Once it is listed, a command reads the list and nothing more:
+    no lock, no write, no process (about 0.5 ms on `oats status --json`). A
+    busy lock never delays a command, and a command routed with `--server`
+    lists nothing.
   - **A removed deployment stays removed.** Nothing automatic lists a path
     `oats deployments remove` took out; `oats deployments add` or
     `oats onboard` brings it back.

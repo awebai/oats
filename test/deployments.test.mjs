@@ -8,7 +8,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
 import { devNull, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -232,6 +234,11 @@ test("add: a deployment inside a linked Git worktree is listed at the primary ch
   git(main, "worktree", "add", "-q", join(f.base, "linked"), "-b", "side");
   writeFileSync(join(f.base, "linked", "deploy", "oats-local.yaml"), LOCAL_YAML);
   assert.deepEqual(f.ok(["deployments", "add", join(f.base, "linked", "deploy")]), { path: join(main, "deploy"), added: true });
+  // The directory's own identity: an `agents` link inside it that points elsewhere changes nothing.
+  mkdirSync(join(f.base, "linked", "other", "agents"), { recursive: true });
+  symlinkSync("../other/agents", join(f.base, "linked", "deploy", "agents"));
+  assert.deepEqual(f.ok(["deployments", "add", join(f.base, "linked", "deploy")]), { path: join(main, "deploy"), added: false });
+  assert.deepEqual(f.ok(["deployments"]).deployments.map((d) => d.path), [join(main, "deploy")]);
 });
 
 test("a deployment at the root of a linked Git worktree is the primary checkout's: one row, and its tombstone holds against the auto-add and the Desktop import", (t) => {
@@ -449,7 +456,7 @@ test("oats deployments: usage hides --via, --server is refused, an unknown subco
 
 // ---------------------------------------------------------------- the auto-add (#1390 amendment)
 
-test("auto-add: a kernel command in an unlisted deployment lists it via cli, once, silently; its answer and exit status are unchanged", (t) => {
+test("auto-add: a kernel command that resolves an unlisted deployment lists it via cli, once, silently; its answer and exit status are unchanged", (t) => {
   const f = fixture(t);
   const acme = f.deployment("acme");
   mkdirSync(join(acme, "agents"));
@@ -469,11 +476,16 @@ test("auto-add: a kernel command in an unlisted deployment lists it via cli, onc
   const gamma = f.deployment("gamma");
   f.oats(["launch-config", "list", "--dir", gamma, "--json"]);
   const delta = f.deployment("delta");
-  f.oats(["session", "inspect", "--home", join(delta, "agents", "x", "instances", "y"), "--json"]);
+  mkdirSync(join(delta, "agents"));
+  f.oats(["status", "--json"], { cwd: join(delta, "agents") }); // ensureRoot's canonical root
   const epsilon = f.deployment("epsilon");
   f.oats(["harness", "trust", "--plan", "--harness", "codex", "--dir", epsilon, "--json"]);
   const listed = f.ok(["deployments"]).deployments;
   for (const d of [acme, beta, gamma, delta, epsilon]) assert.equal(listed.find((row) => row.path === d)?.via, "cli", d);
+  // A command that fails before it resolves a deployment lists nothing.
+  const zeta = f.deployment("zeta");
+  f.oats(["session", "inspect", "--home", join(zeta, "agents", "x", "instances", "y"), "--json"]);
+  assert.equal(f.ok(["deployments"]).deployments.some((row) => row.path === zeta), false);
 });
 
 test("auto-add: never on --server, never for a command outside the table, never for --help; a broken list never changes the command", (t) => {
@@ -510,6 +522,34 @@ test("auto-add: a tombstoned deployment is not listed again by a plain command; 
   assert.deepEqual(f.ok(["deployments"]).deployments.map((d) => d.path), [acme]);
 });
 
+test("auto-add budget: a listed deployment costs one read: no lock, no write, the file's mtime unchanged; a held lock does not delay an unlisted one", { skip: ROOT && "root writes anywhere" }, (t) => {
+  const f = fixture(t);
+  const acme = f.deployment("acme"); mkdirSync(join(acme, "agents"));
+  f.oats(["status", "--json"], { cwd: acme });
+  const before = statSync(f.file);
+  // The config directory refuses a new entry: a lock directory or a private file could not be made.
+  chmodSync(join(f.oatsHome, "config"), 0o500);
+  const listed = f.oats(["status", "--json"], { cwd: acme });
+  assert.equal(listed.status, 0, listed.stderr);
+  chmodSync(join(f.oatsHome, "config"), 0o700);
+  const after = statSync(f.file);
+  assert.equal(after.mtimeMs, before.mtimeMs, "the file's mtime is unchanged");
+  assert.equal(after.ino, before.ino, "the file was not replaced");
+  assert.equal(existsSync(f.lock), false, "no lock directory");
+  // A held lock: an unlisted deployment's command does not wait for it, and lists nothing.
+  const beta = f.deployment("beta"); mkdirSync(join(beta, "agents"));
+  const free = Date.now(); f.oats(["doctor", "--json"], { cwd: f.deployment("gamma") }); const baseline = Date.now() - free;
+  const release = f.holdLock(); t.after(release);
+  const started = Date.now();
+  const busy = f.oats(["status", "--json"], { cwd: beta });
+  assert.equal(busy.status, 0, busy.stderr);
+  assert.ok(Date.now() - started < baseline + 1500, `a held lock does not delay the command (${Date.now() - started} ms; a run with the lock free: ${baseline} ms)`);
+  release();
+  assert.equal(f.ok(["deployments"]).deployments.some((row) => row.path === beta), false, "busy: skipped, the next command tries again");
+  f.oats(["status", "--json"], { cwd: beta });
+  assert.equal(f.ok(["deployments"]).deployments.some((row) => row.path === beta), true);
+});
+
 /** Run `fn` with this process's HOME and OATS_HOME_DIR set to the fixture's, then put them back. */
 async function inProcess(f, fn) {
   const saved = { HOME: process.env.HOME, OATS_HOME_DIR: process.env.OATS_HOME_DIR };
@@ -518,23 +558,43 @@ async function inProcess(f, fn) {
   finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
 }
 
-test("auto-add: the common path is a lock-free read; only an unlisted path takes the lock, and it does not wait for it", async (t) => {
+test("auto-add: a listed deployment is answered from the read alone (no process, no lock, no write); only an unlisted one takes the lock, without waiting", async (t) => {
   const f = fixture(t);
   const acme = f.deployment("acme");
   const beta = f.deployment("beta");
   f.ok(["deployments", "add", acme]);
   const release = f.holdLock();
   t.after(release);
-  await inProcess(f, ({ listUnlisted }) => {
-    assert.equal(listUnlisted(join(acme, "agents")), "listed", "a listed deployment is answered while another process holds the lock");
+  // Every call that would be a process, a lock, a write or a realpath is counted while the listed
+  // deployment is answered (realpathSync.native too: the canonical spelling uses it).
+  const calls = [];
+  const originals = [];
+  const count = (mod, name, wrap = (f) => f) => {
+    const original = mod[name];
+    originals.push([mod, name, original]);
+    mod[name] = wrap(function (...args) { calls.push(name); return original.apply(this, args); });
+  };
+  const restore = () => { for (const [mod, name, original] of originals.splice(0).reverse()) mod[name] = original; syncBuiltinESMExports(); };
+  t.after(restore);
+  await inProcess(f, ({ listResolved }) => {
+    for (const name of ["execFileSync", "execSync", "spawnSync", "spawn", "execFile"]) count(childProcess, name);
+    for (const name of ["mkdirSync", "writeFileSync", "renameSync", "openSync", "rmSync"]) count(fs, name);
+    const native = fs.realpathSync.native;
+    count(fs, "realpathSync", (f) => Object.assign(f, { native(...args) { calls.push("realpathSync.native"); return native.apply(this, args); } }));
+    syncBuiltinESMExports();
+    try {
+      assert.equal(listResolved(acme), "listed", "a listed deployment is answered while another process holds the lock");
+      assert.deepEqual(calls.filter((c) => c !== "openSync"), [], "no process, no lock, no write, no realpath");
+      assert.deepEqual(calls, ["openSync"], "one open: the list's bounded read");
+    } finally { restore(); }
     const started = Date.now();
-    assert.equal(listUnlisted(beta), "skipped", "an unlisted one needs the lock, and gives up at once while it is held");
+    assert.equal(listResolved(beta), "skipped", "an unlisted one needs the lock, and gives up at once while it is held");
     assert.ok(Date.now() - started < 2000);
   });
   release();
-  await inProcess(f, ({ listUnlisted }) => {
-    assert.equal(listUnlisted(beta), "added");
-    assert.equal(listUnlisted(beta), "listed");
-    assert.equal(listUnlisted(join(f.base, "outside")), "skipped");
+  await inProcess(f, ({ listResolved }) => {
+    assert.equal(listResolved(beta), "added");
+    assert.equal(listResolved(beta), "listed");
+    assert.equal(listResolved(join(f.base, "outside")), "skipped", "no oats-local.yaml: not a deployment");
   });
 });

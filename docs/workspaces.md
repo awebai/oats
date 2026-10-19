@@ -698,14 +698,19 @@ only. Which deployments a client has open stays with that client.
 - `oats deployments add [<dir>]`, which the clients run when they open a
   deployment, and people by hand. It lists the deployment at or above `<dir>`
   (default: the current directory), found as every kernel `--dir` finds it.
-- **Every kernel command run in a deployment that is not listed yet** lists it
-  (`via: cli`): `status`, `spawn`, `sync`, `session`, `doctor`, `retire` and
-  the others that read a local deployment, from inside an instance home too.
-  The deployment is the one at or above the command's `--home`, its `--dir`
-  (doctor's `[dir]`), or the current directory.
-  - The common case costs no lock: a read of the list finds the path, and
-    nothing is written. Only an unlisted path takes the lock, and only when
-    it is free, re-reads and writes once.
+- **Every kernel command that resolves a deployment that is not listed yet**
+  lists it (`via: cli`): `status`, `spawn`, `sync`, `session`, `doctor`,
+  `retire` and the others that read a local deployment, from inside an
+  instance home too. The deployment is the one the command itself resolved,
+  once per process; a command that resolves none (`version`, help, a command
+  refused before it reads a deployment) checks nothing.
+  - A listed deployment costs one read of the list (at most 1 MiB, no lock),
+    compared with the path the command resolved: no lock, no write, no
+    process. Measured on `oats status --json`, that is about 0.5 ms the first
+    time in a process.
+  - Only an unlisted deployment goes further: its canonical path, then one
+    try of the lock. When the lock is free it re-reads and writes once; when
+    it is busy the add is skipped at once, and the next command tries again.
   - It is best effort and silent: nothing is printed, and the command's
     answer and exit status are the same whether or not it listed anything.
   - A command routed with `--server` never lists anything: the host's path is

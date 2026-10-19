@@ -66,7 +66,8 @@ import { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } from 
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposedInstructions, withSkills, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
 import { readEvents, setWaiting, incarnationOf } from "../lib/instance-events.mjs";
-import { CLIENT_VIA, addDeployment, deploymentAtOrAbove, importDesktopDeployments, listDeployments, listUnlisted, removeDeployment } from "../lib/deployments.mjs";
+import { CLIENT_VIA, addDeployment, deploymentAtOrAbove, importDesktopDeployments, listDeployments, listResolved, removeDeployment } from "../lib/deployments.mjs";
+import { observeResolvedDeployment } from "../lib/resolved-deployment.mjs";
 
 const rawArgs = process.argv.slice(2);
 /** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
@@ -4681,17 +4682,14 @@ try {
     die(message);
   }
 }
-// This computer's deployments list (awebai/oats#1390, amendment 1): a kernel command that reads a
-// local deployment lists it when it is not listed yet (lib/deployments.mjs listUnlisted). The one
-// table of those commands is here. Never on --server (the remote's path is not this computer's),
-// never for help, and silent: no output, no change to the command's answer or exit status.
+// This computer's deployments list (awebai/oats#1390, amendment 1 and its performance budget): a
+// kernel command that resolves a local deployment lists it when it is not listed yet. The one table
+// of those commands is here. The check runs on the command's own resolution, once per process
+// (lib/resolved-deployment.mjs; lib/deployments.mjs listResolved): a listed deployment costs one
+// bounded read of the list. Never on --server (the remote's path is not this computer's), never for
+// help, and silent: no output, no change to the command's answer or exit status.
 const LISTS_ITS_DEPLOYMENT = new Set(["automations", "capabilities", "doctor", "harness", "inspect", "instance", "launch-config", "operation", "package", "pane", "readiness", "retire", "schedule", "session", "soul", "souls", "spawn", "status", "sync", "teams", "trigger", "update", "workspace", "worktree"]);
-if (LISTS_ITS_DEPLOYMENT.has(cmd) && flag("server") === undefined && !args.slice(1).some((a) => a === "--help" || a === "-h")) {
-  // The command's directory: --home, else doctor's [dir], else --dir, else where it runs.
-  const given = (name) => { const v = flag(name); return typeof v === "string" && v.trim() ? v : undefined; };
-  try { listUnlisted(resolve(given("home") ?? (cmd === "doctor" && args[1] && !args[1].startsWith("--") ? args[1] : undefined) ?? given("dir") ?? process.cwd())); }
-  catch { /* best effort: a working directory that is gone is the command's to answer */ }
-}
+if (LISTS_ITS_DEPLOYMENT.has(cmd) && flag("server") === undefined && !args.slice(1).some((a) => a === "--help" || a === "-h")) observeResolvedDeployment(listResolved);
 if (cmd === "onboard") {
   if (args.includes("--help") || args.includes("-h")) { if (JSON_MODE) jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); else usageFor(cmd); process.exit(0); }
   await onboardCmd();
