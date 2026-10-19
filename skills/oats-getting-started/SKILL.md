@@ -257,7 +257,7 @@ name: acme
 members:
   - git:github.com/acme/acme-oats     # the host is a member too
 packages:
-  oats.framework: v1.13.2             # the installed CLI's catalog version (below)
+  oats.framework: v1.13.3             # the installed CLI's catalog version (below)
 defaults:
   capabilities:
     oats.core: { from: package }
@@ -265,7 +265,7 @@ defaults:
 
 - **The `oats.framework` version** is the installed CLI's catalog's:
   `"$(oats root)/package-catalog.json"`, `packages."oats.framework".ref`,
-  for example `oats-framework/v1.13.2`. Write the part after the `/`.
+  for example `oats-framework/v1.13.3`. Write the part after the `/`.
 - **Add nothing else:** knowledge, messaging and teams come with the setup
   expert.
 
