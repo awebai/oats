@@ -165,7 +165,7 @@ function build(state, at) {
   const heading = (deployment, label, path = null) => {
     const its = deploymentState(deployment), up = its.key === "live";
     // A machine's rows are what it reported at the last roster read: that time stands on its
-    // heading only when the header's time is another, so the heading of a machine read with
+    // heading only when the time of this read (the help's top row) is another, so the heading of a machine read with
     // this one is its name alone. A deployment that is not live has its state and short reason
     // in the shared words instead, and no time.
     const read = up && deployment.local === false ? clockTime(state.rosterAt) : null;
@@ -215,7 +215,7 @@ function build(state, at) {
   // machine is in it: both read from the shared entries (`local`), never decided here.
   const away = [...new Set(deployments.filter((d) => d.local === false && text(d.machine)).map((d) => d.machine))];
   const machines = away.length, here = deployments.some((d) => d.local === true);
-  // Whether a list stands under the header: not for a deployment of this machine that was never
+  // Whether a list stands in the sidebar: not for a deployment of this machine that was never
   // observed, nor for a machine that is not live and has no row kept. Each has only its reason.
   const observed = panel !== null && !gone && (local ? status === "observed" : live || instances.length > 0);
   return {
@@ -283,7 +283,7 @@ function flatten(base, cols, ascii) {
  *  they changed. The flattening for the last width asked is kept beside it. */
 const MADE_FROM = ["entries", "remote", "memory", "notes", "rosterAt", "collecting", "ctxs", "open", "collapsed", "cli", "home", "retiring", "ascii"];
 let kept = null;
-/** The roster of a state: the rows in drawn order and what the header says, for a list pane
+/** The roster of a state: the rows in drawn order and what the sidebar's title says, for a list pane
  *  `cols` wide. Only `items` and `index` depend on the width; `rows`, the instances in drawn
  *  order, do not. `at` stamps a machine's panel before any roster outcome was taken, which
  *  never shows; it is passed on. */
@@ -632,12 +632,20 @@ function paletteView(state, page, at) {
   };
 }
 
+/** The rows the switcher's window has in an area `body` rows tall: the line about the open
+ *  workspace takes one, and the filter field one while it is typed or kept (views/frame.mjs). */
+export const switcherHeight = (sw, body) => Math.max(1, body - (sw.line ? 1 : 0) - (sw.editing || sw.query ? 1 : 0));
+
 /** What the views draw for a state. For the Instances view, in a list pane `page` rows tall and
- *  `cols` wide: the header's facts, the rows of the window with their marks, and the selected
- *  instance's detail. For the switcher, in a pane `page` rows tall: the window of its rows. Only
- *  the rows in the pane are worked out. */
-export function model(state, { page, now, at, cols }) {
+ *  `cols` wide: the title's facts, the rows of the window with their marks, and the selected
+ *  instance's detail; the Souls and the Capabilities views' lists in the same pane, also under the
+ *  help, which leaves the sidebar beside it (views/frame.mjs). For the switcher, the palette and
+ *  the spawn prompt, in an area `body` rows tall (`page` when none is given): the window of their
+ *  rows. Only the rows in the pane are worked out. */
+export function model(state, { page, body = page, now, at, cols }) {
   const r = roster(state, at, cols);
+  // The view under the help, or under a confirmation, decides what the sidebar says.
+  const under = state.view === "help" || state.view === "act" ? state.back : state.view;
   const common = {
     view: state.view, focus: state.focus, ascii: state.ascii, actions: state.actions,
     // The filter of the view shown: the Souls view has one of its own.
@@ -652,25 +660,24 @@ export function model(state, { page, now, at, cols }) {
     split: state.split, group: state.group, panelOpen: state.tabs.length > 0, groups: groupsOf(state),
     tabs: groupsOf(state)[state.group].tabs,
     act: state.view === "act" && state.act ? actView(state) : null,
-    // The leader waits for its key (the footer is its hint), and the palette, while it is open.
-    leader: state.leader?.waiting === true, palette: state.palette === null ? null : paletteView(state, page, at),
-    souls: state.view === "souls" ? soulsView(state, page, at) : null,
-    capabilities: state.view === "capabilities" ? capabilitiesView(state, page, at) : null,
-    spawn: state.spawn === null ? null : spawnView(state, page, at),
-    // The line above the panes: the last outcome, else a spawn under way (outcomeOf).
+    // The leader waits for its key (the cheat sheet is its hint), and the palette, while it is open.
+    leader: state.leader?.waiting === true, palette: state.palette === null ? null : paletteView(state, body, at),
+    souls: under === "souls" ? soulsView(state, page, at) : null,
+    capabilities: under === "capabilities" ? capabilitiesView(state, page, at) : null,
+    spawn: state.spawn === null ? null : spawnView(state, body, at),
+    // The line under the sidebar's title: the last outcome, else a spawn under way (outcomeOf).
     outcome: outcomeOf(state),
   };
-  // The view under the help, or under a confirmation, decides what the header says.
-  const under = state.view === "help" || state.view === "act" ? state.back : state.view;
   if (under === "switcher") {
     const s = switcher(state, at);
     const at_ = s.selected === null ? -1 : s.items.findIndex((item) => item.key === s.selected);
     // The line that says what happened to the open workspace stands above the rows and takes one
-    // of the pane's: the window is that much shorter, so no choice is hidden for it.
-    const win = windowOf({ top: state.switcher.top, count: s.items.length, height: Math.max(1, page - (state.switcher.line ? 1 : 0)), keep: state.switcher.loose ? -1 : at_ });
+    // of the pane's, and so does the filter field while it is typed or kept: the window is that
+    // much shorter, so no choice is hidden for them.
+    const win = windowOf({ top: state.switcher.top, count: s.items.length, height: switcherHeight(state.switcher, body), keep: state.switcher.loose ? -1 : at_ });
     return {
       ...common, under, list: [], above: 0, below: 0, wordWidth: 0, detail: null,
-      // Nothing of a workspace stands in the header while the switcher is shown.
+      // Nothing of a workspace stands in the sidebar while the switcher is shown.
       workspace: "", machines: 0, here: false, machine: null, counts: [], readAt: null, notice: null, note: null, empty: null, observed: true, outcome: null,
       filter: Object.freeze({ editing: state.switcher.editing, query: state.switcher.query }),
       switcher: {
@@ -680,7 +687,7 @@ export function model(state, { page, now, at, cols }) {
     };
   }
   const selected = state.selected === null ? -1 : r.index.get(state.selected) ?? -1;
-  // What the detail, the footer and Enter read of the selected row is worked out once per paint.
+  // What the detail, the cheat sheet and Enter read of the selected row is worked out once per paint.
   const row = selected >= 0 ? r.items[selected].row : null, acts = row ? instanceActs(row) : null;
   const decision = row ? openDecision(state, row, acts) : null;
   // The window holds the selection, unless the list was scrolled away from it on purpose.
@@ -694,7 +701,7 @@ export function model(state, { page, now, at, cols }) {
     openable: decision?.open === true && state.opening === null,
     onTerminal: row !== null && state.terminal !== null && state.terminal.id === instanceId(row),
     // The acts whose key opens a confirmation now, read from the same instanceActs answer: the
-    // footer names them. A key not named still answers, with the line that says why. A secondary
+    // cheat sheet names them. A key not named still answers, with the line that says why. A secondary
     // act (Retire while a retire runs) opens on its key and is not named.
     actable: row && state.opening === null ? ACT_VERBS.filter((verb) => !acts.acts.some((each) => each.verb === verb && each.secondary) && actDecision(state, row, acts, verb).open) : [],
     switcher: null,
@@ -722,7 +729,7 @@ export function localDeployments(state, at) {
   return heldDeployments(held).filter((w) => !w.remote).map((w) => ({ id: w.id, remote: false, instances: rowsOf(held, w.id) }));
 }
 
-/** The four acts on an instance, in the order the help, the footer and the keys know them. */
+/** The four acts on an instance, in the order the help, the cheat sheet and the keys know them. */
 export const ACT_VERBS = Object.freeze(["stop", "retire", "start", "restart"]);
 const DONE = Object.freeze({ stop: "stopped", retire: "retired", start: "started", restart: "restarted" });
 /** The TUI's own words around the acts (docs/tui.md, "Stopping, starting, restarting and
@@ -763,7 +770,7 @@ export function buttonLabel(offer, verb, phase) {
 export const BUTTON_ORDER = Object.freeze(["close", "refresh", "check-again", "apply"]);
 
 /** Whether an act key on `row` opens a confirmation, and what the line says when it does not.
- *  `acts` is the row's instanceActs answer, read once per paint (the footer) or per key, as
+ *  `acts` is the row's instanceActs answer, read once per paint (the cheat sheet) or per key, as
  *  openDecision reads it; nothing here decides which acts a row has.
  *    { open: true, verb, id, name, kind, machine, label, home }  a confirmation opens: `kind`
  *        "lifecycle" for stop and retire (the shared confirmation), "start" for the TUI's own

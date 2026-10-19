@@ -119,7 +119,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   if (options.help) { stdout.write(HELP); return 0; }
   leaveInstance(env);
   if (!isTerminal({ stdin, stdout, env })) { stderr.write(`${NO_TERMINAL}\n`); return 1; }
-  const config = effects.loadConfig({ env, home });
+  const config = effects.loadConfig({ env, home, platform: proc.platform });
   if (!config.ok) { stderr.write(config.lines.map((line) => `${line}\n`).join("")); return 1; }
   const found = effects.findDeployment(resolve(cwd(), options.dir ?? "."));
   // Outside every deployment, and with none named: the switcher, when ~/Agents holds a deployment
@@ -402,6 +402,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
       preflight = null;
       if (ready?.id === effect.panel && ready.prepared) view(effect.panel, ready.prepared.binary, ready.prepared.args);
     }
+    // The leader twice from the terminal's focus: its own bytes to the agent, as what is typed goes.
+    if (effect.input) { if (keysReady()) panel.input(effect.input); }
     if (effect.dismiss !== undefined) dismiss(effect.dismiss);
     if (effect.act) openConfirmation(effect.act);
     if (effect.call) callConfirmation(effect.call);
@@ -558,19 +560,22 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     if (keys !== null && keys !== keysTo) { panel.focus(keys); keysTo = keys; }
   }
   /** The frame for the state now, with what the loop needs of it: the layout first, because the
-   *  model's window is as tall, and its sentences as wide, as the list pane it gives. The switcher
-   *  takes the whole body and has no notice of a deployment. The last captures of the displayed
-   *  tabs go with the model: they are the panel's, not the store's. */
+   *  model's window is as tall, and its sentences as wide, as the sidebar's list it gives, and an
+   *  overlay's window as tall as the area it gives (`body`). The open view of the sidebar is the
+   *  one under the help or a confirmation; the switcher opens none and has no notice of a
+   *  deployment. The last captures of the displayed tabs go with the model: they are the panel's,
+   *  not the store's. */
   function composed() {
     const { size, g, m } = modelled();
     return { size, g, made: frame(m, size) };
   }
   function modelled() {
     const size = guard.size(), at = clock();
-    const listing = (state.view === "help" ? state.back : state.view) === "switcher";
-    const r = listing ? { notice: null, note: null, observed: true } : roster(state, at);
-    const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.tabs.length > 0 });
-    const m = { ...model(state, { page: g.page, now: now(), at, cols: g.listCols }), screen: screens.get(state.terminal?.id) ?? null, screens };
+    const under = state.view === "help" || state.view === "act" ? state.back : state.view;
+    const listing = under === "switcher";
+    const r = listing ? { notice: null, note: null } : roster(state, at);
+    const g = layout(r.notice, size, { note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.tabs.length > 0, open: listing ? null : under });
+    const m = { ...model(state, { page: g.page, body: g.body, now: now(), at, cols: g.listCols }), screen: screens.get(state.terminal?.id) ?? null, screens };
     return { size, g, m };
   }
   /** Where the panel stands for the state and the size now, as the Instances view gives it with

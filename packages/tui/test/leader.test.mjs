@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { instanceId } from "../lib/client.mjs";
 import { paletteItems, roster } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
-import { CLI, instanceRow, leaderThen, leaderTwice, observed, stateOf } from "./helpers.mjs";
+import { CLI, instanceRow, leaderEscape, leaderThen, leaderTwice, observed, stateOf } from "./helpers.mjs";
 
 /** A kernel that starts and restarts sessions and plans stops and retires: every act is offered. */
 const ACTS_CLI = Object.freeze({ ...CLI, lifecycleApi: 1, features: Object.freeze([...CLI.features, "session-start", "session-restart", "lifecycle-plans", "retire-retention", "retire-home"]) });
@@ -46,7 +46,8 @@ const leader = (state, read = ++reads, rest = false) => (state.terminal?.focus =
   ? reduce(state, { back: true, read, rest, ...AT })
   : reduce(state, { key: state.leaderKey, read, ...AT }));
 /** The leader twice, each in a read of its own, from any focus (helpers.mjs leaderTwice is the
- *  terminal's: from the list its `{ back }` is no key). */
+ *  terminal's: from the list its `{ back }` is no key). From the list's focus it only closes the
+ *  hint; from the terminal's it types the leader's bytes into the agent. */
 const twice = (state) => key(leader(state).state, state.leaderKey);
 /** The instance's id and its row, by name. */
 const idOf = (state, name) => instanceId(rowOf(state, name));
@@ -143,33 +144,76 @@ test("the leader typed in the terminal with more bytes after it in the same read
   assert.deepEqual(leader(step.state).state.leader.waiting, true);
 });
 
-test("the leader twice, or the leader then Esc, from the terminal gives the list the focus, unzoomed, and the terminal stays open", () => {
+test("the leader then Esc from the terminal gives the list the focus, unzoomed, and the terminal stays open", () => {
   const state = opened(THREE(), "dev-a");
-  const zoomed = key(leaderTwice(state).state, "z").state;
+  const zoomed = key(leaderEscape(state).state, "z").state;
   assert.deepEqual([zoomed.terminal.focus, zoomed.terminal.zoom], ["terminal", true]);
   for (const from of [state, zoomed]) {
-    for (const step of [leaderTwice(from), leaderThen(from, "escape", AT)]) {
+    for (const step of [leaderEscape(from), leaderThen(from, "escape", AT)]) {
       assert.deepEqual([step.state.terminal, step.state.focus, step.state.view, step.state.leader.waiting, step.effect],
         [{ ...state.terminal, focus: "list", zoom: false }, "list", "instances", false, null]);
     }
   }
 });
 
-test("the leader twice, or the leader then Esc, from the list's focus only closes the hint: nothing else changes, also with a terminal open (Settled 5)", () => {
-  const plain = THREE(), withTerminal = leaderTwice(opened(THREE(), "dev-a")).state;
+test("the leader twice from the terminal types the leader's own bytes into the agent, the terminal keeping the focus and its zoom; the hint closes: ESC o for M-o, 0x1c for C-\\, a function key's first form", () => {
+  const state = opened(THREE(), "dev-a");
+  const zoomed = leaderThen(state, "z", AT).state;
+  assert.deepEqual([zoomed.terminal.focus, zoomed.terminal.zoom], ["terminal", true]);
+  for (const from of [state, zoomed]) {
+    const step = leaderTwice(from);
+    assert.deepEqual([step.state.terminal, step.state.focus, step.state.view, step.state.leader.waiting, step.state.palette], [from.terminal, from.focus, "instances", false, null]);
+    assert.deepEqual(Object.keys(step.effect), ["input"]);
+    assert.deepEqual([...step.effect.input], [0x1c], "C-\\, the tests' leader");
+    assert.deepEqual(butLeader(step.state), butLeader(from), "nothing else changes");
+  }
+  for (const [detachKey, leaderKey, bytes] of [["M-o", "alt+o", [0x1b, 0x6f]], ["C-]", "ctrl+]", [0x1d]], ["F12", "f12", [0x1b, 0x5b, 0x32, 0x34, 0x7e]], ["S-F1", "shift+f1", [0x1b, 0x5b, 0x31, 0x3b, 0x32, 0x50]]]) {
+    const keyed = opened(stateOf(observed([instanceRow("dev", "dev-a"), instanceRow("dev", "dev-b", STOPPED), instanceRow("dev", "dev-c")], { cli: ACTS_CLI }), { cli: ACTS_CLI, detachKey }), "dev-a");
+    assert.equal(keyed.leaderKey, leaderKey, detachKey);
+    const step = leaderTwice(keyed);
+    assert.deepEqual([step.state.terminal.focus, step.state.leader.waiting, [...step.effect.input]], ["terminal", false, bytes], detachKey);
+  }
+  // The second leader in the leader's own read is a paste's: it cancels the leader, and types nothing.
+  const read = ++reads, first = leader(state, read);
+  const same = reduce(first.state, { key: state.leaderKey, read, ...AT });
+  assert.deepEqual([same.state.leader.waiting, same.state.terminal.focus, same.effect], [false, "terminal", null]);
+  // A second { back } while the leader waits from an earlier read is the leader twice too.
+  const again = reduce(first.state, { back: true, read: ++reads, rest: false, ...AT });
+  assert.deepEqual([again.state.leader.waiting, again.state.terminal.focus, [...again.effect.input]], [false, "terminal", [0x1c]]);
+});
+
+test("the leader twice from the list's focus, or the leader then Esc, only closes the hint: nothing else changes, also with a terminal open (Settled 5)", () => {
+  const plain = THREE(), withTerminal = leaderEscape(opened(THREE(), "dev-a")).state;
   for (const state of [plain, withTerminal]) {
     for (const step of [twice(state), leaderThen(state, "escape", AT)]) {
       assert.deepEqual([step.state.leader.waiting, step.effect], [false, null]);
       assert.deepEqual(butLeader(step.state), butLeader(state));
     }
   }
-  // From the detail, the help and an open filter field, they give the list its focus.
+  // From the detail, the help and an open filter field, the leader then Esc gives the list its
+  // focus; the leader twice only closes the hint there too.
   const detail = key(plain, "tab").state;
   assert.equal(detail.focus, "detail");
   assert.deepEqual(butLeader(leaderThen(detail, "escape", AT).state), butLeader(plain));
-  assert.deepEqual(butLeader(twice(key(plain, "?").state).state), butLeader(plain));
+  const helped = key(plain, "?").state;
+  assert.deepEqual(butLeader(leaderThen(helped, "escape", AT).state), butLeader(plain));
+  for (const from of [detail, helped]) {
+    const step = twice(from);
+    assert.deepEqual([butLeader(step.state), step.effect], [butLeader(from), null], from.view);
+  }
   const field = leaderThen(keys(plain, "/", "d").state, "escape", AT).state;
   assert.deepEqual([field.filter, field.view], [{ editing: false, query: "d" }, "instances"]);
+  // Under the palette opened from the terminal the terminal has not the focus: twice types nothing.
+  const palette = leaderThen(opened(THREE(), "dev-a"), "k", AT).state;
+  assert.deepEqual(twice(palette).effect, null);
+});
+
+test("the leader is the platform's default without a tui.json: M-o (read as alt+o) on Linux and Windows, C-\\ (ctrl+\\) on macOS", () => {
+  for (const [platform, detachKey, leaderKey] of [["linux", "M-o", "alt+o"], ["win32", "M-o", "alt+o"], ["darwin", "C-\\", "ctrl+\\"]]) {
+    const state = initialState({ deployment: null, cli: CLI, home: "/home/u", platform });
+    assert.deepEqual([state.detachKey, state.leaderKey], [detachKey, leaderKey], platform);
+  }
+  assert.equal(initialState({ deployment: null, cli: CLI, home: "/home/u", platform: "linux", detachKey: "F12" }).leaderKey, "f12", "tui.json's key wins");
 });
 
 test("the leader then z zooms the terminal that has the focus, in and out; then w closes it, the agent left running; with no terminal open w and z do nothing", () => {
@@ -179,9 +223,9 @@ test("the leader then z zooms the terminal that has the focus, in and out; then 
   const unzoomed = leaderThen(zoomed.state, "z", AT);
   assert.deepEqual([unzoomed.state.terminal, unzoomed.effect], [state.terminal, null]);
   // From the list's focus, z goes to the terminal zoomed, as the list's z does.
-  const fromList = leaderThen(leaderTwice(state).state, "z", AT);
+  const fromList = leaderThen(leaderEscape(state).state, "z", AT);
   assert.deepEqual([fromList.state.terminal.focus, fromList.state.terminal.zoom, fromList.effect], ["terminal", true, null]);
-  for (const from of [state, zoomed.state, leaderTwice(state).state]) {
+  for (const from of [state, zoomed.state, leaderEscape(state).state]) {
     const closed = leaderThen(from, "w", AT);
     assert.deepEqual([closed.state.terminal, closed.state.view, closed.effect], [null, "instances", { close: [a] }]);
   }
@@ -195,7 +239,7 @@ test("the leader then z zooms the terminal that has the focus, in and out; then 
 test("the leader then X, D or R from the terminal acts on the terminal's instance, not the selection: its confirmation opens, and closing it gives the focus back to the terminal", () => {
   const base = opened(THREE(), "dev-a"), a = idOf(base, "dev-a");
   // The selection moved to dev-c, then z went back to the terminal, zoomed.
-  const state = key(on(leaderTwice(base).state, "dev-c"), "z").state;
+  const state = key(on(leaderEscape(base).state, "dev-c"), "z").state;
   assert.deepEqual([state.selected, state.terminal.id, state.terminal.focus], [idOf(base, "dev-c"), a, "terminal"]);
   for (const [k, verb, kind] of [["X", "stop", "lifecycle"], ["D", "retire", "lifecycle"], ["R", "restart", "start"]]) {
     const step = leaderThen(state, k, AT);
@@ -206,7 +250,7 @@ test("the leader then X, D or R from the terminal acts on the terminal's instanc
     assert.deepEqual([shut.state.view, shut.state.act, shut.state.terminal.focus, shut.state.terminal.zoom, shut.effect], ["instances", null, "terminal", false, { dismiss: 1 }], `${k}, then Esc`);
   }
   // From the list's focus they act on the selection, and closing leaves the focus in the list.
-  const listed = leaderThen(on(leaderTwice(base).state, "dev-c"), "X", AT);
+  const listed = leaderThen(on(leaderEscape(base).state, "dev-c"), "X", AT);
   assert.deepEqual([listed.state.act.id, listed.state.act.after], [idOf(base, "dev-c"), null]);
   assert.equal(key(listed.state, "escape").state.terminal.focus, "list");
 });
@@ -239,7 +283,7 @@ test("the leader then Down or Up opens the next or previous instance that can be
   // The fifth: every tab is taken, nothing opens and nothing closes, and the line says so.
   const full = leaderThen(at, "down", AT);
   assert.deepEqual([full.effect, full.state.tabs.length, full.state.terminal.id], [null, 4, idOf(state, "grandchild")]);
-  assert.equal(full.state.outcome.said.map((part) => part.own ?? part.shown).join(""), "4 terminals are open; close one with C-\\ w.");
+  assert.equal(full.state.outcome.said.map((part) => part.own ?? part.shown).join(""), "4 terminals are open; close one with Ctrl+\\ w.");
   // Up from the shown tab: the instance above is a tab, and is shown.
   const shownUp = leaderThen(at, "up", AT);
   assert.deepEqual([shownUp.effect, shownUp.state.terminal.id, shownUp.state.terminal.focus], [{ show: idOf(state, "child-a") }, idOf(state, "child-a"), "terminal"]);
@@ -257,7 +301,7 @@ test("the leader then Down or Up opens the next or previous instance that can be
 });
 
 test("the leader then Up or Down moves from the open terminal's instance, not from the selection, also from the list's focus", () => {
-  const state = leaderTwice(opened(TREE(), "child-a")).state, child = idOf(state, "child-a");
+  const state = leaderEscape(opened(TREE(), "child-a")).state, child = idOf(state, "child-a");
   const moved = on(state, "solo-x");
   for (const [k, to] of [["down", "grandchild"], ["up", "lead"]]) {
     const step = leaderThen(moved, k, AT);
@@ -289,10 +333,10 @@ test("the palette lists the instances most recently opened in this run first, th
   const state = THREE(), a = idOf(state, "dev-a"), c = idOf(state, "dev-c");
   const openedC = opened(state, "dev-c");
   assert.deepEqual(openedC.recent, [c]);
-  assert.deepEqual(rows(key(leaderTwice(openedC).state, "ctrl+k").state).slice(0, 2), ["instance dev-c", "instance dev-a"]);
-  const thenA = key(on(leaderTwice(openedC).state, "dev-a"), "enter").state;
+  assert.deepEqual(rows(key(leaderEscape(openedC).state, "ctrl+k").state).slice(0, 2), ["instance dev-c", "instance dev-a"]);
+  const thenA = key(on(leaderEscape(openedC).state, "dev-a"), "enter").state;
   assert.deepEqual(thenA.recent, [a, c]);
-  assert.deepEqual(rows(key(leaderTwice(thenA).state, "ctrl+k").state).slice(0, 2), ["instance dev-a", "instance dev-c"]);
+  assert.deepEqual(rows(key(leaderEscape(thenA).state, "ctrl+k").state).slice(0, 2), ["instance dev-a", "instance dev-c"]);
 });
 
 test("typing filters each group by the subsequence score, a prefix first and a tie in the group's order; a query that matches nothing leaves no row; Backspace takes a character off", () => {
@@ -364,7 +408,7 @@ test("an act run from the palette opens its confirmation on the palette's instan
   assert.deepEqual([ran.state.palette, ran.state.view, ran.state.act.verb, ran.state.act.id, ran.state.act.after], [null, "act", "stop", a, null]);
   assert.deepEqual(ran.effect, { act: { n: 1, verb: "stop", id: a, row: rowOf(state, "dev-a"), label: null } });
   // From the terminal on dev-a, with dev-c selected.
-  const base = opened(state, "dev-a"), moved = key(on(leaderTwice(base).state, "dev-c"), "z").state;
+  const base = opened(state, "dev-a"), moved = key(on(leaderEscape(base).state, "dev-c"), "z").state;
   const open = leaderThen(moved, "k", AT).state;
   assert.deepEqual(paletteItems(open).items.filter((item) => item.kind === "act").map((item) => [item.does, item.id]), [["stop", a], ["retire", a], ["restart", a]]);
   const restart = keys(open, "r", "e", "s", "t", "enter");
@@ -513,7 +557,7 @@ test("the leader then Down or Up opens the next or previous instance in the Inst
 
 test("with a terminal open, the leader then z zooms it and the leader then w closes it from any view: the Instances view comes back, a confirmation closed and the loop told", () => {
   for (const [what, reach] of SHOWN) {
-    const listed = twice(opened(THREE(), "dev-a")).state;
+    const listed = leaderEscape(opened(THREE(), "dev-a")).state;
     assert.equal(listed.terminal.focus, "list");
     const before = reach(listed);
     const zoomed = key(leader(before).state, "z");

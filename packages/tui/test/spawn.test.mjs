@@ -312,14 +312,14 @@ test("created and launched with every tab taken (Settled 7 of T2): when the row 
     const id = instanceId(roster(s).instances.find((each) => each.instance === name));
     s = reduce(key(Object.freeze({ ...s, selected: id }), "enter").state, { shown: { id } }).state;
     s = reduce(s, { back: true, read: ++reads }).state;
-    s = key(s, s.leaderKey).state;
+    s = key(s, "escape").state;
   }
   assert.deepEqual([s.tabs.length, s.arriving?.instance], [4, "dev-2"]);
   const arrived = reduce(s, { id: DEPLOYMENT, entry: observed([...ROWS, ...more, instanceRow("dev", "dev-2")], { cli: FACTS_CLI }), number: 3 });
   assert.deepEqual([arrived.state.tabs.map((tab) => tab.name), arrived.state.terminal.name, arrived.state.arriving], [["dev-a", "reviewer-a", "dev-x", "dev-y"], "dev-y", null]);
   assert.equal(arrived.effect?.open, undefined, "nothing opens");
   assert.equal(arrived.effect?.close, undefined, "nothing closes");
-  assert.equal(ownText(arrived.state.outcome.said), "Created dev-2. 4 terminals are open; close one with C-\\ w.");
+  assert.equal(ownText(arrived.state.outcome.said), "Created dev-2. 4 terminals are open; close one with Ctrl+\\ w.");
 });
 
 test("created but partial, incomplete or not launched: the shared words and the TUI's for what follows; nothing opens", () => {

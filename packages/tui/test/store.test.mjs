@@ -311,8 +311,8 @@ test("the empty row between clusters and single instances is never selected: dow
 test("a page key moves by a pane and stops at both ends", () => {
   let state = stateOf(observed(MANY));
   const { page } = draw(state);
-  assert.equal(page, 20, "the list pane of 80x24: the body's rows, the header, its rule and the footer taken");
-  // A pane of 20 rows shows 19 instances when rows are cut off, its last row saying so: a page is
+  assert.equal(page, 17, "the list pane of 80x24: the screen's rows less the sidebar's title, the three views' rows, the rules after the list and before the cheat sheet, and the leader's row");
+  // A pane of 17 rows shows 16 instances when rows are cut off, its last row saying so: a page is
   // read here as either, the pane's rows or the rows it shows. Short of an end it is never less.
   const seen = [];
   for (const key of ["pagedown", "pagedown", "pagedown", "pagedown", "pageup", "pageup", "pageup", "pageup"]) {
@@ -1372,8 +1372,10 @@ function framed(state, size = SIZE) {
   const made = draw(state, size);
   return { ...made, m: model(state, { page: made.page, now: NOW, at: AT, cols: made.cols }) };
 }
-/** The row of a frame that carries the selection mark, and its place; null and -1 when none does. */
-const markedAt = (lines) => lines.findIndex((line) => line.startsWith(">"));
+/** The row of a frame that carries the selection mark, and its place; null and -1 when none does.
+ *  The mark stands first in the sidebar's list, or first in the main area, a cell after the rule
+ *  beside the sidebar: the switcher's from 80 columns. */
+const markedAt = (lines) => lines.findIndex((line) => line.startsWith(">") || line.includes("│ >"));
 const marked = (lines) => lines[markedAt(lines)] ?? null;
 /** Twenty-five single instances of this machine: more than the list pane of 80x24 holds. */
 const CROWD = Array.from({ length: 25 }, (_, i) => instanceRow("dev", `inst-${String(i).padStart(2, "0")}`));
@@ -1395,7 +1397,7 @@ test("selecting the last instance brings what stands under it into the pane: aft
   const read = heard(stateOf(reporting(CROWD), { cli: READS }), { thrown: "ENOENT" }, tick(0));
   const failure = read.remote.rosterFailure;
   assert.equal(failure.endsWith("ENOENT"), true);
-  assert.equal(draw(read).page, 20, "the list pane of 80x24: the 25 instances and the three rows after them do not fit");
+  assert.equal(draw(read).page, 17, "the list pane of 80x24: the 25 instances and the three rows after them do not fit");
   // On the instance before the last the window is the least that shows it: the rows after the list are cut off.
   const near = goTo(read, "inst-23");
   assert.equal(framed(near).lines.some((line) => line.includes(ROSTER_FAILED)), false);
