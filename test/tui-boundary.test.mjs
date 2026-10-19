@@ -323,7 +323,7 @@ test("lib/read.mjs starts the reads and the changes and lib/panel.mjs the privat
   const configCode = code(read("packages/tui/lib/config.mjs"));
   assert.deepEqual(configCode.split("mkdirSync(").length - 1, 1, "one mkdirSync");
   assert.ok(configCode.includes("mkdirSync(dirname(to), { recursive: true, mode: 0o700 })"), "the moved file's directories, made 0700");
-  assert.deepEqual([...configCode.matchAll(/\blinkSync\(([^)]*)\)/g)].map((call) => call[1]), ["path, to"], "linked into place from its own file: never over one");
+  assert.deepEqual([...configCode.matchAll(/\blinkSync\(([^)]*)\)/g)].map((call) => call[1]), ["own, to"], "linked into place from its own file: never over one");
   assert.doesNotMatch(code(read("packages/tui/lib/panel.mjs")), /mkdtempSync|mkdirSync|tmux-\d|"oats-tmux/, "the panel makes no directory and names no socket but its own");
   assert.match(code(read("packages/tui/lib/read.mjs")), /mkdtempSync\(join\(tmpdir\(\), "oats-tui-"\)\)/, "in a private directory of its own under the OS temp dir");
   // No folder is opened to be listed anywhere in the client.

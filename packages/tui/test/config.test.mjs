@@ -671,39 +671,74 @@ test("the move into an OATS home whose config is a file: refused, the old file k
   assert.equal(exists(aside), false);
 });
 
-test("the move on a file system without hard links: renamed into place; and two starts at once, the second's copy over the first's, leave the new file read and kept", () => {
-  // node:fs's own functions replaced for this test alone (config.mjs's imports follow them): the
-  // link refused as such a file system refuses it, and the second start run whole between the
-  // first's last look and its rename.
-  const { env, home, old, file, aside } = moving();
-  const bytes = '{"ascii": true, "keys": {"quit": ["x"]}}';
-  fs.writeFileSync(old, bytes);
-  const { linkSync, renameSync } = fs, now = Date.now;
-  let ticks = now(), second;
+/** Two starts at once on real files: `first` is started, and `second` is run whole at the
+ *  instant the first places its copy (its link into place, or, with `links` false, its write of
+ *  the new path on a file system that refuses hard links). node:fs's own functions are replaced
+ *  for this alone (config.mjs's imports follow them). Answers both starts' answers. */
+function twoStarts(first, second, { links }) {
+  const native = { linkSync: fs.linkSync, openSync: fs.openSync }, now = Date.now;
+  let ticks = now(), nested = 0, inner;
+  const placing = (to) => to === configPath(first.env, first.home);
+  const cut = () => { if (nested === 0) { nested += 1; inner = loadConfig(second); } };
   try {
     Date.now = () => ++ticks; // each start's own file a name of its own
-    fs.linkSync = () => { throw Object.assign(new Error("links unsupported"), { code: "EPERM" }); };
-    fs.renameSync = (from, to) => {
-      if (second === undefined && to === file) second = loadConfig({ env, home });
-      return renameSync(from, to);
+    fs.linkSync = (from, to) => {
+      if (!links) throw Object.assign(new Error("links unsupported"), { code: "EPERM" });
+      if (placing(to)) cut();
+      return native.linkSync(from, to);
+    };
+    fs.openSync = (file, flags, mode) => {
+      if (!links && flags === "wx" && placing(file)) cut();
+      return native.openSync(file, flags, mode);
     };
     syncBuiltinESMExports();
-    const first = loadConfig({ env, home });
-    for (const [which, loaded] of [["the second", second], ["the first", first]]) {
-      assert.deepEqual([loaded.ok, loaded.ascii, loaded.actions.find((action) => action.id === "quit").keys], [true, true, ["x"]], which);
-    }
+    const outer = loadConfig(first);
+    assert.equal(nested, 1, "exactly one start ran inside the first");
+    return { outer, inner };
   } finally {
-    fs.linkSync = linkSync;
-    fs.renameSync = renameSync;
+    Object.assign(fs, native);
     Date.now = now;
     syncBuiltinESMExports();
   }
-  assert.equal(fs.readFileSync(file, "utf8"), bytes, "the new file stays, with the old file's bytes");
-  assert.equal(modeOf(file), 0o600);
-  assert.equal(fs.readFileSync(aside, "utf8"), bytes);
-  assert.equal(exists(old), false);
-  assert.deepEqual(fs.readdirSync(path.dirname(file)), ["tui.json"], "no file of its own is left behind");
-  assert.equal(loadConfig({ env, home }).ascii, true, "and the next start reads it");
+}
+const quitOf = (loaded) => loaded.actions.find((action) => action.id === "quit").keys;
+
+test("the move, two starts at once moving the same old file, with hard links and without: one moves it, the other reads what it moved once it is moved, and nothing is lost", () => {
+  for (const links of [true, false]) {
+    const { env, home, old, file, aside } = moving();
+    const bytes = '{"ascii": true, "keys": {"quit": ["x"]}}';
+    fs.writeFileSync(old, bytes);
+    const { outer, inner } = twoStarts({ env, home }, { env, home }, { links });
+    assert.deepEqual([inner.ok, inner.ascii, quitOf(inner)], [true, true, ["x"]], `${links}: the start that moved it`);
+    assert.deepEqual([outer.ok, outer.ascii, quitOf(outer)], [true, true, ["x"]], `${links}: the start that found it moved`);
+    assert.equal(fs.readFileSync(file, "utf8"), bytes, `${links}: the new file stays, with the old file's bytes`);
+    assert.equal(modeOf(file), 0o600);
+    assert.equal(fs.readFileSync(aside, "utf8"), bytes);
+    assert.equal(exists(old), false);
+    assert.deepEqual(fs.readdirSync(path.dirname(file)), ["tui.json"], `${links}: no file of its own is left behind`);
+    assert.equal(loadConfig({ env, home }).ascii, true, `${links}: and the next start reads it`);
+  }
+});
+
+test("the move, two starts at once with one OATS home and two XDG_CONFIG_HOMEs, with hard links and without: the new file is never written over; the start that finds another's beside its own old file refuses as for both", () => {
+  for (const links of [true, false]) {
+    const { env, home, root, file } = moving();
+    const ownXdg = (name, bytes) => {
+      const xdg = path.join(root, name), old = path.join(xdg, "oats", "tui.json");
+      fs.mkdirSync(path.dirname(old), { recursive: true });
+      fs.writeFileSync(old, bytes);
+      return { env: { ...env, XDG_CONFIG_HOME: xdg }, home, old };
+    };
+    const first = ownXdg("xdg-first", '{"ascii": true, "keys": {"quit": ["x"]}}'), second = ownXdg("xdg-second", '{"keys": {"quit": ["f11"]}}');
+    const { outer, inner } = twoStarts(first, second, { links });
+    assert.deepEqual([inner.ok, inner.ascii, quitOf(inner)], [true, false, ["f11"]], `${links}: the start that placed the file`);
+    assert.deepEqual(outer, { ok: false, lines: [bothThere(first.old, file)] }, `${links}: the other refuses, its settings never written over the first's`);
+    assert.equal(fs.readFileSync(file, "utf8"), '{"keys": {"quit": ["f11"]}}');
+    assert.equal(fs.readFileSync(first.old, "utf8"), '{"ascii": true, "keys": {"quit": ["x"]}}', `${links}: the refused start's old file kept`);
+    assert.equal(exists(second.old), false);
+    assert.deepEqual(quitOf(loadConfig(second)), ["f11"], `${links}: the next start of the one that moved it reads its own settings`);
+    assert.deepEqual(loadConfig(first), { ok: false, lines: [bothThere(first.old, file)] });
+  }
 });
 
 test("the move, a link as the old file: what it points at is copied, the link itself is renamed, and its target is untouched", () => {
@@ -811,12 +846,15 @@ test("the move, a rename that fails: the copy is deleted only while it is still 
   assert.deepEqual(named(movedMeanwhile.calls, "read"), [["read", movedMeanwhile.NEW]]);
 });
 
-test("the move, a run that loses the race to another starting reads the file that run placed, and moves nothing itself", () => {
-  const placedFirst = fakeMove({ place(given, file, entries) { entries.set(file, { ino: 9 }); return { ino: 7, taken: true }; } });
+test("the move, a run that loses the race to another starting asks the table again: it reads the file that run placed once that run moved the old file, and refuses as for both while an old file is there", () => {
+  const placedFirst = fakeMove({ place(given, file, entries) { entries.set(file, { ino: 9 }); entries.delete("/x/oats/tui.json"); return { ino: 7, taken: true }; } });
   assert.equal(placedFirst.ok, true);
   assert.equal(placedFirst.ascii, true);
   assert.deepEqual(named(placedFirst.calls, "rename"), []);
   assert.deepEqual(named(placedFirst.calls, "read"), [["read", placedFirst.NEW]]);
+  const oldStill = fakeMove({ place(given, file, entries) { entries.set(file, { ino: 9 }); return { ino: 7, taken: true }; } });
+  assert.deepEqual(oldStill.lines, [bothThere(oldStill.OLD, oldStill.NEW)], "this run's old file beside the new one is both: never another's settings read in its place");
+  assert.deepEqual(named(oldStill.calls, "rename"), []);
   const goneAgain = fakeMove({ place() { return { ino: 7, taken: true }; } });
   assert.deepEqual(goneAgain.lines, [cannotMove("EEXIST", goneAgain.OLD, goneAgain.NEW)], "an entry that was there and is gone again is no file to read");
   // An EEXIST thrown on the way (a directory that is a file, its own file's name taken) is no race.
@@ -824,16 +862,16 @@ test("the move, a run that loses the race to another starting reads the file tha
   assert.deepEqual(thrown.lines, [cannotMove("EEXIST", thrown.OLD, thrown.NEW)]);
   assert.deepEqual(named(thrown.calls, "read"), []);
 
-  // The other run renamed the old file between this run's looks, and placed the new one.
-  let looks = 0;
-  const newAfterFirstLook = () => (looks++ === 0 ? null : { ino: 9 });
-  const backupMade = fakeMove({ there: { "/o/config/tui.json": newAfterFirstLook, [path.join("/x/oats", MIGRATED)]: { ino: 1 } } });
+  // The other run placed the new file and renamed the old one between this run's looks.
+  const afterFirstLook = (first, then) => { let looks = 0; return () => (looks++ === 0 ? first : then); };
+  const backupMade = fakeMove({ there: { "/x/oats/tui.json": afterFirstLook({ ino: 1 }, null), "/o/config/tui.json": afterFirstLook(null, { ino: 9 }), [path.join("/x/oats", MIGRATED)]: { ino: 1 } } });
   assert.equal(backupMade.ok, true, "its backup found");
   assert.deepEqual(named(backupMade.calls, "place"), []);
-  looks = 0;
-  const oldGone = fakeMove({ there: { "/o/config/tui.json": newAfterFirstLook }, stat: (file) => (file === "/x/oats/tui.json" ? null : { file: true, size: 15 }) });
+  const oldGone = fakeMove({ there: { "/x/oats/tui.json": afterFirstLook({ ino: 1 }, null), "/o/config/tui.json": afterFirstLook(null, { ino: 9 }) }, stat: (file) => (file === "/x/oats/tui.json" ? null : { file: true, size: 15 }) });
   assert.equal(oldGone.ok, true, "the old file gone");
   assert.deepEqual(named(oldGone.calls, "place"), []);
+  const aBackupOfItsOwn = fakeMove({ there: { "/o/config/tui.json": afterFirstLook(null, { ino: 9 }), [path.join("/x/oats", MIGRATED)]: { ino: 1 } } });
+  assert.deepEqual(aBackupOfItsOwn.lines, [bothThere(aBackupOfItsOwn.OLD, aBackupOfItsOwn.NEW)], "a new file placed meanwhile beside this run's old file is both");
 });
 
 test("the move's other failures refuse with the code of the error and never its text, before anything is changed when they come first", () => {

@@ -161,7 +161,7 @@ function openProblem(given) {
  *  not followed (a link to nothing is an entry), or null; `place` writes `bytes` as a new file at
  *  `path`, never over one: a file of its own first (mode 0600, synced), in the directory it makes
  *  with mode 0700 when it is missing, then linked there, or, on a file system without hard links,
- *  renamed there once a last look finds nothing there. It answers that file's `{ ino }`, with
+ *  written there, made only where nothing is. It answers that file's `{ ino }`, with
  *  `taken: true` when an entry was at `path` already and nothing was placed; every failure is
  *  thrown. `rename` and `remove` are rename(2) and unlink(2), which act on a link itself. */
 const NODE_IO = Object.freeze({
@@ -169,28 +169,23 @@ const NODE_IO = Object.freeze({
   bytes(path) { return readCapped(path); },
   place(bytes, to) {
     mkdirSync(dirname(to), { recursive: true, mode: 0o700 });
-    const path = join(dirname(to), `.${basename(to)}.${process.pid}.${Date.now()}.tmp`);
-    const fd = openSync(path, "wx", 0o600);
-    let ino;
+    const own = join(dirname(to), `.${basename(to)}.${process.pid}.${Date.now()}.tmp`);
+    const ino = written(own, bytes);
     try {
-      for (let at = 0; at < bytes.length;) at += writeSync(fd, bytes, at, bytes.length - at);
-      fsyncSync(fd);
-      ino = fstatSync(fd).ino;
-    } catch (error) { closeSync(fd); unlinkSync(path); throw error; }
-    closeSync(fd);
-    let kept = true;
-    try {
-      try { linkSync(path, to); return { ino }; } catch (error) {
-        if (error?.code === "EEXIST") return { ino, taken: true };
-      }
-      // A file system without hard links (or another refusal of the link, which the rename then
-      // meets too): renamed into place instead, once a last look finds nothing there.
-      if (entryAt(to) !== null) return { ino, taken: true };
-      renameSync(path, to);
-      kept = false;
+      linkSync(own, to);
       return { ino };
+    } catch (error) {
+      if (error?.code === "EEXIST") return { ino, taken: true };
     } finally {
-      if (kept) try { unlinkSync(path); } catch { /* its own file, in a directory it could write */ }
+      try { unlinkSync(own); } catch { /* its own file, in a directory it could write */ }
+    }
+    // A file system without hard links (or another refusal of the link, which this meets too): the
+    // bytes written to the new path itself, made only where nothing is, so never over a file. It
+    // is not one step: a start that reads it meanwhile finds it short (or both files) and refuses,
+    // as does one after a crash in it; none reads settings it was not moving.
+    try { return { ino: written(to, bytes) }; } catch (error) {
+      if (error?.code === "EEXIST") return { ino: null, taken: true };
+      throw error;
     }
   },
   rename(from, to) { renameSync(from, to); },
@@ -206,6 +201,23 @@ const NODE_IO = Object.freeze({
   },
   read(path) { return readCapped(path).toString("utf8"); },
 });
+/** `bytes` as a new file at `path`, made only where nothing is (mode 0600) and synced; answers its
+ *  inode. A file it made and could not finish is removed. */
+function written(path, bytes) {
+  const fd = openSync(path, "wx", 0o600);
+  let ino;
+  try {
+    for (let at = 0; at < bytes.length;) at += writeSync(fd, bytes, at, bytes.length - at);
+    fsyncSync(fd);
+    ino = fstatSync(fd).ino;
+  } catch (error) {
+    closeSync(fd);
+    try { unlinkSync(path); } catch { /* the error thrown says what failed */ }
+    throw error;
+  }
+  closeSync(fd);
+  return ino;
+}
 /** `{ ino }` of the entry at `path`, a link not followed, or null when there is none. */
 function entryAt(path) {
   try { return { ino: lstatSync(path).ino }; } catch (error) {
@@ -241,39 +253,46 @@ const failedBy = (error) => { const code = error?.code; return typeof code === "
  *    old absent               nothing to move: the new file is read, or the defaults are used.
  *  "Present" is an entry at the path, a link to nothing included: it is reported, not guessed at.
  *  Answers null when the new file is to be read, else the line that refuses. A run that loses a
- *  race to another one starting (a new file placed by it after this run looked) reads the file
- *  that run placed, and moves nothing itself (or, when both placed one, deletes neither); one
- *  that looks in the instant between the other's copy and its rename finds both, and refuses. */
+ *  race to another one starting (a new file placed by it after this run looked) asks the table
+ *  again (again()): it reads the file that run placed once that run has moved the old file, and
+ *  refuses as for both while an old file is still there, its own or the other's not yet renamed. */
 function moved(old, path, io) {
   const from = shownPath(old, "its old configuration file"), to = shownPath(path, "its configuration file");
   const cannot = (reason) => `oats: \`oats tui\` cannot move ${from} to ${to} (${reason}); move it yourself (E_TUI_CONFIG)`;
-  // Before the copy is placed, a step that fails because another run moved the file first (the
-  // old file renamed, or its backup made) is that race lost: the file it placed is read.
-  const unless = (reason) => { try { if (io.entry(path) !== null) return null; } catch { /* refused */ } return cannot(reason); };
+  const both = `oats: \`oats tui\`: ${from} is no longer read: the TUI reads ${to}. Copy what you need into ${to}, then remove ${from} (E_TUI_CONFIG)`;
+  // A step that fails because another run placed a new file since this one looked (the old file
+  // renamed, its backup made, the new path taken) asks the table again: a new file and no old one
+  // is that run's move, read; a new file beside this run's old one (another XDG_CONFIG_HOME's
+  // move) is both, refused; no new file is this step's failure.
+  const again = (reason) => {
+    try {
+      if (io.entry(path) === null) return cannot(reason);
+      return io.entry(old) === null ? null : both;
+    } catch { return cannot(reason); }
+  };
   let had, has;
   try { had = io.entry(old); } catch (error) { return cannot(failedBy(error)); }
   if (had === null) return null;
   try { has = io.entry(path); } catch (error) { return cannot(failedBy(error)); }
-  if (has !== null) return `oats: \`oats tui\`: ${from} is no longer read: the TUI reads ${to}. Copy what you need into ${to}, then remove ${from} (E_TUI_CONFIG)`;
+  if (has !== null) return both;
   const aside = join(dirname(old), MIGRATED);
   let found, bytes, placed;
   try {
     // A backup of an earlier move is never written over.
-    if (io.entry(aside) !== null) return unless(`${MIGRATED} is there already`);
+    if (io.entry(aside) !== null) return again(`${MIGRATED} is there already`);
     found = io.stat(old);
-  } catch (error) { return unless(failedBy(error)); }
-  if (found === null) return unless("it is a link to nothing");
+  } catch (error) { return again(failedBy(error)); }
+  if (found === null) return again("it is a link to nothing");
   if (found.file !== true) return cannot("it is not a regular file");
   if (!(typeof found.size === "number" && found.size <= CONFIG_LIMIT)) return cannot(TOO_LARGE);
-  try { bytes = io.bytes(old); } catch (error) { return error?.code === "EFBIG" ? cannot(TOO_LARGE) : unless(failedBy(error)); }
+  try { bytes = io.bytes(old); } catch (error) { return error?.code === "EFBIG" ? cannot(TOO_LARGE) : again(failedBy(error)); }
   try { placed = io.place(bytes, path); } catch (error) { return cannot(failedBy(error)); }
   // Only an entry found at the new path itself is another run's file; an EEXIST thrown on the way
   // (a `config` that is a file) is a failure like any other.
-  if (placed.taken === true) return unless("EEXIST");
+  if (placed.taken === true) return again("EEXIST");
   try { io.rename(old, aside); } catch (error) {
-    // The old file gone and a new one there: another run moved it meanwhile (on a file system
-    // without hard links its copy and this one's may have replaced each other, both the old
-    // file's bytes). The file there is read, and nothing is deleted.
+    // The old file gone and a new one there (moved meanwhile by something else): the copy is the
+    // old file's bytes, and it is read; nothing is deleted.
     try { if (io.entry(old) === null && io.entry(path) !== null) return null; } catch { /* refused below */ }
     // The copy is deleted only while it is still the one this run made.
     try { if (io.entry(path)?.ino === placed.ino) io.remove(path); } catch { /* the line says to move it by hand */ }
