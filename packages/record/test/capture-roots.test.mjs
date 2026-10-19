@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
+import { syncBuiltinESMExports } from 'node:module';
 import { preflightCaptureRoots, applyCaptureRoots, readCaptureRoots, forgetRetiredRoot } from '../lib/capture-roots.mjs';
 import { acquireCaptureLock, readCaptureLockOwner } from '../lib/capture-lock.mjs';
 
@@ -272,4 +273,30 @@ test('an existing-root busy claim leaves registration and foreign state byte-for
     assert.deepEqual(fs.readFileSync(f.entry(f.deployment)), before);
     assert.deepEqual(fs.readdirSync(f.root).sort(), names); assert.equal(fs.readFileSync(foreign, 'utf8'), 'unchanged');
   } finally { lock.release(); }
+});
+
+test('forget never probes or deletes the transcript directory and isolates source/path/deployment references', t => {
+  const f = fixture(t), path = join(f.base, 'unavailable'), peer = join(f.base, 'peer');
+  fs.symlinkSync(join(f.base, 'missing'), path);
+  f.refresh([pi(path), { source: 'cc', path }, pi(peer)]); f.refresh([]); f.refresh([pi(path)], f.other);
+  const other = fs.readFileSync(f.entry(f.other));
+  const methods = ['statSync', 'lstatSync', 'accessSync', 'realpathSync', 'openSync', 'opendirSync', 'readdirSync', 'readFileSync', 'chmodSync', 'unlinkSync', 'rmSync'];
+  const originals = new Map(methods.map(name => [name, fs[name]])); let probes = 0;
+  try {
+    for (const name of methods) fs[name] = function(value, ...rest) {
+      if (typeof value === 'string' && (value === path || value.startsWith(path + '/'))) {
+        probes++; throw new Error('forbidden transcript-directory operation');
+      }
+      return originals.get(name).call(this, value, ...rest);
+    };
+    syncBuiltinESMExports();
+    assert.equal(forgetRetiredRoot(f.root, { deployment: f.deployment, source: 'pi', path }).changed, true);
+    assert.equal(probes, 0);
+  } finally {
+    for (const [name, original] of originals) fs[name] = original;
+    syncBuiltinESMExports();
+  }
+  assert.deepEqual(JSON.parse(fs.readFileSync(f.entry(f.deployment))).retiredRoots, [{ source: 'cc', path }, pi(peer)]);
+  assert.deepEqual(fs.readFileSync(f.entry(f.other)), other);
+  assert.equal(fs.lstatSync(path).isSymbolicLink(), true);
 });
