@@ -657,6 +657,19 @@ test("the move, a rename that fails: the copy just made is deleted, the old file
   assert.equal(exists(aside), false);
 });
 
+test("the move into an OATS home whose config is a file: refused, the old file kept, and the defaults never used", () => {
+  const { env, home, old, file, aside } = moving();
+  fs.mkdirSync(env.OATS_HOME_DIR);
+  fs.writeFileSync(path.join(env.OATS_HOME_DIR, "config"), "");
+  fs.writeFileSync(old, '{"ascii": true, "keys": {"quit": ["x"]}}');
+  const loaded = loadConfig({ env, home });
+  assert.equal(loaded.ok, false);
+  assert.equal(loaded.lines.length, 1);
+  assert.ok(["EEXIST", "ENOTDIR"].some((code) => loaded.lines[0] === cannotMove(code, old, file)), loaded.lines[0]);
+  assert.equal(fs.readFileSync(old, "utf8"), '{"ascii": true, "keys": {"quit": ["x"]}}');
+  assert.equal(exists(aside), false);
+});
+
 test("the move, a link as the old file: what it points at is copied, the link itself is renamed, and its target is untouched", () => {
   const { env, home, root, old, file, aside } = moving();
   const target = path.join(root, "dotfiles", "tui.json");
@@ -757,11 +770,17 @@ test("the move, a rename that fails: the copy is deleted only while it is still 
 });
 
 test("the move, a run that loses the race to another starting reads the file that run placed, and moves nothing itself", () => {
-  const placedFirst = fakeMove({ place() { throw failing("EEXIST"); } });
+  const placedFirst = fakeMove({ place(given, file, entries) { entries.set(file, { ino: 9 }); return { ino: 7, taken: true }; } });
   assert.equal(placedFirst.ok, true);
   assert.equal(placedFirst.ascii, true);
   assert.deepEqual(named(placedFirst.calls, "rename"), []);
   assert.deepEqual(named(placedFirst.calls, "read"), [["read", placedFirst.NEW]]);
+  const goneAgain = fakeMove({ place() { return { ino: 7, taken: true }; } });
+  assert.deepEqual(goneAgain.lines, [cannotMove("EEXIST", goneAgain.OLD, goneAgain.NEW)], "an entry that was there and is gone again is no file to read");
+  // An EEXIST thrown on the way (a directory that is a file, its own file's name taken) is no race.
+  const thrown = fakeMove({ place() { throw failing("EEXIST"); } });
+  assert.deepEqual(thrown.lines, [cannotMove("EEXIST", thrown.OLD, thrown.NEW)]);
+  assert.deepEqual(named(thrown.calls, "read"), []);
 
   // The other run renamed the old file between this run's looks, and placed the new one.
   let looks = 0;

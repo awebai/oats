@@ -159,16 +159,13 @@ function openProblem(given) {
  *  the limit and one byte, whatever the file became since it was measured, and `bytes` the same as
  *  bytes. For the move (moved()): `entry` answers `{ ino }` when an entry is at the path, a link
  *  not followed (a link to nothing is an entry), or null; `place` writes `bytes` as a new file at
- *  `path`, never over one (a file of its own first, mode 0600, then linked there: EEXIST when an
- *  entry is there), making the directories it needs with mode 0700, and answers its `{ ino }`;
- *  `rename` and `remove` are rename(2) and unlink(2), which act on a link itself. */
+ *  `path`, never over one: a file of its own first (mode 0600, synced), in the directory it makes
+ *  with mode 0700 when it is missing, then linked there, or, on a file system without hard links,
+ *  renamed there once a last look finds nothing there. It answers that file's `{ ino }`, with
+ *  `taken: true` when an entry was at `path` already and nothing was placed; every failure is
+ *  thrown. `rename` and `remove` are rename(2) and unlink(2), which act on a link itself. */
 const NODE_IO = Object.freeze({
-  entry(path) {
-    try { return { ino: lstatSync(path).ino }; } catch (error) {
-      if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return null;
-      throw error;
-    }
-  },
+  entry: entryAt,
   bytes(path) { return readCapped(path); },
   place(bytes, to) {
     mkdirSync(dirname(to), { recursive: true, mode: 0o700 });
@@ -181,8 +178,20 @@ const NODE_IO = Object.freeze({
       ino = fstatSync(fd).ino;
     } catch (error) { closeSync(fd); unlinkSync(path); throw error; }
     closeSync(fd);
-    try { linkSync(path, to); } finally { unlinkSync(path); }
-    return { ino };
+    let kept = true;
+    try {
+      try { linkSync(path, to); return { ino }; } catch (error) {
+        if (error?.code === "EEXIST") return { ino, taken: true };
+      }
+      // A file system without hard links (or another refusal of the link, which the rename then
+      // meets too): renamed into place instead, once a last look finds nothing there.
+      if (entryAt(to) !== null) return { ino, taken: true };
+      renameSync(path, to);
+      kept = false;
+      return { ino };
+    } finally {
+      if (kept) try { unlinkSync(path); } catch { /* its own file, in a directory it could write */ }
+    }
   },
   rename(from, to) { renameSync(from, to); },
   remove(path) { unlinkSync(path); },
@@ -197,6 +206,13 @@ const NODE_IO = Object.freeze({
   },
   read(path) { return readCapped(path).toString("utf8"); },
 });
+/** `{ ino }` of the entry at `path`, a link not followed, or null when there is none. */
+function entryAt(path) {
+  try { return { ino: lstatSync(path).ino }; } catch (error) {
+    if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return null;
+    throw error;
+  }
+}
 /** At most CONFIG_LIMIT bytes of a file, whatever it became since it was measured. */
 function readCapped(path) {
   const fd = openSync(path, "r");
@@ -250,9 +266,10 @@ function moved(old, path, io) {
   if (found.file !== true) return cannot("it is not a regular file");
   if (!(typeof found.size === "number" && found.size <= CONFIG_LIMIT)) return cannot(TOO_LARGE);
   try { bytes = io.bytes(old); } catch (error) { return error?.code === "EFBIG" ? cannot(TOO_LARGE) : unless(failedBy(error)); }
-  try { placed = io.place(bytes, path); } catch (error) {
-    return error?.code === "EEXIST" ? null : cannot(failedBy(error));
-  }
+  try { placed = io.place(bytes, path); } catch (error) { return cannot(failedBy(error)); }
+  // Only an entry found at the new path itself is another run's file; an EEXIST thrown on the way
+  // (a `config` that is a file) is a failure like any other.
+  if (placed.taken === true) return unless("EEXIST");
   try { io.rename(old, aside); } catch (error) {
     // The copy is deleted only while it is still the one this run made.
     try { if (io.entry(path)?.ino === placed.ino) io.remove(path); } catch { /* the line says to move it by hand */ }

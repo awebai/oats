@@ -1316,8 +1316,10 @@ start looks at both:
 - The copy is the file's bytes, not its settings: a file the TUI cannot use
   is moved as it is, then refused against the new path like any other. The
   new file is made with mode `0600`, and the directories it needs with
-  `0700`; it is written beside its path and linked into place, so it is
-  never half written and never written over another file.
+  `0700`. It is written to a file of its own beside its path, then put in
+  place, so it is never half written. It is never written over another
+  file: it is linked into place, or, on a file system without hard links,
+  renamed there once a last look finds nothing there.
 - A link as the old file is renamed itself, not followed: what it points at
   is copied, and its target is left as it was.
 - When the move cannot be made, nothing is left half done and the start
@@ -1328,9 +1330,6 @@ start looks at both:
   made, the copy is deleted first.
 - To move it yourself, put the file at the new path and remove the old one
   (or rename it to anything but `tui.json`).
-- The new path is made by a hard link, so the file system that holds
-  `~/.oats/config` must have them; on one that doesn't the move is refused
-  with the code (`EPERM`), and you move the file yourself.
 - Two runs that start at once move it once: the one that finds the new file
   already placed reads it. One that looks in the instant between the other's
   copy and its rename finds both files, and refuses; start it again.
