@@ -87,7 +87,7 @@ test("the palette opens on its first row: no row is marked to open on, whatever 
     for (const raw of ["", "child", "solo"]) assert.ok(rowsOf(data, raw).every(r => !Object.hasOwn(r, "initial")), raw);
   }
   const source = readFileSync(new URL("../renderer/palette.mjs", import.meta.url), "utf8");
-  assert.doesNotMatch(source, /\binitial\b|activeId/, "paletteRows marks no opening row and reads no terminal in front");
+  assert.doesNotMatch(source, /\.initial\b|initial:|activeId/, "paletteRows marks no opening row and reads no terminal in front");
   const picker = readFileSync(new URL("../renderer/overlay-picker.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(picker, /it\.initial/, "the picker starts on its first selectable row");
 });
@@ -142,13 +142,14 @@ function palette(t, data) {
 }
 
 test("rendered: opens on the first row (#1391); the chord still cycles and skips context rows", async t => {
-  const { store } = focused(["solo-x", "child-a", "lead"]);
+  // The newest focus is a child (child-a): before #1391 the palette opened on it, in the middle; now on its root.
+  const { store } = focused(["solo-x", "lead", "child-a"]);
   const p = palette(t, { instances: ROSTER, deployments: [], recent: store.snapshot(WS) });
   await p.picker.open();
   const groups = [...p.doc.querySelectorAll('[role="listbox"] > [role="group"]')];
   assert.deepEqual(groups.map(g => g.getAttribute("aria-label")), ["lead", "independent", "alpha", "independent"], "no Recent group: the tree by focus");
   assert.deepEqual([...groups[0].children].map(o => o.querySelector(".plabel").textContent), ["lead", "child-a", "grandchild", "child-b"]);
-  assert.equal(p.active(), "lead", "opens on the top row, not a row in the middle");
+  assert.equal(p.active(), "lead", "opens on the top row, not on the newest focus (child-a) in the middle");
   p.key("k", { metaKey: true }); assert.equal(p.active(), "child-a", "the cycle chord moves down from the top");
   p.key("k", { metaKey: true }); assert.equal(p.active(), "grandchild");
   p.key("k", { metaKey: true, shiftKey: true }); p.key("Enter");
@@ -161,6 +162,12 @@ test("rendered: opens on the first row (#1391); the chord still cycles and skips
   assert.equal(p.active(), "grandchild");
   p.key("k", { metaKey: true }); assert.equal(p.active(), "grandchild");
   p.key("ArrowUp"); assert.equal(p.active(), "grandchild");
+  // A query opens on the first match, not the newest one: alpha-kid is newer, alpha comes first.
+  const q = palette(t, { instances: ROSTER, deployments: [], recent: focused(["alpha", "alpha-kid"]).store.snapshot(WS) });
+  await q.picker.open();
+  q.filter("alpha");
+  assert.deepEqual([...q.doc.querySelectorAll('[role="option"]')].map(o => o.querySelector(".plabel").textContent), ["alpha", "alpha-kid"]);
+  assert.equal(q.active(), "alpha", "the first match");
 });
 
 test("an entry for an instance no longer in the roster is not listed", () => {
@@ -169,7 +176,6 @@ test("an entry for an instance no longer in the roster is not listed", () => {
   const rows = instanceRows(paletteRows({ instances: gone, recent: store.snapshot(WS) }, [], "", {}));
   assert.equal(rows[0].label, "solo-x", "the remaining focus still leads");
   assert.equal(rows.filter(r => r.label === "lead").length, 0);
-  assert.deepEqual(rows.filter(r => r.initial).map(r => r.label), ["solo-x"], "the gone front terminal does not shift the opening row");
 });
 
 test("workspace scoping: entries live under their workspace and the exact identity", () => {
@@ -182,16 +188,16 @@ test("workspace scoping: entries live under their workspace and the exact identi
   assert.deepEqual([...store.snapshot("ws-a").keys()], [instanceId(here)]);
   assert.deepEqual([...store.snapshot("ws-b").keys()], [instanceId(other)]);
   assert.deepEqual([...store.snapshot("ws-c").keys()], []);
-  // Which twin each row opens, in order, and which one the palette opens on.
+  // Which twin each row opens, in order: the order is what proves exact-identity scoping.
   const homes = recent => {
     const opened = [];
     const rows = instanceRows(paletteRows({ instances: [here, other], recent }, [], "", { openTerminal: ref => opened.push(ref.home) }));
     for (const r of rows) r.run();
-    return [opened, opened[rows.findIndex(r => r.initial)] ?? null];
+    return opened;
   };
-  assert.deepEqual(homes(new Map()), [["/v/twin", "/w/twin"], null], "the sidebar's order: name, then identity");
-  assert.deepEqual(homes(store.snapshot("ws-a")), [["/w/twin", "/v/twin"], "/w/twin"], "a same-named instance of another agents root is a different entry");
-  assert.deepEqual(homes(store.snapshot("ws-b")), [["/v/twin", "/w/twin"], "/v/twin"]);
+  assert.deepEqual(homes(new Map()), ["/v/twin", "/w/twin"], "the sidebar's order: name, then identity");
+  assert.deepEqual(homes(store.snapshot("ws-a")), ["/w/twin", "/v/twin"], "a same-named instance of another agents root is a different entry");
+  assert.deepEqual(homes(store.snapshot("ws-b")), ["/v/twin", "/w/twin"]);
   assert.equal(recencyIdFromTerminalKey("ws-a", terminalKey("ws-b", here)), null, "another workspace's tab key records nothing here");
   assert.equal(recencyIdFromTerminalKey("", terminalKey("", here)), instanceId(here), "the unbound workspace keys as \"\"");
 });

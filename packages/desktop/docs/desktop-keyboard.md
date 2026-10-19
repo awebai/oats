@@ -295,9 +295,8 @@ control.
   group's place never changes while you type. A match stays in its relation
   group, as in the filtered sidebar: one match out of a group of five is listed
   under that group's name, not under independent. The active row is the first
-  match. A context row
-  is `aria-disabled`: the arrows, the chord and the pointer skip it, and it
-  opens nothing.
+  match. A context row is `aria-disabled`: the arrows, the chord and the pointer
+  skip it, and it opens nothing.
 - **The rows look like the sidebar's.** Each instance row draws the sidebar's
   connectors, from the sidebar's own code (`treeConnectors` and its DOM builder
   `treeGuides`, `renderer/instance-tree-view.mjs`, and the same `.ctx-guide`
