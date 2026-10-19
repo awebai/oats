@@ -1318,18 +1318,16 @@ start looks at both:
   new file is made with mode `0600`, and the directories it needs with
   `0700`. It is written to a file of its own beside its path, then put in
   place, by a hard link, so it is never half written and never written
-  over another file. On a file system without hard links it is written to
-  the new path itself, made only where nothing is there, so it is still
-  never written over a file; a start that reads it while it is written, or
-  after a crash in the middle, finds it short or finds both files, and
-  refuses.
+  over another file.
 - A link as the old file is renamed itself, not followed: what it points at
   is copied, and its target is left as it was.
 - When the move cannot be made, nothing is left half done and the start
   stops: `cannot move <old> to <new> (<reason>); move it yourself`. The
   reason is a link to nothing, not a regular file, larger than 64 KiB,
-  `tui.json.migrated is there already` (a backup is never written over), or
-  the code of the error, as `EACCES`. When the rename fails after the copy is
+  `tui.json.migrated is there already` (a backup is never written over),
+  `this file system has no hard links` (FAT, exFAT, some network mounts:
+  there the file cannot be put in place whole without a risk of writing over
+  another, so it is not moved), or the code of the error, as `EACCES`. When the rename fails after the copy is
   made, the copy is deleted first.
 - To move it yourself, put the file at the new path and remove the old one
   (or rename it to anything but `tui.json`).

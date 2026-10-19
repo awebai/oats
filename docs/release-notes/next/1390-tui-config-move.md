@@ -15,6 +15,6 @@
     `~/.oats/config/tui.json`. A manager that puts the old file back makes
     both files present, and the TUI refuses until you remove it.
   - When the move can't be made (the old file is a link to nothing,
-    `tui.json.migrated` is already there, or a step fails), the TUI says why
-    and stops: move the file yourself. See
-    [OATS TUI](../tui.md#the-move-from-configoats).
+    `tui.json.migrated` is already there, the file system has no hard links,
+    or a step fails), the TUI says why and stops: move the file yourself.
+    See [OATS TUI](../tui.md#the-move-from-configoats).

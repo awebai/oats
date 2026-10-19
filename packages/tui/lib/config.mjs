@@ -160,10 +160,9 @@ function openProblem(given) {
  *  bytes. For the move (moved()): `entry` answers `{ ino }` when an entry is at the path, a link
  *  not followed (a link to nothing is an entry), or null; `place` writes `bytes` as a new file at
  *  `path`, never over one: a file of its own first (mode 0600, synced), in the directory it makes
- *  with mode 0700 when it is missing, then linked there, or, on a file system without hard links,
- *  written there, made only where nothing is. It answers that file's `{ ino }`, with
+ *  with mode 0700 when it is missing, then linked there. It answers that file's `{ ino }`, with
  *  `taken: true` when an entry was at `path` already and nothing was placed; every failure is
- *  thrown. `rename` and `remove` are rename(2) and unlink(2), which act on a link itself. */
+ *  thrown, marked `noLinks` when the file system has no hard links. `rename` and `remove` are rename(2) and unlink(2), which act on a link itself. */
 const NODE_IO = Object.freeze({
   entry: entryAt,
   bytes(path) { return readCapped(path); },
@@ -176,16 +175,12 @@ const NODE_IO = Object.freeze({
       return { ino };
     } catch (error) {
       if (error?.code === "EEXIST") return { ino, taken: true };
+      // A file system without hard links has no step that is both whole and never over a file
+      // (there is no rename that refuses one): the move is refused, nothing placed.
+      if (NO_LINKS.has(error?.code)) error.noLinks = true;
+      throw error;
     } finally {
       try { unlinkSync(own); } catch { /* its own file, in a directory it could write */ }
-    }
-    // A file system without hard links (or another refusal of the link, which this meets too): the
-    // bytes written to the new path itself, made only where nothing is, so never over a file. It
-    // is not one step: a start that reads it meanwhile finds it short (or both files) and refuses,
-    // as does one after a crash in it; none reads settings it was not moving.
-    try { return { ino: written(to, bytes) }; } catch (error) {
-      if (error?.code === "EEXIST") return { ino: null, taken: true };
-      throw error;
     }
   },
   rename(from, to) { renameSync(from, to); },
@@ -201,6 +196,8 @@ const NODE_IO = Object.freeze({
   },
   read(path) { return readCapped(path).toString("utf8"); },
 });
+/** What link(2) answers on a file system without hard links (FAT, exFAT, some network mounts). */
+const NO_LINKS = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS"]);
 /** `bytes` as a new file at `path`, made only where nothing is (mode 0600) and synced; answers its
  *  inode. A file it made and could not finish is removed. */
 function written(path, bytes) {
@@ -286,7 +283,7 @@ function moved(old, path, io) {
   if (found.file !== true) return cannot("it is not a regular file");
   if (!(typeof found.size === "number" && found.size <= CONFIG_LIMIT)) return cannot(TOO_LARGE);
   try { bytes = io.bytes(old); } catch (error) { return error?.code === "EFBIG" ? cannot(TOO_LARGE) : again(failedBy(error)); }
-  try { placed = io.place(bytes, path); } catch (error) { return cannot(failedBy(error)); }
+  try { placed = io.place(bytes, path); } catch (error) { return cannot(error?.noLinks === true ? "this file system has no hard links" : failedBy(error)); }
   // Only an entry found at the new path itself is another run's file; an EEXIST thrown on the way
   // (a `config` that is a file) is a failure like any other.
   if (placed.taken === true) return again("EEXIST");
