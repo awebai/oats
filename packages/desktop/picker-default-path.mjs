@@ -25,17 +25,16 @@ export function pickerDefaultPath({ candidates, exists, home }) {
 
 /**
  * Add workspace → Browse… candidates: the remembered parent of the most
- * recently added or opened workspace first, then the parents of the
- * recents (most-recent-first) and of the open set. The open set is restored
- * startup-first, so it is a fallback, never an order.
+ * recently added or opened workspace first, then the parents of the open
+ * set. The open set is restored startup-first, so it is a fallback, never an
+ * order.
  * @param {object} state
  * @param {string|null} [state.last]  parseLastWorkspaceParent(last-workspace-parent.json)
- * @param {string[]} [state.recents]  validated workspace-recents.json entries
  * @param {string[]} [state.open]     validated open workspaces
  * @returns {string[]}
  */
-export function workspacePickerCandidates({ last = null, recents = [], open = [] }) {
-  const parents = [...recents, ...open]
+export function workspacePickerCandidates({ last = null, open = [] }) {
+  const parents = open
     .filter((p) => typeof p === "string" && isAbsolute(p))
     .map((p) => dirname(p));
   return [...new Set([last, ...parents].filter((p) => typeof p === "string" && isAbsolute(p)))];

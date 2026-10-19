@@ -66,7 +66,6 @@ test("successful adds survive restart; failed readiness and storage writes prese
     const execute = createAddExecutor({
       getDirs: () => [...dirs],
       commitDirs: (next) => { saveWorkspaceDirs(file, next); dirs = next; },
-      commitRecent: () => {},
       replaceServer: async (next) => { replaced.push([...next]); },
       probeVersion: async () => ({ ok: true }),
       isCompatible: () => true,

@@ -88,6 +88,10 @@ const SURFACE = Object.freeze({
   "remote-address.mjs": ["canAddressRemote", "serverLabel", "shownLabel", "unaddressableSentence", "rowReason", "remoteHeadline", "hostReason", "unroutableReason", "kernelCode"],
   "machine-contract.mjs": ["machinesGated"],
   "workspace-admission.mjs": ["validateWorkspace", "deploymentsInside"],
+  // #1390: this computer's deployments, as the kernel lists them; each client words the states itself.
+  "deployment-list.mjs": ["DEPLOYMENTS_LIST_FEATURE", "DEPLOYMENTS_API", "DEPLOYMENT_STATES", "DEPLOYMENT_VIAS", "listedPath", "deploymentsListSupported", "readDeploymentList", "readDeploymentAdd", "readDeploymentRemove", "readDeploymentImport"],
+  // …and the four verbs a client runs on it, through the kernel.
+  "deployment-list-cli.mjs": ["cliDeploymentList", "deploymentListArgv", "DEPLOYMENT_LIST_FAILURE_CODES", "DEPLOYMENT_IMPORT_MAX"],
   // Provisional: lifecycle (5a). A client stops and retires through its own boundary and confirmation; the CLI call
   // and the contract's readers are the boundary's, never a client's.
   "instance-lifecycle.mjs": ["createLifecycleBoundary", "supportsLifecycle"],
@@ -486,7 +490,7 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 63);
+  assert.equal(Object.keys(SURFACE).length, 65);
   // The five modules 1b made are on it, with the names the TUI's first views take.
   for (const module of ["instance-tree.mjs", "roster-sections.mjs", "kernel-environment.mjs", "workspace-admission.mjs", "instance-acts.mjs"]) assert.ok(Object.hasOwn(SURFACE, module), module);
   // 1c: a second client says its own terms with clientTerms, and that is all it takes from that module.

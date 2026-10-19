@@ -6,6 +6,7 @@ import {
   registerAction, listActions, setActiveContexts,
   getBinding, setBinding, resetBinding, resetAllBindings, onKeymapChange,
   matchEvent, handleKeydown, findConflict, keymapConflicts,
+  chordFromKeyId, letThrough, eventMatchesBinding, runAction,
 } from "../renderer/keybindings.mjs";
 
 // Minimal localStorage stub — the engine must survive without it too.
@@ -374,7 +375,7 @@ test("findConflict: a modal dialog's own context clashes only with itself, never
 });
 
 test("registry basics: contexts constant, list/unregister", (t) => {
-  assert.deepEqual([...CONTEXTS], ["global", "stage:hierarchy", "stage:spawn", "roster", "tabs"]);
+  assert.deepEqual([...CONTEXTS], ["global", "stage:hierarchy", "stage:spawn", "roster", "tabs", "sidebar"]);
   assert.ok(TERMINAL_ALLOWLIST.includes("app.palette"));
   const off = registerAction({ id: "tmp.x", label: "X", context: "tabs", run: () => {} });
   assert.ok(listActions().some((a) => a.id === "tmp.x"));
@@ -382,4 +383,104 @@ test("registry basics: contexts constant, list/unregister", (t) => {
   assert.ok(!listActions().some((a) => a.id === "tmp.x"));
   assert.throws(() => registerAction({ id: "", run: () => {} }));
   assert.throws(() => registerAction({ id: "y" }));
+});
+
+// ---------------------------------------------------------------- plain keys, the shared keymap
+
+test("a plain one-character punctuation chord matches with or without Shift and is stored without it; letters keep case", (t) => {
+  assert.deepEqual(parseChord("Shift+?"), { key: "?", mod: false, ctrl: false, alt: false, shift: false });
+  assert.equal(chordToString(chordFromEvent(ev("?", { shiftKey: true }), false)), "?", "a recorded Shift+/ is stored as ?");
+  assert.equal(chordToString(chordFromEvent(ev("|", { shiftKey: true }), false)), "|");
+  assert.equal(chordToString(chordFromEvent(ev("N", { shiftKey: true }), false)), "Shift+N", "N is Shift+N");
+  assert.equal(chordToString(chordFromEvent(ev("n"), false)), "N", "n is the plain letter (stored as its cap)");
+  withActions(t, [
+    { id: "p.split", label: "split", context: "global", run: () => {}, defaultChord: "|" },
+    { id: "p.help", label: "help", context: "global", run: () => {}, defaultChord: "?" },
+    { id: "p.another", label: "another", context: "global", run: () => {}, defaultChord: "Shift+N" },
+    { id: "p.spawn", label: "spawn", context: "global", run: () => {}, defaultChord: "N" },
+  ]);
+  for (const isMac of [false, true]) {
+    // The real shifted keydowns: Shift+\ arrives as "|", Shift+/ as "?".
+    assert.equal(matchEvent(ev("|", { shiftKey: true }), { isMac }), "p.split");
+    assert.equal(matchEvent(ev("?", { shiftKey: true }), { isMac }), "p.help");
+    assert.equal(matchEvent(ev("?"), { isMac }), "p.help", "a layout that types ? without Shift");
+    assert.equal(matchEvent(ev("\\"), { isMac }), null, "a plain | never fires on a plain \\");
+    assert.equal(matchEvent(ev("N", { shiftKey: true }), { isMac }), "p.another");
+    assert.equal(matchEvent(ev("n"), { isMac }), "p.spawn");
+  }
+});
+
+test("the aliases are for chords that hold a modifier: Mod+Shift+\\ and Mod+= keep their shifted forms", (t) => {
+  assert.deepEqual(parseChord("Mod+Shift+|"), parseChord("Mod+Shift+\\"));
+  assert.deepEqual(chordFromEvent(ev("|", { metaKey: true, shiftKey: true }), true), { key: "\\", mod: true, ctrl: false, alt: false, shift: true });
+  assert.deepEqual(chordFromEvent(ev("+", { ctrlKey: true }), false), { key: "=", mod: true, ctrl: false, alt: false, shift: false });
+  assert.deepEqual(parseChord("+"), { key: "+", mod: false, ctrl: false, alt: false, shift: false }, "a plain + stays +");
+  withActions(t, [
+    { id: "s.right", label: "right", context: "global", run: () => {}, defaultChord: "Mod+\\" },
+    { id: "s.down", label: "down", context: "global", run: () => {}, defaultChord: "Mod+Shift+\\" },
+  ]);
+  // findConflict still tells Mod+\ from Mod+Shift+\ (the Shift rule is for plain chords only).
+  assert.equal(findConflict("Mod+\\", "global", "s.right", true), null);
+  assert.equal(findConflict("Mod+Shift+\\", "global", "s.down", true), null);
+  assert.equal(findConflict("Mod+Shift+|", "global", null, true)?.id, "s.down");
+  assert.equal(matchEvent(ev("|", { metaKey: true, shiftKey: true }), { isMac: true }), "s.down");
+  assert.equal(matchEvent(ev("\\", { metaKey: true }), { isMac: true }), "s.right");
+});
+
+test("chordFromKeyId: the shared keymap's key ids as this engine's chords", () => {
+  assert.equal(chordFromKeyId("alt+o"), "Alt+O");
+  assert.equal(chordFromKeyId("ctrl+\\"), "Ctrl+\\");
+  assert.equal(chordFromKeyId("N"), "Shift+N");
+  assert.equal(chordFromKeyId("n"), "N");
+  assert.equal(chordFromKeyId("?"), "?");
+  assert.equal(chordFromKeyId("|"), "|");
+  assert.equal(chordFromKeyId("["), "[");
+  assert.equal(chordFromKeyId("1"), "1");
+  assert.equal(chordFromKeyId("escape"), "Esc");
+  assert.equal(chordFromKeyId("nonsense"), null);
+});
+
+test("`when`: an action that is not live does not exist for dispatch; its chord goes on", (t) => {
+  let live = true, ran = 0;
+  withActions(t, [{ id: "w.lead", label: "lead", context: "global", run: () => ran++, defaultChord: "Alt+O", when: () => live }]);
+  assert.equal(matchEvent(ev("o", { altKey: true }), { isMac: false }), "w.lead");
+  live = false;
+  const e = ev("o", { altKey: true });
+  assert.equal(matchEvent(e, { isMac: false }), null);
+  assert.equal(handleKeydown(e, { isMac: false }), false);
+  assert.ok(!e.defaultPrevented, "the key is the focused control's");
+  assert.equal(runAction("w.lead"), false, "nor does a button run it");
+  assert.equal(ran, 0);
+});
+
+test("letThrough: an event handed to the focused control matches nothing; eventMatchesBinding reads the live chord", (t) => {
+  withActions(t, [{ id: "app.leader", label: "leader", context: "global", run: () => {}, defaultChord: "Alt+O" }]);
+  const e = ev("o", { altKey: true });
+  assert.equal(eventMatchesBinding(e, "app.leader", false), true);
+  letThrough(e);
+  assert.equal(matchEvent(e, { isMac: false }), null);
+  assert.equal(matchEvent(ev("o", { altKey: true }), { isMac: false }), "app.leader", "only that event");
+  setBinding("app.leader", "Alt+L");
+  assert.equal(eventMatchesBinding(ev("o", { altKey: true }), "app.leader", false), false);
+  assert.equal(eventMatchesBinding(ev("l", { altKey: true }), "app.leader", false), true);
+});
+
+// The sidebar's context is on beside the tab layer's (or a stage's) while focus is in the sidebar
+// (shell.mjs updateActiveContexts), so a chord bound in both runs only one of them: a clash, which
+// the editor and keymapConflicts show. A stored rebind is kept, never changed.
+test("a sidebar key and a tab shortcut on one chord clash: both contexts are on at once", (t) => {
+  withActions(t, [
+    { id: "tabs.close", label: "Close tab", context: "tabs", run: () => {} },
+    { id: "sidebar.key.spawn", label: "Quick Open", context: "sidebar", run: () => {} },
+    { id: "view.only", label: "A view's own key", context: "view:hierarchy", run: () => {}, defaultChord: "N" },
+  ]);
+  assert.equal(getBinding("sidebar.key.spawn", false), "N");
+  assert.deepEqual(keymapConflicts(false), [], "the defaults clash with nothing");
+  setBinding("tabs.close", "N"); // a stored rebind that the new sidebar default now shares
+  assert.equal(findConflict("N", "sidebar", "sidebar.key.spawn", false)?.id, "tabs.close");
+  assert.equal(findConflict("N", "tabs", "tabs.close", false)?.id, "sidebar.key.spawn");
+  assert.equal(findConflict("N", "stage:hierarchy", null, false)?.id, "sidebar.key.spawn", "a stage's context is on beside it too");
+  assert.equal(findConflict("N", "view:hierarchy", "view.only", false), null, "a view's own keys stay local to the view");
+  assert.deepEqual(keymapConflicts(false).map((c) => c.actions.map((a) => a.id).sort()), [["sidebar.key.spawn", "tabs.close"]]);
+  assert.equal(getBinding("tabs.close", false), "N", "kept as set");
 });

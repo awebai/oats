@@ -111,11 +111,11 @@ import { failedEntry, observedEntry, panelInstances, pendingEntry, rosterRows } 
 import { model, outcomeOf, roster } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { createScreen } from "../lib/term/screen.mjs";
-import { frame, layout } from "../lib/views/frame.mjs";
+import { frame, layout, mainArea } from "../lib/views/frame.mjs";
 
 /** The fixture's deployment and the kernel record the shared gates accept. */
 export const DEPLOYMENT = "/srv/deploy";
-export const CLI = Object.freeze({ ok: true, bin: "/opt/oats/bin/oats.mjs", source: "tui", version: "0.52.0", workspaceApi: 2, features: Object.freeze(["workspace-v2", "instance-modules", "served-identity", "packages-no-approval", "waiting-on-you", "workspace-identity"]) });
+export const CLI = Object.freeze({ ok: true, bin: "/opt/oats/bin/oats.mjs", source: "tui", version: "0.52.0", workspaceApi: 2, features: Object.freeze(["workspace-v2", "instance-modules", "served-identity", "packages-no-approval", "waiting-on-you", "workspace-identity", "deployments-list"]) });
 /** The time of every paint in a test that does not say otherwise; run the tests with TZ=UTC in mind:
  *  a clock time on the screen is local, so a test that reads one computes it the same way. */
 export const NOW = Date.parse("2026-10-11T10:00:30.000Z");
@@ -155,8 +155,8 @@ export function stateOf(entry = null, options = {}) {
 }
 /** A state after the reader gave `entry` for the fixture's deployment, as cycle `number`. */
 export const took = (state, entry, number, id = DEPLOYMENT) => reduce(state, { id, entry, number }).state;
-/** Draw a state as the main loop does: `{ rows, page, extent, room, terminal, cursor, cols, cells,
- *  lines }`. `cells` is the screen's cell buffer (term/screen.mjs `cells`), `lines` its rows as
+/** Draw a state as the main loop does: `{ rows, page, extent, room, terminal, cursor, cols, area,
+ *  cells, lines }` (`cols` the sidebar's width, `area` the main area's). `cells` is the screen's cell buffer (term/screen.mjs `cells`), `lines` its rows as
  *  strings, one character per cell (the second cell of a wide character is empty), trailing blanks
  *  cut. `screen` is the open terminal's last capture (`{ lines, cursor }`), as the loop hands it on. */
 export function draw(state, size = { cols: 80, rows: 24 }, { now = NOW, utf8 = true, screen = null } = {}) {
@@ -165,7 +165,9 @@ export function draw(state, size = { cols: 80, rows: 24 }, { now = NOW, utf8 = t
   const listing = under === "switcher";
   const r = listing ? { notice: null, note: null } : roster(state, at);
   const g = layout(r.notice, size, { note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.tabs.length > 0, open: listing ? null : under });
-  const made = { ...frame({ ...model(state, { page: g.page, body: g.body, now, at, cols: g.listCols }), screen }, size), cols: g.listCols };
+  // The switcher stands in the main area: the lines above its choices wrap to that area's width.
+  const area = mainArea(g, size.cols).cols;
+  const made = { ...frame({ ...model(state, { page: g.page, body: g.body, now, at, cols: g.listCols, area }), screen }, size), cols: g.listCols, area };
   const cells = createScreen({ utf8, ascii: state.ascii }).cells(made.rows, size);
   return { ...made, cells, lines: cells.map((line) => line.map((cell) => cell.text).join("").trimEnd()) };
 }
@@ -174,9 +176,9 @@ export function draw(state, size = { cols: 80, rows: 24 }, { now = NOW, utf8 = t
 export function press(state, keys, size = { cols: 80, rows: 24 }) {
   const effects = [];
   for (const key of keys) {
-    const { page, extent, room, cols } = draw(state, size);
+    const { page, extent, room, cols, area } = draw(state, size);
     const text = key === "space" ? " " : [...new Intl.Segmenter().segment(key)].length === 1 ? key : undefined;
-    const next = reduce(state, { key, ...(text ? { text } : {}), page, extent, room, cols });
+    const next = reduce(state, { key, ...(text ? { text } : {}), page, extent, room, cols, area });
     state = next.state;
     if (next.effect) effects.push(next.effect);
   }

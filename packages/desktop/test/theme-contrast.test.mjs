@@ -1981,3 +1981,38 @@ for (const [name] of palettes) test(`${name}: the shortcuts editor's search, hea
   assert.equal(dom.window.getComputedStyle(none).color, "var(--muted)");
   assert.ok(contrast(opaqueChannels(value("muted")), opaqueChannels(value("surface"))) >= 4.5);
 });
+
+// The leader (docs/desktop-keyboard.md, "The leader"): its hint over the main area and the footer's
+// button that starts it, drawn by the shipped code and rules, in every theme. Each text is an
+// inventoried token on the surface actually painted under it, with no opacity on the way.
+for (const [name] of palettes) test(`${name}: the leader's hint and its footer button meet AA on their effective colours`, async t => {
+  const { createLeaderHint } = await import("../renderer/leader-hint.mjs");
+  const dom = new JSDOM(readFileSync(new URL("index.html", renderer), "utf8"));
+  t.after(() => dom.window.close());
+  const doc = dom.window.document; doc.documentElement.dataset.theme = name;
+  for (const source of [css, readFileSync(new URL("shell.css", renderer), "utf8")]) {
+    const style = doc.createElement("style"); style.textContent = source; doc.head.append(style);
+  }
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const hint = createLeaderHint({ doc, host: doc.getElementById("main"), before: doc.getElementById("show-panel") });
+  hint.showKeys([{ keys: ["k", "space"], label: "Open the command palette" }, { keys: ["escape"], label: "Instance roster" }], { isMac: false });
+  const button = doc.getElementById("sidebar-leader");
+  const kbd = button.querySelector(".shortcut-hint"); kbd.hidden = false; kbd.textContent = "Alt+O";
+  const check = (selector, fg, surfaceSelector, bg) => {
+    const el = doc.querySelector(selector), surface = doc.querySelector(surfaceSelector);
+    assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, surfaceSelector);
+    assert.ok(pairs.some(([f, b]) => f === fg && b === bg), `--${fg} on --${bg} is inventoried`);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector} on ${bg}`);
+    for (let node = el; node; node = node.parentElement) assert.equal(dom.window.getComputedStyle(node).opacity, "1", `${selector}: no opacity`);
+  };
+  check(".leader-hint-key", "fg", ".leader-hint", "surface-2");
+  check(".leader-hint-label", "muted", ".leader-hint", "surface-2");
+  check("#sidebar-leader", "muted", "#sidebar", "surface");
+  check("#sidebar-leader .shortcut-hint", "fg", "#sidebar", "surface");
+  hint.say("No instance is focused or selected.");
+  check(".leader-hint-line", "fg", ".leader-hint", "surface-2");
+  // The hint is opaque: its surface is a token, never a blend over the terminal behind it.
+  assert.equal(dom.window.getComputedStyle(hint.element).background, "var(--surface-2)");
+});

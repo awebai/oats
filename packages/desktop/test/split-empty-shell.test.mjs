@@ -102,12 +102,14 @@ function shell(t, shellSource = source) {
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "closeStage", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "showTerminalContext",
     "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal",
-    "syncContextPanel", "refreshPanelInstance", "syncTabNeedsInput"];
+    "syncContextPanel", "refreshPanelInstance", "syncTabNeedsInput", "focusNextGroup"];
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];
   });
-  const registry = source.split("\n").filter(line => /^registerAction\(/.test(line) && /id: "(?:split\.|tabs\.close|terminal\.focusActive)/.test(line));
+  // The split actions run under the shipped modal guard (the palette or a dialog shown: none here).
+  c.modalOpen = () => false;
+  const registry = [source.match(/^const unlessModal = [^\n]+/m)[0], ...source.split("\n").filter(line => /^registerAction\(/.test(line) && /id: "(?:split\.|tabs\.close|terminal\.focusActive)/.test(line))];
   // Execute the shipped panel construction as well as its projection functions:
   // pointer/focus intent must compete with opens exactly as in the real shell.
   const panelSetup = shellSource.slice(shellSource.indexOf("const contextPanel = createContextPanel"), shellSource.indexOf("/** Projection only:"));
@@ -229,6 +231,31 @@ test("multiple empty cells are independently focusable, resizable and controllab
   assert.equal(s.c.tabActionsEl.parentElement.id, "tabbar-row"); assert.equal(s.c.tabActionsEl.hidden, true);
   assert.equal(s.cells().length, 0); assert.equal(s.document.querySelector(".split-empty"), null);
   assert.equal(s.document.querySelector(".split-resizer"), null);
+});
+
+// The leader's Tab (docs/desktop-keyboard.md, "The leader"): the shipped split.focusNextGroup.
+test("split.focusNextGroup: the next group's active tab, or the empty group itself, wrapping; nothing without a split", async t => {
+  const s = shell(t);
+  const first = await s.open("first");
+  s.actions.get("split.focusNextGroup")();
+  assert.equal(s.c.split, null); assert.equal(s.c.activeTab, first.id, "no split: nothing moves");
+  s.splitPane("row");
+  const second = await s.open("second"); s.splitPane("row");
+  const ids = () => s.c.split.groups.map(g => g.id);
+  assert.equal(ids().length, 3);
+  const start = s.c.split.focusedGroup, visited = [];
+  for (let i = 0; i < 3; i++) {
+    const from = ids().indexOf(s.c.split.focusedGroup);
+    s.actions.get("split.focusNextGroup")();
+    const to = ids().indexOf(s.c.split.focusedGroup);
+    assert.equal(to, (from + 1) % 3, "the next group, wrapping");
+    const group = s.c.split.groups[to];
+    if (group.activeTab != null) assert.equal(s.c.activeTab, group.activeTab, "its active tab is selected");
+    else assert.equal(s.document.activeElement, s.empty(group.id), "an empty group takes focus itself");
+    visited.push(group.activeTab);
+  }
+  assert.equal(s.c.split.focusedGroup, start, "three presses are a full round");
+  assert.deepEqual(visited.map(String).sort(), [first.id, second.id, null].map(String).sort());
 });
 
 test("closing a focused group's last tab keeps that empty group, not a neighboring terminal", async t => {

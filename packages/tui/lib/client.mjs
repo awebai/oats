@@ -9,6 +9,8 @@ import { clientTerms } from "../../client/client-terms.mjs";
 export { displayLine, DETAIL_WITHHELD } from "../../client/display-text.mjs";
 export { parseProbeStdout, acceptProbe, cliRecord } from "../../client/cli-locator.mjs";
 export { cliDeploymentRead } from "../../client/deployment-read-cli.mjs";
+export { cliDeploymentList } from "../../client/deployment-list-cli.mjs";
+export { deploymentsListSupported } from "../../client/deployment-list.mjs";
 export { cliRemoteRoster } from "../../client/cli-adapter.mjs";
 export { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from "../../client/deployment-observer.mjs";
 export { createRefreshLoop } from "../../client/refresh-loop.mjs";
@@ -33,7 +35,7 @@ export { createRetiresInFlight, retiringRows } from "../../client/retire-in-flig
 export { startGate, startInstance } from "../../client/session-start.mjs";
 export { retainedStartMessage, launchFlagIgnored, flagIgnoredNotice } from "../../client/launch-prompt-outcome.mjs";
 export { INSTANCE_VARIABLES } from "../../client/kernel-environment.mjs";
-export { validateWorkspace, deploymentsInside } from "../../client/workspace-admission.mjs";
+export { validateWorkspace } from "../../client/workspace-admission.mjs";
 export { createSoulCatalog, soulCatalogKey } from "../../client/soul-catalog.mjs";
 export { soulRows } from "../../client/soul-rows.mjs";
 export { soulFacts, spawnRefusal, soulMatches } from "../../client/soul-facts.mjs";

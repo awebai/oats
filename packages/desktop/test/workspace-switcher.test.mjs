@@ -236,7 +236,6 @@ test("production add executor server-error renders reason and never switches", a
   const executor = createAddExecutor({
     getDirs: () => dirs,
     commitDirs: (next) => { dirs = next; },
-    commitRecent: () => assert.fail("server-error must not commit recents"),
     replaceServer: async () => {},
     probeVersion: async () => { throw new Error("probe exploded"); },
     isCompatible: () => true,

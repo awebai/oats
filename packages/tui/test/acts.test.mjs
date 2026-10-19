@@ -492,5 +492,5 @@ test("a view that goes away under an open confirmation closes it: the loop is to
   // An answer that no longer lists garnet: no view holds what was open.
   const next = remoteRosterState(opened.remote, { envelope: { ok: true, result: { groups: [] } } }, "2026-10-11T10:00:40.000Z");
   const gone = reduce(opened, { roster: { remote: { remoteGroups: next.remoteGroups, rosterAnswered: next.rosterAnswered, rosterFailure: next.rosterFailure }, memory: opened.memory, notes: opened.notes, at: "2026-10-11T10:00:40.000Z" } });
-  assert.deepEqual([gone.state.view, gone.state.act, gone.state.open, gone.effect], ["switcher", null, null, { offer: true, dismiss: opened.act.n }]);
+  assert.deepEqual([gone.state.view, gone.state.act, gone.state.open, gone.effect], ["switcher", null, null, { list: true, dismiss: opened.act.n }]);
 });

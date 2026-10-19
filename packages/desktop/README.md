@@ -175,6 +175,15 @@ function over what its caller holds:
   `choiceMatches` is the menu's filter. `renderer/workspace-switcher.mjs`
   draws the menu from the rows and keeps what is only its own: the "On this
   computer" group, the new-window hint and adding a folder.
+- **This computer's deployments list** (`deployment-list.mjs`, #1390). The
+  kernel keeps it (`oats deployments`); `readDeploymentList` reads the answer
+  into rows of `{ path, name, state }` and refuses a document it cannot read
+  whole, and the three writes' answers have their own readers.
+  `deployment-list-cli.mjs` `cliDeploymentList` runs the four verbs (list,
+  add, remove, import) with fixed argv, gated on the probe's `deployments-list`
+  feature. Each client puts the four states into its own words; the Desktop's
+  are in `renderer/workspace-switcher.mjs`
+  ([desktop-deployment-model.md](docs/desktop-deployment-model.md#this-computers-deployments-list)).
 
 It holds the souls a deployment offers and one soul's inspection: the spawn
 catalog (`soul-catalog.mjs`, over the holding rules of `keyed-catalog.mjs`),

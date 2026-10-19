@@ -322,7 +322,8 @@ function cheatSheet(m) {
   // The help and the switcher cover the main area: their keys are how to work them.
   if (m.view === "help") return led([hint("palette"), hint("close"), hint("help"), hint("quit")]);
   // Esc closes the switcher only onto a view, and there is none before a workspace is opened.
-  if (m.view === "switcher") return led([hint("palette"), ...["open", "filter", ...(m.filter?.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])])].map((id) => hint(id)), hint("help"), hint("quit")]);
+  // Remove stands on a row of this computer's deployments list only, after the keys that move about.
+  if (m.view === "switcher") return led([hint("palette"), ...["open", "filter", ...(m.filter?.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])]), ...(m.switcher?.removable ? ["remove"] : [])].map((id) => hint(id)), hint("help"), hint("quit")]);
   // A view's list or its detail: a small sheet; the rest is the leader's, the palette's and the help's.
   const asking = listing && m.opening?.phase === "preflight";
   const enter = asking ? [hint("close", "stop opening")] : listing && m.onTerminal ? [hint("open", "focus terminal")] : listing && m.openable ? [hint("open")]
@@ -481,6 +482,11 @@ function switcherField(m, cols) {
 /** Whether the switcher shows its filter field. */
 export const switcherFieldShown = (filter) => Boolean(filter?.editing) || Boolean(filter?.query);
 
+/** The main area for a layout `g` of a screen `cols` wide: beside the sidebar from WIDE columns,
+ *  a cell of margin on each side; under them the whole width. `{ col, cols }`. The switcher is drawn
+ *  in it, so lib/main.mjs gives the model its width: the lines above the choices wrap to it. */
+export const mainArea = (g, cols) => (g.wide ? { col: g.listCols + 2, cols: Math.max(0, cols - g.listCols - 2 - MARGIN) } : { col: 0, cols });
+
 /** Shift a pane's rows to its place on the screen. */
 const placed = (spans, col) => spans.map((span) => ({ ...span, col: span.col + col }));
 
@@ -502,7 +508,7 @@ function framed(m, size) {
   const { cols } = size;
   // The main area: beside the sidebar from WIDE columns, a cell of margin on each side; under it
   // an overlay has the whole screen.
-  const main = g.wide ? { col: g.listCols + 2, cols: Math.max(0, cols - g.listCols - 2 - MARGIN) } : { col: 0, cols };
+  const main = mainArea(g, cols);
   /** An overlay in the main area, the sidebar beside it; on a narrow terminal over the whole
    *  screen, its first row carrying its keys (withKeys). */
   const overlay = (drawn) => {

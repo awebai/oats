@@ -6,17 +6,26 @@
 // filters rows by name, group or keys; click a chord to record a new one (Esc
 // cancels, Backspace unbinds), conflicts warned inline via findConflict,
 // per-row reset, reset-all. docs/desktop-keyboard.md has its keys.
+//
+// It leads with the leader (the TUI's): a Leader group, the rebindable app.leader
+// row and then one read-only row per key of the shared table the Desktop runs
+// ("Alt+O then K or Space — Open the command palette"), with one quiet line saying
+// the leader matches the TUI and the direct chords are Desktop extras; then the
+// Sidebar keys; then the groups by context.
 
 import {
   listActions, getBinding, setBinding, resetBinding, resetAllBindings,
   onKeymapChange, findConflict, keymapConflicts, formatChord, chordFromEvent, chordToString,
   isPlainChord, defaultBinding, chordKeys, terminalAllows,
 } from "./keybindings.mjs";
+import { supportedLeaderRows, leaderLabel, keyIdCaps, rowKeysText } from "./leader-keys.mjs";
 import { takePickerFocusReturn } from "./overlay-picker.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { icon } from "./shell-icons.mjs";
 
 const CONTEXT_LABELS = {
+  leader: "Leader",
+  sidebar: "Sidebar keys",
   global: "Global",
   tabs: "Tabs",
   roster: "Instance roster",
@@ -35,13 +44,18 @@ const CONTEXT_LABELS = {
 // fire while a terminal has focus. Whether one does is the engine's terminalAllows.
 const TERMINAL_LAYER_CONTEXTS = new Set(["global", "tabs"]);
 
-/** Group registered actions by context, stable order, for rendering. */
+/** The group an action is listed in: its context's, except the leader's own, which leads. */
+const groupOf = (action) => (action.id === "app.leader" ? "leader" : action.context);
+
+/** Group registered actions by context, stable order, for rendering. The Leader group (when
+ * app.leader is registered) comes first, then the Sidebar keys. */
 export function groupActions(actions = listActions()) {
-  const order = ["global", "tabs", "roster", "stage:hierarchy", "view:hierarchy", "stage:spawn", "view:spawn", "spawn-dialog-local"];
+  const order = ["leader", "sidebar", "global", "tabs", "roster", "stage:hierarchy", "view:hierarchy", "stage:spawn", "view:spawn", "spawn-dialog-local"];
   const groups = new Map();
   for (const a of actions) {
-    if (!groups.has(a.context)) groups.set(a.context, []);
-    groups.get(a.context).push(a);
+    const g = groupOf(a);
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(a);
   }
   const sorted = [...groups.entries()].sort((x, y) => {
     const xi = order.indexOf(x[0]); const yi = order.indexOf(y[0]);
@@ -65,11 +79,12 @@ const KEY_WORDS = new Map([
  * name, or the chord as shown: "shift+b", "ctrl shift b" and "ctrlshiftb" all find
  * Ctrl+Shift+B, and on macOS "cmd shift b" finds ⇧⌘B (each word starts one of the
  * chord's keys, in any order). An unbound row's chord reads "unbound". */
-export function shortcutMatches({ label = "", group = "", chord = null }, query, isMac) {
+export function shortcutMatches({ label = "", group = "", chord = null, keys: shown = null }, query, isMac) {
   const q = String(query || "").trim().toLowerCase();
   if (!q) return true;
   if (label.toLowerCase().includes(q) || group.toLowerCase().includes(q)) return true;
-  const keys = chord ? chordKeys(chord, isMac).map(k => k.toLowerCase()) : [];
+  // `keys`: a row's keys as shown when they are not one chord (a leader row: the leader's, then its key's).
+  const keys = (shown ?? (chord ? chordKeys(chord, isMac) : [])).map(k => String(k).toLowerCase());
   if (!keys.length) return "unbound".includes(q);
   const compact = q.replace(/[\s+]+/g, "");
   if (compact && keys.join("").includes(compact)) return true;
@@ -77,7 +92,12 @@ export function shortcutMatches({ label = "", group = "", chord = null }, query,
   return words.length > 0 && words.every(w => keys.some(k => (KEY_WORDS.get(k) || [k]).some(name => name.startsWith(w))));
 }
 
+/** Where a stage's direct chord and the leader's key mean different things (the leader's are the TUI's). */
+const STAGE_DIFFERENCES = Object.freeze({ "stage.hierarchy": "1", "stage.automations": "3" });
+
 export function createKeybindingsEditor({ doc = document, isMac } = {}) {
+  const labelOf = (id) => listActions().find((a) => a.id === id)?.label ?? null;
+  const leaderText = () => { const chord = getBinding("app.leader", isMac); return chord ? formatChord(chord, isMac) : "the leader"; };
   let overlay = null;
   let offKeymap = null;
   let restoreFocus = null;
@@ -179,7 +199,8 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
       for (const group of body.querySelectorAll(".kb-group")) {
         let inGroup = 0;
         for (const row of group.querySelectorAll(".kb-row")) {
-          const match = shortcutMatches({ label: row.dataset.label, group: group.dataset.label, chord: row.dataset.chord || null }, query, isMac);
+          const keys = row.dataset.keys ? JSON.parse(row.dataset.keys) : null;
+          const match = shortcutMatches({ label: row.dataset.label, group: group.dataset.label, chord: row.dataset.chord || null, keys }, query, isMac);
           row.hidden = !match;
           if (match) inGroup++;
         }
@@ -232,6 +253,16 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
           h.textContent = group.label;
           section.append(h);
           for (const action of group.actions) section.append(row(action, group));
+          if (group.context === "leader") {
+            // The leader matches the TUI; the direct chords are Desktop extras, and where one means
+            // something else than the leader's key, both are named.
+            const extras = doc.createElement("p");
+            extras.className = "kb-extras";
+            const stage = (id) => { const chord = getBinding(id, isMac); return chord ? formatChord(chord, isMac) : "unbound"; };
+            extras.textContent = `The leader and the keys after it are the TUI's; the direct shortcuts are Desktop extras. ${leaderText()} then 1 is Instances and ${leaderText()} then 3 is Capabilities, while ${stage("stage.hierarchy")} stays Deployments and ${stage("stage.automations")} stays Automations.`;
+            h.after(extras);
+            for (const leaderRow of supportedLeaderRows()) section.append(fixedRow(leaderRow));
+          }
           body.append(section);
         }
         const none = doc.createElement("p");
@@ -280,6 +311,13 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
         marks.append(m);
       };
       if (inTerminal) mark("terminal", "terminal", "Works while a terminal has focus");
+      // A stage whose leader key is something else (the leader's 1 and 3 are the TUI's): said on the row.
+      if (STAGE_DIFFERENCES[action.id]) {
+        const note = doc.createElement("span");
+        note.className = "kb-note";
+        note.textContent = `${leaderText()} then ${STAGE_DIFFERENCES[action.id]} is ${STAGE_DIFFERENCES[action.id] === "1" ? "Instances" : "Capabilities"}, as in the TUI`;
+        el.querySelector(".kb-main").append(note);
+      }
       if (!isDefault) mark("changed", "changed", `Changed from the default, ${defaultChord ? formatChord(defaultChord, isMac) : "unbound"}`);
       const chordBtn = el.querySelector(".kb-chord");
       chordBtn.dataset.actionId = action.id;
@@ -298,6 +336,8 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
       chordBtn.classList.toggle("kb-unbound", !chordStr);
       chordBtn.setAttribute("aria-label", `Change shortcut for ${action.label}, currently ${chordText}`
         + (inTerminal ? ", works in a terminal" : "") + (isDefault ? "" : ", changed from the default"));
+      const note = el.querySelector(".kb-note");
+      if (note) chordBtn.setAttribute("aria-description", note.textContent);
       const resetBtn = el.querySelector(".kb-reset");
       resetBtn.dataset.actionId = action.id;
       resetBtn.hidden = isDefault;
@@ -318,6 +358,40 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
       conflictEl.textContent = warnings.join(" · ");
 
       chordBtn.addEventListener("click", () => startRecording(action, chordBtn, conflictEl));
+      return el;
+    };
+
+    // A key of the leader's table: read-only (the table is fixed, as in the TUI), reached by Up/Down,
+    // found by its keys ("alt+o k") and by "leader".
+    const fixedRow = (leaderRow) => {
+      const el = doc.createElement("div");
+      el.className = "kb-row kb-row-fixed";
+      const label = leaderLabel(leaderRow.does, labelOf);
+      const leaderChord = getBinding("app.leader", isMac);
+      const leaderCaps = leaderChord ? chordKeys(leaderChord, isMac) : [];
+      const text = `${leaderText()} then ${rowKeysText(leaderRow, isMac)}`;
+      el.dataset.label = label;
+      el.dataset.keys = JSON.stringify([...leaderCaps, ...leaderRow.keys.flatMap((key) => keyIdCaps(key, isMac))]);
+      el.innerHTML = `
+        <span class="kb-main"><span class="kb-label"></span></span>
+        <span class="kb-marks" aria-hidden="true"></span>
+        <span class="kb-chord-cell"><span class="kb-chord kb-fixed" tabindex="-1"></span></span>
+        <span class="kb-reset-slot"></span>`;
+      el.querySelector(".kb-label").textContent = label;
+      const chord = el.querySelector(".kb-chord");
+      chord.dataset.actionId = `leader:${leaderRow.does}`;
+      const keys = doc.createElement("span");
+      keys.className = "kb-keys";
+      keys.setAttribute("aria-hidden", "true");
+      const cap = (k) => { const kbd = doc.createElement("kbd"); kbd.textContent = k; keys.append(kbd); };
+      const word = (w) => { const span = doc.createElement("span"); span.className = "kb-then"; span.textContent = w; keys.append(span); };
+      if (leaderCaps.length) cap(leaderCaps.join(isMac ? "" : "+")); else word("leader");
+      word("then");
+      leaderRow.keys.forEach((key, i) => { if (i) word("or"); cap(keyIdCaps(key, isMac).join(isMac ? "" : "+")); });
+      const said = doc.createElement("span");
+      said.className = "sr-only";
+      said.textContent = `${text}, fixed`;
+      chord.append(keys, said);
       return el;
     };
 

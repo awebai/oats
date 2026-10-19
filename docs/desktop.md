@@ -120,14 +120,23 @@ OATS deployment — the directory (the operator's choice) holding
 `oats-local.yaml` and `agents/`. A folder that is not a deployment is never
 opened: started from Finder, with nothing open to restore, the window shows
 the workspace switcher instead. It lists the deployments on this computer
-under **On this computer** (those directly inside `~/Agents`, and a saved
-one that is not open); click one to open it in this window. **Add local
-workspace… → Browse** points it at any other deployment.
+under **On this computer**: those on this computer's deployments list
+(`oats deployments`, see [Workspaces](workspaces.md)) and a saved one,
+that are not open. Click one to open it in this window. A deployment the list
+holds but that can't be opened says why: missing (the folder is gone, or its
+volume isn't mounted), not a deployment any more, or can't be checked. **Remove**
+beside a row takes it off the list (Right Arrow, then Enter, from the
+keyboard); nothing on disk changes. With an oats that has no such list, the
+switcher shows the saved deployments and says "This oats can't list this
+computer's deployments. Update oats." **Add local workspace… → Browse**
+points it at any other deployment.
 A picked folder without `oats-local.yaml` is offered onboarding instead. The
 Desktop never parses the deployment: its members, lock state and header come
 from `oats workspace status`, and its instances from the deployment's one
 `agents/` root.
-Added workspaces are remembered and offered as suggestions next time.
+Every deployment you open (an add, or the one the app was launched on) is
+put on this computer's deployments list, so it is offered next time. The first launch of this Desktop moves its own list of
+recently added workspaces there, once.
 **Browse** opens in the folder holding the workspace most recently added or
 opened, or your home directory when there is none (never ~/Downloads);
 **Choose oats…** opens in the directory of the chosen or discovered CLI.
@@ -295,7 +304,7 @@ feature (OATS 0.36.0); without it each deployment has its own entry.
 - **Deployments.** The **Deployments** page (formerly the Active overview)
   shows the workspace's overview trees. **All** stacks one section per
   deployment, each headed by its machine and folder ("This Mac ·
-  ~/Agents/oats", "altair · ~/Agents/tsm"). Then each deployment has a tab of
+  ~/acme", "altair · ~/northwind"). Then each deployment has a tab of
   its own, named by its machine ("altair"; "This Mac · oats-v2" when this Mac
   holds two). A workspace with one deployment shows just that deployment's
   tab. The tab you chose is remembered per workspace. With two or more
