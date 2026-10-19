@@ -12,10 +12,11 @@ import {
   identityMemory, remoteRosterState, observeIdentities, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, isMultiDeployment,
   cliRemoteRoster, originLead, displayLine, DETAIL_WITHHELD, instanceSiblings, siblingText,
 } from "../lib/client.mjs";
-import { MORE_FOLDERS, OFFERED_SECTION, ROSTER_FAILED, SENTENCE_INDENT, WORD_MAX, clockTime, disclosure, heldOf as modelHeld, model, panelOf, roster, switcher } from "../lib/model.mjs";
+import { LIST_WORDS, OFFERED_SECTION, ROSTER_FAILED, SENTENCE_INDENT, WORD_MAX, clockTime, disclosure, heldOf as modelHeld, model, panelOf, roster, switcher, switcherLead } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { shown, shownLines, textOf } from "../lib/term/text.mjs";
 import { windowOf } from "../lib/views/scroll.mjs";
+import { SWITCHER_TEXT } from "../lib/views/switcher.mjs";
 import { CLI, DEPLOYMENT, NOW, draw, failed, instanceRow, leaderEscape, observed, press, rosterOf, stateOf, took } from "./helpers.mjs";
 
 const AT = new Date(NOW).toISOString();
@@ -1667,26 +1668,31 @@ test("a sentence in the list takes the rows its width needs, more in a narrow pa
 
 // --- The switcher -----------------------------------------------------------------------
 
-const OFFERED = [{ path: "/home/u/Agents/sandbox", name: "sandbox" }, { path: "/home/u/Agents/garnet-notes", name: "garnet-notes" }];
+/** A row of this computer's deployments list, as the shared reader gives it (packages/client
+ *  deployment-list.mjs): its canonical path, its name and the kernel's state of it. */
+const listedRow = (path, name, state = "ok") => Object.freeze({ path, name, state });
+const LISTED = Object.freeze([listedRow("/home/u/work/sandbox", "sandbox"), listedRow("/home/u/work/garnet-notes", "garnet-notes")]);
 /** A run that can show three things: this workspace on this machine and on garnet, another
- *  workspace on quartz, and basalt, never reached in this run; with two folders offered. The
- *  roster lists the machine that was not reached first. */
-function crowded({ limited = false } = {}) {
+ *  workspace on quartz, and basalt, never reached in this run; with two rows of the list that
+ *  are not served. The roster lists the machine that was not reached first. */
+function crowded(rows = LISTED) {
   const basalt = machine("basalt", { probe: unreached("E_SSH", "Permission denied (publickey)."), workspace: null, instances: [] });
   const state = heard(stateOf(reporting(NEAR), { cli: READS }), answer(basalt, machine("quartz", { workspace: LEDGER }), machine("garnet")), tick(0));
-  return reduce(state, { offered: { offered: OFFERED, limited } }).state;
+  return reduce(state, { listed: { rows } }).state;
 }
 /** The rows the shared home gives a switcher for a state. */
 const choiceRows = (state) => workspaceChoiceRows(workspaceChoices(heldOf(state, AT), TERMS));
-/** A folder that is offered, as the row the shared filter reads: its name and its short path. */
+/** A row of the list that is offered, as the row the shared filter reads: its name and its short path. */
 const folderRow = (state, { path, name }) => ({ label: name, place: shortPath(path, { home: state.home }) });
-/** A switcher's items as a test reads them: a heading in brackets, the TUI's own words after a
- *  colon, a choice as its label, its place and what it says of deployments that are not live. */
-const said = (items) => items.map((item) => (item.heading !== undefined ? `[${item.heading}]` : item.own !== undefined ? `: ${item.own}` : [item.label, item.place, item.notLiveText ?? null]));
+/** A switcher's items as a test reads them: a heading in brackets, a choice as its label, its
+ *  place and what it says of deployments that are not live. */
+const said = (items) => items.map((item) => (item.heading !== undefined ? `[${item.heading}]` : [item.label, item.place, item.notLiveText ?? null]));
+/** The same state with the switcher's selection on a key. */
+const choosing = (state, key) => Object.freeze({ ...state, switcher: Object.freeze({ ...state.switcher, selected: key }) });
 /** The same state with this text in the switcher's filter. */
 const asked = (state, query) => Object.freeze({ ...state, switcher: Object.freeze({ ...state.switcher, query }) });
 
-test("the switcher lists the views in the order the shared rows give, the ones matched to no workspace after the others under the shared heading, then the offered folders under the TUI's own with their short path", () => {
+test("the switcher lists the views in the order the shared rows give, the ones matched to no workspace after the others under the shared heading, then the rows of this computer's list not served under the TUI's own with their short path", () => {
   const state = crowded(), rows = choiceRows(state), s = switcher(state, AT);
   assert.deepEqual(rows.map((row) => [row.label, row.unattached]), [["acme-platform", false], ["ledger", false], ["basalt", true]]);
   const row = (r) => [r.label, r.place, r.notLiveText];
@@ -1695,11 +1701,11 @@ test("the switcher lists the views in the order the shared rows give, the ones m
     `[${UNMATCHED_SECTION}]`,
     ...rows.filter((r) => r.unattached).map(row),
     `[${OFFERED_SECTION}]`,
-    ...OFFERED.map((folder) => [folder.name, shortPath(folder.path, { home: "/home/u" }), null]),
+    ...LISTED.map((listed_) => [listed_.name, shortPath(listed_.path, { home: "/home/u" }), null]),
   ]);
   assert.deepEqual(s.items.filter((item) => item.heading !== undefined), [{ heading: UNMATCHED_SECTION, shared: true }, { heading: OFFERED_SECTION, shared: false }]);
   assert.equal(OFFERED_SECTION, "On this machine, not opened");
-  assert.deepEqual(OFFERED.map((folder) => shortPath(folder.path, { home: "/home/u" })), ["~/Agents/sandbox", "~/Agents/garnet-notes"]);
+  assert.deepEqual(LISTED.map((listed_) => shortPath(listed_.path, { home: "/home/u" })), ["~/work/sandbox", "~/work/garnet-notes"]);
   // A machine never reached in this run is matched to no workspace, and is listed under its own name.
   const loose = rows.find((r) => r.unattached);
   assert.deepEqual([loose.label, loose.id], ["basalt", "remote:basalt:acme-1"]);
@@ -1713,7 +1719,7 @@ test("the switcher lists the views in the order the shared rows give, the ones m
   assert.deepEqual(switcher(there, AT).items.filter((item) => item.open !== undefined).map((item) => item.open), [false, true, false]);
   // What Enter opens: each view's primary deployment, the shared home's.
   assert.deepEqual(s.items.filter((item) => item.primary !== undefined).map((item) => item.primary), rows.map((r) => views.find((v) => v.id === r.id).primary));
-  assert.deepEqual(s.items.filter((item) => item.path !== undefined).map((item) => [item.path, item.refused]), OFFERED.map((folder) => [folder.path, false]));
+  assert.deepEqual(s.items.filter((item) => item.path !== undefined).map((item) => [item.path, item.state, item.refused]), LISTED.map((listed_) => [listed_.path, "ok", false]));
   assert.equal(s.keys.length, 5);
   assert.equal(new Set(s.keys).size, 5);
   assert.deepEqual(s.keys, s.items.filter((item) => item.key !== undefined).map((item) => item.key));
@@ -1724,9 +1730,9 @@ test("the switcher lists the views in the order the shared rows give, the ones m
   assert.equal(switcher(lost, AT).items[0].notLiveText, "1 deployment not live");
 });
 
-test("the switcher's filter keeps a view and an offered folder by the same shared rule, over what each shows, and a heading stands only over rows that are left", () => {
-  const state = crowded(), rows = choiceRows(state), folders = OFFERED.map((folder) => ({ ...folder, ...folderRow(state, folder) }));
-  for (const query of ["", "GARNET", " quartz ", "ssh", "sandbox", "~/agents", "acme", "notes", "this machine", "zzz"]) {
+test("the switcher's filter keeps a view and a row of the list by the same shared rule, over what each shows, and a heading stands only over rows that are left", () => {
+  const state = crowded(), rows = choiceRows(state), folders = LISTED.map((listed_) => ({ ...listed_, ...folderRow(state, listed_) }));
+  for (const query of ["", "GARNET", " quartz ", "ssh", "sandbox", "~/work", "acme", "notes", "this machine", "zzz"]) {
     const s = switcher(asked(state, query), AT);
     const views = rows.filter((r) => choiceMatches(r, query)), offered = folders.filter((folder) => choiceMatches(folder, query));
     const matched = views.filter((r) => !r.unattached), loose = views.filter((r) => r.unattached);
@@ -1739,8 +1745,8 @@ test("the switcher's filter keeps a view and an offered folder by the same share
     assert.equal(s.selected, s.keys[0] ?? null);
   }
   const labelled = (query) => switcher(asked(state, query), AT).items.filter((item) => item.key !== undefined).map((item) => item.label);
-  assert.deepEqual(labelled("GARNET"), ["acme-platform", "garnet-notes"], "a view by its place and a folder by its name, whatever the case");
-  assert.deepEqual(labelled("~/agents"), ["sandbox", "garnet-notes"], "a folder by its short path");
+  assert.deepEqual(labelled("GARNET"), ["acme-platform", "garnet-notes"], "a view by its place and a row of the list by its name, whatever the case");
+  assert.deepEqual(labelled("~/WORK"), ["sandbox", "garnet-notes"], "a row of the list by its short path");
   assert.deepEqual(labelled("ssh"), ["basalt"], "a view matched to no workspace by its short reason");
   assert.deepEqual(labelled("zzz"), []);
   assert.deepEqual(switcher(asked(state, "zzz"), AT).items, []);
@@ -1751,7 +1757,7 @@ test("the switcher's filter keeps a view and an offered folder by the same share
   assert.equal(on("ledger").selected, on("ledger").keys[0]);
 });
 
-test("the switcher is empty in two ways, none when there is nothing to list and nomatch when the filter keeps nothing, and says when the folder holds more than is listed", () => {
+test("the switcher is empty in two ways, none when there is nothing to list and nomatch when the filter keeps nothing, whether a view or a row of the list was there to match", () => {
   const nothing = initialState({ deployment: null, cli: READS, home: "/home/u" });
   assert.deepEqual([nothing.view, nothing.open], ["switcher", null]);
   const none = switcher(nothing, AT);
@@ -1762,13 +1768,18 @@ test("the switcher is empty in two ways, none when there is nothing to list and 
   assert.deepEqual([m.under, m.open, m.switcher.empty, m.switcher.rows.length], ["switcher", false, "none", 0]);
   assert.equal(seen(asked(crowded(), "zzz")).switcher, null, "the Instances view has no switcher in its model");
   assert.equal(seen(press(asked(crowded(), "zzz"), ["w"]).state).switcher.empty, "nomatch");
-  // More folders than the shared scan lists: the TUI's own line, after the folders.
-  assert.equal(MORE_FOLDERS, "More folders than are listed here.");
-  const limited = switcher(crowded({ limited: true }), AT);
-  assert.deepEqual(limited.items.at(-1), { own: MORE_FOLDERS });
-  assert.deepEqual(said(limited.items).slice(-3), [...OFFERED.map((folder) => [folder.name, shortPath(folder.path, { home: "/home/u" }), null]), `: ${MORE_FOLDERS}`]);
-  assert.equal(switcher(crowded(), AT).items.some((item) => item.own !== undefined), false);
-  assert.equal(limited.keys.length, 5, "the line is no choice");
+  // Started outside every deployment, with rows of the list only: they are the choices, and a
+  // filter that keeps none of them is nomatch. A read that answered no row, or one that failed
+  // before any answered, leaves nothing to list: none.
+  const only = reduce(nothing, { listed: { rows: LISTED } }).state;
+  assert.deepEqual([switcher(only, AT).empty, switcher(only, AT).keys], [null, LISTED.map((listed_) => `path\u0000${listed_.path}`)]);
+  assert.equal(switcher(asked(only, "zzz"), AT).empty, "nomatch", "rows of the list to match in, none matched");
+  assert.equal(switcher(asked(only, "sandbox"), AT).empty, null);
+  assert.equal(switcher(reduce(only, { listed: { rows: [] } }).state, AT).empty, "none", "a read that answered no row");
+  assert.equal(switcher(reduce(nothing, { listed: { failure: { code: "E_DEPLOYMENTS_LOCKED", message: "the list is busy" } } }).state, AT).empty, "none", "a read that failed, with no row read before");
+  assert.equal(switcher(asked(reduce(only, { listed: { rows: [] } }).state, "zzz"), AT).empty, "none");
+  // No line of the TUI's own stands among the items: every one is a heading or a choice.
+  assert.equal(switcher(crowded(), AT).items.every((item) => item.heading !== undefined || item.key !== undefined), true);
   // Started outside a deployment with one machine reached: its view is the machine's own.
   const far = heard(nothing, answer(machine("garnet")), tick(0));
   assert.deepEqual(switcher(far, AT).items.map((item) => [item.label, item.place, item.primary, item.open]), [[choiceRows(far)[0].label, "garnet", GARNET, false]]);
@@ -1779,7 +1790,7 @@ test("the model of the switcher: the rows of its window with the selected one ma
   assert.deepEqual([m.view, m.under, m.open], ["switcher", "switcher", true]);
   assert.deepEqual(m.switcher.rows, s.items.map((item) => (item.key === undefined ? item : { ...item, selected: item.key === s.selected })));
   assert.deepEqual(m.switcher.rows.filter((row) => row.selected).map((row) => row.label), ["acme-platform"]);
-  assert.deepEqual([m.switcher.above, m.switcher.below, m.switcher.empty, m.switcher.said], [0, 0, null, null]);
+  assert.deepEqual([m.switcher.above, m.switcher.below, m.switcher.empty, m.switcher.said, m.switcher.failure, m.switcher.removing, m.switcher.removable], [0, 0, null, null, null, false, false]);
   assert.deepEqual([m.list, m.detail, m.workspace, m.machines, m.counts, m.readAt, m.notice, m.note, m.empty, m.observed], [[], null, "", 0, [], null, null, null, null, true]);
   assert.deepEqual(m.filter, { editing: false, query: "" });
   // The filter the model carries is the switcher's, not the Instances view's.
@@ -1846,6 +1857,116 @@ test("two hundred roster groups: the switcher lists every one in the order the s
   assert.deepEqual([seen(few, 80, 7).switcher.rows.length, seen(told, 80, 7).switcher.rows.length, seen(told, 80, 7).switcher.below], [7, 5, 2], "one row short: the cut note takes another");
   // This workspace's own view holds none of them.
   assert.deepEqual([seen(read).machines, shape(seen(read).list)], [0, NEAR_DRAWN]);
+});
+
+// --- This computer's deployments list in the switcher (awebai/oats#1390) -----------------
+
+/** Rows of the list in the kernel's order (not the alphabet's): one that opens, the three stale
+ *  states, and the deployment this run serves. */
+const STALE = Object.freeze([
+  listedRow("/home/u/work/sandbox", "sandbox"),
+  listedRow("/home/u/acme-gone", "acme-gone", "missing"),
+  listedRow("/home/u/acme-old", "acme-old", "not-a-deployment"),
+  listedRow("/home/u/acme-locked", "acme-locked", "unreadable"),
+  listedRow(DEPLOYMENT, "acme-platform"),
+]);
+/** A message of the kernel's that wraps: in the sentence of a Remove that failed, four rows at 60
+ *  columns (whole), two at 120. */
+const LONG_MESSAGE = "the list of deployments is held by another oats process right now; run `oats deployments remove <path>` again once it has finished";
+/** One longer than four rows hold at any width here, 200 columns too. */
+const HUGE_MESSAGE = Array.from({ length: 160 }, (_, i) => `step-${i}`).join(" ");
+
+test("a row of this computer's list is a choice of its own: its name, its short path, the kernel's state of it and whether it was refused, in the kernel's order; a row this run serves is left out, and one admitted now is too", () => {
+  const state = crowded(STALE), s = switcher(state, AT);
+  const listed_ = s.items.filter((item) => item.path !== undefined);
+  assert.deepEqual(listed_, [
+    { key: "path\u0000/home/u/work/sandbox", label: "sandbox", place: "~/work/sandbox", path: "/home/u/work/sandbox", state: "ok", refused: false },
+    { key: "path\u0000/home/u/acme-gone", label: "acme-gone", place: "~/acme-gone", path: "/home/u/acme-gone", state: "missing", refused: false },
+    { key: "path\u0000/home/u/acme-old", label: "acme-old", place: "~/acme-old", path: "/home/u/acme-old", state: "not-a-deployment", refused: false },
+    { key: "path\u0000/home/u/acme-locked", label: "acme-locked", place: "~/acme-locked", path: "/home/u/acme-locked", state: "unreadable", refused: false },
+  ]);
+  assert.equal(state.ctxs.includes(DEPLOYMENT), true, "the deployment the run serves");
+  assert.equal(s.items.some((item) => item.path === DEPLOYMENT), false, "is a view, not a row of the list as well");
+  assert.deepEqual(s.items.slice(-5).map((item) => item.heading ?? item.label), [OFFERED_SECTION, "sandbox", "acme-gone", "acme-old", "acme-locked"], "under the TUI's heading, last");
+  // A stale row is matched by the same rule as any other: its name and its short path.
+  assert.deepEqual(switcher(asked(state, "gone"), AT).items.filter((item) => item.key !== undefined).map((item) => item.label), ["acme-gone"]);
+  assert.deepEqual(switcher(asked(state, "~/acme"), AT).items.filter((item) => item.key !== undefined).map((item) => item.label), ["acme-gone", "acme-old", "acme-locked"]);
+  // A pick that turned out not to be a deployment is marked on its row alone.
+  const refused = reduce(state, { refused: "/home/u/work/sandbox" }).state;
+  assert.deepEqual(switcher(refused, AT).items.filter((item) => item.path !== undefined).map((item) => [item.label, item.refused]), [["sandbox", true], ["acme-gone", false], ["acme-old", false], ["acme-locked", false]]);
+  // Admitted, a row is served from now on: it is a view, and the list does not offer it again.
+  const admitted = reduce(state, { admitted: "/home/u/work/sandbox", at: AT }).state;
+  assert.deepEqual(switcher(admitted, AT).items.filter((item) => item.path !== undefined).map((item) => item.label), ["acme-gone", "acme-old", "acme-locked"]);
+  // A later read replaces the rows; one that failed keeps them.
+  const reread = reduce(state, { listed: { rows: [listedRow("/home/u/acme-docs", "acme-docs")] } }).state;
+  assert.deepEqual(switcher(reread, AT).items.filter((item) => item.path !== undefined).map((item) => item.label), ["acme-docs"]);
+  const failed_ = reduce(state, { listed: { failure: { code: "E_DEPLOYMENTS_LOCKED", message: "the list is busy" } } }).state;
+  assert.deepEqual(switcher(failed_, AT).items, s.items);
+});
+
+test("the model of the switcher says what stands above its rows: why the last read of the list failed, whether a Remove is asked and whether the selected row is one the remove key acts on", () => {
+  const state = press(crowded(), ["w"]).state, keys = switcher(state, AT).keys;
+  const sandbox = `path\u0000${LISTED[0].path}`;
+  assert.deepEqual(keys.slice(-2), LISTED.map((listed_) => `path\u0000${listed_.path}`));
+  // Removable: a row of the list is, a view is not, and nothing selected is not.
+  assert.equal(seen(choosing(state, sandbox)).switcher.removable, true);
+  assert.equal(seen(choosing(state, keys[0])).switcher.removable, false, "a workspace");
+  assert.equal(seen(initialState({ deployment: null, cli: READS, home: "/home/u" })).switcher.removable, false, "no choice");
+  // The failure is the kernel's message as it came, and the rows of the last read stand under it.
+  const failure = { code: "E_DEPLOYMENTS_LOCKED", message: "the list is busy" };
+  const failed_ = reduce(state, { listed: { failure } }).state;
+  assert.equal(seen(failed_).switcher.failure, failure.message);
+  assert.deepEqual(seen(failed_).switcher.rows, seen(state).switcher.rows);
+  assert.equal(seen(reduce(failed_, { listed: { rows: LISTED } }).state).switcher.failure, null, "a read that answered clears it");
+  // Delete on a row of the list asks; Esc keeps the row, and nothing is asked any more.
+  const asking = press(choosing(state, sandbox), ["delete"]).state;
+  assert.deepEqual([seen(asking).switcher.removing, seen(asking).switcher.removable, seen(asking).switcher.said], [true, true, null]);
+  assert.equal(seen(press(asking, ["escape"]).state).switcher.removing, false);
+  assert.equal(seen(press(choosing(state, keys[0]), ["delete"]).state).switcher.removing, false, "Delete on a workspace asks nothing");
+  // What a Remove answered.
+  assert.deepEqual(seen(reduce(state, { removed: { path: LISTED[0].path, name: "sandbox", ok: true } }).state).switcher.said, { removed: "sandbox" });
+  assert.deepEqual(seen(reduce(state, { removed: { path: LISTED[0].path, name: "sandbox", ok: false, reason: failure } }).state).switcher.said, { notRemoved: "sandbox", message: failure.message });
+  // The two lines of the question take two rows of the pane: the window is that much shorter, and the selected row stays in it.
+  const last = choosing(state, keys.at(-1)), asked_ = press(last, ["delete"]).state;
+  for (const page of [8, 6, 4]) {
+    const items = switcher(last, AT).items, keep = items.findIndex((item) => item.key === keys.at(-1));
+    const plain = windowOf({ top: 0, count: items.length, height: page, keep }), shorter = windowOf({ top: 0, count: items.length, height: page - 2, keep });
+    const m = seen(asked_, 80, page).switcher;
+    assert.deepEqual([m.above, m.rows.length, m.below], [shorter.above, shorter.size, shorter.below], `page ${page}`);
+    assert.equal(seen(last, 80, page).switcher.rows.length, plain.size, `page ${page}: without the question`);
+    assert.equal(m.rows.some((row) => row.selected), true, `page ${page}: the selected row is drawn`);
+  }
+});
+
+test("switcherLead counts the rows above the switcher's choices at the width it is given: one for a line of the TUI's own, two for the question, and a sentence with the kernel's words wrapped, four rows at most", () => {
+  const state = press(crowded(), ["w"]).state;
+  const lead = (changes, failure = null) => Object.freeze({ ...state, listed: Object.freeze({ ...state.listed, failure }), switcher: Object.freeze({ ...state.switcher, line: null, removing: null, ...changes }) });
+  const at = (s) => [60, 80, 120, 200].map((cols) => switcherLead(s, cols));
+  assert.deepEqual(at(lead({})), [0, 0, 0, 0], "nothing above the rows");
+  assert.deepEqual(at(lead({ line: "gone" })), [1, 1, 1, 1]);
+  assert.deepEqual(at(lead({ removing: { path: LISTED[0].path, read: null } })), [2, 2, 2, 2], "the question's two lines");
+  assert.deepEqual(at(lead({ line: { removed: "sandbox" } })), [1, 1, 1, 1]);
+  assert.deepEqual(at(lead({}, { code: "E_X", message: "the list is busy" })), [2, 1, 1, 1], "the failure's sentence is longer than 57 cells: two rows at 60 columns");
+  // A long sentence is wrapped at the width: more rows at 60 columns than at 120.
+  assert.deepEqual(at(lead({ line: { notRemoved: "sandbox", message: LONG_MESSAGE } })), [4, 3, 2, 1]);
+  assert.deepEqual(at(lead({}, { code: "E_X", message: LONG_MESSAGE })), [4, 3, 2, 1]);
+  // Four rows at most for each sentence, at every width: what is left over is cut.
+  assert.deepEqual(at(lead({ line: { notRemoved: "sandbox", message: HUGE_MESSAGE } })), [4, 4, 4, 4]);
+  assert.deepEqual(at(lead({ line: { notRemoved: "sandbox", message: HUGE_MESSAGE }, removing: { path: LISTED[0].path, read: null } }, { code: "E_X", message: HUGE_MESSAGE })), [10, 10, 10, 10], "what a Remove answered, the failure and the question, together");
+  assert.equal(SWITCHER_TEXT.notRemoved("sandbox", HUGE_MESSAGE).length > 4 * 200, true, "more than four rows hold at 200 columns");
+  // A width that is not one is read as 80.
+  for (const cols of [undefined, 0, -3, 1.5, "60"]) assert.equal(switcherLead(lead({ line: { notRemoved: "sandbox", message: LONG_MESSAGE } }), cols), 3, String(cols));
+  // The model makes its window that much shorter at the width it is given (the switcher's is the whole width).
+  const wrapped = lead({ line: { notRemoved: "sandbox", message: LONG_MESSAGE } });
+  assert.deepEqual([seen(wrapped, 60, 8).switcher.rows.length, seen(wrapped, 120, 8).switcher.rows.length], [windowOf({ top: 0, count: 7, height: 4, keep: 0 }).size, windowOf({ top: 0, count: 7, height: 6, keep: 0 }).size]);
+});
+
+test("the words of this computer's list that are a line of their own: an add that failed leads with the TUI's words and shows the kernel's message as it came, once above the panes, and a change still running as the TUI leaves names the command", () => {
+  assert.deepEqual(LIST_WORDS.notAdded("the list is busy"), [{ own: "This deployment was not added to this computer's list: " }, { shown: "the list is busy" }]);
+  assert.equal(Object.isFrozen(LIST_WORDS.notAdded("x")), true);
+  assert.equal(LIST_WORDS.leaving, "oats: a change to this computer's list of deployments is still running; `oats deployments` shows the list.");
+  const told = reduce(stateOf(reporting(NEAR), { cli: READS }), { notListed: { code: "E_DEPLOYMENTS_LOCKED", message: "the list is busy" } }).state;
+  assert.deepEqual(told.outcome, { said: LIST_WORDS.notAdded("the list is busy"), under: [] });
 });
 
 // --- A list scrolled away from its selection --------------------------------------------

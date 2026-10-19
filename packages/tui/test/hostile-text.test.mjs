@@ -5,6 +5,7 @@
 // one row of text; the ones after it put the same fixture in every field the Instances view
 // shows.
 import test from "node:test";
+import { posix } from "node:path";
 import assert from "node:assert/strict";
 import { createScreen, glyphs } from "../lib/term/screen.mjs";
 import { style } from "../lib/term/style.mjs";
@@ -171,6 +172,9 @@ const FIELDS = {
   // The back key is named in the cheat sheet while a terminal has the focus: the leader, the leader
   // then Esc, and the leader twice, which types it.
   "the key that leaves an agent's terminal, in the cheat sheet": (value, options) => press(stateOf(observed([one()], { cli: KEYED }), { cli: KEYED, detachKey: value, ...options }), ["enter"]).state,
+  // The add of the deployment the run started in to this computer's list failed: the kernel's
+  // message, once, in the line under the sidebar's title.
+  "the kernel's message of an add to this computer's deployments list that failed, under the sidebar's title": (value, options) => reduce(stateOf(observed([one()]), options), { notListed: { code: "E_DEPLOYMENTS_ADD", message: value } }).state,
 };
 const UTF8 = glyphs({ LANG: "en_US.UTF-8" }), NOT_UTF8 = glyphs({ LANG: "C" });
 const S80 = { cols: 80, rows: 24 }, S120 = { cols: 120, rows: 40 };
@@ -254,10 +258,11 @@ test("through the shared read a hostile waiting message does not arrive: the det
 });
 
 // ── Other machines and the switcher ──────────────────────────────────────────────────────────────
-// The same fixture in what another machine, a registration, a failed roster read or a folder's name
-// can put on the screen. Every outcome of the roster read reaches the store as the loop hands it on
-// (lib/read.mjs): through the shared remoteRosterState and observeIdentities. A group has the
-// kernel's form except in the one field a case makes hostile.
+// The same fixture in what another machine, a registration, a failed roster read or this computer's
+// deployments list (a row, a read that failed, what a Remove answered) can put on the screen.
+// Every outcome of the roster read reaches the store as the loop hands it on (lib/read.mjs):
+// through the shared remoteRosterState and observeIdentities. A group has the kernel's form
+// except in the one field a case makes hostile.
 import { DETAIL_WITHHELD, cliRemoteRoster, displayLine, observeIdentities, remoteRosterState } from "../lib/client.mjs";
 import { textWidth } from "../lib/term/width.mjs";
 import { cutNote } from "../lib/views/instances.mjs";
@@ -305,8 +310,14 @@ const second = (state) => key(state, "w", "j", "enter");
 /** A workspace key whose last segment, the name a view of machines alone is shown under, is `value`. */
 const named = (value) => ({ ...IDENTITY, key: `acme/${value}` });
 
-/** Each place a machine, a registration, a roster read or a folder can put text, and a state in the
- *  Instances view that shows `value` there. `seen`: the view that draws plain text put there.
+/** The switcher, shown over the Instances view of `state`. */
+const switching = (state) => key(state, "w");
+
+/** Each place a machine, a registration, a roster read or this computer's deployments list can put
+ *  text, and a state that shows `value` there: in the Instances view, or for what a Remove
+ *  answered (the switcher's line, which showing the switcher again clears) in the switcher itself,
+ *  where every view of viewsOf is the switcher (`G` moves its selection, `w` keeps it, `?` shows
+ *  the help over it). `seen`: the view that draws plain text put there.
  *  `lead`: where the text is a row's own, the words the detail puts before it to say who gave it
  *  (the shared home's, written out here: a test is the place that pins them). */
 const MACHINE_FIELDS = {
@@ -329,7 +340,17 @@ const MACHINE_FIELDS = {
   },
   "the instance name of a machine's row": { seen: "the list and the detail", make: (value, options) => heard(reporting(options), answered(group({ instances: [farRow(value)] })), T1) },
   "the runtime error of a machine's row": { seen: "the list and the detail", lead: "OATS says:", make: (value, options) => heard(reporting(options), answered(group({ instances: [farRow("acme-ledger-far-a", { running: null, runtimeState: "unreachable", runtimeError: value })] })), T1) },
-  "an offered folder's name and path": { seen: "the switcher", folder: true, make: (value, options) => reduce(reporting(options), { offered: { offered: [{ path: `/home/u/Agents/${value}`, name: value }], limited: true } }).state },
+  // The model takes a row as given: the view is what stands between it and the terminal. The
+  // shared reader hands on a row only when its path is canonical (packages/client/deployment-list.mjs
+  // listedPath); a path that is not, it refuses with the whole list, which the run is told as a
+  // failed read: the fixture goes through the same door.
+  "a row of this computer's deployments list, its name and its path": { seen: "the switcher", make: (value, options) => {
+    const path = `/home/u/${value}`;
+    return reduce(reporting(options), { listed: posix.resolve(path) === path ? { rows: [{ path, name: value, state: "ok" }] } : { failure: { code: "E_CLI_PROTOCOL", message: "The installed OATS CLI returned an invalid answer about this computer's deployments." } } }).state;
+  } },
+  "the kernel's message of a read of this computer's deployments list that failed": { seen: "the switcher", make: (value, options) => reduce(reporting(options), { listed: { failure: { code: "E_DEPLOYMENTS_LIST", message: value } } }).state },
+  "the name of a row a Remove removed, in the switcher's line": { seen: "the switcher", make: (value, options) => reduce(switching(reporting(options)), { removed: { path: "/home/u/acme", name: value, ok: true, reason: null } }).state },
+  "the kernel's message of a Remove that failed, in the switcher's line": { seen: "the switcher", make: (value, options) => reduce(switching(reporting(options)), { removed: { path: "/home/u/acme", name: "acme", ok: false, reason: { code: "E_DEPLOYMENTS_REMOVE", message: value } } }).state },
 };
 /** The views a state's text can reach, each with the sizes it is drawn at: the list with its
  *  headings beside the detail of its last row (a machine's, where there is one), that detail as
@@ -338,14 +359,14 @@ const MACHINE_FIELDS = {
  *  the switcher and the palette have the whole screen, and `page` is what says one is drawn there
  *  (census): the detail's labels, the open workspace's choice, the palette's keys on its first row. */
 function viewsOf(state) {
-  const list = key(state, "G"), switching = key(list, "w");
+  const list = key(state, "G"), shown = switching(list);
   return [
     ["the list and the detail", list, [S80, S120]],
     ["the detail as a page", key(list, "tab"), [S60], { what: "the detail's labels", shows: /\bsoul\b.*\bstate\b/s }],
-    ["the switcher", switching, [S80, S60], { what: "the open workspace's choice", shows: /acme-platform/ }],
+    ["the switcher", shown, [S80, S60], { what: "the open workspace's choice", shows: /acme-platform/ }],
     ["the palette over the list", paletteOver(list), [S80, S60], { what: "the palette's keys on its first row", shows: /Enter run {3}Up\/Down move {3}Esc close/ }],
     ["the help over the list", key(list, "?"), [S80]],
-    ["the help over the switcher", key(switching, "?"), [S80]],
+    ["the help over the switcher", key(shown, "?"), [S80]],
   ];
 }
 /** No row of a frame is wider than the terminal: each takes exactly its columns, in whole graphemes. */
@@ -361,13 +382,9 @@ function within(drawn, size, at) {
 }
 /** A text of 10 000 letters is drawn where a text that long is cut or wrapped, once (see SLOW). */
 const LONG_MACHINE_FIELDS = new Set(["a machine's label", "the thrown message of the roster read, before any answer", "the runtime error of a machine's row"]);
-/** What a folder directly inside `~/Agents` cannot be named: the shared listing reads no such entry. */
-const noFolder = (value) => value.includes("/") || value.includes("\0");
-
-for (const [field, { make, seen, folder = false, lead = null }] of Object.entries(MACHINE_FIELDS)) {
+for (const [field, { make, seen, lead = null }] of Object.entries(MACHINE_FIELDS)) {
   test(`the hostile fixture as ${field}, drawn in the list with its headings, the detail, the switcher, the palette and the help over each, leaves only the TUI's own sequences in the output, and no row is wider than the terminal`, async () => {
     for (const [name, value] of Object.entries(FIXTURE)) {
-      if (folder && noFolder(value)) continue;
       if (name === SLOW) {
         if (!LONG_MACHINE_FIELDS.has(field)) continue;
         const drawn = draw(key(await make(value, { ascii: false }), "G"), S80), at = `${name}, the list, 80x24`;

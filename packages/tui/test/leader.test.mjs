@@ -77,7 +77,7 @@ test("in the list, the leader then a key of its table in a later read does what 
     assert.deepEqual([butLeader(led.state), led.effect], [butLeader(pressed.state), pressed.effect], `${k} after the leader is ${plain} in the list`);
   }
   assert.deepEqual([leaderThen(state, "?", AT).state.view, leaderThen(state, "?", AT).state.back], ["help", "instances"]);
-  assert.deepEqual([leaderThen(state, "o", AT).state.view, leaderThen(state, "o", AT).effect], ["switcher", { offer: true }]);
+  assert.deepEqual([leaderThen(state, "o", AT).state.view, leaderThen(state, "o", AT).effect], ["switcher", { list: true }]);
   assert.deepEqual(leaderThen(state, "/", AT).state.filter, { editing: true, query: "" });
   const souls = leaderThen(state, "2", AT).state;
   assert.equal(souls.view, "souls");
@@ -424,7 +424,7 @@ test("Workspaces, Refresh and Help run from the palette do what their actions do
     const ran = run([...query]), pressed = key(state, plain);
     assert.deepEqual([butLeader(ran.state), ran.effect], [butLeader(pressed.state), pressed.effect], query);
   }
-  assert.deepEqual([run([..."works"]).state.view, run([..."works"]).effect], ["switcher", { offer: true }]);
+  assert.deepEqual([run([..."works"]).state.view, run([..."works"]).effect], ["switcher", { list: true }]);
   assert.deepEqual([run([..."refr"]).state.palette, run([..."refr"]).effect], [null, { refresh: { live: true } }]);
   assert.deepEqual([run([..."help"]).state.view, run([..."help"]).state.back], ["help", "instances"]);
 });

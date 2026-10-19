@@ -1,17 +1,18 @@
 // The effects of the TUI (lib/read.mjs): the reads of every served deployment, the roster of other
-// machines and the two looks at the file system, with real child processes wherever the
-// behaviour is about processes. The kernel and the collector are FAKES (fixtures/fake.mjs), copied
-// into a temp directory: no test runs a real `oats` against a deployment, and none starts tmux.
+// machines, the looks at the file system and the exec of the start's one kernel call, with real
+// child processes wherever the behaviour is about processes. The kernel and the collector are
+// FAKES (fixtures/fake.mjs), copied into a temp directory: no test runs a real `oats` against a
+// deployment, and none starts tmux.
 // A test signals only a pid a fake wrote down, and only after it has seen that the pid is its fake.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ChildProcess, execFile as nodeExecFile, execFileSync, spawn as nodeSpawn } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { COLLECTOR, DETACH_KEY_FEATURE, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliReadsRemotes, cliRecord, cliRemoteRoster, failedEntry, livenessInput, observeIdentities, prepareRemoteTerm, remoteRosterState } from "../lib/client.mjs";
-import { CHANGE_FILES, KERNEL_BIN, admitDeployment, createReader, findDeployment, leaveInstance, offeredDeployments, probeKernel } from "../lib/read.mjs";
+import { CHANGE_FILES, KERNEL_BIN, admitDeployment, createReader, findDeployment, leaveInstance, probeKernel, startExec } from "../lib/read.mjs";
 import { PANEL_FS } from "../lib/panel.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/fake.mjs", import.meta.url));
@@ -306,6 +307,34 @@ test("probeKernel refuses with acceptProbe's own reason, or with one of its four
     assert.equal(typeof reason, "string");
     assert.equal(reason.includes("\n") || reason.includes("SECRET") || reason.includes("second line") || reason.includes(world.dir) || reason.includes("Command failed"), false, reason);
   }
+});
+
+// ── startExec: the exec of the read of this computer's deployments list at a start ──
+
+test("startExec runs `node <bin> <argv…>` with the options it is given, not detached, and answers its callback as execFile does", async () => {
+  const dir = mkdtempSync(path.join(ROOT, "start-exec-")), bin = path.join(dir, "echo.mjs");
+  // What the child was given, and the group it runs in where /proc names it.
+  writeFileSync(bin, [
+    'import { readFileSync } from "node:fs";',
+    'const stat = (() => { try { return readFileSync("/proc/self/stat", "utf8"); } catch { return null; } })();',
+    'const pgid = stat === null ? null : Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[2]);',
+    'process.stdout.write(JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), marker: process.env.OATS_TUI_START_EXEC ?? null, pgid }));',
+  ].join("\n"));
+  const env = { ...CLEAN_ENV, OATS_TUI_START_EXEC: "given" };
+  const argv = ["deployments", "--json", "a value with spaces"];
+  const answer = await new Promise((resolve) => {
+    const child = startExec(bin, argv, { cwd: dir, env, encoding: "utf8", shell: false, timeout: 10_000 }, (error, stdout, stderr) => resolve({ error, stdout, stderr }));
+    assert.equal(child instanceof ChildProcess, true, "the child execFile returns");
+  });
+  assert.deepEqual([answer.error, answer.stderr], [null, ""]);
+  const seen = JSON.parse(answer.stdout);
+  assert.deepEqual([seen.argv, seen.cwd, seen.marker], [argv, dir, "given"], "the argv as it was given, after the bin; the cwd and the environment of the options");
+  if (OWN_GROUP !== null && seen.pgid !== null) assert.equal(seen.pgid, OWN_GROUP, "in the TUI's own process group: a Ctrl+C before the terminal is taken ends it too");
+
+  // A child that fails is answered as execFile answers it.
+  writeFileSync(bin, 'process.stdout.write("partial"); process.exit(3);');
+  const failed = await new Promise((resolve) => startExec(bin, [], { encoding: "utf8" }, (error, stdout) => resolve({ error, stdout })));
+  assert.deepEqual([failed.error?.code, failed.stdout], [3, "partial"]);
 });
 
 // ── a cycle ───────────────────────────────────────────────────────────────────
@@ -1341,7 +1370,7 @@ test("a roster read that ignores SIGTERM keeps neither the reader nor the next r
   await gone([pid], 5000);
 });
 
-// ── the two looks at the file system, for the switcher ────────────────────────
+// ── the look at the file system, for the switcher ─────────────────────────────
 
 /** A directory that is a deployment: it holds a regular oats-local.yaml. Its path. */
 function deploymentAt(dir) {
@@ -1349,81 +1378,6 @@ function deploymentAt(dir) {
   writeFileSync(path.join(dir, "oats-local.yaml"), "");
   return dir;
 }
-const NOTHING = { offered: [], limited: false };
-
-test("offeredDeployments: the deployments directly inside ~/Agents that the run does not serve, by folder name, with canonical paths; no link is followed", () => {
-  const base = path.join(ROOT, "offer"), home = path.join(base, "home"), agents = path.join(home, "Agents");
-  const [alpha, beta, served] = ["alpha", "beta", "served"].map((name) => deploymentAt(path.join(agents, name)));
-  const outside = deploymentAt(path.join(base, "elsewhere", "outside"));
-  deploymentAt(path.join(alpha, "nested")); // a deployment, but not directly inside
-  mkdirSync(path.join(agents, "plain")); // a folder that is no deployment
-  writeFileSync(path.join(agents, "notes.txt"), "a file");
-  symlinkSync(outside, path.join(agents, "linked")); // a link to a deployment: not a folder of ~/Agents
-  mkdirSync(path.join(agents, "linked-file"));
-  symlinkSync(path.join(alpha, "oats-local.yaml"), path.join(agents, "linked-file", "oats-local.yaml"));
-  mkdirSync(path.join(agents, "folder", "oats-local.yaml"), { recursive: true });
-  const offered = { offered: [{ path: alpha, name: "alpha" }, { path: beta, name: "beta" }], limited: false };
-
-  assert.deepEqual(offeredDeployments(home, [served]), offered);
-  assert.deepEqual(offeredDeployments(home, []).offered.map((one) => one.name), ["alpha", "beta", "served"], "sorted by name, as the shared function lists them");
-  assert.deepEqual(offeredDeployments(home, [outside]), { ...offered, offered: [...offered.offered, { path: served, name: "served" }] }, "the link was not followed: what it leads to is not offered, served or not");
-  assert.deepEqual(offeredDeployments(home, [alpha, beta, served]), NOTHING);
-
-  // A home, or an ~/Agents, reached through a link: the paths offered are canonical, so a served one is still left out.
-  symlinkSync(home, path.join(base, "home-link"));
-  assert.deepEqual(offeredDeployments(path.join(base, "home-link"), [served]), offered);
-  mkdirSync(path.join(base, "other-home"));
-  symlinkSync(agents, path.join(base, "other-home", "Agents"));
-  assert.deepEqual(offeredDeployments(path.join(base, "other-home"), [served]), offered);
-
-  // A missing ~/Agents, one that is a file, one that cannot be read: nothing offered, and no exception.
-  assert.deepEqual(offeredDeployments(path.join(base, "nobody"), []), NOTHING);
-  mkdirSync(path.join(base, "filed"));
-  writeFileSync(path.join(base, "filed", "Agents"), "a file");
-  assert.deepEqual(offeredDeployments(path.join(base, "filed"), []), NOTHING);
-  if (process.getuid?.() !== 0) {
-    const locked = path.join(base, "locked", "Agents");
-    deploymentAt(path.join(locked, "hidden"));
-    chmodSync(locked, 0o000);
-    try { assert.deepEqual(offeredDeployments(path.join(base, "locked"), []), NOTHING); } finally { chmodSync(locked, 0o700); }
-  }
-  for (const [badHome, badServed] of [[undefined, []], [null, null], [42, undefined], [home, 42]]) assert.doesNotThrow(() => offeredDeployments(badHome, badServed));
-  assert.deepEqual(offeredDeployments(undefined, []), NOTHING);
-});
-
-test("offeredDeployments with its io replaced: one look at <home>/Agents, a path that cannot be resolved left out, no canonical path offered twice, `limited` as it was answered", () => {
-  const looks = [];
-  const entries = [{ name: "b", isDirectory: true }, { name: "a", isDirectory: true }, { name: "gone", isDirectory: true }, { name: "twin", isDirectory: true }, { name: "link", isDirectory: false }];
-  const io = {
-    list: (dir, limit) => { looks.push([dir, limit]); return { entries, limited: true }; },
-    isDeployment: () => true,
-    realpath: (given) => { if (given.endsWith("/gone")) throw new Error("ENOENT"); return given.endsWith("/twin") ? "/real/Agents/a" : given.replace("/home/someone", "/real"); },
-  };
-  assert.deepEqual(offeredDeployments("/home/someone", ["/real/Agents/b"], io), { offered: [{ path: "/real/Agents/a", name: "a" }], limited: true });
-  assert.deepEqual([looks.length, looks[0][0], Number.isInteger(looks[0][1]) && looks[0][1] > 0], [1, "/home/someone/Agents", true]);
-  assert.deepEqual(offeredDeployments("/home/someone", [], { ...io, isDeployment: (dir) => dir === "/home/someone/Agents/b" }), { offered: [{ path: "/real/Agents/b", name: "b" }], limited: true });
-  assert.deepEqual(offeredDeployments("/home/someone", [], { ...io, list: () => { throw new Error("EACCES"); } }), NOTHING);
-  assert.deepEqual(offeredDeployments("/home/someone", [], { ...io, realpath: () => 42 }), { offered: [], limited: true });
-});
-
-test("offeredDeployments reads no more of ~/Agents than the shared limit, and says `limited` only when the folder holds more", () => {
-  let limit = null;
-  offeredDeployments("/nowhere", [], { list: (dir, given) => { limit = given; return { entries: [], limited: false }; } });
-  assert.equal(Number.isInteger(limit) && limit > 0 && limit <= 5000, true, `the shared limit reads ${limit}`);
-  const home = path.join(ROOT, "many"), agents = path.join(home, "Agents");
-  const names = Array.from({ length: limit + 3 }, (_, n) => `d-${String(n).padStart(5, "0")}`);
-  for (const name of names) deploymentAt(path.join(agents, name));
-
-  const more = offeredDeployments(home, []);
-  assert.deepEqual([more.offered.length, more.limited], [limit, true]);
-  assert.equal(new Set(more.offered.map((one) => one.name)).size, limit);
-  assert.equal(more.offered.every((one) => names.includes(one.name) && one.path === path.join(agents, one.name)), true);
-
-  for (const name of names.slice(limit)) rmSync(path.join(agents, name), { recursive: true });
-  const exact = offeredDeployments(home, []);
-  assert.deepEqual([exact.offered.map((one) => one.name), exact.limited], [names.slice(0, limit), false], "a folder that holds exactly the limit holds no more");
-});
-
 test("admitDeployment: a folder is admitted by what it is now, as its canonical path, and nothing above it is asked", () => {
   const base = path.join(ROOT, "admit"), outer = deploymentAt(path.join(base, "outer")), inner = path.join(outer, "inner"), picked = deploymentAt(path.join(base, "picked"));
   mkdirSync(inner);
@@ -1434,17 +1388,15 @@ test("admitDeployment: a folder is admitted by what it is now, as its canonical 
   assert.deepEqual(findDeployment(inner), { ok: true, deployment: outer });
   assert.deepEqual(admitDeployment(inner), { ok: false }, "no walking up: the deployment above is not the folder that was picked");
 
-  // Offered at one look, no longer a deployment at the pick.
-  const home = path.join(base, "home"), was = deploymentAt(path.join(home, "Agents", "was"));
-  const [offer] = offeredDeployments(home, []).offered;
-  assert.deepEqual(offer, { path: was, name: "was" });
-  assert.deepEqual(admitDeployment(offer.path), { ok: true, deployment: was });
+  // A row of this computer's deployments list when the list was read, no longer a deployment at the pick.
+  const was = deploymentAt(path.join(base, "listed", "was"));
+  assert.deepEqual(admitDeployment(was), { ok: true, deployment: was });
   rmSync(path.join(was, "oats-local.yaml"));
-  assert.deepEqual(admitDeployment(offer.path), { ok: false }, "a folder that stopped being a deployment is refused");
+  assert.deepEqual(admitDeployment(was), { ok: false }, "a folder that stopped being a deployment is refused");
   symlinkSync(path.join(picked, "oats-local.yaml"), path.join(was, "oats-local.yaml"));
-  assert.deepEqual(admitDeployment(offer.path), { ok: false }, "oats-local.yaml as a link is not a deployment's file");
+  assert.deepEqual(admitDeployment(was), { ok: false }, "oats-local.yaml as a link is not a deployment's file");
   rmSync(was, { recursive: true });
-  assert.deepEqual(admitDeployment(offer.path), { ok: false }, "and so is one that is gone");
+  assert.deepEqual(admitDeployment(was), { ok: false }, "and so is one that is gone");
   assert.deepEqual(admitDeployment(path.join(picked, "oats-local.yaml")), { ok: false }, "a file");
   for (const given of [undefined, null, 42, "", "relative/path"]) assert.deepEqual(admitDeployment(given), { ok: false }, String(given));
 

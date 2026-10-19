@@ -10,7 +10,7 @@ import {
   viewModel, workspaceChoices, workspaceChoiceRows,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
-import { MORE_FOLDERS, OFFERED_SECTION, ROSTER_FAILED, model, roster, switcher } from "../lib/model.mjs";
+import { LIST_WORDS, OFFERED_SECTION, ROSTER_FAILED, model, roster, switcher, switcherLead } from "../lib/model.mjs";
 import { QUERY_LIMIT, initialState, reduce } from "../lib/store.mjs";
 import { marksOf } from "../lib/views/instances.mjs";
 import { windowOf } from "../lib/views/scroll.mjs";
@@ -834,8 +834,12 @@ const IDENTITY = Object.freeze({ key: "github.com/acme/platform", ref: "main", k
 const LEDGER = Object.freeze({ ...IDENTITY, key: "github.com/acme/ledger" });
 /** A kernel record that reads other machines (the shared `cliReadsRemotes`). */
 const READS = Object.freeze({ ...CLI, remote: Object.freeze(["roster"]) });
-/** A second deployment of this machine, and a folder of `~/Agents` that is offered. */
-const SECOND = "/srv/deploy-b", FOLDER = "/home/u/Agents/sandbox";
+/** A second deployment of this machine, and a deployment of this computer's list that is offered. */
+const SECOND = "/srv/deploy-b", FOLDER = "/home/u/sandbox";
+/** A row of this computer's deployments list as the shared reader hands it on (`{ path, name,
+ *  state }`, the kernel's state), and the loop telling the store what a read of the list gave. */
+const listRow = (path, name, state = "ok") => ({ path, name, state });
+const withList = (state, rows) => reduce(state, { listed: { rows } }).state;
 /** A row of helpers.mjs `instanceRow`, homed in another deployment of this machine. */
 const homedIn = (dir, row) => ({ ...row, home: `${dir}/agents/${row.agent}/instances/${row.instance}`, repo: `${dir}/oats` });
 /** An observed entry of the deployment at `dir` that reports `identity`, through the real
@@ -897,13 +901,13 @@ const twoViews = (rows = NEAR) => heard(stateOf(reporting(rows), { cli: READS })
 
 // --- A run started outside a deployment -------------------------------------------------
 
-test("a run started outside every deployment serves none and opens nothing: its first state shows the switcher, and holds no entry", () => {
+test("a run started outside every deployment serves none and opens nothing: its first state shows the switcher, asks no Remove, and holds no entry and no row of this computer's list before the loop reads it", () => {
   const state = initialState({ deployment: null, cli: CLI, home: "/home/u" });
   assert.deepEqual({ view: state.view, back: state.back, ctxs: state.ctxs, open: state.open, selected: state.selected }, { view: "switcher", back: "switcher", ctxs: [], open: null, selected: null });
   assert.deepEqual([state.entries.size, state.numbers.size], [0, 0]);
-  assert.deepEqual(state.switcher, { editing: false, query: "", selected: null, top: 0, loose: false, line: null, refused: null });
-  assert.deepEqual(state.offered, { offered: [], limited: false });
-  assert.equal(Object.isFrozen(state) && Object.isFrozen(state.switcher) && Object.isFrozen(state.offered) && Object.isFrozen(state.ctxs), true);
+  assert.deepEqual(state.switcher, { editing: false, query: "", selected: null, top: 0, loose: false, line: null, refused: null, removing: null });
+  assert.deepEqual(state.listed, { rows: [], failure: null });
+  assert.equal(Object.isFrozen(state) && Object.isFrozen(state.switcher) && Object.isFrozen(state.listed) && Object.isFrozen(state.listed.rows) && Object.isFrozen(state.ctxs), true);
   assert.deepEqual(roster(state).rows, []);
 });
 
@@ -969,10 +973,10 @@ test("a roster event sets the roster as the shared rule made it, the memory, the
 
 // --- The switcher -----------------------------------------------------------------------
 
-test("the workspaces key shows the switcher and asks for the folders; the close key returns to the view it came from, as it was; and with nothing open the close key does nothing", () => {
+test("the workspaces key shows the switcher and asks for this computer's deployments list; the close key returns to the view it came from, as it was; and with nothing open the close key does nothing", () => {
   const state = press(goTo(stateOf(observed(MANY)), "inst-30"), ["tab"]).state;
   const shown = hit(state, "w");
-  assert.deepEqual(shown.effect, { offer: true });
+  assert.deepEqual(shown.effect, { list: true });
   assert.deepEqual({ view: shown.state.view, back: shown.state.back }, { view: "switcher", back: "switcher" });
   assert.deepEqual({ open: shown.state.open, selected: shown.state.selected, top: shown.state.top, focus: shown.state.focus }, { open: state.open, selected: state.selected, top: state.top, focus: "detail" }, "nothing of the view under it is touched");
   const again = hit(shown.state, "w");
@@ -990,28 +994,50 @@ test("the workspaces key shows the switcher and asks for the folders; the close 
     assert.equal(result.state, nothing, key);
     assert.equal(result.effect, null, key);
   }
-  assert.deepEqual(press(nothing, ["r", "q"]).effects, [{ refresh: { live: true }, offer: true }, "quit"]);
+  assert.deepEqual(press(nothing, ["r", "q"]).effects, [{ refresh: { live: true }, list: true }, "quit"]);
 });
 
-test("in the switcher the refresh key asks for a live read and for the folders again, and what the loop then lists is held as it was given", () => {
+test("in the switcher the refresh key asks for a live read and for this computer's deployments list again; a read that answered replaces the rows and clears a failure, and a read that failed keeps the last rows and says why", () => {
   const shown = press(stateOf(observed(TREE)), ["w"]).state;
   const asked = hit(shown, "r");
-  assert.deepEqual(asked.effect, { refresh: { live: true }, offer: true });
+  assert.deepEqual(asked.effect, { refresh: { live: true }, list: true });
   assert.equal(asked.state, shown);
   assert.deepEqual(hit(stateOf(observed(TREE)), "r").effect, { refresh: { live: true } }, "in the Instances view it asks for the read alone");
-  const listed = [{ path: FOLDER, name: "sandbox" }];
-  const told = reduce(shown, { offered: { offered: listed, limited: true } });
-  assert.equal(told.effect, null);
-  assert.deepEqual(told.state.offered, { offered: listed, limited: true });
-  assert.equal(Object.isFrozen(told.state.offered) && Object.isFrozen(told.state.offered.offered), true);
-  assert.deepEqual(choices(told.state), [choiceRows(told.state)[0].label, "sandbox"]);
-  assert.deepEqual(reduce(told.state, { offered: { offered: [], limited: false } }).state.offered, { offered: [], limited: false });
+  const rows = [listRow(FOLDER, "sandbox"), listRow("/home/u/harbor", "harbor", "missing")];
+  const answered = reduce(shown, { listed: { rows } });
+  assert.equal(answered.effect, null);
+  assert.deepEqual(answered.state.listed, { rows, failure: null });
+  assert.equal(Object.isFrozen(answered.state.listed) && Object.isFrozen(answered.state.listed.rows) && answered.state.listed.rows.every(Object.isFrozen), true);
+  assert.deepEqual(choices(answered.state), [choiceRows(answered.state)[0].label, "sandbox", "harbor"], "the rows in the kernel's order");
+  // A read that failed: the rows of the last read that answered stay, and the reason stands beside them.
+  const reason = TIMEOUT;
+  const lost = reduce(answered.state, { listed: { failure: reason } });
+  assert.equal(lost.effect, null);
+  assert.equal(lost.state.listed.rows, answered.state.listed.rows, "the same rows");
+  assert.deepEqual(lost.state.listed.failure, reason);
+  assert.equal(Object.isFrozen(lost.state.listed) && Object.isFrozen(lost.state.listed.failure), true);
+  assert.deepEqual(choices(lost.state), choices(answered.state));
+  // The next read that answers replaces the rows, and the failure goes.
+  assert.deepEqual(reduce(lost.state, { listed: { rows: [] } }).state.listed, { rows: [], failure: null });
+  assert.deepEqual(reduce(lost.state, { listed: { rows: [rows[1]] } }).state.listed, { rows: [rows[1]], failure: null });
+  // Before any read answered, a failure keeps no row.
+  assert.deepEqual(reduce(shown, { listed: { failure: reason } }).state.listed, { rows: [], failure: reason });
+});
+
+test("a row of this computer's list that is a deployment this run serves is not offered: the one the run started in, and one admitted in this run", () => {
+  const state = withList(stateOf(observed(TREE)), [listRow(DEPLOYMENT, "deploy"), listRow(FOLDER, "sandbox")]);
+  const offered = (s) => switcher(s, AT).items.filter((item) => item.path !== undefined).map((item) => item.path);
+  assert.deepEqual(offered(state), [FOLDER]);
+  assert.deepEqual(choices(state), [choiceRows(state)[0].label, "sandbox"]);
+  const joined = reduce(state, { admitted: FOLDER, at: AT }).state;
+  assert.deepEqual([joined.listed.rows.length, offered(joined)], [2, []], "the list still holds both rows; neither is offered");
+  assert.equal(switcher(joined, AT).items.some((item) => item.heading === OFFERED_SECTION), false, "and the heading goes with them");
 });
 
 test("in the switcher the movement keys move among the choices and pass over the headings, stopping at both ends", () => {
   const basalt = machine("basalt", { probe: { ok: false, error: { code: "E_SSH", message: "no route to the host" } }, workspace: null, instances: [] });
   const read = heard(stateOf(reporting(NEAR), { cli: READS }), answer(basalt, machine("quartz", { workspace: LEDGER })), tick(0));
-  let state = press(reduce(read, { offered: { offered: [{ path: FOLDER, name: "sandbox" }], limited: false } }).state, ["w"]).state;
+  let state = press(withList(read, [listRow(FOLDER, "sandbox")]), ["w"]).state;
   const s = switcher(state, AT);
   assert.deepEqual(s.items.map((item) => (item.key === undefined ? null : item.label)), ["acme-platform", "ledger", null, "basalt", null, "sandbox"], "two headings stand among the choices");
   assert.equal(chosen(state), "acme-platform", "the first choice is selected before any key");
@@ -1030,18 +1056,18 @@ test("Enter on a view's row opens that view's primary deployment, as the shared 
   const primary = (row) => views.find((v) => v.id === row.id).primary;
   assert.deepEqual(rows.map(primary), [DEPLOYMENT, QUARTZ]);
   const picked = press(state, ["w", "j", "enter"]);
-  assert.deepEqual(picked.effects, [{ offer: true }, { refresh: { live: true } }]);
+  assert.deepEqual(picked.effects, [{ list: true }, { refresh: { live: true } }]);
   assert.deepEqual({ open: picked.state.open, view: picked.state.view, back: picked.state.back, focus: picked.state.focus }, { open: primary(rows[1]), view: "instances", back: "instances", focus: "list" });
   assert.deepEqual(drawn(picked.state), ["quartz-a", "quartz-b"]);
   assert.equal(selectedName(picked.state), "quartz-a", "a view opened for the first time selects its first row");
   // A view of two deployments opens on its primary, this machine's, whichever row of it one thinks of.
   const first = press(picked.state, ["w", "g", "enter"]);
-  assert.deepEqual(first.effects, [{ offer: true }, { refresh: { live: true } }]);
+  assert.deepEqual(first.effects, [{ list: true }, { refresh: { live: true } }]);
   assert.equal(first.state.open, primary(rows[0]));
   assert.deepEqual(drawn(first.state), ["lead", "kid", null, "solo", "garnet-a", "garnet-b"]);
   // The row of the view that is open: the switcher closes on it, and the read is still asked for.
   const same = press(goTo(state, "solo"), ["w", "enter"]);
-  assert.deepEqual(same.effects, [{ offer: true }, { refresh: { live: true } }]);
+  assert.deepEqual(same.effects, [{ list: true }, { refresh: { live: true } }]);
   assert.deepEqual({ open: same.state.open, view: same.state.view, selected: selectedName(same.state) }, { open: DEPLOYMENT, view: "instances", selected: "solo" });
   // Started outside a deployment: a machine's view is opened on the machine's own deployment.
   const outside = heard(initialState({ deployment: null, cli: READS, home: "/home/u" }), answer(machine("garnet")), tick(0));
@@ -1053,8 +1079,8 @@ test("Enter on a view's row opens that view's primary deployment, as the shared 
   assert.deepEqual(drawn(opened.state), ["garnet-a", "garnet-b"]);
 });
 
-test("Enter on an offered folder asks the loop to admit it and changes nothing; admitted, it is served with the shared pending entry, opened and read; refused, its row says so and nothing else changes", () => {
-  const offered = reduce(stateOf(observed(TREE)), { offered: { offered: [{ path: FOLDER, name: "sandbox" }], limited: false } }).state;
+test("Enter on an offered row of this computer's list asks the loop to admit it and changes nothing; admitted, it is served with the shared pending entry, opened and read; refused, its row says so and nothing else changes", () => {
+  const offered = withList(stateOf(observed(TREE)), [listRow(FOLDER, "sandbox")]);
   const shown = press(goTo(offered, "child-a"), ["w", "G"]).state;
   assert.equal(chosen(shown), "sandbox");
   const asked = press(shown, ["enter"]);
@@ -1090,6 +1116,209 @@ test("Enter on an offered folder asks the loop to admit it and changes nothing; 
   // Picked again, the mark is gone and the loop is asked again.
   const retry = press(refused.state, ["enter"]);
   assert.deepEqual([retry.effects, retry.state.switcher.refused], [[{ admit: FOLDER }], null]);
+});
+
+test("a stale row of this computer's list does not open: Enter on it asks nothing and changes nothing, while Enter on a row that is a deployment asks the loop to admit it; the remove key asks for either", () => {
+  const rows = [listRow(FOLDER, "sandbox"), ...["missing", "not-a-deployment", "unreadable"].map((state) => listRow(`/home/u/${state}`, state, state))];
+  const shown = press(withList(stateOf(observed(TREE)), rows), ["w"]).state;
+  assert.deepEqual(switcher(shown, AT).items.filter((item) => item.path !== undefined).map((item) => [item.label, item.state]), rows.map((row) => [row.name, row.state]), "each row carries the kernel's state");
+  for (const [at, row] of rows.entries()) {
+    const on = press(shown, Array(at + 1).fill("j")).state;
+    assert.equal(chosen(on), row.name);
+    const picked = press(on, ["enter"]);
+    if (row.state === "ok") assert.deepEqual([picked.effects, picked.state], [[{ admit: row.path }], on], row.state);
+    else {
+      assert.deepEqual(picked.effects, [], row.state);
+      assert.equal(picked.state, on, `${row.state}: nothing changes`);
+    }
+    assert.deepEqual(press(on, ["delete"]).state.switcher.removing, { path: row.path, read: null }, row.state);
+  }
+});
+
+// --- The switcher's Remove (a row of this computer's deployments list) --------------------
+
+const HARBOR = "/home/u/harbor";
+/** The switcher over the fixture's view and two rows of this computer's list, the first of them selected. */
+const removable = () => press(withList(stateOf(observed(TREE)), [listRow(FOLDER, "sandbox"), listRow(HARBOR, "harbor")]), ["w", "j"]).state;
+/** A key without text in read `read` of input, with the geometry of the frame drawn before it, as the loop numbers its reads. */
+function inRead(state, key, read) {
+  const { page, extent, room, cols } = draw(state);
+  return reduce(state, { key, read, page, extent, room, cols });
+}
+
+test("the remove key on a row of this computer's list asks whether to remove it, and on a workspace's row does nothing; Enter in a later read of input removes the row, and Enter in the same read as the key that asked is not taken", () => {
+  const shown = removable();
+  assert.equal(chosen(shown), "sandbox");
+  const asked = inRead(shown, "delete", 7);
+  assert.equal(asked.effect, null);
+  assert.deepEqual(asked.state.switcher.removing, { path: FOLDER, read: 7 });
+  assert.equal(Object.isFrozen(asked.state.switcher.removing), true);
+  assert.deepEqual({ ...asked.state, switcher: null }, { ...shown, switcher: null }, "nothing but the switcher's own state changed");
+  assert.deepEqual([asked.state.view, chosen(asked.state)], ["switcher", "sandbox"]);
+  // 120 columns: the switcher beside the sidebar has room for each sentence on a row (they wrap at 80).
+  const { lines, m } = framed(asked.state, { cols: 120, rows: 24 });
+  assert.equal(m.switcher.removing, true);
+  for (const text of SWITCHER_TEXT.removing) assert.equal(lines.some((line) => line.includes(text)), true, text);
+  assert.equal(marked(lines).includes("sandbox"), true, "the row asked about stays marked under the question");
+  // Enter in the read that asked (a paste cannot both ask and press): the question stands.
+  const same = inRead(asked.state, "enter", 7);
+  assert.equal(same.state, asked.state);
+  assert.equal(same.effect, null);
+  // Enter in a later read: the loop is asked to remove the row; the row stays until the list is read again.
+  const removed = inRead(asked.state, "enter", 8);
+  assert.deepEqual(removed.effect, { remove: { path: FOLDER, name: "sandbox" } });
+  assert.deepEqual([removed.state.switcher.removing, removed.state.view, chosen(removed.state)], [null, "switcher", "sandbox"]);
+  assert.equal(removed.state.listed, shown.listed);
+  // Keys that carry no read: the question, then Enter, removes.
+  assert.deepEqual(press(shown, ["delete", "enter"]).effects, [{ remove: { path: FOLDER, name: "sandbox" } }]);
+  // On a workspace's row the key does nothing.
+  const onView = press(shown, ["k"]).state;
+  assert.equal(chosen(onView), choiceRows(onView)[0].label);
+  const none = inRead(onView, "delete", 9);
+  assert.equal(none.state, onView);
+  assert.equal(none.effect, null);
+});
+
+test("a Remove asked is kept by Esc, which leaves the switcher shown, and by every other key, which then does what it does; a read of the list that no longer holds the row puts the question away, and nothing is removed", () => {
+  const shown = removable(), asked = inRead(shown, "delete", 7).state;
+  // Esc keeps the row, and only puts the question away.
+  const kept = inRead(asked, "escape", 8);
+  assert.equal(kept.effect, null);
+  assert.deepEqual([kept.state.view, kept.state.switcher, kept.state.listed], ["switcher", shown.switcher, shown.listed]);
+  assert.equal(press(kept.state, ["escape"]).state.view, "instances", "the next Esc closes the switcher");
+  assert.deepEqual(press(kept.state, ["enter"]).effects, [{ admit: FOLDER }], "Enter then opens the row");
+  // Another key: the question goes, and the key does what it does.
+  const moved = press(asked, ["j"]);
+  assert.deepEqual([moved.effects, moved.state.switcher.removing, chosen(moved.state)], [[], null, "harbor"]);
+  assert.deepEqual(press(moved.state, ["enter"]).effects, [{ admit: HARBOR }], "nothing is removed");
+  const refreshed = press(asked, ["r"]);
+  assert.deepEqual([refreshed.effects, refreshed.state.switcher.removing], [[{ refresh: { live: true }, list: true }], null]);
+  // A read of the list that no longer holds the row puts the question away: the selection is on
+  // the first choice now (the open workspace), and Enter opens that one, removing nothing.
+  const reread = withList(asked, [listRow(HARBOR, "harbor")]);
+  assert.deepEqual([reread.switcher.removing, switcher(reread).selected], [null, switcher(reread).keys[0]]);
+  const late = inRead(reread, "enter", 8);
+  assert.deepEqual([late.effect, late.state.switcher.removing, late.state.view], [{ refresh: { live: true } }, null, "instances"]);
+  // A read that failed keeps the rows: the row is still there to remove.
+  const failing = reduce(asked, { listed: { failure: TIMEOUT } }).state;
+  assert.deepEqual(inRead(failing, "enter", 8).effect, { remove: { path: FOLDER, name: "sandbox" } });
+});
+
+test("a Remove asked is gone once the switcher is left: by the help, by the instances key, and when the deployment of a row opened meanwhile is opened; shown again, Enter opens and removes nothing", () => {
+  const shown = removable(), asked = inRead(shown, "delete", 7).state;
+  const help = press(asked, ["?"]);
+  assert.deepEqual([help.state.view, help.state.switcher.removing, help.effects], ["help", null, []]);
+  const back = press(help.state, ["?"]).state;
+  assert.deepEqual([back.view, back.switcher.removing], ["switcher", null]);
+  assert.deepEqual(press(back, ["enter"]).effects, [{ admit: FOLDER }]);
+  const away = press(asked, ["1"]);
+  assert.deepEqual([away.state.view, away.state.switcher.removing, away.effects], ["instances", null, []]);
+  const again = press(away.state, ["w"]);
+  assert.deepEqual([again.state.view, again.state.switcher.removing, again.effects], ["switcher", null, [{ list: true }]]);
+  // Enter asked the loop to admit the row, a Remove was asked before it answered, and the answer opens the deployment.
+  const admitting = press(shown, ["enter"]);
+  assert.deepEqual(admitting.effects, [{ admit: FOLDER }]);
+  const meanwhile = inRead(admitting.state, "delete", 9).state;
+  assert.deepEqual(meanwhile.switcher.removing, { path: FOLDER, read: 9 });
+  const joined = reduce(meanwhile, { admitted: FOLDER, at: AT });
+  assert.deepEqual([joined.state.view, joined.state.open, joined.state.switcher.removing], ["instances", FOLDER, null]);
+  assert.equal(press(joined.state, ["w"]).state.switcher.removing, null);
+});
+
+test("a Remove's answer is said above the switcher's rows, removed or not with the kernel's message, and the list is read again; the next Remove asked puts it away", () => {
+  const shown = removable();
+  const done = reduce(shown, { removed: { path: FOLDER, name: "sandbox", ok: true } });
+  assert.deepEqual(done.effect, { list: true });
+  assert.deepEqual(done.state.switcher.line, { removed: "sandbox" });
+  assert.equal(Object.isFrozen(done.state.switcher.line), true);
+  assert.deepEqual({ ...done.state, switcher: null }, { ...shown, switcher: null }, "the rows stay until the list is read again");
+  assert.deepEqual(framed(done.state).m.switcher.said, { removed: "sandbox" });
+  assert.equal(framed(done.state, { cols: 120, rows: 24 }).lines.some((line) => line.includes(SWITCHER_TEXT.removed("sandbox"))), true);
+  const reason = { code: "E_CLI_FAILED", message: "the kernel could not write the list" };
+  const refused = reduce(shown, { removed: { path: FOLDER, name: "sandbox", ok: false, reason } });
+  assert.deepEqual([refused.effect, refused.state.switcher.line], [{ list: true }, { notRemoved: "sandbox", message: reason.message }]);
+  // Wide enough for the sentence to stand on one row beside the sidebar (it wraps under 160 columns).
+  assert.equal(framed(refused.state, { cols: 160, rows: 24 }).lines.some((line) => line.includes(SWITCHER_TEXT.notRemoved("sandbox", reason.message))), true);
+  // The read the answer asked for: the row is gone, and the line stays.
+  const reread = withList(done.state, [listRow(HARBOR, "harbor")]);
+  assert.deepEqual([choices(reread), reread.switcher.line], [[choiceRows(reread)[0].label, "harbor"], { removed: "sandbox" }]);
+  assert.equal(press(reread, ["G", "delete"]).state.switcher.line, null);
+});
+
+test("a Remove asked is about the row marked when it was asked: a read of the list that brings a row above it keeps that row selected and asked about, and Enter removes that one; a read that no longer holds it puts the question away", () => {
+  // Started outside every deployment with one row: the selection stands on it without having been moved there.
+  const outside = withList(initialState({ deployment: null, cli: CLI, home: "/home/u" }), [listRow(HARBOR, "harbor")]);
+  assert.equal(outside.switcher.selected, null, "nothing was selected by a key");
+  const asked = inRead(outside, "delete", 1).state;
+  assert.deepEqual(asked.switcher.removing, { path: HARBOR, read: 1 });
+  // A read asked for before the Delete answers after it, with a row above the one asked about.
+  const grown = withList(asked, [listRow(FOLDER, "sandbox"), listRow(HARBOR, "harbor")]);
+  assert.equal(switcher(grown).selected, `path\u0000${HARBOR}`, "the row asked about is still the one marked");
+  assert.deepEqual(grown.switcher.removing, { path: HARBOR, read: 1 }, "and still the one asked about");
+  assert.deepEqual(inRead(grown, "enter", 2).effect, { remove: { path: HARBOR, name: "harbor" } });
+  // The row gone from the list: the selection is on another row, and the question goes with it.
+  const gone = withList(asked, [listRow(FOLDER, "sandbox")]);
+  assert.equal(gone.switcher.removing, null);
+  assert.equal(inRead(gone, "enter", 2).effect?.remove, undefined, "Enter removes nothing then");
+});
+
+test("a Remove asked is answered by the keys it names, Enter and Esc, whatever tui.json gives the open and close actions: with open on o, Enter removes and o keeps the row and does what it does; with close on Backspace, Esc still only keeps it", () => {
+  const actions = effectiveConfig({ keys: { open: ["o"], close: ["backspace"] } }).actions;
+  const shown = press(withList(stateOf(observed(TREE), { actions }), [listRow(FOLDER, "sandbox"), listRow(HARBOR, "harbor")]), ["w", "j"]).state;
+  const asked = inRead(shown, "delete", 1).state;
+  assert.deepEqual(inRead(asked, "enter", 2).effect, { remove: { path: FOLDER, name: "sandbox" } }, "Enter, which no action holds now");
+  const byO = inRead(asked, "o", 2);
+  assert.deepEqual([byO.state.switcher.removing, byO.effect], [null, { admit: FOLDER }], "o is open's key: the question goes and the row is opened, nothing removed");
+  const byEsc = inRead(asked, "escape", 2);
+  assert.deepEqual([byEsc.state.switcher.removing, byEsc.state.view, byEsc.effect], [null, "switcher", null], "Esc keeps the row, and the switcher stays");
+  const byBackspace = inRead(asked, "backspace", 2);
+  assert.equal(byBackspace.state.switcher.removing, null, "close's own key keeps it too, as every other key does");
+  // Delete and Enter in one read: the question stands.
+  assert.deepEqual(inRead(asked, "enter", 1).state.switcher.removing, { path: FOLDER, read: 1 });
+  // With open unbound, Enter still removes.
+  const unbound = effectiveConfig({ keys: { open: [] } }).actions;
+  const plain = inRead(press(withList(stateOf(observed(TREE), { actions: unbound }), [listRow(FOLDER, "sandbox")]), ["w", "j"]).state, "delete", 1).state;
+  assert.deepEqual(inRead(plain, "enter", 2).effect, { remove: { path: FOLDER, name: "sandbox" } });
+});
+
+test("the add of the deployment the run started in, refused while the switcher or the help is shown, is held, and said once a view that draws the line above the panes is shown", () => {
+  const reason = { code: "E_DEPLOYMENTS_BUSY", message: "the list is locked" };
+  const shown = press(stateOf(observed(TREE)), ["w"]).state;
+  const held = reduce(shown, { notListed: reason }).state;
+  assert.equal(held.outcome, null, "the switcher draws no such line");
+  assert.deepEqual(held.notice, { said: LIST_WORDS.notAdded(reason.message), under: [] });
+  // The help over the switcher draws none either.
+  assert.equal(press(held, ["?"]).state.outcome, null);
+  // Back to the list of instances, by the key that would put a line away: it is said there, once.
+  const back = press(held, ["1"]).state;
+  assert.deepEqual([back.view, back.outcome, back.notice], ["instances", { said: LIST_WORDS.notAdded(reason.message), under: [] }, null]);
+  assert.equal(press(back, ["j"]).state.outcome, null, "and goes at the next key, as any line there");
+
+  // The help over the list of instances draws no such line either: held there too, said once the help is closed.
+  const helped = press(stateOf(observed(TREE)), ["?"]).state;
+  const underHelp = reduce(helped, { notListed: reason }).state;
+  assert.deepEqual([underHelp.outcome, underHelp.notice], [null, { said: LIST_WORDS.notAdded(reason.message), under: [] }]);
+  const closed = press(underHelp, ["escape"]).state;
+  assert.deepEqual([closed.view, closed.outcome, closed.notice], ["instances", { said: LIST_WORDS.notAdded(reason.message), under: [] }, null]);
+  // Over the list of instances itself it is said at once.
+  assert.deepEqual(reduce(stateOf(observed(TREE)), { notListed: reason }).state.outcome, { said: LIST_WORDS.notAdded(reason.message), under: [] });
+});
+
+// --- This computer's deployments list and the deployment the run started in ---------------
+
+test("the deployment the run started in, not added to this computer's list, is said in the line under the sidebar's title, which stands until the next key bound to an action", () => {
+  const state = stateOf(observed(TREE));
+  const reason = { code: "E_CLI_FAILED", message: "the kernel could not write the list" };
+  const told = reduce(state, { notListed: reason });
+  assert.equal(told.effect, null);
+  assert.deepEqual(told.state.outcome, { said: LIST_WORDS.notAdded(reason.message), under: [] });
+  assert.deepEqual({ ...told.state, outcome: null }, { ...state });
+  // Under the title, wrapped to the sidebar's width: its rows read as the sentence.
+  const d = draw(told.state, { cols: 120, rows: 24 }), side = d.lines.slice(1, 4).map((line) => line.slice(0, d.cols)).join(" ").replace(/\s+/g, " ");
+  assert.equal(side.includes(`This deployment was not added to this computer's list: ${reason.message}`), true, side);
+  for (const key of ["x", "f5"]) assert.deepEqual(press(told.state, [key]).state.outcome, told.state.outcome, key);
+  assert.deepEqual(reduce(told.state, { paste: "x" }).state.outcome, told.state.outcome, "a paste");
+  for (const key of ["j", "r", "w"]) assert.equal(press(told.state, [key]).state.outcome, null, key);
 });
 
 test("selection, the list's scroll and the detail's are kept per open view: away and back returns to the same row at the same place, each view's collapse stays its own, and a filter is not kept", () => {
@@ -1129,7 +1358,7 @@ test("selection, the list's scroll and the detail's are kept per open view: away
   assert.equal(press(filtered, ["w", "g", "enter"]).state.filter.query, "inst");
 });
 
-test("when the open view loses its last deployment the switcher is shown and says so: nothing is open, its place is forgotten, the folders are asked for, and the close key has nowhere to return to", () => {
+test("when the open view loses its last deployment the switcher is shown and says so: nothing is open, its place is forgotten, this computer's deployments list is asked for, and the close key has nowhere to return to", () => {
   const read = heard(stateOf(reporting(NEAR), { cli: READS }), answer(machine("quartz", { workspace: LEDGER })), tick(0));
   const there = press(goTo(read, "solo"), ["w", "j", "enter", "j", "tab"]).state;
   assert.deepEqual([there.open, selectedName(there), there.focus], [QUARTZ, "quartz-b", "detail"]);
@@ -1138,7 +1367,7 @@ test("when the open view loses its last deployment the switcher is shown and say
   assert.deepEqual([kept.effect, kept.state.view, kept.state.open, selectedName(kept.state)], [null, "instances", QUARTZ, "quartz-b"]);
   // An answer that no longer lists it: no view holds what was open.
   const lost = hearing(there, answer(), tick(1));
-  assert.deepEqual(lost.effect, { offer: true });
+  assert.deepEqual(lost.effect, { list: true });
   assert.deepEqual(
     { view: lost.state.view, back: lost.state.back, open: lost.state.open, selected: lost.state.selected, top: lost.state.top, detailTop: lost.state.detailTop, focus: lost.state.focus, line: lost.state.switcher.line },
     { view: "switcher", back: "switcher", open: null, selected: null, top: 0, detailTop: 0, focus: "list", line: "gone" },
@@ -1155,7 +1384,7 @@ test("when the open view loses its last deployment the switcher is shown and say
   assert.deepEqual([back.state.open, back.state.view, selectedName(back.state), back.state.switcher.line], [DEPLOYMENT, "instances", "solo", null]);
   // Under the help it is the same, and the help closes onto the switcher.
   const under = hearing(press(there, ["?"]).state, answer(), tick(1));
-  assert.deepEqual([under.state.view, under.state.open, under.state.switcher.line, under.effect], ["switcher", null, "gone", { offer: true }]);
+  assert.deepEqual([under.state.view, under.state.open, under.state.switcher.line, under.effect], ["switcher", null, "gone", { list: true }]);
   // A view that is not the open one may leave without a word.
   const elsewhere = hearing(read, answer(), tick(1));
   assert.deepEqual([elsewhere.effect, elsewhere.state.view, elsewhere.state.open, elsewhere.state.switcher.line], [null, "instances", DEPLOYMENT, null]);
@@ -1278,7 +1507,7 @@ test("the switcher has a filter field of its own: a text key is text there, q an
   assert.deepEqual([kept.query, drawn(filtered)], ["solo", ["solo"]]);
   const untouched = (state, what) => assert.equal(state.filter, kept, `${what}: the Instances filter is the same object`);
   const open = press(filtered, ["w", "/"]);
-  assert.deepEqual(open.effects, [{ offer: true }]);
+  assert.deepEqual(open.effects, [{ list: true }]);
   assert.deepEqual([open.state.switcher.editing, open.state.switcher.query], [true, ""]);
   untouched(open.state, "opened");
   const typing = press(open.state, ["q", "u", "a", "r", "t", "z"]);
@@ -1335,7 +1564,7 @@ test("the switcher has a filter field of its own: a text key is text there, q an
 
 // --- The help over the switcher ---------------------------------------------------------
 
-test("the help over the switcher returns to the switcher, by the help key and by the close key, and the refresh key there asks for the folders as in the switcher", () => {
+test("the help over the switcher returns to the switcher, by the help key and by the close key, and the refresh key there asks for this computer's deployments list as in the switcher", () => {
   const shown = press(stateOf(observed(TREE)), ["w"]).state;
   const help = press(shown, ["?"]);
   assert.deepEqual([help.state.view, help.state.back, help.effects], ["help", "switcher", []]);
@@ -1343,13 +1572,13 @@ test("the help over the switcher returns to the switcher, by the help key and by
     const back = press(help.state, [key]);
     assert.deepEqual([back.state.view, back.state.back, back.effects], ["switcher", "switcher", []], key);
   }
-  assert.deepEqual(press(help.state, ["r"]).effects, [{ refresh: { live: true }, offer: true }]);
+  assert.deepEqual(press(help.state, ["r"]).effects, [{ refresh: { live: true }, list: true }]);
   assert.deepEqual(press(stateOf(observed(TREE)), ["?", "r"]).effects, [{ refresh: { live: true } }], "over the Instances view it asks for the read alone");
   // The instances key leaves both for the view that is open.
   assert.deepEqual([press(help.state, ["1"]).state.view, press(help.state, ["1"]).state.back], ["instances", "instances"]);
   // From the help over the Instances view the workspaces key shows the switcher, and the help then opens over it.
   const through = press(stateOf(observed(TREE)), ["?", "w"]);
-  assert.deepEqual([through.state.view, through.effects], ["switcher", [{ offer: true }]]);
+  assert.deepEqual([through.state.view, through.effects], ["switcher", [{ list: true }]]);
   assert.equal(press(through.state, ["?", "?"]).state.view, "switcher");
   // With nothing open the help has only the switcher to return to.
   const nothing = initialState({ deployment: null, cli: CLI, home: "/home/u" });
@@ -1370,7 +1599,7 @@ const SMALL = { cols: 60, rows: 15 };
 /** The frame of a state as the loop draws it, with what the model gave the views for it. */
 function framed(state, size = SIZE) {
   const made = draw(state, size);
-  return { ...made, m: model(state, { page: made.page, now: NOW, at: AT, cols: made.cols }) };
+  return { ...made, m: model(state, { page: made.page, now: NOW, at: AT, cols: made.cols, area: made.area }) };
 }
 /** The row of a frame that carries the selection mark, and its place; null and -1 when none does.
  *  The mark stands first in the sidebar's list, or first in the main area, a cell after the rule
@@ -1517,11 +1746,11 @@ test("selecting the first instance brings what stands above it into the pane: th
 
 // --- The same in the switcher -----------------------------------------------------------
 
-/** Two hundred folders of `~/Agents`: more than any pane holds. */
-const FOLDERS = Array.from({ length: 200 }, (_, i) => ({ path: `/home/u/Agents/folder-${String(i).padStart(3, "0")}`, name: `folder-${String(i).padStart(3, "0")}` }));
+/** Two hundred rows of this computer's deployments list: more than any pane holds. */
+const FOLDERS = Array.from({ length: 200 }, (_, i) => listRow(`/home/u/folder-${String(i).padStart(3, "0")}`, `folder-${String(i).padStart(3, "0")}`));
 
-test("in the switcher the last choice brings the line under it into the pane: with two hundred folders and more than are listed, the last-row key selects the last folder and the line that says so is drawn under it, in a tall pane and in a short one, and the down key then changes nothing", () => {
-  const shown = press(reduce(stateOf(observed(TREE)), { offered: { offered: FOLDERS, limited: true } }).state, ["w"]).state;
+test("in the switcher the last choice is the last row of its window: with two hundred rows of this computer's list, the last-row key selects the last row and nothing is cut off under it, in a tall pane and in a short one, and the down key then changes nothing", () => {
+  const shown = press(withList(stateOf(observed(TREE)), FOLDERS), ["w"]).state;
   for (const size of [SIZE, SMALL]) {
     const before = press(shown, ["G", "k"], size).state;
     assert.equal(chosen(before), "folder-198");
@@ -1529,8 +1758,8 @@ test("in the switcher the last choice brings the line under it into the pane: wi
       const { lines, m } = framed(state, size), at = markedAt(lines), where = `${what} at ${size.cols}x${size.rows}`;
       assert.equal(chosen(state), "folder-199", where);
       assert.equal(lines[at].includes("folder-199"), true, where);
-      assert.equal(lines[at + 1].includes(MORE_FOLDERS), true, `${where}: the line stands under the last folder`);
-      assert.deepEqual([m.switcher.below, m.switcher.rows.at(-1), state.switcher.loose], [0, { own: MORE_FOLDERS }, false], where);
+      assert.equal(/folder-\d{3}/.test(lines[at + 1] ?? ""), false, `${where}: no row of the list is drawn under the last one`);
+      assert.deepEqual([m.switcher.below, m.switcher.rows.at(-1).label, m.switcher.rows.at(-1).selected, state.switcher.loose], [0, "folder-199", true, false], where);
       assert.equal(state.switcher.top, m.switcher.above, `${where}: the store's top is the one drawn`);
       for (const key of ["j", "down", "pagedown", "G"]) {
         const more = press(state, [key], size);
@@ -1540,7 +1769,7 @@ test("in the switcher the last choice brings the line under it into the pane: wi
     }
   }
   // The first choice brings the heading above it into the pane.
-  const outside = reduce(initialState({ deployment: null, cli: CLI, home: "/home/u" }), { offered: { offered: FOLDERS, limited: false } }).state;
+  const outside = withList(initialState({ deployment: null, cli: CLI, home: "/home/u" }), FOLDERS);
   const home = press(press(outside, ["G"]).state, ["g"]).state, top = framed(home);
   assert.deepEqual([chosen(home), home.switcher.top, home.switcher.loose], ["folder-000", 0, false]);
   assert.equal(top.lines[markedAt(top.lines) - 1].includes(OFFERED_SECTION), true);
@@ -1550,7 +1779,7 @@ test("in the switcher the last choice brings the line under it into the pane: wi
 test("while the switcher says that the open workspace is gone, its movement counts with the pane less that row: the last-row key reaches the last choice, the store's top is the one the model draws, and the model's rows are the ones on the frame", () => {
   const read = heard(stateOf(reporting(NEAR), { cli: READS }), answer(machine("quartz", { workspace: LEDGER })), tick(0));
   const lost = heard(press(read, ["w", "j", "enter"]).state, answer(), tick(1));
-  const gone = reduce(lost, { offered: { offered: FOLDERS, limited: false } }).state;
+  const gone = withList(lost, FOLDERS);
   assert.deepEqual([gone.view, gone.open, gone.switcher.line], ["switcher", null, "gone"]);
   const folders = (lines) => lines.flatMap((line) => /folder-\d{3}/.exec(line)?.[0] ?? []);
   const agree = (state, what) => {
@@ -1558,16 +1787,16 @@ test("while the switcher says that the open workspace is gone, its movement coun
     assert.equal(lines.some((line) => line.includes(SWITCHER_TEXT.gone)), true, `${what}: the line is said`);
     assert.equal(state.switcher.top, m.switcher.above, `${what}: the store's top is the one drawn`);
     assert.equal(m.switcher.rows.length, windowOf({ top: 0, count: 202, height: page - 1 }).size, `${what}: a window of the pane less one row`);
-    assert.deepEqual(m.switcher.rows.flatMap((row) => (row.path !== undefined ? [row.label] : [])), folders(lines), `${what}: the folders of the model are the folders on the frame`);
+    assert.deepEqual(m.switcher.rows.flatMap((row) => (row.path !== undefined ? [row.label] : [])), folders(lines), `${what}: the rows of the list in the model are the ones on the frame`);
     assert.equal(marked(lines).includes(chosen(state)), true, `${what}: the selected choice is drawn`);
     return m;
   };
-  assert.equal(switcher(gone, AT).items.length, 202, "one view, the heading and two hundred folders");
+  assert.equal(switcher(gone, AT).items.length, 202, "one view, the heading and two hundred rows of the list");
   agree(gone, "at first");
   const end = press(gone, ["G"]).state;
   assert.equal(chosen(end), "folder-199");
   assert.equal(agree(end, "G").switcher.below, 0);
-  assert.equal(press(end, ["j"]).state, end, "nothing stands under the last folder");
+  assert.equal(press(end, ["j"]).state, end, "nothing stands under the last row");
   // Every key after it starts from what is drawn: the selection moves and the window only as it must.
   let state = end;
   for (const key of ["k", "k", "pageup", "j", "pagedown", "pageup", "pageup", "G", "g", "pagedown"]) {
@@ -1577,6 +1806,36 @@ test("while the switcher says that the open workspace is gone, its movement coun
   }
   const up = press(end, ["k"]).state;
   assert.deepEqual([chosen(up), up.switcher.top], ["folder-198", end.switcher.top], "one choice up inside the window moves no row");
+});
+
+test("while the switcher says that the last read of this computer's list failed, and asks a Remove, its window is the pane less the rows those lines take at its width: the last-row key reaches the last row, the store's top is the one the model draws, and the selected row stays drawn under the question", () => {
+  const reason = { code: "E_CLI_TIMEOUT", message: "the kernel did not answer in time; `oats deployments` from a shell reads the list again" };
+  const failing = reduce(withList(initialState({ deployment: null, cli: CLI, home: "/home/u" }), FOLDERS), { listed: { failure: reason } }).state;
+  for (const size of [SIZE, SMALL]) {
+    const where = `${size.cols}x${size.rows}`;
+    const end = press(failing, ["G"], size).state, area = draw(end, size).area, lead = switcherLead(end, area);
+    assert.equal(lead > 1, true, `${where}: the kernel's message is wrapped over more than one row`);
+    const told = framed(end, size);
+    assert.equal(chosen(end), "folder-199", where);
+    assert.equal(end.switcher.top, told.m.switcher.above, `${where}: the store's top is the one drawn`);
+    assert.equal(told.m.switcher.rows.length, windowOf({ top: 0, count: 201, height: told.page - lead }).size, `${where}: a window of the pane less the lines above`);
+    assert.equal(told.m.switcher.failure, reason.message, where);
+    assert.equal(told.lines.some((line) => line.includes("This computer's list of deployments")), true, where);
+    assert.equal(marked(told.lines).includes("folder-199"), true, `${where}: the selected row is drawn`);
+    // The question takes its rows more (each sentence on two rows in the 39 cells beside the
+    // sidebar at 80 columns, on one at 60): the window is shorter again, and holds the selection.
+    const asked = press(end, ["delete"], size).state, asking = switcherLead(asked, area);
+    assert.equal(asking - lead, size === SIZE ? 4 : 2, where);
+    const question = framed(asked, size);
+    assert.equal(question.m.switcher.rows.length, windowOf({ top: 0, count: 201, height: question.page - asking }).size, where);
+    assert.deepEqual([question.m.switcher.below, question.m.switcher.removing], [0, true], where);
+    assert.equal(question.lines.some((line) => line.includes(size === SIZE ? "Remove the selected row" : SWITCHER_TEXT.removing[0])), true, `${where}: the question`);
+    assert.equal(marked(question.lines).includes("folder-199"), true, `${where}: the selected row stays drawn under the question`);
+    // A key that keeps the row moves from what was drawn, with the question gone.
+    const up = press(asked, ["k"], size).state, after = framed(up, size);
+    assert.deepEqual([chosen(up), up.switcher.removing, up.switcher.top], ["folder-198", null, after.m.switcher.above], where);
+    assert.equal(marked(after.lines).includes("folder-198"), true, where);
+  }
 });
 
 // --- A read that failed leaves the user where they were, whoever answers meanwhile -------
@@ -1749,23 +2008,18 @@ test("a list scrolled away from its selection holds it again after the fold of t
 });
 
 test("the switcher's rows scrolled away from the selected choice hold it again when the switcher is shown again, when the selection moves and when its filter's text changes", () => {
-  const shown = press(reduce(stateOf(observed(TREE)), { offered: { offered: FOLDERS, limited: true } }).state, ["w"]).state;
-  // The last folder selected in a tall terminal, which then becomes a short one: the model's
-  // window holds the choice, and the line under it is cut off.
+  const shown = press(withList(stateOf(observed(TREE)), FOLDERS), ["w"]).state;
+  // The last row selected in a tall terminal, which then becomes a short one: the model's
+  // window holds the choice, and nothing stands under it.
   const tall = press(shown, ["G"], SIZE).state;
   const cut = framed(tall, SMALL);
   assert.equal(marked(cut.lines).includes("folder-199"), true);
-  assert.deepEqual([cut.m.switcher.below, cut.lines.some((line) => line.includes(MORE_FOLDERS))], [1, false]);
-  // The down key has no choice to go to: it scrolls the line into the pane.
-  const scrolled = press(tall, ["j"], SMALL);
-  assert.deepEqual(scrolled.effects, []);
-  const loose = scrolled.state, drawnLoose = framed(loose, SMALL);
-  assert.deepEqual([chosen(loose), loose.switcher.loose, drawnLoose.m.switcher.below], ["folder-199", true, 0]);
-  assert.equal(drawnLoose.lines.some((line) => line.includes(MORE_FOLDERS)), true);
-  assert.equal(loose.loose, false, "the list of instances under it is not touched");
-  assert.equal(press(loose, ["j"], SMALL).state, loose, "nothing more to scroll");
-  // Scrolled further away by hand, to see it come back.
-  const away = Object.freeze({ ...loose, switcher: Object.freeze({ ...loose.switcher, top: 0 }) });
+  assert.equal(cut.m.switcher.below, 0);
+  // The down key has no choice to go to and nothing to scroll into the pane.
+  const down = press(tall, ["j"], SMALL);
+  assert.deepEqual([down.state === tall, down.effects], [true, []]);
+  // Scrolled away by hand, as the store keeps rows scrolled with no choice to go to (loose), to see it come back.
+  const away = Object.freeze({ ...tall, switcher: Object.freeze({ ...tall.switcher, top: 0, loose: true }) });
   assert.equal(markedAt(framed(away, SMALL).lines), -1, "the selected choice is not in the pane");
   const held = (state, label, what) => {
     assert.equal(state.switcher.loose, false, what);

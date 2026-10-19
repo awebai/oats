@@ -12,7 +12,7 @@
 import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings } from "./actions.mjs";
 import { collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { defaultDetachKey } from "./config.mjs";
-import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight } from "./model.mjs";
+import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, LIST_WORDS } from "./model.mjs";
 import { backKeyId, backKeySequences, isBackKey } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
 import { SPLIT_MIN, splitFits } from "./views/split.mjs";
@@ -53,7 +53,10 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  on purpose (see `scrolledList`); the switcher has its own.
  *  `selected`, `top`, `detailTop` are the open view's; `places` keeps them for
  *  the views left behind, and `collapsed` holds every view's keys (each carries its `open`).
- *  `back`: the view under the help. `offered`: the deployments of `~/Agents` not served.
+ *  `back`: the view under the help. `listed`: this computer's deployments list as it was last read
+ *  (awebai/oats#1390): `rows`, the shared reader's `{ path, name, state }` in the kernel's order, of
+ *  the last read that answered, and `failure`, the reason (`{ code, message }`) the last read failed
+ *  with, or null once one answered. The switcher offers the rows this run does not serve.
  *  `opening`: the agent of another machine whose terminal is being opened, or null:
  *  `{ id, phase: "preflight", name, machine, routed }` while that machine is asked whether its
  *  session is there; `name`, `machine` and `routed` are the row's as it was when Enter was
@@ -70,7 +73,10 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  "terminal" while what is typed goes to the agent and "list" while the TUI reads keys, and `zoom`
  *  true while it has the whole body (only with the terminal's focus).
  *  `outcome`: the line after an open (the model's `{ said, under }`), shown above the panes until
- *  the next key bound to an action, or null.
+ *  the next key bound to an action, or null. `notice`: such a line that came while no view that
+ *  draws one at every width was shown (the switcher, the help: see `drawsOutcome`), held until one
+ *  is; or null.
+ *  It is the add of the deployment the run started in, refused.
  *  `detachKey`: tui.json's `open.detachKey`, the leader (docs/tui.md, "The leader"; without one,
  *  `platform`'s default, config.mjs defaultDetachKey), and `leaderKey` the key id it is read as
  *  where the TUI reads keys (term/through.mjs backKeyId).
@@ -102,15 +108,24 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     remote: Object.freeze({ remoteGroups: Object.freeze([]), rosterAnswered: false, rosterFailure: null }), rosterAt: null,
     memory: new Map(), notes: new Map(), collecting: false, cli, home,
     selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(),
-    switcher: Object.freeze({ editing: false, query: "", selected: null, top: 0, loose: false, line: null, refused: null }),
-    offered: Object.freeze({ offered: Object.freeze([]), limited: false }),
+    switcher: NO_SWITCHER,
+    listed: NO_LIST,
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
     leaderKey: backKeyId(detachKey), leader: null, palette: null, recent: Object.freeze([]), souls: NO_SOULS, capabilities: NO_CAPABILITIES,
     spawn: null, spawning: null, spawnCheck: null, arriving: null, previews: 0, tabs: Object.freeze([]), split: null, group: 0, aside: null,
+    notice: null,
   });
 }
 
 const next = (state, changes) => Object.freeze({ ...state, ...changes });
+
+/** The switcher's own: the filter, the selection and the scroll; `line`, what it says above its rows
+ *  of what happened (lib/model.mjs SWITCHER_LINES: "gone", or the answer of a Remove); `refused`,
+ *  the path of a picked row that turned out not to be a deployment; `removing`, the Remove asked
+ *  for, `{ path, read }` (the row and the read of input that asked), until it is answered or kept. */
+const NO_SWITCHER = Object.freeze({ editing: false, query: "", selected: null, top: 0, loose: false, line: null, refused: null, removing: null });
+/** This computer's deployments list before its first read. */
+const NO_LIST = Object.freeze({ rows: Object.freeze([]), failure: null });
 const indexOf = (r, id) => (id === null ? -1 : r.index.get(id) ?? -1);
 /** Whether an item of the list is an instance: the only kind the selection stands on. */
 const isRow = (item) => item?.id !== undefined;
@@ -161,7 +176,7 @@ function rehomed(before, state) {
 }
 
 /** The switcher, shown: over whatever view was there. `said`: a line of its own to show. */
-const toSwitcher = (state, said = null) => next(state, { view: "switcher", switcher: Object.freeze({ ...state.switcher, editing: false, loose: false, line: said, refused: null }) });
+const toSwitcher = (state, said = null) => next(state, { view: "switcher", switcher: Object.freeze({ ...state.switcher, editing: false, loose: false, line: said, refused: null, removing: null }) });
 
 /** After what the reader gave changed: when no view holds what was open any more (a machine that
  *  is no longer listed), the switcher is shown and says so, and nothing is open. Else the
@@ -180,7 +195,7 @@ function settled(state, taken) {
     const places = new Map(taken.places); places.delete(taken.open);
     // A confirmation open over that view is closed with it: what it sent goes on.
     const dismiss = taken.act !== null ? { dismiss: taken.act.n } : {};
-    return { state: toSwitcher(next(taken, { open: null, places, selected: null, top: 0, loose: false, detailTop: 0, focus: "list", filter: NO_FILTER, back: "switcher", act: null }), "gone"), effect: { offer: true, ...dismiss } };
+    return { state: toSwitcher(next(taken, { open: null, places, selected: null, top: 0, loose: false, detailTop: 0, focus: "list", filter: NO_FILTER, back: "switcher", act: null }), "gone"), effect: { list: true, ...dismiss } };
   }
   const before = roster(state);
   const unknown = new Set([...taken.unread.values()].flatMap((ids) => [...ids]));
@@ -220,7 +235,7 @@ function heard(state, { remote, memory, notes, at }) {
 /** Open the view of deployment `id`: the place the view left behind is kept, and found again
  *  on the way back (the row, where the list and the detail were scrolled). A filter is not kept. */
 function opened(state, id) {
-  const shown = next(state, { view: "instances", back: "instances", switcher: Object.freeze({ ...state.switcher, editing: false, query: "", line: null, refused: null }) });
+  const shown = next(state, { view: "instances", back: "instances", switcher: Object.freeze({ ...state.switcher, editing: false, query: "", line: null, refused: null, removing: null }) });
   if (id === state.open) return shown;
   const places = new Map(state.places);
   if (state.open !== null) places.set(state.open, Object.freeze({ selected: state.selected, top: state.top, detailTop: state.detailTop }));
@@ -228,8 +243,9 @@ function opened(state, id) {
   return rehomed({ rows: [] }, next(shown, { open: id, places, focus: "list", filter: NO_FILTER, loose: false, ...place }));
 }
 
-/** A picked folder of `~/Agents` that is a deployment (lib/read.mjs made it canonical and asked
- *  the shared rule): it is served from now on, pending until its first read, and opened. */
+/** A picked row of this computer's deployments list that is a deployment (lib/read.mjs made it
+ *  canonical and asked the shared rule): it is served from now on, pending until its first read,
+ *  and opened. */
 function admitted(state, { admitted: id, at }) {
   if (state.ctxs.includes(id)) return opened(state, id);
   const joined = next(state, { ctxs: Object.freeze([...state.ctxs, id]), entries: new Map(state.entries).set(id, pendingEntry(null, at)) });
@@ -469,8 +485,10 @@ function moved(action, from, count, page) {
 }
 
 /** A key in the switcher. The selection moves among the choices (a heading is passed over);
- *  the open key opens the view of a workspace here, and asks the loop to admit a folder. */
-function switched(state, action, page) {
+ *  the open key opens the view of a workspace here, and asks the loop to admit a row of the list
+ *  that is a deployment (a stale one does not open: its row says why). The remove key asks whether
+ *  to remove the selected row of the list from it (see `removal`). */
+function switched(state, action, page, event) {
   const stay = { state, effect: null };
   const s = switcher(state), sw = state.switcher;
   const put = (changes) => next(state, { switcher: Object.freeze({ ...sw, ...changes }) });
@@ -482,14 +500,14 @@ function switched(state, action, page) {
       return state.open === null ? stay : { state: next(put({ line: null, refused: null }), { view: "instances", back: "instances" }), effect: null };
     case "instances": return state.open === null ? stay : { state: next(put({ line: null, refused: null }), { view: "instances", back: "instances" }), effect: null };
     case "up": case "down": case "top": case "bottom": case "page-up": case "page-down": {
-      // The rows of the pane the choices have: the line that says what happened takes one, and the
-      // filter field one while it is shown (lib/model.mjs switcherHeight).
-      const count = s.items.length, height = switcherHeight(sw, page);
+      // The rows of the pane the choices have: the lines above them take theirs, and the filter
+      // field one while it is shown (lib/model.mjs switcherHeight).
+      const count = s.items.length, height = switcherHeight(state, page, event.area);
       const drawn = windowOf({ top: sw.top, count, height, keep: sw.loose ? -1 : s.items.findIndex((item) => item.key !== undefined && item.key === s.selected) }).top;
       const from = Math.max(0, s.keys.indexOf(s.selected));
       const key = s.keys.length ? s.keys[Math.min(Math.max(0, moved(action, from, s.keys.length, page)), s.keys.length - 1)] : null;
       // No choice to go to in that direction (the first, the last, or none at all): the rows
-      // scroll instead, so a line under the last choice (that the folder holds more) is read.
+      // scroll instead, so what stands above the first choice or under the last one is read.
       if (key === null || key === s.selected) {
         const top = windowOf({ top: moved(action, drawn, count, height), count, height }).top;
         return top === drawn ? stay : { state: put({ top, loose: true }), effect: null };
@@ -502,11 +520,47 @@ function switched(state, action, page) {
     case "open": {
       const item = s.items.find((each) => each.key !== undefined && each.key === s.selected);
       if (!item) return stay;
-      if (item.path !== undefined) return { state: put({ refused: null }), effect: { admit: item.path } };
+      if (item.path !== undefined) return item.state === "ok" ? { state: put({ refused: null }), effect: { admit: item.path } } : stay;
       return item.primary === null ? stay : { state: opened(state, item.primary), effect: { refresh: { live: true } } };
+    }
+    case "remove": {
+      const item = s.items.find((each) => each.key !== undefined && each.key === s.selected);
+      // The row asked about is the selected one from then on, whatever the list or the roster bring
+      // meanwhile; a question whose row is no longer the one marked goes (see `askedStill`).
+      return item?.path === undefined ? stay : { state: put({ selected: item.key, removing: Object.freeze({ path: item.path, read: event.read ?? null }), line: null, refused: null }), effect: null };
     }
     default: return stay;
   }
+}
+
+/** A key while the switcher asks whether to remove a row of this computer's deployments list
+ *  (docs/tui.md, "The switcher"). Enter removes it: the loop runs `oats deployments remove`, and
+ *  nothing on disk is touched. Esc keeps it, and so does every other key, which then does what it
+ *  does. Enter and Esc are the keys themselves, as the question says them, not the actions the
+ *  user's tui.json may have moved. Enter in the same read of input as the key that asked is not taken (a paste cannot both
+ *  ask and press), and the question stands. A row the list no longer holds is not removed.
+ *  -> { state, effect } for a key it answers, or null for one that goes on, with the question gone. */
+function removal(state, event) {
+  const asked = state.switcher.removing, kept = next(state, { switcher: Object.freeze({ ...state.switcher, removing: null }) });
+  // The keys the question names, whatever the action table gives them (as a confirmation's are).
+  if (event.key === "escape") return { state: kept, effect: null };
+  if (event.key !== "enter") return null;
+  if (asked.read !== null && event.read === asked.read) return { state, effect: null };
+  const row = state.listed.rows.find((each) => each.path === asked.path);
+  return row ? { state: kept, effect: { remove: { path: row.path, name: row.name } } } : { state: kept, effect: null };
+}
+
+/** This computer's deployments list read (lib/main.mjs): its rows, or why the read failed, which
+ *  keeps the rows of the last read that answered. */
+function listedHeard(state, { rows, failure }) {
+  if (failure !== undefined) return { state: next(state, { listed: Object.freeze({ rows: state.listed.rows, failure: Object.freeze({ ...failure }) }) }), effect: null };
+  return { state: next(state, { listed: Object.freeze({ rows: Object.freeze(rows.map((row) => Object.freeze({ path: row.path, name: row.name, state: row.state }))), failure: null }) }), effect: null };
+}
+
+/** A Remove answered (lib/main.mjs): the switcher says how, and the list is read again. */
+function removedHeard(state, { name, ok, reason = null }) {
+  const line = Object.freeze(ok ? { removed: name } : { notRemoved: name, message: reason?.message ?? "" });
+  return { state: next(state, { switcher: Object.freeze({ ...state.switcher, line }) }), effect: { list: true } };
 }
 
 /** (state, event) -> { state, effect }.
@@ -516,9 +570,10 @@ function switched(state, action, page) {
  *  store keeps no size); a paste, `{ paste: <text> }`; or what the loop read:
  *  `{ id, entry, number }` (a served deployment's entry), `{ roster: { remote, memory, notes, at } }`
  *  (one outcome of the roster read), `{ collecting }`, `{ retiring: <Set of instanceIds> }` (this
- *  run's retires in flight now), `{ offered: { offered, limited } }` (the
- *  deployments of `~/Agents` not served), `{ admitted: <deployment>, at }` and `{ refused: <path> }`
- *  (what a picked folder turned out to be).
+ *  run's retires in flight now), `{ listed: { rows } | { failure } }` (this computer's deployments
+ *  list read, or why it was not), `{ admitted: <deployment>, at }` and `{ refused: <path> }` (what a
+ *  picked row turned out to be), `{ removed: { path, name, ok, reason } }` (a Remove's answer) and
+ *  `{ notListed: <reason> }` (the deployment the run started in was not added to the list).
  *  Opening an agent gives five more: `{ prepared: { id, error? } }` (the preflight of another
  *  machine's agent ended: `error` is what the shared prepareRemoteTerm threw), `{ given: true }`
  *  (the loop gave the preflight up itself: a suspend), `{ shown: { id } }` (the panel has the
@@ -528,14 +583,40 @@ function switched(state, action, page) {
  *  `{ back: true, read, rest }` (the leader was typed in the terminal, in that read of input;
  *  `rest`: more bytes came after it in the same read).
  *  An effect is something only the loop can do: "quit", "suspend", "redraw", or an object with
- *  any of `refresh: { live }` (read now), `offer: true` (list `~/Agents` again),
- *  `admit: <path>` (ask whether a picked folder is a deployment), `close: <id>` (close the open
+ *  any of `refresh: { live }` (read now), `list: true` (read this computer's deployments list
+ *  again), `remove: { path, name }` (remove that row from it), `admit: <path>` (ask whether a picked
+ *  row is a deployment), `close: <id>` (close the open
  *  terminal; when an `open` comes with it, before that open), `open: <decision>` (open the agent's
  *  terminal: the model's openDecision, with its target), `panel: <id>` (the preflight is over:
  *  start the viewer it prepared in the panel) and `abandon: true` (give the preflight up); or null.
  *  The line after an open stands until the next key that is bound to an action: a key bound to
  *  nothing (a stray back key is no key at all) leaves it. */
 export function reduce(state, event, keymap = bindings(state.actions)) {
+  return askedStill(noticed(reduceStep(state, event, keymap)));
+}
+
+/** Whether the line under the sidebar's title stands now at every width (views/frame.mjs): in the
+ *  Instances, Souls and Capabilities views, with neither the palette nor the spawn prompt over them.
+ *  The switcher draws none, and under 80 columns the help, a confirmation, the palette and the
+ *  spawn prompt cover the whole screen, the sidebar too. */
+const drawsOutcome = (state) => ["instances", "souls", "capabilities"].includes(state.view) && state.palette === null && state.spawn === null;
+/** A notice waiting for a view that draws the line under the sidebar's title (`notice`), made the
+ *  line there as soon as one is shown. */
+function noticed(step) {
+  const s = step.state;
+  if (s.notice === null || !drawsOutcome(s)) return step;
+  return { ...step, state: next(s, { outcome: s.notice, notice: null }) };
+}
+/** A Remove asked stands only while its row is the switcher's selected choice: once the row is
+ *  gone from the list or hidden by the filter, the selection is on another, and the question goes
+ *  rather than ask about one row and remove another. */
+function askedStill(step) {
+  const asked = step.state.switcher.removing;
+  if (asked === null || switcher(step.state).selected === `path\u0000${asked.path}`) return step;
+  return { ...step, state: next(step.state, { switcher: Object.freeze({ ...step.state.switcher, removing: null }) }) };
+}
+
+function reduceStep(state, event, keymap) {
   if (state.outcome !== null && typeof event.key === "string" && keymap.has(event.key)) state = next(state, { outcome: null });
   let step = reduced(state, event, keymap);
   // The tabs are the open workspace's: whatever opened another (or left it, gone), they all close,
@@ -988,7 +1069,7 @@ function toList(state) {
 function toInstances(state) {
   const settled = toList(state), s = settled.state;
   if (s.view !== "switcher" || s.open === null) return settled;
-  return { state: next(s, { view: "instances", back: "instances", switcher: Object.freeze({ ...s.switcher, line: null, refused: null }) }), effect: settled.effect };
+  return { state: next(s, { view: "instances", back: "instances", switcher: Object.freeze({ ...s.switcher, line: null, refused: null, removing: null }) }), effect: settled.effect };
 }
 
 /** What the leader's key does (LEADER's `does`), from wherever the focus was. From the terminal's
@@ -1171,7 +1252,11 @@ function reduced(state, event, keymap) {
   if (event.collecting !== undefined) return { state: event.collecting === state.collecting ? state : next(state, { collecting: event.collecting === true }), effect: null };
   // The rows stay where they are: only what they read changes.
   if (event.retiring !== undefined) return { state: next(state, { retiring: new Set(event.retiring) }), effect: null };
-  if (event.offered !== undefined) return { state: next(state, { offered: Object.freeze({ offered: Object.freeze([...event.offered.offered]), limited: event.offered.limited === true }) }), effect: null };
+  if (event.listed !== undefined) return listedHeard(state, event.listed);
+  if (event.removed !== undefined) return removedHeard(state, event.removed);
+  // Shown once, in the line under the sidebar's title, as the line after an open is.
+  // Held while nothing may draw such a line (the switcher, the help): it is said once a view that does is shown.
+  if (event.notListed !== undefined) return { state: next(state, { notice: Object.freeze({ said: LIST_WORDS.notAdded(event.notListed?.message ?? ""), under: Object.freeze([]) }) }), effect: null };
   if (event.admitted !== undefined) return { state: admitted(state, event), effect: { refresh: { live: true } } };
   if (event.refused !== undefined) return { state: next(state, { switcher: Object.freeze({ ...state.switcher, refused: event.refused }) }), effect: null };
   if (event.souls !== undefined) return soulsHeard(state, event.souls);
@@ -1193,6 +1278,11 @@ function reduced(state, event, keymap) {
   if (typeof event.key !== "string" && !given) return stay;
   const action = given ? event.action : keymap.get(event.key);
   if (field) return edited(state, field, event, action);
+  if (state.switcher.removing !== null) {
+    const answered = state.view === "switcher" && !given ? removal(state, event) : null;
+    if (answered) return answered;
+    state = next(state, { switcher: Object.freeze({ ...state.switcher, removing: null }) });
+  }
   if (state.view === "act" && state.act !== null) return inAct(state, event, action);
   const page = Math.max(1, Number.isInteger(event.page) ? event.page : 1);
   // A pane that scrolls on its own (the help, the detail) moves from where it is DRAWN: the top
@@ -1205,11 +1295,11 @@ function reduced(state, event, keymap) {
 
   switch (action) {
     case "quit": case "suspend": case "redraw": return { state, effect: action };
-    // In the switcher the folders of ~/Agents are listed again too.
+    // In the switcher this computer's deployments list is read again too.
     // In the Souls view it reads the souls again, and nothing else; in the Capabilities view, the capabilities.
-    case "refresh": return state.view === "souls" ? inSouls(state, action, event, page, scrolled) : state.view === "capabilities" ? inCapabilities(state, action, event, page, scrolled) : { state, effect: { refresh: { live: true }, ...((state.view === "help" ? state.back : state.view) === "switcher" ? { offer: true } : {}) } };
+    case "refresh": return state.view === "souls" ? inSouls(state, action, event, page, scrolled) : state.view === "capabilities" ? inCapabilities(state, action, event, page, scrolled) : { state, effect: { refresh: { live: true }, ...((state.view === "help" ? state.back : state.view) === "switcher" ? { list: true } : {}) } };
     case "help": return { state: next(state, state.view === "help" ? { view: state.back } : { view: "help", back: state.view, helpTop: 0 }), effect: null };
-    case "workspaces": return state.view === "switcher" ? stay : { state: toSwitcher(next(state, { back: "switcher" })), effect: { offer: true } };
+    case "workspaces": return state.view === "switcher" ? stay : { state: toSwitcher(next(state, { back: "switcher" })), effect: { list: true } };
     case "palette": return { state: paletteOpened(state, event, "list"), effect: null };
     // Souls and Capabilities are views of this machine, whatever workspace is open, or none.
     case "souls": return soulsShown(state);
@@ -1226,7 +1316,7 @@ function reduced(state, event, keymap) {
     if (action === "instances") return state.open === null ? stay : { state: next(state, { view: "instances", back: "instances" }), effect: null };
     return MOVES.includes(action) ? { state: next(state, { helpTop: scrolled(state.helpTop) }), effect: null } : stay;
   }
-  if (state.view === "switcher") return switched(state, action, page);
+  if (state.view === "switcher") return switched(state, action, page, event);
 
   if (action === "close") {
     // In this order: an open under way (another machine is asked first), a kept filter, the detail.

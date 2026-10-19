@@ -12,11 +12,11 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
-import { TERMS, capabilityCatalogKey, createCapabilityCatalog, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
+import { TERMS, capabilityCatalogKey, cliDeploymentList, deploymentsListSupported, createCapabilityCatalog, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
 import { loadConfig } from "./config.mjs";
-import { ACT_WORDS, actContext, actCwd, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
+import { ACT_WORDS, LIST_WORDS, actContext, actCwd, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
-import { CHANGE_FILES, admitDeployment, createReader, findDeployment, leaveInstance, offeredDeployments, probeKernel, realpath, tellable } from "./read.mjs";
+import { CHANGE_FILES, admitDeployment, createReader, findDeployment, leaveInstance, probeKernel, realpath, startExec, tellable } from "./read.mjs";
 import { initialState, reduce } from "./store.mjs";
 import { captureRows } from "./term/capture.mjs";
 import { createKeyParser, keyId } from "./term/keys.mjs";
@@ -24,7 +24,7 @@ import { createScreen, glyphs } from "./term/screen.mjs";
 import { colorEnabled } from "./term/style.mjs";
 import { backKeySequences, createThrough } from "./term/through.mjs";
 import { createGuard, isTerminal } from "./term/tty.mjs";
-import { frame, layout, panelPlace } from "./views/frame.mjs";
+import { frame, layout, mainArea, panelPlace } from "./views/frame.mjs";
 
 export const USAGE = "oats tui [--dir <path>] [--ascii]";
 const HELP = `Usage:
@@ -45,6 +45,10 @@ export const NO_TERMINAL = "oats: `oats tui` needs a terminal on stdin and stdou
 /** A path is echoed only when it is plain: these lines go to a terminal. */
 const plainPath = (path) => (typeof path === "string" && /^[\x20-\x7e]{1,200}$/.test(path) ? path : "that directory");
 export const noDeployment = (dir) => `oats: no OATS deployment at or above ${plainPath(dir)} (E_NO_DEPLOYMENT); name one with \`oats tui --dir <path>\``;
+/** A start outside every deployment, with no `--dir`, when this computer's deployments list holds none (awebai/oats#1390). */
+export const noDeploymentListed = (dir) => `oats: no deployment at or above ${plainPath(dir)}, and this computer's list of deployments holds none (E_NO_DEPLOYMENT): \`oats tui --dir <path>\` opens one (and lists it), \`oats onboard <dir> --workspace <ref>\` creates one`;
+/** The same start, when the list could not be read: the kernel's code and its message, which says what to do. */
+export const noList = (reason) => `oats: \`oats tui\` could not read this computer's list of deployments (${/^E_[A-Z0-9_]{1,62}$/.test(reason?.code ?? "") ? reason.code : NOT_ASKED.code}): ${displayLine(reason?.message) ?? "it gave no reason"}`;
 export const noKernel = (reason) => `oats: \`oats tui\` could not use its own kernel (E_TUI_KERNEL): ${displayLine(reason) ?? "it gave no reason"}`;
 
 /** The arguments: `--ascii`, `--help`/`-h`, `--dir <path>` and `--dir=<path>`. Everything else is
@@ -65,6 +69,12 @@ export function parseArgs(argv) {
   return { options };
 }
 
+/** The label of a change to this computer's deployments list (an add or a remove), for the line after leaving. */
+const LIST_CHANGE = Object.freeze({ verb: "list" });
+/** Why a call to this computer's deployments list has no answer at all: it threw before the kernel
+ *  could answer. The shared adapter's own code for a kernel call that failed (deployment-list-cli.mjs). */
+const NOT_ASKED = Object.freeze({ code: "E_CLI_FAILED", message: "the kernel could not be asked" });
+
 /** An error as lines fit for a terminal: its stack, each line through the display filter. */
 function errorLines(error) {
   const text = error instanceof Error ? error.stack || error.message : String(error);
@@ -80,8 +90,10 @@ function errorLines(error) {
  *  catalog of a workspace's souls, and `createCapabilityCatalog` its table of capabilities, each
  *  replaceable so a test can count its reads; the three spawn
  *  factories are the shared home's preview, apply boundary and transaction, replaceable so a test
- *  can answer them. */
-const EFFECTS = Object.freeze({ loadConfig, findDeployment, probeKernel, createReader, offeredDeployments, admitDeployment, prepareRemoteTerm, createPanel, sweep,
+ *  can answer them. `deploymentList` is the shared cliDeploymentList (this computer's deployments
+ *  list, through the kernel: awebai/oats#1390), and `startExec` the exec it is handed before the
+ *  terminal is taken; replaceable so a test can answer the list. */
+const EFFECTS = Object.freeze({ loadConfig, findDeployment, probeKernel, createReader, deploymentList: cliDeploymentList, startExec, admitDeployment, prepareRemoteTerm, createPanel, sweep,
   runDir: CHANGE_FILES.dir, removeDir: CHANGE_FILES.remove, realpath, tellable, startInstance, createLifecycleConfirmation, createLifecycleBoundary, createSoulCatalog,
   createCapabilityCatalog, createSpawnPreview, createSpawnApplyBoundary, createSpawnTransaction });
 
@@ -111,7 +123,9 @@ export function createRunTimers({ setTimer, clearTimer }) {
  *  Before the alternate screen, in this order, each failure one line on stderr and status 1:
  *  the arguments; the instance variables removed from the environment (a TUI started in an
  *  agent's pane must read the deployment it was asked about, and so must every child it starts);
- *  the terminal; the user's tui.json; the deployment; the kernel it shipped with. */
+ *  the terminal; the user's tui.json; the deployment; the kernel it shipped with; and, for a start
+ *  outside every deployment with no `--dir`, this computer's deployments list, read through that
+ *  kernel. */
 export async function main({ argv, stdin, stdout, stderr, env, proc = process, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, cwd = () => process.cwd(), home = homedir(), effects: given = EFFECTS }) {
   const effects = given === EFFECTS ? EFFECTS : { ...EFFECTS, ...given };
   const { options, error } = parseArgs(argv);
@@ -122,13 +136,20 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   const config = effects.loadConfig({ env, home, platform: proc.platform });
   if (!config.ok) { stderr.write(config.lines.map((line) => `${line}\n`).join("")); return 1; }
   const found = effects.findDeployment(resolve(cwd(), options.dir ?? "."));
-  // Outside every deployment, and with none named: the switcher, when ~/Agents holds a deployment
-  // to offer. A `--dir` that is in no deployment is refused as it is: what was asked for is not there.
-  const offered = found.ok || options.dir !== null ? null : effects.offeredDeployments(home, []);
-  if (!found.ok && !offered?.offered.length) { stderr.write(`${noDeployment(found.dir)}\n`); return 1; }
+  // A `--dir` that is in no deployment is refused as it is: what was asked for is not there.
+  if (!found.ok && options.dir !== null) { stderr.write(`${noDeployment(found.dir)}\n`); return 1; }
   // The kernel is asked once: an upgrade under a running TUI is met by starting it again.
   const probe = await effects.probeKernel({ env });
   if (!probe.ok) { stderr.write(`${noKernel(probe.reason)}\n`); return 1; }
+  // Outside every deployment, and with none named: the switcher, when this computer's deployments
+  // list holds a row, read through the kernel just asked. A list that cannot be read is no empty one.
+  let listedAtStart = null;
+  if (!found.ok) {
+    const listed = await effects.deploymentList(probe.cli, { action: "list" }, { exec: effects.startExec, env });
+    if (!listed.ok) { stderr.write(`${noList(listed.reason)}\n`); return 1; }
+    if (!listed.value.rows.length) { stderr.write(`${noDeploymentListed(found.dir)}\n`); return 1; }
+    listedAtStart = listed.value.rows;
+  }
 
   const clock = () => new Date(now()).toISOString();
   const look = glyphs(env, { ascii: options.ascii || config.ascii });
@@ -141,11 +162,11 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   // takes the focus, so nothing held from before is typed into it.
   const backKey = backKeySequences(state.detachKey);
   let through = createThrough({ sequences: backKey, now }), throughTimer = null;
-  if (offered) state = reduce(state, { offered }, keymap).state;
+  if (listedAtStart) state = reduce(state, { listed: { rows: listedAtStart } }, keymap).state;
   // What the last frame drew, for the store: how tall the list pane is and how far the other
   // pane scrolls. The store holds no size of its own; the panel's room goes with each key as it
   // is when the key is read (placed), whatever the last frame drew.
-  let drawn = { page: 1, extent: 0, room: 1, cols: 1 };
+  let drawn = { page: 1, extent: 0, room: 1, cols: 1, area: 1 };
   let full = true, escTimer = null, ended = false, reads = 0;
   /** The preflight of another machine's agent under way: `{ id, controller, prepared }`, where
    *  `prepared` is what it answered (`{ binary, args }`) once it has; or null. */
@@ -379,8 +400,9 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     });
   }
   /** One step of the reducer taken: the state, then what only the loop can do. True once the
-   *  TUI is leaving. Listing ~/Agents and asking whether a picked folder is a deployment read the
-   *  file system (lib/read.mjs); what they find is an event of its own. */
+   *  TUI is leaving. Asking whether a picked row is a deployment reads the file system
+   *  (lib/read.mjs), and reading or changing this computer's deployments list asks the kernel; what
+   *  each finds is an event of its own. */
   function took(step) {
     state = step.state;
     const effect = step.effect;
@@ -388,7 +410,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     if (effect === "suspend") guard.suspend();
     if (effect === "redraw") guard.reassert(); // the modes again, then the whole screen
     if (effect === null || typeof effect !== "object") return false;
-    if (effect.offer) took(reduce(state, { offered: effects.offeredDeployments(home, state.ctxs) }, keymap));
+    if (effect.list) readList();
+    if (effect.remove) removeListed(effect.remove);
     if (effect.admit !== undefined) {
       const admitted = effects.admitDeployment(effect.admit);
       took(reduce(state, admitted.ok ? { admitted: admitted.deployment, at: clock() } : { refused: effect.admit }, keymap));
@@ -417,6 +440,49 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     if (effect.spawn) spawnNow(effect.spawn);
     if (effect.spawnCheck) checkSpawn();
     return false;
+  }
+
+  // THIS COMPUTER'S DEPLOYMENTS LIST (docs/tui.md, "The switcher"; awebai/oats#1390), the kernel's,
+  // through the shared cliDeploymentList. A read of it is a read (the reader's exec, ended on every
+  // way out), and one runs at a time: a read asked for while one is on its way is one more, after
+  // it, however many times it was asked, and the answer of the one on its way is not taken, since
+  // it may be of the list as it was before what asked again (a Remove). An add or a remove is a
+  // change (the reader's changeExec: never ended by the TUI, only at the adapter's own deadline),
+  // labelled so the line after leaving names the list. The kernel this TUI shipped with lists
+  // this computer's deployments in every release; one that does not (a checkout between the
+  // kernel's change and this one) is asked nothing in the run, and its "Update oats" is not said
+  // of the TUI's own kernel.
+  const listing = deploymentsListSupported(probe.cli);
+  /** The read on its way: `{ again }`, `again` once another was asked for meanwhile; or null. */
+  let listRead = null;
+  const listChange = (bin, argv, options, callback) => reader.changeExec(bin, argv, { ...options, label: LIST_CHANGE }, callback);
+  function readList() {
+    if (ended || !listing) return;
+    if (listRead !== null) { listRead.again = true; return; }
+    const mine = listRead = { again: false };
+    Promise.resolve()
+      .then(() => effects.deploymentList(probe.cli, { action: "list" }, { exec: reader.exec, env }))
+      .then((answer) => (answer.ok ? { rows: answer.value.rows } : { failure: answer.reason }), () => ({ failure: NOT_ASKED }))
+      .then((listed) => {
+        listRead = null;
+        if (mine.again) readList(); else heard({ listed });
+      });
+  }
+  /** Remove the row the store asked about (`{ path, name }`) from the list: nothing on disk is
+   *  touched. Its answer goes to the store, which asks for the list again. */
+  function removeListed({ path, name }) {
+    Promise.resolve()
+      .then(() => effects.deploymentList(probe.cli, { action: "remove", path }, { exec: listChange, env }))
+      .then((answer) => heard({ removed: { path, name, ok: answer.ok, reason: answer.ok ? null : answer.reason } }), () => heard({ removed: { path, name, ok: false, reason: NOT_ASKED } }));
+  }
+  /** The deployment the run started in (from where it was started, or `--dir`), added to the list
+   *  once, as the TUI's: best effort. A failure opens nothing less, and is said once, in the line
+   *  under the sidebar's title. A row opened from the switcher is on the list already. */
+  function listStart(path) {
+    if (!listing) return;
+    Promise.resolve()
+      .then(() => effects.deploymentList(probe.cli, { action: "add", path, via: "tui" }, { exec: listChange, env }))
+      .then((answer) => { if (!answer.ok) heard({ notListed: answer.reason }); }, () => heard({ notListed: NOT_ASKED }));
   }
 
   /** What the boundary admits a request of deployment `id` against, read at every admission. */
@@ -566,17 +632,20 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
    *  deployment. The last captures of the displayed tabs go with the model: they are the panel's,
    *  not the store's. */
   function composed() {
-    const { size, g, m } = modelled();
-    return { size, g, made: frame(m, size) };
+    const { size, g, m, area } = modelled();
+    return { size, g, area, made: frame(m, size) };
   }
+  /** The model for the state and the size now, and the width of the main area (`area`,
+   *  views/frame.mjs mainArea), which the switcher stands in: the lines above its choices wrap to it. */
   function modelled() {
     const size = guard.size(), at = clock();
     const under = state.view === "help" || state.view === "act" ? state.back : state.view;
     const listing = under === "switcher";
     const r = listing ? { notice: null, note: null } : roster(state, at);
     const g = layout(r.notice, size, { note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.tabs.length > 0, open: listing ? null : under });
-    const m = { ...model(state, { page: g.page, body: g.body, now: now(), at, cols: g.listCols }), screen: screens.get(state.terminal?.id) ?? null, screens };
-    return { size, g, m };
+    const area = mainArea(g, size.cols).cols;
+    const m = { ...model(state, { page: g.page, body: g.body, now: now(), at, cols: g.listCols, area }), screen: screens.get(state.terminal?.id) ?? null, screens };
+    return { size, g, m, area };
   }
   /** Where the panel stands for the state and the size now, as the Instances view gives it with
    *  the terminal's focus (views/frame.mjs panelPlace): measured whatever is drawn over it, and
@@ -625,8 +694,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   const guard = createGuard({
     stdin, stdout, proc, setTimer, clearTimer,
     frame() {
-      const { size, g, made } = composed();
-      drawn = { page: made.page, extent: made.extent, room: made.room, cols: g.listCols };
+      const { size, g, area, made } = composed();
+      drawn = { page: made.page, extent: made.extent, room: made.room, cols: g.listCols, area };
       fitPanel(made);
       const bytes = screen.render(made.rows, size, { full, cursor: made.cursor });
       full = false;
@@ -701,6 +770,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
 
   guard.start();
   guard.attempt(() => { if (!ended) Promise.resolve(reader.start()).catch(() => {}); });
+  if (found.ok) guard.attempt(() => { if (!ended) listStart(found.deployment); });
   guard.attempt(() => guard.draw());
   // Once a run, after the first frame: what runs that are gone left of their private servers
   // (lib/panel.mjs sweep, which signals nothing and removes only what it can prove is dead).
@@ -712,7 +782,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   // One line per change still running, to a terminal or a file only; the status never depends on it.
   const running = reader.changes?.() ?? [];
   if (running.length && effects.tellable(stderr)) {
-    try { stderr.write(running.map(({ label }) => `${ACT_WORDS.leaving(label?.verb ?? "change", displayLine(label?.name) ?? "an instance")}\n`).join("")); } catch { /* nothing to tell it to */ }
+    try { stderr.write(running.map(({ label }) => `${label === LIST_CHANGE ? LIST_WORDS.leaving : ACT_WORDS.leaving(label?.verb ?? "change", displayLine(label?.name) ?? "an instance")}\n`).join("")); } catch { /* nothing to tell it to */ }
   }
   if (end.error !== undefined) stderr.write(`oats: \`oats tui\` stopped on an internal error; the terminal was restored\n${errorLines(end.error).map((line) => `  ${line}\n`).join("")}`);
   return end.status;
