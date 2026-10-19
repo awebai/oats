@@ -550,10 +550,12 @@ test("auto-add budget: a listed deployment costs one read: no lock, no write, th
   assert.equal(f.ok(["deployments"]).deployments.some((row) => row.path === beta), true);
 });
 
-/** Run `fn` with this process's HOME and OATS_HOME_DIR set to the fixture's, then put them back. */
+/** Run `fn` with this process's HOME and OATS_HOME_DIR set to the fixture's (and no PI_AGENTS_ROOT),
+ *  then put them back. */
 async function inProcess(f, fn) {
-  const saved = { HOME: process.env.HOME, OATS_HOME_DIR: process.env.OATS_HOME_DIR };
+  const saved = { HOME: process.env.HOME, OATS_HOME_DIR: process.env.OATS_HOME_DIR, PI_AGENTS_ROOT: process.env.PI_AGENTS_ROOT };
   Object.assign(process.env, { HOME: f.home, OATS_HOME_DIR: f.oatsHome });
+  delete process.env.PI_AGENTS_ROOT;
   try { return await fn(await import(LIB)); }
   finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
 }
@@ -597,4 +599,45 @@ test("auto-add: a listed deployment is answered from the read alone (no process,
     assert.equal(listResolved(beta), "listed");
     assert.equal(listResolved(join(f.base, "outside")), "skipped", "no oats-local.yaml: not a deployment");
   });
+});
+
+test("auto-add budget through the resolvers: a listed deployment in a linked worktree is checked against the canonical root the command resolved, with no process or realpath of its own", async (t) => {
+  const f = fixture(t);
+  const git = (cwd, ...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main", ...args], { cwd, env: f.env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const main = join(f.base, "acme"); mkdirSync(main);
+  writeFileSync(join(main, "README"), "x\n");
+  git(main, "init", "-q"); git(main, "add", "."); git(main, "commit", "-q", "-m", "init");
+  const linked = join(f.base, "acme-linked");
+  git(main, "worktree", "add", "-q", linked, "-b", "side");
+  for (const d of [main, linked]) { writeFileSync(join(d, "oats-local.yaml"), LOCAL_YAML); mkdirSync(join(d, "agents")); }
+  f.ok(["deployments", "add", main]);
+  const before = statSync(f.file);
+  const { loadLocal } = await import(new URL("../lib/workspace.mjs", import.meta.url).href);
+  const { ensureRoot } = await import(new URL("../lib/core.mjs", import.meta.url).href);
+  const { observeResolvedDeployment, settleResolvedDeployment } = await import(new URL("../lib/resolved-deployment.mjs", import.meta.url).href);
+  const calls = [], originals = [];
+  const restore = () => { for (const [mod, name, original] of originals.splice(0).reverse()) mod[name] = original; syncBuiltinESMExports(); };
+  t.after(restore);
+  await inProcess(f, async ({ listResolved }) => {
+    const seen = [];
+    observeResolvedDeployment((root) => { seen.push(root); return listResolved(root); });
+    // spawn's order: the local file first (as spelled), then the canonical agents root.
+    loadLocal(linked);
+    assert.equal(ensureRoot(linked), join(main, "agents"));
+    const count = (mod, name, wrap = (fn) => fn) => {
+      const original = mod[name];
+      originals.push([mod, name, original]);
+      mod[name] = wrap(function (...args) { calls.push(name); return original.apply(this, args); });
+    };
+    for (const name of ["execFileSync", "execSync", "spawnSync", "spawn", "execFile"]) count(childProcess, name);
+    for (const name of ["mkdirSync", "writeFileSync", "renameSync", "openSync", "rmSync"]) count(fs, name);
+    const native = fs.realpathSync.native;
+    count(fs, "realpathSync", (fn) => Object.assign(fn, { native(...args) { calls.push("realpathSync.native"); return native.apply(this, args); } }));
+    syncBuiltinESMExports();
+    try { settleResolvedDeployment(); } finally { restore(); }
+    assert.deepEqual(seen, [main], "the observer is given the canonical root, once");
+    assert.deepEqual(calls, ["openSync"], "one open, the list's bounded read: no process, no realpath, no lock, no write");
+  });
+  assert.equal(statSync(f.file).mtimeMs, before.mtimeMs);
+  assert.deepEqual(f.ok(["deployments"]).deployments.map((d) => d.path), [main]);
 });

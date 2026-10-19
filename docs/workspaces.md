@@ -701,8 +701,9 @@ only. Which deployments a client has open stays with that client.
 - **Every kernel command that resolves a deployment that is not listed yet**
   lists it (`via: cli`): `status`, `spawn`, `sync`, `session`, `doctor`,
   `retire` and the others that read a local deployment, from inside an
-  instance home too. The deployment is the one the command itself resolved,
-  once per process; a command that resolves none (`version`, help, a command
+  instance home too. The deployment is the one the command itself resolved
+  (its canonical root, when it resolves one), checked once per process, as it
+  ends; a command that resolves none (`version`, help, a command
   refused before it reads a deployment) checks nothing.
   - A listed deployment costs one read of the list (at most 1 MiB, no lock),
     compared with the path the command resolved: no lock, no write, no

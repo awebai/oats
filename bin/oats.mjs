@@ -4684,9 +4684,9 @@ try {
 }
 // This computer's deployments list (awebai/oats#1390, amendment 1 and its performance budget): a
 // kernel command that resolves a local deployment lists it when it is not listed yet. The one table
-// of those commands is here. The check runs on the command's own resolution, once per process
-// (lib/resolved-deployment.mjs; lib/deployments.mjs listResolved): a listed deployment costs one
-// bounded read of the list. Never on --server (the remote's path is not this computer's), never for
+// of those commands is here. The check runs on the command's own resolution, once, at exit, on
+// the canonical root when the command resolved one (lib/resolved-deployment.mjs; lib/deployments.mjs
+// listResolved): a listed deployment costs one bounded read of the list. Never on --server (the remote's path is not this computer's), never for
 // help, and silent: no output, no change to the command's answer or exit status.
 const LISTS_ITS_DEPLOYMENT = new Set(["automations", "capabilities", "doctor", "harness", "inspect", "instance", "launch-config", "operation", "package", "pane", "readiness", "retire", "schedule", "session", "soul", "souls", "spawn", "status", "sync", "teams", "trigger", "update", "workspace", "worktree"]);
 if (LISTS_ITS_DEPLOYMENT.has(cmd) && flag("server") === undefined && !args.slice(1).some((a) => a === "--help" || a === "-h")) observeResolvedDeployment(listResolved);
