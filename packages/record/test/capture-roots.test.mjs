@@ -152,10 +152,27 @@ test('absent absolute roots register durably, idempotently and independently; em
 
 test('lock overlap refuses registration before mutation and attributes setup-roots', t => {
   const f = fixture(t), selected = pi(join(f.base, 'sessions'));
+  // This is the existing-root busy case; an intervening root mkdir must instead fail ancestry checks.
+  fs.mkdirSync(f.root);
   const plan = preflightCaptureRoots(f.root, f.request([selected]));
   const lock = acquireCaptureLock(f.root, { command: 'pass', caller: { entry: 'turn-record', trigger: 'manual' } });
   try {
-    assert.throws(() => applyCaptureRoots(plan, { entry: 'oats' }), /pass|retry.*current/i);
+    const owner = readCaptureLockOwner(f.root), ownerPath = join(lock.path, 'owner.json');
+    const ownerBytes = fs.readFileSync(ownerPath), names = fs.readdirSync(f.root).sort(), lockNames = fs.readdirSync(lock.path).sort();
+    assert.equal(owner.pid, process.pid); assert.equal(owner.command, 'pass');
+    assert.deepEqual(owner.caller, { entry: 'turn-record', trigger: 'manual' });
+    assert.ok(owner.nonce);
+    assert.throws(() => applyCaptureRoots(plan, { entry: 'oats' }), error => {
+      assert.equal(error.code, 'E_CAPTURE_ROOTS_BUSY');
+      assert.match(error.message, /owning pass pass/); assert.match(error.message, /Retry after the current pass finishes/);
+      assert.deepEqual(error.applied, []);
+      return true;
+    });
+    assert.deepEqual(fs.readdirSync(f.root).sort(), names);
+    assert.deepEqual(fs.readdirSync(lock.path).sort(), lockNames);
+    assert.deepEqual(fs.readFileSync(ownerPath), ownerBytes);
+    assert.deepEqual(readCaptureLockOwner(f.root), owner);
+    assert.equal(fs.existsSync(join(f.root, 'capture-roots')), false);
     assert.equal(fs.existsSync(f.entry(f.deployment)), false);
   } finally { lock.release(); }
   f.refresh([selected]);

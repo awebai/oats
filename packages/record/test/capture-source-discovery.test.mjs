@@ -145,7 +145,7 @@ test('default-root admission precedes selectors and publication rollback retains
 test('format rotation and restart retain public file order within each format and native root precedence', t => {
   const f = fixture(t);
   for (const path of ['cc-a/project/a.jsonl', 'cc-a/project/z.jsonl', 'cc-b/project/a.jsonl',
-    'pi/s/a.jsonl', 'codex/y/m/d/a.jsonl', 'aw/z.jsonl', 'aw/A.jsonl', 'aw/a.jsonl', 'aw/ignored.txt']) f.put(path);
+    'pi/s/a.jsonl', 'codex/y/m/d/a.jsonl', 'aw/b.jsonl', 'aw/Z.jsonl', 'aw/A.jsonl', 'aw/ignored.txt']) f.put(path);
   const roots = [{ source: 'cc', path: join(f.base, 'cc-a') }, { source: 'cc', path: join(f.base, 'cc-b') },
     ...['pi', 'codex', 'aw'].map(source => ({ source, path: join(f.base, source) }))];
   const turns = []; let done = false;
@@ -162,7 +162,8 @@ test('format rotation and restart retain public file order within each format an
         for (const row of found.filter(row => row.source === source))
           assert.equal(row.stream, `fixture~${source}.${SESSION_FORMATS[source].sessionId(row.path)}`);
       }
-      assert.deepEqual(found.filter(row => row.source === 'aw').map(row => row.path), ['A', 'a', 'z'].map(name => join(f.base, 'aw', name + '.jsonl')));
+      // Distinct even on case-insensitive filesystems; Z before b discriminates code-unit from alphabetic order.
+      assert.deepEqual(found.filter(row => row.source === 'aw').map(row => row.path), ['A', 'Z', 'b'].map(name => join(f.base, 'aw', name + '.jsonl')));
       assert.ok(found.every(row => row.outcome === 'ready'));
       assert.equal(opened.state.transaction(() => opened.queue.finish()), false, 'enumeration is not source processing completion');
     }

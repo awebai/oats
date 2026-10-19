@@ -104,6 +104,11 @@ test('actual registered-root failure retains its warning-only classification thr
     env: { HOME: f.home, TMPDIR: f.base, XDG_CACHE_HOME: f.base, PATH: process.env.PATH },
     allowances: { workMs: 1000, finalizeMs: 1500, hardMs: 2000, finalReserveMs: 1000, finalDrainMs: 750, maxStarts: 2 } });
   assert.equal(result.starts, 2); assert.equal(result.outcome, 'failed', JSON.stringify(result)); assert.equal(result.rootCoverageOnly, true);
+  f.state(state => {
+    const failure = state.get('capture-discovery-failure', 'last');
+    assert.equal(failure.registered, true); assert.equal(failure.source, 'pi'); assert.equal(failure.path, path);
+    assert.equal(failure.runId, readCaptureStatus(f.root).lastRun.id);
+  });
   assert.equal(readCaptureStatus(f.root).lastSuccess, null);
   await assert.rejects(captureCommandPass(f.root, f.options(), { run: async () => result, log() {}, error() {} }), { code: 'E_CAPTURE_ROOTS_COVERAGE' });
 });

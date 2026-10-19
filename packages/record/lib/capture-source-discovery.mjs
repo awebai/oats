@@ -199,8 +199,10 @@ export class CaptureSourceDiscovery {
         attempts, nextRetryAt: retryAfterAttempt(attempts, now) };
       row.next = (attempt.index + 1) % this.sources.length;
       this.queue.add([], row);
+      // Only registered groups need an origin marker; preserve the default failure record shape.
       this.queue.state.set("capture-discovery-failure", "last", { runId: attempt.runId, reason,
-        scope: attempt.scope, source: attempt.source, path: attempt.path, registered: attempt.index >= sources.length });
+        scope: attempt.scope, source: attempt.source, path: attempt.path,
+        ...(attempt.index >= sources.length ? { registered: true } : {}) });
       this.queue.state.delete(attemptsKind, this.queue.owner);
     });
   }

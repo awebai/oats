@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { readCaptureRoots } from '../lib/capture-roots.mjs';
 import { RecordStore } from '../lib/store.mjs';
+import { turnId } from '../lib/canonical.mjs';
 
 function fixture(t) {
   const base = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'roots-setup-'))), home = join(base, 'home'), deployment = join(base, 'deployment'), root = join(base, 'record');
@@ -48,18 +49,38 @@ test('typed dry setup validates and describes roots but creates nothing; standal
 
 test('actual setup captures independent registered pi roots once and does not duplicate history after refresh', t => {
   const f = fixture(t), roots = ['one', 'two'].map(name => ({ source: 'pi', path: join(f.base, name) }));
+  const inputs = [];
   for (const [n, root] of roots.entries()) {
     fs.mkdirSync(root.path);
-    fs.writeFileSync(join(root.path, `session${n}.jsonl`), JSON.stringify({ type: 'session', version: 3, id: `session${n}`, cwd: f.deployment, timestamp: '2026-01-01T00:00:00Z' }) + '\n' +
-      JSON.stringify({ type: 'message', id: `message${n}`, timestamp: '2026-01-01T00:00:01Z', message: { role: 'user', content: [{ type: 'text', text: `root ${n}` }] } }) + '\n');
+    const lines = [JSON.stringify({ type: 'session', version: 3, id: `session${n}`, cwd: f.deployment, timestamp: '2026-01-01T00:00:00Z' }),
+      JSON.stringify({ type: 'message', id: `message${n}`, timestamp: '2026-01-01T00:00:01Z', message: { role: 'user', content: [{ type: 'text', text: `root ${n}` }] } })];
+    const bytes = Buffer.from(lines.join('\n') + '\n');
+    inputs.push({ stream: `fixture~pi.session${n}`, sessionId: `session${n}`, lines, bytes });
+    fs.writeFileSync(join(root.path, `session${n}.jsonl`), bytes);
   }
   const first = f.run(f.request(roots)); assert.equal(first.status, 0, first.stderr + first.stdout);
-  assert.match(JSON.parse(first.stdout).summary.firstPass, /appended 2/);
+  // Capture preserves session headers as well as messages; text indexing is a separate projection.
+  assert.equal(JSON.parse(first.stdout).summary.firstPass, 'appended 4, pending no');
   const store = new RecordStore(f.root, { owner: 'fixture' });
+  assert.deepEqual(store.listStreams(), ['fixture~pi.session0', 'fixture~pi.session1']);
+  for (const input of inputs) {
+    const turns = store.readStream(input.stream);
+    const expected = input.lines.map((line, index) => {
+      const core = { v: 1, ts: index === 0 ? '2026-01-01T00:00:00Z' : '2026-01-01T00:00:01Z', from: 'fixture',
+        thread: `pi:session:${input.sessionId}`, kind: 'session', body: { line },
+        provenance: { source: 'pi', fidelity: 'verbatim', origin: { session_id: input.sessionId, line: index + 1 } } };
+      return { ...core, id: turnId(core) };
+    });
+    assert.deepEqual(turns, expected);
+    assert.deepEqual(Buffer.from(turns.map(turn => turn.body.line).join('\n') + '\n'), input.bytes);
+  }
   const before = store.listStreams().map(stream => [stream, store.readStream(stream).map(turn => turn.id)]);
+  assert.equal(new Set(before.flatMap(([, ids]) => ids)).size, 4);
+  const journals = inputs.map(input => [input.stream, fs.readFileSync(store.journalPath(input.stream))]);
   const second = f.run(f.request(roots.slice(1))); assert.equal(second.status, 0, second.stderr + second.stdout);
-  assert.match(JSON.parse(second.stdout).summary.firstPass, /appended 0/);
+  assert.equal(JSON.parse(second.stdout).summary.firstPass, 'appended 0, pending no');
   assert.deepEqual(store.listStreams().map(stream => [stream, store.readStream(stream).map(turn => turn.id)]), before);
+  for (const [stream, bytes] of journals) assert.deepEqual(fs.readFileSync(store.journalPath(stream)), bytes);
   assert.equal(readCaptureRoots(f.root).entries[0].retiredRoots.length, 1);
 });
 
