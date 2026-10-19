@@ -8,7 +8,7 @@
  *   a paste       { paste }  or  { paste: "", truncated: true }
  *   an answer     { keyboard: flags }: the terminal's answer to the protocol's query (`CSI ? flags u`),
  *                 while the parser waits for one */
-import { confirmed, kittyId, kittyKey, legacyBytes } from "./kitty.mjs";
+import { confirmed, kittyId, kittyKey, legacyBytes, legacyParams } from "./kitty.mjs";
 
 export const ESC_TIMEOUT_MS = 50;
 export const PASTE_LIMIT = 1024 * 1024;
@@ -142,10 +142,14 @@ export function legacyEvents(bytes) {
  * "asking" while the terminal's answer to the query is awaited; or the flags it answered once they
  * hold flag 1. `chords` are the key ids the TUI binds as chords (packages/client/keymap.mjs CHORDS):
  * a Map of key id to what it does, of which only the ids are read here. While asking, the answer `CSI ? flags u` is the event `{ keyboard: flags }`, and the bytes
- * after it are read as it says: with flag 1 under the protocol, else as before. Under the protocol a `CSI … u` key is read as its legacy bytes are
- * (term/kitty.mjs legacyBytes, legacyEvents above), so Ctrl+Shift+C is Ctrl+C as without it, and a
- * chord as its own key id (`ctrl+shift+k`). An answer at any other time is dropped, as is a `u`
- * key while not under the protocol.
+ * after it are read as it says: with flag 1 under the protocol, else as before. Under the protocol
+ * a `CSI … u` key is read as its legacy bytes are (term/kitty.mjs legacyBytes, legacyEvents above),
+ * so Ctrl+Shift+C is Ctrl+C as without it, and a chord as its own key id (`ctrl+shift+k`). An answer
+ * at any other time is dropped, as is a `u` key while not under the protocol. Under it a key in a
+ * legacy shape has its modifier made xterm's (term/kitty.mjs legacyParams: the lock keys dropped),
+ * and nothing is timed: a terminal under the protocol sends no lone ESC for a key, so an ESC, like
+ * any sequence begun, waits for what follows it however late that comes, and Esc is its own
+ * sequence.
  *
  *   feed(bytes)  the events of these bytes, in order. Text is never held back:
  *                a complete character is emitted by the feed that completes it.
@@ -235,7 +239,7 @@ export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS } = {
     else if (seq === "" && final === "M") { state = MOUSE; mouse = 3; } // X10 mouse report: 3 raw bytes follow
     else if (seq === "200" && final === "~") state = PASTE;
     else if (final === "u") { kittyEvents(seq); return; }
-    else key = csiKey(seq, final);
+    else key = csiKey(confirmed(kb) ? legacyParams(seq, final) : seq, final);
     if (key) emit(key);
   };
 
@@ -318,8 +322,9 @@ export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS } = {
     feed(bytes) {
       if (!(bytes instanceof Uint8Array)) throw new TypeError("feed expects bytes (a Uint8Array)");
       feedAt = now();
-      // A lone ESC that already waited its time is the Esc key; these bytes start fresh.
-      if (state === ESCAPE && feedAt >= escAt + ESC_TIMEOUT_MS) { state = GROUND; emit(named("escape")); }
+      // A lone ESC that already waited its time is the Esc key; these bytes start fresh. Under the
+      // protocol nothing is timed.
+      if (state === ESCAPE && !confirmed(kb) && feedAt >= escAt + ESC_TIMEOUT_MS) { state = GROUND; emit(named("escape")); }
       abandonStalledPaste();
       lastFeedAt = feedAt;
       for (let i = 0; i < bytes.length; i++) {
@@ -352,13 +357,14 @@ export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS } = {
       return events;
     },
     expire() {
-      if (state !== ESCAPE || now() < escAt + ESC_TIMEOUT_MS) return [];
+      if (state !== ESCAPE || confirmed(kb) || now() < escAt + ESC_TIMEOUT_MS) return [];
       state = GROUND;
       return [named("escape")];
     },
-    /** Only a lone ESC has a deadline. Every other incomplete sequence waits for its end. */
+    /** Only a lone ESC has a deadline, and none under the protocol. Every other incomplete sequence
+     *  waits for its end. */
     timeoutAt() {
-      return state === ESCAPE ? escAt + ESC_TIMEOUT_MS : null;
+      return state === ESCAPE && !confirmed(kb) ? escAt + ESC_TIMEOUT_MS : null;
     },
     giveUp() { if (kb === "asking") kb = null; },
     get keyboard() { return kb; },

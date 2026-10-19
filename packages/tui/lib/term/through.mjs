@@ -2,7 +2,9 @@
 // a terminal has the focus the TUI reads no keys: the bytes the outer terminal sends go to the
 // agent exactly as they came, and the scanner here looks for two things only, the back key's own
 // bytes (which take the focus back to the list) and a bracketed paste (which goes to the agent as
-// a paste, so a back key inside it is pasted, not taken). Pure: no IO; the clock is injected.
+// a paste, so a back key inside it is pasted, not taken). Under the kitty keyboard protocol
+// (docs/tui.md, "Chords") it also takes the chords, and types every other key as the bytes it
+// sends without the protocol (see createThrough). Pure: no IO; the clock is injected.
 //
 // The back key is tui.json's `open.detachKey`. Its grammar is THE TUI'S OWN: the keys it can take
 // back from a terminal and name in the cheat sheet. It began as the kernel's `--detach-key` grammar
@@ -106,10 +108,15 @@ const decoder = () => new TextDecoder("utf-8", { fatal: false });
  *  (a Map of key id to the `does` it names), else the bytes it sends without the protocol
  *  (legacyBytes), which are the back key when they read as `leader` (the back key's key id,
  *  backKeyId), with no timing: Alt+O is one sequence and Esc is another. Any other sequence is
- *  the same, made legacy where the protocol changed it (legacySequence: F1 to F4). What is not a
- *  sequence goes to the agent as it came. A sequence a read ends inside, or a lone ESC, waits for
- *  the next read up to the key parser's Esc timeout, then goes on as it came.
- *  Without it (`keyboard` null or "asking") nothing of that is read, and what follows holds.
+ *  the same, made legacy where the protocol changed it (legacySequence: the modifier, F1 to F4).
+ *  What is not a sequence goes to the agent as it came. Nothing is timed: a sequence a read ends
+ *  inside, or a lone ESC (which no key sends under the protocol), waits for the next read however
+ *  late it comes; one longer than SEQUENCE_HELD is no key and goes on as it came.
+ *  Without it (`keyboard` null or "asking") nothing of that is read, and what follows holds. While
+ *  "asking", the answer may arrive split across reads: a read that ends in what may begin it is
+ *  held, an ESC or `ESC [` for BACK_KEY_SPLIT_MS (they are keys too, and a split read of one write
+ *  comes within it), and from `ESC [ ?` on, which no key sends, until `answerBy` (the clock time the
+ *  run stops waiting for the answer), and at least the key parser's Esc timeout.
  *  A read is never held back from the agent but for a beginning of the back key's own bytes, or of
  *  a paste's start marker from its third byte: those wait for the next read, or until `timeoutAt()`
  *  (BACK_KEY_SPLIT_MS for the back key's alone, the key parser's Esc timeout when they may begin a
@@ -118,7 +125,7 @@ const decoder = () => new TextDecoder("utf-8", { fatal: false });
  *  its end marker; one that reaches PASTE_LIMIT is dropped whole, and one whose end has not come
  *  when a read arrives PASTE_PAUSE_MS after the one before is given to the agent as what it held,
  *  and that read is scanned anew, as the key parser abandons a stalled paste. */
-export function createThrough({ sequences, now, keyboard = null, leader = null, chords = new Map() }) {
+export function createThrough({ sequences, now, keyboard = null, leader = null, chords = new Map(), answerBy = null }) {
   if (typeof now !== "function") throw new TypeError("createThrough needs an injected clock: { now: () => milliseconds }");
   if (!(keyboard === null || keyboard === "asking" || confirmed(keyboard))) throw new TypeError("keyboard is null, \"asking\" or flags that hold flag 1");
   const keys = sequences.map((seq) => Uint8Array.from(seq));
@@ -209,14 +216,17 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
         out.push({ back: true, rest: data.subarray(i + key.length) });
         return;
       }
-      // The read ends on what may be the beginning of the back key or of a paste: held, as long
-      // as the one it may begin allows (a paste's, when it may begin both).
+      // The read ends on what may be the beginning of the back key, of a paste or of the answer
+      // awaited: held, as long as the longest that it may begin allows.
       const pasting = data.length - i >= PASTE_HELD_FROM && begins(data, i, PASTE_START);
-      if (pasting || keys.some((seq) => begins(data, i, seq))) {
+      const answering = kb === "asking" && answerBegins(data, i);
+      const keying = keys.some((seq) => begins(data, i, seq));
+      if (pasting || answering || keying) {
         if (i > 0) out.push({ input: data.subarray(0, i) });
         held = Uint8Array.from(data.subarray(i));
         heldAt = now();
-        heldFor = pasting ? ESC_TIMEOUT_MS : BACK_KEY_SPLIT_MS;
+        const asked = data.length - i < 3 ? BACK_KEY_SPLIT_MS : Math.max(ESC_TIMEOUT_MS, answerBy === null ? 0 : answerBy - heldAt);
+        heldFor = Math.max(pasting ? ESC_TIMEOUT_MS : 0, answering ? asked : 0, keying ? BACK_KEY_SPLIT_MS : 0);
         return;
       }
     }
@@ -227,7 +237,7 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
   function scanKitty(out, data) {
     let from = 0;
     const handOn = (to) => { if (to > from) out.push({ input: data.subarray(from, to) }); from = to; };
-    const hold = (i) => { handOn(i); held = Uint8Array.from(data.subarray(i)); heldAt = now(); heldFor = ESC_TIMEOUT_MS; from = data.length; };
+    const hold = (i) => { handOn(i); held = Uint8Array.from(data.subarray(i)); heldAt = now(); heldFor = Infinity; from = data.length; };
     for (let i = 0; i < data.length; i++) {
       if (data[i] !== ESC) continue;
       if (at(data, i, PASTE_START)) {
@@ -306,7 +316,7 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
       return [...late, ...out].map((event) => (event.input ? { input: Uint8Array.from(event.input) } : event.rest ? { ...event, rest: Uint8Array.from(event.rest) } : event));
     },
     expire() { return lapse(now()); },
-    timeoutAt() { return held.length ? heldAt + heldFor : null; },
+    timeoutAt() { return held.length && Number.isFinite(heldFor) ? heldAt + heldFor : null; },
     /** The answer is no longer awaited (none came in time): a late one goes on as it came. */
     giveUp() { if (kb === "asking") kb = null; },
   };
@@ -315,6 +325,16 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
 /** The most bytes of a `CSI` sequence held for its end under the protocol; a longer one is no key,
  *  and goes on as it came. */
 const SEQUENCE_HELD = 64;
+/** Whether `data` from `i` to its end may begin the protocol's answer `CSI ? flags u`: ESC, `ESC [`,
+ *  or `ESC [ ?` and digits, short of the `u`. */
+function answerBegins(data, i) {
+  const left = data.length - i;
+  if (left < 1 || left > 6 || data[i] !== ESC) return false;
+  if (left >= 2 && data[i + 1] !== 0x5b) return false;
+  if (left >= 3 && data[i + 2] !== 0x3f) return false;
+  for (let j = i + 3; j < data.length; j++) if (data[j] < 0x30 || data[j] > 0x39) return false;
+  return true;
+}
 /** The protocol's answer `CSI ? flags u` whole at `i`: `{ flags, end }`, or null. */
 function answerAt(data, i) {
   if (data[i + 1] !== 0x5b || data[i + 2] !== 0x3f) return null;

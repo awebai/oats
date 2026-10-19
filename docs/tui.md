@@ -357,7 +357,9 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   key go to the agent exactly as typed, `Ctrl+C`, `Ctrl+Z`, `Esc` and `q`
   among them, but for **[the leader](#the-leader)** (`Alt+O`, `Ctrl+\` on
   macOS, unless [`tui.json`](#change-the-keys-tuijson) names another), the
-  one key the TUI takes from the agent. The leader then `Esc` gives the
+  one key the TUI takes from the agent, and the [chords](#chords) while your
+  terminal sends them. Under the kitty keyboard protocol every key reaches
+  the agent as the bytes it sends without it. The leader then `Esc` gives the
   focus to the list; the leader twice types the leader into the agent; the
   leader then another key does what that key does from anywhere. While the
   terminal has the focus the cheat sheet names those three:
@@ -1087,7 +1089,7 @@ your terminal sends them, the palette's and the spawn prompt's, with the
 marks and with what this version does not do. Its top row has the time of the read and the count of withheld rows
 ([What it shows](#what-it-shows)). The movement keys scroll it. While
 a terminal has the focus the table's keys are the agent's: the leader alone
-is the TUI's.
+is the TUI's, with the chords while your terminal sends them.
 
 ### The leader
 

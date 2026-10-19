@@ -169,14 +169,14 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   // guard's PUSH and QUERY), "asking" until it answers or KEYBOARD_WAIT_MS passes, then the flags
   // it confirmed (flag 1 held), or null for the rest of the run. The key parser and the scanner
   // below are made with it, and each reads the answer itself when it comes through it.
-  let kb = keyboard ? "asking" : null, kbTimer = null;
+  let kb = keyboard ? "asking" : null, kbTimer = null, answerBy = null;
   const newParser = () => createKeyParser({ now, keyboard: kb, chords: state.chords });
   let parser = newParser();
   // While a terminal has the focus the bytes typed go to the agent: this scanner takes from them
   // only the back key, the chords and a bracketed paste (term/through.mjs). A new one each time the
   // terminal takes the focus, so nothing held from before is typed into it.
   const backKey = backKeySequences(state.detachKey);
-  const newThrough = () => createThrough({ sequences: backKey, now, keyboard: kb, leader: state.leaderKey, chords: state.chords });
+  const newThrough = () => createThrough({ sequences: backKey, now, keyboard: kb, leader: state.leaderKey, chords: state.chords, answerBy });
   let through = newThrough(), throughTimer = null;
   if (listedAtStart) state = reduce(state, { listed: { rows: listedAtStart } }, keymap).state;
   // What the last frame drew, for the store: how tall the list pane is and how far the other
@@ -808,6 +808,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   }
 
   guard.start();
+  if (kb === "asking" && !ended) answerBy = now() + KEYBOARD_WAIT_MS;
   if (kb === "asking" && !ended) kbTimer = setTimer(() => { kbTimer = null; guard.attempt(() => { parser.giveUp(); answered(null); }); }, KEYBOARD_WAIT_MS);
   guard.attempt(() => { if (!ended) Promise.resolve(reader.start()).catch(() => {}); });
   if (found.ok) guard.attempt(() => { if (!ended) listStart(found.deployment); });

@@ -148,12 +148,33 @@ export function legacyBytes(key, flags) {
   return Uint8Array.from(key.alt ? [ESC, ...bytes] : bytes);
 }
 
+/** The finals of the keys a terminal sends in the legacy shapes under the protocol: `CSI 1 ; m X`
+ *  (the arrows, Home, End, Begin, F1 to F4) and `CSI n ; m ~`. Not `R`: under the protocol F3 is
+ *  `CSI 13 ~`, and `CSI row ; col R` is a cursor report, which stays no key. */
+const KEY_FINALS = "ABCDEFHPQS~";
+/** The parameters of such a key with the protocol's modifier made xterm's: the protocol reports the
+ *  lock keys and Super, Hyper and Meta in the modifier (Up with Caps Lock is `CSI 1 ; 65 A`), where
+ *  a terminal without it sends the key as it is without them (`CSI A`). Shift, Alt and Ctrl stay;
+ *  a modifier of none is left out, with the `1` before a letter (`CSI 1 ; 69 A` is `CSI 1 ; 5 A`,
+ *  `CSI 15 ; 65 ~` is `CSI 15 ~`). Every other sequence's parameters are answered as they are. */
+export function legacyParams(params, final) {
+  const match = typeof params === "string" && final.length === 1 && KEY_FINALS.includes(final) ? /^(\d*);(\d{1,3})$/.exec(params) : null;
+  if (!match) return params;
+  const m = Number(match[2]);
+  if (!(m >= 1 && m <= 256)) return params;
+  const bits = (m - 1) & (SHIFT | ALT | CTRL);
+  if (bits !== 0) return `${match[1]};${bits + 1}`;
+  if (final === "~") return match[1];
+  return match[1] === "" || match[1] === "1" ? "" : params;
+}
+
 /** A complete `CSI` sequence other than a `u` key, as a terminal sends it under the protocol, made
- *  the bytes it is without it: F1, F2 and F4 unmodified come as `CSI P`, `CSI Q`, `CSI S` (legacy
- *  `SS3 P`, `SS3 Q`, `SS3 S`), and F3 as `CSI 13 ~` (legacy `SS3 R`, and `CSI 1 ; m R` with a
- *  modifier). Every other sequence is the same bytes. `params` are the bytes between `CSI` and
- *  `final`. */
-export function legacySequence(params, final) {
+ *  the bytes it is without it: its modifier made xterm's (legacyParams); F1, F2 and F4 unmodified
+ *  come as `CSI P`, `CSI Q`, `CSI S` (legacy `SS3 P`, `SS3 Q`, `SS3 S`), and F3 as `CSI 13 ~` (legacy
+ *  `SS3 R`, and `CSI 1 ; m R` with a modifier). Every other sequence is the same bytes. `params` are
+ *  the bytes between `CSI` and `final`. */
+export function legacySequence(given, final) {
+  const params = legacyParams(given, final);
   const ss3 = (letter) => Uint8Array.of(ESC, 0x4f, letter.charCodeAt(0));
   if ((params === "" || params === "1" || params === "1;1") && "PQS".includes(final) && final !== "") return ss3(final);
   if (final === "~") {

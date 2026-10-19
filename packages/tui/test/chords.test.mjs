@@ -60,6 +60,11 @@ const TABLE = [
   ["Keypad Enter", `${E}[57414u`, "\r"], ["Keypad Up", `${E}[57419u`, `${E}[A`], ["Ctrl+Keypad Up", `${E}[57419;5u`, `${E}[1;5A`],
   ["Alt+Keypad Delete", `${E}[57426;3u`, `${E}[3;3~`], ["Keypad Begin", `${E}[57427u`, `${E}[E`], ["Ctrl+Keypad 5", `${E}[57404;5u`, "5"], ["Keypad +", `${E}[57413u`, "+"],
   ["F13", `${E}[57376u`, ""], ["Play (a media key)", `${E}[57428u`, ""],
+  // The protocol reports the lock keys, and Super, in the legacy shapes' modifier too: dropped.
+  ["Up with Caps Lock", `${E}[1;65A`, `${E}[A`], ["Up with Num Lock", `${E}[1;129A`, `${E}[A`], ["Ctrl+Up with Caps Lock", `${E}[1;69A`, `${E}[1;5A`],
+  ["Super+Up", `${E}[1;9A`, `${E}[A`], ["Home with Num Lock", `${E}[1;129H`, `${E}[H`], ["Delete with Num Lock", `${E}[3;129~`, `${E}[3~`],
+  ["F5 with Caps Lock", `${E}[15;65~`, `${E}[15~`], ["Shift+F5 with Num Lock", `${E}[15;130~`, `${E}[15;2~`],
+  ["F1 with Caps Lock", `${E}[1;65P`, `${E}OP`], ["Ctrl+F3 with Caps Lock", `${E}[13;69~`, `${E}[1;5R`],
 ];
 
 /** What the scanner of a terminal's focus types into the agent for `typed`, under flags `flags`. */
@@ -173,16 +178,21 @@ test("in a terminal under the protocol the back key is its one sequence, a chord
   assert.deepEqual(shown(ctrl.feed(utf8("\x1c"))), ["input 1c"], "its legacy byte is no key a terminal sends under the protocol: the agent's");
 });
 
-test("in a terminal under the protocol a sequence split across reads waits for its end, a lone ESC goes on after the Esc timeout, and a paste is a paste", () => {
+test("in a terminal under the protocol a sequence split across reads waits for its end however late it comes, a lone ESC too, and a paste is a paste", () => {
   let t = 0;
   const s = scanner({ t: () => t });
   assert.deepEqual(shown(s.feed(utf8(`a${E}[111`))), ["input 61"]);
+  assert.equal(s.timeoutAt(), null, "no deadline under the protocol");
+  t += 60_000;
   assert.deepEqual(shown(s.feed(utf8(";3u"))), ["back "], "the back key, completed by the next read");
   const lone = scanner({ t: () => t });
   assert.deepEqual(shown(lone.feed(utf8(E))), []);
-  assert.equal(lone.timeoutAt(), t + ESC_TIMEOUT_MS);
-  t += ESC_TIMEOUT_MS;
-  assert.deepEqual(shown(lone.expire()), ["input 1b"]);
+  assert.equal(lone.timeoutAt(), null);
+  t += 60_000;
+  assert.deepEqual(shown(lone.expire()), []);
+  assert.deepEqual(shown(lone.feed(utf8("x"))), ["input 1b78"], "an ESC and no sequence: as it came");
+  const long = scanner({ t: () => t });
+  assert.deepEqual(shown(long.feed(utf8(`${E}[${"1".repeat(70)}`))).length, 1, "a sequence longer than any key goes on as it came");
   const pasting = scanner({ t: () => t });
   assert.deepEqual(shown(pasting.feed(utf8(`${E}[200~one${E}[107;6u${E}[201~x`))), [`paste one${E}[107;6u`, "input 78"], "a chord inside a paste is pasted text");
 });
@@ -194,6 +204,61 @@ test("while the answer is awaited the scanner takes it from what is typed, never
   assert.deepEqual(shown(refused.feed(utf8(`${E}[?0u${E}o`))), ["answer 0", "back "], "an answer without flag 1: the legacy back key");
   const legacy = createThrough({ sequences: backKeySequences("M-o"), now: () => 0 });
   assert.deepEqual(shown(legacy.feed(utf8(`${E}[?5u${E}[107;6u`))), [`input ${hex(utf8(`${E}[?5u${E}[107;6u`))}`], "never asked: every byte is the agent's, as before");
+});
+
+/** The events of `typed` read in one feed, and split at byte `k` with `delay` ms between the two
+ *  reads, made comparable: consecutive inputs joined. */
+function joined(events) {
+  const out = [];
+  for (const event of shown(events)) {
+    const last = out.at(-1);
+    if (event.startsWith("input ") && last?.startsWith("input ")) out[out.length - 1] = last + event.slice(6);
+    else out.push(event);
+  }
+  return out;
+}
+
+test("under the protocol a key split across two reads at any byte, however far apart, reads and is typed as the key whole: no timing (Alt+O exact, a chord never reaches the agent)", () => {
+  const keys = [`${E}[111;3u`, `${E}[107:75;6u`, `${E}[27u`, `${E}[99;5u`, `${E}[1;65A`, `${E}[15;5~`];
+  for (const key of keys) {
+    const whole = joined(scanner().feed(utf8(key)));
+    const parsed = ids(createKeyParser({ now: () => 0, keyboard: 5, chords: CHORD_MAP }).feed(utf8(key)));
+    for (let k = 1; k < key.length; k++) {
+      for (const delay of [0, 75, 60_000]) {
+        let t = 0;
+        const s = scanner({ t: () => t });
+        const split = s.feed(utf8(key.slice(0, k)));
+        t += delay;
+        assert.deepEqual(joined([...split, ...s.expire(), ...s.feed(utf8(key.slice(k)))]), whole, `${JSON.stringify(key)} split at ${k}, ${delay} ms apart, typed`);
+        const p = createKeyParser({ now: () => t, keyboard: 5, chords: CHORD_MAP });
+        t = 0;
+        const first = p.feed(utf8(key.slice(0, k)));
+        t += delay;
+        assert.deepEqual(ids([...first, ...p.expire(), ...p.feed(utf8(key.slice(k)))]), parsed, `${JSON.stringify(key)} split at ${k}, ${delay} ms apart, read`);
+      }
+    }
+  }
+});
+
+test("while the answer is awaited in a terminal it is taken split at any byte, never the agent's, and what follows reads as it says", () => {
+  const typed = `a${E}[?5u${E}[107;6u`;
+  const expected = ["input 61", "answer 5", "chord palette "];
+  for (let k = 1; k < typed.length; k++) {
+    // A split read of one write comes within BACK_KEY_SPLIT_MS; from `ESC [ ?` on the bytes wait for the answer's deadline.
+    const delays = k >= 4 && k < 7 ? [0, 5, 1500] : [0, 5];
+    for (const delay of delays) {
+      let t = 0;
+      const s = createThrough({ sequences: backKeySequences("M-o"), now: () => t, keyboard: "asking", leader: backKeyId("M-o"), chords: CHORD_MAP, answerBy: 2000 });
+      const first = s.feed(utf8(typed.slice(0, k)));
+      t += delay;
+      assert.deepEqual(joined([...first, ...s.feed(utf8(typed.slice(k)))]), expected, `split at ${k}, ${delay} ms apart`);
+    }
+  }
+});
+
+test("under the protocol the cursor report's shape keeps the legacy reader's rule, its modifier never made xterm's: above 16 it is no key", () => {
+  const parser = createKeyParser({ now: () => 0, keyboard: 5 });
+  assert.deepEqual(ids(parser.feed(utf8(`${E}[1;65R${E}[1;5R${E}[13;65~`))), ["ctrl+f3", "f3"]);
 });
 
 // ── The guard: popped on every way out.
