@@ -163,8 +163,14 @@ broker (`aw wake run` as a per-user service). Both are taught in
         gives `0`. A 403 there saying the feature needs an upgrade means the
         plan has no rulesets, which counts as `0`.
 
-     Then push, and tell the person what changed. If any other check fails
-     or errors, use a pull request.
+     **For the workspace's host repository,** then push, and tell the person
+     what changed. **For a member repository,** ask first: show the person
+     the commit (its files and message), and tell them that a push to
+     `<branch>` runs whatever that repository runs on a push to it (its
+     `.github/workflows` that trigger on `push`, if there are any: CI, a
+     deploy, a release). Push only on their yes in the chat; without one,
+     use a pull request. If any other check fails or errors, use a pull
+     request.
    - **Otherwise a pull request** from a branch, which the repo's owner
      merges (name who). If a straight push is refused (by Git, GitHub or your
      harness's permission check), open a pull request instead; never try

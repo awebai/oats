@@ -71,7 +71,9 @@ only the secrets, the logins and the installs that capture their shell.
 
    Each goes in by the briefing's rule: straight to a repository the person
    alone can push to, when the checks in `/oats-workspace-config`, "Change a
-   shared file", pass; otherwise a pull request, which that repository's
+   shared file", pass (in a member repository, only on the person's yes
+   after you show them the commit and what a push there runs); otherwise a
+   pull request, which that repository's
    owner merges (name who). Once both changes are on their default
    branches, sync and check that each member is confirmed
    (`/oats-workspace-config`). The host is

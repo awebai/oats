@@ -91,7 +91,10 @@ for every local repair. Recheck changed facts and material unknowns.
 (`/oats-workspace-config`, "Change a shared file"). Push straight to a
 repository's default branch only when the person is the only one who can
 push to it and nothing guards that branch, checked by that procedure right
-before the push; then tell them what changed. A repository others can push
+before the push. For the workspace's host, push and then tell them what
+changed; for a member repository, show them the commit and that the push
+runs its push-triggered CI and deploys, and push only on their yes in the
+chat, else a pull request. A repository others can push
 to, or whose default branch a protection or ruleset guards, takes a pull
 request that its owner merges. A refused push (by Git, GitHub or your harness's permission
 check) means a pull request, never another route. These limits hold even
