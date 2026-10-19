@@ -1469,7 +1469,10 @@ with the Desktop (`packages/client/`).
   files in a directory of `oats tui`'s own (made with mode 0700 under the
   system's temporary directory), read back when it ends and deleted. On the
   way out the files of a change still running are deleted (it goes on
-  writing to them), and the directory is removed. `oats tui` waits for an
+  writing to them), and the directory is removed. A run ended by SIGKILL
+  removes nothing: with a kernel that lists this computer's deployments,
+  the add at the start has made the directory, and when no terminal was
+  opened in that run it holds no `owner.json`, so no later run removes it. `oats tui` waits for an
   apply's answer for 10 minutes and for a start's for 60 seconds; then it
   says so, and the change goes on.
 - **A spawn runs the kernel's own `oats spawn`**, as the Desktop does: the
