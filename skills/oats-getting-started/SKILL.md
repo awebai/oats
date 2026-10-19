@@ -69,10 +69,10 @@ work, in its own home and terminal. Each workspace has a setup expert soul,
 - **The harness for the setup expert:** `claude`, `codex` or `pi`. Default:
   the one you are, if it is one of these.
 - **The deployment directory `D`:** where OATS lives on this machine. Any
-  folder works: ask for it, and suggest none. From OATS 0.65.0, `oats onboard`
-  adds `D` to this computer's list of deployments
-  (`~/.oats/config/deployments.json`, which `oats deployments` reads), so the
-  Desktop and the TUI find it wherever it is. Write `D` everywhere
+  folder but their home folder itself works: ask for it, and suggest none.
+  From OATS 0.65.0, `oats onboard` adds `D` to this computer's list of
+  deployments (`~/.oats/config/deployments.json`, which `oats deployments`
+  reads), so the Desktop and the TUI find it wherever it is. Write `D` everywhere
   below as an absolute path, with the home folder spelled out: never `~`,
   which the shell does not expand inside quotes.
 - **OATS Desktop:** installed and started unless they decline. **The TUI**
@@ -467,8 +467,8 @@ oats spawn S --dir D --task-file D/.oats-handover.md
   already running, the new launch hands `--dir` to it and exits.
 - **Linux:** the person opens **OATS Desktop** from their app launcher, so it
   starts with their own session's environment, not yours. Then they pick `D`
-  in its switcher. From OATS 0.65.0 it is listed there; before that, they add
-  it with **Add local workspace… → Browse**.
+  in its switcher (listed there from OATS 0.65.0). If it isn't listed, they
+  add it with **Add local workspace… → Browse**.
 - **Never start it with an emptied environment** (`env -i`): it then loses
   HOME, and Git loses the person's login.
 
