@@ -25,6 +25,19 @@ For example, a kernel expert, a UX expert and a customer-support expert can shar
 
 The [official catalog](docs/official-catalog.md) is the reviewed list of official packages. A workspace trusts a package by declaring it; being listed doesn't declare it.
 
+## Start here
+
+Ask your coding agent (Claude Code, Codex, pi or any other) to download the `oats-getting-started` skill verbatim and follow it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/awebai/oats/main/skills/oats-getting-started/SKILL.md
+```
+
+- **It asks first:** your project, its repositories and the knowledge tools you use.
+- **It installs OATS and OATS Desktop,** then creates your workspace with its own setup expert, or joins this machine to an existing workspace.
+- **It hands over to that setup expert,** an OATS agent that sets up the rest with you. You type only passwords and logins.
+- **Download it, don't web-fetch it:** a tool that summarises pages would lose its exact commands.
+
 ## Why OATS
 
 OATS grew from a practical need: we wanted control over our agent setups—not just which model answered a prompt, but also:
@@ -212,7 +225,7 @@ oats onboard ~/acme --workspace git:github.com/acme/agents   # this machine's de
 oats spawn <soul> --task "First concrete task"
 ```
 
-The [first-team guide](docs/first-team.md) walks through writing the workspace, its members and a first soul; the [release notes](docs/release-notes/) state the supported scope of each version.
+[Start here](#start-here) does all of this for you. The [first-team guide](docs/first-team.md) walks through writing the workspace, its members and a first soul; the [release notes](docs/release-notes/) state the supported scope of each version.
 
 Further documentation:
 
