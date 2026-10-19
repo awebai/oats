@@ -240,11 +240,11 @@ or `run: command`, `cron`, `tz`, `agent`, `task`, plus `runsOn` and `owner`).
 
   ```bash
   oats trigger add --from <package>:<template> --set repo=github.com/<org>/<repo> --workspace <member> --runs-on <host name> --owner github.com/<account>
-  oats automations refresh          # after the PR merges, instead of waiting for the tick
+  oats automations refresh          # once it is on the default branch, instead of waiting for the tick
   oats trigger test <member>/<id>   # on the named host: placement, gh account, repo permissions, soul, teams
   ```
 
-  Commit it by PR to that member (oats-workspace-config).
+  Commit it to that member as `/oats-workspace-config`, "Change a shared file" says.
 
 ## Unresolved schedule attempts
 

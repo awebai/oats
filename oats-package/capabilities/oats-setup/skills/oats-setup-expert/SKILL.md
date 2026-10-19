@@ -33,10 +33,14 @@ It holds no secret, and none ever goes into one.
 
 **A new workspace or an existing one.** The hand-over says which.
 - **New:** the person created the host repository through the entry skill.
-  It is private and theirs, so they review and merge its pull requests.
+  It is private and theirs. While they are the only one who can push to
+  it, push your changes straight to its default branch once the checks in
+  `/oats-workspace-config`, "Change a shared file", pass, and tell them what
+  changed; otherwise use pull requests (the briefing's rule).
 - **Existing:** someone else may own the host and the members. Read the host's
   visibility (`gh repo view <owner>/<repo> --json visibility,viewerPermission`).
-  Steps 3 and 4 then become proposals to the host's owner: a public host
+  The host's side of steps 3 and 4 then becomes a proposal to the host's
+  owner: a public host
   takes no private member (`/oats-onboarding` card 3). Name who merges. This
   machine's own steps (2, 5's host settings, 6 and 7) are yours to do with
   the person.
@@ -47,8 +51,10 @@ only the secrets, the logins and the installs that capture their shell.
 
 1. **Read the deployment** (`/oats-onboarding` card 2). The entry skill's gh
    login over https is enough for these reads; step 2 completes Git. A new
-   workspace has the host as its only member, `oats.framework` pinned,
-   `oats.core` as a default, and you as its one soul:
+   workspace has the host as its only member repository, `oats.framework`
+   pinned, `oats.core` as a default and you as its setup soul; the entry
+   skill may also have added `oats.aweb` with a team, and a first developer
+   soul:
 
    ```bash
    oats workspace status --dir D --json
@@ -60,19 +66,25 @@ only the secrets, the logins and the installs that capture their shell.
    sign-off.
 3. **The person's repositories as members.** For each repository the intake
    names that agents will read or work in, make two changes:
-   - an `oats-membership.yaml` in that repository, by a pull request there;
-   - its line under `members:` in `oats-workspace.yaml`, by a pull request
-     from your work tree.
+   - an `oats-membership.yaml` in that repository;
+   - its line under `members:` in `oats-workspace.yaml`, from your work tree.
 
-   Then sync, and check that each member is confirmed (`/oats-workspace-config`).
-   The person merges both, because they own the repositories. The host is
+   Each goes in by the briefing's rule: straight to a repository the person
+   alone can push to, when the checks in `/oats-workspace-config`, "Change a
+   shared file", pass (in a member repository, only on the person's yes
+   after you show them the commit and what a push there runs); otherwise a
+   pull request, which that repository's
+   owner merges (name who). Once both changes are on their default
+   branches, sync and check that each member is confirmed
+   (`/oats-workspace-config`). The host is
    private, so private members are fine (`/oats-onboarding` card 3's rule).
    Clones for the souls that work in a repository: `/oats-onboarding` card 4.
 4. **The first souls, for the use case.** Propose the smallest set of roles
-   that serves it, usually one or two. For each, give the repository it
+   that serves it, usually one or two. A new workspace may already have a
+   first developer soul from the entry skill: build on it. For each, give the repository it
    works in, its `work:` mode and the capabilities it needs. Each soul is
-   added by a pull request, to the host (`souls/<name>/`) or to the member it
-   belongs to. File shapes: `/oats-workspace-config`.
+   added to the host (`souls/<name>/`) or to the member it belongs to, by the
+   briefing's rule. File shapes: `/oats-workspace-config`.
 5. **Knowledge**, from the intake:
    - Reviewed knowledge with OKF: `/oats-onboarding`, "Knowledge operations
      with OKF".
@@ -81,16 +93,17 @@ only the secrets, the logins and the installs that capture their shell.
      record them in the hand-back. A tool is read by agents only if a
      capability for it is installed. Say so; don't promise more.
 6. **Messaging, when wanted:**
-   - **If the workspace already has it,** the entry skill joined this
-     machine before your spawn (the hand-over says so). Check it with the
+   - **If the workspace already has it,** the entry skill set it up on this
+     machine before your spawn: a new account for a new workspace, a join by
+     invite for an existing one (the hand-over says which). Check it with the
      briefing's read-only aweb check (`member: true`, your own soul as
      `S`), then go on from `/oats-teams`.
-   - **If it has none yet,** first a pull request for the `oats.aweb` pin
+   - **If it has none yet,** first the `oats.aweb` pin
      (`/oats-package-pins`) and `defaults.messaging`
-     (`/oats-workspace-config`). In an existing workspace, propose it to the
-     host's owner. Your soul takes that default: it empties no messaging
-     slot, so it stays the workspace's operator. After the merge,
-     `oats sync`.
+     (`/oats-workspace-config`), by the briefing's rule. In an existing
+     workspace, propose them to the host's owner. Your soul takes that
+     default: it empties no messaging slot, so it stays the workspace's
+     operator. Once they are on the default branch, `oats sync`.
    - Then `/oats-onboarding` card 5's act, through `/oats-aweb` §8, with your
      own soul as `S`. Its key or invite is typed by the person, by route 2
      or 3 of the briefing.
@@ -118,7 +131,8 @@ only the secrets, the logins and the installs that capture their shell.
 8. **Hand back to the person**, in the session:
    - what is set up, with the versions;
    - which steps they typed into (the steps, never the values);
-   - the pull requests waiting for their review or merge;
+   - what you pushed straight, and the pull requests waiting for their
+     review or merge;
    - what is still open, and who decides it.
 
    Also tell them how to reach you again: the Desktop, `oats tui` (OATS

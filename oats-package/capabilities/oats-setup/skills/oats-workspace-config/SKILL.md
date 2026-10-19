@@ -134,10 +134,51 @@ broker (`aw wake run` as a per-user service). Both are taught in
 1. Read the state (above) and the contract section for the field.
 2. Write the change as a **diff** and show it to the human, with why and
    what it changes for which souls.
-3. Commit it on a branch of the repo that owns the file and open a pull
-   request. Never push to its default branch, and never edit a shared file
-   without a PR.
-4. After it merges, on each deployment: `oats sync`, then
+3. Commit it to the repo that owns the file, by one of two routes. Never
+   edit a shared file without one of them.
+   - **Straight to the default branch,** host or member repository alike,
+     only when the person is the only one who can push to it and nothing
+     guards that branch. Check it right before the push, with `L` their
+     login (`gh api user --jq .login`) and
+     `gh repo view <o>/<r> --json viewerPermission,isInOrganization,defaultBranchRef`:
+     1. `viewerPermission` is `ADMIN`.
+     2. For an organization's repository (`isInOrganization` is `true`): `L`
+        is an active member, `gh api user/memberships/orgs/<o> --jq .state`
+        gives `active`, and the only owner,
+        `gh api --paginate "orgs/<o>/members?role=admin" --jq '.[].login'`
+        prints `L` alone. (An outside collaborator sees no org members in
+        the next list, so it would look complete when it isn't.) A 404 on
+        the membership means they are not a member: use a pull request, and
+        don't widen the token's scopes, whatever gh's hint says.
+     3. `gh api --paginate repos/<o>/<r>/collaborators --jq '.[] | select(.permissions.push) | .login'`
+        prints `L` alone. It counts base, team and direct permissions.
+     4. No deploy key can write:
+        `gh api repos/<o>/<r>/keys --jq '[.[] | select(.read_only | not)] | length'`
+        gives `0`. GitHub Apps with write access can't be listed this way;
+        this check does not cover them.
+     5. Nothing guards the default branch `<branch>`, its
+        `defaultBranchRef.name`:
+        `gh api repos/<o>/<r>/branches/<branch> --jq .protected` gives
+        `false`, and `gh api repos/<o>/<r>/rules/branches/<branch> --jq length`
+        gives `0`. A 403 there saying the feature needs an upgrade means the
+        plan has no rulesets, which counts as `0`.
+
+     **For the workspace's host repository,** then push, and tell the person
+     what changed. **For a member repository,** ask first: show the person
+     the commit (its files and message), and tell them that a push to
+     `<branch>` runs whatever that repository runs on a push to it (its
+     `.github/workflows` that trigger on `push`, if there are any: CI, a
+     deploy, a release). Push only on their yes in the chat; without one,
+     use a pull request. If any other check fails or errors, use a pull
+     request.
+   - **Otherwise a pull request** from a branch, which the repo's owner
+     merges (name who). If a straight push is refused (by Git, GitHub or your
+     harness's permission check), open a pull request instead; never try
+     another way. If its output says a rule was bypassed, the change is
+     already on the default branch: stop and tell the person, who decides
+     whether to keep or revert it, and use pull requests for that
+     repository from then on.
+4. Once it is on the default branch, on each deployment: `oats sync`, then
    `oats workspace status` and `oats spawn <soul> --preview` for an affected
    soul. Confirm the new state is there by positive enumeration, not by the
    absence of errors.
@@ -157,9 +198,9 @@ reports this deployment's local file and lock.
 | `E_SOUL_AMBIGUOUS` | two souls share the bare name | use the qualified name it lists (`<member>/<soul>`, `<package>/<soul>`) |
 | `E_SOUL_DISABLED` | `souls.disabled` in this machine's `oats-local.yaml` | re-enable there, if the operator agrees |
 | `E_TEAM_UNKNOWN` | the local `defaultTeam` in `oats-local.yaml` is declared in neither file; the spawn is refused | `oats teams add` it, or `oats teams default` another label; see `/oats-teams` |
-| `E_TEAM_NOT_ELIGIBLE` | the provider refused to join a team the soul may not join | add the label to the soul's `souls:` entry by PR, or join another team; see `/oats-teams` |
+| `E_TEAM_NOT_ELIGIBLE` | the provider refused to join a team the soul may not join | add the label to the soul's `souls:` entry (a shared-file change), or join another team; see `/oats-teams` |
 | `E_TEAM_UNCONFIGURED` | messaging is active and the soul has no default team | commit `defaultTeam:` (or a `souls:` `default`) in `oats-workspace.yaml`; with `localTeams: true`, `oats teams add` (the first becomes the default) or `oats teams default <label>` |
-| `E_TEAM_IN_USE`, `E_TEAM_SHARED`, `E_TEAM_EXISTS` | `oats teams remove`/`add` refused: still the local default, shared (edit by PR), or already declared | see `/oats-teams` |
+| `E_TEAM_IN_USE`, `E_TEAM_SHARED`, `E_TEAM_EXISTS` | `oats teams remove`/`add` refused: still the local default, shared (a shared-file change), or already declared | see `/oats-teams` |
 | `E_HARNESS_UNAVAILABLE` | the harness a launch preference (or flag) chose is not installed here; `details.from`/`at` name the layer | install it, or pin the soul to another launch on this machine: `oats soul launch set <soul> --launch-config <name>` or `--harness <h>` (`'*'` for every soul without an entry), from OATS 0.53.0; on an older kernel, edit `souls.launch` in `oats-local.yaml` |
 | `E_LAUNCH_CONFIG_UNKNOWN` | `souls.launch` names a launch configuration this `oats-local.yaml` lacks, or `oats soul launch set --launch-config <name>` names one it lacks (nothing was written) | declare it (`oats launch-config set`), or pin another (`oats soul launch set <soul> --launch-config <name>`, from OATS 0.53.0; on an older kernel, change `souls.launch` in `oats-local.yaml`) |
 | `E_LAUNCH_PREFERENCE_UNKNOWN` | from OATS 0.53.0: `oats soul launch remove` named an entry `souls.launch` does not have; `details.keys` lists the entries it has | remove one of those: a soul's, `'*'`, or the exact text of a key (`oats soul launch remove <key>`) |
@@ -173,7 +214,7 @@ reports this deployment's local file and lock.
 | `E_CAPABILITY_PRIVATE` | a repo-owned capability used by another repo's soul | use it only from its own repo, or ask its owners to share it |
 | `E_PACKAGE_MISSING` | `from: package` but the lock lacks it, or the package is no longer declared | pin it (`/oats-package-pins`), then `oats sync` |
 | `E_PACKAGE_INTEGRITY` | a tag moved or the content changed under a pin | pin a new version; see `/oats-package-pins` |
-| `E_COMPATIBILITY` | a soul's `compatibility` floor is above the pinned version | bump the pin, or relax the floor, by PR |
+| `E_COMPATIBILITY` | a soul's `compatibility` floor is above the pinned version | bump the pin, or relax the floor, by a shared-file change |
 | `E_CAPABILITY_INCOMPATIBLE` | a module's `compatibility.oats` excludes this kernel | update the kernel (`oats update`) or pin a compatible version |
 | `E_SKILL_DUPLICATE` | two modules contribute a skill of the same name | drop one capability from the soul (`off`) |
 | `E_CLONE_MISSING`, `E_CLONE_MISMATCH` | a `worktree`/`checkout` soul has no clone of its repo here, or `clones:` points at the wrong repo | clone it at `<deployment>/<repo name>` or set `clones:` on this machine |
@@ -182,11 +223,11 @@ reports this deployment's local file and lock.
 ## Gotchas
 
 - A new soul, member or default takes effect only for **new** spawns, after
-  the change is merged and `oats sync` has run. Running instances keep what
+  the change is on the default branch and `oats sync` has run. Running instances keep what
   they were given; `oats status` shows them as moved.
 - `oats workspace status` reads the workspace's default branch over the
   remote, not your working copy: an unmerged change is invisible to it.
 - `oats package add` edits `packages:` only when the host repo is the current
-  checkout; otherwise it prints the line for the PR.
+  checkout; otherwise it prints the line to commit.
 - "Why can't I spawn X": run `oats spawn X --preview`. Its refusal names the
   code and the path, and the table above maps it to the owning file.

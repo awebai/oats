@@ -87,8 +87,19 @@ souls/capabilities, trigger/schedule lists and spawn previews answer different
 questions; select the relevant reads rather than running an onboarding audit
 for every local repair. Recheck changed facts and material unknowns.
 
-**Change shared files only by pull request** to the repository that owns the
-file, never silently. Change host facts only on the machine they describe, with
+**Change shared files in the repository that owns them, never silently**
+(`/oats-workspace-config`, "Change a shared file"). Push straight to a
+repository's default branch only when the person is the only one who can
+push to it and nothing guards that branch, checked by that procedure right
+before the push. For the workspace's host, push and then tell them what
+changed; for a member repository, show them the commit and that the push
+runs its push-triggered CI and deploys, and push only on their yes in the
+chat, else a pull request. A repository others can push
+to, or whose default branch a protection or ruleset guards, takes a pull
+request that its owner merges. A refused push (by Git, GitHub or your harness's permission
+check) means a pull request, never another route. These limits hold even
+where your soul's own instructions allow more; where they are stricter,
+follow them. Change host facts only on the machine they describe, with
 its operator's authorization, including authorization already given. Sync when
 the change requires package/workspace resolution; a local settings repair does
 not inherently require source publication or sync. Verify the requested behavior
