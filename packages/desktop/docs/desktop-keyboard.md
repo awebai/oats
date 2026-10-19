@@ -7,7 +7,7 @@ window's regions, and how each interactive element is reached and operated.
 
 Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 `TERMINAL_ALLOWLIST`, `SIDEBAR_KEYS`), `packages/client/keymap.mjs` (the leader,
-its table and the plain keys, shared with the TUI), `renderer/leader.mjs` (the
+its table and the plain keys, the TUI's), `renderer/leader.mjs` (the
 leader's wait), `renderer/leader-keys.mjs` (which rows apply, the Desktop's
 labels), `renderer/leader-dispatch.mjs` (what each key does),
 `renderer/leader-hint.mjs` (the hint), `renderer/focus-regions.mjs` (F6),
@@ -103,8 +103,9 @@ Show instance panel and the closed sidebar and panel).
 ## The leader
 
 New in 0.65.0. The leader is the TUI's: one chord, then one key from the TUI's
-table (`LEADER_TABLE` in `packages/client/keymap.mjs`, which the TUI and the
-Desktop both read; `test/keymap-parity.test.mjs` fails when they part). It is
+table. The Desktop reads it from `LEADER_TABLE` in `packages/client/keymap.mjs`;
+the TUI still keeps its own copy (`LEADER` in `packages/tui/lib/actions.mjs`),
+and the root `test/keymap-parity.test.mjs` fails when the two part. It is
 **Alt+O** on Linux and Windows and **⌃\** on macOS (`app.leader`, rebindable
 like any action; the table after it is fixed, as in the TUI).
 
@@ -319,7 +320,10 @@ sidebar.
 | `?` | `sidebar.key.help` | the shortcuts editor |
 
 A key that cannot act says why in one line at the bottom of the main area, as
-the leader does. A one-character non-letter key (`?`, `|`, `[`, `/`) matches
+the leader does. While focus is in the sidebar the tab layer's (or a stage's)
+shortcuts are on too, so a sidebar key and a tab shortcut on the same chord
+clash: the shortcuts editor shows it, as it shows any clash with a stored
+rebind. A one-character non-letter key (`?`, `|`, `[`, `/`) matches
 whatever Shift the keyboard layout needs for it; a letter keeps its case, so
 `x` is not Stop.
 

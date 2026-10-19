@@ -10,8 +10,8 @@
   terminal too: there the leader pressed twice sends the program what the
   chord sends (Alt+O is ESC o, ⌃\ is 0x1c). While it waits, a panel at the
   bottom of the main area lists the keys that apply now. `m` (move a tab to
-  the other group) has nothing to act on in the Desktop and is left out. The
-  table is shared with the TUI, so the two cannot drift apart
+  the other group) has nothing to act on in the Desktop and is left out. A
+  test holds the Desktop's table to the TUI's, so the two cannot drift apart
   ([Desktop keyboard](../../packages/desktop/docs/desktop-keyboard.md#the-leader)).
 - Desktop: the TUI's plain keys in the sidebar. With focus in the sidebar,
   `1` `2` `3`, `w`, `/`, `r`, `z`, `c`, `[` `]`, `|` `-`, `X` `D` `S` `R`,

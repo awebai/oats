@@ -72,7 +72,10 @@ export function createLeader({ win, isMac, modalOpen = () => false, supports = (
   onOpen = () => {}, onSettle = () => {}, onClose = () => {} }) {
   const doc = win.document;
   let waiting = null;    // { origin, focused }
-  let swallowed = null;  // the physical key of the consumed follow-up, until its keyup
+  // The physical keys of consumed follow-ups, each until its own keyup (or the window losing focus,
+  // which loses keyups): another key going down meanwhile (rollover, a modifier) releases none of them.
+  const swallowed = new Set();
+  let pressEaten = false; // the last keydown was consumed: its keypress is too
   let observer = null;
   let toggledOff = null; // the opener a pointerdown on it just cancelled the wait from
 
@@ -119,9 +122,10 @@ export function createLeader({ win, isMac, modalOpen = () => false, supports = (
   }
 
   function onKeyDown(e) {
-    if (swallowed !== null) {
-      if (physical(e) === swallowed && e.repeat) { eat(e); return; }
-      swallowed = null;
+    pressEaten = false;
+    if (swallowed.has(physical(e))) {
+      if (e.repeat) { eat(e); pressEaten = true; return; }
+      swallowed.delete(physical(e)); // pressed anew: its keyup was lost
     }
     if (!waiting || isLoneModifier(e)) return;
     if (modalOpen()) { close("modal"); return; }
@@ -136,19 +140,19 @@ export function createLeader({ win, isMac, modalOpen = () => false, supports = (
     const does = key === null ? null : leaderDoes(key);
     const { origin } = waiting;
     eat(e);
-    swallowed = physical(e);
+    pressEaten = true;
+    swallowed.add(physical(e));
     const runs = does !== null && supports(does);
     close(runs ? "settled" : "key");
     if (runs) onSettle(does, origin);
   }
 
   function onKeyPress(e) {
-    if (swallowed !== null) eat(e);
+    if (pressEaten) eat(e);
   }
 
   function onKeyUp(e) {
-    if (swallowed === null || physical(e) !== swallowed) return;
-    swallowed = null;
+    if (!swallowed.delete(physical(e))) return;
     eat(e);
   }
 
@@ -159,7 +163,7 @@ export function createLeader({ win, isMac, modalOpen = () => false, supports = (
     close("pointer");
   };
   const onPaste = () => close("paste");
-  const onBlur = (e) => { if (e.target === win) close("blur"); };
+  const onBlur = (e) => { if (e.target === win) { swallowed.clear(); pressEaten = false; close("blur"); } };
 
   win.addEventListener("keydown", onKeyDown, true);
   win.addEventListener("keypress", onKeyPress, true);

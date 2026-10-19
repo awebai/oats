@@ -470,10 +470,17 @@ export function onKeymapChange(fn) {
  * shows Active everywhere else). */
 const isModalContext = (context) => typeof context === "string" && context.endsWith("-dialog-local");
 
+/** Two contexts the shell has on at once (shell.mjs updateActiveContexts): the sidebar's, while
+ * focus is in the sidebar, beside the tab layer's or a stage's. A chord bound in both would run
+ * only one of them, so they clash like a same-context pair. */
+const SHARES_SIDEBAR = (context) => context === "tabs" || context === "roster" || (typeof context === "string" && context.startsWith("stage:"));
+const onTogether = (a, b) => (a === "sidebar" && SHARES_SIDEBAR(b)) || (b === "sidebar" && SHARES_SIDEBAR(a));
+
 /** First OTHER action whose effective binding collides with `chord` in a way
- * visible from `context` (same context, or either side is global — except a
- * modal dialog's own context, which only its own actions share), optionally
- * excluding one action id (the one being edited). Returns the action or null. */
+ * visible from `context` (same context, either side global, or two contexts on at
+ * once, the sidebar's beside the tabs' or a stage's — except a modal dialog's own
+ * context, which only its own actions share), optionally excluding one action id
+ * (the one being edited). Returns the action or null. */
 export function findConflict(chord, context, excludeId = null, isMac = defaultIsMac()) {
   const c = typeof chord === "string" ? parseChord(chord) : chord;
   if (!c) return null;
@@ -485,6 +492,7 @@ export function findConflict(chord, context, excludeId = null, isMac = defaultIs
     if (action.context === context) return action;
     if (isModalContext(context) || isModalContext(action.context)) continue;
     if (context === "global" || action.context === "global") return action;
+    if (onTogether(context, action.context)) return action;
   }
   return null;
 }

@@ -115,3 +115,50 @@ test("shell wiring: the sidebar context follows focus; the keys run the leader's
   assert.match(shell, /for \(const \{ id, does \} of SIDEBAR_KEYS\) \{\n  registerAction\(\{ id, label: leaderLabel\(does, actionLabel\), context: "sidebar",/);
   assert.match(shell, /leaderDispatch\.run\(does, \{ targetId: leaderTargetId\(/);
 });
+
+// Amendment 8: the context is off in an editable field. A rebind to a modified chord (which the
+// engine's plain-key guard does not hold back) must still leave the field its own key.
+test("off in an editable field, a modified rebind included: the filter keeps Ctrl+X", t => {
+  const r = rig(t);
+  setBinding("sidebar.key.stop", "Ctrl+X");
+  const ctrlX = el => { el.focus(); r.sidebarKeysLive(); const e = new r.win.KeyboardEvent("keydown", { key: "x", ctrlKey: true, bubbles: true, cancelable: true });
+    Object.defineProperty(e, "target", { value: el }); return matchEvent(e, { isMac: false }); };
+  assert.equal(ctrlX(r.row), "sidebar.key.stop", "on a row it is the sidebar key");
+  assert.equal(ctrlX(r.filter), null, "in the filter it is Cut");
+  assert.equal(r.sidebarKeysLive(), false);
+  const editable = r.doc.createElement("div"); editable.contentEditable = "true"; editable.tabIndex = 0;
+  Object.defineProperty(editable, "isContentEditable", { value: true }); // jsdom does not compute it
+  r.doc.getElementById("nav").append(editable);
+  assert.equal(ctrlX(editable), null, "nor in an editable region");
+});
+
+// The target of X D S R N (and of the leader's) when focus is on one of a row's tools (Start…, the
+// actions trigger, the PR link), which sit beside the row in its .ctx-tree-row: that row, not the
+// active terminal's instance. The shipped leaderTargetId, on the shipped markup's relation.
+test("a key on a row's tool targets that row, not the active terminal's instance", () => {
+  const dom = new JSDOM(html);
+  const doc = dom.window.document;
+  const source = shell.match(/function leaderTargetId\([^]*?\n\}/)?.[0];
+  assert.ok(source, "exercise the shipped leaderTargetId");
+  const tabs = new Map([[1, { kind: "terminal", instanceRef: { id: "/h/a" }, paneEl: doc.createElement("div") }]]);
+  const context = { tabs, activeTab: 1, instanceId: i => i.id };
+  const leaderTargetId = runInNewContext(`${source}; leaderTargetId;`, context);
+  const wrap = doc.createElement("div"); wrap.className = "ctx-tree-row";
+  const row = doc.createElement("button"); row.className = "ctx-inst"; row.dataset.treeInstance = "/h/b";
+  const tools = doc.createElement("div"); tools.className = "ctx-row-tools";
+  const trigger = doc.createElement("button"); trigger.className = "ctx-instance-actions";
+  const start = doc.createElement("button"); start.className = "ctx-start";
+  tools.append(start, trigger); wrap.append(row, tools);
+  doc.querySelector(".ctx-list").append(wrap);
+  assert.equal(leaderTargetId(row), "/h/b");
+  assert.equal(leaderTargetId(trigger), "/h/b", "the actions trigger");
+  assert.equal(leaderTargetId(start), "/h/b", "Start…");
+  assert.equal(leaderTargetId(doc.getElementById("sidebar-spawn")), "/h/a", "a footer control: the active terminal's");
+  context.activeTab = null;
+  assert.equal(leaderTargetId(trigger), "/h/b", "with no terminal open too");
+  assert.equal(leaderTargetId(doc.getElementById("sidebar-spawn")), null);
+  // Both paths hand it the focused element: a sidebar key, and the leader.
+  assert.match(shell, /leaderDispatch\.run\(does, \{ targetId: leaderTargetId\(e\?\.target \?\? document\.activeElement\) \}\)/);
+  assert.match(shell, /const at = e\?\.target \?\? document\.activeElement; leader\.start\(\{ targetId: leaderTargetId\(at\) \}\)/);
+  dom.window.close();
+});

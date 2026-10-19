@@ -464,3 +464,23 @@ test("letThrough: an event handed to the focused control matches nothing; eventM
   assert.equal(eventMatchesBinding(ev("o", { altKey: true }), "app.leader", false), false);
   assert.equal(eventMatchesBinding(ev("l", { altKey: true }), "app.leader", false), true);
 });
+
+// The sidebar's context is on beside the tab layer's (or a stage's) while focus is in the sidebar
+// (shell.mjs updateActiveContexts), so a chord bound in both runs only one of them: a clash, which
+// the editor and keymapConflicts show. A stored rebind is kept, never changed.
+test("a sidebar key and a tab shortcut on one chord clash: both contexts are on at once", (t) => {
+  withActions(t, [
+    { id: "tabs.close", label: "Close tab", context: "tabs", run: () => {} },
+    { id: "sidebar.key.spawn", label: "Quick Open", context: "sidebar", run: () => {} },
+    { id: "view.only", label: "A view's own key", context: "view:hierarchy", run: () => {}, defaultChord: "N" },
+  ]);
+  assert.equal(getBinding("sidebar.key.spawn", false), "N");
+  assert.deepEqual(keymapConflicts(false), [], "the defaults clash with nothing");
+  setBinding("tabs.close", "N"); // a stored rebind that the new sidebar default now shares
+  assert.equal(findConflict("N", "sidebar", "sidebar.key.spawn", false)?.id, "tabs.close");
+  assert.equal(findConflict("N", "tabs", "tabs.close", false)?.id, "sidebar.key.spawn");
+  assert.equal(findConflict("N", "stage:hierarchy", null, false)?.id, "sidebar.key.spawn", "a stage's context is on beside it too");
+  assert.equal(findConflict("N", "view:hierarchy", "view.only", false), null, "a view's own keys stay local to the view");
+  assert.deepEqual(keymapConflicts(false).map((c) => c.actions.map((a) => a.id).sort()), [["sidebar.key.spawn", "tabs.close"]]);
+  assert.equal(getBinding("tabs.close", false), "N", "kept as set");
+});

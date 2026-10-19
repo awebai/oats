@@ -9,6 +9,17 @@ import {
 } from "../renderer/leader-keys.mjs";
 import { createLeaderDispatch, rosterStep, actAvailability, NO_TARGET } from "../renderer/leader-dispatch.mjs";
 import { LEADER_TABLE } from "../../client/keymap.mjs";
+import { createLeader } from "../renderer/leader.mjs";
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
+
+const shellSource = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+/** A shipped shell.mjs function, to run here with its free names handed in. */
+function shellFunction(name, context) {
+  const source = shellSource.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))?.[0];
+  assert.ok(source, `execute the shipped ${name}`);
+  return runInNewContext(`${source}; ${name};`, context);
+}
 
 const STATE = { terminalOpen: true, tabs: 2, canSplitRow: true, canSplitCol: true, split: true };
 test("the hint's rows: terminal rows with a terminal, tab keys with two tabs, split keys as the layer allows, never m", () => {
@@ -78,7 +89,7 @@ function dispatchRig(overrides = {}) {
   const d = createLeaderDispatch({
     say: op("say"), targetId: o => o.targetId ?? null, target: o => byId.get(o.targetId) ?? null,
     rosterRows: () => rows.map(row => ({ ...row, open: () => calls.push(["open", row.id]) })),
-    menuReason: () => overrides.menuReason ?? null,
+    menuReason: i => (typeof overrides.menuReason === "function" ? overrides.menuReason(i) : overrides.menuReason ?? null),
     openAct: (verb, i) => calls.push(["act", verb, i.instance]), spawnSoul: i => calls.push(["spawn-soul", i.agent]),
     ...Object.fromEntries(["palette", "instances", "souls", "capabilities", "zoom", "closeTab", "tabPrevious", "tabNext", "splitRight",
       "splitDown", "nextGroup", "closeSplit", "quickOpen", "filter", "workspaces", "help", "list", "refresh"].map(n => [n, op(n)])),
@@ -122,3 +133,89 @@ test("dispatch: an act the menu would not offer runs nothing and says why", () =
   assert.deepEqual(calls, [["say", "This roster is out of date."]]);
 });
 
+
+// The row menu's own block is read from the roster's state (a stale roster, a stale deployment's row),
+// not from a drawn trigger: a target the filter or a collapse leaves undrawn is held the same.
+test("the shell's menu block holds a stale target's acts whether or not its row is drawn", () => {
+  assert.match(shellSource, /\n  menuReason: rosterActsHeld,\n/, "the dispatch reads it");
+  const stale = { rosterStale: false, deploymentStale: false };
+  const context = { ROSTER_STALE_TITLE: "Waiting for a fresh roster.", contextDeployments: [],
+    rowStale: () => stale.deploymentStale };
+  Object.defineProperty(context, "rosterStale", { get: () => stale.rosterStale });
+  const held = shellFunction("rosterActsHeld", context);
+  const { d, calls } = dispatchRig({ instances: [inst("a")], menuReason: held, rows: [] /* a's row is not drawn */ });
+  d.run("stop", { targetId: "a" });
+  stale.rosterStale = true;
+  d.run("stop", { targetId: "a" });
+  d.run("retire", { targetId: "a" });
+  stale.rosterStale = false; stale.deploymentStale = true;
+  d.run("restart", { targetId: "a" });
+  assert.deepEqual(calls, [["act", "stop", "a"], ["say", "Waiting for a fresh roster."], ["say", "Waiting for a fresh roster."], ["say", "Waiting for a fresh roster."]]);
+});
+
+// A key from the table that cannot act now settles and says why (never silently); m, which the
+// Desktop has no operation for, and a key outside the table cancel.
+test("a leader key whose row does not apply now says why; only an unsupported key cancels silently", () => {
+  assert.match(shellSource, /\n  supports: does => leaderDispatch\.supports\(does\),\n/);
+  assert.match(shellSource, /onSettle: \(does, origin\) => \{ const why = notApplicable\(does\); if \(why\) sayInHint\(why\); else leaderDispatch\.run\(does, origin\); \},/);
+  let state = {};
+  const why = shellFunction("notApplicable", { LEADER_TABLE, leaderApplies, leaderState: () => state });
+  assert.equal(why("zoom"), "No terminal tab is open.");
+  assert.equal(why("split-right"), "No terminal tab is open.");
+  state = { ...STATE, canSplitRow: false };
+  assert.equal(why("split-right"), "The active tab can't be split that way now.");
+  assert.equal(why("split-down"), null);
+  state = { ...STATE, tabs: 1 };
+  assert.equal(why("tab-next"), "There is no other tab.");
+  state = { ...STATE, split: false };
+  assert.equal(why("group-close"), "The tabs are not split.");
+  assert.equal(why("palette"), null);
+  assert.equal(why("refresh"), null, "a sidebar-only key has no row");
+});
+
+// The consumed follow-up is consumed whole, each phase, until its own keyup, whatever else goes down
+// meanwhile (rollover, a modifier). Node's EventTarget stands in for the window: no DOM needed.
+function leaderRig() {
+  const win = new EventTarget();
+  win.document = { activeElement: null, body: {}, documentElement: {} };
+  const settled = [];
+  const leader = createLeader({ win, isMac: false, onSettle: does => settled.push(does) });
+  const fire = (type, init) => { const e = new Event(type, { cancelable: true }); Object.assign(e, init); win.dispatchEvent(e); return e; };
+  return { win, leader, settled, fire };
+}
+const DOWN = { key: "ArrowDown", code: "ArrowDown" }, SHIFT = { key: "Shift", code: "ShiftLeft" };
+const K = { key: "k", code: "KeyK" }, J = { key: "j", code: "KeyJ" };
+
+test("rollover: another key going down while the follow-up is held releases none of it", t => {
+  const r = leaderRig();
+  t.after(() => r.leader.dispose());
+  r.leader.start({});
+  assert.equal(r.fire("keydown", DOWN).defaultPrevented, true);
+  assert.deepEqual(r.settled, ["next"]);
+  assert.equal(r.fire("keydown", SHIFT).defaultPrevented, false, "the modifier is the focused control's");
+  assert.equal(r.fire("keydown", { ...DOWN, repeat: true }).defaultPrevented, true, "Down's repeats stay consumed");
+  assert.equal(r.fire("keyup", SHIFT).defaultPrevented, false);
+  assert.equal(r.fire("keyup", DOWN).defaultPrevented, true, "and its keyup");
+  assert.equal(r.fire("keydown", DOWN).defaultPrevented, false, "released: the next Down is the control's");
+  r.fire("keyup", DOWN);
+  // A character follow-up, then another character while it is held: that one types; k stays consumed.
+  r.leader.start({});
+  assert.equal(r.fire("keydown", K).defaultPrevented, true);
+  assert.equal(r.fire("keypress", K).defaultPrevented, true, "its keypress");
+  assert.equal(r.fire("keydown", J).defaultPrevented, false);
+  assert.equal(r.fire("keypress", J).defaultPrevented, false, "j's keypress is j's");
+  assert.equal(r.fire("keydown", { ...K, repeat: true }).defaultPrevented, true);
+  assert.equal(r.fire("keyup", J).defaultPrevented, false);
+  assert.equal(r.fire("keyup", K).defaultPrevented, true);
+  assert.deepEqual(r.settled, ["next", "palette"]);
+});
+
+test("a window blur, which loses keyups, releases the consumed keys", t => {
+  const r = leaderRig();
+  t.after(() => r.leader.dispose());
+  r.leader.start({});
+  assert.equal(r.fire("keydown", K).defaultPrevented, true);
+  r.win.dispatchEvent(new Event("blur"));
+  assert.equal(r.fire("keydown", { ...K, repeat: true }).defaultPrevented, false);
+  assert.equal(r.fire("keyup", K).defaultPrevented, false);
+});

@@ -84,7 +84,7 @@ test("the leader is wired as one rebindable global action, inert under a modal, 
   const src = read("renderer/shell.mjs");
   assert.match(src, /registerAction\(\{ id: "app\.leader", label: "Leader: the commands that follow one key", context: "global", when: \(\) => !modalOpen\(\),/);
   assert.match(src, /const leader = createLeader\(\{ win: window, isMac, modalOpen,/);
-  assert.match(src, /onSettle: \(does, origin\) => leaderDispatch\.run\(does, origin\)/);
+  assert.match(src, /onSettle: \(does, origin\) => \{ const why = notApplicable\(does\); if \(why\) sayInHint\(why\); else leaderDispatch\.run\(does, origin\); \}/);
   assert.match(src, /createLeaderHint\(\{ doc: document, host: document\.getElementById\("main"\), before: document\.getElementById\("show-panel"\) \}\)/);
   assert.match(src, /registerAction\(\{ id: "split\.focusNextGroup", label: "Focus the next editor group", context: "tabs",/);
   // The footer's button starts it, toggles off on a second click, and names the live chord.

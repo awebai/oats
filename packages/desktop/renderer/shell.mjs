@@ -37,7 +37,7 @@ import {
 import { createLeader } from "./leader.mjs";
 import { createLeaderHint } from "./leader-hint.mjs";
 import { createLeaderDispatch } from "./leader-dispatch.mjs";
-import { leaderApplies, leaderLabel, leaderRowsNow, leaderRowOf } from "./leader-keys.mjs";
+import { leaderApplies, leaderLabel, leaderRowsNow } from "./leader-keys.mjs";
 import { LEADER_TABLE } from "../../client/keymap.mjs";
 import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
@@ -526,9 +526,12 @@ function updateActiveContexts(tabLayerOn = tabLayerVisible) {
   else if (stage) set.add(`stage:${stage.name}`);
   // The sidebar's plain keys (context `sidebar`, sidebar.key.*): live while focus is in the sidebar
   // (its nav, the roster rows, the footer), never inside an open popup there (an instance's actions
-  // menu, the workspace switcher's menu). An editable field is matchEvent's own guard.
+  // menu, the workspace switcher's menu) and never in an editable field (the roster filter), where a
+  // rebind to a modified chord would otherwise take the field's own key. Editable as the engine's
+  // plain-key guard reads it (keybindings.mjs isEditableTarget).
   const focused = document.activeElement;
-  if (focused && document.getElementById("sidebar")?.contains(focused) && !focused.closest('[role="menu"], [role="listbox"], .ws-menu')) set.add("sidebar");
+  if (focused && document.getElementById("sidebar")?.contains(focused) && !focused.closest('[role="menu"], [role="listbox"], .ws-menu')
+    && !/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName || "") && !focused.isContentEditable) set.add("sidebar");
   if (activeInstanceMenu?.element.isConnected && activeInstanceMenu.element.dataset.instanceMenuOpen === 'true' && activeInstanceMenu.element.contains(document.activeElement) && activeInstanceMenu.owns()) set.add('instance-menu');
   setActiveContexts(set);
 }
@@ -2786,14 +2789,16 @@ function leaderTargetId(el) {
     const tab = [...tabs.values()].find(t => t.kind === "terminal" && t.paneEl?.contains(el));
     if (tab?.instanceRef) return instanceId(tab.instanceRef);
   }
-  const row = el?.closest?.("#instance-roster .ctx-inst");
+  // The row itself, or one of its tools (Start…, the actions trigger, the PR link), which sit beside
+  // it in its .ctx-tree-row.
+  const row = el?.closest?.("#instance-roster .ctx-inst") ?? el?.closest?.("#instance-roster .ctx-tree-row")?.querySelector(".ctx-inst");
   if (row?.dataset.treeInstance) return row.dataset.treeInstance;
   const active = activeTab != null ? tabs.get(activeTab) : null;
   return active?.kind === "terminal" && active.instanceRef ? instanceId(active.instanceRef) : null;
 }
 const rosterInstance = id => (id == null ? null : shownRows(contextInstances).find(i => instanceId(i) === id) ?? null);
-const rosterRowEl = id => [...(contextRosterEl?.querySelectorAll(".ctx-list .ctx-inst") || [])].find(row => row.dataset.treeInstance === id) ?? null;
-/** Why a key cannot do its row's work now, for a sidebar key (the leader's hint never offers such a row). */
+/** Why a key cannot do its row's work now (the leader's hint does not list such a row, but the key,
+ * after the leader or in the sidebar, says why rather than doing nothing silently). */
 function notApplicable(does) {
   const row = LEADER_TABLE.find(r => r.does === does);
   if (!row) return null;
@@ -2804,6 +2809,13 @@ function notApplicable(does) {
   if (does === "split-right" || does === "split-down") return "The active tab can't be split that way now.";
   return "The tabs are not split.";
 }
+/** The row menu's own block for `instance`, or null: a stale roster, or a stale deployment's row,
+ * holds its actions trigger (renderContextRoster's rowHeldStale, then markStaleControl). Read from
+ * that state, not from the drawn trigger, so a row the filter or a collapse leaves undrawn is held
+ * the same. */
+function rosterActsHeld(instance) {
+  return rosterStale || rowStale(instance, contextDeployments) ? ROSTER_STALE_TITLE : null;
+}
 const leaderDispatch = createLeaderDispatch({
   say: sayInHint,
   targetId: origin => origin.targetId ?? null,
@@ -2812,12 +2824,7 @@ const leaderDispatch = createLeaderDispatch({
     const instance = rosterInstance(row.dataset.treeInstance);
     return { id: row.dataset.treeInstance, openable: instance?.running === true && row.getAttribute("aria-disabled") !== "true", open: () => row.click() };
   }),
-  // The row menu's own block (a stale roster, an act pending): its trigger, aria-disabled, says why.
-  menuReason: instance => {
-    const trigger = rosterRowEl(instanceId(instance))?.closest(".ctx-tree-row")?.querySelector(".ctx-instance-actions");
-    if (!trigger || trigger.disabled || trigger.getAttribute("aria-disabled") !== "true") return null;
-    return trigger.title || ROSTER_STALE_TITLE;
-  },
+  menuReason: rosterActsHeld,
   openAct: (verb, instance) => {
     const ws = contextWorkspace || currentWorkspace();
     if (verb === "stop" || verb === "retire") openLifecycleDialog(verb, instance, ws);
@@ -2855,11 +2862,12 @@ const leaderDispatch = createLeaderDispatch({
   refresh: () => { void refreshContextRoster({ user: true }); },
 });
 const leader = createLeader({ win: window, isMac, modalOpen,
-  // A key whose row does not apply now cancels, as one outside the table does: the hint never offered it.
-  supports: does => leaderDispatch.supports(does) && leaderApplies(LEADER_TABLE.find(row => row.does === does) ?? { does }, leaderState()),
+  // A key the Desktop has no operation for (m) cancels, as one outside the table does. A key whose row
+  // does not apply now (nothing to split, no terminal) settles, and its line says why.
+  supports: does => leaderDispatch.supports(does),
   onOpen: () => leaderHint.showKeys(leaderRowsNow(leaderState()).map(row => ({ keys: row.keys, label: leaderLabel(row.does, actionLabel) })), { isMac }),
   onClose: () => { if (leaderHint.mode() === "keys") leaderHint.hide(); },
-  onSettle: (does, origin) => leaderDispatch.run(does, origin),
+  onSettle: (does, origin) => { const why = notApplicable(does); if (why) sayInHint(why); else leaderDispatch.run(does, origin); },
 });
 window.addEventListener("pagehide", () => leader.dispose(), { once: true });
 // The chord, from every focus, a terminal's and an editable field's included. Under a modal dialog
