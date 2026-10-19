@@ -10,6 +10,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { fixtureBase, inheritedEnv } from "./helpers/host-fixture.mjs";
 import { describeNestedTestFailure } from "./helpers/nested-test-failure.mjs";
+import { outsideTemporaryUnavailable } from "./helpers/outside-temporary.mjs";
 
 const HOST_FIXTURE = fileURLToPath(new URL("./helpers/host-fixture.mjs", import.meta.url));
 const HEAD = `import test from "node:test";
@@ -71,6 +72,19 @@ test("a passing test file that leaves a directory in the temporary directory fai
   assert.ok(own, says(r));
   assert.match(dirname(own), /[/\\]ot-[A-Za-z0-9]{6}$/, "the file's temporary directory is in the run's directory");
   assert.equal(existsSync(dirname(own)), false, "the run's directory is removed when the run has ended");
+});
+
+test("a base a file leaves in /var/tmp, named for the run and the file (test/helpers/outside-temporary.mjs), fails the run, which names the file and removes the base", { skip: outsideTemporaryUnavailable() ?? false }, (t) => {
+  const MAKES = `import { basename, dirname } from "node:path";\ntest("leaves a base outside the temporary directories", () => { const own = tmpdir(); const base = mkdtempSync(join("/var/tmp", "oats-deployments-test-" + basename(dirname(own)) + "." + basename(own) + "-")); writeFileSync(join(base, "file"), "x"); console.log("@@BASE " + base); });\n`;
+  const r = rootRun(t, { "outside.test.mjs": `${HEAD}${MAKES}`, "clean.test.mjs": `${HEAD}test("passes and leaves nothing", () => {});\n` });
+  const base = r.stdout.match(/@@BASE (\S+)/)?.[1];
+  t.after(() => { if (base) rmSync(base, { recursive: true, force: true }); });
+  assert.ok(base, says(r));
+  assert.notEqual(r.status, 0, `the run fails though every test passed. ${says(r)}`);
+  assert.match(r.stderr, /LEFT BEHIND: 1 test file left/);
+  assert.deepEqual(leftBy(r, "test/outside.test.mjs"), { head: "  test/outside.test.mjs: 1 entry", entries: [`${base}/`] });
+  assert.doesNotMatch(r.stderr, /clean\.test\.mjs/);
+  assert.equal(existsSync(base), false, "the run removes it");
 });
 
 test("a file that removes what it makes passes, and so does one that makes nothing; Node's compile cache is not counted, by its exact name only", (t) => {

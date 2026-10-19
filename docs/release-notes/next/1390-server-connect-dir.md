@@ -18,3 +18,10 @@
   A directory or a link of that name is passed over, as a client passes it
   over when it admits a deployment, instead of being listed and then shown
   as `not-a-deployment`.
+- **A deployment under a temporary directory is no longer listed
+  automatically** ([#1397](https://github.com/awebai/oats/issues/1397)). A
+  kernel command run in one (`os.tmpdir()`, `/tmp`, `/private/tmp` or
+  `/var/folders`, compared after realpath) leaves the list alone, so test
+  fixtures no longer fill it with rows that turn `missing`. Such a
+  deployment stays reachable: `oats deployments add`, `oats onboard` and a
+  client opening it still list it.

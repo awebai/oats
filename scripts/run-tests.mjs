@@ -24,7 +24,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import {
   DESKTOP_TEST_DEPS_INSTALL,
   REPO_ROOT,
@@ -103,6 +103,12 @@ const shown = namesReporter
 // directory, or under /tmp when that path is long (macOS: about 49 characters): a file's directory
 // is the start of every path its fixtures make, and a socket's path has about 104 bytes in all.
 const SHORT_TMPDIR = 20;
+// Where the tests of the deployments auto-add make their bases outside the temporary directories, and
+// how those are named: test/helpers/outside-temporary.mjs, whose two names these are. Copied, not
+// imported: this runner imports nothing of the repository's tests or lib (test/left-behind.test.mjs
+// runs a copy of scripts/ alone).
+const OUTSIDE_TEMPORARY_PARENT = "/var/tmp";
+const OUTSIDE_TEMPORARY_PREFIX = "oats-deployments-test-";
 const runDir = mkdtempSync(join(tmpdir().length > SHORT_TMPDIR ? "/tmp" : tmpdir(), "ot-"));
 const warningsFile = join(runDir, "warnings.jsonl");
 const guard = [`--test-reporter=${new URL("./test-warnings-reporter.mjs", import.meta.url).href}`, `--test-reporter-destination=${warningsFile}`];
@@ -116,11 +122,12 @@ const args = ["--test", ownTmpdir, ...flags, ...shown, ...guard, ...KERNEL_GLOBS
 // them, and every tool a test starts, would write into that cache. A tool that asks for one makes it
 // in its file's directory (above).
 const { NODE_COMPILE_CACHE: _developersCache, ...env } = process.env;
-// No test writes the person's own deployments list (awebai/oats#1390): any kernel command run in a
-// deployment adds that deployment to it, and a fixture's deployment is a temporary directory. Each
+// No test writes the person's own deployments list (awebai/oats#1390): an explicit add or an onboard
+// lists a deployment, and so does any kernel command run in one outside the temporary directories
+// (awebai/oats#1397), where the auto-add tests make theirs (OUTSIDE_TEMPORARY_PARENT above). Each
 // file's process gets an OATS_HOME_DIR of its own (scripts/test-file-tmpdir.mjs); a row added to the
-// person's list during the run, under a temporary directory, means a test reached the real one, and
-// the run fails naming it.
+// person's list during the run, under a temporary directory or one of those bases, means a test
+// reached the real one, and the run fails naming it.
 const personalList = join(process.env.OATS_HOME_DIR || join(homedir(), ".oats"), "config", "deployments.json");
 const runStartedAt = new Date().toISOString();
 const run = spawnSync(process.execPath, args, { cwd: REPO_ROOT, stdio: "inherit", env: { ...env, OATS_TEST_RUN_DIR: runDir } });
@@ -137,15 +144,29 @@ try {
     try { file = readFileSync(join(runDir, `${name}.file`), "utf8") || file; } catch (e) { if (e.code !== "ENOENT") throw e; }
     left.push({ file, entries: entries.map((entry) => `${entry.name}${entry.isDirectory() ? "/" : ""}`).sort() });
   }
+  // The bases a file made outside the temporary directories (test/helpers/outside-temporary.mjs) are
+  // named for this run and the file: one still there was left behind. It is removed with the run's.
+  const ours = `${OUTSIDE_TEMPORARY_PREFIX}${basename(runDir)}.`;
+  let outside = [];
+  try { outside = readdirSync(OUTSIDE_TEMPORARY_PARENT).filter((entry) => entry.startsWith(ours)); } catch { /* no /var/tmp: none made */ }
+  for (const entry of outside.sort()) {
+    const name = entry.slice(ours.length).split("-")[0];
+    let file = "(a file the run did not name)";
+    try { file = readFileSync(join(runDir, `${name}.file`), "utf8") || file; } catch (e) { if (e.code !== "ENOENT") throw e; }
+    left.push({ file, entries: [`${join(OUTSIDE_TEMPORARY_PARENT, entry)}/`] });
+    rmSync(join(OUTSIDE_TEMPORARY_PARENT, entry), { recursive: true, force: true });
+  }
 } finally { rmSync(runDir, { recursive: true, force: true }); }
 const warnings = found.split("\n").filter(Boolean).map((line) => JSON.parse(line));
+// The temporary directories, and the bases tests make outside them (test/helpers/outside-temporary.mjs).
 const temporary = [...new Set([tmpdir(), "/tmp", "/private/tmp", "/var/folders", "/private/var/folders"].flatMap((p) => { try { return [p, realpathSync(p)]; } catch { return [p]; } }))];
+const outsideBases = [...new Set([OUTSIDE_TEMPORARY_PARENT].flatMap((p) => { try { return [p, realpathSync(p)]; } catch { return [p]; } }))].map((p) => join(p, OUTSIDE_TEMPORARY_PREFIX));
 const reachedPersonalList = (() => {
   let doc;
   try { doc = JSON.parse(readFileSync(personalList, "utf8")); } catch { return []; }
   return (Array.isArray(doc?.deployments) ? doc.deployments : [])
     .filter((row) => typeof row?.path === "string" && typeof row.addedAt === "string" && row.addedAt >= runStartedAt
-      && temporary.some((dir) => row.path === dir || row.path.startsWith(`${dir}/`)))
+      && (temporary.some((dir) => row.path === dir || row.path.startsWith(`${dir}/`)) || outsideBases.some((base) => row.path.startsWith(base))))
     .map((row) => row.path);
 })();
 
