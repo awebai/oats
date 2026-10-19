@@ -2,8 +2,10 @@
 
    The table itself is the shared one (packages/client/keymap.mjs LEADER_TABLE, the TUI's, with
    its terse labels). Here: the Desktop's word for each `does`, which rows apply in the window's
-   present state (the hint lists exactly those, and a key whose row does not apply cancels like a
-   key outside the table), and how a key id is drawn. The shell supplies the state and runs the
+   present state (the hint lists exactly those; a key whose row does not apply now still settles,
+   and the shell says why in the hint's line: shell.mjs onSettle, notApplicable. Only `m`, which
+   the Desktop has no operation for, cancels like a key outside the table), and how a key id is
+   drawn. The shell supplies the state and runs the
    rows (shell.mjs, leader-dispatch.mjs); docs/desktop-keyboard.md, "The leader", is the table. */
 
 import { LEADER_TABLE } from "../../client/keymap.mjs";

@@ -95,8 +95,9 @@ Show instance panel and the closed sidebar and panel).
   the program. The rule is by action id, so a user who rebinds an allowlisted
   action keeps their choice in the terminal; the allowlist is chosen by the
   defaults (principle 2). On macOS only ⌘ chords fire in a
-  terminal (⌘ never reaches the pty), plus one structural shape checked by
-  action id *and* shape: Ctrl+Tab / Ctrl+Shift+Tab.
+  terminal (⌘ never reaches the pty), plus two shapes, each checked by
+  action id *and* shape: Ctrl+Tab / Ctrl+Shift+Tab (`tabs.next`, `tabs.prev`)
+  and the leader's ⌃\ (`app.leader`, principle 3's exception).
 - Unmodified chords never fire from an editable field; a view's own keys (the
   overview canvas, the Souls grid) stay local to that view.
 
