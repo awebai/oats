@@ -33,10 +33,10 @@ It holds no secret, and none ever goes into one.
 
 **A new workspace or an existing one.** The hand-over says which.
 - **New:** the person created the host repository through the entry skill.
-  It is private and theirs. While they are the only one with access to it,
-  push your changes to it straight to the default branch, once the checks in
-  `/oats-workspace-config`, "Change a shared file" pass, and tell them what changed;
-  otherwise use pull requests (the briefing's rule).
+  It is private and theirs. While they are the only one who can push to
+  it, push your changes straight to its default branch once the checks in
+  `/oats-workspace-config`, "Change a shared file", pass, and tell them what
+  changed; otherwise use pull requests (the briefing's rule).
 - **Existing:** someone else may own the host and the members. Read the host's
   visibility (`gh repo view <owner>/<repo> --json visibility,viewerPermission`).
   Steps 3 and 4 then become proposals to the host's owner: a public host
@@ -68,12 +68,12 @@ only the secrets, the logins and the installs that capture their shell.
    - an `oats-membership.yaml` in that repository;
    - its line under `members:` in `oats-workspace.yaml`, from your work tree.
 
-   Each goes in by the briefing's rule. The membership file is always a
-   pull request, which that repository's owner merges (name who). The
-   `members:` line may go straight to the host when the checks in
-   `/oats-workspace-config`, "Change a shared file", pass. After the owner
-   has merged each membership pull request, sync and check that each member
-   is confirmed (`/oats-workspace-config`). The host is
+   Each goes in by the briefing's rule: straight to a repository the person
+   alone can push to, when the checks in `/oats-workspace-config`, "Change a
+   shared file", pass; otherwise a pull request, which that repository's
+   owner merges (name who). Once both changes are on their default
+   branches, sync and check that each member is confirmed
+   (`/oats-workspace-config`). The host is
    private, so private members are fine (`/oats-onboarding` card 3's rule).
    Clones for the souls that work in a repository: `/oats-onboarding` card 4.
 4. **The first souls, for the use case.** Propose the smallest set of roles

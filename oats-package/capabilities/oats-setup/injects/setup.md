@@ -88,11 +88,12 @@ questions; select the relevant reads rather than running an onboarding audit
 for every local repair. Recheck changed facts and material unknowns.
 
 **Change shared files in the repository that owns them, never silently**
-(`/oats-workspace-config`, "Change a shared file"). Straight to the default branch only for a
-new workspace's host repository while the person is the only one with access
-to it, after that procedure's checks pass; then tell them what changed. Every
-other repository, member repositories included, takes a pull request that its
-owner merges. A refused push (by Git, GitHub or your harness's permission
+(`/oats-workspace-config`, "Change a shared file"). Push straight to a
+repository's default branch only when the person is the only one who can
+push to it and nothing guards that branch, checked by that procedure right
+before the push; then tell them what changed. A repository others can push
+to, or whose default branch a protection or ruleset guards, takes a pull
+request that its owner merges. A refused push (by Git, GitHub or your harness's permission
 check) means a pull request, never another route. These limits hold even
 where your soul's own instructions allow more; where they are stricter,
 follow them. Change host facts only on the machine they describe, with

@@ -136,26 +136,26 @@ broker (`aw wake run` as a per-user service). Both are taught in
    what it changes for which souls.
 3. Commit it to the repo that owns the file, by one of two routes. Never
    edit a shared file without one of them.
-   - **Straight to the default branch,** only when all of these hold,
-     checked right before the push:
-     - the repo is the workspace's host (`result.workspace.url` in
-       `oats workspace status --json`), and the person created it as a new
-       workspace (the setup expert's hand-over says `new`, or the person
-       confirms it);
-     - it belongs to their own GitHub account, not an organization:
-       `gh repo view <o>/<r> --json isInOrganization,owner,defaultBranchRef`
-       gives `false` and their login (`gh api user --jq .login`), and names
-       `<branch>`, the default branch;
-     - they are its only collaborator:
-       `gh api repos/<o>/<r>/collaborators --jq 'map(.login)'`;
-     - no rule guards its default branch: both
-       `gh api repos/<o>/<r>/branches/<branch> --jq .protected` (`false`) and
-       `gh api repos/<o>/<r>/rules/branches/<branch> --jq length` (`0`).
+   - **Straight to the default branch,** host or member repository alike,
+     only when both of these hold, checked right before the push:
+     - the person is the only one who can push to it: with their login from
+       `gh api user --jq .login`,
+       `gh api --paginate repos/<o>/<r>/collaborators --jq '.[] | select(.permissions.push) | .login'`
+       prints that login and nothing else. For an organization's repository
+       the list includes its owners and the members whose base, team or
+       direct permission allows a push. The list is complete only for an
+       admin, so `gh repo view <o>/<r> --json viewerPermission` must give
+       `ADMIN`;
+     - nothing guards its default branch: with `<branch>` from
+       `gh repo view <o>/<r> --json defaultBranchRef --jq .defaultBranchRef.name`,
+       `gh api repos/<o>/<r>/branches/<branch> --jq .protected` gives `false`
+       and `gh api repos/<o>/<r>/rules/branches/<branch> --jq length` gives
+       `0`.
 
-     Then push, and tell the person what changed.
+     Then push, and tell the person what changed. If a check fails or
+     errors, use a pull request.
    - **Otherwise a pull request** from a branch, which the repo's owner
-     merges (name who): every member repository, and every repository
-     others share. If a straight push is refused (by Git, GitHub or your
+     merges (name who). If a straight push is refused (by Git, GitHub or your
      harness's permission check), open a pull request instead; never try
      another way. If its output says a rule was bypassed, the change is
      already on the default branch: stop and tell the person, who decides
