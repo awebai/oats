@@ -376,15 +376,18 @@ function sheet(state, size) {
   return rows.slice(from, to < 0 ? rows.length : to);
 }
 
-test("the cheat sheet names [/] tab after the open terminal's keys while two tabs or more are open, from the list and from the detail; on short rows it gives up its rows from the end", () => {
+test("with tabs open the list's cheat sheet is small, from the list and from the detail: no zoom, close terminal or [/] tab, which the leader's hint names, its tabs' keys while two tabs or more are open; on short rows the sheet gives up its rows from the end", () => {
   const one = toList(opened(SIX(), "dev-a")), two = toList(opened(SIX(), "dev-a", "dev-b"));
   const tall = { cols: 120, rows: 30 };
-  assert.equal(sheet(one, tall).includes(" [/]      tab"), false, "one tab: nothing to switch to");
-  const all = [" Ctrl+\\   commands", " Ctrl+K   palette", " Enter    focus terminal", " z        zoom", " c        close terminal", " [/]      tab", " X        stop", " D        retire",
-    " /        filter", " Tab      detail", " r        refresh", " w        workspaces", " n        spawn", " ?        help", " q        quit"];
-  assert.deepEqual(sheet(two, tall), all);
-  const detail = sheet(key(two, "tab").state, tall);
-  assert.deepEqual(detail.slice(detail.indexOf(" c        close terminal"), detail.indexOf(" X        stop") + 1), [" c        close terminal", " [/]      tab", " X        stop"], "from the detail too");
-  assert.deepEqual(sheet(two, { cols: 100, rows: 24 }), all.slice(0, 11), "given up from its end: quit, help, spawn and workspaces");
+  const all = [" Ctrl+\\   commands", " Ctrl+K   palette", " Enter    focus terminal", " n        spawn", " ?        help", " q        quit"];
+  assert.deepEqual(sheet(one, tall), all, "one tab");
+  assert.deepEqual(sheet(two, tall), all, "two tabs: the same sheet");
+  assert.deepEqual(sheet(key(two, "tab").state, tall), [...all.slice(0, 2), " Tab      back", ...all.slice(2)], "from the detail: Tab back after the palette");
+  // The leader's hint keeps the open terminal's keys, and the tabs' only with two or more.
+  const hint = (s) => sheet(reduce(s, { key: s.leaderKey, read: ++reads, ...AT }).state, tall);
+  assert.deepEqual(hint(two).slice(4, 7), [" z            zoom", " w            close terminal", " Left/Right   tab"]);
+  assert.equal(hint(one).some((row) => row.endsWith(" tab")), false, "one tab: nothing to switch to");
+  assert.deepEqual(sheet(two, { cols: 100, rows: 24 }), all, "the rows hold it whole");
+  assert.deepEqual(sheet(two, { cols: 100, rows: 17 }), all.slice(0, 4), "given up from its end: quit and help");
   assert.deepEqual(sheet(two, { cols: 100, rows: 15 }), all.slice(0, 2), "the list keeps its rows");
 });

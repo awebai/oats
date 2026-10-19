@@ -13,7 +13,7 @@ import {
   observedEntry, originLead, panelInstances, shortPath, remoteRosterState, retainedStartMessage, rosterRows, startGate, startInstance,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
-import { ACT_VERBS, ACT_WORDS, BUTTON_ORDER, actContext, actCwd, actDecision, buttonLabel, model, roster, startOutcome } from "../lib/model.mjs";
+import { ACT_VERBS, ACT_WORDS, BUTTON_ORDER, actContext, actCwd, actDecision, buttonLabel, model, paletteItems, roster, startOutcome } from "../lib/model.mjs";
 import { reduce } from "../lib/store.mjs";
 import { ACT_RULES } from "../lib/views/help.mjs";
 import { CLI, DEPLOYMENT, LIFECYCLE_INSTANCE as fixtureInstance, draw, envelope, instanceRow, lifecycleContext as boundaryContext, lifecycleTarget, observed, press, rosterOf, stateOf, stopPlan, stopReceipt } from "./helpers.mjs";
@@ -119,20 +119,19 @@ test("a start or restart the shared start gate refuses opens nothing, and its se
   assert.deepEqual(lineOf(press(stopped, ["S"]).state), ["", gate.sentence]);
 });
 
-test("the cheat sheet names the act keys the selected row opens now, in the order stop, retire, start, restart, after open; a key it leaves out still answers (Done 1)", () => {
+test("the cheat sheet names no act key, whatever the row: what Enter does, then spawn, help and quit; each act key the row opens still opens, and the palette offers those acts (Done 1)", () => {
   const sheet = (state, sz = S120) => sheetOf(draw(state, sz));
-  const lead = [hint("Ctrl+\\", "commands"), hint("Ctrl+K", "palette")];
-  // At 120x40 every hint has a row of its own.
-  assert.deepEqual(sheet(on(here(), RUN)).slice(0, 7), [...lead, hint("Enter", "open"), hint("X", "stop"), hint("D", "retire"), hint("R", "restart"), hint("/", "filter")]);
-  assert.deepEqual(sheet(on(here(), STOPPED)).slice(0, 6), [...lead, hint("X", "stop"), hint("D", "retire"), hint("S", "start"), hint("/", "filter")]);
-  assert.deepEqual(sheet(on(here(), HALF)).slice(0, 4), [...lead, hint("D", "retire"), hint("/", "filter")]);
-  assert.deepEqual(sheet(on(here(), SPAWNING)).slice(0, 3), [...lead, hint("/", "filter")]);
-  // From the same reading of instanceActs as the key: the model's `actable`.
+  const lead = [hint("Ctrl+\\", "commands"), hint("Ctrl+K", "palette")], tail = [hint("n", "spawn"), hint("?", "help"), hint("q", "quit")];
+  // At 120x40 every hint has a row of its own; Enter's is there only while it opens the row.
+  assert.deepEqual(sheet(on(here(), RUN)), [...lead, hint("Enter", "open"), ...tail]);
+  for (const name of [STOPPED, UNKNOWN, HALF, SPAWNING, HERDR]) assert.deepEqual(sheet(on(here(), name)), [...lead, ...tail], name);
+  // From the same reading of instanceActs as the key: the palette's act rows, and the key opens each.
   for (const name of [RUN, STOPPED, UNKNOWN, HALF, SPAWNING, HERDR]) {
-    const state = on(here(), name), m = model(state, { page: 19, now: 0, at: new Date(0).toISOString(), cols: 57 });
-    assert.deepEqual(m.actable, ACT_VERBS.filter((verb) => actDecision(state, rowOf(state), instanceActs(rowOf(state)), verb).open), name);
+    const state = on(here(), name), opening = ACT_VERBS.filter((verb) => actDecision(state, rowOf(state), instanceActs(rowOf(state)), verb).open);
+    assert.deepEqual(paletteItems(press(state, ["ctrl+k"]).state).items.filter((item) => item.kind === "act").map((item) => item.does), opening, `${name}: the palette's acts`);
+    for (const verb of ACT_VERBS) assert.equal(press(state, [KEY[verb]]).state.view, opening.includes(verb) ? "act" : "instances", `${name} ${verb}: the key`);
   }
-  // At 60x15 the sheet gives up its rows from the end down to its first two; a key whose hint is gone still opens.
+  // At 60x15 the sheet gives up its rows from the end down to its first two; an act key still opens.
   const narrow = on(here(), RUN);
   assert.deepEqual(sheet(narrow, size(60, 15)), lead);
   assert.equal(press(narrow, ["X"], size(60, 15)).state.view, "act");
@@ -145,7 +144,8 @@ test("a tui.json that rebinds the acts: the keys it gives open them, and the cap
   assert.equal(press(state, ["f8"]).state.act.verb, "stop");
   assert.equal(press(state, ["ctrl+s"]).state.act.verb, "start");
   for (const key of ["X", "D", "S", "R"]) assert.deepEqual([press(state, [key]).state.view, press(state, [key]).effects], ["instances", []], key);
-  assert.deepEqual(sheetOf(draw(state, S120)).slice(0, 5), [hint("Ctrl+\\", "commands"), hint("Ctrl+K", "palette"), hint("F8", "stop"), hint("Ctrl+S", "start"), hint("/", "filter")], "the cheat sheet names the keys given, and no hint for an unbound act");
+  assert.deepEqual(sheetOf(draw(state, S120)), [hint("Ctrl+\\", "commands"), hint("Ctrl+K", "palette"), hint("n", "spawn"), hint("?", "help"), hint("q", "quit")], "the cheat sheet names no act, whichever keys are given");
+  assert.deepEqual(paletteItems(press(state, ["ctrl+k"]).state).items.filter((item) => item.kind === "act").map((item) => item.does), ["stop", "retire", "start"], "the palette offers each act the row opens, an unbound one too");
 });
 
 test("the help lists the four acts with their keys, in the instances view, and the rules of a confirmation under them", () => {
@@ -471,7 +471,7 @@ test("while a start of this run is running, no act of that row opens, whether or
     const { state: after, effects } = press(spawned, [key]);
     assert.deepEqual([after.view, effects, lineOf(after)], ["instances", [], [`The start of ${STOPPED} is still running.`]], key);
   }
-  assert.deepEqual(model(spawned, { page: 19, now: 0, at: new Date(0).toISOString(), cols: 57 }).actable, [], "and the cheat sheet names none");
+  assert.deepEqual(paletteItems(press(spawned, ["ctrl+k"]).state).items.filter((item) => item.kind === "act"), [], "and the palette offers none");
   const other = on(spawned, RUN);
   assert.equal(press(other, ["X"]).state.view, "act", "another row is not held");
   const closed = reduce(spawned, { acted: { closed: id } });

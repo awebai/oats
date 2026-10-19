@@ -93,15 +93,11 @@ runs.
  Alt+O    commands                    │
  Ctrl+K   palette                     │
  Enter    open                        │
- X        stop                        │
- D        retire                      │
- /        filter                      │
- Tab      detail                      │
- r        refresh                     │
- w        workspaces                  │
  n        spawn                       │
  ?        help                        │
  q        quit                        │
+                                      │
+                                      │
 ```
 
 The screen is the sidebar on the left and the main area on the right, with
@@ -130,11 +126,19 @@ while a terminal is open); under 80 columns it has the whole width.
   and [the Capabilities view](#the-capabilities-view) its capabilities. A
   workspace with no instances reads `No agents yet: n spawns one`, with the
   key `spawn` has (`No agents yet.` when it has none).
-- **The cheat sheet** comes last, under a rule: the keys that apply now, one
-  per row, the key in bold and what it does beside it. Its first row is
-  always the leader, `Alt+O commands`, which reaches every action; then
-  `Ctrl+K palette`, then the actions that apply now, `help` and `quit`
-  last. While the leader waits for its key the rows are the leader's hint.
+- **The cheat sheet** comes last, under a rule: a few keys, one per row,
+  the key in bold and what it does beside it. Its first row is always the
+  leader, `Alt+O commands`, which reaches every action; then
+  `Ctrl+K palette`. In a view's list it names what `Enter` does now
+  (`open`, `focus terminal` on the row whose terminal is open, `detail`
+  in the Souls and Capabilities views), then `n spawn` where it spawns,
+  and `? help` and `q quit` last; with the detail's focus `Tab back`
+  comes before `Enter`. The other keys (the acts, `/`, `Tab`, `r`, `w`,
+  and a terminal's `z`, `c`, `[` and `]`) are not listed there:
+  the leader's hint, the palette and the help name them. While the
+  terminal has the focus, in an overlay and in the filter field it names
+  the keys that work them. While the leader waits for its key the rows are
+  the leader's hint.
   Everything flows from the top, so empty rows are at the bottom. On a
   short screen the list keeps its rows first: the cheat sheet gives up rows
   from its end, down to the leader alone, then the empty row under the
@@ -144,8 +148,8 @@ while a terminal is open); under 80 columns it has the whole width.
   the palette, the spawn prompt, the help or a confirmation. From 80
   columns an overlay covers the main area and the sidebar stays beside it,
   its cheat sheet naming the overlay's keys. Under 80 columns the detail
-  and every overlay cover the whole screen, and an overlay's first row
-  carries its keys at the right, dim.
+  and every overlay cover the whole screen, and their first row carries
+  their keys at the right, dim: the detail's `Tab back` first.
 - **The counts and the time of the read are not on the screen.** The help's
   top row has the time of the read of this machine that the screen shows,
   `read 14:03:27`, which moves with every read, and how many rows the
@@ -166,7 +170,11 @@ while a terminal is open); under 80 columns it has the whole width.
   state of a home a spawn or a retire holds (`Retire didn't finish`), or
   the shared words for why an instance cannot be reached or opened:
   `gone from garnet`, `garnet not reached`, `not reachable on garnet`,
-  `Herdr no longer supported`, `state unknown`.
+  `Herdr no longer supported`, `state unknown`. The words stand in a
+  column of their own. The name comes first: on a narrow sidebar, where
+  the column would leave the name less than 16 cells, the word is cut to
+  what the name leaves, or left out when that is under 6 cells; the mark
+  and the detail still say it.
 - **The detail** shows the selected instance: its soul, its state, and
   under it the reason when there is one, after the words that say who gave
   it: `OATS says:` for a kernel (this machine's, or the instance's
@@ -340,8 +348,8 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   `Alt+O commands`, `Alt+O Esc the list`, `Alt+O Alt+O types Alt+O`. A
   leader inside a bracketed paste is pasted, not taken.
 - **With the list focused** the terminal stays open, and the agent's screen
-  is still drawn as it changes. The cheat sheet names the keys for it:
-  `Enter focus terminal` on its row, `z zoom` and `c close terminal`.
+  is still drawn as it changes. The cheat sheet names `Enter focus terminal`
+  on its row; the leader's hint names `z zoom` and `c close terminal`.
   - `Enter` on the shown terminal's row gives it the focus again.
   - `z` gives it the focus and the whole screen: the sidebar is hidden. The
     leader then `Esc` brings the sidebar back beside it, and the leader then
@@ -453,8 +461,8 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
     it is asked, hold a place among the four. An instance that cannot be
     opened says why, as it does with no tab open.
 - **Switching.** `[` and `]` in the Instances view, from the list or the
-  detail, show the tab before or after the shown one; the cheat sheet names
-  them (`[/] tab`) after the terminal's keys while two tabs or more are
+  detail, show the tab before or after the shown one; the help names them,
+  and the leader's hint names the leader's own while two tabs or more are
   open. The leader then
   `Left` or `Right` does the same from any focus, and from another view
   goes to the Instances view first.
@@ -832,11 +840,10 @@ none; one whose spawn stopped half way, and one whose retire failed or
 didn't finish, offers only to be retired; a running one offers restart and
 not start, a stopped one start and not restart. One that is `Retiring…`
 offers no start, stop, restart or open: `D` still opens its retire
-confirmation, but the cheat sheet does not name it, since the kernel refuses a
-second retire while one runs and it is needed only when the first one's
-holder can't be read. The
-cheat sheet names the keys the selected instance offers now, after `Enter`
-and the open terminal's keys. A key for an act
+confirmation, which is needed only when the first retire's holder can't be
+read, since the kernel refuses a second retire while one runs. The
+palette offers the acts the selected instance offers now, and the leader's
+hint and the help name their keys. A key for an act
 the instance does not offer opens nothing, and the line under the title
 says why. The keys are yours to change in
 [`tui.json`](#change-the-keys-tuijson): the actions are `stop`, `retire`,

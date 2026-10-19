@@ -230,7 +230,9 @@ const OPEN_HINT = `${LEAD}Enter open   `;
 const BACK = `${LEADER} commands   ${LEADER} Esc the list   ${LEADER} ${LEADER} types ${LEADER}`;
 /** The sheet while the leader waits for its key (docs/tui.md, "The leader"). */
 const LEADER_HINT = `${LEADER} then   k palette`;
-const LIST_HINTS = `${LEAD}Enter focus terminal   z zoom`;
+/** The whole sheet while the list has the focus beside the open terminal: Enter goes to it; the
+ *  terminal's own keys (zoom, close, the tabs) are the leader's hint's, not the sheet's. */
+const LIST_HINTS = `${LEAD}Enter focus terminal   n spawn   ? help   q quit`;
 const FAILED = `${NAME} could not be opened.`;
 /** The agent's row in the list, selected and running: the green mark and its name, and nothing
  *  after it (the harness is the detail's). */
@@ -487,7 +489,7 @@ async function tui(term, { tmp = tmpFor() } = {}) {
         await until(term, () => run.readAt() !== null && run.readAt() !== at, `read number ${k} after ${why}`, () => [], 20000);
       }
       term.press("Escape");
-      await until(term, () => run.readAt() === null && run.sheet().startsWith(LEAD) && run.sheet().includes("   / filter   "), `the help closed again, the list's cheat sheet back, after two reads after ${why}`);
+      await until(term, () => run.readAt() === null && run.sheet().startsWith(LEAD) && run.sheet().includes("   n spawn   "), `the help closed again, the list's cheat sheet back, after two reads after ${why}`);
     },
   };
   lastRun = run;
@@ -522,7 +524,7 @@ test(`Enter on the running agent shows its terminal in the panel beside the list
   assert.doesNotMatch(viewers[0], /^\S*sh -c /, "no shell between the pane and the viewer");
 
   await run.back("from the terminal");
-  await until(term, () => run.sheet().startsWith(LIST_HINTS), "the list's focus, with the keys of the open terminal in the cheat sheet");
+  await until(term, () => run.sheet().startsWith(LIST_HINTS), "the list's focus, with Enter focus terminal in the cheat sheet");
   term.press("c");
   await until(term, () => !run.beside() && run.detailBeside() && viewerSessions().length === 0,
     "the terminal closed: the detail beside the list again, and no viewer session", () => [`viewer sessions: ${JSON.stringify(viewerSessions())}`]);

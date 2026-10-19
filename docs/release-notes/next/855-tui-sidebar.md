@@ -7,14 +7,17 @@
   the note of a one-deployment view and the line after an open stand under
   it. The three views follow as an accordion, each with its key: the open
   one's heading with its list under it, and with no instances
-  `No agents yet: n spawns one`. A cheat sheet of the keys that apply now
-  comes last, the leader first. The filter field and a kept filter stand on
-  the open view's heading. The counts and the time of the read have left
-  the screen. The help shows that time at its top, with how many rows were
+  `No agents yet: n spawns one`. A short cheat sheet comes last: the
+  leader, the palette, what `Enter` does now, spawn, help and quit; the
+  leader's hint, the palette and the help name the other keys. On a narrow
+  sidebar a row's name keeps its cells ahead of its word. The filter field
+  and a kept filter stand on the open view's heading. The counts and the
+  time of the read have left the screen. The help shows that time at its top, with how many rows were
   withheld. From 80 columns the switcher, the palette, the spawn prompt, the
   help and the confirmations cover the main area, and the sidebar stays
   beside them. Under 80 columns they cover the whole screen, with their keys
-  on their first row ([docs/tui.md](../tui.md#what-it-shows)).
+  on their first row, as the detail does
+  ([docs/tui.md](../tui.md#what-it-shows)).
 - **The leader is `Alt+O` on Linux and Windows.** `Ctrl+\` was a stretch on
   most keyboards and needs AltGr on many layouts. macOS keeps `Ctrl+\` for
   now. `open.detachKey` in `tui.json` still names another key, `C-\`

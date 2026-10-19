@@ -80,12 +80,13 @@ function sheetOf(state, sz = S80) {
   const rows = sidebarOf(state, sz), rule = rows.findLastIndex((line) => /^[─-]+$/.test(line));
   return rows.slice(rule + 1).filter(Boolean).map((line) => line.split(/ {2,}/).join(" "));
 }
-/** The cheat sheet of the list of instances with nothing given up, after what Enter does there. */
-const LISTED = ["/ filter", "Tab detail", "r refresh", "w workspaces", "n spawn", "? help", "q quit"];
+/** The cheat sheet of the list of instances with nothing given up, after what Enter does there:
+ *  it names no act, and the list's other keys are the leader's, the palette's and the help's. */
+const LISTED = ["n spawn", "? help", "q quit"];
 
 test("Enter on a running instance of this machine opens it at once in the panel: the effect carries the decision with the shared target, and the store holds the terminal, starting, with the focus", () => {
   const state = on(here(), ALPHA);
-  assert.deepEqual(sheetOf(state), ["Ctrl+\\ commands", "Ctrl+K palette", "Enter open", "X stop", "D retire", ...LISTED], "at 80x24 the sheet gives up nothing: the leader, the palette, Enter, the acts, then the list's keys");
+  assert.deepEqual(sheetOf(state), ["Ctrl+\\ commands", "Ctrl+K palette", "Enter open", ...LISTED], "at 80x24 the sheet gives up nothing: the leader, the palette, Enter, then spawn, help and quit, and no act");
   const { state: opening, effects } = press(state, ["enter"]);
   const row = rowOf(state);
   assert.deepEqual(effects, [{ open: { open: true, id: instanceId(row), name: ALPHA, machine: null, target: { home: row.home }, routed: false } }]);
@@ -229,7 +230,7 @@ test("Enter on a running instance of another machine: the preflight first, the c
   const { state: asking, effects } = press(state, ["enter"]);
   assert.deepEqual(effects, [{ open: { open: true, id: instanceId(row), name: FAR_A, machine: "garnet", target: { serverId: "garnet", instance: FAR_A, home: row.home }, routed: true } }]);
   assert.deepEqual([asking.opening, asking.terminal], [{ id: instanceId(row), phase: "preflight", name: FAR_A, machine: "garnet", routed: true }, null]);
-  assert.deepEqual(sheetOf(asking), ["Ctrl+\\ commands", "Ctrl+K palette", "Esc stop opening", ...LISTED], "no act while it is asked");
+  assert.deepEqual(sheetOf(asking), ["Ctrl+\\ commands", "Ctrl+K palette", "Esc stop opening", ...LISTED], "Esc in Enter's place while it is asked");
   assert.doesNotMatch(sheetOf(asking).join("\n"), /Enter|Esc close/);
   assert.deepEqual(press(asking, ["enter"]).effects, [], "a second Enter does nothing");
   const given = press(asking, ["escape"]);

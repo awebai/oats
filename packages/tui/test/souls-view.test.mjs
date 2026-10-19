@@ -32,6 +32,11 @@ const CONTROL = /[\p{Cc}\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069
 /** The cheat sheet's first row: the leader (helpers.mjs TEST_LEADER, C-\\), spelt for people. */
 const LEAD = " Ctrl+\\   commands";
 const modes = [false, true];
+/** The detail page's keys under 80 columns, at the right of its first row (views/frame.mjs
+ *  withKeys): the cheat sheet's but for the leader, the palette, help and quit. */
+const PAGE_KEYS = ["Tab back", "Enter instances", "n spawn"];
+/** The detail page's first row at `cols`: the title, then `keys` dim at the right, ending a cell before the edge. */
+const pageTop = (title, cols, keys = PAGE_KEYS) => { const said = keys.join("   "); return `${title.padEnd(cols - 1 - said.length)}${said}`; };
 
 // ── The model the frame is handed ───────────────────────────────────────────────────────────────
 
@@ -67,7 +72,8 @@ function soulsModel(over = {}, { ascii = false } = {}) {
   return { ...baseModel(ascii), view: "souls", under: "souls", souls: { ...SOULS(), ...over } };
 }
 const FAILURE = "Couldn't read this workspace's souls: oats souls exited 1 after reading the workspace's members for longer than it was given.";
-const HEADING = { label: "Souls", path: null, state: null, short: FAILURE, readAt: "09:59:30" };
+/** A failed re-read's heading: no word of its own, the accordion's row above it names the view. */
+const HEADING = { label: "", path: null, state: null, short: FAILURE, readAt: "09:59:30" };
 
 /** Draw a model as the main loop draws it after the model step (helpers.mjs `draw`). */
 function drawModel(m, sz) {
@@ -141,13 +147,13 @@ test("the Souls view at 80x24 in UTF-8, cell for cell: the sidebar with the soul
     " Ctrl+\\   commands                    │     Model",
     " Ctrl+K   palette                     │       claude-opus-5-5",
     " Enter    detail                      │     Launch configuration",
-    " i        instances                   │       fast",
-    " /        filter                      │     Chosen by",
-    " r        refresh                     │       the soul",
-    " Esc      close                       │     Set in soul.yaml",
-    " w        workspaces                  │     A spawn of this soul with no launch",
-    " ?        help                        │     chosen would be refused here.",
-    " q        quit                        │     OATS says: no harness is installed",
+    " n        spawn                       │       fast",
+    " ?        help                        │     Chosen by",
+    " q        quit                        │       the soul",
+    "                                      │     Set in soul.yaml",
+    "                                      │     A spawn of this soul with no launch",
+    "                                      │     chosen would be refused here.",
+    "                                      │     OATS says: no harness is installed",
     "                                      │     Install one.",
     "                                      │   10 more below",
   ]);
@@ -292,7 +298,10 @@ test("a section with nothing to say is left out: no works, no refusal, no harnes
     for (const [what, over] of [["null", {}], ["empty", { teams: [], capabilities: [] }]]) {
       const m = soulsModel({ focus: sz.cols < WIDE ? "detail" : "list", detail: { ...BARE(), ...over } }), d = drawModel(m, sz), at = `${what} ${sz.cols}x${sz.rows}`;
       fits(d, sz, at);
-      assert.deepEqual(detailLines(d, sz).filter(Boolean).map((line) => line.trim().replace(/^> /, "")), ["bare", "from     oats-core"], at);
+      const lines = detailLines(d, sz).filter(Boolean).map((line) => line.trim().replace(/^> /, ""));
+      assert.deepEqual(lines.slice(1), ["from     oats-core"], at);
+      // The title alone; under 80 columns, a page, its first row carries its keys at the right.
+      assert.equal(sz.cols < WIDE ? d.lines[0] : lines[0], sz.cols < WIDE ? pageTop(" > bare", sz.cols) : "bare", at);
     }
   }
   // Each section alone, the others left out.
@@ -355,7 +364,8 @@ test("the detail with the focus says so with `>` beside its title, beside the si
       const at = `${ascii} ${sz.cols}x${sz.rows}`;
       const paged = drawModel(soulsModel({ focus: "detail" }, { ascii }), sz);
       fits(paged, sz, at);
-      assert.equal(paged.lines[0], " > acme-ledger-developer", `${at}: the detail from the top row, at the margin`);
+      // At 60 columns the long title leaves no room for the last key: it is given up.
+      assert.equal(paged.lines[0], pageTop(" > acme-ledger-developer", sz.cols, sz.cols === 60 ? PAGE_KEYS.slice(0, -1) : PAGE_KEYS), `${at}: the detail from the top row, at the margin, its keys at the right`);
       assert.equal(paged.lines.some((line) => line.includes("reviewer")), false, `${at}: no row of the list`);
       assert.equal(paged.lines.some((line) => line === " acme-platform" || /^ (Souls|Capabilities)\b/.test(line) || line.includes("commands")), false, `${at}: no title, no view's row, no cheat sheet`);
       const listed = drawModel(soulsModel({ focus: "list" }, { ascii }), sz);
@@ -419,9 +429,11 @@ test("no soul matching the filter, and a failed re-read: the list stands with th
     const kept = drawModel(soulsModel({ heading: HEADING, list: LIST().slice(0, 2) }, { ascii }), sz);
     fits(kept, sz, at("kept"));
     const top = listTop(kept, sz), heading = cellText(kept, top, 0, paneOf(sz));
-    assert.equal(heading.startsWith(" Souls  Couldn't re"), true, `${at("kept")}: ${heading}`);
+    assert.equal(heading.startsWith(" Couldn't re"), true, `${at("kept")}: the sentence from the margin: ${heading}`);
     assert.equal(heading.endsWith("read 09:59:30"), true, `${at("kept")}: the age of the rows`);
-    assert.equal(kept.cells[top][1].style.bold, true, `${at("kept")}: the heading's label is bold`);
+    assert.deepEqual([kept.cells[top][1].text, kept.cells[top][1].style.bold], ["C", false], `${at("kept")}: no bold label before it`);
+    // The accordion's row above it names the view; the heading does not say it again.
+    assert.deepEqual([cellText(kept, top - 1, 0, paneOf(sz)).startsWith(" Souls "), /\bSouls\b/.test(heading)], [true, false], `${at("kept")}: the view's word once, on its own row`);
     assert.equal(cellText(kept, top + 1, 0, paneOf(sz)).startsWith(`> ${g.mark} acme-ledger-developer`), true, `${at("kept")}: the rows follow`);
     if (sz.cols >= WIDE) assert.equal(detailLines(kept, sz)[0].trim(), "acme-ledger-developer", `${at("kept")}: the detail beside them`);
 
@@ -433,27 +445,39 @@ test("no soul matching the filter, and a failed re-read: the list stands with th
 
 // ── The cheat sheet ─────────────────────────────────────────────────────────────────────────────
 
-test("the Souls view's cheat sheet: the leader, the palette, then Enter (detail from the list, instances from the detail), i, the filter, r, Esc and the workspaces, then help and quit, a key a row; given up from its end where the list leaves it too few rows; no spawn key", () => {
-  const all = (enter) => hints(["Ctrl+K", "palette"], ["Enter", enter], ["i", "instances"], ["/", "filter"], ["r", "refresh"], ["Esc", "close"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]);
+test("the Souls view's cheat sheet is small: the leader, the palette, then Enter (detail from the list, instances from the detail, with Tab back before it), n spawn, then help and quit, a key a row; given up from its end where the list leaves it too few rows; i, the filter, r, Esc and the workspaces are not on it", () => {
+  const all = (enter) => hints(["Ctrl+K", "palette"], ["Enter", enter], ["n", "spawn"], ["?", "help"], ["q", "quit"]);
   for (const sz of [S60T, S80, S120]) {
     const d = drawModel(soulsModel(), sz);
     assert.deepEqual(sheet(d, sz), all("detail"), `list at ${sz.cols}x${sz.rows}`);
-    assert.equal(sheet(d, sz).some((line) => /^ (n|N) /.test(line) || line.includes("spawn")), false, "no spawn key");
+    assert.equal(sheet(d, sz).some((line) => /^ (i|\/|r|Esc|w) /.test(line)), false, `${sz.cols}: no i, filter, refresh, close or workspaces`);
     const r = d.lines.findIndex((line) => line.startsWith(LEAD));
     assert.deepEqual([d.cells[r].slice(1, 7).every((cell) => cell.style.bold), d.cells[r][10].style.bold], [true, false], `${sz.cols}: the key is bold, its word plain`);
   }
   // 60x15: the list keeps its four rows, and the sheet has the three that are left.
   assert.deepEqual(sheet(drawModel(soulsModel(), S60), S60), all("detail").slice(0, 3), "list at 60x15");
-  // The detail has the focus beside the sidebar from 80 columns; under them it is a page of its own, with no sheet.
-  for (const sz of [S80, S120]) assert.deepEqual(sheet(drawModel(soulsModel({ focus: "detail" }), sz), sz), all("instances"), `detail at ${sz.cols}`);
+  // The detail has the focus beside the sidebar from 80 columns: Tab back comes right after the palette; under them it is a page of its own, with no sheet.
+  const detailed = hints(["Ctrl+K", "palette"], ["Tab", "back"], ["Enter", "instances"], ["n", "spawn"], ["?", "help"], ["q", "quit"]);
+  for (const sz of [S80, S120]) assert.deepEqual(sheet(drawModel(soulsModel({ focus: "detail" }), sz), sz), detailed, `detail at ${sz.cols}`);
   assert.equal(drawModel(soulsModel({ focus: "detail" }), S60T).lines.some((line) => line.includes("commands")), false, "detail at 60x24");
-  // With no soul selected there is no Enter and no i; with no workspace of this machine, Esc and the workspaces alone.
-  const reading = hints(["Ctrl+K", "palette"], ["/", "filter"], ["r", "refresh"], ["Esc", "close"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]);
-  const away = hints(["Ctrl+K", "palette"], ["Esc", "close"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]);
+  // With no soul selected there is no Enter; with no workspace of this machine, no spawn either: the leader, the palette, help and quit.
+  const reading = hints(["Ctrl+K", "palette"], ["n", "spawn"], ["?", "help"], ["q", "quit"]);
+  const away = hints(["Ctrl+K", "palette"], ["?", "help"], ["q", "quit"]);
   for (const sz of [S60, S80, S120]) {
-    assert.deepEqual(sheet(drawModel(soulsModel({ state: "reading", list: [], detail: null }), sz), sz), sz === S60 ? reading.slice(0, 6) : reading, `reading at ${sz.cols}`);
+    // The list's one row leaves the sheet its five rows even at 60x15.
+    assert.deepEqual(sheet(drawModel(soulsModel({ state: "reading", list: [], detail: null }), sz), sz), reading, `reading at ${sz.cols}`);
     assert.deepEqual(sheet(drawModel(soulsModel({ local: false, state: "none", list: [], detail: null }), sz), sz), away, `no workspace at ${sz.cols}`);
   }
+});
+
+test("under 80 columns the detail page's first row carries its keys at the right, dim, Tab back first: at 70x20, `> acme-ledger-developer`, then, ending a cell before the edge, Tab back, Enter instances and n spawn", () => {
+  const sz = size(70, 20), d = drawModel(soulsModel({ focus: "detail" }), sz);
+  fits(d, sz, "70x20");
+  assert.equal(d.lines[0], ` > acme-ledger-developer${" ".repeat(9)}Tab back   Enter instances   n spawn`);
+  const from = cellIndexOf(d, 0, "Tab back");
+  assert.equal(from, 33, "the keys end a cell before the edge");
+  for (let x = from; x < from + 36; x++) if (d.cells[0][x].text !== " ") assert.equal(d.cells[0][x].style.dim, true, `the keys are dim at ${x}`);
+  assert.deepEqual([d.cells[0][1].style.bold, d.cells[0][3].style.bold, d.cells[0][3].style.dim], [true, true, false], "the focus mark and the title stay bold");
 });
 
 test("a kept filter of the Souls view stands on its heading as the list's does, `Souls  /query`, bold, and the sheet is the list's; while it is typed the heading row is the filter field, and the sheet says Enter keeps it and Esc clears it", () => {
@@ -513,7 +537,7 @@ test("through the store and the model: 2 shows the view reading, the catalog's r
   assert.equal(detailLines(d, S80).some((line) => line.includes(`${MARKS.utf8.running} dev-a  ${MARKS.utf8.stopped} dev-b`)), true, "this machine's instances of the soul");
   state = soulsTold(state, catalogEntry([catalogSoul("dev")], { reason: { code: "E_CLI_FAILED", message: "oats souls exited 1" } }));
   const kept = draw(state);
-  assert.equal(cellText(kept, 5, 0, 38).startsWith(" Souls  Couldn't read"), true);
+  assert.equal(cellText(kept, 5, 0, 38).startsWith(" Couldn't read"), true, "the sentence from the margin, under the Souls row");
   assert.equal(cellText(kept, 6, 0, 38).startsWith(`> ${SOUL_MARK.utf8} dev`), true);
   // The heading has room for the start of the sentence; the detail holds it whole, under the name.
   const detail = detailLines(kept, S80).map((line) => line.trim()).filter(Boolean);
@@ -522,7 +546,7 @@ test("through the store and the model: 2 shows the view reading, the catalog's r
   assert.equal(detailLines(draw(soulsTold(state, catalogEntry([catalogSoul("dev")]))), S80).some((line) => line.includes("Couldn't read")), false, "a read that works again takes it away");
 });
 
-test("i from the Souls view: the Instances view's heading names the kept soul filter as `soul <name>`, bold, where a text filter's `/` stands, and the cheat sheet is the text filter's, Esc that clears it too; Esc clears it, and `/` replaces it with a text filter", () => {
+test("i from the Souls view: the Instances view's heading names the kept soul filter as `soul <name>`, bold, where a text filter's `/` stands, and the cheat sheet is the text filter's, the list's small sheet, with no Esc on it; Esc clears it, and `/` replaces it with a text filter", () => {
   const cli = { ...CLI, features: [...CLI.features, "desktop-facts"] };
   let state = press(stateOf(observed(ROWS(), { cli }), { cli }), ["2"]).state;
   state = soulsTold(state, catalogEntry([catalogSoul("dev")]));
@@ -538,12 +562,12 @@ test("i from the Souls view: the Instances view's heading names the kept soul fi
     assert.equal(heading(draw(text, sz), sz), `${" Instances  /dev".padEnd(pane - 2)}1`, `${sz.cols}: the text filter's`);
     for (const at of [12, 17]) assert.equal(d.cells[2][at].style.bold, true, `${sz.cols}: bold at ${at}`);
     assert.deepEqual(sheet(d, sz), sheet(draw(text, sz), sz), `${sz.cols}: the same keys`);
-    assert.equal(sheet(d, sz).includes(" Esc      close"), true, `${sz.cols}: Esc clears it`);
+    assert.deepEqual(sheet(d, sz), hints(["Ctrl+K", "palette"], ["Enter", "open"], ["n", "spawn"], ["?", "help"], ["q", "quit"]), `${sz.cols}: the list's sheet; Esc that clears the filter is the help's and the palette's`);
   }
   const cleared = press(state, ["escape"]).state;
   assert.equal(cleared.filter.soul, undefined);
   assert.equal(heading(draw(cleared), S80), `${" Instances".padEnd(36)}1`);
-  assert.equal(sheet(draw(cleared), S80).includes(" Esc      close"), false, "nothing left to clear");
+  assert.deepEqual(sheet(draw(cleared), S80), sheet(draw(state), S80), "the sheet is the same with nothing left to clear");
   const typed = press(state, ["/", "a"]).state;
   assert.deepEqual([typed.filter.soul, typed.filter.query], [undefined, "a"]);
   assert.equal(heading(draw(typed), S80), `${" /a".padEnd(36)}1`, "the text filter replaces it: the heading is its field");

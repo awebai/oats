@@ -190,18 +190,17 @@ const LEAD_ROW = new RegExp(`^ ${literal(LEADER)} +commands(?: |│|\\||$)`);
 /** The rows of the cheat sheet, each a key and what it does (docs/tui.md, "The cheat sheet"): the
  *  leader first in every focus, then the palette. */
 const LEAD_HINT = [LEADER, "commands"], PALETTE_HINT = ["Ctrl+K", "palette"], LAST_HINTS = [["?", "help"], ["q", "quit"]];
-/** What the fixture's selected instance offers, in the order the sheet names them: every instance
- *  here is stopped (it never ran), so it can be stopped, retired and started. */
-const ACTS = [["X", "stop"], ["D", "retire"], ["S", "start"]];
-/** The Instances view's sheet, with an instance selected that offers `acts` (none selected: []). */
-const listSheet = (acts = ACTS) => [LEAD_HINT, PALETTE_HINT, ...acts, ["/", "filter"], ["Tab", "detail"], ["r", "refresh"], ["w", "workspaces"], ["n", "spawn"], ...LAST_HINTS];
-const LIST_SHEET = listSheet();
-/** With a filter kept: Esc clears it. */
-const KEPT_SHEET = [LEAD_HINT, PALETTE_HINT, ...ACTS, ["/", "filter"], ["Tab", "detail"], ["Esc", "close"], ["r", "refresh"], ["w", "workspaces"], ["n", "spawn"], ...LAST_HINTS];
+/** The Instances view's sheet, the list focused: small, the same whatever row is selected (or
+ *  none). Every instance here is stopped (it never ran), so Enter opens nothing and is not named;
+ *  the acts, the filter, the detail, refresh and the workspaces are the leader's hint's, the
+ *  palette's and the help's, never the sheet's. */
+const LIST_SHEET = [LEAD_HINT, PALETTE_HINT, ["n", "spawn"], ...LAST_HINTS];
+/** With a filter kept: the list's sheet; Esc still clears the filter, unnamed there. */
+const KEPT_SHEET = LIST_SHEET;
 /** While the filter's text is typed: its own keys. */
 const FIELD_SHEET = [LEAD_HINT, ["Enter", "keep"], ["Esc", "clear"]];
-/** With the detail focused: the selected instance's acts, then the detail's own keys. */
-const DETAIL_SHEET = [LEAD_HINT, PALETTE_HINT, ...ACTS, ["Tab", "detail"], ["Esc", "close"], ["r", "refresh"], ...LAST_HINTS];
+/** With the detail focused: Tab goes back to the list, then the list's. */
+const DETAIL_SHEET = [LEAD_HINT, PALETTE_HINT, ["Tab", "back"], ["n", "spawn"], ...LAST_HINTS];
 const HELP_SHEET = [LEAD_HINT, PALETTE_HINT, ["Esc", "close"], ...LAST_HINTS];
 /** The switcher's, with a workspace open (Esc closes it onto that workspace's view). */
 const SWITCHER_SHEET = [LEAD_HINT, PALETTE_HINT, ["Enter", "open"], ["/", "filter"], ["r", "refresh"], ["Esc", "close"], ...LAST_HINTS];
@@ -370,7 +369,7 @@ function helpFaults(screen, { cols = 80, rows = 24, look = UTF8 } = {}) {
  *  is wrapped to the sidebar's width, and the frame gives a long one up to four at 24 rows). */
 function notReadFaults(screen, { cols = 80, rows = 24, title = /^ \S+$/, reason = 4 } = {}) {
   const side = sidebarOf(screen, cols), said = side.indexOf("", 1) - 1;
-  const { faults, list } = sidebarFaults(screen, { cols, rows, title, above: Array(Math.max(0, said)).fill(/^ \S/), sheet: listSheet([]) });
+  const { faults, list } = sidebarFaults(screen, { cols, rows, title, above: Array(Math.max(0, said)).fill(/^ \S/), sheet: LIST_SHEET });
   if (said < 2 || said > 1 + reason) faults.push(`the rows under the title do not say what state the deployment is in and why, on at most ${reason} rows: ${JSON.stringify(side.slice(1, Math.max(3, said + 1)))}`);
   if (list.length) faults.push(`the list draws rows: ${JSON.stringify(list)}`);
   if (mainOf(screen, cols).some((text) => text !== "")) faults.push("something is drawn beside the sidebar");
@@ -844,13 +843,12 @@ test("the reason the kernel gives for an instance it could not observe stands in
   // column is as wide as it, and starts at cell 20.
   const listed = (row, word) => `${row.padEnd(20)}${word}`;
   /** The whole screen with `selected` selected and `detail` as the rows of its detail beside the
-   *  sidebar: the title, the views with the list, and the cheat sheet, where the instance whose
-   *  state is not known offers no start. */
+   *  sidebar: the title, the views with the list, and the cheat sheet, the list's whatever the
+   *  row: it names no act, the instance whose state is not known or another. */
   const screenOf = (selected, detail) => {
     const at = (name) => (name === selected ? ">" : " "), rule = "─".repeat(38);
     const list = [`${at("alpha")} ○ alpha`, `${at("beta")}   ○ beta`, "", listed(`${at("gamma")} ? gamma`, "state unknown")];
-    const sheet = listSheet(selected === "gamma" ? ACTS.filter(([, word]) => word !== "start") : ACTS);
-    const side = [" fixture", "", viewRow("Instances", "1"), ...list, rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(sheet)];
+    const side = [" fixture", "", viewRow("Instances", "1"), ...list, rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(LIST_SHEET)];
     return Array.from({ length: 24 }, (_, i) => two(side[i] ?? "", detail[i] ?? ""));
   };
   /** What keeps a screen from being `want`, row for row, but for its clock time: when the
@@ -1068,11 +1066,13 @@ test("it follows the terminal's size: at 60x15 the view still draws, the sidebar
   term.press("Tab");
   await run.view("after Tab", { selected: "beta", detail: true, sheet: DETAIL_SHEET });
   resize(79, 24);
-  // The page is the whole screen from its first row: no title, no list and no cheat sheet.
+  // The page is the whole screen from its first row: no title, no list and no cheat sheet; its
+  // first row carries its keys at the right instead, dim, ending a cell from the edge: the
+  // cheat sheet's but for the leader, the palette, help and quit.
   const pageFaults = (screen) => [
     ...(screen.length === 24 ? [] : [`the screen has ${screen.length} rows, not 24`]),
     ...(screen.some((row) => [...row].length > 79) ? ["a row is longer than 79 cells"] : []),
-    ...(screen[0] === " > beta" ? [] : [`row 1 is ${JSON.stringify(screen[0])}, not the detail's title`]),
+    ...(screen[0] === `${" > beta".padEnd(60)}Tab back   n spawn` ? [] : [`row 1 is ${JSON.stringify(screen[0])}, not the detail's title with its keys`]),
     ...(screen.includes("   parent   alpha") ? [] : ["no row names the parent"]),
     ...(screen.some((row) => row === " fixture" || /^[> ] +○ \w/.test(row) || LEAD_ROW.test(row)) ? ["a row of the sidebar is still shown"] : []),
   ];
@@ -1374,7 +1374,7 @@ test("the Souls view, with the real `oats souls`: the leader then 2 shows the wo
   // Move to dev, wherever soulRows sorts it.
   if (!row("dev").startsWith(">")) { term.press("k"); await until(term, () => row("dev")?.startsWith(">"), "dev selected"); }
   term.press("Enter");
-  await until(term, () => sheetOf(term.screen()).includes("Enter instances"), "the detail holds the focus: Enter shows the soul's instances");
+  await until(term, () => sheetStarts(term.screen(), [LEAD_HINT, PALETTE_HINT, ["Tab", "back"], ["Enter", "instances"]]), "the detail holds the focus: Tab goes back to the list, Enter shows the soul's instances");
   const detail = () => term.screen().map((line) => line.split("│")[1] ?? "");
   assert.equal(detail()[0].trimEnd(), " > dev", `the detail is dev's, with the focus:\n${term.shows()}`);
   assert.equal(detail().some((line) => line.trim() === "○ alpha  ○ beta"), true, `its instances here, with their marks:\n${term.shows()}`);
@@ -1411,14 +1411,14 @@ test("the Capabilities view, with the real `oats capabilities` and `oats souls`:
   assert.equal(detail()[0], "   acme.notes", `the detail is the selected capability's:\n${term.shows()}`);
   assert.equal(detail()[1], "   Notes the fixture keeps.", "its description");
   term.press("Enter");
-  await until(term, () => sheetStarts(term.screen(), [LEAD_HINT, PALETTE_HINT, ["Enter", "soul"]]), "the detail holds the focus, a soul of Used by marked: Enter shows it");
+  await until(term, () => JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words([LEAD_HINT, PALETTE_HINT, ["Tab", "back"], ["Enter", "soul"], ...LAST_HINTS])), "the detail holds the focus, a soul of Used by marked: Tab goes back to the list, Enter shows it");
   assert.equal(detail()[0], " > acme.notes", `the detail has the focus:\n${term.shows()}`);
   const used = detail().findIndex((line) => /^ {3}Used by\b/.test(line));
   assert.ok(used > 0, `the detail says which souls use it:\n${term.shows()}`);
   assert.deepEqual(detail().slice(used + 1).filter(Boolean), ["   > ■ dev ·2"], `dev uses it, marked, with alpha and beta carrying it; reviewer does not:\n${term.shows()}`);
   term.press("Enter");
   const soul = (name) => listUnder(term.screen(), viewRow("Souls", "2")).find((line) => new RegExp(`^[> ] ■ ${name}\\b`).test(line)) ?? null;
-  await until(term, () => sheetStarts(term.screen(), [LEAD_HINT, PALETTE_HINT, ["Enter", "detail"], ["i", "instances"]]) && soul("dev") !== null, "the Souls view");
+  await until(term, () => JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words([LEAD_HINT, PALETTE_HINT, ["Enter", "detail"], ["n", "spawn"], ...LAST_HINTS])) && soul("dev") !== null, "the Souls view, its list focused: Enter shows the detail, n spawns");
   assert.match(soul("dev"), /^> ■ dev ·2(?: |$)/, `dev is selected in the Souls view:\n${term.shows()}`);
   assert.equal(soul("reviewer")?.startsWith(" "), true, "and reviewer is not");
   term.press("q");

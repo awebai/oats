@@ -652,7 +652,7 @@ export function model(state, { page, body = page, now, at, cols }) {
     filter: state.view === "souls" ? state.souls.filter : state.view === "capabilities" ? state.capabilities.filter : state.filter,
     workspace: r.workspace, machines: r.machines, here: r.here, machine: r.machine, counts: r.counts, readAt: r.readAt, notice: r.notice, note: r.note, empty: r.empty, observed: r.observed,
     detailTop: state.detailTop, helpTop: state.helpTop, open: state.open !== null,
-    detachKey: state.detachKey, opening: state.opening, openable: false, actable: [],
+    detachKey: state.detachKey, opening: state.opening, openable: false,
     terminal: state.terminal, onTerminal: false,
     // The panel's groups (views/frame.mjs), the split and the focused group; the panel stands while
     // any tab is open. `tabs` is the focused group's strip: each tab in order, the shown one marked,
@@ -687,7 +687,7 @@ export function model(state, { page, body = page, now, at, cols }) {
     };
   }
   const selected = state.selected === null ? -1 : r.index.get(state.selected) ?? -1;
-  // What the detail, the cheat sheet and Enter read of the selected row is worked out once per paint.
+  // What the detail and Enter read of the selected row is worked out once per paint.
   const row = selected >= 0 ? r.items[selected].row : null, acts = row ? instanceActs(row) : null;
   const decision = row ? openDecision(state, row, acts) : null;
   // The window holds the selection, unless the list was scrolled away from it on purpose.
@@ -700,10 +700,6 @@ export function model(state, { page, body = page, now, at, cols }) {
     // Enter opens the selected agent's terminal now, or (`onTerminal`) goes to the one open on it.
     openable: decision?.open === true && state.opening === null,
     onTerminal: row !== null && state.terminal !== null && state.terminal.id === instanceId(row),
-    // The acts whose key opens a confirmation now, read from the same instanceActs answer: the
-    // cheat sheet names them. A key not named still answers, with the line that says why. A secondary
-    // act (Retire while a retire runs) opens on its key and is not named.
-    actable: row && state.opening === null ? ACT_VERBS.filter((verb) => !acts.acts.some((each) => each.verb === verb && each.secondary) && actDecision(state, row, acts, verb).open) : [],
     switcher: null,
   };
 }
@@ -729,7 +725,7 @@ export function localDeployments(state, at) {
   return heldDeployments(held).filter((w) => !w.remote).map((w) => ({ id: w.id, remote: false, instances: rowsOf(held, w.id) }));
 }
 
-/** The four acts on an instance, in the order the help, the cheat sheet and the keys know them. */
+/** The four acts on an instance, in the order the help, the palette and the keys know them. */
 export const ACT_VERBS = Object.freeze(["stop", "retire", "start", "restart"]);
 const DONE = Object.freeze({ stop: "stopped", retire: "retired", start: "started", restart: "restarted" });
 /** The TUI's own words around the acts (docs/tui.md, "Stopping, starting, restarting and
@@ -770,7 +766,7 @@ export function buttonLabel(offer, verb, phase) {
 export const BUTTON_ORDER = Object.freeze(["close", "refresh", "check-again", "apply"]);
 
 /** Whether an act key on `row` opens a confirmation, and what the line says when it does not.
- *  `acts` is the row's instanceActs answer, read once per paint (the cheat sheet) or per key, as
+ *  `acts` is the row's instanceActs answer, read once per paint (the palette) or per key, as
  *  openDecision reads it; nothing here decides which acts a row has.
  *    { open: true, verb, id, name, kind, machine, label, home }  a confirmation opens: `kind`
  *        "lifecycle" for stop and retire (the shared confirmation), "start" for the TUI's own
@@ -975,7 +971,8 @@ function soulsView(state, page, at) {
     // Nothing held: the first read is in flight (or the deployment not read yet), or it failed.
     return reason && !s.held.reading ? { ...base, state: "failed", failure: soulCatalogFailure(reason) } : { ...base, state: "reading" };
   }
-  const heading = reason ? { label: "Souls", path: null, state: null, short: soulCatalogFailure(reason), readAt: clockTime(entry.observedAt) } : null;
+  // A failed re-read's heading: the accordion's row above it names the view, so it has no word of its own.
+  const heading = reason ? { label: "", path: null, state: null, short: soulCatalogFailure(reason), readAt: clockTime(entry.observedAt) } : null;
   const state_ = !s.all.length ? "none" : !s.rows.length ? "nomatch" : "rows";
   const height = Math.max(1, page - (heading ? 1 : 0));
   const at_ = s.selected ? s.rows.indexOf(s.selected) : -1;
@@ -1087,7 +1084,7 @@ function capabilitiesView(state, page, at) {
   if (!c.local) return { ...base, state: "none" };
   const entry = c.held?.entry ?? null, reason = entry?.reason ?? null;
   if (!c.listed) return reason && !c.held.reading ? { ...base, state: "failed", failure: catalogFailure("capabilities", reason) } : { ...base, state: "reading" };
-  const heading = c.heading ? { label: "Capabilities", path: null, state: null, short: catalogFailure("capabilities", reason), readAt: clockTime(entry.observedAt) } : null;
+  const heading = c.heading ? { label: "", path: null, state: null, short: catalogFailure("capabilities", reason), readAt: clockTime(entry.observedAt) } : null;
   const state_ = !c.all.length ? "none" : !c.keys.length ? "nomatch" : "rows";
   const at_ = c.items.findIndex((item) => item.key !== undefined && item.key === c.selected);
   const win = windowOf({ top: v.top, count: c.items.length, height: capabilitiesHeight(c, page), keep: v.loose ? -1 : at_ });

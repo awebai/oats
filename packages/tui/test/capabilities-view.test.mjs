@@ -131,7 +131,7 @@ function fits(d, sz, at) {
 
 // ── The whole screen ────────────────────────────────────────────────────────────────────────────
 
-test("the Capabilities view at 80x24 in UTF-8, cell for cell: the sections and groups in the sidebar under the open view's heading, the sidebar's rule over the whole height, the selected capability's detail beside it from the top, and the cheat sheet under the list, which keeps its rows ahead of the sheet's last", () => {
+test("the Capabilities view at 80x24 in UTF-8, cell for cell: the sections and groups in the sidebar under the open view's heading, the sidebar's rule over the whole height, the selected capability's detail beside it from the top, and the small cheat sheet under the list", () => {
   const d = drawModel(capsModel(), S80);
   assert.deepEqual(d.lines, [
     " acme-platform                        │   aweb Messaging",
@@ -153,11 +153,11 @@ test("the Capabilities view at 80x24 in UTF-8, cell for cell: the sections and g
     " Ctrl+\\   commands                    │     Commands  None",
     " Ctrl+K   palette                     │     Hooks     SessionStart",
     " Enter    detail                      │",
-    " /        filter                      │   Used by  2 souls",
-    " r        refresh                     │     ■ dev ·2 · 1 on an older version",
-    " Esc      close                       │     ■ reviewer ·0",
-    " w        workspaces                  │",
-    " ?        help                        │",
+    " ?        help                        │   Used by  2 souls",
+    " q        quit                        │     ■ dev ·2 · 1 on an older version",
+    "                                      │     ■ reviewer ·0",
+    "                                      │",
+    "                                      │",
   ]);
   assert.deepEqual([d.page, d.room, d.extent], [17, 24, 22], "the list's rows, and the detail's rows shown and held: every row of the screen");
   assert.equal(d.cells[5][1].style.bold, true, "Capabilities is the open view");
@@ -231,10 +231,11 @@ test("the bodies of the catalog's states read as the Souls view's, with the noun
   assert.equal(failed.slice(0, -1).map((line) => line.trim()).join(" "), FAILURE, "the whole sentence, wrapped");
   assert.equal(failed.at(-1), "   r reads them again.");
   // Over a failed re-read: its heading as the list's first row, then the rows; the detail holds the sentence whole, in the warning style.
-  const heading = { label: "Capabilities", path: null, state: null, short: FAILURE, readAt: "09:59:30" };
+  // The heading has no word of its own: the accordion's row above it names the view.
+  const heading = { label: "", path: null, state: null, short: FAILURE, readAt: "09:59:30" };
   const d = drawModel(capsModel({ heading, detail: { ...DETAIL(), failure: FAILURE } }), S120);
   const list = listLines(d, S120);
-  assert.match(list[0], /^ Capabilities {2}Couldn't read/);
+  assert.match(list[0], /^ Couldn't read/, "the sentence from the margin");
   assert.match(list[0], /read 09:59:30$/);
   assert.equal(list[1].trim(), "Workspace owned");
   const detail = detailLines(d, S120);
@@ -262,7 +263,7 @@ test("the detail top to bottom: the name and its layer, the description wrapped,
   const narrow = drawModel(capsModel({ focus: "detail" }), S60);
   fits(narrow, S60, "60, detail");
   const lines = allRows(S60).map((r) => cellText(narrow, r));
-  assert.equal(lines[0], " > aweb Messaging", "the focus mark beside the title");
+  assert.equal(lines[0], `${" > aweb Messaging".padEnd(51)}Tab back`, "the focus mark beside the title, and the page's key at the right");
   assert.equal(lines.some((line) => line.includes("Workspace owned")), false, "the list is not drawn");
   assert.equal(lines.some((line) => line.includes("acme-platform")), false, "nor the rest of the sidebar: the detail has the whole screen");
   assert.equal(lines.some((line) => line.includes(CAPABILITY_COPY.usedBy)), true);
@@ -333,14 +334,14 @@ test("text from outside goes through the display filter: a control character in 
 
 // ── The cheat sheet ─────────────────────────────────────────────────────────────────────────────
 
-test("the cheat sheet offers the view's own keys after the leader and the palette: Enter detail from the list, Enter soul from the detail while a soul is marked and none while none is, then the filter, a read again, Esc and the workspaces; with no workspace here, Esc and the workspaces", () => {
-  const rest = [["/", "filter"], ["r", "refresh"], ["Esc", "close"], ["w", "workspaces"], HELP, QUIT];
+test("the cheat sheet is small: after the leader and the palette, Enter detail from the list; from the detail Tab back, then Enter soul while a soul is marked and none while none is; then help and quit; the filter, a read again, Esc and the workspaces are not on it, nor with no workspace here", () => {
+  const rest = [HELP, QUIT];
   assert.deepEqual(sheet(drawModel(capsModel(), S120), S120), hints(LEAD, PALETTE, ["Enter", "detail"], ...rest));
-  assert.deepEqual(sheet(drawModel(capsModel({ focus: "detail", mark: 0 }), S120), S120), hints(LEAD, PALETTE, ["Enter", "soul"], ...rest));
-  assert.deepEqual(sheet(drawModel(capsModel({ focus: "detail", mark: -1 }), S120), S120), hints(LEAD, PALETTE, ...rest));
-  assert.deepEqual(sheet(drawModel(capsModel({ local: false, state: "none", list: [], detail: null }), S120), S120), hints(LEAD, PALETTE, ["Esc", "close"], ["w", "workspaces"], HELP, QUIT));
-  // In 24 rows the list keeps its rows: the sheet gives up its last, quit.
-  assert.deepEqual(sheet(drawModel(capsModel(), S60), S60), hints(LEAD, PALETTE, ["Enter", "detail"], ...rest.slice(0, -1)));
+  assert.deepEqual(sheet(drawModel(capsModel({ focus: "detail", mark: 0 }), S120), S120), hints(LEAD, PALETTE, ["Tab", "back"], ["Enter", "soul"], ...rest));
+  assert.deepEqual(sheet(drawModel(capsModel({ focus: "detail", mark: -1 }), S120), S120), hints(LEAD, PALETTE, ["Tab", "back"], ...rest));
+  assert.deepEqual(sheet(drawModel(capsModel({ local: false, state: "none", list: [], detail: null }), S120), S120), hints(LEAD, PALETTE, ...rest));
+  // In 24 rows the list keeps its rows, and the small sheet has all of its own under it.
+  assert.deepEqual(sheet(drawModel(capsModel(), S60), S60), hints(LEAD, PALETTE, ["Enter", "detail"], ...rest));
   // A kept filter stands on the view's heading with its `/`, bold; the sheet is the list's.
   const kept = drawModel(capsModel({ filter: { editing: false, query: "aw" } }), S120);
   assert.equal(headingLine(kept, S120), ` Capabilities  /aw${" ".repeat(listWidth(120) - 20)}3`);
@@ -350,4 +351,17 @@ test("the cheat sheet offers the view's own keys after the leader and the palett
   const editing = drawModel(capsModel({ filter: { editing: true, query: "aw" } }), S120);
   assert.equal(headingLine(editing, S120), ` /aw${" ".repeat(listWidth(120) - 6)}3`);
   assert.deepEqual(sheet(editing, S120), hints(LEAD, ["Enter", "keep"], ["Esc", "clear"]));
+});
+
+test("under 80 columns the detail page's first row carries its keys at the right, dim, Tab back first: at 70x20, `> aweb Messaging`, then, ending a cell before the edge, Tab back and Enter soul while a soul is marked, Tab back alone while none is", () => {
+  const sz = size(70, 20);
+  const marked = drawModel(capsModel({ focus: "detail", mark: 0 }), sz);
+  fits(marked, sz, "70x20 marked");
+  assert.equal(cellText(marked, 0), ` > aweb Messaging${" ".repeat(31)}Tab back   Enter soul`);
+  const from = cellIndexOf(marked, 0, "Tab back");
+  assert.equal(from, 48, "the keys end a cell before the edge");
+  for (let x = from; x < from + 21; x++) if (marked.cells[0][x].text !== " ") assert.equal(marked.cells[0][x].style.dim, true, `the keys are dim at ${x}`);
+  assert.deepEqual([marked.cells[0][1].style.bold, marked.cells[0][3].style.bold], [true, true], "the focus mark and the name stay bold");
+  const none = drawModel(capsModel({ focus: "detail", mark: -1 }), sz);
+  assert.equal(cellText(none, 0), ` > aweb Messaging${" ".repeat(44)}Tab back`);
 });

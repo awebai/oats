@@ -280,38 +280,32 @@ function types(m) {
 }
 
 /** THE CHEAT SHEET (docs/tui.md, "The cheat sheet"): the keys that apply now, one per row, the
- *  leader first in every focus (`Alt+O commands`), then the palette, then the actions that apply
- *  now, read from the effective table, `help` and `quit` last. While the leader waits for its key
- *  it is the leader's hint (leaderHints). While what is typed goes to the agent the TUI reads the
- *  leader only: the leader then Esc gives the list the focus, and the leader twice types the
- *  leader into the terminal. In the palette, the spawn prompt (spawnHints), a confirmation and
- *  the filter field, how to work them: the keys they read are their own, so they are the TUI's
- *  words, but for the confirmation's close key and the field's clear, which are the user's. Else:
- *  in the list of instances, first what Enter does: `open` while it would open the selected
- *  agent's terminal, `focus terminal` on the row whose terminal is open, and, while another
- *  machine is asked first, the key that gives the open up (`stop opening`, and `close` is not
- *  listed then); with a terminal open, `zoom` and `close-terminal`, and with two tabs or more in
- *  the focused group the keys that show the tab before and after (`[/] tab`); the acts whose key
- *  opens a confirmation for the selected row now (the model's `actable`, which leaves out a
- *  secondary act: Retire while a retire runs); then `filter`, `detail`, the key that clears a kept
- *  filter, `refresh`, `workspaces` and `spawn`. In the Souls view what Enter does (from the list
- *  the detail, from the detail the soul's instances), `i`, `filter`, `refresh`, `close` and
- *  `workspaces`; in the Capabilities view the same without `i`; with no workspace of this machine
- *  `close` and `workspaces` only. An action with no key (tui.json may unbind one) has no hint.
- *  The views have no hint: the accordion names their keys. When rows are short the sheet gives up
- *  rows from its end (keptHints), down to the leader alone. */
+ *  leader first in every focus (`Alt+O commands`), then the palette, `help` and `quit` last. While
+ *  the leader waits for its key it is the leader's hint (leaderHints). While what is typed goes to
+ *  the agent the TUI reads the leader only: the leader then Esc gives the list the focus, and the
+ *  leader twice types the leader into the terminal. In the palette, the spawn prompt (spawnHints),
+ *  a confirmation, the filter field, the help and the switcher, how to work them: the keys they
+ *  read are their own, so they are the TUI's words, but for the confirmation's close key and the
+ *  field's clear, which are the user's. Else it is small: a view's list or its detail names what
+ *  Enter does now, and the rest stays the leader's hint's, the palette's and the help's. In the list
+ *  of instances Enter is `open` while it would open the selected agent's terminal and `focus
+ *  terminal` on the row whose terminal is open; while another machine is asked first, the key that
+ *  gives the open up (`stop opening`) stands in its place. In the Souls view Enter is the detail
+ *  from the list and the soul's instances from the detail; in the Capabilities view the detail,
+ *  and from it the marked soul. With the detail's focus the key that goes back to the list
+ *  (`Tab back`) comes before it, and `spawn` after it where it spawns (the list of instances, the
+ *  Souls view of a workspace of this machine). An action with no key (tui.json may unbind one) has
+ *  no hint. The views have no hint: the accordion names their keys. When rows are short the sheet
+ *  gives up rows from its end (keptHints), down to the leader alone. */
 function cheatSheet(m) {
   const action = (id) => (m.actions ?? []).find((a) => a.id === id && a.keys.length);
   const hint = (id, label) => { const a = action(id); return a ? made(id, keyText(keyLabel(a.keys[0])), label ?? a.label) : null; };
-  /** `[/] tab`: the keys of `tab-previous` and `tab-next`, while both have one. */
-  const tabsHint = () => { const [before, after] = [action("tab-previous"), action("tab-next")]; return before && after ? made("tabs", keyText(`${keyLabel(before.keys[0])}/${keyLabel(after.keys[0])}`), "tab") : null; };
   if (m.leader) return leaderHints(m);
   const led = (list) => [made("leader", leaderText(m), "commands"), ...list.filter(Boolean)];
   const soul = m.view === "souls" && m.souls ? m.souls : null;
   const capability = m.view === "capabilities" && m.capabilities ? m.capabilities : null;
   const filter = soul ? soul.filter : capability ? capability.filter : m.filter;
-  const filtered = Boolean(filter?.query) || (!soul && m.view === "instances" && Boolean(filter?.soul));
-  // The list of instances: what Enter opens, the open terminal's keys and the acts are its own.
+  // The list of instances, or a confirmation over it.
   const listing = !["help", "switcher", "souls", "capabilities"].includes(m.view);
   if (listing && m.terminal?.focus === "terminal" && !m.palette && !m.spawn) {
     const label = backKeyLabel(m.detachKey), list = keyLabel(LEADER.find((entry) => entry.does === "list").keys[0]);
@@ -325,20 +319,18 @@ function cheatSheet(m) {
     const close = action("close"), shut = m.act.buttons.find((button) => button.id === "close");
     return led([close && shut ? made("close", keyText(keyLabel(close.keys[0])), shut.label) : null, m.act.buttons.length > 1 ? own("move", "Left/Right", "move") : null, own("press", "Enter", "press"), hint("quit")]);
   }
+  // The help and the switcher cover the main area: their keys are how to work them.
+  if (m.view === "help") return led([hint("palette"), hint("close"), hint("help"), hint("quit")]);
+  // Esc closes the switcher only onto a view, and there is none before a workspace is opened.
+  if (m.view === "switcher") return led([hint("palette"), ...["open", "filter", ...(m.filter?.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])])].map((id) => hint(id)), hint("help"), hint("quit")]);
+  // A view's list or its detail: a small sheet; the rest is the leader's, the palette's and the help's.
   const asking = listing && m.opening?.phase === "preflight";
-  const first = asking ? [hint("close", "stop opening")] : listing && m.onTerminal ? [hint("open", "focus terminal")] : listing && m.openable ? [hint("open")]
+  const enter = asking ? [hint("close", "stop opening")] : listing && m.onTerminal ? [hint("open", "focus terminal")] : listing && m.openable ? [hint("open")]
     : soul?.detail ? [hint("open", soul.focus === "detail" ? "instances" : "detail")]
     : capability?.detail ? (capability.focus !== "detail" ? [hint("open", "detail")] : capability.mark >= 0 ? [hint("open", "soul")] : []) : [];
-  const terminal = listing && m.terminal ? [hint("zoom"), hint("close-terminal"), ...((m.tabs?.length ?? 0) > 1 ? [tabsHint()] : [])] : [];
-  const acts = listing && !asking ? (m.actable ?? []).map((verb) => hint(verb)) : [];
-  const ids = m.view === "help" ? ["close"]
-    : soul ? (soul.local === false ? ["close", "workspaces"] : [...(soul.detail ? ["soul-instances"] : []), "filter", "refresh", "close", "workspaces"])
-    : capability ? (capability.local === false ? ["close", "workspaces"] : ["filter", "refresh", "close", "workspaces"])
-    // Esc closes the switcher only onto a view, and there is none before a workspace is opened.
-    : m.view === "switcher" ? ["open", "filter", ...(m.filter?.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])])]
-    : m.focus === "detail" ? ["detail", "close", "refresh"]
-    : ["filter", "detail", ...(filtered ? ["close"] : []), "refresh", "workspaces", "spawn"];
-  return led([hint("palette"), ...first, ...terminal, ...acts, ...ids.filter((id) => !(asking && id === "close")).map((id) => hint(id)), hint("help"), hint("quit")]);
+  const detailed = soul ? soul.focus === "detail" && Boolean(soul.detail) : capability ? capability.focus === "detail" && Boolean(capability.detail) : listing && m.focus === "detail";
+  const spawns = listing || (soul && soul.local !== false);
+  return led([hint("palette"), ...(detailed ? [hint("detail", "back")] : []), ...enter, ...(spawns ? [hint("spawn")] : []), hint("help"), hint("quit")]);
 }
 
 /** The spawn prompt's hints (docs/tui.md, "Spawning an agent"): the keys the prompt reads are its
@@ -400,9 +392,9 @@ function cheatRows(hints, cols) {
   ].filter((span) => span.width > 0));
 }
 
-/** An overlay's first row on a narrow terminal, where it has the whole screen: its essential keys
- *  (the cheat sheet's, but for the leader, the palette, help and quit) at the right, dim, as many
- *  as fit after what the row holds, given up from the end. */
+/** An overlay's or a detail page's first row on a narrow terminal, where it has the whole screen:
+ *  its essential keys (the cheat sheet's, but for the leader, the palette, help and quit) at the
+ *  right, dim, as many as fit after what the row holds, given up from the end. */
 function withKeys(row, hints, cols, { skip = ["leader", "palette", "help", "quit"], last = false } = {}) {
   const keys = hints.filter((h) => !skip.includes(h.id));
   // What the row holds ends where its text does: a span may be given more cells than its text takes.
@@ -576,6 +568,8 @@ function framed(m, size) {
     const drawn = detail(m, { cols: Math.max(0, cols - at - MARGIN), rows: size.rows });
     extent = drawn.extent;
     drawn.rows.forEach((spans, i) => { rows[i] = [...rows[i], ...placed(spans, at)]; });
+    // Over the whole screen, the detail's first row carries its keys, as an overlay's does.
+    if (paged) rows[0] = withKeys(rows[0], cheatSheet(m), cols);
   }
   // Over the whole screen no cheat sheet is drawn: the terminal's title row, the TUI's own, carries
   // its keys at the right instead (the leader, then Esc for the list), and while the leader waits,
@@ -595,14 +589,16 @@ function framed(m, size) {
 /** The Souls or the Capabilities view: its list in the sidebar, and beside it in the main area the
  *  selected entry's detail (`draw`: views/souls.mjs soulDetail, views/capabilities.mjs
  *  capabilityDetail) once the list stands (`listed`); under WIDE columns the sidebar alone, and
- *  the detail as a page over the whole screen while it has the focus (`paged`). Answers the
- *  detail's `extent` and, for the Capabilities view, `top`: the row the detail was drawn from,
- *  which the loop gives the store once the frame is written (it keeps the marked soul in sight). */
+ *  the detail as a page over the whole screen while it has the focus (`paged`), its first row
+ *  carrying its keys (withKeys). Answers the detail's `extent` and, for the Capabilities view,
+ *  `top`: the row the detail was drawn from, which the loop gives the store once the frame is
+ *  written (it keeps the marked soul in sight). */
 function viewFrame(m, size, g, rows, { listed, paged, draw }) {
   const { cols } = size;
   if (!g.wide && paged) {
     const drawn = draw(m, { cols: Math.max(0, cols - 2 * MARGIN), rows: size.rows });
     drawn.rows.forEach((spans, i) => { rows[i] = placed(spans, MARGIN); });
+    rows[0] = withKeys(rows[0], cheatSheet(m), cols);
     return { extent: drawn.extent, top: drawn.top };
   }
   sidebar(m, g, rows, listOf(m, g));

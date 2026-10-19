@@ -20,7 +20,7 @@ export const ACTIONS = Object.freeze([
   { id: "filter", keys: ["/"], label: "filter" },
   { id: "refresh", keys: ["r"], label: "refresh" },
   // The views by their number. The sidebar names the views, each with its key at the right of its row
-  // (docs/tui.md, "What it shows"): the digits are named here, so in the help and the cheat sheet.
+  // (docs/tui.md, "What it shows"): the digits are named here, so in the help and the sidebar.
   { id: "instances", keys: ["1"], label: "instances" },
   { id: "souls", keys: ["2"], label: "souls" },
   { id: "capabilities", keys: ["3"], label: "capabilities" },

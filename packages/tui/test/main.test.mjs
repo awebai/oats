@@ -490,8 +490,7 @@ test("a resize redraws in full; below 60x15 the screen is the too-small line, an
   r.stdout.resize(60, 15);
   let out = r.stdout.take();
   assert.equal(out.startsWith("\x1b[?2026h\x1b[0m\x1b[2J"), true, "a resize clears first, inside the frame's synchronized update");
-  assert.match(textOf(out), /^ acme-platform.*acme-maintainer-ops.*Ctrl\+\\ +commands.*Tab +detail/s);
-  assert.doesNotMatch(textOf(out), /\? +help/, "at 15 rows the cheat sheet gives up its last rows");
+  assert.match(textOf(out), /^ acme-platform.*acme-maintainer-ops.*Ctrl\+\\ +commands +Ctrl\+K +palette +n +spawn +\? +help +q +quit$/s, "at 15 rows the small cheat sheet gives up nothing");
   r.stdout.resize(59, 14);
   out = r.stdout.take();
   assert.equal(textOf(out), "Terminal too small: 59x14, oats tui needs 60x15.");
@@ -530,14 +529,15 @@ test("Ctrl+L sets the terminal's modes again and redraws in full; Ctrl+\\ in the
   r.log.length = 0;
   r.stdin.type("\x1c");
   const hint = r.stdout.take();
-  // The cheat sheet stands on rows 9 to 17 (1 to 9 of the sidebar are its title, the views and the rules).
+  // The leader's hint stands on rows 9 to 17 (1 to 9 of the sidebar are its title, the views and the
+  // rules); the cheat sheet, shorter, on rows 9 to 13, and the rows under it are written empty.
   const sheetRows = Array.from({ length: 9 }, (_, i) => [9 + i, 1]);
   assert.deepEqual([...hint.matchAll(/\x1b\[(\d+);(\d+)H/g)].map(([, row, col]) => [Number(row), Number(col)]), sheetRows, "only the cheat sheet's rows are written");
   assert.equal(words(textOf(hint)), " Ctrl+\\ then │ k palette │ 1-3 views │ Up/Down instance │ X/R/S/D acts │ / filter │ o workspaces │ ? help │ Esc the list │");
   r.stdin.type("\x1c");
   const back = r.stdout.take();
   assert.deepEqual([...back.matchAll(/\x1b\[(\d+);(\d+)H/g)].map(([, row, col]) => [Number(row), Number(col)]), sheetRows);
-  assert.equal(words(textOf(back)), " Ctrl+\\ commands │ Ctrl+K palette │ / filter │ Tab detail │ r refresh │ w workspaces │ n spawn │ ? help │ q quit │");
+  assert.equal(words(textOf(back)), " Ctrl+\\ commands │ Ctrl+K palette │ n spawn │ ? help │ q quit │ │ │ │ │");
   assert.deepEqual(readerDid(r), [["touch"], ["touch"]], "the leader reads nothing");
   r.log.length = 0;
   r.stdin.type("\x0c");
@@ -768,7 +768,7 @@ test("Enter on a folder of ~/Agents asks whether it is a deployment now; admitte
   assert.deepEqual(readerDid(r), [["touch"], ["request", { live: true }]], "it is read at once");
   assert.notEqual(r.stdout.take(), "");
   const opened = screenOf(r);
-  assert.match(opened, /^ acme-ledger +│.*Instances +1 │ +Reading the deployment\..*Souls +2 │ Capabilities +3 │.*Ctrl\+\\ +commands +│ Ctrl\+K +palette +│ \/ +filter.*\? +help.*q +quit/s);
+  assert.match(opened, /^ acme-ledger +│.*Instances +1 │ +Reading the deployment\..*Souls +2 │ Capabilities +3 │.*Ctrl\+\\ +commands +│ Ctrl\+K +palette +│ n +spawn +│ \? +help +│ q +quit +│/s);
   assert.doesNotMatch(opened, /acme-expert-tui|On this machine, not opened/, "the switcher is closed, and the view is the new deployment's");
   // From then on: the reader's answer for it is taken and drawn.
   r.reader.answer(observedAt("/srv/acme-ledger", [instanceRow("acme-clerk", "acme-clerk-books")], { workspace: reportedWorkspace("git.example.com/acme-ledger/books", "aweb:acme-ledger"), name: "acme-ledger" }), "/srv/acme-ledger");
@@ -834,7 +834,7 @@ test("Enter on a workspace opens its view and asks for a live read", async () =>
   assert.deepEqual(effectsOf(r), [], "a workspace is not a folder: nothing is asked of the file system");
   assert.notEqual(r.stdout.take(), "");
   const opened = screenOf(r);
-  assert.match(opened, /^ charts +on onyx +│.*Instances +1 │.*dev-east.*Enter +open.*\/ +filter.*q +quit/s, "the machine's view");
+  assert.match(opened, /^ charts +on onyx +│.*Instances +1 │.*dev-east.*Enter +open +│ n +spawn +│ \? +help +│ q +quit +│/s, "the machine's view");
   assert.doesNotMatch(opened, /acme-expert-tui/);
   // The time of the roster read it is drawn from: the help's top row, beside the sidebar (this
   // machine's own was read at 10:00:00).
@@ -1034,7 +1034,7 @@ test("Enter on a running agent of this machine: the kernel's viewer starts in th
   r.panel.screen("@9", "$ not-this-one");
   assert.doesNotMatch(r.stdout.take(), /not-this-one/);
   leaderEscape(r);
-  assert.match(wholeScreen(r), /Ctrl\+\\ +commands +│ Ctrl\+K +palette +│ Enter +focus terminal +│ z +zoom +│ c +close terminal +│ X +stop +│ D +retire +│ \/ +filter +│/);
+  assert.match(wholeScreen(r), /Ctrl\+\\ +commands +│ Ctrl\+K +palette +│ Enter +focus terminal +│ n +spawn +│ \? +help +│ q +quit +│/);
   r.log.length = 0;
   r.stdin.type("q");
   assert.equal(await r.status, 0);
@@ -1840,7 +1840,8 @@ test("r in the Souls view keeps the souls it holds while it reads, and a read th
   const screen = screenOf(r);
   assert.match(screen, /held-soul/, "the last good souls are kept");
   // The failure's heading above the rows, and its sentence whole in the detail (wrapped there).
-  assert.match(screen, / Souls +Couldn't read… +read \d\d:\d\d:\d\d │/, "under the failure's heading");
+  assert.match(screen, / Couldn't read this… +read \d\d:\d\d:\d\d │/, "under the failure's heading, its sentence from the margin");
+  assert.doesNotMatch(screen, / Souls +Couldn't read/, "the heading has no word: the view's row above it names the view");
   assert.match(screen, /Couldn't read this workspace's souls:/);
   assert.match(screen, /│ +re-read failed/);
   r.stdin.type("q");
@@ -1932,7 +1933,8 @@ test("r in the Capabilities view keeps the table it holds while it reads, and a 
   const screen = screenOf(r);
   assert.match(screen, /held-capability/, "the last good table is kept");
   // The failure's heading above the rows, and its sentence whole in the detail (wrapped there).
-  assert.match(screen, / Capabilities +read \d\d:\d\d:\d\d │/, "under the failure's heading");
+  assert.match(screen, / Couldn't read this… +read \d\d:\d\d:\d\d │/, "under the failure's heading, its sentence from the margin");
+  assert.doesNotMatch(screen, / Capabilities +(Couldn't read|read \d)/, "the heading has no word: the view's row above it names the view");
   assert.match(screen, /Couldn't read this workspace's/);
   assert.match(screen, /capabilities: re-read failed/);
   r.stdin.type("q");

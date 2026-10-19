@@ -35,6 +35,8 @@ function cheatSheet(state, size) {
   const d = draw(state, size), rows = d.lines.map((line) => line.slice(0, d.cols));
   return rows.slice(rows.findLastIndex((line) => /^[─-]+$/.test(line)) + 1).map((line) => line.trim().replace(/ {2,}/, " ")).filter(Boolean);
 }
+/** The list of instances' cheat sheet while Enter opens nothing: it never names an act. */
+const SHEET_NO_ENTER = Object.freeze(["Ctrl+\\ commands", "Ctrl+K palette", "n spawn", "? help", "q quit"]);
 /** The same state with another instance selected, by name (and soul, for a name two souls have). */
 function on(state, name, soul) {
   const item = roster(state).rows.find(({ row }) => row.instance === name && (soul === undefined || row.agent === soul));
@@ -579,12 +581,12 @@ test("which retire a row is: the kernel's facts in the shared order, and a `reti
   for (const name of ["m-state", "m-since", "m-list"]) assert.deepEqual([listRow(state, name).mark, listRow(state, name).word, fact(detailOf(state, name), "state")?.value, fact(detailOf(state, name), "held")], ["stopped", null, "stopped", null], `${name}: an ordinary row: its mark says it, with no word, and the detail reads stopped`);
 });
 
-test("a retiring row offers Retire alone and out of the way: its key opens the confirmation, the cheat sheet does not name it, and Enter, stop, start and restart open nothing and say why", () => {
+test("a retiring row offers Retire alone: its key opens the confirmation, the cheat sheet names no act, and Enter, stop, start and restart open nothing and say why", () => {
   const state = stateOf(observed(RETIRES));
   for (const name of ["r-running", "r-unknown", "r-pending"]) {
     const selected = on(state, name), acts = instanceActs(panelRow(state, name).row);
     assert.deepEqual(acts.acts.map((act) => [act.verb, act.enabled, act.secondary]), [["retire", true, true]], `${name}: premise, Retire secondary`);
-    assert.deepEqual([view(selected).actable, view(selected).openable], [[], false], `${name}: the cheat sheet names no act, and Enter opens nothing`);
+    assert.equal(view(selected).openable, false, `${name}: Enter opens nothing`);
     const opened = press(selected, ["D"]);
     assert.deepEqual([opened.state.view, opened.state.act.verb, opened.effects.map((effect) => effect.act?.verb)], ["act", "retire", ["retire"]], `${name}: D opens the confirmation`);
     for (const key of ["X", "S", "R", "enter"]) {
@@ -592,13 +594,12 @@ test("a retiring row offers Retire alone and out of the way: its key opens the c
       assert.deepEqual([after.view, after.act, after.terminal, effects], ["instances", null, null, []], `${name} ${key}: nothing opens`);
       assert.deepEqual(after.outcome, { said: [], under: [acts.limited.sentence] }, `${name} ${key}: the held sentence says why`);
     }
-    const keys = cheatSheet(selected, { cols: 140, rows: 40 });
-    assert.equal(keys.includes("D retire") || keys.includes("Enter open"), false, `${name}: ${keys.join(", ")}`);
+    assert.deepEqual(cheatSheet(selected, { cols: 140, rows: 40 }), SHEET_NO_ENTER, `${name}: neither Retire nor Enter is named`);
   }
-  // A failed or unfinished retire names Retire: it is the way on.
+  // A failed or unfinished retire: Retire is the way on, and its key opens it; the sheet names no act either.
   for (const name of ["r-failed", "r-failed-code", "r-interrupted"]) {
-    assert.deepEqual(view(on(state, name)).actable, ["retire"], name);
-    assert.equal(cheatSheet(on(state, name), { cols: 140, rows: 40 }).includes("D retire"), true, name);
+    assert.equal(press(on(state, name), ["D"]).state.act?.verb, "retire", name);
+    assert.deepEqual(cheatSheet(on(state, name), { cols: 140, rows: 40 }), SHEET_NO_ENTER, name);
   }
 });
 
@@ -1502,9 +1503,9 @@ test("a row gone from its machine (missingRemotely, a saved route) is drawn with
   assert.equal(reason.sentence, acts.blocked.sentence);
   assert.equal(reason.sentence.includes("oats server forget garnet --instance garnet-gone"), true);
   assert.equal(detail.facts.filter((f) => f.value.includes(reason.sentence)).length, 1);
-  // It can't be opened: nothing offers it, and Enter has nothing to name in the cheat sheet.
-  const m = view(on(state, "garnet-gone"));
-  assert.deepEqual([m.openable, m.actable], [false, []]);
+  // It can't be opened: nothing offers it, and the cheat sheet names neither Enter nor an act.
+  assert.equal(view(on(state, "garnet-gone")).openable, false);
+  assert.deepEqual(cheatSheet(on(state, "garnet-gone"), { cols: 140, rows: 40 }), SHEET_NO_ENTER);
 });
 
 test("every key of the shared row reason is drawn with its own label, and nothing else of the row stands in its place: herdr, unreached, missing, unaddressable, unknown", () => {
