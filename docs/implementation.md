@@ -71,6 +71,8 @@ and the rules its tests pin.
 | path | contents |
 |---|---|
 | `bin/oats.mjs` | the CLI: argument parsing, JSON envelopes, the verbs |
+| `lib/setup-capture-roots.mjs` | adapts the deployment's existing effective named launch-configuration map to a closed record-package setup request; reads location selectors only, reuses package native-location rules, refuses future-home-relative roots without launching a harness |
+| `packages/record/lib/capture-setup.mjs`, `capture-roots.mjs` | shared typed setup entry and package-owned deployment registry, checked durable publication, lifecycle/forget, bounded inventory and root health diagnosis; only admitted workers consume the discovery union |
 | `lib/` | the kernel (below) |
 | `injects/` | the kernel and work-mode instruction blocks composed into every instance |
 | `skills/` | bootstrap skills shipped with the kernel |

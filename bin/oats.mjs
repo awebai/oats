@@ -4153,14 +4153,44 @@ const EXPERIMENTAL_CMDS = new Set(["dress", "spawn", "segments", "mind"]);
 async function recordCmd(sub) {
   process.argv.splice(2, 1);
   if (sub === "setup") {
-    // setup writes a node into the user's Claude settings and into the capture service's unit,
-    // and nothing rewrites them but setup run again: it is handed the rule's answer for the node
-    // running this kernel (docs/capabilities.md, "The node a hook writes down"). The script is
-    // imported into this process, so the variable is set here, over whatever the caller's
-    // environment held; packages/record imports nothing of the kernel.
+    const { deriveCaptureRoots } = await import('../lib/setup-capture-roots.mjs');
+    const { captureSetup } = await import('../packages/record/lib/capture-setup.mjs');
     const { node, warning } = stableNode({ consequence: "the capture hooks and the capture service stop when it goes away", remedy: "run `oats setup` again" });
     if (warning) console.error(`oats: warning: ${warning}`);
     process.env.OATS_NODE_BIN = node;
+    let deploymentRequest;
+    try {
+      const deployment = realpathSync(dirname(loadLocal(dirFlag()).path));
+      try { deploymentRequest = deriveCaptureRoots({ deployment, configurations: launchConfigsAt(deployment) }); }
+      catch { deploymentRequest = deriveCaptureRoots({ deployment, configurationError: true }); }
+    } catch (error) {
+      if (error.code !== 'E_LOCAL_MISSING') {
+        // An invalid effective map still belongs to its nearest deployment.
+        // Locate the declaration without interpreting shell commands or souls.
+        let current = dirFlag();
+        for (;;) {
+          if (existsSync(join(current, 'oats-local.yaml'))) {
+            deploymentRequest = deriveCaptureRoots({ deployment: realpathSync(current), configurationError: true }); break;
+          }
+          if (dirname(current) === current) break;
+          current = dirname(current);
+        }
+        if (!deploymentRequest) return cmdFail(error.code ?? 'E_CAPTURE_SETUP_FAILED', error.message);
+      }
+    }
+    const argv = process.argv.slice(2).filter((arg, index, all) =>
+      arg !== '--dir' && !(index > 0 && all[index - 1] === '--dir') && !arg.startsWith('--dir='));
+    let result;
+    try { result = await captureSetup({ argv, deploymentRequest, node }); }
+    catch (error) {
+      return cmdFail(error.code ?? 'E_CAPTURE_SETUP_FAILED', error.message);
+    }
+    if (JSON_MODE) {
+      if (!result.ok) return jsonFail(result.error.code, result.error.message, { summary: result.summary, warnings: result.warnings });
+      console.log(JSON.stringify(result));
+    }
+    process.exitCode = result.exitCode;
+    return;
   }
   await import(new URL(`../packages/record/bin/${sub}.mjs`, import.meta.url));
 }
@@ -5142,13 +5172,17 @@ The turn record (core — every conversation captured, searchable, replicated):
                                             capture launched, not completed
   oats capture --health [--json]             offline installation, run and issue
                                             diagnosis; captures nothing
+  oats capture --forget-retired-root <absolute-root> --deployment <canonical-deployment>
+      --source cc|pi|codex [--root <dir>] [--json]
+                                            forget an exact retired reference; no history deletion
   oats capture --file <path> --format cc|pi|codex --home <instance home> [--json]
                                             one session file (an archived session),
                                             captured as --home capture would
   oats recall [--kind k] [--thread t]        search the whole record — mail, chat,
       [--from f] [--show id] <query>        sessions — with exact turn provenance
   oats setup [--owner <name>] [--root <dir>] [--replace-service]
-      [--no-service] [--no-hooks] [--dry-run]
+      [--no-service] [--no-hooks] [--dry-run] [--json]
+                                            refresh deployment transcript roots,
                                             install hooks + periodic capture
                                             (launchd/systemd), then run the first pass
 

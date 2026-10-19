@@ -88,7 +88,7 @@ async function superviseAcquiredPass(root, options, { policy, clock, acquire, al
       // result needs no idle retries; an unexplained crash still continues.
       if (result.outcome === "complete" || result.outcome === "partial" && !result.continuation ||
           result.outcome === "failed" && result.continuation === false) {
-        return firstFailure ? failed() : ended({ ...result, starts });
+        return firstFailure ? (result.rootCoverageOnly === true ? ended({ ...result, starts }) : failed()) : ended({ ...result, starts });
       }
       // On a crash the next child reconciles durable admission, then selects
       // independent ready work. There is NO same-pass retry/diagnostic class.

@@ -185,3 +185,18 @@ test("fixed transport bounds actually terminate and reap a silent child and exce
     assert.equal(existsSync(f.root), false);
   }
 });
+
+test('doctor real package transport reports a registered-root configuration refusal without hooks or service', async t => {
+  const f = fixture(t);
+  const { realpathSync } = await import('node:fs');
+  const { preflightCaptureRoots, applyCaptureRoots } = await import('../packages/record/lib/capture-roots.mjs');
+  applyCaptureRoots(preflightCaptureRoots(f.root, { schemaVersion: 1, deployment: realpathSync(f.fx.dep), roots: [],
+    unavailable: [{ configuration: 'relative', selector: 'CODEX_HOME', reason: 'relative' }] }), { entry: 'oats' });
+  const before = disk(f.root), result = f.cli(['--json']);
+  assert.equal(result.status, 0, result.stderr); assert.equal(result.launches.length, 1);
+  const value = JSON.parse(result.stdout);
+  const row = value.warnings.find(row => row.code === 'capture-roots-unavailable');
+  assert.match(row.message, /configuration relative, selector CODEX_HOME: relative/);
+  assert.match(row.message, /absolute transcript location/);
+  assert.deepEqual(disk(f.root), before);
+});

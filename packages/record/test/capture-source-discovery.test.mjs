@@ -356,3 +356,24 @@ test('owned page admission and atomic retirement survive publication rollback an
     assert.equal(opened.discovery.advance({ ...owned('new-pass'), now, retry: true }).deferred, true);
   } finally { close(opened); }
 });
+
+test('registered roots isolate unavailable peers of the same format and absent roots do not block discovery', t => {
+  const f = fixture(t), good = f.put('registered/good/session.jsonl');
+  const dangling = join(f.base, 'dangling'); fs.symlinkSync(join(f.base, 'missing-target'), dangling);
+  const state = new DerivedState(f.root);
+  const queue = new CaptureSourceQueue(state, { owner: 'fixture', selection: 'registered' });
+  const discovery = new CaptureSourceDiscovery(queue, [], { registered: [
+    { source: 'pi', path: dangling }, { source: 'pi', path: join(f.base, 'registered/good') },
+    { source: 'pi', path: join(f.base, 'absent') },
+  ] });
+  try {
+    for (let n = 0; n < 20 && discovery.healthyPending(); n++) {
+      try { discovery.advance({ ...owned('registered'), limit: 1 }); }
+      catch (error) { assert.equal(error.code, 'E_CAPTURE_ROOTS_COVERAGE'); }
+    }
+    assert.deepEqual(rows(state).map(row => row.path), [good]);
+    assert.equal(queue.current().discovered, false, 'unavailable roots never certify completeness');
+    assert.equal(discovery.current().groups.at(-1).complete, true, 'proven absence is optional');
+    assert.equal(discovery.current().groups[4].failure.reason, 'io');
+  } finally { discovery.close(); state.close(); }
+});

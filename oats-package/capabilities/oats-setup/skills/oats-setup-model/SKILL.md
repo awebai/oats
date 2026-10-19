@@ -59,6 +59,37 @@ An inactive finite worker between timer ticks is not evidence of an unhealthy
 schedule; do not promise a permanent PID or infer completion from hook launch.
 Releases 0.56–0.61 do not provide this conversion; follow their own instructions.
 
+From OATS 0.66.0 (configuration-derived capture roots), a person runs `oats setup`
+once in **each deployment** after upgrading and after changing a launch
+configuration's transcript location or referenced location environment. Every
+effective named configuration is included. Use absolute selectors; pi retains
+its native `~/` rule. An absent absolute root registers before first spawn;
+relative, unresolved, malformed or unreadable roots produce named coverage
+warnings. Those warnings alone preserve exit 0 after independent setup work
+succeeds. Registry/publication and unrelated setup failures stay nonzero; keep
+the summary of registration/hooks/service/first-pass effects and warnings.
+A refused first setup may leave only exact checked/synced record-root prefix
+creation, reported as partial initialization (`created setup parent ...`), with
+no registration/hooks/service/first capture. Preserve this evidence; do not
+adopt competing directories or automatically retry. Existing-root busy admission
+has no effects. Resolved unreadable warnings follow their exact registered path:
+health suppresses only that matching warning on observed readable/proven-absent
+outcomes, without rewriting registration; unknown locations require refresh.
+`--no-hooks`/`--no-service` still refresh registration; `--dry-run` changes nothing.
+
+Health's `capture-roots-invalid` requires inspection of the named inventory;
+`capture-roots-unavailable` requires repair/absolute selection and setup refresh,
+or the exact scoped retired-root forget command printed by that row;
+`capture-roots-refresh-required` requires setup at an inode-recreated deployment.
+Refresh/forget never deletes capture history or grants native-history custody.
+Old binaries ignore the inventory and lose this additional coverage; upgrading
+and running setup again restores it. Differing frozen recipes and
+provider-generated locations remain outside the snapshot. Follow the installed
+CLI's `packages/record/docs/capture-service.md#configuration-derived-transcript-roots-oats-066`.
+These source instructions require a separately tagged framework release; existing
+instance homes do not change automatically. Do not use 0.66-only commands or
+coverage claims on older kernels.
+
 For service A, from OATS 0.62.0, the package's `turn-record capture --health [--json]` reads
 installation evidence, receipt freshness/failure and current issues without
 capture, repair or manager calls. Warning rows are valid diagnosis, not a command

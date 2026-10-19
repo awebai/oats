@@ -1,10 +1,11 @@
 // Package-owned offline diagnosis. No writable DB/store, lock acquisition,
 // manager, repair or capture; warnings never publish new run evidence.
 import { homedir, hostname, platform as hostPlatform } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { readCaptureStatus } from "./capture-status.mjs";
 import { readCurrentIssueBacklog } from "./capture-issues.mjs";
 import { emptyFailureBacklog } from "./capture-failures.mjs";
+import { readCaptureRoots } from "./capture-roots.mjs";
 import { captureInstallation } from "./capture-health-installation.mjs";
 import { holderLiveness, readCaptureLockOwner, shellQuote } from "./capture-lock.mjs";
 
@@ -51,11 +52,12 @@ function diagnose(root, { home = homedir(), platform = hostPlatform(), now = Dat
   let installation;
   try { installation = captureInstallation(root, { home, platform, check }); }
   catch (error) { throw new Error(`Capture installation evidence is unknown: ${error.message}`, { cause: error }); }
-  const rows = [], path = join(root, "capture-status.json");
+  const registrations = readCaptureRoots(resolve(root), { check });
+  const rows = [...registrations.rows], path = join(root, "capture-status.json");
   let status = noHistory();
   const result = backlog => ({ schemaVersion: 1, status: rows.length ? "warning" : "ok", rows,
     lastRun: status.lastRun, lastSuccess: status.lastSuccess, lastFailure: status.lastFailure, backlog });
-  if (!installation.installed) { check(); return result(emptyBacklog()); }
+  if (!installation.installed && !registrations.installed) { check(); return result(emptyBacklog()); }
 
   const setup = `Run ${command} setup --root ${shellQuote(root)} with your existing --owner to inspect and refresh installation.`;
   try {
