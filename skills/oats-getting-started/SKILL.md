@@ -272,8 +272,8 @@ name: acme
 members:
   - git:github.com/acme/acme-oats     # the host is a member too
 packages:
-  oats.framework: v1.13.3             # the installed CLI's catalog versions (below)
-  oats.aweb: v1.29.0                  # messaging: agent identities, mail and chat
+  oats.framework: v1.13.4             # the installed CLI's catalog versions (below)
+  oats.aweb: v1.30.0                  # messaging: agent identities, mail and chat
 defaults:
   capabilities:
     oats.core: { from: package }
@@ -285,8 +285,8 @@ defaultTeam: acme                     # every soul starts in this team
 
 - **The versions** are the installed CLI's catalog's:
   `"$(oats root)/package-catalog.json"`, `packages."oats.framework".ref`
-  (for example `oats-framework/v1.13.3`: write the part after the `/`) and
-  `packages."oats.aweb".ref` (for example `v1.29.0`).
+  (for example `oats-framework/v1.13.4`: write the part after the `/`) and
+  `packages."oats.aweb".ref` (for example `v1.30.0`).
 - **The team** is `default:N.aweb.ai`, with `N` the username from step 1;
   its label (here `acme`) is the workspace name.
 - **Without messaging,** leave out the `oats.aweb` line, the `messaging`

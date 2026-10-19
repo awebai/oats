@@ -231,15 +231,22 @@ function receiveRecord(home) {
       (doc.launch !== undefined && !object(doc.launch))) return {error: 'captured instance record is malformed'};
   const meta = doc.capabilityMeta?.['oats.aweb'] ?? {};
   if (!object(meta) || doc.capabilityMeta?.['oats.aweb'] === null ||
-      [meta.runtime, doc.launch?.harness, doc.harness].some(v => v !== undefined && typeof v !== 'string') ||
+      (meta.runtime !== undefined && typeof meta.runtime !== 'string') ||
+      // Kernel harness fields are nonempty identifiers. Only legacy provider
+      // runtime metadata retains the empty-string external-broker meaning.
+      [doc.launch?.harness, doc.harness].some(v => v !== undefined && (typeof v !== 'string' || !v.trim() || v !== v.trim())) ||
       (meta.delivery !== undefined && !['session', 'channel'].includes(meta.delivery)) ||
       (doc.launch?.hooks !== undefined && !object(doc.launch.hooks)) ||
       (doc.launch?.hooks?.env !== undefined && !object(doc.launch.hooks.env))) return {error: 'captured delivery/runtime or credential metadata is malformed'};
+  if (doc.launch?.harness !== undefined && doc.harness !== undefined && doc.launch.harness !== doc.harness) return {error: 'captured kernel launch.harness and harness are inconsistent'};
   try { if (meta.claudeChannelMode !== undefined) selectClaudeChannel(meta.claudeChannelMode); }
   catch { return {error: 'captured Claude channel mode is malformed'}; }
   // The kernel's record of the last start's launch prompt; anything unreadable is no outcome.
   const launchPromptStatus = object(doc.launchPrompts) && typeof doc.launchPrompts.status === 'string' ? doc.launchPrompts.status : undefined;
-  return {meta, runtime: recordedRuntime(meta, doc.launch?.harness ?? doc.harness), identityHome: doc.launch?.hooks?.env?.AWEB_IDENTITY_HOME, hooks: doc.launch?.hooks, launchPromptStatus};
+  // Kernel launch receipts govern readiness. Provider meta may precede a
+  // failed launch; configuration names and caller env do not identify a start.
+  // Lifecycle callers retain recordedRuntime's historical cleanup semantics.
+  return {meta, runtime: doc.launch?.harness ?? doc.harness ?? meta.runtime, identityHome: doc.launch?.hooks?.env?.AWEB_IDENTITY_HOME, hooks: doc.launch?.hooks, launchPromptStatus};
 }
 
 /** Preserve valid retained facts even when a legacy record lacks ownership.
@@ -286,10 +293,13 @@ export function expectedReceive(home, {delivery = 'channel', policy} = {}) {
   // Local commands update disk without rewriting launch metadata. Global modes
   // forbid joins, so contradictory recorded global joins cannot be discarded.
   if (meta.identity?.mode === 'global' && (joined.length || (meta.joinedTeams !== undefined && (!Array.isArray(meta.joinedTeams) || meta.joinedTeams.length)))) return fail('global identity records contain contradictory joined-team state');
-  const primaryBroker = meta.delivery === undefined ? delivery === 'session' :
-    meta.delivery === 'session' || (runtime !== undefined && brokerDelivers({delivery: meta.delivery, runtime}));
+  const primaryBroker = runtime === 'codex' || (meta.delivery === undefined ? delivery === 'session' :
+    meta.delivery === 'session' || (runtime !== undefined && brokerDelivers({delivery: meta.delivery, runtime})));
   const native = meta.delivery === 'channel' && runtime !== undefined && !primaryBroker;
-  if (meta.claudeChannelMode !== undefined && (meta.delivery !== 'channel' || runtime !== 'claude')) return fail('captured Claude channel mode contradicts delivery/runtime');
+  // Validate mode against its own provider receipt; a valid Claude mode can
+  // lag the kernel's Codex receipt just like meta.runtime. It cannot select
+  // native delivery or suppress required broker checks.
+  if (meta.claudeChannelMode !== undefined && (meta.delivery !== 'channel' || (meta.runtime ?? runtime) !== 'claude')) return fail('captured Claude channel mode contradicts delivery/runtime');
   if (native && runtime === 'claude') {
     let channelWarning;
     try { channelWarning = capturedClaudeChannel(meta, captured.hooks, policy, captured.launchPromptStatus); }
@@ -337,7 +347,7 @@ export function wakeDaemonAssessment(status, {minimumVersion}) {
 /** Released aw status is a transport observation. Worker telemetry is absent at
  * the CLI floor; that is unknown, not permission to invent a healthy worker.
  * No generation/start witness is required or inferred from historical inputs. */
-export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime, capturedDelivery, primary, primaryTeam, bindings, incomplete = false}, {minimumVersion, now = Date.now()} = {}) {
+export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime, capturedDelivery, primary, primaryTeam, bindings, incomplete = false}, {minimumVersion, now = Date.now(), clientVersion} = {}) {
   const warnings = [];
   const fail = (code, message) => ({problems: [problem(code, message)], warnings});
   if (!object(status) || !Array.isArray(status.instances)) return fail('wake-status-unavailable', 'aw wake status is unavailable or malformed');
@@ -345,6 +355,8 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
   warnings.push(...daemon.warnings);
   if (daemon.problems.length) return {problems: daemon.problems, warnings};
   const rows = status.instances.filter(row => samePath(row?.home, home));
+  const codexPrimary = runtime === 'codex' && !!primary;
+  if (!rows.length && codexPrimary) return fail('wake-stream-missing', 'Codex primary has no broker target or receive stream');
   if (rows.length !== 1) return fail('wake-target-missing', 'canonical home must have exactly one broker target row');
   const row = rows[0];
   if (row.paused !== false) return fail('wake-target-paused', 'broker target is paused or its pause state is unknown');
@@ -354,6 +366,20 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
   const actualRuntime = row.runtime_delivery;
   if (!['external-session', 'native-channel', 'native-pi'].includes(actualRuntime) ||
       row.delivery !== (actualRuntime === 'external-session' ? 'session' : actualRuntime) || !pathValue(row.identity_home)) return fail('wake-target-binding', 'broker target delivery or primary identity is malformed');
+  // A retained native/mixed row can still carry joined streams without the
+  // primary Codex now requires. Diagnose that absence before route mismatch;
+  // malformed/duplicate identities and same-size substitutions remain binding
+  // failures. Unknown legacy ownership must not acquire a primary requirement.
+  const actual = row.receive_identities;
+  if (codexPrimary && (actual === undefined || (Array.isArray(actual) && !actual.length))) return fail('wake-stream-missing', 'Codex primary has no broker receive streams');
+  if (codexPrimary && Array.isArray(actual) &&
+      actual.every(r => object(r) && pathValue(r.identity_home)) &&
+      new Set(actual.map(r => canon(r.identity_home))).size === actual.length &&
+      !actual.some(r => samePath(r.identity_home, primary)) &&
+      ((!incomplete && actual.length < bindings.length) ||
+       (['native-channel', 'native-pi'].includes(row.runtime_delivery) && samePath(row.primary_identity_home, primary)))) {
+    return fail('wake-stream-missing', 'Codex primary is absent from the broker receive streams');
+  }
   if (!incomplete) {
     if (actualRuntime !== runtimeDelivery || !samePath(row.identity_home, bindings[0]?.identity_home) ||
         (runtimeDelivery !== 'external-session' && !samePath(row.primary_identity_home, primary)) ||
@@ -366,7 +392,6 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
         (primary && actualRuntime === 'external-session' && !samePath(row.identity_home, primary)) ||
         (actualRuntime !== 'external-session' && (!pathValue(row.primary_identity_home) || (primary && !samePath(row.primary_identity_home, primary))))) return fail('wake-target-binding', 'broker target contradicts retained delivery, runtime or primary locator facts');
   }
-  const actual = row.receive_identities;
   if (!Array.isArray(actual) || !actual.length || (!incomplete && actual.length !== bindings.length)) return fail('wake-target-binding', 'broker receive identity set is missing, extra or incomplete');
   if (actual.some(r => !object(r) || !pathValue(r.identity_home)) || new Set(actual.map(r => canon(r.identity_home))).size !== actual.length) return fail('wake-target-binding', 'broker receive identities are malformed or duplicated');
   if (actual.some(r => r.stream_error !== undefined && typeof r.stream_error !== 'string')) return fail('wake-status-unavailable', 'supplied receive stream error is malformed');
@@ -414,7 +439,13 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
   if (states.every(Boolean) && states[0] !== states[1]) return fail('wake-status-unavailable', 'broker observation states contradict each other');
   const updated = status.updated_at === undefined ? undefined : parseTimestamp(status.updated_at);
   const inspected = row.last_inspect_at === undefined ? undefined : parseTimestamp(row.last_inspect_at);
-  if (updated !== undefined && (!Number.isFinite(updated) || updated > now)) return fail('wake-status-stale', 'supplied broker status timestamp is invalid or future');
+  // A malformed observation cannot establish age. Keep the wire's unavailable
+  // status (kernel: unknown), and distinguish it from a parsed future snapshot.
+  if (updated !== undefined && !Number.isFinite(updated)) {
+    const client = typeof clientVersion === 'string' && /^\d+\.\d+\.\d+$/.test(clientVersion) ? clientVersion : 'unknown';
+    return fail('wake-status-timestamp-unknown', `status.updated_at is not an RFC 3339 timestamp in the form aw emits (aw client ${client}; daemon ${status.daemon_version}); broker observation time is unknown`);
+  }
+  if (updated !== undefined && updated > now) return fail('wake-status-stale', 'status.updated_at is in the future');
   if (inspected !== undefined && (!Number.isFinite(inspected) || inspected > now || (updated !== undefined && inspected > updated))) return fail('receive-inspection-unproven', 'supplied broker inspection timestamp is invalid, future or later than the snapshot');
   // Released aw retains nonempty LastError across child status updates, while
   // ReadinessError can clear (channel_core_runner.go:508-539, v1.36.23). There
