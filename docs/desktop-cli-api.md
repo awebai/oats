@@ -987,7 +987,8 @@ before a kernel that writes it ships. A change of meaning moves
   the time it ran.
 
 **`add`** lists the deployment at or above `<dir>` (default: the working
-directory), canonical, and clears a `remove`. → `{"path":"/home/me/acme","added":true}`;
+directory: the nearest directory whose `oats-local.yaml` is a regular file,
+not a link), canonical, and clears a `remove`. → `{"path":"/home/me/acme","added":true}`;
 `added: false` when it was listed already, and nothing is written. `--via
 tui|desktop` names the client that adds it (default `cli`); any other value is
 `E_BAD_ARGS`. Outside every deployment: `E_LOCAL_MISSING {dir}`.

@@ -697,7 +697,9 @@ only. Which deployments a client has open stays with that client.
   nothing.
 - `oats deployments add [<dir>]`, which the clients run when they open a
   deployment, and people by hand. It lists the deployment at or above `<dir>`
-  (default: the current directory), found as every kernel `--dir` finds it.
+  (default: the current directory): the nearest directory whose
+  `oats-local.yaml` is a regular file, not a link. A directory or a link of
+  that name is not a deployment's file and is passed over.
 - **Every kernel command that resolves a deployment that is not listed yet**
   lists it (`via: cli`): `status`, `spawn`, `sync`, `session`, `doctor`,
   `retire` and the others that read a local deployment, from inside an

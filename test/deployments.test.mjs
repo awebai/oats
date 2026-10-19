@@ -192,6 +192,16 @@ test("add: walks up to the deployment, answers added true then false (nothing wr
   const nowhere = join(f.base, "nowhere"); mkdirSync(nowhere);
   const e = f.failure(["deployments", "add", nowhere], "E_LOCAL_MISSING");
   assert.match(e.message, /no oats-local\.yaml at or above .*nowhere/);
+  // Only a regular oats-local.yaml makes a deployment (awebai/oats#1397): a directory or a link of
+  // that name is passed over, to the deployment above it, or to E_LOCAL_MISSING.
+  const odd = join(f.base, "odd"); mkdirSync(join(odd, "oats-local.yaml"), { recursive: true });
+  assert.equal(f.failure(["deployments", "add", odd], "E_LOCAL_MISSING").message, e.message.replace(nowhere, odd));
+  const linked = join(f.base, "linked"); mkdirSync(linked);
+  symlinkSync(join(acme, "oats-local.yaml"), join(linked, "oats-local.yaml"));
+  f.failure(["deployments", "add", linked], "E_LOCAL_MISSING");
+  const inner = join(acme, "inner"); mkdirSync(join(inner, "oats-local.yaml"), { recursive: true });
+  assert.deepEqual(f.ok(["deployments", "add", inner]), { path: acme, added: false }, "past a directory of that name, to the deployment above");
+  assert.equal(existsSync(f.file) && f.stored().deployments.some((d) => d.path === odd || d.path === linked || d.path === inner), false);
   // The clients' --via.
   const beta = f.deployment("beta");
   assert.equal(f.ok(["deployments", "add", beta, "--via", "tui"]).added, true);
