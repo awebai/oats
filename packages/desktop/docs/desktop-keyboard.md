@@ -11,8 +11,8 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 `renderer/instance-recency.mjs` (the palette's last-focus record),
 `renderer/shell.mjs` (action registration). Tests: `test/keymap-linux.test.mjs`,
 `test/keybindings.test.mjs`, `test/focus-regions.test.mjs`,
-`test/spawn-dialog-keyboard.test.mjs`, `test/palette-tree.test.mjs` (the palette's rows and cycling),
-`test/palette-recency.test.mjs` (its Recent group and focus record), `test/tab-strip-reveal.test.mjs`,
+`test/spawn-dialog-keyboard.test.mjs`, `test/palette-tree.test.mjs` (the palette's tree rows, connectors and cycling),
+`test/palette-recency.test.mjs` (its recency order, first-row opening and focus record), `test/tab-strip-reveal.test.mjs`,
 `test/roster-scrollport.test.mjs` (a focused roster row is revealed inside the list),
 `test/roster-reveal-row.test.mjs` (an active terminal tab reveals its roster row),
 `test/theme-picker.test.mjs` (the theme picker's keys), `test/shell-design.test.mjs` (Show sidebar,
@@ -261,41 +261,54 @@ control.
 
 ## The command palette (⌘K)
 
-- **⌘K / Ctrl+Shift+K** opens the palette. With an empty query it starts with
-  a **Recent** group: every instance of the window's workspace whose terminal
-  has been focused (its tab became the active tab, by any path, or its
-  terminal took keyboard focus), most recent first, flat, each with its
-  parent as quiet text ("under lead"). Then every other instance as the
-  sidebar roster lists it (the same relation groups and runs of independent
-  instances, in name order; indented by depth; the sidebar's collapsed state
-  is ignored), minus those already in Recent: each instance appears once. Then up to
-  twelve commands. `>` restricts to commands. The sidebar roster keeps its
-  stable order; only the palette is ordered by focus.
-- **The palette opens on the previous instance.** When the most recent
-  instance is the terminal in front, the second recent row is active, so ⌘K
-  then Enter returns to the agent you were on before. Otherwise the first row
-  is active.
+- **⌘K / Ctrl+Shift+K** opens the palette: the sidebar's tree, in the modal,
+  ordered by last focus. Every instance of the window's workspace is listed
+  once, in the sidebar's deployment sections, relation groups and runs of
+  independent instances, indented by depth (the sidebar's collapsed state is
+  ignored). Then up to twelve commands. `>` restricts to commands.
+- **The order is last focus.** An instance is focused when its tab becomes the
+  active tab, by any path, or its terminal takes keyboard focus. At every level
+  a node sits where the most recently focused instance of its subtree puts it:
+  a relation cluster or a single instance by its most recent member, a
+  cluster's roots and each parent's children the same way, and, with several
+  deployments, each deployment's section by its most recent instance. So a
+  child focused after its parent lifts the parent's group and the parent above
+  its siblings. A child always stays under its parent. Instances never focused
+  keep the sidebar's order (name), after the rest; with no record at all the
+  palette lists exactly the sidebar's order. Groups form again after ordering
+  by the sidebar's rule, so an instance focused a minute ago is not held behind
+  a stale run of independent ones. The sidebar roster keeps its stable name
+  order; only the palette is ordered by focus.
+- **The palette opens on its first row.** With an empty query the active row
+  is the top of the list: by the order above, the root of the most recently
+  focused path. ⌘K again moves down from there. (Until #1391 it opened on the
+  agent you were on before, often a row in the middle of the list.)
 - The focus record is per machine: one `localStorage` key
   (`oats-desktop-instance-recency`), keyed by workspace and by the instance's
   exact identity (the terminal tab's key), the 200 most recent per workspace.
   It survives a restart and is never written to a deployment or sent to the
   server. A missing or corrupt value reads as empty; an entry for an instance
   no longer in the roster is not listed.
-- With a query the matching recent instances come first, most recent first,
-  flat as above. The remaining matches keep tree order: each match at its
-  depth, with its non-matching ancestors shown dimmed for context (a recent
-  ancestor of a match is shown there too, as context). A match stays in its
-  relation group, as in the filtered sidebar: one match out of a group of five
-  is listed under that group's name, not under independent. A context row is
-  `aria-disabled`: the arrows, the chord and the pointer skip it, and it opens
-  nothing.
-- **Siblings say so.** An instance declared a sibling of a root, and that
-  root, each say `sibling of <name>` on every row they have (tree, context and
-  Recent), as quiet text beside the name and read once with the option
-  (`…, sibling of <name>`); a Recent row with a parent reads
-  `under lead · sibling of beta`. Siblings under one parent read
-  `under <parent>`. Only direct links within one deployment count, and a
-  sibling's name does not match the row.
+- **With a query** each match is listed with its non-matching ancestors shown
+  dimmed for context, in the same order as the unfiltered list: the order is
+  decided on the full roster and the query only decides which rows show, so a
+  group's place never changes while you type. A match stays in its relation
+  group, as in the filtered sidebar: one match out of a group of five is listed
+  under that group's name, not under independent. The active row is the first
+  match. A context row is `aria-disabled`: the arrows, the chord and the pointer
+  skip it, and it opens nothing.
+- **The rows look like the sidebar's.** Each instance row draws the sidebar's
+  connectors, from the sidebar's own code (`treeConnectors` and its DOM builder
+  `treeGuides`, `renderer/instance-tree-view.mjs`, and the same `.ctx-guide`
+  rules): the dotted line joining the roots of one group (sibling links) on the
+  dot column, and the solid parent→child elbows and pass-throughs to its right.
+  Its dot is the sidebar's state dot: running, stopped or unknown. A context row
+  keeps its lines; only its text is dimmed.
+- **Relations in words.** A nested row's option reads "…, under <parent>" and an
+  instance at either end of an explicit sibling link reads "…, sibling of
+  <name>", visually hidden and read once with the option; the lines show both,
+  so no relation text is drawn. Only direct links within one deployment count,
+  and a sibling's name does not match the row.
 - **While the palette is open, its own chord cycles**: ⌘K moves the active row
   down, ⇧⌘K up, both wrapping past the ends. Releasing commits nothing:
   **Enter** opens the active row and **Esc** closes. The arrows move too and
@@ -304,11 +317,10 @@ control.
   form, so ArrowUp moves up there. A plain-key binding never cycles: typing
   belongs to the input. Quick Open's chord does not cycle: a second ⌘P /
   Ctrl+Shift+P closes it.
-- For assistive technology each relation group, and Recent, is a named
-  `role=group` (announced once, on entry), and a nested or recent row's option
-  reads "…, under <parent>" (visually hidden; a recent row's visible "under
-  <parent>" is `aria-hidden`, so it is read once). Options carry no `aria-level`, which is not an
-  option's attribute.
+- For assistive technology each relation group is a named `role=group`
+  (announced once, on entry); the lines and dots are `aria-hidden`, and the
+  relations are read as the words above. Options carry no `aria-level`, which
+  is not an option's attribute.
 
 ## Quick Open and the spawn dialog
 

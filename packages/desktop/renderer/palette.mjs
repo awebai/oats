@@ -2,17 +2,26 @@
    Linux/Windows; the keymap engine owns the chord and its terminal policy).
    One input, two result kinds: instances (default; jump-to-terminal) and
    commands (also matched by name — ">" prefix restricts to commands).
-   Instances are listed like the sidebar roster (spec F): the same deployment
-   sections, relation groups, order and depth, from the sidebar's own builders
-   (packages/client: rosterSections, roster-sections.mjs; rosterGroups, instance-tree.mjs);
-   a query keeps tree order, showing each match with its non-matching ancestors
-   as disabled context rows. An instance at either end of an explicit sibling
-   link (#1312; packages/client instanceSiblings, resolved per deployment over
-   its full roster) says "sibling of <name>" on each of its rows, seen and read;
-   matching never reads it. Instances whose terminal was focused lead, most
-   recent first, in a flat Recent group (Spec C; the record is
-   instance-recency.mjs, the sidebar roster keeps its stable order). While open, the palette's own chord moves the
-   active row down (Shift + the chord: up), skipping context rows.
+   Instances are the sidebar's tree ordered by last focus (#1383): the sidebar's
+   deployment sections, relation groups and depth, from its own builders
+   (packages/client: rosterSections, roster-sections.mjs; rosterGroups and
+   recencyOrder, instance-tree.mjs), given the workspace's last-focus record.
+   At every level (a deployment's section, a relation cluster, a cluster's roots,
+   a parent's children) a node sits where the most recently focused instance of
+   its subtree puts it; never-focused nodes keep the sidebar's order after the
+   rest; a child stays under its parent. This supersedes Spec C's flat Recent
+   group; the record is still instance-recency.mjs, and the sidebar keeps its
+   stable name order. The order is decided on the full roster: a query decides
+   only which rows show, each match with its non-matching ancestors as disabled
+   context rows. Each row carries the sidebar row's connectors (treeConnectors,
+   instance-tree-view.mjs) and state; an instance at either end of an explicit
+   sibling link (#1312; instanceSiblings, resolved per deployment over its full
+   roster) says "sibling of <name>" to assistive technology, as a child says
+   "under <parent>": the dotted line carries siblinghood visibly. The palette
+   opens on its first selectable row: the top of the list, which the order makes
+   the most recently focused path (with a query, the first match; #1391).
+   While open, the palette's own chord moves the active row down (Shift + the
+   chord: up), skipping context rows.
    Overlay chrome lives in overlay-picker.mjs (shared with Quick Open), the fuzzy
    matcher in packages/client/subsequence-score.mjs (shared with the TUI); this
    module owns only the palette's row semantics. */
@@ -20,37 +29,34 @@ import { runtimeState, siblingText } from "../../client/instance-presentation.mj
 import { filterInstanceTree, instanceId, instanceSiblings } from "../../client/instance-tree.mjs";
 import { rosterSections, splitByDeployment, isMultiDeployment } from "../../client/roster-sections.mjs";
 import { DESKTOP_TERMS } from "./desktop-terms.mjs";
+import { treeConnectors } from "./instance-tree-view.mjs";
 import { createOverlayPicker } from "./overlay-picker.mjs";
 import { subsequenceScore } from "../../client/subsequence-score.mjs";
 
 /** Commands listed at most (after every instance row; the instance list scrolls). */
 export const PALETTE_COMMAND_CAP = 12;
 
-/** The Recent group's key: never a roster group's, so a following group never merges into it. */
-const RECENT_GROUP = Object.freeze({ key: "\u0000recent", label: "Recent" });
-
 /** Pure row computation — exported for tests. `roster` is the panel's
- * `{ instances, deployments, recent?, activeId? }` (one snapshot), or just the
- * instances where there is a single deployment; `commands` the static command
- * list, `raw` the input value. `recent` is the workspace's last-focus record
- * (Map<instanceId, time>, instance-recency.mjs) and `activeId` the instanceId of
- * the terminal that is the active tab, if any.
- * Instances whose terminal was focused come first, in one flat Recent group, most
- * recent first; every other instance follows in the sidebar's tree presentation,
- * each instance once. Instance rows carry { depth, group: { key, label }, under? }
- * and, for an ancestor shown only as a match's context, { context: true } and no
- * run. A recent row also carries { recent: true } and, with a parent, shows its
- * "under <parent>" ({ showUnder: true }); the row the palette opens on
- * when it is not the first, { initial: true }. Every instance row (tree, context
- * and Recent) of an instance with a sibling by explicit link carries
- * { sibling: "sibling of <names>" } (siblingText over instanceSiblings, built per
+ * `{ instances, deployments, recent? }` (one snapshot), or just the instances
+ * where there is a single deployment; `commands` the static command list, `raw`
+ * the input value. `recent` is the workspace's last-focus record
+ * (Map<instanceId, time>, instance-recency.mjs).
+ * Every instance is listed once, in the sidebar's tree ordered by `recent`
+ * (rosterSections with `lastFocus`). Instance rows carry { depth, group: { key,
+ * label }, connectors, state, under?, sibling? }: `connectors` is treeConnectors
+ * over the row's cluster as listed and its deployment's full roster, `state` is
+ * runtimeState (running, stopped or unknown), `under` "under <parent>" for a
+ * child; a row of an instance with a sibling by explicit link carries
+ * `sibling: "sibling of <names>"` (siblingText over instanceSiblings, built per
  * deployment over its full roster as the sidebar resolves relations, never over
- * the listed rows); a row without one has no `sibling` field. */
+ * the listed rows), and a row without one has no `sibling` field. An ancestor
+ * shown only as a match's context carries { context: true } and no run. No row
+ * is marked to open on: the picker starts on the first selectable row, the top
+ * of the list (with a query, the first match), #1391. */
 export function paletteRows(roster, commands, raw, { openTerminal } = {}) {
   const instances = (Array.isArray(roster) ? roster : roster?.instances) || [];
   const deployments = (Array.isArray(roster) ? null : roster?.deployments) || [];
   const recent = !Array.isArray(roster) && roster?.recent instanceof Map ? roster.recent : new Map();
-  const activeId = (Array.isArray(roster) ? null : roster?.activeId) ?? null;
   const cmdMode = raw.startsWith(">");
   const q = (cmdMode ? raw.slice(1) : raw).trim();
   const rows = [];
@@ -58,67 +64,42 @@ export function paletteRows(roster, commands, raw, { openTerminal } = {}) {
     // The house fuzzy matcher decides what matches; the tree path around a
     // match is the sidebar's (identity-aware filterInstanceTree).
     const matches = (inst) => !q || subsequenceScore(`${inst.instance} ${inst.agent || ""} ${inst.repoName || ""}`, q) != null;
-    const isRecent = (inst) => recent.has(instanceId(inst));
-    // Siblings resolve inside a deployment, over its full roster, as the sidebar's relations do.
-    const siblings = new Map(isMultiDeployment(deployments)
-      ? [...splitByDeployment(deployments)(instances).values()].flatMap((own) => [...instanceSiblings(own)])
-      : instanceSiblings(instances));
-    const instanceRow = (inst, depth, group, parent, said = siblingText(siblings.get(instanceId(inst)))) => ({
-      label: inst.instance,
-      detail: [inst.server, inst.agent, inst.branch, runtimeState(inst)].filter(Boolean).join(" · "),
-      dot: inst.running === true ? true : inst.running === false ? false : null,
-      depth,
-      group,
-      // Depth reaches assistive technology as words (aria-level is not an option's).
-      ...(parent ? { under: `under ${parent}` } : {}),
-      ...(said ? { sibling: said } : {}),
-    });
+    // Relations resolve inside a deployment, over its full roster, as the sidebar's do (#482).
+    const multi = isMultiDeployment(deployments);
+    const own = multi ? splitByDeployment(deployments)(instances) : null;
+    const siblings = new Map(multi ? [...own.values()].flatMap((list) => [...instanceSiblings(list)]) : instanceSiblings(instances));
+    // What a query leaves of each deployment's roster: its matches and their ancestor paths.
+    const visible = !q ? instances
+      : multi ? [...own.values()].flatMap((list) => filterInstanceTree(list, q, matches)) : filterInstanceTree(instances, q, matches);
     const opens = (inst) => () => openTerminal({ instance: inst.instance, home: inst.home, agentsRoot: inst.agentsRoot, ...(inst.server ? { server: inst.server } : {}) });
-    // The sidebar's tree over the instances `keep` leaves of each deployment's
-    // roster: its relation groups, order and depth. Relations and a match's
-    // context rows stay inside its deployment, as in the sidebar (#482).
-    const treeOf = (keep) => {
-      const visible = isMultiDeployment(deployments)
-        ? [...splitByDeployment(deployments)(instances).values()].flatMap(keep)
-        : keep(instances);
-      const out = [];
-      for (const section of rosterSections(instances, visible, deployments, DESKTOP_TERMS)) for (const each of section.groups) {
+    for (const section of rosterSections(instances, visible, deployments, DESKTOP_TERMS, { lastFocus: recent })) {
+      const full = section.deployment ? own.get(section.deployment.id) : instances;
+      for (const each of section.groups) {
         // A group is named, and kept apart, by its deployment where there are several.
         const group = section.deployment
           ? { key: `${section.deployment.id}|${each.key}`, label: `${section.label} · ${each.label}` }
           : { key: each.key, label: each.label };
         for (const cluster of each.clusters) for (const inst of cluster.instances) {
           const depth = inst.depth || 0;
-          out.push({ inst, depth, group, parent: depth > 0 && inst.parentInstance ? inst.parentInstance : null });
+          const parent = depth > 0 && inst.parentInstance ? inst.parentInstance : null;
+          const said = siblingText(siblings.get(instanceId(inst)));
+          const row = {
+            label: inst.instance,
+            detail: [inst.server, inst.agent, inst.branch, runtimeState(inst)].filter(Boolean).join(" · "),
+            depth,
+            group,
+            // The sidebar row's lines and dot: its connectors over the cluster as listed, and its state.
+            connectors: treeConnectors(cluster.instances, inst, full),
+            state: runtimeState(inst),
+            // Depth and siblinghood reach assistive technology as words (aria-level is not an option's).
+            ...(parent ? { under: `under ${parent}` } : {}),
+            ...(said ? { sibling: said } : {}),
+          };
+          if (q && !matches(inst)) row.context = true;
+          else row.run = opens(inst);
+          rows.push(row);
         }
       }
-      return out;
-    };
-    // Recent: the matching instances with a recorded focus, most recent first,
-    // flat, each keeping its relation context from the full tree. An entry for an
-    // instance no longer in the roster has no row.
-    const recentRows = [];
-    if (recent.size) {
-      const time = (inst) => recent.get(instanceId(inst));
-      const listed = treeOf((own) => own).filter(({ inst }) => isRecent(inst) && matches(inst));
-      for (const { inst, parent } of listed.sort((a, b) => time(b.inst) - time(a.inst))) {
-        recentRows.push({ ...instanceRow(inst, 0, RECENT_GROUP, parent), recent: true, ...(parent ? { showUnder: true } : {}), run: opens(inst) });
-      }
-      // ⌘K, Enter goes back to the previous instance: when the most recent is the
-      // terminal in front, the palette opens on the second recent row.
-      if (!q && recentRows.length > 1 && activeId != null && instanceId(listed[0].inst) === activeId) recentRows[1].initial = true;
-    }
-    rows.push(...recentRows);
-    // Then the rest in the tree presentation. With a query the tree holds the
-    // non-recent matches and their ancestors, shown as context rows.
-    const rest = q
-      ? (own) => filterInstanceTree(own, q, (inst) => matches(inst) && !isRecent(inst))
-      : (own) => own.filter((inst) => !isRecent(inst));
-    for (const { inst, depth, group, parent } of treeOf(rest)) {
-      const row = instanceRow(inst, depth, group, parent);
-      if (q && (!matches(inst) || isRecent(inst))) row.context = true;
-      else row.run = opens(inst);
-      rows.push(row);
     }
   }
   const commandRows = [];

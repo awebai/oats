@@ -73,7 +73,7 @@ import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import { collapseKey, hasInstanceChildren, instanceRepoLabel, filterInstanceTree, instanceMatchesFilter, instanceVisibleInTree, waitingRollup, instanceId, rosterParentId, heldHome } from "../../client/instance-tree.mjs";
 import { createRetiresInFlight, retiringRows } from "../../client/retire-in-flight.mjs";
-import { treeConnectors, captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
+import { treeConnectors, treeGuides, captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
   terminalKey, resolveTerminalOpen, createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE } from "./instance-tree-view.mjs";
 import {
   tabVisibleInContext, canActivateTab,
@@ -946,15 +946,7 @@ function renderContextRoster(instances) {
 
         // Design connectors drawn from the dots: rounded solid elbows into
         // children, solid stems/pass-throughs, dotted sibling links.
-        const guides = document.createElement("span");
-        guides.className = "ctx-guides";
-        guides.setAttribute("aria-hidden", "true");
-        for (const { kind, level } of treeConnectors(items, i, instances)) {
-          const guide = document.createElement("span");
-          guide.className = `ctx-guide ${kind}`;
-          guide.style.setProperty("--guide-level", String(level));
-          guides.append(guide);
-        }
+        const guides = treeGuides(document, treeConnectors(items, i, instances));
 
         const row = document.createElement("button");
         row.type = "button";
@@ -1160,15 +1152,7 @@ function pendingSpawnRow(i, items, instances, startedAt = null) {
   const rowWrap = document.createElement("div");
   rowWrap.className = "ctx-tree-row ctx-spawn-row" + (unknown ? " ctx-spawn-unknown" : "") + (p?.revealed ? " ctx-spawn-revealed" : "");
   rowWrap.style.setProperty("--depth", String(i.depth || 0));
-  const guides = document.createElement("span");
-  guides.className = "ctx-guides";
-  guides.setAttribute("aria-hidden", "true");
-  for (const { kind, level } of treeConnectors(items, i, instances)) {
-    const guide = document.createElement("span");
-    guide.className = `ctx-guide ${kind}`;
-    guide.style.setProperty("--guide-level", String(level));
-    guides.append(guide);
-  }
+  const guides = treeGuides(document, treeConnectors(items, i, instances));
   const row = document.createElement("button");
   row.type = "button";
   row.className = "ctx-inst pending";
@@ -2281,13 +2265,11 @@ const palette = createPalette({
   loadInstances: async () => {
     if (windowState() === "choosing") return { instances: [], deployments: [] }; // no workspace: nothing to read (#481)
     const ws = currentWorkspace();
-    // The terminal in front and the last-focus record as the palette opens (Spec C).
-    const front = tabLayerVisible ? tabs.get(activeTab) : null;
-    const activeId = front?.kind === "terminal" && front.workspace === ws ? recencyIdFromTerminalKey(ws, front.key) : null;
+    // The last-focus record as the palette opens: its order (#1383).
     const recent = instanceRecency.snapshot(ws);
     const p = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
     // One snapshot: the palette sections and clusters by these deployments, as the sidebar does.
-    return { instances: p.instances || [], deployments: panelDeployments(p), recent, activeId };
+    return { instances: p.instances || [], deployments: panelDeployments(p), recent };
   },
   // A held home (spawning, retiring, left half cleaned) opens nothing from here either, as its roster row does not:
   // the row as this window reads it (its own retires in flight held), said as the row says it.

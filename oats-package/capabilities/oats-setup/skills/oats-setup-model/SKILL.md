@@ -135,7 +135,7 @@ only by that repo's souls.
 
 **Each workspace has a setup expert:** a soul of its own that holds
 `oats.setup`, named `<workspace>-oats-setup-expert` by convention. From OATS
-0.62.0, the repository's `oats-getting-started` skill creates it for a new
+0.64.0, the repository's `oats-getting-started` skill creates it for a new
 workspace, with nothing else in it; before that, add it by pull request like
 any soul (`/oats-workspace-config`). All its knowledge comes from this capability, so a
 workspace's setup expert improves with the `oats.framework` pin, not by edits

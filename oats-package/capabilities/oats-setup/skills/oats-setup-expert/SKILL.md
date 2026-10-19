@@ -14,7 +14,7 @@ description: >-
 # Your first session as the workspace's setup expert
 
 Use this skill when your task starts with `# Onboarding hand-over from the
-getting-started skill`. From OATS 0.62.0, the repository's
+getting-started skill`. From OATS 0.64.0, the repository's
 `oats-getting-started` skill writes that file when it spawns a workspace's setup expert
 (`<workspace>-oats-setup-expert`). You are that expert, and from now on the
 onboarding is yours.
