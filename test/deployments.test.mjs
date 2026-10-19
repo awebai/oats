@@ -1,6 +1,6 @@
 // This computer's deployments (awebai/oats#1390; docs/workspaces.md "This computer's deployments"):
 // `~/.oats/config/deployments.json` and `oats deployments [list]|add|remove|import`, the first-use
-// `~/Agents` import, the four E_DEPLOYMENTS_* codes, and the auto-add a kernel command does in an
+// `~/Agents` import, the five E_DEPLOYMENTS_* codes, and the auto-add a kernel command does in an
 // unlisted deployment (with tombstones that keep a removed path off the list).
 //
 // Every CLI run here gets an environment built from nothing: a HOME and an OATS_HOME_DIR of the
@@ -109,6 +109,29 @@ test("the ~/Agents import: a linked ~/Agents is not followed (nothing imported, 
   assert.equal(typeof res.imports["agents-dir"], "string");
 });
 
+test("E_DEPLOYMENTS_IMPORT: an unreadable ~/Agents fails the command and is not marked imported; an unreadable entry in it is skipped", { skip: ROOT && "root reads anywhere" }, (t) => {
+  const f = fixture(t);
+  const acme = f.deployment("home", "Agents", "acme");
+  const agents = join(f.home, "Agents");
+  chmodSync(agents, 0o000);
+  for (const args of [["deployments"], ["deployments", "add", f.deployment("beta")], ["deployments", "remove", "/x"], ["deployments", "import", "--from", "desktop"]]) {
+    const e = f.failure(args, "E_DEPLOYMENTS_IMPORT");
+    assert.match(e.message, new RegExp(`^cannot read ${agents} to import its deployments \\(.*EACCES.*\\); make it readable, or move it aside, and retry; nothing was changed$`));
+    assert.equal(e.details.dir, agents);
+  }
+  assert.equal(existsSync(f.file), false, "nothing was written: no rows and no marker");
+  // The auto-add swallows it.
+  const r = f.oats(["doctor", "--json"], { cwd: f.deployment("gamma") });
+  assert.doesNotMatch(r.stderr, /deployments|Agents/);
+  assert.equal(existsSync(f.file), false);
+  // Readable again: the import runs, once. An entry that cannot be checked is skipped.
+  chmodSync(agents, 0o700);
+  const locked = join(agents, "locked"); mkdirSync(join(locked, "inner"), { recursive: true }); chmodSync(locked, 0o000);
+  const res = f.ok(["deployments"]);
+  assert.deepEqual(res.deployments.map((d) => d.path), [acme]);
+  assert.equal(typeof res.imports["agents-dir"], "string");
+});
+
 test("the ~/Agents import reads at most 200 entries", (t) => {
   const f = fixture(t);
   for (let i = 0; i < 205; i++) f.deployment("home", "Agents", `d${String(i).padStart(3, "0")}`);
@@ -211,6 +234,24 @@ test("add: a deployment inside a linked Git worktree is listed at the primary ch
   assert.deepEqual(f.ok(["deployments", "add", join(f.base, "linked", "deploy")]), { path: join(main, "deploy"), added: true });
 });
 
+test("a deployment at the root of a linked Git worktree is the primary checkout's: one row, and its tombstone holds against the auto-add and the Desktop import", (t) => {
+  const f = fixture(t);
+  const git = (cwd, ...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main", ...args], { cwd, env: f.env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const main = join(f.base, "acme"); mkdirSync(main);
+  writeFileSync(join(main, "README"), "x\n");
+  git(main, "init", "-q"); git(main, "add", "."); git(main, "commit", "-q", "-m", "init");
+  const linked = join(f.base, "acme-linked");
+  git(main, "worktree", "add", "-q", linked, "-b", "side");
+  for (const d of [main, linked]) writeFileSync(join(d, "oats-local.yaml"), LOCAL_YAML);
+  assert.deepEqual(f.ok(["deployments", "add", main]), { path: main, added: true });
+  assert.deepEqual(f.ok(["deployments", "add", linked]), { path: main, added: false });
+  assert.deepEqual(f.ok(["deployments"]).deployments.map((d) => d.path), [main]);
+  assert.deepEqual(f.ok(["deployments", "remove", linked]), { path: main, removed: true }, "remove finds the row by the canonical spelling too");
+  f.oats(["doctor", "--json"], { cwd: linked });
+  assert.deepEqual(f.ok(["deployments", "import", "--from", "desktop", linked]).added, []);
+  assert.deepEqual(f.ok(["deployments"]).deployments, [], "neither the auto-add nor the import revives the tombstone");
+});
+
 // ---------------------------------------------------------------- remove (tombstones)
 
 test("remove: a tombstone, hidden from list in both forms; nothing on disk touched; an unlisted path answers removed false and exits 0; an explicit add brings it back", (t) => {
@@ -297,6 +338,7 @@ test("E_DEPLOYMENTS_INVALID: not JSON, not an object, a link, over 1 MiB, or a r
     ["not json\n", /not JSON/],
     ["[]\n", /not a JSON object/],
     [JSON.stringify({ deployments: [] }), /schemaVersion must be 1/],
+    [JSON.stringify({ schemaVersion: 1, imports: { "agents-dir": "2026-10-19T10:00:00.000Z" } }), /deployments must be an array/],
     [JSON.stringify({ schemaVersion: 1, deployments: {} }), /deployments must be an array/],
     [JSON.stringify({ schemaVersion: 1, deployments: [{ path: "relative", addedAt: "x", via: "cli" }] }), /path must be an absolute path/],
     [JSON.stringify({ schemaVersion: 1, deployments: [{ path: "/a", addedAt: "x", via: "cli" }, { path: "/a", addedAt: "x", via: "cli" }] }), /listed twice/],
@@ -348,6 +390,21 @@ test("E_DEPLOYMENTS_BUSY: a lock still held after 3 s; the first-use import neve
   f.holdLock();
   f.ok(["deployments"]);
   f.failure(["deployments", "add", f.deployment("acme")], "E_DEPLOYMENTS_BUSY");
+});
+
+test("E_DEPLOYMENTS_WRITE: a write that would make the file larger than its readers read is refused, and the list stays as it was", (t) => {
+  const f = fixture(t);
+  // Valid, and within the budget as stored (compact); kept fields are written back, pretty-printed.
+  const doc = { ...MARKED(), padding: "" };
+  doc.padding = "x".repeat(1024 * 1024 - Buffer.byteLength(JSON.stringify(doc)) - 64);
+  const text = JSON.stringify(doc);
+  f.seed(text);
+  assert.ok(Buffer.byteLength(text) <= 1024 * 1024);
+  assert.deepEqual(f.ok(["deployments"]).deployments, [], "the stored list reads");
+  const e = f.failure(["deployments", "add", f.deployment("acme")], "E_DEPLOYMENTS_WRITE");
+  assert.match(e.message, /^cannot write .*deployments\.json \(it would be \d+ bytes, over 1 MiB\); nothing was changed$/);
+  assert.equal(readFileSync(f.file, "utf8"), text);
+  f.ok(["deployments", "remove", "/never/listed"]);
 });
 
 test("E_DEPLOYMENTS_WRITE: the write failed; it names the file and the system error", { skip: ROOT && "root writes anywhere" }, (t) => {
@@ -413,8 +470,10 @@ test("auto-add: a kernel command in an unlisted deployment lists it via cli, onc
   f.oats(["launch-config", "list", "--dir", gamma, "--json"]);
   const delta = f.deployment("delta");
   f.oats(["session", "inspect", "--home", join(delta, "agents", "x", "instances", "y"), "--json"]);
+  const epsilon = f.deployment("epsilon");
+  f.oats(["harness", "trust", "--plan", "--harness", "codex", "--dir", epsilon, "--json"]);
   const listed = f.ok(["deployments"]).deployments;
-  for (const d of [acme, beta, gamma, delta]) assert.equal(listed.find((row) => row.path === d)?.via, "cli", d);
+  for (const d of [acme, beta, gamma, delta, epsilon]) assert.equal(listed.find((row) => row.path === d)?.via, "cli", d);
 });
 
 test("auto-add: never on --server, never for a command outside the table, never for --help; a broken list never changes the command", (t) => {

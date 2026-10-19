@@ -724,8 +724,10 @@ entries, no link followed (`~/Agents` itself included). Every directory there
 that holds a regular, non-link `oats-local.yaml` is listed
 (`via: import:agents-dir`), and `imports["agents-dir"]` is set, even when
 `~/Agents` is missing or empty. After that nothing reads `~/Agents` again. A
-command whose import could not run (the lock is busy, the write fails) fails:
-it never answers a list that skipped it.
+command whose import could not run (`~/Agents` cannot be read, the lock is
+busy, the write fails) fails: it never answers a list that skipped it, and
+nothing is marked. A single entry inside `~/Agents` that cannot be checked is
+skipped.
 
 **The Desktop's own lists** are imported once by
 `oats deployments import --from desktop <path>...`: the first run lists every
@@ -761,7 +763,8 @@ only, without following a link, up to 1 MiB. A missing file is an empty list.
 | `E_DEPLOYMENTS_INVALID` | the file is not JSON, not an object, a link, over 1 MiB, or a row breaks the schema: "`<file>` cannot be read as this computer's deployments list (`<reason>`). Fix it, or move it aside and run `oats deployments add <dir>` for each deployment; nothing was changed" |
 | `E_DEPLOYMENTS_VERSION` | `schemaVersion` is newer than this oats reads: "`<file>` was written by a newer oats (schema `<n>`); upgrade oats". The file is never rewritten down |
 | `E_DEPLOYMENTS_BUSY` | the lock is still held after 3 s: "this computer's deployments list is locked (`<why>`); if no oats process is changing it, remove `<lock>` and retry; nothing was changed" |
-| `E_DEPLOYMENTS_WRITE` | the write failed: "cannot write `<file>` (`<system error>`); nothing was changed" |
+| `E_DEPLOYMENTS_WRITE` | the write failed, or would make the file larger than 1 MiB: "cannot write `<file>` (`<system error>`); nothing was changed" |
+| `E_DEPLOYMENTS_IMPORT` | `~/Agents` cannot be read for the first-use import: "cannot read `<dir>` to import its deployments (`<system error>`); make it readable, or move it aside, and retry; nothing was changed" |
 
 `oats deployments add` outside every deployment is `E_LOCAL_MISSING`. The
 JSON of each verb is in the

@@ -27,5 +27,7 @@
   - **`~/Agents` is imported once.** The first command that touches the list
     lists the deployments directly inside `~/Agents` (at most 200 entries, no
     link followed) and records that it did. Nothing reads `~/Agents` again.
-  - **Four new codes:** `E_DEPLOYMENTS_INVALID`, `E_DEPLOYMENTS_VERSION`,
-    `E_DEPLOYMENTS_BUSY` and `E_DEPLOYMENTS_WRITE`, each saying what to do.
+  - **Five new codes:** `E_DEPLOYMENTS_INVALID`, `E_DEPLOYMENTS_VERSION`,
+    `E_DEPLOYMENTS_BUSY`, `E_DEPLOYMENTS_WRITE` and `E_DEPLOYMENTS_IMPORT`
+    (`~/Agents` cannot be read for the first-use import), each saying what
+    to do.

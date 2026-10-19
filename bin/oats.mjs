@@ -3575,8 +3575,8 @@ function deploymentsCmd() {
       return;
     }
     const rows = [["PATH", "STATE", "VIA"], ...result.deployments.map((d) => [shortPath(d.path), d.state, d.via ?? ""])];
-    const width = (i) => Math.max(...rows.map((r) => r[i].length));
-    for (const r of rows) console.log(`${r[0].padEnd(width(0))}  ${r[1].padEnd(width(1))}  ${r[2]}`.trimEnd());
+    const [pathWidth, stateWidth] = [0, 1].map((i) => Math.max(...rows.map((r) => r[i].length)));
+    for (const r of rows) console.log(`${r[0].padEnd(pathWidth)}  ${r[1].padEnd(stateWidth)}  ${r[2]}`.trimEnd());
     return;
   }
   if (sub === "add") {
@@ -4685,7 +4685,7 @@ try {
 // local deployment lists it when it is not listed yet (lib/deployments.mjs listUnlisted). The one
 // table of those commands is here. Never on --server (the remote's path is not this computer's),
 // never for help, and silent: no output, no change to the command's answer or exit status.
-const LISTS_ITS_DEPLOYMENT = new Set(["automations", "capabilities", "doctor", "inspect", "instance", "launch-config", "operation", "package", "pane", "readiness", "retire", "schedule", "session", "soul", "souls", "spawn", "status", "sync", "teams", "trigger", "workspace", "worktree"]);
+const LISTS_ITS_DEPLOYMENT = new Set(["automations", "capabilities", "doctor", "harness", "inspect", "instance", "launch-config", "operation", "package", "pane", "readiness", "retire", "schedule", "session", "soul", "souls", "spawn", "status", "sync", "teams", "trigger", "update", "workspace", "worktree"]);
 if (LISTS_ITS_DEPLOYMENT.has(cmd) && flag("server") === undefined && !args.slice(1).some((a) => a === "--help" || a === "-h")) {
   // The command's directory: --home, else doctor's [dir], else --dir, else where it runs.
   const given = (name) => { const v = flag(name); return typeof v === "string" && v.trim() ? v : undefined; };

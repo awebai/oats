@@ -993,7 +993,7 @@ anything is written. A path `remove` took out is not listed again.
 
 Errors of every verb: `E_DEPLOYMENTS_INVALID {file, reason}`,
 `E_DEPLOYMENTS_VERSION {file, schemaVersion}`, `E_DEPLOYMENTS_BUSY {file, lock}`,
-`E_DEPLOYMENTS_WRITE {file}` ([the messages](workspaces.md#this-computers-deployments)),
+`E_DEPLOYMENTS_WRITE {file}`, `E_DEPLOYMENTS_IMPORT {dir}` ([the messages](workspaces.md#this-computers-deployments)),
 and `E_BAD_ARGS`.
 
 ### `oats sync`
