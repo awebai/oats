@@ -290,6 +290,10 @@ test("what is kept for the answer and is not it reads and is typed as it was, an
   clock = 2000;
   assert.deepEqual(ids(at.expire()), ["escape"], "the Esc key at the wait's end");
   assert.deepEqual(read([E], { gap: 0, giveUp: true }).events, [], "given up at once: the Esc waits only its own timeout now");
+  const cut = createKeyParser({ now: () => 0, keyboard: "asking", answerBy: 2000 });
+  assert.deepEqual(ids(cut.feed(utf8(`${E}[?5`))), []);
+  assert.deepEqual(ids(cut.giveUp()), [], "an answer whose end never came is dropped at the wait's end");
+  assert.deepEqual(ids(cut.feed(utf8("\x03q"))), ["ctrl+c", "q"], "and the keys after it read afresh");
   // In a terminal: a later read that does not go on with the answer comes after what was held, never the back key with it.
   let t = 0;
   const through = () => createThrough({ sequences: backKeySequences("M-o"), now: () => t, keyboard: "asking", leader: backKeyId("M-o"), chords: CHORD_MAP, answerBy: 2000 });

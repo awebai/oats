@@ -405,6 +405,9 @@ export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS, answ
       kb = null;
       if (candidate) replay();
       else if (state === ESCAPE && now() >= escAt + ESC_TIMEOUT_MS) { state = GROUND; emit(named("escape")); }
+      // An answer begun in one read whose end never came: no key sends `CSI ?`, so it is dropped,
+      // and the next key is read afresh.
+      else if (state === CSI && seq !== null && /^\?\d{0,3}$/.test(seq)) state = GROUND;
       flush();
       const events = out;
       out = [];
