@@ -101,9 +101,9 @@ export function startupOpenSet(raw, served, validate) {
 
 /* ── A picked folder that is not a deployment (#461) ───────────────────────
    Refused before anything changes. When it is cheap and safe to see where the
-   deployment is, the answer offers it: deployments one level down (a parent
-   such as ~/Agents), or the deployment the folder is inside (a member repo,
-   agents/). Directory entries are read without following links, at most
+   deployment is, the answer offers it: deployments one level down (a folder
+   that holds deployments), or the deployment the folder is inside (a member
+   repo, agents/). Directory entries are read without following links, at most
    PICK_SCAN_LIMIT of them; nothing is parsed. Only with no choice is the
    onboarding offer (decision 9) made, as a secondary action. */
 export const NOT_A_DEPLOYMENT_REASON = "This folder isn't an OATS deployment: it has no oats-local.yaml. Choose the deployment folder itself, the one that contains oats-local.yaml.";

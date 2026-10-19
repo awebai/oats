@@ -1,4 +1,4 @@
-/* oats desktop — a workspace's own machines (#517): the gates, the Add a machine defaults and field
+/* oats desktop — a workspace's own machines (#517): the gates, the Add a machine Name default and field
    rules, and the step rows of `oats server connect --json` and `oats aweb connect --json` as the CLI
    sends them (docs/desktop-cli-api.md; interface §2 and §4).
 
@@ -36,10 +36,6 @@ export function machineName(host, deploymentDir) {
   if (!text(host)) return '';
   return `${host}-${basename(deploymentDir)}`.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-{2,}/g, '-')
     .replace(/^-+/, '').slice(0, 64).replace(/-+$/, '');
-}
-/** The default Folder on that machine: `~/Agents/<this deployment dir basename>`. */
-export function machineFolder(deploymentDir) {
-  return `~/Agents/${basename(deploymentDir)}`;
 }
 
 /** The first field that the kernel would refuse, as `{ field, text }`, or null. */

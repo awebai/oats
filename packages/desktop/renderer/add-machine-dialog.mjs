@@ -4,8 +4,8 @@
  * and never asks for or shows a secret.
  *
  * - Fields: Machine (an ssh host alias), Name (`<host>-<deployment folder name>` until the operator edits
- *   it), Folder on that machine (`~/Agents/<deployment folder name>`), "Install OATS there if it's
- *   missing" (on). A value the kernel would refuse is said beside its field (machine-contract.mjs).
+ *   it), Folder on that machine (empty and required: no folder is suggested, #1390), "Install OATS there
+ *   if it's missing" (on). A value the kernel would refuse is said beside its field (machine-contract.mjs).
  * - Each phase's steps are rows, as the CLI sends them: the step, its status in words (ok, done, needs
  *   you, waiting, failed: never colour alone), the CLI's own `detail`, `remedy` and code, and a copy
  *   button for each command the remedy names. No wording here replaces the CLI's.
@@ -19,7 +19,7 @@
  * - Tab stays inside the dialog; Escape is the dialog's (it never reaches a dialog underneath); focus
  *   returns to whatever held it when the dialog opened. */
 import { postJson } from './views/common.mjs';
-import { machineName, machineFolder, machineFieldProblem, connectOutcome, registerReached, stepCommands,
+import { machineName, machineFieldProblem, connectOutcome, registerReached, stepCommands,
   STEP_LABELS, CONNECT_STEPS, AWEB_STEPS } from '../../client/machine-contract.mjs';
 
 export const addMachineCSS = `
@@ -34,6 +34,7 @@ export const addMachineCSS = `
 .machine-field { display:flex; flex-direction:column; gap:4px; min-width:0; color:var(--muted); font-size:12px; font-weight:600; }
 .machine-field.wide { grid-column:1 / -1; }
 .machine-dialog input.field { height:30px; padding:0 9px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:12.5px var(--mono,monospace); box-sizing:border-box; min-width:0; }
+.machine-dialog input.field::placeholder { color:var(--muted); } /* the Folder hint is the field's only format note: --muted holds AA on --surface */
 .machine-dialog input.field:focus-visible { outline:none; border-color:var(--accent); }
 .machine-dialog input.field:disabled { background:var(--surface-2); color:var(--muted); }
 .machine-dialog input.field[aria-invalid=true] { border-color:var(--danger); }
@@ -80,7 +81,7 @@ function ensureCSS(doc) {
 }
 
 /** Open the dialog. `ctx` is the view's (its `api`), `ws` the window's view id, `deployment` the local
- * deployment directory the CLI runs in (its folder name gives the defaults), `aweb` whether the messaging
+ * deployment directory the CLI runs in (its folder name gives the Name default), `aweb` whether the messaging
  * step follows, `owns()` the opener's latest intent (its workspace and its own life): once it is false
  * the dialog closes at the next answer and starts nothing more. Returns `{ close }`. */
 export function openAddMachineDialog(doc, { ctx, ws, deployment, aweb = false, owns = () => true, onAdded = () => {}, onClose = () => {} }) {
@@ -104,7 +105,7 @@ export function openAddMachineDialog(doc, { ctx, ws, deployment, aweb = false, o
   };
   const host = field('Machine', 'machine-host'), name = field('Name', 'machine-name'), folder = field('Folder on that machine', 'machine-folder', true);
   host.placeholder = 'ssh host alias, e.g. altair';
-  folder.value = machineFolder(deployment);
+  folder.placeholder = 'A path on that machine, starting with / or ~/';
   const installRow = node('label', undefined, 'machine-install-row'), install = node('input', undefined, 'machine-install');
   install.type = 'checkbox'; install.checked = true; installRow.append(install, node('span', 'Install OATS there if it\'s missing')); fields.append(installRow);
   const problem = node('p', '', 'machine-problem'); problem.id = idOf('problem'); problem.setAttribute('role', 'alert');
