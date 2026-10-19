@@ -155,6 +155,7 @@ function shell(t, { addResult = { ok: true, workspace: { id: 'A' } }, workspace 
     // #461: the bounded wait runs on the test's clock; Re-add goes to a recorded bridge.
     rosterPendingWatch: createPendingWatch({ now: c.now, setTimeout: c.setTimeout, clearTimeout: c.clearTimeout, onOverdue: subject => context.rosterOverdue(subject) }), unservedError, NOT_SERVED_CODE, NO_ANSWER_CODE, rosterReAddLease: 0,
     desktopBridge: { workspaceAdd: async path => { adds.push(path); return typeof addResult === 'function' ? addResult(path) : addResult; } },
+    noteUnlisted: result => result, // #1390: a committed add's listing failure is the notifications' (deployments-list tests)
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, ctx: {},
     connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: x => x, isMac: true,
     contextRosterEl: null, contextRosterGen: 0, contextFilter: '', contextWorkspace: workspace, contextInstances: [], tabWorkspace: workspace,

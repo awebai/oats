@@ -612,7 +612,7 @@ async function reAddRosterWorkspace(ws) {
   let result;
   try { result = await desktopBridge?.workspaceAdd?.(ws); } catch (error) { result = { ok: false, reason: error?.message }; }
   if (lease !== rosterReAddLease || generation !== workspaceGeneration() || currentWorkspace() !== ws) return;
-  if (result?.ok) { rosterPendingWatch.reset(); void refreshContextRoster({ user: true }); return; }
+  if (result?.ok) { noteUnlisted(result); rosterPendingWatch.reset(); void refreshContextRoster({ user: true }); return; }
   if (rosterState?.hasData) return; // a newer observation of this deployment stands
   const error = new Error(`Couldn't re-add ${ws}: ${result?.reason || "the add failed"}`); error.code = NOT_SERVED_CODE;
   contextInstances = []; rosterStale = false; rosterSignaturePainted = null;
