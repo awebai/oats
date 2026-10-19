@@ -249,12 +249,13 @@ test("a deployment at the root of a linked Git worktree is the primary checkout'
   git(main, "init", "-q"); git(main, "add", "."); git(main, "commit", "-q", "-m", "init");
   const linked = join(f.base, "acme-linked");
   git(main, "worktree", "add", "-q", linked, "-b", "side");
-  for (const d of [main, linked]) writeFileSync(join(d, "oats-local.yaml"), LOCAL_YAML);
+  for (const d of [main, linked]) { writeFileSync(join(d, "oats-local.yaml"), LOCAL_YAML); mkdirSync(join(d, "agents")); }
   assert.deepEqual(f.ok(["deployments", "add", main]), { path: main, added: true });
   assert.deepEqual(f.ok(["deployments", "add", linked]), { path: main, added: false });
   assert.deepEqual(f.ok(["deployments"]).deployments.map((d) => d.path), [main]);
   assert.deepEqual(f.ok(["deployments", "remove", linked]), { path: main, removed: true }, "remove finds the row by the canonical spelling too");
   f.oats(["doctor", "--json"], { cwd: linked });
+  f.oats(["status", "--json"], { cwd: linked }); // ensureRoot's canonical root: the primary checkout
   assert.deepEqual(f.ok(["deployments", "import", "--from", "desktop", linked]).added, []);
   assert.deepEqual(f.ok(["deployments"]).deployments, [], "neither the auto-add nor the import revives the tombstone");
 });
@@ -640,4 +641,92 @@ test("auto-add budget through the resolvers: a listed deployment in a linked wor
   });
   assert.equal(statSync(f.file).mtimeMs, before.mtimeMs);
   assert.deepEqual(f.ok(["deployments"]).deployments.map((d) => d.path), [main]);
+});
+
+/** Count, from `start()` until `restore()`, every call that would be a process, a lock, a write or a
+ *  realpath (realpathSync.native too: the canonical spelling uses it); openSync is the list's read. */
+function counted(t) {
+  const calls = [], originals = [];
+  const count = (mod, name, wrap = (fn) => fn) => {
+    const original = mod[name];
+    originals.push([mod, name, original]);
+    mod[name] = wrap(function (...args) { calls.push(name); return original.apply(this, args); });
+  };
+  const restore = () => { for (const [mod, name, original] of originals.splice(0).reverse()) mod[name] = original; syncBuiltinESMExports(); };
+  t.after(restore);
+  const start = () => {
+    for (const name of ["execFileSync", "execSync", "spawnSync", "spawn", "execFile"]) count(childProcess, name);
+    for (const name of ["mkdirSync", "writeFileSync", "renameSync", "openSync", "rmSync"]) count(fs, name);
+    const native = fs.realpathSync.native;
+    count(fs, "realpathSync", (fn) => Object.assign(fn, { native(...args) { calls.push("realpathSync.native"); return native.apply(this, args); } }));
+    syncBuiltinESMExports();
+  };
+  return { calls, start, restore };
+}
+
+/** What a command that only reads the local file (loadLocal: sync, doctor and the other configuration
+ *  commands) makes of `dir`: the observer's answer, and the calls it made, counted. */
+async function settledFromLoadLocal(t, f, dir) {
+  const { loadLocal } = await import(new URL("../lib/workspace.mjs", import.meta.url).href);
+  const { observeResolvedDeployment, settleResolvedDeployment } = await import(new URL("../lib/resolved-deployment.mjs", import.meta.url).href);
+  const { calls, start, restore } = counted(t);
+  return inProcess(f, ({ listResolved }) => {
+    const seen = [];
+    observeResolvedDeployment((root, opts) => { seen.push({ root, ...opts, answer: listResolved(root, opts) }); });
+    loadLocal(dir);
+    start();
+    try { settleResolvedDeployment(); } finally { restore(); }
+    return { seen, calls };
+  });
+}
+
+test("auto-add boundary: a deployment in a linked Git worktree is listed by the commands that resolve its instance root, not by a command that only reads its local file (no process, no write)", async (t) => {
+  const f = fixture(t);
+  const git = (cwd, ...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main", ...args], { cwd, env: f.env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const main = join(f.base, "acme"); mkdirSync(join(main, "nested"), { recursive: true });
+  writeFileSync(join(main, "nested", "README"), "x\n");
+  git(main, "init", "-q"); git(main, "add", "."); git(main, "commit", "-q", "-m", "init");
+  const linked = join(f.base, "acme-linked");
+  git(main, "worktree", "add", "-q", linked, "-b", "side");
+  for (const d of [main, linked]) { writeFileSync(join(d, "oats-local.yaml"), LOCAL_YAML); mkdirSync(join(d, "agents")); }
+  writeFileSync(join(linked, "nested", "oats-local.yaml"), LOCAL_YAML);
+  f.seed(MARKED());
+  const before = statSync(f.file);
+  // Unlisted: at the worktree's root and below it, the check stops at the `.git` file.
+  for (const dir of [linked, join(linked, "nested")]) {
+    const { seen, calls } = await settledFromLoadLocal(t, f, dir);
+    assert.deepEqual(seen, [{ root: dir, canonical: false, answer: "skipped" }], dir);
+    assert.deepEqual(calls, ["openSync"], `${dir}: the list's read alone: no process, no realpath, no lock, no write`);
+  }
+  // Through the CLI: doctor lists nothing; status (ensureRoot's canonical root) lists the primary checkout.
+  f.oats(["doctor", "--json"], { cwd: linked });
+  assert.equal(statSync(f.file).mtimeMs, before.mtimeMs, "a loadLocal-only command in a linked worktree writes nothing");
+  f.oats(["status", "--json"], { cwd: linked });
+  assert.deepEqual(f.ok(["deployments"]).deployments.map((d) => [d.path, d.via]), [[main, "cli"]]);
+  // Listed (at the primary checkout): the same, with no process and no write.
+  const listed = statSync(f.file);
+  const { seen, calls } = await settledFromLoadLocal(t, f, linked);
+  assert.deepEqual(seen, [{ root: linked, canonical: false, answer: "skipped" }]);
+  assert.deepEqual(calls, ["openSync"]);
+  assert.equal(statSync(f.file).mtimeMs, listed.mtimeMs);
+});
+
+test("auto-add budget: another spelling of a listed deployment (a link) costs one realpath at most, never a process, in a Git repository or out of one", async (t) => {
+  const f = fixture(t);
+  const git = (cwd, ...args) => execFileSync("git", ["-c", "init.defaultBranch=main", ...args], { cwd, env: f.env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const plain = f.deployment("plain");
+  const repo = f.deployment("repo");
+  git(repo, "init", "-q");
+  for (const d of [plain, repo]) {
+    f.ok(["deployments", "add", d]);
+    symlinkSync(d, `${d}-link`);
+  }
+  const before = statSync(f.file);
+  for (const d of [plain, repo]) {
+    const { seen, calls } = await settledFromLoadLocal(t, f, `${d}-link`);
+    assert.deepEqual(seen, [{ root: `${d}-link`, canonical: false, answer: "listed" }], d);
+    assert.deepEqual(calls, ["openSync", "realpathSync.native"], `${d}: the list's read and one realpath: no process, no lock, no write`);
+  }
+  assert.equal(statSync(f.file).mtimeMs, before.mtimeMs);
+  assert.deepEqual(f.ok(["deployments"]).deployments.map((d) => d.path), [plain, repo]);
 });

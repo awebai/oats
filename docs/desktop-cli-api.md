@@ -951,6 +951,21 @@ oats deployments remove <path> --json
 oats deployments import --from desktop <path>... --json
 ```
 
+Every answer is a closed key set ([Shapes are closed](#scope)):
+
+| Verb | `result` keys, exactly |
+|---|---|
+| `list` | `deploymentsApi`, `file`, `deployments`, `imports`; each row `path`, `name`, `state`, `addedAt`, `via` |
+| `add` | `path`, `added` |
+| `remove` | `path`, `removed` |
+| `import` | `imported`, `at`, `added` on the first run; `imported`, `at` on every later one |
+
+A key added to any of them later is a contract change: it is announced here
+first, and accepted by the readers in `packages/client/deployment-list.mjs`
+before a kernel that writes it ships. A change of meaning moves
+`deploymentsApi` to 2. A tombstone stays inside the file: its `removed` and
+`removedAt` never reach an answer, and a tombstoned row is never listed.
+
 **`list`** (the default verb):
 
 ```json

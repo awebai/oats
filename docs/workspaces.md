@@ -709,13 +709,18 @@ only. Which deployments a client has open stays with that client.
     compared with the path the command resolved: no lock, no write, no
     process. Measured on `oats status --json`, that is about 0.5 ms the first
     time in a process.
-  - Only an unlisted deployment goes further: its canonical path, then one
-    try of the lock. When the lock is free it re-reads and writes once; when
+  - Another spelling of a listed deployment (a link, or `/var` for
+    `/private/var` on macOS) costs a realpath too. Only an unlisted
+    deployment goes further: its canonical path, then one try of the lock. When the lock is free it re-reads and writes once; when
     it is busy the add is skipped at once, and the next command tries again.
   - It is best effort and silent: nothing is printed, and the command's
     answer and exit status are the same whether or not it listed anything.
   - A command routed with `--server` never lists anything: the host's path is
     not this computer's.
+  - A deployment inside a linked Git worktree or submodule is listed by the
+    first command that resolves its instance root (`status`, `spawn`,
+    `session` and the like), not by `sync`, `doctor` and the other
+    configuration commands.
 
 **Removing.** `oats deployments remove <path>` takes the row whose stored path
 is `<path>` (it does not walk up, so a row whose directory is gone can be
