@@ -12,7 +12,7 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 `renderer/shell.mjs` (action registration). Tests: `test/keymap-linux.test.mjs`,
 `test/keybindings.test.mjs`, `test/focus-regions.test.mjs`,
 `test/spawn-dialog-keyboard.test.mjs`, `test/palette-tree.test.mjs` (the palette's tree rows, connectors and cycling),
-`test/palette-recency.test.mjs` (its recency order, opening row and focus record), `test/tab-strip-reveal.test.mjs`,
+`test/palette-recency.test.mjs` (its recency order, first-row opening and focus record), `test/tab-strip-reveal.test.mjs`,
 `test/roster-scrollport.test.mjs` (a focused roster row is revealed inside the list),
 `test/roster-reveal-row.test.mjs` (an active terminal tab reveals its roster row),
 `test/theme-picker.test.mjs` (the theme picker's keys), `test/shell-design.test.mjs` (Show sidebar,
@@ -279,10 +279,10 @@ control.
   by the sidebar's rule, so an instance focused a minute ago is not held behind
   a stale run of independent ones. The sidebar roster keeps its stable name
   order; only the palette is ordered by focus.
-- **The palette opens on the previous agent.** With an empty query the active
-  row is the most recently focused listed instance that is not the terminal in
-  front, so ⌘K then Enter returns to the agent you were on before; the list
-  scrolls to it. With no focus record the first row is active.
+- **The palette opens on its first row.** With an empty query the active row
+  is the top of the list: by the order above, the root of the most recently
+  focused path. ⌘K again moves down from there. (Until #1391 it opened on the
+  agent you were on before, often a row in the middle of the list.)
 - The focus record is per machine: one `localStorage` key
   (`oats-desktop-instance-recency`), keyed by workspace and by the instance's
   exact identity (the terminal tab's key), the 200 most recent per workspace.
@@ -294,8 +294,8 @@ control.
   decided on the full roster and the query only decides which rows show, so a
   group's place never changes while you type. A match stays in its relation
   group, as in the filtered sidebar: one match out of a group of five is listed
-  under that group's name, not under independent. The active row is the most
-  recently focused match (the first match when none was focused). A context row
+  under that group's name, not under independent. The active row is the first
+  match. A context row
   is `aria-disabled`: the arrows, the chord and the pointer skip it, and it
   opens nothing.
 - **The rows look like the sidebar's.** Each instance row draws the sidebar's

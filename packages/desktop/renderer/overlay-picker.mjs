@@ -48,7 +48,7 @@ export function joinPickerFocusReturn(doc, { opener, dismiss }) {
  *          dot?: boolean|null, state?: "running"|"stopped"|"unknown", run?: Function,
  *          depth?: number, connectors?: Array<{kind: string, level: number}>, under?: string,
  *          sibling?: string, group?: {key: string, label: string},
- *          context?: boolean, initial?: boolean}>} spec.computeRows
+ *          context?: boolean}>} spec.computeRows
  *        query → result rows, already scored/sorted/sliced by the caller.
  *        A row with `state` draws the sidebar's state dot (`ctx-dot on|off|unknown`);
  *        else `dot` draws the small running dot, and a row with neither (a
@@ -59,8 +59,8 @@ export function joinPickerFocusReturn(doc, { opener, dismiss }) {
  *        lines through the row with the sidebar's own builder (treeGuides) and
  *        rules, the row taking the sidebar's indent and dot column (`.tree`);
  *        `under`, then `sibling`, are visually hidden text read once with the
- *        option (the lines show them); the first selectable `initial` row is the active row a
- *        render starts on (else the first selectable row);
+ *        option (the lines show them); a render starts on the first
+ *        selectable row (the palette opens at the top of its list, #1391);
  *        a `context` row is shown dimmed with aria-disabled="true" and is never
  *        active, so the arrows, the cycle chord and pointer hover skip it.
  *        Async run callbacks must return their promise to carry the original
@@ -288,8 +288,7 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
     const update = () => {
       if (!owns()) return;
       items = computeRows(data, input.value);
-      const initial = items.findIndex((it) => it.initial && !it.context);
-      active = initial >= 0 ? initial : Math.max(0, items.findIndex((it) => !it.context));
+      active = Math.max(0, items.findIndex((it) => !it.context));
       render();
     };
 
