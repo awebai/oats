@@ -665,14 +665,23 @@ test("events are fresh objects: changing one does not change a later one", () =>
   assert.deepEqual(parser.expire(), [key("escape")]);
 });
 
-test("the parser is pure: no import, no IO, timer or clock global, no Intl but Intl.Segmenter, and no ESC literal", () => {
-  const source = readFileSync(new URL("../lib/term/keys.mjs", import.meta.url), "utf8");
-  // Built from a string: test/client-boundary.test.mjs reads this file too, and refuses a regular
+test("the parser is pure: its one import is term/kitty.mjs (the kitty keyboard protocol's reading), which imports nothing; neither has IO, a timer or clock global, an Intl but Intl.Segmenter, or an ESC literal", () => {
+  const keys = readFileSync(new URL("../lib/term/keys.mjs", import.meta.url), "utf8");
+  const kitty = readFileSync(new URL("../lib/term/kitty.mjs", import.meta.url), "utf8");
+  // Built from strings: test/client-boundary.test.mjs reads this file too, and refuses a regular
   // expression literal that spells a load, which it could not tell from one.
-  assert.doesNotMatch(source, new RegExp("^\\s*import\\b|\\bimport\\s*\\(|\\brequire\\s*\\(", "m"), "no import");
-  assert.doesNotMatch(source, /\b(process|globalThis|setTimeout|setInterval|setImmediate|queueMicrotask|Date|performance|TextDecoder|TextEncoder|Buffer)\b|\bconsole\s*[.[]/, "no IO, timer or clock global");
-  assert.deepEqual([...new Set(source.match(/\bIntl\.\w+/g))], ["Intl.Segmenter"]);
-  assert.doesNotMatch(source, /\x1b|\\x1b|\\u001b|\\u\{1b\}|\\033/i, "ESC is only ever the number 0x1b, compared against input");
+  const load = new RegExp("^\\s*import\\b|^\\s*export\\s*(\\*|\\{[^}]*\\})[^;\\n]*\\bfrom\\s*[\"'`]|\\bimport\\s*\\(|\\brequire\\s*\\(", "m");
+  const statements = keys.match(new RegExp("^import\\b[^;]*;", "gm")) ?? [];
+  assert.equal(statements.length, 1, "one import statement");
+  assert.match(statements[0], new RegExp("^import \\{[\\w\\s,]+\\} from \"\\./kitty\\.mjs\";$"), "of ./kitty.mjs, by name");
+  assert.doesNotMatch(keys.replace(statements[0], ""), load, "no other import");
+  assert.doesNotMatch(kitty, load, "kitty.mjs imports nothing");
+  for (const [name, source] of [["keys.mjs", keys], ["kitty.mjs", kitty]]) {
+    assert.doesNotMatch(source, /\b(process|globalThis|setTimeout|setInterval|setImmediate|queueMicrotask|Date|performance|TextDecoder|TextEncoder|Buffer)\b|\bconsole\s*[.[]/, `${name}: no IO, timer or clock global`);
+    assert.doesNotMatch(source, /\x1b|\\x1b|\\u001b|\\u\{1b\}|\\033/i, `${name}: ESC is only ever the number 0x1b`);
+  }
+  assert.deepEqual([...new Set(keys.match(/\bIntl\.\w+/g))], ["Intl.Segmenter"]);
+  assert.deepEqual(kitty.match(/\bIntl\.\w+/g), null, "kitty.mjs: no Intl");
 });
 
 // --- keyId ------------------------------------------------------------------------

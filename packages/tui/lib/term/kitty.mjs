@@ -1,8 +1,9 @@
 /** The kitty keyboard protocol, as `oats tui` reads it (docs/tui.md, "Chords"): the flags it asks
  * for, a `CSI … u` key read, and the bytes the same key sends without the protocol. Pure: no IO,
- * no state, no imports. The guard (term/tty.mjs) pushes, queries and pops the protocol; the key
- * parser (term/keys.mjs) and the scanner of what is typed into a terminal (term/through.mjs) read
- * what comes back with these.
+ * no state, no imports, no global; as the key parser's one import it is held to the parser's rule
+ * (packages/tui/test/keys.test.mjs). The guard (term/tty.mjs) pushes, queries and pops the
+ * protocol; the key parser (term/keys.mjs) and the scanner of what is typed into a terminal
+ * (term/through.mjs) read what comes back with these.
  *
  * Under the protocol a terminal sends Esc, and every key held with Ctrl or Alt, as
  * `CSI code[:shifted[:base]] [; mods] u`: one sequence, never an ESC alone, so Alt+O and Esc then
@@ -95,7 +96,18 @@ function ctrlByte(ch) {
   return mapped ?? null;
 }
 
-const utf8 = (text) => [...new TextEncoder().encode(text)];
+/** A string's UTF-8 bytes. Its code points are Unicode scalars (kittyKey), so no surrogate is met. */
+function utf8(text) {
+  const bytes = [];
+  for (const ch of text) {
+    const c = ch.codePointAt(0);
+    if (c < 0x80) bytes.push(c);
+    else if (c < 0x800) bytes.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+    else if (c < 0x10000) bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+    else bytes.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 0x3f), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+  }
+  return bytes;
+}
 const csi = (rest) => [ESC, 0x5b, ...Array.from(rest, (c) => c.charCodeAt(0))];
 
 /** The character Shift makes on `code`: the alternate key flag 4 reported (only while Shift is held:
