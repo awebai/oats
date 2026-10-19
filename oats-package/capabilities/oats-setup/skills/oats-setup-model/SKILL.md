@@ -50,7 +50,11 @@ it. A nonzero exit ends with a setup summary of what changed;
 `capture-service-pending` in health or `oats doctor` means: rerun that command.
 Preserve the selected `--owner`/`--root`; a foreign/disabled refusal offers
 explicit `--replace-service` or `--no-service`. Unknown state never permits
-replacement. `--dry-run` invokes no manager and cannot confirm enablement.
+replacement. If the summary says publication may have occurred but durability
+was not established, inspect the named target/stage before rerunning; a sync or
+close failure after rename does not mean the old file was restored. Preserve
+that partial-apply evidence. `--dry-run` invokes no manager and cannot confirm
+enablement.
 An inactive finite worker between timer ticks is not evidence of an unhealthy
 schedule; do not promise a permanent PID or infer completion from hook launch.
 Releases 0.56–0.61 do not provide this conversion; follow their own instructions.

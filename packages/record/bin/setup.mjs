@@ -31,7 +31,8 @@ import { captureDefaultRootPlan } from "../lib/capture-default-roots.mjs";
 import { captureCommandPass } from "../lib/capture-command-output.mjs";
 import { captureCommandEntry } from "../lib/capture-command.mjs";
 import { IgnoreError, loadIgnore } from "../lib/ignore.mjs";
-import { preflightCaptureService, applyCaptureService, captureSetupSnapshot, recheckCaptureSetup, writeCaptureSetup } from "../lib/capture-service-install.mjs";
+import { preflightCaptureService, applyCaptureService } from "../lib/capture-service-install.mjs";
+import { captureSetupSnapshot, recheckCaptureSetup, writeCaptureSetup } from "../lib/capture-setup-write.mjs";
 import { captureRemedyCommand } from "../lib/capture-health.mjs";
 
 // The node written into what outlives this process: the hooks and the
@@ -243,7 +244,14 @@ try {
   for (const { snapshot, contents } of hooks) {
     if (!contents) console.log(`hooks: ${snapshot.path} already installed`);
     else if (dry) console.log(`hooks: would install Stop+SessionEnd capture in ${snapshot.path}`);
-    else { writeCaptureSetup(snapshot, contents, createdParents); summary.hooks.push(snapshot.path); console.log(`hooks: installed Stop+SessionEnd capture in ${snapshot.path}`); }
+    else {
+      try { writeCaptureSetup(snapshot, contents, createdParents); }
+      catch (error) {
+        if (error.published) summary.hooks.push(`${snapshot.path} (publication may have occurred at ${oneLine(error.stage)}; durability was not established)`);
+        throw error;
+      }
+      summary.hooks.push(snapshot.path); console.log(`hooks: installed Stop+SessionEnd capture in ${snapshot.path}`);
+    }
   }
   if (dry) console.log("dry run: no first capture pass");
   else {

@@ -1533,8 +1533,11 @@ the first pass still uses the running Node. These are user-manager definitions,
 not deployment automation timers. No external wrapper is removed.
 
 The setup coordinator prepares hook edits in memory, then
-`capture-service-install.mjs` snapshots every named service target and inspects
-applicable manager state before any service/file/hook/capture mutation.
+`capture-service-install.mjs` uses `capture-setup-write.mjs` to snapshot every
+named service target and inspects applicable manager state before any
+service/file/hook/capture mutation. The shared module owns checked setup
+publication independently of manager policy; the service module retains its
+snapshot/recheck/write exports for existing callers.
 Snapshots retain regular-file bytes and identity or the symlink's own identity
 and target, plus ancestor identities and explicit missing-ancestor records. Reads are limited to 1 MiB per target;
 unknown reads, nonregular targets and unsupported manager output refuse.
@@ -1581,9 +1584,35 @@ per-apply map shared by subsequent service and hook writes. Newly introduced
 directories or links are not accepted as extra ancestry. Existing ancestor
 identities and observed symlink targets remain binding. The extra metadata
 checks and directory creation do not establish an atomic filesystem operation.
-Each write uses a temporary file and another identity check before rename;
-cleanup also refuses changed ancestry instead of unlinking through a redirected
-path. An interrupted/refused write can leave its original temporary file.
+Each setup hook, service definition and pending-marker write uses the same
+checked publisher. It creates an exclusive 0600 temporary file, checks its
+open descriptor against the pathname, writes the complete contents and fsyncs
+the file before rename. After rechecking the saved target, temporary file and
+ancestors, it renames and fsyncs the containing directory through a checked
+directory descriptor. Newly created ancestor entries are synced in their
+containing directories, from the first missing parent toward the target,
+before creating the next child. A directory whose entry sync/open/close failed
+is not authorized for reuse by a subsequent write through the per-apply map.
+Required directory fsync failures, including an unsupported operation, refuse;
+there is no fallback that reports durability without the required sync.
+
+A failure reports the target and stage, retains the primary cause and any
+scratch/descriptor cleanup failure, and exits nonzero. Before publication,
+the writer preserves the old target and removes only scratch whose saved
+identity and unchanged ancestry still prove ownership. Changed ancestry or a
+substituted temporary file revokes pathname cleanup; an interrupted/refused
+write can leave its original temporary file. After rename, a failed sync,
+close or identity recheck reports that publication may have occurred and
+durability was not established. It neither unlinks the new target nor claims
+rollback. A refused rename whose original target cannot be re-established is
+reported with the same uncertainty.
+
+These are ordered filesystem durability operations, subject to the filesystem
+and storage device honoring fsync. Recording and injected I/O-fault fixtures
+check process-visible bytes, identities, permissions, failures and ordering;
+they do not reproduce or prove survival of a physical power loss. This setup
+publisher does not change ordinary capture transaction sync policy or the
+pending marker's activation/removal lifecycle.
 An expected manager unmask can remove only the saved named `/dev/null` link;
 other observed replacements refuse. These checks detect observed races, not
 an OS-wide atomic transaction over files and managers.
@@ -1654,7 +1683,12 @@ never as "nothing happened". After a service failure, `service changed` lines
 name, in order, what the failed apply had already changed: the replacement
 backup directory, each manager action completed (units stopped, disabled or
 unmasked, a job booted out), each definition written, and the pending-activation
-marker written or a stale one removed. Setup has no `--json` mode.
+marker written or a stale one removed. A failed publication also retains any
+created-parent evidence and names a possibly published target and its failed
+stage in these lines. A hook published before a later durability failure is
+listed under `hooks written` with the same uncertainty and stage, rather than
+reported as `none`. These annotations describe possible changes, not successful
+durability or rollback. Setup has no `--json` mode.
 
 Fake-manager and isolated CLI fixtures exercise this ordering and refusal
 contract. Real-manager cases live in `test/capture-service-real-darwin.test.mjs`
