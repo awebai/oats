@@ -27,11 +27,13 @@ const ev = (key, mods = {}) => ({
 // What Linux/Windows sends for Ctrl(+Shift)(+Alt)+key: with Shift, `key` is the shifted character.
 const linux = (key, mods = {}) => ev(key, { ctrlKey: true, ...mods });
 
-// Every action the shell registers with a default, in its context (tabs actions live in "tabs").
+// Every action the shell registers with a default, in its context (tabs actions live in "tabs", the
+// sidebar's plain keys in "sidebar").
 const IDS = Object.keys(DEFAULT_KEYMAP);
+const contextOf = id => (/^(tabs|split)\./.test(id) ? "tabs" : /^sidebar\.key\./.test(id) ? "sidebar" : "global");
 function registerAll(t) {
   resetAllBindings();
-  const offs = IDS.map(id => registerAction({ id, label: id, context: /^(tabs|split)\./.test(id) ? "tabs" : "global", run: () => {} }));
+  const offs = IDS.map(id => registerAction({ id, label: id, context: contextOf(id), run: () => {} }));
   setActiveContexts(new Set(["tabs"]));
   t.after(() => { offs.forEach(off => off()); setActiveContexts(new Set()); resetAllBindings(); });
 }
@@ -79,7 +81,7 @@ test("nothing binds Super/Meta on Linux/Windows: Mod is Ctrl there", () => {
 
 test("the terminal allowlist is exactly the actions that must work in a terminal", () => {
   assert.deepEqual([...TERMINAL_ALLOWLIST].sort(), [
-    "app.chooseSoul", "app.palette", "app.quickOpenSouls", "app.shortcuts", "app.themePicker", "focus.leaveTerminal",
+    "app.chooseSoul", "app.leader", "app.palette", "app.quickOpenSouls", "app.shortcuts", "app.themePicker", "focus.leaveTerminal",
     "panel.toggle", "sidebar.focusFilter", "sidebar.toggle",
     "split.close", "split.horizontal", "split.vertical",
     "stage.automations", "stage.hierarchy", "stage.spawn",
@@ -308,7 +310,7 @@ function terminalKeyPath(t, selection) {
   resetAllBindings();
   const pty = [], clipboard = [];
   const term = { hasSelection: () => selection !== "", getSelection: () => selection };
-  const offs = IDS.map(id => registerAction({ id, label: id, context: /^(tabs|split)\./.test(id) ? "tabs" : "global",
+  const offs = IDS.map(id => registerAction({ id, label: id, context: contextOf(id),
     run: id === "terminal.copySelection" ? () => copyTerminalSelection(term, text => { clipboard.push(text); }) : () => {} }));
   setActiveContexts(new Set(["tabs"]));
   t.after(() => { offs.forEach(off => off()); setActiveContexts(new Set()); resetAllBindings(); });
@@ -367,4 +369,69 @@ test("macOS: the copy action has no chord, so ⌘C stays the menu's Copy and ⌃
   assert.equal(getBinding("terminal.copySelection", true), null);
   assert.equal(matchEvent(ev("c", { metaKey: true }), { isMac: true, insideTerminal: true }), null);
   assert.equal(matchEvent(ev("C", { ctrlKey: true, shiftKey: true }), { isMac: true, insideTerminal: true }), null);
+});
+
+// The leader (docs/desktop-keyboard.md, "The leader"): the TUI's, from every focus. On Linux/Windows
+// Alt+O is allowlisted (it sends ESC o, which Esc then o still sends: terminal-xterm-bytes); on macOS
+// Ctrl+\ fires in a terminal by name and shape, a named exception to principle 3.
+test("the leader: Alt+O fires app.leader inside a terminal on Linux/Windows, and claims it", t => {
+  registerAll(t);
+  assert.equal(defaultBinding("app.leader", false), "Alt+O");
+  assert.equal(defaultBinding("app.leader", true), "Ctrl+\\");
+  for (const insideTerminal of [true, false]) {
+    const opts = { isMac: false, insideTerminal };
+    const alt = ev("o", { altKey: true });
+    assert.equal(matchEvent(alt, opts), "app.leader", `terminal=${insideTerminal}`);
+    handleKeydown(alt, opts);
+    assert.equal(alt.defaultPrevented, true);
+  }
+  // From an editable field too: it is not a plain chord.
+  const dom = new JSDOM(`<input class="ctx-filter">`);
+  t.after(() => dom.window.close());
+  assert.equal(matchEvent(ev("o", { altKey: true, target: dom.window.document.querySelector("input") }), { isMac: false }), "app.leader");
+  // Alt+Shift+O and plain o are not the leader.
+  assert.equal(matchEvent(ev("O", { altKey: true, shiftKey: true }), { isMac: false, insideTerminal: true }), null);
+  assert.equal(formatChord(getBinding("app.leader", false), false), "Alt+O");
+  assert.equal(formatChord(getBinding("app.leader", true), true), "⌃\\");
+});
+
+test("the leader on macOS: Ctrl+\\ fires inside a terminal; a rebind to another ⌃ chord does not, to ⌘ does", t => {
+  registerAll(t);
+  const inTerm = { isMac: true, insideTerminal: true };
+  const ctrlBackslash = ev("\\", { ctrlKey: true });
+  assert.equal(matchEvent(ctrlBackslash, inTerm), "app.leader");
+  handleKeydown(ctrlBackslash, inTerm);
+  assert.equal(ctrlBackslash.defaultPrevented, true, "claimed before the pty");
+  assert.equal(matchEvent(ev("|", { ctrlKey: true, shiftKey: true }), inTerm), null, "⌃⇧\\ is not the leader's shape");
+  setBinding("app.leader", "Ctrl+J");
+  assert.equal(matchEvent(ev("j", { ctrlKey: true }), inTerm), null, "another ⌃ chord stays the program's");
+  assert.equal(matchEvent(ev("j", { ctrlKey: true }), { isMac: true, insideTerminal: false }), "app.leader", "and is the leader outside");
+  setBinding("app.leader", "Mod+J");
+  assert.equal(matchEvent(ev("j", { metaKey: true }), inTerm), "app.leader", "a ⌘ rebind fires by the ⌘ rule");
+  resetAllBindings();
+  // On Linux/Windows a terminal is the program's for Ctrl+\ (SIGQUIT): the leader is Alt+O there.
+  assert.equal(matchEvent(ev("\\", { ctrlKey: true }), { isMac: false, insideTerminal: true }), null);
+});
+
+test("the leader is inert under a shown modal: the chord goes where it goes today", t => {
+  resetAllBindings();
+  let modal = false;
+  const off = registerAction({ id: "app.leader", label: "Leader", context: "global", when: () => !modal, run: () => {} });
+  t.after(() => { off(); resetAllBindings(); });
+  assert.equal(matchEvent(ev("o", { altKey: true }), { isMac: false, insideTerminal: true }), "app.leader");
+  modal = true;
+  const alt = ev("o", { altKey: true });
+  assert.equal(matchEvent(alt, { isMac: false, insideTerminal: true }), null);
+  assert.equal(handleKeydown(alt, { isMac: false, insideTerminal: true }), false);
+  assert.equal(alt.defaultPrevented, false, "the program gets it");
+});
+
+test("no default the Desktop had changes, and the new defaults clash with none", t => {
+  registerAll(t);
+  for (const isMac of [false, true]) assert.deepEqual(keymapConflicts(isMac), [], `mac=${isMac}`);
+  for (const isMac of [false, true]) for (const id of ["app.leader", "split.focusNextGroup", ...IDS.filter(id => id.startsWith("sidebar.key."))]) {
+    const chord = getBinding(id, isMac);
+    if (chord) assert.equal(findConflict(chord, contextOf(id), id, isMac), null, `${id} (${chord}) mac=${isMac}`);
+  }
+  assert.equal(getBinding("split.focusNextGroup", false), null, "the leader's Tab has no chord of its own");
 });

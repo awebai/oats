@@ -6,10 +6,16 @@ for the default chords, the rules that chose them, how focus moves between the
 window's regions, and how each interactive element is reached and operated.
 
 Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
-`TERMINAL_ALLOWLIST`), `renderer/focus-regions.mjs` (F6),
+`TERMINAL_ALLOWLIST`, `SIDEBAR_KEYS`), `packages/client/keymap.mjs` (the leader,
+its table and the plain keys, the TUI's), `renderer/leader.mjs` (the
+leader's wait), `renderer/leader-keys.mjs` (which rows apply, the Desktop's
+labels), `renderer/leader-dispatch.mjs` (what each key does),
+`renderer/leader-hint.mjs` (the hint), `renderer/focus-regions.mjs` (F6),
 `renderer/surface-return.mjs` (back to where you were),
 `renderer/instance-recency.mjs` (the palette's last-focus record),
 `renderer/shell.mjs` (action registration). Tests: `test/keymap-linux.test.mjs`,
+`test/leader.test.mjs`, `test/leader-dispatch.test.mjs`, `test/keymap-shared.test.mjs`,
+`test/sidebar-keys.test.mjs`, the root `test/keymap-parity.test.mjs` (the table is the TUI's),
 `test/keybindings.test.mjs`, `test/focus-regions.test.mjs`,
 `test/spawn-dialog-keyboard.test.mjs`, `test/palette-tree.test.mjs` (the palette's tree rows, connectors and cycling),
 `test/palette-recency.test.mjs` (its recency order, first-row opening and focus record), `test/tab-strip-reveal.test.mjs`,
@@ -41,6 +47,7 @@ Show instance panel and the closed sidebar and panel).
 
    | Chord | xterm sends | The program still gets it from |
    |---|---|---|
+   | Alt+O (the leader) | ESC o | Esc, then o; and the leader pressed twice sends it |
    | Ctrl+3 (Automations) | ESC | Esc (Ctrl+[ stays the program's too) |
    | Ctrl+Tab (next tab) | Tab | Tab |
    | Ctrl+Shift+Tab (previous tab) | ESC [ Z | Shift+Tab |
@@ -51,12 +58,20 @@ Show instance panel and the closed sidebar and panel).
    the installed xterm.js and pins exactly what it sends, so an xterm upgrade
    that changes one fails CI.
 3. **macOS keeps ⌘.** ⌘ never reaches the pty, so the macOS column changes only
-   where a chord is wrong for macOS users too.
+   where a chord is wrong for macOS users too. One named exception: the leader,
+   ⌃\ (the TUI's), fires in a terminal, checked by action id *and* shape (⌃
+   alone, key `\`), as Ctrl+Tab is. ⌃\ is SIGQUIT's byte, 0x1c; the leader
+   pressed twice gives the program exactly that. A rebind of the leader to a ⌘
+   chord fires by the ⌘ rule; a rebind to another ⌃ chord stays the program's.
 4. **Every default goes through the collision review** in the keyboard lesson
    (`keyboard-focus-and-action-ownership`). That includes shifted punctuation:
-   `KeyboardEvent.key` reports the shifted character (Shift+\ arrives as `|`),
-   so the engine aliases it (`KEY_ALIASES`) and the test dispatches the real
-   shifted event, not a parse round-trip.
+   `KeyboardEvent.key` reports the shifted character (Shift+\ arrives as `|`).
+   A chord that holds ⌘, Ctrl or Alt aliases it back (`MODIFIED_ALIASES`:
+   `|` is `\`, `+` is `=`), so ⌘⇧\ matches. A plain chord keeps its
+   character: one printable non-letter key (`?`, `|`, `[`, `/`) matches with
+   whatever Shift the layout needed and is stored without Shift, so plain `|`
+   never fires on plain `\`; a letter keeps its case (`N` is Shift+N). The
+   tests dispatch the real shifted event, not a parse round-trip.
 
 ## How the engine holds it
 
@@ -80,10 +95,87 @@ Show instance panel and the closed sidebar and panel).
   the program. The rule is by action id, so a user who rebinds an allowlisted
   action keeps their choice in the terminal; the allowlist is chosen by the
   defaults (principle 2). On macOS only ⌘ chords fire in a
-  terminal (⌘ never reaches the pty), plus one structural shape checked by
-  action id *and* shape: Ctrl+Tab / Ctrl+Shift+Tab.
+  terminal (⌘ never reaches the pty), plus two shapes, each checked by
+  action id *and* shape: Ctrl+Tab / Ctrl+Shift+Tab (`tabs.next`, `tabs.prev`)
+  and the leader's ⌃\ (`app.leader`, principle 3's exception).
 - Unmodified chords never fire from an editable field; a view's own keys (the
   overview canvas, the Souls grid) stay local to that view.
+
+## The leader
+
+New in 0.65.0. The leader is the TUI's: one chord, then one key from the TUI's
+table. The Desktop reads it from `LEADER_TABLE` in `packages/client/keymap.mjs`;
+the TUI still keeps its own copy (`LEADER` in `packages/tui/lib/actions.mjs`),
+and the root `test/keymap-parity.test.mjs` fails when the two part. It is
+**Alt+O** on Linux and Windows and **⌃\** on macOS (`app.leader`, rebindable
+like any action; the table after it is fixed, as in the TUI).
+
+**The leader and the keys after it are the TUI's; the direct shortcuts are
+Desktop extras.** So the two can differ, on purpose: leader then 1 is
+Instances and leader then 3 is Capabilities, while ⌘1 / Ctrl+1 stays
+Deployments and ⌘3 / Ctrl+3 stays Automations. The shortcuts editor says the
+same on those rows.
+
+**Where it works.** From every focus, a terminal and an editable field
+included. It is inert while a modal dialog or the palette is shown, as F6 and
+the tab switches are: the chord then goes where it goes without the leader.
+The sidebar footer's first control, the leader's chord and "commands", is a
+button that starts it too; pressed again while it waits, it closes the hint.
+
+**While it waits** (there is no time limit), the next keydown that is not a
+lone modifier settles it:
+
+- A key in the table runs what the table below says, once, and is consumed:
+  no phase of it (keydown, keypress, keyup, repeats) reaches the terminal or
+  the focused control.
+- The leader again: in a terminal, that second press is the program's, so it
+  gets exactly what the chord sends (Alt+O ESC o, ⌃\ 0x1c). Elsewhere it only
+  closes the hint.
+- Any other key cancels it and is dropped: nothing is typed, nothing else runs.
+- A key is matched by what it types (`KeyboardEvent.key`: Shift+x is `X`,
+  Shift+\ is `|`), whatever Shift or AltGr produced it. A key held with Ctrl,
+  ⌘ or Alt (AltGr aside) is not in the table, as in the TUI, and cancels.
+- A click, a paste, the window losing focus, a modal opening or the focused
+  element leaving the document cancels it, with nothing run.
+
+**The hint.** While it waits, a quiet panel at the bottom of the main area
+lists the keys that apply now, key then label, and is announced once ("Leader:
+press a key, Esc for the instances list"). It never takes focus. The rows the TUI
+marks as terminal rows (`z`, `w`, the tab and split keys) show only while a
+terminal tab is open; besides, ←/→ need two tabs or more, `|`/`-` an active
+tab that can split that way, and Tab and `x` tabs that are split. When a key cannot act (no target
+instance, an act the instance's menu would not offer, nothing to split), the
+panel says why in one line, which stays until the next key, click or focus
+change.
+
+**The target instance** of `X` `R` `S` `D` `N` and the roster moves: the
+terminal's instance when the leader was pressed in a terminal; else the
+focused roster row's; else the active terminal tab's; else none.
+
+| Leader, then | Desktop does |
+|---|---|
+| `k`, Space | the command palette (`app.palette`) |
+| `1` | Instances: the workspace's terminals again when any is open, else Deployments |
+| `2` | Workspace › Souls |
+| `3` | Workspace › Capabilities |
+| ↑, ↓ | opens the terminal of the roster row before / after the target, as the roster is drawn (filter applied, collapsed rows absent), passing over rows whose Enter would not open a terminal; no wrap. With no target, ↓ opens the first and ↑ the last |
+| ←, → | previous / next tab (`tabs.prev`, `tabs.next`; the Desktop's cycling wraps, the TUI's does not) |
+| `z` | focus mode on or off (`app.focusMode`), and the active terminal takes focus |
+| `w` | closes the active tab (`tabs.close`); the agent keeps running |
+| `\|`, `-` | split right / split down (`split.vertical`, `split.horizontal`) |
+| Tab | focuses the next editor group's active tab, or the group when it is empty, wrapping (`split.focusNextGroup`) |
+| `x` | closes the split, every tab kept (`split.close`) |
+| `X`, `R`, `S`, `D` | Stop… / Restart… / Start… / Retire… for the target: the same dialogs and availability as its roster menu |
+| `n` | Quick Open: pick a soul, then the spawn dialog (`app.quickOpenSouls`) |
+| `N` | the spawn dialog for the target's soul, as Quick Open opens it |
+| `/` | the roster filter (`sidebar.focusFilter`) |
+| `o` | the workspace switcher (`app.workspaces`) |
+| `?` | the shortcuts editor (`app.shortcuts`), the Desktop's help |
+| Esc | the instance roster, its one tab stop; a hidden sidebar or focus mode is shown first |
+
+**Cannot apply:** `m` (move the tab to the other group). The Desktop has no
+way to move a tab between groups; the key cancels like any key not in the
+table, and the hint leaves it out.
 
 ## The keymap as shipped
 
@@ -108,6 +200,8 @@ Show instance panel and the closed sidebar and panel).
 | Theme picker (`app.themePicker`; also the theme button and **Theme: choose…**) | ⇧⌘Space | Ctrl+Shift+Space | yes |
 | Theme cycle: White, Solarized, Dark, This computer (`app.themeToggle`) | none | none | – (the palette keeps it) |
 | Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | yes |
+| The leader, then one key (`app.leader`; see "The leader") | ⌃\ | Alt+O | yes (Alt+O sends ESC o, which Esc then o still sends; on macOS by principle 3's exception) |
+| Focus the next editor group (`split.focusNextGroup`; the leader's Tab) | none | none | – |
 | Copy the terminal selection (`terminal.copySelection`) | ⌘C (Edit › Copy, the menu role; the action has no macOS default) | Ctrl+Shift+C | yes |
 | Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | yes |
 | Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | no (Ctrl+O is a byte programs read) |
@@ -193,12 +287,67 @@ accelerator from the terminal.
 
 Actions without a default (bind them in the shortcuts editor): the workspace
 switcher, New window (Linux/Windows), Connections, focus mode, focus the active terminal, return to
-terminal groups, explicit themes (`app.theme.light`, `app.theme.solarized`,
+terminal groups, focus the next editor group, explicit themes (`app.theme.light`, `app.theme.solarized`,
 `app.theme.dark`, and `app.theme.host` for This computer), and the instance menu's Open in split / Open
 pull request.
 
 Rebinding applies everywhere a chord is shown: tooltips, the footer hints, the
 palette's command details and the spawn dialog's Spawn button.
+
+### Sidebar keys
+
+New in 0.65.0. While focus is in the sidebar (the nav, a roster row, the
+footer), the TUI's plain keys work there too (`PLAIN_KEYS` in
+`packages/client/keymap.mjs`). Each is its own action in the `sidebar`
+context (`sidebar.key.*`, `SIDEBAR_KEYS`), rebindable and unbindable in the
+shortcuts editor's **Sidebar keys** group, and each does what the same key
+does after the leader. They never fire in an editable field (the roster
+filter types them) or inside a menu or list popup open there (an instance's
+actions menu, the workspace switcher's menu), and never with focus outside the
+sidebar.
+
+| Key | Action id | Does |
+|---|---|---|
+| `1` `2` `3` | `sidebar.key.instances`, `…souls`, `…capabilities` | Instances, Workspace › Souls, Workspace › Capabilities |
+| `w` | `sidebar.key.workspaces` | the workspace switcher |
+| `/` | `sidebar.key.filter` | the roster filter |
+| `r` | `sidebar.key.refresh` | reads the instance roster now |
+| `z` | `sidebar.key.zoom` | focus mode on or off, then the active terminal |
+| `c` | `sidebar.key.closeTerminal` | closes the active tab |
+| `[` `]` | `sidebar.key.tabPrevious`, `…tabNext` | previous / next tab |
+| `\|` `-` | `sidebar.key.splitRight`, `…splitDown` | split right / split down |
+| `X` `D` `S` `R` | `sidebar.key.stop`, `…retire`, `…start`, `…restart` | Stop… / Retire… / Start… / Restart… for the focused roster row (on a nav or footer control, the active terminal tab's instance) |
+| `n`, `N` | `sidebar.key.spawn`, `…spawnAnother` | Quick Open; the spawn dialog for the focused row's soul |
+| `?` | `sidebar.key.help` | the shortcuts editor |
+
+A key that cannot act says why in one line at the bottom of the main area, as
+the leader does. While focus is in the sidebar the tab layer's (or a stage's)
+shortcuts are on too, so a sidebar key and a tab shortcut on the same chord
+clash: the shortcuts editor shows it, as it shows any clash with a stored
+rebind. A one-character non-letter key (`?`, `|`, `[`, `/`) matches
+whatever Shift the keyboard layout needs for it; a letter keeps its case, so
+`x` is not Stop.
+
+On a roster row the tree also reads the TUI's `k` `j` (up, down), `g` `G`
+(first, last), `h` `l` (collapse or go to the parent, expand), beside the
+arrows, and PageUp/PageDown move by the rows that fit the list. These stay the
+tree's own keys, as the arrows are, and are not in the shortcuts editor.
+
+**Not taken, and why:**
+
+- Tab: the sidebar's own focus order.
+- Esc: keeps closing what it closes today.
+- `q`, Ctrl+C (quit): a stray letter must not close a window; the window
+  manager and ⌘Q own that.
+- Ctrl+Z, Ctrl+L: a terminal program's suspend and redraw; nothing to do in a
+  window.
+- Ctrl+K: the Desktop's palette is ⌘K / Ctrl+Shift+K, and plain Ctrl+K is the
+  program's in a terminal, so it would work in only half the places; the
+  leader's `k` is the shared key.
+- `C` (check an unknown spawn): the Desktop reports a spawn's outcome in its
+  own notification; there is no command to put on a key.
+- `i`, and the Souls and Capabilities views' own keys: those views keep their
+  local keys.
 
 ## Regions (F6)
 
@@ -397,11 +546,11 @@ the rig). "Fixed" marks a gap this change closed.
 | Add / onboard workspace dialog | From the menu's Add | Radio-style suggestions with arrows; Esc; trapped; returns to the trigger |
 | Sidebar nav (Deployments, Workspace, Automations) | F6 (current item); Tab; ⌘1/⌘2/⌘3 | Enter/Space |
 | Roster filter | Tab; ⌘F / Ctrl+Shift+F; **Down from it enters the rows (fixed): while filtering, at the first match, never a parent kept only to show its tree path** | Typing filters |
-| Roster rows | One roving stop, **the selected row, else the first filter match (fixed: was the first enabled)**; F6; Up/Down/Home/End; Right expands, Left collapses or goes to the parent. A collapse or a filter never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is. The list shows no scrollbar (the wheel and the touchpad scroll it): a row that takes keyboard focus (these keys, the filter's Down, F6) is revealed whole, its tools included, by scrolling the list alone, never an ancestor | Enter/Space open the terminal (running) or Start (stopped) |
+| Roster rows | One roving stop, **the selected row, else the first filter match (fixed: was the first enabled)**; F6; the leader then Esc; Up/Down/Home/End (and the TUI's `k` `j` `g` `G`), PageUp/PageDown by the rows that fit; Right (`l`) expands, Left (`h`) collapses or goes to the parent; the sidebar keys (see "Sidebar keys"). A collapse or a filter never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is. The list shows no scrollbar (the wheel and the touchpad scroll it): a row that takes keyboard focus (these keys, the filter's Down, F6) is revealed whole, its tools included, by scrolling the list alone, never an ancestor | Enter/Space open the terminal (running) or Start (stopped) |
 | Rows whose state is unknown or that the kernel does not report addressable | **Focusable, `aria-disabled` with the reason as a description (fixed: were `disabled`, which hid their tools from the keyboard)** | Activation does nothing; their tools work |
 | Row tools: PR link, Start…, actions menu | Tab from the focused row (shown on focus) | Enter/Space; the menu: arrows, Home/End, Esc back on its trigger, Tab closes |
 | Start / Restart dialog, lifecycle dialog | From the row or its menu | Esc (Cancel before anything is sent, Close or Done after); trapped; the lifecycle dialog starts on Cancel and focuses Close or Done when it ends; **focus returns to the row when its tool is hidden again (fixed: fell to `<body>`)**, and after a retire to the row that followed it |
-| Sidebar footer: Spawn instance, sidebar, theme, shortcuts, settings, palette | Tab | Enter/Space run the same registered actions as the chords |
+| Sidebar footer: the leader ("Alt+O commands"), Spawn instance, sidebar, theme, shortcuts, settings, palette | Tab | Enter/Space run the same registered actions as the chords; the leader's button starts the leader (its hint opens, the next key settles it) and, pressed again, closes it |
 | Show sidebar (start of the main area's top bar, while the sidebar is hidden or in focus mode) | Tab, first in the Main region; hiding the sidebar moves focus to it | Enter/Space: `sidebar.toggle` (leaves focus mode too) |
 | Tab bar | One roving stop per tablist (per group when split); F6 (main). Tabs shrink to fit (spec F); the active tab is scrolled fully into view in its own strip on every activation, close and strip resize, and a focused control is revealed in its strip, never by scrolling an ancestor | Left/Right/Home/End select; Delete closes the focused tab, and the keymap's `tabs.close` (⌘W / Ctrl+Shift+W, rebindable; the close button's tooltip names it) closes the active one; Ctrl+Tab from anywhere in the tab layer, and Ctrl+PgDn/PgUp and go-to-tab outside a terminal (⌥⌘digit also inside one on macOS), **keeping focus in the content (fixed: fell to `<body>`)** |
 | Terminal | Enter on its roster row; F6 (main) | Every key reaches the program except the terminal-allowlisted chords; ⇧⌘F6 / Ctrl+Shift+F6 leaves for the next region; ⌘C / Ctrl+Shift+C copy the selection and ⌘V / Ctrl+Shift+V paste |
@@ -433,7 +582,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Panel sections: soul link, copy, details, Open soul page, Teams, Git, lifecycle Restart…/Start…/Stop…/Retire… | Tab | Native buttons and summaries |
 | Spawn dialog | Spawn on a card, a soul page, Quick Open | See above |
 | Command palette, Quick Open | ⌘K / Ctrl+Shift+K, ⌘P / Ctrl+Shift+P (from a terminal too) | Type, arrows, Enter, Esc; Tab stays in the input; in the palette its chord cycles rows (⇧ + it: up), skipping context rows (see "The command palette") |
-| Shortcuts editor | ⌘, / Ctrl+, (from a terminal too); focus starts in its search | Typing in the search filters by name, group or keys (`shift+b` and `ctrl shift b` find Ctrl+Shift+B), and the count is announced; Down enters the rows, Up/Down move between them, Up from the first returns to the search; Tab reaches each row's shortcut and Reset; Enter records, Esc cancels a recording, Backspace unbinds; Esc clears the search, then closes; trapped, the search its first stop. A row shows "terminal" when its shortcut works while a terminal has focus and "changed" when it differs from the default |
+| Shortcuts editor | ⌘, / Ctrl+, (from a terminal too); focus starts in its search | The **Leader** group comes first (the leader's own row, then one fixed row per key after it), then **Sidebar keys**; typing in the search filters by name, group or keys (`shift+b` and `ctrl shift b` find Ctrl+Shift+B, `alt+o k` finds the leader's `k`), and the count is announced; Down enters the rows, Up/Down move between them, Up from the first returns to the search; Tab reaches each row's shortcut and Reset; Enter records, Esc cancels a recording, Backspace unbinds; Esc clears the search, then closes; trapped, the search its first stop. A row shows "terminal" when its shortcut works while a terminal has focus and "changed" when it differs from the default |
 | Settings (Connections, Terminal) | Footer settings | Trapped, through the Terminal size field too; the sign-in terminal has an explicit Shift+Tab exit; the font size stepper's − and + stay focusable at 9 and 28 (aria-disabled) and a typed size applies on Enter or on leaving the field |
 | Notifications | Tab (they come last in the document) | Open and Dismiss are buttons; focus moves on after dismissing |
 

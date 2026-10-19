@@ -116,6 +116,13 @@ body {
 #nav { display: flex; flex: none; flex-direction: column; padding: 8px 8px 14px; gap: 1px; }
 #nav-foot { margin-top: auto; flex: none; display: flex; flex-direction: column; padding: 10px; gap: 8px;
             border-top: 1px solid var(--border); }
+/* The leader's hint at the footer's start: quiet text (the chord, then "commands"), a real button. */
+#sidebar-leader { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 24px; padding: 2px 6px;
+                  border: 0; border-radius: 5px; background: none; color: var(--muted); font-family: inherit;
+                  font-size: 11.5px; line-height: 1.4; text-align: left; cursor: pointer; }
+#sidebar-leader .shortcut-hint { max-width: none; color: var(--fg); }
+#sidebar-leader:hover { background: var(--surface-2); }
+#sidebar-leader:focus-visible { background: var(--sel); color: var(--fg); } /* the id rule above outranks the global tint */
 #sidebar-spawn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 32px;
                  padding: 5px 10px; border: 1px solid var(--primary-bg); border-radius: 7px;
                  background: var(--primary-bg); color: var(--primary-fg); font-family: inherit; font-size: 12.5px;
@@ -417,6 +424,21 @@ body {
                      display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
                      font: inherit; cursor: pointer; }
 .main-edge-control[hidden] { display: none; }
+/* The leader's hint (leader-hint.mjs): a quiet, opaque panel at the bottom of the main area, over
+   the terminal, never focusable. Idle it is an empty live region kept out of sight (not display:none,
+   so what is put into it is announced). Keys flow in columns, one key and its label per line. */
+.leader-hint { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 9; box-sizing: border-box;
+               max-height: 50%; overflow: hidden; padding: 10px 14px; border: 1px solid var(--border);
+               border-radius: 8px; background: var(--surface-2); color: var(--fg); box-shadow: var(--shadow-popover);
+               font-size: 12px; line-height: 1.5; pointer-events: none; }
+.leader-hint:not([data-mode]) { width: 1px; height: 1px; left: 0; right: auto; bottom: 0; padding: 0; margin: -1px;
+                                border: 0; overflow: hidden; clip-path: inset(50%); box-shadow: none; }
+.leader-hint-keys { margin: 0; padding: 0; list-style: none; columns: 3 15em; column-gap: 20px; }
+.leader-hint-keys li { display: flex; gap: 10px; align-items: baseline; break-inside: avoid; white-space: nowrap; }
+.leader-hint-key { flex: none; min-width: 6.5em; color: var(--fg); font: 600 11.5px var(--mono); }
+.leader-hint-key kbd { font: inherit; }
+.leader-hint-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.leader-hint-line { margin: 0; color: var(--fg); }
 #show-sidebar { left: 6px; }
 #show-panel { right: 6px; }
 .main-edge-control:hover { color: var(--fg); background: var(--surface-2); }
@@ -708,6 +730,13 @@ body {
 /* The reset keeps its slot when hidden, so chords align whether or not a row has one. */
 .kb-reset-slot { flex: none; width: 30px; display: flex; justify-content: center; }
 .kb-reset { padding: 5px 6px; }
+/* The Leader group: its quiet line (the leader is the TUI's, the direct chords are extras), a
+   stage row's note where the two differ, and the table's read-only rows ("Alt+O then K or Space"). */
+.kb-extras { margin: 0 0 4px; padding: 0 6px 6px; color: var(--muted); font-size: 11.5px; }
+.kb-note { color: var(--muted); font-size: 11px; }
+.kb-row-fixed .kb-chord-cell { width: auto; min-width: 176px; }
+.kb-row .kb-chord.kb-fixed { cursor: default; }
+.kb-then { align-self: center; padding: 0 2px; color: var(--muted); font-size: 11px; }
 .kb-empty { padding: 16px; color: var(--muted); text-align: center; font-size: 13px; }
 /* A narrow window (the editor is 92vw below ~700px): the title gives way to the search (the dialog
    keeps its name), and a row's markers, keycaps and Reset take a second line under its label, so
