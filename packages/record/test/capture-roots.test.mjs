@@ -105,6 +105,21 @@ test('forget refuses a missing record root without creating any directories', t 
   assert.equal(fs.existsSync(f.root), false);
 });
 
+test('indeterminate deployment warns to restore access for stored current roots while retired roots keep the forget remedy', t => {
+  const f = fixture(t), current = join(f.base, 'current'), retired = join(f.base, 'retired');
+  for (const path of [current, retired]) fs.symlinkSync(join(f.base, 'missing'), path);
+  f.refresh([pi(retired)]); f.refresh([pi(current)]);
+  fs.renameSync(f.deployment, f.deployment + '-old'); fs.symlinkSync(join(f.base, 'missing-deployment'), f.deployment);
+  const rows = readCaptureRoots(f.root).rows;
+  const currentWarning = rows.find(row => row.message.includes(`transcript root ${current} `)).message;
+  const retiredWarning = rows.find(row => row.message.includes(`transcript root ${retired} `)).message;
+  assert.match(currentWarning, /Restore deployment directory access, then run oats setup/);
+  assert.doesNotMatch(currentWarning, /--forget-retired-root/);
+  assert.match(retiredWarning, /--forget-retired-root/);
+  assert.throws(() => forgetRetiredRoot(f.root, { deployment: f.deployment, source: 'pi', path: current }), /indeterminate/);
+  assert.equal(forgetRetiredRoot(f.root, { deployment: f.deployment, source: 'pi', path: retired }).changed, true);
+});
+
 test('an unreadable root retains the supplied configuration labels without synthetic duplicate warnings', t => {
   const f = fixture(t), path = join(f.base, 'dangling');
   fs.symlinkSync(join(f.base, 'missing'), path);

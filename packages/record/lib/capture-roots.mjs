@@ -143,10 +143,11 @@ export function captureRootsWarning(row) {
     'Restore readable configuration/root access, then run oats setup in this deployment.';
   return { ...row, remedy };
 }
-function rootWarning(deployment, selected, retired, root) {
+function rootWarning(deployment, selected, retired, root, { canForget = true } = {}) {
   const forget = `turn-record capture --forget-retired-root ${shellQuote(selected.path)} --deployment ${shellQuote(deployment)} --source ${selected.source} --root ${shellQuote(root)}`;
   return { code: 'capture-roots-unavailable', message: `${deployment}: ${selected.source} transcript root ${selected.path} is unavailable. ` +
-    (retired ? `Restore access or forget this retired reference with: ${forget}. This deletes no history.` : 'Restore directory access or change its launch location and run oats setup in this deployment.') };
+    (!canForget ? 'Restore deployment directory access, then run oats setup in this deployment.' :
+      retired ? `Restore access or forget this retired reference with: ${forget}. This deletes no history.` : 'Restore directory access or change its launch location and run oats setup in this deployment.') };
 }
 
 // Offline metadata only; discovery consumes the same inventory under its held
@@ -187,15 +188,15 @@ export function readCaptureRoots(root, { check = () => {}, inspectRoots = true, 
   // Metadata-only configuration/lifecycle warnings do not make the known
   // discovery union incomplete. They remain health evidence until refreshed.
   for (const entry of entries) {
-    check(); let active = false;
+    check(); let lifecycle = 'indeterminate';
     try {
-      const lifecycle = deploymentState(entry, { check });
-      active = lifecycle.state === 'active';
-      if (lifecycle.state === 'replaced') push({ code: 'capture-roots-refresh-required', message: `${entry.deployment}: deployment directory identity changed; run oats setup there to refresh registration. Old roots remain retired for discovery.` });
+      lifecycle = deploymentState(entry, { check }).state;
+      if (lifecycle === 'replaced') push({ code: 'capture-roots-refresh-required', message: `${entry.deployment}: deployment directory identity changed; run oats setup there to refresh registration. Old roots remain retired for discovery.` });
     } catch (error) {
       if (error instanceof CaptureStop) throw error;
       push({ code: 'capture-roots-unavailable', message: `${entry.deployment}: deployment identity is unreadable; restore access and run oats setup there.` });
     }
+    const active = lifecycle === 'active';
     const warnedPaths = new Set();
     if (active) for (const unavailable of entry.unavailable) {
       if (unavailable.path !== undefined) {
@@ -214,7 +215,8 @@ export function readCaptureRoots(root, { check = () => {}, inspectRoots = true, 
       catch (error) {
         if (error instanceof CaptureStop) throw error;
         incomplete = true;
-        if (retired || !warnedPaths.has(selected.path)) push(rootWarning(entry.deployment, selected, retired, root));
+        if (retired || !warnedPaths.has(selected.path)) push(rootWarning(entry.deployment, selected, retired, root,
+          { canForget: values !== entry.roots || lifecycle !== 'indeterminate' }));
       }
     }
   }

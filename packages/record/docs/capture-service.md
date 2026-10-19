@@ -1838,6 +1838,8 @@ A stored current reference can be removed only when that deployment is proven
 absent or replaced by a different inode; its exact lifecycle observation is
 rechecked under the root lock immediately before publication. Active or
 indeterminate deployment identity refuses removal of a stored current reference.
+Its root warning asks for restored deployment access and setup refresh; it does
+not offer the forget command until absence or replacement can be established.
 Only path diagnostics orphaned by the exact removal are dropped; an other-source
 reference at the same path keeps its diagnostic. The recorded deployment identity,
 all other references and other deployments remain. A repeated forget is unchanged
