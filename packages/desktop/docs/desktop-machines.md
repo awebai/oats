@@ -98,8 +98,8 @@ and is not selected.
   on that machine** (starts empty and is required: the dialog suggests no
   folder, #1390; its hint is "A path on that machine, starting with / or
   ~/", and Add machine with it empty says so beside it and runs nothing; the
-  kernel's `oats server connect` requires `--dir` as well), **Install OATS
-  there if it's missing** (on). It never asks for or shows a secret.
+  dialog always passes the entered folder as `--dir`), **Install OATS there
+  if it's missing** (on). It never asks for or shows a secret.
 - Each phase (connect, then messaging) is a box of rows, one per step the CLI
   sent: the step, its status in words (ok, done, needs you, waiting, failed),
   and the CLI's own `detail`, `remedy` (its lines kept: a readiness remedy is
