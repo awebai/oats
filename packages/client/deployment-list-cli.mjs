@@ -4,21 +4,23 @@
  *   list    → `oats deployments --json`                                  (cwd /)
  *   add     → `oats deployments add <path> --via <client> --json`         (cwd <path>)
  *   remove  → `oats deployments remove <path> --json`                     (cwd /)
- *   import  → `oats deployments import --from <client> <path>… --json`    (cwd /; no path is a valid call)
+ *   import  → `oats deployments import --from <client> <path>… --json`    (cwd /; no path is a valid call;
+ *             each path absolute as the client saved it, which the kernel canonicalizes)
  * Each needs the probe's `deployments-list` feature: without it nothing runs, and nothing falls back to
  * looking at the disk. `/` is the working directory of the verbs that name no deployment, so a client
  * started inside one never has it resolved by the kernel on the way. */
 import { execFile } from 'node:child_process';
 import { cliEnvironment } from './cli-environment.mjs';
 import { withoutInstanceVariables } from './kernel-environment.mjs';
-import { deploymentsListSupported, listedPath, readDeploymentAdd, readDeploymentImport, readDeploymentList, readDeploymentRemove } from './deployment-list.mjs';
+import { absolutePath, deploymentsListSupported, listedPath, readDeploymentAdd, readDeploymentImport, readDeploymentList, readDeploymentRemove } from './deployment-list.mjs';
 
 /** The kernel waits up to 3 s for the list's lock; the rest is a node start and a small file. */
 export const DEPLOYMENT_LIST_TIMEOUT = 15_000;
 /** The list file is at most 1 MiB; its answer adds a name and a state per row. */
 export const DEPLOYMENT_LIST_MAX_BUFFER = 4 * 1024 * 1024;
-/** The most paths one import names. */
-export const DEPLOYMENT_IMPORT_MAX = 200;
+/** The most paths one import names: an argv bound, far above any saved set. A longer import is refused
+ * whole, never cut: the caller keeps what it would import. */
+export const DEPLOYMENT_IMPORT_MAX = 2000;
 /** The clients the kernel takes in `--via` and `--from`. */
 const CLIENTS = ['desktop', 'tui'];
 
@@ -49,7 +51,7 @@ export function deploymentListArgv(options) {
       return { argv: ['deployments', 'remove', options.path, '--json'], cwd: '/' };
     case 'import':
       if (!only('action', 'from', 'paths') || !CLIENTS.includes(options.from) || !Array.isArray(options.paths)
-        || options.paths.length > DEPLOYMENT_IMPORT_MAX || !options.paths.every(listedPath)) return null;
+        || options.paths.length > DEPLOYMENT_IMPORT_MAX || !options.paths.every(absolutePath)) return null;
       return { argv: ['deployments', 'import', '--from', options.from, ...options.paths, '--json'], cwd: '/' };
     default: return null;
   }

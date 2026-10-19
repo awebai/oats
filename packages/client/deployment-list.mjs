@@ -31,6 +31,8 @@ const exactKeys = (value, keys) => Object.keys(value).length === keys.length && 
 const text = (value) => typeof value === 'string' && value.length > 0 && !value.includes('\0');
 /** An absolute path as the kernel stores it: canonical in form (no `.`, `..`, `//` or trailing `/`). */
 export const listedPath = (value) => text(value) && isAbsolute(value) && resolve(value) === value;
+/** An absolute path in any form: what an import names, as a client saved it (the kernel canonicalizes it). */
+export const absolutePath = (value) => text(value) && isAbsolute(value);
 
 /** Whether a probe (`oats version --json`, accepted) declares the list. */
 export const deploymentsListSupported = (cli) => Array.isArray(cli?.features) && cli.features.includes(DEPLOYMENTS_LIST_FEATURE);
@@ -84,6 +86,6 @@ export function readDeploymentRemove(result) {
 export function readDeploymentImport(result) {
   if (!record(result) || !text(result.at)) return null;
   if (result.imported === false) return exactKeys(result, ['imported', 'at']) ? { imported: false, at: result.at, added: [] } : null;
-  if (result.imported !== true || !exactKeys(result, ['imported', 'at', 'added']) || !Array.isArray(result.added) || !result.added.every(listedPath)) return null;
+  if (result.imported !== true || !exactKeys(result, ['imported', 'at', 'added']) || !Array.isArray(result.added) || !result.added.every(absolutePath)) return null;
   return { imported: true, at: result.at, added: [...result.added] };
 }

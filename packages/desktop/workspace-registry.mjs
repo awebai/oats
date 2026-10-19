@@ -16,9 +16,8 @@
 // canonicalizes and re-validates, and the caller replaces only an app-OWNED
 // backend server; once an add is committed the caller lists it with the kernel.
 import { mkdirSync, writeFileSync, renameSync, rmSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname } from "node:path";
 import { deploymentCheck, deploymentsInside, PICK_SCAN_LIMIT } from "../client/workspace-admission.mjs";
-import { DEPLOYMENT_IMPORT_MAX } from "../client/deployment-list-cli.mjs";
 
 /** Restore explicitly opened workspaces, independently of recent suggestions.
  * Re-validate on startup: moved/deleted deployments are skipped and
@@ -147,6 +146,8 @@ export function pickedFolderChoices(dir, io) {
  * @param {(workspace) => Promise<{ code: string, message: string }|null>} [io.listed]  an add was committed:
  *        list it on this computer (`oats deployments add --via desktop`); the failure, or null. Best effort:
  *        the add has happened whatever it answers, and its answer carries the failure as `listed`.
+ * @param {(fn: () => Promise<object>) => Promise<object>} [io.serial]  the queue an add runs in, its listing
+ *        included (createSerialQueue): a Remove queued in the same one never runs between the two.
  * `scope` names the window that asked (#481): its own add generation and provenance, so one window's
  * add never supersedes another's; every add still runs through the one serialized executor.
  */
@@ -172,12 +173,15 @@ export function createPerformAdd(io) {
       return answer;
     }
     if (decision.action === "already-advertised") { io.added?.(decision.workspace); return { ok: true, workspace: decision.workspace }; }
-    const result = await io.execute(decision.workspace, () => io.generations.isCurrent(verb, gen));
-    if (!result?.ok) return result;
-    io.added?.(decision.workspace);
-    let listed = null;
-    try { listed = (await io.listed?.(decision.workspace)) ?? null; } catch (error) { listed = { code: "E_CLI_FAILED", message: String(error?.message || error) }; }
-    return listed ? { ...result, listed } : result;
+    const serial = io.serial ?? ((fn) => fn());
+    return serial(async () => {
+      const result = await io.execute(decision.workspace, () => io.generations.isCurrent(verb, gen));
+      if (!result?.ok) return result;
+      io.added?.(decision.workspace);
+      let listed = null;
+      try { listed = (await io.listed?.(decision.workspace)) ?? null; } catch (error) { listed = { code: "E_CLI_FAILED", message: String(error?.message || error) }; }
+      return listed ? { ...result, listed } : result;
+    });
   };
 }
 
@@ -331,6 +335,48 @@ export function createSuggestionCalls(io) {
    lists once, and removes a row on request. Every call is a kernel verb
    (packages/client/deployment-list-cli.mjs); nothing here reads the file. */
 
+/** One queue for what changes the served set or this computer's list: each add (its listing included) and
+ * each Remove run one after the other, so a Remove never runs between an add's commit and its listing, and
+ * checks what is served when it runs, not when it was asked. A failed operation does not stop the queue. */
+export function createSerialQueue() {
+  let chain = Promise.resolve();
+  return (fn) => {
+    const run = chain.then(fn);
+    chain = run.catch(() => { /* the next one runs whatever this one did */ });
+    return run;
+  };
+}
+
+/** The server's CLI probe once it has settled (`probedAt`): a server that was just started, by a launch or
+ * an add's replacement, answers its routes before its probe settles, and a pending probe has no CLI. Null
+ * when it has not settled after `attempts` reads.
+ * @param {() => Promise<object>} read  the server's /api/cli
+ */
+export async function settledCli(read, { attempts = 30, every = 500, delay = (ms) => new Promise((ok) => setTimeout(ok, ms)) } = {}) {
+  for (let i = 0; i < attempts; i++) {
+    try { const cli = await read(); if (cli?.probedAt) return cli; } catch { /* the server is not up yet */ }
+    if (i < attempts - 1) await delay(every);
+  }
+  return null;
+}
+
+/**
+ * List one deployment on this computer (`oats deployments add <path> --via desktop`), once the CLI is known.
+ * The failure, or null: a CLI without the list, or no compatible CLI at all, is no failure (there is no list
+ * to put it on); a probe that never settled is one, never a silent skip.
+ * @param {string} path
+ * @param {object} io
+ * @param {() => Promise<object|null>} io.cli          settledCli over the server's /api/cli
+ * @param {(cli, options) => Promise<object>} io.run    cliDeploymentList
+ */
+export async function listDeployment(path, io) {
+  const cli = await io.cli();
+  if (!cli) return { code: "E_CLI_TIMEOUT", message: "The installed OATS CLI was not ready, so it could not be listed." };
+  const result = await io.run(cli, { action: "add", path, via: "desktop" });
+  if (result?.ok || result?.reason?.code === "E_DEPLOYMENTS_FEATURE" || result?.reason?.code === "E_CLI_UNAVAILABLE") return null;
+  return { code: result?.reason?.code || "E_CLI_FAILED", message: result?.reason?.message || "The installed OATS CLI could not list it." };
+}
+
 /** What became of a list read, for the switcher: `ok`, `unsupported` (the CLI has no deployments-list),
  * `failed` (the kernel refused or answered what cannot be read; `message` says why) or `unavailable`
  * (no compatible CLI yet: the degradation card says so, the switcher says nothing). */
@@ -351,18 +397,23 @@ export function listState(read) {
  * @param {(path: string) => boolean} io.served          the current server serves it
  * @param {(path: string) => Promise<object>} io.remove  cliDeploymentList remove
  * @param {(path: string) => void} io.unsave             drop it from the saved open set (throws when the write fails)
+ * @param {(fn: () => Promise<object>) => Promise<object>} [io.serial]  the adds' queue (createSerialQueue): the
+ *        offer and what is served are checked when the Remove runs, after any add queued before it
  * @returns {(path: string, scope: string) => Promise<{ ok: true, removed: boolean } | { ok: false, code: string, reason: string }>}
  */
 export function createRemoveListed(io) {
-  return async function removeListed(path, scope = "") {
-    if (typeof path !== "string" || !io.removable(scope).has(path)) return { ok: false, code: "not-suggested", reason: "That deployment is no longer offered here. Open the menu again." };
-    if (io.served(path)) return { ok: false, code: "served", reason: "This deployment is open. It can't be removed from here." };
-    const result = await io.remove(path);
-    if (!result?.ok) return { ok: false, code: result?.reason?.code || "E_CLI_FAILED", reason: result?.reason?.message || "Could not remove it from this computer's list." };
-    try { io.unsave(path); } catch (error) {
-      return { ok: false, code: "save-failed", reason: `Removed from this computer's list, but the saved workspaces could not be written: ${error?.message || error}` };
-    }
-    return { ok: true, removed: result.value.removed };
+  const serial = io.serial ?? ((fn) => fn());
+  return function removeListed(path, scope = "") {
+    return serial(async () => {
+      if (typeof path !== "string" || !io.removable(scope).has(path)) return { ok: false, code: "not-suggested", reason: "That deployment is no longer offered here. Open the menu again." };
+      if (io.served(path)) return { ok: false, code: "served", reason: "This deployment is open. It can't be removed from here." };
+      const result = await io.remove(path);
+      if (!result?.ok) return { ok: false, code: result?.reason?.code || "E_CLI_FAILED", reason: result?.reason?.message || "Could not remove it from this computer's list." };
+      try { io.unsave(path); } catch (error) {
+        return { ok: false, code: "save-failed", reason: `Removed from this computer's list, but the saved workspaces could not be written: ${error?.message || error}` };
+      }
+      return { ok: true, removed: result.value.removed };
+    });
   };
 }
 
@@ -388,10 +439,11 @@ export async function importDesktopLists(io) {
   const recents = io.readRecents();
   if (recents === null) return { status: "none" };
   const paths = [];
+  // Every absolute path, as written and unvalidated: the kernel canonicalizes it and keeps a missing one.
+  // Never cut: an import too long for one call is refused, and the file kept.
   for (const path of [...savedWorkspacePaths(recents), ...savedWorkspacePaths(io.readOpen() ?? "[]")]) {
-    if (resolve(path) === path && !path.includes("\0") && !paths.includes(path)) paths.push(path);
+    if (!path.includes("\0") && !paths.includes(path)) paths.push(path);
   }
-  paths.splice(DEPLOYMENT_IMPORT_MAX); // one call names at most this many; a longer saved set is not a real one
   const result = await io.importPaths(paths);
   if (!result?.ok) return { status: "kept", reason: result?.reason?.message || "the import did not run" };
   try { io.retire(); } catch (error) { return { status: "kept", reason: `imported, but the file could not be renamed: ${error?.message || error}` }; }

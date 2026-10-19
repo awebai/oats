@@ -36,7 +36,7 @@ import { cliWorkspace, validWorkspaceRef } from "../client/workspace-cli.mjs";
 import { onboardData } from "../client/deployment-data.mjs";
 import { validateWorkspace } from "../client/workspace-admission.mjs";
 import { cliDeploymentList } from "../client/deployment-list-cli.mjs";
-import { workspaceSuggestions, listState, createRemoveListed, unsavedOpenSet, importDesktopLists, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, commitOpenSet, startupOpenSet, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor,
+import { workspaceSuggestions, listState, createRemoveListed, unsavedOpenSet, importDesktopLists, createSerialQueue, settledCli, listDeployment, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, commitOpenSet, startupOpenSet, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor,
   savedWorkspacePaths, persistableDirs, stageDirs, pickedFolderChoices, createPerformAdd, createSuggestionCalls } from "./workspace-registry.mjs";
 import { workspaceNotServed } from "./renderer/deployment-header.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
@@ -326,19 +326,13 @@ async function deploymentList(options) {
   try { cli = await readServedCli(); } catch { cli = null; }
   return cliDeploymentList(cli, options);
 }
-/** The server's CLI probe once it has settled (`probedAt`), or null when it does not within about 30 s. */
-async function settledCli() {
-  for (let i = 0; i < 60; i++) {
-    try { const cli = await readServedCli(); if (cli?.probedAt) return cli; } catch { /* the server is not up yet */ }
-    await new Promise((ok) => setTimeout(ok, 500));
-  }
-  return null;
-}
+// Adds (their listing included) and Removes, one after the other (createSerialQueue).
+const servingQueue = createSerialQueue();
 /** At startup, once the CLI is known (#1390): the Desktop's own lists imported once, then the launch's
  * own deployment (`--dir`, or a cwd that is one) listed. Both best effort, both only logged: no window
  * owns them. */
 async function startupDeploymentList(launched) {
-  const cli = await settledCli();
+  const cli = await settledCli(readServedCli, { attempts: 60 });
   if (!cli) return;
   const read = (file) => { try { return readFileSync(file, "utf8"); } catch { return null; } };
   const imported = await importDesktopLists({
@@ -348,15 +342,15 @@ async function startupDeploymentList(launched) {
     retire: () => renameSync(RECENTS_FILE(), RECENTS_IMPORTED_FILE()),
   });
   if (imported.status === "kept") console.error(`oats-desktop: the saved workspaces were not imported into this computer's deployments list yet: ${imported.reason}`);
-  if (launched) await listDeployment(launched);
+  if (launched) await servingQueue(() => listOnComputer(launched));
 }
-/** Each committed add, and the launch's own deployment, is listed; the failure, or null. Never the
- * restored open set: a deployment removed with `oats deployments remove` would come back at every launch. */
-async function listDeployment(path) {
-  const r = await deploymentList({ action: "add", path, via: "desktop" });
-  if (r.ok || r.reason.code === "E_DEPLOYMENTS_FEATURE" || r.reason.code === "E_CLI_UNAVAILABLE") return null;
-  console.error(`oats-desktop: could not list ${path} on this computer: ${r.reason.code}: ${r.reason.message}`);
-  return r.reason;
+/** Each committed add, and the launch's own deployment, is listed once the server's probe has settled (a
+ * replacement server's is pending at first); the failure, or null. Never the restored open set: a
+ * deployment removed with `oats deployments remove` would come back at every launch. */
+async function listOnComputer(path) {
+  const failure = await listDeployment(path, { cli: () => settledCli(readServedCli), run: cliDeploymentList });
+  if (failure) console.error(`oats-desktop: could not list ${path} on this computer: ${failure.code}: ${failure.message}`);
+  return failure;
 }
 // Where Add workspace → Browse… opens next (picker-default-path.mjs): the
 // parent of the workspace most recently added or opened, across launches.
@@ -419,6 +413,7 @@ ipcMain.handle("workspace:suggestions", async (e) => {
 // Remove a row of this computer's deployments list (#1390): only one the asking window was offered as
 // removable, never one that is served (#476). Its saved open-set entry goes with it.
 const removeListed = createRemoveListed({
+  serial: servingQueue,
   removable: (scope) => suggestionCalls.removable(scope),
   served: (path) => workspaceDirs.includes(path) || allowedWs.has(path),
   remove: (path) => deploymentList({ action: "remove", path }),
@@ -464,7 +459,8 @@ const performAdd = createPerformAdd({
   // An add that opened a workspace (or found it already open) remembers its parent for the picker (#460).
   added: (ws) => rememberWorkspaceParent(ws.path),
   // A committed add is listed on this computer (#1390): best effort, its failure a notice in the answer.
-  listed: (ws) => listDeployment(ws.path),
+  listed: (ws) => listOnComputer(ws.path),
+  serial: servingQueue,
 });
 
 /** At most `limit` entries of `dir`, typed by the entry itself (a link is not a directory). */

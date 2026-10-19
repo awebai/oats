@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createGenerations, createPerformAdd, createRemoveListed, importDesktopLists, listState, unsavedOpenSet, workspaceSuggestions } from "../workspace-registry.mjs";
+import { createAddExecutor, createGenerations, createPerformAdd, createRemoveListed, createSerialQueue, importDesktopLists, listDeployment, listState, settledCli, unsavedOpenSet, workspaceSuggestions } from "../workspace-registry.mjs";
+import { deploymentListArgv, DEPLOYMENT_IMPORT_MAX } from "../../client/deployment-list-cli.mjs";
 
 test("listState: what the switcher says of a list read", () => {
   assert.deepEqual(listState({ ok: true, value: { ok: true, rows: [] } }), { state: "ok" });
@@ -101,7 +102,7 @@ test("the import: recents ∪ the saved open set, as written, once; the kernel a
   const u = userData({ recents: JSON.stringify(["/h/acme", "relative", "/h/gone", "/h/acme/", 7]), open: JSON.stringify(["/h/tsm", "/h/acme", "/Volumes/x/team"]) });
   try {
     assert.deepEqual(await u.run({ ok: true, value: { imported: true, at: "2026-10-19T10:00:00.000Z", added: [] } }), { status: "imported" });
-    assert.deepEqual(u.asked, [["/h/acme", "/h/gone", "/h/tsm", "/Volumes/x/team"]], "absolute, canonical, each once, whatever their state");
+    assert.deepEqual(u.asked, [["/h/acme", "/h/gone", "/h/acme/", "/h/tsm", "/Volumes/x/team"]], "every absolute path as written, each once, whatever its state");
     assert.equal(existsSync(u.recentsFile), false);
     assert.equal(readFileSync(u.imported, "utf8"), JSON.stringify(["/h/acme", "relative", "/h/gone", "/h/acme/", 7]), "renamed whole");
     assert.equal(existsSync(u.openFile), true, "the open set is the Desktop's own, kept");
@@ -133,4 +134,82 @@ test("the import: a rename that fails keeps the status honest", async () => {
     const answer = await u.run({ ok: true, value: { imported: true, at: "x", added: [] } });
     assert.equal(answer.status, "kept"); assert.match(answer.reason, /could not be renamed/);
   } finally { rmSync(u.dir, { recursive: true, force: true }); }
+});
+
+test("the import names every absolute path as written, a non-canonical one with no twin and more than 200 of them, never cut", async () => {
+  const many = Array.from({ length: 203 }, (_, i) => `/h/d${i}`);
+  const u = userData({ recents: JSON.stringify(["/Volumes/offline/acme/", "/h/parent/../other", ...many]) });
+  try {
+    await u.run({ ok: true, value: { imported: true, at: "x", added: [] } });
+    assert.deepEqual(u.asked, [["/Volumes/offline/acme/", "/h/parent/../other", ...many]]);
+    assert.ok(deploymentListArgv({ action: "import", from: "desktop", paths: u.asked[0] }), "the kernel is asked with all of them");
+  } finally { rmSync(u.dir, { recursive: true, force: true }); }
+  const tooMany = Array.from({ length: DEPLOYMENT_IMPORT_MAX + 1 }, (_, i) => `/h/d${i}`);
+  assert.equal(deploymentListArgv({ action: "import", from: "desktop", paths: tooMany }), null, "past the argv bound the import is refused whole");
+  const kept = userData({ recents: JSON.stringify(tooMany) });
+  try {
+    const answer = await kept.run({ ok: false, reason: { code: "E_BAD_ARGS", message: "The request to this computer's deployments list was not valid." } });
+    assert.equal(answer.status, "kept"); assert.equal(existsSync(kept.recentsFile), true, "kept: no marker is set for a subset");
+  } finally { rmSync(kept.dir, { recursive: true, force: true }); }
+});
+
+test("a committed add is listed once the replacement server's probe has settled, never skipped while it is pending", async () => {
+  const probes = [{ ok: false, probedAt: null }, { ok: false, probedAt: null }, { ok: true, bin: "/usr/bin/oats", features: ["deployments-list"], probedAt: 1 }];
+  const reads = [], runs = [];
+  const read = async () => { reads.push(1); return probes[Math.min(reads.length - 1, probes.length - 1)]; };
+  const failure = await listDeployment("/h/acme", { cli: () => settledCli(read, { delay: async () => {} }),
+    run: async (cli, options) => { runs.push([cli.bin, options]); return { ok: true, value: { path: "/h/acme", added: true } }; } });
+  assert.equal(failure, null);
+  assert.equal(reads.length, 3, "read again until the probe settled");
+  assert.deepEqual(runs, [["/usr/bin/oats", { action: "add", path: "/h/acme", via: "desktop" }]]);
+  const never = await listDeployment("/h/acme", { cli: () => settledCli(async () => ({ ok: false, probedAt: null }), { attempts: 3, delay: async () => {} }), run: assert.fail });
+  assert.equal(never.code, "E_CLI_TIMEOUT", "a probe that never settles is a failure the add says, not a silent skip");
+  const noList = await listDeployment("/h/acme", { cli: async () => ({ ok: true, probedAt: 1 }), run: async () => ({ ok: false, reason: { code: "E_DEPLOYMENTS_FEATURE", message: "x" } }) });
+  const noCli = await listDeployment("/h/acme", { cli: async () => ({ ok: false, probedAt: 1 }), run: async () => ({ ok: false, reason: { code: "E_CLI_UNAVAILABLE", message: "x" } }) });
+  assert.deepEqual([noList, noCli], [null, null], "no list to put it on is no failure");
+  const busy = await listDeployment("/h/acme", { cli: async () => ({ ok: true, probedAt: 1 }), run: async () => ({ ok: false, reason: { code: "E_DEPLOYMENTS_BUSY", message: "locked" } }) });
+  assert.deepEqual(busy, { code: "E_DEPLOYMENTS_BUSY", message: "locked" });
+});
+
+/** Two windows, one queue, as main.mjs wires them: the real add executor and performAdd, and a Remove. */
+function twoWindows({ kernelRemove }) {
+  const queue = createSerialQueue(), log = [];
+  let served = [], saved = ["/h/acme"];
+  const workspace = { id: "/h/acme", name: "acme", team: null, path: "/h/acme" };
+  const execute = createAddExecutor({
+    getDirs: () => [...served], commitDirs: (dirs) => { served = dirs; saved = [...new Set([...saved, ...dirs])]; log.push("commit"); },
+    replaceServer: async () => {}, refreshAdvertised: async () => true, probeVersion: async () => ({ ok: true }), isCompatible: () => true,
+    advertises: async () => true, delay: async () => {}, attempts: 2,
+  });
+  const add = createPerformAdd({ generations: createGenerations(), decide: () => ({ ok: true, workspace, action: "replace-server" }), realpath: (p) => p,
+    choices: () => ({ choices: [] }), offer: () => null, execute: (ws, current) => execute(ws, current),
+    listed: async () => { log.push("listed"); return null; }, serial: queue });
+  const remove = createRemoveListed({ serial: queue, removable: () => new Set(["/h/acme"]), served: (path) => served.includes(path),
+    remove: async (path) => { log.push("remove"); await kernelRemove(); return { ok: true, value: { path, removed: true } }; },
+    unsave: (path) => { saved = saved.filter((p) => p !== path); log.push("unsave"); } });
+  return { add, remove, log, state: () => ({ served, saved }) };
+}
+
+test("Remove and another window's add of the same deployment run one after the other: an add queued first wins, and is never unsaved", async () => {
+  const w = twoWindows({ kernelRemove: async () => {} });
+  const added = w.add("/h/acme", true, "B"), removed = w.remove("/h/acme", "A");
+  assert.equal((await added).ok, true);
+  assert.deepEqual(await removed, { ok: false, code: "served", reason: "This deployment is open. It can't be removed from here." }, "checked when it runs, after the add");
+  assert.deepEqual(w.log, ["commit", "listed"], "the kernel was never asked to remove it");
+  assert.deepEqual(w.state(), { served: ["/h/acme"], saved: ["/h/acme"] });
+});
+
+test("an add asked while a Remove is with the kernel waits for it, then serves, saves and lists the deployment again", async () => {
+  let release; const gate = new Promise((ok) => { release = ok; });
+  const w = twoWindows({ kernelRemove: () => gate });
+  const removed = w.remove("/h/acme", "A");
+  await new Promise((ok) => setImmediate(ok));
+  const added = w.add("/h/acme", true, "B");
+  await new Promise((ok) => setImmediate(ok));
+  assert.deepEqual(w.log, ["remove"], "the add has not started");
+  release();
+  assert.deepEqual(await removed, { ok: true, removed: true });
+  assert.equal((await added).ok, true);
+  assert.deepEqual(w.log, ["remove", "unsave", "commit", "listed"], "its listing clears the kernel's tombstone");
+  assert.deepEqual(w.state(), { served: ["/h/acme"], saved: ["/h/acme"] });
 });

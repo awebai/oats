@@ -320,8 +320,12 @@ that is not served (below); removing a served deployment is #476.
   suggestion, never authorization: one that can be opened must validate now,
   and the add validates it again. Nothing is scanned to find suggestions.
 - **Listing it.** Once an add has committed, `createPerformAdd` runs
-  `oats deployments add <path> --via desktop` (`listed`), and so does startup
-  for the launch's own deployment (`--dir`, or a cwd that is one). An explicit
+  `oats deployments add <path> --via desktop` (`listed`, `listDeployment`), and
+  so does startup for the launch's own deployment (`--dir`, or a cwd that is
+  one). It waits for the server's CLI probe to settle first (`settledCli`): a
+  server just started, by a launch or by an add's replacement, answers its
+  routes before its probe settles. A probe that never settles is a failure,
+  not a skip. An explicit
   add clears a kernel tombstone, which is intended: the person opened it. The
   restored open set is never listed at startup, or a deployment removed with
   `oats deployments remove` would come back at every launch. Best effort: a
@@ -382,12 +386,19 @@ probe's `deployments-list` feature. The shared reader
   - **Its provenance** (`createRemoveListed`): only a path that was offered as
     removable to that window in its latest suggestions (`suggestionCalls.removable`).
     A served deployment is refused: removing it is #476.
+  - **One queue** (`createSerialQueue`, `servingQueue` in `main.mjs`): adds,
+    their listing included, and Removes run one after the other, and a Remove
+    checks the offer and what is served when it runs. So another window's add
+    of the same deployment either comes first (and the Remove is refused) or
+    comes after it (and its listing clears the kernel's tombstone).
 - **The one-time import.** At startup, once the server's CLI probe has
   settled, and while `workspace-recents.json` (the recently-added list of
   earlier Desktops) exists, main runs `oats deployments import --from desktop`.
   It names every absolute path of that file and of `workspace-open.json`, as
-  written, whatever their state, and no path at all is still an import, which
-  sets the kernel's marker (`importDesktopLists`). Once the kernel has
+  written, whatever their state: the kernel canonicalizes them. No path at all
+  is still an import, which sets the kernel's marker (`importDesktopLists`).
+  An import is never cut: past `DEPLOYMENT_IMPORT_MAX` paths it is refused
+  whole and the file is kept. Once the kernel has
   answered, imported now or before, the file is renamed to
   `workspace-recents.imported.json`. A refusal, or a CLI without the feature,
   keeps the file for the next launch. Recents are never read for anything
