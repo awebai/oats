@@ -38,7 +38,7 @@ export const NOT_YET = Object.freeze([
   Object.freeze({ what: "see a capability's skills and files", command: "oats capabilities show <name>" }),
   Object.freeze({ what: "open an agent in its own tmux window", command: "oats session attach --home <home>" }),
   Object.freeze({ what: "start with another harness or model", command: "oats session start --home <home>" }),
-  Object.freeze({ what: "add a machine to this workspace", command: "oats server connect <id> --ssh <alias>" }),
+  Object.freeze({ what: "add a machine to this workspace", command: "oats server connect <id> --ssh <alias> --dir <path on that machine>" }),
   Object.freeze({ what: "check a machine", command: "oats server check <id>" }),
   Object.freeze({ what: "remove a machine", command: "oats server remove <id>" }),
   // The switcher lists the deployments opened in this run and those on this computer's list, and no other.
@@ -68,10 +68,11 @@ const flow = (pieces, room) => pieces.reduce((lines, piece) => {
   return lines;
 }, []);
 /** A table: a left column as wide as its widest entry, then what each entry means, given as
- *  pieces that are never broken (a word, or a whole command: a command cut in two cannot be
- *  typed). What does not fit `cols` goes on in the same column on the next row. A table with a
- *  piece wider than that column puts every meaning under its entry instead, so no row is cut at
- *  the smallest width the frame draws at; a piece wider than even that starts further left. */
+ *  pieces that are never cut (a word, or a whole command: a command cut short cannot be typed).
+ *  What does not fit `cols` goes on in the same column on the next row. A table with a piece
+ *  wider than that column puts every meaning under its entry instead, so no row is cut at the
+ *  smallest width the frame draws at; a piece wider than even that starts further left, and a
+ *  command wider than the whole area is broken before its flags (commandRows). */
 function table(pairs, cols, look) {
   // An entry is the TUI's own word, or text made elsewhere with its width (a key's label). A
   // third member makes rows of its own under the entry's meaning: given the meaning's column and
@@ -85,10 +86,25 @@ function table(pairs, cols, look) {
   return pairs.flatMap(([left, pieces]) => {
     // A row wider than its column (a whole command, in a narrow area) starts as far left as it
     // must to stand whole, down to the area's first column: a command cut short cannot be typed.
-    const lines = flow(pieces, cols - at).map((text) => ({ col: Math.max(0, Math.min(at, cols - text.length)), text: lit(text) }));
+    const lines = flow(pieces, cols - at).flatMap((text) => (text.length <= cols ? [{ col: Math.max(0, Math.min(at, cols - text.length)), text: lit(text) }] : commandRows(text, at, cols)));
     const more = (under.get(pieces)?.(cols - at) ?? []).map((spans) => spans.map((span) => ({ ...span, col: span.col + at })));
     return [...(stacked ? [[entry(left)], ...lines.map((line) => [line])] : lines.map((line, i) => (i === 0 ? [entry(left), line] : [line]))), ...more];
   });
+}
+
+/** A command wider than the whole area (`oats server connect`'s, at 80 columns and under), on as
+ *  few rows as it needs: broken only before a flag (`--dir`), each flag with its value, the rows
+ *  after the first 2 cells further in, so read in order they are the command, and every row
+ *  stands whole inside the area, as far right as `at` when there is room. */
+function commandRows(command, at, cols) {
+  const rows = command.split(/ (?=--)/).reduce((rows, part) => {
+    const last = rows.length - 1;
+    if (last >= 0 && rows[last].length + 1 + part.length <= (last === 0 ? cols : cols - 2)) rows[last] += ` ${part}`;
+    else rows.push(part);
+    return rows;
+  }, []);
+  const start = Math.max(0, Math.min(at, cols - Math.max(rows[0].length, ...rows.slice(1).map((row) => row.length + 2))));
+  return rows.map((row, i) => ({ col: start + (i === 0 ? 0 : 2), text: lit(row) }));
 }
 
 /** The TUI's own sentences under the line of `open` in the list of instances: what the terminal

@@ -1,13 +1,14 @@
 // The user's key file, tui.json: which keys do what, whether the screen is drawn in ASCII, and the
 // key that takes the focus from an agent's terminal back to the list.
-// Read once at start and never written. A file that is wrong in any way is refused whole, each
-// problem as one line that says what to change: the TUI resolves no conflict and guesses nothing
+// Read once at start, and never written but by its move from where it was before (moved()). A file
+// that is wrong in any way is refused whole, each problem as one line that says what to change:
+// the TUI resolves no conflict and guesses nothing
 // (there is no "last wins"), because a key that silently does something else is worse than a
 // program that does not start. The lines go to a terminal, so nothing taken from the file, and
 // no path, reaches one unless it is plain printable ASCII.
-import { closeSync, openSync, readSync, statSync } from "node:fs";
+import { closeSync, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readSync, renameSync, statSync, unlinkSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { ACTIONS, bindings, keyLabel } from "./actions.mjs";
 import { displayLine, leaderKey } from "./client.mjs";
 import { isKeyId } from "./term/keys.mjs";
@@ -52,12 +53,22 @@ const isObject = (value) => value !== null && typeof value === "object" && !Arra
 /** Never the text of an error, which may hold anything: its code, when that is a plain one. */
 const unreadable = (error) => { const code = error?.code; return `it cannot be read${typeof code === "string" && ERROR_CODE.test(code) ? ` (${code})` : ""}`; };
 
-/** The path of tui.json: `$XDG_CONFIG_HOME/oats/tui.json` when that variable is set, not empty
- *  and absolute (the XDG rule: a relative value is ignored), else `<home>/.config/oats/tui.json`. */
+/** The path of tui.json: `config/tui.json` in OATS's own directory of this user, `$OATS_HOME_DIR`
+ *  when that is set and not empty, else `<home>/.oats` (the kernel's rule for its files, as
+ *  lib/deployments.mjs has it for this computer's list of deployments). */
 export function configPath(env, home) {
+  const own = env?.OATS_HOME_DIR;
+  return join(typeof own === "string" && own !== "" ? own : join(home, ".oats"), "config", "tui.json");
+}
+/** Where tui.json was before awebai/oats#1390 step (b), and is looked for only to move it
+ *  (moved()): `$XDG_CONFIG_HOME/oats/tui.json` when that variable is set, not empty and absolute
+ *  (the XDG rule: a relative value is ignored), else `<home>/.config/oats/tui.json`. */
+export function oldConfigPath(env, home) {
   const xdg = env?.XDG_CONFIG_HOME;
   return join(typeof xdg === "string" && xdg !== "" && isAbsolute(xdg) ? xdg : join(home, ".config"), "oats", "tui.json");
 }
+/** What the old file is renamed to once it is copied: beside it, so it is never lost. */
+export const MIGRATED = "tui.json.migrated";
 
 /** What tui.json says, checked: `value` is the file already parsed, `defaults` the action table,
  *  `platform` the one the TUI runs on (a `process.platform` value). Pure. Answers
@@ -144,9 +155,36 @@ function openProblem(given) {
 
 /** The file system as loadConfig needs it. `stat` follows symbolic links and answers null for a
  *  path that does not exist, which includes a path under something that is not a directory (an
- *  XDG_CONFIG_HOME of /dev/null); every other failure is thrown. `read` never takes in more than
- *  the limit and one byte, whatever the file became since it was measured. */
+ *  OATS_HOME_DIR of /dev/null); every other failure is thrown. `read` never takes in more than
+ *  the limit and one byte, whatever the file became since it was measured, and `bytes` the same as
+ *  bytes. For the move (moved()): `entry` answers `{ ino }` when an entry is at the path, a link
+ *  not followed (a link to nothing is an entry), or null; `place` writes `bytes` as a new file at
+ *  `path`, never over one: a file of its own first (mode 0600, synced), in the directory it makes
+ *  with mode 0700 when it is missing, then linked there. It answers that file's `{ ino }`, with
+ *  `taken: true` when an entry was at `path` already and nothing was placed; every failure is
+ *  thrown, marked `noLinks` when the file system has no hard links. `rename` and `remove` are rename(2) and unlink(2), which act on a link itself. */
 const NODE_IO = Object.freeze({
+  entry: entryAt,
+  bytes(path) { return readCapped(path); },
+  place(bytes, to) {
+    mkdirSync(dirname(to), { recursive: true, mode: 0o700 });
+    const own = join(dirname(to), `.${basename(to)}.${process.pid}.${Date.now()}.tmp`);
+    const ino = written(own, bytes);
+    try {
+      linkSync(own, to);
+      return { ino };
+    } catch (error) {
+      if (error?.code === "EEXIST") return { ino, taken: true };
+      // A file system without hard links has no step that is both whole and never over a file
+      // (there is no rename that refuses one): the move is refused, nothing placed.
+      if (NO_LINKS.has(error?.code)) error.noLinks = true;
+      throw error;
+    } finally {
+      try { unlinkSync(own); } catch { /* its own file, in a directory it could write */ }
+    }
+  },
+  rename(from, to) { renameSync(from, to); },
+  remove(path) { unlinkSync(path); },
   stat(path) {
     try {
       const found = statSync(path);
@@ -156,19 +194,112 @@ const NODE_IO = Object.freeze({
       throw error;
     }
   },
-  read(path) {
-    const fd = openSync(path, "r");
-    try {
-      const bytes = Buffer.alloc(CONFIG_LIMIT + 1);
-      let length = 0, got = 0;
-      while (length < bytes.length && (got = readSync(fd, bytes, length, bytes.length - length, null)) > 0) length += got;
-      if (length > CONFIG_LIMIT) throw Object.assign(new Error("tui.json grew past the limit while it was read"), { code: "EFBIG" });
-      return bytes.toString("utf8", 0, length);
-    } finally { closeSync(fd); }
-  },
+  read(path) { return readCapped(path).toString("utf8"); },
 });
+/** What link(2) answers on a file system without hard links (FAT, exFAT, some network mounts). */
+const NO_LINKS = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS"]);
+/** `bytes` as a new file at `path`, made only where nothing is (mode 0600) and synced; answers its
+ *  inode. A file it made and could not finish is removed. */
+function written(path, bytes) {
+  const fd = openSync(path, "wx", 0o600);
+  let ino;
+  try {
+    for (let at = 0; at < bytes.length;) at += writeSync(fd, bytes, at, bytes.length - at);
+    fsyncSync(fd);
+    ino = fstatSync(fd).ino;
+  } catch (error) {
+    closeSync(fd);
+    try { unlinkSync(path); } catch { /* the error thrown says what failed */ }
+    throw error;
+  }
+  closeSync(fd);
+  return ino;
+}
+/** `{ ino }` of the entry at `path`, a link not followed, or null when there is none. */
+function entryAt(path) {
+  try { return { ino: lstatSync(path).ino }; } catch (error) {
+    if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return null;
+    throw error;
+  }
+}
+/** At most CONFIG_LIMIT bytes of a file, whatever it became since it was measured. */
+function readCapped(path) {
+  const fd = openSync(path, "r");
+  try {
+    const bytes = Buffer.alloc(CONFIG_LIMIT + 1);
+    let length = 0, got = 0;
+    while (length < bytes.length && (got = readSync(fd, bytes, length, bytes.length - length, null)) > 0) length += got;
+    if (length > CONFIG_LIMIT) throw Object.assign(new Error("tui.json grew past the limit while it was read"), { code: "EFBIG" });
+    return bytes.subarray(0, length);
+  } finally { closeSync(fd); }
+}
 
-/** Read tui.json, once. Answers `{ ok: true, actions, ascii, detachKey, path }`, or
+/** A path for a line: as it is when it is printable ASCII of at most 200 characters, else `named`. */
+const shownPath = (path, named) => (PLAIN_PATH.test(path) ? path : named);
+/** Why a step of the move failed, for its line: never the text of an error, only its code. */
+const failedBy = (error) => { const code = error?.code; return typeof code === "string" && ERROR_CODE.test(code) ? code : "it failed"; };
+
+/** THE MOVE OF tui.json (docs/tui.md, "Change the keys: tui.json"; awebai/oats#1390 §3), before
+ *  it is read: the file the old rule found (`old`, oldConfigPath) and the one read now (`path`).
+ *    old present, new absent  its bytes are copied to the new path (placed: never over a file),
+ *                             then the old file is renamed to tui.json.migrated beside it (a link
+ *                             is renamed, not followed); then the new file is read. A copy that
+ *                             cannot be made, or a rename that fails, refuses with the line that
+ *                             says to move it by hand, the copy deleted first when it was made.
+ *    both present             refused: the old file is no longer read, and nothing is chosen.
+ *    old absent               nothing to move: the new file is read, or the defaults are used.
+ *  "Present" is an entry at the path, a link to nothing included: it is reported, not guessed at.
+ *  Answers null when the new file is to be read, else the line that refuses. A run that loses a
+ *  race to another one starting (a new file placed by it after this run looked) asks the table
+ *  again (again()): it reads the file that run placed once that run has moved the old file, and
+ *  refuses as for both while an old file is still there, its own or the other's not yet renamed. */
+function moved(old, path, io) {
+  const from = shownPath(old, "its old configuration file"), to = shownPath(path, "its configuration file");
+  const cannot = (reason) => `oats: \`oats tui\` cannot move ${from} to ${to} (${reason}); move it yourself (E_TUI_CONFIG)`;
+  const both = `oats: \`oats tui\`: ${from} is no longer read: the TUI reads ${to}. Copy what you need into ${to}, then remove ${from} (E_TUI_CONFIG)`;
+  // A step that fails because another run placed a new file since this one looked (the old file
+  // renamed, its backup made, the new path taken) asks the table again: a new file and no old one
+  // is that run's move, read; a new file beside this run's old one (another XDG_CONFIG_HOME's
+  // move) is both, refused; no new file is this step's failure.
+  const again = (reason) => {
+    try {
+      if (io.entry(path) === null) return cannot(reason);
+      return io.entry(old) === null ? null : both;
+    } catch { return cannot(reason); }
+  };
+  let had, has;
+  try { had = io.entry(old); } catch (error) { return cannot(failedBy(error)); }
+  if (had === null) return null;
+  try { has = io.entry(path); } catch (error) { return cannot(failedBy(error)); }
+  if (has !== null) return both;
+  const aside = join(dirname(old), MIGRATED);
+  let found, bytes, placed;
+  try {
+    // A backup of an earlier move is never written over.
+    if (io.entry(aside) !== null) return again(`${MIGRATED} is there already`);
+    found = io.stat(old);
+  } catch (error) { return again(failedBy(error)); }
+  if (found === null) return again("it is a link to nothing");
+  if (found.file !== true) return cannot("it is not a regular file");
+  if (!(typeof found.size === "number" && found.size <= CONFIG_LIMIT)) return cannot(TOO_LARGE);
+  try { bytes = io.bytes(old); } catch (error) { return error?.code === "EFBIG" ? cannot(TOO_LARGE) : again(failedBy(error)); }
+  try { placed = io.place(bytes, path); } catch (error) { return cannot(error?.noLinks === true ? "this file system has no hard links" : failedBy(error)); }
+  // Only an entry found at the new path itself is another run's file; an EEXIST thrown on the way
+  // (a `config` that is a file) is a failure like any other.
+  if (placed.taken === true) return again("EEXIST");
+  try { io.rename(old, aside); } catch (error) {
+    // The old file gone and a new one there (moved meanwhile by something else): the copy is the
+    // old file's bytes, and it is read; nothing is deleted.
+    try { if (io.entry(old) === null && io.entry(path) !== null) return null; } catch { /* refused below */ }
+    // The copy is deleted only while it is still the one this run made.
+    try { if (io.entry(path)?.ino === placed.ino) io.remove(path); } catch { /* the line says to move it by hand */ }
+    return cannot(failedBy(error));
+  }
+  return null;
+}
+
+/** Read tui.json, once, after its move from where it was before (moved()). Answers
+ *  `{ ok: true, actions, ascii, detachKey, path }`, or
  *  `{ ok: false, lines }`: the complete lines to print (no trailing newline), after which the TUI
  *  must not start. No file is the defaults: `actions` is ACTIONS itself, `ascii` is false and
  *  `detachKey` is defaultDetachKey(platform); `platform` is the one the TUI runs on (a
@@ -176,11 +307,14 @@ const NODE_IO = Object.freeze({
  *
  *  `io` is the file system (node:fs when omitted): `io.stat(path)` answers `{ file, size }` after
  *  following symbolic links, or null when the path does not exist, and throws for anything else;
- *  `io.read(path)` answers the text. The size is checked before `read` is called, so a file over
- *  CONFIG_LIMIT, a directory or a FIFO is never opened. A line holds the path only when it is
+ *  `io.read(path)` answers the text; the move uses `entry`, `bytes`, `place`, `rename` and `remove`
+ *  (see NODE_IO). The size is checked before `read` or `bytes` is called, so a file over
+ *  CONFIG_LIMIT, a directory or a FIFO is never opened. A line holds a path only when it is
  *  printable ASCII, and never the text of an error: only its code, when it is a plain one. */
 export function loadConfig({ env = process.env, home = homedir(), io = NODE_IO, platform = process.platform } = {}) {
   const path = configPath(env, home);
+  const refusal = moved(oldConfigPath(env, home), path, io);
+  if (refusal !== null) return { ok: false, lines: [refusal] };
   const listed = (problems) => (problems.length > MAX_PROBLEMS ? [...problems.slice(0, MAX_PROBLEMS), problems.length - MAX_PROBLEMS === 1 ? "1 more problem is not listed" : `${problems.length - MAX_PROBLEMS} more problems are not listed`] : problems);
   const refused = (problems) => ({ ok: false, lines: listed(problems).map((problem) => `oats: \`oats tui\` cannot use ${PLAIN_PATH.test(path) ? path : "its configuration file"}: ${problem} (E_TUI_CONFIG)`) });
   let found, text, value;

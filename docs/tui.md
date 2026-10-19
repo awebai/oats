@@ -1218,9 +1218,12 @@ and scrolling keep working.
 
 ## Change the keys: `tui.json`
 
-`oats tui` reads `$XDG_CONFIG_HOME/oats/tui.json` when `XDG_CONFIG_HOME` is
-an absolute path, else `~/.config/oats/tui.json`, once, at the start. It
-never writes it. With no file the keys are the ones above.
+`oats tui` reads `~/.oats/config/tui.json` once, at the start: beside the
+kernel's own files, so it is `$OATS_HOME_DIR/config/tui.json` when
+`OATS_HOME_DIR` is set (the same rule as this computer's list of
+deployments). `XDG_CONFIG_HOME` is not read for it. It never writes the file,
+except to [move it](#the-move-from-configoats) from where earlier versions
+read it. With no file the keys are the ones above.
 
 ```json
 { "keys": { "quit": ["q"], "refresh": ["r", "f5"], "suspend": [] }, "ascii": false, "open": { "detachKey": "F12" } }
@@ -1292,6 +1295,47 @@ guesses nothing. It refuses:
 A name from the file is repeated in a line only when it is plain printable
 ASCII of at most 40 characters. More than twenty problems are counted, not
 listed.
+
+### The move from `.config/oats`
+
+Earlier versions read `$XDG_CONFIG_HOME/oats/tui.json` when
+`XDG_CONFIG_HOME` is set, not empty and an absolute path, else
+`~/.config/oats/tui.json`: the old file. Before it reads the new one, every
+start looks at both:
+
+| Old file | New file | `oats tui` |
+|---|---|---|
+| there | not there | copies the old file's bytes to the new path, then renames the old file `tui.json.migrated` beside it, then reads the new one |
+| there | there | refuses: `<old> is no longer read: the TUI reads <new>. Copy what you need into <new>, then remove <old>` |
+| not there | there | reads the new one |
+| not there | not there | uses the defaults |
+
+- "There" means an entry is at that path: a symbolic link counts, a link to
+  nothing included, so a link to nothing as the old file is reported rather
+  than guessed at.
+- The copy is the file's bytes, not its settings: a file the TUI cannot use
+  is moved as it is, then refused against the new path like any other. The
+  new file is made with mode `0600`, and the directories it needs with
+  `0700`. It is written to a file of its own beside its path, then put in
+  place, by a hard link, so it is never half written and never written
+  over another file.
+- A link as the old file is renamed itself, not followed: what it points at
+  is copied, and its target is left as it was.
+- When the move cannot be made, nothing is left half done and the start
+  stops: `cannot move <old> to <new> (<reason>); move it yourself`. The
+  reason is a link to nothing, not a regular file, larger than 64 KiB,
+  `tui.json.migrated is there already` (a backup is never written over),
+  `this file system has no hard links` (FAT, exFAT, some network mounts:
+  there the file cannot be put in place whole without a risk of writing over
+  another, so it is not moved), or the code of the error, as `EACCES`. When the rename fails after the copy is
+  made, the copy is deleted first.
+- To move it yourself, put the file at the new path and remove the old one
+  (or rename it to anything but `tui.json`).
+- Two runs that start at once move it once. The one that finds a new file
+  placed by the other since it looked asks again: once its old file is gone
+  it reads the new one; while an old file is still there (the other's, not
+  yet renamed, or its own, with another `XDG_CONFIG_HOME`) it refuses as for
+  both files, and never reads settings it was not moving: start it again.
 
 ## What it reads, and what it runs
 
@@ -1508,7 +1552,7 @@ with the Desktop (`packages/client/`).
 | spawn an agent on another machine | `oats spawn <soul> --server <id>` |
 | spawn an agent with another harness, model or task | `oats spawn <soul>` with its options |
 | see a capability's skills and files | `oats capabilities show <name>` |
-| add a machine to this workspace | `oats server connect <id> --ssh <alias>` |
+| add a machine to this workspace | `oats server connect <id> --ssh <alias> --dir <path on that machine>` |
 | check a machine | `oats server check <id>` |
 | remove a machine | `oats server remove <id>` |
 | open a deployment that is not listed | `oats tui --dir <path>` |
@@ -1682,6 +1726,8 @@ alone. The next run removes the directory that is left, with its `tmux`,
 | `E_BAD_ARGS` | `oats tui --json`: it is interactive and has no JSON form. The usual failure envelope, exit 1 | `oats status --json` is the machine view |
 | `E_BAD_ARGS` | any argument other than `--dir <path>`, `--ascii` and `--help`, or `--dir` with no path. One line on stderr with the usage, exit 1 | `oats tui --help` |
 | `E_TUI_CONFIG` | `tui.json` cannot be honoured. One line per problem on stderr, exit 1 | fix the file as the line says, or remove it |
+| `E_TUI_CONFIG` | the [old `tui.json`](#the-move-from-configoats) and the new one are both there: `` `oats tui`: <old> is no longer read: the TUI reads <new>. Copy what you need into <new>, then remove <old> ``. One line on stderr, exit 1 | as the line says |
+| `E_TUI_CONFIG` | the [old `tui.json`](#the-move-from-configoats) could not be moved: `` `oats tui` cannot move <old> to <new> (<reason>); move it yourself ``. One line on stderr, exit 1 | move it yourself: the file at the new path, the old one removed |
 | `E_NO_DEPLOYMENT` | with `--dir`, no directory at or above it holds an `oats-local.yaml`: `no OATS deployment at or above <dir>`. One line on stderr, exit 1 | `oats tui --dir <path>` with a deployment, or `cd` into one |
 | `E_NO_DEPLOYMENT` | without `--dir`, no directory at or above the start holds an `oats-local.yaml`, and this computer's list of deployments holds none: `no deployment at or above <dir>, and this computer's list of deployments holds none (E_NO_DEPLOYMENT): \`oats tui --dir <path>\` opens one (and lists it), \`oats onboard <dir> --workspace <ref>\` creates one`. One line on stderr, exit 1 | as the line says |
 | the kernel's code (`E_DEPLOYMENTS_BUSY`, `E_DEPLOYMENTS_INVALID`, `E_DEPLOYMENTS_VERSION`, …) | without `--dir` and outside every deployment, this computer's list of deployments could not be read: `` `oats tui` could not read this computer's list of deployments (<code>): <the kernel's message> ``. One line on stderr, exit 1 | what the kernel's message says |

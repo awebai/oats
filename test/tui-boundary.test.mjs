@@ -268,7 +268,7 @@ test("the views are pure: they import only the TUI's own text, style and action 
   }
 });
 
-test("lib/read.mjs starts the reads and the changes and lib/panel.mjs the private tmux server, and no other module starts a process; lib/read.mjs, lib/panel.mjs and lib/config.mjs alone read the file system, and only lib/read.mjs and lib/panel.mjs write a file: a change's output, the panel's owner mark, its viewer's two files and the write end of its FIFO, all in the run's private directory, which each removes", () => {
+test("lib/read.mjs starts the reads and the changes and lib/panel.mjs the private tmux server, and no other module starts a process; lib/read.mjs, lib/panel.mjs and lib/config.mjs alone read the file system, and only lib/read.mjs and lib/panel.mjs write a file in the run (a change's output, the panel's owner mark, its viewer's two files and the write end of its FIFO, all in the run's private directory, which each removes) and lib/config.mjs at its start, to move tui.json from where it was before", () => {
   const builtins = (path) => staticImports(read(path)).filter((name) => name.startsWith("node:"));
   const users = (name) => TUI_SOURCES.filter((path) => builtins(path).includes(name));
   assert.deepEqual(users("node:child_process"), ["packages/tui/lib/panel.mjs", "packages/tui/lib/read.mjs"]);
@@ -286,11 +286,16 @@ test("lib/read.mjs starts the reads and the changes and lib/panel.mjs the privat
   // (made by `mkfifo`; `constants` for the open's flags), lists that directory and the OS temp dir
   // for its sweep, and removes its own files and a dead run's directory. It makes no directory.
   const PANEL_FILES = ["constants", "readdirSync", "rmdirSync", "unlinkSync", "writeSync"];
+  // lib/config.mjs moves tui.json from where earlier versions read it (awebai/oats#1390 §3): the
+  // old file's bytes written to a file of its own, made new (0600) in the new file's directory
+  // (made 0700) and synced, then linked into place, never over a file; the old file renamed beside
+  // itself; its own file, and a copy the rename failed after, removed.
+  const CONFIG_FILES = ["fsyncSync", "linkSync", "mkdirSync", "renameSync", "unlinkSync", "writeSync"];
   for (const path of users("node:fs")) {
     const taken = code(read(path)).match(/import\s*\{([^}]*)\}\s*from\s*"node:fs"/);
     assert.ok(taken, `${path} names what it takes from node:fs`);
     for (const name of taken[1].split(",").map((part) => part.trim().split(/\s+as\s+/)[0]).filter(Boolean)) {
-      assert.ok(READS.includes(name) || (path === "packages/tui/lib/read.mjs" && CHANGE_FILES.includes(name)) || (path === "packages/tui/lib/panel.mjs" && PANEL_FILES.includes(name)), `${path} takes ${name} from node:fs`);
+      assert.ok(READS.includes(name) || (path === "packages/tui/lib/read.mjs" && CHANGE_FILES.includes(name)) || (path === "packages/tui/lib/panel.mjs" && PANEL_FILES.includes(name)) || (path === "packages/tui/lib/config.mjs" && CONFIG_FILES.includes(name)), `${path} takes ${name} from node:fs`);
     }
   }
   // A file is opened for reading only, but for the one a change writes to: made new for the child
@@ -314,7 +319,11 @@ test("lib/read.mjs starts the reads and the changes and lib/panel.mjs the privat
     assert.match(call[1], /^path, "wx", 0o600$/, `${path} opens ${call[1]}`);
     writing.push(path);
   }
-  assert.deepEqual(writing, ["packages/tui/lib/panel.mjs", "packages/tui/lib/panel.mjs", "packages/tui/lib/read.mjs"], "a change's output, and the panel's owner mark and viewer files, each made new");
+  assert.deepEqual(writing, ["packages/tui/lib/config.mjs", "packages/tui/lib/panel.mjs", "packages/tui/lib/panel.mjs", "packages/tui/lib/read.mjs"], "the moved tui.json, a change's output, and the panel's owner mark and viewer files, each made new");
+  const configCode = code(read("packages/tui/lib/config.mjs"));
+  assert.deepEqual(configCode.split("mkdirSync(").length - 1, 1, "one mkdirSync");
+  assert.ok(configCode.includes("mkdirSync(dirname(to), { recursive: true, mode: 0o700 })"), "the moved file's directories, made 0700");
+  assert.deepEqual([...configCode.matchAll(/\blinkSync\(([^)]*)\)/g)].map((call) => call[1]), ["own, to"], "linked into place from its own file: never over one");
   assert.doesNotMatch(code(read("packages/tui/lib/panel.mjs")), /mkdtempSync|mkdirSync|tmux-\d|"oats-tmux/, "the panel makes no directory and names no socket but its own");
   assert.match(code(read("packages/tui/lib/read.mjs")), /mkdtempSync\(join\(tmpdir\(\), "oats-tui-"\)\)/, "in a private directory of its own under the OS temp dir");
   // No folder is opened to be listed anywhere in the client.

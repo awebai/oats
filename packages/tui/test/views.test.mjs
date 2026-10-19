@@ -1527,7 +1527,7 @@ test("at 60 columns, the smallest width the frame is drawn at, the help still na
   for (const ascii of [false, true]) {
     const lines = helpLines(golden({ ascii }), size(60, 210)), cut = glyphsOf(ascii).cut;
     for (const command of [...NOT_YET.map((entry_) => entry_.command), ...VIEWS.flatMap((view) => view.commands)]) {
-      assert.equal(lines.some((line) => line.includes(command)), true, `${command} is whole at 60 columns${ascii ? ", in ASCII" : ""}`);
+      assert.equal(commandIn(lines, command), true, `${command} is whole at 60 columns${ascii ? ", in ASCII" : ""}`);
     }
     for (const line of lines) assert.equal(line.endsWith(cut), false, `no row of the help is cut at 60 columns: ${line.trim()}`);
   }
@@ -1545,6 +1545,19 @@ function helpLines(state, sz = HELP_SIZE, key = "?") {
   assert.equal(d.extent <= d.room, true, "the whole help is on this screen");
   return d.cells.slice(1).map((_, i) => cellText(d, i + 1, from));
 }
+/** Whether `command` starts on row `i` of the help's `lines` (as drawn, not trimmed): alone on it,
+ *  or, wider than the area, broken before its flags onto the rows under it, each of those 2 cells
+ *  further in than the first and starting with its flag, which read back in order are the
+ *  command, nothing left out. */
+function commandAt(lines, i, command) {
+  const indent = (line) => line.length - line.trimStart().length;
+  if (lines[i] === undefined || !(command === lines[i].trim() || command.startsWith(`${lines[i].trim()} --`))) return false;
+  let read = lines[i].trim();
+  for (let j = i + 1; read.length < command.length && lines[j] !== undefined && indent(lines[j]) === indent(lines[i]) + 2 && lines[j].trim().startsWith("--"); j++) read += ` ${lines[j].trim()}`;
+  return read === command;
+}
+/** Whether `command` stands in the help's `lines`: on one row, or broken as commandAt reads it. */
+const commandIn = (lines, command) => lines.some((line, i) => line.includes(command) || commandAt(lines, i, command));
 /** A table row of the help: `left`, a gap, `right`. */
 const pair = (lines, left, right) => lines.some((line) => { const text = line.trim(); return text.startsWith(`${left} `) && text.endsWith(` ${right}`) && text.slice(left.length, text.length - right.length).trim() === ""; });
 
@@ -1624,17 +1637,18 @@ test("the help says what each view holds, and names no command for a view: the S
 });
 
 test("the help's last section, `Not in this version`, names every act this version does not have with the oats command that does it", () => {
-  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 210), size(79, 180), size(200, 150)]) {
+  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 210), size(79, 190), size(200, 150)]) {
     const lines = helpLines(golden({ ascii }), sz), text = lines.map((line) => line.trim());
     const at = text.indexOf("Not in this version");
     assert.equal(at > 0, true);
     for (const heading of ["Keys", "Marks", "Views"]) assert.equal(text.indexOf(heading) >= 0 && text.indexOf(heading) < at, true, `${heading} comes before it`);
-    const section = text.slice(at + 1);
-    // Each act with its command: beside it, or on the row under it where the width has no room for both.
+    const section = text.slice(at + 1), drawn = lines.slice(at + 1);
+    // Each act with its command: beside it, or from the row under it where the width has no room
+    // for both (broken before its flags where it is wider than the area).
     for (const { what, command } of NOT_YET) {
       const row = section.findIndex((line) => line === what || line.startsWith(`${what} `));
       assert.equal(row >= 0, true, what);
-      assert.equal(pair([section[row]], what, command) || section[row + 1] === command, true, `${what}: ${command}`);
+      assert.equal(pair([section[row]], what, command) || commandAt(drawn, row + 1, command), true, `${sz.cols}: ${what}: ${command}`);
     }
     // Stop, start, restart and retire are acts of this version: only another launch is left to the kernel's command.
     // A spawn on another machine, or with a harness, a model or a task, is the kernel's: the spawn prompt offers none of them.
@@ -2783,16 +2797,16 @@ test("the switcher's cheat sheet names the remove key on a row of this computer'
 // ── The help, with machines and the switcher ─────────────────────────────────────────────────────
 
 test("the help says every limit of this version: adding, checking and removing a machine and opening a deployment that is not listed with the oats command that does it, and what no command lifts in sentences of its own", () => {
-  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 210), size(79, 180), size(200, 150)]) {
-    const text = helpLines(reached({ ascii }), sz).map((line) => line.trim()), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
+  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 210), size(79, 190), size(200, 150)]) {
+    const lines = helpLines(reached({ ascii }), sz), text = lines.map((line) => line.trim()), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     const machines = text.indexOf("Machines"), last = text.indexOf("Not in this version");
     assert.equal(machines > text.indexOf("Views") && last > machines, true, `${at}: Machines stands between Views and what is not in this version`);
     // The sentences, each whole when its rows are joined, in order, and nothing else in the section.
     assert.equal(text.slice(machines + 1, last).filter(Boolean).join(" "), MACHINES.join(" "), at);
-    const section = text.slice(last + 1);
-    for (const [what, command] of [["add a machine to this workspace", "oats server connect <id> --ssh <alias>"], ["check a machine", "oats server check <id>"], ["remove a machine", "oats server remove <id>"], ["open a deployment that is not listed", "oats tui --dir <path>"]]) {
+    const section = text.slice(last + 1), drawn = lines.slice(last + 1);
+    for (const [what, command] of [["add a machine to this workspace", "oats server connect <id> --ssh <alias> --dir <path on that machine>"], ["check a machine", "oats server check <id>"], ["remove a machine", "oats server remove <id>"], ["open a deployment that is not listed", "oats tui --dir <path>"]]) {
       const row = section.findIndex((line) => line === what || line.startsWith(`${what} `));
-      assert.equal(row >= 0 && (pair([section[row]], what, command) || section[row + 1] === command), true, `${at}: ${what}: ${command}`);
+      assert.equal(row >= 0 && (pair([section[row]], what, command) || commandAt(drawn, row + 1, command)), true, `${at}: ${what}: ${command}`);
     }
     // It no longer says the TUI cannot read another machine.
     assert.equal(text.some((line) => line.includes("oats server roster") || /^other machines\b/.test(line)), false, at);
@@ -3719,14 +3733,25 @@ test("a confirmation beside the sidebar at 80x24 draws every offer, the act's ow
   }
 });
 
-test("the help in the main area beside the sidebar at 80 columns cuts no command: a command wider than its column starts further left, inside the area", () => {
+test("the help in the main area beside the sidebar at 80 columns cuts no command: a command wider than its column starts further left, inside the area, and one wider than the area is broken before its flags, the rows after the first 2 cells further in", () => {
   const cols = S80.cols - draw(stateOf(observed([instanceRow("dev", "dev-a")])), S80).cols - 3;
+  const rows = helpRows(ACTIONS, false, cols, "M-o").map((row) => row.filter((span) => span.text !== undefined));
+  /** The spans `command` stands in from each row it starts on: one, or its broken rows in order. */
+  const placed = (command) => rows.flatMap((row, i) => row.filter((span) => command === textOf(span.text) || command.startsWith(`${textOf(span.text)} --`)).flatMap((first) => {
+    const spans = [first];
+    for (let j = i + 1; spans.map((span) => textOf(span.text)).join(" ").length < command.length && rows[j]?.length === 1 && rows[j][0].col === first.col + 2 && textOf(rows[j][0].text).startsWith("--"); j++) spans.push(rows[j][0]);
+    return spans.map((span) => textOf(span.text)).join(" ") === command ? [spans] : [];
+  }));
   for (const { command } of NOT_YET) {
-    const spans = helpRows(ACTIONS, false, cols, "M-o").flat().filter((span) => span.text !== undefined && textOf(span.text) === command);
+    const found = placed(command);
     // A command can stand for more than one omission (`oats spawn <soul>`): each of its rows.
-    assert.equal(spans.length, NOT_YET.filter((each) => each.command === command).length, command);
-    for (const span of spans) assert.equal(span.col >= 0 && span.col + command.length <= cols, true, `${command} stands whole in ${cols} cells`);
+    assert.equal(found.length, NOT_YET.filter((each) => each.command === command).length, command);
+    for (const spans of found) {
+      for (const span of spans) assert.equal(span.col >= 0 && span.col + textOf(span.text).length <= cols, true, `${command} stands whole in ${cols} cells`);
+      assert.equal(spans.length > 1, command.length > cols, `${command} is broken only when it is wider than the ${cols} cells`);
+    }
   }
+  assert.deepEqual(placed("oats server connect <id> --ssh <alias> --dir <path on that machine>").map((spans) => spans.map((span) => textOf(span.text))), [["oats server connect <id> --ssh <alias>", "--dir <path on that machine>"]], "each flag with its value");
 });
 
 // ── A row's name and its word; a detail page's keys ─────────────────────────────────────────────

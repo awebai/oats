@@ -4,12 +4,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
 import { ACTIONS, bindings } from "../lib/actions.mjs";
-import { CONFIG_LIMIT, MAX_PROBLEMS, configPath, defaultDetachKey, effectiveConfig, loadConfig } from "../lib/config.mjs";
+import { CONFIG_LIMIT, MAX_PROBLEMS, MIGRATED, configPath, defaultDetachKey, effectiveConfig, loadConfig, oldConfigPath } from "../lib/config.mjs";
 import { isKeyId } from "../lib/term/keys.mjs";
 import { BACK_KEY_RULE } from "../lib/term/through.mjs";
 
-const FILE = "/cfg/oats/tui.json";
+const FILE = "/cfg/config/tui.json";
 const IDS = "up, down, top, bottom, page-up, page-down, collapse, expand, detail, filter, refresh, instances, souls, capabilities, workspaces, palette, open, remove, soul-instances, zoom, close-terminal, tab-previous, tab-next, split-right, split-down, group-next, tab-move, group-close, stop, retire, start, restart, spawn, spawn-another, spawn-check, help, close, quit, suspend, redraw";
 const KEY_IDS = "key ids look like q, ctrl+c, shift+tab, f5, space";
 /** The whole line of a refusal, as it is printed. */
@@ -20,12 +21,15 @@ const PRINTABLE = /^[\x20-\x7e]*$/;
 /** The default leader on Linux and Windows (on macOS, C-\\): the platform every test here gives
  *  loadConfig and effectiveConfig unless it says another, so no answer depends on the host's. */
 const LEADER = "M-o";
-/** loadConfig over a file that exists only here, on `platform`. `content` is its text, or a value
- *  written as JSON. `calls` records what was asked of the file system. */
-function load(content, { stat, read, env = { XDG_CONFIG_HOME: "/cfg" }, home = "/home/u", platform = "linux" } = {}) {
+/** loadConfig over a file that exists only here, at the path read now, on `platform`. `content`
+ *  is its text, or a value written as JSON; there is no file at the old path (`entry`, the move's
+ *  look, finds none there), so nothing is moved. `calls` records what was asked of the file system
+ *  to read it. */
+function load(content, { stat, read, env = { OATS_HOME_DIR: "/cfg" }, home = "/home/u", platform = "linux" } = {}) {
   const text = typeof content === "string" ? content : JSON.stringify(content);
   const calls = [];
   const io = {
+    entry(file) { return file === oldConfigPath(env, home) ? null : { ino: 1 }; },
     stat(file) { calls.push(["stat", file]); return stat ? stat(file) : { file: true, size: Buffer.byteLength(text) }; },
     read(file) { calls.push(["read", file]); return read ? read(file) : text; },
   };
@@ -39,36 +43,46 @@ const deepFrozen = (actions) => Object.isFrozen(actions) && actions.every((actio
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oats-tui-config-"));
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 let homes = 0;
-/** A fresh config home on disk, and the path tui.json has in it. */
+/** A fresh OATS_HOME_DIR on disk, with its config directory, and the path tui.json has in it. */
 function onDisk() {
   const home = path.join(dir, `home-${++homes}`);
-  fs.mkdirSync(path.join(home, "oats"), { recursive: true });
-  return { env: { XDG_CONFIG_HOME: home }, home: "/nonexistent", file: path.join(home, "oats", "tui.json") };
+  fs.mkdirSync(path.join(home, "config"), { recursive: true });
+  return { env: { OATS_HOME_DIR: home }, home: "/nonexistent", file: path.join(home, "config", "tui.json") };
 }
 
 // --- The path -------------------------------------------------------------------
 
-test("the path is $XDG_CONFIG_HOME/oats/tui.json when that is set, not empty and absolute, else <home>/.config/oats/tui.json", () => {
-  assert.equal(configPath({ XDG_CONFIG_HOME: "/x/cfg" }, "/home/u"), path.join("/x/cfg", "oats", "tui.json"));
-  const fallback = path.join("/home/u", ".config", "oats", "tui.json");
+test("the path is $OATS_HOME_DIR/config/tui.json when that is set and not empty, else <home>/.oats/config/tui.json, the kernel's rule for its files; XDG_CONFIG_HOME is not read for it", () => {
+  assert.equal(configPath({ OATS_HOME_DIR: "/x/oats" }, "/home/u"), path.join("/x/oats", "config", "tui.json"));
+  const fallback = path.join("/home/u", ".oats", "config", "tui.json");
   assert.equal(configPath({}, "/home/u"), fallback);
-  assert.equal(configPath({ XDG_CONFIG_HOME: "" }, "/home/u"), fallback, "empty");
-  assert.equal(configPath({ XDG_CONFIG_HOME: "cfg" }, "/home/u"), fallback, "relative");
-  assert.equal(configPath({ XDG_CONFIG_HOME: "./cfg" }, "/home/u"), fallback, "relative");
-  assert.equal(configPath({ XDG_CONFIG_HOME: "~/.config" }, "/home/u"), fallback, "a tilde is not expanded: relative");
-  assert.equal(configPath({ XDG_CONFIG_HOME: undefined }, "/home/u"), fallback);
-  assert.equal(configPath({ XDG_CONFIG_HOME: 7 }, "/home/u"), fallback, "not a string");
-  assert.equal(configPath({ XDG_CONFIG_HOME: "/x/cfg" }, undefined), path.join("/x/cfg", "oats", "tui.json"), "the home is not asked for when it is not used");
+  assert.equal(configPath({ OATS_HOME_DIR: "" }, "/home/u"), fallback, "empty");
+  assert.equal(configPath({ OATS_HOME_DIR: undefined }, "/home/u"), fallback);
+  assert.equal(configPath({ OATS_HOME_DIR: 7 }, "/home/u"), fallback, "not a string");
+  assert.equal(configPath({ XDG_CONFIG_HOME: "/x/cfg" }, "/home/u"), fallback, "XDG_CONFIG_HOME is not read");
+  assert.equal(configPath({ OATS_HOME_DIR: "/x/oats" }, undefined), path.join("/x/oats", "config", "tui.json"), "the home is not asked for when it is not used");
 });
 
-test("loadConfig reads the path configPath gives: a relative or empty XDG_CONFIG_HOME falls back to the home", () => {
+test("the old path, looked at only to move it, is the old rule's: $XDG_CONFIG_HOME/oats/tui.json when that is set, not empty and absolute, else <home>/.config/oats/tui.json", () => {
+  assert.equal(oldConfigPath({ XDG_CONFIG_HOME: "/x/cfg" }, "/home/u"), path.join("/x/cfg", "oats", "tui.json"));
   const fallback = path.join("/home/u", ".config", "oats", "tui.json");
-  for (const env of [{}, { XDG_CONFIG_HOME: "" }, { XDG_CONFIG_HOME: "relative/cfg" }]) {
+  assert.equal(oldConfigPath({}, "/home/u"), fallback);
+  assert.equal(oldConfigPath({ XDG_CONFIG_HOME: "" }, "/home/u"), fallback, "empty");
+  assert.equal(oldConfigPath({ XDG_CONFIG_HOME: "cfg" }, "/home/u"), fallback, "relative");
+  assert.equal(oldConfigPath({ XDG_CONFIG_HOME: "./cfg" }, "/home/u"), fallback, "relative");
+  assert.equal(oldConfigPath({ XDG_CONFIG_HOME: "~/.config" }, "/home/u"), fallback, "a tilde is not expanded: relative");
+  assert.equal(oldConfigPath({ XDG_CONFIG_HOME: 7 }, "/home/u"), fallback, "not a string");
+  assert.equal(oldConfigPath({ OATS_HOME_DIR: "/x/oats" }, "/home/u"), fallback, "OATS_HOME_DIR is not the old rule's");
+});
+
+test("loadConfig reads the path configPath gives, whatever XDG_CONFIG_HOME says", () => {
+  const fallback = path.join("/home/u", ".oats", "config", "tui.json");
+  for (const env of [{}, { OATS_HOME_DIR: "" }, { XDG_CONFIG_HOME: "/x/cfg" }, { XDG_CONFIG_HOME: "relative/cfg" }]) {
     const loaded = load({ ascii: true }, { env });
     assert.equal(loaded.path, fallback);
     assert.deepEqual(loaded.calls, [["stat", fallback], ["read", fallback]]);
   }
-  assert.equal(load({}, { env: { XDG_CONFIG_HOME: "/x/cfg" } }).path, path.join("/x/cfg", "oats", "tui.json"));
+  assert.equal(load({}, { env: { OATS_HOME_DIR: "/x/oats", XDG_CONFIG_HOME: "/x/cfg" } }).path, path.join("/x/oats", "config", "tui.json"));
 });
 
 // --- The defaults ---------------------------------------------------------------
@@ -191,7 +205,7 @@ test("refused: not a regular file (a directory, a FIFO, a device), without readi
 });
 
 test("refused: it cannot be read, with the error's code when it is a plain one and never its text", () => {
-  const fail = (code, message = "EACCES: permission denied, stat '/cfg/oats/tui.json'") => () => { throw Object.assign(new Error(message), code === undefined ? {} : { code }); };
+  const fail = (code, message = "EACCES: permission denied, stat '/cfg/config/tui.json'") => () => { throw Object.assign(new Error(message), code === undefined ? {} : { code }); };
   assert.deepEqual(load("{}", { stat: fail("EACCES") }).lines, [line("it cannot be read (EACCES)")]);
   assert.deepEqual(load("{}", { stat: fail("ELOOP") }).lines, [line("it cannot be read (ELOOP)")]);
   assert.deepEqual(load("{}", { read: fail("EISDIR") }).lines, [line("it cannot be read (EISDIR)")]);
@@ -435,27 +449,29 @@ test("a hostile name never appears in a line, wherever the file puts it, and eve
     // A lone space is in every line; every other name here must be in none.
     for (const produced of lines) if (name !== " ") assert.equal(produced.includes(name), false, `${label} in: ${produced.slice(0, 200)}`);
     // In the path the rule is the path's: a space and 41 characters are plain there.
-    const inPath = refused(load({ theme: 1 }, { env: { XDG_CONFIG_HOME: `/cfg/${name}` } }), `path ${label}`);
+    const inPath = refused(load({ theme: 1 }, { env: { OATS_HOME_DIR: `/cfg/${name}` } }), `path ${label}`);
     if (!PRINTABLE.test(name) || name.length > 200) assert.deepEqual(inPath, [line("unknown setting theme; the settings are keys, ascii and open", "its configuration file")], label);
-    all.push(...lines, ...inPath);
+    const inMove = fakeMove({ env: { OATS_HOME_DIR: `/o/${name}`, XDG_CONFIG_HOME: `/x/${name}` }, rename() { throw failing(name, name); } }).lines;
+    if (!PRINTABLE.test(name) || name.length > 200) assert.deepEqual(inMove, [cannotMove("it failed", "its old configuration file", "its configuration file")], `move ${label}`);
+    all.push(...lines, ...inPath, ...inMove);
   }
   assert.ok(all.length > 300, `${all.length} lines`);
   for (const produced of all) assert.match(produced, PRINTABLE);
 });
 
 test("the path is echoed only when it is printable ASCII of at most 200 characters; otherwise the line says its configuration file", () => {
-  const withHome = (xdg) => load({ theme: 1 }, { env: { XDG_CONFIG_HOME: xdg } }).lines;
+  const withHome = (own) => load({ theme: 1 }, { env: { OATS_HOME_DIR: own } }).lines;
   const clause = "unknown setting theme; the settings are keys, ascii and open";
-  assert.deepEqual(withHome("/my config"), [line(clause, path.join("/my config", "oats", "tui.json"))], "a space is printable");
+  assert.deepEqual(withHome("/my config"), [line(clause, path.join("/my config", "config", "tui.json"))], "a space is printable");
   for (const xdg of ["/cfg/\x1b[2J", "/cfg/a\nb", "/cfg/é", "/cfg/日本", "/cfg/a\tb", "/cfg/\x7f", "/cfg/\u009b"]) {
     assert.deepEqual(withHome(xdg), [line(clause, "its configuration file")], JSON.stringify(xdg));
   }
-  const tail = path.join("x", "oats", "tui.json").length - 1; // what configPath adds after the home's last character
+  const tail = path.join("x", "config", "tui.json").length - 1; // what configPath adds after the home's last character
   const fits = `/${"d".repeat(200 - 1 - tail)}`;
-  assert.equal(configPath({ XDG_CONFIG_HOME: fits }, "/h").length, 200);
-  assert.deepEqual(withHome(fits), [line(clause, configPath({ XDG_CONFIG_HOME: fits }, "/h"))]);
+  assert.equal(configPath({ OATS_HOME_DIR: fits }, "/h").length, 200);
+  assert.deepEqual(withHome(fits), [line(clause, configPath({ OATS_HOME_DIR: fits }, "/h"))]);
   assert.deepEqual(withHome(`${fits}d`), [line(clause, "its configuration file")], "201 characters");
-  assert.equal(load({}, { env: { XDG_CONFIG_HOME: "/cfg/\x1b[2J" } }).path, path.join("/cfg/\x1b[2J", "oats", "tui.json"), "the path answered is the real one: it is for opening, not for printing");
+  assert.equal(load({}, { env: { OATS_HOME_DIR: "/cfg/\x1b[2J" } }).path, path.join("/cfg/\x1b[2J", "config", "tui.json"), "the path answered is the real one: it is for opening, not for printing");
 });
 
 // --- Real files -------------------------------------------------------------------
@@ -475,11 +491,12 @@ test("on disk: no file is the defaults, a file is read, and what it says is used
 
 test("on disk: with no config directory at all, or a config home that is not a directory, there is no file", () => {
   const missing = path.join(dir, "no-such-home");
-  assert.deepEqual(loadConfig({ env: { XDG_CONFIG_HOME: missing }, home: "/nonexistent", platform: "linux" }), { ok: true, actions: ACTIONS, ascii: false, detachKey: LEADER, path: path.join(missing, "oats", "tui.json") });
-  assert.deepEqual(loadConfig({ env: {}, home: missing, platform: "darwin" }), { ok: true, actions: ACTIONS, ascii: false, detachKey: "C-\\", path: path.join(missing, ".config", "oats", "tui.json") });
+  assert.deepEqual(loadConfig({ env: { OATS_HOME_DIR: missing }, home: "/nonexistent", platform: "linux" }), { ok: true, actions: ACTIONS, ascii: false, detachKey: LEADER, path: path.join(missing, "config", "tui.json") });
+  assert.deepEqual(loadConfig({ env: {}, home: missing, platform: "darwin" }), { ok: true, actions: ACTIONS, ascii: false, detachKey: "C-\\", path: path.join(missing, ".oats", "config", "tui.json") });
+  assert.equal(fs.existsSync(missing), false, "and nothing is made where nothing is moved");
   const notADirectory = path.join(dir, "a-file");
   fs.writeFileSync(notADirectory, "");
-  assert.equal(loadConfig({ env: { XDG_CONFIG_HOME: notADirectory }, home: "/nonexistent" }).ok, true, "as XDG_CONFIG_HOME=/dev/null");
+  assert.equal(loadConfig({ env: { OATS_HOME_DIR: notADirectory }, home: "/nonexistent" }).ok, true, "as OATS_HOME_DIR=/dev/null");
 });
 
 test("on disk: a symbolic link to a regular file is read; a link to a directory, a directory and a FIFO are refused", (t) => {
@@ -546,6 +563,350 @@ test("on disk: a file whose size says less than it holds is still never read pas
   const { env, home, file } = onDisk();
   fs.symlinkSync(endless, file);
   assert.deepEqual(loadConfig({ env, home }), { ok: false, lines: [line("it is larger than 64 KiB", file)] });
+});
+
+// --- The move from the old path (awebai/oats#1390 §3) ------------------------------------
+/** A fresh place on disk for the move: an OATS_HOME_DIR and an XDG_CONFIG_HOME of its own, with
+ *  the directory the old file was in and nothing in it. `old` is the file the old rule found,
+ *  `file` the one read now, `aside` what the old one is renamed to. */
+function moving() {
+  const root = path.join(dir, `move-${++homes}`);
+  const env = { OATS_HOME_DIR: path.join(root, "oats"), XDG_CONFIG_HOME: path.join(root, "xdg") };
+  const old = path.join(root, "xdg", "oats", "tui.json");
+  fs.mkdirSync(path.dirname(old), { recursive: true });
+  return { env, home: path.join(root, "home"), root, old, file: path.join(root, "oats", "config", "tui.json"), aside: path.join(root, "xdg", "oats", MIGRATED) };
+}
+const cannotMove = (reason, old, file) => `oats: \`oats tui\` cannot move ${old} to ${file} (${reason}); move it yourself (E_TUI_CONFIG)`;
+const bothThere = (old, file) => `oats: \`oats tui\`: ${old} is no longer read: the TUI reads ${file}. Copy what you need into ${file}, then remove ${old} (E_TUI_CONFIG)`;
+const modeOf = (file) => fs.statSync(file).mode & 0o777;
+const exists = (file) => { try { fs.lstatSync(file); return true; } catch { return false; } };
+
+test("the move, old present and new absent: the old file's bytes are copied to the new path (mode 0600, the directories made 0700), the old file is renamed tui.json.migrated beside it, and the new one is read", () => {
+  const { env, home, old, file, aside } = moving();
+  const bytes = Buffer.from('{ "ascii": true,\n  "keys": { "quit": ["x"] } }\n');
+  fs.writeFileSync(old, bytes, { mode: 0o644 });
+  const loaded = loadConfig({ env, home, platform: "linux" });
+  assert.deepEqual([loaded.ok, loaded.ascii, loaded.path], [true, true, file]);
+  assert.deepEqual(loaded.actions.find((action) => action.id === "quit").keys, ["x"]);
+  assert.deepEqual(fs.readFileSync(file), bytes, "byte for byte");
+  assert.equal(fs.lstatSync(file).isFile(), true);
+  assert.equal(modeOf(file), 0o600);
+  assert.equal(modeOf(path.dirname(file)), 0o700);
+  assert.equal(modeOf(env.OATS_HOME_DIR), 0o700);
+  assert.equal(exists(old), false);
+  assert.deepEqual(fs.readFileSync(aside), bytes, "the old file is kept, renamed");
+  assert.deepEqual(fs.readdirSync(path.dirname(file)), ["tui.json"], "no file of its own is left behind");
+  const again = loadConfig({ env, home, platform: "linux" });
+  assert.deepEqual([again.ok, again.ascii], [true, true], "the next start reads the new file and moves nothing");
+  assert.deepEqual(fs.readFileSync(aside), bytes);
+});
+
+test("the move copies bytes, not settings: an old file that is not valid JSON is moved, then refused against the new path", () => {
+  const { env, home, old, file, aside } = moving();
+  fs.writeFileSync(old, "{ not json");
+  assert.deepEqual(loadConfig({ env, home }), { ok: false, lines: [line("it is not valid JSON", file)] });
+  assert.equal(fs.readFileSync(file, "utf8"), "{ not json");
+  assert.equal(fs.readFileSync(aside, "utf8"), "{ not json");
+});
+
+test("the move into an OATS home that exists already: only what is missing is made, and what is there keeps its mode", () => {
+  const { env, home, old, file } = moving();
+  fs.mkdirSync(env.OATS_HOME_DIR, { mode: 0o755 });
+  fs.chmodSync(env.OATS_HOME_DIR, 0o755);
+  fs.writeFileSync(old, "{}");
+  assert.equal(loadConfig({ env, home }).ok, true);
+  assert.equal(modeOf(env.OATS_HOME_DIR), 0o755);
+  assert.equal(modeOf(path.dirname(file)), 0o700);
+  assert.equal(modeOf(file), 0o600);
+});
+
+test("the move, both present: refused naming both, and neither is touched; a link to nothing at the new path is present too", () => {
+  const { env, home, old, file, aside } = moving();
+  fs.writeFileSync(old, '{"ascii": true}');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "{}");
+  assert.deepEqual(loadConfig({ env, home }), { ok: false, lines: [bothThere(old, file)] });
+  assert.equal(fs.readFileSync(old, "utf8"), '{"ascii": true}');
+  assert.equal(fs.readFileSync(file, "utf8"), "{}");
+  assert.equal(exists(aside), false);
+  fs.rmSync(file);
+  fs.symlinkSync(path.join(dir, "nothing-here"), file);
+  assert.deepEqual(loadConfig({ env, home }), { ok: false, lines: [bothThere(old, file)] });
+  assert.equal(fs.lstatSync(file).isSymbolicLink(), true);
+});
+
+test("the move, old absent: the new file is read when it is there, and the defaults are used when neither is, with nothing made", () => {
+  const { env, home, file } = moving();
+  assert.deepEqual(loadConfig({ env, home, platform: "linux" }), { ok: true, actions: ACTIONS, ascii: false, detachKey: LEADER, path: file });
+  assert.equal(exists(env.OATS_HOME_DIR), false);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, '{"ascii": true}');
+  assert.equal(loadConfig({ env, home }).ascii, true);
+});
+
+test("the move, a rename that fails: the copy just made is deleted, the old file stays, and the move is refused", (t) => {
+  if (typeof process.getuid !== "function" || process.getuid() === 0) { t.skip("needs a user that a directory's mode can stop"); return; }
+  const { env, home, old, file, aside } = moving();
+  fs.writeFileSync(old, '{"ascii": true}');
+  fs.chmodSync(path.dirname(old), 0o500);
+  try {
+    assert.deepEqual(loadConfig({ env, home }), { ok: false, lines: [cannotMove("EACCES", old, file)] });
+  } finally { fs.chmodSync(path.dirname(old), 0o700); }
+  assert.equal(exists(file), false, "the copy is deleted");
+  assert.deepEqual(fs.readdirSync(path.dirname(file)), [], "and no file of its own is left");
+  assert.equal(fs.readFileSync(old, "utf8"), '{"ascii": true}');
+  assert.equal(exists(aside), false);
+});
+
+test("the move into an OATS home whose config is a file: refused, the old file kept, and the defaults never used", () => {
+  const { env, home, old, file, aside } = moving();
+  fs.mkdirSync(env.OATS_HOME_DIR);
+  fs.writeFileSync(path.join(env.OATS_HOME_DIR, "config"), "");
+  fs.writeFileSync(old, '{"ascii": true, "keys": {"quit": ["x"]}}');
+  const loaded = loadConfig({ env, home });
+  assert.equal(loaded.ok, false);
+  assert.equal(loaded.lines.length, 1);
+  assert.ok(["EEXIST", "ENOTDIR"].some((code) => loaded.lines[0] === cannotMove(code, old, file)), loaded.lines[0]);
+  assert.equal(fs.readFileSync(old, "utf8"), '{"ascii": true, "keys": {"quit": ["x"]}}');
+  assert.equal(exists(aside), false);
+});
+
+/** node:fs's link(2) replaced by `link` while `run` runs (config.mjs's imports follow it), each
+ *  start's own file a name of its own. */
+function withLink(link, run) {
+  const native = fs.linkSync, now = Date.now;
+  let ticks = now();
+  try {
+    Date.now = () => ++ticks;
+    fs.linkSync = (from, to) => link(from, to, native);
+    syncBuiltinESMExports();
+    return run();
+  } finally {
+    fs.linkSync = native;
+    Date.now = now;
+    syncBuiltinESMExports();
+  }
+}
+/** Two starts at once on real files: `first` is started, and `second` is run whole at the
+ *  instant the first links its copy into place. Answers both starts' answers. */
+function twoStarts(first, second) {
+  let nested = 0, inner;
+  return withLink((from, to, native) => {
+    if (to === configPath(first.env, first.home) && nested === 0) { nested += 1; inner = loadConfig(second); }
+    return native(from, to);
+  }, () => {
+    const outer = loadConfig(first);
+    assert.equal(nested, 1, "exactly one start ran inside the first");
+    return { outer, inner };
+  });
+}
+const quitOf = (loaded) => loaded.actions.find((action) => action.id === "quit").keys;
+
+test("the move, two starts at once moving the same old file: one moves it, the other reads what it moved once it is moved, and nothing is lost", () => {
+  const { env, home, old, file, aside } = moving();
+  const bytes = '{"ascii": true, "keys": {"quit": ["x"]}}';
+  fs.writeFileSync(old, bytes);
+  const { outer, inner } = twoStarts({ env, home }, { env, home });
+  assert.deepEqual([inner.ok, inner.ascii, quitOf(inner)], [true, true, ["x"]], "the start that moved it");
+  assert.deepEqual([outer.ok, outer.ascii, quitOf(outer)], [true, true, ["x"]], "the start that found it moved");
+  assert.equal(fs.readFileSync(file, "utf8"), bytes, "the new file stays, with the old file's bytes");
+  assert.equal(modeOf(file), 0o600);
+  assert.equal(fs.readFileSync(aside, "utf8"), bytes);
+  assert.equal(exists(old), false);
+  assert.deepEqual(fs.readdirSync(path.dirname(file)), ["tui.json"], "no file of its own is left behind");
+  assert.equal(loadConfig({ env, home }).ascii, true, "and the next start reads it");
+});
+
+test("the move, two starts at once with one OATS home and two XDG_CONFIG_HOMEs: the new file is never written over; the start that finds another's beside its own old file refuses as for both", () => {
+  const { env, home, root, file } = moving();
+  const ownXdg = (name, bytes) => {
+    const xdg = path.join(root, name), old = path.join(xdg, "oats", "tui.json");
+    fs.mkdirSync(path.dirname(old), { recursive: true });
+    fs.writeFileSync(old, bytes);
+    return { env: { ...env, XDG_CONFIG_HOME: xdg }, home, old };
+  };
+  const first = ownXdg("xdg-first", '{"ascii": true, "keys": {"quit": ["x"]}}'), second = ownXdg("xdg-second", '{"keys": {"quit": ["f11"]}}');
+  const { outer, inner } = twoStarts(first, second);
+  assert.deepEqual([inner.ok, inner.ascii, quitOf(inner)], [true, false, ["f11"]], "the start that placed the file");
+  assert.deepEqual(outer, { ok: false, lines: [bothThere(first.old, file)] }, "the other refuses, its settings never written over the first's");
+  assert.equal(fs.readFileSync(file, "utf8"), '{"keys": {"quit": ["f11"]}}');
+  assert.equal(fs.readFileSync(first.old, "utf8"), '{"ascii": true, "keys": {"quit": ["x"]}}', "the refused start's old file kept");
+  assert.equal(exists(second.old), false);
+  assert.deepEqual(quitOf(loadConfig(second)), ["f11"], "the next start of the one that moved it reads its own settings");
+  assert.deepEqual(loadConfig(first), { ok: false, lines: [bothThere(first.old, file)] });
+});
+
+test("the move on a file system without hard links is refused, saying so, and nothing is touched: there the file cannot be put in place whole and never over another", () => {
+  for (const code of ["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS"]) {
+    const { env, home, old, file, aside } = moving();
+    fs.writeFileSync(old, '{"ascii": true}');
+    const loaded = withLink(() => { throw Object.assign(new Error("links unsupported"), { code }); }, () => loadConfig({ env, home }));
+    assert.deepEqual(loaded, { ok: false, lines: [cannotMove("this file system has no hard links", old, file)] }, code);
+    assert.equal(fs.readFileSync(old, "utf8"), '{"ascii": true}', `${code}: the old file kept`);
+    assert.equal(exists(file), false, `${code}: no new file`);
+    assert.deepEqual(fs.readdirSync(path.dirname(file)), [], `${code}: and no file of its own left`);
+    assert.equal(exists(aside), false);
+  }
+  // Another refusal of the link is said by its code.
+  const { env, home, old, file } = moving();
+  fs.writeFileSync(old, "{}");
+  assert.deepEqual(withLink(() => { throw Object.assign(new Error("no"), { code: "EACCES" }); }, () => loadConfig({ env, home })), { ok: false, lines: [cannotMove("EACCES", old, file)] });
+  assert.equal(exists(file), false);
+});
+
+test("the move, a link as the old file: what it points at is copied, the link itself is renamed, and its target is untouched", () => {
+  const { env, home, root, old, file, aside } = moving();
+  const target = path.join(root, "dotfiles", "tui.json");
+  fs.mkdirSync(path.dirname(target));
+  fs.writeFileSync(target, '{"ascii": true}');
+  fs.symlinkSync(target, old);
+  assert.equal(loadConfig({ env, home }).ascii, true);
+  assert.equal(fs.lstatSync(file).isFile(), true, "the new file is a file, not a link");
+  assert.equal(fs.readFileSync(file, "utf8"), '{"ascii": true}');
+  assert.equal(fs.lstatSync(aside).isSymbolicLink(), true);
+  assert.equal(fs.readlinkSync(aside), target);
+  assert.equal(fs.readFileSync(target, "utf8"), '{"ascii": true}');
+  assert.equal(exists(old), false);
+});
+
+test("the move refuses what it cannot copy, and touches nothing: a link to nothing, a directory, a file over the limit, a backup already there", () => {
+  const dangling = moving();
+  fs.symlinkSync(path.join(dir, "nothing-here"), dangling.old);
+  assert.deepEqual(loadConfig(dangling), { ok: false, lines: [cannotMove("it is a link to nothing", dangling.old, dangling.file)] }, "reported, not guessed at");
+  assert.equal(fs.lstatSync(dangling.old).isSymbolicLink(), true);
+  assert.equal(exists(dangling.env.OATS_HOME_DIR), false);
+
+  const directory = moving();
+  fs.mkdirSync(directory.old);
+  assert.deepEqual(loadConfig(directory), { ok: false, lines: [cannotMove("it is not a regular file", directory.old, directory.file)] });
+  assert.equal(exists(directory.env.OATS_HOME_DIR), false);
+
+  const large = moving();
+  fs.writeFileSync(large.old, " ".repeat(CONFIG_LIMIT + 1));
+  assert.deepEqual(loadConfig(large), { ok: false, lines: [cannotMove("it is larger than 64 KiB", large.old, large.file)] });
+  assert.equal(exists(large.env.OATS_HOME_DIR), false);
+
+  const backup = moving();
+  fs.writeFileSync(backup.old, '{"ascii": true}');
+  fs.writeFileSync(backup.aside, "an earlier move");
+  assert.deepEqual(loadConfig(backup), { ok: false, lines: [cannotMove(`${MIGRATED} is there already`, backup.old, backup.file)] }, "a backup is never written over");
+  assert.equal(fs.readFileSync(backup.aside, "utf8"), "an earlier move");
+  assert.equal(fs.readFileSync(backup.old, "utf8"), '{"ascii": true}');
+  assert.equal(exists(backup.env.OATS_HOME_DIR), false);
+});
+
+test("the move's two paths: from $XDG_CONFIG_HOME/oats when that is absolute, else <home>/.config/oats (a relative XDG_CONFIG_HOME is ignored); to $OATS_HOME_DIR/config, else <home>/.oats/config", () => {
+  const { root } = moving();
+  const home = path.join(root, "home");
+  const homeOld = path.join(home, ".config", "oats", "tui.json");
+  fs.mkdirSync(path.dirname(homeOld), { recursive: true });
+  fs.writeFileSync(homeOld, '{"ascii": true}');
+
+  const absolute = { XDG_CONFIG_HOME: path.join(root, "xdg"), OATS_HOME_DIR: path.join(root, "own") };
+  fs.writeFileSync(path.join(root, "xdg", "oats", "tui.json"), "{}");
+  assert.equal(loadConfig({ env: absolute, home }).ascii, false, "the file under XDG_CONFIG_HOME is moved");
+  assert.equal(fs.readFileSync(path.join(root, "own", "config", "tui.json"), "utf8"), "{}");
+  assert.equal(fs.readFileSync(homeOld, "utf8"), '{"ascii": true}', "and the one in the home is not looked at");
+
+  const relative = { XDG_CONFIG_HOME: "xdg" };
+  assert.equal(loadConfig({ env: relative, home }).ascii, true, "a relative XDG_CONFIG_HOME is ignored: the home's file is moved");
+  assert.equal(fs.readFileSync(path.join(home, ".oats", "config", "tui.json"), "utf8"), '{"ascii": true}', "to <home>/.oats/config: OATS_HOME_DIR is not set");
+  assert.equal(exists(homeOld), false);
+  assert.equal(fs.readFileSync(path.join(home, ".config", "oats", MIGRATED), "utf8"), '{"ascii": true}');
+});
+
+/** loadConfig over a file system that exists only here, for the move: `there` gives each path's
+ *  entry ({ ino }, an error to throw, or a function answering one of those each time it is
+ *  looked at); the old file is there unless `there` says otherwise. `rename` and `place`, when
+ *  given, replace what those do. `calls` records every call. */
+function fakeMove({ there = {}, rename, place, stat, env = { OATS_HOME_DIR: "/o", XDG_CONFIG_HOME: "/x" } } = {}) {
+  const OLD = oldConfigPath(env, "/h"), NEW = configPath(env, "/h"), bytes = Buffer.from('{"ascii": true}');
+  const calls = [];
+  const entries = new Map(Object.entries({ [OLD]: { ino: 1 }, ...there }));
+  const io = {
+    entry(file) {
+      calls.push(["entry", file]);
+      const value = entries.get(file), entry = typeof value === "function" ? value() : value;
+      if (entry instanceof Error) throw entry;
+      return entry ?? null;
+    },
+    stat(file) { calls.push(["stat", file]); return stat ? stat(file) : { file: true, size: bytes.length }; },
+    bytes(file) { calls.push(["bytes", file]); return bytes; },
+    read(file) { calls.push(["read", file]); return bytes.toString("utf8"); },
+    place(given, file) { calls.push(["place", file]); if (place) return place(given, file, entries); entries.set(file, { ino: 7 }); return { ino: 7 }; },
+    rename(from, to) { calls.push(["rename", from, to]); if (rename) return rename(from, to, entries); entries.set(to, entries.get(from)); entries.delete(from); },
+    remove(file) { calls.push(["remove", file]); entries.delete(file); },
+  };
+  return { ...loadConfig({ env, home: "/h", io, platform: "linux" }), calls, OLD, NEW };
+}
+const failing = (code, message = "it failed here") => Object.assign(new Error(message), code === undefined ? {} : { code });
+const named = (calls, name) => calls.filter((call) => call[0] === name);
+
+test("the move, a rename that fails: the copy is deleted only while it is still the one this run made", () => {
+  const ours = fakeMove({ rename() { throw failing("EXDEV"); } });
+  assert.deepEqual(ours.lines, [cannotMove("EXDEV", ours.OLD, ours.NEW)]);
+  assert.deepEqual(named(ours.calls, "remove"), [["remove", ours.NEW]]);
+  assert.deepEqual(named(ours.calls, "read"), [], "and nothing is read");
+
+  const replaced = fakeMove({ rename(from, to, entries) { entries.set("/o/config/tui.json", { ino: 8 }); throw failing("EXDEV"); } });
+  assert.deepEqual(replaced.lines, [cannotMove("EXDEV", replaced.OLD, replaced.NEW)]);
+  assert.deepEqual(named(replaced.calls, "remove"), [], "a file put there since is not this run's to delete");
+
+  // Another run moved the old file meanwhile: the new file is read, this run's copy or the other's.
+  const movedMeanwhile = fakeMove({ rename(from, to, entries) { entries.delete(from); throw failing("ENOENT"); } });
+  assert.equal(movedMeanwhile.ok, true);
+  assert.deepEqual(named(movedMeanwhile.calls, "remove"), []);
+  assert.deepEqual(named(movedMeanwhile.calls, "read"), [["read", movedMeanwhile.NEW]]);
+});
+
+test("the move, a run that loses the race to another starting asks the table again: it reads the file that run placed once that run moved the old file, and refuses as for both while an old file is there", () => {
+  const placedFirst = fakeMove({ place(given, file, entries) { entries.set(file, { ino: 9 }); entries.delete("/x/oats/tui.json"); return { ino: 7, taken: true }; } });
+  assert.equal(placedFirst.ok, true);
+  assert.equal(placedFirst.ascii, true);
+  assert.deepEqual(named(placedFirst.calls, "rename"), []);
+  assert.deepEqual(named(placedFirst.calls, "read"), [["read", placedFirst.NEW]]);
+  const oldStill = fakeMove({ place(given, file, entries) { entries.set(file, { ino: 9 }); return { ino: 7, taken: true }; } });
+  assert.deepEqual(oldStill.lines, [bothThere(oldStill.OLD, oldStill.NEW)], "this run's old file beside the new one is both: never another's settings read in its place");
+  assert.deepEqual(named(oldStill.calls, "rename"), []);
+  const goneAgain = fakeMove({ place() { return { ino: 7, taken: true }; } });
+  assert.deepEqual(goneAgain.lines, [cannotMove("EEXIST", goneAgain.OLD, goneAgain.NEW)], "an entry that was there and is gone again is no file to read");
+  // An EEXIST thrown on the way (a directory that is a file, its own file's name taken) is no race.
+  const thrown = fakeMove({ place() { throw failing("EEXIST"); } });
+  assert.deepEqual(thrown.lines, [cannotMove("EEXIST", thrown.OLD, thrown.NEW)]);
+  assert.deepEqual(named(thrown.calls, "read"), []);
+
+  // The other run placed the new file and renamed the old one between this run's looks.
+  const afterFirstLook = (first, then) => { let looks = 0; return () => (looks++ === 0 ? first : then); };
+  const backupMade = fakeMove({ there: { "/x/oats/tui.json": afterFirstLook({ ino: 1 }, null), "/o/config/tui.json": afterFirstLook(null, { ino: 9 }), [path.join("/x/oats", MIGRATED)]: { ino: 1 } } });
+  assert.equal(backupMade.ok, true, "its backup found");
+  assert.deepEqual(named(backupMade.calls, "place"), []);
+  const oldGone = fakeMove({ there: { "/x/oats/tui.json": afterFirstLook({ ino: 1 }, null), "/o/config/tui.json": afterFirstLook(null, { ino: 9 }) }, stat: (file) => (file === "/x/oats/tui.json" ? null : { file: true, size: 15 }) });
+  assert.equal(oldGone.ok, true, "the old file gone");
+  assert.deepEqual(named(oldGone.calls, "place"), []);
+  const aBackupOfItsOwn = fakeMove({ there: { "/o/config/tui.json": afterFirstLook(null, { ino: 9 }), [path.join("/x/oats", MIGRATED)]: { ino: 1 } } });
+  assert.deepEqual(aBackupOfItsOwn.lines, [bothThere(aBackupOfItsOwn.OLD, aBackupOfItsOwn.NEW)], "a new file placed meanwhile beside this run's old file is both");
+});
+
+test("the move's other failures refuse with the code of the error and never its text, before anything is changed when they come first", () => {
+  const look = fakeMove({ there: { "/x/oats/tui.json": failing("EACCES") } });
+  assert.deepEqual(look.lines, [cannotMove("EACCES", look.OLD, look.NEW)]);
+  const lookNew = fakeMove({ there: { "/o/config/tui.json": failing("ELOOP") } });
+  assert.deepEqual(lookNew.lines, [cannotMove("ELOOP", lookNew.OLD, lookNew.NEW)]);
+  const full = fakeMove({ place() { throw failing("ENOSPC"); } });
+  assert.deepEqual(full.lines, [cannotMove("ENOSPC", full.OLD, full.NEW)]);
+  assert.deepEqual(named(full.calls, "rename"), []);
+  for (const error of [failing(undefined, "\x1b[2J secret"), failing("not a code \x1b[2J"), "a string"]) {
+    const moved = fakeMove({ rename() { throw error; } });
+    assert.deepEqual(moved.lines, [cannotMove("it failed", moved.OLD, moved.NEW)]);
+  }
+});
+
+test("the move's lines echo a path only when it is printable ASCII of at most 200 characters", () => {
+  const hostile = fakeMove({ env: { OATS_HOME_DIR: "/o\x1b[2J", XDG_CONFIG_HOME: "/x‮" }, rename() { throw failing("EXDEV"); } });
+  assert.deepEqual(hostile.lines, [cannotMove("EXDEV", "its old configuration file", "its configuration file")]);
+  const both = fakeMove({ env: { OATS_HOME_DIR: `/${"d".repeat(300)}`, XDG_CONFIG_HOME: "/x" }, there: { [configPath({ OATS_HOME_DIR: `/${"d".repeat(300)}` }, "/h")]: { ino: 2 } } });
+  assert.deepEqual(both.lines, [bothThere("/x/oats/tui.json", "its configuration file")]);
+  for (const text of [...hostile.lines, ...both.lines]) assert.match(text, PRINTABLE);
 });
 
 // --- open.detachKey ---------------------------------------------------------------
