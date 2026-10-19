@@ -5,7 +5,7 @@
  * A deployment is `{ id, machine, path, label, local, reachable, identityFrom, primary, stale?, reason? }`
  * and a row carries `deployment: { id }`. Nothing is derived from a host name or a path beyond the
  * display label. A view with one deployment has one section and no heading. */
-import { rosterGroups } from './instance-tree.mjs';
+import { rosterGroups, instanceId } from './instance-tree.mjs';
 import { machineLabelParts } from './deployment-label.mjs';
 import { requireTerms } from './client-terms.mjs';
 
@@ -51,16 +51,32 @@ export const rowStale = (row, deployments) => {
  * Sections with no visible row are left out. Each is labelled by its machine, with the path tail
  * only when one machine holds two (deployment-label.mjs machineLabels), in the client's terms
  * (client-terms.mjs: the label of a deployment that names no machine). Returns
- * `[{ deployment|null, label|null, groups }]`, a group being `{ key, label, clusters }` as before. */
-export function rosterSections(instances, visible, deployments, terms) {
+ * `[{ deployment|null, label|null, groups }]`, a group being `{ key, label, clusters }` as before.
+ * `lastFocus` (Map<instanceId, time>, optional; the command palette's, #1383): each section's groups follow
+ * last focus (rosterGroups), and the sections are ordered by the latest focus over each one's full roster,
+ * most recent first, then the panel's order. Without it, the panel's order (the sidebar's and the TUI's). */
+export function rosterSections(instances, visible, deployments, terms, { lastFocus } = {}) {
   requireTerms(terms, 'rosterSections');
-  const groupsOf = (all, shown) => rosterGroups(all, shown); // the relation groups the palette lists too
+  const recency = lastFocus instanceof Map ? { lastFocus } : {};
+  const groupsOf = (all, shown) => rosterGroups(all, shown, recency); // the relation groups the palette lists too
   if (!isMultiDeployment(deployments)) return [{ deployment: null, label: null, groups: groupsOf(instances, visible) }];
   const sectionOf = splitByDeployment(deployments);
   const all = sectionOf(instances), shown = sectionOf(visible), labels = machineLabelParts(deployments, terms);
   const label = ({ machine, tail }) => (tail ? `${machine} · ${tail}` : machine);
-  return deployments.map(d => ({ deployment: d, parts: labels.get(d.id), all: all.get(d.id), shown: shown.get(d.id) }))
-    .filter(s => s.shown.length)
+  const sections = deployments.map(d => ({ deployment: d, parts: labels.get(d.id), all: all.get(d.id), shown: shown.get(d.id) }));
+  if (recency.lastFocus) {
+    const latest = rows => rows.reduce((max, row) => {
+      const time = lastFocus.get(instanceId(row));
+      return Number.isFinite(time) && (max === null || time > max) ? time : max;
+    }, null);
+    const keyed = new Map(sections.map(s => [s, latest(s.all)]));
+    // Stable: sections without a focus keep the panel's order, after those with one.
+    sections.sort((a, b) => {
+      const ka = keyed.get(a), kb = keyed.get(b);
+      return ka === null ? (kb === null ? 0 : 1) : kb === null ? -1 : kb - ka;
+    });
+  }
+  return sections.filter(s => s.shown.length)
     .map(s => ({ deployment: s.deployment, label: label(s.parts), machine: s.parts.machine, tail: s.parts.tail, groups: groupsOf(s.all, s.shown) }));
 }
 

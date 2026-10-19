@@ -68,7 +68,7 @@ const SURFACE = Object.freeze({
   "launch-contract.mjs": ["effectiveOf", "launchOf", "REPORT_FROM", "PREVIEW_FROM", "RECORD_FROM"],
   "deployment-facts.mjs": ["memberLabel", "servedIdentityText", "deploymentUnavailableText"],
   "instance-admission.mjs": ["admitInstance", "instanceSelector"],
-  "instance-tree.mjs": ["instanceId", "resolveLinkId", "clusterInstances", "rosterGroups", "waitingRollup", "instanceVisibleInTree",
+  "instance-tree.mjs": ["instanceId", "resolveLinkId", "clusterInstances", "recencyOrder", "rosterGroups", "waitingRollup", "instanceVisibleInTree",
     "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome", "instanceSiblings"],
   "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES", "withoutInstanceVariables"],
