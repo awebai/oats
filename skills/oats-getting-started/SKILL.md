@@ -327,9 +327,6 @@ toolkit: its briefing says what the person types and what you run, and its
 skills hold every procedure. Start with `/oats-setup-model`. When your task
 is a hand-over from the getting-started skill, follow `/oats-setup-expert`,
 or `/oats-onboarding` if your `oats.setup` is older than 2.8.0 and lacks it.
-While the person is this workspace's only member, commit and push shared
-files straight to the default branch and tell them what changed. Once others
-share the workspace, change shared files only by pull request.
 ```
 
 `souls/acme-developer/soul.yaml`, a first developer for the person's tasks:
@@ -366,7 +363,12 @@ not the workspace's operator, and gets no mail.
 **Commit and push.**
 - This first commit goes straight to the new repository's default branch: it
   is the person's own, just created. Later changes come from the setup
-  expert, straight to the default branch while the person is the only member.
+  expert, by its briefing's rule for shared files (`oats.setup`'s
+  `/oats-workspace-config`, "Change a shared file"). From oats.setup 2.8.3
+  (oats.framework 1.13.4), it pushes straight to the default branch when its
+  checks show nobody else can push there and nothing guards that branch, and
+  for a member repository only on the person's yes; otherwise it opens a
+  pull request. An older `oats.setup` always opens one.
 - If `git config user.email` prints nothing, the person's Git identity is not
   set up yet. After they confirm their name, commit with
   `-c user.name="<their name>" -c user.email="<their noreply address>"`. The
