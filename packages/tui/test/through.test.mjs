@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { BACK_KEY, backKeySequences, createThrough, isBackKey } from "../lib/term/through.mjs";
+import { backKeyLabel } from "../lib/actions.mjs";
+import { BACK_KEY, BACK_KEY_SPLIT_MS, backKeySequences, createThrough, isBackKey } from "../lib/term/through.mjs";
 import { ESC_TIMEOUT_MS, PASTE_LIMIT, PASTE_PAUSE_MS } from "../lib/term/keys.mjs";
 
 const bytes = (text) => Uint8Array.from(Buffer.from(text, "latin1"));
@@ -57,7 +58,7 @@ test("the back key ends the agent's bytes: what came before it goes to the agent
   assert.deepEqual(s.feed("\x1c"), [{ back: true, rest: "" }]);
 });
 
-test("a key sequence split across reads is never held back from the agent, but a beginning of the back key's own bytes waits for the next read or the Esc timeout", () => {
+test("a key sequence split across reads is never held back from the agent, but a beginning of the back key's own bytes waits for the next read or BACK_KEY_SPLIT_MS, and one that may begin a paste the Esc timeout", () => {
   const plain = scanner();
   // A lone ESC (the agent's Esc) and an arrow split after its ESC go on at once with C-\ as the back key.
   assert.deepEqual(plain.feed("\x1b"), [{ input: "\x1b" }]);
@@ -65,18 +66,82 @@ test("a key sequence split across reads is never held back from the agent, but a
   assert.deepEqual(plain.feed("[A"), [{ input: "[A" }]);
   const meta = scanner("M-x");
   assert.deepEqual(meta.feed("ab\x1b"), [{ input: "ab" }]);
-  assert.equal(meta.timeoutAt(), 1000 + ESC_TIMEOUT_MS);
+  assert.equal(meta.timeoutAt(), 1000 + BACK_KEY_SPLIT_MS);
   assert.deepEqual(meta.feed("x!"), [{ back: true, rest: "!" }]);
   assert.deepEqual(meta.feed("\x1b"), []);
+  meta.wait(BACK_KEY_SPLIT_MS - 1);
   assert.deepEqual(meta.expire(), []);
-  meta.wait(ESC_TIMEOUT_MS);
+  meta.wait(1);
   assert.deepEqual(meta.expire(), [{ input: "\x1b" }]);
   assert.equal(meta.timeoutAt(), null);
+  // ESC [ 2 may begin F12 and a paste's start marker: it waits as a paste's beginning does.
   const f12 = scanner("F12");
   assert.deepEqual(f12.feed("\x1b[2"), []);
+  assert.equal(f12.timeoutAt(), 1000 + ESC_TIMEOUT_MS);
   assert.deepEqual(f12.feed("4~"), [{ back: true, rest: "" }]);
   assert.deepEqual(f12.feed("\x1b[2"), []);
   assert.deepEqual(f12.feed("~"), [{ input: "\x1b[2~" }]); // Insert, not F12: the agent's
+});
+
+test("the back key is one keypress (the maintainer's condition): its bytes in one read, or split across reads within BACK_KEY_SPLIT_MS, are the back key; Esc and then its key typed as two keys reach the agent as typed, whether expire() ran or a later read comes first", () => {
+  assert.equal(BACK_KEY_SPLIT_MS, 10);
+  assert.deepEqual(scanner("M-o").feed("\x1bo"), [{ back: true, rest: "" }], "one read");
+  const split = scanner("M-o");
+  assert.deepEqual(split.feed("\x1b"), []);
+  split.wait(5);
+  assert.deepEqual(split.feed("o"), [{ back: true, rest: "" }], "the rest 5 ms later: one keypress, split by the read");
+  // Esc, then o 30 ms later: through the wait's own timer (expire() at 10 ms) ...
+  const timed = scanner("M-o");
+  assert.deepEqual(timed.feed("\x1b"), []);
+  assert.equal(timed.timeoutAt(), 1000 + BACK_KEY_SPLIT_MS);
+  timed.wait(BACK_KEY_SPLIT_MS);
+  assert.deepEqual(timed.expire(), [{ input: "\x1b" }]);
+  timed.wait(30 - BACK_KEY_SPLIT_MS);
+  assert.deepEqual(timed.feed("o"), [{ input: "o" }]);
+  // ... and with no expire() run before the late read: the held ESC is the agent's first.
+  const late = scanner("M-o");
+  assert.deepEqual(late.feed("\x1b"), []);
+  late.wait(30);
+  assert.deepEqual(late.feed("o"), [{ input: "\x1b" }, { input: "o" }]);
+  assert.equal(late.timeoutAt(), null);
+  assert.deepEqual(late.expire(), [], "nothing is handed on twice");
+  // A late read that holds again: the held ESC first, then the new one waits its own time.
+  const again = scanner("M-o");
+  again.feed("\x1b");
+  again.wait(BACK_KEY_SPLIT_MS);
+  assert.deepEqual(again.feed("a\x1b"), [{ input: "\x1b" }, { input: "a" }]);
+  assert.equal(again.timeoutAt(), 1000 + BACK_KEY_SPLIT_MS + BACK_KEY_SPLIT_MS);
+  again.wait(2);
+  assert.deepEqual(again.feed("o"), [{ back: true, rest: "" }]);
+  // The same for a function key split after its ESC: F12's ESC alone waits BACK_KEY_SPLIT_MS.
+  const f12 = scanner("F12");
+  assert.deepEqual(f12.feed("\x1b"), []);
+  assert.equal(f12.timeoutAt(), 1000 + BACK_KEY_SPLIT_MS);
+  f12.wait(30);
+  assert.deepEqual(f12.feed("[24~"), [{ input: "\x1b" }, { input: "[24~" }]);
+});
+
+test("a paste's start marker held from its third byte still waits the Esc timeout, not BACK_KEY_SPLIT_MS: also with a back key that begins with ESC, a late rest of it 30 ms later is the paste's", () => {
+  for (const key of ["C-\\", "M-o"]) {
+    const s = scanner(key);
+    assert.deepEqual(s.feed("\x1b[2"), []);
+    assert.equal(s.timeoutAt(), 1000 + ESC_TIMEOUT_MS, key);
+    s.wait(30);
+    assert.deepEqual(s.expire(), [], key);
+    assert.deepEqual(s.feed("00~one\x1b[201~"), [{ paste: "one" }], key);
+    const lapsed = scanner(key);
+    lapsed.feed("\x1b[2");
+    lapsed.wait(ESC_TIMEOUT_MS - 1);
+    assert.deepEqual(lapsed.expire(), [], key);
+    lapsed.wait(1);
+    assert.deepEqual(lapsed.expire(), [{ input: "\x1b[2" }], key);
+  }
+});
+
+test("a back key is named for people: Control is Ctrl, Meta is Alt, Shift is Shift, a letter a capital, a function key as it is; a value outside the grammar is answered as given", () => {
+  for (const [key, label] of [["C-\\", "Ctrl+\\"], ["C-x", "Ctrl+X"], ["C-]", "Ctrl+]"], ["C-_", "Ctrl+_"], ["M-o", "Alt+O"], ["M-5", "Alt+5"], ["F12", "F12"], ["F1", "F1"],
+    ["S-F5", "Shift+F5"], ["C-F1", "Ctrl+F1"], ["M-F3", "Alt+F3"]]) assert.equal(backKeyLabel(key), label, key);
+  for (const value of ["C-m", "M-O", "Any", "", "C-\\x"]) assert.equal(backKeyLabel(value), value, JSON.stringify(value));
 });
 
 test("a bracketed paste is unwrapped and goes as a paste; a back key inside it is pasted, not taken", () => {
@@ -154,6 +219,23 @@ test("a paste split anywhere with the Esc timeout passing between its reads (a h
     }
     assert.equal(events.some((e) => e.back), false, `${key} ${JSON.stringify(parts)}: ${JSON.stringify(events)}`);
     assert.equal(events.map((e) => e.input).join(""), parts.join(""), "all of it the agent's, as typed");
+  }
+});
+
+test("a paste split anywhere with the wait passing between its reads and no expire() run (the late read hands the held bytes on itself) never lets a back key inside it act either", () => {
+  for (const [key, back] of [["C-\\", "\x1c"], ["M-x", "\x1bx"]]) {
+    const typedText = `a\x1b[200~one${back}two\x1b[201~b`;
+    const reached = (events) => events.map((e) => (e.input !== undefined ? e.input : `\x1b[200~${Buffer.from(e.paste, "utf8").toString("latin1")}\x1b[201~`)).join("");
+    for (let i = 1; i < typedText.length; i++) {
+      for (let j = i + 1; j < typedText.length; j++) {
+        const s = scanner(key), events = [];
+        for (const part of [typedText.slice(0, i), typedText.slice(i, j), typedText.slice(j)]) { events.push(...s.feed(part)); s.wait(ESC_TIMEOUT_MS); }
+        events.push(...s.expire());
+        const at = `${key}, split at ${i}, ${j}`;
+        assert.equal(events.some((e) => e.back), false, `${at}: no back key: ${JSON.stringify(events)}`);
+        assert.equal(reached(events), typedText, at);
+      }
+    }
   }
 });
 

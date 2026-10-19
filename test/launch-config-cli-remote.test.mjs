@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { deploymentsImported } from "./helpers/host-fixture.mjs";
 
 // Actual sending/receiving CLI joined by a loopback SSH substitute. The
 // substitute executes ONLY commands generated for these temporary scopes.
@@ -22,8 +23,8 @@ const originalEnv = { ...process.env };
 const calls = () => existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [];
 try {
   for (const p of [localScope, remoteScope, bin]) mkdirSync(p, { recursive: true });
-  process.env.OATS_HOME_DIR = join(base, 'local-oats');
-  process.env.OATS_REMOTE_SEAM_HOME = join(base, 'remote-oats');
+  process.env.OATS_HOME_DIR = deploymentsImported(join(base, 'local-oats'));
+  process.env.OATS_REMOTE_SEAM_HOME = deploymentsImported(join(base, 'remote-oats'));
   process.env.OATS_REMOTE_SEAM_LOG = log;
   process.env.PATH = `${bin}:${process.env.PATH}`;
   for (const k of ['OATS_INSTANCE', 'OATS_INSTANCE_HOME', 'OATS_HOME', 'PI_AGENT_INSTANCE', 'PI_AGENT_HOME', 'PI_AGENTS_ROOT']) delete process.env[k];

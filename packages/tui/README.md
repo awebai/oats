@@ -21,7 +21,7 @@ never does.
 |---|---|
 | `bin/tui.mjs` | the entry `bin/oats.mjs` loads: it imports the whole module graph, then runs `main()` |
 | `lib/main.mjs` | the start (arguments, environment, terminal, `tui.json`, deployment, kernel) and the loop: events through `reduce`, effects out, the frame drawn |
-| `lib/actions.mjs` | the action table and its default keys: the reducer, the footer and the help read the effective one |
+| `lib/actions.mjs` | the action table and its default keys: the reducer, the cheat sheet and the help read the effective one |
 | `lib/config.mjs` | `tui.json`: read once, checked, and the effective action table |
 | `lib/client.mjs` | the one module that imports the shared readers (`packages/client/`), and the client's terms |
 | `lib/panel.mjs` | the open terminals, as tabs: the run's private tmux server (one control client, one window per tab, up to `MAX_TERMINALS`, each at the size its caller gives), the kernel's `oats session attach` in a pane of each, captures of the displayed tabs only (up to `MAX_SHOWN`, one per group of a split) when tmux says their pane changed, a hidden tab's output marking it, keys typed into the shown tab, and the sweep of what a dead run left; the only module that runs tmux (THE TABS in its header) |
@@ -36,7 +36,7 @@ never does.
 | `lib/term/through.mjs` | the bytes typed while a terminal has the focus: the back key's grammar and bytes, and the scanner that takes the back key and a bracketed paste out of them |
 | `lib/term/screen.mjs` | the cell buffer and the bytes of a frame |
 | `lib/term/tty.mjs` | the guard: enter, leave, signals, suspend, resize, one write per frame |
-| `lib/views/` | pure functions from the model and a size to rows of spans: the frame, the list, the detail, the Capabilities view (`capabilities.mjs`), the switcher, the help, the confirmation of an act (`act.mjs`), the spawn prompt (`spawn.mjs`), the split's geometry (`split.mjs`) |
+| `lib/views/` | pure functions from the model and a size to rows of spans: the frame (the sidebar: its title, the accordion of the three views and the cheat sheet; the main area beside it), the list, the detail, the Capabilities view (`capabilities.mjs`), the switcher, the help, the confirmation of an act (`act.mjs`), the spawn prompt (`spawn.mjs`), the split's geometry (`split.mjs`) |
 
 Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
 

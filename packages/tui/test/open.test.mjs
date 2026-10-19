@@ -14,7 +14,7 @@ import {
   panelInstances, preflightFailure, prepareRemoteTerm, remoteRosterState, rosterRows, sessionAttachArgv,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
-import { OPEN_WORDS, heldOf, model, openDecision, preflightLine, roster } from "../lib/model.mjs";
+import { OPEN_WORDS, heldOf, model, openDecision, outcomeOf, preflightLine, roster } from "../lib/model.mjs";
 import { layout } from "../lib/views/frame.mjs";
 import { reduce } from "../lib/store.mjs";
 import { CLI, NOW, draw, instanceRow, observed, press, rosterOf, stateOf } from "./helpers.mjs";
@@ -49,18 +49,44 @@ function on(state, name, sz = S80) {
   return state;
 }
 const rowOf = (state) => roster(state).instances.find((row) => instanceId(row) === state.selected);
-/** The rows above the panes, as the layout counts them: from under the header's rule to the rule
- *  that opens the panes. */
+/** The sidebar's rows (docs/tui.md, "What it shows"), each cut at its width (the rule beside it
+ *  and the main area left out) and trimmed. */
+function sidebarOf(state, sz = S80) {
+  const d = draw(state, sz);
+  return d.cells.map((row) => row.slice(0, d.cols).map((cell) => cell.text).join("").trim());
+}
+/** The rows under the sidebar's title, as the layout counts them: what stands above the views. */
 function above(state, sz = S80) {
   const r = roster(state, AT);
-  const g = layout(r.notice, sz, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: state.outcome, terminal: state.terminal !== null });
-  return draw(state, sz).lines.slice(3, 3 + g.above - (g.above && r.observed ? 1 : 0)).map((line) => line.trim());
+  const g = layout(r.notice, sz, { note: r.note, ascii: state.ascii, outcome: outcomeOf(state), terminal: state.terminal !== null });
+  return sidebarOf(state, sz).slice(1, 1 + g.above);
 }
-const footerOf = (state, sz = S80) => draw(state, sz).lines[sz.rows - 1];
+/** That the rows under the title are `texts`, each on rows of its own and wrapped to the sidebar's
+ *  width as a reason is: a row ends at a space, so each text is the next rows joined by one. */
+function assertSaid(state, texts, sz = S80, message) {
+  const rows = above(state, sz), made = [];
+  let i = 0;
+  for (const text of texts) {
+    if (i >= rows.length) break;
+    let joined = rows[i++];
+    while (i < rows.length && joined !== text && text.startsWith(`${joined} ${rows[i]}`)) joined = `${joined} ${rows[i++]}`;
+    made.push(joined);
+  }
+  assert.deepEqual([...made, ...rows.slice(i)], texts, message);
+}
+/** The cheat sheet, the sidebar's rows after its last rule: each hint as `key word`, one space
+ *  between them (the sheet sets the word in a column of its own). */
+function sheetOf(state, sz = S80) {
+  const rows = sidebarOf(state, sz), rule = rows.findLastIndex((line) => /^[─-]+$/.test(line));
+  return rows.slice(rule + 1).filter(Boolean).map((line) => line.split(/ {2,}/).join(" "));
+}
+/** The cheat sheet of the list of instances with nothing given up, after what Enter does there:
+ *  it names no act, and the list's other keys are the leader's, the palette's and the help's. */
+const LISTED = ["n spawn", "? help", "q quit"];
 
 test("Enter on a running instance of this machine opens it at once in the panel: the effect carries the decision with the shared target, and the store holds the terminal, starting, with the focus", () => {
   const state = on(here(), ALPHA);
-  assert.equal(footerOf(state), "C-\\ commands   Enter open   / filter   Tab detail   r refresh   ? help   q quit", "at 80 columns the acts and `w workspaces` are given up first");
+  assert.deepEqual(sheetOf(state), ["Ctrl+\\ commands", "Ctrl+K palette", "Enter open", ...LISTED], "at 80x24 the sheet gives up nothing: the leader, the palette, Enter, then spawn, help and quit, and no act");
   const { state: opening, effects } = press(state, ["enter"]);
   const row = rowOf(state);
   assert.deepEqual(effects, [{ open: { open: true, id: instanceId(row), name: ALPHA, machine: null, target: { home: row.home }, routed: false } }]);
@@ -95,7 +121,7 @@ test("after a viewer ended: each word of the shared attachExit, read for a viewe
     const after = returned(state, status, stderr);
     assert.deepEqual(after.effect, { refresh: { live: true } }, why);
     assert.equal(after.state.terminal, null, why);
-    assert.deepEqual(above(after.state), lines, why);
+    assertSaid(after.state, lines, S80, why);
     // A viewer the person closed is said nothing of, whatever its status.
     assert.deepEqual(above(returned(state, status, stderr, true).state), [], `${why}, closed by the person`);
   }
@@ -114,9 +140,9 @@ test("a viewer the panel could not start: no tmux, or one too old, is said in th
   const refused = (how, stderr = "") => reduce(opened, { returned: { id: opened.terminal.id, status: null, stderr, refused: how } });
   const tmux = refused("tmux");
   assert.deepEqual([tmux.state.terminal, tmux.effect], [null, { refresh: { live: true } }]);
-  assert.deepEqual(above(tmux.state, S120), [words(OPEN_WORDS.noTmux(ALPHA))]);
+  assertSaid(tmux.state, [words(OPEN_WORDS.noTmux(ALPHA))], S120);
   assert.equal(words(OPEN_WORDS.noTmux(ALPHA)), `${ALPHA} could not be opened: the terminal panel needs tmux 3.2 or later on this machine.`);
-  assert.deepEqual(above(refused("start", "error connecting to /tmp/x/tmux (File name too long)\n").state, S120), [words(OPEN_WORDS.failed(ALPHA)), '"error connecting to /tmp/x/tmux (File name too long)"']);
+  assertSaid(refused("start", "error connecting to /tmp/x/tmux (File name too long)\n").state, [words(OPEN_WORDS.failed(ALPHA)), '"error connecting to /tmp/x/tmux (File name too long)"'], S120);
   assert.deepEqual(above(refused("start", "\u001b]0;owned\u0007").state, S120).slice(0, 1), [words(OPEN_WORDS.failed(ALPHA))]);
   for (const row of draw(refused("start", "\u001b]0;owned\u0007 x").state, S120).cells) for (const cell of row) assert.doesNotMatch(cell.text, /[\u0000-\u001f\u007f]/);
 });
@@ -124,13 +150,13 @@ test("a viewer the panel could not start: no tmux, or one too old, is said in th
 test("the line stands until the next key bound to an action; a key bound to nothing and a paste leave it", () => {
   const after = returned(on(here(), ALPHA), 2).state;
   const line = [words(OPEN_WORDS.unknown(ALPHA))];
-  for (const key of ["y", "f5", "ctrl+x", "insert"]) assert.deepEqual(above(press(after, [key]).state), line, key);
-  assert.deepEqual(above(reduce(after, { paste: "x" }).state), line, "a paste");
+  for (const key of ["y", "f5", "ctrl+x", "insert"]) assertSaid(press(after, [key]).state, line, S80, key);
+  assertSaid(reduce(after, { paste: "x" }).state, line, S80, "a paste");
   for (const key of ["j", "r", "ctrl+l", "?", "tab", "escape"]) assert.deepEqual(above(press(after, [key]).state).filter(Boolean), [], key);
   // The key a user's tui.json gives an action is what counts.
   const config = effectiveConfig({ keys: { refresh: ["f5"] } });
   const rebound = returned(on(here({ actions: config.actions }), ALPHA), 2).state;
-  assert.deepEqual(above(press(rebound, ["r"]).state), line, "r is bound to nothing there");
+  assertSaid(press(rebound, ["r"]).state, line, S80, "r is bound to nothing there");
   assert.deepEqual(above(press(rebound, ["f5"]).state), [], "f5 refreshes there");
 });
 
@@ -140,28 +166,28 @@ test("Enter where open is not offered opens nothing and says why: not running, s
     const at = on(cli ? here({ cli }) : state, name);
     const { state: after, effects } = press(at, ["enter"]);
     assert.deepEqual([effects, after.opening, after.terminal], [[], null, null], `${name}: nothing is opened`);
-    return { lines: above(after, S120), row: rowOf(at) };
+    return { after, row: rowOf(at) };
   };
-  assert.deepEqual(say(BETA).lines, [`${BETA} is not running, so it has no terminal to open.`]);
-  assert.deepEqual(say("dev-unknown").lines, ["Whether dev-unknown runs is not known, so it is not opened."]);
+  assertSaid(say(BETA).after, [`${BETA} is not running, so it has no terminal to open.`], S120);
+  assertSaid(say("dev-unknown").after, ["Whether dev-unknown runs is not known, so it is not opened."], S120);
   // Held: the row's own reason, as the detail draws it (a sentence of the shared home's, as written).
   const half = say("dev-half");
   const held = instanceActs(half.row).limited;
   assert.equal(openAct(half.row), null);
   assert.equal(held.origin, undefined);
-  assert.deepEqual(half.lines, [displayLine(held.sentence)]);
+  assertSaid(half.after, [displayLine(held.sentence)], S120);
   // A session backend OATS no longer has: the reason's sentence, after its speaker's words when it has one.
   const herdr = say("dev-herdr");
   const reason = openAct(herdr.row).reason;
   assert.equal(reason.code, "unsupported-session");
   const lead = originLead(reason.origin, TERMS);
-  assert.deepEqual(herdr.lines, [reason.origin === undefined ? displayLine(reason.sentence) : lead !== null ? `${lead} ${displayLine(reason.sentence)}` : `"${displayLine(reason.sentence)}"`]);
+  assertSaid(herdr.after, [reason.origin === undefined ? displayLine(reason.sentence) : lead !== null ? `${lead} ${displayLine(reason.sentence)}` : `"${displayLine(reason.sentence)}"`], S120);
   // A kernel that lists no detach key opens like any other: the viewer is given no key.
   assert.equal(CLI.features.includes(DETACH_KEY_FEATURE), false);
   assert.equal(press(on(here({ cli: CLI }), ALPHA), ["enter"]).effects[0].open.open, true);
   assert.equal(OPEN_WORDS.noKey, undefined, "and the line that refused one is gone");
-  // No footer hint for a row Enter does not open.
-  for (const name of [BETA, "dev-unknown", "dev-half", "dev-herdr"]) assert.doesNotMatch(footerOf(on(state, name)), /Enter/, name);
+  // No hint of Enter in the cheat sheet for a row Enter does not open.
+  for (const name of [BETA, "dev-unknown", "dev-half", "dev-herdr"]) assert.doesNotMatch(sheetOf(on(state, name)).join("\n"), /Enter/, name);
 });
 
 // ── Another machine ───────────────────────────────────────────────────────────────────────────────
@@ -194,18 +220,18 @@ test("a row of another machine is opened through the preflight whatever its mach
     assert.equal(entry?.group?.server, "garnet", "the row's tag names the deployment of its group");
     const decision = openDecision(state, row, instanceActs(row));
     assert.deepEqual([decision.open, decision.routed], [true, true], JSON.stringify(probe));
-    assert.match(footerOf(state), /^C-\\ commands {3}Enter open {3}/, JSON.stringify(probe));
+    assert.deepEqual(sheetOf(state).slice(0, 3), ["Ctrl+\\ commands", "Ctrl+K palette", "Enter open"], JSON.stringify(probe));
   }
 });
 
-test("Enter on a running instance of another machine: the preflight first, the footer says so, Enter again does nothing, and Esc gives it up", () => {
+test("Enter on a running instance of another machine: the preflight first, the cheat sheet says so, Enter again does nothing, and Esc gives it up", () => {
   const state = on(both(), FAR_A), row = rowOf(state);
-  assert.match(footerOf(state), /^C-\\ commands {3}Enter open {3}/);
+  assert.deepEqual(sheetOf(state).slice(0, 3), ["Ctrl+\\ commands", "Ctrl+K palette", "Enter open"]);
   const { state: asking, effects } = press(state, ["enter"]);
   assert.deepEqual(effects, [{ open: { open: true, id: instanceId(row), name: FAR_A, machine: "garnet", target: { serverId: "garnet", instance: FAR_A, home: row.home }, routed: true } }]);
   assert.deepEqual([asking.opening, asking.terminal], [{ id: instanceId(row), phase: "preflight", name: FAR_A, machine: "garnet", routed: true }, null]);
-  assert.match(footerOf(asking), /^C-\\ commands {3}Esc stop opening {3}\/ filter/);
-  assert.doesNotMatch(footerOf(asking), /Enter|Esc close/);
+  assert.deepEqual(sheetOf(asking), ["Ctrl+\\ commands", "Ctrl+K palette", "Esc stop opening", ...LISTED], "Esc in Enter's place while it is asked");
+  assert.doesNotMatch(sheetOf(asking).join("\n"), /Enter|Esc close/);
   assert.deepEqual(press(asking, ["enter"]).effects, [], "a second Enter does nothing");
   const given = press(asking, ["escape"]);
   assert.deepEqual([given.effects, given.state.opening], [[{ abandon: true }], null]);
@@ -220,7 +246,7 @@ test("the preflight ends: the viewer is started in the panel for the row selecte
   const started = reduce(asking, { prepared: { id } });
   assert.deepEqual([started.effect, started.state.opening, started.state.terminal], [{ panel: id }, null, { id, name: FAR_A, machine: "garnet", routed: true, group: 0, focus: "terminal", zoom: false, status: "starting" }]);
   const after = reduce(started.state, { returned: { id, status: 1, stderr: "" } });
-  assert.deepEqual(above(after.state), [words(OPEN_WORDS.failed(FAR_A))], "the line names the row of the Enter");
+  assertSaid(after.state, [words(OPEN_WORDS.failed(FAR_A))], S80, "the line names the row of the Enter");
   // The row went away while the preflight ran.
   const gone = heard(press(state, ["enter"]).state, [group({ instances: [farRow(FAR_B, { addressable: false, running: false, runtimeState: "stopped" })] })], "2026-10-11T10:00:25.000Z");
   const dropped = reduce(gone, { prepared: { id } });
@@ -259,7 +285,7 @@ test("a preflight that failed: the shared table's sentence and, when the kernel 
     const said = failure.said === null ? [] : kernelLines(failure.said.message, failure.said.fix, TERMS).map((line) => (line === DETAIL_WITHHELD ? "[withheld]" : line));
     const next = after(error);
     assert.deepEqual([next.effect, next.state.opening], [null, null], failure.code);
-    assert.deepEqual(above(next.state, S120), [failure.sentence, ...said], failure.code);
+    assertSaid(next.state, [failure.sentence, ...said], S120, failure.code);
   }
   // The table's sentence stands first (wrapped as a reason is), the kernel's lines under it.
   assert.equal(after(cases[3]).state.outcome.under[1], DETAIL_WITHHELD, "the shared word for a withheld text reaches the view as it came");
@@ -276,11 +302,11 @@ test("a row of another machine the kernel does not report addressable: the row's
   const blocked = on(both(), FAR_B), reason = instanceActs(rowOf(blocked)).blocked;
   assert.equal(openAct(rowOf(blocked)), null);
   const lead = originLead(reason.origin, TERMS);
-  assert.deepEqual(above(press(blocked, ["enter"]).state, S120), [reason.origin === undefined ? displayLine(reason.sentence) : lead !== null ? `${lead} ${displayLine(reason.sentence)}` : `"${displayLine(reason.sentence)}"`]);
+  assertSaid(press(blocked, ["enter"]).state, [reason.origin === undefined ? displayLine(reason.sentence) : lead !== null ? `${lead} ${displayLine(reason.sentence)}` : `"${displayLine(reason.sentence)}"`], S120);
   // The link: ssh's own failure, under a routed viewer.
   const started = reduce(press(on(both(), FAR_A), ["enter"]).state, { prepared: { id: instanceId(rowOf(on(both(), FAR_A))) } }).state;
   const link = reduce(started, { returned: { id: started.terminal.id, status: 255, stderr: "Connection to garnet.example closed by remote host.\n" } }).state;
-  assert.deepEqual(above(link, S120), [words(OPEN_WORDS.link("garnet")), '"Connection to garnet.example closed by remote host."']);
+  assertSaid(link, [words(OPEN_WORDS.link("garnet")), '"Connection to garnet.example closed by remote host."'], S120);
   assert.equal(words(OPEN_WORDS.link("garnet")), "The connection to garnet ended.");
 });
 
@@ -296,7 +322,7 @@ test("a row gone from its machine (a saved route to an instance its machine no l
   const { state: refused, effects } = press(state, ["enter"]);
   assert.deepEqual(effects, [], "nothing is opened, and no machine is asked");
   assert.equal(above(refused, S120).join(" "), acts.blocked.sentence, "the shared home's own sentence, as it is written, wrapped as a reason is");
-  assert.doesNotMatch(footerOf(state), /Enter/);
+  assert.doesNotMatch(sheetOf(state).join("\n"), /Enter/);
 });
 
 // ── The viewer's stderr ───────────────────────────────────────────────────────────────────────────
@@ -317,8 +343,8 @@ test("the stderr is drawn unvouched as ONE text: its lines and tabs made one lin
     const quoted = rows.slice(1).join(" ");
     assert.equal(quoted.startsWith('"oats: Command failed: tmux -u -S'), true, `${sz.cols}: ${quoted}`);
     assert.doesNotMatch(quoted, /OATS says|oats tui says/, "no speaker's words before it");
-    // Cut as a reason is cut (the notice's rule): a quarter of the body, at most four rows.
-    assert.equal(rows.length - 1 <= Math.min(4, Math.max(1, Math.floor((sz.rows - 5) / 4))), true);
+    // Cut as a reason is cut (the notice's rule): a quarter of the screen, at most four rows.
+    assert.equal(rows.length - 1 <= Math.min(4, Math.max(1, Math.floor(sz.rows / 4))), true);
   }
 });
 
@@ -327,16 +353,17 @@ test("the stderr is compared with nothing: a row whose own text is tmux's same l
   // Made by hand: a running row that carries tmux's line as its own text, as a race can leave it.
   const state = on(stateOf(observed([instanceRow("dev", ALPHA, { runtimeError: TMUX })], { cli: KEYED }), { cli: KEYED }), ALPHA);
   const after = returned(state, 1, `${TMUX}\n`).state;
-  const screen = draw(after, S120).lines.join("\n");
-  assert.equal(screen.split(`"${TMUX}"`).length - 1 >= 1, true, "the stderr, quoted, above the panes");
-  assert.deepEqual(above(after, S120), [words(OPEN_WORDS.failed(ALPHA)), `"${TMUX}"`], "shown once there");
+  // Wrapped to the sidebar's width, its rows read as one text beside the main area.
+  const said = above(after, S120).join(" ");
+  assert.equal(said.split(`"${TMUX}"`).length - 1, 1, "the stderr, quoted, under the sidebar's title");
+  assertSaid(after, [words(OPEN_WORDS.failed(ALPHA)), `"${TMUX}"`], S120, "shown once there");
   assert.equal(model(after, { page: 30, now: 0, at: new Date(0).toISOString(), cols: 57 }).detail.facts.some((fact) => fact.value.includes(TMUX)), true, "and the detail still has the row's own reason");
 });
 
 test("the stderr: a withheld text is [withheld] alone, one with nothing to show draws no row, and a control sequence never reaches the screen", () => {
   const state = on(here(), ALPHA);
-  assert.deepEqual(above(returned(state, 1, "failed: token=abc123\n").state), [words(OPEN_WORDS.failed(ALPHA)), "[withheld]"]);
-  assert.deepEqual(above(returned(state, 1, "   \n\n\t").state), [words(OPEN_WORDS.failed(ALPHA))]);
+  assertSaid(returned(state, 1, "failed: token=abc123\n").state, [words(OPEN_WORDS.failed(ALPHA)), "[withheld]"]);
+  assertSaid(returned(state, 1, "   \n\n\t").state, [words(OPEN_WORDS.failed(ALPHA))]);
   const hostile = returned(state, 1, "boom \u001b[2J\u001b]0;owned\u0007 ‮evil").state;
   const d = draw(hostile, S80);
   for (const row of d.cells) for (const cell of row) assert.doesNotMatch(cell.text, /[\u0000-\u001f\u007f‮]/);
@@ -347,32 +374,37 @@ test("the stderr: a withheld text is [withheld] alone, one with nothing to show 
 test("opening, terminal, outcome and detachKey are kept by the store and read by the model beside the roster, never through it: changing each changes the screen (MADE_FROM)", () => {
   const state = on(both(), FAR_A);
   const before = draw(state).lines;
-  // opening: the footer says the preflight runs.
+  // opening: the cheat sheet says the preflight runs.
   const asking = press(state, ["enter"]).state;
   assert.equal(asking.opening.phase, "preflight");
   assert.notDeepEqual(draw(asking).lines, before);
   assert.equal(roster(asking).instances, roster(state).instances, "the roster is the one already made");
-  // outcome: a line above the panes.
+  // outcome: a line under the sidebar's title.
   const said = reduce(asking, { prepared: { id: asking.opening.id, error: Object.assign(new Error("x"), { code: "E_TERM_PREPARE_TIMEOUT" }) } }).state;
   assert.notDeepEqual(draw(said).lines, draw({ ...said, outcome: null }).lines);
-  // terminal: the panel stands where the detail was.
-  const terminal = Object.freeze({ ...state, terminal: Object.freeze({ id: asking.opening.id, name: FAR_A, machine: "garnet", routed: true, focus: "terminal", zoom: false, status: "open" }) });
+  // terminal: the panel stands where the detail was. Its tab is the panel's (the loop and the
+  // layout read the sidebar's width from the tabs).
+  const shown = { id: asking.opening.id, name: FAR_A, machine: "garnet", routed: true, group: 0 };
+  const terminal = Object.freeze({ ...state, tabs: Object.freeze([Object.freeze({ ...shown, status: "open", activity: false })]), terminal: Object.freeze({ ...shown, focus: "terminal", zoom: false, status: "open" }) });
   assert.notDeepEqual(draw(terminal).lines, before);
   assert.equal(roster(terminal).instances, roster(state).instances, "the roster is the one already made");
-  // detachKey: the footer names it, and it twice, while the terminal has the focus, and the help names it.
+  // detachKey: the cheat sheet names it, it then Esc, and it twice, while the terminal has the
+  // focus, and the help names the two, in a main area wide enough for each sentence on one row.
   const f12 = Object.freeze({ ...terminal, detachKey: "F12" });
-  assert.equal(footerOf(f12), "F12 commands   F12 F12 back to the list");
+  assert.deepEqual(sheetOf(f12), ["F12 commands", "F12 Esc the list", "F12 F12 types F12"]);
   assert.notDeepEqual(draw(f12).lines, draw(terminal).lines);
-  assert.match(draw(press(on(both([group()], { detachKey: "F12" }), FAR_A), ["?"]).state, size(140, 100)).lines.join("\n"), /F12 takes the focus from the terminal back to the list; the agent keeps running\./);
+  const helped = draw(press(on(both([group()], { detachKey: "F12" }), FAR_A), ["?"]).state, size(200, 100)).lines.join("\n");
+  assert.match(helped, /F12 Esc takes the focus from the terminal back to the list; the agent keeps running\./);
+  assert.match(helped, /F12 F12 types the leader into the terminal\./);
 });
 
-test("a name from outside in the line and the footer goes through the display filter on its own; the TUI's words around it are never filtered with it", () => {
+test("a name from outside in the line after an open goes through the display filter on its own; the TUI's words around it are never filtered with it", () => {
   const NAME = "dev-\u001b[31mred‮";
   const state = on(stateOf(observed([instanceRow("dev", NAME, { running: false, runtimeState: "stopped" })], { cli: KEYED }), { cli: KEYED }), NAME);
-  const lines = above(press(state, ["enter"]).state, S120);
-  assert.equal(lines.length, 1);
-  assert.equal(lines[0].endsWith(" is not running, so it has no terminal to open."), true, lines[0]);
-  assert.doesNotMatch(lines[0], /[\u0000-\u001f\u007f‮]/);
+  // One sentence, wrapped to the sidebar's width: its rows read as one text.
+  const text = above(press(state, ["enter"]).state, S120).join(" ");
+  assert.equal(text.endsWith(" is not running, so it has no terminal to open."), true, text);
+  assert.doesNotMatch(text, /[\u0000-\u001f\u007f‮]/);
 });
 
 test("a sentence from outside is wrapped as a reason is, on the reason's rows, never cut to one row as a name is: the preflight table's sentence with its remedy, and a held row's reason, at 60 columns (round 1 of the review)", () => {
@@ -391,12 +423,13 @@ test("a sentence from outside is wrapped as a reason is, on the reason's rows, n
   assert.equal(said.some((line) => line.endsWith("\u2026")), false, "nothing cut");
 });
 
-test("a preflight that ends while the filter field is open gives the terminal the focus and settles the field, its text kept: the footer names the leader and the leader twice alone, and no key goes to the field (round 1 of the review)", () => {
+test("a preflight that ends while the filter field is open gives the terminal the focus and settles the field, its text kept: the cheat sheet names the leader, the leader then Esc and the leader twice alone, and no key goes to the field (round 1 of the review)", () => {
   const state = on(both(), FAR_A), id = instanceId(rowOf(state));
   const typing = press(press(state, ["enter"]).state, ["/", "d", "e", "v"]).state;
   assert.deepEqual([typing.filter.editing, typing.opening?.phase], [true, "preflight"]);
   const started = reduce(typing, { prepared: { id } }).state;
   assert.deepEqual([started.terminal.focus, started.filter, started.focus], ["terminal", { editing: false, query: "dev" }, "list"]);
-  assert.equal(footerOf(started), "C-\\ commands   C-\\ C-\\ back to the list");
-  assert.equal(footerOf(started, S120), "C-\\ commands   C-\\ C-\\ back to the list");
+  const focused = ["Ctrl+\\ commands", "Ctrl+\\ Esc the list", "Ctrl+\\ Ctrl+\\ types Ctrl+\\"];
+  assert.deepEqual(sheetOf(started), focused);
+  assert.deepEqual(sheetOf(started, S120), focused);
 });

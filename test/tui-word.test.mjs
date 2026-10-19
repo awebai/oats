@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { NO_TERMINAL, USAGE } from "../packages/tui/lib/main.mjs";
-import { MACHINES, NOT_YET, VIEWS } from "../packages/tui/lib/views/help.mjs";
+import { LEADER_AGAIN, MACHINES, NOT_YET, PALETTE_KEYS, VIEWS } from "../packages/tui/lib/views/help.mjs";
 import { fixtureBase, fixtureEnv } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -76,8 +76,11 @@ test("every command the help names for what this version does not do is one the 
   // TUI reads the roster itself now.
   for (const command of ["oats server connect <id> --ssh <alias>", "oats server check <id>", "oats server remove <id>", "oats tui --dir <path>"]) assert.equal(commands.filter((each) => each === command).length, 1, command);
   assert.deepEqual(commands.filter((command) => /\broster\b/.test(command)), []);
-  // The sentences about machines name no command: a command the help names is always in one of the two tables read here.
-  assert.equal(MACHINES.length >= 1 && MACHINES.every((sentence) => typeof sentence === "string" && !/\boats [a-z]/.test(sentence) && !sentence.includes("`")), true);
+  // The sentences about machines name no command, nor do the leader's last line and the palette's
+  // keys: a command the help names is always in one of the two tables read here.
+  const names = (sentence) => typeof sentence === "string" && !/\boats [a-z]/.test(sentence) && !sentence.includes("`");
+  assert.equal(MACHINES.length >= 1 && MACHINES.every(names), true);
+  assert.equal(names(LEADER_AGAIN) && PALETTE_KEYS.length >= 1 && PALETTE_KEYS.flat().every(names), true, [LEADER_AGAIN, ...PALETTE_KEYS.flat()].join(" | "));
   const usageOf = new Map();
   for (const command of commands) {
     const [program, word, ...rest] = command.split(" ");

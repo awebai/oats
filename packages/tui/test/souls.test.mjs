@@ -62,7 +62,7 @@ test("the catalog is wanted only once the Souls view is shown: 2, the leader the
   assert.deepEqual(keys(two.state, "1", "2").effects, [{ souls: "settle" }]);
 });
 
-test("what the loop holds of the catalog decides what the view says: reading before anything is held, the failure and r when the first read failed, none, the rows, and over a failed re-read the rows it kept under a heading with the failure and the time of the last good read", () => {
+test("what the loop holds of the catalog decides what the view says: reading before anything is held, the failure and r when the first read failed, none, the rows, and over a failed re-read the rows it kept under a heading with the failure and the time of the last good read, and no word of its own (the accordion's row above it names the view)", () => {
   const opened = key(base(), "2").state;
   assert.equal(view(opened).state, "reading", "before the loop said anything");
   assert.equal(view(soulsTold(opened, null, { reading: true })).state, "reading", "the first read in flight");
@@ -75,7 +75,7 @@ test("what the loop holds of the catalog decides what the view says: reading bef
   const rows = view(shown());
   assert.deepEqual([rows.state, rows.heading, rows.list.map((row) => row.name)], ["rows", null, ["dev", "ops", "reviewer"]], "sorted as the shared rows are");
   const kept = view(shown(SOULS, { reason }));
-  assert.deepEqual([kept.state, kept.list.length, kept.heading], ["rows", 3, { label: "Souls", path: null, state: null, short: "Couldn't read this workspace's souls: oats souls exited 1", readAt: "09:59:30" }]);
+  assert.deepEqual([kept.state, kept.list.length, kept.heading], ["rows", 3, { label: "", path: null, state: null, short: "Couldn't read this workspace's souls: oats souls exited 1", readAt: "09:59:30" }]);
 });
 
 test("a row is the soul's name, its colour from the TUI's table (none for a name outside the palette), the count of its instances on this machine, and whether a spawn of it here would be refused, as the shared facts say", () => {

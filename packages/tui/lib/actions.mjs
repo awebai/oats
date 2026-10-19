@@ -5,6 +5,8 @@
 // An action that does one thing in the list of instances and another in the switcher (`open`)
 // says so in `views`: what it does in each, in the order the help lists them. An action of one
 // view only (the four acts) names that view, so the help says where it acts.
+import { isBackKey } from "./term/through.mjs";
+
 export const ACTIONS = Object.freeze([
   { id: "up", keys: ["up", "k"], label: "up" },
   { id: "down", keys: ["down", "j"], label: "down" },
@@ -17,8 +19,8 @@ export const ACTIONS = Object.freeze([
   { id: "detail", keys: ["tab"], label: "detail" },
   { id: "filter", keys: ["/"], label: "filter" },
   { id: "refresh", keys: ["r"], label: "refresh" },
-  // The views by their number. The header names the views and never draws a digit against a name
-  // (docs/tui.md, "The header"): the digits are named here, so in the help and the footer.
+  // The views by their number. The sidebar names the views, each with its key at the right of its row
+  // (docs/tui.md, "What it shows"): the digits are named here, so in the help and the sidebar.
   { id: "instances", keys: ["1"], label: "instances" },
   { id: "souls", keys: ["2"], label: "souls" },
   { id: "capabilities", keys: ["3"], label: "capabilities" },
@@ -32,7 +34,7 @@ export const ACTIONS = Object.freeze([
   // The open terminal, from the list (docs/tui.md, "Open an agent's terminal"). While the terminal
   // has the focus the TUI takes no key but the leader (tui.json's open.detachKey), so neither of
   // these is ever read there: the leader's table has its own (LEADER).
-  { id: "zoom", keys: ["z"], label: "zoom", views: [["instances", "go to the shown terminal with the whole screen; the leader twice brings the list back"]] },
+  { id: "zoom", keys: ["z"], label: "zoom", views: [["instances", "go to the shown terminal with the whole screen; the leader then Esc brings the list back"]] },
   { id: "close-terminal", keys: ["c"], label: "close terminal", views: [["instances", "close the shown terminal and show its neighbour; the agent keeps running"]] },
   { id: "tab-previous", keys: ["["], label: "previous tab", views: [["instances", "show the terminal of the tab before the shown one"]] },
   { id: "tab-next", keys: ["]"], label: "next tab", views: [["instances", "show the terminal of the tab after the shown one"]] },
@@ -67,8 +69,10 @@ export const ACTIONS = Object.freeze([
  *  open.detachKey) and what each does, from every focus. Fixed: tui.json's `keys` rebinds the plain
  *  keys of ACTIONS only. `does` is an action id of ACTIONS, or one of the leader's own: `previous`
  *  and `next` (the instance before or after the shown terminal's, or the selection's: its tab
- *  shown, or opened as a new one, with the focus in it) and `list` (the list's focus). The leader pressed again is `list` too: it is
- *  the user's key, so it is not in this table. `terminal`: named in the hint only while a terminal
+ *  shown, or opened as a new one, with the focus in it) and `list` (the list's focus, which
+ *  Esc gives). The leader pressed again is not in this table either, as it is the user's key: from
+ *  the open terminal's focus it types the leader's own bytes into the agent, the focus staying
+ *  there, and from any other focus it only closes the hint (lib/store.mjs `twice`). `terminal`: named in the hint only while a terminal
  *  is open, and nothing without one (the hint names the tab keys only with two tabs or more). */
 export const LEADER = Object.freeze([
   { keys: ["k", "space"], does: "palette", label: "palette" },
@@ -117,4 +121,18 @@ export function keyLabel(key) {
   const parts = key.split("+"), last = parts.pop();
   const name = NAMES[last] ?? (/^f\d+$/.test(last) ? last.toUpperCase() : parts.length && last.length === 1 ? last.toUpperCase() : last);
   return [...parts.map((part) => NAMES[part] ?? part), name].join("+");
+}
+
+/** The modifiers of the back key's grammar (term/through.mjs BACK_KEY) as a person reads them. */
+const BACK_MODIFIERS = Object.freeze({ C: "Ctrl", M: "Alt", S: "Shift" });
+/** A back key (tui.json's open.detachKey, the leader) as the cheat sheet and the help name it, spelt
+ *  for people as keyLabel spells a key id: `C-\\` is `Ctrl+\\`, `C-x` is `Ctrl+X`, `M-o` is `Alt+O`,
+ *  `M-5` is `Alt+5`, `F12` is `F12`, `S-F5` is `Shift+F5`. A letter is written as a capital, which
+ *  never means Shift (the grammar has lowercase Meta letters only). Pure. A value outside the
+ *  grammar is answered as it was given (tui.json refuses it; a view draws it as text from outside). */
+export function backKeyLabel(key) {
+  if (!isBackKey(key)) return key;
+  const [, mod, rest] = /^(?:([CMS])-)?(.+)$/.exec(key);
+  const name = rest.length === 1 ? rest.toUpperCase() : rest;
+  return mod ? `${BACK_MODIFIERS[mod]}+${name}` : name;
 }

@@ -122,7 +122,7 @@ test("no text from outside can write a control sequence: a hostile fixture drawn
 import { DETACH_KEY_FEATURE, observedEntry, panelInstances, rosterRows } from "../lib/client.mjs";
 import { model } from "../lib/model.mjs";
 import { reduce } from "../lib/store.mjs";
-import { frame } from "../lib/views/frame.mjs";
+import { WIDE, frame } from "../lib/views/frame.mjs";
 import { CLI, DEPLOYMENT, NOW, draw, failed, instanceRow, observed, press, rosterOf, stateOf } from "./helpers.mjs";
 
 const HOME = `${DEPLOYMENT}/agents/soul/instances/row-1`;
@@ -168,8 +168,9 @@ const FIELDS = {
     const opened = press(stateOf(observed([one()], { cli: KEYED }), { cli: KEYED, ...options }), ["enter"]).state;
     return reduce(opened, { returned: { id: opened.terminal.id, status: 1, stderr: value } }).state;
   },
-  // The back key is named in the footer while a terminal has the focus.
-  "the key that leaves an agent's terminal, in the footer": (value, options) => press(stateOf(observed([one()], { cli: KEYED }), { cli: KEYED, detachKey: value, ...options }), ["enter"]).state,
+  // The back key is named in the cheat sheet while a terminal has the focus: the leader, the leader
+  // then Esc, and the leader twice, which types it.
+  "the key that leaves an agent's terminal, in the cheat sheet": (value, options) => press(stateOf(observed([one()], { cli: KEYED }), { cli: KEYED, detachKey: value, ...options }), ["enter"]).state,
 };
 const UTF8 = glyphs({ LANG: "en_US.UTF-8" }), NOT_UTF8 = glyphs({ LANG: "C" });
 const S80 = { cols: 80, rows: 24 }, S120 = { cols: 120, rows: 40 };
@@ -184,10 +185,16 @@ const SLOW = "a 10 000-character name";
 const LONG_FIELDS = new Set(["the instance name", "the runtime error", "the failure message of an unavailable deployment", "the failure message of an unavailable deployment, marked as the kernel's own refusal", "the failure message of a stale deployment"]);
 const BOTH_LOCALES = new Set(["the instance name", "the failure message of an unavailable deployment", "the failure message of an unavailable deployment, marked as the kernel's own refusal", "the quote line"]);
 const drawnAt = (name, field) => (name !== SLOW ? [[S80, UTF8], [S120, UTF8], ...(BOTH_LOCALES.has(field) ? [[S80, NOT_UTF8]] : [])] : LONG_FIELDS.has(field) ? [[S80, UTF8]] : []);
+/** The palette opened over a state (its key reads no geometry): it lists the rows the view lists. */
+const paletteOver = (state) => reduce(state, { key: "ctrl+k", page: 19, extent: 0, room: 19, cols: 38 }).state;
 
+/** What says a frame is drawn, so that no test passes on an empty screen: the sidebar's three
+ *  views in their order and a rule after them. A page that has the whole screen of a terminal under
+ *  WIDE columns draws no sidebar, and says what it shows instead (`drawn`). */
+const sidebarOf = (look) => ({ what: "the sidebar's views and the rule after them", shows: new RegExp(`Instances.*Souls.*Capabilities.*${look.ascii ? "-" : "─"}{20}`, "s") });
 /** The bytes a frame's rows become on a real screen, held to the census: `text`, what is left of
  *  them without the TUI's own sequences. */
-function census(rows, size, look, at, cells = null) {
+function census(rows, size, look, at, cells = null, drawn = sidebarOf(look)) {
   const screen = createScreen({ ...look, color: true });
   const bytes = Buffer.from(screen.render(rows, size, { full: true }), "utf8"), output = bytes.toString("utf8");
   assert.equal(output.isWellFormed(), true, `${at}: well-formed, no lone surrogate`);
@@ -203,15 +210,18 @@ function census(rows, size, look, at, cells = null) {
   const held = (cells ?? screen.cells(rows, size)).flatMap((line, r) => line.flatMap((cell, x) => (REFUSED.test(cell.text) || /[\u0080-\u009F]/.test(cell.text) ? [`row ${r}, column ${x}`] : [])));
   assert.deepEqual(held, [], `${at}: no cell holds a character the terminal acts on`);
   assert.doesNotMatch(text, /owned|EVIL|hunter2|ghp_|evil\.example/, `${at}: nothing of a withheld text is shown`);
-  assert.equal(text.includes("Instances   Souls   Capabilities") && text.includes((look.ascii ? "-" : "─").repeat(20)), true, `${at}: the frame is drawn: the header's views and the rule under them`);
+  assert.match(text, drawn.shows, `${at}: the frame is drawn: ${drawn.what}`);
   return text;
 }
 
 for (const [field, make] of Object.entries(FIELDS)) {
-  test(`the hostile fixture as ${field}, drawn by the Instances view at 80x24 and at 120x40, leaves only the TUI's own sequences in the output, and no cell holds a control character`, () => {
+  test(`the hostile fixture as ${field}, drawn by the Instances view at 80x24 and at 120x40 and by the palette over it at 80x24, leaves only the TUI's own sequences in the output, and no cell holds a control character`, () => {
     for (const [name, value] of Object.entries(FIXTURE)) for (const [size, look] of drawnAt(name, field)) {
       const state = make(value, { ascii: look.ascii }), at = `${name}, ${size.cols}x${size.rows}${look.utf8 ? "" : ", not UTF-8"}`;
       const drawn = draw(state, size, { utf8: look.utf8 }), text = census(drawn.rows, size, look, at, drawn.cells);
+      // The palette over the view, in the main area with the sidebar beside it (the slow value
+      // is drawn once, as above).
+      if (size === S80 && name !== SLOW) { const listed = draw(paletteOver(state), size, { utf8: look.utf8 }); census(listed.rows, size, look, `${at}, the palette`, listed.cells); }
       // The field is on the screen: plain text put there is read there.
       if (name === "plain text, for comparison" && size === S120) assert.equal(text.includes("dev-1 café 中文"), true, `${at}: ${field} is drawn`);
       if (name === "bidi overrides (U+202D, U+202E)" && size === S120 && !field.startsWith("a waiting claim")) assert.equal(text.includes("safe\uFFFDtxt.exe"), true, `${at}: a bidi override is replaced, never dropped and never written`);
@@ -302,7 +312,7 @@ const named = (value) => ({ ...IDENTITY, key: `acme/${value}` });
 const MACHINE_FIELDS = {
   "a machine's label": { seen: "the list and the detail", make: (value, options) => heard(reporting(options), answered(group({ label: value })), T1) },
   "a machine's server name, which names it when it has no label": { seen: "the list and the detail", make: (value, options) => heard(reporting(options), answered(group({ label: "", server: value })), T1) },
-  "a machine's label where the header alone names it, `on <machine>`": { seen: "the list and the detail", make: (value, options) => second(heard(reporting(options), answered(group({ label: value, workspace: ELSEWHERE })), T1)) },
+  "a machine's label where the sidebar's title alone names it, `on <machine>`": { seen: "the list and the detail", make: (value, options) => second(heard(reporting(options), answered(group({ label: value, workspace: ELSEWHERE })), T1)) },
   "the workspace's name a machine reports": { seen: "the list and the detail", make: (value, options) => second(heard(reporting(options), answered(group({ workspace: named(value) })), T1)) },
   "a probe's error message, of a machine reached earlier": { seen: "the list and the detail", lead: "OATS says:", make: async (value, options) => heard(heard(reporting(options), answered(group()), T1), await printed(group({ probe: { ok: false, error: { code: "E_SSH", message: value } } })), T2) },
   "a probe's error message, of a machine never reached": { seen: null, make: (value, options) => heard(reporting(options), answered(group({ probe: { ok: false, error: { code: "E_REMOTE", message: value } }, workspace: null, instances: [] })), T1) },
@@ -323,14 +333,17 @@ const MACHINE_FIELDS = {
 };
 /** The views a state's text can reach, each with the sizes it is drawn at: the list with its
  *  headings beside the detail of its last row (a machine's, where there is one), that detail as
- *  the page it is on a narrow terminal, the switcher, and the help over the list and over the
- *  switcher. */
+ *  the page it is on a narrow terminal, the switcher, the palette, and the help over the list and
+ *  over the switcher. From WIDE columns the sidebar stands beside each; under them the detail,
+ *  the switcher and the palette have the whole screen, and `page` is what says one is drawn there
+ *  (census): the detail's labels, the open workspace's choice, the palette's keys on its first row. */
 function viewsOf(state) {
   const list = key(state, "G"), switching = key(list, "w");
   return [
     ["the list and the detail", list, [S80, S120]],
-    ["the detail as a page", key(list, "tab"), [S60]],
-    ["the switcher", switching, [S80, S60]],
+    ["the detail as a page", key(list, "tab"), [S60], { what: "the detail's labels", shows: /\bsoul\b.*\bstate\b/s }],
+    ["the switcher", switching, [S80, S60], { what: "the open workspace's choice", shows: /acme-platform/ }],
+    ["the palette over the list", paletteOver(list), [S80, S60], { what: "the palette's keys on its first row", shows: /Enter run {3}Up\/Down move {3}Esc close/ }],
     ["the help over the list", key(list, "?"), [S80]],
     ["the help over the switcher", key(switching, "?"), [S80]],
   ];
@@ -352,7 +365,7 @@ const LONG_MACHINE_FIELDS = new Set(["a machine's label", "the thrown message of
 const noFolder = (value) => value.includes("/") || value.includes("\0");
 
 for (const [field, { make, seen, folder = false, lead = null }] of Object.entries(MACHINE_FIELDS)) {
-  test(`the hostile fixture as ${field}, drawn in the list with its headings, the detail, the switcher and the help over each, leaves only the TUI's own sequences in the output, and no row is wider than the terminal`, async () => {
+  test(`the hostile fixture as ${field}, drawn in the list with its headings, the detail, the switcher, the palette and the help over each, leaves only the TUI's own sequences in the output, and no row is wider than the terminal`, async () => {
     for (const [name, value] of Object.entries(FIXTURE)) {
       if (folder && noFolder(value)) continue;
       if (name === SLOW) {
@@ -362,8 +375,9 @@ for (const [field, { make, seen, folder = false, lead = null }] of Object.entrie
         within(drawn, S80, at);
         continue;
       }
-      for (const [view, state, sizes] of viewsOf(await make(value, { ascii: false }))) for (const size of sizes) {
-        const at = `${name}, ${view}, ${size.cols}x${size.rows}`, drawn = draw(state, size), text = census(drawn.rows, size, UTF8, at, drawn.cells);
+      for (const [view, state, sizes, page] of viewsOf(await make(value, { ascii: false }))) for (const size of sizes) {
+        const at = `${name}, ${view}, ${size.cols}x${size.rows}`, drawn = draw(state, size);
+        const text = census(drawn.rows, size, UTF8, at, drawn.cells, size.cols < WIDE && page ? page : sidebarOf(UTF8));
         within(drawn, size, at);
         // The field is on the screen: plain text put there is read there.
         if (name === "plain text, for comparison" && view === seen && size !== S60 && (size === S120 || view === "the switcher")) assert.equal(text.includes("dev-1 café 中文"), true, `${at}: ${field} is drawn`);
@@ -386,17 +400,19 @@ for (const [field, { make, seen, folder = false, lead = null }] of Object.entrie
   });
 }
 
-test("a hostile machine name in the header's `on <machine>` leaves no control byte of its own on the screen: an escape sequence, a bidi override and wide characters, each cut inside the header's row", () => {
+test("a hostile machine name in the sidebar's title, `on <machine>`, leaves no control byte of its own on the screen: an escape sequence, a bidi override and wide characters, each cut inside the title's row, where no count stands any more", () => {
   const names = { "an escape sequence": `gar${ESC}[2J${ESC}]0;owned${BEL}net`, "a bidi override": "gar\u202Enet", "wide characters": "名前".repeat(80) };
   for (const [name, value] of Object.entries(names)) for (const look of [UTF8, NOT_UTF8]) for (const size of [S80, S120, S60]) {
     const state = second(heard(reporting({ ascii: look.ascii }), answered(group({ label: value, workspace: ELSEWHERE })), T1)), at = `${name}, ${size.cols}x${size.rows}${look.utf8 ? "" : ", not UTF-8"}`;
     const drawn = draw(state, size, { utf8: look.utf8 }), m = model(state, { page: drawn.page, now: NOW, at: new Date(NOW).toISOString(), cols: drawn.cols });
     assert.deepEqual([m.here, m.machines, m.machine], [false, 1, value], `${at}: the model hands the frame the machine's name as the shared entry has it`);
-    const text = census(drawn.rows, size, look, at, drawn.cells), header = drawn.lines[0];
+    // The title is the sidebar's first row: its cells up to the rule beside it (`drawn.cols` wide).
+    const text = census(drawn.rows, size, look, at, drawn.cells), title = drawn.cells[0].slice(0, drawn.cols).map((cell) => cell.text).join("").trimEnd();
     within(drawn, size, at);
-    assert.equal(header.startsWith(" billing  on "), true, `${at}: the workspace's name and the TUI's own word stand whole: ${header}`);
-    assert.equal(header.endsWith("  1 running") && drawn.cells[0][size.cols - 1].text === " ", true, `${at}: the count keeps its place at the right edge: ${header}`);
-    const shownName = header.slice(" billing  on ".length, header.length - "  1 running".length).trim();
+    assert.equal(title.startsWith(" billing  on "), true, `${at}: the workspace's name and the TUI's own word stand whole: ${title}`);
+    assert.equal(drawn.cells[0][drawn.cols - 1].text === " " && (size.cols < WIDE || drawn.cells[0][drawn.cols].text === (look.ascii ? "|" : "│")), true, `${at}: the name is cut inside the sidebar's margin, and from 80 columns the rule beside it stands: ${drawn.lines[0]}`);
+    assert.equal(title.includes("running"), false, `${at}: no count stands on the title: ${title}`);
+    const shownName = title.slice(" billing  on ".length).trim();
     if (name === "an escape sequence") assert.equal(shownName, "[withheld]", `${at}: a name with a control character is withheld whole`);
     if (name === "a bidi override") assert.equal(shownName, look.utf8 ? "gar\uFFFDnet" : "gar?net", `${at}: a bidi override is replaced, never written`);
     if (name === "wide characters") {
@@ -437,8 +453,11 @@ test("200 machines are drawn in bounded work: the shared home reads each machine
     assert.equal(drawn.rows.length, S80.rows, at);
     assert.equal(m.list.length, drawn.page - 1, `${at}: the model works out the rows of the pane and no other`);
     assert.deepEqual([m.above, m.below], [0, items - (drawn.page - 1)], `${at}: and counts the rest`);
-    assert.equal(drawn.lines[22].slice(0, 38).trim(), cutNote(0, items - (drawn.page - 1)), `${at}: the pane's last row, the one above the footer, says so`);
-    assert.equal(draw(walked, S80).lines[0].includes(`+${count} machines`), true, `${at}: the header counts them`);
+    // The list's last row stands above the rule over the closed views (Souls, Capabilities).
+    const last = drawn.lines.findIndex((line) => line.startsWith(" Souls")) - 2;
+    assert.equal(drawn.lines[last + 1].startsWith("─".repeat(drawn.cols)), true, `${at}: the rule after the list`);
+    assert.equal(drawn.lines[last].slice(0, drawn.cols).trim(), cutNote(0, items - (drawn.page - 1)), `${at}: the list's last row in the sidebar says so`);
+    assert.equal(draw(walked, S80).lines[0].includes(`+${count} machines`), true, `${at}: the sidebar's title counts them`);
     census(drawn.rows, S80, UTF8, at, drawn.cells);
     within(drawn, S80, at);
     // The switcher asks the shared home at each paint, and that too is a fixed number of reads a machine.
@@ -452,8 +471,9 @@ test("200 machines are drawn in bounded work: the shared home reads each machine
   assert.equal(each[200].switcher.instances, 0, "the switcher reads no machine's rows");
   // 200 machines matched to no workspace, in the switcher: one screen of them, and the rest counted.
   const never = Array.from({ length: 200 }, (_, i) => group({ id: `quartz-${i}:acme-1`, server: `quartz-${i}`, label: `quartz-${i}`, probe: { ok: false, error: { code: "E_SSH", message: "Permission denied (publickey)." } }, workspace: null, instances: [] }));
+  // The switcher has the main area, every row of it: its window is the screen's height.
   const unmatched = draw(key(heard(reporting(), answered(...never), T1), "w"), S80);
-  assert.equal(unmatched.lines.slice(3, 22).filter((line) => line.includes("quartz-")).length, 17, "the pane holds the open workspace, the heading and seventeen machines");
-  assert.equal(unmatched.lines[22].trim(), cutNote(0, 202 - 19), "the pane's last row, the one above the footer, says what is cut off");
+  assert.equal(unmatched.lines.slice(0, 23).filter((line) => line.includes("quartz-")).length, 21, "the area holds the open workspace, the heading and twenty-one machines");
+  assert.equal(unmatched.lines[23].slice(unmatched.cols + 1).trim(), cutNote(0, 202 - 23), "the area's last row says what is cut off");
   within(unmatched, S80, "200 unmatched machines");
 });

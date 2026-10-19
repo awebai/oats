@@ -1477,7 +1477,11 @@ test("the preflight's exec: `node <bin> session inspect …` in a session of its
   assert.deepEqual(call.argv, ["session", "inspect", "--server", "garnet", "--home", TARGET.home, "--json"], "the inspect never carries the key");
   assert.equal(call.pgid, call.pid, "it leads a process group of its own");
   if (call.sid !== null) assert.equal(call.sid, call.pid, "and the session it leads");
-  assert.deepEqual(call.env, {}, "in the environment the reader was given, which has left the instance");
+  // The fake records the OATS_ and PI_ variables it was started with (fixtures/fake.mjs): the reader's
+  // own, which may hold some (the test runner gives each file an OATS_HOME_DIR), and no instance's.
+  const given = Object.fromEntries(Object.entries(CLEAN_ENV).filter(([name]) => name.startsWith("OATS_") || name.startsWith("PI_")));
+  assert.deepEqual(call.env, given, "in the environment the reader was given, which has left the instance");
+  assert.deepEqual(EIGHT.filter((name) => name in call.env), [], "no instance variable");
   assert.deepEqual(spawned.map((s) => [s.file, s.args[0], s.options.detached]), [[process.execPath, world.bin, true]]);
   assert.deepEqual(reader.children(), [], "and forgotten once it has closed");
 });

@@ -18,6 +18,8 @@ import { dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, fixtureEnv, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { comparableStty } from "./helpers/stty-line.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { backKeyLabel } from "../packages/tui/lib/actions.mjs";
+import { defaultDetachKey } from "../packages/tui/lib/config.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -178,172 +180,210 @@ test.after(() => {
 const TUI = `${shq(process.execPath)} ${shq(CLI)} tui`;
 const PROMPT = "tui-test$";
 const USAGE = "oats tui [--dir <path>] [--ascii]";
-/** The leader, which the footer names first in every focus (docs/tui.md, "The footer"). */
-const LEAD = "C-\\ commands   ";
-/** The Instances footer with every hint that applies with no instance selected, and with one of
- *  the fixture's selected: every instance here is stopped or unknown, and offers to be stopped and
- *  retired (and a stopped one to be started), but those hints are given up first. */
-const WHOLE_FOOTER = `${LEAD}/ filter   Tab detail   r refresh   w workspaces   ? help   q quit`;
-/** The Instances footer at a width: `help` and `quit` always stand, and a hint that would reach
- *  the last cell ends the row's hints. The acts are given up first, then `w workspaces`, then
- *  `r refresh`, so a terminal too narrow for the whole row draws it without them (views/frame.mjs
- *  `footer`). */
-const footerAt = (cols) => {
-  let footer = WHOLE_FOOTER;
-  for (const hint of ["   w workspaces", "   r refresh"]) { if (footer.length <= cols - 1) return footer; footer = footer.replace(hint, ""); }
-  return footer;
+/** The leader: the default on the platform the tests run on (M-o, C-\\ on macOS), as tmux's
+ *  send-keys names it too, and as the cheat sheet and the help spell it. */
+const LEADER_KEY = defaultDetachKey(), LEADER = backKeyLabel(LEADER_KEY);
+const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** The first row of the cheat sheet in every focus (docs/tui.md, "The cheat sheet"), as the screen
+ *  shows it: only the TUI draws it, so a screen without it is not the TUI's. */
+const LEAD_ROW = new RegExp(`^ ${literal(LEADER)} +commands(?: |│|\\||$)`);
+/** The rows of the cheat sheet, each a key and what it does (docs/tui.md, "The cheat sheet"): the
+ *  leader first in every focus, then the palette. */
+const LEAD_HINT = [LEADER, "commands"], PALETTE_HINT = ["Ctrl+K", "palette"], LAST_HINTS = [["?", "help"], ["q", "quit"]];
+/** The Instances view's sheet, the list focused: small, the same whatever row is selected (or
+ *  none). Every instance here is stopped (it never ran), so Enter opens nothing and is not named;
+ *  the acts, the filter, the detail, refresh and the workspaces are the leader's hint's, the
+ *  palette's and the help's, never the sheet's. */
+const LIST_SHEET = [LEAD_HINT, PALETTE_HINT, ["n", "spawn"], ...LAST_HINTS];
+/** With a filter kept: the list's sheet; Esc still clears the filter, unnamed there. */
+const KEPT_SHEET = LIST_SHEET;
+/** While the filter's text is typed: its own keys. */
+const FIELD_SHEET = [LEAD_HINT, ["Enter", "keep"], ["Esc", "clear"]];
+/** With the detail focused: Tab goes back to the list, then the list's. */
+const DETAIL_SHEET = [LEAD_HINT, PALETTE_HINT, ["Tab", "back"], ["n", "spawn"], ...LAST_HINTS];
+const HELP_SHEET = [LEAD_HINT, PALETTE_HINT, ["Esc", "close"], ...LAST_HINTS];
+/** The switcher's, with a workspace open (Esc closes it onto that workspace's view). */
+const SWITCHER_SHEET = [LEAD_HINT, PALETTE_HINT, ["Enter", "open"], ["/", "filter"], ["r", "refresh"], ["Esc", "close"], ...LAST_HINTS];
+/** The rows the sheet draws for `hints`: the key at the margin, what it does in a column of its
+ *  own three cells after the widest key. */
+const sheetRows = (hints) => {
+  const widest = Math.max(...hints.map(([key]) => key.length));
+  return hints.map(([key, word]) => ` ${key.padEnd(widest)}   ${word}`);
 };
-/** At 80 columns, the leader takes the room of `w workspaces`. */
-const PLAIN_FOOTER = footerAt(80);
-const FOOTER = PLAIN_FOOTER;
-/** With the detail focused: the selected instance's acts first, as room allows (stop and retire
- *  at 79 and 80 columns), then the detail's own keys. */
-const DETAIL_FOOTER = `${LEAD}X stop   Tab detail   Esc close   r refresh   ? help   q quit`;
-const HELP_FOOTER = `${LEAD}Esc close   ? help   q quit`;
-/** The switcher: its header, its footer with a workspace open, its two headings (the first is
- *  the shared home's, the second the TUI's own), and the TUI's row for a roster read that failed
- *  before any answer. */
-const SWITCHER_TITLE = " workspaces";
-const SWITCHER_FOOTER = `${LEAD}Enter open   / filter   r refresh   Esc close   ? help   q quit`;
+/** The switcher's two headings (the first is the shared home's, the second the TUI's own), and the
+ *  TUI's row for a roster read that failed before any answer. */
 const UNMATCHED = "  Not matched to a workspace";
 const OFFERED = "  On this machine, not opened";
 const ROSTER_FAILED = "Other machines were not read.";
-/** The help's `Keys` list at 80 columns, one row per action in the table's order, and one per view
- *  for `open` (Enter): under the agent's line the back key, the terminal's rules and where the keys
- *  are listed (views/help.mjs `openRows`). */
+/** The help's `Keys` list at 80x24, in the 39 cells the main area gives it beside the sidebar: its
+ *  first rows, one action after another in the table's order, each sentence on as many rows as it
+ *  needs. A page of the help at 80x24 holds the first twenty; the rows after these, under the line
+ *  of `open`, wrap by the width of the leader's label (views/help.mjs `openRows`). */
 const HELP_KEYS = [
   /^ *Up, k {2,}up$/, /^ *Down, j {2,}down$/, /^ *g, Home {2,}first$/, /^ *G, End {2,}last$/, /^ *PageUp {2,}page up$/, /^ *PageDown {2,}page down$/,
-  /^ *Left, h {2,}collapse, or go to the parent$/, /^ *Right, l {2,}expand, or go to the first child$/, /^ *Tab {2,}detail$/, /^ *\/ {2,}filter$/,
-  /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *2 {2,}souls$/, /^ *3 {2,}capabilities$/, /^ *w {2,}workspaces$/, /^ *Ctrl\+K {2,}palette$/,
-  /^ *Enter {2,}open the selected agent's terminal as a tab beside the list, or$/, /^ {2,}show its tab when it has one, in the list of instances$/,
-  /^ {2,}C-\\ C-\\ takes the focus from the terminal back to the list; the$/, /^ {2,}agent keeps running\.$/,
-  /^ {2,}While the terminal has the focus every other key goes to the$/, /^ {2,}agent, Ctrl\+C and Ctrl\+Z too\.$/,
-  /^ {2,}Up to 4 terminals are open at a time, each a tab\. They have no$/, /^ {2,}scrollback but the viewer's own, and no mouse\.$/,
-  /^ {2,}docs\/tui\.md has the keys that can be the leader\.$/,
-  /^ *Enter {2,}open the selected workspace, in the switcher$/,
-  /^ *z {2,}go to the shown terminal with the whole screen; the leader twice$/, /^ {2,}brings the list back$/,
-  /^ *c {2,}close the shown terminal and show its neighbour; the agent keeps$/, /^ {2,}running$/,
-  /^ *\[ {2,}show the terminal of the tab before the shown one$/, /^ *\] {2,}show the terminal of the tab after the shown one$/,
-  // The acts, and under the last of them the rules of a confirmation (views/help.mjs ACT_RULES).
-  /^ *X {2,}stop the selected agent, after a confirmation$/, /^ *D {2,}retire the selected agent, after a confirmation$/,
-  /^ *S {2,}start the selected agent as it was last launched, after a$/, /^ {2,}confirmation$/,
-  /^ *R {2,}restart the selected agent as it was last launched, after a$/, /^ {2,}confirmation$/,
-  /^ {2,}Each act opens a confirmation with Cancel chosen: move to the act$/, /^ {2,}with Left\/Right or Tab, then press Enter\.$/,
-  /^ {2,}Esc closes a confirmation; an act it sent goes on, also after oats$/, /^ {2,}tui quits\.$/,
-  /^ *\? {2,}help$/, /^ *Esc {2,}close$/, /^ *q, Ctrl\+C {2,}quit$/, /^ *Ctrl\+Z {2,}suspend$/, /^ *Ctrl\+L {2,}redraw$/,
+  /^ *Left, h {2,}collapse, or go to the$/, /^ {2,}parent$/, /^ *Right, l {2,}expand, or go to the$/, /^ {2,}first child$/,
+  /^ *Tab {2,}detail$/, /^ *\/ {2,}filter$/, /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *2 {2,}souls$/, /^ *3 {2,}capabilities$/, /^ *w {2,}workspaces$/, /^ *Ctrl\+K {2,}palette$/,
+  /^ *Enter {2,}open the selected agent's$/, /^ {2,}terminal as a tab beside$/, /^ {2,}the list, or show its tab$/, /^ {2,}when it has one, in the$/, /^ {2,}list of instances$/,
 ];
 const NO_TERMINAL = "oats: `oats tui` needs a terminal on stdin and stdout (E_NO_TERMINAL); `oats status` prints the instances once";
 const noDeployment = (dir) => `oats: no OATS deployment at or above ${dir} (E_NO_DEPLOYMENT); name one with \`oats tui --dir <path>\``;
 const tooSmallLine = (cols, rows) => `Terminal too small: ${cols}x${rows}, oats tui needs 60x15.`;
-const UTF8 = { locale: "C.UTF-8", rule: "─", down: "┬", stopped: "○" };
-const ASCII = { locale: "C", rule: "-", down: "+", stopped: "-" };
-/** The columns of the list pane where the terminal is wide enough for two panes (docs/tui.md). */
-const listCols = (cols) => Math.min(60, Math.max(36, Math.floor(cols * 0.48)));
-const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const UTF8 = { locale: "C.UTF-8", rule: "─", bar: "│", stopped: "○" };
+const ASCII = { locale: "C", rule: "-", bar: "|", stopped: "-" };
+/** The columns of the sidebar where the terminal is wide enough for the main area beside it
+ *  (docs/tui.md); under 80 columns the sidebar has the whole width. */
+const listCols = (cols) => (cols >= 80 ? Math.min(60, Math.max(36, Math.floor(cols * 0.48))) : cols);
+/** The sidebar's part of each row (trailing blanks cut), and the main area's: from two cells after
+ *  the rule between them, where the detail and every overlay stand. */
+const sidebarOf = (screen, cols = 80) => screen.map((text) => [...text].slice(0, listCols(cols)).join("").trimEnd());
+const mainOf = (screen, cols = 80) => screen.map((text) => [...text].slice(listCols(cols) + 2).join(""));
+/** A view's row of the sidebar's accordion, `width` cells wide: its name, and its key at the
+ *  right, a cell from the edge. Given `name` with no key, the row as it stands (a heading that
+ *  names a filter). */
+const viewRow = (name, key, width = listCols(80)) => `${` ${name}`.padEnd(width - 2)}${key}`;
+/** The cheat sheet on a screen as words: each row its key and what it does with the run of blanks
+ *  between them made one space, from the leader's row (`commands`, or `then` while the leader
+ *  waits) to the first empty row; [] when the screen draws no sheet. */
+function sheetOf(screen, cols = 80) {
+  const side = sidebarOf(screen, cols).map((text) => text.trim().replace(/ {2,}/g, " "));
+  const first = side.findIndex((text) => text === `${LEADER} commands` || text === `${LEADER} then`);
+  if (first < 0) return [];
+  const end = side.indexOf("", first);
+  return side.slice(first, end < 0 ? undefined : end);
+}
 
-/** The rows around the panes, the same in every view: what is wrong with them. `split`: the two
- *  panes are drawn, so each rule has a joint where the line between them meets it. `footer` is
- *  the last row, or what it matches. `title` and `views` are the two rows of the header, or what
- *  they match: the fixture's name with its count and the time of a read, unless a view says
- *  otherwise. */
-function chromeFaults(screen, { cols, rows, look, split, footer, count, title = new RegExp(`^ fixture +${count} stopped$`), views = /^ {2}Instances {3}Souls {3}Capabilities +read \d\d:\d\d:\d\d$/ }) {
-  const faults = [];
+/** Hints as sheetOf reads them: `key word`. */
+const words = (hints) => hints.map(([key, word]) => `${key} ${word}`);
+/** Whether the cheat sheet on a screen begins with `hints`. */
+const sheetStarts = (screen, hints) => JSON.stringify(sheetOf(screen).slice(0, hints.length)) === JSON.stringify(words(hints));
+/** The leader's hint, while it waits for its key (docs/tui.md, "The leader"): its first rows. */
+const LEADER_HINT = [[LEADER, "then"], ["k", "palette"]];
+/** The open view's list on a screen: the sidebar's rows under its heading (`heading`, that row as
+ *  it stands), down to the rule under them. */
+function listUnder(screen, heading, cols = 80) {
+  const side = sidebarOf(screen, cols), at = side.indexOf(heading), end = at < 0 ? -1 : side.indexOf(UTF8.rule.repeat(listCols(cols)), at + 1);
+  return at < 0 ? [] : side.slice(at + 1, end < 0 ? undefined : end);
+}
+
+/** The sidebar, the same in every view: what is wrong with it (docs/tui.md, "What it shows").
+ *  From the top: the title (`title`: the fixture's name alone, no count), the rows `above` (each a
+ *  string, or what it matches: a deployment's state and reason), an empty row, then the views
+ *  Instances, Souls and Capabilities, each with its key, the `open` one's heading (`heading`, its
+ *  row unless given) with its list under it and a rule between it and each view beside it; a
+ *  rule, then the cheat sheet `sheet` (its first rows, as many as the rows left hold, the leader's
+ *  at least), and nothing under it. From 80 columns the rule between the sidebar and the main
+ *  area (`look.bar`) stands on every row. Answers the faults and the rows of the open view's list. */
+function sidebarFaults(screen, { cols = 80, rows = 24, look = UTF8, title = " fixture", above = [], open = "instances", heading, sheet }) {
+  const faults = [], width = listCols(cols), side = sidebarOf(screen, cols), rule = look.rule.repeat(width);
   const expect = (row, want, what) => {
-    const got = screen[row] ?? "";
-    if (want instanceof RegExp ? !want.test(got) : got !== want) faults.push(`${what} (row ${row + 1}) is ${JSON.stringify(screen[row])}, not ${want instanceof RegExp ? want : JSON.stringify(want)}`);
+    const got = side[row] ?? "";
+    if (want instanceof RegExp ? !want.test(got) : got !== want) faults.push(`${what} (row ${row + 1}) is ${JSON.stringify(side[row])}, not ${want instanceof RegExp ? want : JSON.stringify(want)}`);
   };
-  const rule = (joint) => (split ? look.rule.repeat(listCols(cols)) + joint + look.rule.repeat(cols - listCols(cols) - 1) : look.rule.repeat(cols));
   if (screen.length !== rows) faults.push(`the screen has ${screen.length} rows, not ${rows}`);
-  expect(0, title, "the title row");
-  expect(1, views, "the views row");
-  expect(2, rule(look.down), "the rule under the views");
-  // No rule over the footer: the panes reach down to it.
-  if (screen[rows - 2] !== undefined && /^[─+-]+$/.test(screen[rows - 2])) faults.push(`row ${rows - 1}, over the footer, is a rule: ${JSON.stringify(screen[rows - 2])}`);
-  expect(rows - 1, footer, "the footer");
   if (screen.some((row) => [...row].length > cols)) faults.push(`a row is longer than ${cols} cells`);
-  return faults;
+  if (cols >= 80) screen.forEach((text, i) => { if ([...text][width] !== look.bar) faults.push(`row ${i + 1} has no ${look.bar} in column ${width + 1}, between the sidebar and the main area: ${JSON.stringify(text)}`); });
+  let r = 0, list = [];
+  expect(r++, title, "the title");
+  for (const want of above) expect(r++, want, "a row under the title");
+  expect(r++, "", "the empty row over the views");
+  const views = [["Instances", "1", "instances"], ["Souls", "2", "souls"], ["Capabilities", "3", "capabilities"]];
+  const at = views.findIndex(([, , id]) => id === open);
+  views.forEach(([name, key], i) => {
+    if (i === at && i > 0) expect(r++, rule, `the rule over ${name}, the open view`);
+    expect(r++, i === at && heading !== undefined ? heading : viewRow(name, key, width), i === at ? `the heading of ${name}, the open view` : `the row of ${name}`);
+    if (i !== at) return;
+    const end = side.indexOf(rule, r);
+    list = side.slice(r, end < 0 ? r : end);
+    if (end >= 0) r = end;
+    if (i < views.length - 1) expect(r++, rule, `the rule under the list of ${name}`);
+  });
+  expect(r++, rule, "the rule over the cheat sheet");
+  const kept = sheet.slice(0, Math.max(1, Math.min(sheet.length, rows - r)));
+  for (const want of sheetRows(kept)) expect(r++, want, "a row of the cheat sheet");
+  for (; r < rows; r++) expect(r, "", "a row under the cheat sheet");
+  return { faults, list };
 }
 /** What keeps a screen from being the Instances view of the fixture at that size: nothing, when
  *  it is that view. `selected` is the instance the selection is on; `folded`: `alpha` is
  *  collapsed; `gone`: names no row shows (folded away, or hidden by the filter); `extra`: names of
- *  instances a test added; `detail`: the detail pane holds the focus. With every row hidden the
+ *  instances a test added; `detail`: the detail holds the focus; `heading`: the open view's
+ *  heading, when a filter is typed or kept; `sheet`: the cheat sheet. With every row hidden the
  *  list says that nothing matches the filter, and the detail is empty.
  *  With nothing hidden the list is the Desktop's order, row for row: the cluster, an empty row,
  *  the single instance. With something hidden only what the shared grouping promises whatever it
  *  hides is asserted: which rows are drawn, each once, and which is selected; not where a row
  *  stands among the groups (awebai/oats#971). */
-function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, selected = "alpha", folded = false, gone = [], extra = [], detail = false, footer = footerAt(cols), count = 3 } = {}) {
-  const split = cols >= 80;
-  const faults = chromeFaults(screen, { cols, rows, look, split, footer, count });
+function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, selected = "alpha", folded = false, gone = [], extra = [], detail = false, heading, sheet = LIST_SHEET } = {}) {
+  const { faults, list } = sidebarFaults(screen, { cols, rows, look, heading, sheet });
   const hidden = new Set([...gone, ...(folded ? ["beta"] : [])]);
   // A row is its mark and its name, indented by its level: no disclosure mark and no word (every
   // row here is stopped, which the mark says). A folded row says how many it folds away.
   const row = (name, depth, fold = "") => new RegExp(`^${name === selected ? ">" : " "} ${"  ".repeat(depth)}${literal(look.stopped)} ${name}${fold ? literal(` ${fold}`) : ""}$`);
   const wanted = [["alpha", 0, folded ? "+1" : ""], ["beta", 1], ["gamma", 0], ...extra.map((name) => [name, 0])].filter(([name]) => !hidden.has(name));
-  const list = screen.slice(3, rows - 1).map((text) => (split ? [...text].slice(0, listCols(cols)).join("").trimEnd() : text));
   const NO_MATCH = "   No instance matches the filter.";
   const drawn = list.filter((text) => text !== "" && text !== NO_MATCH);
-  if (wanted.length === 0 && list[0] !== NO_MATCH) faults.push(`the list's first row is ${JSON.stringify(list[0])}, not ${JSON.stringify(NO_MATCH)}`);
+  if (wanted.length === 0 && JSON.stringify(list) !== JSON.stringify([NO_MATCH])) faults.push(`the list is ${JSON.stringify(list)}, not the one row ${JSON.stringify(NO_MATCH)}`);
   if (wanted.length > 0 && list.includes(NO_MATCH)) faults.push("the list says nothing matches");
   if (hidden.size === 0 && extra.length === 0) {
     const order = [wanted[0], wanted[1], null, wanted[2]];
-    order.forEach((want, i) => { if (want ? !row(...want).test(list[i] ?? "") : list[i] !== "") faults.push(`row ${i + 4} of the list is ${JSON.stringify(list[i])}, not ${want ? row(...want) : "empty"}`); });
-    if (drawn.length !== 3) faults.push(`the list draws ${drawn.length} rows, not 3: ${JSON.stringify(drawn)}`);
+    order.forEach((want, i) => { if (want ? !row(...want).test(list[i] ?? "") : list[i] !== "") faults.push(`row ${i + 1} of the list is ${JSON.stringify(list[i])}, not ${want ? row(...want) : "empty"}`); });
+    if (list.length !== order.length) faults.push(`the list has ${list.length} rows, not ${order.length}: ${JSON.stringify(list)}`);
   } else {
     for (const want of wanted) { const n = drawn.filter((text) => row(...want).test(text)).length; if (n !== 1) faults.push(`${n} rows of the list are ${row(...want)}: ${JSON.stringify(drawn)}`); }
     if (drawn.length !== wanted.length) faults.push(`the list draws ${drawn.length} rows, not ${wanted.length}: ${JSON.stringify(drawn)}`);
     for (const name of hidden) if (drawn.some((text) => new RegExp(`\\b${name}\\b`).test(text))) faults.push(`a row still shows ${name}`);
   }
-  if (split) {
-    const pane = screen.slice(3, rows - 1).map((text) => [...text].slice(listCols(cols) + 1).join(""));
-    const title = wanted.length ? `${detail ? " >" : "  "} ${selected}` : "";
+  // From 80 columns the detail stands beside the sidebar, from the first row.
+  if (cols >= 80) {
+    const pane = mainOf(screen, cols);
+    const title = wanted.length ? `${detail ? ">" : " "} ${selected}` : "";
     if (pane[0] !== title) faults.push(`the detail's first row is ${JSON.stringify(pane[0])}, not ${JSON.stringify(title)}`);
-    if (wanted.length && !pane.some((text) => /^ {3}soul {5}(dev|reviewer)$/.test(text))) faults.push("the detail names no soul");
+    if (wanted.length && !pane.some((text) => /^ {2}soul {5}(dev|reviewer)$/.test(text))) faults.push("the detail names no soul");
+    if (!wanted.length && pane.some((text) => text !== "")) faults.push(`the detail is not empty: ${JSON.stringify(pane)}`);
   }
   return faults;
 }
-/** The same for the help: the rules without a joint, a `Keys` list with one row per action in the
- *  table's order, as many as the pane holds over its last row, and no row of the list. */
-function helpFaults(screen, { cols = 80, rows = 24, look = UTF8, count = 3 } = {}) {
-  const faults = chromeFaults(screen, { cols, rows, look, split: false, footer: HELP_FOOTER, count });
-  const area = screen.slice(3, rows - 1);
-  const title = area.findIndex((text) => text.trim() === "Keys");
-  if (title < 0) faults.push("no row is the title `Keys`");
+/** The same for the help: the sidebar beside it as the Instances view draws it, with the help's
+ *  own cheat sheet; in the main area the time of the last read on the help's top row (it is on no
+ *  other screen: docs/tui.md, "The help"), then the title `Keys` and a `Keys` list with one row per
+ *  action in the table's order, as many as the area holds over its last row, and no detail. */
+function helpFaults(screen, { cols = 80, rows = 24, look = UTF8 } = {}) {
+  const { faults } = sidebarFaults(screen, { cols, rows, look, sheet: HELP_SHEET });
+  const pane = mainOf(screen, cols);
+  if (!/^ {2}read \d\d:\d\d:\d\d$/.test(pane[0] ?? "")) faults.push(`the help's top row is ${JSON.stringify(pane[0])}, not the time of the last read`);
+  const area = pane.slice(1);
+  if (area[0]?.trim() !== "Keys") faults.push(`the help's second row is ${JSON.stringify(area[0])}, not the title \`Keys\``);
   const start = area.findIndex((text) => HELP_KEYS[0].test(text));
-  if (start < 0 || start < title) faults.push("no row under the title is `Up, k  up`");
-  else HELP_KEYS.slice(0, area.length - 1 - start).forEach((pattern, i) => { if (!pattern.test(area[start + i] ?? "")) faults.push(`row ${start + i + 4} is ${JSON.stringify(area[start + i])}, which is not ${pattern}`); });
-  if (area.some((text) => /\bstopped$/.test(text))) faults.push("a row of the list is still shown");
+  if (start < 0) faults.push("no row under the title is `Up, k  up`");
+  else HELP_KEYS.slice(0, area.length - 1 - start).forEach((pattern, i) => { if (!pattern.test(area[start + i] ?? "")) faults.push(`row ${start + i + 2} is ${JSON.stringify(area[start + i])}, which is not ${pattern}`); });
+  if (pane.some((text) => /^ {2}soul {5}/.test(text))) faults.push("the detail is still drawn beside the help");
   return faults;
 }
 
-/** What keeps a screen of 80x24 from being the Instances view of a deployment that was not read.
- *  What a failed read becomes is the shared rule's answer, and so are its words: here only that
- *  it is said, on rows of its own under the views, that no instance and no time of a read is
- *  drawn for a deployment that was not read, and that the one pane has no line down its middle.
- *  `title` is what the title row matches; `reason`: the most rows the reason takes (the frame
- *  gives a long one up to four), each started at the margin, with nothing under the last. */
-function notReadFaults(screen, { title = /^ \S+$/, reason = 1 } = {}) {
-  const why = screen.slice(4, 4 + reason), said = why.findIndex((row) => row === "");
-  return [
-    ...(title.test(screen[0] ?? "") ? [] : [`the title row counts instances, or names another deployment: ${JSON.stringify(screen[0])}`]),
-    ...(screen[1] === "  Instances   Souls   Capabilities" ? [] : [`the views row is ${JSON.stringify(screen[1])}`]),
-    ...(screen[2] === UTF8.rule.repeat(80) && screen[22] !== UTF8.rule.repeat(80) ? [] : ["the rule under the views has a joint or is not there, or a rule is over the footer"]),
-    ...(/^ \S/.test(screen[3] ?? "") && /^ \S/.test(screen[4] ?? "") ? [] : [`rows 4 and 5 do not say what state the deployment is in and why: ${JSON.stringify(screen.slice(3, 5))}`]),
-    ...(why.slice(0, said < 0 ? reason : said).every((row) => /^ \S/.test(row)) ? [] : [`a row of the reason does not start at the margin: ${JSON.stringify(why)}`]),
-    ...(screen.slice(said < 0 ? 4 + reason : 4 + said, 23).every((row) => row === "") ? [] : ["something is drawn under the reason"]),
-    ...(screen[23] === PLAIN_FOOTER ? [] : [`the footer is ${JSON.stringify(screen[23])}`]),
-  ];
+/** What keeps a screen from being the Instances view of a deployment that was not read. What a
+ *  failed read becomes is the shared rule's answer, and so are its words: here only that it is
+ *  said in the sidebar, under the title: the state on the row after the title (its time at the
+ *  right, when it has one), then the reason on rows of its own, each started at the margin; that
+ *  no instance is drawn and no detail; and that the cheat sheet is the list's with no instance
+ *  selected. `title` is what the title row matches; `reason`: the most rows the reason takes (it
+ *  is wrapped to the sidebar's width, and the frame gives a long one up to four at 24 rows). */
+function notReadFaults(screen, { cols = 80, rows = 24, title = /^ \S+$/, reason = 4 } = {}) {
+  const side = sidebarOf(screen, cols), said = side.indexOf("", 1) - 1;
+  const { faults, list } = sidebarFaults(screen, { cols, rows, title, above: Array(Math.max(0, said)).fill(/^ \S/), sheet: LIST_SHEET });
+  if (said < 2 || said > 1 + reason) faults.push(`the rows under the title do not say what state the deployment is in and why, on at most ${reason} rows: ${JSON.stringify(side.slice(1, Math.max(3, said + 1)))}`);
+  if (list.length) faults.push(`the list draws rows: ${JSON.stringify(list)}`);
+  if (mainOf(screen, cols).some((text) => text !== "")) faults.push("something is drawn beside the sidebar");
+  return faults;
 }
 
-/** The same for the switcher, which takes the whole body: the header says `workspaces` where a
- *  workspace's name stands, with no count and no time of a read; the rules have no joint; the body
- *  is `body`, row for row from its first (each a string, or what the row matches), and nothing
- *  under it. `open`: a workspace is open, so Esc has a view to close the switcher onto and the
- *  footer offers it. */
+/** The same for the switcher, in the main area: the title says `workspaces` where a workspace's
+ *  name stands, no view of the accordion is open, and the main area is `body`, row for row from
+ *  the first (each a string, or what the row matches), and nothing under it. `open`: a workspace
+ *  is open, so Esc has a view to close the switcher onto and the cheat sheet offers it. */
 function switcherFaults(screen, { cols = 80, rows = 24, look = UTF8, body, open = true }) {
-  const faults = chromeFaults(screen, { cols, rows, look, split: false, footer: open ? SWITCHER_FOOTER : SWITCHER_FOOTER.replace("   Esc close", ""), title: SWITCHER_TITLE, views: "  Instances   Souls   Capabilities" });
-  const area = screen.slice(3, rows - 1);
-  body.forEach((want, i) => { if (want instanceof RegExp ? !want.test(area[i] ?? "") : area[i] !== want) faults.push(`row ${i + 4} is ${JSON.stringify(area[i])}, not ${want instanceof RegExp ? want : JSON.stringify(want)}`); });
+  const { faults } = sidebarFaults(screen, { cols, rows, look, title: " workspaces", open: null, sheet: open ? SWITCHER_SHEET : SWITCHER_SHEET.filter(([key]) => key !== "Esc") });
+  const area = mainOf(screen, cols);
+  body.forEach((want, i) => { if (want instanceof RegExp ? !want.test(area[i] ?? "") : area[i] !== want) faults.push(`row ${i + 1} of the switcher is ${JSON.stringify(area[i])}, not ${want instanceof RegExp ? want : JSON.stringify(want)}`); });
   if (!area.slice(body.length).every((text) => text === "")) faults.push(`something is drawn under the ${body.length} rows of the switcher`);
   return faults;
 }
@@ -615,19 +655,12 @@ test("on a terminal of 80x24 `oats tui --dir` shows the fixture's instances, gro
   const term = await terminal(t, { world });
   const run = await tui(term, {}, { world });
   const two = (left, right) => `${left.padEnd(38)}│${right}`.trimEnd();
-  assert.deepEqual(term.screen().map((row) => row.replace(/read \d\d:\d\d:\d\d$/, "read HH:MM:SS")), [
-    `${" fixture".padEnd(70)}3 stopped`,
-    "  Instances   Souls   Capabilities                                read HH:MM:SS",
-    `${"─".repeat(38)}┬${"─".repeat(41)}`,
-    two("> ○ alpha", "   alpha"),
-    two("    ○ beta", "   soul     dev"),
-    two("", "   state    stopped"),
-    two("  ○ gamma", "   harness  claude"),
-    two("", "   work     directory"),
-    two("", "   home     …/agents/dev/instances/alpha"),
-    ...Array(14).fill(two("", "")),
-    FOOTER,
-  ], "the Instances view, row for row");
+  // The sidebar: the title (the name alone: no count, and no time of a read), an empty row, the
+  // views with the open one's list, and the cheat sheet; the detail beside it from the first row.
+  const rule = "─".repeat(38);
+  const side = [" fixture", "", viewRow("Instances", "1"), "> ○ alpha", "    ○ beta", "", "  ○ gamma", rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(LIST_SHEET)];
+  const detail = ["   alpha", "   soul     dev", "   state    stopped", "   harness  claude", "   work     directory", "   home     …/agents/dev/instances/alpha"];
+  assert.deepEqual(term.screen(), Array.from({ length: 24 }, (_, i) => two(side[i] ?? "", detail[i] ?? "")), "the Instances view, row for row");
 
   term.press("j");
   await run.view("after j: the next row, the child", { selected: "beta" });
@@ -641,13 +674,13 @@ test("on a terminal of 80x24 `oats tui --dir` shows the fixture's instances, gro
   await run.view("after l on an open row: its first child", { selected: "beta" });
 
   term.press("/");
-  await run.view("after /: the filter field takes the footer", { selected: "beta", footer: /^C-\\ commands {3}\/ +Enter keep {3}Esc clear$/ });
+  await run.view("after /: the filter field is the heading of the view, and the cheat sheet its keys", { selected: "beta", heading: viewRow("/", "1"), sheet: FIELD_SHEET });
   tmuxOn("send-keys", "-l", "-t", term.pane, "gamq");
-  await run.view("after text: q is text in the field, and nothing matches", { gone: ["alpha", "beta", "gamma"], footer: /^C-\\ commands {3}\/gamq +Enter keep {3}Esc clear$/ });
+  await run.view("after text: q is text in the field, and nothing matches", { gone: ["alpha", "beta", "gamma"], heading: viewRow("/gamq", "1"), sheet: FIELD_SHEET });
   term.press("BSpace");
-  await run.view("after Backspace: the one match, selected", { selected: "gamma", gone: ["alpha", "beta"], footer: /^C-\\ commands {3}\/gam +Enter keep {3}Esc clear$/ });
+  await run.view("after Backspace: the one match, selected", { selected: "gamma", gone: ["alpha", "beta"], heading: viewRow("/gam", "1"), sheet: FIELD_SHEET });
   term.press("Enter");
-  await run.view("after Enter: the filter is kept and the keys are keys again", { selected: "gamma", gone: ["alpha", "beta"], footer: /^C-\\ commands {3}\/gam +\/ filter {3}Tab detail {3}\? help {3}q quit$/ });
+  await run.view("after Enter: the filter is kept, named on the heading, and the keys are keys again", { selected: "gamma", gone: ["alpha", "beta"], heading: viewRow("Instances  /gam", "1"), sheet: KEPT_SHEET });
   term.press("Escape");
   await run.view("after Esc: the filter is cleared, the selection stays on its instance", { selected: "gamma" });
 
@@ -655,26 +688,26 @@ test("on a terminal of 80x24 `oats tui --dir` shows the fixture's instances, gro
   // the key asks for one is packages/tui/test/main.test.mjs's; a read comes every five seconds too.)
   await world.spawn("reviewer", { name: "delta" });
   term.press("r");
-  const more = { selected: "gamma", extra: ["delta"], count: 4 };
+  const more = { selected: "gamma", extra: ["delta"] };
   await run.view("after r: the new instance", more);
 
   term.press("Tab");
-  await run.view("after Tab: the detail holds the focus", { ...more, detail: true, footer: DETAIL_FOOTER });
+  await run.view("after Tab: the detail holds the focus", { ...more, detail: true, sheet: DETAIL_SHEET });
   term.press("Escape");
   await run.view("after Esc: the list has it again", more);
   term.press("?");
-  await run.help("after ?", { count: 4 });
+  await run.help("after ?");
   term.press("Escape");
   await run.view("after Esc closed the help", more);
   term.press("?");
-  await run.help("after ? again", { count: 4 });
+  await run.help("after ? again");
   term.press("?");
   await run.view("after ? closed the help", more);
 
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
   await term.prompt("after q");
-  assert.equal(term.screen().includes(FOOTER), false, `the view is gone from the shell's screen:\n${term.shows()}`);
+  assert.equal(term.screen().some((row) => LEAD_ROW.test(row)), false, `the view is gone from the shell's screen:\n${term.shows()}`);
   assert.equal(alive(run.pid), false, "the process is gone");
 });
 
@@ -682,14 +715,15 @@ test("on a terminal of 80x24 `oats tui --dir` shows the fixture's instances, gro
  *  in flight is gone, and `stty -g`, the pane's modes and every tmux option are what they were
  *  before the start; while it ran, only the alternate screen, the cursor, autowrap and bracketed
  *  paste were changed. `arrive(term, run)` brings the TUI to where it is left, and answers the
- *  pids of what holds its read then. `env` is set in the terminal's shell over the world's, and
- *  `start` is what `tui` is told of the start (its arguments, its first screen). */
-async function leavesTheTerminalIntact(t, { how, status, world = WORLD, env = {}, start = {}, arrive, leave }) {
-  const term = await terminal(t, { world, env });
+ *  pids of what holds its read then. `env` is set in the terminal's shell over the world's,
+ *  `start` is what `tui` is told of the start (its arguments, its first screen), and `size` the
+ *  terminal's (`{ cols, rows }`, 80x24 when not given), which every screen of the run is read at. */
+async function leavesTheTerminalIntact(t, { how, status, world = WORLD, env = {}, start = {}, size = {}, arrive, leave }) {
+  const term = await terminal(t, { world, env, ...size });
   const before = await term.state("before the start");
   assertShellModes(before.flags, "before the start");
   const mine = everything();
-  const run = await tui(term, {}, { world, ...start });
+  const run = await tui(term, size, { world, ...start });
   assertRunningModes(term, `while it runs, before ${how}`);
   assert.deepEqual(everything(), mine, "the TUI made no session, window or pane");
 
@@ -711,7 +745,7 @@ async function leavesTheTerminalIntact(t, { how, status, world = WORLD, env = {}
   assert.deepEqual(after.flags, before.flags, `the pane's modes after ${how}`);
   assertShellModes(after.flags, `after ${how}`);
   assert.deepEqual(after, before, `the terminal and the server after ${how}`);
-  for (const footer of [FOOTER, SWITCHER_FOOTER]) assert.equal(term.screen().includes(footer), false, `the shell's screen is back:\n${term.shows()}`);
+  assert.equal(term.screen().some((row) => LEAD_ROW.test(row)), false, `the shell's screen is back, with no cheat sheet on it:\n${term.shows()}`);
 }
 
 for (const [how, status, leave, first = async () => {}] of [
@@ -739,12 +773,21 @@ for (const [how, status, leave, first = async () => {}] of [
   });
 }
 
-/** A choice of the switcher at 80 columns: the selection's mark, the mark of the workspace that
- *  is open, the name in a column a third of the width, and two cells on what stands beside it. */
-const choice = (label, place, { selected = false, open = false } = {}) => `${selected ? ">" : " "} ${open ? "*" : " "} ${label.padEnd(26)}  ${place}`.trimEnd();
+/** The switcher's area at `cols` columns: the main area beside the sidebar. Its names stand in a
+ *  column a third of its width, of twenty cells at least (views/switcher.mjs). */
+const switcherCols = (cols) => cols - listCols(cols) - 3;
+const labelCols = (cols) => Math.min(Math.max(Math.floor(switcherCols(cols) / 3), 20), 40);
+/** A choice of the switcher at `cols` columns: the selection's mark, the mark of the workspace
+ *  that is open, the name in its column, and two cells on what stands beside it, which is cut with
+ *  `…` where it would reach the area's last cell. */
+const choice = (label, place, { selected = false, open = false } = {}, cols = 80) => {
+  const room = switcherCols(cols) - 1 - (4 + labelCols(cols) + 2);
+  const beside = place.length > room ? `${place.slice(0, room - 1)}…` : place;
+  return `${selected ? ">" : " "} ${open ? "*" : " "} ${label.padEnd(labelCols(cols))}  ${beside}`.trimEnd();
+};
 /** The same where what stands beside the name is the shared home's to word: `beside` is the
  *  source of what it matches. */
-const choiceLike = (label, beside, marks) => new RegExp(`^${literal(choice(label, "", marks).padEnd(32))}${beside}$`);
+const choiceLike = (label, beside, marks, cols = 80) => new RegExp(`^${literal(choice(label, "", marks, cols).padEnd(4 + labelCols(cols) + 2))}${beside}$`);
 /** The switcher in the world with the machine: the fixture's workspace, open and selected, and
  *  under the shared heading the machine that did not answer, by its own name with the short
  *  reason the shared home gives it. */
@@ -791,7 +834,7 @@ function serverNotRead(world, home, said) {
   writeFileSync(front, readFileSync(front, "utf8").replace("\n", `\ncase " $* " in *" -S "${shq(socket)}" "*) echo ${shq(said)} >&2; exit 1 ;; esac\n`));
 }
 
-test("the reason the kernel gives for an instance it could not observe stands in the detail under the state, after `OATS says:` and with no quotation mark: with a tmux that fails for the socket one instance is recorded on, that instance reads the shared `state unknown` in the list, `unreachable` on its detail's state line, and is counted as unknown, its detail has the kernel's text wrapped under `state`, and the others are stopped as before; after q the terminal is intact", { skip: NO_TMUX }, async (t) => {
+test("the reason the kernel gives for an instance it could not observe stands in the detail under the state, after `OATS says:` and with no quotation mark: with a tmux that fails for the socket one instance is recorded on, that instance reads the shared `state unknown` in the list, `unreachable` on its detail's state line, and no row counts it (the title is the workspace's name alone), its detail has the kernel's text wrapped under `state`, and the others are stopped as before; after q the terminal is intact", { skip: NO_TMUX }, async (t) => {
   const world = await deployment(t); // its own: this test changes a home's record and the fixture's tmux
   serverNotRead(world, join(world.fx.root, "reviewer", "instances", "gamma"), NOT_READ);
 
@@ -799,22 +842,19 @@ test("the reason the kernel gives for an instance it could not observe stands in
   // Only the row whose state is not known has a word, the shared label `state unknown`: the word
   // column is as wide as it, and starts at cell 20.
   const listed = (row, word) => `${row.padEnd(20)}${word}`;
-  /** The whole screen with `selected` selected and `detail` as the rows of its detail. */
+  /** The whole screen with `selected` selected and `detail` as the rows of its detail beside the
+   *  sidebar: the title, the views with the list, and the cheat sheet, the list's whatever the
+   *  row: it names no act, the instance whose state is not known or another. */
   const screenOf = (selected, detail) => {
-    const at = (name) => (name === selected ? ">" : " ");
+    const at = (name) => (name === selected ? ">" : " "), rule = "─".repeat(38);
     const list = [`${at("alpha")} ○ alpha`, `${at("beta")}   ○ beta`, "", listed(`${at("gamma")} ? gamma`, "state unknown")];
-    return [
-      `${" fixture".padEnd(59)}2 stopped  1 unknown`,
-      `${"  Instances   Souls   Capabilities".padEnd(66)}read HH:MM:SS`,
-      `${"─".repeat(38)}┬${"─".repeat(41)}`,
-      ...Array.from({ length: 20 }, (_, i) => two(list[i] ?? "", detail[i] ?? "")),
-      FOOTER,
-    ];
+    const side = [" fixture", "", viewRow("Instances", "1"), ...list, rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(LIST_SHEET)];
+    return Array.from({ length: 24 }, (_, i) => two(side[i] ?? "", detail[i] ?? ""));
   };
-  /** What keeps a screen from being `want`, row for row, but for its two clock times: when it was
-   *  read (the header) and when the instance was started (the detail of a launched home). */
+  /** What keeps a screen from being `want`, row for row, but for its clock time: when the
+   *  instance was started (the detail of a launched home). */
   const faults = (want) => (screen) => {
-    const got = screen.map((row) => row.replace(/read \d\d:\d\d:\d\d$/, "read HH:MM:SS").replace(/(│ {3}started {2})\S.*$/, "$1HH:MM"));
+    const got = screen.map((row) => row.replace(/(│ {3}started {2})\S.*$/, "$1HH:MM"));
     return [...(got.length === want.length ? [] : [`the screen has ${got.length} rows, not ${want.length}`]), ...want.flatMap((row, i) => (got[i] === row ? [] : [`row ${i + 1} is ${JSON.stringify(got[i])}, not ${JSON.stringify(row)}`]))];
   };
   const ALPHA = ["   alpha", "   soul     dev", "   state    stopped", "   harness  claude", "   work     directory", "   home     …/agents/dev/instances/alpha"];
@@ -835,7 +875,7 @@ test("the reason the kernel gives for an instance it could not observe stands in
       assert.equal(run.status(), null, "oats tui still runs with that detail drawn");
       // However the reason wraps, the rows under the state are the speaker's words and the
       // kernel's text, and nothing around them.
-      const pane = term.screen().slice(3, 23).map((row) => [...row].slice(listCols(80) + 1).join(""));
+      const pane = term.screen().map((row) => [...row].slice(listCols(80) + 1).join(""));
       const state = pane.indexOf("   state    unreachable"), under = [];
       for (let i = state + 1; /^ {12}\S/.test(pane[i] ?? ""); i++) under.push(pane[i].trim());
       assert.equal(under.join(" "), `OATS says: ${NOT_READ}`, `the rows under the state:\n${term.shows()}`);
@@ -987,7 +1027,7 @@ test("Ctrl+Z, the deployment removed, fg: the view returns and says, in the shar
   assertRunningModes(term, "after fg");
   t.diagnostic(`after fg with the deployment gone the pane shows:\n${term.shows()}`);
   term.press("?");
-  await until(term, () => term.screen().some((row) => row.trim() === "Keys") && term.screen().at(-1) === HELP_FOOTER, "the help, after fg with the deployment gone");
+  await until(term, () => mainOf(term.screen()).some((row) => row.trim() === "Keys") && JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words(HELP_SHEET)), "the help, with its cheat sheet, after fg with the deployment gone");
   assert.equal(run.status(), null, "it still runs");
   term.press("Escape");
   await untilScreen(term, notReadFaults, "the view again after the help was closed");
@@ -997,7 +1037,7 @@ test("Ctrl+Z, the deployment removed, fg: the view returns and says, in the shar
   assert.equal(await run.ended("after fg and q"), 0, term.shows());
 });
 
-test("it follows the terminal's size: at 60x15 the view still draws, in one pane; below it, in either direction, one line gives the size found and the size needed; back at 80x24 the two panes return with the selection where it was; under 80 columns the detail is a page of its own", { skip: NO_TMUX }, async (t) => {
+test("it follows the terminal's size: at 60x15 the view still draws, the sidebar alone; below it, in either direction, one line gives the size found and the size needed; back at 80x24 the detail returns beside the sidebar with the selection where it was; under 80 columns the detail is a page of its own", { skip: NO_TMUX }, async (t) => {
   const term = await terminal(t);
   const run = await tui(term);
   // A detached session keeps the size it was made with, and resize-window sets window-size to
@@ -1024,17 +1064,21 @@ test("it follows the terminal's size: at 60x15 the view still draws, in one pane
 
   // With the focus on the detail, a terminal under 80 columns shows the detail alone.
   term.press("Tab");
-  await run.view("after Tab", { selected: "beta", detail: true, footer: DETAIL_FOOTER });
+  await run.view("after Tab", { selected: "beta", detail: true, sheet: DETAIL_SHEET });
   resize(79, 24);
+  // The page is the whole screen from its first row: no title, no list and no cheat sheet; its
+  // first row carries its keys at the right instead, dim, ending a cell from the edge: the
+  // cheat sheet's but for the leader, the palette, help and quit.
   const pageFaults = (screen) => [
-    ...chromeFaults(screen, { cols: 79, rows: 24, look: UTF8, split: false, footer: DETAIL_FOOTER, count: 3 }),
-    ...(screen[3] === " > beta" ? [] : [`row 4 is ${JSON.stringify(screen[3])}, not the detail's title`]),
+    ...(screen.length === 24 ? [] : [`the screen has ${screen.length} rows, not 24`]),
+    ...(screen.some((row) => [...row].length > 79) ? ["a row is longer than 79 cells"] : []),
+    ...(screen[0] === `${" > beta".padEnd(60)}Tab back   n spawn` ? [] : [`row 1 is ${JSON.stringify(screen[0])}, not the detail's title with its keys`]),
     ...(screen.includes("   parent   alpha") ? [] : ["no row names the parent"]),
-    ...(screen.some((row) => /\balpha +stopped$/.test(row)) ? ["a row of the list is still shown"] : []),
+    ...(screen.some((row) => row === " fixture" || /^[> ] +○ \w/.test(row) || LEAD_ROW.test(row)) ? ["a row of the sidebar is still shown"] : []),
   ];
   await untilScreen(term, pageFaults, "the detail as a page at 79x24");
   term.press("Escape");
-  await run.view("after Esc at 79x24: the list, in one pane", { cols: 79, rows: 24, selected: "beta" });
+  await run.view("after Esc at 79x24: the list, the sidebar alone", { cols: 79, rows: 24, selected: "beta" });
 
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
@@ -1110,21 +1154,24 @@ test("started outside a deployment and with no --dir, it opens on the switcher w
   // What was asked for is not there: a --dir is never answered with the switcher.
   await refused(`--dir ${shq(here)}`, "for a --dir in no deployment, with a deployment in ~/Agents");
 
+  // 120 columns: at 80 the switcher beside the sidebar has twelve cells for what stands beside a
+  // name, which would cut the folder's path and the workspace's place.
+  const cols = 120;
   await leavesTheTerminalIntact(t, {
-    how: "q in the switcher of a run started outside a deployment", status: 0, env: { HOME: home }, leave: (term) => term.press("q"),
-    // Nothing is open yet: Esc has no view to close the switcher onto, and the footer does not offer it.
-    start: { args: "", first: (run) => run.switcher("at the start", { open: false, body: [OFFERED, choice("acme-ledger", "~/Agents/acme-ledger", { selected: true })] }) },
+    how: "q in the switcher of a run started outside a deployment", status: 0, env: { HOME: home }, size: { cols }, leave: (term) => term.press("q"),
+    // Nothing is open yet: Esc has no view to close the switcher onto, and the cheat sheet does not offer it.
+    start: { args: "", first: (run) => run.switcher("at the start", { open: false, body: [OFFERED, choice("acme-ledger", "~/Agents/acme-ledger", { selected: true }, cols)] }) },
     arrive: async (term, run) => {
       term.press("Enter");
-      // The view of that deployment: its folder's name in the header, and the state and the
+      // The view of that deployment: its folder's name in the title, and the state and the
       // reason of a deployment that was not read, which are the shared home's words.
-      await untilScreen(term, (screen) => notReadFaults(screen, { title: /^ acme-ledger$/, reason: 4 }), "the Instances view of the folder's deployment after Enter");
+      await untilScreen(term, (screen) => notReadFaults(screen, { cols, title: /^ acme-ledger$/, reason: 4 }), "the Instances view of the folder's deployment after Enter");
       assert.equal(run.status(), null, "oats tui still runs after Enter");
       term.press("w");
       // It is served now, so it is no folder to open: it is this run's one workspace, which the
       // shared home lists by its machine and a short reason, under its heading for what it
       // matched to no workspace.
-      await run.switcher("after w", { body: [UNMATCHED, choiceLike("acme-ledger", "This machine \\S+ \\S.*", { selected: true, open: true })] });
+      await run.switcher("after w", { body: [UNMATCHED, choiceLike("acme-ledger", "This machine \\S+ \\S.*", { selected: true, open: true }, cols)] });
       return []; // no read is held
     },
   });
@@ -1202,27 +1249,27 @@ test("started in an agent's pane, in the instance's home and with the variables 
   }
 });
 
-test("tui.json is honoured: the key it gives an action is that action's key in the footer, in the help and at the keyboard, and the default it replaced is no key; a file the TUI cannot use is named on stderr with E_TUI_CONFIG, status 1, and nothing is drawn", { skip: NO_TMUX }, async (t) => {
+test("tui.json is honoured: the key it gives an action is that action's key in the cheat sheet, in the help and at the keyboard, and the default it replaced is no key; a file the TUI cannot use is named on stderr with E_TUI_CONFIG, status 1, and nothing is drawn", { skip: NO_TMUX }, async (t) => {
   const good = join(base, "config-good"), bad = join(base, "config-bad");
   for (const [dir, value] of [[good, { keys: { quit: ["x"] } }], [bad, { keys: { fly: ["x"] } }]]) {
     mkdirSync(join(dir, "oats"), { recursive: true });
     writeFileSync(join(dir, "oats", "tui.json"), JSON.stringify(value));
   }
   const term = await terminal(t, { env: { XDG_CONFIG_HOME: good } });
-  const run = await tui(term, { footer: FOOTER.replace("q quit", "x quit") });
+  const withX = (hints) => hints.map(([key, word]) => (word === "quit" ? ["x", word] : [key, word]));
+  const run = await tui(term, { sheet: withX(LIST_SHEET) });
   term.press("q"); // no key now: read, and nothing happens
   term.press("?");
-  // At 80x24 the help's first page ends fifty rows above `quit`: the table holds the three views,
-  // `workspaces`, `open` four times with the agent's terminal in nine rows and the Souls view's and
-  // the Capabilities view's in two each, `soul-instances`, `zoom` in two, `close-terminal` in two,
-  // `tab-previous` and `tab-next`, the split's five in eight rows (`split-right`, `split-down` and
-  // `group-next` in two each, `tab-move` and `group-close` in one), the four acts in six rows with
-  // the two rules of a confirmation in four under them, and the spawn's three in nine rows (`spawn`
-  // in four, `spawn-another` in three, `spawn-check` in two) (HELP_KEYS); the movement keys scroll
-  // the help, and fifty rows down show it.
-  for (let i = 0; i < 50; i++) term.press("j");
-  await until(term, () => term.screen().some((row) => /^ *x {2,}quit$/.test(row)) && term.screen().at(-1) === HELP_FOOTER.replace("q quit", "x quit"), "the help with x as the quit key, after a q that did not quit");
-  assert.equal(term.screen().some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
+  // At 80x24 the help has the 39 cells of the main area beside the sidebar, and its line of `quit`
+  // is its 120th row or so: under the views, `workspaces` and the palette, `open` four times with
+  // the agent's terminal and the leader's keys under it (whose rows depend on how the leader's label
+  // wraps: one more with `Ctrl+\` than with `Alt+O`), `soul-instances`, the open terminal's keys, the
+  // split's, the four acts with the rules of a confirmation under them, and the spawn's, each
+  // sentence wrapped to that width. The movement keys scroll the help: with either leader the line
+  // of `quit` is on the screen from 100 rows down to 121, and 110 rows down show it.
+  for (let i = 0; i < 110; i++) term.press("j");
+  await until(term, () => mainOf(term.screen()).some((row) => /^ *x {2,}quit$/.test(row)) && JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words(withX(HELP_SHEET))), "the help with x as the quit key, in it and in its cheat sheet, after a q that did not quit");
+  assert.equal(mainOf(term.screen()).some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
   term.press("Escape");
   await run.view("after the help was closed");
   term.press("x");
@@ -1256,12 +1303,12 @@ test("a bracketed paste outside the filter field is dropped whole: a pasted q do
   assertRunningModes(term, "after the pastes");
 
   term.press("/");
-  await run.view("after /", { footer: /^C-\\ commands {3}\/ +Enter keep {3}Esc clear$/ });
+  await run.view("after /", { heading: viewRow("/", "1"), sheet: FIELD_SHEET });
   paste("gam\nq\n");
-  await run.view("after a paste into the field: its first line", { selected: "gamma", gone: ["alpha", "beta"], footer: /^C-\\ commands {3}\/gam +Enter keep {3}Esc clear$/ });
+  await run.view("after a paste into the field: its first line", { selected: "gamma", gone: ["alpha", "beta"], heading: viewRow("/gam", "1"), sheet: FIELD_SHEET });
   paste("\u202Ema"); // a bidi override: the display filter replaces it
-  term.press("Enter"); // read after the paste: the footer shows what the field held then
-  await run.view("after a paste the display filter would change, then Enter: nothing was added", { selected: "gamma", gone: ["alpha", "beta"], footer: /^C-\\ commands {3}\/gam +\/ filter {3}Tab detail {3}\? help {3}q quit$/ });
+  term.press("Enter"); // read after the paste: the heading names what the field held then
+  await run.view("after a paste the display filter would change, then Enter: nothing was added", { selected: "gamma", gone: ["alpha", "beta"], heading: viewRow("Instances  /gam", "1"), sheet: KEPT_SHEET });
   term.press("Escape");
   await run.view("after Esc cleared the filter", { selected: "gamma" });
 
@@ -1298,8 +1345,8 @@ test("in a locale that is not UTF-8 the view's rules and marks are ASCII, and th
   const term = await terminal(t, { locale: ASCII.locale });
   const run = await tui(term, { look: ASCII });
   const screen = term.screen();
-  assert.equal(screen[2], `${"-".repeat(38)}+${"-".repeat(41)}`);
-  assert.equal(screen[22], `${"".padEnd(38)}|`, "no rule over the footer: the line between the panes reaches it");
+  assert.equal(sidebarOf(screen)[7], "-".repeat(38), "the rule under the list");
+  assert.equal(screen[23], `${"".padEnd(38)}|`, "the line between the sidebar and the main area reaches the last row");
   assert.equal(screen[3].slice(0, 38).trimEnd(), "> - alpha");
   assert.equal(screen.some((row) => /[^\x20-\x7e]/.test(row)), false, `every character on the screen is printable ASCII:\n${term.shows()}`);
   term.press("h");
@@ -1313,33 +1360,33 @@ test("in a locale that is not UTF-8 the view's rules and marks are ASCII, and th
   assert.equal(await run.ended("after q"), 0, term.shows());
 });
 
-test("the Souls view, with the real `oats souls`: the leader then 2 shows the workspace's souls, each with its instances here counted; Enter shows the selected soul's detail; i shows its instances in the Instances view, filtered by that soul and said so in the footer; Esc clears the filter; q exits 0", { skip: NO_TMUX }, async (t) => {
+test("the Souls view, with the real `oats souls`: the leader then 2 shows the workspace's souls, each with its instances here counted; Enter shows the selected soul's detail; i shows its instances in the Instances view, filtered by that soul and said so on its heading; Esc clears the filter; q exits 0", { skip: NO_TMUX }, async (t) => {
   const term = await terminal(t);
   const run = await tui(term);
-  const footer = () => term.screen().at(-1) ?? "";
   const row = (name) => term.screen().find((line) => new RegExp(`^[> ] ■ ${name}\\b`).test(line)) ?? null;
-  term.press("C-\\");
-  await until(term, () => footer().startsWith("C-\\   k palette"), "the leader's hint");
+  term.press(LEADER_KEY);
+  await until(term, () => sheetStarts(term.screen(), LEADER_HINT), "the leader's hint");
   term.press("2");
   await until(term, () => row("dev") !== null && row("reviewer") !== null, "the souls, read with `oats souls`");
   assert.match(row("dev"), /^[> ] ■ dev ·2(?: |│|$)/, "dev has alpha and beta here");
   assert.match(row("reviewer"), /^[> ] ■ reviewer ·1(?: |│|$)/, "reviewer has gamma");
-  assert.equal(term.screen()[1].includes("Souls"), true);
+  assert.deepEqual(sidebarOf(term.screen()).slice(2, 5), [viewRow("Instances", "1"), UTF8.rule.repeat(38), viewRow("Souls", "2")], `the Souls view is the open one, its heading under a rule:\n${term.shows()}`);
   // Move to dev, wherever soulRows sorts it.
   if (!row("dev").startsWith(">")) { term.press("k"); await until(term, () => row("dev")?.startsWith(">"), "dev selected"); }
   term.press("Enter");
-  await until(term, () => footer().includes("Enter instances"), "the detail holds the focus: Enter shows the soul's instances");
-  const detail = () => term.screen().slice(3, -1).map((line) => line.split("│")[1] ?? "");
+  await until(term, () => sheetStarts(term.screen(), [LEAD_HINT, PALETTE_HINT, ["Tab", "back"], ["Enter", "instances"]]), "the detail holds the focus: Tab goes back to the list, Enter shows the soul's instances");
+  const detail = () => term.screen().map((line) => line.split("│")[1] ?? "");
   assert.equal(detail()[0].trimEnd(), " > dev", `the detail is dev's, with the focus:\n${term.shows()}`);
   assert.equal(detail().some((line) => line.trim() === "○ alpha  ○ beta"), true, `its instances here, with their marks:\n${term.shows()}`);
   term.press("i");
-  await until(term, () => footer().startsWith(`${LEAD}soul dev `), "the Instances view, filtered by dev");
-  const shown = () => term.screen().slice(3, -1).map((line) => line.split("│")[0]).join("\n");
+  const filtered = viewRow("Instances  soul dev", "1");
+  await until(term, () => sidebarOf(term.screen())[2] === filtered, "the Instances view, filtered by dev, which its heading says");
+  const shown = () => listUnder(term.screen(), sidebarOf(term.screen())[2]).join("\n");
   assert.match(shown(), /alpha/);
   assert.match(shown(), /beta/);
   assert.doesNotMatch(shown(), /gamma/, "the reviewer's instance is not dev's");
   term.press("Escape");
-  await until(term, () => /gamma/.test(shown()) && !footer().includes("soul dev"), "Esc clears the soul filter");
+  await until(term, () => /gamma/.test(shown()) && sidebarOf(term.screen())[2] === viewRow("Instances", "1"), "Esc clears the soul filter, and the heading says no more of it");
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
 });
@@ -1353,11 +1400,10 @@ test("the Capabilities view, with the real `oats capabilities` and `oats souls`:
   });
   const term = await terminal(t, { world });
   const run = await tui(term, {}, { world });
-  const footer = () => term.screen().at(-1) ?? "";
-  const list = () => term.screen().slice(3, -1).map((line) => line.split("│")[0].trimEnd());
-  const detail = () => term.screen().slice(3, -1).map((line) => (line.split("│")[1] ?? "").trimEnd());
-  term.press("C-\\");
-  await until(term, () => footer().startsWith("C-\\   k palette"), "the leader's hint");
+  const list = () => listUnder(term.screen(), viewRow("Capabilities", "3"));
+  const detail = () => term.screen().map((line) => (line.split("│")[1] ?? "").trimEnd());
+  term.press(LEADER_KEY);
+  await until(term, () => sheetStarts(term.screen(), LEADER_HINT), "the leader's hint");
   term.press("3");
   await until(term, () => list().some((line) => /^> +acme\.notes$/.test(line)), "the capabilities, read with `oats capabilities`, the first selected");
   assert.equal(list()[0], " Workspace owned", `the section of the member's capabilities heads the list:\n${term.shows()}`);
@@ -1365,14 +1411,14 @@ test("the Capabilities view, with the real `oats capabilities` and `oats souls`:
   assert.equal(detail()[0], "   acme.notes", `the detail is the selected capability's:\n${term.shows()}`);
   assert.equal(detail()[1], "   Notes the fixture keeps.", "its description");
   term.press("Enter");
-  await until(term, () => footer().startsWith(`${LEAD}Enter soul`), "the detail holds the focus, a soul of Used by marked: Enter shows it");
+  await until(term, () => JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words([LEAD_HINT, PALETTE_HINT, ["Tab", "back"], ["Enter", "soul"], ...LAST_HINTS])), "the detail holds the focus, a soul of Used by marked: Tab goes back to the list, Enter shows it");
   assert.equal(detail()[0], " > acme.notes", `the detail has the focus:\n${term.shows()}`);
   const used = detail().findIndex((line) => /^ {3}Used by\b/.test(line));
   assert.ok(used > 0, `the detail says which souls use it:\n${term.shows()}`);
   assert.deepEqual(detail().slice(used + 1).filter(Boolean), ["   > ■ dev ·2"], `dev uses it, marked, with alpha and beta carrying it; reviewer does not:\n${term.shows()}`);
   term.press("Enter");
-  const soul = (name) => list().find((line) => new RegExp(`^[> ] ■ ${name}\\b`).test(line)) ?? null;
-  await until(term, () => footer().startsWith(`${LEAD}Enter detail   i instances`) && soul("dev") !== null, "the Souls view");
+  const soul = (name) => listUnder(term.screen(), viewRow("Souls", "2")).find((line) => new RegExp(`^[> ] ■ ${name}\\b`).test(line)) ?? null;
+  await until(term, () => JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words([LEAD_HINT, PALETTE_HINT, ["Enter", "detail"], ["n", "spawn"], ...LAST_HINTS])) && soul("dev") !== null, "the Souls view, its list focused: Enter shows the detail, n spawns");
   assert.match(soul("dev"), /^> ■ dev ·2(?: |$)/, `dev is selected in the Souls view:\n${term.shows()}`);
   assert.equal(soul("reviewer")?.startsWith(" "), true, "and reviewer is not");
   term.press("q");

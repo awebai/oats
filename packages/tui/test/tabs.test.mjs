@@ -14,7 +14,7 @@ import { draw, instanceRow, observed, stateOf } from "./helpers.mjs";
 
 /** The geometry of the frame before each key: the store reads it for a move, never keeps it. */
 const AT = Object.freeze({ page: 19, extent: 0, room: 19, cols: 38 });
-const FULL = "4 terminals are open; close one with C-\\ w.";
+const FULL = "4 terminals are open; close one with Ctrl+\\ w.";
 
 /** Drawn dev-a … dev-f, every one running here: each can be opened. */
 const SIX = () => stateOf(observed(["dev-a", "dev-b", "dev-c", "dev-d", "dev-e", "dev-f"].map((name) => instanceRow("dev", name))));
@@ -42,8 +42,8 @@ const opened = (state, ...names) => names.reduce((s, name) => enter(s, name).sta
 /** The strip's order as names, and the shown one's name. */
 const strip = (state) => state.tabs.map((tab) => tab.name);
 const shownName = (state) => state.terminal?.name ?? null;
-/** The focus back to the list, as the leader twice leaves it. */
-const toList = (state) => leaderThen(state, state.leaderKey).state;
+/** The focus back to the list, as the leader then Esc leaves it. */
+const toList = (state) => leaderThen(state, "escape").state;
 
 test("TAB_LIMIT, the store's cap, is the panel's MAX_TERMINALS", () => {
   assert.equal(TAB_LIMIT, MAX_TERMINALS);
@@ -368,12 +368,26 @@ test("a shown name that fits the panel stays whole however many tabs are hidden:
   assert.equal(wide.text, ` a  b  c  ${LONG}`);
 });
 
-test("the footer names [/] tab after the open terminal's keys while two tabs or more are open, from the list and from the detail; it is given up after the acts, the workspaces, refresh and close, and before detail", () => {
-  const foot = (state, cols) => draw(state, { cols, rows: 30 }).lines.at(-1);
+/** The cheat sheet as drawn at `size`: the sidebar's rows from the leader's on, to the first empty one. */
+function sheet(state, size) {
+  const d = draw(state, size), rows = d.lines.map((line) => line.slice(0, d.cols).trimEnd());
+  const from = rows.findIndex((row) => row.startsWith(" Ctrl+\\ "));
+  const to = rows.indexOf("", from);
+  return rows.slice(from, to < 0 ? rows.length : to);
+}
+
+test("with tabs open the list's cheat sheet is small, from the list and from the detail: no zoom, close terminal or [/] tab, which the leader's hint names, its tabs' keys while two tabs or more are open; on short rows the sheet gives up its rows from the end", () => {
   const one = toList(opened(SIX(), "dev-a")), two = toList(opened(SIX(), "dev-a", "dev-b"));
-  assert.doesNotMatch(foot(one, 200), /\[\/\] tab/, "one tab: nothing to switch to");
-  assert.match(foot(two, 200), /c close terminal {3}\[\/\] tab {3}X stop/);
-  assert.match(foot(key(two, "tab").state, 200), /c close terminal {3}\[\/\] tab {3}X stop/, "from the detail too");
-  assert.equal(foot(two, 120), "C-\\ commands   Enter focus terminal   z zoom   c close terminal   [/] tab   / filter   Tab detail   ? help   q quit");
-  assert.equal(foot(two, 100), "C-\\ commands   Enter focus terminal   z zoom   c close terminal   / filter   ? help   q quit", "given up before detail");
+  const tall = { cols: 120, rows: 30 };
+  const all = [" Ctrl+\\   commands", " Ctrl+K   palette", " Enter    focus terminal", " n        spawn", " ?        help", " q        quit"];
+  assert.deepEqual(sheet(one, tall), all, "one tab");
+  assert.deepEqual(sheet(two, tall), all, "two tabs: the same sheet");
+  assert.deepEqual(sheet(key(two, "tab").state, tall), [...all.slice(0, 2), " Tab      back", ...all.slice(2)], "from the detail: Tab back after the palette");
+  // The leader's hint keeps the open terminal's keys, and the tabs' only with two or more.
+  const hint = (s) => sheet(reduce(s, { key: s.leaderKey, read: ++reads, ...AT }).state, tall);
+  assert.deepEqual(hint(two).slice(4, 7), [" z            zoom", " w            close terminal", " Left/Right   tab"]);
+  assert.equal(hint(one).some((row) => row.endsWith(" tab")), false, "one tab: nothing to switch to");
+  assert.deepEqual(sheet(two, { cols: 100, rows: 24 }), all, "the rows hold it whole");
+  assert.deepEqual(sheet(two, { cols: 100, rows: 17 }), all.slice(0, 4), "given up from its end: quit and help");
+  assert.deepEqual(sheet(two, { cols: 100, rows: 15 }), all.slice(0, 2), "the list keeps its rows");
 });

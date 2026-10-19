@@ -9,11 +9,11 @@
 // removed, and nothing here decides what a failed read means or which view a deployment is in.
 // Selection is an identity (the shared `instanceId`), never an index, so it survives every read;
 // the rows it moves among are the model's, in drawn order.
-import { ACTIONS, LEADER_KEYS, bindings } from "./actions.mjs";
+import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings } from "./actions.mjs";
 import { collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
-import { DETACH_KEY } from "./config.mjs";
-import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher } from "./model.mjs";
-import { backKeyId } from "./term/through.mjs";
+import { defaultDetachKey } from "./config.mjs";
+import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight } from "./model.mjs";
+import { backKeyId, backKeySequences, isBackKey } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
 import { SPLIT_MIN, splitFits } from "./views/split.mjs";
 
@@ -71,8 +71,9 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  true while it has the whole body (only with the terminal's focus).
  *  `outcome`: the line after an open (the model's `{ said, under }`), shown above the panes until
  *  the next key bound to an action, or null.
- *  `detachKey`: tui.json's `open.detachKey`, the leader (docs/tui.md, "The leader"), and
- *  `leaderKey` the key id it is read as where the TUI reads keys (term/through.mjs backKeyId).
+ *  `detachKey`: tui.json's `open.detachKey`, the leader (docs/tui.md, "The leader"; without one,
+ *  `platform`'s default, config.mjs defaultDetachKey), and `leaderKey` the key id it is read as
+ *  where the TUI reads keys (term/through.mjs backKeyId).
  *  `leader`: `{ read, waiting }` from the leader's read on, or null (see `leading`).
  *  `palette`: the palette while it is open (see `paletteOpened`), or null. `recent`: the ids of
  *  the instances opened in this run, the latest first.
@@ -93,7 +94,7 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  agentsRoot, agent, reads, words }`, until its row is opened or two reads did not show it;
  *  `previews` the number of the last preview read asked in the run, so that an answer to a prompt
  *  already closed is never taken by the next one. */
-export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false, detachKey = DETACH_KEY }) {
+export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false, platform, detachKey = defaultDetachKey(platform) }) {
   return Object.freeze({
     view: deployment === null ? "switcher" : "instances", back: deployment === null ? "switcher" : "instances",
     ctxs: Object.freeze(deployment === null ? [] : [deployment]), open: deployment,
@@ -481,8 +482,9 @@ function switched(state, action, page) {
       return state.open === null ? stay : { state: next(put({ line: null, refused: null }), { view: "instances", back: "instances" }), effect: null };
     case "instances": return state.open === null ? stay : { state: next(put({ line: null, refused: null }), { view: "instances", back: "instances" }), effect: null };
     case "up": case "down": case "top": case "bottom": case "page-up": case "page-down": {
-      // The rows of the pane the choices have: the line that says what happened takes one (lib/model.mjs).
-      const count = s.items.length, height = Math.max(1, page - (sw.line ? 1 : 0));
+      // The rows of the pane the choices have: the line that says what happened takes one, and the
+      // filter field one while it is shown (lib/model.mjs switcherHeight).
+      const count = s.items.length, height = switcherHeight(sw, page);
       const drawn = windowOf({ top: sw.top, count, height, keep: sw.loose ? -1 : s.items.findIndex((item) => item.key !== undefined && item.key === s.selected) }).top;
       const from = Math.max(0, s.keys.indexOf(s.selected));
       const key = s.keys.length ? s.keys[Math.min(Math.max(0, moved(action, from, s.keys.length, page)), s.keys.length - 1)] : null;
@@ -570,7 +572,7 @@ const inGroup = (state, g) => state.tabs.filter((tab) => tab.group === g);
 /** Group `g`'s shown tab's id: the focused group's is the terminal's, the other's `aside`. */
 const shownOf = (state, g) => (g === state.group ? state.terminal?.id ?? null : state.aside);
 /** The cap's line: every tab is taken, and how to free one (the leader's close). */
-const fullLine = (state) => Object.freeze({ said: TAB_WORDS.full(TAB_LIMIT, state.detachKey), under: Object.freeze([]) });
+const fullLine = (state) => Object.freeze({ said: TAB_WORDS.full(TAB_LIMIT, backKeyLabel(state.detachKey)), under: Object.freeze([]) });
 
 /** A new tab for an open decision (the model's openDecision), starting, in the focused group:
  *  placed after its shown one (last, with none shown: an empty group's first) and shown, with the
@@ -923,23 +925,43 @@ const both = (a, b) => (a === null ? b : b === null ? a : typeof b === "string" 
  *  waits, with no timeout, for the key of LEADER's table that follows it IN A LATER READ, so a
  *  paste can never run a command: what comes in the leader's own read cancels it and is dropped.
  *  The key that follows is one key: the rest of its read is dropped too. A key not in the table
- *  cancels the leader and is dropped. Answers the step, or `{ pass }`: the state the event goes on
- *  in, when it is not the leader's. */
+ *  cancels the leader and is dropped. The leader again, in a later read, is the leader's key
+ *  itself (twice): see `twice`. Answers the step, or `{ pass }`: the state the event goes on in,
+ *  when it is not the leader's. */
 function leading(state, event, keymap) {
   const l = state.leader;
   // The leader typed in a terminal: the rest of that read is never the agent's (lib/main.mjs), and
-  // when there was a rest (`rest`), it cancelled the leader.
-  if (event.back !== undefined) return { state: state.terminal?.focus === "terminal" ? next(state, { leader: leaderAt(event.read, event.rest !== true) }) : state, effect: null };
+  // when there was a rest (`rest`), it cancelled the leader. While the leader waits from an earlier
+  // read it is the leader twice (the loop reads keys while the leader waits, so it hands on no
+  // `{ back }` then; one that comes is the leader's key all the same).
+  if (event.back !== undefined) {
+    if (state.terminal?.focus !== "terminal") return { state, effect: null };
+    if (l !== null && l.waiting && !sameRead(l, event)) return twice(next(state, { leader: leaderAt(event.read, false) }));
+    return { state: next(state, { leader: leaderAt(event.read, event.rest !== true) }), effect: null };
+  }
   if (typeof event.key !== "string" && !("paste" in event)) return { pass: state };
   if (l !== null && sameRead(l, event)) return { state: l.waiting ? next(state, { leader: leaderAt(l.read, false) }) : state, effect: null };
   if (l !== null && l.waiting) {
     const after = next(state, { leader: leaderAt(event.read, false) });
-    const does = typeof event.key !== "string" ? undefined : event.key === state.leaderKey ? "list" : LEADER_KEYS.get(event.key);
+    if (event.key === state.leaderKey) return twice(after);
+    const does = typeof event.key !== "string" ? undefined : LEADER_KEYS.get(event.key);
     return does === undefined ? { state: after, effect: null } : led(after, does, event, keymap);
   }
   const plain = l === null ? state : next(state, { leader: null });
   if (event.key === state.leaderKey) return { state: next(plain, { leader: leaderAt(event.read, true) }), effect: null };
   return { pass: plain };
+}
+
+/** The leader twice (`state` is after it, its hint closed). While the open terminal has the focus,
+ *  which it keeps, the leader's own key goes to the agent: the effect `{ input: <bytes> }`, the
+ *  bytes a terminal sends for the back key (term/through.mjs backKeySequences, its first form:
+ *  ESC o for M-o, 0x1c for C-\\), which the loop types into the focused tab as it types what
+ *  passes through (lib/main.mjs), so an agent that reads that key still gets it. From any other
+ *  focus it does nothing else: the list is reached with the leader then Esc (LEADER). */
+function twice(state) {
+  const inTerminal = state.terminal?.focus === "terminal" && state.view === "instances";
+  // (A key outside the grammar has no bytes: tui.json refuses it, so it is never the leader.)
+  return { state, effect: inTerminal && isBackKey(state.detachKey) ? { input: backKeySequences(state.detachKey)[0] } : null };
 }
 
 /** Whatever has the focus, settled, so the list has it: the palette closed, a confirmation closed

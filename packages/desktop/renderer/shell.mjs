@@ -2280,13 +2280,11 @@ const palette = createPalette({
   loadInstances: async () => {
     if (windowState() === "choosing") return { instances: [], deployments: [] }; // no workspace: nothing to read (#481)
     const ws = currentWorkspace();
-    // The terminal in front and the last-focus record as the palette opens (Spec C).
-    const front = tabLayerVisible ? tabs.get(activeTab) : null;
-    const activeId = front?.kind === "terminal" && front.workspace === ws ? recencyIdFromTerminalKey(ws, front.key) : null;
+    // The last-focus record as the palette opens: its order (#1383).
     const recent = instanceRecency.snapshot(ws);
     const p = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
     // One snapshot: the palette sections and clusters by these deployments, as the sidebar does.
-    return { instances: p.instances || [], deployments: panelDeployments(p), recent, activeId };
+    return { instances: p.instances || [], deployments: panelDeployments(p), recent };
   },
   // A held home (spawning, retiring, left half cleaned) opens nothing from here either, as its roster row does not:
   // the row as this window reads it (its own retires in flight held), said as the row says it.

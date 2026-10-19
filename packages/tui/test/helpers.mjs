@@ -145,9 +145,12 @@ export function observed(rows, { withheld, workspace = "acme-platform", observed
 export const failed = (entry, reason, at = "2026-10-11T10:05:00.000Z") => failedEntry(entry, reason, at);
 export const pending = (at = "2026-10-11T09:59:59.000Z") => pendingEntry(null, at);
 
+/** The leader the tests' states are made with, whatever platform runs them: C-\\ (macOS's default;
+ *  config.test.mjs pins each platform's). An option `detachKey` gives another. */
+export const TEST_LEADER = "C-\\";
 /** The state of a run that took `entry` (pending when none is given). */
 export function stateOf(entry = null, options = {}) {
-  const first = initialState({ deployment: DEPLOYMENT, cli: CLI, home: "/home/u", entry: pending(), ...options });
+  const first = initialState({ deployment: DEPLOYMENT, cli: CLI, home: "/home/u", entry: pending(), detachKey: TEST_LEADER, ...options });
   return entry ? took(first, entry, 1) : first;
 }
 /** A state after the reader gave `entry` for the fixture's deployment, as cycle `number`. */
@@ -158,10 +161,11 @@ export const took = (state, entry, number, id = DEPLOYMENT) => reduce(state, { i
  *  cut. `screen` is the open terminal's last capture (`{ lines, cursor }`), as the loop hands it on. */
 export function draw(state, size = { cols: 80, rows: 24 }, { now = NOW, utf8 = true, screen = null } = {}) {
   const at = new Date(now).toISOString();
-  const listing = (state.view === "help" ? state.back : state.view) === "switcher";
-  const r = listing ? { notice: null, note: null, observed: true } : roster(state, at);
-  const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.terminal !== null });
-  const made = { ...frame({ ...model(state, { page: g.page, now, at, cols: g.listCols }), screen }, size), cols: g.listCols };
+  const under = state.view === "help" || state.view === "act" ? state.back : state.view;
+  const listing = under === "switcher";
+  const r = listing ? { notice: null, note: null } : roster(state, at);
+  const g = layout(r.notice, size, { note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.tabs.length > 0, open: listing ? null : under });
+  const made = { ...frame({ ...model(state, { page: g.page, body: g.body, now, at, cols: g.listCols }), screen }, size), cols: g.listCols };
   const cells = createScreen({ utf8, ascii: state.ascii }).cells(made.rows, size);
   return { ...made, cells, lines: cells.map((line) => line.map((cell) => cell.text).join("").trimEnd()) };
 }
@@ -195,10 +199,17 @@ export const soulsTold = (state, entry, { reading = false, id = DEPLOYMENT } = {
 
 /** The reads of input the helpers below number their events with, as the loop does (lib/main.mjs). */
 let reads = 1000;
-/** The leader typed in the terminal (`{ back }`, term/through.mjs), then pressed again in a later
- *  read, now read as the TUI's own key: the focus goes to the list (docs/tui.md, "The leader").
- *  From the terminal's focus only: elsewhere `{ back }` is nothing, and the second press leaves
- *  the leader waiting. -> the store's step after the second press. */
+/** The leader typed in the terminal (`{ back }`, term/through.mjs), then Esc in a later read, now
+ *  read as the TUI's own key: the focus goes to the list (docs/tui.md, "The leader"). From the
+ *  terminal's focus only: elsewhere `{ back }` is nothing, and Esc is the focus's own key.
+ *  -> the store's step after Esc. */
+export function leaderEscape(state) {
+  const first = reduce(state, { back: true, read: ++reads, rest: false });
+  return reduce(first.state, { key: "escape", read: ++reads });
+}
+/** The leader typed in the terminal (`{ back }`), then pressed again in a later read, now read as
+ *  the TUI's own key: the leader's own bytes typed into the agent, the focus kept (docs/tui.md,
+ *  "The leader"). From the terminal's focus only, as leaderEscape. -> the step after the second. */
 export function leaderTwice(state) {
   const first = reduce(state, { back: true, read: ++reads, rest: false });
   return reduce(first.state, { key: first.state.leaderKey, read: ++reads });

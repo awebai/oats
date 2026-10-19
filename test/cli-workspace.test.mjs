@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
+import { deploymentsImported } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 
@@ -26,7 +27,7 @@ function fixtureBase() {
 function oats(args, { cwd, env = {}, base }) {
   return spawnSync(process.execPath, [CLI, ...args], {
     cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PI_AGENT_HOME: "", OATS_HOME: "", OATS_REMOTE_CACHE: join(base, "cache"), ...env },
+    env: { ...process.env, PI_AGENT_HOME: "", OATS_HOME: "", OATS_HOME_DIR: deploymentsImported(join(base, "oats-home")), OATS_REMOTE_CACHE: join(base, "cache"), ...env },
   });
 }
 /** stdout must be exactly one JSON envelope. */

@@ -16,11 +16,12 @@ import { draw, instanceRow, observed, stateOf } from "./helpers.mjs";
 /** The model the loop draws `state` from at `size` (lib/main.mjs modelled, as helpers.mjs draw makes it). */
 function modelOf(state, size, now = "2026-10-11T10:00:30.000Z") {
   const r = roster(state, now);
-  const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: outcomeOf(state), terminal: state.tabs.length > 0 });
-  return model(state, { page: g.page, now: Date.parse(now), at: now, cols: g.listCols });
+  const g = layout(r.notice, size, { note: r.note, ascii: state.ascii, outcome: outcomeOf(state), terminal: state.tabs.length > 0 });
+  return model(state, { page: g.page, body: g.body, now: Date.parse(now), at: now, cols: g.listCols });
 }
-/** The panel's room at 120x40 with a terminal open (the list keeps 30 columns beside it). */
-const ROOM = Object.freeze({ cols: 89, rows: 36 });
+/** The panel's room at 120x40 with a terminal open (the sidebar keeps 30 columns beside it, and
+ *  the panel has every row, its strip's counted). */
+const ROOM = Object.freeze({ cols: 89, rows: 40 });
 const AT = Object.freeze({ page: 19, extent: 0, room: 19, cols: 38, panel: ROOM });
 const S80 = { cols: 80, rows: 24 }, S120 = { cols: 120, rows: 40 }, S200 = { cols: 200, rows: 50 };
 
@@ -42,7 +43,8 @@ function enter(state, name) {
   return step.state.terminal?.status === "starting" ? { ...step, state: reduce(step.state, { shown: { id: idOf(state, name) }, ...AT }).state } : step;
 }
 const opened = (state, ...names) => names.reduce((s, name) => enter(s, name).state, state);
-const toList = (state) => leaderThen(state, state.leaderKey).state;
+/** The focus back to the list: the leader then Esc. */
+const toList = (state) => leaderThen(state, "escape").state;
 /** Each group's strip as names, and its shown one: `[[names, shown], …]`. */
 const groups = (state) => Array.from({ length: state.split ? 2 : 1 }, (_, g) => [state.tabs.filter((tab) => tab.group === g).map((tab) => tab.name), g === state.group ? state.terminal?.name ?? null : state.tabs.find((tab) => tab.id === state.aside)?.name ?? null]);
 const said = (state) => state.outcome?.said.map((part) => part.own).join("") ?? null;
@@ -105,7 +107,7 @@ test("the cap counts both groups' tabs: at 4, T2's line, and nothing closes", ()
   const s = toList(enter(enter(splitOf(), "dev-c").state, "dev-d").state);
   assert.equal(s.tabs.length, 4);
   const step = key(on(s, "dev-e"), "enter");
-  assert.deepEqual([step.effect, step.state.tabs.length, said(step.state)], [null, 4, "4 terminals are open; close one with C-\\ w."]);
+  assert.deepEqual([step.effect, step.state.tabs.length, said(step.state)], [null, 4, "4 terminals are open; close one with Ctrl+\\ w."]);
 });
 
 // ── Focus between groups ─────────────────────────────────────────────────────────────────────────
@@ -224,11 +226,12 @@ test("the palette lists the split's rows where each applies", () => {
 // ── The layout ───────────────────────────────────────────────────────────────────────────────────
 
 test("splitRegions: side by side the first takes the extra column, a rule column between; one above the other the first the extra row, a rule row between", () => {
-  assert.deepEqual(splitRegions({ title: 3, col: 31, cols: 89, rows: 35 }, "right"), [
-    { title: 3, top: 4, col: 31, cols: 44, rows: 35 }, { title: 3, top: 4, col: 76, cols: 44, rows: 35 }, { col: 75 },
+  // The panels of 120x40 and 80x24 beside the sidebar: from row 0, every row.
+  assert.deepEqual(splitRegions({ title: 0, col: 31, cols: 89, rows: 39 }, "right"), [
+    { title: 0, top: 1, col: 31, cols: 44, rows: 39 }, { title: 0, top: 1, col: 76, cols: 44, rows: 39 }, { col: 75 },
   ]);
-  assert.deepEqual(splitRegions({ title: 3, col: 31, cols: 49, rows: 19 }, "down"), [
-    { title: 3, top: 4, col: 31, cols: 49, rows: 9 }, { title: 14, top: 15, col: 31, cols: 49, rows: 8 }, { row: 13 },
+  assert.deepEqual(splitRegions({ title: 0, col: 31, cols: 49, rows: 23 }, "down"), [
+    { title: 0, top: 1, col: 31, cols: 49, rows: 11 }, { title: 13, top: 14, col: 31, cols: 49, rows: 10 }, { row: 12 },
   ]);
 });
 
@@ -237,12 +240,12 @@ const both = (k) => enter(leaderThen(opened(SIX(), "dev-a", "dev-b"), k).state, 
 
 test("the regions the frame draws, at 80x24, 120x40 and 200x50, both orientations; side by side does not fit at 80 columns, so the focused group is drawn alone (Settled 3)", () => {
   const expect = {
-    "120x40 |": [{ group: 0, cols: 44, rows: 35 }, { group: 1, cols: 44, rows: 35 }],
-    "200x50 |": [{ group: 0, cols: 84, rows: 45 }, { group: 1, cols: 84, rows: 45 }],
-    "80x24 -": [{ group: 0, cols: 49, rows: 9 }, { group: 1, cols: 49, rows: 8 }],
-    "120x40 -": [{ group: 0, cols: 89, rows: 17 }, { group: 1, cols: 89, rows: 16 }],
-    "200x50 -": [{ group: 0, cols: 169, rows: 22 }, { group: 1, cols: 169, rows: 21 }],
-    "80x24 |": [{ group: 1, cols: 49, rows: 19 }],
+    "120x40 |": [{ group: 0, cols: 44, rows: 39 }, { group: 1, cols: 44, rows: 39 }],
+    "200x50 |": [{ group: 0, cols: 84, rows: 49 }, { group: 1, cols: 84, rows: 49 }],
+    "80x24 -": [{ group: 0, cols: 49, rows: 11 }, { group: 1, cols: 49, rows: 10 }],
+    "120x40 -": [{ group: 0, cols: 89, rows: 19 }, { group: 1, cols: 89, rows: 18 }],
+    "200x50 -": [{ group: 0, cols: 169, rows: 24 }, { group: 1, cols: 169, rows: 23 }],
+    "80x24 |": [{ group: 1, cols: 49, rows: 23 }],
   };
   for (const [name, regions] of Object.entries(expect)) {
     const [w, k] = name.split(" "), [cols, rows] = w.split("x").map(Number);
@@ -254,48 +257,56 @@ test("the regions the frame draws, at 80x24, 120x40 and 200x50, both orientation
 
 test("both strips drawn, the rule between: the focused group's shown tab in reverse while its terminal has the focus, the other's bold and never in reverse", () => {
   const s = both("|"), d = draw(s, S120);
-  const line = d.lines[3];
+  // The strips stand on the screen's first row, beside the sidebar's title.
+  const line = d.lines[0];
   assert.match(line, /│ dev-a {2}dev-b +│ dev-c/, "group 0's strip, the rule, group 1's title");
   const at = (word) => line.indexOf(word);
-  assert.deepEqual([d.cells[3][at("dev-c")].style.reverse, d.cells[3][at("dev-b")].style.reverse, d.cells[3][at("dev-b")].style.bold], [true, false, true]);
-  // The rule stands on every row of the panel.
+  assert.deepEqual([d.cells[0][at("dev-c")].style.reverse, d.cells[0][at("dev-b")].style.reverse, d.cells[0][at("dev-b")].style.bold], [true, false, true]);
+  // The rule stands on every row of the panel, which is every row of the screen.
   const ruleCol = 31 + 44;
-  for (let r = 3; r < 39; r++) assert.equal(d.cells[r][ruleCol].text, "│", `row ${r}`);
+  for (let r = 0; r < 40; r++) assert.equal(d.cells[r][ruleCol].text, "│", `row ${r}`);
   // From the list, neither is in reverse.
   const l = draw(toList(s), S120);
-  assert.equal(l.cells[3][at("dev-c")].style.reverse, false);
-  // One above the other: a rule row between.
+  assert.equal(l.cells[0][at("dev-c")].style.reverse, false);
+  // One above the other: a rule row between, under group 0's strip and its 19 rows.
   const down = draw(both("-"), S120);
-  assert.equal(down.lines[3 + 18].slice(31), "─".repeat(89));
-  // Where it meets the list's bar, a joint: `├`, `+` in ASCII; zoomed, or with the whole body, no bar and no joint.
-  assert.equal(down.lines[3 + 18][30], "├");
-  assert.equal(draw({ ...both("-"), ascii: true }, S120).lines[3 + 18].slice(30, 33), "+--");
-  assert.equal(draw(both("-"), { cols: 70, rows: 30 }).lines.some((line) => line.includes("├")), false, "under 80 columns the panel has the whole body");
+  assert.equal(down.lines[20].slice(31), "─".repeat(89));
+  // Where it meets the sidebar's rule, a joint: `├`, `+` in ASCII; zoomed, or with the whole screen, no rule and no joint.
+  assert.equal(down.lines[20][30], "├");
+  assert.equal(draw({ ...both("-"), ascii: true }, S120).lines[20].slice(30, 33), "+--");
+  assert.equal(draw(both("-"), { cols: 70, rows: 30 }).lines.some((line) => line.includes("├")), false, "under 80 columns the panel has the whole screen");
 });
 
-test("the empty group's hint: Enter on an agent opens it here, in reverse while it is focused, and the leader's keys for the groups", () => {
+test("the empty group's hint: Enter on an agent opens it here, in reverse while it is focused, and the leader's keys for the groups, as many as the group's width holds", () => {
   const d = draw(splitOf(), S120);
-  const hint = d.lines[4].slice(76), keys = d.lines[5].slice(76);
+  const hint = d.lines[1].slice(76), keys = d.lines[2].slice(76);
   assert.equal(hint.trim(), "Enter on an agent opens it here");
-  assert.equal(d.cells[4][77].style.reverse, true);
-  assert.match(keys, /C-\\ Tab next group {3}C-\\ x close group/);
+  assert.equal(d.cells[1][77].style.reverse, true);
+  assert.equal(keys, " Ctrl+\\ Tab next group", "44 cells hold the first key alone");
+  assert.equal(draw(splitOf(), S200).lines[2].slice(116), " Ctrl+\\ Tab next group   Ctrl+\\ x close group", "84 hold both");
   // Not focused: plain.
-  assert.equal(draw(leaderThen(splitOf(), "tab").state, S120).cells[4][77].style.reverse, false);
+  assert.equal(draw(leaderThen(splitOf(), "tab").state, S120).cells[1][77].style.reverse, false);
 });
 
-test("zoomed, the focused group's terminal has the whole body and the other is not drawn; under 80 columns with a terminal focused the whole body holds both", () => {
+test("zoomed, the focused group's terminal has the whole screen and the other is not drawn; under 80 columns with a terminal focused the whole screen holds both", () => {
   const z = draw(leaderThen(both("-"), "z").state, S120);
-  assert.deepEqual(z.regions.map(({ group, cols, rows }) => ({ group, cols, rows })), [{ group: 1, cols: 120, rows: 35 }]);
+  assert.deepEqual(z.regions.map(({ group, cols, rows }) => ({ group, cols, rows })), [{ group: 1, cols: 120, rows: 39 }]);
   const narrow = draw(both("-"), { cols: 70, rows: 30 });
   assert.deepEqual(narrow.regions.map(({ group, cols }) => ({ group, cols })), [{ group: 0, cols: 70 }, { group: 1, cols: 70 }]);
   assert.equal(draw(toList(both("-")), { cols: 70, rows: 30 }).regions.length, 0, "the list alone with its focus (T1)");
 });
 
 test("the leader's hint names the split's keys where they apply", () => {
-  const hint = (s) => { const w = reduce(s, s.terminal?.focus === "terminal" ? { back: true, read: ++reads, ...AT } : { key: s.leaderKey, read: ++reads, ...AT }).state; return draw(w, { cols: 200, rows: 40 }).lines[39]; };
-  assert.match(hint(opened(SIX(), "dev-a")), /\|\/- split/);
-  assert.match(hint(splitOf()), /Tab next group {3}x close group/);
-  assert.match(hint(both("|")), /Tab next group {3}m move tab/);
+  // The hint is the sidebar's cheat sheet, a row per key: the sidebar's rows (30 columns while a
+  // tab is open, the empty group's too), trimmed, one per line.
+  const hint = (s) => {
+    const w = reduce(s, s.terminal?.focus === "terminal" ? { back: true, read: ++reads, ...AT } : { key: s.leaderKey, read: ++reads, ...AT }).state, size = { cols: 200, rows: 40 };
+    const cols = layout(null, size, { terminal: w.tabs.length > 0 }).listCols;
+    return draw(w, size).cells.map((line) => line.slice(0, cols).map((cell) => cell.text).join("").trim()).join("\n");
+  };
+  assert.match(hint(opened(SIX(), "dev-a")), /\nw {9}close terminal\n\|\/- {7}split\n/);
+  assert.match(hint(splitOf()), /\nTab {7}next group\nx {9}close group\n/);
+  assert.match(hint(both("|")), /\nTab {7}next group\nm {9}move tab\n/);
   assert.doesNotMatch(hint(SIX()), /split/);
 });
 
@@ -304,7 +315,7 @@ test("the panel's place is the Instances view's with the terminal's focus, whate
   const help = key(toList(s), "?").state, pal = leaderThen(s, "k").state;
   for (const [name, over] of [["help", help], ["palette", pal]]) {
     assert.deepEqual(draw(over, S80).regions, [], name);
-    assert.deepEqual(panelPlace(modelOf(over, S80), S80), { panel: { cols: 49, rows: 20 }, focused: { cols: 49, rows: 19 } }, name);
+    assert.deepEqual(panelPlace(modelOf(over, S80), S80), { panel: { cols: 49, rows: 24 }, focused: { cols: 49, rows: 23 } }, name);
   }
   assert.deepEqual(panelPlace(modelOf(toList(s), { cols: 70, rows: 30 }), { cols: 70, rows: 30 }).panel.cols, 70, "under 80 columns, the whole width");
   assert.equal(panelPlace(modelOf(s, { cols: 50, rows: 10 }), { cols: 50, rows: 10 }), null, "too small");

@@ -25,6 +25,24 @@ import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rm
 import { delimiter, dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { backKeyLabel } from "../packages/tui/lib/actions.mjs";
+import { defaultDetachKey } from "../packages/tui/lib/config.mjs";
+
+/** The leader: the default on the platform the tests run on (M-o, C-\\ on macOS), as tmux's
+ *  send-keys names it too, and as the cheat sheet spells it. */
+const LEADER_KEY = defaultDetachKey(), LEADER = backKeyLabel(LEADER_KEY);
+const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** A row of the cheat sheet in the sidebar (docs/tui.md, "The cheat sheet"): the key at the
+ *  margin, what it does in a column after it, and the rest of the row the sidebar's (its rule, or
+ *  the main area beside it). */
+const hintRow = (key, word) => new RegExp(`^ ${literal(key)} +${literal(word)}(?: |$)`);
+/** Rows of the cheat sheet: `q quit`, in the list's sheet and a confirmation's; `n spawn`, in the
+ *  list's and not a confirmation's; and the one the open terminal's focus alone draws, the leader
+ *  then Esc, which gives the list the focus. */
+const QUIT_ROW = hintRow("q", "quit"), SPAWN_ROW = hintRow("n", "spawn"), BACK_ROW = hintRow(`${LEADER} Esc`, "the list");
+/** The main area of a row: from two cells after the rule between it and the sidebar, where a
+ *  confirmation and the spawn prompt stand (the row as it is when it has no rule). */
+const mainOf = (row) => { const at = row.indexOf("│"); return at < 0 ? row : row.slice(at + 2); };
 
 const REPOSITORY = resolve(new URL("..", import.meta.url).pathname);
 const CLI = join(REPOSITORY, "bin", "oats.mjs");
@@ -217,19 +235,20 @@ async function tui(term, { shadow = false, stderr = "pane" } = {}) {
     /** The status the run ended with: the one read that showed it (a second read could meet the
      *  file being written again by a later `echo $? >`). */
     async ended(why) { let status = null; await until(term, () => (status = run.status()) !== null, `oats tui in ${term.id} to end ${why}`); return status; },
-    /** A frame is on the screen: the header names the fixture's workspace, and the footer ends
-     *  with `q quit`. */
-    drawn() { const screen = term.screen(); return /^ fixture {2}/.test(screen[0] ?? "") && / q quit$/.test(screen.at(-1) ?? ""); },
-    /** The list of instances is on the screen: drawn, with the list's footer (`/ filter`) and no
-     *  confirmation's buttons. A confirmation draws no list, so a row's absence means nothing then. */
-    listed() { return run.drawn() && (term.screen().at(-1) ?? "").includes("/ filter") && run.buttons() === ""; },
+    /** A frame is on the screen: the title names the fixture's workspace, and the cheat sheet
+     *  offers `q quit`. */
+    drawn() { const screen = term.screen(); return /^ fixture(?: |│|$)/.test(screen[0] ?? "") && screen.some((row) => QUIT_ROW.test(row)); },
+    /** The list of instances is on the screen: drawn, with the list's cheat sheet (`n spawn`)
+     *  and no confirmation's buttons. A confirmation draws no such sheet, so a row's absence means
+     *  nothing then. */
+    listed() { return run.drawn() && term.screen().some((row) => SPAWN_ROW.test(row)) && run.buttons() === ""; },
     /** The list's row of `name`: `{ selected, mark }`, or null when it is not listed. */
     row(name) {
       const text = term.screen().map((row) => [...row].slice(0, 48).join("")).find((row) => new RegExp(`^[> ] +[●○◌?◆] ${name}\\b`).test(row));
       return text ? { selected: text.startsWith(">"), mark: /^[> ] +(\S)/.exec(text)[1], text } : null;
     },
-    /** The confirmation's buttons row, as drawn: `> Label <` has the focus. */
-    buttons() { return term.screen().find((row) => /^ {2}(> .* <|\[ .* \])/.test(row)) ?? ""; },
+    /** The confirmation's buttons row, as drawn in the main area: `> Label <` has the focus. */
+    buttons() { return term.screen().map(mainOf).find((row) => /^ {2}(> .* <|\[ .* \])/.test(row)) ?? ""; },
     focused() { return /> (.*?) </.exec(run.buttons())?.[1] ?? null; },
     async select(name) {
       for (let i = 0; i < 10 && !run.row(name)?.selected; i++) { term.press(i === 0 ? "g" : "j"); await until(term, () => run.drawn(), `the list after a move to ${name}`); }
@@ -417,20 +436,20 @@ test("5. a spawn from the TUI with the real kernel: a pasted n, a soul's name an
   // The picker as the paste left it: once the souls are read (its row, under the query's line,
   // which says `> scribe` from the paste on), Enter picks scribe, in a read of its own.
   if (term.has("Spawn: pick a soul")) {
-    await until(term, () => term.screen().filter((line) => /^>\s+scribe\b/.test(line)).length === 2, "scribe's row in the picker", 60000);
+    await until(term, () => term.screen().map(mainOf).filter((line) => /^>\s+scribe\b/.test(line)).length === 2, "scribe's row in the picker", 60000);
     term.press("Enter");
   }
   // The preview read: its facts drawn, and no read under way.
   await until(term, () => term.has("Spawn scribe") && term.has("Harness") && !term.has("Reading the preview"), "scribe's preview", 90000);
   assert.equal(term.has("Spawning"), false, `the paste spawned nothing:\n${term.shows()}`);
   term.press("Enter");
-  await until(term, () => term.has("back to the list"), "the new agent's terminal, with the focus", 180000);
+  await until(term, () => term.screen().some((row) => BACK_ROW.test(row)), "the new agent's terminal, with the focus: the cheat sheet says the leader then Esc gives the list the focus", 180000);
   const made = scribes();
   assert.equal(made.length, 1, `one scribe: ${made.join(", ")}`);
   assert.equal(run.row(made[0])?.selected, true, "its row is selected");
-  // The leader twice gives the focus back to the list; q there quits.
-  term.press("C-\\"); term.press("C-\\");
-  await until(term, () => run.listed(), "the list again, after the leader twice");
+  // The leader then Esc gives the focus back to the list; q there quits.
+  term.press(LEADER_KEY); term.press("Escape");
+  await until(term, () => run.listed(), "the list again, after the leader then Esc");
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
   assert.deepEqual(scribes(), made, "and no second spawn on the way out");
