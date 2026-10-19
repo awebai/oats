@@ -48,11 +48,27 @@ Another deployment is opened from [the switcher](#the-switcher), in the
 same run.
 
 **Outside every deployment.** Started with no `--dir` in a directory that
-is in no deployment, it looks directly inside `~/Agents`. When a deployment
-is there it starts with the switcher, and nothing is open until you open a
-row. When none is there it prints one line (`E_NO_DEPLOYMENT`) and exits 1
-without touching the terminal. With `--dir`, nothing is offered in place of
-a path that is in no deployment: the same line, and exit 1.
+is in no deployment, it reads this computer's list of deployments,
+`oats deployments --json` ([This computer's
+deployments](workspaces.md#this-computers-deployments)), through the kernel
+it shipped with. When the list holds a row it starts with the switcher, and
+nothing is open until you open a row. When the list holds none it prints
+one line (`E_NO_DEPLOYMENT`) and exits 1 without touching the terminal, and
+when the list cannot be read it prints the kernel's code and message
+instead, which say what to do. With `--dir`, nothing is offered in place of
+a path that is in no deployment: the `E_NO_DEPLOYMENT` line that names
+`--dir`, and exit 1.
+
+**Opening a deployment lists it.** The deployment a run starts in, from
+where you are or from `--dir`, is added to this computer's list once, as the
+TUI's (`oats deployments add <path> --via tui --json`), also when you had
+removed it from the list. It is best effort: a failure opens nothing less,
+and is said once, in the line under the title, in the kernel's words. When
+it comes while the switcher, the help, a confirmation, the palette, the
+spawn prompt, a detail or a terminal has the screen or the focus, it is said
+once a view's list has the focus again, so no screen that covers the
+sidebar hides it. A deployment opened from the switcher is
+on the list already.
 
 **From inside an agent's pane it still reads the deployment you asked
 for.** An instance session carries variables that make a kernel command
@@ -243,7 +259,7 @@ of this machine. When no row of that machine is kept either, nothing is drawn
 under the reason: no list and no detail.
 
 **A machine that has not answered in this run is not in its workspace's
-list.** `oats tui` keeps nothing on disk, so it cannot tell which workspace
+list.** `oats tui` keeps nothing on disk of its own, so it cannot tell which workspace
 a machine belongs to before the machine has said so in this run. Such a
 machine is listed in [the switcher](#the-switcher) by its own name, under
 `Not matched to a workspace`. The OATS Desktop, which remembers what each
@@ -759,8 +775,8 @@ switcher covers the whole screen.
  Instances                                    1 │   Not matched to a workspace
  Souls                                        2 │     basalt                ssh needs a prompt
  Capabilities                                 3 │   On this machine, not opened
-────────────────────────────────────────────────│     acme-docs             ~/Agents/acme-docs
- Alt+O    commands                              │     sandbox               ~/Agents/sandbox
+────────────────────────────────────────────────│     acme-docs             ~/acme-docs
+ Alt+O    commands                              │     sandbox               Not found.
  Ctrl+K   palette                               │
  Enter    open                                  │
  /        filter                                │
@@ -781,26 +797,62 @@ It lists, in this order:
 - **`Not matched to a workspace`**: what those rules matched to no
   workspace, each by its own name with a short reason. A machine that has
   not answered in this run is listed here.
-- **`On this machine, not opened`**: the deployments directly inside
-  `~/Agents` that this run has not opened, each by its folder's name and
-  its path. Nothing is read from one before it is picked. `~/Agents` is
-  looked at up to its first 200 entries; when it holds more, a last row says
-  `More folders than are listed here.`
+- **`On this machine, not opened`**: the rows of this computer's list of
+  deployments (`oats deployments`) that this run has not opened, in the
+  list's order, each by its folder's name and its path. Nothing is read from
+  one before it is picked. A row that cannot be opened says why where its
+  path stood, and does not open:
+
+  | The row says | The list's state |
+  |---|---|
+  | `Not found.` | `missing`: the folder is gone, or on a volume that is not mounted |
+  | `Not an OATS deployment any more.` | `not-a-deployment`: the folder has no `oats-local.yaml` |
+  | `Can't be read.` | `unreadable`: the check failed, for example for a permission |
+
+  The list is read when the switcher opens, on `r` in it and after a
+  Remove. When a read fails, the rows of the last read stay, under a line
+  that says the list could not be read, with the kernel's message.
 
 | Key | Does |
 |---|---|
 | `Up` `k`, `Down` `j`, `g` `Home`, `G` `End`, `PageUp`, `PageDown` | move the selection among the rows; a heading is passed over |
 | `Enter` | opens the selected row |
 | `/` | filters the rows by what they show: a name, the machines, a path |
-| `r` | reads now, and lists `~/Agents` again |
-| `Esc` | clears a kept filter; else closes the switcher, back to the view that was open |
+| `r` | reads now, and reads this computer's list of deployments again |
+| `Delete` | on a row of `On this machine, not opened`, asks whether to remove it from this computer's list; the cheat sheet names it while such a row is selected |
+| `Esc` | while a Remove is asked, keeps the row; else clears a kept filter; else closes the switcher, back to the view that was open |
 | `1` | closes the switcher, back to the view that was open |
 
-**Enter on a workspace** opens its view. **Enter on a folder** opens that
-deployment in this run: from then on it is read with the others, and its
-workspace is the open view. A folder that stopped being a deployment since
-it was listed is not opened: its row says
+**Enter on a workspace** opens its view. **Enter on a row of the list**
+opens that deployment in this run: from then on it is read with the others,
+and its workspace is the open view. A folder that stopped being a deployment
+since the list was read is not opened: its row says
 `Not an OATS deployment any more.` where its path stood.
+
+**Remove** takes a row off this computer's list
+(`oats deployments remove <path>`); nothing on disk is touched, and the
+folder stays. `Delete` on the row asks first, above the rows:
+
+```
+  Remove the selected row from this computer's list?
+  Enter removes it; other keys keep it. Its folder stays.
+```
+
+`Enter` removes it, and the list is read again; `Esc`, or any other key,
+keeps it (the other key then does what it does). These are the keys
+themselves, whatever your `tui.json` gives `open` and `close`. The question
+is about the row marked when it was asked: when a read of the list no longer
+holds that row, the question goes. An `Enter` that came in
+the same read of input as the `Delete` is not taken. What the kernel
+answered stands above the rows: that the row was removed, or why it was not,
+in the kernel's words. A removed deployment is not listed again by the
+kernel on its own; opening it with `oats tui --dir <path>` lists it again.
+A workspace this run has open has no Remove here.
+
+`Delete` is the key and no letter is: a new default key that your
+[`tui.json`](#change-the-keys-tuijson) already gives to another action
+would make the file refused at the start. To use another key, give it to
+`remove` there, for example `{ "keys": { "remove": ["x"] } }`.
 
 **Each view keeps its place while the run lasts:** the selected instance,
 where its list and its detail were scrolled, and what was folded away are
@@ -1000,6 +1052,7 @@ The line after leaving says so and names `oats status` to see it.
 | `2` | [the Souls view](#the-souls-view); `Esc` or `1` goes back |
 | `3` | [the Capabilities view](#the-capabilities-view); `Esc` or `1` goes back |
 | `w` | opens [the switcher](#the-switcher) |
+| `Delete` | in the switcher, asks whether to remove the selected row from this computer's list of deployments; `Enter` removes it |
 | `Enter` | in the list of instances, opens the selected agent's terminal in a new [tab](#tabs) beside the sidebar, or shows its tab when it has one, with the focus in it; in the switcher, opens the selected row; in a confirmation, presses the button with the focus |
 | `z` | gives the shown terminal the focus and the whole screen |
 | `c` | closes the shown terminal's tab and shows the tab beside it; the agent keeps running |
@@ -1181,7 +1234,7 @@ never writes it. With no file the keys are the ones above.
   `souls`, `capabilities`, `workspaces`, `palette`, `open`, `soul-instances`, `zoom`, `close-terminal`,
   `tab-previous`, `tab-next`, `split-right`, `split-down`, `group-next`, `tab-move`,
   `group-close`, `stop`, `retire`, `start`, `restart`, `spawn`, `spawn-another`,
-  `spawn-check`, `help`, `close`, `quit`, `suspend` and `redraw`. `workspaces` (`w`) opens the switcher and `open` (`enter`)
+  `spawn-check`, `remove`, `help`, `close`, `quit`, `suspend` and `redraw`. `workspaces` (`w`) opens the switcher and `open` (`enter`)
   opens the selected agent's terminal in the list of instances, the
   selected row in the switcher and the detail in the Souls view;
   `soul-instances` (`i`) shows the selected soul's instances. `zoom` (`z`) and `close-terminal` (`c`) act
@@ -1189,7 +1242,8 @@ never writes it. With no file the keys are the ones above.
   the tab before and after it. `split-right` (`|`) and `split-down` (`-`)
   [split](#splits) the panel; `group-next`, `tab-move` and `group-close`
   have no key of their own by default (the leader then `Tab`, `m` and `x`
-  reach them). In an open filter field `Enter` keeps the filter,
+  reach them). `remove` (`delete`) asks whether to remove the selected row
+  of this computer's list of deployments, in the switcher. In an open filter field `Enter` keeps the filter,
   whatever key `open` has.
 - A key is written as the help shows it, in lower case: `q`, `G`, `?`,
   `space`, `enter`, `tab`, `escape`, `backspace`, `up`, `pageup`, `f5`,
@@ -1293,12 +1347,22 @@ with the Desktop (`packages/client/`).
     a suspend and when a row is opened in the switcher.
   - A kernel whose version record lists no read of other machines is never
     asked for one, and no other machine is shown.
-- **Two looks at the file system serve the switcher**, and neither reads a
-  file's content. At a start outside every deployment with no `--dir`, when
-  the switcher opens, and on `r` in it, the entries of `~/Agents` are
-  listed: at most 200, and each directory among them is asked for a regular
-  `oats-local.yaml`. An entry that is a link is not followed. When a folder
-  is opened, that one directory is asked again.
+- **This computer's list of deployments is the kernel's**, read and changed
+  through the same kernel, with 15 seconds and 4 MiB each, from `/`:
+  - `oats deployments --json`, at a start outside every deployment with no
+    `--dir` (before the terminal is taken), when the switcher opens, on `r`
+    in it and after a Remove. One runs at a time: one asked for while one is
+    on its way runs after it, however many times it was asked, and the
+    answer taken is that later one's.
+  - `oats deployments add <path> --via tui --json`, once a run, for the
+    deployment it started in, from that deployment.
+  - `oats deployments remove <path> --json`, for a Remove you confirmed.
+
+  An add and a remove are changes: `oats tui` never ends one, and one still
+  running as it leaves is named in one line after the screen is left.
+- **One look at the file system serves the switcher**, and it reads no
+  file's content: when a row of the list is opened, that one directory is
+  asked for a regular `oats-local.yaml`.
 - **Opening an agent runs one more command,** `oats session attach --home
   <home>`, by the same kernel, in a pane of the run's private tmux server
   ([above](#open-an-agents-terminal)), with no key of its own. For an agent
@@ -1405,7 +1469,10 @@ with the Desktop (`packages/client/`).
   files in a directory of `oats tui`'s own (made with mode 0700 under the
   system's temporary directory), read back when it ends and deleted. On the
   way out the files of a change still running are deleted (it goes on
-  writing to them), and the directory is removed. `oats tui` waits for an
+  writing to them), and the directory is removed. A run ended by SIGKILL
+  removes nothing: with a kernel that lists this computer's deployments,
+  the add at the start has made the directory, and when no terminal was
+  opened in that run it holds no `owner.json`, so no later run removes it. `oats tui` waits for an
   apply's answer for 10 minutes and for a start's for 60 seconds; then it
   says so, and the change goes on.
 - **A spawn runs the kernel's own `oats spawn`**, as the Desktop does: the
@@ -1444,18 +1511,20 @@ with the Desktop (`packages/client/`).
 | add a machine to this workspace | `oats server connect <id> --ssh <alias>` |
 | check a machine | `oats server check <id>` |
 | remove a machine | `oats server remove <id>` |
-| open a deployment outside `~/Agents` | `oats tui --dir <path>` |
+| open a deployment that is not listed | `oats tui --dir <path>` |
 | open an agent in a tmux window or split of its own | `oats session attach --home <home>` in that window (the detail shows the home) |
 
 The help screen (`?`) names the same commands. What else holds for this
 version:
 
-- **It keeps nothing on disk.** A machine it has not reached in this run is
-  listed by its own name, in no workspace. What is folded away and each
-  view's place last as long as the run, and no filter is saved.
+- **It keeps nothing on disk of its own; opening a deployment lists it**
+  on this computer's list, which is the kernel's. A machine it has not
+  reached in this run is listed by its own name, in no workspace. What is
+  folded away and each view's place last as long as the run, and no filter
+  is saved.
 - **Of this machine's deployments, the switcher lists only the ones opened
-  in this run and the ones directly inside `~/Agents`.** Any other is
-  opened with `oats tui --dir <path>`.
+  in this run and the ones on this computer's list.** Any other is opened
+  with `oats tui --dir <path>`, which lists it.
 - **A row of another machine shows what its host reported at the last
   read,** not what is true at this moment. The time of that read is on the
   machine's heading when it is not the time of this machine's read. A view
@@ -1600,6 +1669,10 @@ alone. The next run removes the directory that is left, with its `tmux`,
   to its own end. A spawn is ended only at its deadline, while `oats tui`
   runs ([above](#what-it-reads-and-what-it-runs)): never on the way out,
   and never after it.
+- It **changes this computer's list of deployments only through the
+  kernel** (`oats deployments add` and `remove`,
+  [above](#what-it-reads-and-what-it-runs)), and never reads or writes the
+  list's file itself.
 
 ## Errors
 
@@ -1609,11 +1682,16 @@ alone. The next run removes the directory that is left, with its `tmux`,
 | `E_BAD_ARGS` | `oats tui --json`: it is interactive and has no JSON form. The usual failure envelope, exit 1 | `oats status --json` is the machine view |
 | `E_BAD_ARGS` | any argument other than `--dir <path>`, `--ascii` and `--help`, or `--dir` with no path. One line on stderr with the usage, exit 1 | `oats tui --help` |
 | `E_TUI_CONFIG` | `tui.json` cannot be honoured. One line per problem on stderr, exit 1 | fix the file as the line says, or remove it |
-| `E_NO_DEPLOYMENT` | no directory at or above the start holds an `oats-local.yaml`; and, for a start without `--dir`, `~/Agents` holds no deployment. One line on stderr, exit 1 | `oats tui --dir <path>`, or `cd` into the deployment |
+| `E_NO_DEPLOYMENT` | with `--dir`, no directory at or above it holds an `oats-local.yaml`: `no OATS deployment at or above <dir>`. One line on stderr, exit 1 | `oats tui --dir <path>` with a deployment, or `cd` into one |
+| `E_NO_DEPLOYMENT` | without `--dir`, no directory at or above the start holds an `oats-local.yaml`, and this computer's list of deployments holds none: `no deployment at or above <dir>, and this computer's list of deployments holds none (E_NO_DEPLOYMENT): \`oats tui --dir <path>\` opens one (and lists it), \`oats onboard <dir> --workspace <ref>\` creates one`. One line on stderr, exit 1 | as the line says |
+| the kernel's code (`E_DEPLOYMENTS_BUSY`, `E_DEPLOYMENTS_INVALID`, `E_DEPLOYMENTS_VERSION`, …) | without `--dir` and outside every deployment, this computer's list of deployments could not be read: `` `oats tui` could not read this computer's list of deployments (<code>): <the kernel's message> ``. One line on stderr, exit 1 | what the kernel's message says |
 | `E_TUI_KERNEL` | the kernel it shipped with did not answer `version --json` with a record it accepts; the line gives the reason. One line on stderr, exit 1 | reinstall `oats`: the client and the kernel are one package |
 
 These lines are written before the terminal is touched, in this order: the
-arguments, the terminal, `tui.json`, the deployment, the kernel. None of the
+arguments, the terminal, `tui.json`, the deployment, the kernel, and then,
+for a start without `--dir` outside every deployment, this computer's list of
+deployments, which is read through that kernel. A `--dir` that is in no
+deployment is answered before the kernel is asked. None of the
 codes on stderr appears in a JSON envelope. A path is repeated in a line
 only when it is plain printable ASCII.
 

@@ -11,11 +11,11 @@
 // functions (client.mjs), which decide what a roster, a row and a failed read are, once, for both
 // clients: the TUI never writes "stopped" for a row and never builds the collector's input by hand.
 import { execFile as nodeExecFile, spawn as nodeSpawn } from "node:child_process";
-import { closeSync, fstatSync, lstatSync, mkdtempSync, openSync, opendirSync, readSync, realpathSync, rmdirSync, statSync, unlinkSync } from "node:fs";
+import { closeSync, fstatSync, lstatSync, mkdtempSync, openSync, readSync, realpathSync, rmdirSync, statSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { COLLECTOR, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliDeploymentRead, cliReadsRemotes, cliRecord, cliRemoteRoster, createDeploymentObserver, createRefreshLoop, deploymentsInside, failedEntry, livenessAnswers, livenessInput, mapBounded, observeIdentities, observedEntry, panelInstances, parseProbeStdout, remoteRosterState, rosterRows, validateWorkspace } from "./client.mjs";
+import { COLLECTOR, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliDeploymentRead, cliReadsRemotes, cliRecord, cliRemoteRoster, createDeploymentObserver, createRefreshLoop, failedEntry, livenessAnswers, livenessInput, mapBounded, observeIdentities, observedEntry, panelInstances, parseProbeStdout, remoteRosterState, rosterRows, validateWorkspace } from "./client.mjs";
 
 /** A path made canonical: what the shared start rule checks a local home with (session-start.mjs
  *  verifiedLocalHome). Throws for a path that cannot be resolved; the rule answers that as no home. */
@@ -61,26 +61,13 @@ export function leaveInstance(env) {
 /** A step that must not stop the ones after it: a child, a stream or a directory that is already gone. */
 const quietly = (act) => { try { return act(); } catch { return undefined; } };
 
-/** The filesystem the three functions below read when they are given none. findDeployment: one
+/** The filesystem the two functions below read when they are given none. findDeployment: one
  *  realpath and one stat of the start, then one lstat per directory. A symbolic link named
- *  oats-local.yaml is not a deployment's file (lstat does not follow it).
- *  `list(dir, limit)` is the look inside a folder the shared deploymentsInside asks for:
- *  -> { entries: [{ name, isDirectory }], limited }. It reads at most `limit` entries, and one more
- *  only to say whether the folder holds more (`limited`), so a folder of any size costs a bounded
- *  read. `isDirectory` is the entry's own type: a link to a directory is not a directory, and
- *  nothing is followed. It throws for a folder that cannot be opened; the shared function answers
- *  that as a folder that holds nothing. */
+ *  oats-local.yaml is not a deployment's file (lstat does not follow it). */
 const DEPLOYMENT_IO = Object.freeze({
   realpath: (path) => realpathSync(path),
   isDirectory: (path) => statSync(path).isDirectory(),
   isDeployment: (dir) => lstatSync(join(dir, "oats-local.yaml")).isFile(),
-  list: (dir, limit) => {
-    const handle = opendirSync(dir), entries = [];
-    try {
-      for (let entry; entries.length < limit && (entry = handle.readSync());) entries.push({ name: entry.name, isDirectory: entry.isDirectory() });
-      return { entries, limited: entries.length >= limit && handle.readSync() !== null };
-    } finally { quietly(() => handle.closeSync()); }
-  },
 });
 
 /** The deployment `start` is in: (start directory, io?) -> { ok: true, deployment } | { ok: false, dir }.
@@ -102,34 +89,9 @@ export function findDeployment(start, io = {}) {
   }
 }
 
-/** The deployments the switcher offers unasked: those directly inside `<home>/Agents` that this run
- *  does not serve. (home, served, io?) -> { offered: [{ path, name }], limited }.
- *  Which folders are deployments, their order and the limit of the look are the shared
- *  deploymentsInside's; this adds only what a run knows. Each path is made canonical (io.realpath)
- *  BEFORE it is compared with `served`, whose ids are canonical: a `~/Agents` reached through a
- *  link would otherwise offer a deployment the run already shows. One that cannot be resolved (it
- *  went away since the look) is left out, and so is a second folder that leads to the same place.
- *  `name` is the folder's name as it was listed, `path` the canonical one to admit. `limited` says
- *  the folder holds more entries than were read. Nothing is read from any deployment: an offered
- *  one is read when it is picked. Never throws: a missing or unreadable `~/Agents` offers nothing. */
-export function offeredDeployments(home, served, io = {}) {
-  try {
-    const { realpath, isDeployment, list } = { ...DEPLOYMENT_IO, ...io };
-    const inside = deploymentsInside(join(home, "Agents"), { list, isDeployment });
-    const taken = new Set(served), offered = [];
-    for (const listed of inside.paths) {
-      const path = quietly(() => realpath(listed));
-      if (typeof path !== "string" || taken.has(path)) continue;
-      taken.add(path);
-      offered.push({ path, name: basename(listed) });
-    }
-    return { offered, limited: inside.limited };
-  } catch { return { offered: [], limited: false }; }
-}
-
 /** Whether `path` is a deployment NOW: (path, io?) -> { ok: true, deployment } | { ok: false }.
- *  Asked when an offered deployment is picked: the offer is as old as the last look, and the
- *  folder may have stopped being a deployment since. The path is made canonical (io.realpath) and
+ *  Asked when a row of this computer's deployments list is picked: the row is as old as the last
+ *  read of the list, and the folder may have stopped being a deployment since. The path is made canonical (io.realpath) and
  *  the shared validateWorkspace is asked about that directory itself. Unlike findDeployment it
  *  walks nowhere: a folder that is no longer a deployment must not open the one above it in its
  *  place. `deployment` is the canonical path, the id a served deployment has. Never throws. */
@@ -165,6 +127,14 @@ export function probeKernel({ bin = KERNEL_BIN, env = process.env, execFile = no
       });
     } catch { refuse("it did not start"); }
   });
+}
+
+/** The exec of the one kernel call made before the terminal is taken but the probe: the read of
+ *  this computer's deployments list at a start outside every deployment (the shared
+ *  cliDeploymentList's `io.exec`). execFile's signature for `node <bin> <argv…>`, as the probe
+ *  runs the kernel, and NOT detached, as the probe is not: a Ctrl+C then ends it with the TUI. */
+export function startExec(bin, argv, options, callback) {
+  return nodeExecFile(process.execPath, [bin, ...argv], options, callback);
 }
 
 /** Where a change's output goes (createReader `files`). `dir()` makes the run's private directory

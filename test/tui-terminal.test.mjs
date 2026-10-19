@@ -13,7 +13,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, fixtureEnv, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { comparableStty } from "./helpers/stty-line.mjs";
@@ -227,6 +227,21 @@ const HELP_KEYS = [
 ];
 const NO_TERMINAL = "oats: `oats tui` needs a terminal on stdin and stdout (E_NO_TERMINAL); `oats status` prints the instances once";
 const noDeployment = (dir) => `oats: no OATS deployment at or above ${dir} (E_NO_DEPLOYMENT); name one with \`oats tui --dir <path>\``;
+/** The same start with no `--dir`, when this computer's list of deployments holds none (awebai/oats#1390). */
+const noDeploymentListed = (dir) => `oats: no deployment at or above ${dir}, and this computer's list of deployments holds none (E_NO_DEPLOYMENT): \`oats tui --dir <path>\` opens one (and lists it), \`oats onboard <dir> --workspace <ref>\` creates one`;
+/** Whether the kernel of this checkout lists this computer's deployments (`oats deployments`,
+ *  feature deployments-list): a start outside every deployment with no `--dir` reads that list. */
+const LISTS = /"deployments-list"/.test(spawnSync(process.execPath, [CLI, "version", "--json"], { encoding: "utf8", timeout: 20000 }).stdout ?? "");
+const NO_LIST = LISTS ? false : "this kernel has no `oats deployments` (feature deployments-list, awebai/oats#1390)";
+/** This computer's list of deployments as the kernel keeps it (`$OATS_HOME_DIR/config/deployments.json`,
+ *  schema 1), written for a test of its own: `paths` canonical, and the one-time import of `~/Agents`
+ *  marked done, so the kernel lists these and no other. Its OATS_HOME_DIR. */
+function listedHome(dir, paths) {
+  mkdirSync(join(dir, "config"), { recursive: true, mode: 0o700 });
+  const at = "2026-10-19T10:00:00.000Z";
+  writeFileSync(join(dir, "config", "deployments.json"), JSON.stringify({ schemaVersion: 1, deployments: paths.map((path) => ({ path, addedAt: at, via: "cli" })), imports: { "agents-dir": at } }), { mode: 0o600 });
+  return dir;
+}
 const tooSmallLine = (cols, rows) => `Terminal too small: ${cols}x${rows}, oats tui needs 60x15.`;
 const UTF8 = { locale: "C.UTF-8", rule: "─", bar: "│", stopped: "○" };
 const ASCII = { locale: "C", rule: "-", bar: "|", stopped: "-" };
@@ -379,9 +394,11 @@ function notReadFaults(screen, { cols = 80, rows = 24, title = /^ \S+$/, reason 
 /** The same for the switcher, in the main area: the title says `workspaces` where a workspace's
  *  name stands, no view of the accordion is open, and the main area is `body`, row for row from
  *  the first (each a string, or what the row matches), and nothing under it. `open`: a workspace
- *  is open, so Esc has a view to close the switcher onto and the cheat sheet offers it. */
-function switcherFaults(screen, { cols = 80, rows = 24, look = UTF8, body, open = true }) {
-  const { faults } = sidebarFaults(screen, { cols, rows, look, title: " workspaces", open: null, sheet: open ? SWITCHER_SHEET : SWITCHER_SHEET.filter(([key]) => key !== "Esc") });
+ *  is open, so Esc has a view to close the switcher onto and the cheat sheet offers it. `removable`:
+ *  a row of this computer's list of deployments is selected, and the sheet offers its Remove. */
+function switcherFaults(screen, { cols = 80, rows = 24, look = UTF8, body, open = true, removable = false }) {
+  const sheet = [...SWITCHER_SHEET.slice(0, -LAST_HINTS.length).filter(([key]) => open || key !== "Esc"), ...(removable ? [["Delete", "remove"]] : []), ...LAST_HINTS];
+  const { faults } = sidebarFaults(screen, { cols, rows, look, title: " workspaces", open: null, sheet });
   const area = mainOf(screen, cols);
   body.forEach((want, i) => { if (want instanceof RegExp ? !want.test(area[i] ?? "") : area[i] !== want) faults.push(`row ${i + 1} of the switcher is ${JSON.stringify(area[i])}, not ${want instanceof RegExp ? want : JSON.stringify(want)}`); });
   if (!area.slice(body.length).every((text) => text === "")) faults.push(`something is drawn under the ${body.length} rows of the switcher`);
@@ -887,7 +904,16 @@ test("the reason the kernel gives for an instance it could not observe stands in
 
 test("SIGHUP ends it with status 129, and the children of a read in flight with it; SIGKILL ends it at once: either way the process is gone and the private server holds exactly the sessions, windows and panes the tests made", { skip: NO_TMUX }, async (t) => {
   for (const [signal, status] of [["SIGHUP", 129], ["SIGKILL", 137]]) {
-    const term = await terminal(t);
+    // A temporary directory of the test's own for this run, empty: what the run leaves in it is all
+    // it made. A run SIGKILLed can remove nothing: the directory it made for the add of its
+    // deployment to this computer's list (a change, whose output goes there) is left, with no
+    // owner.json, since no terminal was opened, so no later run's sweep takes it (docs/tui.md, "What
+    // it reads, and what it runs"). The test removes its own directory, whatever happens.
+    const tmp = join(base, `tmp-${signal}`);
+    mkdirSync(tmp, { mode: 0o700 });
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    const made = () => readdirSync(tmp).map((name) => join(tmp, name));
+    const term = await terminal(t, { env: { TMPDIR: tmp } });
     const mine = everything();
     const run = await tui(term);
     // After SIGKILL nothing ran that could end a child either: a read then ends by itself.
@@ -897,6 +923,8 @@ test("SIGHUP ends it with status 129, and the children of a read in flight with 
     assert.equal(await run.ended(`after ${signal}`), status, term.shows());
     await until(term, () => !alive(run.pid), `the process ${run.pid} to be gone after ${signal}`);
     assert.deepEqual(everything(), mine, `${signal}: nothing was added to the server, and nothing of the test's was taken`);
+    if (signal === "SIGHUP") assert.deepEqual(made(), [], "SIGHUP: the run removed its directory on the way out");
+    else assert.equal(made().every((dir) => /[/]oats-tui-[^/]+$/.test(dir) && !existsSync(join(dir, "owner.json"))), true, `SIGKILL: what is left is a run directory with no panel: ${made()}`);
     // After SIGKILL nothing ran that could put the terminal back: it is left in the alternate
     // screen, which is expected and documented, and not asserted. The terminal goes with its session.
     t.diagnostic(`after ${signal} the pane reports ${term.flagsLine()}`);
@@ -1113,54 +1141,57 @@ for (const [what, set] of [["TERM=dumb", "env TERM=dumb"], ["an empty TERM", "en
   });
 }
 
-test("outside a deployment it prints one line with E_NO_DEPLOYMENT that names the directory and --dir, with status 1, and the terminal received no escape byte and changed no mode: where it was started, for a --dir that is a file, and for one that is not there; at a shell's prompt the terminal and the server are what they were", { skip: NO_TMUX }, async (t) => {
-  // Outside a deployment and with no --dir the TUI looks in ~/Agents before it gives up (the
-  // test after this one). Here there is none to look in: the panes of `bare` have this worker's
-  // home and the shell's terminal has the fixture's, and neither holds an `Agents`.
-  for (const home of [process.env.HOME, WORLD.env.HOME]) assert.equal(existsSync(join(home, "Agents")), false, `${home} holds no Agents`);
+test("outside a deployment with a --dir it prints one line with E_NO_DEPLOYMENT that names the directory and --dir, with status 1, and the terminal received no escape byte and changed no mode: for a --dir that is a file, and for one that is not there", { skip: NO_TMUX }, async (t) => {
+  // What was asked for is not there: answered before the kernel is asked, whatever this computer lists.
   const file = join(base, "a-file"), missing = join(base, "not", "there");
   writeFileSync(file, "");
-  for (const [what, args, dir] of [["where it was started", "", realpathSync(base)], ["for a --dir that is a file", `--dir ${shq(file)}`, file], ["for a --dir that is not there", `--dir ${shq(missing)}`, missing]]) {
+  for (const [what, args, dir] of [["for a --dir that is a file", `--dir ${shq(file)}`, file], ["for a --dir that is not there", `--dir ${shq(missing)}`, missing]]) {
     const { term, status, text } = await bare(t, `${TUI} ${args}`, what);
     assert.equal(status, "1\n", term.shows());
     assert.equal(text, `\n${noDeployment(dir)}\ntui-ended\n`, what);
   }
+});
+
+test("outside every deployment with no --dir and nothing on this computer's list of deployments it prints the E_NO_DEPLOYMENT line that says how to open one and how to create one, with status 1, and the terminal received no escape byte and changed no mode; at a shell's prompt the terminal and the server are what they were", { skip: NO_TMUX || NO_LIST }, async (t) => {
+  // A list of the test's own that holds no row, its import of ~/Agents done: what the kernel answers is an empty list.
+  const empty = `env OATS_HOME_DIR=${shq(listedHome(join(base, "oats-home-empty"), []))}`;
+  const { term: bareTerm, status, text } = await bare(t, `${empty} ${TUI}`, "where it was started");
+  assert.equal(status, "1\n", bareTerm.shows());
+  assert.equal(text, `\n${noDeploymentListed(realpathSync(base))}\ntui-ended\n`);
   const term = await terminal(t);
   const before = await term.state("before the start");
   const statusFile = join(base, `${term.id}-outside.status`);
-  await term.command(`${TUI}; echo $? > ${shq(statusFile)}`, "oats tui outside a deployment");
+  await term.command(`${empty} ${TUI}; echo $? > ${shq(statusFile)}`, "oats tui outside a deployment");
   await until(term, () => existsSync(statusFile) && /\n$/.test(readFileSync(statusFile, "utf8")), "the status of oats tui outside a deployment");
   await term.prompt("after the refusal");
   assert.equal(readFileSync(statusFile, "utf8"), "1\n");
-  assert.ok(term.showsLine(noDeployment(realpathSync(base))), `the pane shows the line:\n${term.shows()}`);
+  assert.ok(term.showsLine(noDeploymentListed(realpathSync(base))), `the pane shows the line:\n${term.shows()}`);
   assert.deepEqual(await term.state("after the refusal"), before, "the terminal and the server after the refusal");
 });
 
-test("started outside a deployment and with no --dir, it opens on the switcher when ~/Agents holds a deployment: the folder is listed by its name and its path under the heading for what is not opened; Enter opens it and the Instances view of that deployment is drawn, which says that it is not observed and why; w returns to the switcher, where it is now the open one; q exits 0 and the terminal is what it was. With an ~/Agents that holds no deployment, and with a --dir that is in no deployment, it prints the E_NO_DEPLOYMENT line as before", { skip: NO_TMUX }, async (t) => {
-  // A home of the test's own, for its terminals only. test/helpers/v2-deployment.mjs makes a
-  // deployment in a base of its own and nowhere else, so the folder holds only a regular
-  // `oats-local.yaml` (the fixture deployment's own): a deployment for the switcher, which reads
-  // nothing of a folder but that file's existence, and one the kernel cannot read once it is opened.
-  const home = join(base, "home-with-agents"), folder = join(home, "Agents", "acme-ledger"), here = realpathSync(base);
+test("started outside a deployment and with no --dir, it opens on the switcher when this computer's list of deployments holds one: it is listed by its name and its path under the heading for what is not opened; Enter opens it and the Instances view of that deployment is drawn, which says that it is not observed and why; w returns to the switcher, where it is now the open one; q exits 0 and the terminal is what it was. With a --dir that is in no deployment, it prints the E_NO_DEPLOYMENT line as before", { skip: NO_TMUX || NO_LIST }, async (t) => {
+  // A home and a list of the test's own, for its terminals only. test/helpers/v2-deployment.mjs
+  // makes a deployment in a base of its own and nowhere else, so the folder holds only a regular
+  // `oats-local.yaml` (the fixture deployment's own): a deployment for the list's existence check
+  // and the switcher, which read nothing of a folder but that file's existence, and one the kernel
+  // cannot read once it is opened.
+  const home = join(base, "home-listed"), folder = join(home, "acme-ledger"), here = realpathSync(base);
   mkdirSync(folder, { recursive: true });
-  t.after(() => rmSync(home, { recursive: true, force: true }));
-  const refused = async (args, what) => {
-    const { term, status, text } = await bare(t, `env HOME=${shq(home)} ${TUI} ${args}`, what);
-    assert.equal(status, "1\n", term.shows());
-    assert.equal(text, `\n${noDeployment(here)}\ntui-ended\n`, what);
-  };
-  await refused("", "with an ~/Agents whose one folder is no deployment");
   writeFileSync(join(folder, "oats-local.yaml"), readFileSync(join(WORLD.dep, "oats-local.yaml")));
+  const listed = listedHome(join(base, "oats-home-listed"), [realpathSync(folder)]);
+  t.after(() => { rmSync(home, { recursive: true, force: true }); rmSync(listed, { recursive: true, force: true }); });
   // What was asked for is not there: a --dir is never answered with the switcher.
-  await refused(`--dir ${shq(here)}`, "for a --dir in no deployment, with a deployment in ~/Agents");
+  const { term: refusedTerm, status, text } = await bare(t, `env HOME=${shq(home)} OATS_HOME_DIR=${shq(listed)} ${TUI} --dir ${shq(here)}`, "for a --dir in no deployment, with a deployment listed");
+  assert.equal(status, "1\n", refusedTerm.shows());
+  assert.equal(text, `\n${noDeployment(here)}\ntui-ended\n`);
 
   // 120 columns: at 80 the switcher beside the sidebar has twelve cells for what stands beside a
   // name, which would cut the folder's path and the workspace's place.
   const cols = 120;
   await leavesTheTerminalIntact(t, {
-    how: "q in the switcher of a run started outside a deployment", status: 0, env: { HOME: home }, size: { cols }, leave: (term) => term.press("q"),
+    how: "q in the switcher of a run started outside a deployment", status: 0, env: { HOME: home, OATS_HOME_DIR: listed }, size: { cols }, leave: (term) => term.press("q"),
     // Nothing is open yet: Esc has no view to close the switcher onto, and the cheat sheet does not offer it.
-    start: { args: "", first: (run) => run.switcher("at the start", { open: false, body: [OFFERED, choice("acme-ledger", "~/Agents/acme-ledger", { selected: true }, cols)] }) },
+    start: { args: "", first: (run) => run.switcher("at the start", { open: false, removable: true, body: [OFFERED, choice("acme-ledger", "~/acme-ledger", { selected: true }, cols)] }) },
     arrive: async (term, run) => {
       term.press("Enter");
       // The view of that deployment: its folder's name in the title, and the state and the
@@ -1263,7 +1294,7 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   // At 80x24 the help has the 39 cells of the main area beside the sidebar, and its line of `quit`
   // is its 120th row or so: under the views, `workspaces` and the palette, `open` four times with
   // the agent's terminal and the leader's keys under it (whose rows depend on how the leader's label
-  // wraps: one more with `Ctrl+\` than with `Alt+O`), `soul-instances`, the open terminal's keys, the
+  // wraps: one more with `Ctrl+\` than with `Alt+O`), the switcher's `remove`, `soul-instances`, the open terminal's keys, the
   // split's, the four acts with the rules of a confirmation under them, and the spawn's, each
   // sentence wrapped to that width. The movement keys scroll the help: with either leader the line
   // of `quit` is on the screen from 100 rows down to 121, and 110 rows down show it.
