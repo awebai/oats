@@ -14,7 +14,6 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, fixtureEnv, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { comparableStty } from "./helpers/stty-line.mjs";
@@ -903,19 +902,19 @@ test("the reason the kernel gives for an instance it could not observe stands in
   });
 });
 
-/** The run directories `oats-tui-*` in the temporary directory the TUIs of this file are given. */
-const runDirs = () => readdirSync(tmpdir()).filter((name) => name.startsWith("oats-tui-")).map((name) => join(tmpdir(), name));
-
 test("SIGHUP ends it with status 129, and the children of a read in flight with it; SIGKILL ends it at once: either way the process is gone and the private server holds exactly the sessions, windows and panes the tests made", { skip: NO_TMUX }, async (t) => {
   for (const [signal, status] of [["SIGHUP", 129], ["SIGKILL", 137]]) {
-    const term = await terminal(t);
+    // A temporary directory of the test's own for this run, empty: what the run leaves in it is all
+    // it made. A run SIGKILLed can remove nothing: the directory it made for the add of its
+    // deployment to this computer's list (a change, whose output goes there) is left, with no
+    // owner.json, since no terminal was opened, so no later run's sweep takes it (docs/tui.md, "What
+    // it reads, and what it runs"). The test removes its own directory, whatever happens.
+    const tmp = join(base, `tmp-${signal}`);
+    mkdirSync(tmp, { mode: 0o700 });
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    const made = () => readdirSync(tmp).map((name) => join(tmp, name));
+    const term = await terminal(t, { env: { TMPDIR: tmp } });
     const mine = everything();
-    const before = new Set(runDirs()), made = () => runDirs().filter((dir) => !before.has(dir));
-    // A run SIGKILLed can remove nothing: the directory it made for the add of its deployment to
-    // this computer's list (a change, whose output goes there) is left, with no owner.json, since no
-    // terminal was opened, so no later run's sweep takes it (docs/tui.md, "What it reads, and what
-    // it runs"). The test removes it, whatever happens.
-    t.after(() => { for (const dir of made()) rmSync(dir, { recursive: true, force: true }); });
     const run = await tui(term);
     // After SIGKILL nothing ran that could end a child either: a read then ends by itself.
     const reading = signal === "SIGHUP" ? await run.reading("before SIGHUP") : [];
@@ -925,7 +924,7 @@ test("SIGHUP ends it with status 129, and the children of a read in flight with 
     await until(term, () => !alive(run.pid), `the process ${run.pid} to be gone after ${signal}`);
     assert.deepEqual(everything(), mine, `${signal}: nothing was added to the server, and nothing of the test's was taken`);
     if (signal === "SIGHUP") assert.deepEqual(made(), [], "SIGHUP: the run removed its directory on the way out");
-    else assert.equal(made().every((dir) => !existsSync(join(dir, "owner.json"))), true, "SIGKILL: what is left holds no panel");
+    else assert.equal(made().every((dir) => /[/]oats-tui-[^/]+$/.test(dir) && !existsSync(join(dir, "owner.json"))), true, `SIGKILL: what is left is a run directory with no panel: ${made()}`);
     // After SIGKILL nothing ran that could put the terminal back: it is left in the alternate
     // screen, which is expected and documented, and not asserted. The terminal goes with its session.
     t.diagnostic(`after ${signal} the pane reports ${term.flagsLine()}`);
