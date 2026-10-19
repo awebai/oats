@@ -151,7 +151,7 @@ test("focus: one global 1px inset accent edge and tint replace every 2px ring an
 
 test("focus: keyboard focus on plain shell controls paints the tint and the edge", t => {
   const u = fixture(t);
-  for (const selector of ["#ws-trigger", ".ws-option", ".ws-add-open", ".nav-item:not(.active)", ".ctx-inst", ".tab-trigger", ".tab .close",
+  for (const selector of ["#ws-trigger", "#sidebar-leader", ".ws-option", ".ws-add-open", ".nav-item:not(.active)", ".ctx-inst", ".tab-trigger", ".tab .close",
     "#tab-actions button", ".ws-suggestion", ".ws-dialog-foot .secondary", ".kb-chord", ".kb-close", ".ws-segmented [aria-pressed=false]",
     ".ctx-instance-menu button", ".ctx-instance-actions", ".lifecycle-close", ".lifecycle-review", ".lifecycle-check", ".oats-view .act:not(.primary):not(.danger)"]) {
     const s = u.focused(selector);

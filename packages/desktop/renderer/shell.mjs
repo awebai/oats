@@ -32,7 +32,13 @@ import { createFocusRegions, firstTabbable, isShown } from "./focus-regions.mjs"
 import { createFileOpener } from "./open-file.mjs";
 import {
   registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction, keymapConflicts, pickerCycleDirection,
+  listActions, SIDEBAR_KEYS,
 } from "./keybindings.mjs";
+import { createLeader } from "./leader.mjs";
+import { createLeaderHint } from "./leader-hint.mjs";
+import { createLeaderDispatch } from "./leader-dispatch.mjs";
+import { leaderApplies, leaderLabel, leaderRowsNow, leaderRowOf } from "./leader-keys.mjs";
+import { LEADER_TABLE } from "../../client/keymap.mjs";
 import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
 import { createTerminalSettings, settingsTerminalCSS } from "./settings-terminal.mjs";
@@ -518,9 +524,18 @@ function updateActiveContexts(tabLayerOn = tabLayerVisible) {
   const set = new Set();
   if (tabLayerOn) set.add("tabs");
   else if (stage) set.add(`stage:${stage.name}`);
+  // The sidebar's plain keys (context `sidebar`, sidebar.key.*): live while focus is in the sidebar
+  // (its nav, the roster rows, the footer), never inside an open popup there (an instance's actions
+  // menu, the workspace switcher's menu). An editable field is matchEvent's own guard.
+  const focused = document.activeElement;
+  if (focused && document.getElementById("sidebar")?.contains(focused) && !focused.closest('[role="menu"], [role="listbox"], .ws-menu')) set.add("sidebar");
   if (activeInstanceMenu?.element.isConnected && activeInstanceMenu.element.dataset.instanceMenuOpen === 'true' && activeInstanceMenu.element.contains(document.activeElement) && activeInstanceMenu.owns()) set.add('instance-menu');
   setActiveContexts(set);
 }
+
+// The sidebar context follows focus.
+document.addEventListener("focusin", () => updateActiveContexts());
+document.addEventListener("focusout", () => queueMicrotask(() => updateActiveContexts()));
 
 function initContextRoster() {
   contextRosterEl = document.getElementById("instance-roster");
@@ -1253,7 +1268,10 @@ function onRosterRowKey(e) {
     if (pid) focusInstance(pid);
     return;
   }
-  const to = moveTarget(action, at, rows.length);
+  // PageUp/PageDown move by the rows that fit the list.
+  const rowHeight = btn.closest(".ctx-tree-row")?.getBoundingClientRect().height || btn.getBoundingClientRect().height;
+  const pageSize = rowHeight > 0 ? Math.floor(listEl.clientHeight / rowHeight) : 1;
+  const to = moveTarget(action, at, rows.length, pageSize);
   if (to < 0 || to === at) return;
   // Every row takes focus (an unavailable one is aria-disabled, never disabled).
   setRovingRow(listEl, rows[to]);
@@ -2239,7 +2257,8 @@ for (const button of document.querySelectorAll("#nav-foot [data-action]")) {
 
 // This is a chooser entry, not a launch or an inspection preselection. Capture
 // workspace visit + selection before import, and contain stale rejections too.
-async function openWorkspaceSouls() {
+// The leader's 3 opens the same way on Capabilities (`tab`).
+async function openWorkspaceSouls(tab = "souls") {
   const selectionOwns = tabOpenIntents.begin();
   const owns = () => selectionOwns() && ![...document.querySelectorAll('[aria-modal="true"]')]
     .some(dialog => !dialog.closest("[hidden]"));
@@ -2247,11 +2266,11 @@ async function openWorkspaceSouls() {
   try { mod = await import("./views/spawn.mjs"); }
   catch (e) {
     if (!owns()) return;
-    ctx.notify(`Could not open Workspace Souls: ${e.message || e}`);
+    ctx.notify(`Could not open Workspace ${tab === "souls" ? "Souls" : "Capabilities"}: ${e.message || e}`);
     return;
   }
   if (!owns()) return;
-  mod.preselectWorkspaceTab("souls");
+  mod.preselectWorkspaceTab(tab);
   showStage("spawn");
 }
 
@@ -2326,7 +2345,13 @@ const quickOpen = createQuickOpen({
     const ws = currentWorkspace();
     return api(`/api/agents${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
   },
-  onPick: async (soul) => {
+  onPick: (soul) => soulSpawn.open(soul),
+});
+/** Quick Open's pick path: the spawn dialog for `soul`, scoped as its card's Spawn opens it (a soul
+ * that can't be spawned here opens its page, which says why); dismissing it returns to where the
+ * operator was. The leader's N takes it for the target instance's soul (`onMiss`: no such soul). */
+const soulSpawn = {
+  async open(soul, { onMiss } = {}) {
     // Capture before module loading: a new tab/stage/sidebar intent or an
     // A→B→A workspace visit must not turn this old callback into a new pick.
     const owns = tabOpenIntents.begin();
@@ -2340,10 +2365,10 @@ const quickOpen = createQuickOpen({
       return;
     }
     if (!owns()) return;
-    mod.preselectSpawn({ ...soul, onDismiss: () => surfaceReturn.restore(origin) });
+    mod.preselectSpawn({ ...soul, ...(onMiss ? { onMiss } : {}), onDismiss: () => surfaceReturn.restore(origin) });
     showStage("spawn");
   },
-});
+};
 // Both pickers contain workspace-scoped references. Close synchronously on
 // every workspace visit; their own lifetimes discard late lists and row clicks.
 onWorkspaceChange(() => {
@@ -2707,6 +2732,19 @@ registerAction({ id: "focus.prevRegion", label: "Focus the previous region", con
 // leaves it for the next region, same order as F6; from there plain F6 works.
 registerAction({ id: "focus.leaveTerminal", label: "Leave the terminal (focus the next region)", context: "global", run: () => cycleRegion(1) });
 
+// The leader's Tab (docs/desktop-keyboard.md, "The leader"): the next editor group's active tab, or
+// the group itself when it is empty, wrapping. No default chord of its own.
+registerAction({ id: "split.focusNextGroup", label: "Focus the next editor group", context: "tabs", run: unlessModal(() => focusNextGroup()) });
+function focusNextGroup() {
+  if (!tabLayerVisible || !split || split.groups.length < 2) return;
+  const at = split.groups.findIndex(g => g.id === split.focusedGroup);
+  const next = split.groups[(at + 1) % split.groups.length];
+  tabOpenIntents.invalidate();
+  if (next.activeTab != null) { selectTab(next.activeTab, { focusContent: true }); return; }
+  if (selectEmptyGroup(next.id)) tabOpenIntents.applyFocus(() => tabhost.querySelector(".focused-group > .split-empty")?.focus());
+}
+
+
 // THE one window keydown listener. The engine owns the terminal policy
 // (⌘ chords on mac; the action-id allowlist on Linux/Windows, where the
 // allowlisted defaults are Ctrl+Shift+key so plain Ctrl+letter stays the
@@ -2715,6 +2753,131 @@ registerAction({ id: "focus.leaveTerminal", label: "Leave the terminal (focus th
 // engine must not double-dispatch them.
 // The engine skips already-consumed (defaultPrevented) events itself.
 window.addEventListener("keydown", (e) => handleKeydown(e));
+
+// ── the leader (Alt+O / Ctrl+\, the TUI's): one key after it, from every focus ──────────
+// leader.mjs settles the wait on the next key; leader-keys.mjs says which rows apply and their
+// words; leader-dispatch.mjs runs a `does` (the leader's and the sidebar keys' alike); the hint
+// lists the keys while it waits and says, in one line, why something did not run.
+const actionLabel = id => listActions().find(action => action.id === id)?.label ?? null;
+const leaderHint = createLeaderHint({ doc: document, host: document.getElementById("main"), before: document.getElementById("show-panel") });
+let hintLineArmed = false;
+/** One line in the hint: it stays until the next keydown, click or focus change (never on a timer). */
+function sayInHint(line) {
+  leaderHint.say(line);
+  hintLineArmed = false;
+  setTimeout(() => { hintLineArmed = leaderHint.mode() === "line"; }, 0);
+}
+for (const type of ["keydown", "pointerdown", "focusin", "focusout"]) {
+  window.addEventListener(type, () => { if (hintLineArmed && leaderHint.mode() === "line") { hintLineArmed = false; leaderHint.hide(); } }, true);
+}
+/** What the window shows now, for the rows that apply (leader-keys.mjs leaderApplies). */
+function leaderState() {
+  const ws = currentWorkspace();
+  const terminalOpen = tabLayerVisible && [...tabs.values()].some(t => t.kind === "terminal" && canActivateTab(t, ws));
+  const active = activeTab != null ? tabs.get(activeTab) : null;
+  const controls = splitControlsState(split, activeTab, active?.kind ?? null, tabLayerVisible);
+  return { terminalOpen, tabs: tabLayerVisible ? visibleTabEntries().length : 0,
+    canSplitRow: !!controls.splitRow, canSplitCol: !!controls.splitCol, split: tabLayerVisible && !!split && split.groups.length >= 2 };
+}
+/** The instance a key acts on: the terminal's when it was pressed in one, else the focused roster
+ * row's, else the selected row's (the active terminal tab's), else none. Its instanceId. */
+function leaderTargetId(el) {
+  if (el?.closest?.(".xterm")) {
+    const tab = [...tabs.values()].find(t => t.kind === "terminal" && t.paneEl?.contains(el));
+    if (tab?.instanceRef) return instanceId(tab.instanceRef);
+  }
+  const row = el?.closest?.("#instance-roster .ctx-inst");
+  if (row?.dataset.treeInstance) return row.dataset.treeInstance;
+  const active = activeTab != null ? tabs.get(activeTab) : null;
+  return active?.kind === "terminal" && active.instanceRef ? instanceId(active.instanceRef) : null;
+}
+const rosterInstance = id => (id == null ? null : shownRows(contextInstances).find(i => instanceId(i) === id) ?? null);
+const rosterRowEl = id => [...(contextRosterEl?.querySelectorAll(".ctx-list .ctx-inst") || [])].find(row => row.dataset.treeInstance === id) ?? null;
+/** Why a key cannot do its row's work now, for a sidebar key (the leader's hint never offers such a row). */
+function notApplicable(does) {
+  const row = LEADER_TABLE.find(r => r.does === does);
+  if (!row) return null;
+  const state = leaderState();
+  if (leaderApplies(row, state)) return null;
+  if (row.terminal && !state.terminalOpen) return "No terminal tab is open.";
+  if (does === "tab-previous" || does === "tab-next") return "There is no other tab.";
+  if (does === "split-right" || does === "split-down") return "The active tab can't be split that way now.";
+  return "The tabs are not split.";
+}
+const leaderDispatch = createLeaderDispatch({
+  say: sayInHint,
+  targetId: origin => origin.targetId ?? null,
+  target: origin => rosterInstance(origin.targetId ?? null),
+  rosterRows: () => [...(contextRosterEl?.querySelectorAll(".ctx-list .ctx-inst:not(.pending):not([data-filter-context])") || [])].map(row => {
+    const instance = rosterInstance(row.dataset.treeInstance);
+    return { id: row.dataset.treeInstance, openable: instance?.running === true && row.getAttribute("aria-disabled") !== "true", open: () => row.click() };
+  }),
+  // The row menu's own block (a stale roster, an act pending): its trigger, aria-disabled, says why.
+  menuReason: instance => {
+    const trigger = rosterRowEl(instanceId(instance))?.closest(".ctx-tree-row")?.querySelector(".ctx-instance-actions");
+    if (!trigger || trigger.disabled || trigger.getAttribute("aria-disabled") !== "true") return null;
+    return trigger.title || ROSTER_STALE_TITLE;
+  },
+  openAct: (verb, instance) => {
+    const ws = contextWorkspace || currentWorkspace();
+    if (verb === "stop" || verb === "retire") openLifecycleDialog(verb, instance, ws);
+    else openInstanceStart(instance, { restart: verb === "restart" });
+  },
+  spawnSoul: instance => soulSpawn.open({ name: instance.agent, agentsRoot: instance.agentsRoot, ...(instance.server ? { server: instance.server } : {}) }, {
+    onMiss: count => sayInHint(count ? `Several souls are named ${instance.agent}; pick it in the Workspace view.` : `${instance.agent} is not in this workspace's souls.`),
+  }),
+  palette: () => runAction("app.palette"),
+  instances: () => {
+    const ws = currentWorkspace();
+    if ([...tabs.values()].some(t => t.kind === "terminal" && canActivateTab(t, ws))) showTerminalContext();
+    else void showStageFocused("hierarchy");
+  },
+  souls: () => runAction("app.chooseSoul"),
+  capabilities: () => openWorkspaceSouls("capabilities"),
+  // The TUI's zoom is a toggle, so this one is: focus mode on or off, and the active terminal focused either way.
+  zoom: () => { runAction("app.focusMode"); focusActiveTerminal(); },
+  closeTab: () => runAction("tabs.close"),
+  tabPrevious: () => runAction("tabs.prev"),
+  tabNext: () => runAction("tabs.next"),
+  splitRight: () => runAction("split.vertical"),
+  splitDown: () => runAction("split.horizontal"),
+  nextGroup: () => runAction("split.focusNextGroup"),
+  closeSplit: () => runAction("split.close"),
+  quickOpen: () => runAction("app.quickOpenSouls"),
+  filter: () => runAction("sidebar.focusFilter"),
+  workspaces: () => runAction("app.workspaces"),
+  help: () => runAction("app.shortcuts"),
+  list: () => {
+    if (sidebarHidden() || contextPanel.isFocusMode()) runAction("sidebar.toggle");
+    tabOpenIntents.invalidate();
+    focusRegions.focusRegion("roster");
+  },
+  refresh: () => { void refreshContextRoster({ user: true }); },
+});
+const leader = createLeader({ win: window, isMac, modalOpen,
+  // A key whose row does not apply now cancels, as one outside the table does: the hint never offered it.
+  supports: does => leaderDispatch.supports(does) && leaderApplies(LEADER_TABLE.find(row => row.does === does) ?? { does }, leaderState()),
+  onOpen: () => leaderHint.showKeys(leaderRowsNow(leaderState()).map(row => ({ keys: row.keys, label: leaderLabel(row.does, actionLabel) })), { isMac }),
+  onClose: () => { if (leaderHint.mode() === "keys") leaderHint.hide(); },
+  onSettle: (does, origin) => leaderDispatch.run(does, origin),
+});
+window.addEventListener("pagehide", () => leader.dispose(), { once: true });
+// The chord, from every focus, a terminal's and an editable field's included. Under a modal dialog
+// or the palette it is not there at all (`when`): the key goes where it goes without it.
+registerAction({ id: "app.leader", label: "Leader: the commands that follow one key", context: "global", when: () => !modalOpen(),
+  run: (e) => { const at = e?.target ?? document.activeElement; leader.start({ targetId: leaderTargetId(at) }); } });
+// The sidebar's footer starts it too (its hint opens; the next key settles it, as from the keyboard).
+const leaderButton = document.getElementById("sidebar-leader");
+leaderButton?.addEventListener("click", () => { if (!modalOpen()) leader.toggle({ opener: leaderButton, targetId: leaderTargetId(leaderButton) }); });
+// The sidebar's plain keys (the TUI's, shared PLAIN_KEYS): one action per key, the same `does` as
+// the leader's, acting on the focused roster row (on a nav or footer control: the selected row).
+for (const { id, does } of SIDEBAR_KEYS) {
+  registerAction({ id, label: leaderLabel(does, actionLabel), context: "sidebar", run: (e) => {
+    const why = notApplicable(does);
+    if (why) { sayInHint(why); return; }
+    leaderDispatch.run(does, { targetId: leaderTargetId(e?.target ?? document.activeElement) });
+  } });
+}
 
 // Chord-suffixed tooltips, live against the keymap: any control that
 // declares data-action gets “ … (chord)” appended to its base title.
@@ -2735,6 +2898,13 @@ function applyChordTitles() {
     const chord = getBinding(el.dataset.shortcut, isMac);
     el.textContent = chord ? formatChord(chord, isMac) : "";
     el.hidden = !chord;
+  }
+  // The footer's leader button: its tooltip and its name say the live chord.
+  const leaderStart = document.getElementById("sidebar-leader");
+  if (leaderStart) {
+    const chord = getBinding("app.leader", isMac);
+    const name = chord ? `Commands: ${formatChord(chord, isMac)}, then one key` : "Commands: press this, then one key";
+    leaderStart.title = name; leaderStart.setAttribute("aria-label", name);
   }
 }
 onKeymapChange(() => applyChordTitles());

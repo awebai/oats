@@ -79,3 +79,21 @@ test("view-local defaults are first-class engine bindings (registerAction defaul
   assert.match(spawn, /id: "spawn\.filter", label:.*defaultChord: "\/"/, "spawn.filter default '/'");
   assert.match(spawn, /id: "spawn\.brain", label:.*defaultChord: "B"/, "spawn.brain default B");
 });
+
+test("the leader is wired as one rebindable global action, inert under a modal, with its hint and footer button", () => {
+  const src = read("renderer/shell.mjs");
+  assert.match(src, /registerAction\(\{ id: "app\.leader", label: "Leader: the commands that follow one key", context: "global", when: \(\) => !modalOpen\(\),/);
+  assert.match(src, /const leader = createLeader\(\{ win: window, isMac, modalOpen,/);
+  assert.match(src, /onSettle: \(does, origin\) => leaderDispatch\.run\(does, origin\)/);
+  assert.match(src, /createLeaderHint\(\{ doc: document, host: document\.getElementById\("main"\), before: document\.getElementById\("show-panel"\) \}\)/);
+  assert.match(src, /registerAction\(\{ id: "split\.focusNextGroup", label: "Focus the next editor group", context: "tabs",/);
+  // The footer's button starts it, toggles off on a second click, and names the live chord.
+  assert.match(src, /leaderButton\?\.addEventListener\("click", \(\) => \{ if \(!modalOpen\(\)\) leader\.toggle\(\{ opener: leaderButton,/);
+  assert.match(src, /const chord = getBinding\("app\.leader", isMac\);\n    const name = chord \? `Commands: \$\{formatChord\(chord, isMac\)\}, then one key`/);
+  const html = read("renderer/index.html");
+  const foot = html.slice(html.indexOf('<div id="nav-foot">'));
+  assert.ok(foot.indexOf('id="sidebar-leader"') < foot.indexOf('id="sidebar-spawn"'), "the leader's hint is the footer's first control");
+  assert.match(foot, /<kbd class="shortcut-hint" data-shortcut="app\.leader" aria-hidden="true" hidden><\/kbd><span aria-hidden="true">commands<\/span>/);
+  // A terminal's interception goes through matchEvent, which a let-through event (the leader twice) passes.
+  assert.match(read("renderer/keybindings.mjs"), /if \(e\.defaultPrevented \|\| letThroughEvents\.has\(e\)\) return null;/);
+});
