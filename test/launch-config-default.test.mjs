@@ -14,6 +14,7 @@ import YAML from "yaml";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { launchConfigsAt, NATIVE_DEFAULT_MODEL, resolveLaunchSelection } from "../lib/core.mjs";
 import { launchOf, PREVIEW_FROM, REPORT_FROM } from "../packages/client/launch-contract.mjs";
+import { deploymentsImported } from "./helpers/host-fixture.mjs";
 
 const OPUS = { harness: "claude", model: "claude-opus-5-5" };
 const LOCAL = "oats-local.yaml";
@@ -50,6 +51,7 @@ test("selection: the harness default stands in for 'no configuration', below nam
 });
 
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-launch-default-")));
+deploymentsImported(join(base, "oats-home"));
 test.after(() => rmSync(base, { recursive: true, force: true }));
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const HEAD = "schemaVersion: 2\nworkspace: example.invalid/acme/workspace\n";
