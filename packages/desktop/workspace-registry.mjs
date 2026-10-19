@@ -2,18 +2,23 @@
 // (Phase-2 hook 3; the switcher and its modal live in the renderer.)
 //
 // Discovery is BOUNDED and deterministic — never arbitrary filesystem
-// scanning: (a) deployments the app already knows, (b) a persisted
-// recently-added list, (c) the deployments directly inside ~/Agents
-// (deploymentsInside). (A folder the operator picked that is not a deployment
-// gets one bounded look around it: pickedFolderChoices.) Every candidate must still be a workspace-model v2
-// deployment directory AT SUGGESTION TIME; `reason` says why it is offered.
+// scanning: (a) deployments the app already knows (the saved open set and
+// what was added), (b) this computer's deployments list, read from the kernel
+// (`oats deployments --json`, feature deployments-list, #1390). (A folder the
+// operator picked that is not a deployment gets one bounded look around it:
+// pickedFolderChoices.) A list row is a suggestion, never authorization: one
+// that can be opened must still be a workspace-model v2 deployment directory
+// AT SUGGESTION TIME, and workspace:add validates it again; `reason` says why
+// it is offered. A row the kernel reports stale (missing, not a deployment,
+// unreadable) is shown with its state and can only be removed from the list.
 // The deployment's content is the kernel's to read (`oats workspace status`);
-// the registry never parses it and knows no team scope. workspace:add canonicalizes, re-validates, persists to a recents
-// store (path-validated on read-back — never trusted blindly), and the
-// caller replaces only an app-OWNED backend server.
+// the registry never parses it and knows no team scope. workspace:add
+// canonicalizes and re-validates, and the caller replaces only an app-OWNED
+// backend server; once an add is committed the caller lists it with the kernel.
 import { mkdirSync, writeFileSync, renameSync, rmSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { deploymentCheck, deploymentsInside, PICK_SCAN_LIMIT } from "../client/workspace-admission.mjs";
+import { DEPLOYMENT_IMPORT_MAX } from "../client/deployment-list-cli.mjs";
 
 /** Restore explicitly opened workspaces, independently of recent suggestions.
  * Re-validate on startup: moved/deleted deployments are skipped and
@@ -139,6 +144,9 @@ export function pickedFolderChoices(dir, io) {
  * @param {(workspace, isCurrent: () => boolean) => Promise<object>} io.execute  createAddExecutor
  * @param {ReturnType<typeof createGenerations>} io.generations
  * @param {(workspace) => void} [io.added]  a workspace was opened, or was already open
+ * @param {(workspace) => Promise<{ code: string, message: string }|null>} [io.listed]  an add was committed:
+ *        list it on this computer (`oats deployments add --via desktop`); the failure, or null. Best effort:
+ *        the add has happened whatever it answers, and its answer carries the failure as `listed`.
  * `scope` names the window that asked (#481): its own add generation and provenance, so one window's
  * add never supersedes another's; every add still runs through the one serialized executor.
  */
@@ -165,8 +173,11 @@ export function createPerformAdd(io) {
     }
     if (decision.action === "already-advertised") { io.added?.(decision.workspace); return { ok: true, workspace: decision.workspace }; }
     const result = await io.execute(decision.workspace, () => io.generations.isCurrent(verb, gen));
-    if (result?.ok) io.added?.(decision.workspace);
-    return result;
+    if (!result?.ok) return result;
+    io.added?.(decision.workspace);
+    let listed = null;
+    try { listed = (await io.listed?.(decision.workspace)) ?? null; } catch (error) { listed = { code: "E_CLI_FAILED", message: String(error?.message || error) }; }
+    return listed ? { ...result, listed } : result;
   };
 }
 
@@ -200,50 +211,42 @@ export function saveWorkspaceDirs(file, dirs) {
   writeJsonAtomic(file, dirs);
 }
 
+/** Why a suggestion is offered: a deployment this Desktop has saved (or added) but does not serve, and a
+ * row of this computer's deployments list. */
+export const SAVED_REASON = "Saved, not open";
+export const LISTED_REASON = "On this computer";
+
 /**
- * Assemble the suggestion list: validated candidates NOT currently advertised.
+ * Assemble the suggestion list: deployments NOT currently advertised, each once (first reason wins).
  * @param {object} io
- * @param {string[]} io.knownPaths      deployment paths the app already knows (startup --dir set)
- * @param {string[]} io.recents         persisted recently-added paths (validated on read)
- * @param {string[]} [io.discovered]    deployments found in ~/Agents (deploymentsInside)
+ * @param {string[]} io.knownPaths      deployment paths the app already knows (the saved set, what was added)
+ * @param {Array<{ path, name, state }>|null} [io.listed]  this computer's deployments list (deployment-list.mjs
+ *        rows), or null when it could not be read
  * @param {Set<string>} io.advertised   workspace ids the current server advertises
  * @param {(p: string) => ReturnType<typeof validateWorkspace>} io.validate
- * @returns {Array<{ id, name, team, path, reason }>}
+ * @returns {Array<{ id, name, team, path, reason, state, removable }>}
+ *   `state` is "ok" for one that can be opened (it validates now), else the list's stale state;
+ *   `removable` when the list holds it (Remove runs `oats deployments remove`).
  */
 export function workspaceSuggestions(io) {
-  const out = new Map(); // id -> candidate (first reason wins; dedup)
-  const consider = (path, reason) => {
+  const out = new Map(); // path -> candidate
+  const listed = Array.isArray(io.listed) ? io.listed : [];
+  const inList = new Set(listed.map((row) => row.path));
+  const known = (path, reason) => {
     const v = io.validate(path);
     if (!v) return;                       // must be a real workspace NOW
     if (io.advertised.has(v.id)) return;  // already advertised — not a suggestion
-    if (!out.has(v.id)) out.set(v.id, { ...v, reason });
+    if (!out.has(v.path)) out.set(v.path, { ...v, reason, state: "ok", removable: inList.has(v.path) });
   };
-  for (const p of io.knownPaths) consider(p, "known workspace");
-  for (const p of io.recents) consider(p, "recently used");
-  for (const p of io.discovered ?? []) consider(p, "found in ~/Agents");
-  return [...out.values()];
-}
-
-/**
- * Recents store shape (app userData JSON). Read-back is VALIDATED — paths
- * that no longer resolve as workspaces are dropped, non-arrays/garbage
- * rejected; the store can never smuggle an arbitrary path into privileged
- * flows.
- */
-export function parseRecents(raw, validate) {
-  let data;
-  try { data = JSON.parse(raw); } catch { return []; }
-  if (!Array.isArray(data)) return [];
-  const out = [];
-  for (const entry of data.slice(0, 20)) {
-    if (typeof entry !== "string" || !entry.startsWith("/")) continue;
-    if (validate(entry)) out.push(entry);
+  for (const p of io.knownPaths) known(p, SAVED_REASON);
+  for (const row of listed) {
+    if (out.has(row.path) || io.advertised.has(row.path)) continue;
+    // A row the kernel calls a deployment is offered only while it validates here too; one that stopped
+    // being one since (a race) is left out until the next read says what it is.
+    if (row.state === "ok") { known(row.path, LISTED_REASON); continue; }
+    out.set(row.path, { id: row.path, name: row.name, team: null, path: row.path, reason: "", state: row.state, removable: true });
   }
-  return out;
-}
-
-export function pushRecent(recents, path, max = 10) {
-  return [path, ...recents.filter((p) => p !== path)].slice(0, max);
+  return [...out.values()];
 }
 
 /**
@@ -295,27 +298,104 @@ export function createGenerations() {
 /**
  * The workspace:suggestions calls, per window (#481): each window (`scope`) has its own generation,
  * so a newer call supersedes only that window's older one, and its own record of the paths it was
- * last offered (the provenance its add is checked against). `forget` drops a closed window's record.
+ * last offered: the ones it may add (the provenance its add is checked against) and the ones it may
+ * remove from this computer's list. `forget` drops a closed window's record.
  * @param {object} io
  * @param {ReturnType<typeof createGenerations>} io.generations
  * @param {() => Promise<unknown>} io.refresh   refresh the advertised set from the live server
- * @param {() => Array<{ path: string }>} io.list  the suggestions (workspaceSuggestions)
+ * @param {() => Promise<{ suggestions: Array<{ path: string, state: string, removable: boolean }>, list: object }>} io.list
+ *        the suggestions (workspaceSuggestions) and what became of this computer's list read (`list`)
  */
 export function createSuggestionCalls(io) {
-  const offered = new Map();
+  const offered = new Map(), removable = new Map();
   return {
     async suggest(scope) {
       const verb = `suggestions:${scope}`;
       const gen = io.generations.next(verb);
       await io.refresh();
-      const suggestions = io.list();
+      const { suggestions, list } = await io.list();
       if (!io.generations.isCurrent(verb, gen)) return { stale: true, suggestions: [] };
-      offered.set(scope, new Set(suggestions.map((s) => s.path)));
-      return { stale: false, suggestions };
+      offered.set(scope, new Set(suggestions.filter((s) => s.state === "ok").map((s) => s.path)));
+      removable.set(scope, new Set(suggestions.filter((s) => s.removable).map((s) => s.path)));
+      return { stale: false, suggestions, list };
     },
     offered: (scope) => offered.get(scope) ?? new Set(),
-    forget(scope) { offered.delete(scope); },
+    removable: (scope) => removable.get(scope) ?? new Set(),
+    forget(scope) { offered.delete(scope); removable.delete(scope); },
   };
+}
+
+/* ── This computer's deployments list (#1390) ──────────────────────────────
+   The kernel keeps it (~/.oats/config/deployments.json); the Desktop reads it
+   for its suggestions, lists each deployment it opens, imports its own old
+   lists once, and removes a row on request. Every call is a kernel verb
+   (packages/client/deployment-list-cli.mjs); nothing here reads the file. */
+
+/** What became of a list read, for the switcher: `ok`, `unsupported` (the CLI has no deployments-list),
+ * `failed` (the kernel refused or answered what cannot be read; `message` says why) or `unavailable`
+ * (no compatible CLI yet: the degradation card says so, the switcher says nothing). */
+export function listState(read) {
+  if (read?.ok) return { state: "ok" };
+  const code = read?.reason?.code;
+  if (code === "E_DEPLOYMENTS_FEATURE") return { state: "unsupported" };
+  if (code === "E_CLI_UNAVAILABLE") return { state: "unavailable" };
+  return { state: "failed", message: read?.reason?.message || "The installed OATS CLI could not read this computer's deployments list." };
+}
+
+/**
+ * The Remove of one row (workspace:remove-listed): only a path this window was offered as removable, never
+ * one the server serves (#476 is that). The kernel drops the row (it leaves a tombstone, so nothing adds it
+ * back on its own); a path in the saved open set leaves it too, or the switcher would still offer it.
+ * @param {object} io
+ * @param {(scope: string) => Set<string>} io.removable  the paths offered to that window as removable
+ * @param {(path: string) => boolean} io.served          the current server serves it
+ * @param {(path: string) => Promise<object>} io.remove  cliDeploymentList remove
+ * @param {(path: string) => void} io.unsave             drop it from the saved open set (throws when the write fails)
+ * @returns {(path: string, scope: string) => Promise<{ ok: true, removed: boolean } | { ok: false, code: string, reason: string }>}
+ */
+export function createRemoveListed(io) {
+  return async function removeListed(path, scope = "") {
+    if (typeof path !== "string" || !io.removable(scope).has(path)) return { ok: false, code: "not-suggested", reason: "That deployment is no longer offered here. Open the menu again." };
+    if (io.served(path)) return { ok: false, code: "served", reason: "This deployment is open. It can't be removed from here." };
+    const result = await io.remove(path);
+    if (!result?.ok) return { ok: false, code: result?.reason?.code || "E_CLI_FAILED", reason: result?.reason?.message || "Could not remove it from this computer's list." };
+    try { io.unsave(path); } catch (error) {
+      return { ok: false, code: "save-failed", reason: `Removed from this computer's list, but the saved workspaces could not be written: ${error?.message || error}` };
+    }
+    return { ok: true, removed: result.value.removed };
+  };
+}
+
+/** The saved open set without `path`: what workspace-open.json holds after a Remove. */
+export function unsavedOpenSet(saved, path) {
+  return saved.filter((entry) => entry !== path);
+}
+
+/**
+ * The Desktop's own lists, imported once (#1390 §3): while workspace-recents.json exists, its paths and
+ * the saved open set's go to `oats deployments import --from desktop` (every absolute path as written,
+ * whatever its state: the kernel keeps a missing one); once the kernel answered, imported or done
+ * before, the recents file is renamed to workspace-recents.imported.json and never read again. A CLI
+ * without the list, or a refusal, leaves the file for the next launch.
+ * @param {object} io
+ * @param {() => string|null} io.readRecents       the recents file's text, or null when there is none
+ * @param {() => string|null} io.readOpen          the saved open set's text, or null
+ * @param {(paths: string[]) => Promise<object>} io.importPaths  cliDeploymentList import
+ * @param {() => void} io.retire                   rename the recents file (throws when it fails)
+ * @returns {Promise<{ status: "none"|"imported"|"already"|"kept", reason?: string }>}
+ */
+export async function importDesktopLists(io) {
+  const recents = io.readRecents();
+  if (recents === null) return { status: "none" };
+  const paths = [];
+  for (const path of [...savedWorkspacePaths(recents), ...savedWorkspacePaths(io.readOpen() ?? "[]")]) {
+    if (resolve(path) === path && !path.includes("\0") && !paths.includes(path)) paths.push(path);
+  }
+  paths.splice(DEPLOYMENT_IMPORT_MAX); // one call names at most this many; a longer saved set is not a real one
+  const result = await io.importPaths(paths);
+  if (!result?.ok) return { status: "kept", reason: result?.reason?.message || "the import did not run" };
+  try { io.retire(); } catch (error) { return { status: "kept", reason: `imported, but the file could not be renamed: ${error?.message || error}` }; }
+  return { status: result.value.imported ? "imported" : "already" };
 }
 
 /**
@@ -328,7 +408,7 @@ export function createSuggestionCalls(io) {
  *  - SERIALIZED: adds run one at a time (in-flight adds queue); a request
  *    superseded while queued or during readiness commits NOTHING.
  *  - STAGED: the prospective --dir list is passed to the server replacement
- *    but workspaceDirs/recents are committed only AFTER readiness; on any
+ *    but workspaceDirs is committed only AFTER readiness; on any
  *    failure the previous server configuration is RESTORED (respawn with
  *    the old dirs).
  *  - Readiness = identity match (isCompatible on /api/version response,
@@ -339,7 +419,6 @@ export function createSuggestionCalls(io) {
  * @param {() => string[]} io.getDirs            current committed dir list
  * @param {(dirs: string[], path: string) => string[]} [io.stage]  the --dir set to start with (stageDirs)
  * @param {(dirs: string[]) => void} io.commitDirs
- * @param {(path: string) => void} io.commitRecent
  * @param {(dirs: string[]) => Promise<void>} io.replaceServer  stop owned server
  *        (awaiting its exit) and start one with `dirs`; must not return
  *        until the old process released the port. Implementations must
@@ -384,7 +463,6 @@ export function createAddExecutor(io) {
         if (v?.ok && io.isCompatible(v) && await io.advertises(workspace.id)) {
           if (!isCurrent()) break; // superseded during readiness — roll back
           io.commitDirs(stagedDirs);
-          io.commitRecent(workspace.path);
           committed = true;
           return { ok: true, workspace };
         }

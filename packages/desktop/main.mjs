@@ -12,7 +12,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, screen, shell } from "electron";
 import { spawn, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, realpathSync, writeFileSync, lstatSync, statSync, fstatSync, opendirSync, openSync, readSync, closeSync, watch } from "node:fs";
+import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync, lstatSync, statSync, fstatSync, opendirSync, openSync, readSync, closeSync, watch } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -34,8 +34,9 @@ import { ensureServerOnPort, serverCompatible } from "./server-compat.mjs";
 import { createServerHost, createServerAdapter, serverSpawnSpec } from "./server-host.mjs";
 import { cliWorkspace, validWorkspaceRef } from "../client/workspace-cli.mjs";
 import { onboardData } from "../client/deployment-data.mjs";
-import { validateWorkspace, deploymentsInside } from "../client/workspace-admission.mjs";
-import { workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, commitOpenSet, startupOpenSet, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor,
+import { validateWorkspace } from "../client/workspace-admission.mjs";
+import { cliDeploymentList } from "../client/deployment-list-cli.mjs";
+import { workspaceSuggestions, listState, createRemoveListed, unsavedOpenSet, importDesktopLists, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, commitOpenSet, startupOpenSet, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor,
   savedWorkspacePaths, persistableDirs, stageDirs, pickedFolderChoices, createPerformAdd, createSuggestionCalls } from "./workspace-registry.mjs";
 import { workspaceNotServed } from "./renderer/deployment-header.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
@@ -294,14 +295,17 @@ installHostThemeHandlers({ ipc: ipcMain, guard, source: hostTheme });
 
 // ---- IPC: workspace suggestions + runtime add ---------------------------
 // Privileged side of the runtime workspace switcher (phase-2 hook 3; the
-// renderer owns the modal). Discovery is bounded: known deployment
-// dirs and validated recents. The kernel reads the deployment itself.
-// workspace:add only ever replaces an app-OWNED server; foreign servers fail
-// closed.
+// renderer owns the modal). Discovery is bounded: known deployment dirs and
+// this computer's deployments list, read from the kernel (#1390). The kernel
+// reads the deployment itself. workspace:add only ever replaces an app-OWNED
+// server; foreign servers fail closed.
 const wsGens = createGenerations();
 /** The window a privileged workspace call comes from (#481): its own generations and provenance. */
 const windowScope = (e) => String(e.sender.id);
+// The recently-added list of Desktops before #1390: read once, for the import into this computer's
+// deployments list, then renamed (RECENTS_IMPORTED_FILE) and never read or written again.
 const RECENTS_FILE = () => join(app.getPath("userData"), "workspace-recents.json");
+const RECENTS_IMPORTED_FILE = () => join(app.getPath("userData"), "workspace-recents.imported.json");
 const OPEN_WORKSPACES_FILE = () => join(app.getPath("userData"), "workspace-open.json");
 // The last workspace identity each remote roster group reported (server/remote-identity.mjs, #482).
 const REMOTE_IDENTITY_FILE = () => join(app.getPath("userData"), "remote-identity.json");
@@ -314,12 +318,45 @@ const wsValidate = (p) => validateWorkspace(p, {
   },
 });
 
-function readRecents() {
-  try { return parseRecents(readFileSync(RECENTS_FILE(), "utf8"), (p) => !!wsValidate(p)); }
-  catch { return []; }
+// This computer's deployments list (#1390): every call a kernel verb, through the server's accepted CLI
+// (the binary every other kernel verb uses). Gated on its deployments-list feature; nothing falls back.
+const readServedCli = async () => (await fetch(`${base()}/api/cli`, { signal: AbortSignal.timeout(10_000) })).json();
+async function deploymentList(options) {
+  let cli;
+  try { cli = await readServedCli(); } catch { cli = null; }
+  return cliDeploymentList(cli, options);
 }
-function writeRecents(recents) {
-  try { writeFileSync(RECENTS_FILE(), JSON.stringify(recents, null, 2)); } catch { /* best-effort */ }
+/** The server's CLI probe once it has settled (`probedAt`), or null when it does not within about 30 s. */
+async function settledCli() {
+  for (let i = 0; i < 60; i++) {
+    try { const cli = await readServedCli(); if (cli?.probedAt) return cli; } catch { /* the server is not up yet */ }
+    await new Promise((ok) => setTimeout(ok, 500));
+  }
+  return null;
+}
+/** At startup, once the CLI is known (#1390): the Desktop's own lists imported once, then the launch's
+ * own deployment (`--dir`, or a cwd that is one) listed. Both best effort, both only logged: no window
+ * owns them. */
+async function startupDeploymentList(launched) {
+  const cli = await settledCli();
+  if (!cli) return;
+  const read = (file) => { try { return readFileSync(file, "utf8"); } catch { return null; } };
+  const imported = await importDesktopLists({
+    readRecents: () => read(RECENTS_FILE()),
+    readOpen: () => read(OPEN_WORKSPACES_FILE()),
+    importPaths: (paths) => cliDeploymentList(cli, { action: "import", from: "desktop", paths }),
+    retire: () => renameSync(RECENTS_FILE(), RECENTS_IMPORTED_FILE()),
+  });
+  if (imported.status === "kept") console.error(`oats-desktop: the saved workspaces were not imported into this computer's deployments list yet: ${imported.reason}`);
+  if (launched) await listDeployment(launched);
+}
+/** Each committed add, and the launch's own deployment, is listed; the failure, or null. Never the
+ * restored open set: a deployment removed with `oats deployments remove` would come back at every launch. */
+async function listDeployment(path) {
+  const r = await deploymentList({ action: "add", path, via: "desktop" });
+  if (r.ok || r.reason.code === "E_DEPLOYMENTS_FEATURE" || r.reason.code === "E_CLI_UNAVAILABLE") return null;
+  console.error(`oats-desktop: could not list ${path} on this computer: ${r.reason.code}: ${r.reason.message}`);
+  return r.reason;
 }
 // Where Add workspace → Browse… opens next (picker-default-path.mjs): the
 // parent of the workspace most recently added or opened, across launches.
@@ -347,7 +384,6 @@ const executeAdd = createAddExecutor({
     workspaceDirs.length = 0; workspaceDirs.push(...next.served);
     knowDirs(dirs);
   },
-  commitRecent: (p) => writeRecents(pushRecent(readRecents(), p)),
   replaceServer,
   refreshAdvertised: async () => (await panelWorkspaces()) !== null, // true only when the server ANSWERED
   probeVersion,
@@ -360,19 +396,44 @@ const executeAdd = createAddExecutor({
 const suggestionCalls = createSuggestionCalls({
   generations: wsGens,
   refresh: () => panelWorkspaces(), // refresh allowedWs from the live server
-  list: () => workspaceSuggestions({
-    // Every deployment this Desktop knows (the saved set as read included): a saved one that is not
-    // served, such as one whose volume was mounted after launch, is offered again (#472, #518).
-    knownPaths: [...knownDirs],
-    recents: readRecents(),
-    discovered: deploymentsInside(join(homedir(), "Agents"), { list: listEntries, isDeployment: (p) => !!wsValidate(p) }).paths,
-    advertised: allowedWs,
-    validate: wsValidate,
-  }),
+  list: async () => {
+    const read = await deploymentList({ action: "list" });
+    return {
+      suggestions: workspaceSuggestions({
+        // Every deployment this Desktop knows (the saved set as read included): a saved one that is not
+        // served, such as one whose volume was mounted after launch, is offered again (#472, #518).
+        knownPaths: [...knownDirs],
+        listed: read.ok ? read.value.rows : null,
+        advertised: allowedWs,
+        validate: wsValidate,
+      }),
+      list: listState(read),
+    };
+  },
 });
 ipcMain.handle("workspace:suggestions", async (e) => {
   guard(e);
   return suggestionCalls.suggest(windowScope(e));
+});
+
+// Remove a row of this computer's deployments list (#1390): only one the asking window was offered as
+// removable, never one that is served (#476). Its saved open-set entry goes with it.
+const removeListed = createRemoveListed({
+  removable: (scope) => suggestionCalls.removable(scope),
+  served: (path) => workspaceDirs.includes(path) || allowedWs.has(path),
+  remove: (path) => deploymentList({ action: "remove", path }),
+  unsave: (path) => {
+    if (openDirs.includes(path)) {
+      const open = unsavedOpenSet(openDirs, path);
+      saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), open);
+      openDirs = open;
+    }
+    knownDirs.delete(path); // no longer offered as a saved entry
+  },
+});
+ipcMain.handle("workspace:remove-listed", async (e, path) => {
+  guard(e);
+  return removeListed(path, windowScope(e));
 });
 
 // The entry point of every add (workspace-registry.mjs createPerformAdd): a refusal returns before
@@ -402,6 +463,8 @@ const performAdd = createPerformAdd({
   execute: (ws, isCurrent) => executeAdd(ws, isCurrent),
   // An add that opened a workspace (or found it already open) remembers its parent for the picker (#460).
   added: (ws) => rememberWorkspaceParent(ws.path),
+  // A committed add is listed on this computer (#1390): best effort, its failure a notice in the answer.
+  listed: (ws) => listDeployment(ws.path),
 });
 
 /** At most `limit` entries of `dir`, typed by the entry itself (a link is not a directory). */
@@ -421,7 +484,7 @@ const onboardExecutor = createOnboardExecutor({
   realpath: (p) => realpathSync(p),
   isDeployment: (p) => !!wsValidate(p),
   // The server's accepted probe: the same binary every other kernel verb uses.
-  readCli: async () => (await fetch(`${base()}/api/cli`, { signal: AbortSignal.timeout(10_000) })).json(),
+  readCli: readServedCli,
   run: (cli, options) => cliWorkspace(cli, options, DESKTOP_TERMS),
   project: onboardData,
   add: (dir, scope) => performAdd(dir, true, scope),
@@ -448,7 +511,7 @@ ipcMain.handle("workspace:pick", async (e) => {
   // Opens beside the most recently added workspace (picker-default-path.mjs).
   const defaultPath = pickerDefaultPath({
     candidates: workspacePickerCandidates({
-      last: readLastWorkspaceParent(), recents: readRecents(), open: workspaceDirs.filter((p) => !!wsValidate(p)),
+      last: readLastWorkspaceParent(), open: workspaceDirs.filter((p) => !!wsValidate(p)),
     }),
     exists: isDirectory,
     home: app.getPath("home"),
@@ -876,10 +939,11 @@ const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => ope
   workspaceDirs.splice(0, workspaceDirs.length,
     ...restoreWorkspaceDirs(WORKSPACE, saved, (p) => wsValidate(realpathSync(p))));
   // Launching on a workspace (--dir, or a workspace cwd) is an open.
-  try { const launched = wsValidate(realpathSync(WORKSPACE)); if (launched) rememberWorkspaceParent(launched.path); } catch { /* not a workspace */ }
+  let launchedPath = null;
+  try { const launched = wsValidate(realpathSync(WORKSPACE)); if (launched) { rememberWorkspaceParent(launched.path); launchedPath = launched.path; } } catch { /* not a workspace */ }
   knowDirs([...savedWorkspacePaths(saved), ...workspaceDirs]);
-  // A launch from a folder that is not a deployment (a parent such as ~/Agents as the cwd or
-  // --dir) opens the saved set and nothing else, and says so (#461).
+  // A launch from a folder that is not a deployment (a parent folder as the cwd or --dir) opens
+  // the saved set and nothing else, and says so (#461).
   const startupIsDeployment = (() => { try { return !!wsValidate(realpathSync(WORKSPACE)); } catch { return false; } })();
   if (!startupIsDeployment) console.log(persistableDirs(workspaceDirs, wsValidate).length
     ? `oats-desktop: ${WORKSPACE} is not an OATS deployment (no oats-local.yaml); opened the saved workspaces instead`
@@ -895,6 +959,8 @@ const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => ope
     if (serverHost.owned() && startupSet.write) saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), startupSet.open);
   }
   catch (e) { console.error(`oats-desktop: ${e.message}`); }
+  // This computer's deployments list (#1390): the one-time import, then the launch's own deployment.
+  void startupDeploymentList(launchedPath).catch((e) => console.error(`oats-desktop: ${e?.message || e}`));
   // Window activity: visibility flips that are not focus flips, hooked on
   // every window BEFORE the first one exists (focus/blur are app-level below).
   app.on("browser-window-created", (_event, win) => {

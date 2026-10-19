@@ -55,11 +55,11 @@ test('stageDirs: the restart after an add carries the whole validated set plus t
 });
 
 function executor({ ready = true, previous = ['/d/oats-v2', '/d/Agents/aweb'] } = {}) {
-  const log = { servers: [], commits: [], recents: [] };
+  const log = { servers: [], commits: [] };
   let dirs = [...previous];
   const execute = createAddExecutor({
     getDirs: () => [...dirs], stage: (d, path) => stageDirs(d, path, validate),
-    commitDirs: next => { log.commits.push(next); dirs = next; }, commitRecent: path => log.recents.push(path),
+    commitDirs: next => { log.commits.push(next); dirs = next; },
     replaceServer: async next => { log.servers.push(next); },
     refreshAdvertised: async () => true, probeVersion: async () => ({ ok: true }), isCompatible: () => true,
     advertises: async () => ready, delay: async () => {}, attempts: 2,

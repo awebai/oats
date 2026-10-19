@@ -416,6 +416,10 @@ split into sections) is `packages/client/roster-sections.mjs`.
   `requestDeploymentTab`, so the Deployments page opens on its tab. Never an id, a path or a
   reason sentence (paths only in tooltips); twins of one name show their key. Filtering
   (shown text only) and Arrow/Home/End run over every shown option.
+  A window with no workspace adds the "On this computer" group: the saved entries and the rows of
+  this computer's deployments list that are not served (#1390). A stale row says its state in words
+  (`LISTED_STATE_TEXT`) beside a status mark and opens nothing; a list row has **Remove** beside it,
+  reached like Open in new window (Right Arrow; Left Arrow or Escape back).
 - **Grouping by deployment** only when a view has two or more deployments: the sidebar
   roster (`rosterSections`, a heading per deployment named by `machineLabels` in the
   cluster-label type, a status mark when not live, none for a deployment without rows) and
@@ -1209,8 +1213,8 @@ workspace is observed through its server and never synced from here.
   identity's team is that team's id (nothing when none). Those members come
   from `/api/team-members?ws=<view>` (#482, decision Q5): the view's
   deployments only. A card groups them by deployment (`memberGroups`), each
-  heading labelled by `deploymentLabel` ("This Mac · ~/Agents/oats · 3",
-  "altair · ~/Agents/tsm · not reached"), this Mac's first. A member's
+  heading labelled by `deploymentLabel` ("This Mac · ~/acme · 3",
+  "altair · ~/northwind · not reached"), this Mac's first. A member's
   `workspace` is its deployment id. Its Show and Terminal actions stay in the
   view on screen (`teamMemberAction` never switches workspace). They wait for
   the row of that deployment, and the open is owned by the view

@@ -281,12 +281,14 @@ deployment (the Desktop cannot tell the two apart, so it does not guess). Such
 an entry is inert: it is never served, never reported as "not served" (that
 needs a deployment that validates), and never offered by the switcher. Each
 launch re-validates the persisted set, so a deployment that came back is served
-again. **Only an explicit remove drops a saved path**; nothing else does.
+again. **Only an explicit remove drops a saved path**; nothing else does. Today
+that is the switcher's **Remove** on a row of this computer's deployments list
+that is not served (below); removing a served deployment is #476.
 
 - **Launch.** `restoreWorkspaceDirs` opens the saved deployments plus the
   launch directory (`--dir`, `OATS_DESKTOP_DIR` or the cwd) when that is one. A
-  launch from a folder that is not a deployment (a parent such as `~/Agents`)
-  opens the saved set and logs that it did. A folder that is not a deployment
+  launch from a folder that is not a deployment (a parent folder) opens the
+  saved set and logs that it did. A folder that is not a deployment
   is never served, whatever the launch (`/` from Finder included): when nothing
   is a deployment the server starts with no `--dir` (it serves no local
   deployment, never its cwd; main starts it in the first served deployment,
@@ -313,10 +315,19 @@ again. **Only an explicit remove drops a saved path**; nothing else does.
   the session's known set (the saved file as read, the open set, every
   committed add). The native picker (`workspace:pick`) is its own provenance.
   Suggestions are the deployments in the known set that are not served (a
-  saved one whose volume was mounted after launch), the validated recents,
-  and the deployments directly inside `~/Agents` (`deploymentsInside`: at most
-  `PICK_SCAN_LIMIT` entries, links not followed, nothing parsed), so a fresh
-  machine needs no Browse.
+  saved one whose volume was mounted after launch) and the rows of this
+  computer's deployments list that are not served (below). A row is a
+  suggestion, never authorization: one that can be opened must validate now,
+  and the add validates it again. Nothing is scanned to find suggestions.
+- **Listing it.** Once an add has committed, `createPerformAdd` runs
+  `oats deployments add <path> --via desktop` (`listed`), and so does startup
+  for the launch's own deployment (`--dir`, or a cwd that is one). An explicit
+  add clears a kernel tombstone, which is intended: the person opened it. The
+  restored open set is never listed at startup, or a deployment removed with
+  `oats deployments remove` would come back at every launch. Best effort: a
+  failure is logged, and an add's answer carries it as `listed: { code,
+  message }`, which the window says in a notification once it has switched to
+  the workspace. The add is never undone for it.
 - **A picked folder that is not a deployment** is refused with "This folder
   isn't an OATS deployment: it has no oats-local.yaml. Choose the deployment
   folder itself, the one that contains oats-local.yaml." `pickedFolderChoices`
@@ -328,6 +339,59 @@ again. **Only an explicit remove drops a saved path**; nothing else does.
   single-use offer for that exact folder) is the secondary action "Set up a
   new deployment here…", never the default reaction.
 
+
+## This computer's deployments list
+
+The kernel keeps one list per user of this computer's deployments,
+`~/.oats/config/deployments.json` ([#1390](https://github.com/awebai/oats/issues/1390);
+the command and its JSON are in [desktop-cli-api.md](../../../docs/desktop-cli-api.md)).
+The Desktop never reads the file. Every read and change is a kernel verb, run
+from main through the server's accepted CLI (`deploymentList` in `main.mjs`,
+`packages/client/deployment-list-cli.mjs`), with fixed argv and gated on the
+probe's `deployments-list` feature. The shared reader
+(`packages/client/deployment-list.mjs`) turns the answer into rows of
+`{ path, name, state }`; a document it cannot read is refused whole.
+
+- **What the switcher shows.** A window with no workspace lists, under **On
+  this computer**, the saved entries that are not served and the list's rows
+  that are not served (`workspaceSuggestions`), read each time its menu opens.
+  The Add dialog's suggestions are the same minus the stale rows.
+  - A row the kernel calls `ok` is offered only while it validates here too,
+    and one click is the normal add.
+  - A stale row says its state in words, with a warning mark, and opens
+    nothing. The states are `missing` ("Missing: the folder is gone, or its
+    volume isn't mounted"), `not-a-deployment` ("Not a deployment any more: no
+    oats-local.yaml") and `unreadable` ("Can't be checked: OATS couldn't read
+    this folder"). The words are `LISTED_STATE_TEXT` in
+    `renderer/workspace-switcher.mjs`.
+  - Every list row has **Remove** beside it, reached as Open in new window
+    is: Right Arrow, then Enter; Left Arrow or Escape go back to the row.
+- **Without the feature** the section holds the saved entries and one line,
+  "This oats can't list this computer's deployments. Update oats." Nothing
+  falls back to looking at the disk. A read the kernel refused says "Couldn't
+  read this computer's deployments: <the kernel's message>". With no
+  compatible CLI the section says nothing more: the degradation card covers
+  that.
+- **Remove** runs `oats deployments remove <path>` (the kernel keeps a
+  tombstone, so nothing adds the row back on its own) and drops the path from
+  the saved open set, or the row would still be offered as a saved entry. It
+  touches nothing on disk, so it asks nothing; the menu says what it did and
+  reads the list again.
+  - **Its channel**, `workspace:remove-listed(path)`, is a privileged IPC
+    channel with the senderFrame guard (`guard`).
+  - **Its provenance** (`createRemoveListed`): only a path that was offered as
+    removable to that window in its latest suggestions (`suggestionCalls.removable`).
+    A served deployment is refused: removing it is #476.
+- **The one-time import.** At startup, once the server's CLI probe has
+  settled, and while `workspace-recents.json` (the recently-added list of
+  earlier Desktops) exists, main runs `oats deployments import --from desktop`.
+  It names every absolute path of that file and of `workspace-open.json`, as
+  written, whatever their state, and no path at all is still an import, which
+  sets the kernel's marker (`importDesktopLists`). Once the kernel has
+  answered, imported now or before, the file is renamed to
+  `workspace-recents.imported.json`. A refusal, or a CLI without the feature,
+  keeps the file for the next launch. Recents are never read for anything
+  else, and never written.
 ## Workspace views and deployments
 
 A **deployment** is one place a workspace runs: a local deployment directory
@@ -384,7 +448,7 @@ first. Deployment-level surfaces read and act on it: the Workspace header and
 Setup, Capabilities, Sync, Automations, Schedules, the Teams configuration,
 the soul inspector, Brain and launch configurations. In a view of two or more
 deployments each of them says which under its heading ("On This Mac ·
-~/Agents/oats"); a view of one shows no such line. The Deployments page has
+~/acme"); a view of one shows no such line. The Deployments page has
 no primary: each deployment has its own tab, and nothing there is marked
 "primary".
 
@@ -414,7 +478,7 @@ answers the view that holds it; no `?ws=` answers the first view.
   stale?, reason?, short?, fix?, note?}`. `machine` is "This Mac" (the Desktop's label for the
   machine it runs on, `thisMachine` of `renderer/desktop-terms.mjs`) or the server's label, else its
   id. `deploymentLabel` (`packages/client/deployment-label.mjs`) shows it as "This
-  Mac · ~/Agents/oats" or "altair · ~/Agents/tsm": the home directory as
+  Mac · ~/acme" or "altair · ~/northwind": the home directory as
   `~` (on a remote, a `/Users/<name>` or `/home/<name>` prefix, a display
   guess) and the last two segments of a long path. A deployment is live
   (`reachable`), not reached (with its `reason`), remembered
