@@ -14,7 +14,7 @@ import {
   originLead, panelInstances, primaryDeployment, remoteRosterState, rosterRows, rowReason, runtimeState, waitedText, waitingBelowText, waitingClock, waitingLabel, workspaceChoiceRows, workspaceChoices,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
-import { MORE_FOLDERS, OFFERED_SECTION, ROSTER_FAILED, heldOf, model, paletteItems, panelOf, roster } from "../lib/model.mjs";
+import { OFFERED_SECTION, ROSTER_FAILED, heldOf, model, paletteItems, panelOf, roster } from "../lib/model.mjs";
 import { reduce } from "../lib/store.mjs";
 import { captureRows } from "../lib/term/capture.mjs";
 import { createScreen } from "../lib/term/screen.mjs";
@@ -445,6 +445,7 @@ test("a view answers exactly as many rows as the terminal has, and every span is
     "unavailable, the kernel's own refusal": stateOf(failed(entry(), REFUSED("a refusal nobody has seen"))),
     "this machine and another": reached(), "a machine not reached": lost(), "a machine with no row": rowless(),
     "the switcher": choosing(), "the switcher, nothing to list": stateOf(null, { deployment: null }), "the help over the switcher": press(choosing(), ["?"]).state,
+    "the switcher, with all the list puts in it": listing(),
   };
   for (const [name, state] of Object.entries(states)) for (const sz of [...SIZES, size(3000, 24), size(200, 60), size(59, 15), size(60, 14), size(20, 3)]) {
     const d = draw(state, sz), at = `${name} at ${sz.cols}x${sz.rows}`;
@@ -486,7 +487,10 @@ test("in ASCII nothing on the screen is outside printable ASCII: the list, the d
     // machines is listed with the shared home's own separator between them, which is not ASCII
     // and is not the TUI's (the switcher's ASCII golden frame says what is drawn there).
     "this machine and another": reached(options), "a machine not reached": lost(options), "a machine with no row": rowless(options),
-    "the switcher": reduce(press(local(options), ["w"]).state, { offered: OFFERED }).state, "the switcher, nothing to list": stateOf(null, { deployment: null, ...options }),
+    "the switcher": reduce(press(local(options), ["w"]).state, { listed: LISTED }).state, "the switcher, nothing to list": stateOf(null, { deployment: null, ...options }),
+    "the switcher, with all the list puts in it": listing(reduce(press(local(options), ["w"]).state, { listed: LISTED }).state),
+    // A kernel's message too long for the lead's rows: cut on its last row with the ASCII cut mark.
+    "the switcher, a failed read's message cut": reduce(press(local(options), ["w"]).state, { listed: { failure: { code: "E_DEPLOYMENTS_INVALID", message: "a message far too long to stand whole ".repeat(20) } } }).state,
   };
   for (const [name, state] of Object.entries(states)) for (const sz of [...SIZES, size(200, 60), size(59, 15)]) {
     const d = draw(state, sz);
@@ -1551,7 +1555,7 @@ test("the help lists every action of the table it is given with its keys, and an
   // leader reaches) is listed as `(no key)`, as one tui.json unbinds.
   const labelOf = (action) => (action.keys.length ? keysLabel(action) : "(no key)");
   for (const action of ACTIONS) for (const said of action.views ? action.views.map(([, words]) => words) : [action.label]) assert.equal(pair(lines, labelOf(action), said), true, `${action.id}: ${labelOf(action)} ${said}`);
-  for (const [keys, label] of [["Up, k", "up"], ["Down, j", "down"], ["g, Home", "first"], ["G, End", "last"], ["PageUp", "page up"], ["PageDown", "page down"], ["Tab", "detail"], ["/", "filter"], ["r", "refresh"], ["1", "instances"], ["2", "souls"], ["3", "capabilities"], ["w", "workspaces"], ["Enter", "open the selected agent's terminal as a tab beside the list, or show its tab when it has one, in the list of instances"], ["z", "go to the shown terminal with the whole screen; the leader then Esc brings the list back"], ["c", "close the shown terminal and show its neighbour; the agent keeps running"], ["[", "show the terminal of the tab before the shown one"], ["]", "show the terminal of the tab after the shown one"], ["Enter", "open the selected workspace, in the switcher"], ["?", "help"], ["Esc", "close"], ["q, Ctrl+C", "quit"], ["Ctrl+Z", "suspend"], ["Ctrl+L", "redraw"]]) {
+  for (const [keys, label] of [["Up, k", "up"], ["Down, j", "down"], ["g, Home", "first"], ["G, End", "last"], ["PageUp", "page up"], ["PageDown", "page down"], ["Tab", "detail"], ["/", "filter"], ["r", "refresh"], ["1", "instances"], ["2", "souls"], ["3", "capabilities"], ["w", "workspaces"], ["Enter", "open the selected agent's terminal as a tab beside the list, or show its tab when it has one, in the list of instances"], ["z", "go to the shown terminal with the whole screen; the leader then Esc brings the list back"], ["c", "close the shown terminal and show its neighbour; the agent keeps running"], ["[", "show the terminal of the tab before the shown one"], ["]", "show the terminal of the tab after the shown one"], ["Enter", "open the selected workspace, in the switcher"], ["Delete", "remove the selected row of this computer's list of deployments, after a confirmation; its folder stays"], ["?", "help"], ["Esc", "close"], ["q, Ctrl+C", "quit"], ["Ctrl+Z", "suspend"], ["Ctrl+L", "redraw"]]) {
     assert.equal(pair(lines, keys, label), true, `${keys} ${label}`);
   }
   const config = effectiveConfig({ keys: { quit: ["x"], filter: [], refresh: ["r", "f5"], suspend: [] } });
@@ -1697,7 +1701,8 @@ test("every key a tui.json may give an action is drawn: the cheat sheet and the 
       assert.equal(d.cells[help][2].width, 0, "the second cell of the wide key");
       assert.equal(cellIndexOf(d.cells[help].slice(0, d.cols), "help"), cellIndexOf(d.cells[quit].slice(0, d.cols), "quit"));
     }
-    const big = size(163, 160), lines = helpLines(state, big, "日");
+    // Tall enough for the whole help, the switcher's Remove among it.
+    const big = size(163, 170), lines = helpLines(state, big, "日");
     for (const id of Object.keys(keys)) assert.ok(lines.some((line) => line.trim().startsWith(`${labelOf(id)}  `)), `the help lists ${id} under ${labelOf(id)}`);
     assert.ok(lines.some((line) => line.trim() === `${labelOf("close").split(", ")[0]} or 日 closes this help`), "the closing line names the two keys");
     // The meanings stand in one column, whatever cells the keys take.
@@ -1795,15 +1800,24 @@ const local = (options) => stateOf(reporting(NEAR()), { cli: REMOTE_CLI, ...opti
 const reached = (options) => heard(local(options), answered(group()), T1);
 const lost = (options) => heard(reached(options), TIMEOUT, T2);
 const rowless = (options, label = "garnet") => heard(heard(local(options), answered(group({ label, instances: [] })), T1), TIMEOUT, T2);
-/** The deployments `~/Agents` holds that the run does not serve, as lib/read.mjs lists them. */
-const folder = (name) => ({ path: `/home/u/Agents/${name}`, name });
-const OFFERED = Object.freeze({ offered: Object.freeze([folder("acme-billing"), folder("acme-docs")]), limited: false });
+/** A row of this computer's deployments list, as the shared reader gives it (packages/client
+ *  deployment-list.mjs), and a read of the list that answered two rows the run does not serve. */
+const listedRow = (name, state = "ok") => Object.freeze({ path: `/home/u/${name}`, name, state });
+const LISTED = Object.freeze({ rows: Object.freeze([listedRow("acme-billing"), listedRow("acme-docs")]) });
 /** The switcher over a workspace on two machines, one of them not reached now, beside a machine that
- *  was never reached in this run and two folders that are not opened. */
+ *  was never reached in this run and two rows of the list that are not opened. */
 function choosing(options) {
   const never = quartz({ probe: UNPROMPTED, workspace: null, instances: [] });
   const state = heard(heard(local(options), answered(group(), never), T1), answered(group({ probe: UNPROMPTED }), never), T2);
-  return reduce(press(state, ["w"]).state, { offered: OFFERED }).state;
+  return reduce(press(state, ["w"]).state, { listed: LISTED }).state;
+}
+/** A switcher with all the list can put in it: stale rows, a Remove asked over the selected one (the
+ *  last), what an earlier Remove answered and a read of the list that failed, each the kernel's words. */
+function listing(switcher = choosing()) {
+  const stale = reduce(switcher, { listed: { rows: [listedRow("acme-billing", "missing"), listedRow("acme-docs", "unreadable")] } }).state;
+  const asked = press(press(stale, ["G"]).state, ["delete"]).state;
+  const told = reduce(asked, { removed: { path: "/home/u/acme-billing", name: "acme-billing", ok: false, reason: { code: "E_DEPLOYMENTS_LOCKED", message: "busy" } } }).state;
+  return reduce(told, { listed: { failure: { code: "E_DEPLOYMENTS_LOCKED", message: "busy" } } }).state;
 }
 /** A deployment of the open view, as the shared home lists it, and the shared words for it. */
 const deploymentOf = (state, id = GARNET) => panelOf(state, AT).deployments.find((d) => d.id === id);
@@ -2406,13 +2420,17 @@ test("with `--ascii` and a locale that is not UTF-8 the words that say who gave 
 const switcherSide = (hints, { cols = 38, ascii = false } = {}) => [" workspaces", "", viewLine("Instances", "1", cols), viewLine("Souls", "2", cols), viewLine("Capabilities", "3", cols), ruleLine(cols, ascii), ...sheet(hints)];
 /** The cheat sheet of the switcher with a workspace open to go back to. */
 const SWITCHER_SHEET = Object.freeze([LEAD, ["Ctrl+K", "palette"], ["Enter", "open"], ["/", "filter"], ["r", "refresh"], ["Esc", "close"], ["?", "help"], ["q", "quit"]]);
+/** The same with a row of this computer's list of deployments selected: its Remove before help and quit. */
+const REMOVE_SHEET = Object.freeze([...SWITCHER_SHEET.slice(0, -2), ["Delete", "remove"], ...SWITCHER_SHEET.slice(-2)]);
 /** A row of the main area for `beside`, its texts at the columns of the area (from 40 at 80 columns). */
 const inMain = (...parts) => placed(...parts.map(([col, text]) => [col + 1, text]));
 /** The columns the switcher stands from, and its rows' texts from there. */
 const mainFrom = (d, sz) => (sz.cols >= WIDE ? d.cols + 2 : 0);
 const mainRows = (d, sz) => d.cells.map((_, r) => cellText(d, r, mainFrom(d, sz)));
+/** The same without the keys that stand at the right of the first row under 80 columns. */
+const ownRows = (d, sz) => mainRows(d, sz).map((line, r) => (r === 0 && sz.cols < WIDE ? line.replace(/ {3,}Enter open\b.*$/, "") : line));
 
-test("the switcher at 80x24 in UTF-8, cell for cell: in the main area beside the sidebar, a workspace on two machines with one deployment not live, the open mark, the shared heading over a machine matched to no workspace, the TUI's own over the folders not opened, and the selection", () => {
+test("the switcher at 80x24 in UTF-8, cell for cell: in the main area beside the sidebar, a workspace on two machines with one deployment not live, the open mark, the shared heading over a machine matched to no workspace, the TUI's own over the rows of this computer's list not opened, and the selection", () => {
   assert.equal(OPEN_MARK, "*");
   assert.equal(OFFERED_SECTION, "On this machine, not opened");
   const state = press(choosing(), ["j", "j"]).state, [platform, never] = choicesOf(state);
@@ -2420,20 +2438,20 @@ test("the switcher at 80x24 in UTF-8, cell for cell: in the main area beside the
   assert.equal(platform.notLiveText.length > 0 && platform.place.includes("garnet") && never.place.length > 0, true, "the shared home words the machines, what is not live, and why a machine is not matched");
   const d = draw(state, S80);
   // 39 cells: the label is cut before what is not live, and the place of the first is given up.
-  assert.deepEqual(d.lines, beside(switcherSide(SWITCHER_SHEET), [
+  assert.deepEqual(d.lines, beside(switcherSide(REMOVE_SHEET), [
     inMain([2, "*"], [4, cutTo("acme-platform", 11)], [38 - platform.notLiveText.length, platform.notLiveText]),
     `   ${UNMATCHED_SECTION}`,
     inMain([4, "quartz"], [26, cutTo(never.place, 12)]),
     "   On this machine, not opened",
-    inMain([0, ">"], [4, "acme-billing"], [26, cutTo("~/Agents/acme-billing", 12)]),
-    inMain([4, "acme-docs"], [26, cutTo("~/Agents/acme-docs", 12)]),
+    inMain([0, ">"], [4, "acme-billing"], [26, cutTo("~/acme-billing", 12)]),
+    inMain([4, "acme-docs"], [26, cutTo("~/acme-docs", 12)]),
   ]));
   // The selection is a bar over the switcher's cells with `>` in its first; no other row has either.
   assert.deepEqual(d.cells.flatMap((line, r) => (line.some((cell) => cell.style.reverse) ? [r] : [])), [4]);
   assert.deepEqual(d.cells[4].map((cell) => cell.style.reverse), Array.from({ length: 80 }, (_, x) => x >= 40 && x < 79), "over the switcher's cells");
   assert.deepEqual(bodyRows(S80).filter((r) => d.cells[r][40].text === ">"), [4]);
   // The two headings and a place are dim; what is not live is not: it is what a person looks for.
-  for (const [r, from, to] of [[1, 42, 42 + UNMATCHED_SECTION.length], [3, 42, 42 + OFFERED_SECTION.length], [5, 66, 78]]) for (const cell of d.cells[r].slice(from, to)) assert.equal(cell.style, DIM, `row ${r}`);
+  for (const [r, from, to] of [[1, 42, 42 + UNMATCHED_SECTION.length], [3, 42, 42 + OFFERED_SECTION.length], [5, 66, 66 + "~/acme-docs".length]]) for (const cell of d.cells[r].slice(from, to)) assert.equal(cell.style, DIM, `row ${r}`);
   for (const cell of d.cells[0].slice(78 - platform.notLiveText.length, 78)) assert.equal(cell.style.dim, false);
   // While the switcher is shown the title names no workspace, and none of the three views is the
   // open one: none is bold, none in reverse, each plain (each is a view that opens).
@@ -2448,13 +2466,13 @@ test("the switcher at 80x24 in UTF-8, cell for cell: in the main area beside the
 test("the switcher at 80x24 in ASCII, cell for cell: the rules and the rule column in ASCII, and the shared home's place line as it gives it", () => {
   const state = press(choosing({ ascii: true }), ["j", "j"]).state, [platform, never] = choicesOf(state);
   const d = draw(state, S80);
-  assert.deepEqual(d.lines, beside(switcherSide(SWITCHER_SHEET, { ascii: true }), [
+  assert.deepEqual(d.lines, beside(switcherSide(REMOVE_SHEET, { ascii: true }), [
     inMain([2, "*"], [4, cutTo("acme-platform", 11, true)], [38 - platform.notLiveText.length, platform.notLiveText]),
     `   ${UNMATCHED_SECTION}`,
     inMain([4, "quartz"], [26, cutTo(never.place, 12, true)]),
     "   On this machine, not opened",
-    inMain([0, ">"], [4, "acme-billing"], [26, cutTo("~/Agents/acme-billing", 12, true)]),
-    inMain([4, "acme-docs"], [26, cutTo("~/Agents/acme-docs", 12, true)]),
+    inMain([0, ">"], [4, "acme-billing"], [26, cutTo("~/acme-billing", 12, true)]),
+    inMain([4, "acme-docs"], [26, cutTo("~/acme-docs", 12, true)]),
   ], { bar: "|" }));
   // Where the place line stands whole (120 columns), what is on the screen outside printable ASCII
   // is that line's own, and nothing of the TUI's: with `--ascii` on a terminal that reads UTF-8 it
@@ -2478,12 +2496,12 @@ test("the switcher at 120x40, 79x24 and 60x15: no row wider than the terminal, w
       `  ${UNMATCHED_SECTION}`,
       placed([4, "quartz"], [place, never.place]),
       "  On this machine, not opened",
-      placed([0, ">"], [4, "acme-billing"], [place, "~/Agents/acme-billing"]),
-      placed([4, "acme-docs"], [place, "~/Agents/acme-docs"]),
+      placed([0, ">"], [4, "acme-billing"], [place, "~/acme-billing"]),
+      placed([4, "acme-docs"], [place, "~/acme-docs"]),
     ], at);
     assert.deepEqual([d.cells[0][from + cells - 2].text, d.cells[0][from + cells - 1].text], [platform.notLiveText.at(-1), " "], `${at}: it ends one cell before the edge of the switcher's cells`);
     assert.deepEqual(d.cells[4].map((cell) => cell.style.reverse), Array.from({ length: sz.cols }, (_, x) => x >= from && x < from + cells), `${at}: the selection is the switcher's width`);
-    if (sz.cols >= WIDE) assert.deepEqual(hintsOf(d), SWITCHER_SHEET, at);
+    if (sz.cols >= WIDE) assert.deepEqual(hintsOf(d), REMOVE_SHEET, at);
   }
   // A name longer than the labels' column is cut inside it; what is not live still stands whole.
   const NAME = "acme-platform-of-the-ledger-team-and-its-friends";
@@ -2495,10 +2513,19 @@ test("the switcher at 120x40, 79x24 and 60x15: no row wider than the terminal, w
 });
 
 test("the switcher with nothing to list says so in the TUI's words, its sentences wrapped to its area, and names the command that opens a deployment whole on one row", () => {
-  assert.deepEqual({ ...SWITCHER_TEXT, none: [...SWITCHER_TEXT.none] }, {
+  const { removed, notRemoved, unread, ...words } = SWITCHER_TEXT;
+  assert.deepEqual({ ...words, none: [...words.none], states: { ...words.states }, removing: [...words.removing] }, {
     none: ["No workspace to show.", "Start it in a deployment, or name one:", "oats tui --dir <path>"],
     nomatch: "No workspace matches the filter.", gone: "That workspace is no longer listed.", refused: "Not an OATS deployment any more.",
+    // A stale row of this computer's list, by the kernel's state, in place of its path.
+    states: { missing: "Not found.", "not-a-deployment": "Not an OATS deployment any more.", unreadable: "Can't be read." },
+    removing: ["Remove the selected row from this computer's list?", "Enter removes it; other keys keep it. Its folder stays."],
   });
+  assert.deepEqual([removed("acme-docs"), notRemoved("acme-docs", "the list is busy"), unread("the list is busy")], [
+    "acme-docs was removed from this computer's list.",
+    "acme-docs was not removed from this computer's list: the list is busy",
+    "This computer's list of deployments could not be read: the list is busy",
+  ]);
   const state = stateOf(null, { deployment: null, cli: REMOTE_CLI });
   assert.deepEqual([state.view, state.open], ["switcher", null], "a run started outside every deployment shows the switcher");
   // The rows after the first, by the switcher's width: the second sentence and its command on one
@@ -2535,7 +2562,7 @@ test("the switcher's filter: `/` opens its field on a row of its own at the top 
     if (sz.cols >= WIDE) assert.deepEqual(hintsOf(d), [LEAD, ["Enter", "keep"], ["Esc", "clear"]], at);
     else assert.equal(cellText(d, 0).endsWith("Enter keep   Esc clear"), true, `${at}: the field's keys at the right of its row`);
     const rows = mainRows(d, sz).slice(1).filter(Boolean);
-    assert.equal(rows.length === 2 && rows[0] === "  On this machine, not opened" && rows[1].startsWith(">   acme-docs "), true, `${at}: the one folder that matches, under its heading, selected: ${rows}`);
+    assert.equal(rows.length === 2 && rows[0] === "  On this machine, not opened" && rows[1].startsWith(">   acme-docs "), true, `${at}: the one row of the list that matches, under its heading, selected: ${rows}`);
     assert.equal(d.lines.some((line) => line.includes("acme-billing") || line.includes("quartz") || line.includes("acme-platf") || line.includes(UNMATCHED_SECTION)), false, `${at}: no other choice, and no heading without one`);
   }
   // Kept, the filter keeps its row, in bold, and the key that clears it is offered before `refresh`.
@@ -2544,11 +2571,11 @@ test("the switcher's filter: `/` opens its field on a row of its own at the top 
     const d = draw(kept(sz), sz), from = mainFrom(d, sz);
     assert.equal(mainRows(d, sz)[0], "  /docs", `${sz.cols}`);
     assert.equal(d.cells[0].slice(from + 3, from + 7).every((cell) => cell.style.bold), true, `${sz.cols}: a kept filter is bold`);
-    assert.deepEqual(hintsOf(d), [LEAD, ["Ctrl+K", "palette"], ["Enter", "open"], ["/", "filter"], ["Esc", "close"], ["r", "refresh"], ["?", "help"], ["q", "quit"]], `${sz.cols}`);
+    assert.deepEqual(hintsOf(d), [LEAD, ["Ctrl+K", "palette"], ["Enter", "open"], ["/", "filter"], ["Esc", "close"], ["r", "refresh"], ["Delete", "remove"], ["?", "help"], ["q", "quit"]], `${sz.cols}`);
   }
   assert.equal(cellText(draw(kept(S60), S60), 0).startsWith("  /docs   "), true);
   const cleared = draw(press(kept(S80), ["escape"]).state, S80);
-  assert.deepEqual(hintsOf(cleared), SWITCHER_SHEET, "Esc clears a kept filter first");
+  assert.deepEqual(hintsOf(cleared), SWITCHER_SHEET, "Esc clears a kept filter first: the selection is back on the first choice, a workspace");
   assert.equal(mainRows(cleared, S80)[0].includes("/"), false, "and its row is gone");
   assert.equal(mainRows(cleared, S80).filter((line) => line.includes("acme-")).length, 3, "and every choice is back");
   // The place is matched too, and upper case and spaces around what was typed do not matter.
@@ -2565,10 +2592,10 @@ test("the switcher's filter: `/` opens its field on a row of its own at the top 
 });
 
 test("the switcher's cheat sheet offers Esc only when a workspace is open to go back to, and `help` and `quit` last", () => {
-  const none = reduce(stateOf(null, { deployment: null, cli: REMOTE_CLI }), { offered: OFFERED }).state;
+  const none = reduce(stateOf(null, { deployment: null, cli: REMOTE_CLI }), { listed: LISTED }).state;
   for (const sz of [S80, S120]) {
     assert.deepEqual(hintsOf(draw(choosing(), sz)), SWITCHER_SHEET, `${sz.cols}`);
-    assert.deepEqual(hintsOf(draw(none, sz)), SWITCHER_SHEET.filter(([key]) => key !== "Esc"), `${sz.cols}: nothing is open: no Esc`);
+    assert.deepEqual(hintsOf(draw(none, sz)), REMOVE_SHEET.filter(([key]) => key !== "Esc"), `${sz.cols}: nothing is open: no Esc (a row of the list is selected)`);
   }
   // Under 80 columns its keys stand on its first row, after its heading, as many as fit, given up
   // from the end; with nothing open, no Esc.
@@ -2584,7 +2611,7 @@ test("the switcher's cheat sheet offers Esc only when a workspace is open to go 
   assert.deepEqual(hintsOf(draw(reached({ actions: rebound.actions }), S120)), [LEAD, ["Ctrl+K", "palette"], ["o", "open"], ["n", "spawn"], ["?", "help"], ["q", "quit"]], "the open key as tui.json gave it");
 });
 
-test("the switcher says in a line of its own that the open workspace is no longer listed, and that line hides no choice: 30 folders at 80x15", () => {
+test("the switcher says in a line of its own that the open workspace is no longer listed, and that line hides no choice: 30 rows of the list at 80x15", () => {
   // garnet's own view is open, and the next answer lists no machine: no view holds what was open.
   const alone = press(heard(reached(), answered(group({ workspace: ELSEWHERE })), T2), ["w", "j", "enter"]).state;
   const gone = heard(alone, answered(), T3);
@@ -2599,7 +2626,7 @@ test("the switcher says in a line of its own that the open workspace is no longe
   // More choices than the switcher has rows: the line keeps its row, the screen's last row says
   // what is cut off, and every choice comes on the screen as the selection walks down.
   const names = Array.from({ length: 30 }, (_, i) => `acme-${String(i).padStart(2, "0")}`), sz = size(80, 15);
-  let state = reduce(gone, { offered: { offered: names.map(folder), limited: false } }).state;
+  let state = reduce(gone, { listed: { rows: names.map((name) => listedRow(name)) } }).state;
   const seen = new Set();
   for (let i = 0; i < 31; i++) {
     const body = mainRows(draw(state, sz), sz), at = `after ${i} down`;
@@ -2620,34 +2647,142 @@ test("the switcher says in a line of its own that the open workspace is no longe
   assert.equal(draw(press(gone, ["enter", "w"]).state, S80).lines.some((line) => line.includes("no longer listed")), false);
 });
 
-test("a folder that turned out not to be a deployment says so in its row, where its path stood, and `~/Agents` holding more than was read says so under the folders", () => {
-  assert.equal(MORE_FOLDERS, "More folders than are listed here.");
-  const state = reduce(press(reached(), ["w"]).state, { offered: { ...OFFERED, limited: true } }).state;
-  const refused = reduce(press(state, ["j"]).state, { refused: "/home/u/Agents/acme-billing" }).state;
+test("a row that turned out not to be a deployment says so in its row, where its path stood, and a stale row of the list says its state there in the TUI's words, plain, and does not open", () => {
+  const rows = [listedRow("acme-billing"), listedRow("acme-docs"), listedRow("acme-gone", "missing"), listedRow("acme-old", "not-a-deployment"), listedRow("acme-locked", "unreadable")];
+  const state = reduce(press(reached(), ["w"]).state, { listed: { rows } }).state;
+  const refused = reduce(press(state, ["j"]).state, { refused: "/home/u/acme-billing" }).state;
   for (const ascii of [false, true]) for (const [sz, place, cells] of [[S80, 26, 39], [S120, 26, 60], [S79, 32, 79], [S60, 26, 60]]) {
     const d = draw({ ...refused, ascii }, sz), from = mainFrom(d, sz), room = cells - 1 - place, at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
-    assert.deepEqual(mainRows(d, sz).slice(1, 5), [
+    const said = (text) => cutTo(text, room, ascii);
+    assert.deepEqual(mainRows(d, sz).slice(1, 8), [
       "  On this machine, not opened",
-      placed([0, ">"], [4, "acme-billing"], [place, cutTo("Not an OATS deployment any more.", room, ascii)]),
-      placed([4, "acme-docs"], [place, cutTo("~/Agents/acme-docs", room, ascii)]),
-      "    More folders than are listed here.",
+      placed([0, ">"], [4, "acme-billing"], [place, said("Not an OATS deployment any more.")]),
+      placed([4, "acme-docs"], [place, said("~/acme-docs")]),
+      placed([4, "acme-gone"], [place, said("Not found.")]),
+      placed([4, "acme-old"], [place, said("Not an OATS deployment any more.")]),
+      placed([4, "acme-locked"], [place, said("Can't be read.")]),
+      "",
     ], at);
     assert.equal(d.cells[3][from + place].style, DIM, `${at}: a path is dim`);
-    for (const cell of d.cells[4].slice(from).filter((c) => c.text !== " ")) assert.equal(cell.style, DIM, `${at}: so is the line about more folders`);
+    // What the kernel says of a stale row is something to read where its path stood: plain, not dim.
+    for (const [r, words] of [[4, "Not found."], [5, "Not an OATS deployment any more."], [6, "Can't be read."]]) {
+      for (const cell of d.cells[r].slice(from + place, from + place + Math.min(words.length, room))) assert.equal(cell.style, PLAIN, `${at}: row ${r} is plain`);
+    }
     fits(d, sz, at);
   }
   // Not dim where it is not selected either: it is what happened to the pick.
   const moved = draw(press(refused, ["j"]).state, S120), from = mainFrom(moved, S120);
   assert.equal(mainRows(moved, S120)[2], placed([4, "acme-billing"], [26, "Not an OATS deployment any more."]));
   assert.equal(moved.cells[2][from + 26].style.dim || moved.cells[2][from + 26].style.reverse, false);
-  // Before the pick, and without the limit, neither line is there.
-  const plain = draw(reduce(press(reached(), ["w"]).state, { offered: OFFERED }).state, S80);
-  assert.equal(plain.lines.some((line) => line.includes("Not an OATS deployment") || line.includes("More folders")), false);
+  // Before the pick, the row that opens has its path.
+  assert.equal(mainRows(draw(state, S120), S120)[2], placed([4, "acme-billing"], [26, "~/acme-billing"]));
+  // A stale row does not open: Enter on it asks the loop for nothing, and the screen stays as it was.
+  for (const down of [3, 4, 5]) {
+    const on = press(state, Array.from({ length: down }, () => "j")).state, entered = press(on, ["enter"]);
+    assert.equal(mainRows(draw(on, S80), S80)[1 + down].startsWith(">"), true, `${down} down: a stale row is selected`);
+    assert.deepEqual(entered.effects, [], `${down} down`);
+    assert.deepEqual(draw(entered.state, S80).lines, draw(on, S80).lines, `${down} down`);
+  }
+});
+
+test("Delete on a row of the list asks over the rows in two sentences of the TUI's own, wrapped to the switcher's width and not dim, with the selected row still drawn under them; Enter removes it, and Esc or any other key keeps it, the switcher still shown", () => {
+  assert.deepEqual(SWITCHER_TEXT.removing, ["Remove the selected row from this computer's list?", "Enter removes it; other keys keep it. Its folder stays."]);
+  for (const [sz, cells] of [[S80, 39], [S120, 60], [S79, 79], [S60, 60]]) {
+    const state = press(choosing(), ["j", "j"], sz).state, asking = press(state, ["delete"], sz).state, at = `${sz.cols}x${sz.rows}`;
+    const d = draw(asking, sz), before = draw(state, sz), from = mainFrom(d, sz), rows = ownRows(d, sz);
+    const asked = SWITCHER_TEXT.removing.flatMap((sentence) => wrap(sentence, cells - 3)).map((line) => `  ${line}`);
+    assert.deepEqual(rows.slice(0, asked.length), asked, at);
+    if (sz === S80) assert.equal(asked.length, 4, `${at}: each sentence on two rows in 39 cells`);
+    // (Under 80 columns the keys stand dim at the right of the first row: the sentence's cells are checked.)
+    for (let r = 0; r < asked.length; r++) for (const cell of d.cells[r].slice(from, from + asked[r].length).filter((c) => c.text !== " ")) assert.equal(cell.style, PLAIN, `${at}: row ${r} is something to read, not dim`);
+    // The rows under them are the switcher's, as many rows down, the selected one among them.
+    assert.deepEqual(rows.slice(asked.length, asked.length + 6), ownRows(before, sz).slice(0, 6), `${at}: the rows, under the question`);
+    const selected = bodyRows(sz).filter((r) => d.cells[r][from].text === ">");
+    assert.deepEqual(selected, [asked.length + 4], `${at}: the selected row is drawn`);
+    assert.equal(rows[asked.length + 4].includes("acme-billing") && d.cells[asked.length + 4].slice(from, from + cells - 1).every((cell) => cell.style.reverse), true, `${at}: still marked`);
+    fits(d, sz, at);
+    // Esc keeps the row and closes the question, not the switcher.
+    const kept = press(asking, ["escape"], sz);
+    assert.deepEqual([kept.state.view, kept.effects], ["switcher", []], at);
+    assert.deepEqual(draw(kept.state, sz).lines, before.lines, `${at}: Esc`);
+    // Any other key keeps it too, and then does what it does.
+    assert.deepEqual(draw(press(asking, ["j"], sz).state, sz).lines, draw(press(state, ["j"], sz).state, sz).lines, `${at}: j`);
+    // Enter removes it: the loop is asked to, and the question goes.
+    const removed = press(asking, ["enter"], sz);
+    assert.deepEqual(removed.effects, [{ remove: { path: "/home/u/acme-billing", name: "acme-billing" } }], at);
+    assert.deepEqual(draw(removed.state, sz).lines, before.lines, `${at}: Enter`);
+  }
+  // Delete on a workspace asks nothing.
+  assert.deepEqual(draw(press(choosing(), ["delete"]).state, S80).lines, draw(choosing(), S80).lines);
+});
+
+test("what a Remove answered, and a read of the list that failed, stand over the rows: the TUI's sentence with the row's name and the kernel's message as it came, wrapped to the switcher's width and not cut, at most four rows each, not dim", () => {
+  const MESSAGE = "the list of deployments is held by another oats process right now; run `oats deployments remove <path>` again once it has finished";
+  const HUGE = Array.from({ length: 160 }, (_, i) => `step-${i}`).join(" ");
+  const state = press(choosing(), ["j", "j"]).state;
+  const answered_ = (ok, message) => reduce(state, { removed: { path: "/home/u/acme-billing", name: "acme-billing", ok, ...(ok ? {} : { reason: { code: "E_DEPLOYMENTS_LOCKED", message } }) } });
+  // Each answer asks for the list to be read again.
+  assert.deepEqual(answered_(true).effect, { list: true });
+  assert.deepEqual(answered_(false, MESSAGE).effect, { list: true });
+  const failing = (message) => reduce(state, { listed: { failure: { code: "E_DEPLOYMENTS_LOCKED", message } } }).state;
+  for (const [sz, cells] of [[S80, 39], [S120, 60], [S79, 79], [S60, 60]]) {
+    const at = `${sz.cols}x${sz.rows}`, width = cells - 3, before = ownRows(draw(state, sz), sz);
+    /** The sentence's rows over the rows of the switcher, which follow them as they stood before. */
+    const over = (d, sentence, most = 4) => {
+      const rows = wrap(sentence, width).map((line) => `  ${line}`), main = ownRows(d, sz), from = mainFrom(d, sz);
+      assert.deepEqual(main.slice(0, rows.length), rows, `${at}: ${sentence.slice(0, 30)}`);
+      assert.deepEqual(main.slice(rows.length, rows.length + 4), before.slice(0, 4), `${at}: the rows follow`);
+      for (let r = 0; r < rows.length; r++) for (const cell of d.cells[r].slice(from, from + rows[r].length).filter((c) => c.text !== " ")) assert.equal(cell.style, PLAIN, `${at}: row ${r} is not dim`);
+      assert.equal(rows.length <= most, true, `${at}: at most ${most} rows`);
+      fits(d, sz, at);
+      return rows.length;
+    };
+    assert.equal(over(draw(answered_(true).state, sz), "acme-billing was removed from this computer's list."), sz === S80 ? 2 : 1, at);
+    // The kernel's message, wrapped and whole where four rows hold it.
+    if (cells >= 60) {
+      const notRemoved = over(draw(answered_(false, MESSAGE).state, sz), `acme-billing was not removed from this computer's list: ${MESSAGE}`);
+      const unread = over(draw(failing(MESSAGE), sz), `This computer's list of deployments could not be read: ${MESSAGE}`);
+      if (cells === 60) assert.deepEqual([notRemoved, unread], [4, 4], at);
+      if (cells === 79) assert.deepEqual([notRemoved, unread], [3, 3], at);
+    }
+    // A message longer than four rows hold is cut on the fourth, with the cut mark: the rows of the switcher still follow.
+    const cut = ownRows(draw(answered_(false, HUGE).state, sz), sz), rows = wrap(`acme-billing was not removed from this computer's list: ${HUGE}`, width);
+    assert.deepEqual(cut.slice(0, 3), rows.slice(0, 3).map((line) => `  ${line}`), at);
+    assert.equal(cut[3].endsWith("…") && rows[3].startsWith(cut[3].slice(2, -1).trimEnd()), true, `${at}: ${cut[3]}`);
+    assert.deepEqual(cut.slice(4, 8), before.slice(0, 4), `${at}: four rows, then the switcher's`);
+    // What a Remove answered first, then the failure, each its own sentence.
+    const both = ownRows(draw(reduce(answered_(true).state, { listed: { failure: { code: "E_DEPLOYMENTS_LOCKED", message: "busy" } } }).state, sz), sz);
+    const said = [...wrap("acme-billing was removed from this computer's list.", width), ...wrap("This computer's list of deployments could not be read: busy", width)].map((line) => `  ${line}`);
+    assert.deepEqual(both.slice(0, said.length), said, at);
+  }
+  // A read that answered takes the failure away.
+  assert.deepEqual(draw(reduce(failing(MESSAGE), { listed: LISTED }).state, S80).lines, draw(state, S80).lines);
+  // The sentences, pinned: a name and the kernel's message are put in as they came.
+  assert.equal(SWITCHER_TEXT.removed("acme-billing"), "acme-billing was removed from this computer's list.");
+  assert.equal(SWITCHER_TEXT.notRemoved("acme-billing", "busy"), "acme-billing was not removed from this computer's list: busy");
+  assert.equal(SWITCHER_TEXT.unread("busy"), "This computer's list of deployments could not be read: busy");
+});
+
+test("the switcher's cheat sheet names the remove key on a row of this computer's list, after the keys that move about and before help and quit, and never on a workspace", () => {
+  const on = (options) => press(choosing(options), ["j", "j"]).state;
+  for (const sz of [S80, S120]) {
+    assert.deepEqual(hintsOf(draw(on(), sz)), REMOVE_SHEET, `${sz.cols}`);
+    // On a workspace it is not named.
+    assert.deepEqual(hintsOf(draw(choosing(), sz)), SWITCHER_SHEET, `${sz.cols}: on a workspace`);
+  }
+  // A stale row is removed as any row of the list is.
+  const stale = reduce(on(), { listed: { rows: [listedRow("acme-billing", "missing"), listedRow("acme-docs")] } }).state;
+  assert.deepEqual(hintsOf(draw(stale, S80)), REMOVE_SHEET);
+  // The key is the effective table's; with none, no hint.
+  const rebound = effectiveConfig({ keys: { remove: ["f8"] } }), unbound = effectiveConfig({ keys: { remove: [] } });
+  assert.deepEqual([rebound.ok, unbound.ok], [true, true]);
+  assert.deepEqual(hintsOf(draw(on({ actions: rebound.actions }), S80)), REMOVE_SHEET.map((hint) => (hint[0] === "Delete" ? ["F8", "remove"] : hint)));
+  assert.deepEqual(hintsOf(draw(on({ actions: unbound.actions }), S80)), SWITCHER_SHEET);
 });
 
 // ── The help, with machines and the switcher ─────────────────────────────────────────────────────
 
-test("the help says every limit of this version: adding, checking and removing a machine and opening a deployment elsewhere with the oats command that does it, and what no command lifts in sentences of its own", () => {
+test("the help says every limit of this version: adding, checking and removing a machine and opening a deployment that is not listed with the oats command that does it, and what no command lifts in sentences of its own", () => {
   for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 210), size(79, 180), size(200, 150)]) {
     const text = helpLines(reached({ ascii }), sz).map((line) => line.trim()), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     const machines = text.indexOf("Machines"), last = text.indexOf("Not in this version");
@@ -2655,7 +2790,7 @@ test("the help says every limit of this version: adding, checking and removing a
     // The sentences, each whole when its rows are joined, in order, and nothing else in the section.
     assert.equal(text.slice(machines + 1, last).filter(Boolean).join(" "), MACHINES.join(" "), at);
     const section = text.slice(last + 1);
-    for (const [what, command] of [["add a machine to this workspace", "oats server connect <id> --ssh <alias>"], ["check a machine", "oats server check <id>"], ["remove a machine", "oats server remove <id>"], ["open a deployment outside ~/Agents", "oats tui --dir <path>"]]) {
+    for (const [what, command] of [["add a machine to this workspace", "oats server connect <id> --ssh <alias>"], ["check a machine", "oats server check <id>"], ["remove a machine", "oats server remove <id>"], ["open a deployment that is not listed", "oats tui --dir <path>"]]) {
       const row = section.findIndex((line) => line === what || line.startsWith(`${what} `));
       assert.equal(row >= 0 && (pair([section[row]], what, command) || section[row + 1] === command), true, `${at}: ${what}: ${command}`);
     }
@@ -2668,7 +2803,10 @@ test("the help says every limit of this version: adding, checking and removing a
   assert.equal(MACHINES.length, 3);
   assert.match(MACHINES[0], /machine's rows are what it reported at the time on its heading/);
   assert.match(MACHINES[0], /in a view of one machine, at the top of this help/);
-  assert.match(MACHINES[1], /Nothing is kept on disk: a machine not reached in this run is listed by its own name/);
+  // Nothing of the TUI's own: this computer's list of deployments is the kernel's.
+  assert.equal(MACHINES[1], "Nothing of its own is kept on disk: a machine not reached in this run is listed by its own name.");
+  assert.deepEqual(NOT_YET.at(-1), { what: "open a deployment that is not listed", command: "oats tui --dir <path>" });
+  assert.equal(NOT_YET.some((entry_) => entry_.what.includes("~/Agents")), false, "there is no folder of its own to be outside of");
   assert.equal(MACHINES[2], "Souls and Capabilities are this machine's.", "both views are built: no `when they come`");
   assert.equal(NOT_YET.some((entry_) => entry_.command === "oats server roster" || entry_.what === "other machines"), false);
   // The mark of the open workspace is listed with the others.

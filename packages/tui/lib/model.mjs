@@ -21,6 +21,7 @@ import { ownEllipsis, shownLines } from "./term/text.mjs";
 import { textWidth } from "./term/width.mjs";
 import { windowOf } from "./views/scroll.mjs";
 import { SOUL_COLOURS } from "./views/souls.mjs";
+import { leadRows } from "./views/switcher.mjs";
 
 /** The widest the word column of the list may be, in cells. */
 export const WORD_MAX = 20;
@@ -502,17 +503,39 @@ function detailOf(state, r, item, now, acts) {
   return { title: row.instance, facts };
 }
 
-/** The heading of the deployments in `~/Agents` that are not served yet: the TUI's own. */
+/** The heading of the rows of this computer's deployments list that this run does not serve: the TUI's own. */
 export const OFFERED_SECTION = "On this machine, not opened";
-export const MORE_FOLDERS = "More folders than are listed here.";
+
+/** The words of this computer's deployments list (awebai/oats#1390) where they are a line of their
+ *  own: the add of the deployment the run started in, when it failed (the line under the sidebar's title,
+ *  once; the kernel's message says what to do, and is shown as it came), and a change to the list
+ *  still running as the TUI leaves. */
+export const LIST_WORDS = Object.freeze({
+  notAdded: (message) => Object.freeze([{ own: "This deployment was not added to this computer's list: " }, { shown: message }]),
+  /** An add or a remove still running as the TUI leaves: one line, after the screen is left. */
+  leaving: "oats: a change to this computer's list of deployments is still running; `oats deployments` shows the list.",
+});
+
+/** What the switcher says above its rows, as views/switcher.mjs leadRows reads it. */
+const leadOf = (state) => ({ said: state.switcher.line, failure: state.listed.failure?.message ?? null, removing: state.switcher.removing !== null });
+/** How many rows stand above the switcher's choices in an area `cols` wide (the switcher's is the
+ *  whole width): what happened (`line`), that the last read of the list failed, and a Remove
+ *  asked, as views/switcher.mjs leadRows draws them. The window of the choices is that much
+ *  shorter, so none is hidden for them. */
+export function switcherLead(state, cols) {
+  return leadRows(leadOf(state), Number.isInteger(cols) && cols > 0 ? cols : 80, { ascii: state.ascii }).length;
+}
 
 /** The switcher's rows for a state, top to bottom: the workspaces this run can show, as the
  *  shared home lists and words them; then the ones matched to no workspace under the shared
- *  heading; then the deployments of `~/Agents` that are not served, under the TUI's own.
- *  An item is `{ heading, shared }`, `{ own }`, or a choice: `{ key, label, place, notLiveText,
- *  open, primary }` for a view (`primary` is the deployment Enter opens) and `{ key, label, place,
- *  path, refused }` for an offered folder. `keys` are the choices in order; `selected` is the
- *  key the selection stands on (the first choice when the state's own is not listed). */
+ *  heading; then the rows of this computer's deployments list that this run does not serve, in
+ *  the kernel's order, under the TUI's own. A served deployment's id and a row's path are both
+ *  canonical, so a deployment opened in this run is never offered again.
+ *  An item is `{ heading, shared }`, or a choice: `{ key, label, place, notLiveText, open,
+ *  primary }` for a view (`primary` is the deployment Enter opens) and `{ key, label, place,
+ *  path, state, refused }` for a row of the list (`state` the kernel's: views/switcher.mjs says a
+ *  stale one in words). `keys` are the choices in order; `selected` is the key the selection
+ *  stands on (the first choice when the state's own is not listed). */
 export function switcher(state, at = new Date(0).toISOString()) {
   const held = heldOf(state, at), views = viewModel(held, TERMS);
   const rows = workspaceChoiceRows(workspaceChoices(held, TERMS, views));
@@ -524,17 +547,17 @@ export function switcher(state, at = new Date(0).toISOString()) {
   });
   const shown = rows.filter((row) => choiceMatches(row, query));
   const matched = shown.filter((row) => !row.unattached).map(choice), unmatched = shown.filter((row) => row.unattached).map(choice);
-  const offered = state.offered.offered
-    .map(({ path, name }) => ({ key: `path\u0000${path}`, label: name, place: shortPath(path, { home: state.home }), path, refused: state.switcher.refused === path }))
+  const unserved = state.listed.rows.filter((row) => !state.ctxs.includes(row.path));
+  const offered = unserved
+    .map(({ path, name, state: listedState }) => ({ key: `path\u0000${path}`, label: name, place: shortPath(path, { home: state.home }), path, state: listedState, refused: state.switcher.refused === path }))
     .filter((item) => choiceMatches(item, query));
   const items = [
     ...matched,
     ...(unmatched.length ? [{ heading: UNMATCHED_SECTION, shared: true }, ...unmatched] : []),
     ...(offered.length ? [{ heading: OFFERED_SECTION, shared: false }, ...offered] : []),
-    ...(state.offered.limited ? [{ own: MORE_FOLDERS }] : []),
   ];
   const keys = items.filter((item) => item.key !== undefined).map((item) => item.key);
-  const total = rows.length + state.offered.offered.length;
+  const total = rows.length + unserved.length;
   return {
     items, keys, selected: keys.includes(state.switcher.selected) ? state.switcher.selected : keys[0] ?? null,
     empty: keys.length ? null : total ? "nomatch" : "none",
@@ -632,17 +655,19 @@ function paletteView(state, page, at) {
   };
 }
 
-/** The rows the switcher's window has in an area `body` rows tall: the line about the open
- *  workspace takes one, and the filter field one while it is typed or kept (views/frame.mjs). */
-export const switcherHeight = (sw, body) => Math.max(1, body - (sw.line ? 1 : 0) - (sw.editing || sw.query ? 1 : 0));
+/** The rows the switcher's window has in an area `body` rows tall and `cols` wide: the lines above
+ *  the choices take theirs (switcherLead), and the filter field one while it is typed or kept
+ *  (views/frame.mjs). */
+export const switcherHeight = (state, body, cols) => Math.max(1, body - switcherLead(state, cols) - (state.switcher.editing || state.switcher.query ? 1 : 0));
 
 /** What the views draw for a state. For the Instances view, in a list pane `page` rows tall and
  *  `cols` wide: the title's facts, the rows of the window with their marks, and the selected
  *  instance's detail; the Souls and the Capabilities views' lists in the same pane, also under the
  *  help, which leaves the sidebar beside it (views/frame.mjs). For the switcher, the palette and
  *  the spawn prompt, in an area `body` rows tall (`page` when none is given): the window of their
- *  rows. Only the rows in the pane are worked out. */
-export function model(state, { page, body = page, now, at, cols }) {
+ *  rows; `area` is the main area's width (`cols` when none is given), which the lines above the
+ *  switcher's choices wrap to (views/frame.mjs mainArea). Only the rows in the pane are worked out. */
+export function model(state, { page, body = page, now, at, cols, area = cols }) {
   const r = roster(state, at, cols);
   // The view under the help, or under a confirmation, decides what the sidebar says.
   const under = state.view === "help" || state.view === "act" ? state.back : state.view;
@@ -671,10 +696,9 @@ export function model(state, { page, body = page, now, at, cols }) {
   if (under === "switcher") {
     const s = switcher(state, at);
     const at_ = s.selected === null ? -1 : s.items.findIndex((item) => item.key === s.selected);
-    // The line that says what happened to the open workspace stands above the rows and takes one
-    // of the pane's, and so does the filter field while it is typed or kept: the window is that
-    // much shorter, so no choice is hidden for them.
-    const win = windowOf({ top: state.switcher.top, count: s.items.length, height: switcherHeight(state.switcher, body), keep: state.switcher.loose ? -1 : at_ });
+    // The lines above the rows take the pane's rows, and so does the filter field while it is
+    // typed or kept: the window is that much shorter, so no choice is hidden for them (switcherHeight).
+    const win = windowOf({ top: state.switcher.top, count: s.items.length, height: switcherHeight(state, body, area), keep: state.switcher.loose ? -1 : at_ });
     return {
       ...common, under, list: [], above: 0, below: 0, wordWidth: 0, detail: null,
       // Nothing of a workspace stands in the sidebar while the switcher is shown.
@@ -682,7 +706,9 @@ export function model(state, { page, body = page, now, at, cols }) {
       filter: Object.freeze({ editing: state.switcher.editing, query: state.switcher.query }),
       switcher: {
         rows: s.items.slice(win.top, win.top + win.size).map((item) => (item.key === undefined ? item : { ...item, selected: item.key === s.selected })),
-        above: win.above, below: win.below, empty: s.empty, said: state.switcher.line,
+        above: win.above, below: win.below, empty: s.empty, ...leadOf(state),
+        // Whether the remove key acts on the selected row: a row of the list (the cheat sheet names it then).
+        removable: s.items.some((item) => item.key === s.selected && item.path !== undefined),
       },
     };
   }

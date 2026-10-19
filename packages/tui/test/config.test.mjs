@@ -10,7 +10,7 @@ import { isKeyId } from "../lib/term/keys.mjs";
 import { BACK_KEY_RULE } from "../lib/term/through.mjs";
 
 const FILE = "/cfg/oats/tui.json";
-const IDS = "up, down, top, bottom, page-up, page-down, collapse, expand, detail, filter, refresh, instances, souls, capabilities, workspaces, palette, open, soul-instances, zoom, close-terminal, tab-previous, tab-next, split-right, split-down, group-next, tab-move, group-close, stop, retire, start, restart, spawn, spawn-another, spawn-check, help, close, quit, suspend, redraw";
+const IDS = "up, down, top, bottom, page-up, page-down, collapse, expand, detail, filter, refresh, instances, souls, capabilities, workspaces, palette, open, remove, soul-instances, zoom, close-terminal, tab-previous, tab-next, split-right, split-down, group-next, tab-move, group-close, stop, retire, start, restart, spawn, spawn-another, spawn-check, help, close, quit, suspend, redraw";
 const KEY_IDS = "key ids look like q, ctrl+c, shift+tab, f5, space";
 /** The whole line of a refusal, as it is printed. */
 const line = (clause, file = FILE) => `oats: \`oats tui\` cannot use ${file}: ${clause} (E_TUI_CONFIG)`;
@@ -315,6 +315,27 @@ test("refused: one key given to two actions, naming the key and both; a user's k
   assert.deepEqual(load({ keys: { detail: ["enter"] } }).lines, [line("the key enter is given to open and to detail; a key does one thing")]);
   assert.equal(load({ keys: { refresh: ["w"], workspaces: ["f2"] } }).ok, true);
   assert.equal(load({ keys: { detail: ["enter"], open: [] } }).ok, true);
+});
+
+test("the switcher's Remove holds Delete by default, and no letter: a file that gives x or m to an action is still taken; one that gives Delete to another action is refused naming both, until it rebinds remove", () => {
+  assert.deepEqual(ACTIONS.find((action) => action.id === "remove").keys, ["delete"]);
+  assert.equal(bindings(ACTIONS).get("delete"), "remove");
+  // The free letters a file is likeliest to use: a file written before Remove existed keeps working.
+  for (const letter of ["x", "m"]) for (const id of ["refresh", "remove", "help"]) {
+    const loaded = load({ keys: { [id]: [letter] } });
+    assert.equal(loaded.ok, true, `${letter} to ${id}`);
+    assert.equal(bindings(loaded.actions).get(letter), id);
+  }
+  // Delete, as any default that is taken: refused, naming the key and both actions.
+  assert.deepEqual(load({ keys: { refresh: ["delete"] } }).lines, [line("the key delete is given to remove and to refresh; a key does one thing")]);
+  assert.deepEqual(effectiveConfig({ keys: { close: ["escape", "delete"] } }), { ok: false, problems: ["the key delete is given to remove and to close; a key does one thing"] });
+  // Rebound or unbound like the rest: then Delete is free for another action.
+  const rebound = load({ keys: { refresh: ["delete"], remove: ["x"] } });
+  assert.equal(rebound.ok, true);
+  assert.deepEqual([bindings(rebound.actions).get("delete"), bindings(rebound.actions).get("x")], ["refresh", "remove"]);
+  const unbound = load({ keys: { refresh: ["r", "delete"], remove: [] } });
+  assert.equal(unbound.ok, true);
+  assert.deepEqual([unbound.actions.find((action) => action.id === "remove").keys, bindings(unbound.actions).get("delete")], [[], "refresh"]);
 });
 
 test("refused: one key given to two actions by two lists of the file, found at the second", () => {

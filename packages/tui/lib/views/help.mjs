@@ -41,14 +41,14 @@ export const NOT_YET = Object.freeze([
   Object.freeze({ what: "add a machine to this workspace", command: "oats server connect <id> --ssh <alias>" }),
   Object.freeze({ what: "check a machine", command: "oats server check <id>" }),
   Object.freeze({ what: "remove a machine", command: "oats server remove <id>" }),
-  // The switcher lists the deployments opened in this run and those in ~/Agents, and no other.
-  Object.freeze({ what: "open a deployment outside ~/Agents", command: "oats tui --dir <path>" }),
+  // The switcher lists the deployments opened in this run and those on this computer's list, and no other.
+  Object.freeze({ what: "open a deployment that is not listed", command: "oats tui --dir <path>" }),
 ]);
 /** What a user should know of the machines the list shows, each a sentence of the TUI's own: a
  *  limit that no command lifts is stated too. */
 export const MACHINES = Object.freeze([
   "A machine's rows are what it reported at the time on its heading (in a view of one machine, at the top of this help).",
-  "Nothing is kept on disk: a machine not reached in this run is listed by its own name.",
+  "Nothing of its own is kept on disk: a machine not reached in this run is listed by its own name.",
   "Souls and Capabilities are this machine's.",
 ]);
 /** The views the frame names, what each holds, and what to run for what a view does not do yet.

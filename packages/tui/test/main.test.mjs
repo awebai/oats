@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { ACTIONS, bindings, keyLabel } from "../lib/actions.mjs";
 import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, createCapabilityCatalog, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
-import { NO_TERMINAL, USAGE, main, noDeployment, noKernel, parseArgs } from "../lib/main.mjs";
+import { NO_TERMINAL, USAGE, main, noDeployment, noDeploymentListed, noKernel, noList, parseArgs } from "../lib/main.mjs";
+import { LIST_WORDS } from "../lib/model.mjs";
 import { shown, textOf as textShown } from "../lib/term/text.mjs";
 import { ENTER, LEAVE } from "../lib/term/tty.mjs";
 import { CLI, DEPLOYMENT, lifecycleSession, lifecycleWork, failed, fakeProcess, fakeStdin, fakeStdout, fakeTimers, instanceRow, modesOf, observed, readTerminalOutput, rosterOf } from "./helpers.mjs";
@@ -80,7 +81,7 @@ function fakePanel(log, options) {
 }
 /** `oats tui` on a fake terminal: the run, its streams and what it wrote. Everything outside the
  *  terminal (the user's file, the deployment, the kernel, the reader) is the test's own. */
-function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false, detachKey: "C-\\" }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", offered = { offered: [], limited: false }, admit = (path) => ({ ok: true, deployment: path }), prepare = null, confirm = null, start = null, tellable = () => false } = {}) {
+function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false, detachKey: "C-\\" }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", listed = [], listAnswer = null, admit = (path) => ({ ok: true, deployment: path }), prepare = null, confirm = null, start = null, tellable = () => false } = {}) {
   const log = [];
   const stdin = fakeStdin({ log, isTTY: stdinTTY }), stdout = fakeStdout({ log, columns, rows, isTTY: stdoutTTY }), proc = fakeProcess(), timers = fakeTimers();
   const kill = proc.kill;
@@ -88,7 +89,10 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
   const errors = [];
   const stderr = { write(text) { errors.push(text); log.push(["stderr", text]); return true; } };
   let clock = Date.parse("2026-10-11T10:00:30.000Z");
-  // `offered`: what ~/Agents holds that the run does not serve; a test may put another answer there.
+  // `listed`: the rows this computer's deployments list answers a read with; `listAnswer(asked, call)`:
+  // the answer of any call to that list (a read, an add, a remove), by default `listed` for a read and
+  // done for a change, each the test's to replace; an answer of undefined holds the call open, for
+  // the test to answer through its `answer`. `lists`: every call, in order.
   // `panel`: the run's panel, faked (what the loop asked of it, and a way to answer as the panel
   // does); `preflights`: every preflight it began, each with what it was handed and a way to answer it.
   // `soulReads`: every `oats souls` the run's catalog asked for, with a way to answer it; `soulExec`
@@ -96,8 +100,9 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
   // the run's capabilities table (`oats capabilities`).
   // `spawn`: what the run made of the three shared spawn factories, faked: the preview's reads and
   // the transaction's submits and checks, each with a way to answer; what the boundary was made with.
-  const r = { stdin, stdout, proc, timers, errors, log, offered, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
+  const r = { stdin, stdout, proc, timers, errors, log, listed, lists: [], reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
     spawn: { preview: null, previewExec: null, reads: [], applyRead: null, applyExec: null, applyCalls: [], request: null, submits: [], checks: [] } };
+  r.listAnswer = listAnswer ?? ((asked) => (asked.action === "list" ? { ok: true, value: { ok: true, rows: r.listed } } : { ok: true, value: asked.action === "add" ? { path: asked.path, added: true } : { path: asked.path, removed: true } }));
   let up;
   r.up = new Promise((resolve) => { up = resolve; });
   const effects = {
@@ -105,7 +110,21 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
     findDeployment(start) { log.push(["effect", "deployment", start]); return deployment; },
     async probeKernel(asked) { log.push(["effect", "kernel", { ...asked.env }]); return kernel; },
     createReader(options) { r.reader = fakeReader(log, options); const start = r.reader.start; r.reader.start = () => { const answer = start(); queueMicrotask(up); return answer; }; return r.reader; },
-    offeredDeployments(home, served) { log.push(["effect", "offered", home, [...served]]); return r.offered; },
+    // This computer's deployments list (the shared cliDeploymentList), faked: each call is logged
+    // with what it asked and the exec it was handed: `start` (the effect below, the exec of the one
+    // read before the terminal is taken), `read` (the reader's own exec) or `change` (any other: the
+    // loop's changeExec, for an add or a remove).
+    deploymentList(cli, asked, io) {
+      const via = io.exec === effects.startExec ? "start" : io.exec === r.reader?.exec ? "read" : "change";
+      log.push(["effect", "list", { ...asked }, via]);
+      return new Promise((resolve) => {
+        const call = { cli, asked, io, answer: resolve };
+        r.lists.push(call);
+        const given = r.listAnswer(asked, call);
+        if (given !== undefined) resolve(given);
+      });
+    },
+    startExec() { throw new Error("the fake start exec starts nothing"); },
     admitDeployment(path) { log.push(["effect", "admit", path]); return admit(path); },
     createPanel(options) { r.panel = fakePanel(log, options); return r.panel.api; },
     sweep(options) { log.push(["panel", "sweep", options.env === env]); return { removed: [] }; },
@@ -193,9 +212,15 @@ const onyx = () => group("onyx:t2", "/home/builder/acme-atlas", [remoteRow("dev-
 const rosterAnswer = (groups) => ({ schemaVersion: 1, ok: true, result: { groups } });
 /** A kernel record that reads other machines, made by the shared `cliRecord` as the probe makes it. */
 const REMOTE_CLI = cliRecord({ version: CLI.version, workspaceApi: CLI.workspaceApi, features: [...CLI.features], remote: ["roster"] }, { bin: CLI.bin, source: "tui" });
-/** A folder of ~/Agents this run does not serve, as lib/read.mjs `offeredDeployments` answers. */
-const LEDGER = "/home/u/Agents/acme-ledger";
-const OFFERED = Object.freeze({ offered: Object.freeze([Object.freeze({ path: LEDGER, name: "acme-ledger" })]), limited: false });
+/** A row of this computer's deployments list that this run does not serve, as the shared reader gives it. */
+const LEDGER = "/home/u/acme-ledger";
+const LISTED = Object.freeze([Object.freeze({ path: LEDGER, name: "acme-ledger", state: "ok" })]);
+/** What the kernel refuses a call to the list with when another holds its lock. */
+const BUSY = Object.freeze({ code: "E_DEPLOYMENTS_BUSY", message: "This computer's list of deployments is busy; try again." });
+/** The delete key, as a terminal sends it: the switcher's Remove. */
+const DELETE = "\x1b[3~";
+/** Every microtask and the callbacks of the I/O already due run: an answer given is taken. */
+const settle = () => new Promise((resolve) => setImmediate(resolve));
 /** What a run asked of the file system and the kernel, in order: the effects with their arguments
  *  (the user's file and the kernel are asked with the environment, which is not repeated here). */
 const effectsOf = (r) => r.log.filter(([what]) => what === "effect").map(([, which, ...rest]) => (which === "config" || which === "kernel" ? [which] : [which, ...rest]));
@@ -246,12 +271,19 @@ function sidebarOf(r) {
   r.stdout.resize(r.stdout.columns, r.stdout.rows);
   return words(screenRows(r.stdout.take(), r.stdout.columns, r.stdout.rows).map((line) => line.split("\u2502")[0].trim()).filter(Boolean).join(" "));
 }
+/** The main area's text the same way: each row after the rule beside the sidebar. A sentence the
+ *  switcher wraps reads whole, and nothing of the sidebar comes between its rows. */
+function mainAreaOf(r) {
+  r.stdout.take();
+  r.stdout.resize(r.stdout.columns, r.stdout.rows);
+  return words(screenRows(r.stdout.take(), r.stdout.columns, r.stdout.rows).map((line) => line.split("\u2502").slice(1).join("\u2502").trim()).filter(Boolean).join(" "));
+}
 
 test("the action table binds each key to one action, and a key bound twice is refused when the table is read", () => {
   assert.deepEqual(Object.fromEntries(bindings(ACTIONS)), {
     up: "up", k: "up", down: "down", j: "down", g: "top", home: "top", G: "bottom", end: "bottom", pageup: "page-up", pagedown: "page-down",
     left: "collapse", h: "collapse", right: "expand", l: "expand", tab: "detail", "/": "filter", r: "refresh", 1: "instances", 2: "souls", 3: "capabilities",
-    w: "workspaces", enter: "open", i: "soul-instances", z: "zoom", c: "close-terminal", "[": "tab-previous", "]": "tab-next", "|": "split-right", "-": "split-down", X: "stop", D: "retire", S: "start", R: "restart", n: "spawn", N: "spawn-another", C: "spawn-check",
+    w: "workspaces", enter: "open", delete: "remove", i: "soul-instances", z: "zoom", c: "close-terminal", "[": "tab-previous", "]": "tab-next", "|": "split-right", "-": "split-down", X: "stop", D: "retire", S: "start", R: "restart", n: "spawn", N: "spawn-another", C: "spawn-check",
     "?": "help", escape: "close", q: "quit", "ctrl+c": "quit", "ctrl+z": "suspend", "ctrl+l": "redraw", "ctrl+k": "palette",
   });
   assert.throws(() => bindings([{ id: "a", keys: ["x"], label: "a" }, { id: "b", keys: ["x"], label: "b" }]), /key x is bound to a and to b/);
@@ -332,19 +364,23 @@ test("the eight instance variables are removed from the process environment itse
   assert.deepEqual(Object.keys(none), []);
 });
 
-test("before the alternate screen, in this order and each a line on stderr with status 1: the user's file, the deployment, the kernel", async () => {
+test("before the alternate screen, in this order and each a line on stderr with status 1: the user's file, the deployment, the kernel, and outside every deployment this computer's list of deployments", async () => {
   const lines = ["oats: `oats tui` cannot use /home/u/.config/oats/tui.json: quit has no key; give it one (E_TUI_CONFIG)", "oats: `oats tui` cannot use /home/u/.config/oats/tui.json: unknown action reload; the actions are up (E_TUI_CONFIG)"];
   const cases = [
     [{ config: { ok: false, lines } }, lines.map((line) => `${line}\n`).join(""), ["config"]],
-    // No deployment where the user is, and none named: ~/Agents is looked at before the run gives up.
-    [{ deployment: { ok: false, dir: "/work/here" } }, `${noDeployment("/work/here")}\n`, ["config", "deployment", "offered"]],
     [{ kernel: { ok: false, reason: "version 0.24.0 outside >=0.25.8 <0.53.0" } }, `${noKernel("version 0.24.0 outside >=0.25.8 <0.53.0")}\n`, ["config", "deployment", "kernel"]],
+    // No deployment where the user is, and none named: the list is read through the kernel, so a
+    // kernel the TUI cannot use reads no list; a list that holds no row, and one that could not be read.
+    [{ deployment: { ok: false, dir: "/work/here" }, kernel: { ok: false, reason: "version 0.24.0 outside >=0.25.8 <0.53.0" } }, `${noKernel("version 0.24.0 outside >=0.25.8 <0.53.0")}\n`, ["config", "deployment", "kernel"]],
+    [{ deployment: { ok: false, dir: "/work/here" } }, `${noDeploymentListed("/work/here")}\n`, ["config", "deployment", "kernel", "list"]],
+    [{ deployment: { ok: false, dir: "/work/here" }, listAnswer: () => ({ ok: false, reason: BUSY }) }, `${noList(BUSY)}\n`, ["config", "deployment", "kernel", "list"]],
   ];
   for (const [options, said, asked] of cases) {
     const r = run(options);
     assert.equal(await r.status, 1);
     assert.equal(r.errors.join(""), said);
     assert.deepEqual(r.log.filter(([what]) => what === "effect").map(([, which]) => which), asked);
+    assert.equal(r.lists.length, asked.includes("list") ? 1 : 0, "the list is read at most once");
     assert.deepEqual(r.stdout.written, [], "nothing is drawn");
     assert.equal(r.stdin.raw, false);
     assert.equal(r.reader, null, "and nothing is read");
@@ -352,6 +388,8 @@ test("before the alternate screen, in this order and each a line on stderr with 
   }
   assert.equal(noDeployment("/work/here"), "oats: no OATS deployment at or above /work/here (E_NO_DEPLOYMENT); name one with `oats tui --dir <path>`");
   assert.equal(noKernel("version 0.24.0 outside >=0.25.8 <0.53.0"), "oats: `oats tui` could not use its own kernel (E_TUI_KERNEL): version 0.24.0 outside >=0.25.8 <0.53.0");
+  assert.equal(noDeploymentListed("/work/here"), "oats: no deployment at or above /work/here, and this computer's list of deployments holds none (E_NO_DEPLOYMENT): `oats tui --dir <path>` opens one (and lists it), `oats onboard <dir> --workspace <ref>` creates one");
+  assert.equal(noList(BUSY), "oats: `oats tui` could not read this computer's list of deployments (E_DEPLOYMENTS_BUSY): This computer's list of deployments is busy; try again.", "the kernel's code, and its message as it came: it says what to do");
 });
 
 test("a path or a reason in those lines is never written raw: a path that is not plain reads `that directory`, and a reason goes through the display filter", () => {
@@ -359,6 +397,16 @@ test("a path or a reason in those lines is never written raw: a path that is not
     assert.equal(noDeployment(dir), "oats: no OATS deployment at or above that directory (E_NO_DEPLOYMENT); name one with `oats tui --dir <path>`", JSON.stringify(dir));
   }
   assert.equal(noDeployment("/srv/my deployments/one").includes("/srv/my deployments/one"), true, "a space is plain");
+  for (const dir of ["/tmp/\x1b[2J", "/tmp/café", `/${"d".repeat(200)}`, "", null]) {
+    assert.equal(noDeploymentListed(dir), "oats: no deployment at or above that directory, and this computer's list of deployments holds none (E_NO_DEPLOYMENT): `oats tui --dir <path>` opens one (and lists it), `oats onboard <dir> --workspace <ref>` creates one", JSON.stringify(dir));
+  }
+  // The list's refusal: a code not in the kernel's form is not echoed (E_CLI_FAILED stands for it), and the message goes through the display filter.
+  assert.doesNotMatch(noList({ code: "E_DEPLOYMENTS_BUSY", message: "busy (\x1b]0;owned\x07)" }), /[\x00-\x1f\x7f-\x9f]/);
+  assert.match(noList({ code: "E_DEPLOYMENTS_BUSY", message: "busy (\x1b]0;owned\x07)" }), /\(E_DEPLOYMENTS_BUSY\): \[withheld\]$/);
+  assert.match(noList({ code: "E_DEPLOYMENTS_BUSY", message: "two\nlines" }), /: two lines$/);
+  for (const reason of [{ code: "\x1b[2J", message: "m" }, { code: "busy", message: "m" }, { message: "m" }]) assert.match(noList(reason), /deployments \(E_CLI_FAILED\): m$/, JSON.stringify(reason));
+  for (const reason of [{ code: "E_DEPLOYMENTS_BUSY", message: "" }, { code: "E_DEPLOYMENTS_BUSY" }]) assert.match(noList(reason), /\(E_DEPLOYMENTS_BUSY\): it gave no reason$/);
+  assert.equal(noList(null), "oats: `oats tui` could not read this computer's list of deployments (E_CLI_FAILED): it gave no reason");
   assert.doesNotMatch(noKernel("not the oats CLI (name: \x1b]0;owned\x07)"), /[\x00-\x1f\x7f-\x9f]/);
   assert.match(noKernel("not the oats CLI (name: \x1b]0;owned\x07)"), /\(E_TUI_KERNEL\): \[withheld\]$/);
   assert.match(noKernel("two\nlines"), /: two lines$/);
@@ -413,7 +461,7 @@ test("every key press tells the reader the user is there; r asks for a live read
 });
 
 test("the modes a whole run switches are exactly the list: four on at the start, the same four off and on again at Ctrl+L, the four back at the end, and nothing else, with the view drawn, filtered and scrolled", async () => {
-  const r = await started({ offered: OFFERED });
+  const r = await started({ listed: LISTED });
   r.reader.answer(ENTRY);
   r.stdin.type("?");
   r.stdout.resize(100, 30);
@@ -426,10 +474,11 @@ test("the modes a whole run switches are exactly the list: four on at the start,
   r.reader.answer(failed(ENTRY, { code: "E_NEW_CODE", message: "a refusal with \x1b[2J in it" }));
   // The same refusal as the kernel's own (the reader marks it): the shared sentence names the speaker.
   r.reader.answer(failed(ENTRY, { code: "E_NEW_CODE", message: "a refusal with \x1b[2J in it", origin: "kernel" }));
-  // And with the switcher drawn, over a machine's roster and a folder of ~/Agents.
+  // And with the switcher drawn, over a machine's roster and a row of this computer's list.
   r.reader.collecting();
   r.reader.roster({ envelope: rosterAnswer([garnet(), onyx()]) });
   r.stdin.type("w");
+  await settle();
   r.stdin.type("j/");
   r.stdin.type("\x1b[200~onyx\x1b]0;owned\x07\x1b[201~");
   r.stdin.type("\r");
@@ -670,94 +719,221 @@ test("a reader that throws when asked ends the run as an internal error, with th
 
 // ── Other machines and the workspace switcher ────────────────────────────────
 
-test("started outside every deployment with a folder of ~/Agents to offer, it opens on the switcher: the folder is listed, nothing is served, and the reader is started, which reads the roster of other machines", async () => {
-  // 120 columns: the switcher beside the sidebar is wide enough for a folder's whole path.
-  const r = await started({ deployment: { ok: false, dir: "/work/here" }, offered: OFFERED, kernel: { ok: true, cli: REMOTE_CLI }, columns: 120, rows: 40 });
+test("started outside every deployment with no --dir, it reads this computer's list of deployments through its kernel before the terminal is taken, and with a row there it opens on the switcher: the row is listed, nothing is served, and the reader is started, which reads the roster of other machines", async () => {
+  // 120 columns: the switcher beside the sidebar is wide enough for a row's whole path.
+  const r = await started({ deployment: { ok: false, dir: "/work/here" }, listed: LISTED, kernel: { ok: true, cli: REMOTE_CLI }, columns: 120, rows: 40 });
   assert.deepEqual(r.errors, [], "there is something to list, so no line that there is no deployment");
-  assert.deepEqual(effectsOf(r), [["config"], ["deployment", "/work/here"], ["offered", "/home/u", []], ["kernel"]], "~/Agents is looked at for what a run that serves nothing can offer, before the kernel is asked");
+  assert.deepEqual(effectsOf(r), [["config"], ["deployment", "/work/here"], ["kernel"], ["list", { action: "list" }, "start"]], "the list is read through the kernel just asked, with the exec made for the start: the reader's does not exist yet");
+  const [read] = r.lists;
+  assert.deepEqual([read.cli, read.io.env], [REMOTE_CLI, r.reader.options.env], "with the run's own kernel and environment");
+  const at = (what, which) => r.log.findIndex(([w, x]) => w === what && (which === undefined || x === which));
+  assert.equal(at("effect", "list") < at("write"), true, "before the terminal is taken");
   assert.deepEqual(r.reader.options.getServed(), [], "nothing is served");
   assert.deepEqual(r.reader.options.getRoster(), { remote: { remoteGroups: [], rosterAnswered: false, rosterFailure: null }, memory: new Map(), notes: new Map() });
   assert.deepEqual(readerDid(r), [["start"]], "the reader is started all the same: its cycles read the other machines");
   const first = textOf(r.stdout.take());
-  assert.match(first, /^ workspaces.*On this machine, not opened.*acme-ledger\s+~\/Agents\/acme-ledger.*Enter +open.*\/ +filter.*r +refresh.*\? +help.*q +quit/s);
+  assert.match(first, /^ workspaces.*On this machine, not opened.*acme-ledger\s+~\/acme-ledger.*Enter +open.*\/ +filter.*r +refresh.*Delete +remove.*\? +help.*q +quit/s);
   assert.doesNotMatch(first, /Reading the deployment|Esc close/, "no deployment is being read, and there is no view to close the switcher onto");
   // What the reader's first cycle found of the other machines is listed too.
   r.reader.collecting();
   r.reader.roster({ envelope: rosterAnswer([garnet()]) });
   assert.match(screenOf(r), /^ workspaces.*garnet.*On this machine, not opened.*acme-ledger/s);
   assert.deepEqual(r.reader.options.getServed(), []);
+  await settle();
+  assert.equal(r.lists.length, 1, "a run started in no deployment adds none to the list");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
 
-test("started outside every deployment with nothing in ~/Agents to offer, it exits 1 with the E_NO_DEPLOYMENT line and no byte on stdout; a --dir that is in no deployment exits the same way, and ~/Agents is not looked at for it", async () => {
+test("started outside every deployment with no row on this computer's list, it exits 1 with the E_NO_DEPLOYMENT line that says so and no byte on stdout, and so does a list that could not be read, with the kernel's code and message; a --dir that is in no deployment exits with its own line before the kernel is asked or the list read", async () => {
   const none = run({ deployment: { ok: false, dir: "/work/here" } });
   assert.equal(await none.status, 1);
-  assert.deepEqual(effectsOf(none), [["config"], ["deployment", "/work/here"], ["offered", "/home/u", []]], "~/Agents was looked at, and the kernel is not asked for a run that has nothing to show");
-  assert.deepEqual(none.errors, [`${noDeployment("/work/here")}\n`]);
+  assert.deepEqual(effectsOf(none), [["config"], ["deployment", "/work/here"], ["kernel"], ["list", { action: "list" }, "start"]]);
+  assert.deepEqual(none.errors, [`${noDeploymentListed("/work/here")}\n`]);
   assert.deepEqual(none.stdout.written, [], "no byte, so no escape byte");
   assert.deepEqual([none.reader, none.stdin.raw, none.proc.eventNames()], [null, false, []]);
 
-  // What was asked for is not there: a folder of ~/Agents is no answer to a path that was named.
+  // A list that could not be read is no empty list: what the kernel said, as it said it.
+  const unread = run({ deployment: { ok: false, dir: "/work/here" }, listAnswer: () => ({ ok: false, reason: BUSY }) });
+  assert.equal(await unread.status, 1);
+  assert.deepEqual(unread.errors, [`${noList(BUSY)}\n`]);
+  assert.equal(unread.errors[0].includes(`(${BUSY.code}): ${BUSY.message}\n`), true, "the kernel's code and message, unchanged");
+  assert.deepEqual([unread.stdout.written, unread.reader, unread.stdin.raw, unread.proc.eventNames()], [[], null, false, []]);
+
+  // What was asked for is not there: a row of the list is no answer to a path that was named.
   for (const argv of [["--dir", "/srv/nowhere"], ["--dir=/srv/nowhere"], ["--ascii", "--dir", "/srv/nowhere"]]) {
-    const named = run({ argv, deployment: { ok: false, dir: "/srv/nowhere" }, offered: OFFERED });
+    const named = run({ argv, deployment: { ok: false, dir: "/srv/nowhere" }, listed: LISTED });
     // A run that took the terminal instead would wait for a key and never end, and this file with
     // it: such a run is seen as soon as it has started, and is ended here before it is judged.
     const how = await Promise.race([named.status, named.up.then(() => "it took the terminal")]);
     if (how !== 1) { named.stdin.type("q"); await named.status; }
     assert.equal(how, 1, argv.join(" "));
-    assert.deepEqual(effectsOf(named), [["config"], ["deployment", "/srv/nowhere"]], argv.join(" "));
+    assert.deepEqual(effectsOf(named), [["config"], ["deployment", "/srv/nowhere"]], `${argv.join(" ")}: the kernel is not asked, and the list is not read`);
+    assert.deepEqual(named.lists, []);
     assert.deepEqual(named.errors, [`${noDeployment("/srv/nowhere")}\n`]);
     assert.deepEqual(named.stdout.written, []);
     assert.deepEqual([named.reader, named.stdin.raw, named.proc.eventNames()], [null, false, []]);
   }
 });
 
-test("w opens the switcher: ~/Agents is looked at for the folders this run does not serve and they are listed under the workspaces; r there looks again and asks for a live read", async () => {
-  // 120 columns: the switcher beside the sidebar is wide enough for a folder's whole path.
-  const r = await started({ offered: OFFERED, columns: 120, rows: 40 });
+test("a run started in a deployment, from where it was started or by --dir, adds it to this computer's list once, as the TUI's, after the reader starts and as a change of the run, and reads no list for it; never again in that run: not on w, not on r, not when a row is opened", async () => {
+  for (const [argv, from] of [[[], "/work/here"], [["--dir", DEPLOYMENT], DEPLOYMENT]]) {
+    const r = await started({ argv, listed: LISTED });
+    await settle();
+    assert.deepEqual(effectsOf(r), [["config"], ["deployment", from], ["kernel"], ["list", { action: "add", path: DEPLOYMENT, via: "tui" }, "change"]], `${argv.join(" ")}: the add, through no exec of the start's and no read's`);
+    const at = (what, which) => r.log.findIndex(([w, x]) => w === what && x === which);
+    assert.equal(at("reader", "start") < at("effect", "list"), true, "after the reader starts");
+    const [add] = r.lists;
+    assert.deepEqual([add.cli, add.io.env], [CLI, r.reader.options.env], "with the run's own kernel and environment");
+    r.stdin.type("q");
+    assert.equal(await r.status, 0);
+  }
+  const r = await started({ listed: LISTED });
   r.reader.answer(HOME_ENTRY);
-  assert.deepEqual(effectsOf(r).filter(([which]) => which === "offered"), [], "a run started in a deployment does not look at ~/Agents until it is asked to");
+  r.stdin.type("w"); await settle();
+  r.stdin.type("r"); await settle();
+  r.stdin.type("j");
+  r.stdin.type("\r"); await settle();
+  assert.deepEqual(r.reader.options.getServed(), [DEPLOYMENT, LEDGER], "the row was opened");
+  r.stdin.type("w"); await settle();
+  r.stdin.type("r"); await settle();
+  assert.deepEqual(r.lists.map(({ asked }) => asked.action), ["add", "list", "list", "list", "list"], "one add, and a read for each w and each r");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("an add the kernel refuses is said once, under the sidebar's title, with the kernel's message as it came, and blocks nothing; an add that is done says nothing", async () => {
+  const r = await started({ columns: 120, listAnswer: (asked) => (asked.action === "add" ? { ok: false, reason: BUSY } : { ok: true, value: { ok: true, rows: LISTED } }) });
+  await settle();
+  r.reader.answer(ENTRY);
+  // A redraw that types nothing: screenOf's Ctrl+L is a key bound to an action, which puts the line away.
+  const said = sidebarOf(r);
+  assert.match(said, /^acme-platform This deployment was not added to this computer's list: This computer's list of deployments is busy; try again\. /, said);
+  assert.match(said, /acme-expert-tui.*acme-maintainer-ops/s, "the deployment is read and drawn all the same");
+  r.stdin.type("j");
+  const after = screenOf(r);
+  assert.doesNotMatch(after, /not added/, "said once: the next key puts it away");
+  assert.match(after, /acme-expert-tui.*acme-maintainer-ops/s);
+  r.reader.answer(ENTRY);
+  r.stdin.type("w"); await settle();
+  assert.match(screenOf(r), /On this machine, not opened.*acme-ledger/s, "the list is read as ever");
+  assert.doesNotMatch(screenOf(r), /not added/, "and nothing brings the line back");
+  assert.deepEqual(r.lists.map(({ asked }) => asked.action), ["add", "list"], "the add is not tried again");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+
+  const done = await started({ columns: 120 });
+  await settle();
+  done.reader.answer(ENTRY);
+  assert.doesNotMatch(textOf(written(done)), /not added|this computer's list/);
+  done.stdin.type("q");
+  assert.equal(await done.status, 0);
+});
+
+test("a change to this computer's list still running when the run ends is named after the screen is left, in the list's own line, only to a terminal or a file", async () => {
+  for (const [tell, lines] of [[true, [`${LIST_WORDS.leaving}\n`]], [false, []]]) {
+    const r = await started({ tellable: () => tell });
+    await settle();
+    const [add] = r.lists;
+    // The exec the add was handed is the reader's changeExec, labelled as a change to the list; what
+    // the shared call asks of it goes on as it was.
+    add.io.exec(CLI.bin, ["deployments", "add", DEPLOYMENT, "--via", "tui", "--json"], { cwd: DEPLOYMENT }, () => {});
+    const [change] = r.reader.changed;
+    assert.deepEqual([change.argv, change.options.cwd], [["deployments", "add", DEPLOYMENT, "--via", "tui", "--json"], DEPLOYMENT]);
+    r.reader.running = [{ pid: 4001, label: change.options.label }];
+    r.stdin.type("q");
+    assert.equal(await r.status, 0, String(tell));
+    assert.deepEqual(r.errors, lines, String(tell));
+  }
+  assert.equal(LIST_WORDS.leaving, "oats: a change to this computer's list of deployments is still running; `oats deployments` shows the list.");
+});
+
+test("w opens the switcher: this computer's list of deployments is read through the reader's exec, and its rows this run does not serve are listed under the workspaces; r there reads it again and asks for a live read; one read runs at a time, and a read asked for while one is on its way is one more after it, whose answer is the one taken", async () => {
+  // The list holds the deployment the run serves too: it is not offered.
+  // 120 columns: the switcher beside the sidebar is wide enough for a row's whole path.
+  const r = await started({ listed: [Object.freeze({ path: DEPLOYMENT, name: "deploy", state: "ok" }), ...LISTED], columns: 120 });
+  r.reader.answer(HOME_ENTRY);
+  await settle();
+  assert.deepEqual(r.lists.filter(({ asked }) => asked.action === "list"), [], "a run started in a deployment does not read the list until it is asked to");
   r.stdout.take();
   r.log.length = 0;
   // In the list of instances Enter opens the selected agent in the panel, here with a kernel record
   // that has no detach key (the viewer is given none); the leader then Esc gives the list back, and c
   // closes it. None of it is an effect on the file system or a read.
   r.stdin.type("\r");
-  await new Promise((resolve) => setImmediate(resolve));
+  await settle();
   assert.deepEqual([effectsOf(r), readerDid(r)], [[], [["touch"]]]);
   assert.equal(r.panel.opens.length, 1);
   leaderEscape(r);
   r.stdin.type("c");
   r.log.length = 0;
   r.stdin.type("w");
-  assert.deepEqual(effectsOf(r), [["offered", "/home/u", [DEPLOYMENT]]], "asked with the deployments the run serves, which it leaves out");
+  await settle();
+  assert.deepEqual(effectsOf(r), [["list", { action: "list" }, "read"]], "a read, through the reader's own exec");
   assert.deepEqual(readerDid(r), [["touch"]], "opening the switcher reads no deployment");
   assert.notEqual(r.stdout.take(), "");
   const listed = screenOf(r);
-  assert.match(listed, /^ workspaces.*> \* acme-platform\s+This machine.*On this machine, not opened.*acme-ledger\s+~\/Agents\/acme-ledger.*Enter +open.*\/ +filter.*r +refresh.*Esc +close.*\? +help.*q +quit/s);
-  assert.doesNotMatch(listed, /acme-expert-tui|More folders/);
+  assert.match(mainAreaOf(r), /^> \* acme-platform This machine.*On this machine, not opened acme-ledger ~\/acme-ledger$/);
+  assert.match(sidebarOf(r), /^workspaces .*Enter open \/ filter r refresh Esc close \? help q quit$/, "on a workspace no Remove is offered");
+  assert.doesNotMatch(listed, /acme-expert-tui|\/srv\/deploy/, "the deployment the run serves is on the list, and not offered");
 
-  // Another folder appeared, and ~/Agents now holds more than a look reads.
-  r.offered = { offered: [...OFFERED.offered, { path: "/home/u/Agents/acme-ledger-archive", name: "acme-ledger-archive" }], limited: true };
+  // Another row joined the list.
+  r.listed = [...r.listed, Object.freeze({ path: "/home/u/acme-ledger-archive", name: "acme-ledger-archive", state: "ok" })];
   r.log.length = 0;
   r.stdin.type("r");
-  assert.deepEqual(effectsOf(r), [["offered", "/home/u", [DEPLOYMENT]]]);
+  await settle();
+  assert.deepEqual(effectsOf(r), [["list", { action: "list" }, "read"]]);
   assert.deepEqual(readerDid(r), [["touch"], ["request", { live: true }]]);
   assert.notEqual(r.stdout.take(), "");
-  assert.match(screenOf(r), /acme-ledger\s+~\/Agents\/acme-ledger.*acme-ledger-archive\s+~\/Agents\/acme-ledger-archive.*More folders than are listed here\./s);
+  assert.match(screenOf(r), /acme-ledger\s+~\/acme-ledger.*acme-ledger-archive\s+~\/acme-ledger-archive/s);
+
+  // One read at a time: three asked while one is on its way start nothing more; once it answers,
+  // its answer is not taken (the list may have changed since it began) and one more read begins,
+  // whose answer is.
+  r.listAnswer = () => undefined;
+  const before = r.lists.length;
+  for (let i = 0; i < 4; i++) r.stdin.type("r");
+  await settle();
+  assert.equal(r.lists.length, before + 1, "one read on its way, however many times r was pressed");
+  const first = r.lists.at(-1);
+  first.answer({ ok: true, value: { ok: true, rows: [...LISTED, Object.freeze({ path: "/home/u/acme-older", name: "acme-older", state: "ok" })] } });
+  await settle();
+  assert.equal(r.lists.length, before + 2, "one more after it, for the r pressed meanwhile");
+  assert.doesNotMatch(screenOf(r), /acme-older/, "the answer of a read asked again while it was on its way is not taken");
+  r.lists.at(-1).answer({ ok: true, value: { ok: true, rows: LISTED } });
+  await settle();
+  const kept = screenOf(r);
+  assert.match(kept, /acme-ledger\s+~\/acme-ledger/);
+  assert.doesNotMatch(kept, /acme-ledger-archive|acme-older/, "the last read's rows");
+  assert.equal(r.lists.length, before + 2, "and nothing after it");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
 
-test("Enter on a folder of ~/Agents asks whether it is a deployment now; admitted, it is served from then on under the path it was admitted as, its Instances view is shown and a live read is asked for", async () => {
-  // The folder is a link: what is admitted is where it leads.
-  // 120 columns: the switcher beside the sidebar is wide enough for a folder's whole path.
-  const r = await started({ offered: OFFERED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }), columns: 120, rows: 40 });
+test("a kernel that does not list this computer's deployments is asked nothing of it in a run: no add of the deployment the run started in, no read when the switcher opens or on r, and no line about it", async () => {
+  const OLD = Object.freeze({ ...CLI, features: Object.freeze(CLI.features.filter((feature) => feature !== "deployments-list")) });
+  const r = await started({ kernel: { ok: true, cli: OLD }, listed: LISTED });
+  r.reader.answer(HOME_ENTRY);
+  await settle();
+  r.stdin.type("w");
+  await settle();
+  r.stdin.type("r");
+  await settle();
+  assert.deepEqual(r.lists, [], "nothing asked");
+  assert.doesNotMatch(screenOf(r), /acme-ledger|Update oats|could not be read/, "no row, and nothing said of the list");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("Enter on a row of this computer's list asks whether it is a deployment now; admitted, it is served from then on under the path it was admitted as, its Instances view is shown and a live read is asked for", async () => {
+  // The row is a link: what is admitted is where it leads.
+  // 120 columns: the switcher beside the sidebar is wide enough for a row's whole path.
+  const r = await started({ listed: LISTED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }), columns: 120, rows: 40 });
   r.reader.answer(HOME_ENTRY);
   r.stdin.type("w");
-  r.stdin.type("j"); // from the workspace that is open to the folder under it
-  assert.match(screenOf(r), /\* acme-platform.*>\s+acme-ledger\s+~\/Agents\/acme-ledger/s);
+  await settle();
+  r.stdin.type("j"); // from the workspace that is open to the row under it
+  assert.match(screenOf(r), /\* acme-platform.*>\s+acme-ledger\s+~\/acme-ledger/s);
   r.stdout.take();
   r.log.length = 0;
   r.stdin.type("\r");
@@ -776,21 +952,24 @@ test("Enter on a folder of ~/Agents asks whether it is a deployment now; admitte
   const read = screenOf(r);
   assert.match(read, /^ acme-ledger +│.*acme-clerk-books/s);
   assert.doesNotMatch(read, /1 running/, "no counts on the screen");
-  // And the switcher no longer offers it: the next look is told that it is served.
-  r.offered = { offered: [], limited: false };
+  // And the switcher no longer offers it: the list holds canonical paths, as the served ids are,
+  // and a row that is a deployment this run serves is left out.
+  r.listed = [Object.freeze({ path: "/srv/acme-ledger", name: "acme-ledger", state: "ok" })];
   r.log.length = 0;
   r.stdin.type("w");
-  assert.deepEqual(effectsOf(r), [["offered", "/home/u", [DEPLOYMENT, "/srv/acme-ledger"]]]);
+  await settle();
+  assert.deepEqual(effectsOf(r), [["list", { action: "list" }, "read"]], "read again, and nothing added: a row opened is on the list already");
   assert.doesNotMatch(screenOf(r), /On this machine, not opened/);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
 
-test("Enter on a folder of ~/Agents that is no deployment any more: its row says so, and nothing else changed", async () => {
-  // 120 columns: the switcher beside the sidebar is wide enough for a folder's whole path.
-  const r = await started({ offered: OFFERED, admit: () => ({ ok: false }), columns: 120, rows: 40 });
+test("Enter on a row of this computer's list that is no deployment any more: its row says so, and nothing else changed", async () => {
+  // 120 columns: the switcher beside the sidebar is wide enough for a row's whole path.
+  const r = await started({ listed: LISTED, admit: () => ({ ok: false }), columns: 120, rows: 40 });
   r.reader.answer(HOME_ENTRY);
   r.stdin.type("w");
+  await settle();
   r.stdin.type("j");
   const before = screenOf(r);
   r.stdout.take();
@@ -803,12 +982,126 @@ test("Enter on a folder of ~/Agents that is no deployment any more: its row says
   assert.notEqual(r.stdout.take(), "");
   const after = screenOf(r);
   assert.match(after, /^ workspaces.*\* acme-platform\s+This machine.*On this machine, not opened.*>\s+acme-ledger\s+Not an OATS deployment any more\..*Enter +open.*Esc +close/s);
-  assert.equal(words(after), words(before).replace("~/Agents/acme-ledger", "Not an OATS deployment any more."), "the switcher as it was, but for what that row says");
+  assert.equal(words(after), words(before).replace("~/acme-ledger", "Not an OATS deployment any more."), "the switcher as it was, but for what that row says");
   // The view the switcher was opened over is still there to go back to.
   r.stdin.type("\x1b");
   r.tick(50);
   r.timers.fire();
   assert.match(screenOf(r), /^ acme-platform.*acme-expert-tui.*acme-maintainer-ops/s);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("a stale row of this computer's list says its state where its path stood, and Enter on it asks nothing: no admit, no read, the switcher as it was", async () => {
+  const stale = [["acme-gone", "missing", "Not found."], ["acme-moved", "not-a-deployment", "Not an OATS deployment any more."], ["acme-locked", "unreadable", "Can't be read."]];
+  // 120 columns: the switcher beside the sidebar is wide enough for what a stale row says.
+  const r = await started({ listed: stale.map(([name, state]) => Object.freeze({ path: `/home/u/${name}`, name, state })), columns: 120 });
+  r.reader.answer(HOME_ENTRY);
+  r.stdin.type("w");
+  await settle();
+  const listed = screenOf(r);
+  assert.match(mainAreaOf(r), /On this machine, not opened acme-gone Not found\. acme-moved Not an OATS deployment any more\. acme-locked Can't be read\.$/);
+  assert.doesNotMatch(listed, /~\/acme-/, "a stale row's path is not shown");
+  for (const [name] of stale) {
+    r.stdin.type("j");
+    const before = screenOf(r);
+    assert.match(before, new RegExp(`>\\s+${name}`), name);
+    r.log.length = 0;
+    r.stdin.type("\r");
+    await settle();
+    assert.deepEqual([effectsOf(r), readerDid(r)], [[], [["touch"]]], name);
+    assert.equal(words(screenOf(r)), words(before), name);
+  }
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("Delete on a row of this computer's list asks first, over the rows; Enter in a later read removes it as a change of the run, the switcher says so and the list is read again; Enter in the read that asked, Esc and another key keep it, and Delete on a workspace asks nothing; a refused remove says the kernel's message", async () => {
+  // 120 columns: the switcher beside the sidebar is wide enough for a row's whole path.
+  const r = await started({ listed: LISTED, columns: 120 });
+  r.reader.answer(HOME_ENTRY);
+  r.stdin.type("w");
+  await settle();
+  r.stdin.type("j");
+  const removes = () => r.lists.filter(({ asked }) => asked.action === "remove");
+  const ASKED = /^Remove the selected row from this computer's list\? Enter removes it; other keys keep it\. Its folder stays\. .*On this machine, not opened > acme-ledger ~\/acme-ledger$/;
+  // Delete and Enter in one read: a paste cannot both ask and press. The question stands.
+  r.stdin.type(`${DELETE}\r`);
+  await settle();
+  assert.deepEqual(removes(), []);
+  // A redraw that types nothing: Ctrl+L is a key, which keeps the row.
+  assert.match(mainAreaOf(r), ASKED);
+  r.listed = [];
+  r.log.length = 0;
+  r.stdin.type("\r");
+  await settle();
+  assert.deepEqual(effectsOf(r), [["list", { action: "remove", path: LEDGER }, "change"], ["list", { action: "list" }, "read"]], "the remove, as a change of the run, then the list read again; nothing is admitted");
+  let shown = screenOf(r);
+  assert.match(mainAreaOf(r), /^acme-ledger was removed from this computer's list\. > \* acme-platform/);
+  assert.doesNotMatch(shown, /On this machine, not opened|Remove the selected row/, "the list read again holds it no more");
+
+  // Back on the list; Esc keeps it, and so does another key, which does what it does.
+  r.listed = LISTED;
+  r.stdin.type("r");
+  await settle();
+  r.stdin.type("G");
+  r.stdin.type(DELETE);
+  assert.match(mainAreaOf(r), ASKED);
+  r.stdin.type("\x1b");
+  r.tick(50);
+  r.timers.fire();
+  shown = wholeScreen(r);
+  assert.doesNotMatch(shown, /Remove the selected row/);
+  assert.match(mainAreaOf(r), /> acme-ledger/, "the switcher stays");
+  r.stdin.type(DELETE);
+  r.stdin.type("k");
+  shown = wholeScreen(r);
+  assert.doesNotMatch(shown, /Remove the selected row/);
+  assert.match(shown, /> \* acme-platform/, "k moved the selection");
+  r.stdin.type(DELETE);
+  assert.doesNotMatch(wholeScreen(r), /Remove the selected row/, "a workspace is no row of the list");
+  r.stdin.type("\r");
+  await settle();
+  assert.equal(removes().length, 1);
+
+  // The kernel refuses one: its message, as it came, and the list is read again.
+  r.stdin.type("w");
+  await settle();
+  const done = r.listAnswer;
+  r.listAnswer = (asked, call) => (asked.action === "remove" ? { ok: false, reason: { code: "E_DEPLOYMENTS_BUSY", message: "The list is busy." } } : done(asked, call));
+  r.stdin.type("G");
+  r.stdin.type(DELETE);
+  r.log.length = 0;
+  r.stdin.type("\r");
+  await settle();
+  assert.deepEqual(effectsOf(r), [["list", { action: "remove", path: LEDGER }, "change"], ["list", { action: "list" }, "read"]]);
+  assert.match(mainAreaOf(r), /^acme-ledger was not removed from this computer's list: The list is busy\. .*On this machine, not opened > acme-ledger ~\/acme-ledger$/);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("a read of this computer's list that fails keeps the rows of the last one that answered and says why over them, with the kernel's message as it came, or the TUI's when the kernel could not be asked; the next read that answers puts the line away", async () => {
+  const r = await started({ columns: 120, listed: LISTED });
+  r.reader.answer(HOME_ENTRY);
+  r.stdin.type("w");
+  await settle();
+  const done = r.listAnswer;
+  r.listAnswer = () => ({ ok: false, reason: BUSY });
+  r.stdin.type("r");
+  await settle();
+  assert.match(mainAreaOf(r), /^This computer's list of deployments could not be read: This computer's list of deployments is busy; try again\. .*On this machine, not opened acme-ledger ~\/acme-ledger$/);
+  r.listAnswer = () => { throw new Error("spawn EAGAIN"); };
+  r.stdin.type("r");
+  await settle();
+  const unasked = mainAreaOf(r);
+  assert.match(unasked, /^This computer's list of deployments could not be read: the kernel could not be asked .*acme-ledger ~\/acme-ledger$/);
+  assert.doesNotMatch(unasked, /EAGAIN/);
+  r.listAnswer = done;
+  r.stdin.type("r");
+  await settle();
+  const read = screenOf(r);
+  assert.doesNotMatch(read, /could not be read/);
+  assert.match(read, /acme-ledger\s+~\/acme-ledger/);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -819,6 +1112,7 @@ test("Enter on a workspace opens its view and asks for a live read", async () =>
   r.reader.collecting();
   r.reader.roster({ envelope: rosterAnswer([onyx()]) }); // a machine that reports a workspace of its own
   r.stdin.type("w");
+  await settle(); // the list read it asked for has answered: what follows asks nothing more
   const two = screenOf(r);
   assert.match(two, /\* acme-platform\s+This machine/, "the open workspace is marked");
   assert.match(two, / {2}charts\s+onyx/, "and the machine's own workspace is listed beside it, unmarked");
@@ -979,7 +1273,6 @@ async function opening(options = {}) {
   r.log.length = 0;
   return r;
 }
-const settle = () => new Promise((resolve) => setImmediate(resolve));
 const HOME = `${DEPLOYMENT}/agents/acme-expert/instances/acme-expert-tui`;
 /** What the loop asked of the panel since the log was last emptied. */
 const panelDid = (r) => r.log.filter(([what]) => what === "panel").map(([, ...rest]) => rest);
@@ -1288,9 +1581,10 @@ test("the palette's Split right at 80 columns is refused with the line, measured
 });
 
 test("with two tabs open, another workspace opened closes each tab's viewer by its window id, and no terminal is left (T2)", async () => {
-  const r = await viewingTwoTabs({ offered: OFFERED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }) });
+  const r = await viewingTwoTabs({ listed: LISTED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }) });
   leaderEscape(r);
   r.stdin.type("w");
+  await settle();
   r.stdin.type("j");
   r.log.length = 0;
   r.stdin.type("\r");
