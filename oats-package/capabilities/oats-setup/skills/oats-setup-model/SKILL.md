@@ -241,8 +241,8 @@ Use `--json` when you parse; read `oats help` for any flag not shown here.
 - **Absence proves nothing.** A soul missing from `oats souls` is usually a
   membership or access fact, not a deleted soul: check `oats workspace status`
   for that account first.
-- **The workspace view is the remote, not a working copy.** An unmerged change
-  is invisible to every `oats` read until it merges.
+- **The workspace view is the remote, not a working copy.** A change is
+  invisible to every `oats` read until it is on the default branch.
 - **A running instance never changes under itself.** Explaining an instance
   means reading what it recorded (`oats inspect --home`), not the workspace as
   it stands now.

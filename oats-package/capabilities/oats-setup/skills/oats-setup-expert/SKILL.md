@@ -71,8 +71,9 @@ only the secrets, the logins and the installs that capture their shell.
    Each goes in by the briefing's rule. The membership file is always a
    pull request, which that repository's owner merges (name who). The
    `members:` line may go straight to the host when the checks in
-   `/oats-workspace-config`, "Change a shared file", pass. Then sync, and
-   check that each member is confirmed (`/oats-workspace-config`). The host is
+   `/oats-workspace-config`, "Change a shared file", pass. After the owner
+   has merged each membership pull request, sync and check that each member
+   is confirmed (`/oats-workspace-config`). The host is
    private, so private members are fine (`/oats-onboarding` card 3's rule).
    Clones for the souls that work in a repository: `/oats-onboarding` card 4.
 4. **The first souls, for the use case.** Propose the smallest set of roles

@@ -138,11 +138,14 @@ broker (`aw wake run` as a per-user service). Both are taught in
    edit a shared file without one of them.
    - **Straight to the default branch,** only when all of these hold,
      checked right before the push:
-     - the repo is the workspace's host, created by the person as a new
-       workspace (the setup expert's hand-over says `new`);
+     - the repo is the workspace's host (the host entry in
+       `oats workspace status`), and the person created it as a new
+       workspace (the setup expert's hand-over says `new`, or the person
+       confirms it);
      - it belongs to their own GitHub account, not an organization:
-       `gh repo view <o>/<r> --json isInOrganization,owner` gives `false` and
-       their login (`gh api user --jq .login`);
+       `gh repo view <o>/<r> --json isInOrganization,owner,defaultBranchRef`
+       gives `false` and their login (`gh api user --jq .login`), and names
+       `<branch>`, the default branch;
      - they are its only collaborator:
        `gh api repos/<o>/<r>/collaborators --jq 'map(.login)'`;
      - no rule guards its default branch: both
@@ -153,8 +156,11 @@ broker (`aw wake run` as a per-user service). Both are taught in
    - **Otherwise a pull request** from a branch, which the repo's owner
      merges (name who): every member repository, and every repository
      others share. If a straight push is refused (by Git, GitHub or your
-     harness's permission check), or its output says a rule was bypassed,
-     open a pull request instead; never try another way.
+     harness's permission check), open a pull request instead; never try
+     another way. If its output says a rule was bypassed, the change is
+     already on the default branch: stop and tell the person, who decides
+     whether to keep or revert it, and use pull requests for that
+     repository from then on.
 4. Once it is on the default branch, on each deployment: `oats sync`, then
    `oats workspace status` and `oats spawn <soul> --preview` for an affected
    soul. Confirm the new state is there by positive enumeration, not by the
@@ -200,11 +206,11 @@ reports this deployment's local file and lock.
 ## Gotchas
 
 - A new soul, member or default takes effect only for **new** spawns, after
-  the change is merged and `oats sync` has run. Running instances keep what
+  the change is on the default branch and `oats sync` has run. Running instances keep what
   they were given; `oats status` shows them as moved.
 - `oats workspace status` reads the workspace's default branch over the
   remote, not your working copy: an unmerged change is invisible to it.
 - `oats package add` edits `packages:` only when the host repo is the current
-  checkout; otherwise it prints the line for the PR.
+  checkout; otherwise it prints the line to commit.
 - "Why can't I spawn X": run `oats spawn X --preview`. Its refusal names the
   code and the path, and the table above maps it to the owning file.

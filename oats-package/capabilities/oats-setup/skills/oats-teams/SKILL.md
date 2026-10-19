@@ -163,7 +163,8 @@ of the act; “Next” is the single handoff after its success predicate passes.
   relevant failure remains.
 - **Next:** return to `/oats-onboarding`'s preview step for the selected seat.
 - **Error → remedy:** `E_WORKSPACE_SCHEMA` for an unknown label → add the
-  selected shared declaration or correct the reference in the same PR.
+  selected shared declaration or correct the reference in the same
+  shared-file change.
   `team-soul-unknown` → correct the qualified key from `oats souls --dir D --json`.
   `team-unmapped` → use the provider handoff to obtain the authorized ID,
   then commit it in `teams.L.team`; do not guess one.
@@ -263,18 +264,18 @@ an identity to work around a configuration refusal.
 
 | Emitted code or condition | Supported remedy |
 |---|---|
-| `E_TEAM_NOT_ELIGIBLE` (provider) | Edit the complete matching shared `souls:` teams list under shared-policy authority, merge/sync, and reread eligibility. Local teams, if allowed, are eligible for all souls; there is no local per-soul override. Resume the provider act only after readback. |
-| `E_TEAM_UNKNOWN` | Read the named reference and scope. Correct its label or declare the authorized mapping in the shared PR/local card; do not substitute an internal UUID for `T`. |
+| `E_TEAM_NOT_ELIGIBLE` (provider) | Edit the complete matching shared `souls:` teams list under shared-policy authority (a shared-file change), sync once it is on the default branch, and reread eligibility. Local teams, if allowed, are eligible for all souls; there is no local per-soul override. Resume the provider act only after readback. |
+| `E_TEAM_UNKNOWN` | Read the named reference and scope. Correct its label or declare the authorized mapping in the shared-file change or the local card; do not substitute an internal UUID for `T`. |
 | `E_TEAM_UNCONFIGURED` | Choose an existing mapped default using the shared/local card. If no authorized provider team exists, hand off to `/oats-aweb`'s selected setup branch first; the diagnostic's bare setup hint is not a complete procedure. |
 | `E_TEAM_SHARED` | Remove/change the declaration by a shared-file change (`/oats-workspace-config`, "Change a shared file"); `oats teams remove` cannot remove a shared declaration. |
 | `E_TEAM_IN_USE` | `usedBy` identifies the local default. Set another declared default through the local-default card before removing a purely local label. If local teams are closed, use the migration row below. |
 | `E_TEAM_EXISTS` | Read `from` and the mapping. Reuse a matching declaration. For a differing shared mapping, use a shared-file change. For an authorized local redefinition, first move a referencing default to another declared label, then remove/add; if no alternate exists, edit the selected local mapping in place and inspect it. Never silently change provider identity state. |
-| `E_WORKSPACE_SCHEMA`, `local-teams-closed` | Either obtain the selected shared-policy PR setting `localTeams: true`, then sync, or commit the selected team mappings/default in the workspace, merge/sync, and remove local `defaultTeam` from `D/oats-local.yaml` before `oats teams remove L --dir D` for each local declaration. Removing a label alone does not clear the local default. Reread after all local remnants are removed. |
+| `E_WORKSPACE_SCHEMA`, `local-teams-closed` | Either obtain the selected shared-policy change setting `localTeams: true`, then sync, or commit the selected team mappings/default in the workspace (a shared-file change), sync once it is on the default branch, and remove local `defaultTeam` from `D/oats-local.yaml` before `oats teams remove L --dir D` for each local declaration. Removing a label alone does not clear the local default. Reread after all local remnants are removed. |
 | `team-label-collision` | Shared wins. If the local mapping is still needed, rename its local key and any local default reference to the selected noncolliding label in `D/oats-local.yaml`. If it is a migrated duplicate, remove the local copy and any disallowed local default. |
 | `team-unmapped` | Ask the authorized provider procedure for the canonical ID and commit it in the shared mapping. Unmapped default is a failure; other unmapped labels are warnings. |
 | `team-soul-unknown` | `oats souls --dir D --json` supplies qualified names. Correct/remove the shared `souls:` key by a shared-file change, then sync. |
 | `default-team-changed` | Existing instance default remains recorded; return to onboarding for an authorized replacement seat. There is no generic in-place primary-team migration. |
-| `E_WORKSPACE_SCHEMA`, `removed-key` for `souls.teams` / `souls.default` | Commit the error's replacement `souls:` entries with qualified keys, preserving each soul's full eligible list; merge/sync, then remove the old local keys. Use `localTeams: true` only if selected policy permits local teams. |
+| `E_WORKSPACE_SCHEMA`, `removed-key` for `souls.teams` / `souls.default` | Commit the error's replacement `souls:` entries with qualified keys, preserving each soul's full eligible list (a shared-file change); sync once it is on the default branch, then remove the old local keys. Use `localTeams: true` only if selected policy permits local teams. |
 | `E_LOCAL_CHANGED` | Reread the local file after the competing writer settles, then retry the same authorized edit. |
 
 Older `messaging.byTeam`, `defaults.byTeam`, soul/membership `team:`, and

@@ -5,7 +5,7 @@
   was "only by pull request". `/oats-workspace-config`'s "Change a shared
   file" now has two routes. A commit goes straight to the default branch only
   for the host repository of a workspace the person created, after checks
-  checks right before the push: it belongs to their own account, not an
+  right before the push: it belongs to their own account, not an
   organization; they are its only collaborator; and no protection or ruleset
   guards the branch. The setup expert then tells them what changed. Every
   other repository, member repositories included, takes a pull request, and a

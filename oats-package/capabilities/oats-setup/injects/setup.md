@@ -93,8 +93,9 @@ new workspace's host repository while the person is the only one with access
 to it, after that procedure's checks pass; then tell them what changed. Every
 other repository, member repositories included, takes a pull request that its
 owner merges. A refused push (by Git, GitHub or your harness's permission
-check) means a pull request, never another route. Where your soul's own
-instructions are stricter, follow them. Change host facts only on the machine they describe, with
+check) means a pull request, never another route. These limits hold even
+where your soul's own instructions allow more; where they are stricter,
+follow them. Change host facts only on the machine they describe, with
 its operator's authorization, including authorization already given. Sync when
 the change requires package/workspace resolution; a local settings repair does
 not inherently require source publication or sync. Verify the requested behavior
