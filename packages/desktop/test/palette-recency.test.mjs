@@ -1,7 +1,7 @@
 // #1383: the command palette is the sidebar's tree, ordered by last focus (it supersedes Spec C's flat Recent
 // group; the record is still Spec C's). At every level a node sits where the most recently focused instance of
 // its subtree puts it, never-focused nodes keep the sidebar's order after the rest, and a child stays under its
-// parent. The palette opens on the previous agent. The record is per-machine localStorage, scoped by workspace
+// parent. The palette opens on its first row (#1391). The record is per-machine localStorage, scoped by workspace
 // and exact identity; the sidebar keeps its stable order.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -79,34 +79,28 @@ test("there is no Recent group: no flat rows, no recent fields, nothing named Re
   assert.doesNotMatch(source, /RECENT_GROUP|recentRows|showUnder/);
 });
 
-test("the palette opens on the previous agent: the newest focus that is not the terminal in front", () => {
+test("the palette opens on its first row: no row is marked to open on, whatever was focused or is in front (#1391)", () => {
   const { store } = focused(["solo-x", "lead"]);
   const recent = store.snapshot(WS);
-  const roster = activeId => ({ instances: ROSTER, deployments: [], recent, activeId });
-  const initial = rows => rows.filter(r => r.initial).map(r => r.label);
-  assert.deepEqual(initial(rowsOf(roster(instanceId(byName("lead"))))), ["solo-x"], "⌘K then Enter returns to the previous agent");
-  assert.deepEqual(initial(rowsOf(roster(instanceId(byName("solo-x"))))), ["lead"], "the front terminal is not the newest: the newest");
-  assert.deepEqual(initial(rowsOf(roster(null))), ["lead"], "no terminal in front: the newest");
-  // The opening row need not be second, nor a root: a focused child is opened on in place.
-  const kid = focused(["alpha", "grandchild"]).store.snapshot(WS);
-  const rows = rowsOf({ instances: ROSTER, recent: kid, activeId: instanceId(byName("alpha")) });
-  assert.deepEqual(initial(rows), ["grandchild"]);
-  assert.equal(rows.findIndex(r => r.initial), 2, "under lead and child-a");
-  // Nothing but the front terminal was focused, or nothing at all: no initial row, the picker starts on the first.
-  const one = focused(["lead"]).store.snapshot(WS);
-  assert.deepEqual(initial(rowsOf({ instances: ROSTER, recent: one, activeId: instanceId(byName("lead")) })), []);
-  assert.deepEqual(initial(rowsOf({ instances: ROSTER, recent: new Map() })), []);
+  // The terminal in front is not part of the palette's data any more; a stale caller's activeId changes nothing.
+  for (const data of [{ instances: ROSTER, recent }, { instances: ROSTER, recent, activeId: instanceId(byName("lead")) }, { instances: ROSTER, recent: new Map() }, ROSTER]) {
+    for (const raw of ["", "child", "solo"]) assert.ok(rowsOf(data, raw).every(r => !Object.hasOwn(r, "initial")), raw);
+  }
+  const source = readFileSync(new URL("../renderer/palette.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\.initial\b|initial:|activeId/, "paletteRows marks no opening row and reads no terminal in front");
+  const picker = readFileSync(new URL("../renderer/overlay-picker.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(picker, /it\.initial/, "the picker starts on its first selectable row");
 });
 
-test("with a query: the newest match is the opening row, the order is the unfiltered one, ancestors are context", () => {
+test("with a query: the order is the unfiltered one, ancestors are context", () => {
   const { store } = focused(["child-a", "alpha-kid", "child-b"]);
-  const roster = { instances: ROSTER, deployments: [], recent: store.snapshot(WS), activeId: instanceId(byName("child-b")) };
+  const roster = { instances: ROSTER, deployments: [], recent: store.snapshot(WS) };
   const rows = paletteRows(roster, [{ label: "Child command", run() {} }], "child", { openTerminal() {} });
-  assert.deepEqual(rows.map(r => [r.group?.label ?? null, r.label, !!r.context, !!r.initial]), [
+  assert.deepEqual(rows.map(r => [r.group?.label ?? null, r.label, !!r.context]), [
     // lead's cluster leads (child-b, newest), child-b above child-a; lead itself is context.
-    ["lead", "lead", true, false], ["lead", "child-b", false, true], ["lead", "child-a", false, false], ["lead", "grandchild", false, false],
-    [null, "Child command", false, false],
-  ], "the newest match opens, even the terminal in front; commands follow");
+    ["lead", "lead", true], ["lead", "child-b", false], ["lead", "child-a", false], ["lead", "grandchild", false],
+    [null, "Child command", false],
+  ], "the first match (child-b) is the first selectable row; commands follow");
   // A query never reorders: the listed rows keep the unfiltered list's order.
   const full = rowsOf(roster).map(r => r.label);
   for (const query of ["child", "kid", "a", "solo", "grand"]) {
@@ -114,11 +108,9 @@ test("with a query: the newest match is the opening row, the order is the unfilt
     assert.ok(listed.length, query);
     assert.deepEqual(listed, full.filter(n => listed.includes(n)), `"${query}" keeps the unfiltered order`);
   }
-  // A focused ancestor of a match is context, at its place, and is not the opening row.
+  // A focused ancestor of a match is context, at its place: it opens nothing.
   const kid = rowsOf({ instances: ROSTER, recent: focused(["alpha-kid", "alpha"]).store.snapshot(WS) }, "kid");
-  assert.deepEqual(kid.map(r => [r.label, !!r.context, typeof r.run, !!r.initial]), [["alpha", true, "undefined", false], ["alpha-kid", false, "function", true]]);
-  // No match was focused: no opening row, the first match is active.
-  assert.deepEqual(rowsOf({ instances: ROSTER, recent: store.snapshot(WS) }, "solo").filter(r => r.initial), []);
+  assert.deepEqual(kid.map(r => [r.label, !!r.context, typeof r.run]), [["alpha", true, "undefined"], ["alpha-kid", false, "function"]]);
 });
 
 test("several deployments: sections by their newest focus, then the panel's order; groups stay in their deployment", () => {
@@ -149,15 +141,17 @@ function palette(t, data) {
   return { doc, picker, opened, key, active, filter };
 }
 
-test("rendered: opens on the previous agent; ⌘K, Enter goes back; the chord still cycles and skips context rows", async t => {
-  const { store } = focused(["solo-x", "child-a", "lead"]);
-  const p = palette(t, { instances: ROSTER, deployments: [], recent: store.snapshot(WS), activeId: instanceId(byName("lead")) });
+test("rendered: opens on the first row (#1391); the chord still cycles and skips context rows", async t => {
+  // The newest focus is a child (child-a): before #1391 the palette opened on it, in the middle; now on its root.
+  const { store } = focused(["solo-x", "lead", "child-a"]);
+  const p = palette(t, { instances: ROSTER, deployments: [], recent: store.snapshot(WS) });
   await p.picker.open();
   const groups = [...p.doc.querySelectorAll('[role="listbox"] > [role="group"]')];
   assert.deepEqual(groups.map(g => g.getAttribute("aria-label")), ["lead", "independent", "alpha", "independent"], "no Recent group: the tree by focus");
   assert.deepEqual([...groups[0].children].map(o => o.querySelector(".plabel").textContent), ["lead", "child-a", "grandchild", "child-b"]);
-  assert.equal(p.active(), "child-a", "opens on the previous agent, in place");
-  p.key("k", { metaKey: true }); assert.equal(p.active(), "grandchild", "the cycle chord is unchanged");
+  assert.equal(p.active(), "lead", "opens on the top row, not on the newest focus (child-a) in the middle");
+  p.key("k", { metaKey: true }); assert.equal(p.active(), "child-a", "the cycle chord moves down from the top");
+  p.key("k", { metaKey: true }); assert.equal(p.active(), "grandchild");
   p.key("k", { metaKey: true, shiftKey: true }); p.key("Enter");
   assert.deepEqual(p.opened, ["child-a"]);
   // A query: the chord and the arrows skip the context ancestor.
@@ -168,15 +162,20 @@ test("rendered: opens on the previous agent; ⌘K, Enter goes back; the chord st
   assert.equal(p.active(), "grandchild");
   p.key("k", { metaKey: true }); assert.equal(p.active(), "grandchild");
   p.key("ArrowUp"); assert.equal(p.active(), "grandchild");
+  // A query opens on the first match, not the newest one: alpha-kid is newer, alpha comes first.
+  const q = palette(t, { instances: ROSTER, deployments: [], recent: focused(["alpha", "alpha-kid"]).store.snapshot(WS) });
+  await q.picker.open();
+  q.filter("alpha");
+  assert.deepEqual([...q.doc.querySelectorAll('[role="option"]')].map(o => o.querySelector(".plabel").textContent), ["alpha", "alpha-kid"]);
+  assert.equal(q.active(), "alpha", "the first match");
 });
 
 test("an entry for an instance no longer in the roster is not listed", () => {
   const { store } = focused(["solo-x", "lead"]);
   const gone = ROSTER.filter(i => i.instance !== "lead");
-  const rows = instanceRows(paletteRows({ instances: gone, recent: store.snapshot(WS), activeId: instanceId(byName("lead")) }, [], "", {}));
+  const rows = instanceRows(paletteRows({ instances: gone, recent: store.snapshot(WS) }, [], "", {}));
   assert.equal(rows[0].label, "solo-x", "the remaining focus still leads");
   assert.equal(rows.filter(r => r.label === "lead").length, 0);
-  assert.deepEqual(rows.filter(r => r.initial).map(r => r.label), ["solo-x"], "the gone front terminal does not shift the opening row");
 });
 
 test("workspace scoping: entries live under their workspace and the exact identity", () => {
@@ -189,16 +188,16 @@ test("workspace scoping: entries live under their workspace and the exact identi
   assert.deepEqual([...store.snapshot("ws-a").keys()], [instanceId(here)]);
   assert.deepEqual([...store.snapshot("ws-b").keys()], [instanceId(other)]);
   assert.deepEqual([...store.snapshot("ws-c").keys()], []);
-  // Which twin each row opens, in order, and which one the palette opens on.
+  // Which twin each row opens, in order: the order is what proves exact-identity scoping.
   const homes = recent => {
     const opened = [];
     const rows = instanceRows(paletteRows({ instances: [here, other], recent }, [], "", { openTerminal: ref => opened.push(ref.home) }));
     for (const r of rows) r.run();
-    return [opened, opened[rows.findIndex(r => r.initial)] ?? null];
+    return opened;
   };
-  assert.deepEqual(homes(new Map()), [["/v/twin", "/w/twin"], null], "the sidebar's order: name, then identity");
-  assert.deepEqual(homes(store.snapshot("ws-a")), [["/w/twin", "/v/twin"], "/w/twin"], "a same-named instance of another agents root is a different entry");
-  assert.deepEqual(homes(store.snapshot("ws-b")), [["/v/twin", "/w/twin"], "/v/twin"]);
+  assert.deepEqual(homes(new Map()), ["/v/twin", "/w/twin"], "the sidebar's order: name, then identity");
+  assert.deepEqual(homes(store.snapshot("ws-a")), ["/w/twin", "/v/twin"], "a same-named instance of another agents root is a different entry");
+  assert.deepEqual(homes(store.snapshot("ws-b")), ["/v/twin", "/w/twin"]);
   assert.equal(recencyIdFromTerminalKey("ws-a", terminalKey("ws-b", here)), null, "another workspace's tab key records nothing here");
   assert.equal(recencyIdFromTerminalKey("", terminalKey("", here)), instanceId(here), "the unbound workspace keys as \"\"");
 });
@@ -257,7 +256,7 @@ test("the sidebar roster keeps its stable order: recency reaches only the palett
   assert.deepEqual(rosterGroups(ROSTER, ROSTER).flatMap(g => g.clusters.flatMap(c => c.instances.map(i => i.instance))), before);
   const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
   assert.equal(shell.match(/instanceRecency\.snapshot\(/g)?.length, 1, "read once: by the palette's loader");
-  assert.match(shell, /const recent = instanceRecency\.snapshot\(ws\);[\s\S]{0,400}return \{ instances: p\.instances \|\| \[\], deployments: panelDeployments\(p\), recent, activeId \}/);
+  assert.match(shell, /const recent = instanceRecency\.snapshot\(ws\);[\s\S]{0,400}return \{ instances: p\.instances \|\| \[\], deployments: panelDeployments\(p\), recent \}/);
   assert.match(shell, /function activateTab\([\s\S]*?instanceRecency\.record\(current\.workspace, recencyIdFromTerminalKey\(current\.workspace, current\.key\)\)[\s\S]*?\n\}/,
     "recorded at the one activation seam");
   assert.doesNotMatch(shell, /lastFocus/, "the sidebar never passes a last-focus record");
