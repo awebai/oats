@@ -1724,7 +1724,7 @@ for (const [name] of palettes) test(`${name}: the soul page's Instructions secti
 });
 
 // #517: Add a machine (every step status) and the Setup tab's Machines box (a row, its states and the Remove confirmation).
-import { openAddMachineDialog } from '../renderer/add-machine-dialog.mjs';
+import { openAddMachineDialog, addMachineCSS } from '../renderer/add-machine-dialog.mjs';
 import { createWorkspaceMachines, machinesCSS, resetMachineChecks } from '../renderer/workspace-machines.mjs';
 for (const [name] of palettes) test(`${name}: Add a machine and the Machines box meet computed AA without opacity`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div class="setup" id="setup"></div></div></body></html>`, { pretendToBeVisual: true });
@@ -1742,6 +1742,7 @@ for (const [name] of palettes) test(`${name}: Add a machine and the Machines box
   const dialog = openAddMachineDialog(doc, { ctx, ws: 'ws:x', deployment: '/Users/j/Agents/k' });
   t.after(() => { dialog.close(); box.dispose(); dom.window.close(); });
   const host = doc.querySelector('.machine-host'); host.value = 'altair'; host.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  const folder = doc.querySelector('.machine-folder'); folder.value = '~/k'; folder.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   doc.querySelector('.machine-primary').click();
   for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
   doc.querySelector('[data-machine="down"] .machine-remove').click();
@@ -1775,6 +1776,9 @@ for (const [name] of palettes) test(`${name}: Add a machine and the Machines box
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1', selector);
   }
+  // A placeholder is not computed here: the Folder hint (#1390) is painted with --muted, which .machine-lede holds on --surface above.
+  assert.match(addMachineCSS, /\.machine-dialog input\.field::placeholder \{ color:var\(--muted\); \}/);
+  assert.ok(doc.querySelector('.machine-folder').closest('.machine-dialog'), 'the hint sits on the dialog\'s --surface');
 });
 
 // #558: the terminal tab's Needs input glyph is a non-text graphic (the trigger's name says it): --warn
@@ -1980,4 +1984,39 @@ for (const [name] of palettes) test(`${name}: the shortcuts editor's search, hea
   assert.equal(none.hidden, false);
   assert.equal(dom.window.getComputedStyle(none).color, "var(--muted)");
   assert.ok(contrast(opaqueChannels(value("muted")), opaqueChannels(value("surface"))) >= 4.5);
+});
+
+// The leader (docs/desktop-keyboard.md, "The leader"): its hint over the main area and the footer's
+// button that starts it, drawn by the shipped code and rules, in every theme. Each text is an
+// inventoried token on the surface actually painted under it, with no opacity on the way.
+for (const [name] of palettes) test(`${name}: the leader's hint and its footer button meet AA on their effective colours`, async t => {
+  const { createLeaderHint } = await import("../renderer/leader-hint.mjs");
+  const dom = new JSDOM(readFileSync(new URL("index.html", renderer), "utf8"));
+  t.after(() => dom.window.close());
+  const doc = dom.window.document; doc.documentElement.dataset.theme = name;
+  for (const source of [css, readFileSync(new URL("shell.css", renderer), "utf8")]) {
+    const style = doc.createElement("style"); style.textContent = source; doc.head.append(style);
+  }
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const hint = createLeaderHint({ doc, host: doc.getElementById("main"), before: doc.getElementById("show-panel") });
+  hint.showKeys([{ keys: ["k", "space"], label: "Open the command palette" }, { keys: ["escape"], label: "Instance roster" }], { isMac: false });
+  const button = doc.getElementById("sidebar-leader");
+  const kbd = button.querySelector(".shortcut-hint"); kbd.hidden = false; kbd.textContent = "Alt+O";
+  const check = (selector, fg, surfaceSelector, bg) => {
+    const el = doc.querySelector(selector), surface = doc.querySelector(surfaceSelector);
+    assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, surfaceSelector);
+    assert.ok(pairs.some(([f, b]) => f === fg && b === bg), `--${fg} on --${bg} is inventoried`);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector} on ${bg}`);
+    for (let node = el; node; node = node.parentElement) assert.equal(dom.window.getComputedStyle(node).opacity, "1", `${selector}: no opacity`);
+  };
+  check(".leader-hint-key", "fg", ".leader-hint", "surface-2");
+  check(".leader-hint-label", "muted", ".leader-hint", "surface-2");
+  check("#sidebar-leader", "muted", "#sidebar", "surface");
+  check("#sidebar-leader .shortcut-hint", "fg", "#sidebar", "surface");
+  hint.say("No instance is focused or selected.");
+  check(".leader-hint-line", "fg", ".leader-hint", "surface-2");
+  // The hint is opaque: its surface is a token, never a blend over the terminal behind it.
+  assert.equal(dom.window.getComputedStyle(hint.element).background, "var(--surface-2)");
 });

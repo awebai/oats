@@ -9,6 +9,17 @@ import { isLocalPath, workspaceChoiceLabels, workspaceChoiceRows, choiceMatches,
 
 /** The section a window with no workspace lists this computer's deployments under, to add with one click (#518). */
 export const LOCAL_SECTION = "On this computer";
+/** A row of this computer's deployments list that can't be opened, in words (#1390): the kernel's state. */
+export const LISTED_STATE_TEXT = Object.freeze({
+  missing: "Missing: the folder is gone, or its volume isn't mounted",
+  "not-a-deployment": "Not a deployment any more: no oats-local.yaml",
+  unreadable: "Can't be checked: OATS couldn't read this folder",
+});
+/** What the section says when this computer's list could not be read: its CLI has no list, or the read failed. */
+export const LIST_UNSUPPORTED_TEXT = "This oats can't list this computer's deployments. Update oats.";
+export const listFailedText = (message) => `Couldn't read this computer's deployments: ${message}`;
+/** The keyboard route to a row's Remove, said once for every removable option. */
+export const REMOVE_HINT = "Press Right Arrow, then Enter, to remove it from this computer's list.";
 
 const text = (value) => String(value || "");
 const candidateId = (candidate) => text(candidate?.id || candidate?.path);
@@ -23,6 +34,8 @@ export function openInNewWindowHint(mac) {
 
 export function createWorkspaceSwitcher({
   document, selectWorkspace, discoverSuggestions, addWorkspace, pickWorkspace, onboardWorkspace = null, onboarded = null,
+  // Remove a row of this computer's deployments list (#1390). Absent, no Remove.
+  removeListed = null,
   // One window per workspace (#481): opens (or focuses) a workspace's own window. Absent, no action.
   openInNewWindow = null, mac = false,
 }) {
@@ -39,6 +52,8 @@ export function createWorkspaceSwitcher({
   // The options' description: how to reach Open in new window from the keyboard (one hidden element).
   const hint = document.createElement('p'); hint.id = 'ws-open-window-hint'; hint.hidden = true; hint.textContent = openInNewWindowHint(mac);
   if (openInNewWindow) empty.after(hint);
+  const removeHint = document.createElement('p'); removeHint.id = 'ws-remove-hint'; removeHint.hidden = true; removeHint.textContent = REMOVE_HINT;
+  if (removeListed) empty.after(removeHint);
   const modal = q("ws-modal"), dialog = modal.querySelector(".ws-dialog");
   const modalSearch = q("ws-suggestion-search"), suggestionsEl = q("ws-suggestions");
   const status = q("ws-dialog-status"), confirm = q("ws-confirm"), browse = q("ws-browse");
@@ -68,9 +83,12 @@ export function createWorkspaceSwitcher({
   let generation = 0, modalGeneration = 0, discoveryGeneration = 0;
   let activeId = "", workspaces = [], suggestions = [], selected = null, choosing = false;
   let adding = false, discoveryState = { message: "", error: false };
-  // A window with no workspace: the deployments main suggests (found in ~/Agents, saved and not served),
-  // looked up each time its menu opens; `localAdding` is the path a one-click add is adding (#518).
+  // A window with no workspace: the deployments main suggests (saved and not served, and this computer's
+  // deployments list, #1390), looked up each time its menu opens; `localAdding` is the path a one-click add
+  // is adding (#518), `localRemoving` the row a Remove is removing. `listNote` is what the section says
+  // when the list could not be read.
   let local = [], localLooking = false, localGeneration = 0, localAdding = "", localAddGeneration = 0;
+  let localRemoving = "", listNote = "";
 
   const setStatus = (message = "", error = false) => {
     status.textContent = message;
@@ -112,6 +130,7 @@ export function createWorkspaceSwitcher({
     const focusedPath = document.activeElement?.classList?.contains("ws-local-option") ? document.activeElement.dataset.workspacePath : "";
     // Focus on a served workspace's Open in new window action comes back to that action (#481, #521).
     const focusedAction = document.activeElement?.classList?.contains("ws-open-window") ? document.activeElement.dataset.workspaceId : "";
+    const focusedRemove = document.activeElement?.classList?.contains("ws-remove-listed") ? document.activeElement.dataset.workspacePath : "";
     options.replaceChildren();
     const unmatched = document.createElement("div");
     unmatched.className = "ws-option-group"; unmatched.setAttribute("role", "group"); unmatched.setAttribute("aria-labelledby", unmatchedHeadingId);
@@ -180,50 +199,78 @@ export function createWorkspaceSwitcher({
     if (unmatched.querySelector(".ws-option")) options.append(unmatched);
     const offered = choosing ? offeredLocally() : [];
     const localGroup = renderLocalGroup(offered.filter((candidate) => !query
-      || `${candidateName(candidate)} ${pathTail(candidateId(candidate), 2)}`.toLocaleLowerCase().includes(query)));
+      || `${candidateName(candidate)} ${pathTail(candidateId(candidate), 2)}`.toLocaleLowerCase().includes(query)), choosing ? listNote : "");
     if (localGroup) options.append(localGroup);
     empty.hidden = options.childElementCount > 0;
     empty.textContent = empty.hidden ? '' : workspaces.length || offered.length ? 'No workspaces match this filter.'
       : choosing && localLooking ? 'Looking for workspaces on this computer…' : 'No workspace choices reported.';
     if (focusedAction && !menu.hidden) {
       ([...options.querySelectorAll(".ws-open-window")].find((button) => button.dataset.workspaceId === focusedAction) || menuSearch).focus();
+    } else if (focusedRemove && !menu.hidden) {
+      ([...options.querySelectorAll(".ws-remove-listed")].find((button) => button.dataset.workspacePath === focusedRemove) || menuSearch).focus();
     } else if ((focusedId || focusedPath) && !menu.hidden) {
       (menuItems().find((button) => focusedId ? button.dataset.workspaceId === focusedId : button.dataset.workspacePath === focusedPath) || menuSearch).focus();
     }
   };
   // This computer's deployments, for a window with no workspace: each option adds its deployment and
-  // opens it in this window (the Add dialog's add, from the menu). Null when there is none to show.
+  // opens it in this window (the Add dialog's add, from the menu). A row of the list that can't be opened
+  // (missing, not a deployment any more, unreadable) says so in words and opens nothing; each list row has
+  // Remove beside it (#1390). `note`, when the list could not be read, is the section's one line. Null when
+  // there is nothing to show.
   const localHeadingId = `ws-local-${Math.random().toString(36).slice(2, 8)}`;
-  const renderLocalGroup = (candidates) => {
-    if (!candidates.length) return null;
+  const renderLocalGroup = (candidates, note) => {
+    if (!candidates.length && !note) return null;
+    const busy = !!(localAdding || localRemoving);
     const group = document.createElement("div");
     group.className = "ws-option-group ws-local-group"; group.setAttribute("role", "group"); group.setAttribute("aria-labelledby", localHeadingId);
-    group.setAttribute("aria-busy", String(!!localAdding));
+    group.setAttribute("aria-busy", String(busy));
     const head = document.createElement("div");
     head.className = "ws-option-section"; head.id = localHeadingId; head.setAttribute("role", "presentation");
     head.textContent = LOCAL_SECTION;
     group.append(head);
+    if (note) {
+      const line = document.createElement("p"); line.className = "ws-local-note"; line.textContent = note;
+      group.append(line);
+    }
     for (const candidate of candidates) {
       const path = candidateId(candidate), label = candidateName(candidate);
+      const stale = Object.hasOwn(LISTED_STATE_TEXT, candidate.state) ? LISTED_STATE_TEXT[candidate.state] : "";
       const button = document.createElement("button");
       button.type = "button"; button.className = "ws-option ws-local-option";
       button.setAttribute("role", "option"); button.setAttribute("aria-selected", "false");
-      if (localAdding) button.setAttribute("aria-disabled", "true");
-      button.dataset.workspacePath = path; button.title = path;
+      if (busy || stale) button.setAttribute("aria-disabled", "true");
+      button.dataset.workspacePath = path; button.title = stale ? `${path}\n${stale}` : path;
+      if (stale) button.dataset.listedState = candidate.state;
       const check = document.createElement("span"); check.className = "ws-check"; check.setAttribute("aria-hidden", "true");
       const copy = document.createElement("span"); copy.className = "ws-option-copy";
       const line = document.createElement("span"); line.className = "ws-option-line";
       const name = document.createElement("span"); name.className = "ws-option-name"; name.textContent = label;
       line.append(name);
-      const meta = document.createElement("span"); meta.className = "ws-option-meta"; meta.textContent = pathTail(path, 2);
+      if (stale) line.append(deploymentMark(document, stale));
+      const meta = document.createElement("span"); meta.className = "ws-option-meta"; meta.textContent = stale || pathTail(path, 2);
+      if (stale) meta.classList.add("ws-listed-state");
       copy.append(line, meta);
       button.append(createWorkspaceMark(document, { id: path, name: label }), copy, check);
       button.addEventListener("click", () => {
-        if (menu.hidden || !button.isConnected || !options.contains(button)) return;
+        if (stale || menu.hidden || !button.isConnected || !options.contains(button)) return;
         void addFromMenu(path, label);
       });
       const row = document.createElement("div"); row.className = "ws-option-row"; row.setAttribute("role", "none");
       row.append(button);
+      if (removeListed && candidate.removable) {
+        button.setAttribute("aria-describedby", removeHint.id);
+        const remove = document.createElement("button");
+        remove.type = "button"; remove.className = "ws-remove-listed"; remove.tabIndex = -1;
+        remove.dataset.workspacePath = path; remove.textContent = "Remove";
+        remove.setAttribute("aria-label", `Remove ${label} from this computer's list`);
+        remove.title = `Remove ${label} from this computer's list. Nothing on disk changes.`;
+        if (busy) remove.setAttribute("aria-disabled", "true");
+        remove.addEventListener("click", () => {
+          if (menu.hidden || !remove.isConnected || !options.contains(remove)) return;
+          void removeFromMenu(path, label);
+        });
+        row.append(remove);
+      }
       group.append(row);
     }
     return group;
@@ -232,21 +279,24 @@ export function createWorkspaceSwitcher({
   const lookLocally = async () => {
     const token = ++localGeneration;
     localLooking = true;
-    let found = [];
+    let found = [], note = "";
     try {
       const result = await discoverSuggestions();
       found = result?.stale ? [] : Array.isArray(result) ? result : (result?.suggestions || []);
+      if (!result?.stale) note = result?.list?.state === "unsupported" ? LIST_UNSUPPORTED_TEXT
+        : result?.list?.state === "failed" ? listFailedText(result.list.message || "the installed OATS CLI could not read it.") : "";
     } catch { /* nothing found: the menu still offers Add local workspace… */ }
     if (token !== localGeneration) return;
     localLooking = false;
     local = found.filter((candidate) => candidateId(candidate));
+    listNote = note;
     renderOptions();
   };
   /** One click: add the deployment (main validates and serves it) and open it in this window. A failure
    * stays in the menu, with focus back on the same deployment; an add superseded by a choice made
    * meanwhile (the window bound, or no longer choosing) opens nothing here. */
   const addFromMenu = async (path, label) => {
-    if (localAdding || adding) return;
+    if (localAdding || localRemoving || adding) return;
     const token = ++localAddGeneration;
     localAdding = path;
     setMenuStatus(`Adding ${label}…`);
@@ -267,11 +317,38 @@ export function createWorkspaceSwitcher({
     renderOptions();
     if (!menu.hidden) (menuItems().find((button) => button.dataset.workspacePath === path) || menuSearch).focus();
   };
+  /** Remove one row from this computer's list (#1390). It touches nothing on disk, so it asks nothing; the
+   * menu says what happened and reads the list again. Focus stays on the row's place: the next row, else
+   * the search field. */
+  const removeFromMenu = async (path, label) => {
+    if (localAdding || localRemoving || adding) return;
+    localRemoving = path;
+    setMenuStatus(`Removing ${label}…`);
+    renderOptions();
+    let result;
+    try { result = await removeListed(path); }
+    catch (error) { result = { ok: false, reason: error?.message || "Could not remove it from this computer's list." }; }
+    localRemoving = "";
+    if (!choosing) { setMenuStatus(""); renderOptions(); return; }
+    if (result?.ok) {
+      const rows = menuItems(), at = rows.findIndex((button) => button.dataset.workspacePath === path);
+      const after = rows.slice(at + 1).find((button) => button.dataset.workspacePath && button.dataset.workspacePath !== path)?.dataset.workspacePath || "";
+      local = local.filter((candidate) => candidateId(candidate) !== path);
+      setMenuStatus(`Removed ${label} from this computer's list.`);
+      renderOptions();
+      if (!menu.hidden) (menuItems().find((button) => button.dataset.workspacePath === after) || menuSearch).focus();
+      void lookLocally();
+      return;
+    }
+    setMenuStatus(result?.reason || "Could not remove it from this computer's list.");
+    renderOptions();
+    if (!menu.hidden) ([...options.querySelectorAll(".ws-remove-listed")].find((button) => button.dataset.workspacePath === path) || menuSearch).focus();
+  };
   const openMenu = () => {
     menu.hidden = false;
     trigger.setAttribute("aria-expanded", "true");
     menuSearch.value = "";
-    if (!localAdding) setMenuStatus("");
+    if (!localAdding && !localRemoving) setMenuStatus("");
     if (choosing) void lookLocally();
     renderOptions();
     menuSearch.focus();
@@ -445,7 +522,9 @@ export function createWorkspaceSwitcher({
         const found = Array.isArray(result) ? result : (result?.suggestions || []);
         // A deployment a view already holds is added too (#482): views name their deployments.
         const added = new Set(workspaces.flatMap((workspace) => [workspace.id, ...(Array.isArray(workspace.deployments) ? workspace.deployments : [])]));
-        suggestions = found.filter((candidate) => candidateId(candidate) && !added.has(candidateId(candidate)));
+        // Only what can be opened: a stale row of this computer's list is the menu's to show and remove (#1390).
+        suggestions = found.filter((candidate) => candidateId(candidate) && !added.has(candidateId(candidate))
+          && (candidate.state === undefined || candidate.state === "ok"));
         discoveryState = {
           message: suggestions.length ? `${suggestions.length} suggested workspace${suggestions.length === 1 ? "" : "s"}` : "No additional OATS workspaces were discovered.",
           error: false,
@@ -581,12 +660,15 @@ export function createWorkspaceSwitcher({
   const onMenuKey = (event) => {
     // Open in new window (#481): the button beside an option is reached with ArrowRight and left with
     // ArrowLeft or Escape; ⌘Enter (macOS) / Ctrl+Enter on the option opens it directly.
-    const action = event.target?.closest?.(".ws-open-window");
+    // A list row's Remove (#1390) is reached and left the same way.
+    const action = event.target?.closest?.(".ws-open-window, .ws-remove-listed");
     const optionOf = (el) => el?.parentElement?.querySelector(":scope > .ws-option");
-    if (openInNewWindow && action && ["ArrowLeft", "Escape"].includes(event.key)) { event.preventDefault(); optionOf(action)?.focus(); return; }
+    if (action && ["ArrowLeft", "Escape"].includes(event.key)) { event.preventDefault(); optionOf(action)?.focus(); return; }
     const focusedOption = event.target?.classList?.contains("ws-option") ? event.target : null;
-    if (openInNewWindow && focusedOption && event.key === "ArrowRight") {
-      event.preventDefault(); focusedOption.parentElement.querySelector(":scope > .ws-open-window")?.focus(); return;
+    if (focusedOption && event.key === "ArrowRight") {
+      const beside = focusedOption.parentElement.querySelector(":scope > .ws-open-window, :scope > .ws-remove-listed");
+      if (beside) { event.preventDefault(); beside.focus(); }
+      return;
     }
     if (openInNewWindow && focusedOption?.dataset.workspaceId && event.key === "Enter" && !event.shiftKey && !event.altKey
       && (mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)) {

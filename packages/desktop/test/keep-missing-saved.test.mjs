@@ -26,7 +26,6 @@ function desktop({ saved, served, validate, ready = true, failWrite = false }) {
     getDirs: () => [...sets.served],
     stage: (dirs, path) => stageDirs(dirs, path, validate),
     commitDirs: dirs => { sets = commitOpenSet(sets, dirs, open => { if (failWrite) throw new Error('disk full'); writes.push(open); }); },
-    commitRecent: () => {},
     replaceServer: async dirs => { servers.push(dirs); },
     refreshAdvertised: async () => true, probeVersion: async () => ({ ok: true }), isCompatible: () => true,
     advertises: async () => ready, delay: async () => {}, attempts: 2,
@@ -119,8 +118,8 @@ test('a kept saved entry that is not a deployment stays inert: never served, nev
   d.unmount(C); assert.equal(refusal(`/api/panel?ws=${encodeURIComponent(C)}`), null, 'a missing one is inert the same way');
   d.mount(C); d.mount(B); known.add(B);
   assert.equal(refusal(`/api/panel?ws=${encodeURIComponent(B)}`)?.status, 404, 'a deployment that validates and is not served is reported');
-  // The switcher offers the served set's known deployments and recents, each validated: never the kept entry.
-  assert.deepEqual(workspaceSuggestions({ knownPaths: served, recents: [parent], advertised: new Set(), validate: d.validate }).map(s => s.path), [A]);
+  // The switcher offers the served set's known deployments, each validated: never the kept entry.
+  assert.deepEqual(workspaceSuggestions({ knownPaths: [...served, parent], advertised: new Set(), validate: d.validate }).map(s => s.path), [A]);
 });
 
 test('main.mjs wires the two sets: the add commits through commitOpenSet, startup through startupOpenSet; the switcher and the refusal read the known set, validated', () => {
@@ -128,7 +127,8 @@ test('main.mjs wires the two sets: the add commits through commitOpenSet, startu
   assert.match(source, /const next = commitOpenSet\(\{ open: openDirs \}, dirs, \(open\) => saveWorkspaceDirs\(OPEN_WORKSPACES_FILE\(\), open\)\);\n\s*openDirs = next\.open;\n\s*workspaceDirs\.length = 0; workspaceDirs\.push\(\.\.\.next\.served\);/);
   assert.match(source, /const startupSet = startupOpenSet\(saved, workspaceDirs, wsValidate\);\n\s*openDirs = startupSet\.open;/);
   assert.match(source, /if \(serverHost\.owned\(\) && startupSet\.write\) saveWorkspaceDirs\(OPEN_WORKSPACES_FILE\(\), startupSet\.open\);/);
-  assert.equal(source.match(/saveWorkspaceDirs\(/g).length, 2, 'no other writer of the open set');
+  assert.equal(source.match(/saveWorkspaceDirs\(/g).length, 3, 'no other writer of the open set than these two and a Remove (#1390)');
+  assert.match(source, /const open = unsavedOpenSet\(openDirs, path\);\n\s*saveWorkspaceDirs\(OPEN_WORKSPACES_FILE\(\), open\);/, 'a Remove drops only its own saved entry');
   assert.match(source, /stage: \(dirs, path\) => stageDirs\(dirs, path, wsValidate\)/, 'the served set is staged from validated deployments only');
   assert.match(source, /knownPaths: \[\.\.\.knownDirs\]/, 'suggestions read every known path (a saved one not served included); workspaceSuggestions offers only those that validate (#518)');
   assert.match(source, /known: \(path\) => knownDirs\.has\(path\) && !!wsValidate\(path\)/, 'the refusal needs a deployment that validates');

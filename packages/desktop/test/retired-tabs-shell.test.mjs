@@ -103,12 +103,14 @@ function shell(t, shellSource = source) {
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "closeStage", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "showTerminalContext",
     "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal",
-    "syncContextPanel", "refreshPanelInstance", "syncTabNeedsInput", "closeRetiredTabs"];
+    "syncContextPanel", "refreshPanelInstance", "syncTabNeedsInput", "closeRetiredTabs", "focusNextGroup"];
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];
   });
-  const registry = source.split("\n").filter(line => /^registerAction\(/.test(line) && /id: "(?:split\.|tabs\.close|terminal\.focusActive)/.test(line));
+  // The split actions run under the shipped modal guard (the palette or a dialog shown: none here).
+  c.modalOpen = () => false;
+  const registry = [source.match(/^const unlessModal = [^\n]+/m)[0], ...source.split("\n").filter(line => /^registerAction\(/.test(line) && /id: "(?:split\.|tabs\.close|terminal\.focusActive)/.test(line))];
   // Execute the shipped panel construction as well as its projection functions:
   // pointer/focus intent must compete with opens exactly as in the real shell.
   const panelSetup = shellSource.slice(shellSource.indexOf("const contextPanel = createContextPanel"), shellSource.indexOf("/** Projection only:"));

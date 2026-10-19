@@ -63,8 +63,9 @@ test('a machine added: Where to run lists it, selects it and the form reads for 
   await u.open();
   await u.change('.fserver', '+add-machine');
   const host = u.doc.querySelector('.machine-host'); host.value = 'vega'; host.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
+  const folder = u.doc.querySelector('.machine-folder'); folder.value = '~/northwind'; folder.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
   u.doc.querySelector('.machine-primary').click(); await settle();
-  assert.deepEqual(sent, [{ path: '/api/server-connect?ws=northwind', body: { phase: 'connect', id: 'vega-northwind', host: 'vega', folder: '~/Agents/northwind', installOats: true } }]);
+  assert.deepEqual(sent, [{ path: '/api/server-connect?ws=northwind', body: { phase: 'connect', id: 'vega-northwind', host: 'vega', folder: '~/northwind', installOats: true } }]);
   assert.equal(machineDialog(u), null, 'closed on success');
   assert.equal(u.q('.fserver').value, 'vega-northwind');
   assert.deepEqual(options(u).at(-1), ['+add-machine', 'Add a machine to this workspace…'], 'Add stays last');
@@ -84,6 +85,7 @@ test('two or more deployments: Add a machine is a button under the Deployment fi
   assert.equal(u.q('.fdeployment').closest('.spawn-field').nextElementSibling, button.closest('.spawn-add-machine'));
   button.click();
   const host = u.doc.querySelector('.machine-host'); host.value = 'vega'; host.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
+  const folder = u.doc.querySelector('.machine-folder'); folder.value = '~/northwind'; folder.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
   u.doc.querySelector('.machine-primary').click(); await settle();
   assert.equal(machineDialog(u), null);
   assert.equal(u.text('.spawn-add-machine-note'), 'vega-northwind is added. It is listed here once this computer has read it.');
@@ -100,6 +102,7 @@ test('leaving the workspace while connect runs: the Add dialog goes with the spa
   await u.open();
   await u.change('.fserver', '+add-machine');
   const host = u.doc.querySelector('.machine-host'); host.value = 'vega'; host.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
+  const folder = u.doc.querySelector('.machine-folder'); folder.value = '~/northwind'; folder.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
   u.doc.querySelector('.machine-primary').click(); await settle();
   setWorkspace('another-workspace'); await settle();
   assert.equal(u.dialog(), null, 'the spawn dialog closed');

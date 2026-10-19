@@ -1,4 +1,4 @@
-/** "On This Mac · ~/Agents/oats" (#482, expert decision Q1): a deployment-level surface (the
+/** "On This Mac · ~/acme" (#482, expert decision Q1): a deployment-level surface (the
  * Workspace view, Automations, Schedules, the soul inspector, Brain, a capability page, the Sync
  * sheet) reads and acts on its view's PRIMARY deployment. In a view of two or more deployments it
  * says which, in one short line under its heading. A one-deployment view shows nothing (the line

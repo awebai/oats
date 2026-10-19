@@ -506,12 +506,17 @@ test(`Enter on the running agent shows its terminal in the panel beside the list
   await agentWindow();
   const term = await terminal(t);
   const run = await tui(term);
-  assert.equal(run.dir(), null, "no run directory before the first open");
+  // Before the first open the run may have made its directory already: the add of the deployment
+  // to this computer's list is a change, whose output goes there (awebai/oats#1390). It holds no
+  // panel until the first open, which takes that directory.
+  const early = run.dir();
+  assert.equal(early === null || !existsSync(join(early, "owner.json")), true, "no panel's directory before the first open");
   await run.open("on the running agent");
   assert.equal(run.sheet(), BACK, `the cheat sheet names the leader, the leader then Esc and the leader twice:\n${term.shows()}`);
   assert.equal(run.panel()[0].trim(), NAME, "the panel's top row, the screen's first, names the agent");
   const dir = run.dir();
-  assert.ok(dir, "the run directory, made at the first open");
+  assert.ok(dir, "the run directory, made at the first open or at the add before it");
+  if (early !== null) assert.equal(dir, early, "the open takes the run's directory the add made");
   assert.deepEqual(readJson(join(dir, "owner.json")).tool, "oats-tui");
   assert.equal(readJson(join(dir, "owner.json")).pid, run.pid, "owner.json names the run");
   assert.equal(answers(panelSocket(dir)), true, "the private server answers on its socket in the run directory");
@@ -833,12 +838,14 @@ test("a run's sweep removes what a dead run left, its directory (its server SIGK
   assert.equal(answers(panelSocket(liveDir)), true);
   await live.back("in the live run");
   await until(liveTerm, () => live.sheet().startsWith(LIST_HINTS), "the live run's list focused, its terminal open");
-  // A dead run: opened, then killed with no way to clean up.
+  // A dead run: opened, then killed with no way to clean up. Its directory is the one that is new
+  // since it started: made at its first open, or before it by the add of its deployment to this
+  // computer's list, and holding owner.json once the terminal is open.
+  const before = new Set(runDirs(tmp));
   const deadTerm = await terminal(t);
   const dead = await tui(deadTerm, { tmp });
-  const before = new Set(runDirs(tmp));
   deadTerm.press("Enter");
-  await until(deadTerm, () => runDirs(tmp).some((dir) => !before.has(dir)) && dead.beside(), "the dead run's terminal open");
+  await until(deadTerm, () => runDirs(tmp).some((dir) => !before.has(dir) && existsSync(join(dir, "owner.json"))) && dead.beside(), "the dead run's terminal open");
   const deadDir = runDirs(tmp).find((dir) => !before.has(dir));
   const deadPanes = panePids(panelSocket(deadDir));
   assert.equal(deadPanes.length, 2, "the dead run's keeper and viewer");

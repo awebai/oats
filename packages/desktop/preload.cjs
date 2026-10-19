@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld("oatsDesktop", {
   workspacePick: () => ipcRenderer.invoke("workspace:pick"),
   /** Onboard the folder behind a picker offer (single-use token) — kernel `oats onboard`. */
   workspaceOnboard: (token, ref) => ipcRenderer.invoke("workspace:onboard", token, ref),
+  /** Remove a row of this computer's deployments list (#1390) — kernel `oats deployments remove`. */
+  workspaceRemoveListed: (path) => ipcRenderer.invoke("workspace:remove-listed", path),
 
   /** One window per workspace (#481). Bind this window to a workspace in place (null: to none); a
    * workspace another window holds is refused, and that window focused unless `focus` is false. */

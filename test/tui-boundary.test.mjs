@@ -70,6 +70,9 @@ const TAKEN = Object.freeze({
   "display-text.mjs": ["displayLine", "DETAIL_WITHHELD"],
   "cli-locator.mjs": ["parseProbeStdout", "acceptProbe", "cliRecord"],
   "deployment-read-cli.mjs": ["cliDeploymentRead"],
+  // awebai/oats#1390: this computer's deployments list, through the kernel (the switcher's rows, the add on opening, Remove).
+  "deployment-list-cli.mjs": ["cliDeploymentList"],
+  "deployment-list.mjs": ["deploymentsListSupported"],
   "cli-adapter.mjs": ["cliRemoteRoster"],
   "deployment-observer.mjs": ["createDeploymentObserver", "mapBounded", "MAX_DEPLOYMENT_OBSERVATIONS"],
   "refresh-loop.mjs": ["createRefreshLoop"],
@@ -94,7 +97,7 @@ const TAKEN = Object.freeze({
   "session-start.mjs": ["startGate", "startInstance"],
   "launch-prompt-outcome.mjs": ["retainedStartMessage", "launchFlagIgnored", "flagIgnoredNotice"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES"],
-  "workspace-admission.mjs": ["validateWorkspace", "deploymentsInside"],
+  "workspace-admission.mjs": ["validateWorkspace"],
   "soul-catalog.mjs": ["createSoulCatalog", "soulCatalogKey"],
   "soul-rows.mjs": ["soulRows"],
   "soul-facts.mjs": ["soulFacts", "spawnRefusal", "soulMatches"],
@@ -117,6 +120,9 @@ const TAKEN = Object.freeze({
   "capability-catalog.mjs": ["createCapabilityCatalog", "capabilityCatalogKey"],
   "capability-rows.mjs": ["memberNames", "capabilitySource", "groupCapabilities", "hostKeyOf", "capabilitySections", "matchCapabilities", "soulsComposition", "rosterAgentName", "layerLabel", "capabilityUsers"],
   "capability-facts.mjs": ["capabilityFacts", "CAPABILITY_COPY"],
+  // The keys the TUI shares with the Desktop (#1395): lib/actions.mjs builds its leader's table and its plain keys'
+  // defaults from them, lib/config.mjs its default leader, and packages/tui/test/keymap.test.mjs pins all three to them.
+  "keymap.mjs": ["LEADER_TABLE", "PLAIN_KEYS", "leaderKey", "plainKeys"],
 });
 /** Every clause of a source that takes names from a module of the shared home: [[module, names], …].
  *  A name taken under another name is read as the name the home gives it. */
@@ -141,7 +147,7 @@ test("what packages/tui/lib/client.mjs takes from the shared home is this list, 
   const added = {
     "cli-adapter.mjs": ["cliRemoteRoster"], "panel-views.mjs": ["cliReadsRemotes", "workspaceChoices", "viewModel"], "remote-roster.mjs": ["remoteRosterState"],
     "remote-identity-memory.mjs": ["observeIdentities", "identityMemory"], "workspace-choices.mjs": ["workspaceChoiceRows", "choiceMatches", "UNMATCHED_SECTION"],
-    "workspace-admission.mjs": ["deploymentsInside"], "deployment-label.mjs": ["shortPath"], "deployment-observer.mjs": ["mapBounded", "MAX_DEPLOYMENT_OBSERVATIONS"], "roster-sections.mjs": ["isMultiDeployment"],
+    "deployment-label.mjs": ["shortPath"], "deployment-observer.mjs": ["mapBounded", "MAX_DEPLOYMENT_OBSERVATIONS"], "roster-sections.mjs": ["isMultiDeployment"],
   };
   for (const [module, names] of Object.entries(added)) for (const name of names) assert.ok(TAKEN[module]?.includes(name), `${name} of ${module}`);
   // Beside what it hands on, the seam makes two values of its own: the client's terms and the collector's path.
@@ -268,10 +274,9 @@ test("lib/read.mjs starts the reads and the changes and lib/panel.mjs the privat
   assert.deepEqual(users("node:child_process"), ["packages/tui/lib/panel.mjs", "packages/tui/lib/read.mjs"]);
   assert.deepEqual(users("node:fs"), ["packages/tui/lib/config.mjs", "packages/tui/lib/panel.mjs", "packages/tui/lib/read.mjs"]);
   assert.deepEqual(users("node:fs/promises"), []);
-  // What the two take from node:fs is named, and each name only reads. `opendirSync` opens a folder
-  // to list it (the look inside ~/Agents for the switcher): what it answers can be read and closed,
-  // and has no way to change the folder.
-  const READS = ["closeSync", "fstatSync", "lstatSync", "opendirSync", "openSync", "readSync", "realpathSync", "statSync"];
+  // What the two take from node:fs is named, and each name only reads. No folder is listed: this
+  // computer's deployments are the kernel's list (awebai/oats#1390), read through the kernel.
+  const READS = ["closeSync", "fstatSync", "lstatSync", "openSync", "readSync", "realpathSync", "statSync"];
   // A change (a stop or retire apply, a start) writes its output to two files of the run's own
   // private directory, never to a pipe (Spec 5): lib/read.mjs makes that directory, and removes
   // each file and the directory. Nothing else of node:fs can change a file.
@@ -312,22 +317,8 @@ test("lib/read.mjs starts the reads and the changes and lib/panel.mjs the privat
   assert.deepEqual(writing, ["packages/tui/lib/panel.mjs", "packages/tui/lib/panel.mjs", "packages/tui/lib/read.mjs"], "a change's output, and the panel's owner mark and viewer files, each made new");
   assert.doesNotMatch(code(read("packages/tui/lib/panel.mjs")), /mkdtempSync|mkdirSync|tmux-\d|"oats-tmux/, "the panel makes no directory and names no socket but its own");
   assert.match(code(read("packages/tui/lib/read.mjs")), /mkdtempSync\(join\(tmpdir\(\), "oats-tui-"\)\)/, "in a private directory of its own under the OS temp dir");
-  // A folder is opened by its path alone (no option: one folder, never what is under it), only
-  // in lib/read.mjs, and of what that answers only the two calls that read an entry and close it
-  // are made. Those two are methods of the folder's handle, not names taken from node:fs, so the
-  // list above does not see them: they are read here.
-  const opened = [];
-  for (const path of TUI_SOURCES) for (const call of code(read(path)).matchAll(/(?:\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*)?\bopendirSync\(([^)]*)\)/g)) {
-    assert.equal(path, "packages/tui/lib/read.mjs", `${path} opens a folder`);
-    assert.match(call[2], /^[A-Za-z_$][\w$]*$/, `${path} opens a folder with ${call[2]}`);
-    assert.ok(call[1], `${path} keeps the folder it opens under a name, so what is done with it can be read`);
-    opened.push(call[1]);
-    const done = [...code(read(path)).matchAll(new RegExp(`\\b${call[1]}\\s*(?:\\??\\.\\s*([A-Za-z_$][\\w$]*)|\\[)`, "g"))].map((use) => use[1] ?? "a computed member");
-    assert.deepEqual([...new Set(done)].sort(), ["closeSync", "readSync"], `${path} does ${done.join(", ")} with the folder it opened`);
-    // The name stands for the folder and nothing else: it is handed to no function and to no other name.
-    assert.equal(code(read(path)).match(new RegExp(`\\b${call[1]}\\b`, "g")).length, 1 + done.length, `${path} uses ${call[1]} only to read the folder and close it`);
-  }
-  assert.deepEqual(opened, ["handle"], "one folder is opened in the whole client: the look inside ~/Agents");
+  // No folder is opened to be listed anywhere in the client.
+  for (const path of TUI_SOURCES) assert.doesNotMatch(code(read(path)), /\bopendirSync\b/, `${path} opens a folder to list it`);
   // Every builtin the client loads, by module: a new one is a decision, and shows here.
   assert.deepEqual([...new Set(TUI_SOURCES.flatMap(builtins))].sort(), ["node:child_process", "node:fs", "node:os", "node:path", "node:url"]);
 });
@@ -368,9 +359,11 @@ test("opening an agent: no module of the TUI holds an attach argument, the featu
     // And the shared preview's one code whose words say it is read again ("Reading it again…"), which the store does (E_TARGET_CHANGED).
     // And the shared transaction's reason for an outcome not known, which the loop gives a spawn call that threw
     // instead of answering, as the transaction does itself (lib/main.mjs; spawn-transaction.mjs `failed`).
+    // And the shared list adapter's code for a call to this computer's deployments list that threw
+    // instead of answering, as the adapter answers an exec that throws (lib/main.mjs NOT_ASKED; deployment-list-cli.mjs).
     const codes = literals(read(path)).filter((text) => /^E_[A-Z_]+$/.test(text));
     if (path === "packages/tui/lib/panel.mjs") assert.deepEqual([...new Set(codes)].filter((c) => !c.startsWith("E_PANEL_")), [], path);
-    else assert.deepEqual(codes, path === "packages/tui/lib/model.mjs" ? ["E_TERM_CONTEXT_CHANGED", "E_START_UNCONFIRMED"] : path === "packages/tui/lib/main.mjs" ? ["E_OUTCOME_UNKNOWN", "E_PANEL_TMUX"] : path === "packages/tui/lib/store.mjs" ? ["E_TARGET_CHANGED"] : [], path);
+    else assert.deepEqual(codes, path === "packages/tui/lib/model.mjs" ? ["E_TERM_CONTEXT_CHANGED", "E_START_UNCONFIRMED"] : path === "packages/tui/lib/main.mjs" ? ["E_CLI_FAILED", "E_OUTCOME_UNKNOWN", "E_PANEL_TMUX"] : path === "packages/tui/lib/store.mjs" ? ["E_TARGET_CHANGED"] : [], path);
   }
   // The viewer is started where it is built from the shared answer: lib/main.mjs hands lib/panel.mjs
   // what sessionAttachArgv or prepareRemoteTerm answered, with no key, and nothing else.

@@ -47,6 +47,10 @@
         <div class="ctx-list"></div>
       </section>
       <div id="nav-foot">
+        <!-- The leader (the TUI's): its live chord, then "commands"; a click starts it as the chord does. -->
+        <button id="sidebar-leader" type="button" aria-controls="leader-hint" title="Commands: press this, then one key" aria-label="Commands: press this, then one key">
+          <kbd class="shortcut-hint" data-shortcut="app.leader" aria-hidden="true" hidden></kbd><span aria-hidden="true">commands</span>
+        </button>
         <button id="sidebar-spawn" class="primary" type="button" data-action="app.chooseSoul"
                 title="Choose a soul in Workspace to spawn an instance" aria-label="Spawn instance: choose a soul in Workspace">
           <span data-shell-icon="plus" aria-hidden="true"></span><span>Spawn instance</span>

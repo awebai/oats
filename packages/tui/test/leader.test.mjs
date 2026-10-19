@@ -6,7 +6,7 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { instanceId } from "../lib/client.mjs";
-import { paletteItems, roster } from "../lib/model.mjs";
+import { LIST_WORDS, paletteItems, roster } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { CLI, instanceRow, leaderEscape, leaderThen, leaderTwice, observed, stateOf } from "./helpers.mjs";
 
@@ -77,7 +77,7 @@ test("in the list, the leader then a key of its table in a later read does what 
     assert.deepEqual([butLeader(led.state), led.effect], [butLeader(pressed.state), pressed.effect], `${k} after the leader is ${plain} in the list`);
   }
   assert.deepEqual([leaderThen(state, "?", AT).state.view, leaderThen(state, "?", AT).state.back], ["help", "instances"]);
-  assert.deepEqual([leaderThen(state, "o", AT).state.view, leaderThen(state, "o", AT).effect], ["switcher", { offer: true }]);
+  assert.deepEqual([leaderThen(state, "o", AT).state.view, leaderThen(state, "o", AT).effect], ["switcher", { list: true }]);
   assert.deepEqual(leaderThen(state, "/", AT).state.filter, { editing: true, query: "" });
   const souls = leaderThen(state, "2", AT).state;
   assert.equal(souls.view, "souls");
@@ -142,6 +142,20 @@ test("the leader typed in the terminal with more bytes after it in the same read
   assert.deepEqual([step.state.leader, step.state.terminal, step.effect], [{ read, waiting: false }, state.terminal, null]);
   // The next leader, alone in its read, waits again.
   assert.deepEqual(leader(step.state).state.leader.waiting, true);
+});
+
+test("the add of the deployment the run started in, refused while a terminal has the focus, zoomed or not, is held, and said once the list has the focus again", () => {
+  // Under 80 columns a terminal with the focus has the whole screen, and zoomed it has it at any
+  // width: the sidebar, and its line under the title, are not drawn (awebai/oats#1390).
+  const reason = { code: "E_DEPLOYMENTS_BUSY", message: "the list is locked" }, said = { said: LIST_WORDS.notAdded(reason.message), under: [] };
+  const state = opened(THREE(), "dev-a");
+  const zoomed = key(leaderEscape(state).state, "z").state;
+  for (const from of [state, zoomed]) {
+    const held = reduce(from, { notListed: reason }).state;
+    assert.deepEqual([held.outcome, held.notice], [null, said], `zoom ${from.terminal.zoom}`);
+    const back = leaderEscape(held).state;
+    assert.deepEqual([back.terminal.focus, back.outcome, back.notice], ["list", said, null], `zoom ${from.terminal.zoom}: said once the list has the focus`);
+  }
 });
 
 test("the leader then Esc from the terminal gives the list the focus, unzoomed, and the terminal stays open", () => {
@@ -424,7 +438,7 @@ test("Workspaces, Refresh and Help run from the palette do what their actions do
     const ran = run([...query]), pressed = key(state, plain);
     assert.deepEqual([butLeader(ran.state), ran.effect], [butLeader(pressed.state), pressed.effect], query);
   }
-  assert.deepEqual([run([..."works"]).state.view, run([..."works"]).effect], ["switcher", { offer: true }]);
+  assert.deepEqual([run([..."works"]).state.view, run([..."works"]).effect], ["switcher", { list: true }]);
   assert.deepEqual([run([..."refr"]).state.palette, run([..."refr"]).effect], [null, { refresh: { live: true } }]);
   assert.deepEqual([run([..."help"]).state.view, run([..."help"]).state.back], ["help", "instances"]);
 });

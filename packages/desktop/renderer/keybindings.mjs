@@ -7,9 +7,9 @@
 // Terminal safety (the rule: a default chord never takes a key a program inside
 // the terminal reads). When the keydown target is inside `.xterm`, on macOS ONLY
 // chords whose `Mod` resolves to ⌘ (meta) may fire — ⌘ never reaches the pty —
-// plus one structural shape, Ctrl+Tab tab cycling; every other chord (⌃digits,
-// F6, Ctrl+letters) belongs to the attached program. On Linux/Windows the Ctrl key
-// IS the terminal's control key, so only an explicit allowlist of action ids may
+// plus two shapes named by action id, Ctrl+Tab tab cycling and the leader's ⌃\;
+// every other chord (⌃digits, F6, Ctrl+letters) belongs to the attached program.
+// On Linux/Windows the Ctrl key IS the terminal's control key, so only an explicit allowlist of action ids may
 // fire inside the terminal; every other chord passes through. Their defaults
 // there are chords xterm sends nothing for, mostly Ctrl+Shift+key (the GNOME
 // Terminal / Alacritty / Ghostty / kitty convention; TERMINAL_ALLOWLIST has the
@@ -17,6 +17,12 @@
 // F6, Alt+digit and Ctrl+PgUp/PgDn stay the program's. app-menu.mjs follows the
 // same policy for the menu accelerators.
 // docs/desktop-keyboard.md is the keymap's reference.
+//
+// The leader and the plain keys the Desktop shares with the TUI are written down once, in
+// packages/client/keymap.mjs: DEFAULT_KEYMAP reads app.leader and the sidebar.key.* defaults
+// from there (chordFromKeyId), never a literal of its own.
+
+import { LEADER, PLAIN_KEYS } from "../../client/keymap.mjs";
 
 const STORAGE_KEY = "oats-desktop-keymap";
 
@@ -26,17 +32,37 @@ const MOD_ORDER = ["Mod", "Ctrl", "Alt", "Shift"];
 
 // e.key values normalized so layouts/shift variants land on one spelling.
 const KEY_ALIASES = new Map([
-  ["+", "="], // Shift-= / numpad plus both mean the "=" binding (Mod+=)
-  ["|", "\\"], // Shift-\ produces "|" — both mean the "\" binding (Mod+Shift+\)
   ["pgdn", "pagedown"], ["pgup", "pageup"],
   ["esc", "escape"],
   [" ", "space"],
   ["spacebar", "space"],
 ]);
+// Only for a chord that holds Mod, Ctrl or Alt: there the shifted character names its key.
+// A plain chord keeps its own character, so a plain `|` never fires on a plain `\`.
+const MODIFIED_ALIASES = new Map([
+  ["+", "="], // Shift-= / numpad plus both mean the "=" binding (Mod+=)
+  ["|", "\\"], // Shift-\ produces "|" — both mean the "\" binding (Mod+Shift+\)
+]);
 
+/** A key as a chord holding a modifier names it (the aliases of both tables). */
 export function normalizeKey(key) {
   const k = String(key || "").toLowerCase();
-  return KEY_ALIASES.get(k) || k;
+  const base = KEY_ALIASES.get(k) || k;
+  return MODIFIED_ALIASES.get(base) || base;
+}
+
+const baseKey = (key) => { const k = String(key || "").toLowerCase(); return KEY_ALIASES.get(k) || k; };
+
+/** One printable character that is not a letter (`?`, `|`, `[`, `/`, a digit): a plain chord on
+ * such a key matches whatever Shift the layout needed to type it, so it never carries Shift
+ * (`KeyboardEvent.key` already holds the shift). Letters keep their case: `N` is Shift+N. */
+const shiftFreeKey = (key) => [...key].length === 1 && !/\p{L}/u.test(key) && /\S/u.test(key);
+
+/** The chord's own spelling of its key, and Shift dropped where the rule above says so. */
+function settleChord(chord) {
+  if (chord.mod || chord.ctrl || chord.alt) chord.key = MODIFIED_ALIASES.get(chord.key) || chord.key;
+  else if (shiftFreeKey(chord.key)) chord.shift = false;
+  return chord;
 }
 
 /** Parse "Mod+Shift+K" → { key, mod, ctrl, alt, shift } or null. */
@@ -56,11 +82,11 @@ export function parseChord(str) {
     else if (p === "shift") chord.shift = true;
     else if (p) {
       if (chord.key) return null; // two non-modifier keys — invalid
-      chord.key = normalizeKey(p);
+      chord.key = baseKey(p);
     }
   }
   if (!chord.key) return null;
-  return chord;
+  return settleChord(chord);
 }
 
 const KEY_LABELS = new Map([
@@ -115,7 +141,7 @@ export function chordToString(chord) {
 /** Build a chord object from a keydown event (for the recorder + matching).
  * On mac, metaKey is `Mod`; elsewhere ctrlKey is `Mod` (never both). */
 export function chordFromEvent(e, isMac = defaultIsMac()) {
-  const key = normalizeKey(e.key);
+  const key = baseKey(e.key);
   if (!key || ["meta", "control", "alt", "shift"].includes(key)) return null;
   const chord = { key, mod: false, ctrl: false, alt: !!e.altKey, shift: !!e.shiftKey };
   if (isMac) {
@@ -124,7 +150,31 @@ export function chordFromEvent(e, isMac = defaultIsMac()) {
   } else {
     chord.mod = !!e.ctrlKey; // Ctrl plays the Mod role; explicit meta ignored
   }
-  return chord;
+  return settleChord(chord);
+}
+
+const NAMED_KEY_IDS = new Map([
+  ["up", "ArrowUp"], ["down", "ArrowDown"], ["left", "ArrowLeft"], ["right", "ArrowRight"],
+  ["escape", "Escape"], ["space", "Space"], ["enter", "Enter"], ["tab", "Tab"],
+  ["home", "Home"], ["end", "End"], ["pageup", "PageUp"], ["pagedown", "PageDown"],
+]);
+
+/** A key id of the shared keymap (packages/client/keymap.mjs, the TUI's spelling: `alt+o`,
+ * `ctrl+\\`, `N`, `?`) as this engine's canonical chord string (`Alt+O`, `Ctrl+\\`, `Shift+N`, `?`). */
+export function chordFromKeyId(keyId) {
+  let rest = String(keyId || "");
+  const chord = { key: "", mod: false, ctrl: false, alt: false, shift: false };
+  for (;;) {
+    if (rest.startsWith("ctrl+") && rest.length > 5) { chord.ctrl = true; rest = rest.slice(5); }
+    else if (rest.startsWith("alt+") && rest.length > 4) { chord.alt = true; rest = rest.slice(4); }
+    else break;
+  }
+  if (NAMED_KEY_IDS.has(rest)) chord.key = baseKey(NAMED_KEY_IDS.get(rest));
+  else if ([...rest].length === 1) {
+    chord.key = rest.toLowerCase();
+    chord.shift = rest !== chord.key; // a capital letter is Shift and the letter
+  } else return null;
+  return chordToString(settleChord(chord));
 }
 
 /** Platform-concrete equality: does `chord` (with Mod) match the event chord? */
@@ -162,7 +212,31 @@ function isEditableTarget(target) {
 // to the program; macOS keeps ⌘, which never reaches the pty. Every default passed the collision review in the
 // keyboard lesson, shifted punctuation included (KEY_ALIASES, tested with the
 // real shifted event). Action ids never change, so stored overrides survive.
+//
+// The sidebar's plain keys (context `sidebar`): one action per key of the shared PLAIN_KEYS that
+// the Desktop reads in the sidebar, each with the `does` its default comes from. The tree keys
+// (up/down/top/bottom/page/collapse/expand) stay DOM-local in roster-keys.mjs; `open` is the
+// row's own Enter.
+export const SIDEBAR_KEYS = Object.freeze([
+  ["sidebar.key.instances", "instances"], ["sidebar.key.souls", "souls"], ["sidebar.key.capabilities", "capabilities"],
+  ["sidebar.key.workspaces", "workspaces"], ["sidebar.key.filter", "filter"], ["sidebar.key.refresh", "refresh"],
+  ["sidebar.key.zoom", "zoom"], ["sidebar.key.closeTerminal", "close-terminal"],
+  ["sidebar.key.tabPrevious", "tab-previous"], ["sidebar.key.tabNext", "tab-next"],
+  ["sidebar.key.splitRight", "split-right"], ["sidebar.key.splitDown", "split-down"],
+  ["sidebar.key.stop", "stop"], ["sidebar.key.retire", "retire"], ["sidebar.key.start", "start"], ["sidebar.key.restart", "restart"],
+  ["sidebar.key.spawn", "spawn"], ["sidebar.key.spawnAnother", "spawn-another"], ["sidebar.key.help", "help"],
+].map(([id, does]) => Object.freeze({ id, does })));
+
+const plainDefault = (does) => chordFromKeyId(PLAIN_KEYS.find((entry) => entry.does === does)?.keys[0]) ?? null;
+
 export const DEFAULT_KEYMAP = Object.freeze({
+  // The leader (docs/desktop-keyboard.md, "The leader"): the TUI's, read from the shared keymap.
+  // Ctrl+\ on macOS fires in a terminal by name (macStructuralChord); Alt+O on Linux/Windows is
+  // terminal-allowlisted (it sends ESC o, which the program still gets from Esc, then o).
+  "app.leader": { mac: chordFromKeyId(LEADER.mac), other: chordFromKeyId(LEADER.other) },
+  ...Object.fromEntries(SIDEBAR_KEYS.map(({ id, does }) => [id, plainDefault(does)])),
+  // The leader's Tab: no chord of its own.
+  "split.focusNextGroup": null,
   // Ctrl+Shift+K / Ctrl+Shift+P on Linux/Windows: plain Ctrl+K and Ctrl+P are bytes a program
   // reads (readline's kill-line, shell history); the shifted chords are none.
   "app.palette": { mac: "Mod+K", other: "Ctrl+Shift+K" },
@@ -234,12 +308,14 @@ export function defaultBinding(actionId, isMac = defaultIsMac()) {
 // without it F6 cannot get out of a terminal. test/terminal-xterm-bytes.test.mjs
 // runs each allowlisted default through xterm's own keydown and pins exactly
 // what it sends.
-// Every plain Ctrl+letter, Alt+key, F-key and Ctrl+PgUp/PgDn stays the program's,
+// A byte the program still gets, by name: app.leader (Alt+O sends ESC o: Esc, then o), the key
+// the TUI reads its leader from too.
+// Every plain Ctrl+letter, other Alt+key, F-key and Ctrl+PgUp/PgDn stays the program's,
 // so these stay out: app.openFile (Ctrl+O), tabs.goto1–9 (Alt+digit: readline's
 // numeric argument, irssi/weechat, tmux window bindings), focus.next/prevRegion
 // (F6: mc, htop, nano) and tabs.next/prevPage (Ctrl+PgUp/PgDn: vim, weechat).
 export const TERMINAL_ALLOWLIST = Object.freeze([
-  "app.palette", "app.quickOpenSouls", "app.chooseSoul", "app.themePicker", "app.shortcuts", "terminal.copySelection",
+  "app.leader", "app.palette", "app.quickOpenSouls", "app.chooseSoul", "app.themePicker", "app.shortcuts", "terminal.copySelection",
   "tabs.next", "tabs.prev", "tabs.close",
   "split.vertical", "split.horizontal", "split.close",
   "focus.leaveTerminal",
@@ -249,12 +325,12 @@ export const TERMINAL_ALLOWLIST = Object.freeze([
 ]);
 
 export const CONTEXTS = Object.freeze([
-  "global", "stage:hierarchy", "stage:spawn", "roster", "tabs",
+  "global", "stage:hierarchy", "stage:spawn", "roster", "tabs", "sidebar",
 ]);
 
 // ---------------------------------------------------------------- registry
 
-const actions = new Map();   // id -> { id, label, context, run }
+const actions = new Map();   // id -> { id, label, context, run, when }
 let activeContexts = new Set();
 const keymapListeners = new Set();
 
@@ -263,11 +339,13 @@ const keymapListeners = new Set();
  * effective keymap exactly like a DEFAULT_KEYMAP entry: user override wins,
  * an explicit editor unbind (persisted null) kills it, and getBinding /
  * findConflict / the editor all see it — view-local actions registered at
- * mount carry their defaults with the registration (contract addendum 3). */
-export function registerAction({ id, label, context = "global", run, defaultChord = null }) {
+ * mount carry their defaults with the registration (contract addendum 3).
+ * Optional `when()`: while it answers false the action does not exist for dispatch — its chord
+ * is not matched, so the key goes where it would go without it (app.leader under a modal). */
+export function registerAction({ id, label, context = "global", run, defaultChord = null, when = null }) {
   if (!id || typeof run !== "function") throw new Error("registerAction: id and run required");
   const canonical = defaultChord == null ? null : chordToString(parseChord(defaultChord));
-  const action = { id, label: label || id, context, run, defaultChord: canonical };
+  const action = { id, label: label || id, context, run, defaultChord: canonical, when: typeof when === "function" ? when : null };
   actions.set(id, action);
   notifyKeymapChange(); // a new default can change effective bindings
   return () => {
@@ -281,7 +359,7 @@ export function registerAction({ id, label, context = "global", run, defaultChor
  * run — single source of truth). Returns true when the action ran. */
 export function runAction(id) {
   const action = actions.get(id);
-  if (!action || !contextEligible(action.context)) return false;
+  if (!action || !contextEligible(action.context) || !actionLive(action)) return false;
   try { action.run(); } catch { /* an action must not break its caller */ }
   return true;
 }
@@ -297,6 +375,10 @@ export function setActiveContexts(set) {
 
 function contextEligible(context) {
   return context === "global" || activeContexts.has(context);
+}
+
+function actionLive(action) {
+  try { return !action.when || action.when() !== false; } catch { return false; }
 }
 
 // ---------------------------------------------------------------- overrides
@@ -388,10 +470,17 @@ export function onKeymapChange(fn) {
  * shows Active everywhere else). */
 const isModalContext = (context) => typeof context === "string" && context.endsWith("-dialog-local");
 
+/** Two contexts the shell has on at once (shell.mjs updateActiveContexts): the sidebar's, while
+ * focus is in the sidebar, beside the tab layer's or a stage's. A chord bound in both would run
+ * only one of them, so they clash like a same-context pair. */
+const SHARES_SIDEBAR = (context) => context === "tabs" || context === "roster" || (typeof context === "string" && context.startsWith("stage:"));
+const onTogether = (a, b) => (a === "sidebar" && SHARES_SIDEBAR(b)) || (b === "sidebar" && SHARES_SIDEBAR(a));
+
 /** First OTHER action whose effective binding collides with `chord` in a way
- * visible from `context` (same context, or either side is global — except a
- * modal dialog's own context, which only its own actions share), optionally
- * excluding one action id (the one being edited). Returns the action or null. */
+ * visible from `context` (same context, either side global, or two contexts on at
+ * once, the sidebar's beside the tabs' or a stage's — except a modal dialog's own
+ * context, which only its own actions share), optionally excluding one action id
+ * (the one being edited). Returns the action or null. */
 export function findConflict(chord, context, excludeId = null, isMac = defaultIsMac()) {
   const c = typeof chord === "string" ? parseChord(chord) : chord;
   if (!c) return null;
@@ -403,6 +492,7 @@ export function findConflict(chord, context, excludeId = null, isMac = defaultIs
     if (action.context === context) return action;
     if (isModalContext(context) || isModalContext(action.context)) continue;
     if (context === "global" || action.context === "global") return action;
+    if (onTogether(context, action.context)) return action;
   }
   return null;
 }
@@ -453,13 +543,17 @@ export function isPlainChord(chord) {
 function macStructuralChord(id, c) {
   if (c.mod || c.alt) return false;
   if (id === "tabs.next" || id === "tabs.prev") return c.key === "tab" && c.ctrl;
+  // The leader (a named exception to principle 3): bound to a ⌃-only chord on `\`, as shipped.
+  // A rebind to ⌘something fires by the ⌘ rule; a rebind to another ⌃ chord stays the program's.
+  if (id === "app.leader") return c.ctrl && !c.shift && c.key === "\\";
   return false;
 }
 
 /** Whether an action bound to `chord` may fire while a terminal has focus: on
  * Linux/Windows when its id is in TERMINAL_ALLOWLIST, whatever the chord; on macOS
  * when the chord holds ⌘ and not ⌃ (⌘ never reaches the pty), or is the Ctrl+Tab
- * shape of tabs.next/prev. matchEvent applies it; the shortcuts editor shows it. */
+ * shape of tabs.next/prev, or the ⌃\\ shape of app.leader. matchEvent applies it; the shortcuts
+ * editor shows it. */
 export function terminalAllows(actionId, chord, isMac = defaultIsMac()) {
   const c = typeof chord === "string" ? parseChord(chord) : chord;
   if (!c) return false;
@@ -473,8 +567,9 @@ export function terminalAllows(actionId, chord, isMac = defaultIsMac()) {
 export function matchEvent(e, opts = {}) {
   // A consumed event stays consumed: view-local handlers (hierarchy canvas,
   // roster rows, palette input) preventDefault what they own — the engine
-  // must never double-dispatch it (contract addendum a).
-  if (e.defaultPrevented) return null;
+  // must never double-dispatch it (contract addendum a). An event let through
+  // (letThrough) is the focused control's, whatever it matches.
+  if (e.defaultPrevented || letThroughEvents.has(e)) return null;
   const isMac = opts.isMac ?? defaultIsMac();
   const insideTerminal = opts.insideTerminal ?? !!e.target?.closest?.(".xterm");
   const evChord = chordFromEvent(e, isMac);
@@ -488,7 +583,7 @@ export function matchEvent(e, opts = {}) {
   let globalHit = null;
   let contextHit = null;
   for (const action of actions.values()) {
-    if (!contextEligible(action.context)) continue;
+    if (!contextEligible(action.context) || !actionLive(action)) continue;
     const bound = parseChord(getBinding(action.id, isMac) || "");
     if (!bound || !chordMatches(bound, evChord, isMac)) continue;
     // Inside a terminal, every other chord stays with the attached program, even after
@@ -499,6 +594,18 @@ export function matchEvent(e, opts = {}) {
   }
   const hit = contextHit || globalHit; // specific context wins over global
   return hit ? hit.id : null;
+}
+
+const letThroughEvents = new WeakSet();
+/** Hand an event to the focused control: no action matches it, in any phase of dispatch
+ * (the window listener or a terminal's interception). The leader pressed twice in a terminal. */
+export function letThrough(e) {
+  if (e && typeof e === "object") letThroughEvents.add(e);
+}
+
+/** Does the event press the effective chord of `actionId` (whatever its context)? */
+export function eventMatchesBinding(e, actionId, isMac = defaultIsMac()) {
+  return chordMatches(parseChord(getBinding(actionId, isMac) || ""), chordFromEvent(e, isMac), isMac);
 }
 
 /** The single shell-level keydown listener body: match, prevent, run. */

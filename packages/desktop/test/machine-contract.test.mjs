@@ -1,7 +1,7 @@
 // #517: a workspace's own machines — the shared contract (gates, defaults, validation, step rows).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { machinesGated, awebConnectGated, machineName, machineFolder, machineFieldProblem, connectOutcome,
+import { machinesGated, awebConnectGated, machineName, machineFieldProblem, connectOutcome,
   registerReached, stepCommands, STEP_LABELS, followBackfill } from '../../client/machine-contract.mjs';
 
 const CLI = { ok: true, features: ['workspace-identity', 'servers-per-workspace', 'server-connect', 'capability-route'] };
@@ -16,16 +16,15 @@ test('gates: servers-per-workspace and server-connect from the probe; the aweb s
   assert.equal(awebConnectGated({ ...CLI, features: ['servers-per-workspace', 'server-connect'] }), false);
 });
 
-test('defaults: Name is <host>-<deployment dir basename> made a valid id; Folder is ~/Agents/<basename>', () => {
+test('the Name default: <host>-<deployment dir basename> made a valid id (Folder has none, #1390)', () => {
   assert.equal(machineName('altair', '/Users/juanre/Agents/aweb'), 'altair-aweb');
   assert.equal(machineName('Altair.local', '/Users/j/My Agents_v2'), 'altair-local-my-agents-v2');
   assert.equal(machineName('', '/Users/j/aweb'), '', 'no host yet: no name');
   assert.equal(machineName('a'.repeat(70), '/x/y'), 'a'.repeat(64), 'bounded to the id length');
-  assert.equal(machineFolder('/Users/juanre/Agents/aweb'), '~/Agents/aweb');
 });
 
 test('field problems: the kernel\'s own rules (id, ssh host, a folder on the host)', () => {
-  const ok = { id: 'altair-aweb', host: 'altair', folder: '~/Agents/aweb' };
+  const ok = { id: 'altair-aweb', host: 'altair', folder: '~/aweb' };
   assert.equal(machineFieldProblem(ok), null);
   assert.equal(machineFieldProblem({ ...ok, folder: '/srv/aweb' }), null);
   assert.deepEqual(machineFieldProblem({ ...ok, host: '' }), { field: 'host', text: 'Type the machine\'s ssh host alias.' });
@@ -33,7 +32,8 @@ test('field problems: the kernel\'s own rules (id, ssh host, a folder on the hos
   assert.equal(machineFieldProblem({ ...ok, host: '-oProxyCommand=x' }).field, 'host');
   assert.equal(machineFieldProblem({ ...ok, id: 'Altair' }).field, 'id');
   assert.equal(machineFieldProblem({ ...ok, id: '' }).field, 'id');
-  assert.equal(machineFieldProblem({ ...ok, folder: 'Agents/aweb' }).field, 'folder');
+  assert.equal(machineFieldProblem({ ...ok, folder: 'aweb' }).field, 'folder');
+  assert.deepEqual(machineFieldProblem({ ...ok, folder: '' }), { field: 'folder', text: 'The folder is a path on that machine, starting with / or ~/.' }, 'required: no default fills it');
   assert.equal(machineFieldProblem({ ...ok, folder: '~/a\nb' }).field, 'folder');
   assert.equal(machineFieldProblem({ ...ok, folder: '~/' + 'x'.repeat(1100) }).field, 'folder');
 });

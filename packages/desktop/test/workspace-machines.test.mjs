@@ -120,8 +120,9 @@ test('Add a machine opens the dialog for this workspace; an added machine is lis
   assert.equal(u.q('.setup-empty').textContent, 'No machine runs this workspace yet.');
   u.q('.machines-add').click();
   assert.ok(u.q('.machine-dialog'));
-  assert.equal(u.q('.machine-folder').value, '~/Agents/aweb');
+  assert.equal(u.q('.machine-folder').value, '', 'no folder is suggested');
   const host = u.q('.machine-host'); host.value = 'altair'; host.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
+  const folder = u.q('.machine-folder'); folder.value = '~/aweb'; folder.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
   u.q('.machine-primary').click(); await settle();
   assert.equal(u.q('.machine-dialog'), null);
   assert.ok(u.row('altair-aweb'));
@@ -192,6 +193,7 @@ test('an owner that moved on: no answer renders or starts the next step, and the
   await settle();
   u.q('.machines-add').click();
   const host = u.q('.machine-host'); host.value = 'altair'; host.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
+  const folder = u.q('.machine-folder'); folder.value = '~/aweb'; folder.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
   u.q('.machine-primary').click(); await settle();
   owned = false; release(); await settle();
   assert.equal(u.q('.machine-dialog'), null);

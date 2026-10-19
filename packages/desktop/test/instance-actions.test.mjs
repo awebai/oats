@@ -4,7 +4,8 @@ import { JSDOM } from "jsdom";
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { registerAction, setActiveContexts, getBinding, formatChord, setBinding, resetBinding, runAction, handleKeydown, onKeymapChange } from '../renderer/keybindings.mjs';
-import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
+import { instanceActions, captureInstanceActionMenu, pendingActionReason } from "../renderer/instance-actions.mjs";
+import { createLeaderDispatch } from "../renderer/leader-dispatch.mjs";
 import { markStaleControl, ROSTER_STALE_TITLE } from "../renderer/instance-tree-view.mjs";
 import { cliRetire, parseRetireEnvelope } from "../../client/cli-adapter.mjs";
 import { HERDR, MARKUP, CONTROL, DETAIL_WITHHELD, shown } from "./helpers/speaker-cases.mjs";
@@ -249,6 +250,37 @@ test("a pending action marks its trigger aria-disabled with why it waits, keeps 
   finish({}); await new Promise(setImmediate);
   clear(trigger); clear(triggerOf(replacement)); assert.equal(triggerOf(replacement).dataset.pendingAction, undefined);
   marked(triggerOf(stale), ROSTER_STALE_TITLE);
+  dom.window.close();
+});
+
+// The leader's and the sidebar's X R S D (docs/desktop-keyboard.md, "Sidebar keys") are held while
+// the row's menu waits for one of its acts, as the menu is, its row drawn or not: the shipped
+// rosterActsHeld reads the menu's pending reason by its own key (scope, identity, incarnation).
+test("a lifecycle shortcut waits while the row's menu has an act in flight, and runs once it settles", async () => {
+  const dom = menuDom(), doc = dom.window.document;
+  let finish;
+  const instance = { instance: "dev-held", home: "/home/dev-held", running: true, createdAt: "2026-10-19T00:00:00Z" };
+  const options = { scope: "ws-a", invoke: () => new Promise((r) => { finish = r; }), openLifecycle: assert.fail, done() {}, report: assert.fail };
+  const control = instanceActions(doc, instance, options); doc.body.append(control);
+  const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  const source = shell.match(/function rosterActsHeld\([^]*?\n\}/)?.[0];
+  assert.ok(source, "exercise the shipped rosterActsHeld");
+  const rosterActsHeld = runInNewContext(`${source}; rosterActsHeld;`, { pendingActionReason, contextWorkspace: "ws-a", currentWorkspace: () => "ws-a",
+    rosterStale: false, rowStale: () => false, contextDeployments: [], ROSTER_STALE_TITLE });
+  const calls = [];
+  const d = createLeaderDispatch({ say: (line) => calls.push(["say", line]), targetId: () => "dev-held", target: () => instance, rosterRows: () => [],
+    menuReason: rosterActsHeld, openAct: (verb) => calls.push(["dialog", verb]), spawnSoul() {} });
+  control.querySelector('[data-action="inspect"]').click();
+  const waiting = "Waiting for Knowledge & capabilities to finish";
+  assert.equal(pendingActionReason("ws-a", instance), waiting);
+  assert.equal(pendingActionReason("ws-b", instance), null, "another workspace's menu is another menu");
+  assert.equal(pendingActionReason("ws-a", { ...instance, createdAt: "2026-10-20T00:00:00Z" }), null, "another incarnation's too");
+  control.remove(); // filtered or collapsed away: the act is still in flight
+  d.run("stop", {});
+  finish({}); await new Promise(setImmediate);
+  assert.equal(pendingActionReason("ws-a", instance), null);
+  d.run("stop", {});
+  assert.deepEqual(calls, [["say", waiting], ["dialog", "stop"]]);
   dom.window.close();
 });
 

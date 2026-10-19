@@ -8,7 +8,7 @@
  *   dropdown (choice-popup.mjs). Each option is the deployment's machine label (machineLabels: "This
  *   Mac", "altair", "This Mac · oats-v2"; never an id) and, for a deployment that is not live, its state
  *   in words ("not reached", "remembered": deploymentState) as a tag. The full deploymentLabel
- *   ("altair · ~/Agents/tsm") is the dialog's "Runs on" row (`runsOn()`).
+ *   ("altair · ~/acme") is the dialog's "Runs on" row (`runsOn()`).
  * - Availability is the CHOSEN deployment's own spawn catalog (`/api/agents?ws=<deployment id>`;
  *   a remote deployment's catalog is its roster group's, answered by the server). A deployment
  *   without the soul, or not reached, stays selectable; choosing it blocks Spawn, and the dialog says
@@ -186,7 +186,7 @@ export function createSpawnDeploymentField(doc, { ctx, soul, viewId, deployments
     /** The chosen deployment's id: every spawn request of the dialog addresses it. */
     value: () => deployment().id,
     deployment,
-    /** The "Runs on" row's words: the chosen deployment's full label ("altair · ~/Agents/tsm"). */
+    /** The "Runs on" row's words: the chosen deployment's full label ("altair · ~/acme"). */
     runsOn: () => deploymentLabel(deployment(), DESKTOP_TERMS),
     /** The chosen deployment's server ('' for a local one): a remote deployment spawns through it. */
     server: () => serverOf(deployment(), catalogs.get(deployment().id)?.row),

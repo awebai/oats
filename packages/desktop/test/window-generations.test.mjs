@@ -12,24 +12,26 @@ test('suggestions: concurrent calls from two windows both answer; a newer call f
   const gates = [];
   const calls = createSuggestionCalls({ generations: createGenerations(),
     refresh: () => { const g = deferred(); gates.push(g); return g.promise; },
-    list: () => [{ path: '/d/a' }, { path: '/d/b' }] });
+    list: async () => ({ suggestions: [{ path: '/d/a', state: 'ok', removable: false }, { path: '/d/b', state: 'ok', removable: true }], list: { state: 'ok' } }) });
   const one = calls.suggest('1'), two = calls.suggest('2'), oneAgain = calls.suggest('1');
   for (const g of gates) g.resolve();
-  assert.deepEqual(await two, { stale: false, suggestions: [{ path: '/d/a' }, { path: '/d/b' }] });
+  assert.deepEqual(await two, { stale: false, suggestions: [{ path: '/d/a', state: 'ok', removable: false }, { path: '/d/b', state: 'ok', removable: true }], list: { state: 'ok' } });
   assert.deepEqual(await one, { stale: true, suggestions: [] }, 'superseded by its own window\'s newer call');
   assert.equal((await oneAgain).stale, false);
   assert.deepEqual([...calls.offered('1')], ['/d/a', '/d/b']);
   assert.deepEqual([...calls.offered('2')], ['/d/a', '/d/b']);
   assert.deepEqual([...calls.offered('3')], [], 'a window never offered anything has no provenance');
+  assert.deepEqual([...calls.removable('2')], ['/d/b'], 'only a row of this computer\'s list may be removed (#1390)');
   calls.forget('1');
   assert.deepEqual([...calls.offered('1')], []);
+  assert.deepEqual([...calls.removable('1')], []);
 });
 
 test('suggestions: a superseded call does not overwrite its window\'s offered paths', async () => {
   const gates = []; let n = 0;
   const calls = createSuggestionCalls({ generations: createGenerations(),
     refresh: () => { const g = deferred(); gates.push(g); return g.promise; },
-    list: () => [{ path: `/d/${++n}` }] });
+    list: async () => ({ suggestions: [{ path: `/d/${++n}`, state: 'ok', removable: false }], list: { state: 'ok' } }) });
   const older = calls.suggest('1'), newer = calls.suggest('1');
   gates[1].resolve(); await newer;
   gates[0].resolve(); await older;
@@ -59,7 +61,7 @@ test('add: a second window\'s add queues behind the first through the one execut
   const log = [];
   const execute = createAddExecutor({
     getDirs: () => [...dirs], stage: (d, path) => stageDirs(d, path, (p) => ({ id: p, path: p })),
-    commitDirs: (next) => { log.push(['commit', next]); dirs = next; }, commitRecent: () => {},
+    commitDirs: (next) => { log.push(['commit', next]); dirs = next; },
     replaceServer: async (next) => { log.push(['replace', next]); if (next.includes('/d/b') && !next.includes('/d/c')) await replace.promise; },
     refreshAdvertised: async () => true, probeVersion: async () => ({ ok: true }), isCompatible: () => true,
     advertises: async () => true, delay: async () => {}, attempts: 2,
