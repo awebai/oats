@@ -39,7 +39,8 @@ It holds no secret, and none ever goes into one.
   changed; otherwise use pull requests (the briefing's rule).
 - **Existing:** someone else may own the host and the members. Read the host's
   visibility (`gh repo view <owner>/<repo> --json visibility,viewerPermission`).
-  Steps 3 and 4 then become proposals to the host's owner: a public host
+  The host's side of steps 3 and 4 then becomes a proposal to the host's
+  owner: a public host
   takes no private member (`/oats-onboarding` card 3). Name who merges. This
   machine's own steps (2, 5's host settings, 6 and 7) are yours to do with
   the person.

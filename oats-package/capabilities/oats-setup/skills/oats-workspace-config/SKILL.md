@@ -137,23 +137,31 @@ broker (`aw wake run` as a per-user service). Both are taught in
 3. Commit it to the repo that owns the file, by one of two routes. Never
    edit a shared file without one of them.
    - **Straight to the default branch,** host or member repository alike,
-     only when both of these hold, checked right before the push:
-     - the person is the only one who can push to it: with their login from
-       `gh api user --jq .login`,
-       `gh api --paginate repos/<o>/<r>/collaborators --jq '.[] | select(.permissions.push) | .login'`
-       prints that login and nothing else. For an organization's repository
-       the list includes its owners and the members whose base, team or
-       direct permission allows a push. The list is complete only for an
-       admin, so `gh repo view <o>/<r> --json viewerPermission` must give
-       `ADMIN`;
-     - nothing guards its default branch: with `<branch>` from
-       `gh repo view <o>/<r> --json defaultBranchRef --jq .defaultBranchRef.name`,
-       `gh api repos/<o>/<r>/branches/<branch> --jq .protected` gives `false`
-       and `gh api repos/<o>/<r>/rules/branches/<branch> --jq length` gives
-       `0`.
+     only when the person is the only one who can push to it and nothing
+     guards that branch. Check it right before the push, with `L` their
+     login (`gh api user --jq .login`) and
+     `gh repo view <o>/<r> --json viewerPermission,isInOrganization,defaultBranchRef`:
+     1. `viewerPermission` is `ADMIN`.
+     2. For an organization's repository (`isInOrganization` is `true`): `L`
+        is an active member, `gh api user/memberships/orgs/<o> --jq .state`
+        gives `active`, and the only owner,
+        `gh api --paginate "orgs/<o>/members?role=admin" --jq '.[].login'`
+        prints `L` alone. (An outside collaborator sees no org members in
+        the next list, so it would look complete when it isn't.)
+     3. `gh api --paginate repos/<o>/<r>/collaborators --jq '.[] | select(.permissions.push) | .login'`
+        prints `L` alone. It counts base, team and direct permissions.
+     4. No deploy key can write:
+        `gh api repos/<o>/<r>/keys --jq '[.[] | select(.read_only | not)] | length'`
+        gives `0`. GitHub Apps with write access can't be listed this way;
+        this check does not cover them.
+     5. Nothing guards the default branch `<branch>` (`defaultBranchRef`):
+        `gh api repos/<o>/<r>/branches/<branch> --jq .protected` gives
+        `false`, and `gh api repos/<o>/<r>/rules/branches/<branch> --jq length`
+        gives `0`. A 403 there saying the feature needs an upgrade means the
+        plan has no rulesets, which counts as `0`.
 
-     Then push, and tell the person what changed. If a check fails or
-     errors, use a pull request.
+     Then push, and tell the person what changed. If any other check fails
+     or errors, use a pull request.
    - **Otherwise a pull request** from a branch, which the repo's owner
      merges (name who). If a straight push is refused (by Git, GitHub or your
      harness's permission check), open a pull request instead; never try
