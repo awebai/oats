@@ -24,6 +24,9 @@
 // deployment adds to, among the rest). Its deployments list is made with the ~/Agents import marked
 // done, so no such test reads the person's ~/Agents either. A test that names its own OATS_HOME_DIR
 // with the real HOME seeds the marker itself (test/helpers/host-fixture.mjs deploymentsImported).
+// So every file's environment holds an OATS_HOME_DIR, as it holds a TMPDIR: a test that compares an
+// environment it passed on (or the OATS_ variables of one) compares it with the environment it gave,
+// never with {} (packages/tui/test/read.test.mjs, the preflight's exec).
 //
 // OATS_TEST_RUN_DIR, which names the run's directory, is how the run reaches this preload, and no test
 // sees it: a test file's process takes it out of its environment before any code of the file runs, so
