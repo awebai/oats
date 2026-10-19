@@ -93,7 +93,7 @@ Service A ships in [0.62.0](release-notes/v0.62.0.md) and every later
 release. Read 0.62.0's Upgrade section and keep this order: install the
 Desktop of the release you upgrade to first (the 0.62.0 Desktop accepts CLIs
 `>=0.26.0 <0.63.0`, the 0.63.0 Desktop `>=0.26.0 <0.64.0`, the 0.64.0
-Desktop `>=0.26.0 <0.65.0`, the 0.65.0 Desktop `>=0.26.0 <0.66.0`), then that
+Desktop `>=0.26.0 <0.65.0`, the 0.65.0 Desktop `>=0.26.0 <0.66.0`, the 0.66.0 Desktop `>=0.26.0 <0.67.0`), then that
 release's CLI and matching pi bridge. Only **after
 installing that CLI**, run its setup conversion once per user on each host,
 from that user's shell, then its health and doctor checks. That conversion is where an owned legacy
@@ -437,7 +437,7 @@ PI_CODING_AGENT_DIR=<folder> pi install npm:@awebai/oats-pi@<the CLI's version>
 assignment out only when your shell does not set `PI_CODING_AGENT_DIR`;
 when it does, name the folder: `PI_CODING_AGENT_DIR="$HOME/.pi/agent"`.
 
-## Configuration-derived capture roots (0.66)
+## Configuration-derived capture roots (0.67)
 
 Run `oats setup` once in each deployment after upgrading and after changing a
 launch configuration's transcript location or referenced location environment.
@@ -458,7 +458,7 @@ Health uses `capture-roots-invalid` (inspect unsafe/corrupt/bounded inventory),
 `capture-roots-unavailable` (repair access/selectors or explicitly forget an
 exact retired reference), and `capture-roots-refresh-required` (run setup after
 an inode replacement at a deployment path). The
-[package reference](../packages/record/docs/capture-service.md#configuration-derived-transcript-roots-oats-066)
+[package reference](../packages/record/docs/capture-service.md#configuration-derived-transcript-roots-oats-067)
 owns selectors, persistence, lifecycle, limits and the scoped forget command.
 
 Old binaries ignore the inventory; rollback loses the additional coverage while

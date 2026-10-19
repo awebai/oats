@@ -23,9 +23,9 @@ const PROBLEM_ROWS = [
   [['grant-expired'], 'no', 'oats.grant_expired', 'operator'],
   [['grant-revoked'], 'no', 'oats.grant_revoked', 'operator'],
   [['wake-daemon-not-running', 'wake-status-unavailable', 'wake-stream-unavailable', 'wake-worker-unavailable'], 'no', 'oats.wake_broker_down', 'operator'],
-  [['wake-target-missing', 'wake-target-inactive', 'wake-target-binding', 'receive-record-unavailable'], 'no', 'oats.wake_not_registered', 'operator'],
+  [['wake-target-missing', 'wake-stream-missing', 'wake-target-inactive', 'wake-target-binding', 'receive-record-unavailable'], 'no', 'oats.wake_not_registered', 'operator'],
   [['wake-target-paused'], 'no', 'oats.wake_paused', 'operator'],
-  [['receive-inspection-unproven', 'wake-status-stale', 'wake-daemon-version-unknown'], 'unknown', 'oats.receive_unknown', 'unknown'],
+  [['receive-inspection-unproven', 'wake-status-stale', 'wake-status-timestamp-unknown', 'wake-daemon-version-unknown'], 'unknown', 'oats.receive_unknown', 'unknown'],
 ];
 const RECEIVE_UNPROVEN_WARNINGS = ['receive-ownership-unproven', 'receive-observation-aged', 'receive-observation-unproven'];
 /** Launch prompt outcomes that show the channel was loaded: a confirmed

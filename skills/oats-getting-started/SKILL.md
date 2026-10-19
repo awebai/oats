@@ -272,8 +272,8 @@ name: acme
 members:
   - git:github.com/acme/acme-oats     # the host is a member too
 packages:
-  oats.framework: v1.13.3             # the installed CLI's catalog versions (below)
-  oats.aweb: v1.29.0                  # messaging: agent identities, mail and chat
+  oats.framework: v1.13.4             # the installed CLI's catalog versions (below)
+  oats.aweb: v1.30.0                  # messaging: agent identities, mail and chat
 defaults:
   capabilities:
     oats.core: { from: package }
@@ -285,8 +285,8 @@ defaultTeam: acme                     # every soul starts in this team
 
 - **The versions** are the installed CLI's catalog's:
   `"$(oats root)/package-catalog.json"`, `packages."oats.framework".ref`
-  (for example `oats-framework/v1.13.3`: write the part after the `/`) and
-  `packages."oats.aweb".ref` (for example `v1.29.0`).
+  (for example `oats-framework/v1.13.4`: write the part after the `/`) and
+  `packages."oats.aweb".ref` (for example `v1.30.0`).
 - **The team** is `default:N.aweb.ai`, with `N` the username from step 1;
   its label (here `acme`) is the workspace name.
 - **Without messaging,** leave out the `oats.aweb` line, the `messaging`
@@ -327,9 +327,6 @@ toolkit: its briefing says what the person types and what you run, and its
 skills hold every procedure. Start with `/oats-setup-model`. When your task
 is a hand-over from the getting-started skill, follow `/oats-setup-expert`,
 or `/oats-onboarding` if your `oats.setup` is older than 2.8.0 and lacks it.
-While the person is this workspace's only member, commit and push shared
-files straight to the default branch and tell them what changed. Once others
-share the workspace, change shared files only by pull request.
 ```
 
 `souls/acme-developer/soul.yaml`, a first developer for the person's tasks:
@@ -366,7 +363,12 @@ not the workspace's operator, and gets no mail.
 **Commit and push.**
 - This first commit goes straight to the new repository's default branch: it
   is the person's own, just created. Later changes come from the setup
-  expert, straight to the default branch while the person is the only member.
+  expert, by its briefing's rule for shared files (`oats.setup`'s
+  `/oats-workspace-config`, "Change a shared file"). From oats.setup 2.8.3
+  (oats.framework 1.13.4), it pushes straight to the default branch when its
+  checks show nobody else can push there and nothing guards that branch, and
+  for a member repository only on the person's yes; otherwise it opens a
+  pull request. An older `oats.setup` always opens one.
 - If `git config user.email` prints nothing, the person's Git identity is not
   set up yet. After they confirm their name, commit with
   `-c user.name="<their name>" -c user.email="<their noreply address>"`. The

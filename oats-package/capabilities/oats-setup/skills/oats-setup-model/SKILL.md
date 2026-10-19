@@ -59,7 +59,7 @@ An inactive finite worker between timer ticks is not evidence of an unhealthy
 schedule; do not promise a permanent PID or infer completion from hook launch.
 Releases 0.56–0.61 do not provide this conversion; follow their own instructions.
 
-From OATS 0.66.0 (configuration-derived capture roots), a person runs `oats setup`
+From OATS 0.67.0 (configuration-derived capture roots), a person runs `oats setup`
 once in **each deployment** after upgrading and after changing a launch
 configuration's transcript location or referenced location environment. Every
 effective named configuration is included. Use absolute selectors; pi retains
@@ -91,9 +91,9 @@ active or indeterminate identities refuse, and other references/history remain.
 Old binaries ignore the inventory and lose this additional coverage; upgrading
 and running setup again restores it. Differing frozen recipes and
 provider-generated locations remain outside the snapshot. Follow the installed
-CLI's `packages/record/docs/capture-service.md#configuration-derived-transcript-roots-oats-066`.
+CLI's `packages/record/docs/capture-service.md#configuration-derived-transcript-roots-oats-067`.
 These source instructions require a separately tagged framework release; existing
-instance homes do not change automatically. Do not use 0.66-only commands or
+instance homes do not change automatically. Do not use 0.67-only commands or
 coverage claims on older kernels.
 
 For service A, from OATS 0.62.0, the package's `turn-record capture --health [--json]` reads

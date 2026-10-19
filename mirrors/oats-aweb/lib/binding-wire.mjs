@@ -257,13 +257,13 @@ async function readinessDetails(settings,{deployment,env=process.env}={}) {
   if(classicEnv(env)) return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:CLASSIC_REFUSAL}]}};
   const invalidTeam=invalidAwebTeamId(env);if(invalidTeam)return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:AWEB_TEAM_ID_MESSAGE}]}};
   const team=teamFromSettings(settings,null,{env}),candidate=rootCandidate(settings,team,{deployment,env}),problems=[],warnings=[];
-  const awProblem=await awFloorProblem();if(awProblem) problems.push(awProblem);
+  const aw=await awFloorObservation();if(aw.message) problems.push({code:'needs-configuration',message:aw.message});
   if(!team) {
     const label=typeof env.OATS_DEFAULT_TEAM==='string'&&env.OATS_DEFAULT_TEAM.trim()?env.OATS_DEFAULT_TEAM.trim():'';
     problems.push({code:'needs-configuration',message:label?unmappedDefaultMessage(label):NO_TEAMS_MESSAGE});
   }
   if(needsMintingRoot(settings) && (!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw')))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
-  return {team,candidate,warnings,result:checkProblems(problems) || {status:'ready',problems:[]}};
+  return {team,candidate,awVersion:aw.version,warnings,result:checkProblems(problems) || {status:'ready',problems:[]}};
 }
 async function readinessFromSettings(settings,options) {return (await readinessDetails(settings,options)).result;}
 function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
@@ -276,11 +276,16 @@ function semverLt(a,b) {const A=String(a||'0.0.0').split('.').map(n=>Number(n)||
 /** The first executable `cmd` on env's PATH, as an absolute path, or undefined. */
 export function onPath(cmd,env=process.env){for(const dir of String(env.PATH||'').split(delimiter)){if(!dir)continue;try{const p=resolve(join(dir,cmd));const st=statSync(p);if(st.isFile()&&(st.mode&0o111))return p;}catch{}}return undefined;}
 const AW_INSTALL_COMMAND=`\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@${AW_MIN}\`)`;
+async function awFloorObservation({env=process.env}={}) {
+  if(!onPath('aw',env)) return {message:`aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`};
+  const version=await readAwVersion({env});
+  if(!version) return {message:`aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`};
+  return {version,message:semverLt(version,AW_MIN)?`aw ${version} is older than required ${AW_MIN}; upgrade with ${AW_INSTALL_COMMAND}`:undefined};
+}
 /** Why the aw on PATH does not meet AW_MIN, or undefined when it does: the one
  *  wording every path that refuses below the floor uses. `env` is the PATH to
  *  search and the environment `aw version` runs in. */
-export async function awFloorMessage({env=process.env}={}){if(!onPath('aw',env))return `aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;const installed=await readAwVersion({env});if(!installed)return `aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;return semverLt(installed,AW_MIN)?`aw ${installed} is older than required ${AW_MIN}; upgrade with ${AW_INSTALL_COMMAND}`:undefined;}
-async function awFloorProblem(){const message=await awFloorMessage();return message?{code:'needs-configuration',message}:null;}
+export async function awFloorMessage(options){return (await awFloorObservation(options)).message;}
 /** Whether a spawn from these soul-scope settings needs the host wake broker:
  *  session delivery, or a joined team (a Codex launch is not visible here). */
 function soulNeedsBroker(settings) {return settings.delivery==='session' || (typeof settings.join==='string' && settings.join.split(',').some(label=>label.trim()));}
@@ -348,7 +353,7 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
         try {status=JSON.parse(localAw(['aw','wake','status','--json'],ctx.home));} catch { /* unavailable below */ }
         // aw stamps updated_at during the status call, so judge its evidence
         // against a post-read clock, not the phase start. No skew allowance.
-        const target=targetReceiveAssessment(status,{home:ctx.home,...expected},{minimumVersion:AW_MIN,now:Date.now()});
+        const target=targetReceiveAssessment(status,{home:ctx.home,...expected},{minimumVersion:AW_MIN,now:Date.now(),clientVersion:details.awVersion});
         const targetProblems=target.problems;
         warnings.push(...target.warnings);
         receiveProblems.push(...targetProblems);

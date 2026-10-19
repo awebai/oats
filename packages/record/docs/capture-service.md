@@ -1731,7 +1731,7 @@ Health/doctor runtime qualification, final schema delivery and full service
 acceptance remain separate; audit allowance/reservation/storage/synchronization
 gates are unchanged.
 
-## Configuration-derived transcript roots (OATS 0.66)
+## Configuration-derived transcript roots (OATS 0.67)
 
 Run `oats setup` once in each deployment after upgrading and after changing a
 launch configuration's transcript location or the referenced environment value.
