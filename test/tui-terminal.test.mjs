@@ -1281,12 +1281,14 @@ test("started in an agent's pane, in the instance's home and with the variables 
 });
 
 test("tui.json is honoured: the key it gives an action is that action's key in the cheat sheet, in the help and at the keyboard, and the default it replaced is no key; a file the TUI cannot use is named on stderr with E_TUI_CONFIG, status 1, and nothing is drawn", { skip: NO_TMUX }, async (t) => {
+  // tui.json is $OATS_HOME_DIR/config/tui.json: each run here has an OATS_HOME_DIR of its own, so
+  // the file's own (which the other tests share) never holds one.
   const good = join(base, "config-good"), bad = join(base, "config-bad");
   for (const [dir, value] of [[good, { keys: { quit: ["x"] } }], [bad, { keys: { fly: ["x"] } }]]) {
-    mkdirSync(join(dir, "oats"), { recursive: true });
-    writeFileSync(join(dir, "oats", "tui.json"), JSON.stringify(value));
+    mkdirSync(join(dir, "config"), { recursive: true });
+    writeFileSync(join(dir, "config", "tui.json"), JSON.stringify(value));
   }
-  const term = await terminal(t, { env: { XDG_CONFIG_HOME: good } });
+  const term = await terminal(t, { env: { OATS_HOME_DIR: good } });
   const withX = (hints) => hints.map(([key, word]) => (word === "quit" ? ["x", word] : [key, word]));
   const run = await tui(term, { sheet: withX(LIST_SHEET) });
   term.press("q"); // no key now: read, and nothing happens
@@ -1306,11 +1308,11 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   term.press("x");
   assert.equal(await run.ended("after x"), 0, term.shows());
 
-  const refused = await bare(t, `env XDG_CONFIG_HOME=${shq(bad)} ${TUI} --dir ${shq(WORLD.dep)}`, "with a tui.json that names an action there is none of");
+  const refused = await bare(t, `env OATS_HOME_DIR=${shq(bad)} ${TUI} --dir ${shq(WORLD.dep)}`, "with a tui.json that names an action there is none of");
   assert.equal(refused.status, "1\n", refused.term.shows());
   const said = refused.text.split("\n").filter(Boolean);
   assert.equal(said.length, 2, refused.text);
-  assert.ok(said[0].startsWith(`oats: \`oats tui\` cannot use ${join(bad, "oats", "tui.json")}: `) && said[0].endsWith(" (E_TUI_CONFIG)") && said[0].includes("fly"), said[0]);
+  assert.ok(said[0].startsWith(`oats: \`oats tui\` cannot use ${join(bad, "config", "tui.json")}: `) && said[0].endsWith(" (E_TUI_CONFIG)") && said[0].includes("fly"), said[0]);
   assert.equal(said[1], "tui-ended");
 });
 

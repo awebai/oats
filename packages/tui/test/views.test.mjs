@@ -2790,7 +2790,7 @@ test("the help says every limit of this version: adding, checking and removing a
     // The sentences, each whole when its rows are joined, in order, and nothing else in the section.
     assert.equal(text.slice(machines + 1, last).filter(Boolean).join(" "), MACHINES.join(" "), at);
     const section = text.slice(last + 1);
-    for (const [what, command] of [["add a machine to this workspace", "oats server connect <id> --ssh <alias>"], ["check a machine", "oats server check <id>"], ["remove a machine", "oats server remove <id>"], ["open a deployment that is not listed", "oats tui --dir <path>"]]) {
+    for (const [what, command] of [["add a machine to this workspace", "oats server connect <id> --ssh <alias> --dir <path on that machine>"], ["check a machine", "oats server check <id>"], ["remove a machine", "oats server remove <id>"], ["open a deployment that is not listed", "oats tui --dir <path>"]]) {
       const row = section.findIndex((line) => line === what || line.startsWith(`${what} `));
       assert.equal(row >= 0 && (pair([section[row]], what, command) || section[row + 1] === command), true, `${at}: ${what}: ${command}`);
     }

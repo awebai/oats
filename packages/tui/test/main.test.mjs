@@ -365,7 +365,7 @@ test("the eight instance variables are removed from the process environment itse
 });
 
 test("before the alternate screen, in this order and each a line on stderr with status 1: the user's file, the deployment, the kernel, and outside every deployment this computer's list of deployments", async () => {
-  const lines = ["oats: `oats tui` cannot use /home/u/.config/oats/tui.json: quit has no key; give it one (E_TUI_CONFIG)", "oats: `oats tui` cannot use /home/u/.config/oats/tui.json: unknown action reload; the actions are up (E_TUI_CONFIG)"];
+  const lines = ["oats: `oats tui` cannot use /home/u/.oats/config/tui.json: quit has no key; give it one (E_TUI_CONFIG)", "oats: `oats tui` cannot use /home/u/.oats/config/tui.json: unknown action reload; the actions are up (E_TUI_CONFIG)"];
   const cases = [
     [{ config: { ok: false, lines } }, lines.map((line) => `${line}\n`).join(""), ["config"]],
     [{ kernel: { ok: false, reason: "version 0.24.0 outside >=0.25.8 <0.53.0" } }, `${noKernel("version 0.24.0 outside >=0.25.8 <0.53.0")}\n`, ["config", "deployment", "kernel"]],
@@ -670,7 +670,7 @@ test("with --ascii, the user's file saying ascii, or a locale that is not UTF-8,
 
 test("the keys are the effective table's: with the user's file giving quit to x, x quits and q does nothing, and the cheat sheet says so", async () => {
   const config = effectiveConfig({ keys: { quit: ["x"] } });
-  const r = await started({ config: { ...config, path: "/home/u/.config/oats/tui.json" } });
+  const r = await started({ config: { ...config, path: "/home/u/.oats/config/tui.json" } });
   assert.match(textOf(r.stdout.take()), / x +quit +│/);
   r.stdin.type("q");
   assert.equal(r.stdout.take(), "");

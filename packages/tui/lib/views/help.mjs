@@ -38,7 +38,7 @@ export const NOT_YET = Object.freeze([
   Object.freeze({ what: "see a capability's skills and files", command: "oats capabilities show <name>" }),
   Object.freeze({ what: "open an agent in its own tmux window", command: "oats session attach --home <home>" }),
   Object.freeze({ what: "start with another harness or model", command: "oats session start --home <home>" }),
-  Object.freeze({ what: "add a machine to this workspace", command: "oats server connect <id> --ssh <alias>" }),
+  Object.freeze({ what: "add a machine to this workspace", command: "oats server connect <id> --ssh <alias> --dir <path on that machine>" }),
   Object.freeze({ what: "check a machine", command: "oats server check <id>" }),
   Object.freeze({ what: "remove a machine", command: "oats server remove <id>" }),
   // The switcher lists the deployments opened in this run and those on this computer's list, and no other.

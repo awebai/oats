@@ -74,7 +74,7 @@ test("every command the help names for what this version does not do is one the 
   // What this version leaves to the kernel about other machines and other deployments is among
   // them, so each of the four is held to the kernel's usage below. `oats server roster` is not: the
   // TUI reads the roster itself now.
-  for (const command of ["oats server connect <id> --ssh <alias>", "oats server check <id>", "oats server remove <id>", "oats tui --dir <path>"]) assert.equal(commands.filter((each) => each === command).length, 1, command);
+  for (const command of ["oats server connect <id> --ssh <alias> --dir <path on that machine>", "oats server check <id>", "oats server remove <id>", "oats tui --dir <path>"]) assert.equal(commands.filter((each) => each === command).length, 1, command);
   assert.deepEqual(commands.filter((command) => /\broster\b/.test(command)), []);
   // The sentences about machines name no command, nor do the leader's last line and the palette's
   // keys: a command the help names is always in one of the two tables read here.
@@ -83,7 +83,8 @@ test("every command the help names for what this version does not do is one the 
   assert.equal(names(LEADER_AGAIN) && PALETTE_KEYS.length >= 1 && PALETTE_KEYS.flat().every(names), true, [LEADER_AGAIN, ...PALETTE_KEYS.flat()].join(" | "));
   const usageOf = new Map();
   for (const command of commands) {
-    const [program, word, ...rest] = command.split(" ");
+    // A <placeholder> may hold spaces (`<path on that machine>`): it is one part.
+    const [program, word, ...rest] = command.match(/<[^>]*>|\S+/g);
     assert.equal(program, "oats", command);
     if (!usageOf.has(word)) {
       const answer = oats(word, "--help", "--json");
@@ -93,12 +94,20 @@ test("every command the help names for what this version does not do is one the 
       usageOf.set(word, parsed.result.usage.join("\n"));
     }
     // What is literal in the help's command (the words and the flags, not its <placeholders>)
-    // stands in one usage line of the kernel, in that order.
+    // stands in one entry of the kernel's usage, in that order: the line that names the command
+    // and the lines that go on with its flags, up to the next line that names one. (The usage puts
+    // `--dir <path>` of `oats server connect` on the entry's second line, optional before the
+    // kernel requires it, awebai/oats#1390 step (b), and first there after.)
     const literal = rest.filter((part) => !part.startsWith("<"));
-    const line = usageOf.get(word).split("\n").find((row) => {
-      let from = row.indexOf(`oats ${word}`);
-      if (from < 0) return false;
-      for (const part of literal) { from = row.indexOf(part, from); if (from < 0) return false; }
+    const entries = [];
+    let open = false;
+    for (const row of usageOf.get(word).split("\n")) {
+      if (/\boats [a-z]/.test(row)) { open = row.includes(`oats ${word}`); if (open) entries.push(row); }
+      else if (open) entries[entries.length - 1] += `\n${row}`;
+    }
+    const line = entries.find((entry) => {
+      let from = entry.indexOf(`oats ${word}`);
+      for (const part of literal) { from = entry.indexOf(part, from); if (from < 0) return false; }
       return true;
     });
     assert.ok(line, `the kernel's usage of \`oats ${word}\` has no line with ${JSON.stringify(literal)}:\n${usageOf.get(word)}`);
