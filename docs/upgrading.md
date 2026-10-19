@@ -92,7 +92,8 @@ Desktop accepts CLIs `>=0.26.0 <0.62.0`, and a 0.60 Desktop refuses a 0.61.0 CLI
 Service A ships in [0.62.0](release-notes/v0.62.0.md) and every later
 release. Read 0.62.0's Upgrade section and keep this order: install the
 Desktop of the release you upgrade to first (the 0.62.0 Desktop accepts CLIs
-`>=0.26.0 <0.63.0`, the 0.63.0 Desktop `>=0.26.0 <0.64.0`), then that
+`>=0.26.0 <0.63.0`, the 0.63.0 Desktop `>=0.26.0 <0.64.0`, the 0.64.0
+Desktop `>=0.26.0 <0.65.0`), then that
 release's CLI and matching pi bridge. Only **after
 installing that CLI**, run its setup conversion once per user on each host,
 from that user's shell, then its health and doctor checks. That conversion is where an owned legacy
