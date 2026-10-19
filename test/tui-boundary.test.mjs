@@ -120,6 +120,9 @@ const TAKEN = Object.freeze({
   "capability-catalog.mjs": ["createCapabilityCatalog", "capabilityCatalogKey"],
   "capability-rows.mjs": ["memberNames", "capabilitySource", "groupCapabilities", "hostKeyOf", "capabilitySections", "matchCapabilities", "soulsComposition", "rosterAgentName", "layerLabel", "capabilityUsers"],
   "capability-facts.mjs": ["capabilityFacts", "CAPABILITY_COPY"],
+  // The keys the TUI shares with the Desktop (#1395): lib/actions.mjs builds its leader's table and its plain keys'
+  // defaults from them, lib/config.mjs its default leader, and packages/tui/test/keymap.test.mjs pins all three to them.
+  "keymap.mjs": ["LEADER_TABLE", "PLAIN_KEYS", "leaderKey", "plainKeys"],
 });
 /** Every clause of a source that takes names from a module of the shared home: [[module, names], …].
  *  A name taken under another name is read as the name the home gives it. */

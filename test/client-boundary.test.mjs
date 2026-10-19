@@ -150,6 +150,9 @@ const SURFACE = Object.freeze({
   "session-attach.mjs": ["prepareRemoteTerm", "sessionAttachArgv", "detachKeySupported", "hostDetachKeySupported", "preflightFailure", "DETACH_KEY_FEATURE"],
   "attach-exit.mjs": ["attachExit"],
   "kernel-lines.mjs": ["kernelLines"],
+  // The keys both clients share (#1395): the leader, its table and the plain keys of the list. The TUI reads its
+  // defaults from it and holds no copy.
+  "keymap.mjs": ["LEADER", "LEADER_TABLE", "PLAIN_KEYS", "leaderKey", "leaderDoes", "plainKeys", "leaderRows"],
 });
 /** Never importable, by anyone but the one the comment names. */
 const ENVIRONMENT = "own-environment.mjs"; // changes the environment of whoever imports it; the collector's entry does, first

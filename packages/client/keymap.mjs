@@ -1,7 +1,7 @@
 /** The keys both clients share: the leader, the table read after it, and the plain keys of the list
- * of instances. Written down once, here; the Desktop reads its defaults from it, and the TUI's own
- * table (packages/tui/lib/actions.mjs LEADER) is held equal to LEADER_TABLE by the root test
- * test/keymap-parity.test.mjs until the TUI imports this module.
+ * of instances. Written down once, here; the Desktop and the TUI read their defaults from it
+ * (packages/tui/lib/actions.mjs LEADER is LEADER_TABLE, and the TUI's test
+ * packages/tui/test/keymap.test.mjs fails on a `does` the TUI does not handle).
  *
  * Pure data and readers: no state, no DOM, no imports. Every value is frozen.
  *
