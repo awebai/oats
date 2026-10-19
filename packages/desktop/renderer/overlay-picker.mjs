@@ -8,6 +8,7 @@
 import { captureFocusReturn } from "./focus-return.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { icon } from "./shell-icons.mjs";
+import { treeGuides } from "./instance-tree-view.mjs";
 
 let nextPickerId = 0;
 // A document has one picker lifetime, not a stack of modal focus traps.
@@ -44,17 +45,21 @@ export function joinPickerFocusReturn(doc, { opener, dismiss }) {
  *        it verbatim). A load that resolves after the picker was closed or
  *        reopened must not paint (generation-guarded here).
  * @param {(data: any, query: string) => Array<{label: string, detail?: string,
- *          dot?: boolean|null, run?: Function, depth?: number, under?: string,
- *          showUnder?: boolean, sibling?: string, group?: {key: string, label: string},
+ *          dot?: boolean|null, state?: "running"|"stopped"|"unknown", run?: Function,
+ *          depth?: number, connectors?: Array<{kind: string, level: number}>, under?: string,
+ *          sibling?: string, group?: {key: string, label: string},
  *          context?: boolean, initial?: boolean}>} spec.computeRows
  *        query → result rows, already scored/sorted/sliced by the caller.
+ *        A row with `state` draws the sidebar's state dot (`ctx-dot on|off|unknown`);
+ *        else `dot` draws the small running dot, and a row with neither (a
+ *        command) the chevron.
  *        Optional tree shape (the palette's instances): consecutive rows sharing
  *        a group.key sit in one role=group named by group.label; depth indents
- *        (visual only); `under` is visually hidden text read with the option
- *        (with `showUnder` a flat row also shows it, quietly, aria-hidden so it is
- *        read once); `sibling` is read the same way after it, and always shown
- *        in that one quiet span (`under · sibling` when both are shown, the
- *        under phrase shortening first); the first selectable `initial` row is the active row a
+ *        (visual only); `connectors` (treeConnectors' answer) draws the sidebar's
+ *        lines through the row with the sidebar's own builder (treeGuides) and
+ *        rules, the row taking the sidebar's indent and dot column (`.tree`);
+ *        `under`, then `sibling`, are visually hidden text read once with the
+ *        option (the lines show them); the first selectable `initial` row is the active row a
  *        render starts on (else the first selectable row);
  *        a `context` row is shown dimmed with aria-disabled="true" and is never
  *        active, so the arrows, the cycle chord and pointer hover skip it.
@@ -239,33 +244,19 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
         row.id = `${id}-option-${i}`;
         row.className = "palette-item";
         row.setAttribute("role", "option");
-        const dot = it.dot != null ? `<span class="pdot${it.dot ? " on" : ""}" aria-hidden="true"></span>` : `<span class="picon" aria-hidden="true">${icon("chevronRight", { size: 13 })}</span>`;
+        // The sidebar's state dot for an instance (unknown liveness included); else the small dot or a command's chevron.
+        const dot = it.state ? `<span class="ctx-dot ${it.state === "running" ? "on" : it.state === "stopped" ? "off" : "unknown"}" aria-hidden="true"></span>`
+          : it.dot != null ? `<span class="pdot${it.dot ? " on" : ""}" aria-hidden="true"></span>` : `<span class="picon" aria-hidden="true">${icon("chevronRight", { size: 13 })}</span>`;
         row.innerHTML = `${dot}<span class="plabel"></span><span class="pdetail"></span>`;
         row.querySelector(".plabel").textContent = it.label;
         row.querySelector(".pdetail").textContent = it.detail || "";
         if (Number.isInteger(it.depth) && it.depth > 0) row.style.setProperty("--depth", String(it.depth));
+        // A tree row: the sidebar's lines (its builder, its shell.css rules), on the sidebar's dot column.
+        if (Array.isArray(it.connectors)) { row.classList.add("tree"); row.prepend(treeGuides(doc, it.connectors)); }
         for (const phrase of [it.under, it.sibling].filter(Boolean)) {
           const read = doc.createElement("span");
           read.className = "sr-only"; read.textContent = `, ${phrase}`;
           row.querySelector(".pdetail").append(read); // read as one phrase with the detail
-        }
-        const seen = [it.showUnder ? it.under : null, it.sibling].filter(Boolean);
-        if (seen.length) {
-          // Seen, not read twice: the visually hidden phrases above are the ones read.
-          const shown = doc.createElement("span");
-          shown.className = "punder"; shown.setAttribute("aria-hidden", "true");
-          if (seen.length === 1) shown.textContent = seen[0];
-          else {
-            // "under <parent> · sibling of <name>": each phrase ellipsizes on its own and a long parent gives
-            // way first, so the sibling, the row's new information, stays in sight (shell.css .punder-split).
-            shown.classList.add("punder-split");
-            for (const [cls, text] of [["punder-under", seen[0]], ["punder-sep", " · "], ["punder-sibling", seen[1]]]) {
-              const part = doc.createElement("span");
-              part.className = cls; part.textContent = text;
-              shown.append(part);
-            }
-          }
-          row.querySelector(".plabel").after(shown);
         }
         // A match's ancestor, shown for its place in the tree: never active or run.
         if (it.context) { row.classList.add("context"); row.setAttribute("aria-disabled", "true"); }

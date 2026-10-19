@@ -1,5 +1,5 @@
-/* oats desktop — when each instance was last focused (Spec C: the command
-   palette lists instances by last focus, most recent first).
+/* oats desktop — when each instance was last focused (Spec C's record; the
+   command palette orders the sidebar's tree by it, #1383: palette.mjs).
    An instance is focused when its terminal tab becomes the active tab, for any
    reason (shell.mjs activateTab records it; a terminal taking keyboard focus
    selects its tab through wirePaneSelection, so it lands there too). Entries are

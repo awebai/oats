@@ -1,11 +1,15 @@
-// Spec F: the command palette lists instances like the sidebar roster (same
-// relation groups, order and depth, from the sidebar's own builders), keeps
-// tree order under a query with non-matching ancestors as disabled context
+// Spec F, #1383: the command palette lists instances as the sidebar draws its
+// tree (same relation groups and depth, from the sidebar's own builders; the
+// same connectors and state dots, from the sidebar's own code and rules), keeps
+// the list's order under a query with non-matching ancestors as disabled context
 // rows, and cycles its rows with its own chord (⌘K / Ctrl+Shift+K) while open.
+// Its recency order is palette-recency.test.mjs's.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { paletteRows, createPalette, PALETTE_COMMAND_CAP } from "../renderer/palette.mjs";
+import { treeConnectors } from "../renderer/instance-tree-view.mjs";
 import { rosterGroups, instanceId } from "../../client/instance-tree.mjs";
 import { rosterSections } from "../../client/roster-sections.mjs";
 import { pickerCycleDirection, setBinding, resetBinding, DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
@@ -321,17 +325,99 @@ test("several deployments: a sibling link resolves only inside its deployment", 
     [[D1.id, "ada", null], [D2.id, "ada", "sibling of bea"], [D2.id, "bea", "sibling of ada"]]);
 });
 
-test("rendered: a tree row's sibling is shown once, aria-hidden, and read once with the detail", async t => {
+test("rendered: relations are words read once, never shown: no quiet under or sibling text (#1383)", async t => {
   const p = palette(t, SIBLINGS);
   await p.picker.open();
-  const option = [...p.doc.querySelectorAll('[role="option"]')].find(o => o.querySelector(".plabel").textContent === "bea");
-  const shown = option.querySelector(".punder");
-  assert.equal(shown.textContent, "sibling of ada", "seen beside the name");
-  assert.equal(shown.getAttribute("aria-hidden"), "true");
-  assert.equal(shown.previousElementSibling, option.querySelector(".plabel"), "right after the label");
-  assert.equal(option.querySelector(".pdetail .sr-only").textContent, ", sibling of ada", "read with the detail");
+  const option = name => [...p.doc.querySelectorAll('[role="option"]')].find(o => o.querySelector(".plabel").textContent === name);
+  assert.equal(p.doc.querySelector(".punder, .punder-split"), null, "the dotted line carries siblinghood visibly");
+  assert.equal(option("bea").querySelector(".pdetail .sr-only").textContent, ", sibling of ada", "read with the detail");
+  assert.deepEqual([...option("zed").querySelectorAll(".pdetail .sr-only")].map(s => s.textContent), [", under ada"]);
   const read = node => [...node.childNodes].map(n => n.nodeType === 3 ? n.textContent : n.getAttribute("aria-hidden") === "true" ? "" : read(n)).join("");
-  assert.equal(read(option).split("sibling of ada").length - 1, 1, "read exactly once");
-  const kid = [...p.doc.querySelectorAll('[role="option"]')].find(o => o.querySelector(".plabel").textContent === "kid-1");
-  assert.equal(kid.querySelector(".punder"), null, "a tree row without a sibling shows nothing new");
+  assert.equal(read(option("bea")).split("sibling of ada").length - 1, 1, "read exactly once");
+  assert.equal(read(option("bea")).split("ada").length - 1, 1, "and shown nowhere else");
+  assert.equal(option("kid-1").querySelector(".pdetail .sr-only").textContent, ", under lead");
+  const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
+  assert.doesNotMatch(css, /punder/, "its rules are gone");
+});
+
+// #1383: each instance row carries what the sidebar's row draws from, and draws it with the sidebar's code.
+test("instance rows carry the sidebar row's connectors and state; commands carry neither", () => {
+  const rows = paletteRows(SIBLINGS, COMMANDS, "", { openTerminal() {} });
+  const tree = instanceRows(rows);
+  // The sidebar's connectors: treeConnectors over the sidebar's own cluster, with the full roster.
+  const sidebar = new Map(rosterGroups(SIBLINGS, SIBLINGS).flatMap(g => g.clusters.flatMap(c => c.instances.map(i => [i.instance, treeConnectors(c.instances, i, SIBLINGS)]))));
+  assert.deepEqual(tree.map(r => [r.label, r.connectors]), tree.map(r => [r.label, sidebar.get(r.label)]));
+  const kinds = name => tree.find(r => r.label === name).connectors.map(c => `${c.kind}@${c.level}`);
+  assert.deepEqual(kinds("ada"), ["down@0", "link-out@0"], "a root's stem, and the dotted line on to its sibling root");
+  assert.deepEqual(kinds("zed"), ["elbow@0", "link-through@0"], "a child's elbow, the dotted line passing beside it");
+  assert.deepEqual(kinds("bea"), ["link-in@0"]);
+  assert.deepEqual(kinds("kid-1"), ["elbow@0", "line@0"], "a non-last child: elbow and its parent's line on");
+  assert.deepEqual(kinds("kid-2"), ["elbow@0"]);
+  assert.ok(tree.every(r => r.state === "running"));
+  assert.deepEqual(instanceRows(paletteRows(ROSTER, [], "", {})).map(r => [r.label, r.state]),
+    [["alpha", "stopped"], ["alpha-kid", "running"], ["lead", "running"], ["child-a", "running"], ["grandchild", "running"], ["child-b", "stopped"], ["solo-x", "running"], ["solo-y", "stopped"]]);
+  assert.deepEqual(paletteRows([at("maybe", { running: null })], [], "", {}).map(r => r.state), ["unknown"]);
+  for (const row of rows.filter(r => !r.group)) assert.ok(!Object.hasOwn(row, "connectors") && !Object.hasOwn(row, "state"), row.label);
+});
+
+test("under a query a row's connectors are the sidebar's over the listed cluster: context rows keep theirs", () => {
+  const rows = instanceRows(paletteRows(ROSTER, [], "grand", { openTerminal() {} }));
+  assert.deepEqual(rows.map(r => [r.label, !!r.context, r.connectors.map(c => `${c.kind}@${c.level}`)]), [
+    ["lead", true, ["down@0"]], ["child-a", true, ["elbow@0", "down@1"]], ["grandchild", false, ["elbow@1"]],
+  ], "the filtered sidebar draws the same lines");
+});
+
+test("rendered: the sidebar's guides (one builder) and state dot on each instance row; commands keep the chevron", async t => {
+  const roster = [...SIBLINGS, at("maybe", { running: null }), at("idle", { running: false })];
+  const p = palette(t, roster);
+  await p.picker.open();
+  const option = name => [...p.doc.querySelectorAll('[role="option"]')].find(o => o.querySelector(".plabel").textContent === name);
+  const guides = name => [...option(name).querySelectorAll(":scope > .ctx-guides > .ctx-guide")].map(g => `${g.className.replace("ctx-guide ", "")}@${g.style.getPropertyValue("--guide-level")}`);
+  assert.deepEqual(guides("ada"), ["down@0", "link-out@0"]);
+  assert.deepEqual(guides("zed"), ["elbow@0", "link-through@0"]);
+  const ada = option("ada");
+  assert.equal(ada.firstElementChild.className, "ctx-guides", "the guides lead the row");
+  assert.equal(ada.firstElementChild.getAttribute("aria-hidden"), "true");
+  assert.ok(ada.classList.contains("tree"), "a tree row takes the sidebar's dot column");
+  assert.equal(option("zed").style.getPropertyValue("--depth"), "1");
+  const dot = name => option(name).querySelector(".ctx-dot");
+  assert.equal(dot("ada").className, "ctx-dot on");
+  assert.equal(dot("idle").className, "ctx-dot off");
+  assert.equal(dot("maybe").className, "ctx-dot unknown", "unknown liveness is the sidebar's unknown dot");
+  assert.equal(option("maybe").querySelector(".picon, .pdot"), null, "never the commands' chevron");
+  assert.ok([...p.doc.querySelectorAll('[role="option"]')].filter(o => o.querySelector(".ctx-dot")).every(o => o.querySelector(".ctx-dot").getAttribute("aria-hidden") === "true"));
+  const command = option("Theme: toggle");
+  assert.ok(command.querySelector(".picon"), "a command keeps its chevron");
+  assert.equal(command.querySelector(".ctx-guides, .ctx-dot"), null);
+  assert.ok(!command.classList.contains("tree"));
+  // The one builder: the shell draws both its row kinds with it, and the picker too; nobody repeats the loop.
+  for (const file of ["../renderer/shell.mjs", "../renderer/overlay-picker.mjs"]) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /className = `ctx-guide \$\{kind\}`/, file);
+  }
+  const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  assert.equal(shell.match(/treeGuides\(document, treeConnectors\(items, i, instances\)\)/g)?.length, 2, "the roster row and the pending spawn's");
+});
+
+test("the palette's tree rows reuse the sidebar's guide rules with the sidebar's geometry (no copied .ctx-guide rule)", () => {
+  const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
+  const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map(([, sel, body]) => [sel.replace(/\/\*[\s\S]*?\*\//g, "").trim(), body]);
+  const rule = sel => rules.find(([s]) => s === sel)?.[1] ?? "";
+  const prop = (sel, name) => rule(sel).match(new RegExp(`${name}:\\s*([^;]+);`))?.[1].trim();
+  assert.ok(rules.filter(([sel]) => /ctx-guide/.test(sel)).every(([sel]) => !/palette/.test(sel)), "one set of .ctx-guide rules");
+  // The sidebar's values: the shared rules land on the palette's dots as on the sidebar's.
+  for (const [name, value] of [["--tree-step", "18px"], ["--tree-branch-offset", "5px"]]) {
+    assert.equal(prop(".ctx-tree-row", name), value, `the sidebar's ${name}`);
+    assert.equal(prop(".palette-item.tree", name), value, name);
+  }
+  assert.equal(prop(".palette-item.tree", "padding-left"), "calc(10px + var(--depth, 0) * var(--tree-step))",
+    "the sidebar's 10px inset (.ctx-inst) plus its indent, so the dot column is the sidebar's 13.25px rule");
+  assert.match(rule(".ctx-inst"), /padding: 0 8px 0 10px/, "the sidebar's inset the palette matches");
+  assert.equal(prop(".palette-item.tree", "--row-gap"), "0px", "rows touch: lines run on from row to row");
+  assert.equal(prop(".palette-item.tree", "--row-solid"), "var(--surface)", "the dot's ring is the palette's surface");
+  assert.equal(prop(".palette", "background"), "var(--surface)");
+  assert.equal(prop(".palette-item.tree.active", "--row-solid"), "var(--sel)", "and the selection's tint on the active row");
+  assert.equal(prop(".palette-item.active", "background"), "var(--sel)");
+  assert.match(rule(".palette-item"), /position: relative/, "the guides' containing block");
+  assert.doesNotMatch(rule(".palette-item.context"), /opacity/, "context rows dim by colour only; their lines are not dimmed");
 });
