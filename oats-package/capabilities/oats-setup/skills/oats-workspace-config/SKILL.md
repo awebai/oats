@@ -138,8 +138,8 @@ broker (`aw wake run` as a per-user service). Both are taught in
    edit a shared file without one of them.
    - **Straight to the default branch,** only when all of these hold,
      checked right before the push:
-     - the repo is the workspace's host (the host entry in
-       `oats workspace status`), and the person created it as a new
+     - the repo is the workspace's host (`result.workspace.url` in
+       `oats workspace status --json`), and the person created it as a new
        workspace (the setup expert's hand-over says `new`, or the person
        confirms it);
      - it belongs to their own GitHub account, not an organization:
