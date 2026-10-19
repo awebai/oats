@@ -1,7 +1,7 @@
 // The keys the Desktop shares with the TUI (packages/client/keymap.mjs), pinned exactly: the leader
 // per platform, the leader's table (rows, order, keys) and the plain keys. A key bound twice in either
-// table is a defect and fails here. The parity with the TUI's own table is the root test's
-// (test/keymap-parity.test.mjs); no Desktop test reads packages/tui.
+// table is a defect and fails here. The TUI reads the same module, and its own test
+// (packages/tui/test/keymap.test.mjs) pins that; no Desktop test reads packages/tui.
 // The Desktop's defaults for app.leader and every sidebar.key.* come from the module: a copy of the
 // module with another entry gives a copy of the engine another default, and keybindings.mjs holds
 // no literal of its own.

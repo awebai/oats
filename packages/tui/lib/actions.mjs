@@ -5,29 +5,34 @@
 // An action that does one thing in the list of instances and another in the switcher (`open`)
 // says so in `views`: what it does in each, in the order the help lists them. An action of one
 // view only (the four acts) names that view, so the help says where it acts.
+// The keys the TUI shares with the Desktop are not written here: an action with no `keys` of its own
+// takes its default keys from the shared keymap (packages/client/keymap.mjs PLAIN_KEYS), and the
+// leader's table is the shared one (LEADER, below). What only the TUI has (q, Ctrl+C, Ctrl+Z, Ctrl+L,
+// Ctrl+K, Tab, Esc, Delete, C, i) keeps its keys here. packages/tui/test/keymap.test.mjs pins both.
+import { LEADER_TABLE, plainKeys } from "./client.mjs";
 import { isBackKey } from "./term/through.mjs";
 
 export const ACTIONS = Object.freeze([
-  { id: "up", keys: ["up", "k"], label: "up" },
-  { id: "down", keys: ["down", "j"], label: "down" },
-  { id: "top", keys: ["g", "home"], label: "first" },
-  { id: "bottom", keys: ["G", "end"], label: "last" },
-  { id: "page-up", keys: ["pageup"], label: "page up" },
-  { id: "page-down", keys: ["pagedown"], label: "page down" },
-  { id: "collapse", keys: ["left", "h"], label: "collapse, or go to the parent" },
-  { id: "expand", keys: ["right", "l"], label: "expand, or go to the first child" },
+  { id: "up", label: "up" },
+  { id: "down", label: "down" },
+  { id: "top", label: "first" },
+  { id: "bottom", label: "last" },
+  { id: "page-up", label: "page up" },
+  { id: "page-down", label: "page down" },
+  { id: "collapse", label: "collapse, or go to the parent" },
+  { id: "expand", label: "expand, or go to the first child" },
   { id: "detail", keys: ["tab"], label: "detail" },
-  { id: "filter", keys: ["/"], label: "filter" },
-  { id: "refresh", keys: ["r"], label: "refresh" },
+  { id: "filter", label: "filter" },
+  { id: "refresh", label: "refresh" },
   // The views by their number. The sidebar names the views, each with its key at the right of its row
   // (docs/tui.md, "What it shows"): the digits are named here, so in the help and the sidebar.
-  { id: "instances", keys: ["1"], label: "instances" },
-  { id: "souls", keys: ["2"], label: "souls" },
-  { id: "capabilities", keys: ["3"], label: "capabilities" },
-  { id: "workspaces", keys: ["w"], label: "workspaces" },
+  { id: "instances", label: "instances" },
+  { id: "souls", label: "souls" },
+  { id: "capabilities", label: "capabilities" },
+  { id: "workspaces", label: "workspaces" },
   // The palette (docs/tui.md, "The palette"): from every focus it is the leader and then `k`.
   { id: "palette", keys: ["ctrl+k"], label: "palette" },
-  { id: "open", keys: ["enter"], label: "open", views: [["instances", "open the selected agent's terminal as a tab beside the list, or show its tab when it has one, in the list of instances"], ["switcher", "open the selected workspace, in the switcher"], ["souls", "show the selected soul's detail, and from the detail its instances, in the Souls view"], ["capabilities", "show the selected capability's detail, and from the detail the marked soul that uses it, in the Capabilities view"]] },
+  { id: "open", label: "open", views: [["instances", "open the selected agent's terminal as a tab beside the list, or show its tab when it has one, in the list of instances"], ["switcher", "open the selected workspace, in the switcher"], ["souls", "show the selected soul's detail, and from the detail its instances, in the Souls view"], ["capabilities", "show the selected capability's detail, and from the detail the marked soul that uses it, in the Capabilities view"]] },
   // The switcher's Remove (docs/tui.md, "The switcher"; awebai/oats#1390): a row of this computer's
   // deployments list, after a confirmation; nothing on disk is touched. Delete, and no letter: a new
   // default key that a user's tui.json already gives to another action would make that file refused
@@ -40,73 +45,58 @@ export const ACTIONS = Object.freeze([
   // The open terminal, from the list (docs/tui.md, "Open an agent's terminal"). While the terminal
   // has the focus the TUI takes no key but the leader (tui.json's open.detachKey), so neither of
   // these is ever read there: the leader's table has its own (LEADER).
-  { id: "zoom", keys: ["z"], label: "zoom", views: [["instances", "go to the shown terminal with the whole screen; the leader then Esc brings the list back"]] },
-  { id: "close-terminal", keys: ["c"], label: "close terminal", views: [["instances", "close the shown terminal and show its neighbour; the agent keeps running"]] },
-  { id: "tab-previous", keys: ["["], label: "previous tab", views: [["instances", "show the terminal of the tab before the shown one"]] },
-  { id: "tab-next", keys: ["]"], label: "next tab", views: [["instances", "show the terminal of the tab after the shown one"]] },
+  { id: "zoom", label: "zoom", views: [["instances", "go to the shown terminal with the whole screen; the leader then Esc brings the list back"]] },
+  { id: "close-terminal", label: "close terminal", views: [["instances", "close the shown terminal and show its neighbour; the agent keeps running"]] },
+  { id: "tab-previous", label: "previous tab", views: [["instances", "show the terminal of the tab before the shown one"]] },
+  { id: "tab-next", label: "next tab", views: [["instances", "show the terminal of the tab after the shown one"]] },
   // The split (docs/tui.md, "Splits"): two groups of tabs at most, side by side or one above the
   // other. `group-next`, `tab-move` and `group-close` have no key of their own here by default
   // (Tab is the detail's, and `m` and `x` are often a tui.json's): the leader's are.
-  { id: "split-right", keys: ["|"], label: "split right", views: [["instances", "split the panel side by side; the new group, on the right, is empty and focused"]] },
-  { id: "split-down", keys: ["-"], label: "split down", views: [["instances", "split the panel one above the other; the new group, below, is empty and focused"]] },
+  { id: "split-right", label: "split right", views: [["instances", "split the panel side by side; the new group, on the right, is empty and focused"]] },
+  { id: "split-down", label: "split down", views: [["instances", "split the panel one above the other; the new group, below, is empty and focused"]] },
   { id: "group-next", keys: [], label: "next group", views: [["instances", "go to the other group's terminal, or to the focused group's from the list"]] },
   { id: "tab-move", keys: [], label: "move tab", views: [["instances", "move the shown tab to the other group, and go there"]] },
   { id: "group-close", keys: [], label: "close group", views: [["instances", "close the focused group while it is empty"]] },
   // The four acts on an instance: each opens a confirmation, and nothing is done before a move and
   // a press in it. Capitals: a lower-case key is one slip away, a capital takes Shift.
-  { id: "stop", keys: ["X"], label: "stop", views: [["instances", "stop the selected agent, after a confirmation"]] },
-  { id: "retire", keys: ["D"], label: "retire", views: [["instances", "retire the selected agent, after a confirmation"]] },
-  { id: "start", keys: ["S"], label: "start", views: [["instances", "start the selected agent as it was last launched, after a confirmation"]] },
-  { id: "restart", keys: ["R"], label: "restart", views: [["instances", "restart the selected agent as it was last launched, after a confirmation"]] },
+  { id: "stop", label: "stop", views: [["instances", "stop the selected agent, after a confirmation"]] },
+  { id: "retire", label: "retire", views: [["instances", "retire the selected agent, after a confirmation"]] },
+  { id: "start", label: "start", views: [["instances", "start the selected agent as it was last launched, after a confirmation"]] },
+  { id: "restart", label: "restart", views: [["instances", "restart the selected agent as it was last launched, after a confirmation"]] },
   // A spawn (docs/tui.md, "Spawning an agent"): a prompt over the list, the soul picked, the
   // shared preview, and one Enter. Only on this machine's workspace, one spawn at a time.
-  { id: "spawn", keys: ["n"], label: "spawn", views: [["instances", "spawn an agent: pick its soul, then the preview, and Enter spawns it"], ["souls", "spawn an agent of the selected soul: the preview, and Enter spawns it"]] },
-  { id: "spawn-another", keys: ["N"], label: "spawn another", views: [["instances", "spawn another agent of the selected agent's soul: the preview, and Enter spawns it"], ["souls", "the same as n"]] },
+  { id: "spawn", label: "spawn", views: [["instances", "spawn an agent: pick its soul, then the preview, and Enter spawns it"], ["souls", "spawn an agent of the selected soul: the preview, and Enter spawns it"]] },
+  { id: "spawn-another", label: "spawn another", views: [["instances", "spawn another agent of the selected agent's soul: the preview, and Enter spawns it"], ["souls", "the same as n"]] },
   // Offered only while a spawn's outcome is not known: it asks the kernel once, never spawns again.
   { id: "spawn-check", keys: ["C"], label: "check spawn", views: [["instances", "check the result of a spawn whose outcome is not known, while one is"]] },
-  { id: "help", keys: ["?"], label: "help" },
+  { id: "help", label: "help" },
   { id: "close", keys: ["escape"], label: "close" },
   { id: "quit", keys: ["q", "ctrl+c"], label: "quit" },
   { id: "suspend", keys: ["ctrl+z"], label: "suspend" },
   { id: "redraw", keys: ["ctrl+l"], label: "redraw" },
-].map((action) => Object.freeze({ ...action, keys: Object.freeze([...action.keys]), ...(action.views ? { views: Object.freeze(action.views.map((view) => Object.freeze([...view]))) } : {}) })));
+].map(({ keys, ...action }) => Object.freeze({ id: action.id, keys: Object.freeze([...(keys ?? plainKeys(action.id))]), ...action, ...(action.views ? { views: Object.freeze(action.views.map((view) => Object.freeze([...view]))) } : {}) })));
 
 /** THE LEADER'S TABLE (docs/tui.md, "The leader"): the keys read after the leader (tui.json's
- *  open.detachKey) and what each does, from every focus. Fixed: tui.json's `keys` rebinds the plain
- *  keys of ACTIONS only. `does` is an action id of ACTIONS, or one of the leader's own: `previous`
- *  and `next` (the instance before or after the shown terminal's, or the selection's: its tab
- *  shown, or opened as a new one, with the focus in it) and `list` (the list's focus, which
- *  Esc gives). The leader pressed again is not in this table either, as it is the user's key: from
- *  the open terminal's focus it types the leader's own bytes into the agent, the focus staying
- *  there, and from any other focus it only closes the hint (lib/store.mjs `twice`). `terminal`: named in the hint only while a terminal
- *  is open, and nothing without one (the hint names the tab keys only with two tabs or more). */
-export const LEADER = Object.freeze([
-  { keys: ["k", "space"], does: "palette", label: "palette" },
-  { keys: ["1"], does: "instances", label: "instances" },
-  { keys: ["2"], does: "souls", label: "souls" },
-  { keys: ["3"], does: "capabilities", label: "capabilities" },
-  { keys: ["up"], does: "previous", label: "previous instance" },
-  { keys: ["down"], does: "next", label: "next instance" },
-  { keys: ["z"], does: "zoom", label: "zoom", terminal: true },
-  { keys: ["w"], does: "close-terminal", label: "close terminal", terminal: true },
-  { keys: ["left"], does: "tab-previous", label: "previous tab", terminal: true },
-  { keys: ["right"], does: "tab-next", label: "next tab", terminal: true },
-  { keys: ["|"], does: "split-right", label: "split right", terminal: true },
-  { keys: ["-"], does: "split-down", label: "split down", terminal: true },
-  { keys: ["tab"], does: "group-next", label: "next group", terminal: true },
-  { keys: ["m"], does: "tab-move", label: "move tab", terminal: true },
-  { keys: ["x"], does: "group-close", label: "close group", terminal: true },
-  { keys: ["X"], does: "stop", label: "stop" },
-  { keys: ["R"], does: "restart", label: "restart" },
-  { keys: ["S"], does: "start", label: "start" },
-  { keys: ["D"], does: "retire", label: "retire" },
-  { keys: ["n"], does: "spawn", label: "spawn" },
-  { keys: ["N"], does: "spawn-another", label: "spawn another" },
-  { keys: ["/"], does: "filter", label: "filter" },
-  { keys: ["o"], does: "workspaces", label: "workspaces" },
-  { keys: ["?"], does: "help", label: "help" },
-  { keys: ["escape"], does: "list", label: "the list" },
-].map((entry) => Object.freeze({ ...entry, keys: Object.freeze([...entry.keys]) })));
+ *  open.detachKey) and what each does, from every focus. It is the shared one, the Desktop's too
+ *  (packages/client/keymap.mjs LEADER_TABLE), in its order, with its labels and its `terminal`
+ *  rows: named in the hint only while a terminal is open, and nothing without one. What the TUI
+ *  adds to a row is its own, keyed by `does`: the hint's filters (views/frame.mjs leaderHints:
+ *  the tab keys only with two tabs or more, the split's only where they apply). Fixed: tui.json's
+ *  `keys` rebinds the plain keys of ACTIONS only. Each `does` is handled by the TUI
+ *  (leaderHandles); the leader pressed again is not in the table, as it is the user's key: from the
+ *  open terminal's focus it types the leader's own bytes into the agent, the focus staying there,
+ *  and from any other focus it only closes the hint (lib/store.mjs `twice`). */
+export const LEADER = LEADER_TABLE;
+/** What the leader does that no action of ACTIONS does (lib/store.mjs `led`): `previous` and
+ *  `next` (the instance before or after the shown terminal's, or the selection's: its tab shown,
+ *  or opened as a new one, with the focus in it) and `list` (the list's focus, which Esc gives). */
+export const LEADER_OWN = Object.freeze(["previous", "next", "list"]);
+/** Whether the TUI acts on `does`, a `does` of the shared leader table: it is one of the leader's
+ *  own (LEADER_OWN), or the id of an action of ACTIONS, which lib/store.mjs `led` runs as its key
+ *  runs it, or in its own way from the leader (the terminal's keys, the acts, the spawns). A
+ *  `does` the TUI does not handle is a failure of packages/tui/test/keymap.test.mjs, never a
+ *  key that does nothing. */
+export const leaderHandles = (does) => LEADER_OWN.includes(does) || ACTIONS.some((action) => action.id === does);
 /** key id -> what the leader then does (LEADER's `does`). */
 export const LEADER_KEYS = new Map(LEADER.flatMap((entry) => entry.keys.map((key) => [key, entry.does])));
 

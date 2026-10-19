@@ -15,7 +15,7 @@ labels), `renderer/leader-dispatch.mjs` (what each key does),
 `renderer/instance-recency.mjs` (the palette's last-focus record),
 `renderer/shell.mjs` (action registration). Tests: `test/keymap-linux.test.mjs`,
 `test/leader.test.mjs`, `test/leader-dispatch.test.mjs`, `test/keymap-shared.test.mjs`,
-`test/sidebar-keys.test.mjs`, the root `test/keymap-parity.test.mjs` (the table is the TUI's),
+`test/sidebar-keys.test.mjs`, the TUI's `packages/tui/test/keymap.test.mjs` (the TUI reads the same table),
 `test/keybindings.test.mjs`, `test/focus-regions.test.mjs`,
 `test/spawn-dialog-keyboard.test.mjs`, `test/palette-tree.test.mjs` (the palette's tree rows, connectors and cycling),
 `test/palette-recency.test.mjs` (its recency order, first-row opening and focus record), `test/tab-strip-reveal.test.mjs`,
@@ -104,9 +104,9 @@ Show instance panel and the closed sidebar and panel).
 ## The leader
 
 New in 0.65.0. The leader is the TUI's: one chord, then one key from the TUI's
-table. The Desktop reads it from `LEADER_TABLE` in `packages/client/keymap.mjs`;
-the TUI still keeps its own copy (`LEADER` in `packages/tui/lib/actions.mjs`),
-and the root `test/keymap-parity.test.mjs` fails when the two part. It is
+table. Both clients read it from `LEADER_TABLE` in `packages/client/keymap.mjs`,
+and neither keeps a copy (`packages/tui/test/keymap.test.mjs` fails when the
+TUI has no handler for a row). It is
 **Alt+O** on Linux and Windows and **⌃\** on macOS (`app.leader`, rebindable
 like any action; the table after it is fixed, as in the TUI).
 

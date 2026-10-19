@@ -150,6 +150,9 @@ const SURFACE = Object.freeze({
   "session-attach.mjs": ["prepareRemoteTerm", "sessionAttachArgv", "detachKeySupported", "hostDetachKeySupported", "preflightFailure", "DETACH_KEY_FEATURE"],
   "attach-exit.mjs": ["attachExit"],
   "kernel-lines.mjs": ["kernelLines"],
+  // The keys both clients share (#1395): the leader, its table and the plain keys of the list. The TUI reads its
+  // defaults from it and holds no copy.
+  "keymap.mjs": ["LEADER", "LEADER_TABLE", "PLAIN_KEYS", "leaderKey", "leaderDoes", "plainKeys", "leaderRows"],
 });
 /** Never importable, by anyone but the one the comment names. */
 const ENVIRONMENT = "own-environment.mjs"; // changes the environment of whoever imports it; the collector's entry does, first
@@ -490,7 +493,9 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 65);
+  assert.equal(Object.keys(SURFACE).length, 66);
+  // #1395: the keys both clients share; the TUI reads its defaults from them.
+  assert.ok(Object.hasOwn(SURFACE, "keymap.mjs"), "keymap.mjs");
   // The five modules 1b made are on it, with the names the TUI's first views take.
   for (const module of ["instance-tree.mjs", "roster-sections.mjs", "kernel-environment.mjs", "workspace-admission.mjs", "instance-acts.mjs"]) assert.ok(Object.hasOwn(SURFACE, module), module);
   // 1c: a second client says its own terms with clientTerms, and that is all it takes from that module.
