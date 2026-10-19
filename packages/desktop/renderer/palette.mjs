@@ -18,8 +18,8 @@
    sibling link (#1312; instanceSiblings, resolved per deployment over its full
    roster) says "sibling of <name>" to assistive technology, as a child says
    "under <parent>": the dotted line carries siblinghood visibly. The palette
-   opens on the previous agent: the most recently focused listed instance that is
-   not the terminal in front (with a query, the most recently focused match).
+   opens on its first selectable row: the top of the list, which the order makes
+   the most recently focused path (with a query, the first match; #1391).
    While open, the palette's own chord moves the active row down (Shift + the
    chord: up), skipping context rows.
    Overlay chrome lives in overlay-picker.mjs (shared with Quick Open), the fuzzy
@@ -37,11 +37,10 @@ import { subsequenceScore } from "../../client/subsequence-score.mjs";
 export const PALETTE_COMMAND_CAP = 12;
 
 /** Pure row computation — exported for tests. `roster` is the panel's
- * `{ instances, deployments, recent?, activeId? }` (one snapshot), or just the
- * instances where there is a single deployment; `commands` the static command
- * list, `raw` the input value. `recent` is the workspace's last-focus record
- * (Map<instanceId, time>, instance-recency.mjs) and `activeId` the instanceId of
- * the terminal that is the active tab, if any.
+ * `{ instances, deployments, recent? }` (one snapshot), or just the instances
+ * where there is a single deployment; `commands` the static command list, `raw`
+ * the input value. `recent` is the workspace's last-focus record
+ * (Map<instanceId, time>, instance-recency.mjs).
  * Every instance is listed once, in the sidebar's tree ordered by `recent`
  * (rosterSections with `lastFocus`). Instance rows carry { depth, group: { key,
  * label }, connectors, state, under?, sibling? }: `connectors` is treeConnectors
@@ -51,16 +50,13 @@ export const PALETTE_COMMAND_CAP = 12;
  * `sibling: "sibling of <names>"` (siblingText over instanceSiblings, built per
  * deployment over its full roster as the sidebar resolves relations, never over
  * the listed rows), and a row without one has no `sibling` field. An ancestor
- * shown only as a match's context carries { context: true } and no run. The row
- * the palette opens on carries { initial: true }: the listed instance with the
- * latest focus that is not `activeId` (with a query: the matching row with the
- * latest focus); with no such row, none does and the picker starts on the first
- * selectable row. */
+ * shown only as a match's context carries { context: true } and no run. No row
+ * is marked to open on: the picker starts on the first selectable row, the top
+ * of the list (with a query, the first match), #1391. */
 export function paletteRows(roster, commands, raw, { openTerminal } = {}) {
   const instances = (Array.isArray(roster) ? roster : roster?.instances) || [];
   const deployments = (Array.isArray(roster) ? null : roster?.deployments) || [];
   const recent = !Array.isArray(roster) && roster?.recent instanceof Map ? roster.recent : new Map();
-  const activeId = (Array.isArray(roster) ? null : roster?.activeId) ?? null;
   const cmdMode = raw.startsWith(">");
   const q = (cmdMode ? raw.slice(1) : raw).trim();
   const rows = [];
@@ -76,8 +72,6 @@ export function paletteRows(roster, commands, raw, { openTerminal } = {}) {
     const visible = !q ? instances
       : multi ? [...own.values()].flatMap((list) => filterInstanceTree(list, q, matches)) : filterInstanceTree(instances, q, matches);
     const opens = (inst) => () => openTerminal({ instance: inst.instance, home: inst.home, agentsRoot: inst.agentsRoot, ...(inst.server ? { server: inst.server } : {}) });
-    const time = (inst) => recent.get(instanceId(inst));
-    let initial = null; // { row, time }
     for (const section of rosterSections(instances, visible, deployments, DESKTOP_TERMS, { lastFocus: recent })) {
       const full = section.deployment ? own.get(section.deployment.id) : instances;
       for (const each of section.groups) {
@@ -103,14 +97,10 @@ export function paletteRows(roster, commands, raw, { openTerminal } = {}) {
           };
           if (q && !matches(inst)) row.context = true;
           else row.run = opens(inst);
-          // ⌘K, Enter goes back to the previous agent: the latest focus that is not the terminal in front.
-          const at = time(inst);
-          if (!row.context && Number.isFinite(at) && (q || instanceId(inst) !== activeId) && (!initial || at > initial.time)) initial = { row, time: at };
           rows.push(row);
         }
       }
     }
-    if (initial) initial.row.initial = true;
   }
   const commandRows = [];
   for (const c of commands) {

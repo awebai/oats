@@ -22,7 +22,7 @@ export const SWITCHER_TEXT = Object.freeze({
 /** The columns of a choice: the selection mark in the first cell, the open mark, then the label.
  *  A heading and every line that is not a choice start two cells before the labels. */
 const OPEN = 2, LABEL = 4, ASIDE = LABEL - 2;
-/** One cell of margin at the right edge, as the header and the footer keep. */
+/** One cell of margin at the right edge, as the sidebar keeps. */
 const MARGIN = 1;
 /** The cells between two columns. */
 const GAP = 2;
@@ -67,10 +67,21 @@ function leadLines(s, cols) {
   if (s.said === "gone") lines.push({ text: SWITCHER_TEXT.gone, style: PLAIN });
   if (s.empty === "nomatch") lines.push({ text: SWITCHER_TEXT.nomatch, style: DIM });
   if (s.empty === "none") {
-    const [first, second, command] = SWITCHER_TEXT.none, whole = `${second} ${command}`;
-    for (const text of [first, ...(ASIDE + whole.length <= cols - MARGIN ? [whole] : [second, command])]) lines.push({ text, style: DIM });
+    const [first, second, command] = SWITCHER_TEXT.none, whole = `${second} ${command}`, room = cols - MARGIN - ASIDE;
+    // A sentence wider than the area (the main area beside the sidebar can be narrow) goes on on the
+    // next row, broken at its spaces; the command is a piece of its own, never broken.
+    for (const text of [...wrapped(first, room), ...(whole.length <= room ? [whole] : [...wrapped(second, room), command])]) lines.push({ text, style: DIM });
   }
   return lines;
+}
+/** A sentence of the TUI's own on rows of at most `room` cells, broken at its spaces. */
+function wrapped(text, room) {
+  return text.split(" ").reduce((rows, word) => {
+    const last = rows.at(-1);
+    if (last !== undefined && last.length + 1 + word.length <= room) rows[rows.length - 1] = `${last} ${word}`;
+    else rows.push(word);
+    return rows;
+  }, []);
 }
 
 /** `size.rows` rows for an area `size.cols` wide: the lines above, the model's window of the

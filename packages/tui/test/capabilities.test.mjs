@@ -104,7 +104,7 @@ test("the catalog is wanted only once the Capabilities view is shown: 3, the lea
   assert.deepEqual(keys(three.state, "1", "3").effects, [{ souls: "settle", capabilities: "settle" }]);
 });
 
-test("what the loop holds of the table decides what the view says: reading before anything is held, the failure when the first read failed, none, the rows, and over a failed re-read the rows it kept under a heading with the failure and the time of the last good read", () => {
+test("what the loop holds of the table decides what the view says: reading before anything is held, the failure when the first read failed, none, the rows, and over a failed re-read the rows it kept under a heading with the failure and the time of the last good read, and no word of its own (the accordion's row above it names the view)", () => {
   const opened = key(base(), "3").state;
   assert.equal(view(opened).state, "reading", "before the loop said anything");
   assert.equal(view(told(opened, null, { reading: true })).state, "reading", "the first read in flight");
@@ -117,7 +117,7 @@ test("what the loop holds of the table decides what the view says: reading befor
   const rows = view(shown());
   assert.deepEqual([rows.state, rows.heading], ["rows", null]);
   const kept = view(shown({ options: { reason } }));
-  assert.deepEqual([kept.state, kept.heading], ["rows", { label: "Capabilities", path: null, state: null, short: "Couldn't read this workspace's capabilities: oats capabilities exited 1", readAt: "09:59:30" }]);
+  assert.deepEqual([kept.state, kept.heading], ["rows", { label: "", path: null, state: null, short: "Couldn't read this workspace's capabilities: oats capabilities exited 1", readAt: "09:59:30" }]);
   assert.equal(kept.detail.failure, kept.heading.short, "the selected capability's detail holds the sentence whole");
 });
 

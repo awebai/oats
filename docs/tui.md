@@ -79,44 +79,82 @@ runs.
 ## What it shows
 
 ```
- fixture                                                              3 stopped
-  Instances   Souls   Capabilities                                read 20:02:02
-──────────────────────────────────────┬─────────────────────────────────────────
-> ■ dev ·2                            │   dev
-  ■ reviewer ·1                       │   dev fixture soul.
-                                      │   from     ws
-                                      │   works    works in directory
-                                      │   harness
-                                      │     Harness    Pi
-                                      │     Model      Pi's default model
-                                      │     Chosen by  no preference set: the
-                                      │                host default
-                                      │   instances here
-                                      │     ○ alpha  ○ beta
-                                      │     i shows them in the Instances view.
+ acme-platform                        │   dev
+                                      │   soul     dev
+ Instances                          1 │   state    running
+> ● dev                               │   harness  claude, claude-opus-5-5 (so…
+                                      │   work     worktree, agents/dev
+  ● reviewer                         !│   team     eng
+    ○ helper                          │   started  11:00
+──────────────────────────────────────│   home     …oy/agents/dev/instances/dev
+ Souls                              2 │
+ Capabilities                       3 │
+──────────────────────────────────────│
+ Alt+O    commands                    │
+ Ctrl+K   palette                     │
+ Enter    open                        │
+ n        spawn                       │
+ ?        help                        │
+ q        quit                        │
+                                      │
+                                      │
 ```
 
-- **The header** starts with the workspace's name, then what the view holds of
-  other machines, then the counts. Beside a deployment of this machine the
+The screen is the sidebar on the left and the main area on the right, with
+a rule between them over every row. There is no header and no footer. From
+80 columns the sidebar takes about half the width (36 to 60 columns, 30
+while a terminal is open); under 80 columns it has the whole width.
+
+- **The title** is the sidebar's first row: the workspace's name, then what
+  the view holds of other machines. Beside a deployment of this machine the
   other machines are counted: `+1 machine`, `+2 machines`. A view that holds
   no deployment of this machine names its one machine, `on garnet`, or
-  counts them when there are two or more, `2 machines`. The counts are over
-  every row of the view: instances running, instances that need input,
-  stopped, state unknown, and rows the kernel reported that were withheld (a
-  home outside its soul's directory, or one reported twice). A count of zero
-  is left out. The second row names the views, `Instances   Souls
-  Capabilities`, the open one drawn in reverse video. `1`, `2` and `3`
-  open them in the list, and [the leader](#the-leader) then `1`, `2` or `3`
-  from anywhere; the leader's hint, [the palette](#the-palette) and the
-  help name those keys. [The Souls view](#the-souls-view) lists the open
-  workspace's souls, and [the Capabilities view](#the-capabilities-view)
-  its capabilities. On the right is the time of the read of this machine
-  that the screen shows: it moves with every read.
-- **The footer** is one row of keys from the first column, with no rule
-  above it. It names `C-\ commands` first, in every focus: the leader,
-  which reaches every action. Then come the actions that apply now, as many
-  as fit, `help` and `quit` last; a narrow footer gives the others up first.
-  While the leader waits for its key the row is the leader's hint.
+  counts them when there are two or more, `2 machines`. While
+  [the switcher](#the-switcher) is shown the title is `workspaces`.
+- **Under the title** stands what the view needs to say first, wrapped to
+  the sidebar's width: a deployment's state when it is not live, with
+  `since …` and its reason on rows of its own; the note of a view of one
+  deployment; and the line that says what happened after an open, an act or
+  a spawn. Then an empty row.
+- **The views** follow as an accordion, always in this order: `Instances`,
+  `Souls`, `Capabilities`, each with its key dim at the right edge. The open
+  view's heading is bold and its list stands under it, with a rule between
+  it and the views before and after it. `1`, `2` and `3` open them in the
+  list, and [the leader](#the-leader) then `1`, `2` or `3` from anywhere;
+  the leader's hint, [the palette](#the-palette) and the help name those
+  keys. [The Souls view](#the-souls-view) lists the open workspace's souls,
+  and [the Capabilities view](#the-capabilities-view) its capabilities. A
+  workspace with no instances reads `No agents yet: n spawns one`, with the
+  key `spawn` has (`No agents yet.` when it has none).
+- **The cheat sheet** comes last, under a rule: a few keys, one per row,
+  the key in bold and what it does beside it. Its first row is always the
+  leader, `Alt+O commands`, which reaches every action; then
+  `Ctrl+K palette`. In a view's list it names what `Enter` does now
+  (`open`, `focus terminal` on the row whose terminal is open, `detail`
+  in the Souls and Capabilities views), then `n spawn` where it spawns,
+  and `? help` and `q quit` last; with the detail's focus `Tab back`
+  comes before `Enter`. The other keys (the acts, `/`, `Tab`, `r`, `w`,
+  and a terminal's `z`, `c`, `[` and `]`) are not listed there:
+  the leader's hint, the palette and the help name them. While the
+  terminal has the focus, in an overlay and in the filter field it names
+  the keys that work them. While the leader waits for its key the rows are
+  the leader's hint.
+  Everything flows from the top, so empty rows are at the bottom. On a
+  short screen the list keeps its rows first: the cheat sheet gives up rows
+  from its end, down to the leader alone, then the empty row under the
+  title goes, and the list scrolls in what is left.
+- **The main area** holds the selected row's detail, an
+  [open terminal](#open-an-agents-terminal), or an overlay: the switcher,
+  the palette, the spawn prompt, the help or a confirmation. From 80
+  columns an overlay covers the main area and the sidebar stays beside it,
+  its cheat sheet naming the overlay's keys. Under 80 columns the detail
+  and every overlay cover the whole screen, and their first row carries
+  their keys at the right, dim: the detail's `Tab back` first.
+- **The counts and the time of the read are not on the screen.** The help's
+  top row has the time of the read of this machine that the screen shows,
+  `read 14:03:27`, which moves with every read, and how many rows the
+  kernel reported that were withheld (a home outside its soul's directory,
+  or one reported twice), `2 withheld`, when there are any.
 - **The list** is the roster the Desktop draws: the same groups in the same
   order, from the same code. It is in name order, by each group's top
   instance, so starting or stopping an instance moves nothing. An instance
@@ -132,7 +170,11 @@ runs.
   state of a home a spawn or a retire holds (`Retire didn't finish`), or
   the shared words for why an instance cannot be reached or opened:
   `gone from garnet`, `garnet not reached`, `not reachable on garnet`,
-  `Herdr no longer supported`, `state unknown`.
+  `Herdr no longer supported`, `state unknown`. The words stand in a
+  column of their own. The name comes first: on a narrow sidebar, where
+  the column would leave the name less than 16 cells, the word is cut to
+  what the name leaves, or left out when that is under 6 cells; the mark
+  and the detail still say it.
 - **The detail** shows the selected instance: its soul, its state, and
   under it the reason when there is one, after the words that say who gave
   it: `OATS says:` for a kernel (this machine's, or the instance's
@@ -150,10 +192,10 @@ runs.
   link, either way, as the Desktop reads them: `sibling of a`, `sibling of
   a and b`, `sibling of a, b and c`. They are read inside the instance's
   own deployment, and a name that is no instance there, or two of them, is
-  not shown. From 80 columns up it stands beside the list; on a narrower
-  terminal `Tab` opens it as a page.
+  not shown. From 80 columns up it stands beside the sidebar; on a narrower
+  terminal `Tab` opens it as a page over the whole screen.
 - **Opening an agent.** `Enter` on an instance that runs opens its terminal
-  beside the list, where the detail was, as a tab: see
+  beside the sidebar, where the detail was, as a tab: see
   [Open an agent's terminal](#open-an-agents-terminal) and [Tabs](#tabs).
 
 **A view of more than one deployment** (this machine and another, or two
@@ -165,9 +207,9 @@ deployments on one machine) is one list, grouped as the Desktop groups it:
   view. A heading cannot be selected or folded: the movement keys pass over
   it. A view of one deployment has no heading.
 - **A machine's heading is its name.** When its rows were read at another
-  time than the one in the header, that time stands at the right of the
-  heading: `read 14:03:21`. A row of another machine shows what its host
-  reported at that time.
+  time than this machine's (the one on the help's top row), that time
+  stands at the right of the heading: `read 14:03:21`. A row of another
+  machine shows what its host reported at that time.
 - **A deployment that is not live carries its state and a short reason**
   on its heading, and no time: `garnet  remembered  Not reached`. The rows
   a machine last reported are kept when it is not reached, and each of them
@@ -187,17 +229,17 @@ deployments on one machine) is one list, grouped as the Desktop groups it:
   deployment, such as `garnet now reports workspace other.` for a machine
   that reported another workspace before, or that a deployment's teams are
   local only. It stands under the deployment's heading. In a view of one
-  deployment, which has no heading, it stands above the list.
+  deployment, which has no heading, it stands under the title.
 - **The detail has a `machine` line**, the machine the selected instance is
   on. When that deployment is not live, the whole sentence that says why
   follows it.
 
-**A view that holds no deployment of this machine** says so in its header:
+**A view that holds no deployment of this machine** says so in its title:
 `other  on garnet` for one machine, `2 machines` after the name for
-two or more. The time in the header is then the time the machines' rows
-were read. A view of one machine has no heading, so its state, when it is
-not live, is said above the list with the reason, as for a deployment of
-this machine. When no row of that machine is kept either, nothing is drawn
+two or more. The time on the help's top row is then the time the machines'
+rows were read. A view of one machine has no heading, so its state, when it
+is not live, is said under the title with the reason, as for a deployment
+of this machine. When no row of that machine is kept either, nothing is drawn
 under the reason: no list and no detail.
 
 **A machine that has not answered in this run is not in its workspace's
@@ -248,7 +290,7 @@ last rows stay as they were; or they stay and are marked `stale`, with the
 time of the last read that succeeded (a remote that could not be read
 again); or the
 deployment is `not observed` and no row is drawn. A state that is not live
-is said in words above the list, with the reason on rows of its own. When
+is said in words under the title, with the reason on rows of its own. When
 the kernel refused the read and no rows are kept, the reason says so and
 quotes it: `OATS answered with an error (<code>). It says: <message>`. When
 the last rows are kept as `stale`, the reason says so and then quotes the
@@ -274,53 +316,63 @@ fit; the detail shows them whole. The TUI's own words end the same way:
 ## Open an agent's terminal
 
 ```
- acme-platform                                                        2 running
-  Instances   Souls   Capabilities                                read 14:03:27
-──────────────────────────────┬─────────────────────────────────────────────────
-> ● backend-lead              │ backend-lead
-  ● docs-writer               │$ make docs
-                              │Building the reference...
-                              │
-                              │
-C-\ commands   C-\ C-\ back to the list
+ acme-platform                │ backend-lead
+                              │$ make docs
+ Instances                  1 │Building the reference...
+> ● backend-lead              │
+  ● docs-writer               │
+──────────────────────────────│
+ Souls                      2 │
+ Capabilities               3 │
+──────────────────────────────│
+ Alt+O         commands       │
+ Alt+O Esc     the list       │
+ Alt+O Alt+O   types Alt+O    │
 ```
 
 - **`Enter` on an instance that runs** opens its terminal on the right of
-  the body, where the detail was, with the list on the left. Its top row
-  names the agent (and `on <machine>` for one of another machine); under it
-  is the agent's screen, as the agent draws it, in its own colours. While a
-  terminal is open the list keeps 30 columns at most, also while the
+  the sidebar, where the detail was, over every row. Its top row names the
+  agent (and `on <machine>` for one of another machine); under it is the
+  agent's screen, as the agent draws it, in its own colours. While a
+  terminal is open the sidebar keeps 30 columns at most, also while the
   detail stands in the terminal's place, and a name longer than its row is
   cut with `…` (`...` in ASCII).
 - **The terminal has the focus.** What you type, what you paste and every
   key go to the agent exactly as typed, `Ctrl+C`, `Ctrl+Z`, `Esc` and `q`
-  among them, but for **[the leader](#the-leader)** (`Ctrl+\` unless
-  [`tui.json`](#change-the-keys-tuijson) names another), the one key the
-  TUI takes from the agent. The leader twice gives the focus to the list;
-  the leader then another key does what that key does from anywhere. While
-  the terminal has the focus the footer names it, and the leader twice:
-  `C-\ commands   C-\ C-\ back to the list`. A leader inside a bracketed
-  paste is pasted, not taken.
+  among them, but for **[the leader](#the-leader)** (`Alt+O`, `Ctrl+\` on
+  macOS, unless [`tui.json`](#change-the-keys-tuijson) names another), the
+  one key the TUI takes from the agent. The leader then `Esc` gives the
+  focus to the list; the leader twice types the leader into the agent; the
+  leader then another key does what that key does from anywhere. While the
+  terminal has the focus the cheat sheet names those three:
+  `Alt+O commands`, `Alt+O Esc the list`, `Alt+O Alt+O types Alt+O`. A
+  leader inside a bracketed paste is pasted, not taken.
 - **With the list focused** the terminal stays open, and the agent's screen
-  is still drawn as it changes. The footer names the keys for it:
-  `Enter focus terminal` on its row, `z zoom` and `c close terminal`.
+  is still drawn as it changes. The cheat sheet names `Enter focus terminal`
+  on its row; the leader's hint names `z zoom` and `w close terminal`.
   - `Enter` on the shown terminal's row gives it the focus again.
-  - `z` gives it the focus and the whole body: the header and the footer
-    stay, the list is hidden. The leader twice brings the list back beside
-    it, and the leader then `z` zooms it out and in without leaving it.
-  - `c` closes it: the agent keeps running. The tab beside it is shown;
-    with no other tab the right side is the detail again.
+  - `z` gives it the focus and the whole screen: the sidebar is hidden. The
+    leader then `Esc` brings the sidebar back beside it, and the leader then
+    `z` zooms it out and in without leaving it.
+  - `c` closes it, and the leader then `w` from anywhere: the agent keeps
+    running. The tab beside it is shown; with no other tab the right side
+    is the detail again.
   - `Tab` shows the detail in its place until `Tab` or `Esc`. Nothing of
     the terminal is drawn meanwhile, and its screen is read afresh when it
     shows again.
 - **Up to four terminals are open at a time, each a tab.** `Enter` on
   another instance that runs opens its terminal in a new tab, and the
   others stay open: see [Tabs](#tabs).
-- **Under 80 columns** the terminal is always shown with the whole body
-  when it has the focus. With the list focused the list is shown alone; the
-  terminal stays open, unseen, and `Enter focus terminal` in the footer
-  shows it again. Beside the list the terminal is never narrower than 40
-  columns.
+- **Under 80 columns** the terminal is always shown with the whole screen
+  when it has the focus. With the list focused the sidebar is shown alone;
+  the terminal stays open, unseen, and `Enter focus terminal` in the cheat
+  sheet shows it again. Beside the sidebar the terminal is never narrower
+  than 40 columns: with less room it has the whole screen too.
+- **With the whole screen** (zoomed, or a narrow terminal) no cheat sheet is
+  drawn. The terminal's title row carries the keys at its right, dim:
+  `Alt+O commands   Alt+O Esc the list`, and while the leader waits, the
+  leader's hint, as many keys as fit, `Esc the list` last. The agent's
+  screen keeps every row under it.
 - **A terminal also closes by itself** when its viewer ends, shown or
   hidden ([which tab is shown then](#tabs)): the agent's
   window ended, its session went away, or the link to its machine dropped.
@@ -331,7 +383,7 @@ C-\ commands   C-\ C-\ back to the list
   terminal without it when it has not come. A tmux built with libutempter
   (Ubuntu's and Debian's are) can lose that status: while it waits,
   `oats tui` has tmux look for it again once a second, so the terminal
-  still closes within a second or two with the line its status calls for. The instances are then read again at once, and one line above the panes
+  still closes within a second or two with the line its status calls for. The instances are then read again at once, and the line under the title
   says what happened: that it could not be opened, that the connection to
   its machine ended, or that the viewer ended without saying why. What the
   viewer printed on its error output stands under that line in quotation
@@ -360,15 +412,19 @@ C-\ commands   C-\ C-\ back to the list
 ## Tabs
 
 ```
- acme-platform                                                        3 running
-  Instances   Souls   Capabilities                                read 14:03:27
-──────────────────────────────┬─────────────────────────────────────────────────
-> ● backend-lead              │ backend-lead  docs-writer•  qa-runner
-  ● docs-writer               │$ make test
-  ● qa-runner                 │ok 41 of 41
-                              │
-                              │
-C-\ commands   C-\ C-\ back to the list
+ acme-platform                │ backend-lead  docs-writer•  qa-runner
+                              │$ make test
+ Instances                  1 │ok 41 of 41
+> ● backend-lead              │
+  ● docs-writer               │
+  ● qa-runner                 │
+──────────────────────────────│
+ Souls                      2 │
+ Capabilities               3 │
+──────────────────────────────│
+ Alt+O         commands       │
+ Alt+O Esc     the list       │
+ Alt+O Alt+O   types Alt+O    │
 ```
 
 Each terminal open in the panel is a tab, and the panel holds up to four.
@@ -400,16 +456,15 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
     machine is asked whether it can be opened, another open does nothing,
     and neither does a key that shows another tab.
   - **At four tabs nothing closes by itself.** The open does nothing, and
-    the line above the panes says `4 terminals are open; close one with C-\ w.`
+    the line under the title says `4 terminals are open; close one with Alt+O w.`
     (with your leader, when [`tui.json`](#change-the-keys-tuijson) names
     another). A tab still starting, and an agent of another machine while
     it is asked, hold a place among the four. An instance that cannot be
     opened says why, as it does with no tab open.
 - **Switching.** `[` and `]` in the Instances view, from the list or the
-  detail, show the tab before or after the shown one; the footer names them
-  (`[/] tab`) after the terminal's keys while two tabs or more are open, and
-  gives them up after the acts, `workspaces`, `refresh` and `close`, before
-  `detail`. The leader then
+  detail, show the tab before or after the shown one; the help names them,
+  and the leader's hint names the leader's own while two tabs or more are
+  open. The leader then
   `Left` or `Right` does the same from any focus, and from another view
   goes to the Instances view first.
   - The strip does not wrap: on the first tab `[` does nothing, and on the
@@ -433,13 +488,13 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
   - Closing the last tab closes the panel: the right side is the detail
     again, and the list has the focus.
 - **A tab that closes by itself**, when its viewer ends, says so on the line
-  above the panes in the words [above](#open-an-agents-terminal), for that
+  under the title in the words [above](#open-an-agents-terminal), for that
   tab's agent (no line when it ended cleanly).
   - The shown tab: the tab to its right is shown, else the one to its left,
     and the list takes the focus.
   - A hidden tab: the shown tab and the focus stay as they were.
-- **Zoom** (`z`, or the leader then `z`) gives the shown tab the whole body.
-  The strip stays its top row, and the other tabs stay open.
+- **Zoom** (`z`, or the leader then `z`) gives the shown tab the whole
+  screen. The strip stays its top row, and the other tabs stay open.
 - **The tabs are the open workspace's.** Opening another workspace in
   [the switcher](#the-switcher) closes them all, and so does the open
   workspace no longer being listed; their agents keep running. Coming back
@@ -448,15 +503,19 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
 ## Splits
 
 ```
- acme-platform                                                                                        3 running
-  Instances   Souls   Capabilities                                                                read 14:03:27
-──────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────
-  ● backend-lead              │ backend-lead  docs-writer              │ qa-runner
-  ● docs-writer               │$ git log --oneline -2                  │$ make test
-> ● qa-runner                 │4be1c0d Fix the reader                  │ok 41 of 41
-                              │9a03e7f Add the roster                  │
-                              │                                        │
-C-\ commands   C-\ C-\ back to the list
+ acme-platform                │ backend-lead  docs-writer              │ qa-runner
+                              │$ git log --oneline -2                  │$ make test
+ Instances                  1 │4be1c0d Fix the reader                  │ok 41 of 41
+  ● backend-lead              │9a03e7f Add the roster                  │
+  ● docs-writer               │                                        │
+> ● qa-runner                 │                                        │
+──────────────────────────────│                                        │
+ Souls                      2 │                                        │
+ Capabilities               3 │                                        │
+──────────────────────────────│                                        │
+ Alt+O         commands       │                                        │
+ Alt+O Esc     the list       │                                        │
+ Alt+O Alt+O   types Alt+O    │                                        │
 ```
 
 The panel can be split in two **groups**, side by side or one above the
@@ -469,9 +528,9 @@ tab and the marks of its hidden ones.
   (left, or top). The second group starts empty and is the focused group.
   - A split needs a tab open, and none starting.
   - **There are at most two groups.** With two, the split keys do nothing,
-    and the line above the panes says `The panel has two groups already.`
+    and the line under the title says `The panel has two groups already.`
   - **Each group needs 40 columns side by side, and 8 rows one above the
-    other**, its strip counted. The panel beside the list then needs 81
+    other**, its strip counted. The panel beside the sidebar then needs 81
     columns (a terminal of 112), or 17 rows. A split that would leave a
     group smaller does nothing, and the line says so:
     `No room to split side by side: each group needs 40 columns.` or
@@ -490,10 +549,10 @@ tab and the marks of its hidden ones.
     it. **When the terminal becomes too small for both groups,** the split
     stays and the focused group is drawn alone; the other group's shown tab
     is not drawn, only marked, until there is room again.
-  - **Under 80 columns** the terminal's focus gives the whole body to both
-    groups, and the list's focus shows the list alone, as with one group.
+  - **Under 80 columns** the terminal's focus gives the whole screen to both
+    groups, and the list's focus shows the sidebar alone, as with one group.
   - **Zoom** (`z`, or the leader then `z`) gives the focused group's shown
-    terminal the whole body, and the same key brings the split back. With
+    terminal the whole screen, and the same key brings the split back. With
     the empty group focused it does nothing.
 - **Opening.** `Enter`, the palette, the leader then `Up`/`Down` and a
   spawn open as with one group:
@@ -502,7 +561,7 @@ tab and the marks of its hidden ones.
   - any other: a new tab in the focused group, after its shown tab, or as
     the first tab of the empty group.
   - **The four tabs are counted across both groups.** At four, the line
-    says `4 terminals are open; close one with C-\ w.` as with one group.
+    says `4 terminals are open; close one with Alt+O w.` as with one group.
 - **Moving between the groups.** The leader then `Tab` from a terminal goes
   to the other group's shown terminal, or to the other group when it is
   empty. From the list it goes to the focused group's terminal, or, with
@@ -537,14 +596,23 @@ ones `oats spawn` can make an instance of here, as the OATS Desktop lists
 them, from the same code.
 
 ```
- acme-platform                                        2 running  1 stopped
-  Instances   Souls   Capabilities                                read 14:03:27
-──────────────────────────────────────┬─────────────────────────────────────────
-> ■ dev ·2                            │   dev
-  ■ ops !                             │   Builds and ships the platform.
-  ■ reviewer ·1                       │
-                                      │   from     oats-core
-                                      │   works    works in its own worktree
+ acme-platform                        │   dev
+                                      │   Builds and ships the platform.
+ Instances                          1 │   from     oats-core
+──────────────────────────────────────│   works    works in its own worktree
+ Souls                              2 │   harness
+> ■ dev ·2                            │     No default harness: you choose one
+  ■ ops !                             │     when you launch it.
+  ■ reviewer ·1                       │   instances here
+──────────────────────────────────────│     ● dev-1  ● dev-2
+ Capabilities                       3 │     i shows them in the Instances view.
+──────────────────────────────────────│
+ Alt+O    commands                    │
+ Ctrl+K   palette                     │
+ Enter    detail                      │
+ n        spawn                       │
+ ?        help                        │
+ q        quit                        │
 ```
 
 - **A row** is the soul's colour mark (`■`, `#` in ASCII; its colour is the
@@ -559,10 +627,10 @@ them, from the same code.
   problem as the kernel reports it); its teams, the default first; its
   capabilities; and its instances on this machine, eight at most and then
   `+n`. `Enter` gives the detail the focus (under 80 columns it takes the
-  list's place), and the movement keys then scroll it.
+  whole screen), and the movement keys then scroll it.
 - **`i`**, or `Enter` in the detail, shows that soul's instances in the
-  Instances view: an exact filter, shown where a kept filter stands in
-  the footer, `soul dev`.
+  Instances view: an exact filter, named where a kept filter stands, on
+  the view's heading: `Instances  soul dev`.
   An instance of another soul whose name holds `dev` is not listed. `Esc`
   clears it, and `/` replaces it with a text filter.
 - **`r`** reads the souls again; while a read is under way it starts
@@ -593,25 +661,26 @@ the ones its repositories and its packages offer, as the OATS Desktop lists
 them, from the same code.
 
 ```
- acme-platform                                                        3 running
-  Instances   Souls   Capabilities                                read 14:03:27
-──────────────────────────────────────┬─────────────────────────────────────────
- Workspace owned                      │   aweb Messaging
-  oats · member repo · host           │   Messaging over aweb, mail and chat,
->   aweb Messaging                    │   for every instance of the workspace.
-  tools · member repo                 │
-    notes                             │   Comes from
- Packages                             │     Repository   oats
-  oats-okf · package · v1.2.0         │     Latest       bbbbbbb
-    okf-knowledge Knowledge           │     Path         capabilities/aweb
-                                      │
-                                      │   Provides
-                                      │     Skills    oats-aweb, aweb-messaging
-                                      │     Hooks     SessionStart
-                                      │
-                                      │   Used by  2 souls
-                                      │     ■ dev ·2 · 1 on an older version
-                                      │     ■ reviewer ·1
+ acme-platform                        │   aweb Messaging
+                                      │   Messaging over aweb, mail and chat,
+ Instances                          1 │   for every instance of the workspace.
+ Souls                              2 │
+──────────────────────────────────────│   Comes from
+ Capabilities                       3 │     Repository   oats
+ Workspace owned                      │     Latest       bbbbbbb
+  oats · member repo · host           │     Path         capabilities/aweb
+>   aweb Messaging                    │
+  tools · member repo                 │   Provides
+    notes                             │     Skills    oats-aweb, aweb-messaging
+ Packages                             │     Hooks     SessionStart
+  oats-okf · package · v1.2.0         │
+    okf-knowledge Knowledge           │   Used by  2 souls
+──────────────────────────────────────│     ■ dev ·2 · 1 on an older version
+ Alt+O    commands                    │     ■ reviewer ·1
+ Ctrl+K   palette                     │
+ Enter    detail                      │
+ ?        help                        │
+ q        quit                        │
 ```
 
 - **The list** is in the Desktop's sections: Workspace owned, Repo owned
@@ -647,7 +716,7 @@ them, from the same code.
     `Reading souls…`, and a read of them that fails says why, in the
     warning style.
 - **`Enter`** gives the detail the focus (under 80 columns it takes the
-  list's place), with a mark, `>` in reverse video, on the first soul of
+  whole screen), with a mark, `>` in reverse video, on the first soul of
   Used by. `Up` and `Down` move the mark among the listed souls, and the
   detail scrolls to keep it in sight. Past the first or the last soul, and
   with the other movement keys, the detail scrolls; with no soul listed
@@ -680,25 +749,25 @@ selected.
 
 ## The switcher
 
-`w` opens the switcher: what this run can show, over the whole body of the
-screen.
+`w` opens the switcher: what this run can show, over the main area. The
+sidebar's title says `workspaces` and no view is open; under 80 columns the
+switcher covers the whole screen.
 
 ```
- workspaces
-  Instances   Souls   Capabilities
-────────────────────────────────────────────────────────────────────────────────
-> * acme-platform               This machine · garnet
-    ledger                      quartz
-  Not matched to a workspace
-    basalt                      ssh needs a prompt
-  On this machine, not opened
-    acme-docs                   ~/Agents/acme-docs
-    sandbox                     ~/Agents/sandbox
-
-
-
-
-C-\ commands   Enter open   / filter   r refresh   Esc close   ? help   q quit
+ workspaces                                     │ > * acme-platform         This machine · garnet
+                                                │     ledger                quartz
+ Instances                                    1 │   Not matched to a workspace
+ Souls                                        2 │     basalt                ssh needs a prompt
+ Capabilities                                 3 │   On this machine, not opened
+────────────────────────────────────────────────│     acme-docs             ~/Agents/acme-docs
+ Alt+O    commands                              │     sandbox               ~/Agents/sandbox
+ Ctrl+K   palette                               │
+ Enter    open                                  │
+ /        filter                                │
+ r        refresh                               │
+ Esc      close                                 │
+ ?        help                                  │
+ q        quit                                  │
 ```
 
 It lists, in this order:
@@ -764,17 +833,18 @@ none; one whose spawn stopped half way, and one whose retire failed or
 didn't finish, offers only to be retired; a running one offers restart and
 not start, a stopped one start and not restart. One that is `Retiring…`
 offers no start, stop, restart or open: `D` still opens its retire
-confirmation, but the footer does not name it, since the kernel refuses a
-second retire while one runs and it is needed only when the first one's
-holder can't be read. The
-footer names the keys the selected instance offers now, after `Enter`, and
-on a narrow terminal they are the first hints it gives up. A key for an act
-the instance does not offer opens nothing, and the line above the panes
+confirmation, which is needed only when the first retire's holder can't be
+read, since the kernel refuses a second retire while one runs. The
+palette offers the acts the selected instance offers now, and the leader's
+hint and the help name their keys. A key for an act
+the instance does not offer opens nothing, and the line under the title
 says why. The keys are yours to change in
 [`tui.json`](#change-the-keys-tuijson): the actions are `stop`, `retire`,
 `start` and `restart`.
 
-**The confirmation** opens over the list, with the focus on `Cancel`.
+**The confirmation** opens over the main area, with the focus on `Cancel`;
+the cheat sheet names its keys (under 80 columns it covers the whole screen,
+its keys on its first row).
 `Left`/`Right` and `Tab`/`Shift+Tab` move between its buttons and `Enter`
 presses one. No letter moves the focus, and an `Enter` that arrives in the
 same read of input as the move onto the act's button is ignored, so pasted
@@ -844,7 +914,7 @@ The exit status never depends on it.
 one screen to read and one `Enter` to press.
 
 - **`n`** in the list of instances (or the leader then `n`, from any focus,
-  a terminal's too) opens the soul picker over the list: the souls of
+  a terminal's too) opens the soul picker over the main area: the souls of
   [the Souls view](#the-souls-view), read with `oats souls` if they were
   not read yet (`Reading souls…` until then). Typing filters them with the
   palette's subsequence match; `Up`/`Down` move, `Enter` picks the selected
@@ -865,7 +935,7 @@ one screen to read and one `Enter` to press.
 - **One focus ring:** `Spawn` (where the focus starts), `name`, `child of`
   (when an instance of this machine was selected), then each folded part.
   `Tab` moves along it, `Shift+Tab` back. `Enter` does what the focus says,
-  and the footer names it:
+  and the cheat sheet names it:
   - on `Spawn`, spawns what the preview shows;
   - on `name`, keeps the name typed and reads the preview again with it:
     the instance is named `<soul>-<name>` (`--purpose`). Only the letters,
@@ -891,8 +961,8 @@ one screen to read and one `Enter` to press.
 - **`n` and `N` are of the view they are pressed in**: the leader's too.
   From the Souls view (its list, its filter or its detail) both are of its
   selected soul, whatever the list of instances has selected.
-- **One spawn at a time.** While one is under way the line above the
-  panes says `Spawning <name>…`, and the TUI goes on working: `n` and `N`
+- **One spawn at a time.** While one is under way the line under the
+  title says `Spawning <name>…`, and the TUI goes on working: `n` and `N`
   say a spawn is under way and open nothing.
 - **Only on this machine.** On another machine's row or workspace `n` and
   `N` (from their keys, the leader or the palette) say that spawning on
@@ -904,7 +974,7 @@ the TUI adds only what to do next, naming its keys or an `oats` command:
 
 | Outcome | What follows |
 |---|---|
-| created and started | the instances are read at once; when the new row appears it is selected and its terminal opens beside the list in a new [tab](#tabs), with the focus in it. With four tabs open the line says it was created, then `4 terminals are open; close one with C-\ w.`, and nothing opens. Not running after two reads: the line says it is not visible yet, and nothing opens later by itself |
+| created and started | the instances are read at once; when the new row appears it is selected and its terminal opens beside the sidebar in a new [tab](#tabs), with the focus in it. With four tabs open the line says it was created, then `4 terminals are open; close one with Alt+O w.`, and nothing opens. Not running after two reads: the line says it is not visible yet, and nothing opens later by itself |
 | created, but not started, or its wake not saved, or not finished | the line says so; nothing opens. A home the spawn left reads as [held](#held-rows) |
 | not known (the answer was lost, or still running at the deadline) | the line says so, and `C` checks its result once, without spawning again: it is offered only then |
 | its cleanup is owed | the line says so and names the retire |
@@ -930,12 +1000,12 @@ The line after leaving says so and names `oats status` to see it.
 | `2` | [the Souls view](#the-souls-view); `Esc` or `1` goes back |
 | `3` | [the Capabilities view](#the-capabilities-view); `Esc` or `1` goes back |
 | `w` | opens [the switcher](#the-switcher) |
-| `Enter` | in the list of instances, opens the selected agent's terminal in a new [tab](#tabs) beside the list, or shows its tab when it has one, with the focus in it; in the switcher, opens the selected row; in a confirmation, presses the button with the focus |
-| `z` | gives the shown terminal the focus and the whole body |
+| `Enter` | in the list of instances, opens the selected agent's terminal in a new [tab](#tabs) beside the sidebar, or shows its tab when it has one, with the focus in it; in the switcher, opens the selected row; in a confirmation, presses the button with the focus |
+| `z` | gives the shown terminal the focus and the whole screen |
 | `c` | closes the shown terminal's tab and shows the tab beside it; the agent keeps running |
 | `[`, `]` | in the Instances view, shows the tab before or after the shown one |
 | `\|`, `-` | in the Instances view, [splits](#splits) the panel side by side or one above the other |
-| `Ctrl+\` | [the leader](#the-leader), from every focus ([`tui.json`](#change-the-keys-tuijson) can name another key) |
+| `Alt+O` (`Ctrl+\` on macOS) | [the leader](#the-leader), from every focus ([`tui.json`](#change-the-keys-tuijson) can name another key) |
 | `Ctrl+K` | opens [the palette](#the-palette); `Ctrl+K` again closes it |
 | `X`, `D`, `S`, `R` | stop, retire, start, restart the selected agent, [after a confirmation](#stopping-starting-restarting-and-retiring) |
 | `n` | [spawns an agent](#spawning-an-agent): the soul picker, then the preview |
@@ -958,15 +1028,23 @@ instance can always be read, however many they are. The selection stays
 where it is, and the list returns to it at the next key that moves it.
 
 The help screen is generated from the table the program acts on, so it
-always lists the keys that work, the leader's among them, with the marks
-and with what this version does not do. The movement keys scroll it. While
+always lists the keys that work, the leader's among them, the palette's
+and the spawn prompt's, with the marks and with what this version does not
+do. Its top row has the time of the read and the count of withheld rows
+([What it shows](#what-it-shows)). The movement keys scroll it. While
 a terminal has the focus the table's keys are the agent's: the leader alone
 is the TUI's.
 
 ### The leader
 
 Every action is reached by keys from every focus, a terminal's too: the
-leader, `Ctrl+\` (tui.json's `open.detachKey`), then one plain key.
+leader (tui.json's `open.detachKey`), then one plain key. The leader is
+`Alt+O` on Linux and Windows and `Ctrl+\` on macOS, unless
+[`tui.json`](#change-the-keys-tuijson) names another key, `C-\` among
+them. `Alt+O` is reached with one hand on every keyboard layout, where
+`Ctrl+\` is a stretch on most and needs AltGr on many. macOS keeps
+`Ctrl+\` because its terminals type `ø` for Option+O unless they are set
+to use Option as Meta.
 
 | The leader, then | Does |
 |---|---|
@@ -974,7 +1052,7 @@ leader, `Ctrl+\` (tui.json's `open.detachKey`), then one plain key.
 | `1`, `2`, `3` | the Instances, Souls and Capabilities views |
 | `Up`, `Down` | opens the terminal of the instance before or after, in the list as it is drawn, the focus in it: from the shown terminal's instance, or from the selection when none is open. It shows the instance's tab when it has one, else opens a new [tab](#tabs). Rows that cannot be opened are passed over, and the list does not wrap |
 | `Left`, `Right` | shows the tab before or after the shown one; the strip does not wrap, and the focus stays where it was |
-| `z` | zooms the shown terminal in or out; with the list focused, gives it the focus and the whole body |
+| `z` | zooms the shown terminal in or out; with the list focused, gives it the focus and the whole screen |
 | `w` | closes the shown terminal's tab and shows the tab beside it; the agent keeps running |
 | `\|`, `-` | [splits](#splits) the panel side by side or one above the other |
 | `Tab` | goes to the other group's terminal (or to the other group, when it is empty); from the list, to the focused group's |
@@ -985,13 +1063,17 @@ leader, `Ctrl+\` (tui.json's `open.detachKey`), then one plain key.
 | `/` | the filter |
 | `o` | [the switcher](#the-switcher) |
 | `?` | the help |
-| `Esc`, or the leader again | gives the list the focus; with the list focused, only closes the hint |
+| `Esc` | gives the list the focus |
+| the leader again | types the leader into the terminal that has the focus, which keeps it; with the list focused, only closes the hint |
 
-- **While the leader waits** for its key the footer row is its hint, which
-  names these keys (`z` and `w` only while a terminal is open, `Left` and
-  `Right` only with two tabs or more, `|` and `-` while the panel has one
-  group, `Tab` with two, then `m` while the focused group shows a tab or
-  `x` while it is empty). It waits
+- **While the leader waits** for its key the cheat sheet's rows are its
+  hint: `Alt+O then`, then a row per key, `Esc the list` last. It names
+  these keys but `n` and `N` (`z` and `w` only while a terminal is open,
+  `Left` and `Right` only with two tabs or more, `|` and `-` while the
+  panel has one group, `Tab` with two, then `m` while the focused group
+  shows a tab or `x` while it is empty, and the leader again while a
+  terminal has the focus). On a short screen it gives up rows before its
+  last. It waits
   with no time limit. A key not in the table cancels it and is dropped:
   nothing is typed.
 - **Only a key in a later read counts.** A key that came in the same read of
@@ -999,6 +1081,13 @@ leader, `Ctrl+\` (tui.json's `open.detachKey`), then one plain key.
   read, so a paste can never run a command. In a terminal the bytes before
   the leader in that read still go to the agent. A leader inside a
   bracketed paste is pasted text.
+- **In a terminal `Alt+O` is one keypress only.** A terminal sends `Alt+O`
+  as `Esc` then `o`. Those bytes count as the leader when they arrive in
+  one read, or split across reads within 10 ms. An `Esc` then `o` typed as
+  two keys reaches the agent unchanged: in vim that is "leave insert mode,
+  open a line". Over a slow link two keys typed apart can arrive in one
+  read and act as the leader, and one `Alt+O` can arrive split and reach
+  the agent as `Esc` and `o`.
 - **In the list no leader is needed:** the plain keys work as they always
   have, and the leader works there too.
 - **What was open under it is settled first,** from whatever view: a
@@ -1013,8 +1102,12 @@ leader, `Ctrl+\` (tui.json's `open.detachKey`), then one plain key.
 ### The palette
 
 The leader then `k` (or `Space`), or `Ctrl+K` in the list, opens one input
-over a list, as the OATS Desktop's ⌘K does. It takes the body, and while it
-is open no terminal is drawn and the TUI reads the keys.
+over a list, as the OATS Desktop's ⌘K does. From 80 columns it covers the
+main area and the sidebar stays beside it, its cheat sheet naming the
+palette's keys (`Enter run`, `Up/Down move`, `Esc close`); under 80 columns
+it covers the whole screen, with those keys on its first row. While it is
+open no terminal is drawn and the TUI reads the keys. The help lists its
+keys under The palette.
 
 - **It lists, in this order:** the instances that can be opened, the most
   recently opened or shown in this run first (when the first is the shown tab's,
@@ -1050,15 +1143,18 @@ is open no terminal is drawn and the TUI reads the keys.
 - Closed, it gives the focus back to the terminal it was opened from.
   Recency is kept for the run only: nothing is written.
 
-**The filter.** `/` opens a field on the last row. What you type narrows the
+**The filter.** `/` opens a field on the open view's heading: while you
+type, the heading is `/` and the text. What you type narrows the
 list to the instances whose name, soul or repository contains it, with the
 instances they were spawned from, whatever is folded away. In the field
 every printable key is text, so `q` and `j` can be typed; `Backspace`
 removes a character, `Enter` keeps the filter and returns to the list
-(the last row then shows it as `/text`), `Esc` clears it. `Ctrl+C`, `Ctrl+Z`
+(the heading then names it after the view's name, `Instances  /text`),
+`Esc` clears it. `Ctrl+C`, `Ctrl+Z`
 and `Ctrl+L` still do what they do. The filter holds at most 200
-characters. The switcher has a filter of its own, with the same field: it
-narrows the rows to the ones whose name, machines or path contain the text.
+characters. The switcher has a filter of its own: its field stands on a
+row of its own above its list while it is typed or kept, and it narrows the
+rows to the ones whose name, machines or path contain the text.
 
 **Pasted text is never read as keys.** A paste into the list is dropped
 whole. A paste into the filter field adds its first line, and only when
@@ -1102,12 +1198,16 @@ never writes it. With no file the keys are the ones above.
   and `Ctrl+M` as `backspace`, `tab` and `enter`, so those four are not
   keys of their own.
 - `ascii: true` is `--ascii`.
-- `open.detachKey` is **[the leader](#the-leader)**, `C-\` when you name
-  none. It is `oats tui`'s own and never reaches the agent or the kernel.
+- `open.detachKey` is **[the leader](#the-leader)**. When you name none
+  it is `M-o` (`Alt+O`) on Linux and Windows and `C-\` (`Ctrl+\`) on
+  macOS; `C-\` stays a key you can name on every platform. It is
+  `oats tui`'s own: it never reaches the kernel, and it reaches the agent
+  only when you press it twice in the agent's terminal.
   It is read as a key wherever the TUI reads keys, so it may not be a key
   an action has: `C-l` is `redraw`'s `Ctrl+L`, `C-k` the palette's
-  `Ctrl+K`, `C-j` is `Enter`. It is one of
-  these, written as shown: `C-` with a letter but `h`, `i` and `m` (a
+  `Ctrl+K`, `C-j` is `Enter`. That holds for the default too: a file that
+  gives `alt+o` to an action on Linux or Windows names another leader as
+  well. It is one of these, written as shown: `C-` with a letter but `h`, `i` and `m` (a
   terminal sends those as `Backspace`, `Tab` and `Enter`) or one of `\`
   `]` `^` `_`; `M-` with a lower-case letter or a digit; or `F1` to `F12`,
   alone or with one of `C-`, `M-`, `S-` (`C-F5`). These are the keys a
@@ -1126,7 +1226,7 @@ guesses nothing. It refuses:
 | has a setting other than `keys`, `ascii` and `open`, or one of the wrong kind | `unknown setting …`, `keys must be an object`, `ascii must be true or false`, `open must be an object` |
 | has a member of `open` other than `detachKey` | `unknown member … of open; open has detachKey` |
 | gives `open.detachKey` anything but one of the keys above | `open.detachKey must be one key: …`, with the keys it can be |
-| gives `open.detachKey` a key an action has | `open.detachKey … is read as …, the key of …; give the leader a key no action has, or give … another` |
+| gives `open.detachKey`, or the default leader, a key an action has | `open.detachKey … is read as …, the key of …; give the leader a key no action has, or give … another`, or `the default leader … is read as …` with the same end when the file names no leader |
 | names `open-workspace`, the action's name before it became `open` | `open-workspace is called open now; rename it` |
 | names an action that does not exist | `unknown action …`, with the list of actions |
 | gives an action something that is not a list of strings | `… must be a list of key ids` |
@@ -1158,8 +1258,8 @@ with the Desktop (`packages/client/`).
 - **How often:** 5 seconds after the last read ended; 30 seconds once ten
   minutes have passed without a key; at once on `r`, on the return from a
   suspend and when a row is opened in the switcher. Every read asks tmux
-  anew and reads the instances anew, and the time in the header is that
-  read's. What a read in the background may reuse is the kernel's own look
+  anew and reads the instances anew, and the time on the help's top row is
+  that read's. What a read in the background may reuse is the kernel's own look
   at the workspace's remotes, for up to 60 seconds; `r` asks the kernel to
   look again.
 - **The souls are one more read**, `oats souls --json` for the open
@@ -1242,7 +1342,7 @@ with the Desktop (`packages/client/`).
   that pane's output until the tab is displayed again, so a hidden agent
   that prints without pause costs one chunk of output each time its tab is
   hidden, and a quiet one nothing. The panel hidden as a whole (another
-  view or an overlay over it, or the list alone under 80 columns) pauses
+  view or an overlay over it, or the sidebar alone under 80 columns) pauses
   its displayed tabs the same way. A
   paused pane is still read by the private server, so its screen stays
   current and its viewer never waits. A tab displayed again is continued
@@ -1358,9 +1458,9 @@ version:
   opened with `oats tui --dir <path>`.
 - **A row of another machine shows what its host reported at the last
   read,** not what is true at this moment. The time of that read is on the
-  machine's heading when it is not the header's time. A view of one machine
-  has no heading: there the header names the machine (`on garnet`) and
-  carries the time.
+  machine's heading when it is not the time of this machine's read. A view
+  of one machine has no heading: there the title names the machine
+  (`on garnet`) and the help's top row carries the time.
 - The Souls and Capabilities views list a workspace of this machine's
   souls and capabilities: both are this machine's.
 - There is no sorting and no mouse, and a deployment's heading cannot be

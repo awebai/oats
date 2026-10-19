@@ -13,13 +13,26 @@ import {
   observedEntry, originLead, panelInstances, shortPath, remoteRosterState, retainedStartMessage, rosterRows, startGate, startInstance,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
-import { ACT_VERBS, ACT_WORDS, BUTTON_ORDER, actContext, actCwd, actDecision, buttonLabel, model, roster, startOutcome } from "../lib/model.mjs";
+import { ACT_VERBS, ACT_WORDS, BUTTON_ORDER, actContext, actCwd, actDecision, buttonLabel, model, paletteItems, roster, startOutcome } from "../lib/model.mjs";
 import { reduce } from "../lib/store.mjs";
 import { ACT_RULES } from "../lib/views/help.mjs";
 import { CLI, DEPLOYMENT, LIFECYCLE_INSTANCE as fixtureInstance, draw, envelope, instanceRow, lifecycleContext as boundaryContext, lifecycleTarget, observed, press, rosterOf, stateOf, stopPlan, stopReceipt } from "./helpers.mjs";
 
 const size = (cols, rows) => ({ cols, rows });
 const S80 = size(80, 24), S120 = size(120, 40);
+/** Wide enough that the main area beside the sidebar (137 cells) holds a confirmation's lines, and
+ *  the help's, each on one row, as the whole screen did. */
+const S200 = size(200, 40);
+/** The main area's rows as text, trimmed: what a confirmation or the help draws beside the sidebar
+ *  (views/frame.mjs: from column listCols + 2, `cols` the sidebar's width). */
+const mainLines = (d) => d.cells.map((line) => line.slice(d.cols + 2).map((cell) => cell.text).join("").trim());
+/** The cheat sheet's rows (the sidebar's, after its last rule), trimmed. */
+function sheetOf(d) {
+  const rows = d.cells.map((line) => line.slice(0, d.cols).map((cell) => cell.text).join("").trim());
+  return rows.slice(rows.lastIndexOf("─".repeat(d.cols)) + 1).filter(Boolean);
+}
+/** A row of the cheat sheet: the key, then what it does in the column after the widest key. */
+const hint = (key, word, widest = 6) => `${key.padEnd(widest + 3)}${word}`;
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 /** A kernel that starts and restarts sessions and plans stops and retires. */
@@ -45,7 +58,7 @@ function on(state, name) {
   assert.equal(rowOf(state).instance, name, `${name} is selected`);
   return state;
 }
-/** The line above the panes as text: its parts, then each text under it. */
+/** The line under the sidebar's title as text: its parts, then each text under it. */
 const lineOf = (state) => (state.outcome === null ? null : [words(state.outcome.said), ...state.outcome.under]);
 /** A reason of the shared home's, as the line says it: after its speaker when it names one, as
  *  written when it carries no mark, and quoted when its mark names nobody. */
@@ -59,7 +72,7 @@ const openedWith = (effects) => effects.map(({ act }) => ({ act: { ...act, row: 
 
 // ── Which key opens what ─────────────────────────────────────────────────────────────────────────
 
-test("each act key opens a confirmation exactly when instanceActs lists its verb enabled, and otherwise says why on the line above the panes (Done 1)", () => {
+test("each act key opens a confirmation exactly when instanceActs lists its verb enabled, and otherwise says why on the line under the sidebar's title (Done 1)", () => {
   const cases = [
     // row, the verbs that open; every other verb says why
     [RUN, ["stop", "retire", "restart"]],
@@ -106,21 +119,21 @@ test("a start or restart the shared start gate refuses opens nothing, and its se
   assert.deepEqual(lineOf(press(stopped, ["S"]).state), ["", gate.sentence]);
 });
 
-test("the footer names the act keys the selected row opens now, in the order stop, retire, start, restart, after open; a key it leaves out still answers (Done 1)", () => {
-  const footer = (state, sz = S120) => draw(state, sz).lines[sz.rows - 1];
-  // At 140 columns every hint has room: at 120 `R restart` is given up first (the acts go before the views).
-  assert.match(footer(on(here(), RUN), size(140, 40)), /^C-\\ commands {3}Enter open {3}X stop {3}D retire {3}R restart {3}\/ filter/);
-  assert.match(footer(on(here(), STOPPED)), /^C-\\ commands {3}X stop {3}D retire {3}S start {3}\/ filter/);
-  assert.match(footer(on(here(), HALF)), /^C-\\ commands {3}D retire {3}\/ filter/);
-  assert.match(footer(on(here(), SPAWNING)), /^C-\\ commands {3}\/ filter/);
-  // From the same reading of instanceActs as the key: the model's `actable`.
+test("the cheat sheet names no act key, whatever the row: what Enter does, then spawn, help and quit; each act key the row opens still opens, and the palette offers those acts (Done 1)", () => {
+  const sheet = (state, sz = S120) => sheetOf(draw(state, sz));
+  const lead = [hint("Ctrl+\\", "commands"), hint("Ctrl+K", "palette")], tail = [hint("n", "spawn"), hint("?", "help"), hint("q", "quit")];
+  // At 120x40 every hint has a row of its own; Enter's is there only while it opens the row.
+  assert.deepEqual(sheet(on(here(), RUN)), [...lead, hint("Enter", "open"), ...tail]);
+  for (const name of [STOPPED, UNKNOWN, HALF, SPAWNING, HERDR]) assert.deepEqual(sheet(on(here(), name)), [...lead, ...tail], name);
+  // From the same reading of instanceActs as the key: the palette's act rows, and the key opens each.
   for (const name of [RUN, STOPPED, UNKNOWN, HALF, SPAWNING, HERDR]) {
-    const state = on(here(), name), m = model(state, { page: 19, now: 0, at: new Date(0).toISOString(), cols: 57 });
-    assert.deepEqual(m.actable, ACT_VERBS.filter((verb) => actDecision(state, rowOf(state), instanceActs(rowOf(state)), verb).open), name);
+    const state = on(here(), name), opening = ACT_VERBS.filter((verb) => actDecision(state, rowOf(state), instanceActs(rowOf(state)), verb).open);
+    assert.deepEqual(paletteItems(press(state, ["ctrl+k"]).state).items.filter((item) => item.kind === "act").map((item) => item.does), opening, `${name}: the palette's acts`);
+    for (const verb of ACT_VERBS) assert.equal(press(state, [KEY[verb]]).state.view, opening.includes(verb) ? "act" : "instances", `${name} ${verb}: the key`);
   }
-  // At 60 columns the acts are given up first; a key whose hint is gone still opens.
+  // At 60x15 the sheet gives up its rows from the end down to its first two; an act key still opens.
   const narrow = on(here(), RUN);
-  assert.equal(footer(narrow, size(60, 15)).includes("stop"), false);
+  assert.deepEqual(sheet(narrow, size(60, 15)), lead);
   assert.equal(press(narrow, ["X"], size(60, 15)).state.view, "act");
 });
 
@@ -131,11 +144,12 @@ test("a tui.json that rebinds the acts: the keys it gives open them, and the cap
   assert.equal(press(state, ["f8"]).state.act.verb, "stop");
   assert.equal(press(state, ["ctrl+s"]).state.act.verb, "start");
   for (const key of ["X", "D", "S", "R"]) assert.deepEqual([press(state, [key]).state.view, press(state, [key]).effects], ["instances", []], key);
-  assert.match(draw(state, S120).lines[39], /^C-\\ commands {3}F8 stop {3}Ctrl\+S start {3}\/ filter/, "the footer names the keys given, and no hint for an unbound act");
+  assert.deepEqual(sheetOf(draw(state, S120)), [hint("Ctrl+\\", "commands"), hint("Ctrl+K", "palette"), hint("n", "spawn"), hint("?", "help"), hint("q", "quit")], "the cheat sheet names no act, whichever keys are given");
+  assert.deepEqual(paletteItems(press(state, ["ctrl+k"]).state).items.filter((item) => item.kind === "act").map((item) => item.does), ["stop", "retire", "start"], "the palette offers each act the row opens, an unbound one too");
 });
 
 test("the help lists the four acts with their keys, in the instances view, and the rules of a confirmation under them", () => {
-  const lines = draw(press(here(), ["?"]).state, size(100, 160)).lines.map((line) => line.trim());
+  const lines = mainLines(draw(press(here(), ["?"]).state, size(200, 160)));
   for (const [key, said] of [["X", "stop the selected agent, after a confirmation"], ["D", "retire the selected agent, after a confirmation"], ["S", "start the selected agent as it was last launched, after a confirmation"], ["R", "restart the selected agent as it was last launched, after a confirmation"]]) {
     assert.equal(lines.some((line) => line.startsWith(`${key} `) && line.endsWith(said)), true, `${key} ${said}`);
   }
@@ -248,7 +262,7 @@ test("the buttons are exactly the confirmation's offers in every phase, Cancel o
     assert.equal(buttonsOf(t.state).filter((b) => b.focused).map((b) => b.label)[0], "Close", `${kind}: the focus back on the first`);
     assert.equal(t.settled, 1, `${kind}: onSettled once`);
     // The settled view's headline is drawn as the shared home words it.
-    const screen = draw(t.state, S120).lines.join("\n");
+    const screen = mainLines(draw(t.state, S200)).join("\n");
     assert.equal(screen.includes(displayLine(t.made.view().status.headline)), true, `${kind}: ${t.made.view().status.headline}`);
     assert.equal(screen.includes(displayLine(t.made.view().title)), true, `${kind}: the title`);
   }
@@ -256,13 +270,13 @@ test("the buttons are exactly the confirmation's offers in every phase, Cancel o
   const stale = driven(() => failure("E_PLAN_STALE", { details: { plan: stopPlan() } }));
   await tick(); await tick(); stale.made.apply(); await tick(); await tick(); await tick();
   assert.deepEqual([stale.made.state().phase, stale.state.act.phase, buttonsOf(stale.state).map((b) => b.label)], ["review", "review", ["Cancel", "Review again", "Stop"]]);
-  assert.equal(draw(stale.state, S120).lines.join("\n").includes(stale.made.state().notice.sentence), true, "the notice of a plan that changed");
+  assert.equal(mainLines(draw(stale.state, S200)).join("\n").includes(stale.made.state().notice.sentence), true, "the notice of a plan that changed");
   assert.equal(stale.settled, 0, "a return to review is not a settled answer");
   // A plan that could not be read: Review again and Close.
   const unavailable = driven(() => null, { plan: () => failure("E_SESSION_UNKNOWN") });
   await tick(); await tick();
   assert.deepEqual([unavailable.made.state().outcome, buttonsOf(unavailable.state).map((b) => b.label)], ["unavailable", ["Close", "Review again"]]);
-  assert.equal(draw(unavailable.state, S120).lines.join("\n").includes(displayLine(unavailable.made.view().title)), true);
+  assert.equal(mainLines(draw(unavailable.state, S200)).join("\n").includes(displayLine(unavailable.made.view().title)), true);
   // An answer that does not read: Check again and Close, never a second apply.
   const ctx = boundaryContext(), boundary = createLifecycleBoundary({ terms: TERMS, invoke: async () => envelope(stopPlan()) });
   const opened = press(on(here(), RUN), ["X"]).state;
@@ -275,18 +289,18 @@ test("the buttons are exactly the confirmation's offers in every phase, Cancel o
 
 test("the act view draws the plan as the shared planView gives it: the question, what will happen, the state rows, the choice; while a plan is read, the reading line and how to stop waiting", async () => {
   const t = driven((args) => envelope(stopReceipt(args)));
-  let lines = draw(t.state, S120).lines.join("\n");
+  let lines = mainLines(draw(t.state, S200)).join("\n");
   assert.equal(lines.includes(displayLine(t.made.view().message)), true, "the reading line");
   assert.equal(lines.includes("Esc stops waiting."), true);
-  assert.match(draw(t.state, S120).lines[39], /^C-\\ commands {3}Esc Cancel {3}Enter press {3}q quit$/, "one button: no move hint");
+  assert.deepEqual(sheetOf(draw(t.state, S120)), [hint("Ctrl+\\", "commands"), hint("Esc", "Cancel"), hint("Enter", "press"), hint("q", "quit")], "one button: no move hint");
   await tick(); await tick();
   const view = t.made.view();
-  lines = draw(t.state, S120).lines.join("\n");
+  lines = mainLines(draw(t.state, S200)).join("\n");
   for (const text of [view.question, ...view.happening.map((h) => h.text), ...view.state.rows.flatMap((r) => [r.label, r.value])]) assert.equal(lines.includes(displayLine(text)), true, text);
   const choice = view.choices.find((c) => c.offered);
   assert.equal(lines.includes(`[x] ${choice.sentence}`), true, "the choice, set");
   assert.match(lines, /> Cancel < {3}\[ Review again \] {3}\[ Stop \]/);
-  assert.match(draw(t.state, S120).lines[39], /^C-\\ commands {3}Esc Cancel {3}Left\/Right move {3}Enter press {3}q quit$/);
+  assert.deepEqual(sheetOf(draw(t.state, S120)), [["Ctrl+\\", "commands"], ["Esc", "Cancel"], ["Left/Right", "move"], ["Enter", "press"], ["q", "quit"]].map(([key, word]) => hint(key, word, 10)));
 });
 
 test("the focus moves with Left/Right and Tab/Shift+Tab only; h, l and every other printable key move nothing; Enter on Cancel closes; the act's own button takes a move and a press (Done 2)", async () => {
@@ -327,7 +341,7 @@ test("Space sets the plan's choice through the confirmation, which reads a new p
   await tick(); await tick();
   assert.equal(t.made.state().phase, "review");
   assert.equal(t.made.view().choices.find((c) => c.id === "recursive").value, false);
-  assert.equal(draw(t.state, S120).lines.join("\n").includes(`[ ] ${t.made.view().choices[0].sentence}`), true);
+  assert.equal(mainLines(draw(t.state, S200)).join("\n").includes(`[ ] ${t.made.view().choices[0].sentence}`), true);
 });
 
 test("Esc while applying closes the view: the apply goes on, and its answer, when it comes, changes nothing on screen", async () => {
@@ -356,7 +370,7 @@ test("a plan whose state rows name a target with a control character or wide cha
     assert.equal(t.made.state().phase, "review", `${JSON.stringify(name)}: premise, the shared confirmation admits the plan`);
     const rows = t.made.view().state.rows;
     assert.equal(rows.some((row) => row.label === name), true, `${JSON.stringify(name)}: premise, a state row is labelled with the target's name`);
-    const lines = draw(t.state, S120).lines;
+    const lines = mainLines(draw(t.state, S200));
     for (const row of rows) {
       const label = displayLine(row.label), value = displayLine(row.value);
       const at = lines.findIndex((line) => line.trimStart().startsWith(label) && line.includes(value));
@@ -373,7 +387,7 @@ test("a settled answer's blocks are drawn: the details with the kernel's line th
     blocks: [{ type: "details", reason: { code: "E_LIFECYCLE_BUSY", detail: "held by pid 4242" }, bare: false }, { type: "lines", lines: [{ text: "Recovery copy saved at", path: "/home/u/rec" }] }], uncertain: false };
   const since = Date.parse("2026-10-11T09:41:00.000Z");
   const settled = reduce(state, { acted: { n, confirmation: { phase: "settled", outcome: "refused", offers: ["refresh", "close"], notice: null, running: { target: { instance: RUN }, operation: "retire", since }, view } } }).state;
-  const lines = draw(settled, S120).lines.map((line) => line.trim());
+  const lines = mainLines(draw(settled, S200));
   for (const line of [...kernelLines("the kernel's quote", undefined, TERMS), "Details: E_LIFECYCLE_BUSY", ...kernelLines("held by pid 4242", undefined, TERMS), "Recovery copy saved at ~/rec",
     `Check the process it names, then retire it with \`oats retire ${RUN} --force\`.`, "Started at 09:41."]) assert.equal(lines.includes(line), true, line);
 });
@@ -383,19 +397,25 @@ test("a settled answer's blocks are drawn: the details with the kernel's line th
 test("a start opens the TUI's own confirmation: its question and line, the machine and home; the press after a move asks the loop to start, and the view then says it is starting with Close (the start goes on) (Done 4)", () => {
   const state = on(here(), STOPPED), row = rowOf(state);
   const open = press(state, ["S"]).state;
-  let lines = draw(open, S120).lines.map((line) => line.trim());
+  let lines = mainLines(draw(open, S120));
   for (const line of [`Start ${STOPPED}?`, ACT_WORDS.what("start"), `home  ${shortPath(row.home, { home: open.home })}`]) assert.equal(lines.includes(line), true, `${line}\n${lines.join("\n")}`);
   assert.match(lines.join("\n"), /> Cancel < {3}\[ Start \]/);
-  assert.equal(draw(press(on(here(), RUN), ["R"]).state, S120).lines.some((l) => l.trim() === "Its session is ended and started again: what it is doing is interrupted. Save any work in progress first."), true, "the restart's line");
+  // Under 80 columns it has the whole screen, no sidebar beside it, and its first row carries its keys at the right, dim.
+  const narrow = draw(open, size(70, 24));
+  assert.equal(narrow.lines[0], `  Start ${STOPPED}?       Esc Cancel   Left/Right move   Enter press`);
+  assert.equal(narrow.cells[0][27].style.dim, true, "the keys are dim");
+  assert.equal(narrow.lines.some((line) => line.includes("Instances")), false, "no sidebar");
+  assert.equal(narrow.lines[23], "  > Cancel <   [ Start ]", "the buttons on the last row");
+  assert.equal(mainLines(draw(press(on(here(), RUN), ["R"]).state, S200)).some((l) => l === "Its session is ended and started again: what it is doing is interrupted. Save any work in progress first."), true, "the restart's line");
   const pressed = reduce(reduce(open, { key: "right", read: 1 }).state, { key: "enter", read: 2 });
   assert.deepEqual(pressed.effect, { start: { n: open.act.n, verb: "start", id: instanceId(row), row } });
-  lines = draw(pressed.state, S120).lines.map((line) => line.trim());
+  lines = mainLines(draw(pressed.state, S120));
   assert.equal(lines.includes(`Starting ${STOPPED}…`), true);
   assert.match(lines.join("\n"), /> Close \(the start goes on\) </);
   // The answer settles it with Close only, and asks for a live read; one for a closed view asks the read and changes nothing else.
   const answered = reduce(pressed.state, { acted: { n: open.act.n, answer: { ok: true, result: {} } } });
   assert.deepEqual([answered.state.act.phase, answered.state.act.offers, answered.effect], ["settled", ["close"], { refresh: { live: true } }]);
-  assert.equal(draw(answered.state, S120).lines.some((l) => l.trim() === `${STOPPED} started.`), true);
+  assert.equal(mainLines(draw(answered.state, S120)).some((l) => l === `${STOPPED} started.`), true);
   const closed = reduce(pressed.state, { key: "escape" }).state, late = reduce(closed, { acted: { n: open.act.n, answer: { ok: true, result: {} } } });
   assert.deepEqual([late.state.act, late.effect], [null, { refresh: { live: true } }]);
 });
@@ -451,7 +471,7 @@ test("while a start of this run is running, no act of that row opens, whether or
     const { state: after, effects } = press(spawned, [key]);
     assert.deepEqual([after.view, effects, lineOf(after)], ["instances", [], [`The start of ${STOPPED} is still running.`]], key);
   }
-  assert.deepEqual(model(spawned, { page: 19, now: 0, at: new Date(0).toISOString(), cols: 57 }).actable, [], "and the footer names none");
+  assert.deepEqual(paletteItems(press(spawned, ["ctrl+k"]).state).items.filter((item) => item.kind === "act"), [], "and the palette offers none");
   const other = on(spawned, RUN);
   assert.equal(press(other, ["X"]).state.view, "act", "another row is not held");
   const closed = reduce(spawned, { acted: { closed: id } });

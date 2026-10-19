@@ -1348,11 +1348,12 @@ section is the module map.
   `recencyOrder`), every instance listed, each row carrying the sidebar row's
   `connectors` (`treeConnectors`) and `state`, then at most
   `PALETTE_COMMAND_CAP` commands. The shell hands it one panel snapshot,
-  `{ instances, deployments, recent, activeId }`: with several deployments each one is filtered
+  `{ instances, deployments, recent }`: with several deployments each one is filtered
   and clustered on its own, its sections by latest focus, then the panel's order, and a group's key and label
   carry its deployment, so no relation or query context crosses deployments. The shell passes
   `cycleKey` from `pickerCycleDirection(e, "app.palette")` (keybindings.mjs), so
-  ⌘K cycles while open (Shift: up) and follows a rebind.
+  ⌘K cycles while open (Shift: up) and follows a rebind. The palette opens on
+  its first selectable row, the top of the list (#1391).
 - **settings-terminal.mjs** — Settings → Terminal: the font size stepper
   (− / typed value / +, 9–28, "Reset to default (15)"), mounted by
   `connections.mjs` through its `sections` option after Connections and disposed
