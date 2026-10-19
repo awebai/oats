@@ -226,8 +226,20 @@ function underLock(root, command, entry, fn, { acquire = acquireCaptureLock, ens
     const attribution = owner?.pid === lock.held.pid && owner?.startedAt === lock.held.startedAt && ['pass', 'home', 'file', 'reset-cursors', 'retry', 'setup-roots', 'forget-retired-root'].includes(owner?.command) ? owner.command : 'unknown';
     throw Object.assign(new Error(`root registration refused: ${lock.held.recovery}; owning pass ${attribution}. Retry after the current pass finishes (automatic passes are bounded to 300s).`), { code: 'E_CAPTURE_ROOTS_BUSY' });
   }
-  try { lock.checkOwned?.(); return fn(lock); }
-  finally { const released = lock.release(); if (!released.released) throw invalid(`capture roots lock release failed: ${released.reason}; inspect ${lock.path}`); }
+  let result, failure;
+  try { lock.checkOwned?.(); result = fn(lock); }
+  catch (error) { failure = error; }
+  try {
+    const released = lock.release();
+    if (!released.released) throw invalid(`capture roots lock release failed: ${released.reason}; inspect ${lock.path}`);
+  } catch (error) {
+    if (failure) {
+      failure.message += `; ${error.message}`;
+      failure.releaseError = error;
+    } else failure = error;
+  }
+  if (failure) throw failure;
+  return result;
 }
 function publish(plan, createdParents = new Map(), operations) {
   recheckCaptureSetup(plan.snapshot, createdParents);
