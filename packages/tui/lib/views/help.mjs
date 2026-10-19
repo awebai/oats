@@ -71,7 +71,7 @@ const flow = (pieces, room) => pieces.reduce((lines, piece) => {
  *  pieces that are never broken (a word, or a whole command: a command cut in two cannot be
  *  typed). What does not fit `cols` goes on in the same column on the next row. A table with a
  *  piece wider than that column puts every meaning under its entry instead, so no row is cut at
- *  the smallest width the frame draws at. */
+ *  the smallest width the frame draws at; a piece wider than even that starts further left. */
 function table(pairs, cols, look) {
   // An entry is the TUI's own word, or text made elsewhere with its width (a key's label). A
   // third member makes rows of its own under the entry's meaning: given the meaning's column and
@@ -83,7 +83,9 @@ function table(pairs, cols, look) {
   const stacked = pairs.some(([, pieces]) => pieces.some((piece) => column + piece.length > cols));
   const at = stacked ? INDENT + 2 : column;
   return pairs.flatMap(([left, pieces]) => {
-    const lines = flow(pieces, cols - at).map((text) => ({ col: at, text: lit(text) }));
+    // A row wider than its column (a whole command, in a narrow area) starts as far left as it
+    // must to stand whole, down to the area's first column: a command cut short cannot be typed.
+    const lines = flow(pieces, cols - at).map((text) => ({ col: Math.max(0, Math.min(at, cols - text.length)), text: lit(text) }));
     const more = (under.get(pieces)?.(cols - at) ?? []).map((spans) => spans.map((span) => ({ ...span, col: span.col + at })));
     return [...(stacked ? [[entry(left)], ...lines.map((line) => [line])] : lines.map((line, i) => (i === 0 ? [entry(left), line] : [line]))), ...more];
   });

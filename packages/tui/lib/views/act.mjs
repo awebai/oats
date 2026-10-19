@@ -1,7 +1,7 @@
 // The act view: one confirmation of a stop, a retire, a start or a restart, over the list of
 // instances (as the help is). Pure: no IO, no clock, no escape byte. (model, area) -> rows.
 // The content (lib/model.mjs actView) scrolls when it is taller than the area; the buttons keep
-// the area's last row. The TUI's own words are lit(); every shared sentence, the kernel's lines,
+// the area's last rows. The TUI's own words are lit(); every shared sentence, the kernel's lines,
 // a name and a path go through shown(). Meaning never rests on colour alone: the button with the
 // focus is drawn between `>` and `<` as well as in reverse.
 import { EMPTY, lit, shown, shownLines, textOf } from "../term/text.mjs";
@@ -55,31 +55,35 @@ export function actRows(m, cols) {
   return rows.map((spans) => spans.map((span) => ({ ...span, col: span.col + LEFT })));
 }
 
-/** The buttons, one per offer of the confirmation and in its order, on one row; the one with the
- *  focus between `>` and `<`. */
-function buttonRow(buttons, cols) {
-  const spans = [];
-  let col = LEFT;
+/** The buttons, one per offer of the confirmation and in its order, the one with the focus between
+ *  `>` and `<`: on one row when they fit, else on as many as they need, a button never split and
+ *  never left out (the area beside the sidebar can be narrow, and every offer, the one with the
+ *  focus among them, must be seen). A label wider than a row is cut there. */
+function buttonRows(buttons, cols) {
+  const rows = [];
+  let row = [], col = LEFT;
   for (const button of buttons) {
     const label = button.focused ? `> ${button.label} <` : `[ ${button.label} ]`;
-    if (col + label.length > cols) break;
-    spans.push({ col, text: lit(label), width: label.length, ...(button.focused ? { style: FOCUSED } : {}) });
+    if (row.length && col + label.length > cols) { rows.push(row); row = []; col = LEFT; }
+    row.push({ col, text: lit(label), width: Math.max(0, Math.min(label.length, cols - col)), ...(button.focused ? { style: FOCUSED } : {}) });
     col += label.length + GAP;
   }
-  return spans;
+  if (row.length) rows.push(row);
+  return rows;
 }
 
 /** `{ rows, extent, room }`: `size.rows` rows for an area `size.cols` wide: the content scrolled
- *  to the confirmation's `top`, then an empty row and the buttons on the last row. `extent` and
- *  `room` are the content's, for the store's scroll. */
+ *  to the confirmation's `top`, then an empty row and the buttons on the last rows (buttonRows).
+ *  `extent` and `room` are the content's, for the store's scroll. */
 export function act(m, size) {
   const rows = Array.from({ length: size.rows }, () => []);
-  const room = Math.max(0, size.rows - 2);
+  const buttons = buttonRows(m.act.buttons, size.cols).slice(-Math.max(0, size.rows - 1));
+  const room = Math.max(0, size.rows - 1 - buttons.length);
   const all = actRows(m, size.cols);
   const win = windowOf({ top: m.act.top ?? 0, count: all.length, height: room });
   all.slice(win.top, win.top + win.size).forEach((spans, i) => { rows[i] = spans; });
   const note = cutNote(win.above, win.below);
   if (note && room > 0) rows[room - 1] = [{ col: LEFT, text: lit(note), style: DIM, width: Math.max(0, size.cols - LEFT) }];
-  if (size.rows > 0) rows[size.rows - 1] = buttonRow(m.act.buttons, size.cols);
+  buttons.forEach((spans, i) => { rows[size.rows - buttons.length + i] = spans; });
   return { rows, extent: all.length, room: Math.max(1, room) };
 }

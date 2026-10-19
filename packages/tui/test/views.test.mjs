@@ -23,7 +23,7 @@ import { isSafeText, shown, textOf } from "../lib/term/text.mjs";
 import { textWidth } from "../lib/term/width.mjs";
 import { CAPABILITIES_TEXT } from "../lib/views/capabilities.mjs";
 import { LIST_BESIDE, MIN_SIZE, PANEL_MIN, WIDE, frame } from "../lib/views/frame.mjs";
-import { ACT_RULES, LEADER_AGAIN, MACHINES, NOT_YET, PALETTE_KEYS, VIEWS, keysLabel } from "../lib/views/help.mjs";
+import { ACT_RULES, LEADER_AGAIN, MACHINES, NOT_YET, PALETTE_KEYS, VIEWS, helpRows, keysLabel } from "../lib/views/help.mjs";
 import { EMPTY_TEXT, MARKS, cutNote, marksOf } from "../lib/views/instances.mjs";
 import { SOUL_MARK } from "../lib/views/souls.mjs";
 import { OPEN_MARK, SWITCHER_TEXT } from "../lib/views/switcher.mjs";
@@ -3529,5 +3529,38 @@ test("at 60 columns the help's `The leader` section has every row whole: the sen
       "             closes the hint",
     ], key);
     for (const line of lines.slice(from, to)) assert.equal(textWidth(line) <= 60 - 2, true, `the right margin is kept: ${line}`);
+  }
+});
+
+// ── The main area beside the sidebar is narrow (39 cells at 80 columns): what an overlay draws
+// there must still stand whole (round 1 of the review).
+
+test("a confirmation beside the sidebar at 80x24 draws every offer, the act's own button among them, before and after the focus moves to it: buttons that do not fit one row go on to the next, never left out", () => {
+  const cli = { ...CLI, lifecycleApi: 1, features: [...CLI.features, "lifecycle-plans", "retire-retention", "retire-home"] };
+  const state = stateOf(observed([instanceRow("dev", "dev-a")], { cli }), { cli });
+  for (const [key, verb] of [["X", "Stop"], ["D", "Retire"]]) {
+    const opened = press(state, [key]).state;
+    assert.equal(opened.view, "act", verb);
+    // The shared confirmation's review offers: Cancel, Review again and the act (acts.test.mjs).
+    const reviewing = reduce(opened, { acted: { n: opened.act.n, confirmation: { phase: "review", offers: ["close", "refresh", "apply"], view: { title: `${verb} dev-a?` } } } }).state;
+    const focused = press(reviewing, ["tab", "tab"]).state;
+    assert.equal(focused.act.focus, "apply", verb);
+    for (const [s, marked] of [[reviewing, "> Cancel <"], [focused, `> ${verb} <`]]) {
+      const d = draw(s, S80), main = d.lines.map((line) => line.slice(d.cols + 2));
+      const shown = main.join("\n");
+      for (const label of ["Cancel", "Review again", verb]) assert.equal(shown.includes(` ${label} `), true, `${verb}: ${label} is drawn`);
+      assert.equal(shown.includes(marked), true, `${verb}: the focused offer is drawn between > and <`);
+      assert.equal(main.every((line) => textWidth(line) <= S80.cols - d.cols - 2), true, `${verb}: no button passes the main area`);
+    }
+  }
+});
+
+test("the help in the main area beside the sidebar at 80 columns cuts no command: a command wider than its column starts further left, inside the area", () => {
+  const cols = S80.cols - draw(stateOf(observed([instanceRow("dev", "dev-a")])), S80).cols - 3;
+  for (const { command } of NOT_YET) {
+    const spans = helpRows(ACTIONS, false, cols, "M-o").flat().filter((span) => span.text !== undefined && textOf(span.text) === command);
+    // A command can stand for more than one omission (`oats spawn <soul>`): each of its rows.
+    assert.equal(spans.length, NOT_YET.filter((each) => each.command === command).length, command);
+    for (const span of spans) assert.equal(span.col >= 0 && span.col + command.length <= cols, true, `${command} stands whole in ${cols} cells`);
   }
 });
