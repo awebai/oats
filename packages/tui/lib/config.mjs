@@ -242,8 +242,8 @@ const failedBy = (error) => { const code = error?.code; return typeof code === "
  *  "Present" is an entry at the path, a link to nothing included: it is reported, not guessed at.
  *  Answers null when the new file is to be read, else the line that refuses. A run that loses a
  *  race to another one starting (a new file placed by it after this run looked) reads the file
- *  that run placed, and moves nothing itself; one that looks in the instant between the other's
- *  copy and its rename finds both, and refuses. */
+ *  that run placed, and moves nothing itself (or, when both placed one, deletes neither); one
+ *  that looks in the instant between the other's copy and its rename finds both, and refuses. */
 function moved(old, path, io) {
   const from = shownPath(old, "its old configuration file"), to = shownPath(path, "its configuration file");
   const cannot = (reason) => `oats: \`oats tui\` cannot move ${from} to ${to} (${reason}); move it yourself (E_TUI_CONFIG)`;
@@ -271,6 +271,10 @@ function moved(old, path, io) {
   // (a `config` that is a file) is a failure like any other.
   if (placed.taken === true) return unless("EEXIST");
   try { io.rename(old, aside); } catch (error) {
+    // The old file gone and a new one there: another run moved it meanwhile (on a file system
+    // without hard links its copy and this one's may have replaced each other, both the old
+    // file's bytes). The file there is read, and nothing is deleted.
+    try { if (io.entry(old) === null && io.entry(path) !== null) return null; } catch { /* refused below */ }
     // The copy is deleted only while it is still the one this run made.
     try { if (io.entry(path)?.ino === placed.ino) io.remove(path); } catch { /* the line says to move it by hand */ }
     return cannot(failedBy(error));

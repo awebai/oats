@@ -436,7 +436,8 @@ test("a run says it is reading, draws the instances when the reader answers (the
   // and rows of its own under the first: at 24 rows its first page ends before Esc.
   assert.match(textOf(r.stdout.take()), /│ {3}read 10:00:00 .*Keys.*w +workspaces.*Enter +open the selected agent's .*terminal as a tab beside .*more below/s);
   r.stdin.type("G");
-  assert.match(textOf(r.stdout.take()), /Not in this version.*oats session attach --home <home>.*closes this help/s, "the movement keys scroll the help to its end");
+  // Its last page: the last section's commands, `oats server connect`'s on two rows, and the close.
+  assert.match(textOf(r.stdout.take()), /oats session attach --home <home>.*oats server connect <id> --ssh <alias>.*--dir <path on that machine>.*closes this help.*more above/s, "the movement keys scroll the help to its end");
   r.stdin.type("?");
   assert.match(textOf(r.stdout.take()), /acme-expert-tui/);
   r.log.length = 0;

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
 import { ACTIONS, bindings } from "../lib/actions.mjs";
 import { CONFIG_LIMIT, MAX_PROBLEMS, MIGRATED, configPath, defaultDetachKey, effectiveConfig, loadConfig, oldConfigPath } from "../lib/config.mjs";
 import { isKeyId } from "../lib/term/keys.mjs";
@@ -670,6 +671,41 @@ test("the move into an OATS home whose config is a file: refused, the old file k
   assert.equal(exists(aside), false);
 });
 
+test("the move on a file system without hard links: renamed into place; and two starts at once, the second's copy over the first's, leave the new file read and kept", () => {
+  // node:fs's own functions replaced for this test alone (config.mjs's imports follow them): the
+  // link refused as such a file system refuses it, and the second start run whole between the
+  // first's last look and its rename.
+  const { env, home, old, file, aside } = moving();
+  const bytes = '{"ascii": true, "keys": {"quit": ["x"]}}';
+  fs.writeFileSync(old, bytes);
+  const { linkSync, renameSync } = fs, now = Date.now;
+  let ticks = now(), second;
+  try {
+    Date.now = () => ++ticks; // each start's own file a name of its own
+    fs.linkSync = () => { throw Object.assign(new Error("links unsupported"), { code: "EPERM" }); };
+    fs.renameSync = (from, to) => {
+      if (second === undefined && to === file) second = loadConfig({ env, home });
+      return renameSync(from, to);
+    };
+    syncBuiltinESMExports();
+    const first = loadConfig({ env, home });
+    for (const [which, loaded] of [["the second", second], ["the first", first]]) {
+      assert.deepEqual([loaded.ok, loaded.ascii, loaded.actions.find((action) => action.id === "quit").keys], [true, true, ["x"]], which);
+    }
+  } finally {
+    fs.linkSync = linkSync;
+    fs.renameSync = renameSync;
+    Date.now = now;
+    syncBuiltinESMExports();
+  }
+  assert.equal(fs.readFileSync(file, "utf8"), bytes, "the new file stays, with the old file's bytes");
+  assert.equal(modeOf(file), 0o600);
+  assert.equal(fs.readFileSync(aside, "utf8"), bytes);
+  assert.equal(exists(old), false);
+  assert.deepEqual(fs.readdirSync(path.dirname(file)), ["tui.json"], "no file of its own is left behind");
+  assert.equal(loadConfig({ env, home }).ascii, true, "and the next start reads it");
+});
+
 test("the move, a link as the old file: what it points at is copied, the link itself is renamed, and its target is untouched", () => {
   const { env, home, root, old, file, aside } = moving();
   const target = path.join(root, "dotfiles", "tui.json");
@@ -767,6 +803,12 @@ test("the move, a rename that fails: the copy is deleted only while it is still 
   const replaced = fakeMove({ rename(from, to, entries) { entries.set("/o/config/tui.json", { ino: 8 }); throw failing("EXDEV"); } });
   assert.deepEqual(replaced.lines, [cannotMove("EXDEV", replaced.OLD, replaced.NEW)]);
   assert.deepEqual(named(replaced.calls, "remove"), [], "a file put there since is not this run's to delete");
+
+  // Another run moved the old file meanwhile: the new file is read, this run's copy or the other's.
+  const movedMeanwhile = fakeMove({ rename(from, to, entries) { entries.delete(from); throw failing("ENOENT"); } });
+  assert.equal(movedMeanwhile.ok, true);
+  assert.deepEqual(named(movedMeanwhile.calls, "remove"), []);
+  assert.deepEqual(named(movedMeanwhile.calls, "read"), [["read", movedMeanwhile.NEW]]);
 });
 
 test("the move, a run that loses the race to another starting reads the file that run placed, and moves nothing itself", () => {

@@ -1317,9 +1317,11 @@ start looks at both:
   is moved as it is, then refused against the new path like any other. The
   new file is made with mode `0600`, and the directories it needs with
   `0700`. It is written to a file of its own beside its path, then put in
-  place, so it is never half written. It is never written over another
-  file: it is linked into place, or, on a file system without hard links,
-  renamed there once a last look finds nothing there.
+  place, so it is never half written. Where the file system has hard links
+  it is linked into place, and so never written over another file. Where it
+  has none it is renamed there once a last look finds nothing there: only
+  another start moving the same file in that instant can be replaced, by
+  the same bytes.
 - A link as the old file is renamed itself, not followed: what it points at
   is copied, and its target is left as it was.
 - When the move cannot be made, nothing is left half done and the start
@@ -1331,7 +1333,8 @@ start looks at both:
 - To move it yourself, put the file at the new path and remove the old one
   (or rename it to anything but `tui.json`).
 - Two runs that start at once move it once: the one that finds the new file
-  already placed reads it. One that looks in the instant between the other's
+  already placed, or the old one moved, reads the new file and deletes
+  nothing. One that looks in the instant between the other's
   copy and its rename finds both files, and refuses; start it again.
 
 ## What it reads, and what it runs
