@@ -17,7 +17,7 @@ const setup = fileURLToPath(new URL("../bin/setup.mjs", import.meta.url));
 const service = "turn-record-capture.service", timer = "turn-record-capture.timer";
 const write = (path, text) => { fs.mkdirSync(dirname(path), { recursive: true }); fs.writeFileSync(path, text); };
 function fixture(t, platform = "linux") {
-  const base = fs.mkdtempSync(join(tmpdir(), "capture-service-install-")), home = join(base, "home"), root = join(base, "record 'quoted' $root %h");
+  const base = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), "capture-service-install-"))), home = join(base, "home"), root = join(base, "record 'quoted' $root %h");
   fs.mkdirSync(home); const settings = join(home, ".claude/settings.json"); write(settings, '{"kept":true}\n');
   const request = { root, owner: "fixture-owner", plan: captureDefaultRootPlan({ home, cwd: base, env: {} }) };
   const definition = captureServiceDefinition({ platform, node: process.execPath, request });
@@ -338,39 +338,61 @@ test("directory identities created for the first named file remain binding for t
   const f = fixture(t), directory = dirname(f.definition.files[0].path), external = join(f.base, "unrelated");
   fs.mkdirSync(external); const plan = f.preflight(), rename = fs.renameSync;
   const hooks = fs.readFileSync(f.settings);
+  let refusal, ancestrySwaps = 0;
   fs.renameSync = (from, to) => {
     rename(from, to);
     if (to === f.definition.files[0].path) {
       rename(directory, directory + ".saved");
       fs.symlinkSync(external, directory);
+      ancestrySwaps++;
     }
   };
-  try { assert.throws(() => applyCaptureService(plan), /parent changed since preflight/); }
+  try {
+    assert.throws(() => applyCaptureService(plan), error => {
+      assert.match(error.message, /parent changed since preflight/);
+      refusal = error; return true;
+    });
+  }
   finally { fs.renameSync = rename; }
+  assert.equal(ancestrySwaps, 1, "ancestry swap completed exactly once after the real target rename");
+  assert.equal(refusal.published, true); assert.equal(refusal.path, f.definition.files[0].path);
+  assert.equal(refusal.stage, "directory fsync");
+  assert.ok(refusal.applied.some(line => line.includes(`${f.definition.files[0].path}: publication may have occurred at directory fsync; durability was not established`)));
   assert.deepEqual(fs.readdirSync(external), []);
   assert.equal(fs.readFileSync(join(directory + ".saved", service), "utf8"), f.definition.files[0].contents);
   assert.equal(fs.existsSync(f.definition.files[1].path), false); assert.deepEqual(fs.readFileSync(f.settings), hooks);
   assert.equal(fs.existsSync(join(f.root, "capture-status.json")), false); assert.deepEqual(f.operations(), []);
-  assert.ok(f.logs.includes(`service: definition written: ${f.definition.files[0].path}`));
+  assert.equal(f.logs.includes(`service: definition written: ${f.definition.files[0].path}`), false);
   assert.doesNotMatch(f.logs.join("\n"), /periodic capture scheduled|rollback/);
 });
 
 test("refusal after a temporary write does not clean up through replaced ancestry", t => {
   const f = fixture(t), target = f.definition.files[0].path, directory = dirname(target);
   const external = join(f.base, "unrelated"); fs.mkdirSync(external);
-  const plan = f.preflight(), writeFile = fs.writeFileSync;
-  let temporary;
-  fs.writeFileSync = (path, ...args) => {
-    writeFile(path, ...args);
-    if (typeof path === "string" && path.startsWith(target + ".tmp-")) {
-      temporary = path.slice(directory.length + 1);
+  const plan = f.preflight(), writeFile = fs.writeFileSync, open = fs.openSync, close = fs.closeSync;
+  const temporaryPaths = new Map();
+  let temporary, ancestrySwaps = 0;
+  fs.openSync = (path, flags, ...args) => {
+    const fd = open(path, flags, ...args);
+    if (typeof path === "string" && path.startsWith(target + ".tmp-") && (flags & fs.constants.O_EXCL)) temporaryPaths.set(fd, path);
+    return fd;
+  };
+  fs.closeSync = fd => { try { return close(fd); } finally { temporaryPaths.delete(fd); } };
+  fs.writeFileSync = (fd, ...args) => {
+    const result = writeFile(fd, ...args);
+    if (typeof fd === "number" && temporaryPaths.has(fd)) {
+      temporary = temporaryPaths.get(fd).slice(directory.length + 1);
       fs.renameSync(directory, directory + ".saved");
       writeFile(join(external, temporary), "unrelated temporary-name collision");
       fs.symlinkSync(external, directory);
+      ancestrySwaps++;
     }
+    return result;
   };
   try { assert.throws(() => applyCaptureService(plan), /parent changed since preflight/); }
-  finally { fs.writeFileSync = writeFile; }
+  finally { fs.openSync = open; fs.closeSync = close; fs.writeFileSync = writeFile; }
+  assert.equal(ancestrySwaps, 1, "ancestry swap completed exactly once after the real owned numeric-fd write");
+  assert.equal(temporaryPaths.size, 0, "the owned temporary fd was closed and its mapping revoked");
   assert.ok(temporary); assert.equal(fs.readFileSync(join(external, temporary), "utf8"), "unrelated temporary-name collision");
   assert.equal(fs.readFileSync(join(directory + ".saved", temporary), "utf8"), f.definition.files[0].contents);
   assert.equal(fs.existsSync(target), false); assert.deepEqual(f.operations(), []);
