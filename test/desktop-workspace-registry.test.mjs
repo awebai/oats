@@ -1,11 +1,11 @@
 // Workspace suggestions + runtime add (phase-2 hook 3) — privileged-side
 // decision tests: bounded discovery, validation, canonicalization,
-// suggestion-set provenance, foreign-server fail-closed, recents hygiene,
-// and latest-intent generations (reverse completion).
+// suggestion-set provenance, foreign-server fail-closed, and latest-intent
+// generations (reverse completion).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateWorkspace } from "../packages/client/workspace-admission.mjs";
-import { workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations } from "../packages/desktop/workspace-registry.mjs";
+import { workspaceSuggestions, decideAdd, createGenerations, SAVED_REASON, LISTED_REASON } from "../packages/desktop/workspace-registry.mjs";
 
 const mkValidate = (deployments) => (p) => validateWorkspace(p, {
   // existence of the deployment file only; the registry never parses it
@@ -21,32 +21,23 @@ test("validateWorkspace: a v2 deployment directory is its own identity; no team 
   assert.equal(validateWorkspace("/w/x", { isDeployment: () => "yes" }), null, "only a literal true admits");
 });
 
-test("suggestions: known + recents only, validated, advertised excluded, deduped with first reason", () => {
+test("suggestions: the known paths and this computer's list, validated, advertised excluded, each once with its first reason", () => {
   const validate = mkValidate(["/w/a", "/w/b", "/w/c"]);
+  const row = (path, state = "ok") => ({ path, name: path.split("/").pop(), state });
   const list = workspaceSuggestions({
-    knownPaths: ["/w/a", "/w/b"],
-    recents: ["/w/c", "/w/b", "/w/dead"],
+    knownPaths: ["/w/a", "/w/b", "/w/dead"],
+    listed: [row("/w/b"), row("/w/c"), row("/w/a")],
     advertised: new Set(["/w/a"]), // current workspace — not a suggestion
     validate,
     teamSiblings: () => assert.fail("no team-scope discovery in workspace model v2"),
   });
-  assert.deepEqual(list.map((s) => [s.id, s.reason]), [
-    ["/w/b", "known workspace"],
-    ["/w/c", "recently used"],
+  assert.deepEqual(list.map((s) => [s.id, s.reason, s.state, s.removable]), [
+    ["/w/b", SAVED_REASON, "ok", true],
+    ["/w/c", LISTED_REASON, "ok", true],
   ]);
-});
-
-test("parseRecents: garbage, non-arrays, relative paths, and stale workspaces are dropped", () => {
-  const validate = (p) => p === "/w/live";
-  assert.deepEqual(parseRecents("not json", validate), []);
-  assert.deepEqual(parseRecents('{"a":1}', validate), []);
-  assert.deepEqual(parseRecents('["/w/live","relative","/w/gone",42]', validate), ["/w/live"]);
-});
-
-test("pushRecent: front insertion, dedup, cap", () => {
-  assert.deepEqual(pushRecent(["/a", "/b"], "/b"), ["/b", "/a"]);
-  assert.deepEqual(pushRecent(["/a"], "/c", 2), ["/c", "/a"]);
-  assert.deepEqual(pushRecent(["/a", "/b"], "/c", 2), ["/c", "/a"]);
+  assert.equal(SAVED_REASON, "Saved, not open"); assert.equal(LISTED_REASON, "On this computer");
+  assert.deepEqual(workspaceSuggestions({ knownPaths: ["/w/b"], advertised: new Set(), validate }).map((s) => [s.id, s.removable]), [["/w/b", false]],
+    "without the list (no feature, a failed read): the known paths alone, none removable");
 });
 
 const addIo = (over = {}) => ({
@@ -115,7 +106,6 @@ function execHarness(over = {}) {
   const state = {
     dirs: ["/w/base"],
     committedDirs: null,
-    recents: [],
     serverDirs: ["/w/base"],   // what the running server was started with
     replacements: [],
     probes: 0,
@@ -123,7 +113,6 @@ function execHarness(over = {}) {
   const io = {
     getDirs: () => [...state.dirs],
     commitDirs: (d) => { state.dirs = d; state.committedDirs = d; },
-    commitRecent: (p) => state.recents.push(p),
     replaceServer: async (d) => { state.serverDirs = d; state.replacements.push([...d]); state.advertisedValid = false; },
     refreshAdvertised: async () => { state.advertisedValid = true; state.refreshes = (state.refreshes || 0) + 1; return true; },
     probeVersion: async () => { state.probes++; return over.version ?? { ok: true, body: { capability: "@awebai/oats-desktop", version: "1" } }; },
@@ -135,12 +124,11 @@ function execHarness(over = {}) {
   return { state, exec: createAddExecutor(io) };
 }
 
-test("executor: success commits dirs+recents AFTER readiness", async () => {
+test("executor: success commits dirs AFTER readiness", async () => {
   const { state, exec } = execHarness();
   const r = await exec({ id: "/w/new", path: "/w/new" }, () => true);
   assert.equal(r.ok, true);
   assert.deepEqual(state.dirs, ["/w/base", "/w/new"]);
-  assert.deepEqual(state.recents, ["/w/new"]);
   assert.deepEqual(state.replacements, [["/w/base", "/w/new"]], "single replacement with staged dirs");
 });
 
@@ -149,7 +137,6 @@ test("executor: readiness timeout commits NOTHING and restores the previous serv
   const r = await exec({ id: "/w/new", path: "/w/new" }, () => true);
   assert.equal(r.code, "server-timeout");
   assert.deepEqual(state.dirs, ["/w/base"], "dirs not committed");
-  assert.deepEqual(state.recents, [], "recents not committed");
   assert.deepEqual(state.replacements.at(-1), ["/w/base"], "server restored to previous dirs");
 });
 
@@ -191,7 +178,6 @@ test("executor: adds serialize — the second waits for the first, effects in or
   const io = {
     getDirs: () => [...state.dirs],
     commitDirs: (d) => { state.dirs = d; order.push(["commit", d.at(-1)]); },
-    commitRecent: () => {},
     replaceServer: async (d) => {
       order.push(["replace", d.at(-1)]);
       state.replacements.push(d);
@@ -231,8 +217,7 @@ test("executor: a THROWING readiness callback still restores and reports server-
     const io = {
       getDirs: () => [...state.dirs],
       commitDirs: (d) => { state.dirs = d; },
-      commitRecent: (p) => state.recents.push(p),
-      replaceServer: async (d) => { state.serverDirs = d; state.replacements.push([...d]); state.advertisedValid = false; },
+        replaceServer: async (d) => { state.serverDirs = d; state.replacements.push([...d]); state.advertisedValid = false; },
       refreshAdvertised: async () => { state.advertisedValid = true; return true; },
       probeVersion: broken.probeVersion ?? (async () => ({ ok: true, body: { capability: "@awebai/oats-desktop", version: "1" } })),
       isCompatible: broken.isCompatible ?? ((v) => true),
@@ -277,7 +262,6 @@ test("executor: restore is readiness-aware — refresh retried until the restore
   const io = {
     getDirs: () => [...state.dirs],
     commitDirs: (d) => { state.dirs = d; },
-    commitRecent: () => {},
     replaceServer: async (d) => { state.replacements.push([...d]); phase = d.length === 1 ? "restored" : "staged"; },
     probeVersion: async () => {
       if (phase === "staged") return { ok: true, body: {} };            // staged server answers but never advertises
@@ -309,7 +293,6 @@ test("executor: a THROWING staged replacement still restores previousDirs and re
   const io = {
     getDirs: () => [...state.dirs],
     commitDirs: (d) => { state.dirs = d; },
-    commitRecent: () => { state.recentCommitted = true; },
     replaceServer: async (d) => {
       call++;
       if (call === 1) throw new Error("spawn ENOENT"); // the STAGED replacement fails
@@ -327,7 +310,6 @@ test("executor: a THROWING staged replacement still restores previousDirs and re
   assert.equal(r.ok, false);
   assert.equal(r.code, "server-error", "stable domain result, not a transport rejection");
   assert.deepEqual(state.dirs, ["/w/base"], "nothing committed");
-  assert.equal(state.recentCommitted, undefined, "recents untouched");
   assert.deepEqual(state.replacements, [["/w/base"]], "final replacement RESTORED previousDirs");
   assert.equal(state.refreshes, 1, "trust state rebuilt from the restored server");
 });

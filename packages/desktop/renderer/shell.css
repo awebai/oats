@@ -83,6 +83,15 @@ body {
                   border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
 .ws-open-window:hover { background: var(--surface-2); color: var(--fg); }
 .ws-open-window:focus-visible { background: var(--sel); color: var(--fg); }
+/* A row of this computer's deployments list (#1390): its Remove beside it, a row that can't be opened says
+   why on a line that wraps, and the section's one line when the list could not be read. */
+.ws-remove-listed { flex: 0 0 auto; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent;
+                    color: var(--muted); font: inherit; font-size: 11.5px; cursor: pointer; }
+.ws-remove-listed:hover { background: var(--surface-2); color: var(--fg); }
+.ws-remove-listed:focus-visible { background: var(--sel); color: var(--fg); }
+.ws-remove-listed[aria-disabled="true"], .ws-local-option[aria-disabled="true"] { cursor: default; }
+.ws-option-meta.ws-listed-state { white-space: normal; }
+.ws-local-note { margin: 2px 8px 6px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .ws-check { color: var(--accent); font-weight: 750; }
 .ws-option-copy { min-width: 0; }
 .ws-option .workspace-avatar { width:26px; height:26px; border-radius:7px; font-size:12px; }

@@ -14,6 +14,8 @@ export const CLIENT_OWN_CODES = Object.freeze([
   // Reading a deployment, a workspace and another machine's roster.
   'E_CAPABILITY_SHOW_FEATURE', 'E_DEPLOYMENT_BUSY', 'E_DEPLOYMENT_FEATURE', 'E_DEPLOYMENT_SCOPE', 'E_DEPLOYMENT_STALE',
   'E_REMOTE_ROSTER', 'E_WORKSPACE_FEATURE', 'E_WORKSPACE_UNKNOWN',
+  // This computer's deployments list (#1390): a CLI without it.
+  'E_DEPLOYMENTS_FEATURE',
   // A spawn: its preview, its apply and the wake saved with it.
   'E_APPLY_UNAVAILABLE', 'E_BACKEND_UNAVAILABLE', 'E_BUSY', 'E_FORBIDDEN_FRAME', 'E_INPUT_PREPARATION', 'E_INSTANCE_GONE',
   'E_INTENT_EXPIRED', 'E_OUTCOME_UNKNOWN', 'E_PREFLIGHT_INCOMPLETE', 'E_PREVIEW_UNAVAILABLE', 'E_TARGET_CHANGED',
