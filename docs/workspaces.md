@@ -657,6 +657,116 @@ is fetched into `<agents-root>/<soul>/souls/<commit12>/` at its discovered
 commit before its first spawn (idempotent per commit; `<agents-root>/<soul>/soul`
 points at the current one); its instances then materialize as above.
 
+## This computer's deployments
+
+Most people have several deployments, and one computer can hold two
+deployments of the same workspace. The kernel keeps **one per-user list of the
+deployments on this computer**, `~/.oats/config/deployments.json`
+(`OATS_HOME_DIR` overrides `~/.oats`). The clients (the Desktop, the TUI) read
+it to offer the deployments that are not open, and `oats deployments` shows it.
+It lists local deployments only: other machines stay in the
+[server registry](servers.md).
+
+**The file** (mode 0600, in a `config/` directory with mode 0700) holds facts
+only. Which deployments a client has open stays with that client.
+
+```json
+{
+  "schemaVersion": 1,
+  "deployments": [ { "path": "/home/me/acme", "addedAt": "2026-10-19T10:00:00.000Z", "via": "onboard" } ],
+  "imports": { "agents-dir": "2026-10-19T10:00:00.000Z" }
+}
+```
+
+- **`path`** is absolute and canonical, and unique in the list: the directory
+  as it is on disk (a link, or another letter case on a case-insensitive
+  filesystem, is one row), then the primary checkout's path when the
+  deployment sits in a linked Git worktree.
+- **`via`** says how the row joined, for information only: `onboard`, `tui`,
+  `desktop`, `cli`, `import:agents-dir` or `import:desktop`.
+- **`removed: true`** and **`removedAt`** mark a row `oats deployments remove`
+  took out (below). Nothing shows it.
+- **`imports`** holds the one-time migration markers; a missing key means that
+  import has not run.
+
+**What lists a deployment:**
+
+- `oats onboard`, on success, lists what it created (`via: onboard`). Its
+  result says so in `listed`: `true`, or `{ code, message }` when the list
+  could not be written. A failed add never fails the onboard; `--check` lists
+  nothing.
+- `oats deployments add [<dir>]`, which the clients run when they open a
+  deployment, and people by hand. It lists the deployment at or above `<dir>`
+  (default: the current directory), found as every kernel `--dir` finds it.
+- **Every kernel command run in a deployment that is not listed yet** lists it
+  (`via: cli`): `status`, `spawn`, `sync`, `session`, `doctor`, `retire` and
+  the others that read a local deployment, from inside an instance home too.
+  The deployment is the one at or above the command's `--home`, its `--dir`
+  (doctor's `[dir]`), or the current directory.
+  - The common case costs no lock: a read of the list finds the path, and
+    nothing is written. Only an unlisted path takes the lock, and only when
+    it is free, re-reads and writes once.
+  - It is best effort and silent: nothing is printed, and the command's
+    answer and exit status are the same whether or not it listed anything.
+  - A command routed with `--server` never lists anything: the host's path is
+    not this computer's.
+
+**Removing.** `oats deployments remove <path>` takes the row whose stored path
+is `<path>` (it does not walk up, so a row whose directory is gone can be
+removed) and touches nothing on disk. The row stays in the file as a
+tombstone, so nothing automatic lists that path again: not a plain command,
+not an import. An explicit `oats deployments add`, an `oats onboard`, or a
+client opening the deployment by its path brings it back.
+
+**The first use imports `~/Agents`, once.** The first command that touches the
+list (any of the above) reads `$HOME/Agents` under the list's lock: at most 200
+entries, no link followed (`~/Agents` itself included). Every directory there
+that holds a regular, non-link `oats-local.yaml` is listed
+(`via: import:agents-dir`), and `imports["agents-dir"]` is set, even when
+`~/Agents` is missing or empty. After that nothing reads `~/Agents` again. A
+command whose import could not run (the lock is busy, the write fails) fails:
+it never answers a list that skipped it.
+
+**The Desktop's own lists** are imported once by
+`oats deployments import --from desktop <path>...`: the first run lists every
+absolute path given, whatever its state, and sets `imports.desktop` in the
+same write; every later run changes nothing.
+
+**Each row's state** comes from existence checks only; no deployment's content
+is read:
+
+| State | Meaning |
+|---|---|
+| `ok` | the directory holds a regular, non-link `oats-local.yaml` |
+| `missing` | the path is gone, or on a volume that is not mounted |
+| `not-a-deployment` | the path exists, without an `oats-local.yaml` |
+| `unreadable` | the check failed (for example `EACCES`) |
+
+```
+$ oats deployments
+PATH        STATE    VIA
+~/acme      ok       onboard
+~/old-demo  missing  import:agents-dir
+```
+
+**Concurrency.** Every change runs under `~/.oats/config/deployments.lock`
+(waiting up to 3 s for it) and re-reads the file inside it, and each write
+replaces the file atomically. Readers take no lock: they read a regular file
+only, without following a link, up to 1 MiB. A missing file is an empty list.
+
+**Errors:**
+
+| Code | When |
+|---|---|
+| `E_DEPLOYMENTS_INVALID` | the file is not JSON, not an object, a link, over 1 MiB, or a row breaks the schema: "`<file>` cannot be read as this computer's deployments list (`<reason>`). Fix it, or move it aside and run `oats deployments add <dir>` for each deployment; nothing was changed" |
+| `E_DEPLOYMENTS_VERSION` | `schemaVersion` is newer than this oats reads: "`<file>` was written by a newer oats (schema `<n>`); upgrade oats". The file is never rewritten down |
+| `E_DEPLOYMENTS_BUSY` | the lock is still held after 3 s: "this computer's deployments list is locked (`<why>`); if no oats process is changing it, remove `<lock>` and retry; nothing was changed" |
+| `E_DEPLOYMENTS_WRITE` | the write failed: "cannot write `<file>` (`<system error>`); nothing was changed" |
+
+`oats deployments add` outside every deployment is `E_LOCAL_MISSING`. The
+JSON of each verb is in the
+[Desktop CLI API](desktop-cli-api.md#this-computers-deployments-oats-deployments).
+
 ## The standalone case
 
 A repo you can read whose workspace you **cannot** read (a contractor with

@@ -6,9 +6,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { CODEX_TASK_PROMPT, describeLaunchCommand, launchEnvRefs, parseLaunchCommand, planLaunch, redactLaunchCommand, renderLaunchCommand, renderLaunchRecipe, resolveLaunchSelection, validateLaunchConfig } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { deploymentsImported } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-launch-recipe-")));
+deploymentsImported(join(base, "oats-home"));
 test.after(() => rmSync(base, { recursive: true, force: true }));
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }

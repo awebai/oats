@@ -22,8 +22,8 @@
 // Any extra arguments are forwarded to node --test.
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import {
   DESKTOP_TEST_DEPS_INSTALL,
@@ -116,6 +116,13 @@ const args = ["--test", ownTmpdir, ...flags, ...shown, ...guard, ...KERNEL_GLOBS
 // them, and every tool a test starts, would write into that cache. A tool that asks for one makes it
 // in its file's directory (above).
 const { NODE_COMPILE_CACHE: _developersCache, ...env } = process.env;
+// No test writes the person's own deployments list (awebai/oats#1390): any kernel command run in a
+// deployment adds that deployment to it, and a fixture's deployment is a temporary directory. Each
+// file's process gets an OATS_HOME_DIR of its own (scripts/test-file-tmpdir.mjs); a row added to the
+// person's list during the run, under a temporary directory, means a test reached the real one, and
+// the run fails naming it.
+const personalList = join(process.env.OATS_HOME_DIR || join(homedir(), ".oats"), "config", "deployments.json");
+const runStartedAt = new Date().toISOString();
 const run = spawnSync(process.execPath, args, { cwd: REPO_ROOT, stdio: "inherit", env: { ...env, OATS_TEST_RUN_DIR: runDir } });
 
 let found = "";
@@ -132,6 +139,15 @@ try {
   }
 } finally { rmSync(runDir, { recursive: true, force: true }); }
 const warnings = found.split("\n").filter(Boolean).map((line) => JSON.parse(line));
+const temporary = [...new Set([tmpdir(), "/tmp", "/private/tmp", "/var/folders", "/private/var/folders"].flatMap((p) => { try { return [p, realpathSync(p)]; } catch { return [p]; } }))];
+const reachedPersonalList = (() => {
+  let doc;
+  try { doc = JSON.parse(readFileSync(personalList, "utf8")); } catch { return []; }
+  return (Array.isArray(doc?.deployments) ? doc.deployments : [])
+    .filter((row) => typeof row?.path === "string" && typeof row.addedAt === "string" && row.addedAt >= runStartedAt
+      && temporary.some((dir) => row.path === dir || row.path.startsWith(`${dir}/`)))
+    .map((row) => row.path);
+})();
 
 if (run.error) throw run.error;
 
@@ -177,4 +193,16 @@ if (left.length) {
   ].join("\n"));
 }
 
-process.exit(warnings.length || left.length ? run.status || 1 : run.status ?? 1);
+if (reachedPersonalList.length) {
+  console.error([
+    "", RULE,
+    `PERSONAL LIST WRITTEN: ${reachedPersonalList.length} temporary deployment${reachedPersonalList.length === 1 ? " was" : "s were"} added to ${personalList} during this run. The run FAILS.`,
+    "A test runs the CLI with an OATS_HOME_DIR of its own (scripts/test-file-tmpdir.mjs gives each file one; a test that",
+    "builds its environment from nothing names one). Remove these rows with `oats deployments remove <path>`:",
+    ...reachedPersonalList.slice(0, 5).map((path) => `  ${path}`),
+    ...(reachedPersonalList.length > 5 ? [`  … and ${reachedPersonalList.length - 5} more`] : []),
+    RULE,
+  ].join("\n"));
+}
+
+process.exit(warnings.length || left.length || reachedPersonalList.length ? run.status || 1 : run.status ?? 1);

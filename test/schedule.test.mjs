@@ -5,13 +5,14 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { deploymentsImported } from "./helpers/host-fixture.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const bin = join(here, "..", "bin", "oats.mjs");
 // short, and its OATS_HOME_DIR is <base>/h: that holds ssh's control socket (ssh/<40 hex>), which ssh needs
 // within 86 bytes, under the root run's directory of the file (docs/implementation.md, fixtures)
 const base = realpathSync(mkdtempSync(join(tmpdir(), "o-sc-")));
-process.env.OATS_HOME_DIR = join(base, "h");
+process.env.OATS_HOME_DIR = deploymentsImported(join(base, "h"));
 delete process.env.OATS_INSTANCE; delete process.env.OATS_INSTANCE_HOME; delete process.env.PI_AGENTS_ROOT;
 const S = await import("../lib/schedule.mjs");
 const H = await import("../lib/schedule-host.mjs");

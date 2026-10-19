@@ -6,9 +6,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { launchConfigsAt, parseYamlNested, validateLaunchConfig } from "../lib/core.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
+import { deploymentsImported } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-launch-config-")));
+deploymentsImported(join(base, "oats-home"));
 test.after(() => rmSync(base, { recursive: true, force: true }));
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 const env = () => { const e = { ...process.env, OATS_HOME_DIR: join(base, "oats-home") }; for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"]) delete e[k]; return e; };

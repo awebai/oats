@@ -66,6 +66,7 @@ import { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } from 
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposedInstructions, withSkills, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
 import { readEvents, setWaiting, incarnationOf } from "../lib/instance-events.mjs";
+import { CLIENT_VIA, addDeployment, deploymentAtOrAbove, importDesktopDeployments, listDeployments, listUnlisted, removeDeployment } from "../lib/deployments.mjs";
 
 const rawArgs = process.argv.slice(2);
 /** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
@@ -98,14 +99,14 @@ function expandInlineValues(argv) {
 const { argv: args, problem: argvProblem, inline: inlineValues } = expandInlineValues(rawArgs);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["harness", "automations", "trigger", "capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "soul", "teams", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "tui", "update", "version", "workspace", "worktree"]);
+const KERNEL_COMMANDS = new Set(["harness", "automations", "trigger", "capture", "capabilities", "deployments", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "soul", "teams", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "tui", "update", "version", "workspace", "worktree"]);
 /** Commands whose argv another parser reads (packages/record, packages/experimental and packages/tui parse process.argv). */
 const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental", "tui"]);
 /** The kernel features this binary implements: `features` in `version --json` (the Desktop API v1
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running", "deployments-list"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -3535,6 +3536,74 @@ async function tuiCmd() {
   await import(new URL("../packages/tui/bin/tui.mjs", import.meta.url));
 }
 
+/**
+ * `oats deployments [list] | add [<dir>] | remove <path> | import --from desktop <path>...  [--json]`:
+ * this computer's list of its deployments (lib/deployments.mjs; docs/workspaces.md "This computer's
+ * deployments"). Runs anywhere, needs no deployment, never routes to another machine. `--via
+ * tui|desktop` (add) is the clients' and is not in the usage.
+ */
+function deploymentsCmd() {
+  const usage = "usage: oats deployments [list] | add [<dir>] | remove <path> | import --from desktop <path>...  [--json]";
+  const fail = (code, message, details) => cmdFail(code, message, details);
+  const positional = [];
+  const values = {};
+  for (let i = 1; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--json") continue;
+    if (a === "--server") return fail("E_BAD_ARGS", "oats deployments lists this computer's deployments: --server is not accepted");
+    if (a === "--via" || a === "--from") {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith("--")) return fail("E_BAD_ARGS", `${a} needs a value\n${usage}`);
+      if (values[a.slice(2)] !== undefined) return fail("E_BAD_ARGS", `${a} is given twice\n${usage}`);
+      values[a.slice(2)] = v; i++; continue;
+    }
+    if (a.startsWith("--")) return fail("E_BAD_ARGS", `unknown flag ${a}\n${usage}`);
+    positional.push(a);
+  }
+  const sub = positional.length ? positional.shift() : "list";
+  if (!["list", "add", "remove", "import"].includes(sub)) return fail("E_BAD_ARGS", `unknown subcommand ${JSON.stringify(sub)}\n${usage}`);
+  if (values.via !== undefined && sub !== "add") return fail("E_BAD_ARGS", `--via is for oats deployments add\n${usage}`);
+  if (values.from !== undefined && sub !== "import") return fail("E_BAD_ARGS", `--from is for oats deployments import\n${usage}`);
+  const run = (fn) => { try { return fn(); } catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return fail(e.code, e.message, e.details); throw e; } };
+
+  if (sub === "list") {
+    if (positional.length) return fail("E_BAD_ARGS", usage);
+    const result = run(() => listDeployments());
+    if (JSON_MODE) return jsonOk(result);
+    if (!result.deployments.length) {
+      console.log(`no deployments listed (${shortPath(result.file)}): create one with \`oats onboard <dir> --workspace <ref>\`, or add one with \`oats deployments add <dir>\``);
+      return;
+    }
+    const rows = [["PATH", "STATE", "VIA"], ...result.deployments.map((d) => [shortPath(d.path), d.state, d.via ?? ""])];
+    const width = (i) => Math.max(...rows.map((r) => r[i].length));
+    for (const r of rows) console.log(`${r[0].padEnd(width(0))}  ${r[1].padEnd(width(1))}  ${r[2]}`.trimEnd());
+    return;
+  }
+  if (sub === "add") {
+    if (positional.length > 1) return fail("E_BAD_ARGS", usage);
+    if (values.via !== undefined && !CLIENT_VIA.includes(values.via)) return fail("E_BAD_ARGS", `--via takes ${CLIENT_VIA.join(" or ")}, got ${JSON.stringify(values.via)}`);
+    const from = resolve(positional[0] ?? process.cwd());
+    const found = deploymentAtOrAbove(from);
+    if (!found) return fail("E_LOCAL_MISSING", `no oats-local.yaml at or above ${from}: it is not in a deployment (\`oats onboard <dir> --workspace <ref>\` creates one)`, { dir: from });
+    const result = run(() => addDeployment(found, { via: values.via ?? "cli" }));
+    if (JSON_MODE) return jsonOk(result);
+    console.log(result.added ? `listed ${shortPath(result.path)}` : `${shortPath(result.path)} is already listed; nothing was changed`);
+    return;
+  }
+  if (sub === "remove") {
+    if (positional.length !== 1) return fail("E_BAD_ARGS", `oats deployments remove takes one path\n${usage}`);
+    const result = run(() => removeDeployment(positional[0]));
+    if (JSON_MODE) return jsonOk(result);
+    console.log(result.removed ? `removed ${shortPath(result.path)} from this computer's list (nothing on disk was touched)` : `${shortPath(result.path)} is not listed; nothing was changed`);
+    return;
+  }
+  // import
+  if (values.from !== "desktop") return fail("E_BAD_ARGS", `oats deployments import needs --from desktop\n${usage}`);
+  const result = run(() => importDesktopDeployments(positional));
+  if (JSON_MODE) return jsonOk(result);
+  console.log(result.imported ? `imported the Desktop's deployments: ${result.added.length} listed` : `the Desktop's deployments were imported already (${result.at}); nothing was changed`);
+}
+
 /** `oats onboard [<dir>] --workspace <repo ref> [--json]` — workspace model v2 (decision 9).
  *
  * Realizes a workspace on this machine in the directory the operator chooses
@@ -3652,8 +3721,14 @@ async function onboardCmd() {
   // cannot see forge visibility, so it states the rule rather than judging.
   const hostIsMember = members.some((m) => m.key === synced.discovery.key);
   const hosting = { host: synced.discovery.key, hostIsMember, rule: "If any member is private, host oats-workspace.yaml in a private repo that is not a public member (a dedicated <org>/workspace repo); public contributors then use the standalone case (from: here capabilities + oats.core)." };
-  const result = { onboardApi: 2, standalone: standalone || undefined, local: localFile, dir, agents: join(dir, "agents"), lock: synced.lockFile, sync: synced.report, hosting, next: { clone: clones, spawn: spawnHint, souls: soulNames.slice(0, 3) } };
+  // This computer's deployments list gains what was created (awebai/oats#1390); a failed add never
+  // fails the onboard, it is answered in `listed`.
+  let listed = true;
+  try { addDeployment(dir, { via: "onboard" }); }
+  catch (e) { listed = { code: typeof e?.code === "string" && e.code.startsWith("E_") ? e.code : "E_DEPLOYMENTS_WRITE", message: String(e?.message ?? e) }; }
+  const result = { onboardApi: 2, standalone: standalone || undefined, local: localFile, dir, agents: join(dir, "agents"), lock: synced.lockFile, sync: synced.report, hosting, next: { clone: clones, spawn: spawnHint, souls: soulNames.slice(0, 3) }, listed };
   if (JSON_MODE) { jsonOk(result); return; }
+  if (listed !== true) console.error(`oats: ${shortPath(dir)} was onboarded, but not added to this computer's deployments list: ${listed.message}`);
 
   console.log(`Onboarded ${shortPath(dir)} into workspace ${workspaceName(synced.discovery)} (${synced.discovery.key} @ ${short(synced.discovery.commit)}).${standalone ? `\n  (${standaloneNote(synced.discovery, { from: " from here" })})` : ""}\n`);
   printSyncReport(ctx, synced);
@@ -4606,6 +4681,17 @@ try {
     die(message);
   }
 }
+// This computer's deployments list (awebai/oats#1390, amendment 1): a kernel command that reads a
+// local deployment lists it when it is not listed yet (lib/deployments.mjs listUnlisted). The one
+// table of those commands is here. Never on --server (the remote's path is not this computer's),
+// never for help, and silent: no output, no change to the command's answer or exit status.
+const LISTS_ITS_DEPLOYMENT = new Set(["automations", "capabilities", "doctor", "inspect", "instance", "launch-config", "operation", "package", "pane", "readiness", "retire", "schedule", "session", "soul", "souls", "spawn", "status", "sync", "teams", "trigger", "workspace", "worktree"]);
+if (LISTS_ITS_DEPLOYMENT.has(cmd) && flag("server") === undefined && !args.slice(1).some((a) => a === "--help" || a === "-h")) {
+  // The command's directory: --home, else doctor's [dir], else --dir, else where it runs.
+  const given = (name) => { const v = flag(name); return typeof v === "string" && v.trim() ? v : undefined; };
+  try { listUnlisted(resolve(given("home") ?? (cmd === "doctor" && args[1] && !args[1].startsWith("--") ? args[1] : undefined) ?? given("dir") ?? process.cwd())); }
+  catch { /* best effort: a working directory that is gone is the command's to answer */ }
+}
 if (cmd === "onboard") {
   if (args.includes("--help") || args.includes("-h")) { if (JSON_MODE) jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); else usageFor(cmd); process.exit(0); }
   await onboardCmd();
@@ -4619,6 +4705,7 @@ const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
 if (flag("server") !== undefined && ROUTED_COMMANDS.has(cmd)) await serverRouteCmd();
 else if (cmd === "server") await serverCmd();
+else if (cmd === "deployments") deploymentsCmd();
 else if (cmd === "inspect") await inspectCmd();
 else if (cmd === "operation") await operationCmd();
 else if (cmd === "launch-config") await launchConfigCmd();
@@ -4774,9 +4861,21 @@ Usage:
                                             and prints the
                                             next steps (clone members you work IN, spawn the
                                             workspace's setup expert (the soul holding oats.setup));
-                                            creates no soul, spawns nothing
+                                            creates no soul, spawns nothing; lists <dir> in this
+                                            computer's deployments (below)
       [--check]                             --check: write nothing; report <dir> (~ = this home),
                                             its state and whether Git reads the workspace remote
+  oats deployments [list] [--json]           this computer's deployments (~/.oats/config/
+                                            deployments.json): path, state (ok, missing,
+                                            not-a-deployment, unreadable) and how each was listed.
+                                            Onboard lists what it creates, and a kernel command run
+                                            in an unlisted deployment lists it; ~/Agents is
+                                            imported once, on first use
+  oats deployments add [<dir>] [--json]      list the deployment at or above <dir> (default: here)
+  oats deployments remove <path> [--json]    take <path> off the list (nothing on disk is touched);
+                                            nothing lists it again but an explicit add or onboard
+  oats deployments import --from desktop <path>... [--json]
+                                            the Desktop's one-time import of its own lists
   oats session inspect|input|attach --home <absolute-home> [--text-file <path>] [--json]
   oats session attach --home <absolute-home> [--detach-key <key>]
                                             a viewer of one instance. <key> (C-<letter>, M-<letter

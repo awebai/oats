@@ -126,6 +126,7 @@ and the rules its tests pin.
 | `read-ahead.mjs`, `read-ahead-worker.mjs` | read-ahead for the tree digests (`fingerprintTrees`): while a digest reads a tree on the calling thread, a planner thread walks it in the digest's order and a few reader threads read the next files into the page cache, within a window of bytes and files ahead of the digest. The digest still reads and hashes every byte itself, so no value or error depends on it; one that cannot start or falls behind costs speed only |
 | `session-input.mjs` | session inspection and input transport. `createSessionPaneInspector` interprets one window's panes for both lifecycle inspection and status, sharing a lazy process scan across a status read; `core.mjs` batches pane reads per socket/session and applies its shared `harnessRunning` predicate |
 | `servers.mjs` | routing commands to a registered server |
+| `deployments.mjs` | this computer's deployments ([workspaces.md](workspaces.md#this-computers-deployments)): the per-user files `<OATS_HOME_DIR>/config/deployments.json` (the list, 0600 in a 0700 `config/`) and `config/deployments.lock` (`withDirLock`, waited for up to 3 s), the bounded no-follow read, the atomic write, the first-use `~/Agents` import (the real `$HOME`) and the four `E_DEPLOYMENTS_*` codes. `oats deployments`, onboard's `listed` and the auto-add write through it. `listUnlisted` is the auto-add: `bin/oats.mjs` calls it once before dispatch, for the commands in its one table (`LISTS_ITS_DEPLOYMENT`); it reads without a lock, takes the lock only for a path not listed (without waiting), and never throws or prints |
 | `launch-prompt-evidence.mjs` | private bounded storage of exact unmatched, stable-screen completed or flag-ignored notice frames, original-home identity checks and receipt-last publication; no terminal operations or public raw text |
 | `launch-prompt-completion.mjs` | the 21 question markers that block after the development-channel Enter; reporting only, never an input matcher |
 | `launch-prompt-fixtures.mjs` | the development-channel tolerance list (`launch-prompt-fixtures/dev-channel-confirmation.json`): engagement from the argv, the enumerated normalization, equality matching, the `flag-ignored` notice block, the running-session banner hint, what differed, and the Claude version read from the executable's path |
@@ -501,6 +502,17 @@ the rule:
   preload in `OATS_TEST_RUN_DIR`, and the preload takes that variable out of
   the file's environment before any code of the file runs. No test sees it,
   nor any process a test starts.
+- The preload also gives each file an `OATS_HOME_DIR` of its own,
+  `<n>.oats-home` beside its directory, holding a deployments list whose
+  `~/Agents` import is marked done (awebai/oats#1390). Any kernel command run
+  in a deployment adds that deployment to this computer's list, so a test
+  that runs the CLI with the environment it was given never writes the
+  person's `~/.oats`, nor reads their `~/Agents`. A test that names an
+  `OATS_HOME_DIR` of its own beside the person's `HOME` seeds the same marker
+  (`test/helpers/host-fixture.mjs` `deploymentsImported`); a fixture with a
+  `HOME` of its own needs nothing. When the run has ended, a row added to the
+  person's list during the run under a temporary directory fails the run,
+  naming it.
 - When the run has ended it reads each file's directory. If one is not empty
   the run fails, even if every test passed, and names each file and what it
   left.

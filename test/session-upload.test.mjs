@@ -6,11 +6,13 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { attachmentName, receiveAttachment, uploadAttachment, sha256Hex } from "../lib/attachments.mjs";
+import { deploymentsImported } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 // short, and its OATS_HOME_DIR is <base>/h: that holds ssh's control socket (ssh/<40 hex>), which ssh needs
 // within 86 bytes, under the root run's directory of the file (docs/implementation.md, fixtures)
 const base = realpathSync(mkdtempSync(join(tmpdir(), "o-up-")));
+deploymentsImported(join(base, "h"));
 test.after(() => rmSync(base, { recursive: true, force: true }));
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 let n = 0;
