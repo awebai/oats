@@ -80,7 +80,7 @@ function fakePanel(log, options) {
 }
 /** `oats tui` on a fake terminal: the run, its streams and what it wrote. Everything outside the
  *  terminal (the user's file, the deployment, the kernel, the reader) is the test's own. */
-function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", offered = { offered: [], limited: false }, admit = (path) => ({ ok: true, deployment: path }), prepare = null, confirm = null, start = null, tellable = () => false } = {}) {
+function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false, detachKey: "C-\\" }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", offered = { offered: [], limited: false }, admit = (path) => ({ ok: true, deployment: path }), prepare = null, confirm = null, start = null, tellable = () => false } = {}) {
   const log = [];
   const stdin = fakeStdin({ log, isTTY: stdinTTY }), stdout = fakeStdout({ log, columns, rows, isTTY: stdoutTTY }), proc = fakeProcess(), timers = fakeTimers();
   const kill = proc.kill;
@@ -216,6 +216,36 @@ const CONTROL = /[\x00-\x1f\x7f-\x9f]/;
 const written = (r) => r.log.filter(([what]) => what === "write").map(([, bytes]) => bytes).join("");
 /** A screen's text with every run of blanks as one: two screens that differ in a sentence's length compare by their words. */
 const words = (text) => text.replace(/ +/g, " ");
+/** The rows a terminal shows after `output`, `cols` by `rows`, each with its trailing blanks cut:
+ *  the text placed where each position sequence puts it, an erase to the end of a row and a clear
+ *  of the screen done (the only sequences that move or clear anything, helpers.mjs). One character
+ *  is one cell: enough for the fixtures' words. */
+function screenRows(output, cols, rows) {
+  const screen = Array.from({ length: rows }, () => Array(cols).fill(" "));
+  let row = 0, col = 0;
+  for (let i = 0; i < output.length; i++) {
+    const csi = output[i] === "\x1b" ? /^\x1b\[([0-9;?]*)([A-Za-z])/.exec(output.slice(i, i + 32)) : null;
+    if (csi) {
+      if (csi[2] === "H") [row, col] = csi[1].split(";").map((n) => Number(n) - 1);
+      else if (csi[2] === "J") screen.forEach((line) => line.fill(" "));
+      else if (csi[2] === "K" && row < rows) screen[row].fill(" ", col);
+      i += csi[0].length - 1;
+    } else if (output[i] !== "\x1b") {
+      if (row < rows && col < cols) screen[row][col] = output[i];
+      col += 1;
+    }
+  }
+  return screen.map((line) => line.join("").trimEnd());
+}
+/** The sidebar's text as the run draws it now (docs/tui.md, "What it shows"), by a redraw that is no
+ *  key (a resize to the same size: a key bound to an action would put the line after an open
+ *  away): each row up to the rule beside it, the rows joined, every run of blanks as one. A
+ *  sentence the sidebar wraps reads whole, and nothing of the main area comes between its rows. */
+function sidebarOf(r) {
+  r.stdout.take();
+  r.stdout.resize(r.stdout.columns, r.stdout.rows);
+  return words(screenRows(r.stdout.take(), r.stdout.columns, r.stdout.rows).map((line) => line.split("\u2502")[0].trim()).filter(Boolean).join(" "));
+}
 
 test("the action table binds each key to one action, and a key bound twice is refused when the table is read", () => {
   assert.deepEqual(Object.fromEntries(bindings(ACTIONS)), {
@@ -343,17 +373,20 @@ test("the deployment is looked for from --dir, a relative one from where the use
   }
 });
 
-test("a run says it is reading, draws the instances when the reader answers, opens and closes the help, and q quits with status 0, the terminal restored and the reader stopped before the run is over", async () => {
+test("a run says it is reading, draws the instances when the reader answers (the sidebar names the workspace and counts nothing), opens and closes the help, and q quits with status 0, the terminal restored and the reader stopped before the run is over", async () => {
   const r = await started();
   assert.deepEqual([r.reader.options.getServed(), r.reader.options.cli], [[DEPLOYMENT], CLI], "the reader reads the deployment that was found, with the kernel that was accepted");
   assert.equal(r.reader.options.getEntry(DEPLOYMENT).deployment.status, "pending", "and is told the entry the store holds");
-  assert.match(textOf(r.stdout.take()), /^ deploy  Instances   Souls   Capabilities.*Reading the deployment\..*\? help.*q quit/s);
+  assert.match(textOf(r.stdout.take()), /^ deploy +│.*Instances +1 │ +Reading the deployment\..*Souls +2 │ Capabilities +3 │.*Ctrl\+\\ +commands.*\? +help.*q +quit/s);
   r.reader.answer(ENTRY);
-  assert.match(textOf(r.stdout.take()), /acme-platform.*1 running.*1 stopped.*● acme-expert-tui.*○ acme-maintainer-ops/s);
+  const answered = textOf(r.stdout.take());
+  assert.match(answered, /^ acme-platform +│.*● acme-expert-tui.*○ acme-maintainer-ops/s);
+  assert.doesNotMatch(answered, /\d+ (running|stopped)/, "no counts: the header that held them is gone");
   assert.equal(r.reader.options.getEntry(DEPLOYMENT), ENTRY);
   r.stdin.type("?");
-  // Enter has a line per view, and rows of its own under the first: at 24 rows its first page ends before Esc.
-  assert.match(textOf(r.stdout.take()), /Keys.*w.*workspaces.*Enter.*open the selected agent's terminal.*more below/s);
+  // Beside the sidebar, its top row the time of the read the screen shows. Enter has a line per view,
+  // and rows of its own under the first: at 24 rows its first page ends before Esc.
+  assert.match(textOf(r.stdout.take()), /│ {3}read 10:00:00 .*Keys.*w +workspaces.*Enter +open the selected agent's .*terminal as a tab beside .*more below/s);
   r.stdin.type("G");
   assert.match(textOf(r.stdout.take()), /Not in this version.*oats session attach --home <home>.*closes this help/s, "the movement keys scroll the help to its end");
   r.stdin.type("?");
@@ -457,12 +490,12 @@ test("a resize redraws in full; below 60x15 the screen is the too-small line, an
   r.stdout.resize(60, 15);
   let out = r.stdout.take();
   assert.equal(out.startsWith("\x1b[?2026h\x1b[0m\x1b[2J"), true, "a resize clears first, inside the frame's synchronized update");
-  assert.match(textOf(out), /^ acme-platform.*acme-maintainer-ops.*\? help/s);
+  assert.match(textOf(out), /^ acme-platform.*acme-maintainer-ops.*Ctrl\+\\ +commands +Ctrl\+K +palette +n +spawn +\? +help +q +quit$/s, "at 15 rows the small cheat sheet gives up nothing");
   r.stdout.resize(59, 14);
   out = r.stdout.take();
   assert.equal(textOf(out), "Terminal too small: 59x14, oats tui needs 60x15.");
   r.stdout.resize(80, 24);
-  assert.match(textOf(r.stdout.take()), />.*acme-maintainer-ops.*soul.*acme-maintainer/s, "the selection is where it was");
+  assert.match(textOf(r.stdout.take()), /acme-maintainer-ops +│ +soul +acme-maintainer\b.*> ○ acme-maintainer-ops/s, "the selection is where it was, its detail beside the list");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -489,17 +522,22 @@ test("a resize while a frame is being written makes no second write until the fi
   assert.equal(await r.status, 0);
 });
 
-test("Ctrl+L sets the terminal's modes again and redraws in full; Ctrl+\\ in the list is the leader, whose hint takes the footer's row until a second Ctrl+\\ puts the footer back and does nothing else", async () => {
+test("Ctrl+L sets the terminal's modes again and redraws in full; Ctrl+\\ in the list is the leader, whose hint takes the cheat sheet's rows until a second Ctrl+\\ puts the cheat sheet back and does nothing else", async () => {
   const r = await started();
   const first = r.stdout.take();
   assert.equal(first.startsWith(ENTER), true);
   r.log.length = 0;
   r.stdin.type("\x1c");
   const hint = r.stdout.take();
-  assert.equal(hint.includes("\x1b[24;1H") && !/\x1b\[(?!24;)\d+;\d+H/.test(hint), true, "only the footer's row is written");
-  assert.equal(textOf(hint), "C-\\   k palette   1-3 views   Up/Down instance   X/R/S/D acts   Esc the list");
+  // The leader's hint stands on rows 9 to 17 (1 to 9 of the sidebar are its title, the views and the
+  // rules); the cheat sheet, shorter, on rows 9 to 13, and the rows under it are written empty.
+  const sheetRows = Array.from({ length: 9 }, (_, i) => [9 + i, 1]);
+  assert.deepEqual([...hint.matchAll(/\x1b\[(\d+);(\d+)H/g)].map(([, row, col]) => [Number(row), Number(col)]), sheetRows, "only the cheat sheet's rows are written");
+  assert.equal(words(textOf(hint)), " Ctrl+\\ then │ k palette │ 1-3 views │ Up/Down instance │ X/R/S/D acts │ / filter │ o workspaces │ ? help │ Esc the list │");
   r.stdin.type("\x1c");
-  assert.match(textOf(r.stdout.take()), /^C-\\ commands   \/ filter/);
+  const back = r.stdout.take();
+  assert.deepEqual([...back.matchAll(/\x1b\[(\d+);(\d+)H/g)].map(([, row, col]) => [Number(row), Number(col)]), sheetRows);
+  assert.equal(words(textOf(back)), " Ctrl+\\ commands │ Ctrl+K palette │ n spawn │ ? help │ q quit │ │ │ │ │");
   assert.deepEqual(readerDid(r), [["touch"], ["touch"]], "the leader reads nothing");
   r.log.length = 0;
   r.stdin.type("\x0c");
@@ -565,7 +603,7 @@ test("stopped and continued from outside, which it could not prepare for: the re
 });
 
 test("with --ascii, the user's file saying ascii, or a locale that is not UTF-8, the rules are hyphens and no byte outside ASCII is written", async () => {
-  for (const options of [{ argv: ["--ascii"] }, { config: { ok: true, actions: ACTIONS, ascii: true } }, { env: { TERM: "xterm", LANG: "C" } }, { env: { TERM: "xterm", LC_ALL: "POSIX", LANG: "en_US.UTF-8" } }]) {
+  for (const options of [{ argv: ["--ascii"] }, { config: { ok: true, actions: ACTIONS, ascii: true, detachKey: "C-\\" } }, { env: { TERM: "xterm", LANG: "C" } }, { env: { TERM: "xterm", LC_ALL: "POSIX", LANG: "en_US.UTF-8" } }]) {
     const r = await started(options);
     r.reader.answer(ENTRY);
     r.stdin.type("?");
@@ -573,19 +611,18 @@ test("with --ascii, the user's file saying ascii, or a locale that is not UTF-8,
     assert.equal(await r.status, 0);
     const output = r.stdout.written.join("");
     assert.doesNotMatch(output, /[^\x00-\x7f]/, JSON.stringify(options.argv ?? options.env ?? "tui.json"));
-    assert.match(textOf(output), /-{80}/);
-    assert.match(textOf(output), /\+-{41}/, "the joint of the two panes is a plus");
+    assert.match(textOf(output), /-{38}\|/, "the sidebar's rule is hyphens across its 38 columns, and the rule beside it a bar");
   }
   const utf8 = await started();
   utf8.stdin.type("q");
   await utf8.status;
-  assert.match(textOf(utf8.stdout.written.join("")), /─{80}/);
+  assert.match(textOf(utf8.stdout.written.join("")), /─{38}│/);
 });
 
-test("the keys are the effective table's: with the user's file giving quit to x, x quits and q does nothing, and the footer says so", async () => {
+test("the keys are the effective table's: with the user's file giving quit to x, x quits and q does nothing, and the cheat sheet says so", async () => {
   const config = effectiveConfig({ keys: { quit: ["x"] } });
   const r = await started({ config: { ...config, path: "/home/u/.config/oats/tui.json" } });
-  assert.match(textOf(r.stdout.take()), /x quit/);
+  assert.match(textOf(r.stdout.take()), / x +quit +│/);
   r.stdin.type("q");
   assert.equal(r.stdout.take(), "");
   r.stdin.type("x");
@@ -634,14 +671,15 @@ test("a reader that throws when asked ends the run as an internal error, with th
 // ── Other machines and the workspace switcher ────────────────────────────────
 
 test("started outside every deployment with a folder of ~/Agents to offer, it opens on the switcher: the folder is listed, nothing is served, and the reader is started, which reads the roster of other machines", async () => {
-  const r = await started({ deployment: { ok: false, dir: "/work/here" }, offered: OFFERED, kernel: { ok: true, cli: REMOTE_CLI } });
+  // 120 columns: the switcher beside the sidebar is wide enough for a folder's whole path.
+  const r = await started({ deployment: { ok: false, dir: "/work/here" }, offered: OFFERED, kernel: { ok: true, cli: REMOTE_CLI }, columns: 120, rows: 40 });
   assert.deepEqual(r.errors, [], "there is something to list, so no line that there is no deployment");
   assert.deepEqual(effectsOf(r), [["config"], ["deployment", "/work/here"], ["offered", "/home/u", []], ["kernel"]], "~/Agents is looked at for what a run that serves nothing can offer, before the kernel is asked");
   assert.deepEqual(r.reader.options.getServed(), [], "nothing is served");
   assert.deepEqual(r.reader.options.getRoster(), { remote: { remoteGroups: [], rosterAnswered: false, rosterFailure: null }, memory: new Map(), notes: new Map() });
   assert.deepEqual(readerDid(r), [["start"]], "the reader is started all the same: its cycles read the other machines");
   const first = textOf(r.stdout.take());
-  assert.match(first, /^ workspaces.*On this machine, not opened.*acme-ledger\s+~\/Agents\/acme-ledger.*Enter open.*\/ filter.*r refresh.*\? help.*q quit/s);
+  assert.match(first, /^ workspaces.*On this machine, not opened.*acme-ledger\s+~\/Agents\/acme-ledger.*Enter +open.*\/ +filter.*r +refresh.*\? +help.*q +quit/s);
   assert.doesNotMatch(first, /Reading the deployment|Esc close/, "no deployment is being read, and there is no view to close the switcher onto");
   // What the reader's first cycle found of the other machines is listed too.
   r.reader.collecting();
@@ -676,19 +714,20 @@ test("started outside every deployment with nothing in ~/Agents to offer, it exi
 });
 
 test("w opens the switcher: ~/Agents is looked at for the folders this run does not serve and they are listed under the workspaces; r there looks again and asks for a live read", async () => {
-  const r = await started({ offered: OFFERED });
+  // 120 columns: the switcher beside the sidebar is wide enough for a folder's whole path.
+  const r = await started({ offered: OFFERED, columns: 120, rows: 40 });
   r.reader.answer(HOME_ENTRY);
   assert.deepEqual(effectsOf(r).filter(([which]) => which === "offered"), [], "a run started in a deployment does not look at ~/Agents until it is asked to");
   r.stdout.take();
   r.log.length = 0;
   // In the list of instances Enter opens the selected agent in the panel, here with a kernel record
-  // that has no detach key (the viewer is given none); the leader twice gives the list back, and c
+  // that has no detach key (the viewer is given none); the leader then Esc gives the list back, and c
   // closes it. None of it is an effect on the file system or a read.
   r.stdin.type("\r");
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual([effectsOf(r), readerDid(r)], [[], [["touch"]]]);
   assert.equal(r.panel.opens.length, 1);
-  leaderTwice(r);
+  leaderEscape(r);
   r.stdin.type("c");
   r.log.length = 0;
   r.stdin.type("w");
@@ -696,7 +735,7 @@ test("w opens the switcher: ~/Agents is looked at for the folders this run does 
   assert.deepEqual(readerDid(r), [["touch"]], "opening the switcher reads no deployment");
   assert.notEqual(r.stdout.take(), "");
   const listed = screenOf(r);
-  assert.match(listed, /^ workspaces.*> \* acme-platform\s+This machine.*On this machine, not opened.*acme-ledger\s+~\/Agents\/acme-ledger.*Enter open.*\/ filter.*r refresh.*Esc close.*\? help.*q quit/s);
+  assert.match(listed, /^ workspaces.*> \* acme-platform\s+This machine.*On this machine, not opened.*acme-ledger\s+~\/Agents\/acme-ledger.*Enter +open.*\/ +filter.*r +refresh.*Esc +close.*\? +help.*q +quit/s);
   assert.doesNotMatch(listed, /acme-expert-tui|More folders/);
 
   // Another folder appeared, and ~/Agents now holds more than a look reads.
@@ -713,7 +752,8 @@ test("w opens the switcher: ~/Agents is looked at for the folders this run does 
 
 test("Enter on a folder of ~/Agents asks whether it is a deployment now; admitted, it is served from then on under the path it was admitted as, its Instances view is shown and a live read is asked for", async () => {
   // The folder is a link: what is admitted is where it leads.
-  const r = await started({ offered: OFFERED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }) });
+  // 120 columns: the switcher beside the sidebar is wide enough for a folder's whole path.
+  const r = await started({ offered: OFFERED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }), columns: 120, rows: 40 });
   r.reader.answer(HOME_ENTRY);
   r.stdin.type("w");
   r.stdin.type("j"); // from the workspace that is open to the folder under it
@@ -728,12 +768,14 @@ test("Enter on a folder of ~/Agents asks whether it is a deployment now; admitte
   assert.deepEqual(readerDid(r), [["touch"], ["request", { live: true }]], "it is read at once");
   assert.notEqual(r.stdout.take(), "");
   const opened = screenOf(r);
-  assert.match(opened, /^ acme-ledger.*Instances   Souls   Capabilities.*Reading the deployment\..*C-\\ commands {3}\/ filter.*\? help.*q quit/s);
+  assert.match(opened, /^ acme-ledger +│.*Instances +1 │ +Reading the deployment\..*Souls +2 │ Capabilities +3 │.*Ctrl\+\\ +commands +│ Ctrl\+K +palette +│ n +spawn +│ \? +help +│ q +quit +│/s);
   assert.doesNotMatch(opened, /acme-expert-tui|On this machine, not opened/, "the switcher is closed, and the view is the new deployment's");
   // From then on: the reader's answer for it is taken and drawn.
   r.reader.answer(observedAt("/srv/acme-ledger", [instanceRow("acme-clerk", "acme-clerk-books")], { workspace: reportedWorkspace("git.example.com/acme-ledger/books", "aweb:acme-ledger"), name: "acme-ledger" }), "/srv/acme-ledger");
   assert.match(textOf(r.stdout.take()), /acme-clerk-books/);
-  assert.match(screenOf(r), /^ acme-ledger\s+1 running.*acme-clerk-books/s);
+  const read = screenOf(r);
+  assert.match(read, /^ acme-ledger +│.*acme-clerk-books/s);
+  assert.doesNotMatch(read, /1 running/, "no counts on the screen");
   // And the switcher no longer offers it: the next look is told that it is served.
   r.offered = { offered: [], limited: false };
   r.log.length = 0;
@@ -745,7 +787,8 @@ test("Enter on a folder of ~/Agents asks whether it is a deployment now; admitte
 });
 
 test("Enter on a folder of ~/Agents that is no deployment any more: its row says so, and nothing else changed", async () => {
-  const r = await started({ offered: OFFERED, admit: () => ({ ok: false }) });
+  // 120 columns: the switcher beside the sidebar is wide enough for a folder's whole path.
+  const r = await started({ offered: OFFERED, admit: () => ({ ok: false }), columns: 120, rows: 40 });
   r.reader.answer(HOME_ENTRY);
   r.stdin.type("w");
   r.stdin.type("j");
@@ -759,7 +802,7 @@ test("Enter on a folder of ~/Agents that is no deployment any more: its row says
   assert.equal(r.reader.options.getEntry(LEDGER), null);
   assert.notEqual(r.stdout.take(), "");
   const after = screenOf(r);
-  assert.match(after, /^ workspaces.*\* acme-platform\s+This machine.*On this machine, not opened.*>\s+acme-ledger\s+Not an OATS deployment any more\..*Enter open.*Esc close/s);
+  assert.match(after, /^ workspaces.*\* acme-platform\s+This machine.*On this machine, not opened.*>\s+acme-ledger\s+Not an OATS deployment any more\..*Enter +open.*Esc +close/s);
   assert.equal(words(after), words(before).replace("~/Agents/acme-ledger", "Not an OATS deployment any more."), "the switcher as it was, but for what that row says");
   // The view the switcher was opened over is still there to go back to.
   r.stdin.type("\x1b");
@@ -791,8 +834,13 @@ test("Enter on a workspace opens its view and asks for a live read", async () =>
   assert.deepEqual(effectsOf(r), [], "a workspace is not a folder: nothing is asked of the file system");
   assert.notEqual(r.stdout.take(), "");
   const opened = screenOf(r);
-  assert.match(opened, /^ charts.*Instances   Souls   Capabilities.*read 10:00:30.*dev-east.*Enter open {3}\/ filter.*q quit/s, "the machine's view, with the time of the roster read it is drawn from");
+  assert.match(opened, /^ charts +on onyx +│.*Instances +1 │.*dev-east.*Enter +open +│ n +spawn +│ \? +help +│ q +quit +│/s, "the machine's view");
   assert.doesNotMatch(opened, /acme-expert-tui/);
+  // The time of the roster read it is drawn from: the help's top row, beside the sidebar (this
+  // machine's own was read at 10:00:00).
+  r.stdin.type("?");
+  assert.match(screenOf(r), /│ {3}read 10:00:30 /);
+  r.stdin.type("?");
   assert.deepEqual(r.reader.options.getServed(), [DEPLOYMENT], "a machine's workspace is no deployment this run serves");
   r.stdin.type("w");
   const back = screenOf(r);
@@ -813,7 +861,9 @@ test("the roster of other machines: a read that began changes nothing on the scr
   const held = r.reader.options.getRoster();
   r.reader.roster({ envelope: rosterAnswer([garnet()]) });
   assert.notEqual(r.stdout.take(), "", "the answer is drawn when it arrives");
-  assert.match(screenOf(r), /^ acme-platform\s+\+1 machine\s+2 running\s+2 stopped.*This machine.*acme-expert-tui.*acme-maintainer-ops.*garnet\s+read 10:00:45.*● dev-far.*○ dev-he…/s);
+  const two = screenOf(r);
+  assert.match(two, /^ acme-platform\s+\+1 machine\s+│.*This machine.*acme-expert-tui.*acme-maintainer-ops.*garnet\s+read 10:00:45.*● dev-far.*○ dev-held  not reachable on g…/s, "the name before its word: the word is cut to what the name leaves");
+  assert.doesNotMatch(two, /\d+ (running|stopped)/, "no counts on the screen");
   // What the loop holds is what the shared rule made of the answer, and the reader is told it.
   const now = r.reader.options.getRoster(), made = rosterEvent(held, { envelope: rosterAnswer([garnet()]) }, "2026-10-11T10:00:45.000Z").roster;
   assert.deepEqual(now, { remote: made.remote, memory: made.memory, notes: made.notes });
@@ -824,7 +874,8 @@ test("the roster of other machines: a read that began changes nothing on the scr
   r.reader.collecting();
   r.reader.roster({ thrown: "spawn EMFILE" });
   const lost = screenOf(r);
-  assert.match(lost, /\+1 machine.*1 running\s+1 stopped\s+2 unknown.*This machine.*garnet\s+remembered\s+Not reached.*\? dev-far\s+garnet not reached.*\? dev-held\s+garnet not reached/s);
+  assert.match(lost, /\+1 machine.*This machine.*garnet\s+remembered\s+Not reached.*\? dev-far\s+garnet not reached.*\? dev-held\s+garnet not reached/s);
+  assert.doesNotMatch(lost, /\d+ (running|stopped|unknown)/, "no counts on the screen");
   assert.doesNotMatch(lost, /garnet\s+read /, "a heading that is not live carries no time");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
@@ -886,7 +937,7 @@ test("a deployment that could not be observed says why in the shared sentence: t
     r.reader.answer(entry);
     assert.notEqual(r.stdout.take(), "", label);
     const text = screenOf(r);
-    assert.equal(text.split(sentence).length, 2, `drawn once, whole: ${label}`);
+    assert.equal(sidebarOf(r).split(sentence).length, 2, `drawn once, whole (wrapped to the sidebar's width): ${label}`);
     assert.match(text, /not observed/, label);
     assert.equal(/It says:/.test(text), sentence.includes("It says:"), `a message that is withheld or absent is not introduced: ${label}`);
     assert.equal(text.includes(DETAIL_WITHHELD), sentence.includes(DETAIL_WITHHELD), label);
@@ -939,13 +990,18 @@ function wholeScreen(r) {
   r.stdout.resize(r.stdout.columns, r.stdout.rows);
   return textOf(r.stdout.take());
 }
-/** The leader typed twice, each in a read of its own, as a person types it: from the terminal's
- *  focus the first is the back key the scanner finds in the bytes, and the second the TUI reads as
- *  its own key; the focus goes to the list (docs/tui.md, "The leader"). */
-function leaderTwice(r) {
+/** The leader, then Esc, each in a read of its own, as a person types them: from the terminal's
+ *  focus the leader is the back key the scanner finds in the bytes, and Esc the TUI reads as its
+ *  own key; the focus goes to the list (docs/tui.md, "The leader"). Esc is typed as ESC and then a
+ *  focus report (ESC [ I), which the key parser reads at once as the Esc key and a report it drops,
+ *  so no timer has to fire. */
+function leaderEscape(r) {
   r.stdin.type("\x1c");
-  r.stdin.type("\x1c");
+  r.stdin.type("\x1b\x1b[I");
 }
+/** The cheat sheet while the terminal has the focus, as the screen's text has it: the leader, the
+ *  leader then Esc, and the leader twice, which types it into the terminal. */
+const TYPING_SHEET = /Ctrl\+\\ +commands +│ Ctrl\+\\ Esc +the list +│ Ctrl\+\\ Ctrl\+\\ +types Ctrl\+\\ │/;
 /** A run with the agent's terminal open in the panel (window `@1`), the focus in it. */
 async function viewing(options) {
   const r = await opening(options);
@@ -957,28 +1013,28 @@ async function viewing(options) {
   return r;
 }
 
-test("Enter on a running agent of this machine: the kernel's viewer starts in the panel beside the list, at the panel's size, with the shared home's arguments and no key; the TUI keeps its terminal and its reads, and the footer names the back key", async () => {
+test("Enter on a running agent of this machine: the kernel's viewer starts in the panel beside the list, at the panel's size, with the shared home's arguments and no key; the TUI keeps its terminal and its reads, and the cheat sheet names the leader's keys", async () => {
   const r = await opening();
   r.stdin.type("\r");
   await settle();
   const [asked] = r.panel.opens;
   assert.deepEqual(asked.argv, [process.execPath, KEYED.bin, ...sessionAttachArgv(KEYED, { home: HOME })], "node, the kernel's own binary, the shared home's arguments");
   assert.equal(asked.argv.includes("--detach-key"), false);
-  assert.deepEqual([asked.cols, asked.rows], [49, 19], "80 columns: the 30 columns the list keeps beside a terminal, its bar, and 49 to the right edge; the body's rows but the title");
+  assert.deepEqual([asked.cols, asked.rows], [49, 23], "80 columns: the 30 columns the sidebar keeps beside a terminal, its bar, and 49 to the right edge; every row but the title's");
   assert.deepEqual(r.log.filter(([what, which]) => (what === "write" && (which === LEAVE || which === ENTER)) || what === "raw" || (what === "reader" && ["void", "hold"].includes(which))), [], "nothing is lent: no leave, no cooked mode, no read made void");
   assert.equal(r.stdin.paused, false);
   asked.made("@1");
   await settle();
-  r.panel.screen("@1", "$ marker-of-the-agent", { x: 2, y: 0, visible: true }, { cols: 49, rows: 19 });
+  r.panel.screen("@1", "$ marker-of-the-agent", { x: 2, y: 0, visible: true }, { cols: 49, rows: 23 });
   const screen = wholeScreen(r);
   assert.match(screen, /acme-expert-tui[\s\S]*marker-of-the-agent/, "the list and the agent's screen");
-  assert.match(screen, /C-\\ commands {3}C-\\ C-\\ back to the list/);
+  assert.match(screen, TYPING_SHEET);
   // A capture of a window that is not the open one is not drawn.
   r.stdout.take();
   r.panel.screen("@9", "$ not-this-one");
   assert.doesNotMatch(r.stdout.take(), /not-this-one/);
-  leaderTwice(r);
-  assert.match(wholeScreen(r), /C-\\ commands {3}Enter focus terminal {3}z zoom {3}\/ filter/);
+  leaderEscape(r);
+  assert.match(wholeScreen(r), /Ctrl\+\\ +commands +│ Ctrl\+K +palette +│ Enter +focus terminal +│ n +spawn +│ \? +help +│ q +quit +│/);
   r.log.length = 0;
   r.stdin.type("q");
   assert.equal(await r.status, 0);
@@ -1013,6 +1069,34 @@ test("while the terminal has the focus every byte but the leader goes to the age
   r.timers.fire();
   r.stdin.type("q");
   assert.equal(await r.status, 0);
+});
+
+test("the leader twice from the terminal's focus types the leader's own bytes into the agent and the terminal keeps the focus, so what is typed next is the agent's too; Esc then the leader's key typed as two keys are the agent's as typed (one keypress)", async () => {
+  const r = await viewing();
+  r.stdin.type("\x1c");
+  r.stdin.type("\x1c");
+  await settle();
+  r.stdin.type("q");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [["input", "\x1c"], ["input", "q"]], "C-\\ twice: one 0x1c to the agent, then q");
+  leaderEscape(r);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  // M-o, the default on Linux and Windows: ESC o is the leader only as one keypress.
+  const m = await viewing({ config: { ...KEY_CONFIG, detachKey: "M-o" } });
+  m.stdin.type("\x1bo");
+  m.stdin.type("\x1bo");
+  await settle();
+  m.stdin.type("x");
+  assert.deepEqual(panelDid(m).filter(([what]) => what === "input"), [["input", "\x1bo"], ["input", "x"]], "M-o twice: ESC o to the agent, then x");
+  m.log.length = 0;
+  m.stdin.type("\x1b");
+  m.tick(30);
+  m.stdin.type("o");
+  assert.deepEqual(panelDid(m).filter(([what]) => what === "input"), [["input", "\x1b"], ["input", "o"]], "Esc, then o 30 ms later: the agent's");
+  m.stdin.type("\x1bo");
+  m.stdin.type("\x1b\x1b[I");
+  m.stdin.type("q");
+  assert.equal(await m.status, 0, "the leader then Esc, then q in the list");
 });
 
 // ── The leader and the palette from a terminal's focus (Spec T1b): the leader is the one key the
@@ -1056,7 +1140,7 @@ test("with a terminal focused, the leader, k, a few letters and Enter, each in a
   r.log.length = 0;
   r.stdin.type("typed");
   assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [["input", "typed"]], "the focus is in the new terminal");
-  leaderTwice(r);
+  leaderEscape(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1094,7 +1178,7 @@ test("a hidden tab's output marks it on the strip and draws nothing of its scree
   const shown = wholeScreen(r);
   assert.match(shown, /shown words/);
   assert.match(shown, /│ acme-expert-tui\u2022 {2}acme-ledger-dev(?!\u2022)/, "the shown tab is never marked");
-  leaderTwice(r);
+  leaderEscape(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1106,7 +1190,7 @@ test("on the last tab the leader then Right does nothing: the terminal keeps the
   await settle();
   r.stdin.type("q");
   assert.deepEqual(panelDid(r).filter(([what]) => what !== "refresh" && what !== "visible" && what !== "resize"), [["input", "q"]]);
-  leaderTwice(r);
+  leaderEscape(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1117,7 +1201,7 @@ test("two groups: a split resizes the first group's windows to its region; a tab
   r.stdin.type("\x1c");
   r.stdin.type("|");
   await settle();
-  assert.deepEqual(did(), [["resize", 44, 35, ["@1", "@2"]]], "the second group is empty: nothing else is shown");
+  assert.deepEqual(did(), [["resize", 44, 39, ["@1", "@2"]]], "the second group is empty: nothing else is shown");
   r.stdin.type("\x1c");
   r.stdin.type("\t");
   await settle();
@@ -1131,8 +1215,8 @@ test("two groups: a split resizes the first group's windows to its region; a tab
   r.stdin.type("\x1c");
   r.stdin.type("w");
   await settle();
-  assert.deepEqual(did(), [["close", "@2"], ["resize", 89, 35, ["@1"]], ["focus", "@1"]]);
-  leaderTwice(r);
+  assert.deepEqual(did(), [["close", "@2"], ["resize", 89, 39, ["@1"]], ["focus", "@1"]]);
+  leaderEscape(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1151,7 +1235,7 @@ test("keys typed after a switch of group or tab reach the agent switched to, als
   r.stdin.type("for-first-agent");
   assert.deepEqual(did(), [["focus", "@1"], ["input", "for-first-agent"]], "the keys go to @1, never to @2");
   r.stdout.emit("drain"); await settle();
-  leaderTwice(r);
+  leaderEscape(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
   // A tab hidden by a resize is no destination: the empty group focused and drawn alone at 80
@@ -1167,9 +1251,9 @@ test("keys typed after a switch of group or tab reach the agent switched to, als
   h.stdin.type("\t");
   await settle();
   h.stdin.type("keep-these-bytes");
-  assert.deepEqual(panelDid(h).filter(([what]) => what !== "refresh"), [["resize", 49, 19, ["@1", "@2"]], ["show", "@2"], ["input", "keep-these-bytes"]], "its group drawn alone, at its size, and shown before the keys");
+  assert.deepEqual(panelDid(h).filter(([what]) => what !== "refresh"), [["resize", 49, 23, ["@1", "@2"]], ["show", "@2"], ["input", "keep-these-bytes"]], "its group drawn alone, at its size, and shown before the keys");
   h.stdout.emit("drain"); await settle();
-  leaderTwice(h);
+  leaderEscape(h);
   h.stdin.type("q");
   assert.equal(await h.status, 0);
   // A tab switched within one group, blocked the same way: the tab before shown first, then the keys.
@@ -1183,7 +1267,7 @@ test("keys typed after a switch of group or tab reach the agent switched to, als
   t.stdin.type("for-first");
   assert.deepEqual(panelDid(t).filter(([what]) => what !== "refresh"), [["hide", "@2"], ["show", "@1"], ["input", "for-first"]]);
   t.stdout.emit("drain"); await settle();
-  leaderTwice(t);
+  leaderEscape(t);
   t.stdin.type("q");
   assert.equal(await t.status, 0);
 });
@@ -1192,20 +1276,20 @@ test("the palette's Split right at 80 columns is refused with the line, measured
   const r = await viewingTwoTabs();
   const choose = async (text) => { r.stdin.type("\x1c"); r.stdin.type("k"); await settle(); r.stdin.type(text); await settle(); r.stdin.type("\r"); await settle(); };
   await choose("splitr");
-  assert.match(wholeScreen(r), /No room to split side by side: each group needs 40 columns\./);
-  // The line takes rows above the panes, so the panel is resized for it: at the whole width still.
+  assert.match(sidebarOf(r), /No room to split side by side: each group needs 40 columns\./);
+  // The line stands in the sidebar, so the panel keeps its size: at its whole width still.
   assert.deepEqual(panelDid(r).filter(([what, cols]) => what === "hide" || (what === "resize" && cols !== 49)), [], "no split: nothing hidden, no window narrower");
   r.log.length = 0;
   await choose("splitd");
-  assert.deepEqual(panelDid(r).filter(([what]) => what === "resize"), [["resize", 49, 9, ["@1", "@2"]]], "the first group above, 9 rows of the 19");
-  leaderTwice(r);
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "resize"), [["resize", 49, 11, ["@1", "@2"]]], "the first group above, 11 rows of the 23");
+  leaderEscape(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
 
 test("with two tabs open, another workspace opened closes each tab's viewer by its window id, and no terminal is left (T2)", async () => {
   const r = await viewingTwoTabs({ offered: OFFERED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }) });
-  leaderTwice(r);
+  leaderEscape(r);
   r.stdin.type("w");
   r.stdin.type("j");
   r.log.length = 0;
@@ -1240,7 +1324,7 @@ test("with a terminal focused, the leader then Down opens the next agent's termi
   r.stdin.type("\x1b[A");
   await settle();
   assert.deepEqual(panelDid(r).filter(([what]) => what === "open" || what === "close" || what === "input"), [], "no wrap, and nothing typed");
-  leaderTwice(r);
+  leaderEscape(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1260,7 +1344,7 @@ test("a paste that holds the leader's byte and a command key runs nothing: with 
   r.stdin.type("\x1b[200~\x1cX\x1b[201~");
   assert.deepEqual(panelDid(r), [["paste", "\x1cX"]], "a bracketed paste goes to the agent as a paste, its leader byte with it");
   assert.doesNotMatch(wholeScreen(r), /Cancel| instance\b/, "no confirmation and no palette");
-  leaderTwice(r);
+  leaderEscape(r);
   // In the list's focus: the leader with k, or X, in the same read opens nothing.
   for (const pasted of ["\x1ck", "\x1cX", "\x1c?"]) {
     r.stdin.type(pasted);
@@ -1284,8 +1368,8 @@ test("keys that came in one chunk with the Enter that opened the terminal are dr
     assert.deepEqual(panelDid(r).filter(([what]) => what === "input" || what === "close"), [], `${JSON.stringify(behind)}: nothing typed, nothing closed`);
     const screen = wholeScreen(r);
     assert.doesNotMatch(screen, /^ workspaces|Keys/, `${JSON.stringify(behind)}: no other view was opened`);
-    assert.match(screen, /C-\\ commands {3}C-\\ C-\\ back to the list/, JSON.stringify(behind));
-    leaderTwice(r);
+    assert.match(screen, TYPING_SHEET, JSON.stringify(behind));
+    leaderEscape(r);
     r.stdin.type("q");
     assert.equal(await r.status, 0, JSON.stringify(behind));
   }
@@ -1295,9 +1379,8 @@ test("a viewer that ends on its own closes the terminal: the line says what it p
   const r = await viewing();
   r.panel.closed("@1", 1, "can't find session: acme-expert-tui\n");
   await settle();
-  const screen = wholeScreen(r);
-  assert.match(screen, /acme-expert-tui could not be opened\.[\s\S]*"can't find session: acme-expert-tui"/);
-  assert.doesNotMatch(screen, /back to the list/);
+  assert.match(sidebarOf(r), /acme-expert-tui could not be opened\. "can't find session: acme-expert-tui"/);
+  assert.doesNotMatch(wholeScreen(r), /Esc +the list/, "the list has the focus");
   assert.deepEqual(readerDid(r).filter(([what]) => what === "request"), [["request", { live: true }]]);
   r.tick(60_000);
   r.timers.fire();
@@ -1308,13 +1391,13 @@ test("a viewer that ends on its own closes the terminal: the line says what it p
   await settle();
   r.panel.opens[1].made("@2");
   await settle();
-  leaderTwice(r);
+  leaderEscape(r);
   r.log.length = 0;
   r.stdin.type("c");
   assert.deepEqual(panelDid(r).filter(([what]) => what === "close"), [["close", "@2"]], "the shown tab, by its window");
   r.panel.closed("@2", null, "", true);
   await settle();
-  assert.doesNotMatch(wholeScreen(r), /could not|ended|back to the list|focus terminal/);
+  assert.doesNotMatch(wholeScreen(r), /could not|ended|Esc +the list|focus terminal/);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1327,7 +1410,7 @@ test("no argument the TUI hands the panel is tmux or the agents' socket: the pan
     assert.equal(/(^|\/)tmux$/.test(arg), false, arg);
     assert.equal(arg.includes(AGENTS_SOCKET), false, arg);
   }
-  leaderTwice(r);
+  leaderEscape(r);
   r.stdin.type("q");
   await r.status;
 });
@@ -1335,13 +1418,13 @@ test("no argument the TUI hands the panel is tmux or the agents' socket: the pan
 // T3: each resize names the windows it is for (lib/main.mjs fitPanel: a group's tabs).
 test("the panel is told what the frame gives the terminal: zoom and back resize its window, Tab hides it and shows it again, a resize of the terminal resizes it, and under 80 columns the list's focus hides it", async () => {
   const r = await viewing();
-  leaderTwice(r);
+  leaderEscape(r);
   r.log.length = 0;
   r.stdin.type("z");
-  assert.deepEqual(panelDid(r), [["resize", 80, 19, ["@1"]]], "zoomed: the whole body");
+  assert.deepEqual(panelDid(r), [["resize", 80, 23, ["@1"]]], "zoomed: the whole screen, but its title row");
   r.log.length = 0;
-  leaderTwice(r);
-  assert.deepEqual(panelDid(r), [["resize", 49, 19, ["@1"]]]);
+  leaderEscape(r);
+  assert.deepEqual(panelDid(r), [["resize", 49, 23, ["@1"]]]);
   r.log.length = 0;
   r.stdin.type("\t");
   assert.deepEqual(panelDid(r), [["visible", false]], "the detail in the terminal's place: no capture runs");
@@ -1350,14 +1433,14 @@ test("the panel is told what the frame gives the terminal: zoom and back resize 
   assert.deepEqual(panelDid(r), [["visible", true]], "shown again: one fresh capture (the panel's)");
   r.log.length = 0;
   r.stdout.resize(120, 40);
-  assert.deepEqual(panelDid(r), [["resize", 89, 35, ["@1"]]], "120 columns: the list keeps 30 beside the terminal");
+  assert.deepEqual(panelDid(r), [["resize", 89, 39, ["@1"]]], "120 columns: the sidebar keeps 30 beside the terminal");
   r.log.length = 0;
   r.stdout.resize(70, 30);
   assert.deepEqual(panelDid(r), [["visible", false]], "under 80 columns, the list alone");
   r.log.length = 0;
   r.stdin.type("\r");
-  assert.deepEqual(panelDid(r), [["visible", true], ["resize", 70, 25, ["@1"]]], "Enter: the terminal, zoomed");
-  leaderTwice(r);
+  assert.deepEqual(panelDid(r), [["visible", true], ["resize", 70, 29, ["@1"]]], "Enter: the terminal, over the whole screen");
+  leaderEscape(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1370,9 +1453,9 @@ test("the panel is told the size and the sight its new window needs: a resize wh
   r.log.length = 0;
   r.panel.opens[0].made("@1");
   await settle();
-  assert.deepEqual(panelDid(r).filter(([what]) => what === "resize"), [["resize", 89, 35, ["@1"]]], "the size the frame gives now, once the window exists");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "resize"), [["resize", 89, 39, ["@1"]]], "the size the frame gives now, once the window exists");
   // Closed behind the detail: the next open shows its window again.
-  leaderTwice(r);
+  leaderEscape(r);
   r.stdin.type("\t");
   r.stdin.type("c");
   assert.deepEqual(panelDid(r).filter(([what]) => what === "visible" || what === "close"), [["visible", false], ["close", "@1"]]);
@@ -1381,14 +1464,14 @@ test("the panel is told the size and the sight its new window needs: a resize wh
   r.stdin.type("\r");
   await settle();
   assert.deepEqual(panelDid(r).filter(([what]) => what === "visible" || what === "open").map(([what, more]) => (what === "open" ? what : [what, more])), [["visible", true], "open"]);
-  leaderTwice(r);
+  leaderEscape(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
 
 test("SIGTERM with a terminal open ends the run at once with 143, the private server ended on the way out; a stop from the list pauses the panel and the return resumes it", async () => {
   const r = await viewing();
-  leaderTwice(r);
+  leaderEscape(r);
   r.log.length = 0;
   r.stdin.type("\x1a");
   assert.deepEqual(panelDid(r), [["pause"]]);
@@ -1415,7 +1498,7 @@ test("the sweep runs once a run, after the first frame, with the run's environme
   r.log.length = 0;
   s.panel.options.dir();
   s.log.length = 0;
-  leaderTwice(s);
+  leaderEscape(s);
   s.stdin.type("q");
   assert.equal(await s.status, 0);
   assert.deepEqual(s.log.filter(([what, which]) => (what === "panel" && (which === "end" || which === "remove")) || (what === "reader" && which === "stop")).map(([what, which, more]) => [what, which, ...(more ? [more] : [])]), [["panel", "end"], ["reader", "stop"], ["panel", "remove", "/tmp/oats-tui-fixture"]]);
@@ -1427,12 +1510,12 @@ test("a panel that cannot start a viewer says so in the TUI's words: no tmux, or
   await settle();
   r.panel.opens[0].refuse(Object.assign(new Error("tmux is not installed"), { code: "E_PANEL_TMUX" }));
   await settle();
-  assert.match(wholeScreen(r), /acme-expert-tui could not be opened: the terminal panel needs tmux 3\.2 or later on this machine\./);
+  assert.match(sidebarOf(r), /acme-expert-tui could not be opened: the terminal panel needs tmux 3\.2 or later on this machine\./);
   r.stdin.type("\r");
   await settle();
   r.panel.opens[1].refuse(Object.assign(new Error("the panel's tmux server did not start"), { code: "E_PANEL_START", detail: "error connecting to /tmp/x/tmux (File name too long)" }));
   await settle();
-  assert.match(words(wholeScreen(r)), /acme-expert-tui could not be opened\.[\s\S]*"error connecting to \/tmp\/x\/tmux \(File name too long\)"/);
+  assert.match(sidebarOf(r), /acme-expert-tui could not be opened\. "error connecting to \/tmp\/x\/tmux \(File name too long\)"/);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1455,7 +1538,7 @@ test("Enter on a running agent of another machine: the shared preflight over the
   await settle();
   const [asked] = r.preflights;
   assert.deepEqual([asked.cli, asked.target, asked.options.exec, "detachKey" in asked.options, asked.options.signal.aborted], [KEYED, { serverId: "garnet", instance: "dev-far", home: "/srv/acme-platform/agents/dev/instances/dev-far" }, r.reader.exec, false, false]);
-  assert.match(screenOf(r), /Esc stop opening/);
+  assert.match(screenOf(r), /Esc +stop opening/);
   r.stdin.type("\r");
   await settle();
   assert.equal(r.preflights.length, 1, "a second Enter does nothing");
@@ -1466,7 +1549,7 @@ test("Enter on a running agent of another machine: the shared preflight over the
   await settle();
   r.panel.closed("@1", 255, "Connection to garnet.example closed by remote host.\n");
   await settle();
-  assert.match(wholeScreen(r), /The connection to garnet ended\.[\s\S]*"Connection to garnet\.example closed by remote host\."/);
+  assert.match(sidebarOf(r), /The connection to garnet ended\. "Connection to garnet\.example closed by remote host\."/);
 
   r.stdin.type("\r");
   await settle();
@@ -1487,7 +1570,7 @@ test("a preflight that answers behind the help opens the viewer at the size the 
   const [asked] = r.preflights;
   asked.resolve({ binary: KEYED.bin, args: ["session", "attach", "--server", "garnet", "--home", asked.target.home] });
   await settle();
-  assert.deepEqual(r.panel.opens.map((o) => [o.cols, o.rows]), [[49, 19]]);
+  assert.deepEqual(r.panel.opens.map((o) => [o.cols, o.rows]), [[49, 23]]);
   r.panel.opens[0].made("@1");
   await settle();
   assert.deepEqual(panelDid(r).filter(([what]) => what === "visible").at(-1), ["visible", false], "hidden behind the help");
@@ -1495,7 +1578,7 @@ test("a preflight that answers behind the help opens the viewer at the size the 
   r.stdin.type("?");
   await settle();
   assert.deepEqual(panelDid(r).filter(([what]) => what === "visible"), [["visible", true]], "shown once the help closes");
-  leaderTwice(r);
+  leaderEscape(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1512,7 +1595,7 @@ test("Esc during a preflight gives it up through its signal, and what it answers
   r.preflights[0].resolve({ binary: KEYED.bin, args: [] });
   await settle();
   assert.deepEqual(r.panel.opens, [], "given up: nothing starts");
-  assert.doesNotMatch(screenOf(r), /Esc stop opening/);
+  assert.doesNotMatch(screenOf(r), /Esc +stop opening/);
 
   r.stdin.type("\r");
   await settle();
@@ -1525,7 +1608,7 @@ test("Esc during a preflight gives it up through its signal, and what it answers
   r.preflights[1].reject(failure);
   await settle();
   const screen = screenOf(r);
-  assert.doesNotMatch(screen, /Esc stop opening|could not|timed out/, "nothing is said");
+  assert.doesNotMatch(screen, /Esc +stop opening|could not|timed out/, "nothing is said");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1647,7 +1730,7 @@ test("a start runs the shared start rule once, over a change of this run: while 
   r.stdin.type("\x1b"); r.tick(50); r.timers.fire(); await settle();
   r.stdout.take();
   r.stdin.type("X");
-  assert.match(textOf(r.stdout.take()), /The start of acme-maintainer-ops is still running\./, "the line, until the next key");
+  assert.match(sidebarOf(r), /The start of acme-maintainer-ops is still running\./, "the line, until the next key");
   const before = readerDid(r).filter(([what]) => what === "request").length;
   r.reader.changed[0].callback(null, "", "");
   answer({ ok: true, result: { started: true } });
@@ -1757,7 +1840,8 @@ test("r in the Souls view keeps the souls it holds while it reads, and a read th
   const screen = screenOf(r);
   assert.match(screen, /held-soul/, "the last good souls are kept");
   // The failure's heading above the rows, and its sentence whole in the detail (wrapped there).
-  assert.match(screen, / Souls +Couldn't read… +read \d\d:\d\d:\d\d │/, "under the failure's heading");
+  assert.match(screen, / Couldn't read this… +read \d\d:\d\d:\d\d │/, "under the failure's heading, its sentence from the margin");
+  assert.doesNotMatch(screen, / Souls +Couldn't read/, "the heading has no word: the view's row above it names the view");
   assert.match(screen, /Couldn't read this workspace's souls:/);
   assert.match(screen, /│ +re-read failed/);
   r.stdin.type("q");
@@ -1849,7 +1933,8 @@ test("r in the Capabilities view keeps the table it holds while it reads, and a 
   const screen = screenOf(r);
   assert.match(screen, /held-capability/, "the last good table is kept");
   // The failure's heading above the rows, and its sentence whole in the detail (wrapped there).
-  assert.match(screen, / Capabilities +read \d\d:\d\d:\d\d │/, "under the failure's heading");
+  assert.match(screen, / Couldn't read this… +read \d\d:\d\d:\d\d │/, "under the failure's heading, its sentence from the margin");
+  assert.doesNotMatch(screen, / Capabilities +(Couldn't read|read \d)/, "the heading has no word: the view's row above it names the view");
   assert.match(screen, /Couldn't read this workspace's/);
   assert.match(screen, /capabilities: re-read failed/);
   r.stdin.type("q");
@@ -2121,8 +2206,8 @@ test("an outcome not known offers C, which checks the submitted job once; quitti
   const [submit] = r.spawn.submits, job = { address: DEPLOYMENT, spawnRef: "b".repeat(64) };
   submit.call.progress("submitted", job);
   submit.answer({ kind: "unknown", view: null, reason: { code: "E_OUTCOME_UNKNOWN" }, job }); await settle();
-  // What was written: screenOf's Ctrl+L is a key bound to an action, which puts the line away.
-  assert.match(textOf(written(r)), /Press C to check before spawning again\./);
+  // Read by a redraw that is no key: screenOf's Ctrl+L is a key bound to an action, which puts the line away.
+  assert.match(sidebarOf(r), /Press C to check before spawning again\./);
   r.stdin.type("C"); await settle();
   assert.deepEqual([r.spawn.checks.length, r.spawn.checks[0].job], [1, job]);
   assert.match(screenOf(r), /Checking the spawn of acme-expert-2…/);

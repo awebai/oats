@@ -19,9 +19,12 @@ export const CONFIG_LIMIT = 64 * 1024;
 const TOO_LARGE = `it is larger than ${CONFIG_LIMIT / 1024} KiB`;
 const NOT_AN_OBJECT = 'it is not one JSON object, like {"keys": {"quit": ["q"]}}';
 const SETTINGS = "the settings are keys, ascii and open";
-/** The back key when tui.json names none: the key that takes the focus from an agent's terminal
- *  back to the list (the setting keeps its name, `open.detachKey`, from when it left a viewer). */
-export const DETACH_KEY = "C-\\";
+/** The back key when tui.json names none, on `platform` (a `process.platform` value): the key that
+ *  takes the focus from an agent's terminal back to the list, the leader (the setting keeps its
+ *  name, `open.detachKey`, from when it left a viewer). `C-\\` on macOS, whose terminals send
+ *  Option as Meta only when told to; `M-o` (Alt+O) elsewhere. Both are read as keys no action of
+ *  ACTIONS holds (`ctrl+\\`, `alt+o`), which the check of the leader below keeps true. */
+export const defaultDetachKey = (platform = process.platform) => (platform === "darwin" ? "C-\\" : "M-o");
 /** An action id this program had and has no more, with what it is called now. */
 const RENAMED = Object.freeze({ "open-workspace": "open" });
 const KEY_IDS = "key ids look like q, ctrl+c, shift+tab, f5, space";
@@ -33,7 +36,7 @@ const ERROR_CODE = /^[A-Z][A-Z0-9_]{0,30}$/;
 export const MAX_PROBLEMS = 20;
 
 const plain = (name) => typeof name === "string" && PLAIN_NAME.test(name);
-/** Whether the footer and the help can name a key: its label is drawn as text from outside (the
+/** Whether the cheat sheet and the help can name a key: its label is drawn as text from outside (the
  *  shared display filter), and a label that filter would change would name another key, or none.
  *  Such a key (a bidi override, a combining mark on a space) is refused here, with the file named,
  *  where a key the views cannot draw would otherwise be bound and never said. */
@@ -49,9 +52,10 @@ export function configPath(env, home) {
   return join(typeof xdg === "string" && xdg !== "" && isAbsolute(xdg) ? xdg : join(home, ".config"), "oats", "tui.json");
 }
 
-/** What tui.json says, checked: `value` is the file already parsed, `defaults` the action table.
- *  Pure. Answers `{ ok: true, actions, ascii, detachKey }` or `{ ok: false, problems }`:
- *  `detachKey` is `open.detachKey`, or DETACH_KEY when the file names none.
+/** What tui.json says, checked: `value` is the file already parsed, `defaults` the action table,
+ *  `platform` the one the TUI runs on (a `process.platform` value). Pure. Answers
+ *  `{ ok: true, actions, ascii, detachKey }` or `{ ok: false, problems }`: `detachKey` is
+ *  `open.detachKey`, or defaultDetachKey(platform) when the file names none.
  *
  *  `actions` is a frozen table shaped exactly like `defaults` (same order, ids and labels, frozen
  *  rows with frozen `keys`) in which the list of each action the file names REPLACES that action's
@@ -63,7 +67,7 @@ export function configPath(env, home) {
  *  order. A key given to two actions is judged with the kept defaults included and names both. An
  *  action whose list is refused takes no part in that judgement: what it was meant to hold is not
  *  known. The ids of `defaults` are the program's own; one that is not plain is still never echoed. */
-export function effectiveConfig(value, defaults = ACTIONS) {
+export function effectiveConfig(value, defaults = ACTIONS, platform = process.platform) {
   if (!isObject(value)) return { ok: false, problems: [NOT_AN_OBJECT] };
   for (const [setting, given] of Object.entries(value)) {
     if (setting === "keys") { if (!isObject(given)) return { ok: false, problems: ['keys must be an object, like {"quit": ["q"]}'] }; }
@@ -106,9 +110,11 @@ export function effectiveConfig(value, defaults = ACTIONS) {
   }
   // The leader is read as a key wherever the TUI reads keys (docs/tui.md, "The leader"), so no
   // action may hold the key it reads as: `C-l` would be redraw's Ctrl+L, `C-j` open's Enter.
-  const detachKey = value.open?.detachKey ?? DETACH_KEY, leader = backKeyId(detachKey);
+  const detachKey = value.open?.detachKey ?? defaultDetachKey(platform), leader = backKeyId(detachKey);
   const taken = defaults.find((action) => (named.get(action.id) ?? action.keys).includes(leader));
-  if (taken) problems.push(`open.detachKey ${detachKey} is read as ${keyLabel(leader)}, the key of ${say(taken.id)}; give the leader a key no action has, or give ${say(taken.id)} another`);
+  // A file that names no leader is told it is the default, which it did not write.
+  const which = value.open?.detachKey === undefined ? `the default leader ${detachKey}` : `open.detachKey ${detachKey}`;
+  if (taken) problems.push(`${which} is read as ${keyLabel(leader)}, the key of ${say(taken.id)}; give the leader a key no action has, or give ${say(taken.id)} another`);
   if (problems.length > 0) return { ok: false, problems };
 
   const actions = Object.freeze(defaults.map((action) => Object.freeze({ ...action, keys: Object.freeze([...(named.get(action.id) ?? action.keys)]) })));
@@ -158,24 +164,25 @@ const NODE_IO = Object.freeze({
 /** Read tui.json, once. Answers `{ ok: true, actions, ascii, detachKey, path }`, or
  *  `{ ok: false, lines }`: the complete lines to print (no trailing newline), after which the TUI
  *  must not start. No file is the defaults: `actions` is ACTIONS itself, `ascii` is false and
- *  `detachKey` is DETACH_KEY.
+ *  `detachKey` is defaultDetachKey(platform); `platform` is the one the TUI runs on (a
+ *  `process.platform` value, given so the answer is known for each).
  *
  *  `io` is the file system (node:fs when omitted): `io.stat(path)` answers `{ file, size }` after
  *  following symbolic links, or null when the path does not exist, and throws for anything else;
  *  `io.read(path)` answers the text. The size is checked before `read` is called, so a file over
  *  CONFIG_LIMIT, a directory or a FIFO is never opened. A line holds the path only when it is
  *  printable ASCII, and never the text of an error: only its code, when it is a plain one. */
-export function loadConfig({ env = process.env, home = homedir(), io = NODE_IO } = {}) {
+export function loadConfig({ env = process.env, home = homedir(), io = NODE_IO, platform = process.platform } = {}) {
   const path = configPath(env, home);
   const listed = (problems) => (problems.length > MAX_PROBLEMS ? [...problems.slice(0, MAX_PROBLEMS), problems.length - MAX_PROBLEMS === 1 ? "1 more problem is not listed" : `${problems.length - MAX_PROBLEMS} more problems are not listed`] : problems);
   const refused = (problems) => ({ ok: false, lines: listed(problems).map((problem) => `oats: \`oats tui\` cannot use ${PLAIN_PATH.test(path) ? path : "its configuration file"}: ${problem} (E_TUI_CONFIG)`) });
   let found, text, value;
   try { found = io.stat(path); } catch (error) { return refused([unreadable(error)]); }
-  if (found === null) return { ok: true, actions: ACTIONS, ascii: false, detachKey: DETACH_KEY, path };
+  if (found === null) return { ok: true, actions: ACTIONS, ascii: false, detachKey: defaultDetachKey(platform), path };
   if (found.file !== true) return refused(["it is not a regular file"]);
   if (!(typeof found.size === "number" && found.size <= CONFIG_LIMIT)) return refused([TOO_LARGE]); // read only what is known to fit
   try { text = io.read(path); } catch (error) { return refused([error?.code === "EFBIG" ? TOO_LARGE : unreadable(error)]); }
   try { value = JSON.parse(text); } catch { return refused(["it is not valid JSON"]); }
-  const checked = effectiveConfig(value);
+  const checked = effectiveConfig(value, ACTIONS, platform);
   return checked.ok ? { ...checked, path } : refused(checked.problems);
 }

@@ -7,6 +7,7 @@
 // many it folds away, `+n`. In a view of two or more deployments the list also holds a heading
 // per deployment and the sentences the model sets under one: a heading says in words what it is
 // of.
+import { keyLabel } from "../actions.mjs";
 import { lit, shown, shownEnd, textOf } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { textWidth } from "../term/width.mjs";
@@ -28,8 +29,11 @@ const WAITING = 4;
 const LEAD = 4;
 /** The column of the state mark, before a row's indent. */
 const MARK = 2;
+/** The cells a row's name keeps before its word, and the fewest a cut word is drawn in: under
+ *  them the word is left out, since a few cells of it say nothing. */
+const NAME_LEAST = 16, WORD_LEAST = 6;
 
-/** A heading starts here: at the margin the header and the footer keep, not at a row's indent. */
+/** A heading starts here: at the margin the sidebar keeps, not at a row's indent. */
 const HEAD = 1;
 /** The cells between two parts of a heading. */
 const GAP = 2;
@@ -52,9 +56,12 @@ const WAITS_SELECTED = style({ reverse: true, bold: true });
 
 export const EMPTY_TEXT = Object.freeze({
   reading: "Reading the deployment.",
-  none: "No instances in this deployment.",
+  none: "No agents yet",
   nomatch: "No instance matches the filter.",
 });
+
+/** The words after EMPTY_TEXT.none and the key that spawns (docs/tui.md, "What it shows"). */
+export const SPAWNS_ONE = "spawns one";
 
 /** Text the TUI did not write, with the cells its display takes: `{ text, width }`. What stands
  *  after it on a row is placed by that width. */
@@ -68,27 +75,33 @@ const waitingText = (row) => (row.below > 99 ? "!99+" : row.below > 0 ? `!${row.
 /** One instance's row in a pane `cols` wide: the state mark, the name cut to what is left, on a
  *  folded row `+n` after the name, the row's word (when it has one) in the word column, and the
  *  waiting mark at the edge. A row with no word gives its name the word column's cells too. The
- *  name is cut before `+n` is: the count stays whole beside what is left of the name. Every span
- *  has its width, so no text can pass its column whatever the terminal thinks a character takes. */
+ *  name wins over the word: it keeps NAME_LEAST cells (all of it when it is shorter), and when the
+ *  word column would leave it fewer, the word is cut to what the name leaves, after it, or given
+ *  up under WORD_LEAST cells; the mark and the detail still say it. The name is cut before `+n`
+ *  is: the count stays whole beside what is left of the name. Every span has its width, so no
+ *  text can pass its column whatever the terminal thinks a character takes. */
 function instanceRow(row, cols, wordWidth, marks) {
   const look = (own) => (row.selected ? SELECTED : own);
   const at = Math.min(row.depth, LEVELS - 1) * INDENT;
-  const worded = wordWidth > 0 && row.word !== null && row.word !== undefined;
-  const wordCol = Math.max(0, cols - WAITING - 1 - wordWidth);
-  const nameCol = LEAD + at, nameEnd = worded ? wordCol - 2 : cols - WAITING - 1;
   const fold = row.folded > 0 ? `+${row.folded}` : null;
+  const nameCol = LEAD + at, room = cols - WAITING - 1 - nameCol;
+  const name = measured(row.name), claim = Math.min(name.width + (fold ? fold.length + 1 : 0), NAME_LEAST);
+  // The word's cells: its column's, or what the name's claim leaves of the row, or none.
+  const left = room - claim - 2;
+  const wordCells = wordWidth > 0 && row.word !== null && row.word !== undefined ? (left >= wordWidth ? wordWidth : left >= WORD_LEAST ? left : 0) : 0;
+  const wordCol = left >= wordWidth ? cols - WAITING - 1 - wordWidth : nameCol + claim + 2;
+  const nameEnd = wordCells ? wordCol - 2 : cols - WAITING - 1;
   const spans = [];
   if (row.selected) spans.push({ col: 0, width: cols, style: SELECTED }, { col: 0, text: lit(marks.selected), style: SELECTED, width: 1 });
   spans.push({ col: MARK + at, text: lit(marks[row.mark] ?? marks.unknown), style: look(LOOK[row.mark] ?? LOOK.unknown), width: 1 });
   if (nameEnd > nameCol) {
-    const name = measured(row.name);
     // The count and the gap before it, when there is room for them and for a cell of the name.
     const after = fold && nameEnd - nameCol > fold.length + 1 ? fold.length + 1 : 0;
     const nameWidth = Math.min(name.width, nameEnd - nameCol - after);
     spans.push({ col: nameCol, text: name.text, style: look(PLAIN), width: after ? nameWidth : nameEnd - nameCol });
     if (after) spans.push({ col: nameCol + nameWidth + 1, text: lit(fold), style: look(DIM), width: fold.length });
   }
-  if (worded) spans.push({ col: wordCol, text: shown(row.word), style: look(DIM), width: wordWidth });
+  if (wordCells) spans.push({ col: wordCol, text: shown(row.word), style: look(DIM), width: wordCells });
   const waits = waitingText(row);
   if (waits) spans.push({ col: cols - waits.length, text: lit(waits), style: row.selected ? WAITS_SELECTED : WAITS, width: waits.length });
   return spans;
@@ -132,6 +145,21 @@ export function cutNote(above, below) {
   return [above > 0 ? `${above} more above` : null, below > 0 ? `${below} more below` : null].filter(Boolean).join(", ");
 }
 
+/** The one row of a view with no instances, in `aside` cells: `No agents yet: n spawns one`, with
+ *  the key the user's table gives `spawn` (text from outside: tui.json may rebind it), or `No
+ *  agents yet.` while it has none. Cut at the edge, the key before the words after it. */
+function noneRow(m, aside) {
+  const action = (m.actions ?? []).find((a) => a.id === "spawn" && a.keys.length);
+  if (!action) return [{ col: SENTENCE_INDENT, text: lit(`${EMPTY_TEXT.none}.`), style: DIM, width: aside }];
+  const end = SENTENCE_INDENT + aside, lead = `${EMPTY_TEXT.none}:`, key = measured(keyLabel(action.keys[0]));
+  const at = SENTENCE_INDENT + lead.length + 1, after = at + key.width + 1;
+  return [
+    { col: SENTENCE_INDENT, text: lit(lead), style: DIM, width: Math.min(lead.length, aside) },
+    { col: at, text: key.text, style: DIM, width: Math.max(0, Math.min(key.width, end - at)) },
+    { col: after, text: lit(SPAWNS_ONE), style: DIM, width: Math.max(0, Math.min(SPAWNS_ONE.length, end - after)) },
+  ].filter((span) => span.width > 0);
+}
+
 /** `size.rows` rows for a pane `size.cols` wide: the model's window of the list, one item per row,
  *  and on the last row what is cut off above and below. An item is an instance, a deployment's
  *  heading, one row of a sentence the model wrapped (safe text already, placed as it is), a line
@@ -146,6 +174,7 @@ export function instances(m, size) {
     if (item.heading) rows[i] = headingRow(item.heading, size.cols, m.ascii);
     else if (item.line) rows[i] = [{ col: SENTENCE_INDENT, text: item.line, width: sentence }];
     else if (item.own) rows[i] = [{ col: SENTENCE_INDENT, text: lit(item.own), style: DIM, width: sentence }];
+    else if (item.empty === "none") rows[i] = noneRow(m, aside);
     else if (item.empty) rows[i] = [{ col: SENTENCE_INDENT, text: lit(EMPTY_TEXT[item.empty]), style: DIM, width: aside }];
     else rows[i] = instanceRow(item, size.cols, m.wordWidth, marks);
   });

@@ -2,7 +2,7 @@
 // text. Pure: no IO, no clock, no escape byte. The keys are generated from the table the reducer
 // acts on, so the help names every key that does something and no key that does not; the marks
 // are the ones the list and the switcher draw (views/instances.mjs, views/switcher.mjs).
-import { LEADER, keyLabel } from "../actions.mjs";
+import { LEADER, backKeyLabel, keyLabel } from "../actions.mjs";
 import { lit, ownEllipsis } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { cutNote, marksOf, measured } from "./instances.mjs";
@@ -47,7 +47,7 @@ export const NOT_YET = Object.freeze([
 /** What a user should know of the machines the list shows, each a sentence of the TUI's own: a
  *  limit that no command lifts is stated too. */
 export const MACHINES = Object.freeze([
-  "A machine's rows are what it reported at the time on its heading (in a view of one machine, in the header).",
+  "A machine's rows are what it reported at the time on its heading (in a view of one machine, at the top of this help).",
   "Nothing is kept on disk: a machine not reached in this run is listed by its own name.",
   "Souls and Capabilities are this machine's.",
 ]);
@@ -71,7 +71,7 @@ const flow = (pieces, room) => pieces.reduce((lines, piece) => {
  *  pieces that are never broken (a word, or a whole command: a command cut in two cannot be
  *  typed). What does not fit `cols` goes on in the same column on the next row. A table with a
  *  piece wider than that column puts every meaning under its entry instead, so no row is cut at
- *  the smallest width the frame draws at. */
+ *  the smallest width the frame draws at; a piece wider than even that starts further left. */
 function table(pairs, cols, look) {
   // An entry is the TUI's own word, or text made elsewhere with its width (a key's label). A
   // third member makes rows of its own under the entry's meaning: given the meaning's column and
@@ -83,7 +83,9 @@ function table(pairs, cols, look) {
   const stacked = pairs.some(([, pieces]) => pieces.some((piece) => column + piece.length > cols));
   const at = stacked ? INDENT + 2 : column;
   return pairs.flatMap(([left, pieces]) => {
-    const lines = flow(pieces, cols - at).map((text) => ({ col: at, text: lit(text) }));
+    // A row wider than its column (a whole command, in a narrow area) starts as far left as it
+    // must to stand whole, down to the area's first column: a command cut short cannot be typed.
+    const lines = flow(pieces, cols - at).map((text) => ({ col: Math.max(0, Math.min(at, cols - text.length)), text: lit(text) }));
     const more = (under.get(pieces)?.(cols - at) ?? []).map((spans) => spans.map((span) => ({ ...span, col: span.col + at })));
     return [...(stacked ? [[entry(left)], ...lines.map((line) => [line])] : lines.map((line, i) => (i === 0 ? [entry(left), line] : [line]))), ...more];
   });
@@ -97,15 +99,18 @@ export const OPEN_RULES = Object.freeze([
   "Up to 4 terminals are open at a time, each a tab. They have no scrollback but the viewer's own, and no mouse.",
   "docs/tui.md has the keys that can be the leader.",
 ]);
-/** The rows under the line of `open`, in `room` cells: the leader pressed twice, which takes the
- *  focus from the open terminal (tui.json's open.detachKey, text from outside), then OPEN_RULES,
- *  each sentence on as many rows as it needs. */
+/** The rows under the line of `open`, in `room` cells: the leader then Esc, which takes the focus
+ *  from the open terminal, and the leader twice, which types it into the terminal (tui.json's
+ *  open.detachKey, text from outside), then OPEN_RULES, each sentence on as many rows as it needs. */
 function openRows(detachKey, room) {
-  const key = keyText(`${detachKey} ${detachKey}`), said = "takes the focus from the terminal back to the list; the agent keeps running.";
-  const first = flow(words(said), Math.max(1, room - key.width - 1));
+  const label = backKeyLabel(detachKey), esc = keyLabel(LEADER.find((entry) => entry.does === "list").keys[0]);
+  const pair = (keys, said) => {
+    const key = keyText(keys), lines = flow(words(said), Math.max(1, room - key.width - 1));
+    return [[{ col: 0, text: key.text, width: key.width }, { col: key.width + 1, text: lit(lines[0]) }], ...lines.slice(1).map((text) => [{ col: key.width + 1, text: lit(text) }])];
+  };
   return [
-    [{ col: 0, text: key.text, width: key.width }, { col: key.width + 1, text: lit(first[0]) }],
-    ...first.slice(1).map((text) => [{ col: key.width + 1, text: lit(text) }]),
+    ...pair(`${label} ${esc}`, "takes the focus from the terminal back to the list; the agent keeps running."),
+    ...pair(`${label} ${label}`, "types the leader into the terminal."),
     ...OPEN_RULES.flatMap((sentence) => flow(words(sentence), room).map((text) => [{ col: 0, text: lit(text) }])),
   ];
 }
@@ -124,10 +129,22 @@ const sentences = (list, cols) => list.flatMap((sentence) => {
   return [first, ...flow(rest.flatMap(words), cols - 2 * INDENT - 2)].map((text, i) => [{ col: INDENT + (i ? 2 : 0), text: lit(text) }]);
 });
 
+/** What the leader pressed again does, the last line of the leader's table. */
+export const LEADER_AGAIN = "the leader again: types it into the terminal that has the focus; with the list focused, closes the hint";
+
+/** The palette's keys (docs/tui.md, "The palette"): it reads its keys itself, so they are fixed
+ *  and the TUI's words. */
+export const PALETTE_KEYS = Object.freeze([
+  Object.freeze(["Up, Down", "move; typing narrows the list"]),
+  Object.freeze(["Enter", "run the selected row"]),
+  Object.freeze(["Esc", "close the palette"]),
+]);
+const paletteRows = (cols) => [heading("The palette"), [], ...table(PALETTE_KEYS.map(([keys, said]) => [keys, words(said)]), cols, KEYS)];
+
 /** The leader's rows (docs/tui.md, "The leader"): its key, then the table of what each key after
  *  it does (actions.mjs LEADER), from every focus. */
 function leaderRows(detachKey, cols) {
-  const key = keyText(detachKey);
+  const key = keyText(backKeyLabel(detachKey));
   // The sentence after the key on as many rows as it needs, its later rows under its first.
   const at = INDENT + key.width + 1;
   const lead = flow(words("then one of these keys, from every focus; a terminal too:"), Math.max(1, cols - INDENT - at));
@@ -136,8 +153,11 @@ function leaderRows(detachKey, cols) {
     [],
     [{ col: INDENT, text: key.text, width: key.width, style: KEYS }, { col: at, text: lit(lead[0]) }],
     ...lead.slice(1).map((text) => [{ col: at, text: lit(text) }]),
-    ...table(LEADER.map((entry) => [entry.keys.map(keyLabel).join(", "),
-      words(entry.does === "list" ? `${entry.label}; the leader again does the same` : entry.terminal ? `${entry.label}, while a terminal is open` : entry.label)]), cols, KEYS),
+    ...table([...LEADER.map((entry) => [entry.keys.map(keyLabel).join(", "),
+      words(entry.terminal ? `${entry.label}, while a terminal is open` : entry.label)]),
+    // The leader again is the user's key, so it is not in the table: it types the leader into the
+    // terminal that has the focus, and with the list focused only closes the hint.
+    [key, words(LEADER_AGAIN)]], cols, KEYS),
   ];
 }
 
@@ -148,7 +168,7 @@ export const SPAWN_KEYS = Object.freeze([
   Object.freeze(["Enter", "pick the selected soul; a soul marked ! would be refused here and cannot be picked"]),
   Object.freeze(["Esc", "close the soul picker"]),
   Object.freeze(["Tab, Shift+Tab", "move the focus in the preview: Spawn, name, child of, then each fold"]),
-  Object.freeze(["Enter", "do what the footer names: on Spawn spawn, on name keep the name and read the preview again, on child of switch it, on a fold open or close it"]),
+  Object.freeze(["Enter", "do what the cheat sheet names: on Spawn spawn, on name keep the name and read the preview again, on child of switch it, on a fold open or close it"]),
   Object.freeze(["Esc", "from a field back to Spawn; from Spawn back to the picker, or to the list"]),
 ]);
 export const SPAWN_RULES = Object.freeze([
@@ -161,7 +181,7 @@ const spawnRows = (cols) => [heading("The spawn prompt"), [], ...table(SPAWN_KEY
  *  now. An action that does one thing in each view has a line per view, its key on each; under
  *  the line of opening an agent stand the back key (`detachKey`, tui.json's `open.detachKey`) and
  *  the rules of OPEN_RULES; under the line of the last act, ACT_RULES. After the leader's table,
- *  the spawn prompt's keys (SPAWN_KEYS, SPAWN_RULES). */
+ *  the palette's keys (PALETTE_KEYS) and the spawn prompt's (SPAWN_KEYS, SPAWN_RULES). */
 export function helpRows(actions, ascii, cols = 100, detachKey = null) {
   const marks = marksOf(ascii);
   const closing = keyText(["close", "help"].map((id) => actions.find((action) => action.id === id)).filter((action) => action?.keys.length).map((action) => keyLabel(action.keys[0])).join(" or "));
@@ -175,6 +195,8 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null) {
         : action.id === "restart" ? actRows : undefined]);
     }), cols, KEYS),
     ...(detachKey !== null ? [[], ...leaderRows(detachKey, cols)] : []),
+    [],
+    ...paletteRows(cols),
     [],
     ...spawnRows(cols),
     [],
