@@ -24,6 +24,14 @@ const clearPending = (control, reason) => {
   if (control.title === reason) { control.removeAttribute('aria-disabled'); control.removeAttribute('title'); control.removeAttribute('aria-description'); }
 };
 
+/** Why `instance`'s menu, drawn for `scope`, waits now (an act of it in flight, its trigger marked
+ * pending), or null. Keyed as the menu keys it (scope, identity, incarnation), so a shortcut for the
+ * same act is held while the row is filtered or collapsed away too. */
+export function pendingActionReason(scope, instance) {
+  if (!instance) return null;
+  return pending.get(JSON.stringify([scope, instanceId(instance), instance.createdAt ?? null]))?.reason ?? null;
+}
+
 /** Preserve an open menu through the roster's periodic DOM rebuild. */
 export function captureInstanceActionMenu(root) {
   const open = root.querySelector('[data-instance-menu-open="true"]');

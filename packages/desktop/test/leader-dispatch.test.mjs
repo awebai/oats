@@ -140,7 +140,8 @@ test("the shell's menu block holds a stale target's acts whether or not its row 
   assert.match(shellSource, /\n  menuReason: rosterActsHeld,\n/, "the dispatch reads it");
   const stale = { rosterStale: false, deploymentStale: false };
   const context = { ROSTER_STALE_TITLE: "Waiting for a fresh roster.", contextDeployments: [],
-    rowStale: () => stale.deploymentStale };
+    rowStale: () => stale.deploymentStale, contextWorkspace: "ws", currentWorkspace: () => "ws",
+    pendingActionReason: () => stale.pending ?? null /* the menu's own act in flight: instance-actions.test.mjs */ };
   Object.defineProperty(context, "rosterStale", { get: () => stale.rosterStale });
   const held = shellFunction("rosterActsHeld", context);
   const { d, calls } = dispatchRig({ instances: [inst("a")], menuReason: held, rows: [] /* a's row is not drawn */ });
@@ -150,7 +151,10 @@ test("the shell's menu block holds a stale target's acts whether or not its row 
   d.run("retire", { targetId: "a" });
   stale.rosterStale = false; stale.deploymentStale = true;
   d.run("restart", { targetId: "a" });
-  assert.deepEqual(calls, [["act", "stop", "a"], ["say", "Waiting for a fresh roster."], ["say", "Waiting for a fresh roster."], ["say", "Waiting for a fresh roster."]]);
+  stale.deploymentStale = false; stale.pending = "Waiting for Open pull request to finish";
+  d.run("stop", { targetId: "a" });
+  assert.deepEqual(calls, [["act", "stop", "a"], ["say", "Waiting for a fresh roster."], ["say", "Waiting for a fresh roster."], ["say", "Waiting for a fresh roster."],
+    ["say", "Waiting for Open pull request to finish"]]);
 });
 
 // A key from the table that cannot act now settles and says why (never silently); m, which the

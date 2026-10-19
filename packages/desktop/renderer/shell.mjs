@@ -10,7 +10,7 @@
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
 import { currentWorkspace, workspaceGeneration, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, postJson, rowDeployment, httpError,
   switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices } from "./views/common.mjs";
-import { instanceActions, captureInstanceActionMenu } from "./instance-actions.mjs";
+import { instanceActions, captureInstanceActionMenu, pendingActionReason } from "./instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
 import { createInstancePrAction } from "./instance-pr-action.mjs";
 import { instanceSplitPlan, instanceSplitIdentity } from "./instance-split.mjs";
@@ -2809,11 +2809,13 @@ function notApplicable(does) {
   if (does === "split-right" || does === "split-down") return "The active tab can't be split that way now.";
   return "The tabs are not split.";
 }
-/** The row menu's own block for `instance`, or null: a stale roster, or a stale deployment's row,
- * holds its actions trigger (renderContextRoster's rowHeldStale, then markStaleControl). Read from
- * that state, not from the drawn trigger, so a row the filter or a collapse leaves undrawn is held
- * the same. */
+/** The row menu's own block for `instance`, or null: an act of its menu still in flight (its
+ * trigger marked pending, instance-actions.mjs), or a stale roster or a stale deployment's row
+ * (renderContextRoster's rowHeldStale, then markStaleControl). Read from that state, not from the
+ * drawn trigger, so a row the filter or a collapse leaves undrawn is held the same. */
 function rosterActsHeld(instance) {
+  const waiting = pendingActionReason(contextWorkspace || currentWorkspace(), instance);
+  if (waiting) return waiting;
   return rosterStale || rowStale(instance, contextDeployments) ? ROSTER_STALE_TITLE : null;
 }
 const leaderDispatch = createLeaderDispatch({
