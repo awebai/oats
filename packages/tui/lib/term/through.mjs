@@ -113,10 +113,12 @@ const decoder = () => new TextDecoder("utf-8", { fatal: false });
  *  inside, or a lone ESC (which no key sends under the protocol), waits for the next read however
  *  late it comes; one longer than SEQUENCE_HELD is no key and goes on as it came.
  *  Without it (`keyboard` null or "asking") nothing of that is read, and what follows holds. While
- *  "asking", the answer may arrive split across reads: a read that ends in what may begin it is
- *  held, an ESC or `ESC [` for BACK_KEY_SPLIT_MS (they are keys too, and a split read of one write
- *  comes within it), and from `ESC [ ?` on, which no key sends, until `answerBy` (the clock time the
- *  run stops waiting for the answer), and at least the key parser's Esc timeout.
+ *  "asking", the answer may arrive split across reads, and over a slow link late: a read that ends
+ *  in what may begin it (ESC, `ESC [`, `ESC [ ?` and digits) is held until `answerBy` (the clock time
+ *  the run stops waiting for it), at least the key parser's Esc timeout. A later read that does not
+ *  go on with the answer comes after them: within BACK_KEY_SPLIT_MS joined to them as before (the
+ *  back key, a paste), later handed on after them, as a key of its own, so they never make the back
+ *  key with it. giveUp() hands on what is held for the answer.
  *  A read is never held back from the agent but for a beginning of the back key's own bytes, or of
  *  a paste's start marker from its third byte: those wait for the next read, or until `timeoutAt()`
  *  (BACK_KEY_SPLIT_MS for the back key's alone, the key parser's Esc timeout when they may begin a
@@ -133,7 +135,7 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
   /** The bytes held for the next read, since when, and how long they may wait: BACK_KEY_SPLIT_MS
    *  when they are held only as a beginning of the back key, ESC_TIMEOUT_MS when they may begin a
    *  paste's start marker (or its rest, see PASTE_HELD_FROM). */
-  let held = new Uint8Array(0), heldAt = 0, heldFor = ESC_TIMEOUT_MS;
+  let held = new Uint8Array(0), heldAt = 0, heldFor = ESC_TIMEOUT_MS, answerHeld = false;
   /** The paste being read: its content so far (null when none; only the tail that may begin the
    *  end marker once it went past the limit), and whether it did. */
   let paste = null, over = false, lastFeed = 0;
@@ -225,8 +227,9 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
         if (i > 0) out.push({ input: data.subarray(0, i) });
         held = Uint8Array.from(data.subarray(i));
         heldAt = now();
-        const asked = data.length - i < 3 ? BACK_KEY_SPLIT_MS : Math.max(ESC_TIMEOUT_MS, answerBy === null ? 0 : answerBy - heldAt);
+        const asked = answerBy !== null ? Math.max(ESC_TIMEOUT_MS, answerBy - heldAt) : data.length - i < 3 ? BACK_KEY_SPLIT_MS : ESC_TIMEOUT_MS;
         heldFor = Math.max(pasting ? ESC_TIMEOUT_MS : 0, answering ? asked : 0, keying ? BACK_KEY_SPLIT_MS : 0);
+        answerHeld = answering;
         return;
       }
     }
@@ -278,6 +281,7 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
     if (!held.length || t < heldAt + heldFor) return [];
     const out = [{ input: held }];
     held = new Uint8Array(0);
+    answerHeld = false;
     forwarded = handedOn(out);
     return out;
   }
@@ -286,6 +290,9 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
     feed(bytes) {
       if (!(bytes instanceof Uint8Array)) throw new TypeError("feed expects bytes (a Uint8Array)");
       const t = now();
+      // Bytes held for the answer that this read does not go on with, past the one-keypress window:
+      // their wait is over.
+      if (held.length && answerHeld && t >= heldAt + BACK_KEY_SPLIT_MS && !answerGoesOn(join(held, bytes))) heldFor = 0;
       // Held bytes whose wait is over are the agent's before this read is looked at, whether or not
       // expire() ran: a read that comes later never completes the back key with them (one keypress).
       const late = lapse(t), out = [];
@@ -299,7 +306,7 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
         data = inPaste(out, data);
         if (paste !== null) return out; // nothing was held: a paste and held bytes never meet
       }
-      if (held.length) { data = join(held, data); held = new Uint8Array(0); }
+      if (held.length) { data = join(held, data); held = new Uint8Array(0); answerHeld = false; }
       // The rest of a start marker whose first bytes the last read handed on: the paste is raw.
       // A beginning of that rest waits for the next read, as a held key does.
       if (raw === null && forwarded > 0 && soon) {
@@ -317,8 +324,14 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
     },
     expire() { return lapse(now()); },
     timeoutAt() { return held.length && Number.isFinite(heldFor) ? heldAt + heldFor : null; },
-    /** The answer is no longer awaited (none came in time): a late one goes on as it came. */
-    giveUp() { if (kb === "asking") kb = null; },
+    /** The answer is no longer awaited (none came in time): a late one goes on as it came, and what
+     *  was held for it is handed on (the events answered). */
+    giveUp() {
+      if (kb === "asking") kb = null;
+      if (!answerHeld) return [];
+      heldFor = 0;
+      return lapse(now()).map((event) => ({ input: Uint8Array.from(event.input) }));
+    },
   };
 }
 
@@ -335,6 +348,8 @@ function answerBegins(data, i) {
   for (let j = i + 3; j < data.length; j++) if (data[j] < 0x30 || data[j] > 0x39) return false;
   return true;
 }
+/** Whether `data` begins with the answer, whole or begun. */
+const answerGoesOn = (data) => answerAt(data, 0) !== null || answerBegins(data, 0);
 /** The protocol's answer `CSI ? flags u` whole at `i`: `{ flags, end }`, or null. */
 function answerAt(data, i) {
   if (data[i + 1] !== 0x5b || data[i + 2] !== 0x3f) return null;

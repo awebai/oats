@@ -1408,9 +1408,15 @@ test("a run asks for the kitty keyboard protocol in the write that sets its mode
   assert.deepEqual(r.timers.delays(), [KEYBOARD_WAIT_MS], "the wait is the one timer");
   r.stdin.type("\x1b[107;6u");
   assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/, "Ctrl+Shift+K before an answer is no key");
+  // A lone Esc while the answer is awaited may begin it: kept until the wait's end, then the Esc key.
+  r.stdin.type("?");
+  r.stdin.type("\x1b");
+  r.tick(50);
+  assert.match(wholeScreen(r), /Keys/, "the help, its Esc kept");
   r.log.length = 0;
   r.timers.fire();
   assert.deepEqual(writes(r).filter((bytes) => bytes.includes("\x1b[<")), [POP], "popped at the wait's end");
+  assert.doesNotMatch(wholeScreen(r), /Keys/, "the kept Esc closed the help at the wait's end");
   r.stdin.type("\x1b[?5u");
   r.stdin.type("\x1b[107;6u");
   assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/, "an answer after the wait is not taken");

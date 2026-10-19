@@ -169,8 +169,10 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   // guard's PUSH and QUERY), "asking" until it answers or KEYBOARD_WAIT_MS passes, then the flags
   // it confirmed (flag 1 held), or null for the rest of the run. The key parser and the scanner
   // below are made with it, and each reads the answer itself when it comes through it.
-  let kb = keyboard ? "asking" : null, kbTimer = null, answerBy = null;
-  const newParser = () => createKeyParser({ now, keyboard: kb, chords: state.chords });
+  let kb = keyboard ? "asking" : null, kbTimer = null;
+  /** The clock time the wait for the answer ends: what may begin it is held up to then. */
+  const answerBy = keyboard ? now() + KEYBOARD_WAIT_MS : null;
+  const newParser = () => createKeyParser({ now, keyboard: kb, chords: state.chords, answerBy });
   let parser = newParser();
   // While a terminal has the focus the bytes typed go to the agent: this scanner takes from them
   // only the back key, the chords and a bracketed paste (term/through.mjs). A new one each time the
@@ -708,7 +710,9 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     kb = confirmed(flags) ? flags : null;
     guard.keyboardAnswered(kb !== null);
     if (parser.keyboard === "asking") parser = newParser();
-    through.giveUp();
+    // What the scanner held as a possible beginning of the answer is the agent's after all.
+    const released = through.giveUp();
+    if (released.length && typing()) typed(released);
     if (kb !== null) { state = reduce(state, { keyboard: kb }, keymap).state; guard.draw(); }
   }
   /** Whether the keys typed now reach the agent the state gives them to, the focused group's shown
@@ -808,8 +812,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   }
 
   guard.start();
-  if (kb === "asking" && !ended) answerBy = now() + KEYBOARD_WAIT_MS;
-  if (kb === "asking" && !ended) kbTimer = setTimer(() => { kbTimer = null; guard.attempt(() => { parser.giveUp(); answered(null); }); }, KEYBOARD_WAIT_MS);
+  // At the wait's end what the key parser kept as a possible beginning of the answer is read as typed.
+  if (kb === "asking" && !ended) kbTimer = setTimer(() => { kbTimer = null; guard.attempt(() => { const released = parser.giveUp(); answered(null); if (released.length && !typing()) act(released); watchEscape(); }); }, Math.max(0, answerBy - now()));
   guard.attempt(() => { if (!ended) Promise.resolve(reader.start()).catch(() => {}); });
   if (found.ok) guard.attempt(() => { if (!ended) listStart(found.deployment); });
   guard.attempt(() => guard.draw());

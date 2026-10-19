@@ -150,19 +150,31 @@ export function legacyEvents(bytes) {
  * and nothing is timed: a terminal under the protocol sends no lone ESC for a key, so an ESC, like
  * any sequence begun, waits for what follows it however late that comes, and Esc is its own
  * sequence.
+ * While asking, the answer may come split across reads, and over a slow link late: with `answerBy`
+ * (the clock time the run stops waiting for it) an ESC that a later read follows with `[` is kept as
+ * its possible beginning (a `candidate`) up to then. What turns out not to be the answer is read as
+ * it was typed: the Esc key, then `[` and the rest as text. A late ESC that `[` does not follow is
+ * the Esc key, as before, and so a lone ESC is, at `answerBy` at the latest.
  *
  *   feed(bytes)  the events of these bytes, in order. Text is never held back:
  *                a complete character is emitted by the feed that completes it.
  *   expire()     call when the clock reaches timeoutAt(): the Esc key, if a lone
  *                ESC has waited ESC_TIMEOUT_MS; else nothing.
  *   timeoutAt()  the clock time at which expire() is due, or null.
- *   giveUp()     the answer is no longer awaited (none came in time): a late one is dropped.
+ *   giveUp()     the answer is no longer awaited (none came in time): a late one is dropped, and
+ *                the events of what was kept for it are answered.
  *   keyboard     the protocol as it is now: null, "asking" or the confirmed flags. */
-export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS } = {}) {
+export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS, answerBy = null } = {}) {
   if (typeof now !== "function") throw new TypeError("createKeyParser needs an injected clock: { now: () => milliseconds }");
   if (!(keyboard === null || keyboard === "asking" || confirmed(keyboard))) throw new TypeError("keyboard is null, \"asking\" or flags that hold flag 1");
   if (!(chords instanceof Map)) throw new TypeError("chords is a Map of key ids");
   let kb = keyboard;
+  /** An ESC kept past its timeout as the possible beginning of the answer, and the CSI it began. */
+  let candidate = false;
+  const asking = () => kb === "asking" && answerBy !== null;
+  /** When a lone ESC is the Esc key: after ESC_TIMEOUT_MS, and while the answer is awaited not
+   *  before `answerBy` (a later read decides it sooner, see feed). */
+  const escDue = () => (asking() ? Math.max(escAt + ESC_TIMEOUT_MS, answerBy) : escAt + ESC_TIMEOUT_MS);
   const utf8 = utf8Decoder();
   let state = GROUND, out = [], feedAt = 0, lastFeedAt = 0;
   let run = "";       // consecutive printable code points of this feed, not yet cut into graphemes
@@ -221,6 +233,12 @@ export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS } = {
   /** Inside a CSI, an SS3 or the Linux console form. A control byte is dropped and
    * the sequence goes on, an ESC starts over, a byte >= 0x80 aborts and is dropped. */
   const inSequence = (b) => {
+    // A candidate goes on only as the answer does: `?`, at most three digits, `u`.
+    if (candidate) {
+      const goesOn = seq === "" ? b === 0x3f : b === 0x75 ? /^\?\d{1,3}$/.test(seq) : b >= 0x30 && b <= 0x39 && /^\?\d{0,2}$/.test(seq);
+      if (!goesOn) { replay(); step(b); return; }
+      if (b === 0x75) candidate = false;
+    }
     if (b === ESC) { startEscape(); return; }
     if (b < 0x20 || b === 0x7f) return;
     if (b >= 0x80) { state = GROUND; return; }
@@ -241,6 +259,14 @@ export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS } = {
     else if (final === "u") { kittyEvents(seq); return; }
     else key = csiKey(confirmed(kb) ? legacyParams(seq, final) : seq, final);
     if (key) emit(key);
+  };
+
+  /** A candidate that is not the answer, as it was typed: the Esc key, then `[` and what followed. */
+  const replay = () => {
+    const typed = `[${seq ?? ""}`;
+    candidate = false; state = GROUND;
+    emit(named("escape"));
+    for (const c of typed) ground(c.charCodeAt(0));
   };
 
   /** A `CSI … u`: the protocol's answer while it is awaited, or a key under the protocol. */
@@ -318,38 +344,46 @@ export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS } = {
     if (state === PASTE && feedAt - lastFeedAt >= PASTE_PAUSE_MS) endPaste(true);
   };
 
+  /** One byte, in whatever state the parser is (a paste's content is read by inPaste). */
+  function step(b) {
+    switch (state) {
+      case GROUND: ground(b); break;
+      case ESCAPE: afterEscape(b); break;
+      case MOUSE:
+        if (b === ESC) startEscape();
+        else if (--mouse === 0) state = GROUND;
+        break;
+      case STRING: // swallowed as it streams, never held
+        if (b === ESC) state = STRING_ESC;
+        else if (bel && b === 0x07) state = GROUND;
+        break;
+      case STRING_ESC:
+        // `ESC \` is ST and ends the string. An ESC before anything else abandons
+        // the string and starts a new sequence, as in a CSI: the next key that
+        // sends an ESC recovers from a string whose end never arrives.
+        if (b === 0x5c) state = GROUND;
+        else if (b !== ESC) afterEscape(b);
+        break;
+      default: inSequence(b);
+    }
+  }
+
   return {
     feed(bytes) {
       if (!(bytes instanceof Uint8Array)) throw new TypeError("feed expects bytes (a Uint8Array)");
       feedAt = now();
       // A lone ESC that already waited its time is the Esc key; these bytes start fresh. Under the
-      // protocol nothing is timed.
-      if (state === ESCAPE && !confirmed(kb) && feedAt >= escAt + ESC_TIMEOUT_MS) { state = GROUND; emit(named("escape")); }
+      // protocol nothing is timed. While the answer is awaited, one these bytes follow with `[` may
+      // begin it: kept, as a candidate.
+      if (state === ESCAPE && !confirmed(kb) && feedAt >= escAt + ESC_TIMEOUT_MS) {
+        if (asking() && feedAt < answerBy && bytes[0] === 0x5b) candidate = true;
+        else { state = GROUND; emit(named("escape")); }
+      }
       abandonStalledPaste();
       lastFeedAt = feedAt;
       for (let i = 0; i < bytes.length; i++) {
         if (state === PASTE) { i = inPaste(bytes, i) - 1; continue; }
-        const b = bytes[i];
-        switch (state) {
-          case GROUND: ground(b); break;
-          case ESCAPE: afterEscape(b); break;
-          case MOUSE:
-            if (b === ESC) startEscape();
-            else if (--mouse === 0) state = GROUND;
-            break;
-          case STRING: // swallowed as it streams, never held
-            if (b === ESC) state = STRING_ESC;
-            else if (bel && b === 0x07) state = GROUND;
-            break;
-          case STRING_ESC:
-            // `ESC \` is ST and ends the string. An ESC before anything else abandons
-            // the string and starts a new sequence, as in a CSI: the next key that
-            // sends an ESC recovers from a string whose end never arrives.
-            if (b === 0x5c) state = GROUND;
-            else if (b !== ESC) afterEscape(b);
-            break;
-          default: inSequence(b);
-        }
+        step(bytes[i]);
       }
       flush();
       const events = out;
@@ -357,16 +391,25 @@ export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS } = {
       return events;
     },
     expire() {
-      if (state !== ESCAPE || confirmed(kb) || now() < escAt + ESC_TIMEOUT_MS) return [];
+      if (state !== ESCAPE || confirmed(kb) || now() < escDue()) return [];
       state = GROUND;
       return [named("escape")];
     },
     /** Only a lone ESC has a deadline, and none under the protocol. Every other incomplete sequence
      *  waits for its end. */
     timeoutAt() {
-      return state === ESCAPE && !confirmed(kb) ? escAt + ESC_TIMEOUT_MS : null;
+      return state === ESCAPE && !confirmed(kb) ? escDue() : null;
     },
-    giveUp() { if (kb === "asking") kb = null; },
+    giveUp() {
+      if (kb !== "asking") return [];
+      kb = null;
+      if (candidate) replay();
+      else if (state === ESCAPE && now() >= escAt + ESC_TIMEOUT_MS) { state = GROUND; emit(named("escape")); }
+      flush();
+      const events = out;
+      out = [];
+      return events;
+    },
     get keyboard() { return kb; },
   };
 }

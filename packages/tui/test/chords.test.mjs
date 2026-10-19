@@ -240,13 +240,11 @@ test("under the protocol a key split across two reads at any byte, however far a
   }
 });
 
-test("while the answer is awaited in a terminal it is taken split at any byte, never the agent's, and what follows reads as it says", () => {
+test("while the answer is awaited in a terminal it is taken split at any byte, however late within the wait, never the agent's, and what follows reads as it says", () => {
   const typed = `a${E}[?5u${E}[107;6u`;
   const expected = ["input 61", "answer 5", "chord palette "];
   for (let k = 1; k < typed.length; k++) {
-    // A split read of one write comes within BACK_KEY_SPLIT_MS; from `ESC [ ?` on the bytes wait for the answer's deadline.
-    const delays = k >= 4 && k < 7 ? [0, 5, 1500] : [0, 5];
-    for (const delay of delays) {
+    for (const delay of [0, 5, 75, 1500]) {
       let t = 0;
       const s = createThrough({ sequences: backKeySequences("M-o"), now: () => t, keyboard: "asking", leader: backKeyId("M-o"), chords: CHORD_MAP, answerBy: 2000 });
       const first = s.feed(utf8(typed.slice(0, k)));
@@ -254,6 +252,64 @@ test("while the answer is awaited in a terminal it is taken split at any byte, n
       assert.deepEqual(joined([...first, ...s.feed(utf8(typed.slice(k)))]), expected, `split at ${k}, ${delay} ms apart`);
     }
   }
+});
+
+test("while the answer is awaited in the list it is read split at any byte, however late within the wait", () => {
+  const typed = `${E}[?5u${E}[107;6u`;
+  for (let k = 1; k < typed.length; k++) {
+    for (const delay of [0, 75, 1500]) {
+      let t = 0;
+      const p = createKeyParser({ now: () => t, keyboard: "asking", chords: CHORD_MAP, answerBy: 2000 });
+      const first = p.feed(utf8(typed.slice(0, k)));
+      t += delay;
+      assert.deepEqual(ids([...first, ...p.expire(), ...p.feed(utf8(typed.slice(k)))]), ["answer 5", "ctrl+shift+k"], `split at ${k}, ${delay} ms apart`);
+    }
+  }
+});
+
+test("what is kept for the answer and is not it reads and is typed as it was, and nothing stays kept once the wait is over", () => {
+  const read = (parts, { gap = 500, giveUp = false } = {}) => {
+    let t = 0;
+    const p = createKeyParser({ now: () => t, keyboard: "asking", answerBy: 2000 });
+    const events = [];
+    for (const part of parts) { events.push(...p.feed(utf8(part)), ...p.expire()); t += gap; }
+    if (giveUp) events.push(...p.giveUp());
+    return { events: ids(events), p };
+  };
+  assert.deepEqual(read([E, "x"]).events, ["escape", "x"], "Esc, then x later: never Alt+X");
+  assert.deepEqual(read([E, "x"], { gap: 10 }).events, ["alt+x"], "within the Esc timeout, as without the protocol");
+  assert.deepEqual(read([E, "[a"]).events, ["escape", "[", "a"], "Esc, then [ and a later: as typed");
+  assert.deepEqual(read([E, "[", "?"], { giveUp: true }).events, ["escape", "[", "?"], "given up: as typed");
+  const lone = read([E], { gap: 0 });
+  assert.equal(lone.p.timeoutAt(), 2000, "a lone ESC waits for the answer's deadline at most");
+  let clock = 0;
+  const at = createKeyParser({ now: () => clock, keyboard: "asking", answerBy: 2000 });
+  assert.deepEqual(ids(at.feed(utf8(E))), []);
+  clock = 1999;
+  assert.deepEqual(ids(at.expire()), [], "kept while the wait lasts");
+  clock = 2000;
+  assert.deepEqual(ids(at.expire()), ["escape"], "the Esc key at the wait's end");
+  assert.deepEqual(read([E], { gap: 0, giveUp: true }).events, [], "given up at once: the Esc waits only its own timeout now");
+  // In a terminal: a later read that does not go on with the answer comes after what was held, never the back key with it.
+  let t = 0;
+  const through = () => createThrough({ sequences: backKeySequences("M-o"), now: () => t, keyboard: "asking", leader: backKeyId("M-o"), chords: CHORD_MAP, answerBy: 2000 });
+  let s = through();
+  assert.deepEqual(shown(s.feed(utf8(E))), []);
+  assert.equal(s.timeoutAt(), 2000);
+  t = 500;
+  assert.deepEqual(shown(s.feed(utf8("o"))), ["input 1b", "input 6f"], "Esc, then o later: the agent's, not the back key");
+  t = 0; s = through(); s.feed(utf8(E)); t = 5;
+  assert.deepEqual(shown(s.feed(utf8("o"))), ["back "], "within the one-keypress window: the back key, as without the protocol");
+  t = 0; s = through(); s.feed(utf8(`${E}[`)); t = 500;
+  assert.deepEqual(shown(s.feed(utf8("x"))), ["input 1b5b", "input 78"]);
+  t = 0; s = through(); s.feed(utf8(`${E}[?5`));
+  assert.deepEqual(shown(s.giveUp()), [`input ${hex(utf8(`${E}[?5`))}`], "given up: what was held is the agent's");
+  assert.equal(s.timeoutAt(), null, "and nothing stays held");
+  t = 0; s = through(); s.feed(utf8(E));
+  t = 1999;
+  assert.deepEqual(shown(s.expire()), [], "held while the wait lasts");
+  t = 2000;
+  assert.deepEqual(shown(s.expire()), ["input 1b"], "at the deadline a held ESC is handed on");
 });
 
 test("under the protocol the cursor report's shape keeps the legacy reader's rule, its modifier never made xterm's: above 16 it is no key", () => {

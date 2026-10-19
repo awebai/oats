@@ -1187,7 +1187,10 @@ its own.
   (`CSI ? u`). Only when the answer holds flag 1 does it read the protocol,
   take the chords and list them in the help. With no answer within 2
   seconds, or one without flag 1, it pops the protocol, and the rest of the
-  run is as without it. foot, Ghostty, kitty, Alacritty and WezTerm answer.
+  run is as without it. The answer may come split and late over a slow
+  link, so until it comes (at most those 2 seconds) an `Esc` pressed on its
+  own may wait for the next key or for the wait's end, as it may begin the
+  answer. foot, Ghostty, kitty, Alacritty and WezTerm answer.
   GNOME Terminal and the other VTE terminals, and Terminal.app, do not:
   there the chords are absent.
 - **Your terminal may take some first.** foot takes Ctrl+Shift+C, V, R, N,
