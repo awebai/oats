@@ -185,6 +185,51 @@ export function clusterInstances(instances, { links = instanceLinks } = {}) {
   return clusters.sort((a, b) => rank(a.head, b.head)).map(({ head: _head, ...c }) => c);
 }
 
+/** `clusterInstances` output ordered by last focus (#1383; the command palette's order, never the sidebar's).
+ * `lastFocus` is Map<instanceId, time>. A node's key is the latest focus time over the node and all of its
+ * descendants; a node with no focus anywhere in its subtree has none. Clusters are ordered by their key, most
+ * recent first, and so is each set of nodes at one level of a cluster: its depth-0 roots, and the children of
+ * each parent. Nodes without a key follow every node with one, in their input order (a stable sort), so an
+ * empty record returns the input order. A child stays under its parent: each cluster is walked again in
+ * pre-order, every depth unchanged. Parentage is read from the pre-order and the depths alone (a node's
+ * children are the following rows one level deeper, until a row at its depth or above), never from names: the
+ * tree was built by identity, and a malformed cycle's depth-0 leftovers are roots like any other. Returns new
+ * cluster objects over the same rows; the input is not mutated. */
+export function recencyOrder(clusters, lastFocus) {
+  const timeOf = (inst) => {
+    const time = lastFocus?.get(instanceId(inst));
+    return Number.isFinite(time) ? time : null;
+  };
+  const recentFirst = (a, b) => (a.key === null ? (b.key === null ? 0 : 1) : b.key === null ? -1 : b.key - a.key);
+  const ranked = clusters.map((cluster) => {
+    const roots = [];
+    const open = []; // the path from a root to the last row read
+    for (const inst of cluster.instances) {
+      const node = { inst, depth: inst.depth || 0, key: timeOf(inst), kids: [] };
+      while (open.length && open.at(-1).depth >= node.depth) open.pop();
+      (open.length ? open.at(-1).kids : roots).push(node);
+      open.push(node);
+    }
+    // Keys bottom-up, then each level sorted (stable) and walked again in pre-order.
+    const keyOf = (node) => {
+      for (const kid of node.kids) {
+        const key = keyOf(kid);
+        if (key !== null && (node.key === null || key > node.key)) node.key = key;
+      }
+      return node.key;
+    };
+    const instances = [];
+    const walk = (nodes) => {
+      for (const node of [...nodes].sort(recentFirst)) { instances.push(node.inst); walk(node.kids); }
+    };
+    const top = { key: null, kids: roots };
+    keyOf(top);
+    walk(roots);
+    return { key: top.key, cluster: { ...cluster, instances } };
+  });
+  return ranked.sort(recentFirst).map(({ cluster }) => cluster);
+}
+
 /** Find the roster instance a UI reference means. References carry the
  * display name plus whatever identity the caller knows (home/agentsRoot —
  * sidebar rows know both; older callers pass a bare name). Identity match
@@ -449,12 +494,17 @@ export function visibleClusters(allInstances, visibleInstances, { links = instan
  * [{ key, label, clusters: [{ key, instances }] }], each cluster projected to its visible members, which carry
  * their tree depth. A group's key is unique even when two roots share a name (other agents roots or hosts), and
  * does not depend on what is visible: a cluster's is `cluster:<its place among the full roster's multi-member
- * clusters>:<name>`, a run's `independent:<instanceId of its first member in the full roster>`. */
-export function rosterGroups(allInstances, visibleInstances, { links = instanceLinks } = {}) {
+ * clusters>:<name>`, a run's `independent:<instanceId of its first member in the full roster>`.
+ * `lastFocus` (Map<instanceId, time>, optional; the command palette's, #1383): the full roster's clusters are
+ * ordered by last focus (`recencyOrder`) before the groups form by the same rule, so a run is the consecutive
+ * single clusters of that order, keyed by its first member there. What is visible still decides only which rows
+ * are listed, never the order. Without it, the roster's own order (the sidebar's and the TUI's). */
+export function rosterGroups(allInstances, visibleInstances, { links = instanceLinks, lastFocus } = {}) {
   const visibleIds = new Set(visibleInstances.map((i) => instanceId(i)));
   const groups = [];
   let place = 0, run = null;
-  for (const c of clusterInstances(allInstances, { links })) {
+  const clusters = clusterInstances(allInstances, { links });
+  for (const c of lastFocus instanceof Map ? recencyOrder(clusters, lastFocus) : clusters) {
     const shown = { ...c, instances: c.instances.filter((i) => visibleIds.has(instanceId(i))) };
     if (c.instances.length > 1) {
       run = null;

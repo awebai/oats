@@ -426,7 +426,9 @@ split into sections) is `packages/client/roster-sections.mjs`.
   multi-member cluster is a group under its name; each run of consecutive single instances is one
   "independent" group, in place. So a bundle keeps its place when its instance gains or loses children, and
   a start or a stop moves no row. Keys: `cluster:<n>:<name>`, `independent:<first member's instanceId>`,
-  decided on the full roster (a filter or a collapse moves no row, #971).
+  decided on the full roster (a filter or a collapse moves no row, #971). The palette alone passes its
+  last-focus record (`{ lastFocus }`): the clusters are ordered by `recencyOrder` first (#1383), and the
+  sidebar and the TUI never pass it.
 - **The Deployments page** (the former Active overview, stage `hierarchy`): tabs from
   `deployment-tabs.mjs` (All, then one per deployment; one deployment has only its own tab;
   the choice remembered per view); All stacks one section per deployment, a deployment's tab
@@ -1333,17 +1335,21 @@ section is the module map.
   `packages/client/subsequence-score.mjs` `subsequenceScore` (`null` = no
   match — prefix bonuses make real scores negative). Rows may carry a tree shape:
   consecutive rows sharing `group.key` sit in one named `role=group`, `depth`
-  indents, `under` is visually hidden text read with the option, and a
+  indents, `connectors` draws the sidebar's lines (its `treeGuides` builder and
+  `.ctx-guide` rules, on the sidebar's dot column), `state` the sidebar's state
+  dot, `under` and `sibling` are visually hidden text read with the option, and a
   `context` row is `aria-disabled` and never active. An optional `cycleKey(e)`
   lets the picker's own chord move the active row while open (wrapping,
   skipping context rows); with it, `toggle()` on an open picker cycles.
-- **palette.mjs** — the command palette's rows (`paletteRows`): instances as
-  the sidebar lists them, from the sidebar's own builders (`filterInstanceTree`
-  with the fuzzy matcher as its predicate, then `rosterSections`, whose groups
-  are `rosterGroups`), every instance listed, then at most
+- **palette.mjs** — the command palette's rows (`paletteRows`): the sidebar's
+  tree ordered by last focus (#1383), from the sidebar's own builders
+  (`filterInstanceTree` with the fuzzy matcher as its predicate, then
+  `rosterSections` with `{ lastFocus }`, whose groups are `rosterGroups` over
+  `recencyOrder`), every instance listed, each row carrying the sidebar row's
+  `connectors` (`treeConnectors`) and `state`, then at most
   `PALETTE_COMMAND_CAP` commands. The shell hands it one panel snapshot,
-  `{ instances, deployments }`: with several deployments each one is filtered
-  and clustered on its own, in the panel's order, and a group's key and label
+  `{ instances, deployments, recent, activeId }`: with several deployments each one is filtered
+  and clustered on its own, its sections by latest focus, then the panel's order, and a group's key and label
   carry its deployment, so no relation or query context crosses deployments. The shell passes
   `cycleKey` from `pickerCycleDirection(e, "app.palette")` (keybindings.mjs), so
   ⌘K cycles while open (Shift: up) and follows a rebind.

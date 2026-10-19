@@ -619,26 +619,21 @@ body {
 .palette-item .pdetail { margin-left: auto; color: var(--muted); font-size: 11.5px; flex: none; max-width: 45%;
                          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .palette-empty { padding: 16px; color: var(--muted); text-align: center; font-size: 13px; }
-/* Instances as the sidebar lists them (spec F): relation groups read from the
-   sidebar's 14px gap alone (each is a named role=group for AT), rows indent
-   18px per level, and a match's ancestor shown only for its place in the tree
-   is dimmed by colour (the muted token, never opacity) and is not a target. */
+/* Instances as the sidebar draws them (spec F, #1383): relation groups read from the
+   sidebar's 14px gap alone (each is a named role=group for AT), and a match's ancestor
+   shown only for its place in the tree is dimmed by colour (the muted token, never
+   opacity; its lines are not dimmed) and is not a target. A tree row (.tree: one with
+   connectors) takes the sidebar's indent and dot column, a 10px inset plus --depth ×
+   --tree-step before its 8px .ctx-dot, so the sidebar's own .ctx-guide rules land on its
+   dots: they read the same custom properties, set here to the sidebar's values. Rows
+   touch (no gap), so lines run on from row to row in one cluster; the dot's ring is the
+   palette's surface, or the selection's tint on the active row. */
 .palette-group + .palette-group, .palette-group + .palette-item { margin-top: 14px; }
 .palette-item.context { cursor: default; color: var(--muted); }
 .palette-item.context .plabel { font-weight: 400; }
-/* A Recent row is flat, so its relation context is shown as quiet text beside the name (Spec C); any row with a
-   sibling (#1312) shows "sibling of <name>" the same way, after a Recent row's "under <parent>" (" · "). With
-   both, each phrase ellipsizes on its own within the same cap and the under phrase gives way first (its far
-   larger flex-shrink, down to "under…"), so a long parent never hides the sibling. */
-.palette-item .punder { color: var(--muted); font-size: 11.5px; flex: none; max-width: 30%;
-                        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.palette-item .punder.punder-split { display: flex; }
-.palette-item .punder-split > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* A sibling's share of the shrink stays below a layout unit until the under phrase is down to "under…" (min-width);
-   only then does the sibling phrase shorten. A smaller ratio still trims the sibling by a fraction of a pixel, and so
-   ellipsizes a phrase that fits. */
-.palette-item .punder-split > .punder-under { flex-shrink: 1000000; min-width: 4em; }
-.palette-item .punder-split > .punder-sep { flex: none; white-space: pre; }
+.palette-item.tree { --tree-step: 18px; --tree-branch-offset: 5px; --row-gap: 0px; --row-solid: var(--surface);
+                     padding-left: calc(10px + var(--depth, 0) * var(--tree-step)); }
+.palette-item.tree.active { --row-solid: var(--sel); }
 
 /* ── keyboard shortcuts editor (⌘,) ──
    Calm by construction: one search, rows of label + keycaps, quiet markers in the muted ink,

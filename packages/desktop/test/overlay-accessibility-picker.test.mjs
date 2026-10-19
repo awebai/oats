@@ -414,24 +414,45 @@ test("current callers preserve instance identity, command handoffs and Quick Ope
   assert.equal(openerFocuses, 0);
 });
 
-test("a row's sibling is read after its under, and shown with a shown under as one aria-hidden span", async (t) => {
+test("a row's sibling is read after its under, once; neither is shown (#1383: the lines show them)", async (t) => {
   const rows = [
     { label: "tree", under: "under lead", sibling: "sibling of a and b", run() {} },
-    { label: "flat", under: "under lead", showUnder: true, sibling: "sibling of b", run() {} },
     { label: "plain", under: "under lead", run() {} },
   ];
   const { doc, picker } = setup(t, { loadItems: async () => rows, computeRows: (data) => data });
   await picker.open();
   const option = (label) => [...doc.querySelectorAll('[role="option"]')].find((o) => o.querySelector(".plabel").textContent === label);
-  const shown = (label) => [...option(label).querySelectorAll(".punder")].map((s) => [s.textContent, s.getAttribute("aria-hidden")]);
   const read = (label) => [...option(label).querySelectorAll(".pdetail .sr-only")].map((s) => s.textContent);
-  assert.deepEqual(shown("tree"), [["sibling of a and b", "true"]], "a tree row shows its sibling, not its under");
   assert.deepEqual(read("tree"), [", under lead", ", sibling of a and b"]);
-  assert.deepEqual(shown("flat"), [["under lead · sibling of b", "true"]]);
-  assert.deepEqual([...option("flat").querySelectorAll(".punder.punder-split > span")].map((s) => [s.className, s.textContent]),
-    [["punder-under", "under lead"], ["punder-sep", " · "], ["punder-sibling", "sibling of b"]], "with both, each phrase is its own part");
-  assert.equal(option("tree").querySelector(".punder").children.length, 0, "one phrase: plain text, as before");
-  assert.deepEqual(read("flat"), [", under lead", ", sibling of b"]);
-  assert.deepEqual(shown("plain"), [], "no sibling, no shown under: as before");
   assert.deepEqual(read("plain"), [", under lead"]);
+  assert.equal(doc.querySelector(".punder"), null, "no quiet relation text");
+  for (const label of ["tree", "plain"]) assert.equal(option(label).textContent.split("under lead").length - 1, 1, `${label}: the phrase once`);
+});
+
+test("a row with connectors draws the sidebar's guides and tree geometry; a row with state, the sidebar's dot; neither: as before", async (t) => {
+  const rows = [
+    { label: "lead", state: "running", connectors: [{ kind: "down", level: 0 }], run() {} },
+    { label: "kid", state: "unknown", depth: 1, connectors: [{ kind: "elbow", level: 0 }, { kind: "link-through", level: 0 }], run() {} },
+    { label: "idle", state: "stopped", run() {} },
+    { label: "small", dot: true, run() {} },
+    { label: "command", dot: null, run() {} },
+  ];
+  const { doc, picker } = setup(t, { loadItems: async () => rows, computeRows: (data) => data });
+  await picker.open();
+  const option = (label) => [...doc.querySelectorAll('[role="option"]')].find((o) => o.querySelector(".plabel").textContent === label);
+  const kid = option("kid");
+  assert.ok(kid.classList.contains("tree"));
+  assert.equal(kid.firstElementChild.className, "ctx-guides");
+  assert.equal(kid.firstElementChild.getAttribute("aria-hidden"), "true");
+  assert.deepEqual([...kid.querySelectorAll(".ctx-guide")].map((g) => [g.className, g.style.getPropertyValue("--guide-level")]),
+    [["ctx-guide elbow", "0"], ["ctx-guide link-through", "0"]]);
+  assert.equal(kid.querySelector(".ctx-dot").className, "ctx-dot unknown", "unknown liveness: the unknown dot, not the chevron");
+  assert.equal(kid.querySelector(".picon"), null);
+  assert.equal(option("lead").querySelector(".ctx-dot").className, "ctx-dot on");
+  assert.equal(option("idle").querySelector(".ctx-dot").className, "ctx-dot off");
+  assert.ok(!option("idle").classList.contains("tree"), "state alone: no guides, no tree geometry");
+  assert.equal(option("idle").querySelector(".ctx-guides"), null);
+  assert.equal(option("small").querySelector(".pdot.on")?.getAttribute("aria-hidden"), "true", "a row with neither keeps today's dot");
+  assert.ok(option("command").querySelector(".picon"), "and today's chevron");
+  assert.equal(option("command").querySelector(".ctx-dot, .ctx-guides"), null);
 });

@@ -73,7 +73,7 @@ import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import { collapseKey, hasInstanceChildren, instanceRepoLabel, filterInstanceTree, instanceMatchesFilter, instanceVisibleInTree, waitingRollup, instanceId, rosterParentId, heldHome } from "../../client/instance-tree.mjs";
 import { createRetiresInFlight, retiringRows } from "../../client/retire-in-flight.mjs";
-import { treeConnectors, captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
+import { treeConnectors, treeGuides, captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
   terminalKey, resolveTerminalOpen, createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE } from "./instance-tree-view.mjs";
 import {
   tabVisibleInContext, canActivateTab,
@@ -946,15 +946,7 @@ function renderContextRoster(instances) {
 
         // Design connectors drawn from the dots: rounded solid elbows into
         // children, solid stems/pass-throughs, dotted sibling links.
-        const guides = document.createElement("span");
-        guides.className = "ctx-guides";
-        guides.setAttribute("aria-hidden", "true");
-        for (const { kind, level } of treeConnectors(items, i, instances)) {
-          const guide = document.createElement("span");
-          guide.className = `ctx-guide ${kind}`;
-          guide.style.setProperty("--guide-level", String(level));
-          guides.append(guide);
-        }
+        const guides = treeGuides(document, treeConnectors(items, i, instances));
 
         const row = document.createElement("button");
         row.type = "button";
@@ -1160,15 +1152,7 @@ function pendingSpawnRow(i, items, instances, startedAt = null) {
   const rowWrap = document.createElement("div");
   rowWrap.className = "ctx-tree-row ctx-spawn-row" + (unknown ? " ctx-spawn-unknown" : "") + (p?.revealed ? " ctx-spawn-revealed" : "");
   rowWrap.style.setProperty("--depth", String(i.depth || 0));
-  const guides = document.createElement("span");
-  guides.className = "ctx-guides";
-  guides.setAttribute("aria-hidden", "true");
-  for (const { kind, level } of treeConnectors(items, i, instances)) {
-    const guide = document.createElement("span");
-    guide.className = `ctx-guide ${kind}`;
-    guide.style.setProperty("--guide-level", String(level));
-    guides.append(guide);
-  }
+  const guides = treeGuides(document, treeConnectors(items, i, instances));
   const row = document.createElement("button");
   row.type = "button";
   row.className = "ctx-inst pending";

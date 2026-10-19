@@ -52,6 +52,23 @@ export function treeConnectors(items, item, allInstances = items) {
   return out;
 }
 
+/** The one DOM builder for a row's connectors (`treeConnectors`' answer), shared by the sidebar's rows (a
+ * roster row and a pending spawn's) and the command palette's tree rows (overlay-picker.mjs): an aria-hidden
+ * `.ctx-guides` holding one `.ctx-guide <kind>` per connector at its `--guide-level`. shell.css positions them
+ * from the custom properties each row kind sets (`--tree-step`, `--tree-branch-offset`, `--row-gap`). */
+export function treeGuides(doc, connectors) {
+  const guides = doc.createElement("span");
+  guides.className = "ctx-guides";
+  guides.setAttribute("aria-hidden", "true");
+  for (const { kind, level } of connectors) {
+    const guide = doc.createElement("span");
+    guide.className = `ctx-guide ${kind}`;
+    guide.style.setProperty("--guide-level", String(level));
+    guides.append(guide);
+  }
+  return guides;
+}
+
 /** Terminal-tab dedup key for an instance reference: workspace-scoped and
  * IDENTITY-scoped, so two same-named instances from different agents roots
  * are different terminals (review 46f3fdc). Bare-name refs key by name

@@ -394,5 +394,5 @@ test("palette remote terminal actions preserve server and home, and label unknow
   assert.ok(opened.every((r) => r.home === "/same"));
   const unknown = rows.find((r) => r.detail.includes("two"));
   assert.match(unknown.detail, /unknown/);
-  assert.equal(unknown.dot, null);
+  assert.equal(unknown.state, "unknown", "drawn as the sidebar's unknown dot (#1383), never a command's chevron");
 });
