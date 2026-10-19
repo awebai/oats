@@ -15,7 +15,7 @@ import { QUERY_LIMIT, initialState, reduce } from "../lib/store.mjs";
 import { marksOf } from "../lib/views/instances.mjs";
 import { windowOf } from "../lib/views/scroll.mjs";
 import { SWITCHER_TEXT } from "../lib/views/switcher.mjs";
-import { CLI, DEPLOYMENT, NOW, draw, failed, instanceRow, observed, pending, press, rosterOf, stateOf } from "./helpers.mjs";
+import { CLI, DEPLOYMENT, NOW, catalogEntry, catalogSoul, draw, failed, instanceRow, observed, pending, press, rosterOf, stateOf } from "./helpers.mjs";
 
 const SIZE = { cols: 80, rows: 24 }, SHORT = { cols: 80, rows: 15 };
 const STOPPED = { running: false, runtimeState: "stopped" };
@@ -1281,7 +1281,7 @@ test("a Remove asked is answered by the keys it names, Enter and Esc, whatever t
   assert.deepEqual(inRead(plain, "enter", 2).effect, { remove: { path: FOLDER, name: "sandbox" } });
 });
 
-test("the add of the deployment the run started in, refused while the switcher or the help is shown, is held, and said once a view that draws the line above the panes is shown", () => {
+test("the add of the deployment the run started in, refused while the switcher, the help or a detail is shown, is held, and said once a view's list is shown with the focus", () => {
   const reason = { code: "E_DEPLOYMENTS_BUSY", message: "the list is locked" };
   const shown = press(stateOf(observed(TREE)), ["w"]).state;
   const held = reduce(shown, { notListed: reason }).state;
@@ -1300,6 +1300,17 @@ test("the add of the deployment the run started in, refused while the switcher o
   assert.deepEqual([underHelp.outcome, underHelp.notice], [null, { said: LIST_WORDS.notAdded(reason.message), under: [] }]);
   const closed = press(underHelp, ["escape"]).state;
   assert.deepEqual([closed.view, closed.outcome, closed.notice], ["instances", { said: LIST_WORDS.notAdded(reason.message), under: [] }, null]);
+  // Under 80 columns a detail with the focus is a page over the whole screen: held while a detail
+  // has the focus, in each of the three views, and said once its list has it again.
+  const souls = reduce(press(stateOf(observed(TREE)), ["2"]).state, { souls: { id: DEPLOYMENT, entry: catalogEntry([catalogSoul("dev")]), reading: false } }).state;
+  for (const [view, list] of [["instances", stateOf(observed(TREE))], ["souls", souls]]) {
+    const inDetail = press(list, ["tab"]).state, focus = (s) => (view === "souls" ? s.souls.focus : s.focus);
+    assert.equal(focus(inDetail), "detail", view);
+    const held = reduce(inDetail, { notListed: reason }).state;
+    assert.deepEqual([held.outcome, held.notice], [null, { said: LIST_WORDS.notAdded(reason.message), under: [] }], `${view}: held in the detail`);
+    const back = press(held, ["tab"]).state;
+    assert.deepEqual([focus(back), back.outcome, back.notice], ["list", { said: LIST_WORDS.notAdded(reason.message), under: [] }, null], `${view}: said from the list`);
+  }
   // Over the list of instances itself it is said at once.
   assert.deepEqual(reduce(stateOf(observed(TREE)), { notListed: reason }).state.outcome, { said: LIST_WORDS.notAdded(reason.message), under: [] });
 });

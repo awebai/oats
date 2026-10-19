@@ -171,7 +171,9 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   /** The preflight of another machine's agent under way: `{ id, controller, prepared }`, where
    *  `prepared` is what it answered (`{ binary, args }`) once it has; or null. */
   let preflight = null;
-  /** The run's private directory, made at the first change or the first open (lib/read.mjs
+  /** The run's private directory, made at the first change (with a kernel that lists this
+   *  computer's deployments, the add of the deployment the run started in, at the start) or the
+   *  first open (lib/read.mjs
    *  CHANGE_FILES): the reader writes a change's output there, and the panel keeps its tmux
    *  server's socket there. */
   let dir = null;

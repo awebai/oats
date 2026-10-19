@@ -349,8 +349,10 @@ const MACHINE_FIELDS = {
     return reduce(reporting(options), { listed: posix.resolve(path) === path ? { rows: [{ path, name: value, state: "ok" }] } : { failure: { code: "E_CLI_PROTOCOL", message: "The installed OATS CLI returned an invalid answer about this computer's deployments." } } }).state;
   } },
   "the kernel's message of a read of this computer's deployments list that failed": { seen: "the switcher", make: (value, options) => reduce(reporting(options), { listed: { failure: { code: "E_DEPLOYMENTS_LIST", message: value } } }).state },
-  "the name of a row a Remove removed, in the switcher's line": { seen: "the switcher", make: (value, options) => reduce(switching(reporting(options)), { removed: { path: "/home/u/acme", name: value, ok: true, reason: null } }).state },
-  "the kernel's message of a Remove that failed, in the switcher's line": { seen: "the switcher", make: (value, options) => reduce(switching(reporting(options)), { removed: { path: "/home/u/acme", name: "acme", ok: false, reason: { code: "E_DEPLOYMENTS_REMOVE", message: value } } }).state },
+  // A Remove's answer stands only in the switcher, which these states show already: they are drawn
+  // in the views that start from it (`inSwitcher`), the switcher and the help over it.
+  "the name of a row a Remove removed, in the switcher's line": { seen: "the switcher", inSwitcher: true, make: (value, options) => reduce(switching(reporting(options)), { removed: { path: "/home/u/acme", name: value, ok: true, reason: null } }).state },
+  "the kernel's message of a Remove that failed, in the switcher's line": { seen: "the switcher", inSwitcher: true, make: (value, options) => reduce(switching(reporting(options)), { removed: { path: "/home/u/acme", name: "acme", ok: false, reason: { code: "E_DEPLOYMENTS_REMOVE", message: value } } }).state },
 };
 /** The views a state's text can reach, each with the sizes it is drawn at: the list with its
  *  headings beside the detail of its last row (a machine's, where there is one), that detail as
@@ -382,7 +384,7 @@ function within(drawn, size, at) {
 }
 /** A text of 10 000 letters is drawn where a text that long is cut or wrapped, once (see SLOW). */
 const LONG_MACHINE_FIELDS = new Set(["a machine's label", "the thrown message of the roster read, before any answer", "the runtime error of a machine's row"]);
-for (const [field, { make, seen, lead = null }] of Object.entries(MACHINE_FIELDS)) {
+for (const [field, { make, seen, lead = null, inSwitcher = false }] of Object.entries(MACHINE_FIELDS)) {
   test(`the hostile fixture as ${field}, drawn in the list with its headings, the detail, the switcher, the palette and the help over each, leaves only the TUI's own sequences in the output, and no row is wider than the terminal`, async () => {
     for (const [name, value] of Object.entries(FIXTURE)) {
       if (name === SLOW) {
@@ -392,7 +394,7 @@ for (const [field, { make, seen, lead = null }] of Object.entries(MACHINE_FIELDS
         within(drawn, S80, at);
         continue;
       }
-      for (const [view, state, sizes, page] of viewsOf(await make(value, { ascii: false }))) for (const size of sizes) {
+      for (const [view, state, sizes, page] of viewsOf(await make(value, { ascii: false }))) for (const size of inSwitcher && !view.includes("switcher") ? [] : sizes) {
         const at = `${name}, ${view}, ${size.cols}x${size.rows}`, drawn = draw(state, size);
         const text = census(drawn.rows, size, UTF8, at, drawn.cells, size.cols < WIDE && page ? page : sidebarOf(UTF8));
         within(drawn, size, at);

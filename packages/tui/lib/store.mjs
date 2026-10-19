@@ -74,8 +74,8 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  true while it has the whole body (only with the terminal's focus).
  *  `outcome`: the line after an open (the model's `{ said, under }`), shown above the panes until
  *  the next key bound to an action, or null. `notice`: such a line that came while no view that
- *  draws one at every width was shown (the switcher, the help: see `drawsOutcome`), held until one
- *  is; or null.
+ *  draws one at every width was shown (the switcher, the help, a detail or a terminal with the
+ *  focus: see `drawsOutcome`), held until one is; or null.
  *  It is the add of the deployment the run started in, refused.
  *  `detachKey`: tui.json's `open.detachKey`, the leader (docs/tui.md, "The leader"; without one,
  *  `platform`'s default, config.mjs defaultDetachKey), and `leaderKey` the key id it is read as
@@ -596,10 +596,17 @@ export function reduce(state, event, keymap = bindings(state.actions)) {
 }
 
 /** Whether the line under the sidebar's title stands now at every width (views/frame.mjs): in the
- *  Instances, Souls and Capabilities views, with neither the palette nor the spawn prompt over them.
- *  The switcher draws none, and under 80 columns the help, a confirmation, the palette and the
- *  spawn prompt cover the whole screen, the sidebar too. */
-const drawsOutcome = (state) => ["instances", "souls", "capabilities"].includes(state.view) && state.palette === null && state.spawn === null;
+ *  Instances, Souls and Capabilities views, with the focus in the view's list and neither the
+ *  palette nor the spawn prompt over it. The switcher draws none; a zoomed terminal has the whole
+ *  screen; and under 80 columns the help, a confirmation, the palette, the spawn prompt, a detail
+ *  with the focus and a terminal with the focus cover the whole screen, the sidebar too. */
+function drawsOutcome(state) {
+  if (state.palette !== null || state.spawn !== null) return false;
+  if (state.view === "instances") return state.focus !== "detail" && state.terminal?.focus !== "terminal";
+  if (state.view === "souls") return state.souls.focus !== "detail";
+  if (state.view === "capabilities") return state.capabilities.focus !== "detail";
+  return false;
+}
 /** A notice waiting for a view that draws the line under the sidebar's title (`notice`), made the
  *  line there as soon as one is shown. */
 function noticed(step) {

@@ -64,9 +64,10 @@ where you are or from `--dir`, is added to this computer's list once, as the
 TUI's (`oats deployments add <path> --via tui --json`), also when you had
 removed it from the list. It is best effort: a failure opens nothing less,
 and is said once, in the line under the title, in the kernel's words. When
-it comes while the switcher, the help, a confirmation, the palette or the
-spawn prompt is shown, it is said once you are back in a view, so no screen
-that covers the sidebar hides it. A deployment opened from the switcher is
+it comes while the switcher, the help, a confirmation, the palette, the
+spawn prompt, a detail or a terminal has the screen or the focus, it is said
+once a view's list has the focus again, so no screen that covers the
+sidebar hides it. A deployment opened from the switcher is
 on the list already.
 
 **From inside an agent's pane it still reads the deployment you asked
