@@ -1,8 +1,8 @@
 # Run your first OATS team
 
-**The quick way:** give your coding agent the
-[`oats-getting-started` skill](../skills/oats-getting-started/SKILL.md). It
-installs OATS, creates your workspace with its own setup expert soul (or joins
+**The quick way:** the README's [Start here](../README.md#start-here): your
+coding agent downloads the `oats-getting-started` skill verbatim and follows
+it. It installs OATS, creates your workspace with its own setup expert soul (or joins
 an existing workspace), and hands over to that expert. This page is the manual
 path, for writing a workspace by hand.
 

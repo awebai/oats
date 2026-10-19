@@ -35,7 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/awebai/oats/main/skills/oats-gettin
 
 - **It asks first:** your project, its repositories and the knowledge tools you use.
 - **It installs OATS and OATS Desktop,** then creates your workspace with its own setup expert, or joins this machine to an existing workspace.
-- **It hands over to that setup expert,** an OATS agent that sets up the rest with you. You type only passwords and logins.
+- **It hands over to that setup expert,** an OATS agent that sets up the rest with you. You type only passwords, logins and tokens.
 - **Download it, don't web-fetch it:** a tool that summarises pages would lose its exact commands.
 
 ## Why OATS

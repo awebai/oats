@@ -26,7 +26,7 @@
     oats.framework 1.13.0). An existing workspace without a setup soul gets
     one first, from its owner, by pull request.
   - The Desktop is started on the new deployment, and the TUI is offered.
-  - The person types only passwords and logins, and no secret passes through
+  - The person types only passwords, logins and tokens, and no secret passes through
     the agent.
 
 ## Documentation
