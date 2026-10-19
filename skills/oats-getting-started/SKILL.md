@@ -63,9 +63,14 @@ work, in its own home and terminal. Each workspace has a setup expert soul,
     they can create repositories in) and the repository's name. Suggest
     `<workspace>-oats`. Refuse `agents`: OATS keeps instance homes in a
     folder of that name.
-- **Messaging between agents (aweb):** wanted or not. The setup expert sets it
-  up later. An existing workspace that already has it needs it on this
-  machine before the setup expert can spawn (step 7).
+- **Messaging between agents (aweb):** wanted or not (recommended: agents
+  that can mail each other can coordinate).
+  - New workspace: a **username** `N` for a new hosted aweb account
+    (lowercase letters, digits and `-`), not a secret. Step 7 signs it up
+    with no API key, and its team is `default:N.aweb.ai`. Also a name `A`
+    for this machine's messaging root, such as `<workspace>-root`.
+  - Existing workspace that already has it: this machine needs it before the
+    setup expert can spawn (step 7).
 - **The harness for the setup expert:** `claude`, `codex` or `pi`. Default:
   the one you are, if it is one of these.
 - **The deployment directory `D`:** where OATS lives on this machine. Any
@@ -118,6 +123,13 @@ GitHub access. Check first:
 
 ```bash
 gh auth status
+```
+
+If it is logged in, let Git use it (without this, step 5's push and step 6
+fail with "could not read Username"), then go to step 4:
+
+```bash
+gh auth setup-git
 ```
 
 If it is not logged in, start the login yourself, detached and without a
@@ -236,7 +248,7 @@ pi install "npm:@awebai/oats-pi@V"      # only when the harness is pi
 ## 5. The workspace
 
 **New workspace.** Create its repository, private, inside the deployment
-directory `D`, then write four files in it.
+directory `D`, then write the files below in it.
 - **Private** is the safe default: the workspace file names every member, so
   whoever reads it sees the list.
 - **`D/<repo>` must not exist yet:** an existing folder's files would end up
@@ -246,10 +258,11 @@ directory `D`, then write four files in it.
 mkdir -p "D" && cd "D" && test ! -e "<repo>" && gh repo create "<owner>/<repo>" --private --clone && ls -a "<repo>"
 ```
 
-Then write the four files below in `D/<repo>`. They show a workspace named
-`acme`, in the repository `acme/acme-oats`, with Claude as the harness:
-write the person's own workspace name, repository and harness in their
-place.
+Then write the files below in `D/<repo>`, all in this one first commit.
+They show a workspace named `acme`, in the repository `acme/acme-oats`,
+with Claude as the harness and messaging for the aweb username `acme-ana`:
+write the person's own workspace name, repository, harness and username in
+their place.
 
 `oats-workspace.yaml`:
 
@@ -259,17 +272,27 @@ name: acme
 members:
   - git:github.com/acme/acme-oats     # the host is a member too
 packages:
-  oats.framework: v1.13.3             # the installed CLI's catalog version (below)
+  oats.framework: v1.13.3             # the installed CLI's catalog versions (below)
+  oats.aweb: v1.29.0                  # messaging: agent identities, mail and chat
 defaults:
   capabilities:
     oats.core: { from: package }
+  messaging: { oats.aweb: { from: package } }
+teams:
+  acme: { description: The acme workspace's aweb team, team: "default:acme-ana.aweb.ai" }
+defaultTeam: acme                     # every soul starts in this team
 ```
 
-- **The `oats.framework` version** is the installed CLI's catalog's:
-  `"$(oats root)/package-catalog.json"`, `packages."oats.framework".ref`,
-  for example `oats-framework/v1.13.3`. Write the part after the `/`.
-- **Add nothing else:** knowledge, messaging and teams come with the setup
-  expert.
+- **The versions** are the installed CLI's catalog's:
+  `"$(oats root)/package-catalog.json"`, `packages."oats.framework".ref`
+  (for example `oats-framework/v1.13.3`: write the part after the `/`) and
+  `packages."oats.aweb".ref` (for example `v1.29.0`).
+- **The team** is `default:N.aweb.ai`, with `N` the username from step 1;
+  its label (here `acme`) is the workspace name.
+- **Without messaging,** leave out the `oats.aweb` line, the `messaging`
+  line, `teams` and `defaultTeam`.
+- **Add nothing else:** knowledge and the person's own repositories come
+  with the setup expert.
 
 `oats-membership.yaml`:
 
@@ -284,7 +307,7 @@ workspace: git:github.com/acme/acme-oats
 schemaVersion: 2
 name: acme-oats-setup-expert
 description: The OATS setup expert for the acme workspace — onboards machines and people, and keeps this workspace's OATS setup working.
-work: worktree      # it changes this repository by pull request, on its own branch
+work: worktree      # it changes this repository from its own worktree
 capabilities:
   oats.setup: { from: package }
 knowledge: none     # so it spawns on a machine before knowledge is set up there
@@ -304,7 +327,33 @@ toolkit: its briefing says what the person types and what you run, and its
 skills hold every procedure. Start with `/oats-setup-model`. When your task
 is a hand-over from the getting-started skill, follow `/oats-setup-expert`,
 or `/oats-onboarding` if your `oats.setup` is older than 2.8.0 and lacks it.
-Change shared files only by pull request; the person reviews and merges them.
+While the person is this workspace's only member, commit and push shared
+files straight to the default branch and tell them what changed. Once others
+share the workspace, change shared files only by pull request.
+```
+
+`souls/acme-developer/soul.yaml`, a first developer for the person's tasks:
+
+```yaml
+schemaVersion: 2
+name: acme-developer
+description: A developer in the acme workspace — builds what its task asks.
+work: directory     # its own folder; the setup expert points it at the person's repositories later
+knowledge: none
+launch: { harness: claude }
+```
+
+`souls/acme-developer/AGENTS.md`, and beside it the symlink
+`CLAUDE.md -> AGENTS.md`:
+
+```markdown
+# acme-developer
+
+You are a developer in the acme workspace. You build what your task asks,
+in your own `work/` directory: write the code, run it and test it. Keep the
+solution small and simple. When you finish, say what you built, where it is
+and how you checked it. If you are blocked on a decision, ask whoever gave
+you the task.
 ```
 
 **Keep the soul this thin.** Everything it knows comes from `oats.setup`, so
@@ -312,13 +361,12 @@ it improves when the workspace's `oats.framework` pin moves. It has no
 knowledge of its own, so it can be spawned on a machine before knowledge is
 set up there. It takes the workspace's messaging and doesn't empty that
 slot: a setup soul that empties the messaging slot the workspace fills is
-not the workspace's operator, and gets no mail. A new workspace has no
-messaging yet; the setup expert adds it.
+not the workspace's operator, and gets no mail.
 
 **Commit and push.**
 - This first commit goes straight to the new repository's default branch: it
-  is the person's own, just created. Every later change is a pull request
-  from the setup expert.
+  is the person's own, just created. Later changes come from the setup
+  expert, straight to the default branch while the person is the only member.
 - If `git config user.email` prints nothing, the person's Git identity is not
   set up yet. After they confirm their name, commit with
   `-c user.name="<their name>" -c user.email="<their noreply address>"`. The
@@ -327,7 +375,7 @@ messaging yet; the setup expert adds it.
   setup expert sets up their identity properly later.
 
 ```bash
-cd "D/<repo>" && git add -A && git commit -m "OATS workspace acme: workspace, membership, setup expert" && git push -u origin HEAD
+cd "D/<repo>" && git add -A && git commit -m "OATS workspace acme: workspace, team, setup expert, developer" && git push -u origin HEAD
 ```
 
 The workspace reference `W` is then `git:github.com/<owner>/<repo>`, here
@@ -382,8 +430,25 @@ can't spawn on this machine until it has messaging too. Set it up now:
    ```
 
    Its `aw.status` must be `ok` or `done`; stop on `failed` and tell the
-   person why. Its `defaultTeam.label` is `L`, the setup expert's team.
-2. **The person gets an invite token** from a member of `L`, who runs
+   person why. Its `defaultTeam.label` is `L`, the setup expert's team. For a new workspace it must equal the label you wrote under `teams:` (the workspace name, not the username `N`); if it differs, stop and tell the person.
+2. **New workspace: sign up its aweb account and team,** with `N` and `A`
+   from step 1. No API key, no token and nothing for the person to type.
+   Preview first, then run it:
+
+   ```bash
+   cd "D" && oats aweb setup --soul S --username N --name A --label L --plan --json
+   cd "D" && oats aweb setup --soul S --username N --name A --label L --json
+   ```
+
+   The preview does not contact aweb, so it can't tell whether `N` is free.
+   If the run fails with `E_SETUP_NATIVE` (most likely the username is
+   taken; aw's output is withheld), don't rerun yet: run
+   `test -e "D/.aw" && echo HAS_AW`. If it prints `HAS_AW`, stop and tell the
+   person what you saw. Otherwise ask the person for another `N`, then in
+   `D/<repo>` change the team id in `oats-workspace.yaml` to
+   `default:N.aweb.ai`, commit and push it, run `oats sync --dir D`, and run
+   both lines again. Then skip items 3 and 4 and go to the check (item 5).
+3. **Existing workspace: the person gets an invite token** from a member of `L`, who runs
    `oats aweb invite --soul <their soul> --label L --json` in their own
    deployment and passes the token to the person privately, never by
    ordinary mail. They also give the aweb service URL `U`. Choose with the
@@ -391,14 +456,14 @@ can't spawn on this machine until it has messaging too. Set it up now:
    `<workspace>-<their machine>`. This works for a hosted team only: if the
    invite is refused, or the join says the team is not hosted, stop, and
    the workspace's owner decides.
-3. **The person joins in their own terminal,** typing the token at the
+4. **Existing workspace: the person joins in their own terminal,** typing the token at the
    hidden prompt. Give them the line with `D`, `S`, `L`, `A` and `U` filled
    in:
 
    ```text
    cd "D" && sh -c 'stty -echo; printf "Invite token: "; read -r T; stty echo; echo; printf "%s\n" "$T" | oats aweb setup --soul S --join L --invite-stdin --name A --service U'
    ```
-4. **Check,** and expect `"member": true`:
+5. **Check,** and expect `"member": true`:
 
    ```bash
    cd "D" && oats aweb setup --soul S --check-only --json
@@ -423,7 +488,7 @@ are cloned, knowledge tools, messaging wanted or not>
 - Installed: OATS <V> (oats version), OATS Desktop <V> | not installed (why)
 - GitHub: gh logged in over https as <login>; no SSH key or signing set up
 - New workspace only: repository <owner>/<repo> created, first commit pushed
-- Messaging: this machine joined L as root A (aw <version>, <harness>
+- Messaging: new account N signed up, or joined L by invite; root A (aw <version>, <harness>
   channel installed) | not set up (the setup expert has no messaging)
 
 ## Left to you
@@ -495,6 +560,7 @@ its own window when they need to type a secret. You are done.
   person did not create in step 5.
 - **The Desktop:** never download it through a browser, skip a verification
   step, strip quarantine without asking, or start it with `env -i`.
-- **Put an absolute path, an account or a credential** in
-  `oats-workspace.yaml`, `oats-membership.yaml` or a soul.
+- **Put an absolute path or a credential** in `oats-workspace.yaml`,
+  `oats-membership.yaml` or a soul (the aweb username in the team id is not
+  a secret).
 - **Spawn** before `oats onboard` confirmed the host.
