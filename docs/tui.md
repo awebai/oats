@@ -349,13 +349,14 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   leader inside a bracketed paste is pasted, not taken.
 - **With the list focused** the terminal stays open, and the agent's screen
   is still drawn as it changes. The cheat sheet names `Enter focus terminal`
-  on its row; the leader's hint names `z zoom` and `c close terminal`.
+  on its row; the leader's hint names `z zoom` and `w close terminal`.
   - `Enter` on the shown terminal's row gives it the focus again.
   - `z` gives it the focus and the whole screen: the sidebar is hidden. The
     leader then `Esc` brings the sidebar back beside it, and the leader then
     `z` zooms it out and in without leaving it.
-  - `c` closes it: the agent keeps running. The tab beside it is shown;
-    with no other tab the right side is the detail again.
+  - `c` closes it, and the leader then `w` from anywhere: the agent keeps
+    running. The tab beside it is shown; with no other tab the right side
+    is the detail again.
   - `Tab` shows the detail in its place until `Tab` or `Esc`. Nothing of
     the terminal is drawn meanwhile, and its screen is read afresh when it
     shows again.
@@ -609,11 +610,7 @@ them, from the same code.
  Alt+O    commands                    │
  Ctrl+K   palette                     │
  Enter    detail                      │
- i        instances                   │
- /        filter                      │
- r        refresh                     │
- Esc      close                       │
- w        workspaces                  │
+ n        spawn                       │
  ?        help                        │
  q        quit                        │
 ```
@@ -682,10 +679,6 @@ them, from the same code.
  Alt+O    commands                    │     ■ reviewer ·1
  Ctrl+K   palette                     │
  Enter    detail                      │
- /        filter                      │
- r        refresh                     │
- Esc      close                       │
- w        workspaces                  │
  ?        help                        │
  q        quit                        │
 ```

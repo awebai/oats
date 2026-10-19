@@ -394,12 +394,16 @@ function cheatRows(hints, cols) {
 
 /** An overlay's or a detail page's first row on a narrow terminal, where it has the whole screen:
  *  its essential keys (the cheat sheet's, but for the leader, the palette, help and quit) at the
- *  right, dim, as many as fit after what the row holds, given up from the end. */
-function withKeys(row, hints, cols, { skip = ["leader", "palette", "help", "quit"], last = false } = {}) {
+ *  right, dim, as many as fit after what the row holds, given up from the end. With `first`, the
+ *  first key always stands (a detail page's way back): what the row holds is cut to leave it room. */
+function withKeys(given, hints, cols, { skip = ["leader", "palette", "help", "quit"], last = false, first = false } = {}) {
   const keys = hints.filter((h) => !skip.includes(h.id));
+  const widthOf = (list) => list.reduce((sum, h) => sum + h.key.width + 1 + h.word.width, 0) + Math.max(0, list.length - 1) * GAP;
+  const limit = first && keys.length ? cols - MARGIN - widthOf(keys.slice(0, 1)) - GAP : Infinity;
+  const row = limit === Infinity ? given : given.filter((span) => span.text === undefined || span.col < limit)
+    .map((span) => (span.text === undefined ? span : { ...span, width: Math.min(span.width ?? textWidth(textOf(span.text)), limit - span.col) }));
   // What the row holds ends where its text does: a span may be given more cells than its text takes.
   const end = row.reduce((most, span) => (span.text !== undefined ? Math.max(most, span.col + Math.min(span.width ?? Infinity, textWidth(textOf(span.text)))) : most), 0);
-  const widthOf = (list) => list.reduce((sum, h) => sum + h.key.width + 1 + h.word.width, 0) + Math.max(0, list.length - 1) * GAP;
   let kept = keys;
   // Given up from the end; with `last`, the last is kept as long as one other is (the leader's `Esc`).
   while (kept.length && end + GAP + widthOf(kept) > cols - MARGIN) kept = last && kept.length > 1 ? [...kept.slice(0, -2), kept.at(-1)] : kept.slice(0, -1);
@@ -569,7 +573,7 @@ function framed(m, size) {
     extent = drawn.extent;
     drawn.rows.forEach((spans, i) => { rows[i] = [...rows[i], ...placed(spans, at)]; });
     // Over the whole screen, the detail's first row carries its keys, as an overlay's does.
-    if (paged) rows[0] = withKeys(rows[0], cheatSheet(m), cols);
+    if (paged) rows[0] = withKeys(rows[0], cheatSheet(m), cols, { first: true });
   }
   // Over the whole screen no cheat sheet is drawn: the terminal's title row, the TUI's own, carries
   // its keys at the right instead (the leader, then Esc for the list), and while the leader waits,
@@ -598,7 +602,7 @@ function viewFrame(m, size, g, rows, { listed, paged, draw }) {
   if (!g.wide && paged) {
     const drawn = draw(m, { cols: Math.max(0, cols - 2 * MARGIN), rows: size.rows });
     drawn.rows.forEach((spans, i) => { rows[i] = placed(spans, MARGIN); });
-    rows[0] = withKeys(rows[0], cheatSheet(m), cols);
+    rows[0] = withKeys(rows[0], cheatSheet(m), cols, { first: true });
     return { extent: drawn.extent, top: drawn.top };
   }
   sidebar(m, g, rows, listOf(m, g));

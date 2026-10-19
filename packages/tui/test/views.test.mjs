@@ -1384,6 +1384,8 @@ test("at 79 columns tab replaces the list by the detail, a page over the whole s
   const scrolled = press(long, ["G"], S60).state, end = draw(scrolled, S60);
   assert.equal(end.lines[14].trim(), cutNote(end.extent - (end.room - 1), 0));
   assert.equal(end.lines.slice(0, 14).some((line) => line.trim().startsWith("home ")), true, "the last fact is on the screen");
+  // Scrolled, the page's first row is a fact's, and the keys still stand at its right.
+  assert.equal(end.lines[0].endsWith("   Tab back   n spawn"), true, end.lines[0]);
   // A held home does not open: its page's keys have no Enter.
   assert.equal(draw(press(scrolled, ["g"], S60).state, S60).lines[0], pageTop(" > held-tall", "Tab back   n spawn", 60));
 });
@@ -3614,8 +3616,8 @@ test("an instance row's name wins over its word: beside an open terminal (30 cel
   assert.deepEqual(rowsAt(48), [`> ? dev-2               ${unknown}`, "  ● dev-a", `  ◆ ${HELD}    ${spawn}`], "at 48 the column fits for both, as before");
 });
 
-test("under 80 columns the Instances detail page's first row carries its keys at the right, dim, ending a cell before the edge: `Tab back`, what Enter does and `n spawn`, given up from the end as the name grows, `Tab back` kept while it fits", () => {
-  const page = (name, sz) => draw(press(stateOf(observed([instanceRow("dev", name)])), ["tab"], sz).state, sz);
+test("under 80 columns the Instances detail page's first row carries its keys at the right, dim, ending a cell before the edge: `Tab back`, what Enter does and `n spawn`, given up from the end as the name grows; `Tab back` always stands, the name cut to leave it room (round 3 of the review)", () => {
+  const page = (name, sz, options = {}) => draw(press(stateOf(observed([instanceRow("dev", name)]), options), ["tab"], sz).state, sz);
   const ALL = "Tab back   Enter open   n spawn";
   for (const sz of [size(70, 20), S79]) {
     const d = page("dev-2", sz), at = `${sz.cols}x${sz.rows}`;
@@ -3626,10 +3628,15 @@ test("under 80 columns the Instances detail page's first row carries its keys at
     d.cells[0].slice(3, 8).forEach((cell) => assert.equal(cell.style.dim, false, `${at}: the name is not`));
   }
   // At 70 columns the keys and their 3-cell gap fit after ` > ` and a name of up to 32 cells; a
-  // longer one gives `n spawn` up, then Enter's hint, then `Tab back`.
+  // longer one gives `n spawn` up, then Enter's hint; `Tab back` stays, and a name longer than
+  // the 55 cells it leaves is cut.
   const named = (cells) => `dev-${"x".repeat(cells - 4)}`;
-  for (const [cells, keys] of [[32, ALL], [33, "Tab back   Enter open"], [42, "Tab back   Enter open"], [43, "Tab back"], [55, "Tab back"], [56, ""]]) {
+  for (const [cells, keys] of [[32, ALL], [33, "Tab back   Enter open"], [42, "Tab back   Enter open"], [43, "Tab back"], [55, "Tab back"], [56, "Tab back"], [80, "Tab back"]]) {
     const name = named(cells), d = page(name, size(70, 20));
-    assert.equal(d.lines[0], keys ? pageTop(` > ${name}`, keys, 70) : ` > ${name}`, `a name of ${cells} cells`);
+    assert.equal(d.lines[0], pageTop(` > ${cutTo(name, 55)}`, keys, 70), `a name of ${cells} cells`);
   }
+  // At 60x15 a 46-cell name is cut to 45, and with the detail's key rebound it is that key.
+  assert.equal(page(named(46), S60).lines[0], pageTop(` > ${cutTo(named(46), 45)}`, "Tab back", 60));
+  const rebound = effectiveConfig({ keys: { detail: ["f6", "tab"] } });
+  assert.equal(page(named(46), S60, { actions: rebound.actions }).lines[0], pageTop(` > ${cutTo(named(46), 46)}`, "F6 back", 60));
 });
