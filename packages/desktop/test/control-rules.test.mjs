@@ -48,7 +48,7 @@ const markup = `<div id="app"><aside id="sidebar">
     <label class="ctx-filter-field"><span class="ctx-filter-icon"></span><input class="ctx-filter" placeholder="Filter instances"><kbd class="shortcut-hint" hidden></kbd></label>
     <div class="ctx-list"><div class="ctx-tree-row"><button class="ctx-inst">Row</button>
       <span class="ctx-row-tools"><button class="ctx-instance-actions">…</button></span></div></div></section>
-  <div id="nav-foot"><button id="sidebar-spawn" class="primary">Spawn</button>
+  <div id="nav-foot"><button id="sidebar-leader" type="button">commands</button><button id="sidebar-spawn" class="primary">Spawn</button>
     <div id="sidebar-tools"><button id="sidebar-toggle" class="nav-item">S</button></div></div></aside>
   <main id="main"><div id="tabstrip"><div id="tabbar-row"><div id="tabbar">
     <div class="tab active"><button class="tab-trigger">Tab</button><button class="close">×</button></div>

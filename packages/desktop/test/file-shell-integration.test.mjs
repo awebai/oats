@@ -7,6 +7,7 @@ import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { opened, confirmed, ready as terminalReady } from './helpers/terminal-wire.mjs';
 import { readFileSync } from "node:fs";
+import { LEADER, PLAIN_KEYS } from "../../client/keymap.mjs";
 import { runInNewContext } from "node:vm";
 import { withShellWindowGlobals } from './helpers/shell-window-globals.mjs';
 import { JSDOM } from "jsdom";
@@ -76,9 +77,9 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     <button id="destination">Newer destination</button>
   </body>`, { url: "http://127.0.0.1/" });
   const document = dom.window.document, navigator = { platform };
-  // A fresh copy of the actual engine gets only this JSDOM's localStorage.
-  const keys = runInNewContext(`${keySource.replace(/^export /gm, "")}\n({ registerAction, runAction, getBinding, setBinding, resetBinding, listActions, matchEvent, handleKeydown, formatChord, pickerCycleDirection });`,
-    { navigator, localStorage: dom.window.localStorage });
+  // A fresh copy of the actual engine gets only this JSDOM's localStorage (and the shared keymap it imports).
+  const keys = runInNewContext(`${keySource.replace(/^import [^\n]*\n/gm, "").replace(/^export /gm, "")}\n({ registerAction, runAction, getBinding, setBinding, resetBinding, listActions, matchEvent, handleKeydown, formatChord, pickerCycleDirection });`,
+    { navigator, localStorage: dom.window.localStorage, LEADER, PLAIN_KEYS });
   const requests = [], loads = [], chooserInputs = [], tickets = [], opens = [], attachments = [], terms = [], detached = [], notices = [], listeners = [];
   dom.window.HTMLInputElement.prototype.click = function () {
     assert.equal(this.type, "file"); chooserInputs.push(this); // never launch a native chooser

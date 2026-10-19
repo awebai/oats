@@ -647,7 +647,7 @@ test("the editor opens on a Leader group, then Sidebar keys, then the groups as 
   const rows = [...leader.querySelectorAll(".kb-row")];
   // First the rebindable leader itself, marked as working in a terminal.
   assert.equal(rows[0].querySelector(".kb-label").textContent, "Leader: the commands that follow one key");
-  assert.equal(rows[0].querySelector("button.kb-chord").textContent, "Alt+O");
+  assert.deepEqual([...rows[0].querySelectorAll("button.kb-chord kbd")].map((k) => k.textContent), ["Alt", "O"]);
   assert.equal(f.marks("Leader: the commands that follow one key", "terminal"), "terminal");
   // Then one read-only row per entry of the table the Desktop runs: no m.
   const fixed = rows.slice(1);

@@ -448,7 +448,7 @@ test("`when`: an action that is not live does not exist for dispatch; its chord 
   const e = ev("o", { altKey: true });
   assert.equal(matchEvent(e, { isMac: false }), null);
   assert.equal(handleKeydown(e, { isMac: false }), false);
-  assert.equal(e.defaultPrevented, false, "the key is the focused control's");
+  assert.ok(!e.defaultPrevented, "the key is the focused control's");
   assert.equal(runAction("w.lead"), false, "nor does a button run it");
   assert.equal(ran, 0);
 });
