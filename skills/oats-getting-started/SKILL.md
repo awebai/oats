@@ -111,9 +111,12 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
     unless `sudo -n true` succeeds.
 - **npm's global folder** (`npm prefix -g`) must be writable for step 4's
   install (`test -w "$(npm prefix -g)/lib"`). If it is not (a system Node
-  under `/usr`), either they run that install with `sudo` in their own
-  terminal, or set a per-user prefix (`npm config set prefix ~/.local`, with
-  `~/.local/bin` on their PATH).
+  under `/usr`, as NodeSource installs it), either they run that install with
+  `sudo` in their own terminal, or set a per-user prefix:
+  `npm config set prefix ~/.local`. Then put `~/.local/bin` on PATH: start
+  each later command of yours with `export PATH="$HOME/.local/bin:$PATH"`
+  (your shell does not reread their profile), and ask them to add that line
+  to their shell's startup file so their own terminal finds `oats` too.
 - **Windows** is not supported.
 
 ## 3. Log in to GitHub
@@ -230,9 +233,11 @@ Terminal=false
 Categories=Development;
 ```
 
-- **Without FUSE** (the AppImage fails with a FUSE message), add
-  ` --appimage-extract-and-run` after the AppImage's path in `Exec=` and
-  wherever you start it.
+- **Without FUSE** (the AppImage fails with a FUSE message; Ubuntu 22.04
+  and later ship without `libfuse2`), either they install it in their own
+  terminal (`sudo apt install libfuse2`, or `libfuse2t64` on Ubuntu 24.04),
+  or add ` --appimage-extract-and-run` after the AppImage's path in `Exec=`
+  and wherever you start it.
 - **Linux arm64** (`uname -m` says `aarch64`) has no Desktop: skip the
   download, say so and go on.
 
