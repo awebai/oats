@@ -8,99 +8,10 @@ import { basename, dirname, isAbsolute, join } from "node:path";
 import { CAPTURE_POLICY } from "./capture-budget.mjs";
 import { capturePendingActivationName, captureServiceDefinition, captureServiceLabel, captureServiceUnit, captureServiceTimer } from "./capture-service-definition.mjs";
 import { captureServiceOwnership, captureServiceArgvOwnership } from "./capture-service-ownership.mjs";
+import { captureSetupSnapshot, recheckCaptureSetup, recheckCaptureSetupParents, writeCaptureSetup } from "./capture-setup-write.mjs";
+export { captureSetupSnapshot, recheckCaptureSetup, writeCaptureSetup } from "./capture-setup-write.mjs";
 
 export const serviceShellWord = value => /^[A-Za-z0-9_./:@%+,-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
-const identity = stat => [stat.dev, stat.ino, stat.mode, stat.size, stat.mtimeMs, stat.ctimeMs].join(":");
-function parents(path) {
-  const records = [];
-  for (let directory = dirname(path); ; directory = dirname(directory)) {
-    let stat;
-    try { stat = fs.lstatSync(directory); }
-    catch (error) { if (error.code !== "ENOENT") throw error; }
-    if (stat) {
-      let target = null;
-      if (stat.isSymbolicLink()) {
-        try { target = fs.statSync(directory); }
-        catch (error) { if (error.code !== "ENOENT") throw error; }
-      }
-      // Even a dangling ancestor link has an identity to retain. Its missing
-      // target must not turn a later retargeting into ordinary directory creation.
-      records.push([directory, `${stat.dev}:${stat.ino}:${stat.mode}`, stat.isSymbolicLink() ? fs.readlinkSync(directory) : null,
-        target ? `${target.dev}:${target.ino}:${target.mode}` : null]);
-    } else records.push([directory, null, null, null]);
-    if (dirname(directory) === directory) return records;
-  }
-}
-
-export function captureSetupSnapshot(path) {
-  const ancestry = parents(path);
-  let stat;
-  try { stat = fs.lstatSync(path); }
-  catch (error) { if (error.code === "ENOENT") return { path, kind: "absent", parents: ancestry }; throw error; }
-  const before = identity(stat);
-  let bytes, link;
-  if (stat.isSymbolicLink()) link = fs.readlinkSync(path);
-  else {
-    if (!stat.isFile() || stat.size > 1024 * 1024) throw new Error(`refusing nonregular or oversized setup target ${path}`);
-    const fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
-    try {
-      if (identity(fs.fstatSync(fd)) !== before) throw new Error(`setup target changed while opening ${path}`);
-      bytes = fs.readFileSync(fd);
-      if (identity(fs.fstatSync(fd)) !== before) throw new Error(`setup target changed while reading ${path}`);
-    } finally { fs.closeSync(fd); }
-  }
-  if (identity(fs.lstatSync(path)) !== before) throw new Error(`setup target changed while reading ${path}`);
-  return { path, kind: link === undefined ? "file" : "link", identity: before, bytes, link, parents: ancestry };
-}
-
-function recheckParents(snapshot, current, createdParents = new Map()) {
-  if (snapshot.parents.some(record => {
-    const expected = record[1] === null ? createdParents.get(record[0]) ?? record : record;
-    return !current.parents.some(now => JSON.stringify(now) === JSON.stringify(expected));
-  }))
-    throw new Error(`setup target parent changed since preflight: ${snapshot.path}; re-run setup`);
-}
-export function recheckCaptureSetup(snapshot, createdParents = new Map()) {
-  recheckParents(snapshot, { parents: parents(snapshot.path) }, createdParents);
-  const current = captureSetupSnapshot(snapshot.path);
-  recheckParents(snapshot, current, createdParents);
-  if (current.kind !== snapshot.kind || current.identity !== snapshot.identity || current.link !== snapshot.link ||
-      (snapshot.bytes && !snapshot.bytes.equals(current.bytes))) throw new Error(`setup target changed since preflight: ${snapshot.path}; re-run setup`);
-}
-
-export function writeCaptureSetup(snapshot, contents, createdParents = new Map()) {
-  recheckCaptureSetup(snapshot, createdParents);
-  // A missing ancestor is evidence, not permission to follow whatever appears
-  // there later. Create one level at a time, refusing EEXIST, and share only
-  // this apply's observed non-link directory identities with subsequent writes.
-  for (const record of [...snapshot.parents].reverse()) {
-    if (record[1] !== null || createdParents.has(record[0])) continue;
-    recheckCaptureSetup(snapshot, createdParents);
-    fs.mkdirSync(record[0]);
-    const stat = fs.lstatSync(record[0]);
-    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`setup created parent changed: ${record[0]}; re-run setup`);
-    createdParents.set(record[0], [record[0], `${stat.dev}:${stat.ino}:${stat.mode}`, null, null]);
-  }
-  recheckCaptureSetup(snapshot, createdParents);
-  const temporary = `${snapshot.path}.tmp-${randomUUID()}`;
-  let temporaryIdentity;
-  try {
-    fs.writeFileSync(temporary, contents, { flag: "wx", mode: 0o600 });
-    temporaryIdentity = identity(fs.lstatSync(temporary));
-    recheckCaptureSetup(snapshot, createdParents);
-    fs.renameSync(temporary, snapshot.path);
-  } finally {
-    // A refused ancestor replacement also revokes cleanup through that path.
-    // Leave the original scratch file rather than unlink an unrelated target.
-    let safe = false;
-    try {
-      recheckParents(snapshot, { parents: parents(snapshot.path) }, createdParents);
-      safe = temporaryIdentity !== undefined && identity(fs.lstatSync(temporary)) === temporaryIdentity;
-    } catch { /* absent scratch or changed ancestry: no pathname cleanup */ }
-    if (safe) fs.unlinkSync(temporary);
-  }
-}
-
 const detail = result => [result.error?.message, result.signal && `signal ${result.signal}`, result.stderr?.trim(),
   result.status !== null && result.status !== undefined && `exit ${result.status}`].filter(Boolean).join("; ") || "no exit status returned";
 const manager = (command, argv) => spawnSync(command, argv, { encoding: "utf8", timeout: 10000, maxBuffer: 1024 * 1024 });
@@ -249,7 +160,7 @@ export function preflightCaptureService({ platform, node, request, setupCommand,
 export function applyCaptureService(plan, createdParents = new Map()) {
   const applied = [];
   try { return applyCaptureServiceSteps(plan, createdParents, applied); }
-  catch (error) { if (applied.length) error.applied = [...applied]; throw error; }
+  catch (error) { if (applied.length) error.applied = [...applied, ...(error.applied ?? [])]; throw error; }
 }
 
 function applyCaptureServiceSteps(plan, createdParents, applied) {
@@ -309,7 +220,7 @@ function applyCaptureServiceSteps(plan, createdParents, applied) {
   if (plan.platform === "darwin") {
     if (plan.changed && current.registered) command("launchctl", ["bootout", plan.target]);
     for (const file of files) if (file.changed) writeDefinition(file);
-    recheckParents(files[0].snapshot, { parents: parents(files[0].path) }, createdParents);
+    recheckCaptureSetupParents(files[0].snapshot, createdParents);
     fs.mkdirSync(join(plan.request.plan.home, "Library", "Logs"), { recursive: true });
     if (plan.disabled) command("launchctl", ["enable", plan.target]);
     if (plan.changed || !current.registered) command("launchctl", ["bootstrap", plan.domain, files[0].path]);
@@ -334,7 +245,7 @@ function applyCaptureServiceSteps(plan, createdParents, applied) {
     for (const file of files) {
       if (plan.disabled && file.snapshot.kind === "link" && file.snapshot.link === "/dev/null") {
         const now = captureSetupSnapshot(file.path);
-        recheckParents(file.snapshot, now, createdParents);
+        recheckCaptureSetupParents(file.snapshot, createdParents, now);
         if (now.kind === "absent") file.snapshot = now;
       }
       if (file.changed) writeDefinition(file);
@@ -351,7 +262,7 @@ function applyCaptureServiceSteps(plan, createdParents, applied) {
   }
   for (const file of files) {
     const final = captureSetupSnapshot(file.path);
-    recheckParents(file.snapshot, final, createdParents);
+    recheckCaptureSetupParents(file.snapshot, createdParents, final);
     if (final.kind !== "file" || !final.bytes.equals(Buffer.from(file.contents))) throw new Error(`capture definition changed during activation: ${file.path}; re-run setup`);
   }
   if (marked || plan.pending && !plan.pending.stale) {

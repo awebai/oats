@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { captureDefaultRootPlan } from "../lib/capture-default-roots.mjs";
 import { captureServiceDefinition } from "../lib/capture-service-definition.mjs";
 import { captureServiceOwnership } from "../lib/capture-service-ownership.mjs";
-import { preflightCaptureService, applyCaptureService, serviceShellWord } from "../lib/capture-service-install.mjs";
+import { preflightCaptureService, applyCaptureService, serviceShellWord, captureSetupSnapshot, writeCaptureSetup } from "../lib/capture-service-install.mjs";
 import { fakeCaptureManager } from "./fixtures/capture-fake-manager.mjs";
 import { readCaptureStatus } from "../lib/capture-status.mjs";
 
@@ -17,7 +17,7 @@ const setup = fileURLToPath(new URL("../bin/setup.mjs", import.meta.url));
 const service = "turn-record-capture.service", timer = "turn-record-capture.timer";
 const write = (path, text) => { fs.mkdirSync(dirname(path), { recursive: true }); fs.writeFileSync(path, text); };
 function fixture(t, platform = "linux") {
-  const base = fs.mkdtempSync(join(tmpdir(), "capture-service-install-")), home = join(base, "home"), root = join(base, "record 'quoted' $root %h");
+  const base = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), "capture-service-install-"))), home = join(base, "home"), root = join(base, "record 'quoted' $root %h");
   fs.mkdirSync(home); const settings = join(home, ".claude/settings.json"); write(settings, '{"kept":true}\n');
   const request = { root, owner: "fixture-owner", plan: captureDefaultRootPlan({ home, cwd: base, env: {} }) };
   const definition = captureServiceDefinition({ platform, node: process.execPath, request });
@@ -29,7 +29,17 @@ function fixture(t, platform = "linux") {
 import { syncBuiltinESMExports } from 'node:module';
 import { fakeCaptureManager } from ${JSON.stringify(new URL("./fixtures/capture-fake-manager.mjs", import.meta.url).href)};
 os.platform = () => ${JSON.stringify(platform)};
-const open = fs.openSync;
+const open = fs.openSync, sync = fs.fsyncSync, rename = fs.renameSync;
+let lastPublished;
+fs.renameSync = (from, to) => { const result = rename(from, to); lastPublished = to; return result; };
+fs.fsyncSync = fd => {
+  if (process.env.FIXTURE_FORBID_SYNC) throw new Error('dry-run must not fsync');
+  if (process.env.FIXTURE_SYNC_TARGET && lastPublished === process.env.FIXTURE_SYNC_TARGET && fs.fstatSync(fd).isDirectory()) {
+    lastPublished = undefined; throw new Error('fixture directory fsync refused');
+  }
+  return sync(fd);
+};
+if (process.env.FIXTURE_BLOCK_CAPTURE) cp.spawn = () => { throw new Error('fixture first pass blocked'); };
 cp.spawnSync = (command, args, options) => {
   if (['launchctl','systemctl'].includes(command)) return fakeCaptureManager(process.env.HOME, command, args);
   throw new Error('unexpected synchronous child in setup fixture');
@@ -328,39 +338,61 @@ test("directory identities created for the first named file remain binding for t
   const f = fixture(t), directory = dirname(f.definition.files[0].path), external = join(f.base, "unrelated");
   fs.mkdirSync(external); const plan = f.preflight(), rename = fs.renameSync;
   const hooks = fs.readFileSync(f.settings);
+  let refusal, ancestrySwaps = 0;
   fs.renameSync = (from, to) => {
     rename(from, to);
     if (to === f.definition.files[0].path) {
       rename(directory, directory + ".saved");
       fs.symlinkSync(external, directory);
+      ancestrySwaps++;
     }
   };
-  try { assert.throws(() => applyCaptureService(plan), /parent changed since preflight/); }
+  try {
+    assert.throws(() => applyCaptureService(plan), error => {
+      assert.match(error.message, /parent changed since preflight/);
+      refusal = error; return true;
+    });
+  }
   finally { fs.renameSync = rename; }
+  assert.equal(ancestrySwaps, 1, "ancestry swap completed exactly once after the real target rename");
+  assert.equal(refusal.published, true); assert.equal(refusal.path, f.definition.files[0].path);
+  assert.equal(refusal.stage, "directory fsync");
+  assert.ok(refusal.applied.some(line => line.includes(`${f.definition.files[0].path}: publication may have occurred at directory fsync; durability was not established`)));
   assert.deepEqual(fs.readdirSync(external), []);
   assert.equal(fs.readFileSync(join(directory + ".saved", service), "utf8"), f.definition.files[0].contents);
   assert.equal(fs.existsSync(f.definition.files[1].path), false); assert.deepEqual(fs.readFileSync(f.settings), hooks);
   assert.equal(fs.existsSync(join(f.root, "capture-status.json")), false); assert.deepEqual(f.operations(), []);
-  assert.ok(f.logs.includes(`service: definition written: ${f.definition.files[0].path}`));
+  assert.equal(f.logs.includes(`service: definition written: ${f.definition.files[0].path}`), false);
   assert.doesNotMatch(f.logs.join("\n"), /periodic capture scheduled|rollback/);
 });
 
 test("refusal after a temporary write does not clean up through replaced ancestry", t => {
   const f = fixture(t), target = f.definition.files[0].path, directory = dirname(target);
   const external = join(f.base, "unrelated"); fs.mkdirSync(external);
-  const plan = f.preflight(), writeFile = fs.writeFileSync;
-  let temporary;
-  fs.writeFileSync = (path, ...args) => {
-    writeFile(path, ...args);
-    if (typeof path === "string" && path.startsWith(target + ".tmp-")) {
-      temporary = path.slice(directory.length + 1);
+  const plan = f.preflight(), writeFile = fs.writeFileSync, open = fs.openSync, close = fs.closeSync;
+  const temporaryPaths = new Map();
+  let temporary, ancestrySwaps = 0;
+  fs.openSync = (path, flags, ...args) => {
+    const fd = open(path, flags, ...args);
+    if (typeof path === "string" && path.startsWith(target + ".tmp-") && (flags & fs.constants.O_EXCL)) temporaryPaths.set(fd, path);
+    return fd;
+  };
+  fs.closeSync = fd => { try { return close(fd); } finally { temporaryPaths.delete(fd); } };
+  fs.writeFileSync = (fd, ...args) => {
+    const result = writeFile(fd, ...args);
+    if (typeof fd === "number" && temporaryPaths.has(fd)) {
+      temporary = temporaryPaths.get(fd).slice(directory.length + 1);
       fs.renameSync(directory, directory + ".saved");
       writeFile(join(external, temporary), "unrelated temporary-name collision");
       fs.symlinkSync(external, directory);
+      ancestrySwaps++;
     }
+    return result;
   };
   try { assert.throws(() => applyCaptureService(plan), /parent changed since preflight/); }
-  finally { fs.writeFileSync = writeFile; }
+  finally { fs.openSync = open; fs.closeSync = close; fs.writeFileSync = writeFile; }
+  assert.equal(ancestrySwaps, 1, "ancestry swap completed exactly once after the real owned numeric-fd write");
+  assert.equal(temporaryPaths.size, 0, "the owned temporary fd was closed and its mapping revoked");
   assert.ok(temporary); assert.equal(fs.readFileSync(join(external, temporary), "utf8"), "unrelated temporary-name collision");
   assert.equal(fs.readFileSync(join(directory + ".saved", temporary), "utf8"), f.definition.files[0].contents);
   assert.equal(fs.existsSync(target), false); assert.deepEqual(f.operations(), []);
@@ -567,4 +599,217 @@ test("no-service bypasses even unreadable targets and managers; dry-run reads on
   assert.equal(result.status, 0, result.stderr); assert.match(result.stdout, /manager registration\/disabled state unexamined/);
   assert.equal(fs.existsSync(dry.calls), false); assert.equal(fs.existsSync(dry.root), false);
   assert.deepEqual(fs.readFileSync(dry.settings), bytes); assert.equal(fs.existsSync(dry.definition.files[0].path), false);
+});
+
+
+// The fourth argument is a private fs-operation seam, never a CLI/env switch.
+// The baseline writer ignores it, so the first regression fails on missing
+// durability witnesses while still exercising its real snapshot/write path.
+function setupWriteFixture(t, { missing = false, linked = false } = {}) {
+  const f = fixture(t), parent = join(f.home, "publication");
+  fs.mkdirSync(parent);
+  let directory = parent;
+  if (linked) { directory = join(f.home, "approved-link"); fs.symlinkSync(parent, directory); }
+  const target = missing ? join(directory, "first", "second", "settings.json") : join(directory, "settings.json");
+  if (!missing) fs.writeFileSync(target, "old bytes\n");
+  const snapshot = captureSetupSnapshot(target), created = new Map(), events = [], descriptors = new Map();
+  const bytes = Buffer.alloc(192 * 1024, 0x61); bytes[bytes.length - 1] = 0x0a;
+  let intercept = () => {}, temporary;
+  const operations = new Proxy(fs, { get(source, name) {
+    if (typeof source[name] !== "function") return source[name];
+    return (...args) => {
+      const fd = typeof args[0] === "number" ? args[0] : null;
+      const path = fd === null ? args[0] : descriptors.get(fd)?.path;
+      const kind = fd === null ? null : descriptors.get(fd)?.kind;
+      const event = { op: name, path, kind, args };
+      events.push(event); intercept(event);
+      const result = source[name](...args);
+      if (name === "openSync") {
+        const stat = fs.fstatSync(result);
+        descriptors.set(result, { path: args[0], kind: stat.isDirectory() ? "directory" : "file" });
+        if (args[0].startsWith(`${target}.tmp-`)) temporary = args[0];
+      }
+      if (name === "closeSync") descriptors.delete(args[0]);
+      return result;
+    };
+  } });
+  t.after(() => { for (const fd of descriptors.keys()) { try { fs.closeSync(fd); } catch {} } });
+  return { ...f, target, parent, snapshot, created, bytes, events, operations,
+    get temporary() { return temporary; },
+    intercept(fn) { intercept = fn; },
+    publish() { return writeCaptureSetup(snapshot, bytes, created, operations); },
+    scratch() { return fs.readdirSync(dirname(target)).filter(name => name.startsWith("settings.json.tmp-")); },
+  };
+}
+
+test("setup durable publication: sync ordering", t => {
+  for (const linked of [false, true]) {
+    const f = setupWriteFixture(t, { linked }); f.publish();
+    assert.deepEqual(fs.readFileSync(f.target), f.bytes, "complete new bytes are published");
+    assert.equal(fs.statSync(f.target).mode & 0o777, 0o600);
+    const fileSync = f.events.findIndex(e => e.op === "fsyncSync" && e.kind === "file");
+    const rename = f.events.findIndex(e => e.op === "renameSync");
+    const directorySync = f.events.findIndex(e => e.op === "fsyncSync" && e.kind === "directory");
+    assert.ok(fileSync >= 0, "file fsync must be witnessed before publication");
+    assert.ok(fileSync < rename && rename < directorySync, "file sync precedes rename; directory sync follows it");
+    assert.deepEqual(f.scratch(), []);
+  }
+});
+
+test("setup durable publication: created parent entries", t => {
+  const f = setupWriteFixture(t, { missing: true }); f.publish();
+  assert.deepEqual(fs.readFileSync(f.target), f.bytes);
+  assert.equal(fs.statSync(f.target).mode & 0o777, 0o600);
+  const mutations = f.events.filter(e => ["mkdirSync", "fsyncSync", "renameSync"].includes(e.op))
+    .map(e => [e.op, e.kind === "file" ? "temporary" : e.path]);
+  assert.deepEqual(mutations, [
+    ["mkdirSync", join(f.parent, "first")], ["fsyncSync", f.parent],
+    ["mkdirSync", join(f.parent, "first", "second")], ["fsyncSync", join(f.parent, "first")],
+    ["fsyncSync", "temporary"], ["renameSync", f.temporary],
+    ["fsyncSync", dirname(f.target)],
+  ], "each created directory entry is synced before creating its child");
+  assert.equal(f.created.size, 2);
+});
+
+test("setup durable publication: boundary failures retain atomic bytes and cause", t => {
+  const cases = [
+    ["temporary open", e => e.op === "openSync" && String(e.path).includes(".tmp-"), false],
+    ["file write", e => ["writeSync", "writeFileSync"].includes(e.op) && e.kind === "file", false],
+    ["file fsync", e => e.op === "fsyncSync" && e.kind === "file", false],
+    ["file close", e => e.op === "closeSync" && e.kind === "file", false],
+    ["rename", e => e.op === "renameSync", false],
+    ["directory open", e => e.op === "openSync" && !String(e.path).includes(".tmp-"), false],
+    ["directory fsync", e => e.op === "fsyncSync" && e.kind === "directory", true],
+    ["directory close", e => e.op === "closeSync" && e.kind === "directory", true],
+  ];
+  for (const [boundary, matches, published] of cases) {
+    const f = setupWriteFixture(t), primary = Object.assign(new Error(`refused ${boundary}`), { code: "EIO" });
+    let hit = false;
+    f.intercept(e => {
+      if (!hit && matches(e)) { hit = true; throw primary; }
+    });
+    assert.throws(() => f.publish(), error => {
+      assert.equal(hit, true, `${boundary} fault reached`);
+      assert.equal(error.cause, primary, `${boundary} preserves primary cause`);
+      assert.equal(error.published, published, boundary);
+      assert.ok(error.message.includes(f.target), "failure names target");
+      if (published) {
+        assert.match(error.message, /publication may have occurred.*durability.*not established/);
+        assert.ok(error.applied.some(line => line.includes(f.target)), "partial apply retains affected target");
+      }
+      return true;
+    }, boundary);
+    assert.deepEqual(fs.readFileSync(f.target), published ? f.bytes : Buffer.from("old bytes\n"), boundary);
+    assert.deepEqual(f.scratch(), [], boundary);
+  }
+});
+
+test("setup durable publication: unsupported directory sync and created-parent sync refuse", t => {
+  for (const missing of [false, true]) {
+    const f = setupWriteFixture(t, { missing });
+    const primary = Object.assign(new Error("directory sync unsupported"), { code: "EINVAL" });
+    f.intercept(e => { if (e.op === "fsyncSync" && e.kind === "directory") throw primary; });
+    assert.throws(() => f.publish(), error => {
+      assert.equal(error.cause, primary); assert.equal(error.published, !missing);
+      assert.ok(error.message.includes(f.target)); return true;
+    });
+    if (missing) {
+      assert.equal(fs.existsSync(f.target), false);
+      assert.equal(fs.existsSync(join(f.parent, "first")), true);
+      assert.equal(fs.existsSync(join(f.parent, "first", "second")), false, "stop before next mkdir");
+      assert.equal(f.created.size, 0, "failed durability must not authorize a later writer");
+      assert.equal(f.events.some(e => e.op === "renameSync"), false);
+    } else assert.deepEqual(fs.readFileSync(f.target), f.bytes);
+  }
+});
+
+test("setup durable publication: target ancestor and temp replacement refuse owned-only cleanup", t => {
+  for (const replacement of ["target", "ancestor", "temporary"]) {
+    const f = setupWriteFixture(t), foreign = Buffer.from("unrelated replacement\n"), saved = `${f.parent}-saved`;
+    let hit = false;
+    f.intercept(e => {
+      if (hit || e.op !== "fsyncSync" || e.kind !== "file") return;
+      hit = true;
+      if (replacement === "target") { fs.unlinkSync(f.target); fs.writeFileSync(f.target, foreign); }
+      else if (replacement === "ancestor") {
+        fs.renameSync(f.parent, saved); fs.mkdirSync(f.parent); fs.writeFileSync(f.target, foreign);
+      } else { fs.unlinkSync(f.temporary); fs.writeFileSync(f.temporary, foreign); }
+    });
+    assert.throws(() => f.publish(), /changed/);
+    assert.equal(hit, true, "replacement occurs at file-sync boundary");
+    assert.deepEqual(fs.readFileSync(f.target), replacement === "temporary" ? Buffer.from("old bytes\n") : foreign);
+    assert.equal(f.events.some(e => e.op === "renameSync"), false);
+    if (replacement === "temporary") assert.deepEqual(fs.readFileSync(f.temporary), foreign, "do not unlink a substituted scratch");
+    if (replacement === "ancestor") {
+      assert.equal(fs.readdirSync(saved).some(name => name.includes(".tmp-")), true, "original scratch retained under revoked ancestry");
+      assert.deepEqual(f.scratch(), []);
+    }
+  }
+});
+
+test("setup durable publication: primary and cleanup failures are both retained", t => {
+  const f = setupWriteFixture(t), primary = new Error("file sync refused"), cleanup = new Error("scratch unlink refused");
+  f.intercept(e => {
+    if (e.op === "fsyncSync" && e.kind === "file") throw primary;
+    if (e.op === "unlinkSync") throw cleanup;
+  });
+  assert.throws(() => f.publish(), error => {
+    assert.equal(error.cause, primary); assert.ok(error.cleanupErrors.includes(cleanup));
+    assert.match(error.message, /file sync refused.*scratch unlink refused/); return true;
+  });
+  assert.equal(fs.readFileSync(f.target, "utf8"), "old bytes\n");
+  assert.equal(f.scratch().length, 1);
+});
+
+
+test("setup durable publication: callers report post-rename partial apply", t => {
+  for (const kind of ["marker", "definition", "hook"]) {
+    const f = fixture(t), target = kind === "marker" ? join(f.root, "capture-service-pending.json") :
+      kind === "definition" ? f.definition.files[0].path : f.settings;
+    const result = f.cli(kind === "hook" ? ["--no-service"] : [], {
+      FIXTURE_SYNC_TARGET: target, FIXTURE_BLOCK_CAPTURE: "1",
+    });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /setup summary:\n  status: incomplete \(exit 1\)/);
+    assert.ok(result.stderr.includes(target), result.stderr);
+    assert.match(result.stderr, /fixture directory fsync refused/);
+    assert.match(result.stdout, /publication may have occurred.*durability.*not established/);
+    const lines = result.stdout.split("\n").filter(line => line.includes(kind === "hook" ? "hooks written:" : "service changed:"));
+    assert.ok(lines.some(line => line.includes(target) && /publication may have occurred/.test(line)), result.stdout);
+    assert.equal(fs.statSync(target).mode & 0o777, 0o600);
+    if (kind === "marker") assert.equal(fs.existsSync(f.definition.files[0].path), false, "marker failure precedes definition publication");
+    else if (kind === "definition") assert.equal(fs.readFileSync(target, "utf8"), f.definition.files[0].contents);
+    else assert.ok(JSON.parse(fs.readFileSync(target)).hooks.Stop);
+    assert.equal(fs.readdirSync(dirname(target)).some(name => name.startsWith(`${target.split("/").at(-1)}.tmp-`)), false);
+  }
+});
+
+test("setup durable publication: dry run never writes syncs or invokes a manager", t => {
+  const f = fixture(t), before = fs.readFileSync(f.settings);
+  const result = f.cli(["--dry-run"], { FIXTURE_FORBID_SYNC: "1", FIXTURE_BLOCK_CAPTURE: "1" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.deepEqual(fs.readFileSync(f.settings), before);
+  assert.equal(fs.existsSync(f.root), false);
+  assert.equal(fs.existsSync(f.calls), false);
+  for (const file of f.definition.files) assert.equal(fs.existsSync(file.path), false);
+  assert.match(result.stdout, /dry run: no first capture pass/);
+});
+
+test("setup durable publication: partial write removes owned scratch", t => {
+  const f = setupWriteFixture(t), primary = Object.assign(new Error("partial write refused"), { code: "EIO" });
+  let intermediateBytes = 0;
+  f.intercept(event => {
+    if (event.op !== "writeFileSync" || event.kind !== "file") return;
+    const fd = event.args[0];
+    assert.equal(fs.writeSync(fd, f.bytes, 0, 4096), 4096);
+    intermediateBytes = fs.fstatSync(fd).size;
+    assert.equal(intermediateBytes, 4096, "real owned scratch contains the partial write before EIO");
+    throw primary;
+  });
+  assert.throws(() => f.publish(), error => {
+    assert.equal(error.cause, primary); assert.equal(error.published, false); return true;
+  });
+  assert.equal(intermediateBytes, 4096, "partial-write fault was reached");
+  assert.equal(fs.readFileSync(f.target, "utf8"), "old bytes\n");
+  assert.deepEqual(f.scratch(), [], "remove only the owned partial scratch");
 });
