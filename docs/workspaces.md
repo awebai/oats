@@ -697,7 +697,9 @@ only. Which deployments a client has open stays with that client.
   nothing.
 - `oats deployments add [<dir>]`, which the clients run when they open a
   deployment, and people by hand. It lists the deployment at or above `<dir>`
-  (default: the current directory), found as every kernel `--dir` finds it.
+  (default: the current directory): the nearest directory whose
+  `oats-local.yaml` is a regular file, not a link. A directory or a link of
+  that name is not a deployment's file and is passed over.
 - **Every kernel command that resolves a deployment that is not listed yet**
   lists it (`via: cli`): `status`, `spawn`, `sync`, `session`, `doctor`,
   `retire` and the others that read a local deployment, from inside an
@@ -717,6 +719,11 @@ only. Which deployments a client has open stays with that client.
     answer and exit status are the same whether or not it listed anything.
   - A command routed with `--server` never lists anything: the host's path is
     not this computer's.
+  - A deployment under a temporary directory (`os.tmpdir()`, `/tmp`,
+    `/private/tmp` or `/var/folders`, each compared after realpath) is never
+    listed this way, since test fixtures live there and would stay in the list
+    as `missing`; `oats deployments add`, `oats onboard` and a client opening it
+    still list one.
   - A deployment inside a linked Git worktree or submodule is listed by the
     first command that resolves its instance root (`status`, `spawn`,
     `session` and the like), not by `sync`, `doctor` and the other

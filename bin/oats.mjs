@@ -4325,12 +4325,13 @@ async function serverCmd() {
   } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
 }
 
-/** `oats server connect <id> --ssh <host>`: this deployment's workspace on a host, registered
- *  (lib/servers.mjs connectServer). Defaults come from the deployment it runs in: its workspace
- *  ref, and ~/Agents/<its directory's name> on the host. */
+/** `oats server connect <id> --ssh <host> --dir <path>`: this deployment's workspace on a host,
+ *  registered (lib/servers.mjs connectServer). The workspace ref defaults from the deployment it
+ *  runs in; the folder on the host never has a default, inside a deployment too (awebai/oats#1390,
+ *  step b): only the person knows where it goes. */
 function serverConnectCmd(bail) {
   const id = args[2];
-  if (!id || id.startsWith("--")) bail("E_USAGE", "usage: oats server connect <id> --ssh <host-alias> [--workspace-ref <ref>] [--dir </abs/path or ~/path on the host>] [--oats <path>] [--path <dir:dir>] [--label <text>] [--install-oats] [--replace] [--json]");
+  if (!id || id.startsWith("--")) bail("E_USAGE", "usage: oats server connect <id> --ssh <host-alias> --dir </abs/path or ~/path on the host> [--workspace-ref <ref>] [--oats <path>] [--path <dir:dir>] [--label <text>] [--install-oats] [--replace] [--json]");
   const val = (name) => { const v = flag(name); return v === true ? bail("E_BAD_ARGS", `--${name} needs a value`) : v; };
   const sshHost = val("ssh");
   if (!sshHost) bail("E_BAD_ARGS", "--ssh <host-alias> is required: the OpenSSH host alias of the machine to connect");
@@ -4339,8 +4340,8 @@ function serverConnectCmd(bail) {
   const workspaceRef = val("workspace-ref") ?? local?.local.workspace;
   if (!workspaceRef) bail("E_BAD_ARGS", "--workspace-ref <ref> is required outside a deployment (inside one it defaults to oats-local.yaml workspace:)");
   try { remoteModule.parseRepoRef(workspaceRef); } catch (e) { bail(e.code || "E_REPO_REF", e.message, e.details); }
-  const dir = val("dir") ?? (local ? `~/Agents/${basename(dirname(local.path))}` : undefined);
-  if (!dir) bail("E_BAD_ARGS", "--dir <path on the host> is required outside a deployment (inside one it defaults to ~/Agents/<the deployment's directory name>)");
+  const dir = val("dir");
+  if (!dir) bail("E_BAD_ARGS", `--dir <path on the host> is required: the folder on ${sshHost} for this deployment (absolute, or ~/… resolved there)`);
   let res;
   try {
     res = connectServer({ id, sshHost, workspaceRef, dir, oatsPath: val("oats"), path: val("path"), label: val("label"), installOats: args.includes("--install-oats"), replace: args.includes("--replace"), localVersion: OATS_VERSION });
@@ -4812,7 +4813,7 @@ Usage:
       [--workspace-ref <ref>]               (filled in when missing) and Git readability;
                                             list --workspace-ref = one workspace's servers
   oats server connect <id> --ssh <alias>     put this deployment's workspace on that machine and
-      [--workspace-ref <ref>] [--dir <path>] register it: ssh, oats, git, deployment, register,
+      --dir <path> [--workspace-ref <ref>]  register it: ssh, oats, git, deployment, register,
       [--oats <p>] [--path <dir:dir>]       readiness, each re-checked every run; --install-oats
       [--label <t>] [--install-oats]        installs this version with npm there; human steps
       [--replace] [--json]                  come back with the exact remedy (docs/servers.md)

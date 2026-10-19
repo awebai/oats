@@ -987,7 +987,8 @@ before a kernel that writes it ships. A change of meaning moves
   the time it ran.
 
 **`add`** lists the deployment at or above `<dir>` (default: the working
-directory), canonical, and clears a `remove`. → `{"path":"/home/me/acme","added":true}`;
+directory: the nearest directory whose `oats-local.yaml` is a regular file,
+not a link), canonical, and clears a `remove`. → `{"path":"/home/me/acme","added":true}`;
 `added: false` when it was listed already, and nothing is written. `--via
 tui|desktop` names the client that adds it (default `cli`); any other value is
 `E_BAD_ARGS`. Outside every deployment: `E_LOCAL_MISSING {dir}`.
@@ -3358,9 +3359,9 @@ whose key is not known; an unparsable ref is `E_REPO_REF`.
 
 ```json
 {"file":"/Users/me/.oats/servers.json",
- "servers":[{"id":"altair-aweb","sshHost":"altair","workspace":"/Users/me/Agents/aweb","path":"/opt/homebrew/bin","label":"altair",
+ "servers":[{"id":"altair-aweb","sshHost":"altair","workspace":"/Users/me/acme","path":"/opt/homebrew/bin","label":"altair",
              "workspaceKey":"github.com/awebai/ac",
-             "target":{"sshHost":"altair","workspace":"/Users/me/Agents/aweb","oatsPath":"oats","path":"/opt/homebrew/bin"},"snapshots":0}],
+             "target":{"sshHost":"altair","workspace":"/Users/me/acme","oatsPath":"oats","path":"/opt/homebrew/bin"},"snapshots":0}],
  "unknownWorkspace":["build"]}
 ```
 
@@ -3378,7 +3379,7 @@ contradicts fails the check with `E_SERVER_WORKSPACE_MISMATCH`, `details:
 ### `oats server connect` (feature `server-connect`)
 
 ```text
-oats server connect <id> --ssh <host> [--workspace-ref <ref>] [--dir </abs/path or ~/path on the host>]
+oats server connect <id> --ssh <host> --dir </abs/path or ~/path on the host> [--workspace-ref <ref>]
                     [--oats <path>] [--path <dirs>] [--label <text>] [--install-oats] [--replace] --json
 ```
 

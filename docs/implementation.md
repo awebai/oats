@@ -127,7 +127,7 @@ and the rules its tests pin.
 | `read-ahead.mjs`, `read-ahead-worker.mjs` | read-ahead for the tree digests (`fingerprintTrees`): while a digest reads a tree on the calling thread, a planner thread walks it in the digest's order and a few reader threads read the next files into the page cache, within a window of bytes and files ahead of the digest. The digest still reads and hashes every byte itself, so no value or error depends on it; one that cannot start or falls behind costs speed only |
 | `session-input.mjs` | session inspection and input transport. `createSessionPaneInspector` interprets one window's panes for both lifecycle inspection and status, sharing a lazy process scan across a status read; `core.mjs` batches pane reads per socket/session and applies its shared `harnessRunning` predicate |
 | `servers.mjs` | routing commands to a registered server |
-| `deployments.mjs` | this computer's deployments ([workspaces.md](workspaces.md#this-computers-deployments)): the per-user files `<OATS_HOME_DIR>/config/deployments.json` (the list, 0600 in a 0700 `config/`) and `config/deployments.lock` (`withDirLock`, waited for up to 3 s), the bounded no-follow read, the atomic write, the first-use `~/Agents` import (the real `$HOME`) and the five `E_DEPLOYMENTS_*` codes. `oats deployments`, onboard's `listed` and the auto-add write through it. `listResolved` is the auto-add: `bin/oats.mjs` sets it as the observer of `resolved-deployment.mjs` for the commands in its one table (`LISTS_ITS_DEPLOYMENT`), so it runs once per process on the deployment the command itself resolved. A listed deployment costs one bounded read (no lock, write, process or realpath), another spelling of it a realpath; a spelled root in a linked worktree or submodule (a `.git` file above it) is left to the commands that resolve its canonical root; only a path not listed is canonicalized and takes the lock, without waiting for it. It never throws or prints |
+| `deployments.mjs` | this computer's deployments ([workspaces.md](workspaces.md#this-computers-deployments)): the per-user files `<OATS_HOME_DIR>/config/deployments.json` (the list, 0600 in a 0700 `config/`) and `config/deployments.lock` (`withDirLock`, waited for up to 3 s), the bounded no-follow read, the atomic write, the first-use `~/Agents` import (the real `$HOME`) and the five `E_DEPLOYMENTS_*` codes. `oats deployments`, onboard's `listed` and the auto-add write through it. `listResolved` is the auto-add: `bin/oats.mjs` sets it as the observer of `resolved-deployment.mjs` for the commands in its one table (`LISTS_ITS_DEPLOYMENT`), so it runs once per process on the deployment the command itself resolved. A listed deployment costs one bounded read (no lock, write, process or realpath), another spelling of it a realpath; a spelled root in a linked worktree or submodule (a `.git` file above it) is left to the commands that resolve its canonical root; a root under a temporary directory (`underTemporaryDirectory`, awebai/oats#1397) is never auto-added; only a path not listed is canonicalized and takes the lock, without waiting for it. It never throws or prints |
 | `resolved-deployment.mjs` | the deployment a command resolved: `loadLocal` (`workspace.mjs`) reports the directory it found as spelled, `ensureRoot` (`core.mjs`) the canonical one, and the observer the CLI set is called once, at exit, with the first canonical root (else the first spelled one), so an earlier spelling never stands for a root the command canonicalized. A no-op until the CLI sets one, so library callers and tests are unaffected. Dependency-free |
 | `launch-prompt-evidence.mjs` | private bounded storage of exact unmatched, stable-screen completed or flag-ignored notice frames, original-home identity checks and receipt-last publication; no terminal operations or public raw text |
 | `launch-prompt-completion.mjs` | the 21 question markers that block after the development-channel Enter; reporting only, never an input matcher |
@@ -515,6 +515,15 @@ the rule:
   `HOME` of its own needs nothing. When the run has ended, a row added to the
   person's list during the run under a temporary directory fails the run,
   naming it.
+- The auto-add never lists a deployment under a temporary directory
+  (awebai/oats#1397), so a test that needs it to list one makes its
+  deployments outside them: `test/helpers/outside-temporary.mjs`
+  `outsideTemporaryBase(t)`, a 0700 base in `/var/tmp` named
+  `oats-deployments-test-<run>.<n>-…` and removed when the test ends. Where
+  `/var/tmp` is missing, not writable or itself temporary, such a test skips,
+  saying why; it never falls back to `/tmp`. The run reads `/var/tmp` for its
+  own bases when it has ended: one still there is left behind, named for its
+  file and removed.
 - When the run has ended it reads each file's directory. If one is not empty
   the run fails, even if every test passed, and names each file and what it
   left.

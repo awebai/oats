@@ -13,17 +13,23 @@ import childProcess from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
 import { devNull, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { outsideTemporaryBase, outsideTemporaryUnavailable } from "./helpers/outside-temporary.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const LIB = new URL("../lib/deployments.mjs", import.meta.url).href;
 const ROOT = typeof process.getuid === "function" && process.getuid() === 0;
+/** Why the auto-add tests cannot run here (no usable /var/tmp), or null: their deployments must be
+ *  outside every temporary directory, which the auto-add skips (test/helpers/outside-temporary.mjs). */
+const OUTSIDE = outsideTemporaryUnavailable();
 const LOCAL_YAML = "schemaVersion: 2\nworkspace: github.com/example/acme-workspace\n";
 
 /** A fresh base: a HOME (with no ~/Agents unless a case makes one), an OATS_HOME_DIR, and room for
- *  deployments. realpath'd once, so the paths the list stores are the ones built here. */
-function fixture(t) {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-deployments-")));
-  t.after(() => { chmodTree(base); rmSync(base, { recursive: true, force: true }); });
+ *  deployments. realpath'd once, so the paths the list stores are the ones built here. `outside`: in
+ *  /var/tmp, outside every temporary directory, for a case where a command's auto-add must list
+ *  (or must be seen not to list for a reason of its own); the test then skips with OUTSIDE. */
+function fixture(t, { outside = false } = {}) {
+  const base = outside ? outsideTemporaryBase(t) : realpathSync(mkdtempSync(join(tmpdir(), "oats-deployments-")));
+  if (!outside) t.after(() => { chmodTree(base); rmSync(base, { recursive: true, force: true }); }); // an outside base removes itself
   const home = join(base, "home");
   mkdirSync(home);
   const oatsHome = join(base, "oats-home");
@@ -192,6 +198,16 @@ test("add: walks up to the deployment, answers added true then false (nothing wr
   const nowhere = join(f.base, "nowhere"); mkdirSync(nowhere);
   const e = f.failure(["deployments", "add", nowhere], "E_LOCAL_MISSING");
   assert.match(e.message, /no oats-local\.yaml at or above .*nowhere/);
+  // Only a regular oats-local.yaml makes a deployment (awebai/oats#1397): a directory or a link of
+  // that name is passed over, to the deployment above it, or to E_LOCAL_MISSING.
+  const odd = join(f.base, "odd"); mkdirSync(join(odd, "oats-local.yaml"), { recursive: true });
+  assert.equal(f.failure(["deployments", "add", odd], "E_LOCAL_MISSING").message, e.message.replace(nowhere, odd));
+  const linked = join(f.base, "linked"); mkdirSync(linked);
+  symlinkSync(join(acme, "oats-local.yaml"), join(linked, "oats-local.yaml"));
+  f.failure(["deployments", "add", linked], "E_LOCAL_MISSING");
+  const inner = join(acme, "inner"); mkdirSync(join(inner, "oats-local.yaml"), { recursive: true });
+  assert.deepEqual(f.ok(["deployments", "add", inner]), { path: acme, added: false }, "past a directory of that name, to the deployment above");
+  assert.equal(existsSync(f.file) && f.stored().deployments.some((d) => d.path === odd || d.path === linked || d.path === inner), false);
   // The clients' --via.
   const beta = f.deployment("beta");
   assert.equal(f.ok(["deployments", "add", beta, "--via", "tui"]).added, true);
@@ -241,8 +257,8 @@ test("add: a deployment inside a linked Git worktree is listed at the primary ch
   assert.deepEqual(f.ok(["deployments"]).deployments.map((d) => d.path), [join(main, "deploy")]);
 });
 
-test("a deployment at the root of a linked Git worktree is the primary checkout's: one row, and its tombstone holds against the auto-add and the Desktop import", (t) => {
-  const f = fixture(t);
+test("a deployment at the root of a linked Git worktree is the primary checkout's: one row, and its tombstone holds against the auto-add and the Desktop import", { skip: OUTSIDE ?? false }, (t) => {
+  const f = fixture(t, { outside: true });
   const git = (cwd, ...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main", ...args], { cwd, env: f.env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const main = join(f.base, "acme"); mkdirSync(main);
   writeFileSync(join(main, "README"), "x\n");
@@ -457,8 +473,8 @@ test("oats deployments: usage hides --via, --server is refused, an unknown subco
 
 // ---------------------------------------------------------------- the auto-add (#1390 amendment)
 
-test("auto-add: a kernel command that resolves an unlisted deployment lists it via cli, once, silently; its answer and exit status are unchanged", (t) => {
-  const f = fixture(t);
+test("auto-add: a kernel command that resolves an unlisted deployment lists it via cli, once, silently; its answer and exit status are unchanged", { skip: OUTSIDE ?? false }, (t) => {
+  const f = fixture(t, { outside: true });
   const acme = f.deployment("acme");
   mkdirSync(join(acme, "agents"));
   const first = f.oats(["doctor", "--json"], { cwd: join(acme, "agents") });
@@ -489,8 +505,8 @@ test("auto-add: a kernel command that resolves an unlisted deployment lists it v
   assert.equal(f.ok(["deployments"]).deployments.some((row) => row.path === zeta), false);
 });
 
-test("auto-add: never on --server, never for a command outside the table, never for --help; a broken list never changes the command", (t) => {
-  const f = fixture(t);
+test("auto-add: never on --server, never for a command outside the table, never for --help; a broken list never changes the command", { skip: OUTSIDE ?? false }, (t) => {
+  const f = fixture(t, { outside: true });
   const acme = f.deployment("acme");
   f.oats(["status", "--server", "nope", "--json"], { cwd: acme });
   f.oats(["version", "--json"], { cwd: acme });
@@ -498,7 +514,7 @@ test("auto-add: never on --server, never for a command outside the table, never 
   f.oats(["deployments", "--help"], { cwd: acme });
   assert.equal(existsSync(f.file), false, "nothing listed acme, and nothing touched the list");
   // A broken list: the command answers as it would, and the list is left alone.
-  const g = fixture(t);
+  const g = fixture(t, { outside: true });
   const beta = g.deployment("beta");
   const clean = g.oats(["doctor", "--json"], { cwd: beta });
   rmSync(g.oatsHome, { recursive: true, force: true });
@@ -510,8 +526,8 @@ test("auto-add: never on --server, never for a command outside the table, never 
   assert.equal(readFileSync(g.file, "utf8"), "not json\n");
 });
 
-test("auto-add: a tombstoned deployment is not listed again by a plain command; an explicit add clears it", (t) => {
-  const f = fixture(t);
+test("auto-add: a tombstoned deployment is not listed again by a plain command; an explicit add clears it", { skip: OUTSIDE ?? false }, (t) => {
+  const f = fixture(t, { outside: true });
   const acme = f.deployment("acme");
   f.ok(["deployments", "add", acme]);
   f.ok(["deployments", "remove", acme]);
@@ -523,8 +539,8 @@ test("auto-add: a tombstoned deployment is not listed again by a plain command; 
   assert.deepEqual(f.ok(["deployments"]).deployments.map((d) => d.path), [acme]);
 });
 
-test("auto-add budget: a listed deployment costs one read: no lock, no write, the file's mtime unchanged; a held lock does not delay an unlisted one", { skip: ROOT && "root writes anywhere" }, (t) => {
-  const f = fixture(t);
+test("auto-add budget: a listed deployment costs one read: no lock, no write, the file's mtime unchanged; a held lock does not delay an unlisted one", { skip: OUTSIDE ?? (ROOT && "root writes anywhere") }, (t) => {
+  const f = fixture(t, { outside: true });
   const acme = f.deployment("acme"); mkdirSync(join(acme, "agents"));
   f.oats(["status", "--json"], { cwd: acme });
   const before = statSync(f.file);
@@ -561,8 +577,8 @@ async function inProcess(f, fn) {
   finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
 }
 
-test("auto-add: a listed deployment is answered from the read alone (no process, no lock, no write); only an unlisted one takes the lock, without waiting", async (t) => {
-  const f = fixture(t);
+test("auto-add: a listed deployment is answered from the read alone (no process, no lock, no write); only an unlisted one takes the lock, without waiting", { skip: OUTSIDE ?? false }, async (t) => {
+  const f = fixture(t, { outside: true });
   const acme = f.deployment("acme");
   const beta = f.deployment("beta");
   f.ok(["deployments", "add", acme]);
@@ -680,8 +696,8 @@ async function settledFromLoadLocal(t, f, dir) {
   });
 }
 
-test("auto-add boundary: a deployment in a linked Git worktree is listed by the commands that resolve its instance root, not by a command that only reads its local file (no process, no write)", async (t) => {
-  const f = fixture(t);
+test("auto-add boundary: a deployment in a linked Git worktree is listed by the commands that resolve its instance root, not by a command that only reads its local file (no process, no write)", { skip: OUTSIDE ?? false }, async (t) => {
+  const f = fixture(t, { outside: true });
   const git = (cwd, ...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main", ...args], { cwd, env: f.env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const main = join(f.base, "acme"); mkdirSync(join(main, "nested"), { recursive: true });
   writeFileSync(join(main, "nested", "README"), "x\n");
@@ -729,4 +745,56 @@ test("auto-add budget: another spelling of a listed deployment (a link) costs on
   }
   assert.equal(statSync(f.file).mtimeMs, before.mtimeMs);
   assert.deepEqual(f.ok(["deployments"]).deployments.map((d) => d.path), [plain, repo]);
+});
+
+// ---------------------------------------------------------------- the temporary directories (#1397)
+
+test("auto-add: a deployment under a temporary directory is never listed by a plain command, which writes nothing; an explicit add, a client's add --via and the Desktop import still list one", (t) => {
+  const f = fixture(t); // under the temporary directory, as a test's fixtures are
+  const acme = f.deployment("acme");
+  mkdirSync(join(acme, "agents"));
+  f.oats(["doctor", "--json"], { cwd: acme }); // loadLocal's spelled root
+  f.oats(["status", "--json"], { cwd: join(acme, "agents") }); // ensureRoot's canonical root
+  f.oats(["launch-config", "list", "--dir", acme, "--json"]);
+  assert.equal(existsSync(f.file), false, "no command listed it, nor took the lock, nor ran the first-use import");
+  assert.equal(existsSync(f.lock), false);
+  // onboard lists one too (test/onboard.test.mjs: its deployments are under the temporary directory).
+  assert.deepEqual(f.ok(["deployments", "add", acme]), { path: acme, added: true });
+  const beta = f.deployment("beta");
+  assert.equal(f.ok(["deployments", "add", beta, "--via", "tui"]).added, true);
+  const gamma = f.deployment("gamma");
+  assert.deepEqual(f.ok(["deployments", "import", "--from", "desktop", gamma]).added, [gamma]);
+  assert.deepEqual(f.ok(["deployments"]).deployments.map((d) => [d.path, d.via]), [[acme, "cli"], [beta, "tui"], [gamma, "import:desktop"]]);
+});
+
+test("auto-add: the temporary directories are compared after realpath: a link from outside to a deployment under one is not listed; a link under one to a deployment outside is, at its real path", { skip: OUTSIDE ?? false }, (t) => {
+  const inside = fixture(t);
+  const f = fixture(t, { outside: true });
+  const tmpDeployment = inside.deployment("acme");
+  symlinkSync(tmpDeployment, join(f.base, "to-tmp"));
+  f.oats(["doctor", join(f.base, "to-tmp"), "--json"]);
+  assert.equal(existsSync(f.file), false, "its realpath is under the temporary directory");
+  const real = f.deployment("beta");
+  symlinkSync(real, join(inside.base, "to-outside"));
+  f.oats(["doctor", join(inside.base, "to-outside"), "--json"]);
+  assert.deepEqual(f.ok(["deployments"]).deployments.map((d) => [d.path, d.via]), [[real, "cli"]]);
+});
+
+test("auto-add budget: a listed deployment under a temporary directory is answered by the read before any temporary-directory check (no realpath); an unlisted one is skipped with no process, lock or write", async (t) => {
+  const f = fixture(t);
+  const acme = f.deployment("acme");
+  const beta = f.deployment("beta");
+  f.ok(["deployments", "add", acme]);
+  const before = statSync(f.file);
+  const { calls, start, restore } = counted(t);
+  await inProcess(f, ({ listResolved }) => {
+    start();
+    try { assert.equal(listResolved(acme), "listed"); } finally { restore(); }
+    assert.deepEqual(calls.splice(0), ["openSync"], "the list's read alone");
+    start();
+    try { assert.equal(listResolved(beta), "skipped"); assert.equal(listResolved(beta, { canonical: true }), "skipped"); } finally { restore(); }
+    assert.deepEqual(calls.filter((c) => c !== "openSync" && c !== "realpathSync.native"), [], "no process, no lock, no write");
+  });
+  assert.equal(statSync(f.file).mtimeMs, before.mtimeMs);
+  assert.deepEqual(f.ok(["deployments"]).deployments.map((d) => d.path), [acme]);
 });
