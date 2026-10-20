@@ -70,11 +70,20 @@ export function joinPickerFocusReturn(doc, { opener, dismiss }) {
  *        opening chord while it is open: 1 moves the active row down, -1 up,
  *        both wrapping and skipping context rows; it never commits (Enter does).
  *        With it, toggle() on an open picker cycles down instead of closing.
+ * @param {(e: KeyboardEvent) => (1|-1|0)} [spec.groupKey] the picker's group keys while
+ *        it is open (the palette's: Quick Open has none): 1 moves the active row to the first
+ *        selectable row of the next run of rows (consecutive rows sharing a group.key, or
+ *        consecutive rows with no group: one run), -1 to that of the run before; both skip a
+ *        run with no selectable row and wrap, a single run's first selectable row is where both
+ *        go, and with no selectable row nothing moves. It never commits. Taken before
+ *        everything else, cycleKey included, so it wins over every binding while open.
+ * @param {string} [spec.footer] a line of plain text under the list (`.palette-footer`):
+ *        the palette names its group keys there. None, no footer.
  * @param {Document} [spec.doc]
  * @returns {{ open: Function, close: Function, toggle: Function }} Opening
  *        replaces any other picker in this Document without returning focus.
  */
-export function createOverlayPicker({ placeholder, ariaLabel, loadItems, computeRows, cycleKey = null, doc = globalThis.document }) {
+export function createOverlayPicker({ placeholder, ariaLabel, loadItems, computeRows, cycleKey = null, groupKey = null, footer = "", doc = globalThis.document }) {
   // IDs belong to the picker, not a render or a data-derived label. Result
   // slots keep their IDs across selection updates and cannot collide with a
   // second picker (including a palette → Quick Open handoff).
@@ -117,6 +126,12 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
     list.id = `${id}-list`;
     list.setAttribute("aria-label", `${ariaLabel} results`);
     input.setAttribute("aria-controls", list.id);
+    if (footer) {
+      const line = doc.createElement("div");
+      line.className = "palette-footer";
+      line.textContent = footer;
+      dialog.append(line);
+    }
 
     const dismiss = (restoreFocus) => {
       if (!owns()) return;
@@ -138,10 +153,14 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
 
     function modalKeydown(e) {
       if (!owns()) return;
-      // Before the keymap engine sees it: the picker's own chord cycles rows
-      // instead of reopening, closing or reaching a terminal.
-      const direction = cycleKey?.(e) || 0;
-      if (direction) {
+      // Before the keymap engine sees it: the picker's group keys jump between
+      // runs of rows, first, and its own chord cycles rows, instead of reopening,
+      // closing, running another action or reaching a terminal.
+      const toGroup = groupKey?.(e) || 0;
+      const direction = toGroup ? 0 : cycleKey?.(e) || 0;
+      if (toGroup) {
+        e.preventDefault(); e.stopPropagation(); jump(toGroup);
+      } else if (direction) {
         e.preventDefault(); e.stopPropagation(); move(direction, true);
       } else if (e.key === "Escape") {
         e.preventDefault(); e.stopPropagation(); dismiss(true);
@@ -188,6 +207,22 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
       active = step(direction, wrap); select();
     }
     cycle = (direction) => { if (owns()) move(direction, true); };
+    /** The first selectable row of the next run of rows in `direction` that has one, wrapping:
+     * a run is consecutive rows sharing a group key (rows with no group are one run too). The
+     * current run is reached last, so with a single run both directions go to its first row. */
+    function jump(direction) {
+      if (!items.length || !selectable(active)) return;
+      const runs = []; // [first, end) of each run, in row order
+      items.forEach((it, i) => {
+        if (i > 0 && it.group?.key === items[i - 1].group?.key) runs.at(-1)[1] = i + 1;
+        else runs.push([i, i + 1]);
+      });
+      const current = runs.findIndex(([first, end]) => active >= first && active < end);
+      for (let n = 1; n <= runs.length; n++) {
+        const [first, end] = runs[(((current + direction * n) % runs.length) + runs.length) % runs.length];
+        for (let i = first; i < end; i++) if (selectable(i)) { active = i; select(); return; }
+      }
+    }
 
     const activate = (it) => {
       if (!owns()) return;

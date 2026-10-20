@@ -650,6 +650,9 @@ body {
 .palette-item .pdetail { margin-left: auto; color: var(--muted); font-size: 11.5px; flex: none; max-width: 45%;
                          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .palette-empty { padding: 16px; color: var(--muted); text-align: center; font-size: 13px; }
+/* The palette's footer names its group keys (overlay-picker `footer`): one quiet line of plain text
+   under the list, in the muted ink on the palette's surface, set off by the input's rule. */
+.palette-footer { padding: 6px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11.5px; line-height: 1.4; }
 /* Instances as the sidebar draws them (spec F, #1383): relation groups read from the
    sidebar's 14px gap alone (each is a named role=group for AT), and a match's ancestor
    shown only for its place in the tree is dimmed by colour (the muted token, never

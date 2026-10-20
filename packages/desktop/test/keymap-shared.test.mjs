@@ -104,7 +104,7 @@ test("the chords: every one, per platform, and what it does", () => {
 test("the palette's own keys: next and previous group, per platform, read only while it is open", () => {
   assert.deepEqual(PALETTE_KEYS.map(({ does, mac, other }) => [does, mac, other]), [
     ["palette-next-group", "cmd+n", "alt+shift+down"],
-    ["palette-previous-group", "cmd+shift+n", "alt+shift+up"],
+    ["palette-previous-group", "cmd+alt+n", "alt+shift+up"],
   ]);
   assert.ok(Object.isFrozen(PALETTE_KEYS) && PALETTE_KEYS.every((entry) => Object.isFrozen(entry)));
   assert.equal(paletteKey("palette-next-group", true), "cmd+n");

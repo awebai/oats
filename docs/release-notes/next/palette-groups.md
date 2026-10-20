@@ -5,7 +5,8 @@
   [desktop-keyboard.md](../../packages/desktop/docs/desktop-keyboard.md)).
   While the palette is open, `Alt+Shift+Down` moves the selection to the
   first row of the next group, and `Alt+Shift+Up` to the previous one's;
-  both wrap. On macOS the Desktop's keys are `⌘N` and `⌘⇧N`.
+  both wrap. On macOS the Desktop's keys are `⌘N` and `⌥⌘N` (`⌘⇧N` stays
+  File → New Window).
   - **The keys are the palette's while it is open.** There `⌘N` doesn't
     choose a soul, and the Alt+Shift arrows don't open the next or previous
     instance. With the palette closed, they do what they did before.
