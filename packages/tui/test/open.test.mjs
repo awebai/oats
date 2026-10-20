@@ -82,11 +82,11 @@ function sheetOf(state, sz = S80) {
 }
 /** The cheat sheet of the list of instances with nothing given up, after what Enter does there:
  *  it names no act, and the list's other keys are the leader's, the palette's and the help's. */
-const LISTED = ["n spawn", "? help", "q quit"];
+const LISTED = ["n spawn", "w workspaces", "? help", "q quit"];
 
 test("Enter on a running instance of this machine opens it at once in the panel: the effect carries the decision with the shared target, and the store holds the terminal, starting, with the focus", () => {
   const state = on(here(), ALPHA);
-  assert.deepEqual(sheetOf(state), ["Ctrl+\\ commands", "Ctrl+K palette", "Enter open", ...LISTED], "at 80x24 the sheet gives up nothing: the leader, the palette, Enter, then spawn, help and quit, and no act");
+  assert.deepEqual(sheetOf(state), ["Ctrl+\\ commands", "Ctrl+K palette", "Enter open", ...LISTED], "at 80x24 the sheet gives up nothing: the leader, the palette, Enter, then spawn, workspaces, help and quit, and no act");
   const { state: opening, effects } = press(state, ["enter"]);
   const row = rowOf(state);
   assert.deepEqual(effects, [{ open: { open: true, id: instanceId(row), name: ALPHA, machine: null, target: { home: row.home }, routed: false } }]);

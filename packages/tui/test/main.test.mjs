@@ -101,7 +101,9 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
   // the run's capabilities table (`oats capabilities`).
   // `spawn`: what the run made of the three shared spawn factories, faked: the preview's reads and
   // the transaction's submits and checks, each with a way to answer; what the boundary was made with.
-  const r = { stdin, stdout, proc, timers, errors, log, listed, lists: [], reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
+  // `identities`: what the run asked of its identity reads (lib/read.mjs createIdentityReads, faked): each
+  // start's paths in order, how many times they were stopped, and what the run made them with.
+  const r = { stdin, stdout, proc, timers, errors, log, listed, lists: [], identities: { starts: [], stops: 0, options: null }, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
     spawn: { preview: null, previewExec: null, reads: [], applyRead: null, applyExec: null, applyCalls: [], request: null, submits: [], checks: [] } };
   r.listAnswer = listAnswer ?? ((asked) => (asked.action === "list" ? { ok: true, value: { ok: true, rows: r.listed } } : { ok: true, value: asked.action === "add" ? { path: asked.path, added: true } : { path: asked.path, removed: true } }));
   let up;
@@ -111,6 +113,8 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
     findDeployment(start) { log.push(["effect", "deployment", start]); return deployment; },
     async probeKernel(asked) { log.push(["effect", "kernel", { ...asked.env }]); return kernel; },
     createReader(options) { r.reader = fakeReader(log, options); const start = r.reader.start; r.reader.start = () => { const answer = start(); queueMicrotask(up); return answer; }; return r.reader; },
+    // The identity reads, faked: nothing is read; the test answers through `r.identities.options.onRead`.
+    createIdentityReads(options) { r.identities.options = options; return { start(paths) { r.identities.starts.push([...paths]); }, stop() { r.identities.stops += 1; } }; },
     // This computer's deployments list (the shared cliDeploymentList), faked: each call is logged
     // with what it asked and the exec it was handed: `start` (the effect below, the exec of the one
     // read before the terminal is taken), `read` (the reader's own exec) or `change` (any other: the
@@ -543,7 +547,7 @@ test("a resize redraws in full; below 60x15 the screen is the too-small line, an
   r.stdout.resize(60, 15);
   let out = r.stdout.take();
   assert.equal(out.startsWith("\x1b[?2026h\x1b[0m\x1b[2J"), true, "a resize clears first, inside the frame's synchronized update");
-  assert.match(textOf(out), /^ acme-platform.*acme-maintainer-ops.*Ctrl\+\\ +commands +Ctrl\+K +palette +n +spawn +\? +help +q +quit$/s, "at 15 rows the small cheat sheet gives up nothing");
+  assert.match(textOf(out), /^ acme-platform.*acme-maintainer-ops.*Ctrl\+\\ +commands +Ctrl\+K +palette +n +spawn +w +workspaces +\? +help +q +quit$/s, "at 15 rows the small cheat sheet gives up nothing");
   r.stdout.resize(59, 14);
   out = r.stdout.take();
   assert.equal(textOf(out), "Terminal too small: 59x14, oats tui needs 60x15.");
@@ -590,7 +594,7 @@ test("Ctrl+L sets the terminal's modes again and redraws in full; Ctrl+\\ in the
   r.stdin.type("\x1c");
   const back = r.stdout.take();
   assert.deepEqual([...back.matchAll(/\x1b\[(\d+);(\d+)H/g)].map(([, row, col]) => [Number(row), Number(col)]), sheetRows);
-  assert.equal(words(textOf(back)), " Ctrl+\\ commands │ Ctrl+K palette │ n spawn │ ? help │ q quit │ │ │ │ │");
+  assert.equal(words(textOf(back)), " Ctrl+\\ commands │ Ctrl+K palette │ n spawn │ w workspaces │ ? help │ q quit │ │ │ │");
   assert.deepEqual(readerDid(r), [["touch"], ["touch"]], "the leader reads nothing");
   r.log.length = 0;
   r.stdin.type("\x0c");
@@ -780,11 +784,11 @@ test("started outside every deployment with no row on this computer's list, it e
   }
 });
 
-test("a run started in a deployment, from where it was started or by --dir, adds it to this computer's list once, as the TUI's, after the reader starts and as a change of the run, and reads no list for it; never again in that run: not on w, not on r, not when a row is opened", async () => {
+test("a run started in a deployment, from where it was started or by --dir, adds it to this computer's list once, as the TUI's, after the reader starts and as a change of the run, then reads the list once for the identity reads; never adds again in that run: not on w, not on r, not when a row is opened", async () => {
   for (const [argv, from] of [[[], "/work/here"], [["--dir", DEPLOYMENT], DEPLOYMENT]]) {
     const r = await started({ argv, listed: LISTED });
     await settle();
-    assert.deepEqual(effectsOf(r), [["config"], ["deployment", from], ["kernel"], ["list", { action: "add", path: DEPLOYMENT, via: "tui" }, "change"]], `${argv.join(" ")}: the add, through no exec of the start's and no read's`);
+    assert.deepEqual(effectsOf(r), [["config"], ["deployment", from], ["kernel"], ["list", { action: "add", path: DEPLOYMENT, via: "tui" }, "change"], ["list", { action: "list" }, "read"]], `${argv.join(" ")}: the add, through no exec of the start's and no read's; then the list, through the reader's exec`);
     const at = (what, which) => r.log.findIndex(([w, x]) => w === what && x === which);
     assert.equal(at("reader", "start") < at("effect", "list"), true, "after the reader starts");
     const [add] = r.lists;
@@ -801,7 +805,7 @@ test("a run started in a deployment, from where it was started or by --dir, adds
   assert.deepEqual(r.reader.options.getServed(), [DEPLOYMENT, LEDGER], "the row was opened");
   r.stdin.type("w"); await settle();
   r.stdin.type("r"); await settle();
-  assert.deepEqual(r.lists.map(({ asked }) => asked.action), ["add", "list", "list", "list", "list"], "one add, and a read for each w and each r");
+  assert.deepEqual(r.lists.map(({ asked }) => asked.action), ["add", "list", "list", "list", "list", "list"], "one add, a read at the start, and a read for each w and each r");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -822,7 +826,7 @@ test("an add the kernel refuses is said once, under the sidebar's title, with th
   r.stdin.type("w"); await settle();
   assert.match(screenOf(r), /On this machine, not opened.*acme-ledger/s, "the list is read as ever");
   assert.doesNotMatch(screenOf(r), /not added/, "and nothing brings the line back");
-  assert.deepEqual(r.lists.map(({ asked }) => asked.action), ["add", "list"], "the add is not tried again");
+  assert.deepEqual(r.lists.map(({ asked }) => asked.action), ["add", "list", "list"], "the add is not tried again: the start's read and the w's");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 
@@ -858,7 +862,7 @@ test("w opens the switcher: this computer's list of deployments is read through 
   const r = await started({ listed: [Object.freeze({ path: DEPLOYMENT, name: "deploy", state: "ok" }), ...LISTED], columns: 120 });
   r.reader.answer(HOME_ENTRY);
   await settle();
-  assert.deepEqual(r.lists.filter(({ asked }) => asked.action === "list"), [], "a run started in a deployment does not read the list until it is asked to");
+  assert.deepEqual(r.lists.filter(({ asked }) => asked.action === "list").length, 1, "a run started in a deployment reads the list once at the start, for the identity reads, and then until it is asked to");
   r.stdout.take();
   r.log.length = 0;
   // In the list of instances Enter opens the selected agent in the panel, here with a kernel record
@@ -948,7 +952,7 @@ test("Enter on a row of this computer's list asks whether it is a deployment now
   assert.deepEqual(readerDid(r), [["touch"], ["request", { live: true }]], "it is read at once");
   assert.notEqual(r.stdout.take(), "");
   const opened = screenOf(r);
-  assert.match(opened, /^ acme-ledger +│.*Instances +1 │ +Reading the deployment\..*Souls +2 │ Capabilities +3 │.*Ctrl\+\\ +commands +│ Ctrl\+K +palette +│ n +spawn +│ \? +help +│ q +quit +│/s);
+  assert.match(opened, /^ acme-ledger +│.*Instances +1 │ +Reading the deployment\..*Souls +2 │ Capabilities +3 │.*Ctrl\+\\ +commands +│ Ctrl\+K +palette +│ n +spawn +│ w +workspaces +│ \? +help +│ q +quit +│/s);
   assert.doesNotMatch(opened, /acme-expert-tui|On this machine, not opened/, "the switcher is closed, and the view is the new deployment's");
   // From then on: the reader's answer for it is taken and drawn.
   r.reader.answer(observedAt("/srv/acme-ledger", [instanceRow("acme-clerk", "acme-clerk-books")], { workspace: reportedWorkspace("git.example.com/acme-ledger/books", "aweb:acme-ledger"), name: "acme-ledger" }), "/srv/acme-ledger");
@@ -985,7 +989,7 @@ test("Enter on a row of this computer's list that is no deployment any more: its
   assert.equal(r.reader.options.getEntry(LEDGER), null);
   assert.notEqual(r.stdout.take(), "");
   const after = screenOf(r);
-  assert.match(after, /^ workspaces.*\* acme-platform\s+This machine.*On this machine, not opened.*>\s+acme-ledger\s+Not an OATS deployment any more\..*Enter +open.*Esc +close/s);
+  assert.match(after, /^ workspaces.*\* acme-platform.*This machine.*On this machine, not opened.*>\s+acme-ledger\s+Not an OATS deployment any more\..*Enter +open.*Esc +close/s);
   assert.equal(words(after), words(before).replace("~/acme-ledger", "Not an OATS deployment any more."), "the switcher as it was, but for what that row says");
   // The view the switcher was opened over is still there to go back to.
   r.stdin.type("\x1b");
@@ -1110,6 +1114,51 @@ test("a read of this computer's list that fails keeps the rows of the last one t
   assert.equal(await r.status, 0);
 });
 
+test("the identity reads (#482): once at the start, over the rows of this computer's list that the run does not serve and the kernel says are deployments, through the reader's exec; again when the switcher is opened and on r there; never on a timer; an answer merges the row into its workspace, whose Enter opens it; a suspend gives them up", async () => {
+  const GONE = Object.freeze({ path: "/home/u/gone", name: "gone", state: "missing" });
+  const r = await started({ listed: [Object.freeze({ path: DEPLOYMENT, name: "deploy", state: "ok" }), ...LISTED, GONE], columns: 120 });
+  r.reader.answer(HOME_ENTRY);
+  await settle();
+  assert.deepEqual(r.identities.starts, [[LEDGER]], "the served deployment and a stale row are not read");
+  assert.deepEqual([r.identities.options.exec, r.identities.options.cli, r.identities.options.env], [r.reader.exec, CLI, r.reader.options.env], "through the reader's own exec, kernel and environment");
+  // However long the run waits and whatever its timers do, nothing reads them again on its own.
+  for (let i = 0; i < 5; i++) { r.tick(60_000); r.timers.fire(); await settle(); }
+  assert.deepEqual(r.identities.starts, [[LEDGER]], "no timer reads a deployment the run does not serve");
+  r.stdin.type("w"); await settle();
+  assert.deepEqual(r.identities.starts, [[LEDGER], [LEDGER]], "the switcher opened: read again, after the list");
+  assert.match(screenOf(r), /On this machine, not opened.*acme-ledger/s, "drawn before any answer");
+  r.stdin.type("r"); await settle();
+  assert.equal(r.identities.starts.length, 3, "r in the switcher reads them again");
+  // An answer comes in: the row is in its workspace's, with its line, and nothing is left under the heading.
+  r.identities.options.onRead({ path: LEDGER, read: { ok: true, workspace: reportedWorkspace() } });
+  await settle();
+  const merged = screenOf(r);
+  assert.match(merged, /\* acme-platform.*This machine · deploy.*This machine · acme-ledger · not opened/s);
+  assert.match(merged, /On this machine, not opened.*gone/s, "only the stale row is left there");
+  assert.doesNotMatch(merged, /On this machine, not opened[^│]*│[^│]*acme-ledger/);
+  r.log.length = 0;
+  r.stdin.type("\r"); await settle();
+  assert.deepEqual(effectsOf(r), [["admit", LEDGER]], "Enter on the workspace asks whether the listed deployment is one now");
+  assert.deepEqual(r.reader.options.getServed(), [DEPLOYMENT, LEDGER], "and serves it from then on");
+  assert.deepEqual(readerDid(r).filter(([what]) => what === "request"), [["request", { live: true }]]);
+  const stops = r.identities.stops;
+  r.stdin.type("\x1a");
+  assert.equal(r.identities.stops, stops + 1, "a suspend gives the reads in flight up");
+  r.proc.emit("SIGCONT");
+  await settle();
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("started outside every deployment, the identity reads begin at once over the rows the list answered before the terminal was taken: no second read of the list", async () => {
+  const r = await started({ deployment: { ok: false, dir: "/work/here" }, listed: LISTED });
+  await settle();
+  assert.deepEqual(r.identities.starts, [[LEDGER]]);
+  assert.equal(r.lists.length, 1);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
 test("Enter on a workspace opens its view and asks for a live read", async () => {
   const r = await started({ kernel: { ok: true, cli: REMOTE_CLI } });
   r.reader.answer(HOME_ENTRY);
@@ -1118,8 +1167,8 @@ test("Enter on a workspace opens its view and asks for a live read", async () =>
   r.stdin.type("w");
   await settle(); // the list read it asked for has answered: what follows asks nothing more
   const two = screenOf(r);
-  assert.match(two, /\* acme-platform\s+This machine/, "the open workspace is marked");
-  assert.match(two, / {2}charts\s+onyx/, "and the machine's own workspace is listed beside it, unmarked");
+  assert.match(two, /\* acme-platform.*This machine/s, "the open workspace is marked, its deployment on a line under it");
+  assert.match(two, / {2}charts.*onyx/s, "and the machine's own workspace is listed beside it, unmarked");
   // Whatever order the shared home lists them in, the filter leaves the one that is wanted.
   r.stdin.type("/");
   r.stdin.type("onyx");
@@ -1132,7 +1181,7 @@ test("Enter on a workspace opens its view and asks for a live read", async () =>
   assert.deepEqual(effectsOf(r), [], "a workspace is not a folder: nothing is asked of the file system");
   assert.notEqual(r.stdout.take(), "");
   const opened = screenOf(r);
-  assert.match(opened, /^ charts +on onyx +│.*Instances +1 │.*dev-east.*Enter +open +│ n +spawn +│ \? +help +│ q +quit +│/s, "the machine's view");
+  assert.match(opened, /^ charts +on onyx +│.*Instances +1 │.*dev-east.*Enter +open +│ n +spawn +│ w +workspaces +│ \? +help +│ q +quit +│/s, "the machine's view");
   assert.doesNotMatch(opened, /acme-expert-tui/);
   // The time of the roster read it is drawn from: the help's top row, beside the sidebar (this
   // machine's own was read at 10:00:00).
@@ -1142,8 +1191,8 @@ test("Enter on a workspace opens its view and asks for a live read", async () =>
   assert.deepEqual(r.reader.options.getServed(), [DEPLOYMENT], "a machine's workspace is no deployment this run serves");
   r.stdin.type("w");
   const back = screenOf(r);
-  assert.match(back, /\* charts\s+onyx/, "and it is the open one now");
-  assert.match(back, / {2}acme-platform\s+This machine/);
+  assert.match(back, /\* charts.*onyx/s, "and it is the open one now");
+  assert.match(back, / {2}acme-platform.*This machine/s);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1331,7 +1380,7 @@ test("Enter on a running agent of this machine: the kernel's viewer starts in th
   r.panel.screen("@9", "$ not-this-one");
   assert.doesNotMatch(r.stdout.take(), /not-this-one/);
   leaderEscape(r);
-  assert.match(wholeScreen(r), /Ctrl\+\\ +commands +│ Ctrl\+K +palette +│ Enter +focus terminal +│ n +spawn +│ \? +help +│ q +quit +│/);
+  assert.match(wholeScreen(r), /Ctrl\+\\ +commands +│ Ctrl\+K +palette +│ Enter +focus terminal +│ n +spawn +│ w +workspaces +│ \? +help +│ q +quit +│/);
   r.log.length = 0;
   r.stdin.type("q");
   assert.equal(await r.status, 0);
@@ -1574,19 +1623,19 @@ async function viewingTwoTabs(options = {}) {
 
 test("a hidden tab's output marks it on the strip and draws nothing of its screen; the shown tab's screen is drawn (T2)", async () => {
   const r = await viewingTwoTabs();
-  assert.match(wholeScreen(r), /│ acme-expert-tui {2}acme-ledger-dev/, "the strip: both tabs, no mark");
+  assert.match(wholeScreen(r), /│ acme-expert-tui │\[acme-ledger-dev\]/, "the tab bar: both tabs, the shown one in brackets, no mark");
   r.panel.activity("@1");
   r.panel.screen("@1", "hidden words");
   await settle();
   const marked = wholeScreen(r);
-  assert.match(marked, /│ acme-expert-tui\u2022 {2}acme-ledger-dev/, "the hidden tab is marked");
+  assert.match(marked, /│ acme-expert-tui\u2022 │\[acme-ledger-dev\]/, "the hidden tab is marked");
   assert.doesNotMatch(marked, /hidden words/, "a hidden tab's screen is not drawn");
   r.panel.activity("@2");
   r.panel.screen("@2", "shown words");
   await settle();
   const shown = wholeScreen(r);
   assert.match(shown, /shown words/);
-  assert.match(shown, /│ acme-expert-tui\u2022 {2}acme-ledger-dev(?!\u2022)/, "the shown tab is never marked");
+  assert.match(shown, /│ acme-expert-tui\u2022 │\[acme-ledger-dev\](?!\u2022)/, "the shown tab is never marked");
   leaderEscape(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);

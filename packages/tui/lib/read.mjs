@@ -15,7 +15,7 @@ import { closeSync, fstatSync, lstatSync, mkdtempSync, openSync, readSync, realp
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { COLLECTOR, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliDeploymentRead, cliReadsRemotes, cliRecord, cliRemoteRoster, createDeploymentObserver, createRefreshLoop, failedEntry, livenessAnswers, livenessInput, mapBounded, observeIdentities, observedEntry, panelInstances, parseProbeStdout, remoteRosterState, rosterRows, validateWorkspace } from "./client.mjs";
+import { COLLECTOR, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliDeploymentIdentity, cliDeploymentRead, cliReadsRemotes, cliRecord, cliRemoteRoster, createDeploymentObserver, createRefreshLoop, failedEntry, identityReadable, identityTimedOut, livenessAnswers, livenessInput, mapBounded, observeIdentities, observedEntry, panelInstances, parseProbeStdout, remoteRosterState, rosterRows, validateWorkspace } from "./client.mjs";
 
 /** A path made canonical: what the shared start rule checks a local home with (session-start.mjs
  *  verifiedLocalHome). Throws for a path that cannot be resolved; the rule answers that as no home. */
@@ -612,4 +612,56 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
     /** The pids of the children remembered now (for tests). */
     children() { return [...remembered.keys()].map((child) => child.pid).filter((pid) => Number.isInteger(pid)); },
   };
+}
+
+/** The most time the identity reads of one run take together, in ms: two reads at their own limit
+ *  (packages/client deployment-read-cli.mjs DEPLOYMENT_READ_TIMEOUT, 30 s each). */
+export const IDENTITY_BUDGET_MS = 60_000;
+
+/** THE IDENTITY READS (docs/tui.md, "The switcher"): what the switcher learns of the deployments of this
+ *  computer's list that the run does not serve, so that one of them is matched to its workspace before it
+ *  is opened (#482). -> { start(paths), stop() }
+ *  `start(paths)` reads each path's identity through the shared cliDeploymentIdentity (`oats status --dir
+ *  <path> --json`, the read an opened deployment gets, with its own time limit, `--max-age` as a background
+ *  cycle's), ONE AT A TIME, in order, and calls `onRead({ path, read })` with each answer as it comes:
+ *  nothing waits for them, and the screen is drawn before the first. They take IDENTITY_BUDGET_MS at most
+ *  together: when it runs out the read in flight is ended, and it and every read not begun answer the
+ *  shared timed-out failure (identityTimedOut). A new `start` ends the run before it, whose answers are
+ *  then dropped, and so does `stop()`. With a kernel that reports no workspace identities
+ *  (identityReadable), or no path, nothing is read.
+ *  Nothing here runs on a timer: a run starts only when its caller says, and the caller says so at the
+ *  start and when the switcher is opened or refreshed (lib/main.mjs), never from the refresh loop.
+ *  `exec` is the reader's asked exec (createReader `exec`): every read is a child of kind "read" in a
+ *  session of its own, ended on every way out, and ended through the run's signal here. */
+export function createIdentityReads({ cli, exec, env, onRead, timers = globalThis, budgetMs = IDENTITY_BUDGET_MS, read = cliDeploymentIdentity }) {
+  let run = null;
+  function stop() {
+    if (run === null) return;
+    run.gone = true;
+    run.controller.abort();
+    run = null;
+  }
+  async function start(paths) {
+    stop();
+    // No exec of the reader's, nothing is read: the shared reader would start its own child otherwise.
+    if (typeof exec !== "function" || !identityReadable(cli) || !Array.isArray(paths) || !paths.length) return;
+    const mine = run = { controller: new AbortController(), gone: false, spent: false };
+    const timer = timers.setTimeout(() => { mine.spent = true; mine.controller.abort(); }, budgetMs);
+    timer?.unref?.();
+    const own = (bin, argv, options, callback) => exec(bin, argv, { ...options, signal: mine.controller.signal }, callback);
+    try {
+      for (const path of paths) {
+        if (mine.gone) return;
+        let answer = mine.spent ? identityTimedOut() : await read(cli, path, { maxAge: BACKGROUND_MAX_AGE }, { exec: own, env });
+        if (mine.gone) return;
+        // A read the budget ended answers whatever its ending made of it: it timed out.
+        if (mine.spent && !answer?.ok) answer = identityTimedOut();
+        onRead({ path, read: answer });
+      }
+    } finally {
+      timers.clearTimeout(timer);
+      if (run === mine) run = null;
+    }
+  }
+  return { start: (paths) => start(paths).catch(() => {}), stop };
 }

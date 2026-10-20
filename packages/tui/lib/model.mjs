@@ -9,7 +9,7 @@ import {
   TERMS, panelData, displayLine, DETAIL_WITHHELD, originLead, instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree,
   hasInstanceChildren, heldHome, instanceSiblings, siblingText, rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts,
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs, rowReason,
-  identityMemory, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath,
+  identityMemory, viewModel, listedViews, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, machineLabels,
   openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
   startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage, retiringRows, soulRows, soulFacts, spawnRefusal,
   defaultSpawnChoices, spawnProblem, outcomeWords, previewFacts, deploymentLabel, subsequenceScore, soulMatches, soulCatalogFailure, catalogFailure,
@@ -44,6 +44,9 @@ export function heldOf(state, at) {
     remembered: identityMemory({ memory: state.memory, notes: state.notes }),
     rosterAnswered: state.remote.rosterAnswered, rosterFailure: state.remote.rosterFailure, cli: state.cli,
     observing: new Set(), remoteCollecting: state.collecting, home: state.home, at: state.rosterAt ?? at,
+    // What the identity reads learned of this computer's listed deployments (lib/main.mjs): a listed one is
+    // matched to its workspace in the switcher, and one opened from there is in its view before its first read.
+    learned: state.identities,
   };
 }
 
@@ -53,6 +56,14 @@ export function heldOf(state, at) {
  *  as read: this run's retires in flight are put on them by `build` alone. */
 export function panelOf(state, at) {
   return state.open === null ? null : panelData(heldOf(state, at), state.open, TERMS);
+}
+
+/** The workspace (the shared view's id: panel-views.mjs viewModel) that holds deployment `id` in `state`,
+ *  or null: what the tabs belong to, so a change of `state.open` within one workspace (its deployment of
+ *  this machine opened beside another machine's) is not taken for opening another. */
+export function workspaceOf(state, id, at) {
+  if (id === null) return null;
+  return viewModel(heldOf(state, at), TERMS).views.find((v) => v.id === id || v.deployments.includes(id))?.id ?? null;
 }
 
 const text = (value) => typeof value === "string" && value !== "";
@@ -526,42 +537,89 @@ export function switcherLead(state, cols) {
   return leadRows(leadOf(state), Number.isInteger(cols) && cols > 0 ? cols : 80, { ascii: state.ascii }).length;
 }
 
-/** The switcher's rows for a state, top to bottom: the workspaces this run can show, as the
- *  shared home lists and words them; then the ones matched to no workspace under the shared
- *  heading; then the rows of this computer's deployments list that this run does not serve, in
- *  the kernel's order, under the TUI's own. A served deployment's id and a row's path are both
- *  canonical, so a deployment opened in this run is never offered again.
- *  An item is `{ heading, shared }`, or a choice: `{ key, label, place, notLiveText, open,
- *  primary }` for a view (`primary` is the deployment Enter opens) and `{ key, label, place,
- *  path, state, refused }` for a row of the list (`state` the kernel's: views/switcher.mjs says a
- *  stale one in words). `keys` are the choices in order; `selected` is the key the selection
- *  stands on (the first choice when the state's own is not listed). */
+/** The word an indicator line says of a deployment of a workspace in the switcher, or null for a live
+ *  one: "not opened" for a deployment of this computer's list that this run does not serve (the TUI's
+ *  own), else the shared word for its state (roster-sections.mjs deploymentState: not observed, not
+ *  reached, stale, remembered). */
+export const NOT_OPENED = "not opened";
+function indicatorState(info) {
+  if (info.listed) return NOT_OPENED;
+  const said = deploymentState(info);
+  return said.key === "live" ? null : said.text;
+}
+
+/** The switcher's rows for a state, top to bottom: the workspaces, each a choice followed by one
+ *  indicator line per deployment of it; then the views matched to no workspace under the shared
+ *  heading; then the rows of this computer's deployments list that this run does not serve and that
+ *  no workspace took, in the kernel's order, under the TUI's own.
+ *  A workspace is what the shared rule (panel-views.mjs listedViews, buildViews underneath) makes of
+ *  the deployments this run serves, the machines' groups and the listed deployments whose identity a
+ *  read learned (`state.identities`, lib/main.mjs): a listed deployment that reports the same
+ *  workspace as another is in its row. A served deployment's id and a row's path are both canonical,
+ *  so a deployment opened in this run is never offered again.
+ *  An item is `{ heading, shared }`; `{ indicator }`, a line under a workspace (its deployment's
+ *  machine label, with a path tail where the shared label adds one, then its state word when it is
+ *  not live: indicatorState), never a choice; or a choice: `{ key, label, open, primary, join, opens }`
+ *  for a workspace (`primary` the deployment Enter opens when every local one is served; `join` the
+ *  listed deployments Enter opens first, and `opens` the deployments it may then open, in order),
+ *  `{ key, label, place, notLiveText, open, primary }` for a view matched to no workspace, and
+ *  `{ key, label, place, path, state, refused }` for a row of the list (`state` the kernel's:
+ *  views/switcher.mjs says a stale one in words; `place` why no workspace took it, when a read said, then its path: the reason first, so a narrow row
+ *  cuts the path and keeps it).
+ *  `keys` are the choices in order; `selected` is the key the selection stands on (the first choice
+ *  when the state's own is not listed). */
 export function switcher(state, at = new Date(0).toISOString()) {
-  const held = heldOf(state, at), views = viewModel(held, TERMS);
+  const held = heldOf(state, at);
+  const unserved = state.listed.rows.filter((row) => !state.ctxs.includes(row.path));
+  // Only a row the kernel says is a deployment is matched: a stale one (missing, not one any more) says so instead.
+  const views = listedViews(held, unserved.filter((row) => row.state === "ok"), TERMS);
   const rows = workspaceChoiceRows(workspaceChoices(held, TERMS, views));
   const query = state.switcher.query;
+  const viewOf = (id) => views.views.find((v) => v.id === id);
   const openView = state.open === null ? null : views.views.find((v) => v.id === state.open || v.deployments.includes(state.open))?.id ?? null;
-  const choice = (row) => ({
-    key: `view\u0000${row.id}`, label: row.label, place: row.place, notLiveText: row.notLiveText, open: row.id === openView,
-    primary: views.views.find((v) => v.id === row.id)?.primary ?? null,
-  });
-  const shown = rows.filter((row) => choiceMatches(row, query));
-  const matched = shown.filter((row) => !row.unattached).map(choice), unmatched = shown.filter((row) => row.unattached).map(choice);
-  const unserved = state.listed.rows.filter((row) => !state.ctxs.includes(row.path));
-  const offered = unserved
-    .map(({ path, name, state: listedState }) => ({ key: `path\u0000${path}`, label: name, place: shortPath(path, { home: state.home }), path, state: listedState, refused: state.switcher.refused === path }))
+  const items = [];
+  for (const row of rows.filter((each) => !each.unattached)) {
+    // This machine's deployments first (the served, then the listed), then the other machines', each in the shared order.
+    const all = viewOf(row.id).deployments.map((id) => views.infos.get(id)).filter(Boolean);
+    const infos = [...all.filter((info) => info.local), ...all.filter((info) => !info.local)], view = viewOf(row.id);
+    const labels = machineLabels(infos, TERMS);
+    const lines = infos.map((info) => [labels.get(info.id), indicatorState(info)].filter(Boolean).join(" · "));
+    if (!choiceMatches({ label: row.label, place: lines.join(" ") }, query)) continue;
+    const join = infos.filter((info) => info.listed).map((info) => info.id);
+    items.push({ key: `view\u0000${row.id}`, label: row.label, open: row.id === openView, primary: view.primary, join,
+      opens: infos.map((info) => info.id) });
+    for (const line of lines) items.push({ indicator: line });
+  }
+  const unmatched = rows.filter((row) => row.unattached && choiceMatches(row, query)).map((row) => ({
+    key: `view\u0000${row.id}`, label: row.label, place: row.place, notLiveText: row.notLiveText, open: row.id === openView, primary: viewOf(row.id)?.primary ?? null,
+  }));
+  const why = new Map(views.unmatched.map((info) => [info.id, info.short]));
+  const taken = new Set([...views.infos.keys()]);
+  const offered = unserved.filter((row) => !taken.has(row.path))
+    .map(({ path, name, state: listedState }) => ({
+      key: `path\u0000${path}`, label: name, place: [why.get(path), shortPath(path, { home: state.home })].filter(Boolean).join(" · "), path, state: listedState, refused: state.switcher.refused === path,
+    }))
     .filter((item) => choiceMatches(item, query));
-  const items = [
-    ...matched,
+  items.push(
     ...(unmatched.length ? [{ heading: UNMATCHED_SECTION, shared: true }, ...unmatched] : []),
     ...(offered.length ? [{ heading: OFFERED_SECTION, shared: false }, ...offered] : []),
-  ];
+  );
   const keys = items.filter((item) => item.key !== undefined).map((item) => item.key);
-  const total = rows.length + unserved.length;
+  const total = rows.length + unserved.filter((row) => !taken.has(row.path)).length;
   return {
     items, keys, selected: keys.includes(state.switcher.selected) ? state.switcher.selected : keys[0] ?? null,
     empty: keys.length ? null : total ? "nomatch" : "none",
   };
+}
+/** The window of the switcher's `items` in a pane `height` rows tall, from `top`, that holds the choice
+ *  `key` and, while they fit, the indicator lines under it (scroll.mjs windowOf, asked to keep the last
+ *  of them and then the choice). No key (-1 kept): the window as `top` gives it. */
+export function switcherWindow(items, key, { top, height }) {
+  const at = key === null ? -1 : items.findIndex((item) => item.key === key);
+  let last = at;
+  while (last >= 0 && items[last + 1]?.indicator !== undefined) last++;
+  const after = windowOf({ top, count: items.length, height, keep: last });
+  return windowOf({ top: after.top, count: items.length, height, keep: at });
 }
 
 /** The palette's views and commands, each a row's label and the action it runs. */
@@ -697,10 +755,9 @@ export function model(state, { page, body = page, now, at, cols, area = cols }) 
   };
   if (under === "switcher") {
     const s = switcher(state, at);
-    const at_ = s.selected === null ? -1 : s.items.findIndex((item) => item.key === s.selected);
     // The lines above the rows take the pane's rows, and so does the filter field while it is
     // typed or kept: the window is that much shorter, so no choice is hidden for them (switcherHeight).
-    const win = windowOf({ top: state.switcher.top, count: s.items.length, height: switcherHeight(state, body, area), keep: state.switcher.loose ? -1 : at_ });
+    const win = switcherWindow(s.items, state.switcher.loose ? null : s.selected, { top: state.switcher.top, height: switcherHeight(state, body, area) });
     return {
       ...common, under, list: [], above: 0, below: 0, wordWidth: 0, detail: null,
       // Nothing of a workspace stands in the sidebar while the switcher is shown.

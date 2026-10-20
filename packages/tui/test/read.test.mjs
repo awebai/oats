@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { COLLECTOR, DETACH_KEY_FEATURE, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliReadsRemotes, cliRecord, cliRemoteRoster, failedEntry, livenessInput, observeIdentities, prepareRemoteTerm, remoteRosterState } from "../lib/client.mjs";
-import { CHANGE_FILES, KERNEL_BIN, admitDeployment, createReader, findDeployment, leaveInstance, probeKernel, startExec } from "../lib/read.mjs";
+import { CHANGE_FILES, IDENTITY_BUDGET_MS, KERNEL_BIN, admitDeployment, createIdentityReads, createReader, findDeployment, leaveInstance, probeKernel, startExec } from "../lib/read.mjs";
 import { PANEL_FS } from "../lib/panel.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/fake.mjs", import.meta.url));
@@ -1699,4 +1699,111 @@ test("changeExec returns the real child, an armed timeout or not: it has the pid
   assert.deepEqual([error.code, error.signal], [null, "SIGKILL"]);
   assert.deepEqual(timers.delays(), [], "cleared when the child ended");
   await gone([run.child.pid]);
+});
+
+// --- The identity reads (docs/tui.md, "The switcher") -------------------------------------
+
+/** A kernel record that reports workspace identities, and one that does not. */
+const IDENTIFIES = Object.freeze({ ok: true, bin: "/opt/oats/bin/oats.mjs", version: "0.66.0", workspaceApi: 2, features: Object.freeze(["workspace-v2", "workspace-identity"]) });
+/** Timers the test fires by hand: what is armed, and what was cleared. */
+function handTimers() {
+  const armed = new Map();
+  let next = 1;
+  return { armed, setTimeout(fn, ms) { const id = next++; armed.set(id, { fn, ms }); return id; }, clearTimeout(id) { armed.delete(id); }, fire() { const all = [...armed.values()]; armed.clear(); for (const t of all) t.fn(); } };
+}
+/** A read the test answers by hand: every call, with what it was handed. */
+function handReads() {
+  const calls = [];
+  return { calls, read: (cli, path, options, io) => new Promise((answer) => { calls.push({ cli, path, options, io, answer }); }) };
+}
+const turn = () => new Promise((resolve) => setImmediate(resolve));
+const IDENTITY_ANSWER = (key) => ({ ok: true, workspace: { reachable: true, key } });
+
+test("identity reads run one at a time, in order, each answer handed on as it comes; each through the reader's exec with the run's signal and a background --max-age; one timer, the budget, cleared at the end", async () => {
+  const timers = handTimers(), reads = handReads(), heard = [], execs = [];
+  const exec = (bin, argv, options, callback) => { execs.push(options); return { bin, argv, callback }; };
+  const identities = createIdentityReads({ cli: IDENTIFIES, exec, env: { HOME: "/home/u" }, onRead: (event) => heard.push(event), timers, read: reads.read });
+  identities.start(["/a", "/b", "/c"]);
+  await turn();
+  assert.deepEqual(reads.calls.map((c) => c.path), ["/a"], "one read at a time");
+  assert.deepEqual([...timers.armed.values()].map((t) => t.ms), [IDENTITY_BUDGET_MS], "the one timer is the budget");
+  assert.equal(IDENTITY_BUDGET_MS, 60_000);
+  const [first] = reads.calls;
+  assert.deepEqual([first.cli, first.options, first.io.env], [IDENTIFIES, { maxAge: 60 }, { HOME: "/home/u" }]);
+  first.io.exec("/opt/oats/bin/oats.mjs", ["status"], { cwd: "/a", timeout: 30_000 }, () => {});
+  assert.equal(execs[0].signal instanceof AbortSignal, true, "the run's signal rides on the reader's exec");
+  assert.deepEqual([execs[0].cwd, execs[0].timeout, execs[0].signal.aborted], ["/a", 30_000, false]);
+  first.answer(IDENTITY_ANSWER("k/a"));
+  await turn();
+  assert.deepEqual(heard, [{ path: "/a", read: IDENTITY_ANSWER("k/a") }], "handed on before the next read is answered");
+  assert.deepEqual(reads.calls.map((c) => c.path), ["/a", "/b"]);
+  reads.calls[1].answer({ ok: false, reason: { code: "E_CLI_FAILED", message: "no" } });
+  await turn();
+  reads.calls[2].answer(IDENTITY_ANSWER("k/c"));
+  await turn();
+  assert.deepEqual(heard.map((e) => [e.path, e.read.ok]), [["/a", true], ["/b", false], ["/c", true]]);
+  assert.equal(timers.armed.size, 0, "nothing is left armed: nothing reads again on its own");
+});
+
+test("the budget: when it runs out the read in flight is ended through its signal and answers timed out, whatever it then says, and every read not begun answers timed out without being made", async () => {
+  const timers = handTimers(), reads = handReads(), heard = [], signals = [];
+  const exec = (bin, argv, options) => { signals.push(options.signal); };
+  const identities = createIdentityReads({ cli: IDENTIFIES, exec, env: {}, onRead: (event) => heard.push(event), timers, read: reads.read });
+  identities.start(["/a", "/b", "/c"]);
+  await turn();
+  reads.calls[0].answer(IDENTITY_ANSWER("k/a"));
+  await turn();
+  reads.calls[1].io.exec("bin", [], {}, () => {});
+  timers.fire();
+  assert.equal(signals[0].aborted, true, "the read in flight is ended");
+  reads.calls[1].answer({ ok: false, reason: { code: "E_CLI_FAILED", message: "killed" } });
+  await turn(); await turn();
+  assert.equal(reads.calls.length, 2, "the read not begun is never made");
+  assert.deepEqual(heard.map((e) => [e.path, e.read.ok, e.read.reason?.code ?? null]), [["/a", true, null], ["/b", false, "E_CLI_TIMEOUT"], ["/c", false, "E_CLI_TIMEOUT"]]);
+});
+
+test("a new start ends the run before it, whose answers are dropped; stop() does the same; with no exec, a kernel without workspace identities or no path, nothing is read", async () => {
+  const timers = handTimers(), reads = handReads(), heard = [], signals = [];
+  const exec = (bin, argv, options) => { signals.push(options.signal); };
+  const identities = createIdentityReads({ cli: IDENTIFIES, exec, env: {}, onRead: (event) => heard.push(event), timers, read: reads.read });
+  identities.start(["/a", "/b"]);
+  await turn();
+  reads.calls[0].io.exec("bin", [], {}, () => {});
+  identities.start(["/c"]);
+  await turn();
+  assert.equal(signals[0].aborted, true, "the read of the run before is ended");
+  reads.calls[0].answer(IDENTITY_ANSWER("k/a"));
+  await turn();
+  assert.deepEqual(reads.calls.map((c) => c.path), ["/a", "/c"], "the run before reads nothing more");
+  reads.calls[1].answer(IDENTITY_ANSWER("k/c"));
+  await turn();
+  assert.deepEqual(heard.map((e) => e.path), ["/c"], "only the new run's answer");
+  identities.start(["/d"]);
+  await turn();
+  identities.stop();
+  reads.calls[2].answer(IDENTITY_ANSWER("k/d"));
+  await turn();
+  assert.deepEqual(heard.map((e) => e.path), ["/c"], "nothing after stop()");
+  assert.equal(timers.armed.size, 0);
+  for (const [what, options] of [["no exec", { exec: undefined }], ["no feature", { cli: { ...IDENTIFIES, features: ["workspace-v2"] } }], ["no paths", {}]]) {
+    const none = handReads();
+    const quiet = createIdentityReads({ cli: IDENTIFIES, exec, env: {}, onRead: () => assert.fail(what), timers, read: none.read, ...options });
+    quiet.start(what === "no paths" ? [] : ["/a"]);
+    await turn();
+    assert.deepEqual([none.calls.length, timers.armed.size], [0, 0], what);
+  }
+});
+
+test("an identity read through the real shared reader and the reader's own exec: `oats status --dir <path> --max-age 60 --json` in the deployment, the projected workspace object handed on", async () => {
+  const dir = "/srv/listed", argvs = [];
+  const document = { root: `${dir}/agents`, agents: [], workspace: { reachable: true, key: "github.com/acme/lfx", ref: "main", keyFrom: "workspace", standalone: false, defaultTeam: { label: "eng", team: "t" }, teams: { eng: "t" }, teamsFrom: "observed" } };
+  const exec = (bin, argv, options, callback) => { argvs.push([bin, argv, options.cwd, typeof options.timeout]); setImmediate(() => callback(null, JSON.stringify(document), "")); };
+  const heard = [];
+  const cli = { ...IDENTIFIES, features: [...IDENTIFIES.features, "observe-max-age", "instance-modules", "served-identity", "packages-no-approval"] };
+  const identities = createIdentityReads({ cli, exec, env: {}, onRead: (event) => heard.push(event), timers: handTimers() });
+  identities.start([dir]);
+  for (let i = 0; i < 5 && !heard.length; i++) await turn();
+  assert.deepEqual(argvs, [[cli.bin, ["status", "--dir", dir, "--max-age", "60", "--json"], dir, "number"]]);
+  assert.equal(heard.length, 1);
+  assert.deepEqual([heard[0].path, heard[0].read.ok, heard[0].read.workspace.key, heard[0].read.workspace.reachable], [dir, true, "github.com/acme/lfx", true]);
 });
