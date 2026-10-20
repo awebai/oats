@@ -5,7 +5,7 @@
 import { LEADER, backKeyLabel, keyLabel } from "../actions.mjs";
 import { lit, ownEllipsis } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
-import { cutNote, marksOf, measured } from "./instances.mjs";
+import { NEEDS_INPUT, belowText, cutNote, marksOf, measured } from "./instances.mjs";
 import { windowOf } from "./scroll.mjs";
 import { SOUL_MARK } from "./souls.mjs";
 import { OPEN_MARK } from "./switcher.mjs";
@@ -248,8 +248,8 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = 
       [marks.unknown, "state unknown"],
       [marks.held, ownEllipsis("held by a spawn or a retire: under way (Retiring\u2026), failed or not finished", ascii)],
       ["+N", "N instances folded away below it"],
-      [marks.waiting, "needs input"],
-      [`${marks.waiting}N`, "N instances folded away below it need input"],
+      [marks.waiting, `needs input, in reverse video: ${NEEDS_INPUT} where the whole name fits`],
+      ["N", `N instances folded away below it need input: ${belowText("N")} where the whole name fits`],
       [marks.selected, "the selected row, and the pane the movement keys act on"],
       [OPEN_MARK, "among the workspaces: the one that is open"],
       [ascii ? SOUL_MARK.ascii : SOUL_MARK.utf8, "among the souls: a soul, in its colour"],
