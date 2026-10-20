@@ -593,24 +593,24 @@ control.
   when the instance runs, opens its terminal unless the operator acted since the
   press (a key other than a lone modifier, a paste, a focus move, a navigation) or
   an overlay is open (`docs/desktop-spawn-preview.md`, Background spawn).
-- **Focus on open:** the form's first field (Deployment when it shows, else
-  Harness), whenever the dialog opens for a chosen soul (a card, the soul page,
-  Quick Open, Reopen spawn, a pick in the soul list), without scrolling. Name is
-  optional and the form's last field, so the dialog never lands there; its
-  section key (Mod+1) reaches it, with the caret at the end of a restored name
-  (never selected). Quick Open from a tab opens the dialog just before the
+- **Focus on open:** the form's first field, the Opening instruction,
+  whenever the dialog opens for a chosen soul (a card, the soul page, Quick
+  Open, Reopen spawn, a pick in the soul list), without scrolling, with the
+  caret at the end of a restored instruction (never selected). Name is optional
+  and the form's last field; its section key (Mod+1) reaches it, with the caret
+  at the end of a restored name. Quick Open from a tab opens the dialog just before the
   Workspace stage is shown; the first field takes focus once it is, unless the
   operator has focused something else by then.
 - **Spawn: Mod+Enter (⌘↵ / Ctrl+Enter) from any field**, the Opening
   instruction and the segmented controls included; plain Enter in Name does
   not spawn, Enter or Space on the focused Spawn button does. The button
   shows the effective chord.
-- **Tab order** is the visual order: Deployment (when shown) → Harness → Model
-  (its field, then its suggestions button) → Where to run (when shown) →
-  Relationship (one stop) → its target when shown → Teams (one stop) → Opening
-  instruction → Name → Developer settings →
-  (Details, when a problem shows it) → Cancel → Spawn, then the header's Change
-  soul and Close. Tab is trapped in the dialog.
+- **Tab order** is the visual order: Opening instruction → Deployment (when
+  shown) → Harness → Model (its field, then its suggestions button) → Where to
+  run (when shown) → Relationship (one stop) → its target when shown → Teams
+  (one stop) → Name → Developer settings → (in a narrow window, What will be
+  created, below the fields) → (Details, when a problem shows it) → Cancel →
+  Spawn, then the header's Change soul and Close. Tab is trapped in the dialog.
 - Segmented controls and radio groups are one tab stop: Arrow keys move (and
   choose, in a radio group), Home/End go to the ends (`roveSegment`).
 - The Harness and Model pickers open with Enter, Space or Alt+Down and close
@@ -633,8 +633,9 @@ control.
   | Opening instruction (`spawn.jumpTask`) | ⌘6 | Ctrl+6 | the instruction |
   | Developer settings (`spawn.toggleAdvanced`) | ⌘7 | Ctrl+7 | opens it on its first control; again closes it back on its summary |
 
-  Name keeps ⌘1 though it is now the form's last field: the chords name
-  sections, not positions. A closed disclosure holding the target opens first. Each chord shows as a
+  Name keeps ⌘1 though it is now the form's last field, and the Opening
+  instruction keeps ⌘6 though it is now the first: the chords name sections,
+  not positions. A closed disclosure holding the target opens first. Each chord shows as a
   quiet hint beside its section's label (`aria-hidden`; the control carries
   `aria-keyshortcuts`). They are actions of the `spawn-dialog-local` context
   (`renderer/spawn-dialog-keys.mjs`, with Mod+Enter): the shortcuts editor

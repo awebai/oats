@@ -1,7 +1,7 @@
 /** The spawn dialog's Deployment field (#482, decision Q2, UI spec): which of the view's deployments the
  * new instance is spawned in. Shown only when the view has two or more deployments; with one, there is
- * no field and nothing changes (the dialog addresses that deployment). It is the form's first field:
- * where the instance runs decides everything else.
+ * no field and nothing changes (the dialog addresses that deployment). It is the form's first choice,
+ * after the Opening instruction: where the instance runs decides everything else.
  *
  * - The control is the form's own family, never a native select: with two or three deployments the
  *   segmented control (Relationship's; one tab stop, arrows choose), with more the Harness-style
