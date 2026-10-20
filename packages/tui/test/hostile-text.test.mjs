@@ -492,7 +492,7 @@ test("200 machines are drawn in bounded work: the shared home reads each machine
   const never = Array.from({ length: 200 }, (_, i) => group({ id: `quartz-${i}:acme-1`, server: `quartz-${i}`, label: `quartz-${i}`, probe: { ok: false, error: { code: "E_SSH", message: "Permission denied (publickey)." } }, workspace: null, instances: [] }));
   // The switcher has the main area, every row of it: its window is the screen's height.
   const unmatched = draw(key(heard(reporting(), answered(...never), T1), "w"), S80);
-  assert.equal(unmatched.lines.slice(0, 23).filter((line) => line.includes("quartz-")).length, 21, "the area holds the open workspace, the heading and twenty-one machines");
-  assert.equal(unmatched.lines[23].slice(unmatched.cols + 1).trim(), cutNote(0, 202 - 23), "the area's last row says what is cut off");
+  assert.equal(unmatched.lines.slice(0, 23).filter((line) => line.includes("quartz-")).length, 20, "the area holds the open workspace, its line (this machine), the heading and twenty machines");
+  assert.equal(unmatched.lines[23].slice(unmatched.cols + 1).trim(), cutNote(0, 203 - 23), "the area's last row says what is cut off");
   within(unmatched, S80, "200 unmatched machines");
 });

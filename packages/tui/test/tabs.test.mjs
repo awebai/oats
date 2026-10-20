@@ -9,6 +9,7 @@ import { collapseKey, instanceId } from "../lib/client.mjs";
 import { paletteItems, roster } from "../lib/model.mjs";
 import { MAX_TERMINALS } from "../lib/panel.mjs";
 import { TAB_LIMIT, reduce } from "../lib/store.mjs";
+import { createScreen } from "../lib/term/screen.mjs";
 import { textWidth } from "../lib/term/width.mjs";
 import { draw, instanceRow, observed, stateOf } from "./helpers.mjs";
 
@@ -296,7 +297,7 @@ test("opening another workspace closes every tab: one close for each, and no ter
   assert.equal(same.state.tabs.length, 3);
 });
 
-// ── The strip ────────────────────────────────────────────────────────────────────────────────────
+// ── The tab bar ──────────────────────────────────────────────────────────────────────────────────
 
 /** dev-alpha (hidden, with output), dev-beta-with-a-long-name (hidden, on garnet), dev-gamma
  *  (shown, the focus in it). */
@@ -312,60 +313,92 @@ function stripAt(state, cols) {
 }
 const cellsOf = (s, word) => { const at = s.text.indexOf(word); assert.notEqual(at, -1, word); return s.cells.slice(at, at + word.length); };
 
-test("the strip at 120 columns: every tab in opening order, the shown one in reverse while its terminal has the focus, a hidden one with output marked, another machine's dim", () => {
+/** Each cell of `word` in the strip is dim, a blank one passed over. */
+const dimCells = (s, word) => cellsOf(s, word).filter((each) => each.text !== " ").every((cell) => cell.style.dim === true);
+
+test("the tab bar at 120 columns: every tab in opening order, a dim │ between two; the shown one in brackets, bold and in reverse while its terminal has the focus, its sides included; a hidden one dim, with output marked; another machine's · <machine> dim inside its tab", () => {
   const s = stripAt(three(), 120);
-  assert.equal(s.text, " dev-alpha•  dev-beta-with-a-long-name on garnet  dev-gamma");
-  for (const cell of cellsOf(s, "dev-gamma")) assert.deepEqual([cell.style.reverse, cell.style.bold], [true, true]);
-  for (const cell of cellsOf(s, "dev-alpha")) assert.deepEqual([cell.style.reverse, cell.style.bold, cell.style.dim], [false, false, false], "a hidden tab is plain");
-  for (const cell of [...cellsOf(s, " on "), ...cellsOf(s, "garnet")].filter((each) => each.text !== " ")) assert.equal(cell.style.dim, true);
+  assert.equal(s.text, " dev-alpha• │ dev-beta-with-a-long-name · garnet │[dev-gamma]");
+  for (const cell of cellsOf(s, "[dev-gamma]")) assert.deepEqual([cell.style.reverse, cell.style.bold], [true, true], "the front tab, sides and all");
+  for (const cell of cellsOf(s, "dev-alpha")) assert.deepEqual([cell.style.reverse, cell.style.bold, cell.style.dim], [false, false, true], "a hidden tab is dim");
+  assert.equal(cellsOf(s, "•")[0].style.dim, false, "the activity mark is not dim");
+  assert.equal(dimCells(s, "· garnet"), true, "the machine is dim");
+  for (const cell of s.cells.filter((each) => each.text === "│")) assert.equal(cell.style.dim, true, "a divider is dim");
+  assert.equal(s.cells.filter((each) => each.text === "│").length, 2, "one divider between two tabs, none at the ends");
   assert.equal(textWidth(s.text) <= s.cols, true);
-  // From the list the shown one is bold, not reverse.
+  // From the list the shown one is bold, not reverse; it keeps its brackets, the mark no style is needed for.
   const list = stripAt(toList(three()), 120);
-  for (const cell of cellsOf(list, "dev-gamma")) assert.deepEqual([cell.style.reverse, cell.style.bold], [false, true]);
+  assert.equal(list.text, s.text);
+  for (const cell of cellsOf(list, "[dev-gamma]")) assert.deepEqual([cell.style.reverse, cell.style.bold], [false, true]);
 });
 
-test("the strip at 80 columns: another machine is cut first, then hidden names with …; the shown tab stays whole", () => {
+test("the tab bar of another machine's agent while it is the shown tab: its machine dim inside the brackets, in the tab's reverse video", () => {
+  let s = opened(SIX(), "dev-a");
+  s = Object.freeze({ ...s, tabs: Object.freeze(s.tabs.map((tab) => Object.freeze({ ...tab, routed: true, machine: "garnet" }))), terminal: Object.freeze({ ...s.terminal, routed: true, machine: "garnet" }) });
+  const bar = stripAt(s, 120);
+  assert.equal(bar.text, "[dev-a · garnet]");
+  for (const cell of cellsOf(bar, "· garnet").filter((each) => each.text !== " ")) assert.deepEqual([cell.style.dim, cell.style.reverse], [true, true]);
+  for (const cell of cellsOf(bar, "dev-a")) assert.deepEqual([cell.style.bold, cell.style.reverse, cell.style.dim], [true, true, false]);
+  const list = stripAt(toList(s), 120);
+  assert.equal(list.text, "[dev-a · garnet]");
+  for (const cell of cellsOf(list, "garnet")) assert.deepEqual([cell.style.dim, cell.style.reverse], [true, false]);
+});
+
+test("the tab bar at 80 columns: another machine is cut first, then hidden names with …; the shown tab stays whole", () => {
   const s = stripAt(three(), 80);
-  assert.equal(s.cols < 52, true, "too narrow for the whole strip");
+  assert.equal(s.cols < 62, true, "too narrow for the whole bar");
   assert.equal(s.text.includes("garnet"), false, "the machine went first");
-  assert.equal(s.text.includes("dev-gamma"), true, "the shown tab is whole");
-  assert.match(s.text, /^ dev-alpha• {2}dev-beta-with-a-\S*… {2}dev-gamma$/);
+  assert.match(s.text, /^ dev-alpha• │ dev-beta-with\S*… │\[dev-gamma\]$/);
   assert.equal(textWidth(s.text) <= s.cols, true);
 });
 
-test("the strip at 60 columns (the terminal zoomed to the whole width) fits, and in ASCII the mark is * and the cut is ...", () => {
+test("the tab bar at 60 columns (the terminal zoomed to the whole width) cuts the hidden machine only; in ASCII the mark is *, the divider |, the machine's dot - and the cut ...", () => {
   const s = stripAt(three(), 60);
   assert.equal(s.cols, 60);
-  assert.equal(s.text, " dev-alpha•  dev-beta-with-a-long-name on garnet  dev-gamma");
+  assert.equal(s.text, " dev-alpha• │ dev-beta-with-a-long-name │[dev-gamma]");
+  const wide = stripAt(three({ ascii: true }), 120);
+  assert.equal(wide.text, " dev-alpha* | dev-beta-with-a-long-name - garnet |[dev-gamma]");
   const ascii = stripAt(three({ ascii: true }), 80);
-  assert.match(ascii.text, /^ dev-alpha\* {2}dev-beta-with-\S*\.\.\. {2}dev-gamma$/);
+  assert.match(ascii.text, /^ dev-alpha\* \| dev-beta-with\S*\.\.\. \|\[dev-gamma\]$/);
   assert.equal(textWidth(ascii.text) <= ascii.cols, true);
+  assert.equal([...ascii.text].every((ch) => ch.charCodeAt(0) < 128), true, "printable ASCII");
 });
 
-test("with a single tab the row reads as T1's title: the name alone, and its machine dim when it is another's", () => {
+test("with a single tab the top row is still a tab bar: the one tab, in brackets, and no divider; back to one tab after a close, the same", () => {
   const one = opened(SIX(), "dev-a");
   const s = stripAt(one, 120);
-  assert.equal(s.text, " dev-a");
+  assert.equal(s.text, "[dev-a]");
+  for (const cell of cellsOf(s, "[dev-a]")) assert.deepEqual([cell.style.bold, cell.style.reverse], [true, true]);
   const after = stripAt(leaderThen(opened(SIX(), "dev-a", "dev-b"), "w").state, 120);
-  assert.equal(after.text, " dev-a", "back to one tab, back to the title");
+  assert.equal(after.text, "[dev-a]", "back to one tab");
 });
 
-test("a shown name that fits the panel stays whole however many tabs are hidden: the hidden ones farthest from it are left out first (round 1 of the review)", () => {
-  const LONG = "backend-maintainer-deployment-review-release";
+test("under NO_COLOR the shown tab still reads as the front one: its brackets are text, and only attributes are written", () => {
+  const sz = { cols: 120, rows: 24 }, d = draw(three(), sz);
+  const bytes = createScreen({ utf8: true, color: false }).render(d.rows, sz, { full: true });
+  assert.equal(bytes.includes("[dev-gamma]"), true);
+  // Every SGR written is a reset and attributes (1 bold, 2 dim, 7 reverse): no colour parameter.
+  for (const [, params] of bytes.matchAll(/\u001b\[([0-9;]*)m/g)) for (const p of params.split(";").filter(Boolean)) assert.equal(["0", "1", "2", "3", "4", "7", "9"].includes(p), true, `SGR ${params}`);
+});
+
+test("a shown name that fits the panel stays whole however many tabs are hidden: the hidden ones farthest from it are left out first, each with its divider (round 1 of the review)", () => {
+  const LONG = "backend-maintainer-deployment-review-rel";
   const base = () => stateOf(observed(["a", "b", "c", LONG].map((name) => instanceRow("dev", name))));
   const last = opened(base(), "a", "b", "c", LONG);
   const s = stripAt(last, 80);
   assert.equal(s.cols, 49);
-  assert.equal(s.text, ` c  ${LONG}`, "the nearest hidden tab is kept, the others left out");
+  assert.equal(s.text, ` c │[${LONG}]`, "the nearest hidden tab is kept, the others left out");
   assert.equal(textWidth(s.text) <= s.cols, true);
-  // Shown first: the strip starts with it, whole.
+  // Shown first: the bar starts with it, whole.
   const first = key(key(key(toList(opened(base(), LONG, "a", "b", "c")), "[").state, "[").state, "[").state;
   assert.equal(shownName(first), LONG);
-  const f = stripAt(first, 80);
-  assert.equal(f.text, ` ${LONG}  a`);
-  // Wider, every tab is there and only the hidden names are cut.
-  const wide = stripAt(last, 120);
-  assert.equal(wide.text, ` a  b  c  ${LONG}`);
+  assert.equal(stripAt(first, 80).text, `[${LONG}]│ a`);
+  // Wider, every tab is there.
+  assert.equal(stripAt(last, 120).text, ` a │ b │ c │[${LONG}]`);
+  // A shown name wider than the panel is cut, its brackets kept, and no hidden tab is drawn.
+  const huge = "x".repeat(60);
+  const lone = stripAt(opened(stateOf(observed(["a", huge].map((name) => instanceRow("dev", name)))), "a", huge), 80);
+  assert.equal(lone.text, `[${"x".repeat(46)}…]`);
 });
 
 /** The cheat sheet as drawn at `size`: the sidebar's rows from the leader's on, to the first empty one. */
@@ -379,7 +412,7 @@ function sheet(state, size) {
 test("with tabs open the list's cheat sheet is small, from the list and from the detail: no zoom, close terminal or [/] tab, which the leader's hint names, its tabs' keys while two tabs or more are open; on short rows the sheet gives up its rows from the end", () => {
   const one = toList(opened(SIX(), "dev-a")), two = toList(opened(SIX(), "dev-a", "dev-b"));
   const tall = { cols: 120, rows: 30 };
-  const all = [" Ctrl+\\   commands", " Ctrl+K   palette", " Enter    focus terminal", " n        spawn", " ?        help", " q        quit"];
+  const all = [" Ctrl+\\   commands", " Ctrl+K   palette", " Enter    focus terminal", " n        spawn", " w        workspaces", " ?        help", " q        quit"];
   assert.deepEqual(sheet(one, tall), all, "one tab");
   assert.deepEqual(sheet(two, tall), all, "two tabs: the same sheet");
   assert.deepEqual(sheet(key(two, "tab").state, tall), [...all.slice(0, 2), " Tab      back", ...all.slice(2)], "from the detail: Tab back after the palette");
@@ -388,6 +421,6 @@ test("with tabs open the list's cheat sheet is small, from the list and from the
   assert.deepEqual(hint(two).slice(4, 7), [" z            zoom", " w            close terminal", " Left/Right   tab"]);
   assert.equal(hint(one).some((row) => row.endsWith(" tab")), false, "one tab: nothing to switch to");
   assert.deepEqual(sheet(two, { cols: 100, rows: 24 }), all, "the rows hold it whole");
-  assert.deepEqual(sheet(two, { cols: 100, rows: 17 }), all.slice(0, 4), "given up from its end: quit and help");
+  assert.deepEqual(sheet(two, { cols: 100, rows: 17 }), all.slice(0, 4), "given up from its end: quit, help and workspaces");
   assert.deepEqual(sheet(two, { cols: 100, rows: 15 }), all.slice(0, 2), "the list keeps its rows");
 });

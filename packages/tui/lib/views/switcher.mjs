@@ -4,7 +4,8 @@
 // deployment's name and path and what the kernel said; the marks, the headings of its own and its
 // few sentences are the TUI's.
 // Nothing is told by colour alone: the selected row carries `>` as well as reverse video, and
-// the workspace that is open carries `*`.
+// the workspace that is open carries `*`. Under a workspace, one dim line per deployment of it says
+// where it is and, when it is not live, its state in words (lib/model.mjs switcher): never a colour.
 import { lit, shown, shownLines } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { cutNote, measured } from "./instances.mjs";
@@ -33,6 +34,8 @@ export const SWITCHER_TEXT = Object.freeze({
 /** The columns of a choice: the selection mark in the first cell, the open mark, then the label.
  *  A heading and every line that is not a choice start two cells before the labels. */
 const OPEN = 2, LABEL = 4, ASIDE = LABEL - 2;
+/** The column of a workspace's indicator lines: two cells in from its label. */
+const INDICATOR = LABEL + 2;
 /** One cell of margin at the right edge, as the sidebar keeps. */
 const MARGIN = 1;
 /** The cells between two columns. */
@@ -134,6 +137,8 @@ export function switcher(m, size) {
     const at = lead.length + i;
     if (at >= size.rows) return;
     if (item.heading !== undefined) rows[at] = [{ col: ASIDE, text: item.shared ? shown(item.heading) : lit(item.heading), style: DIM, width: aside }];
+    // A deployment of the workspace above: the shared machine label and state word, cut at the edge.
+    else if (item.indicator !== undefined) rows[at] = cols - MARGIN > INDICATOR ? [{ col: INDICATOR, text: shown(item.indicator), style: DIM, width: cols - MARGIN - INDICATOR }] : [];
     else rows[at] = choiceRow(item, cols);
   });
   if (note) rows[size.rows - 1] = [{ col: ASIDE, text: lit(note), style: DIM, width: aside }];

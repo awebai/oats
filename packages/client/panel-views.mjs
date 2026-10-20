@@ -18,6 +18,9 @@
  *     remoteCollecting,  // boolean: the remote roster is being read
  *     home,              // string: the user's home directory, for the short label
  *     at,                // string: the ISO time of this call
+ *     learned,           // optional: Map<deployment path, identity read> (deployment-identity.mjs
+ *                        // `cliDeploymentIdentity` answers) of this computer's deployments, read before
+ *                        // they were observed: see `deploymentInfo` and `listedViews`
  *   }
  *
  * These functions read no clock: the one time they stamp is `held.at`, and the same `held` gives the
@@ -73,6 +76,13 @@ export function rememberedGroups(held) {
  * `roster`. Without it a client makes no roster read (remote-roster.mjs `remoteRosterState`: "gated"). */
 export const cliReadsRemotes = (cli) => !!cli.ok && !!cli.remote?.includes("roster");
 const identityFeature = (held) => !!held.cli.features?.includes("workspace-identity");
+/** What a projected `workspace` object (deployment-data.mjs) says of the identity: readIdentity's
+ * classification, `feature` when the CLI reports no identities, `invalid` when the projection marked it. */
+const identityRead = (held, workspace) => (!identityFeature(held) ? { status: "feature" }
+  : workspace?.identityInvalid ? { status: "invalid" } : readIdentity(workspace));
+/** The identity read learned of this computer's deployment `id` before it was observed (`held.learned`):
+ * the answer when the read answered, else null (not read, or the read failed). */
+const learnedOf = (held, id) => { const read = held.learned?.get?.(id); return read?.ok === true ? read : null; };
 /** One deployment's identity, attachment, machine label and reason. */
 export function deploymentInfo(held, d, terms) {
   requireTerms(terms, 'deploymentInfo');
@@ -83,14 +93,16 @@ export function deploymentInfo(held, d, terms) {
     // it in its view, but it is stale, not live, and says why. Still reachable: this computer's own deployment.
     // Whether one is kept is deployment-facts.mjs `keptFailure`'s to say, never a test of the message.
     const kept = live ? keptFailure(entry) : null;
-    const read = !live ? { status: "none" } : !identityFeature(held) ? { status: "feature" }
-      : observed.reachable?.identityInvalid ? { status: "invalid" } : readIdentity(observed.reachable);
+    // Not observed (yet, or its read failed): the identity an identity read learned of it, when one did, places it
+    // in its view (`identityFrom: "learned"`); it stays not live, with its reading or unavailable sentence.
+    const learned = live ? null : learnedOf(held, d.id);
+    const read = live ? identityRead(held, observed.reachable) : learned ? identityRead(held, learned.workspace) : { status: "none" };
     const identity = read.status === "identity" ? read.identity : null;
     const attach = attachment(identity);
     // Not observed (yet): the reading or unavailable sentence, never a silent empty.
     const unavailable = live ? null : deploymentUnavailableText(observed || { status: "pending" }, terms);
     return { id: d.id, local: true, machine: terms.thisMachine, path: d.id, label: shortPath(d.id, { home: held.home }), name: d.name,
-      live: live && !kept, reachable: live, ...(kept ? { stale: true } : {}), identityFrom: identity ? "reported" : null, identity, attach,
+      live: live && !kept, reachable: live, ...(kept ? { stale: true } : {}), identityFrom: identity ? (live ? "reported" : "learned") : null, identity, attach,
       teamLabel: identity?.defaultTeam?.label ?? null,
       ...reasonFields(deploymentReasonParts({ local: true, identityStatus: read.status, attach, ref: identity?.ref, unavailable,
         ...(kept ? { readError: kept.message, readErrorOrigin: kept.origin } : {}) }, terms)),
@@ -121,17 +133,58 @@ export function deploymentInfo(held, d, terms) {
 export function reasonFields(parts) {
   return parts ? { reason: parts.detail, short: parts.short, fix: parts.fix } : { reason: null, short: null, fix: [] };
 }
-/** The views and the per-deployment facts they rest on: `{ views, infos: Map<deploymentId, info> }`. */
-export function viewModel(held, terms) {
-  requireTerms(terms, 'viewModel');
-  const infos = new Map(deployments(held).map((d) => [d.id, deploymentInfo(held, d, terms)]));
-  const views = buildViews([...infos.values()]).map((v) => {
+/** buildViews' views over `infos`, each unattached one with its deployment's reason, short reason and ref. */
+function viewsOver(infos) {
+  return buildViews([...infos.values()]).map((v) => {
     const unattachedReason = v.unattached ? infos.get(v.primary)?.reason ?? null : null;
     const unattachedShort = v.unattached ? infos.get(v.primary)?.short ?? null : null;
     const ref = v.unattached ? infos.get(v.primary)?.identity?.ref ?? null : null;
     return { ...v, ...(unattachedReason ? { reason: unattachedReason } : {}), ...(unattachedShort ? { short: unattachedShort } : {}), ...(ref ? { ref } : {}) };
   });
-  return { views, infos };
+}
+/** The views and the per-deployment facts they rest on: `{ views, infos: Map<deploymentId, info> }`. */
+export function viewModel(held, terms) {
+  requireTerms(terms, 'viewModel');
+  const infos = new Map(deployments(held).map((d) => [d.id, deploymentInfo(held, d, terms)]));
+  return { views: viewsOver(infos), infos };
+}
+
+/** Why an identity read of a listed deployment failed, as reason parts: `Timed out` for the read's time limit
+ * (a read that never began before its caller's budget ran out is answered the same), else `Not read`; the
+ * sentence is the unavailable one (deployment-facts.mjs), the kernel's words set apart when it gave them. */
+function identityFailure(reason, terms) {
+  return { short: reason?.code === "E_CLI_TIMEOUT" ? "Timed out" : "Not read", detail: deploymentUnavailableText({ status: "unavailable", reason: reason || {} }, terms), fix: [] };
+}
+/** One row of this computer's deployments list (deployment-list.mjs: `{ path, name }`) that the client does not
+ * serve, as a switcher matches it: an info of `deploymentInfo`'s shape, never live or reachable, `listed: true`,
+ * named by the row (its folder's name, a local name to buildViews), with the identity an identity read learned
+ * of it (`held.learned`) and `read`: "pending" (no answer yet), "read" or "failed". Its reason says why it is not
+ * matched: the read's failure, or the shared reason of an identity that attaches to no workspace; none while it
+ * is pending or when it attaches. */
+export function listedInfo(held, row, terms) {
+  requireTerms(terms, 'listedInfo');
+  const answer = held.learned?.get?.(row.path) ?? null, learned = answer?.ok === true ? answer : null;
+  const read = learned ? identityRead(held, learned.workspace) : { status: "none" };
+  const identity = read.status === "identity" ? read.identity : null;
+  const attach = attachment(identity);
+  const parts = answer === null ? null : !learned ? identityFailure(answer.reason, terms)
+    : deploymentReasonParts({ local: true, identityStatus: read.status, attach, ref: identity?.ref }, terms);
+  return { id: row.path, local: true, listed: true, machine: terms.thisMachine, path: row.path, label: shortPath(row.path, { home: held.home }), name: row.name,
+    live: false, reachable: false, identityFrom: identity ? "learned" : null, identity, attach, teamLabel: identity?.defaultTeam?.label ?? null,
+    read: answer === null ? "pending" : learned ? "read" : "failed", ...reasonFields(parts), note: null };
+}
+/** The switcher's views (#482): `viewModel`'s, with this computer's listed deployments the client does not serve
+ * matched in by the same rule (buildViews, over the served deployments first, then these). `listed`: the list's
+ * rows (`{ path, name }`), in its order; a row the client serves is passed over. A listed deployment whose
+ * identity attaches joins its workspace's view, or makes one; the others are `unmatched`, in order, each
+ * `listedInfo`'s answer. `{ views, infos, unmatched }`: `infos` holds the served deployments' and the matched
+ * listed ones'. Only a switcher reads this: a listed deployment is in no panel and no route. */
+export function listedViews(held, listed, terms) {
+  requireTerms(terms, 'listedViews');
+  const model = viewModel(held, terms);
+  const offered = (Array.isArray(listed) ? listed : []).filter((row) => !model.infos.has(row?.path)).map((row) => listedInfo(held, row, terms));
+  const infos = new Map([...model.infos, ...offered.filter((info) => !info.attach.unattached).map((info) => [info.id, info])]);
+  return { views: viewsOver(infos), infos, unmatched: offered.filter((info) => info.attach.unattached) };
 }
 /** The view a selector names: a view id, or a deployment id (answered with the view that holds it, so
  * a selection saved before views opens its view). No selector means the first view. `model` is a
