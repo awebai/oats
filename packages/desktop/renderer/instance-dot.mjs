@@ -3,7 +3,8 @@
  * (packages/client instance-presentation.mjs `instanceColor`), and the dot keeps saying the state by its
  * shape: filled while running, a ring while stopped. An unknown state keeps today's warning dot whatever the
  * colour, and a row with no colour keeps today's look. The dot carries the palette name only, as
- * `data-instance-color`; shell.css turns it into `--instance-color` (the soul palette's `--soul-<name>-fg`)
+ * `data-instance-color`; shell.css turns it into `--instance-color` (theme.css `--instance-<name>`: the soul's `-fg` in the built-in
+ * themes, held at 3:1 on every fill by "This computer", host-theme.mjs)
  * and each dot's own rule paints with it (theme-contrast.test.mjs proves it on every surface it sits on). */
 import { instanceColor } from '../../client/instance-presentation.mjs';
 

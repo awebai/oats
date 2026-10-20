@@ -39,7 +39,7 @@ export const COLOR_CHOICES = Object.freeze([null, ...SOUL_COLORS]);
 export const colorLabel = color => (color === null ? 'None' : `${color[0].toUpperCase()}${color.slice(1)}`);
 
 /* The swatches. The circle's colour is the dot's (shell.css `[data-instance-color]` → --instance-color, the
- * theme's --soul-<colour>-fg), proven against the dialog's surfaces by test/theme-contrast.test.mjs; "None" is a
+ * theme's --instance-<colour>: the soul's -fg in the built-in themes, held at 3:1 by "This computer"), proven against the dialog's surfaces by test/theme-contrast.test.mjs; "None" is a
  * ring. Pressed is said by shape as well as by colour: a heavier edge and bold name. */
 export const instanceColorCSS = `
 .instance-color-swatches { display:flex; flex-wrap:wrap; gap:6px; }
