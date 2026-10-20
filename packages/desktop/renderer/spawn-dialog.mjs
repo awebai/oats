@@ -24,6 +24,7 @@ import { distinguishingRootTags } from '../../client/instance-tree.mjs';
 import { createChoicePopup } from './choice-popup.mjs';
 import { postJson, workspaceGeneration, wsQuery } from './views/common.mjs';
 import { previewSupported, previewChoices, previewData, previewTarget, previewFailure, INSTANCE_NAME_MAX } from '../../client/spawn-preview-contract.mjs';
+import { nameWithRole } from '../../client/instance-name.mjs';
 import { spawnApplySupported, spawnPrepareInput, spawnApplyReason, ROLLED_BACK_CODES } from '../../client/spawn-apply-contract.mjs';
 import { createSpawnTransaction } from '../../client/spawn-transaction.mjs';
 import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from '../../client/spawn-messages.mjs';
@@ -169,19 +170,14 @@ export const spawnDialogCSS = `
 .spawn-form .field { min-width:0; width:100%; box-sizing:border-box; }
 /* Focus is the shell's (rule 2/3: fields turn their border accent); a joined wrapper is the one frame of its inputs. */
 .spawn-joined:focus-within { border-color:var(--accent); }
-/* Name: the hero field. One frame (the wrapper's border) that turns to the accent on focus; no ring. */
+/* Name: optional, the form's last field. One frame (the wrapper's border) that turns to the accent on focus; no ring. */
 .spawn-name-input { display:flex; align-items:stretch; min-width:0; height:36px; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
 .spawn-name-input:focus-within { border-color:var(--accent); box-shadow:none; outline:none; }
 .spawn-name-prefix { flex:none; display:flex; align-items:center; max-width:55%; padding:0 0 0 12px; color:var(--muted); font:13px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .spawn-name-input input.field { flex:1; height:100%; border:0; border-radius:8px; background:transparent; padding:0 12px 0 1px; font:600 13px var(--mono,monospace); color:var(--fg); }
 .spawn-dialog .spawn-name-input input.field, .spawn-dialog .spawn-name-input input.field:focus, .spawn-dialog .spawn-name-input input.field:focus-visible { outline:none; border:0; box-shadow:none; }
 .spawn-name-result { display:flex; align-items:center; gap:6px; }
-.spawn-dialog .spawn-name { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"label switch" "input input" "result result"; column-gap:12px; align-items:center; }
-/* Tab order is Name, then the prefix switch (spec F); the switch still sits on the label's line. */
-.spawn-name > label { grid-area:label; }
-.spawn-name > .spawn-name-input { grid-area:input; }
-.spawn-name > .spawn-switch { grid-area:switch; justify-self:end; font-size:11.5px; color:var(--muted); }
-.spawn-name > .spawn-name-result { grid-area:result; }
+/* The <soul>- prefix is shown only where the typed name is a purpose (an older kernel, a remote target). */
 .spawn-name-input.unprefixed .spawn-name-prefix { display:none; }
 .spawn-name-input.unprefixed input.field { padding-left:12px; }
 .spawn-name-result strong { font:600 11.5px var(--mono,monospace); color:var(--fg); }
@@ -587,7 +583,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   header.append(mark, headCopy, changeSoul, closeButton);
   // ── chooser (picker layout)
   const { chooser, search, focusTarget } = composeChooser(doc, { soul, agents, canChoose, query: draft.query || '', note: catalogNote,
-    choose: (candidate, query) => { if (!busy()) choose(candidate, { query, purpose: purpose.value, task: task.value, prefixed: prefixed.checked, layout: 'picker' }); } });
+    choose: (candidate, query) => { if (!busy()) choose(candidate, { query, purpose: purpose.value, task: task.value, layout: 'picker' }); } });
   // ── preview (scoped layout): what the kernel will create, from the latest observation
   const preview = el('aside', undefined, 'spawn-preview'); preview.setAttribute('aria-label', 'Spawn preview');
   const factsSection = el('section', undefined, 'spawn-preview-section spawn-preview-created');
@@ -608,15 +604,12 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const keyHint = target => { const k = el('kbd', '', 'shortcut-hint spawn-key-hint'); k.setAttribute('aria-hidden', 'true'); k.hidden = true; keyHints[target] = k; return k; };
   const selectionSummary = el('span', `Selected soul ${soul.name}${soul.server ? ` on ${soul.server}` : ''}`, 'workspace-sr-only');
   selectionSummary.id = 'spawn-selection-summary'; dialog.setAttribute('aria-describedby', selectionSummary.id);
-  // Name
+  // Name (optional, the last field): what is typed gets the soul's role as its suffix and goes as
+  // --name <typed>-<role> (packages/client/instance-name.mjs) where the CLI advertises spawn-name and
+  // the spawn is local; elsewhere (an older kernel, a remote target, whose route takes a purpose)
+  // it is a purpose, named <soul>-<typed>, with that prefix shown. Empty: the kernel numbers it.
   const nameField = el('div', undefined, 'spawn-field spawn-name');
-  const nameLabel = el('label', 'Name'); nameLabel.htmlFor = 'spawn-purpose'; nameLabel.append(keyHint('name'));
-  // Prefix toggle: on = --purpose <typed> (named <soul>-<typed>); off = --name <typed>
-  // (exact). Offered only where the CLI advertises spawn-name.
-  const prefixLabel = el('label', undefined, 'spawn-switch spawn-prefix-toggle'), prefixed = el('input', undefined, 'fprefix');
-  prefixed.type = 'checkbox'; prefixed.setAttribute('role', 'switch'); prefixed.checked = draft.prefixed !== false;
-  prefixLabel.append(prefixed, doc.createTextNode('Prefix with the soul name'));
-  prefixLabel.hidden = !cli()?.features?.includes('spawn-name');
+  const nameLabel = el('label', 'Name '); nameLabel.htmlFor = 'spawn-purpose'; nameLabel.append(el('small', '· optional'), keyHint('name'));
   const nameInput = el('div', undefined, 'spawn-name-input');
   const prefix = el('span', `${soul.name}-`, 'spawn-name-prefix'); prefix.setAttribute('aria-hidden', 'true'); prefix.title = `${soul.name}-`;
   const purpose = el('input', undefined, 'field fpurpose'); purpose.id = 'spawn-purpose'; purpose.autocomplete = 'off'; purpose.spellcheck = false;
@@ -624,8 +617,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   purpose.setAttribute('aria-describedby', 'spawn-name-result');
   nameInput.append(prefix, purpose);
   const nameResult = el('p', '', 'spawn-hint spawn-name-result'); nameResult.id = 'spawn-name-result'; nameResult.setAttribute('aria-live', 'polite');
-  // DOM order is tab order: the Name input, then its prefix switch (drawn on the label's line).
-  nameField.append(nameLabel, nameInput, prefixLabel, nameResult);
+  nameField.append(nameLabel, nameInput, nameResult);
   // Harness · Model — the harness is a picker with its badge; the select holds the value.
   const runRow = el('div', undefined, 'spawn-row spawn-run');
   const runtimeLabel = el('label'), runtimeText = el('span', 'Harness', 'spawn-label-text'); runtimeText.append(keyHint('harness')); runtimeLabel.append(runtimeText);
@@ -789,13 +781,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const statusDiffered = el('div', undefined, 'spawn-status-differed');
   footer.append(statusRow, actions, details);
   const body = el('div', undefined, 'spawn-form-body');
-  body.append(selectionSummary, nameField, runField, placeField, relation, teamsField, taskLabel, advanced);
+  body.append(selectionSummary, runField, placeField, relation, teamsField, taskLabel, nameField, advanced);
   form.append(body, footer); // the footer stays in view while the body scrolls
   const columns = el('div', undefined, 'spawn-columns'); columns.append(preview, chooser, form);
   dialog.append(header, columns); modal.append(dialog);
   // ── #482 Deployment (renderer/spawn-deployment-field.mjs) ───────────────────────────────────────────
   // With two or more deployments in the view the field replaces "Where to run" and comes first, before
-  // Name: a remote deployment spawns through its server, a local one through the preview-bound
+  // Harness: a remote deployment spawns through its server, a local one through the preview-bound
   // prepare/apply at ?ws=<its id>. Why Spawn is blocked there is said in the footer only; the preview
   // column's "Runs on" row names the chosen deployment.
   // The view's deployments as the dialog opened (a dialog belongs to one view; a newer list is the next dialog's).
@@ -811,7 +803,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       if (moved || rooted) { shown = settled = null; void fillConfigs(); void fillRelatives(); if (programmatic) dropPress(); }
       schedule(0);
     } });
-  if (deploymentField) { placeField.remove(); nameField.before(deploymentField.element); }
+  if (deploymentField) { placeField.remove(); runField.before(deploymentField.element); }
   /** The deployment every spawn request addresses (the preview and prepare/apply echo it): the chosen one,
    * else the view's only one, else its primary; a view id only while none is known. */
   const address = () => deploymentField?.value() ?? (deploymentsAtOpen.length === 1 ? deploymentsAtOpen[0].id : null) ?? workspace()?.primary ?? workspace()?.id;
@@ -942,6 +934,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     openAddMachine({ select: true });
   });
   const local = () => !remoteTarget() && (!!deploymentField || !workspace()?.remote && !workspace()?.server);
+  /** A typed name goes as --name with the soul's role: a local spawn whose CLI advertises spawn-name. Else a purpose. */
+  const roleNamed = () => local() && !!cli()?.features?.includes('spawn-name');
+  /** The instance name a typed value gives: <typed>-<role> (once), or <soul>-<purpose>. */
+  const finalName = (typed, named) => named ? nameWithRole(typed, soul.name) : `${soul.name}-${typed}`;
   // The server admits the workspace against its own registry (absolute scope, local); /api/panel carries only the id.
   const previewable = () => local() && previewSupported(cli()) && !!address() && soul.work !== 'attached';
   const applicable = () => previewable() && spawnApplySupported(cli()) && !soul.captured;
@@ -982,18 +978,17 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   function choices() {
     const p = purpose.value.trim();
     if (p && !PURPOSE.test(p)) return { error: 'Use letters, digits and dashes in the name (start with a letter or digit).', field: 'name' };
-    const exact = !prefixLabel.hidden && !prefixed.checked;
-    // The final name is what the kernel caps (#159): the exact name, or <soul>-<purpose>.
-    if (p && (exact ? p.length : soul.name.length + 1 + p.length) > INSTANCE_NAME_MAX) {
+    const named = roleNamed();
+    // The final name is what the kernel caps (#159): <typed>-<role>, or <soul>-<purpose>.
+    if (p && finalName(p, named).length > INSTANCE_NAME_MAX) {
       return { error: `Instance names are at most ${INSTANCE_NAME_MAX} characters. Shorten the name.`, field: 'name' };
     }
     const relationValue = relationChoice();
     if (!relationValue) return { error: `Pick the instance this one is a ${rel.value} of.`, field: 'relation' };
-    if (exact && !p) return { error: 'Type the instance name, or turn the soul-name prefix back on.', field: 'name' };
     const identityChoice = identityOffered() && identity.value ? identity.value === 'local' ? { provider: messagingProvider, mode: 'local' }
       : { provider: messagingProvider, mode: 'global', resident: resident.value.trim() } : null;
     if (identityChoice?.mode === 'global' && !identityChoice.resident) return { error: 'Type the resident this instance acts as.', field: 'identity' };
-    const out = { ...(p ? exact ? { name: p } : { purpose: p } : {}), ...(soul.work === 'checkout' && worktree.checked ? { work: 'worktree' } : {}),
+    const out = { ...(p ? named ? { name: finalName(p, true) } : { purpose: p } : {}), ...(soul.work === 'checkout' && worktree.checked ? { work: 'worktree' } : {}),
       ...(effectiveWork() === 'worktree' && branch.value.trim() ? { branch: branch.value.trim() } : {}),
       ...(effectiveWork() === 'worktree' && base.value.trim() ? { base: base.value.trim() } : {}),
       ...(runtime.value ? { harness: runtime.value } : {}), ...(config.value ? { launchConfig: config.value } : {}),
@@ -1024,8 +1019,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   function nameNow() {
     const same = settledFor(['purpose', 'name']);
     if (same) return { name: same.instance, kernel: true };
-    const typed = purpose.value.trim(), exact = !prefixLabel.hidden && !prefixed.checked;
-    return { name: typed ? exact ? typed : `${soul.name}-${typed}` : null, kernel: false };
+    const typed = purpose.value.trim();
+    return { name: typed ? finalName(typed, roleNamed()) : null, kernel: false };
   }
 
   // ── rendering from the latest observation
@@ -1035,21 +1030,24 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     const data = settled?.data, draftChoice = choices();
     const typed = purpose.value.trim();
     // Name: what was typed, then the kernel's decision.
-    const exact = !prefixLabel.hidden && !prefixed.checked;
-    nameInput.classList.toggle('unprefixed', exact);
-    purpose.placeholder = exact ? 'instance name, e.g. release-bot' : 'purpose, e.g. api-v2';
+    const named = roleNamed();
+    nameInput.classList.toggle('unprefixed', named);
+    purpose.placeholder = named ? 'e.g. desktop-improvements' : 'purpose, e.g. api-v2';
     // The kernel's name refusals belong next to the field, not only in the footer.
     const nameRefusal = shown?.failure && shown.key === choiceKey(draftChoice.value) && ['E_INSTANCE_NAME_INVALID', 'E_INSTANCE_NAME_TAKEN'].includes(shown.failure.code) ? shown.failure : null;
     nameResult.classList.toggle('err', !!(draftChoice.error && draftChoice.field === 'name' || nameRefusal));
     if (draftChoice.error && draftChoice.field === 'name') nameResult.textContent = draftChoice.error;
     else if (nameRefusal) nameResult.textContent = spawnText(spawnProblem(nameRefusal));
     else if (!local()) nameResult.textContent = `Named by ${remoteTarget()} when it spawns.`;
+    // Only what is true now: an empty name is numbered by the kernel (its number is the preview's "What will be created").
+    else if (named && !typed) nameResult.textContent = 'Left empty, the kernel numbers it.';
     else {
       nameResult.replaceChildren();
       const { name, kernel } = nameNow();
       if (name) { nameResult.append('Instance name: '); nameResult.append(el('strong', name)); }
       else nameResult.append('Instance name: numbered by the kernel');
-      if (kernel && typed && !exact && name !== `${soul.name}-${typed.toLowerCase()}`) nameResult.append(' — that name is taken, so the kernel numbered it');
+      // A purpose's taken name is numbered by the kernel; --name is refused instead (E_INSTANCE_NAME_TAKEN, beside the field).
+      if (kernel && typed && !named && name !== `${soul.name}-${typed.toLowerCase()}`) nameResult.append(' — that name is taken, so the kernel numbered it');
     }
     // Runtime / model defaults: from the preview for these very choices only.
     const now = matched();
@@ -1373,7 +1371,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       // decision on screen; the dialog is single-flight: one press, one handoff (handedOff), never two.
       if (handoff) {
         if (handedOff) return;
-        const draftNow = { purpose: purpose.value, prefixed: prefixed.checked, task: task.value, layout: 'scoped',
+        const draftNow = { purpose: purpose.value, task: task.value, layout: 'scoped',
           restore: { choices: structuredClone(draftChoice.value), ...(wakeValue ? { wake: structuredClone(wakeValue) } : {}), ...(deploymentField ? { deployment: address() } : {}) } };
         handedOff = true; syncButton();
         let taken = false;
@@ -1591,6 +1589,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     try { purpose.setSelectionRange(end, end); } catch { /* not a text input here */ }
   }
   const visibleControl = c => !!c && !c.disabled && !c.hidden && !c.closest('[hidden]');
+  const tabbable = root => [...root.querySelectorAll('button, input, select, textarea, summary, [tabindex]')].filter(c => visibleControl(c) && c.tabIndex >= 0);
+  /** Focus on open: the form's first field (Deployment when it shows, else Harness), without scrolling. Name is
+   * optional and last, so it is never where the dialog lands; its section key (Mod+1) still reaches it. */
+  function focusFirst({ preventScroll = true } = {}) {
+    const first = tabbable(body)[0];
+    if (first) first.focus({ preventScroll }); else focusName({ preventScroll });
+  }
   /** The control each section key lands on (Relationship: its selected segment; Teams: its first box one can tick). */
   const jumpTargets = {
     name: () => purpose,
@@ -1601,8 +1606,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     task: () => task,
   };
   /** The first control of Developer settings, in tab order. */
-  const firstAdvanced = () => [...advancedBody.querySelectorAll('button, input, select, textarea, summary, [tabindex]')]
-    .find(c => visibleControl(c) && c.tabIndex >= 0) || null;
+  const firstAdvanced = () => tabbable(advancedBody)[0] || null;
   /** A section key: focus moves to that section's control; a closed disclosure holding it opens first.
    * 'advanced' toggles Developer settings: open, focus on its first control; closed, focus on its summary.
    * False when the section is not there (Teams not offered, say): focus stays. */
@@ -1647,8 +1651,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   function restoreDraft(restore) {
     const c = restore?.choices;
     if (c && typeof c === 'object') {
-      if (typeof c.name === 'string') { purpose.value = c.name; prefixed.checked = false; }
-      else if (typeof c.purpose === 'string') { purpose.value = c.purpose; prefixed.checked = true; }
+      // A name comes back as sent (<typed>-<role>, which nameWithRole leaves as it is); a purpose as typed.
+      if (typeof c.name === 'string') purpose.value = c.name;
+      else if (typeof c.purpose === 'string') purpose.value = c.purpose;
       worktree.checked = c.work === 'worktree' && soul.work === 'checkout';
       if (typeof c.branch === 'string') branch.value = c.branch;
       if (typeof c.base === 'string') base.value = c.base;
@@ -1675,8 +1680,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     /** Begin reading once the host owns the attached dialog. */
     start() { if (!current()) return; deploymentField?.start(); schedule(0); void fillModels(); void fillConfigs(); },
     dialog, search, purpose, spawn, status, preview, changeSoul,
-    /** Spec E: focus Name (caret at the end), a section key's jump, and the chords the hints show. */
-    focusName, jump, setShortcuts,
+    /** Spec E: focus Name (caret at the end), the first field (focus on open), a section key's jump, and the chords the hints show. */
+    focusName, focusFirst, jump, setShortcuts,
     /** 'scoped' (preview + form) or 'picker' (chooser + form); switched in place. */
     get layout() { return layoutNow; }, setLayout,
     submit: () => { if (!spawn.disabled) void run(); },

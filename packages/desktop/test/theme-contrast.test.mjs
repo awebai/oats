@@ -1719,7 +1719,9 @@ for (const [name] of palettes) test(`${name}: the soul page's Instructions secti
     ['.cap-reader-flag', '.cap-reader-head', 'warn', 'bg'],
   ]);
   section.update({ ...soul('# T\n'), skills: [] });
-  check([['[role=tree] .cap-contents-group-label', '.cap-contents', 'muted', 'surface'], ['[role=tree] .cap-contents-note', '.cap-contents', 'muted', 'surface']]);
+  check([['[role=tree] .cap-contents-group-label', '.cap-contents', 'muted', 'surface'], ['[role=tree] .cap-contents-note', '.cap-contents', 'muted', 'surface'],
+    // The two sections' headings ("Defined in this soul", "Composed for an instance"); the rule between them is a border, not text.
+    ['[role=tree] .soul-section-title', '.cap-contents', 'fg', 'surface']]);
   section.dispose(); dom.window.close();
 });
 

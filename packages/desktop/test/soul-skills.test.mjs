@@ -1,5 +1,6 @@
-// #1144: the soul page's Skills group — the soul's own skills (`inspect --soul --skills`, feature soul-skills,
-// `souls[0].skills`) in the Instructions card, between "This soul" and "Instance": the shared skill item
+// #1144: the soul page's Skills groups — the soul's own skills (`inspect --soul --skills`, feature soul-skills,
+// `souls[0].skills`) in the Instructions card, under "Defined in this soul" and again, each "From this soul", under
+// "Composed for an instance" (until the kernel lists what capabilities add): the shared skill item
 // (contents-reader.mjs `skillTreeItem`, as capability Contents), each file read under its repository path through
 // the strict reader, links to a listed file opened in place. The answers are built on the shape the issue documents
 // (`{name, path, description, files: [{path, bytes, text, binary, truncated, omitted?}], filesTruncated}`, every path
@@ -8,7 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createSoulInstructions, skillsOf, soulFilePath, SOUL_INSTRUCTIONS_COPY, OWN, COMPOSED } from '../renderer/soul-instructions.mjs';
+import { createSoulInstructions, skillsOf, soulFilePath, skillSource, SOUL_INSTRUCTIONS_COPY, OWN, COMPOSED } from '../renderer/soul-instructions.mjs';
 import { SKILL_COPY, sizeText } from '../renderer/contents-reader.mjs';
 
 const REVIEW_MD = `---\nname: oats-pr-review\ndescription: "The OATS repository's part of a review."\n---\n# Reviewing an OATS pull request\n\nSee [the checklist](references/checklist.md), [the release lane](../git-tag-release/SKILL.md), [a missing one](../git-tag-release/gone.md), [outside](../../../../docs/x.md), [GitHub](https://github.com/awebai/oats), [plain](http://example.com/y) and [mail](mailto:a@b.c).\n\n<script>alert(1)</script><img src="https://evil.example/x.png" onerror="alert(2)">\n\n## Usage\n\nRead [usage](#usage).\n`;
@@ -40,13 +41,18 @@ function setup(t, options = {}) {
   t.after(() => { section.dispose(); dom.window.close(); });
   const $ = s => host.querySelector(s), $$ = s => [...host.querySelectorAll(s)];
   const key = (el, k) => el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  // The first match is in "Defined in this soul"; the composed Skills' copies are `copy(path)` and their files `composed-file:<path>`.
   const item = path => $$('[role=treeitem]').find(i => i.dataset.path === path) || null;
   const skill = path => $$('[role=treeitem]').find(i => i.dataset.skill === path) || null;
-  const groups = () => $$('[role=tree] > li[role=none] > ul[role=group]').map(g => doc.getElementById(g.getAttribute('aria-labelledby')).textContent);
-  return { dom, doc, host, section, opened, $, $$, key, item, skill, groups };
+  const copy = path => $$('[role=treeitem]').find(i => i.dataset.focusKey === `instructions:composed-skill:${path}`) || null;
+  /** Every labelled group, in document order: the two sections and the groups inside them. */
+  const groups = () => $$('[role=tree] ul[role=group][aria-labelledby]').map(g => doc.getElementById(g.getAttribute('aria-labelledby')).textContent);
+  /** The two sections' rows (the tree's top-level groups). */
+  const sections = () => $$('[role=tree] > li[role=none] > ul[role=group]');
+  return { dom, doc, host, section, opened, $, $$, key, item, skill, copy, groups, sections };
 }
 function scrollable(el) { let top = 0; Object.defineProperty(el, 'scrollTop', { configurable: true, get: () => top, set: v => { top = Math.max(0, Number(v) || 0); } }); return el; }
-/** A composed answer of one body and no blocks (the Instance group, for order). */
+/** A composed answer of one body and no blocks (the composed AGENTS.md, for order). */
 const composedOf1 = text => ({ file: null, text, truncated: false, resolution: 'r', body: { start: 0, end: text.length, truncated: false }, sources: [] });
 
 /* ── the contract's decoder ──────────────────────────────────────────── */
@@ -93,10 +99,11 @@ test('repository paths: the soul directory joined when it is a plain path, else 
 });
 
 /* ── the group ───────────────────────────────────────────────────────── */
-test('navigation: Skills between "This soul" and "Instance"; each skill its mono name, its description\'s first sentence, collapsed', t => {
+test('navigation: Skills under each section; each skill its mono name, its description\'s first sentence, collapsed', t => {
   const u = setup(t); u.section.update(row({ composedInstructions: composedOf1('# x\n') }));
-  assert.deepEqual(u.groups(), ['This soul', 'Skills', 'Instance']);
-  const skills = u.$$('[role=tree] > li[role=none] > ul[role=group]')[1].querySelectorAll(':scope > [role=treeitem]');
+  assert.deepEqual(u.groups(), ['Defined in this soul', 'Skills', 'Composed for an instance', 'Skills']);
+  const [soulSection] = u.sections();
+  const skills = soulSection.querySelector('ul[role=group][aria-labelledby]').querySelectorAll(':scope > [role=treeitem]');
   assert.deepEqual([...skills].map(s => s.getAttribute('aria-label')), ['git-tag-release', 'oats-pr-review']);
   const review = u.skill('skills/oats-pr-review');
   assert.equal(review.querySelector('.cap-node-name').className, 'cap-node-name mono');
@@ -106,6 +113,62 @@ test('navigation: Skills between "This soul" and "Instance"; each skill its mono
   assert.equal(review.getAttribute('aria-expanded'), 'false'); assert.equal(review.getAttribute('aria-level'), '1');
   assert.equal(u.section.selected, OWN, 'the soul\'s AGENTS.md stays the file opened first');
   assert.equal(u.$('.cap-reader-path').textContent, 'souls/oats-maintainer/AGENTS.md');
+});
+
+test('composed Skills: after the composed AGENTS.md, each skill again saying "From this soul", then the note on capability skills', t => {
+  const u = setup(t); u.section.update(row({ composedInstructions: composedOf1('# x\n') }));
+  const [, composedSection] = u.sections();
+  assert.deepEqual([...composedSection.children].map(c => c.getAttribute('role')), ['treeitem', 'none'], 'the composed AGENTS.md, then the Skills row');
+  assert.equal(composedSection.children[0].dataset.path, COMPOSED);
+  const skillsRow = composedSection.children[1], skillsGroup = skillsRow.querySelector(':scope > ul[role=group]');
+  assert.deepEqual([...skillsRow.children].map(c => [c.className, c.tagName === 'UL' ? '' : c.textContent]),
+    [['cap-contents-group-label', 'Skills'], ['', ''], ['cap-contents-note', 'Skills that capabilities add are listed by a newer OATS.']]);
+  const copies = [...skillsGroup.querySelectorAll(':scope > [role=treeitem]')];
+  assert.deepEqual(copies.map(s => s.getAttribute('aria-label')), ['git-tag-release', 'oats-pr-review']);
+  const review = u.copy('skills/oats-pr-review');
+  assert.equal(review, copies[1]); assert.notEqual(review, u.skill('skills/oats-pr-review'), 'its own row, not the one above');
+  assert.equal(review.querySelector('.cap-node-desc').textContent, 'From this soul', 'where it comes from, in place of the sentence');
+  assert.equal(review.getAttribute('aria-description'), "From this soul. The OATS repository's part of a review: which consumers to read. More files not listed.");
+  assert.equal(review.querySelector(':scope > .cap-node').title, skillsAnswer()[1].description);
+  assert.equal(review.getAttribute('aria-expanded'), 'false'); assert.equal(review.getAttribute('aria-level'), '1');
+  // A skill whose files can't be listed says where it comes from too.
+  u.section.update(row({ skills: [{ ...skillsAnswer()[1], files: null, filesTruncated: false }] }));
+  const unlisted = u.copy('skills/oats-pr-review');
+  assert.equal(unlisted.querySelector('.cap-node-desc').textContent, "From this soul · Its files can't be listed.");
+  assert.equal(unlisted.getAttribute('aria-description'), "From this soul · Its files can't be listed.");
+});
+
+test('skillSource: the soul, or a capability by its id, as the composed parts name their sources', () => {
+  assert.deepEqual(skillSource('soul'), { label: 'From this soul', capability: null });
+  assert.deepEqual(skillSource('capability:oats.core'), { label: 'From oats.core', capability: 'oats.core' });
+});
+
+test('a composed skill file: its own selection, links staying in the composed section, kept by a refresh', t => {
+  const u = setup(t); u.section.update(row({ composedInstructions: composedOf1('# x\n') }));
+  const review = u.copy('skills/oats-pr-review');
+  review.querySelector(':scope > .cap-node').click();
+  assert.equal(review.getAttribute('aria-expanded'), 'true'); assert.equal(u.skill('skills/oats-pr-review').getAttribute('aria-expanded'), 'false', 'the copy expands on its own');
+  const key = 'composed-file:skills/oats-pr-review/SKILL.md';
+  u.item(key).querySelector('.cap-node').click();
+  assert.equal(u.section.selected, key);
+  assert.equal(u.$('.cap-reader-path').textContent, 'souls/oats-maintainer/skills/oats-pr-review/SKILL.md', 'the same file, its repository path');
+  assert.deepEqual(u.$$('[role=treeitem][aria-selected=true]').map(i => i.dataset.path), [key], 'one selected item: the copy\'s, not the one above');
+  // A link from the composed copy opens the composed copy of its target.
+  u.$$('.cap-reader-body a').find(a => a.textContent === 'the release lane').click();
+  assert.equal(u.section.selected, 'composed-file:skills/git-tag-release/SKILL.md');
+  assert.equal(u.copy('skills/git-tag-release').getAttribute('aria-expanded'), 'true');
+  assert.equal(u.skill('skills/git-tag-release').getAttribute('aria-expanded'), 'false');
+  u.item('composed-file:skills/git-tag-release/SKILL.md').focus();
+  // A refresh with another skill: selection, expansion and focus are found again by their keys.
+  const more = [{ name: 'aaa', path: 'skills/aaa', description: null, files: [file('skills/aaa/SKILL.md', '# a\n')], filesTruncated: false }, ...skillsAnswer()];
+  u.section.update(row({ skills: more, composedInstructions: composedOf1('# x\n') }));
+  assert.equal(u.section.selected, 'composed-file:skills/git-tag-release/SKILL.md');
+  assert.equal(u.doc.activeElement, u.item('composed-file:skills/git-tag-release/SKILL.md'));
+  assert.equal(u.copy('skills/oats-pr-review').getAttribute('aria-expanded'), 'true');
+  // From the composed AGENTS.md a link to a skill file opens its composed copy; from the soul's own, the one above.
+  u.item(OWN).querySelector('.cap-node').click();
+  u.$$('.cap-reader-body a').find(a => a.textContent === 'the review skill').click();
+  assert.equal(u.section.selected, 'file:skills/oats-pr-review/SKILL.md');
 });
 
 test('a skill: selecting it toggles it; its files SKILL.md first, relative to the skill, then "more files"', t => {
@@ -121,7 +184,7 @@ test('a skill: selecting it toggles it; its files SKILL.md first, relative to th
   assert.equal(review.getAttribute('aria-expanded'), 'false');
 });
 
-test('notes: absent, [], null and a broken answer each a label and one note in place, between the groups; never an empty list', t => {
+test('notes: absent, [], null and a broken answer each a label and its note in place, in both sections; never an empty list', t => {
   const u = setup(t);
   const cases = [[undefined, SOUL_INSTRUCTIONS_COPY.skillsAbsent], [[], SOUL_INSTRUCTIONS_COPY.noSkills], [null, SOUL_INSTRUCTIONS_COPY.skillsUnlistable],
     [[{ name: 'x', path: '/abs' }], SOUL_INSTRUCTIONS_COPY.skillsUnreadable]];
@@ -130,15 +193,21 @@ test('notes: absent, [], null and a broken answer each a label and one note in p
   for (const [skills, note] of cases) {
     const { skills: _drop, ...without } = row({ composedInstructions: composedOf1('# x\n') }); void _drop;
     u.section.update(skills === undefined ? without : { ...without, skills });
-    const rows = u.$$('[role=tree] > li[role=none]');
-    assert.equal(rows.length, 3, 'This soul, the Skills row, Instance');
-    assert.deepEqual([...rows[1].children].map(c => [c.className, c.textContent]), [['cap-contents-group-label', 'Skills'], ['cap-contents-note', note]]);
-    assert.equal(rows[1].querySelector('[role=treeitem], [role=group]'), null, 'a note is not a tree item');
-    assert.deepEqual(u.groups(), ['This soul', 'Instance']);
+    const [soulSection, composedSection] = u.sections();
+    assert.deepEqual([...soulSection.children].map(c => c.getAttribute('role')), ['treeitem', 'none'], 'AGENTS.md, the Skills row');
+    const row1 = soulSection.children[1];
+    assert.deepEqual([...row1.children].map(c => [c.className, c.textContent]), [['cap-contents-group-label', 'Skills'], ['cap-contents-note', note]]);
+    assert.equal(row1.querySelector('[role=treeitem], [role=group]'), null, 'a note is not a tree item');
+    // The composed Skills: today's note for that case; a listed answer (an empty one) is followed by the capability note.
+    const row2 = composedSection.children[1];
+    assert.deepEqual([...row2.children].map(c => [c.className, c.textContent]), [['cap-contents-group-label', 'Skills'], ['cap-contents-note', note],
+      ...(Array.isArray(skills) && note === SOUL_INSTRUCTIONS_COPY.noSkills ? [['cap-contents-note', SOUL_INSTRUCTIONS_COPY.capabilitySkills]] : [])]);
+    assert.equal(row2.querySelector('[role=treeitem], [role=group]'), null);
+    assert.deepEqual(u.groups(), ['Defined in this soul', 'Composed for an instance']);
   }
   // The same place when nothing follows.
   u.section.update(row({ skills: [] }));
-  assert.equal(u.$$('[role=tree] > li[role=none]').at(-1).querySelector('.cap-contents-note').textContent, SOUL_INSTRUCTIONS_COPY.noSkills);
+  assert.equal(u.sections()[0].querySelector('.cap-contents-note').textContent, SOUL_INSTRUCTIONS_COPY.noSkills);
 });
 
 test('a skill whose files can\'t be listed: a reachable item that says so and opens nothing', t => {
@@ -151,13 +220,15 @@ test('a skill whose files can\'t be listed: a reachable item that says so and op
   assert.equal(u.section.selected, OWN); assert.equal(u.doc.activeElement, item);
 });
 
-test('keyboard: one tree, one tab stop, the arrows across all three groups; Enter toggles a skill and opens a file', t => {
+test('keyboard: one tree, one tab stop, the arrows across both sections and every group; Enter toggles a skill and opens a file', t => {
   const u = setup(t); u.section.update(row({ composedInstructions: composedOf1('# x\n') }));
   const own = u.item(OWN), release = u.skill('skills/git-tag-release'), review = u.skill('skills/oats-pr-review'), composed = u.item(COMPOSED);
+  const lastCopy = u.copy('skills/oats-pr-review');
   own.focus();
-  u.key(own, 'ArrowDown'); assert.equal(u.doc.activeElement, release, 'from "This soul" into Skills');
+  u.key(own, 'ArrowDown'); assert.equal(u.doc.activeElement, release, 'from AGENTS.md into Skills');
   u.key(release, 'ArrowDown'); assert.equal(u.doc.activeElement, review);
-  u.key(review, 'ArrowDown'); assert.equal(u.doc.activeElement, composed, 'and on into Instance');
+  u.key(review, 'ArrowDown'); assert.equal(u.doc.activeElement, composed, 'and on across the section boundary');
+  u.key(composed, 'ArrowDown'); assert.equal(u.doc.activeElement, u.copy('skills/git-tag-release'), 'into the composed Skills');
   u.key(composed, 'Home'); assert.equal(u.doc.activeElement, own);
   u.key(own, 'ArrowDown'); u.key(release, 'ArrowDown');
   u.key(review, 'Enter'); assert.equal(review.getAttribute('aria-expanded'), 'true', 'Enter toggles a skill'); assert.equal(u.section.selected, OWN);
@@ -168,7 +239,7 @@ test('keyboard: one tree, one tab stop, the arrows across all three groups; Ente
   u.key(skillMd, 'ArrowLeft'); assert.equal(u.doc.activeElement, review, 'Left climbs to its skill');
   u.key(review, 'ArrowLeft'); assert.equal(review.getAttribute('aria-expanded'), 'false');
   assert.equal(u.$$('[role=treeitem][tabindex="0"]').length, 1, 'one tab stop');
-  u.key(review, 'End'); assert.equal(u.doc.activeElement, composed);
+  u.key(review, 'End'); assert.equal(u.doc.activeElement, lastCopy);
 });
 
 /* ── the reader ──────────────────────────────────────────────────────── */
@@ -287,10 +358,12 @@ test('refresh: expansion, selection and focus survive while the skill and file e
 test('each group on its own: skills without AGENTS.md or a composed answer, and a composed answer without skills', t => {
   const u = setup(t);
   u.section.update(row({ instructions: null }));
-  assert.deepEqual(u.groups(), ['This soul', 'Skills']);
+  assert.deepEqual(u.groups(), ['Defined in this soul', 'Skills', 'Composed for an instance', 'Skills']);
+  assert.equal(u.item(COMPOSED), null, 'no composed AGENTS.md without the answer, and no note for it');
   assert.equal(u.$('.cap-reader-body').textContent, "This soul's AGENTS.md could not be read.");
   u.section.update(row({ skills: null, composedInstructions: composedOf1('# x\n') }));
-  assert.deepEqual(u.groups(), ['This soul', 'Instance']);
+  assert.deepEqual(u.groups(), ['Defined in this soul', 'Composed for an instance']);
+  assert.ok(u.item(COMPOSED));
   u.section.update(row({ path: '/not/plain' }));
   u.skill('skills/git-tag-release').querySelector(':scope > .cap-node').click();
   u.item('file:skills/git-tag-release/SKILL.md').querySelector('.cap-node').click();

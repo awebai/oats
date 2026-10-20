@@ -201,34 +201,57 @@ repository at a time; "N of M shown" appears while a pill or the search
 narrows the list.
 
 A soul's page (open a soul from **Workspace › Souls**) ends with
-**Instructions**, what its instances are told: the soul's own `AGENTS.md`,
-read like a capability's injected instructions (a navigation tree on the left,
-the file on the right), at its path in the soul's repository. It comes from the
-same inspection as the rest of the page, so **Refresh** re-reads it and keeps
-what you had open, and your place in it. A file over 200,000 characters is
-shown cut, and says so.
+**Instructions**, what its instances are told, read like a capability's
+injected instructions (a navigation tree on the left, the file on the right).
+The tree has two sections, a rule between them:
 
-With an OATS that composes a soul's instructions (0.46.0 and later), the tree
-also has **Instance**: its **AGENTS.md**, *after spawn, with injects*, is the
-file a spawn of this soul on this computer would write, with one entry per part
-(the soul's own text, then each block OATS and the soul's capabilities add, in
-order). Open it to read the whole document; choose a part to go to it. Each
-part's header says where it comes from (**From this soul** or **Injected by …**)
-and names its file; a capability's part has **Open capability**, and **Copy
-composed AGENTS.md** copies the exact file. When the soul can't be composed
-here, the group says so and the problem shows at the top of the page. For a
-soul on another machine (a server workspace), the page shows the composed file
-when that machine supports it: this computer's OATS must be 0.49.0 or later, to
-pass on what each server reports about itself, and the server's OATS must say
-it composes a soul's instructions (0.49.0 and later report this). Until a
-server reports it (an older server, or one whose last read failed), its soul
-pages show only the soul's own `AGENTS.md`, with no **Instance** group.
+- **Defined in this soul**: its own `AGENTS.md`, at its path in the soul's
+  repository, and, with an OATS that reports a soul's skills, its **Skills**.
+  Open a skill to list its files; a file opens in the reader under its
+  repository path.
+- **Composed for an instance**: what an instance of this soul gets. Its
+  **AGENTS.md**, *after spawn, with injects*, and its **Skills**, each saying
+  where it comes from. The skills listed are the soul's own, each **From this
+  soul**; a note says that the skills capabilities add are listed by a newer
+  OATS.
+
+Both come from the same inspection as the rest of the page, so **Refresh**
+re-reads them and keeps what you had open, and your place in it. A file over
+200,000 characters is shown cut, and says so.
+
+The composed **AGENTS.md** needs an OATS that composes a soul's instructions
+(0.46.0 and later). It is the file a spawn of this soul on this computer would
+write, with one entry per part (the soul's own text, then each block OATS and
+the soul's capabilities add, in order). Open it to read the whole document;
+choose a part to go to it. Each part's header says where it comes from
+(**From this soul** or **Injected by …**) and names its file; a capability's
+part has **Open capability**, and **Copy composed AGENTS.md** copies the exact
+file. When the soul can't be composed here, the section says so and the problem
+shows at the top of the page. For a soul on another machine (a server
+workspace), the page shows the composed file when that machine supports it:
+this computer's OATS must be 0.49.0 or later, to pass on what each server
+reports about itself, and the server's OATS must say it composes a soul's
+instructions (0.49.0 and later report this). Until a server reports it (an
+older server, or one whose last read failed), its soul pages show no composed
+**AGENTS.md**. A soul's skills follow the same rule, with the server's OATS
+saying it reports them.
 
 The **Spawn** dialog's left column, **What will be created**, starts with the
 new instance's name and its home. Then come where it works, its harness and
 model (with where that choice came from), its default team and the teams it may
 also join, and its relationship when it has one. Under them are its core
 capabilities and its other capabilities.
+
+The dialog's last field before **Developer settings** is **Name · optional**.
+Left empty, the kernel numbers the new instance (`<soul>-<n>`). A name you type
+gets the soul's role, the last word of the soul's name, as its suffix:
+`desktop-improvements` for `oats-desktop-expert` becomes
+`desktop-improvements-expert`. A name that already ends in the role, or is
+the role, stays as typed. The line under the field shows the final name, and a
+name that is too long, invalid or already taken is explained there. With an
+OATS older than 0.26.0, which can't take an exact name, and for a spawn on a
+server, what you type is a purpose instead: the instance is named
+`<soul>-<purpose>`, and the field shows that prefix.
 
 When capabilities set up the new worktree (OATS 0.49.0 and later), **Setup**
 names them, in the order they run, and says this can take several minutes. Such

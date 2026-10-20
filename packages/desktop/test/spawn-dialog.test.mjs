@@ -46,7 +46,7 @@ test('the dialog shows what the kernel decided: name, harness, model and work â€
   const dialog = await u.open();
   const preview = created('preview-worktree-default');
   assert.equal(u.q('.spawn-name-result strong').textContent, preview.instance, 'the kernel names an instance with no purpose');
-  assert.equal(u.q('.spawn-name-prefix').textContent, 'release-manager-');
+  assert.equal(u.q('.spawn-name-prefix').textContent, 'release-manager-', 'without spawn-name (the host\'s default) a typed name is a purpose');
   const trigger = u.q('.spawn-run .spawn-choice-trigger');
   assert.equal(trigger.querySelector('.runtime-badge').dataset.runtime, 'pi'); assert.equal(trigger.querySelector('.spawn-trigger-tag').textContent, 'default');
   assert.equal(trigger.getAttribute('aria-label'), 'Harness: Pi (default)');
@@ -61,12 +61,12 @@ test('the dialog shows what the kernel decided: name, harness, model and work â€
   // The relationship is in the main form, not in Developer settings.
   assert.equal(advanced.contains(u.q('.spawn-relationship')), false);
   assert.equal(u.q('.spawn-seg input:checked').value, 'unrelated'); assert.equal(u.q('.frelto').hidden, true);
-  // Removed: capability toggles, K6 placeholders, the preview button. The captured kernel advertises spawn-name.
+  // Removed: capability toggles, K6 placeholders, the preview button, the soul-name prefix switch.
   assert.doesNotMatch(dialog.textContent, /Attach knowledge|Allow child spawns|Open PR|Available after|Preview invocation|Force native/i);
   // Board 6: the capabilities are the preview's facts (read-only), never a choice.
   assert.equal(dialog.querySelector('.spawn-preview :is(input, select, button, textarea)'), null, 'no capability toggles');
-  assert.equal(dialog.querySelectorAll('input[type=checkbox]:not(.fworktree):not(.fprefix):not(.fwake-enabled)').length, 0);
-  assert.equal(u.q('.spawn-prefix-toggle').hidden, false);
+  assert.equal(dialog.querySelectorAll('input[type=checkbox]:not(.fworktree):not(.fwake-enabled)').length, 0);
+  assert.equal(u.q('.spawn-prefix-toggle'), null); assert.doesNotMatch(dialog.textContent, /Prefix with the soul name/);
   assert.equal(u.q('.fspawn').disabled, false); assert.equal(u.q('.fspawn').hidden, false, 'the shell must not rewrite the Spawn button');
   assert.equal(u.q('.fspawn').textContent, 'Spawn'); assert.ok(u.q('.fspawn').dataset.chord);
   assert.equal(u.previews().length, 1); assert.equal(u.spawns().length, 0, 'opening never prepares or applies');
@@ -368,26 +368,73 @@ test('choosing another soul keeps the typed name and instruction', async t => {
   [...u.doc.querySelectorAll('.spawn-choice')].find(b => b.dataset.agent === 'support-triager').click(); await settle();
   assert.equal(u.q('.spawn-choice[aria-selected=true]').dataset.agent, 'support-triager');
   assert.equal(u.q('.fpurpose').value, 'api-v2'); assert.equal(u.q('.ftask').value, 'keep me');
-  assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'a pick goes on to Name (Spec E)');
+  assert.equal(u.doc.activeElement, u.q('.spawn-run .spawn-choice-trigger'), 'a pick goes on to the first field, Harness (Spec E)');
 });
 
-test('the soul-name prefix toggle is offered only with spawn-name; off sends --name, and a name refusal shows at the field', async t => {
-  const older = await mountSpawn(t, { cli: { ...structuredClone(CLI), features: CLI.features.filter(f => f !== 'spawn-name') } });
-  await older.open();
-  assert.equal(older.q('.spawn-prefix-toggle').hidden, true, 'a kernel without spawn-name never gets --name');
-  older.q('.fcancel')?.click(); await settle(20);
-  // The kernel's own refusal of a name taken in the deployment (f3 capture, spawn-name).
-  const u = await mountSpawn(t, { kernel: (_c, { choices }) => choices.name === 'api-gateway' ? kernel('preview-name-taken') : kernel('preview-worktree-default') });
+// The name (decided 2026-10-20): optional and the form's last field; with spawn-name a typed name goes as
+// --name <typed>-<role> (packages/client/instance-name.mjs); an older kernel keeps --purpose with the prefix shown.
+test('the name is optional and the last field, after Opening instruction and before Developer settings; no prefix switch', async t => {
+  const u = await mountSpawn(t, { spawnName: true });
   await u.open();
-  assert.equal(u.q('.spawn-prefix-toggle').hidden, false); assert.equal(u.q('.fprefix').checked, true);
-  await u.change('.fprefix', false);
-  assert.ok(u.q('.spawn-name-input').classList.contains('unprefixed'));
-  assert.match(u.text('.spawn-name-result'), /Type the instance name/);
-  await u.type('.fpurpose', 'api-gateway');
-  assert.deepEqual(last(u), { name: 'api-gateway', model: { kind: 'inherit' }, relation: { kind: 'unrelated' } });
+  const fields = [...u.q('.spawn-form-body').children].filter(c => !c.classList.contains('workspace-sr-only'));
+  const at = cls => fields.findIndex(f => f.classList.contains(cls) || f.querySelector(`:scope > .${cls}`));
+  assert.equal(at('spawn-name'), fields.indexOf(u.q('.ftask').closest('.spawn-field')) + 1, 'right after Opening instruction');
+  assert.equal(fields[at('spawn-name') + 1], u.q('.spawn-advanced'), 'right before Developer settings');
+  const label = u.q('.spawn-name > label');
+  assert.equal(label.htmlFor, 'spawn-purpose'); assert.equal(label.firstChild.textContent, 'Name '); assert.equal(label.querySelector('small').textContent, 'Â· optional');
+  assert.equal(u.q('.spawn-prefix-toggle'), null); assert.equal(u.q('.fprefix'), null);
+  assert.ok(u.q('.spawn-name-input').classList.contains('unprefixed'), 'no <soul>- prefix where the name goes as --name');
+  assert.equal(u.q('.fpurpose').placeholder, 'e.g. desktop-improvements');
+});
+
+test('with spawn-name: empty is numbered by the kernel; a typed name gets the soul\'s role once and goes as --name', async t => {
+  // release-manager's role is "manager". The kernel answers the f3 --name capture with the name it was asked for.
+  const answer = choices => { const k = kernel('preview-name'); if (choices.name) { k.result.instance = choices.name; k.result.decision.instance = choices.name; } return choices.name ? k : kernel('preview-worktree-default'); };
+  const u = await mountSpawn(t, { spawnName: true, kernel: (_c, { choices }) => answer(choices) });
+  await u.open(); await settle(20);
+  assert.equal(u.text('.spawn-name-result'), 'Left empty, the kernel numbers it.', 'only what is true now, never the preview\'s number');
+  assert.deepEqual(last(u), { model: { kind: 'inherit' }, relation: { kind: 'unrelated' } }, 'nothing sent for an empty name');
+  await u.type('.fpurpose', 'api-v2');
+  assert.deepEqual(last(u), { name: 'api-v2-manager', model: { kind: 'inherit' }, relation: { kind: 'unrelated' } });
+  assert.equal(u.text('.spawn-name-result'), 'Instance name: api-v2-manager'); assert.equal(u.q('.spawn-name-result strong').textContent, 'api-v2-manager');
+  for (const typed of ['api-manager', 'manager']) {
+    await u.type('.fpurpose', typed);
+    assert.equal(last(u).name, typed, `${typed}: no double suffix`); assert.equal(u.q('.spawn-name-result strong').textContent, typed);
+  }
+  assert.equal(last(u).purpose, undefined, 'this dialog no longer sends --purpose here');
+  await u.type('.fpurpose', ''); await settle(20);
+  assert.equal(u.text('.spawn-name-result'), 'Left empty, the kernel numbers it.');
+});
+
+test('with spawn-name the 64-character cap runs on the final name, suffix included; a kernel refusal shows at the field', async t => {
+  const u = await mountSpawn(t, { spawnName: true, kernel: (_c, { choices }) => choices.name === 'api-gateway-manager' ? kernel('preview-name-taken') : kernel('preview-worktree-default') });
+  await u.open(); await settle(20);
+  const before = u.previews().length, room = 64 - '-manager'.length;
+  await u.type('.fpurpose', 'a'.repeat(room + 1)); await settle(20);
+  assert.match(u.text('.spawn-name-result'), /^Instance names are at most 64 characters\. Shorten the name\.$/); assert.equal(u.q('.fspawn').disabled, true);
+  assert.equal(u.previews().length, before, 'never sent');
+  await u.type('.fpurpose', 'a'.repeat(room)); await settle(20);
+  assert.equal(last(u).name, `${'a'.repeat(room)}-manager`); assert.equal(last(u).name.length, 64);
+  // A typed name that already ends in the role is capped as typed.
+  await u.type('.fpurpose', `${'b'.repeat(57)}-manager`); await settle(20);
+  assert.match(u.text('.spawn-name-result'), /at most 64 characters/);
+  // The kernel's own refusal of a name taken in the deployment (the f3 capture's E_INSTANCE_NAME_TAKEN), beside the field.
+  await u.type('.fpurpose', 'api-gateway'); await settle(20);
+  assert.deepEqual(last(u), { name: 'api-gateway-manager', model: { kind: 'inherit' }, relation: { kind: 'unrelated' } });
   assert.equal(u.text('.spawn-name-result'), 'An instance with this name already exists. Choose another name.');
   assert.equal(u.text('.fstatus'), '', 'said once, next to the name');
   assert.ok(u.q('.spawn-name-result').classList.contains('err')); assert.equal(u.q('.fspawn').disabled, true);
+});
+
+test('an older kernel without spawn-name keeps --purpose, the <soul>- prefix shown and today\'s hint', async t => {
+  const u = await mountSpawn(t);
+  await u.open(); await settle(20);
+  assert.equal(u.q('.spawn-name-input').classList.contains('unprefixed'), false); assert.equal(u.text('.spawn-name-prefix'), 'release-manager-');
+  assert.equal(u.q('.fpurpose').placeholder, 'purpose, e.g. api-v2');
+  assert.match(u.text('.spawn-name-result'), /^Instance name: /, 'the numbered name as today, not the spawn-name hint');
+  await u.type('.fpurpose', 'api-v2');
+  assert.deepEqual(last(u), { purpose: 'api-v2', model: { kind: 'inherit' }, relation: { kind: 'unrelated' } });
+  assert.equal(u.q('.spawn-prefix-toggle'), null);
 });
 
 test('the CLI going away closes the dialog; a retained Spawn click never dispatches; only a newly opened dialog can spawn', async t => {
@@ -520,7 +567,6 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: every spawn 
     ['.spawn-name > label kbd.spawn-key-hint', '.spawn-dialog', 'muted', 'surface'], ['.spawn-relationship > legend kbd.spawn-key-hint', '.spawn-dialog', 'muted', 'surface'],
     ['.spawn-advanced > summary kbd.spawn-key-hint', '.spawn-advanced', 'muted', 'surface-2'],
     ['.spawn-joined-from', '.spawn-joined-from', 'muted', 'surface-2'],
-    ['.spawn-prefix-toggle', '.spawn-dialog', 'muted', 'surface'],
     ['.spawn-chooser-title', '.spawn-dialog', 'fg', 'surface'], ['.spawn-search-count', '.spawn-dialog', 'muted', 'surface'],
     ['.spawn-details-toggle', '.spawn-footer', 'muted', 'surface'], ['.spawn-problem-detail', '.spawn-problem-detail', 'muted', 'surface-2'],
     ['.spawn-problem-line', '.spawn-problem-detail', 'muted', 'surface-2'],
@@ -538,22 +584,17 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: every spawn 
   assert.ok(dialog.isConnected);
 });
 
-test('a name longer than the kernel cap (#159) is refused at the field before any preview: exact and derived', async t => {
+test('a name longer than the kernel cap (#159) is refused at the field before any preview: a purpose\'s derived name', async t => {
   const u = await mountSpawn(t);
   await u.open(); await settle(20);
   const before = u.previews().length;
-  // Prefix on: the kernel names <soul>-<purpose>, so the purpose may use 64 - "release-manager-".length.
+  // A purpose (no spawn-name): the kernel names <soul>-<purpose>, so the purpose may use 64 - "release-manager-".length.
   const room = 64 - 'release-manager-'.length;
   await u.type('.fpurpose', 'a'.repeat(room + 1)); await settle(20);
   assert.match(u.text('.spawn-name-result'), /at most 64 characters/); assert.equal(u.q('.fspawn').disabled, true);
   assert.equal(u.previews().length, before, 'never sent');
   await u.type('.fpurpose', 'a'.repeat(room)); await settle(400);
   assert.doesNotMatch(u.text('.spawn-name-result'), /at most 64/); assert.ok(u.previews().length > before, 'the longest derived name is previewed');
-  // Prefix off: the exact name itself is capped.
-  await u.change('.fprefix', false);
-  const sent = u.previews().length;
-  await u.type('.fpurpose', 'b'.repeat(65)); await settle(20);
-  assert.match(u.text('.spawn-name-result'), /at most 64 characters/); assert.equal(u.previews().length, sent);
 });
 
 // Spec 02: "Where to run".

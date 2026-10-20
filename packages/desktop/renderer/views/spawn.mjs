@@ -1347,7 +1347,7 @@ function openSpawnModal(s, a, draft = {}) {
   s.syncModalFacts = () => { if (ownsModal()) ui.sync(); };
   s.syncModalRelations = s.syncModalFacts;
   ui.start();
-  // Spec E: opened for a soul, or after a pick, the dialog lands on Name (the caret after a restored draft).
+  // Spec E: opened for a soul, or after a pick, the dialog lands on its first field (Deployment, else Harness).
   // Quick Open's pick from a tab opens the dialog before its stage is on screen (the stage shows right after),
   // and focus on a control not rendered yet does not land: try again on the next frames, while this dialog
   // is still the open one and focus has gone nowhere new since (the operator's own focus is never taken).
@@ -1358,7 +1358,7 @@ function openSpawnModal(s, a, draft = {}) {
     // Before each attempt: focus already in the dialog, or moved anywhere new, is the operator's: stop.
     const now = doc.activeElement;
     if (modal.contains(now) || (now && now !== from && now !== doc.body)) return;
-    ui.focusName();
+    ui.focusFirst();
     if (!modal.contains(doc.activeElement) && tries > 0) nextFrame(() => focusInitial(tries - 1));
   };
   focusInitial(10);

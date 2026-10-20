@@ -36,15 +36,18 @@ test('the path shown is the file in its repository, never the host cache path', 
   assert.deepEqual(soulInstructionsOf(row({ path: null, instructions: { file: '/x', text: 5, truncated: 'yes' } })), { path: 'AGENTS.md', text: null, truncated: false });
 });
 
-test('section, navigation and default selection: one tree, the "This soul" group, its AGENTS.md open', t => {
+test('section, navigation and default selection: one tree of two sections, "Defined in this soul" with its AGENTS.md open', t => {
   const u = setup(t); u.section.update(row());
   const title = u.$('h3.page-section-title');
   assert.equal(title.firstChild.textContent, 'Instructions'); assert.equal(title.querySelector('.page-section-lead').textContent, 'what its instances are told');
   assert.equal(u.section.element.dataset.section, 'Instructions');
   assert.ok(u.$('.cap-contents > nav.cap-contents-nav + .cap-contents-reader'), 'the Contents card grammar');
   const tree = u.$('[role=tree]'); assert.equal(tree.getAttribute('aria-label'), 'Instructions of release-manager');
-  const group = u.$('[role=tree] > li[role=none] > ul[role=group]');
-  assert.equal(u.doc.getElementById(group.getAttribute('aria-labelledby')).textContent, SOUL_INSTRUCTIONS_COPY.own);
+  // Two top-level groups named by their headings: the section boundary is the tree's too, not only a drawn rule.
+  const sections = u.$$('[role=tree] > li[role=none] > ul[role=group]');
+  assert.deepEqual(sections.map(g => u.doc.getElementById(g.getAttribute('aria-labelledby')).textContent), ['Defined in this soul', 'Composed for an instance']);
+  assert.deepEqual(sections.map(g => g.parentElement.className), ['soul-section', 'soul-section']);
+  assert.ok(sections[0].querySelector(':scope > [role=treeitem][data-path=own]'), 'its AGENTS.md is the first section\'s');
   const items = u.$$('[role=treeitem]'); assert.equal(items.length, 1);
   const [item] = items;
   assert.equal(item.getAttribute('aria-label'), 'AGENTS.md, souls/release-manager/AGENTS.md');
@@ -56,7 +59,8 @@ test('section, navigation and default selection: one tree, the "This soul" group
   assert.equal(u.$('.cap-reader-size').textContent, `${Buffer.byteLength(TEXT)} B`);
   assert.equal(u.$('.cap-reader-flag'), null);
   assert.doesNotMatch(u.host.textContent, /\/Users\/someone|abc123/, 'never the host cache path');
-  assert.doesNotMatch(u.host.textContent, /Composed|after spawn/, 'without composedInstructions there is no composed view');
+  assert.doesNotMatch(u.host.textContent, /Composed AGENTS|after spawn/, 'without composedInstructions there is no composed view');
+  assert.equal(sections[1].querySelector('[role=treeitem]'), null, 'nor a composed AGENTS.md item: that section holds only notes here');
 });
 
 test('the file reads like a capability inject: front matter as facts, Markdown, highlighted code with copy', t => {
