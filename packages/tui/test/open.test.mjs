@@ -76,6 +76,9 @@ function assertSaid(state, texts, sz = S80, message) {
 }
 /** The cheat sheet, the sidebar's rows after its last rule: each hint as `key word`, one space
  *  between them (the sheet sets the word in a column of its own). */
+/** After the leader's three, a terminal's sheet names the Alt+Shift arrows without the kitty
+ *  keyboard protocol (docs/tui.md, "Chords"); on macOS the TUI has no chords. */
+const ARROWS = Object.freeze(process.platform === "darwin" ? [] : ["Alt+Shift+Up/Down agent"]);
 function sheetOf(state, sz = S80) {
   const rows = sidebarOf(state, sz), rule = rows.findLastIndex((line) => /^[─-]+$/.test(line));
   return rows.slice(rule + 1).filter(Boolean).map((line) => line.split(/ {2,}/).join(" "));
@@ -391,7 +394,7 @@ test("opening, terminal, outcome and detachKey are kept by the store and read by
   // detachKey: the cheat sheet names it, it then Esc, and it twice, while the terminal has the
   // focus, and the help names the two, in a main area wide enough for each sentence on one row.
   const f12 = Object.freeze({ ...terminal, detachKey: "F12" });
-  assert.deepEqual(sheetOf(f12), ["F12 commands", "F12 Esc the list", "F12 F12 types F12"]);
+  assert.deepEqual(sheetOf(f12), ["F12 commands", "F12 Esc the list", "F12 F12 types F12", ...ARROWS]);
   assert.notDeepEqual(draw(f12).lines, draw(terminal).lines);
   const helped = draw(press(on(both([group()], { detachKey: "F12" }), FAR_A), ["?"]).state, size(200, 100)).lines.join("\n");
   assert.match(helped, /F12 Esc takes the focus from the terminal back to the list; the agent keeps running\./);
@@ -429,7 +432,7 @@ test("a preflight that ends while the filter field is open gives the terminal th
   assert.deepEqual([typing.filter.editing, typing.opening?.phase], [true, "preflight"]);
   const started = reduce(typing, { prepared: { id } }).state;
   assert.deepEqual([started.terminal.focus, started.filter, started.focus], ["terminal", { editing: false, query: "dev" }, "list"]);
-  const focused = ["Ctrl+\\ commands", "Ctrl+\\ Esc the list", "Ctrl+\\ Ctrl+\\ types Ctrl+\\"];
+  const focused = ["Ctrl+\\ commands", "Ctrl+\\ Esc the list", "Ctrl+\\ Ctrl+\\ types Ctrl+\\", ...ARROWS];
   assert.deepEqual(sheetOf(started), focused);
   assert.deepEqual(sheetOf(started, S120), focused);
 });
