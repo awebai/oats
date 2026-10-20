@@ -36,8 +36,9 @@ refuses with `E_INSTANCE_NAME_INVALID`/`E_INSTANCE_NAME_TAKEN`). The spawn
 dialog sends a typed name as `name`, with the soul's role as its suffix
 (`nameWithRole`, `packages/client/instance-name.mjs`), when the CLI advertises
 `spawn-name` and the spawn is local; otherwise (an older kernel, a server's
-`/api/spawn`, which takes a purpose) as `purpose`. An empty name sends neither:
-the kernel numbers the instance. Also work
+`/api/spawn`, which takes a purpose) as `purpose`. An empty name sends neither,
+and the kernel numbers the instance, unless the dialog has a suggested name for
+the task (below): then the choices carry that name as `name`. Also work
 (`worktree` for a checkout soul), worktree-only branch/base, advertised
 harness/backend, launchConfig, yolo, model, relation and identity.
 `identity` is `{provider, mode:"local"}` or `{provider, mode:"global", resident}`
@@ -61,7 +62,7 @@ local operations. Git and the kernel own ref validity and default naming.
 
 `POST /api/workspace-spawn-preview?ws=<workspace>` accepts exactly
 `{action:"preview",selector,choices}`, at most **16 KiB**. Opening instruction and
-wake configuration are absent. Missing/duplicate/extra workspace query selectors
+wake configuration are absent; only a suggest read (below) carries the task. Missing/duplicate/extra workspace query selectors
 refuse. CLI argv is fixed `execFile`, `shell:false`:
 
 ```text
@@ -87,6 +88,56 @@ the kernel's own message, printable and at most 1,024 characters. A reason
 with a `fix` is therefore one whose `message` is the kernel's. A test of what
 reaches the dialog starts from the CLI's printed envelope, through the exec
 owner: the boundary's `invoke` seam is after it.
+
+## The suggest read (feature `spawn-suggest-name`)
+
+The same route takes `{action:"suggest",selector,choices,task}`: a preview that
+also names the instance from its task (awebai/oats#1421 §3). The choices carry no
+`name` or `purpose`; the task is the apply's (never blank, at most 32 KiB), so
+this action's body may take the apply's **64 KiB**, checked in the Electron
+proxy (`spawn-preview-proxy.mjs`) and again by the route. Admission is the
+preview's, and the CLI must advertise both `spawn-suggest-name` and
+`spawn-name` (`suggestSupported`), else `E_UNSUPPORTED_OPTION`. The task goes
+to the CLI in a private `0600` temporary file, as the apply's does, and the
+file is removed on every path:
+
+```text
+spawn <soul> --dir <context> --agents-root <root> --preview --suggest-name
+  --task-file <tmp> [validated choices] [--max-age 60] --json
+```
+
+The answer is the preview with `naming` projected (`namingOf`):
+`{source:"suggested",ms,harness,model}` or `{source:"numbered",reason,ms}`, the
+reason one of `no-task`, `unsupported-harness`, `timeout`, `harness-failed`,
+`invalid-reply`. The kernel's `message` is not projected: it can carry an
+exit code or a signal. An answer without `naming` is `E_CLI_PROTOCOL`.
+
+**Its own lane.** Suggest reads are outside the previews' two slots: one per
+workspace, and a newer one ends the older. The older read's `AbortSignal` ends
+its CLI (`execFile` sends SIGTERM, and the kernel ends its naming call with
+it), and it answers `E_SUPERSEDED`. There is no renderer cancel and no IPC for
+it: the next read is the cancel. Closing the dialog ends nothing; the call ends
+within the kernel's 20 s budget. Nothing of a suggest read is cached as such,
+except that a `suggested` answer *is* the preview of `--name <instance>` (the
+kernel's contract): it is held under that preview's identity, so the dialog's
+next read and prepare take it without a second kernel call.
+
+**The dialog** (`spawn-dialog.mjs`, rules in `packages/client/spawn-naming.mjs`)
+asks only while the name field is empty and has never been typed in (for the
+dialog's lifetime, restored with a draft), after the task text rests for
+`SUGGEST_PAUSE_MS` (1.5 s) with at least `SUGGEST_MIN_WORDS` (3) words. It
+keeps every answer by the exact task text and the soul (`namingKey`). A
+suggestion for the current text becomes the choices' `name`, so the preview,
+prepare and apply all bind it, and the placeholder reads "will be named …". With
+no name yet, the preview's Name reads "named from its task" and the facts that
+follow from the numbered name (its home and new branch) are left out
+(`previewFacts`'s `unnamed`): Spawn would not create them.
+Spawn with no suggestion for the text makes one suggest read ("Naming…"),
+joining one in the air for the same text, with no word threshold; an empty
+task makes none. A `numbered` answer spawns the numbered name, and the
+background spawn says "Named <instance>: <reason in words>." when it is
+created (`numberedLine`). A suggested name that a `--name` preview finds
+taken is forgotten, and a waiting press names again.
 
 **The reuse window.** The preview and the apply broker are boundaries of the shared
 home (`packages/client/spawn-preview.mjs`, `spawn-apply.mjs`) that a client creates

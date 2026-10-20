@@ -9,7 +9,7 @@ import * as spawn from '../../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace, postJson } from '../../renderer/views/common.mjs';
 import { createSpawnJobs } from '../../renderer/spawn-jobs.mjs';
 import { refreshCli } from '../../renderer/views/cli-status.mjs';
-import { createSpawnPreview, createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../../client/spawn-preview.mjs';
+import { createSpawnPreview, createSpawnPreviewBoundary, createSpawnPreviewFlights, createSpawnSuggestBoundary } from '../../../client/spawn-preview.mjs';
 import { createSpawnApplyBoundary } from '../../../client/spawn-apply.mjs';
 import { soulsData, workspaceStatusData } from '../../../client/deployment-data.mjs';
 import { cli as CLI, kernel, DEPLOYMENT, ROOT, anchor, anchorHome, deferred } from './spawn-preview-fixture.mjs';
@@ -74,6 +74,9 @@ export async function mountSpawn(t, options = {}) {
   const desktopPreview = options.previewNow ? createSpawnPreview({ invoke: invokePreview, now: options.previewNow }) : null;
   const previewBoundary = desktopPreview ? desktopPreview.read : createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: invokePreview });
   const prepareRead = desktopPreview ? desktopPreview.prepareRead : previewBoundary;
+  // A suggest read (feature spawn-suggest-name) goes to the suggest lane: the Desktop's own (options.previewNow), or
+  // one of its own here. options.kernel answers it too: its args then carry `task` and `signal`.
+  const suggestRead = desktopPreview ? desktopPreview.suggest : createSpawnSuggestBoundary({ flights: createSpawnPreviewFlights(), invoke: invokePreview });
   let ids = 0;
   // u.restartBroker() is a backend restart: a new broker, which knows no reference the old one prepared.
   const newBroker = () => createSpawnApplyBoundary({ mint: () => (++ids).toString(16).padStart(64, '0'), read: prepareRead,
@@ -90,7 +93,7 @@ export async function mountSpawn(t, options = {}) {
     ...(options.deployments ? { deployments: options.deployments } : {}),
     deployment: { status: 'observed', root: `${northwindDir}/agents`, workspace: workspaceStatusData(northwind, northwindDir).workspace,
       workspaceStatus: workspaceStatusData(northwind, northwindDir), reachable: { reachable: true } } });
-  const ctx = { hasWorkspaceSwitcher: true, spawnTiming: { previewDelay: options.previewDelay ?? 0, busyDelay: options.busyDelay ?? 0, backfillDelay: 0, pollDelay: 0, wait: { tries: 3, delayMs: 0, sleep: options.sleep ?? (async () => {}) } },
+  const ctx = { hasWorkspaceSwitcher: true, spawnTiming: { previewDelay: options.previewDelay ?? 0, busyDelay: options.busyDelay ?? 0, backfillDelay: 0, pollDelay: 0, suggestDelay: options.suggestDelay ?? 0, wait: { tries: 3, delayMs: 0, sleep: options.sleep ?? (async () => {}) } },
     api: async (path, opts = {}) => {
       const body = opts.body ? JSON.parse(opts.body) : undefined; calls.push({ path, body, method: opts.method || 'GET' });
       if (path === '/api/cli') return cli;
@@ -104,7 +107,7 @@ export async function mountSpawn(t, options = {}) {
       if (path.startsWith('/api/panel?ws=remote')) return { workspace: { id: decodeURIComponent(path.split('ws=')[1]), remote: true }, instances: options.serverPanels?.[decodeURIComponent(path.split('ws=')[1])] ?? [] };
       if (path.startsWith('/api/panel')) return panel();
       if (path.startsWith('/api/team-members')) return options.teamMembers ?? { members: [], servers: [], notReached: [] };
-      if (path.startsWith('/api/workspace-spawn-preview')) { await options.previewGate?.(body, wsOf(path)); return previewBoundary(body, () => context(wsOf(path))); }
+      if (path.startsWith('/api/workspace-spawn-preview')) { await options.previewGate?.(body, wsOf(path)); return (body?.action === 'suggest' ? suggestRead : previewBoundary)(body, () => context(wsOf(path))); }
       if (path.startsWith('/api/spawn?')) { await options.spawnGate?.(body); return broker(body, () => context(wsOf(path))); }
       if (path === '/api/spawn') return options.remote ? options.remote(body) : assert.fail('no unguarded spawn in these tests');
       if (path === '/api/models') return options.models ? options.models(body) : { models: [] };

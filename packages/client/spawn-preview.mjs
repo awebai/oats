@@ -15,7 +15,7 @@ import { dirname } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { cliSpawnPreview } from './spawn-preview-cli.mjs';
 import { admitInstance } from './instance-admission.mjs';
-import { absolute, record, previewSelector, previewChoices, previewSupported, previewFailure, previewData, previewComposedFrom } from './spawn-preview-contract.mjs';
+import { absolute, record, previewSelector, previewChoices, previewSupported, previewFailure, previewData, previewComposedFrom, suggestSupported, suggestTask } from './spawn-preview-contract.mjs';
 /** One preview's flights: its two-slot budget (`slots`), the flights in the air per invoker (`byInvoker`, where
  * exact duplicates coalesce), and the monotonic clock that stamps each flight's start (`started`). The cache is
  * given the same clock: it orders flight starts against invalidations, so a flight that started before its
@@ -139,10 +139,54 @@ export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview, cache = n
     } catch { return previewFailure('E_CLI_FAILED'); }
   };
 }
+/** The suggest read (feature spawn-suggest-name, awebai/oats#1421 §3): a preview that also names the instance from its
+ * task, `{ action: 'suggest', selector, choices, task }`, with no name or purpose among the choices. It has its own
+ * lane, outside the previews' two slots: ONE read per workspace, and a newer one ends the older (its CLI gets
+ * SIGTERM, which ends the kernel's naming call too) and the older answers E_SUPERSEDED. Nothing of it is cached here
+ * (the dialog caches by task), except that a suggested answer IS the preview of `--name <instance>` (the kernel's
+ * contract), so it is held as that preview's answer, for the dialog's next read and for prepare. */
+export function createSpawnSuggestBoundary({ invoke = cliSpawnPreview, cache = null, maxAge = null, flights, exec } = {}) {
+  if (!flights?.clock) throw missing('createSpawnSuggestBoundary', 'flights (createSpawnPreviewFlights)');
+  if (cache && cache.clock !== flights.clock) throw new TypeError('createSpawnSuggestBoundary: the cache must run on the flights\' clock');
+  const lanes = new Map(), io = exec ? [{ exec }] : [];
+  return async function suggest(request, getContext) {
+    let lane = null, workspace = null;
+    try {
+      if (!record(request) || request.action !== 'suggest' || Object.keys(request).some(k => !['action', 'selector', 'choices', 'task'].includes(k))) return previewFailure('E_BAD_ARGS');
+      const selector = previewSelector(request.selector), choices = previewChoices(request.choices);
+      if (!selector || !choices || !suggestTask(request.task) || choices.name !== undefined || choices.purpose !== undefined) return previewFailure('E_BAD_ARGS');
+      const context = getContext(), selected = admitSpawnSelection(selector, choices, context);
+      if (selected.error) return previewFailure(selected.error);
+      const { target, identity, cli } = selected;
+      if (!suggestSupported(cli)) return previewFailure('E_UNSUPPORTED_OPTION', target);
+      workspace = target.workspace;
+      lanes.get(workspace)?.abort();
+      lane = new AbortController(); lanes.set(workspace, lane);
+      const startedAt = flights.clock();
+      const reuse = maxAge !== null && cli.features.includes('spawn-preview-max-age') ? { maxAge } : {};
+      const envelope = await invoke(cli, { target, choices, task: request.task, signal: lane.signal, ...reuse }, ...io);
+      if (lane.signal.aborted) return previewFailure('E_SUPERSEDED', target);
+      if (envelope?.schemaVersion !== 1 || envelope.ok !== true) return previewFailure(envelope?.error?.code, target, envelope?.error?.message, envelope?.error?.details?.fix);
+      const data = previewData(envelope.result, target, { composedFrom: previewComposedFrom(cli) });
+      if (!data?.naming) return previewFailure('E_CLI_PROTOCOL', target);
+      const current = admitSpawnSelection(selector, choices, getContext());
+      if (current.identity !== identity) return previewFailure('E_TARGET_CHANGED', target);
+      const result = { spawnPreviewViewApi: 1, status: 'available', target, data, reason: null };
+      if (cache && data.naming.source === 'suggested') {
+        // The choices as a read of `--name <instance>` admits them (previewChoices's order), so its identity is the same.
+        const namedChoices = previewChoices({ ...choices, name: data.instance }), named = namedChoices && admitSpawnSelection(selector, namedChoices, getContext());
+        if (named && !named.error) { const { naming, ...plain } = data; cache.set(named.identity, workspace, { ...result, data: plain }, startedAt); }
+      }
+      return result;
+    } catch { return previewFailure('E_CLI_FAILED'); }
+    finally { if (lane && lanes.get(workspace) === lane) lanes.delete(workspace); }
+  };
+}
 export const PREVIEW_MAX_AGE_S = 60;
-/** One client's spawn preview: `{ read, prepareRead, cache }`.
+/** One client's spawn preview: `{ read, prepareRead, suggest, cache }`.
  *   read         the dialog's read, through the cache; its kernel reads may reuse recent member heads (maxAge,
  *                where the CLI declares spawn-preview-max-age)
+ *   suggest      the suggest read (createSpawnSuggestBoundary): its own lane, one per workspace, the newer ending the older
  *   prepareRead  prepare's read (spawn-apply.mjs createSpawnApplyBoundary's `read`), through the same cache,
  *                taking a held answer up to `prepareReuseMs` old (PREPARE_REUSE_MS), never with maxAge; a reusing
  *                read and a live one never coalesce
@@ -159,6 +203,7 @@ export function createSpawnPreview({ invoke = cliSpawnPreview, exec, now = () =>
   return {
     read: createSpawnPreviewBoundary({ invoke, cache, maxAge, heldMs: ttlMs, flights, exec }),
     prepareRead: createSpawnPreviewBoundary({ invoke, cache, heldMs: prepareReuseMs, flights, exec }),
+    suggest: createSpawnSuggestBoundary({ invoke, cache, maxAge, flights, exec }),
     cache: { invalidate: workspace => cache.invalidate(workspace), size: () => cache.size() },
   };
 }

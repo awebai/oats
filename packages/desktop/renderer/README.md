@@ -560,7 +560,10 @@ into the form's scroll area after its last field, above the footer (`placePrevie
 (`roleNamed()`), a typed name goes as `--name`, lowercased (the kernel uses a
 name exactly as given) and with the soul's role as its suffix (`finalName` →
 `nameWithRole`, `packages/client/instance-name.mjs`), and
-an empty one reads "Left empty, the kernel numbers it."; otherwise (an older
+an empty one reads "Left empty, the kernel numbers it." (with `spawn-suggest-name`
+and a field never typed in: "Left empty, the instance is named from its task.", and the
+task's suggested name is the placeholder and the choices' `name`; the suggest read is in
+`packages/desktop/docs/desktop-spawn-preview.md`); otherwise (an older
 kernel, a remote target, whose `/api/spawn` takes a purpose) it is a purpose
 with the `<soul>-` prefix shown. The 64-character check runs on the final name;
 the kernel's name refusals show under the field. **Developer settings** is collapsed: work area (base | branch,

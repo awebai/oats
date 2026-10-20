@@ -265,6 +265,27 @@ OATS older than 0.26.0, which can't take an exact name, and for a spawn on a
 server, what you type is a purpose instead: the instance is named
 `<soul>-<purpose>`, and the field shows that prefix.
 
+**Named from its task.** When the installed OATS can suggest names (feature
+`spawn-suggest-name`), the help under an empty Name reads "Left empty, the
+instance is named from its task." Once the Opening instruction holds at
+least three words and you stop typing for about a second and a half, the
+Desktop asks OATS for a name. The soul's own harness reads the instruction
+and replies with a short name for the work, and the role is added as its
+suffix. The name shows as the field's placeholder ("will be named
+release-notes-manager"), on the line under the field ("(from the task)") and
+in **What will be created**. It belongs to the instruction it was made for:
+when you change the instruction it goes, until the next pause. Typing in Name
+replaces it and stops suggestions for the rest of the dialog, even if you
+empty the field again. Press **Spawn** with Name empty and no name yet, and the
+dialog says **Naming…** and asks once, however short the instruction. When OATS
+can't name it, the instance is numbered and a notification says why, for
+example "Named oats-desktop-expert-3: naming took longer than 20 seconds."
+That happens when there is no instruction, when the harness doesn't suggest
+names (Codex), when there is no answer within 20 seconds, when the harness
+couldn't be asked, and when its reply wasn't a name. Each request is a call
+to the harness's model: nothing is asked before you type, nothing runs on a
+timer, and a spawn on a server is not named this way.
+
 When capabilities set up the new worktree (OATS 0.49.0 and later), **Setup**
 names them, in the order they run, and says this can take several minutes. Such
 a spawn may run for a long time: its roster row reads **Setting up worktree…**

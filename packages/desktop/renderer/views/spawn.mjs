@@ -460,7 +460,7 @@ function closeCapability(s, { restoreFocus = false } = {}) {
 
 export function mount(el, ctx) {
   ensureTheme(el.ownerDocument);
-  // ctx.spawnTiming (optional, harness only): { previewDelay, busyDelay, wait } — never set by the shell.
+  // ctx.spawnTiming (optional, harness only): { previewDelay, busyDelay, suggestDelay, wait } — never set by the shell.
   const s = state = { el, ctx, souls: { agents: [] }, panelInstances: [], filterText: "", groupBy: "repo", sel: null, timers: [], unsubWs: null, alive: true, spawnOp: 0, rosterReq: 0, rosterGen: null,
     waitOpts: ctx.spawnTiming?.wait };
   el.innerHTML = `
@@ -1234,6 +1234,7 @@ function openSpawnModal(s, a, draft = {}) {
     ...(Number.isInteger(s.ctx.spawnTiming?.busyDelay) ? { busyDelay: s.ctx.spawnTiming.busyDelay } : {}),
     ...(Number.isInteger(s.ctx.spawnTiming?.backfillDelay) ? { backfillDelay: s.ctx.spawnTiming.backfillDelay } : {}),
     ...(Number.isInteger(s.ctx.spawnTiming?.pollDelay) ? { pollDelay: s.ctx.spawnTiming.pollDelay } : {}),
+    ...(Number.isInteger(s.ctx.spawnTiming?.suggestDelay) ? { suggestDelay: s.ctx.spawnTiming.suggestDelay } : {}),
     choose: (candidate, next) => {
       if (!ownsModal() || !canLaunchSoul(s, candidate)) return;
       const fresh = s.souls.agents.find(current => current.name === candidate.name && current.agentsRoot === candidate.agentsRoot && (current.server || "") === (candidate.server || ""));

@@ -77,13 +77,17 @@ function previewModules(modules) {
   return { core, caps };
 }
 
-export function previewFacts(data, { name = null, runsOn = null, cli = null } = {}) {
+/** `unnamed`: what the Name fact says with no name yet. Given (the dialog's 'named from its task', where it will ask the
+ *  kernel for one, feature spawn-suggest-name), the preview's numbered name is not the one Spawn creates: the facts
+ *  derived from it, the home and the new branch, are left out until there is a name. */
+export function previewFacts(data, { name = null, runsOn = null, cli = null, unnamed } = {}) {
   const preview = data && typeof data === 'object' ? data : {};
-  const identity = [name ? { label: 'Name', text: name } : { label: 'Name', text: 'numbered by the kernel', muted: true }];
-  const home = homeText(preview.home, preview.subject?.dir);
+  const pending = !name && unnamed !== undefined;
+  const identity = [name ? { label: 'Name', text: name } : { label: 'Name', text: unnamed ?? 'numbered by the kernel', muted: true }];
+  const home = pending ? null : homeText(preview.home, preview.subject?.dir);
   if (home) identity.push({ label: 'Home', text: home.text, title: home.title });
   const facts = [], fact = (label, parts, extra = {}) => { facts.push({ label, ...extra, parts }); };
-  const worktree = preview.work === 'worktree' && preview.branch ? worktreeText(preview) : null;
+  const worktree = preview.work === 'worktree' && preview.branch && !pending ? worktreeText(preview) : null;
   if (worktree) fact('Works in', [{ text: worktree.lead }, { text: worktree.branch, mono: true }, ...(worktree.tail ? [{ text: worktree.tail }] : [])]);
   else if (preview.work) fact('Works in', [{ text: worksInText(preview.work) }]);
   if (preview.harness) {

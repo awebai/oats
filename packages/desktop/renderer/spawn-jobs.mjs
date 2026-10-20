@@ -123,6 +123,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
     if (!live(job) || currentWorkspace() !== job.workspace) return; // held until its workspace is on screen
     // Its own slot, before the job's notice: shown once, and remembered as shown across a reload.
     if (job.flag) { const { message, options } = job.flag; job.flag = null; job.flagSaid = true; notify(message, options); save(); }
+    if (job.namedLine) { const message = job.namedLine; job.namedLine = null; notify(message); }
     // Spec E: a launched partial spawn is followed to its instance too, with no second notice (its own
     // notice already said what went wrong with its wake schedule).
     if (job.arrived) {
@@ -164,6 +165,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
     if (job.deployment !== job.workspace) { try { rememberDeployment(job.workspace, job.deployment); } catch { /* a convenience */ } }
     const ignored = job.flagSaid ? null : flagIgnoredNotice(job.instance, view.receipt?.flagIgnored);
     if (ignored) job.flag = { message: ignored.headline, options: ignored.detail ? { detail: ignored.detail } : {} };
+    if (job.named) { job.namedLine = job.named; job.named = null; }
     if (view.status === 'partial') {
       // Created; only its wake schedule failed. A launched one is still awaited running, to be followed to (Spec E).
       job.wantRunning = view.receipt?.launched === true; job.quiet = true;
@@ -235,6 +237,9 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
       tokens.add(spec.token);
       const job = { id: `spawn-${++serial}`, workspace: spec.workspace, deployment: text(spec.deployment) ? spec.deployment : spec.workspace, soul: spec.soul, selector: spec.selector, input: structuredClone(spec.input),
         decision: structuredClone(spec.decision), instance: spec.decision.instance, home: spec.decision.home, placement: { ...(spec.placement || {}) },
+        // Why a spawn the dialog would have named from its task was numbered (spawn-naming.mjs numberedLine), said once it
+        // is created. This window's only: a reload does not bring it back.
+        named: text(spec.named, 512) ? spec.named : null,
         draft: structuredClone(spec.draft ?? {}), state: 'spawning', submitted: false, spawnRef: null, prepared: null, notice: null, announced: false, startedAt: now() };
       jobs.set(job.id, job); changed();
       void run(job);

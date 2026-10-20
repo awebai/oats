@@ -1205,14 +1205,20 @@ const server = createServer(async (req, res) => {
     if (path === '/api/workspace-spawn-preview' && req.method === 'POST') {
       try {
         if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
-        const request = await readStrictBody(req, 16384);
+        // A preview's body is at most 16 KiB. A suggest read (feature spawn-suggest-name, awebai/oats#1421 §3) also
+        // carries the task, at most 32 KiB as at apply, so its body may take the apply's 64 KiB.
+        const { body: request, bytes } = await readStrictBody(req, 65536, true);
+        const suggest = request.action === 'suggest';
+        if (!suggest && bytes > 16384) throw new Error('body too large');
         const getContext = () => {
           const workspace = deploymentFor(held(), url.searchParams.get('ws'), DESKTOP_TERMS);
           return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
             instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
         // Settled answers are reused for 60 s here, and prepare takes them up to PREPARE_REUSE_MS old, the drift
-        // fenced by apply's --expect-decision (packages/client/spawn-preview.mjs).
+        // fenced by apply's --expect-decision (packages/client/spawn-preview.mjs). A suggest read has its own lane: one
+        // per workspace, a newer one ending the older (E_SUPERSEDED).
+        if (suggest) return send(res, 200, await spawnPreview.suggest(request, getContext));
         return send(res, 200, await spawnPreview.read(request, getContext));
       } catch { return send(res, 400, previewFailure('E_BAD_ARGS')); }
     }

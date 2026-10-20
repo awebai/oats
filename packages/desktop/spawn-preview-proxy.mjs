@@ -1,4 +1,6 @@
-/** K6 read-only IPC. No fallback, task forwarding or mutation result handling. */
+/** K6 read-only IPC. No fallback or mutation result handling. The one read that carries a task is the suggest read
+ *  (`action: 'suggest'`, feature spawn-suggest-name, awebai/oats#1421 §3): its body may take the apply's 64 KiB, a
+ *  preview's stays at 16 KiB, and the server checks both again (server/oats-web.mjs). */
 import { apiUrl, apiInit } from './api-url.mjs';
 import { trustedForgeFrame } from './forge-proxy.mjs';
 import { previewFailure, previewTarget, previewData } from '../client/spawn-preview-contract.mjs';
@@ -15,7 +17,9 @@ export async function proxySpawnPreview(event, path, opts, { rendererURL, connec
     const url = apiUrl(path, start.base, start.wsId, start.allowedWs, { bound: start.bound === true });
     if (url.pathname !== '/api/workspace-spawn-preview') return reply('E_BAD_ARGS', 400);
     const init = apiInit({ method: 'POST', body: opts.body });
-    if (typeof init.body !== 'string' || Buffer.byteLength(init.body) > 16384) return reply('E_BAD_ARGS', 400);
+    if (typeof init.body !== 'string') return reply('E_BAD_ARGS', 400);
+    let action; try { action = JSON.parse(init.body)?.action; } catch { return reply('E_BAD_ARGS', 400); }
+    if (Buffer.byteLength(init.body) > (action === 'suggest' ? 65536 : 16384)) return reply('E_BAD_ARGS', 400);
     const response = await fetcher(url, { ...init, signal: AbortSignal.timeout(35000) }), raw = await response.text();
     if (!owns()) return reply('E_FORBIDDEN_FRAME', 403);
     if (!current()) return reply('E_TARGET_CHANGED');
