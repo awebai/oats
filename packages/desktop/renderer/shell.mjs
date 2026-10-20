@@ -2723,11 +2723,7 @@ for (const [id, action, label] of [['instance.openSplit', 'open-split', 'Instanc
 }
 /** The leader's target (leaderTargetId) where the palette was opened from: its instance entries act on it. */
 let paletteTargetId = null;
-registerAction({ id: "app.palette", label: "Open the command palette", context: "global", run: () => {
-  tabOpenIntents.invalidate();
-  if (!palette.isOpen()) paletteTargetId = leaderTargetId(document.activeElement);
-  palette.toggle();
-} });
+registerAction({ id: "app.palette", label: "Open the command palette", context: "global", run: () => { tabOpenIntents.invalidate(); if (!palette.isOpen()) paletteTargetId = leaderTargetId(document.activeElement); palette.toggle(); } });
 registerAction({ id: "app.quickOpenSouls", label: "Quick open a soul to spawn", context: "global", run: () => { tabOpenIntents.invalidate(); quickOpen.toggle(); } });
 registerAction({ id: "app.chooseSoul", label: "Spawn instance: choose a soul in Workspace", context: "global", run: () => openWorkspaceSouls() });
 registerAction({ id: "app.shortcuts", label: "Edit keyboard shortcuts", context: "global", run: () => openShortcutsEditor() });

@@ -254,6 +254,7 @@ const DEFAULTS = [
   ["roster.openPrevious",{"mac":"Mod+Alt+↑","other":"Alt+Shift+↑"}],
   ["roster.openNext",{"mac":"Mod+Alt+↓","other":"Alt+Shift+↓"}],
   ["terminal.focusMode",{"mac":"Mod+Alt+Z","other":"Ctrl+Alt+Z"}],
+  ["instance.edit",{"mac":"Mod+Alt+R","other":"Ctrl+Alt+R"}],
   ["app.chooseSoul",{"mac":"Mod+N","other":"Ctrl+Shift+N"}],
   ["app.shortcuts","Mod+,"],
   ["app.themeToggle",null],

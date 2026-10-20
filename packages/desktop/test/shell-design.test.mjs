@@ -61,7 +61,8 @@ function shell(t, shellSource = source, { storage = {}, gitPanel } = {}) {
     showStage(name) { c.tabOpenIntents.invalidate(); events.push(["stage", name]); },
     showStageFocused: name => c.showStage(name), // the stage switch; its focus keeping is shell glue over focusRegion("main")
     registerAction(action) { const off = registerAction(action); offs.push(off); return off; }, runAction,
-    palette: { toggle: () => events.push(["palette"]) },
+    // The palette action notes the leader's target as it opens (the instance entries act on it).
+    palette: { toggle: () => events.push(["palette"]), isOpen: () => false }, leaderTargetId: () => null,
     quickOpen: { toggle: () => events.push(["quickOpen"]) },
     shortcutsEditor: { close() {}, open: () => events.push(["shortcuts"]) },
     THEMES, setTheme: id => events.push(["theme", id]),
