@@ -49,6 +49,7 @@ const SENDS = {
   "split.close": ctrlAlt("W"),
   "split.focusNextGroup": ctrlAlt("A"),
   "sidebar.focusFilter": ctrlAlt("F"),
+  "instance.edit": ctrlAlt("R"),
   "focus.leaveTerminal": { data: "\x1b[17;6~", plainer: null },
 };
 // The named exceptions of the terminal rule, exactly (docs/desktop-keyboard.md, principle 2).

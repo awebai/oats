@@ -36,6 +36,7 @@ import { rosterSections, splitByDeployment, isMultiDeployment } from "../../clie
 import { DESKTOP_TERMS } from "./desktop-terms.mjs";
 import { treeConnectors } from "./instance-tree-view.mjs";
 import { createOverlayPicker } from "./overlay-picker.mjs";
+import { dotColor } from "./instance-dot.mjs";
 import { subsequenceScore } from "../../client/subsequence-score.mjs";
 
 /** Commands listed at most (after every instance row; the instance list scrolls). */
@@ -96,6 +97,8 @@ export function paletteRows(roster, commands, raw, { openTerminal } = {}) {
             // The sidebar row's lines and dot: its connectors over the cluster as listed, and its state.
             connectors: treeConnectors(cluster.instances, inst, full),
             state: runtimeState(inst),
+            // Its colour on that dot (instance-dot.mjs), a palette name or null.
+            color: dotColor(inst, runtimeState(inst)),
             // Depth and siblinghood reach assistive technology as words (aria-level is not an option's).
             ...(parent ? { under: `under ${parent}` } : {}),
             ...(said ? { sibling: said } : {}),

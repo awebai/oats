@@ -90,6 +90,7 @@ test("the chords: every one, per platform, and what it does", () => {
     ["split-down", "cmd+shift+\\", "ctrl+alt+shift+e"],
     ["group-next", "cmd+alt+a", "ctrl+alt+a"],
     ["filter", "cmd+f", "ctrl+alt+f"],
+    ["edit-instance", "cmd+alt+r", "ctrl+alt+r"],
   ]);
   assert.ok(Object.isFrozen(CHORDS) && CHORDS.every((entry) => Object.isFrozen(entry)));
   assert.equal(new Set(CHORDS.map((entry) => entry.does)).size, CHORDS.length, "one chord per action");
@@ -99,6 +100,9 @@ test("the chords: every one, per platform, and what it does", () => {
   assert.equal(chordKey("palette", true), "cmd+k");
   assert.equal(chordKey("palette", false), "ctrl+alt+k");
   assert.equal(chordKey("instances", false), null, "the stages are the Desktop's own");
+  // The instance's name and colour: a chord of its own, no leader key, never a Shift variant.
+  assert.equal(LEADER_TABLE.some((row) => row.does === "edit-instance"), false, "no leader key for it");
+  assert.equal(PLAIN_KEYS.some((row) => row.does === "edit-instance"), false, "no plain key for it");
 });
 
 test("the palette's own keys: next and previous group, per platform, read only while it is open", () => {
@@ -152,7 +156,7 @@ test("the Desktop's chords are the module's entries, each read by one action", (
     previous: "roster.openPrevious", next: "roster.openNext", "tab-previous": "tabs.prevPage", "tab-next": "tabs.nextPage",
     ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tab-${i + 1}`, `tabs.goto${i + 1}`])),
     zoom: "terminal.focusMode", "close-terminal": "tabs.close", "split-right": "split.vertical", "split-down": "split.horizontal",
-    "group-next": "split.focusNextGroup", filter: "sidebar.focusFilter",
+    "group-next": "split.focusNextGroup", filter: "sidebar.focusFilter", "edit-instance": "instance.edit",
   });
   for (const { id, does } of CHORDS_READ) {
     assert.ok(Object.hasOwn(DEFAULT_KEYMAP, id), id);

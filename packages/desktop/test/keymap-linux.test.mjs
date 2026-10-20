@@ -50,6 +50,7 @@ test("the shipped table: each changed default resolves per platform", () => {
     "app.chooseSoul": ["Mod+N", "Ctrl+Shift+N"],
     "roster.openPrevious": ["Mod+Alt+↑", "Alt+Shift+↑"], "roster.openNext": ["Mod+Alt+↓", "Alt+Shift+↓"],
     "terminal.focusMode": ["Mod+Alt+Z", "Ctrl+Alt+Z"],
+    "instance.edit": ["Mod+Alt+R", "Ctrl+Alt+R"],
     "tabs.close": ["Mod+W", "Ctrl+Alt+W"],
     "tabs.next": ["Ctrl+Tab", "Ctrl+Tab"], "tabs.prev": ["Ctrl+Shift+Tab", "Ctrl+Shift+Tab"],
     "tabs.nextPage": ["Mod+Alt+→", "Alt+Shift+→"], "tabs.prevPage": ["Mod+Alt+←", "Alt+Shift+←"],
@@ -93,7 +94,7 @@ test("nothing binds Super/Meta on Linux/Windows: Mod is Ctrl there", () => {
 test("the terminal allowlist is exactly the actions that must work in a terminal", () => {
   assert.deepEqual([...TERMINAL_ALLOWLIST].sort(), [
     "app.chooseSoul", "app.leader", "app.palette", "app.quickOpenSouls", "app.shortcuts", "app.themePicker", "app.workspaces", "focus.leaveTerminal",
-    "panel.toggle", "roster.openNext", "roster.openPrevious", "sidebar.focusFilter", "sidebar.toggle",
+    "instance.edit", "panel.toggle", "roster.openNext", "roster.openPrevious", "sidebar.focusFilter", "sidebar.toggle",
     "split.close", "split.focusNextGroup", "split.horizontal", "split.vertical",
     "stage.automations", "stage.hierarchy", "stage.spawn",
     "tabs.close", "tabs.next", "tabs.nextPage", "tabs.prev", "tabs.prevPage",
@@ -121,6 +122,7 @@ test("Linux/Windows inside a terminal: the allowlisted chords fire from real (sh
     [linux("e", { altKey: true }), "split.vertical"], [linux("E", { altKey: true, shiftKey: true }), "split.horizontal"],
     [linux("W", { shiftKey: true, altKey: true }), "split.close"], [linux("a", { altKey: true }), "split.focusNextGroup"],
     [linux("z", { altKey: true }), "terminal.focusMode"], [linux("1", { altKey: true }), "tabs.goto1"], [linux("9", { altKey: true }), "tabs.goto9"],
+    [linux("r", { altKey: true }), "instance.edit"],
     // The Alt+Shift arrows (no Ctrl): the leader's ↑ / ↓ and the tab moves.
     [ev("ArrowUp", { altKey: true, shiftKey: true }), "roster.openPrevious"], [ev("ArrowDown", { altKey: true, shiftKey: true }), "roster.openNext"],
     [ev("ArrowLeft", { altKey: true, shiftKey: true }), "tabs.prevPage"], [ev("ArrowRight", { altKey: true, shiftKey: true }), "tabs.nextPage"],
@@ -137,6 +139,8 @@ test("Linux/Windows inside a terminal: the allowlisted chords fire from real (sh
     const claimed = ev(event.key, event); handleKeydown(claimed, inTerm);
     assert.equal(claimed.defaultPrevented, true, `${id} is claimed before the pty`);
   }
+  // The instance's name and colour has no Shift variant: Ctrl+Alt+Shift+R is the program's.
+  assert.equal(matchEvent(linux("R", { altKey: true, shiftKey: true }), inTerm), null, "Ctrl+Alt+Shift+R is no chord");
 });
 
 test("Linux/Windows inside a terminal: Ctrl+W/K/\\/P/B, F6, Alt+digit and Ctrl+PgUp/PgDn reach the program (never preventDefault'ed)", t => {
@@ -209,6 +213,7 @@ test("macOS inside a terminal: ⌘ chords fire (they never reach the pty), plus 
     [ev("ø", { code: "KeyO", metaKey: true, altKey: true }), "app.workspaces"], [ev("Ω", { code: "KeyZ", metaKey: true, altKey: true }), "terminal.focusMode"],
     [ev("å", { code: "KeyA", metaKey: true, altKey: true }), "split.focusNextGroup"], [ev("∑", { code: "KeyW", metaKey: true, altKey: true }), "split.close"],
     [ev("¡", { code: "Digit1", metaKey: true, altKey: true }), "tabs.goto1"],
+    [ev("®", { code: "KeyR", metaKey: true, altKey: true }), "instance.edit"],
   ]) assert.equal(matchEvent(event, inTerm), id, id);
   // ⌃3 is ESC, ⌃4–⌃7 FS/GS/RS/US, ⌃8 DEL, ⌃6 vim's alternate file; F6 is mc's/htop's/nano's.
   for (const [name, event] of [["⌃3", ev("3", { ctrlKey: true })], ["⌃6", ev("6", { ctrlKey: true })], ["F6", ev("F6")], ["⇧F6", ev("F6", { shiftKey: true })]]) {

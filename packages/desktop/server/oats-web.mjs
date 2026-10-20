@@ -68,6 +68,7 @@ import { readinessRequest } from './readiness.mjs';
 import { readinessFailure } from '../../client/readiness-contract.mjs';
 import { createSpawnPreview } from '../../client/spawn-preview.mjs';
 import { teamsRequest, soulTeamsRequest, teamsFailure } from './teams.mjs';
+import { instanceColorRequest, instanceColorNotRun } from './instance-color.mjs';
 import { instanceEventsRequest } from './instance-events.mjs';
 import { eventsFailure } from '../../client/instance-events-contract.mjs';
 import { createSpawnApplyBoundary, ANSWER_WITHIN_MS } from '../../client/spawn-apply.mjs';
@@ -1244,6 +1245,25 @@ const server = createServer(async (req, res) => {
         }
         return send(res, 200, result);
       } catch { return send(res, 400, teamsFailure('E_BAD_ARGS')); }
+    }
+    // An instance's colour (feature instance-color, #1421 §2): `oats instance color`, local or routed to the row's
+    // host. POST, so the Origin guard above covers it. A change re-reads the roster at once, so every dot follows.
+    if (path === '/api/instance-color' && req.method === 'POST') {
+      try {
+        if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
+        const request = await readStrictBody(req, 4096);
+        const getContext = () => {
+          const workspace = deployments(held()).find(w => w.id === url.searchParams.get('ws'));
+          return { workspace, cli: cliState, localCwd: ctxs[0] ?? homedir(), instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+        };
+        const result = await instanceColorRequest(request, getContext);
+        // A change, or an outcome not known (the record may have changed), reads the roster again at once.
+        if ((result.status === 'ok' && result.changed) || result.status === 'unknown') {
+          try { if (getContext().workspace?.remote) void remoteLoop.request(); else observeMutation(url.searchParams.get('ws')); }
+          catch { /* a refresh must not erase the answer */ }
+        }
+        return send(res, 200, result);
+      } catch { return send(res, 400, instanceColorNotRun('E_BAD_ARGS')); }
     }
     if (path === '/api/instance-lifecycle' && req.method === 'POST') {
       try {
