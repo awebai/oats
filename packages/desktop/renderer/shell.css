@@ -116,13 +116,6 @@ body {
 #nav { display: flex; flex: none; flex-direction: column; padding: 8px 8px 14px; gap: 1px; }
 #nav-foot { margin-top: auto; flex: none; display: flex; flex-direction: column; padding: 10px; gap: 8px;
             border-top: 1px solid var(--border); }
-/* The leader's hint at the footer's start: quiet text (the chord, then "commands"), a real button. */
-#sidebar-leader { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 24px; padding: 2px 6px;
-                  border: 0; border-radius: 5px; background: none; color: var(--muted); font-family: inherit;
-                  font-size: 11.5px; line-height: 1.4; text-align: left; cursor: pointer; }
-#sidebar-leader .shortcut-hint { max-width: none; color: var(--fg); }
-#sidebar-leader:hover { background: var(--surface-2); }
-#sidebar-leader:focus-visible { background: var(--sel); color: var(--fg); } /* the id rule above outranks the global tint */
 #sidebar-spawn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 32px;
                  padding: 5px 10px; border: 1px solid var(--primary-bg); border-radius: 7px;
                  background: var(--primary-bg); color: var(--primary-fg); font-family: inherit; font-size: 12.5px;
@@ -197,7 +190,7 @@ body {
    set background-color only: the background shorthand resets the clip to
    border-box, which painted the gap and made a selected row and a hovered
    neighbour touch (human, 2026-10-03). */
-.ctx-tree-row { --tree-step: 18px; --tree-branch-offset: 5px; --row-gap: 2px; --row-solid: var(--surface); position: relative; width: 100%; min-height: 48px;
+.ctx-tree-row { --tree-step: 18px; --tree-branch-offset: 5px; --tree-link-shift: 2px; --row-gap: 2px; --row-solid: var(--surface); position: relative; width: 100%; min-height: 48px;
                 box-sizing: border-box; display: flex; align-items: center;
                 border-top: var(--row-gap) solid transparent; border-bottom: var(--row-gap) solid transparent;
                 background-clip: padding-box; border-radius: 7px / 9px;
@@ -277,9 +270,11 @@ body {
 .ctx-inst.idle, .ctx-inst:disabled, .ctx-inst[aria-disabled="true"] { color: var(--muted); }
 .ctx-inst:disabled, .ctx-inst[aria-disabled="true"] { cursor: default; }
 /* Two columns per level, so the sibling cue and parentage never merge (#1312). The dotted sibling
-   link sits on the dot's centre column (10px inset + 4px radius) and joins the depth-0 dots of one
+   link sits on the dot's column (10px inset + 4px radius), --tree-link-shift left of its centre
+   (the sidebar's 2px, so the two columns are 7px apart; still inside the dot, so it reads as
+   joining it; the palette's rows, unset, stay on the centre), and joins the depth-0 dots of one
    group, passing beside their children. The solid lineage (a parent's stem, pass-throughs for open
-   branches, rounded elbows into children) runs --tree-branch-offset to its right: the stem leaves
+   branches, rounded elbows into children) runs --tree-branch-offset right of the centre: the stem leaves
    the parent's dot at its lower right, under the ring, and each elbow ends under the child dot's
    ring. Dots paint above every line with a ring in the row's own solid colour (--row-solid:
    surface, hover surface-2, selected sel), so every line appears to leave the dot itself and a
@@ -294,7 +289,7 @@ body {
 .ctx-guide.elbow { top: -2px; height: calc(50% + 2px); width: calc(var(--tree-step) - var(--tree-branch-offset) - 4.25px);
                    border-bottom: 1.5px solid var(--tree-line); border-bottom-left-radius: 5px; }
 .ctx-guide.down { top: 50%; bottom: 0; }
-.ctx-guide.link-in, .ctx-guide.link-out, .ctx-guide.link-through { left: calc(13.25px + var(--guide-level) * var(--tree-step));
+.ctx-guide.link-in, .ctx-guide.link-out, .ctx-guide.link-through { left: calc(13.25px - var(--tree-link-shift, 0px) + var(--guide-level) * var(--tree-step));
                                                                    border-left: 1.5px dotted var(--tree-link); }
 .ctx-guide.link-in { top: 0; height: 50%; }
 .ctx-guide.link-out { top: 50%; bottom: 0; }
@@ -332,6 +327,8 @@ body {
 .ctx-attn { flex: none; display: inline-flex; align-items: center; gap: 3px; padding: 0 5px; border: 1px solid var(--attn-border);
   border-radius: 999px; background-color: var(--attn-bg); color: var(--warn); font-size: 10.5px; font-weight: 600; line-height: 15px; white-space: nowrap; }
 .ctx-attn > .shell-icon { flex: none; }
+/* The mark in place of the meta line's text: the line keeps its place, so the row never reorders or grows (48px). */
+.ctx-meta.ctx-attn-line { display: flex; min-width: 0; }
 .ctx-repo-label { display: block; color: var(--muted); font-family: var(--mono); font-size: 11.5px; font-weight: 400; line-height: normal; }
 .ctx-runtime { width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 5px;
                font-size: 9.5px; font-weight: 700; }

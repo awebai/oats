@@ -1010,7 +1010,8 @@ function renderContextRoster(instances) {
         if (unavailable) { const said = why + waitingSentence(claim, below, Date.now()); row.title = said; row.setAttribute("aria-description", said); }
         else {
           rosterTip.bind(row, () => rosterTipFacts(i, why, pr, { below, stale: heldStale }));
-          if (held) row.setAttribute("aria-description", why);
+          // A held home's state takes its meta line over the mark (below): its description says the wait.
+          if (held) row.setAttribute("aria-description", why + waitingSentence(claim, below, Date.now()));
         }
         const dot = document.createElement("span");
         dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
@@ -1042,18 +1043,17 @@ function renderContextRoster(instances) {
         // Spec E: a spawn the operator was not taken to says New (text and a dot, never colour alone)
         // until its row is opened, or its tab is (the first paint where it is the active row).
         if (isActive) spawnJobs.seen?.(ws, i);
-        // Spec D: Needs input before New on the same line; the marks keep their size, the name ellipsizes.
-        const attn = claim ? needsInputMark() : below.length ? needsInputMark(below.length) : null;
+        // Spec D (human, 2026-10-20): the name line keeps the name, whole; a waiting row's mark takes the meta line
+        // in place of its text (the repository, pull request and branch stay in the hover card, as a held home's do).
+        // A held home's state wins that line: its description says the wait. "New" stays beside the name.
+        const attn = held ? null : claim ? needsInputMark() : below.length ? needsInputMark(below.length) : null;
+        if (attn) { meta.className = "ctx-meta ctx-attn-line"; meta.removeAttribute("title"); meta.replaceChildren(attn); }
         const isNew = !!spawnJobs.isNew?.(ws, i);
-        if (attn || isNew) {
+        if (isNew) {
           const line = document.createElement("span"); line.className = "ctx-name-line";
-          line.append(name);
-          if (attn) line.append(attn);
-          if (isNew) {
-            const mark = document.createElement("span"); mark.className = "ctx-new";
-            const markDot = document.createElement("span"); markDot.className = "ctx-new-dot"; markDot.setAttribute("aria-hidden", "true");
-            mark.append(markDot, "New"); line.append(mark);
-          }
+          const mark = document.createElement("span"); mark.className = "ctx-new";
+          const markDot = document.createElement("span"); markDot.className = "ctx-new-dot"; markDot.setAttribute("aria-hidden", "true");
+          mark.append(markDot, "New"); line.append(name, mark);
           copy.append(line, meta, ...heldLines);
         } else copy.append(name, meta, ...heldLines);
         row.append(dot, copy);
@@ -2896,9 +2896,6 @@ window.addEventListener("pagehide", () => leader.dispose(), { once: true });
 // or the palette it is not there at all (`when`): the key goes where it goes without it.
 registerAction({ id: "app.leader", label: "Leader: the commands that follow one key", context: "global", when: () => !modalOpen(),
   run: (e) => { const at = e?.target ?? document.activeElement; leader.start({ targetId: leaderTargetId(at) }); } });
-// The sidebar's footer starts it too (its hint opens; the next key settles it, as from the keyboard).
-const leaderButton = document.getElementById("sidebar-leader");
-leaderButton?.addEventListener("click", () => { if (!modalOpen()) leader.toggle({ opener: leaderButton, targetId: leaderTargetId(leaderButton) }); });
 /** A key that does what the leader then a key does, from where it was pressed: the leader's own
  * target (leaderTargetId) and rules (notApplicable's line when it cannot act). */
 function runAsLeaderKey(does, e) {
@@ -2937,13 +2934,6 @@ function applyChordTitles() {
     const chord = getBinding(el.dataset.shortcut, isMac);
     el.textContent = chord ? formatChord(chord, isMac) : "";
     el.hidden = !chord;
-  }
-  // The footer's leader button: its tooltip and its name say the live chord.
-  const leaderStart = document.getElementById("sidebar-leader");
-  if (leaderStart) {
-    const chord = getBinding("app.leader", isMac);
-    const name = chord ? `Commands: ${formatChord(chord, isMac)}, then one key` : "Commands: press this, then one key";
-    leaderStart.title = name; leaderStart.setAttribute("aria-label", name);
   }
 }
 onKeymapChange(() => applyChordTitles());

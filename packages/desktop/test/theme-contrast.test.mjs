@@ -2002,8 +2002,6 @@ for (const [name] of palettes) test(`${name}: the leader's hint and its footer b
   const root = dom.window.getComputedStyle(doc.documentElement);
   const hint = createLeaderHint({ doc, host: doc.getElementById("main"), before: doc.getElementById("show-panel") });
   hint.showKeys([{ keys: ["k", "space"], label: "Open the command palette" }, { keys: ["escape"], label: "Instance roster" }], { isMac: false });
-  const button = doc.getElementById("sidebar-leader");
-  const kbd = button.querySelector(".shortcut-hint"); kbd.hidden = false; kbd.textContent = "Alt+O";
   const check = (selector, fg, surfaceSelector, bg) => {
     const el = doc.querySelector(selector), surface = doc.querySelector(surfaceSelector);
     assert.ok(el && surface, selector);
@@ -2015,8 +2013,6 @@ for (const [name] of palettes) test(`${name}: the leader's hint and its footer b
   };
   check(".leader-hint-key", "fg", ".leader-hint", "surface-2");
   check(".leader-hint-label", "muted", ".leader-hint", "surface-2");
-  check("#sidebar-leader", "muted", "#sidebar", "surface");
-  check("#sidebar-leader .shortcut-hint", "fg", "#sidebar", "surface");
   hint.say("No instance is focused or selected.");
   check(".leader-hint-line", "fg", ".leader-hint", "surface-2");
   // The hint is opaque: its surface is a token, never a blend over the terminal behind it.
