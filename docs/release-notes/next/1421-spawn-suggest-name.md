@@ -12,6 +12,10 @@
     (`scripts/naming-isolation-proof.mjs`). Claude Code's own built-in
     plugins (`cc-plugin-*@builtin`) load as they always do, `--bare`
     included; none of the user's plugins, hooks or MCP servers do.
+    pi runs its own credential commands (`!command` keys and headers in
+    models.json), as every pi launch does: they are its login. A claude login
+    through `apiKeyHelper` is not read, so such a user gets `harness-failed`
+    and a numbered name.
   - **codex is not supported yet:** a codex soul's preview is numbered, with
     `naming.reason: "unsupported-harness"`.
   - **A failure is never an error.** The preview numbers the instance as

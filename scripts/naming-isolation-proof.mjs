@@ -10,7 +10,9 @@
 // server, and for pi a package. The model is a local stub API with a dummy key, so nothing leaves the
 // machine. A positive control (no isolation flags) must touch every marker, or the fixture proves
 // nothing. The naming call (the kernel's own argv, lib/instance-naming.mjs NAMING_CALLS) must touch
-// none and send no tool. `--real` adds one naming call with this user's real configuration and native
+// none and send no tool. A decided exception is shown by a control of its own, labelled as the
+// exception and never as a pass: pi runs its credential commands (`!command` keys and headers in
+// models.json), as every pi launch does, since they are its login. `--real` adds one naming call with this user's real configuration and native
 // login (claude and pi), to show that authentication survives the flags.
 //
 // An operator reruns it on a host after a harness upgrade. CI does not run it: it has no real harness.
@@ -117,7 +119,10 @@ const HARNESSES = {
     write(join(agent, "settings.json"), json({ packages: [pkg], quietStartup: true }));
     write(join(agent, "mcp.json"), json({ mcpServers: { marker: mcpServer(m, "mcp-user") } }));
     return { env: { ...process.env, PI_CODING_AGENT_DIR: agent }, markers: ["extension-user", "extension-package", "mcp-user"],
-      control: ["-p", "--model", "stub/stub-model"], naming: NAMING_CALLS.pi.argv("stub/stub-model") };
+      control: ["-p", "--model", "stub/stub-model"], naming: NAMING_CALLS.pi.argv("stub/stub-model"),
+      // The stated exception: a credential command in models.json runs under the naming argv.
+      exception: { marker: "credential-command", what: "pi runs its credential commands (`!command` keys in models.json): they are its login",
+        prepare: () => write(join(agent, "models.json"), json({ providers: { stub: { baseUrl: `http://127.0.0.1:${api.port}`, api: "anthropic-messages", apiKey: `!${touch(m, "credential-command")}; printf sk-dummy-proof`, models: [{ id: "stub-model" }] } } })) } };
   },
   async codex(p, m, api) {
     const home = join(p, "codex"), mk = join(p, "mk");
@@ -163,6 +168,11 @@ async function prove(harness) {
     const naming = await observe("naming", f.naming);
     const proven = naming.touched.length === 0 && naming.requests > 0 && (harness === "codex" ? !naming.tools.some((t) => t.includes("mcp")) : naming.tools.length === 0);
     console.log(`  ${proven ? "PROVEN" : "NOT PROVEN"}${harness === "codex" ? " (the candidate, on an API key; codex stays unsupported-harness)" : ""}`);
+    if (f.exception) {
+      f.exception.prepare();
+      const seen = await observe("naming, with the exception's fixture", f.naming);
+      console.log(`  STATED EXCEPTION, not a pass: ${f.exception.what}; ${seen.touched.includes(f.exception.marker) ? "it ran, as decided" : "it did not run"}`);
+    }
     return proven ? 0 : 1;
   } finally { api.close(); rmSync(p, { recursive: true, force: true }); }
 }

@@ -2522,10 +2522,11 @@ or `--task <text>`). Like every preview it writes nothing and runs no hooks.
   > <the task text, at most 4000 characters>
 
   It runs from a fresh empty temporary directory, removed afterwards, with no
-  `OATS_INSTANCE*` variable, without a shell, in its own process group. The
-  group is killed after 20 s, or sooner when the preview's 20 s preflight
-  budget runs out first; the budget is not raised for it. At most 4 KiB of
-  its output is read.
+  `OATS_INSTANCE*` variable, without a shell, in its own process group. It is
+  made before anything that depends on the name (placement, branch, home), and
+  it counts against the preview's one 20 s preflight budget, which is not
+  raised for it: the group is killed after 20 s, or when the budget runs out
+  first. At most 4 KiB of its output is read.
 - **It starts nothing that runs code: no MCP server, hook, plugin, extension
   or project setting.** Each harness's argv is proven to start nothing
   (`scripts/naming-isolation-proof.mjs`, a recorded run against fixtures,
@@ -2534,14 +2535,18 @@ or `--task <text>`). Like every preview it writes nothing and runs no hooks.
   - **claude**, model `haiku`: `-p --tools "" --strict-mcp-config
     --setting-sources "" --disable-slash-commands --no-session-persistence
     --output-format text --model haiku`. Its native login is kept, which
-    `--bare` would not keep. Claude Code's own built-in plugins
+    `--bare` would not keep. A claude login through `apiKeyHelper` is not
+    read (`--setting-sources ""`): such a user gets `harness-failed` and a
+    numbered name. Claude Code's own built-in plugins
     (`cc-plugin-*@builtin`) load as they always do, `--bare` included; none
     of the user's plugins, hooks or MCP servers do. Hooks in the host's
     managed policy (`managed-settings.json`) still apply: they are the host
     admin's.
   - **pi**, the instance's model: `-p --no-session --no-tools
     --no-extensions --no-mcp --no-skills --no-prompt-templates --no-themes
-    --no-context-files --no-approve [--model <m>]`.
+    --no-context-files --no-approve [--model <m>]`. pi runs its own
+    credential commands (`!command` keys and headers in models.json), as
+    every pi launch does: they are its login.
   - **codex** is not supported. Its naming call is not proven to start
     nothing, so a codex soul is numbered with `unsupported-harness`.
 - **The name.**

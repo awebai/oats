@@ -14,6 +14,7 @@
 // - the CLI: the refusals, the answer's `naming`, a suggested name previewed as --name (the same
 //   decision, which an apply with --expect-decision matches), numbered otherwise, the feature.
 import test from "node:test";
+import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -240,4 +241,28 @@ test("oats spawn --preview --suggest-name: the suggested name previewed as --nam
   assert.equal(human.status, 0, human.stderr);
   assert.match(human.stdout, /^name: suggested by claude \(haiku\) in \d+ ms$/m);
   assert.ok(JSON.parse(fx.cli(["version", "--json"]).stdout).features.includes("spawn-suggest-name"));
+});
+
+test("the name is chosen before anything that depends on it, within the preview's one preflight budget", async (t) => {
+  const fake = fakeHarness(t);
+  const local = { "launch-configs": { fake: { harness: "claude", executable: fake.bin } } };
+  const fx = v2Deployment({ t, local, souls: { dev: { soul: { work: "worktree" } } } });
+  // The numbered name's branch is retained (dev-1 retired, its branch kept): the plain preview is
+  // refused for it, the suggestion is not, since it never uses that name.
+  execFileSync("git", ["-C", fx.member, "branch", "agents/dev-1"], { stdio: "ignore" });
+  const refusedPlain = refused(fx.cli(["spawn", "dev", "--preview", "--launch-config", "fake", "--json"]), "plain");
+  assert.equal(refusedPlain.code, "E_BRANCH_EXISTS");
+  const env = { FAKE_REPLY: "fix-login\n" };
+  const r = okResult(fx.cli(["spawn", "dev", "--preview", "--suggest-name", "--launch-config", "fake", "--task", "Fix login", "--json"], { env }), "suggest");
+  assert.deepEqual([r.instance, r.branch, r.naming.source], ["fix-login-dev", "agents/fix-login-dev", "suggested"]);
+  // One budget: the naming call's time is in the preview's preflight, and the budget bounds the call.
+  assert.equal(r.preflight.budgetMs, 20000);
+  assert.ok(r.preflight.elapsedMs >= r.naming.ms, `${r.preflight.elapsedMs} ≥ ${r.naming.ms}`);
+  // Numbered after all, the numbered placement's own refusals apply, as in a plain preview.
+  assert.equal(refused(fx.cli(["spawn", "dev", "--preview", "--suggest-name", "--launch-config", "fake", "--task", "Fix login", "--json"], { env: { FAKE_EXIT: "1" } }), "numbered").code, "E_BRANCH_EXISTS");
+  execFileSync("git", ["-C", fx.member, "branch", "-D", "agents/dev-1"], { stdio: "ignore" });
+  const slow = okResult(fx.cli(["spawn", "dev", "--preview", "--suggest-name", "--launch-config", "fake", "--task", "Fix login", "--json"], { env: { ...env, FAKE_SLEEP_MS: "8000", OATS_PREVIEW_PREFLIGHT_BUDGET_MS: "700" } }), "budget");
+  assert.equal(slow.naming.reason, "timeout");
+  assert.ok(slow.naming.ms < 3000, `the call ended with the budget (${slow.naming.ms} ms)`);
+  assert.equal(slow.preflight.budgetMs, 700);
 });
