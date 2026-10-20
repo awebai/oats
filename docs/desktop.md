@@ -244,7 +244,8 @@ capabilities and its other capabilities.
 
 The dialog's last field before **Developer settings** is **Name · optional**.
 Left empty, the kernel numbers the new instance (`<soul>-<n>`). A name you type
-gets the soul's role, the last word of the soul's name, as its suffix:
+is used in lowercase and gets the soul's role, the last word of the soul's
+name, as its suffix:
 `desktop-improvements` for `oats-desktop-expert` becomes
 `desktop-improvements-expert`. A name that already ends in the role, or is
 the role, stays as typed. The line under the field shows the final name, and a

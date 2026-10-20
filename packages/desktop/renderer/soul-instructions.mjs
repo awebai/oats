@@ -22,8 +22,8 @@
  * the boundary too; the tree stays one tab stop and the arrows cross it. Until the kernel lists the skills its
  * capabilities add (feature soul-composed-skills, a later change), the composed Skills are the soul's own, each
  * "From this soul", then one note saying a newer OATS lists the rest. A composed skill row is its own copy with its
- * own keys: selecting a file there selects that row, not the one above. A capability's skill will say "From <id>"
- * (skillSource) and offer Open capability in the reader's head, as a composed part does in its header.
+ * own keys: selecting a file there selects that row, not the one above. A capability's skill (`module:<id>`) will say
+ * "From <id>" (skillSource) and offer Open capability in the reader's head, as a composed part does in its header.
  *
  * Links resolve by repository path across the card: a link to a listed skill file opens it in place, from a skill
  * file or from an AGENTS.md, in the section the reader is showing.
@@ -99,11 +99,13 @@ export const COMPOSED = 'composed';
 const partKey = i => `part:${i}`;
 const skillKey = (path, composed = false) => `${composed ? 'composed-' : ''}skill:${path}`;
 const fileKey = (path, composed = false) => `${composed ? 'composed-' : ''}file:${path}`;
-/** Where a composed skill comes from: the soul (`soul`), or a capability (`capability:<id>`, once the kernel lists
- * them), as the composed parts name their sources: its row's label, and the capability its reader may open. */
+/** Where a composed skill comes from, in the vocabulary of instance.json and the spawn preview (#1421 §1): the soul
+ * (`soul`), or a capability's module (`module:<capability id>`, once the kernel lists them). Its row's label, and the
+ * capability its reader may open. Any other value names nothing: no label, rather than a guess. */
 export function skillSource(source) {
-  const capability = /^capability:(.+)$/.exec(source);
-  return capability ? { label: SOUL_INSTRUCTIONS_COPY.fromCapability(capability[1]), capability: capability[1] } : { label: SOUL_INSTRUCTIONS_COPY.fromSoul, capability: null };
+  if (source === 'soul') return { label: SOUL_INSTRUCTIONS_COPY.fromSoul, capability: null };
+  const capability = typeof source === 'string' ? /^module:(.+)$/.exec(source) : null;
+  return capability ? { label: SOUL_INSTRUCTIONS_COPY.fromCapability(capability[1]), capability: capability[1] } : { label: null, capability: null };
 }
 
 /** A soul file's repository path: `<dir>/<path>` from the soul row's `path` (its directory in its repository, e.g.

@@ -328,8 +328,7 @@ automations and scripts that know only the soul and a purpose.
 Names are unique per deployment (a workspace-model deployment has one agents
 root): a derived name in use gets `-2`, `-3`…; an explicit `--name` in use is
 refused (`E_INSTANCE_NAME_TAKEN`). The Desktop's spawn dialog adds the role to
-a typed name: the last word of the soul's name, so `desktop-improvements`
-typed for `oats-desktop-expert` is spawned as `--name desktop-improvements-expert`.
+a typed name.
 
 From a deployment (where `oats-local.yaml` is), a spawn: reads the local file →
 discovers the workspace over its remotes and confirms membership → finds the

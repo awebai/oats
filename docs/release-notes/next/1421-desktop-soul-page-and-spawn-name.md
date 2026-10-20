@@ -11,9 +11,10 @@
   **Name · optional** now comes after **Opening instruction**. The soul-name
   prefix and its **Prefix with the soul name** switch are gone. Left empty,
   the kernel numbers the instance. The Desktop's spawn dialog adds the role
-  to a typed name, the last word of the soul's name: `desktop-improvements`
-  for `oats-desktop-expert` spawns as `desktop-improvements-expert`, and a
-  name that already ends in the role stays as typed. On a CLI without
+  to a typed name (the last word of the soul's name) and uses the name in
+  lowercase: `desktop-improvements` for `oats-desktop-expert` spawns as
+  `desktop-improvements-expert`, and a name that already ends in the role
+  gets no second one. On a CLI without
   `spawn-name`, and for a spawn on a server, a typed name is still a purpose
   named `<soul>-<purpose>`. The dialog now opens on its first field;
   Ctrl+1 / ⌘1 still goes to Name. ([Desktop](../desktop.md),

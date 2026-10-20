@@ -140,7 +140,8 @@ test('composed Skills: after the composed AGENTS.md, each skill again saying "Fr
 
 test('skillSource: the soul, or a capability by its id, as the composed parts name their sources', () => {
   assert.deepEqual(skillSource('soul'), { label: 'From this soul', capability: null });
-  assert.deepEqual(skillSource('capability:oats.core'), { label: 'From oats.core', capability: 'oats.core' });
+  assert.deepEqual(skillSource('module:oats.core'), { label: 'From oats.core', capability: 'oats.core' });
+  for (const other of ['capability:oats.core', 'module:', '', null, undefined]) assert.deepEqual(skillSource(other), { label: null, capability: null }, `${other}: no guess`);
 });
 
 test('a composed skill file: its own selection, links staying in the composed section, kept by a refresh', t => {

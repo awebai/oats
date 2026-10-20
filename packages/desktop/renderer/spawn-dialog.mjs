@@ -936,8 +936,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const local = () => !remoteTarget() && (!!deploymentField || !workspace()?.remote && !workspace()?.server);
   /** A typed name goes as --name with the soul's role: a local spawn whose CLI advertises spawn-name. Else a purpose. */
   const roleNamed = () => local() && !!cli()?.features?.includes('spawn-name');
-  /** The instance name a typed value gives: <typed>-<role> (once), or <soul>-<purpose>. */
-  const finalName = (typed, named) => named ? nameWithRole(typed, soul.name) : `${soul.name}-${typed}`;
+  /** The instance name a typed value gives: <typed>-<role> (once), or <soul>-<purpose>. --name is used exactly as
+   * given (the kernel slugs a purpose, never a name), so a typed name is lowercased first; PURPOSE admits only ASCII. */
+  const finalName = (typed, named) => named ? nameWithRole(typed.toLowerCase(), soul.name) : `${soul.name}-${typed}`;
   // The server admits the workspace against its own registry (absolute scope, local); /api/panel carries only the id.
   const previewable = () => local() && previewSupported(cli()) && !!address() && soul.work !== 'attached';
   const applicable = () => previewable() && spawnApplySupported(cli()) && !soul.captured;

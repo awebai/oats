@@ -402,6 +402,12 @@ test('with spawn-name: empty is numbered by the kernel; a typed name gets the so
     assert.equal(last(u).name, typed, `${typed}: no double suffix`); assert.equal(u.q('.spawn-name-result strong').textContent, typed);
   }
   assert.equal(last(u).purpose, undefined, 'this dialog no longer sends --purpose here');
+  // --name is used exactly as given (the kernel slugs a purpose, not a name): what is typed is lowercased first.
+  await u.type('.fpurpose', 'Desktop-Improvements');
+  assert.equal(last(u).name, 'desktop-improvements-manager'); assert.equal(u.q('.spawn-name-result strong').textContent, 'desktop-improvements-manager');
+  assert.equal(u.q('.fpurpose').value, 'Desktop-Improvements', 'the field keeps what was typed');
+  await u.type('.fpurpose', 'API-Manager');
+  assert.equal(last(u).name, 'api-manager', 'lowercased before the role check: no double suffix');
   await u.type('.fpurpose', ''); await settle(20);
   assert.equal(u.text('.spawn-name-result'), 'Left empty, the kernel numbers it.');
 });

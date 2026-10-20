@@ -555,8 +555,9 @@ Main form, in order: **Runtime** and **Model** (always visible, showing the kern
 with a *default* pill), **Relationship** (Independent / Child of / Sibling of /
 Parent of, a segmented control; choosing one reveals the instance picker), the **Opening
 instruction** and **Name · optional**. Name: with `spawn-name` on a local spawn
-(`roleNamed()`), a typed name goes as `--name` with the soul's role as its
-suffix (`finalName` → `nameWithRole`, `packages/client/instance-name.mjs`) and
+(`roleNamed()`), a typed name goes as `--name`, lowercased (the kernel uses a
+name exactly as given) and with the soul's role as its suffix (`finalName` →
+`nameWithRole`, `packages/client/instance-name.mjs`), and
 an empty one reads "Left empty, the kernel numbers it."; otherwise (an older
 kernel, a remote target, whose `/api/spawn` takes a purpose) it is a purpose
 with the `<soul>-` prefix shown. The 64-character check runs on the final name;
@@ -1043,7 +1044,7 @@ listed, an empty list included; an absent, unlistable or unreadable answer is
 that case's note alone). These rows are copies with their own keys
 (`composed-skill:<path>`, `composed-file:<path>`), so selecting one never
 selects the row above; a link from a composed copy or the composed document
-opens the composed copy of its target. `skillSource('capability:<id>')` gives
+opens the composed copy of its target. `skillSource('module:<id>')` gives
 "From <id>" and the capability, for the kernel's later list of capability
 skills; Open capability then goes in the reader head.
 
