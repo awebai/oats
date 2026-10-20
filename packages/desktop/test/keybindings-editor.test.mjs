@@ -675,7 +675,10 @@ test("the leader's rows are found by their keys and by \"leader\", and Up/Down r
   const f = setupLinux(t, { extra: LEADER_EXTRA });
   f.editor.open();
   f.type("alt+o k");
-  assert.deepEqual(f.shown(), ["Command palette"]);
+  const found = () => [...f.doc.querySelectorAll(".kb-row")].filter((r) => !r.closest("[hidden]"))
+    .map((r) => `${r.closest(".kb-group").dataset.label}: ${r.querySelector(".kb-label").textContent}`);
+  // The leader's row, and the palette's own chord Ctrl+Alt+K: "alt", "o" (option) and "k" each start one of its keys.
+  assert.deepEqual(found().sort(), ["Global: Command palette", "Leader: Command palette"]);
   f.type("alt+o shift+n");
   assert.ok(f.shown().includes("Spawn another of the instance's soul…"));
   f.type("leader");

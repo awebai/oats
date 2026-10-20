@@ -3,7 +3,6 @@
 // acts on, so the help names every key that does something and no key that does not; the marks
 // are the ones the list and the switcher draw (views/instances.mjs, views/switcher.mjs).
 import { LEADER, backKeyLabel, keyLabel, keysTogether } from "../actions.mjs";
-import { isBackKey } from "../term/through.mjs";
 import { lit, ownEllipsis } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { cutNote, marksOf, measured } from "./instances.mjs";
@@ -179,12 +178,12 @@ function bothSaid(a, b) {
   return x.length > 1 && x.at(-1) === y.at(-1) ? `${x.slice(0, -1).join(" ")} and ${y.join(" ")}` : `${a} and ${b}`;
 }
 /** The chords' rows: `chords` are `[key id, does]` in the table's order, each said as the leader's
- *  table says its `does`, then `or <the leader> then <its key>` (`detachKey`'s label, while it is a
- *  back key); a pair of CHORD_PAIRS on one row, and the nine tab-N on one, `Ctrl+Alt+1 … Ctrl+Alt+9`
+ *  table says its `does`, then `or <the leader> then <its key>` (`detachKey`'s label, when one is
+ *  given); a pair of CHORD_PAIRS on one row, and the nine tab-N on one, `Ctrl+Alt+1 … Ctrl+Alt+9`
  *  (`...` in ASCII), which no leader's key does. */
 function chordRows(chords, cols, detachKey, ascii) {
   const by = (does) => LEADER.find((entry) => entry.does === does);
-  const leader = isBackKey(detachKey) ? backKeyLabel(detachKey) : null;
+  const leader = typeof detachKey === "string" ? backKeyLabel(detachKey) : null;
   const then = (list) => (leader === null || list.some((does) => !by(does)) ? "" : `, or ${leader} then ${list.map((does) => keyLabel(by(does).keys[0])).join(" and ")}`);
   const keyOf = new Map(chords.map(([key, does]) => [does, key]));
   const tabs = chords.filter(([, does]) => TAB_N.test(does));

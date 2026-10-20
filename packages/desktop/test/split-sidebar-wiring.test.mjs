@@ -131,15 +131,18 @@ test("split default chords match REAL key events — Shift+\\ arrives as event.k
     { key: "\\", metaKey: true, shiftKey: false, ctrlKey: false, altKey: false, defaultPrevented: false },
     { isMac: true, insideTerminal: false, editableTarget: false },
   ), "split.vertical");
-  // non-mac inside xterm: allowlisted; the REAL shifted events report "E" / "O"
+  // non-mac inside xterm: allowlisted; the REAL events report "e" for Ctrl+Alt+E and "E" for Ctrl+Alt+Shift+E
   const linux = (key, extra = {}) => matchEvent(
-    { key, ctrlKey: true, shiftKey: true, metaKey: false, altKey: false, defaultPrevented: false, ...extra },
+    { key, ctrlKey: true, altKey: true, shiftKey: false, metaKey: false, defaultPrevented: false, ...extra },
     { isMac: false, insideTerminal: true, editableTarget: false });
-  assert.equal(linux("E"), "split.vertical");
-  assert.equal(linux("O"), "split.horizontal");
-  // Ctrl+\ and Ctrl+Shift+\ (reported "|") reach the program: SIGQUIT is its.
-  assert.equal(linux("\\", { shiftKey: false }), null);
-  assert.equal(linux("|"), null);
+  assert.equal(linux("e"), "split.vertical");
+  assert.equal(linux("E", { shiftKey: true }), "split.horizontal");
+  // 0.66's Ctrl+Shift+E and Ctrl+Shift+O reach the program now.
+  assert.equal(linux("E", { altKey: false, shiftKey: true }), null);
+  assert.equal(linux("O", { altKey: false, shiftKey: true }), null);
+  // Ctrl+\\ and Ctrl+Shift+\\ (reported "|") reach the program: SIGQUIT is its.
+  assert.equal(linux("\\", { altKey: false }), null);
+  assert.equal(linux("|", { altKey: false, shiftKey: true }), null);
 });
 
 test("pane-selection disposer removes pointer and focus entry listeners", () => {

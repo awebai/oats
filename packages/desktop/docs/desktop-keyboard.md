@@ -88,7 +88,9 @@ Show instance panel and the closed sidebar and panel).
    too (⌥O is ø, ⌥1 ¡), so a chord holding ⌥ with ⌘ or ⌃ names a letter key
    by the physical key (`KeyboardEvent.code`), as the keyboard layout labels
    it (`navigator.keyboard.getLayoutMap()`, read at startup and whenever the
-   window comes back; without it, the letter the code names), and a digit key
+   window comes back) when it labels it with an ASCII letter (AZERTY's KeyQ
+   is A), else by the letter the code names (a Russian layout's KeyO, щ, is
+   O; and so without the layout's map), and a digit key
    by its digit, on every layout (⌘⌥ on AZERTY's & key is ⌘⌥1): ⌘⌥O is
    Mod+Alt+O on every layout, and the shortcuts editor records it so. Linux and Windows keep `key`, and plain ⌥+key is typing. The tests
    dispatch the real shifted event, not a parse round-trip.

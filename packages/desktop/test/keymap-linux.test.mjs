@@ -511,8 +511,8 @@ test("text fields keep their own keys: no default takes an editing key, and the 
 });
 
 // macOS: ⌥ changes the character a key types (⌥O is ø), so a chord holding ⌥ with ⌘ or ⌃ names its
-// letter or digit by the layout's base character for `code` (navigator.keyboard.getLayoutMap(), in
-// setKeyboardLayoutMap), else by the letter or digit `code` names. Plain ⌥+key is typing, and
+// letter by the layout's base character for `code` when it is an ASCII letter (navigator.keyboard.getLayoutMap(),
+// in setKeyboardLayoutMap), else by the letter `code` names; a digit key is its digit. Plain ⌥+key is typing, and
 // Linux/Windows keep `key` (AltGr's character).
 test("macOS ⌘⌥ chords name their key by the physical key, through the layout's map when there is one", t => {
   registerAll(t);
@@ -539,6 +539,11 @@ test("macOS ⌘⌥ chords name their key by the physical key, through the layout
   assert.equal(matchEvent(mac("‡", "KeyA"), { isMac: true, insideTerminal: true }), null, "KeyA is Q there");
   assert.equal(chordToString(chordFromEvent(mac("", "Digit1"), true)), "Mod+Alt+1", "a digit key is its digit, whatever the layout types on it");
   assert.equal(matchEvent(mac("", "Digit1"), { isMac: true, insideTerminal: true }), "tabs.goto1", "AZERTY ⌘⌥ on the & key: go to tab 1");
+  // A layout whose key is no ASCII letter (Russian: KeyO is щ) names it by `code`.
+  setKeyboardLayoutMap(new Map([["KeyO", "щ"], ["KeyZ", "я"], ["KeyA", "ф"]]));
+  assert.equal(chordToString(chordFromEvent(mac("щ", "KeyO"), true)), "Mod+Alt+O");
+  assert.equal(matchEvent(mac("щ", "KeyO"), { isMac: true, insideTerminal: true }), "app.workspaces", "Russian ⌘⌥ on KeyO: the switcher");
+  assert.equal(matchEvent(mac("я", "KeyZ"), { isMac: true, insideTerminal: true }), "terminal.focusMode", "Russian ⌘⌥ on KeyZ: zoom");
   // Read from navigator.keyboard; a failing or missing API keeps the last map.
   return readKeyboardLayout({ keyboard: { getLayoutMap: () => Promise.resolve(new Map([["KeyQ", "q"]])) } }).then(async () => {
     assert.equal(chordToString(chordFromEvent(mac("œ", "KeyQ"), true)), "Mod+Alt+Q");

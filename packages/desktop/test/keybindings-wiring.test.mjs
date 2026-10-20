@@ -107,6 +107,7 @@ test("the overview canvas, the Souls grid, the roster tree and the actions trigg
   assert.match(read("renderer/roster-keys.mjs"), /if \(named && keymapTakes\(event\)\) return null;/);
   assert.match(read("renderer/instance-actions.mjs"), /if \(!\["ArrowDown", "ArrowUp"\]\.includes\(event\.key\) \|\| keymapTakes\(event\)\) return;/);
   for (const file of ["renderer/views/hierarchy.mjs", "renderer/views/spawn.mjs", "renderer/roster-keys.mjs", "renderer/instance-actions.mjs"]) {
-    assert.doesNotMatch(read(file), /(?:e|event)\.altKey \|\| (?:e|event)\.metaKey\)\) return/, `${file}: no modifier guess`);
+    // The roster's letter guard (`!named && …`: a letter held with Ctrl, Alt or ⌘ is not the tree's) is not about the arrows.
+    assert.doesNotMatch(read(file), /(?<!!named && \((?:e|event)\.ctrlKey \|\| )(?:e|event)\.altKey \|\| (?:e|event)\.metaKey\)\) return/, `${file}: no modifier guess`);
   }
 });

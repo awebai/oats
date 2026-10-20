@@ -145,7 +145,8 @@ export function chordToString(chord) {
 // macOS: Option changes the character a key types (⌥O is ø, ⌥1 ¡), so a chord that holds ⌥ with ⌘ or
 // ⌃ names its letter or digit key by the layout's own character for the physical key (`code`):
 // navigator.keyboard.getLayoutMap(), read at startup and whenever the window regains focus
-// (shell.mjs), else the letter `code` names. A digit key is its digit on every layout (the number
+// (shell.mjs), when that character is an ASCII letter, else the letter `code` names (a
+// Russian layout's KeyO is щ: ⌘⌥ on it is ⌘⌥O). A digit key is its digit on every layout (the number
 // row's place: ⌘⌥ on AZERTY's & key is ⌘⌥1, go to tab 1). Linux/Windows read `key` (AltGr's
 // character must win there), and plain ⌥+key is typing.
 let layoutMap = null;
@@ -165,7 +166,9 @@ function macOptionKey(e) {
   if (m[2]) return m[2];
   let base = null;
   try { base = layoutMap?.get(e.code); } catch { /* a broken map reads as none */ }
-  return typeof base === "string" && [...base].length === 1 ? base.toLowerCase() : (m[1] || m[2]).toLowerCase();
+  // The map's character names the key only when it is a letter of the table's: a Russian layout's
+  // KeyO is "щ", and ⌘⌥ on it is ⌘⌥O, as the menus read it.
+  return typeof base === "string" && /^[a-z]$/i.test(base) ? base.toLowerCase() : m[1].toLowerCase();
 }
 
 /** Build a chord object from a keydown event (for the recorder + matching).
