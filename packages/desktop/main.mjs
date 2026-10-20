@@ -1004,10 +1004,11 @@ if (primaryInstance) app.on("window-all-closed", () => { app.quit(); });
 if (primaryInstance) {
   app.whenReady().then(() => hostTheme.start());
   app.on("browser-window-focus", () => hostTheme.refresh());
-  // keys.json edited by hand (or by another tool) reaches every window when the operator comes back.
-  app.on("browser-window-focus", () => chordFamily.refresh());
   app.on("will-quit", () => hostTheme.dispose());
 }
+// keys.json edited by hand (or by another tool) reaches every window when the operator comes back
+// (chord-family.mjs: read again, and handed on only when it changed).
+if (primaryInstance) app.on("browser-window-focus", () => chordFamily.refresh());
 
 async function shutdown() {
   try { forgeAuth.dispose(); } catch { /* other resource cleanup must still run */ } // ephemeral gh child only
