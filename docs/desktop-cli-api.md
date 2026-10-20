@@ -119,6 +119,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `souls-capabilities` | `capabilities` on `oats souls --json` rows: the capabilities each soul composes, keyed like `oats capabilities` rows, with `from`, OATS 0.45.0 ([`oats capabilities` and `oats souls`](#oats-capabilities---dir---json--capabilitiesapi-1--oats-souls---dir---json--soulsapi-1)) | |
 | `soul-composed-instructions` | `oats inspect --soul <soul> --instructions` and its `souls[].composedInstructions`: the AGENTS.md a spawn of the soul here would write, with the soul body and each composed block as ranges, OATS 0.46.0 ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
 | `soul-skills` | `oats inspect --soul <soul> --skills` and its `souls[].skills`: the soul's own skills, the ones a spawn of it copies, with each file's text ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
+| `soul-composed-skills` | `oats inspect --soul <soul> --composed-skills` and its `souls[].composedSkills`: every skill a spawn of the soul gives its instance, its own and its capabilities', each with its `source` and each file's text ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)). The same kernels name each capability skill of `spawn --preview`'s `skills[]` as the spawn does ([The preview](#the-preview)) | |
 | `teams-conditional-default` | `oats teams default <label> --if-absent \| --expect <label>` and `E_TEAM_DEFAULT_MISMATCH`; `oats teams add … --no-default` and its `reused` answer; `E_TEAM_EXISTS` `observed`; unknown flags on `oats teams` refused, OATS 0.48.0 ([`oats teams`](#oats-teams)). A kernel without it ignores the flags: `--if-absent` there is an unconditional set, so check the feature before passing them | |
 | `worktree-event` | the `worktree` hook event; `oats worktree add\|remove` ([`oats worktree`](#oats-worktree)); `worktreeHooks` on `spawn --preview` and on the spawn result and `spawned` event; `spawnInProgress` on `oats status --json` instance rows; the `worktree-added` event kind; `E_INTERRUPTED` and `E_WORKTREE_DIRTY`, OATS 0.49.0 | |
 | `trigger-sources` | capability-declared trigger sources: `on.source: "<capability>:<source>"` triggers and their added row keys, `oats trigger poll`, `--run-source` on `trigger test` and `trigger poll` (`E_TRIGGER_SOURCE_RUN` without it), `E_TRIGGER_SOURCE`, `E_TRIGGER_POLL` `details.cause`, and `triggerSources`/`triggerSourceProblems` on `oats capabilities show`, OATS 0.50.0 ([`oats trigger`](#oats-trigger)) | `triggerApi: 1` (payload only) |
@@ -437,7 +438,7 @@ A module's origin (`from`) is `{kind: "member", repoKey, commit}` or `{kind:
 ### `oats inspect`
 
 ```text
-oats inspect (--home <abs> | --soul <name> [--dir <d>] [--instructions] [--skills]) [--max-age <s>] --json
+oats inspect (--home <abs> | --soul <name> [--dir <d>] [--instructions] [--skills] [--composed-skills]) [--max-age <s>] --json
 ```
 
 An instance subject, abridged:
@@ -587,6 +588,48 @@ Routed with `--server <id>`, `--skills` travels to the host; a host whose
 probe does not advertise `soul-skills` is refused with `E_REMOTE_INCOMPATIBLE`,
 and nothing is sent. Every text is untrusted repository content: render it as
 plain text or through a sanitising renderer.
+
+`composedSkills` (feature `soul-composed-skills`) is present only with
+`--composed-skills`, which takes a soul subject (`--home` is `E_BAD_ARGS`) and
+combines with `--instructions` and `--skills`; without the flag the key is
+absent and nothing extra is composed. It lists every skill an instance of this
+soul gets: the soul's own and each capability's.
+
+```json
+"composedSkills":[{"name":"oats-operate","source":"module:oats.core","path":".oats/modules/oats.core/skills/oats-operate",
+                   "description":"…","files":[{"path":".oats/modules/oats.core/skills/oats-operate/SKILL.md","bytes":1234,"text":"…","binary":false,"truncated":false}],
+                   "filesTruncated":false},
+                  {"name":"release-checklist","source":"soul","path":"skills/release-checklist","description":"Cutting a release.",
+                   "files":[…],"filesTruncated":false}]
+```
+
+- One row per skill, sorted by `name` in codepoint order. `source` is
+  `"soul"` or `"module:<capability id>"`, the vocabulary of `instance.json`
+  `skills` and of the spawn preview.
+- `path` is POSIX. A soul skill's is relative to the soul directory, as in
+  `skills`; a capability skill's is relative to the instance home, where the
+  instance carries the capability's copy (`.oats/modules/<id>/…`). Each
+  file's `path` starts with its skill's.
+- The rest of a row, and every rule for its files, is `skills`' above, with
+  one difference: the whole field carries at most 2 MiB (2,097,152 bytes) of
+  `text`, summed over every file in answer order, whichever source it comes
+  from. Problems name `composedSkills: ` instead of `skills: `.
+- It is computed by the same scratch materialization as `--instructions`
+  (one serves both when both are given): the soul's skills by the
+  enumerator spawn uses, read from the soul copy, and the capability skills
+  materialize placed, read from the scratch copy before it is removed. It
+  runs no hooks and writes nothing in the deployment.
+- It is `null` when a spawn would refuse a collision between a soul skill and
+  a capability skill (names compare case-insensitively), with the problem
+  `{code: "E_SKILL_DUPLICATE", message: "composedSkills: skill \"<name>\"
+  from soul collides with module <id>'s skill"}`, the sentence spawn refuses
+  with. It is `null` when the soul resolves but cannot be composed here, with
+  the composition's code and sentence, naming `composedSkills`. It is `null`
+  with `soul-skills-unreadable` when the soul's own skills cannot be listed.
+
+Routed with `--server <id>`, `--composed-skills` travels to the host; a host
+whose probe does not advertise `soul-composed-skills` is refused with
+`E_REMOTE_INCOMPATIBLE`, and nothing is sent.
 
 **Layers.** `id` is the capability filling the slot or `null`. `from`
 (feature `layers-from`) is `"soul"` or `"workspace"`, `null` for an empty slot
@@ -2430,7 +2473,11 @@ it to a temporary copy (`soulFetched: true`).
 - `capabilities[]` (`{name, origin}`, `origin` `package:<id>@<v>` or
   `member:<repoKey>@<commit>`) and `skills[]` (the soul's own skills as
   strings, module skills as `{name, source: "module:<cap>"}`) are display
-  only: bind to `modules[]` and `decision`.
+  only: bind to `modules[]` and `decision`. A module skill's `name` is the
+  skill the spawn copies, by the resolution's enumeration: a manifest entry
+  that holds skill directories lists each of them (feature
+  `soul-composed-skills`; earlier kernels named such an entry by its own
+  directory, `skills`).
 - `resolution` (24 hex) hashes `declRevision` (the declarations) and
   `payloadRevision` (the merged payloads). `workspace` is the host key;
   `standalone` marks a standalone view. `task` is the task text or `null`.
