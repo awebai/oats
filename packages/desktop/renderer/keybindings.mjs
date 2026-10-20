@@ -11,10 +11,11 @@
 // every other chord (⌃digits, F6, Ctrl+letters) belongs to the attached program.
 // On Linux/Windows the Ctrl key IS the terminal's control key, so only an explicit allowlist of action ids may
 // fire inside the terminal; every other chord passes through. Their defaults
-// there are chords xterm sends nothing for, mostly Ctrl+Shift+key (the GNOME
-// Terminal / Alacritty / Ghostty / kitty convention; TERMINAL_ALLOWLIST has the
-// rule), so plain Ctrl+letter (Ctrl+W, Ctrl+K, Ctrl+P, Ctrl+B, Ctrl+\),
-// F6, Alt+digit and Ctrl+PgUp/PgDn stay the program's. app-menu.mjs follows the
+// there are chords xterm sends nothing for (Ctrl+Shift+key, the GNOME Terminal /
+// Alacritty / Ghostty / kitty convention) or a byte a plainer key still sends (the
+// shared Ctrl+Alt family: ESC, then the Ctrl+letter byte or the digit), and two named
+// exceptions (TERMINAL_ALLOWLIST has the rule), so plain Ctrl+letter (Ctrl+W, Ctrl+K,
+// Ctrl+P, Ctrl+B, Ctrl+\), F6 and Alt+digit stay the program's. app-menu.mjs follows the
 // same policy for the menu accelerators.
 // docs/desktop-keyboard.md is the keymap's reference.
 //
@@ -36,6 +37,8 @@ const KEY_ALIASES = new Map([
   ["esc", "escape"],
   [" ", "space"],
   ["spacebar", "space"],
+  // An arrow's stored spelling is its label (chordToString: "Alt+Shift+↑"), read back as the key.
+  ["↑", "arrowup"], ["↓", "arrowdown"], ["←", "arrowleft"], ["→", "arrowright"],
 ]);
 // Only for a chord that holds Mod, Ctrl or Alt: there the shifted character names its key.
 // A plain chord keeps its own character, so a plain `|` never fires on a plain `\`.
@@ -160,8 +163,9 @@ const NAMED_KEY_IDS = new Map([
 ]);
 
 /** A key id of the shared keymap (packages/client/keymap.mjs, the TUI's spelling: `alt+o`,
- * `ctrl+\\`, `N`, `?`, `ctrl+shift+k`, and `cmd+` for ⌘) as this engine's canonical chord string
- * (`Alt+O`, `Ctrl+\\`, `Shift+N`, `?`, `Ctrl+Shift+K`, `Mod+K`). */
+ * `ctrl+\\`, `N`, `?`, `ctrl+alt+shift+e`, `alt+shift+up`, and `cmd+` for ⌘) as this engine's
+ * canonical chord string (`Alt+O`, `Ctrl+\\`, `Shift+N`, `?`, `Ctrl+Alt+Shift+E`, `Alt+Shift+↑`,
+ * `Mod+K`). */
 export function chordFromKeyId(keyId) {
   let rest = String(keyId || "");
   const chord = { key: "", mod: false, ctrl: false, alt: false, shift: false };
@@ -211,8 +215,9 @@ function isEditableTarget(target) {
 // no default there). Principles (docs/desktop-keyboard.md): Super/Meta belongs to
 // the window manager on Linux, so `Mod` is Ctrl there and nothing binds Super;
 // a chord that must work while a terminal has focus is one xterm.js sends no byte
-// for on Linux/Windows (Ctrl+Shift+key, mostly), because plain Ctrl+letter belongs
-// to the program; macOS keeps ⌘, which never reaches the pty. Every default passed the collision review in the
+// for on Linux/Windows, or a byte the program still gets from a plainer key
+// (TERMINAL_ALLOWLIST has the rule), because plain Ctrl+letter belongs to the
+// program; macOS keeps ⌘, which never reaches the pty. Every default passed the collision review in the
 // keyboard lesson, shifted punctuation included (KEY_ALIASES, tested with the
 // real shifted event). Action ids never change, so stored overrides survive.
 //
@@ -233,11 +238,19 @@ export const SIDEBAR_KEYS = Object.freeze([
 const plainDefault = (does) => chordFromKeyId(PLAIN_KEYS.find((entry) => entry.does === does)?.keys[0]) ?? null;
 
 // The chords the Desktop shares with the TUI (packages/client/keymap.mjs CHORDS), by the action that
-// reads each and its `does`. One string where both platforms have the same chord.
+// reads each and its `does`, in the table's order. One string where both platforms have the same
+// chord. The shared tab moves are the second tab-cycling chords (tabs.prevPage, tabs.nextPage):
+// Ctrl+Tab and Ctrl+Shift+Tab stay the Desktop's own (tabs.next, tabs.prev). The leader's ↑ ↓ z
+// have actions of their own here (roster.openPrevious, roster.openNext, terminal.zoom: shell.mjs),
+// which run what the leader then that key runs.
 export const CHORDS_READ = Object.freeze([
-  ["app.palette", "palette"], ["app.quickOpenSouls", "spawn"],
-  ["tabs.next", "tab-next"], ["tabs.prev", "tab-previous"], ["tabs.close", "close-terminal"],
-  ["sidebar.focusFilter", "filter"], ["split.vertical", "split-right"], ["split.horizontal", "split-down"],
+  ["app.palette", "palette"], ["app.quickOpenSouls", "spawn"], ["app.workspaces", "workspaces"],
+  ["roster.openPrevious", "previous"], ["roster.openNext", "next"],
+  ["tabs.prevPage", "tab-previous"], ["tabs.nextPage", "tab-next"],
+  ...Array.from({ length: 9 }, (_, i) => [`tabs.goto${i + 1}`, `tab-${i + 1}`]),
+  ["terminal.zoom", "zoom"], ["tabs.close", "close-terminal"],
+  ["split.vertical", "split-right"], ["split.horizontal", "split-down"], ["split.focusNextGroup", "group-next"],
+  ["sidebar.focusFilter", "filter"],
 ].map(([id, does]) => Object.freeze({ id, does })));
 function chordDefault(does) {
   const entry = CHORDS.find((each) => each.does === does);
@@ -252,12 +265,21 @@ export const DEFAULT_KEYMAP = Object.freeze({
   // terminal-allowlisted (it sends ESC o, which the program still gets from Esc, then o).
   "app.leader": { mac: chordFromKeyId(LEADER.mac), other: chordFromKeyId(LEADER.other) },
   ...Object.fromEntries(SIDEBAR_KEYS.map(({ id, does }) => [id, plainDefault(does)])),
-  // The leader's Tab: no chord of its own.
-  "split.focusNextGroup": null,
-  // Ctrl+Shift+K / Ctrl+Shift+P on Linux/Windows: plain Ctrl+K and Ctrl+P are bytes a program
-  // reads (readline's kill-line, shell history); the shifted chords are none.
+  // The leader's Tab, as a chord (CHORDS group-next).
+  "split.focusNextGroup": chordOf("split.focusNextGroup"),
+  // The shared chords on Linux/Windows are Ctrl+Alt+letter (Ctrl+Alt+K, Ctrl+Alt+P, Ctrl+Alt+O):
+  // plain Ctrl+K and Ctrl+P are bytes a program reads (readline's kill-line, shell history), and
+  // what xterm sends for the Ctrl+Alt chord, ESC then that byte, the program still gets from Esc,
+  // then Ctrl+K. On Windows the same chord is AltGr: where the layout types a character on it, the
+  // event carries that character and matches no chord (docs/desktop-keyboard.md).
   "app.palette": chordOf("app.palette"),
   "app.quickOpenSouls": chordOf("app.quickOpenSouls"),
+  "app.workspaces": chordOf("app.workspaces"),
+  // The leader's ↑ / ↓ / z, as chords: Alt+Shift+↑/↓ (a named exception of the terminal rule) and
+  // Ctrl+Alt+Z on Linux/Windows, ⌘⌥↑/↓ and ⌘⌥Z on macOS.
+  "roster.openPrevious": chordOf("roster.openPrevious"),
+  "roster.openNext": chordOf("roster.openNext"),
+  "terminal.zoom": chordOf("terminal.zoom"),
   "app.chooseSoul": { mac: "Mod+N", other: "Ctrl+Shift+N" },
   "app.shortcuts": "Mod+,",
   // No default (spec F): ⌘⇧T is "reopen closed tab" in browsers and Ctrl+Shift+T "new tab" in
@@ -270,24 +292,26 @@ export const DEFAULT_KEYMAP = Object.freeze({
   "stage.hierarchy": "Mod+1",
   "stage.spawn": "Mod+2",
   "stage.automations": "Mod+3",
-  "tabs.next": chordOf("tabs.next"),
-  "tabs.prev": chordOf("tabs.prev"),
-  "tabs.nextPage": { mac: null, other: "Ctrl+PageDown" },
-  "tabs.prevPage": { mac: null, other: "Ctrl+PageUp" },
+  // The Desktop's own, on both platforms (a terminal program never sees Ctrl+Tab as anything but Tab).
+  "tabs.next": "Ctrl+Tab",
+  "tabs.prev": "Ctrl+Shift+Tab",
+  // The shared tab moves: Alt+Shift+→/← (a named exception of the terminal rule), ⌘⌥→/← on macOS.
+  "tabs.nextPage": chordOf("tabs.nextPage"),
+  "tabs.prevPage": chordOf("tabs.prevPage"),
   // ⌘⌥1–⌘⌥9 on macOS (⌘1–⌘3 are the stages; ⌃digits are control bytes a program reads);
-  // Alt+1–Alt+9 elsewhere (GNOME Terminal, Firefox), outside a terminal only. 9 is the last tab.
-  ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tabs.goto${i + 1}`, { mac: `Mod+Alt+${i + 1}`, other: `Alt+${i + 1}` }])),
+  // Ctrl+Alt+1–Ctrl+Alt+9 elsewhere, which send ESC and the digit, as Alt+digit does. 9 is the last tab.
+  ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tabs.goto${i + 1}`, chordOf(`tabs.goto${i + 1}`)])),
   "tabs.close": chordOf("tabs.close"),
   // F6 / Shift+F6 cycle regions outside a terminal (mc, htop and nano read F6 in one);
   // ⌘⇧F6 / Ctrl+Shift+F6 leaves a terminal for the next region, after which F6 works.
   "focus.nextRegion": "F6",
   "focus.prevRegion": "Shift+F6",
   "focus.leaveTerminal": "Mod+Shift+F6",
-  // Ctrl+Shift+F / Ctrl+Shift+B on Linux/Windows: plain Ctrl+F and Ctrl+B are bytes a program
-  // reads (readline's forward-char, the tmux prefix); the shifted chords are none.
+  // Ctrl+Alt+F / Ctrl+Shift+B on Linux/Windows: plain Ctrl+F and Ctrl+B are bytes a program
+  // reads (readline's forward-char, the tmux prefix).
   "sidebar.focusFilter": chordOf("sidebar.focusFilter"),
   "sidebar.toggle": { mac: "Mod+B", other: "Ctrl+Shift+B" },
-  // Terminator / Tilix: Ctrl+Shift+E splits right, Ctrl+Shift+O splits down.
+  // Ctrl+Alt+E splits right, Ctrl+Alt+Shift+E down.
   "split.vertical": chordOf("split.vertical"),
   "split.horizontal": chordOf("split.horizontal"),
   "split.close": { mac: "Mod+Alt+W", other: "Ctrl+Shift+Alt+W" },
@@ -320,21 +344,24 @@ export function defaultBinding(actionId, isMac = defaultIsMac()) {
 // defaults and Ctrl+Shift+Space (xterm's Ctrl+letter and Ctrl+Space bytes need
 // Shift up), Ctrl+1, Ctrl+2, Ctrl+, and the zoom chords Ctrl+= Ctrl+- Ctrl+0.
 // A byte the program still gets: Ctrl+3 (ESC: Esc), Ctrl+Tab (Tab), Ctrl+Shift+Tab
-// (back-tab: Shift+Tab), Ctrl+Shift+Alt+W (ESC Ctrl+W: Ctrl+Alt+W). One deliberate
-// exception: Ctrl+Shift+F6 sends a sequence no plainer key does, kept because
-// without it F6 cannot get out of a terminal. test/terminal-xterm-bytes.test.mjs
-// runs each allowlisted default through xterm's own keydown and pins exactly
-// what it sends.
-// A byte the program still gets, by name: app.leader (Alt+O sends ESC o: Esc, then o), the key
-// the TUI reads its leader from too.
-// Every plain Ctrl+letter, other Alt+key, F-key and Ctrl+PgUp/PgDn stays the program's,
-// so these stay out: app.openFile (Ctrl+O), tabs.goto1–9 (Alt+digit: readline's
-// numeric argument, irssi/weechat, tmux window bindings), focus.next/prevRegion
-// (F6: mc, htop, nano) and tabs.next/prevPage (Ctrl+PgUp/PgDn: vim, weechat).
+// (back-tab: Shift+Tab), app.leader (Alt+O sends ESC o: Esc, then o; the key the TUI
+// reads its leader from too), the shared Ctrl+Alt chords (Ctrl+Alt+letter, with Shift
+// or without, sends ESC and the Ctrl+letter byte: Esc, then Ctrl+letter; Ctrl+Alt+digit
+// ESC and the digit: Alt+digit) and Ctrl+Shift+Alt+W (ESC Ctrl+W: Esc, then Ctrl+W).
+// On Windows xterm sends nothing for Ctrl+Alt+letter or digit: it reads them as AltGr.
+// Named exceptions, sequences no plainer key sends: Ctrl+Shift+F6, without which F6
+// cannot get out of a terminal, and the Alt+Shift arrows (CSI 1;4 A–D: the shared
+// previous / next instance and tab moves), which no agent or readline binds.
+// test/terminal-xterm-bytes.test.mjs runs each allowlisted default through xterm's own
+// keydown and pins exactly what it sends.
+// Every plain Ctrl+letter, other Alt+key and F-key stays the program's, so these stay
+// out: app.openFile (Ctrl+O) and focus.next/prevRegion (F6: mc, htop, nano).
 export const TERMINAL_ALLOWLIST = Object.freeze([
-  "app.leader", "app.palette", "app.quickOpenSouls", "app.chooseSoul", "app.themePicker", "app.shortcuts", "terminal.copySelection",
-  "tabs.next", "tabs.prev", "tabs.close",
-  "split.vertical", "split.horizontal", "split.close",
+  "app.leader", "app.palette", "app.quickOpenSouls", "app.workspaces", "app.chooseSoul", "app.themePicker", "app.shortcuts", "terminal.copySelection",
+  "roster.openPrevious", "roster.openNext", "terminal.zoom",
+  "tabs.next", "tabs.prev", "tabs.nextPage", "tabs.prevPage", "tabs.close",
+  ...Array.from({ length: 9 }, (_, i) => `tabs.goto${i + 1}`),
+  "split.vertical", "split.horizontal", "split.close", "split.focusNextGroup",
   "focus.leaveTerminal",
   "sidebar.toggle", "sidebar.focusFilter", "panel.toggle",
   "stage.hierarchy", "stage.spawn", "stage.automations",
@@ -638,7 +665,7 @@ export function handleKeydown(e, opts = {}) {
 /** While a picker opened by `actionId` is open, its own chord moves the active
  * row down (1) and Shift + that chord moves it up (-1); anything else is 0.
  * Read from the live keymap, so a rebind follows. A chord that already holds
- * Shift (Ctrl+Shift+K on Linux/Windows) has no Shift form: ArrowUp moves up
+ * Shift (a rebind to Ctrl+Shift+K, say) has no Shift form: ArrowUp moves up
  * there. An unbound action, or a plain chord (typing belongs to the input),
  * never cycles. */
 export function pickerCycleDirection(e, actionId, isMac = defaultIsMac()) {

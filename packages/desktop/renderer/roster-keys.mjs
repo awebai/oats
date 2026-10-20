@@ -19,11 +19,15 @@ const TREE = Object.freeze(["up", "down", "top", "bottom", "page-up", "page-down
 const TREE_KEYS = new Map(TREE.flatMap((does) => plainKeys(does).map((key) => [key, does])));
 
 /** What the tree does for a keydown (`up`, `collapse`, …), or null. A letter held with Ctrl, Alt
- * or ⌘ is not the tree's; the arrows, Home, End and the page keys are, as they always were. */
+ * or ⌘ is not the tree's; the arrows, Home, End and the page keys are, as they always were, alone
+ * or with Ctrl or Shift. Held with Alt or ⌘ they are chords (the shared Alt+Shift+↑/↓ and ⌘⌥↑/↓,
+ * the previous / next instance's terminal; Alt+Shift+←/→ and ⌘⌥←/→, the tab moves), which reach
+ * the keymap from a row as from anywhere. */
 export function rosterKeyDoes(event) {
   const key = String(event.key ?? "");
   const named = NAMED[key];
   if (!named && (event.ctrlKey || event.altKey || event.metaKey)) return null;
+  if (named && (event.altKey || event.metaKey)) return null;
   return TREE_KEYS.get(named ?? key) ?? null;
 }
 

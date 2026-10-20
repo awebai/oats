@@ -29,9 +29,10 @@ test("split + sidebar actions have parseable default chords and are terminal-all
       assert.ok(parseChord(defaultBinding(id, isMac)), `${id} chord parses`);
     }
   }
-  // Linux/Windows: Terminator/Tilix splits (spec F), never Ctrl+\ (SIGQUIT in a terminal).
-  assert.equal(defaultBinding("split.vertical", false), "Ctrl+Shift+E");
-  assert.equal(defaultBinding("split.horizontal", false), "Ctrl+Shift+O");
+  // Linux/Windows: the shared Ctrl+Alt splits (packages/client/keymap.mjs CHORDS), never Ctrl+\
+  // (SIGQUIT in a terminal).
+  assert.equal(defaultBinding("split.vertical", false), "Ctrl+Alt+E");
+  assert.equal(defaultBinding("split.horizontal", false), "Ctrl+Alt+Shift+E");
   assert.equal(defaultBinding("split.close", false), "Ctrl+Shift+Alt+W");
   // The sidebar is Ctrl+Shift+B there: plain Ctrl+B is the tmux prefix, Ctrl+Shift+B is no byte.
   assert.equal(defaultBinding("sidebar.toggle", false), "Ctrl+Shift+B");

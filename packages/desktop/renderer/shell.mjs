@@ -2205,7 +2205,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     // Terminal-allowlisted shortcuts (engine policy: TERMINAL_ALLOWLIST, e.g.
     // app.palette, tabs.next/prev/close, split.*, focus.leaveTerminal) must be
     // intercepted BEFORE xterm writes to the pty — its handler consumes e.g.
-    // Ctrl+Shift+K or ⌘⇧F6 and stops propagation, so the bubble-phase window
+    // Ctrl+Alt+K or ⌘⇧F6 and stops propagation, so the bubble-phase window
     // listener never sees it. matchEvent applies the allowlist (insideTerminal);
     // the action runs once on keydown, and every phase of a matched chord
     // is claimed so no control byte leaks to the attached program.
@@ -2311,7 +2311,7 @@ const palette = createPalette({
   // A held home (spawning, retiring, left half cleaned) opens nothing from here either, as its roster row does not:
   // the row as this window reads it (its own retires in flight held), said as the row says it.
   openTerminal: (name) => openTerminalTab(name, { refuse: (inst) => { const held = heldHome(shownRows([inst])[0]); return held ? heldLine(held) : null; } }),
-  // While open, ⌘K / Ctrl+Shift+K moves down and Shift + it up (live keymap); Esc closes, Enter opens.
+  // While open, ⌘K / Ctrl+Alt+K moves down and Shift + it up (live keymap); Esc closes, Enter opens.
   cycleKey: (e) => pickerCycleDirection(e, "app.palette", isMac),
   commands: [
     // View commands derive from the nav manifest so a new rail destination
@@ -2349,15 +2349,15 @@ const palette = createPalette({
   ],
 });
 
-// ── Quick Open for souls (⌘P / Ctrl+Shift+P): find a soul, open its spawn dialog ──
+// ── Quick Open for souls (⌘P / Ctrl+Alt+P): find a soul, open its spawn dialog ──
 // Selection hands off to Workspace (preselectSpawn — consumed by the view's
 // next roster paint): the spawn dialog scoped to that soul, exactly as its
 // card's Spawn opens it. A soul that can't be spawned here (attached only,
 // refused, no verified CLI) opens its page instead, which says why.
 // Dismissing the dialog returns to where the operator was before Quick Open
 // (surface-return.mjs). Terminal policy (documented): app.quickOpenSouls is
-// terminal-allowlisted — ⌘P on macOS, Ctrl+Shift+P on Linux/Windows, a chord
-// xterm sends nothing for; plain Ctrl+P stays the shell's history.
+// terminal-allowlisted — ⌘P on macOS, Ctrl+Alt+P on Linux/Windows, which xterm
+// sends as ESC Ctrl+P (Esc, then Ctrl+P); plain Ctrl+P stays the shell's history.
 const quickOpen = createQuickOpen({
   loadSouls: async () => {
     const ws = currentWorkspace();
@@ -2736,8 +2736,8 @@ const unlessModal = (fn) => () => { if (!modalOpen()) fn(); };
 registerAction({ id: "tabs.next", label: "Next tab", context: "tabs", run: unlessModal(() => cycleTab(1)) });
 registerAction({ id: "tabs.prev", label: "Previous tab", context: "tabs", run: unlessModal(() => cycleTab(-1)) });
 registerAction({ id: "tabs.close", label: "Close the active tab", context: "tabs", run: () => { if (activeTab != null) closeTab(activeTab, true); } });
-// Second chords for tab cycling (Ctrl+PgDn / Ctrl+PgUp on Linux and Windows): their own ids,
-// so each stays rebindable and unbindable on its own. Neither fires inside a terminal.
+// Second chords for tab cycling, the shared tab moves (Alt+Shift+→/← on Linux and Windows,
+// ⌘⌥→/← on macOS): their own ids, so each stays rebindable and unbindable on its own.
 registerAction({ id: "tabs.nextPage", label: "Next tab (second shortcut)", context: "tabs", run: unlessModal(() => cycleTab(1)) });
 registerAction({ id: "tabs.prevPage", label: "Previous tab (second shortcut)", context: "tabs", run: unlessModal(() => cycleTab(-1)) });
 for (let n = 1; n <= 9; n++) {
@@ -2751,7 +2751,7 @@ registerAction({ id: "focus.prevRegion", label: "Focus the previous region", con
 registerAction({ id: "focus.leaveTerminal", label: "Leave the terminal (focus the next region)", context: "global", run: () => cycleRegion(1) });
 
 // The leader's Tab (docs/desktop-keyboard.md, "The leader"): the next editor group's active tab, or
-// the group itself when it is empty, wrapping. No default chord of its own.
+// the group itself when it is empty, wrapping. Its chord is the shared group-next (Ctrl+Alt+A / ⌘⌥A).
 registerAction({ id: "split.focusNextGroup", label: "Focus the next editor group", context: "tabs", run: unlessModal(() => focusNextGroup()) });
 function focusNextGroup() {
   if (!tabLayerVisible || !split || split.groups.length < 2) return;
@@ -2765,8 +2765,7 @@ function focusNextGroup() {
 
 // THE one window keydown listener. The engine owns the terminal policy
 // (⌘ chords on mac; the action-id allowlist on Linux/Windows, where the
-// allowlisted defaults are Ctrl+Shift+key so plain Ctrl+letter stays the
-// program's). View-local handlers (hierarchy canvas,
+// allowlisted defaults leave plain Ctrl+letter the program's). View-local handlers (hierarchy canvas,
 // roster rows, palette input) preventDefault the keys they consume; the
 // engine must not double-dispatch them.
 // The engine skips already-consumed (defaultPrevented) events itself.
@@ -2894,14 +2893,23 @@ registerAction({ id: "app.leader", label: "Leader: the commands that follow one 
 // The sidebar's footer starts it too (its hint opens; the next key settles it, as from the keyboard).
 const leaderButton = document.getElementById("sidebar-leader");
 leaderButton?.addEventListener("click", () => { if (!modalOpen()) leader.toggle({ opener: leaderButton, targetId: leaderTargetId(leaderButton) }); });
+/** A key that does what the leader then a key does, from where it was pressed: the leader's own
+ * target (leaderTargetId) and rules (notApplicable's line when it cannot act). */
+function runAsLeaderKey(does, e) {
+  const why = notApplicable(does);
+  if (why) { sayInHint(why); return; }
+  leaderDispatch.run(does, { targetId: leaderTargetId(e?.target ?? document.activeElement) });
+}
 // The sidebar's plain keys (the TUI's, shared PLAIN_KEYS): one action per key, the same `does` as
 // the leader's, acting on the focused roster row (on a nav or footer control: the selected row).
 for (const { id, does } of SIDEBAR_KEYS) {
-  registerAction({ id, label: leaderLabel(does, actionLabel), context: "sidebar", run: (e) => {
-    const why = notApplicable(does);
-    if (why) { sayInHint(why); return; }
-    leaderDispatch.run(does, { targetId: leaderTargetId(e?.target ?? document.activeElement) });
-  } });
+  registerAction({ id, label: leaderLabel(does, actionLabel), context: "sidebar", run: (e) => runAsLeaderKey(does, e) });
+}
+// The leader's ↑ / ↓ / z on chords of their own (the shared CHORDS previous, next, zoom: Alt+Shift+↑/↓
+// and Ctrl+Alt+Z, ⌘⌥↑/↓ and ⌘⌥Z): each runs exactly what the leader then that key runs, for the
+// same target, from every focus. Inert under a modal dialog or the palette, as the leader is.
+for (const [id, does] of [["roster.openPrevious", "previous"], ["roster.openNext", "next"], ["terminal.zoom", "zoom"]]) {
+  registerAction({ id, label: leaderLabel(does, actionLabel), context: "global", when: () => !modalOpen(), run: (e) => runAsLeaderKey(does, e) });
 }
 
 // Chord-suffixed tooltips, live against the keymap: any control that

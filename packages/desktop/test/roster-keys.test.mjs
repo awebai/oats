@@ -54,6 +54,14 @@ test("k j g G h l do what the arrows, Home and End do; held with Ctrl, Alt or �
   assert.equal(rosterKeyAction({ key: "K" }), null, "K is not k");
   for (const mods of [{ ctrlKey: true }, { altKey: true }, { metaKey: true }]) assert.equal(rosterKeyAction({ key: "j", ...mods }), null);
   assert.deepEqual(rosterKeyAction({ key: "ArrowDown", shiftKey: true }), { type: "move", delta: 1 }, "the arrows as they always were");
+  assert.deepEqual(rosterKeyAction({ key: "ArrowDown", ctrlKey: true }), { type: "move", delta: 1 });
+  // Held with Alt or ⌘ an arrow is a chord, the keymap's (Alt+Shift+↑/↓ and ⌘⌥↑/↓ open the previous /
+  // next instance's terminal; Alt+Shift+←/→ and ⌘⌥←/→ move between tabs): the row lets it through.
+  for (const key of ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]) {
+    for (const mods of [{ altKey: true, shiftKey: true }, { metaKey: true, altKey: true }, { altKey: true }]) {
+      assert.equal(rosterKeyAction({ key, ...mods }, { hasChildren: true, collapsed: false }), null, `${key} ${JSON.stringify(mods)}`);
+    }
+  }
   // The letters are the shared table's, not a copy of it.
   for (const does of ["up", "down", "top", "bottom", "collapse", "expand", "page-up", "page-down"]) {
     for (const key of plainKeys(does)) {

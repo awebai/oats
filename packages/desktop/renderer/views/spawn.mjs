@@ -977,6 +977,9 @@ function onGridKey(s, e) {
   if (!cards.length) return;
   const cur = focusedCard(s);
   const at = cur ? cards.indexOf(cur) : -1;
+  // An arrow held with Alt or ⌘ is a chord (the shared Alt+Shift+↑/↓, ⌘⌥↑/↓), the keymap's from a card too.
+  const arrow = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(e.key);
+  if (arrow && (e.altKey || e.metaKey)) return;
   if (["ArrowRight", "ArrowDown"].includes(e.key)) {
     e.preventDefault();
     focusCard(s, cards, Math.min(cards.length - 1, at + 1));

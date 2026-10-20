@@ -68,14 +68,28 @@ test("the plain keys: every action, with its keys", () => {
 
 test("the chords: every one, per platform, and what it does", () => {
   assert.deepEqual(CHORDS.map(({ does, mac, other }) => [does, mac, other]), [
-    ["palette", "cmd+k", "ctrl+shift+k"],
-    ["spawn", "cmd+p", "ctrl+shift+p"],
-    ["tab-next", "ctrl+tab", "ctrl+tab"],
-    ["tab-previous", "ctrl+shift+tab", "ctrl+shift+tab"],
-    ["close-terminal", "cmd+w", "ctrl+shift+w"],
-    ["filter", "cmd+f", "ctrl+shift+f"],
-    ["split-right", "cmd+\\", "ctrl+shift+e"],
-    ["split-down", "cmd+shift+\\", "ctrl+shift+o"],
+    ["palette", "cmd+k", "ctrl+alt+k"],
+    ["spawn", "cmd+p", "ctrl+alt+p"],
+    ["workspaces", "cmd+alt+o", "ctrl+alt+o"],
+    ["previous", "cmd+alt+up", "alt+shift+up"],
+    ["next", "cmd+alt+down", "alt+shift+down"],
+    ["tab-previous", "cmd+alt+left", "alt+shift+left"],
+    ["tab-next", "cmd+alt+right", "alt+shift+right"],
+    ["tab-1", "cmd+alt+1", "ctrl+alt+1"],
+    ["tab-2", "cmd+alt+2", "ctrl+alt+2"],
+    ["tab-3", "cmd+alt+3", "ctrl+alt+3"],
+    ["tab-4", "cmd+alt+4", "ctrl+alt+4"],
+    ["tab-5", "cmd+alt+5", "ctrl+alt+5"],
+    ["tab-6", "cmd+alt+6", "ctrl+alt+6"],
+    ["tab-7", "cmd+alt+7", "ctrl+alt+7"],
+    ["tab-8", "cmd+alt+8", "ctrl+alt+8"],
+    ["tab-9", "cmd+alt+9", "ctrl+alt+9"],
+    ["zoom", "cmd+alt+z", "ctrl+alt+z"],
+    ["close-terminal", "cmd+w", "ctrl+alt+w"],
+    ["split-right", "cmd+\\", "ctrl+alt+e"],
+    ["split-down", "cmd+shift+\\", "ctrl+alt+shift+e"],
+    ["group-next", "cmd+alt+a", "ctrl+alt+a"],
+    ["filter", "cmd+f", "ctrl+alt+f"],
   ]);
   assert.ok(Object.isFrozen(CHORDS) && CHORDS.every((entry) => Object.isFrozen(entry)));
   assert.equal(new Set(CHORDS.map((entry) => entry.does)).size, CHORDS.length, "one chord per action");
@@ -83,7 +97,7 @@ test("the chords: every one, per platform, and what it does", () => {
     assert.equal(new Set(CHORDS.map((entry) => entry[platform])).size, CHORDS.length, `${platform}: no chord twice`);
   }
   assert.equal(chordKey("palette", true), "cmd+k");
-  assert.equal(chordKey("palette", false), "ctrl+shift+k");
+  assert.equal(chordKey("palette", false), "ctrl+alt+k");
   assert.equal(chordKey("instances", false), null, "the stages are the Desktop's own");
 });
 
@@ -117,7 +131,17 @@ test("the readers answer from the tables, and every value they return is frozen"
 });
 
 test("the Desktop's chords are the module's entries, each read by one action", () => {
-  assert.deepEqual(CHORDS_READ.map(({ does }) => does).sort(), CHORDS.map(({ does }) => does).sort(), "every chord is read, once");
+  assert.deepEqual(CHORDS_READ.map(({ does }) => does), CHORDS.map(({ does }) => does), "every chord is read, once, in the table's order");
+  assert.equal(new Set(CHORDS_READ.map(({ id }) => id)).size, CHORDS_READ.length, "one action per chord");
+  // Who reads what: the shared tab moves are the second tab-cycling chords (Ctrl+Tab and Ctrl+Shift+Tab
+  // stay the Desktop's own tabs.next / tabs.prev), and the leader's ↑ ↓ z have actions of their own.
+  assert.deepEqual(Object.fromEntries(CHORDS_READ.map(({ id, does }) => [does, id])), {
+    palette: "app.palette", spawn: "app.quickOpenSouls", workspaces: "app.workspaces",
+    previous: "roster.openPrevious", next: "roster.openNext", "tab-previous": "tabs.prevPage", "tab-next": "tabs.nextPage",
+    ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tab-${i + 1}`, `tabs.goto${i + 1}`])),
+    zoom: "terminal.zoom", "close-terminal": "tabs.close", "split-right": "split.vertical", "split-down": "split.horizontal",
+    "group-next": "split.focusNextGroup", filter: "sidebar.focusFilter",
+  });
   for (const { id, does } of CHORDS_READ) {
     assert.ok(Object.hasOwn(DEFAULT_KEYMAP, id), id);
     assert.equal(defaultBinding(id, true), chordFromKeyId(chordKey(does, true)), `${id} on macOS`);
@@ -125,6 +149,8 @@ test("the Desktop's chords are the module's entries, each read by one action", (
   }
   assert.deepEqual(["cmd+k", "cmd+shift+\\", "ctrl+shift+k", "ctrl+shift+tab", "ctrl+tab", "shift+tab"].map(chordFromKeyId),
     ["Mod+K", "Mod+Shift+\\", "Ctrl+Shift+K", "Ctrl+Shift+Tab", "Ctrl+Tab", "Shift+Tab"]);
+  assert.deepEqual(["ctrl+alt+k", "ctrl+alt+shift+e", "ctrl+alt+1", "alt+shift+up", "alt+shift+right", "cmd+alt+down", "cmd+alt+left", "cmd+alt+o"].map(chordFromKeyId),
+    ["Ctrl+Alt+K", "Ctrl+Alt+Shift+E", "Ctrl+Alt+1", "Alt+Shift+↑", "Alt+Shift+→", "Mod+Alt+↓", "Mod+Alt+←", "Mod+Alt+O"]);
 });
 
 const ENGINE = new URL("../renderer/keybindings.mjs", import.meta.url);
@@ -157,7 +183,9 @@ test("change the module's entry in a copy: the Desktop's default follows, and ke
   mkdirSync(join(root, "client")); mkdirSync(join(root, "desktop", "renderer"), { recursive: true });
   const module = readFileSync(MODULE, "utf8");
   const changed = module.replace('other: "alt+o"', 'other: "alt+l"').replace('{ does: "refresh", keys: ["r"] }', '{ does: "refresh", keys: ["F"] }')
-    .replace('{ does: "palette", mac: "cmd+k", other: "ctrl+shift+k" }', '{ does: "palette", mac: "cmd+j", other: "ctrl+shift+j" }');
+    .replace('{ does: "palette", mac: "cmd+k", other: "ctrl+alt+k" }', '{ does: "palette", mac: "cmd+j", other: "ctrl+shift+j" }')
+    .replace('{ does: "previous", mac: "cmd+alt+up", other: "alt+shift+up" }', '{ does: "previous", mac: "cmd+alt+u", other: "ctrl+alt+u" }')
+    .replace('`ctrl+alt+${i + 1}`', '`ctrl+shift+alt+${i + 1}`');
   assert.notEqual(changed, module);
   writeFileSync(join(root, "client", "keymap.mjs"), changed);
   writeFileSync(join(root, "desktop", "renderer", "keybindings.mjs"), readFileSync(ENGINE, "utf8"));
@@ -165,16 +193,23 @@ test("change the module's entry in a copy: the Desktop's default follows, and ke
   assert.equal(copy.defaultBinding("app.leader", false), "Alt+L");
   assert.equal(copy.defaultBinding("sidebar.key.refresh", false), "Shift+F");
   assert.deepEqual([copy.defaultBinding("app.palette", true), copy.defaultBinding("app.palette", false)], ["Mod+J", "Ctrl+Shift+J"]);
+  assert.deepEqual([copy.defaultBinding("roster.openPrevious", true), copy.defaultBinding("roster.openPrevious", false)], ["Mod+Alt+U", "Ctrl+Alt+U"]);
+  assert.deepEqual([copy.defaultBinding("tabs.goto1", false), copy.defaultBinding("tabs.goto9", false)], ["Ctrl+Alt+Shift+1", "Ctrl+Alt+Shift+9"]);
   // No literal duplicate: the engine names neither chord nor key of the shared tables.
   const engine = readFileSync(ENGINE, "utf8");
   assert.doesNotMatch(engine, /"Alt\+O"|"Ctrl\+\\\\"|"alt\+o"|"ctrl\+\\\\"/, "the leader is read, not retyped");
   assert.doesNotMatch(engine, /"sidebar\.key\.\w+":\s*"/, "no sidebar key with a literal default");
   for (const { id } of CHORDS_READ) assert.doesNotMatch(engine, new RegExp(`"${id.replace(".", "\\.")}":\\s*[{"]`), `${id}: the chord is read, not retyped`);
+  assert.doesNotMatch(engine, /`tabs\.goto\$\{i \+ 1\}`, \{|Alt\+\$\{i \+ 1\}/, "go to tab is read, not retyped");
 });
 
 // Every default of the Desktop's keymap, as written: what the engine reads per platform
 // (defaultBinding). Pinned before the chords moved to the shared module (packages/client/keymap.mjs
-// CHORDS) and after: reading them from there changed no key, no shape and no order.
+// CHORDS) and after: reading them from there changed no key, no shape and no order. Phase 3's table
+// (c4d4a391) changed exactly its rows: the palette, Quick Open, close tab, filter and the splits
+// moved to Ctrl+Alt on Linux/Windows, the second tab-cycling chords to Alt+Shift+←/→ (⌘⌥←/→, new on
+// macOS), go to tab to Ctrl+Alt+digit; the workspace switcher and the next editor group got a chord;
+// roster.openPrevious, roster.openNext and terminal.zoom are new.
 const DEFAULTS = [
   ["app.leader",{"mac":"Ctrl+\\","other":"Alt+O"}],
   ["sidebar.key.instances","1"],
@@ -196,9 +231,13 @@ const DEFAULTS = [
   ["sidebar.key.spawn","N"],
   ["sidebar.key.spawnAnother","Shift+N"],
   ["sidebar.key.help","?"],
-  ["split.focusNextGroup",null],
-  ["app.palette",{"mac":"Mod+K","other":"Ctrl+Shift+K"}],
-  ["app.quickOpenSouls",{"mac":"Mod+P","other":"Ctrl+Shift+P"}],
+  ["split.focusNextGroup",{"mac":"Mod+Alt+A","other":"Ctrl+Alt+A"}],
+  ["app.palette",{"mac":"Mod+K","other":"Ctrl+Alt+K"}],
+  ["app.quickOpenSouls",{"mac":"Mod+P","other":"Ctrl+Alt+P"}],
+  ["app.workspaces",{"mac":"Mod+Alt+O","other":"Ctrl+Alt+O"}],
+  ["roster.openPrevious",{"mac":"Mod+Alt+↑","other":"Alt+Shift+↑"}],
+  ["roster.openNext",{"mac":"Mod+Alt+↓","other":"Alt+Shift+↓"}],
+  ["terminal.zoom",{"mac":"Mod+Alt+Z","other":"Ctrl+Alt+Z"}],
   ["app.chooseSoul",{"mac":"Mod+N","other":"Ctrl+Shift+N"}],
   ["app.shortcuts","Mod+,"],
   ["app.themeToggle",null],
@@ -208,25 +247,25 @@ const DEFAULTS = [
   ["stage.automations","Mod+3"],
   ["tabs.next","Ctrl+Tab"],
   ["tabs.prev","Ctrl+Shift+Tab"],
-  ["tabs.nextPage",{"mac":null,"other":"Ctrl+PageDown"}],
-  ["tabs.prevPage",{"mac":null,"other":"Ctrl+PageUp"}],
-  ["tabs.goto1",{"mac":"Mod+Alt+1","other":"Alt+1"}],
-  ["tabs.goto2",{"mac":"Mod+Alt+2","other":"Alt+2"}],
-  ["tabs.goto3",{"mac":"Mod+Alt+3","other":"Alt+3"}],
-  ["tabs.goto4",{"mac":"Mod+Alt+4","other":"Alt+4"}],
-  ["tabs.goto5",{"mac":"Mod+Alt+5","other":"Alt+5"}],
-  ["tabs.goto6",{"mac":"Mod+Alt+6","other":"Alt+6"}],
-  ["tabs.goto7",{"mac":"Mod+Alt+7","other":"Alt+7"}],
-  ["tabs.goto8",{"mac":"Mod+Alt+8","other":"Alt+8"}],
-  ["tabs.goto9",{"mac":"Mod+Alt+9","other":"Alt+9"}],
-  ["tabs.close",{"mac":"Mod+W","other":"Ctrl+Shift+W"}],
+  ["tabs.nextPage",{"mac":"Mod+Alt+→","other":"Alt+Shift+→"}],
+  ["tabs.prevPage",{"mac":"Mod+Alt+←","other":"Alt+Shift+←"}],
+  ["tabs.goto1",{"mac":"Mod+Alt+1","other":"Ctrl+Alt+1"}],
+  ["tabs.goto2",{"mac":"Mod+Alt+2","other":"Ctrl+Alt+2"}],
+  ["tabs.goto3",{"mac":"Mod+Alt+3","other":"Ctrl+Alt+3"}],
+  ["tabs.goto4",{"mac":"Mod+Alt+4","other":"Ctrl+Alt+4"}],
+  ["tabs.goto5",{"mac":"Mod+Alt+5","other":"Ctrl+Alt+5"}],
+  ["tabs.goto6",{"mac":"Mod+Alt+6","other":"Ctrl+Alt+6"}],
+  ["tabs.goto7",{"mac":"Mod+Alt+7","other":"Ctrl+Alt+7"}],
+  ["tabs.goto8",{"mac":"Mod+Alt+8","other":"Ctrl+Alt+8"}],
+  ["tabs.goto9",{"mac":"Mod+Alt+9","other":"Ctrl+Alt+9"}],
+  ["tabs.close",{"mac":"Mod+W","other":"Ctrl+Alt+W"}],
   ["focus.nextRegion","F6"],
   ["focus.prevRegion","Shift+F6"],
   ["focus.leaveTerminal","Mod+Shift+F6"],
-  ["sidebar.focusFilter",{"mac":"Mod+F","other":"Ctrl+Shift+F"}],
+  ["sidebar.focusFilter",{"mac":"Mod+F","other":"Ctrl+Alt+F"}],
   ["sidebar.toggle",{"mac":"Mod+B","other":"Ctrl+Shift+B"}],
-  ["split.vertical",{"mac":"Mod+\\","other":"Ctrl+Shift+E"}],
-  ["split.horizontal",{"mac":"Mod+Shift+\\","other":"Ctrl+Shift+O"}],
+  ["split.vertical",{"mac":"Mod+\\","other":"Ctrl+Alt+E"}],
+  ["split.horizontal",{"mac":"Mod+Shift+\\","other":"Ctrl+Alt+Shift+E"}],
   ["split.close",{"mac":"Mod+Alt+W","other":"Ctrl+Shift+Alt+W"}],
   ["panel.toggle",{"mac":"Mod+I","other":"Ctrl+Shift+I"}],
   ["terminal.copySelection",{"mac":null,"other":"Ctrl+Shift+C"}],

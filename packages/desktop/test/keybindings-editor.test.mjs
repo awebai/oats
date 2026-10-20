@@ -338,7 +338,7 @@ test("shell wiring: the footer shortcuts button carries the clash marker, recomp
 
 // ── Spec A, PR 2: search, keycaps and markers ──────────────────────────────────────────────
 // Linux/Windows: the shipped defaults of these ids come from DEFAULT_KEYMAP (sidebar Ctrl+Shift+B,
-// Quick Open Ctrl+Shift+P, go to tab Alt+1, F6); focus mode has none.
+// Quick Open Ctrl+Alt+P, go to tab Ctrl+Alt+1, F6); focus mode has none.
 function setupLinux(t, { isMac = false, extra = [] } = {}) {
   const dom = new JSDOM("<!doctype html><body>");
   const doc = dom.window.document;
@@ -385,10 +385,10 @@ test("search: focused on open; filters by label, by group name and by the chord 
     f.type(q);
     assert.deepEqual(f.shown(), ["Sidebar: show or hide"], `“${q}” finds Ctrl+Shift+B and nothing else`);
   }
-  // The keys typed need not be all of the chord's: Ctrl+P also finds Ctrl+Shift+P.
+  // The keys typed need not be all of the chord's: Ctrl+P also finds Ctrl+Alt+P.
   f.type("ctrl+p");
   assert.deepEqual(f.shown(), ["Quick open a soul"]);
-  f.type("ctrl+shift+k");
+  f.type("ctrl+alt+k");
   assert.deepEqual(f.shown(), ["Command palette"]);
   f.type("f6");
   assert.deepEqual(f.shown(), ["Focus the next region"]);
@@ -525,7 +525,7 @@ test("terminal marker on Linux/Windows: the allowlisted actions, by id, so it fo
   f.editor.open();
   const marked = () => [...f.doc.querySelectorAll(".kb-row")].filter((r) => r.querySelector(".kb-mark-terminal"))
     .map((r) => r.querySelector(".kb-label").textContent).sort();
-  assert.deepEqual(marked(), ["Close tab", "Command palette", "Instance panel: show or hide", "Next tab", "Quick open a soul", "Sidebar: show or hide"]);
+  assert.deepEqual(marked(), ["Close tab", "Command palette", "Go to tab 1", "Instance panel: show or hide", "Next tab", "Quick open a soul", "Sidebar: show or hide"]);
   assert.equal(f.marks("Sidebar: show or hide", "terminal"), "terminal");
   assert.equal(f.rowFor("Sidebar: show or hide").querySelector(".kb-mark-terminal").title, "Works while a terminal has focus");
   // A rebind of an allowlisted action keeps the marker (the policy is by id), even to a plain Ctrl letter.
@@ -533,11 +533,10 @@ test("terminal marker on Linux/Windows: the allowlisted actions, by id, so it fo
   assert.equal(f.marks("Sidebar: show or hide", "terminal"), "terminal");
   // A non-allowlisted action never gets it, whatever it is bound to.
   setBinding("app.focusMode", "Ctrl+Shift+U");
-  setBinding("tabs.goto1", "Ctrl+Shift+Q");
+  setBinding("focus.nextRegion", "Ctrl+Shift+Q");
   assert.equal(f.marks("Focus mode: toggle", "terminal"), null);
-  assert.equal(f.marks("Go to tab 1", "terminal"), null);
   assert.equal(f.marks("Focus the next region", "terminal"), null);
-  assert.doesNotMatch(f.rowFor("Go to tab 1").querySelector(".kb-chord").getAttribute("aria-label"), /terminal/);
+  assert.doesNotMatch(f.rowFor("Focus the next region").querySelector(".kb-chord").getAttribute("aria-label"), /terminal/);
   // Unbound, an allowlisted action fires nothing: no marker.
   setBinding("panel.toggle", null);
   assert.equal(f.marks("Instance panel: show or hide", "terminal"), null);

@@ -1416,7 +1416,9 @@ function onKey(s, e) {
     s.viewActions.find((a) => a.id === hit)?.run();
     return;
   }
-  if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) return;
+  // An arrow held with Alt or ⌘ is a chord (the shared Alt+Shift+↑/↓, ⌘⌥↑/↓: the previous / next
+  // instance's terminal), the keymap's from the canvas as from anywhere.
+  if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key) || e.altKey || e.metaKey) return;
   e.preventDefault();
   if (!s.sel) { select(s, instanceId(list[0])); return; }
   const cur = s.nodeEls.get(s.sel);

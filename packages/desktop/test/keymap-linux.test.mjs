@@ -1,17 +1,17 @@
 // Spec F, Part 3: a keymap that is sane on Linux (and Omarchy) as well as macOS.
 // The rule: a default chord never takes a key a program inside the terminal reads. Every
 // changed default resolves per platform; inside a terminal on Linux/Windows only the allowlisted
-// actions fire (chords xterm sends nothing for, or a byte a plainer key still sends:
-// test/terminal-xterm-bytes.test.mjs), and the program keeps Ctrl+W/K/\/P/B/I/F/O, F6, Alt+digit
-// and Ctrl+PgUp/PgDn; on macOS only ⌘ chords (and Ctrl+Tab) fire there, so ⌃digits and F6 stay
-// the program's.
+// actions fire (chords xterm sends nothing for, or a byte a plainer key still sends, and the named
+// exceptions: test/terminal-xterm-bytes.test.mjs), and the program keeps Ctrl+W/K/\/P/B/I/F/O, F6,
+// Alt+digit and Ctrl+PgUp/PgDn; on macOS only ⌘ chords (and Ctrl+Tab) fire there, so ⌃digits and F6
+// stay the program's.
 // Chords are dispatched as the REAL events a keyboard sends (the shifted character in `key`).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import {
-  DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, defaultBinding, getBinding, formatChord, isPlainChord,
+  CHORDS_READ, DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, defaultBinding, getBinding, formatChord, isPlainChord,
   registerAction, setActiveContexts, resetAllBindings, setBinding, matchEvent, handleKeydown, findConflict, keymapConflicts,
 } from "../renderer/keybindings.mjs";
 import { terminalKeyDecision } from "../renderer/terminal-tab.mjs";
@@ -40,19 +40,22 @@ function registerAll(t) {
 
 test("the shipped table: each changed default resolves per platform", () => {
   const table = {
-    "app.palette": ["Mod+K", "Ctrl+Shift+K"],
-    "app.quickOpenSouls": ["Mod+P", "Ctrl+Shift+P"],
+    "app.palette": ["Mod+K", "Ctrl+Alt+K"],
+    "app.quickOpenSouls": ["Mod+P", "Ctrl+Alt+P"],
+    "app.workspaces": ["Mod+Alt+O", "Ctrl+Alt+O"],
     "app.chooseSoul": ["Mod+N", "Ctrl+Shift+N"],
-    "tabs.close": ["Mod+W", "Ctrl+Shift+W"],
+    "roster.openPrevious": ["Mod+Alt+↑", "Alt+Shift+↑"], "roster.openNext": ["Mod+Alt+↓", "Alt+Shift+↓"],
+    "terminal.zoom": ["Mod+Alt+Z", "Ctrl+Alt+Z"],
+    "tabs.close": ["Mod+W", "Ctrl+Alt+W"],
     "tabs.next": ["Ctrl+Tab", "Ctrl+Tab"], "tabs.prev": ["Ctrl+Shift+Tab", "Ctrl+Shift+Tab"],
-    "tabs.nextPage": [null, "Ctrl+PageDown"], "tabs.prevPage": [null, "Ctrl+PageUp"],
-    "tabs.goto1": ["Mod+Alt+1", "Alt+1"], "tabs.goto9": ["Mod+Alt+9", "Alt+9"],
-    "split.vertical": ["Mod+\\", "Ctrl+Shift+E"], "split.horizontal": ["Mod+Shift+\\", "Ctrl+Shift+O"],
-    "split.close": ["Mod+Alt+W", "Ctrl+Shift+Alt+W"],
+    "tabs.nextPage": ["Mod+Alt+→", "Alt+Shift+→"], "tabs.prevPage": ["Mod+Alt+←", "Alt+Shift+←"],
+    "tabs.goto1": ["Mod+Alt+1", "Ctrl+Alt+1"], "tabs.goto9": ["Mod+Alt+9", "Ctrl+Alt+9"],
+    "split.vertical": ["Mod+\\", "Ctrl+Alt+E"], "split.horizontal": ["Mod+Shift+\\", "Ctrl+Alt+Shift+E"],
+    "split.close": ["Mod+Alt+W", "Ctrl+Shift+Alt+W"], "split.focusNextGroup": ["Mod+Alt+A", "Ctrl+Alt+A"],
     "stage.hierarchy": ["Mod+1", "Mod+1"], "stage.spawn": ["Mod+2", "Mod+2"], "stage.automations": ["Mod+3", "Mod+3"],
     "focus.nextRegion": ["F6", "F6"], "focus.prevRegion": ["Shift+F6", "Shift+F6"],
     "focus.leaveTerminal": ["Mod+Shift+F6", "Mod+Shift+F6"],
-    "sidebar.toggle": ["Mod+B", "Ctrl+Shift+B"], "sidebar.focusFilter": ["Mod+F", "Ctrl+Shift+F"], "panel.toggle": ["Mod+I", "Ctrl+Shift+I"],
+    "sidebar.toggle": ["Mod+B", "Ctrl+Shift+B"], "sidebar.focusFilter": ["Mod+F", "Ctrl+Alt+F"], "panel.toggle": ["Mod+I", "Ctrl+Shift+I"],
     "app.themeToggle": [null, null], "app.themePicker": ["Mod+Shift+Space", "Ctrl+Shift+Space"], "app.shortcuts": ["Mod+,", "Mod+,"],
     "terminal.fontBigger": ["Mod+=", "Mod+="], "terminal.fontSmaller": ["Mod+-", "Mod+-"], "terminal.fontReset": ["Mod+0", "Mod+0"],
     "terminal.copySelection": [null, "Ctrl+Shift+C"],
@@ -62,10 +65,14 @@ test("the shipped table: each changed default resolves per platform", () => {
     assert.equal(defaultBinding(id, false), other, `${id} on Linux/Windows`);
   }
   // Shown as each platform reads it (the shortcuts editor and the hints use getBinding + formatChord).
-  assert.equal(formatChord(getBinding("app.palette", false), false), "Ctrl+Shift+K");
-  assert.equal(formatChord(getBinding("app.quickOpenSouls", false), false), "Ctrl+Shift+P");
+  assert.equal(formatChord(getBinding("app.palette", false), false), "Ctrl+Alt+K");
+  assert.equal(formatChord(getBinding("app.quickOpenSouls", false), false), "Ctrl+Alt+P");
   assert.equal(formatChord(getBinding("app.quickOpenSouls", true), true), "⌘P");
-  assert.equal(formatChord(getBinding("tabs.nextPage", false), false), "Ctrl+PgDn");
+  assert.equal(formatChord(getBinding("tabs.nextPage", false), false), "Alt+Shift+→");
+  assert.equal(formatChord(getBinding("tabs.nextPage", true), true), "⌥⌘→");
+  assert.equal(formatChord(getBinding("roster.openPrevious", true), true), "⌥⌘↑");
+  assert.equal(formatChord(getBinding("split.horizontal", false), false), "Ctrl+Alt+Shift+E");
+  assert.equal(formatChord(getBinding("tabs.goto3", false), false), "Ctrl+Alt+3");
   assert.equal(formatChord(getBinding("tabs.goto3", true), true), "⌥⌘3");
   assert.equal(formatChord(getBinding("focus.leaveTerminal", false), false), "Ctrl+Shift+F6");
   assert.equal(formatChord(getBinding("sidebar.toggle", false), false), "Ctrl+Shift+B");
@@ -81,13 +88,16 @@ test("nothing binds Super/Meta on Linux/Windows: Mod is Ctrl there", () => {
 
 test("the terminal allowlist is exactly the actions that must work in a terminal", () => {
   assert.deepEqual([...TERMINAL_ALLOWLIST].sort(), [
-    "app.chooseSoul", "app.leader", "app.palette", "app.quickOpenSouls", "app.shortcuts", "app.themePicker", "focus.leaveTerminal",
-    "panel.toggle", "sidebar.focusFilter", "sidebar.toggle",
-    "split.close", "split.horizontal", "split.vertical",
+    "app.chooseSoul", "app.leader", "app.palette", "app.quickOpenSouls", "app.shortcuts", "app.themePicker", "app.workspaces", "focus.leaveTerminal",
+    "panel.toggle", "roster.openNext", "roster.openPrevious", "sidebar.focusFilter", "sidebar.toggle",
+    "split.close", "split.focusNextGroup", "split.horizontal", "split.vertical",
     "stage.automations", "stage.hierarchy", "stage.spawn",
-    "tabs.close", "tabs.next", "tabs.prev", "terminal.copySelection",
-    "terminal.fontBigger", "terminal.fontReset", "terminal.fontSmaller",
+    "tabs.close", "tabs.next", "tabs.nextPage", "tabs.prev", "tabs.prevPage",
+    ...Array.from({ length: 9 }, (_, i) => `tabs.goto${i + 1}`),
+    "terminal.copySelection", "terminal.fontBigger", "terminal.fontReset", "terminal.fontSmaller", "terminal.zoom",
   ].sort());
+  // Every shared chord works in a terminal (CHORDS_READ): the leader's keys are reachable from every focus.
+  for (const { id } of CHORDS_READ) assert.ok(TERMINAL_ALLOWLIST.includes(id), `${id} is allowlisted`);
   // No allowlisted default on Linux/Windows is a key a program reads: not a plain Ctrl+letter,
   // not a bare function key, not Alt+digit, not Ctrl+PgUp/PgDn.
   for (const id of TERMINAL_ALLOWLIST) {
@@ -100,16 +110,21 @@ test("Linux/Windows inside a terminal: the allowlisted chords fire from real (sh
   registerAll(t);
   const inTerm = { isMac: false, insideTerminal: true };
   for (const [event, id] of [
-    [linux("K", { shiftKey: true }), "app.palette"], [linux("P", { shiftKey: true }), "app.quickOpenSouls"],
+    [linux("k", { altKey: true }), "app.palette"], [linux("p", { altKey: true }), "app.quickOpenSouls"],
+    [linux("o", { altKey: true }), "app.workspaces"],
     [linux("N", { shiftKey: true }), "app.chooseSoul"],
-    [linux("W", { shiftKey: true }), "tabs.close"], [linux("Tab"), "tabs.next"], [linux("Tab", { shiftKey: true }), "tabs.prev"],
-    [linux("E", { shiftKey: true }), "split.vertical"], [linux("O", { shiftKey: true }), "split.horizontal"],
-    [linux("W", { shiftKey: true, altKey: true }), "split.close"],
+    [linux("w", { altKey: true }), "tabs.close"], [linux("Tab"), "tabs.next"], [linux("Tab", { shiftKey: true }), "tabs.prev"],
+    [linux("e", { altKey: true }), "split.vertical"], [linux("E", { altKey: true, shiftKey: true }), "split.horizontal"],
+    [linux("W", { shiftKey: true, altKey: true }), "split.close"], [linux("a", { altKey: true }), "split.focusNextGroup"],
+    [linux("z", { altKey: true }), "terminal.zoom"], [linux("1", { altKey: true }), "tabs.goto1"], [linux("9", { altKey: true }), "tabs.goto9"],
+    // The Alt+Shift arrows (no Ctrl): the leader's ↑ / ↓ and the tab moves.
+    [ev("ArrowUp", { altKey: true, shiftKey: true }), "roster.openPrevious"], [ev("ArrowDown", { altKey: true, shiftKey: true }), "roster.openNext"],
+    [ev("ArrowLeft", { altKey: true, shiftKey: true }), "tabs.prevPage"], [ev("ArrowRight", { altKey: true, shiftKey: true }), "tabs.nextPage"],
     [linux("F6", { shiftKey: true }), "focus.leaveTerminal"], [linux("C", { shiftKey: true }), "terminal.copySelection"],
     // Allowlisted with this keymap: the moved defaults (e.key is the upper-case letter with Shift),
     // the stages (Ctrl+3 is ESC, which Esc still sends), the shortcuts editor and the zoom chords.
     [linux("B", { shiftKey: true }), "sidebar.toggle"], [linux("I", { shiftKey: true }), "panel.toggle"],
-    [linux("F", { shiftKey: true }), "sidebar.focusFilter"],
+    [linux("f", { altKey: true }), "sidebar.focusFilter"],
     [linux("1"), "stage.hierarchy"], [linux("2"), "stage.spawn"], [linux("3"), "stage.automations"],
     [linux(","), "app.shortcuts"],
     [linux("="), "terminal.fontBigger"], [linux("-"), "terminal.fontSmaller"], [linux("0"), "terminal.fontReset"],
@@ -133,19 +148,20 @@ test("Linux/Windows inside a terminal: Ctrl+W/K/\\/P/B, F6, Alt+digit and Ctrl+P
     assert.equal(matchEvent(event, inTerm), null, name);
     assert.equal(handleKeydown(event, inTerm), false); assert.equal(event.defaultPrevented, false, `${name} is the program's`);
   }
-  // Outside the terminal the same keys are the app's.
+  // Outside the terminal F6 is the app's; Alt+digit and Ctrl+PgUp/PgDn are bound to nothing (go to tab
+  // is Ctrl+Alt+digit, the second tab-cycling chords Alt+Shift+←/→).
   const out = { isMac: false, insideTerminal: false };
   assert.equal(matchEvent(ev("F6"), out), "focus.nextRegion");
-  assert.equal(matchEvent(ev("3", { altKey: true }), out), "tabs.goto3");
-  assert.equal(matchEvent(linux("PageDown"), out), "tabs.nextPage");
+  assert.equal(matchEvent(ev("3", { altKey: true }), out), null);
+  assert.equal(matchEvent(linux("PageDown"), out), null);
+  assert.equal(matchEvent(linux("3", { altKey: true }), out), "tabs.goto3");
   // Ctrl+Shift+\ (the shifted "|") is not claimed on Linux either.
   assert.equal(matchEvent(linux("|", { shiftKey: true }), inTerm), null);
   // Actions that are not allowlisted never fire inside, even on their own chord: Open file
-  // (Ctrl+O, a view's registration default), go to tab, F6, Ctrl+PgDn.
+  // (Ctrl+O, a view's registration default) and F6.
   t.after(registerAction({ id: "app.openFile", label: "Open file", context: "global", defaultChord: "Mod+O", run: () => {} }));
   for (const [event, id] of [
-    [linux("o"), "app.openFile"], [ev("1", { altKey: true }), "tabs.goto1"],
-    [ev("F6"), "focus.nextRegion"], [linux("PageDown"), "tabs.nextPage"],
+    [linux("o"), "app.openFile"], [ev("F6"), "focus.nextRegion"],
   ]) {
     assert.equal(matchEvent(event, inTerm), null, id);
     assert.equal(matchEvent(event, { isMac: false, insideTerminal: false }), id, `${id} still works outside the terminal`);
@@ -182,6 +198,11 @@ test("macOS inside a terminal: ⌘ chords fire (they never reach the pty), plus 
     [ev("|", { metaKey: true, shiftKey: true }), "split.horizontal"], [ev("\\", { metaKey: true }), "split.vertical"],
     [ev("3", { metaKey: true, altKey: true }), "tabs.goto3"], [ev("Tab", { ctrlKey: true }), "tabs.next"],
     [ev("F6", { metaKey: true, shiftKey: true }), "focus.leaveTerminal"], [ev("3", { metaKey: true }), "stage.automations"],
+    // The shared ⌘⌥ rows: the leader's ↑ ↓ z, the tab moves, the workspace switcher and the next group.
+    [ev("ArrowUp", { metaKey: true, altKey: true }), "roster.openPrevious"], [ev("ArrowDown", { metaKey: true, altKey: true }), "roster.openNext"],
+    [ev("ArrowLeft", { metaKey: true, altKey: true }), "tabs.prevPage"], [ev("ArrowRight", { metaKey: true, altKey: true }), "tabs.nextPage"],
+    [ev("o", { metaKey: true, altKey: true }), "app.workspaces"], [ev("z", { metaKey: true, altKey: true }), "terminal.zoom"],
+    [ev("a", { metaKey: true, altKey: true }), "split.focusNextGroup"],
   ]) assert.equal(matchEvent(event, inTerm), id, id);
   // ⌃3 is ESC, ⌃4–⌃7 FS/GS/RS/US, ⌃8 DEL, ⌃6 vim's alternate file; F6 is mc's/htop's/nano's.
   for (const [name, event] of [["⌃3", ev("3", { ctrlKey: true })], ["⌃6", ev("6", { ctrlKey: true })], ["F6", ev("F6")], ["⇧F6", ev("F6", { shiftKey: true })]]) {
@@ -426,12 +447,58 @@ test("the leader is inert under a shown modal: the chord goes where it goes toda
   assert.equal(alt.defaultPrevented, false, "the program gets it");
 });
 
-test("no default the Desktop had changes, and the new defaults clash with none", t => {
+test("the leader's, the sidebar's and the shared chords clash with no other default", t => {
   registerAll(t);
   for (const isMac of [false, true]) assert.deepEqual(keymapConflicts(isMac), [], `mac=${isMac}`);
-  for (const isMac of [false, true]) for (const id of ["app.leader", "split.focusNextGroup", ...IDS.filter(id => id.startsWith("sidebar.key."))]) {
+  for (const isMac of [false, true]) for (const id of ["app.leader", ...CHORDS_READ.map(({ id }) => id), ...IDS.filter(id => id.startsWith("sidebar.key."))]) {
     const chord = getBinding(id, isMac);
+    assert.ok(chord || id.startsWith("sidebar.key."), `${id} has a chord, mac=${isMac}`);
     if (chord) assert.equal(findConflict(chord, contextOf(id), id, isMac), null, `${id} (${chord}) mac=${isMac}`);
   }
-  assert.equal(getBinding("split.focusNextGroup", false), null, "the leader's Tab has no chord of its own");
+  assert.equal(getBinding("split.focusNextGroup", false), "Ctrl+Alt+A", "the leader's Tab, as the shared group-next");
+});
+
+// Desktop text fields (the roster filter, the spawn dialog's fields, the palette's input): no default
+// takes a key a field edits with, on either platform, so a field keeps every one of them; the shared
+// chords are not such keys, and fire from a field as from anywhere (they type nothing).
+test("text fields keep their own keys: no default takes an editing key, and the shared chords fire from a field", t => {
+  registerAll(t);
+  const dom = new JSDOM(`<input class="ctx-filter"><textarea class="ftask"></textarea>`);
+  t.after(() => dom.window.close());
+  const fields = [...dom.window.document.querySelectorAll("input, textarea")];
+  const arrows = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
+  const editing = {
+    // Linux/Windows: select, word moves and word selection, line ends, delete a word, undo/redo, clipboard.
+    false: [
+      ...arrows.flatMap(key => [ev(key), ev(key, { shiftKey: true }), linux(key), linux(key, { shiftKey: true })]),
+      ...["Home", "End"].flatMap(key => [ev(key), ev(key, { shiftKey: true }), linux(key), linux(key, { shiftKey: true })]),
+      linux("Backspace"), linux("Delete"), ...["a", "c", "v", "x", "z", "y"].map(key => linux(key)), linux("Z", { shiftKey: true }), linux("V", { shiftKey: true }),
+    ],
+    // macOS: ⌘ and ⌥ arrows (line and word moves), with ⇧ to select; ⌘/⌥ Backspace; the Emacs ⌃ keys; undo/redo, clipboard.
+    true: [
+      ...arrows.flatMap(key => [ev(key), ev(key, { shiftKey: true }), ev(key, { metaKey: true }), ev(key, { metaKey: true, shiftKey: true }),
+        ev(key, { altKey: true }), ev(key, { altKey: true, shiftKey: true })]),
+      ev("Backspace", { metaKey: true }), ev("Backspace", { altKey: true }),
+      ...["a", "e", "k", "d", "h", "f", "b", "n", "p"].map(key => ev(key, { ctrlKey: true })),
+      ...["a", "c", "v", "x", "z"].map(key => ev(key, { metaKey: true })), ev("z", { metaKey: true, shiftKey: true }),
+    ],
+  };
+  for (const isMac of [false, true]) {
+    for (const target of fields) for (const e of editing[isMac]) {
+      const keyed = ev(e.key, { ...e, target });
+      assert.equal(matchEvent(keyed, { isMac }), null, `${JSON.stringify({ key: e.key, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey })} mac=${isMac}: ${target.className}'s`);
+      assert.equal(handleKeydown(keyed, { isMac }), false); assert.equal(keyed.defaultPrevented, false);
+    }
+  }
+  // The shared chords, pressed in a field: each is the Desktop's (Linux/Windows and macOS).
+  for (const target of fields) {
+    for (const [e, id] of [
+      [linux("k", { altKey: true }), "app.palette"], [linux("1", { altKey: true }), "tabs.goto1"], [linux("E", { altKey: true, shiftKey: true }), "split.horizontal"],
+      [ev("ArrowUp", { altKey: true, shiftKey: true }), "roster.openPrevious"], [ev("ArrowRight", { altKey: true, shiftKey: true }), "tabs.nextPage"],
+    ]) assert.equal(matchEvent(ev(e.key, { ...e, target }), { isMac: false }), id, `${id} from ${target.className}`);
+    for (const [e, id] of [
+      [ev("k", { metaKey: true }), "app.palette"], [ev("ArrowDown", { metaKey: true, altKey: true }), "roster.openNext"],
+      [ev("ArrowLeft", { metaKey: true, altKey: true }), "tabs.prevPage"], [ev("z", { metaKey: true, altKey: true }), "terminal.zoom"],
+    ]) assert.equal(matchEvent(ev(e.key, { ...e, target }), { isMac: true }), id, `${id} from ${target.className} on macOS`);
+  }
 });
