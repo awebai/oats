@@ -9,7 +9,7 @@
 import { keyLabel } from "../actions.mjs";
 import { lit, shown, shownLines } from "../term/text.mjs";
 import { COLORS, style } from "../term/style.mjs";
-import { LOOK, cutNote, headingRow, marksOf, measured } from "./instances.mjs";
+import { cutNote, headingRow, markLook, marksOf, measured } from "./instances.mjs";
 import { windowOf } from "./scroll.mjs";
 
 /** The TUI's own lines in the Souls view. `retry` and `toInstances` stand after the key that does
@@ -245,7 +245,7 @@ export function soulDetailRows(m, cols) {
     rows.push([label("instances here")]);
     const marks = marksOf(ascii);
     const units = [
-      ...here.shown.map((each) => [{ text: lit(marks[each.mark] ?? marks.unknown), width: 1, style: LOOK[each.mark] ?? LOOK.unknown }, measured(each.name)]),
+      ...here.shown.map((each) => [{ text: lit(marks[each.mark] ?? marks.unknown), width: 1, style: markLook(each.mark, each.color) }, measured(each.name)]),
       ...(here.more > 0 ? [[{ text: lit(`+${here.more}`), width: `+${here.more}`.length, style: DIM }]] : []),
     ];
     flowed(units, inner, 2).forEach((spans) => rows.push(spans.map((span) => ({ ...span, col: span.col + INNER }))));
