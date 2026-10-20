@@ -232,7 +232,7 @@ const BACK = `${LEADER} commands   ${LEADER} Esc the list   ${LEADER} ${LEADER} 
 const LEADER_HINT = `${LEADER} then   k palette`;
 /** The whole sheet while the list has the focus beside the open terminal: Enter goes to it; the
  *  terminal's own keys (zoom, close, the tabs) are the leader's hint's, not the sheet's. */
-const LIST_HINTS = `${LEAD}Enter focus terminal   n spawn   ? help   q quit`;
+const LIST_HINTS = `${LEAD}Enter focus terminal   n spawn   w workspaces   ? help   q quit`;
 const FAILED = `${NAME} could not be opened.`;
 /** The agent's row in the list, selected and running: the green mark and its name, and nothing
  *  after it (the harness is the detail's). */
@@ -513,7 +513,7 @@ test(`Enter on the running agent shows its terminal in the panel beside the list
   assert.equal(early === null || !existsSync(join(early, "owner.json")), true, "no panel's directory before the first open");
   await run.open("on the running agent");
   assert.equal(run.sheet(), BACK, `the cheat sheet names the leader, the leader then Esc and the leader twice:\n${term.shows()}`);
-  assert.equal(run.panel()[0].trim(), NAME, "the panel's top row, the screen's first, names the agent");
+  assert.equal(run.panel()[0].trim(), `[${NAME}]`, "the panel's top row, the screen's first, is the tab bar: the agent's tab, the shown one, bracketed");
   const dir = run.dir();
   assert.ok(dir, "the run directory, made at the first open or at the add before it");
   if (early !== null) assert.equal(dir, early, "the open takes the run's directory the add made");
@@ -560,7 +560,7 @@ test("what is typed reaches the agent and shows in the panel; the leader then Es
   await until(term, () => run.beside("abcd"), "the panel redrawn with the list focused");
 
   term.press("z");
-  await until(term, () => run.zoomed("abcd") && term.screen()[0].startsWith(` ${NAME} `) && term.screen()[0].endsWith(`${LEADER} commands   ${LEADER} Esc the list`) && run.sheet() === "", "the terminal zoomed: its title on the first row with the leader's keys at its right, and the agent's screen from the first column, no list and no cheat sheet");
+  await until(term, () => run.zoomed("abcd") && term.screen()[0].startsWith(`[${NAME}] `) && term.screen()[0].endsWith(`${LEADER} commands   ${LEADER} Esc the list`) && run.sheet() === "", "the terminal zoomed: its tab bar on the first row, the shown tab bracketed, with the leader's keys at its right, and the agent's screen from the first column, no list and no cheat sheet");
   term.type("e");
   await until(term, () => typed() === "abcde", "typing reaches the agent while zoomed");
   await run.back("while zoomed", { zoomed: true });
@@ -1246,9 +1246,9 @@ async function fourAgents(t) {
   t.after(() => { for (const name of OTHERS) { try { killAgentWindow(name); } catch { /* gone */ } } });
   for (const name of FOUR) await agentWindow(name);
 }
-/** The names in the tab strip, the panel's top row (the screen's first), in its order; a hidden
- *  tab's mark (`•`) dropped. */
-const stripNames = (run) => (run.panel()[0] ?? "").trim().split(/\s+/).filter(Boolean).map((name) => name.replace(/•$/, ""));
+/** The names in the tab bar, the panel's top row (the screen's first), in its order: the tabs
+ *  between its dividers (`│`), the shown tab's brackets and a hidden tab's mark (`•`) dropped. */
+const stripNames = (run) => (run.panel()[0] ?? "").split("│").map((tab) => tab.trim().replace(/^\[(.*)\]$/, "$1").replace(/•$/, "")).filter(Boolean);
 /** The row of agent `name` is selected and running, read from the list's columns. */
 const selectedRunning = (term, name) => term.screen().some((text) => new RegExp(`^> +● ${name}$`).test([...text].slice(0, LIST_BESIDE).join("").trimEnd()));
 /** The tab of FOUR[k]: Enter on the selected agent for the first, then for each next one the leader
@@ -1268,8 +1268,8 @@ async function openTab(term, run, k) {
     assert.equal(run.status(), null, `oats tui ended opening ${name}`);
     const session = viewerSessions().find((s) => !before.has(s));
     return session !== undefined && attached().includes(session) && run.beside() && run.sheet() === BACK && selectedRunning(term, name) && JSON.stringify(stripNames(run)) === JSON.stringify(opened);
-  }, `the tab of ${name}: its viewer attached, its screen in the panel with the focus in it, its row selected, and the strip naming ${JSON.stringify(opened)}`,
-  () => [`the strip names ${JSON.stringify(stripNames(run))}`, `viewer sessions: ${JSON.stringify(viewerSessions())}, attached: ${JSON.stringify(attached())}`], 30000);
+  }, `the tab of ${name}: its viewer attached, its screen in the panel with the focus in it, its row selected, and the tab bar naming ${JSON.stringify(opened)}`,
+  () => [`the tab bar names ${JSON.stringify(stripNames(run))}`, `viewer sessions: ${JSON.stringify(viewerSessions())}, attached: ${JSON.stringify(attached())}`], 30000);
 }
 
 for (const [how, end, expected] of [

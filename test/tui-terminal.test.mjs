@@ -192,15 +192,15 @@ const LEAD_ROW = new RegExp(`^ ${literal(LEADER)} +commands(?: |│|\\||$)`);
 const LEAD_HINT = [LEADER, "commands"], PALETTE_HINT = ["Ctrl+K", "palette"], LAST_HINTS = [["?", "help"], ["q", "quit"]];
 /** The Instances view's sheet, the list focused: small, the same whatever row is selected (or
  *  none). Every instance here is stopped (it never ran), so Enter opens nothing and is not named;
- *  the acts, the filter, the detail, refresh and the workspaces are the leader's hint's, the
- *  palette's and the help's, never the sheet's. */
-const LIST_SHEET = [LEAD_HINT, PALETTE_HINT, ["n", "spawn"], ...LAST_HINTS];
+ *  `w workspaces` follows `n spawn`; the acts, the filter, the detail and refresh are the leader's
+ *  hint's, the palette's and the help's, never the sheet's. */
+const LIST_SHEET = [LEAD_HINT, PALETTE_HINT, ["n", "spawn"], ["w", "workspaces"], ...LAST_HINTS];
 /** With a filter kept: the list's sheet; Esc still clears the filter, unnamed there. */
 const KEPT_SHEET = LIST_SHEET;
 /** While the filter's text is typed: its own keys. */
 const FIELD_SHEET = [LEAD_HINT, ["Enter", "keep"], ["Esc", "clear"]];
 /** With the detail focused: Tab goes back to the list, then the list's. */
-const DETAIL_SHEET = [LEAD_HINT, PALETTE_HINT, ["Tab", "back"], ["n", "spawn"], ...LAST_HINTS];
+const DETAIL_SHEET = [LEAD_HINT, PALETTE_HINT, ["Tab", "back"], ["n", "spawn"], ["w", "workspaces"], ...LAST_HINTS];
 const HELP_SHEET = [LEAD_HINT, PALETTE_HINT, ["Esc", "close"], ...LAST_HINTS];
 /** The switcher's, with a workspace open (Esc closes it onto that workspace's view). */
 const SWITCHER_SHEET = [LEAD_HINT, PALETTE_HINT, ["Enter", "open"], ["/", "filter"], ["r", "refresh"], ["Esc", "close"], ...LAST_HINTS];
@@ -805,10 +805,12 @@ const choice = (label, place, { selected = false, open = false } = {}, cols = 80
 /** The same where what stands beside the name is the shared home's to word: `beside` is the
  *  source of what it matches. */
 const choiceLike = (label, beside, marks, cols = 80) => new RegExp(`^${literal(choice(label, "", marks, cols).padEnd(4 + labelCols(cols) + 2))}${beside}$`);
-/** The switcher in the world with the machine: the fixture's workspace, open and selected, and
- *  under the shared heading the machine that did not answer, by its own name with the short
- *  reason the shared home gives it. */
-const MACHINES_SWITCHER = [choice("fixture", "This machine", { selected: true, open: true }), UNMATCHED, choiceLike("garnet", "\\S.*")];
+/** A workspace's indicator line in the switcher: under its row, dim, what it says of one deployment. */
+const indicator = (said) => `      ${said}`;
+/** The switcher in the world with the machine: the fixture's workspace, open and selected, its
+ *  deployment of this machine on the line under it, and under the shared heading the machine that
+ *  did not answer, by its own name with the short reason the shared home gives it. */
+const MACHINES_SWITCHER = [choice("fixture", "", { selected: true, open: true }), indicator("This machine"), UNMATCHED, choiceLike("garnet", "\\S.*")];
 
 test("the terminal is intact after q with the switcher open and a roster read in flight: status 0, the held ssh of the read is gone, and stty -g, the pane's modes and every tmux option are what they were before the start, with the prompt on the row after the command", { skip: NO_TMUX }, async (t) => {
   await leavesTheTerminalIntact(t, {
@@ -1097,10 +1099,11 @@ test("it follows the terminal's size: at 60x15 the view still draws, the sidebar
   // The page is the whole screen from its first row: no title, no list and no cheat sheet; its
   // first row carries its keys at the right instead, dim, ending a cell from the edge: the
   // cheat sheet's but for the leader, the palette, help and quit.
+  const pageKeys = "Tab back   n spawn   w workspaces";
   const pageFaults = (screen) => [
     ...(screen.length === 24 ? [] : [`the screen has ${screen.length} rows, not 24`]),
     ...(screen.some((row) => [...row].length > 79) ? ["a row is longer than 79 cells"] : []),
-    ...(screen[0] === `${" > beta".padEnd(60)}Tab back   n spawn` ? [] : [`row 1 is ${JSON.stringify(screen[0])}, not the detail's title with its keys`]),
+    ...(screen[0] === `${" > beta".padEnd(78 - pageKeys.length)}${pageKeys}` ? [] : [`row 1 is ${JSON.stringify(screen[0])}, not the detail's title with its keys`]),
     ...(screen.includes("   parent   alpha") ? [] : ["no row names the parent"]),
     ...(screen.some((row) => row === " fixture" || /^[> ] +○ \w/.test(row) || LEAD_ROW.test(row)) ? ["a row of the sidebar is still shown"] : []),
   ];
@@ -1191,7 +1194,7 @@ test("started outside a deployment and with no --dir, it opens on the switcher w
   await leavesTheTerminalIntact(t, {
     how: "q in the switcher of a run started outside a deployment", status: 0, env: { HOME: home, OATS_HOME_DIR: listed }, size: { cols }, leave: (term) => term.press("q"),
     // Nothing is open yet: Esc has no view to close the switcher onto, and the cheat sheet does not offer it.
-    start: { args: "", first: (run) => run.switcher("at the start", { open: false, removable: true, body: [OFFERED, choice("acme-ledger", "~/acme-ledger", { selected: true }, cols)] }) },
+    start: { args: "", first: (run) => run.switcher("at the start", { open: false, removable: true, body: [OFFERED, choiceLike("acme-ledger", "(?:\\S.* · )?~/acme-ledger", { selected: true }, cols)] }) },
     arrive: async (term, run) => {
       term.press("Enter");
       // The view of that deployment: its folder's name in the title, and the state and the
