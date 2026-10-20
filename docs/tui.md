@@ -1420,7 +1420,9 @@ TUI reads the keys. The help lists its keys under The palette.
   does the cluster, the root and the child: the one with the instance opened
   or shown most recently in this run first, then the list's order (the
   sidebar keeps its own order). When the first instance is the shown tab's,
-  the second is selected as the palette opens.
+  the palette opens on the instance shown before it, wherever its group puts
+  it (the second instance, when none was shown before): `Enter` goes back to
+  that terminal.
 - **An instance's row** has its state mark, its name, for another machine
   `on <machine>`, and, dim, its siblings as the detail names them
   (`sibling of <names>`), which are cut first when the row is short and are
