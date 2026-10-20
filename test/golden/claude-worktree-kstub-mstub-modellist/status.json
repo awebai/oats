@@ -396,6 +396,7 @@
           "launched": false,
           "startedAt": null,
           "identityAddress": null,
+          "color": null,
           "running": false,
           "waitingOnYou": null,
           "soul": {
