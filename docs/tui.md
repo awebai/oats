@@ -100,7 +100,7 @@ runs.
  Instances                          1 │   state    running
 > ● dev                               │   harness  claude, claude-opus-5-5 (so…
                                       │   work     worktree, agents/dev
-  ● reviewer                         !│   team     eng
+  ● reviewer              Needs input │   team     eng
     ○ helper                          │   started  11:00
 ──────────────────────────────────────│   home     …oy/agents/dev/instances/dev
  Souls                              2 │

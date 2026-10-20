@@ -1105,9 +1105,9 @@ test("under NO_COLOR the reverse video alone carries the tag: the waiting colour
   }
 });
 
-test("a narrow row: the tag gives way first, to its short form, still reversed, and only then do the word and the name give way as on a row with no tag; it never takes a cell from the mark, the name or the word, from the whole-width sidebar down to the narrowest the frame draws", () => {
-  const narrowest = listWidth(WIDE), widest = WIDE - 1;
-  assert.equal(narrowest, 38);
+test("a narrow row: the tag gives way first, to its short form, still reversed, and only then do the word and the name give way as on a row with no tag; it never takes a cell from the mark, the name or the word, from the whole-width sidebar down to the narrowest the frame draws, the sidebar beside an open terminal", () => {
+  const narrowest = LIST_BESIDE, widest = WIDE - 1;
+  assert.equal(narrowest, 30);
   const WORD = "state unknown";
   for (const [what, more, words, short] of TAGGED) for (const depth of [0, 1, 5]) for (const name of ["dev", "acme-ledger-dev", "acme-ledger-developer-note-target"]) for (const word of [null, WORD]) for (const ascii of [false, true]) {
     let shrunk = false;
@@ -3319,6 +3319,27 @@ test("beside the list the panel is never narrower than PANEL_MIN (40): at 80 col
     assert.equal(t.cols >= PANEL_MIN + 1, true, `${cols}: ${t.cols}`);
   }
   assert.equal(drawPanel(panelIn("focus"), size(WIDE - 1, 24)).terminal.whole, true);
+});
+
+test("with a terminal open, in the sidebar's 30 columns, a waiting row whose whole name fits beside the words says `Needs input` and one whose name does not says `!`, reversed, its name cut as on a row that does not wait; the open, selected row's tag is not reversed", () => {
+  const LONG = "dev-z-with-a-name-far-longer-than-the-list";
+  for (const ascii of [false, true]) {
+    const rows = [instanceRow("dev", "dev-a", { waitingOnYou: { ...QUESTION } }), instanceRow("dev", "dev-b", { waitingOnYou: { ...QUESTION } }), instanceRow("dev", LONG, { waitingOnYou: { ...QUESTION } }), instanceRow("dev", "dev-c")];
+    const all = stateOf(observed(rows), { ascii });
+    let s = keyed(Object.freeze({ ...all, selected: roster(all).rows.find(({ row }) => row.instance === "dev-a").id }), "enter");
+    s = leaderEscape(reduce(s, { shown: { id: s.terminal.id } }).state).state;
+    for (const sz of PANEL_WIDE) {
+      const d = drawPanel(s, sz), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`, row = (name) => listRows(d).find((r) => cellText(d, r, 0, LIST_BESIDE).includes(name.slice(0, 12)));
+      assert.equal(d.cols, LIST_BESIDE, at);
+      const mark = marksOf(ascii).running, cut = glyphsOf(ascii).cut;
+      assert.deepEqual([tagAt(d, row("dev-a"), LIST_BESIDE)?.style, tagAt(d, row("dev-a"), LIST_BESIDE)?.words], [TAG_SELECTED, NEEDS_INPUT], `${at}: the open row, selected`);
+      assert.equal(cellText(d, row("dev-b"), 0, LIST_BESIDE), tagged(`  ${mark} dev-b`, LIST_BESIDE), at);
+      assert.equal(tagAt(d, row("dev-b"), LIST_BESIDE)?.style, TAG, at);
+      assert.equal(cellText(d, row(LONG), 0, LIST_BESIDE), tagged(`  ${mark} ${LONG.slice(0, LIST_BESIDE - 4 - 5 - cut.length)}${cut}`, LIST_BESIDE, "!"), `${at}: the name cut inside the cells a row keeps, the short tag in them`);
+      assert.equal(tagAt(d, row(LONG), LIST_BESIDE)?.style, TAG, at);
+      assert.equal(tagAt(d, row("dev-c"), LIST_BESIDE), null, `${at}: a row that does not wait has no tag`);
+    }
+  }
 });
 
 test("with a terminal open the sidebar keeps 30 columns at most, beside the terminal or the detail in its place, and a name longer than its row is cut there with the cut mark; closed, the sidebar has its width again", () => {
