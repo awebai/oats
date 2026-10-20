@@ -36,7 +36,7 @@ const SENDS = {
   "app.workspaces": ctrlAlt("O"),
   "roster.openPrevious": { data: "\x1b[1;4A", plainer: null },
   "roster.openNext": { data: "\x1b[1;4B", plainer: null },
-  "terminal.zoom": ctrlAlt("Z"),
+  "terminal.focusMode": ctrlAlt("Z"),
   "stage.automations": { data: "\x1b", plainer: "Escape" },
   "tabs.next": { data: "\t", plainer: "Tab" },
   "tabs.prev": { data: "\x1b[Z", plainer: "Shift+Tab" },
@@ -261,7 +261,7 @@ test("Windows: where AltGr types nothing, the shared Ctrl+Alt chords are the Des
   // Spanish and Polish type nothing on K, P, W, F; Spanish nothing on O, Z, A either.
   for (const [layout, k, id] of [
     ["Spanish", "k", "app.palette"], ["Spanish", "p", "app.quickOpenSouls"], ["Spanish", "w", "tabs.close"], ["Spanish", "f", "sidebar.focusFilter"],
-    ["Spanish", "o", "app.workspaces"], ["Spanish", "z", "terminal.zoom"], ["Spanish", "a", "split.focusNextGroup"], ["Spanish", "9", "tabs.goto9"],
+    ["Spanish", "o", "app.workspaces"], ["Spanish", "z", "terminal.focusMode"], ["Spanish", "a", "split.focusNextGroup"], ["Spanish", "9", "tabs.goto9"],
     ["Polish", "k", "app.palette"], ["Polish", "p", "app.quickOpenSouls"], ["Polish", "w", "tabs.close"], ["Polish", "f", "sidebar.focusFilter"],
   ]) {
     const name = `${layout} Ctrl+Alt+${k.toUpperCase()}`;

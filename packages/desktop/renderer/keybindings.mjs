@@ -61,9 +61,10 @@ const baseKey = (key) => { const k = String(key || "").toLowerCase(); return KEY
  * (`KeyboardEvent.key` already holds the shift). Letters keep their case: `N` is Shift+N. */
 const shiftFreeKey = (key) => [...key].length === 1 && !/\p{L}/u.test(key) && /\S/u.test(key);
 
-/** The chord's own spelling of its key, and Shift dropped where the rule above says so. */
-function settleChord(chord) {
-  if (chord.mod || chord.ctrl || chord.alt) chord.key = MODIFIED_ALIASES.get(chord.key) || chord.key;
+/** The chord's own spelling of its key, and Shift dropped where the rule above says so. A key
+ * AltGr typed (`aliases` false) keeps its character: Spanish AltGr+1 is `|`, never `\`. */
+function settleChord(chord, aliases = true) {
+  if (chord.mod || chord.ctrl || chord.alt) { if (aliases) chord.key = MODIFIED_ALIASES.get(chord.key) || chord.key; }
   else if (shiftFreeKey(chord.key)) chord.shift = false;
   return chord;
 }
@@ -141,11 +142,39 @@ export function chordToString(chord) {
   return parts.join("+");
 }
 
+// macOS: Option changes the character a key types (⌥O is ø, ⌥1 ¡), so a chord that holds ⌥ with ⌘ or
+// ⌃ names its letter or digit key by the layout's own character for the physical key (`code`):
+// navigator.keyboard.getLayoutMap(), read at startup and whenever the window regains focus
+// (shell.mjs), else the letter `code` names. A digit key is its digit on every layout (the number
+// row's place: ⌘⌥ on AZERTY's & key is ⌘⌥1, go to tab 1). Linux/Windows read `key` (AltGr's
+// character must win there), and plain ⌥+key is typing.
+let layoutMap = null;
+/** The keyboard layout's map (code → base character), or null for none; tests inject one here. */
+export function setKeyboardLayoutMap(map) { layoutMap = map && typeof map.get === "function" ? map : null; }
+/** Read the layout map now (navigator.keyboard.getLayoutMap), keeping the last one if it fails. */
+export function readKeyboardLayout(nav = globalThis.navigator) {
+  try {
+    const pending = nav?.keyboard?.getLayoutMap?.();
+    if (pending && typeof pending.then === "function") return pending.then(setKeyboardLayoutMap, () => {});
+  } catch { /* no keyboard API */ }
+  return Promise.resolve();
+}
+function macOptionKey(e) {
+  const m = /^(?:Key([A-Z])|Digit([0-9]))$/.exec(String(e.code || ""));
+  if (!m) return null;
+  if (m[2]) return m[2];
+  let base = null;
+  try { base = layoutMap?.get(e.code); } catch { /* a broken map reads as none */ }
+  return typeof base === "string" && [...base].length === 1 ? base.toLowerCase() : (m[1] || m[2]).toLowerCase();
+}
+
 /** Build a chord object from a keydown event (for the recorder + matching).
  * On mac, metaKey is `Mod`; elsewhere ctrlKey is `Mod` (never both). */
 export function chordFromEvent(e, isMac = defaultIsMac()) {
-  const key = baseKey(e.key);
-  if (!key || ["meta", "control", "alt", "shift"].includes(key)) return null;
+  const optionChord = isMac && !!e.altKey && !!(e.metaKey || e.ctrlKey);
+  const key = (optionChord && macOptionKey(e)) || baseKey(e.key);
+  if (!key || ["meta", "control", "alt", "altgraph", "shift"].includes(key)) return null;
+  const altGraph = typeof e.getModifierState === "function" && e.getModifierState("AltGraph") === true;
   const chord = { key, mod: false, ctrl: false, alt: !!e.altKey, shift: !!e.shiftKey };
   if (isMac) {
     chord.mod = !!e.metaKey;
@@ -153,7 +182,7 @@ export function chordFromEvent(e, isMac = defaultIsMac()) {
   } else {
     chord.mod = !!e.ctrlKey; // Ctrl plays the Mod role; explicit meta ignored
   }
-  return settleChord(chord);
+  return settleChord(chord, !altGraph);
 }
 
 const NAMED_KEY_IDS = new Map([
@@ -241,14 +270,14 @@ const plainDefault = (does) => chordFromKeyId(PLAIN_KEYS.find((entry) => entry.d
 // reads each and its `does`, in the table's order. One string where both platforms have the same
 // chord. The shared tab moves are the second tab-cycling chords (tabs.prevPage, tabs.nextPage):
 // Ctrl+Tab and Ctrl+Shift+Tab stay the Desktop's own (tabs.next, tabs.prev). The leader's ↑ ↓ z
-// have actions of their own here (roster.openPrevious, roster.openNext, terminal.zoom: shell.mjs),
+// have actions of their own here (roster.openPrevious, roster.openNext, terminal.focusMode: shell.mjs),
 // which run what the leader then that key runs.
 export const CHORDS_READ = Object.freeze([
   ["app.palette", "palette"], ["app.quickOpenSouls", "spawn"], ["app.workspaces", "workspaces"],
   ["roster.openPrevious", "previous"], ["roster.openNext", "next"],
   ["tabs.prevPage", "tab-previous"], ["tabs.nextPage", "tab-next"],
   ...Array.from({ length: 9 }, (_, i) => [`tabs.goto${i + 1}`, `tab-${i + 1}`]),
-  ["terminal.zoom", "zoom"], ["tabs.close", "close-terminal"],
+  ["terminal.focusMode", "zoom"], ["tabs.close", "close-terminal"],
   ["split.vertical", "split-right"], ["split.horizontal", "split-down"], ["split.focusNextGroup", "group-next"],
   ["sidebar.focusFilter", "filter"],
 ].map(([id, does]) => Object.freeze({ id, does })));
@@ -279,7 +308,7 @@ export const DEFAULT_KEYMAP = Object.freeze({
   // Ctrl+Alt+Z on Linux/Windows, ⌘⌥↑/↓ and ⌘⌥Z on macOS.
   "roster.openPrevious": chordOf("roster.openPrevious"),
   "roster.openNext": chordOf("roster.openNext"),
-  "terminal.zoom": chordOf("terminal.zoom"),
+  "terminal.focusMode": chordOf("terminal.focusMode"),
   "app.chooseSoul": { mac: "Mod+N", other: "Ctrl+Shift+N" },
   "app.shortcuts": "Mod+,",
   // No default (spec F): ⌘⇧T is "reopen closed tab" in browsers and Ctrl+Shift+T "new tab" in
@@ -358,7 +387,7 @@ export function defaultBinding(actionId, isMac = defaultIsMac()) {
 // out: app.openFile (Ctrl+O) and focus.next/prevRegion (F6: mc, htop, nano).
 export const TERMINAL_ALLOWLIST = Object.freeze([
   "app.leader", "app.palette", "app.quickOpenSouls", "app.workspaces", "app.chooseSoul", "app.themePicker", "app.shortcuts", "terminal.copySelection",
-  "roster.openPrevious", "roster.openNext", "terminal.zoom",
+  "roster.openPrevious", "roster.openNext", "terminal.focusMode",
   "tabs.next", "tabs.prev", "tabs.nextPage", "tabs.prevPage", "tabs.close",
   ...Array.from({ length: 9 }, (_, i) => `tabs.goto${i + 1}`),
   "split.vertical", "split.horizontal", "split.close", "split.focusNextGroup",
@@ -645,6 +674,13 @@ const letThroughEvents = new WeakSet();
  * (the window listener or a terminal's interception). The leader pressed twice in a terminal. */
 export function letThrough(e) {
   if (e && typeof e === "object") letThroughEvents.add(e);
+}
+
+/** Does the keymap take this keydown here: would `matchEvent` (same options) run an action for
+ * it? For a view's own key handler: a key the keymap binds, the user's rebinds included, is the
+ * keymap's, and the view gives way; a key bound to nothing stays the view's. */
+export function keymapTakes(e, opts = {}) {
+  return matchEvent(e, opts) !== null;
 }
 
 /** Does the event press the effective chord of `actionId` (whatever its context)? */

@@ -139,7 +139,7 @@ test("the Desktop's chords are the module's entries, each read by one action", (
     palette: "app.palette", spawn: "app.quickOpenSouls", workspaces: "app.workspaces",
     previous: "roster.openPrevious", next: "roster.openNext", "tab-previous": "tabs.prevPage", "tab-next": "tabs.nextPage",
     ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tab-${i + 1}`, `tabs.goto${i + 1}`])),
-    zoom: "terminal.zoom", "close-terminal": "tabs.close", "split-right": "split.vertical", "split-down": "split.horizontal",
+    zoom: "terminal.focusMode", "close-terminal": "tabs.close", "split-right": "split.vertical", "split-down": "split.horizontal",
     "group-next": "split.focusNextGroup", filter: "sidebar.focusFilter",
   });
   for (const { id, does } of CHORDS_READ) {
@@ -209,7 +209,7 @@ test("change the module's entry in a copy: the Desktop's default follows, and ke
 // (c4d4a391) changed exactly its rows: the palette, Quick Open, close tab, filter and the splits
 // moved to Ctrl+Alt on Linux/Windows, the second tab-cycling chords to Alt+Shift+←/→ (⌘⌥←/→, new on
 // macOS), go to tab to Ctrl+Alt+digit; the workspace switcher and the next editor group got a chord;
-// roster.openPrevious, roster.openNext and terminal.zoom are new.
+// roster.openPrevious, roster.openNext and terminal.focusMode are new.
 const DEFAULTS = [
   ["app.leader",{"mac":"Ctrl+\\","other":"Alt+O"}],
   ["sidebar.key.instances","1"],
@@ -237,7 +237,7 @@ const DEFAULTS = [
   ["app.workspaces",{"mac":"Mod+Alt+O","other":"Ctrl+Alt+O"}],
   ["roster.openPrevious",{"mac":"Mod+Alt+↑","other":"Alt+Shift+↑"}],
   ["roster.openNext",{"mac":"Mod+Alt+↓","other":"Alt+Shift+↓"}],
-  ["terminal.zoom",{"mac":"Mod+Alt+Z","other":"Ctrl+Alt+Z"}],
+  ["terminal.focusMode",{"mac":"Mod+Alt+Z","other":"Ctrl+Alt+Z"}],
   ["app.chooseSoul",{"mac":"Mod+N","other":"Ctrl+Shift+N"}],
   ["app.shortcuts","Mod+,"],
   ["app.themeToggle",null],

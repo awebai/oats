@@ -82,8 +82,16 @@ Show instance panel and the closed sidebar and panel).
    `|` is `\`, `+` is `=`), so ⌘⇧\ matches. A plain chord keeps its
    character: one printable non-letter key (`?`, `|`, `[`, `/`) matches with
    whatever Shift the layout needed and is stored without Shift, so plain `|`
-   never fires on plain `\`; a letter keeps its case (`N` is Shift+N). The
-   tests dispatch the real shifted event, not a parse round-trip.
+   never fires on plain `\`; a letter keeps its case (`N` is Shift+N). A
+   character AltGr typed (`getModifierState("AltGraph")`) is never aliased:
+   Spanish AltGr+1 is `|`, not `Ctrl+Alt+\`. On macOS ⌥ changes the character
+   too (⌥O is ø, ⌥1 ¡), so a chord holding ⌥ with ⌘ or ⌃ names a letter key
+   by the physical key (`KeyboardEvent.code`), as the keyboard layout labels
+   it (`navigator.keyboard.getLayoutMap()`, read at startup and whenever the
+   window comes back; without it, the letter the code names), and a digit key
+   by its digit, on every layout (⌘⌥ on AZERTY's & key is ⌘⌥1): ⌘⌥O is
+   Mod+Alt+O on every layout, and the shortcuts editor records it so. Linux and Windows keep `key`, and plain ⌥+key is typing. The tests
+   dispatch the real shifted event, not a parse round-trip.
 
 ## How the engine holds it
 
@@ -111,7 +119,11 @@ Show instance panel and the closed sidebar and panel).
   action id *and* shape: Ctrl+Tab / Ctrl+Shift+Tab (`tabs.next`, `tabs.prev`)
   and the leader's ⌃\ (`app.leader`, principle 3's exception).
 - Unmodified chords never fire from an editable field; a view's own keys (the
-  overview canvas, the Souls grid) stay local to that view.
+  overview canvas, the Souls grid) stay local to that view. Where a view moves
+  with the arrows (the roster tree, the overview canvas, the Souls grid, a
+  row's actions button), an arrow chord the keymap binds is the keymap's
+  (`keymapTakes`): Alt+Shift+↑/↓ (⌥⌘↑/↓), or a rebind, works from there as
+  from anywhere, and an arrow chord bound to nothing stays the view's.
 
 ## The leader
 
@@ -164,7 +176,7 @@ change.
 terminal's instance when the leader was pressed in a terminal; else the
 focused roster row's; else the active terminal tab's; else none. The chords
 that do what ↑, ↓ and `z` do (`roster.openPrevious`, `roster.openNext`,
-`terminal.zoom`) run exactly what the leader then that key runs, for the
+`terminal.focusMode`) run exactly what the leader then that key runs, for the
 target where the chord was pressed, and say why in the same line when they
 cannot act.
 
@@ -176,7 +188,7 @@ cannot act.
 | `3` | Workspace › Capabilities |
 | ↑, ↓ | opens the terminal of the roster row before / after the target, as the roster is drawn (filter applied, collapsed rows absent), passing over rows whose Enter would not open a terminal; no wrap. With no target, ↓ opens the first and ↑ the last. Also `roster.openPrevious`, `roster.openNext` |
 | ←, → | previous / next tab (`tabs.prev`, `tabs.next`; the Desktop's cycling wraps, the TUI's does not) |
-| `z` | focus mode on or off (`app.focusMode`), and the active terminal takes focus. Also `terminal.zoom` |
+| `z` | focus mode on or off (`app.focusMode`), and the active terminal takes focus. Also `terminal.focusMode` |
 | `w` | closes the active tab (`tabs.close`); the agent keeps running |
 | `\|`, `-` | split right / split down (`split.vertical`, `split.horizontal`) |
 | Tab | focuses the next editor group's active tab, or the group when it is empty, wrapping (`split.focusNextGroup`) |
@@ -201,7 +213,7 @@ table, and the hint leaves it out.
 | Quick open a soul (`app.quickOpenSouls`) | ⌘P | Ctrl+Alt+P | yes (plain Ctrl+P, shell history, stays the program's) |
 | Workspace switcher (`app.workspaces`; the leader's `o`) | ⌥⌘O | Ctrl+Alt+O | yes |
 | Open the previous / next instance's terminal (`roster.openPrevious`, `roster.openNext`; the leader's ↑ ↓) | ⌥⌘↑ / ⌥⌘↓ | Alt+Shift+↑ / Alt+Shift+↓ | yes (a named exception, principle 2) |
-| Focus mode on or off, in the active terminal (`terminal.zoom`; the leader's `z`) | ⌥⌘Z | Ctrl+Alt+Z | yes |
+| Focus mode on or off, in the active terminal (`terminal.focusMode`; the leader's `z`) | ⌥⌘Z | Ctrl+Alt+Z | yes |
 | Spawn instance: choose a soul in Workspace (`app.chooseSoul`) | ⌘N | Ctrl+Shift+N | yes |
 | Close tab (`tabs.close`) | ⌘W | Ctrl+Alt+W | yes |
 | Next / previous tab (`tabs.next`, `tabs.prev`) | ⌃Tab / ⌃⇧Tab | Ctrl+Tab / Ctrl+Shift+Tab | yes |
@@ -348,8 +360,13 @@ a key types (`KeyboardEvent.key`). The chords whose keys type nothing there are
 the Desktop's as everywhere (Spanish Ctrl+Alt+K is the palette). For the
 others the leader still works (Alt+O, then the key: `|` splits right, `z` is
 focus mode), Ctrl+Tab still cycles the tabs where go to tab is the layout's,
-and the shortcuts editor can rebind the action. On Linux AltGr is a key of its
-own. `test/terminal-xterm-bytes.test.mjs` pins both layouts through the
+and the shortcuts editor can rebind the action. German gives up Ctrl+Alt+E (€)
+and the digits 2, 3, 7, 8 and 9 the same way. On AZERTY the digit row types
+& é " ' … without Shift, so on Linux and Windows Ctrl+Alt+1 arrives as `&`
+and go to tab never matches there (as Alt+digit did not before); on macOS
+⌘⌥ with the digit key matches, whatever the layout types on it. A character AltGr types is never
+read as another key: Spanish AltGr+1 is `|`, never a binding on `Ctrl+Alt+\`.
+On Linux AltGr is a key of its own. `test/terminal-xterm-bytes.test.mjs` pins both layouts through the
 terminal's own key path.
 
 ### Sidebar keys
@@ -604,7 +621,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Add / onboard workspace dialog | From the menu's Add | Radio-style suggestions with arrows; Esc; trapped; returns to the trigger |
 | Sidebar nav (Deployments, Workspace, Automations) | F6 (current item); Tab; ⌘1/⌘2/⌘3 | Enter/Space |
 | Roster filter | Tab; ⌘F / Ctrl+Alt+F; **Down from it enters the rows (fixed): while filtering, at the first match, never a parent kept only to show its tree path** | Typing filters |
-| Roster rows | One roving stop, **the selected row, else the first filter match (fixed: was the first enabled)**; F6; the leader then Esc; Up/Down/Home/End (and the TUI's `k` `j` `g` `G`), PageUp/PageDown by the rows that fit; Right (`l`) expands, Left (`h`) collapses or goes to the parent; the sidebar keys (see "Sidebar keys"). A collapse or a filter never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is. The list shows no scrollbar (the wheel and the touchpad scroll it): a row that takes keyboard focus (these keys, the filter's Down, F6) is revealed whole, its tools included, by scrolling the list alone, never an ancestor | Enter/Space open the terminal (running) or Start (stopped); an arrow held with Alt or ⌘ is the keymap's, so Alt+Shift+↑/↓ (⌥⌘↑/↓) open the terminal of the row above / below, as from anywhere |
+| Roster rows | One roving stop, **the selected row, else the first filter match (fixed: was the first enabled)**; F6; the leader then Esc; Up/Down/Home/End (and the TUI's `k` `j` `g` `G`), PageUp/PageDown by the rows that fit; Right (`l`) expands, Left (`h`) collapses or goes to the parent; the sidebar keys (see "Sidebar keys"). A collapse or a filter never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is. The list shows no scrollbar (the wheel and the touchpad scroll it): a row that takes keyboard focus (these keys, the filter's Down, F6) is revealed whole, its tools included, by scrolling the list alone, never an ancestor | Enter/Space open the terminal (running) or Start (stopped); an arrow chord the keymap binds is the keymap's, so Alt+Shift+↑/↓ (⌥⌘↑/↓) open the terminal of the row above / below, as from anywhere |
 | Rows whose state is unknown or that the kernel does not report addressable | **Focusable, `aria-disabled` with the reason as a description (fixed: were `disabled`, which hid their tools from the keyboard)** | Activation does nothing; their tools work |
 | Row tools: PR link, Start…, actions menu | Tab from the focused row (shown on focus) | Enter/Space; the menu: arrows, Home/End, Esc back on its trigger, Tab closes |
 | Start / Restart dialog, lifecycle dialog | From the row or its menu | Esc (Cancel before anything is sent, Close or Done after); trapped; the lifecycle dialog starts on Cancel and focuses Close or Done when it ends; **focus returns to the row when its tool is hidden again (fixed: fell to `<body>`)**, and after a retire to the row that followed it |

@@ -31,7 +31,7 @@ import {
   apiJson, postJson, ensureTheme,
   currentWorkspace, switchWorkspace, onWorkspaceChange, wsQuery, workspaceGeneration,
 } from "./common.mjs";
-import { registerAction, getBinding, formatChord, onKeymapChange } from "../keybindings.mjs";
+import { registerAction, getBinding, formatChord, onKeymapChange, keymapTakes } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { cliAvailable, cliKnownUnavailable, cliStatus, refreshCli, onCliChange, cliCard } from "./cli-status.mjs";
 import { preselectSchedule } from "./schedules.mjs";
@@ -977,9 +977,8 @@ function onGridKey(s, e) {
   if (!cards.length) return;
   const cur = focusedCard(s);
   const at = cur ? cards.indexOf(cur) : -1;
-  // An arrow held with Alt or ⌘ is a chord (the shared Alt+Shift+↑/↓, ⌘⌥↑/↓), the keymap's from a card too.
-  const arrow = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(e.key);
-  if (arrow && (e.altKey || e.metaKey)) return;
+  // An arrow chord the keymap binds (the shared Alt+Shift+↑/↓, ⌘⌥↑/↓; a rebind) is the keymap's from a card too.
+  if (["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(e.key) && keymapTakes(e)) return;
   if (["ArrowRight", "ArrowDown"].includes(e.key)) {
     e.preventDefault();
     focusCard(s, cards, Math.min(cards.length - 1, at + 1));

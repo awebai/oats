@@ -32,7 +32,7 @@ import { createFocusRegions, firstTabbable, isShown } from "./focus-regions.mjs"
 import { createFileOpener } from "./open-file.mjs";
 import {
   registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction, keymapConflicts, pickerCycleDirection,
-  listActions, SIDEBAR_KEYS,
+  listActions, readKeyboardLayout, SIDEBAR_KEYS,
 } from "./keybindings.mjs";
 import { createLeader } from "./leader.mjs";
 import { createLeaderHint } from "./leader-hint.mjs";
@@ -2770,6 +2770,12 @@ function focusNextGroup() {
 // engine must not double-dispatch them.
 // The engine skips already-consumed (defaultPrevented) events itself.
 window.addEventListener("keydown", (e) => handleKeydown(e));
+// macOS: a ⌘⌥ / ⌃⌥ chord names its key by the layout's character for it (keybindings.mjs
+// readKeyboardLayout), read now and whenever the window comes back (the layout may have changed).
+if (isMac) {
+  void readKeyboardLayout(navigator);
+  window.addEventListener("focus", () => { void readKeyboardLayout(navigator); });
+}
 
 // ── the leader (Alt+O / Ctrl+\, the TUI's): one key after it, from every focus ──────────
 // leader.mjs settles the wait on the next key; leader-keys.mjs says which rows apply and their
@@ -2908,7 +2914,7 @@ for (const { id, does } of SIDEBAR_KEYS) {
 // The leader's ↑ / ↓ / z on chords of their own (the shared CHORDS previous, next, zoom: Alt+Shift+↑/↓
 // and Ctrl+Alt+Z, ⌘⌥↑/↓ and ⌘⌥Z): each runs exactly what the leader then that key runs, for the
 // same target, from every focus. Inert under a modal dialog or the palette, as the leader is.
-for (const [id, does] of [["roster.openPrevious", "previous"], ["roster.openNext", "next"], ["terminal.zoom", "zoom"]]) {
+for (const [id, does] of [["roster.openPrevious", "previous"], ["roster.openNext", "next"], ["terminal.focusMode", "zoom"]]) {
   registerAction({ id, label: leaderLabel(does, actionLabel), context: "global", when: () => !modalOpen(), run: (e) => runAsLeaderKey(does, e) });
 }
 

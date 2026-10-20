@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { rosterKeyAction, rosterKeyDoes, moveTarget, rovingIndex } from "../renderer/roster-keys.mjs";
 import { plainKeys } from "../../client/keymap.mjs";
+import { registerAction, setBinding, resetAllBindings } from "../renderer/keybindings.mjs";
 
 test("arrows walk rows; Right expands a collapsed branch, else moves down", () => {
   assert.deepEqual(rosterKeyAction({ key: "ArrowDown" }), { type: "move", delta: 1 });
@@ -55,12 +56,9 @@ test("k j g G h l do what the arrows, Home and End do; held with Ctrl, Alt or �
   for (const mods of [{ ctrlKey: true }, { altKey: true }, { metaKey: true }]) assert.equal(rosterKeyAction({ key: "j", ...mods }), null);
   assert.deepEqual(rosterKeyAction({ key: "ArrowDown", shiftKey: true }), { type: "move", delta: 1 }, "the arrows as they always were");
   assert.deepEqual(rosterKeyAction({ key: "ArrowDown", ctrlKey: true }), { type: "move", delta: 1 });
-  // Held with Alt or ⌘ an arrow is a chord, the keymap's (Alt+Shift+↑/↓ and ⌘⌥↑/↓ open the previous /
-  // next instance's terminal; Alt+Shift+←/→ and ⌘⌥←/→ move between tabs): the row lets it through.
-  for (const key of ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]) {
-    for (const mods of [{ altKey: true, shiftKey: true }, { metaKey: true, altKey: true }, { altKey: true }]) {
-      assert.equal(rosterKeyAction({ key, ...mods }, { hasChildren: true, collapsed: false }), null, `${key} ${JSON.stringify(mods)}`);
-    }
+  // With nothing bound in the keymap, every modifier on an arrow is still the tree's.
+  for (const mods of [{ altKey: true, shiftKey: true }, { altKey: true }, { metaKey: true }]) {
+    assert.deepEqual(rosterKeyAction({ key: "ArrowUp", ...mods }), { type: "move", delta: -1 }, JSON.stringify(mods));
   }
   // The letters are the shared table's, not a copy of it.
   for (const does of ["up", "down", "top", "bottom", "collapse", "expand", "page-up", "page-down"]) {
@@ -80,4 +78,23 @@ test("PageUp/PageDown move by the rows that fit the list, clamped", () => {
   assert.equal(moveTarget({ page: -1 }, 3, 30, 8), 0, "clamped at first");
   assert.equal(moveTarget({ page: 1 }, 0, 30, 0), 1, "a list too short for one row still moves one");
   assert.equal(moveTarget({ delta: 1 }, 0, 30, 8), 1, "an arrow is still one row");
+});
+
+// A named key the keymap binds is the keymap's on a row (keybindings.mjs keymapTakes), so the shared
+// Alt+Shift+↑/↓ (roster.openPrevious / roster.openNext) open the terminal above / below from a row, and
+// a rebind follows; an arrow chord bound to nothing (Alt+↑, Ctrl+↓) still moves, as it always did.
+test("a row gives way to the keymap's arrow chords, and only to those", t => {
+  resetAllBindings();
+  const offs = ["roster.openPrevious", "roster.openNext", "tabs.prevPage", "tabs.nextPage"]
+    .map(id => registerAction({ id, label: id, context: "global", run: () => {} }));
+  t.after(() => { offs.forEach(off => off()); resetAllBindings(); });
+  const row = { hasChildren: true, collapsed: false };
+  for (const key of ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]) {
+    assert.equal(rosterKeyAction({ key, altKey: true, shiftKey: true }, row), null, `Alt+Shift+${key} is the keymap's`);
+  }
+  assert.deepEqual(rosterKeyAction({ key: "ArrowUp", altKey: true }, row), { type: "move", delta: -1 }, "Alt+↑ is bound to nothing");
+  assert.deepEqual(rosterKeyAction({ key: "ArrowDown", ctrlKey: true, shiftKey: true }, row), { type: "move", delta: 1 });
+  setBinding("roster.openNext", "Ctrl+Shift+↓");
+  assert.equal(rosterKeyAction({ key: "ArrowDown", ctrlKey: true, shiftKey: true }, row), null, "the rebind is the keymap's");
+  assert.deepEqual(rosterKeyAction({ key: "ArrowDown", altKey: true, shiftKey: true }, row), { type: "move", delta: 1 }, "the old default is the tree's again");
 });

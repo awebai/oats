@@ -1327,8 +1327,15 @@ section is the module map.
   `app.quickOpenSouls` (⌘P / Ctrl+Alt+P) among them, while plain Ctrl+K
   and Ctrl+P stay the program's (readline's kill-line, shell history).
   The leader's ↑ ↓ z have actions of their own (`roster.openPrevious`,
-  `roster.openNext`, `terminal.zoom`, shell.mjs `runAsLeaderKey`), which run
+  `roster.openNext`, `terminal.focusMode`, shell.mjs `runAsLeaderKey`), which run
   what the leader then that key runs.
+  `keymapTakes(e)` tells a view's own key handler that the keymap binds this
+  keydown (matchEvent's answer, nothing run); the roster tree, the overview
+  canvas, the Souls grid and a row's actions button give way to it on their
+  arrows. On macOS a chord holding ⌥ with ⌘ or ⌃ names its letter or digit by
+  `KeyboardEvent.code`, as the layout labels it (`readKeyboardLayout`, called
+  by the shell at startup and on window focus; `setKeyboardLayoutMap` for
+  tests), since ⌥ changes `key`; a character AltGr typed is never aliased.
 - **focus-regions.mjs** — F6 / Shift+F6 (`focus.nextRegion`/`prevRegion`,
   outside a terminal; `focus.leaveTerminal` from inside one): sidebar nav →
   roster → main → instance panel, hidden regions skipped, each region's

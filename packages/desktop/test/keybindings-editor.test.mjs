@@ -71,6 +71,11 @@ test("recording: keydown sets the binding; Esc cancels; Backspace unbinds", (t) 
   doc.dispatchEvent(key(doc, "p", { metaKey: true, shiftKey: true }));
   assert.equal(getBinding("app.palette", true), "Mod+Shift+P");
   assert.equal(rowFor("Command palette").querySelector(".kb-chord").textContent, "⇧⌘P");
+  // macOS ⌘⌥O as a Mac reports it (⌥ makes `key` "ø"): recorded by the physical key, Mod+Alt+O.
+  rowFor("Command palette").querySelector(".kb-chord").click();
+  doc.dispatchEvent(key(doc, "ø", { code: "KeyO", metaKey: true, altKey: true }));
+  assert.equal(getBinding("app.palette", true), "Mod+Alt+O");
+  assert.equal(rowFor("Command palette").querySelector(".kb-chord").textContent, "⌥⌘O");
 
   // Esc cancels without changing the binding
   rowFor("Close tab").querySelector(".kb-chord").click();

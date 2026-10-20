@@ -167,3 +167,36 @@ test("spawn MODAL controls are excluded from view-key dispatch: '/' and 'B' from
     dom.window.close();
   }
 });
+
+// A card's arrows give way to the keymap only for a chord it binds (keybindings.mjs keymapTakes): the
+// shared Alt+Shift+↑/↓ open the previous / next instance's terminal from a card too, and a rebind
+// follows; an arrow chord bound to nothing (Alt+↓) still moves between the cards. The overview canvas
+// (views/hierarchy.mjs) and the roster rows (roster-keys.mjs) give way the same way.
+test("spawn grid: the keymap's arrow chords pass the cards; an unbound arrow chord still moves", async () => {
+  const dom = new JSDOM('<!doctype html><html><body><div id=host></div></body></html>', { url: "http://localhost" });
+  const oldDoc = globalThis.document, oldWin = globalThis.window;
+  const kb = await import("../renderer/keybindings.mjs");
+  kb.resetAllBindings();
+  const offs = ["roster.openPrevious", "roster.openNext"].map(id => kb.registerAction({ id, label: id, context: "global", run: () => {} }));
+  try {
+    const { spawn } = await mountSpawn(dom);
+    const doc = dom.window.document;
+    const cards = [...doc.querySelectorAll(".soul-card")];
+    cards[0].focus();
+    const chord = key(doc, cards[0], "ArrowDown", { altKey: true, shiftKey: true });
+    assert.equal(chord.defaultPrevented, false, "Alt+Shift+↓ is the keymap's");
+    assert.equal(doc.activeElement, cards[0], "the card keeps focus");
+    const alt = key(doc, cards[0], "ArrowDown", { altKey: true });
+    assert.equal(alt.defaultPrevented, true, "Alt+↓ is bound to nothing: the grid's");
+    assert.equal(doc.activeElement, cards[1]);
+    kb.setBinding("roster.openPrevious", "Ctrl+Shift+↑");
+    const rebound = key(doc, cards[1], "ArrowUp", { ctrlKey: true, shiftKey: true });
+    assert.equal(rebound.defaultPrevented, false, "the rebind is the keymap's");
+    assert.equal(doc.activeElement, cards[1]);
+    spawn.unmount();
+  } finally {
+    offs.forEach(off => off()); kb.resetAllBindings();
+    globalThis.document = oldDoc; globalThis.window = oldWin;
+  }
+  dom.window.close();
+});

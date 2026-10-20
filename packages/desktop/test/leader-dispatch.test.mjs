@@ -178,11 +178,11 @@ test("a leader key whose row does not apply now says why; only an unsupported ke
 });
 
 // The leader's ↑ / ↓ / z on chords of their own (packages/client/keymap.mjs CHORDS previous, next,
-// zoom): roster.openPrevious, roster.openNext and terminal.zoom run the shipped runAsLeaderKey, as the
+// zoom): roster.openPrevious, roster.openNext and terminal.focusMode run the shipped runAsLeaderKey, as the
 // sidebar keys do. Driven here beside the leader's own settle (onSettle, as shipped and pinned above,
 // with the origin leader.start gets: the target where the key was pressed), over one roster.
-test("roster.openPrevious, roster.openNext and terminal.zoom run what the leader's ↑, ↓ and z run", () => {
-  assert.match(shellSource, /for \(const \[id, does\] of \[\["roster\.openPrevious", "previous"\], \["roster\.openNext", "next"\], \["terminal\.zoom", "zoom"\]\]\) \{\n  registerAction\(\{ id, label: leaderLabel\(does, actionLabel\), context: "global", when: \(\) => !modalOpen\(\), run: \(e\) => runAsLeaderKey\(does, e\) \}\);/);
+test("roster.openPrevious, roster.openNext and terminal.focusMode run what the leader's ↑, ↓ and z run", () => {
+  assert.match(shellSource, /for \(const \[id, does\] of \[\["roster\.openPrevious", "previous"\], \["roster\.openNext", "next"\], \["terminal\.focusMode", "zoom"\]\]\) \{\n  registerAction\(\{ id, label: leaderLabel\(does, actionLabel\), context: "global", when: \(\) => !modalOpen\(\), run: \(e\) => runAsLeaderKey\(does, e\) \}\);/);
   assert.match(shellSource, /const at = e\?\.target \?\? document\.activeElement; leader\.start\(\{ targetId: leaderTargetId\(at\) \}\)/);
   assert.deepEqual(["previous", "next", "zoom"].map(does => leaderLabel(does)),
     ["Open the previous instance's terminal", "Open the next instance's terminal", "Focus mode on or off, in the active terminal"]);
