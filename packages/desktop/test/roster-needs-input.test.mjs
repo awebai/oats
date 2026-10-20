@@ -20,6 +20,7 @@ import { iconElement } from "../renderer/shell-icons.mjs";
 import { createRosterTip, rosterTipFacts } from "../renderer/roster-tip.mjs";
 import { waitingClock } from "../../client/waiting-on-you.mjs";
 import { createTabChrome } from "../renderer/tab-a11y.mjs";
+import { prChip, prText } from "../renderer/roster-pr.mjs";
 import { NO_ANSWER_CODE, unservedError } from "../renderer/deployment-header.mjs";
 import { remotePanel, unavailableGroups } from "../../client/remote-roster.mjs";
 import { kernelRemoteRow, kernelRemoteGroup, remoteRows } from "./helpers/kernel-remote-row.mjs";
@@ -80,17 +81,25 @@ function fixture(t, extra = {}) {
   return { doc, dom, context, render, failRosterUnserved, openTab, list, row, marks, facts, fact };
 }
 
-test("a running, waiting row shows “Needs input” on its name line: an icon and text, part of the row's accessible name", async t => {
+test("a running, waiting row shows “Needs input” in place of its meta line: an icon and text, part of the row's accessible name", async t => {
   const u = fixture(t);
-  u.render([instance("dev-a", undefined, { waitingOnYou: claim() }), instance("dev-b")]);
+  u.render([instance("dev-a", undefined, { waitingOnYou: claim(), branch: "feature/x" }), instance("dev-b")]);
   const [mark] = u.marks("dev-a");
   assert.ok(mark, "the mark is painted");
   assert.equal(mark.textContent, "Needs input");
   assert.equal(mark.className, "ctx-attn");
   assert.equal(mark.querySelector("svg").getAttribute("aria-hidden"), "true", "the text carries the state; the icon is decoration");
-  assert.equal(mark.parentElement.className, "ctx-name-line");
-  assert.equal(mark.previousElementSibling.className, "ctx-name", "after the name");
-  assert.match(u.row("dev-a").textContent, /^dev-aNeeds input/, "in the row button's name");
+  // Human, 2026-10-20: the name line holds the name alone, at its full width; the mark takes the second line.
+  const line = mark.parentElement;
+  assert.equal(line.className, "ctx-meta ctx-attn-line");
+  assert.deepEqual([...line.childNodes], [mark], "the mark in place of the line's text");
+  assert.equal(line.title, "Repository: desktop-repo\nBranch: feature/x", "the line keeps its own title");
+  assert.equal(line.previousElementSibling.className, "ctx-name", "under the name");
+  assert.equal(u.row("dev-a").querySelector(".ctx-name-line"), null, "the name line is the name alone");
+  assert.equal(u.row("dev-a").textContent, "dev-aNeeds input", "in the row button's name");
+  // The repository and branch stay in the hover card.
+  assert.deepEqual([u.fact("dev-a", "Repo"), u.fact("dev-a", "Branch")], ["desktop-repo", "feature/x"]);
+  assert.equal(u.row("dev-b").querySelector(".ctx-meta").textContent, "desktop-repo", "a row without a mark keeps its meta line");
   assert.ok(u.row("dev-a").querySelector(".ctx-dot.on"), "the dot stays liveness");
   assert.equal(u.marks("dev-b").length, 0);
   assert.equal(u.row("dev-b").querySelector(".ctx-name-line"), null, "a row without marks keeps its plain name");
@@ -160,11 +169,47 @@ test("the mark disappears on the first repaint after the claim clears", async t 
   assert.equal(u.marks("dev-a").length, 0, "absent is unknown, never a mark");
 });
 
-test("with New: Needs input first, then New, both on the name line", async t => {
+test("with New: New stays on the name line, Needs input on the line under it", async t => {
   const u = fixture(t, { jobs: { isNew: (_ws, i) => i.instance === "dev-a" } });
   u.render([instance("dev-a", undefined, { waitingOnYou: claim() })]);
   const line = u.row("dev-a").querySelector(".ctx-name-line");
-  assert.deepEqual([...line.children].map(el => el.className), ["ctx-name", "ctx-attn", "ctx-new"]);
+  assert.deepEqual([...line.children].map(el => el.className), ["ctx-name", "ctx-new"]);
+  assert.equal(line.nextElementSibling.className, "ctx-meta ctx-attn-line");
+  assert.equal(line.nextElementSibling.textContent, "Needs input");
+});
+
+test("a waiting row with a pull request: the mark replaces the chip and the branch; the card and the row tools keep the PR", async t => {
+  const pr = { home: "/synthetic/dev-a", number: 317, state: "OPEN", isDraft: false, url: "https://github.com/o/r/pull/317" };
+  const u = fixture(t, { context: { prChip, prText, rosterPrs: { get: home => home === pr.home ? pr : null, refresh() {} } } });
+  u.render([instance("dev-a", undefined, { waitingOnYou: claim(), branch: "feature/x" }), instance("dev-b", undefined, { home: pr.home.replace("dev-a", "dev-b") })]);
+  assert.equal(u.row("dev-a").querySelector(".ctx-pr"), null, "no chip on the row");
+  assert.equal(u.row("dev-a").querySelector(".ctx-meta").textContent, "Needs input");
+  assert.equal(u.fact("dev-a", "Pull request"), prText(pr));
+  assert.ok(u.row("dev-a").parentElement.querySelector(".ctx-pr-open"), "its Open pull request tool stays");
+});
+
+test("a row with no card (unavailable) whose mark replaced its meta line says the repository and branch in its title and description", async t => {
+  // A local root whose state is unknown (unavailable: no card), collapsed over a running, waiting child.
+  const rows = [instance("root", undefined, { running: null, runtimeState: "unreachable", branch: "feature/root" }), instance("kid", "root", { waitingOnYou: claim() })];
+  const u = fixture(t, { context: { collapsedInstances: new Set([tree.collapseKey("A", "/synthetic/root")]) } });
+  u.render(rows);
+  const root = u.row("root"), said = root.getAttribute("aria-description");
+  assert.equal(root.getAttribute("aria-disabled"), "true");
+  assert.equal(u.marks("root")[0].textContent, "1 below need input");
+  assert.match(said, / · desktop-repo · feature\/root · 1 below need input: kid$/, "why, then where, then the wait");
+  assert.equal(root.title, said);
+  assert.equal(root.querySelector(".ctx-attn-line").title, "Repository: desktop-repo\nBranch: feature/root");
+  // A row whose line is its own (no mark) keeps its description as it was.
+  u.render([instance("root", undefined, { running: null, runtimeState: "unreachable", branch: "feature/root" })]);
+  assert.doesNotMatch(u.row("root").getAttribute("aria-description") ?? "", /desktop-repo/);
+});
+
+test("a held home keeps its state on the meta line; its description says the wait", async t => {
+  const u = fixture(t);
+  u.render([instance("dev-a", undefined, { waitingOnYou: claim(), retireInFlight: true })]);
+  assert.equal(u.marks("dev-a").length, 0, "the held state wins the line");
+  assert.equal(u.row("dev-a").querySelector(".ctx-meta").className, "ctx-meta ctx-spawn-state");
+  assert.match(u.row("dev-a").getAttribute("aria-description"), /Needs input: Waiting for a tool approval since /);
 });
 
 test("CSS: the pill keeps its size, paints its own opaque surface with background-color, and never animates", () => {
@@ -173,7 +218,7 @@ test("CSS: the pill keeps its size, paints its own opaque surface with backgroun
   for (const decl of ["flex: none", "display: inline-flex", "background-color: var(--attn-bg)", "color: var(--warn)",
     "border: 1px solid var(--attn-border)", "font-size: 10.5px", "font-weight: 600", "line-height: 15px"]) assert.ok(rule.includes(decl), decl);
   assert.doesNotMatch(rule, /background:|opacity|animation|transition/);
-  assert.match(css, /\.ctx-name-line > \.ctx-name \{ min-width: 0; \}/, "the name is what ellipsizes");
+  assert.match(css, /\.ctx-meta\.ctx-attn-line \{ display: flex; min-width: 0; \}/, "the mark's line keeps its place");
   assert.doesNotMatch(css, /\.ctx-attn[^{]*\{[^}]*animation/);
 });
 

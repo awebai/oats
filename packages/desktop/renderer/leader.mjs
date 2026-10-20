@@ -77,7 +77,6 @@ export function createLeader({ win, isMac, modalOpen = () => false, supports = (
   const swallowed = new Set();
   let pressEaten = false; // the last keydown was consumed: its keypress is too
   let observer = null;
-  let toggledOff = null; // the opener a pointerdown on it just cancelled the wait from
 
   const eat = (e) => { e.preventDefault(); e.stopImmediatePropagation(); };
 
@@ -104,21 +103,11 @@ export function createLeader({ win, isMac, modalOpen = () => false, supports = (
    * is noted here. Returns false, and does nothing, under a modal. */
   function start(origin = {}) {
     if (modalOpen()) return false;
-    toggledOff = null;
     if (waiting) close("again");
     waiting = { origin, focused: doc.activeElement && doc.activeElement !== doc.body ? doc.activeElement : null };
     watch();
     try { onOpen(origin); } catch { /* as above */ }
     return true;
-  }
-
-  /** A pointer opener (the footer's button): a click on it while it waits cancels the wait (the
-   * pointerdown did) and does not start it again. */
-  function toggle(origin = {}) {
-    const opener = origin.opener ?? null;
-    if (opener && toggledOff === opener) { toggledOff = null; return false; }
-    if (waiting) { close("again"); return false; }
-    return start(origin);
   }
 
   function onKeyDown(e) {
@@ -156,12 +145,7 @@ export function createLeader({ win, isMac, modalOpen = () => false, supports = (
     eat(e);
   }
 
-  const onPointerDown = (e) => {
-    if (!waiting) return;
-    const opener = waiting.origin.opener ?? null;
-    toggledOff = opener && opener.contains?.(e.target) ? opener : null;
-    close("pointer");
-  };
+  const onPointerDown = () => { if (waiting) close("pointer"); };
   const onPaste = () => close("paste");
   const onBlur = (e) => { if (e.target === win) { swallowed.clear(); pressEaten = false; close("blur"); } };
 
@@ -175,7 +159,6 @@ export function createLeader({ win, isMac, modalOpen = () => false, supports = (
 
   return {
     start,
-    toggle,
     cancel: () => close("cancel"),
     isWaiting: () => !!waiting,
     origin: () => waiting?.origin ?? null,
