@@ -543,18 +543,20 @@ Relationship and Teams are one tab stop each (`roveSegment`: arrows, Home/End);
 the soul chooser is a `listbox` of `option` buttons where typing filters,
 Enter in the search picks the best match and Enter, Space or a click on a soul
 picks it, every pick moving focus to the first field. The dialog opens on its
-first field (`focusFirst`: Deployment when shown, else Harness; no scroll):
-Name is optional and last. Mod+1–Mod+7 jump to Name (`focusName`: caret at the
-end), Harness,
-Model, Relationship, Teams, the instruction and Developer settings
+first field, the Opening instruction (`focusFirst`: no scroll, the caret at the
+end of a restored draft); Name is optional and last. Mod+1–Mod+7 jump, in form
+order, to the instruction, Harness, Model, Relationship, Teams, Name
+(`focusName`: caret at the end) and Developer settings
 (`spawn-dialog-keys.mjs` registers them with `spawn.submit` in the
 `spawn-dialog-local` context, once, for the editor; the host resolves and stops
 them; `jump()` and `setShortcuts()` are the dialog's).
 
-Main form, in order: **Runtime** and **Model** (always visible, showing the kernel's real defaults
+Main form, in order: the **Opening instruction**, **Runtime** and **Model** (always visible, showing the kernel's real defaults
 with a *default* pill), **Relationship** (Independent / Child of / Sibling of /
-Parent of, a segmented control; choosing one reveals the instance picker), the **Opening
-instruction** and **Name · optional**. Name: with `spawn-name` on a local spawn
+Parent of, a segmented control; choosing one reveals the instance picker), **Teams**
+and **Name · optional**. Below `SPAWN_NARROW` (760px, one column) the preview column moves
+into the form's scroll area after its last field, above the footer (`placePreview`, a
+`matchMedia` listener): moved in the document, so reading and Tab order stay the order on screen. Name: with `spawn-name` on a local spawn
 (`roleNamed()`), a typed name goes as `--name`, lowercased (the kernel uses a
 name exactly as given) and with the soul's role as its suffix (`finalName` →
 `nameWithRole`, `packages/client/instance-name.mjs`), and

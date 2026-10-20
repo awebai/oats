@@ -364,6 +364,12 @@ after 400 ms, for about the CLI's timeout, and is never shown while it retries.
 
 ### What will be created
 
+Wide, it is the dialog's left column. Below 760px (one column) it follows the
+form's last field (Name, then the folded Developer settings) in the form's own
+scroll area, above the footer, which stays in view: the Opening instruction,
+focused on open, is what shows first. It is moved in the document there, so
+reading and Tab order follow the screen.
+
 The column reads top to bottom:
 
 1. **The instance.** Its name comes first and largest (mono, `--fg`). Under it

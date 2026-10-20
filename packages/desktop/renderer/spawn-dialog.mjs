@@ -52,6 +52,8 @@ import { HARNESS_NAMES as RUNTIME_NAMES } from '../../client/harness-names.mjs';
 export { RUNTIME_NAMES };
 const PURPOSE = /^[a-z0-9][a-z0-9-]*$/i;
 
+/** The one-column dialog: the stylesheet's media query and the preview's place (placePreview) read it. */
+export const SPAWN_NARROW = '(max-width:760px)';
 export const spawnDialogCSS = `
 /* The modal centres in a grid whose auto track grows to the dialog, so 100% would not cap it: the viewport does. */
 .spawn-modal .spawn-dialog { width:880px; max-width:calc(100vw - 48px); box-sizing:border-box; max-height:calc(100vh - 48px); padding:0; gap:0; overflow:hidden; background:var(--surface); box-shadow:var(--shadow-modal); }
@@ -82,6 +84,8 @@ export const spawnDialogCSS = `
 /* The preview column: what the kernel will create, re-drawn from every observation. A named size
    container: below ~300px of content width its facts stack label-above-value. */
 .spawn-preview { display:flex; flex-direction:column; gap:16px; min-width:0; min-height:0; overflow:auto; padding:18px 20px; box-sizing:border-box; background:var(--surface-2); border-right:1px solid var(--border); container:spawn-preview / inline-size; }
+/* Narrow (placePreview): in the form's scroll area after its last field, as a card, at its full height. */
+.spawn-form-body > .spawn-preview { flex:none; overflow:visible; padding:14px; border:1px solid var(--border); border-radius:10px; }
 .spawn-preview-section { display:flex; flex-direction:column; gap:6px; min-width:0; }
 .spawn-preview-body { display:flex; flex-direction:column; gap:12px; min-width:0; }
 .spawn-preview-title { margin:0; font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase; color:var(--muted); }
@@ -304,10 +308,11 @@ ${launchDifferedCSS}
 /* The segmented inputs are invisible hit areas: their keyboard focus is drawn on the span (above), not on the input. */
 .spawn-dialog .spawn-seg input:focus-visible { outline:none; box-shadow:none; }
 .spawn-dialog [hidden] { display:none; }
-@media(max-width:760px) {
+@media${SPAWN_NARROW} {
  .spawn-columns, .spawn-dialog[data-layout=scoped] .spawn-columns { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
  .spawn-chooser { max-height:200px; border-right:0; border-bottom:1px solid var(--border); }
- .spawn-preview { max-height:220px; border-right:0; border-bottom:1px solid var(--border); }
+ /* What will be created has moved into the form (placePreview): the scoped form is the one row. */
+ .spawn-dialog[data-layout=scoped] .spawn-columns { grid-template-rows:minmax(0,1fr); }
  .spawn-row { grid-template-columns:minmax(0,1fr); }
  .spawn-form-body { padding:14px; }
  .spawn-footer { padding:10px 14px; }
@@ -781,9 +786,21 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const statusDiffered = el('div', undefined, 'spawn-status-differed');
   footer.append(statusRow, actions, details);
   const body = el('div', undefined, 'spawn-form-body');
-  body.append(selectionSummary, runField, placeField, relation, teamsField, taskLabel, nameField, advanced);
+  // The Opening instruction first (the dialog lands there), Name last before Developer settings.
+  body.append(selectionSummary, taskLabel, runField, placeField, relation, teamsField, nameField, advanced);
   form.append(body, footer); // the footer stays in view while the body scrolls
   const columns = el('div', undefined, 'spawn-columns'); columns.append(preview, chooser, form);
+  // Below SPAWN_NARROW (one column), What will be created follows the form's last field in the form's own
+  // scroll area, above the footer, which stays in view: the instruction is what shows on open, and the
+  // preview is reached by scrolling on with the fields. Moved in the document, not only drawn there, so the
+  // reading and tab order are the order on screen. Wide, it is the left column again.
+  const narrowQuery = (() => { try { return doc.defaultView?.matchMedia?.(SPAWN_NARROW) ?? null; } catch { return null; } })();
+  function placePreview() {
+    if (narrowQuery?.matches) { if (body.lastElementChild !== preview) body.append(preview); }
+    else if (columns.firstElementChild !== preview) columns.prepend(preview);
+  }
+  placePreview();
+  narrowQuery?.addEventListener?.('change', placePreview);
   dialog.append(header, columns); modal.append(dialog);
   // ── #482 Deployment (renderer/spawn-deployment-field.mjs) ───────────────────────────────────────────
   // With two or more deployments in the view the field replaces "Where to run" and comes first, before
@@ -1591,11 +1608,12 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   }
   const visibleControl = c => !!c && !c.disabled && !c.hidden && !c.closest('[hidden]');
   const tabbable = root => [...root.querySelectorAll('button, input, select, textarea, summary, [tabindex]')].filter(c => visibleControl(c) && c.tabIndex >= 0);
-  /** Focus on open: the form's first field (Deployment when it shows, else Harness), without scrolling. Name is
-   * optional and last, so it is never where the dialog lands; its section key (Mod+1) still reaches it. */
+  /** Focus on open: the form's first field, the Opening instruction, without scrolling, with the caret at the
+   * end of what is there (a restored draft is never selected). */
   function focusFirst({ preventScroll = true } = {}) {
-    const first = tabbable(body)[0];
-    if (first) first.focus({ preventScroll }); else focusName({ preventScroll });
+    task.focus({ preventScroll });
+    const end = task.value.length;
+    try { task.setSelectionRange(end, end); } catch { /* not a text field here */ }
   }
   /** The control each section key lands on (Relationship: its selected segment; Teams: its first box one can tick). */
   const jumpTargets = {
@@ -1701,6 +1719,6 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     /** The background spawn store changed: re-read whether a spawn of this soul is in flight. */
     syncInFlight() { if (alive) syncButton(); },
     closePopups() { models.close(); runtimePicker.close(); deploymentField?.closePopup(); },
-    dispose() { alive = false; addMachineDialog?.close({ restoreFocus: false }); stopBackfill?.(); clearTimeout(timer); serial++; pressed = null; modelsReq++; configsReq++; deploymentField?.dispose(); models.dispose(); runtimePicker.dispose(); form.removeEventListener('input', onEdit); form.removeEventListener('change', onEdit); },
+    dispose() { alive = false; narrowQuery?.removeEventListener?.('change', placePreview); addMachineDialog?.close({ restoreFocus: false }); stopBackfill?.(); clearTimeout(timer); serial++; pressed = null; modelsReq++; configsReq++; deploymentField?.dispose(); models.dispose(); runtimePicker.dispose(); form.removeEventListener('input', onEdit); form.removeEventListener('change', onEdit); },
   };
 }
