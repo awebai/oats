@@ -99,7 +99,7 @@ test("the detail is the selected soul's, from its row and the shared facts: wher
     name: "dev", failure: null, description: "The dev soul.", from: "package acme.souls 1.2.0", works: "works in its own worktree", refusal: null, harness: undefined,
     teams: [{ label: "core", default: true }, { label: "ops", default: false }],
     capabilities: ["oats.core", "acme.deploy"],
-    instances: { shown: [{ name: "dev-a", mark: "running" }, { name: "dev-b", mark: "stopped" }], more: 0 },
+    instances: { shown: [{ name: "dev-a", mark: "running", color: null }, { name: "dev-b", mark: "stopped", color: null }], more: 0 },
   });
   assert.deepEqual(detail.harness, { rows: [], notes: ["No default harness: you choose one when you launch it."], problem: null }, "no launch reported: the shared facts' note");
   const refused = view(keys(shown(), "j").state).detail;

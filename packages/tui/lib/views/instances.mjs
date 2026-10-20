@@ -53,6 +53,14 @@ const DIM = style({ dim: true });
 const SELECTED = style({ reverse: true });
 /** The look of each state mark: the Souls view draws an instance's mark in its detail as the list does. */
 export const LOOK = Object.freeze({ running: style({ fg: "green" }), stopped: DIM, shell: DIM, unknown: style({ fg: "yellow" }), held: style({ fg: "magenta" }) });
+/** The marks an instance's colour (feature instance-color) draws: running in it, stopped and at its shell in
+ *  it and dim. The shape still says the state; `unknown` and `held` keep their own look whatever the colour. */
+const COLOURED = Object.freeze({ running: false, stopped: true, shell: true });
+/** A state mark's look for a row of colour `colour` (a terminal colour name, or null for none). */
+export function markLook(mark, colour) {
+  if (colour && Object.hasOwn(COLOURED, mark)) return style({ fg: colour, dim: COLOURED[mark] });
+  return LOOK[mark] ?? LOOK.unknown;
+}
 /** The needs-input tag: reverse video in the waiting colour, so the reverse video alone carries it
  *  under NO_COLOR. On the selected row, which is in reverse already, it is the other way round:
  *  not reversed, a gap in the selection's bar. */
@@ -121,7 +129,7 @@ function instanceRow(row, cols, wordWidth, marks) {
   const nameEnd = wordCells ? wordCol - 2 : end;
   const spans = [];
   if (row.selected) spans.push({ col: 0, width: cols, style: SELECTED }, { col: 0, text: lit(marks.selected), style: SELECTED, width: 1 });
-  spans.push({ col: MARK + at, text: lit(marks[row.mark] ?? marks.unknown), style: look(LOOK[row.mark] ?? LOOK.unknown), width: 1 });
+  spans.push({ col: MARK + at, text: lit(marks[row.mark] ?? marks.unknown), style: look(markLook(row.mark, row.color)), width: 1 });
   if (nameEnd > nameCol) {
     // The count and the gap before it, when there is room for them and for a cell of the name.
     const after = fold && nameEnd - nameCol > fold.length + 1 ? fold.length + 1 : 0;

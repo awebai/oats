@@ -7,7 +7,7 @@
 // in. What it adds is the TUI's: the window, the clock times, and which fact stands on which line.
 import {
   TERMS, panelData, displayLine, DETAIL_WITHHELD, originLead, instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree,
-  hasInstanceChildren, heldHome, instanceSiblings, siblingText, rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts,
+  hasInstanceChildren, heldHome, instanceSiblings, siblingText, rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts, instanceColor,
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs, rowReason,
   identityMemory, viewModel, listedViews, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, machineLabels,
   openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
@@ -114,6 +114,10 @@ function markOf(row) {
   const word = runtimeState(row);
   return word === "stopped" && row.runtimeState === "shell" ? "shell" : word;
 }
+
+/** An instance row's colour (feature instance-color) as one of the terminal's sixteen, through the souls'
+ *  map (views/souls.mjs SOUL_COLOURS), or null: which colour a row shows is the shared rule (instanceColor). */
+const rowColour = (row) => SOUL_COLOURS[instanceColor(row)] ?? null;
 
 /** The key prefix of each run of instances related to no other, as the shared grouping names it
  *  (`independent:<id>`). Read by key, not by label: a cluster whose root is named `independent` has that
@@ -321,7 +325,7 @@ function listRow(state, r, item) {
   const closed = disclosure(state, r, item) === "closed";
   return {
     id: item.id, name: item.row.instance, depth: item.depth, selected: item.id === state.selected,
-    mark: markOf(item.row), word: wordOf(item.row, state.ascii),
+    mark: markOf(item.row), color: rowColour(item.row), word: wordOf(item.row, state.ascii),
     waiting: waitingClaim(item.row, { stale: r.stale(item.row) }) !== null,
     folded: closed ? r.folded.get(item.id) ?? 0 : 0,
     below: closed ? r.below.get(item.id)?.length ?? 0 : 0,
@@ -1080,7 +1084,7 @@ function soulDetail(state, at, row) {
     name: row.name, description: row.description ?? "", from: soulFrom(row), works: facts.work, refusal: facts.refusalLine,
     harness: { rows: facts.rows, notes: facts.notes, problem: facts.problem },
     teams, capabilities,
-    instances: { shown: here.slice(0, INSTANCES_NAMED).map((each) => ({ name: each.instance, mark: markOf(each) })), more: Math.max(0, here.length - INSTANCES_NAMED) },
+    instances: { shown: here.slice(0, INSTANCES_NAMED).map((each) => ({ name: each.instance, mark: markOf(each), color: rowColour(each) })), more: Math.max(0, here.length - INSTANCES_NAMED) },
   };
 }
 

@@ -249,6 +249,7 @@ sent as text or on stdin, never as paths.
 | `instance events` | the instance's home | `instance-events-2` (`eventsApi: 2`) |
 | `instance git`, `instance diff` | the instance's home; the Git runs there | `instance-git` (`instanceGitApi: 1`) |
 | `instance stop --plan\|--apply`, `retire --plan`, `retire --plan-revision … --idempotency-key …` | the instance's home | `lifecycle-plans` (`lifecycleApi: 1`) |
+| `instance color` | the instance's home | `instance-color` |
 
 Before every routed command except `status`, the kernel reads the server's
 `oats version --json`. A remote OATS older than 0.22.1 is refused, and so is a
