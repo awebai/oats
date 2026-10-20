@@ -246,8 +246,8 @@ table, and the hint leaves it out.
 
 While the command palette is open, its group keys take their presses over
 every binding (see "The command palette"): ⌘N and ⌥⌘N on macOS, Alt+Shift+↓
-and Alt+Shift+↑ on Linux/Windows. The previous group is ⌥⌘N, not ⇧⌘N: that is
-File → New Window, a menu accelerator, which macOS may handle before the page. So ⌘N is `app.chooseSoul` only while the
+and Alt+Shift+↑ on Linux/Windows. The previous group is ⌥⌘N, not ⇧⌘N: ⇧⌘N is
+File → New Window, a key the menu shows, so the palette doesn't shadow it. So ⌘N is `app.chooseSoul` only while the
 palette is closed, and Alt+Shift+↓ / ↑ are `roster.openNext` /
 `roster.openPrevious` only while it is closed.
 
@@ -569,7 +569,7 @@ control.
   `roster.openPrevious` everywhere else. A footer under the list names them:
   "⌘N next group · ⌥⌘N previous" on macOS, "Alt+Shift+↓ next group ·
   Alt+Shift+↑ previous" elsewhere (`paletteGroupHint`, in the engine's own
-  labels), plain text in the dialog. Quick Open has neither.
+  labels), plain text in the dialog and the input's description (`aria-describedby`), read once as the palette opens: the focus stays in the input, so it is never reached otherwise. Quick Open has neither.
 - For assistive technology each relation group is a named `role=group`
   (announced once, on entry); the lines and dots are `aria-hidden`, and the
   relations are read as the words above. Options carry no `aria-level`, which

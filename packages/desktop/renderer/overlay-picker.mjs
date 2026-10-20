@@ -78,7 +78,9 @@ export function joinPickerFocusReturn(doc, { opener, dismiss }) {
  *        go, and with no selectable row nothing moves. It never commits. Taken before
  *        everything else, cycleKey included, so it wins over every binding while open.
  * @param {string} [spec.footer] a line of plain text under the list (`.palette-footer`):
- *        the palette names its group keys there. None, no footer.
+ *        the palette names its group keys there. It is the input's description
+ *        (aria-describedby), read once as the picker opens: the focus never leaves
+ *        the combobox, so it is never reached otherwise. None, no footer.
  * @param {Document} [spec.doc]
  * @returns {{ open: Function, close: Function, toggle: Function }} Opening
  *        replaces any other picker in this Document without returning focus.
@@ -128,9 +130,11 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
     input.setAttribute("aria-controls", list.id);
     if (footer) {
       const line = doc.createElement("div");
+      line.id = `${id}-footer`;
       line.className = "palette-footer";
       line.textContent = footer;
       dialog.append(line);
+      input.setAttribute("aria-describedby", line.id);
     }
 
     const dismiss = (restoreFocus) => {

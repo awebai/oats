@@ -234,13 +234,13 @@ test("⌘N moves to the next group's first row and ⌥⌘N to the previous one's
     assert.equal(event.defaultPrevented, true);
     assert.equal(p.active(), expected);
   }
-  p.key("˜", { metaKey: true, altKey: true, code: "KeyN" });
+  p.key("Dead", { metaKey: true, altKey: true, code: "KeyN" });
   assert.equal(p.active(), "Theme: toggle", "previous from the first group wraps to the commands");
-  p.key("˜", { metaKey: true, altKey: true, code: "KeyN" });
+  p.key("Dead", { metaKey: true, altKey: true, code: "KeyN" });
   assert.equal(p.active(), "solo-x");
   // From inside a group: next is the next group's first row, previous the first row of the one before (not this one's).
   p.key("ArrowDown"); assert.equal(p.active(), "solo-y");
-  p.key("˜", { metaKey: true, altKey: true, code: "KeyN" });
+  p.key("Dead", { metaKey: true, altKey: true, code: "KeyN" });
   assert.equal(p.active(), "lead");
   p.key("ArrowDown"); p.key("ArrowDown"); assert.equal(p.active(), "grandchild");
   p.key("n", { metaKey: true });
@@ -282,12 +282,12 @@ test("group keys skip context rows: a group's first selectable row; one group: b
   assert.equal(p.active(), "alpha-kid");
   p.key("n", { metaKey: true }); assert.equal(p.active(), "child-a", "past lead, a context row");
   p.key("n", { metaKey: true }); assert.equal(p.active(), "alpha-kid", "wraps past alpha, a context row");
-  p.key("˜", { metaKey: true, altKey: true, code: "KeyN" }); assert.equal(p.active(), "child-a");
+  p.key("Dead", { metaKey: true, altKey: true, code: "KeyN" }); assert.equal(p.active(), "child-a");
   p.filter("child"); // one group: lead (context), child-a, grandchild, child-b
   p.key("ArrowDown"); p.key("ArrowDown"); assert.equal(p.active(), "child-b");
   p.key("n", { metaKey: true }); assert.equal(p.active(), "child-a", "a single group: next is its first selectable row");
   p.key("ArrowDown"); assert.equal(p.active(), "grandchild");
-  p.key("˜", { metaKey: true, altKey: true, code: "KeyN" }); assert.equal(p.active(), "child-a", "and so is previous");
+  p.key("Dead", { metaKey: true, altKey: true, code: "KeyN" }); assert.equal(p.active(), "child-a", "and so is previous");
   p.filter(">"); // only the commands: one run
   p.key("ArrowDown"); assert.equal(p.active(), "Split: terminal right");
   p.key("n", { metaKey: true }); assert.equal(p.active(), "Theme: toggle", "the commands alone are one group");
@@ -320,6 +320,7 @@ test("the picker's group move skips a run with no selectable row, and no selecta
   press("p"); assert.equal(active(), "c2");
   press("p"); assert.equal(active(), "a1", "past b");
   assert.equal(doc.querySelector(".palette-footer"), null, "no footer unless given");
+  assert.equal(input.hasAttribute("aria-describedby"), false, "and no description");
   rows = [row("b1", "b", true), row("c1", "c", true)];
   input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
   press("n"); press("p");
@@ -345,7 +346,7 @@ test("the group keys act only while the palette is open: closed, ⌘N reaches th
   assert.deepEqual(p.reachedShell, ["n", "ArrowDown"]);
 });
 
-test("the footer names the group keys per platform: plain text in the dialog, after the list", async t => {
+test("the footer names the group keys per platform: plain text in the dialog, after the list, and the input's description", async t => {
   const p = palette(t);
   await p.picker.open();
   const footer = p.doc.querySelector(".palette-footer");
@@ -354,6 +355,7 @@ test("the footer names the group keys per platform: plain text in the dialog, af
   assert.equal(footer.previousElementSibling, p.doc.querySelector('[role="listbox"]'), "under the list, never one of its options");
   assert.equal(footer.children.length, 0, "plain text");
   assert.equal(footer.hasAttribute("role"), false);
+  assert.equal(p.doc.querySelector('[role="combobox"]').getAttribute("aria-describedby"), footer.id, "read once as it opens: the focus stays in the input");
   p.picker.close();
   assert.equal(p.doc.querySelector(".palette-footer"), null, "it goes with the palette");
   const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");

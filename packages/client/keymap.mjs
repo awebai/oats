@@ -121,8 +121,8 @@ export const CHORDS = Object.freeze([
  * (the Desktop's ⌘N, `app.chooseSoul`; the chords `previous` and `next`), so they are not CHORDS,
  * which are bound from every focus. The selection goes to the first row of the next group, or of
  * the one before, and wraps (docs/tui.md, "The palette"; packages/desktop/docs/desktop-keyboard.md).
- * On macOS the TUI has none: a terminal never passes ⌘. The previous group is ⌥⌘N, not ⇧⌘N, which is
- * the Desktop's File → New Window. */
+ * On macOS the TUI has none: a terminal never passes ⌘. The previous group is ⌥⌘N, not ⇧⌘N: that is
+ * the Desktop's File → New Window, a key its menu shows, which the palette does not shadow. */
 export const PALETTE_KEYS = Object.freeze([
   { does: "palette-next-group", mac: "cmd+n", other: "alt+shift+down" },
   { does: "palette-previous-group", mac: "cmd+alt+n", other: "alt+shift+up" },

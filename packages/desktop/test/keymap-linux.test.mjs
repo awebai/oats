@@ -631,7 +631,8 @@ test("paletteGroupDirection: ⌘N / ⌥⌘N on macOS, Alt+Shift+↓ / ↑ elsewh
     ["palette-next-group", "Mod+N", "Alt+Shift+↓"], ["palette-previous-group", "Mod+Alt+N", "Alt+Shift+↑"],
   ]);
   assert.equal(paletteGroupDirection(ev("n", { metaKey: true }), true), 1);
-  assert.equal(paletteGroupDirection(ev("˜", { metaKey: true, altKey: true, code: "KeyN" }), true), -1, "⌥⌘N, by the physical key (⌥N types ˜)");
+  assert.equal(paletteGroupDirection(ev("Dead", { metaKey: true, altKey: true, code: "KeyN" }), true), -1, "⌥⌘N as a US Mac sends it: ⌥N is a dead key, read by the physical key");
+  assert.equal(paletteGroupDirection(ev("˜", { metaKey: true, altKey: true, code: "KeyN" }), true), -1, "and where it types ˜");
   for (const e of [ev("n"), ev("N", { shiftKey: true }), ev("n", { ctrlKey: true }), ev("N", { metaKey: true, shiftKey: true }),
     ev("ArrowDown", { altKey: true, shiftKey: true }), ev("ArrowDown", { metaKey: true, altKey: true }), ev("k", { metaKey: true })]) {
     assert.equal(paletteGroupDirection(e, true), 0, `macOS: ${JSON.stringify(e)}`);
