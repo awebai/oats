@@ -368,3 +368,41 @@ test('without the feature the dialog is today\'s: no call, and an empty name is 
   assert.equal(k.asked.length, 0); assert.equal(Object.hasOwn(u.applied.at(-1).choices, 'name'), false);
   assert.equal(u.notices.some(n => /^Named /.test(n.message)), false);
 });
+
+test('a name taken at prepare (after the handoff): refused with Reopen, and the reopened dialog names again with one call', async t => {
+  let now = 0, n = 0;
+  const taken = new Set();
+  const k = namingKernel({ taken, suggest: () => ({ source: 'suggested', name: n++ ? 'release-notes-manager-2' : 'release-notes-manager' }) });
+  const u = await dialog(t, k, { previewNow: () => now });
+  await u.type('.ftask', 'Write the release notes'); await pause(); await settle();
+  assert.equal(lastPreview(u).choices.name, 'release-notes-manager', 'the named preview settled');
+  taken.add('release-notes-manager'); now += 300001; // past prepare's reuse window: prepare asks the kernel again
+  await u.spawn(); await settle(30);
+  assert.equal(k.asked.length, 1, 'the background job has no naming of its own');
+  assert.equal(u.applied.length, 0, 'nothing applied');
+  const offer = u.notices.find(x => x.options?.buttons?.some(b => b.label === 'Reopen spawn'));
+  assert.ok(offer, JSON.stringify(u.notices.map(x => x.message)));
+  await offer.options.buttons[0].activate(); await settle(30);
+  assert.equal(u.q('.fpurpose').placeholder, 'e.g. desktop-improvements', 'the reopened dialog forgot the taken name');
+  await u.spawn(); await settle(40);
+  assert.equal(k.asked.length, 2, 'one fresh naming call');
+  assert.equal(u.applied.at(-1).choices.name, 'release-notes-manager-2');
+});
+
+test('a numbered outcome belongs to its press: a press dropped by an edit, then a new press, names again', async t => {
+  let hold = null;
+  const k = namingKernel({ suggest: () => ({ source: 'numbered', reason: 'timeout' }) });
+  const u = await dialog(t, k, { previewGate: async body => { if (body.action === 'preview' && hold) await hold.promise; } });
+  await u.type('.ftask', 'fix login'); await settle();
+  hold = deferred();
+  await u.type('.fmodel', 'model-one');
+  u.q('.fspawn').click(); await settle(20);
+  assert.equal(k.asked.length, 1, 'the press named first');
+  assert.equal(u.applied.length, 0, 'and waits for the preview of its choices');
+  await u.type('.fmodel', 'model-two'); // drops the press
+  const h = hold; hold = null; h.resolve(); await settle(20);
+  assert.equal(u.applied.length, 0, 'the dropped press never spawns');
+  u.q('.fspawn').click(); await settle(30);
+  assert.equal(k.asked.length, 2, 'the new press makes its own naming call');
+  assert.equal(u.applied.length, 1);
+});

@@ -896,7 +896,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   // or { source: 'numbered', reason, harness }. asking: the one call in the air ({ key, promise }); a newer one ends it
   // on the server (E_SUPERSEDED). pauseTimer: the task text's pause, armed by an edit only. nameTouched: the name field
   // was typed in, for this dialog's lifetime (a draft brings it back): no suggestion is asked for or used.
-  // suggestedNow: the suggestion the choices carry. pressNaming: a press whose naming ended numbered, for that text.
+  // suggestedNow: the suggestion the choices carry. pressNaming: this press's naming ended numbered, for that text (each
+  // press the person makes starts without it: press()).
   const namings = new Map();
   let asking = null, pauseTimer = null, nameTouched = draft.nameTouched === true || !!String(draft.purpose || '').trim(), suggestedNow = null, pressNaming = null;
   const current = () => alive && owns() && mount === workspaceGeneration();
@@ -1444,6 +1445,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (answer.source === 'numbered') pressNaming = { text, reason: answer.reason, harness: answer.harness };
     return run();
   }
+  /** A Spawn the person pressed (the button, or the submit key): a press of its own, so a numbered naming outcome of an
+   * earlier press (pressNaming), ended by an edit or a refusal, is never reused: this press names again. */
+  function press() { pressNaming = null; return run(); }
   /** Spawn pressed before the preview for these exact choices settled: keep the press as intent until
    * the read for them lands (read continues it, or shows its failure). The button says Checking…. */
   function holdPress() {
@@ -1700,7 +1704,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     schedule(event.type === 'change' && (event.target.tagName !== 'INPUT' || event.target.type === 'checkbox') ? 0 : debounce);
   };
   form.addEventListener('input', onEdit); form.addEventListener('change', onEdit);
-  spawn.addEventListener('click', () => { void run(); });
+  spawn.addEventListener('click', () => { void press(); });
   cancel.addEventListener('click', () => close());
   closeButton.addEventListener('click', () => close());
   // Change soul: the picker, in place — never a reopen, so nothing typed is lost.
@@ -1816,7 +1820,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     focusName, focusFirst, jump, setShortcuts,
     /** 'scoped' (preview + form) or 'picker' (chooser + form); switched in place. */
     get layout() { return layoutNow; }, setLayout,
-    submit: () => { if (!spawn.disabled) void run(); },
+    submit: () => { if (!spawn.disabled) void press(); },
     busy,
     /** CLI/roster/workspace facts changed under the open dialog. */
     sync() {
