@@ -180,24 +180,25 @@ test("the palette as it opens selects the second instance when the first recent 
   const s = opened(SIX(), "dev-a", "dev-b");
   const palette = leaderThen(s, "k").state;
   const items = paletteItems(palette);
-  assert.deepEqual(items.items.slice(0, 2).map((item) => item.label), ["dev-b", "dev-a"], "the most recent first");
-  assert.equal(items.selected, items.items[1].key, "dev-a, the terminal before");
+  assert.deepEqual(items.items.slice(0, 3).map((item) => item.label), ["independent", "dev-b", "dev-a"], "under their group's label row, the most recent first");
+  assert.equal(items.selected, items.items[2].key, "dev-a, the terminal before");
   const ran = key(palette, "enter");
   assert.deepEqual([ran.effect, shownName(ran.state), ran.state.terminal.focus], [{ show: idOf(s, "dev-a") }, "dev-a", "terminal"], "Enter goes back to it");
+  // Typed, the first row that can be selected: the first instance, under its group's label row.
   const typed = key(palette, "d").state;
-  assert.equal(paletteItems(typed).selected, paletteItems(typed).items[0].key);
-  // One instance only: the second row is a view, so the first stays selected.
+  assert.deepEqual([paletteItems(typed).items[0].kind, paletteItems(typed).selected], ["group", paletteItems(typed).items[1].key]);
+  // One instance only: the row after it is a view, so the instance stays selected.
   const alone = leaderThen(opened(stateOf(observed([instanceRow("dev", "solo")])), "solo"), "k").state;
   const list = paletteItems(alone);
-  assert.deepEqual([list.items[1].kind, list.selected], ["view", list.items[0].key]);
+  assert.deepEqual([list.items[0].kind, list.items[2].kind, list.selected], ["group", "view", list.items[1].key]);
 });
 
 test("a tab shown counts for the palette's recency: after [ the palette goes back to the tab shown before", () => {
   const s = key(toList(opened(SIX(), "dev-a", "dev-b", "dev-c")), "[").state;
   assert.equal(shownName(s), "dev-b");
   const items = paletteItems(key(s, "ctrl+k").state);
-  assert.deepEqual(items.items.slice(0, 3).map((item) => item.label), ["dev-b", "dev-c", "dev-a"]);
-  assert.equal(items.selected, items.items[1].key, "dev-c, the one shown before");
+  assert.deepEqual(items.items.slice(0, 4).map((item) => item.label), ["independent", "dev-b", "dev-c", "dev-a"]);
+  assert.equal(items.selected, items.items[2].key, "dev-c, the one shown before");
 });
 
 // ── Closing ──────────────────────────────────────────────────────────────────────────────────────

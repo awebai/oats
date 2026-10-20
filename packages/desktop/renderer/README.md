@@ -1044,11 +1044,36 @@ description's sentence in its `aria-description`), then the note "Skills that
 capabilities add are listed by a newer OATS." (only when the skills were
 listed, an empty list included; an absent, unlistable or unreadable answer is
 that case's note alone). These rows are copies with their own keys
-(`composed-skill:<path>`, `composed-file:<path>`), so selecting one never
+(`composed-skill:<path>`, `composed-file:<skill path>//<path in the skill>`), so selecting one never
 selects the row above; a link from a composed copy or the composed document
-opens the composed copy of its target. `skillSource('module:<id>')` gives
-"From <id>" and the capability, for the kernel's later list of capability
-skills; Open capability then goes in the reader head.
+opens the composed copy of its target, else the copy that is listed.
+
+**Every skill an instance gets (#1421 §1, kernel feature
+`soul-composed-skills`).** When the inspection carries
+`souls[0].composedSkills`, the composed Skills are that list, not the soul's
+own again, and the "newer OATS" note goes. The request is the soul skills'
+again: `composedSkillsWanted` adds `composedSkills: true` (soul page only)
+when `composedSkillsSupported` (local) or `routedComposedSkillsSupported`
+(routed) holds; the server validates it ("Invalid composed skills flag"),
+keys the cache on it and, routed, keeps it only when the held row's host
+lists them (`hostComposesSkills`); the adapter appends `--composed-skills`
+after `--skills` only when the probe's features list it. `composedSkillsOf`
+decodes it by `skillsOf`'s rules (`undefined`, `null`, `false`, the list),
+each row also carrying a non-empty `source`. Each row's second line is
+`skillSource(source).label`: "From this soul", "From <id>" for
+`module:<id>`, nothing for a value it doesn't know. A soul skill's files open
+under their repository path; a capability's paths are home-relative
+(`.oats/modules/<id>/…`) and shown as they are, with Open capability in the
+reader head when the page can open that capability (`canOpenCapability`, as
+for a composed part). `[]`, `null` and a broken answer are a note each ("No
+skills from this soul or its capabilities.", "The skills an instance gets
+can't be listed: see the problem above.", "This OATS answered composed skills
+this Desktop can't read."). A capability may declare one skill inside
+another, so a composed file path is unique within its skill only (the composed
+keys name the skill) and a link from a composed file prefers the copy in the
+skill being read. A flagged skills read may print more than any other read:
+the adapter gives it `SKILLS_INSPECT_MAX_BUFFER` (32 MiB: the 3 MiB of skill text JSON may print sixfold, and room) in place of
+`ENVELOPE_MAX_BUFFER` (4 MiB).
 
 **Core capabilities and Capabilities read as one system.** Wherever the two
 sections appear (the soul page, the inspector's *Modules as spawned*, the

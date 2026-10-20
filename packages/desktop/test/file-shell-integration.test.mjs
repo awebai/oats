@@ -7,7 +7,7 @@ import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { opened, confirmed, ready as terminalReady } from './helpers/terminal-wire.mjs';
 import { readFileSync } from "node:fs";
-import { CHORDS, LEADER, PLAIN_KEYS } from "../../client/keymap.mjs";
+import { CHORDS, LEADER, PLAIN_KEYS, paletteKey } from "../../client/keymap.mjs";
 import { runInNewContext } from "node:vm";
 import { withShellWindowGlobals } from './helpers/shell-window-globals.mjs';
 import { JSDOM } from "jsdom";
@@ -78,8 +78,8 @@ function shell(t, shellSource = source, platform = "MacIntel") {
   </body>`, { url: "http://127.0.0.1/" });
   const document = dom.window.document, navigator = { platform };
   // A fresh copy of the actual engine gets only this JSDOM's localStorage (and the shared keymap it imports).
-  const keys = runInNewContext(`${keySource.replace(/^import [^\n]*\n/gm, "").replace(/^export /gm, "")}\n({ registerAction, runAction, getBinding, setBinding, resetBinding, listActions, matchEvent, handleKeydown, formatChord, pickerCycleDirection });`,
-    { navigator, localStorage: dom.window.localStorage, CHORDS, LEADER, PLAIN_KEYS });
+  const keys = runInNewContext(`${keySource.replace(/^import [^\n]*\n/gm, "").replace(/^export /gm, "")}\n({ registerAction, runAction, getBinding, setBinding, resetBinding, listActions, matchEvent, handleKeydown, formatChord, pickerCycleDirection, paletteGroupDirection, paletteGroupHint });`,
+    { navigator, localStorage: dom.window.localStorage, CHORDS, LEADER, PLAIN_KEYS, paletteKey });
   const requests = [], loads = [], chooserInputs = [], tickets = [], opens = [], attachments = [], terms = [], detached = [], notices = [], listeners = [];
   dom.window.HTMLInputElement.prototype.click = function () {
     assert.equal(this.type, "file"); chooserInputs.push(this); // never launch a native chooser

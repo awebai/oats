@@ -7,7 +7,8 @@ window's regions, and how each interactive element is reached and operated.
 
 Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 `TERMINAL_ALLOWLIST`, `SIDEBAR_KEYS`, `CHORDS_READ`), `packages/client/keymap.mjs`
-(the leader, its table, the plain keys and the chords, the TUI's too), `renderer/leader.mjs` (the
+(the leader, its table, the plain keys and the chords, the TUI's too, and the palette's own keys,
+`PALETTE_KEYS`), `renderer/leader.mjs` (the
 leader's wait), `renderer/leader-keys.mjs` (which rows apply, the Desktop's
 labels), `renderer/leader-dispatch.mjs` (what each key does),
 `renderer/leader-hint.mjs` (the hint), `renderer/focus-regions.mjs` (F6),
@@ -18,7 +19,7 @@ labels), `renderer/leader-dispatch.mjs` (what each key does),
 `test/leader.test.mjs`, `test/leader-dispatch.test.mjs`, `test/keymap-shared.test.mjs`,
 `test/sidebar-keys.test.mjs`, the TUI's `packages/tui/test/keymap.test.mjs` (the TUI reads the same table),
 `test/keybindings.test.mjs`, `test/focus-regions.test.mjs`,
-`test/spawn-dialog-keyboard.test.mjs`, `test/palette-tree.test.mjs` (the palette's tree rows, connectors and cycling),
+`test/spawn-dialog-keyboard.test.mjs`, `test/palette-tree.test.mjs` (the palette's tree rows, connectors, cycling, group keys and footer),
 `test/palette-recency.test.mjs` (its recency order, first-row opening and focus record), `test/tab-strip-reveal.test.mjs`,
 `test/roster-scrollport.test.mjs` (a focused roster row is revealed inside the list),
 `test/roster-reveal-row.test.mjs` (an active terminal tab reveals its roster row),
@@ -243,6 +244,13 @@ table, and the hint leaves it out.
 | Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | no (Ctrl+O is a byte programs read) |
 | New window, with no workspace (`app.newWindow`) | ⌘⇧N (File → New Window, the menu's accelerator) | none (the palette's **Window: new window**) | – |
 | Cycle the app's windows | ⌘\` (macOS's own, Window menu) | none (the window manager's) | – |
+
+While the command palette is open, its group keys take their presses over
+every binding (see "The command palette"): ⌘N and ⌥⌘N on macOS, Alt+Shift+↓
+and Alt+Shift+↑ on Linux/Windows. The previous group is ⌥⌘N, not ⇧⌘N: ⇧⌘N is
+File → New Window, a key the menu shows, so the palette doesn't shadow it. So ⌘N is `app.chooseSoul` only while the
+palette is closed, and Alt+Shift+↓ / ↑ are `roster.openNext` /
+`roster.openPrevious` only while it is closed.
 
 Changed in the next release on Linux/Windows: the chords shared with the TUI
 are one Ctrl+Alt family. The palette is Ctrl+Alt+K (was Ctrl+Shift+K), Quick
@@ -546,6 +554,23 @@ control.
   say) has no Shift form, so ArrowUp moves up there. A plain-key binding never
   cycles: typing belongs to the input. Quick Open's chord does not cycle: a
   second ⌘P / Ctrl+Alt+P closes it.
+- **While the palette is open, its group keys jump between groups**: ⌘N /
+  Alt+Shift+↓ moves the active row to the first row of the next group, ⌥⌘N /
+  Alt+Shift+↑ to the first row of the group before, both wrapping past the
+  ends. A group is a relation group (named by its deployment where there are
+  several); the commands after the instances are one more. The move lands on a
+  group's first selectable row, past its context rows, and passes over a group
+  with none; with a single group both keys go to its first row. Nothing commits
+  until **Enter**. They are the palette's own keys (`PALETTE_KEYS` in
+  `packages/client/keymap.mjs`, read by `paletteGroupDirection`), not bindings:
+  the shortcuts editor does not list them and no rebind moves them. While the
+  palette is open they win over every binding, taken before the keymap engine
+  sees them: ⌘N is the palette's there and `app.chooseSoul` everywhere else,
+  and Alt+Shift+↓ / ↑ are the palette's there and `roster.openNext` /
+  `roster.openPrevious` everywhere else. A footer under the list names them:
+  "⌘N next group · ⌥⌘N previous" on macOS, "Alt+Shift+↓ next group ·
+  Alt+Shift+↑ previous" elsewhere (`paletteGroupHint`, in the engine's own
+  labels), plain text in the dialog and the input's description (`aria-describedby`), read once as the palette opens: the focus stays in the input, so it is never reached otherwise. Quick Open has neither.
 - For assistive technology each relation group is a named `role=group`
   (announced once, on entry); the lines and dots are `aria-hidden`, and the
   relations are read as the words above. Options carry no `aria-level`, which
@@ -619,7 +644,8 @@ control.
   the dialog's: it stops them, held or not, so ⌘1–⌘3 never switch the stage
   behind the modal. A modal dialog's own context clashes only with itself in
   the editor (`findConflict`), never with a global key it shadows.
-- ⌘N / Ctrl+Shift+N goes to Workspace › Souls; it never spawns.
+- ⌘N / Ctrl+Shift+N goes to Workspace › Souls; it never spawns. (While the
+  command palette is open, ⌘N is its next group.)
 
 ## Keyboard audit
 
@@ -669,7 +695,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Show instance panel (end of the main area's top bar, while the panel is closed and has something to show) | Tab, last in the Main region; closing the panel moves focus to it | Enter/Space: `panel.toggle`, then focus on the panel's selected tab |
 | Panel sections: soul link, copy, details, Open soul page, Teams, Git, lifecycle Restart…/Start…/Stop…/Retire… | Tab | Native buttons and summaries |
 | Spawn dialog | Spawn on a card, a soul page, Quick Open | See above |
-| Command palette, Quick Open | ⌘K / Ctrl+Alt+K, ⌘P / Ctrl+Alt+P (from a terminal too) | Type, arrows, Enter, Esc; Tab stays in the input; in the palette its chord cycles rows (⇧ + it: up), skipping context rows (see "The command palette") |
+| Command palette, Quick Open | ⌘K / Ctrl+Alt+K, ⌘P / Ctrl+Alt+P (from a terminal too) | Type, arrows, Enter, Esc; Tab stays in the input; in the palette its chord cycles rows (⇧ + it: up), skipping context rows, and ⌘N / ⌥⌘N (Alt+Shift+↓ / ↑ on Linux/Windows) move to the next / previous group's first row, named in its footer (see "The command palette") |
 | Shortcuts editor | ⌘, / Ctrl+, (from a terminal too); focus starts in its search | The **Leader** group comes first (the leader's own row, then one fixed row per key after it), then **Sidebar keys**; typing in the search filters by name, group or keys (`shift+b` and `ctrl shift b` find Ctrl+Shift+B, `alt+o k` finds the leader's `k`), and the count is announced; Down enters the rows, Up/Down move between them, Up from the first returns to the search; Tab reaches each row's shortcut and Reset; Enter records, Esc cancels a recording, Backspace unbinds; Esc clears the search, then closes; trapped, the search its first stop. A row shows "terminal" when its shortcut works while a terminal has focus and "changed" when it differs from the default |
 | Settings (Connections, Terminal) | Footer settings | Trapped, through the Terminal size field too; the sign-in terminal has an explicit Shift+Tab exit; the font size stepper's − and + stay focusable at 9 and 28 (aria-disabled) and a typed size applies on Enter or on leaving the field |
 | Notifications | Tab (they come last in the document) | Open and Dismiss are buttons; focus moves on after dismissing |

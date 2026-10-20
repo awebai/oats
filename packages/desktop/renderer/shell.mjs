@@ -32,6 +32,7 @@ import { createFocusRegions, firstTabbable, isShown } from "./focus-regions.mjs"
 import { createFileOpener } from "./open-file.mjs";
 import {
   registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction, keymapConflicts, pickerCycleDirection,
+  paletteGroupDirection, paletteGroupHint,
   listActions, readKeyboardLayout, SIDEBAR_KEYS,
 } from "./keybindings.mjs";
 import { createLeader } from "./leader.mjs";
@@ -2317,6 +2318,10 @@ const palette = createPalette({
   openTerminal: (name) => openTerminalTab(name, { refuse: (inst) => { const held = heldHome(shownRows([inst])[0]); return held ? heldLine(held) : null; } }),
   // While open, ⌘K / Ctrl+Alt+K moves down and Shift + it up (live keymap); Esc closes, Enter opens.
   cycleKey: (e) => pickerCycleDirection(e, "app.palette", isMac),
+  // While open, ⌘N / ⌥⌘N (Alt+Shift+↓ / ↑ elsewhere) jump to the next / previous group, over
+  // app.chooseSoul and roster.openNext / openPrevious; the footer names them.
+  groupKey: (e) => paletteGroupDirection(e, isMac),
+  footer: paletteGroupHint(isMac),
   commands: [
     // View commands derive from the nav manifest so a new rail destination
     // can never be palette-invisible (review 8441961 nit).

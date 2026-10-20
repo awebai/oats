@@ -3,16 +3,20 @@
 // same connectors and state dots, from the sidebar's own code and rules), keeps
 // the list's order under a query with non-matching ancestors as disabled context
 // rows, and cycles its rows with its own chord (⌘K / Ctrl+Shift+K) while open.
+// While open, its group keys (⌘N / ⌥⌘N, Alt+Shift+↓ / ↑) jump between groups,
+// over every binding, and its footer names them; Quick Open takes neither.
 // Its recency order is palette-recency.test.mjs's.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { paletteRows, createPalette, PALETTE_COMMAND_CAP } from "../renderer/palette.mjs";
+import { createOverlayPicker } from "../renderer/overlay-picker.mjs";
+import { createQuickOpen } from "../renderer/quick-open.mjs";
 import { treeConnectors } from "../renderer/instance-tree-view.mjs";
 import { rosterGroups, instanceId } from "../../client/instance-tree.mjs";
 import { rosterSections } from "../../client/roster-sections.mjs";
-import { pickerCycleDirection, setBinding, resetBinding, DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
+import { pickerCycleDirection, paletteGroupDirection, paletteGroupHint, setBinding, resetBinding, DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
 
 const at = (instance, extra = {}) => ({ instance, agent: "dev", home: `/w/${instance}`, agentsRoot: "/w", running: true, ...extra });
@@ -101,7 +105,8 @@ test("the palette's chord cycles: Mod+K down, Shift down to up; a chord holding 
   assert.equal(pickerCycleDirection(ev("k"), "app.palette", true), 0, "a plain chord never steals typing");
 });
 
-function palette(t, roster = ROSTER) {
+// The palette as the shell builds it (shell.mjs createPalette): its cycle chord, its group keys and footer, on macOS or elsewhere.
+function palette(t, roster = ROSTER, { isMac = true } = {}) {
   const dom = new JSDOM('<!doctype html><body><button id="opener">Open</button></body>', { url: "http://localhost" });
   t.after(() => dom.window.close());
   const doc = dom.window.document;
@@ -111,7 +116,8 @@ function palette(t, roster = ROSTER) {
   const picker = createPalette({
     loadInstances: async () => roster, openTerminal: ref => opened.push(ref.instance),
     commands: COMMANDS.map(c => ({ ...c, run: () => opened.push(c.label) })),
-    cycleKey: e => pickerCycleDirection(e, "app.palette", true), doc,
+    cycleKey: e => pickerCycleDirection(e, "app.palette", isMac),
+    groupKey: e => paletteGroupDirection(e, isMac), footer: paletteGroupHint(isMac), doc,
   });
   t.after(() => picker.close());
   doc.getElementById("opener").focus();
@@ -208,9 +214,174 @@ test("the shell wires the cycle to the live app.palette chord; Quick Open (⌘P)
   const { readFileSync } = await import("node:fs");
   const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
   assert.match(shell, /cycleKey: \(e\) => pickerCycleDirection\(e, "app\.palette", isMac\)/);
+  assert.match(shell, /groupKey: \(e\) => paletteGroupDirection\(e, isMac\),\n\s*footer: paletteGroupHint\(isMac\),/, "the group keys and their footer, per platform");
+  assert.equal(shell.match(/groupKey:|footer: paletteGroupHint/g).length, 2, "only the palette gets them");
   assert.match(shell, /registerAction\(\{ id: "app\.palette", [^\n]*palette\.toggle\(\)/, "the action still opens it; open, it cycles");
   const quickOpen = readFileSync(new URL("../renderer/quick-open.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(quickOpen, /cycleKey/, "a second ⌘P still closes Quick Open");
+  assert.doesNotMatch(quickOpen, /groupKey|footer/, "Quick Open has no group keys and no footer");
+});
+
+// The palette's group keys (packages/client/keymap.mjs PALETTE_KEYS; paletteGroupDirection's pure
+// test is keymap-linux.test.mjs's). ROSTER's runs: alpha (2 rows), lead (4), independent (2), then
+// the two commands, one run of their own.
+test("⌘N moves to the next group's first row and ⌥⌘N to the previous one's, both wrapping; the commands are a group", async t => {
+  const p = palette(t);
+  await p.picker.open();
+  assert.equal(p.active(), "alpha");
+  for (const expected of ["lead", "solo-x", "Theme: toggle", "alpha"]) {
+    const event = p.key("n", { metaKey: true });
+    assert.equal(event.defaultPrevented, true);
+    assert.equal(p.active(), expected);
+  }
+  p.key("Dead", { metaKey: true, altKey: true, code: "KeyN" });
+  assert.equal(p.active(), "Theme: toggle", "previous from the first group wraps to the commands");
+  p.key("Dead", { metaKey: true, altKey: true, code: "KeyN" });
+  assert.equal(p.active(), "solo-x");
+  // From inside a group: next is the next group's first row, previous the first row of the one before (not this one's).
+  p.key("ArrowDown"); assert.equal(p.active(), "solo-y");
+  p.key("Dead", { metaKey: true, altKey: true, code: "KeyN" });
+  assert.equal(p.active(), "lead");
+  p.key("ArrowDown"); p.key("ArrowDown"); assert.equal(p.active(), "grandchild");
+  p.key("n", { metaKey: true });
+  assert.equal(p.active(), "solo-x");
+  p.key("ArrowDown"); p.key("ArrowDown"); p.key("ArrowDown"); assert.equal(p.active(), "Split: terminal right");
+  p.key("n", { metaKey: true });
+  assert.equal(p.active(), "alpha", "next from the commands' last row wraps to the first group");
+  // The plain arrows bubble on as before (the engine leaves a consumed event alone); the group keys never do.
+  assert.deepEqual(p.reachedShell.filter(key => key !== "ArrowDown"), [], "never reaches the keymap engine: ⌘N is not app.chooseSoul while open");
+  assert.deepEqual(p.opened, [], "a group key commits nothing");
+  p.key("Enter");
+  assert.deepEqual(p.opened, ["alpha"]);
+});
+
+test("Linux/Windows: Alt+Shift+↓ / ↑ move between groups, over roster.openNext / openPrevious and the input's arrows", async t => {
+  const p = palette(t, ROSTER, { isMac: false });
+  await p.picker.open();
+  assert.equal(p.active(), "alpha");
+  assert.equal(p.key("ArrowDown", { altKey: true, shiftKey: true }).defaultPrevented, true);
+  assert.equal(p.active(), "lead", "the next group's first row, not the next row (alpha-kid)");
+  p.key("ArrowDown", { altKey: true, shiftKey: true }); assert.equal(p.active(), "solo-x");
+  p.key("ArrowUp", { altKey: true, shiftKey: true }); assert.equal(p.active(), "lead");
+  p.key("ArrowUp", { altKey: true, shiftKey: true }); assert.equal(p.active(), "alpha");
+  p.key("ArrowUp", { altKey: true, shiftKey: true }); assert.equal(p.active(), "Theme: toggle", "wraps to the commands");
+  p.key("ArrowDown", { altKey: true, shiftKey: true }); assert.equal(p.active(), "alpha", "and back");
+  assert.deepEqual(p.reachedShell, [], "roster.openNext / openPrevious never see them while open");
+  // The plain arrows and the cycle chord are unchanged.
+  p.key("ArrowDown"); assert.equal(p.active(), "alpha-kid");
+  p.key("k", { ctrlKey: true, altKey: true }); assert.equal(p.active(), "lead");
+  assert.equal(p.doc.querySelector(".palette-footer").textContent, "Alt+Shift+↓ next group · Alt+Shift+↑ previous");
+});
+
+test("group keys skip context rows: a group's first selectable row; one group: both go to its first row", async t => {
+  const p = palette(t);
+  await p.picker.open();
+  p.filter("id"); // alpha-kid under alpha, and lead's three children under lead: two groups led by context rows
+  assert.deepEqual([...p.doc.querySelectorAll('[role="option"]')].map(o => [o.querySelector(".plabel").textContent, o.getAttribute("aria-disabled")]),
+    [["alpha", "true"], ["alpha-kid", null], ["lead", "true"], ["child-a", null], ["grandchild", null], ["child-b", null]]);
+  assert.equal(p.active(), "alpha-kid");
+  p.key("n", { metaKey: true }); assert.equal(p.active(), "child-a", "past lead, a context row");
+  p.key("n", { metaKey: true }); assert.equal(p.active(), "alpha-kid", "wraps past alpha, a context row");
+  p.key("Dead", { metaKey: true, altKey: true, code: "KeyN" }); assert.equal(p.active(), "child-a");
+  p.filter("child"); // one group: lead (context), child-a, grandchild, child-b
+  p.key("ArrowDown"); p.key("ArrowDown"); assert.equal(p.active(), "child-b");
+  p.key("n", { metaKey: true }); assert.equal(p.active(), "child-a", "a single group: next is its first selectable row");
+  p.key("ArrowDown"); assert.equal(p.active(), "grandchild");
+  p.key("Dead", { metaKey: true, altKey: true, code: "KeyN" }); assert.equal(p.active(), "child-a", "and so is previous");
+  p.filter(">"); // only the commands: one run
+  p.key("ArrowDown"); assert.equal(p.active(), "Split: terminal right");
+  p.key("n", { metaKey: true }); assert.equal(p.active(), "Theme: toggle", "the commands alone are one group");
+  // No rows: nothing to move to, and the key is still the palette's.
+  p.filter("zzzz");
+  assert.match(p.doc.querySelector(".palette-list").textContent, /No matches/);
+  assert.equal(p.key("n", { metaKey: true }).defaultPrevented, true);
+  assert.equal(p.doc.querySelector(".palette-input").hasAttribute("aria-activedescendant"), false);
+  assert.deepEqual(p.reachedShell.filter(key => key !== "ArrowDown"), [], "only the plain arrows bubble on");
+});
+
+test("the picker's group move skips a run with no selectable row, and no selectable row moves nothing", async t => {
+  const dom = new JSDOM("<!doctype html><body></body>", { url: "http://localhost" });
+  t.after(() => dom.window.close());
+  const doc = dom.window.document;
+  const row = (label, key, context = false) => ({ label, ...(key ? { group: { key, label: key } } : {}), ...(context ? { context } : { run() {} }) });
+  let rows = [row("a1", "a"), row("b1", "b", true), row("b2", "b", true), row("c1", "c", true), row("c2", "c"), row("x"), row("y")];
+  const picker = createOverlayPicker({ placeholder: "", ariaLabel: "Groups", loadItems: async () => null, computeRows: () => rows,
+    groupKey: e => (e.key === "n" ? 1 : e.key === "p" ? -1 : 0), doc });
+  t.after(() => picker.close());
+  await picker.open();
+  const input = doc.querySelector(".palette-input");
+  const press = key => input.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+  const active = () => doc.getElementById(input.getAttribute("aria-activedescendant"))?.querySelector(".plabel").textContent;
+  assert.equal(active(), "a1");
+  press("n"); assert.equal(active(), "c2", "b has no selectable row; c's first selectable row is c2");
+  press("n"); assert.equal(active(), "x", "the ungrouped rows are one run");
+  press("n"); assert.equal(active(), "a1");
+  press("p"); assert.equal(active(), "x");
+  press("p"); assert.equal(active(), "c2");
+  press("p"); assert.equal(active(), "a1", "past b");
+  assert.equal(doc.querySelector(".palette-footer"), null, "no footer unless given");
+  assert.equal(input.hasAttribute("aria-describedby"), false, "and no description");
+  rows = [row("b1", "b", true), row("c1", "c", true)];
+  input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  press("n"); press("p");
+  assert.equal(input.hasAttribute("aria-activedescendant"), false, "no selectable row: nothing is active, nothing moves");
+  assert.equal(doc.querySelectorAll(".palette-item.active").length, 0);
+});
+
+test("the group keys act only while the palette is open: closed, ⌘N reaches the keymap engine", async t => {
+  const p = palette(t);
+  await p.picker.open();
+  p.key("n", { metaKey: true });
+  assert.deepEqual(p.reachedShell, []);
+  p.key("Escape");
+  assert.equal(p.doc.querySelector(".palette-overlay"), null);
+  const closed = p.key("n", { metaKey: true });
+  assert.equal(closed.defaultPrevented, false, "the palette no longer takes it");
+  assert.deepEqual(p.reachedShell, ["n"], "the window listener (app.chooseSoul) sees it");
+  await p.picker.open();
+  p.key("n", { metaKey: true });
+  assert.deepEqual(p.reachedShell, ["n"], "open again: the palette's again");
+  p.picker.close();
+  p.key("ArrowDown", { altKey: true, shiftKey: true });
+  assert.deepEqual(p.reachedShell, ["n", "ArrowDown"]);
+});
+
+test("the footer names the group keys per platform: plain text in the dialog, after the list, and the input's description", async t => {
+  const p = palette(t);
+  await p.picker.open();
+  const footer = p.doc.querySelector(".palette-footer");
+  assert.equal(footer.textContent, "⌘N next group · ⌥⌘N previous");
+  assert.equal(footer.parentElement, p.doc.querySelector('.palette[role="dialog"]'));
+  assert.equal(footer.previousElementSibling, p.doc.querySelector('[role="listbox"]'), "under the list, never one of its options");
+  assert.equal(footer.children.length, 0, "plain text");
+  assert.equal(footer.hasAttribute("role"), false);
+  assert.equal(p.doc.querySelector('[role="combobox"]').getAttribute("aria-describedby"), footer.id, "read once as it opens: the focus stays in the input");
+  p.picker.close();
+  assert.equal(p.doc.querySelector(".palette-footer"), null, "it goes with the palette");
+  const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
+  const rule = css.match(/\.palette-footer \{([^}]*)\}/)?.[1] ?? "";
+  assert.match(rule, /color: var\(--muted\)/, "quiet, in a token the contrast inventory holds on the palette's surface");
+  assert.match(rule, /font-size: 11\.5px/, "small, as the rows' details");
+});
+
+test("Quick Open takes no group keys and has no footer: ⌘N passes through, Alt+Shift+↓ is its arrow", async t => {
+  const dom = new JSDOM('<!doctype html><body><button id="opener">Open</button></body>', { url: "http://localhost" });
+  t.after(() => dom.window.close());
+  const doc = dom.window.document, reached = [];
+  dom.window.addEventListener("keydown", e => reached.push(e.key));
+  const quickOpen = createQuickOpen({ loadSouls: async () => ({ agents: [{ name: "a-soul", work: "worktree" }, { name: "b-soul", work: "worktree" }] }), onPick() {}, doc });
+  t.after(() => quickOpen.close());
+  doc.getElementById("opener").focus();
+  await quickOpen.open();
+  const input = doc.querySelector(".palette-input");
+  const key = (key, mods) => { const e = new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...mods }); input.dispatchEvent(e); return e; };
+  const active = () => doc.getElementById(input.getAttribute("aria-activedescendant"))?.querySelector(".plabel").textContent;
+  assert.equal(doc.querySelector(".palette-footer"), null);
+  assert.equal(key("n", { metaKey: true }).defaultPrevented, false);
+  assert.deepEqual(reached, ["n"], "⌘N reaches the keymap engine");
+  key("ArrowDown", { altKey: true, shiftKey: true });
+  assert.equal(active(), "b-soul", "the input's ArrowDown, one row, as before");
+  assert.deepEqual(reached, ["n", "ArrowDown"]);
 });
 
 test("filterInstanceTree takes the palette's matcher and keeps the sidebar's default; rosterGroups is the sidebar's grouping", async () => {

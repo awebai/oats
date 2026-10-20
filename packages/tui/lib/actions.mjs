@@ -9,7 +9,7 @@
 // takes its default keys from the shared keymap (packages/client/keymap.mjs PLAIN_KEYS), and the
 // leader's table is the shared one (LEADER, below). What only the TUI has (q, Ctrl+C, Ctrl+Z, Ctrl+L,
 // Ctrl+K, Tab, Esc, Delete, C, i) keeps its keys here. packages/tui/test/keymap.test.mjs pins both.
-import { CHORDS, LEADER_TABLE, plainKeys } from "./client.mjs";
+import { CHORDS, LEADER_TABLE, PALETTE_KEYS, plainKeys } from "./client.mjs";
 import { legacyChord } from "./term/kitty.mjs";
 import { isBackKey } from "./term/through.mjs";
 
@@ -116,6 +116,21 @@ export const LEADER_KEYS = new Map(LEADER.flatMap((entry) => entry.keys.map((key
 export function chordKeys(isMac, actions = ACTIONS, chords = CHORDS) {
   const bound = new Set(actions.flatMap((action) => action.keys));
   return new Map(chords.map((entry) => [isMac ? entry.mac : entry.other, entry.does]).filter(([key, does]) => !key.startsWith("cmd+") && !bound.has(key) && leaderHandles(does)));
+}
+
+/** THE PALETTE'S OWN KEYS (docs/tui.md, "The palette"): key id -> `does`, the shared ones
+ *  (packages/client/keymap.mjs PALETTE_KEYS) on macOS (`isMac`) or elsewhere, in the table's order:
+ *  `palette-next-group` and `palette-previous-group`, the first row of the next group or of the one
+ *  before. Read only while the palette is open, and there before every other key: the chords that
+ *  share a key (Alt+Shift+Down is the chord `next` too) and the palette's own (lib/store.mjs
+ *  `leading` hands them on, and inPalette reads them first). Left out: a key with `cmd+` (a
+ *  terminal never passes macOS's Command to a program: with the shared table that is both of
+ *  macOS's, so the macOS TUI has none). Fixed, as the palette's Up and Down are: tui.json's `keys`
+ *  rebinds the plain keys of ACTIONS only. On Linux and Windows each is an Alt+Shift arrow, read
+ *  with or without the kitty keyboard protocol (term/kitty.mjs LEGACY_CHORDS). `table` is the
+ *  shared table. */
+export function paletteKeys(isMac, table = PALETTE_KEYS) {
+  return new Map(table.map((entry) => [isMac ? entry.mac : entry.other, entry.does]).filter(([key]) => !key.startsWith("cmd+")));
 }
 
 /** The chords of `chords` (chordKeys) the TUI reads while the terminal confirms the kitty keyboard
