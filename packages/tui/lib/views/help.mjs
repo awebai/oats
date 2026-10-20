@@ -163,6 +163,23 @@ export const CHORD_RULES = Object.freeze([
   "The leader works in every terminal.",
   "docs/tui.md, \"Chords\", has the table of terminals.",
 ]);
+/** THE FAMILY (docs/tui.md, "Switch to Ctrl+Shift"): the sentences that lead the chords' section,
+ *  for `keys`, the model's `{ family, label, note }` (keys.json as lib/config.mjs loadKeys read it, and
+ *  the shared chordFamilyNote's line, or null), while the terminal confirms the kitty keyboard
+ *  protocol (`confirmed`) or not. Which family is bound: Ctrl+Alt, with how to switch; Ctrl+Shift,
+ *  from keys.json, and, without the protocol, that this terminal cannot send it, so the leader is
+ *  the way (the Alt+Shift arrows still come). Then the note, when the file was there and not taken.
+ *  No `keys` (a view drawn without a run): none. macOS has no chords, so no section and no line. */
+export function chordFamilyLines(keys, confirmed) {
+  if (!keys) return [];
+  const shift = "Ctrl+Shift";
+  const said = keys.family !== "ctrl+shift"
+    ? `Shortcuts: ${keys.label}. For ${shift} (foot, Alacritty), set "chords": "ctrl+shift" in keys.json and restart.`
+    : confirmed ? `Shortcuts: ${shift}, from keys.json.`
+      : `Shortcuts: ${shift}, from keys.json, but this terminal does not confirm the kitty keyboard protocol: use the leader.`;
+  return typeof keys.note === "string" ? [said, keys.note] : [said];
+}
+
 /** The chords listed on one row of their own, both keys first, their modifiers said once
  *  (`Alt+Shift+Up/Down`, actions.mjs keysTogether, as the cheat sheet says them): the leader's Up
  *  and Down, its Left and Right. The table's left column stays narrow enough for the help beside
@@ -180,8 +197,9 @@ function bothSaid(a, b) {
 /** The chords' rows: `chords` are `[key id, does]` in the table's order, each said as the leader's
  *  table says its `does`, then `or <the leader> then <its key>` (`detachKey`'s label, when one is
  *  given); a pair of CHORD_PAIRS on one row, and the nine tab-N on one, `Ctrl+Alt+1 … Ctrl+Alt+9`
- *  (`...` in ASCII), which no leader's key does. */
-function chordRows(chords, cols, detachKey, ascii) {
+ *  (`...` in ASCII), which no leader's key does. The family's lines lead them (chordFamilyLines:
+ *  `keys`, under the protocol or not, `confirmed`). */
+function chordRows(chords, cols, detachKey, ascii, keys = null, confirmed = false) {
   const by = (does) => LEADER.find((entry) => entry.does === does);
   const leader = typeof detachKey === "string" ? backKeyLabel(detachKey) : null;
   const then = (list) => (leader === null || list.some((does) => !by(does)) ? "" : `, or ${leader} then ${list.map((does) => keyLabel(by(does).keys[0])).join(" and ")}`);
@@ -205,6 +223,7 @@ function chordRows(chords, cols, detachKey, ascii) {
   return [
     heading("Chords"),
     [],
+    ...sentences(chordFamilyLines(keys, confirmed), cols),
     ...sentences(["One keypress each, from every focus, a terminal's too: none reaches the agent."], cols),
     ...table(rows.map(([keys, said]) => [keyText(keys), words(said)]), cols, KEYS),
     ...sentences(CHORD_RULES, cols),
@@ -281,12 +300,13 @@ const spawnRows = (cols) => [heading("The spawn prompt"), [], ...table(SPAWN_KEY
  *  confirms the kitty keyboard protocol (`chordsLead`), before this table; without it they come
  *  after the leader's table. Then the palette's keys (PALETTE_KEYS, and its own keys `paletteKeys`,
  *  `[key id, does]`, where there are any: paletteRows) and the spawn prompt's (SPAWN_KEYS,
- *  SPAWN_RULES). */
-export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = null, chordsLead = false, paletteKeys = null) {
+ *  SPAWN_RULES). `keys` is the family the chords are bound in, `{ family, note }` (chordFamilyLines),
+ *  said at the top of the chords' section; null says none. */
+export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = null, chordsLead = false, paletteKeys = null, keys = null) {
   const marks = marksOf(ascii), chorded = chords !== null && chords.length > 0;
   const closing = keyText(["close", "help"].map((id) => actions.find((action) => action.id === id)).filter((action) => action?.keys.length).map((action) => keyLabel(action.keys[0])).join(" or "));
   return [
-    ...(chorded && chordsLead ? [...chordRows(chords, cols, detachKey, ascii), []] : []),
+    ...(chorded && chordsLead ? [...chordRows(chords, cols, detachKey, ascii, keys, true), []] : []),
     heading("Keys"),
     [],
     ...table(actions.flatMap((action) => {
@@ -296,7 +316,7 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = 
         : action.id === "restart" ? actRows : undefined]);
     }), cols, KEYS),
     ...(detachKey !== null ? [[], ...leaderRows(detachKey, cols)] : []),
-    ...(chorded && !chordsLead ? [[], ...chordRows(chords, cols, detachKey, ascii)] : []),
+    ...(chorded && !chordsLead ? [[], ...chordRows(chords, cols, detachKey, ascii, keys, false)] : []),
     [],
     ...paletteRows(cols, paletteKeys),
     [],
@@ -336,8 +356,8 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = 
 
 /** `{ rows, extent }`: `size.rows` rows for an area `size.cols` wide, scrolled to `top`, and how
  *  many rows the whole help has. The movement keys scroll it. */
-export function help(actions, size, { top = 0, ascii = false, detachKey = null, chords = null, chordsLead = false, paletteKeys = null } = {}) {
-  const all = helpRows(actions, ascii, size.cols, detachKey, chords, chordsLead, paletteKeys);
+export function help(actions, size, { top = 0, ascii = false, detachKey = null, chords = null, chordsLead = false, paletteKeys = null, keys = null } = {}) {
+  const all = helpRows(actions, ascii, size.cols, detachKey, chords, chordsLead, paletteKeys, keys);
   const rows = Array.from({ length: size.rows }, () => []);
   const win = windowOf({ top, count: all.length, height: size.rows });
   all.slice(win.top, win.top + win.size).forEach((spans, i) => { rows[i] = spans; });

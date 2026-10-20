@@ -47,6 +47,7 @@ module.exports = {
     "picker-default-path.mjs",
     "login-path.mjs",
     "host-theme.mjs",
+    "chord-family.mjs",
     "server/**/*",
     "renderer/**/*",
     // Only the sidebar mark ships as a file; the platform icons are wired

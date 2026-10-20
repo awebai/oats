@@ -3,8 +3,8 @@
 // agent exactly as they came, and the scanner here looks for three things only: the back key's own
 // bytes (which take the focus back to the list), a bracketed paste (which goes to the agent as a
 // paste, so a back key inside it is pasted, not taken) and the chords (docs/tui.md, "Chords"): the
-// Alt+Shift arrows in every state, and under the kitty keyboard protocol the Ctrl+Alt ones too,
-// every other key then typed as the bytes it sends without the protocol (see createThrough). Pure:
+// Alt+Shift arrows in every state, and under the kitty keyboard protocol the Ctrl+Alt ones too (or,
+// when keys.json chose that family, the Ctrl+Shift ones), every other key then typed as the bytes it sends without the protocol (see createThrough). Pure:
 // no IO; the clock is injected.
 //
 // The back key is tui.json's `open.detachKey`. Its grammar is THE TUI'S OWN: the keys it can take
@@ -105,14 +105,17 @@ const decoder = () => new TextDecoder("utf-8", { fatal: false });
  *  the agent's, and `rest` hands it on) or `{ chord: <does>, rest: <bytes> }` (a chord, the same).
  *
  *  UNDER THE PROTOCOL (`keyboard` the confirmed flags, term/kitty.mjs; docs/tui.md, "Chords") the
- *  scanner reads every `CSI` sequence typed. A `u` key is a chord when its id (kittyId, a Ctrl+Alt
- *  chord's) is one of `chords` (a Map of key id to the `does` it names), else the bytes it sends
+ *  scanner reads every `CSI` sequence typed. A `u` key is a chord when its id (kittyId, a Ctrl+Alt or
+ *  a Ctrl+Shift chord's) is one of `chords` (a Map of key id to the `does` it names), else the bytes it sends
  *  without the protocol (legacyBytes), which are the back key when they read as `leader` (the back
  *  key's key id, backKeyId), with no timing: Alt+O is one sequence and Esc is another. Any other sequence is
  *  the same, made legacy where the protocol changed it (legacySequence: the modifier, F1 to F4).
  *  What is not a sequence goes to the agent as it came. Nothing is timed: a sequence a read ends
  *  inside, or a lone ESC (which no key sends under the protocol), waits for the next read however
  *  late it comes; one longer than SEQUENCE_HELD is no key and goes on as it came.
+ *  A Ctrl+Shift chord is read only so, from its event's Shift bit: a Ctrl+Shift letter that is not
+ *  among `chords` (every one under the default family) is typed as Ctrl and the letter
+ *  (`CSI 100;6u` is 0x04, the agent's Ctrl+D), and a C0 byte typed is never a chord.
  *  The legacy bytes are read as the key they are: an Alt+Shift arrow among `chords`
  *  (term/kitty.mjs LEGACY_CHORDS) is the chord however the protocol reports the lock keys in its
  *  modifier (legacyParams: `CSI 1 ; 68 A` with Caps Lock is `CSI 1 ; 4 A`), and so is a keypad

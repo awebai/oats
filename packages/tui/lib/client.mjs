@@ -51,7 +51,10 @@ export { subsequenceScore } from "../../client/subsequence-score.mjs";
 export { createCapabilityCatalog, capabilityCatalogKey } from "../../client/capability-catalog.mjs";
 export { memberNames, capabilitySource, groupCapabilities, hostKeyOf, capabilitySections, matchCapabilities, soulsComposition, rosterAgentName, layerLabel, capabilityUsers } from "../../client/capability-rows.mjs";
 export { capabilityFacts, CAPABILITY_COPY } from "../../client/capability-facts.mjs";
-export { CHORDS, LEADER_TABLE, PALETTE_KEYS, PLAIN_KEYS, leaderKey, plainKeys } from "../../client/keymap.mjs";
+export { CHORDS, CHORD_FAMILY_LABELS, DEFAULT_CHORD_FAMILY, LEADER_TABLE, PALETTE_KEYS, PLAIN_KEYS, chordKeyOf, leaderKey, plainKeys } from "../../client/keymap.mjs";
+// keys.json, the chord family both clients bind (docs/tui.md, "Switch to Ctrl+Shift"): the TUI reads the file
+// itself, at its start (lib/config.mjs loadKeys), and the shared reader says what its text means.
+export { KEYS_LIMIT, chordFamilyFrom, chordFamilyNote, keysPath } from "../../client/keys-file.mjs";
 
 /** The words a shared sentence uses where it names the client that shows it (client-terms.mjs).
  *  Made once, here: every shared function that takes `terms` is passed this constant, and refuses

@@ -12,8 +12,9 @@
 // On Linux/Windows the Ctrl key IS the terminal's control key, so only an explicit allowlist of action ids may
 // fire inside the terminal; every other chord passes through. Their defaults
 // there are chords xterm sends nothing for (Ctrl+Shift+key, the GNOME Terminal /
-// Alacritty / Ghostty / kitty convention) or a byte a plainer key still sends (the
-// shared Ctrl+Alt family: ESC, then the Ctrl+letter byte or the digit), and two named
+// Alacritty / Ghostty / kitty convention, and the Ctrl+Shift family's seven) or a byte a
+// plainer key still sends (the shared Ctrl+Alt family: ESC, then the Ctrl+letter byte or the
+// digit), and two named
 // exceptions (TERMINAL_ALLOWLIST has the rule), so plain Ctrl+letter (Ctrl+W, Ctrl+K,
 // Ctrl+P, Ctrl+B, Ctrl+\), F6 and Alt+digit stay the program's. app-menu.mjs follows the
 // same policy for the menu accelerators.
@@ -24,8 +25,16 @@
 // the chords of CHORDS_READ from there (chordFromKeyId), never a literal of its own. The palette's
 // own keys (PALETTE_KEYS, read with paletteKey) are not bindings: paletteGroupDirection reads them
 // for the open palette, and paletteGroupHint names them in its footer.
+//
+// The chord family (docs/desktop-keyboard.md, "Switch to Ctrl+Shift"): on Linux/Windows the shared
+// chords are the Ctrl+Alt family by default, or the Ctrl+Shift family when keys.json says so (the
+// shared CHORDS `shift` column: seven rows move, the others keep their key). Main reads keys.json and
+// hands the family to the page (chord-family.mjs, renderer/chord-family.mjs), which sets it here with
+// setChordFamily before the shell listens to its first key; every reader of a default asks
+// defaultBinding, which reads the active family's keymap, so a switch applies at once. macOS has no
+// family: its keys are the same in both.
 
-import { CHORDS, LEADER, PLAIN_KEYS, paletteKey } from "../../client/keymap.mjs";
+import { CHORDS, CHORD_FAMILIES, DEFAULT_CHORD_FAMILY, LEADER, PLAIN_KEYS, chordKeyOf, paletteKey } from "../../client/keymap.mjs";
 
 const STORAGE_KEY = "oats-desktop-keymap";
 
@@ -284,87 +293,128 @@ export const CHORDS_READ = Object.freeze([
   ...Array.from({ length: 9 }, (_, i) => [`tabs.goto${i + 1}`, `tab-${i + 1}`]),
   ["terminal.focusMode", "zoom"], ["tabs.close", "close-terminal"],
   ["split.vertical", "split-right"], ["split.horizontal", "split-down"], ["split.focusNextGroup", "group-next"],
-  ["sidebar.focusFilter", "filter"],
+  ["sidebar.focusFilter", "filter"], ["instance.edit", "edit-instance"],
 ].map(([id, does]) => Object.freeze({ id, does })));
-function chordDefault(does) {
+/** The default of the CHORDS row `does` in `family`: macOS's key, and Linux/Windows' key in that
+ * family (chordKeyOf), as one string where both are the same chord. */
+function chordDefault(does, family) {
   const entry = CHORDS.find((each) => each.does === does);
-  const mac = chordFromKeyId(entry.mac), other = chordFromKeyId(entry.other);
+  const mac = chordFromKeyId(entry.mac), other = chordFromKeyId(chordKeyOf(entry, false, family));
   return mac === other ? mac : { mac, other };
 }
-const chordOf = (id) => chordDefault(CHORDS_READ.find((each) => each.id === id).does);
 
-export const DEFAULT_KEYMAP = Object.freeze({
-  // The leader (docs/desktop-keyboard.md, "The leader"): the TUI's, read from the shared keymap.
-  // Ctrl+\ on macOS fires in a terminal by name (macStructuralChord); Alt+O on Linux/Windows is
-  // terminal-allowlisted (it sends ESC o, which the program still gets from Esc, then o).
-  "app.leader": { mac: chordFromKeyId(LEADER.mac), other: chordFromKeyId(LEADER.other) },
-  ...Object.fromEntries(SIDEBAR_KEYS.map(({ id, does }) => [id, plainDefault(does)])),
-  // The leader's Tab, as a chord (CHORDS group-next).
-  "split.focusNextGroup": chordOf("split.focusNextGroup"),
-  // The shared chords on Linux/Windows are Ctrl+Alt+letter (Ctrl+Alt+K, Ctrl+Alt+P, Ctrl+Alt+O):
-  // plain Ctrl+K and Ctrl+P are bytes a program reads (readline's kill-line, shell history), and
-  // what xterm sends for the Ctrl+Alt chord, ESC then that byte, the program still gets from Esc,
-  // then Ctrl+K. On Windows the same chord is AltGr: where the layout types a character on it, the
-  // event carries that character and matches no chord (docs/desktop-keyboard.md).
-  "app.palette": chordOf("app.palette"),
-  "app.quickOpenSouls": chordOf("app.quickOpenSouls"),
-  "app.workspaces": chordOf("app.workspaces"),
-  // The leader's ↑ / ↓ / z, as chords: Alt+Shift+↑/↓ (a named exception of the terminal rule) and
-  // Ctrl+Alt+Z on Linux/Windows, ⌘⌥↑/↓ and ⌘⌥Z on macOS.
-  "roster.openPrevious": chordOf("roster.openPrevious"),
-  "roster.openNext": chordOf("roster.openNext"),
-  "terminal.focusMode": chordOf("terminal.focusMode"),
-  "app.chooseSoul": { mac: "Mod+N", other: "Ctrl+Shift+N" },
-  "app.shortcuts": "Mod+,",
-  // No default (spec F): ⌘⇧T is "reopen closed tab" in browsers and Ctrl+Shift+T "new tab" in
-  // Linux terminals. The palette keeps the command; the editor can bind one.
-  "app.themeToggle": null,
-  // The theme picker: the in-app counterpart of Omarchy's theme menu (Super+Ctrl+Shift+Space), without
-  // Super on Linux/Windows (the window manager's) and with ⌘ for Super on macOS, without ⌃: on macOS a
-  // chord holding ⌃ never fires in a terminal (matchEvent). xterm.js sends nothing for either chord.
-  "app.themePicker": { mac: "Mod+Shift+Space", other: "Ctrl+Shift+Space" },
-  "stage.hierarchy": "Mod+1",
-  "stage.spawn": "Mod+2",
-  "stage.automations": "Mod+3",
-  // The Desktop's own, on both platforms (a terminal program never sees Ctrl+Tab as anything but Tab).
-  "tabs.next": "Ctrl+Tab",
-  "tabs.prev": "Ctrl+Shift+Tab",
-  // The shared tab moves: Alt+Shift+→/← (a named exception of the terminal rule), ⌘⌥→/← on macOS.
-  "tabs.nextPage": chordOf("tabs.nextPage"),
-  "tabs.prevPage": chordOf("tabs.prevPage"),
-  // ⌘⌥1–⌘⌥9 on macOS (⌘1–⌘3 are the stages; ⌃digits are control bytes a program reads);
-  // Ctrl+Alt+1–Ctrl+Alt+9 elsewhere, which send ESC and the digit, as Alt+digit does. 9 is the last tab.
-  ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tabs.goto${i + 1}`, chordOf(`tabs.goto${i + 1}`)])),
-  "tabs.close": chordOf("tabs.close"),
-  // F6 / Shift+F6 cycle regions outside a terminal (mc, htop and nano read F6 in one);
-  // ⌘⇧F6 / Ctrl+Shift+F6 leaves a terminal for the next region, after which F6 works.
-  "focus.nextRegion": "F6",
-  "focus.prevRegion": "Shift+F6",
-  "focus.leaveTerminal": "Mod+Shift+F6",
-  // Ctrl+Alt+F / Ctrl+Shift+B on Linux/Windows: plain Ctrl+F and Ctrl+B are bytes a program
-  // reads (readline's forward-char, the tmux prefix).
-  "sidebar.focusFilter": chordOf("sidebar.focusFilter"),
-  "sidebar.toggle": { mac: "Mod+B", other: "Ctrl+Shift+B" },
-  // Ctrl+Alt+E splits right, Ctrl+Alt+Shift+E down.
-  "split.vertical": chordOf("split.vertical"),
-  "split.horizontal": chordOf("split.horizontal"),
-  "split.close": { mac: "Mod+Alt+W", other: "Ctrl+Shift+Alt+W" },
-  // The instance panel (the right-hand panel). Ctrl+Shift+I on Linux/Windows: plain Ctrl+I is
-  // the Tab byte, which stays with the program.
-  "panel.toggle": { mac: "Mod+I", other: "Ctrl+Shift+I" },
-  // Copy the terminal's selection (#672): Ctrl+Shift+C, the Linux terminals' copy (Ctrl+C is the
-  // interrupt). No macOS default: ⌘C is Edit › Copy, the menu role. xterm.js sends nothing for
-  // Ctrl+Shift+C (its Ctrl+letter control bytes need Shift up), so claiming it takes nothing.
-  "terminal.copySelection": { mac: null, other: "Ctrl+Shift+C" },
-  "terminal.fontBigger": "Mod+=",
-  "terminal.fontSmaller": "Mod+-",
-  "terminal.fontReset": "Mod+0",
-});
+/** The Desktop's default keymap in one chord family: every action's default, the CHORDS_READ ones
+ * in that family (chordDefault). Built once per family at module load (DEFAULT_KEYMAPS); the two
+ * differ only in the Linux/Windows key of the seven rows the Ctrl+Shift family moves. */
+function keymapIn(family) {
+  const chordOf = (id) => chordDefault(CHORDS_READ.find((each) => each.id === id).does, family);
+  return Object.freeze({
+    // The leader (docs/desktop-keyboard.md, "The leader"): the TUI's, read from the shared keymap.
+    // Ctrl+\ on macOS fires in a terminal by name (macStructuralChord); Alt+O on Linux/Windows is
+    // terminal-allowlisted (it sends ESC o, which the program still gets from Esc, then o).
+    "app.leader": { mac: chordFromKeyId(LEADER.mac), other: chordFromKeyId(LEADER.other) },
+    ...Object.fromEntries(SIDEBAR_KEYS.map(({ id, does }) => [id, plainDefault(does)])),
+    // The leader's Tab, as a chord (CHORDS group-next).
+    "split.focusNextGroup": chordOf("split.focusNextGroup"),
+    // The shared chords on Linux/Windows are Ctrl+Alt+letter (Ctrl+Alt+K, Ctrl+Alt+P, Ctrl+Alt+O):
+    // plain Ctrl+K and Ctrl+P are bytes a program reads (readline's kill-line, shell history), and
+    // what xterm sends for the Ctrl+Alt chord, ESC then that byte, the program still gets from Esc,
+    // then Ctrl+K. On Windows the same chord is AltGr: where the layout types a character on it, the
+    // event carries that character and matches no chord (docs/desktop-keyboard.md). In the Ctrl+Shift
+    // family seven of them are Ctrl+Shift+letter instead (K, P, S, M, W, E, D), which xterm sends
+    // nothing for: its Ctrl+letter bytes need Shift up.
+    "app.palette": chordOf("app.palette"),
+    "app.quickOpenSouls": chordOf("app.quickOpenSouls"),
+    "app.workspaces": chordOf("app.workspaces"),
+    // The leader's ↑ / ↓ / z, as chords: Alt+Shift+↑/↓ (a named exception of the terminal rule) and
+    // Ctrl+Alt+Z on Linux/Windows, ⌘⌥↑/↓ and ⌘⌥Z on macOS.
+    "roster.openPrevious": chordOf("roster.openPrevious"),
+    "roster.openNext": chordOf("roster.openNext"),
+    "terminal.focusMode": chordOf("terminal.focusMode"),
+    // The instance's name and colour (#1421): Ctrl+Alt+R on Linux/Windows, ⌘⌥R on macOS, never a
+    // Shift variant, in both chord families (not one of the seven). The instance is the leader's
+    // target (shell.mjs leaderTargetId).
+    "instance.edit": chordOf("instance.edit"),
+    "app.chooseSoul": { mac: "Mod+N", other: "Ctrl+Shift+N" },
+    "app.shortcuts": "Mod+,",
+    // No default (spec F): ⌘⇧T is "reopen closed tab" in browsers and Ctrl+Shift+T "new tab" in
+    // Linux terminals. The palette keeps the command; the editor can bind one.
+    "app.themeToggle": null,
+    // The theme picker: the in-app counterpart of Omarchy's theme menu (Super+Ctrl+Shift+Space), without
+    // Super on Linux/Windows (the window manager's) and with ⌘ for Super on macOS, without ⌃: on macOS a
+    // chord holding ⌃ never fires in a terminal (matchEvent). xterm.js sends nothing for either chord.
+    "app.themePicker": { mac: "Mod+Shift+Space", other: "Ctrl+Shift+Space" },
+    "stage.hierarchy": "Mod+1",
+    "stage.spawn": "Mod+2",
+    "stage.automations": "Mod+3",
+    // The Desktop's own, on both platforms (a terminal program never sees Ctrl+Tab as anything but Tab).
+    "tabs.next": "Ctrl+Tab",
+    "tabs.prev": "Ctrl+Shift+Tab",
+    // The shared tab moves: Alt+Shift+→/← (a named exception of the terminal rule), ⌘⌥→/← on macOS.
+    "tabs.nextPage": chordOf("tabs.nextPage"),
+    "tabs.prevPage": chordOf("tabs.prevPage"),
+    // ⌘⌥1–⌘⌥9 on macOS (⌘1–⌘3 are the stages; ⌃digits are control bytes a program reads);
+    // Ctrl+Alt+1–Ctrl+Alt+9 elsewhere, which send ESC and the digit, as Alt+digit does. 9 is the last tab.
+    ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tabs.goto${i + 1}`, chordOf(`tabs.goto${i + 1}`)])),
+    "tabs.close": chordOf("tabs.close"),
+    // F6 / Shift+F6 cycle regions outside a terminal (mc, htop and nano read F6 in one);
+    // ⌘⇧F6 / Ctrl+Shift+F6 leaves a terminal for the next region, after which F6 works.
+    "focus.nextRegion": "F6",
+    "focus.prevRegion": "Shift+F6",
+    "focus.leaveTerminal": "Mod+Shift+F6",
+    // Ctrl+Alt+F / Ctrl+Shift+B on Linux/Windows: plain Ctrl+F and Ctrl+B are bytes a program
+    // reads (readline's forward-char, the tmux prefix).
+    "sidebar.focusFilter": chordOf("sidebar.focusFilter"),
+    "sidebar.toggle": { mac: "Mod+B", other: "Ctrl+Shift+B" },
+    // Ctrl+Alt+E splits right, Ctrl+Alt+Shift+E down.
+    "split.vertical": chordOf("split.vertical"),
+    "split.horizontal": chordOf("split.horizontal"),
+    "split.close": { mac: "Mod+Alt+W", other: "Ctrl+Shift+Alt+W" },
+    // The instance panel (the right-hand panel). Ctrl+Shift+I on Linux/Windows: plain Ctrl+I is
+    // the Tab byte, which stays with the program.
+    "panel.toggle": { mac: "Mod+I", other: "Ctrl+Shift+I" },
+    // Copy the terminal's selection (#672): Ctrl+Shift+C, the Linux terminals' copy (Ctrl+C is the
+    // interrupt). No macOS default: ⌘C is Edit › Copy, the menu role. xterm.js sends nothing for
+    // Ctrl+Shift+C (its Ctrl+letter control bytes need Shift up), so claiming it takes nothing.
+    "terminal.copySelection": { mac: null, other: "Ctrl+Shift+C" },
+    "terminal.fontBigger": "Mod+=",
+    "terminal.fontSmaller": "Mod+-",
+    "terminal.fontReset": "Mod+0",
+  });
+}
 
-/** The default chord for an action on this platform (string or null). */
-export function defaultBinding(actionId, isMac = defaultIsMac()) {
-  if (!Object.prototype.hasOwnProperty.call(DEFAULT_KEYMAP, actionId)) return undefined;
-  const entry = DEFAULT_KEYMAP[actionId];
+/** The default keymap of each chord family (CHORD_FAMILIES), frozen. */
+export const DEFAULT_KEYMAPS = Object.freeze(Object.fromEntries(CHORD_FAMILIES.map((family) => [family, keymapIn(family)])));
+/** The default keymap in the default family, Ctrl+Alt: the one a user who never chose has. */
+export const DEFAULT_KEYMAP = DEFAULT_KEYMAPS[DEFAULT_CHORD_FAMILY];
+
+// The active chord family (CHORD_FAMILIES): the default until main's answer is set (setChordFamily).
+let chordFamily = DEFAULT_CHORD_FAMILY;
+
+/** The chord family the keymap binds now. */
+export function activeChordFamily() { return chordFamily; }
+
+/** Bind `family`'s defaults from now on (anything that is not one of CHORD_FAMILIES is the default):
+ * every reader of a default follows at once, and the keymap's listeners hear of it. A user's own
+ * override is untouched, and still wins over either family's default (getBinding). */
+export function setChordFamily(family) {
+  const next = CHORD_FAMILIES.includes(family) ? family : DEFAULT_CHORD_FAMILY;
+  if (next === chordFamily) return;
+  chordFamily = next;
+  notifyKeymapChange();
+}
+
+/** The default keymap of `family` (the active one when none is given). */
+export function defaultKeymap(family = chordFamily) {
+  return DEFAULT_KEYMAPS[family] ?? DEFAULT_KEYMAP;
+}
+
+/** The default chord for an action on this platform, in `family` (the active one when none is
+ * given): a string, null for none, or undefined when the keymap has no entry for the action. */
+export function defaultBinding(actionId, isMac = defaultIsMac(), family = chordFamily) {
+  const keymap = defaultKeymap(family);
+  if (!Object.prototype.hasOwnProperty.call(keymap, actionId)) return undefined;
+  const entry = keymap[actionId];
   if (entry && typeof entry === "object") return (isMac ? entry.mac : entry.other) ?? null;
   return entry ?? null;
 }
@@ -386,13 +436,20 @@ export function defaultBinding(actionId, isMac = defaultIsMac()) {
 // Named exceptions, sequences no plainer key sends: Ctrl+Shift+F6, without which F6
 // cannot get out of a terminal, and the Alt+Shift arrows (CSI 1;4 A–D: the shared
 // previous / next instance and tab moves), which no agent or readline binds.
-// test/terminal-xterm-bytes.test.mjs runs each allowlisted default through xterm's own
-// keydown and pins exactly what it sends.
+// The chord family changes the key, never the list: in the Ctrl+Shift family (keys.json) the
+// seven rows it moves (app.palette, app.quickOpenSouls, app.workspaces, terminal.focusMode,
+// tabs.close, split.vertical, split.horizontal) are Ctrl+Shift+K P S M W E D, which xterm sends
+// nothing for, and their Ctrl+Alt keys are then no binding, so those go to the program (ESC, then
+// the Ctrl+letter byte); in the default family it is the other way round, and Ctrl+Shift+K and the
+// rest are no binding. Since the list is by action id, the seven fire in a terminal under either
+// family by the rule above, on whichever key the family gives them.
+// test/terminal-xterm-bytes.test.mjs runs each allowlisted default, in each family, through
+// xterm's own keydown and pins exactly what it sends.
 // Every plain Ctrl+letter, other Alt+key and F-key stays the program's, so these stay
 // out: app.openFile (Ctrl+O) and focus.next/prevRegion (F6: mc, htop, nano).
 export const TERMINAL_ALLOWLIST = Object.freeze([
   "app.leader", "app.palette", "app.quickOpenSouls", "app.workspaces", "app.chooseSoul", "app.themePicker", "app.shortcuts", "terminal.copySelection",
-  "roster.openPrevious", "roster.openNext", "terminal.focusMode",
+  "roster.openPrevious", "roster.openNext", "terminal.focusMode", "instance.edit",
   "tabs.next", "tabs.prev", "tabs.nextPage", "tabs.prevPage", "tabs.close",
   ...Array.from({ length: 9 }, (_, i) => `tabs.goto${i + 1}`),
   "split.vertical", "split.horizontal", "split.close", "split.focusNextGroup",
@@ -590,7 +647,9 @@ export function keymapConflicts(isMac = defaultIsMac()) {
     const key = [action.id, other.id].sort().join("|");
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ chord, actions: [action, other] });
+    // `own`: which of the two the user bound there. When only one is, that one runs where both
+    // apply (matchEvent: an override wins over a default), and the editor says so.
+    out.push({ chord, actions: [action, other], own: [own(action.id), own(other.id)] });
   }
   return out;
 }
@@ -658,9 +717,13 @@ export function matchEvent(e, opts = {}) {
   const plainKey = isPlainChord(evChord);
   if (plainKey && editable) return null;
 
+  // Two actions on one chord (a clash the editor names, keymapConflicts): the one the user bound
+  // there wins over one that holds it by default, so a user's own rebinding wins over a default
+  // of either chord family, row by row (docs/desktop-keyboard.md, "Switch to Ctrl+Shift": a stored
+  // Ctrl+Shift+K rebind keeps firing after the option makes Ctrl+Shift+K the palette's default).
+  // Within each, a specific context wins over global.
   const find = (chord, only = () => true) => {
-    let globalHit = null;
-    let contextHit = null;
+    const hits = { own: { context: null, global: null }, fixed: { context: null, global: null } };
     for (const action of actions.values()) {
       if (!only(action.id) || !contextEligible(action.context) || !actionLive(action)) continue;
       const bound = parseChord(getBinding(action.id, isMac) || "");
@@ -668,10 +731,11 @@ export function matchEvent(e, opts = {}) {
       // Inside a terminal, every other chord stays with the attached program, even after
       // a custom rebind (on macOS the event's chord equals the bound one here).
       if (insideTerminal && !terminalAllows(action.id, chord, isMac)) continue;
-      if (action.context === "global") globalHit = globalHit || action;
-      else contextHit = contextHit || action;
+      const tier = hits[hasOverride(action.id) ? "own" : "fixed"];
+      if (action.context === "global") tier.global = tier.global || action;
+      else tier.context = tier.context || action;
     }
-    return contextHit || globalHit; // specific context wins over global
+    return hits.own.context || hits.own.global || hits.fixed.context || hits.fixed.global;
   };
   // A rebind the shortcuts editor recorded before macOS ⌘⌥ chords were read by the physical key
   // holds the character ⌥ typed (⌘⌥O was stored as Mod+Alt+Ø): it still matches that press, and

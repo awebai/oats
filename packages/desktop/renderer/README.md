@@ -1359,11 +1359,18 @@ section is the module map.
   `defaultChord` that folds into the effective keymap like a
   `DEFAULT_KEYMAP` entry — override wins, explicit unbind kills it),
   `DEFAULT_KEYMAP` (one entry per action: a chord, or `{ mac, other }`
-  when the platforms differ; `defaultBinding(id, isMac)`), user overrides
+  when the platforms differ; `defaultBinding(id, isMac)`), one such keymap
+  per chord family (`DEFAULT_KEYMAPS`: Ctrl+Alt, the default and
+  `DEFAULT_KEYMAP`, and Ctrl+Shift, which moves the Linux/Windows key of seven
+  `CHORDS_READ` rows; `setChordFamily` binds one, from
+  `chord-family.mjs`, and every reader of a default follows at once), user overrides
   persisted under `localStorage["oats-desktop-keymap"]`, chord
   parse/format/match, and dispatch (`matchEvent`/`handleKeydown`).
-  `getBinding(id, isMac)` is override → platform default → registration
-  default; pass the platform wherever a chord is shown. The engine
+  `getBinding(id, isMac)` is override → platform default (in the active
+  family) → registration default; pass the platform wherever a chord is shown.
+  When two actions match one keydown, one bound there by the user wins over one
+  holding it by default (a stored rebind keeps firing after a family's default
+  takes its key), and within each a specific context wins over global. The engine
   skips already-consumed (`defaultPrevented`) events, and unmodified/
   shift-only chords never fire while an editable field (input, textarea,
   select, contenteditable) has focus. Terminal
@@ -1449,7 +1456,16 @@ section is the module map.
   the engine's `terminalAllows` (global and tabs actions only: a terminal
   lives in the tab layer), a "changed" marker and Reset when the binding
   differs from the default, click-to-record (Esc cancels, Backspace
-  unbinds), conflict warnings via `findConflict`, reset-all.
+  unbinds), conflict warnings via `findConflict`, reset-all. On Linux/Windows,
+  given the page's chord family, its top holds the family choice ("Shortcuts
+  anywhere": Ctrl+Alt or Ctrl+Shift), which writes keys.json through main and
+  switches the keymap at once, with main's note when the file was not taken.
+- **chord-family.mjs** — the chord family in the page: asks main
+  (`../chord-family.mjs`) as the window starts, follows its pushes, writes the
+  Shortcuts page's choice through it, checks what main sends again, and applies
+  each state to the engine (`setChordFamily`). The shell awaits `start()` before
+  it installs its keydown listener, so no key is read in the wrong family. It
+  never imports `keys-file.mjs`, which names a Node builtin.
 
 ## Shared Components — existing-data frame 10 parity
 
@@ -1511,6 +1527,19 @@ either: it opens `forget-dialog.mjs`, the lifecycle dialog's classes and focus h
 with no plan, which sends `{server, instance}` once to `/api/server-forget`
 (`../server/server-forget.mjs`), which answers the outcome and starts the roster read after the command; the row leaves the roster when that read lands
 ([desktop-deployment-model.md](../docs/desktop-deployment-model.md#remote-rows)).
+
+An instance's colour (#1421 §2) has no row menu item: the palette's **Instance: name and
+colour…** and `instance.edit` (CHORDS `edit-instance`, Ctrl+Alt+R / ⌥⌘R) open
+`instance-color-dialog.mjs` for the leader's target (`leaderTargetId`; the palette captures
+it when it opens). The dialog is Forget's pattern: it asks `/api/instance-color` with
+`check: true` on open (nothing runs), then sends one `{instance, home, color}` at a time,
+the latest press winning (`../server/instance-color.mjs`, which runs `oats instance color`,
+routed with `--server` for a remote row, and reads the roster again after a change). The dots
+draw the colour from the row (`instance-dot.mjs` over `instanceColor`): `data-instance-color`
+on a running or stopped dot, which shell.css maps to `--instance-<colour>` (theme.css: the
+soul's `-fg` in the built-in themes); the contrast inventory (`contrast-inventory.mjs`
+GRAPHIC_PAIRS) holds every colour on every fill, and "This computer" moves these tokens until
+they hold (`host-theme.mjs`), leaving the soul pairs as calibrated.
 
 `choice-popup.mjs` owns the existing provider/model popup behavior. Model search
 is local to reported advisory IDs/labels; **Defaults**, **Reported suggestions**

@@ -601,6 +601,29 @@ right of its parent, and related instances are grouped together. Siblings are
 joined by a dotted line through their dots. A parent's line to its children
 runs just to the right of the dotted line, so the two never merge.
 
+## An instance's colour
+
+An instance can have a colour, one of the soul palette's six (Sand, Sage,
+Slate, Mauve, Clay, Olive). Its dot shows it wherever the instance is listed:
+the sidebar, its terminal tab, the command palette and the overview. A running
+instance's dot is filled with the colour, a stopped one's is a ring in it. An
+instance whose state is unknown keeps the warning dot, and one without a colour
+looks as before. The shape says the state, never the colour alone.
+
+To set it, open **Instance: name and colour…** from the command palette, or
+press Ctrl+Alt+R (⌥⌘R on macOS). It acts on the instance of the terminal you
+are in, else the focused sidebar row, else the active terminal tab's instance.
+The dialog shows the instance's name, which can't be changed yet, and the
+colours as buttons: **None** and the six. Arrow keys move between them; Enter,
+Space or a click sets the colour at once, and **Saved.** or OATS's refusal
+appears under the title. The dialog stays open until you close it.
+
+The colour is the instance's own, kept in its home by OATS
+(`oats instance color`). Setting one needs OATS 0.67.0 or later on this
+computer, and for an instance on a server, on that server too; until then the
+buttons are disabled and the dialog says which is missing. An instance whose
+home is being spawned or retired can't be given a colour meanwhile.
+
 ## Identity marks and harness badges
 
 Souls, capabilities and workspaces carry a coloured two-letter mark beside

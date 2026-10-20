@@ -71,7 +71,7 @@ import { observeResolvedDeployment } from "../lib/resolved-deployment.mjs";
 
 const rawArgs = process.argv.slice(2);
 /** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
-const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear", "composed-skills", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "if-absent", "install-oats", "instructions", "json", "keep-dir", "keep-env", "no-child-spawns", "no-default", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "run-source", "self", "skills", "verbose", "yes", "yolo"]);
+const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear", "composed-skills", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "if-absent", "install-oats", "instructions", "json", "keep-dir", "keep-env", "no-child-spawns", "no-default", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "run-source", "self", "skills", "suggest-name", "verbose", "yes", "yolo"]);
 /** `--flag=value` is `--flag value`: every kernel reader (flag(), valueFlag(), the onboard and
  *  routed-command loops) then applies the spaced form's validation to it. `problem` is an empty
  *  `--flag=`, a switch given a value, or a value that is itself an option (`--model=--yolo`):
@@ -107,7 +107,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental",
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running", "deployments-list", "soul-composed-skills", "instance-color"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running", "deployments-list", "soul-composed-skills", "instance-color", "spawn-suggest-name"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -2732,7 +2732,15 @@ const livenessWord = (i) => i.running === true ? "RUNNING" : i.running === false
  *  host through `--server`, whose route reads it. `--max-age` reaches here only on a preview or an
  *  apply bound by --expect-decision: the dispatch allow-list (maxAgeRefusal) refuses it otherwise. */
 const SPAWN_VALUE_FLAGS = new Set(["agents-root", "backend", "base", "branch", "dir", "expect-decision", "harness", "idempotency-key", "instance", "launch-config", "max-age", "model", "name", "parent", "purpose", "relation", "relative-root", "relative-to", "repo", "runtime", "task", "task-file", "trigger-event", "wake-cron", "wake-every", "wake-file", "wake-json", "wake-message", "wake-message-file", "wake-tz", "work", "work-dir"]);
-const SPAWN_SWITCHES = new Set(["allow-child-spawns", "json", "no-child-spawns", "no-launch", "no-yolo", "preview", "yolo"]);
+const SPAWN_SWITCHES = new Set(["allow-child-spawns", "json", "no-child-spawns", "no-launch", "no-yolo", "preview", "suggest-name", "yolo"]);
+/** `--suggest-name` (feature spawn-suggest-name): a preview's, with no --name or --purpose. The kernel
+ *  refuses the same (core.mjs spawnBody); the CLI says it before anything is read or sent. */
+function suggestNameProblem(argv) {
+  if (!argv.includes("--suggest-name")) return undefined;
+  if (!argv.includes("--preview")) return "--suggest-name is a preview's: it chooses the name a spawn would get; pass --preview";
+  if (argv.some((a) => ["--name", "--purpose"].includes(a.split("=")[0]))) return "--suggest-name chooses the name: it takes no --name or --purpose";
+  return undefined;
+}
 /** Why `argv` (after `spawn`, the soul first) is not a spawn, or undefined: a positional after the
  *  soul or a flag spawn does not read is never ignored. A value flag consumes its value exactly as
  *  flag() reads it; a missing value is the flag's own check. */
@@ -2765,6 +2773,9 @@ function printSpawnPreview(r, { server, soulFetched = false } = {}) {
   // A host before 0.27 names the harness `runtime` (it still answers spawn-preview-2).
   const harness = r.harness ?? r.runtime;
   console.log(`preview ${r.agent} → ${r.instance}${server ? ` on ${server}` : ""} (${r.work}${r.branch ? `, branch ${r.branch}${r.base ? ` from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}` : ""}) harness ${harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (${server ? "the server's" : "this machine's"} ${harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
+  // Feature spawn-suggest-name: how the name was chosen.
+  if (r.naming?.source === "suggested") console.log(`name: suggested by ${terminalText(r.naming.harness)}${r.naming.model ? ` (${terminalText(r.naming.model)})` : ""} in ${r.naming.ms} ms`);
+  else if (r.naming?.source === "numbered") console.log(`name: numbered (${terminalText(r.naming.reason)}: ${terminalText(r.naming.message)})`);
   if (Array.isArray(r.worktreeHooks)) console.log(r.worktreeHooks.length ? `worktree hooks: ${r.worktreeHooks.map((h) => `${h.capability}${h.required ? " (required)" : ""}`).join(", ")}` : "worktree hooks: none");
   for (const w of r.warnings || []) console.log(`  WARNING: ${terminalText(w)}`);
 }
@@ -2783,7 +2794,7 @@ async function spawnCmd() {
   };
   checkDirectoryOptions(requestedWork); // before anything is resolved or written
   const name = args[1];
-  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--no-launch] [--json]");
+  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>] [--preview [--suggest-name]] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--no-launch] [--json]");
   // Retired boundary flags (maintainer transport ruling): fail LOUDLY before
   // ANY side effect, including root discovery.
   // Local souls (local-agents/) are gone with the workspace model: a soul is a member
@@ -2794,6 +2805,7 @@ async function spawnCmd() {
   const nameFlag = flag("name");
   if (nameFlag === true) bail("E_BAD_ARGS", "--name needs an instance name (a slug: lowercase letters and digits, single dashes between them)");
   if (nameFlag !== undefined && flag("purpose") !== undefined) bail("E_BAD_ARGS", "--name and --purpose are mutually exclusive: --name is the exact instance name, --purpose derives <agent>-<purpose>");
+  { const problem = suggestNameProblem(args); if (problem) bail("E_BAD_ARGS", problem); }
   // The slug rule is checked here too, before any side effect (soul fetch).
   if (nameFlag !== undefined) { try { explicitInstanceName(String(nameFlag)); } catch (e) { bail(e.code, e.message); throw e; } }
   if (args.includes("--ephemeral")) bail("E_BAD_ARGS", "--ephemeral was removed by the runtime-boundary ruling — declare the agent in a capability manifest (agents:) for automatic ephemeral semantics");
@@ -2988,6 +3000,7 @@ async function spawnCmd() {
       // K6: --preview decides everything and touches nothing; --base <ref>
       // selects a worktree's start point; --model @native-default is the
       // explicit "harness's own default" (distinct from omitting --model).
+      ...(args.includes("--suggest-name") ? { suggestName: true } : {}),
       ...(args.includes("--preview") ? { preview: true, subject: { soul: name, agentsRoot: agentsRootFlag !== undefined ? String(agentsRootFlag) : null, dir: flag("dir") !== undefined && flag("dir") !== true ? String(flag("dir")) : null } } : {}),
       ...(flag("base") !== undefined && flag("base") !== true ? { baseRef: flag("base") } : {}),
       // A confirmed preview binds this apply (K6b): drift → E_DECISION_STALE, nothing created.
@@ -4565,7 +4578,7 @@ async function serverRouteCmd() {
     const herdr = herdrSpawnFlag();
     if (herdr) { const e = herdrSettingRemoved(`${herdr} was given`); bail(e.code, e.message); }
     const local = args.slice(1).filter((a, i, all) => a !== "--server" && all[i - 1] !== "--server");
-    const problem = spawnArgvProblem(local);
+    const problem = spawnArgvProblem(local) ?? suggestNameProblem(local);
     if (problem) bail("E_BAD_ARGS", problem);
   }
   // Everything after the command word travels, minus the routing flags; a
@@ -4992,6 +5005,10 @@ Usage:
                                             instance.json providers.<capability>)
       [--preview]                           decide everything, create no instance; --json
                                             includes the decision revision for confirmation
+      [--suggest-name]                      with --preview, no --name or --purpose: the soul's
+                                            harness names the instance for its task
+                                            (<descriptive>-<role>); else it is numbered, and
+                                            naming.reason says why (claude and pi)
       [--expect-decision <rev>]              bind apply to the previewed decision; drift refuses
       [--idempotency-key <key>]              with --expect-decision, replay the completed receipt
                                             for the same key and confirmed decision; a different

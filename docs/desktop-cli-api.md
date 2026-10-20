@@ -120,6 +120,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `soul-composed-instructions` | `oats inspect --soul <soul> --instructions` and its `souls[].composedInstructions`: the AGENTS.md a spawn of the soul here would write, with the soul body and each composed block as ranges, OATS 0.46.0 ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
 | `soul-skills` | `oats inspect --soul <soul> --skills` and its `souls[].skills`: the soul's own skills, the ones a spawn of it copies, with each file's text ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
 | `soul-composed-skills` | `oats inspect --soul <soul> --composed-skills` and its `souls[].composedSkills`: every skill a spawn of the soul gives its instance, its own and its capabilities', each with its `source` and each file's text ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)). The same kernels name each capability skill of `spawn --preview`'s `skills[]` as the spawn does ([The preview](#the-preview)) | |
+| `spawn-suggest-name` | `oats spawn <soul> --preview --suggest-name`: the preview also chooses the name, from the task, through the soul's own harness, and says how in `naming` ([The suggested name](#the-suggested-name-feature-spawn-suggest-name)). Suggested names work on claude and pi; codex is numbered (`unsupported-harness`). Routed, the host needs the feature | |
 | `teams-conditional-default` | `oats teams default <label> --if-absent \| --expect <label>` and `E_TEAM_DEFAULT_MISMATCH`; `oats teams add … --no-default` and its `reused` answer; `E_TEAM_EXISTS` `observed`; unknown flags on `oats teams` refused, OATS 0.48.0 ([`oats teams`](#oats-teams)). A kernel without it ignores the flags: `--if-absent` there is an unconditional set, so check the feature before passing them | |
 | `worktree-event` | the `worktree` hook event; `oats worktree add\|remove` ([`oats worktree`](#oats-worktree)); `worktreeHooks` on `spawn --preview` and on the spawn result and `spawned` event; `spawnInProgress` on `oats status --json` instance rows; the `worktree-added` event kind; `E_INTERRUPTED` and `E_WORKTREE_DIRTY`, OATS 0.49.0 | |
 | `trigger-sources` | capability-declared trigger sources: `on.source: "<capability>:<source>"` triggers and their added row keys, `oats trigger poll`, `--run-source` on `trigger test` and `trigger poll` (`E_TRIGGER_SOURCE_RUN` without it), `E_TRIGGER_SOURCE`, `E_TRIGGER_POLL` `details.cause`, and `triggerSources`/`triggerSourceProblems` on `oats capabilities show`, OATS 0.50.0 ([`oats trigger`](#oats-trigger)) | `triggerApi: 1` (payload only) |
@@ -2500,6 +2501,102 @@ it to a temporary copy (`soulFetched: true`).
   new head and revision. An apply with `--expect-decision` may reuse heads
   too (feature `spawn-apply-max-age`, [Apply](#apply)).
 
+#### The suggested name (feature `spawn-suggest-name`)
+
+```text
+oats spawn <soul> --preview --suggest-name --task-file <f> [the flags of a real spawn] [--json]
+```
+
+A preview that also chooses the instance's name, from the task (`--task-file`,
+or `--task <text>`). Like every preview it writes nothing and runs no hooks.
+- `--suggest-name` without `--preview`, or with `--name` or `--purpose`, is
+  `E_BAD_ARGS`.
+- **The call.** The kernel makes one non-interactive call through the
+  harness, executable and environment the spawn would launch (the launch
+  configuration's `env`, not its `args`), with this prompt on stdin, never in
+  argv:
+
+  > Name an agent for this task: 2–4 lowercase words joined by hyphens, describing the work, not the role. Reply with the name only.
+  >
+  > Task:
+  > <the task text, at most 4000 characters>
+
+  It runs from a fresh empty temporary directory, removed afterwards, with no
+  `OATS_INSTANCE*` variable, without a shell, in its own process group. It is
+  made after the preview's harness checks (the executable's lookup and the
+  harness package probes, from where the home will be) and before anything
+  that depends on the name (placement, branch, home). It takes what those
+  checks leave of the preview's one 20 s preflight budget, which is not
+  raised for it: the group is killed after 20 s, or when the budget runs out
+  first. Its time counts in `preflight.elapsedMs`; `preflight.status` stays
+  that of the checks, so a numbered preview after a `timeout` is confirmed
+  like any other. At most 4 KiB of its output is read.
+- **It starts none of the user's code: no MCP server, hook, plugin,
+  extension or project setting, and no tool on either harness.** Three
+  exceptions are stated:
+  - Claude Code's own built-in plugins (`cc-plugin-*@builtin`) load as
+    they always do, `--bare` included.
+  - Hooks in the host's managed policy (`managed-settings.json`) still
+    apply: they are the host admin's.
+  - pi runs its own credential commands (`!command` keys and headers in
+    models.json), as every pi launch does: they are its login.
+
+  A claude login through `apiKeyHelper` is not read (`--setting-sources
+  ""`): such a user gets `harness-failed` and a numbered name.
+
+  Each harness's argv is proven to start nothing else
+  (`scripts/naming-isolation-proof.mjs`, a recorded run against fixtures,
+  rerun by an operator after a harness upgrade). The proof covers claude
+  2.1.288 and pi 1.3.0, on Linux; macOS is not proven.
+  - **claude**, model `haiku`: `-p --tools "" --strict-mcp-config
+    --setting-sources "" --disable-slash-commands --no-session-persistence
+    --output-format text --model haiku`. Its native login is kept, which
+    `--bare` would not keep.
+  - **pi**, the instance's model: `-p --no-session --no-tools
+    --no-extensions --no-mcp --no-skills --no-prompt-templates --no-themes
+    --no-context-files --no-approve [--model <m>]`.
+  - **codex** is not supported. Its naming call is not proven to start
+    nothing, so a codex soul is numbered with `unsupported-harness`.
+- **The name.**
+  1. The reply's first non-empty line, as a slug.
+  2. Without one or more trailing `-<role>`. The role is the last word of the
+     soul's name, after any package qualifier.
+  3. At most 4 words, cut at a word boundary to fit
+     `64 − 1 − len(role)`.
+  4. Nothing left, or only the role, is `invalid-reply`.
+  5. The name is `<descriptive>-<role>`. A name that is taken (an instance,
+     a soul or a live window, as for `--name`) gets `-2`, `-3`, and so on.
+- **The answer** is the full preview, plus `naming`:
+
+  ```json
+  "naming": { "source": "suggested", "ms": 2310, "harness": "claude", "model": "haiku" }
+  ```
+
+  ```json
+  "naming": { "source": "numbered", "reason": "timeout", "message": "claude gave no name within 20 s", "ms": 20000 }
+  ```
+
+  - With `source: "suggested"`, `instance`, `home`, `branch` and `decision`
+    are those of a preview with `--name <instance>`: an apply with `--name
+    <instance> --expect-decision <revision>` matches it.
+  - With `source: "numbered"`, they are today's numbered name, and the apply
+    goes without `--name`.
+  - `reason` is one of a closed set:
+    - `no-task`: no task, or a blank one; no call is made.
+    - `unsupported-harness`: no call is made.
+    - `timeout`.
+    - `harness-failed`: a nonzero exit, a signal, or no executable. `message`
+      gives the exit or the signal, never the output.
+    - `invalid-reply`.
+  - `model` is `null` when the harness runs its own default.
+  - A failure is never an error: the preview answers.
+  - The text preview prints `name: suggested by claude (haiku) in 2310 ms` or
+    `name: numbered (<reason>: <message>)`.
+- **`--server`:** the call runs on the target machine, through the routed
+  preview, and the task travels as a routed spawn's does. A host that does
+  not advertise `spawn-suggest-name` is refused (`E_REMOTE_INCOMPATIBLE`)
+  before the spawn is sent.
+
 **Provider settings.**
 - `providers` is the `--provider` map as typed.
 - `settings.<cap>`: the merged payload (manifest defaults, then workspace,
@@ -2633,6 +2730,9 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
   `E_INSTANCE_NAME_TAKEN {instance, home, session?}`; a typed name never gets
   a silent `-2`.
 - The name is part of the decision.
+- `--preview --suggest-name` (feature `spawn-suggest-name`) chooses a
+  descriptive name for the task, `<descriptive>-<role>`, which the apply then
+  passes as `--name` ([The suggested name](#the-suggested-name-feature-spawn-suggest-name)).
 
 ### Spawn origin
 

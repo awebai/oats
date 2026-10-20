@@ -38,6 +38,16 @@ contextBridge.exposeInMainWorld("oatsDesktop", {
     return () => ipcRenderer.removeListener("host-theme:changed", fn);
   },
 
+  /** The chord family on Linux/Windows (keys.json, shared with the TUI; chord-family.mjs): plain
+   * state ({ family, why, note }), never a path or file content. The Shortcuts page sets it, which
+   * writes the file; every window hears the change. The renderer validates it again before use. */
+  chordFamily: () => ipcRenderer.invoke("chord-family:get"),
+  setChordFamily: (family) => ipcRenderer.invoke("chord-family:set", family),
+  onChordFamilyChanged: (cb) => {
+    const fn = (_e, state) => cb(state); ipcRenderer.on("chord-family:changed", fn);
+    return () => ipcRenderer.removeListener("chord-family:changed", fn);
+  },
+
   /** Runtime workspace switcher (privileged; renderer modal is the UX layer). */
   workspaceSuggestions: () => ipcRenderer.invoke("workspace:suggestions"),
   workspaceAdd: (path) => ipcRenderer.invoke("workspace:add", path),

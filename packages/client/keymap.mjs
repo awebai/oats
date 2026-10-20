@@ -16,7 +16,8 @@
  *   leaderDoes(key)         -> what the leader then does for a key id, or null
  *   plainKeys(does)         -> the plain key ids of an action (empty when it has none)
  *   leaderRows()            -> LEADER_TABLE
- *   chordKey(does, isMac)   -> the chord's key id on that platform, or null
+ *   chordKey(does, isMac, family)    -> the chord's key id on that platform and in that family, or null
+ *   chordKeyOf(entry, isMac, family) -> the same for a CHORDS row
  *   paletteKey(does, isMac) -> the palette's own key id on that platform, or null
  *
  * `does` names an action, not a client's code: each client maps it to its own. */
@@ -99,23 +100,36 @@ export const PLAIN_KEYS = Object.freeze([
  * under the kitty keyboard protocol (ESC then Ctrl+K is what Ctrl+Alt+K sends without it); an
  * Alt+Shift arrow has a sequence of its own (`CSI 1;4A`) and reaches it with or without. `tab-N`
  * shows the Nth tab of the focused group, `tab-9` its last. The Desktop's Ctrl+Tab, Ctrl+1/2/3 (the
- * stages) and Ctrl+, are the Desktop's own and are not here. */
+ * stages) and Ctrl+, are the Desktop's own and are not here.
+ *
+ * `shift` is the row's key in the Ctrl+Shift family, the option a user picks in keys.json
+ * (packages/client/keys-file.mjs) for a terminal that passes Ctrl+Shift apart from Ctrl: foot and
+ * Alacritty (docs/tui.md, "Which family for my terminal"). Seven rows move (K palette, P spawn,
+ * S workspaces, M zoom, W close, E split right, D split down: the maintainer's cut, a43470ce); the
+ * others keep their `other` key in both families: the Alt+Shift arrows, since Ctrl+Shift+arrow
+ * selects text in inputs and editors; Ctrl+Alt+1–9, since Ctrl+Shift+digit is a shifted symbol on
+ * most layouts; group-next and filter, whose Ctrl+Shift A and F a terminal or an agent takes; and
+ * edit-instance, the Desktop's alone, Ctrl+Alt+R in both. macOS has no family: `mac` is the only key there. */
 export const CHORDS = Object.freeze([
-  { does: "palette", mac: "cmd+k", other: "ctrl+alt+k" },
-  { does: "spawn", mac: "cmd+p", other: "ctrl+alt+p" },
-  { does: "workspaces", mac: "cmd+alt+o", other: "ctrl+alt+o" },
+  { does: "palette", mac: "cmd+k", other: "ctrl+alt+k", shift: "ctrl+shift+k" },
+  { does: "spawn", mac: "cmd+p", other: "ctrl+alt+p", shift: "ctrl+shift+p" },
+  { does: "workspaces", mac: "cmd+alt+o", other: "ctrl+alt+o", shift: "ctrl+shift+s" },
   { does: "previous", mac: "cmd+alt+up", other: "alt+shift+up" },
   { does: "next", mac: "cmd+alt+down", other: "alt+shift+down" },
   { does: "tab-previous", mac: "cmd+alt+left", other: "alt+shift+left" },
   { does: "tab-next", mac: "cmd+alt+right", other: "alt+shift+right" },
   ...Array.from({ length: 9 }, (_, i) => ({ does: `tab-${i + 1}`, mac: `cmd+alt+${i + 1}`, other: `ctrl+alt+${i + 1}` })),
-  { does: "zoom", mac: "cmd+alt+z", other: "ctrl+alt+z" },
-  { does: "close-terminal", mac: "cmd+w", other: "ctrl+alt+w" },
-  { does: "split-right", mac: "cmd+\\", other: "ctrl+alt+e" },
-  { does: "split-down", mac: "cmd+shift+\\", other: "ctrl+alt+shift+e" },
+  { does: "zoom", mac: "cmd+alt+z", other: "ctrl+alt+z", shift: "ctrl+shift+m" },
+  { does: "close-terminal", mac: "cmd+w", other: "ctrl+alt+w", shift: "ctrl+shift+w" },
+  { does: "split-right", mac: "cmd+\\", other: "ctrl+alt+e", shift: "ctrl+shift+e" },
+  { does: "split-down", mac: "cmd+shift+\\", other: "ctrl+alt+shift+e", shift: "ctrl+shift+d" },
   { does: "group-next", mac: "cmd+alt+a", other: "ctrl+alt+a" },
   { does: "filter", mac: "cmd+f", other: "ctrl+alt+f" },
-].map((entry) => Object.freeze({ ...entry })));
+  // The Desktop's alone for now (#1421): its name and colour dialog. No leader key; the TUI has no
+  // such action, so it binds no key for it (chordKeys skips a `does` it does not handle). Not one of
+  // the seven the Ctrl+Shift family moves: Ctrl+Alt+R in both families (the maintainer's ruling).
+  { does: "edit-instance", mac: "cmd+alt+r", other: "ctrl+alt+r" },
+].map((entry) => Object.freeze({ ...entry, shift: entry.shift ?? entry.other })));
 
 /** The palette's own keys, read only while the palette is open: there they win over every binding
  * (the Desktop's ⌘N, `app.chooseSoul`; the chords `previous` and `next`), so they are not CHORDS,
@@ -127,6 +141,12 @@ export const PALETTE_KEYS = Object.freeze([
   { does: "palette-next-group", mac: "cmd+n", other: "alt+shift+down" },
   { does: "palette-previous-group", mac: "cmd+alt+n", other: "alt+shift+up" },
 ].map((entry) => Object.freeze({ ...entry })));
+
+/** The chord families on Linux and Windows: the default and the option (CHORDS `other` and `shift`),
+ * with the name a client shows for each. */
+export const CHORD_FAMILIES = Object.freeze(["ctrl+alt", "ctrl+shift"]);
+export const DEFAULT_CHORD_FAMILY = "ctrl+alt";
+export const CHORD_FAMILY_LABELS = Object.freeze({ "ctrl+alt": "Ctrl+Alt", "ctrl+shift": "Ctrl+Shift" });
 
 const NONE = Object.freeze([]);
 
@@ -151,10 +171,17 @@ export function leaderRows() {
   return LEADER_TABLE;
 }
 
-/** The key id of the chord that does `does` on macOS (`true`) or elsewhere, or null when none does. */
-export function chordKey(does, isMac) {
+/** The key id of the CHORDS row `entry` on macOS (`true`) or elsewhere, in `family` (CHORD_FAMILIES;
+ * anything else is the default), which macOS ignores. */
+export function chordKeyOf(entry, isMac, family = DEFAULT_CHORD_FAMILY) {
+  return isMac ? entry.mac : family === "ctrl+shift" ? entry.shift : entry.other;
+}
+
+/** The key id of the chord that does `does` on macOS (`true`) or elsewhere, in `family` (chordKeyOf),
+ * or null when none does. */
+export function chordKey(does, isMac, family = DEFAULT_CHORD_FAMILY) {
   const entry = CHORDS.find((each) => each.does === does);
-  return entry === undefined ? null : isMac ? entry.mac : entry.other;
+  return entry === undefined ? null : chordKeyOf(entry, isMac, family);
 }
 
 /** The key id of the palette's own key that does `does` on macOS (`true`) or elsewhere, or null. */

@@ -9,6 +9,7 @@ import { captureFocusReturn } from "./focus-return.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { icon } from "./shell-icons.mjs";
 import { treeGuides } from "./instance-tree-view.mjs";
+import { SOUL_COLORS } from "../../client/soul-colors.mjs";
 
 let nextPickerId = 0;
 // A document has one picker lifetime, not a stack of modal focus traps.
@@ -50,7 +51,8 @@ export function joinPickerFocusReturn(doc, { opener, dismiss }) {
  *          sibling?: string, group?: {key: string, label: string},
  *          context?: boolean}>} spec.computeRows
  *        query → result rows, already scored/sorted/sliced by the caller.
- *        A row with `state` draws the sidebar's state dot (`ctx-dot on|off|unknown`);
+ *        A row with `state` draws the sidebar's state dot (`ctx-dot on|off|unknown`), in `color` when it has one
+ *        (a palette name: instance-dot.mjs);
  *        else `dot` draws the small running dot, and a row with neither (a
  *        command) the chevron.
  *        Optional tree shape (the palette's instances): consecutive rows sharing
@@ -284,7 +286,9 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
         row.className = "palette-item";
         row.setAttribute("role", "option");
         // The sidebar's state dot for an instance (unknown liveness included); else the small dot or a command's chevron.
-        const dot = it.state ? `<span class="ctx-dot ${it.state === "running" ? "on" : it.state === "stopped" ? "off" : "unknown"}" aria-hidden="true"></span>`
+        // Its colour, a palette name only (instance-dot.mjs dotColor), never markup.
+        const colored = it.state && typeof it.color === "string" && SOUL_COLORS.includes(it.color) ? ` data-instance-color="${it.color}"` : "";
+        const dot = it.state ? `<span class="ctx-dot ${it.state === "running" ? "on" : it.state === "stopped" ? "off" : "unknown"}"${colored} aria-hidden="true"></span>`
           : it.dot != null ? `<span class="pdot${it.dot ? " on" : ""}" aria-hidden="true"></span>` : `<span class="picon" aria-hidden="true">${icon("chevronRight", { size: 13 })}</span>`;
         row.innerHTML = `${dot}<span class="plabel"></span><span class="pdetail"></span>`;
         row.querySelector(".plabel").textContent = it.label;
@@ -354,5 +358,5 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
 
   // A cycling picker's chord moves its rows while open (modalKeydown consumes it
   // first); toggle() — the same action from anywhere else — agrees.
-  return { open, close, toggle: () => (!overlay ? open() : cycleKey ? cycle?.(1) : close()) };
+  return { open, close, isOpen: () => !!overlay, toggle: () => (!overlay ? open() : cycleKey ? cycle?.(1) : close()) };
 }

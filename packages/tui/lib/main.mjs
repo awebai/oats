@@ -13,7 +13,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
 import { TERMS, capabilityCatalogKey, cliDeploymentList, deploymentsListSupported, createCapabilityCatalog, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
-import { loadConfig } from "./config.mjs";
+import { loadConfig, loadKeys } from "./config.mjs";
 import { ACT_WORDS, LIST_WORDS, actContext, actCwd, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
 import { CHANGE_FILES, admitDeployment, createIdentityReads, createReader, findDeployment, leaveInstance, probeKernel, realpath, startExec, tellable } from "./read.mjs";
@@ -93,8 +93,9 @@ function errorLines(error) {
  *  factories are the shared home's preview, apply boundary and transaction, replaceable so a test
  *  can answer them. `deploymentList` is the shared cliDeploymentList (this computer's deployments
  *  list, through the kernel: awebai/oats#1390), and `startExec` the exec it is handed before the
- *  terminal is taken; replaceable so a test can answer the list. */
-const EFFECTS = Object.freeze({ loadConfig, findDeployment, probeKernel, createReader, createIdentityReads, deploymentList: cliDeploymentList, startExec, admitDeployment, prepareRemoteTerm, createPanel, sweep,
+ *  terminal is taken; replaceable so a test can answer the list. `loadKeys` reads keys.json, the
+ *  chord family (lib/config.mjs), replaceable so no test reads a user's file. */
+const EFFECTS = Object.freeze({ loadConfig, loadKeys, findDeployment, probeKernel, createReader, createIdentityReads, deploymentList: cliDeploymentList, startExec, admitDeployment, prepareRemoteTerm, createPanel, sweep,
   runDir: CHANGE_FILES.dir, removeDir: CHANGE_FILES.remove, realpath, tellable, startInstance, createLifecycleConfirmation, createLifecycleBoundary, createSoulCatalog,
   createCapabilityCatalog, createSpawnPreview, createSpawnApplyBoundary, createSpawnTransaction });
 
@@ -144,6 +145,9 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   if (!isTerminal({ stdin, stdout, env })) { stderr.write(`${NO_TERMINAL}\n`); return 1; }
   const config = effects.loadConfig({ env, home, platform: proc.platform });
   if (!config.ok) { stderr.write(config.lines.map((line) => `${line}\n`).join("")); return 1; }
+  // keys.json, the chord family (docs/tui.md, "Switch to Ctrl+Shift"): read once, here, and never
+  // a reason not to start: what is wrong with it is the default, and the help says why.
+  const keysRead = effects.loadKeys({ env, home });
   const found = effects.findDeployment(resolve(cwd(), options.dir ?? "."));
   // A `--dir` that is in no deployment is refused as it is: what was asked for is not there.
   if (!found.ok && options.dir !== null) { stderr.write(`${noDeployment(found.dir)}\n`); return 1; }
@@ -163,7 +167,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   const clock = () => new Date(now()).toISOString();
   const look = glyphs(env, { ascii: options.ascii || config.ascii });
   const screen = createScreen({ ...look, color: colorEnabled(env) });
-  let state = initialState({ deployment: found.ok ? found.deployment : null, cli: probe.cli, home, entry: found.ok ? pendingEntry(null, clock()) : null, actions: config.actions, ascii: look.ascii, platform: proc.platform, detachKey: config.detachKey });
+  let state = initialState({ deployment: found.ok ? found.deployment : null, cli: probe.cli, home, entry: found.ok ? pendingEntry(null, clock()) : null, actions: config.actions, ascii: look.ascii, platform: proc.platform, detachKey: config.detachKey, keysRead });
   const keymap = bindings(state.actions);
   // THE KITTY KEYBOARD PROTOCOL (docs/tui.md, "Chords"): asked for as the terminal is taken (the
   // guard's PUSH and QUERY), "asking" until it answers or KEYBOARD_WAIT_MS passes, then the flags

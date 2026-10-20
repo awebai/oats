@@ -6,11 +6,13 @@
 // (there is no "last wins"), because a key that silently does something else is worse than a
 // program that does not start. The lines go to a terminal, so nothing taken from the file, and
 // no path, reaches one unless it is plain printable ASCII.
+// Beside it, keys.json (loadKeys, at the end): the chord family both clients bind. That file is not
+// the TUI's alone, so it is never refused: whatever is wrong with it is the default, said in the help.
 import { closeSync, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readSync, renameSync, statSync, unlinkSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { ACTIONS, bindings, keyLabel } from "./actions.mjs";
-import { displayLine, leaderKey } from "./client.mjs";
+import { KEYS_LIMIT, chordFamilyFrom, displayLine, keysPath, leaderKey } from "./client.mjs";
 import { isKeyId } from "./term/keys.mjs";
 import { BACK_KEY_RULE, backKeyId, isBackKey } from "./term/through.mjs";
 
@@ -195,6 +197,10 @@ const NODE_IO = Object.freeze({
     }
   },
   read(path) { return readCapped(path).toString("utf8"); },
+  // keys.json (loadKeys): its bytes, at most KEYS_LIMIT and one, never thrown for its size. The
+  // shared reader decodes them (packages/client/keys-file.mjs), as it does the Desktop's, so the same
+  // bytes are the same family in both clients; one byte over the limit is too large there.
+  keys(path) { return readUpTo(path, KEYS_LIMIT); },
 });
 /** What link(2) answers on a file system without hard links (FAT, exFAT, some network mounts). */
 const NO_LINKS = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS"]);
@@ -222,16 +228,22 @@ function entryAt(path) {
     throw error;
   }
 }
-/** At most CONFIG_LIMIT bytes of a file, whatever it became since it was measured. */
-function readCapped(path) {
+/** At most `limit` bytes of a file and one more, whatever it became since it was measured: one
+ *  byte more is how a reader knows the file is over its limit. */
+function readUpTo(path, limit) {
   const fd = openSync(path, "r");
   try {
-    const bytes = Buffer.alloc(CONFIG_LIMIT + 1);
+    const bytes = Buffer.alloc(limit + 1);
     let length = 0, got = 0;
     while (length < bytes.length && (got = readSync(fd, bytes, length, bytes.length - length, null)) > 0) length += got;
-    if (length > CONFIG_LIMIT) throw Object.assign(new Error("tui.json grew past the limit while it was read"), { code: "EFBIG" });
     return bytes.subarray(0, length);
   } finally { closeSync(fd); }
+}
+/** At most CONFIG_LIMIT bytes of a file, whatever it became since it was measured. */
+function readCapped(path) {
+  const bytes = readUpTo(path, CONFIG_LIMIT);
+  if (bytes.length > CONFIG_LIMIT) throw Object.assign(new Error("tui.json grew past the limit while it was read"), { code: "EFBIG" });
+  return bytes;
 }
 
 /** A path for a line: as it is when it is printable ASCII of at most 200 characters, else `named`. */
@@ -326,4 +338,33 @@ export function loadConfig({ env = process.env, home = homedir(), io = NODE_IO, 
   try { value = JSON.parse(text); } catch { return refused(["it is not valid JSON"]); }
   const checked = effectiveConfig(value, ACTIONS, platform);
   return checked.ok ? { ...checked, path } : refused(checked.problems);
+}
+
+/** What loadKeys hands the shared reader for a path that is there and is no regular file (a
+ *  directory, a FIFO, a device): an error that is not ENOENT or ENOTDIR, so "unreadable". Such a
+ *  file is never opened: a FIFO would hold the start until something wrote to it. */
+const NOT_A_FILE = Object.freeze({ reason: "not a regular file" });
+
+/** Read keys.json, once, at the start (docs/tui.md, "Switch to Ctrl+Shift"): the chord family the
+ *  TUI binds on Linux and Windows, as the shared reader (packages/client/keys-file.mjs
+ *  chordFamilyFrom) says it, a frozen `{ family, why }`. The file is the clients' and the user's:
+ *  `config/keys.json` beside tui.json (keysPath), `{ "chords": "ctrl+alt" | "ctrl+shift" }`. The
+ *  TUI only reads it, and never refuses to start for it: no file, a file that cannot be read, one
+ *  that is not a regular file, over KEYS_LIMIT, not JSON or naming no family it knows are all the
+ *  default, Ctrl+Alt, with `why` saying which (the help says it: chordFamilyNote). A change is read
+ *  at the next start. macOS has no family; the answer is read there too, and ignored.
+ *
+ *  `io` is the file system (node:fs when omitted): `io.stat(path)` as loadConfig's, and
+ *  `io.keys(path)` the file's bytes, at most KEYS_LIMIT and one of them (NODE_IO). Nothing it
+ *  throws reaches the user: it is the reader's `error`. */
+export function loadKeys({ env = process.env, home = homedir(), io = NODE_IO } = {}) {
+  const path = keysPath(env, home);
+  try {
+    const found = io.stat(path);
+    if (found === null) return chordFamilyFrom(null);
+    if (found.file !== true) return chordFamilyFrom(null, NOT_A_FILE);
+    return chordFamilyFrom(io.keys(path));
+  } catch (error) {
+    return chordFamilyFrom(null, error ?? NOT_A_FILE);
+  }
 }

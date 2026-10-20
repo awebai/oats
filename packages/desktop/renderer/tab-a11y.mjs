@@ -24,6 +24,7 @@ export function tabNameTailStart(name, soul = "") {
 /** decor (all decorative; the accessible name stays the bare title):
  *  { kind } or { icon } an app icon for artifact tabs; { dot, detail } a
  *  live-state dot and the instance branch for terminal tabs (Redesign v3);
+ *  { color } the instance's colour on that dot, a palette name (instance-dot.mjs);
  *  { tailAt, tailEnd } splits the title: a head that ellipsizes, the tail
  *  [tailAt, tailEnd) that never shrinks (tabNameTailStart), then any rest of
  *  the title (a remote tab's " · host"), which gives way before the head. */
@@ -42,7 +43,12 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
   triggerEl.tabIndex = -1;
   const { dot = null, detail = null } = decor || {};
   const icon = decor?.icon ?? KIND_ICONS[decor?.kind] ?? null;
-  if (dot) { const mark = document.createElement("span"); mark.className = `tab-dot ${dot === "on" ? "on" : "off"}`; mark.setAttribute("aria-hidden", "true"); triggerEl.append(mark); }
+  if (dot) {
+    const mark = document.createElement("span"); mark.className = `tab-dot ${dot === "on" ? "on" : "off"}`; mark.setAttribute("aria-hidden", "true");
+    // The instance's colour (instance-dot.mjs): a palette name, set on the dot the shell's roster sync keeps current.
+    if (typeof decor.color === "string" && decor.color) mark.dataset.instanceColor = decor.color;
+    triggerEl.append(mark);
+  }
   else if (icon) { const mark = document.createElement("span"); mark.className = "tab-icon"; mark.setAttribute("aria-hidden", "true"); mark.append(iconElement(document, icon, { size: 14 })); triggerEl.append(mark); }
   const label = document.createElement("span"); label.className = "tab-label"; triggerEl.append(label);
   const tailAt = decor?.tailAt;

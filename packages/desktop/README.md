@@ -78,6 +78,13 @@ The shell has three navigation contexts:
 - `host-theme.mjs` — the theme of the computer that runs Desktop, for the
   "This computer" theme choice: reads and follows Omarchy's `colors.toml`, else
   the system's light or dark appearance, and sends plain state to the windows.
+- `chord-family.mjs` — keys.json, the chord family both clients bind on
+  Linux/Windows (Ctrl+Alt or Ctrl+Shift; `packages/client/keys-file.mjs` says
+  what its text means): reads it when a window asks and at app focus, writes it
+  when the Shortcuts page asks (only `chords`, atomically: a temporary file in
+  the same directory, then a rename), and sends plain state to every window
+  (`chord-family:get`, `chord-family:set`, `chord-family:changed`). The kernel
+  never reads the file. `renderer/chord-family.mjs` is its page side.
 - `renderer/shell.mjs` — contextual single sidebar, stage host, artifact-tab
   host, command palette, recursive instance roster, and integrated terminals.
 - `renderer/views/*.mjs` — feature views per the shared contract:

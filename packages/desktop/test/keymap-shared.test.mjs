@@ -11,9 +11,13 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { CHORDS_READ, DEFAULT_KEYMAP, SIDEBAR_KEYS, defaultBinding, chordFromKeyId } from "../renderer/keybindings.mjs";
 import {
-  CHORDS, LEADER, LEADER_TABLE, PALETTE_KEYS, PLAIN_KEYS, chordKey, leaderKey, leaderDoes, paletteKey, plainKeys, leaderRows,
+  CHORDS_READ, DEFAULT_KEYMAP, DEFAULT_KEYMAPS, SIDEBAR_KEYS, defaultBinding, defaultKeymap, chordFromKeyId,
+  activeChordFamily, setChordFamily, getBinding, onKeymapChange,
+} from "../renderer/keybindings.mjs";
+import {
+  CHORDS, CHORD_FAMILIES, CHORD_FAMILY_LABELS, DEFAULT_CHORD_FAMILY, LEADER, LEADER_TABLE, PALETTE_KEYS, PLAIN_KEYS,
+  chordKey, chordKeyOf, leaderKey, leaderDoes, paletteKey, plainKeys, leaderRows,
 } from "../../client/keymap.mjs";
 
 test("the leader is Ctrl+\\ on macOS and Alt+O elsewhere", () => {
@@ -90,6 +94,7 @@ test("the chords: every one, per platform, and what it does", () => {
     ["split-down", "cmd+shift+\\", "ctrl+alt+shift+e"],
     ["group-next", "cmd+alt+a", "ctrl+alt+a"],
     ["filter", "cmd+f", "ctrl+alt+f"],
+    ["edit-instance", "cmd+alt+r", "ctrl+alt+r"],
   ]);
   assert.ok(Object.isFrozen(CHORDS) && CHORDS.every((entry) => Object.isFrozen(entry)));
   assert.equal(new Set(CHORDS.map((entry) => entry.does)).size, CHORDS.length, "one chord per action");
@@ -99,6 +104,33 @@ test("the chords: every one, per platform, and what it does", () => {
   assert.equal(chordKey("palette", true), "cmd+k");
   assert.equal(chordKey("palette", false), "ctrl+alt+k");
   assert.equal(chordKey("instances", false), null, "the stages are the Desktop's own");
+  // The instance's name and colour: a chord of its own, no leader key, never a Shift variant.
+  assert.equal(LEADER_TABLE.some((row) => row.does === "edit-instance"), false, "no leader key for it");
+  assert.equal(PLAIN_KEYS.some((row) => row.does === "edit-instance"), false, "no plain key for it");
+});
+
+test("the Ctrl+Shift family: seven rows move, the others keep their key, and macOS has none", () => {
+  assert.deepEqual([...CHORD_FAMILIES], ["ctrl+alt", "ctrl+shift"]);
+  assert.equal(DEFAULT_CHORD_FAMILY, "ctrl+alt");
+  assert.deepEqual({ ...CHORD_FAMILY_LABELS }, { "ctrl+alt": "Ctrl+Alt", "ctrl+shift": "Ctrl+Shift" });
+  // The maintainer's cut (a43470ce): K P S M W E D.
+  const moved = { palette: "ctrl+shift+k", spawn: "ctrl+shift+p", workspaces: "ctrl+shift+s", zoom: "ctrl+shift+m",
+    "close-terminal": "ctrl+shift+w", "split-right": "ctrl+shift+e", "split-down": "ctrl+shift+d" };
+  assert.deepEqual(CHORDS.map(({ does, shift }) => [does, shift]),
+    CHORDS.map(({ does, other }) => [does, moved[does] ?? other]));
+  assert.deepEqual(CHORDS.filter((entry) => entry.shift !== entry.other).map((entry) => entry.does), Object.keys(moved));
+  assert.equal(new Set(CHORDS.map((entry) => entry.shift)).size, CHORDS.length, "shift: no chord twice");
+  for (const entry of CHORDS) {
+    assert.equal(chordKeyOf(entry, true, "ctrl+shift"), entry.mac, `${entry.does}: macOS has no family`);
+    assert.equal(chordKeyOf(entry, false), entry.other, `${entry.does}: the default is Ctrl+Alt`);
+    assert.equal(chordKeyOf(entry, false, "ctrl+shift"), entry.shift);
+    assert.equal(chordKeyOf(entry, false, "anything"), entry.other, `${entry.does}: an unknown family is the default`);
+  }
+  assert.equal(chordKey("palette", false, "ctrl+shift"), "ctrl+shift+k");
+  assert.equal(chordKey("filter", false, "ctrl+shift"), "ctrl+alt+f");
+  assert.equal(chordKey("next", false, "ctrl+shift"), "alt+shift+down");
+  assert.equal(chordKey("tab-9", false, "ctrl+shift"), "ctrl+alt+9");
+  assert.equal(chordKey("palette", true, "ctrl+shift"), "cmd+k");
 });
 
 test("the palette's own keys: next and previous group, per platform, read only while it is open", () => {
@@ -152,7 +184,7 @@ test("the Desktop's chords are the module's entries, each read by one action", (
     previous: "roster.openPrevious", next: "roster.openNext", "tab-previous": "tabs.prevPage", "tab-next": "tabs.nextPage",
     ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tab-${i + 1}`, `tabs.goto${i + 1}`])),
     zoom: "terminal.focusMode", "close-terminal": "tabs.close", "split-right": "split.vertical", "split-down": "split.horizontal",
-    "group-next": "split.focusNextGroup", filter: "sidebar.focusFilter",
+    "group-next": "split.focusNextGroup", filter: "sidebar.focusFilter", "edit-instance": "instance.edit",
   });
   for (const { id, does } of CHORDS_READ) {
     assert.ok(Object.hasOwn(DEFAULT_KEYMAP, id), id);
@@ -195,7 +227,7 @@ test("change the module's entry in a copy: the Desktop's default follows, and ke
   mkdirSync(join(root, "client")); mkdirSync(join(root, "desktop", "renderer"), { recursive: true });
   const module = readFileSync(MODULE, "utf8");
   const changed = module.replace('other: "alt+o"', 'other: "alt+l"').replace('{ does: "refresh", keys: ["r"] }', '{ does: "refresh", keys: ["F"] }')
-    .replace('{ does: "palette", mac: "cmd+k", other: "ctrl+alt+k" }', '{ does: "palette", mac: "cmd+j", other: "ctrl+shift+j" }')
+    .replace('{ does: "palette", mac: "cmd+k", other: "ctrl+alt+k", shift: "ctrl+shift+k" }', '{ does: "palette", mac: "cmd+j", other: "ctrl+shift+j" }')
     .replace('{ does: "previous", mac: "cmd+alt+up", other: "alt+shift+up" }', '{ does: "previous", mac: "cmd+alt+u", other: "ctrl+alt+u" }')
     .replace('`ctrl+alt+${i + 1}`', '`ctrl+shift+alt+${i + 1}`');
   assert.notEqual(changed, module);
@@ -250,6 +282,7 @@ const DEFAULTS = [
   ["roster.openPrevious",{"mac":"Mod+Alt+↑","other":"Alt+Shift+↑"}],
   ["roster.openNext",{"mac":"Mod+Alt+↓","other":"Alt+Shift+↓"}],
   ["terminal.focusMode",{"mac":"Mod+Alt+Z","other":"Ctrl+Alt+Z"}],
+  ["instance.edit",{"mac":"Mod+Alt+R","other":"Ctrl+Alt+R"}],
   ["app.chooseSoul",{"mac":"Mod+N","other":"Ctrl+Shift+N"}],
   ["app.shortcuts","Mod+,"],
   ["app.themeToggle",null],
@@ -293,4 +326,85 @@ test("the Desktop's default keymap, every action on both platforms, is as pinned
     assert.equal(defaultBinding(id, true), mac, `${id} on macOS`);
     assert.equal(defaultBinding(id, false), other, `${id} elsewhere`);
   }
+});
+
+// The Ctrl+Shift family (keys.json "chords": "ctrl+shift"; docs/desktop-keyboard.md, "Switch to
+// Ctrl+Shift"): the same keymap, with the Linux/Windows key of the seven rows it moves (the
+// maintainer's cut, a43470ce) and nothing else. macOS has no family: its keys are the same in both.
+const SHIFT_MOVED = {
+  "app.palette": "Ctrl+Shift+K",
+  "app.quickOpenSouls": "Ctrl+Shift+P",
+  "app.workspaces": "Ctrl+Shift+S",
+  "terminal.focusMode": "Ctrl+Shift+M",
+  "tabs.close": "Ctrl+Shift+W",
+  "split.vertical": "Ctrl+Shift+E",
+  "split.horizontal": "Ctrl+Shift+D",
+};
+const SHIFT_DEFAULTS = DEFAULTS.map(([id, entry]) => [id, Object.hasOwn(SHIFT_MOVED, id) ? { mac: entry.mac, other: SHIFT_MOVED[id] } : entry]);
+
+test("the Desktop's default keymap in each chord family, every action on both platforms, is as pinned", t => {
+  t.after(() => setChordFamily("ctrl+alt"));
+  assert.deepEqual(Object.keys(DEFAULT_KEYMAPS), ["ctrl+alt", "ctrl+shift"]);
+  assert.ok(Object.isFrozen(DEFAULT_KEYMAPS) && Object.values(DEFAULT_KEYMAPS).every(Object.isFrozen));
+  assert.equal(DEFAULT_KEYMAP, DEFAULT_KEYMAPS["ctrl+alt"], "the default keymap is the Ctrl+Alt one");
+  assert.deepEqual(JSON.parse(JSON.stringify(Object.entries(DEFAULT_KEYMAPS["ctrl+shift"]))), SHIFT_DEFAULTS);
+  for (const [family, table] of [["ctrl+alt", DEFAULTS], ["ctrl+shift", SHIFT_DEFAULTS]]) {
+    for (const [id, entry] of table) {
+      const [mac, other] = entry !== null && typeof entry === "object" ? [entry.mac, entry.other] : [entry, entry];
+      assert.equal(defaultBinding(id, true, family), mac, `${id} on macOS, ${family}`);
+      assert.equal(defaultBinding(id, false, family), other, `${id} elsewhere, ${family}`);
+    }
+  }
+  // Exactly the seven differ, on Linux/Windows only.
+  const differ = Object.keys(DEFAULT_KEYMAP).filter((id) => defaultBinding(id, false, "ctrl+alt") !== defaultBinding(id, false, "ctrl+shift"));
+  assert.deepEqual(differ.sort(), Object.keys(SHIFT_MOVED).sort());
+  for (const id of Object.keys(DEFAULT_KEYMAP)) assert.equal(defaultBinding(id, true, "ctrl+shift"), defaultBinding(id, true, "ctrl+alt"), `${id}: macOS has no family`);
+  // The kept rows keep their key: group-next, filter, the Alt+Shift arrows and Ctrl+Alt+1–9.
+  assert.deepEqual(["split.focusNextGroup", "sidebar.focusFilter", "roster.openPrevious", "tabs.nextPage", "tabs.goto1", "tabs.goto9"].map((id) => defaultBinding(id, false, "ctrl+shift")),
+    ["Ctrl+Alt+A", "Ctrl+Alt+F", "Alt+Shift+↑", "Alt+Shift+→", "Ctrl+Alt+1", "Ctrl+Alt+9"]);
+  // An unknown family is the default's keymap.
+  assert.equal(defaultKeymap("ctrl+meta"), DEFAULT_KEYMAP);
+  assert.equal(defaultBinding("app.palette", false, "ctrl+meta"), "Ctrl+Alt+K");
+});
+
+test("the Desktop's chords are the module's entries in each family: CHORDS shift, read by chordKeyOf", () => {
+  for (const { id, does } of CHORDS_READ) for (const family of CHORD_FAMILIES) {
+    assert.equal(defaultBinding(id, false, family), chordFromKeyId(chordKey(does, false, family)), `${id} elsewhere, ${family}`);
+    assert.equal(defaultBinding(id, true, family), chordFromKeyId(chordKey(does, true)), `${id} on macOS, ${family}`);
+  }
+});
+
+test("the active family: the default until set, every reader follows at once, and the keymap's listeners hear of it", t => {
+  t.after(() => setChordFamily("ctrl+alt"));
+  assert.equal(activeChordFamily(), "ctrl+alt");
+  let heard = 0;
+  const off = onKeymapChange(() => { heard++; });
+  t.after(off);
+  setChordFamily("ctrl+shift");
+  assert.equal(activeChordFamily(), "ctrl+shift");
+  assert.equal(heard, 1);
+  assert.equal(defaultBinding("app.palette", false), "Ctrl+Shift+K", "defaultBinding reads the active family");
+  assert.equal(getBinding("split.horizontal", false), "Ctrl+Shift+D", "and so does getBinding, every reader's");
+  assert.equal(getBinding("app.palette", true), "Mod+K", "macOS is the same");
+  setChordFamily("ctrl+shift");
+  assert.equal(heard, 1, "the same family again is no change");
+  setChordFamily("Ctrl+Shift ");
+  assert.equal(activeChordFamily(), "ctrl+alt", "anything that is not a family is the default");
+  assert.equal(heard, 2);
+  assert.equal(getBinding("app.palette", false), "Ctrl+Alt+K");
+});
+
+test("change the module's shift entry in a copy: the Desktop's Ctrl+Shift default follows", async t => {
+  const root = mkdtempSync(join(tmpdir(), "keymap-shared-shift-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "client")); mkdirSync(join(root, "desktop", "renderer"), { recursive: true });
+  const module = readFileSync(MODULE, "utf8");
+  const changed = module.replace('shift: "ctrl+shift+k"', 'shift: "ctrl+shift+j"').replace('{ does: "filter", mac: "cmd+f", other: "ctrl+alt+f" }', '{ does: "filter", mac: "cmd+f", other: "ctrl+alt+f", shift: "ctrl+shift+f" }');
+  assert.notEqual(changed, module);
+  writeFileSync(join(root, "client", "keymap.mjs"), changed);
+  writeFileSync(join(root, "desktop", "renderer", "keybindings.mjs"), readFileSync(ENGINE, "utf8"));
+  const copy = await import(pathToFileURL(join(root, "desktop", "renderer", "keybindings.mjs")).href);
+  assert.deepEqual([copy.defaultBinding("app.palette", false, "ctrl+shift"), copy.defaultBinding("app.palette", false, "ctrl+alt")], ["Ctrl+Shift+J", "Ctrl+Alt+K"]);
+  assert.equal(copy.defaultBinding("sidebar.focusFilter", false, "ctrl+shift"), "Ctrl+Shift+F");
+  assert.equal(copy.defaultBinding("app.palette", true, "ctrl+shift"), "Mod+K");
 });
