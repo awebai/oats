@@ -87,13 +87,9 @@ test("the leader is wired as one rebindable global action, inert under a modal, 
   assert.match(src, /onSettle: \(does, origin\) => \{ const why = notApplicable\(does\); if \(why\) sayInHint\(why\); else leaderDispatch\.run\(does, origin\); \}/);
   assert.match(src, /createLeaderHint\(\{ doc: document, host: document\.getElementById\("main"\), before: document\.getElementById\("show-panel"\) \}\)/);
   assert.match(src, /registerAction\(\{ id: "split\.focusNextGroup", label: "Focus the next editor group", context: "tabs",/);
-  // The footer's button starts it, toggles off on a second click, and names the live chord.
-  assert.match(src, /leaderButton\?\.addEventListener\("click", \(\) => \{ if \(!modalOpen\(\)\) leader\.toggle\(\{ opener: leaderButton,/);
-  assert.match(src, /const chord = getBinding\("app\.leader", isMac\);\n    const name = chord \? `Commands: \$\{formatChord\(chord, isMac\)\}, then one key`/);
-  const html = read("renderer/index.html");
-  const foot = html.slice(html.indexOf('<div id="nav-foot">'));
-  assert.ok(foot.indexOf('id="sidebar-leader"') < foot.indexOf('id="sidebar-spawn"'), "the leader's hint is the footer's first control");
-  assert.match(foot, /<kbd class="shortcut-hint" data-shortcut="app\.leader" aria-hidden="true" hidden><\/kbd><span aria-hidden="true">commands<\/span>/);
+  // The footer has no leader button: the shortcuts editor is where the commands are listed.
+  assert.doesNotMatch(read("renderer/index.html"), /sidebar-leader|data-shortcut="app\.leader"/);
+  assert.doesNotMatch(src, /sidebar-leader/);
   // A terminal's interception goes through matchEvent, which a let-through event (the leader twice) passes.
   assert.match(read("renderer/keybindings.mjs"), /if \(e\.defaultPrevented \|\| letThroughEvents\.has\(e\)\) return null;/);
 });

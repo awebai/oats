@@ -163,9 +163,13 @@ validates the field and never synthesizes it.
   - A last-known roster (an unreached server, a held-stale row) never shows
     it.
 - **The mark.** A "Needs input" pill (an alert icon and text, never colour
-  alone) sits on the row's name line, before "New". It becomes part of the
-  row's accessible name. The dot stays liveness. Rows are not reordered, and
-  nothing animates.
+  alone) takes the row's second line, in place of its repository, pull
+  request and branch, which stay in the card (a row with no card says them in
+  its title and description, before the wait). The name line keeps the name
+  at its full width, and "New" beside it. A held home's state wins that line:
+  the mark is not shown, and the row's description says the wait. The mark
+  becomes part of the row's accessible name. The dot stays liveness. Rows are
+  not reordered, keep their height, and nothing animates.
 - **The card** (hover or keyboard focus) adds `Waiting` (the reason in words,
   how long, and the local start time) and `Message`. A claim without a note
   (none, malformed or withheld) has no `Message` row: `Waiting` already says
@@ -176,7 +180,7 @@ validates the field and never synthesizes it.
   month table, like the rest of the copy), judged against the show or paint
   time.
 - **Collapsed parents.** A waiting row hidden by a collapse is counted on its
-  nearest visible ancestor as "N below" (`waitingRollup` in
+  nearest visible ancestor as "N below", in the same place as the mark (`waitingRollup` in
   `packages/client/instance-tree.mjs`, beside `instanceVisibleInTree`, which it mirrors), following the parent relation only
   (never across a remote server), and never outside the deployment section the
   waiting row is painted in. A collapse hides only rows of its own section
