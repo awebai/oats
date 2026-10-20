@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import {
-  registerAction, setBinding, resetAllBindings, getBinding, defaultBinding, keymapConflicts,
+  registerAction, setBinding, resetAllBindings, getBinding, defaultBinding, keymapConflicts, setChordFamily, activeChordFamily,
 } from "../renderer/keybindings.mjs";
-import { createKeybindingsEditor, groupActions, shortcutMatches } from "../renderer/keybindings-editor.mjs";
+import { createKeybindingsEditor, groupActions, shortcutMatches, CHORD_FAMILY_WORDS } from "../renderer/keybindings-editor.mjs";
+import { createChordFamily } from "../renderer/chord-family.mjs";
 
 // storage stub so overrides work in node
 const map = new Map();
@@ -701,4 +702,124 @@ test("a rebind of the leader is shown everywhere the editor names it", (t) => {
   assert.match(f.doc.querySelector(".kb-extras").textContent, /Alt\+L then 1 is Instances/);
   f.type("alt+l k");
   assert.deepEqual(f.shown(), ["Command palette"]);
+});
+
+// ── The chord family (keys.json; docs/desktop-keyboard.md, "Switch to Ctrl+Shift") ──────────────
+// On Linux/Windows the page's top holds a two-way choice; a change writes keys.json through main at
+// once and the keymap switches at once. `desk` stands for main: it answers, writes and fails as told.
+function familySetup(t, { isMac = false, answer = { family: "ctrl+alt", why: "missing", note: null }, fail = false } = {}) {
+  const dom = new JSDOM("<!doctype html><body>");
+  const doc = dom.window.document;
+  resetAllBindings();
+  const offs = [
+    registerAction({ id: "app.palette", label: "Command palette", context: "global", run: () => {} }),
+    registerAction({ id: "sidebar.toggle", label: "Sidebar: show or hide", context: "global", run: () => {} }),
+    registerAction({ id: "tabs.close", label: "Close tab", context: "tabs", run: () => {} }),
+  ];
+  const writes = [];
+  const desk = {
+    chordFamily: async () => answer,
+    setChordFamily: async (family) => { writes.push(family); if (fail) throw new Error("EACCES"); return { family, why: null, note: null }; },
+    onChordFamilyChanged: () => () => {},
+  };
+  const chordFamily = createChordFamily({ desk, apply: setChordFamily });
+  const editor = createKeybindingsEditor({ doc, isMac, chordFamily });
+  t.after(() => { editor.close(); for (const off of offs) off(); resetAllBindings(); setChordFamily("ctrl+alt"); dom.window.close(); });
+  const choice = () => doc.querySelector(".kb-family");
+  const radio = (family) => doc.querySelector(`.kb-family input[value="${family}"]`);
+  const choose = async (family) => { radio(family).click(); for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r)); };
+  // A row's chord as its keycaps show it, one per key ("Ctrl+Shift+K": Ctrl, Shift, K).
+  const chordOf = (label) => [...[...doc.querySelectorAll(".kb-row")].find((r) => r.querySelector(".kb-label").textContent === label).querySelectorAll(".kb-keys kbd")].map((k) => k.textContent).join("+");
+  return { doc, editor, chordFamily, writes, choice, radio, choose, chordOf };
+}
+
+test("chord family: Linux/Windows shows the choice at the top, in its words, naming the family in use", async (t) => {
+  const f = familySetup(t, { answer: { family: "ctrl+shift", why: null, note: null } });
+  await f.chordFamily.start();
+  f.editor.open();
+  const choice = f.choice();
+  assert.ok(choice, "the choice is there");
+  assert.equal(choice.tagName, "FIELDSET");
+  assert.equal(choice.previousElementSibling.className, "kb-head", "at the top, under the head");
+  assert.equal(choice.querySelector("legend").textContent, "Shortcuts anywhere");
+  assert.deepEqual([...choice.querySelectorAll("label")].map((l) => l.textContent.trim()), ["Ctrl+Alt (default)", "Ctrl+Shift (foot, Alacritty)"]);
+  assert.deepEqual({ ...CHORD_FAMILY_WORDS.options }, { "ctrl+alt": "Ctrl+Alt (default)", "ctrl+shift": "Ctrl+Shift (foot, Alacritty)" });
+  assert.equal(f.radio("ctrl+shift").checked, true, "the family in use is the one chosen");
+  assert.equal(f.radio("ctrl+alt").checked, false);
+  assert.equal(choice.querySelector(".kb-family-tui").textContent, "oats tui uses it from its next start.");
+  assert.equal(choice.querySelector(".kb-family-note").hidden, true, "nothing more to say");
+  assert.equal(f.chordOf("Command palette"), "Ctrl+Shift+K", "the rows show the family's keys");
+});
+
+test("chord family: macOS has no choice, and neither has an editor given no family", async (t) => {
+  const mac = familySetup(t, { isMac: true });
+  mac.editor.open();
+  assert.equal(mac.choice(), null);
+  mac.editor.close();
+  const dom = new JSDOM("<!doctype html><body>");
+  t.after(() => dom.window.close());
+  const bare = createKeybindingsEditor({ doc: dom.window.document, isMac: false });
+  bare.open();
+  assert.equal(dom.window.document.querySelector(".kb-family"), null);
+  bare.close();
+});
+
+test("chord family: a change writes keys.json at once and the keymap switches at once, rows included", async (t) => {
+  const f = familySetup(t);
+  await f.chordFamily.start();
+  f.editor.open();
+  assert.equal(f.radio("ctrl+alt").checked, true);
+  assert.equal(f.chordOf("Command palette"), "Ctrl+Alt+K");
+  await f.choose("ctrl+shift");
+  assert.deepEqual(f.writes, ["ctrl+shift"], "written once, with the family chosen");
+  assert.equal(activeChordFamily(), "ctrl+shift");
+  assert.equal(getBinding("app.palette", false), "Ctrl+Shift+K");
+  assert.equal(f.chordOf("Command palette"), "Ctrl+Shift+K", "the page follows");
+  assert.equal(f.chordOf("Close tab"), "Ctrl+Shift+W");
+  assert.equal(f.radio("ctrl+shift").checked, true);
+  await f.choose("ctrl+alt");
+  assert.deepEqual(f.writes, ["ctrl+shift", "ctrl+alt"]);
+  assert.equal(f.chordOf("Command palette"), "Ctrl+Alt+K");
+});
+
+test("chord family: the note main sends is shown under the choice", async (t) => {
+  const f = familySetup(t, { answer: { family: "ctrl+alt", why: "unknown-chords", note: "keys.json: unknown chords value, using Ctrl+Alt" } });
+  await f.chordFamily.start();
+  f.editor.open();
+  const note = f.choice().querySelector(".kb-family-note");
+  assert.equal(note.hidden, false);
+  assert.equal(note.textContent, "keys.json: unknown chords value, using Ctrl+Alt");
+  assert.equal(f.radio("ctrl+alt").checked, true);
+  // Chosen now, the file chose: nothing more to say.
+  await f.choose("ctrl+shift");
+  assert.equal(note.hidden, true);
+});
+
+test("chord family: a write that fails keeps the family in use, and says so", async (t) => {
+  const f = familySetup(t, { fail: true });
+  await f.chordFamily.start();
+  f.editor.open();
+  await f.choose("ctrl+shift");
+  assert.deepEqual(f.writes, ["ctrl+shift"]);
+  assert.equal(activeChordFamily(), "ctrl+alt", "nothing switched");
+  assert.equal(f.radio("ctrl+alt").checked, true, "the choice is back on the family in use");
+  const note = f.choice().querySelector(".kb-family-note");
+  assert.equal(note.hidden, false);
+  assert.equal(note.textContent, "Could not write keys.json: the shortcuts stay Ctrl+Alt.");
+  assert.equal(note.getAttribute("role"), "status");
+});
+
+test("chord family: a stored override on one of the seven keys shows its clash with the new default", async (t) => {
+  const f = familySetup(t);
+  await f.chordFamily.start();
+  setBinding("sidebar.toggle", "Ctrl+Shift+K");
+  f.editor.open();
+  assert.equal(f.doc.querySelector(".kb-clashes").hidden, true, "no clash under Ctrl+Alt");
+  await f.choose("ctrl+shift");
+  const banner = f.doc.querySelector(".kb-clashes");
+  assert.equal(banner.hidden, false);
+  assert.match(banner.textContent, /Ctrl\+Shift\+K is both “Command palette” and “Sidebar: show or hide”|Ctrl\+Shift\+K is both “Sidebar: show or hide” and “Command palette”/);
+  const row = f.doc.querySelector('.kb-chord[data-action-id="sidebar.toggle"]').closest(".kb-row");
+  assert.match(row.querySelector(".kb-conflict").textContent, /Also bound to “Command palette”/);
+  assert.equal(getBinding("sidebar.toggle", false), "Ctrl+Shift+K", "the stored rebind is kept");
 });

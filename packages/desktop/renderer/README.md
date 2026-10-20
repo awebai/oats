@@ -1354,11 +1354,18 @@ section is the module map.
   `defaultChord` that folds into the effective keymap like a
   `DEFAULT_KEYMAP` entry — override wins, explicit unbind kills it),
   `DEFAULT_KEYMAP` (one entry per action: a chord, or `{ mac, other }`
-  when the platforms differ; `defaultBinding(id, isMac)`), user overrides
+  when the platforms differ; `defaultBinding(id, isMac)`), one such keymap
+  per chord family (`DEFAULT_KEYMAPS`: Ctrl+Alt, the default and
+  `DEFAULT_KEYMAP`, and Ctrl+Shift, which moves the Linux/Windows key of seven
+  `CHORDS_READ` rows; `setChordFamily` binds one, from
+  `chord-family.mjs`, and every reader of a default follows at once), user overrides
   persisted under `localStorage["oats-desktop-keymap"]`, chord
   parse/format/match, and dispatch (`matchEvent`/`handleKeydown`).
-  `getBinding(id, isMac)` is override → platform default → registration
-  default; pass the platform wherever a chord is shown. The engine
+  `getBinding(id, isMac)` is override → platform default (in the active
+  family) → registration default; pass the platform wherever a chord is shown.
+  When two actions match one keydown, one bound there by the user wins over one
+  holding it by default (a stored rebind keeps firing after a family's default
+  takes its key), and within each a specific context wins over global. The engine
   skips already-consumed (`defaultPrevented`) events, and unmodified/
   shift-only chords never fire while an editable field (input, textarea,
   select, contenteditable) has focus. Terminal
@@ -1444,7 +1451,16 @@ section is the module map.
   the engine's `terminalAllows` (global and tabs actions only: a terminal
   lives in the tab layer), a "changed" marker and Reset when the binding
   differs from the default, click-to-record (Esc cancels, Backspace
-  unbinds), conflict warnings via `findConflict`, reset-all.
+  unbinds), conflict warnings via `findConflict`, reset-all. On Linux/Windows,
+  given the page's chord family, its top holds the family choice ("Shortcuts
+  anywhere": Ctrl+Alt or Ctrl+Shift), which writes keys.json through main and
+  switches the keymap at once, with main's note when the file was not taken.
+- **chord-family.mjs** — the chord family in the page: asks main
+  (`../chord-family.mjs`) as the window starts, follows its pushes, writes the
+  Shortcuts page's choice through it, checks what main sends again, and applies
+  each state to the engine (`setChordFamily`). The shell awaits `start()` before
+  it installs its keydown listener, so no key is read in the wrong family. It
+  never imports `keys-file.mjs`, which names a Node builtin.
 
 ## Shared Components — existing-data frame 10 parity
 

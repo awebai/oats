@@ -12,7 +12,8 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, screen, shell } from "electron";
 import { spawn, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync, lstatSync, statSync, fstatSync, opendirSync, openSync, readSync, closeSync, watch } from "node:fs";
+import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync, lstatSync, statSync, fstatSync, opendirSync, openSync, readSync, closeSync, watch,
+  mkdirSync, writeSync, fsyncSync, unlinkSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -50,6 +51,7 @@ import { proxySpawnApply } from './spawn-apply-proxy.mjs';
 import { startSingleInstance, launchDirectory, createLaunchOpener } from "./single-instance.mjs";
 import { createActivityNotifier, createViewsNotifier } from "./window-activity.mjs";
 import { createHostThemeSource, installHostThemeHandlers } from "./host-theme.mjs";
+import { createChordFamilySource, installChordFamilyHandlers } from "./chord-family.mjs";
 import { frameWorkspace, trustedRendererUrl, workspaceHash } from "./renderer/window-binding.mjs";
 import { validWorkspaceId } from "./renderer/workspace-id.mjs";
 import { createWindowSet } from "./window-set.mjs";
@@ -292,6 +294,22 @@ const hostTheme = createHostThemeSource({
   },
 });
 installHostThemeHandlers({ ipc: ipcMain, guard, source: hostTheme });
+
+// ---- IPC: the chord family, keys.json (chord-family.mjs) -------------------
+// On Linux/Windows the shared chords are Ctrl+Alt or, by this user's keys.json (shared with the
+// TUI, beside tui.json), Ctrl+Shift. Main reads the file when a window asks and when the operator
+// comes back to Desktop, writes it when the Shortcuts page changes the choice (only `chords`,
+// atomically), and hands the family to every window at once. Plain state only: no path, no content.
+const chordFamily = createChordFamilySource({
+  fs: { openSync, fstatSync, readSync, closeSync, mkdirSync, writeSync, fsyncSync, renameSync, unlinkSync },
+  env: process.env, home: homedir(),
+  send: (state) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      try { if (!win.webContents.isDestroyed()) win.webContents.send("chord-family:changed", state); } catch { /* closing window */ }
+    }
+  },
+});
+installChordFamilyHandlers({ ipc: ipcMain, guard, source: chordFamily });
 
 // ---- IPC: workspace suggestions + runtime add ---------------------------
 // Privileged side of the runtime workspace switcher (phase-2 hook 3; the
@@ -986,6 +1004,8 @@ if (primaryInstance) app.on("window-all-closed", () => { app.quit(); });
 if (primaryInstance) {
   app.whenReady().then(() => hostTheme.start());
   app.on("browser-window-focus", () => hostTheme.refresh());
+  // keys.json edited by hand (or by another tool) reaches every window when the operator comes back.
+  app.on("browser-window-focus", () => chordFamily.refresh());
   app.on("will-quit", () => hostTheme.dispose());
 }
 
