@@ -1070,7 +1070,7 @@ this Desktop can't read."). A capability may declare one skill inside
 another, so a composed file path is unique within its skill only (the composed
 keys name the skill) and a link from a composed file prefers the copy in the
 skill being read. A flagged skills read may print more than any other read:
-the adapter gives it `SKILLS_INSPECT_MAX_BUFFER` (16 MiB) in place of
+the adapter gives it `SKILLS_INSPECT_MAX_BUFFER` (32 MiB: the 3 MiB of skill text JSON may print sixfold, and room) in place of
 `ENVELOPE_MAX_BUFFER` (4 MiB).
 
 **Core capabilities and Capabilities read as one system.** Wherever the two

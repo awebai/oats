@@ -146,22 +146,24 @@ test('server: a routed soul inspect carries --composed-skills only for a host wh
 test('adapter: a skills inspection may print more than any other read, still bounded (a real child, its real stdout limit)', { skip: process.platform === 'win32' }, async t => {
   const dir = mkdtempSync(join(tmpdir(), 'oats-composed-skills-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  /** An `oats` that prints a valid soul inspection whose composed skills carry `bytes` of text, whatever it is asked. */
-  const cli = (name, bytes) => {
+  /** An `oats` that prints a valid soul inspection whose skills carry `files` × `bytes` of U+0001, whatever it is asked:
+   * text to the kernel (only NUL and invalid UTF-8 are binary), six bytes each as JSON prints it (`\u0001`). */
+  const cli = (name, files, bytes) => {
     const bin = join(dir, name);
     writeFileSync(bin, `#!${process.execPath}
-const text = '"'.repeat(${Math.floor(bytes / 2)}); // a quote prints as two bytes: the JSON escaping the allowance covers
-process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { souls: [{ name: 'release-manager', composedSkills: [
-  { name: 'big', source: 'module:oats.core', path: '.oats/modules/oats.core/skills/big', description: null, filesTruncated: false,
-    files: [{ path: '.oats/modules/oats.core/skills/big/SKILL.md', bytes: text.length, text, binary: false, truncated: false }] }] }] } }));
+const text = String.fromCharCode(1).repeat(${bytes}), at = '.oats/modules/oats.core/skills/big';
+const files = Array.from({ length: ${files} }, (_, i) => ({ path: at + '/f' + i + '.md', bytes: text.length, text, binary: false, truncated: false }));
+process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { souls: [{ name: 'release-manager',
+  composedSkills: [{ name: 'big', source: 'module:oats.core', path: at, description: null, filesTruncated: false, files }] }] } }));
 `);
     chmodSync(bin, 0o755); return bin;
   };
   const soulArgs = { action: 'inspect', context: dir, soul: 'release-manager', agentsRoot: join(dir, 'agents'), localCwd: dir };
-  const within = cli('within', 6 * 1024 * 1024), past = cli('past', SKILLS_INSPECT_MAX_BUFFER + 1024);
+  // The kernel's whole budget (1 MiB of own skills' text and 2 MiB of composed), in 256-KiB files, all sixfold: ~18 MiB.
+  const within = cli('within', 12, 256 * 1024), past = cli('past', 1, Math.ceil(SKILLS_INSPECT_MAX_BUFFER / 6) + 1024);
   // Past the plain read's limit, within the allowance: the answer is read whole.
   const read = await cliCapability(within, { ...soulArgs, composedSkills: true, features: [COMPOSED_SKILLS_FEATURE] });
-  assert.equal(read.ok, true); assert.ok(JSON.stringify(read).length > ENVELOPE_MAX_BUFFER, 'it printed past the plain limit');
+  assert.equal(read.ok, true); assert.ok(JSON.stringify(read).length > 18 * 1024 * 1024, 'it printed the budget sixfold');
   await cliCapability(within, { ...soulArgs, skills: true, features: [SKILLS_FEATURE] }).then(r => assert.equal(r.ok, true, 'the own skills too'));
   // Any other read keeps its limit, and so does the allowance: past either, no answer.
   assert.equal((await cliCapability(within, soulArgs)).error.code, 'E_CLI_PROTOCOL');

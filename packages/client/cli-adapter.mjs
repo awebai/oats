@@ -154,9 +154,10 @@ export function writeTaskFile(taskText, io = {}) {
 /** What a kernel answer may print, bytes of stdout: every read but a soul inspection that carries its skills' text. */
 export const ENVELOPE_MAX_BUFFER = 4 * 1024 * 1024;
 /** A soul inspection with `--skills` and/or `--composed-skills`: their texts' budgets (1 MiB and 2 MiB of UTF-8,
- * docs/desktop-cli-api.md) as JSON prints them (an ordinary character at most doubles: a quote, a backslash, a line
- * end), beside the two AGENTS.md (200,000 characters each) and the rest of the answer, with room to spare. */
-export const SKILLS_INSPECT_MAX_BUFFER = 16 * 1024 * 1024;
+ * docs/desktop-cli-api.md) as JSON may print them, six bytes a byte (the kernel reads a control character as text,
+ * and JSON escapes it as `\u0001`): 18 MiB, beside the two AGENTS.md (200,000 characters each, sixfold too) and the
+ * rest of the answer, with room to spare. */
+export const SKILLS_INSPECT_MAX_BUFFER = 32 * 1024 * 1024;
 
 function runJson(bin, argv, { cwd, exec, timeout = ENVELOPE_TIMEOUT_MS, parse = parseEnvelope, strictExit = false, detached = false, maxBuffer = ENVELOPE_MAX_BUFFER } = {}) {
   const run = exec ?? (detached ? execFileInSession : execFile);
