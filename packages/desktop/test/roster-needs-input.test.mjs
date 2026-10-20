@@ -93,7 +93,7 @@ test("a running, waiting row shows “Needs input” in place of its meta line: 
   const line = mark.parentElement;
   assert.equal(line.className, "ctx-meta ctx-attn-line");
   assert.deepEqual([...line.childNodes], [mark], "the mark in place of the line's text");
-  assert.equal(line.hasAttribute("title"), false, "no repository title over the mark");
+  assert.equal(line.title, "Repository: desktop-repo\nBranch: feature/x", "the line keeps its own title");
   assert.equal(line.previousElementSibling.className, "ctx-name", "under the name");
   assert.equal(u.row("dev-a").querySelector(".ctx-name-line"), null, "the name line is the name alone");
   assert.equal(u.row("dev-a").textContent, "dev-aNeeds input", "in the row button's name");
@@ -186,6 +186,22 @@ test("a waiting row with a pull request: the mark replaces the chip and the bran
   assert.equal(u.row("dev-a").querySelector(".ctx-meta").textContent, "Needs input");
   assert.equal(u.fact("dev-a", "Pull request"), prText(pr));
   assert.ok(u.row("dev-a").parentElement.querySelector(".ctx-pr-open"), "its Open pull request tool stays");
+});
+
+test("a row with no card (unavailable) whose mark replaced its meta line says the repository and branch in its title and description", async t => {
+  // A local root whose state is unknown (unavailable: no card), collapsed over a running, waiting child.
+  const rows = [instance("root", undefined, { running: null, runtimeState: "unreachable", branch: "feature/root" }), instance("kid", "root", { waitingOnYou: claim() })];
+  const u = fixture(t, { context: { collapsedInstances: new Set([tree.collapseKey("A", "/synthetic/root")]) } });
+  u.render(rows);
+  const root = u.row("root"), said = root.getAttribute("aria-description");
+  assert.equal(root.getAttribute("aria-disabled"), "true");
+  assert.equal(u.marks("root")[0].textContent, "1 below need input");
+  assert.match(said, / · desktop-repo · feature\/root · 1 below need input: kid$/, "why, then where, then the wait");
+  assert.equal(root.title, said);
+  assert.equal(root.querySelector(".ctx-attn-line").title, "Repository: desktop-repo\nBranch: feature/root");
+  // A row whose line is its own (no mark) keeps its description as it was.
+  u.render([instance("root", undefined, { running: null, runtimeState: "unreachable", branch: "feature/root" })]);
+  assert.doesNotMatch(u.row("root").getAttribute("aria-description") ?? "", /desktop-repo/);
 });
 
 test("a held home keeps its state on the meta line; its description says the wait", async t => {

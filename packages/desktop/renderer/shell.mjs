@@ -1007,7 +1007,15 @@ function renderContextRoster(instances) {
         const heldStale = rowHeldStale(i);
         // Needs input: this row's own claim (waitingClaim is the only gate), and the waiting rows hidden under it.
         const claim = waitingClaim(i, { stale: heldStale }), below = waitingBelow.get(instanceId(i)) || [];
-        if (unavailable) { const said = why + waitingSentence(claim, below, Date.now()); row.title = said; row.setAttribute("aria-description", said); }
+        // Spec D (human, 2026-10-20): the name line keeps the name, whole; a waiting row's mark takes the meta line
+        // in place of its text (the repository, pull request and branch stay in the hover card, as a held home's do;
+        // a row with no card says them in its title and description, and the line keeps its own title).
+        // A held home's state wins that line: its description says the wait. "New" stays beside the name.
+        const attn = held ? null : claim ? needsInputMark() : below.length ? needsInputMark(below.length) : null;
+        if (unavailable) {
+          const replaced = attn ? [instanceRepoLabel(i), pr ? prText(pr) : null, i.branch].filter(Boolean).map(part => ` · ${part}`).join("") : "";
+          const said = why + replaced + waitingSentence(claim, below, Date.now()); row.title = said; row.setAttribute("aria-description", said);
+        }
         else {
           rosterTip.bind(row, () => rosterTipFacts(i, why, pr, { below, stale: heldStale }));
           // A held home's state takes its meta line over the mark (below): its description says the wait.
@@ -1043,11 +1051,7 @@ function renderContextRoster(instances) {
         // Spec E: a spawn the operator was not taken to says New (text and a dot, never colour alone)
         // until its row is opened, or its tab is (the first paint where it is the active row).
         if (isActive) spawnJobs.seen?.(ws, i);
-        // Spec D (human, 2026-10-20): the name line keeps the name, whole; a waiting row's mark takes the meta line
-        // in place of its text (the repository, pull request and branch stay in the hover card, as a held home's do).
-        // A held home's state wins that line: its description says the wait. "New" stays beside the name.
-        const attn = held ? null : claim ? needsInputMark() : below.length ? needsInputMark(below.length) : null;
-        if (attn) { meta.className = "ctx-meta ctx-attn-line"; meta.removeAttribute("title"); meta.replaceChildren(attn); }
+        if (attn) { meta.className = "ctx-meta ctx-attn-line"; meta.replaceChildren(attn); }
         const isNew = !!spawnJobs.isNew?.(ws, i);
         if (isNew) {
           const line = document.createElement("span"); line.className = "ctx-name-line";

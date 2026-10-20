@@ -164,7 +164,8 @@ validates the field and never synthesizes it.
     it.
 - **The mark.** A "Needs input" pill (an alert icon and text, never colour
   alone) takes the row's second line, in place of its repository, pull
-  request and branch, which stay in the card. The name line keeps the name
+  request and branch, which stay in the card (a row with no card says them in
+  its title and description, before the wait). The name line keeps the name
   at its full width, and "New" beside it. A held home's state wins that line:
   the mark is not shown, and the row's description says the wait. The mark
   becomes part of the row's accessible name. The dot stays liveness. Rows are
