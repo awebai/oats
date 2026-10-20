@@ -41,7 +41,7 @@ function setup(t, options = {}) {
   t.after(() => { section.dispose(); dom.window.close(); });
   const $ = s => host.querySelector(s), $$ = s => [...host.querySelectorAll(s)];
   const key = (el, k) => el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
-  // The first match is in "Defined in this soul"; the composed Skills' copies are `copy(path)` and their files `composed-file:<path>`.
+  // The first match is in "Defined in this soul"; the composed Skills' copies are `copy(path)` and their files `composed-file:<skill path>//<path in the skill>`.
   const item = path => $$('[role=treeitem]').find(i => i.dataset.path === path) || null;
   const skill = path => $$('[role=treeitem]').find(i => i.dataset.skill === path) || null;
   const copy = path => $$('[role=treeitem]').find(i => i.dataset.focusKey === `instructions:composed-skill:${path}`) || null;
@@ -149,22 +149,22 @@ test('a composed skill file: its own selection, links staying in the composed se
   const review = u.copy('skills/oats-pr-review');
   review.querySelector(':scope > .cap-node').click();
   assert.equal(review.getAttribute('aria-expanded'), 'true'); assert.equal(u.skill('skills/oats-pr-review').getAttribute('aria-expanded'), 'false', 'the copy expands on its own');
-  const key = 'composed-file:skills/oats-pr-review/SKILL.md';
+  const key = 'composed-file:skills/oats-pr-review//SKILL.md';
   u.item(key).querySelector('.cap-node').click();
   assert.equal(u.section.selected, key);
   assert.equal(u.$('.cap-reader-path').textContent, 'souls/oats-maintainer/skills/oats-pr-review/SKILL.md', 'the same file, its repository path');
   assert.deepEqual(u.$$('[role=treeitem][aria-selected=true]').map(i => i.dataset.path), [key], 'one selected item: the copy\'s, not the one above');
   // A link from the composed copy opens the composed copy of its target.
   u.$$('.cap-reader-body a').find(a => a.textContent === 'the release lane').click();
-  assert.equal(u.section.selected, 'composed-file:skills/git-tag-release/SKILL.md');
+  assert.equal(u.section.selected, 'composed-file:skills/git-tag-release//SKILL.md');
   assert.equal(u.copy('skills/git-tag-release').getAttribute('aria-expanded'), 'true');
   assert.equal(u.skill('skills/git-tag-release').getAttribute('aria-expanded'), 'false');
-  u.item('composed-file:skills/git-tag-release/SKILL.md').focus();
+  u.item('composed-file:skills/git-tag-release//SKILL.md').focus();
   // A refresh with another skill: selection, expansion and focus are found again by their keys.
   const more = [{ name: 'aaa', path: 'skills/aaa', description: null, files: [file('skills/aaa/SKILL.md', '# a\n')], filesTruncated: false }, ...skillsAnswer()];
   u.section.update(row({ skills: more, composedInstructions: composedOf1('# x\n') }));
-  assert.equal(u.section.selected, 'composed-file:skills/git-tag-release/SKILL.md');
-  assert.equal(u.doc.activeElement, u.item('composed-file:skills/git-tag-release/SKILL.md'));
+  assert.equal(u.section.selected, 'composed-file:skills/git-tag-release//SKILL.md');
+  assert.equal(u.doc.activeElement, u.item('composed-file:skills/git-tag-release//SKILL.md'));
   assert.equal(u.copy('skills/oats-pr-review').getAttribute('aria-expanded'), 'true');
   // From the composed AGENTS.md a link to a skill file opens its composed copy; from the soul's own, the one above.
   u.item(OWN).querySelector('.cap-node').click();

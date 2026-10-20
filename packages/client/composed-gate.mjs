@@ -1,6 +1,7 @@
 /** When a soul field the host composes or reports is asked for: the composed AGENTS.md (feature
- * soul-composed-instructions, `inspect --soul --instructions`) and the soul's own skills (feature soul-skills,
- * `inspect --soul --skills`, `souls[0].skills`). The one gate module for both, shared by the renderer (whether the
+ * soul-composed-instructions, `inspect --soul --instructions`), the soul's own skills (feature soul-skills,
+ * `inspect --soul --skills`, `souls[0].skills`) and every skill a spawn gives its instance (feature
+ * soul-composed-skills, `inspect --soul --composed-skills`, `souls[0].composedSkills`). The one gate module for all three, shared by the renderer (whether the
  * soul page asks) and the server (whether the ask reaches the CLI); DOM-free so the server can import it.
  *
  * A local soul: this computer's CLI advertises the feature. A routed soul (`--server`): the host answers, so this
@@ -11,6 +12,7 @@
  * (`E_REMOTE_INCOMPATIBLE`) and never by probing: the roster row is the answer. */
 export const COMPOSED_FEATURE = 'soul-composed-instructions';
 export const SKILLS_FEATURE = 'soul-skills';
+export const COMPOSED_SKILLS_FEATURE = 'soul-composed-skills';
 export const PROBE_FEATURES_FEATURE = 'server-probe-features';
 
 const advertises = (cli, feature) => !!cli?.ok && Array.isArray(cli.features) && cli.features.includes(feature);
@@ -32,3 +34,9 @@ export const skillsSupported = cli => advertises(cli, SKILLS_FEATURE);
 export const routedSkillsSupported = cli => skillsSupported(cli) && advertises(cli, PROBE_FEATURES_FEATURE);
 /** A roster group's host reports a soul's skills: its last roster read succeeded and its own list names the feature. */
 export const hostReportsSkills = (cli, group) => routedSkillsSupported(cli) && hostAdvertises(group, SKILLS_FEATURE);
+/** This computer's CLI lists every skill a spawn of a soul gives its instance, capabilities' included. */
+export const composedSkillsSupported = cli => advertises(cli, COMPOSED_SKILLS_FEATURE);
+/** This computer's CLI can route the composed-skills request and relays the hosts' own feature lists in the roster. */
+export const routedComposedSkillsSupported = cli => composedSkillsSupported(cli) && advertises(cli, PROBE_FEATURES_FEATURE);
+/** A roster group's host lists composed skills: its last roster read succeeded and its own list names the feature. */
+export const hostComposesSkills = (cli, group) => routedComposedSkillsSupported(cli) && hostAdvertises(group, COMPOSED_SKILLS_FEATURE);

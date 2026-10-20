@@ -37,7 +37,7 @@ import { soulFacts, desktopFacts, workText, cantSpawnLine } from '../../client/s
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from './loading.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 import { createSoulInstructions } from './soul-instructions.mjs';
-import { composedSupported, routedComposedSupported, skillsSupported, routedSkillsSupported } from '../../client/composed-gate.mjs';
+import { composedSupported, routedComposedSupported, skillsSupported, routedSkillsSupported, composedSkillsSupported, routedComposedSkillsSupported } from '../../client/composed-gate.mjs';
 import { warningsOf } from '../../client/capability-warnings-contract.mjs';
 import { createWarningsList, WARNINGS_COPY } from './capability-warnings.mjs';
 import { DESKTOP_TERMS } from './desktop-terms.mjs';
@@ -399,7 +399,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (same && teamsHere) void teamsHere.refresh({ user });
     try {
       const result = await request({ action: 'inspect', selector: next.selector, ...(user ? { refresh: true } : {}), ...(composedWanted(next) ? { instructions: true } : {}),
-        ...(skillsWanted(next) ? { skills: true } : {}) });
+        ...(skillsWanted(next) ? { skills: true } : {}), ...(composedSkillsWanted(next) ? { composedSkills: true } : {}) });
       if (!valid(id, gen)) return;
       data = result;
       const inspected = inspectData(data, selection);
@@ -449,6 +449,13 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   function skillsWanted(next) {
     if (layout !== 'page' || !next?.agent) return false;
     return next.agent.remote || next.agent.server ? routedSkillsSupported(cliStatus()) : skillsSupported(cliStatus());
+  }
+  /** The soul page asks for every skill a spawn gives the instance (feature soul-composed-skills, composed-gate.mjs), by
+   * the same rule: locally when this CLI lists them; routed when it also relays the hosts' features, the server keeping
+   * the flag only for a host whose roster row names the feature. Without it, Composed shows the soul's own skills. */
+  function composedSkillsWanted(next) {
+    if (layout !== 'page' || !next?.agent) return false;
+    return next.agent.remote || next.agent.server ? routedComposedSkillsSupported(cliStatus()) : composedSkillsSupported(cliStatus());
   }
   function facts(entries, parent = content) {
     const dl = node('dl', undefined, 'inspector-facts');
