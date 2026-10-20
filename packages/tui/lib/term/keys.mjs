@@ -144,7 +144,11 @@ export function legacyEvents(bytes) {
  * a Map of key id to what it does, of which only the ids are read here. While asking, the answer `CSI ? flags u` is the event `{ keyboard: flags }`, and the bytes
  * after it are read as it says: with flag 1 under the protocol, else as before. Under the protocol
  * a `CSI … u` key is read as its legacy bytes are (term/kitty.mjs legacyBytes, legacyEvents above),
- * so Ctrl+Shift+C is Ctrl+C as without it, and a chord as its own key id (`ctrl+shift+k`). An answer
+ * so Ctrl+Shift+C is Ctrl+C as without it, and a Ctrl+Alt chord as its own key id (`ctrl+alt+k`,
+ * term/kitty.mjs kittyId), which without the protocol is ESC and a C0 byte (`ctrl+alt+k` too, here,
+ * which the store binds only under the protocol). A character that is not ASCII is never a chord:
+ * AltGr's `€`, as text or as a `CSI … u` of its own, reads as that text. An Alt+Shift arrow chord is
+ * read by its legacy sequence (`CSI 1 ; 4 A`) in every state. An answer
  * at any other time is dropped, as is a `u` key while not under the protocol. Under it a key in a
  * legacy shape has its modifier made xterm's (term/kitty.mjs legacyParams: the lock keys dropped),
  * and nothing is timed: a terminal under the protocol sends no lone ESC for a key, so an ESC, like
@@ -282,7 +286,7 @@ export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS, answ
     const key = kb === null || kb === "asking" ? null : kittyKey(seq);
     if (key === null) { flush(); return; }
     const id = kittyId(key);
-    if (id !== null && chords.has(id)) { emit(named(key.code === 9 ? "tab" : String.fromCharCode(key.code), true, key.alt, key.shift)); return; }
+    if (id !== null && chords.has(id)) { emit(named(String.fromCharCode(key.code), true, true, key.shift)); return; }
     const bytes = legacyBytes(key, kb);
     if (bytes === null) { flush(); return; }
     for (const event of legacyEvents(bytes)) emit(event);

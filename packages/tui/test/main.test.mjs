@@ -1406,8 +1406,8 @@ test("a run asks for the kitty keyboard protocol in the write that sets its mode
   assert.equal(writes(r)[0], ENTER + PUSH + QUERY, "pushed and asked after the modes, in one write");
   assert.equal(PUSH, "\x1b[>5u", "flags 1 and 4");
   assert.deepEqual(r.timers.delays(), [KEYBOARD_WAIT_MS], "the wait is the one timer");
-  r.stdin.type("\x1b[107;6u");
-  assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/, "Ctrl+Shift+K before an answer is no key");
+  r.stdin.type("\x1b[107;7u");
+  assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/, "Ctrl+Alt+K before an answer is no key");
   // A lone Esc while the answer is awaited may begin it: kept until the wait's end, then the Esc key.
   r.stdin.type("?");
   r.stdin.type("\x1b");
@@ -1418,7 +1418,7 @@ test("a run asks for the kitty keyboard protocol in the write that sets its mode
   assert.deepEqual(writes(r).filter((bytes) => bytes.includes("\x1b[<")), [POP], "popped at the wait's end");
   assert.doesNotMatch(wholeScreen(r), /Keys/, "the kept Esc closed the help at the wait's end");
   r.stdin.type("\x1b[?5u");
-  r.stdin.type("\x1b[107;6u");
+  r.stdin.type("\x1b[107;7u");
   assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/, "an answer after the wait is not taken");
   r.stdin.type("\x0b");
   assert.match(wholeScreen(r), /acme-expert-tui +instance/, "Ctrl+K opens the palette, as without the protocol");
@@ -1429,20 +1429,20 @@ test("a run asks for the kitty keyboard protocol in the write that sets its mode
   assert.deepEqual(writes(r), [LEAVE], "nothing pushed is left to pop");
 });
 
-test("once the terminal answers with flags 1 and 4, Ctrl+Shift+K opens the palette from the list and from a terminal's focus, where no byte of it reaches the agent; every other key reaches the agent as its legacy bytes; the help lists the chords; quit pops the protocol before the modes", async () => {
+test("once the terminal answers with flags 1 and 4, Ctrl+Alt+K opens the palette from the list and from a terminal's focus, where no byte of it reaches the agent; every other key reaches the agent as its legacy bytes; the help lists the chords; quit pops the protocol before the modes", async () => {
   const r = await opening({ keyboard: true, platform: "linux" });
   r.stdin.type("\x1b[?5u");
   assert.deepEqual(r.timers.delays(), [], "the answer ends the wait");
   assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/);
-  r.stdin.type("\x1b[107;6u");
-  assert.match(wholeScreen(r), /acme-expert-tui +instance/, "Ctrl+Shift+K: the palette");
+  r.stdin.type("\x1b[107;7u");
+  assert.match(wholeScreen(r), /acme-expert-tui +instance/, "Ctrl+Alt+K: the palette");
   r.stdin.type("\x1b[27u");
   assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/, "Esc under the protocol: exact, no timer");
   r.stdin.type("?");
   let help = wholeScreen(r);
   for (let page = 0; page < 40 && /more below/.test(help.slice(-40)); page++) { r.stdin.type("\x1b[6~"); help += wholeScreen(r); }
   assert.match(help, /Chords/);
-  assert.match(help, /Ctrl\+Shift\+K +palette/);
+  assert.match(help, /Ctrl\+Alt\+K +palette,/);
   // The rules under the table (what a terminal may take first) wrap with the width: chords.test.mjs reads them.
   r.stdin.type("?");
   r.stdin.type("\r");
@@ -1454,7 +1454,7 @@ test("once the terminal answers with flags 1 and 4, Ctrl+Shift+K opens the palet
   r.stdin.type("a\x1b[99;5u\x1b[27uo\x1b[50:64;4u");
   assert.deepEqual(panelDid(r).filter(([what]) => what === "input").map(([, bytes]) => bytes).join(""), "a\x03\x1bo\x1b@");
   r.log.length = 0;
-  r.stdin.type("\x1b[107;6uzz");
+  r.stdin.type("\x1b[107;7uzz");
   assert.deepEqual(panelDid(r).filter(([what]) => what === "input" || what === "paste"), [], "the chord and the rest of its read reach nobody");
   assert.match(wholeScreen(r), /acme-expert-tui +instance/, "the palette, from the terminal's focus");
   r.stdin.type("\x1b[27u");
@@ -1488,8 +1488,8 @@ test("with the protocol confirmed, a split chord typed in a terminal is the lead
     assert.equal(await r.status, 0);
     return did;
   };
-  const chorded = await split(["\x1b[101;6u"]);
-  assert.deepEqual(chorded, await split(["\x1b[92;5u", "|"]), "Ctrl+Shift+E is the leader then |");
+  const chorded = await split(["\x1b[101;7u"]);
+  assert.deepEqual(chorded, await split(["\x1b[92;5u", "|"]), "Ctrl+Alt+E is the leader then |");
   assert.equal(chorded.some(([what]) => what === "resize"), true, "the panel was split");
   assert.equal(chorded.some(([what]) => what === "input" || what === "paste"), false, "nothing reached the agent");
 });

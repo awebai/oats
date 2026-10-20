@@ -2,7 +2,8 @@
 // text. Pure: no IO, no clock, no escape byte. The keys are generated from the table the reducer
 // acts on, so the help names every key that does something and no key that does not; the marks
 // are the ones the list and the switcher draw (views/instances.mjs, views/switcher.mjs).
-import { LEADER, backKeyLabel, keyLabel } from "../actions.mjs";
+import { LEADER, backKeyLabel, keyLabel, keysTogether } from "../actions.mjs";
+import { isBackKey } from "../term/through.mjs";
 import { lit, ownEllipsis } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { cutNote, marksOf, measured } from "./instances.mjs";
@@ -131,7 +132,7 @@ function openRows(detachKey, room, chorded = false) {
   ];
 }
 /** Under OPEN_RULES, while the chords are listed: they too are the TUI's in a terminal. */
-export const CHORD_OPEN_RULE = "The chords (below) are taken there too: they never reach the agent.";
+export const CHORD_OPEN_RULE = "The chords are taken there too: they never reach the agent.";
 /** The TUI's own sentences under the line of the last act: how a confirmation is worked, and that
  *  what it sent is never ended by the TUI. */
 export const ACT_RULES = Object.freeze([
@@ -150,20 +151,63 @@ const sentences = (list, cols) => list.flatMap((sentence) => {
 /** What the leader pressed again does, the last line of the leader's table. */
 export const LEADER_AGAIN = "the leader again: types it into the terminal that has the focus; with the list focused, closes the hint";
 
-/** THE CHORDS (docs/tui.md, "Chords"): listed only while the terminal confirms the kitty keyboard
- *  protocol, which alone sends them, as extras: the leader is the key that always works. What a
- *  terminal may take first is said, with foot's list. */
+/** THE CHORDS (docs/tui.md, "Chords"): the chords read now, the extras of the leader, which is the
+ *  key that always works. While the terminal confirms the kitty keyboard protocol they lead the
+ *  help, first of all; without it only the Alt+Shift arrows are read, listed after the leader's
+ *  section. What a
+ *  terminal may take first is said, and where the table of terminals is, as sentences the help
+ *  flows. */
 export const CHORD_RULES = Object.freeze([
-  "Your terminal may take some of these first: foot takes Ctrl+Shift+C, V, R, N, O, U, Z, X and Q. The leader works in every terminal.",
+  "Your terminal may take some first: Windows Terminal takes Ctrl+Alt+1 to Ctrl+Alt+9 for its own tabs, and the Alt+Shift arrows while its panes are split.",
+  "Terminals without the kitty keyboard protocol (GNOME Terminal and the other VTE terminals, Konsole before 26.08, Terminal.app, WezTerm unless enable_kitty_keyboard is set) send only the Alt+Shift arrows.",
+  "On a keyboard layout where AltGr is Ctrl+Alt (Windows), a Ctrl+Alt key that types a character types it.",
+  "The leader works in every terminal.",
+  "docs/tui.md, \"Chords\", has the table of terminals.",
 ]);
-/** The chords' rows: `chords` are `[key id, does]`, each said as the leader's table says its `does`. */
-function chordRows(chords, cols) {
-  const said = (does) => LEADER.find((entry) => entry.does === does)?.label ?? does;
+/** The chords listed on one row of their own, both keys first, their modifiers said once
+ *  (`Alt+Shift+Up/Down`, actions.mjs keysTogether, as the cheat sheet says them): the leader's Up
+ *  and Down, its Left and Right. The table's left column stays narrow enough for the help beside
+ *  the sidebar at 80 columns. */
+const CHORD_PAIRS = Object.freeze([Object.freeze(["previous", "next"]), Object.freeze(["tab-previous", "tab-next"])]);
+/** The chords' own (actions.mjs CHORD_OWN), the Nth tab: one row for the nine, as the TUI's words. */
+const TAB_N = /^tab-([1-9])$/;
+const TABS_SAID = "the focused group's first to eighth tab, 9 its last";
+/** Two labels of the leader's table as one: `previous instance` and `next instance` are
+ *  `previous and next instance`. */
+function bothSaid(a, b) {
+  const [x, y] = [words(a), words(b)];
+  return x.length > 1 && x.at(-1) === y.at(-1) ? `${x.slice(0, -1).join(" ")} and ${y.join(" ")}` : `${a} and ${b}`;
+}
+/** The chords' rows: `chords` are `[key id, does]` in the table's order, each said as the leader's
+ *  table says its `does`, then `or <the leader> then <its key>` (`detachKey`'s label, while it is a
+ *  back key); a pair of CHORD_PAIRS on one row, and the nine tab-N on one, `Ctrl+Alt+1 … Ctrl+Alt+9`
+ *  (`...` in ASCII), which no leader's key does. */
+function chordRows(chords, cols, detachKey, ascii) {
+  const by = (does) => LEADER.find((entry) => entry.does === does);
+  const leader = isBackKey(detachKey) ? backKeyLabel(detachKey) : null;
+  const then = (list) => (leader === null || list.some((does) => !by(does)) ? "" : `, or ${leader} then ${list.map((does) => keyLabel(by(does).keys[0])).join(" and ")}`);
+  const keyOf = new Map(chords.map(([key, does]) => [does, key]));
+  const tabs = chords.filter(([, does]) => TAB_N.test(does));
+  const done = new Set(), rows = [];
+  for (const [key, does] of chords) {
+    if (done.has(does)) continue;
+    const pair = CHORD_PAIRS.find((each) => each.includes(does) && each.every((one) => keyOf.has(one)));
+    if (pair) {
+      pair.forEach((one) => done.add(one));
+      rows.push([keysTogether(pair.map((one) => keyOf.get(one))), `${bothSaid(by(pair[0]).label, by(pair[1]).label)}${then(pair)}`]);
+    } else if (TAB_N.test(does) && tabs.length === 9) {
+      tabs.forEach(([, one]) => done.add(one));
+      rows.push([ownEllipsis(`${keyLabel(tabs[0][0])} \u2026 ${keyLabel(tabs[8][0])}`, ascii), TABS_SAID]);
+    } else {
+      const n = TAB_N.exec(does)?.[1];
+      rows.push([keyLabel(key), n === undefined ? `${by(does)?.label ?? does}${then([does])}` : n === "9" ? "the focused group's last tab" : `the focused group's tab ${n}`]);
+    }
+  }
   return [
     heading("Chords"),
     [],
-    ...sentences(["Your terminal sends these keys too: each does what the leader then its key does, from every focus, a terminal's too."], cols),
-    ...table(chords.map(([key, does]) => [keyLabel(key), words(said(does))]), cols, KEYS),
+    ...sentences(["One keypress each, from every focus, a terminal's too: none reaches the agent."], cols),
+    ...table(rows.map(([keys, said]) => [keyText(keys), words(said)]), cols, KEYS),
     ...sentences(CHORD_RULES, cols),
   ];
 }
@@ -216,24 +260,26 @@ const spawnRows = (cols) => [heading("The spawn prompt"), [], ...table(SPAWN_KEY
  *  listed as such: the table can be changed by the user's tui.json, and the help says what is so
  *  now. An action that does one thing in each view has a line per view, its key on each; under
  *  the line of opening an agent stand the back key (`detachKey`, tui.json's `open.detachKey`) and
- *  the rules of OPEN_RULES; under the line of the last act, ACT_RULES. After the leader's table,
- *  the chords (`chords`, `[key id, does]`, or null while the terminal has not confirmed the kitty
- *  keyboard protocol: then they are not listed), the palette's keys (PALETTE_KEYS) and the spawn
- *  prompt's (SPAWN_KEYS, SPAWN_RULES). */
-export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = null) {
-  const marks = marksOf(ascii);
+ *  the rules of OPEN_RULES; under the line of the last act, ACT_RULES. The chords read now
+ *  (`chords`, `[key id, does]`; none, or null, lists none) lead the whole help while the terminal
+ *  confirms the kitty keyboard protocol (`chordsLead`), before this table; without it they come
+ *  after the leader's table. Then the palette's keys (PALETTE_KEYS) and the spawn prompt's
+ *  (SPAWN_KEYS, SPAWN_RULES). */
+export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = null, chordsLead = false) {
+  const marks = marksOf(ascii), chorded = chords !== null && chords.length > 0;
   const closing = keyText(["close", "help"].map((id) => actions.find((action) => action.id === id)).filter((action) => action?.keys.length).map((action) => keyLabel(action.keys[0])).join(" or "));
   return [
+    ...(chorded && chordsLead ? [...chordRows(chords, cols, detachKey, ascii), []] : []),
     heading("Keys"),
     [],
     ...table(actions.flatMap((action) => {
       const left = action.keys.length ? keyText(keysLabel(action)) : "(no key)";
       if (!action.views) return [[left, words(action.label)]];
-      return action.views.map(([view, said]) => [left, words(said), action.id === "open" && view === "instances" && detachKey !== null ? (room) => openRows(detachKey, room, chords !== null && chords.length > 0)
+      return action.views.map(([view, said]) => [left, words(said), action.id === "open" && view === "instances" && detachKey !== null ? (room) => openRows(detachKey, room, chorded)
         : action.id === "restart" ? actRows : undefined]);
     }), cols, KEYS),
     ...(detachKey !== null ? [[], ...leaderRows(detachKey, cols)] : []),
-    ...(chords !== null && chords.length > 0 ? [[], ...chordRows(chords, cols)] : []),
+    ...(chorded && !chordsLead ? [[], ...chordRows(chords, cols, detachKey, ascii)] : []),
     [],
     ...paletteRows(cols),
     [],
@@ -273,8 +319,8 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = 
 
 /** `{ rows, extent }`: `size.rows` rows for an area `size.cols` wide, scrolled to `top`, and how
  *  many rows the whole help has. The movement keys scroll it. */
-export function help(actions, size, { top = 0, ascii = false, detachKey = null, chords = null } = {}) {
-  const all = helpRows(actions, ascii, size.cols, detachKey, chords);
+export function help(actions, size, { top = 0, ascii = false, detachKey = null, chords = null, chordsLead = false } = {}) {
+  const all = helpRows(actions, ascii, size.cols, detachKey, chords, chordsLead);
   const rows = Array.from({ length: size.rows }, () => []);
   const win = windowOf({ top, count: all.length, height: size.rows });
   all.slice(win.top, win.top + win.size).forEach((spans, i) => { rows[i] = spans; });

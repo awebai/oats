@@ -23,7 +23,7 @@ import { isSafeText, shown, textOf } from "../lib/term/text.mjs";
 import { textWidth } from "../lib/term/width.mjs";
 import { CAPABILITIES_TEXT } from "../lib/views/capabilities.mjs";
 import { LIST_BESIDE, MIN_SIZE, PANEL_MIN, WIDE, frame } from "../lib/views/frame.mjs";
-import { ACT_RULES, LEADER_AGAIN, MACHINES, NOT_YET, PALETTE_KEYS, VIEWS, helpRows, keysLabel } from "../lib/views/help.mjs";
+import { ACT_RULES, CHORD_OPEN_RULE, LEADER_AGAIN, MACHINES, NOT_YET, PALETTE_KEYS, VIEWS, helpRows, keysLabel } from "../lib/views/help.mjs";
 import { EMPTY_TEXT, MARKS, cutNote, instances, marksOf } from "../lib/views/instances.mjs";
 import { SOUL_MARK } from "../lib/views/souls.mjs";
 import { OPEN_MARK, SWITCHER_TEXT } from "../lib/views/switcher.mjs";
@@ -1525,7 +1525,7 @@ test("a query of 200 characters is cut inside the heading, open and kept, with t
 
 test("at 60 columns, the smallest width the frame is drawn at, the help still names every command whole: what this version does not do is said with the oats command that does it", () => {
   for (const ascii of [false, true]) {
-    const lines = helpLines(golden({ ascii }), size(60, 210)), cut = glyphsOf(ascii).cut;
+    const lines = helpLines(golden({ ascii }), size(60, 250)), cut = glyphsOf(ascii).cut;
     for (const command of [...NOT_YET.map((entry_) => entry_.command), ...VIEWS.flatMap((view) => view.commands)]) {
       assert.equal(commandIn(lines, command), true, `${command} is whole at 60 columns${ascii ? ", in ASCII" : ""}`);
     }
@@ -1536,7 +1536,8 @@ test("at 60 columns, the smallest width the frame is drawn at, the help still na
 // ── The help ─────────────────────────────────────────────────────────────────────────────────────
 
 // Wide enough that the help, in the main area beside the sidebar, has 140 columns (203 less the
-// sidebar's 60 and three cells), and tall enough for the whole help (T3 added the split's rows).
+// sidebar's 60 and three cells), and tall enough for the whole help (T3 added the split's rows, and
+// keymap phase 3 the chords' section on Linux and Windows).
 const HELP_SIZE = size(203, 200);
 /** The help's rows under its top row (the time of the read), opened with `key`: the main area's
  *  cells from 80 columns, the whole width under them. */
@@ -1545,6 +1546,12 @@ function helpLines(state, sz = HELP_SIZE, key = "?") {
   assert.equal(d.extent <= d.room, true, "the whole help is on this screen");
   return d.cells.slice(1).map((_, i) => cellText(d, i + 1, from));
 }
+/** The help's headings, in no order: a section of the help runs from its heading to the next. */
+const HELP_HEADINGS = Object.freeze(["Keys", "Chords", "The leader", "The palette", "The spawn prompt", "Marks", "Views", "Machines", "Not in this version"]);
+/** The row of the heading after row `from` of the help's `lines` (trimmed or not), or -1. The
+ *  leader's section is followed by the chords' on Linux and Windows, whose Alt+Shift arrows are read
+ *  without the kitty keyboard protocol, and by the palette's on macOS, where there are no chords. */
+const nextHeading = (lines, from) => lines.findIndex((line, i) => i > from && HELP_HEADINGS.includes(line.trim()));
 /** Whether `command` starts on row `i` of the help's `lines` (as drawn, not trimmed): alone on it,
  *  or, wider than the area, broken before its flags onto the rows under it, each of those 2 cells
  *  further in than the first and starting with its flag, which read back in order are the
@@ -1589,14 +1596,18 @@ test("the help is generated from the table: another key and another action appea
   assert.equal(lines.some((line) => line.includes("redraw") || line.includes("Ctrl+L")), false, "an action that is not in the table is not in the help");
   const keys = lines.slice(lines.findIndex((line) => line.trim() === "Keys") + 1, lines.findIndex((line) => line.trim() === "The leader")).filter((line) => line.trim());
   // One row per action and view; under the line of opening an agent, five rows of its own (the leader then Esc, the leader twice,
-  // what the terminal takes, its limits, the pointer); under the line of the last act, the rows of ACT_RULES. Then the leader's
-  // section: the leader, a row per key of its table, whatever the action table, and the leader again's row. The palette's section
-  // follows it, then the spawn prompt's, with keys of their own.
-  const leader = lines.slice(lines.findIndex((line) => line.trim() === "The leader") + 1, lines.findIndex((line) => line.trim() === "The palette")).filter((line) => line.trim());
+  // what the terminal takes, its limits, the pointer), and a sixth where there are chords (CHORD_OPEN_RULE: on Linux and Windows
+  // the Alt+Shift arrows, read without the kitty keyboard protocol); under the line of the last act, the rows of ACT_RULES. Then the leader's
+  // section: the leader, a row per key of its table, whatever the action table, and the leader again's row. The chords' section
+  // follows it where there are chords (nextHeading), then the palette's and the spawn prompt's, with keys of their own.
+  const at = lines.findIndex((line) => line.trim() === "The leader");
+  const leader = lines.slice(at + 1, nextHeading(lines, at)).filter((line) => line.trim());
   assert.equal(leader.length, 2 + LEADER.length, "the leader, one row per key of its table, and the leader again");
   const rules = keys.filter((line) => ACT_RULES.some((sentence) => sentence.includes(line.trim())));
   assert.equal(rules.length >= ACT_RULES.length, true, "the rules of the acts stand under them");
-  assert.equal(keys.length, table.reduce((n, action) => n + (action.views?.length ?? 1), 0) + 5 + rules.length, "one row per action, and one more per view of an action that has two");
+  const chorded = keys.some((line) => line.trim() === CHORD_OPEN_RULE);
+  assert.equal(chorded, process.platform !== "darwin", "the chords' rule under the agent's line where there are chords");
+  assert.equal(keys.length, table.reduce((n, action) => n + (action.views?.length ?? 1), 0) + 5 + (chorded ? 1 : 0) + rules.length, "one row per action, and one more per view of an action that has two");
 });
 
 test("the help lists the marks with their words, in UTF-8 and in ASCII: each mark the list draws is there", () => {
@@ -1637,7 +1648,7 @@ test("the help says what each view holds, and names no command for a view: the S
 });
 
 test("the help's last section, `Not in this version`, names every act this version does not have with the oats command that does it", () => {
-  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 210), size(79, 190), size(200, 150)]) {
+  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 250), size(79, 220), size(200, 170)]) {
     const lines = helpLines(golden({ ascii }), sz), text = lines.map((line) => line.trim());
     const at = text.indexOf("Not in this version");
     assert.equal(at > 0, true);
@@ -1680,7 +1691,7 @@ test("the help scrolls: at 60x15 it does not fit, the screen's last row says wha
   assert.deepEqual(draw(press(ended, ["g"], sz).state, sz).lines, d.lines, "and goes back to its start");
   assert.deepEqual(draw(press(ended, ["k"], sz).state, sz).lines[sz.rows - 1].trim(), cutNote(d.extent - visible - 1, 1));
   // Every row of the help is reached by scrolling: nothing is lost behind the note.
-  const whole = helpLines(golden(), size(60, 210)).map((line) => line.trim()).filter(Boolean), seen = new Set();
+  const whole = helpLines(golden(), size(60, 250)).map((line) => line.trim()).filter(Boolean), seen = new Set();
   let state = open;
   for (let i = 0; i < d.extent; i++) { for (const line of draw(state, sz).lines.slice(1, sz.rows - 1)) seen.add(line.trim()); state = press(state, ["j"], sz).state; }
   for (const line of whole) assert.equal(seen.has(line), true, line);
@@ -1716,7 +1727,7 @@ test("every key a tui.json may give an action is drawn: the cheat sheet and the 
       assert.equal(cellIndexOf(d.cells[help].slice(0, d.cols), "help"), cellIndexOf(d.cells[quit].slice(0, d.cols), "quit"));
     }
     // Tall enough for the whole help, the switcher's Remove among it.
-    const big = size(163, 170), lines = helpLines(state, big, "日");
+    const big = size(163, 200), lines = helpLines(state, big, "日");
     for (const id of Object.keys(keys)) assert.ok(lines.some((line) => line.trim().startsWith(`${labelOf(id)}  `)), `the help lists ${id} under ${labelOf(id)}`);
     assert.ok(lines.some((line) => line.trim() === `${labelOf("close").split(", ")[0]} or 日 closes this help`), "the closing line names the two keys");
     // The meanings stand in one column, whatever cells the keys take.
@@ -2797,7 +2808,7 @@ test("the switcher's cheat sheet names the remove key on a row of this computer'
 // ── The help, with machines and the switcher ─────────────────────────────────────────────────────
 
 test("the help says every limit of this version: adding, checking and removing a machine and opening a deployment that is not listed with the oats command that does it, and what no command lifts in sentences of its own", () => {
-  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 210), size(79, 190), size(200, 150)]) {
+  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 250), size(79, 220), size(200, 170)]) {
     const lines = helpLines(reached({ ascii }), sz), text = lines.map((line) => line.trim()), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     const machines = text.indexOf("Machines"), last = text.indexOf("Not in this version");
     assert.equal(machines > text.indexOf("Views") && last > machines, true, `${at}: Machines stands between Views and what is not in this version`);
@@ -3043,10 +3054,12 @@ test("the help lists Enter once per view with what it does there, the keys of th
   assert.equal(keys.filter((line) => line.startsWith("Enter ")).length, 4, "Enter four times, once per view");
   for (const [key, label] of [["1", "instances"], ["2", "souls"], ["3", "capabilities"]]) assert.equal(pair(lines, key, label), true, key);
   assert.equal(lines.some((line) => line.includes("open an agent in its own tmux window") && line.includes("oats session attach --home <home>")), true);
-  // The leader's section, after the keys and before the marks (the palette's and the spawn prompt's
-  // sections stand between it and them): the leader, then each key of its table (actions.mjs
-  // LEADER) and what it does, from every focus, and last the leader again.
-  const leader = lines.slice(lines.indexOf("The leader") + 1, lines.indexOf("The palette")).filter(Boolean);
+  // The leader's section, after the keys and before the marks (the chords' where there are chords,
+  // the palette's and the spawn prompt's sections stand between it and them): the leader, then each
+  // key of its table (actions.mjs LEADER) and what it does, from every focus, and last the leader
+  // again. Without the kitty keyboard protocol the chords' section follows it, where there are chords.
+  const leader = lines.slice(lines.indexOf("The leader") + 1, nextHeading(lines, lines.indexOf("The leader"))).filter(Boolean);
+  assert.equal(lines[nextHeading(lines, lines.indexOf("The leader"))], process.platform === "darwin" ? "The palette" : "Chords", "the leader leads: the chords after it");
   assert.equal(lines.indexOf("The leader") > lines.indexOf("Keys") && lines.indexOf("The leader") < lines.indexOf("Marks"), true, "between the keys and the marks");
   assert.deepEqual(leader.map((line) => line.replace(/ {2,}/g, "  ")), [
     "Ctrl+\\ then one of these keys, from every focus; a terminal too:",
@@ -3669,9 +3682,9 @@ test("the Capabilities view of a table that lists none says so in the sidebar an
 
 test("at 60 columns the help's `The leader` section has every row whole: the sentence after the leader's key wrapped under its first row, the table's rows uncut, the leader again's wrapped under its words, none past the edge", () => {
   for (const [detachKey, key, lead] of [[undefined, "Ctrl+\\", ["  Ctrl+\\ then one of these keys, from every focus; a", "         terminal too:"]], ["C-F5", "Ctrl+F5", ["  Ctrl+F5 then one of these keys, from every focus; a", "          terminal too:"]]]) {
-    const lines = helpLines(golden(detachKey ? { detachKey } : {}), size(60, 210));
-    // The section ends where the palette's begins (spawn-view.test.mjs holds the spawn prompt's).
-    const from = lines.indexOf("  The leader"), to = lines.indexOf("  The palette");
+    const lines = helpLines(golden(detachKey ? { detachKey } : {}), size(60, 250));
+    // The section ends where the next begins, the chords' or the palette's (spawn-view.test.mjs holds the spawn prompt's).
+    const from = lines.indexOf("  The leader"), to = nextHeading(lines, from);
     assert.equal(from > 0 && to > from, true);
     assert.deepEqual(lines.slice(from, to - 1), [
       "  The leader",

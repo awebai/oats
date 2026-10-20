@@ -16,7 +16,7 @@ import {
   memberNames, capabilitySource, groupCapabilities, hostKeyOf, capabilitySections, matchCapabilities, soulsComposition, rosterAgentName, layerLabel, capabilityUsers,
   capabilityFacts, CAPABILITY_COPY,
 } from "./client.mjs";
-import { LEADER, keyLabel } from "./actions.mjs";
+import { LEADER, chordsRead, keyLabel } from "./actions.mjs";
 import { ownEllipsis, shownLines } from "./term/text.mjs";
 import { textWidth } from "./term/width.mjs";
 import { windowOf } from "./views/scroll.mjs";
@@ -678,8 +678,9 @@ export function model(state, { page, body = page, now, at, cols, area = cols }) 
     workspace: r.workspace, machines: r.machines, here: r.here, machine: r.machine, counts: r.counts, readAt: r.readAt, notice: r.notice, note: r.note, empty: r.empty, observed: r.observed,
     detailTop: state.detailTop, helpTop: state.helpTop, open: state.open !== null,
     detachKey: state.detachKey, opening: state.opening, openable: false,
-    // The chords, `[key id, does]`, while the terminal confirms the kitty keyboard protocol; else null.
-    chords: state.keyboard === null ? null : [...state.chords],
+    // The chords read now, `[key id, does]` (actions.mjs chordsRead), and whether the terminal
+    // confirms the kitty keyboard protocol: then the help and a terminal's cheat sheet lead with them.
+    chords: [...chordsRead(state.chords, state.keyboard !== null)], kitty: state.keyboard !== null,
     terminal: state.terminal, onTerminal: false,
     // The panel's groups (views/frame.mjs), the split and the focused group; the panel stands while
     // any tab is open. `tabs` is the focused group's strip: each tab in order, the shown one marked,

@@ -10,7 +10,7 @@
 // whole width, and the detail and every overlay are a page over the whole screen. There is no
 // header and no footer. The TUI's own words are lit(); everything else is shown(). Meaning never
 // rests on colour alone: what is dim or bold also says what it is in words or by a mark.
-import { LEADER, backKeyLabel, keyLabel } from "../actions.mjs";
+import { LEADER, backKeyLabel, keyLabel, keysTogether } from "../actions.mjs";
 import { lit, ownEllipsis, shown, shownLines, textOf } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { act } from "./act.mjs";
@@ -282,9 +282,11 @@ function types(m) {
 /** THE CHEAT SHEET (docs/tui.md, "The cheat sheet"): the keys that apply now, one per row, the
  *  leader first in every focus (`Alt+O commands`), then the palette, `help` and `quit` last. While
  *  the leader waits for its key it is the leader's hint (leaderHints). While what is typed goes to
- *  the agent the TUI reads the leader only: the leader then Esc gives the list the focus, and the
- *  leader twice types the leader into the terminal. In the palette, the spawn prompt (spawnHints),
- *  a confirmation, the filter field, the help and the switcher, how to work them: the keys they
+ *  the agent the TUI reads the leader and the chords only: the leader then Esc gives the list the
+ *  focus, and the leader twice types the leader into the terminal; while the terminal confirms the
+ *  kitty keyboard protocol the chords lead there (docs/tui.md, "Chords"; chordHints), the leader's
+ *  hints after them, and the leader is the last given up. In the palette, the spawn prompt
+ *  (spawnHints), a confirmation, the filter field, the help and the switcher, how to work them: the keys they
  *  read are their own, so they are the TUI's words, but for the confirmation's close key and the
  *  field's clear, which are the user's. Else it is small: a view's list or its detail names what
  *  Enter does now, and the rest stays the leader's hint's, the palette's and the help's. In the list
@@ -309,7 +311,8 @@ function cheatSheet(m) {
   const listing = !["help", "switcher", "souls", "capabilities"].includes(m.view);
   if (listing && m.terminal?.focus === "terminal" && !m.palette && !m.spawn) {
     const label = backKeyLabel(m.detachKey), list = keyLabel(LEADER.find((entry) => entry.does === "list").keys[0]);
-    return led([made("list", keyText(`${label} ${list}`), "the list"), made("again", keyText(`${label} ${label}`), types(m))]);
+    const leader = [made("list", keyText(`${label} ${list}`), "the list"), made("again", keyText(`${label} ${label}`), types(m))];
+    return m.kitty ? [...chordHints(m), ...led(leader)] : led(leader);
   }
   if (m.palette) return led([own("run", "Enter", "run"), own("move", "Up/Down", "move"), own("close", "Esc", "close")]);
   if (m.spawn) return led(spawnHints(m.spawn, m.ascii));
@@ -332,6 +335,25 @@ function cheatSheet(m) {
   const detailed = soul ? soul.focus === "detail" && Boolean(soul.detail) : capability ? capability.focus === "detail" && Boolean(capability.detail) : listing && m.focus === "detail";
   const spawns = listing || (soul && soul.local !== false);
   return led([hint("palette"), ...(detailed ? [hint("detail", "back")] : []), ...enter, ...(spawns ? [hint("spawn")] : []), hint("help"), hint("quit")]);
+}
+
+/** The chords a terminal's cheat sheet names under the kitty keyboard protocol, in this order, a
+ *  pair as one hint, each with the TUI's word: what is reached most from a terminal. */
+const SHEET_CHORDS = Object.freeze([
+  Object.freeze([["palette"], "palette"]),
+  Object.freeze([["previous", "next"], "agent"]),
+  Object.freeze([["tab-previous", "tab-next"], "tab"]),
+  Object.freeze([["close-terminal"], "close"]),
+  Object.freeze([["zoom"], "zoom"]),
+]);
+/** The chord hints of a terminal's focus under the protocol (docs/tui.md, "Chords"): those of
+ *  SHEET_CHORDS read now (the model's `chords`: tui.json may have taken a key), the tabs' only
+ *  with two tabs or more, as the leader's hint has them. A pair's keys share their modifiers:
+ *  `Alt+Shift+Up/Down` (keysTogether). They stand in a block of their own (cheatRows). */
+function chordHints(m) {
+  const keyOf = new Map((m.chords ?? []).map(([key, does]) => [does, key]));
+  return SHEET_CHORDS.filter(([list]) => list.every((does) => keyOf.has(does)) && (list[0] !== "tab-previous" || (m.tabs?.length ?? 0) > 1))
+    .map(([list, word]) => ({ ...made(`chord-${list[0]}`, keyText(keysTogether(list.map((does) => keyOf.get(does)))), word), block: "chords" }));
 }
 
 /** The spawn prompt's hints (docs/tui.md, "Spawning an agent"): the keys the prompt reads are its
@@ -373,24 +395,42 @@ function leaderHints(m) {
   ];
 }
 
-/** The hints that stand in `count` rows: given up from the end, down to the leader alone; the
- *  leader's hint keeps its last, the list's, while it has two rows. */
+/** The hints that stand in `count` rows: given up from the end, down to the leader alone (givenUp);
+ *  the leader's hint keeps its last, the list's, while it has two rows. */
 function keptHints(m, hints, count) {
   if (count >= hints.length) return hints;
   if (m.leader && count >= 2) return [...hints.slice(0, count - 1), hints.at(-1)];
-  return hints.slice(0, Math.max(1, count));
+  let kept = hints;
+  while (kept.length > Math.max(1, count)) kept = givenUp(kept);
+  return kept;
+}
+/** `hints` with one given up: the last but the leader's (`commands`), which goes last of all. In a
+ *  sheet that leads with the leader that is the last; in one that leads with the chords (a
+ *  terminal's, under the kitty keyboard protocol) the leader stays after them. */
+function givenUp(hints) {
+  const at = hints.findLastIndex((h) => h.id !== "leader");
+  return at < 0 ? hints.slice(0, -1) : [...hints.slice(0, at), ...hints.slice(at + 1)];
 }
 
 /** The cheat sheet's rows, `cols` wide: each hint's key in bold from the margin, and what it does
- *  in a column of its own after the widest key; a word is cut at the edge. */
+ *  in a column of its own after the widest key; a word is cut at the edge. The hints of a `block`
+ *  (the chords') have a column of their own, after their own widest key, and as far left as
+ *  leaves their words whole: those words are the TUI's own and short, where their keys are long
+ *  (`Alt+Shift+Left/Right` in the 30 cells beside a terminal). */
 function cheatRows(hints, cols) {
   const edge = cols - MARGIN;
-  const widest = hints.reduce((most, h) => Math.max(most, h.key.width), 0);
-  const wordCol = Math.min(MARGIN + widest + GAP, Math.max(MARGIN + 1, edge - 6));
-  return hints.map((h) => [
-    { col: MARGIN, text: h.key.text, style: BOLD, width: Math.max(0, Math.min(h.key.width, wordCol - 1 - MARGIN)) },
-    ...h.word.spans.map((span) => ({ ...span, col: wordCol + span.col, width: Math.max(0, Math.min(span.width, edge - wordCol - span.col)) })),
-  ].filter((span) => span.width > 0));
+  const columns = new Map();
+  for (const h of hints) {
+    const c = columns.get(h.block) ?? { widest: 0, word: 6 };
+    columns.set(h.block, { widest: Math.max(c.widest, h.key.width), word: h.block === undefined ? c.word : Math.max(c.word, h.word.width) });
+  }
+  return hints.map((h) => {
+    const c = columns.get(h.block), wordCol = Math.min(MARGIN + c.widest + GAP, Math.max(MARGIN + 1, edge - c.word));
+    return [
+      { col: MARGIN, text: h.key.text, style: BOLD, width: Math.max(0, Math.min(h.key.width, wordCol - 1 - MARGIN)) },
+      ...h.word.spans.map((span) => ({ ...span, col: wordCol + span.col, width: Math.max(0, Math.min(span.width, edge - wordCol - span.col)) })),
+    ].filter((span) => span.width > 0);
+  });
 }
 
 /** An overlay's or a detail page's first row on a narrow terminal, where it has the whole screen:
@@ -406,8 +446,9 @@ function withKeys(given, hints, cols, { skip = ["leader", "palette", "help", "qu
   // What the row holds ends where its text does: a span may be given more cells than its text takes.
   const end = row.reduce((most, span) => (span.text !== undefined ? Math.max(most, span.col + Math.min(span.width ?? Infinity, textWidth(textOf(span.text)))) : most), 0);
   let kept = keys;
-  // Given up from the end; with `last`, the last is kept as long as one other is (the leader's `Esc`).
-  while (kept.length && end + GAP + widthOf(kept) > cols - MARGIN) kept = last && kept.length > 1 ? [...kept.slice(0, -2), kept.at(-1)] : kept.slice(0, -1);
+  // Given up from the end, the leader last (givenUp); with `last`, the last is kept as long as one
+  // other is (the leader's `Esc`).
+  while (kept.length && end + GAP + widthOf(kept) > cols - MARGIN) kept = last && kept.length > 1 ? [...kept.slice(0, -2), kept.at(-1)] : givenUp(kept);
   const spans = [];
   let col = cols - MARGIN - widthOf(kept);
   for (const h of kept) {
@@ -539,7 +580,7 @@ function framed(m, size) {
   }
   // The help, under its top row (readRow).
   if (m.view === "help") {
-    const drawn = help(m.actions, { cols: main.cols, rows: size.rows - 1 }, { top: m.helpTop, ascii: m.ascii, detachKey: m.detachKey, chords: m.chords ?? null });
+    const drawn = help(m.actions, { cols: main.cols, rows: size.rows - 1 }, { top: m.helpTop, ascii: m.ascii, detachKey: m.detachKey, chords: m.chords ?? null, chordsLead: m.kitty === true });
     overlay([readRow(m), ...drawn.rows]);
     return { rows, page: Math.max(1, g.page), extent: drawn.extent, room: Math.max(1, size.rows - 1) };
   }
