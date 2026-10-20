@@ -297,8 +297,9 @@ function types(m) {
  *  from the list and the soul's instances from the detail; in the Capabilities view the detail,
  *  and from it the marked soul. With the detail's focus the key that goes back to the list
  *  (`Tab back`) comes before it, and `spawn` after it where it spawns (the list of instances, the
- *  Souls view of a workspace of this machine). An action with no key (tui.json may unbind one) has
- *  no hint. The views have no hint: the accordion names their keys. When rows are short the sheet
+ *  Souls view of a workspace of this machine), then in the Instances view `workspaces` (the
+ *  switcher). An action with no key (tui.json may unbind one) has no hint. The views have no
+ *  hint: the accordion names their keys. When rows are short the sheet
  *  gives up rows from its end (keptHints), down to the leader alone. */
 function cheatSheet(m) {
   const action = (id) => (m.actions ?? []).find((a) => a.id === id && a.keys.length);
@@ -335,7 +336,7 @@ function cheatSheet(m) {
     : capability?.detail ? (capability.focus !== "detail" ? [hint("open", "detail")] : capability.mark >= 0 ? [hint("open", "soul")] : []) : [];
   const detailed = soul ? soul.focus === "detail" && Boolean(soul.detail) : capability ? capability.focus === "detail" && Boolean(capability.detail) : listing && m.focus === "detail";
   const spawns = listing || (soul && soul.local !== false);
-  return led([hint("palette"), ...(detailed ? [hint("detail", "back")] : []), ...enter, ...(spawns ? [hint("spawn")] : []), hint("help"), hint("quit")]);
+  return led([hint("palette"), ...(detailed ? [hint("detail", "back")] : []), ...enter, ...(spawns ? [hint("spawn")] : []), ...(listing ? [hint("workspaces")] : []), hint("help"), hint("quit")]);
 }
 
 /** The chords a terminal's cheat sheet names under the kitty keyboard protocol, in this order, a
@@ -727,25 +728,41 @@ function terminalAt(m, size, g) {
 
 /** A hidden tab's mark for output since it was last shown (docs/tui.md, "Tabs"). */
 const ACTIVITY = "\u2022";
+/** What stands between a tab's agent and its machine, another machine's: ` · ` (` - ` in ASCII). */
+const tabDot = (ascii) => (ascii ? "-" : "\u00b7");
+/** The divider between two tabs: one dim cell. */
+const tabDivider = (ascii) => (ascii ? "|" : "\u2502");
+/** The shown tab's own mark, which no style is needed to read: brackets in place of its side cells. */
+const SHOWN_SIDES = Object.freeze(["[", "]"]);
+/** A hidden tab's look: dim. Its activity mark is not: it is what a glance looks for. */
+const HIDDEN = DIM;
+/** The machine of the shown tab while what is typed goes to it: dim, in the tab's reverse video. */
+const FOCUSED_DIM = style({ dim: true, reverse: true });
 
-/** The tab strip (docs/tui.md, "Tabs"), the panel's top row with two tabs or more: each tab in
- *  order as ` name ` (and ` on machine`, dim, for another machine's agent), the shown one bold, in
- *  reverse while what is typed goes to it, a hidden one plain with `•` after its name when its
- *  agent wrote since it was shown. What does not fit is cut in this order: the hidden tabs'
- *  machines, then their names, each to an equal share of what the shown tab leaves with `…`, then
- *  the shown tab's machine, then the hidden tabs farthest from the shown one are left out. The
- *  shown tab's name stays whole while the row can hold it. */
+/** THE TAB BAR (docs/tui.md, "Tabs"), the top row of a group's region whenever it shows a tab, one
+ *  or many, as a terminal's own tabs read: each tab in order, a dim `│` (`|` in ASCII) between two.
+ *  A tab is its agent's name with a cell on each side, `•` (`*` in ASCII) after the name of a hidden
+ *  one whose agent wrote since it was shown, and ` · <machine>` dim (` - ` in ASCII) inside it for
+ *  another machine's agent. The shown tab reads as the front one: `[` and `]` stand in its side
+ *  cells (a mark no style is needed for: it holds under NO_COLOR and in ASCII), its name is bold,
+ *  and the whole tab is in reverse video while what is typed goes to it; a hidden tab is dim.
+ *  What does not fit is cut in this order: the hidden tabs' machines, then their names, each to an
+ *  equal share of what the shown tab leaves with `…`, then the shown tab's machine, then the hidden
+ *  tabs farthest from the shown one are left out (each takes its divider with it). The shown tab's
+ *  name stays whole while the row can hold it, and is cut last. */
 function stripRow(given, area, { focused, ascii }) {
-  const mark = ascii ? "*" : ACTIVITY;
-  const tabs = given.map((tab) => ({ ...tab, name: measured(tab.name), machine: tab.machine === null ? null : measured(tab.machine), mark: !tab.shown && tab.activity }));
-  const machineCells = (tab) => (tab.machine ? 1 + ON.length + 1 + tab.machine.width : 0);
+  const mark = ascii ? "*" : ACTIVITY, dot = tabDot(ascii);
+  const tabs = given.map((tab) => ({ ...tab, name: measured(tab.name), machine: tab.machine ? measured(tab.machine) : null, mark: !tab.shown && tab.activity === true }));
+  const machineCells = (tab) => (tab.machine ? 3 + tab.machine.width : 0);
   const cellsOf = (tab, { machine, name = tab.name.width, dropped = false }) => (dropped ? 0 : 1 + name + (tab.mark ? 1 : 0) + (machine ? machineCells(tab) : 0) + 1);
-  const total = (plan) => tabs.reduce((sum, tab, i) => sum + cellsOf(tab, plan[i]), 0);
   const plan = tabs.map((tab) => ({ machine: true, name: tab.name.width, dropped: false }));
-  const fits = () => total(plan) <= area.cols;
-  const shown = tabs.findIndex((tab) => tab.shown);
-  // The least a hidden tab is drawn in: a cell of its name (the cut mark), its mark, a cell each side.
-  const least = (tab) => 3 + (tab.mark ? 1 : 0);
+  // Each drawn tab after the first has its divider before it.
+  const total = () => tabs.reduce((sum, tab, i) => sum + cellsOf(tab, plan[i]), 0) + Math.max(0, plan.filter((p) => !p.dropped).length - 1);
+  const fits = () => total() <= area.cols;
+  const shown = Math.max(0, tabs.findIndex((tab) => tab.shown));
+  // The least a hidden tab is drawn in: a cell of its name (the cut mark), its mark, a cell each
+  // side, and its divider.
+  const least = (tab) => 4 + (tab.mark ? 1 : 0);
   // The shown tab's cells are taken first; the hidden ones share the rest equally. Those that do
   // not get even their least are left out, the farthest from the shown tab first.
   const share = () => {
@@ -753,42 +770,56 @@ function stripRow(given, area, { focused, ascii }) {
     const near = tabs.map((tab, i) => i).filter((i) => i !== shown).sort((a, b) => Math.abs(a - shown) - Math.abs(b - shown) || a - b);
     const kept = [];
     for (const i of near) { plan[i].dropped = left - least(tabs[i]) < 0; if (!plan[i].dropped) { kept.push(i); left -= least(tabs[i]); } }
-    const room = area.cols - cellsOf(tabs[shown], plan[shown]), each = Math.floor(room / Math.max(1, kept.length));
+    const room = area.cols - cellsOf(tabs[shown], plan[shown]) - kept.length, each = Math.floor(room / Math.max(1, kept.length));
     for (const i of kept) plan[i].name = Math.max(1, Math.min(tabs[i].name.width, each - 2 - (tabs[i].mark ? 1 : 0)));
     while (!fits() && kept.length) plan[kept.pop()].dropped = true;
   };
   if (!fits()) tabs.forEach((tab, i) => { if (i !== shown) plan[i].machine = false; });
   if (!fits()) share();
-  if (plan.some((p) => p.dropped) && plan[shown].machine && tabs[shown].machine) { plan[shown].machine = false; plan.forEach((p) => { p.dropped = false; }); share(); }
+  if ((!fits() || plan.some((p) => p.dropped)) && plan[shown].machine && tabs[shown].machine) { plan[shown].machine = false; plan.forEach((p) => { p.dropped = false; }); share(); }
+  // A shown name wider than the row itself: cut, its brackets kept.
+  if (cellsOf(tabs[shown], plan[shown]) > area.cols) plan[shown].name = Math.max(1, area.cols - 2);
+  const cut = (tab, p) => (p.name < tab.name.width ? shownLines(textOf(tab.name.text), p.name, 1, { ascii })[0] ?? lit("") : tab.name.text);
   const row = [];
-  let col = area.col;
   const end = area.col + area.cols;
-  tabs.forEach((tab, i) => {
-    if (col >= end || plan[i].dropped) return;
-    const p = plan[i], width = Math.min(cellsOf(tab, p), end - col);
-    const style = tab.shown ? (focused ? FOCUSED : BOLD) : null;
-    const name = p.name < tab.name.width ? shownLines(textOf(tab.name.text), p.name, 1, { ascii })[0] ?? lit("") : tab.name.text;
-    const nameWidth = Math.min(p.name, textWidth(textOf(name)), end - col - 1);
-    // In reverse, as T1's title: the name with a cell on each side; its machine stays dim.
-    if (tab.shown && focused) row.push({ col, width: Math.min(nameWidth + 2, end - col), style: FOCUSED });
-    if (nameWidth > 0) row.push({ col: col + 1, text: name, width: nameWidth, ...(style ? { style } : {}) });
-    let at = col + 1 + nameWidth;
-    if (tab.mark && at < end) { row.push({ col: at, text: lit(mark), width: 1 }); at += 1; }
-    if (p.machine && tab.machine && at + 1 + ON.length + 1 < end) {
-      row.push({ col: at + 1, text: lit(ON), style: DIM, width: ON.length });
-      row.push({ col: at + 2 + ON.length, text: tab.machine.text, style: DIM, width: Math.max(0, Math.min(tab.machine.width, end - (at + 2 + ON.length))) });
-    }
+  let col = area.col, first = true;
+  // `text` null is a blank cell (a hidden tab's side): its cells are passed over.
+  const put = (text, width, look) => {
+    const w = Math.max(0, Math.min(width, end - col));
+    if (w > 0 && text !== null) row.push({ col, text, width: w, ...(look ? { style: look } : {}) });
     col += width;
+  };
+  tabs.forEach((tab, i) => {
+    const p = plan[i];
+    if (p.dropped || col >= end) return;
+    if (!first) put(lit(tabDivider(ascii)), 1, DIM);
+    first = false;
+    if (col >= end) return;
+    const front = tab.shown, reversed = front && focused;
+    const look = front ? (reversed ? FOCUSED : BOLD) : HIDDEN;
+    // In reverse while what is typed goes to it: the whole tab, its sides and machine included.
+    if (reversed) row.push({ col, width: Math.max(0, Math.min(cellsOf(tab, p), end - col)), style: FOCUSED });
+    const [left, right] = front ? SHOWN_SIDES.map((side) => lit(side)) : [null, null];
+    put(left, 1, look);
+    const name = cut(tab, p);
+    put(name, Math.min(p.name, textWidth(textOf(name))), look);
+    if (tab.mark) put(lit(mark), 1, null);
+    if (p.machine && tab.machine) {
+      const machineLook = reversed ? FOCUSED_DIM : DIM;
+      put(null, 1, null);
+      put(lit(dot), 1, machineLook);
+      put(null, 1, null);
+      put(tab.machine.text, tab.machine.width, machineLook);
+    }
+    put(right, 1, look);
   });
   return row;
 }
 
-/** The open terminal's rows from its title row: the agent's name (and its machine, when it is
- *  another's), in reverse while what is typed goes to it (with two tabs or more, the tab strip:
- *  stripRow), then the shown agent's screen as the last capture made it (lib/panel.mjs,
- *  term/capture.mjs: spans of the agent's own text and styles), each row placed at the terminal's
- *  first column and kept inside its cells. */
-/** What an empty group shows (docs/tui.md, "Splits"), under an empty strip row: that Enter on an
+/** The open terminal's rows from its top row: the tab bar (stripRow), then the shown agent's
+ *  screen as the last capture made it (lib/panel.mjs, term/capture.mjs: spans of the agent's own
+ *  text and styles), each row placed at the terminal's first column and kept inside its cells. */
+/** What an empty group shows (docs/tui.md, "Splits"), under an empty tab bar row: that Enter on an
  *  agent in the list opens it here, in reverse while it is the focused group, then the leader's
  *  keys for the groups. */
 const EMPTY_HINT = "Enter on an agent opens it here";
@@ -812,18 +843,9 @@ function regionRows(m, area) {
   // The focused group's shown tab is in reverse while what is typed goes to it; the other group's
   // is bold, never in reverse, so one terminal at a time reads as focused (T3).
   const focused = area.focused && m.terminal?.focus === "terminal";
-  const tab = group.tabs.find((each) => each.shown) ?? { name: m.terminal?.name, machine: m.terminal?.routed ? m.terminal.machine : null };
-  const name = measured(tab.name);
-  let title = [];
-  if (group.tabs.length > 1) title = stripRow(group.tabs, area, { focused, ascii: m.ascii });
-  else {
-    if (focused) title.push({ col: area.col, width: Math.min(area.cols, name.width + 2), style: FOCUSED });
-    title.push({ col: area.col + 1, text: name.text, style: focused ? FOCUSED : BOLD, width: Math.max(0, Math.min(name.width, area.cols - 2)) });
-    if (tab.machine) {
-      const where = measured(tab.machine), at = area.col + name.width + 3;
-      if (at + ON.length + 1 < area.col + area.cols) title.push({ col: at, text: lit(ON), style: DIM, width: ON.length }, { col: at + ON.length + 1, text: where.text, style: DIM, width: Math.max(0, area.col + area.cols - (at + ON.length + 1)) });
-    }
-  }
+  // A model made by hand may name its terminal and no tabs: its one tab is that terminal.
+  const tabs = group.tabs.length ? group.tabs : [{ name: m.terminal?.name, machine: m.terminal?.routed ? m.terminal.machine : null, shown: true, activity: false }];
+  const title = stripRow(tabs, area, { focused, ascii: m.ascii });
   const screenOf = area.focused ? m.screen : m.screens?.get(group.shown) ?? null;
   const lines = screenOf?.lines ?? [];
   const body = Array.from({ length: area.rows }, (_, r) => (lines[r] ?? [])

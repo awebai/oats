@@ -16,7 +16,7 @@ import { TERMS, capabilityCatalogKey, cliDeploymentList, deploymentsListSupporte
 import { loadConfig } from "./config.mjs";
 import { ACT_WORDS, LIST_WORDS, actContext, actCwd, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
-import { CHANGE_FILES, admitDeployment, createReader, findDeployment, leaveInstance, probeKernel, realpath, startExec, tellable } from "./read.mjs";
+import { CHANGE_FILES, admitDeployment, createIdentityReads, createReader, findDeployment, leaveInstance, probeKernel, realpath, startExec, tellable } from "./read.mjs";
 import { initialState, reduce } from "./store.mjs";
 import { captureRows } from "./term/capture.mjs";
 import { createKeyParser, keyId } from "./term/keys.mjs";
@@ -94,7 +94,7 @@ function errorLines(error) {
  *  can answer them. `deploymentList` is the shared cliDeploymentList (this computer's deployments
  *  list, through the kernel: awebai/oats#1390), and `startExec` the exec it is handed before the
  *  terminal is taken; replaceable so a test can answer the list. */
-const EFFECTS = Object.freeze({ loadConfig, findDeployment, probeKernel, createReader, deploymentList: cliDeploymentList, startExec, admitDeployment, prepareRemoteTerm, createPanel, sweep,
+const EFFECTS = Object.freeze({ loadConfig, findDeployment, probeKernel, createReader, createIdentityReads, deploymentList: cliDeploymentList, startExec, admitDeployment, prepareRemoteTerm, createPanel, sweep,
   runDir: CHANGE_FILES.dir, removeDir: CHANGE_FILES.remove, realpath, tellable, startInstance, createLifecycleConfirmation, createLifecycleBoundary, createSoulCatalog,
   createCapabilityCatalog, createSpawnPreview, createSpawnApplyBoundary, createSpawnTransaction });
 
@@ -430,11 +430,17 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     if (effect === "suspend") guard.suspend();
     if (effect === "redraw") guard.reassert(); // the modes again, then the whole screen
     if (effect === null || typeof effect !== "object") return false;
-    if (effect.list) readList();
+    if (effect.list) readList({ identify: effect.identify === true });
     if (effect.remove) removeListed(effect.remove);
     if (effect.admit !== undefined) {
       const admitted = effects.admitDeployment(effect.admit);
       took(reduce(state, admitted.ok ? { admitted: admitted.deployment, at: clock() } : { refused: effect.admit }, keymap));
+    }
+    if (effect.join) {
+      // Each listed deployment of the workspace picked, asked whether it is a deployment now, as a picked row is.
+      const answers = effect.join.paths.map((path) => [path, effects.admitDeployment(path)]);
+      const canonical = new Map(answers.filter(([, a]) => a.ok).map(([path, a]) => [path, a.deployment]));
+      took(reduce(state, { joined: { admitted: [...canonical.values()], opens: effect.join.opens.map((id) => canonical.get(id) ?? id) }, at: clock() }, keymap));
     }
     if (effect.abandon) giveUpPreflight();
     // A tab shown (`show`) needs nothing here: the frame after it brings the panel to it (fitPanel).
@@ -476,17 +482,31 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   /** The read on its way: `{ again }`, `again` once another was asked for meanwhile; or null. */
   let listRead = null;
   const listChange = (bin, argv, options, callback) => reader.changeExec(bin, argv, { ...options, label: LIST_CHANGE }, callback);
-  function readList() {
+  /** `identify`: once the list has answered, read the identities of its rows (`identify` below). A read asked
+   *  for while one is on its way keeps the wish of either. */
+  function readList({ identify: wanted = false } = {}) {
     if (ended || !listing) return;
-    if (listRead !== null) { listRead.again = true; return; }
-    const mine = listRead = { again: false };
+    if (listRead !== null) { listRead.again = true; listRead.identify ||= wanted; return; }
+    const mine = listRead = { again: false, identify: wanted };
     Promise.resolve()
       .then(() => effects.deploymentList(probe.cli, { action: "list" }, { exec: reader.exec, env }))
       .then((answer) => (answer.ok ? { rows: answer.value.rows } : { failure: answer.reason }), () => ({ failure: NOT_ASKED }))
       .then((listed) => {
         listRead = null;
-        if (mine.again) readList(); else heard({ listed });
+        if (mine.again) return readList({ identify: mine.identify });
+        heard({ listed });
+        if (mine.identify) identify();
       });
+  }
+  // THE IDENTITY READS (lib/read.mjs createIdentityReads; docs/tui.md, "The switcher"): the rows of this
+  // computer's list that this run does not serve and that the kernel says are deployments, each read for
+  // its workspace's identity, one at a time, so the switcher puts it in its workspace's row. At the start
+  // and when the switcher is opened or refreshed, never on a timer; their answers come in as the screen
+  // is used. A suspend gives the run up (what a stopped TUI reads is no evidence), as it does the cycles.
+  const identities = effects.createIdentityReads({ cli: probe.cli, exec: reader.exec, env, onRead: (identity) => heard({ identity }) });
+  function identify() {
+    if (ended) return;
+    identities.start(state.listed.rows.filter((row) => row.state === "ok" && !state.ctxs.includes(row.path)).map((row) => row.path));
   }
   /** Remove the row the store asked about (`{ path, name }`) from the list: nothing on disk is
    *  touched. Its answer goes to the store, which asks for the list again. */
@@ -774,7 +794,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     // The run's directory goes last, made for whichever of the two needed it first: the reader
     // removes it only when it wrote a change there, and one it cannot remove (a change still
     // writing) stays.
-    onEnd() { ended = true; spawnTimers.end(); dismiss(confirmation?.n); panel.end(); reader.stop(); if (dir !== null) { try { effects.removeDir(dir); } catch { /* not empty, or gone */ } } },
+    onEnd() { ended = true; spawnTimers.end(); dismiss(confirmation?.n); panel.end(); identities.stop(); reader.stop(); if (dir !== null) { try { effects.removeDir(dir); } catch { /* not empty, or gone */ } } },
   });
   function refresh(how) { Promise.resolve(reader.request(how)).catch(() => {}); }
   /** A preflight under way when the process stops: given up, and the store told. */
@@ -785,7 +805,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   }
   /** Every read in flight is void (lib/read.mjs), the roster's with them: the reader says nothing
    *  for a void read, so the state is told here that none is in flight. */
-  function dropReads() { reader.voidInFlight(); state = reduce(state, { collecting: false }, keymap).state; }
+  function dropReads() { reader.voidInFlight(); identities.stop(); state = reduce(state, { collecting: false }, keymap).state; }
   /** The events of one batch of input, in order. Once one of them gave the terminal the focus,
    *  the rest are dropped: they were typed before it had it, and neither the list nor the agent
    *  is to have them (a `q` behind the Enter would end the run). Each batch is one read of input,
@@ -816,6 +836,9 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   if (kb === "asking" && !ended) kbTimer = setTimer(() => { kbTimer = null; guard.attempt(() => { const released = parser.giveUp(); answered(null); if (released.length && !typing()) act(released); watchEscape(); }); }, Math.max(0, answerBy - now()));
   guard.attempt(() => { if (!ended) Promise.resolve(reader.start()).catch(() => {}); });
   if (found.ok) guard.attempt(() => { if (!ended) listStart(found.deployment); });
+  // Once a run, at the start: the identities of this computer's listed deployments, the list read first
+  // when the run did not read it before the terminal was taken.
+  guard.attempt(() => { if (!ended) { if (listedAtStart) identify(); else readList({ identify: true }); } });
   guard.attempt(() => guard.draw());
   // Once a run, after the first frame: what runs that are gone left of their private servers
   // (lib/panel.mjs sweep, which signals nothing and removes only what it can prove is dead).

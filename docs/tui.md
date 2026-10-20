@@ -110,9 +110,9 @@ runs.
  Ctrl+K   palette                     │
  Enter    open                        │
  n        spawn                       │
+ w        workspaces                  │
  ?        help                        │
  q        quit                        │
-                                      │
                                       │
 ```
 
@@ -149,8 +149,9 @@ while a terminal is open); under 80 columns it has the whole width.
   `Ctrl+K palette`. In a view's list it names what `Enter` does now
   (`open`, `focus terminal` on the row whose terminal is open, `detail`
   in the Souls and Capabilities views), then `n spawn` where it spawns,
+  `w workspaces` (the [switcher](#the-switcher)) in the Instances view,
   and `? help` and `q quit` last; with the detail's focus `Tab back`
-  comes before `Enter`. The other keys (the acts, `/`, `Tab`, `r`, `w`,
+  comes before `Enter`. The other keys (the acts, `/`, `Tab`, `r`,
   and a terminal's `z`, `c`, `[` and `]`) are not listed there:
   the leader's hint, the palette and the help name them. While the
   terminal has the focus, in an overlay and in the filter field it names
@@ -333,7 +334,7 @@ fit; the detail shows them whole. The TUI's own words end the same way:
 ## Open an agent's terminal
 
 ```
- acme-platform                │ backend-lead
+ acme-platform                │[backend-lead]
                               │$ make docs
  Instances                  1 │Building the reference...
 > ● backend-lead              │
@@ -348,8 +349,9 @@ fit; the detail shows them whole. The TUI's own words end the same way:
 ```
 
 - **`Enter` on an instance that runs** opens its terminal on the right of
-  the sidebar, where the detail was, over every row. Its top row names the
-  agent (and `on <machine>` for one of another machine); under it is the
+  the sidebar, where the detail was, over every row. Its top row is the
+  [tab bar](#tabs), here one tab: the agent's name in brackets (and
+  ` · <machine>` for one of another machine); under it is the
   agent's screen, as the agent draws it, in its own colours. While a
   terminal is open the sidebar keeps 30 columns at most, also while the
   detail stands in the terminal's place, and a name longer than its row is
@@ -395,7 +397,7 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   sheet shows it again. Beside the sidebar the terminal is never narrower
   than 40 columns: with less room it has the whole screen too.
 - **With the whole screen** (zoomed, or a narrow terminal) no cheat sheet is
-  drawn. The terminal's title row carries the keys at its right, dim:
+  drawn. The terminal's tab bar carries the keys at its right, dim:
   `Alt+O commands   Alt+O Esc the list`, after the chords under the kitty
   keyboard protocol, as many as fit, and while the leader waits, the
   leader's hint, as many keys as fit, `Esc the list` last. The agent's
@@ -439,7 +441,7 @@ fit; the detail shows them whole. The TUI's own words end the same way:
 ## Tabs
 
 ```
- acme-platform                │ backend-lead  docs-writer•  qa-runner
+ acme-platform                │[backend-lead]│ docs-writer• │ qa-runner
                               │$ make test
  Instances                  1 │ok 41 of 41
 > ● backend-lead              │
@@ -456,23 +458,27 @@ fit; the detail shows them whole. The TUI's own words end the same way:
 
 Each terminal open in the panel is a tab, and the panel holds up to four.
 
-- **The tab strip** is the panel's top row: each tab's agent, in the order
-  the tabs were opened. With one tab the row reads as
-  [above](#open-an-agents-terminal), the agent's name alone.
-  - **The shown tab** is the one whose screen the panel draws. Its name is
-    in reverse video while the terminal has the focus, and bold otherwise.
-  - **The other tabs are hidden**, their names plain. A hidden tab whose
-    agent wrote since it was last shown has `•` after its name (`*` in
-    ASCII); the mark goes when the tab is shown. A hidden tab's screen is
-    not read: only that its agent wrote.
-  - **An agent of another machine** reads `<name>`, then a dim
-    `on <machine>`.
-  - **A strip longer than its row is cut** in this order: the hidden tabs'
-    `on <machine>`, then the hidden tabs' names, each to an equal share of
-    what the shown tab leaves, with `…` (`...` in ASCII), then the shown
-    tab's `on <machine>`; then the hidden tabs farthest from the shown one
-    are left out of the row (they stay open). The shown tab's name stays
-    whole while the row can hold it.
+- **The tab bar** is the panel's top row whenever a terminal is open, with
+  one tab or many, as a terminal's own tabs read: each tab's agent, in the
+  order the tabs were opened, a dim `│` (`|` in ASCII) between two tabs.
+  - **The shown tab** is the one whose screen the panel draws, the front
+    tab. It stands in brackets, `[backend-lead]`, a mark that needs no
+    style, so it reads the same under `NO_COLOR` and in ASCII. Its name is
+    bold, and the whole tab is in reverse video while the terminal has the
+    focus.
+  - **The other tabs are hidden**, dim, a cell on each side of the name. A
+    hidden tab whose agent wrote since it was last shown has `•` after its
+    name (`*` in ASCII), not dim; the mark goes when the tab is shown. A
+    hidden tab's screen is not read: only that its agent wrote.
+  - **An agent of another machine** reads `<name> · <machine>` inside its
+    tab, the machine dim (`-` for `·` in ASCII): `[billing-lead · garnet]`.
+  - **A bar longer than its row is cut** in this order: the hidden tabs'
+    machines, then the hidden tabs' names, each to an equal share of what
+    the shown tab leaves, with `…` (`...` in ASCII), then the shown tab's
+    machine; then the hidden tabs farthest from the shown one are left out
+    of the row with their dividers (they stay open). The shown tab's name
+    stays whole while the row can hold it, and is cut last.
+  - The TUI takes no mouse input: a tab is shown with the keys below.
 - **Opening.** `Enter` on a row, an instance in
   [the palette](#the-palette), the leader then `Up` or `Down`, and a
   [spawn](#spawning-an-agent)'s new agent open a terminal the same way:
@@ -494,7 +500,7 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
   open. The leader then
   `Left` or `Right` does the same from any focus, and from another view
   goes to the Instances view first.
-  - The strip does not wrap: on the first tab `[` does nothing, and on the
+  - The bar does not wrap: on the first tab `[` does nothing, and on the
     last `]`; the leader then `Left` or `Right` there leaves even the focus
     where it was.
   - The focus does not move: in the terminal it stays in the terminal,
@@ -521,11 +527,13 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
     and the list takes the focus.
   - A hidden tab: the shown tab and the focus stay as they were.
 - **Zoom** (`z`, or the leader then `z`) gives the shown tab the whole
-  screen. The strip stays its top row, and the other tabs stay open.
+  screen. The tab bar stays its top row, and the other tabs stay open.
 - **The tabs are the open workspace's.** Opening another workspace in
   [the switcher](#the-switcher) closes them all, and so does the open
   workspace no longer being listed; their agents keep running. Coming back
-  opens none of them again.
+  opens none of them again. Opening the same workspace again, with its
+  deployment of this machine now opened beside another machine's, keeps
+  them.
 
 ## Splits
 
@@ -546,7 +554,7 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
 ```
 
 The panel can be split in two **groups**, side by side or one above the
-other. Each group is a panel of [tabs](#tabs) of its own: a strip, a shown
+other. Each group is a panel of [tabs](#tabs) of its own: a tab bar, a shown
 tab and the marks of its hidden ones.
 
 - **Splitting.** The leader then `|` splits the panel side by side, and the
@@ -557,14 +565,14 @@ tab and the marks of its hidden ones.
   - **There are at most two groups.** With two, the split keys do nothing,
     and the line under the title says `The panel has two groups already.`
   - **Each group needs 40 columns side by side, and 8 rows one above the
-    other**, its strip counted. The panel beside the sidebar then needs 81
+    other**, its tab bar counted. The panel beside the sidebar then needs 81
     columns (a terminal of 112), or 17 rows. A split that would leave a
     group smaller does nothing, and the line says so:
     `No room to split side by side: each group needs 40 columns.` or
     `No room to split one above the other: each group needs 8 rows.`
 - **What is drawn.** A rule separates the groups. Both groups' shown tabs
   are drawn as their agents write; hidden tabs only set their marks.
-  - The focused group's strip is drawn as with one group: its shown tab in
+  - The focused group's tab bar is drawn as with one group: its shown tab in
     reverse while its terminal has the focus, bold otherwise. The other
     group's shown tab is bold, never in reverse, so one terminal at a time
     reads as the one you type into.
@@ -781,17 +789,17 @@ sidebar's title says `workspaces` and no view is open; under 80 columns the
 switcher covers the whole screen.
 
 ```
- workspaces                                     │ > * acme-platform         This machine · garnet
-                                                │     ledger                quartz
- Instances                                    1 │   Not matched to a workspace
- Souls                                        2 │     basalt                ssh needs a prompt
- Capabilities                                 3 │   On this machine, not opened
-────────────────────────────────────────────────│     acme-docs             ~/acme-docs
- Alt+O    commands                              │     sandbox               Not found.
- Ctrl+K   palette                               │
- Enter    open                                  │
- /        filter                                │
- r        refresh                               │
+ workspaces                                     │ > * acme-platform
+                                                │       This machine
+ Instances                                    1 │       garnet
+ Souls                                        2 │     lfx
+ Capabilities                                 3 │       This machine · not opened
+────────────────────────────────────────────────│       athenea (lfx)
+ Alt+O    commands                              │   Not matched to a workspace
+ Ctrl+K   palette                               │     basalt                ssh needs a prompt
+ Enter    open                                  │   On this machine, not opened
+ /        filter                                │     acme-docs             Timed out · ~/acme-docs
+ r        refresh                               │     sandbox               Not found.
  Esc      close                                 │
  ?        help                                  │
  q        quit                                  │
@@ -799,20 +807,36 @@ switcher covers the whole screen.
 
 It lists, in this order:
 
-- **The workspaces this run knows**, one row each: the name, the machines
-  its deployments are on, and at the right edge how many of its deployments
-  are not live (`1 deployment not live`). A workspace here is what the
-  rules shared with the Desktop make of the deployments opened in this run
-  and of what the registered machines answered: the ones that report the
-  same workspace are one row. `*` marks the workspace that is open.
+- **The workspaces**, one row each, by name. Under each stands one dim line
+  per deployment of it:
+  - the machine it is on (`This machine`, `garnet`), with the folder's last
+    segment when one machine holds two deployments of it;
+  - then its state when it is not live: `not opened` for a deployment of
+    this computer's list that this run has not opened, else the words the
+    sidebar's headings use (`not observed`, `not reached`, `stale`,
+    `remembered`).
+
+  A workspace is what the rules shared with the Desktop make of the
+  deployments opened in this run, of what the registered machines answered,
+  and of the deployments of this computer's list whose workspace was read
+  (below): the ones that report the same workspace (its key and default
+  team) are one row, whichever machine they are on. Its name is the one a
+  deployment of this machine gives it: the workspace's own name once one is
+  opened and read, the folder's name of one that is not, else the last part
+  of the workspace's key. `*` marks the workspace that is open.
 - **`Not matched to a workspace`**: what those rules matched to no
   workspace, each by its own name with a short reason. A machine that has
   not answered in this run is listed here.
 - **`On this machine, not opened`**: the rows of this computer's list of
-  deployments (`oats deployments`) that this run has not opened, in the
-  list's order, each by its folder's name and its path. Nothing is read from
-  one before it is picked. A row that cannot be opened says why where its
-  path stood, and does not open:
+  deployments (`oats deployments`) that this run has not opened and that no
+  workspace took, in the list's order, each by its folder's name and its
+  path. A row whose workspace is not known yet says nothing more; one whose
+  read failed says why before its path (`Timed out`, `Not read`), and so
+  does one whose workspace attaches to none (`Workspace not known yet`,
+  `Invalid workspace reference`, `Reports no workspace`), so a narrow row
+  cuts the path, not the reason; both still open.
+  A row that cannot be opened says why where its path stood, and does not
+  open:
 
   | The row says | The list's state |
   |---|---|
@@ -820,9 +844,26 @@ It lists, in this order:
   | `Not an OATS deployment any more.` | `not-a-deployment`: the folder has no `oats-local.yaml` |
   | `Can't be read.` | `unreadable`: the check failed, for example for a permission |
 
-  The list is read when the switcher opens, on `r` in it and after a
-  Remove. When a read fails, the rows of the last read stay, under a line
-  that says the list could not be read, with the kernel's message.
+  The list is read once at the start, when the switcher opens, on `r` in
+  it and after a Remove. When a read fails, the rows of the last read stay,
+  under a line that says the list could not be read, with the kernel's
+  message.
+
+**How a deployment of the list finds its workspace.** Each row of the list
+that this run has not opened and that the kernel says is a deployment is
+read for its workspace identity: `oats status --dir <path> --json`, the
+same read an opened deployment gets, whose `workspace` object says which
+workspace and default team it is.
+
+- **When:** once at the start, and again each time the switcher is opened
+  and on `r` in it, after the list is read. Never on a timer.
+- **How:** one at a time, each with its own 30 seconds, all of them within
+  60 seconds. A read still running when the 60 seconds are up is ended,
+  and it and the ones not begun say `Timed out`.
+- **The switcher never waits for them:** it is drawn at once, and each
+  answer moves its row into its workspace's as it comes in. A later
+  answer replaces an earlier one; nothing else is read from such a
+  deployment until it is opened.
 
 | Key | Does |
 |---|---|
@@ -834,9 +875,16 @@ It lists, in this order:
 | `Esc` | while a Remove is asked, keeps the row; else clears a kept filter; else closes the switcher, back to the view that was open |
 | `1` | closes the switcher, back to the view that was open |
 
-**Enter on a workspace** opens its view. **Enter on a row of the list**
-opens that deployment in this run: from then on it is read with the others,
-and its workspace is the open view. A folder that stopped being a deployment
+**Enter on a workspace** opens its view. Every deployment of it on this
+machine that this run has not opened is opened first: asked whether it is
+still a deployment, as a row of the list is, then read with the others from
+then on. The view holds it and the other machines' deployments of the
+workspace at once, `not observed` until its first read. One that is no
+longer a deployment is not opened, and the workspace opens on its other
+deployments; with none to open, the switcher stays and the list is read
+again. **Enter on a row of the list** opens that deployment in this run:
+from then on it is read with the others, and its workspace is the open
+view. A folder that stopped being a deployment
 since the list was read is not opened: its row says
 `Not an OATS deployment any more.` where its path stood.
 
@@ -1573,9 +1621,9 @@ with the Desktop (`packages/client/`).
     asked for one, and no other machine is shown.
 - **This computer's list of deployments is the kernel's**, read and changed
   through the same kernel, with 15 seconds and 4 MiB each, from `/`:
-  - `oats deployments --json`, at a start outside every deployment with no
-    `--dir` (before the terminal is taken), when the switcher opens, on `r`
-    in it and after a Remove. One runs at a time: one asked for while one is
+  - `oats deployments --json`, at the start (outside every deployment with
+    no `--dir`, before the terminal is taken), when the switcher opens, on
+    `r` in it and after a Remove. One runs at a time: one asked for while one is
     on its way runs after it, however many times it was asked, and the
     answer taken is that later one's.
   - `oats deployments add <path> --via tui --json`, once a run, for the
@@ -1584,9 +1632,16 @@ with the Desktop (`packages/client/`).
 
   An add and a remove are changes: `oats tui` never ends one, and one still
   running as it leaves is named in one line after the screen is left.
+- **The workspace of each row of that list the run has not opened** is
+  one more read, `oats status --dir <path> --json` with `--max-age 60`, by
+  the same kernel ([the switcher](#the-switcher)): at the start, when the
+  switcher opens and on `r` in it, one at a time, 30 seconds each and 60
+  seconds for all of them; never from the reads' cadence above. A kernel
+  that reports no workspace identities is not asked.
 - **One look at the file system serves the switcher**, and it reads no
-  file's content: when a row of the list is opened, that one directory is
-  asked for a regular `oats-local.yaml`.
+  file's content: when a row of the list, or a workspace with such a row,
+  is opened, each of those directories is asked for a regular
+  `oats-local.yaml`.
 - **Opening an agent runs one more command,** `oats session attach --home
   <home>`, by the same kernel, in a pane of the run's private tmux server
   ([above](#open-an-agents-terminal)), with no key of its own. For an agent

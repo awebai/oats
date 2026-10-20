@@ -119,9 +119,9 @@ test("a start or restart the shared start gate refuses opens nothing, and its se
   assert.deepEqual(lineOf(press(stopped, ["S"]).state), ["", gate.sentence]);
 });
 
-test("the cheat sheet names no act key, whatever the row: what Enter does, then spawn, help and quit; each act key the row opens still opens, and the palette offers those acts (Done 1)", () => {
+test("the cheat sheet names no act key, whatever the row: what Enter does, then spawn, workspaces, help and quit; each act key the row opens still opens, and the palette offers those acts (Done 1)", () => {
   const sheet = (state, sz = S120) => sheetOf(draw(state, sz));
-  const lead = [hint("Ctrl+\\", "commands"), hint("Ctrl+K", "palette")], tail = [hint("n", "spawn"), hint("?", "help"), hint("q", "quit")];
+  const lead = [hint("Ctrl+\\", "commands"), hint("Ctrl+K", "palette")], tail = [hint("n", "spawn"), hint("w", "workspaces"), hint("?", "help"), hint("q", "quit")];
   // At 120x40 every hint has a row of its own; Enter's is there only while it opens the row.
   assert.deepEqual(sheet(on(here(), RUN)), [...lead, hint("Enter", "open"), ...tail]);
   for (const name of [STOPPED, UNKNOWN, HALF, SPAWNING, HERDR]) assert.deepEqual(sheet(on(here(), name)), [...lead, ...tail], name);
@@ -144,7 +144,7 @@ test("a tui.json that rebinds the acts: the keys it gives open them, and the cap
   assert.equal(press(state, ["f8"]).state.act.verb, "stop");
   assert.equal(press(state, ["ctrl+s"]).state.act.verb, "start");
   for (const key of ["X", "D", "S", "R"]) assert.deepEqual([press(state, [key]).state.view, press(state, [key]).effects], ["instances", []], key);
-  assert.deepEqual(sheetOf(draw(state, S120)), [hint("Ctrl+\\", "commands"), hint("Ctrl+K", "palette"), hint("n", "spawn"), hint("?", "help"), hint("q", "quit")], "the cheat sheet names no act, whichever keys are given");
+  assert.deepEqual(sheetOf(draw(state, S120)), [hint("Ctrl+\\", "commands"), hint("Ctrl+K", "palette"), hint("n", "spawn"), hint("w", "workspaces"), hint("?", "help"), hint("q", "quit")], "the cheat sheet names no act, whichever keys are given");
   assert.deepEqual(paletteItems(press(state, ["ctrl+k"]).state).items.filter((item) => item.kind === "act").map((item) => item.does), ["stop", "retire", "start"], "the palette offers each act the row opens, an unbound one too");
 });
 
@@ -493,5 +493,5 @@ test("a view that goes away under an open confirmation closes it: the loop is to
   // An answer that no longer lists garnet: no view holds what was open.
   const next = remoteRosterState(opened.remote, { envelope: { ok: true, result: { groups: [] } } }, "2026-10-11T10:00:40.000Z");
   const gone = reduce(opened, { roster: { remote: { remoteGroups: next.remoteGroups, rosterAnswered: next.rosterAnswered, rosterFailure: next.rosterFailure }, memory: opened.memory, notes: opened.notes, at: "2026-10-11T10:00:40.000Z" } });
-  assert.deepEqual([gone.state.view, gone.state.act, gone.state.open, gone.effect], ["switcher", null, null, { list: true, dismiss: opened.act.n }]);
+  assert.deepEqual([gone.state.view, gone.state.act, gone.state.open, gone.effect], ["switcher", null, null, { list: true, identify: true, dismiss: opened.act.n }]);
 });

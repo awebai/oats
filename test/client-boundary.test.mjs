@@ -76,7 +76,9 @@ const SURFACE = Object.freeze({
   // Firm (1d): what one deployment's observation becomes for the panel. A client calls `panelInstances`, not the row's own projection.
   "deployment-panel.mjs": ["rosterRows", "livenessInput", "livenessAnswers", "panelInstances", "pendingEntry", "failedEntry", "observedEntry", "publicDeployment"],
   // Firm (1d): the deployments a client holds and the views over them. The rest of the module is the Desktop's own composition.
-  "panel-views.mjs": ["deployments", "deploymentInfo", "deploymentTag", "deploymentEntry", "deploymentPanel", "viewModel", "viewFor", "panelData", "workspaceChoices", "cliReadsRemotes"],
+  "panel-views.mjs": ["deployments", "deploymentInfo", "deploymentTag", "deploymentEntry", "deploymentPanel", "viewModel", "listedInfo", "listedViews", "viewFor", "panelData", "workspaceChoices", "cliReadsRemotes"],
+  // #482 in a switcher: the identity of a listed deployment, read before it is served.
+  "deployment-identity.mjs": ["cliDeploymentIdentity", "identityReadable", "identityTimedOut"],
   // Provisional: machines and the switcher. 3a: what a roster answer becomes (`remotePanel` takes the time of its call, required),
   // what a client remembers of the machines that answered, and the words a switcher shows for a view.
   "cli-adapter.mjs": ["parseEnvelope", "cliRemoteRoster", "cliCapability", "writeTaskFile"],
@@ -493,7 +495,9 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 66);
+  assert.equal(Object.keys(SURFACE).length, 67);
+  // #482 in a switcher: a listed deployment's identity, read before it is served.
+  assert.ok(Object.hasOwn(SURFACE, "deployment-identity.mjs"), "deployment-identity.mjs");
   // #1395: the keys both clients share; the TUI reads its defaults from them.
   assert.ok(Object.hasOwn(SURFACE, "keymap.mjs"), "keymap.mjs");
   // The five modules 1b made are on it, with the names the TUI's first views take.

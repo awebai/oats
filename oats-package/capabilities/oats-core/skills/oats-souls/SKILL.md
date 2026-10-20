@@ -95,15 +95,31 @@ unclear, ask your human.
 
 ## Name the instance
 
-By default `oats spawn <soul> --purpose <role>` names the instance
-`<soul>-<role>`. Use a short lowercase kebab-case role for what this
-incarnation does (`release-0-26`, `desktop-review`), not an opaque number.
-`--name <slug>` gives an exact, unprefixed name instead (not with
-`--purpose`); it must be a slug and not a soul name. Names are unique across
-the deployment: a derived name in use gets `-2`; an explicit `--name` in use is
-refused, never suffixed. Never put secrets,
-user data or volatile task detail in a name — with a messaging capability the
-instance name is also its address.
+Name an instance `<descriptive>-<role>`, with `--name`:
+
+- **Descriptive:** a few lowercase kebab-case words for what this incarnation
+  does (`desktop-improvements`, `release-0-26`), not an opaque number.
+- **Role:** the last word of the soul's name, after any package qualifier:
+  `oats-desktop-expert` → `expert`, `oats-kernel-developer` → `developer`,
+  `code-reviewer` → `reviewer`. A one-word soul's role is its name.
+- So `oats spawn oats-desktop-expert --name desktop-improvements-expert`, not
+  `--purpose desktop-improvements` (which gives
+  `oats-desktop-expert-desktop-improvements`).
+
+`--name` is used exactly as given: it must be a slug, at most 64 characters,
+and not a soul name. A name built this way can be a soul's name
+(`integrations-expert`): add a word. An explicit `--name` in use is refused,
+never suffixed.
+
+Spawn's `--purpose <slug>` names the instance `<soul>-<slug>` instead,
+derived from the soul, so a script or automation that knows only the soul
+and a purpose can use it. It is not exact: a derived name in use gets `-2`.
+`--name` and `--purpose` do not combine. Without either, the kernel numbers
+the instance.
+
+Names are unique across the deployment. Never put secrets, user data or
+volatile task detail in a name — with a messaging capability the instance
+name is also its address.
 
 ## Propose a new soul
 

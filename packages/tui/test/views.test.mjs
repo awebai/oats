@@ -236,10 +236,10 @@ const ARROWS = Object.freeze(process.platform === "darwin" ? [] : [["Alt+Shift+U
  *  the help's (each row of the accordion carries its view's key). Where the rows are short the sheet
  *  gives hints up from its end: under the fixture's roster at 80x24 all six stand, at 60x15 the
  *  leader alone. */
-const LIST_SHEET = Object.freeze([LEAD, ["Ctrl+K", "palette"], ["Enter", "open"], ["n", "spawn"], ["?", "help"], ["q", "quit"]]);
+const LIST_SHEET = Object.freeze([LEAD, ["Ctrl+K", "palette"], ["Enter", "open"], ["n", "spawn"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]]);
 const SHEET_80 = LIST_SHEET.slice(0, 6);
 /** The cheat sheet while the detail has the focus: `Tab back` after the palette, then Enter, spawn. */
-const DETAIL_SHEET = Object.freeze([LEAD, ["Ctrl+K", "palette"], ["Tab", "back"], ["Enter", "open"], ["n", "spawn"], ["?", "help"], ["q", "quit"]]);
+const DETAIL_SHEET = Object.freeze([LEAD, ["Ctrl+K", "palette"], ["Tab", "back"], ["Enter", "open"], ["n", "spawn"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]]);
 /** The acts the palette offers on the selected row, which are the acts whose key opens a
  *  confirmation now: the cheat sheet names none of them. */
 const paletteActs = (state) => paletteItems(leaderThen(state, "k").state, AT).items.filter((item) => item.kind === "act").map((item) => item.does);
@@ -1391,10 +1391,11 @@ test("at 79 columns tab replaces the list by the detail, a page over the whole s
   const scrolled = press(long, ["G"], S60).state, end = draw(scrolled, S60);
   assert.equal(end.lines[14].trim(), cutNote(end.extent - (end.room - 1), 0));
   assert.equal(end.lines.slice(0, 14).some((line) => line.trim().startsWith("home ")), true, "the last fact is on the screen");
-  // Scrolled, the page's first row is a fact's, and the keys still stand at its right.
+  // Scrolled, the page's first row is a fact's, and the keys still stand at its right, as many as fit
+  // after it (`w workspaces` is given up first).
   assert.equal(end.lines[0].endsWith("   Tab back   n spawn"), true, end.lines[0]);
   // A held home does not open: its page's keys have no Enter.
-  assert.equal(draw(press(scrolled, ["g"], S60).state, S60).lines[0], pageTop(" > held-tall", "Tab back   n spawn", 60));
+  assert.equal(draw(press(scrolled, ["g"], S60).state, S60).lines[0], pageTop(" > held-tall", "Tab back   n spawn   w workspaces", 60));
 });
 
 test("a resize from 100 to 79 columns with the detail focused shows the detail as the page, and back at 100 the two sides", () => {
@@ -1450,12 +1451,12 @@ test("the cheat sheet is read from the effective table: a key the user's tui.jso
   const config = effectiveConfig({ keys: { quit: ["x"], spawn: [] } });
   assert.equal(config.ok, true);
   for (const sz of [S120, size(80, 40), size(60, 40)]) {
-    assert.deepEqual(hintsOf(draw(golden({ actions: config.actions }), sz)), [LEAD, ["Ctrl+K", "palette"], ["Enter", "open"], ["?", "help"], ["x", "quit"]], `${sz.cols}x${sz.rows}`);
+    assert.deepEqual(hintsOf(draw(golden({ actions: config.actions }), sz)), [LEAD, ["Ctrl+K", "palette"], ["Enter", "open"], ["w", "workspaces"], ["?", "help"], ["x", "quit"]], `${sz.cols}x${sz.rows}`);
   }
   const rebound = effectiveConfig({ keys: { help: ["f1"], detail: ["d", "tab"], refresh: ["f5", "r"], close: ["backspace"] } });
-  assert.deepEqual(hintsOf(draw(golden({ actions: rebound.actions }), S120)), [LEAD, ["Ctrl+K", "palette"], ["Enter", "open"], ["n", "spawn"], ["F1", "help"], ["q", "quit"]]);
+  assert.deepEqual(hintsOf(draw(golden({ actions: rebound.actions }), S120)), [LEAD, ["Ctrl+K", "palette"], ["Enter", "open"], ["n", "spawn"], ["w", "workspaces"], ["F1", "help"], ["q", "quit"]]);
   // The detail's `back` is the detail action's first key.
-  assert.deepEqual(hintsOf(draw(press(golden({ actions: rebound.actions }), ["d"], S120).state, S120)), [LEAD, ["Ctrl+K", "palette"], ["d", "back"], ["Enter", "open"], ["n", "spawn"], ["F1", "help"], ["q", "quit"]]);
+  assert.deepEqual(hintsOf(draw(press(golden({ actions: rebound.actions }), ["d"], S120).state, S120)), [LEAD, ["Ctrl+K", "palette"], ["d", "back"], ["Enter", "open"], ["n", "spawn"], ["w", "workspaces"], ["F1", "help"], ["q", "quit"]]);
 });
 
 test("when the sidebar is short the cheat sheet gives its hints up from its end, down to the leader alone, and a long key stands whole on its row with the words in one column after the widest", () => {
@@ -1956,7 +1957,7 @@ test("the same view with the machine not reached, at 80x24 in UTF-8 and in ASCII
       ` garnet  ${said.text}  ${garnet.short}`,
       `  ${marks.unknown} ${cut(FAR_A, 16)}  ${cut(NOT_REACHED(), 11)}`,
       `> ${marks.unknown} ${cut(FAR_B, 16)}  ${cut(NOT_REACHED(), 11)}`,
-    ], [LEAD, ["Ctrl+K", "palette"], ["n", "spawn"], ["?", "help"], ["q", "quit"]], { ascii }), [
+    ], [LEAD, ["Ctrl+K", "palette"], ["n", "spawn"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]], { ascii }), [
       "   acme-ledger-far-b",
       "   soul     acme-ledger-developer",
       "   machine  garnet",
@@ -2372,7 +2373,7 @@ test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8
   ];
   // Its state is not known: Enter does not open it, and the sheet has no Enter; its acts, stop and
   // retire, are the palette's.
-  const hints = [LEAD, ["Ctrl+K", "palette"], ["n", "spawn"], ["?", "help"], ["q", "quit"]];
+  const hints = [LEAD, ["Ctrl+K", "palette"], ["n", "spawn"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]];
   assert.deepEqual(paletteActs(told()), ["stop", "retire"]);
   assert.deepEqual(draw(told(), S80).lines, beside(instancesSide(" acme-platform", [
     "  ● acme-console-expert-tui-read",
@@ -2458,16 +2459,22 @@ const mainRows = (d, sz) => d.cells.map((_, r) => cellText(d, r, mainFrom(d, sz)
 /** The same without the keys that stand at the right of the first row under 80 columns. */
 const ownRows = (d, sz) => mainRows(d, sz).map((line, r) => (r === 0 && sz.cols < WIDE ? line.replace(/ {3,}Enter open\b.*$/, "") : line));
 
-test("the switcher at 80x24 in UTF-8, cell for cell: in the main area beside the sidebar, a workspace on two machines with one deployment not live, the open mark, the shared heading over a machine matched to no workspace, the TUI's own over the rows of this computer's list not opened, and the selection", () => {
+/** The indicator lines of choosing()'s workspace: this machine's deployment, live, and garnet's, not
+ *  reached since its first answer, with the shared word for its state. */
+const PLATFORM_LINES = Object.freeze(["This machine", "garnet · remembered"]);
+
+test("the switcher at 80x24 in UTF-8, cell for cell: in the main area beside the sidebar, a workspace on two machines with a dim line under it per deployment (the one not live with its state word), the open mark, the shared heading over a machine matched to no workspace, the TUI's own over the rows of this computer's list not opened, and the selection", () => {
   assert.equal(OPEN_MARK, "*");
   assert.equal(OFFERED_SECTION, "On this machine, not opened");
   const state = press(choosing(), ["j", "j"]).state, [platform, never] = choicesOf(state);
   assert.deepEqual(choicesOf(state).map((row) => [row.label, row.unattached]), [["acme-platform", false], ["quartz", true]]);
-  assert.equal(platform.notLiveText.length > 0 && platform.place.includes("garnet") && never.place.length > 0, true, "the shared home words the machines, what is not live, and why a machine is not matched");
+  assert.equal(platform.place.includes("garnet") && never.place.length > 0, true, "the shared home words the machines, and why a machine is not matched");
   const d = draw(state, S80);
-  // 39 cells: the label is cut before what is not live, and the place of the first is given up.
+  // 39 cells: a workspace's name has the row; each of its deployments a dim line two cells in from it.
   assert.deepEqual(d.lines, beside(switcherSide(REMOVE_SHEET), [
-    inMain([2, "*"], [4, cutTo("acme-platform", 11)], [38 - platform.notLiveText.length, platform.notLiveText]),
+    inMain([2, "*"], [4, "acme-platform"]),
+    inMain([6, PLATFORM_LINES[0]]),
+    inMain([6, PLATFORM_LINES[1]]),
     `   ${UNMATCHED_SECTION}`,
     inMain([4, "quartz"], [26, cutTo(never.place, 12)]),
     "   On this machine, not opened",
@@ -2475,69 +2482,71 @@ test("the switcher at 80x24 in UTF-8, cell for cell: in the main area beside the
     inMain([4, "acme-docs"], [26, cutTo("~/acme-docs", 12)]),
   ]));
   // The selection is a bar over the switcher's cells with `>` in its first; no other row has either.
-  assert.deepEqual(d.cells.flatMap((line, r) => (line.some((cell) => cell.style.reverse) ? [r] : [])), [4]);
-  assert.deepEqual(d.cells[4].map((cell) => cell.style.reverse), Array.from({ length: 80 }, (_, x) => x >= 40 && x < 79), "over the switcher's cells");
-  assert.deepEqual(bodyRows(S80).filter((r) => d.cells[r][40].text === ">"), [4]);
-  // The two headings and a place are dim; what is not live is not: it is what a person looks for.
-  for (const [r, from, to] of [[1, 42, 42 + UNMATCHED_SECTION.length], [3, 42, 42 + OFFERED_SECTION.length], [5, 66, 66 + "~/acme-docs".length]]) for (const cell of d.cells[r].slice(from, to)) assert.equal(cell.style, DIM, `row ${r}`);
-  for (const cell of d.cells[0].slice(78 - platform.notLiveText.length, 78)) assert.equal(cell.style.dim, false);
+  assert.deepEqual(d.cells.flatMap((line, r) => (line.some((cell) => cell.style.reverse) ? [r] : [])), [6]);
+  assert.deepEqual(d.cells[6].map((cell) => cell.style.reverse), Array.from({ length: 80 }, (_, x) => x >= 40 && x < 79), "over the switcher's cells");
+  assert.deepEqual(bodyRows(S80).filter((r) => d.cells[r][40].text === ">"), [6]);
+  // The two headings, the indicator lines and a place are dim; a workspace's name is not.
+  for (const [r, from, to] of [[1, 46, 46 + PLATFORM_LINES[0].length], [2, 46, 46 + PLATFORM_LINES[1].length], [3, 42, 42 + UNMATCHED_SECTION.length], [5, 42, 42 + OFFERED_SECTION.length], [7, 66, 66 + "~/acme-docs".length]]) {
+    for (const cell of d.cells[r].slice(from, to)) assert.equal(cell.style, DIM, `row ${r}`);
+  }
+  for (const cell of d.cells[0].slice(44, 44 + "acme-platform".length)) assert.equal(cell.style.dim, false);
   // While the switcher is shown the title names no workspace, and none of the three views is the
   // open one: none is bold, none in reverse, each plain (each is a view that opens).
   for (const r of [2, 3, 4]) for (const cell of d.cells[r].slice(0, 38)) assert.equal(cell.style.bold || cell.style.reverse, false, `row ${r}: no view is the open one`);
   for (const [r, name] of [[2, "Instances"], [3, "Souls"], [4, "Capabilities"]]) for (const cell of d.cells[r].slice(1, 1 + name.length)) assert.equal(cell.style, PLAIN, `${name} is plain`);
-  // Before any key the selection is on the first choice, which is also the open one.
+  // Before any key the selection is on the first choice, which is also the open one; its lines are not selected.
   const first = draw(choosing(), S80);
-  assert.equal(cellText(first, 0, 39), inMain([0, ">"], [2, "*"], [4, cutTo("acme-platform", 11)], [38 - platform.notLiveText.length, platform.notLiveText]));
+  assert.equal(cellText(first, 0, 39), inMain([0, ">"], [2, "*"], [4, "acme-platform"]));
   assert.equal(first.cells[0].slice(40, 79).every((cell) => cell.style.reverse), true);
+  assert.equal(first.cells[1].some((cell) => cell.style.reverse), false);
 });
 
-test("the switcher at 80x24 in ASCII, cell for cell: the rules and the rule column in ASCII, and the shared home's place line as it gives it", () => {
-  const state = press(choosing({ ascii: true }), ["j", "j"]).state, [platform, never] = choicesOf(state);
+test("the switcher at 80x24 in ASCII, cell for cell: the rules and the rule column in ASCII, and the shared home's words as it gives them", () => {
+  const state = press(choosing({ ascii: true }), ["j", "j"]).state, [, never] = choicesOf(state);
   const d = draw(state, S80);
   assert.deepEqual(d.lines, beside(switcherSide(REMOVE_SHEET, { ascii: true }), [
-    inMain([2, "*"], [4, cutTo("acme-platform", 11, true)], [38 - platform.notLiveText.length, platform.notLiveText]),
+    inMain([2, "*"], [4, "acme-platform"]),
+    inMain([6, PLATFORM_LINES[0]]),
+    inMain([6, PLATFORM_LINES[1]]),
     `   ${UNMATCHED_SECTION}`,
     inMain([4, "quartz"], [26, cutTo(never.place, 12, true)]),
     "   On this machine, not opened",
     inMain([0, ">"], [4, "acme-billing"], [26, cutTo("~/acme-billing", 12, true)]),
     inMain([4, "acme-docs"], [26, cutTo("~/acme-docs", 12, true)]),
   ], { bar: "|" }));
-  // Where the place line stands whole (120 columns), what is on the screen outside printable ASCII
-  // is that line's own, and nothing of the TUI's: with `--ascii` on a terminal that reads UTF-8 it
-  // is drawn as given, and with a locale that is not UTF-8 the screen replaces each such character.
-  // At 160 columns the switcher has 97 cells, a third of them for the labels: the places stand from its 38th.
-  const wide = draw(press(choosing({ ascii: true }), ["j", "j"], size(160, 24)).state, size(160, 24)), from = wide.cols + 2 + 38;
+  // What is on the screen outside printable ASCII is the shared words' own (the ` · ` of an indicator
+  // line), and nothing of the TUI's: with `--ascii` on a terminal that reads UTF-8 it is drawn as given,
+  // and with a locale that is not UTF-8 the screen replaces each such character.
+  const wide = draw(press(choosing({ ascii: true }), ["j", "j"], size(160, 24)).state, size(160, 24)), from = wide.cols + 2 + 6;
   const foreign = (cells) => cells.flatMap((line, r) => line.flatMap((cell, x) => (PRINTABLE_ASCII.test(cell.text) ? [] : [[r, x, cell.text]])));
-  assert.deepEqual(foreign(wide.cells), [...platform.place].flatMap((ch, i) => (PRINTABLE_ASCII.test(ch) ? [] : [[0, from + i, ch]])));
+  assert.deepEqual(foreign(wide.cells), [...PLATFORM_LINES[1]].flatMap((ch, i) => (PRINTABLE_ASCII.test(ch) ? [] : [[2, from + i, ch]])));
   assert.deepEqual(foreign(draw(state, S80, { utf8: false }).cells), []);
 });
 
-test("the switcher at 120x40, 79x24 and 60x15: no row wider than the terminal, what is not live whole at the right edge, and where the room is short the place is cut before the label is", () => {
+test("the switcher at 120x40, 79x24 and 60x15: no row wider than the terminal, a workspace's name and its lines in their columns, and where the room is short a row's place is cut before its label is", () => {
   for (const ascii of [false, true]) for (const [sz, place, cells] of [[S120, 26, 60], [S79, 32, 79], [S60, 26, 60]]) {
-    const state = press(choosing({ ascii }), ["j", "j"], sz).state, [platform, never] = choicesOf(state), d = draw(state, sz), g = glyphsOf(ascii), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
+    const state = press(choosing({ ascii }), ["j", "j"], sz).state, [, never] = choicesOf(state), d = draw(state, sz), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     fits(d, sz, at);
-    const live = cells - 1 - platform.notLiveText.length, from = mainFrom(d, sz);
-    // In 60 cells the machines have ten before what is not live: cut, with the mark.
-    const machines = cells === 60 ? `${platform.place.slice(0, 10 - g.cut.length)}${g.cut}` : platform.place;
-    assert.deepEqual(mainRows(d, sz).slice(0, 6), [
-      placed([2, "*"], [4, "acme-platform"], [place, machines], [live, platform.notLiveText]),
+    const from = mainFrom(d, sz);
+    assert.deepEqual(ownRows(d, sz).slice(0, 8), [
+      placed([2, "*"], [4, "acme-platform"]),
+      placed([6, PLATFORM_LINES[0]]),
+      placed([6, PLATFORM_LINES[1]]),
       `  ${UNMATCHED_SECTION}`,
-      placed([4, "quartz"], [place, never.place]),
+      placed([4, "quartz"], [place, cutTo(never.place, cells - 1 - place, ascii)]),
       "  On this machine, not opened",
       placed([0, ">"], [4, "acme-billing"], [place, "~/acme-billing"]),
       placed([4, "acme-docs"], [place, "~/acme-docs"]),
     ], at);
-    assert.deepEqual([d.cells[0][from + cells - 2].text, d.cells[0][from + cells - 1].text], [platform.notLiveText.at(-1), " "], `${at}: it ends one cell before the edge of the switcher's cells`);
-    assert.deepEqual(d.cells[4].map((cell) => cell.style.reverse), Array.from({ length: sz.cols }, (_, x) => x >= from && x < from + cells), `${at}: the selection is the switcher's width`);
+    assert.deepEqual(d.cells[6].map((cell) => cell.style.reverse), Array.from({ length: sz.cols }, (_, x) => x >= from && x < from + cells), `${at}: the selection is the switcher's width`);
     if (sz.cols >= WIDE) assert.deepEqual(hintsOf(d), REMOVE_SHEET, at);
   }
-  // A name longer than the labels' column is cut inside it; what is not live still stands whole.
-  const NAME = "acme-platform-of-the-ledger-team-and-its-friends";
+  // A name longer than the labels' column has the row, as a workspace has no place on it: cut at the edge.
+  const NAME = "acme-platform-of-the-ledger-team-and-its-friends-and-more-friends";
   const named = (sz) => { const state = heard(heard(stateOf(reporting(NEAR(), { workspace: NAME }), { cli: REMOTE_CLI }), answered(group()), T1), TIMEOUT, T2); const d = draw(press(state, ["w"], sz).state, sz); return mainRows(d, sz)[0]; };
-  const said = choicesOf(lost())[0];
-  assert.equal(named(S60), placed([0, ">"], [2, "*"], [4, `${NAME.slice(0, 19)}…`], [26, `${said.place.slice(0, 9)}…`], [59 - said.notLiveText.length, said.notLiveText]));
-  assert.equal(named(S80), placed([0, ">"], [2, "*"], [4, `${NAME.slice(0, 10)}…`], [38 - said.notLiveText.length, said.notLiveText]));
-  assert.equal(named(S120), placed([0, ">"], [2, "*"], [4, `${NAME.slice(0, 19)}…`], [26, `${said.place.slice(0, 9)}…`], [59 - said.notLiveText.length, said.notLiveText]));
+  assert.equal(named(S60), placed([0, ">"], [2, "*"], [4, cutTo(NAME, 55)]));
+  assert.equal(named(S80), placed([0, ">"], [2, "*"], [4, cutTo(NAME, 34)]));
+  assert.equal(named(S120), placed([0, ">"], [2, "*"], [4, cutTo(NAME, 55)]));
 });
 
 test("the switcher with nothing to list says so in the TUI's words, its sentences wrapped to its area, and names the command that opens a deployment whole on one row", () => {
@@ -2581,7 +2590,7 @@ test("the switcher with nothing to list says so in the TUI's words, its sentence
   }
 });
 
-test("the switcher's filter: `/` opens its field on a row of its own at the top of the switcher, a row stays while its name or its place holds what was typed, and a filter that matches nothing says so", () => {
+test("the switcher's filter: `/` opens its field on a row of its own at the top of the switcher, a row stays while its name, its place or (a workspace) its lines hold what was typed, and a filter that matches nothing says so", () => {
   for (const sz of SIZES) {
     const open = press(choosing(), ["/"], sz).state, typed = press(open, ["d", "o", "c", "s"], sz).state, d = draw(typed, sz), at = `${sz.cols}x${sz.rows}`, from = mainFrom(d, sz);
     assert.equal(mainRows(draw(open, sz), sz)[0].startsWith("  /"), true, at);
@@ -2606,9 +2615,9 @@ test("the switcher's filter: `/` opens its field on a row of its own at the top 
   assert.deepEqual(hintsOf(cleared), SWITCHER_SHEET, "Esc clears a kept filter first: the selection is back on the first choice, a workspace");
   assert.equal(mainRows(cleared, S80)[0].includes("/"), false, "and its row is gone");
   assert.equal(mainRows(cleared, S80).filter((line) => line.includes("acme-")).length, 3, "and every choice is back");
-  // The place is matched too, and upper case and spaces around what was typed do not matter.
+  // A workspace's lines and a row's place are matched too, and upper case and spaces around what was typed do not matter.
   const by = (keys) => mainRows(draw(press(choosing(), ["/", ...keys, "enter"], S120).state, S120), S120).slice(1).filter(Boolean).map((line) => line.trim());
-  assert.equal(by(["G", "A", "R", "N", "E", "T"]).length === 1 && by(["G", "A", "R", "N", "E", "T"])[0].includes("acme-platform"), true, "a machine's name finds its workspace");
+  assert.deepEqual(by(["G", "A", "R", "N", "E", "T"]), ["> * acme-platform", ...PLATFORM_LINES], "a machine's name finds its workspace, with its lines");
   assert.deepEqual(by(["q", "u", "a", "r", "t", "z"]).map((line) => line.split(" ")[0]), ["Not", ">"], "an unmatched machine keeps the shared heading over it");
   // Nothing matches: the TUI's line, no choice, and nothing selected.
   for (const keys of [["/", "z", "z", "z"], ["/", "z", "z", "z", "enter"]]) for (const sz of SIZES) {
@@ -2635,8 +2644,8 @@ test("the switcher's cheat sheet offers Esc only when a workspace is open to go 
   const rebound = effectiveConfig({ keys: { open: ["o"], close: ["backspace"], workspaces: ["f2"] } });
   assert.equal(rebound.ok, true);
   assert.deepEqual(hintsOf(draw(press(reached({ actions: rebound.actions }), ["f2"]).state, S120)), [LEAD, ["Ctrl+K", "palette"], ["o", "open"], ["/", "filter"], ["r", "refresh"], ["Backspace", "close"], ["?", "help"], ["q", "quit"]], "the close key as tui.json gave it");
-  // The list's sheet is small: the workspaces key, which opened the switcher above, is not on it.
-  assert.deepEqual(hintsOf(draw(reached({ actions: rebound.actions }), S120)), [LEAD, ["Ctrl+K", "palette"], ["o", "open"], ["n", "spawn"], ["?", "help"], ["q", "quit"]], "the open key as tui.json gave it");
+  // The list's sheet names the workspaces key, which opened the switcher above, as tui.json gave it.
+  assert.deepEqual(hintsOf(draw(reached({ actions: rebound.actions }), S120)), [LEAD, ["Ctrl+K", "palette"], ["o", "open"], ["n", "spawn"], ["F2", "workspaces"], ["?", "help"], ["q", "quit"]], "the open and workspaces keys as tui.json gave them");
 });
 
 test("the switcher says in a line of its own that the open workspace is no longer listed, and that line hides no choice: 30 rows of the list at 80x15", () => {
@@ -2665,8 +2674,8 @@ test("the switcher says in a line of its own that the open workspace is no longe
     const cut = /^ {2}(?:(\d+) more above)?(?:, )?(?:(\d+) more below)?$/.exec(body[14]);
     assert.notEqual(cut, null, `${at}: the last row says what is cut off: ${body[14]}`);
     const shown_ = body.slice(1, 14).filter(Boolean);
-    assert.equal(shown_.length, 13, `${at}: the thirteen rows between hold choices and their heading`);
-    assert.equal(Number(cut[1] ?? 0) + Number(cut[2] ?? 0) + shown_.length, 32, `${at}: 31 choices and one heading, none lost`);
+    assert.equal(shown_.length, 13, `${at}: the thirteen rows between hold choices, the workspace's line and the heading`);
+    assert.equal(Number(cut[1] ?? 0) + Number(cut[2] ?? 0) + shown_.length, 33, `${at}: 31 choices, the workspace's one line and one heading, none lost`);
     for (const line of shown_) seen.add(line.trim().replace(/^> +/, "").split(" ")[0]);
     state = press(state, ["j"], sz).state;
   }
@@ -2682,7 +2691,8 @@ test("a row that turned out not to be a deployment says so in its row, where its
   for (const ascii of [false, true]) for (const [sz, place, cells] of [[S80, 26, 39], [S120, 26, 60], [S79, 32, 79], [S60, 26, 60]]) {
     const d = draw({ ...refused, ascii }, sz), from = mainFrom(d, sz), room = cells - 1 - place, at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     const said = (text) => cutTo(text, room, ascii);
-    assert.deepEqual(mainRows(d, sz).slice(1, 8), [
+    // Under the workspace and its two lines (this machine, garnet).
+    assert.deepEqual(mainRows(d, sz).slice(3, 10), [
       "  On this machine, not opened",
       placed([0, ">"], [4, "acme-billing"], [place, said("Not an OATS deployment any more.")]),
       placed([4, "acme-docs"], [place, said("~/acme-docs")]),
@@ -2691,23 +2701,23 @@ test("a row that turned out not to be a deployment says so in its row, where its
       placed([4, "acme-locked"], [place, said("Can't be read.")]),
       "",
     ], at);
-    assert.equal(d.cells[3][from + place].style, DIM, `${at}: a path is dim`);
+    assert.equal(d.cells[5][from + place].style, DIM, `${at}: a path is dim`);
     // What the kernel says of a stale row is something to read where its path stood: plain, not dim.
-    for (const [r, words] of [[4, "Not found."], [5, "Not an OATS deployment any more."], [6, "Can't be read."]]) {
+    for (const [r, words] of [[6, "Not found."], [7, "Not an OATS deployment any more."], [8, "Can't be read."]]) {
       for (const cell of d.cells[r].slice(from + place, from + place + Math.min(words.length, room))) assert.equal(cell.style, PLAIN, `${at}: row ${r} is plain`);
     }
     fits(d, sz, at);
   }
   // Not dim where it is not selected either: it is what happened to the pick.
   const moved = draw(press(refused, ["j"]).state, S120), from = mainFrom(moved, S120);
-  assert.equal(mainRows(moved, S120)[2], placed([4, "acme-billing"], [26, "Not an OATS deployment any more."]));
-  assert.equal(moved.cells[2][from + 26].style.dim || moved.cells[2][from + 26].style.reverse, false);
+  assert.equal(mainRows(moved, S120)[4], placed([4, "acme-billing"], [26, "Not an OATS deployment any more."]));
+  assert.equal(moved.cells[4][from + 26].style.dim || moved.cells[4][from + 26].style.reverse, false);
   // Before the pick, the row that opens has its path.
-  assert.equal(mainRows(draw(state, S120), S120)[2], placed([4, "acme-billing"], [26, "~/acme-billing"]));
+  assert.equal(mainRows(draw(state, S120), S120)[4], placed([4, "acme-billing"], [26, "~/acme-billing"]));
   // A stale row does not open: Enter on it asks the loop for nothing, and the screen stays as it was.
   for (const down of [3, 4, 5]) {
     const on = press(state, Array.from({ length: down }, () => "j")).state, entered = press(on, ["enter"]);
-    assert.equal(mainRows(draw(on, S80), S80)[1 + down].startsWith(">"), true, `${down} down: a stale row is selected`);
+    assert.equal(mainRows(draw(on, S80), S80)[3 + down].startsWith(">"), true, `${down} down: a stale row is selected`);
     assert.deepEqual(entered.effects, [], `${down} down`);
     assert.deepEqual(draw(entered.state, S80).lines, draw(on, S80).lines, `${down} down`);
   }
@@ -2726,8 +2736,8 @@ test("Delete on a row of the list asks over the rows in two sentences of the TUI
     // The rows under them are the switcher's, as many rows down, the selected one among them.
     assert.deepEqual(rows.slice(asked.length, asked.length + 6), ownRows(before, sz).slice(0, 6), `${at}: the rows, under the question`);
     const selected = bodyRows(sz).filter((r) => d.cells[r][from].text === ">");
-    assert.deepEqual(selected, [asked.length + 4], `${at}: the selected row is drawn`);
-    assert.equal(rows[asked.length + 4].includes("acme-billing") && d.cells[asked.length + 4].slice(from, from + cells - 1).every((cell) => cell.style.reverse), true, `${at}: still marked`);
+    assert.deepEqual(selected, [asked.length + 6], `${at}: the selected row is drawn`);
+    assert.equal(rows[asked.length + 6].includes("acme-billing") && d.cells[asked.length + 6].slice(from, from + cells - 1).every((cell) => cell.style.reverse), true, `${at}: still marked`);
     fits(d, sz, at);
     // Esc keeps the row and closes the question, not the switcher.
     const kept = press(asking, ["escape"], sz);
@@ -2999,7 +3009,7 @@ test("the cheat sheet names Enter open whenever Enter would open, whatever the k
   // The fixture's kernel has no session-start: the acts its rows offer are stop and retire, and
   // they are the palette's, not the sheet's. A kept filter adds nothing: the key that clears it is
   // the help's. No hint names the views.
-  const P = ["Ctrl+K", "palette"], OPEN = ["Enter", "open"], END = [["n", "spawn"], ["?", "help"], ["q", "quit"]];
+  const P = ["Ctrl+K", "palette"], OPEN = ["Enter", "open"], END = [["n", "spawn"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]];
   const cases = {
     "the list": [state, LIST_SHEET],
     "the detail": [detailed, DETAIL_SHEET],
@@ -3034,10 +3044,10 @@ test("no hint of the cheat sheet names the views, whatever keys tui.json gives t
 
 test("while another machine is asked first the cheat sheet says Esc gives the open up, where the open hint stood, and Esc is not listed twice", () => {
   const preflight = Object.freeze({ ...openable(), opening: Object.freeze({ id: "x", phase: "preflight", name: "dev-alpha", machine: "garnet", routed: true }) });
-  const all = [LEAD, ["Ctrl+K", "palette"], ["Esc", "stop opening"], ["n", "spawn"], ["?", "help"], ["q", "quit"]];
+  const all = [LEAD, ["Ctrl+K", "palette"], ["Esc", "stop opening"], ["n", "spawn"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]];
   assert.deepEqual(hintsOf(draw(preflight, S120)), all);
   assert.deepEqual(hintsOf(draw(preflight, S80)), all.slice(0, hintsOf(draw(preflight, S80)).length));
-  assert.deepEqual(hintsOf(draw(preflight, S60)), all, "at 60x15 the six rows under the two instances hold it whole");
+  assert.deepEqual(hintsOf(draw(preflight, S60)), all.slice(0, 6), "at 60x15 the six rows under the two instances hold all but its last");
   const filtered = hintsOf(draw(Object.freeze({ ...preflight, filter: Object.freeze({ editing: false, query: "d" }) }), S120));
   assert.deepEqual(filtered.filter(([key]) => key === "Esc"), [["Esc", "stop opening"]], "Esc once, and not as close");
 });
@@ -3127,7 +3137,7 @@ const PANEL_WIDE = [size(80, 24), size(100, 30), S120, size(200, 50)];
 /** The cheat sheet of the list while a terminal is open: what Enter does on the row whose terminal
  *  is open, then the list's `n spawn`. The terminal's keys (zoom, close, the tabs) are the leader's
  *  hint's, the palette's and the help's. */
-const TERMINAL_SHEET = Object.freeze([LEAD, ["Ctrl+K", "palette"], ["Enter", "focus terminal"], ["n", "spawn"], ["?", "help"], ["q", "quit"]]);
+const TERMINAL_SHEET = Object.freeze([LEAD, ["Ctrl+K", "palette"], ["Enter", "focus terminal"], ["n", "spawn"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]]);
 
 test("Enter: the terminal stands beside the sidebar, where the detail was, edge to edge to the right and over every row; its top row names the agent, and its screen is placed from the row under it, the agent's colours kept and clipped to the panel", () => {
   for (const sz of PANEL_WIDE) {
@@ -3138,7 +3148,7 @@ test("Enter: the terminal stands beside the sidebar, where the detail was, edge 
     assert.equal(t.rows, sz.rows - 1, `${at}: every row of the screen but the title`);
     // The list stays on screen, both rows of it.
     for (const name of ["dev-a", "dev-b"]) assert.equal(listLines(d).some((line) => line.includes(name)), true, `${at}: ${name} in the list`);
-    assert.equal(d.lines[0].slice(t.col).trim(), "dev-a", `${at}: the title names the agent`);
+    assert.equal(d.lines[0].slice(t.col).trim(), "[dev-a]", `${at}: the tab bar names the agent, its one tab the shown one`);
     assert.equal(d.cells[0][t.col + 1].style.bold && d.cells[0][t.col + 1].style.reverse, true, `${at}: the title of a focused terminal is drawn focused`);
     assert.equal(d.lines[1].slice(t.col), "$ hello", at);
     assert.equal(d.lines[2].slice(t.col, t.col + 7), "red and", at);
@@ -3154,7 +3164,7 @@ test("while the terminal has the focus the cheat sheet names the leader, the lea
     const d = drawPanel(panelIn(how, { detachKey, status }), sz), key = detachKey === undefined ? LEADER_KEY : backKeyLabel(detachKey), at = `${sz.cols}x${sz.rows} ${how} ${status} ${detachKey}`;
     if (sz.cols < WIDE || how === "zoom") {
       const keys = `${key} commands   ${key} Esc the list`, row = cellText(d, 0);
-      assert.equal(row.startsWith(" dev-a ") && row.endsWith(keys), true, `${at}: ${row}`);
+      assert.equal(row.startsWith("[dev-a] ") && row.endsWith(keys), true, `${at}: ${row}`);
       assert.equal(d.cells[0].slice(sz.cols - 1 - keys.length, sz.cols - 1).every((cell) => cell.text === " " || cell.style.dim), true, `${at}: dim, a cell before the edge`);
       assert.equal(d.cells[0][sz.cols - 1].text, " ", `${at}: the last cell left empty`);
     } else assert.deepEqual(hintsOf(d), [[key, "commands"], [`${key} Esc`, "the list"], [`${key} ${key}`, `types ${key}`], ...ARROWS], at);
@@ -3166,7 +3176,7 @@ test("with the list focused and a terminal open, the cheat sheet names, after th
   assert.deepEqual(hintsOf(drawPanel(panelIn("list"), S80)), TERMINAL_SHEET, "at 80x24 every hint has its row under the two instances");
   // On another row, Enter opens that one (and closes this).
   const other = Object.freeze({ ...panelIn("list"), selected: roster(PANEL_STATE()).rows.find(({ row }) => row.instance === "dev-b").id });
-  assert.deepEqual(hintsOf(drawPanel(other, S120)).slice(2), [["Enter", "open"], ["n", "spawn"], ["?", "help"], ["q", "quit"]]);
+  assert.deepEqual(hintsOf(drawPanel(other, S120)).slice(2), [["Enter", "open"], ["n", "spawn"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]]);
   // The terminal goes on being drawn beside the list, its title no longer focused.
   const d = drawPanel(panelIn("list"), S120), t = d.terminal;
   assert.equal(d.lines[1].slice(t.col), "$ hello");
@@ -3180,7 +3190,7 @@ test("zoom gives the terminal the whole screen: its title row on the first, the 
     assert.deepEqual([t.col, t.cols, t.title, t.top, t.rows, t.whole], [0, sz.cols, 0, 1, sz.rows - 1, true], at);
     assert.equal(d.lines.some((line) => line.includes("dev-b") || line.includes("acme-platform")), false, `${at}: no sidebar`);
     assert.equal(d.cells.some((line) => line.some((cell) => cell.text === "│")), false, `${at}: no rule column`);
-    assert.equal(d.lines[0].startsWith(" dev-a "), true, at);
+    assert.equal(d.lines[0].startsWith("[dev-a] "), true, at);
     assert.equal(d.lines[1], "$ hello", `${at}: the agent's screen from column 0`);
     assert.equal(d.lines[2].length, sz.cols, `${at}: to the last column`);
     const back = drawPanel(leaderEscape(panelIn("zoom")).state, sz);
@@ -3303,14 +3313,16 @@ const leaderHint = (hints = HINTS, { key = LEADER_KEY, typing = false } = {}) =>
 const keptHint = (whole, count) => (count >= whole.length ? whole : count >= 2 ? [...whole.slice(0, count - 1), whole.at(-1)] : whole.slice(0, 1));
 /** The row of the cheat sheet's last hint. */
 const sheetEnd = (d) => d.cells.findLastIndex((_, r) => isRule(d, r)) + sheetOf(d).length;
-/** The title row of a terminal over the whole screen while the leader waits, `cols` wide: the
- *  agent's name, then as many of the hint's keys as fit before the last column, three cells after
- *  the name and between two, given up from the end, `Esc the list` kept last. */
+/** The tab bar of a terminal over the whole screen while the leader waits, `cols` wide: its one
+ *  tab (the agent's name in brackets), then as many of the hint's keys as fit before the last
+ *  column, three cells after the tab and between two, given up from the end, `Esc the list` kept
+ *  last. */
 function leaderTitle(cols, whole, name = "dev-a") {
   const text = (list) => list.map(([key, word]) => `${key} ${word}`).join("   ");
   let kept = whole;
-  while (kept.length > 1 && 1 + name.length + 3 + text(kept).length > cols - 1) kept = [...kept.slice(0, -2), kept.at(-1)];
-  return `${` ${name}`.padEnd(cols - 1 - text(kept).length)}${text(kept)}`;
+  const tab = `[${name}]`;
+  while (kept.length > 1 && tab.length + 3 + text(kept).length > cols - 1) kept = [...kept.slice(0, -2), kept.at(-1)];
+  return `${tab.padEnd(cols - 1 - text(kept).length)}${text(kept)}`;
 }
 
 test("while the leader waits, the cheat sheet is its hint and nothing else on the screen changes: at 80x24, cell for cell, the leader's key in bold, then what the keys after it do, a row each, the ones that do not fit given up from the end and `Esc the list` last", () => {
@@ -3347,15 +3359,15 @@ test("the leader's hint at every height from 15 to 40 rows and at 60, 80 and 120
 
 test("over the whole screen a terminal's title row is the leader's hint at its right while the leader waits, dim, as many as fit after the agent's name, `Esc the list` kept last; the leader again named, as the terminal has the focus", () => {
   const whole = leaderHint(TERMINAL_HINTS, { typing: true });
-  assert.equal(leaderTitle(80, whole), " dev-a    Ctrl+\\ then   k palette   1-3 views   Up/Down instance   Esc the list");
-  assert.equal(leaderTitle(60, whole), " dev-a   Ctrl+\\ then   k palette   1-3 views   Esc the list");
+  assert.equal(leaderTitle(80, whole), "[dev-a]   Ctrl+\\ then   k palette   1-3 views   Up/Down instance   Esc the list");
+  assert.equal(leaderTitle(60, whole), "[dev-a]              Ctrl+\\ then   k palette   Esc the list", "the bracketed tab leaves no room for 1-3 views at 60");
   for (let cols = MIN_SIZE.cols; cols <= 200; cols++) {
     const cases = [["zoom", panelIn("zoom")], ...(cols < WIDE ? [["focus", panelIn("focus")]] : [])];
     for (const [how, state] of cases) {
       const d = drawPanel(waiting(state), size(cols, 24)), at = `${cols} ${how}`;
       assert.equal(d.terminal.whole, true, at);
       assert.equal(cellText(d, 0), leaderTitle(cols, whole), at);
-      const keys = leaderTitle(cols, whole).slice(" dev-a".length).trimStart();
+      const keys = leaderTitle(cols, whole).slice("[dev-a]".length).trimStart();
       assert.equal(d.cells[0].slice(cols - 1 - keys.length, cols - 1).every((cell) => cell.text === " " || cell.style.dim), true, `${at}: dim`);
       assert.equal(d.lines[1], "$ hello", `${at}: the agent's screen unchanged`);
     }
@@ -3795,9 +3807,9 @@ test("an instance row's name wins over its word: beside an open terminal (30 cel
   assert.deepEqual(rowsAt(48), [`> ? dev-2               ${unknown}`, "  ● dev-a", `  ◆ ${HELD}    ${spawn}`], "at 48 the column fits for both, as before");
 });
 
-test("under 80 columns the Instances detail page's first row carries its keys at the right, dim, ending a cell before the edge: `Tab back`, what Enter does and `n spawn`, given up from the end as the name grows; `Tab back` always stands, the name cut to leave it room (round 3 of the review)", () => {
+test("under 80 columns the Instances detail page's first row carries its keys at the right, dim, ending a cell before the edge: `Tab back`, what Enter does, `n spawn` and `w workspaces`, given up from the end as the name grows; `Tab back` always stands, the name cut to leave it room (round 3 of the review)", () => {
   const page = (name, sz, options = {}) => draw(press(stateOf(observed([instanceRow("dev", name)]), options), ["tab"], sz).state, sz);
-  const ALL = "Tab back   Enter open   n spawn";
+  const ALL = "Tab back   Enter open   n spawn   w workspaces", SPAWN = "Tab back   Enter open   n spawn";
   for (const sz of [size(70, 20), S79]) {
     const d = page("dev-2", sz), at = `${sz.cols}x${sz.rows}`;
     assert.equal(detailPage(d), true, at);
@@ -3806,11 +3818,11 @@ test("under 80 columns the Instances detail page's first row carries its keys at
     d.cells[0].slice(from, sz.cols - 1).forEach((cell, x) => { if (cell.text !== " ") assert.equal(cell.style, DIM, `${at}: the keys are dim (cell ${from + x})`); });
     d.cells[0].slice(3, 8).forEach((cell) => assert.equal(cell.style.dim, false, `${at}: the name is not`));
   }
-  // At 70 columns the keys and their 3-cell gap fit after ` > ` and a name of up to 32 cells; a
-  // longer one gives `n spawn` up, then Enter's hint; `Tab back` stays, and a name longer than
-  // the 55 cells it leaves is cut.
+  // At 70 columns the keys and their 3-cell gap fit after ` > ` and a name of up to 17 cells; a
+  // longer one gives `w workspaces` up (up to 32 cells), then `n spawn`, then Enter's hint; `Tab back`
+  // stays, and a name longer than the 55 cells it leaves is cut.
   const named = (cells) => `dev-${"x".repeat(cells - 4)}`;
-  for (const [cells, keys] of [[32, ALL], [33, "Tab back   Enter open"], [42, "Tab back   Enter open"], [43, "Tab back"], [55, "Tab back"], [56, "Tab back"], [80, "Tab back"]]) {
+  for (const [cells, keys] of [[17, ALL], [18, SPAWN], [32, SPAWN], [33, "Tab back   Enter open"], [42, "Tab back   Enter open"], [43, "Tab back"], [55, "Tab back"], [56, "Tab back"], [80, "Tab back"]]) {
     const name = named(cells), d = page(name, size(70, 20));
     assert.equal(d.lines[0], pageTop(` > ${cutTo(name, 55)}`, keys, 70), `a name of ${cells} cells`);
   }
