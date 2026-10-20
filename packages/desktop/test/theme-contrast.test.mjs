@@ -109,7 +109,7 @@ test("the shared inventory holds token names only, covers the 16 ANSI colours, a
   assert.equal(ansi.length, 16);
   for (const token of ansi) assert.ok(pairs.some(([fg, bg]) => fg === token && bg === "term-bg"), `--${token} is held on --term-bg`);
   assert.deepEqual(GRAPHIC_PAIRS, [["graph-edge", "bg"], ["graph-edge", "surface"], ["graph-edge", "surface-2"], ["tree-link", "surface"], ["tree-link", "surface-2"], ["tree-link", "sel"], ["muted", "surface"], ["muted", "surface-2"], ["term-sel", "term-bg"], ["accent", "surface"],
-    ...soulTones.flatMap(tone => ["bg", "surface", "surface-2", "sel"].map(bg => [`soul-${tone}-fg`, bg]))]);
+    ...soulTones.flatMap(tone => ["bg", "surface", "surface-2", "sel"].map(bg => [`instance-${tone}`, bg]))]);
   assert.deepEqual(PAINTED_OVER, [["md-code-bg", "bg"]]);
   assert.deepEqual(HOST_UNADJUSTED_PAIRS, ansi.map(token => [token, "term-bg"]), "the host theme's one exception: its terminal colours, unadjusted");
   assert.equal(TEXT_CONTRAST, 4.5); assert.equal(GRAPHIC_CONTRAST, 3);

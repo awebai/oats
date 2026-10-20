@@ -301,13 +301,13 @@ body {
 /* An instance's colour (feature instance-color, #1421 §2; instance-dot.mjs): its dot, wherever it is drawn
    (the roster, a terminal tab, a palette row, the overview card), filled in the colour while running and a
    ring in it while stopped; the shape still says the state, an unknown state keeps the warning dot (the
-   attribute is set only on a running or stopped dot), and the token is the soul palette's -fg. */
-[data-instance-color="sand"] { --instance-color: var(--soul-sand-fg); }
-[data-instance-color="sage"] { --instance-color: var(--soul-sage-fg); }
-[data-instance-color="slate"] { --instance-color: var(--soul-slate-fg); }
-[data-instance-color="mauve"] { --instance-color: var(--soul-mauve-fg); }
-[data-instance-color="clay"] { --instance-color: var(--soul-clay-fg); }
-[data-instance-color="olive"] { --instance-color: var(--soul-olive-fg); }
+   attribute is set only on a running or stopped dot), and the token is --instance-<colour> (theme.css: the soul palette's -fg, held at 3:1 by "This computer"). */
+[data-instance-color="sand"] { --instance-color: var(--instance-sand); }
+[data-instance-color="sage"] { --instance-color: var(--instance-sage); }
+[data-instance-color="slate"] { --instance-color: var(--instance-slate); }
+[data-instance-color="mauve"] { --instance-color: var(--instance-mauve); }
+[data-instance-color="clay"] { --instance-color: var(--instance-clay); }
+[data-instance-color="olive"] { --instance-color: var(--instance-olive); }
 .ctx-dot.on[data-instance-color] { border-color: var(--instance-color); background: var(--instance-color); }
 .ctx-dot.off[data-instance-color] { border-color: var(--instance-color); }
 /* A pending spawn (Spec C): a dot-sized spinner beside "Spawning…" (the text carries the state; the

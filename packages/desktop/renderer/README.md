@@ -1515,8 +1515,10 @@ it when it opens). The dialog is Forget's pattern: it asks `/api/instance-color`
 the latest press winning (`../server/instance-color.mjs`, which runs `oats instance color`,
 routed with `--server` for a remote row, and reads the roster again after a change). The dots
 draw the colour from the row (`instance-dot.mjs` over `instanceColor`): `data-instance-color`
-on a running or stopped dot, which shell.css maps to `--soul-<colour>-fg`; the contrast
-inventory (`contrast-inventory.mjs` GRAPHIC_PAIRS) holds every colour on every fill.
+on a running or stopped dot, which shell.css maps to `--instance-<colour>` (theme.css: the
+soul's `-fg` in the built-in themes); the contrast inventory (`contrast-inventory.mjs`
+GRAPHIC_PAIRS) holds every colour on every fill, and "This computer" moves these tokens until
+they hold (`host-theme.mjs`), leaving the soul pairs as calibrated.
 
 `choice-popup.mjs` owns the existing provider/model popup behavior. Model search
 is local to reported advisory IDs/labels; **Defaults**, **Reported suggestions**

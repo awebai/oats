@@ -11,6 +11,7 @@ import { createInstanceColorBoundary, instanceColorOutcome, INSTANCE_COLOR_FEATU
 import { cliInstanceColor } from '../../client/cli-adapter.mjs';
 import { kernelMade } from '../../client/kernel-made.mjs';
 import { GRAPHIC_PAIRS, SOUL_TONES } from '../renderer/contrast-inventory.mjs';
+import { deriveHostTokens } from '../renderer/host-theme.mjs';
 import { createInstanceColorDialog, instanceColorCSS, checkNote, saveOutcome, COLOR_CHOICES } from '../renderer/instance-color-dialog.mjs';
 import { SOUL_COLORS } from '../../client/soul-colors.mjs';
 import { paletteRows, createPalette } from '../renderer/palette.mjs';
@@ -18,6 +19,7 @@ import { projectActivePanel, activeSignature } from '../renderer/active-observat
 
 const renderer = new URL('../renderer/', import.meta.url);
 const shellCss = readFileSync(new URL('shell.css', renderer), 'utf8');
+const themeCss = readFileSync(new URL('theme.css', renderer), 'utf8');
 const hierarchy = readFileSync(new URL('views/hierarchy.mjs', renderer), 'utf8');
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 async function settle(n = 6) { for (let i = 0; i < n; i++) await tick(); }
@@ -38,8 +40,8 @@ test('the dot carries the colour only while running or stopped, and only a palet
   paintDotColor(null, { color: 'olive' }, 'running'); // nothing to paint: no throw
 });
 
-test('the stylesheet: each colour is its --soul-<colour>-fg; running fills, stopped rings; no raw colour, no opacity', () => {
-  for (const c of SOUL_COLORS) assert.match(shellCss, new RegExp(`\\[data-instance-color="${c}"\\] \\{ --instance-color: var\\(--soul-${c}-fg\\); \\}`), c);
+test('the stylesheet: each colour is its --instance-<colour>; running fills, stopped rings; no raw colour, no opacity', () => {
+  for (const c of SOUL_COLORS) assert.match(shellCss, new RegExp(`\\[data-instance-color="${c}"\\] \\{ --instance-color: var\\(--instance-${c}\\); \\}`), c);
   assert.match(shellCss, /\.ctx-dot\.on\[data-instance-color\] \{ border-color: var\(--instance-color\); background: var\(--instance-color\); \}/);
   assert.match(shellCss, /\.ctx-dot\.off\[data-instance-color\] \{ border-color: var\(--instance-color\); \}/);
   assert.match(shellCss, /\.tab-dot\.on\[data-instance-color\] \{ background: var\(--instance-color\); \}/);
@@ -50,11 +52,37 @@ test('the stylesheet: each colour is its --soul-<colour>-fg; running fills, stop
   assert.doesNotMatch(rules.replace(/\/\*[\s\S]*?\*\//g, ''), /#[0-9a-f]{3,8}\b|rgb\(|opacity/i);
 });
 
-test('the contrast inventory holds every colour, as a graphic (3:1), on every fill a dot is drawn on', () => {
+// The tokens as theme.css writes them, per built-in theme (dark is the base the others override).
+const tokensOf = block => new Map([...block.matchAll(/--([\w-]+):\s*(#[0-9a-f]{6}(?:[0-9a-f]{2})?)\b/gi)].map(m => [m[1], m[2].toLowerCase()]));
+const dark = tokensOf(themeCss.match(/:root, \[data-theme="dark"\] \{([\s\S]*?)\n\}/)[1]);
+const over = name => { const m = new Map(dark); for (const [k, v] of tokensOf(themeCss.match(new RegExp(`\\[data-theme="${name}"\\] \\{([\\s\\S]*?)\\n\\}`))[1])) m.set(k, v); return m; };
+const lum = hex => { const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+
+test('the contrast inventory holds every colour, as a graphic (3:1), on every fill a dot is drawn on; built in, it is the soul\'s -fg', () => {
   for (const tone of SOUL_TONES) for (const bg of ['bg', 'surface', 'surface-2', 'sel']) {
-    assert.ok(GRAPHIC_PAIRS.some(([fg, b]) => fg === `soul-${tone}-fg` && b === bg), `${tone} on ${bg}`);
+    assert.ok(GRAPHIC_PAIRS.some(([fg, b]) => fg === `instance-${tone}` && b === bg), `${tone} on ${bg}`);
   }
   assert.deepEqual([...SOUL_TONES], [...SOUL_COLORS], 'the tones are the palette');
+  for (const [name, palette] of [['dark', dark], ['light', over('light')], ['solarized', over('solarized')]]) {
+    for (const tone of SOUL_TONES) assert.equal(palette.get(`instance-${tone}`), palette.get(`soul-${tone}-fg`), `${name} ${tone}`);
+  }
+});
+
+test('This computer: a mid-tone host palette moves the instance colours until they hold 3:1 on every fill; the soul pairs stay calibrated', () => {
+  const background = '#4a4a4a', white = '#ffffff';
+  const colors = { background, canvas: background, foreground: white, accent: white, brightForeground: white, selection: '#666666',
+    ansi: [background, ...Array(15).fill(white)] };
+  const overrides = deriveHostTokens(colors, 'dark', token => dark.get(token));
+  assert.ok(overrides, 'the palette is accepted');
+  const palette = new Map(dark); for (const [k, v] of Object.entries(overrides)) palette.set(k.slice(2), v);
+  assert.ok(ratio(dark.get('instance-sand'), palette.get('sel')) < 3, 'the base sand alone would fail on the selected row (the review\'s case)');
+  for (const tone of SOUL_TONES) for (const bg of ['bg', 'surface', 'surface-2', 'sel']) {
+    assert.ok(ratio(palette.get(`instance-${tone}`), palette.get(bg)) >= 3, `${tone} on --${bg}: ${ratio(palette.get(`instance-${tone}`), palette.get(bg)).toFixed(2)}`);
+  }
+  for (const tone of SOUL_TONES) for (const part of ['bg', 'fg']) assert.equal(`--soul-${tone}-${part}` in overrides, false, `--soul-${tone}-${part} is not imported`);
+  const unstyled = deriveHostTokens(colors, 'dark', token => (token.startsWith('instance-') ? undefined : dark.get(token)));
+  assert.ok(unstyled && !('--instance-sand' in unstyled), 'no base value for it: left alone');
 });
 
 test('the palette: each instance row carries its colour by the dot rule, and its dot draws it', async t => {
@@ -122,7 +150,9 @@ test('boundary: the gate is the feature, said as where it is missing; a check ru
   const remoteRow = { ...row, server: 'box', addressable: true };
   const host = { ...REMOTE, group: { server: 'box', probe: { ok: true, features: [] } } };
   assert.deepEqual((await request({ ...row, check: true }, context({ workspace: host, cli: cli('server-probe-features'), instances: [remoteRow] }))).reason.details, { where: 'server' });
-  assert.deepEqual((await request({ ...row, check: true }, context({ workspace: REMOTE, cli: cli(), instances: [remoteRow] }))).reason.details, { where: 'server' }, 'this CLI must relay the hosts\' features');
+  assert.deepEqual((await request({ ...row, check: true }, context({ workspace: REMOTE, cli: cli(), instances: [remoteRow] }))).reason.details, { where: 'local' }, 'this CLI must relay the hosts\' features: this computer\'s to update');
+  const relaysOnly = { ok: true, bin: '/fixture/oats', features: ['server-probe-features'] };
+  assert.deepEqual((await request({ ...row, check: true }, context({ workspace: REMOTE, cli: relaysOnly, instances: [remoteRow] }))).reason.details, { where: 'local' }, 'the host advertises it: never blamed for this computer\'s CLI');
   assert.deepEqual(await request({ ...row, check: true }, context()), { status: 'ok', instance: 'dev-1', check: true });
   assert.deepEqual(await request({ ...row, check: true }, context({ workspace: REMOTE, cli: cli('server-probe-features'), instances: [remoteRow] })), { status: 'ok', instance: 'dev-1', check: true });
   assert.equal(calls.length, 0);

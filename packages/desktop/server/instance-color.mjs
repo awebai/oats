@@ -18,7 +18,8 @@
  * The gate is the feature, never a refusal: locally, this computer's CLI lists `instance-color`; for a remote row,
  * this CLI routes and relays the hosts' features (`server-probe-features`) and the held roster row's own
  * `probe.features` names `instance-color` (composed-gate.mjs hostAdvertises). Without it: not-run
- * E_INSTANCE_COLOR_UNAVAILABLE, with `details.where` `local` or `server` (the dialog's sentence says which).
+ * E_INSTANCE_COLOR_UNAVAILABLE, with `details.where` `local` when this computer's CLI lacks what it needs (also
+ * `server-probe-features`, for a remote row), else `server` (the dialog's sentence says which).
  * One write per home at a time (E_BUSY): the dialog never sends two, so a second is another window's. */
 import { isAbsolute } from 'node:path';
 import { cliInstanceColor } from '../../client/cli-adapter.mjs';
@@ -88,10 +89,11 @@ export function createInstanceColorBoundary({ invoke = cliInstanceColor } = {}) 
       if (!row) return instanceColorNotRun('E_SNAPSHOT_UNKNOWN');
       const remote = !!(workspace.remote || workspace.server);
       if (remote && (!canAddressRemote(row) || typeof workspace.server !== 'string')) return instanceColorNotRun('E_SNAPSHOT_UNKNOWN');
-      const supported = remote
-        ? advertises(cli, INSTANCE_COLOR_FEATURE) && advertises(cli, PROBE_FEATURES_FEATURE) && hostAdvertises(workspace.group, INSTANCE_COLOR_FEATURE)
-        : advertises(cli, INSTANCE_COLOR_FEATURE);
-      if (!supported || typeof cli?.bin !== 'string') return instanceColorNotRun('E_INSTANCE_COLOR_UNAVAILABLE', { where: remote ? 'server' : 'local' });
+      // This computer's CLI first (it runs or routes the verb, and relays the hosts' features): `local`. Only then the
+      // host's own: `server`, so a host that advertises the feature is never blamed for this computer's CLI.
+      const here = advertises(cli, INSTANCE_COLOR_FEATURE) && typeof cli?.bin === 'string' && (!remote || advertises(cli, PROBE_FEATURES_FEATURE));
+      if (!here) return instanceColorNotRun('E_INSTANCE_COLOR_UNAVAILABLE', { where: 'local' });
+      if (remote && !hostAdvertises(workspace.group, INSTANCE_COLOR_FEATURE)) return instanceColorNotRun('E_INSTANCE_COLOR_UNAVAILABLE', { where: 'server' });
       if (asked.check) return { status: 'ok', instance: asked.instance, check: true };
       const key = `${workspace.id}\0${asked.home}`;
       if (writing.has(key)) return instanceColorNotRun('E_BUSY');
