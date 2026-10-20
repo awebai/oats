@@ -16,7 +16,7 @@
 import test from "node:test";
 import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fixtureBase } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -31,13 +31,15 @@ const named = (reply, soul, taken = never) => { const role = soulRole(soul); ret
 
 /** A fake harness: it records its argv, working directory (and what is in it), environment names,
  *  stdin, pid and process group to $FAKE_RECORD, then prints $FAKE_REPLY (default a name) and exits
- *  $FAKE_EXIT, after $FAKE_SLEEP_MS. With $FAKE_GRANDCHILD it first starts a `sleep` and records its pid. */
+ *  $FAKE_EXIT, after $FAKE_SLEEP_MS. With $FAKE_GRANDCHILD it first starts a `sleep` and records its pid.
+ *  Asked for Claude's `plugin list --json` (the package probe), it prints $FAKE_PLUGINS (default none). */
 function fakeHarness(t) {
   const dir = fixtureBase("oats-naming-fake-");
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const bin = join(dir, "harness");
   writeFileSync(bin, `#!${process.execPath}
 const fs = require("fs"), cp = require("child_process");
+if (process.argv.slice(2, 5).join(" ") === "plugin list --json") { process.stdout.write(process.env.FAKE_PLUGINS ?? "[]"); process.exit(0); }
 let input = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (d) => { input += d; });
@@ -265,4 +267,44 @@ test("the name is chosen before anything that depends on it, within the preview'
   assert.equal(slow.naming.reason, "timeout");
   assert.ok(slow.naming.ms < 3000, `the call ended with the budget (${slow.naming.ms} ms)`);
   assert.equal(slow.preflight.budgetMs, 700);
+  assert.equal(slow.preflight.status, "timeout", "a call the budget ended is the preflight's timeout");
+});
+
+test("the naming call takes what the harness package probes leave of the budget: a slow call ends numbered, after the probes answered", async (t) => {
+  const fake = fakeHarness(t);
+  const plugin = join(fake.dir, "plugins", "chat");
+  mkdirSync(plugin, { recursive: true });
+  const local = { "launch-configs": { fake: { harness: "claude", executable: fake.bin } } };
+  const fx = v2Deployment({ t, local,
+    souls: { dev: { soul: { capabilities: { "test.chat": { from: "here" } } } } },
+    capabilities: { "test.chat": { manifest: { requires: [{ harness: "claude", package: "chat@acme-market", why: "the fixture's" }] } } },
+  });
+  const installed = JSON.stringify([{ id: "chat@acme-market", version: "1.0.0", scope: "user", enabled: true, installPath: plugin }]);
+  const preview = (env) => fx.cli(["spawn", "dev", "--preview", "--suggest-name", "--launch-config", "fake", "--task", "Fix login", "--json"], { env: { FAKE_REPLY: "fix-login\n", ...env } });
+  // Premises: the package is required (missing, the preview is refused), and installed it passes.
+  assert.equal(refused(preview({ FAKE_PLUGINS: "[]" }), "missing").code, "E_HARNESS_RESOURCE_MISSING");
+  assert.equal(okResult(preview({ FAKE_PLUGINS: installed }), "installed").instance, "fix-login-dev");
+  const numberedName = okResult(fx.cli(["spawn", "dev", "--preview", "--launch-config", "fake", "--json"], { env: { FAKE_PLUGINS: installed } }), "numbered").instance;
+  // A naming call slower than the budget: the probes ran first, so the preview is the numbered one.
+  const slow = okResult(preview({ FAKE_PLUGINS: installed, FAKE_SLEEP_MS: "8000", OATS_PREVIEW_PREFLIGHT_BUDGET_MS: "1500" }), "slow");
+  assert.deepEqual([slow.instance, slow.naming.source, slow.naming.reason], [numberedName, "numbered", "timeout"]);
+  assert.ok(slow.naming.ms < 3000, `the call ended with the budget (${slow.naming.ms} ms)`);
+  assert.equal(slow.preflight.status, "timeout");
+});
+
+test("the naming call runs the executable the preview reports: a relative PATH entry resolves from where the home will be", async (t) => {
+  const fake = fakeHarness(t);
+  // `../../../../bin` from a home (agents/dev/instances/<name>) is the deployment's bin/; from the soul's
+  // instances/ directory it would be the directory above the deployment.
+  const fx = v2Deployment({ t, local: { "launch-configs": { rel: { harness: "claude", env: { PATH: "../../../../bin:/usr/bin:/bin" } } } } });
+  const right = join(fx.dep, "bin", "claude"), wrong = join(fx.base, "bin", "claude");
+  for (const bin of [right, wrong]) mkdirSync(join(bin, ".."), { recursive: true });
+  writeFileSync(right, readFileSync(fake.bin));
+  writeFileSync(wrong, `#!/bin/sh\necho wrong > ${JSON.stringify(join(fake.dir, "wrong"))}\necho wrong-harness\n`);
+  for (const bin of [right, wrong]) chmodSync(bin, 0o755);
+  const r = okResult(fx.cli(["spawn", "dev", "--preview", "--suggest-name", "--launch-config", "rel", "--task", "Fix login", "--json"], { env: { FAKE_RECORD: fake.record, FAKE_REPLY: "fix-login\n" } }), "relative");
+  assert.equal(r.executable, right, "the preview's executable, looked up from the home");
+  assert.deepEqual([r.instance, r.naming.source], ["fix-login-dev", "suggested"]);
+  assert.deepEqual(fake.read().argv, NAMING_CALLS.claude.argv("haiku"), "the naming call ran that executable");
+  assert.equal(existsSync(join(fake.dir, "wrong")), false, "and not the one instances/ would find");
 });

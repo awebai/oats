@@ -2523,12 +2523,17 @@ or `--task <text>`). Like every preview it writes nothing and runs no hooks.
 
   It runs from a fresh empty temporary directory, removed afterwards, with no
   `OATS_INSTANCE*` variable, without a shell, in its own process group. It is
-  made before anything that depends on the name (placement, branch, home), and
-  it counts against the preview's one 20 s preflight budget, which is not
+  made after the preview's harness checks (the executable's lookup and the
+  harness package probes, from where the home will be) and before anything
+  that depends on the name (placement, branch, home). It takes what those
+  checks leave of the preview's one 20 s preflight budget, which is not
   raised for it: the group is killed after 20 s, or when the budget runs out
-  first. At most 4 KiB of its output is read.
-- **It starts nothing that runs code: no MCP server, hook, plugin, extension
-  or project setting.** Each harness's argv is proven to start nothing
+  first, and a call the budget ends makes `preflight.status` `timeout`. At
+  most 4 KiB of its output is read.
+- **It starts none of the user's code: no MCP server, hook, plugin,
+  extension or project setting, with two stated exceptions, both below:
+  pi's own credential commands, and hooks in the host's managed policy.**
+  Each harness's argv is proven to start nothing else
   (`scripts/naming-isolation-proof.mjs`, a recorded run against fixtures,
   rerun by an operator after a harness upgrade). The proof covers claude
   2.1.288 and pi 1.3.0, on Linux; macOS is not proven.
@@ -2544,9 +2549,9 @@ or `--task <text>`). Like every preview it writes nothing and runs no hooks.
     admin's.
   - **pi**, the instance's model: `-p --no-session --no-tools
     --no-extensions --no-mcp --no-skills --no-prompt-templates --no-themes
-    --no-context-files --no-approve [--model <m>]`. pi runs its own
-    credential commands (`!command` keys and headers in models.json), as
-    every pi launch does: they are its login.
+    --no-context-files --no-approve [--model <m>]`. The stated exception:
+    pi runs its own credential commands (`!command` keys and headers in
+    models.json), as every pi launch does: they are its login.
   - **codex** is not supported. Its naming call is not proven to start
     nothing, so a codex soul is numbered with `unsupported-harness`.
 - **The name.**
