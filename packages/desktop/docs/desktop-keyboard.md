@@ -147,8 +147,9 @@ same on those rows.
 **Where it works.** From every focus, a terminal and an editable field
 included. It is inert while a modal dialog or the palette is shown, as F6 and
 the tab switches are: the chord then goes where it goes without the leader.
-The sidebar footer's first control, the leader's chord and "commands", is a
-button that starts it too; pressed again while it waits, it closes the hint.
+The keys after it are listed in the shortcuts editor, which leads with the
+Leader group (the footer's shortcuts button, Ctrl+, / ⌘, or the palette); the
+sidebar has no button of its own for the leader.
 
 **While it waits** (there is no time limit), the next keydown that is not a
 lone modifier settles it:
@@ -636,7 +637,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Rows whose state is unknown or that the kernel does not report addressable | **Focusable, `aria-disabled` with the reason as a description (fixed: were `disabled`, which hid their tools from the keyboard)** | Activation does nothing; their tools work |
 | Row tools: PR link, Start…, actions menu | Tab from the focused row (shown on focus) | Enter/Space; the menu: arrows, Home/End, Esc back on its trigger, Tab closes |
 | Start / Restart dialog, lifecycle dialog | From the row or its menu | Esc (Cancel before anything is sent, Close or Done after); trapped; the lifecycle dialog starts on Cancel and focuses Close or Done when it ends; **focus returns to the row when its tool is hidden again (fixed: fell to `<body>`)**, and after a retire to the row that followed it |
-| Sidebar footer: the leader ("Alt+O commands"), Spawn instance, sidebar, theme, shortcuts, settings, palette | Tab | Enter/Space run the same registered actions as the chords; the leader's button starts the leader (its hint opens, the next key settles it) and, pressed again, closes it |
+| Sidebar footer: Spawn instance, sidebar, theme, shortcuts, settings, palette | Tab | Enter/Space run the same registered actions as the chords |
 | Show sidebar (start of the main area's top bar, while the sidebar is hidden or in focus mode) | Tab, first in the Main region; hiding the sidebar moves focus to it | Enter/Space: `sidebar.toggle` (leaves focus mode too) |
 | Tab bar | One roving stop per tablist (per group when split); F6 (main). Tabs shrink to fit (spec F); the active tab is scrolled fully into view in its own strip on every activation, close and strip resize, and a focused control is revealed in its strip, never by scrolling an ancestor | Left/Right/Home/End select; Delete closes the focused tab, and the keymap's `tabs.close` (⌘W / Ctrl+Alt+W, rebindable; the close button's tooltip names it) closes the active one; Ctrl+Tab, Alt+Shift+→/← (⌥⌘→/←) and go-to-tab from anywhere in the tab layer, a terminal included, **keeping focus in the content (fixed: fell to `<body>`)** |
 | Terminal | Enter on its roster row; F6 (main) | Every key reaches the program except the terminal-allowlisted chords; ⇧⌘F6 / Ctrl+Shift+F6 leaves for the next region; ⌘C / Ctrl+Shift+C copy the selection and ⌘V / Ctrl+Shift+V paste |
