@@ -368,18 +368,19 @@ test('choosing another soul keeps the typed name and instruction', async t => {
   [...u.doc.querySelectorAll('.spawn-choice')].find(b => b.dataset.agent === 'support-triager').click(); await settle();
   assert.equal(u.q('.spawn-choice[aria-selected=true]').dataset.agent, 'support-triager');
   assert.equal(u.q('.fpurpose').value, 'api-v2'); assert.equal(u.q('.ftask').value, 'keep me');
-  assert.equal(u.doc.activeElement, u.q('.spawn-run .spawn-choice-trigger'), 'a pick goes on to the first field, Harness (Spec E)');
+  assert.equal(u.doc.activeElement, u.q('.ftask'), 'a pick goes on to the first field, the Opening instruction (Spec E)');
 });
 
-// The name (decided 2026-10-20): optional and the form's last field; with spawn-name a typed name goes as
+// The name (decided 2026-10-20): optional and the form's last field (the Opening instruction is its first); with spawn-name a typed name goes as
 // --name <typed>-<role> (packages/client/instance-name.mjs); an older kernel keeps --purpose with the prefix shown.
-test('the name is optional and the last field, after Opening instruction and before Developer settings; no prefix switch', async t => {
+test('the name is optional and the last field, before Developer settings, the Opening instruction the first; no prefix switch', async t => {
   const u = await mountSpawn(t, { spawnName: true });
   await u.open();
   const fields = [...u.q('.spawn-form-body').children].filter(c => !c.classList.contains('workspace-sr-only'));
   const at = cls => fields.findIndex(f => f.classList.contains(cls) || f.querySelector(`:scope > .${cls}`));
-  assert.equal(at('spawn-name'), fields.indexOf(u.q('.ftask').closest('.spawn-field')) + 1, 'right after Opening instruction');
+  assert.equal(fields[0], u.q('.ftask').closest('.spawn-field'), 'the Opening instruction is the first field');
   assert.equal(fields[at('spawn-name') + 1], u.q('.spawn-advanced'), 'right before Developer settings');
+  assert.equal(at('spawn-name'), fields.length - 2, 'the last field');
   const label = u.q('.spawn-name > label');
   assert.equal(label.htmlFor, 'spawn-purpose'); assert.equal(label.firstChild.textContent, 'Name '); assert.equal(label.querySelector('small').textContent, '· optional');
   assert.equal(u.q('.spawn-prefix-toggle'), null); assert.equal(u.q('.fprefix'), null);

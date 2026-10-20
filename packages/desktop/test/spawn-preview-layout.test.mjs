@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { createSpawnDialog, spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
+import { createSpawnDialog, spawnDialogCSS, SPAWN_NARROW } from '../renderer/spawn-dialog.mjs';
 import { homeText, worktreeText, relationText } from '../../client/spawn-preview-facts.mjs';
 import { identityCSS } from '../renderer/identity-marks.mjs';
 import { cli as CLI, kernel, ROOT, target, view } from './helpers/spawn-preview-fixture.mjs';
@@ -17,11 +17,12 @@ async function settle(n = 12) { for (let i = 0; i < n; i++) await tick(); }
 const soul = { name: 'release-manager', description: 'Cuts releases.', kind: 'persistent', work: 'worktree', agentsRoot: ROOT, soulKind: 'member', origin: 'member', repoName: 'agents' };
 const preview = name => kernel(name).result;
 
-function mount(t, data, chosen = soul) {
+function mount(t, data, chosen = soul, { matchMedia } = {}) {
   const asked = { ...target, selector: { soul: chosen.name, agentsRoot: chosen.agentsRoot } };
   const dom = new JSDOM('<!doctype html><html data-theme="light"><body><div class="oats-view"><div class="spawn-modal"></div></div></body></html>', { url: 'http://localhost', pretendToBeVisual: true });
   const doc = dom.window.document;
   for (const source of [themeCSS, identityCSS, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  if (matchMedia) dom.window.matchMedia = matchMedia; // jsdom has none: the dialog is then wide
   const ctx = { api: async path => {
     if (path.startsWith('/api/workspace-spawn-preview')) return view(asked, data);
     if (path === '/api/models') return { models: [] };
@@ -114,4 +115,38 @@ test('the footer: Cancel and Spawn are one right-aligned group after the status,
   // on its own line under the title in a narrow form.
   assert.match(spawnDialogCSS, /\.spawn-advanced > summary small \{[^}]*min-width:0;[^}]*overflow:hidden; text-overflow:ellipsis; white-space:nowrap;/);
   assert.match(spawnDialogCSS, /@container spawn-advanced \(max-width:479px\) \{\s*\/\*[^*]*\*\/\s*\.spawn-advanced > summary small \{ flex-basis:100%; margin-left:18px; \}/);
+});
+
+// Narrow (one column, below 760px): What will be created goes after the form's last field, in the form's own scroll
+// area, above the footer, which stays in view; the Opening instruction (focused on open) is what shows first. It is
+// moved in the document, so reading and tab order follow the screen; wide again, it is the left column.
+test('narrow: What will be created follows the last field in the form\'s scroll area, above the footer; wide again, the left column', async t => {
+  const media = { matches: true, listeners: new Set(), addEventListener(type, f) { if (type === 'change') this.listeners.add(f); }, removeEventListener(type, f) { this.listeners.delete(f); } };
+  const asked = [];
+  const u = mount(t, structuredClone(preview('preview-worktree-default')), soul, { matchMedia: query => { asked.push(query); return media; } }); await settle();
+  assert.deepEqual(asked, [SPAWN_NARROW]); assert.equal(SPAWN_NARROW, '(max-width:760px)');
+  const body = u.q('.spawn-form-body'), aside = u.q('.spawn-preview'), task = u.q('.ftask'), footer = u.q('.spawn-footer');
+  assert.equal(aside.parentElement, body, 'inside the form\'s scroll area'); assert.equal(body.lastElementChild, aside);
+  assert.equal(aside.previousElementSibling, u.q('.spawn-advanced'), 'after Name and the folded Developer settings');
+  assert.equal(u.q('.spawn-form').lastElementChild, footer, 'the footer stays outside the scroll, in view');
+  const before = (a, b) => !!(a.compareDocumentPosition(b) & 4); // DOCUMENT_POSITION_FOLLOWING
+  assert.ok(before(task, aside) && before(aside, footer), 'reading and tab order: the instruction, the fields, the preview, the footer');
+  assert.equal(u.q('.spawn-columns').firstElementChild, u.q('.spawn-chooser'), 'no column before the form');
+  // The stylesheet: no fixed box above the form any more; the scoped form is the one row; the preview a card at full height.
+  const narrow = spawnDialogCSS.match(/@media\(max-width:760px\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
+  assert.ok(narrow, 'the narrow block');
+  assert.doesNotMatch(narrow, /\.spawn-preview \{/); assert.doesNotMatch(spawnDialogCSS, /max-height:220px/);
+  assert.match(narrow, /\.spawn-dialog\[data-layout=scoped\] \.spawn-columns \{ grid-template-rows:minmax\(0,1fr\); \}/);
+  assert.match(spawnDialogCSS, /\.spawn-form-body > \.spawn-preview \{ flex:none; overflow:visible;/);
+  // Wider again: the left column, first, as on a wide screen; and back.
+  media.matches = false; for (const f of media.listeners) f();
+  assert.equal(u.q('.spawn-columns').firstElementChild, aside, 'the left column again'); assert.equal(body.contains(aside), false);
+  media.matches = true; for (const f of media.listeners) f();
+  assert.equal(body.lastElementChild, aside);
+});
+
+test('wide (no narrow match): What will be created is the left column, before the form', async t => {
+  const u = mount(t, structuredClone(preview('preview-worktree-default')), soul, { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) }); await settle();
+  assert.equal(u.q('.spawn-columns').firstElementChild, u.q('.spawn-preview'));
+  assert.equal(u.q('.spawn-form-body').contains(u.q('.spawn-preview')), false);
 });

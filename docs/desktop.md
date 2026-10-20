@@ -248,6 +248,11 @@ model (with where that choice came from), its default team and the teams it may
 also join, and its relationship when it has one. Under them are its core
 capabilities and its other capabilities.
 
+The dialog's first field is the **Opening instruction**, and the dialog opens
+with the cursor in it (after a restored instruction's text). In a narrow window,
+**What will be created** comes after the form's last field, above **Spawn**:
+scroll down with the fields to read it.
+
 The dialog's last field before **Developer settings** is **Name · optional**.
 Left empty, the kernel numbers the new instance (`<soul>-<n>`). A name you type
 is used in lowercase and gets the soul's role, the last word of the soul's
