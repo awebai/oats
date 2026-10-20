@@ -22,7 +22,10 @@ const packaged = { name: 'code-reviewer', description: 'Reviews.', kind: 'persis
 const preview = name => kernel(name).result;
 const v2 = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/${name}.json`, import.meta.url), 'utf8'));
 
-function mount(t, { soul = member, agents = [member, other, packaged], layout, previews = () => view(target, preview('preview-worktree-default')), cli = CLI, theme = 'light', workspace = () => ({ id: 'northwind', name: 'northwind' }), instances = () => [] } = {}) {
+// The previews here are `--purpose` captures, chosen by a typed purpose: by default the dialog's CLI lacks spawn-name,
+// the older kernel's path, where a typed name is a purpose (spawn-dialog.test.mjs covers the --name path).
+const PURPOSE_CLI = { ...CLI, features: CLI.features.filter(f => f !== 'spawn-name') };
+function mount(t, { soul = member, agents = [member, other, packaged], layout, previews = () => view(target, preview('preview-worktree-default')), cli = PURPOSE_CLI, theme = 'light', workspace = () => ({ id: 'northwind', name: 'northwind' }), instances = () => [] } = {}) {
   const dom = new JSDOM(`<!doctype html><html data-theme="${theme}"><body><div class="oats-view"><div class="spawn-modal"></div></div></body></html>`, { url: 'http://localhost', pretendToBeVisual: true });
   const doc = dom.window.document;
   for (const source of [themeCSS, identityCSS, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
@@ -97,7 +100,7 @@ test('Change soul switches to the picker in place, keeps every typed value and f
   const pressed = u.q('.spawn-choice[aria-selected=true]'); assert.equal(pressed.dataset.agent, 'release-manager'); assert.equal(u.doc.activeElement, pressed);
   [...dialog.querySelectorAll('.spawn-choice')].find(row => row.dataset.agent === 'support-triager').click();
   assert.equal(u.chosen.length, 1); assert.equal(u.chosen[0].candidate.name, 'support-triager');
-  assert.deepEqual(u.chosen[0].draft, { query: '', purpose: 'api-v2', task: 'Cut 3.2', prefixed: true, layout: 'picker' });
+  assert.deepEqual(u.chosen[0].draft, { query: '', purpose: 'api-v2', task: 'Cut 3.2', layout: 'picker' });
   u.ui.setLayout('scoped'); assert.equal(u.ui.layout, 'scoped'); assert.equal(u.hidden(u.q('.spawn-chooser')), true); assert.equal(u.q('.fpurpose').value, 'api-v2');
 });
 

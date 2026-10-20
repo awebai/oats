@@ -327,7 +327,8 @@ for an `oats-desktop-expert`). `--purpose` derives the name from the soul, for
 automations and scripts that know only the soul and a purpose.
 Names are unique per deployment (a workspace-model deployment has one agents
 root): a derived name in use gets `-2`, `-3`…; an explicit `--name` in use is
-refused (`E_INSTANCE_NAME_TAKEN`).
+refused (`E_INSTANCE_NAME_TAKEN`). The Desktop's spawn dialog adds the role to
+a typed name.
 
 From a deployment (where `oats-local.yaml` is), a spawn: reads the local file →
 discovers the workspace over its remotes and confirms membership → finds the

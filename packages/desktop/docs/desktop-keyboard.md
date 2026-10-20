@@ -487,7 +487,8 @@ control.
   the spawn dialog scoped to that soul, exactly as its card's Spawn does (the
   Workspace stage behind it). A soul
   that can't be spawned here (attached only, refused, no verified CLI) opens
-  its soul page instead, which says why. Focus lands in Name.
+  its soul page instead, which says why. Focus lands on the dialog's first
+  field.
 - Dismissing the dialog (Cancel, Esc, ×, the backdrop) returns to where the
   operator was before Quick Open: the same tab re-activated (its terminal
   focused when that is where they were), or the same stage and control, else
@@ -497,18 +498,22 @@ control.
   when the instance runs, opens its terminal unless the operator acted since the
   press (a key other than a lone modifier, a paste, a focus move, a navigation) or
   an overlay is open (`docs/desktop-spawn-preview.md`, Background spawn).
-- **Focus on open:** Name, whenever the dialog opens for a chosen soul (a card,
-  the soul page, Quick Open, Reopen spawn), with the caret at the end of a
-  restored name (never selected), without scrolling. Quick Open from a tab opens
-  the dialog just before the Workspace stage is shown; Name takes focus once it
-  is, unless the operator has focused something else by then.
+- **Focus on open:** the form's first field (Deployment when it shows, else
+  Harness), whenever the dialog opens for a chosen soul (a card, the soul page,
+  Quick Open, Reopen spawn, a pick in the soul list), without scrolling. Name is
+  optional and the form's last field, so the dialog never lands there; its
+  section key (Mod+1) reaches it, with the caret at the end of a restored name
+  (never selected). Quick Open from a tab opens the dialog just before the
+  Workspace stage is shown; the first field takes focus once it is, unless the
+  operator has focused something else by then.
 - **Spawn: Mod+Enter (⌘↵ / Ctrl+Enter) from any field**, the Opening
   instruction and the segmented controls included; plain Enter in Name does
   not spawn, Enter or Space on the focused Spawn button does. The button
   shows the effective chord.
-- **Tab order** is the visual order: Name → Prefix switch → Harness → Model (its
-  field, then its suggestions button) → Relationship (one stop) → its target
-  when shown → Teams (one stop) → Opening instruction → Developer settings →
+- **Tab order** is the visual order: Deployment (when shown) → Harness → Model
+  (its field, then its suggestions button) → Where to run (when shown) →
+  Relationship (one stop) → its target when shown → Teams (one stop) → Opening
+  instruction → Name → Developer settings →
   (Details, when a problem shows it) → Cancel → Spawn, then the header's Change
   soul and Close. Tab is trapped in the dialog.
 - Segmented controls and radio groups are one tab stop: Arrow keys move (and
@@ -519,7 +524,8 @@ control.
 - **Change soul** shows the soul list, focus on the selected soul (the search
   when the filter hides it): a listbox with Arrow/Home/End. Typing on the list
   filters it through its search; Enter in the search picks the best match;
-  Enter, Space or a click on a soul picks it. Every pick moves focus to Name.
+  Enter, Space or a click on a soul picks it. Every pick moves focus to the
+  form's first field.
 - **Section keys** (Spec E), from any field of the dialog:
 
   | Section | macOS | Linux / Windows | Lands on |
@@ -532,7 +538,8 @@ control.
   | Opening instruction (`spawn.jumpTask`) | ⌘6 | Ctrl+6 | the instruction |
   | Developer settings (`spawn.toggleAdvanced`) | ⌘7 | Ctrl+7 | opens it on its first control; again closes it back on its summary |
 
-  A closed disclosure holding the target opens first. Each chord shows as a
+  Name keeps ⌘1 though it is now the form's last field: the chords name
+  sections, not positions. A closed disclosure holding the target opens first. Each chord shows as a
   quiet hint beside its section's label (`aria-hidden`; the control carries
   `aria-keyshortcuts`). They are actions of the `spawn-dialog-local` context
   (`renderer/spawn-dialog-keys.mjs`, with Mod+Enter): the shortcuts editor

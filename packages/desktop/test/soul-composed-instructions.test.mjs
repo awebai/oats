@@ -1,6 +1,6 @@
 // Spec D (B2): the soul page's composed AGENTS.md — `inspect --soul --instructions` (kernel feature
 // soul-composed-instructions, awebai/oats#751) through the server's one optional `instructions` key, and the
-// Instructions section's "Instance" group (its AGENTS.md "after spawn, with injects"): parts in order, their headers, scroll to a part, Open capability, Copy.
+// Instructions section's "Composed for an instance" section (its AGENTS.md "after spawn, with injects"): parts in order, their headers, scroll to a part, Open capability, Copy.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -121,12 +121,13 @@ function setup(t, options = {}) {
 }
 function scrollable(el) { let top = 0; Object.defineProperty(el, 'scrollTop', { configurable: true, get: () => top, set: v => { top = Math.max(0, Number(v) || 0); } }); return el; }
 
-test('navigation: "This soul" then "Instance", its AGENTS.md "after spawn, with injects" collapsed; the own file stays the default', t => {
+test('navigation: "Defined in this soul" then "Composed for an instance", its AGENTS.md "after spawn, with injects" collapsed; the own file stays the default', t => {
   const u = setup(t); u.section.update(row());
-  const groups = u.$$('[role=tree] > li[role=none] > ul[role=group]').map(g => u.doc.getElementById(g.getAttribute('aria-labelledby')).textContent);
-  assert.deepEqual(groups, ['This soul', 'Instance']);
+  const sections = u.$$('[role=tree] > li[role=none] > ul[role=group]');
+  assert.deepEqual(sections.map(g => u.doc.getElementById(g.getAttribute('aria-labelledby')).textContent), ['Defined in this soul', 'Composed for an instance']);
   const composed = u.item(COMPOSED);
-  assert.equal(composed.getAttribute('aria-label'), 'AGENTS.md, after spawn, with injects', 'the group\'s top item, parallel to the soul\'s');
+  assert.equal(composed.parentElement, sections[1], 'the second section\'s first item');
+  assert.equal(composed.getAttribute('aria-label'), 'AGENTS.md, after spawn, with injects', 'the section\'s top item, parallel to the soul\'s');
   assert.deepEqual([...composed.querySelectorAll(':scope > .cap-node .cap-node-name, :scope > .cap-node .cap-node-desc')].map(n => n.textContent), ['AGENTS.md', 'after spawn, with injects']);
   assert.equal(composed.getAttribute('aria-expanded'), 'false'); assert.equal(composed.getAttribute('aria-description'), '4 parts');
   assert.deepEqual([...composed.querySelectorAll('[role=treeitem]')].map(i => i.getAttribute('aria-label')), ['This soul', 'Instance boundary · OATS', 'Work mode · worktree', 'oats.core']);
@@ -176,10 +177,10 @@ test('a part: selecting it scrolls the reader to its header below the sticky hea
   assert.equal(u.$('.soul-part'), null);
 });
 
-test('keyboard: one tree across both groups; Right/Left expand and climb; Enter opens', t => {
+test('keyboard: one tree across both sections; Right/Left expand and climb; Enter opens', t => {
   const u = setup(t); u.section.update(row());
   const own = u.item(OWN), composed = u.item(COMPOSED);
-  own.focus(); u.key(own, 'ArrowDown'); assert.equal(u.doc.activeElement, composed, 'the arrows cross groups');
+  own.focus(); u.key(own, 'ArrowDown'); assert.equal(u.doc.activeElement, composed, 'the arrows cross the section boundary');
   u.key(composed, 'ArrowRight'); assert.equal(composed.getAttribute('aria-expanded'), 'true');
   u.key(composed, 'ArrowRight'); assert.equal(u.doc.activeElement, u.item('part:0'), 'into its first part');
   u.key(u.item('part:0'), 'End'); assert.equal(u.doc.activeElement, u.item('part:3'));
@@ -206,19 +207,23 @@ test('Copy copies the kernel’s exact text, markers included', async t => {
   u.item(OWN).querySelector('.cap-node').click(); assert.equal(u.$('.soul-copy'), null, 'the own file has no Copy');
 });
 
-test('without the feature no composed group; a null answer is a note pointing at the problem; a broken one says it cannot be read', t => {
+test('without the feature no composed AGENTS.md and no note; a null answer is a note pointing at the problem; a broken one says it cannot be read', t => {
   const u = setup(t);
   u.section.update(row({ composedInstructions: undefined }));
   const { composedInstructions, ...without } = row(); void composedInstructions;
   u.section.update(without);
-  assert.equal(u.item(COMPOSED), null); assert.doesNotMatch(u.host.textContent, /Instance|after spawn/);
+  const composedSection = () => u.$$('[role=tree] > li[role=none] > ul[role=group]')[1];
+  // Without the feature the section holds only its Skills row (soul-skills.test.mjs): today's silence for the composed file.
+  assert.equal(u.item(COMPOSED), null); assert.doesNotMatch(u.host.textContent, /after spawn/);
+  assert.deepEqual([...composedSection().children].map(c => c.querySelector('.cap-contents-group-label')?.textContent), ['Skills']);
   u.section.update(row({ composedInstructions: null }));
   assert.equal(u.item(COMPOSED), null);
-  // The Instance group's note is the last (the Skills group's, soul-skills.test.mjs, sits before it).
-  assert.equal(u.$$('.cap-contents-note').at(-1).textContent, SOUL_INSTRUCTIONS_COPY.cannotCompose);
-  assert.equal(u.$$('.cap-contents-group-label').at(-1).textContent, 'Instance');
+  // The note stands where the composed AGENTS.md would, first in its section (the Skills row follows it).
+  const noteOf = () => composedSection().children[0];
+  assert.deepEqual([...noteOf().children].map(c => [c.className, c.textContent]), [['cap-contents-note', SOUL_INSTRUCTIONS_COPY.cannotCompose]]);
+  assert.equal(noteOf().getAttribute('role'), 'none');
   u.section.update(row({ composedInstructions: { text: 'x' } }));
-  assert.equal(u.$$('.cap-contents-note').at(-1).textContent, SOUL_INSTRUCTIONS_COPY.cannotRead);
+  assert.equal(noteOf().textContent, SOUL_INSTRUCTIONS_COPY.cannotRead);
 });
 
 test('a part past the size limit says so in its section; a cut part is flagged in its header', t => {
