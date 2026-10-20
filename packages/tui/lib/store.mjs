@@ -12,7 +12,7 @@
 import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings, chordKeys } from "./actions.mjs";
 import { collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { defaultDetachKey } from "./config.mjs";
-import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, LIST_WORDS } from "./model.mjs";
+import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, LIST_WORDS } from "./model.mjs";
 import { backKeyId, backKeySequences, isBackKey } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
 import { SPLIT_MIN, splitFits } from "./views/split.mjs";
@@ -57,6 +57,10 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  (awebai/oats#1390): `rows`, the shared reader's `{ path, name, state }` in the kernel's order, of
  *  the last read that answered, and `failure`, the reason (`{ code, message }`) the last read failed
  *  with, or null once one answered. The switcher offers the rows this run does not serve.
+ *  `identities`: what the identity reads learned of the rows of that list (lib/main.mjs), path ->
+ *  `{ ok: true, workspace }` or `{ ok: false, reason }` (deployment-identity.mjs), the last answer for
+ *  each, kept for the run: the switcher matches a listed deployment to its workspace by it, and a
+ *  deployment opened from there is in its workspace's view before its first read (lib/model.mjs heldOf).
  *  `opening`: the agent of another machine whose terminal is being opened, or null:
  *  `{ id, phase: "preflight", name, machine, routed }` while that machine is asked whether its
  *  session is there; `name`, `machine` and `routed` are the row's as it was when Enter was
@@ -112,7 +116,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     memory: new Map(), notes: new Map(), collecting: false, cli, home,
     selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(),
     switcher: NO_SWITCHER,
-    listed: NO_LIST,
+    listed: NO_LIST, identities: new Map(),
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
     leaderKey: backKeyId(detachKey), leader: null, keyboard: null, chords: chordKeys(platform === "darwin", actions), palette: null, recent: Object.freeze([]), souls: NO_SOULS, capabilities: NO_CAPABILITIES,
     spawn: null, spawning: null, spawnCheck: null, arriving: null, previews: 0, tabs: Object.freeze([]), split: null, group: 0, aside: null,
@@ -198,7 +202,7 @@ function settled(state, taken) {
     const places = new Map(taken.places); places.delete(taken.open);
     // A confirmation open over that view is closed with it: what it sent goes on.
     const dismiss = taken.act !== null ? { dismiss: taken.act.n } : {};
-    return { state: toSwitcher(next(taken, { open: null, places, selected: null, top: 0, loose: false, detailTop: 0, focus: "list", filter: NO_FILTER, back: "switcher", act: null }), "gone"), effect: { list: true, ...dismiss } };
+    return { state: toSwitcher(next(taken, { open: null, places, selected: null, top: 0, loose: false, detailTop: 0, focus: "list", filter: NO_FILTER, back: "switcher", act: null }), "gone"), effect: { list: true, identify: true, ...dismiss } };
   }
   const before = roster(state);
   const unknown = new Set([...taken.unread.values()].flatMap((ids) => [...ids]));
@@ -253,6 +257,28 @@ function admitted(state, { admitted: id, at }) {
   if (state.ctxs.includes(id)) return opened(state, id);
   const joined = next(state, { ctxs: Object.freeze([...state.ctxs, id]), entries: new Map(state.entries).set(id, pendingEntry(null, at)) });
   return opened(joined, id);
+}
+
+/** The deployments of a workspace picked in the switcher that were on this computer's list and not served
+ *  (lib/main.mjs asked each whether it is a deployment now): `admitted` are served from now on, pending
+ *  until their first read, which the identity read already placed in their workspace's view; then the
+ *  workspace opens on the first of `opens` (its deployments, this machine's first) that is served or is
+ *  another machine's. A folder refused is not served; when nothing of the workspace can be opened the
+ *  switcher stays, and the list is read again, so its rows say what the folders are now. */
+function joinedHeard(state, { admitted: ids, opens, at }) {
+  const added = ids.filter((id) => !state.ctxs.includes(id));
+  const entries = new Map(state.entries);
+  for (const id of added) entries.set(id, pendingEntry(null, at));
+  const joined = added.length ? next(state, { ctxs: Object.freeze([...state.ctxs, ...added]), entries }) : state;
+  const target = opens.find((id) => joined.ctxs.includes(id) || !id.startsWith("/")) ?? null;
+  if (target === null) return { state: joined, effect: { list: true } };
+  return { state: opened(joined, target), effect: { refresh: { live: true } } };
+}
+
+/** What an identity read learned of a deployment of this computer's list (lib/main.mjs): kept for the run,
+ *  the last answer for each path; an answer replaces the one before it. */
+function identityHeard(state, { path, read }) {
+  return { state: next(state, { identities: new Map(state.identities).set(path, read) }), effect: null };
 }
 
 /** The filter's text changed. */
@@ -506,7 +532,7 @@ function switched(state, action, page, event) {
       // The rows of the pane the choices have: the lines above them take theirs, and the filter
       // field one while it is shown (lib/model.mjs switcherHeight).
       const count = s.items.length, height = switcherHeight(state, page, event.area);
-      const drawn = windowOf({ top: sw.top, count, height, keep: sw.loose ? -1 : s.items.findIndex((item) => item.key !== undefined && item.key === s.selected) }).top;
+      const drawn = switcherWindow(s.items, sw.loose ? null : s.selected, { top: sw.top, height }).top;
       const from = Math.max(0, s.keys.indexOf(s.selected));
       const key = s.keys.length ? s.keys[Math.min(Math.max(0, moved(action, from, s.keys.length, page)), s.keys.length - 1)] : null;
       // No choice to go to in that direction (the first, the last, or none at all): the rows
@@ -515,15 +541,18 @@ function switched(state, action, page, event) {
         const top = windowOf({ top: moved(action, drawn, count, height), count, height }).top;
         return top === drawn ? stay : { state: put({ top, loose: true }), effect: null };
       }
-      const at = s.items.findIndex((item) => item.key === key);
-      // The headings above the first choice come into the pane with it, and what stands under the last one.
-      const top = windowOf({ top: key === s.keys[0] ? 0 : key === s.keys.at(-1) ? count : drawn, count, height, keep: at }).top;
+      // The headings above the first choice come into the pane with it, and what stands under the last one;
+      // a workspace's indicator lines come in with it while they fit (lib/model.mjs switcherWindow).
+      const top = switcherWindow(s.items, key, { top: key === s.keys[0] ? 0 : key === s.keys.at(-1) ? count : drawn, height }).top;
       return { state: put({ selected: key, top, loose: false }), effect: null };
     }
     case "open": {
       const item = s.items.find((each) => each.key !== undefined && each.key === s.selected);
       if (!item) return stay;
       if (item.path !== undefined) return item.state === "ok" ? { state: put({ refused: null }), effect: { admit: item.path } } : stay;
+      // A workspace with deployments of this computer's list that this run does not serve: each is asked
+      // whether it is a deployment now, and served from then on (`joinedHeard`), before the workspace opens.
+      if (item.join?.length) return { state: put({ refused: null }), effect: { join: Object.freeze({ paths: item.join, opens: item.opens }) } };
       return item.primary === null ? stay : { state: opened(state, item.primary), effect: { refresh: { live: true } } };
     }
     case "remove": {
@@ -575,7 +604,10 @@ function removedHeard(state, { name, ok, reason = null }) {
  *  (one outcome of the roster read), `{ collecting }`, `{ retiring: <Set of instanceIds> }` (this
  *  run's retires in flight now), `{ listed: { rows } | { failure } }` (this computer's deployments
  *  list read, or why it was not), `{ admitted: <deployment>, at }` and `{ refused: <path> }` (what a
- *  picked row turned out to be), `{ removed: { path, name, ok, reason } }` (a Remove's answer) and
+ *  picked row turned out to be), `{ joined: { admitted, opens }, at }` (which listed deployments of a
+ *  workspace picked in the switcher are deployments now, and the ones it may open, in order),
+ *  `{ identity: { path, read } }` (what an identity read answered of a row of the list),
+ *  `{ removed: { path, name, ok, reason } }` (a Remove's answer) and
  *  `{ notListed: <reason> }` (the deployment the run started in was not added to the list).
  *  Opening an agent gives five more: `{ prepared: { id, error? } }` (the preflight of another
  *  machine's agent ended: `error` is what the shared prepareRemoteTerm threw), `{ given: true }`
@@ -587,8 +619,10 @@ function removedHeard(state, { name, ok, reason = null }) {
  *  `rest`: more bytes came after it in the same read).
  *  An effect is something only the loop can do: "quit", "suspend", "redraw", or an object with
  *  any of `refresh: { live }` (read now), `list: true` (read this computer's deployments list
- *  again), `remove: { path, name }` (remove that row from it), `admit: <path>` (ask whether a picked
- *  row is a deployment), `close: <id>` (close the open
+ *  again; with `identify: true`, then read the identities of its rows this run does not serve),
+ *  `remove: { path, name }` (remove that row from it), `admit: <path>` (ask whether a picked
+ *  row is a deployment), `join: { paths, opens }` (ask that of each of a picked workspace's listed
+ *  deployments, then answer `joined`), `close: <id>` (close the open
  *  terminal; when an `open` comes with it, before that open), `open: <decision>` (open the agent's
  *  terminal: the model's openDecision, with its target), `panel: <id>` (the preflight is over:
  *  start the viewer it prepared in the panel) and `abandon: true` (give the preflight up); or null.
@@ -1280,6 +1314,8 @@ function reduced(state, event, keymap) {
   // Held while nothing may draw such a line (the switcher, the help): it is said once a view that does is shown.
   if (event.notListed !== undefined) return { state: next(state, { notice: Object.freeze({ said: LIST_WORDS.notAdded(event.notListed?.message ?? ""), under: Object.freeze([]) }) }), effect: null };
   if (event.admitted !== undefined) return { state: admitted(state, event), effect: { refresh: { live: true } } };
+  if (event.joined !== undefined) return joinedHeard(state, { ...event.joined, at: event.at });
+  if (event.identity !== undefined) return identityHeard(state, event.identity);
   if (event.refused !== undefined) return { state: next(state, { switcher: Object.freeze({ ...state.switcher, refused: event.refused }) }), effect: null };
   if (event.souls !== undefined) return soulsHeard(state, event.souls);
   if (event.capabilities !== undefined) return capabilitiesHeard(state, event.capabilities);
@@ -1319,9 +1355,9 @@ function reduced(state, event, keymap) {
     case "quit": case "suspend": case "redraw": return { state, effect: action };
     // In the switcher this computer's deployments list is read again too.
     // In the Souls view it reads the souls again, and nothing else; in the Capabilities view, the capabilities.
-    case "refresh": return state.view === "souls" ? inSouls(state, action, event, page, scrolled) : state.view === "capabilities" ? inCapabilities(state, action, event, page, scrolled) : { state, effect: { refresh: { live: true }, ...((state.view === "help" ? state.back : state.view) === "switcher" ? { list: true } : {}) } };
+    case "refresh": return state.view === "souls" ? inSouls(state, action, event, page, scrolled) : state.view === "capabilities" ? inCapabilities(state, action, event, page, scrolled) : { state, effect: { refresh: { live: true }, ...((state.view === "help" ? state.back : state.view) === "switcher" ? { list: true, identify: true } : {}) } };
     case "help": return { state: next(state, state.view === "help" ? { view: state.back } : { view: "help", back: state.view, helpTop: 0 }), effect: null };
-    case "workspaces": return state.view === "switcher" ? stay : { state: toSwitcher(next(state, { back: "switcher" })), effect: { list: true } };
+    case "workspaces": return state.view === "switcher" ? stay : { state: toSwitcher(next(state, { back: "switcher" })), effect: { list: true, identify: true } };
     case "palette": return { state: paletteOpened(state, event, "list"), effect: null };
     // Souls and Capabilities are views of this machine, whatever workspace is open, or none.
     case "souls": return soulsShown(state);

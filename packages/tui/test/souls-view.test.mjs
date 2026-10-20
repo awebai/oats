@@ -562,7 +562,7 @@ test("i from the Souls view: the Instances view's heading names the kept soul fi
     assert.equal(heading(draw(text, sz), sz), `${" Instances  /dev".padEnd(pane - 2)}1`, `${sz.cols}: the text filter's`);
     for (const at of [12, 17]) assert.equal(d.cells[2][at].style.bold, true, `${sz.cols}: bold at ${at}`);
     assert.deepEqual(sheet(d, sz), sheet(draw(text, sz), sz), `${sz.cols}: the same keys`);
-    assert.deepEqual(sheet(d, sz), hints(["Ctrl+K", "palette"], ["Enter", "open"], ["n", "spawn"], ["?", "help"], ["q", "quit"]), `${sz.cols}: the list's sheet; Esc that clears the filter is the help's and the palette's`);
+    assert.deepEqual(sheet(d, sz), hints(["Ctrl+K", "palette"], ["Enter", "open"], ["n", "spawn"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]), `${sz.cols}: the list's sheet; Esc that clears the filter is the help's and the palette's`);
   }
   const cleared = press(state, ["escape"]).state;
   assert.equal(cleared.filter.soul, undefined);
