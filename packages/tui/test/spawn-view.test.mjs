@@ -399,7 +399,8 @@ test("the prompt is drawn over the main area as the palette is, the sidebar besi
   const palette = { query: "", rows: [], above: 0, below: 0, empty: true };
   const both = drawModel({ ...base, palette, spawn: pickerOf() }, S80);
   assert.equal(both.lines.some((line) => line.includes("Spawn: pick a soul")), false);
-  assert.deepEqual(sheet(both), hints(LEAD, ["Enter", "run"], ["Up/Down", "move"], ["Esc", "close"]));
+  // The palette's own keys last where the TUI has them (not on macOS: the platform is the host's).
+  assert.deepEqual(sheet(both), hints(LEAD, ["Enter", "run"], ["Up/Down", "move"], ["Esc", "close"], ...(process.platform === "darwin" ? [] : [["Alt+Shift+Up/Down", "group"]])));
   // An open terminal with the focus: the prompt reads the keys, and the terminal is not drawn.
   const terminal = { name: "dev-a", focus: "terminal", zoom: false, machine: null, routed: false };
   const open = { ...base, terminal, spawn: previewOf() };

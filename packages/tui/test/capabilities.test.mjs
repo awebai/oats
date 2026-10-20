@@ -286,7 +286,8 @@ test("the palette lists the capabilities once their table was read, each with wh
   const choose = (state, query, name) => {
     let palette = key(key(state, "1").state, "ctrl+k").state;
     for (const ch of query) palette = key(palette, ch).state;
-    const items = paletteItems(palette).items, at = items.findIndex((item) => item.kind === "capability" && item.name === name);
+    // Down moves among the rows that can be selected: a group's label row is not one.
+    const items = paletteItems(palette).items.filter((item) => item.kind !== "group"), at = items.findIndex((item) => item.kind === "capability" && item.name === name);
     for (let i = 0; i < at; i++) palette = key(palette, "down").state;
     return key(palette, "enter");
   };

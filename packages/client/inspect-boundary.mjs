@@ -9,7 +9,7 @@
  *   maxAge   seconds the kernel may reuse remote observations on a miss (a local inspect only)
  *   exec     how the CLI is run (cli-adapter.mjs `runJson`'s `io.exec`); without it, execFile
  *
- *   request  { action: 'inspect', selector: { soul, agentsRoot } | { home }, refresh?, instructions?, skills? }
+ *   request  { action: 'inspect', selector: { soul, agentsRoot } | { home }, refresh?, instructions?, skills?, composedSkills? }
  *   context  { workspace, cli, agents, instances, localCwd, catalogKey }
  *
  * It resolves the kernel's result with `observedAt` and `refreshing`, and throws an Error with a stable `code`
@@ -28,7 +28,7 @@ import { cliCapability, operationArgs } from './cli-adapter.mjs';
 import { inspectKey } from './inspect-cache.mjs';
 import { observationData } from './deployment-data.mjs';
 import { OBSERVE_MAX_AGE_FEATURE } from './deployment-contract.mjs';
-import { hostComposes, hostReportsSkills } from './composed-gate.mjs';
+import { hostComposes, hostReportsSkills, hostComposesSkills } from './composed-gate.mjs';
 import { canAddressRemote, unaddressableSentence, hostReason, shownLabel, unroutableReason } from './remote-address.mjs';
 
 const fail = (message, code = 'E_BAD_ARGS') => { throw Object.assign(new Error(message), { code }); };
@@ -37,7 +37,7 @@ const TEAM_LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 /** Admit a capability request in its context, or throw. `actions`: the actions the caller serves (an inspect
  * boundary serves only 'inspect'); any other is the same refusal as an unknown one. Returns what the call needs:
- * `{ action, server, label, refresh, instructions, skills, soul, agentsRoot, home, context, key }`, where
+ * `{ action, server, label, refresh, instructions, skills, composedSkills, soul, agentsRoot, home, context, key }`, where
  * `context` is the --dir the CLI runs in and `key` the inspect cache's key for the subject. */
 export function capabilityAdmission(request, { workspace, cli, agents = [], instances = [], catalogKey = null }, actions = ['inspect', 'run']) {
   if (!workspace) fail('Select a known workspace', 'E_WORKSPACE_UNKNOWN');
@@ -74,6 +74,10 @@ export function capabilityAdmission(request, { workspace, cli, agents = [], inst
   // reports them (composed-gate.mjs hostReportsSkills); otherwise it is dropped and the read is today's.
   if (request.skills !== undefined && (action !== 'inspect' || typeof request.skills !== 'boolean' || selector.soul === undefined)) fail('Invalid skills flag');
   const skills = request.skills === true && (!server || hostReportsSkills(cli, workspace.group));
+  // composedSkills (feature soul-composed-skills): every skill a spawn gives the instance (`souls[0].composedSkills`),
+  // the same way again: inspect of a soul only; routed only when the held row says the host lists them (hostComposesSkills).
+  if (request.composedSkills !== undefined && (action !== 'inspect' || typeof request.composedSkills !== 'boolean' || selector.soul === undefined)) fail('Invalid composed skills flag');
+  const composedSkills = request.composedSkills === true && (!server || hostComposesSkills(cli, workspace.group));
   let soul, agentsRoot, home, key;
   let context = workspace.scope;
   if (selector.home !== undefined) {
@@ -95,17 +99,17 @@ export function capabilityAdmission(request, { workspace, cli, agents = [], inst
     const agent = matches[0];
     soul = agent.name; agentsRoot = agent.agentsRoot;
     context = dirname(agentsRoot);
-    key = inspectKey({ deployment: workspace.scope, server, kind: 'soul', soul, agentsRoot, catalogKey, instructions, skills });
+    key = inspectKey({ deployment: workspace.scope, server, kind: 'soul', soul, agentsRoot, catalogKey, instructions, skills, composedSkills });
   } else fail('Select a soul or an instance home (inspection has no scope subject)');
-  return { action, server, label, refresh, instructions, skills, soul, agentsRoot, home, context, key };
+  return { action, server, label, refresh, instructions, skills, composedSkills, soul, agentsRoot, home, context, key };
 }
 
 /** The CLI call's options for an admitted request (cli-adapter.mjs `cliCapability`). */
-export function capabilityCall(request, { action, server, refresh, instructions, skills, soul, agentsRoot, home, context }, { workspace, cli, localCwd, maxAge }) {
+export function capabilityCall(request, { action, server, refresh, instructions, skills, composedSkills, soul, agentsRoot, home, context }, { workspace, cli, localCwd, maxAge }) {
   return {
     action, context, server, soul, agentsRoot, home,
     operation: request.operation, ...(request.args !== undefined ? { args: request.args } : {}), ...(instructions ? { instructions } : {}),
-    ...(skills ? { skills } : {}),
+    ...(skills ? { skills } : {}), ...(composedSkills ? { composedSkills } : {}),
     localCwd: server ? localCwd : context || workspace.scope,
     // --max-age travels only on a LOCAL inspect (reuse is local only: the kernel refuses it with --server)
     // and only when the probe declared observe-max-age (the adapter's call).

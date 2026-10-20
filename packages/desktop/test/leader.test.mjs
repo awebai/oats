@@ -281,23 +281,6 @@ test("under a shown modal the leader is not there: the chord goes where it goes 
   assert.ok(down);
 });
 
-test("the footer's opener: a click while it waits cancels and does not start it again", t => {
-  const r = rig(t);
-  assert.equal(r.leader.toggle({ opener: r.button, from: "footer" }), true);
-  r.button.dispatchEvent(new r.window.MouseEvent("mousedown", { bubbles: true }));
-  assert.equal(r.leader.isWaiting(), false, "the press on it cancelled");
-  assert.equal(r.leader.toggle({ opener: r.button, from: "footer" }), false, "its click does not reopen");
-  assert.equal(r.leader.toggle({ opener: r.button, from: "footer" }), true, "the next click does");
-  // Keyboard activation of the opener while it waits: Space is the palette, and its keyup (the
-  // button's click) never reaches the button.
-  let clicks = 0; r.button.addEventListener("click", () => clicks++);
-  r.button.focus();
-  const space = r.press(r.button, keyInit("space"));
-  assert.equal(space.up.defaultPrevented, true);
-  assert.equal(clicks, 0);
-  assert.deepEqual(r.log.at(-1), ["settle", "palette", "footer"]);
-});
-
 // ---------------------------------------------------------------- the hint
 
 test("the hint: role=status, announced once, the keys for the eye, never focusable; a line says why", t => {

@@ -48,7 +48,7 @@ const markup = `<div id="app"><aside id="sidebar">
     <label class="ctx-filter-field"><span class="ctx-filter-icon"></span><input class="ctx-filter" placeholder="Filter instances"><kbd class="shortcut-hint" hidden></kbd></label>
     <div class="ctx-list"><div class="ctx-tree-row"><button class="ctx-inst">Row</button>
       <span class="ctx-row-tools"><button class="ctx-instance-actions">…</button></span></div></div></section>
-  <div id="nav-foot"><button id="sidebar-leader" type="button">commands</button><button id="sidebar-spawn" class="primary">Spawn</button>
+  <div id="nav-foot"><button id="sidebar-spawn" class="primary">Spawn</button>
     <div id="sidebar-tools"><button id="sidebar-toggle" class="nav-item">S</button></div></div></aside>
   <main id="main"><div id="tabstrip"><div id="tabbar-row"><div id="tabbar">
     <div class="tab active"><button class="tab-trigger">Tab</button><button class="close">×</button></div>
@@ -151,7 +151,7 @@ test("focus: one global 1px inset accent edge and tint replace every 2px ring an
 
 test("focus: keyboard focus on plain shell controls paints the tint and the edge", t => {
   const u = fixture(t);
-  for (const selector of ["#ws-trigger", "#sidebar-leader", ".ws-option", ".ws-add-open", ".nav-item:not(.active)", ".ctx-inst", ".tab-trigger", ".tab .close",
+  for (const selector of ["#ws-trigger", ".ws-option", ".ws-add-open", ".nav-item:not(.active)", ".ctx-inst", ".tab-trigger", ".tab .close",
     "#tab-actions button", ".ws-suggestion", ".ws-dialog-foot .secondary", ".kb-chord", ".kb-close", ".ws-segmented [aria-pressed=false]",
     ".ctx-instance-menu button", ".ctx-instance-actions", ".lifecycle-close", ".lifecycle-review", ".lifecycle-check", ".oats-view .act:not(.primary):not(.danger)"]) {
     const s = u.focused(selector);

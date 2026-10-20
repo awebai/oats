@@ -218,7 +218,8 @@ test("the palette lists the split's rows where each applies", () => {
   assert.equal(rowsOf(enter(splitOf(), "dev-c").state).at(-1), "Move tab to the other group");
   // Run from the palette: the split is made.
   let p = leaderThen(opened(SIX(), "dev-a"), "k").state;
-  const at = paletteItems(p).items.findIndex((item) => item.label === "Split down");
+  // Down moves among the rows that can be selected: a group's label row is not one.
+  const at = paletteItems(p).items.filter((item) => item.kind !== "group").findIndex((item) => item.label === "Split down");
   for (let i = 0; i < at; i++) p = key(p, "down").state;
   assert.equal(key(p, "enter").state.split, "down");
 });

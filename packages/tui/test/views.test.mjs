@@ -24,7 +24,7 @@ import { isSafeText, shown, textOf } from "../lib/term/text.mjs";
 import { textWidth } from "../lib/term/width.mjs";
 import { CAPABILITIES_TEXT } from "../lib/views/capabilities.mjs";
 import { LIST_BESIDE, MIN_SIZE, PANEL_MIN, WIDE, frame } from "../lib/views/frame.mjs";
-import { ACT_RULES, CHORD_OPEN_RULE, LEADER_AGAIN, MACHINES, NOT_YET, PALETTE_KEYS, VIEWS, helpRows, keysLabel } from "../lib/views/help.mjs";
+import { ACT_RULES, CHORD_OPEN_RULE, LEADER_AGAIN, MACHINES, NOT_YET, PALETTE_GROUP_WORDS, PALETTE_KEYS, VIEWS, helpRows, keysLabel } from "../lib/views/help.mjs";
 import { EMPTY_TEXT, MARKS, NEEDS_INPUT, belowText, cutNote, instances, marksOf } from "../lib/views/instances.mjs";
 import { SOUL_MARK } from "../lib/views/souls.mjs";
 import { OPEN_MARK, SWITCHER_TEXT } from "../lib/views/switcher.mjs";
@@ -3196,9 +3196,12 @@ test("the help lists Enter once per view with what it does there, the keys of th
     "Esc  the list",
     `Ctrl+\\  ${LEADER_AGAIN}`,
   ]);
-  // The palette's section, between the leader's and the spawn prompt's: its keys are its own.
+  // The palette's section, between the leader's and the spawn prompt's: its keys are its own, and
+  // after Up and Down its group keys, where the TUI has them (not on macOS).
   const palette = lines.slice(lines.indexOf("The palette") + 1, lines.indexOf("The spawn prompt")).filter(Boolean);
-  assert.deepEqual(palette.map((line) => line.replace(/ {2,}/g, "  ")), PALETTE_KEYS.map(([keys_, said]) => `${keys_}  ${said}`));
+  const said = PALETTE_KEYS.map(([keys_, words_]) => `${keys_}  ${words_}`);
+  if (process.platform !== "darwin") said.splice(1, 0, `Alt+Shift+Up, Alt+Shift+Down  ${PALETTE_GROUP_WORDS}`);
+  assert.deepEqual(palette.map((line) => line.replace(/ {2,}/g, "  ")), said);
   // The leader is tui.json's, text from outside: the help names it, then Esc and twice under the agent's line.
   const rebound = helpLines(openable({ detachKey: "F12" })).map((line) => line.trim());
   assert.equal(rebound.join(" ").replace(/ +/g, " ").includes("F12 Esc takes the focus from the terminal back to the list; the agent keeps running. F12 F12 types the leader into the terminal."), true);
@@ -3533,26 +3536,33 @@ const paletteOpen = (state) => leaderThen(state, "k").state;
  *  and its rows' texts there. */
 const areaOf = (d, sz) => (sz.cols >= WIDE ? [d.cols + 2, sz.cols - d.cols - 3] : [0, sz.cols]);
 const areaLines = (d, sz) => { const [from, width] = areaOf(d, sz); return d.cells.map((_, r) => cellText(d, r, from, from + width)); };
+/** The palette's own keys, last on its cheat sheet, where the TUI has them: not on macOS
+ *  (the tests' platform is the host's). */
+const PALETTE_GROUP = Object.freeze(process.platform === "darwin" ? [] : [["Alt+Shift+Up/Down", "group"]]);
 /** The cheat sheet while the palette is open: how to work it. */
-const PALETTE_SHEET = Object.freeze([LEAD, ["Enter", "run"], ["Up/Down", "move"], ["Esc", "close"]]);
+const PALETTE_SHEET = Object.freeze([LEAD, ["Enter", "run"], ["Up/Down", "move"], ["Esc", "close"], ...PALETTE_GROUP]);
 /** A palette row as the spec draws it in `cols` cells: `>` on the selected one, an instance's state
  *  mark, its text from the fourth cell, cut two cells before the kind, and the kind word at the
- *  right edge. */
+ *  right edge. A group's label row: its label from the fourth cell to the edge, and nothing else. */
 function paletteRow(item, selected, cols, ascii = false) {
+  if (item.kind === "group") return `    ${cutTo(item.label, cols - 4, ascii)}`;
   const text = item.kind === "instance" ? `${item.name}${item.machine ? ` on ${item.machine}` : ""}` : item.kind === "act" ? `${item.label} ${item.name}` : item.label;
   return `${selected ? ">" : " "} ${item.kind === "instance" ? marksOf(ascii)[item.mark] : " "} ${cutTo(text, cols - 6 - item.kind.length, ascii)}`.padEnd(cols - item.kind.length) + item.kind;
 }
 /** A row of `cols` cells: `left`, then `kind` at the right edge. */
 const edged = (left, kind, cols = 80) => `${left.padEnd(cols - kind.length)}${kind}`;
 
-test("the palette at 80x24 in UTF-8 and in ASCII, cell for cell: in the main area beside the sidebar, the query's row on the top row, then the instances that can be opened in the list's order, the views, the selected instance's acts and the commands, each cut two cells before its kind at the right edge; the first selected, in reverse with `>`; the sidebar stays, its cheat sheet saying how to work the palette", () => {
+test("the palette at 80x24 in UTF-8 and in ASCII, cell for cell: in the main area beside the sidebar, the query's row on the top row, then the instances that can be opened in the list's order, each group under its label row, dim, then the views, the selected instance's acts and the commands, each cut two cells before its kind at the right edge; the first instance selected, in reverse with `>`; the sidebar stays, its cheat sheet saying how to work the palette", () => {
   const AREA = 39;
   for (const ascii of [false, true]) {
     const run = ascii ? "*" : "●", d = draw(paletteOpen(golden({ ascii })), S80);
     const row = (left, text, kind) => edged(`${left}${cutTo(text, AREA - 6 - kind.length, ascii)}`, kind, AREA);
+    // The groups as the sidebar draws them, but acme-expert-tui's, whose one row cannot be opened:
+    // each cluster under its root's name, and the single maintainer under `independent`.
     const main = [">",
-      row(`> ${run} `, DESKTOP_EXPERT, "instance"), row(`  ${run} `, DESKTOP_A, "instance"), row(`  ${run} `, DESKTOP_B, "instance"),
-      row(`  ${run} `, KERNEL_EXPERT, "instance"), row(`  ${run} `, KERNEL_DEV, "instance"), row(`  ${run} `, MAINTAINER, "instance"),
+      `    ${DESKTOP_EXPERT}`, row(`> ${run} `, DESKTOP_EXPERT, "instance"), row(`  ${run} `, DESKTOP_A, "instance"), row(`  ${run} `, DESKTOP_B, "instance"),
+      `    ${KERNEL_EXPERT}`, row(`  ${run} `, KERNEL_EXPERT, "instance"), row(`  ${run} `, KERNEL_DEV, "instance"),
+      "    independent", row(`  ${run} `, MAINTAINER, "instance"),
       row("    ", "Instances", "view"), row("    ", "Souls", "view"), row("    ", "Capabilities", "view"),
       row("    ", `Stop ${KERNEL_DEV}`, "act"), row("    ", `Retire ${KERNEL_DEV}`, "act"),
       row("    ", "Spawn an agent", "command"), row("    ", "Workspaces", "command"), row("    ", "Refresh", "command"), row("    ", "Help", "command"),
@@ -3561,13 +3571,20 @@ test("the palette at 80x24 in UTF-8 and in ASCII, cell for cell: in the main are
     assert.deepEqual(d.lines, beside(instancesSide(" acme-platform", listed, PALETTE_SHEET, { ascii }), main.map((line) => ` ${line}`), { bar: ascii ? "|" : "│" }).map((line) => line.trimEnd()), ascii ? "ASCII" : "UTF-8");
     assert.deepEqual(d.cursor, { row: 0, col: 42 }, "the cursor after the empty query");
     assert.deepEqual(d.cells[0][40].style, style({ bold: true }), "the prompt");
-    d.cells[1].slice(40, 40 + AREA).forEach((cell, x) => assert.equal(cell.style.reverse, true, `the selected row, cell ${40 + x}`));
-    for (let r = 2; r <= 15; r++) assert.equal(d.cells[r].slice(39).some((cell) => cell.style.reverse), false, `row ${r} is not selected`);
+    d.cells[2].slice(40, 40 + AREA).forEach((cell, x) => assert.equal(cell.style.reverse, true, `the selected row, cell ${40 + x}`));
+    for (let r = 1; r <= 18; r++) if (r !== 2) assert.equal(d.cells[r].slice(39).some((cell) => cell.style.reverse), false, `row ${r} is not selected`);
+    // A group's label row is dim from the fourth cell, its label alone: no mark, no kind.
+    for (const r of [1, 5, 8]) {
+      const label = areaLines(d, S80)[r].trim();
+      for (const cell of d.cells[r].slice(44, 44 + label.length)) assert.deepEqual(cell.style, DIM, `row ${r}: the label`);
+      assert.equal(d.cells[r].slice(40, 44).every((cell) => cell.text === " "), true, `row ${r}: no mark`);
+      assert.equal(d.cells[r].slice(44 + label.length).every((cell) => cell.text === " " || cell.text === ""), true, `row ${r}: no kind`);
+    }
     // A row's kind is dim; an instance's name is plain, and an act's instance dim after its label.
-    for (const cell of d.cells[2].slice(40 + AREA - 8, 40 + AREA)) assert.deepEqual(cell.style, DIM);
-    for (const cell of d.cells[2].slice(44, 44 + 24)) assert.deepEqual(cell.style, PLAIN);
-    for (const cell of d.cells[10].slice(44, 48)) assert.deepEqual(cell.style, PLAIN);
-    for (const cell of d.cells[10].slice(49, 49 + 24)) assert.deepEqual(cell.style, DIM);
+    for (const cell of d.cells[3].slice(40 + AREA - 8, 40 + AREA)) assert.deepEqual(cell.style, DIM);
+    for (const cell of d.cells[3].slice(44, 44 + 24)) assert.deepEqual(cell.style, PLAIN);
+    for (const cell of d.cells[13].slice(44, 48)) assert.deepEqual(cell.style, PLAIN);
+    for (const cell of d.cells[13].slice(49, 49 + 24)) assert.deepEqual(cell.style, DIM);
   }
   // Ctrl+K from the list's focus opens the same palette.
   assert.deepEqual(draw(reduce(golden(), { key: "ctrl+k", read: 1 }).state, S80).lines, draw(paletteOpen(golden()), S80).lines);
@@ -3582,9 +3599,11 @@ test("the palette's rows are paletteItems' rows in its order, at 120x40, 80x24 a
     rows.forEach((line, i) => assert.equal(line, paletteRow(list.items[i], list.items[i].key === list.selected, width), `${at}: row ${i}`));
     fits(d, sz, at);
   }
-  // Down moved the selection to the third row.
-  assert.equal(areaLines(draw(states[2], S80), S80)[3].startsWith(`> ● ${DESKTOP_B.slice(0, 20)}`), true);
-  assert.equal(areaLines(draw(states[2], S80), S80)[1].startsWith(`  ● ${DESKTOP_EXPERT.slice(0, 20)}`), true);
+  // Down twice moved the selection to the third instance, the fourth row under the query's: the
+  // first is its group's label.
+  assert.equal(areaLines(draw(states[2], S80), S80)[4].startsWith(`> ● ${DESKTOP_B.slice(0, 20)}`), true);
+  assert.equal(areaLines(draw(states[2], S80), S80)[2].startsWith(`  ● ${DESKTOP_EXPERT.slice(0, 20)}`), true);
+  assert.equal(areaLines(draw(states[2], S80), S80)[1], `    ${DESKTOP_EXPERT}`);
   // garnet's running instance, which can be opened, is listed with its machine, dim: at 120 columns
   // the main area has the room for both.
   const d = draw(states[1], S120), lines = areaLines(d, S120), r = lines.findIndex((line) => line.includes(FAR_A)), [from, width] = areaOf(d, S120);
@@ -3632,7 +3651,8 @@ test("under 80 columns the palette has the whole screen and its query's row carr
   assert.equal(end.lines[14], `    ${list.items.length - rows.length} more above`);
   // Two machines' palette has fewer rows (the instances that can be opened): at 60x15 they fit, with no note.
   const two = paletteOpen(reached()), all = paletteItems(two, AT).items, shown_ = draw(two, S60);
-  assert.deepEqual(shown_.lines.slice(1, 1 + all.length), all.map((item, i) => paletteRow(item, i === 0, 60)));
+  assert.equal(all[0].kind, "group", "the first row is a group's label");
+  assert.deepEqual(shown_.lines.slice(1, 1 + all.length), all.map((item) => paletteRow(item, item.key === paletteItems(two, AT).selected, 60)));
   assert.deepEqual(shown_.lines.slice(1 + all.length), Array(14 - all.length).fill(""));
 });
 
@@ -3655,9 +3675,9 @@ test("while the palette is open no terminal is drawn, even with one open: from 8
   // dev-a is the shown tab and the first recent entry, so the second instance is selected (T2); with a
   // terminal open the split commands are offered too.
   const d = draw(opened, S80), [, width] = areaOf(d, S80);
-  assert.deepEqual(areaLines(d, S80).slice(0, 14), [
+  assert.deepEqual(areaLines(d, S80).slice(0, 15), [
     ">",
-    edged("  ● dev-a", "instance", width), edged("> ● dev-b", "instance", width),
+    "    independent", edged("  ● dev-a", "instance", width), edged("> ● dev-b", "instance", width),
     edged("    Instances", "view", width), edged("    Souls", "view", width), edged("    Capabilities", "view", width),
     edged("    Stop dev-a", "act", width), edged("    Retire dev-a", "act", width),
     edged("    Spawn an agent", "command", width), edged("    Workspaces", "command", width), edged("    Refresh", "command", width), edged("    Help", "command", width),
@@ -3681,6 +3701,42 @@ test("hostile text in an instance's name or in the query goes through shown(): n
         fits(d, sz, at);
       }
     }
+  }
+});
+
+test("a group's label row in the palette: its label dim from the rows' text column, with no mark, no kind and no selection, the instance under it selected; the label is text from outside, through shown(): a cluster's name with control and bidi characters, at 80x24 and 60x15, in UTF-8 and in ASCII", () => {
+  const ROOT = "lead\x1b[31mred\x1b[0m‮evil";
+  for (const ascii of [false, true]) {
+    const state = paletteOpen(stateOf(observed([instanceRow("dev", ROOT), instanceRow("dev", "kid", { parentInstance: ROOT })]), { ascii }));
+    assert.deepEqual(paletteItems(state, AT).items.slice(0, 3).map((item) => [item.kind, item.label]), [["group", ROOT], ["instance", ROOT], ["instance", "kid"]], "the cluster's name, as the shared grouping gives it");
+    const label = textOf(shown(ROOT));
+    for (const sz of [S80, S60]) {
+      const d = draw(state, sz), [from, width] = areaOf(d, sz), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
+      for (const line of d.cells) for (const cell of line) assert.doesNotMatch(cell.text, CONTROL, at);
+      assert.equal(areaLines(d, sz)[1], `    ${cutTo(label, width - 4, ascii)}`, `${at}: the label alone, from the fourth cell`);
+      for (const cell of d.cells[1].slice(from + 4, from + 4 + Math.min(label.length, width - 4))) assert.deepEqual(cell.style, DIM, `${at}: dim`);
+      assert.equal(d.cells[1].slice(from, from + width).some((cell) => cell.style.reverse), false, `${at}: never selected`);
+      assert.equal(areaLines(d, sz)[2].startsWith(`> ${marksOf(ascii).running} `), true, `${at}: the instance under it is`);
+      fits(d, sz, at);
+    }
+  }
+});
+
+test("the palette's cheat sheet names its group keys last, `Alt+Shift+Up/Down group`, on Linux and Windows, and none on macOS, where the TUI has none: in the sidebar, and under 80 columns on the query's row, where they are the first given up; the help's palette section names them after Up and Down, and not on macOS", () => {
+  for (const platform of ["linux", "win32", "darwin"]) {
+    const mac = platform === "darwin", state = paletteOpen(golden({ platform }));
+    const group = mac ? [] : [["Alt+Shift+Up/Down", "group"]];
+    for (const sz of [S80, S120]) assert.deepEqual(hintsOf(draw(state, sz)), [LEAD, ["Enter", "run"], ["Up/Down", "move"], ["Esc", "close"], ...group], `${platform} ${sz.cols}`);
+    // At 70 columns all four stand on the query's row; at 60 the group's, the last, is given up and Esc close stays.
+    assert.equal(draw(state, size(70, 24)).lines[0].endsWith(mac ? "Enter run   Up/Down move   Esc close" : "Enter run   Up/Down move   Esc close   Alt+Shift+Up/Down group"), true, `${platform} 70`);
+    assert.equal(draw(state, S60).lines[0].endsWith("Enter run   Up/Down move   Esc close"), true, `${platform} 60`);
+    const lines = helpLines(golden({ platform })).map((line) => line.trim());
+    const palette = lines.slice(lines.indexOf("The palette") + 1, lines.indexOf("The spawn prompt")).filter(Boolean).map((line) => line.replace(/ {2,}/g, "  "));
+    assert.deepEqual(palette, [
+      `${PALETTE_KEYS[0][0]}  ${PALETTE_KEYS[0][1]}`,
+      ...(mac ? [] : [`Alt+Shift+Up, Alt+Shift+Down  ${PALETTE_GROUP_WORDS}`]),
+      ...PALETTE_KEYS.slice(1).map(([keys_, said]) => `${keys_}  ${said}`),
+    ], `${platform}: the help`);
   }
 });
 

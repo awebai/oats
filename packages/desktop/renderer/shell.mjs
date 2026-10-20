@@ -32,6 +32,7 @@ import { createFocusRegions, firstTabbable, isShown } from "./focus-regions.mjs"
 import { createFileOpener } from "./open-file.mjs";
 import {
   registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction, keymapConflicts, pickerCycleDirection,
+  paletteGroupDirection, paletteGroupHint,
   listActions, readKeyboardLayout, SIDEBAR_KEYS,
 } from "./keybindings.mjs";
 import { createLeader } from "./leader.mjs";
@@ -1007,10 +1008,19 @@ function renderContextRoster(instances) {
         const heldStale = rowHeldStale(i);
         // Needs input: this row's own claim (waitingClaim is the only gate), and the waiting rows hidden under it.
         const claim = waitingClaim(i, { stale: heldStale }), below = waitingBelow.get(instanceId(i)) || [];
-        if (unavailable) { const said = why + waitingSentence(claim, below, Date.now()); row.title = said; row.setAttribute("aria-description", said); }
+        // Spec D (human, 2026-10-20): the name line keeps the name, whole; a waiting row's mark takes the meta line
+        // in place of its text (the repository, pull request and branch stay in the hover card, as a held home's do;
+        // a row with no card says them in its title and description, and the line keeps its own title).
+        // A held home's state wins that line: its description says the wait. "New" stays beside the name.
+        const attn = held ? null : claim ? needsInputMark() : below.length ? needsInputMark(below.length) : null;
+        if (unavailable) {
+          const replaced = attn ? [instanceRepoLabel(i), pr ? prText(pr) : null, i.branch].filter(Boolean).map(part => ` · ${part}`).join("") : "";
+          const said = why + replaced + waitingSentence(claim, below, Date.now()); row.title = said; row.setAttribute("aria-description", said);
+        }
         else {
           rosterTip.bind(row, () => rosterTipFacts(i, why, pr, { below, stale: heldStale }));
-          if (held) row.setAttribute("aria-description", why);
+          // A held home's state takes its meta line over the mark (below): its description says the wait.
+          if (held) row.setAttribute("aria-description", why + waitingSentence(claim, below, Date.now()));
         }
         const dot = document.createElement("span");
         dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
@@ -1042,18 +1052,13 @@ function renderContextRoster(instances) {
         // Spec E: a spawn the operator was not taken to says New (text and a dot, never colour alone)
         // until its row is opened, or its tab is (the first paint where it is the active row).
         if (isActive) spawnJobs.seen?.(ws, i);
-        // Spec D: Needs input before New on the same line; the marks keep their size, the name ellipsizes.
-        const attn = claim ? needsInputMark() : below.length ? needsInputMark(below.length) : null;
+        if (attn) { meta.className = "ctx-meta ctx-attn-line"; meta.replaceChildren(attn); }
         const isNew = !!spawnJobs.isNew?.(ws, i);
-        if (attn || isNew) {
+        if (isNew) {
           const line = document.createElement("span"); line.className = "ctx-name-line";
-          line.append(name);
-          if (attn) line.append(attn);
-          if (isNew) {
-            const mark = document.createElement("span"); mark.className = "ctx-new";
-            const markDot = document.createElement("span"); markDot.className = "ctx-new-dot"; markDot.setAttribute("aria-hidden", "true");
-            mark.append(markDot, "New"); line.append(mark);
-          }
+          const mark = document.createElement("span"); mark.className = "ctx-new";
+          const markDot = document.createElement("span"); markDot.className = "ctx-new-dot"; markDot.setAttribute("aria-hidden", "true");
+          mark.append(markDot, "New"); line.append(name, mark);
           copy.append(line, meta, ...heldLines);
         } else copy.append(name, meta, ...heldLines);
         row.append(dot, copy);
@@ -2313,6 +2318,10 @@ const palette = createPalette({
   openTerminal: (name) => openTerminalTab(name, { refuse: (inst) => { const held = heldHome(shownRows([inst])[0]); return held ? heldLine(held) : null; } }),
   // While open, ⌘K / Ctrl+Alt+K moves down and Shift + it up (live keymap); Esc closes, Enter opens.
   cycleKey: (e) => pickerCycleDirection(e, "app.palette", isMac),
+  // While open, ⌘N / ⌥⌘N (Alt+Shift+↓ / ↑ elsewhere) jump to the next / previous group, over
+  // app.chooseSoul and roster.openNext / openPrevious; the footer names them.
+  groupKey: (e) => paletteGroupDirection(e, isMac),
+  footer: paletteGroupHint(isMac),
   commands: [
     // View commands derive from the nav manifest so a new rail destination
     // can never be palette-invisible (review 8441961 nit).
@@ -2896,9 +2905,6 @@ window.addEventListener("pagehide", () => leader.dispose(), { once: true });
 // or the palette it is not there at all (`when`): the key goes where it goes without it.
 registerAction({ id: "app.leader", label: "Leader: the commands that follow one key", context: "global", when: () => !modalOpen(),
   run: (e) => { const at = e?.target ?? document.activeElement; leader.start({ targetId: leaderTargetId(at) }); } });
-// The sidebar's footer starts it too (its hint opens; the next key settles it, as from the keyboard).
-const leaderButton = document.getElementById("sidebar-leader");
-leaderButton?.addEventListener("click", () => { if (!modalOpen()) leader.toggle({ opener: leaderButton, targetId: leaderTargetId(leaderButton) }); });
 /** A key that does what the leader then a key does, from where it was pressed: the leader's own
  * target (leaderTargetId) and rules (notApplicable's line when it cannot act). */
 function runAsLeaderKey(does, e) {
@@ -2937,13 +2943,6 @@ function applyChordTitles() {
     const chord = getBinding(el.dataset.shortcut, isMac);
     el.textContent = chord ? formatChord(chord, isMac) : "";
     el.hidden = !chord;
-  }
-  // The footer's leader button: its tooltip and its name say the live chord.
-  const leaderStart = document.getElementById("sidebar-leader");
-  if (leaderStart) {
-    const chord = getBinding("app.leader", isMac);
-    const name = chord ? `Commands: ${formatChord(chord, isMac)}, then one key` : "Commands: press this, then one key";
-    leaderStart.title = name; leaderStart.setAttribute("aria-label", name);
   }
 }
 onKeymapChange(() => applyChordTitles());

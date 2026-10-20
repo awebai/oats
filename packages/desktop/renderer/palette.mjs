@@ -21,7 +21,12 @@
    opens on its first selectable row: the top of the list, which the order makes
    the most recently focused path (with a query, the first match; #1391).
    While open, the palette's own chord moves the active row down (Shift + the
-   chord: up), skipping context rows.
+   chord: up), skipping context rows, and its group keys (packages/client/keymap.mjs
+   PALETTE_KEYS: ⌘N / ⌥⌘N on macOS, Alt+Shift+↓ / ↑ elsewhere) move it to the
+   first selectable row of the next group or of the one before, wrapping: a
+   relation group (one per deployment where there are several) is one, and the
+   commands after the instances are one more. They win over every binding while
+   the palette is open, and only then; a footer under the list names them.
    Overlay chrome lives in overlay-picker.mjs (shared with Quick Open), the fuzzy
    matcher in packages/client/subsequence-score.mjs (shared with the TUI); this
    module owns only the palette's row semantics. */
@@ -120,14 +125,21 @@ export function paletteRows(roster, commands, raw, { openTerminal } = {}) {
  * @param {(e: KeyboardEvent) => (1|-1|0)} [deps.cycleKey] while open: 1 when
  *        the event is the palette's own chord (move down), -1 for Shift + it
  *        (move up), 0 otherwise. The shell derives it from the live keymap.
+ * @param {(e: KeyboardEvent) => (1|-1|0)} [deps.groupKey] while open: 1 for the
+ *        next-group key (to the first selectable row of the next group), -1 for
+ *        the previous-group key, 0 otherwise (paletteGroupDirection, keybindings.mjs).
+ * @param {string} [deps.footer] the line under the list naming the group keys
+ *        (paletteGroupHint, keybindings.mjs).
  */
-export function createPalette({ loadInstances, openTerminal, commands = [], cycleKey, doc }) {
+export function createPalette({ loadInstances, openTerminal, commands = [], cycleKey, groupKey, footer, doc }) {
   return createOverlayPicker({
     placeholder: 'Jump to an instance… (">" for commands)',
     ariaLabel: "Command palette",
     loadItems: async () => { try { return await loadInstances(); } catch { return []; } },
     computeRows: (roster, raw) => paletteRows(roster || [], commands, raw, { openTerminal }),
     cycleKey,
+    groupKey,
+    footer,
     doc, // undefined: the picker's own default (the global document)
   });
 }

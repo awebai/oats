@@ -19,7 +19,7 @@ import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
 import { rosterResponseOwns, rosterSignature } from "../renderer/instance-tree-view.mjs";
 import { staleWorkspaceSelection } from "../renderer/views/common.mjs";
 import { createPendingWatch, NOT_SERVED_CODE, NO_ANSWER_CODE } from "../renderer/deployment-header.mjs";
-import { DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, registerAction, runAction, listActions, getBinding, formatChord, setActiveContexts, matchEvent, handleKeydown, setBinding, resetBinding, onKeymapChange } from "../renderer/keybindings.mjs";
+import { DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, registerAction, runAction, listActions, getBinding, formatChord, setActiveContexts, matchEvent, handleKeydown, setBinding, resetBinding, onKeymapChange, paletteGroupDirection, paletteGroupHint } from "../renderer/keybindings.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const html = readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
@@ -68,7 +68,7 @@ function shell(t, shellSource = source, { storage = {}, gitPanel } = {}) {
     toggleTheme: () => events.push(["theme"]), themePicker: { toggle: () => events.push(["themePicker"]) },
     splitPane: orientation => events.push(["split", orientation]), closeSplit: () => events.push(["split", "close"]),
     fileOpener: { choose() {}, dispose() {} },
-    getBinding, formatChord, isMac: false, contextRosterEl: document.getElementById("instance-roster"),
+    getBinding, formatChord, paletteGroupDirection, paletteGroupHint, isMac: false, contextRosterEl: document.getElementById("instance-roster"),
     activeTrigger: null, activeTabTrigger: () => c.activeTrigger,
   };
   c.tabOpenIntents = createSelectionOwnership(c);
@@ -161,24 +161,13 @@ test("static SVG inventory stays 16px, hidden to AT and rejects arbitrary markup
   }
 });
 
-test("footer has the leader's hint, one honest chooser and five permanently named tools, all dispatching the real registry", async t => {
+test("footer has one honest chooser and five permanently named tools, all dispatching the real registry", async t => {
   const s = shell(t), q = id => s.document.getElementById(id);
   const foot = q("nav-foot"), tools = [...q("sidebar-tools").children];
-  assert.deepEqual([...foot.children].map(el => el.id), ["sidebar-leader", "sidebar-spawn", "sidebar-tools"]);
+  // No leader button: the shortcuts editor (a tool here, Mod+, and the palette) lists the leader's commands.
+  assert.deepEqual([...foot.children].map(el => el.id), ["sidebar-spawn", "sidebar-tools"]);
   assert.deepEqual(tools.map(b => b.dataset.action), ["sidebar.toggle", "app.themePicker", "app.shortcuts", "app.connections", "app.palette"]);
-  // The leader's hint leads the footer: its live chord, then "commands"; its tooltip and name say the chord.
-  const leader = q("sidebar-leader");
-  assert.equal(leader.type, "button"); assert.equal(leader.tabIndex, 0);
-  assert.equal(leader.querySelector('kbd[data-shortcut="app.leader"]').textContent, "Alt+O");
-  assert.equal(leader.querySelector('kbd[data-shortcut="app.leader"]').hidden, false);
-  assert.equal(leader.textContent.trim(), "Alt+Ocommands");
-  assert.equal(leader.getAttribute("aria-label"), "Commands: Alt+O, then one key");
-  assert.equal(leader.title, "Commands: Alt+O, then one key");
-  setBinding("app.leader", "Alt+L");
-  assert.equal(leader.getAttribute("aria-label"), "Commands: Alt+L, then one key", "a rebind follows");
-  assert.equal(leader.querySelector("kbd").textContent, "Alt+L");
-  resetBinding("app.leader");
-  for (const button of foot.querySelectorAll("button:not(#sidebar-leader)")) {
+  for (const button of foot.querySelectorAll("button")) {
     assert.equal(button.type, "button"); assert.equal(button.hidden, false); assert.equal(button.disabled, false);
     assert.ok(button.tabIndex >= 0); assert.ok(button.getAttribute("aria-label")); assert.ok(button.title);
     assert.ok(button.querySelector('svg[aria-hidden="true"]'));
