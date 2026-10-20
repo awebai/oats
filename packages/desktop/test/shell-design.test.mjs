@@ -236,11 +236,11 @@ test("sidebar shortcuts keep Ctrl+B/F/N/P with the pty and dispatch Cmd+F/N on m
   for (const [key, action] of [["f", "sidebar.focusFilter"], ["n", "app.chooseSoul"]]) {
     assert.equal(matchEvent({ key, metaKey: true }, { isMac: true, insideTerminal: true }), action);
   }
-  // Linux/Windows: the filter is Ctrl+Shift+F and "Spawn instance" Ctrl+Shift+N, both inside the
+  // Linux/Windows: the filter is Ctrl+Alt+F and "Spawn instance" Ctrl+Shift+N, both inside the
   // terminal and out, while plain Ctrl+F and Ctrl+N stay the program's.
   for (const key of ["f", "n"]) assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: false }), null);
   for (const insideTerminal of [false, true]) {
-    assert.equal(matchEvent({ key: "F", ctrlKey: true, shiftKey: true }, { isMac: false, insideTerminal }), "sidebar.focusFilter");
+    assert.equal(matchEvent({ key: "f", ctrlKey: true, altKey: true }, { isMac: false, insideTerminal }), "sidebar.focusFilter");
     assert.equal(matchEvent({ key: "N", ctrlKey: true, shiftKey: true }, { isMac: false, insideTerminal }), "app.chooseSoul");
   }
 });

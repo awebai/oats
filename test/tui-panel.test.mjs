@@ -225,9 +225,13 @@ const LEADER_KEY = defaultDetachKey(), LEADER = backKeyLabel(LEADER_KEY);
 /** The leader and the palette, which the sheet names first in every focus of the list. */
 const LEAD = `${LEADER} commands   Ctrl+K palette   `;
 const OPEN_HINT = `${LEAD}Enter open   `;
-/** The whole sheet while the terminal has the focus: the leader, the leader then Esc (the list's
- *  focus) and the leader twice (the leader typed into the terminal). */
-const BACK = `${LEADER} commands   ${LEADER} Esc the list   ${LEADER} ${LEADER} types ${LEADER}`;
+/** The whole sheet while the terminal has the focus, with `tabs` tabs open: the leader, the leader
+ *  then Esc (the list's focus) and the leader twice (the leader typed into the terminal); then, as
+ *  the terminal here confirms no kitty keyboard protocol, the Alt+Shift arrows (docs/tui.md,
+ *  "Chords"), the tabs' with two or more; on macOS the TUI has no chords. */
+const backWith = (tabs) => [`${LEADER} commands   ${LEADER} Esc the list   ${LEADER} ${LEADER} types ${LEADER}`,
+  ...(process.platform === "darwin" ? [] : ["Alt+Shift+Up/Down agent", ...(tabs > 1 ? ["Alt+Shift+Left/Right tab"] : [])])].join("   ");
+const BACK = backWith(1);
 /** The sheet while the leader waits for its key (docs/tui.md, "The leader"). */
 const LEADER_HINT = `${LEADER} then   k palette`;
 /** The whole sheet while the list has the focus beside the open terminal: Enter goes to it; the
@@ -1267,7 +1271,7 @@ async function openTab(term, run, k) {
   await until(term, () => {
     assert.equal(run.status(), null, `oats tui ended opening ${name}`);
     const session = viewerSessions().find((s) => !before.has(s));
-    return session !== undefined && attached().includes(session) && run.beside() && run.sheet() === BACK && selectedRunning(term, name) && JSON.stringify(stripNames(run)) === JSON.stringify(opened);
+    return session !== undefined && attached().includes(session) && run.beside() && run.sheet() === backWith(k + 1) && selectedRunning(term, name) && JSON.stringify(stripNames(run)) === JSON.stringify(opened);
   }, `the tab of ${name}: its viewer attached, its screen in the panel with the focus in it, its row selected, and the tab bar naming ${JSON.stringify(opened)}`,
   () => [`the tab bar names ${JSON.stringify(stripNames(run))}`, `viewer sessions: ${JSON.stringify(viewerSessions())}, attached: ${JSON.stringify(attached())}`], 30000);
 }

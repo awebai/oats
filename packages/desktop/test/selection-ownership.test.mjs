@@ -534,7 +534,7 @@ test("under an open modal the tab-switch actions do nothing (as F6 doesn't); clo
   assert.notEqual(s.c.activeTab, before, "without a modal, Ctrl+Tab switches");
 });
 
-test("shell wiring: every tab-switch action (Ctrl+Tab, Ctrl+PgUp/PgDn, go-to-tab) is modal-guarded", () => {
+test("shell wiring: every tab-switch action (Ctrl+Tab, Alt+Shift+←/→, go-to-tab) is modal-guarded", () => {
   for (const id of ["tabs.next", "tabs.prev", "tabs.nextPage", "tabs.prevPage"]) {
     assert.match(source, new RegExp(`id: "${id.replace(".", "\\.")}".*run: unlessModal\\(`), id);
   }

@@ -1,4 +1,4 @@
-/* oats desktop — sidebar roster tree keyboard policy (pure).
+/* oats desktop — sidebar roster tree keyboard policy (pure, but for the keymap it asks).
    The persistent instance roster is a tree: Up/Down walk the VISIBLE rows,
    Right expands (or moves down when already open/leaf), Left collapses (or
    jumps to the parent row), Home/End jump, PageUp/PageDown move by the rows
@@ -8,9 +8,12 @@
    expand). These are DOM-local focus keys (roving tabindex), NOT global
    chords — only "focus the roster" is a registered keybinding action; the
    sidebar's other plain keys are the `sidebar` context's (keybindings.mjs).
+   A named key the keymap takes (keymapTakes: a live binding, the shared
+   Alt+Shift+↑/↓ or a rebind) is the keymap's, not the tree's.
    Extracted so the policy is unit-testable without booting the shell. */
 
 import { plainKeys } from "../../client/keymap.mjs";
+import { keymapTakes } from "./keybindings.mjs";
 
 // A keydown's key id, the shared keymap's spelling (`ArrowUp` is `up`; a character is itself).
 const NAMED = Object.freeze({ __proto__: null, ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
@@ -19,11 +22,14 @@ const TREE = Object.freeze(["up", "down", "top", "bottom", "page-up", "page-down
 const TREE_KEYS = new Map(TREE.flatMap((does) => plainKeys(does).map((key) => [key, does])));
 
 /** What the tree does for a keydown (`up`, `collapse`, …), or null. A letter held with Ctrl, Alt
- * or ⌘ is not the tree's; the arrows, Home, End and the page keys are, as they always were. */
+ * or ⌘ is not the tree's; the arrows, Home, End and the page keys are, with any modifier, as they
+ * always were, unless the keymap binds that chord (Alt+Shift+↑/↓ and ⌘⌥↑/↓ open the previous /
+ * next instance's terminal, from a row as from anywhere; a rebind follows). */
 export function rosterKeyDoes(event) {
   const key = String(event.key ?? "");
   const named = NAMED[key];
   if (!named && (event.ctrlKey || event.altKey || event.metaKey)) return null;
+  if (named && keymapTakes(event)) return null;
   return TREE_KEYS.get(named ?? key) ?? null;
 }
 

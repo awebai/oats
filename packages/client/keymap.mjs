@@ -8,9 +8,9 @@
  * Key ids are the TUI's spelling (packages/tui/lib/term/keys.mjs keyId): one character as itself,
  * case kept (`n`, `N`, `|`, `?`, `/`, `-`); named keys `up` `down` `left` `right` `tab` `escape`
  * `space` `enter` `home` `end` `pageup` `pagedown`; modifiers as `ctrl+` / `alt+` / `shift+`
- * prefixes, in that order. A chord adds two: `shift+` with Ctrl and a letter (`ctrl+shift+k`, which
- * the TUI reads only under the kitty keyboard protocol), and `cmd+`, first, for macOS's Command
- * (`cmd+k`, the Desktop's ⌘K), which a terminal never passes to a program.
+ * prefixes, in that order. A chord adds two: `shift+` with Ctrl or Alt and a letter or an arrow
+ * (`ctrl+alt+shift+e`, `alt+shift+up`), and `cmd+`, first, for macOS's Command (`cmd+k`, the
+ * Desktop's ⌘K), which a terminal never passes to a program.
  *
  *   leaderKey(isMac)        -> the leader's key id on that platform        "ctrl+\\" / "alt+o"
  *   leaderDoes(key)         -> what the leader then does for a key id, or null
@@ -86,21 +86,34 @@ export const PLAIN_KEYS = Object.freeze([
   { does: "help", keys: ["?"] },
 ].map((entry) => Object.freeze({ ...entry, keys: Object.freeze([...entry.keys]) })));
 
-/** The chords: one key that does what the leader then a key does, the Desktop's direct chords whose
- * action the TUI has too, per platform (`mac`, `other`). The Desktop's DEFAULT_KEYMAP reads these
- * entries from here (docs/desktop-keyboard.md). The TUI takes the `other` ones, and the `mac` ones
- * without `cmd+`, while the terminal confirms the kitty keyboard protocol (docs/tui.md, "Chords"),
- * as extras: the leader stays the key that always works. The Desktop's Ctrl+1/2/3 (the stages) are
- * the Desktop's own and are not here. */
+/** The chords: one key that does what the leader then a key does, from every focus, the same in
+ * both clients, per platform (`mac`, `other`). The Desktop's DEFAULT_KEYMAP reads these entries from
+ * here (CHORDS_READ, docs/desktop-keyboard.md); the TUI binds the `other` ones, and the `mac` ones
+ * without `cmd+`, from every focus (docs/tui.md, "Chords"). The leader stays the key that always
+ * works: help, the views and the acts (stop, restart, start, retire) are reached by it alone.
+ *
+ * One family, so that no terminal's own keys take them (the matrix in docs/tui.md, "Chords"):
+ * Ctrl+Alt with a letter or a digit for an action, Alt+Shift with the leader's arrow to move. On
+ * macOS the Desktop holds ⌘ (⌘⌥ for the rows new in phase 3). A Ctrl+Alt chord reaches the TUI only
+ * under the kitty keyboard protocol (ESC then Ctrl+K is what Ctrl+Alt+K sends without it); an
+ * Alt+Shift arrow has a sequence of its own (`CSI 1;4A`) and reaches it with or without. `tab-N`
+ * shows the Nth tab of the focused group, `tab-9` its last. The Desktop's Ctrl+Tab, Ctrl+1/2/3 (the
+ * stages) and Ctrl+, are the Desktop's own and are not here. */
 export const CHORDS = Object.freeze([
-  { does: "palette", mac: "cmd+k", other: "ctrl+shift+k" },
-  { does: "spawn", mac: "cmd+p", other: "ctrl+shift+p" },
-  { does: "tab-next", mac: "ctrl+tab", other: "ctrl+tab" },
-  { does: "tab-previous", mac: "ctrl+shift+tab", other: "ctrl+shift+tab" },
-  { does: "close-terminal", mac: "cmd+w", other: "ctrl+shift+w" },
-  { does: "filter", mac: "cmd+f", other: "ctrl+shift+f" },
-  { does: "split-right", mac: "cmd+\\", other: "ctrl+shift+e" },
-  { does: "split-down", mac: "cmd+shift+\\", other: "ctrl+shift+o" },
+  { does: "palette", mac: "cmd+k", other: "ctrl+alt+k" },
+  { does: "spawn", mac: "cmd+p", other: "ctrl+alt+p" },
+  { does: "workspaces", mac: "cmd+alt+o", other: "ctrl+alt+o" },
+  { does: "previous", mac: "cmd+alt+up", other: "alt+shift+up" },
+  { does: "next", mac: "cmd+alt+down", other: "alt+shift+down" },
+  { does: "tab-previous", mac: "cmd+alt+left", other: "alt+shift+left" },
+  { does: "tab-next", mac: "cmd+alt+right", other: "alt+shift+right" },
+  ...Array.from({ length: 9 }, (_, i) => ({ does: `tab-${i + 1}`, mac: `cmd+alt+${i + 1}`, other: `ctrl+alt+${i + 1}` })),
+  { does: "zoom", mac: "cmd+alt+z", other: "ctrl+alt+z" },
+  { does: "close-terminal", mac: "cmd+w", other: "ctrl+alt+w" },
+  { does: "split-right", mac: "cmd+\\", other: "ctrl+alt+e" },
+  { does: "split-down", mac: "cmd+shift+\\", other: "ctrl+alt+shift+e" },
+  { does: "group-next", mac: "cmd+alt+a", other: "ctrl+alt+a" },
+  { does: "filter", mac: "cmd+f", other: "ctrl+alt+f" },
 ].map((entry) => Object.freeze({ ...entry })));
 
 const NONE = Object.freeze([]);

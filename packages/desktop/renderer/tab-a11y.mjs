@@ -69,7 +69,7 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
   closeEl.className = "close";
   closeEl.append(iconElement(document, "close", { size: 13 }));
   closeEl.setAttribute("aria-label", `Close ${title}`);
-  // The chord half is the keymap's tabs.close on this platform (⌘W / Ctrl+Shift+W), or none when unbound.
+  // The chord half is the keymap's tabs.close on this platform (⌘W / Ctrl+Alt+W), or none when unbound.
   const chord = getBinding("tabs.close", isMac);
   closeEl.title = `Close ${title} (${chord ? `Delete or ${formatChord(chord, isMac)}` : "Delete"})`;
   tabEl.append(triggerEl, closeEl);
@@ -92,7 +92,7 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
 
 export function tabKeyAction(event, index, count) {
   const key = event.key;
-  // Delete closes the focused tab. The close chord (⌘W / Ctrl+Shift+W) is the keymap's
+  // Delete closes the focused tab. The close chord (⌘W / Ctrl+Alt+W) is the keymap's
   // tabs.close, never hard-coded here: a rebind or unbind must hold on the strip too (spec F).
   if (key === "Delete" && !event.metaKey && !event.ctrlKey && !event.altKey) return { type: "close" };
   if (!count || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.defaultPrevented) return null;
