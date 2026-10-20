@@ -100,7 +100,7 @@ runs.
  Instances                          1 │   state    running
 > ● dev                               │   harness  claude, claude-opus-5-5 (so…
                                       │   work     worktree, agents/dev
-  ● reviewer                         !│   team     eng
+  ● reviewer              Needs input │   team     eng
     ○ helper                          │   started  11:00
 ──────────────────────────────────────│   home     …oy/agents/dev/instances/dev
  Souls                              2 │
@@ -182,8 +182,21 @@ while a terminal is open); under 80 columns it has the whole width.
   indent alone says which instance is under which: no mark is drawn for
   it. A row whose instances are folded away (`h`) says how many after its
   name: `+1`.
-- **Each row** is the mark of its state and the name, then `!` at the
-  right when it needs input. The harness and the state in words are in
+- **Each row** is the mark of its state and the name, then, when it needs
+  input, a tag at its right edge in the Desktop's words: `Needs input`. A
+  folded row with waiting instances among those it folds away says how
+  many: `3 below`, and `99+ below` past 99. A row that needs input itself
+  and folds waiting ones away says `Needs input`, as the Desktop's row
+  does: the detail's `below` line names the others. The tag is in reverse
+  video in the waiting colour, and on the selected row, which is in reverse
+  video already, it is the waiting colour not reversed, a gap in the
+  selection's bar; under `NO_COLOR` the reverse video alone carries it. On
+  a narrow row the tag gives way first: it says its words only where the
+  whole name, its `+1` and the row's word in its column all fit beside them,
+  and else shrinks to `!`, or the count alone (`3`, `99+`), still in
+  reverse video, in the cells every row keeps at its right edge. So the
+  tag never cuts a name, a word or a mark: those give way as on a row
+  that does not wait. The harness and the state in words are in
   the detail. A row has a word, dim, only where its mark cannot say it: the
   state of a home a spawn or a retire holds (`Retire didn't finish`), or
   the shared words for why an instance cannot be reached or opened:
@@ -276,8 +289,8 @@ in its workspace for the rest of the run, also while it is not reached.
 | `?` | `?` | state unknown: the kernel or the terminal probe could not tell, or the instance's machine was not reached |
 | `◆` | `#` | held by a spawn or a retire: under way (Retiring…), failed or not finished ([below](#held-rows)) |
 | `+n` | `+n` | after a name: n instances folded away below it |
-| `!` | `!` | needs input |
-| `!N` | `!N` | N instances folded away below it need input |
+| `Needs input` | `Needs input` | needs input: a tag in reverse video at the row's right edge, `!` where the whole name does not fit beside the words |
+| `N below` | `N below` | N instances folded away below it need input, `N` where the whole name does not fit beside the words |
 | `>` | `>` | the selected row (also drawn in reverse video), and the pane the movement keys act on |
 | `*` | `*` | in the switcher: the workspace that is open |
 

@@ -142,7 +142,7 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   const dialog = u.get('.spawn-dialog');
   assert.equal(dialog.dataset.layout, 'scoped'); assert.equal(dialog.querySelector('.spawn-chooser').hidden, true); assert.equal(dialog.querySelector('.spawn-preview').hidden, false);
   assert.equal(dialog.querySelector('#spawn-dialog-title').textContent, 'Spawn dev'); assert.equal(dialog.querySelector('.spawn-change-soul').hidden, false);
-  assert.equal(u.doc.activeElement, dialog.querySelector('.fpurpose'), 'the name field takes the focus');
+  assert.equal(u.doc.activeElement, dialog.querySelector('.spawn-run .spawn-choice-trigger'), 'the first field (Harness) takes the focus: Name is optional and last');
   u.get('.spawn-dialog').dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await tick();
   assert.equal(u.get('.spawn-dialog'), null, 'Escape closes it');
   assert.equal(u.doc.activeElement, u.get('.soul-tile > .soul-spawn'), 'focus returns to the Spawn button that opened it');

@@ -177,19 +177,21 @@ export const isSkillMd = (skill, file) => file.path === `${skill.path}/SKILL.md`
  * @param {string} o.focusKey
  * @param {{ focusItem: (item: HTMLElement) => void, toggle: (item: HTMLElement) => void }} o.keys  the tree (createContentsTree)
  * @param {(file: object, shown: string) => HTMLElement} o.fileItem  a file's tree item (level 2), `shown` its path in the skill
+ * @param {string} [o.source]  where the skill comes from ("From this soul"): the row's second line in place of the
+ *   description's sentence, which then follows it in the accessible description (the soul page's composed Skills)
  */
-export function skillTreeItem(doc, skill, { open, focusKey, keys, fileItem }) {
+export function skillTreeItem(doc, skill, { open, focusKey, keys, fileItem, source = null }) {
   const node = (tag, cls, text) => { const el = doc.createElement(tag); if (cls) el.className = cls; if (text !== undefined && text !== null) el.textContent = text; return el; };
   if (skill.files === null) return unlistedSkill();
   const item = node('li'); item.setAttribute('role', 'treeitem'); item.setAttribute('aria-level', '1'); item.setAttribute('aria-expanded', String(open));
   item.setAttribute('aria-label', skill.name); item.dataset.skill = skill.path; item.dataset.focusKey = focusKey; item.tabIndex = -1;
   const sentence = firstSentence(skill.description);
-  if (sentence) item.setAttribute('aria-description', [sentence, skill.filesTruncated ? SKILL_COPY.moreFiles : ''].filter(Boolean).join(' '));
-  else if (skill.filesTruncated) item.setAttribute('aria-description', SKILL_COPY.moreFiles);
+  const description = [source ? `${source}.` : '', sentence, skill.filesTruncated ? SKILL_COPY.moreFiles : ''].filter(Boolean).join(' ');
+  if (description) item.setAttribute('aria-description', description);
   const row = node('div', 'cap-node'); if (skill.description) row.title = skill.description;
   const twisty = node('span', 'cap-node-twisty', open ? '▾' : '▸'); twisty.setAttribute('aria-hidden', 'true');
   const copy = node('span', 'cap-node-copy'); const label = node('span', 'cap-node-name mono', skill.name); label.title = skill.name; copy.append(label);
-  if (sentence) copy.append(node('span', 'cap-node-desc', sentence));
+  if (source || sentence) copy.append(node('span', 'cap-node-desc', source || sentence));
   row.append(twisty, copy); item.append(row);
   const children = node('ul'); children.setAttribute('role', 'group'); children.hidden = !open;
   for (const f of [...skill.files].sort((a, b) => isSkillMd(skill, b) - isSkillMd(skill, a))) children.append(fileItem(f, skillRelativePath(skill, f)));
@@ -199,11 +201,12 @@ export function skillTreeItem(doc, skill, { open, focusKey, keys, fileItem }) {
   return item;
   function unlistedSkill() {
     const item = node('li'); item.setAttribute('role', 'treeitem'); item.setAttribute('aria-level', '1'); item.setAttribute('aria-disabled', 'true');
-    item.setAttribute('aria-label', skill.name); item.setAttribute('aria-description', SKILL_COPY.unlisted);
+    const said = source ? `${source} · ${SKILL_COPY.unlisted}` : SKILL_COPY.unlisted;
+    item.setAttribute('aria-label', skill.name); item.setAttribute('aria-description', said);
     item.dataset.focusKey = focusKey; item.tabIndex = -1;
     const row = node('div', 'cap-node'); if (skill.description) row.title = skill.description;
     const twisty = node('span', 'cap-node-twisty'); twisty.setAttribute('aria-hidden', 'true');
-    const copy = node('span', 'cap-node-copy'); copy.append(node('span', 'cap-node-name mono', skill.name), node('span', 'cap-node-desc', SKILL_COPY.unlisted));
+    const copy = node('span', 'cap-node-copy'); copy.append(node('span', 'cap-node-name mono', skill.name), node('span', 'cap-node-desc', said));
     row.append(twisty, copy); item.append(row);
     row.addEventListener('click', () => keys.focusItem(item));
     return item;

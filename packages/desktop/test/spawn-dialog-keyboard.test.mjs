@@ -13,6 +13,8 @@ const key = (u, target, k, fields = {}) => {
 };
 const asMac = u => Object.defineProperty(u.dom.window.navigator, 'platform', { value: 'MacIntel', configurable: true });
 const card = (u, name) => [...u.doc.querySelectorAll('.soul-card')].find(c => c.dataset.agent === name);
+/** The form's first field, where the dialog lands (Harness here: no Deployment field in these views). */
+const harness = u => u.q('.spawn-run label:first-child .spawn-choice-trigger');
 /** Tab stops in DOM order (what Tab walks): enabled, tabIndex >= 0, not hidden, not in a closed <details>. */
 function tabStops(u) {
   const dialog = u.dialog(), view = u.dom.window;
@@ -25,7 +27,7 @@ function tabStops(u) {
     return true;
   });
 }
-const label = el => el.classList.contains('fpurpose') ? 'Name' : el.classList.contains('fprefix') ? 'Prefix'
+const label = el => el.classList.contains('fpurpose') ? 'Name'
   : el.matches('.spawn-run label:first-child .spawn-choice-trigger') ? 'Harness' : el.classList.contains('fmodel') ? 'Model'
   : el.matches('.spawn-model-controls .spawn-choice-trigger') ? 'Model choices' : el.closest('.frelation') ? `Relationship:${el.value}`
   : el.classList.contains('frelto') ? 'Relationship target' : el.closest('.spawn-team-list') ? `Team:${el.value || 'default'}`
@@ -36,14 +38,14 @@ const label = el => el.classList.contains('fpurpose') ? 'Name' : el.classList.co
 
 // ── Part 1: Quick Open → the scoped spawn dialog ─────────────────────────
 
-test('Quick Open picks a soul: the spawn dialog opens scoped to it (header, preview, Change soul) with focus on Name', async t => {
+test('Quick Open picks a soul: the spawn dialog opens scoped to it (header, preview, Change soul) with focus on its first field', async t => {
   const u = await mountSpawn(t);
   spawn.preselectSpawn({ name: 'release-manager', agentsRoot: ROOT, onDismiss: () => true }); await settle();
   const dialog = u.dialog(); assert.ok(dialog, 'the dialog is open');
   assert.equal(dialog.dataset.layout, 'scoped');
   assert.equal(u.text('h2#spawn-dialog-title'), 'Spawn release-manager');
   assert.equal(u.q('.spawn-preview').hidden, false); assert.equal(u.q('.spawn-change-soul').hidden, false);
-  assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'focus lands in Name');
+  assert.equal(u.doc.activeElement, harness(u), 'focus lands on the first field, Harness: Name is optional and last');
   assert.equal(u.doc.querySelector('.workspace-soul-page').hidden, true, 'no soul page on the way');
 });
 
@@ -61,7 +63,7 @@ test('dismissing a Quick Open dialog returns to where the operator was; if that 
   // A successful spawn is not a dismissal: the return never runs.
 });
 
-test('the return target survives Change soul; Enter on a soul in the list picks it and moves to Name', async t => {
+test('the return target survives Change soul; Enter on a soul in the list picks it and moves to the first field', async t => {
   const u = await mountSpawn(t);
   const returns = [];
   spawn.preselectSpawn({ name: 'release-manager', agentsRoot: ROOT, onDismiss: () => { returns.push('back'); return true; } }); await settle();
@@ -76,13 +78,13 @@ test('the return target survives Change soul; Enter on a soul in the list picks 
   key(u, first, 'Enter'); await settle();
   assert.equal(u.text('h2'), 'Spawn instance', 'the picker layout stays');
   assert.equal(u.q('.spawn-choice[aria-selected=true]').dataset.agent, first.dataset.agent);
-  assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'Enter goes on to Name');
+  assert.equal(u.doc.activeElement, harness(u), 'Enter goes on to the first field');
   assert.equal(u.q('.fpurpose').value, 'api-v2', 'nothing typed is lost');
   u.q('.close-act').click(); await settle();
   assert.deepEqual(returns, ['back']);
 });
 
-test('the soul list filters as you type; Enter in its search picks the best match and moves to Name', async t => {
+test('the soul list filters as you type; Enter in its search picks the best match and moves to the first field', async t => {
   const u = await mountSpawn(t);
   await u.open(); u.q('.spawn-change-soul').click();
   const option = u.doc.activeElement;
@@ -93,7 +95,7 @@ test('the soul list filters as you type; Enter in its search picks the best matc
   assert.equal(u.text('.spawn-search-count'), '1 of 8');
   key(u, search, 'Enter'); await settle();
   assert.equal(u.q('.spawn-choice[aria-selected=true]').dataset.agent, 'support-triager');
-  assert.equal(u.doc.activeElement, u.q('.fpurpose'));
+  assert.equal(u.doc.activeElement, harness(u));
 });
 
 test('an attached-only soul goes to its page (which explains why), never the dialog', async t => {
@@ -138,10 +140,10 @@ test('plain Enter in Name does not spawn; Enter or Space on the focused Spawn bu
   assert.equal(u.spawns()[0]?.action, 'prepare');
 });
 
-test('Tab walks the form in visual order: Name, Prefix, Harness, Model, Relationship (one stop), its target, Instruction, Developer settings, Cancel, Spawn; the header after', async t => {
-  const u = await mountSpawn(t, { cli: { ...(await import('./helpers/spawn-preview-fixture.mjs')).cli, features: [...(await import('./helpers/spawn-preview-fixture.mjs')).cli.features, 'spawn-name'] } });
+test('Tab walks the form in visual order: Harness, Model, Relationship (one stop), its target, Instruction, Name, Developer settings, Cancel, Spawn; the header after', async t => {
+  const u = await mountSpawn(t, { spawnName: true });
   await u.open(); await u.type('.fpurpose', 'api-v2');
-  assert.deepEqual(tabStops(u).map(label), ['Change soul', 'Close', 'Name', 'Prefix', 'Harness', 'Model', 'Model choices', 'Relationship:unrelated', 'Opening instruction', 'Developer settings', 'Cancel', 'Spawn']);
+  assert.deepEqual(tabStops(u).map(label), ['Change soul', 'Close', 'Harness', 'Model', 'Model choices', 'Relationship:unrelated', 'Opening instruction', 'Name', 'Developer settings', 'Cancel', 'Spawn']);
   // A relationship with a target: the target joins, right after the (one) Relationship stop.
   const independent = u.q('.frelation input:checked'); independent.focus();
   key(u, independent, 'ArrowRight'); await settle();
@@ -178,23 +180,25 @@ test('the Harness picker opens with Enter, Space or Alt+Down; Escape closes it b
 
 // ── Spec E: focus on open, and the section keys ──────────────────────────
 
-test('Spec E: Reopen spawn (a restored draft) lands on Name with the caret at the end, nothing selected', async t => {
-  const u = await mountSpawn(t);
-  spawn.preselectSpawn({ name: 'release-manager', agentsRoot: ROOT, draft: { layout: 'scoped', restore: { choices: { purpose: 'api-v2' } } } }); await settle();
+test('Spec E: Reopen spawn (a restored draft) lands on the first field; Mod+1 reaches the restored name, caret at the end, nothing selected', async t => {
+  const u = await mountSpawn(t, { spawnName: true }); asMac(u);
+  spawn.preselectSpawn({ name: 'release-manager', agentsRoot: ROOT, draft: { layout: 'scoped', restore: { choices: { name: 'api-v2-manager' } } } }); await settle();
   const purpose = u.q('.fpurpose');
-  assert.equal(u.dialog().dataset.layout, 'scoped'); assert.equal(purpose.value, 'api-v2');
+  assert.equal(u.dialog().dataset.layout, 'scoped'); assert.equal(purpose.value, 'api-v2-manager', 'the name as sent, which the role rule leaves as it is');
+  assert.equal(u.doc.activeElement, harness(u));
+  key(u, harness(u), '1', { metaKey: true });
   assert.equal(u.doc.activeElement, purpose);
-  assert.deepEqual([purpose.selectionStart, purpose.selectionEnd], [6, 6], 'the caret after the restored name, no select-all');
+  assert.deepEqual([purpose.selectionStart, purpose.selectionEnd], [14, 14], 'the caret after the restored name, no select-all');
 });
 
-test('Spec E: Change soul keeps today\'s focus in the list; a click pick goes on to Name', async t => {
+test('Spec E: Change soul keeps today\'s focus in the list; a click pick goes on to the first field', async t => {
   const u = await mountSpawn(t);
   await u.open(); await u.type('.fpurpose', 'api-v2');
   u.q('.spawn-change-soul').click();
   assert.equal(u.doc.activeElement, u.q('.spawn-choice[aria-selected=true]'), 'the picker layout: the soul list, as before');
   [...u.doc.querySelectorAll('.spawn-choice')].find(b => b.dataset.agent === 'support-triager').click(); await settle();
   assert.equal(u.dialog().dataset.layout, 'picker');
-  assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'after the pick: Name');
+  assert.equal(u.doc.activeElement, harness(u), 'after the pick: the first field');
 });
 
 const SECTIONS = [
@@ -256,7 +260,8 @@ test('Spec E: each section shows its chord as a quiet hint (aria-hidden) and the
   assert.equal(hints.length, 7);
   for (const hint of hints) assert.equal(hint.getAttribute('aria-hidden'), 'true');
   const shown = hints.filter(h => !h.closest('[hidden]')).map(h => h.textContent);
-  assert.deepEqual(shown, ['⌘1', '⌘2', '⌘3', '⌘4', '⌘6', '⌘7'], 'Teams is not offered here: its hint is in its hidden row');
+  // In form order: Name is the last field before Developer settings and keeps its chord, Mod+1.
+  assert.deepEqual(shown, ['⌘2', '⌘3', '⌘4', '⌘6', '⌘1', '⌘7'], 'Teams is not offered here: its hint is in its hidden row');
   assert.equal(u.q('label[for=spawn-purpose] kbd').textContent, '⌘1', 'beside the Name label');
   assert.equal(u.q('.fpurpose').getAttribute('aria-keyshortcuts'), 'Meta+1');
   assert.equal(u.q('.spawn-run label:first-child .spawn-choice-trigger').getAttribute('aria-keyshortcuts'), 'Meta+2');
@@ -264,7 +269,7 @@ test('Spec E: each section shows its chord as a quiet hint (aria-hidden) and the
   assert.ok([...u.dialog().querySelectorAll('.frelation input')].every(i => i.getAttribute('aria-keyshortcuts') === 'Meta+4'));
   assert.equal(u.q('.ftask').getAttribute('aria-keyshortcuts'), 'Meta+6');
   assert.equal(u.q('.spawn-advanced > summary').getAttribute('aria-keyshortcuts'), 'Meta+7');
-  assert.equal(u.q('label[for=spawn-purpose]').textContent.replace(u.q('label[for=spawn-purpose] kbd').textContent, ''), 'Name');
+  assert.equal(u.q('label[for=spawn-purpose]').textContent.replace(u.q('label[for=spawn-purpose] kbd').textContent, ''), 'Name · optional');
   t.after(() => resetBinding('spawn.jumpName'));
   setBinding('spawn.jumpName', 'Mod+Shift+N');
   assert.equal(u.q('label[for=spawn-purpose] kbd').textContent, '⇧⌘N');
@@ -312,7 +317,7 @@ test('Spec E: a section key from an open Harness picker closes the picker and mo
 // shows it right after): focus on Name cannot land yet. It lands once the stage is shown, unless the
 // operator focused something else in between. (Seen live: the dialog opened with focus on <body>.)
 for (const [why, between, lands] of [
-  ['the stage shows a frame later: Name takes focus then', show => show(), true],
+  ['the stage shows a frame later: the first field takes focus then', show => show(), true],
   ['the operator focused something else first: it stays theirs', (show, u) => { const b = u.doc.createElement('button'); u.doc.body.append(b); b.focus(); show(); }, false],
   ['the operator focused a control in the dialog first: it stays theirs', (show, u) => { show(); u.q('.ftask').focus(); }, false],
 ]) test(`opened before its stage is on screen: ${why}`, async t => {
@@ -324,10 +329,10 @@ for (const [why, between, lands] of [
   // The host collects setInterval (the view's polls), which jsdom's own frames run on: drive frames here.
   u.dom.window.requestAnimationFrame = f => setTimeout(f, 16);
   spawn.preselectSpawn({ name: 'release-manager', agentsRoot: ROOT, onDismiss: () => true });
-  assert.ok(u.dialog(), 'the dialog is open'); assert.notEqual(u.doc.activeElement, u.q('.fpurpose'), 'not yet');
+  assert.ok(u.dialog(), 'the dialog is open'); assert.notEqual(u.doc.activeElement, harness(u), 'not yet');
   between(() => { offscreen = false; }, u); // the stage is shown
   const other = u.doc.activeElement;
   await new Promise(r => setTimeout(r, 250)); // more than the 10 frames the retry may take
-  if (lands) assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'focus lands in Name');
+  if (lands) assert.equal(u.doc.activeElement, harness(u), 'focus lands on the first field');
   else assert.equal(u.doc.activeElement, other, 'the operator\'s focus is not taken');
 });

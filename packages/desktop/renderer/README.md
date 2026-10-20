@@ -538,25 +538,30 @@ Open (⌘P / Ctrl+Alt+P) opens the scoped layout too (`preselectSpawn`), and
 dismissing that dialog returns to where the operator was.
 
 Keyboard (spec F; `../docs/desktop-keyboard.md`): Mod+Enter (`spawn.submit`)
-spawns from any field, plain Enter in Name never does; DOM order is Tab order
-(Name, then its Prefix switch, drawn on the label's line by CSS grid);
+spawns from any field, plain Enter in Name never does; DOM order is Tab order;
 Relationship and Teams are one tab stop each (`roveSegment`: arrows, Home/End);
 the soul chooser is a `listbox` of `option` buttons where typing filters,
 Enter in the search picks the best match and Enter, Space or a click on a soul
-picks it, every pick moving focus to Name. The dialog opens on Name
-(`focusName`: caret at the end, no scroll). Mod+1–Mod+7 jump to Name, Harness,
+picks it, every pick moving focus to the first field. The dialog opens on its
+first field (`focusFirst`: Deployment when shown, else Harness; no scroll):
+Name is optional and last. Mod+1–Mod+7 jump to Name (`focusName`: caret at the
+end), Harness,
 Model, Relationship, Teams, the instruction and Developer settings
 (`spawn-dialog-keys.mjs` registers them with `spawn.submit` in the
 `spawn-dialog-local` context, once, for the editor; the host resolves and stops
 them; `jump()` and `setShortcuts()` are the dialog's).
 
-Main form, in order: **Name** (the `<soul>-` prefix plus a purpose, with the
-kernel's final name shown below; when the CLI advertises `spawn-name`, a
-**Prefix with the soul name** switch sends `--name` instead of `--purpose`),
-**Runtime** and **Model** (always visible, showing the kernel's real defaults
+Main form, in order: **Runtime** and **Model** (always visible, showing the kernel's real defaults
 with a *default* pill), **Relationship** (Independent / Child of / Sibling of /
-Parent of, a segmented control; choosing one reveals the instance picker) and the **Opening
-instruction**. **Developer settings** is collapsed: work area (base | branch,
+Parent of, a segmented control; choosing one reveals the instance picker), the **Opening
+instruction** and **Name · optional**. Name: with `spawn-name` on a local spawn
+(`roleNamed()`), a typed name goes as `--name`, lowercased (the kernel uses a
+name exactly as given) and with the soul's role as its suffix (`finalName` →
+`nameWithRole`, `packages/client/instance-name.mjs`), and
+an empty one reads "Left empty, the kernel numbers it."; otherwise (an older
+kernel, a remote target, whose `/api/spawn` takes a purpose) it is a purpose
+with the `<soul>-` prefix shown. The 64-character check runs on the final name;
+the kernel's name refusals show under the field. **Developer settings** is collapsed: work area (base | branch,
 the worktree path relative to the deployment, *Use a worktree instead* for
 checkout souls), permissions, **messaging identity** (Default / Local /
 Global + resident, sent as `--provider <cap> identity.mode=…` to the messaging
@@ -975,7 +980,7 @@ contract — ranges that don't tile `text` from 0 — a note, nothing rendered),
 `<path>/AGENTS.md`) then each `sources[]` entry with its marker lines dropped
 (`blockText`; a part cut by the cap may lack its closing one); a part wholly
 past the cap (`start == end == text.length`) shows "Not included: past the size
-limit." The group's label is "Instance"; its top item is "AGENTS.md" with
+limit." It is the top item of the "Composed for an instance" section: "AGENTS.md" with
 "after spawn, with injects" as its second line (`.cap-node-desc`, the description
 style, not the path's `.cap-node-file`), accessible
 name "AGENTS.md, after spawn, with injects", and its parts count as
@@ -992,8 +997,16 @@ the ids the whole AGENTS.md would give; a part's own `#fragment` links follow it
 capability part the page lists, and goes through the page's own
 `openCapability` path. Keys: `composed`, `part:<i>`.
 
-**The soul's own skills (#1144, kernel feature `soul-skills`).** The Skills
-group sits between "This soul" and "Instance" in the same tree. The request
+**The two sections.** The tree's top level is two `role=group` sections, each
+labelled by its heading (`.soul-section-title`), a rule above the second:
+"Defined in this soul" (the own AGENTS.md, key `own`, then a Skills group) and
+"Composed for an instance" (the composed AGENTS.md, or its note, then a Skills
+group). One tree still: one tab stop, the arrows cross the boundary. Without
+`soul-composed-instructions` the composed section has no AGENTS.md row and no
+note, as before.
+
+**The soul's own skills (#1144, kernel feature `soul-skills`).** A Skills
+group sits in each section of the same tree. The request
 follows the composed AGENTS.md exactly: `skillsWanted` in `soul-inspector.mjs`
 adds `skills: true` (soul page only) when `skillsSupported` (local) or
 `routedSkillsSupported` (routed) holds; the server validates it like
@@ -1022,6 +1035,18 @@ the composed "From this soul" part; a change of the listed files repaints what
 the reader shows, so no link outlives its target. Keys: `file:<path>` (soul
 relative); a skill item's `skill:<path>` names it in the expanded set and its
 focus key, never the selection.
+
+The composed section's Skills list the same skills again, each with "From this
+soul" as its second line (`skillTreeItem`'s `source`, which puts the
+description's sentence in its `aria-description`), then the note "Skills that
+capabilities add are listed by a newer OATS." (only when the skills were
+listed, an empty list included; an absent, unlistable or unreadable answer is
+that case's note alone). These rows are copies with their own keys
+(`composed-skill:<path>`, `composed-file:<path>`), so selecting one never
+selects the row above; a link from a composed copy or the composed document
+opens the composed copy of its target. `skillSource('module:<id>')` gives
+"From <id>" and the capability, for the kernel's later list of capability
+skills; Open capability then goes in the reader head.
 
 **Core capabilities and Capabilities read as one system.** Wherever the two
 sections appear (the soul page, the inspector's *Modules as spawned*, the

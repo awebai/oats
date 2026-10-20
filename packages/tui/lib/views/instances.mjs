@@ -2,11 +2,11 @@
 // Every name, word and reason in it is text the TUI did not write and goes through shown(); the
 // marks and the few words around them are the TUI's own. Nothing is told by colour alone: each
 // state has a mark of its own shape, the selected row carries `>` as well as reverse video, and a
-// waiting row carries `!`. A row is quiet: its mark and its name, and a word only where the mark
-// can't say it. Children stand under their parent by indentation alone; a folded row says how
-// many it folds away, `+n`. In a view of two or more deployments the list also holds a heading
-// per deployment and the sentences the model sets under one: a heading says in words what it is
-// of.
+// waiting row carries a tag in words, `Needs input`, in reverse video. A row is quiet: its mark
+// and its name, and a word only where the mark can't say it. Children stand under their parent by
+// indentation alone; a folded row says how many it folds away, `+n`, and how many of those wait,
+// `N below`. In a view of two or more deployments the list also holds a heading per deployment
+// and the sentences the model sets under one: a heading says in words what it is of.
 import { keyLabel } from "../actions.mjs";
 import { lit, shown, shownEnd, textOf } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
@@ -23,8 +23,10 @@ export const marksOf = (ascii) => (ascii ? MARKS.ascii : MARKS.utf8);
 
 /** Two cells of indent per level, and no deeper than this many levels: a deeper row sits at the last. */
 const INDENT = 2, LEVELS = 6;
-/** The cells kept at the right edge for the waiting mark: `!`, `!N`, `!NN`, `!99+`. */
-const WAITING = 4;
+/** The cells every row keeps at its right edge, so the word column stands in one place whether a
+ *  row waits or not: they hold a needs-input tag in its short form, ` ! ` to ` 99+ `, whose
+ *  padding is its gap. A tag in words takes more, and one cell of gap before it. */
+const EDGE = 5;
 /** A row's cells before its name: the selection mark, a gap, the state mark, a gap. */
 const LEAD = 4;
 /** The column of the state mark, before a row's indent. */
@@ -51,8 +53,20 @@ const DIM = style({ dim: true });
 const SELECTED = style({ reverse: true });
 /** The look of each state mark: the Souls view draws an instance's mark in its detail as the list does. */
 export const LOOK = Object.freeze({ running: style({ fg: "green" }), stopped: DIM, shell: DIM, unknown: style({ fg: "yellow" }), held: style({ fg: "magenta" }) });
-const WAITS = style({ fg: "yellow", bold: true });
-const WAITS_SELECTED = style({ reverse: true, bold: true });
+/** The needs-input tag: reverse video in the waiting colour, so the reverse video alone carries it
+ *  under NO_COLOR. On the selected row, which is in reverse already, it is the other way round:
+ *  not reversed, a gap in the selection's bar. */
+const WAITS = style({ fg: "yellow", bold: true, reverse: true });
+const WAITS_SELECTED = style({ fg: "yellow", bold: true });
+
+/** The needs-input tag's words, the Desktop's (packages/desktop/renderer/shell.mjs, needsInputMark;
+ *  a test pins them equal): `Needs input` on a waiting row, `N below` on a row that folds away N
+ *  waiting rows, `99+ below` past 99. A row that is both says `Needs input`, as the Desktop's does:
+ *  its own claim wins, and the detail's `below` line names the rest. */
+export const NEEDS_INPUT = "Needs input";
+/** A count of waiting rows as the tag says it, or the help's letter for one (`N`) as it is. */
+const count = (n) => (typeof n === "number" && n > 99 ? "99+" : String(n));
+export const belowText = (n) => `${count(n)} below`;
 
 export const EMPTY_TEXT = Object.freeze({
   reading: "Reading the deployment.",
@@ -70,27 +84,41 @@ export function measured(value) {
   return { text, width: textWidth(textOf(text)) };
 }
 
-const waitingText = (row) => (row.below > 99 ? "!99+" : row.below > 0 ? `!${row.below}` : row.waiting ? "!" : null);
+/** A row's needs-input tag, in words and in its short form (`!`, or the count alone), or null when
+ *  the row neither waits nor folds a waiting row away. Drawn with a cell of padding either side. */
+function tagOf(row, marks) {
+  if (row.waiting) return { full: NEEDS_INPUT, short: marks.waiting };
+  return row.below > 0 ? { full: belowText(row.below), short: count(row.below) } : null;
+}
 
 /** One instance's row in a pane `cols` wide: the state mark, the name cut to what is left, on a
  *  folded row `+n` after the name, the row's word (when it has one) in the word column, and the
- *  waiting mark at the edge. A row with no word gives its name the word column's cells too. The
+ *  needs-input tag at the edge. A row with no word gives its name the word column's cells too. The
  *  name wins over the word: it keeps NAME_LEAST cells (all of it when it is shorter), and when the
  *  word column would leave it fewer, the word is cut to what the name leaves, after it, or given
  *  up under WORD_LEAST cells; the mark and the detail still say it. The name is cut before `+n`
- *  is: the count stays whole beside what is left of the name. Every span has its width, so no
- *  text can pass its column whatever the terminal thinks a character takes. */
+ *  is: the count stays whole beside what is left of the name. The tag is the first to give way:
+ *  it is in words only where the whole name, its count and the word column all fit beside it
+ *  (the word column then stands left of the tag), and else in its short form, inside the EDGE
+ *  cells every row keeps, so it never takes a cell from the name, the word or the mark. Every
+ *  span has its width, so no text can pass its column whatever the terminal thinks a character
+ *  takes. */
 function instanceRow(row, cols, wordWidth, marks) {
   const look = (own) => (row.selected ? SELECTED : own);
   const at = Math.min(row.depth, LEVELS - 1) * INDENT;
   const fold = row.folded > 0 ? `+${row.folded}` : null;
-  const nameCol = LEAD + at, room = cols - WAITING - 1 - nameCol;
+  const nameCol = LEAD + at;
   const name = measured(row.name), claim = Math.min(name.width + (fold ? fold.length + 1 : 0), NAME_LEAST);
+  // The tag, and where the name and the word end: before the tag in words and a gap, or the EDGE.
+  const hasWord = wordWidth > 0 && row.word !== null && row.word !== undefined;
+  const whole = name.width + (fold ? fold.length + 1 : 0) + (hasWord ? 2 + wordWidth : 0);
+  const tag = tagOf(row, marks), wide = tag !== null && cols - tag.full.length - 3 - nameCol >= whole;
+  const waits = tag && (wide ? tag.full : tag.short), end = wide ? cols - tag.full.length - 3 : cols - EDGE, room = end - nameCol;
   // The word's cells: its column's, or what the name's claim leaves of the row, or none.
   const left = room - claim - 2;
-  const wordCells = wordWidth > 0 && row.word !== null && row.word !== undefined ? (left >= wordWidth ? wordWidth : left >= WORD_LEAST ? left : 0) : 0;
-  const wordCol = left >= wordWidth ? cols - WAITING - 1 - wordWidth : nameCol + claim + 2;
-  const nameEnd = wordCells ? wordCol - 2 : cols - WAITING - 1;
+  const wordCells = hasWord ? (left >= wordWidth ? wordWidth : left >= WORD_LEAST ? left : 0) : 0;
+  const wordCol = left >= wordWidth ? end - wordWidth : nameCol + claim + 2;
+  const nameEnd = wordCells ? wordCol - 2 : end;
   const spans = [];
   if (row.selected) spans.push({ col: 0, width: cols, style: SELECTED }, { col: 0, text: lit(marks.selected), style: SELECTED, width: 1 });
   spans.push({ col: MARK + at, text: lit(marks[row.mark] ?? marks.unknown), style: look(LOOK[row.mark] ?? LOOK.unknown), width: 1 });
@@ -102,8 +130,11 @@ function instanceRow(row, cols, wordWidth, marks) {
     if (after) spans.push({ col: nameCol + nameWidth + 1, text: lit(fold), style: look(DIM), width: fold.length });
   }
   if (wordCells) spans.push({ col: wordCol, text: shown(row.word), style: look(DIM), width: wordCells });
-  const waits = waitingText(row);
-  if (waits) spans.push({ col: cols - waits.length, text: lit(waits), style: row.selected ? WAITS_SELECTED : WAITS, width: waits.length });
+  // The tag: its padding a blank span in its style, the words over it.
+  const tagCol = waits ? cols - waits.length - 2 : 0, tagLook = row.selected ? WAITS_SELECTED : WAITS;
+  if (waits && tagCol > MARK + at) {
+    spans.push({ col: tagCol, width: waits.length + 2, style: tagLook }, { col: tagCol + 1, text: lit(waits), style: tagLook, width: waits.length });
+  }
   return spans;
 }
 

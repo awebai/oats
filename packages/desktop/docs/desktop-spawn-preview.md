@@ -32,7 +32,12 @@ A selector is `{soul,agentsRoot}`, matched to one soul of the deployment's spawn
 catalog (`oats souls --json`); a catalog that could not be read, or a name it
 reports twice, refuses rather than falling back to the roster.
 Choices include purpose **or** name (exclusive; the kernel owns naming rules and
-refuses with `E_INSTANCE_NAME_INVALID`/`E_INSTANCE_NAME_TAKEN`), work
+refuses with `E_INSTANCE_NAME_INVALID`/`E_INSTANCE_NAME_TAKEN`). The spawn
+dialog sends a typed name as `name`, with the soul's role as its suffix
+(`nameWithRole`, `packages/client/instance-name.mjs`), when the CLI advertises
+`spawn-name` and the spawn is local; otherwise (an older kernel, a server's
+`/api/spawn`, which takes a purpose) as `purpose`. An empty name sends neither:
+the kernel numbers the instance. Also work
 (`worktree` for a checkout soul), worktree-only branch/base, advertised
 harness/backend, launchConfig, yolo, model, relation and identity.
 `identity` is `{provider, mode:"local"}` or `{provider, mode:"global", resident}`
