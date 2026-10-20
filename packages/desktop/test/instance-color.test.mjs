@@ -14,6 +14,7 @@ import { GRAPHIC_PAIRS, SOUL_TONES } from '../renderer/contrast-inventory.mjs';
 import { createInstanceColorDialog, instanceColorCSS, checkNote, saveOutcome, COLOR_CHOICES } from '../renderer/instance-color-dialog.mjs';
 import { SOUL_COLORS } from '../../client/soul-colors.mjs';
 import { paletteRows, createPalette } from '../renderer/palette.mjs';
+import { projectActivePanel, activeSignature } from '../renderer/active-observation.mjs';
 
 const renderer = new URL('../renderer/', import.meta.url);
 const shellCss = readFileSync(new URL('shell.css', renderer), 'utf8');
@@ -70,6 +71,15 @@ test('the palette: each instance row carries its colour by the dot rule, and its
   await picker.open();
   const dots = [...dom.window.document.querySelectorAll('.ctx-dot')].map(d => [d.className, d.dataset.instanceColor ?? null]);
   assert.deepEqual(dots, [['ctx-dot on', 'sage'], ['ctx-dot off', 'clay'], ['ctx-dot unknown', null], ['ctx-dot on', null]]);
+});
+
+test('the overview: the panel projection keeps the colour (a palette name only), and a colour change changes its signature', () => {
+  const panel = color => ({ workspace: { id: 'team' }, instances: [{ instance: 'dev-1', home: '/h/dev-1', agentsRoot: '/h', running: true, ...(color === undefined ? {} : { color }) }] });
+  const projected = projectActivePanel(panel('sage'));
+  assert.equal(dotColor(projected.instances[0], 'running'), 'sage');
+  assert.notEqual(activeSignature(projectActivePanel(panel('sage'))), activeSignature(projectActivePanel(panel('clay'))), 'a new colour redraws the canvas');
+  assert.equal(Object.hasOwn(projectActivePanel(panel('red')).instances[0], 'color'), false, 'anything else is no colour');
+  assert.equal(Object.hasOwn(projectActivePanel(panel(undefined)).instances[0], 'color'), false);
 });
 
 // ── the backend boundary ───────────────────────────────────────────────────────────────────────────────
@@ -241,7 +251,7 @@ test('dialog: arrows move focus and apply nothing; a press applies at once and t
   assert.ok(u.q('[role=dialog]'), 'it stays open');
 });
 
-test('dialog: one request at a time; presses while one runs are the latest intent, and only the last answer paints', async t => {
+test('dialog: one request at a time; presses while one runs are the latest intent, and only the last answer speaks', async t => {
   const pending = [];
   const u = mountDialog(t, { answer: body => (body.check ? { status: 'ok', instance: 'dev-1', check: true }
     : new Promise(r => pending.push(() => r({ status: 'ok', instance: 'dev-1', color: body.color, changed: true })))) });
@@ -250,11 +260,23 @@ test('dialog: one request at a time; presses while one runs are the latest inten
   await settle();
   assert.deepEqual(u.sent.slice(1), [{ instance: 'dev-1', home: row.home, color: 'sand' }], 'one in flight');
   pending.shift()(); await settle();
-  assert.deepEqual(u.pressed(), ['none'], 'sand\'s answer is not the last: it does not paint');
+  assert.deepEqual(u.pressed(), ['sand'], 'sand is saved: the pressed swatch, though a newer press follows');
   assert.deepEqual(u.sent.slice(1).map(b => b.color), ['sand', 'clay'], 'then the latest intent alone');
-  assert.equal(u.q('[role=status]').textContent, 'Saving…');
+  assert.equal(u.q('[role=status]').textContent, 'Saving…', 'sand\'s words are not said: clay runs');
   pending.shift()(); await settle();
   assert.deepEqual(u.pressed(), ['clay']); assert.equal(u.q('[role=status]').textContent, 'Saved.');
+});
+
+test('dialog: a superseded answer still sets the saved colour; a refusal of the latest leaves that colour pressed', async t => {
+  const pending = [];
+  const u = mountDialog(t, { answer: body => (body.check ? { status: 'ok', instance: 'dev-1', check: true } : new Promise(r => pending.push(r))) });
+  u.dialog.open({ ...row, color: null }); await settle();
+  u.q('[data-color=sand]').click(); u.q('[data-color=clay]').click(); await settle();
+  pending.shift()({ status: 'ok', instance: 'dev-1', color: 'sand', changed: true }); await settle();
+  assert.deepEqual(u.sent.slice(1).map(b => b.color), ['sand', 'clay']);
+  pending.shift()({ status: 'refused', reason: { code: 'E_LIFECYCLE_BUSY', message: 'A stop is running.' } }); await settle();
+  assert.deepEqual(u.pressed(), ['sand'], 'Sand was saved: it is the pressed swatch');
+  assert.equal(u.q('[role=status] > span:last-child').innerHTML, "Couldn't set dev-1's colour.<br>OATS says: A stop is running.");
 });
 
 test('dialog: a refusal is said under the kernel\'s name and the pressed swatch stays; the feature missing disables with its note', async t => {

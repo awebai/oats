@@ -2,7 +2,7 @@
 import { instanceId, distinguishingRootTags } from '../../client/instance-tree.mjs';
 import { eventsTimestamp } from '../../client/instance-events-contract.mjs';
 import { canAddressRemote } from '../../client/remote-address.mjs';
-import { knownOrigin, hasRuntimeError } from '../../client/instance-presentation.mjs';
+import { knownOrigin, hasRuntimeError, instanceColor } from '../../client/instance-presentation.mjs';
 import { keptFailure } from '../../client/deployment-facts.mjs';
 import { retireData } from '../../client/retire-state.mjs';
 
@@ -41,6 +41,9 @@ export function projectActivePanel(panel) {
     // backend is where the mark is made and guarded.
     if (hasRuntimeError(raw) && knownOrigin(raw.runtimeErrorOrigin)) instance.runtimeErrorOrigin = raw.runtimeErrorOrigin;
     for (const key of ['parentInstance', 'siblingInstance']) instance[key] = typeof raw[key] === 'string' ? raw[key] : '';
+    // #1421 §2: the instance's colour, a palette name only (instanceColor), for the canvas's dot; in the signature, so a change redraws.
+    const color = instanceColor(raw);
+    if (color) instance.color = color;
     const id = instanceId(instance);
     if (seen.has(id)) throw new Error('The roster contains duplicate instance identities; actions are unavailable.');
     seen.add(id);

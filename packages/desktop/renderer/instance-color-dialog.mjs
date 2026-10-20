@@ -18,7 +18,8 @@
  *   nothing ran for another reason           the server's own sentence
  *
  * One request per instance at a time. A press while one runs is the latest intent: it is sent when the one in
- * flight answers, and only the last answer paints. The answer's `color` is the pressed swatch; the roster's
+ * flight answers. Every answer's colour is the saved one (the pressed swatch, a superseded answer's too); only the
+ * last answer's words are said. The answer's `color` is the pressed swatch; the roster's
  * next read (the server reads it again after a change) draws the dots. The status line says "Saving…", then
  * "Saved.", the kernel's refusal under its name (kernel-lines.mjs: E_INSTANCE_RETIRING, E_LIFECYCLE_BUSY, …),
  * the server's own reason when nothing ran, or that the outcome is not known. An answer that lands after the
@@ -150,7 +151,8 @@ export function createInstanceColorDialog({ doc, request, generation = () => 0, 
     const at = focused ?? ui.swatches.find(b => b.getAttribute('aria-pressed') === 'true') ?? ui.swatches[0];
     for (const b of ui.swatches) b.tabIndex = b === at ? 0 : -1;
   }
-  /** Sends the latest intent, one request at a time; only the last answer paints. */
+  /** Sends the latest intent, one request at a time. Every answer's colour is the saved one, so it is the pressed
+   * swatch even when a newer press follows; only the last answer's words reach the status line. */
   async function pump(mounted, owns) {
     const { state } = ui;
     if (state.sending) return;
@@ -161,11 +163,10 @@ export function createInstanceColorDialog({ doc, request, generation = () => 0, 
       let answer = null;
       try { answer = await request(row, { instance: row.instance, home: row.home, color }); } catch { answer = null; }
       if (!owns() || life !== mounted) return;
-      if (state.pending !== undefined) continue; // a newer press: this answer is not the last
       const outcome = saveOutcome(answer, row);
       if (outcome.color !== undefined) state.color = outcome.color;
       if (outcome.note) state.note = outcome.note;
-      state.said = outcome.text;
+      if (state.pending === undefined) state.said = outcome.text; // a newer press: its own answer speaks
     }
     if (!owns() || life !== mounted) return;
     state.sending = false; paint(); roving(doc.activeElement && ui.swatches.includes(doc.activeElement) ? doc.activeElement : null);
