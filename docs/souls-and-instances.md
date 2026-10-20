@@ -329,6 +329,13 @@ Names are unique per deployment (a workspace-model deployment has one agents
 root): a derived name in use gets `-2`, `-3`…; an explicit `--name` in use is
 refused (`E_INSTANCE_NAME_TAKEN`). The Desktop's spawn dialog adds the role to
 a typed name.
+`oats spawn <soul> --preview --suggest-name --task-file <f>` asks the soul's
+own harness for the descriptive words, from the task, in one call that starts
+no MCP server, hook, plugin or extension. The preview then answers for
+`--name <descriptive>-<role>`, de-duplicated the same way. On claude and pi
+only; any other harness, and any failure of the call, leaves the name numbered
+and says why
+([The suggested name](desktop-cli-api.md#the-suggested-name-feature-spawn-suggest-name)).
 
 From a deployment (where `oats-local.yaml` is), a spawn: reads the local file →
 discovers the workspace over its remotes and confirms membership → finds the
