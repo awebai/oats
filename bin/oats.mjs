@@ -60,7 +60,7 @@ import { kernelNode, stableNode } from "../lib/stable-node.mjs";
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
-import { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, descendantsOf, resolveInstance as resolveInstanceForCli, STOP_WARNINGS } from "../lib/instance-lifecycle.mjs";
+import { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, descendantsOf, resolveInstance as resolveInstanceForCli, setInstanceColor, STOP_WARNINGS } from "../lib/instance-lifecycle.mjs";
 import { extraWorktreeLines, formatBytes, warningLines, workRecoveryLines } from "../lib/retire-output.mjs";
 import { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } from "../lib/retained-after-retire.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
@@ -107,7 +107,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental",
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running", "deployments-list", "soul-composed-skills"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running", "deployments-list", "soul-composed-skills", "instance-color"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -1322,8 +1322,8 @@ function instanceCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const sub = args[1], name = args[2];
   if (sub === "waiting" || sub === "attention") return instanceWaitingCmd(sub, bail);
-  const usage = "usage: oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--dir <d>] [--json] | oats instance attention [--message <text>] [--clear] [--json] | oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--dir <d>] [--json] | oats instance git <instance> [--home <abs>] [--dir <d>] [--json] | oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json] | oats instance stop <instance> (--plan | --apply --plan-revision <rev> --idempotency-key <key>) [--no-recursive] [--grace-ms <n>] [--home <abs>] [--dir <d>] [--json]";
-  if (!["git", "diff", "stop", "events"].includes(sub) || !name || name.startsWith("--")) return bail("E_BAD_ARGS", usage);
+  const usage = "usage: oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--dir <d>] [--json] | oats instance attention [--message <text>] [--clear] [--json] | oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--dir <d>] [--json] | oats instance git <instance> [--home <abs>] [--dir <d>] [--json] | oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json] | oats instance stop <instance> (--plan | --apply --plan-revision <rev> --idempotency-key <key>) [--no-recursive] [--grace-ms <n>] [--home <abs>] [--dir <d>] [--json] | oats instance color <instance> (<color> | --clear) [--home <abs>] [--dir <d>] [--json]";
+  if (!["git", "diff", "stop", "events", "color"].includes(sub) || !name || name.startsWith("--")) return bail("E_BAD_ARGS", usage);
   dropAmbientRoot();
   if (sub === "events") {
     // K7: typed producer events, bounded window; nothing inferred.
@@ -1355,6 +1355,29 @@ function instanceCmd() {
       for (const e of ev.events) console.log(`  ${e.at ?? "?"}  ${e.kind.padEnd(20)} ${e.producer}${e.data ? `  ${JSON.stringify(e.data).slice(0, 120)}` : ""}`);
       return;
     } catch (e) { return bail(e.code || "E_EVENTS_FAILED", e.message, e.candidates ? { candidates: e.candidates } : undefined); }
+  }
+  if (sub === "color") {
+    // Feature instance-color: presentation only, so no plan; addressed as stop addresses an instance.
+    const homeOpt = flag("home");
+    if (homeOpt === true || (homeOpt !== undefined && !isAbsolute(homeOpt))) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
+    const colorUsage = "usage: oats instance color <instance> (<color> | --clear) [--home <abs>] [--dir <d>] [--json]";
+    // The words after the instance that are not a flag or the value of --home or --dir: the colour, at most one.
+    const words = [];
+    for (let i = 3; i < args.length; i++) { if (args[i] === "--home" || args[i] === "--dir") i++; else if (!args[i].startsWith("--")) words.push(args[i]); }
+    const clear = args.includes("--clear");
+    if (words.length > 1) return bail("E_BAD_ARGS", `oats instance color takes one colour; ${colorUsage}`);
+    const value = words[0];
+    if (value !== undefined && clear) return bail("E_BAD_ARGS", `give a colour or --clear, not both; ${colorUsage}`);
+    if (value === undefined && !clear) return bail("E_BAD_ARGS", `give a colour or --clear; ${colorUsage}`);
+    let root; try { root = ensureRoot(dirFlag()); } catch (e) { return lifecycleFail(e, "E_NO_ROOT"); }
+    try {
+      const r = setInstanceColor(dirFlag(), root, name, { home: homeOpt, color: clear ? null : value });
+      if (JSON_MODE) { jsonOk(r); return; }
+      console.log(`${r.instance}: ${r.color === null ? "no colour" : `colour ${r.color}`}${r.changed ? "" : " (unchanged)"}`);
+      return;
+    } catch (e) {
+      return lifecycleFail(e, "E_LIFECYCLE_FAILED", e.candidates ? { candidates: e.candidates } : e.details);
+    }
   }
   if (sub === "stop") {
     // K3: plan → apply. The plan is what a confirmation shows; apply carries
@@ -5112,6 +5135,9 @@ Usage:
   oats instance stop <instance> --apply --plan-revision <rev> --idempotency-key <key>
                                              quiesce (SIGTERM, bounded, never escalated),
                                              children first; home/work/launch retained
+  oats instance color <instance> (<color> | --clear) [--home <abs>] [--json]
+                                             the instance's colour, presentation only: sand,
+                                             sage, slate, mauve, clay or olive; --clear removes it
   oats worktree add --purpose <p> --branch <b> --base <remote-branch>  from an instance home: make the
       [--repo <member key|clone path>]      extra tree <home>/.work-<p> on a new branch at origin's
       [--preview] [--json]                  <base> (the clone's refs are not moved), then run the

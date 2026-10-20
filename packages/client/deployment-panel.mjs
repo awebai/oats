@@ -12,7 +12,7 @@
  * test/inventory.test.mjs holds that its page reaches no module that imports a Node builtin. */
 import { dirname } from 'node:path';
 import { livenessOrigin } from './liveness.mjs';
-import { knownOrigin, hasRuntimeError, byRuntimeState } from './instance-presentation.mjs';
+import { knownOrigin, hasRuntimeError, byRuntimeState, instanceColor } from './instance-presentation.mjs';
 import { retireData } from './retire-state.mjs';
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -108,6 +108,8 @@ export function panelInstance(i) {
     // Needs input (PR K): the validated claim (or null, unknown) as status reported it; absent stays absent.
     // The client's liveness is merged before projection, so running/runtimeState beside it are the probe's.
     ...(i.waitingOnYou !== undefined ? { waitingOnYou: i.waitingOnYou } : {}),
+    // Feature instance-color: the row's colour as instanceColor reads it, present only when it is one.
+    ...(instanceColor(i) !== null ? { color: instanceColor(i) } : {}),
     team: i.team || null,
   };
 }

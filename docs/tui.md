@@ -296,6 +296,17 @@ in its workspace for the rest of the run, also while it is not reached.
 
 Every state has a mark of its own shape, so nothing is told by colour alone.
 
+**An instance's colour** (feature `instance-color`; set with
+`oats instance color <instance> <colour>`, [desktop-cli-api.md](desktop-cli-api.md#an-instances-colour-oats-instance-color))
+colours its mark, in the list and in a soul's detail: a running mark in it, a
+stopped one and one with a shell left in it dim in it. `?` and `◆` keep their
+own look whatever the colour, and an instance with no colour looks as above.
+The six colours are the terminal's: `sand` yellow, `sage` green, `slate` blue,
+`mauve` magenta, `clay` red, `olive` cyan, the souls' own map. Which colour a
+row shows is the Desktop's rule (`instanceColor` in `packages/client`); an
+older kernel reports none. Setting a colour from the TUI is not in this
+version.
+
 <a id="held-rows"></a>**A held row** says in its word what holds it, by the
 Desktop's rule:
 

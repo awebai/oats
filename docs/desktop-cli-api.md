@@ -136,6 +136,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `spawn-kernel-codes` | `oats spawn`, apply and `--preview`, answers the kernel's own code, as raised, whatever stage of the spawn raised it; `E_SPAWN_FAILED` is for an error with no kernel code (with `details.cause`, as the lifecycle commands' general codes have it). A code says nothing about how far the spawn got: `details.unconfirmed` does. Details are those each code had before; OATS 0.56.0 ([spawn errors](#spawn-errors)). A kernel without it answers `E_SPAWN_FAILED` for most kernel codes its kernel stage raised: there, that code may hide one | |
 | `roster-workspace-key` | `oats server roster --workspace-key <key>`, repeatable: only the groups that can belong to one of the given workspaces are probed and returned (registered for one of them, registered with no known `workspaceKey`, or saved routes only); the answer's shape is unchanged, OATS 0.56.0 ([The remote roster](#roster-workspace-key)). Gate on the probe: a kernel without it ignores the flag and probes and answers every group | |
 | `spawn-apply-max-age` | `--max-age <s>` on a spawn apply bound by `--expect-decision <revision>`: the apply reuses member heads as the preview does, its decision fence unchanged, and its answer carries no `observation` block, OATS 0.58.0 ([Apply](#apply)). Gate on the probe: a kernel without it refuses the flag on an apply (`E_BAD_ARGS`) | |
+| `instance-color` | `oats instance color <instance> (<color> \| --clear)`, local and `--server` ([An instance's colour](#an-instances-colour-oats-instance-color)); `color` on `oats status --json` instance rows, on `oats server roster --json` rows and on `oats inspect --home` `instance` (`null` for none). Gate on the probe, locally or in the host's `probe.features`: an older kernel's rows have no `color` | `instanceColorApi: 1` (payload only) |
 | `deployments-list` | `oats deployments [list]\|add\|remove\|import --json`, this computer's list of its deployments (`~/.oats/config/deployments.json`); `listed` on `oats onboard --json`; a kernel command run in an unlisted deployment lists it ([This computer's deployments](#this-computers-deployments-oats-deployments)). Gate on the probe: there is no fallback scan | `deploymentsApi: 1` |
 | `status-retire-state` | `retire` on `oats status --json` instance rows and on remote roster rows: whether a retire of the home is running, cannot be told, failed or was interrupted, read only from the files beside the home, OATS 0.59.0 ([`retire`](#row-retire)). `retirePending` is unchanged. Gate on the probe: a kernel without it never carries the field, so its absence there says nothing | |
 
@@ -464,7 +465,7 @@ An instance subject, abridged:
  "recordedDefaultTeam":{"label":"eng","team":null,"from":"soul"},
  "knowledge":{"provider":"oats.okf","version":"2.1.3","operations":[{"name":"status","kind":"view","available":true,"reason":null}]},
  "instance":{"home":"/w/agents/rm/instances/rm-1","instance":"rm-1","agent":"rm","harness":"pi","model":null,"yolo":null,"launched":false,
-   "createdAt":"2026-09-28T10:08:01.281Z","resolution":"abacbdb5a7975098d77007c8","soulDir":"/w/agents/rm/souls/66566512168e",
+   "createdAt":"2026-09-28T10:08:01.281Z","color":null,"resolution":"abacbdb5a7975098d77007c8","soulDir":"/w/agents/rm/souls/66566512168e",
    "instructions":{"file":"/w/agents/rm/instances/rm-1/AGENTS.md","text":"…","truncated":false,
                    "sources":[{"source":"capability:oats.okf","file":"/w/agents/rm/instances/rm-1/.oats/modules/oats.okf/injects/okf.md"}]}},
  "identity":null,
@@ -480,7 +481,7 @@ An instance subject, abridged:
 | `capabilities`, `capabilitiesOff` | the resolved modules (by id) and the ones the soul turned off |
 | `teams`, `defaultTeam`, `teamsSource`, `recordedDefaultTeam` | [Where teams appear](#where-teams-appear); `recordedDefaultTeam` is home only |
 | `knowledge` | `{provider, version, operations: [{name, kind, available, reason}]}` for the knowledge slot (`null`s and `[]` when empty) |
-| `instance` | `null` for a soul; the home's facts above. `instructions.sources` lists each composed inject in order |
+| `instance` | `null` for a soul; the home's facts above. `instructions.sources` lists each composed inject in order. `color` (feature `instance-color`) is the instance's colour or `null` ([An instance's colour](#an-instances-colour-oats-instance-color)) |
 | `identity` | home only (absent for a soul): the served identity a messaging provider recorded, `{…, provider}`, or `null`. Read on every call, so after a start whose launch hook returned new `meta` it is that start's record, not the spawn's |
 | `problems` | below |
 | `warnings` | always present (0.49.0): [capability warnings](#capability-warnings-hook-event-unsupported-oats-0490); for `--home`, `path` is home-relative |
@@ -3055,6 +3056,12 @@ its absence.
   An older kernel's `running` is the window's presence, and it checks a row
   with a claim against its session (as `oats session inspect` observes it),
   reading `null` unless a harness runs there.
+- **`color`** (feature `instance-color`): the instance's colour, one of
+  `sand`, `sage`, `slate`, `mauve`, `clay`, `olive`, or `null` for none,
+  from the home's own record ([An instance's colour](#an-instances-colour-oats-instance-color));
+  a `color` in `instance.json` never stands in for it. Every row has it,
+  an unreadable record's row included (`null`). Presentation only: it is not
+  identity and never addresses anything.
 - <a id="row-retire"></a>**`retire`** (feature `status-retire-state`, OATS
   0.59.0): `{state, since, self, code?, message?}` while a retire of the home
   is running, scheduled or owed; absent otherwise, and from older kernels.
@@ -3215,7 +3222,7 @@ route target:
                "soul":{"repoKey":"github.com/acme/team","commit":"66566512…","current":"9c1e04ab…","status":"moved"},
                "modules":[{"name":"oats.okf","from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"},
                            "commit":"ab897841…","current":{"commit":"ab897841…","version":"2.1.3"},"status":"current"}],
-               "retirePending":false,"rollbackIncomplete":false,
+               "color":"sage","retirePending":false,"rollbackIncomplete":false,
                "savedRoute":false,"addressable":true,"missingRemotely":false}],
  "retireFailures":[]}
 ```
@@ -3510,6 +3517,7 @@ instance's own machine: the local command, with `--server <id>` added.
 | `oats instance git\|diff <name> --server <id> …` | `instance-git` | `instance-git`, `instanceGitApi: 1` |
 | `oats instance stop <name> --server <id> (--plan \| --apply …)` | `lifecycle-plans` | `lifecycle-plans`, `lifecycleApi: 1` |
 | `oats retire <name> --server <id> --plan`, and the guarded apply (`--plan-revision`, `--idempotency-key`) | `lifecycle-plans` | `lifecycle-plans`, `lifecycleApi: 1` |
+| `oats instance color <name> (<color> \| --clear) --server <id>` | none | `instance-color` |
 
 - The flags are the local command's. The instance is addressed like every
   routed instance command ([servers.md](servers.md#run-there)): `--home` as
@@ -5427,6 +5435,60 @@ none), `reached`, and a message that ends with the sentence the typed refusals a
 removal begins, and only with the home kept (`reached.home: "kept"`). A
 typed refusal keeps its code, its details and its own words; the inspections'
 and the recovery's refusals end with the sentence of their phase, once.
+
+## An instance's colour (`oats instance color`)
+
+Feature `instance-color` (awebai/oats#1421).
+
+```text
+oats instance color <instance> (<color> | --clear) [--home <abs>] [--dir <d>] [--json]
+```
+
+The colour is presentation, not identity. Anyone may change it at any time,
+the agent on its own instance included, and it is never an address.
+
+- **The palette** is closed: `sand`, `sage`, `slate`, `mauve`, `clay`,
+  `olive`, the clients' own (`packages/client/soul-colors.mjs`).
+- **The record** is `<home>/.oats-color.json`, `{"colorApi": 1, "color":
+  "sage", "at": "<ISO time>"}`, mode 0600, written atomically. `--clear`
+  removes it. It is a kernel-owned home file: a capability cannot declare it
+  as its own, and it is no change to the home at retire.
+- **A reader** takes a regular file only, without following a link, of at
+  most 4 KiB. Anything that is not such a valid record reads as no colour
+  (`null`), never as an error.
+- **The instance** is addressed as `oats instance stop` addresses it, and
+  refused with the same answers: not found, ambiguous, a `--home` that is not
+  its home, a record that cannot be read.
+
+The answer:
+
+```json
+{"instanceColorApi":1,"instance":"dev-a","home":"/w/agents/dev/instances/dev-a","color":"sage","changed":true}
+```
+
+`color` is `null` after `--clear`. Setting the colour the instance already
+has answers `changed: false` and writes nothing; so does clearing an instance
+with no colour.
+
+| Code | When |
+|---|---|
+| `E_BAD_ARGS` | The colour is not in the palette: `"<value>" is not an instance colour: use one of sand, sage, slate, mauve, clay, olive, or --clear`. Also: both a colour and `--clear`, neither, or two colours |
+| *(as `oats instance stop`)* | Instance resolution: `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`, `E_UNIDENTIFIED_INSTANCE_HOME` |
+| `E_INSTANCE_RETIRING` | A retire of the home is in flight (its pending marker, or a live retire holding the home's lifecycle claim, which the command reads and never takes, as `oats worktree add` reads it), or the home is quarantined. Nothing was written |
+| `E_LIFECYCLE_BUSY` | The home's claim file cannot be read as a claim, or a retire's liveness cannot be read, as for `oats worktree add` |
+
+Routed with `--server <id>`, the command runs on the host
+([Routed reads and plans](#routed-reads-and-plans)); a host whose probe does
+not advertise `instance-color` is refused with `E_REMOTE_INCOMPATIBLE`, and
+nothing is sent.
+
+Where it is read: `color` on [status rows](#the-roster-oats-status---json),
+on [remote roster rows](#the-remote-roster-oats-server-roster---json) (only a
+palette name is relayed, anything else is `null`), and on `oats inspect
+--home` as `instance.color`. A client draws a row's colour by one rule,
+`instanceColor(row)` in `packages/client/instance-presentation.mjs`: the
+row's palette name, else none. Colour never says a state alone: a client's
+mark keeps the state by its shape.
 
 ## Sessions and launch configurations
 

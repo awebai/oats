@@ -23,7 +23,7 @@ export { workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION } from "../../cli
 export { shortPath, deploymentLabel, machineLabels } from "../../client/deployment-label.mjs";
 export { instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree, hasInstanceChildren, heldHome, instanceSiblings } from "../../client/instance-tree.mjs";
 export { rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment } from "../../client/roster-sections.mjs";
-export { runtimeState, runtimeCounts, originLead, siblingText } from "../../client/instance-presentation.mjs";
+export { runtimeState, runtimeCounts, originLead, siblingText, instanceColor } from "../../client/instance-presentation.mjs";
 export { waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText } from "../../client/waiting-on-you.mjs";
 export { instanceActs, openAct } from "../../client/instance-acts.mjs";
 export { rowReason } from "../../client/remote-address.mjs";
