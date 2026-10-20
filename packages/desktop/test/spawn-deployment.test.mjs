@@ -203,19 +203,21 @@ test('one deployment: no Deployment field, nothing new on screen, and the spawn 
   await u.open(); await settle();
   assert.equal(u.q('.fdeployment'), null, 'no field'); assert.equal(u.q('.spawn-deployment'), null);
   assert.ok(u.q('.spawn-place'), 'Where to run stays where it was');
-  assert.ok(u.q('.spawn-form-body > .spawn-field').querySelector('.spawn-run'), 'Harness is still the first field');
+  const fields = [...u.q('.spawn-form-body').children].filter(n => n.classList.contains('spawn-field'));
+  assert.ok(fields[0].querySelector('.ftask') && fields[1].querySelector('.spawn-run'), 'the Opening instruction, then Harness, as before');
   assert.equal(facts(u)['Runs on'], undefined, 'no Runs on row'); assert.equal(facts(u).Name, 'release-manager-1', 'the summary as before');
   assert.ok(previewWs(u).length > 0); assert.ok(previewWs(u).every(ws => ws === A), 'the deployment, never the view id');
   assert.equal(u.calls.filter(c => c.path.startsWith('/api/agents?ws=')).filter(c => wsOf(c.path) === A).length, 0, 'no catalog read per deployment');
 });
 
-test('two deployments: the field comes first, before Harness, replaces Where to run, defaults to the first that has the soul; Runs on names it', async t => {
+test('two deployments: the field comes first after the Opening instruction, before Harness, replaces Where to run, defaults to the first that has the soul; Runs on names it', async t => {
   const u = await mountSpawn(t, { deployments: [DA, DB], catalogs: { [A]: catalogAgents(), [B]: catalogAgents() } });
   await u.open(); await settle();
   assert.ok(u.q('.fdeployment')); assert.equal(u.q('.spawn-place'), null, 'Where to run is replaced');
   const fields = [...u.q('.spawn-form-body').children].filter(n => n.classList.contains('spawn-field'));
-  assert.ok(fields[0].classList.contains('spawn-deployment'), 'Deployment is the first field'); assert.ok(fields[1].querySelector('.spawn-run'), 'then Harness');
-  assert.ok(u.dialog().querySelector('.spawn-deployment').contains(u.doc.activeElement), 'focus on open: the first field, Deployment');
+  assert.ok(fields[0].querySelector('.ftask'), 'the Opening instruction is the first field');
+  assert.ok(fields[1].classList.contains('spawn-deployment'), 'then Deployment'); assert.ok(fields[2].querySelector('.spawn-run'), 'then Harness');
+  assert.equal(u.doc.activeElement, u.q('.ftask'), 'focus on open: the first field, the Opening instruction');
   assert.equal(u.dialog().querySelector('select.fdeployment, .spawn-deployment select'), null, 'never a native select');
   assert.equal(u.q('.spawn-deployment .spawn-seg').getAttribute('role'), 'radiogroup', 'two: the segmented control');
   assert.deepEqual(options(u), ['This Mac · northwind-workspace', 'This Mac · northwind'], 'by machine; one machine with two: the path tail');
@@ -272,7 +274,7 @@ test('four deployments: the dropdown, first; a pick re-reads there and Runs on f
   await u.open(); await settle();
   assert.equal(u.q('.spawn-deployment .spawn-seg'), null); assert.equal(u.dialog().querySelector('.spawn-deployment select'), null);
   const trigger = u.q('.spawn-deployment .spawn-choice-trigger');
-  assert.ok(u.q('.spawn-form-body > .spawn-field').classList.contains('spawn-deployment'), 'first');
+  assert.ok(u.q('.spawn-form-body > .spawn-field + .spawn-field').classList.contains('spawn-deployment'), 'first after the Opening instruction');
   assert.equal(trigger.getAttribute('aria-label'), 'Deployment: This Mac · northwind-workspace');
   trigger.click(); await settle();
   const items = [...u.dialog().querySelectorAll('#spawn-deployment-choices [role=option]')];
