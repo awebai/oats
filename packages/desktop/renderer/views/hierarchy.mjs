@@ -71,6 +71,7 @@ import { deploymentLabel } from "../../../client/deployment-label.mjs";
 import { DESKTOP_TERMS } from "../desktop-terms.mjs";
 import { ALL_TAB, deploymentTabs, selectedDeploymentTab, rememberDeploymentTab, onDeploymentTabRequest } from "../deployment-tabs.mjs";
 import { deploymentsPageCSS, createDeploymentTabBar, deploymentHead, deploymentReasonBlock, deploymentNeedsWords, deploymentHasWords } from "../deployments-page.mjs";
+import { paintDotColor } from "../instance-dot.mjs";
 
 export const hierarchyCSS = `
 .hier { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); color: var(--fg);
@@ -136,6 +137,9 @@ export const hierarchyCSS = `
 .hdot.on { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 .hdot.unknown { background: var(--warn); border: 1.5px dashed var(--fg); }
 .hdot.off { box-sizing: border-box; background: transparent; border: 1.5px solid var(--faint); }
+/* An instance's colour (instance-dot.mjs): the running dot and its halo in it, the stopped ring in it. */
+.hdot.on[data-instance-color] { background: var(--instance-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--instance-color) 18%, transparent); }
+.hdot.off[data-instance-color] { border-color: var(--instance-color); }
 .hnode.idle .hname { color: var(--muted); }
 .hier-pop { position: absolute; z-index:4; width:224px; max-width:calc(100% - 16px); background:var(--surface); border:1px solid var(--border);
             border-radius:10px; box-shadow:var(--shadow-popover); padding:11px 12px; font-size:12px; overflow-wrap:anywhere; }
@@ -1009,6 +1013,7 @@ function nodeEl(s, n, wsName) {
   d.dataset.name = i.instance; d.dataset.id = id;
   const name = node(s, 'div', undefined, 'hname');
   const dot = node(s, 'span', undefined, `hdot ${status === 'running' ? 'on' : status === 'stopped' ? 'off' : 'unknown'}`); dot.setAttribute('aria-hidden', 'true');
+  paintDotColor(dot, i, status);
   name.append(dot, node(s, 'span', i.instance, 'nm'));
   const metadata = [target, i.repoName || 'Context not reported', i.harness || 'Harness not reported', i.branch || '', status === 'unknown' ? 'state unknown' : '', held?.state || ''].filter(Boolean).join(' · ');
   d.append(name, node(s, 'div', metadata, 'hmeta'));

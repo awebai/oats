@@ -232,7 +232,8 @@ test("two shrunk tabs whose names share a prefix still read differently: the tai
   assert.equal(plain.triggerEl.querySelector(".tab-label").children.length, 0);
   assert.equal(plain.triggerEl.querySelector(".tab-label").textContent, "README.md");
   const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
-  assert.match(shell, /decor: \{ dot: inst\.running \? "on" : "off", tailAt: tabNameTailStart\(name, inst\.agent\), tailEnd: name\.length \}/,
+  // The dot also carries the instance's colour (#1421 §2, instance-dot.mjs dotColor); the split is unchanged.
+  assert.match(shell, /decor: \{ dot: inst\.running \? "on" : "off", color: dotColor\(inst, inst\.running \? "running" : "stopped"\), tailAt: tabNameTailStart\(name, inst\.agent\), tailEnd: name\.length \}/,
     "terminal tabs split at the soul-aware tail, which ends with the name");
 });
 

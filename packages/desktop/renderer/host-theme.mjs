@@ -15,7 +15,7 @@
    the next first paint, and says so when the host's theme could not be used.
    `theme.mjs` applies what this module answers; it never imports it (tests
    evaluate its source on its own), so the shell hands one to `initTheme()`. */
-import { TEXT_PAIRS, GRAPHIC_PAIRS, PAINTED_OVER, ANSI_TOKENS, TEXT_CONTRAST, GRAPHIC_CONTRAST } from "./contrast-inventory.mjs";
+import { TEXT_PAIRS, GRAPHIC_PAIRS, PAINTED_OVER, ANSI_TOKENS, SOUL_TONES, TEXT_CONTRAST, GRAPHIC_CONTRAST } from "./contrast-inventory.mjs";
 
 const HEX = /^#[0-9a-f]{6}$/; // what main sends: opaque and lower-case
 // A base theme's own token, as theme.css writes it: opaque, or with an alpha byte.
@@ -137,6 +137,12 @@ export function deriveHostTokens(colors, mode, base = () => undefined) {
   if (!hold("graph-edge", mixHex(background, foreground, 0.4), GRAPHIC_PAIRS, GRAPHIC_CONTRAST)) return null;
   // The sidebar's dotted sibling link is the only mark on its column (#1312): a meaningful graphic too.
   if (!hold("tree-link", mixHex(background, foreground, 0.4), GRAPHIC_PAIRS, GRAPHIC_CONTRAST)) return null;
+  // An instance's colour on its dot (#1421): the base theme's (its soul's -fg), moved until it holds on every fill a
+  // dot is drawn on. The soul pairs themselves stay calibrated. Without a base value (no stylesheet) it is left alone.
+  for (const tone of SOUL_TONES) {
+    const start = base(`instance-${tone}`);
+    if (typeof start === "string" && CSS_OPAQUE.test(start) && !hold(`instance-${tone}`, start.toLowerCase(), GRAPHIC_PAIRS, GRAPHIC_CONTRAST)) return null;
+  }
   // The running dot and the lit graph path are the accent, as in the built-in themes.
   tokens.live = tokens["graph-edge-coord"] = tokens.accent;
   return Object.fromEntries(Object.entries(tokens).map(([token, value]) => [`--${token}`, value]));

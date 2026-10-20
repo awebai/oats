@@ -108,8 +108,8 @@ export const PLAIN_KEYS = Object.freeze([
  * S workspaces, M zoom, W close, E split right, D split down: the maintainer's cut, a43470ce); the
  * others keep their `other` key in both families: the Alt+Shift arrows, since Ctrl+Shift+arrow
  * selects text in inputs and editors; Ctrl+Alt+1–9, since Ctrl+Shift+digit is a shifted symbol on
- * most layouts; group-next and filter, whose Ctrl+Shift A and F a terminal or an agent takes.
- * macOS has no family: `mac` is the only key there. */
+ * most layouts; group-next and filter, whose Ctrl+Shift A and F a terminal or an agent takes; and
+ * edit-instance, the Desktop's alone, Ctrl+Alt+R in both. macOS has no family: `mac` is the only key there. */
 export const CHORDS = Object.freeze([
   { does: "palette", mac: "cmd+k", other: "ctrl+alt+k", shift: "ctrl+shift+k" },
   { does: "spawn", mac: "cmd+p", other: "ctrl+alt+p", shift: "ctrl+shift+p" },
@@ -125,6 +125,10 @@ export const CHORDS = Object.freeze([
   { does: "split-down", mac: "cmd+shift+\\", other: "ctrl+alt+shift+e", shift: "ctrl+shift+d" },
   { does: "group-next", mac: "cmd+alt+a", other: "ctrl+alt+a" },
   { does: "filter", mac: "cmd+f", other: "ctrl+alt+f" },
+  // The Desktop's alone for now (#1421): its name and colour dialog. No leader key; the TUI has no
+  // such action, so it binds no key for it (chordKeys skips a `does` it does not handle). Not one of
+  // the seven the Ctrl+Shift family moves: Ctrl+Alt+R in both families (the maintainer's ruling).
+  { does: "edit-instance", mac: "cmd+alt+r", other: "ctrl+alt+r" },
 ].map((entry) => Object.freeze({ ...entry, shift: entry.shift ?? entry.other })));
 
 /** The palette's own keys, read only while the palette is open: there they win over every binding

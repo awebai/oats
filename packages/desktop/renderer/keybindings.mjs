@@ -293,7 +293,7 @@ export const CHORDS_READ = Object.freeze([
   ...Array.from({ length: 9 }, (_, i) => [`tabs.goto${i + 1}`, `tab-${i + 1}`]),
   ["terminal.focusMode", "zoom"], ["tabs.close", "close-terminal"],
   ["split.vertical", "split-right"], ["split.horizontal", "split-down"], ["split.focusNextGroup", "group-next"],
-  ["sidebar.focusFilter", "filter"],
+  ["sidebar.focusFilter", "filter"], ["instance.edit", "edit-instance"],
 ].map(([id, does]) => Object.freeze({ id, does })));
 /** The default of the CHORDS row `does` in `family`: macOS's key, and Linux/Windows' key in that
  * family (chordKeyOf), as one string where both are the same chord. */
@@ -331,6 +331,10 @@ function keymapIn(family) {
     "roster.openPrevious": chordOf("roster.openPrevious"),
     "roster.openNext": chordOf("roster.openNext"),
     "terminal.focusMode": chordOf("terminal.focusMode"),
+    // The instance's name and colour (#1421): Ctrl+Alt+R on Linux/Windows, ⌘⌥R on macOS, never a
+    // Shift variant, in both chord families (not one of the seven). The instance is the leader's
+    // target (shell.mjs leaderTargetId).
+    "instance.edit": chordOf("instance.edit"),
     "app.chooseSoul": { mac: "Mod+N", other: "Ctrl+Shift+N" },
     "app.shortcuts": "Mod+,",
     // No default (spec F): ⌘⇧T is "reopen closed tab" in browsers and Ctrl+Shift+T "new tab" in
@@ -445,7 +449,7 @@ export function defaultBinding(actionId, isMac = defaultIsMac(), family = chordF
 // out: app.openFile (Ctrl+O) and focus.next/prevRegion (F6: mc, htop, nano).
 export const TERMINAL_ALLOWLIST = Object.freeze([
   "app.leader", "app.palette", "app.quickOpenSouls", "app.workspaces", "app.chooseSoul", "app.themePicker", "app.shortcuts", "terminal.copySelection",
-  "roster.openPrevious", "roster.openNext", "terminal.focusMode",
+  "roster.openPrevious", "roster.openNext", "terminal.focusMode", "instance.edit",
   "tabs.next", "tabs.prev", "tabs.nextPage", "tabs.prevPage", "tabs.close",
   ...Array.from({ length: 9 }, (_, i) => `tabs.goto${i + 1}`),
   "split.vertical", "split.horizontal", "split.close", "split.focusNextGroup",

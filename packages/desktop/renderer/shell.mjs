@@ -46,6 +46,7 @@ import { createConnections, connectionsCSS } from "./connections.mjs";
 import { createTerminalSettings, settingsTerminalCSS } from "./settings-terminal.mjs";
 import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
 import { createForgetDialog, forgetSuccessor } from './forget-dialog.mjs';
+import { createInstanceColorDialog, instanceColorCSS } from './instance-color-dialog.mjs';
 import { successorRow } from "./focus-return.mjs";
 import { createThemePicker, themePickerCSS } from './theme-picker.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
@@ -56,6 +57,7 @@ import { createTerminalAtlasRecovery } from "./terminal-atlas-recovery.mjs";
 import { attachClipboardWrite, attachSelectionCopy, copyTerminalSelection } from "./terminal-clipboard.mjs";
 import { attachTerminalMouse } from "./terminal-mouse.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "./tab-a11y.mjs";
+import { dotColor, paintDotColor } from "./instance-dot.mjs";
 import { revealInStrip } from "./reveal-in-scrollport.mjs";
 import { createIntentGate, prepareOwnedOpen, runOpenFlow } from "./open-intent.mjs";
 import { createSelectionOwnership, wirePaneSelection } from "./selection-ownership.mjs";
@@ -123,7 +125,7 @@ hostTheme.start();
 window.addEventListener("pagehide", () => hostTheme.dispose(), { once: true });
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
-identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceSoulCSS + instanceGitCSS + notificationCSS + connectionsCSS + settingsTerminalCSS + lifecycleCSS + themePickerCSS + rosterTipCSS + rosterPrCSS; document.head.append(identityStyle);
+identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceSoulCSS + instanceGitCSS + notificationCSS + connectionsCSS + settingsTerminalCSS + lifecycleCSS + instanceColorCSS + themePickerCSS + rosterTipCSS + rosterPrCSS; document.head.append(identityStyle);
 const rosterTip = createRosterTip(document);
 // The PR of each local instance's branch (forge-roster), re-read at most once a minute.
 const rosterPrs = createRosterPrs({
@@ -1033,6 +1035,7 @@ function renderContextRoster(instances) {
         }
         const dot = document.createElement("span");
         dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
+        paintDotColor(dot, i, state);
         const copy = document.createElement("span");
         copy.className = "ctx-copy";
         const name = document.createElement("span");
@@ -1535,7 +1538,8 @@ function refreshPanelInstance(instances, workspace) {
  * gate (waitingClaim, with the sidebar's held-stale rule). It MUTATES only the trigger's mark,
  * aria-label and title — never rebuilds the trigger or the tab — so strip focus, an open tab menu or a
  * drag survive the poll. Cleared (or unknown), the tab gets back exactly the mark, label and title it
- * was drawn with. */
+ * was drawn with. The same pass keeps the dot's colour (instance-dot.mjs) the row's, so a colour set
+ * or cleared reaches an open tab; the dot's state stays as it was drawn. */
 let tabNeedsInputRoster = { instances: [], workspace: null };
 function syncTabNeedsInput(instances, workspace) {
   tabNeedsInputRoster = { instances, workspace };
@@ -1547,6 +1551,7 @@ function syncTabNeedsInput(instances, workspace) {
     const row = rows.length === 1 ? rows[0] : null;
     const claim = row ? waitingClaim(row, { stale: rosterStale || rowStale(row, contextDeployments) }) : null;
     const drawn = tab.needsInputDrawn ??= { mark: trigger.querySelector(":scope > .tab-dot"), label: trigger.getAttribute("aria-label"), title: trigger.title };
+    if (row && drawn.mark) paintDotColor(drawn.mark, row, drawn.mark.classList.contains("on") ? "running" : "stopped");
     let attn = trigger.querySelector(":scope > .tab-attn");
     let label = drawn.label, title = drawn.title;
     if (claim) {
@@ -2234,7 +2239,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     title: `${name}${inst.server ? ` · ${inst.server}` : ""}`,
     // Workspace v4 (W6): a terminal tab carries only its name and status; the branch lives in the bottom bar.
     // A shrunk tab keeps its name's end ("oats-…palette"); a host suffix gives way first.
-    decor: { dot: inst.running ? "on" : "off", tailAt: tabNameTailStart(name, inst.agent), tailEnd: name.length },
+    decor: { dot: inst.running ? "on" : "off", color: dotColor(inst, inst.running ? "running" : "stopped"), tailAt: tabNameTailStart(name, inst.agent), tailEnd: name.length },
     key,
     kind: "terminal",
     workspace: ws,
@@ -2348,6 +2353,8 @@ const palette = createPalette({
     ...(typeof desktopBridge.windowOpenWorkspace === "function" ? [{ label: "Window: new window",
       detail: () => chordDetail("app.newWindow")() || (isMac ? formatChord("Mod+Shift+N", true) : ""), run: () => runAction("app.newWindow") }] : []),
     { label: "Instances: focus the sidebar roster", detail: chordDetail("sidebar.focusFilter"), run: () => focusRoster() },
+    // The instance it acts on is the leader's target when the palette opened (paletteTargetId).
+    { label: "Instance: name and colour…", detail: chordDetail("instance.edit"), run: () => openInstanceEdit(paletteTargetId) },
     { label: "Sidebar: toggle (hide/show)", detail: chordDetail("sidebar.toggle"), run: () => toggleSidebar() },
     { label: "Instance panel: show / hide", detail: chordDetail("panel.toggle"), run: () => runAction("panel.toggle") },
     { label: "Focus mode: toggle", detail: chordDetail("app.focusMode"), run: () => runAction("app.focusMode") },
@@ -2535,6 +2542,26 @@ function openForgetDialog(instance, workspace) {
   forgetDialog.open(instance);
 }
 window.addEventListener('pagehide', () => forgetDialog.dispose(), { once: true });
+/* Name and colour (#1421 §2; instance-color-dialog.mjs), for the leader's target: its chord (instance.edit) and
+ * the palette's entry. The server runs `oats instance color` for the row's deployment and reads the roster again
+ * after a change; the dots follow that read. Nothing here edits a row. */
+const instanceColorDialog = createInstanceColorDialog({ doc: document,
+  request: async (row, body) => (await desk.api(`/api/instance-color?ws=${encodeURIComponent(rowDeployment(row))}`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })).body,
+  generation: workspaceGeneration, subscribeWorkspace: onWorkspaceChange,
+  onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn),
+});
+/** Opens it for the instance `id` names (leaderTargetId), as this window's roster shows it (its own retires in
+ * flight held); with none, the hint says so. */
+function openInstanceEdit(id) {
+  const instance = rosterInstance(id);
+  if (!instance) { sayInHint("No instance is focused or selected."); return; }
+  connections.close(); shortcutsEditor.close(); lifecycleDialog.close(); forgetDialog.close();
+  const held = heldHome(instance);
+  instanceColorDialog.open(instance, { held: held ? heldLine(held) : null });
+}
+window.addEventListener('pagehide', () => instanceColorDialog.dispose(), { once: true });
 // The theme button, the palette and the chord (app.themePicker) open it; a choice goes through setTheme,
 // so it is stored as a palette choice is.
 const themePicker = createThemePicker({ doc: document, themes: THEMES, current: currentTheme, choose: setTheme,
@@ -2703,7 +2730,9 @@ for (const [id, action, label] of [['instance.openSplit', 'open-split', 'Instanc
     if (menu?.owns() && menu.element.isConnected && menu.element.dataset.instanceMenuOpen === 'true' && menu.element.contains(document.activeElement)) void menu.run(action);
   } }); // no new default chord, especially no terminal Ctrl interception
 }
-registerAction({ id: "app.palette", label: "Open the command palette", context: "global", run: () => { tabOpenIntents.invalidate(); palette.toggle(); } });
+/** The leader's target (leaderTargetId) where the palette was opened from: its instance entries act on it. */
+let paletteTargetId = null;
+registerAction({ id: "app.palette", label: "Open the command palette", context: "global", run: () => { tabOpenIntents.invalidate(); if (!palette.isOpen()) paletteTargetId = leaderTargetId(document.activeElement); palette.toggle(); } });
 registerAction({ id: "app.quickOpenSouls", label: "Quick open a soul to spawn", context: "global", run: () => { tabOpenIntents.invalidate(); quickOpen.toggle(); } });
 registerAction({ id: "app.chooseSoul", label: "Spawn instance: choose a soul in Workspace", context: "global", run: () => openWorkspaceSouls() });
 registerAction({ id: "app.shortcuts", label: "Edit keyboard shortcuts", context: "global", run: () => openShortcutsEditor() });
@@ -2932,6 +2961,10 @@ for (const { id, does } of SIDEBAR_KEYS) {
 for (const [id, does] of [["roster.openPrevious", "previous"], ["roster.openNext", "next"], ["terminal.focusMode", "zoom"]]) {
   registerAction({ id, label: leaderLabel(does, actionLabel), context: "global", when: () => !modalOpen(), run: (e) => runAsLeaderKey(does, e) });
 }
+// The instance's name and colour (#1421; CHORDS edit-instance, no leader key): the leader's target, from
+// every focus, a terminal's included. Inert under a modal dialog or the palette, as the leader is.
+registerAction({ id: "instance.edit", label: "Instance: name and colour…", context: "global", when: () => !modalOpen(),
+  run: (e) => openInstanceEdit(leaderTargetId(e?.target ?? document.activeElement)) });
 
 // Chord-suffixed tooltips, live against the keymap: any control that
 // declares data-action gets “ … (chord)” appended to its base title.

@@ -16,12 +16,15 @@ import { waitingRollup } from "../../../client/instance-tree.mjs";
 import { rowReasonLine, runtimeErrorLine, unsupportedLine, speakerLine, keptFailureLine, heldLine } from "../../renderer/speaker-line.mjs";
 import { keptFailure } from "../../../client/deployment-facts.mjs";
 import { retiredTabs, tabShowsRow, otherIncarnation, terminalOrigin } from "../../renderer/retired-tabs.mjs";
+import { dotColor, paintDotColor } from "../../renderer/instance-dot.mjs";
 
 export const viewContext = () => ({
   contextDeployments: [], rosterSections, DESKTOP_TERMS, deploymentHeading, notePanel, panelDeployments, rowStale, deploymentState,
   rehomeMap, viewMembership: createViewMembership(), rehomeWorkspaceState() {},
   waitingClaim, waitingRollup, waitingSentence, waitingLabel, waitingClock, splitByDeployment,
   rowReasonLine, runtimeErrorLine, unsupportedLine, speakerLine, keptFailureLine, keptFailure, heldLine,
+  // #1421 §2: an instance's colour on its dots (instance-dot.mjs), pure, read by the roster paint, the tab sync and a tab's open.
+  dotColor, paintDotColor,
   shownRows: rows => rows, retires: { landed() {}, ids: () => new Set() },
   // syncTabNeedsInput's module state (#558): the last painted roster, read when a terminal tab opens.
   // Every roster paint calls syncTabNeedsInput; a suite about other behaviour gets this no-op, and a suite

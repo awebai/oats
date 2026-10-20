@@ -1152,6 +1152,7 @@ that kind.
 | the terminal of the instance before, after | – | `Alt+Shift+Up`, `Alt+Shift+Down` | `Alt+Shift+Up`, `Alt+Shift+Down` (kept) | `⌥⌘↑`, `⌥⌘↓` | `Up`, `Down` |
 | the tab before, after | `[`, `]` | `Alt+Shift+Left`, `Alt+Shift+Right` | `Alt+Shift+Left`, `Alt+Shift+Right` (kept) | `⌥⌘←`, `⌥⌘→` | `Left`, `Right` |
 | the first to eighth tab, the last | – | `Ctrl+Alt+1` to `Ctrl+Alt+9` | `Ctrl+Alt+1` to `Ctrl+Alt+9` (kept) | `⌥⌘1` to `⌥⌘9` | – |
+| an instance's name and colour (OATS Desktop only) | – | `Ctrl+Alt+R` | `Ctrl+Alt+R` (kept) | `⌥⌘R` | – |
 | move the tab to the other group | – | – | – | – | `m` |
 | close the empty group | – | – | – | – | `x` |
 | stop, restart, start, retire | `X`, `R`, `S`, `D` | – | – | – | `X`, `R`, `S`, `D` |
@@ -1165,7 +1166,8 @@ both families, marked kept: Ctrl+Shift with an arrow selects text in inputs
 and editors, Ctrl+Shift with a digit is a shifted symbol on most layouts,
 and Ctrl+Shift+A and Ctrl+Shift+F are taken by terminals (kitty, Ghostty,
 and for F Alacritty and GNOME Terminal too) and by agents (Codex's
-Ctrl+Shift+A, pi's Ctrl+Shift+F). The list's own keys for moving and
+Ctrl+Shift+A, pi's Ctrl+Shift+F). `Ctrl+Alt+R` is the Desktop's alone, not
+one of the seven: `oats tui` has no such action and binds no key for it. The list's own keys for moving and
 reading are in [In the list](#in-the-list). The tables come from
 `packages/client/keymap.mjs` (`CHORDS`, `PLAIN_KEYS`, `LEADER_TABLE`), which
 both clients read.
@@ -1387,6 +1389,10 @@ Every chord, in both families, with what it does and the leader's key for
 it, is in [Every action's keys](#every-actions-keys). While the palette is
 open, `Alt+Shift+Up` and `Alt+Shift+Down` move between its groups instead
 ([The palette](#the-palette)).
+
+`CHORDS` also holds the Desktop's `edit-instance` (`Ctrl+Alt+R`, its name and
+colour dialog). The TUI has no such action, so it binds no key for it and
+`Ctrl+Alt+R` stays the agent's.
 
 They are one family: Ctrl+Alt with a letter or a digit acts, and Alt+Shift
 with the leader's arrow moves. No terminal in the table below takes them by

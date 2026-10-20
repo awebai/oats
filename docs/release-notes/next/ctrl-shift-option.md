@@ -13,8 +13,9 @@
     `Ctrl+Shift+M` zoom, `Ctrl+Shift+W` close the tab, `Ctrl+Shift+E` split
     right and `Ctrl+Shift+D` split down.
   - **The others keep their keys:** `Ctrl+Alt+A` the other group,
-    `Ctrl+Alt+F` the filter, the Alt+Shift arrows and `Ctrl+Alt+1` to
-    `Ctrl+Alt+9`.
+    `Ctrl+Alt+F` the filter, the Alt+Shift arrows, `Ctrl+Alt+1` to
+    `Ctrl+Alt+9`, and in the Desktop `Ctrl+Alt+R`, an instance's name and
+    colour.
   - **To switch,** choose **Ctrl+Shift (foot, Alacritty)** under
     **Shortcut family, shared with oats tui** on the Desktop's Shortcuts page, or write
     `{ "chords": "ctrl+shift" }` to `~/.oats/config/keys.json`

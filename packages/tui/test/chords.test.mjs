@@ -522,9 +522,18 @@ test("the chords are the shared ones (CHORDS), every row pinned, each one the TU
   assert.deepEqual([...chordKeys(true)], [], "on macOS the TUI has no chords");
   assert.equal(CHORDS.every((entry) => entry.mac.startsWith("cmd+")), true);
   for (const [, does] of LINUX_CHORDS) assert.equal(leaderHandles(does), true, `${does} is one the TUI handles`);
-  // A row the Desktop has and the TUI not yet (an edit of the instance, say) is no key of the TUI's.
-  const more = [...CHORDS, { does: "edit-instance", mac: "cmd+alt+r", other: "ctrl+alt+r" }];
-  assert.deepEqual([...chordKeys(false, ACTIONS, more)], LINUX_CHORDS, "an action the TUI does not have is skipped");
+  // A row the Desktop has and the TUI not (edit-instance, the Desktop's name and colour dialog) is no key of the TUI's:
+  // Ctrl+Alt+R stays the program's in the TUI's terminal.
+  const edit = CHORDS.find((entry) => entry.does === "edit-instance");
+  // Not one of the seven: Ctrl+Alt+R in the Ctrl+Shift family too (the maintainer's ruling).
+  assert.deepEqual({ ...edit }, { does: "edit-instance", mac: "cmd+alt+r", other: "ctrl+alt+r", shift: "ctrl+alt+r" });
+  assert.equal(leaderHandles("edit-instance"), false, "the TUI has no such action");
+  assert.equal(chordKeys(false).has("ctrl+alt+r"), false, "an action the TUI does not have is skipped");
+  for (const family of ["ctrl+alt", "ctrl+shift"]) {
+    assert.equal([...chordKeys(false, ACTIONS, CHORDS, family).values()].includes("edit-instance"), false, `${family}: skipped with the family on`);
+  }
+  const more = [...CHORDS, { does: "rename-the-moon", mac: "cmd+alt+m", other: "ctrl+alt+m" }];
+  assert.deepEqual([...chordKeys(false, ACTIONS, more)], LINUX_CHORDS, "any action the TUI does not have is skipped");
   assert.deepEqual(CHORD_OWN, ["tab-1", "tab-2", "tab-3", "tab-4", "tab-5", "tab-6", "tab-7", "tab-8", "tab-9"]);
   // Each is read as the protocol or the legacy sequence says: a Ctrl+Alt one by kittyId, an Alt+Shift arrow by its sequence.
   for (const [key] of LINUX_CHORDS) assert.equal(Object.hasOwn(LEGACY_CHORDS, key) || kittyId(kittyKey(sent(key)[0].slice(2, -1))) === key, true, key);
