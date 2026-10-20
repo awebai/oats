@@ -13,7 +13,8 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { CHORDS_READ, DEFAULT_KEYMAP, SIDEBAR_KEYS, defaultBinding, chordFromKeyId } from "../renderer/keybindings.mjs";
 import {
-  CHORDS, LEADER, LEADER_TABLE, PALETTE_KEYS, PLAIN_KEYS, chordKey, leaderKey, leaderDoes, paletteKey, plainKeys, leaderRows,
+  CHORDS, CHORD_FAMILIES, CHORD_FAMILY_LABELS, DEFAULT_CHORD_FAMILY, LEADER, LEADER_TABLE, PALETTE_KEYS, PLAIN_KEYS,
+  chordKey, chordKeyOf, leaderKey, leaderDoes, paletteKey, plainKeys, leaderRows,
 } from "../../client/keymap.mjs";
 
 test("the leader is Ctrl+\\ on macOS and Alt+O elsewhere", () => {
@@ -99,6 +100,30 @@ test("the chords: every one, per platform, and what it does", () => {
   assert.equal(chordKey("palette", true), "cmd+k");
   assert.equal(chordKey("palette", false), "ctrl+alt+k");
   assert.equal(chordKey("instances", false), null, "the stages are the Desktop's own");
+});
+
+test("the Ctrl+Shift family: seven rows move, the others keep their key, and macOS has none", () => {
+  assert.deepEqual([...CHORD_FAMILIES], ["ctrl+alt", "ctrl+shift"]);
+  assert.equal(DEFAULT_CHORD_FAMILY, "ctrl+alt");
+  assert.deepEqual({ ...CHORD_FAMILY_LABELS }, { "ctrl+alt": "Ctrl+Alt", "ctrl+shift": "Ctrl+Shift" });
+  // The maintainer's cut (a43470ce): K P S M W E D.
+  const moved = { palette: "ctrl+shift+k", spawn: "ctrl+shift+p", workspaces: "ctrl+shift+s", zoom: "ctrl+shift+m",
+    "close-terminal": "ctrl+shift+w", "split-right": "ctrl+shift+e", "split-down": "ctrl+shift+d" };
+  assert.deepEqual(CHORDS.map(({ does, shift }) => [does, shift]),
+    CHORDS.map(({ does, other }) => [does, moved[does] ?? other]));
+  assert.deepEqual(CHORDS.filter((entry) => entry.shift !== entry.other).map((entry) => entry.does), Object.keys(moved));
+  assert.equal(new Set(CHORDS.map((entry) => entry.shift)).size, CHORDS.length, "shift: no chord twice");
+  for (const entry of CHORDS) {
+    assert.equal(chordKeyOf(entry, true, "ctrl+shift"), entry.mac, `${entry.does}: macOS has no family`);
+    assert.equal(chordKeyOf(entry, false), entry.other, `${entry.does}: the default is Ctrl+Alt`);
+    assert.equal(chordKeyOf(entry, false, "ctrl+shift"), entry.shift);
+    assert.equal(chordKeyOf(entry, false, "anything"), entry.other, `${entry.does}: an unknown family is the default`);
+  }
+  assert.equal(chordKey("palette", false, "ctrl+shift"), "ctrl+shift+k");
+  assert.equal(chordKey("filter", false, "ctrl+shift"), "ctrl+alt+f");
+  assert.equal(chordKey("next", false, "ctrl+shift"), "alt+shift+down");
+  assert.equal(chordKey("tab-9", false, "ctrl+shift"), "ctrl+alt+9");
+  assert.equal(chordKey("palette", true, "ctrl+shift"), "cmd+k");
 });
 
 test("the palette's own keys: next and previous group, per platform, read only while it is open", () => {
@@ -195,7 +220,7 @@ test("change the module's entry in a copy: the Desktop's default follows, and ke
   mkdirSync(join(root, "client")); mkdirSync(join(root, "desktop", "renderer"), { recursive: true });
   const module = readFileSync(MODULE, "utf8");
   const changed = module.replace('other: "alt+o"', 'other: "alt+l"').replace('{ does: "refresh", keys: ["r"] }', '{ does: "refresh", keys: ["F"] }')
-    .replace('{ does: "palette", mac: "cmd+k", other: "ctrl+alt+k" }', '{ does: "palette", mac: "cmd+j", other: "ctrl+shift+j" }')
+    .replace('{ does: "palette", mac: "cmd+k", other: "ctrl+alt+k", shift: "ctrl+shift+k" }', '{ does: "palette", mac: "cmd+j", other: "ctrl+shift+j" }')
     .replace('{ does: "previous", mac: "cmd+alt+up", other: "alt+shift+up" }', '{ does: "previous", mac: "cmd+alt+u", other: "ctrl+alt+u" }')
     .replace('`ctrl+alt+${i + 1}`', '`ctrl+shift+alt+${i + 1}`');
   assert.notEqual(changed, module);
