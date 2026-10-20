@@ -13,6 +13,7 @@
 
 - **`oats spawn --preview` names each capability skill as the spawn copies
   it.** A manifest whose `skills` entry is a directory of skills (the
-  documented `"skills": ["skills"]`) showed as one skill named `skills`; the
-  preview now lists each skill under it, as `--composed-skills` does
-  ([The preview](../desktop-cli-api.md#the-preview)).
+  documented `"skills": ["skills"]`) showed as one skill named `skills`, and
+  a manifest with no `skills` showed none of the `skills/` directories the
+  spawn copies. The preview now lists each of them, as `--composed-skills`
+  does ([The preview](../desktop-cli-api.md#the-preview)).

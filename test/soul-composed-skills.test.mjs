@@ -8,7 +8,9 @@
 //   soul-relative or home-relative (`.oats/modules/<cap>/…`), and the --skills row shape otherwise; the names
 //   are exactly the spawned home's .agents/skills and instance.json's skills, and spawn --preview's skills[];
 // - a capability manifest whose entry is a root of skills (`skills: ["skills"]`): the preview names each skill
-//   under it (the fix in the same change), not one named `skills`;
+//   under it (the fix in the same change), not one named `skills`; and one that declares no `skills`, whose
+//   skills/* materialize copies by its fallback: the preview names those too (lib/materialize.mjs
+//   plannedModuleSkills);
 // - a collision a spawn refuses: null, with spawn's own sentence, which a real spawn gives;
 // - a soul that cannot be composed: null with the composition's problem, per asked field;
 // - one scratch composition serves --instructions and --composed-skills together;
@@ -98,6 +100,24 @@ test("inspect --soul --composed-skills: the soul's and its capabilities' skills,
   for (const s of composedSkills.filter((x) => x.source !== "soul")) {
     assert.equal(readFileSync(join(spawned.home, s.path, "SKILL.md"), "utf8"), s.files[0].text, `${s.path} is where the instance carries it`);
   }
+});
+
+test("a capability whose manifest declares no `skills` (materialize's skills/* fallback): the preview, composedSkills and the spawn name the same skills", (t) => {
+  const bare = {
+    "acme.bare": {
+      manifest: {},
+      files: { "skills/alpha/SKILL.md": skillDoc("alpha"), "skills/beta/SKILL.md": skillDoc("beta"), "skills/notes/README.md": "not a skill\n" },
+    },
+  };
+  const fx = v2Deployment({ t, capabilities: bare, souls: { dev: { soul: { capabilities: { "acme.bare": { from: "here" } } }, skills: { review: {} } } } });
+  const composed = okResult(fx.cli(["inspect", "--soul", "dev", "--composed-skills", "--json"]), "inspect").souls[0].composedSkills;
+  assertRows(composed);
+  assert.deepEqual(composed.map((s) => [s.name, s.source]), [["alpha", "module:acme.bare"], ["beta", "module:acme.bare"], ["review", "soul"]]);
+  const preview = okResult(fx.cli(["spawn", "dev", "--preview", "--json"]), "spawn --preview");
+  assert.deepEqual(preview.skills.filter((s) => typeof s === "object"), [{ name: "alpha", source: "module:acme.bare" }, { name: "beta", source: "module:acme.bare" }]);
+  assert.deepEqual(preview.skills.map((s) => (typeof s === "string" ? s : s.name)).sort(), composed.map((s) => s.name).sort());
+  const spawned = okResult(fx.cli(["spawn", "dev", "--purpose", "x", "--no-launch", "--json"]), "spawn");
+  assert.deepEqual(readdirSync(join(spawned.home, ".agents", "skills")).sort(), composed.map((s) => s.name).sort());
 });
 
 test("inspect --composed-skills: --home refused; a switch; with --instructions both keys from one composition; the feature is advertised", async (t) => {

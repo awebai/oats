@@ -2473,11 +2473,13 @@ it to a temporary copy (`soulFetched: true`).
 - `capabilities[]` (`{name, origin}`, `origin` `package:<id>@<v>` or
   `member:<repoKey>@<commit>`) and `skills[]` (the soul's own skills as
   strings, module skills as `{name, source: "module:<cap>"}`) are display
-  only: bind to `modules[]` and `decision`. A module skill's `name` is the
-  skill the spawn copies, by the resolution's enumeration: a manifest entry
-  that holds skill directories lists each of them (feature
-  `soul-composed-skills`; earlier kernels named such an entry by its own
-  directory, `skills`).
+  only: bind to `modules[]` and `decision`. A module skill's `name` is a
+  skill the spawn copies, by the rule it copies by: a manifest entry that
+  holds skill directories lists each of them, and a manifest with no
+  `skills` lists each `skills/<dir>/` holding a `SKILL.md`, read at the
+  module's commit (feature `soul-composed-skills`; earlier kernels named such
+  an entry by its own directory, `skills`, and listed nothing for a manifest
+  with no `skills`).
 - `resolution` (24 hex) hashes `declRevision` (the declarations) and
   `payloadRevision` (the merged payloads). `workspace` is the host key;
   `standalone` marks a standalone view. `task` is the task text or `null`.
