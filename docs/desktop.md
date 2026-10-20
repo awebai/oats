@@ -211,9 +211,15 @@ The tree has two sections, a rule between them:
   repository path.
 - **Composed for an instance**: what an instance of this soul gets. Its
   **AGENTS.md**, *after spawn, with injects*, and its **Skills**, each saying
-  where it comes from. The skills listed are the soul's own, each **From this
-  soul**; a note says that the skills capabilities add are listed by a newer
-  OATS.
+  where it comes from. With an OATS that lists every skill a spawn gives the
+  instance (0.67.0 and later), the Skills are that list: the soul's own, each
+  **From this soul**, and the ones its capabilities add, each **From** the
+  capability. A capability's skill file opens under its place in the instance
+  home (`.oats/modules/<capability>/…`), with **Open capability** above it. With
+  an older OATS the skills listed are the soul's own, and a note says that the
+  skills capabilities add are listed by a newer OATS. For a soul on another
+  machine, the server's OATS must list them too, as for the composed
+  AGENTS.md below.
 
 Both come from the same inspection as the rest of the page, so **Refresh**
 re-reads them and keeps what you had open, and your place in it. A file over
