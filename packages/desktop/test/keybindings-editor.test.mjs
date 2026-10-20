@@ -810,7 +810,7 @@ test("chord family: a write that fails keeps the family in use, and says so", as
   assert.equal(f.radio("ctrl+alt").checked, true, "the choice is back on the family in use");
   const note = f.choice().querySelector(".kb-family-note");
   assert.equal(note.hidden, false);
-  assert.equal(note.textContent, "Could not write keys.json: the shortcuts stay Ctrl+Alt.");
+  assert.equal(note.textContent, "Could not write keys.json: the shortcuts stay Ctrl+Alt. Fix or remove the file, then choose again.");
   assert.equal(note.getAttribute("role"), "status");
 });
 

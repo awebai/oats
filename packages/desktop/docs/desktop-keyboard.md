@@ -480,8 +480,9 @@ matrix).
   half written. A `keys.json` that is a symbolic link is written where the
   link leads, and the link stays. A file it cannot keep whole (one it
   cannot read, not a JSON object, or too large once `chords` is set) it
-  leaves as it is, and the page says "Could not write keys.json": fix or
-  remove the file, then choose again.
+  leaves as it is, and the page says what to do: "Could not write
+  keys.json: the shortcuts stay Ctrl+Alt. Fix or remove the file, then
+  choose again."
 - **It is the clients' file.** The kernel never reads it.
 - The reader is `packages/client/keys-file.mjs`, which the TUI reads too.
 

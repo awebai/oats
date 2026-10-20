@@ -118,7 +118,7 @@ export const CHORD_FAMILY_WORDS = Object.freeze({
   }),
   tui: "Both work here; pick the one your terminal passes to oats tui. oats tui uses it from its next start.",
   /** When main could not write keys.json: the family in use stays. */
-  unwritten: (family) => `Could not write keys.json: the shortcuts stay ${CHORD_FAMILY_LABELS[family] ?? CHORD_FAMILY_LABELS[DEFAULT_CHORD_FAMILY]}.`,
+  unwritten: (family) => `Could not write keys.json: the shortcuts stay ${CHORD_FAMILY_LABELS[family] ?? CHORD_FAMILY_LABELS[DEFAULT_CHORD_FAMILY]}. Fix or remove the file, then choose again.`,
 });
 
 /** Where a stage's direct chord and the leader's key mean different things (the leader's are the TUI's). */
