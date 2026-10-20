@@ -572,7 +572,7 @@ control.
   whenever the dialog opens for a chosen soul (a card, the soul page, Quick
   Open, Reopen spawn, a pick in the soul list), without scrolling, with the
   caret at the end of a restored instruction (never selected). Name is optional
-  and the form's last field; its section key (Mod+6) reaches it, with the caret
+  and the form's last field; its section key (Mod+1) reaches it, with the caret
   at the end of a restored name. Quick Open from a tab opens the dialog just before the
   Workspace stage is shown; the first field takes focus once it is, unless the
   operator has focused something else by then.
@@ -600,16 +600,17 @@ control.
 
   | Section | macOS | Linux / Windows | Lands on |
   |---|---|---|---|
-  | Opening instruction (`spawn.jumpTask`) | ⌘1 | Ctrl+1 | the instruction |
+  | Name (`spawn.jumpName`) | ⌘1 | Ctrl+1 | the Name field |
   | Harness (`spawn.jumpHarness`) | ⌘2 | Ctrl+2 | the Harness picker |
   | Model (`spawn.jumpModel`) | ⌘3 | Ctrl+3 | the Model field |
   | Relationship (`spawn.jumpRelationship`) | ⌘4 | Ctrl+4 | the selected segment |
   | Teams (`spawn.jumpTeams`) | ⌘5 | Ctrl+5 | the first team that can be ticked (nothing when Teams is not shown) |
-  | Name (`spawn.jumpName`) | ⌘6 | Ctrl+6 | the Name field |
+  | Opening instruction (`spawn.jumpTask`) | ⌘6 | Ctrl+6 | the instruction |
   | Developer settings (`spawn.toggleAdvanced`) | ⌘7 | Ctrl+7 | opens it on its first control; again closes it back on its summary |
 
-  The digits follow the form's order, the Opening instruction first and Name
-  the last field before Developer settings. A closed disclosure holding the target opens first. Each chord shows as a
+  Name keeps ⌘1 though it is now the form's last field, and the Opening
+  instruction keeps ⌘6 though it is now the first: the chords name sections,
+  not positions. A closed disclosure holding the target opens first. Each chord shows as a
   quiet hint beside its section's label (`aria-hidden`; the control carries
   `aria-keyshortcuts`). They are actions of the `spawn-dialog-local` context
   (`renderer/spawn-dialog-keys.mjs`, with Mod+Enter): the shortcuts editor

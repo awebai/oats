@@ -16,5 +16,6 @@
   `desktop-improvements-expert`, and a name that already ends in the role
   gets no second one. On a CLI without
   `spawn-name`, and for a spawn on a server, a typed name is still a purpose
-  named `<soul>-<purpose>`. ([Desktop](../desktop.md),
+  named `<soul>-<purpose>`. The dialog opens on the Opening instruction;
+  Ctrl+1 / ⌘1 still goes to Name. ([Desktop](../desktop.md),
   [souls and instances](../souls-and-instances.md))

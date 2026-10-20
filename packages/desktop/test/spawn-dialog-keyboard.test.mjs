@@ -180,14 +180,14 @@ test('the Harness picker opens with Enter, Space or Alt+Down; Escape closes it b
 
 // ── Spec E: focus on open, and the section keys ──────────────────────────
 
-test('Spec E: Reopen spawn (a restored draft) lands on the instruction, caret at its end; Mod+6 reaches the restored name, caret at the end, nothing selected', async t => {
+test('Spec E: Reopen spawn (a restored draft) lands on the instruction, caret at its end; Mod+1 reaches the restored name, caret at the end, nothing selected', async t => {
   const u = await mountSpawn(t, { spawnName: true }); asMac(u);
   spawn.preselectSpawn({ name: 'release-manager', agentsRoot: ROOT, draft: { layout: 'scoped', task: 'Cut 3.2', restore: { choices: { name: 'api-v2-manager' } } } }); await settle();
   const purpose = u.q('.fpurpose'), task = u.q('.ftask');
   assert.equal(u.dialog().dataset.layout, 'scoped'); assert.equal(purpose.value, 'api-v2-manager', 'the name as sent, which the role rule leaves as it is');
   assert.equal(u.doc.activeElement, task);
   assert.deepEqual([task.value, task.selectionStart, task.selectionEnd], ['Cut 3.2', 7, 7], 'the caret after the restored instruction, no select-all');
-  key(u, task, '6', { metaKey: true });
+  key(u, task, '1', { metaKey: true });
   assert.equal(u.doc.activeElement, purpose);
   assert.deepEqual([purpose.selectionStart, purpose.selectionEnd], [14, 14], 'the caret after the restored name, no select-all');
 });
@@ -202,13 +202,13 @@ test('Spec E: Change soul keeps today\'s focus in the list; a click pick goes on
   assert.equal(u.doc.activeElement, firstField(u), 'after the pick: the first field');
 });
 
-// In form order: the Opening instruction first, Name the last field before Developer settings (Mod+7).
+// The chords name sections, not positions: Name keeps Mod+1 as the last field, the instruction Mod+6 as the first.
 const SECTIONS = [
-  ['1', u => u.q('.ftask'), 'Opening instruction'],
+  ['1', u => u.q('.fpurpose'), 'Name'],
   ['2', u => u.q('.spawn-run label:first-child .spawn-choice-trigger'), 'Harness'],
   ['3', u => u.q('.fmodel'), 'Model'],
   ['4', u => u.q('.frelation input:checked'), 'Relationship'],
-  ['6', u => u.q('.fpurpose'), 'Name'],
+  ['6', u => u.q('.ftask'), 'Opening instruction'],
 ];
 for (const platform of ['mac', 'other']) {
   test(`Spec E: Mod+1–Mod+6 jump to their section, from any field, and never reach the shell behind the modal (${platform})`, async t => {
@@ -225,14 +225,14 @@ for (const platform of ['mac', 'other']) {
     }
     assert.deepEqual(behind, [], 'the section keys stop at the dialog: nothing behind the modal sees them');
     // The other platform's modifier is not the chord here: it does nothing in the dialog.
-    u.q('.ftask').focus(); key(u, u.q('.ftask'), '6', platform === 'mac' ? { ctrlKey: true } : { metaKey: true });
+    u.q('.ftask').focus(); key(u, u.q('.ftask'), '1', platform === 'mac' ? { ctrlKey: true } : { metaKey: true });
     assert.equal(u.doc.activeElement, u.q('.ftask'));
     behind.length = 0;
     // Teams is not offered here: Mod+5 moves nothing, and still never reaches the shell.
     const five = key(u, u.q('.ftask'), '5', mod);
     assert.equal(five.defaultPrevented, true); assert.equal(u.doc.activeElement, u.q('.ftask'));
     // A held key repeats: still the dialog's, and nothing moves.
-    const held = key(u, u.q('.ftask'), '6', { ...mod, repeat: true });
+    const held = key(u, u.q('.ftask'), '1', { ...mod, repeat: true });
     assert.equal(held.defaultPrevented, true); assert.equal(u.doc.activeElement, u.q('.ftask'));
     assert.deepEqual(behind, [], 'nothing propagated past the dialog');
     assert.ok(u.dialog(), 'the dialog stays open');
@@ -262,14 +262,14 @@ test('Spec E: each section shows its chord as a quiet hint (aria-hidden) and the
   assert.equal(hints.length, 7);
   for (const hint of hints) assert.equal(hint.getAttribute('aria-hidden'), 'true');
   const shown = hints.filter(h => !h.closest('[hidden]')).map(h => h.textContent);
-  // In form order, and numbered in it: the Opening instruction first (⌘1), Name the last field before Developer settings (⌘6).
-  assert.deepEqual(shown, ['⌘1', '⌘2', '⌘3', '⌘4', '⌘6', '⌘7'], 'Teams is not offered here: its hint is in its hidden row');
-  assert.equal(u.q('label[for=spawn-purpose] kbd').textContent, '⌘6', 'beside the Name label');
-  assert.equal(u.q('.fpurpose').getAttribute('aria-keyshortcuts'), 'Meta+6');
+  // In form order: the Opening instruction first keeps ⌘6, Name the last field before Developer settings keeps ⌘1.
+  assert.deepEqual(shown, ['⌘6', '⌘2', '⌘3', '⌘4', '⌘1', '⌘7'], 'Teams is not offered here: its hint is in its hidden row');
+  assert.equal(u.q('label[for=spawn-purpose] kbd').textContent, '⌘1', 'beside the Name label');
+  assert.equal(u.q('.fpurpose').getAttribute('aria-keyshortcuts'), 'Meta+1');
   assert.equal(u.q('.spawn-run label:first-child .spawn-choice-trigger').getAttribute('aria-keyshortcuts'), 'Meta+2');
   assert.equal(u.q('.fmodel').getAttribute('aria-keyshortcuts'), 'Meta+3');
   assert.ok([...u.dialog().querySelectorAll('.frelation input')].every(i => i.getAttribute('aria-keyshortcuts') === 'Meta+4'));
-  assert.equal(u.q('.ftask').getAttribute('aria-keyshortcuts'), 'Meta+1');
+  assert.equal(u.q('.ftask').getAttribute('aria-keyshortcuts'), 'Meta+6');
   assert.equal(u.q('.spawn-advanced > summary').getAttribute('aria-keyshortcuts'), 'Meta+7');
   assert.equal(u.q('label[for=spawn-purpose]').textContent.replace(u.q('label[for=spawn-purpose] kbd').textContent, ''), 'Name · optional');
   t.after(() => resetBinding('spawn.jumpName'));
@@ -278,7 +278,7 @@ test('Spec E: each section shows its chord as a quiet hint (aria-hidden) and the
   assert.equal(u.q('.fpurpose').getAttribute('aria-keyshortcuts'), 'Meta+Shift+N');
   u.q('.ftask').focus(); key(u, u.q('.ftask'), 'N', { metaKey: true, shiftKey: true });
   assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'the rebound chord jumps');
-  u.q('.ftask').focus(); key(u, u.q('.ftask'), '6', { metaKey: true });
+  u.q('.ftask').focus(); key(u, u.q('.ftask'), '1', { metaKey: true });
   assert.equal(u.doc.activeElement, u.q('.ftask'), 'the old chord no longer jumps');
   setBinding('spawn.jumpName', null);
   assert.equal(u.q('label[for=spawn-purpose] kbd').hidden, true, 'unbound: no hint');
@@ -295,9 +295,9 @@ test('Spec E: the dialog keys are listed in the shortcuts editor under Spawn dia
   assert.equal(groupActions().find(g => g.context === 'spawn-dialog-local').label, 'Spawn dialog');
   const release = registerAction({ id: 'fixture.showActive', label: 'Show Active', context: 'global', defaultChord: 'Mod+1', run: () => {} });
   try {
-    assert.equal(findConflict('Mod+1', 'spawn-dialog-local', 'spawn.jumpTask', true), null, 'the open dialog owns Mod+1; Active keeps it elsewhere');
+    assert.equal(findConflict('Mod+1', 'spawn-dialog-local', 'spawn.jumpName', true), null, 'the open dialog owns Mod+1; Active keeps it elsewhere');
     assert.equal(findConflict('Mod+1', 'global', 'fixture.showActive', true), null);
-    assert.equal(findConflict('Mod+2', 'spawn-dialog-local', 'spawn.jumpTask', true)?.id, 'spawn.jumpHarness', 'within the dialog, a clash is a clash');
+    assert.equal(findConflict('Mod+2', 'spawn-dialog-local', 'spawn.jumpName', true)?.id, 'spawn.jumpHarness', 'within the dialog, a clash is a clash');
   } finally { release(); }
 });
 
@@ -307,7 +307,7 @@ test('Spec E: a section key from an open Harness picker closes the picker and mo
   const trigger = u.q('.spawn-run label:first-child .spawn-choice-trigger'), menu = () => u.q('#spawn-runtime-choices');
   trigger.focus(); key(u, trigger, 'Enter'); await settle();
   assert.equal(menu().hidden, false, 'the picker is open');
-  const e = key(u, u.doc.activeElement, '1', { ctrlKey: true });
+  const e = key(u, u.doc.activeElement, '6', { ctrlKey: true });
   assert.equal(e.defaultPrevented, true);
   assert.equal(menu().hidden, true, 'closed by the jump, not left behind');
   assert.equal(u.doc.activeElement, u.q('.ftask'), 'focus moved on (not restored to the picker trigger)');
