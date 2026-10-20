@@ -151,11 +151,18 @@ export function writeTaskFile(taskText, io = {}) {
  * fixed list of options), so this home's own default for it is `execFileInSession`. Such a child is given no
  * deadline (`timeout: 0`, the default of an apply): execFileInSession arms its kill only for a positive one,
  * and the caller's own wait ends instead (cliStart's START_WAIT_MS; instance-lifecycle.mjs APPLY_WAIT_MS). */
-function runJson(bin, argv, { cwd, exec, timeout = ENVELOPE_TIMEOUT_MS, parse = parseEnvelope, strictExit = false, detached = false } = {}) {
+/** What a kernel answer may print, bytes of stdout: every read but a soul inspection that carries its skills' text. */
+export const ENVELOPE_MAX_BUFFER = 4 * 1024 * 1024;
+/** A soul inspection with `--skills` and/or `--composed-skills`: their texts' budgets (1 MiB and 2 MiB of UTF-8,
+ * docs/desktop-cli-api.md) as JSON prints them (an ordinary character at most doubles: a quote, a backslash, a line
+ * end), beside the two AGENTS.md (200,000 characters each) and the rest of the answer, with room to spare. */
+export const SKILLS_INSPECT_MAX_BUFFER = 16 * 1024 * 1024;
+
+function runJson(bin, argv, { cwd, exec, timeout = ENVELOPE_TIMEOUT_MS, parse = parseEnvelope, strictExit = false, detached = false, maxBuffer = ENVELOPE_MAX_BUFFER } = {}) {
   const run = exec ?? (detached ? execFileInSession : execFile);
   return new Promise((resolveP, rejectP) => {
     try {
-      run(bin, argv, { cwd, encoding: "utf8", timeout, maxBuffer: 4 * 1024 * 1024, shell: false, ...(detached ? { detached: true } : {}) },
+      run(bin, argv, { cwd, encoding: "utf8", timeout, maxBuffer, shell: false, ...(detached ? { detached: true } : {}) },
         (err, stdout) => {
           // New reads require a clean exit for success. Keep the historical
           // envelope-wins policy for existing mutations unless opted in.
@@ -658,5 +665,7 @@ export async function cliCapability(bin, { action, context, server, soul, agents
   const composedSkillsArgv = composedSkills && Array.isArray(features) && features.includes('soul-composed-skills') ? ['--composed-skills'] : [];
   return await runJson(bin, [...argv, ...target, ...composed, ...skillsArgv, ...composedSkillsArgv, ...maxAgeArgv(features, maxAge), '--json'], {
     cwd: localCwd, exec: io.exec, timeout: io.timeout ?? (action === 'run' ? 300_000 : ENVELOPE_TIMEOUT_MS),
+    // The skills' text makes the answer larger than any other read: an allowance of its own, still bounded.
+    maxBuffer: skillsArgv.length || composedSkillsArgv.length ? SKILLS_INSPECT_MAX_BUFFER : ENVELOPE_MAX_BUFFER,
   });
 }

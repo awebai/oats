@@ -1042,7 +1042,7 @@ description's sentence in its `aria-description`), then the note "Skills that
 capabilities add are listed by a newer OATS." (only when the skills were
 listed, an empty list included; an absent, unlistable or unreadable answer is
 that case's note alone). These rows are copies with their own keys
-(`composed-skill:<path>`, `composed-file:<path>`), so selecting one never
+(`composed-skill:<path>`, `composed-file:<skill path>//<path in the skill>`), so selecting one never
 selects the row above; a link from a composed copy or the composed document
 opens the composed copy of its target, else the copy that is listed.
 
@@ -1066,7 +1066,12 @@ reader head when the page can open that capability (`canOpenCapability`, as
 for a composed part). `[]`, `null` and a broken answer are a note each ("No
 skills from this soul or its capabilities.", "The skills an instance gets
 can't be listed: see the problem above.", "This OATS answered composed skills
-this Desktop can't read.").
+this Desktop can't read."). A capability may declare one skill inside
+another, so a composed file path is unique within its skill only (the composed
+keys name the skill) and a link from a composed file prefers the copy in the
+skill being read. A flagged skills read may print more than any other read:
+the adapter gives it `SKILLS_INSPECT_MAX_BUFFER` (16 MiB) in place of
+`ENVELOPE_MAX_BUFFER` (4 MiB).
 
 **Core capabilities and Capabilities read as one system.** Wherever the two
 sections appear (the soul page, the inspector's *Modules as spawned*, the

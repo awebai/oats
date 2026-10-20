@@ -7,8 +7,10 @@
 // list changed, since no fixture names the feature.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { cliCapability } from '../../client/cli-adapter.mjs';
+import { readFileSync, writeFileSync, chmodSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { cliCapability, ENVELOPE_MAX_BUFFER, SKILLS_INSPECT_MAX_BUFFER } from '../../client/cli-adapter.mjs';
 import { capabilityRequest } from '../server/capabilities.mjs';
 import { createInspectCache, inspectKey } from '../../client/inspect-cache.mjs';
 import { remoteWorkspace, remoteAgents } from '../../client/remote-roster.mjs';
@@ -139,4 +141,30 @@ test('server: a routed soul inspect carries --composed-skills only for a host wh
   // A workspace object without its roster group (no held row) is unknown.
   const { group: _held, ...bare } = remoteWorkspace(listingGroup());
   assert.ok(!(await argvFor({ cli: NEW_CLI, workspace: bare, agents: remoteAgents(listingGroup()), composedSkills: true })).includes('--composed-skills'));
+});
+
+test('adapter: a skills inspection may print more than any other read, still bounded (a real child, its real stdout limit)', { skip: process.platform === 'win32' }, async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'oats-composed-skills-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  /** An `oats` that prints a valid soul inspection whose composed skills carry `bytes` of text, whatever it is asked. */
+  const cli = (name, bytes) => {
+    const bin = join(dir, name);
+    writeFileSync(bin, `#!${process.execPath}
+const text = '"'.repeat(${Math.floor(bytes / 2)}); // a quote prints as two bytes: the JSON escaping the allowance covers
+process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { souls: [{ name: 'release-manager', composedSkills: [
+  { name: 'big', source: 'module:oats.core', path: '.oats/modules/oats.core/skills/big', description: null, filesTruncated: false,
+    files: [{ path: '.oats/modules/oats.core/skills/big/SKILL.md', bytes: text.length, text, binary: false, truncated: false }] }] }] } }));
+`);
+    chmodSync(bin, 0o755); return bin;
+  };
+  const soulArgs = { action: 'inspect', context: dir, soul: 'release-manager', agentsRoot: join(dir, 'agents'), localCwd: dir };
+  const within = cli('within', 6 * 1024 * 1024), past = cli('past', SKILLS_INSPECT_MAX_BUFFER + 1024);
+  // Past the plain read's limit, within the allowance: the answer is read whole.
+  const read = await cliCapability(within, { ...soulArgs, composedSkills: true, features: [COMPOSED_SKILLS_FEATURE] });
+  assert.equal(read.ok, true); assert.ok(JSON.stringify(read).length > ENVELOPE_MAX_BUFFER, 'it printed past the plain limit');
+  await cliCapability(within, { ...soulArgs, skills: true, features: [SKILLS_FEATURE] }).then(r => assert.equal(r.ok, true, 'the own skills too'));
+  // Any other read keeps its limit, and so does the allowance: past either, no answer.
+  assert.equal((await cliCapability(within, soulArgs)).error.code, 'E_CLI_PROTOCOL');
+  assert.equal((await cliCapability(within, { ...soulArgs, composedSkills: true, features: [] })).error.code, 'E_CLI_PROTOCOL', 'not sent: not allowed');
+  assert.equal((await cliCapability(past, { ...soulArgs, composedSkills: true, features: [COMPOSED_SKILLS_FEATURE] })).error.code, 'E_CLI_PROTOCOL');
 });

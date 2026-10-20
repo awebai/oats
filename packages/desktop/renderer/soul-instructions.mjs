@@ -96,14 +96,16 @@ export const soulInstructionsCSS = `
 .soul-part[data-source=soul] > .soul-part-body { border-left-color:var(--accent); }
 `;
 
-/** Selection keys: the soul's own AGENTS.md, the composed document, a part of it (by its index), and a skill file (by
- * its soul-relative path, unique in the answer), in "Defined in this soul" or in the composed Skills (its own keys).
- * A skill item is expanded, never selected: its key names it in `expanded`. */
+/** Selection keys: the soul's own AGENTS.md, the composed document, a part of it (by its index), and a skill file: in
+ * "Defined in this soul" by its soul-relative path (unique in the answer: a soul's skills never nest); in the composed
+ * Skills by its skill's path and its path in the skill, `//` between them (never in a plain path), since a
+ * capability's skills may nest and list one file each. A skill item is expanded, never selected: its key names it in
+ * `expanded`. */
 export const OWN = 'own';
 export const COMPOSED = 'composed';
 const partKey = i => `part:${i}`;
 const skillKey = (path, composed = false) => `${composed ? 'composed-' : ''}skill:${path}`;
-const fileKey = (path, composed = false) => `${composed ? 'composed-' : ''}file:${path}`;
+const fileKey = (skill, path, composed = false) => composed ? `composed-file:${skill.path}//${path.slice(skill.path.length + 1)}` : `file:${path}`;
 /** Where a composed skill comes from, in the vocabulary of instance.json and the spawn preview (#1421 §1): the soul
  * (`soul`), or a capability's module (`module:<capability id>`). Its row's label, and the capability its reader may
  * open. Any other value names nothing: no label, rather than a guess. */
@@ -192,7 +194,8 @@ export function skillsOf(soul) {
  * Every skill a spawn gives an instance of an inspected soul row (`composedSkills`, feature soul-composed-skills), by
  * skillsOf's rules, each row with its `source` (a non-empty string: `soul`, `module:<id>`, or a value skillSource names
  * nothing for). A soul skill's paths are relative to the soul's directory, a capability's to the instance home
- * (`.oats/modules/<id>/…`). `null`: the kernel answered they can't be listed (a problem names `composedSkills`).
+ * (`.oats/modules/<id>/…`). A capability may declare one skill inside another, so a file path is unique within its
+ * skill only. `null`: the kernel answered they can't be listed (a problem names `composedSkills`).
  */
 export function composedSkillsOf(soul) {
   if (!record(soul) || !Object.hasOwn(soul, 'composedSkills')) return undefined;
@@ -212,6 +215,7 @@ function skillRows(v, sourced) {
     let files = null;
     if (s.files) {
       files = [];
+      if (sourced) filePaths.clear();
       for (const f of s.files) {
         if (!record(f) || !plainPath(f.path) || !f.path.startsWith(`${s.path}/`) || filePaths.has(f.path)) return false;
         if (!Number.isSafeInteger(f.bytes) || f.bytes < 0 || !(f.text === null || typeof f.text === 'string') || typeof f.binary !== 'boolean' || typeof f.truncated !== 'boolean') return false;
@@ -250,7 +254,7 @@ export function createSoulInstructions(doc, { openExternal = null, canOpenCapabi
   // `shown`: what the reader holds ('own' | 'composed' | a skill file's key); a part is a place in the composed document.
   // `files`: each listed skill file by its key ({ skill, file, path: its repository path, or a capability's home path,
   // composed: in the composed Skills, capability: the one it comes from or null }); `local`: the keys by that path,
-  // [own, composed copy], either absent when the file is listed in one section only.
+  // { own, composed: [each composed copy] }, either absent when the file is listed in one section only.
   let alive = true, name = null, own = null, composed, skills, composedSkills, files = new Map(), local = new Map();
   let navSignature = null, ownSignature = null, composedSignature = null, fileSignature = null, localSignature = null, shown = null, selected = OWN;
   const expanded = new Set(); // the composed item's key and each expanded skill's skillKey
@@ -264,7 +268,14 @@ export function createSoulInstructions(doc, { openExternal = null, canOpenCapabi
   // A link opens the file in the section the reader shows: from the composed document or a composed skill file, its composed copy.
   const inComposed = () => shown === 'composed' || !!files.get(shown)?.composed;
   const fileReader = createContentsReader(doc, { reader, head, body, alive: () => alive, openExternal,
-    isLocal: path => local.has(path), openLocal: path => { const [mine, copy] = local.get(path) || []; open((inComposed() ? copy : mine) ?? mine ?? copy); } });
+    isLocal: path => local.has(path), openLocal: path => open(localKey(path)) });
+  /** A link's target: in the section the reader shows (a composed copy in the skill being read first, as nested
+   * skills list one file each), else the one listed. */
+  function localKey(path) {
+    const { own: mine, composed: copies = [] } = local.get(path) || {};
+    const reading = files.get(shown)?.skill, copy = copies.find(key => files.get(key).skill === reading) ?? copies[0];
+    return (inComposed() ? copy : mine) ?? mine ?? copy;
+  }
   const hasKey = key => key === OWN || files.has(key) || (!!composed && (key === COMPOSED || composed.parts.some((_, i) => partKey(i) === key)));
   // Found by its key as data, never through a selector: a key holds the soul's own paths.
   const itemFor = focusKey => [...nav.querySelectorAll('[role=treeitem]')].find(item => item.dataset.focusKey === focusKey) || null;
@@ -285,9 +296,11 @@ export function createSoulInstructions(doc, { openExternal = null, canOpenCapabi
         const { capability } = composedCopy ? skillSource(skill.source ?? 'soul') : { capability: null };
         const ownFile = !composedCopy || skill.source === undefined || skill.source === 'soul';
         for (const file of skill.files || []) {
-          const path = ownFile ? soulFilePath(soul?.path, file.path) : file.path, key = fileKey(file.path, composedCopy);
+          const path = ownFile ? soulFilePath(soul?.path, file.path) : file.path, key = fileKey(skill, file.path, composedCopy);
           files.set(key, { skill, file, path, composed: composedCopy, capability });
-          const keysAt = local.get(path) || []; keysAt[composedCopy ? 1 : 0] = key; local.set(path, keysAt);
+          const keysAt = local.get(path) || {};
+          if (composedCopy) (keysAt.composed ||= []).push(key); else keysAt.own = key;
+          local.set(path, keysAt);
         }
       }
     };
@@ -370,7 +383,7 @@ export function createSoulInstructions(doc, { openExternal = null, canOpenCapabi
     const composedCopy = !!source;
     return skillTreeItem(doc, skill, { open: expanded.has(skillKey(skill.path, composedCopy)), focusKey: `instructions:${skillKey(skill.path, composedCopy)}`, keys,
       source: source?.label ?? null,
-      fileItem: (file, shown) => leaf(fileKey(file.path, composedCopy), [node('span', 'cap-node-name mono', shown)], { level: 2, label: shown }) });
+      fileItem: (file, shown) => leaf(fileKey(skill, file.path, composedCopy), [node('span', 'cap-node-name mono', shown)], { level: 2, label: shown }) });
   }
   const skillsNote = () => skills === undefined ? SOUL_INSTRUCTIONS_COPY.skillsAbsent : skills === null ? SOUL_INSTRUCTIONS_COPY.skillsUnlistable
     : skills === false ? SOUL_INSTRUCTIONS_COPY.skillsUnreadable : SOUL_INSTRUCTIONS_COPY.noSkills;

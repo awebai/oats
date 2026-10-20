@@ -103,7 +103,7 @@ test('a capability’s file opens under its instance-home path with Open capabil
   const u = setup(t, { canOpenCapability: id => id === 'oats.core', openCapability: id => opened.push(id) });
   u.section.update(row());
   u.copy(CORE).querySelector('.cap-node').click();
-  u.item(`composed-file:${CORE}/SKILL.md`).querySelector('.cap-node').click();
+  u.item(`composed-file:${CORE}//SKILL.md`).querySelector('.cap-node').click();
   assert.ok(u.$('.cap-reader-head').textContent.includes(`${CORE}/SKILL.md`));
   assert.ok(!u.$('.cap-reader-head').textContent.includes('souls/'), 'not under the soul’s directory');
   const button = u.$('.cap-reader-head button.soul-file-open');
@@ -111,13 +111,13 @@ test('a capability’s file opens under its instance-home path with Open capabil
   button.click(); assert.deepEqual(opened, ['oats.core']);
   // A soul skill's composed copy: its repository path, no Open capability.
   u.copy('skills/git-tag-release').querySelector('.cap-node').click();
-  u.item('composed-file:skills/git-tag-release/SKILL.md').querySelector('.cap-node').click();
+  u.item('composed-file:skills/git-tag-release//SKILL.md').querySelector('.cap-node').click();
   assert.ok(u.$('.cap-reader-head').textContent.includes('souls/oats-maintainer/skills/git-tag-release/SKILL.md'));
   assert.equal(u.$('.cap-reader-head button.soul-file-open'), null);
   // A capability the page can't open: no button.
   const v = setup(t, { canOpenCapability: () => false, openCapability: () => assert.fail('not openable') });
   v.section.update(row());
-  v.copy(CORE).querySelector('.cap-node').click(); v.item(`composed-file:${CORE}/SKILL.md`).querySelector('.cap-node').click();
+  v.copy(CORE).querySelector('.cap-node').click(); v.item(`composed-file:${CORE}//SKILL.md`).querySelector('.cap-node').click();
   assert.equal(v.$('.cap-reader-head button.soul-file-open'), null);
 });
 
@@ -125,14 +125,14 @@ test('links: inside a capability’s skill they open its listed files; a soul fi
   const u = setup(t);
   u.section.update(row());
   u.copy(CORE).querySelector('.cap-node').click();
-  u.item(`composed-file:${CORE}/SKILL.md`).querySelector('.cap-node').click();
+  u.item(`composed-file:${CORE}//SKILL.md`).querySelector('.cap-node').click();
   u.$('.cap-reader-body a').click();
-  assert.equal(u.section.selected, `composed-file:${CORE}/references/commands.md`);
+  assert.equal(u.section.selected, `composed-file:${CORE}//references/commands.md`);
   // From the composed copy of a soul skill, a link into a capability's skill opens it there.
   u.copy('skills/git-tag-release').querySelector('.cap-node').click();
-  u.item('composed-file:skills/git-tag-release/SKILL.md').querySelector('.cap-node').click();
+  u.item('composed-file:skills/git-tag-release//SKILL.md').querySelector('.cap-node').click();
   u.$('.cap-reader-body a').click();
-  assert.equal(u.section.selected, `composed-file:${CORE}/SKILL.md`);
+  assert.equal(u.section.selected, `composed-file:${CORE}//SKILL.md`);
   // From the soul's own AGENTS.md, a link to its skill opens the copy in "Defined in this soul".
   u.item(OWN).querySelector('.cap-node').click();
   u.$('.cap-reader-body a').click();
@@ -141,7 +141,7 @@ test('links: inside a capability’s skill they open its listed files; a soul fi
   const v = setup(t);
   v.section.update(row({ instructions: { file: '/c', text: `[operate](../../${CORE}/SKILL.md)`, truncated: false } }));
   v.$('.cap-reader-body a').click();
-  assert.equal(v.section.selected, `composed-file:${CORE}/SKILL.md`);
+  assert.equal(v.section.selected, `composed-file:${CORE}//SKILL.md`);
   const w = setup(t);
   w.section.update(row({ composedSkills: null, composedInstructions: { file: null, text: AGENTS, truncated: false, resolution: 'r',
     body: { start: 0, end: AGENTS.length, truncated: false }, sources: [] } }));
@@ -159,6 +159,31 @@ test('a refresh with a changed composed list repaints the tree; an unchanged one
   u.section.update(row({ composedSkills: [composedAnswer()[0]] }));
   assert.notEqual(u.$('[role=tree]'), tree);
   assert.equal(u.copy(CORE), null);
+});
+
+test('a capability’s nested skills: both rows list their files, each its own item; a link keeps to the skill being read', t => {
+  // A capability may declare skills/parent and skills/parent/child: the parent's files include the child's.
+  const at = '.oats/modules/acme.ops/skills/parent', md = (path, text) => file(path, text);
+  const parent = { name: 'parent', source: 'module:acme.ops', path: at, description: null, filesTruncated: false,
+    files: [md(`${at}/SKILL.md`, '# Parent\n\nSee [the child](child/SKILL.md).\n'), md(`${at}/child/SKILL.md`, '# Child\n\nSee [its notes](notes.md).\n'), md(`${at}/child/notes.md`, '# Notes\n')] };
+  const child = { name: 'parent-child', source: 'module:acme.ops', path: `${at}/child`, description: null, filesTruncated: false,
+    files: [md(`${at}/child/SKILL.md`, '# Child\n\nSee [its notes](notes.md).\n'), md(`${at}/child/notes.md`, '# Notes\n')] };
+  assert.deepEqual(composedSkillsOf({ composedSkills: [parent, child] }).map(s => [s.name, s.files.length]), [['parent', 3], ['parent-child', 2]]);
+  assert.equal(composedSkillsOf({ composedSkills: [{ ...child, files: [...child.files, child.files[0]] }] }), false, 'a file twice in one skill still breaks it');
+  const u = setup(t);
+  u.section.update(row({ composedSkills: [parent, child] }));
+  const ofParent = `composed-file:${at}//child/SKILL.md`, ofChild = `composed-file:${at}/child//SKILL.md`;
+  assert.ok(u.item(ofParent) && u.item(ofChild) && u.item(ofParent) !== u.item(ofChild), 'one item each');
+  u.copy(`${at}/child`).querySelector('.cap-node').click();
+  u.item(ofChild).querySelector('.cap-node').click();
+  assert.equal(u.section.selected, ofChild);
+  assert.equal(u.item(ofChild).getAttribute('aria-selected'), 'true'); assert.equal(u.item(ofParent).getAttribute('aria-selected'), 'false');
+  u.$('.cap-reader-body a').click();
+  assert.equal(u.section.selected, `composed-file:${at}/child//notes.md`, 'from the child, its own copy');
+  u.copy(at).querySelector('.cap-node').click();
+  u.item(`composed-file:${at}//SKILL.md`).querySelector('.cap-node').click();
+  u.$('.cap-reader-body a').click();
+  assert.equal(u.section.selected, ofParent, 'from the parent, the parent’s copy');
 });
 
 /* ── on the soul page: the request ───────────────────────────────────── */
