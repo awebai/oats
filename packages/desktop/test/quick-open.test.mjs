@@ -147,10 +147,10 @@ test("paletteRows: '>' restricts to commands; live chord detail functions re-eva
 
 // ── keymap + terminal policy pins ────────────────────────────────────────
 
-test("app.quickOpenSouls defaults to ⌘P / Ctrl+Shift+P and is terminal-allowlisted", () => {
-  assert.deepEqual(DEFAULT_KEYMAP["app.quickOpenSouls"], { mac: "Mod+P", other: "Ctrl+Shift+P" });
+test("app.quickOpenSouls defaults to ⌘P / Ctrl+Alt+P and is terminal-allowlisted", () => {
+  assert.deepEqual(DEFAULT_KEYMAP["app.quickOpenSouls"], { mac: "Mod+P", other: "Ctrl+Alt+P" });
   assert.ok(TERMINAL_ALLOWLIST.includes("app.quickOpenSouls"),
-    "Ctrl+Shift+P fires from a focused terminal on Linux/Windows; plain Ctrl+P stays the shell's history");
+    "Ctrl+Alt+P fires from a focused terminal on Linux/Windows; plain Ctrl+P stays the shell's history");
 });
 
 // ── shell wiring pins (source-level, house style) ────────────────────────

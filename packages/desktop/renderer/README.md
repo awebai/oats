@@ -534,7 +534,7 @@ draws its own way; the dialog draws them. **Change soul** switches the same dial
 the **picker** (the soul chooser, grouped by source, alphabetical, externals
 last, keyed by `agentsRoot + name + server`); switching soul keeps the typed
 name and instruction, and a soul chosen there reopens in the picker. Quick
-Open (⌘P / Ctrl+Shift+P) opens the scoped layout too (`preselectSpawn`), and
+Open (⌘P / Ctrl+Alt+P) opens the scoped layout too (`preselectSpawn`), and
 dismissing that dialog returns to where the operator was.
 
 Keyboard (spec F; `../docs/desktop-keyboard.md`): Mod+Enter (`spawn.submit`)
@@ -1319,7 +1319,7 @@ The keymap, its per-platform defaults, the terminal policy, the F6 regions and
 the keyboard audit are documented in `../docs/desktop-keyboard.md`; this
 section is the module map.
 
-- **⌘F / Ctrl+Shift+F** reveals the sidebar and focuses the instance filter; **⌘N /
+- **⌘F / Ctrl+Alt+F** reveals the sidebar and focuses the instance filter; **⌘N /
   Ctrl+Shift+N** opens Workspace's soul chooser, never automatically spawning
   an instance. Visible hints and tooltips follow the effective bindings
   (including explicit unbinds). Existing user overrides are retained.
@@ -1341,14 +1341,26 @@ section is the module map.
   inside `.xterm`, on macOS only ⌘-resolved chords fire, plus Ctrl+Tab for
   tabs.next/prev; on Linux/Windows only `TERMINAL_ALLOWLIST` action ids may
   fire (a default xterm sends nothing for, or a byte the program still gets
-  from a plainer key; `test/terminal-xterm-bytes.test.mjs` pins each) —
-  plain Ctrl+letter, F6, Alt+digit and Ctrl+PgUp/PgDn belong to the attached
-  program, and `focus.leaveTerminal` (Mod+Shift+F6) is the way out. `keymapConflicts`
+  from a plainer key, or a named exception: `focus.leaveTerminal` and the
+  Alt+Shift arrows; `test/terminal-xterm-bytes.test.mjs` pins each) —
+  plain Ctrl+letter, F6 and Alt+digit belong to the attached program, and
+  `focus.leaveTerminal` (Mod+Shift+F6) is the way out. `keymapConflicts`
   lists clashes that involve a stored rebind; the shell marks the footer
-  shortcuts button and the editor names them. `app.palette` (⌘K /
-  Ctrl+Shift+K) and `app.quickOpenSouls` (⌘P / Ctrl+Shift+P) both fire
-  from a focused terminal; plain Ctrl+K and Ctrl+P stay the program's
-  (readline's kill-line, shell history).
+  shortcuts button and the editor names them. The chords shared with the
+  TUI (`CHORDS_READ`, read from `packages/client/keymap.mjs` CHORDS) all
+  fire from a focused terminal: `app.palette` (⌘K / Ctrl+Alt+K) and
+  `app.quickOpenSouls` (⌘P / Ctrl+Alt+P) among them, while plain Ctrl+K
+  and Ctrl+P stay the program's (readline's kill-line, shell history).
+  The leader's ↑ ↓ z have actions of their own (`roster.openPrevious`,
+  `roster.openNext`, `terminal.focusMode`, shell.mjs `runAsLeaderKey`), which run
+  what the leader then that key runs.
+  `keymapTakes(e)` tells a view's own key handler that the keymap binds this
+  keydown (matchEvent's answer, nothing run); the roster tree, the overview
+  canvas, the Souls grid and a row's actions button give way to it on their
+  arrows. On macOS a chord holding ⌥ with ⌘ or ⌃ names its letter or digit by
+  `KeyboardEvent.code`, as the layout labels it (`readKeyboardLayout`, called
+  by the shell at startup and on window focus; `setKeyboardLayoutMap` for
+  tests), since ⌥ changes `key`; a character AltGr typed is never aliased.
 - **focus-regions.mjs** — F6 / Shift+F6 (`focus.nextRegion`/`prevRegion`,
   outside a terminal; `focus.leaveTerminal` from inside one): sidebar nav →
   roster → main → instance panel, hidden regions skipped, each region's
@@ -1391,7 +1403,7 @@ section is the module map.
   `onTerminalTypographyChange`), so every open terminal and the control follow
   each other. A typed size applies on Enter or on leaving the field, never per
   keystroke. The font family stays on the palette's prompt.
-- **quick-open.mjs** — Quick Open for souls (⌘P / Ctrl+Shift+P, also “Souls: quick
+- **quick-open.mjs** — Quick Open for souls (⌘P / Ctrl+Alt+P, also “Souls: quick
   open…” in the palette): fuzzy-find a soul from the Spawn view's data
   source and hand off through `views/spawn.mjs` `preselectSpawn()`: the
   spawn dialog scoped to that soul, as its card's Spawn opens it, with focus

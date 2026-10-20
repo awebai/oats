@@ -222,7 +222,7 @@ test('no saved theme and the "host" fallback: This computer is marked current, a
 // With the keymap engine and the shell's one window keydown listener present (Linux chords).
 function withEngine(t, f) {
   const offs = [
-    // The shell's sidebar.focusFilter (Ctrl+Shift+F) focuses the roster filter behind the modal.
+    // The shell's sidebar.focusFilter (Ctrl+Alt+F) focuses the roster filter behind the modal.
     registerAction({ id: 'sidebar.focusFilter', label: 'Filter', context: 'global', run: () => f.doc.getElementById('field').focus() }),
     registerAction({ id: 'app.themePicker', label: 'Choose a theme…', context: 'global', run: e => { if (!e?.repeat) f.picker.toggle(); } }),
   ];
@@ -232,12 +232,12 @@ function withEngine(t, f) {
   return { chord: (extra = {}) => f.key(' ', { code: 'Space', ctrlKey: true, shiftKey: true, ...extra }) };
 }
 
-test('a background focus chord (Ctrl+Shift+F) cannot take focus out of the picker: Tab and Escape keep working', t => {
+test('a background focus chord (Ctrl+Alt+F) cannot take focus out of the picker: Tab and Escape keep working', t => {
   const f = fixture(t), engine = withEngine(t, f);
   engine.chord();
   assert.equal(f.overlays().length, 1, 'the chord opens it from the opener');
   const rows = f.rows(); rows[1].focus();
-  const filter = f.key('F', { ctrlKey: true, shiftKey: true });
+  const filter = f.key('f', { ctrlKey: true, altKey: true });
   assert.equal(filter.defaultPrevented, true, 'the background action ran');
   assert.equal(f.doc.activeElement, rows[1], 'focus is pulled back to where it was in the picker');
   rows[3].focus(); f.key('Tab'); assert.equal(f.doc.activeElement, f.doc.querySelector('.theme-picker-close'), 'Tab still wraps inside');

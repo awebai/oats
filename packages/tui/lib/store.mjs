@@ -9,7 +9,7 @@
 // removed, and nothing here decides what a failed read means or which view a deployment is in.
 // Selection is an identity (the shared `instanceId`), never an index, so it survives every read;
 // the rows it moves among are the model's, in drawn order.
-import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings, chordKeys } from "./actions.mjs";
+import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings, chordKeys, chordsRead } from "./actions.mjs";
 import { collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { defaultDetachKey } from "./config.mjs";
 import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, workspaceOf, LIST_WORDS } from "./model.mjs";
@@ -87,7 +87,8 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  `leader`: `{ read, waiting }` from the leader's read on, or null (see `leading`).
  *  `keyboard`: the flags the terminal confirmed for the kitty keyboard protocol (lib/main.mjs, the
  *  event `{ keyboard }`), or null while it has not; `chords`: the chords of `platform`, key id ->
- *  `does` (actions.mjs chordKeys), read only while `keyboard` is not null (see `leading`).
+ *  `does` (actions.mjs chordKeys), every one read while `keyboard` is not null, and the Alt+Shift
+ *  arrows alone while it is null (actions.mjs chordsRead; see `leading`).
  *  `palette`: the palette while it is open (see `paletteOpened`), or null. `recent`: the ids of
  *  the instances opened in this run, the latest first.
  *  `act`: the confirmation open in the act view (see `actOpened`), or null; `acted` counts the
@@ -799,17 +800,27 @@ function ungrouped(state, g, focus) {
   return showTab(one, left, { focus, zoom: false });
 }
 
-/** The tab before or after the shown one (`step` -1 or 1) in the focused group shown, without
- *  wrapping and never into the other group: at either end
- *  nothing moves, nor while a tab is still starting (it is the shown one until the panel has its
- *  window). The focus stays where it was, and so does the zoom. */
-function tabStepped(state, step, { focus = state.terminal?.focus ?? "list", zoom = state.terminal?.zoom ?? false } = {}) {
+/** The tab of the focused group that `pick` names, shown: `pick(count, at)` answers its place
+ *  among the group's `count` tabs, `at` the shown one's. Never into the other group, and nothing
+ *  moves when there is no such tab, when it is the shown one, or while a tab is still starting (it
+ *  is the shown one until the panel has its window). The focus stays where it was, and so does
+ *  the zoom. */
+function tabPicked(state, pick, { focus = state.terminal?.focus ?? "list", zoom = state.terminal?.zoom ?? false } = {}) {
   const t = state.terminal;
   if (t === null || state.tabs.some((tab) => tab.status === "starting")) return { state, effect: null };
-  const mine = inGroup(state, state.group), at = mine.findIndex((tab) => tab.id === t.id) + step;
-  if (at < 0 || at >= mine.length) return { state, effect: null };
-  return showTab(state, mine[at].id, { focus, zoom });
+  const mine = inGroup(state, state.group), from = mine.findIndex((tab) => tab.id === t.id), to = pick(mine.length, from);
+  if (!(to >= 0 && to < mine.length) || to === from) return { state, effect: null };
+  return showTab(state, mine[to].id, { focus, zoom });
 }
+/** The tab each of these `does` shows (tabPicked): `tab-previous` and `tab-next` (the leader's Left
+ *  and Right, the list's keys) the one before or after the shown one, without wrapping, and the
+ *  chords' `tab-1` to `tab-8` (actions.mjs CHORD_OWN) the Nth, `tab-9` the last. */
+const TAB_PICKS = Object.freeze({
+  __proto__: null,
+  "tab-previous": (count, at) => at - 1,
+  "tab-next": (count, at) => at + 1,
+  ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tab-${i + 1}`, i === 8 ? (count) => count - 1 : () => i])),
+});
 
 /** The preflight of another machine's agent ended. Given up meanwhile (Esc, a suspend, a second
  *  open): dropped. Failed: the line that says so, unless it is the person's own giving up. Else
@@ -1089,9 +1100,10 @@ function leading(state, event, keymap) {
     if (l !== null && l.waiting && !sameRead(l, event)) return twice(next(state, { leader: leaderAt(event.read, false) }));
     return { state: next(state, { leader: leaderAt(event.read, event.rest !== true) }), effect: null };
   }
-  // A chord typed in a terminal (term/through.mjs): the leader then its key, at once.
+  // A chord typed in a terminal (term/through.mjs): the leader then its key, at once. Only one
+  // that is read now (chordsRead): the scanner takes no other.
   if (event.chord !== undefined) {
-    if (state.keyboard === null || state.terminal?.focus !== "terminal") return { state, effect: null };
+    if (state.terminal?.focus !== "terminal" || ![...chordsRead(state.chords, state.keyboard !== null).values()].includes(event.chord)) return { state, effect: null };
     return led(l === null ? state : next(state, { leader: null }), event.chord, event, keymap);
   }
   if (typeof event.key !== "string" && !("paste" in event)) return { pass: state };
@@ -1104,10 +1116,11 @@ function leading(state, event, keymap) {
   }
   const plain = l === null ? state : next(state, { leader: null });
   if (event.key === state.leaderKey) return { state: next(plain, { leader: leaderAt(event.read, true) }), effect: null };
-  // THE CHORDS (docs/tui.md, "Chords"): while the terminal confirms the kitty keyboard protocol, a
-  // chord does what the leader then its key does, from whatever was open. While the leader waits it
-  // is a key not in the leader's table (above): it cancels the leader and is dropped.
-  const chord = state.keyboard === null || typeof event.key !== "string" ? undefined : state.chords.get(event.key);
+  // THE CHORDS (docs/tui.md, "Chords"): a chord does what the leader then its key does, from
+  // whatever was open: every one while the terminal confirms the kitty keyboard protocol, the
+  // Alt+Shift arrows without it too (chordsRead). While the leader waits it is a key not in the
+  // leader's table (above): it cancels the leader and is dropped.
+  const chord = typeof event.key !== "string" ? undefined : chordsRead(state.chords, state.keyboard !== null).get(event.key);
   if (chord !== undefined) return led(plain, chord, event, keymap);
   return { pass: plain };
 }
@@ -1151,12 +1164,14 @@ function toInstances(state) {
   return { state: next(s, { view: "instances", back: "instances", switcher: Object.freeze({ ...s.switcher, line: null, refused: null, removing: null }) }), effect: settled.effect };
 }
 
-/** What the leader's key does (LEADER's `does`), from wherever the focus was. From the terminal's
- *  focus the acts are the open terminal's instance's and give the focus back when their
+/** What the leader's key does (LEADER's `does`), or a chord (actions.mjs chordKeys: the same
+ *  `does`, and the chords' own `tab-1` to `tab-9`), from wherever the focus was. From the
+ *  terminal's focus the acts are the open terminal's instance's and give the focus back when their
  *  confirmation closes, zoom zooms it in or out, and the palette gives it back when it is closed;
- *  Up and Down go from the open terminal's instance. Every other key first gives the focus to
- *  the list, then does what its action does there; the terminal's keys and the acts first go to
- *  the Instances view, from any view (toInstances). */
+ *  Up and Down go from the open terminal's instance; the tabs' (Left, Right, tab-N) keep the focus
+ *  where it was. Every other key first gives the focus to the list, then does what its action does
+ *  there; the terminal's keys and the acts first go to the Instances view, from any view
+ *  (toInstances). */
 function led(state, does, event, keymap) {
   const stay = { state, effect: null }, t = state.terminal;
   const inTerminal = t?.focus === "terminal" && state.view === "instances";
@@ -1173,13 +1188,14 @@ function led(state, does, event, keymap) {
     return { state: step.state, effect: both(settledState.effect, step.effect) };
   }
   // The tabs, from any focus: the one shown next keeps the focus and the zoom it had.
-  if (does === "tab-previous" || does === "tab-next") {
-    // At either end, or while a tab starts, nothing at all: not even the settling, which would
-    // take the focus from the terminal.
-    if (tabStepped(state, does === "tab-previous" ? -1 : 1).effect === null) return stay;
+  const pick = TAB_PICKS[does];
+  if (pick !== undefined) {
+    // At either end, with no such tab, on the shown one or while a tab starts, nothing at all: not
+    // even the settling, which would take the focus from the terminal.
+    if (tabPicked(state, pick).effect === null) return stay;
     const settledState = toInstances(state);
     if (settledState.state.view !== "instances") return stay;
-    const step = tabStepped(settledState.state, does === "tab-previous" ? -1 : 1, { focus: inTerminal ? "terminal" : "list", zoom: inTerminal && t.zoom });
+    const step = tabPicked(settledState.state, pick, { focus: inTerminal ? "terminal" : "list", zoom: inTerminal && t.zoom });
     return { state: step.state, effect: both(settledState.effect, step.effect) };
   }
   // The split's keys, from any focus: nothing at all when they do not apply (splitRefused).
@@ -1210,7 +1226,8 @@ function led(state, does, event, keymap) {
     return { state: step.state, effect: both(settledState.effect, step.effect) };
   }
   const settledState = toList(state);
-  const { key, text, ...rest } = event;
+  // The action alone: neither the key nor a chord that ran it is read again.
+  const { key, text, chord, ...rest } = event;
   const step = reduced(settledState.state, { ...rest, action: does }, keymap);
   return { state: step.state, effect: both(settledState.effect, step.effect) };
 }
@@ -1414,7 +1431,7 @@ function reduced(state, event, keymap) {
     case "filter": return { state: rehomed(roster(state), next(state, { focus: "list", filter: Object.freeze({ editing: true, query: state.filter.query }) })), effect: null };
     case "open": return at < 0 ? stay : openAgent(state, r.items[at].row);
     case "zoom": case "close-terminal": return terminalKey(state, action);
-    case "tab-previous": case "tab-next": return tabStepped(state, action === "tab-previous" ? -1 : 1);
+    case "tab-previous": case "tab-next": return tabPicked(state, TAB_PICKS[action]);
     case "split-right": case "split-down": case "group-next": case "tab-move": case "group-close": {
       const refused = splitRefused(state, action, event.panel);
       return refused === true ? { state, effect: null } : refused !== null ? { state: next(state, { outcome: refused }), effect: null } : splitKey(state, action, false);

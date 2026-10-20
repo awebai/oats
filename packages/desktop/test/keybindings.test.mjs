@@ -87,10 +87,10 @@ test("overrides persist to localStorage and reset cleanly", () => {
   assert.equal(getBinding("tabs.close", false), null);
   resetBinding("app.palette");
   assert.equal(getBinding("app.palette", true), "Mod+K");
-  assert.equal(getBinding("app.palette", false), "Ctrl+Shift+K");
+  assert.equal(getBinding("app.palette", false), "Ctrl+Alt+K");
   resetAllBindings();
   assert.equal(getBinding("tabs.close", true), "Mod+W");
-  assert.equal(getBinding("tabs.close", false), "Ctrl+Shift+W");
+  assert.equal(getBinding("tabs.close", false), "Ctrl+Alt+W");
   assert.equal(store.has("oats-desktop-keymap"), false, "empty overrides remove the key");
 });
 
@@ -126,11 +126,12 @@ function withActions(t, actions) {
 test("matchEvent: global action fires on its default chord (mac + non-mac)", (t) => {
   withActions(t, [{ id: "app.palette", label: "Palette", context: "global", run: () => {} }]);
   assert.equal(matchEvent(ev("k", { metaKey: true }), { isMac: true, insideTerminal: false }), "app.palette");
-  // Linux/Windows: Ctrl+Shift+K (#1217); plain Ctrl+K is the program's, and Ctrl+Shift+P, the
-  // palette's chord until #1217, is Quick Open's now.
-  assert.equal(matchEvent(ev("K", { ctrlKey: true, shiftKey: true }), { isMac: false, insideTerminal: false }), "app.palette");
+  // Linux/Windows: Ctrl+Alt+K (the shared Ctrl+Alt family); plain Ctrl+K is the program's, and
+  // Ctrl+Shift+K, the palette's chord from #1217 to phase 3, is nothing now; Ctrl+Alt+P is Quick Open's.
+  assert.equal(matchEvent(ev("k", { ctrlKey: true, altKey: true }), { isMac: false, insideTerminal: false }), "app.palette");
   assert.equal(matchEvent(ev("k", { ctrlKey: true }), { isMac: false, insideTerminal: false }), null);
-  assert.equal(matchEvent(ev("P", { ctrlKey: true, shiftKey: true }), { isMac: false, insideTerminal: false }), null);
+  assert.equal(matchEvent(ev("K", { ctrlKey: true, shiftKey: true }), { isMac: false, insideTerminal: false }), null);
+  assert.equal(matchEvent(ev("p", { ctrlKey: true, altKey: true }), { isMac: false, insideTerminal: false }), null);
   assert.equal(matchEvent(ev("k"), { isMac: true, insideTerminal: false }), null);
   assert.equal(matchEvent(ev("k", { metaKey: true, shiftKey: true }), { isMac: true, insideTerminal: false }), null,
     "extra modifiers must not match");
@@ -186,10 +187,10 @@ test("terminal policy non-mac: only allowlisted action ids fire inside xterm", (
     { id: "app.themeToggle", label: "Theme", context: "global", run: () => {} },
   ]);
   const inTerm = { isMac: false, insideTerminal: true };
-  assert.equal(matchEvent(ev("K", { ctrlKey: true, shiftKey: true }), inTerm), "app.palette");
+  assert.equal(matchEvent(ev("k", { ctrlKey: true, altKey: true }), inTerm), "app.palette");
   assert.equal(matchEvent(ev("Tab", { ctrlKey: true }), inTerm), "tabs.next");
   assert.equal(matchEvent(ev("Tab", { ctrlKey: true, shiftKey: true }), inTerm), "tabs.prev");
-  assert.equal(matchEvent(ev("W", { ctrlKey: true, shiftKey: true }), inTerm), "tabs.close");
+  assert.equal(matchEvent(ev("w", { ctrlKey: true, altKey: true }), inTerm), "tabs.close");
   // Ctrl+K / Ctrl+W are the program's (kill line, delete word): no default claims them.
   assert.equal(matchEvent(ev("k", { ctrlKey: true }), inTerm), null);
   assert.equal(matchEvent(ev("w", { ctrlKey: true }), inTerm), null);
@@ -200,7 +201,7 @@ test("terminal policy non-mac: only allowlisted action ids fire inside xterm", (
   // allowlist is action-id based, so it follows a rebind (the user's choice)
   setBinding("app.palette", "Ctrl+K");
   assert.equal(matchEvent(ev("k", { ctrlKey: true }), inTerm), "app.palette");
-  assert.equal(matchEvent(ev("K", { ctrlKey: true, shiftKey: true }), inTerm), null, "old chord no longer bound");
+  assert.equal(matchEvent(ev("k", { ctrlKey: true, altKey: true }), inTerm), null, "old chord no longer bound");
 });
 
 test("the legacy palette chord check is gone: the engine is the one palette policy", async () => {
@@ -305,7 +306,7 @@ test("registerAction defaultChord: folds into the effective keymap (addendum 3)"
   // static DEFAULT_KEYMAP wins over a registration default for the same id
   const off2 = registerAction({ id: "app.palette", label: "P", context: "global", run: () => {}, defaultChord: "Mod+9" });
   assert.equal(getBinding("app.palette", true), "Mod+K");
-  assert.equal(getBinding("app.palette", false), "Ctrl+Shift+K");
+  assert.equal(getBinding("app.palette", false), "Ctrl+Alt+K");
   off2();
   // …including a static "no default" on a platform: never the registration's chord.
   const off4 = registerAction({ id: "app.themeToggle", label: "T", context: "global", run: () => {}, defaultChord: "Mod+Shift+T" });
@@ -438,6 +439,21 @@ test("chordFromKeyId: the shared keymap's key ids as this engine's chords", () =
   assert.equal(chordFromKeyId("1"), "1");
   assert.equal(chordFromKeyId("escape"), "Esc");
   assert.equal(chordFromKeyId("nonsense"), null);
+  assert.equal(chordFromKeyId("ctrl+alt+shift+e"), "Ctrl+Alt+Shift+E");
+  assert.equal(chordFromKeyId("alt+shift+up"), "Alt+Shift+↑");
+  assert.equal(chordFromKeyId("cmd+alt+right"), "Mod+Alt+→");
+});
+
+test("an arrow chord is stored as its label and read back as the arrow: the real keydown matches it", (t) => {
+  for (const [label, key] of [["↑", "ArrowUp"], ["↓", "ArrowDown"], ["←", "ArrowLeft"], ["→", "ArrowRight"]]) {
+    assert.equal(parseChord(`Alt+Shift+${label}`).key, key.toLowerCase());
+    assert.equal(chordToString(chordFromEvent(ev(key, { altKey: true, shiftKey: true }), false)), `Alt+Shift+${label}`, "a recorded arrow");
+    assert.equal(formatChord(`Mod+Alt+${label}`, true), `⌥⌘${label}`);
+  }
+  withActions(t, [{ id: "a.up", label: "up", context: "global", run: () => {} }]);
+  setBinding("a.up", "Alt+Shift+↑");
+  assert.equal(matchEvent(ev("ArrowUp", { altKey: true, shiftKey: true }), { isMac: false, insideTerminal: false }), "a.up");
+  assert.equal(matchEvent(ev("ArrowUp", { altKey: true }), { isMac: false, insideTerminal: false }), null, "Shift is part of it");
 });
 
 test("`when`: an action that is not live does not exist for dispatch; its chord goes on", (t) => {

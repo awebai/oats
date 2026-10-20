@@ -10,6 +10,7 @@
 // leader's table is the shared one (LEADER, below). What only the TUI has (q, Ctrl+C, Ctrl+Z, Ctrl+L,
 // Ctrl+K, Tab, Esc, Delete, C, i) keeps its keys here. packages/tui/test/keymap.test.mjs pins both.
 import { CHORDS, LEADER_TABLE, plainKeys } from "./client.mjs";
+import { legacyChord } from "./term/kitty.mjs";
 import { isBackKey } from "./term/through.mjs";
 
 export const ACTIONS = Object.freeze([
@@ -91,24 +92,38 @@ export const LEADER = LEADER_TABLE;
  *  `next` (the instance before or after the shown terminal's, or the selection's: its tab shown,
  *  or opened as a new one, with the focus in it) and `list` (the list's focus, which Esc gives). */
 export const LEADER_OWN = Object.freeze(["previous", "next", "list"]);
-/** Whether the TUI acts on `does`, a `does` of the shared leader table: it is one of the leader's
- *  own (LEADER_OWN), or the id of an action of ACTIONS, which lib/store.mjs `led` runs as its key
- *  runs it, or in its own way from the leader (the terminal's keys, the acts, the spawns). A
- *  `does` the TUI does not handle is a failure of packages/tui/test/keymap.test.mjs, never a
- *  key that does nothing. */
-export const leaderHandles = (does) => LEADER_OWN.includes(does) || ACTIONS.some((action) => action.id === does);
+/** What a chord does that neither the leader's table nor an action does (lib/store.mjs `led`):
+ *  `tab-1` to `tab-8`, the focused group's Nth tab shown, and `tab-9`, its last (as the Desktop and
+ *  the browsers do). No key after the leader does them: LEADER has no row for them. */
+export const CHORD_OWN = Object.freeze(Array.from({ length: 9 }, (_, i) => `tab-${i + 1}`));
+/** Whether the TUI acts on `does`, a `does` of the shared leader table or of the chords: it is one
+ *  of the leader's own (LEADER_OWN), of the chords' own (CHORD_OWN), or the id of an action of
+ *  ACTIONS, which lib/store.mjs `led` runs as its key runs it, or in its own way from the leader
+ *  (the terminal's keys, the acts, the spawns). A `does` the TUI does not handle is a failure of
+ *  packages/tui/test/keymap.test.mjs or chords.test.mjs, never a key that does nothing. */
+export const leaderHandles = (does) => LEADER_OWN.includes(does) || CHORD_OWN.includes(does) || ACTIONS.some((action) => action.id === does);
 /** key id -> what the leader then does (LEADER's `does`). */
 export const LEADER_KEYS = new Map(LEADER.flatMap((entry) => entry.keys.map((key) => [key, entry.does])));
 
 /** THE CHORDS (docs/tui.md, "Chords"): key id -> `does`, the shared ones (packages/client/keymap.mjs
- *  CHORDS) on macOS (`isMac`) or elsewhere, each doing what the leader then its key does
- *  (lib/store.mjs `led`). Read only while the terminal confirms the kitty keyboard protocol, which
- *  alone sends them. Left out: a chord with `cmd+` (a terminal never passes macOS's Command to a
- *  program), and one whose key an action of `actions` binds (a user's tui.json keeps its key).
- *  Each `does` is one the TUI handles (leaderHandles): packages/tui/test/chords.test.mjs. */
-export function chordKeys(isMac, actions = ACTIONS) {
+ *  CHORDS) on macOS (`isMac`) or elsewhere, in the table's order, each doing what the leader then
+ *  its key does, or a tab by its place (CHORD_OWN; lib/store.mjs `led`), from every focus. Left
+ *  out: a chord with `cmd+` (a terminal never passes macOS's Command to a program: with the shared
+ *  table that is every chord of macOS), and one whose key an action of `actions` binds (a user's
+ *  tui.json keeps its key), and one whose `does` the TUI does not handle (leaderHandles: a row may
+ *  be the Desktop's alone): packages/tui/test/chords.test.mjs. `chords` is the shared table. Which of them are read depends on the kitty keyboard protocol
+ *  (chordsRead). */
+export function chordKeys(isMac, actions = ACTIONS, chords = CHORDS) {
   const bound = new Set(actions.flatMap((action) => action.keys));
-  return new Map(CHORDS.map((entry) => [isMac ? entry.mac : entry.other, entry.does]).filter(([key, does]) => !key.startsWith("cmd+") && !bound.has(key) && leaderHandles(does)));
+  return new Map(chords.map((entry) => [isMac ? entry.mac : entry.other, entry.does]).filter(([key, does]) => !key.startsWith("cmd+") && !bound.has(key) && leaderHandles(does)));
+}
+
+/** The chords of `chords` (chordKeys) the TUI reads while the terminal confirms the kitty keyboard
+ *  protocol (`kitty`) or not: all of them under it; without it only the Alt+Shift arrows
+ *  (term/kitty.mjs LEGACY_CHORDS), whose sequence is their own. A Ctrl+Alt chord without the
+ *  protocol is the bytes of two keys (ESC, then Ctrl+K), the agent's, and in the list no key. */
+export function chordsRead(chords, kitty) {
+  return kitty ? chords : new Map([...chords].filter(([key]) => legacyChord(key)));
 }
 
 /** key id -> action id. A key bound twice is a defect of the table, refused when it is read. */
@@ -128,6 +143,13 @@ export function keyLabel(key) {
   const parts = key.split("+"), last = parts.pop();
   const name = NAMES[last] ?? (/^f\d+$/.test(last) ? last.toUpperCase() : parts.length && last.length === 1 ? last.toUpperCase() : last);
   return [...parts.map((part) => NAMES[part] ?? part), name].join("+");
+}
+
+/** Key ids as one label, the modifiers they share said once: `alt+shift+up` and `alt+shift+down` are
+ *  `Alt+Shift+Up/Down`; keys that share none are each said whole, `/` between them. */
+export function keysTogether(keys) {
+  const labels = keys.map(keyLabel), shared = labels[0].slice(0, labels[0].lastIndexOf("+") + 1);
+  return labels.every((label) => label.startsWith(shared) && label.length > shared.length) ? shared + labels.map((label) => label.slice(shared.length)).join("/") : labels.join("/");
 }
 
 /** The modifiers of the back key's grammar (term/through.mjs BACK_KEY) as a person reads them. */

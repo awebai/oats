@@ -62,7 +62,7 @@ import {
 import { createDataState, skeleton, statusLine, observedText } from "../loading.mjs";
 import { NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "../deployment-header.mjs";
 import { deploymentUnavailableText } from "../../../client/deployment-facts.mjs";
-import { registerAction } from "../keybindings.mjs";
+import { keymapTakes, registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { icon } from "../shell-icons.mjs";
 import { attachDeployments } from "../view-deployments.mjs";
@@ -1416,7 +1416,9 @@ function onKey(s, e) {
     s.viewActions.find((a) => a.id === hit)?.run();
     return;
   }
-  if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) return;
+  // An arrow chord the keymap binds (the shared Alt+Shift+↑/↓, ⌘⌥↑/↓: the previous / next
+  // instance's terminal; a rebind) is the keymap's from the canvas as from anywhere.
+  if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key) || keymapTakes(e)) return;
   e.preventDefault();
   if (!s.sel) { select(s, instanceId(list[0])); return; }
   const cur = s.nodeEls.get(s.sel);

@@ -177,6 +177,40 @@ test("a leader key whose row does not apply now says why; only an unsupported ke
   assert.equal(why("refresh"), null, "a sidebar-only key has no row");
 });
 
+// The leader's ↑ / ↓ / z on chords of their own (packages/client/keymap.mjs CHORDS previous, next,
+// zoom): roster.openPrevious, roster.openNext and terminal.focusMode run the shipped runAsLeaderKey, as the
+// sidebar keys do. Driven here beside the leader's own settle (onSettle, as shipped and pinned above,
+// with the origin leader.start gets: the target where the key was pressed), over one roster.
+test("roster.openPrevious, roster.openNext and terminal.focusMode run what the leader's ↑, ↓ and z run", () => {
+  assert.match(shellSource, /for \(const \[id, does\] of \[\["roster\.openPrevious", "previous"\], \["roster\.openNext", "next"\], \["terminal\.focusMode", "zoom"\]\]\) \{\n  registerAction\(\{ id, label: leaderLabel\(does, actionLabel\), context: "global", when: \(\) => !modalOpen\(\), run: \(e\) => runAsLeaderKey\(does, e\) \}\);/);
+  assert.match(shellSource, /const at = e\?\.target \?\? document\.activeElement; leader\.start\(\{ targetId: leaderTargetId\(at\) \}\)/);
+  assert.deepEqual(["previous", "next", "zoom"].map(does => leaderLabel(does)),
+    ["Open the previous instance's terminal", "Open the next instance's terminal", "Focus mode on or off, in the active terminal"]);
+  const calls = [];
+  const rows = ["a", "b", "c"].map(id => ({ id, openable: id !== "b", open: () => calls.push(["open", id]) }));
+  const d = createLeaderDispatch({ say: line => calls.push(["say", line]), targetId: origin => origin.targetId ?? null,
+    target: () => null, rosterRows: () => rows, zoom: () => calls.push(["zoom"]) });
+  let state = STATE;
+  const notApplicable = shellFunction("notApplicable", { LEADER_TABLE, leaderApplies, leaderState: () => state });
+  const leaderTargetId = el => el?.instance ?? null;
+  const sayInHint = line => calls.push(["say", line]);
+  const runAsLeaderKey = shellFunction("runAsLeaderKey", { notApplicable, sayInHint, leaderDispatch: d, leaderTargetId, document: { activeElement: null } });
+  const viaLeader = (does, at) => { const why = notApplicable(does); if (why) sayInHint(why); else d.run(does, { targetId: leaderTargetId(at) }); };
+  const both = (does, at) => {
+    calls.length = 0; viaLeader(does, at); const leader = [...calls];
+    calls.length = 0; runAsLeaderKey(does, { target: at });
+    assert.deepEqual(calls, leader, `${does} from ${at?.instance ?? "no target"}`);
+    return leader;
+  };
+  assert.deepEqual(both("next", { instance: "a" }), [["open", "c"]], "b is passed over");
+  assert.deepEqual(both("previous", { instance: "c" }), [["open", "a"]]);
+  assert.deepEqual(both("previous", null), [["open", "c"]], "no target: the last");
+  assert.deepEqual(both("next", { instance: "c" }), [["say", "No instance below this one has a terminal to open."]]);
+  assert.deepEqual(both("zoom", { instance: "a" }), [["zoom"]]);
+  state = {};
+  assert.deepEqual(both("zoom", null), [["say", "No terminal tab is open."]]);
+});
+
 // The consumed follow-up is consumed whole, each phase, until its own keyup, whatever else goes down
 // meanwhile (rollover, a modifier). Node's EventTarget stands in for the window: no DOM needed.
 function leaderRig() {

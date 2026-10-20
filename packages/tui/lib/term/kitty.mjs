@@ -10,10 +10,11 @@
  * `o` are told apart exactly. Everything else (text, Shift and a character, Enter, Tab and
  * Backspace alone, the arrows, the function keys) keeps the bytes it has without it.
  *
- * What the TUI reads is what the legacy bytes of a key read as, with two exceptions: the chords
- * (packages/client/keymap.mjs CHORDS), which keep their own key id (`ctrl+shift+k`), and the exact
- * Alt and Esc above. What it types into an agent is those legacy bytes (`legacyBytes`), so the
- * agent's program gets what it gets without the protocol. */
+ * What the TUI reads is what the legacy bytes of a key read as, with two exceptions: the Ctrl+Alt
+ * chords (packages/client/keymap.mjs CHORDS), which keep their own key id (`ctrl+alt+k`, kittyId),
+ * and the exact Alt and Esc above. What it types into an agent is those legacy bytes
+ * (`legacyBytes`), so the agent's program gets what it gets without the protocol. The Alt+Shift
+ * arrow chords need no exception: their legacy sequence is their own (LEGACY_CHORDS). */
 
 /** The flags pushed (`CSI > flags u`): 1, disambiguate the escape codes, and 4, report alternate
  *  keys, so the shifted key a key with Shift makes on the person's layout comes with it. The
@@ -50,14 +51,27 @@ export function kittyKey(params) {
 }
 const scalar = (cp) => Number.isInteger(cp) && cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff);
 
-/** The key id a key held with Ctrl keeps under the protocol, the chords' spelling
- *  (packages/client/keymap.mjs: `ctrl+shift+k`, `ctrl+tab`): Ctrl, Alt and Shift, in that order,
- *  then a letter or Tab. Null for every other key: those are read as their legacy bytes are. */
+/** The key id a Ctrl+Alt chord keeps under the protocol, the chords' spelling
+ *  (packages/client/keymap.mjs: `ctrl+alt+k`, `ctrl+alt+shift+e`, `ctrl+alt+1`): Ctrl and Alt held,
+ *  and a base key (`code`, the key unshifted) that is an ASCII letter, with or without Shift, or a
+ *  digit 1 to 9 without it. Null for every other key, which is read as its legacy bytes are: a
+ *  key that types a character that is not ASCII (an AltGr composition on a layout where AltGr is
+ *  Ctrl+Alt: `€`, `ą`) is never a chord, whatever its modifiers. */
 export function kittyId(key) {
-  if (key === null || !key.ctrl) return null;
-  const name = key.code === 9 ? "tab" : key.code >= 0x61 && key.code <= 0x7a ? String.fromCharCode(key.code) : null;
-  return name === null ? null : `ctrl+${key.alt ? "alt+" : ""}${key.shift ? "shift+" : ""}${name}`;
+  if (key === null || !key.ctrl || !key.alt) return null;
+  const { code } = key;
+  if (code >= 0x61 && code <= 0x7a) return `ctrl+alt+${key.shift ? "shift+" : ""}${String.fromCharCode(code)}`;
+  return code >= 0x31 && code <= 0x39 && !key.shift ? `ctrl+alt+${String.fromCharCode(code)}` : null;
 }
+
+/** The chords whose key has a sequence of its own without the protocol, and keeps it under it:
+ *  Alt+Shift with an arrow, `CSI 1 ; 4 <final>` (xterm's modifier 4, Alt and Shift), key id -> final.
+ *  They are read with the protocol or without it, in the list (term/keys.mjs reads the sequence as
+ *  the key) and in a terminal (term/through.mjs). Ctrl+Alt+Shift with an arrow (`CSI 1 ; 8 A`) is
+ *  another key, and no chord. */
+export const LEGACY_CHORDS = Object.freeze({ __proto__: null, "alt+shift+up": "A", "alt+shift+down": "B", "alt+shift+right": "C", "alt+shift+left": "D" });
+/** Whether the chord key id `id` is read without the protocol too (LEGACY_CHORDS). */
+export const legacyChord = (id) => typeof id === "string" && Object.hasOwn(LEGACY_CHORDS, id);
 
 const ESC = 0x1b;
 /** The functional keys of the protocol's private-use range the TUI forwards: the keypad, as the key
@@ -127,9 +141,10 @@ function shiftedText(key, flags) {
  *  confirmed ones: with flag 4, Shift's character is the one the terminal reported.
  *    Esc ESC; Enter CR; Tab TAB, with Shift `CSI Z`; Backspace DEL, with Ctrl BS; Space SP, with Ctrl
  *    NUL; a character with Shift its shifted character, with Ctrl its C0 byte (ctrlByte); a keypad key
- *    as the key it is; Alt puts ESC before any of these. The arrows, Home, End, Insert, Delete,
- *    PageUp, PageDown and Begin are `CSI` forms with the modifier as their parameter (1 + Shift 1 +
- *    Alt 2 + Ctrl 4), as xterm sends them. */
+ *    as the key it is; Alt puts ESC before any of these, but for a character that is not ASCII with
+ *    Ctrl and Alt both, AltGr's on a layout where AltGr is Ctrl+Alt: the character alone. The
+ *    arrows, Home, End, Insert, Delete, PageUp, PageDown and Begin are `CSI` forms with the modifier
+ *    as their parameter (1 + Shift 1 + Alt 2 + Ctrl 4), as xterm sends them. */
 export function legacyBytes(key, flags) {
   if (key === null) return null;
   let { code } = key;
@@ -154,6 +169,9 @@ export function legacyBytes(key, flags) {
   else if (code < 0x20 || code === 0x7f || (code >= 0x80 && code <= 0x9f)) return null;
   else {
     const text = shiftedText(key, flags);
+    // AltGr where it is Ctrl+Alt (Windows): a character that is not ASCII typed with both is the
+    // layout's character (`€`, `ą`), and a terminal without the protocol sends it alone.
+    if (key.ctrl && key.alt && code > 0x7f) return Uint8Array.from(utf8(text));
     const byte = key.ctrl ? ctrlByte(text) : null;
     bytes = byte === null ? utf8(text) : [byte];
   }
