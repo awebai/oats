@@ -632,51 +632,75 @@ const PALETTE_SPLIT = Object.freeze({
 });
 const PALETTE_ACTS = Object.freeze({ stop: "Stop", restart: "Restart", retire: "Retire", start: "Start" });
 
+/** Which way each of the palette's own keys (its `does`, lib/actions.mjs paletteKeys) moves the
+ *  selection among the palette's runs: to the next, or to the one before. */
+const PALETTE_STEPS = Object.freeze({ "palette-next-group": 1, "palette-previous-group": -1 });
+
 /** THE PALETTE'S ROWS (docs/tui.md, "The palette"), in this order: the instances that can be
- *  opened (the most recently opened in this run first, then the shared order), the souls of the
- *  open workspace once its catalog was read, its capabilities once theirs was, the views, the acts
- *  the palette's instance offers (the open terminal's, when the palette came from its focus; else
- *  the selected one) and, once the catalog lists its soul, another of that soul, then spawning an
- *  agent, workspaces, refresh and help, and the split's that apply. With a query, each group keeps the rows the
- *  Desktop's subsequence score matches, the best first (a prefix first); a tie keeps that order.
- *  A row: `{ key, kind, label, does?, id?, name?, machine?, mark?, sibling?, capability?, source? }`; `selected` is the key the
- *  selection stands on (the first row when the palette's own is not listed). */
+ *  opened, grouped and ordered as the sidebar's tree but by recency (the shared rosterSections
+ *  with `lastFocus`, the Desktop's palette's: the group, the cluster, the root and the child opened
+ *  most recently in this run first, then the shared order; one section per deployment where the
+ *  view has several, as the sidebar's), each group led by a row of its label (`kind: "group"`: its
+ *  name, the deployment's before it where there are several, never selected), then the souls of
+ *  the open workspace once its catalog was read, its capabilities once theirs was, the views, the
+ *  acts the palette's instance offers (the open terminal's, when the palette came from its focus;
+ *  else the selected one) and, once the catalog lists its soul, another of that soul, then
+ *  spawning an agent, workspaces, refresh and help, and the split's that apply. With a query, an
+ *  instance group keeps the rows the Desktop's subsequence score matches, in its own order, and a
+ *  group with none has no label row; each kind after them keeps its matches the best first (a
+ *  prefix first), a tie in that order. A row: `{ key, kind, label, does?, id?, name?, machine?, mark?, sibling?, capability?, source? }`.
+ *  `runs`: the keys of the rows that can be selected, run by run (each instance group, then each
+ *  kind), which the palette's own keys move between (paletteStep). `selected` is the key the
+ *  selection stands on (the first row that can be selected when the palette's own is not listed). */
 export function paletteItems(state, at = new Date(0).toISOString()) {
   const p = state.palette;
-  if (p === null) return { items: [], selected: null };
-  const groups = [];
+  if (p === null) return { items: [], runs: [], selected: null };
+  const query = p.query.trim();
+  // An instance group keeps its order under a query; a kind is ranked by the score.
+  const matched = (item) => query === "" || subsequenceScore(item.text, query) !== null;
+  const ranked = (group) => (query === "" ? group
+    : group.map((item, i) => ({ item, i, score: subsequenceScore(item.text, query) })).filter((each) => each.score !== null).sort((a, b) => a.score - b.score || a.i - b.i).map(({ item }) => item));
+  const runs = [];
   if (state.open !== null) {
     const r = roster(state, at);
-    const recent = new Map(state.recent.map((id, i) => [id, i]));
-    const rank = (row) => recent.get(instanceId(row)) ?? Infinity;
-    const openable = r.ordered.filter((row) => openDecision(state, row, instanceActs(row)).open);
-    groups.push(openable.map((row, i) => ({ row, i })).sort((a, b) => rank(a.row) - rank(b.row) || a.i - b.i).map(({ row }) => {
+    const openable = r.instances.filter((row) => openDecision(state, row, instanceActs(row)).open);
+    // The record of focus the shared order reads: larger is more recent, `recent` is the latest first.
+    const lastFocus = new Map(state.recent.map((id, i) => [id, state.recent.length - i]));
+    const item = (row) => {
       const machine = elsewhere(row) ? row.deployment?.machine ?? row.server : null;
       // `sibling`: the shared words for its siblings, or null; never part of what a query matches.
       return {
         key: `instance\u0000${instanceId(row)}`, kind: "instance", label: row.instance, id: instanceId(row), name: row.instance, machine, mark: markOf(row),
         sibling: siblingText(r.siblings.get(instanceId(row))), text: `${row.instance} ${machine ?? ""}`,
       };
-    }));
+    };
+    for (const section of rosterSections(r.instances, openable, r.deployments, TERMS, { lastFocus })) for (const group of section.groups) {
+      const rows = group.clusters.flatMap((cluster) => cluster.instances).map(item).filter(matched);
+      if (!rows.length) continue;
+      // A group is named, and kept apart, by its deployment where there are several (the Desktop's palette.mjs).
+      const key = section.deployment ? `${section.deployment.id}|${group.key}` : group.key;
+      runs.push([{ key: `group\u0000${key}`, kind: "group", label: section.deployment ? `${section.label} · ${group.label}` : group.label }, ...rows]);
+    }
   }
+  const kinds = [];
   // The souls of the open workspace, once its catalog was read (the Souls view opened): choosing
   // one shows the Souls view with it selected. A palette never reads the catalog.
-  groups.push(soulsOf(state).all.map((row) => ({ key: `soul\u0000${row.name}`, kind: "soul", label: row.name, name: row.name, text: row.name })));
+  kinds.push(soulsOf(state).all.map((row) => ({ key: `soul\u0000${row.name}`, kind: "soul", label: row.name, name: row.name, text: row.name })));
   // The capabilities of the open workspace, once its catalog was read (the Capabilities view opened):
   // choosing one shows that view with it selected. Each says where it comes from (a package's and a
   // member's may share a name).
   const c = capabilitiesOf(state), names = memberNames(c.status);
-  groups.push(c.all.map((row) => {
+  kinds.push(c.all.map((row) => {
     const capability = capabilityKey(row, names);
     return { key: `capability\u0000${capability}`, kind: "capability", label: row.name, name: row.name, capability, source: capabilitySource(row, names).label, text: row.name };
   }));
-  groups.push(PALETTE_VIEWS.map(([does, label]) => ({ key: `view\u0000${does}`, kind: "view", label, does, text: label })));
+  kinds.push(PALETTE_VIEWS.map(([does, label]) => ({ key: `view\u0000${does}`, kind: "view", label, does, text: label })));
   const id = p.from === "terminal" && state.terminal !== null ? state.terminal.id : state.selected;
   const row = id === null || state.open === null ? null : roster(state, at).instances.find((each) => instanceId(each) === id) ?? null;
   if (row !== null && state.opening === null) {
     const acts = instanceActs(row);
     const another = !elsewhere(row) && state.ctxs.includes(state.open) ? soulOfAgent(state, state.open, row.agent) : null;
-    groups.push([
+    kinds.push([
       ...ACT_VERBS.filter((verb) => actDecision(state, row, acts, verb).open)
         .map((verb) => ({ key: `act\u0000${verb}`, kind: "act", label: PALETTE_ACTS[verb], does: verb, id: instanceId(row), name: row.instance, text: `${PALETTE_ACTS[verb]} ${row.instance}` })),
       // Another of its soul (N), once the catalog lists that soul: the row names the soul.
@@ -688,16 +712,26 @@ export function paletteItems(state, at = new Date(0).toISOString()) {
   // empty. A split there is no room for says so when it is run.
   const splitting = state.tabs.length > 0 && state.opening === null && !state.tabs.some((tab) => tab.status === "starting");
   const SPLIT = splitting ? (state.split === null ? PALETTE_SPLIT.one : state.terminal !== null ? PALETTE_SPLIT.shown : PALETTE_SPLIT.empty) : [];
-  groups.push([...PALETTE_COMMANDS, ...SPLIT].map(([does, label]) => ({ key: `command\u0000${does}`, kind: "command", label, does, text: label })));
-  const query = p.query.trim();
-  const items = groups.flatMap((group) => (query === ""
-    ? group
-    : group.map((item, i) => ({ item, i, score: subsequenceScore(item.text, query) })).filter((each) => each.score !== null).sort((a, b) => a.score - b.score || a.i - b.i).map(({ item }) => item)));
-  // With nothing chosen yet, the first row; but in the palette as it opens (no query), when the
-  // first row is the shown tab's instance (the most recent), the second instance: the palette and
-  // Enter go back to the terminal before it, as the Desktop's recent group does.
-  const first = p.query === "" && items[0]?.kind === "instance" && items[0].id === state.terminal?.id && items[1]?.kind === "instance" ? items[1] : items[0];
-  return { items, selected: items.some((item) => item.key === p.selected) ? p.selected : first?.key ?? null };
+  kinds.push([...PALETTE_COMMANDS, ...SPLIT].map(([does, label]) => ({ key: `command\u0000${does}`, kind: "command", label, does, text: label })));
+  for (const kind of kinds) { const rows = ranked(kind); if (rows.length) runs.push(rows); }
+  const items = runs.flat(), selectable = items.filter((each) => each.kind !== "group"), instances = selectable.filter((each) => each.kind === "instance");
+  // With nothing chosen yet, the first row that can be selected; but in the palette as it opens (no
+  // query), when that is the shown tab's instance (the most recent), the second instance: the
+  // palette and Enter go back to the terminal before it, as the Desktop's recent group did.
+  const first = p.query === "" && instances.length > 1 && selectable[0] === instances[0] && instances[0].id === state.terminal?.id ? instances[1] : selectable[0];
+  return {
+    items, runs: runs.map((run) => run.filter((each) => each.kind !== "group").map((each) => each.key)),
+    selected: selectable.some((each) => each.key === p.selected) ? p.selected : first?.key ?? null,
+  };
+}
+/** Where the palette's own key `does` (lib/actions.mjs paletteKeys) takes the selection of `list`
+ *  (paletteItems): the first row of the next run, or of the one before, wrapping past either end;
+ *  with one run, its first row. Null with no row, or for a `does` that is not the palette's. */
+export function paletteStep(list, does) {
+  const step = PALETTE_STEPS[does], n = list.runs.length;
+  if (step === undefined || n === 0) return null;
+  const at = list.runs.findIndex((run) => run.includes(list.selected));
+  return list.runs[(((at < 0 ? 0 : at + step) % n) + n) % n][0];
 }
 /** The palette as the view draws it, in a body `page` rows tall: its query on the first row, and
  *  under it the window of its rows that holds the selection (whose last row says what is cut off,
@@ -739,6 +773,9 @@ export function model(state, { page, body = page, now, at, cols, area = cols }) 
     // The chords read now, `[key id, does]` (actions.mjs chordsRead), and whether the terminal
     // confirms the kitty keyboard protocol: then the help and a terminal's cheat sheet lead with them.
     chords: [...chordsRead(state.chords, state.keyboard !== null)], kitty: state.keyboard !== null,
+    // The palette's own keys, `[key id, does]` (actions.mjs paletteKeys; none on macOS): its cheat
+    // sheet and the help name them.
+    paletteKeys: [...state.paletteKeys],
     terminal: state.terminal, onTerminal: false,
     // The panel's groups (views/frame.mjs), the split and the focused group; the panel stands while
     // any tab is open. `tabs` is the focused group's strip: each tab in order, the shown one marked,

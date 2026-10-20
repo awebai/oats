@@ -173,10 +173,12 @@ test("the palette lists the souls once their catalog was read, under the views' 
   let palette = key(key(shown(), "1").state, "ctrl+k").state;
   assert.deepEqual(paletteItems(palette).items.filter((item) => item.kind === "soul").map((item) => item.label), ["dev", "ops", "reviewer"]);
   for (const ch of "revi") palette = key(palette, ch).state;
-  // The instance whose name matches stands first: the instances' group comes before the souls'.
+  // The instance whose name matches stands first, under its group's label row: the instances'
+  // groups come before the souls'. Down moves among the rows that can be selected, which no label row is.
   const items = paletteItems(palette).items, at = items.findIndex((item) => item.kind === "soul");
-  assert.deepEqual([items[0].kind, items[at]], ["instance", { key: "soul\u0000reviewer", kind: "soul", label: "reviewer", name: "reviewer", text: "reviewer" }]);
-  for (let i = 0; i < at; i++) palette = key(palette, "down").state;
+  assert.deepEqual([items[0].kind, items[1].kind, items[at]], ["group", "instance", { key: "soul\u0000reviewer", kind: "soul", label: "reviewer", name: "reviewer", text: "reviewer" }]);
+  const steps = items.filter((item) => item.kind !== "group").indexOf(items[at]);
+  for (let i = 0; i < steps; i++) palette = key(palette, "down").state;
   const ran = key(palette, "enter");
   assert.deepEqual([ran.state.view, soulsOf(ran.state).selected.name, ran.state.palette, ran.effect], ["souls", "reviewer", null, { souls: "settle" }]);
 });
@@ -185,7 +187,8 @@ test("a soul chosen in the palette is the one shown, even where the Souls view k
   const choose = (state, name) => {
     let palette = key(key(state, "1").state, "ctrl+k").state;
     for (const ch of name) palette = key(palette, ch).state;
-    const items = paletteItems(palette).items, at = items.findIndex((item) => item.kind === "soul" && item.name === name);
+    // Down moves among the rows that can be selected: a group's label row is not one.
+    const items = paletteItems(palette).items.filter((item) => item.kind !== "group"), at = items.findIndex((item) => item.kind === "soul" && item.name === name);
     for (let i = 0; i < at; i++) palette = key(palette, "down").state;
     return key(palette, "enter").state;
   };

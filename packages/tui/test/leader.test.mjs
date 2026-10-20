@@ -19,8 +19,8 @@ const AT = Object.freeze({ page: 19, extent: 0, room: 19, cols: 38 });
 /** Drawn dev-a, dev-c, dev-b: the stopped one last, and it cannot be opened. */
 const THREE = () => stateOf(observed([instanceRow("dev", "dev-a"), instanceRow("dev", "dev-b", STOPPED), instanceRow("dev", "dev-c")], { cli: ACTS_CLI }), { cli: ACTS_CLI });
 /** Drawn alpha, alpha-kid, lead, child-a, grandchild, child-b, the empty row, solo-x, solo-y;
- *  alpha, child-b and solo-y are stopped. */
-const TREE = () => stateOf(observed([
+ *  alpha, child-b and solo-y are stopped. `options` are initialState's (a `platform`). */
+const TREE = (options = {}) => stateOf(observed([
   instanceRow("dev", "solo-y", STOPPED),
   instanceRow("dev", "grandchild", { parentInstance: "child-a" }),
   instanceRow("dev", "lead"),
@@ -29,7 +29,7 @@ const TREE = () => stateOf(observed([
   instanceRow("dev", "solo-x"),
   instanceRow("dev", "child-a", { parentInstance: "lead" }),
   instanceRow("dev", "alpha-kid", { parentInstance: "alpha" }),
-]));
+]), options);
 
 let reads = 0;
 /** A key in a read of its own (or in `read`); a one-character id types itself. */
@@ -327,18 +327,20 @@ test("the leader then Up or Down moves from the open terminal's instance, not fr
 
 // ── The palette ──────────────────────────────────────────────────────────────────────────────────
 
-test("the palette lists the instances that can be opened, the views, the acts the selected instance offers, then Spawn an agent, Workspaces, Refresh and Help; an instance's row carries its mark, name, machine and siblings", () => {
+test("the palette lists the instances that can be opened under their group's label row, the views, the acts the selected instance offers, then Spawn an agent, Workspaces, Refresh and Help; an instance's row carries its mark, name, machine and siblings", () => {
   const state = key(THREE(), "ctrl+k").state;
   assert.deepEqual(rows(state), [
-    "instance dev-a", "instance dev-c",
+    "group independent", "instance dev-a", "instance dev-c",
     "view Instances", "view Souls", "view Capabilities",
     "act Stop", "act Retire", "act Restart",
     "command Spawn an agent", "command Workspaces", "command Refresh", "command Help",
   ]);
   const a = idOf(state, "dev-a");
-  assert.deepEqual(paletteItems(state).items[0], { key: `instance\u0000${a}`, kind: "instance", label: "dev-a", id: a, name: "dev-a", machine: null, mark: "running", sibling: null, text: "dev-a " });
-  assert.deepEqual(paletteItems(state).items[5], { key: "act\u0000stop", kind: "act", label: "Stop", does: "stop", id: a, name: "dev-a", text: "Stop dev-a" });
-  assert.equal(paletteItems(state).selected, `instance\u0000${a}`, "the first row is selected");
+  // The label row is the shared group's: its key, and its label, three single instances' `independent`.
+  assert.deepEqual(paletteItems(state).items[0], { key: `group\u0000independent:${a}`, kind: "group", label: "independent" });
+  assert.deepEqual(paletteItems(state).items[1], { key: `instance\u0000${a}`, kind: "instance", label: "dev-a", id: a, name: "dev-a", machine: null, mark: "running", sibling: null, text: "dev-a " });
+  assert.deepEqual(paletteItems(state).items[6], { key: "act\u0000stop", kind: "act", label: "Stop", does: "stop", id: a, name: "dev-a", text: "Stop dev-a" });
+  assert.equal(paletteItems(state).selected, `instance\u0000${a}`, "the first row that can be selected is: the instance under the label row");
   // The acts are the selected instance's: dev-b is stopped, so it is started, not restarted.
   assert.deepEqual(rows(key(on(THREE(), "dev-b"), "ctrl+k").state).filter((row) => row.startsWith("act ")), ["act Stop", "act Retire", "act Start"]);
 });
@@ -347,16 +349,16 @@ test("the palette lists the instances most recently opened in this run first, th
   const state = THREE(), a = idOf(state, "dev-a"), c = idOf(state, "dev-c");
   const openedC = opened(state, "dev-c");
   assert.deepEqual(openedC.recent, [c]);
-  assert.deepEqual(rows(key(leaderEscape(openedC).state, "ctrl+k").state).slice(0, 2), ["instance dev-c", "instance dev-a"]);
+  assert.deepEqual(rows(key(leaderEscape(openedC).state, "ctrl+k").state).slice(0, 3), ["group independent", "instance dev-c", "instance dev-a"]);
   const thenA = key(on(leaderEscape(openedC).state, "dev-a"), "enter").state;
   assert.deepEqual(thenA.recent, [a, c]);
-  assert.deepEqual(rows(key(leaderEscape(thenA).state, "ctrl+k").state).slice(0, 2), ["instance dev-a", "instance dev-c"]);
+  assert.deepEqual(rows(key(leaderEscape(thenA).state, "ctrl+k").state).slice(0, 3), ["group independent", "instance dev-a", "instance dev-c"]);
 });
 
 test("typing filters each group by the subsequence score, a prefix first and a tie in the group's order; a query that matches nothing leaves no row; Backspace takes a character off", () => {
   const open = key(THREE(), "ctrl+k").state;
   const c = key(open, "c").state;
-  assert.deepEqual([c.palette.query, rows(c)], ["c", ["instance dev-c", "view Capabilities", "view Instances", "command Workspaces"]]);
+  assert.deepEqual([c.palette.query, rows(c)], ["c", ["group independent", "instance dev-c", "view Capabilities", "view Instances", "command Workspaces"]]);
   const re = keys(open, "r", "e").state;
   assert.deepEqual([re.palette.query, rows(re)], ["re", ["act Retire", "act Restart", "command Refresh", "command Workspaces"]]);
   const none = keys(open, "z", "z", "z").state;
@@ -369,7 +371,8 @@ test("typing filters each group by the subsequence score, a prefix first and a t
 });
 
 test("Up and Down move the palette's selection among its rows and stop at both ends", () => {
-  const open = key(THREE(), "ctrl+k").state, all = paletteItems(open).items.map((item) => item.key);
+  // The rows that can be selected: a group's label row is never one (see the groups' tests below).
+  const open = key(THREE(), "ctrl+k").state, all = paletteItems(open).items.filter((item) => item.kind !== "group").map((item) => item.key);
   assert.equal(key(open, "up").state.palette.selected, all[0]);
   assert.equal(key(open, "down").state.palette.selected, all[1]);
   assert.equal(keys(open, "down", "down", "up").state.palette.selected, all[1]);
@@ -394,7 +397,7 @@ test("Enter in the read that opened the palette runs nothing, and in a later rea
 test("an instance run from the palette opened from a terminal opens it as a tab of its own beside the open one (T2: nothing is closed)", () => {
   const state = opened(THREE(), "dev-a"), a = idOf(state, "dev-a"), c = idOf(state, "dev-c");
   const open = leaderThen(state, "k", AT).state;
-  assert.deepEqual(rows(open).slice(0, 2), ["instance dev-a", "instance dev-c"]);
+  assert.deepEqual(rows(open).slice(0, 3), ["group independent", "instance dev-a", "instance dev-c"]);
   const ran = keys(open, "d", "e", "v", "-", "c", "enter");
   assert.deepEqual(ran.effect, { open: decision(state, "dev-c") });
   assert.deepEqual(ran.state.tabs.map((tab) => tab.id), [a, c]);
@@ -446,7 +449,7 @@ test("Workspaces, Refresh and Help run from the palette do what their actions do
 test("a paste into the palette is its query's, its first line only, and runs nothing", () => {
   const open = key(THREE(), "ctrl+k").state;
   const pasted = reduce(open, { paste: "dev-c\nenter", read: ++reads, ...AT });
-  assert.deepEqual([pasted.state.palette.query, pasted.effect, rows(pasted.state)], ["dev-c", null, ["instance dev-c"]]);
+  assert.deepEqual([pasted.state.palette.query, pasted.effect, rows(pasted.state)], ["dev-c", null, ["group independent", "instance dev-c"]]);
   // A paste in the read that opened it is the query's too, and an Enter with it runs nothing.
   const read = ++reads, same = reduce(key(THREE(), "ctrl+k", read).state, { paste: "dev", read, ...AT }).state;
   assert.equal(same.palette.query, "dev");
@@ -460,6 +463,158 @@ test("Ctrl+K opens the palette from the list and Ctrl+K again closes it; Esc clo
   for (const close of ["ctrl+k", "escape"]) assert.deepEqual([butLeader(key(open.state, close).state), key(open.state, close).effect], [butLeader(state), null], close);
   assert.deepEqual([key(open.state, "ctrl+c").state, key(open.state, "ctrl+c").effect], [open.state, "quit"]);
   assert.deepEqual([key(open.state, "q").state.palette.query, key(open.state, "q").effect], ["q", null]);
+});
+
+// ── The palette's groups (docs/tui.md, "The palette") ─────────────────────────────────────────────
+
+/** TREE on Linux, where the palette has its own keys, with `names` opened in this run, the latest
+ *  first (the store's `recent`). */
+const RECENT = (names, platform = "linux") => {
+  const state = TREE({ platform });
+  return Object.freeze({ ...state, recent: Object.freeze(names.map((name) => idOf(state, name))) });
+};
+/** The palette's rows as `kind label`, a group's label row with its key. */
+const grouped = (state) => paletteItems(state).items.map((item) => (item.kind === "group" ? `group ${item.label} ${item.key.split("\u0000")[1]}` : `${item.kind} ${item.label}`));
+/** The key of the palette's row of the instance `name`, or of the row of `kind` labelled `label`. */
+const rowKey = (state, name) => `instance\u0000${idOf(state, name)}`;
+const kindKey = (state, kind, label) => paletteItems(state).items.find((item) => item.kind === kind && item.label === label).key;
+/** A key with the page the store reads for PageUp and PageDown (`page` rows of the body). */
+const paged = (state, id, page) => reduce(state, { key: id, read: ++reads, ...AT, page });
+/** The views, the acts and the commands TREE's palette lists after its instances, alpha selected. */
+const TREE_KINDS = Object.freeze(["view Instances", "view Souls", "view Capabilities", "act Stop", "act Retire", "command Spawn an agent", "command Workspaces", "command Refresh", "command Help"]);
+
+test("the palette groups the instances that can be opened as the sidebar does, each group under its label row (a cluster's name, or independent), and orders them by recency as the Desktop's palette does (#1383): the group, the cluster, the root and the child opened most recently first; a group with no row that can be opened has none", () => {
+  const solo = (state, name) => `independent:${idOf(state, name)}`;
+  // Nothing opened yet: the sidebar's order. alpha is stopped, so its group lists alpha-kid alone;
+  // solo-y is stopped, and child-b, so neither is listed.
+  const fresh = key(TREE({ platform: "linux" }), "ctrl+k").state;
+  assert.deepEqual(grouped(fresh), [
+    "group alpha cluster:0:alpha", "instance alpha-kid",
+    "group lead cluster:1:lead", "instance lead", "instance child-a", "instance grandchild",
+    `group independent ${solo(fresh, "solo-x")}`, "instance solo-x",
+    ...TREE_KINDS,
+  ]);
+  // solo-x opened last, grandchild before it: solo-x's run first, then lead's cluster (its
+  // grandchild was opened), then alpha's, never opened; under lead the child on grandchild's path
+  // first. The shared grouping keys a group by the order it is made in.
+  const recent = key(RECENT(["solo-x", "grandchild"]), "ctrl+k").state;
+  assert.deepEqual(grouped(recent), [
+    `group independent ${solo(recent, "solo-x")}`, "instance solo-x",
+    "group lead cluster:0:lead", "instance lead", "instance child-a", "instance grandchild",
+    "group alpha cluster:1:alpha", "instance alpha-kid",
+    ...TREE_KINDS,
+  ]);
+  // alpha-kid opened last: its cluster first, the rest as they were.
+  assert.deepEqual(grouped(key(RECENT(["alpha-kid", "solo-x", "grandchild"]), "ctrl+k").state).slice(0, 8), [
+    "group alpha cluster:0:alpha", "instance alpha-kid",
+    `group independent ${solo(recent, "solo-x")}`, "instance solo-x",
+    "group lead cluster:1:lead", "instance lead", "instance child-a", "instance grandchild",
+  ]);
+  // The runs the palette's own keys move between: each instance group's rows, then each kind's.
+  assert.deepEqual(paletteItems(recent).runs.map((run) => run.length), [1, 3, 1, 3, 2, 4]);
+  assert.equal(paletteItems(recent).runs.flat().some((each) => each.startsWith("group\u0000")), false, "no label row is in a run");
+});
+
+test("a group's label row is never selected: the palette opens on its first row that can be selected, and Up, Down, PageUp and PageDown pass over every label row; as it opens on the shown terminal's instance, the second instance is selected, past a label row", () => {
+  const open = key(RECENT(["solo-x", "grandchild"]), "ctrl+k").state, items = paletteItems(open).items;
+  assert.equal(items[0].kind, "group");
+  assert.equal(paletteItems(open).selected, rowKey(open, "solo-x"), "the first row that can be selected");
+  // Down from a group's last row is the next group's first; Up from it, the group before's last.
+  assert.equal(key(open, "down").state.palette.selected, rowKey(open, "lead"));
+  assert.equal(key(key(open, "down").state, "up").state.palette.selected, rowKey(open, "solo-x"));
+  assert.equal(key(open, "up").state.palette.selected, rowKey(open, "solo-x"), "Up from the first row stays: the label row above it is no row to stand on");
+  assert.equal(keys(open, "down", "down", "down", "down").state.palette.selected, rowKey(open, "alpha-kid"));
+  // From every row, every move lands on a row that can be selected, at every page.
+  const selectable = paletteItems(open).runs.flat();
+  for (const from of selectable) for (const move of ["up", "down", "pageup", "pagedown"]) for (const page of [3, 4, 19]) {
+    const at = Object.freeze({ ...open, palette: Object.freeze({ ...open.palette, selected: from }) });
+    assert.equal(selectable.includes(paged(at, move, page).state.palette.selected), true, `${move} at a page of ${page} from ${from}`);
+  }
+  // A page of 4 rows moves two rows that can be selected: from solo-x past lead's label to child-a, and back.
+  assert.equal(paged(open, "pagedown", 4).state.palette.selected, rowKey(open, "child-a"));
+  assert.equal(paged(paged(open, "pagedown", 4).state, "pageup", 4).state.palette.selected, rowKey(open, "solo-x"));
+  assert.equal(paged(open, "pageup", 4).state.palette.selected, rowKey(open, "solo-x"), "PageUp at the top stays on the first row that can be selected");
+  // The shown terminal is solo-x's, the most recent: the palette opens on the second instance,
+  // lead, which stands under its group's label row.
+  const shown = reduce(key(on(RECENT(["grandchild"]), "solo-x"), "enter").state, { shown: { id: idOf(open, "solo-x") }, ...AT }).state;
+  assert.deepEqual(shown.recent, [idOf(open, "solo-x"), idOf(open, "grandchild")]);
+  const fromTerminal = leaderThen(shown, "k", AT).state;
+  assert.deepEqual(grouped(fromTerminal).slice(0, 3), [`group independent independent:${idOf(open, "solo-x")}`, "instance solo-x", "group lead cluster:0:lead"]);
+  assert.equal(paletteItems(fromTerminal).selected, rowKey(open, "lead"));
+  // Typed, the first row that can be selected is.
+  assert.equal(paletteItems(key(fromTerminal, "s").state).selected, rowKey(open, "solo-x"));
+});
+
+test("under a query an instance group keeps its rows that match in its own order, and a group with none loses its label row; the kinds after the groups keep their matches the best first", () => {
+  const open = key(RECENT(["solo-x", "grandchild"]), "ctrl+k").state;
+  // `a` matches lead (and child-a, grandchild) and alpha-kid, never solo-x: its group is gone. alpha-kid,
+  // a prefix, does not go before lead's group, as the views' Capabilities goes before Instances.
+  assert.deepEqual(grouped(key(open, "a").state), [
+    "group lead cluster:0:lead", "instance lead", "instance child-a", "instance grandchild",
+    "group alpha cluster:1:alpha", "instance alpha-kid",
+    "view Capabilities", "view Instances", "act Stop", "act Retire", "command Spawn an agent", "command Workspaces",
+  ]);
+  assert.equal(paletteItems(key(open, "a").state).selected, rowKey(open, "lead"));
+  // `ch`: lead's group keeps child-a and grandchild, in its order (child-a scores no better).
+  assert.deepEqual(grouped(keys(open, "c", "h").state), ["group lead cluster:0:lead", "instance child-a", "instance grandchild"]);
+  // A query that matches no instance leaves no label row.
+  assert.deepEqual(grouped(keys(open, "h", "e", "l", "p").state), ["command Help"]);
+});
+
+test("Alt+Shift+Down and Alt+Shift+Up move the palette's selection to the first row of the next group and of the one before, across the instance groups and the kinds, and wrap past either end; with one group, its first row; under a query, among the groups that are left", () => {
+  const open = key(RECENT(["solo-x", "grandchild"]), "ctrl+k").state;
+  const firsts = [rowKey(open, "solo-x"), rowKey(open, "lead"), rowKey(open, "alpha-kid"), kindKey(open, "view", "Instances"), kindKey(open, "act", "Stop"), kindKey(open, "command", "Spawn an agent")];
+  assert.deepEqual(paletteItems(open).runs.map((run) => run[0]), firsts);
+  let s = open;
+  for (const want of [...firsts.slice(1), firsts[0]]) { s = key(s, "alt+shift+down").state; assert.equal(s.palette.selected, want, "next"); }
+  s = open;
+  for (const want of [...firsts].reverse()) { s = key(s, "alt+shift+up").state; assert.equal(s.palette.selected, want, "previous"); }
+  // From the middle of a group: next is the next group's first row, previous the group before's, not its own.
+  const mid = keys(open, "down", "down").state;
+  assert.equal(mid.palette.selected, rowKey(open, "child-a"));
+  assert.equal(key(mid, "alt+shift+down").state.palette.selected, rowKey(open, "alpha-kid"));
+  assert.equal(key(mid, "alt+shift+up").state.palette.selected, rowKey(open, "solo-x"));
+  // The query is kept, and nothing else of the palette changes.
+  const moved = key(open, "alt+shift+down").state;
+  assert.deepEqual(moved.palette, { ...open.palette, selected: rowKey(open, "lead") });
+  // One group: both keys go to its first row.
+  const one = keys(open, "c", "h").state;
+  assert.deepEqual([key(one, "alt+shift+down").state.palette.selected, key(key(one, "down").state, "alt+shift+up").state.palette.selected], [rowKey(open, "child-a"), rowKey(open, "child-a")]);
+  // Under a query, among the groups it leaves: lead's, alpha's, the views', the acts', the commands'.
+  const a = key(open, "a").state;
+  assert.equal(key(a, "alt+shift+up").state.palette.selected, kindKey(a, "command", "Spawn an agent"), "wrapped back to the last group");
+  // No row: nothing moves.
+  const none = keys(open, "z", "z", "z").state;
+  assert.deepEqual([key(none, "alt+shift+down").state, key(none, "alt+shift+down").effect], [none, null]);
+});
+
+test("while the palette is open Alt+Shift+Down and Up are its own, with and without the kitty keyboard protocol: they move the group, and open no agent nor close the palette; closed, they are the chords next and previous again; a chord from a terminal's scanner does nothing while it is open; on macOS the palette has no such key", () => {
+  for (const kitty of [false, true]) {
+    const base = RECENT(["solo-x", "grandchild"]), state = kitty ? reduce(base, { keyboard: 5 }).state : base, how = kitty ? "under the protocol" : "without it";
+    assert.equal(state.keyboard !== null, kitty, how);
+    const open = key(on(state, "lead"), "ctrl+k").state;
+    for (const [id, want] of [["alt+shift+down", rowKey(open, "lead")], ["alt+shift+up", kindKey(open, "command", "Spawn an agent")]]) {
+      const step = key(open, id);
+      assert.deepEqual([step.effect, step.state.palette?.selected, step.state.terminal, step.state.tabs], [null, want, null, []], `${how}: ${id}`);
+    }
+    // Closed, the same key is the chord: the instance after the selection's opens.
+    const shut = key(on(state, "lead"), "alt+shift+down");
+    assert.equal(shut.effect?.open?.id, idOf(state, "child-a"), `${how}: the chord next with the palette closed`);
+    // The palette opened from a terminal: the terminal has no focus while it is open, so no chord
+    // comes from its scanner; one that came would open nothing, and the palette stays.
+    const fromTerminal = leaderThen(opened(state, "lead"), "k", AT).state;
+    assert.equal(fromTerminal.terminal.focus, "list", how);
+    const chord = reduce(fromTerminal, { chord: "next", read: ++reads, ...AT });
+    assert.deepEqual([chord.state, chord.effect], [fromTerminal, null], `${how}: a chord event`);
+    const moved = key(fromTerminal, "alt+shift+down");
+    assert.deepEqual([moved.effect, moved.state.palette.selected, moved.state.terminal.id], [null, paletteItems(fromTerminal).runs[1][0], idOf(state, "lead")], `${how}: from a terminal`);
+    // The leader then Down is the leader's still, the palette open or not.
+    assert.equal(key(leader(open).state, "down").effect?.open?.id, idOf(state, "child-a"), `${how}: the leader then Down`);
+  }
+  // On macOS the TUI has no group key and no chord: the key does nothing in the palette.
+  const mac = key(RECENT(["solo-x", "grandchild"], "darwin"), "ctrl+k").state;
+  assert.deepEqual(mac.paletteKeys, new Map());
+  for (const id of ["alt+shift+down", "alt+shift+up"]) assert.deepEqual([key(mac, id).state, key(mac, id).effect], [mac, null], `darwin: ${id}`);
 });
 
 // ── The views of this machine ────────────────────────────────────────────────────────────────────
@@ -510,12 +665,15 @@ const SHOWN = Object.freeze([
   ["a restart confirmation", (s) => key(s, "R").state],
   ["the filter field", (s) => keys(s, "/", "d").state],
 ]);
-/** The palette opened by the leader, `query` typed, its first row checked to be `label`'s, then
- *  Enter in a later read. -> the step */
+/** The palette opened by the leader, `query` typed, the row it selects checked to be `label`'s and
+ *  to be its first row that can be selected (a group's label row may stand above it), then Enter
+ *  in a later read. -> the step */
 function runFromPalette(state, query, label) {
   let s = key(leader(state).state, "k").state;
   for (const ch of query) s = key(s, ch).state;
-  assert.equal(paletteItems(s).items[0]?.label ?? paletteItems(s).items[0]?.name, label, `${query}: the first row`);
+  const list = paletteItems(s), first = list.items.find((item) => item.kind !== "group");
+  assert.equal(first?.key, list.selected, `${query}: the first row that can be selected is selected`);
+  assert.equal(first?.label ?? first?.name, label, `${query}: the first row`);
   return key(s, "enter");
 }
 /** What a confirmation that was open under a command is told: closed (the loop's `dismiss`). */
