@@ -1,5 +1,5 @@
 /** The keys both clients share: the leader, the table read after it, the plain keys of the list
- * of instances, and the chords. Written down once, here; the Desktop and the TUI read their defaults
+ * of instances, the chords, and the palette's own keys. Written down once, here; the Desktop and the TUI read their defaults
  * from it (packages/tui/lib/actions.mjs LEADER is LEADER_TABLE, and the TUI's test
  * packages/tui/test/keymap.test.mjs fails on a `does` the TUI does not handle).
  *
@@ -17,6 +17,7 @@
  *   plainKeys(does)         -> the plain key ids of an action (empty when it has none)
  *   leaderRows()            -> LEADER_TABLE
  *   chordKey(does, isMac)   -> the chord's key id on that platform, or null
+ *   paletteKey(does, isMac) -> the palette's own key id on that platform, or null
  *
  * `does` names an action, not a client's code: each client maps it to its own. */
 
@@ -116,6 +117,16 @@ export const CHORDS = Object.freeze([
   { does: "filter", mac: "cmd+f", other: "ctrl+alt+f" },
 ].map((entry) => Object.freeze({ ...entry })));
 
+/** The palette's own keys, read only while the palette is open: there they win over every binding
+ * (the Desktop's ⌘N, `app.chooseSoul`; the chords `previous` and `next`), so they are not CHORDS,
+ * which are bound from every focus. The selection goes to the first row of the next group, or of
+ * the one before, and wraps (docs/tui.md, "The palette"; packages/desktop/docs/desktop-keyboard.md).
+ * On macOS the TUI has none: a terminal never passes ⌘. */
+export const PALETTE_KEYS = Object.freeze([
+  { does: "palette-next-group", mac: "cmd+n", other: "alt+shift+down" },
+  { does: "palette-previous-group", mac: "cmd+shift+n", other: "alt+shift+up" },
+].map((entry) => Object.freeze({ ...entry })));
+
 const NONE = Object.freeze([]);
 
 /** The leader's key id on macOS (`true`) or elsewhere. */
@@ -142,5 +153,11 @@ export function leaderRows() {
 /** The key id of the chord that does `does` on macOS (`true`) or elsewhere, or null when none does. */
 export function chordKey(does, isMac) {
   const entry = CHORDS.find((each) => each.does === does);
+  return entry === undefined ? null : isMac ? entry.mac : entry.other;
+}
+
+/** The key id of the palette's own key that does `does` on macOS (`true`) or elsewhere, or null. */
+export function paletteKey(does, isMac) {
+  const entry = PALETTE_KEYS.find((each) => each.does === does);
   return entry === undefined ? null : isMac ? entry.mac : entry.other;
 }

@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { CHORDS_READ, DEFAULT_KEYMAP, SIDEBAR_KEYS, defaultBinding, chordFromKeyId } from "../renderer/keybindings.mjs";
 import {
-  CHORDS, LEADER, LEADER_TABLE, PLAIN_KEYS, chordKey, leaderKey, leaderDoes, plainKeys, leaderRows,
+  CHORDS, LEADER, LEADER_TABLE, PALETTE_KEYS, PLAIN_KEYS, chordKey, leaderKey, leaderDoes, paletteKey, plainKeys, leaderRows,
 } from "../../client/keymap.mjs";
 
 test("the leader is Ctrl+\\ on macOS and Alt+O elsewhere", () => {
@@ -99,6 +99,18 @@ test("the chords: every one, per platform, and what it does", () => {
   assert.equal(chordKey("palette", true), "cmd+k");
   assert.equal(chordKey("palette", false), "ctrl+alt+k");
   assert.equal(chordKey("instances", false), null, "the stages are the Desktop's own");
+});
+
+test("the palette's own keys: next and previous group, per platform, read only while it is open", () => {
+  assert.deepEqual(PALETTE_KEYS.map(({ does, mac, other }) => [does, mac, other]), [
+    ["palette-next-group", "cmd+n", "alt+shift+down"],
+    ["palette-previous-group", "cmd+shift+n", "alt+shift+up"],
+  ]);
+  assert.ok(Object.isFrozen(PALETTE_KEYS) && PALETTE_KEYS.every((entry) => Object.isFrozen(entry)));
+  assert.equal(paletteKey("palette-next-group", true), "cmd+n");
+  assert.equal(paletteKey("palette-previous-group", false), "alt+shift+up");
+  assert.equal(paletteKey("next", false), null, "a chord is no palette key");
+  assert.equal(chordKey("palette-next-group", false), null, "and a palette key no chord");
 });
 
 test("no key is bound twice, in the leader's table or in the plain keys", () => {
