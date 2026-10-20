@@ -115,6 +115,9 @@ export const CHORDS = Object.freeze([
   { does: "split-down", mac: "cmd+shift+\\", other: "ctrl+alt+shift+e" },
   { does: "group-next", mac: "cmd+alt+a", other: "ctrl+alt+a" },
   { does: "filter", mac: "cmd+f", other: "ctrl+alt+f" },
+  // The Desktop's alone for now (#1421): its name and colour dialog. No leader key; the TUI has no
+  // such action, so it binds no key for it (chordKeys skips a `does` it does not handle).
+  { does: "edit-instance", mac: "cmd+alt+r", other: "ctrl+alt+r" },
 ].map((entry) => Object.freeze({ ...entry })));
 
 /** The palette's own keys, read only while the palette is open: there they win over every binding

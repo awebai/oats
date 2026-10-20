@@ -63,12 +63,14 @@
   /* --graph-edge draws connectors, which are meaningful graphics: ≥3:1 on bg/surface/surface-2 (WCAG 1.4.11). */
   --graph-edge: #636c79; --graph-edge-coord: #4493f8;
   /* Opaque identity pairs: fixed names only, never CSS supplied by a soul. */
-  --soul-sand-bg: #393128; --soul-sand-fg: #d4b991;
-  --soul-sage-bg: #29392e; --soul-sage-fg: #a9c6ad;
-  --soul-slate-bg: #2b3542; --soul-slate-fg: #afc1d6;
-  --soul-mauve-bg: #3b2e3b; --soul-mauve-fg: #d0aec7;
-  --soul-clay-bg: #3e302b; --soul-clay-fg: #d5b09a;
-  --soul-olive-bg: #343828; --soul-olive-fg: #bdc393;
+  /* --instance-<colour>: an instance's colour on its dot (#1421), its soul's -fg here; "This computer" holds it at 3:1
+     on every fill (host-theme.mjs), leaving the soul pair as calibrated. */
+  --soul-sand-bg: #393128; --soul-sand-fg: #d4b991; --instance-sand: #d4b991;
+  --soul-sage-bg: #29392e; --soul-sage-fg: #a9c6ad; --instance-sage: #a9c6ad;
+  --soul-slate-bg: #2b3542; --soul-slate-fg: #afc1d6; --instance-slate: #afc1d6;
+  --soul-mauve-bg: #3b2e3b; --soul-mauve-fg: #d0aec7; --instance-mauve: #d0aec7;
+  --soul-clay-bg: #3e302b; --soul-clay-fg: #d5b09a; --instance-clay: #d5b09a;
+  --soul-olive-bg: #343828; --soul-olive-fg: #bdc393; --instance-olive: #bdc393;
   /* Harness marks (identity-marks.mjs): -fg paints the mark, -bg its tile,
      held at AA though a mark needs only 3:1. Claude: the ivory spark on our
      own terracotta (not Anthropic's Clay), the same in every theme. Pi: the
@@ -123,12 +125,12 @@
   --md-code-bg: #ffffff60; --md-rule: #1a1a182e;
   --graph-edge: #8c8c86; --graph-edge-coord: #ad5500;
   /* Opaque identity pairs: fixed names only, never CSS supplied by a soul. */
-  --soul-sand-bg: #eee5d7; --soul-sand-fg: #665239;
-  --soul-sage-bg: #e2ebe2; --soul-sage-fg: #46634b;
-  --soul-slate-bg: #e3e8ee; --soul-slate-fg: #485d71;
-  --soul-mauve-bg: #eee3eb; --soul-mauve-fg: #74536a;
-  --soul-clay-bg: #f0e2da; --soul-clay-fg: #79533f;
-  --soul-olive-bg: #e9eadb; --soul-olive-fg: #5d623b;
+  --soul-sand-bg: #eee5d7; --soul-sand-fg: #665239; --instance-sand: #665239;
+  --soul-sage-bg: #e2ebe2; --soul-sage-fg: #46634b; --instance-sage: #46634b;
+  --soul-slate-bg: #e3e8ee; --soul-slate-fg: #485d71; --instance-slate: #485d71;
+  --soul-mauve-bg: #eee3eb; --soul-mauve-fg: #74536a; --instance-mauve: #74536a;
+  --soul-clay-bg: #f0e2da; --soul-clay-fg: #79533f; --instance-clay: #79533f;
+  --soul-olive-bg: #e9eadb; --soul-olive-fg: #5d623b; --instance-olive: #5d623b;
   /* Harness marks: see the dark block. Pi keeps its badge's own #111111. */
   --runtime-claude-bg: #b4532f; --runtime-claude-fg: #fff7ea;
   --runtime-pi-bg: #efefeb; --runtime-pi-fg: #111111;
@@ -174,12 +176,12 @@
   --md-code-bg: #58637510; --md-rule: #5863752e;
   --graph-edge: #8e846f; --graph-edge-coord: #1f6fb2;
   /* Opaque identity pairs: fixed names only, never CSS supplied by a soul. */
-  --soul-sand-bg: #eee5d7; --soul-sand-fg: #665239;
-  --soul-sage-bg: #e2ebe2; --soul-sage-fg: #46634b;
-  --soul-slate-bg: #e3e8ee; --soul-slate-fg: #485d71;
-  --soul-mauve-bg: #eee3eb; --soul-mauve-fg: #74536a;
-  --soul-clay-bg: #f0e2da; --soul-clay-fg: #79533f;
-  --soul-olive-bg: #e9eadb; --soul-olive-fg: #5d623b;
+  --soul-sand-bg: #eee5d7; --soul-sand-fg: #665239; --instance-sand: #665239;
+  --soul-sage-bg: #e2ebe2; --soul-sage-fg: #46634b; --instance-sage: #46634b;
+  --soul-slate-bg: #e3e8ee; --soul-slate-fg: #485d71; --instance-slate: #485d71;
+  --soul-mauve-bg: #eee3eb; --soul-mauve-fg: #74536a; --instance-mauve: #74536a;
+  --soul-clay-bg: #f0e2da; --soul-clay-fg: #79533f; --instance-clay: #79533f;
+  --soul-olive-bg: #e9eadb; --soul-olive-fg: #5d623b; --instance-olive: #5d623b;
   /* Harness marks: see the dark block. Pi keeps its badge's own #111111. */
   --runtime-claude-bg: #b4532f; --runtime-claude-fg: #fff7ea;
   --runtime-pi-bg: #ebe3c9; --runtime-pi-fg: #111111;

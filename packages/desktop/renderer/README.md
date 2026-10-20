@@ -1509,6 +1509,19 @@ with no plan, which sends `{server, instance}` once to `/api/server-forget`
 (`../server/server-forget.mjs`), which answers the outcome and starts the roster read after the command; the row leaves the roster when that read lands
 ([desktop-deployment-model.md](../docs/desktop-deployment-model.md#remote-rows)).
 
+An instance's colour (#1421 §2) has no row menu item: the palette's **Instance: name and
+colour…** and `instance.edit` (CHORDS `edit-instance`, Ctrl+Alt+R / ⌥⌘R) open
+`instance-color-dialog.mjs` for the leader's target (`leaderTargetId`; the palette captures
+it when it opens). The dialog is Forget's pattern: it asks `/api/instance-color` with
+`check: true` on open (nothing runs), then sends one `{instance, home, color}` at a time,
+the latest press winning (`../server/instance-color.mjs`, which runs `oats instance color`,
+routed with `--server` for a remote row, and reads the roster again after a change). The dots
+draw the colour from the row (`instance-dot.mjs` over `instanceColor`): `data-instance-color`
+on a running or stopped dot, which shell.css maps to `--instance-<colour>` (theme.css: the
+soul's `-fg` in the built-in themes); the contrast inventory (`contrast-inventory.mjs`
+GRAPHIC_PAIRS) holds every colour on every fill, and "This computer" moves these tokens until
+they hold (`host-theme.mjs`), leaving the soul pairs as calibrated.
+
 `choice-popup.mjs` owns the existing provider/model popup behavior. Model search
 is local to reported advisory IDs/labels; **Defaults**, **Reported suggestions**
 and **Custom** are control/data groups, not model-quality claims. Arbitrary

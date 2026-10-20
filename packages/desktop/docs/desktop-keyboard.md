@@ -234,6 +234,7 @@ table, and the hint leaves it out.
 | Leave the terminal for the next region (`focus.leaveTerminal`) | ⇧⌘F6 | Ctrl+Shift+F6 | yes |
 | Sidebar (`sidebar.toggle`; also the footer's sidebar button, and Show sidebar while it is hidden) | ⌘B | Ctrl+Shift+B | yes (plain Ctrl+B, the tmux prefix, stays the program's) |
 | Filter instances (`sidebar.focusFilter`) | ⌘F | Ctrl+Alt+F | yes |
+| An instance's name and colour, for the leader's target (`instance.edit`; also **Instance: name and colour…**; no leader key, never with Shift) | ⌥⌘R | Ctrl+Alt+R | yes (ESC and Ctrl+R, which Esc then Ctrl+R still sends) |
 | Instance panel (`panel.toggle`; also Show instance panel while it is closed, and the panel's own close button) | ⌘I | Ctrl+Shift+I | yes (plain Ctrl+I, the Tab byte, stays the program's) |
 | Theme picker (`app.themePicker`; also the theme button and **Theme: choose…**) | ⇧⌘Space | Ctrl+Shift+Space | yes |
 | Theme cycle: White, Solarized, Dark, This computer (`app.themeToggle`) | none | none | – (the palette keeps it) |
@@ -349,21 +350,24 @@ pull request.
 Rebinding applies everywhere a chord is shown: tooltips, the footer hints, the
 palette's command details and the spawn dialog's Spawn button.
 
-**Shared with the TUI.** Twenty-two of these chords are written down once, in
+**Shared with the TUI.** Twenty-three of these chords are written down once, in
 `CHORDS` in `packages/client/keymap.mjs`, and `DEFAULT_KEYMAP` reads them from
 there (`CHORDS_READ`, one action each): one family on Linux/Windows, ⌘ or ⌥⌘
 on macOS. Ctrl+Alt with a letter does an action: the palette (K), Quick open
 (P; a spawn, in the TUI), the workspace switcher (O), focus mode (Z, the
 leader's `z`), close tab (W), split right (E) and split down (Shift+E), the
-next editor group (A, the leader's Tab) and filter instances (F). Ctrl+Alt with
+next editor group (A, the leader's Tab), filter instances (F) and the
+instance's name and colour (R; `instance.edit`, ⌥⌘R on macOS, never with
+Shift, no leader key). Ctrl+Alt with
 a digit goes to tab 1–9 (9 is the last). Alt+Shift with the leader's arrows
 moves: the previous / next instance's terminal (↑ ↓) and the previous / next
 tab (← →). The TUI binds the same chords from every focus (docs/tui.md,
 "Chords"); the leader stays the key that always works. Ctrl+Tab /
 Ctrl+Shift+Tab, the stages' ⌘1–⌘3 / Ctrl+1–Ctrl+3 and the shortcuts editor's
 ⌘, / Ctrl+, are the Desktop's own and are not shared; help is the leader's
-`?`. `test/keymap-shared.test.mjs` pins the table and the whole default
-keymap.
+`?`. `edit-instance` (Ctrl+Alt+R) is the Desktop's alone so far: the TUI has
+no such action and binds no key for it. `test/keymap-shared.test.mjs` pins the
+table and the whole default keymap.
 
 **AltGr.** On Windows, Ctrl+Alt is AltGr. On a layout that types a character
 on a Ctrl+Alt chord (Spanish: € on E, | @ # on 1 2 3; Polish: ą ę ó ż on A E O

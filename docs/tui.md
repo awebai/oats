@@ -1263,6 +1263,10 @@ retire), which have no chord.
 | `Ctrl+Alt+A` | goes to the other group | `Tab` |
 | `Ctrl+Alt+F` | the filter | `/` |
 
+`CHORDS` also holds the Desktop's `edit-instance` (`Ctrl+Alt+R`, its name and
+colour dialog). The TUI has no such action, so it binds no key for it and
+`Ctrl+Alt+R` stays the agent's.
+
 They are one family: Ctrl+Alt with a letter or a digit acts, and Alt+Shift
 with the leader's arrow moves. No terminal in the table below takes them by
 default, and no agent (Claude Code, Codex, pi) reads them. Ctrl+Shift with a
