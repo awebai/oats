@@ -55,9 +55,10 @@ export async function mountSpawn(t, options = {}) {
   const polls = []; globalThis.setInterval = fn => { polls.push(fn); return 0; };
   // The f3 previews are `--purpose` captures, and a dialog types a purpose to choose one: on a CLI with spawn-name a
   // typed name goes as `--name <typed>-<role>` instead, which no capture ran. So the host drops spawn-name (the older
-  // kernel's path, a purpose) unless a test asks for the naming path with options.spawnName.
-  let cli = structuredClone(options.cli ?? CLI), agents = options.agents ?? catalogAgents();
-  if (!options.spawnName && Array.isArray(cli?.features)) cli.features = cli.features.filter(f => f !== 'spawn-name');
+  // kernel's path, a purpose) unless a test asks for the naming path with options.spawnName; u.setCli() too, so a CLI
+  // swapped in mid-test never moves the dialog from one path to the other.
+  const naming = value => options.spawnName || !Array.isArray(value?.features) ? value : { ...value, features: value.features.filter(f => f !== 'spawn-name') };
+  let cli = naming(structuredClone(options.cli ?? CLI)), agents = options.agents ?? catalogAgents();
   let instances = options.instances ?? [{ ...anchor, home: anchorHome, running: true, createdAt: 'first', tmux: { session: 's', window: 'w' } }];
   const calls = [], opens = [], notified = [], applied = [];
   // options.deployments (#482): the view's deployments as /api/panel lists them; the preview and spawn routes then
@@ -158,7 +159,7 @@ export async function mountSpawn(t, options = {}) {
       el.dispatchEvent(new dom.window.Event('change', { bubbles: true })); await settle(); return el;
     },
     async spawn() { u.q('.fspawn').click(); await settle(20); },
-    setCli: async value => { cli = value; await refreshCli({ api: async () => cli }); },
+    setCli: async value => { cli = naming(value); await refreshCli({ api: async () => cli }); },
     setAgents: value => { agents = value; }, setInstances: value => { instances = value; },
   };
   return u;
