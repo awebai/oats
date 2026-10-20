@@ -2734,7 +2734,7 @@ const livenessWord = (i) => i.running === true ? "RUNNING" : i.running === false
 const SPAWN_VALUE_FLAGS = new Set(["agents-root", "backend", "base", "branch", "dir", "expect-decision", "harness", "idempotency-key", "instance", "launch-config", "max-age", "model", "name", "parent", "purpose", "relation", "relative-root", "relative-to", "repo", "runtime", "task", "task-file", "trigger-event", "wake-cron", "wake-every", "wake-file", "wake-json", "wake-message", "wake-message-file", "wake-tz", "work", "work-dir"]);
 const SPAWN_SWITCHES = new Set(["allow-child-spawns", "json", "no-child-spawns", "no-launch", "no-yolo", "preview", "suggest-name", "yolo"]);
 /** `--suggest-name` (feature spawn-suggest-name): a preview's, with no --name or --purpose. The kernel
- *  refuses the same (core.mjs suggestNamePreview); the CLI says it before anything is read or sent. */
+ *  refuses the same (core.mjs spawnBody); the CLI says it before anything is read or sent. */
 function suggestNameProblem(argv) {
   if (!argv.includes("--suggest-name")) return undefined;
   if (!argv.includes("--preview")) return "--suggest-name is a preview's: it chooses the name a spawn would get; pass --preview";
