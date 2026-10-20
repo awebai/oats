@@ -4,8 +4,8 @@ description: >-
   Use when operating OATS from inside an instance: your home and work
   directories, extra trees (`oats worktree add|remove`), what a module is, reading `oats status` (modules, soul source,
   drift), spawning with preview then apply, relations, stopping or retiring
-  instances you spawned, asking a human for input you are blocked on
-  (`oats instance attention`), being spawned by a trigger, lifecycle events
+  instances you spawned, setting needs-input whenever you need anything
+  from a human (`oats instance attention`), being spawned by a trigger, lifecycle events
   and doctor. oats.core is day-to-day OATS operation, working with OATS from
   inside an instance; which souls exist is `/oats-souls`, and the setup and
   config of an OATS workspace is oats.setup.
@@ -253,8 +253,10 @@ is running, the message names the step to take first.
 
 ## Asking for a human's attention
 
-When you have asked a human something and cannot continue without the
-answer (a decision, a credential, an approval), say so, then end your turn:
+**IMPORTANT: WHENEVER YOU NEED ANYTHING FROM A HUMAN, SET NEEDS-INPUT.
+ALWAYS.** A question you ask them, a decision, an approval, a credential, an
+answer, ANY input you are waiting for: ask, set the claim, THEN end your turn.
+Without it, NOBODY can see that you are waiting.
 
 ```bash
 oats instance attention --message "<what you need, one line>"   # from your home
@@ -270,14 +272,16 @@ oats instance attention --clear                                  # once you have
 - `oats status` shows the claim on your row as
   `! needs input (attention): <message>`.
 - Only `--clear` or the next session start, restart or stop clears it.
-  Clear it yourself as soon as you are unblocked.
-- Not for FYIs, progress or "done" reports: those go through your task's
-  usual channel.
+  Clear it yourself first thing when the answer arrives.
+- Only for input you wait on. Never for FYIs, progress or "done" reports:
+  those go through your task's usual channel.
 
 The Claude Code emitter is separate and automatic. In a Claude instance,
 oats.core's hooks report a pending permission prompt or question themselves
-(producer `oats.core`) and clear it when the session moves on. Your
-attention claim is yours alone, and the emitter never clears it.
+(producer `oats.core`) and clear it when the session moves on. So a question
+you ask through Claude's question dialog, or a permission prompt, needs no
+claim of yours; set your own for a question you ask in text, by mail or by
+chat. Your attention claim is yours alone, and the emitter never clears it.
 
 ## Spawned by a trigger
 

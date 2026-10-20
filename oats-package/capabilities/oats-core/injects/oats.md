@@ -17,11 +17,13 @@ different capability's job (`oats.setup`). If your task ends with a
 "Triggered run" block, an automation spawned you: `/oats-operate` says how to
 read the event.
 
-**When you need a human to continue**, that is when you have asked something and
-cannot go on without the answer (a decision, a credential, an approval), run
+**IMPORTANT: WHENEVER YOU NEED ANYTHING FROM A HUMAN, SET NEEDS-INPUT.
+ALWAYS.** A question you ask them, a decision, an approval, a credential, an
+answer, ANY input you are waiting for: run
 `oats instance attention --message "<what you need, one line>"` from your home,
-then end your turn. Run `oats instance attention --clear` once you have the
-answer. Don't use it for FYIs or progress updates.
+THEN end your turn. Without it, NOBODY can see that you are waiting. Run
+`oats instance attention --clear` once you have the answer. It is ONLY for
+input you wait on, never for FYIs or progress updates.
 
 **Before you message another instance,** ask who will do something different
 because of it. Nobody: don't send it. One: send it to that one alone, as short as acting on

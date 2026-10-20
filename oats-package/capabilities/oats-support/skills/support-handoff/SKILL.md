@@ -69,8 +69,7 @@ Work in this order, and stop at the first step that works:
 
 Record every start and spawn in your append-only log, so your human sees it.
 Another support maintainer may be stopped on a machine you can't see. Use
-`oats instance attention` only when you are blocked waiting for your human,
-never for a notice.
+`oats instance attention` whenever you wait on your human, never for a notice.
 
 ### The brief template
 ```markdown

@@ -3780,7 +3780,7 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
 
 ### Waiting on you
 
-Feature `waiting-on-you` (OATS 0.40.0): an instance blocked on a human (a
+Feature `waiting-on-you` (OATS 0.40.0): an instance waiting on a human (a
 permission prompt, a question, an agent asking for an answer) says so through
 a producer's claim. **Claims are display-only:** nothing in the kernel acts
 on `waitingOnYou`. In particular `oats session input` behaves exactly as

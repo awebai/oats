@@ -996,15 +996,15 @@ latest-state capability.
 ### oats.core: needs input
 
 oats.core (2.4.0 and later, kernel 0.40.0 and later) tells the deployment
-when an instance is blocked on a human, in two independent ways. Each shows
+when an instance is waiting on a human, in two independent ways. Each shows
 on `oats status` and in `oats instance events`. The verbs' contract
 (`oats instance waiting`, `oats instance attention`, the `waiting` event) is
 in [desktop-cli-api.md](desktop-cli-api.md#waiting-on-you). Claims are
 display-only: nothing in the kernel acts on them.
 
 **The agent's own claim.** The oats.core inject and `/oats-operate` teach
-every instance this protocol. When it has asked a human something and cannot
-continue without the answer, it runs
+every instance this protocol. Whenever it needs anything from a human (a
+question, a decision, an approval, a credential, any input it waits on), it runs
 `oats instance attention --message "<one line>"` from its home and ends its
 turn. Once it has the answer, it runs `oats instance attention --clear`. The
 claim belongs to producer `agent`. Only `--clear` or the next session start,
