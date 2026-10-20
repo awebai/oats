@@ -522,7 +522,9 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
 - **The tabs are the open workspace's.** Opening another workspace in
   [the switcher](#the-switcher) closes them all, and so does the open
   workspace no longer being listed; their agents keep running. Coming back
-  opens none of them again.
+  opens none of them again. Opening the same workspace again, with its
+  deployment of this machine now opened beside another machine's, keeps
+  them.
 
 ## Splits
 
@@ -787,7 +789,7 @@ switcher covers the whole screen.
  Alt+O    commands                              │   Not matched to a workspace
  Ctrl+K   palette                               │     basalt                ssh needs a prompt
  Enter    open                                  │   On this machine, not opened
- /        filter                                │     acme-docs             ~/acme-docs · Timed out
+ /        filter                                │     acme-docs             Timed out · ~/acme-docs
  r        refresh                               │     sandbox               Not found.
  Esc      close                                 │
  ?        help                                  │
@@ -820,9 +822,10 @@ It lists, in this order:
   deployments (`oats deployments`) that this run has not opened and that no
   workspace took, in the list's order, each by its folder's name and its
   path. A row whose workspace is not known yet says nothing more; one whose
-  read failed says why after its path (`Timed out`, `Not read`), and so
+  read failed says why before its path (`Timed out`, `Not read`), and so
   does one whose workspace attaches to none (`Workspace not known yet`,
-  `Invalid workspace reference`, `Reports no workspace`); both still open.
+  `Invalid workspace reference`, `Reports no workspace`), so a narrow row
+  cuts the path, not the reason; both still open.
   A row that cannot be opened says why where its path stood, and does not
   open:
 

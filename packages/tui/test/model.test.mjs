@@ -1922,10 +1922,10 @@ test("Pepe's shape, drawn: the workspace rows with their dim lines under them, i
 test("a listed deployment whose identity read failed or timed out stays a row of its own, saying why; one whose identity attaches to no workspace says the shared reason; a stale row of the list is never matched", () => {
   const base = pepe();
   const at = (state) => switcher(state, AT).items.filter((item) => item.path !== undefined).map((item) => [item.label, item.place]);
-  assert.deepEqual(at(identityOf(base, LFX_PATH, { ok: false, reason: { code: "E_CLI_TIMEOUT", message: "The deployment observation exceeded its time limit." } })), [["lfx", "~/Work/lfx · Timed out"]]);
-  assert.deepEqual(at(identityOf(base, LFX_PATH, { ok: false, reason: { code: "E_NO_DEPLOYMENT", message: "no deployment here", origin: "kernel" } })), [["lfx", "~/Work/lfx · Not read"]]);
-  assert.deepEqual(at(identityOf(base, LFX_PATH, learnedOf({ ...LFX, keyFrom: "member" }))), [["lfx", "~/Work/lfx · Workspace not known yet"]]);
-  assert.deepEqual(at(identityOf(base, LFX_PATH, { ok: true, workspace: null })), [["lfx", "~/Work/lfx · Reports no workspace"]]);
+  assert.deepEqual(at(identityOf(base, LFX_PATH, { ok: false, reason: { code: "E_CLI_TIMEOUT", message: "The deployment observation exceeded its time limit." } })), [["lfx", "Timed out · ~/Work/lfx"]]);
+  assert.deepEqual(at(identityOf(base, LFX_PATH, { ok: false, reason: { code: "E_NO_DEPLOYMENT", message: "no deployment here", origin: "kernel" } })), [["lfx", "Not read · ~/Work/lfx"]]);
+  assert.deepEqual(at(identityOf(base, LFX_PATH, learnedOf({ ...LFX, keyFrom: "member" }))), [["lfx", "Workspace not known yet · ~/Work/lfx"]]);
+  assert.deepEqual(at(identityOf(base, LFX_PATH, { ok: true, workspace: null })), [["lfx", "Reports no workspace · ~/Work/lfx"]]);
   // Still a row of the list: Enter admits it as it did, and Remove acts on it.
   const failed_ = identityOf(base, LFX_PATH, { ok: false, reason: { code: "E_CLI_TIMEOUT", message: "late" } });
   assert.equal(switcher(failed_, AT).items.find((item) => item.path === LFX_PATH).state, "ok");
@@ -1963,6 +1963,51 @@ test("Enter on the lfx workspace opens ~/Work/lfx in this run and shows athenea 
   // With nothing at all to open, the switcher stays and the list is read again.
   const none = reduce(asking, { joined: { admitted: [], opens: [LFX_PATH] }, at: AT });
   assert.deepEqual([none.state.view, none.state.open, none.effect], ["switcher", DEPLOYMENT, { list: true }]);
+});
+
+test("a failed identity read's reason is drawn at 80 columns: the reason comes before the path, so the path is what a narrow row cuts", () => {
+  const failedRead = identityOf(press(pepe(), ["w"]).state, LFX_PATH, { ok: false, reason: { code: "E_CLI_TIMEOUT", message: "The deployment observation exceeded its time limit." } });
+  const row = draw(failedRead, { cols: 80, rows: 24 }).lines.find((line) => / lfx /.test(line) && !line.includes("· athenea"));
+  assert.match(row, /lfx +Timed out/);
+});
+
+test("the switcher's selection follows the deployment it stood on: a listed row whose identity is learned is selected in its workspace's row, so Enter opens that workspace; when a later answer takes the workspace away the selection is back on the row", () => {
+  const before = press(pepe(), ["w", "j", "j"]).state;
+  const chosen = (state) => { const s = switcher(state, AT); return s.items.find((item) => item.key === s.selected); };
+  assert.equal(chosen(before).path, LFX_PATH);
+  const learned = identityOf(before, LFX_PATH, learnedOf(LFX));
+  assert.deepEqual([chosen(learned).label, chosen(learned).join], ["lfx", [LFX_PATH]]);
+  assert.deepEqual(press(learned, ["enter"]).effects.at(-1), { join: { paths: [LFX_PATH], opens: [LFX_PATH, ATHENEA_LFX] } });
+  // A workspace of its own (no other machine has it): the row comes with the answer, and goes with the next.
+  const ALONE = Object.freeze({ ...LFX, key: "github.com/u/alone" });
+  const alone = identityOf(before, LFX_PATH, learnedOf(ALONE));
+  assert.deepEqual([chosen(alone).label, chosen(alone).join], ["lfx", [LFX_PATH]]);
+  const back = identityOf(alone, LFX_PATH, { ok: false, reason: { code: "E_CLI_TIMEOUT", message: "late" } });
+  assert.equal(chosen(back).path, LFX_PATH);
+});
+
+test("Enter on the workspace already open from another machine, once its deployment of this machine is learned, opens that one in the same workspace and keeps its tabs; opening another workspace still closes them", () => {
+  // The lfx workspace open on athenea, an agent's terminal open there as a tab.
+  let state = press(pepe(), ["w", "j", "enter"]).state;
+  assert.equal(state.open, ATHENEA_LFX);
+  state = { ...state, cli: { ...state.cli, remote: ["roster", "session"] } };
+  state = press(state, ["enter"]).state;
+  assert.ok(state.opening, "the agent's terminal is being opened");
+  state = reduce(state, { prepared: { id: state.opening.id } }).state;
+  state = reduce(state, { shown: { id: state.terminal.id } }).state;
+  state = leaderEscape(state).state;
+  assert.equal(state.tabs.length, 1);
+  const workspace = panelOf(state, AT).workspace.id;
+  state = identityOf(state, LFX_PATH, learnedOf(LFX));
+  const asking = press(state, ["w", "enter"]);
+  assert.deepEqual(asking.effects.at(-1), { join: { paths: [LFX_PATH], opens: [LFX_PATH, ATHENEA_LFX] } });
+  const step = reduce(asking.state, { joined: { admitted: [LFX_PATH], opens: [LFX_PATH, ATHENEA_LFX] }, at: AT });
+  assert.deepEqual([step.state.open, panelOf(step.state, AT).workspace.id, step.state.tabs.length], [LFX_PATH, workspace, 1]);
+  assert.equal(step.effect.close, undefined, "no tab is closed");
+  // The other workspace: its tabs go.
+  const other = press(step.state, ["w", "k", "enter"]);
+  assert.deepEqual([other.state.open, other.state.tabs.length], [DEPLOYMENT, 0]);
+  assert.equal(other.effects.some((effect) => effect?.close?.length === 1), true);
 });
 
 test("a later identity answer replaces the one before it, and a deployment this run serves is never offered or read for: the switcher is drawn from what has come in so far", () => {

@@ -12,7 +12,7 @@
 import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings, chordKeys } from "./actions.mjs";
 import { collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { defaultDetachKey } from "./config.mjs";
-import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, LIST_WORDS } from "./model.mjs";
+import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, workspaceOf, LIST_WORDS } from "./model.mjs";
 import { backKeyId, backKeySequences, isBackKey } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
 import { SPLIT_MIN, splitFits } from "./views/split.mjs";
@@ -263,7 +263,7 @@ function admitted(state, { admitted: id, at }) {
  *  (lib/main.mjs asked each whether it is a deployment now): `admitted` are served from now on, pending
  *  until their first read, which the identity read already placed in their workspace's view; then the
  *  workspace opens on the first of `opens` (its deployments, this machine's first) that is served or is
- *  another machine's. A folder refused is not served; when nothing of the workspace can be opened the
+ *  another machine's (the workspace already open stays open, its place and tabs kept). A folder refused is not served; when nothing of the workspace can be opened the
  *  switcher stays, and the list is read again, so its rows say what the folders are now. */
 function joinedHeard(state, { admitted: ids, opens, at }) {
   const added = ids.filter((id) => !state.ctxs.includes(id));
@@ -272,13 +272,35 @@ function joinedHeard(state, { admitted: ids, opens, at }) {
   const joined = added.length ? next(state, { ctxs: Object.freeze([...state.ctxs, ...added]), entries }) : state;
   const target = opens.find((id) => joined.ctxs.includes(id) || !id.startsWith("/")) ?? null;
   if (target === null) return { state: joined, effect: { list: true } };
-  return { state: opened(joined, target), effect: { refresh: { live: true } } };
+  // The workspace already open (from another machine's deployment) stays where its list was, and keeps its tabs (reduceStep).
+  const same = state.open !== null && workspaceOf(joined, target) === workspaceOf(state, state.open);
+  const shown = opened(joined, target);
+  return { state: same ? next(shown, { selected: state.selected, top: state.top, detailTop: state.detailTop }) : shown, effect: { refresh: { live: true } } };
+}
+
+/** The deployments a choice of the switcher stands for: a workspace's, a listed row's path, an unmatched
+ *  view's primary (lib/model.mjs switcher). */
+const choiceDeployments = (item) => item.opens ?? [item.path ?? item.primary].filter(Boolean);
+
+/** The switcher's selection after `after` changed its rows: kept while its choice is listed; else on the
+ *  choice that now holds a deployment the selected one stood for (a listed row whose workspace a read
+ *  learned is in that workspace's row from then on, and back on its own row when a later answer takes
+ *  that away), so Enter opens what was selected. */
+function reselected(before, after) {
+  const was = switcher(before);
+  if (was.selected === null) return after;
+  const now = switcher(after);
+  if (now.keys.includes(was.selected)) return after;
+  const ids = choiceDeployments(was.items.find((item) => item.key === was.selected));
+  const found = now.items.find((item) => item.key !== undefined && choiceDeployments(item).some((id) => ids.includes(id)));
+  return found ? next(after, { switcher: Object.freeze({ ...after.switcher, selected: found.key, loose: false }) }) : after;
 }
 
 /** What an identity read learned of a deployment of this computer's list (lib/main.mjs): kept for the run,
- *  the last answer for each path; an answer replaces the one before it. */
+ *  the last answer for each path; an answer replaces the one before it. The switcher's selection
+ *  follows the deployment it stood on (`reselected`). */
 function identityHeard(state, { path, read }) {
-  return { state: next(state, { identities: new Map(state.identities).set(path, read) }), effect: null };
+  return { state: reselected(state, next(state, { identities: new Map(state.identities).set(path, read) })), effect: null };
 }
 
 /** The filter's text changed. */
@@ -664,8 +686,11 @@ function reduceStep(state, event, keymap) {
   if (state.outcome !== null && typeof event.key === "string" && keymap.has(event.key)) state = next(state, { outcome: null });
   let step = reduced(state, event, keymap);
   // The tabs are the open workspace's: whatever opened another (or left it, gone), they all close,
-  // and the split with them.
-  if (step.state.open !== state.open && (step.state.tabs.length || step.state.split !== null)) {
+  // and the split with them. Another deployment of the same workspace opened (its deployment of this
+  // machine, once served, in place of another machine's) keeps them.
+  const moved = step.state.open !== state.open && (step.state.tabs.length || step.state.split !== null);
+  const was = moved && step.state.open !== null ? workspaceOf(state, state.open) : null;
+  if (moved && (was === null || workspaceOf(step.state, step.state.open) !== was)) {
     const ids = step.state.tabs.map((tab) => tab.id);
     step = { state: next(step.state, { tabs: Object.freeze([]), terminal: null, ...NO_SPLIT }), effect: ids.length ? both(step.effect, { close: ids }) : step.effect };
   }

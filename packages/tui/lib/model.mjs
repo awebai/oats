@@ -58,6 +58,14 @@ export function panelOf(state, at) {
   return state.open === null ? null : panelData(heldOf(state, at), state.open, TERMS);
 }
 
+/** The workspace (the shared view's id: panel-views.mjs viewModel) that holds deployment `id` in `state`,
+ *  or null: what the tabs belong to, so a change of `state.open` within one workspace (its deployment of
+ *  this machine opened beside another machine's) is not taken for opening another. */
+export function workspaceOf(state, id, at) {
+  if (id === null) return null;
+  return viewModel(heldOf(state, at), TERMS).views.find((v) => v.id === id || v.deployments.includes(id))?.id ?? null;
+}
+
 const text = (value) => typeof value === "string" && value !== "";
 const pad = (n) => String(n).padStart(2, "0");
 /** An ISO time as a local clock time, `14:03:27`, or null. */
@@ -556,7 +564,8 @@ function indicatorState(info) {
  *  listed deployments Enter opens first, and `opens` the deployments it may then open, in order),
  *  `{ key, label, place, notLiveText, open, primary }` for a view matched to no workspace, and
  *  `{ key, label, place, path, state, refused }` for a row of the list (`state` the kernel's:
- *  views/switcher.mjs says a stale one in words; `place` its path, then why no workspace took it).
+ *  views/switcher.mjs says a stale one in words; `place` why no workspace took it, when a read said, then its path: the reason first, so a narrow row
+ *  cuts the path and keeps it).
  *  `keys` are the choices in order; `selected` is the key the selection stands on (the first choice
  *  when the state's own is not listed). */
 export function switcher(state, at = new Date(0).toISOString()) {
@@ -588,7 +597,7 @@ export function switcher(state, at = new Date(0).toISOString()) {
   const taken = new Set([...views.infos.keys()]);
   const offered = unserved.filter((row) => !taken.has(row.path))
     .map(({ path, name, state: listedState }) => ({
-      key: `path\u0000${path}`, label: name, place: [shortPath(path, { home: state.home }), why.get(path)].filter(Boolean).join(" · "), path, state: listedState, refused: state.switcher.refused === path,
+      key: `path\u0000${path}`, label: name, place: [why.get(path), shortPath(path, { home: state.home })].filter(Boolean).join(" · "), path, state: listedState, refused: state.switcher.refused === path,
     }))
     .filter((item) => choiceMatches(item, query));
   items.push(
