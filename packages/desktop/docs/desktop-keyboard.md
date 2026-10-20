@@ -92,7 +92,9 @@ Show instance panel and the closed sidebar and panel).
    is A), else by the letter the code names (a Russian layout's KeyO, щ, is
    O; and so without the layout's map), and a digit key
    by its digit, on every layout (⌘⌥ on AZERTY's & key is ⌘⌥1): ⌘⌥O is
-   Mod+Alt+O on every layout, and the shortcuts editor records it so. Linux and Windows keep `key`, and plain ⌥+key is typing. The tests
+   Mod+Alt+O on every layout, and the shortcuts editor records it so. A
+   rebind 0.66 recorded by the character ⌥ typed (Mod+Alt+Ø) still matches
+   that press, ahead of any default, until it is recorded again (`eventChordsFor`). Linux and Windows keep `key`, and plain ⌥+key is typing. The tests
    dispatch the real shifted event, not a parse round-trip.
 
 ## How the engine holds it

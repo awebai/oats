@@ -55,5 +55,6 @@
     Ctrl+Shift chords (sidebar, instance panel, spawn, theme picker, copy).
   - On macOS the Desktop gains `⌘⌥→` and `⌘⌥←` for the next and previous
     tab, beside `⌃Tab`.
-  - A binding you set yourself in the Desktop's shortcuts editor is kept.
+  - A binding you set yourself in the Desktop's shortcuts editor is kept,
+    a macOS ⌘⌥ one that 0.66 saved by the character ⌥ typed (`⌥⌘Ø`) too.
     When it is a chord a default now takes, the editor shows the clash.

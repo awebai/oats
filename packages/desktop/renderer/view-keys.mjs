@@ -8,7 +8,7 @@
    (review 4f57091: no local chord fallback — a resolver-side default would
    resurrect explicitly unbound shortcuts and split the keymap authority
    addendum 3 unified). */
-import { getBinding, parseChord, chordFromEvent } from "./keybindings.mjs";
+import { getBinding, parseChord, eventChordsFor } from "./keybindings.mjs";
 
 function chordsEqual(a, b, isMac) {
   if (!a || !b || a.key !== b.key || a.alt !== b.alt || a.shift !== b.shift) return false;
@@ -23,11 +23,9 @@ function chordsEqual(a, b, isMac) {
  * canvas/grid), never WHAT it is bound to. An action whose effective
  * binding is null (no default, or explicitly unbound) never fires. */
 export function resolveViewKey(e, actions, { isMac = /mac/i.test(navigator.platform || ""), binding = getBinding } = {}) {
-  const evChord = chordFromEvent(e, isMac);
-  if (!evChord) return null;
   for (const a of actions) {
     const bound = parseChord(binding(a.id, isMac) || "");
-    if (bound && chordsEqual(bound, evChord, isMac)) return a.id;
+    if (bound && eventChordsFor(e, a.id, isMac).some((chord) => chordsEqual(bound, chord, isMac))) return a.id;
   }
   return null;
 }

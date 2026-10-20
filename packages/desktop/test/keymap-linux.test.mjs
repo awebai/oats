@@ -14,7 +14,9 @@ import {
   CHORDS_READ, DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, defaultBinding, chordFromEvent, chordToString, keymapTakes,
   setKeyboardLayoutMap, readKeyboardLayout, getBinding, formatChord, isPlainChord,
   registerAction, setActiveContexts, resetAllBindings, setBinding, matchEvent, handleKeydown, findConflict, keymapConflicts,
+  eventMatchesBinding, pickerCycleDirection,
 } from "../renderer/keybindings.mjs";
+import { resolveViewKey } from "../renderer/view-keys.mjs";
 import { terminalKeyDecision } from "../renderer/terminal-tab.mjs";
 import { copyTerminalSelection } from "../renderer/terminal-clipboard.mjs";
 
@@ -566,6 +568,16 @@ test("macOS: a ⌘⌥ rebind stored by the character ⌥ typed (0.66) keeps work
   assert.equal(matchEvent(mac("ø", "KeyO"), { isMac: true, insideTerminal: true }), "app.palette", "in a terminal too (the palette is allowlisted)");
   setBinding("app.workspaces", "Mod+Alt+Shift+Ø");
   assert.equal(matchEvent(mac("Ø", "KeyO", { metaKey: true, altKey: true, shiftKey: true }), opts), "app.workspaces", "with Shift");
+  // Every reader of one action's binding reads it so (eventChordsFor): the palette's own chord
+  // cycles down, with Shift up; the leader rebound so is the leader again on its second press.
+  setBinding("app.workspaces", null);
+  assert.equal(pickerCycleDirection(mac("ø", "KeyO"), "app.palette", true), 1);
+  assert.equal(pickerCycleDirection(mac("Ø", "KeyO", { metaKey: true, altKey: true, shiftKey: true }), "app.palette", true), -1, "⇧ cycles up");
+  assert.equal(eventMatchesBinding(mac("ø", "KeyO"), "app.palette", true), true);
+  setBinding("app.leader", "Mod+Alt+Ø");
+  assert.equal(eventMatchesBinding(mac("ø", "KeyO"), "app.leader", true), true, "the leader again");
+  assert.equal(resolveViewKey(mac("ø", "KeyO"), [{ id: "app.leader" }], { isMac: true }), "app.leader", "a view's own keys too");
+  assert.equal(eventMatchesBinding(mac("ø", "KeyO"), "app.workspaces", true), false, "unbound stays unbound");
   // A default is never matched by the typed character: only a stored rebind is.
   resetAllBindings();
   t.after(registerAction({ id: "x.oslash", label: "x", context: "global", defaultChord: "Mod+Alt+Ø", run: () => {} }));

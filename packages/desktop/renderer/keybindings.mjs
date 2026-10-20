@@ -675,8 +675,21 @@ export function matchEvent(e, opts = {}) {
   // holds the character ⌥ typed (⌘⌥O was stored as Mod+Alt+Ø): it still matches that press, and
   // first, so a default on the physical key (Mod+Alt+O) never takes it.
   const typed = typedOptionChord(e, isMac, evChord);
-  const hit = (typed && find(typed, (id) => Object.prototype.hasOwnProperty.call(overrides, id))) || find(evChord);
+  const hit = (typed && find(typed, hasOverride)) || find(evChord);
   return hit ? hit.id : null;
+}
+
+const hasOverride = (actionId) => Object.prototype.hasOwnProperty.call(overrides, actionId);
+
+/** The chords a keydown presses for `actionId`'s binding: as it reads now (chordFromEvent), and,
+ *  while that action holds a stored rebind, as 0.66 read a macOS ⌘⌥ press (typedOptionChord), first.
+ *  Every reader of one action's binding (eventMatchesBinding, pickerCycleDirection, view-keys.mjs)
+ *  asks this, so a rebind 0.66 recorded works there as in matchEvent. */
+export function eventChordsFor(e, actionId, isMac = defaultIsMac()) {
+  const physical = chordFromEvent(e, isMac);
+  if (!physical) return [];
+  const typed = hasOverride(actionId) ? typedOptionChord(e, isMac, physical) : null;
+  return typed ? [typed, physical] : [physical];
 }
 
 /** A macOS ⌘⌥ or ⌃⌥ press read as the engine read it before the physical key named it: by the
@@ -704,7 +717,8 @@ export function keymapTakes(e, opts = {}) {
 
 /** Does the event press the effective chord of `actionId` (whatever its context)? */
 export function eventMatchesBinding(e, actionId, isMac = defaultIsMac()) {
-  return chordMatches(parseChord(getBinding(actionId, isMac) || ""), chordFromEvent(e, isMac), isMac);
+  const bound = parseChord(getBinding(actionId, isMac) || "");
+  return eventChordsFor(e, actionId, isMac).some((chord) => chordMatches(bound, chord, isMac));
 }
 
 /** The single shell-level keydown listener body: match, prevent, run. */
@@ -725,9 +739,9 @@ export function handleKeydown(e, opts = {}) {
  * never cycles. */
 export function pickerCycleDirection(e, actionId, isMac = defaultIsMac()) {
   const bound = parseChord(getBinding(actionId, isMac) || "");
-  const evChord = chordFromEvent(e, isMac);
-  if (!bound || !evChord || isPlainChord(bound)) return 0;
-  if (chordMatches(bound, evChord, isMac)) return 1;
-  if (!bound.shift && chordMatches({ ...bound, shift: true }, evChord, isMac)) return -1;
+  const chords = eventChordsFor(e, actionId, isMac);
+  if (!bound || !chords.length || isPlainChord(bound)) return 0;
+  if (chords.some((chord) => chordMatches(bound, chord, isMac))) return 1;
+  if (!bound.shift && chords.some((chord) => chordMatches({ ...bound, shift: true }, chord, isMac))) return -1;
   return 0;
 }
