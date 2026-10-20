@@ -51,6 +51,8 @@
   | the Desktop's second next and previous tab chords | `Ctrl+PgDn`, `Ctrl+PgUp` (outside a terminal) | `Alt+Shift+Right`, `Alt+Shift+Left` (everywhere) |
   | the Desktop's go to tab 1–9 | `Alt+1` to `Alt+9` (outside a terminal) | `Ctrl+Alt+1` to `Ctrl+Alt+9` (everywhere) |
 
+  - **The Alt+Shift arrows no longer reach the agent in its terminal:** in
+    both clients they are the chords, there as everywhere else.
   - The Desktop keeps `Ctrl+Tab` and `Ctrl+Shift+Tab`, and its other
     Ctrl+Shift chords (sidebar, instance panel, spawn, theme picker, copy).
   - On macOS the Desktop gains `⌘⌥→` and `⌘⌥←` for the next and previous

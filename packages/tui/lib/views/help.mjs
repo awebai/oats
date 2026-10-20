@@ -218,7 +218,24 @@ export const PALETTE_KEYS = Object.freeze([
   Object.freeze(["Enter", "run the selected row"]),
   Object.freeze(["Esc", "close the palette"]),
 ]);
-const paletteRows = (cols) => [heading("The palette"), [], ...table(PALETTE_KEYS.map(([keys, said]) => [keys, words(said)]), cols, KEYS)];
+/** What the palette's own keys do (actions.mjs paletteKeys), said on a row of their own after its
+ *  Up and Down, where the TUI has them (not on macOS). */
+export const PALETTE_GROUP_WORDS = "the first row of the group before, or of the next; past either end it wraps";
+/** The key ids of the palette's own keys (`paletteKeys`, `[key id, does]`, the model's), the
+ *  group before's then the next's, as Up then Down; null unless it has both (none on macOS). The
+ *  help and the cheat sheet (views/frame.mjs) name them so. */
+export function paletteGroupKeys(paletteKeys) {
+  const keyOf = new Map((paletteKeys ?? []).map(([key, does]) => [does, key]));
+  const pair = ["palette-previous-group", "palette-next-group"].map((does) => keyOf.get(does));
+  return pair.every((key) => key !== undefined) ? pair : null;
+}
+/** The palette's section: PALETTE_KEYS, and after its Up and Down the row of its own keys
+ *  (paletteGroupKeys), where it has them. */
+function paletteRows(cols, paletteKeys) {
+  const pair = paletteGroupKeys(paletteKeys), rows = PALETTE_KEYS.map(([keys, said]) => [keys, words(said)]);
+  if (pair !== null) rows.splice(1, 0, [pair.map(keyLabel).join(", "), words(PALETTE_GROUP_WORDS)]);
+  return [heading("The palette"), [], ...table(rows, cols, KEYS)];
+}
 
 /** The leader's rows (docs/tui.md, "The leader"): its key, then the table of what each key after
  *  it does (actions.mjs LEADER), from every focus. */
@@ -262,9 +279,10 @@ const spawnRows = (cols) => [heading("The spawn prompt"), [], ...table(SPAWN_KEY
  *  the rules of OPEN_RULES; under the line of the last act, ACT_RULES. The chords read now
  *  (`chords`, `[key id, does]`; none, or null, lists none) lead the whole help while the terminal
  *  confirms the kitty keyboard protocol (`chordsLead`), before this table; without it they come
- *  after the leader's table. Then the palette's keys (PALETTE_KEYS) and the spawn prompt's
- *  (SPAWN_KEYS, SPAWN_RULES). */
-export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = null, chordsLead = false) {
+ *  after the leader's table. Then the palette's keys (PALETTE_KEYS, and its own keys `paletteKeys`,
+ *  `[key id, does]`, where there are any: paletteRows) and the spawn prompt's (SPAWN_KEYS,
+ *  SPAWN_RULES). */
+export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = null, chordsLead = false, paletteKeys = null) {
   const marks = marksOf(ascii), chorded = chords !== null && chords.length > 0;
   const closing = keyText(["close", "help"].map((id) => actions.find((action) => action.id === id)).filter((action) => action?.keys.length).map((action) => keyLabel(action.keys[0])).join(" or "));
   return [
@@ -280,7 +298,7 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = 
     ...(detachKey !== null ? [[], ...leaderRows(detachKey, cols)] : []),
     ...(chorded && !chordsLead ? [[], ...chordRows(chords, cols, detachKey, ascii)] : []),
     [],
-    ...paletteRows(cols),
+    ...paletteRows(cols, paletteKeys),
     [],
     ...spawnRows(cols),
     [],
@@ -318,8 +336,8 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = 
 
 /** `{ rows, extent }`: `size.rows` rows for an area `size.cols` wide, scrolled to `top`, and how
  *  many rows the whole help has. The movement keys scroll it. */
-export function help(actions, size, { top = 0, ascii = false, detachKey = null, chords = null, chordsLead = false } = {}) {
-  const all = helpRows(actions, ascii, size.cols, detachKey, chords, chordsLead);
+export function help(actions, size, { top = 0, ascii = false, detachKey = null, chords = null, chordsLead = false, paletteKeys = null } = {}) {
+  const all = helpRows(actions, ascii, size.cols, detachKey, chords, chordsLead, paletteKeys);
   const rows = Array.from({ length: size.rows }, () => []);
   const win = windowOf({ top, count: all.length, height: size.rows });
   all.slice(win.top, win.top + win.size).forEach((spans, i) => { rows[i] = spans; });

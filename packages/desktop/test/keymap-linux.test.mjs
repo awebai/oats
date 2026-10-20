@@ -14,8 +14,9 @@ import {
   CHORDS_READ, DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, defaultBinding, chordFromEvent, chordToString, keymapTakes,
   setKeyboardLayoutMap, readKeyboardLayout, getBinding, formatChord, isPlainChord,
   registerAction, setActiveContexts, resetAllBindings, setBinding, matchEvent, handleKeydown, findConflict, keymapConflicts,
-  eventMatchesBinding, pickerCycleDirection,
+  eventMatchesBinding, pickerCycleDirection, paletteGroupDirection, paletteGroupHint, chordFromKeyId,
 } from "../renderer/keybindings.mjs";
+import { PALETTE_KEYS, paletteKey } from "../../client/keymap.mjs";
 import { resolveViewKey } from "../renderer/view-keys.mjs";
 import { terminalKeyDecision } from "../renderer/terminal-tab.mjs";
 import { copyTerminalSelection } from "../renderer/terminal-clipboard.mjs";
@@ -619,4 +620,41 @@ test("keymapTakes: a live binding, a rebind included, is the keymap's; an unboun
   // It answers as matchEvent does: a consumed event is nobody's.
   const consumed = ev("ArrowDown", { ctrlKey: true, shiftKey: true, defaultPrevented: true });
   assert.equal(keymapTakes(consumed, out), false);
+});
+
+// The palette's own group keys (packages/client/keymap.mjs PALETTE_KEYS), read only while the palette
+// is open (overlay-picker's capture-phase handler: palette-tree.test.mjs). With it closed the same
+// presses stay the keymap's: ⌘N is app.chooseSoul, Alt+Shift+↓/↑ are roster.openNext/openPrevious.
+test("paletteGroupDirection: ⌘N / ⌥⌘N on macOS, Alt+Shift+↓ / ↑ elsewhere, read from PALETTE_KEYS; the hint names them", t => {
+  registerAll(t);
+  assert.deepEqual(PALETTE_KEYS.map(({ does }) => [does, chordFromKeyId(paletteKey(does, true)), chordFromKeyId(paletteKey(does, false))]), [
+    ["palette-next-group", "Mod+N", "Alt+Shift+↓"], ["palette-previous-group", "Mod+Alt+N", "Alt+Shift+↑"],
+  ]);
+  assert.equal(paletteGroupDirection(ev("n", { metaKey: true }), true), 1);
+  assert.equal(paletteGroupDirection(ev("Dead", { metaKey: true, altKey: true, code: "KeyN" }), true), -1, "⌥⌘N as a US Mac sends it: ⌥N is a dead key, read by the physical key");
+  assert.equal(paletteGroupDirection(ev("˜", { metaKey: true, altKey: true, code: "KeyN" }), true), -1, "and where it types ˜");
+  for (const e of [ev("n"), ev("N", { shiftKey: true }), ev("n", { ctrlKey: true }), ev("N", { metaKey: true, shiftKey: true }),
+    ev("ArrowDown", { altKey: true, shiftKey: true }), ev("ArrowDown", { metaKey: true, altKey: true }), ev("k", { metaKey: true })]) {
+    assert.equal(paletteGroupDirection(e, true), 0, `macOS: ${JSON.stringify(e)}`);
+  }
+  assert.equal(paletteGroupDirection(ev("ArrowDown", { altKey: true, shiftKey: true }), false), 1);
+  assert.equal(paletteGroupDirection(ev("ArrowUp", { altKey: true, shiftKey: true }), false), -1);
+  for (const e of [ev("ArrowDown"), ev("ArrowDown", { altKey: true }), ev("ArrowDown", { shiftKey: true }), linux("ArrowDown", { altKey: true, shiftKey: true }),
+    linux("n"), linux("N", { shiftKey: true }), ev("n", { metaKey: true }), ev("ArrowRight", { altKey: true, shiftKey: true })]) {
+    assert.equal(paletteGroupDirection(e, false), 0, `Linux: ${JSON.stringify(e)}`);
+  }
+  // Not bindings: a rebind of the actions they shadow moves neither, and closed, those actions keep the presses.
+  assert.equal(matchEvent(ev("n", { metaKey: true }), { isMac: true, insideTerminal: false }), "app.chooseSoul");
+  assert.equal(matchEvent(ev("ArrowDown", { altKey: true, shiftKey: true }), { isMac: false, insideTerminal: false }), "roster.openNext");
+  assert.equal(matchEvent(ev("ArrowUp", { altKey: true, shiftKey: true }), { isMac: false, insideTerminal: false }), "roster.openPrevious");
+  setBinding("app.chooseSoul", "Mod+J"); setBinding("roster.openNext", "Ctrl+Shift+↓");
+  assert.equal(paletteGroupDirection(ev("n", { metaKey: true }), true), 1);
+  assert.equal(paletteGroupDirection(ev("ArrowDown", { altKey: true, shiftKey: true }), false), 1);
+  assert.equal(paletteGroupDirection(linux("ArrowDown", { shiftKey: true }), false), 0);
+  // The footer's words, in the engine's own labels (formatChord).
+  assert.equal(paletteGroupHint(true), "⌘N next group · ⌥⌘N previous");
+  assert.equal(paletteGroupHint(false), "Alt+Shift+↓ next group · Alt+Shift+↑ previous");
+  // Read, never retyped: the engine names neither key of the shared table.
+  const engine = readFileSync(new URL("../renderer/keybindings.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(engine, /"cmd\+(alt\+)?n"|"alt\+shift\+(up|down)"/, "no copy of PALETTE_KEYS");
 });

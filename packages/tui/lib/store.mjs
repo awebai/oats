@@ -9,10 +9,10 @@
 // removed, and nothing here decides what a failed read means or which view a deployment is in.
 // Selection is an identity (the shared `instanceId`), never an index, so it survives every read;
 // the rows it moves among are the model's, in drawn order.
-import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings, chordKeys, chordsRead } from "./actions.mjs";
+import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings, chordKeys, chordsRead, paletteKeys } from "./actions.mjs";
 import { collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { defaultDetachKey } from "./config.mjs";
-import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, workspaceOf, LIST_WORDS } from "./model.mjs";
+import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, paletteStep, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, workspaceOf, LIST_WORDS } from "./model.mjs";
 import { backKeyId, backKeySequences, isBackKey } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
 import { SPLIT_MIN, splitFits } from "./views/split.mjs";
@@ -89,8 +89,10 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  event `{ keyboard }`), or null while it has not; `chords`: the chords of `platform`, key id ->
  *  `does` (actions.mjs chordKeys), every one read while `keyboard` is not null, and the Alt+Shift
  *  arrows alone while it is null (actions.mjs chordsRead; see `leading`).
- *  `palette`: the palette while it is open (see `paletteOpened`), or null. `recent`: the ids of
- *  the instances opened in this run, the latest first.
+ *  `palette`: the palette while it is open (see `paletteOpened`), or null; `paletteKeys` its own
+ *  keys on `platform`, key id -> `does` (actions.mjs paletteKeys: none on macOS), which win over
+ *  every other key while it is open. `recent`: the ids of the instances opened in this run, the
+ *  latest first.
  *  `act`: the confirmation open in the act view (see `actOpened`), or null; `acted` counts the
  *  confirmations opened in this run, so an answer for one that was closed is told apart.
  *  `starting`: id -> `{ verb, since }` of this run's starts and restarts whose child is still
@@ -119,7 +121,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     switcher: NO_SWITCHER,
     listed: NO_LIST, identities: new Map(),
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
-    leaderKey: backKeyId(detachKey), leader: null, keyboard: null, chords: chordKeys(platform === "darwin", actions), palette: null, recent: Object.freeze([]), souls: NO_SOULS, capabilities: NO_CAPABILITIES,
+    leaderKey: backKeyId(detachKey), leader: null, keyboard: null, chords: chordKeys(platform === "darwin", actions), palette: null, paletteKeys: paletteKeys(platform === "darwin"), recent: Object.freeze([]), souls: NO_SOULS, capabilities: NO_CAPABILITIES,
     spawn: null, spawning: null, spawnCheck: null, arriving: null, previews: 0, tabs: Object.freeze([]), split: null, group: 0, aside: null,
     notice: null,
   });
@@ -1116,6 +1118,10 @@ function leading(state, event, keymap) {
   }
   const plain = l === null ? state : next(state, { leader: null });
   if (event.key === state.leaderKey) return { state: next(plain, { leader: leaderAt(event.read, true) }), effect: null };
+  // THE PALETTE'S OWN KEYS (docs/tui.md, "The palette"): while it is open they are its, before any
+  // chord (Alt+Shift+Down and Up are the chords `next` and `previous` too): inPalette reads them.
+  // A chord typed in a terminal (`{ chord }`, above) never comes then: the terminal has no focus.
+  if (state.palette !== null && typeof event.key === "string" && state.paletteKeys.has(event.key)) return { pass: plain };
   // THE CHORDS (docs/tui.md, "Chords"): a chord does what the leader then its key does, from
   // whatever was open: every one while the terminal confirms the kitty keyboard protocol, the
   // Alt+Shift arrows without it too (chordsRead). While the leader waits it is a key not in the
@@ -1273,9 +1279,12 @@ function paletteClosed(state) {
 /** The keys that move the palette's selection: named keys only, so every letter is the query's. */
 const PALETTE_MOVES = Object.freeze({ up: "up", down: "down", pageup: "page-up", pagedown: "page-down" });
 /** A key or a paste while the palette is open. Text and a paste's first line go to the query,
- *  Backspace takes a grapheme off it, Up and Down (and PageUp, PageDown) move among its rows,
- *  Enter runs the selected row, Esc (or its own key again) closes it; quit, suspend and redraw keep
- *  their actions. Every other key does nothing. */
+ *  Backspace takes a grapheme off it, Up and Down (and PageUp, PageDown) move among its rows that
+ *  can be selected (a group's label row is passed over), its own keys (`paletteKeys`, read before
+ *  every other key, a key a tui.json binds to an action too) to the first row of the next group or
+ *  of the one before, wrapping (model.mjs paletteStep), Enter runs the selected row, Esc (or its
+ *  own key again) closes it; quit, suspend and redraw keep their actions. Every other key does
+ *  nothing. */
 function inPalette(state, event, keymap) {
   const p = state.palette, stay = { state, effect: null };
   const put = (changes) => next(state, { palette: Object.freeze({ ...p, ...changes }) });
@@ -1284,10 +1293,12 @@ function inPalette(state, event, keymap) {
   if (typeof event.text === "string") return query(typed(p.query, event.text, { key: true }));
   const action = keymap.get(event.key);
   if (event.key === "backspace") return query([...GRAPHEMES.segment(p.query)].map((g) => g.segment).slice(0, -1).join(""));
+  const group = state.paletteKeys.get(event.key);
+  if (group !== undefined) { const to = paletteStep(paletteItems(state), group); return to === null ? stay : { state: put({ selected: to }), effect: null }; }
   if (event.key === "escape" || action === "close" || action === "palette") return { state: paletteClosed(state), effect: null };
   if (action === "quit" || action === "suspend" || action === "redraw") return { state, effect: action };
   const list = paletteItems(state);
-  const keys = list.items.map((item) => item.key);
+  const keys = list.items.filter((item) => item.kind !== "group").map((item) => item.key);
   if (Object.hasOwn(PALETTE_MOVES, event.key)) {
     if (!keys.length) return stay;
     const page = Math.max(1, (Number.isInteger(event.page) ? event.page : 1) - 1);

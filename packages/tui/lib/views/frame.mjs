@@ -15,7 +15,7 @@ import { lit, ownEllipsis, shown, shownLines, textOf } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { act } from "./act.mjs";
 import { detail } from "./detail.mjs";
-import { help, keyText } from "./help.mjs";
+import { help, keyText, paletteGroupKeys } from "./help.mjs";
 import { instances, measured } from "./instances.mjs";
 import { textWidth } from "../term/width.mjs";
 import { palette } from "./palette.mjs";
@@ -286,9 +286,10 @@ function types(m) {
  *  focus, and the leader twice types the leader into the terminal; while the terminal confirms the
  *  kitty keyboard protocol the chords lead there (docs/tui.md, "Chords"; chordHints), the leader's
  *  hints after them, and the leader is the last given up; without it the leader's lead, and the
- *  Alt+Shift arrows, the chords that come then, follow them (the first given up). In the palette, the spawn prompt
- *  (spawnHints), a confirmation, the filter field, the help and the switcher, how to work them: the keys they
- *  read are their own, so they are the TUI's words, but for the confirmation's close key and the
+ *  Alt+Shift arrows, the chords that come then, follow them (the first given up). In the palette
+ *  (its group keys last, where the TUI has them, so the first given up: paletteGroups), the spawn prompt
+ *  (spawnHints), a confirmation, the filter field, the help and the switcher, how to work them: the
+ *  keys they read are their own, so they are the TUI's words, but for the confirmation's close key and the
  *  field's clear, which are the user's. Else it is small: a view's list or its detail names what
  *  Enter does now, and the rest stays the leader's hint's, the palette's and the help's. In the list
  *  of instances Enter is `open` while it would open the selected agent's terminal and `focus
@@ -316,7 +317,7 @@ function cheatSheet(m) {
     const leader = [made("list", keyText(`${label} ${list}`), "the list"), made("again", keyText(`${label} ${label}`), types(m))];
     return m.kitty ? [...chordHints(m), ...led(leader)] : [...led(leader), ...chordHints(m)];
   }
-  if (m.palette) return led([own("run", "Enter", "run"), own("move", "Up/Down", "move"), own("close", "Esc", "close")]);
+  if (m.palette) return led([own("run", "Enter", "run"), own("move", "Up/Down", "move"), own("close", "Esc", "close"), paletteGroups(m)]);
   if (m.spawn) return led(spawnHints(m.spawn, m.ascii));
   if (m.view !== "help" && filter?.editing) return led([own("keep", "Enter", "keep"), hint("close", "clear")]);
   if (m.view === "act" && m.act) {
@@ -337,6 +338,14 @@ function cheatSheet(m) {
   const detailed = soul ? soul.focus === "detail" && Boolean(soul.detail) : capability ? capability.focus === "detail" && Boolean(capability.detail) : listing && m.focus === "detail";
   const spawns = listing || (soul && soul.local !== false);
   return led([hint("palette"), ...(detailed ? [hint("detail", "back")] : []), ...enter, ...(spawns ? [hint("spawn")] : []), ...(listing ? [hint("workspaces")] : []), hint("help"), hint("quit")]);
+}
+
+/** The palette's own keys as one hint (docs/tui.md, "The palette"): the first row of the group
+ *  before and of the next, `Alt+Shift+Up/Down group` (keysTogether), from the model's
+ *  `paletteKeys` (views/help.mjs paletteGroupKeys); null where the TUI has none (macOS). */
+function paletteGroups(m) {
+  const pair = paletteGroupKeys(m.paletteKeys);
+  return pair === null ? null : own("group", keysTogether(pair), "group");
 }
 
 /** The chords a terminal's cheat sheet names under the kitty keyboard protocol, in this order, a
@@ -588,7 +597,7 @@ function framed(m, size) {
   }
   // The help, under its top row (readRow).
   if (m.view === "help") {
-    const drawn = help(m.actions, { cols: main.cols, rows: size.rows - 1 }, { top: m.helpTop, ascii: m.ascii, detachKey: m.detachKey, chords: m.chords ?? null, chordsLead: m.kitty === true });
+    const drawn = help(m.actions, { cols: main.cols, rows: size.rows - 1 }, { top: m.helpTop, ascii: m.ascii, detachKey: m.detachKey, chords: m.chords ?? null, chordsLead: m.kitty === true, paletteKeys: m.paletteKeys ?? null });
     overlay([readRow(m), ...drawn.rows]);
     return { rows, page: Math.max(1, g.page), extent: drawn.extent, room: Math.max(1, size.rows - 1) };
   }

@@ -154,7 +154,7 @@ const SURFACE = Object.freeze({
   "kernel-lines.mjs": ["kernelLines"],
   // The keys both clients share (#1395): the leader, its table, the plain keys of the list and the chords. The TUI reads its
   // defaults from it and holds no copy.
-  "keymap.mjs": ["CHORDS", "LEADER", "LEADER_TABLE", "PLAIN_KEYS", "chordKey", "leaderKey", "leaderDoes", "plainKeys", "leaderRows"],
+  "keymap.mjs": ["CHORDS", "LEADER", "LEADER_TABLE", "PALETTE_KEYS", "PLAIN_KEYS", "chordKey", "leaderKey", "leaderDoes", "paletteKey", "plainKeys", "leaderRows"],
 });
 /** Never importable, by anyone but the one the comment names. */
 const ENVIRONMENT = "own-environment.mjs"; // changes the environment of whoever imports it; the collector's entry does, first

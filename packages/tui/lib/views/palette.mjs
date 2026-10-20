@@ -1,10 +1,12 @@
 // The palette (docs/tui.md, "The palette"): (model, area) -> rows of spans, over the whole body.
 // Pure: no IO, no clock, no escape byte. One input over a list: the query on the first row, then
 // the window of the rows lib/model.mjs paletteItems lists, the selected one in reverse with `>`.
-// An instance's, a soul's or a capability's name, a machine, an instance's siblings, where a
-// capability comes from and the query are text the TUI did not write and go through shown(); the
-// labels of the views, the acts and the commands are the TUI's own. Nothing is told by colour
-// alone: each row says in a word what kind it is.
+// An instance's, a soul's or a capability's name, a machine, an instance's siblings, a group's
+// label (a cluster's name, a machine's), where a capability comes from and the query are text the
+// TUI did not write and go through shown(); the labels of the views, the acts and the commands are
+// the TUI's own. Nothing is told by colour alone: each row says in a word what kind it is, and a
+// group's label row, dim, which is never selected, stands where no row's mark stands, before the
+// rows it names.
 import { lit, shown } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { cutNote, marksOf, measured } from "./instances.mjs";
@@ -23,8 +25,16 @@ const DIM = style({ dim: true });
 const SELECTED = style({ reverse: true });
 const PLAIN = style();
 
+/** A group's label row in `cols` cells: its label, text from outside, dim at the rows' text
+ *  column, with no kind word and no mark. */
+function groupRow(item, cols) {
+  const label = measured(item.label), width = Math.min(label.width, Math.max(0, cols - LEAD));
+  return width > 0 ? [{ col: LEAD, text: label.text, style: DIM, width }] : [];
+}
+
 /** One row of the palette in `cols` cells. */
 function itemRow(item, cols, marks) {
+  if (item.kind === "group") return groupRow(item, cols);
   const look = (own) => (item.selected ? SELECTED : own);
   const kind = KINDS[item.kind], kindCol = Math.max(LEAD, cols - kind.length);
   const spans = [];

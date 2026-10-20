@@ -521,10 +521,11 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
   - **Showing a tab selects its instance's row** in the list and brings it
     into view: a filter that hides the row is cleared, and an instance
     folded over it is opened.
-- **The palette** lists the instances most recently opened or shown first,
-  as the Desktop's does. When the first of them is the shown tab's, the
-  palette opens with the second selected, so the palette then `Enter` goes
-  back to the terminal shown before it.
+- **The palette** groups the instances as [The palette](#the-palette) says,
+  the group last used first, as the Desktop's does. When the first of them
+  is the shown tab's, the palette opens on the instance shown before it,
+  wherever its group puts it, so the palette then `Enter` goes back to that
+  terminal.
 - **Closing.** The leader then `w`, or `c` in the Instances view, closes the
   shown tab: its agent keeps running. The tab to its right is shown, else
   the one to its left.
@@ -1132,7 +1133,7 @@ The line after leaving says so and names `oats status` to see it.
 | `\|`, `-` | in the Instances view, [splits](#splits) the panel side by side or one above the other |
 | `Alt+O` (`Ctrl+\` on macOS) | [the leader](#the-leader), from every focus ([`tui.json`](#change-the-keys-tuijson) can name another key) |
 | `Ctrl+K` | opens [the palette](#the-palette); `Ctrl+K` again closes it |
-| `Ctrl+Alt+K`, `Alt+Shift+Up` and the other [chords](#chords) | what the leader then a key does, from every focus; the Ctrl+Alt ones where your terminal sends them |
+| `Ctrl+Alt+K`, `Alt+Shift+Up` and the other [chords](#chords) | what the leader then a key does, from every focus; the Ctrl+Alt ones where your terminal sends them. While [the palette](#the-palette) is open, `Alt+Shift+Up` and `Alt+Shift+Down` are its own |
 | `X`, `D`, `S`, `R` | stop, retire, start, restart the selected agent, [after a confirmation](#stopping-starting-restarting-and-retiring) |
 | `n` | [spawns an agent](#spawning-an-agent): the soul picker, then the preview |
 | `N` | spawns another of the selected instance's soul: its preview |
@@ -1242,7 +1243,7 @@ retire), which have no chord.
 | `Ctrl+Alt+K` | opens the palette | `k` |
 | `Ctrl+Alt+P` | spawns an agent | `n` |
 | `Ctrl+Alt+O` | opens the switcher | `o` |
-| `Alt+Shift+Up`, `Alt+Shift+Down` | opens the terminal of the instance before or after | `Up`, `Down` |
+| `Alt+Shift+Up`, `Alt+Shift+Down` | opens the terminal of the instance before or after; while the palette is open, its previous and next group instead ([The palette](#the-palette)) | `Up`, `Down` |
 | `Alt+Shift+Left`, `Alt+Shift+Right` | shows the tab before or after the shown one | `Left`, `Right` |
 | `Ctrl+Alt+1` to `Ctrl+Alt+8`, `Ctrl+Alt+9` | shows the focused group's first to eighth tab, and its last | – |
 | `Ctrl+Alt+Z` | zooms the shown terminal in or out | `z` |
@@ -1398,17 +1399,35 @@ from an agent's line editor, which no agent above binds them in.
 The leader then `k` (or `Space`), or `Ctrl+K` in the list, opens one input
 over a list, as the OATS Desktop's ⌘K does. From 80 columns it covers the
 main area and the sidebar stays beside it, its cheat sheet naming the
-palette's keys (`Enter run`, `Up/Down move`, `Esc close`); under 80 columns
-it covers the whole screen, with those keys on its first row. While it is
-open no terminal is drawn and the TUI reads the keys. The help lists its
-keys under The palette.
+palette's keys (`Enter run`, `Up/Down move`, `Esc close`, then
+`Alt+Shift+Up/Down group`, which macOS has not); under 80 columns it covers
+the whole screen, with those keys on its first row, as many as fit (at 60
+columns `group` gives way). While it is open no terminal is drawn and the
+TUI reads the keys. The help lists its keys under The palette.
 
-- **It lists, in this order:** the instances that can be opened, the most
-  recently opened or shown in this run first (when the first is the shown tab's,
-  the second is selected as it opens), then the list's order, each with its
-  state mark, its name, for another machine `on <machine>`, and, dim, its
-  siblings as the detail names them (`sibling of <names>`), which are cut
-  first when the row is short and are never matched by a query; the souls
+- **It lists, in this order:** the instances that can be opened, in groups;
+  then the souls, the capabilities, the views, the acts and the commands,
+  one group each.
+- **The instances are grouped as the sidebar groups them:** a cluster under
+  its name, and a run of single instances under `independent`. Where the
+  view has several deployments, each group is one deployment's, and its
+  label names the machine first (`<machine> · <group>`).
+- **Each instance group has a label row:** its label, dim, before its rows.
+  It is never selected: `Up`/`Down` and `PageUp`/`PageDown` pass over it,
+  and the palette opens on the first row under it. A group with no instance
+  that can be opened is not listed.
+- **The group last used comes first,** as in the Desktop's palette, and so
+  does the cluster, the root and the child: the one with the instance opened
+  or shown most recently in this run first, then the list's order (the
+  sidebar keeps its own order). When the first instance is the shown tab's,
+  the palette opens on the instance shown before it, wherever its group puts
+  it (the second instance, when none was shown before): `Enter` goes back to
+  that terminal.
+- **An instance's row** has its state mark, its name, for another machine
+  `on <machine>`, and, dim, its siblings as the detail names them
+  (`sibling of <names>`), which are cut first when the row is short and are
+  never matched by a query.
+- **The other groups:** the souls
   of the open workspace, once they were read (by [the Souls
   view](#the-souls-view), the Capabilities view or a spawn), and choosing
   one shows the Souls view with it selected; its capabilities, once [the
@@ -1421,12 +1440,25 @@ keys under The palette.
   catalog lists its soul; then Spawn an agent, Workspaces, Refresh and Help, and [the split's](#splits)
   rows where each applies.
   Each row says at its right edge what kind it is: `instance`, `soul`,
-  `capability`, `view`, `act` or `command`.
-- **Typing filters it** with the Desktop's subsequence match, a prefix
-  first: each kind keeps the rows that match, the best first.
+  `capability`, `view`, `act` or `command`. A label row says none.
+- **Typing filters it** with the Desktop's subsequence match. An instance
+  group keeps the rows that match, in its own order, and a group with none
+  loses its label row. Each other group keeps the rows that match, the best
+  first, a prefix first.
   `Backspace` removes a character, and a paste adds its first line.
   `Up`/`Down` (and `PageUp`/`PageDown`) move, `Enter` runs the selected
   row, `Esc` closes it.
+- **`Alt+Shift+Down` goes to the next group, `Alt+Shift+Up` to the one
+  before:** to its first row. Past the last group it wraps to the first,
+  and before the first to the last; with one group, both go to its first
+  row. While the palette is open these keys are its own: they win over the
+  chords `Alt+Shift+Up` and `Alt+Shift+Down` ([Chords](#chords)), so they
+  open no agent and leave the palette open, with or without the kitty
+  keyboard protocol. The leader then `Up` or `Down` still opens one. The
+  Desktop's palette has the same pair (`PALETTE_KEYS` in
+  `packages/client/keymap.mjs`, which both read).
+- **On macOS there is no group key:** the Desktop's hold `⌘`, which a
+  terminal never passes to a program.
 - **Running a row** settles what was open under the palette, as the leader
   does: an instance shows its tab, or opens its terminal in a new one, in
   the Instances view, the focus in it ([Tabs](#tabs)); an act opens its

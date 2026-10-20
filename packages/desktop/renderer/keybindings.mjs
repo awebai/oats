@@ -21,9 +21,11 @@
 //
 // The leader, the plain keys and the chords the Desktop shares with the TUI are written down once,
 // in packages/client/keymap.mjs: DEFAULT_KEYMAP reads app.leader, the sidebar.key.* defaults and
-// the chords of CHORDS_READ from there (chordFromKeyId), never a literal of its own.
+// the chords of CHORDS_READ from there (chordFromKeyId), never a literal of its own. The palette's
+// own keys (PALETTE_KEYS, read with paletteKey) are not bindings: paletteGroupDirection reads them
+// for the open palette, and paletteGroupHint names them in its footer.
 
-import { CHORDS, LEADER, PLAIN_KEYS } from "../../client/keymap.mjs";
+import { CHORDS, LEADER, PLAIN_KEYS, paletteKey } from "../../client/keymap.mjs";
 
 const STORAGE_KEY = "oats-desktop-keymap";
 
@@ -744,4 +746,31 @@ export function pickerCycleDirection(e, actionId, isMac = defaultIsMac()) {
   if (chords.some((chord) => chordMatches(bound, chord, isMac))) return 1;
   if (!bound.shift && chords.some((chord) => chordMatches({ ...bound, shift: true }, chord, isMac))) return -1;
   return 0;
+}
+
+/** The palette's own group keys on this platform (packages/client/keymap.mjs PALETTE_KEYS), as
+ * chord strings: next ⌘N / Alt+Shift+↓, previous ⌥⌘N / Alt+Shift+↑. */
+function paletteGroupChords(isMac) {
+  return { next: chordFromKeyId(paletteKey("palette-next-group", isMac)), previous: chordFromKeyId(paletteKey("palette-previous-group", isMac)) };
+}
+
+/** While the palette is open, its next-group key moves the active row to the first selectable row
+ * of the next group (1) and its previous-group key to that of the group before (-1); anything else
+ * is 0. They are fixed palette keys, not bindings: no rebind reaches them, and the palette's
+ * capture-phase handler takes them before the keymap engine (⌘N is app.chooseSoul, and
+ * Alt+Shift+↓/↑ are roster.openNext/openPrevious, only while the palette is closed). */
+export function paletteGroupDirection(e, isMac = defaultIsMac()) {
+  const chord = chordFromEvent(e, isMac);
+  if (!chord) return 0;
+  const { next, previous } = paletteGroupChords(isMac);
+  if (chordMatches(parseChord(next), chord, isMac)) return 1;
+  if (chordMatches(parseChord(previous), chord, isMac)) return -1;
+  return 0;
+}
+
+/** The palette's footer line naming its group keys, in the engine's own labels:
+ * "⌘N next group · ⌥⌘N previous" on macOS, "Alt+Shift+↓ next group · Alt+Shift+↑ previous" elsewhere. */
+export function paletteGroupHint(isMac = defaultIsMac()) {
+  const { next, previous } = paletteGroupChords(isMac);
+  return `${formatChord(next, isMac)} next group · ${formatChord(previous, isMac)} previous`;
 }
