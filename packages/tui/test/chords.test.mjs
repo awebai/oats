@@ -513,13 +513,16 @@ test("a suspend pops the protocol with the modes before the stop; the return pus
 
 // ── The chords the TUI binds, and what each does.
 
-test("the chords are the shared ones (CHORDS), every row pinned, each one the TUI handles; none of phase 2's; on macOS none (every key there holds ⌘); a key a user's tui.json binds stays the user's", () => {
+test("the chords are the shared ones (CHORDS), every row pinned, each one the TUI handles, and a row of an action the TUI does not have is skipped; none of phase 2's; on macOS none (every key there holds ⌘); a key a user's tui.json binds stays the user's", () => {
   assert.deepEqual([...chordKeys(false)], LINUX_CHORDS);
-  assert.deepEqual([...chordKeys(false)], CHORDS.map((entry) => [entry.other, entry.does]), "the table's own, in its order");
+  assert.deepEqual([...chordKeys(false)], CHORDS.filter((entry) => leaderHandles(entry.does)).map((entry) => [entry.other, entry.does]), "the table's own, in its order");
   for (const key of PHASE_2) assert.equal(chordKeys(false).has(key), false, `${key} is no chord`);
   assert.deepEqual([...chordKeys(true)], [], "on macOS the TUI has no chords");
   assert.equal(CHORDS.every((entry) => entry.mac.startsWith("cmd+")), true);
-  for (const entry of CHORDS) assert.equal(leaderHandles(entry.does), true, `${entry.does} is one the TUI handles`);
+  for (const [, does] of LINUX_CHORDS) assert.equal(leaderHandles(does), true, `${does} is one the TUI handles`);
+  // A row the Desktop has and the TUI not yet (an edit of the instance, say) is no key of the TUI's.
+  const more = [...CHORDS, { does: "edit-instance", mac: "cmd+alt+r", other: "ctrl+alt+r" }];
+  assert.deepEqual([...chordKeys(false, ACTIONS, more)], LINUX_CHORDS, "an action the TUI does not have is skipped");
   assert.deepEqual(CHORD_OWN, ["tab-1", "tab-2", "tab-3", "tab-4", "tab-5", "tab-6", "tab-7", "tab-8", "tab-9"]);
   // Each is read as the protocol or the legacy sequence says: a Ctrl+Alt one by kittyId, an Alt+Shift arrow by its sequence.
   for (const [key] of LINUX_CHORDS) assert.equal(Object.hasOwn(LEGACY_CHORDS, key) || kittyId(kittyKey(sent(key)[0].slice(2, -1))) === key, true, key);

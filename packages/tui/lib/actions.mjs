@@ -110,12 +110,12 @@ export const LEADER_KEYS = new Map(LEADER.flatMap((entry) => entry.keys.map((key
  *  its key does, or a tab by its place (CHORD_OWN; lib/store.mjs `led`), from every focus. Left
  *  out: a chord with `cmd+` (a terminal never passes macOS's Command to a program: with the shared
  *  table that is every chord of macOS), and one whose key an action of `actions` binds (a user's
- *  tui.json keeps its key). Each `does` is one the TUI handles (leaderHandles):
- *  packages/tui/test/chords.test.mjs. Which of them are read depends on the kitty keyboard protocol
+ *  tui.json keeps its key), and one whose `does` the TUI does not handle (leaderHandles: a row may
+ *  be the Desktop's alone): packages/tui/test/chords.test.mjs. `chords` is the shared table. Which of them are read depends on the kitty keyboard protocol
  *  (chordsRead). */
-export function chordKeys(isMac, actions = ACTIONS) {
+export function chordKeys(isMac, actions = ACTIONS, chords = CHORDS) {
   const bound = new Set(actions.flatMap((action) => action.keys));
-  return new Map(CHORDS.map((entry) => [isMac ? entry.mac : entry.other, entry.does]).filter(([key, does]) => !key.startsWith("cmd+") && !bound.has(key) && leaderHandles(does)));
+  return new Map(chords.map((entry) => [isMac ? entry.mac : entry.other, entry.does]).filter(([key, does]) => !key.startsWith("cmd+") && !bound.has(key) && leaderHandles(does)));
 }
 
 /** The chords of `chords` (chordKeys) the TUI reads while the terminal confirms the kitty keyboard
