@@ -12,6 +12,13 @@
 // ("Alt+O then K or Space — Open the command palette"), with one quiet line saying
 // the leader matches the TUI and the direct chords are Desktop extras; then the
 // Sidebar keys; then the groups by context.
+//
+// On Linux/Windows its top holds the chord family (docs/desktop-keyboard.md, "Switch to
+// Ctrl+Shift"): a two-way choice, "Shortcut family, shared with oats tui", Ctrl+Alt (the default) or Ctrl+Shift, which
+// names the family in use. A change writes keys.json through main at once (renderer/chord-family.mjs)
+// and the keymap switches at once; the TUI, which shares the file, takes it at its next start, as
+// the line under the choice says, with the note main sends when keys.json was there and not taken.
+// macOS has no family, and no choice.
 
 import {
   listActions, getBinding, setBinding, resetBinding, resetAllBindings,
@@ -19,6 +26,7 @@ import {
   isPlainChord, defaultBinding, chordKeys, terminalAllows,
 } from "./keybindings.mjs";
 import { supportedLeaderRows, leaderLabel, keyIdCaps, rowKeysText } from "./leader-keys.mjs";
+import { CHORD_FAMILIES, CHORD_FAMILY_LABELS, DEFAULT_CHORD_FAMILY } from "../../client/keymap.mjs";
 import { takePickerFocusReturn } from "./overlay-picker.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { icon } from "./shell-icons.mjs";
@@ -92,14 +100,39 @@ export function shortcutMatches({ label = "", group = "", chord = null, keys: sh
   return words.length > 0 && words.every(w => keys.some(k => (KEY_WORDS.get(k) || [k]).some(name => name.startsWith(w))));
 }
 
+/** One clash of keymapConflicts, said: when only one side is the user's, the one that runs where
+ * both apply (matchEvent: an override wins over a default), else both named, as before. */
+const clashWords = (isMac) => ({ chord, actions: [a, b], own = [true, true] }) => {
+  const key = formatChord(chord, isMac);
+  if (own[0] === own[1]) return `${key} is both “${a.label}” and “${b.label}”`;
+  const [yours, fixed] = own[0] ? [a, b] : [b, a];
+  return `${key} runs “${yours.label}” (yours) where both apply; “${fixed.label}” has it by default`;
+};
+
+/** The chord family choice's words: its title, each family's option, and the line under it. */
+export const CHORD_FAMILY_WORDS = Object.freeze({
+  title: "Shortcut family, shared with oats tui",
+  options: Object.freeze({
+    "ctrl+alt": `${CHORD_FAMILY_LABELS["ctrl+alt"]} (default)`,
+    "ctrl+shift": `${CHORD_FAMILY_LABELS["ctrl+shift"]} (foot, Alacritty)`,
+  }),
+  tui: "Both work here; pick the one your terminal passes to oats tui. oats tui uses it from its next start.",
+  /** When main could not write keys.json: the family in use stays. */
+  unwritten: (family) => `Could not write keys.json: the shortcuts stay ${CHORD_FAMILY_LABELS[family] ?? CHORD_FAMILY_LABELS[DEFAULT_CHORD_FAMILY]}. Fix or remove the file, then choose again.`,
+});
+
 /** Where a stage's direct chord and the leader's key mean different things (the leader's are the TUI's). */
 const STAGE_DIFFERENCES = Object.freeze({ "stage.hierarchy": "1", "stage.automations": "3" });
 
-export function createKeybindingsEditor({ doc = document, isMac } = {}) {
+/** `chordFamily` is the page's chord family (renderer/chord-family.mjs: current, set, onChange);
+ * without it, or on macOS, the editor has no family choice. */
+export function createKeybindingsEditor({ doc = document, isMac, chordFamily = null } = {}) {
   const labelOf = (id) => listActions().find((a) => a.id === id)?.label ?? null;
+  const familyChoice = !isMac && !!chordFamily;
   const leaderText = () => { const chord = getBinding("app.leader", isMac); return chord ? formatChord(chord, isMac) : "the leader"; };
   let overlay = null;
   let offKeymap = null;
+  let offFamily = null;
   let restoreFocus = null;
   let stopRecording = null; // teardown for an in-flight chord capture
 
@@ -111,6 +144,7 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
     if (!overlay) return;
     endRecording(); // the capture listener must not outlive the dialog
     offKeymap?.(); offKeymap = null;
+    offFamily?.(); offFamily = null;
     overlay.remove(); overlay = null;
     try { restoreFocus?.restore(); } catch { /* focus target may be gone */ }
     restoreFocus = null;
@@ -132,7 +166,15 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
             aria-label="Search shortcuts" placeholder="Search by name, group or keys" autocomplete="off" spellcheck="false"></div>
           <button type="button" class="kb-reset-all">Reset all</button>
           <button type="button" class="kb-close" aria-label="Close shortcuts editor">${icon("close", { size: 14 })}</button>
-        </div>
+        </div>${familyChoice ? `
+        <fieldset class="kb-family">
+          <legend class="kb-family-title">${CHORD_FAMILY_WORDS.title}</legend>
+          <div class="kb-family-options">${CHORD_FAMILIES.map((family) => `
+            <label class="kb-family-option"><input type="radio" name="kb-family" value="${family}"> ${CHORD_FAMILY_WORDS.options[family]}</label>`).join("")}
+          </div>
+          <p class="kb-family-tui">${CHORD_FAMILY_WORDS.tui}</p>
+          <p class="kb-family-note" role="status" hidden></p>
+        </fieldset>` : ""}
         <p class="kb-hint">Click a shortcut to record a new one — Esc cancels, Backspace unbinds.</p>
         <p class="kb-clashes" role="status" hidden></p>
         <p class="kb-count sr-only" role="status"></p>
@@ -140,6 +182,30 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
       </div>`;
     const search = overlay.querySelector(".kb-search");
     const body = overlay.querySelector(".kb-body");
+    // The chord family: the choice shows the family in use, and the note main sent (keys.json was
+    // there and not taken) or, after a write that failed, that the family in use stays.
+    const familyEl = overlay.querySelector(".kb-family"), own = overlay;
+    let unwritten = false;
+    const renderFamily = () => {
+      if (!familyEl || overlay !== own) return; // a write answered after this editor closed
+      const { family: active, note } = chordFamily.current();
+      for (const radio of familyEl.querySelectorAll('input[type="radio"]')) radio.checked = radio.value === active;
+      const line = unwritten ? CHORD_FAMILY_WORDS.unwritten(active) : note;
+      const noteEl = familyEl.querySelector(".kb-family-note");
+      noteEl.textContent = line ?? "";
+      noteEl.hidden = !line;
+    };
+    if (familyEl) {
+      familyEl.addEventListener("change", (e) => {
+        const family = e.target?.value;
+        if (!CHORD_FAMILIES.includes(family)) return;
+        unwritten = false;
+        // Written at once; the keymap switches when main answers (chordFamily applies its state).
+        chordFamily.set(family).then(renderFamily, () => { unwritten = true; renderFamily(); });
+      });
+      offFamily = chordFamily.onChange(() => { unwritten = false; renderFamily(); });
+      renderFamily();
+    }
     // The chord buttons of the rows the search shows, in order (Up/Down move along them).
     const visibleChords = () => [...body.querySelectorAll(".kb-chord")].filter((el) => !el.closest("[hidden]"));
 
@@ -234,7 +300,7 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
       clashEl.hidden = !clashes.length;
       clashEl.textContent = clashes.length
         ? `${clashes.length === 1 ? "A shortcut you set clashes" : `${clashes.length} shortcuts you set clash`} with another: ${clashes
-          .map(({ chord, actions: [a, b] }) => `${formatChord(chord, isMac)} is both “${a.label}” and “${b.label}”`).join("; ")}. Rebind or reset one.`
+          .map(clashWords(isMac)).join("; ")}. Rebind or reset one.`
         : "";
       const groups = groupActions();
       if (!groups.length) {

@@ -706,6 +706,16 @@ body {
 }
 .kb-reset-all:hover, .kb-close:hover, .kb-reset:hover { background: var(--surface-2); }
 .kb-hint { margin: 0; padding: 8px 16px; color: var(--muted); font-size: 11.5px; border-bottom: 1px solid var(--border); }
+/* The chord family (Linux/Windows): "Shortcut family, shared with oats tui", two options on one line, then the TUI's
+   line and, when keys.json was not taken or could not be written, the note in --warn. */
+.kb-family { margin: 0; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--border); min-width: 0; }
+.kb-family-title { padding: 0; margin-bottom: 6px; color: var(--fg); font-size: 12.5px; font-weight: 650; }
+.kb-family-options { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.kb-family-option { display: inline-flex; align-items: center; gap: 6px; color: var(--fg); font-size: 12.5px; cursor: pointer; }
+.kb-family-option input { margin: 0; accent-color: var(--accent); }
+.kb-family-tui { margin: 6px 0 0; color: var(--muted); font-size: 11.5px; }
+.kb-family-note { margin: 4px 0 0; color: var(--warn); font-size: 11.5px; }
+.kb-family-note[hidden] { display: none; }
 .kb-body { overflow-y: auto; padding: 0 10px 12px; }
 .kb-group[hidden], .kb-row[hidden], .kb-nomatch[hidden] { display: none; }
 /* A group's heading sticks to the top of the scroll area while its rows scroll, on an opaque

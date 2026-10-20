@@ -9,7 +9,7 @@
 // takes its default keys from the shared keymap (packages/client/keymap.mjs PLAIN_KEYS), and the
 // leader's table is the shared one (LEADER, below). What only the TUI has (q, Ctrl+C, Ctrl+Z, Ctrl+L,
 // Ctrl+K, Tab, Esc, Delete, C, i) keeps its keys here. packages/tui/test/keymap.test.mjs pins both.
-import { CHORDS, LEADER_TABLE, PALETTE_KEYS, plainKeys } from "./client.mjs";
+import { CHORDS, DEFAULT_CHORD_FAMILY, LEADER_TABLE, PALETTE_KEYS, chordKeyOf, plainKeys } from "./client.mjs";
 import { legacyChord } from "./term/kitty.mjs";
 import { isBackKey } from "./term/through.mjs";
 
@@ -107,15 +107,18 @@ export const LEADER_KEYS = new Map(LEADER.flatMap((entry) => entry.keys.map((key
 
 /** THE CHORDS (docs/tui.md, "Chords"): key id -> `does`, the shared ones (packages/client/keymap.mjs
  *  CHORDS) on macOS (`isMac`) or elsewhere, in the table's order, each doing what the leader then
- *  its key does, or a tab by its place (CHORD_OWN; lib/store.mjs `led`), from every focus. Left
- *  out: a chord with `cmd+` (a terminal never passes macOS's Command to a program: with the shared
- *  table that is every chord of macOS), and one whose key an action of `actions` binds (a user's
- *  tui.json keeps its key), and one whose `does` the TUI does not handle (leaderHandles: a row may
- *  be the Desktop's alone): packages/tui/test/chords.test.mjs. `chords` is the shared table. Which of them are read depends on the kitty keyboard protocol
- *  (chordsRead). */
-export function chordKeys(isMac, actions = ACTIONS, chords = CHORDS) {
+ *  its key does, or a tab by its place (CHORD_OWN; lib/store.mjs `led`), from every focus. Each
+ *  row's key is the one of `family` (keymap.mjs chordKeyOf: CHORD_FAMILIES, keys.json's `chords`,
+ *  lib/config.mjs loadKeys): `ctrl+alt`, the default, binds the `other` keys; `ctrl+shift` the
+ *  `shift` ones (seven rows move, the others keep their key); macOS ignores it. Left out: a chord
+ *  with `cmd+` (a terminal never passes macOS's Command to a program: with the shared table that is
+ *  every chord of macOS), and one whose key an action of `actions` binds (a user's tui.json keeps
+ *  its key, row by row, whichever the family), and one whose `does` the TUI does not handle
+ *  (leaderHandles: a row may be the Desktop's alone): packages/tui/test/chords.test.mjs. `chords`
+ *  is the shared table. Which of them are read depends on the kitty keyboard protocol (chordsRead). */
+export function chordKeys(isMac, actions = ACTIONS, chords = CHORDS, family = DEFAULT_CHORD_FAMILY) {
   const bound = new Set(actions.flatMap((action) => action.keys));
-  return new Map(chords.map((entry) => [isMac ? entry.mac : entry.other, entry.does]).filter(([key, does]) => !key.startsWith("cmd+") && !bound.has(key) && leaderHandles(does)));
+  return new Map(chords.map((entry) => [chordKeyOf(entry, isMac, family) ?? entry.other, entry.does]).filter(([key, does]) => !key.startsWith("cmd+") && !bound.has(key) && leaderHandles(does)));
 }
 
 /** THE PALETTE'S OWN KEYS (docs/tui.md, "The palette"): key id -> `does`, the shared ones
@@ -135,8 +138,11 @@ export function paletteKeys(isMac, table = PALETTE_KEYS) {
 
 /** The chords of `chords` (chordKeys) the TUI reads while the terminal confirms the kitty keyboard
  *  protocol (`kitty`) or not: all of them under it; without it only the Alt+Shift arrows
- *  (term/kitty.mjs LEGACY_CHORDS), whose sequence is their own. A Ctrl+Alt chord without the
- *  protocol is the bytes of two keys (ESC, then Ctrl+K), the agent's, and in the list no key. */
+ *  (term/kitty.mjs LEGACY_CHORDS), whose sequence is their own, in either family. A Ctrl+Alt chord
+ *  without the protocol is the bytes of two keys (ESC, then Ctrl+K), the agent's, and in the list
+ *  no key. A Ctrl+Shift one is Ctrl and its letter's byte, the same as Ctrl alone (Ctrl+Shift+D is
+ *  0x04, EOF; Ctrl+Shift+M is 0x0d, Enter): never a chord, the agent's in its terminal and the
+ *  list's key in the list (term/kitty.mjs kittyId reads one only from the protocol's event). */
 export function chordsRead(chords, kitty) {
   return kitty ? chords : new Map([...chords].filter(([key]) => legacyChord(key)));
 }

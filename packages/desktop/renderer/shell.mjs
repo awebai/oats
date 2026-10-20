@@ -33,8 +33,9 @@ import { createFileOpener } from "./open-file.mjs";
 import {
   registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction, keymapConflicts, pickerCycleDirection,
   paletteGroupDirection, paletteGroupHint,
-  listActions, readKeyboardLayout, SIDEBAR_KEYS,
+  listActions, readKeyboardLayout, SIDEBAR_KEYS, setChordFamily,
 } from "./keybindings.mjs";
+import { createChordFamily } from "./chord-family.mjs";
 import { createLeader } from "./leader.mjs";
 import { createLeaderHint } from "./leader-hint.mjs";
 import { createLeaderDispatch } from "./leader-dispatch.mjs";
@@ -104,9 +105,17 @@ import { splitControlsState } from "./split-controls.mjs";
 import { projectSplitDom } from "./split-dom.mjs";
 
 const desk = window.oatsDesktop;
+// The chord family (keys.json, which main reads; renderer/chord-family.mjs): asked beside the window's
+// start and in place before the window listens to its first key, since the one keydown listener and
+// every terminal's key path are installed below these awaits. A change (the Shortcuts page, another
+// window, a hand edit seen at app focus) applies at once.
+const chordFamily = createChordFamily({ desk, apply: setChordFamily });
+const chordFamilyRead = chordFamily.start();
 // One window per workspace (#481): settle this window's workspace (its hash, or the shared default
 // when no other window has it) before anything reads one. A window left choosing reads nothing.
 const windowStart = await startWindow();
+await chordFamilyRead;
+window.addEventListener("pagehide", () => chordFamily.dispose(), { once: true });
 // "This computer" (#602): the stored last host state paints first, synchronously; main's answer and its
 // pushes then keep it current, in every window whose choice it is.
 const hostTheme = createHostTheme({ desk, storage: (() => { try { return window.localStorage; } catch { return null; } })(), onChange: refreshHostTheme });
@@ -2411,7 +2420,7 @@ onWorkspaceChange(() => {
 });
 
 // ── shortcuts editor (rail-footer button + palette + Mod+,) ────────────
-const shortcutsEditor = createKeybindingsEditor({ doc: document, isMac });
+const shortcutsEditor = createKeybindingsEditor({ doc: document, isMac, chordFamily });
 // Stored rebinds vs the effective keymap (spec F review): a clash is never resolved silently;
 // the footer button carries a warn dot and a description until the operator rebinds or resets.
 function markShortcutClashes() {

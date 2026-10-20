@@ -125,7 +125,8 @@ const TAKEN = Object.freeze({
   // The keys the TUI shares with the Desktop (#1395): lib/actions.mjs builds its leader's table and its plain keys'
   // defaults from them, lib/config.mjs its default leader, and packages/tui/test/keymap.test.mjs pins all three to them.
   // PALETTE_KEYS: the palette's own keys, next and previous group (lib/actions.mjs paletteKeys).
-  "keymap.mjs": ["CHORDS", "LEADER_TABLE", "PALETTE_KEYS", "PLAIN_KEYS", "leaderKey", "plainKeys"],
+  "keymap.mjs": ["CHORDS", "CHORD_FAMILY_LABELS", "DEFAULT_CHORD_FAMILY", "LEADER_TABLE", "PALETTE_KEYS", "PLAIN_KEYS", "chordKeyOf", "leaderKey", "plainKeys"],
+  "keys-file.mjs": ["KEYS_LIMIT", "chordFamilyFrom", "chordFamilyNote", "keysPath"],
 });
 /** Every clause of a source that takes names from a module of the shared home: [[module, names], …].
  *  A name taken under another name is read as the name the home gives it. */

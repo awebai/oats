@@ -2,7 +2,7 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS, bindings, keyLabel } from "../lib/actions.mjs";
-import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, createCapabilityCatalog, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
+import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, chordFamilyFrom, cliReadsRemotes, createCapabilityCatalog, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
 import { KEYBOARD_WAIT_MS, NO_TERMINAL, USAGE, main, noDeployment, noDeploymentListed, noKernel, noList, parseArgs } from "../lib/main.mjs";
 import { LIST_WORDS } from "../lib/model.mjs";
@@ -81,7 +81,7 @@ function fakePanel(log, options) {
 }
 /** `oats tui` on a fake terminal: the run, its streams and what it wrote. Everything outside the
  *  terminal (the user's file, the deployment, the kernel, the reader) is the test's own. */
-function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false, detachKey: "C-\\" }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", listed = [], listAnswer = null, admit = (path) => ({ ok: true, deployment: path }), prepare = null, confirm = null, start = null, tellable = () => false, keyboard = false, platform } = {}) {
+function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false, detachKey: "C-\\" }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", listed = [], listAnswer = null, admit = (path) => ({ ok: true, deployment: path }), prepare = null, confirm = null, start = null, tellable = () => false, keyboard = false, platform, keys = chordFamilyFrom(null) } = {}) {
   const log = [];
   const stdin = fakeStdin({ log, isTTY: stdinTTY }), stdout = fakeStdout({ log, columns, rows, isTTY: stdoutTTY }), proc = fakeProcess(), timers = fakeTimers();
   if (platform !== undefined) proc.platform = platform;
@@ -103,13 +103,16 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
   // the transaction's submits and checks, each with a way to answer; what the boundary was made with.
   // `identities`: what the run asked of its identity reads (lib/read.mjs createIdentityReads, faked): each
   // start's paths in order, how many times they were stopped, and what the run made them with.
-  const r = { stdin, stdout, proc, timers, errors, log, listed, lists: [], identities: { starts: [], stops: 0, options: null }, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
+  const r = { stdin, stdout, proc, timers, errors, log, listed, keysAsked: [], lists: [], identities: { starts: [], stops: 0, options: null }, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
     spawn: { preview: null, previewExec: null, reads: [], applyRead: null, applyExec: null, applyCalls: [], request: null, submits: [], checks: [] } };
   r.listAnswer = listAnswer ?? ((asked) => (asked.action === "list" ? { ok: true, value: { ok: true, rows: r.listed } } : { ok: true, value: asked.action === "add" ? { path: asked.path, added: true } : { path: asked.path, removed: true } }));
   let up;
   r.up = new Promise((resolve) => { up = resolve; });
   const effects = {
     loadConfig(asked) { log.push(["effect", "config", { ...asked.env }]); return config; },
+    // keys.json (lib/config.mjs loadKeys), the test's own: no test reads a user's file. `keys` is
+    // its answer (no file by default); what it was asked with is kept, not logged.
+    loadKeys(asked) { r.keysAsked.push({ env: { ...asked.env }, home: asked.home }); return keys; },
     findDeployment(start) { log.push(["effect", "deployment", start]); return deployment; },
     async probeKernel(asked) { log.push(["effect", "kernel", { ...asked.env }]); return kernel; },
     createReader(options) { r.reader = fakeReader(log, options); const start = r.reader.start; r.reader.start = () => { const answer = start(); queueMicrotask(up); return answer; }; return r.reader; },
@@ -1518,6 +1521,57 @@ test("once the terminal answers with flags 1 and 4, Ctrl+Alt+K opens the palette
   assert.equal(await r.status, 0);
   assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [], "the leader, Esc and q were the TUI's");
   assert.equal(writes(r).at(-1), POP + LEAVE, "the protocol popped before the modes, in the one write that leaves");
+});
+
+test("keys.json is read once, at the start, with the run's environment and home, after tui.json; one tui.json refuses is never read, and a keys.json that cannot be read starts the run as Ctrl+Alt", async () => {
+  const r = await started({ platform: "linux", env: { TERM: "xterm-256color", OATS_HOME_DIR: "/o" } });
+  assert.deepEqual(r.keysAsked, [{ env: { TERM: "xterm-256color", OATS_HOME_DIR: "/o" }, home: "/home/u" }]);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  const refused = run({ config: { ok: false, lines: ["oats: `oats tui` cannot use /x: it is not valid JSON (E_TUI_CONFIG)"] } });
+  assert.equal(await refused.status, 1);
+  assert.deepEqual(refused.keysAsked, [], "tui.json refused: the run ends before keys.json");
+  const unreadable = await started({ platform: "linux", keys: chordFamilyFrom(null, { code: "EACCES" }) });
+  assert.deepEqual(unreadable.errors, [], "nothing is said on stderr");
+  unreadable.stdin.type("q");
+  assert.equal(await unreadable.status, 0);
+});
+
+test("under keys.json's Ctrl+Shift and the confirmed protocol, Ctrl+Shift+K opens the palette from the list and from a terminal's focus, where no byte of it reaches the agent; Ctrl+Alt+K is then no chord; under the default family Ctrl+Shift+D is the agent's Ctrl+D", async () => {
+  const r = await opening({ keyboard: true, platform: "linux", keys: chordFamilyFrom('{ "chords": "ctrl+shift" }') });
+  r.stdin.type("\x1b[?5u");
+  r.stdin.type("\x1b[107;7u");
+  assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/, "Ctrl+Alt+K: no chord under the option");
+  r.stdin.type("\x1b[107;6u");
+  assert.match(wholeScreen(r), /acme-expert-tui +instance/, "Ctrl+Shift+K: the palette");
+  r.stdin.type("\x1b[27u");
+  r.stdin.type("\r");
+  await settle();
+  r.panel.opens[0].made("@1");
+  await settle();
+  r.log.length = 0;
+  r.stdin.type("\x04\r\x1b[107;6uzz");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "input" || what === "paste"), [["input", "\x04\r"]], "the legacy 0x04 and 0x0d are the agent's; the chord and the rest of its read reach nobody");
+  assert.match(wholeScreen(r), /acme-expert-tui +instance/, "the palette, from the terminal's focus");
+  r.stdin.type("\x1b[27u");
+  r.stdin.type("\x1b[92;5u");
+  r.stdin.type("\x1b[27u");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  // The default family: the same event is Ctrl and the letter, typed into the agent as before.
+  const d = await opening({ keyboard: true, platform: "linux" });
+  d.stdin.type("\x1b[?5u");
+  d.stdin.type("\r");
+  await settle();
+  d.panel.opens[0].made("@1");
+  await settle();
+  d.log.length = 0;
+  d.stdin.type("\x1b[100;6u\x1b[109;6u");
+  assert.deepEqual(panelDid(d).filter(([what]) => what === "input").map(([, bytes]) => bytes).join(""), "\x04\r", "CSI 100;6u and 109;6u: the agent's Ctrl+D and Enter");
+  d.stdin.type("\x1b[92;5u");
+  d.stdin.type("\x1b[27u");
+  d.stdin.type("q");
+  assert.equal(await d.status, 0);
 });
 
 test("with the protocol confirmed, a split chord typed in a terminal is the leader then its key: the panel splits as after the leader then |, and no byte reaches the agent", async () => {

@@ -15,7 +15,7 @@ import { createRequire } from "node:module";
 import { JSDOM, VirtualConsole } from "jsdom";
 import {
   DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, defaultBinding, parseChord,
-  registerAction, setActiveContexts, resetAllBindings, matchEvent, handleKeydown,
+  registerAction, setActiveContexts, resetAllBindings, matchEvent, handleKeydown, setChordFamily,
 } from "../renderer/keybindings.mjs";
 import { terminalOptions, terminalKeyDecision } from "../renderer/terminal-tab.mjs";
 
@@ -182,6 +182,79 @@ test("macOS: Ctrl+\\, the leader, is the byte 0x1c in xterm, which the leader pr
   assert.equal(press(keydownInit(defaultBinding("app.leader", true))), "\x1c");
   // Under the Linux evaluation the same key sends the same byte.
   assert.equal(xtermTerminal(t)(keydownInit("Ctrl+\\")), "\x1c");
+});
+
+// ---------------------------------------------------------------- the Ctrl+Shift family
+
+// The option (keys.json "chords": "ctrl+shift"; docs/desktop-keyboard.md, "Switch to Ctrl+Shift"):
+// seven rows take Ctrl+Shift+letter, which xterm sends nothing for (its Ctrl+letter bytes need Shift
+// up), so by the rule they fire in a terminal. The allowlist is by action id and does not change; the
+// keys are the family's, so the Ctrl+Shift keys are chords only while the option is on.
+const SEVEN = { "app.palette": "K", "app.quickOpenSouls": "P", "app.workspaces": "S", "terminal.focusMode": "M",
+  "tabs.close": "W", "split.vertical": "E", "split.horizontal": "D" };
+
+test("Ctrl+Shift family: every allowlisted Linux default sends nothing, or exactly its SENDS row; the seven send nothing", t => {
+  setChordFamily("ctrl+shift");
+  t.after(() => setChordFamily("ctrl+alt"));
+  const press = xtermTerminal(t);
+  for (const [id, letter] of Object.entries(SEVEN)) {
+    assert.ok(TERMINAL_ALLOWLIST.includes(id), `${id} is allowlisted`);
+    assert.equal(defaultBinding(id, false), `Ctrl+Shift+${letter}`, id);
+    assert.equal(press(keydownInit(`Ctrl+Shift+${letter}`)), "", `Ctrl+Shift+${letter} (${id}) sends nothing`);
+  }
+  for (const id of TERMINAL_ALLOWLIST) {
+    const chord = defaultBinding(id, false);
+    assert.ok(chord, `${id} has a Linux/Windows default`);
+    assert.equal(press(keydownInit(chord)), Object.hasOwn(SEVEN, id) ? "" : SENDS[id]?.data ?? "", `${id} (${chord})`);
+  }
+  // A plainer key of a row that still sends is no default of this family either.
+  for (const [id, { plainer }] of Object.entries(SENDS)) {
+    if (!plainer || Object.hasOwn(SEVEN, id)) continue;
+    for (const chord of plainer.split(", then ")) {
+      const taker = TERMINAL_ALLOWLIST.find(other => sameLinuxChord(defaultBinding(other, false), chord));
+      assert.equal(taker, undefined, `${id}: its plainer ${chord} is ${taker}'s in a terminal`);
+    }
+  }
+});
+
+test("the Ctrl+Shift keys are chords only while the option is on, and each fires in a terminal then", t => {
+  const ran = registerDefaults(t);
+  t.after(() => setChordFamily("ctrl+alt"));
+  const linuxKeyPath = (event) => {
+    const interceptKey = (ev) => {
+      if (!matchEvent(ev, { isMac: false, insideTerminal: true })) return false;
+      if (ev.type === "keydown") handleKeydown(ev, { isMac: false, insideTerminal: true });
+      return true;
+    };
+    return !terminalKeyDecision(event, interceptKey).handled;
+  };
+  const press = xtermTerminal(t, { keyHandler: linuxKeyPath });
+  for (const family of ["ctrl+alt", "ctrl+shift"]) {
+    setChordFamily(family);
+    for (const [id, letter] of Object.entries(SEVEN)) {
+      ran.length = 0;
+      const { data, events } = press.sequence([["keydown", keydownInit(`Ctrl+Shift+${letter}`)]]);
+      assert.equal(data, "", `Ctrl+Shift+${letter}: xterm sends nothing, ${family}`);
+      if (family === "ctrl+shift") {
+        assert.deepEqual(ran, [id], `Ctrl+Shift+${letter} runs ${id} in a terminal`);
+        assert.equal(events[0].defaultPrevented, true, `Ctrl+Shift+${letter} is claimed`);
+      } else {
+        assert.deepEqual(ran, [], `Ctrl+Shift+${letter} is no binding under ctrl+alt`);
+        assert.equal(events[0].defaultPrevented, false);
+      }
+      // The row's Ctrl+Alt key: the Desktop's under ctrl+alt; the program's (ESC, then the Ctrl+letter byte) under ctrl+shift.
+      ran.length = 0;
+      const old = defaultBinding(id, false, "ctrl+alt");
+      const sent = press.sequence([["keydown", keydownInit(old)]]);
+      if (family === "ctrl+alt") {
+        assert.deepEqual(ran, [id], `${old} runs ${id}`);
+        assert.equal(sent.data, "", `${old} is claimed: the program gets nothing`);
+      } else {
+        assert.deepEqual(ran, [], `${old} is no binding under ctrl+shift`);
+        assert.equal(sent.data, SENDS[id].data, `${old} reaches the program as under any terminal`);
+      }
+    }
+  }
 });
 
 // ---------------------------------------------------------------- AltGr (Windows)

@@ -10,9 +10,11 @@
  * `o` are told apart exactly. Everything else (text, Shift and a character, Enter, Tab and
  * Backspace alone, the arrows, the function keys) keeps the bytes it has without it.
  *
- * What the TUI reads is what the legacy bytes of a key read as, with two exceptions: the Ctrl+Alt
- * chords (packages/client/keymap.mjs CHORDS), which keep their own key id (`ctrl+alt+k`, kittyId),
- * and the exact Alt and Esc above. What it types into an agent is those legacy bytes
+ * What the TUI reads is what the legacy bytes of a key read as, with two exceptions: the chords
+ * (packages/client/keymap.mjs CHORDS) of Ctrl+Alt, and of Ctrl+Shift when keys.json chose that
+ * family, which keep their own key id (`ctrl+alt+k`, `ctrl+shift+k`, kittyId), and the exact Alt
+ * and Esc above. A Ctrl+Shift chord is read only from this event, whose Shift bit is its own: its
+ * legacy bytes are Ctrl's alone (Ctrl+Shift+D is 0x04, EOF), and no legacy byte is ever one. What it types into an agent is those legacy bytes
  * (`legacyBytes`), so the agent's program gets what it gets without the protocol. The Alt+Shift
  * arrow chords need no exception: their legacy sequence is their own (LEGACY_CHORDS). */
 
@@ -51,16 +53,21 @@ export function kittyKey(params) {
 }
 const scalar = (cp) => Number.isInteger(cp) && cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff);
 
-/** The key id a Ctrl+Alt chord keeps under the protocol, the chords' spelling
- *  (packages/client/keymap.mjs: `ctrl+alt+k`, `ctrl+alt+shift+e`, `ctrl+alt+1`): Ctrl and Alt held,
- *  and a base key (`code`, the key unshifted) that is an ASCII letter, with or without Shift, or a
- *  digit 1 to 9 without it. Null for every other key, which is read as its legacy bytes are: a
- *  key that types a character that is not ASCII (an AltGr composition on a layout where AltGr is
- *  Ctrl+Alt: `€`, `ą`) is never a chord, whatever its modifiers. */
+/** The key id a chord keeps under the protocol, the chords' spelling (packages/client/keymap.mjs:
+ *  `ctrl+alt+k`, `ctrl+alt+shift+e`, `ctrl+alt+1`, `ctrl+shift+k`): Ctrl and Alt held, and a base
+ *  key (`code`, the key unshifted) that is an ASCII letter, with or without Shift, or a digit 1 to 9
+ *  without it; or Ctrl and Shift held without Alt, and an ASCII letter (the Ctrl+Shift family:
+ *  a digit with Shift is a shifted symbol, and no row has one). Null for every other key, which is
+ *  read as its legacy bytes are: a key that types a character that is not ASCII (an AltGr
+ *  composition on a layout where AltGr is Ctrl+Alt: `€`, `ą`) is never a chord, whatever its
+ *  modifiers. An id is a chord only where the TUI binds it (term/keys.mjs and term/through.mjs look
+ *  it up in their `chords`): an unbound Ctrl+Shift letter, every one under the default family, is
+ *  read and typed as its legacy bytes, Ctrl and the letter, as before. */
 export function kittyId(key) {
-  if (key === null || !key.ctrl || !key.alt) return null;
-  const { code } = key;
-  if (code >= 0x61 && code <= 0x7a) return `ctrl+alt+${key.shift ? "shift+" : ""}${String.fromCharCode(code)}`;
+  if (key === null || !key.ctrl) return null;
+  const { code } = key, letter = code >= 0x61 && code <= 0x7a;
+  if (!key.alt) return letter && key.shift ? `ctrl+shift+${String.fromCharCode(code)}` : null;
+  if (letter) return `ctrl+alt+${key.shift ? "shift+" : ""}${String.fromCharCode(code)}`;
   return code >= 0x31 && code <= 0x39 && !key.shift ? `ctrl+alt+${String.fromCharCode(code)}` : null;
 }
 
