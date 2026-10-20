@@ -147,9 +147,9 @@ Spawn only when your task or your human asks for it.
 
 ```bash
 oats spawn <soul> --preview                         # nothing is created
-oats spawn <soul> --purpose <slug> --task "…" --parent "$OATS_INSTANCE"
-oats spawn <soul> --purpose <slug> --no-launch      # scaffold only
-oats spawn <soul> --purpose <slug> --harness claude --model <model>   # pick the harness (pi, claude, codex) and model
+oats spawn <soul> --name <descriptive>-<role> --task "…" --parent "$OATS_INSTANCE"
+oats spawn <soul> --name <descriptive>-<role> --no-launch   # scaffold only
+oats spawn <soul> --name <descriptive>-<role> --harness claude --model <model>   # pick the harness (pi, claude, codex) and model
 ```
 
 A soul shipped by a package is named `<package>/<soul>` (the bare name works
@@ -181,8 +181,10 @@ overrides its start point. When the clone is of the soul's repository, the
 default is the commit observed by spawn, even when the local clone is behind.
 A `--repo` that is not a clone of the soul's repository starts at its `HEAD`.
 
-**Naming.** `--purpose <slug>` names the instance `<soul>-<slug>`; `--name
-<slug>` gives an exact name instead. Without either the kernel numbers it.
+**Naming.** Name an instance for its work, with the soul's role last:
+`--name <descriptive>-<role>`, for example `--name desktop-improvements-expert`
+for an `oats-desktop-expert`. `/oats-souls` has the rules, and when spawn's
+`--purpose` fits instead.
 
 **Teams to join.** The preview's `teams` lists the teams the soul may join
 (`default` first, each with `via`: why), and `defaultTeam` the one its

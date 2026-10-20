@@ -313,12 +313,18 @@ locally refused legacy instance selector. For preview confirmation and receipt
 replay, see the [spawn decision and apply contract](desktop-cli-api.md#the-decision).
 
 ```bash
-oats spawn release-manager --purpose cut-3.2 --task "…"            # a soul of a confirmed member
+oats spawn release-manager --name cut-3-2-manager --task "…"        # a soul of a confirmed member
 oats spawn release-manager --preview --json                        # decide everything, create nothing
 oats spawn release-manager --provider oats.aweb identity.source=/abs/path/to/retained/.aw   # instance-level payload
 ```
 
-An instance is named `<soul>-<purpose>` by default, or exactly `--name <slug>`.
+An instance is named exactly `--name <slug>`, or `<soul>-<purpose>` with
+`--purpose`; with neither, the kernel numbers it. The convention for a name a
+person or an agent chooses is `<descriptive>-<role>` through `--name`: a few
+words for the instance's work, then the soul's role, the last word of the
+soul's name after any package qualifier (`--name desktop-improvements-expert`
+for an `oats-desktop-expert`). `--purpose` derives the name from the soul, for
+automations and scripts that know only the soul and a purpose.
 Names are unique per deployment (a workspace-model deployment has one agents
 root): a derived name in use gets `-2`, `-3`…; an explicit `--name` in use is
 refused (`E_INSTANCE_NAME_TAKEN`).
