@@ -8,7 +8,9 @@
 //   that is a valid record, and anything else is null, never an error;
 // - the file is kernel-owned: a capability cannot declare it, and it is no change to the home's stored digest;
 // - the CLI: the answer, `changed`, --clear, the refusals with #1421's words, resolution as `instance stop`
-//   answers it, E_INSTANCE_RETIRING beside a retire, the feature; status rows and inspect --home carry it.
+//   answers it, E_INSTANCE_RETIRING beside a retire, the feature; status rows and inspect --home carry it;
+// - end to end: a colour set by the command reaches the TUI's row through the shared reader's projection
+//   (packages/client deployment-data.mjs deploymentStatusData, then the panel) and draws the row's mark in it.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, lstatSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
@@ -20,6 +22,12 @@ import { COLOR_FILE, INSTANCE_COLORS, RECORD_MAX, paletteColor, readInstanceColo
 import { instanceColorRefusal } from "../lib/instance-lifecycle.mjs";
 import { disposableHomeRootProblem } from "../lib/capability-contract.mjs";
 import { KERNEL_HOME_RECEIPTS, retirePendingMarkerPath, storedTreeDigest } from "../lib/core.mjs";
+import { deploymentStatusData } from "../packages/client/deployment-data.mjs";
+import { observedEntry, panelInstances, rosterRows } from "../packages/tui/lib/client.mjs";
+import { style } from "../packages/tui/lib/term/style.mjs";
+import { MARKS } from "../packages/tui/lib/views/instances.mjs";
+import { SOUL_COLOURS } from "../packages/tui/lib/views/souls.mjs";
+import { CLI, draw, stateOf } from "../packages/tui/test/helpers.mjs";
 
 function okResult(r, what) {
   assert.equal(r.status, 0, `${what}: ${r.stdout}${r.stderr}`);
@@ -177,4 +185,32 @@ test("oats instance color refuses with #1421's words, resolves as instance stop 
   assert.equal(readInstanceColor(spawned.home), null, "nothing was written");
   rmSync(marker);
   assert.equal(okResult(fx.cli(["instance", "color", name, "sage", "--json"]), "after").color, "sage");
+});
+
+test("end to end: a colour set by the command reaches the TUI's row through the shared reader, and draws its mark", (t) => {
+  const fx = v2Deployment({ t });
+  const spawned = okResult(fx.cli(["spawn", "dev", "--purpose", "e2e", "--no-launch", "--json"]), "spawn");
+  okResult(fx.cli(["instance", "color", spawned.instance, "slate", "--json"]), "set");
+  const r = fx.cli(["status", "--json"]);
+  assert.equal(r.status, 0, r.stderr);
+  // The raw status document, through the projection every client reads it with, then the panel's.
+  const roster = deploymentStatusData(JSON.parse(r.stdout), fx.dep);
+  const projected = roster.agents.flatMap((a) => a.instances).find((i) => i.instance === spawned.instance);
+  assert.equal(projected.color, "slate", "the shared reader keeps the colour");
+  const listed = rosterRows(roster, CLI);
+  const instances = panelInstances(listed, listed.map((row) => ({ running: true, runtimeState: "running", tmux: row.tmux })));
+  assert.equal(instances.find((i) => i.instance === spawned.instance).color, "slate", "and the panel");
+  // Drawn as a running row (the collector's answer above), not the selected one: a first row is.
+  const first = { ...listed[0], instance: "aaa-selected", home: `${dirname(listed[0].home)}/aaa-selected` };
+  const entry = observedEntry({ roster, workspaceStatus: { workspace: { name: "acme" } }, observedAt: "2026-10-20T15:00:00.000Z" },
+    panelInstances([first, ...listed], [first, ...listed].map((row) => ({ running: true, runtimeState: "running", tmux: row.tmux }))), "2026-10-20T15:00:01.000Z");
+  const d = draw(stateOf(entry), { cols: 120, rows: 24 });
+  const row = d.lines.findIndex((line) => line.includes(` ${spawned.instance}`));
+  assert.ok(row >= 0, `${spawned.instance} is drawn`);
+  const col = d.lines[row].indexOf(` ${spawned.instance}`) - 1;
+  assert.deepEqual({ mark: d.lines[row][col], style: d.cells[row][col].style }, { mark: MARKS.utf8.running, style: style({ fg: SOUL_COLOURS.slate }) });
+  // A value outside the palette, as a status document could carry it, is dropped: no colour.
+  const doc = JSON.parse(r.stdout);
+  for (const i of doc.agents.flatMap((a) => a.instances)) i.color = "teal";
+  assert.equal(deploymentStatusData(doc, fx.dep).agents.flatMap((a) => a.instances).find((i) => i.instance === spawned.instance).color, undefined);
 });
