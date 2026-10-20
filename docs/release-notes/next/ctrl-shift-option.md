@@ -31,3 +31,15 @@
     agent's terminal too: pi's `Ctrl+Shift+P` (previous model) spawns
     instead.
   - macOS has no option.
+
+## Changed
+
+- **In OATS Desktop, a key you bound yourself now wins over a default on
+  every key two actions share,** not only on the seven keys of the
+  Ctrl+Shift option
+  ([desktop-keyboard.md](../../packages/desktop/docs/desktop-keyboard.md)).
+  Before, a default of a narrower context (the tabs, the sidebar, a stage)
+  could win over a global key of yours. The shortcuts editor lists every
+  such clash, and now says which of the two runs: "Ctrl+Shift+K runs
+  “Sidebar: show or hide” (yours) where both apply; “Command palette” has
+  it by default."
