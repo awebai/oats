@@ -2528,8 +2528,9 @@ or `--task <text>`). Like every preview it writes nothing and runs no hooks.
   that depends on the name (placement, branch, home). It takes what those
   checks leave of the preview's one 20 s preflight budget, which is not
   raised for it: the group is killed after 20 s, or when the budget runs out
-  first, and a call the budget ends makes `preflight.status` `timeout`. At
-  most 4 KiB of its output is read.
+  first. Its time counts in `preflight.elapsedMs`; `preflight.status` stays
+  that of the checks, so a numbered preview after a `timeout` is confirmed
+  like any other. At most 4 KiB of its output is read.
 - **It starts none of the user's code: no MCP server, hook, plugin,
   extension or project setting, and no tool on either harness.** Three
   exceptions are stated:

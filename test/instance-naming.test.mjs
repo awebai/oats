@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { fixtureBase } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { NAME_CASES, ROLE_CASES } from "./client-instance-name.test.mjs";
+import { spawnPreparedData } from "../packages/client/spawn-apply-contract.mjs";
 import {
   NAMING_CALLS, NAMING_OUTPUT_MAX, NAMING_PROMPT, NAMING_REASONS, NAMING_TASK_MAX, NAMING_TIMEOUT_MS,
   descriptiveWords, namingCall, namingEnvironment, namingPrompt, soulRole, suggestInstanceName, uniqueName,
@@ -271,7 +272,7 @@ test("the name is chosen before anything that depends on it, within the preview'
   assert.equal(slow.naming.reason, "timeout");
   assert.ok(slow.naming.ms < 3000, `the call ended with the budget (${slow.naming.ms} ms)`);
   assert.equal(slow.preflight.budgetMs, 700);
-  assert.equal(slow.preflight.status, "timeout", "a call the budget ended is the preflight's timeout");
+  assert.equal(slow.preflight.status, "complete", "the checks completed: the naming call's timeout is naming's");
 });
 
 test("the naming call takes what the harness package probes leave of the budget: a slow call ends numbered, after the probes answered", async (t) => {
@@ -284,7 +285,7 @@ test("the naming call takes what the harness package probes leave of the budget:
     capabilities: { "test.chat": { manifest: { requires: [{ harness: "claude", package: "chat@acme-market", why: "the fixture's" }] } } },
   });
   const installed = JSON.stringify([{ id: "chat@acme-market", version: "1.0.0", scope: "user", enabled: true, installPath: plugin }]);
-  const preview = (env) => fx.cli(["spawn", "dev", "--preview", "--suggest-name", "--launch-config", "fake", "--task", "Fix login", "--json"], { env: { FAKE_REPLY: "fix-login\n", ...env } });
+  const preview = (env, extra = []) => fx.cli(["spawn", "dev", "--preview", "--suggest-name", "--launch-config", "fake", "--task", "Fix login", ...extra, "--json"], { env: { FAKE_REPLY: "fix-login\n", ...env } });
   // Premises: the package is required (missing, the preview is refused), and installed it passes.
   assert.equal(refused(preview({ FAKE_PLUGINS: "[]" }), "missing").code, "E_HARNESS_RESOURCE_MISSING");
   assert.equal(okResult(preview({ FAKE_PLUGINS: installed }), "installed").instance, "fix-login-dev");
@@ -293,7 +294,18 @@ test("the naming call takes what the harness package probes leave of the budget:
   const slow = okResult(preview({ FAKE_PLUGINS: installed, FAKE_SLEEP_MS: "8000", OATS_PREVIEW_PREFLIGHT_BUDGET_MS: "1500" }), "slow");
   assert.deepEqual([slow.instance, slow.naming.source, slow.naming.reason], [numberedName, "numbered", "timeout"]);
   assert.ok(slow.naming.ms < 3000, `the call ended with the budget (${slow.naming.ms} ms)`);
-  assert.equal(slow.preflight.status, "timeout");
+  assert.equal(slow.preflight.status, "complete", "the probes completed: the naming call's timeout is naming's");
+  // The numbered preview a timed-out call leaves is a confirmable one, by the clients' own admission
+  // (packages/client/spawn-apply-contract.mjs), as a plain preview and a suggested one are. A client
+  // previews with the subject it targets (--dir, --agents-root).
+  const asClient = ["--dir", fx.dep, "--agents-root", fx.root];
+  const target = (r) => ({ workspace: r.workspace, context: fx.dep, selector: { soul: "dev", agentsRoot: fx.root } });
+  const admitted = (r) => spawnPreparedData(r, target(r));
+  assert.ok(admitted(okResult(fx.cli(["spawn", "dev", "--preview", "--launch-config", "fake", ...asClient, "--json"], { env: { FAKE_PLUGINS: installed } }), "plain")), "premise: a plain preview is admitted");
+  assert.ok(admitted(okResult(preview({ FAKE_PLUGINS: installed }, asClient), "suggested")), "a suggested one");
+  const slowAsClient = okResult(preview({ FAKE_PLUGINS: installed, FAKE_SLEEP_MS: "8000", OATS_PREVIEW_PREFLIGHT_BUDGET_MS: "1500" }, asClient), "slow, as a client");
+  assert.equal(slowAsClient.naming.reason, "timeout");
+  assert.ok(admitted(slowAsClient), "and the numbered one after a timeout");
 });
 
 test("the naming call runs the executable the preview reports: a relative PATH entry resolves from where the home will be", async (t) => {
