@@ -523,8 +523,9 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
     folded over it is opened.
 - **The palette** groups the instances as [The palette](#the-palette) says,
   the group last used first, as the Desktop's does. When the first of them
-  is the shown tab's, the palette opens with the second selected, so the
-  palette then `Enter` goes back to the terminal shown before it.
+  is the shown tab's, the palette opens on the instance shown before it,
+  wherever its group puts it, so the palette then `Enter` goes back to that
+  terminal.
 - **Closing.** The leader then `w`, or `c` in the Instances view, closes the
   shown tab: its agent keeps running. The tab to its right is shown, else
   the one to its left.

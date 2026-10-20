@@ -716,9 +716,11 @@ export function paletteItems(state, at = new Date(0).toISOString()) {
   for (const kind of kinds) { const rows = ranked(kind); if (rows.length) runs.push(rows); }
   const items = runs.flat(), selectable = items.filter((each) => each.kind !== "group"), instances = selectable.filter((each) => each.kind === "instance");
   // With nothing chosen yet, the first row that can be selected; but in the palette as it opens (no
-  // query), when that is the shown tab's instance (the most recent), the second instance: the
-  // palette and Enter go back to the terminal before it, as the Desktop's recent group did.
-  const first = p.query === "" && instances.length > 1 && selectable[0] === instances[0] && instances[0].id === state.terminal?.id ? instances[1] : selectable[0];
+  // query), when that is the shown tab's instance (the most recent), the instance shown before it
+  // (`recent`'s second, wherever its group puts it), else the second instance: the palette and Enter
+  // go back to the terminal before it, as the Desktop's recent group did.
+  const before = instances.find((each) => each.id === state.recent[1]) ?? instances[1];
+  const first = p.query === "" && instances.length > 1 && selectable[0] === instances[0] && instances[0].id === state.terminal?.id ? before : selectable[0];
   return {
     items, runs: runs.map((run) => run.filter((each) => each.kind !== "group").map((each) => each.key)),
     selected: selectable.some((each) => each.key === p.selected) ? p.selected : first?.key ?? null,

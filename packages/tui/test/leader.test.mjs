@@ -515,7 +515,7 @@ test("the palette groups the instances that can be opened as the sidebar does, e
   assert.equal(paletteItems(recent).runs.flat().some((each) => each.startsWith("group\u0000")), false, "no label row is in a run");
 });
 
-test("a group's label row is never selected: the palette opens on its first row that can be selected, and Up, Down, PageUp and PageDown pass over every label row; as it opens on the shown terminal's instance, the second instance is selected, past a label row", () => {
+test("a group's label row is never selected: the palette opens on its first row that can be selected, and Up, Down, PageUp and PageDown pass over every label row; as it opens on the shown terminal's instance, the instance shown before it is selected, wherever its group puts it", () => {
   const open = key(RECENT(["solo-x", "grandchild"]), "ctrl+k").state, items = paletteItems(open).items;
   assert.equal(items[0].kind, "group");
   assert.equal(paletteItems(open).selected, rowKey(open, "solo-x"), "the first row that can be selected");
@@ -534,13 +534,14 @@ test("a group's label row is never selected: the palette opens on its first row 
   assert.equal(paged(open, "pagedown", 4).state.palette.selected, rowKey(open, "child-a"));
   assert.equal(paged(paged(open, "pagedown", 4).state, "pageup", 4).state.palette.selected, rowKey(open, "solo-x"));
   assert.equal(paged(open, "pageup", 4).state.palette.selected, rowKey(open, "solo-x"), "PageUp at the top stays on the first row that can be selected");
-  // The shown terminal is solo-x's, the most recent: the palette opens on the second instance,
-  // lead, which stands under its group's label row.
+  // The shown terminal is solo-x's, the most recent: the palette opens on the instance shown before
+  // it, grandchild, deep in lead's group: not lead, the second instance in the list.
   const shown = reduce(key(on(RECENT(["grandchild"]), "solo-x"), "enter").state, { shown: { id: idOf(open, "solo-x") }, ...AT }).state;
   assert.deepEqual(shown.recent, [idOf(open, "solo-x"), idOf(open, "grandchild")]);
   const fromTerminal = leaderThen(shown, "k", AT).state;
   assert.deepEqual(grouped(fromTerminal).slice(0, 3), [`group independent independent:${idOf(open, "solo-x")}`, "instance solo-x", "group lead cluster:0:lead"]);
-  assert.equal(paletteItems(fromTerminal).selected, rowKey(open, "lead"));
+  assert.equal(paletteItems(fromTerminal).selected, rowKey(open, "grandchild"));
+  assert.equal(key(fromTerminal, "enter").effect?.open?.id, idOf(open, "grandchild"), "Enter goes back to it (it has no tab here: it opens)");
   // Typed, the first row that can be selected is.
   assert.equal(paletteItems(key(fromTerminal, "s").state).selected, rowKey(open, "solo-x"));
 });
@@ -606,8 +607,11 @@ test("while the palette is open Alt+Shift+Down and Up are its own, with and with
     assert.equal(fromTerminal.terminal.focus, "list", how);
     const chord = reduce(fromTerminal, { chord: "next", read: ++reads, ...AT });
     assert.deepEqual([chord.state, chord.effect], [fromTerminal, null], `${how}: a chord event`);
+    // It opens on the instance shown before lead's (solo-x): the key goes to the group after solo-x's.
+    const list = paletteItems(fromTerminal), at = list.runs.findIndex((run) => run.includes(list.selected));
+    assert.equal(list.selected, rowKey(fromTerminal, "solo-x"), `${how}: the terminal shown before`);
     const moved = key(fromTerminal, "alt+shift+down");
-    assert.deepEqual([moved.effect, moved.state.palette.selected, moved.state.terminal.id], [null, paletteItems(fromTerminal).runs[1][0], idOf(state, "lead")], `${how}: from a terminal`);
+    assert.deepEqual([moved.effect, moved.state.palette.selected, moved.state.terminal.id], [null, list.runs[(at + 1) % list.runs.length][0], idOf(state, "lead")], `${how}: from a terminal`);
     // The leader then Down is the leader's still, the palette open or not.
     assert.equal(key(leader(open).state, "down").effect?.open?.id, idOf(state, "child-a"), `${how}: the leader then Down`);
   }
