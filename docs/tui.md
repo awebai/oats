@@ -143,8 +143,9 @@ while a terminal is open); under 80 columns it has the whole width.
   workspace with no instances reads `No agents yet: n spawns one`, with the
   key `spawn` has (`No agents yet.` when it has none).
 - **The cheat sheet** comes last, under a rule: a few keys, one per row,
-  the key in bold and what it does beside it. Its first row is always the
-  leader, `Alt+O commands`, which reaches every action; then
+  the key in bold and what it does beside it. Its first row is the
+  leader, `Alt+O commands`, which reaches every action (but while a
+  terminal has the focus under the kitty keyboard protocol, below); then
   `Ctrl+K palette`. In a view's list it names what `Enter` does now
   (`open`, `focus terminal` on the row whose terminal is open, `detail`
   in the Souls and Capabilities views), then `n spawn` where it spawns,
@@ -357,14 +358,20 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   key go to the agent exactly as typed, `Ctrl+C`, `Ctrl+Z`, `Esc` and `q`
   among them, but for **[the leader](#the-leader)** (`Alt+O`, `Ctrl+\` on
   macOS, unless [`tui.json`](#change-the-keys-tuijson) names another), the
-  one key the TUI takes from the agent, and the [chords](#chords) while your
-  terminal sends them. Under the kitty keyboard protocol every key reaches
+  one key the TUI takes from the agent, and the [chords](#chords) (the
+  Ctrl+Alt ones while your terminal sends them). Under the kitty keyboard protocol every key reaches
   the agent as the bytes it sends without it. The leader then `Esc` gives the
   focus to the list; the leader twice types the leader into the agent; the
   leader then another key does what that key does from anywhere. While the
   terminal has the focus the cheat sheet names those three:
-  `Alt+O commands`, `Alt+O Esc the list`, `Alt+O Alt+O types Alt+O`. A
-  leader inside a bracketed paste is pasted, not taken.
+  `Alt+O commands`, `Alt+O Esc the list`, `Alt+O Alt+O types Alt+O`.
+  While the terminal confirms the kitty keyboard protocol
+  ([Chords](#chords)) the chords come first: `Ctrl+Alt+K palette`,
+  `Alt+Shift+Up/Down agent`, `Alt+Shift+Left/Right tab` (with two tabs or
+  more), `Ctrl+Alt+W close`, `Ctrl+Alt+Z zoom`, then the leader's three.
+  On a short screen the sheet gives up rows from its end, and the leader's
+  `commands` last of all. A leader inside a bracketed paste is pasted, not
+  taken.
 - **With the list focused** the terminal stays open, and the agent's screen
   is still drawn as it changes. The cheat sheet names `Enter focus terminal`
   on its row; the leader's hint names `z zoom` and `w close terminal`.
@@ -388,7 +395,8 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   than 40 columns: with less room it has the whole screen too.
 - **With the whole screen** (zoomed, or a narrow terminal) no cheat sheet is
   drawn. The terminal's title row carries the keys at its right, dim:
-  `Alt+O commands   Alt+O Esc the list`, and while the leader waits, the
+  `Alt+O commands   Alt+O Esc the list`, after the chords under the kitty
+  keyboard protocol, as many as fit, and while the leader waits, the
   leader's hint, as many keys as fit, `Esc the list` last. The agent's
   screen keeps every row under it.
 - **A terminal also closes by itself** when its viewer ends, shown or
@@ -1062,7 +1070,7 @@ The line after leaving says so and names `oats status` to see it.
 | `\|`, `-` | in the Instances view, [splits](#splits) the panel side by side or one above the other |
 | `Alt+O` (`Ctrl+\` on macOS) | [the leader](#the-leader), from every focus ([`tui.json`](#change-the-keys-tuijson) can name another key) |
 | `Ctrl+K` | opens [the palette](#the-palette); `Ctrl+K` again closes it |
-| `Ctrl+Shift+K`, `Ctrl+Tab` and the other [chords](#chords) | where your terminal sends them, what the leader then a key does, from every focus |
+| `Ctrl+Alt+K`, `Alt+Shift+Up` and the other [chords](#chords) | what the leader then a key does, from every focus; the Ctrl+Alt ones where your terminal sends them |
 | `X`, `D`, `S`, `R` | stop, retire, start, restart the selected agent, [after a confirmation](#stopping-starting-restarting-and-retiring) |
 | `n` | [spawns an agent](#spawning-an-agent): the soul picker, then the preview |
 | `N` | spawns another of the selected instance's soul: its preview |
@@ -1084,12 +1092,13 @@ instance can always be read, however many they are. The selection stays
 where it is, and the list returns to it at the next key that moves it.
 
 The help screen is generated from the table the program acts on, so it
-always lists the keys that work, the leader's among them, the chords while
-your terminal sends them, the palette's and the spawn prompt's, with the
+always lists the keys that work, the leader's among them, the
+[chords](#chords) (first of all while your terminal confirms the kitty
+keyboard protocol), the palette's and the spawn prompt's, with the
 marks and with what this version does not do. Its top row has the time of the read and the count of withheld rows
 ([What it shows](#what-it-shows)). The movement keys scroll it. While
-a terminal has the focus the table's keys are the agent's: the leader alone
-is the TUI's, with the chords while your terminal sends them.
+a terminal has the focus the table's keys are the agent's: the leader and
+the chords alone are the TUI's.
 
 ### The leader
 
@@ -1107,7 +1116,7 @@ to use Option as Meta.
 | `k` or `Space` | opens [the palette](#the-palette) |
 | `1`, `2`, `3` | the Instances, Souls and Capabilities views |
 | `Up`, `Down` | opens the terminal of the instance before or after, in the list as it is drawn, the focus in it: from the shown terminal's instance, or from the selection when none is open. It shows the instance's tab when it has one, else opens a new [tab](#tabs). Rows that cannot be opened are passed over, and the list does not wrap |
-| `Left`, `Right` | shows the tab before or after the shown one; the strip does not wrap, and the focus stays where it was |
+| `Left`, `Right` | shows the tab before or after the shown one; the tab bar does not wrap, and the focus stays where it was |
 | `z` | zooms the shown terminal in or out; with the list focused, gives it the focus and the whole screen |
 | `w` | closes the shown terminal's tab and shows the tab beside it; the agent keeps running |
 | `\|`, `-` | [splits](#splits) the panel side by side or one above the other |
@@ -1159,46 +1168,70 @@ to use Option as Meta.
 
 ### Chords
 
-Where your terminal lets them through, the OATS Desktop's Ctrl+Shift chords
-work in `oats tui` too, as extras: each does what the leader then a key
-does, from every focus, a terminal's too, and never reaches the agent. The
-leader stays the key that always works, and the cheat sheet does not name
-the chords.
+A chord does in one keypress what the leader then a key does, from every
+focus, an agent's terminal too, and never reaches the agent. The OATS
+Desktop has the same chords (`CHORDS` in `packages/client/keymap.mjs`, which
+both read; the TUI keeps no copy). The leader stays the key that always
+works, and the one for help, the views and the acts (stop, restart, start,
+retire), which have no chord.
 
-| Chord (Linux and Windows) | Does: the leader then |
-|---|---|
-| `Ctrl+Shift+K` | `k`, the palette |
-| `Ctrl+Shift+P` | `n`, spawn an agent |
-| `Ctrl+Tab`, `Ctrl+Shift+Tab` | `Right`, `Left`: the next or the previous tab |
-| `Ctrl+Shift+W` | `w`, close the shown terminal |
-| `Ctrl+Shift+F` | `/`, the filter |
-| `Ctrl+Shift+E`, `Ctrl+Shift+O` | `\|`, `-`: split right, split down |
+| Chord (Linux and Windows) | Does | The leader then |
+|---|---|---|
+| `Ctrl+Alt+K` | opens the palette | `k` |
+| `Ctrl+Alt+P` | spawns an agent | `n` |
+| `Ctrl+Alt+O` | opens the switcher | `o` |
+| `Alt+Shift+Up`, `Alt+Shift+Down` | opens the terminal of the instance before or after | `Up`, `Down` |
+| `Alt+Shift+Left`, `Alt+Shift+Right` | shows the tab before or after the shown one | `Left`, `Right` |
+| `Ctrl+Alt+1` to `Ctrl+Alt+8`, `Ctrl+Alt+9` | shows the focused group's first to eighth tab, and its last | – |
+| `Ctrl+Alt+Z` | zooms the shown terminal in or out | `z` |
+| `Ctrl+Alt+W` | closes the shown terminal's tab | `w` |
+| `Ctrl+Alt+E`, `Ctrl+Alt+Shift+E` | splits the panel side by side, or one above the other | `\|`, `-` |
+| `Ctrl+Alt+A` | goes to the other group | `Tab` |
+| `Ctrl+Alt+F` | the filter | `/` |
 
-On macOS the Desktop's chords hold ⌘, which a terminal never passes to a
-program: there `Ctrl+Tab` and `Ctrl+Shift+Tab` are the only chords. The
-chords are the Desktop's (`CHORDS` in `packages/client/keymap.mjs`), and the
-TUI keeps no copy. The Desktop's Ctrl+1, Ctrl+2 and Ctrl+3 (its stages) are
-its own.
+They are one family: Ctrl+Alt with a letter or a digit acts, and Alt+Shift
+with the leader's arrow moves. No terminal in the table below takes them by
+default, and no agent (Claude Code, Codex, pi) reads them. Ctrl+Shift with a
+letter, the obvious family, is the terminals' own: kitty binds 22 of those
+letters, Ghostty 13, and foot, GNOME Terminal, WezTerm, Konsole and Windows
+Terminal their own. On macOS the TUI has no chords: the Desktop's hold ⌘,
+which a terminal never passes to a program.
 
-- **Only where the terminal says it can.** A terminal sends these keys apart
-  from `Ctrl+K`, `Ctrl+P` and the others only under the kitty keyboard
-  protocol. As it takes the terminal, `oats tui` asks for the protocol with
-  flags 1 and 4 (`CSI > 5 u`) and asks the terminal which flags it has
-  (`CSI ? u`). Only when the answer holds flag 1 does it read the protocol,
-  take the chords and list them in the help. With no answer within 2
-  seconds, or one without flag 1, it pops the protocol, and the rest of the
-  run is as without it. The answer may come split and late over a slow
-  link, so until it comes (at most those 2 seconds) an `Esc` pressed on its
-  own may wait for the next key or for the wait's end, as it may begin the
-  answer. foot, Ghostty, kitty, Alacritty and WezTerm answer.
-  GNOME Terminal and the other VTE terminals, and Terminal.app, do not:
-  there the chords are absent.
-- **Your terminal may take some first.** foot takes Ctrl+Shift+C, V, R, N,
-  O, U, Z, X and Q for itself, so `Ctrl+Shift+O` never reaches `oats tui`
-  there. The help says so.
+- **The Ctrl+Alt chords only where the terminal says it can.** Without the
+  kitty keyboard protocol a terminal sends `Ctrl+Alt+K` as `Esc` then
+  `Ctrl+K`, the same bytes as those two keys typed for the agent. As
+  it takes the terminal, `oats tui` asks for the protocol with flags 1 and 4
+  (`CSI > 5 u`) and asks the terminal which flags it has (`CSI ? u`). Only
+  when the answer holds flag 1 does it read the protocol and take the
+  Ctrl+Alt chords. With no answer within 2 seconds, or one without flag 1,
+  it pops the protocol, and the rest of the run is as without it. The
+  answer may come split and late over a slow link, so until it comes (at
+  most those 2 seconds) an `Esc` pressed on its own may wait for the next
+  key or for the wait's end, as it may begin the answer.
+- **The Alt+Shift arrows everywhere.** Each sends a sequence of its own,
+  with the protocol or without it (`CSI 1;4A` for `Alt+Shift+Up`), so the
+  TUI takes them in every terminal. `Ctrl+Alt+Shift` with an arrow is not
+  one of them.
+- **The help and the cheat sheet lead with the chords** while the terminal
+  confirms the protocol: one row per chord, then the leader and its key
+  ("or `Alt+O` then `k`"), and the leader's own section after them. Without
+  the protocol the leader leads, and only the Alt+Shift arrows are listed
+  as chords.
+- **Your terminal may take some first** ([the matrix](#which-terminals-let-the-chords-through)).
+  Windows Terminal takes `Ctrl+Alt+1` to `Ctrl+Alt+9` for its own tabs, and
+  the Alt+Shift arrows while its panes are split. GNOME Terminal and the
+  other VTE terminals, Konsole before 26.08, Terminal.app, and WezTerm unless
+  `enable_kitty_keyboard` is set have no protocol: there only the Alt+Shift
+  arrows reach `oats tui`. The leader works in every terminal.
+- **A character typed with AltGr stays a character.** On Windows `AltGr` is
+  `Ctrl+Alt`: on a Spanish layout `Ctrl+Alt+E` types `€` and `Ctrl+Alt+2`
+  `@`, on a Polish one `Ctrl+Alt+A` types `ą`. A key that arrives as text is
+  never a chord: on such a layout those chords are the layout's, and the
+  leader still does what they do. On Linux and macOS `AltGr` and Option are
+  keys of their own.
 - **Every other key reads as it does without the protocol.** `Ctrl+Shift+L`
   is `Ctrl+L`, `Ctrl+Enter` is `Enter`, and so on: the protocol only adds
-  the chords, and tells `Alt+O` from `Esc` then `o` exactly
+  the Ctrl+Alt chords, and tells `Alt+O` from `Esc` then `o` exactly
   ([The leader](#the-leader)).
 - **An agent gets what it gets without the protocol.** Every key typed
   into an agent's terminal is turned back into the bytes the same key sends
@@ -1220,6 +1253,82 @@ its own.
   (and pushed again on return), and before any other program is given the
   terminal: the shell at a suspend is the only one `oats tui` ever gives
   it to.
+
+#### Which terminals let the chords through
+
+Each terminal's documented default key bindings, read from its source or
+manual at the release named. `✗` is a chord the terminal takes for itself
+by default, `~` one it takes only in a state it names, `·` one it passes on.
+WT is Windows Terminal; iTerm2 and Terminal.app are on macOS, where the TUI
+has no chords (above) and the column is for reference.
+
+| Chord | foot | kitty | Ghostty | Alacritty | GNOME Terminal | WezTerm | Konsole | WT | iTerm2 | Terminal.app |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `Ctrl+Alt+K` `P` `O` `Z` `W` `E` `A` `F` | · | · | · | · | · | · | · | · | · | · |
+| `Ctrl+Alt+Shift+E` | · | · | · | · | · | · | · | · | · | · |
+| `Ctrl+Alt+1` to `9` | · | · | · | · | · | · | · | ✗ its tabs | · | · |
+| `Alt+Shift+` arrows | · | · | · | · | · | · | · | ~ pane resize, passed on with one pane | · | · |
+| kitty protocol, flags 1 and 4 | yes, since 1.10.3 | yes | yes | yes, since 0.13 | no (VTE has none) | only with `enable_kitty_keyboard` | yes, since 26.08 | yes, since 1.25 | yes | no |
+| Release read | 1.28.0 | 0.49.2 | 1.3.1 | 0.17.0 | 3.60.0 (VTE 0.84.1) | 20240203 | 26.08.2 | 1.25.2733 | 3.7 | macOS 15 |
+
+Where a terminal has no protocol, its Ctrl+Alt cells say only that it takes
+none of them: the chord does not reach the TUI there anyway. What the
+terminals take besides, near these chords:
+
+- Konsole: `Ctrl+Alt+S`, `N`, `M`, `U`, `H`, `G`, `I`, `0`, `[`, `]`, `\`
+  and `,`.
+- Windows Terminal: `Ctrl+Alt+,`, `Ctrl+Alt+Left`, and `Alt` with an arrow
+  (pane focus).
+- kitty: `Ctrl+Shift+Alt+T`. Ghostty: `Ctrl+Shift+Alt+J`, and `Ctrl+Alt`
+  with an arrow (split focus). WezTerm: `Ctrl+Shift+Alt` with an arrow,
+  `'` and `5`.
+
+The desktops' global keys come before any terminal's:
+
+| Desktop (release read) | Takes, near the chords | Takes none of |
+|---|---|---|
+| GNOME 49 to 51 | `Ctrl+Alt` with an arrow (workspaces) and with `Shift` (move to a workspace), `Ctrl+Alt+Tab`, `Ctrl+Alt+Esc`, `Ctrl+Alt+Delete`, `Ctrl+Alt+F1` to `F12`, `Ctrl+Shift+Alt+R`, `Shift+Alt+Tab`; Ubuntu adds `Ctrl+Alt+T` | the chords above |
+| KDE Plasma 6.8.1 | `Ctrl+Alt+Delete`, `Ctrl+Alt+F1` to `F12`, `Alt+Shift+Tab`, `Alt+Shift+F2`; Konsole, where installed, `Ctrl+Alt+T` | the chords above |
+| Omarchy 4.0.4 (Hyprland) | `Ctrl+Alt+Delete`, `Ctrl+Alt+Tab`, `Ctrl+Alt+Shift+Tab`, `Alt+Shift+Tab` | the chords above |
+
+From
+[GNOME's window manager keys](https://gitlab.gnome.org/GNOME/gsettings-desktop-schemas/-/blob/49.1/schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in),
+[mutter's](https://gitlab.gnome.org/GNOME/mutter/-/blob/49.8/data/org.gnome.mutter.wayland.gschema.xml.in),
+[the shell's](https://gitlab.gnome.org/GNOME/gnome-shell/-/blob/49.10/data/org.gnome.shell.gschema.xml.in)
+and [the settings daemon's](https://gitlab.gnome.org/GNOME/gnome-settings-daemon/-/blob/49.1/data/org.gnome.settings-daemon.plugins.media-keys.gschema.xml.in);
+[KWin's](https://invent.kde.org/plasma/kwin/-/blob/v6.8.1/src/tabbox/tabbox.cpp#L330-L335),
+[the session's](https://invent.kde.org/plasma/plasma-workspace/-/blob/v6.8.1/startkde/session-shortcuts/main.cpp#L40)
+and [KRunner's](https://invent.kde.org/plasma/plasma-workspace/-/blob/v6.8.1/krunner/org.kde.krunner.desktop.cmake#L135);
+and [Omarchy's](https://github.com/basecamp/omarchy/blob/v4.0.4/default/hypr/bindings/tiling.lua).
+
+Sources:
+[foot](https://codeberg.org/dnkl/foot/src/tag/1.28.0/config.c#L3362-L3445)
+([protocol](https://codeberg.org/dnkl/foot/src/tag/1.28.0/CHANGELOG.md#L2222-L2245)),
+[kitty](https://github.com/kovidgoyal/kitty/blob/v0.49.2/kitty/options/definition.py#L3650-L4711)
+([protocol](https://github.com/kovidgoyal/kitty/blob/v0.49.2/docs/keyboard-protocol.rst#L302-L309)),
+[Ghostty](https://github.com/ghostty-org/ghostty/blob/v1.3.1/src/config/Config.zig#L6392-L7146)
+([protocol](https://github.com/ghostty-org/ghostty/blob/v1.3.1/src/terminal/kitty/key.zig#L79-L84)),
+[Alacritty](https://github.com/alacritty/alacritty/blob/v0.17.0/alacritty/src/config/bindings.rs#L430-L562)
+([protocol](https://github.com/alacritty/alacritty/blob/v0.17.0/CHANGELOG.md#L243)),
+[GNOME Terminal](https://gitlab.gnome.org/GNOME/gnome-terminal/-/blob/3.60.0/src/org.gnome.Terminal.gschema.xml#L362-L631)
+([VTE has no protocol](https://gitlab.gnome.org/GNOME/vte/-/work_items/2601)),
+[WezTerm](https://wezterm.org/config/default-keys.html)
+([protocol](https://wezterm.org/config/lua/config/enable_kitty_keyboard.html)),
+[Konsole](https://invent.kde.org/utilities/konsole/-/blob/v26.08.2/src/ViewManager.cpp#L120-L393)
+(and [SessionController.cpp](https://invent.kde.org/utilities/konsole/-/blob/v26.08.2/src/SessionController.cpp#L660-L955);
+[protocol](https://invent.kde.org/utilities/konsole/-/commit/1983d2b4735d6b61b74cf85854acc1cb4d2445d5)),
+[Windows Terminal](https://github.com/microsoft/terminal/blob/v1.25.2733.0/src/cascadia/TerminalSettingsModel/defaults.json#L721-L803)
+([protocol](https://github.com/microsoft/terminal/releases/tag/v1.25.622.0)),
+[iTerm2](https://github.com/gnachman/iTerm2/blob/beb7cfbffeb3ae482042b08a8dd2590cd2cf4ee5/plists/DefaultGlobalKeyMap.plist)
+([keys](https://iterm2.com/documentation-preferences-keys.html)),
+[Terminal.app](https://support.apple.com/guide/terminal/keyboard-shortcuts-trmlshtcts/mac).
+The agents' keys:
+[Claude Code](https://code.claude.com/docs/en/keybindings),
+[Codex](https://github.com/openai/codex/blob/e1b9c9457ceca75a99b034a5df39ac48c3998d15/codex-rs/tui/src/keymap.rs#L1673-L2003),
+[pi](https://github.com/earendil-works/pi/blob/26293e74f664c2cfb731b22a653cccf852830e00/packages/coding-agent/docs/keybindings.md).
+Of the shells' keys, bash's readline binds `Ctrl+Alt+E` and `Ctrl+Alt+F`
+(expand the line, a word forward); under the protocol the TUI takes them
+from an agent's line editor, which no agent above binds them in.
 
 ### The palette
 
