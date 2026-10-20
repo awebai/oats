@@ -128,6 +128,24 @@ function modulesOf(v, projected, composedFrom) {
 }
 export const previewSupported = cli => cli?.ok === true && absolute(cli.bin) && cli.spawnPreviewApi === 2
   && Array.isArray(cli.features) && cli.features.includes('spawn-preview-2');
+/** Feature spawn-suggest-name (awebai/oats#1421 §3): `spawn --preview --suggest-name` also chooses the name, from the
+ *  task, through the soul's harness. The Desktop asks only where it can also pass the name back (`spawn-name`). */
+export const SUGGEST_NAME_FEATURE = 'spawn-suggest-name';
+export const suggestSupported = cli => previewSupported(cli) && cli.features.includes(SUGGEST_NAME_FEATURE) && cli.features.includes('spawn-name');
+/** Why a suggest read was numbered: the kernel's closed set. */
+export const NAMING_REASONS = ['no-task', 'unsupported-harness', 'timeout', 'harness-failed', 'invalid-reply'];
+/** The task a suggest read carries: the apply's bound (spawnPrepareInput), never blank. */
+export const suggestTask = v => typeof v === 'string' && !v.includes('\0') && v.length <= 32768 && new TextEncoder().encode(v).byteLength <= 32768 && !!v.trim();
+/** The preview's `naming`, or null when it is malformed. `suggested` names its harness and model (null: the harness's
+ *  default); `numbered` names its reason. The kernel's `message` is not projected: it can carry an exit code or a
+ *  signal, and the Desktop says the reason in its own words. */
+export function namingOf(v) {
+  if (!record(v) || !Number.isSafeInteger(v.ms) || v.ms < 0) return null;
+  if (v.source === 'suggested') return name(v.harness) && (v.model === null || safe(v.model, 256) && !!v.model)
+    ? { source: 'suggested', ms: v.ms, harness: v.harness, model: v.model } : null;
+  if (v.source === 'numbered') return NAMING_REASONS.includes(v.reason) ? { source: 'numbered', reason: v.reason, ms: v.ms } : null;
+  return null;
+}
 export function previewSelector(v) {
   return exact(v, ['soul', 'agentsRoot']) && name(v.soul) && absolute(v.agentsRoot) ? { soul: v.soul, agentsRoot: v.agentsRoot } : null;
 }
@@ -234,6 +252,7 @@ const errors = {
   E_CLI_TIMEOUT: 'The spawn preview timed out.', E_CLI_OUTPUT_LIMIT: 'The spawn preview exceeded its output limit.',
   E_CLI_PROTOCOL: 'The CLI returned an invalid or mismatched API 2 preview.', E_CLI_FAILED: 'The installed CLI could not complete the preview.',
   E_FORBIDDEN_FRAME: 'This frame cannot request a spawn preview.',
+  E_SUPERSEDED: 'A newer naming request replaced this one.',
 };
 const KERNEL_CODE = /^E_[A-Z0-9_]{1,63}$/;
 /** A kernel refusal keeps its own code and message (bounded, printable): the
@@ -304,6 +323,10 @@ export function previewData(v, expected, { composedFrom = false } = {}) {
   const launchPromptAnswers = Object.hasOwn(v, 'launchPromptAnswers') ? launchPromptAnswersOf(v.launchPromptAnswers) : undefined;
   if (launchPromptAnswers === null) return null;
   const worktreeHooks = worktreeHooksOf(v.worktreeHooks);
+  // Feature spawn-suggest-name: how the name was chosen, on a suggest read only. A malformed one refuses the preview: its
+  // name is then not known to be the one a `--name` preview would give.
+  const naming = Object.hasOwn(v, 'naming') ? namingOf(v.naming) : undefined;
+  if (naming === null) return null;
   // Only reports carry `problem`: a preview that would hit one refuses with the error instead.
   if (Object.hasOwn(v, 'launch') && (launch === undefined || launch.problem !== null || launch.effective.harness !== e.harness || launch.effective.model !== e.model
     || launch.effective.launchConfig !== e.launchConfig)) return null;
@@ -315,6 +338,7 @@ export function previewData(v, expected, { composedFrom = false } = {}) {
     preflight: { status: v.preflight.status, budgetMs: v.preflight.budgetMs, elapsedMs: v.preflight.elapsedMs }, messaging, teams, modules,
     ...(defaultTeam !== undefined ? { defaultTeam } : {}), ...(launch ? { launch } : {}),
     ...(launchPromptAnswers ? { launchPromptAnswers } : {}),
+    ...(naming ? { naming } : {}),
     // Capability warnings (0.49.0): the kernel's message strings, tolerant and idempotent (a malformed list reads as none,
     // never refuses the preview); absent on an older kernel. Shown only: the apply binds nothing on them.
     ...(Object.hasOwn(v, 'warnings') ? { warnings: previewWarningsOf(v.warnings) } : {}) };

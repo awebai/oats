@@ -199,7 +199,8 @@ cache, and a provider operation (`run`, the Desktop's) is admitted by the
 boundary's own `capabilityAdmission`. It holds a spawn's two boundaries too:
 the preview (`spawn-preview.mjs` `createSpawnPreview`), which is the dialog's
 read, prepare's read and the settled answers they share, both reads within one
-budget of two flights; and the confirmed-spawn broker (`spawn-apply.mjs`
+budget of two flights, and the suggest read's own lane (`suggest`: one per
+workspace, the newer ending the older); and the confirmed-spawn broker (`spawn-apply.mjs`
 `createSpawnApplyBoundary`), which prepares, applies and reads a result,
 prepares through a preview's `prepareRead`, and runs each apply's `oats spawn`
 in a process session of its own. Both refuse a remote workspace. The backend
@@ -210,8 +211,9 @@ outcome kind), which the background store and the dialog's store-less path
 each make and drive; a problem's and an outcome's words (`spawn-messages.mjs`:
 a shared `fact` and a `next` code, which `renderer/spawn-words.mjs` says in the
 Desktop's words); the preview's facts (`spawn-preview-facts.mjs`
-`previewFacts`); and the untouched choices (`spawn-preview-contract.mjs`
-`defaultSpawnChoices`). Two of a soul's rules sit beside them, so the page can
+`previewFacts`); the suggested name's rules (`spawn-naming.mjs`: when the dialog
+asks, what it remembers an answer by, and a numbered spawn's words); and the
+untouched choices (`spawn-preview-contract.mjs` `defaultSpawnChoices`). Two of a soul's rules sit beside them, so the page can
 load them: the soul filter (`soul-facts.mjs` `soulMatches`) and the sentence of
 a failed catalog read (`spawn-messages.mjs` `soulCatalogFailure`).
 
