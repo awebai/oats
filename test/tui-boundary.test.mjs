@@ -86,7 +86,7 @@ const TAKEN = Object.freeze({
   "deployment-label.mjs": ["shortPath", "deploymentLabel", "machineLabels"],
   "instance-tree.mjs": ["instanceId", "instanceVisibleInTree", "waitingRollup", "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome", "instanceSiblings"],
   "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment"],
-  "instance-presentation.mjs": ["runtimeState", "runtimeCounts", "originLead", "siblingText"],
+  "instance-presentation.mjs": ["runtimeState", "runtimeCounts", "originLead", "siblingText", "instanceColor"],
   "waiting-on-you.mjs": ["waitingClaim", "waitingLabel", "waitedText", "waitingClock", "waitingBelowText"],
   "instance-acts.mjs": ["instanceActs", "openAct"],
   "remote-address.mjs": ["rowReason"],

@@ -1,5 +1,6 @@
 import { HERDR_REMOVED } from "./terminal-contract.mjs";
 import { requireTerms } from './client-terms.mjs';
+import { SOUL_COLORS } from './soul-colors.mjs';
 
 export function runtimeState(instance) {
   return instance.running === true ? "running" : instance.running === false ? "stopped" : "unknown";
@@ -13,6 +14,16 @@ const RUNTIME_ORDER = Object.freeze({ running: 0, unknown: 1, stopped: 2 });
  * `rosterOrder`, #1262). */
 export function byRuntimeState(a, b) {
   return RUNTIME_ORDER[runtimeState(a)] - RUNTIME_ORDER[runtimeState(b)] || String(a.instance).localeCompare(String(b.instance));
+}
+
+/** Which colour an instance's row shows (feature instance-color, awebai/oats#1421 §2): the row's own `color`
+ * when it is a palette name exactly (soul-colors.mjs SOUL_COLORS, which the kernel's INSTANCE_COLORS equals),
+ * else null, and null draws the row as it looks without one. The one rule every client draws by: the kernel
+ * already validated what it relays, and anything else a row carries is no colour. Colour never says a
+ * state alone: a client's mark keeps the state by its shape. */
+export function instanceColor(row) {
+  const color = row?.color;
+  return typeof color === 'string' && SOUL_COLORS.includes(color) ? color : null;
 }
 
 /** The words for an instance's siblings (#1312; the list `instanceSiblings` answers, instance-tree.mjs):

@@ -9,6 +9,7 @@ import { launchOf, REPORT_FROM } from './launch-contract.mjs';
 import { readIdentity } from './workspace-views.mjs';
 import { waitingOnYouData } from './waiting-on-you.mjs';
 import { retireData } from './retire-state.mjs';
+import { instanceColor } from './instance-presentation.mjs';
 const text = value => typeof value === 'string' && value.length <= 8192 && !value.includes('\0');
 const absolute = value => text(value) && isAbsolute(value) && resolve(value) === value;
 const own = (value, key) => Object.hasOwn(value, key);
@@ -214,6 +215,10 @@ export function deploymentStatusData(document, deployment) {
       // check()ed: a value out of the contract is dropped and the row reads as if it had none.
       if (own(instance, 'retire')) { const retire = retireData(instance.retire); if (retire) row.retire = retire; }
       if (own(instance, 'rollbackIncomplete')) row.rollbackIncomplete = true;
+      // Feature instance-color: the instance's colour, a palette name exactly (instance-presentation.mjs
+      // instanceColor, the one rule of which colour a row shows). Validated, never check()ed: anything
+      // else is dropped and the row reads as one with no colour.
+      if (own(instance, 'color') && instanceColor(instance) !== null) row.color = instanceColor(instance);
       // #802 (feature worktree-event): a spawn running its worktree hooks, verifiably alive. Boolean true only;
       // any other value is dropped, never checked: the row stays an ordinary one.
       if (own(instance, 'spawnInProgress') && instance.spawnInProgress === true) row.spawnInProgress = true;

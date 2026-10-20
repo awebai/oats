@@ -180,7 +180,7 @@ test("server roster: instance rows carry the remote status facts, null where the
     startedAt: "2026-09-29T10:00:00.000Z", createdAt: "2026-09-29T09:00:00.000Z", model: "opus", runtimeState: "working",
     parentInstance: "boss", siblingInstance: "dev-b", relation: "child", relativeTo: "boss", spawnOrigin: "instance",
     // #675: the host's work record and its own drift observation, relayed as it answered them.
-    work: "worktree", repo: "/srv/ws/repo", branch: "agents/dev-a", modelFrom: "soul",
+    work: "worktree", repo: "/srv/ws/repo", branch: "agents/dev-a", modelFrom: "soul", color: "sage",
     soul: { repoKey: "github.com/acme/agents", commit: "1111111111111111111111111111111111111111", current: "2222222222222222222222222222222222222222", status: "moved" },
     modules: [
       { name: "acme.x", from: { kind: "member", repoKey: "github.com/acme/agents", commit: "3333333333333333333333333333333333333333" }, commit: "3333333333333333333333333333333333333333", current: { commit: "4444444444444444444444444444444444444444", version: "1.1.0" }, status: "moved" },
@@ -188,13 +188,16 @@ test("server roster: instance rows carry the remote status facts, null where the
     ],
   };
   const bare = { instance: "dev-b", home: "/srv/ws/agents/dev/instances/dev-b", running: false };
-  const status = { root: "/srv/ws/agents", agents: [{ name: "dev", harness: "claude", instances: [full, bare] }] };
+  // Feature instance-color: a colour outside the palette is relayed as none.
+  const odd = { instance: "dev-c", home: "/srv/ws/agents/dev/instances/dev-c", running: false, color: "teal" };
+  const status = { root: "/srv/ws/agents", agents: [{ name: "dev", harness: "claude", instances: [full, bare, odd] }] };
   const { exec } = countingExec(() => JSON.stringify(status));
   const out = await rosterGroups({ io: { execFileAsync: async (...call) => exec(...call) } });
   const rows = out.groups[0].instances;
   const FIELDS = ["identity", "identityAddress", "teams", "startedAt", "createdAt", "model", "runtimeState", "parentInstance", "siblingInstance", "relation", "relativeTo", "spawnOrigin",
-    "work", "repo", "branch", "modelFrom", "soul", "modules"];
+    "work", "repo", "branch", "modelFrom", "soul", "modules", "color"];
   const a = rows.find((r) => r.instance === "dev-a");
+  assert.equal(rows.find((r) => r.instance === "dev-c").color, null, "a colour outside the palette is relayed as null");
   for (const k of FIELDS) assert.deepEqual(a[k], full[k], k);
   assert.equal(a.savedRoute, false);
   assert.equal(a.running, true); assert.equal(a.harness, "claude");
@@ -487,7 +490,7 @@ test("a remote without the session commands: the fallback hint names the instanc
 // ---- item 4: the Desktop's reads and lifecycle plans, routed ----
 
 const SURFACE_PROBE = { ...FULL_PROBE, remote: [...FULL_PROBE.remote, "readiness", "instance-events", "instance-git", "lifecycle-plans"],
-  features: [...FULL_PROBE.features, "readiness", "instance-events-2", "instance-git", "lifecycle-plans", "retire-retention"],
+  features: [...FULL_PROBE.features, "readiness", "instance-events-2", "instance-git", "lifecycle-plans", "retire-retention", "instance-color"],
   readinessApi: 2, eventsApi: 2, instanceGitApi: 1, lifecycleApi: 1 };
 const HOME_A = homeOf("dev", "dev-a");
 const ENVELOPES = {
@@ -498,6 +501,7 @@ const ENVELOPES = {
   diff: { schemaVersion: 1, ok: true, result: { file: { id: "f1", path: "a.txt", kind: "modified" }, against: "index", patch: "@@\n", binary: false, truncated: false } },
   stopPlan: { schemaVersion: 1, ok: true, result: { planRevision: "r1", targets: [], notes: [] } },
   stopApply: { schemaVersion: 1, ok: true, result: { ok: true, results: [], replayed: false } },
+  color: { schemaVersion: 1, ok: true, result: { instanceColorApi: 1, instance: "dev-a", home: HOME_A, color: "sage", changed: true } },
   // `facts.ownWorktree` (awebai/oats#988): the host's plan crosses with its facts as the host answered them.
   retirePlan: { schemaVersion: 1, ok: true, result: { planRevision: "r2", home: HOME_A, facts: { workMode: "worktree", ownWorktree: true }, defaults: { retainWorktree: true }, notes: [] } },
 };
@@ -515,6 +519,7 @@ function surfaceSetup(name, probe = SURFACE_PROBE) {
     [`instance stop dev-a --plan --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.stopPlan),
     [`instance stop dev-a --apply --plan-revision r1 --idempotency-key k1 --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.stopApply),
     [`retire dev-a --plan --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.retirePlan),
+    [`instance color dev-a sage --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.color),
     [`instance events dev-a --home /srv/elsewhere/dev-a --dir ${WS} --json`]: { stdout: JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_HOME_MISMATCH", message: "not a home of dev-a under /srv/ws" } }), exit: 1 },
   } });
   const env = cliEnv(dir, host);
@@ -532,6 +537,8 @@ const SURFACE_CALLS = [
   ["lifecycle-plans", ["instance", "stop", "dev-a", "--server", "build", "--plan", "--json"], ENVELOPES.stopPlan],
   ["lifecycle-plans", ["instance", "stop", "dev-a", "--server", "build", "--apply", "--plan-revision", "r1", "--idempotency-key", "k1", "--json"], ENVELOPES.stopApply],
   ["lifecycle-plans", ["retire", "dev-a", "--server", "build", "--plan", "--json"], ENVELOPES.retirePlan],
+  // Feature instance-color: the feature alone, no API number.
+  ["instance-color", ["instance", "color", "dev-a", "sage", "--server", "build", "--json"], ENVELOPES.color],
 ];
 
 test("routed readiness, instance events, git, diff, stop and retire plans: run on the host, their envelope relayed unchanged", () => {
