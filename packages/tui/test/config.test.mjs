@@ -6,7 +6,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
 import { ACTIONS, bindings } from "../lib/actions.mjs";
-import { CONFIG_LIMIT, MAX_PROBLEMS, MIGRATED, configPath, defaultDetachKey, effectiveConfig, loadConfig, oldConfigPath } from "../lib/config.mjs";
+import { KEYS_LIMIT, chordFamilyNote, keysPath } from "../lib/client.mjs";
+import { CONFIG_LIMIT, MAX_PROBLEMS, MIGRATED, configPath, defaultDetachKey, effectiveConfig, loadConfig, loadKeys, oldConfigPath } from "../lib/config.mjs";
 import { isKeyId } from "../lib/term/keys.mjs";
 import { BACK_KEY_RULE } from "../lib/term/through.mjs";
 
@@ -963,4 +964,86 @@ test("a file that names open-workspace, the action's name before it became open,
   assert.equal(load({ keys: { open: ["o"] } }).ok, true);
   // Against a table that has no open, the old name is just unknown.
   assert.deepEqual(effectiveConfig({ keys: { "open-workspace": ["o"] } }, Object.freeze([{ id: "a", keys: ["x"], label: "A" }])), { ok: false, problems: ["unknown action open-workspace; the actions are a"] });
+});
+
+// --- keys.json: the chord family (docs/tui.md, "Switch to Ctrl+Shift") ---------
+
+const KEYS_FILE = "/cfg/config/keys.json";
+/** loadKeys over a keys.json that exists only here: `content` its text (a value is written as JSON),
+ *  or `stat`/`keys` in place of the file system's own. `calls` records what was asked of it. */
+function keysLoad(content, { stat, keys, env = { OATS_HOME_DIR: "/cfg" }, home = "/home/u" } = {}) {
+  const text = typeof content === "string" ? content : JSON.stringify(content);
+  const calls = [];
+  const io = {
+    stat(file) { calls.push(["stat", file]); return stat ? stat(file) : { file: true, size: Buffer.byteLength(text) }; },
+    keys(file) { calls.push(["keys", file]); return keys ? keys(file) : text; },
+  };
+  return { read: loadKeys({ env, home, io }), calls };
+}
+const family = (read) => ({ family: read.family, why: read.why });
+
+test("keys.json is config/keys.json beside tui.json, resolved the same way, and loadKeys reads that path", () => {
+  assert.equal(keysPath({ OATS_HOME_DIR: "/x/oats" }, "/home/u"), path.join("/x/oats", "config", "keys.json"));
+  assert.equal(keysPath({}, "/home/u"), path.join("/home/u", ".oats", "config", "keys.json"));
+  assert.equal(path.dirname(keysPath({ OATS_HOME_DIR: "/x" }, "/h")), path.dirname(configPath({ OATS_HOME_DIR: "/x" }, "/h")));
+  assert.deepEqual(keysLoad({ chords: "ctrl+shift" }).calls, [["stat", KEYS_FILE], ["keys", KEYS_FILE]]);
+  assert.deepEqual(keysLoad({}, { env: {}, home: "/home/u" }).calls[0], ["stat", path.join("/home/u", ".oats", "config", "keys.json")]);
+});
+
+test("keys.json: a good file chooses the family; missing, unreadable (EACCES), not a regular file, bad JSON, a missing key and an unknown value are all Ctrl+Alt, each with why, and none is an error", () => {
+  assert.deepEqual(family(keysLoad({ chords: "ctrl+shift" }).read), { family: "ctrl+shift", why: null });
+  assert.deepEqual(family(keysLoad({ chords: "ctrl+alt", later: { kept: true } }).read), { family: "ctrl+alt", why: null }, "another key is a later client's, and ignored");
+  assert.equal(Object.isFrozen(keysLoad({ chords: "ctrl+shift" }).read), true);
+  const none = keysLoad({}, { stat: () => null });
+  assert.deepEqual(family(none.read), { family: "ctrl+alt", why: "missing" });
+  assert.deepEqual(none.calls.map(([what]) => what), ["stat"], "no file: nothing is read");
+  assert.equal(chordFamilyNote(none.read), null, "no file: nothing to say");
+  const eacces = () => { throw Object.assign(new Error("permission denied, open '/cfg/config/keys.json'"), { code: "EACCES" }); };
+  for (const [name, options, why] of [
+    ["the read refused (EACCES)", { keys: eacces }, "unreadable"],
+    ["the stat refused (EACCES)", { stat: eacces }, "unreadable"],
+    ["a directory", { stat: () => ({ file: false, size: 4096 }) }, "unreadable"],
+    ["a thrown nothing", { keys: () => { throw undefined; } }, "unreadable"],
+  ]) {
+    const got = keysLoad({}, options);
+    assert.deepEqual(family(got.read), { family: "ctrl+alt", why }, name);
+    assert.equal(chordFamilyNote(got.read), "keys.json cannot be read, using Ctrl+Alt", name);
+  }
+  assert.deepEqual(keysLoad({}, { stat: () => ({ file: false, size: 0 }) }).calls.map(([what]) => what), ["stat"], "what is no regular file is never opened (a FIFO would hold the start)");
+  for (const [content, why, note] of [
+    ["{", "not-json", "keys.json is not JSON, using Ctrl+Alt"],
+    ["[]", "not-object", "keys.json is not an object, using Ctrl+Alt"],
+    [{}, "no-chords", "keys.json names no chords, using Ctrl+Alt"],
+    [{ chords: "ctrl+meta" }, "unknown-chords", "keys.json: unknown chords value, using Ctrl+Alt"],
+    [{ chords: "CTRL+SHIFT" }, "unknown-chords", "keys.json: unknown chords value, using Ctrl+Alt"],
+    ["x".repeat(KEYS_LIMIT + 1), "too-large", "keys.json is too large, using Ctrl+Alt"],
+  ]) {
+    const got = keysLoad(content);
+    assert.deepEqual(family(got.read), { family: "ctrl+alt", why }, JSON.stringify(content).slice(0, 40));
+    assert.equal(chordFamilyNote(got.read), note);
+  }
+});
+
+test("on disk: keys.json is read from the OATS home given, never past the limit, and every failure is the default", (t) => {
+  const { env, home } = onDisk();
+  const file = keysPath(env, home);
+  assert.deepEqual(family(loadKeys({ env, home })), { family: "ctrl+alt", why: "missing" }, "no file");
+  fs.writeFileSync(file, '{ "chords": "ctrl+shift" }\n');
+  assert.deepEqual(family(loadKeys({ env, home })), { family: "ctrl+shift", why: null });
+  fs.writeFileSync(file, '{ "chords": "ctrl+shift"');
+  assert.deepEqual(family(loadKeys({ env, home })), { family: "ctrl+alt", why: "not-json" });
+  // Over the limit, in characters that take two bytes each: a part of it is never read as the whole.
+  fs.writeFileSync(file, `{ "chords": "ctrl+shift", "pad": "${"é".repeat(KEYS_LIMIT)}" }`);
+  assert.deepEqual(family(loadKeys({ env, home })), { family: "ctrl+alt", why: "too-large" });
+  fs.writeFileSync(file, `{ "chords": "ctrl+shift", "pad": "${"x".repeat(KEYS_LIMIT - 40)}" }`);
+  assert.ok(fs.statSync(file).size <= KEYS_LIMIT);
+  assert.deepEqual(family(loadKeys({ env, home })), { family: "ctrl+shift", why: null }, "a file within the limit is read");
+  fs.rmSync(file);
+  fs.mkdirSync(file);
+  assert.deepEqual(family(loadKeys({ env, home })), { family: "ctrl+alt", why: "unreadable" }, "a directory");
+  fs.rmdirSync(file);
+  assert.deepEqual(family(loadKeys({ env: { OATS_HOME_DIR: "/dev/null" }, home })), { family: "ctrl+alt", why: "missing" }, "an OATS home that is not a directory: no file");
+  if (typeof process.getuid !== "function" || process.getuid() === 0) { t.skip("needs a user that a file mode can stop"); return; }
+  fs.writeFileSync(file, '{ "chords": "ctrl+shift" }', { mode: 0o000 });
+  assert.deepEqual(family(loadKeys({ env, home })), { family: "ctrl+alt", why: "unreadable" }, "EACCES");
 });

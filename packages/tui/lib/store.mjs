@@ -10,7 +10,7 @@
 // Selection is an identity (the shared `instanceId`), never an index, so it survives every read;
 // the rows it moves among are the model's, in drawn order.
 import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings, chordKeys, chordsRead, paletteKeys } from "./actions.mjs";
-import { collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
+import { CHORDS, chordFamilyFrom, collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { defaultDetachKey } from "./config.mjs";
 import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, paletteStep, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, workspaceOf, LIST_WORDS } from "./model.mjs";
 import { backKeyId, backKeySequences, isBackKey } from "./term/through.mjs";
@@ -87,8 +87,11 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  `leader`: `{ read, waiting }` from the leader's read on, or null (see `leading`).
  *  `keyboard`: the flags the terminal confirmed for the kitty keyboard protocol (lib/main.mjs, the
  *  event `{ keyboard }`), or null while it has not; `chords`: the chords of `platform`, key id ->
- *  `does` (actions.mjs chordKeys), every one read while `keyboard` is not null, and the Alt+Shift
- *  arrows alone while it is null (actions.mjs chordsRead; see `leading`).
+ *  `does` (actions.mjs chordKeys), in the family keys.json chose, every one read while `keyboard`
+ *  is not null, and the Alt+Shift arrows alone while it is null (actions.mjs chordsRead; see
+ *  `leading`). `keysRead`: what keys.json said at the start (lib/config.mjs loadKeys, the shared
+ *  reader's frozen `{ family, why }`; no file when none is given): the family `chords` are bound
+ *  in, and why it is the default when the file did not choose it. The help names both.
  *  `palette`: the palette while it is open (see `paletteOpened`), or null; `paletteKeys` its own
  *  keys on `platform`, key id -> `does` (actions.mjs paletteKeys: none on macOS), which win over
  *  every other key while it is open. `recent`: the ids of the instances opened in this run, the
@@ -110,7 +113,7 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  agentsRoot, agent, reads, words }`, until its row is opened or two reads did not show it;
  *  `previews` the number of the last preview read asked in the run, so that an answer to a prompt
  *  already closed is never taken by the next one. */
-export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false, platform = process.platform, detachKey = defaultDetachKey(platform) }) {
+export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false, platform = process.platform, detachKey = defaultDetachKey(platform), keysRead = NO_KEYS_FILE }) {
   return Object.freeze({
     view: deployment === null ? "switcher" : "instances", back: deployment === null ? "switcher" : "instances",
     ctxs: Object.freeze(deployment === null ? [] : [deployment]), open: deployment,
@@ -121,13 +124,15 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     switcher: NO_SWITCHER,
     listed: NO_LIST, identities: new Map(),
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
-    leaderKey: backKeyId(detachKey), leader: null, keyboard: null, chords: chordKeys(platform === "darwin", actions), palette: null, paletteKeys: paletteKeys(platform === "darwin"), recent: Object.freeze([]), souls: NO_SOULS, capabilities: NO_CAPABILITIES,
+    leaderKey: backKeyId(detachKey), leader: null, keyboard: null, keysRead, chords: chordKeys(platform === "darwin", actions, CHORDS, keysRead.family), palette: null, paletteKeys: paletteKeys(platform === "darwin"), recent: Object.freeze([]), souls: NO_SOULS, capabilities: NO_CAPABILITIES,
     spawn: null, spawning: null, spawnCheck: null, arriving: null, previews: 0, tabs: Object.freeze([]), split: null, group: 0, aside: null,
     notice: null,
   });
 }
 
 const next = (state, changes) => Object.freeze({ ...state, ...changes });
+/** keys.json's answer when the run read none (a test's state): no file, the default family. */
+const NO_KEYS_FILE = chordFamilyFrom(null);
 
 /** The switcher's own: the filter, the selection and the scroll; `line`, what it says above its rows
  *  of what happened (lib/model.mjs SWITCHER_LINES: "gone", or the answer of a Remove); `refused`,

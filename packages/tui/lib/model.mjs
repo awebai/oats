@@ -14,7 +14,7 @@ import {
   startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage, retiringRows, soulRows, soulFacts, spawnRefusal,
   defaultSpawnChoices, spawnProblem, outcomeWords, previewFacts, deploymentLabel, subsequenceScore, soulMatches, soulCatalogFailure, catalogFailure,
   memberNames, capabilitySource, groupCapabilities, hostKeyOf, capabilitySections, matchCapabilities, soulsComposition, rosterAgentName, layerLabel, capabilityUsers,
-  capabilityFacts, CAPABILITY_COPY,
+  capabilityFacts, CAPABILITY_COPY, CHORD_FAMILY_LABELS, DEFAULT_CHORD_FAMILY, chordFamilyNote,
 } from "./client.mjs";
 import { LEADER, chordsRead, keyLabel } from "./actions.mjs";
 import { ownEllipsis, shownLines } from "./term/text.mjs";
@@ -775,6 +775,9 @@ export function model(state, { page, body = page, now, at, cols, area = cols }) 
     // The chords read now, `[key id, does]` (actions.mjs chordsRead), and whether the terminal
     // confirms the kitty keyboard protocol: then the help and a terminal's cheat sheet lead with them.
     chords: [...chordsRead(state.chords, state.keyboard !== null)], kitty: state.keyboard !== null,
+    // The family the chords are bound in (keys.json, lib/config.mjs loadKeys), its name, and the line that says
+    // why the file was not taken, or null (the shared chordFamilyNote): the help's chords section names both.
+    keys: state.keysRead ? Object.freeze({ family: state.keysRead.family, label: CHORD_FAMILY_LABELS[state.keysRead.family] ?? CHORD_FAMILY_LABELS[DEFAULT_CHORD_FAMILY], note: chordFamilyNote(state.keysRead) }) : null,
     // The palette's own keys, `[key id, does]` (actions.mjs paletteKeys; none on macOS): its cheat
     // sheet and the help name them.
     paletteKeys: [...state.paletteKeys],

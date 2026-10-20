@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { ACTIONS, LEADER, backKeyLabel } from "../lib/actions.mjs";
 import {
-  DETAIL_WITHHELD, TERMS, UNMATCHED_SECTION, cliRemoteRoster, deploymentState, displayLine, heldHome, instanceActs, livenessAnswers, livenessInput, observeIdentities, observedEntry,
+  DETAIL_WITHHELD, TERMS, UNMATCHED_SECTION, chordFamilyFrom, cliRemoteRoster, deploymentState, displayLine, heldHome, instanceActs, livenessAnswers, livenessInput, observeIdentities, observedEntry,
   originLead, panelInstances, primaryDeployment, remoteRosterState, rosterRows, rowReason, runtimeState, waitedText, waitingBelowText, waitingClock, waitingLabel, workspaceChoiceRows, workspaceChoices,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
@@ -1645,6 +1645,23 @@ test("at 60 columns, the smallest width the frame is drawn at, the help still na
       assert.equal(commandIn(lines, command), true, `${command} is whole at 60 columns${ascii ? ", in ASCII" : ""}`);
     }
     for (const line of lines) assert.equal(line.endsWith(cut), false, `no row of the help is cut at 60 columns: ${line.trim()}`);
+  }
+});
+
+test("at 60 columns the help's family lines (keys.json, docs/tui.md \"Switch to Ctrl+Shift\") stand whole in the chords' section: each word once, in order, no row cut, in every family, the note too", () => {
+  const SAID = Object.freeze([
+    [null, ['Shortcuts: Ctrl+Alt. For Ctrl+Shift (foot, Alacritty), set "chords": "ctrl+shift" in keys.json and restart.']],
+    [chordFamilyFrom('{ "chords": "ctrl+shift" }'), ["Shortcuts: Ctrl+Shift, from keys.json, but this terminal does not confirm the kitty keyboard protocol: use the leader."]],
+    [chordFamilyFrom('{ "chords": 7 }'), ['Shortcuts: Ctrl+Alt. For Ctrl+Shift (foot, Alacritty), set "chords": "ctrl+shift" in keys.json and restart.', "keys.json: unknown chords value, using Ctrl+Alt"]],
+  ]);
+  for (const [keysRead, sentences] of SAID) {
+    const state = golden({ platform: "linux", ...(keysRead ? { keysRead } : {}) });
+    const lines = helpLines(state, size(60, 250)), cut = glyphsOf(false).cut;
+    const from = lines.findIndex((line) => line.trim() === "Chords"), to = nextHeading(lines, from);
+    assert.equal(from > 0 && to > from, true, "the chords' section, after the leader's (no protocol)");
+    const section = lines.slice(from + 1, to).map((line) => line.trim()).filter(Boolean).join(" ");
+    assert.equal(section.startsWith(sentences.join(" ")), true, `${section.slice(0, 160)}`);
+    for (const line of lines.slice(from, to)) assert.equal(line.endsWith(cut), false, `no row is cut: ${line.trim()}`);
   }
 });
 

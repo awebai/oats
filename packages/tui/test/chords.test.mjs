@@ -5,14 +5,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS, CHORD_OWN, chordKeys, chordsRead, leaderHandles } from "../lib/actions.mjs";
-import { CHORDS, instanceId } from "../lib/client.mjs";
+import { CHORDS, chordFamilyFrom, chordFamilyNote, instanceId } from "../lib/client.mjs";
 import { roster } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { ESC_TIMEOUT_MS, createKeyParser, keyId, legacyEvents } from "../lib/term/keys.mjs";
 import { KEYBOARD_FLAGS, LEGACY_CHORDS, US_SHIFTED, confirmed, kittyId, kittyKey, legacyBytes } from "../lib/term/kitty.mjs";
 import { BACK_KEY_SPLIT_MS, backKeyId, backKeySequences, createThrough } from "../lib/term/through.mjs";
 import { ENTER, LEAVE, POP, PUSH, QUERY, SIGNAL_STATUS, createGuard } from "../lib/term/tty.mjs";
-import { CHORD_OPEN_RULE, CHORD_RULES, helpRows } from "../lib/views/help.mjs";
+import { CHORD_OPEN_RULE, CHORD_RULES, chordFamilyLines, helpRows } from "../lib/views/help.mjs";
 import { draw, fakeProcess, fakeStdin, fakeStdout, fakeTimers, instanceRow, observed, readTerminalOutput, rowStrings, stateOf } from "./helpers.mjs";
 
 const E = "\x1b";
@@ -191,9 +191,11 @@ test("under the protocol each Ctrl+Alt chord keeps its own key id, with or witho
   for (const [id] of LINUX_CHORDS) for (const typed of sent(id)) assert.deepEqual(ids(parser.feed(utf8(typed))), [id], `${id} as ${JSON.stringify(typed)}`);
   // Ctrl+Shift+K, Ctrl+Tab, Ctrl+Shift+Tab (phase 2's), Ctrl+Alt+0, Ctrl+Alt+Shift+1, Ctrl+Alt+L (no chord), Ctrl+Shift+C.
   assert.deepEqual(ids(parser.feed(utf8(`${E}[107;6u${E}[9;5u${E}[9;6u${E}[48;7u${E}[49:33;8u${E}[108;7u${E}[99;6u`))), ["ctrl+k", "tab", "shift+tab", "alt+0", "alt+!", "ctrl+alt+l", "ctrl+c"]);
-  // kittyId is the chords' spelling, and null for every other key.
+  // kittyId is the chords' spelling, and null for every other key. A Ctrl+Shift letter has the
+  // spelling of the Ctrl+Shift family's chords (`ctrl+shift+k`), and is still read as Ctrl+K above:
+  // it is a chord only where `chords` binds it (keys.json's ctrl+shift, below).
   assert.deepEqual(["107;7", "101:69;8", "49;7", "57;7", "107;6", "9;5", "48;7", "49;8", "107;3", "8364;7", "261::97;7"].map((params) => kittyId(kittyKey(params))),
-    ["ctrl+alt+k", "ctrl+alt+shift+e", "ctrl+alt+1", "ctrl+alt+9", null, null, null, null, null, null, null]);
+    ["ctrl+alt+k", "ctrl+alt+shift+e", "ctrl+alt+1", "ctrl+alt+9", "ctrl+shift+k", null, null, null, null, null, null]);
 });
 
 test("the Alt+Shift arrows read as their key ids with the protocol and without it: under it the lock keys are dropped from the modifier (a keypad arrow too), without it only Alt and Shift; with Ctrl too it is another key", () => {
@@ -759,4 +761,159 @@ test("under the protocol a terminal's cheat sheet leads with the chords, the lea
     assert.deepEqual(got, sheetRows(kept), `${rows} rows`);
     assert.equal(got.some((line) => /^ Ctrl\+\\ +commands$/.test(line)), true, `${rows} rows: the leader stands`);
   }
+});
+
+// ── The Ctrl+Shift family (docs/tui.md, "Switch to Ctrl+Shift"): keys.json's `chords`, read at the start.
+
+/** keys.json's answers (lib/config.mjs loadKeys, through the shared reader): the option chosen, and a file not taken. */
+const SHIFT_READ = chordFamilyFrom('{ "chords": "ctrl+shift" }');
+const UNKNOWN_READ = chordFamilyFrom('{ "chords": "ctrl+meta" }');
+/** The chords the TUI binds on Linux and Windows under the option (CHORDS `shift`), every row pinned:
+ *  seven move to Ctrl+Shift, the Alt+Shift arrows, Ctrl+Alt+1–9, group-next and filter keep their key. */
+const SHIFT_CHORDS = Object.freeze([
+  ["ctrl+shift+k", "palette"], ["ctrl+shift+p", "spawn"], ["ctrl+shift+s", "workspaces"],
+  ["alt+shift+up", "previous"], ["alt+shift+down", "next"], ["alt+shift+left", "tab-previous"], ["alt+shift+right", "tab-next"],
+  ["ctrl+alt+1", "tab-1"], ["ctrl+alt+2", "tab-2"], ["ctrl+alt+3", "tab-3"], ["ctrl+alt+4", "tab-4"], ["ctrl+alt+5", "tab-5"],
+  ["ctrl+alt+6", "tab-6"], ["ctrl+alt+7", "tab-7"], ["ctrl+alt+8", "tab-8"], ["ctrl+alt+9", "tab-9"],
+  ["ctrl+shift+m", "zoom"], ["ctrl+shift+w", "close-terminal"], ["ctrl+shift+e", "split-right"], ["ctrl+shift+d", "split-down"],
+  ["ctrl+alt+a", "group-next"], ["ctrl+alt+f", "filter"],
+]);
+const SHIFT_MAP = chordKeys(false, ACTIONS, CHORDS, "ctrl+shift");
+/** What a terminal sends for the Ctrl+Shift chord `id` under flags 1 and 4: its `CSI u` key with the
+ *  Shift and Ctrl bits (modifier 6), with flag 4's capital and base-layout key, and without them. */
+function sentShift(id) {
+  const code = /^ctrl\+shift\+([a-z])$/.exec(id)[1].charCodeAt(0), upper = code - 0x20;
+  return [`${E}[${code};6u`, `${E}[${code}:${upper};6u`, `${E}[${code}:${upper}:${code};6u`, `${E}[${code};70u`];
+}
+
+test("each family's chords, every row pinned: Ctrl+Alt by default (no file, or one not taken), the seven Ctrl+Shift rows under the option, the others' key kept; macOS has none in either", () => {
+  assert.deepEqual([...chordKeys(false, ACTIONS, CHORDS, "ctrl+alt")], LINUX_CHORDS);
+  assert.deepEqual([...chordKeys(false, ACTIONS, CHORDS)], LINUX_CHORDS, "the default family is Ctrl+Alt");
+  assert.deepEqual([...SHIFT_MAP], SHIFT_CHORDS);
+  assert.deepEqual([...SHIFT_MAP], CHORDS.filter((entry) => leaderHandles(entry.does)).map((entry) => [entry.shift, entry.does]), "the table's `shift` column, in its order");
+  const moved = SHIFT_CHORDS.filter(([key]) => key.startsWith("ctrl+shift+")).map(([, does]) => does);
+  assert.deepEqual(moved, ["palette", "spawn", "workspaces", "zoom", "close-terminal", "split-right", "split-down"]);
+  for (const family of ["ctrl+alt", "ctrl+shift"]) assert.deepEqual([...chordKeys(true, ACTIONS, CHORDS, family)], [], `macOS, ${family}: no chords, as before`);
+  // The store binds the family keys.json chose; with no file, or a file not taken, Ctrl+Alt.
+  const state = (keysRead, platform = "linux") => initialState({ cli: {}, home: "/h", platform, ...(keysRead ? { keysRead } : {}) });
+  assert.deepEqual([...state(null).chords], LINUX_CHORDS, "no keysRead: the default");
+  assert.deepEqual([...state(chordFamilyFrom(null)).chords], LINUX_CHORDS, "no file");
+  assert.deepEqual([...state(UNKNOWN_READ).chords], LINUX_CHORDS, "an unknown value");
+  assert.deepEqual([...state(SHIFT_READ).chords], SHIFT_CHORDS, "the option");
+  assert.equal(state(SHIFT_READ).keysRead, SHIFT_READ, "the store keeps what keys.json said, for the help");
+  assert.equal(state(SHIFT_READ, "darwin").chords.size, 0, "macOS: none, whatever the file says");
+});
+
+test("a key a user's tui.json binds keeps its key under the option too, row by row: the chord that has it drops, the other rows stay", () => {
+  // tui.json takes ctrl+alt+a and ctrl+alt+f (keys of the kept rows) for the help and the palette.
+  const rebound = ACTIONS.map((action) => (action.id === "help" ? { ...action, keys: ["ctrl+alt+a"] } : action.id === "palette" ? { ...action, keys: ["ctrl+k", "ctrl+alt+f"] } : action));
+  const map = chordKeys(false, rebound, CHORDS, "ctrl+shift");
+  assert.deepEqual([...map], SHIFT_CHORDS.filter(([key]) => key !== "ctrl+alt+a" && key !== "ctrl+alt+f"));
+  assert.deepEqual(rebound.find((action) => action.id === "palette").keys, ["ctrl+k", "ctrl+alt+f"], "the action keeps its keys");
+  // A table whose action holds ctrl+shift+k (no tui.json can write that id: term/keys.mjs isKeyId refuses it, as no
+  // key parser without the binding reads it): the palette's chord drops, the action keeps it, the other six stay.
+  const holding = ACTIONS.map((action) => (action.id === "help" ? { ...action, keys: ["ctrl+shift+k"] } : action));
+  const held = chordKeys(false, holding, CHORDS, "ctrl+shift");
+  assert.equal(held.has("ctrl+shift+k"), false, "the palette's chord drops");
+  assert.deepEqual(holding.find((action) => action.id === "help").keys, ["ctrl+shift+k"], "the action keeps its key");
+  assert.deepEqual([...held], SHIFT_CHORDS.filter(([key]) => key !== "ctrl+shift+k"), "every other row stays");
+  assert.equal(chordKeys(false, holding, CHORDS, "ctrl+alt").get("ctrl+alt+k"), "palette", "under the default family that key is no chord's: nothing drops");
+});
+
+test("without the protocol the option reads no chord but the Alt+Shift arrows: a Ctrl+Shift letter is Ctrl and its letter's byte, the agent's", () => {
+  assert.deepEqual([...chordsRead(SHIFT_MAP, false)], [["alt+shift+up", "previous"], ["alt+shift+down", "next"], ["alt+shift+left", "tab-previous"], ["alt+shift+right", "tab-next"]]);
+  assert.equal(chordsRead(SHIFT_MAP, true).size, SHIFT_CHORDS.length);
+  const base = stateOf(observed([instanceRow("dev", "dev-a")]), { platform: "linux", keysRead: SHIFT_READ });
+  assert.deepEqual(outcome(key(base, "ctrl+shift+k")), outcome({ state: base, effect: null }), "before the protocol is confirmed: nothing");
+  assert.notEqual(key(kitty(base), "ctrl+shift+k").state.palette, null, "under it: the palette");
+  assert.equal(key(kitty(base), "ctrl+shift+s").state.view, "switcher", "Ctrl+Shift+S: the switcher");
+  assert.equal(key(kitty(base), "ctrl+alt+k").state.palette, null, "Ctrl+Alt+K is no chord under the option");
+});
+
+test("condition 4, D and M: under the option and the protocol CSI 100;6u is split down and CSI 109;6u zoom, in the list and in a terminal; their legacy bytes 0x04 (EOF) and 0x0d (Enter) are never a chord, the protocol confirmed or not", () => {
+  for (const [letter, does, legacy, legacyId] of [["d", "split-down", "\x04", "ctrl+d"], ["m", "zoom", "\r", "enter"]]) {
+    const id = `ctrl+shift+${letter}`;
+    for (const typed of sentShift(id)) {
+      assert.deepEqual(ids(createKeyParser({ now: () => 0, keyboard: 5, chords: SHIFT_MAP }).feed(utf8(typed))), [id], `${id} as ${JSON.stringify(typed)}, in the list`);
+      assert.deepEqual(shown(scanner({ chords: SHIFT_MAP }).feed(utf8(`a${typed}b`))), ["input 61", `chord ${does} 62`], `${id} as ${JSON.stringify(typed)}, in a terminal`);
+    }
+    for (const keyboard of [5, 1, null, "asking"]) {
+      assert.deepEqual(ids(createKeyParser({ now: () => 0, keyboard, chords: SHIFT_MAP }).feed(utf8(legacy))), [legacyId], `${JSON.stringify(legacy)} under ${keyboard}: the list's ${legacyId}`);
+      assert.deepEqual(shown(scanner({ keyboard, chords: SHIFT_MAP }).feed(utf8(legacy))), [`input ${hex(utf8(legacy))}`], `${JSON.stringify(legacy)} under ${keyboard}: the agent's`);
+    }
+    // Under the default family the event is Ctrl and the letter, as before: Ctrl+D (EOF) and Enter for the agent.
+    assert.deepEqual(shown(scanner().feed(utf8(`${E}[${letter.charCodeAt(0)};6u`))), [`input ${hex(utf8(legacy))}`], `${id} under Ctrl+Alt: the agent's ${legacyId}`);
+    assert.deepEqual(ids(createKeyParser({ now: () => 0, keyboard: 5, chords: CHORD_MAP }).feed(utf8(`${E}[${letter.charCodeAt(0)};6u`))), [legacyId], `${id} under Ctrl+Alt, in the list: ${legacyId}`);
+  }
+  // The store: the chord's `does` from a terminal is the leader then its key, as every chord.
+  assert.equal(SHIFT_MAP.get("ctrl+shift+d"), "split-down");
+  assert.equal(SHIFT_MAP.get("ctrl+shift+m"), "zoom");
+});
+
+test("under the option every Ctrl+Shift chord is read from its protocol event, with or without flag 4's subfields and the lock keys; Ctrl+Alt+Shift with a letter (Alt held) is none of them, and an unbound Ctrl+Shift letter is Ctrl and the letter", () => {
+  const parser = createKeyParser({ now: () => 0, keyboard: 5, chords: SHIFT_MAP });
+  for (const [id, does] of SHIFT_CHORDS.filter(([key]) => key.startsWith("ctrl+shift+"))) for (const typed of sentShift(id)) {
+    assert.deepEqual(ids(parser.feed(utf8(typed))), [id], `${id} as ${JSON.stringify(typed)}`);
+    assert.deepEqual(shown(scanner({ chords: SHIFT_MAP }).feed(utf8(typed))), [`chord ${does} `], `${id} as ${JSON.stringify(typed)}, in a terminal`);
+  }
+  // Alt held: Ctrl+Alt+Shift+K, D, M. No Ctrl+Shift chord, their legacy bytes: ESC and the Ctrl byte.
+  for (const letter of ["k", "d", "m"]) {
+    const code = letter.charCodeAt(0), typed = `${E}[${code}:${code - 0x20};8u`;
+    assert.equal(kittyId(kittyKey(typed.slice(2, -1))), `ctrl+alt+shift+${letter}`);
+    const read = ids(createKeyParser({ now: () => 0, keyboard: 5, chords: SHIFT_MAP }).feed(utf8(typed)));
+    assert.equal(read.includes(`ctrl+shift+${letter}`), false, `Ctrl+Alt+Shift+${letter.toUpperCase()} is no Ctrl+Shift chord`);
+    assert.deepEqual(shown(scanner({ chords: SHIFT_MAP }).feed(utf8(typed))), [`input ${hex(legacyBytes(kittyKey(typed.slice(2, -1)), 5))}`], `Ctrl+Alt+Shift+${letter.toUpperCase()}: the agent's`);
+  }
+  // A Ctrl+Shift letter the option does not bind (C, the copy key; L): Ctrl and the letter, as before.
+  assert.deepEqual(ids(parser.feed(utf8(`${E}[99;6u${E}[108;6u`))), ["ctrl+c", "ctrl+l"]);
+  assert.deepEqual(shown(scanner({ chords: SHIFT_MAP }).feed(utf8(`${E}[108;6u`))), ["input 0c"]);
+  // kittyId: Ctrl and Shift without Alt and a letter only; a digit with Shift, Shift alone, Ctrl alone are not.
+  assert.deepEqual(["100;6", "109:77;6", "49:33;6", "107;2", "107;5", "100:68;8"].map((params) => kittyId(kittyKey(params))),
+    ["ctrl+shift+d", "ctrl+shift+m", null, null, null, "ctrl+alt+shift+d"]);
+});
+
+test("the help says which family is bound, at the top of the chords' section: Ctrl+Alt with how to switch; Ctrl+Shift from keys.json; the option without the protocol, use the leader; and why a file was not taken", () => {
+  const ALT_LINE = 'Shortcuts: Ctrl+Alt. For Ctrl+Shift (foot, Alacritty), set "chords": "ctrl+shift" in keys.json and restart.';
+  const SHIFT_LINE = "Shortcuts: Ctrl+Shift, from keys.json.";
+  const NO_PROTOCOL = "Shortcuts: Ctrl+Shift, from keys.json, but this terminal does not confirm the kitty keyboard protocol: use the leader.";
+  const keysOf = (read) => ({ family: read.family, label: read.family === "ctrl+shift" ? "Ctrl+Shift" : "Ctrl+Alt", note: chordFamilyNote(read) });
+  assert.deepEqual(chordFamilyLines(keysOf(chordFamilyFrom(null)), true), [ALT_LINE], "no file: nothing more to say");
+  assert.deepEqual(chordFamilyLines(keysOf(chordFamilyFrom(null)), false), [ALT_LINE]);
+  assert.deepEqual(chordFamilyLines(keysOf(SHIFT_READ), true), [SHIFT_LINE]);
+  assert.deepEqual(chordFamilyLines(keysOf(SHIFT_READ), false), [NO_PROTOCOL]);
+  assert.deepEqual(chordFamilyLines(keysOf(UNKNOWN_READ), true), [ALT_LINE, "keys.json: unknown chords value, using Ctrl+Alt"]);
+  assert.deepEqual(chordFamilyLines(keysOf(chordFamilyFrom(null, { code: "EACCES" })), false), [ALT_LINE, "keys.json cannot be read, using Ctrl+Alt"]);
+  assert.deepEqual(chordFamilyLines(keysOf(chordFamilyFrom("{")), true), [ALT_LINE, "keys.json is not JSON, using Ctrl+Alt"]);
+  assert.deepEqual(chordFamilyLines(null, true), [], "no family given: none");
+  // In the help, the sentences lead the chords' section, under its heading, before its own first sentence.
+  const said = (lines) => lines.join(" ").replace(/ +/g, " ");
+  const section = (lines) => lines.slice(lines.indexOf("  Chords"), lines.indexOf("  Chords") + 6);
+  const under = rowStrings(helpRows(ACTIONS, false, 140, "M-o", [...SHIFT_MAP], true, null, keysOf(SHIFT_READ)), 140).map((line) => line.trimEnd());
+  assert.deepEqual(section(under).slice(0, 4), ["  Chords", "", `  ${SHIFT_LINE}`, "  One keypress each, from every focus, a terminal's too: none reaches the agent."]);
+  assert.equal(under.some((line) => line.startsWith("  Ctrl+Shift+K ") && line.endsWith("palette, or Alt+O then k")), true, "the chords named in their family");
+  assert.equal(under.some((line) => line.startsWith("  Ctrl+Shift+D ") && line.endsWith("split down, or Alt+O then -")), true);
+  assert.equal(under.some((line) => line.startsWith("  Ctrl+Alt+A ") && line.endsWith("next group, or Alt+O then Tab")), true, "a kept row keeps its key");
+  const without = rowStrings(helpRows(ACTIONS, false, 140, "M-o", [...chordsRead(SHIFT_MAP, false)], false, null, keysOf(SHIFT_READ)), 140).map((line) => line.trimEnd());
+  assert.equal(said(section(without)).includes(NO_PROTOCOL), true, "without the protocol: the option cannot work here");
+  assert.equal(without.slice(without.indexOf("  Chords")).some((line) => line.startsWith("  Ctrl+Shift+")), false, "and no Ctrl+Shift chord is listed");
+  const fell = rowStrings(helpRows(ACTIONS, false, 140, "M-o", [...CHORD_MAP], true, null, keysOf(UNKNOWN_READ)), 140).map((line) => line.trimEnd());
+  assert.deepEqual(section(fell).slice(2, 5), [`  ${ALT_LINE}`, "  keys.json: unknown chords value, using Ctrl+Alt", "  One keypress each, from every focus, a terminal's too: none reaches the agent."]);
+  // The run's state reaches the help: the help view drawn from a state under the option, the protocol confirmed.
+  const state = kitty(stateOf(observed([instanceRow("dev", "dev-a")]), { platform: "linux", keysRead: SHIFT_READ }));
+  const shownHelp = draw(key(state, "?").state, { cols: 140, rows: 60 }).lines.join("\n");
+  assert.equal(shownHelp.includes(SHIFT_LINE), true, "the help drawn from the run's state");
+  assert.equal(draw(key(kitty(stateOf(observed([instanceRow("dev", "dev-a")]), { platform: "linux", keysRead: UNKNOWN_READ })), "?").state, { cols: 140, rows: 60 }).lines.join("\n").includes("keys.json: unknown chords value, using Ctrl+Alt"), true);
+  // macOS: no chords, no section, no line.
+  const mac = stateOf(observed([instanceRow("dev", "dev-a")]), { platform: "darwin", keysRead: SHIFT_READ });
+  assert.equal(draw(key(kitty(mac), "?").state, { cols: 140, rows: 60 }).lines.join("\n").includes("Shortcuts:"), false);
+});
+
+test("under the option a terminal's cheat sheet names the Ctrl+Shift chords it shows: the palette, close and zoom", () => {
+  const sz = { cols: 120, rows: 40 };
+  const terminal = opened(stateOf(observed(["dev-a", "dev-b", "dev-c", "dev-d"].map((name) => instanceRow("dev", name))), { platform: "linux", keysRead: SHIFT_READ }), "dev-a", "dev-b", "dev-c");
+  const chords = [["Ctrl+Shift+K", "palette", "c"], ["Alt+Shift+Up/Down", "agent", "c"], ["Alt+Shift+Left/Right", "tab", "c"], ["Ctrl+Shift+W", "close", "c"], ["Ctrl+Shift+M", "zoom", "c"]];
+  const leader = [["Ctrl+\\", "commands", "l"], ["Ctrl+\\ Esc", "the list", "l"], ["Ctrl+\\ Ctrl+\\", "types Ctrl+\\", "l"]];
+  assert.deepEqual(sheetOf(draw(kitty(terminal), sz)), sheetRows([...chords, ...leader]));
+  const arrows = chords.filter(([keys]) => keys.startsWith("Alt+Shift+"));
+  assert.deepEqual(sheetOf(draw(terminal, sz)), sheetRows([...leader, ...arrows]), "without the protocol: the leader's three, then the Alt+Shift arrows, as under Ctrl+Alt");
 });
