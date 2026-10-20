@@ -113,6 +113,10 @@ test("each harness's argv, exactly (proven by scripts/naming-isolation-proof.mjs
   assert.deepEqual(NAMING_CALLS.pi.argv("github-copilot/gpt-6-astra"), ["-p", "--no-session", "--no-tools", "--no-extensions", "--no-mcp", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-approve", "--model", "github-copilot/gpt-6-astra"]);
   assert.deepEqual(NAMING_CALLS.pi.argv(null), ["-p", "--no-session", "--no-tools", "--no-extensions", "--no-mcp", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-approve"]);
   for (const call of Object.values(NAMING_CALLS)) assert.equal(call.argv("m").some((a) => a.includes("Task:")), false, "the prompt is never in argv");
+  // No tools on either harness (the maintainer's condition on the stated exceptions, awebai/oats#1421).
+  const claude = NAMING_CALLS.claude.argv("haiku"), at = claude.indexOf("--tools");
+  assert.ok(at >= 0 && claude[at + 1] === "", 'claude: --tools ""');
+  for (const m of ["github-copilot/gpt-6-astra", null]) assert.ok(NAMING_CALLS.pi.argv(m).includes("--no-tools"), "pi: --no-tools");
 });
 
 test("namingEnvironment passes no OATS_INSTANCE* variable", () => {

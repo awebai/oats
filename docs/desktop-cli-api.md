@@ -2531,8 +2531,18 @@ or `--task <text>`). Like every preview it writes nothing and runs no hooks.
   first, and a call the budget ends makes `preflight.status` `timeout`. At
   most 4 KiB of its output is read.
 - **It starts none of the user's code: no MCP server, hook, plugin,
-  extension or project setting, with two stated exceptions, both below:
-  pi's own credential commands, and hooks in the host's managed policy.**
+  extension or project setting, and no tool on either harness.** Three
+  exceptions are stated:
+  - Claude Code's own built-in plugins (`cc-plugin-*@builtin`) load as
+    they always do, `--bare` included.
+  - Hooks in the host's managed policy (`managed-settings.json`) still
+    apply: they are the host admin's.
+  - pi runs its own credential commands (`!command` keys and headers in
+    models.json), as every pi launch does: they are its login.
+
+  A claude login through `apiKeyHelper` is not read (`--setting-sources
+  ""`): such a user gets `harness-failed` and a numbered name.
+
   Each harness's argv is proven to start nothing else
   (`scripts/naming-isolation-proof.mjs`, a recorded run against fixtures,
   rerun by an operator after a harness upgrade). The proof covers claude
@@ -2540,18 +2550,10 @@ or `--task <text>`). Like every preview it writes nothing and runs no hooks.
   - **claude**, model `haiku`: `-p --tools "" --strict-mcp-config
     --setting-sources "" --disable-slash-commands --no-session-persistence
     --output-format text --model haiku`. Its native login is kept, which
-    `--bare` would not keep. A claude login through `apiKeyHelper` is not
-    read (`--setting-sources ""`): such a user gets `harness-failed` and a
-    numbered name. Claude Code's own built-in plugins
-    (`cc-plugin-*@builtin`) load as they always do, `--bare` included; none
-    of the user's plugins, hooks or MCP servers do. Hooks in the host's
-    managed policy (`managed-settings.json`) still apply: they are the host
-    admin's.
+    `--bare` would not keep.
   - **pi**, the instance's model: `-p --no-session --no-tools
     --no-extensions --no-mcp --no-skills --no-prompt-templates --no-themes
-    --no-context-files --no-approve [--model <m>]`. The stated exception:
-    pi runs its own credential commands (`!command` keys and headers in
-    models.json), as every pi launch does: they are its login.
+    --no-context-files --no-approve [--model <m>]`.
   - **codex** is not supported. Its naming call is not proven to start
     nothing, so a codex soul is numbered with `unsupported-harness`.
 - **The name.**

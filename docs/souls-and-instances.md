@@ -331,8 +331,10 @@ refused (`E_INSTANCE_NAME_TAKEN`). The Desktop's spawn dialog adds the role to
 a typed name.
 `oats spawn <soul> --preview --suggest-name --task-file <f>` asks the soul's
 own harness for the descriptive words, from the task, in one call that starts
-none of the user's MCP servers, hooks, plugins or extensions (pi's credential
-commands and the host's managed-policy hooks aside). The preview then answers for
+none of the user's MCP servers, hooks, plugins or extensions. Claude Code's
+built-in plugins, the host's managed-policy hooks and pi's credential commands
+are the stated exceptions; a claude login through `apiKeyHelper` is not read,
+so that user's name stays numbered (`harness-failed`). The preview then answers for
 `--name <descriptive>-<role>`, de-duplicated the same way. On claude and pi
 only; any other harness, and any failure of the call, leaves the name numbered
 and says why
