@@ -158,7 +158,7 @@ export const LEADER_AGAIN = "the leader again: types it into the terminal that h
  *  flows. */
 export const CHORD_RULES = Object.freeze([
   "Your terminal may take some first: Windows Terminal takes Ctrl+Alt+1 to Ctrl+Alt+9 for its own tabs, and the Alt+Shift arrows while its panes are split.",
-  "Terminals without the kitty keyboard protocol (GNOME Terminal and the other VTE terminals, Konsole before 26.08, Terminal.app, WezTerm unless enable_kitty_keyboard is set) send only the Alt+Shift arrows.",
+  "Terminals without the kitty keyboard protocol (GNOME Terminal and the other VTE terminals, Konsole before 26.08, WezTerm unless enable_kitty_keyboard is set) send only the Alt+Shift arrows.",
   "On a keyboard layout where AltGr is Ctrl+Alt (Windows), a Ctrl+Alt key that types a character types it.",
   "The leader works in every terminal.",
   "docs/tui.md, \"Chords\", has the table of terminals.",

@@ -149,7 +149,8 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, openForg
   menu.addEventListener("keydown", (event) => {
     if (event.key === "Tab") { close(true); return; }
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(true); return; }
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    // As on the trigger: an arrow chord the keymap binds is the keymap's, from an item too.
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || keymapTakes(event)) return;
     event.preventDefault(); event.stopPropagation();
     const available = items.filter(item => !item.disabled);
     const current = available.indexOf(doc.activeElement);

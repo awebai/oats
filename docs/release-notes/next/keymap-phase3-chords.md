@@ -17,8 +17,9 @@
   and `⌘⌥A`. Help, the views, and stop, restart, start and retire stay on
   the leader, which still works everywhere.
   - **In `oats tui` the Ctrl+Alt chords need the kitty keyboard protocol,**
-    as the 0.66 chords did. The Alt+Shift arrows work in every terminal,
-    GNOME Terminal and Terminal.app included.
+    as the 0.66 chords did. The Alt+Shift arrows work in every terminal on
+    Linux and Windows, GNOME Terminal included. On macOS `oats tui` has no
+    chords: the leader does it all there.
   - **While the terminal confirms the protocol, the help and the cheat sheet
     lead with the chords,** each with its leader key beside it. The leader
     keeps its own section.

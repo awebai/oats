@@ -369,6 +369,7 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   ([Chords](#chords)) the chords come first: `Ctrl+Alt+K palette`,
   `Alt+Shift+Up/Down agent`, `Alt+Shift+Left/Right tab` (with two tabs or
   more), `Ctrl+Alt+W close`, `Ctrl+Alt+Z zoom`, then the leader's three.
+  Without it the leader's three lead, and the Alt+Shift arrows follow them.
   On a short screen the sheet gives up rows from its end, and the leader's
   `commands` last of all. A leader inside a bracketed paste is pasted, not
   taken.
@@ -1216,11 +1217,12 @@ which a terminal never passes to a program.
   confirms the protocol: one row per chord, then the leader and its key
   ("or `Alt+O` then `k`"), and the leader's own section after them. Without
   the protocol the leader leads, and only the Alt+Shift arrows are listed
-  as chords.
+  as chords. The cheat sheet names chords while an agent's terminal has the
+  focus; the list's names its own keys, which need no modifier.
 - **Your terminal may take some first** ([the matrix](#which-terminals-let-the-chords-through)).
   Windows Terminal takes `Ctrl+Alt+1` to `Ctrl+Alt+9` for its own tabs, and
   the Alt+Shift arrows while its panes are split. GNOME Terminal and the
-  other VTE terminals, Konsole before 26.08, Terminal.app, and WezTerm unless
+  other VTE terminals, Konsole before 26.08, and WezTerm unless
   `enable_kitty_keyboard` is set have no protocol: there only the Alt+Shift
   arrows reach `oats tui`. The leader works in every terminal.
 - **A character typed with AltGr stays a character.** On Windows `AltGr` is

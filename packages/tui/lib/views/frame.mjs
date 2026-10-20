@@ -285,7 +285,8 @@ function types(m) {
  *  the agent the TUI reads the leader and the chords only: the leader then Esc gives the list the
  *  focus, and the leader twice types the leader into the terminal; while the terminal confirms the
  *  kitty keyboard protocol the chords lead there (docs/tui.md, "Chords"; chordHints), the leader's
- *  hints after them, and the leader is the last given up. In the palette, the spawn prompt
+ *  hints after them, and the leader is the last given up; without it the leader's lead, and the
+ *  Alt+Shift arrows, the chords that come then, follow them (the first given up). In the palette, the spawn prompt
  *  (spawnHints), a confirmation, the filter field, the help and the switcher, how to work them: the keys they
  *  read are their own, so they are the TUI's words, but for the confirmation's close key and the
  *  field's clear, which are the user's. Else it is small: a view's list or its detail names what
@@ -312,7 +313,7 @@ function cheatSheet(m) {
   if (listing && m.terminal?.focus === "terminal" && !m.palette && !m.spawn) {
     const label = backKeyLabel(m.detachKey), list = keyLabel(LEADER.find((entry) => entry.does === "list").keys[0]);
     const leader = [made("list", keyText(`${label} ${list}`), "the list"), made("again", keyText(`${label} ${label}`), types(m))];
-    return m.kitty ? [...chordHints(m), ...led(leader)] : led(leader);
+    return m.kitty ? [...chordHints(m), ...led(leader)] : [...led(leader), ...chordHints(m)];
   }
   if (m.palette) return led([own("run", "Enter", "run"), own("move", "Up/Down", "move"), own("close", "Esc", "close")]);
   if (m.spawn) return led(spawnHints(m.spawn, m.ascii));
@@ -346,8 +347,9 @@ const SHEET_CHORDS = Object.freeze([
   Object.freeze([["close-terminal"], "close"]),
   Object.freeze([["zoom"], "zoom"]),
 ]);
-/** The chord hints of a terminal's focus under the protocol (docs/tui.md, "Chords"): those of
- *  SHEET_CHORDS read now (the model's `chords`: tui.json may have taken a key), the tabs' only
+/** The chord hints of a terminal's focus (docs/tui.md, "Chords"): those of SHEET_CHORDS read now
+ *  (the model's `chords`: tui.json may have taken a key; without the protocol the Alt+Shift
+ *  arrows alone), the tabs' only
  *  with two tabs or more, as the leader's hint has them. A pair's keys share their modifiers:
  *  `Alt+Shift+Up/Down` (keysTogether). They stand in a block of their own (cheatRows). */
 function chordHints(m) {

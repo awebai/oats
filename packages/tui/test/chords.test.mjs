@@ -700,7 +700,7 @@ test("without the protocol the leader leads, and a short chords' section after i
 test("what a terminal may take first is said in sentences: Windows Terminal's tabs and panes, the terminals without the protocol, AltGr, the leader, and where the table of terminals is", () => {
   assert.deepEqual(CHORD_RULES, [
     "Your terminal may take some first: Windows Terminal takes Ctrl+Alt+1 to Ctrl+Alt+9 for its own tabs, and the Alt+Shift arrows while its panes are split.",
-    "Terminals without the kitty keyboard protocol (GNOME Terminal and the other VTE terminals, Konsole before 26.08, Terminal.app, WezTerm unless enable_kitty_keyboard is set) send only the Alt+Shift arrows.",
+    "Terminals without the kitty keyboard protocol (GNOME Terminal and the other VTE terminals, Konsole before 26.08, WezTerm unless enable_kitty_keyboard is set) send only the Alt+Shift arrows.",
     "On a keyboard layout where AltGr is Ctrl+Alt (Windows), a Ctrl+Alt key that types a character types it.",
     "The leader works in every terminal.",
     "docs/tui.md, \"Chords\", has the table of terminals.",
@@ -728,7 +728,7 @@ function sheetRows(hints) {
   return hints.map(([key, word, block]) => ` ${key.padEnd(col(block) - 2)} ${word}`);
 }
 
-test("under the protocol a terminal's cheat sheet leads with the chords, the leader's hints after them; the leader is given up last; without the protocol, and in the list, the sheet is as before", () => {
+test("under the protocol a terminal's cheat sheet leads with the chords, the leader's hints after them; the leader is given up last; without the protocol the leader's lead and the Alt+Shift arrows follow; in the list the sheet is as before", () => {
   const sz = { cols: 120, rows: 40 };
   const terminal = opened(FOUR(), "dev-a", "dev-b", "dev-c");
   const chords = [["Ctrl+Alt+K", "palette", "c"], ["Alt+Shift+Up/Down", "agent", "c"], ["Alt+Shift+Left/Right", "tab", "c"], ["Ctrl+Alt+W", "close", "c"], ["Ctrl+Alt+Z", "zoom", "c"]];
@@ -736,7 +736,13 @@ test("under the protocol a terminal's cheat sheet leads with the chords, the lea
   const full = [...chords, ...leader];
   assert.deepEqual(sheetOf(draw(kitty(terminal), sz)), sheetRows(full));
   assert.equal(sheetRows(full)[2], " Alt+Shift+Left/Right tab", "the widest chord whole, its word whole");
-  assert.deepEqual(sheetOf(draw(terminal, sz)), sheetRows(leader), "without the protocol: the leader's three, as before");
+  const arrows = chords.filter(([key]) => key.startsWith("Alt+Shift+"));
+  assert.deepEqual(sheetOf(draw(terminal, sz)), sheetRows([...leader, ...arrows]), "without the protocol: the leader's three, then the Alt+Shift arrows");
+  for (let rows = 15; rows < 40; rows++) {
+    const got = sheetOf(draw(terminal, { cols: 120, rows })), kept = [...leader, ...arrows];
+    while (kept.length > got.length) kept.splice(kept.findLastIndex(([, word]) => word !== "commands"), 1);
+    assert.deepEqual(got, sheetRows(kept), `without the protocol, ${rows} rows: the arrows are given up first`);
+  }
   // One tab: no tab hint.
   assert.deepEqual(sheetOf(draw(kitty(opened(FOUR(), "dev-a")), sz)), sheetRows(full.filter(([, word]) => word !== "tab")));
   // In the list the sheet is the list's, the protocol or not.

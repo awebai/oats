@@ -347,7 +347,7 @@ test("actions are app buttons with keyboard navigation, dismissal and refresh re
 
 // On a row's actions trigger, ↑/↓ open the menu, but an arrow chord the keymap binds is the keymap's
 // (keybindings.mjs keymapTakes): Alt+Shift+↓ opens the next instance's terminal from there too, and a
-// rebind follows; an arrow chord bound to nothing still opens the menu.
+// rebind follows; an arrow chord bound to nothing still opens the menu. The open menu's items do the same.
 test("the actions trigger gives way to the keymap's arrow chords, and only to those", t => {
   const dom = menuDom(), doc = dom.window.document;
   const options = { invoke: assert.fail, openLifecycle: assert.fail, done() {}, report: assert.fail };
@@ -367,6 +367,18 @@ test("the actions trigger gives way to the keymap's arrow chords, and only to th
   setBinding("roster.openNext", "Ctrl+Shift+↓");
   assert.equal(press({ key: "ArrowDown", ctrlKey: true, shiftKey: true }).defaultPrevented, false, "the rebind is the keymap's");
   assert.equal(trigger.getAttribute("aria-expanded"), "false");
+  // In the open menu too: the keymap's chord passes the focused item by; plain ↓ still walks the items.
+  resetBinding("roster.openNext");
+  press({ key: "ArrowDown" });
+  const first = doc.activeElement;
+  assert.equal(trigger.getAttribute("aria-expanded"), "true");
+  const inMenu = (init) => { const e = new dom.window.KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }); doc.activeElement.dispatchEvent(e); return e; };
+  for (const key of ["ArrowDown", "ArrowUp"]) {
+    assert.equal(inMenu({ key, altKey: true, shiftKey: true }).defaultPrevented, false, `Alt+Shift+${key} in the menu is the keymap's`);
+    assert.equal(doc.activeElement, first, "and moves no focus");
+  }
+  assert.equal(inMenu({ key: "ArrowDown", altKey: true }).defaultPrevented, true, "Alt+↓, bound to nothing, walks the menu");
+  assert.notEqual(doc.activeElement, first);
 });
 
 /* ── #982: a reason that is the row's own text is shown with who made it ── */

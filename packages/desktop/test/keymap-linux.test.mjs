@@ -553,6 +553,25 @@ test("macOS ⌘⌥ chords name their key by the physical key, through the layout
   });
 });
 
+// 0.66's shortcuts editor recorded a ⌘⌥ press by the character ⌥ typed: ⌘⌥O on a US Mac was stored
+// as Mod+Alt+Ø. That stored rebind still matches the press, before the physical key's default.
+test("macOS: a ⌘⌥ rebind stored by the character ⌥ typed (0.66) keeps working, ahead of a default", t => {
+  registerAll(t);
+  const mac = (key, code, mods = { metaKey: true, altKey: true }) => ev(key, { code, ...mods });
+  const opts = { isMac: true, insideTerminal: false };
+  assert.equal(matchEvent(mac("ø", "KeyO"), opts), "app.workspaces", "without a rebind: the default on KeyO");
+  setBinding("app.palette", "Mod+Alt+Ø");
+  assert.equal(getBinding("app.palette", true), "Mod+Alt+Ø", "stored as 0.66 recorded it");
+  assert.equal(matchEvent(mac("ø", "KeyO"), opts), "app.palette", "the rebind wins the press it was recorded from");
+  assert.equal(matchEvent(mac("ø", "KeyO"), { isMac: true, insideTerminal: true }), "app.palette", "in a terminal too (the palette is allowlisted)");
+  setBinding("app.workspaces", "Mod+Alt+Shift+Ø");
+  assert.equal(matchEvent(mac("Ø", "KeyO", { metaKey: true, altKey: true, shiftKey: true }), opts), "app.workspaces", "with Shift");
+  // A default is never matched by the typed character: only a stored rebind is.
+  resetAllBindings();
+  t.after(registerAction({ id: "x.oslash", label: "x", context: "global", defaultChord: "Mod+Alt+Ø", run: () => {} }));
+  assert.equal(matchEvent(mac("ø", "KeyO"), opts), "app.workspaces");
+});
+
 // Windows AltGr (Ctrl+Alt) types a character, and the engine keeps it as typed: Spanish AltGr+1 is
 // "|", which a chord holding a modifier would otherwise read as "\\" (MODIFIED_ALIASES).
 test("Windows AltGr: its character is kept as typed (no alias), and the modifier keydowns before it match nothing", t => {

@@ -656,20 +656,36 @@ export function matchEvent(e, opts = {}) {
   const plainKey = isPlainChord(evChord);
   if (plainKey && editable) return null;
 
-  let globalHit = null;
-  let contextHit = null;
-  for (const action of actions.values()) {
-    if (!contextEligible(action.context) || !actionLive(action)) continue;
-    const bound = parseChord(getBinding(action.id, isMac) || "");
-    if (!bound || !chordMatches(bound, evChord, isMac)) continue;
-    // Inside a terminal, every other chord stays with the attached program, even after
-    // a custom rebind (on macOS the event's chord equals the bound one here).
-    if (insideTerminal && !terminalAllows(action.id, evChord, isMac)) continue;
-    if (action.context === "global") globalHit = globalHit || action;
-    else contextHit = contextHit || action;
-  }
-  const hit = contextHit || globalHit; // specific context wins over global
+  const find = (chord, only = () => true) => {
+    let globalHit = null;
+    let contextHit = null;
+    for (const action of actions.values()) {
+      if (!only(action.id) || !contextEligible(action.context) || !actionLive(action)) continue;
+      const bound = parseChord(getBinding(action.id, isMac) || "");
+      if (!bound || !chordMatches(bound, chord, isMac)) continue;
+      // Inside a terminal, every other chord stays with the attached program, even after
+      // a custom rebind (on macOS the event's chord equals the bound one here).
+      if (insideTerminal && !terminalAllows(action.id, chord, isMac)) continue;
+      if (action.context === "global") globalHit = globalHit || action;
+      else contextHit = contextHit || action;
+    }
+    return contextHit || globalHit; // specific context wins over global
+  };
+  // A rebind the shortcuts editor recorded before macOS ⌘⌥ chords were read by the physical key
+  // holds the character ⌥ typed (⌘⌥O was stored as Mod+Alt+Ø): it still matches that press, and
+  // first, so a default on the physical key (Mod+Alt+O) never takes it.
+  const typed = typedOptionChord(e, isMac, evChord);
+  const hit = (typed && find(typed, (id) => Object.prototype.hasOwnProperty.call(overrides, id))) || find(evChord);
   return hit ? hit.id : null;
+}
+
+/** A macOS ⌘⌥ or ⌃⌥ press read as the engine read it before the physical key named it: by the
+ *  character ⌥ typed (`key`), or null when that is the same chord or none. */
+function typedOptionChord(e, isMac, physical) {
+  if (!isMac || !e.altKey || !(e.metaKey || e.ctrlKey)) return null;
+  const key = baseKey(e.key);
+  if (!key || key === physical.key || ["meta", "control", "alt", "altgraph", "shift"].includes(key)) return null;
+  return settleChord({ key, mod: !!e.metaKey, ctrl: !!e.ctrlKey, alt: true, shift: !!e.shiftKey });
 }
 
 const letThroughEvents = new WeakSet();
