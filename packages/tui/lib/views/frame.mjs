@@ -435,6 +435,11 @@ function cheatRows(hints, cols) {
   });
 }
 
+/** The cheat sheet a title row carries (withKeys): without the kitty keyboard protocol the
+ *  Alt+Shift arrows follow the leader's hints in the sheet's rows, but a title row keeps to the
+ *  leader's; under it the chords lead there as in the rows. */
+const titleSheet = (m) => cheatSheet(m).filter((h) => m.kitty || h.block !== "chords");
+
 /** An overlay's or a detail page's first row on a narrow terminal, where it has the whole screen:
  *  its essential keys (the cheat sheet's, but for the leader, the palette, help and quit) at the
  *  right, dim, as many as fit after what the row holds, given up from the end. With `first`, the
@@ -557,7 +562,7 @@ function framed(m, size) {
   const overlay = (drawn) => {
     if (g.wide) { sidebar(m, g, rows, listOf(m, g)); barred(m, rows, g.listCols); }
     drawn.forEach((spans, i) => { if (i < size.rows) rows[i] = [...rows[i], ...placed(spans, main.col)]; });
-    if (!g.wide) rows[0] = withKeys(rows[0], cheatSheet(m), cols);
+    if (!g.wide) rows[0] = withKeys(rows[0], titleSheet(m), cols);
   };
 
   // The palette, whatever is under it.
@@ -627,7 +632,7 @@ function framed(m, size) {
   // Over the whole screen no cheat sheet is drawn: the terminal's title row, the TUI's own, carries
   // its keys at the right instead (the leader, then Esc for the list), and while the leader waits,
   // the leader's hint, as many as fit, its last (`Esc the list`) kept.
-  if (zoomed) rows[area.title] = m.leader ? withKeys(rows[area.title], leaderHints(m), cols, { skip: [], last: true }) : withKeys(rows[area.title], cheatSheet(m), cols, { skip: ["again"] });
+  if (zoomed) rows[area.title] = m.leader ? withKeys(rows[area.title], leaderHints(m), cols, { skip: [], last: true }) : withKeys(rows[area.title], titleSheet(m), cols, { skip: ["again"] });
   // The focused group's terminal, when it shows one: the agent's cursor, where the agent has it,
   // while what is typed goes to the agent.
   const shownArea = area !== null && area.id !== null && m.terminal ? { title: area.title, top: area.top, col: area.col, cols: area.cols, rows: area.rows, whole: area.whole } : null;

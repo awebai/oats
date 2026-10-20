@@ -3146,7 +3146,7 @@ test("Enter: the terminal stands beside the sidebar, where the detail was, edge 
   }
 });
 
-test("while the terminal has the focus the cheat sheet names the leader, the leader then Esc back to the list and the leader twice, which types it, and nothing else; over the whole screen the terminal's title row carries the leader's keys at its right, dim: each size, starting or open, zoomed or not, the default key and a rebound one (QA note 2)", () => {
+test("while the terminal has the focus the cheat sheet names the leader, the leader then Esc back to the list and the leader twice, which types it, then (without the kitty keyboard protocol) the Alt+Shift arrows that come; over the whole screen the terminal's title row carries the leader's keys at its right, and no chord, dim: each size, starting or open, zoomed or not, the default key and a rebound one (QA note 2)", () => {
   for (const sz of [S60, S79, S80, S120, size(200, 50)]) for (const detachKey of [undefined, "F12", "M-x", "C-]"]) for (const [how, status] of [["focus", "starting"], ["focus", "open"], ["zoom", "open"]]) {
     const d = drawPanel(panelIn(how, { detachKey, status }), sz), key = detachKey === undefined ? LEADER_KEY : backKeyLabel(detachKey), at = `${sz.cols}x${sz.rows} ${how} ${status} ${detachKey}`;
     if (sz.cols < WIDE || how === "zoom") {
@@ -3154,7 +3154,7 @@ test("while the terminal has the focus the cheat sheet names the leader, the lea
       assert.equal(row.startsWith(" dev-a ") && row.endsWith(keys), true, `${at}: ${row}`);
       assert.equal(d.cells[0].slice(sz.cols - 1 - keys.length, sz.cols - 1).every((cell) => cell.text === " " || cell.style.dim), true, `${at}: dim, a cell before the edge`);
       assert.equal(d.cells[0][sz.cols - 1].text, " ", `${at}: the last cell left empty`);
-    } else assert.deepEqual(hintsOf(d), [[key, "commands"], [`${key} Esc`, "the list"], [`${key} ${key}`, `types ${key}`]], at);
+    } else assert.deepEqual(hintsOf(d), [[key, "commands"], [`${key} Esc`, "the list"], [`${key} ${key}`, `types ${key}`], ["Alt+Shift+Up/Down", "agent"]], at);
   }
 });
 
@@ -3374,7 +3374,7 @@ test("a rebound leader is named in its hint, by the key tui.json gave it spelt f
 test("once the leader's next key comes the cheat sheet is back: Esc, the leader again, or a key not in its table in the list; from a terminal, Esc gives the list's sheet, and a key not in the table leaves the terminal's", () => {
   for (const key of ["escape", golden().leaderKey, "x", "q"]) assert.deepEqual(hintsOf(draw(leaderThen(golden(), key).state, S80)), SHEET_80, key);
   assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus"), "escape").state, S80)), TERMINAL_SHEET);
-  assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus"), "x").state, S80)), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`]]);
+  assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus"), "x").state, S80)), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], ["Alt+Shift+Up/Down", "agent"]]);
 });
 
 // ── The palette (T1b) ────────────────────────────────────────────────────────────────────────────
@@ -3518,7 +3518,7 @@ test("while the palette is open no terminal is drawn, even with one open: from 8
   ]);
   const closed = drawPanel(press(opened, ["escape"]).state, S80);
   assert.equal(closed.terminal.whole, false);
-  assert.deepEqual(hintsOf(closed), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`]]);
+  assert.deepEqual(hintsOf(closed), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], ["Alt+Shift+Up/Down", "agent"]]);
 });
 
 test("hostile text in an instance's name or in the query goes through shown(): no control or bidi character in any cell of the palette, and every row inside the terminal, at 80x24 and 60x15, in UTF-8 and in ASCII", () => {
