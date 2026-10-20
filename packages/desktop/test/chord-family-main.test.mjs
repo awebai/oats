@@ -10,7 +10,7 @@ import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { KEYS_LIMIT } from "../../client/keys-file.mjs";
-import { createChordFamilySource, installChordFamilyHandlers, readChordFamily, readKeysText, writeChordFamily } from "../chord-family.mjs";
+import { CHORD_FAMILY_FS, createChordFamilySource, installChordFamilyHandlers, readChordFamily, readKeysBytes, writeChordFamily } from "../chord-family.mjs";
 
 const NO_HOME = join("/", "nonexistent", "chord-family-test-home");
 
@@ -24,7 +24,7 @@ function home(t) {
 /** The real fs calls chord-family.mjs makes, each recorded as [name, ...args] (a buffer as its length). */
 function recording(overrides = {}) {
   const calls = [];
-  const names = ["openSync", "fstatSync", "readSync", "closeSync", "mkdirSync", "writeSync", "fsyncSync", "renameSync", "unlinkSync", "lstatSync", "realpathSync", "readlinkSync"];
+  const names = CHORD_FAMILY_FS;
   const fs = Object.fromEntries(names.map((name) => [name, (...args) => {
     calls.push([name, ...args.map((a) => (Buffer.isBuffer(a) ? `<${a.length} bytes>` : a))]);
     return (overrides[name] ?? realFs[name])(...args);
@@ -58,9 +58,13 @@ test("read: the family the file names, and every way it can fail is Ctrl+Alt, wi
     assert.deepEqual(read, expected, text);
     assert.ok(Object.isFrozen(read));
   }
-  // Not UTF-8, and a directory where the file should be: a file that cannot be read.
-  h.write(Buffer.from([0x7b, 0xff, 0xfe, 0x7d]));
-  assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+alt", "unreadable", "keys.json cannot be read, using Ctrl+Alt"));
+  // The bytes as the shared reader decodes them, the TUI's too (packages/tui/test/config.test.mjs has the same
+  // two files): a byte-order mark is no text, and a byte that is not UTF-8 makes the file none.
+  h.write(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('{ "chords": "ctrl+shift" }')]));
+  assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+shift"), "a byte-order mark");
+  h.write(Buffer.concat([Buffer.from('{ "chords": "ctrl+shift", "x": "'), Buffer.from([0xc3]), Buffer.from('" }')]));
+  assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+alt", "not-utf8", "keys.json is not UTF-8 text, using Ctrl+Alt"));
+  // A directory where the file should be: a file that cannot be read.
   rmSync(h.file); mkdirSync(h.file);
   assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+alt", "unreadable", "keys.json cannot be read, using Ctrl+Alt"));
 });
@@ -85,7 +89,7 @@ test("read: at most KEYS_LIMIT + 1 bytes; a longer file is too large, one at the
   // A long multi-byte file is too large too, not "not UTF-8" because the read cut a character.
   h.write(`{ "chords": "ctrl+shift", "x": "${"é".repeat(KEYS_LIMIT)}" }`);
   assert.equal(readChordFamily(realFs, h.file).why, "too-large");
-  assert.equal(readKeysText(realFs, h.file).text.length, KEYS_LIMIT + 1);
+  assert.equal(readKeysBytes(realFs, h.file).bytes.length, KEYS_LIMIT + 1);
   // The opened file is checked and closed, never read past.
   assert.ok(calls.some(([name]) => name === "fstatSync") && calls.at(-1)[0] === "closeSync");
 });
@@ -116,10 +120,34 @@ test("write: a missing config/ is made, mode 0700, and the file is { chords }", 
   assert.equal(statSync(h.config).mode & 0o777, 0o700);
   assert.equal(readFileSync(h.file, "utf8"), '{\n  "chords": "ctrl+shift"\n}\n');
   assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+shift"));
-  // A file that is not a JSON object gives way to { chords }.
-  h.write("not json");
-  writeChordFamily(realFs, h.file, "ctrl+alt");
-  assert.deepEqual(JSON.parse(readFileSync(h.file, "utf8")), { chords: "ctrl+alt" });
+});
+
+test("write: a file whose keys cannot all be kept is refused, and left as it was", t => {
+  const h = home(t);
+  for (const [bytes, why] of [["not json", "not-json"], ["[1, 2]", "not-object"], [Buffer.from([0x7b, 0xff, 0x7d]), "not-utf8"],
+    [`{ "chords": "ctrl+alt", "pad": "${"x".repeat(KEYS_LIMIT)}" }`, "too-large"]]) {
+    h.write(bytes);
+    const before = readFileSync(h.file);
+    assert.throws(() => writeChordFamily(realFs, h.file, "ctrl+shift"), (error) => error.code === "E_KEYS_UNWRITABLE" && error.why === why, why);
+    assert.deepEqual(readFileSync(h.file), before, `${why}: untouched`);
+    assert.deepEqual(readdirSync(h.config), ["keys.json"], `${why}: no file of its own left`);
+  }
+  // A file that fits when read but not once indented is written on one line, every key kept, and read back.
+  const later = Array(3000).fill(0);
+  h.write(JSON.stringify({ chords: "ctrl+alt", later }));
+  writeChordFamily(realFs, h.file, "ctrl+shift");
+  assert.deepEqual(JSON.parse(readFileSync(h.file, "utf8")), { chords: "ctrl+shift", later });
+  assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+shift"));
+});
+
+test("write: a file that is there and cannot be read is refused: what it holds is not known, so nothing is written", { skip: process.getuid?.() === 0 && "root reads every file" }, t => {
+  const h = home(t);
+  h.write('{ "chords": "ctrl+alt", "later": 1 }');
+  chmodSync(h.file, 0o000);
+  assert.throws(() => writeChordFamily(realFs, h.file, "ctrl+shift"), (error) => error.code === "EACCES");
+  chmodSync(h.file, 0o600);
+  assert.deepEqual(JSON.parse(readFileSync(h.file, "utf8")), { chords: "ctrl+alt", later: 1 }, "untouched");
+  assert.deepEqual(readdirSync(h.config), ["keys.json"]);
 });
 
 test("write: a keys.json that is a symbolic link is written where it leads, and the link stays", t => {
@@ -219,6 +247,12 @@ test("main wires it: the source on keys.json, the handlers behind the frame guar
   assert.match(main, /import \{ createChordFamilySource, installChordFamilyHandlers \} from "\.\/chord-family\.mjs";/);
   assert.match(main, /createChordFamilySource\(\{[^]*?env: process\.env, home: homedir\(\)[^]*?webContents\.send\("chord-family:changed", state\)/);
   assert.match(main, /installChordFamilyHandlers\(\{ ipc: ipcMain, guard, source: chordFamily \}\);/);
+  // The fs main hands over has every call the module makes (a missing lstatSync once read as no file).
+  const given = /createChordFamilySource\(\{\s*fs: \{([^}]*)\}/.exec(main)[1].split(",").map((name) => name.trim()).filter(Boolean);
+  assert.deepEqual([...given].sort(), [...CHORD_FAMILY_FS].sort());
+  const imported = /import \{([^}]*)\} from "node:fs";/.exec(main)[1].split(",").map((name) => name.trim());
+  for (const name of CHORD_FAMILY_FS) assert.ok(imported.includes(name), `main imports ${name}`);
+  assert.throws(() => createChordFamilySource({ fs: { openSync: realFs.openSync }, env: {}, home: NO_HOME }), /fs lacks fstatSync/);
   assert.match(main, /app\.on\("browser-window-focus", \(\) => chordFamily\.refresh\(\)\);/);
   const preload = readFileSync(new URL("../preload.cjs", import.meta.url), "utf8");
   for (const line of ['chordFamily: () => ipcRenderer.invoke("chord-family:get")', 'setChordFamily: (family) => ipcRenderer.invoke("chord-family:set", family)', 'ipcRenderer.on("chord-family:changed", fn)']) {

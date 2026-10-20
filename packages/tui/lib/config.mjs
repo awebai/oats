@@ -197,10 +197,10 @@ const NODE_IO = Object.freeze({
     }
   },
   read(path) { return readCapped(path).toString("utf8"); },
-  // keys.json (loadKeys): at most KEYS_LIMIT and one byte, never thrown for its size. A file over the
-  // limit is answered one character a byte, so the shared reader finds it longer than KEYS_LIMIT
-  // (too-large) whatever its bytes are, and never reads a part of it as the whole.
-  keys(path) { const bytes = readUpTo(path, KEYS_LIMIT); return bytes.toString(bytes.length > KEYS_LIMIT ? "latin1" : "utf8"); },
+  // keys.json (loadKeys): its bytes, at most KEYS_LIMIT and one, never thrown for its size. The
+  // shared reader decodes them (packages/client/keys-file.mjs), as it does the Desktop's, so the same
+  // bytes are the same family in both clients; one byte over the limit is too large there.
+  keys(path) { return readUpTo(path, KEYS_LIMIT); },
 });
 /** What link(2) answers on a file system without hard links (FAT, exFAT, some network mounts). */
 const NO_LINKS = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS"]);
@@ -355,7 +355,7 @@ const NOT_A_FILE = Object.freeze({ reason: "not a regular file" });
  *  at the next start. macOS has no family; the answer is read there too, and ignored.
  *
  *  `io` is the file system (node:fs when omitted): `io.stat(path)` as loadConfig's, and
- *  `io.keys(path)` the file's text, at most KEYS_LIMIT and one byte of it (NODE_IO). Nothing it
+ *  `io.keys(path)` the file's bytes, at most KEYS_LIMIT and one of them (NODE_IO). Nothing it
  *  throws reaches the user: it is the reader's `error`. */
 export function loadKeys({ env = process.env, home = homedir(), io = NODE_IO } = {}) {
   const path = keysPath(env, home);

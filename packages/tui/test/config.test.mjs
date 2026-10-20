@@ -1038,6 +1038,12 @@ test("on disk: keys.json is read from the OATS home given, never past the limit,
   fs.writeFileSync(file, `{ "chords": "ctrl+shift", "pad": "${"x".repeat(KEYS_LIMIT - 40)}" }`);
   assert.ok(fs.statSync(file).size <= KEYS_LIMIT);
   assert.deepEqual(family(loadKeys({ env, home })), { family: "ctrl+shift", why: null }, "a file within the limit is read");
+  // The bytes as the shared reader decodes them, the Desktop's too (packages/desktop/test/chord-family-main.test.mjs
+  // has the same two files): a byte-order mark is no text, and a byte that is not UTF-8 makes the file none.
+  fs.writeFileSync(file, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('{ "chords": "ctrl+shift" }')]));
+  assert.deepEqual(family(loadKeys({ env, home })), { family: "ctrl+shift", why: null }, "a byte-order mark");
+  fs.writeFileSync(file, Buffer.concat([Buffer.from('{ "chords": "ctrl+shift", "x": "'), Buffer.from([0xc3]), Buffer.from('" }')]));
+  assert.deepEqual(family(loadKeys({ env, home })), { family: "ctrl+alt", why: "not-utf8" }, "not UTF-8, in a value nobody reads");
   fs.rmSync(file);
   fs.mkdirSync(file);
   assert.deepEqual(family(loadKeys({ env, home })), { family: "ctrl+alt", why: "unreadable" }, "a directory");

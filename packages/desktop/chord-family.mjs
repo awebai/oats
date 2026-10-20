@@ -25,13 +25,18 @@ import { KEYS_LIMIT, chordFamilyFrom, chordFamilyNote, keysPath, keysWithFamily 
  * open would wait for a writer, in the main process). A flag a platform lacks adds nothing. */
 const OPEN_FLAGS = constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOCTTY ?? 0);
 
-/** keys.json's text as the reader takes it: `{ text }`, or `{ error }`, the error the read threw
- * (or one standing for it: a directory or a FIFO, and text that is not UTF-8, are a file that
- * cannot be read). At most KEYS_LIMIT + 1 bytes are read: a file longer than the limit answers
- * its first KEYS_LIMIT + 1 bytes, one character each (latin1), so that the reader sees text longer
- * than the limit and says it is too large. The path is opened first and the opened file is
- * checked, never the path (host-theme.mjs readBounded). */
-export function readKeysText(fs, path) {
+/** The fs calls this module makes, every one of which `fs` must have: main passes them by name, and
+ * createChordFamilySource refuses an `fs` without one (a call that is missing must never read as a
+ * file that is missing). */
+export const CHORD_FAMILY_FS = Object.freeze(["openSync", "fstatSync", "readSync", "closeSync", "mkdirSync", "writeSync",
+  "fsyncSync", "renameSync", "unlinkSync", "lstatSync", "realpathSync", "readlinkSync"]);
+
+/** keys.json's bytes as the reader takes them: `{ bytes }`, or `{ error }`, the error the read threw
+ * (or one standing for it: a directory or a FIFO is a file that cannot be read). At most
+ * KEYS_LIMIT + 1 bytes are read; the shared reader decodes them, as it does the TUI's, and says a
+ * longer file is too large. The path is opened first and the opened file is checked, never the
+ * path (host-theme.mjs readBounded). */
+export function readKeysBytes(fs, path) {
   let fd = null;
   try {
     fd = fs.openSync(path, OPEN_FLAGS);
@@ -39,9 +44,7 @@ export function readKeysText(fs, path) {
     const buffer = Buffer.alloc(KEYS_LIMIT + 1);
     let length = 0;
     for (let n; length < buffer.length && (n = fs.readSync(fd, buffer, length, buffer.length - length, null)) > 0;) length += n;
-    if (length > KEYS_LIMIT) return { text: buffer.toString("latin1", 0, length) };
-    try { return { text: new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, length)) }; }
-    catch { return { error: Object.assign(new Error("keys.json is not UTF-8"), { code: "EILSEQ" }) }; }
+    return { bytes: buffer.subarray(0, length) };
   } catch (error) { return { error }; }
   finally { if (fd !== null) { try { fs.closeSync(fd); } catch { /* nothing to release */ } } }
 }
@@ -50,16 +53,20 @@ export function readKeysText(fs, path) {
  * (chordFamilyFrom's family and why, and chordFamilyNote's line or null). Every way the file can
  * fail is the default, Ctrl+Alt. */
 export function readChordFamily(fs, path) {
-  const { text = null, error = null } = readKeysText(fs, path);
-  const read = chordFamilyFrom(text, error);
+  const { bytes = null, error = null } = readKeysBytes(fs, path);
+  const read = chordFamilyFrom(bytes, error);
   return Object.freeze({ family: read.family, why: read.why, note: chordFamilyNote(read) });
 }
 
 /** Where a write of `path` goes: the file a symbolic link at `path` leads to, else `path` itself
- * (no entry, or one that is no link). A link to nothing is written at its target too. */
+ * (no entry, or one that is no link). A link to nothing is written at its target too. Any other
+ * failure to look is thrown: nothing is written. */
 function linkTarget(fs, path) {
   let entry;
-  try { entry = fs.lstatSync(path); } catch { return path; }
+  try { entry = fs.lstatSync(path); } catch (error) {
+    if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return path;
+    throw error;
+  }
   if (!entry.isSymbolicLink()) return path;
   try { return fs.realpathSync(path); } catch {
     const to = fs.readlinkSync(path);
@@ -68,15 +75,18 @@ function linkTarget(fs, path) {
 }
 
 /** Write `family` to keys.json at `path`: the file's current text with `chords` set and every other
- * key kept (keysWithFamily; a file that cannot be read, or is not a JSON object, gives way to
- * `{ "chords" }`). Atomic: the new text goes to a file of its own in the same directory (mode 0600,
+ * key kept (keysWithFamily). A file that is there and cannot be read, or that keysWithFamily cannot
+ * keep whole (not a JSON object, too large), is refused: the error is thrown and nothing is
+ * written, so that no key is lost; the page says the file could not be written. Atomic: the new text goes to a file of its own in the same directory (mode 0600,
  * made where nothing is, synced), which is then renamed over keys.json; a failure removes it and
  * leaves keys.json as it was. The directory is made, mode 0700, when it is missing. Throws a
  * TypeError, before touching anything, for a family that is not one of CHORD_FAMILIES, and the
  * failure of any step. `stamp` names the temporary file (tests). */
 export function writeChordFamily(fs, path, family, { stamp = `${process.pid}.${Date.now()}` } = {}) {
   if (!CHORD_FAMILIES.includes(family)) throw new TypeError(`unknown chord family: ${String(family)}`);
-  const text = keysWithFamily(readKeysText(fs, path).text ?? null, family);
+  const current = readKeysBytes(fs, path);
+  if (current.error && current.error.code !== "ENOENT" && current.error.code !== "ENOTDIR") throw current.error;
+  const text = keysWithFamily(current.bytes ?? null, family);
   // A keys.json that is a symbolic link (a dotfile manager's) is written where it leads, so the
   // rename replaces the file it names and the link stays.
   const target = linkTarget(fs, path);
@@ -107,6 +117,8 @@ export function writeChordFamily(fs, path, family, { stamp = `${process.pid}.${D
  * `send(state)` hands a state to every window, and is called only for one that differs from the
  * last one read, so a change made by one window, or by hand, reaches all of them at once. */
 export function createChordFamilySource({ fs, env, home, send = () => {} }) {
+  const missing = CHORD_FAMILY_FS.filter((name) => typeof fs?.[name] !== "function");
+  if (missing.length) throw new TypeError(`chord-family: fs lacks ${missing.join(", ")}`);
   const path = keysPath(env, home);
   let last = null;
   function read() {

@@ -1184,8 +1184,8 @@ Each terminal's defaults at the release
 On Linux and Windows. macOS has no option: the Desktop keeps its ⌘ chords
 there, and `oats tui` the leader.
 
-- **In OATS Desktop:** the Shortcuts page (`Ctrl+,`), at its top, **Shortcuts
-  anywhere**: choose **Ctrl+Shift (foot, Alacritty)**. The Desktop writes the
+- **In OATS Desktop:** the Shortcuts page (`Ctrl+,`), at its top, **Shortcut
+  family, shared with oats tui**: choose **Ctrl+Shift (foot, Alacritty)**. The Desktop writes the
   file below and switches its keys at once. **Ctrl+Alt (default)** switches
   back. A change by hand reaches the Desktop when it next gets the focus.
 - **Or by hand:** write `$OATS_HOME_DIR/config/keys.json`, else
@@ -1202,7 +1202,8 @@ there, and `oats tui` the leader.
   read or is larger than 16 KiB, one that is not a JSON object, one with no
   `chords` or another value: each means Ctrl+Alt, and the help says why
   (`keys.json: unknown chords value, using Ctrl+Alt`). The Desktop changes
-  only `chords` and keeps every other key in the file.
+  only `chords` and keeps every other key in the file; a file it cannot
+  keep whole it leaves as it is, and says so.
 - **It is the clients' file.** The kernel never reads it, and `tui.json`
   does not hold it.
 - **Your own keys still win, row by row.** A key you give an action in
@@ -1371,19 +1372,10 @@ both read; the TUI keeps no copy). The leader stays the key that always
 works, and the one for help, the views and the acts (stop, restart, start,
 retire), which have no chord.
 
-| Chord (Linux and Windows) | With the Ctrl+Shift option | Does | The leader then |
-|---|---|---|---|
-| `Ctrl+Alt+K` | `Ctrl+Shift+K` | opens the palette | `k` |
-| `Ctrl+Alt+P` | `Ctrl+Shift+P` | spawns an agent | `n` |
-| `Ctrl+Alt+O` | `Ctrl+Shift+S` | opens the switcher | `o` |
-| `Alt+Shift+Up`, `Alt+Shift+Down` | kept | opens the terminal of the instance before or after; while the palette is open, its previous and next group instead ([The palette](#the-palette)) | `Up`, `Down` |
-| `Alt+Shift+Left`, `Alt+Shift+Right` | kept | shows the tab before or after the shown one | `Left`, `Right` |
-| `Ctrl+Alt+1` to `Ctrl+Alt+8`, `Ctrl+Alt+9` | kept | shows the focused group's first to eighth tab, and its last | – |
-| `Ctrl+Alt+Z` | `Ctrl+Shift+M` | zooms the shown terminal in or out | `z` |
-| `Ctrl+Alt+W` | `Ctrl+Shift+W` | closes the shown terminal's tab | `w` |
-| `Ctrl+Alt+E`, `Ctrl+Alt+Shift+E` | `Ctrl+Shift+E`, `Ctrl+Shift+D` | splits the panel side by side, or one above the other | `\|`, `-` |
-| `Ctrl+Alt+A` | kept | goes to the other group | `Tab` |
-| `Ctrl+Alt+F` | kept | the filter | `/` |
+Every chord, in both families, with what it does and the leader's key for
+it, is in [Every action's keys](#every-actions-keys). While the palette is
+open, `Alt+Shift+Up` and `Alt+Shift+Down` move between its groups instead
+([The palette](#the-palette)).
 
 They are one family: Ctrl+Alt with a letter or a digit acts, and Alt+Shift
 with the leader's arrow moves. No terminal in the table below takes them by

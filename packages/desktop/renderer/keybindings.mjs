@@ -643,7 +643,9 @@ export function keymapConflicts(isMac = defaultIsMac()) {
     const key = [action.id, other.id].sort().join("|");
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ chord, actions: [action, other] });
+    // `own`: which of the two the user bound there. When only one is, that one runs where both
+    // apply (matchEvent: an override wins over a default), and the editor says so.
+    out.push({ chord, actions: [action, other], own: [own(action.id), own(other.id)] });
   }
   return out;
 }

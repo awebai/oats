@@ -324,9 +324,14 @@ test("a stored rebind that clashes with another binding is surfaced, never chang
   const banner = doc.querySelector(".kb-clashes");
   assert.equal(banner.hidden, false);
   assert.equal(banner.getAttribute("role"), "status");
-  assert.match(banner.textContent, /⌘W is both “Command palette” and “Close tab”/);
+  assert.match(banner.textContent, /⌘W runs “Command palette” \(yours\) where both apply; “Close tab” has it by default\. Rebind or reset one\./);
   const paletteRow = doc.querySelector('.kb-chord[data-action-id="app.palette"]').closest(".kb-row");
   assert.match(paletteRow.querySelector(".kb-conflict").textContent, /Also bound to “Close tab”/, "and marked on its row");
+  // Both sides set by the user: neither holds it by default, so both are named, as before.
+  setBinding("tabs.close", "Mod+W");
+  editor.close();
+  editor.open();
+  assert.match(doc.querySelector(".kb-clashes").textContent, /⌘W is both “(Command palette|Close tab)” and “(Close tab|Command palette)”\. Rebind or reset one\./);
   // A clash between defaults only (no stored rebind) is not the operator's to fix: not listed.
   resetAllBindings();
   assert.deepEqual(keymapConflicts(true), []);
@@ -741,12 +746,12 @@ test("chord family: Linux/Windows shows the choice at the top, in its words, nam
   assert.ok(choice, "the choice is there");
   assert.equal(choice.tagName, "FIELDSET");
   assert.equal(choice.previousElementSibling.className, "kb-head", "at the top, under the head");
-  assert.equal(choice.querySelector("legend").textContent, "Shortcuts anywhere");
+  assert.equal(choice.querySelector("legend").textContent, "Shortcut family, shared with oats tui");
   assert.deepEqual([...choice.querySelectorAll("label")].map((l) => l.textContent.trim()), ["Ctrl+Alt (default)", "Ctrl+Shift (foot, Alacritty)"]);
   assert.deepEqual({ ...CHORD_FAMILY_WORDS.options }, { "ctrl+alt": "Ctrl+Alt (default)", "ctrl+shift": "Ctrl+Shift (foot, Alacritty)" });
   assert.equal(f.radio("ctrl+shift").checked, true, "the family in use is the one chosen");
   assert.equal(f.radio("ctrl+alt").checked, false);
-  assert.equal(choice.querySelector(".kb-family-tui").textContent, "oats tui uses it from its next start.");
+  assert.equal(choice.querySelector(".kb-family-tui").textContent, "Both work here; pick the one your terminal passes to oats tui. oats tui uses it from its next start.");
   assert.equal(choice.querySelector(".kb-family-note").hidden, true, "nothing more to say");
   assert.equal(f.chordOf("Command palette"), "Ctrl+Shift+K", "the rows show the family's keys");
 });
@@ -818,7 +823,7 @@ test("chord family: a stored override on one of the seven keys shows its clash w
   await f.choose("ctrl+shift");
   const banner = f.doc.querySelector(".kb-clashes");
   assert.equal(banner.hidden, false);
-  assert.match(banner.textContent, /Ctrl\+Shift\+K is both “Command palette” and “Sidebar: show or hide”|Ctrl\+Shift\+K is both “Sidebar: show or hide” and “Command palette”/);
+  assert.match(banner.textContent, /Ctrl\+Shift\+K runs “Sidebar: show or hide” \(yours\) where both apply; “Command palette” has it by default\./);
   const row = f.doc.querySelector('.kb-chord[data-action-id="sidebar.toggle"]').closest(".kb-row");
   assert.match(row.querySelector(".kb-conflict").textContent, /Also bound to “Command palette”/);
   assert.equal(getBinding("sidebar.toggle", false), "Ctrl+Shift+K", "the stored rebind is kept");

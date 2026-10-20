@@ -14,7 +14,7 @@
 // Sidebar keys; then the groups by context.
 //
 // On Linux/Windows its top holds the chord family (docs/desktop-keyboard.md, "Switch to
-// Ctrl+Shift"): a two-way choice, "Shortcuts anywhere", Ctrl+Alt (the default) or Ctrl+Shift, which
+// Ctrl+Shift"): a two-way choice, "Shortcut family, shared with oats tui", Ctrl+Alt (the default) or Ctrl+Shift, which
 // names the family in use. A change writes keys.json through main at once (renderer/chord-family.mjs)
 // and the keymap switches at once; the TUI, which shares the file, takes it at its next start, as
 // the line under the choice says, with the note main sends when keys.json was there and not taken.
@@ -100,14 +100,23 @@ export function shortcutMatches({ label = "", group = "", chord = null, keys: sh
   return words.length > 0 && words.every(w => keys.some(k => (KEY_WORDS.get(k) || [k]).some(name => name.startsWith(w))));
 }
 
+/** One clash of keymapConflicts, said: when only one side is the user's, the one that runs where
+ * both apply (matchEvent: an override wins over a default), else both named, as before. */
+const clashWords = (isMac) => ({ chord, actions: [a, b], own = [true, true] }) => {
+  const key = formatChord(chord, isMac);
+  if (own[0] === own[1]) return `${key} is both “${a.label}” and “${b.label}”`;
+  const [yours, fixed] = own[0] ? [a, b] : [b, a];
+  return `${key} runs “${yours.label}” (yours) where both apply; “${fixed.label}” has it by default`;
+};
+
 /** The chord family choice's words: its title, each family's option, and the line under it. */
 export const CHORD_FAMILY_WORDS = Object.freeze({
-  title: "Shortcuts anywhere",
+  title: "Shortcut family, shared with oats tui",
   options: Object.freeze({
     "ctrl+alt": `${CHORD_FAMILY_LABELS["ctrl+alt"]} (default)`,
     "ctrl+shift": `${CHORD_FAMILY_LABELS["ctrl+shift"]} (foot, Alacritty)`,
   }),
-  tui: "oats tui uses it from its next start.",
+  tui: "Both work here; pick the one your terminal passes to oats tui. oats tui uses it from its next start.",
   /** When main could not write keys.json: the family in use stays. */
   unwritten: (family) => `Could not write keys.json: the shortcuts stay ${CHORD_FAMILY_LABELS[family] ?? CHORD_FAMILY_LABELS[DEFAULT_CHORD_FAMILY]}.`,
 });
@@ -291,7 +300,7 @@ export function createKeybindingsEditor({ doc = document, isMac, chordFamily = n
       clashEl.hidden = !clashes.length;
       clashEl.textContent = clashes.length
         ? `${clashes.length === 1 ? "A shortcut you set clashes" : `${clashes.length} shortcuts you set clash`} with another: ${clashes
-          .map(({ chord, actions: [a, b] }) => `${formatChord(chord, isMac)} is both “${a.label}” and “${b.label}”`).join("; ")}. Rebind or reset one.`
+          .map(clashWords(isMac)).join("; ")}. Rebind or reset one.`
         : "";
       const groups = groupActions();
       if (!groups.length) {

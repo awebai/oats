@@ -16,7 +16,7 @@
     `Ctrl+Alt+F` the filter, the Alt+Shift arrows and `Ctrl+Alt+1` to
     `Ctrl+Alt+9`.
   - **To switch,** choose **Ctrl+Shift (foot, Alacritty)** under
-    **Shortcuts anywhere** on the Desktop's Shortcuts page, or write
+    **Shortcut family, shared with oats tui** on the Desktop's Shortcuts page, or write
     `{ "chords": "ctrl+shift" }` to `~/.oats/config/keys.json`
     (`$OATS_HOME_DIR/config/keys.json` when that is set). The Desktop
     switches at once; `oats tui` reads the file at its next start. A

@@ -13,7 +13,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, screen, shell }
 import { spawn, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync, lstatSync, statSync, fstatSync, opendirSync, openSync, readSync, closeSync, watch,
-  mkdirSync, writeSync, fsyncSync, unlinkSync } from "node:fs";
+  mkdirSync, writeSync, fsyncSync, unlinkSync, readlinkSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -301,7 +301,7 @@ installHostThemeHandlers({ ipc: ipcMain, guard, source: hostTheme });
 // comes back to Desktop, writes it when the Shortcuts page changes the choice (only `chords`,
 // atomically), and hands the family to every window at once. Plain state only: no path, no content.
 const chordFamily = createChordFamilySource({
-  fs: { openSync, fstatSync, readSync, closeSync, mkdirSync, writeSync, fsyncSync, renameSync, unlinkSync },
+  fs: { openSync, fstatSync, readSync, closeSync, mkdirSync, writeSync, fsyncSync, renameSync, unlinkSync, lstatSync, realpathSync, readlinkSync },
   env: process.env, home: homedir(),
   send: (state) => {
     for (const win of BrowserWindow.getAllWindows()) {

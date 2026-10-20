@@ -216,6 +216,12 @@ table, and the hint leaves it out.
 
 ## The keymap as shipped
 
+The keys come in three layers, as in `oats tui`:
+
+1. **In the sidebar:** plain keys, such as `n` to spawn, `w` for the switcher, `/` to filter ([Sidebar keys](#sidebar-keys)).
+2. **Anywhere, a terminal included:** the shortcuts below, ⌘K and the rest on macOS, `Ctrl+Alt+K` and the rest on Linux and Windows by default, `Ctrl+Shift+K` and the rest [as the option](#the-ctrlshift-option). Not plain `Ctrl+K`: that is the program's, kill to the end of the line in Claude Code, Codex, pi and the shell.
+3. **Always:** [the leader](#the-leader), `Alt+O` then a key (`Ctrl+\` on macOS).
+
 | Action (id) | macOS | Linux / Windows (Ctrl+Alt, the default) | Ctrl+Shift option (Linux / Windows) | Works in a terminal (Linux/Win) |
 |---|---|---|---|---|
 | Command palette (`app.palette`) | ⌘K | Ctrl+Alt+K | Ctrl+Shift+K | yes (plain Ctrl+K, kill to the end of the line, stays the program's) |
@@ -429,12 +435,33 @@ one.
   by default). Ctrl+Shift+K already holds Shift, so under the option the
   palette moves up with ArrowUp.
 
+### Which family for my terminal
+
+The choice is shared with `oats tui`, so pick it by the terminal you run
+`oats tui` in. In the Desktop both families work. `✓` is a family whose
+chords reach `oats tui` in that terminal, `✗` one whose chords do not, with
+the reason (docs/tui.md, [Which family for my
+terminal](../../../docs/tui.md#which-family-for-my-terminal), and its full
+matrix).
+
+| Terminal | Ctrl+Alt (default) | Ctrl+Shift (the option) |
+|---|---|---|
+| foot | ✓ | ✓ |
+| Alacritty | ✓ | ✓ |
+| Ghostty | ✓ | ✗ Ghostty closes its own tab on Ctrl+Shift+W, taking oats tui with it |
+| kitty | ✓ | ✗ kitty takes Ctrl+Shift+K, P, S, W and E for itself; W closes its window, `oats tui` with it |
+| WezTerm | ✓ with `enable_kitty_keyboard`; without it only the Alt+Shift arrows | ✗ WezTerm takes Ctrl+Shift+K, P, M and W for itself: clear the scrollback, its command palette, hide the window, close the tab |
+| GNOME Terminal | ✗ no kitty keyboard protocol (VTE has none): only the Alt+Shift arrows arrive | ✗ no kitty keyboard protocol: a Ctrl+Shift letter reaches a program as the Ctrl letter |
+| Konsole | ✓ since 26.08 | ✗ Konsole takes all seven for itself; Ctrl+Shift+W closes the tab |
+| Windows Terminal | ✓, but `Ctrl+Alt+1` to `9` are its tabs, and the Alt+Shift arrows resize its split panes | ✗ Windows Terminal takes Ctrl+Shift+K, P, M, W and D for itself; W closes the pane |
+
 ### Switch to Ctrl+Shift
 
 - **On the Shortcuts page** (`app.shortcuts`, Ctrl+,), at its top,
-  Linux/Windows only: **Shortcuts anywhere**, with **Ctrl+Alt (default)** and
-  **Ctrl+Shift (foot, Alacritty)**. Under it: "oats tui uses it from its next
-  start." A change writes the file at once and switches the keymap at once,
+  Linux/Windows only: **Shortcut family, shared with oats tui**, with
+  **Ctrl+Alt (default)** and **Ctrl+Shift (foot, Alacritty)**. Under it: "Both
+  work here; pick the one your terminal passes to oats tui. oats tui uses it
+  from its next start." A change writes the file at once and switches the keymap at once,
   in every window, with no restart.
 - **Or by hand:** `$OATS_HOME_DIR/config/keys.json`, else
   `~/.oats/config/keys.json`, beside the TUI's `tui.json`:
@@ -451,7 +478,10 @@ one.
   a later client adds survives an older Desktop. It writes a temp file in
   the same directory, then renames it over the file, so the file is never
   half written. A `keys.json` that is a symbolic link is written where the
-  link leads, and the link stays.
+  link leads, and the link stays. A file it cannot keep whole (one it
+  cannot read, not a JSON object, or too large once `chords` is set) it
+  leaves as it is, and the page says "Could not write keys.json": fix or
+  remove the file, then choose again.
 - **It is the clients' file.** The kernel never reads it.
 - The reader is `packages/client/keys-file.mjs`, which the TUI reads too.
 
