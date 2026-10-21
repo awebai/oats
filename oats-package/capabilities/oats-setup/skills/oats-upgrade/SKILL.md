@@ -132,8 +132,13 @@ realpath "$(npm prefix -g)/lib/node_modules/@awebai/oats"   # Windows: <prefix>/
 ```
 
 When they differ (a Node version manager, another prefix), or npm answers
-`EACCES`, hand the person `npm install -g @awebai/oats@$V` to run from
-their own shell. Then `oats version --json` must report `$V`.
+`EACCES`, the CLI the person uses is not the one your shell runs: hand the
+person the install, and then, for each deployment, the bridge step and the
+check below, all to run from their own shell. Your `oats` is still the old
+CLI, so never run the bridge step yourself in that case; check what they
+ran with their output, or with `oats doctor <deployment>` read only for its
+warnings. Otherwise, `oats version --json` must report `$V` before the
+bridges move.
 
 **The deployments on the host** are listed by `oats deployments` (from OATS
 0.65.0); on an older CLI, ask the person. With the new CLI, in each one:
@@ -143,6 +148,10 @@ oats update --check --dir <deployment>   # the plan; runs nothing
 oats update --yes --dir <deployment>     # on the person's yes: your shell has no terminal
 oats doctor <deployment>                 # after the steps that come after the CLI
 ```
+
+Read the `--check` plan before each `--yes`: it must move bridges only. If
+it holds a CLI install, npm lists a release newer than `$V` since you
+started: stop, and start again from section 1 for that release.
 
 **What the person runs themselves:** the Desktop install, and every step an
 Upgrade section says to run from the user's own shell or login session (the
