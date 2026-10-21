@@ -181,6 +181,21 @@ test('the main proxy lets a suggest read carry its task (64 KiB); a preview stay
   assert.match(readFileSync(new URL('../../client/spawn-preview.mjs', import.meta.url), 'utf8'), /suggest: createSpawnSuggestBoundary\(\{ invoke, cache, maxAge, flights, exec \}\),/, 'the suggest lane shares the preview\'s cache and clock');
 });
 
+test('the main proxy refuses a body over 64 KiB before it parses it', async t => {
+  const renderer = 'file:///fixture/index.html', frame = { url: renderer }, event = { senderFrame: frame, sender: { mainFrame: frame, isDestroyed: () => false } };
+  const connection = { base: 'http://localhost:4820', wsId: 'northwind', allowedWs: new Set(['northwind']), epoch: 0, transition: false };
+  const deps = { rendererURL: renderer, connection: () => connection, fetch: () => assert.fail('never sent') };
+  const parse = JSON.parse, parsed = [];
+  JSON.parse = (text, ...rest) => { parsed.push(typeof text === 'string' ? text.length : null); return parse(text, ...rest); };
+  t.after(() => { JSON.parse = parse; });
+  for (const body of [JSON.stringify(suggestRequest('x'.repeat(65536))), '{' + ' '.repeat(65536) + '}', 'x'.repeat(10 * 1024 * 1024)]) {
+    parsed.length = 0;
+    const answer = await proxySpawnPreview(event, '/api/workspace-spawn-preview?ws=northwind', { method: 'POST', body }, deps);
+    assert.equal(answer.body.reason.code, 'E_BAD_ARGS');
+    assert.equal(parsed.some(n => n === body.length), false, `a ${body.length}-character body is never parsed`);
+  }
+});
+
 // ── the dialog
 /** A kernel for the dialog: suggest reads answer `suggest(task)`; `--name` previews the named capture (or a taken
  * refusal); everything else the f3 captures. `gate(task)` holds a suggest read. */
