@@ -1,5 +1,44 @@
 # Upgrading OATS on a host
 
+This page opens with the upgrade to the latest version. The steps that are
+the same for every release follow, then what each older release asks of a
+host that comes from it.
+
+## Upgrading to the latest version
+
+The latest version is **OATS 0.67.0** ([release notes](release-notes/v0.67.0.md)).
+The 0.67.0 Desktop accepts OATS CLIs `>=0.26.0 <0.68.0`.
+
+**First, read the `## Upgrade` section of every release after yours, up to
+0.67.0,** in the [release notes](release-notes/): it says what to do before
+the CLI changes, and what else must change with it (the Desktop, another
+tool, a package pin). [Coming from an older version](#coming-from-an-older-version)
+names the releases that ask for more than the steps below. `oats version`
+prints the version you have.
+
+Then, on each host:
+
+```sh
+                                     # 0. where the Desktop is installed: Desktop 0.67.0 first
+npm install -g @awebai/oats@0.67.0   # 1. the CLI
+oats update                          # 2. in each deployment: the plan, then it asks before it runs
+oats doctor                          # 3. in the same deployment
+```
+
+The Desktop's installers are the assets of the
+[GitHub Release](https://github.com/awebai/oats/releases) of that version
+([OATS Desktop](desktop.md#install)). Then restart the pi sessions that were
+running: a session keeps the bridge it loaded when it started.
+[The steps](#the-steps) says what each step does and why they come in this
+order.
+
+An agent with the oats.setup capability does this with you through its
+`/oats-upgrade` skill. It reads this page and the release notes at the
+latest release's tag, never the copy in the installed CLI, which describes
+the version you are upgrading from.
+
+## The steps
+
 Upgrading OATS means three things, in this order, on each host, and one
 before them where the Desktop is installed:
 
@@ -14,32 +53,20 @@ must be at the same version: a pi session with an older bridge runs old
 extension code against a new kernel. A host that launches no pi instance has
 no bridge, and step 2 has nothing to move.
 
-**A release's own steps are in its notes.** Read the `## Upgrade` section of
-every version between yours and the new one in the
-[release notes](release-notes/) first: it says what to do before the CLI
-changes, and what else must change with it (the Desktop, another tool, a
-package pin). This page is the part that is the same for every release.
+**A release's own steps are in its notes**, in its `## Upgrade` section.
+This page is the part that is the same for every release.
 
 **Why the Desktop goes first.** A Desktop accepts a CLI up to its own minor
 version and refuses a newer one: with the CLI moved first, the Desktop that
 is still running lists no instance until it is replaced. The new Desktop
 accepts the older CLI in the meantime. The CLI can move by two commands, the
-`npm install` below and an `oats update` whose plan installs it: step 0 comes
+`npm install` and an `oats update` whose plan installs it: step 0 comes
 before either.
 
 **Package versions are a different thing.** `oats update` moves the CLI and
 the bridge, never a package. A deployment's capabilities come from the
 packages pinned in `oats-workspace.yaml`; change a pin, then run `oats sync`
 ([Packages](packages.md)).
-
-## The steps
-
-```sh
-                              # 0. where the Desktop is installed: the new version's Desktop first
-npm install -g @awebai/oats   # 1. the CLI
-oats update                   # 2. in a deployment: the plan, then it asks before it runs
-oats doctor                   # 3. in the same deployment
-```
 
 Run steps 2 and 3 in every deployment on the host, or name one from anywhere
 with `oats update --dir <deployment>`. Then restart the pi sessions that were
@@ -74,7 +101,57 @@ Versions are compared as semver, so a prerelease is below its release:
 no other version: a local build `0.53.0+build.1` is `0.53.0`, and nothing is
 installed over it.
 
-## Capture service release order
+## Coming from an older version
+
+Read the `## Upgrade` section of every release after yours, up to the
+latest: each release's own steps are there, and only there. This list names,
+newest first, the releases whose Upgrade section asks for more than
+[the steps](#the-steps), the order of the Desktop and the CLI, and an
+optional package pin. A release that is not listed asks for nothing more.
+
+- **[0.67.0](release-notes/v0.67.0.md#upgrade):** on Linux and Windows the
+  shared shortcuts are Ctrl+Alt, in OATS Desktop and in `oats tui`; a
+  terminal that passes Ctrl+Shift apart from Ctrl takes the Ctrl+Shift
+  option.
+- **[0.66.0](release-notes/v0.66.0.md#upgrade):** `oats tui` moves its key
+  file to `~/.oats/config/tui.json`; `oats server connect` needs `--dir`.
+- **[0.62.0](release-notes/v0.62.0.md#upgrade):** after the CLI, run
+  `oats setup` once per user on each host, from that user's shell: the
+  capture service ([Capture service release order](#capture-service-release-order)).
+- **[0.61.0](release-notes/v0.61.0.md#upgrade):** restart a pi instance stuck
+  on its opening task once the bridge has moved; `oats onboard`'s
+  `next.spawn` names the soul that holds oats.setup.
+- **[0.60.0](release-notes/v0.60.0.md#upgrade):** `running` in
+  `oats status --json` means the harness is running.
+- **[0.59.0](release-notes/v0.59.0.md#upgrade):** with oats.aweb 1.28.0, a
+  host that needs the wake broker installs it once (`oats aweb wake install`,
+  from its own login session); `oats tui`'s back key is pressed twice.
+- **[0.58.0](release-notes/v0.58.0.md#upgrade):** on a Mac, upgrade the CLI
+  before the next reboot.
+- **[0.57.1](release-notes/v0.57.1.md#upgrade):** upgrade the hosts a Desktop
+  reaches over `--server` too; `oats tui`'s panel needs tmux 3.2 or later.
+- **[0.57.0](release-notes/v0.57.0.md#upgrade):** a retire plan taken before
+  the upgrade is refused once (`E_PLAN_STALE`); `oats worktree remove` may
+  refuse with `E_CHILDREN_RUNNING`; with oats.okf 5.2.0, new spawns carry the
+  harvest duty unless the soul opts out.
+- **[0.56.0](release-notes/v0.56.0.md#upgrade):** new refusal codes for
+  scripts; `open-workspace` in `tui.json` is `open`; a launch gets only its
+  capabilities' declared environment.
+- **[0.55.1](release-notes/v0.55.1.md#upgrade):** pin oats.aweb 1.27.3 and run
+  `oats sync`.
+- **[0.55.0](release-notes/v0.55.0.md#upgrade):** the first capture after the
+  upgrade takes longer.
+- **[0.53.0](release-notes/v0.53.0.md#upgrade):** from 0.51 or earlier, do
+  0.52.0's steps first (aw 1.36.33 or later, before `oats sync`); run
+  `oats setup` again where it was run; rerun `oats aweb resident create` for
+  an existing resident custody unit; `oats doctor` names unmatched
+  `souls.launch` keys.
+
+**Coming from before 0.53.0:** read the notes of every release after yours.
+Before 0.38.0 the section may be called `## Upgrading` or
+`## Upgrading from <version>`.
+
+### Capture service release order
 
 The bounded periodic capture service (service A) is **not shipped in
 [0.56.0](release-notes/v0.56.0.md) through [0.61.0](release-notes/v0.61.0.md)**
@@ -85,16 +162,13 @@ existing capture watcher, and upgrading to any of them does not install the
 periodic service. The capture algorithms and recovery commands already
 released do not prove that migration happened.
 
-For those released versions, follow their own Upgrade sections and the steps
-above. In particular, install the target Desktop before the CLI: the 0.61.0
-Desktop accepts CLIs `>=0.26.0 <0.62.0`, and a 0.60 Desktop refuses a 0.61.0 CLI.
+For those released versions, follow their own Upgrade sections and
+[the steps](#the-steps), the target Desktop before the CLI.
 
 Service A ships in [0.62.0](release-notes/v0.62.0.md) and every later
 release. Read 0.62.0's Upgrade section and keep this order: install the
-Desktop of the release you upgrade to first (the 0.62.0 Desktop accepts CLIs
-`>=0.26.0 <0.63.0`, the 0.63.0 Desktop `>=0.26.0 <0.64.0`, the 0.64.0
-Desktop `>=0.26.0 <0.65.0`, the 0.65.0 Desktop `>=0.26.0 <0.66.0`, the 0.66.0 Desktop `>=0.26.0 <0.67.0`, the 0.67.0 Desktop `>=0.26.0 <0.68.0`), then that
-release's CLI and matching pi bridge. Only **after
+Desktop of the release you upgrade to first (its notes give the CLIs
+it accepts), then that release's CLI and matching pi bridge. Only **after
 installing that CLI**, run its setup conversion once per user on each host,
 from that user's shell, then its health and doctor checks. That conversion is where an owned legacy
 watcher is replaced by the periodic service; foreign or disabled definitions

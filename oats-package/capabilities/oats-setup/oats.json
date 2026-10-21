@@ -16,7 +16,8 @@
     "skills/oats-workspace-config",
     "skills/oats-teams",
     "skills/oats-package-pins",
-    "skills/oats-automations"
+    "skills/oats-automations",
+    "skills/oats-upgrade"
   ],
   "inject": "injects/setup.md"
 }
