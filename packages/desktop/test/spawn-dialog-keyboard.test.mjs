@@ -181,14 +181,14 @@ test('the Harness picker opens with Enter, Space or Alt+Down; Escape closes it b
 
 // ── Spec E: focus on open, and the section keys ──────────────────────────
 
-test('Spec E: Reopen spawn (a restored draft) lands on the instruction, caret at its end; Mod+1 reaches the restored name, caret at the end, nothing selected', async t => {
+test('Spec E: Reopen spawn (a restored draft) lands on the instruction, caret at its end; Mod+6 reaches the restored name, caret at the end, nothing selected', async t => {
   const u = await mountSpawn(t, { spawnName: true }); asMac(u);
   spawn.preselectSpawn({ name: 'release-manager', agentsRoot: ROOT, draft: { layout: 'scoped', task: 'Cut 3.2', restore: { choices: { name: 'api-v2-manager' } } } }); await settle();
   const purpose = u.q('.fpurpose'), task = u.q('.ftask');
   assert.equal(u.dialog().dataset.layout, 'scoped'); assert.equal(purpose.value, 'api-v2-manager', 'the name as sent, which the role rule leaves as it is');
   assert.equal(u.doc.activeElement, task);
   assert.deepEqual([task.value, task.selectionStart, task.selectionEnd], ['Cut 3.2', 7, 7], 'the caret after the restored instruction, no select-all');
-  key(u, task, '1', { metaKey: true });
+  key(u, task, '6', { metaKey: true });
   assert.equal(u.doc.activeElement, purpose);
   assert.deepEqual([purpose.selectionStart, purpose.selectionEnd], [14, 14], 'the caret after the restored name, no select-all');
 });
@@ -287,16 +287,16 @@ test('Spec E: each section shows its chord as a quiet hint (aria-hidden) and the
   assert.equal(u.q('.fpurpose').hasAttribute('aria-keyshortcuts'), false);
 });
 
-// Rebinds are kept by action id when a default moves; where one of yours now shares a chord with another section's
-// new default, yours runs (resolveViewKey, as matchEvent and the editor say).
+// Where a rebind of yours now shares a chord with another section's new default, yours runs (resolveViewKey, as
+// matchEvent and the editor say); and rebinds are kept by action id when a default moves.
 for (const platform of ['mac', 'other']) {
-  test(`Spec E: your rebinds keep their chords after the section keys moved, and win over a section that has the chord by default (${platform})`, async t => {
+  test(`Spec E: your rebinds win over a section that has the chord by default after the section keys moved (${platform})`, async t => {
     const { setBinding, resetBinding, getBinding, keymapConflicts } = await import('../renderer/keybindings.mjs');
     const isMac = platform === 'mac', navPlatform = isMac ? 'MacIntel' : 'Linux x86_64';
     pinPlatform(t, navPlatform);
     const u = await mountSpawn(t);
     Object.defineProperty(u.dom.window.navigator, 'platform', { value: navPlatform, configurable: true });
-    for (const id of ['spawn.jumpName', 'spawn.jumpHarness', 'spawn.toggleAdvanced']) t.after(() => resetBinding(id));
+    for (const id of ['spawn.jumpHarness', 'spawn.toggleAdvanced']) t.after(() => resetBinding(id));
     // As stored before the move: Harness on Mod+1 (Name moved off it), Developer settings on Mod+6.
     setBinding('spawn.jumpHarness', 'Mod+1'); setBinding('spawn.toggleAdvanced', 'Mod+6');
     await u.open();
@@ -313,11 +313,35 @@ for (const platform of ['mac', 'other']) {
     key(u, harness, '6', mod);
     assert.equal(advanced.open, true, 'Mod+6 is your Developer settings, not Name that has it by default');
     assert.ok(u.q('.spawn-advanced-body').contains(u.doc.activeElement));
-    // A rebound Name keeps its chord: rebinds are by action id, whatever the default.
-    setBinding('spawn.jumpName', 'Mod+Shift+N');
-    assert.equal(getBinding('spawn.jumpName', isMac), 'Mod+Shift+N');
+  });
+
+  test(`Spec E: a Name rebind stored under the old Mod+1 default survives the new registration (${platform})`, async t => {
+    const { setBinding, resetBinding, getBinding, registerAction } = await import('../renderer/keybindings.mjs');
+    const { SPAWN_JUMPS, SPAWN_DIALOG_CONTEXT } = await import('../renderer/spawn-dialog-keys.mjs');
+    const isMac = platform === 'mac', navPlatform = isMac ? 'MacIntel' : 'Linux x86_64';
+    pinPlatform(t, navPlatform);
+    const name = SPAWN_JUMPS.find(j => j.id === 'spawn.jumpName');
+    const register = defaultChord => registerAction({ id: name.id, label: name.label, context: SPAWN_DIALOG_CONTEXT, defaultChord, run: () => {} });
+    // The app as it was: Name registered on Mod+1, and the user's rebind stored under that default.
+    register('Mod+1');
+    t.after(() => { resetBinding(name.id); register(name.defaultChord); });
+    setBinding(name.id, 'Mod+Shift+N');
+    // The new app registers Name on its new default; the stored rebind is by action id, untouched.
+    register(name.defaultChord);
+    assert.equal(name.defaultChord, 'Mod+6');
+    assert.equal(getBinding(name.id, isMac), 'Mod+Shift+N', 'the rebind kept its chord');
+    const u = await mountSpawn(t);
+    Object.defineProperty(u.dom.window.navigator, 'platform', { value: navPlatform, configurable: true });
+    await u.open();
+    const mod = isMac ? { metaKey: true } : { ctrlKey: true };
+    assert.equal(getBinding(name.id, isMac), 'Mod+Shift+N', 'and still after the dialog registered its keys');
+    assert.equal(u.q('.fpurpose').getAttribute('aria-keyshortcuts'), isMac ? 'Meta+Shift+N' : 'Control+Shift+N', 'the hint says yours');
     u.q('.ftask').focus(); key(u, u.q('.ftask'), 'N', { ...mod, shiftKey: true });
-    assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'your Name chord jumps to Name');
+    assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'your chord jumps to Name');
+    u.q('.ftask').focus(); key(u, u.q('.ftask'), '6', mod);
+    assert.equal(u.doc.activeElement, u.q('.ftask'), 'the new default is not Name\'s while your rebind holds');
+    key(u, u.q('.ftask'), '1', mod);
+    assert.equal(u.doc.activeElement, u.q('.ftask'), 'nor the old one: Mod+1 is the instruction\'s');
   });
 }
 
