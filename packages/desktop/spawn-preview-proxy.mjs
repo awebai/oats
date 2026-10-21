@@ -17,9 +17,13 @@ export async function proxySpawnPreview(event, path, opts, { rendererURL, connec
     const url = apiUrl(path, start.base, start.wsId, start.allowedWs, { bound: start.bound === true });
     if (url.pathname !== '/api/workspace-spawn-preview') return reply('E_BAD_ARGS', 400);
     const init = apiInit({ method: 'POST', body: opts.body });
+    // The largest body any read may have (a suggest read's 64 KiB) is refused before it is parsed; a parsed one that is
+    // not a suggest read then keeps a preview's 16 KiB.
     if (typeof init.body !== 'string') return reply('E_BAD_ARGS', 400);
+    const bytes = Buffer.byteLength(init.body);
+    if (bytes > 65536) return reply('E_BAD_ARGS', 400);
     let action; try { action = JSON.parse(init.body)?.action; } catch { return reply('E_BAD_ARGS', 400); }
-    if (Buffer.byteLength(init.body) > (action === 'suggest' ? 65536 : 16384)) return reply('E_BAD_ARGS', 400);
+    if (action !== 'suggest' && bytes > 16384) return reply('E_BAD_ARGS', 400);
     const response = await fetcher(url, { ...init, signal: AbortSignal.timeout(35000) }), raw = await response.text();
     if (!owns()) return reply('E_FORBIDDEN_FRAME', 403);
     if (!current()) return reply('E_TARGET_CHANGED');
