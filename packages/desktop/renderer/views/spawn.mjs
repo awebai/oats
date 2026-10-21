@@ -1321,7 +1321,7 @@ function openSpawnModal(s, a, draft = {}) {
     const hit = dialogKey(e);
     if (hit === "spawn.submit") { e.preventDefault(); e.stopPropagation(); ui.submit(); return; }
     const jump = hit && SPAWN_JUMPS.find(j => j.id === hit);
-    // Spec E: Mod+1–7 move to a section, and never switch anything behind the modal.
+    // Spec E: Mod+1–7 move to a section, in the form's order, and never switch anything behind the modal.
     if (jump) { e.preventDefault(); e.stopPropagation(); ui.jump(jump.target); return; }
     if (e.key === "Enter" && e.target.closest?.(".fspawn")) { e.preventDefault(); ui.submit(); return; }
     if (e.key !== "Tab") return; // focus trap includes disclosure controls

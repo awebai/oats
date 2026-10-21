@@ -6,6 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mountSpawn, settle, catalogAgents, ROOT } from './helpers/spawn-dialog-host.mjs';
 import * as spawn from '../renderer/views/spawn.mjs';
+import { pinPlatform } from './helpers/platform.mjs';
 
 const key = (u, target, k, fields = {}) => {
   const event = new u.dom.window.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...fields });
@@ -180,14 +181,14 @@ test('the Harness picker opens with Enter, Space or Alt+Down; Escape closes it b
 
 // ── Spec E: focus on open, and the section keys ──────────────────────────
 
-test('Spec E: Reopen spawn (a restored draft) lands on the instruction, caret at its end; Mod+1 reaches the restored name, caret at the end, nothing selected', async t => {
+test('Spec E: Reopen spawn (a restored draft) lands on the instruction, caret at its end; Mod+6 reaches the restored name, caret at the end, nothing selected', async t => {
   const u = await mountSpawn(t, { spawnName: true }); asMac(u);
   spawn.preselectSpawn({ name: 'release-manager', agentsRoot: ROOT, draft: { layout: 'scoped', task: 'Cut 3.2', restore: { choices: { name: 'api-v2-manager' } } } }); await settle();
   const purpose = u.q('.fpurpose'), task = u.q('.ftask');
   assert.equal(u.dialog().dataset.layout, 'scoped'); assert.equal(purpose.value, 'api-v2-manager', 'the name as sent, which the role rule leaves as it is');
   assert.equal(u.doc.activeElement, task);
   assert.deepEqual([task.value, task.selectionStart, task.selectionEnd], ['Cut 3.2', 7, 7], 'the caret after the restored instruction, no select-all');
-  key(u, task, '1', { metaKey: true });
+  key(u, task, '6', { metaKey: true });
   assert.equal(u.doc.activeElement, purpose);
   assert.deepEqual([purpose.selectionStart, purpose.selectionEnd], [14, 14], 'the caret after the restored name, no select-all');
 });
@@ -202,13 +203,14 @@ test('Spec E: Change soul keeps today\'s focus in the list; a click pick goes on
   assert.equal(u.doc.activeElement, firstField(u), 'after the pick: the first field');
 });
 
-// The chords name sections, not positions: Name keeps Mod+1 as the last field, the instruction Mod+6 as the first.
+// The section keys follow the form's order: the instruction, its first field, is Mod+1; Name, its last before
+// Developer settings, Mod+6.
 const SECTIONS = [
-  ['1', u => u.q('.fpurpose'), 'Name'],
+  ['1', u => u.q('.ftask'), 'Opening instruction'],
   ['2', u => u.q('.spawn-run label:first-child .spawn-choice-trigger'), 'Harness'],
   ['3', u => u.q('.fmodel'), 'Model'],
   ['4', u => u.q('.frelation input:checked'), 'Relationship'],
-  ['6', u => u.q('.ftask'), 'Opening instruction'],
+  ['6', u => u.q('.fpurpose'), 'Name'],
 ];
 for (const platform of ['mac', 'other']) {
   test(`Spec E: Mod+1–Mod+6 jump to their section, from any field, and never reach the shell behind the modal (${platform})`, async t => {
@@ -225,14 +227,14 @@ for (const platform of ['mac', 'other']) {
     }
     assert.deepEqual(behind, [], 'the section keys stop at the dialog: nothing behind the modal sees them');
     // The other platform's modifier is not the chord here: it does nothing in the dialog.
-    u.q('.ftask').focus(); key(u, u.q('.ftask'), '1', platform === 'mac' ? { ctrlKey: true } : { metaKey: true });
+    u.q('.ftask').focus(); key(u, u.q('.ftask'), '6', platform === 'mac' ? { ctrlKey: true } : { metaKey: true });
     assert.equal(u.doc.activeElement, u.q('.ftask'));
     behind.length = 0;
     // Teams is not offered here: Mod+5 moves nothing, and still never reaches the shell.
     const five = key(u, u.q('.ftask'), '5', mod);
     assert.equal(five.defaultPrevented, true); assert.equal(u.doc.activeElement, u.q('.ftask'));
     // A held key repeats: still the dialog's, and nothing moves.
-    const held = key(u, u.q('.ftask'), '1', { ...mod, repeat: true });
+    const held = key(u, u.q('.ftask'), '6', { ...mod, repeat: true });
     assert.equal(held.defaultPrevented, true); assert.equal(u.doc.activeElement, u.q('.ftask'));
     assert.deepEqual(behind, [], 'nothing propagated past the dialog');
     assert.ok(u.dialog(), 'the dialog stays open');
@@ -262,14 +264,14 @@ test('Spec E: each section shows its chord as a quiet hint (aria-hidden) and the
   assert.equal(hints.length, 7);
   for (const hint of hints) assert.equal(hint.getAttribute('aria-hidden'), 'true');
   const shown = hints.filter(h => !h.closest('[hidden]')).map(h => h.textContent);
-  // In form order: the Opening instruction first keeps ⌘6, Name the last field before Developer settings keeps ⌘1.
-  assert.deepEqual(shown, ['⌘6', '⌘2', '⌘3', '⌘4', '⌘1', '⌘7'], 'Teams is not offered here: its hint is in its hidden row');
-  assert.equal(u.q('label[for=spawn-purpose] kbd').textContent, '⌘1', 'beside the Name label');
-  assert.equal(u.q('.fpurpose').getAttribute('aria-keyshortcuts'), 'Meta+1');
+  // In form order, the chords in order: the Opening instruction first, ⌘1; Name the last field before Developer settings, ⌘6.
+  assert.deepEqual(shown, ['⌘1', '⌘2', '⌘3', '⌘4', '⌘6', '⌘7'], 'Teams is not offered here: its hint is in its hidden row');
+  assert.equal(u.q('label[for=spawn-purpose] kbd').textContent, '⌘6', 'beside the Name label');
+  assert.equal(u.q('.fpurpose').getAttribute('aria-keyshortcuts'), 'Meta+6');
   assert.equal(u.q('.spawn-run label:first-child .spawn-choice-trigger').getAttribute('aria-keyshortcuts'), 'Meta+2');
   assert.equal(u.q('.fmodel').getAttribute('aria-keyshortcuts'), 'Meta+3');
   assert.ok([...u.dialog().querySelectorAll('.frelation input')].every(i => i.getAttribute('aria-keyshortcuts') === 'Meta+4'));
-  assert.equal(u.q('.ftask').getAttribute('aria-keyshortcuts'), 'Meta+6');
+  assert.equal(u.q('.ftask').getAttribute('aria-keyshortcuts'), 'Meta+1');
   assert.equal(u.q('.spawn-advanced > summary').getAttribute('aria-keyshortcuts'), 'Meta+7');
   assert.equal(u.q('label[for=spawn-purpose]').textContent.replace(u.q('label[for=spawn-purpose] kbd').textContent, ''), 'Name · optional');
   t.after(() => resetBinding('spawn.jumpName'));
@@ -278,12 +280,70 @@ test('Spec E: each section shows its chord as a quiet hint (aria-hidden) and the
   assert.equal(u.q('.fpurpose').getAttribute('aria-keyshortcuts'), 'Meta+Shift+N');
   u.q('.ftask').focus(); key(u, u.q('.ftask'), 'N', { metaKey: true, shiftKey: true });
   assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'the rebound chord jumps');
-  u.q('.ftask').focus(); key(u, u.q('.ftask'), '1', { metaKey: true });
+  u.q('.ftask').focus(); key(u, u.q('.ftask'), '6', { metaKey: true });
   assert.equal(u.doc.activeElement, u.q('.ftask'), 'the old chord no longer jumps');
   setBinding('spawn.jumpName', null);
   assert.equal(u.q('label[for=spawn-purpose] kbd').hidden, true, 'unbound: no hint');
   assert.equal(u.q('.fpurpose').hasAttribute('aria-keyshortcuts'), false);
 });
+
+// Where a rebind of yours now shares a chord with another section's new default, yours runs (resolveViewKey, as
+// matchEvent and the editor say); and rebinds are kept by action id when a default moves.
+for (const platform of ['mac', 'other']) {
+  test(`Spec E: your rebinds win over a section that has the chord by default after the section keys moved (${platform})`, async t => {
+    const { setBinding, resetBinding, getBinding, keymapConflicts } = await import('../renderer/keybindings.mjs');
+    const isMac = platform === 'mac', navPlatform = isMac ? 'MacIntel' : 'Linux x86_64';
+    pinPlatform(t, navPlatform);
+    const u = await mountSpawn(t);
+    Object.defineProperty(u.dom.window.navigator, 'platform', { value: navPlatform, configurable: true });
+    for (const id of ['spawn.jumpHarness', 'spawn.toggleAdvanced']) t.after(() => resetBinding(id));
+    // As stored before the move: Harness on Mod+1 (Name moved off it), Developer settings on Mod+6.
+    setBinding('spawn.jumpHarness', 'Mod+1'); setBinding('spawn.toggleAdvanced', 'Mod+6');
+    await u.open();
+    const mod = isMac ? { metaKey: true } : { ctrlKey: true };
+    assert.equal(getBinding('spawn.jumpTask', isMac), 'Mod+1', 'the Opening instruction has Mod+1 by default now');
+    assert.equal(getBinding('spawn.jumpName', isMac), 'Mod+6', 'and Name Mod+6');
+    const clashes = keymapConflicts(isMac).filter(c => c.actions.every(a => a.id.startsWith('spawn.')))
+      .map(c => c.actions.map(a => a.id).sort().join(' ')).sort();
+    assert.deepEqual(clashes, ['spawn.jumpHarness spawn.jumpTask', 'spawn.jumpName spawn.toggleAdvanced'], 'the editor names both clashes');
+    const harness = u.q('.spawn-run label:first-child .spawn-choice-trigger'), advanced = u.q('.spawn-advanced');
+    u.q('.fpurpose').focus(); key(u, u.q('.fpurpose'), '1', mod);
+    assert.equal(u.doc.activeElement, harness, 'Mod+1 is your Harness, not the Opening instruction that has it by default');
+    assert.equal(advanced.open, false);
+    key(u, harness, '6', mod);
+    assert.equal(advanced.open, true, 'Mod+6 is your Developer settings, not Name that has it by default');
+    assert.ok(u.q('.spawn-advanced-body').contains(u.doc.activeElement));
+  });
+
+  test(`Spec E: a Name rebind stored under the old Mod+1 default survives the new registration (${platform})`, async t => {
+    const { setBinding, resetBinding, getBinding, registerAction } = await import('../renderer/keybindings.mjs');
+    const { SPAWN_JUMPS, SPAWN_DIALOG_CONTEXT } = await import('../renderer/spawn-dialog-keys.mjs');
+    const isMac = platform === 'mac', navPlatform = isMac ? 'MacIntel' : 'Linux x86_64';
+    pinPlatform(t, navPlatform);
+    const name = SPAWN_JUMPS.find(j => j.id === 'spawn.jumpName');
+    const register = defaultChord => registerAction({ id: name.id, label: name.label, context: SPAWN_DIALOG_CONTEXT, defaultChord, run: () => {} });
+    // The app as it was: Name registered on Mod+1, and the user's rebind stored under that default.
+    register('Mod+1');
+    t.after(() => { resetBinding(name.id); register(name.defaultChord); });
+    setBinding(name.id, 'Mod+Shift+N');
+    // The new app registers Name on its new default; the stored rebind is by action id, untouched.
+    register(name.defaultChord);
+    assert.equal(name.defaultChord, 'Mod+6');
+    assert.equal(getBinding(name.id, isMac), 'Mod+Shift+N', 'the rebind kept its chord');
+    const u = await mountSpawn(t);
+    Object.defineProperty(u.dom.window.navigator, 'platform', { value: navPlatform, configurable: true });
+    await u.open();
+    const mod = isMac ? { metaKey: true } : { ctrlKey: true };
+    assert.equal(getBinding(name.id, isMac), 'Mod+Shift+N', 'and still after the dialog registered its keys');
+    assert.equal(u.q('.fpurpose').getAttribute('aria-keyshortcuts'), isMac ? 'Meta+Shift+N' : 'Control+Shift+N', 'the hint says yours');
+    u.q('.ftask').focus(); key(u, u.q('.ftask'), 'N', { ...mod, shiftKey: true });
+    assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'your chord jumps to Name');
+    u.q('.ftask').focus(); key(u, u.q('.ftask'), '6', mod);
+    assert.equal(u.doc.activeElement, u.q('.ftask'), 'the new default is not Name\'s while your rebind holds');
+    key(u, u.q('.ftask'), '1', mod);
+    assert.equal(u.doc.activeElement, u.q('.ftask'), 'nor the old one: Mod+1 is the instruction\'s');
+  });
+}
 
 test('Spec E: the dialog keys are listed in the shortcuts editor under Spawn dialog, and shadow no global key', async () => {
   const { listActions, findConflict, registerAction } = await import('../renderer/keybindings.mjs');
@@ -295,9 +355,9 @@ test('Spec E: the dialog keys are listed in the shortcuts editor under Spawn dia
   assert.equal(groupActions().find(g => g.context === 'spawn-dialog-local').label, 'Spawn dialog');
   const release = registerAction({ id: 'fixture.showActive', label: 'Show Active', context: 'global', defaultChord: 'Mod+1', run: () => {} });
   try {
-    assert.equal(findConflict('Mod+1', 'spawn-dialog-local', 'spawn.jumpName', true), null, 'the open dialog owns Mod+1; Active keeps it elsewhere');
+    assert.equal(findConflict('Mod+1', 'spawn-dialog-local', 'spawn.jumpTask', true), null, 'the open dialog owns Mod+1; Active keeps it elsewhere');
     assert.equal(findConflict('Mod+1', 'global', 'fixture.showActive', true), null);
-    assert.equal(findConflict('Mod+2', 'spawn-dialog-local', 'spawn.jumpName', true)?.id, 'spawn.jumpHarness', 'within the dialog, a clash is a clash');
+    assert.equal(findConflict('Mod+2', 'spawn-dialog-local', 'spawn.jumpTask', true)?.id, 'spawn.jumpHarness', 'within the dialog, a clash is a clash');
   } finally { release(); }
 });
 
@@ -307,7 +367,7 @@ test('Spec E: a section key from an open Harness picker closes the picker and mo
   const trigger = u.q('.spawn-run label:first-child .spawn-choice-trigger'), menu = () => u.q('#spawn-runtime-choices');
   trigger.focus(); key(u, trigger, 'Enter'); await settle();
   assert.equal(menu().hidden, false, 'the picker is open');
-  const e = key(u, u.doc.activeElement, '6', { ctrlKey: true });
+  const e = key(u, u.doc.activeElement, '1', { ctrlKey: true });
   assert.equal(e.defaultPrevented, true);
   assert.equal(menu().hidden, true, 'closed by the jump, not left behind');
   assert.equal(u.doc.activeElement, u.q('.ftask'), 'focus moved on (not restored to the picker trigger)');

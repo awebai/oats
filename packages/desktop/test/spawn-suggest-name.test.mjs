@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
 import { createSpawnPreview, createSpawnPreviewFlights, createSpawnSuggestBoundary } from '../../client/spawn-preview.mjs';
 import { namingOf, previewData, previewChoices, suggestSupported, suggestTask, NAMING_REASONS } from '../../client/spawn-preview-contract.mjs';
-import { taskWords, namingKey, numberedWords, numberedLine, SUGGEST_PAUSE_MS, SUGGEST_MIN_WORDS } from '../../client/spawn-naming.mjs';
+import { taskWords, namingKey, numberedWords, numberedLine, SUGGEST_DEBOUNCE_MS, SUGGEST_MIN_WORDS } from '../../client/spawn-naming.mjs';
 import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
 import { cli, target, selector, context, kernel, deferred, tick, DEPLOYMENT, ROOT } from './helpers/spawn-preview-fixture.mjs';
 import { mountSpawn, settle, kernelPreviewName } from './helpers/spawn-dialog-host.mjs';
@@ -48,7 +48,7 @@ test('the gate needs spawn-suggest-name and spawn-name; the task is the apply\'s
 });
 
 test('when the dialog asks, and how it says a numbered name', () => {
-  assert.equal(SUGGEST_PAUSE_MS, 1500); assert.equal(SUGGEST_MIN_WORDS, 3);
+  assert.equal(SUGGEST_DEBOUNCE_MS, 300); assert.equal(SUGGEST_MIN_WORDS, 7);
   assert.equal(taskWords('fix the login'), 3); assert.equal(taskWords('  fix   login \n'), 2);
   assert.equal(taskWords('- -- fix → login'), 2, 'a run without a letter or a digit is no word');
   assert.equal(taskWords('réparer la connexion'), 3); assert.equal(taskWords(''), 0);
@@ -220,6 +220,8 @@ async function dialog(t, k = namingKernel(), options = {}) {
   await u.open();
   return u;
 }
+// Typed tasks long enough to be named while typed (SUGGEST_MIN_WORDS, seven words); 'fix login' stays short: Spawn asks whatever the length.
+const NOTES = 'Write the release notes for the next version', BUDGET = 'Review the budget now for the next quarter';
 const pause = async () => { await new Promise(r => setTimeout(r, 15)); await settle(); };
 const lastPreview = u => u.previews().filter(b => b.action === 'preview').at(-1);
 
@@ -234,46 +236,56 @@ test('untouched and empty: the help says the instance is named from its task; no
   assert.equal(k.asked.length, 0, 'two words: no call while typing');
 });
 
-test('three words and a pause: one call, the suggestion is the placeholder, and the preview binds it', async t => {
+test('more than six words: six ask nothing while typing, the seventh asks once', async t => {
   const k = namingKernel(), u = await dialog(t, k);
-  for (const text of ['Write', 'Write the', 'Write the release', 'Write the release notes']) { const el = u.q('.ftask'); el.value = text; el.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); }
+  await u.type('.ftask', 'Write the release notes for version'); await pause();
+  assert.equal(k.asked.length, 0, 'six words: no call');
+  await u.type('.ftask', 'Write the release notes for version two'); await pause();
+  assert.deepEqual(k.asked.map(a => a.task), ['Write the release notes for version two'], 'seven words: one call');
+  await pause(); assert.equal(k.asked.length, 1, 'and no other, on no timer of its own');
+  assert.equal(u.q('.fpurpose').placeholder, 'release-notes-manager');
+});
+
+test('seven words while typing: one call for the burst, the suggested name alone is the placeholder, and the preview binds it', async t => {
+  const k = namingKernel(), u = await dialog(t, k);
+  for (const text of NOTES.split(' ').map((_, i, words) => words.slice(0, i + 1).join(' '))) { const el = u.q('.ftask'); el.value = text; el.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); }
   await pause();
-  assert.deepEqual(k.asked.map(a => a.task), ['Write the release notes'], 'one call for the burst, after the pause');
+  assert.deepEqual(k.asked.map(a => a.task), [NOTES], 'one call for the burst, after the debounce');
   assert.equal(Object.hasOwn(k.asked[0].choices, 'name') || Object.hasOwn(k.asked[0].choices, 'purpose'), false);
-  assert.equal(u.q('.fpurpose').placeholder, 'will be named release-notes-manager');
+  assert.equal(u.q('.fpurpose').placeholder, 'release-notes-manager');
   assert.equal(u.q('.fpurpose').value, '', 'the field stays empty');
   assert.equal(u.text('.spawn-name-result'), 'Instance name: release-notes-manager (from the task)');
   assert.equal(lastPreview(u).choices.name, 'release-notes-manager', 'the dialog\'s preview is the --name preview');
   assert.match(u.text('.spawn-preview'), /release-notes-manager/);
   // Another text: the suggestion no longer speaks for it, at once.
-  const el = u.q('.ftask'); el.value = 'Write the release notes again'; el.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
+  const el = u.q('.ftask'); el.value = 'Write the release notes for the next version again'; el.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
   assert.equal(u.q('.fpurpose').placeholder, 'e.g. desktop-improvements');
   assert.equal(u.text('.spawn-name-result'), 'Left empty, the instance is named from its task.');
-  await pause(); assert.equal(k.asked.length, 2); assert.equal(u.q('.fpurpose').placeholder, 'will be named release-notes-again-manager');
+  await pause(); assert.equal(k.asked.length, 2); assert.equal(u.q('.fpurpose').placeholder, 'release-notes-again-manager');
   // Back to the first text: the answer is remembered, no second call for it.
-  await u.type('.ftask', 'Write the release notes'); await pause();
-  assert.equal(k.asked.length, 2); assert.equal(u.q('.fpurpose').placeholder, 'will be named release-notes-manager');
+  await u.type('.ftask', NOTES); await pause();
+  assert.equal(k.asked.length, 2); assert.equal(u.q('.fpurpose').placeholder, 'release-notes-manager');
 });
 
-test('a new pause supersedes the call in the air: only the latest text\'s answer is shown', async t => {
+test('a newer text supersedes the call in the air: only the latest text\'s answer is shown', async t => {
   const holds = new Map();
   const k = namingKernel({ suggest: task => ({ source: 'suggested', name: task.includes('budget') ? 'budget-review-manager' : 'release-notes-manager' }),
     gate: (task, signal) => new Promise(resolve => { holds.set(task, resolve); signal?.addEventListener('abort', resolve); }) });
   const u = await dialog(t, k);
-  await u.type('.ftask', 'Write the release notes'); await pause();
-  await u.type('.ftask', 'Review the budget now'); await pause();
+  await u.type('.ftask', NOTES); await pause();
+  await u.type('.ftask', BUDGET); await pause();
   assert.equal(k.asked.length, 2);
-  holds.get('Review the budget now')(); await settle(); await pause();
-  assert.equal(u.q('.fpurpose').placeholder, 'will be named budget-review-manager');
-  holds.get('Write the release notes')?.(); await settle();
-  assert.equal(u.q('.fpurpose').placeholder, 'will be named budget-review-manager', 'the superseded answer is dropped');
+  holds.get(BUDGET)(); await settle(); await pause();
+  assert.equal(u.q('.fpurpose').placeholder, 'budget-review-manager');
+  holds.get(NOTES)?.(); await settle();
+  assert.equal(u.q('.fpurpose').placeholder, 'budget-review-manager', 'the superseded answer is dropped');
 });
 
 test('typing in the name field replaces the suggestion and stops suggestions for this dialog', async t => {
   const k = namingKernel(), u = await dialog(t, k);
   await u.type('.fpurpose', 'x'); await u.type('.fpurpose', '');
   assert.equal(u.text('.spawn-name-result'), 'Left empty, the kernel numbers it.');
-  await u.type('.ftask', 'Write the release notes'); await pause();
+  await u.type('.ftask', NOTES); await pause();
   assert.equal(k.asked.length, 0);
   await u.spawn(); await settle(20);
   assert.equal(k.asked.length, 0, 'Spawn asks for no name either');
@@ -283,11 +295,11 @@ test('typing in the name field replaces the suggestion and stops suggestions for
 
 test('Spawn with the suggestion for this text: no further call, the apply passes --name', async t => {
   const k = namingKernel(), u = await dialog(t, k);
-  await u.type('.ftask', 'Write the release notes'); await pause();
+  await u.type('.ftask', NOTES); await pause();
   await u.spawn(); await settle(20);
   assert.equal(k.asked.length, 1);
   assert.equal(u.applied.at(-1).choices.name, 'release-notes-manager');
-  assert.equal(u.applied.at(-1).task, 'Write the release notes');
+  assert.equal(u.applied.at(-1).task, NOTES);
 });
 
 test('Spawn with no suggestion yet: "Naming…", one call whatever the length, then the suggested name', async t => {
@@ -306,7 +318,7 @@ test('Spawn with no suggestion yet: "Naming…", one call whatever the length, t
 test('Spawn while the live call for the same text is in the air joins it: one call', async t => {
   const hold = deferred();
   const k = namingKernel({ gate: () => hold.promise }), u = await dialog(t, k);
-  await u.type('.ftask', 'Write the release notes'); await pause();
+  await u.type('.ftask', NOTES); await pause();
   u.q('.fspawn').click(); await settle();
   assert.equal(k.asked.length, 1);
   hold.resolve(); await settle(30);
@@ -315,7 +327,7 @@ test('Spawn while the live call for the same text is in the air joins it: one ca
 
 test('numbered: it spawns the numbered name and says why, in the Desktop\'s words', async t => {
   const k = namingKernel({ suggest: () => ({ source: 'numbered', reason: 'timeout' }) }), u = await dialog(t, k);
-  await u.type('.ftask', 'Write the release notes'); await pause();
+  await u.type('.ftask', NOTES); await pause();
   assert.equal(k.asked.length, 1); assert.equal(u.q('.fpurpose').placeholder, 'e.g. desktop-improvements');
   await u.spawn(); await settle(30);
   assert.equal(k.asked.length, 2, 'a numbered answer does not short-cut Spawn: one more call');
@@ -339,7 +351,7 @@ test('a suggested name taken since: forgotten, and Spawn names again (the kernel
   const u = await dialog(t, k);
   // Taken between the suggestion and its --name preview: the preview refuses it.
   taken.add('release-notes-manager');
-  await u.type('.ftask', 'Write the release notes'); await pause(); await settle();
+  await u.type('.ftask', NOTES); await pause(); await settle();
   assert.equal(u.q('.fpurpose').placeholder, 'e.g. desktop-improvements', 'forgotten');
   assert.equal(u.q('.spawn-name-result').classList.contains('err'), false, 'never said as a refusal of a name the person typed');
   await u.spawn(); await settle(40);
@@ -350,28 +362,28 @@ test('a suggested name taken since: forgotten, and Spawn names again (the kernel
 test('Reopen brings a suggested name back as the suggestion for its text, the field empty', async t => {
   const refused = () => ({ started: false, envelope: { schemaVersion: 1, ok: false, error: { code: 'E_HARNESS_UNAVAILABLE', message: 'pi is not installed' } } });
   const k = namingKernel(), u = await dialog(t, k, { apply: refused });
-  await u.type('.ftask', 'Write the release notes'); await pause();
+  await u.type('.ftask', NOTES); await pause();
   await u.spawn(); await settle(30);
   const offer = u.notices.find(n => n.options?.buttons?.some(b => b.label === 'Reopen spawn'));
   assert.ok(offer, JSON.stringify(u.notices.map(n => n.message)));
   await offer.options.buttons[0].activate(); await settle(20);
   const draft = u.reopened.at(-1).draft;
-  assert.deepEqual(draft.restore.naming, { task: 'Write the release notes', name: 'release-notes-manager' });
+  assert.deepEqual(draft.restore.naming, { task: NOTES, name: 'release-notes-manager' });
   assert.equal(Object.hasOwn(draft.restore.choices, 'name'), false, 'never as typed'); assert.equal(draft.nameTouched, false);
-  assert.equal(u.q('.fpurpose').value, ''); assert.equal(u.q('.ftask').value, 'Write the release notes');
-  assert.equal(u.q('.fpurpose').placeholder, 'will be named release-notes-manager');
+  assert.equal(u.q('.fpurpose').value, ''); assert.equal(u.q('.ftask').value, NOTES);
+  assert.equal(u.q('.fpurpose').placeholder, 'release-notes-manager');
   assert.equal(k.asked.length, 1, 'no new call');
 });
 
 test('Reopen keeps a typed-then-emptied name field touched', async t => {
   const refused = () => ({ started: false, envelope: { schemaVersion: 1, ok: false, error: { code: 'E_HARNESS_UNAVAILABLE', message: 'pi is not installed' } } });
   const k = namingKernel(), u = await dialog(t, k, { apply: refused });
-  await u.type('.fpurpose', 'x'); await u.type('.fpurpose', ''); await u.type('.ftask', 'Write the release notes');
+  await u.type('.fpurpose', 'x'); await u.type('.fpurpose', ''); await u.type('.ftask', NOTES);
   await u.spawn(); await settle(30);
   await u.notices.find(n => n.options?.buttons?.some(b => b.label === 'Reopen spawn')).options.buttons[0].activate(); await settle(20);
   assert.equal(u.reopened.at(-1).draft.nameTouched, true);
   assert.equal(u.text('.spawn-name-result'), 'Left empty, the kernel numbers it.');
-  await u.type('.ftask', 'Write the release notes now'); await pause();
+  await u.type('.ftask', `${NOTES} now`); await pause();
   assert.equal(k.asked.length, 0);
 });
 
@@ -379,7 +391,7 @@ test('without the feature the dialog is today\'s: no call, and an empty name is 
   const k = namingKernel(), u = await mountSpawn(t, { cli, spawnName: true, kernel: k.invoke, apply, suggestDelay: 5, jobs: true });
   await u.open();
   assert.equal(u.text('.spawn-name-result'), 'Left empty, the kernel numbers it.');
-  await u.type('.ftask', 'Write the release notes'); await pause(); await u.spawn(); await settle(20);
+  await u.type('.ftask', NOTES); await pause(); await u.spawn(); await settle(20);
   assert.equal(k.asked.length, 0); assert.equal(Object.hasOwn(u.applied.at(-1).choices, 'name'), false);
   assert.equal(u.notices.some(n => /^Named /.test(n.message)), false);
 });
@@ -389,7 +401,7 @@ test('a name taken at prepare (after the handoff): refused with Reopen, and the 
   const taken = new Set();
   const k = namingKernel({ taken, suggest: () => ({ source: 'suggested', name: n++ ? 'release-notes-manager-2' : 'release-notes-manager' }) });
   const u = await dialog(t, k, { previewNow: () => now });
-  await u.type('.ftask', 'Write the release notes'); await pause(); await settle();
+  await u.type('.ftask', NOTES); await pause(); await settle();
   assert.equal(lastPreview(u).choices.name, 'release-notes-manager', 'the named preview settled');
   taken.add('release-notes-manager'); now += 300001; // past prepare's reuse window: prepare asks the kernel again
   await u.spawn(); await settle(30);

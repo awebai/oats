@@ -268,15 +268,15 @@ server, what you type is a purpose instead: the instance is named
 **Named from its task.** When the installed OATS can suggest names (feature
 `spawn-suggest-name`), the help under an empty Name reads "Left empty, the
 instance is named from its task." Once the Opening instruction holds at
-least three words and you stop typing for about a second and a half, the
-Desktop asks OATS for a name. The soul's own harness reads the instruction
-and replies with a short name for the work, and the role is added as its
-suffix. The name shows as the field's placeholder ("will be named
-release-notes-manager"), on the line under the field ("(from the task)") and
-in **What will be created**. It belongs to the instruction it was made for:
-when you change the instruction it goes, until the next pause. Typing in Name
-replaces it and stops suggestions for the rest of the dialog, even if you
-empty the field again. Press **Spawn** with Name empty and no name yet, and the
+least seven words, the Desktop asks OATS for a name as you type. The soul's
+own harness reads the instruction and replies with a short name for the work,
+and the role is added as its suffix. The name shows as the field's
+placeholder ("release-notes-manager"), on the line under the field ("(from
+the task)") and in **What will be created**. It belongs to the instruction it
+was made for: when you change the instruction it goes, and the Desktop asks
+again for the new instruction while it holds seven words or more. Typing in
+Name replaces it and stops suggestions for the rest of the dialog, even if
+you empty the field again. Press **Spawn** with Name empty and no name yet, and the
 dialog says **Naming…** and asks once, however short the instruction. When OATS
 can't name it, the instance is numbered and a notification says why, for
 example "Named oats-desktop-expert-3: naming took longer than 20 seconds."

@@ -603,8 +603,8 @@ export function onKeymapChange(fn) {
 /** A modal dialog's own context (`spawn-dialog-local`): while the dialog is open
  * its keys are its own and it stops them, so nothing behind the modal sees them;
  * while it is closed they do nothing. Its chords collide only with each other,
- * never with a global action (Spec E: Mod+1 jumps to Name in the spawn dialog and
- * shows Active everywhere else). */
+ * never with a global action (Spec E: Mod+1 jumps to the Opening instruction in the
+ * spawn dialog and shows Deployments everywhere else). */
 const isModalContext = (context) => typeof context === "string" && context.endsWith("-dialog-local");
 
 /** Two contexts the shell has on at once (shell.mjs updateActiveContexts): the sidebar's, while
@@ -775,7 +775,9 @@ export function matchEvent(e, opts = {}) {
   return hit ? hit.id : null;
 }
 
-const hasOverride = (actionId) => Object.prototype.hasOwnProperty.call(overrides, actionId);
+/** True when the user bound `actionId` themselves (a stored override, an unbind included). Where two actions
+ * hold one chord, the one the user bound wins over one that has it by default (matchEvent, resolveViewKey). */
+export const hasOverride = (actionId) => Object.prototype.hasOwnProperty.call(overrides, actionId);
 
 /** The chords a keydown presses for `actionId`'s binding: as it reads now (chordFromEvent), and,
  *  while that action holds a stored rebind, as 0.66 read a macOS ⌘⌥ press (typedOptionChord), first.

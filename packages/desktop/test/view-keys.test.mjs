@@ -48,3 +48,19 @@ test("pure-modifier keydowns resolve to nothing", () => {
   assert.equal(resolveViewKey(ev("Shift", { shiftKey: true }), actions, { isMac: false, binding }), null);
   assert.equal(resolveViewKey(ev("Control", { ctrlKey: true }), actions, { isMac: false, binding }), null);
 });
+
+test("two actions on the pressed chord: the one the user bound there wins over a default, in either order", () => {
+  // hier.fit holds Mod+1 by default; the user rebound hier.brain onto Mod+1 (an override equal to that default).
+  const binding = () => "Mod+1";
+  const rebound = (id) => id === "hier.brain";
+  const press = ev("1", { ctrlKey: true });
+  assert.equal(resolveViewKey(press, actions, { isMac: false, binding, rebound }), "hier.brain");
+  assert.equal(resolveViewKey(press, [...actions].reverse(), { isMac: false, binding, rebound }), "hier.brain", "not by array order");
+  // Two of the same kind (both defaults, or both the user's): the first listed, as before.
+  assert.equal(resolveViewKey(press, actions, { isMac: false, binding, rebound: () => false }), "hier.brain");
+  assert.equal(resolveViewKey(press, [...actions].reverse(), { isMac: false, binding, rebound: () => false }), "hier.fit");
+  assert.equal(resolveViewKey(press, [...actions].reverse(), { isMac: false, binding, rebound: () => true }), "hier.fit");
+  // An unbound override never fires, and never hides the default it clashes with.
+  const unbound = (id) => (id === "hier.brain" ? null : "Mod+1");
+  assert.equal(resolveViewKey(press, actions, { isMac: false, binding: unbound, rebound }), "hier.fit");
+});

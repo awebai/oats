@@ -24,7 +24,7 @@ import { distinguishingRootTags } from '../../client/instance-tree.mjs';
 import { createChoicePopup } from './choice-popup.mjs';
 import { postJson, workspaceGeneration, wsQuery } from './views/common.mjs';
 import { previewSupported, previewChoices, previewData, previewTarget, previewFailure, INSTANCE_NAME_MAX, suggestSupported } from '../../client/spawn-preview-contract.mjs';
-import { SUGGEST_PAUSE_MS, SUGGEST_MIN_WORDS, taskWords, namingKey, numberedLine } from '../../client/spawn-naming.mjs';
+import { SUGGEST_DEBOUNCE_MS, SUGGEST_MIN_WORDS, taskWords, namingKey, numberedLine } from '../../client/spawn-naming.mjs';
 import { nameWithRole } from '../../client/instance-name.mjs';
 import { spawnApplySupported, spawnPrepareInput, spawnApplyReason, ROLLED_BACK_CODES } from '../../client/spawn-apply-contract.mjs';
 import { createSpawnTransaction } from '../../client/spawn-transaction.mjs';
@@ -564,14 +564,14 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
  *                 link to its pending row; the host calls syncInFlight() when the store changes.
  *               backfillDelay — #517: ms between list reads while the server learns unknown keys (BACKFILL_POLL_MS).
  *               pollDelay — #802: ms between `result` reads while a submitted spawn is pending (RECOVER_POLL_MS).
- *               suggestDelay — #1421 §3: ms the task text rests before the dialog asks for a name (SUGGEST_PAUSE_MS).
+ *               suggestDelay — #1421 §3: the debounce, in ms, before the dialog asks for a name for the typed task (SUGGEST_DEBOUNCE_MS).
  *               deployments() — #482: the view's deployments (/api/panel `deployments`). With two or more the
  *                 Deployment field (spawn-deployment-field.mjs) chooses where to spawn; every spawn request
  *                 addresses a deployment, never the view.
  */
 export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, instances, canChoose, choose, close, owns,
   draft = {}, catalogNote = '', onCreated = async () => {}, remoteSpawn = async () => {}, servers = [], serverFacts = () => [], serverRows = async () => [],
-  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, backfillDelay = BACKFILL_POLL_MS, pollDelay = RECOVER_POLL_MS, suggestDelay = SUGGEST_PAUSE_MS, layout = 'picker', handoff = null, spawnInFlight = null, deployments = () => [] }) {
+  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, backfillDelay = BACKFILL_POLL_MS, pollDelay = RECOVER_POLL_MS, suggestDelay = SUGGEST_DEBOUNCE_MS, layout = 'picker', handoff = null, spawnInFlight = null, deployments = () => [] }) {
   const doc = modal.ownerDocument, el = (tag, text, cls) => node(doc, tag, text, cls);
   const titleId = 'spawn-dialog-title';
   const dialog = el('section', undefined, 'spawn-dialog');
@@ -894,12 +894,12 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   // ── the suggested name (feature spawn-suggest-name, awebai/oats#1421 §3 "The Desktop's use of it")
   // namings: every answer of this dialog, by the exact task text and the soul (namingKey): { source: 'suggested', name }
   // or { source: 'numbered', reason, harness }. asking: the one call in the air ({ key, promise }); a newer one ends it
-  // on the server (E_SUPERSEDED). pauseTimer: the task text's pause, armed by an edit only. nameTouched: the name field
+  // on the server (E_SUPERSEDED). suggestTimer: the debounce after a task edit, armed by an edit only. nameTouched: the name field
   // was typed in, for this dialog's lifetime (a draft brings it back): no suggestion is asked for or used.
   // suggestedNow: the suggestion the choices carry. pressNaming: this press's naming ended numbered, for that text (each
   // press the person makes starts without it: press()).
   const namings = new Map();
-  let asking = null, pauseTimer = null, nameTouched = draft.nameTouched === true || !!String(draft.purpose || '').trim(), suggestedNow = null, pressNaming = null;
+  let asking = null, suggestTimer = null, nameTouched = draft.nameTouched === true || !!String(draft.purpose || '').trim(), suggestedNow = null, pressNaming = null;
   const current = () => alive && owns() && mount === workspaceGeneration();
   const remoteTarget = () => deploymentField ? deploymentField.server() : soul.server || server.value || '';
   // Each server's registered group (where `spawn --server` goes), from the route's facts; its label for the hint.
@@ -1073,7 +1073,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     nameInput.classList.toggle('unprefixed', named);
     // The suggestion is the placeholder, only for the text it was made for: it never names what Spawn would not create.
     const suggestion = suggestionNow();
-    purpose.placeholder = suggestion ? `will be named ${suggestion}` : named ? 'e.g. desktop-improvements' : 'purpose, e.g. api-v2';
+    purpose.placeholder = suggestion ? suggestion : named ? 'e.g. desktop-improvements' : 'purpose, e.g. api-v2';
     // The kernel's name refusals belong next to the field, not only in the footer.
     const nameRefusal = shown?.failure && shown.key === choiceKey(draftChoice.value) && ['E_INSTANCE_NAME_INVALID', 'E_INSTANCE_NAME_TAKEN'].includes(shown.failure.code) ? shown.failure : null;
     nameResult.classList.toggle('err', !!(draftChoice.error && draftChoice.field === 'name' || nameRefusal));
@@ -1385,21 +1385,22 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     // Suggestions follow the harness the kernel resolved, once it is known.
     if (next.data && !runtime.value && modelsFor !== next.data.harness) void fillModels();
   }
-  // ── the suggested name: asked after the task text rests, never on a timer of its own
+  // ── the suggested name: asked shortly after the task text is edited, never on a timer of its own
   /** The choices now carry another suggestion (one arrived, or the text moved away from it): the preview reads again. */
   function followSuggestion() {
     const now = suggestionNow();
     if (now === suggestedNow) { render(); return; }
     suggestedNow = now; schedule(debounce);
   }
-  /** The task text changed: the suggestion follows it, and a pause (suggestDelay, SUGGEST_PAUSE_MS) asks for a name for it, once
-   * it holds SUGGEST_MIN_WORDS words and the dialog has no answer for it yet. */
+  /** The task text changed: the suggestion follows it, and after a short debounce (suggestDelay, SUGGEST_DEBOUNCE_MS: only
+   * so typing makes no read per keystroke) the dialog asks for a name for it, once it holds SUGGEST_MIN_WORDS words and the
+   * dialog has no answer for it yet. A newer text supersedes the older read on the server. */
   function taskEdited() {
-    clearTimeout(pauseTimer); pauseTimer = null;
+    clearTimeout(suggestTimer); suggestTimer = null;
     followSuggestion();
     const text = task.value;
     if (!suggesting() || purpose.value.trim() || taskWords(text) < SUGGEST_MIN_WORDS || namings.has(namingKey(selector, text))) return;
-    pauseTimer = setTimeout(() => { pauseTimer = null; if (current() && task.value === text) void ask(text); }, suggestDelay);
+    suggestTimer = setTimeout(() => { suggestTimer = null; if (current() && task.value === text) void ask(text); }, suggestDelay);
   }
   /** Ask the kernel to name the instance for `text` (a suggest read: the full preview, and `naming`). An answer the dialog
    * has is reused; with `fresh` (Spawn) only a suggested one is. A call in the air for the same text is joined; one
@@ -1698,7 +1699,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (event.target === runtime || event.target === server) void fillModels();
     if (event.target === server) { shown = settled = null; void fillConfigs(); void fillRelatives(); paintServerHint(); }
     // Typing in the name field replaces the suggestion, and stops suggestions for this dialog.
-    if (event.target === purpose && event.type === 'input' && !nameTouched) { nameTouched = true; clearTimeout(pauseTimer); pauseTimer = null; suggestedNow = null; }
+    if (event.target === purpose && event.type === 'input' && !nameTouched) { nameTouched = true; clearTimeout(suggestTimer); suggestTimer = null; suggestedNow = null; }
     if (event.target === task && event.type === 'input') { taskEdited(); syncButton(); return; }
     if ([search].includes(event.target) || wake.el.contains(event.target) || event.target === task) { syncButton(); return; }
     schedule(event.type === 'change' && (event.target.tagName !== 'INPUT' || event.target.type === 'checkbox') ? 0 : debounce);
@@ -1836,6 +1837,6 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     /** The background spawn store changed: re-read whether a spawn of this soul is in flight. */
     syncInFlight() { if (alive) syncButton(); },
     closePopups() { models.close(); runtimePicker.close(); deploymentField?.closePopup(); },
-    dispose() { alive = false; narrowQuery?.removeEventListener?.('change', placePreview); addMachineDialog?.close({ restoreFocus: false }); stopBackfill?.(); clearTimeout(timer); clearTimeout(pauseTimer); serial++; pressed = null; modelsReq++; configsReq++; deploymentField?.dispose(); models.dispose(); runtimePicker.dispose(); form.removeEventListener('input', onEdit); form.removeEventListener('change', onEdit); },
+    dispose() { alive = false; narrowQuery?.removeEventListener?.('change', placePreview); addMachineDialog?.close({ restoreFocus: false }); stopBackfill?.(); clearTimeout(timer); clearTimeout(suggestTimer); serial++; pressed = null; modelsReq++; configsReq++; deploymentField?.dispose(); models.dispose(); runtimePicker.dispose(); form.removeEventListener('input', onEdit); form.removeEventListener('change', onEdit); },
   };
 }

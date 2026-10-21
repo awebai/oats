@@ -544,9 +544,9 @@ the soul chooser is a `listbox` of `option` buttons where typing filters,
 Enter in the search picks the best match and Enter, Space or a click on a soul
 picks it, every pick moving focus to the first field. The dialog opens on its
 first field, the Opening instruction (`focusFirst`: no scroll, the caret at the
-end of a restored draft); Name is optional and last. Mod+1–Mod+7 jump to Name
-(`focusName`: caret at the end), Harness, Model, Relationship, Teams, the
-instruction and Developer settings (sections, not positions)
+end of a restored draft); Name is optional and last. Mod+1–Mod+7 jump to the
+instruction, Harness, Model, Relationship, Teams, Name (`focusName`: caret at
+the end) and Developer settings: the keys follow the form's order
 (`spawn-dialog-keys.mjs` registers them with `spawn.submit` in the
 `spawn-dialog-local` context, once, for the editor; the host resolves and stops
 them; `jump()` and `setShortcuts()` are the dialog's).
@@ -1370,7 +1370,9 @@ section is the module map.
   family) → registration default; pass the platform wherever a chord is shown.
   When two actions match one keydown, one bound there by the user wins over one
   holding it by default (a stored rebind keeps firing after a family's default
-  takes its key), and within each a specific context wins over global. The engine
+  takes its key), and within each a specific context wins over global. A view's
+  own keys follow the same first rule (`view-keys.mjs` `resolveViewKey`, the
+  spawn dialog's section keys among them). The engine
   skips already-consumed (`defaultPrevented`) events, and unmodified/
   shift-only chords never fire while an editable field (input, textarea,
   select, contenteditable) has focus. Terminal

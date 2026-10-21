@@ -8,7 +8,7 @@
    (review 4f57091: no local chord fallback — a resolver-side default would
    resurrect explicitly unbound shortcuts and split the keymap authority
    addendum 3 unified). */
-import { getBinding, parseChord, eventChordsFor } from "./keybindings.mjs";
+import { getBinding, hasOverride, parseChord, eventChordsFor } from "./keybindings.mjs";
 
 function chordsEqual(a, b, isMac) {
   if (!a || !b || a.key !== b.key || a.alt !== b.alt || a.shift !== b.shift) return false;
@@ -21,11 +21,18 @@ function chordsEqual(a, b, isMac) {
  * defaultChord). The effective chord is ENGINE-OWNED via getBinding;
  * view-local dispatch merely scopes WHERE the key fires (the focused
  * canvas/grid), never WHAT it is bound to. An action whose effective
- * binding is null (no default, or explicitly unbound) never fires. */
-export function resolveViewKey(e, actions, { isMac = /mac/i.test(navigator.platform || ""), binding = getBinding } = {}) {
+ * binding is null (no default, or explicitly unbound) never fires.
+ * Two actions on the pressed chord (a clash the editor names,
+ * keymapConflicts): the one the user bound there (`rebound`, hasOverride)
+ * wins over one that holds it by default, as in matchEvent and as the
+ * editor says; between two of the same kind, the first in `actions`. */
+export function resolveViewKey(e, actions, { isMac = /mac/i.test(navigator.platform || ""), binding = getBinding, rebound = hasOverride } = {}) {
+  let byDefault = null;
   for (const a of actions) {
     const bound = parseChord(binding(a.id, isMac) || "");
-    if (bound && eventChordsFor(e, a.id, isMac).some((chord) => chordsEqual(bound, chord, isMac))) return a.id;
+    if (!bound || !eventChordsFor(e, a.id, isMac).some((chord) => chordsEqual(bound, chord, isMac))) continue;
+    if (rebound(a.id)) return a.id;
+    byDefault ??= a.id;
   }
-  return null;
+  return byDefault;
 }
