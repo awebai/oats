@@ -108,7 +108,8 @@ const decoder = () => new TextDecoder("utf-8", { fatal: false });
  *  scanner reads every `CSI` sequence typed. A `u` key is a chord when its id (kittyId, a Ctrl+Alt or
  *  a Ctrl+Shift chord's) is one of `chords` (a Map of key id to the `does` it names), else the bytes it sends
  *  without the protocol (legacyBytes), which are the back key when they read as `leader` (the back
- *  key's key id, backKeyId), with no timing: Alt+O is one sequence and Esc is another. Any other sequence is
+ *  key's key id, backKeyId) and the key has no id of its own (kittyId: Ctrl+Shift+X, whose legacy
+ *  byte is Ctrl+X's, is typed, never the back key), with no timing: Alt+O is one sequence and Esc is another. Any other sequence is
  *  the same, made legacy where the protocol changed it (legacySequence: the modifier, F1 to F4).
  *  What is not a sequence goes to the agent as it came. Nothing is timed: a sequence a read ends
  *  inside, or a lone ESC (which no key sends under the protocol), waits for the next read however
@@ -128,6 +129,8 @@ const decoder = () => new TextDecoder("utf-8", { fatal: false });
  *  go on with the answer comes after them: within BACK_KEY_SPLIT_MS joined to them as before (the
  *  back key, a paste), later handed on after them, as a key of its own, so they never make the back
  *  key with it. giveUp() hands on what is held for the answer.
+ *  A Control back key's byte right after ESC in a read is Ctrl+Alt with that key (ESC 0x18 is
+ *  Ctrl+Alt+X), as the key parser reads it: the agent's, never the back key.
  *  The Alt+Shift arrow chords among `chords` are taken as the back key is: their one legacy
  *  sequence exactly (`CSI 1 ; 4 A` to `D`, nothing but Alt and Shift in the modifier), with what
  *  came after it in the read handed on as the rest.
@@ -229,7 +232,9 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
         kb = confirmed(answer.flags) ? answer.flags : null;
         return scan(out, data.subarray(answer.end));
       }
-      const key = keys.find((seq) => seq[0] === b && at(data, i, seq));
+      // A Control back key right after ESC is Ctrl+Alt with it (ESC 0x18 is Ctrl+Alt+X), never the
+      // back key: it goes to the agent as it came, as the key parser reads it as ctrl+alt+x.
+      const key = keys.find((seq) => seq[0] === b && at(data, i, seq) && !(seq.length === 1 && i > 0 && data[i - 1] === ESC));
       if (key) {
         if (i > 0) out.push({ input: data.subarray(0, i) });
         out.push({ back: true, rest: data.subarray(i + key.length) });
@@ -283,17 +288,20 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
       handOn(i);
       from = end;
       i = end - 1;
-      let bytes;
+      let bytes, own = null;
       if (final === "u") {
         if (/^\?\d{1,3}$/.test(params)) continue; // the protocol's answer again: never the agent's
         const key = kittyKey(params), id = kittyId(key);
         if (id !== null && chords.has(id)) { out.push({ chord: chords.get(id), rest: data.subarray(end) }); return; }
+        own = id;
         bytes = legacyBytes(key, kb);
       } else bytes = legacySequence(params, final);
       if (bytes === null) continue; // a key that sends nothing without the protocol: nothing
-      // What the bytes read as without the protocol: the back key, or an Alt+Shift arrow chord.
+      // What the bytes read as without the protocol: the back key, or an Alt+Shift arrow chord. A
+      // key with an id of its own (kittyId: Ctrl+Shift or Ctrl+Alt with a letter) is never the back
+      // key, though its legacy bytes may read as it (Ctrl+Shift+X is 0x18, as Ctrl+X): it types them.
       const events = legacyEvents(bytes), id = events.length === 1 ? keyId(events[0]) : null;
-      if (id !== null && id === leader) { out.push({ back: true, rest: data.subarray(end) }); return; }
+      if (id !== null && id === leader && own === null) { out.push({ back: true, rest: data.subarray(end) }); return; }
       if (legacyChord(id) && chords.has(id)) { out.push({ chord: chords.get(id), rest: data.subarray(end) }); return; }
       out.push({ input: bytes });
     }

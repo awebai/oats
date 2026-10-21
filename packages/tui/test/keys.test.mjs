@@ -102,7 +102,9 @@ const TABLE = [
   ["DEL is Backspace", [0x7f], [key("backspace")]],
   ["BS is Backspace", [0x08], [key("backspace")]],
   ["NUL is dropped", [0x00], []],
-  ["0x1c is Ctrl+\\ (the leader's default on macOS)", [0x1c], [key("ctrl+\\")]],
+  ["0x18 is Ctrl+X (the default leader)", [0x18], [key("ctrl+x")]],
+  ["ESC 0x18 is Ctrl+Alt+X, not the leader Ctrl+X", [ESC, 0x18], [key("ctrl+alt+x")]],
+  ["0x1c is Ctrl+\\ (the leader's default on macOS before Ctrl+X)", [0x1c], [key("ctrl+\\")]],
   ["0x1d is Ctrl+]", [0x1d], [key("ctrl+]")]],
   ["0x1e is Ctrl+^", [0x1e], [key("ctrl+^")]],
   ["0x1f is Ctrl+_", [0x1f], [key("ctrl+_")]],
@@ -133,7 +135,7 @@ const TABLE = [
 
   // Alt: ESC then a key.
   ["ESC then a letter is Alt+letter", [ESC, "q"], [alt("q")]],
-  ["ESC o is Alt+O (the leader's default on Linux and Windows)", [ESC, "o"], [alt("o")]],
+  ["ESC o is Alt+O (the leader's default on Linux and Windows before Ctrl+X: now a key like any other)", [ESC, "o"], [alt("o")]],
   ["ESC then a space is Alt+space", [ESC, " "], [alt(" ")]],
   ["ESC then a multi-byte character is Alt+that character", [ESC, "\u00e9"], [alt("\u00e9")]],
   ["ESC then a CJK character is Alt+that character", [ESC, "\u65e5"], [alt("\u65e5")]],

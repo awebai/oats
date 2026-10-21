@@ -20,11 +20,11 @@ import {
   chordKey, chordKeyOf, leaderKey, leaderDoes, paletteKey, plainKeys, leaderRows,
 } from "../../client/keymap.mjs";
 
-test("the leader is Ctrl+\\ on macOS and Alt+O elsewhere", () => {
-  assert.deepEqual({ ...LEADER }, { mac: "ctrl+\\", other: "alt+o" });
+test("the leader is Ctrl+X on macOS and elsewhere", () => {
+  assert.deepEqual({ ...LEADER }, { mac: "ctrl+x", other: "ctrl+x" });
   assert.ok(Object.isFrozen(LEADER));
-  assert.equal(leaderKey(true), "ctrl+\\");
-  assert.equal(leaderKey(false), "alt+o");
+  assert.equal(leaderKey(true), "ctrl+x");
+  assert.equal(leaderKey(false), "ctrl+x");
 });
 
 test("the leader's table: every row, in order, with its keys and what it does", () => {
@@ -203,7 +203,7 @@ const MODULE = new URL("../../client/keymap.mjs", import.meta.url);
 test("the Desktop's leader and sidebar-key defaults are the module's entries", () => {
   assert.equal(defaultBinding("app.leader", true), chordFromKeyId(LEADER.mac));
   assert.equal(defaultBinding("app.leader", false), chordFromKeyId(LEADER.other));
-  assert.deepEqual([defaultBinding("app.leader", true), defaultBinding("app.leader", false)], ["Ctrl+\\", "Alt+O"]);
+  assert.deepEqual([defaultBinding("app.leader", true), defaultBinding("app.leader", false)], ["Ctrl+X", "Ctrl+X"]);
   const sidebar = SIDEBAR_KEYS.map(({ id, does }) => [id, does]);
   assert.equal(new Set(sidebar.map(([, does]) => does)).size, sidebar.length, "one action per key");
   for (const [id, does] of sidebar) {
@@ -226,7 +226,7 @@ test("change the module's entry in a copy: the Desktop's default follows, and ke
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "client")); mkdirSync(join(root, "desktop", "renderer"), { recursive: true });
   const module = readFileSync(MODULE, "utf8");
-  const changed = module.replace('other: "alt+o"', 'other: "alt+l"').replace('{ does: "refresh", keys: ["r"] }', '{ does: "refresh", keys: ["F"] }')
+  const changed = module.replace('other: "ctrl+x"', 'other: "alt+l"').replace('{ does: "refresh", keys: ["r"] }', '{ does: "refresh", keys: ["F"] }')
     .replace('{ does: "palette", mac: "cmd+k", other: "ctrl+alt+k", shift: "ctrl+shift+k" }', '{ does: "palette", mac: "cmd+j", other: "ctrl+shift+j" }')
     .replace('{ does: "previous", mac: "cmd+alt+up", other: "alt+shift+up" }', '{ does: "previous", mac: "cmd+alt+u", other: "ctrl+alt+u" }')
     .replace('`ctrl+alt+${i + 1}`', '`ctrl+shift+alt+${i + 1}`');
@@ -241,7 +241,7 @@ test("change the module's entry in a copy: the Desktop's default follows, and ke
   assert.deepEqual([copy.defaultBinding("tabs.goto1", false), copy.defaultBinding("tabs.goto9", false)], ["Ctrl+Alt+Shift+1", "Ctrl+Alt+Shift+9"]);
   // No literal duplicate: the engine names neither chord nor key of the shared tables.
   const engine = readFileSync(ENGINE, "utf8");
-  assert.doesNotMatch(engine, /"Alt\+O"|"Ctrl\+\\\\"|"alt\+o"|"ctrl\+\\\\"/, "the leader is read, not retyped");
+  assert.doesNotMatch(engine, /"Ctrl\+X"|"ctrl\+x"/, "the leader is read, not retyped");
   assert.doesNotMatch(engine, /"sidebar\.key\.\w+":\s*"/, "no sidebar key with a literal default");
   for (const { id } of CHORDS_READ) assert.doesNotMatch(engine, new RegExp(`"${id.replace(".", "\\.")}":\\s*[{"]`), `${id}: the chord is read, not retyped`);
   assert.doesNotMatch(engine, /`tabs\.goto\$\{i \+ 1\}`, \{|Alt\+\$\{i \+ 1\}/, "go to tab is read, not retyped");
@@ -253,9 +253,10 @@ test("change the module's entry in a copy: the Desktop's default follows, and ke
 // (c4d4a391) changed exactly its rows: the palette, Quick Open, close tab, filter and the splits
 // moved to Ctrl+Alt on Linux/Windows, the second tab-cycling chords to Alt+Shift+←/→ (⌘⌥←/→, new on
 // macOS), go to tab to Ctrl+Alt+digit; the workspace switcher and the next editor group got a chord;
-// roster.openPrevious, roster.openNext and terminal.focusMode are new.
+// roster.openPrevious, roster.openNext and terminal.focusMode are new. 0.67 (#1433) changed only the
+// leader, to Ctrl+X on both.
 const DEFAULTS = [
-  ["app.leader",{"mac":"Ctrl+\\","other":"Alt+O"}],
+  ["app.leader",{"mac":"Ctrl+X","other":"Ctrl+X"}],
   ["sidebar.key.instances","1"],
   ["sidebar.key.souls","2"],
   ["sidebar.key.capabilities","3"],

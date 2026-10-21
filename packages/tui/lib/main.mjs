@@ -176,7 +176,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   let kb = keyboard ? "asking" : null, kbTimer = null;
   /** The clock time the wait for the answer ends: what may begin it is held up to then. */
   const answerBy = keyboard ? now() + KEYBOARD_WAIT_MS : null;
-  const newParser = () => createKeyParser({ now, keyboard: kb, chords: state.chords, answerBy });
+  const newParser = () => createKeyParser({ now, keyboard: kb, chords: state.chords, leader: state.leaderKey, answerBy });
   let parser = newParser();
   // While a terminal has the focus the bytes typed go to the agent: this scanner takes from them
   // only the back key, the chords and a bracketed paste (term/through.mjs). A new one each time the

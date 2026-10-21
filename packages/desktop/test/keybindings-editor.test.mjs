@@ -657,7 +657,7 @@ test("the editor opens on a Leader group, then Sidebar keys, then the groups as 
   const rows = [...leader.querySelectorAll(".kb-row")];
   // First the rebindable leader itself, marked as working in a terminal.
   assert.equal(rows[0].querySelector(".kb-label").textContent, "Leader: the commands that follow one key");
-  assert.deepEqual([...rows[0].querySelectorAll("button.kb-chord kbd")].map((k) => k.textContent), ["Alt", "O"]);
+  assert.deepEqual([...rows[0].querySelectorAll("button.kb-chord kbd")].map((k) => k.textContent), ["Ctrl", "X"]);
   assert.equal(f.marks("Leader: the commands that follow one key", "terminal"), "terminal");
   // Then one read-only row per entry of the table the Desktop runs: no m.
   const fixed = rows.slice(1);
@@ -665,27 +665,27 @@ test("the editor opens on a Leader group, then Sidebar keys, then the groups as 
   assert.ok(fixed.every((row) => row.classList.contains("kb-row-fixed") && !row.querySelector("button")), "read-only: no button to record or reset");
   const palette = fixed[0];
   assert.equal(palette.querySelector(".kb-label").textContent, "Command palette", "a key that runs one action shows its label");
-  assert.equal(palette.querySelector(".kb-chord .sr-only").textContent, "Alt+O then K or Space, fixed");
-  assert.deepEqual([...palette.querySelectorAll(".kb-keys kbd")].map((k) => k.textContent), ["Alt+O", "K", "Space"]);
+  assert.equal(palette.querySelector(".kb-chord .sr-only").textContent, "Ctrl+X then K or Space, fixed");
+  assert.deepEqual([...palette.querySelectorAll(".kb-keys kbd")].map((k) => k.textContent), ["Ctrl+X", "K", "Space"]);
   assert.ok(fixed.some((row) => row.querySelector(".kb-label").textContent === "Instance roster"), "Esc");
   // The quiet line: the leader is the TUI's, the direct chords are extras, and where 1 and 3 differ.
   const extras = leader.querySelector(".kb-extras");
   assert.match(extras.textContent, /the TUI's/);
-  assert.match(extras.textContent, /Alt\+O then 1 is Instances and Alt\+O then 3 is Capabilities, while Ctrl\+1 stays Deployments and Ctrl\+3 stays Automations/);
+  assert.match(extras.textContent, /Ctrl\+X then 1 is Instances and Ctrl\+X then 3 is Capabilities, while Ctrl\+1 stays Deployments and Ctrl\+3 stays Automations/);
   // The stage rows say it too.
-  assert.match(f.rowFor("View: Deployments").querySelector(".kb-note").textContent, /Alt\+O then 1 is Instances/);
-  assert.match(f.rowFor("View: Automations").querySelector(".kb-note").textContent, /Alt\+O then 3 is Capabilities/);
+  assert.match(f.rowFor("View: Deployments").querySelector(".kb-note").textContent, /Ctrl\+X then 1 is Instances/);
+  assert.match(f.rowFor("View: Automations").querySelector(".kb-note").textContent, /Ctrl\+X then 3 is Capabilities/);
 });
 
 test("the leader's rows are found by their keys and by \"leader\", and Up/Down reach them", (t) => {
   const f = setupLinux(t, { extra: LEADER_EXTRA });
   f.editor.open();
-  f.type("alt+o k");
+  f.type("ctrl+x k");
   const found = () => [...f.doc.querySelectorAll(".kb-row")].filter((r) => !r.closest("[hidden]"))
     .map((r) => `${r.closest(".kb-group").dataset.label}: ${r.querySelector(".kb-label").textContent}`);
-  // The leader's row, and the palette's own chord Ctrl+Alt+K: "alt", "o" (option) and "k" each start one of its keys.
-  assert.deepEqual(found().sort(), ["Global: Command palette", "Leader: Command palette"]);
-  f.type("alt+o shift+n");
+  // The leader's row alone: no key of the palette's own chord Ctrl+Alt+K starts with "x".
+  assert.deepEqual(found().sort(), ["Leader: Command palette"]);
+  f.type("ctrl+x shift+n");
   assert.ok(f.shown().includes("Spawn another of the instance's soul…"));
   f.type("leader");
   assert.equal(f.shown().length, 25, "the group's name finds all of it");

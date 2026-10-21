@@ -429,6 +429,7 @@ test("the aliases are for chords that hold a modifier: Mod+Shift+\\ and Mod+= ke
 });
 
 test("chordFromKeyId: the shared keymap's key ids as this engine's chords", () => {
+  assert.equal(chordFromKeyId("ctrl+x"), "Ctrl+X");
   assert.equal(chordFromKeyId("alt+o"), "Alt+O");
   assert.equal(chordFromKeyId("ctrl+\\"), "Ctrl+\\");
   assert.equal(chordFromKeyId("N"), "Shift+N");
@@ -470,14 +471,14 @@ test("`when`: an action that is not live does not exist for dispatch; its chord 
 });
 
 test("letThrough: an event handed to the focused control matches nothing; eventMatchesBinding reads the live chord", (t) => {
-  withActions(t, [{ id: "app.leader", label: "leader", context: "global", run: () => {}, defaultChord: "Alt+O" }]);
-  const e = ev("o", { altKey: true });
+  withActions(t, [{ id: "app.leader", label: "leader", context: "global", run: () => {} }]);
+  const e = ev("x", { ctrlKey: true });
   assert.equal(eventMatchesBinding(e, "app.leader", false), true);
   letThrough(e);
   assert.equal(matchEvent(e, { isMac: false }), null);
-  assert.equal(matchEvent(ev("o", { altKey: true }), { isMac: false }), "app.leader", "only that event");
+  assert.equal(matchEvent(ev("x", { ctrlKey: true }), { isMac: false }), "app.leader", "only that event");
   setBinding("app.leader", "Alt+L");
-  assert.equal(eventMatchesBinding(ev("o", { altKey: true }), "app.leader", false), false);
+  assert.equal(eventMatchesBinding(ev("x", { ctrlKey: true }), "app.leader", false), false);
   assert.equal(eventMatchesBinding(ev("l", { altKey: true }), "app.leader", false), true);
 });
 

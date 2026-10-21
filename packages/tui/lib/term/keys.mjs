@@ -43,7 +43,7 @@ const named = (name, ctrl = false, alt = false, shift = false) => ({ name, ctrl,
 const CTRL_PUNCTUATION = "\\]^_";
 
 /** The key of a C0 byte or DEL, or null for a byte that is no key (NUL). 0x1c..0x1f are Control
- *  with \ ] ^ _ (the leader, `C-\` by default, is one of them: docs/tui.md, "The leader"). */
+ *  with \ ] ^ _ (`C-\`, a leader tui.json can name, is one of them: docs/tui.md, "The leader"). */
 function c0Key(b) {
   if (b === 0x0d || b === 0x0a) return named("enter");
   if (b === 0x09) return named("tab");
@@ -150,7 +150,9 @@ export function legacyEvents(bytes) {
  * (`ctrl+shift+k`, bound only when keys.json chose that family), which is read from the protocol's
  * event alone: without it, and as a legacy byte under it, Ctrl+Shift+K is Ctrl+K, and Ctrl+Shift+D
  * and Ctrl+Shift+M are Ctrl+D and Enter. A Ctrl+Shift letter that is not among `chords` reads as its
- * legacy bytes, as before. A character that is not ASCII is never a chord:
+ * legacy bytes, as before, but the one whose legacy bytes read as `leader` (the leader's key id,
+ * null for none): Ctrl+Shift+X under the protocol is `ctrl+shift+x`, which nothing binds, and never
+ * the leader Ctrl+X. A character that is not ASCII is never a chord:
  * AltGr's `€`, as text or as a `CSI … u` of its own, reads as that text. An Alt+Shift arrow chord is
  * read by its legacy sequence (`CSI 1 ; 4 A`) in every state. An answer
  * at any other time is dropped, as is a `u` key while not under the protocol. Under it a key in a
@@ -172,7 +174,7 @@ export function legacyEvents(bytes) {
  *   giveUp()     the answer is no longer awaited (none came in time): a late one is dropped, and
  *                the events of what was kept for it are answered.
  *   keyboard     the protocol as it is now: null, "asking" or the confirmed flags. */
-export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS, answerBy = null } = {}) {
+export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS, leader = null, answerBy = null } = {}) {
   if (typeof now !== "function") throw new TypeError("createKeyParser needs an injected clock: { now: () => milliseconds }");
   if (!(keyboard === null || keyboard === "asking" || confirmed(keyboard))) throw new TypeError("keyboard is null, \"asking\" or flags that hold flag 1");
   if (!(chords instanceof Map)) throw new TypeError("chords is a Map of key ids");
@@ -293,7 +295,11 @@ export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS, answ
     if (id !== null && chords.has(id)) { emit(named(String.fromCharCode(key.code), key.ctrl, key.alt, key.shift)); return; }
     const bytes = legacyBytes(key, kb);
     if (bytes === null) { flush(); return; }
-    for (const event of legacyEvents(bytes)) emit(event);
+    const events = legacyEvents(bytes);
+    // A key with an id of its own whose legacy bytes read as the leader (Ctrl+Shift+X is 0x18, as
+    // Ctrl+X) is its own key, which nothing binds: never the leader.
+    if (id !== null && leader !== null && events.length === 1 && keyId(events[0]) === leader) { emit(named(String.fromCharCode(key.code), key.ctrl, key.alt, key.shift)); return; }
+    for (const event of events) emit(event);
   };
 
   const endPaste = (truncated) => {

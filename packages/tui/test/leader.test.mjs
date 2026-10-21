@@ -170,7 +170,7 @@ test("the leader then Esc from the terminal gives the list the focus, unzoomed, 
   }
 });
 
-test("the leader twice from the terminal types the leader's own bytes into the agent, the terminal keeping the focus and its zoom; the hint closes: ESC o for M-o, 0x1c for C-\\, a function key's first form", () => {
+test("the leader twice from the terminal types the leader's own bytes into the agent, the terminal keeping the focus and its zoom; the hint closes: 0x18 for C-x (the default), ESC o for M-o, 0x1c for C-\\, a function key's first form", () => {
   const state = opened(THREE(), "dev-a");
   const zoomed = leaderThen(state, "z", AT).state;
   assert.deepEqual([zoomed.terminal.focus, zoomed.terminal.zoom], ["terminal", true]);
@@ -181,7 +181,7 @@ test("the leader twice from the terminal types the leader's own bytes into the a
     assert.deepEqual([...step.effect.input], [0x1c], "C-\\, the tests' leader");
     assert.deepEqual(butLeader(step.state), butLeader(from), "nothing else changes");
   }
-  for (const [detachKey, leaderKey, bytes] of [["M-o", "alt+o", [0x1b, 0x6f]], ["C-]", "ctrl+]", [0x1d]], ["F12", "f12", [0x1b, 0x5b, 0x32, 0x34, 0x7e]], ["S-F1", "shift+f1", [0x1b, 0x5b, 0x31, 0x3b, 0x32, 0x50]]]) {
+  for (const [detachKey, leaderKey, bytes] of [["C-x", "ctrl+x", [0x18]], ["M-o", "alt+o", [0x1b, 0x6f]], ["C-]", "ctrl+]", [0x1d]], ["F12", "f12", [0x1b, 0x5b, 0x32, 0x34, 0x7e]], ["S-F1", "shift+f1", [0x1b, 0x5b, 0x31, 0x3b, 0x32, 0x50]]]) {
     const keyed = opened(stateOf(observed([instanceRow("dev", "dev-a"), instanceRow("dev", "dev-b", STOPPED), instanceRow("dev", "dev-c")], { cli: ACTS_CLI }), { cli: ACTS_CLI, detachKey }), "dev-a");
     assert.equal(keyed.leaderKey, leaderKey, detachKey);
     const step = leaderTwice(keyed);
@@ -222,12 +222,28 @@ test("the leader twice from the list's focus, or the leader then Esc, only close
   assert.deepEqual(twice(palette).effect, null);
 });
 
-test("the leader is the platform's default without a tui.json: M-o (read as alt+o) on Linux and Windows, C-\\ (ctrl+\\) on macOS", () => {
-  for (const [platform, detachKey, leaderKey] of [["linux", "M-o", "alt+o"], ["win32", "M-o", "alt+o"], ["darwin", "C-\\", "ctrl+\\"]]) {
+test("the leader is the default without a tui.json: C-x (read as ctrl+x) on Linux, Windows and macOS alike", () => {
+  for (const platform of ["linux", "win32", "darwin"]) {
     const state = initialState({ deployment: null, cli: CLI, home: "/home/u", platform });
-    assert.deepEqual([state.detachKey, state.leaderKey], [detachKey, leaderKey], platform);
+    assert.deepEqual([state.detachKey, state.leaderKey], ["C-x", "ctrl+x"], platform);
   }
   assert.equal(initialState({ deployment: null, cli: CLI, home: "/home/u", platform: "linux", detachKey: "F12" }).leaderKey, "f12", "tui.json's key wins");
+  assert.equal(initialState({ deployment: null, cli: CLI, home: "/home/u", platform: "linux", detachKey: "M-o" }).leaderKey, "alt+o", "M-o, the default before, as tui.json names it");
+});
+
+test("the default leader twice from the terminal types 0x18 once into the agent, on every platform; Alt+O there is no leader: from the list it is a key of its own (#1433)", () => {
+  for (const platform of ["linux", "win32", "darwin"]) {
+    const base = stateOf(observed([instanceRow("dev", "dev-a"), instanceRow("dev", "dev-b", STOPPED), instanceRow("dev", "dev-c")], { cli: ACTS_CLI }), { cli: ACTS_CLI, platform, detachKey: undefined });
+    assert.equal(base.leaderKey, "ctrl+x", platform);
+    const state = opened(base, "dev-a");
+    const step = leaderTwice(state);
+    assert.deepEqual([step.state.terminal.focus, step.state.leader.waiting, Object.keys(step.effect), [...step.effect.input]], ["terminal", false, ["input"], [0x18]], platform);
+    // From the list's focus, alt+o neither opens the leader's hint nor closes it.
+    const list = key(base, "alt+o");
+    assert.equal(list.state.leader?.waiting ?? false, false, `${platform}: alt+o is not the leader`);
+    const open = leader(base);
+    assert.equal(open.state.leader.waiting, true, `${platform}: ctrl+x is`);
+  }
 });
 
 test("the leader then z zooms the terminal that has the focus, in and out; then w closes it, the agent left running; with no terminal open w and z do nothing", () => {

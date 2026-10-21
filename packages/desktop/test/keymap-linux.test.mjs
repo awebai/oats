@@ -15,7 +15,7 @@ import {
   setKeyboardLayoutMap, readKeyboardLayout, getBinding, formatChord, isPlainChord,
   registerAction, setActiveContexts, resetAllBindings, setBinding, matchEvent, handleKeydown, findConflict, keymapConflicts,
   eventMatchesBinding, pickerCycleDirection, paletteGroupDirection, paletteGroupHint, chordFromKeyId,
-  setChordFamily, parseChord, terminalAllows,
+  setChordFamily, parseChord, terminalAllows, leaderLeftToField,
 } from "../renderer/keybindings.mjs";
 import { readdirSync } from "node:fs";
 import { appMenuTemplate } from "../app-menu.mjs";
@@ -108,8 +108,10 @@ test("the terminal allowlist is exactly the actions that must work in a terminal
   for (const { id } of CHORDS_READ) assert.ok(TERMINAL_ALLOWLIST.includes(id), `${id} is allowlisted`);
   // No allowlisted default on Linux/Windows is a key a program reads: not a plain Ctrl+letter,
   // not a bare function key, not Alt+digit, not Ctrl+PgUp/PgDn.
+  // The one named exception, the leader's Ctrl+X (0x18, which the leader pressed twice gives the program).
   for (const id of TERMINAL_ALLOWLIST) {
     const chord = defaultBinding(id, false);
+    if (id === "app.leader") { assert.equal(chord, "Ctrl+X"); continue; }
     assert.doesNotMatch(chord, /^(Mod|Ctrl)\+[A-Za-z\\]$|^(Shift\+)?F\d+$|^Alt\+\d$|^Ctrl\+Page(Up|Down)$/, `${id}: ${chord}`);
   }
 });
@@ -125,7 +127,7 @@ test("Linux/Windows inside a terminal: the allowlisted chords fire from real (sh
     [linux("e", { altKey: true }), "split.vertical"], [linux("E", { altKey: true, shiftKey: true }), "split.horizontal"],
     [linux("W", { shiftKey: true, altKey: true }), "split.close"], [linux("a", { altKey: true }), "split.focusNextGroup"],
     [linux("z", { altKey: true }), "terminal.focusMode"], [linux("1", { altKey: true }), "tabs.goto1"], [linux("9", { altKey: true }), "tabs.goto9"],
-    [linux("r", { altKey: true }), "instance.edit"],
+    [linux("r", { altKey: true }), "instance.edit"], [linux("x"), "app.leader"],
     // The Alt+Shift arrows (no Ctrl): the leader's ↑ / ↓ and the tab moves.
     [ev("ArrowUp", { altKey: true, shiftKey: true }), "roster.openPrevious"], [ev("ArrowDown", { altKey: true, shiftKey: true }), "roster.openNext"],
     [ev("ArrowLeft", { altKey: true, shiftKey: true }), "tabs.prevPage"], [ev("ArrowRight", { altKey: true, shiftKey: true }), "tabs.nextPage"],
@@ -154,6 +156,7 @@ test("Linux/Windows inside a terminal: Ctrl+W/K/\\/P/B, F6, Alt+digit and Ctrl+P
     ["F6 (mc, htop, nano)", ev("F6")], ["Shift+F6", ev("F6", { shiftKey: true })],
     ["Alt+1 (readline numeric argument)", ev("1", { altKey: true })], ["Alt+9", ev("9", { altKey: true })],
     ["Ctrl+PgDn (vim, weechat)", linux("PageDown")], ["Ctrl+PgUp", linux("PageUp")],
+    ["Alt+O (ESC o; the leader before 0.67)", ev("o", { altKey: true })],
   ];
   for (const [name, event] of programKeys) {
     assert.equal(matchEvent(event, inTerm), null, name);
@@ -410,45 +413,122 @@ test("macOS: the copy action has no chord, so ⌘C stays the menu's Copy and ⌃
   assert.equal(matchEvent(ev("C", { ctrlKey: true, shiftKey: true }), { isMac: true, insideTerminal: true }), null);
 });
 
-// The leader (docs/desktop-keyboard.md, "The leader"): the TUI's, from every focus. On Linux/Windows
-// Alt+O is allowlisted (it sends ESC o, which Esc then o still sends: terminal-xterm-bytes); on macOS
-// Ctrl+\ fires in a terminal by name and shape, a named exception to principle 3.
-test("the leader: Alt+O fires app.leader inside a terminal on Linux/Windows, and claims it", t => {
+// The leader (docs/desktop-keyboard.md, "The leader"): the TUI's, Ctrl+X on every platform, from every
+// focus. On Linux/Windows it is allowlisted, a named exception to principle 2 (it sends 0x18, which the
+// leader pressed twice gives the program: terminal-xterm-bytes), and Cut keeps it in a text field
+// (leaderLeftToField). On macOS ⌃X fires in a terminal by name and shape (⌃\, the leader before 0.67,
+// too), a named exception to principle 3, and in a field as well: Cut is ⌘X there.
+test("the leader: Ctrl+X fires app.leader inside a terminal on Linux/Windows, and claims it", t => {
   registerAll(t);
-  assert.equal(defaultBinding("app.leader", false), "Alt+O");
-  assert.equal(defaultBinding("app.leader", true), "Ctrl+\\");
+  assert.equal(defaultBinding("app.leader", false), "Ctrl+X");
+  assert.equal(defaultBinding("app.leader", true), "Ctrl+X");
   for (const insideTerminal of [true, false]) {
     const opts = { isMac: false, insideTerminal };
-    const alt = ev("o", { altKey: true });
-    assert.equal(matchEvent(alt, opts), "app.leader", `terminal=${insideTerminal}`);
-    handleKeydown(alt, opts);
-    assert.equal(alt.defaultPrevented, true);
+    const ctrlX = linux("x");
+    assert.equal(matchEvent(ctrlX, opts), "app.leader", `terminal=${insideTerminal}`);
+    handleKeydown(ctrlX, opts);
+    assert.equal(ctrlX.defaultPrevented, true);
   }
-  // From an editable field too: it is not a plain chord.
-  const dom = new JSDOM(`<input class="ctx-filter">`);
-  t.after(() => dom.window.close());
-  assert.equal(matchEvent(ev("o", { altKey: true, target: dom.window.document.querySelector("input") }), { isMac: false }), "app.leader");
-  // Alt+Shift+O and plain o are not the leader.
-  assert.equal(matchEvent(ev("O", { altKey: true, shiftKey: true }), { isMac: false, insideTerminal: true }), null);
-  assert.equal(formatChord(getBinding("app.leader", false), false), "Alt+O");
-  assert.equal(formatChord(getBinding("app.leader", true), true), "⌃\\");
+  // Ctrl+Shift+X and Ctrl+Alt+X are not the leader; nor is Alt+O, the leader before 0.67: the program's (ESC o).
+  const inTerm = { isMac: false, insideTerminal: true };
+  assert.equal(matchEvent(linux("X", { shiftKey: true }), inTerm), null);
+  assert.equal(matchEvent(linux("x", { altKey: true }), inTerm), null);
+  const altO = ev("o", { altKey: true });
+  assert.equal(matchEvent(altO, inTerm), null, "Alt+O");
+  assert.equal(handleKeydown(altO, inTerm), false); assert.equal(altO.defaultPrevented, false, "Alt+O is the program's");
+  assert.equal(formatChord(getBinding("app.leader", false), false), "Ctrl+X");
+  assert.equal(formatChord(getBinding("app.leader", true), true), "⌃X");
 });
 
-test("the leader on macOS: Ctrl+\\ fires inside a terminal; a rebind to another ⌃ chord does not, to ⌘ does", t => {
+test("the leader in a text field: Linux/Windows leave Ctrl+X to Cut; a terminal's own textarea, a field with nothing to cut and macOS open it", t => {
+  registerAll(t);
+  const dom = new JSDOM(`<input class="ctx-filter"><input type="search" class="search"><textarea class="ftask"></textarea>
+    <div class="editable" contenteditable="true"></div><input type="checkbox" class="check"><button class="button">b</button>
+    <input class="readonly" readonly><textarea class="readonly-area" readonly></textarea><input type="password" class="password"><input type="date" class="date">
+    <div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div>`);
+  t.after(() => dom.window.close());
+  const doc = dom.window.document;
+  const editable = doc.querySelector(".editable");
+  Object.defineProperty(editable, "isContentEditable", { value: true }); // jsdom does not compute it
+  const fields = [doc.querySelector(".ctx-filter"), doc.querySelector(".search"), doc.querySelector(".ftask"), editable];
+  const ctrlX = target => linux("x", { target });
+  // Linux and Windows are one path (isMac false): Ctrl+X in a text input, a textarea or a contenteditable
+  // matches nothing and is not prevented, so Chromium's Cut runs.
+  for (const target of fields) {
+    const e = ctrlX(target);
+    assert.equal(leaderLeftToField(e, false), true, `${target.className}: left to the field`);
+    assert.equal(matchEvent(e, { isMac: false }), null, `${target.className}: not the leader`);
+    assert.equal(handleKeydown(e, { isMac: false }), false);
+    assert.equal(e.defaultPrevented, false, `${target.className}: Cut runs`);
+    // macOS cuts with ⌘X: ⌃X is the leader there, in a field too.
+    const mac = ctrlX(target);
+    assert.equal(leaderLeftToField(mac, true), false, `${target.className} on macOS`);
+    assert.equal(handleKeydown(mac, { isMac: true }), true, `${target.className} on macOS opens the leader`);
+    assert.equal(mac.defaultPrevented, true);
+  }
+  // xterm's helper textarea is a textarea inside .xterm: there Ctrl+X is the leader (the terminal rule).
+  const helper = doc.querySelector(".xterm-helper-textarea");
+  assert.equal(leaderLeftToField(ctrlX(helper), false), false, "a terminal is not a field");
+  const inTerminal = ctrlX(helper);
+  assert.equal(handleKeydown(inTerminal, { isMac: false }), true, "the terminal's textarea opens the leader");
+  assert.equal(inTerminal.defaultPrevented, true);
+  // Nothing Cut takes text from is a field: an input with no text, a button, a read-only input or
+  // textarea, a password (Chromium disables Cut there) and a date.
+  for (const target of [".check", ".button", ".readonly", ".readonly-area", ".password", ".date"].map(s => doc.querySelector(s))) {
+    assert.equal(leaderLeftToField(ctrlX(target), false), false, target.className);
+    assert.equal(matchEvent(ctrlX(target), { isMac: false }), "app.leader", `${target.className} opens the leader`);
+  }
+  // The rule is the chord's: a stored rebind to Ctrl+X (or Mod+X, the same key here) follows it.
+  for (const chord of ["Ctrl+X", "Mod+X"]) {
+    setBinding("app.leader", chord);
+    for (const target of fields) {
+      const e = ctrlX(target);
+      assert.equal(handleKeydown(e, { isMac: false }), false, `${chord} rebind, ${target.className}`);
+      assert.equal(e.defaultPrevented, false);
+    }
+    assert.equal(matchEvent(ctrlX(doc.querySelector(".button")), { isMac: false }), "app.leader", `${chord} rebind on a button`);
+  }
+  // A rebind to anything else fires in a field as before, and Ctrl+X is then plain in a field: nothing matches.
+  setBinding("app.leader", "Alt+O");
+  for (const target of fields) {
+    const altO = ev("o", { altKey: true, target });
+    assert.equal(leaderLeftToField(altO, false), false);
+    assert.equal(handleKeydown(altO, { isMac: false }), true, `Alt+O in ${target.className} opens the leader`);
+    assert.equal(altO.defaultPrevented, true);
+    const e = ctrlX(target);
+    assert.equal(matchEvent(e, { isMac: false }), null, `Ctrl+X in ${target.className} is Cut`);
+    assert.equal(handleKeydown(e, { isMac: false }), false); assert.equal(e.defaultPrevented, false);
+  }
+  setBinding("app.leader", "Ctrl+Shift+X");
+  assert.equal(matchEvent(linux("X", { shiftKey: true, target: fields[0] }), { isMac: false }), "app.leader", "Ctrl+Shift+X is not Cut's");
+});
+
+test("the leader on macOS: ⌃X fires inside a terminal, and ⌃\\ bound back; another ⌃ chord does not, ⌘ does", t => {
   registerAll(t);
   const inTerm = { isMac: true, insideTerminal: true };
-  const ctrlBackslash = ev("\\", { ctrlKey: true });
-  assert.equal(matchEvent(ctrlBackslash, inTerm), "app.leader");
-  handleKeydown(ctrlBackslash, inTerm);
-  assert.equal(ctrlBackslash.defaultPrevented, true, "claimed before the pty");
+  const ctrlX = ev("x", { ctrlKey: true });
+  assert.equal(matchEvent(ctrlX, inTerm), "app.leader");
+  handleKeydown(ctrlX, inTerm);
+  assert.equal(ctrlX.defaultPrevented, true, "claimed before the pty");
+  assert.equal(matchEvent(ev("X", { ctrlKey: true, shiftKey: true }), inTerm), null, "⌃⇧X is not the leader's shape");
+  // By action id and shape (the shortcuts editor reads terminalAllows too): ⌃X and ⌃\, no other ⌃ chord.
+  assert.equal(terminalAllows("app.leader", "Ctrl+X", true), true);
+  assert.equal(terminalAllows("app.leader", "Ctrl+\\", true), true);
+  assert.equal(terminalAllows("app.leader", "Ctrl+Y", true), false);
+  assert.equal(terminalAllows("app.leader", "Ctrl+Shift+X", true), false);
+  assert.equal(terminalAllows("app.leader", "Ctrl+Alt+X", true), false);
+  assert.equal(terminalAllows("tabs.close", "Ctrl+X", true), false, "⌃X is the leader's alone");
+  setBinding("app.leader", "Ctrl+\\");
+  assert.equal(matchEvent(ev("\\", { ctrlKey: true }), inTerm), "app.leader", "⌃\\, the leader before 0.67, bound back");
+  assert.equal(matchEvent(ev("x", { ctrlKey: true }), inTerm), null, "⌃X is then the program's");
   assert.equal(matchEvent(ev("|", { ctrlKey: true, shiftKey: true }), inTerm), null, "⌃⇧\\ is not the leader's shape");
-  setBinding("app.leader", "Ctrl+J");
-  assert.equal(matchEvent(ev("j", { ctrlKey: true }), inTerm), null, "another ⌃ chord stays the program's");
-  assert.equal(matchEvent(ev("j", { ctrlKey: true }), { isMac: true, insideTerminal: false }), "app.leader", "and is the leader outside");
+  setBinding("app.leader", "Ctrl+Y");
+  assert.equal(matchEvent(ev("y", { ctrlKey: true }), inTerm), null, "another ⌃ chord stays the program's");
+  assert.equal(matchEvent(ev("y", { ctrlKey: true }), { isMac: true, insideTerminal: false }), "app.leader", "and is the leader outside");
   setBinding("app.leader", "Mod+J");
   assert.equal(matchEvent(ev("j", { metaKey: true }), inTerm), "app.leader", "a ⌘ rebind fires by the ⌘ rule");
   resetAllBindings();
-  // On Linux/Windows a terminal is the program's for Ctrl+\ (SIGQUIT): the leader is Alt+O there.
+  // On Linux/Windows a terminal is the program's for Ctrl+\ (SIGQUIT).
   assert.equal(matchEvent(ev("\\", { ctrlKey: true }), { isMac: false, insideTerminal: true }), null);
 });
 
@@ -457,12 +537,12 @@ test("the leader is inert under a shown modal: the chord goes where it goes toda
   let modal = false;
   const off = registerAction({ id: "app.leader", label: "Leader", context: "global", when: () => !modal, run: () => {} });
   t.after(() => { off(); resetAllBindings(); });
-  assert.equal(matchEvent(ev("o", { altKey: true }), { isMac: false, insideTerminal: true }), "app.leader");
+  assert.equal(matchEvent(linux("x"), { isMac: false, insideTerminal: true }), "app.leader");
   modal = true;
-  const alt = ev("o", { altKey: true });
-  assert.equal(matchEvent(alt, { isMac: false, insideTerminal: true }), null);
-  assert.equal(handleKeydown(alt, { isMac: false, insideTerminal: true }), false);
-  assert.equal(alt.defaultPrevented, false, "the program gets it");
+  const ctrlX = linux("x");
+  assert.equal(matchEvent(ctrlX, { isMac: false, insideTerminal: true }), null);
+  assert.equal(handleKeydown(ctrlX, { isMac: false, insideTerminal: true }), false);
+  assert.equal(ctrlX.defaultPrevented, false, "the program gets it");
 });
 
 test("the leader's, the sidebar's and the shared chords clash with no other default", t => {
@@ -477,8 +557,9 @@ test("the leader's, the sidebar's and the shared chords clash with no other defa
 });
 
 // Desktop text fields (the roster filter, the spawn dialog's fields, the palette's input): no default
-// takes a key a field edits with, on either platform, so a field keeps every one of them; the shared
-// chords are not such keys, and fire from a field as from anywhere (they type nothing).
+// takes a key a field edits with, on either platform, so a field keeps every one of them (the leader's
+// Ctrl+X is Cut's in a field on Linux/Windows: leaderLeftToField); the shared chords are not such keys,
+// and fire from a field as from anywhere (they type nothing).
 test("text fields keep their own keys: no default takes an editing key, and the shared chords fire from a field", t => {
   registerAll(t);
   const dom = new JSDOM(`<input class="ctx-filter"><textarea class="ftask"></textarea>`);
@@ -692,7 +773,7 @@ test("Ctrl+Shift family: every action's Linux/Windows default, as the shortcuts 
     assert.equal(getBinding(id, false), defaultBinding(id, false, "ctrl+alt"), `${id} keeps its key`);
   }
   // The leader is the same in both families, and so are the palette's own group keys.
-  assert.equal(getBinding("app.leader", false), "Alt+O");
+  assert.equal(getBinding("app.leader", false), "Ctrl+X");
   assert.equal(paletteGroupHint(false), "Alt+Shift+↓ next group · Alt+Shift+↑ previous");
 });
 
