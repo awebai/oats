@@ -29,9 +29,9 @@ work, in its own home and terminal. Each workspace has a setup expert soul,
   steps yourself and read back what each did.
 - **Secrets.** The person types only what you must never hold: passwords,
   tokens and logins. Before the spawn there are two ways for that: a browser
-  device flow you start (the GitHub login, step 3), and the exact command
-  for their own terminal (a `sudo` or Homebrew password, an aweb invite
-  token).
+  device flow you start (the GitHub login, step 3), and the exact command in
+  their own terminal (a `sudo` or Homebrew password, an aweb invite token),
+  which you open for them (below).
   - Never ask for a secret in the conversation, and never write one to a file.
   - Never suggest Claude Code's `! <command>` for one: its command and output
     enter your context.
@@ -42,6 +42,23 @@ work, in its own home and terminal. Each workspace has a setup expert soul,
     path), write that value in literally.
 - **Sandboxes.** If your harness sandboxes commands, these steps need network
   access and writes in the home folder: ask the person to approve them.
+  Starting the Desktop and opening a terminal also run outside the sandbox.
+- **Their own terminal, opened by you.** When a command must run in the
+  person's terminal, write it to a file (`mktemp`; it holds no secret) after
+  a first line `export PATH="<your PATH>"`, with the value your own commands
+  use written in, and a last line
+  `printf '\nDone: close this window.\n'; read -r _`. Then open a window
+  that runs it, with `F` the file's path written in:
+  - **macOS:** `osascript -e 'tell application "Terminal" to do script "sh F"'`.
+    The first time, macOS may ask the person to let you control Terminal.
+  - **Linux:** `systemd-run --user --collect --quiet -p KillMode=process -E DISPLAY -E WAYLAND_DISPLAY -E XAUTHORITY xdg-terminal-exec sh "F"`,
+    or `x-terminal-emulator -e sh "F"` in place of `xdg-terminal-exec` where
+    only that exists. Through `systemd-run` the window gets their desktop
+    session's environment, not yours.
+
+  Tell them what to type there. Check the result with a read-only command,
+  never by reading the window, then delete the file. Only when no window
+  opens do you give them the command to run themselves.
 - **Touch nothing you were not asked to.** Don't edit an existing
   deployment's files (`oats-local.yaml`, `oats-lock.json`, `agents/`), and
   don't push to a repository the person did not create in step 5.
@@ -117,7 +134,8 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
   each later command of yours with `export PATH="$HOME/.local/bin:$PATH"`
   (your shell does not reread their profile). Add that line to their shell's
   startup file yourself, so their own terminal finds `oats` too, and tell
-  them you did: `~/.zshrc` when `$SHELL` ends in `zsh`, else `~/.bashrc`.
+  them you did: `~/.zshrc` when `$SHELL` ends in `zsh`, else `~/.bashrc`
+  (for fish, `fish -c 'fish_add_path ~/.local/bin'` instead).
 
   ```bash
   RC="$HOME/.bashrc"; case "$SHELL" in *zsh) RC="$HOME/.zshrc";; esac; grep -qsF '$HOME/.local/bin' "$RC" || printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$RC"; echo "$RC"
@@ -154,9 +172,10 @@ In a separate command, a few seconds later, read the code and the URL:
 cat "$HOME/.oats-gh-login.txt"
 ```
 
-- **Give the person the code and the URL** (`https://github.com/login/device`).
-  The code is not a secret: only their own signed-in browser can use it. They
-  open the URL, enter the code and approve. A code expires after about 15
+- **Give the person the code, and open the URL** in their browser
+  (`open https://github.com/login/device` on macOS, `xdg-open …` on Linux;
+  give them the URL if that fails). The code is not a secret: only their own
+  signed-in browser can use it. They enter the code and approve. A code expires after about 15
   minutes; then start again.
 - **Once they say they approved,** check the login and let Git use it:
 
@@ -202,9 +221,10 @@ defaults read "$PWD/OATS Desktop.app/Contents/Info" CFBundleShortVersionString
 - **Download with `gh`, never through a browser.** `gh` sets no quarantine
   on what it downloads, and that copy starts from Finder. A browser download
   would be quarantined.
-- **Install it.** If the Desktop is running, tell the person and quit it
-  (`osascript -e 'quit app "OATS Desktop"'`); its agents keep running. Then,
-  with the folder `pwd` printed:
+- **Install it.** If the Desktop is running, tell the person and quit it;
+  its agents keep running:
+  `osascript -e 'quit app "OATS Desktop"'; for i in $(seq 20); do pgrep -xq "OATS Desktop" || break; sleep 1; done`.
+  Then, with the folder `pwd` printed:
 
   ```bash
   cd "<that folder>" && rm -rf "/Applications/OATS Desktop.app" && ditto "OATS Desktop.app" "/Applications/OATS Desktop.app" && defaults read "/Applications/OATS Desktop.app/Contents/Info" CFBundleShortVersionString
@@ -216,7 +236,9 @@ defaults read "$PWD/OATS Desktop.app/Contents/Info" CFBundleShortVersionString
   Desktop.app"`): never silently.
 
 **Linux x64.** It needs glibc 2.34 or later (`ldd --version`). It installs
-per user, without sudo, and shows in the app launcher:
+per user, without sudo, and shows in the app launcher. If the Desktop is
+running, tell the person and quit it first; its agents keep running:
+`pkill -u "$(id -u)" -x oats-desktop; for i in $(seq 20); do pgrep -u "$(id -u)" -x oats-desktop >/dev/null || break; sleep 1; done`.
 
 ```bash
 cd "$(mktemp -d)" &&
@@ -239,9 +261,9 @@ Terminal=false
 Categories=Development;
 ```
 
-- **Without FUSE** (the AppImage fails with a FUSE message; Ubuntu 22.04
+- **Without FUSE** (step 8's start fails with a FUSE message; Ubuntu 22.04
   and later ship without `libfuse2`), add ` --appimage-extract-and-run` after
-  the AppImage's path in `Exec=` and wherever you start it. That needs no
+  the AppImage's path in `Exec=` and in step 8's start. That needs no
   `sudo`; installing `libfuse2` (`libfuse2t64` on Ubuntu 24.04) does.
 - **Linux arm64** (`uname -m` says `aarch64`) has no Desktop: skip the
   download, say so and go on.
@@ -468,9 +490,9 @@ can't spawn on this machine until it has messaging too. Set it up now:
    `<workspace>-<their machine>`. This works for a hosted team only: if the
    invite is refused, or the join says the team is not hosted, stop, and
    the workspace's owner decides.
-4. **Existing workspace: the person joins in their own terminal,** typing the token at the
-   hidden prompt. Give them the line with `D`, `S`, `L`, `A` and `U` filled
-   in:
+4. **Existing workspace: the person joins in their own terminal,** which you
+   open for them ("How to work"), typing the token at the hidden prompt. Its
+   command, with `D`, `S`, `L`, `A` and `U` filled in:
 
    ```text
    cd "D" && sh -c 'stty -echo; printf "Invite token: "; read -r T; stty echo; echo; printf "%s\n" "$T" | oats aweb setup --soul S --join L --invite-stdin --name A --service U'
@@ -517,9 +539,9 @@ oats harness trust --dir D --harness claude
 ```
 
 - **If either refuses a file** (on macOS, `~/.claude.json` can carry a mark
-  the writer refuses), don't edit the file or its attributes. The person
-  runs `cd D && claude` (or `codex`) in their own terminal, accepts the
-  harness's folder-trust question and exits.
+  the writer refuses), don't edit the file or its attributes. Open their
+  own terminal ("How to work") with `cd "D" && claude` (or `codex`); they
+  accept the harness's folder-trust question and exit.
 - **Then check** that the `harness-trust` item of
   `oats readiness --soul S --dir D --json` passes.
 
@@ -542,29 +564,28 @@ oats spawn S --dir D --task-file D/.oats-handover.md
 **The Desktop**, if installed, starts on the new deployment:
 - **macOS:** `open -n -a "OATS Desktop" --args --dir D`. If the Desktop is
   already running, the new launch hands `--dir` to it and exits.
-- **Linux:** start it yourself, detached from your process, when your shell
-  reaches their desktop session (`$WAYLAND_DISPLAY` or `$DISPLAY` is set),
-  with `<home>` written in:
+- **Linux:** start it yourself through their session manager, so it gets
+  their desktop session's environment, not yours (yours may carry your
+  harness's variables and sandbox, and the Desktop passes its environment to
+  every agent it starts):
 
   ```bash
-  echo "${WAYLAND_DISPLAY:-}${DISPLAY:-}" | grep -q . && setsid -f "<home>/.local/opt/oats-desktop/OATS-Desktop.AppImage" --dir "D" >/dev/null 2>&1 && sleep 5 && pgrep -f OATS-Desktop.AppImage >/dev/null && echo STARTED
+  U="oats-desktop-$(date +%s)"; systemd-run --user --collect --quiet --unit "$U" -p KillMode=process -E DISPLAY -E WAYLAND_DISPLAY -E XAUTHORITY "$HOME/.local/opt/oats-desktop/OATS-Desktop.AppImage" --dir "D" && for i in $(seq 30); do pgrep -u "$(id -u)" -x oats-desktop >/dev/null && break; sleep 1; done; sleep 3; if pgrep -u "$(id -u)" -x oats-desktop >/dev/null; then echo STARTED; else echo FAILED; journalctl --user -u "$U" -n 20 --no-pager; fi
   ```
 
-  Only when it doesn't print `STARTED` does the person open **OATS Desktop**
-  from their app launcher; it then shows `D` in its switcher (listed there
-  from OATS 0.65.0).
+  - **`STARTED`:** it shows `D`.
+  - **A FUSE message:** see step 4, then start it again.
+  - **Anything else,** or no `systemd-run`: tell the person what it printed.
+    They open **OATS Desktop** from their app launcher, and it lists `D` in
+    its switcher (from OATS 0.65.0).
 - **Never start it with an emptied environment** (`env -i`): it then loses
   HOME, and Git loses the person's login.
 
 **The TUI**, if they wanted it, runs in a terminal of its own:
 - **macOS:** open a Terminal window with
   `osascript -e 'tell application "Terminal" to do script "oats tui --dir D"'`.
-- **Linux:** open a terminal window for it, when your shell reaches their
-  desktop session, with `<oats>` the path `command -v oats` prints (a new
-  terminal may not have `~/.local/bin` on PATH yet):
-  `setsid -f xdg-terminal-exec "<oats>" tui --dir "D"`, or
-  `setsid -f x-terminal-emulator -e "<oats>" tui --dir "D"` where that
-  exists. Without either, give them `oats tui --dir D`.
+- **Linux:** open it in their own terminal, as "How to work" says, with the
+  command `oats tui --dir "D"`.
 
 **Tell the person where the setup expert is**, and that it continues from
 here: in the Desktop or the TUI you started. Without either, they reach it
