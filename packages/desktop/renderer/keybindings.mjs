@@ -775,7 +775,9 @@ export function matchEvent(e, opts = {}) {
   return hit ? hit.id : null;
 }
 
-const hasOverride = (actionId) => Object.prototype.hasOwnProperty.call(overrides, actionId);
+/** True when the user bound `actionId` themselves (a stored override, an unbind included). Where two actions
+ * hold one chord, the one the user bound wins over one that has it by default (matchEvent, resolveViewKey). */
+export const hasOverride = (actionId) => Object.prototype.hasOwnProperty.call(overrides, actionId);
 
 /** The chords a keydown presses for `actionId`'s binding: as it reads now (chordFromEvent), and,
  *  while that action holds a stored rebind, as 0.66 read a macOS ⌘⌥ press (typedOptionChord), first.

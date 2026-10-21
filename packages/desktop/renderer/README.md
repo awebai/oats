@@ -1370,7 +1370,9 @@ section is the module map.
   family) → registration default; pass the platform wherever a chord is shown.
   When two actions match one keydown, one bound there by the user wins over one
   holding it by default (a stored rebind keeps firing after a family's default
-  takes its key), and within each a specific context wins over global. The engine
+  takes its key), and within each a specific context wins over global. A view's
+  own keys follow the same first rule (`view-keys.mjs` `resolveViewKey`, the
+  spawn dialog's section keys among them). The engine
   skips already-consumed (`defaultPrevented`) events, and unmodified/
   shift-only chords never fire while an editable field (input, textarea,
   select, contenteditable) has focus. Terminal
