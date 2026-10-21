@@ -40,7 +40,9 @@ Show instance panel and the closed sidebar and panel).
    select-window binding. Ctrl+PgUp/PgDn in vim and weechat. On macOS the
    ⌃digits, which are control bytes (⌃3 ESC, ⌃4–⌃7 FS/GS/RS/US, ⌃8 DEL; ⌃6 is
    vim's alternate file). Such a key may stay bound for focus outside a
-   terminal, but it is never terminal-allowlisted. On Linux/Windows a chord
+   terminal, but it is never terminal-allowlisted, with one named exception:
+   the leader's Ctrl+X (the TUI's, as in Emacs), whose 0x18 the leader pressed
+   twice gives the program (see "The leader"). On Linux/Windows a chord
    fires in a terminal only when xterm sends nothing for it, or when what it
    sends is a byte the program still gets from a plainer key. Two families do
    that. **Ctrl+Shift+key** sends nothing, the convention of GNOME Terminal,
@@ -50,13 +52,13 @@ Show instance panel and the closed sidebar and panel).
    **Ctrl+Alt+key**, the family the Desktop shares with the TUI (see "Shared
    with the TUI"), sends ESC and then what the key sends with Ctrl alone (ESC
    and the digit, for a digit): the program still gets exactly that from Esc,
-   then that key, as it gets the leader's Alt+O from Esc, then o. xterm also
+   then that key. xterm also
    sends nothing for Ctrl+1, Ctrl+2, Ctrl+, and Ctrl+= Ctrl+- Ctrl+0. The
    allowlisted defaults that do send something:
 
    | Chord | xterm sends | The program still gets it from |
    |---|---|---|
-   | Alt+O (the leader) | ESC o | Esc, then o; and the leader pressed twice sends it |
+   | Ctrl+X (the leader) | 0x18 (CAN) | no plainer key: a named exception. The leader pressed twice sends it, so the shell's Ctrl+X Ctrl+E and nano's exit stay the program's |
    | Ctrl+Alt+K, P, O, Z, W, E, A, F (palette, Quick Open, workspace switcher, focus mode, close tab, split right, next editor group, filter) | ESC, then Ctrl+that letter (ESC 0x0b for K) | Esc, then Ctrl+that letter |
    | Ctrl+Alt+Shift+E (split down) | ESC Ctrl+E | Esc, then Ctrl+E |
    | Ctrl+Alt+1–Ctrl+Alt+9 (go to tab) | ESC and the digit | Alt+digit |
@@ -75,10 +77,11 @@ Show instance panel and the closed sidebar and panel).
    exceptions are exactly these, so an xterm upgrade that changes one fails CI.
 3. **macOS keeps ⌘.** ⌘ never reaches the pty, so the macOS column changes only
    where a chord is wrong for macOS users too. One named exception: the leader,
-   ⌃\ (the TUI's), fires in a terminal, checked by action id *and* shape (⌃
-   alone, key `\`), as Ctrl+Tab is. ⌃\ is SIGQUIT's byte, 0x1c; the leader
-   pressed twice gives the program exactly that. A rebind of the leader to a ⌘
-   chord fires by the ⌘ rule; a rebind to another ⌃ chord stays the program's.
+   ⌃X (the TUI's), fires in a terminal, checked by action id *and* shape (⌃
+   alone, key `x`; or key `\`, for ⌃\, the leader before 0.67, bound back), as
+   Ctrl+Tab is. ⌃X is 0x18 (⌃\ is SIGQUIT's byte, 0x1c); the leader pressed
+   twice gives the program exactly that. A rebind of the leader to a ⌘ chord
+   fires by the ⌘ rule; a rebind to another ⌃ chord (⌃Y) stays the program's.
 4. **Every default goes through the collision review** in the keyboard lesson
    (`keyboard-focus-and-action-ownership`). That includes shifted punctuation:
    `KeyboardEvent.key` reports the shifted character (Shift+\ arrives as `|`).
@@ -125,8 +128,10 @@ Show instance panel and the closed sidebar and panel).
   defaults (principle 2). On macOS only ⌘ chords fire in a
   terminal (⌘ never reaches the pty), plus two shapes, each checked by
   action id *and* shape: Ctrl+Tab / Ctrl+Shift+Tab (`tabs.next`, `tabs.prev`)
-  and the leader's ⌃\ (`app.leader`, principle 3's exception).
-- Unmodified chords never fire from an editable field; a view's own keys (the
+  and the leader's ⌃X or ⌃\ (`app.leader`, principle 3's exception).
+- Unmodified chords never fire from an editable field, nor, on Linux/Windows,
+  the leader's Ctrl+X, which is the field's Cut (`leaderLeftToField`; see "The
+  leader"); a view's own keys (the
   overview canvas, the Souls grid) stay local to that view. Where a view moves
   with the arrows (the roster tree, the overview canvas, the Souls grid, a
   row's actions button), an arrow chord the keymap binds is the keymap's
@@ -139,8 +144,11 @@ New in 0.65.0. The leader is the TUI's: one chord, then one key from the TUI's
 table. Both clients read it from `LEADER_TABLE` in `packages/client/keymap.mjs`,
 and neither keeps a copy (`packages/tui/test/keymap.test.mjs` fails when the
 TUI has no handler for a row). It is
-**Alt+O** on Linux and Windows and **⌃\** on macOS (`app.leader`, rebindable
-like any action; the table after it is fixed, as in the TUI).
+**Ctrl+X** on every platform, as in Emacs (`app.leader`, rebindable like any
+action; the table after it is fixed, as in the TUI). Changed in 0.67.0: it was
+Alt+O on Linux and Windows and ⌃\ on macOS. A leader you set yourself is kept,
+and ⌃\ bound back still fires in a terminal on macOS; Alt+O now reaches the
+focused control or the program (ESC o in a terminal).
 
 **The leader, the keys after it and the shared chords are the TUI's; the
 other direct shortcuts are Desktop extras.** So the two can differ, on purpose: leader then 1 is
@@ -148,8 +156,14 @@ Instances and leader then 3 is Capabilities, while ⌘1 / Ctrl+1 stays
 Deployments and ⌘3 / Ctrl+3 stays Automations. The shortcuts editor says the
 same on those rows.
 
-**Where it works.** From every focus, a terminal and an editable field
-included. It is inert while a modal dialog or the palette is shown, as F6 and
+**Where it works.** From every focus, a terminal included, and on macOS an
+editable field too. On Linux and Windows Ctrl+X in a text field (a text input
+or a textarea that is not read-only, or a contenteditable; not a password or a
+date, where there is nothing to cut, and not a terminal's input) is the field's Cut:
+the leader leaves it there and does not open (`leaderLeftToField`). The rule
+is the chord's: a leader you rebind to Ctrl+X follows it, and one you rebind
+to another chord opens from a field as well. macOS cuts with ⌘X, so ⌃X is the
+leader in a field there. It is inert while a modal dialog or the palette is shown, as F6 and
 the tab switches are: the chord then goes where it goes without the leader.
 The keys after it are listed in the shortcuts editor, which leads with the
 Leader group (the footer's shortcuts button, Ctrl+, / ⌘, or the palette); the
@@ -162,8 +176,9 @@ lone modifier settles it:
   no phase of it (keydown, keypress, keyup, repeats) reaches the terminal or
   the focused control.
 - The leader again: in a terminal, that second press is the program's, so it
-  gets exactly what the chord sends (Alt+O ESC o, ⌃\ 0x1c). Elsewhere it only
-  closes the hint.
+  gets exactly what the chord sends (Ctrl+X 0x18, once: the shell's Ctrl+X
+  Ctrl+E, nano's exit). In a text field on Linux/Windows it closes the hint and
+  stays the field's Cut. Elsewhere it only closes the hint.
 - Any other key cancels it and is dropped: nothing is typed, nothing else runs.
 - A key is matched by what it types (`KeyboardEvent.key`: Shift+x is `X`,
   Shift+\ is `|`), whatever Shift or AltGr produced it. A key held with Ctrl,
@@ -220,7 +235,7 @@ The keys come in three layers, as in `oats tui`:
 
 1. **In the sidebar:** plain keys, such as `n` to spawn, `w` for the switcher, `/` to filter ([Sidebar keys](#sidebar-keys)).
 2. **Anywhere, a terminal included:** the shortcuts below, ⌘K and the rest on macOS, `Ctrl+Alt+K` and the rest on Linux and Windows by default, `Ctrl+Shift+K` and the rest [as the option](#the-ctrlshift-option). Not plain `Ctrl+K`: that is the program's, kill to the end of the line in Claude Code, Codex, pi and the shell.
-3. **Always:** [the leader](#the-leader), `Alt+O` then a key (`Ctrl+\` on macOS).
+3. **Always:** [the leader](#the-leader), `Ctrl+X` then a key, on every platform (in a text field on Linux and Windows, Ctrl+X is Cut).
 
 | Action (id) | macOS | Linux / Windows (Ctrl+Alt, the default) | Ctrl+Shift option (Linux / Windows) | Works in a terminal (Linux/Win) |
 |---|---|---|---|---|
@@ -248,7 +263,7 @@ The keys come in three layers, as in `oats tui`:
 | Theme picker (`app.themePicker`; also the theme button and **Theme: choose…**) | ⇧⌘Space | Ctrl+Shift+Space | the same | yes |
 | Theme cycle: White, Solarized, Dark, This computer (`app.themeToggle`) | none | none | none | – (the palette keeps it) |
 | Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | the same | yes |
-| The leader, then one key (`app.leader`; see "The leader") | ⌃\ | Alt+O | the same | yes (Alt+O sends ESC o, which Esc then o still sends; on macOS by principle 3's exception) |
+| The leader, then one key (`app.leader`; see "The leader") | ⌃X | Ctrl+X | the same | yes (a named exception, principle 2: it sends 0x18, which the leader pressed twice gives the program; on macOS by principle 3's exception; not in a text field on Linux/Windows, where Ctrl+X is Cut) |
 | Copy the terminal selection (`terminal.copySelection`) | ⌘C (Edit › Copy, the menu role; the action has no macOS default) | Ctrl+Shift+C | the same | yes |
 | Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | the same | yes |
 | Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | the same | no (Ctrl+O is a byte programs read) |
@@ -306,7 +321,7 @@ terminals. New: go to tab, Ctrl+PgDn/PgUp, ⌘3/Ctrl+3, F6, and ⇧⌘F6 /
 Ctrl+Shift+F6 to leave a terminal.
 
 On macOS the "works in a terminal" column is simpler: every ⌘ chord works there
-(⌘ never reaches the pty), and so does ⌃Tab; ⌃digits and F6 are the program's.
+(⌘ never reaches the pty), and so do ⌃Tab and the leader's ⌃X; ⌃digits and F6 are the program's.
 From a terminal, Ctrl+Tab switches tabs on every platform, and go to tab works
 there too: ⌥⌘digit on macOS, Ctrl+Alt+digit on Linux/Windows.
 
@@ -326,7 +341,7 @@ The theme picker's chord is the in-app counterpart of Omarchy's theme menu
 (Super+Ctrl+Shift+Space). Linux/Windows leave out Super, which belongs to the
 window manager (principle 1); macOS puts ⌘ in Super's place and leaves out ⌃,
 because on macOS a chord that holds ⌃ never fires while a terminal has focus
-(Ctrl+Tab aside).
+(Ctrl+Tab and the leader aside).
 xterm.js sends no byte for either chord (its Ctrl+Space → NUL needs Shift up),
 so the picker takes nothing from a program, and plain Ctrl+Space stays the
 program's. On Omarchy, Super+Ctrl+Shift+Space opens Omarchy's own theme menu,
@@ -391,7 +406,7 @@ Z), that chord is the layout's: the key types its character, in a text field
 and in a terminal, and runs nothing, because the engine matches the character
 a key types (`KeyboardEvent.key`). The chords whose keys type nothing there are
 the Desktop's as everywhere (Spanish Ctrl+Alt+K is the palette). For the
-others the leader still works (Alt+O, then the key: `|` splits right, `z` is
+others the leader still works (Ctrl+X, then the key: `|` splits right, `z` is
 focus mode), Ctrl+Tab still cycles the tabs where go to tab is the layout's,
 and the shortcuts editor can rebind the action. German gives up Ctrl+Alt+E (€)
 and the digits 2, 3, 7, 8 and 9 the same way. On AZERTY the digit row types
@@ -806,7 +821,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Panel sections: soul link, copy, details, Open soul page, Teams, Git, lifecycle Restart…/Start…/Stop…/Retire… | Tab | Native buttons and summaries |
 | Spawn dialog | Spawn on a card, a soul page, Quick Open | See above |
 | Command palette, Quick Open | ⌘K / Ctrl+Alt+K, ⌘P / Ctrl+Alt+P (from a terminal too) | Type, arrows, Enter, Esc; Tab stays in the input; in the palette its chord cycles rows (⇧ + it: up), skipping context rows, and ⌘N / ⌥⌘N (Alt+Shift+↓ / ↑ on Linux/Windows) move to the next / previous group's first row, named in its footer (see "The command palette") |
-| Shortcuts editor | ⌘, / Ctrl+, (from a terminal too); focus starts in its search | The **Leader** group comes first (the leader's own row, then one fixed row per key after it), then **Sidebar keys**; typing in the search filters by name, group or keys (`shift+b` and `ctrl shift b` find Ctrl+Shift+B, `alt+o k` finds the leader's `k`), and the count is announced; Down enters the rows, Up/Down move between them, Up from the first returns to the search; Tab reaches each row's shortcut and Reset; Enter records, Esc cancels a recording, Backspace unbinds; Esc clears the search, then closes; trapped, the search its first stop. A row shows "terminal" when its shortcut works while a terminal has focus and "changed" when it differs from the default |
+| Shortcuts editor | ⌘, / Ctrl+, (from a terminal too); focus starts in its search | The **Leader** group comes first (the leader's own row, then one fixed row per key after it), then **Sidebar keys**; typing in the search filters by name, group or keys (`shift+b` and `ctrl shift b` find Ctrl+Shift+B, `ctrl+x k` finds the leader's `k`), and the count is announced; Down enters the rows, Up/Down move between them, Up from the first returns to the search; Tab reaches each row's shortcut and Reset; Enter records, Esc cancels a recording, Backspace unbinds; Esc clears the search, then closes; trapped, the search its first stop. A row shows "terminal" when its shortcut works while a terminal has focus and "changed" when it differs from the default |
 | Settings (Connections, Terminal) | Footer settings | Trapped, through the Terminal size field too; the sign-in terminal has an explicit Shift+Tab exit; the font size stepper's − and + stay focusable at 9 and 28 (aria-disabled) and a typed size applies on Enter or on leaving the field |
 | Notifications | Tab (they come last in the document) | Open and Dismiss are buttons; focus moves on after dismissing |
 

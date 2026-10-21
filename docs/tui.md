@@ -106,7 +106,7 @@ runs.
  Souls                              2 │
  Capabilities                       3 │
 ──────────────────────────────────────│
- Alt+O    commands                    │
+ Ctrl+X   commands                    │
  Ctrl+K   palette                     │
  Enter    open                        │
  n        spawn                       │
@@ -144,7 +144,7 @@ while a terminal is open); under 80 columns it has the whole width.
   key `spawn` has (`No agents yet.` when it has none).
 - **The cheat sheet** comes last, under a rule: a few keys, one per row,
   the key in bold and what it does beside it. Its first row is the
-  leader, `Alt+O commands`, which reaches every action (but while a
+  leader, `Ctrl+X commands`, which reaches every action (but while a
   terminal has the focus under the kitty keyboard protocol, below); then
   `Ctrl+K palette`. In a view's list it names what `Enter` does now
   (`open`, `focus terminal` on the row whose terminal is open, `detail`
@@ -367,9 +367,9 @@ fit; the detail shows them whole. The TUI's own words end the same way:
  Souls                      2 │
  Capabilities               3 │
 ──────────────────────────────│
- Alt+O         commands       │
- Alt+O Esc     the list       │
- Alt+O Alt+O   types Alt+O    │
+ Ctrl+X          commands     │
+ Ctrl+X Esc      the list     │
+ Ctrl+X Ctrl+X   types Ctrl+X │
 ```
 
 - **`Enter` on an instance that runs** opens its terminal on the right of
@@ -382,8 +382,8 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   cut with `…` (`...` in ASCII).
 - **The terminal has the focus.** What you type, what you paste and every
   key go to the agent exactly as typed, `Ctrl+C`, `Ctrl+Z`, `Esc` and `q`
-  among them, but for **[the leader](#the-leader)** (`Alt+O`, `Ctrl+\` on
-  macOS, unless [`tui.json`](#change-the-keys-tuijson) names another), the
+  among them, but for **[the leader](#the-leader)** (`Ctrl+X`, unless
+  [`tui.json`](#change-the-keys-tuijson) names another), the
   one key the TUI takes from the agent, and the [chords](#chords) (the
   Ctrl+Alt ones, or the Ctrl+Shift ones under
   [the option](#switch-to-ctrlshift), while your terminal sends them). Under the kitty keyboard protocol every key reaches
@@ -391,7 +391,7 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   focus to the list; the leader twice types the leader into the agent; the
   leader then another key does what that key does from anywhere. While the
   terminal has the focus the cheat sheet names those three:
-  `Alt+O commands`, `Alt+O Esc the list`, `Alt+O Alt+O types Alt+O`.
+  `Ctrl+X commands`, `Ctrl+X Esc the list`, `Ctrl+X Ctrl+X types Ctrl+X`.
   While the terminal confirms the kitty keyboard protocol
   ([Chords](#chords)) the chords come first: `Ctrl+Alt+K palette`,
   `Alt+Shift+Up/Down agent`, `Alt+Shift+Left/Right tab` (with two tabs or
@@ -424,7 +424,7 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   than 40 columns: with less room it has the whole screen too.
 - **With the whole screen** (zoomed, or a narrow terminal) no cheat sheet is
   drawn. The terminal's tab bar carries the keys at its right, dim:
-  `Alt+O commands   Alt+O Esc the list`, after the chords under the kitty
+  `Ctrl+X commands   Ctrl+X Esc the list`, after the chords under the kitty
   keyboard protocol, as many as fit, and while the leader waits, the
   leader's hint, as many keys as fit, `Esc the list` last. The agent's
   screen keeps every row under it.
@@ -477,9 +477,9 @@ fit; the detail shows them whole. The TUI's own words end the same way:
  Souls                      2 │
  Capabilities               3 │
 ──────────────────────────────│
- Alt+O         commands       │
- Alt+O Esc     the list       │
- Alt+O Alt+O   types Alt+O    │
+ Ctrl+X          commands     │
+ Ctrl+X Esc      the list     │
+ Ctrl+X Ctrl+X   types Ctrl+X │
 ```
 
 Each terminal open in the panel is a tab, and the panel holds up to four.
@@ -515,7 +515,7 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
     machine is asked whether it can be opened, another open does nothing,
     and neither does a key that shows another tab.
   - **At four tabs nothing closes by itself.** The open does nothing, and
-    the line under the title says `4 terminals are open; close one with Alt+O w.`
+    the line under the title says `4 terminals are open; close one with Ctrl+X w.`
     (with your leader, when [`tui.json`](#change-the-keys-tuijson) names
     another). A tab still starting, and an agent of another machine while
     it is asked, hold a place among the four. An instance that cannot be
@@ -575,9 +575,9 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
  Souls                      2 │                                        │
  Capabilities               3 │                                        │
 ──────────────────────────────│                                        │
- Alt+O         commands       │                                        │
- Alt+O Esc     the list       │                                        │
- Alt+O Alt+O   types Alt+O    │                                        │
+ Ctrl+X          commands     │                                        │
+ Ctrl+X Esc      the list     │                                        │
+ Ctrl+X Ctrl+X   types Ctrl+X │                                        │
 ```
 
 The panel can be split in two **groups**, side by side or one above the
@@ -623,7 +623,7 @@ tab and the marks of its hidden ones.
   - any other: a new tab in the focused group, after its shown tab, or as
     the first tab of the empty group.
   - **The four tabs are counted across both groups.** At four, the line
-    says `4 terminals are open; close one with Alt+O w.` as with one group.
+    says `4 terminals are open; close one with Ctrl+X w.` as with one group.
 - **Moving between the groups.** The leader then `Tab` from a terminal goes
   to the other group's shown terminal, or to the other group when it is
   empty. From the list it goes to the focused group's terminal, or, with
@@ -669,7 +669,7 @@ them, from the same code.
 ──────────────────────────────────────│     ● dev-1  ● dev-2
  Capabilities                       3 │     i shows them in the Instances view.
 ──────────────────────────────────────│
- Alt+O    commands                    │
+ Ctrl+X   commands                    │
  Ctrl+K   palette                     │
  Enter    detail                      │
  n        spawn                       │
@@ -738,7 +738,7 @@ them, from the same code.
   oats-okf · package · v1.2.0         │
     okf-knowledge Knowledge           │   Used by  2 souls
 ──────────────────────────────────────│     ■ dev ·2 · 1 on an older version
- Alt+O    commands                    │     ■ reviewer ·1
+ Ctrl+X   commands                    │     ■ reviewer ·1
  Ctrl+K   palette                     │
  Enter    detail                      │
  ?        help                        │
@@ -822,7 +822,7 @@ switcher covers the whole screen.
  Souls                                        2 │     lfx
  Capabilities                                 3 │       This machine · not opened
 ────────────────────────────────────────────────│       athenea (lfx)
- Alt+O    commands                              │   Not matched to a workspace
+ Ctrl+X   commands                              │   Not matched to a workspace
  Ctrl+K   palette                               │     basalt                ssh needs a prompt
  Enter    open                                  │   On this machine, not opened
  /        filter                                │     acme-docs             Timed out · ~/acme-docs
@@ -1112,7 +1112,7 @@ the TUI adds only what to do next, naming its keys or an `oats` command:
 
 | Outcome | What follows |
 |---|---|
-| created and started | the instances are read at once; when the new row appears it is selected and its terminal opens beside the sidebar in a new [tab](#tabs), with the focus in it. With four tabs open the line says it was created, then `4 terminals are open; close one with Alt+O w.`, and nothing opens. Not running after two reads: the line says it is not visible yet, and nothing opens later by itself |
+| created and started | the instances are read at once; when the new row appears it is selected and its terminal opens beside the sidebar in a new [tab](#tabs), with the focus in it. With four tabs open the line says it was created, then `4 terminals are open; close one with Ctrl+X w.`, and nothing opens. Not running after two reads: the line says it is not visible yet, and nothing opens later by itself |
 | created, but not started, or its wake not saved, or not finished | the line says so; nothing opens. A home the spawn left reads as [held](#held-rows) |
 | not known (the answer was lost, or still running at the deadline) | the line says so, and `C` checks its result once, without spawning again: it is offered only then |
 | its cleanup is owed | the line says so and names the retire |
@@ -1128,7 +1128,7 @@ The keys come in three layers:
 
 1. **In the list:** plain keys, such as `n` to spawn, `w` for the switcher, `/` to filter ([In the list](#in-the-list)).
 2. **Anywhere, an agent's terminal included:** the [chords](#chords), `Ctrl+Alt+K` and the rest by default, `Ctrl+Shift+K` and the rest [as the option](#switch-to-ctrlshift). Not plain `Ctrl+K`: that is the agent's, kill to the end of the line in Claude Code, Codex, pi and the shell.
-3. **Always:** [the leader](#the-leader), `Alt+O` then a key (`Ctrl+\` on macOS), in every terminal.
+3. **Always:** [the leader](#the-leader), `Ctrl+X` then a key, in every terminal.
 
 ### Every action's keys
 
@@ -1278,7 +1278,7 @@ every focus, an agent's terminal included: the agent never gets them.
 | `c` | closes the shown terminal's tab and shows the tab beside it; the agent keeps running |
 | `[`, `]` | in the Instances view, shows the tab before or after the shown one |
 | `\|`, `-` | in the Instances view, [splits](#splits) the panel side by side or one above the other |
-| `Alt+O` (`Ctrl+\` on macOS) | [the leader](#the-leader), from every focus ([`tui.json`](#change-the-keys-tuijson) can name another key) |
+| `Ctrl+X` | [the leader](#the-leader), from every focus ([`tui.json`](#change-the-keys-tuijson) can name another key) |
 | `Ctrl+K` | opens [the palette](#the-palette); `Ctrl+K` again closes it |
 | `Ctrl+Alt+K`, `Alt+Shift+Up` and the other [chords](#chords) (`Ctrl+Shift+K` and the rest [with the option](#switch-to-ctrlshift)) | what the leader then a key does, from every focus; the Ctrl+Alt and Ctrl+Shift ones where your terminal sends them. While [the palette](#the-palette) is open, `Alt+Shift+Up` and `Alt+Shift+Down` are its own |
 | `X`, `D`, `S`, `R` | stop, retire, start, restart the selected agent, [after a confirmation](#stopping-starting-restarting-and-retiring) |
@@ -1314,12 +1314,18 @@ the chords alone are the TUI's.
 
 Every action is reached by keys from every focus, a terminal's too: the
 leader (tui.json's `open.detachKey`), then one plain key. The leader is
-`Alt+O` on Linux and Windows and `Ctrl+\` on macOS, unless
-[`tui.json`](#change-the-keys-tuijson) names another key, `C-\` among
-them. `Alt+O` is reached with one hand on every keyboard layout, where
-`Ctrl+\` is a stretch on most and needs AltGr on many. macOS keeps
-`Ctrl+\` because its terminals type `ø` for Option+O unless they are set
-to use Option as Meta.
+`Ctrl+X` on every platform, as in OATS Desktop (where, on Linux and
+Windows, `Ctrl+X` stays Cut in a text field), unless
+[`tui.json`](#change-the-keys-tuijson) names another key: `M-o` names
+`Alt+O` and `C-\` names `Ctrl+\`, the leaders of earlier versions on
+Linux and Windows and on macOS. `Ctrl+X` is Emacs' prefix key: the same
+key on every platform and keyboard layout, and one byte in every terminal
+without the kitty keyboard protocol, so it needs neither the protocol nor
+any timing (below). Its cost is the programs
+that read `Ctrl+X` themselves, which take the leader twice (the
+leader again types it into the terminal): in the shell `Ctrl+X Ctrl+E`,
+which edits the command line in your editor, is `Ctrl+X` twice, then
+`Ctrl+E`, and nano exits with `Ctrl+X` twice.
 
 | The leader, then | Does |
 |---|---|
@@ -1342,7 +1348,7 @@ to use Option as Meta.
 | the leader again | types the leader into the terminal that has the focus, which keeps it; with the list focused, only closes the hint |
 
 - **While the leader waits** for its key the cheat sheet's rows are its
-  hint: `Alt+O then`, then a row per key, `Esc the list` last. It names
+  hint: `Ctrl+X then`, then a row per key, `Esc the list` last. It names
   these keys but `n` and `N` (`z` and `w` only while a terminal is open,
   `Left` and `Right` only with two tabs or more, `|` and `-` while the
   panel has one group, `Tab` with two, then `m` while the focused group
@@ -1356,15 +1362,25 @@ to use Option as Meta.
   read, so a paste can never run a command. In a terminal the bytes before
   the leader in that read still go to the agent. A leader inside a
   bracketed paste is pasted text.
-- **In a terminal `Alt+O` is one keypress only.** A terminal sends `Alt+O`
-  as `Esc` then `o`. Those bytes count as the leader when they arrive in
-  one read, or split across reads within 10 ms. An `Esc` then `o` typed as
-  two keys reaches the agent unchanged: in vim that is "leave insert mode,
-  open a line". Over a slow link two keys typed apart can arrive in one
-  read and act as the leader, and one `Alt+O` can arrive split and reach
-  the agent as `Esc` and `o`. Under the kitty keyboard protocol
-  ([Chords](#chords)) there is no timing: `Alt+O` is one sequence and `Esc`
-  another, so each is told exactly, in a terminal and in the list.
+- **`Ctrl+X` is one byte.** Without the kitty keyboard protocol
+  ([Chords](#chords)) every terminal sends it as `0x18`, which no read
+  splits and nothing has to time; under the protocol it is `CSI 120;5u`,
+  which the TUI reads as `Ctrl+X` too. `Ctrl+Shift+X` and `Ctrl+Alt+X` are
+  not the leader under the protocol: each is a key of its own, which
+  nothing binds, and in a terminal it reaches the agent as the bytes it
+  sends without the protocol. Without it most terminals send `0x18` for
+  `Ctrl+Shift+X` as for `Ctrl+X`, so there it is the leader. In a terminal
+  `Esc` then `0x18` in one read is `Ctrl+Alt+X`, and goes to the agent.
+- **An Alt leader is one keypress only.** A leader `tui.json` names with
+  `M-`, such as `M-o` (`Alt+O`), is sent by a terminal as `Esc` then `o`.
+  Those bytes count as the leader when they arrive in one read, or split
+  across reads within 10 ms. An `Esc` then `o` typed as two keys reaches
+  the agent unchanged: in vim that is "leave insert mode, open a line".
+  Over a slow link two keys typed apart can arrive in one read and act as
+  the leader, and one `Alt+O` can arrive split and reach the agent as `Esc`
+  and `o`. Under the kitty keyboard protocol there is no timing: `Alt+O` is
+  one sequence and `Esc` another, so each is told exactly, in a terminal
+  and in the list.
 - **In the list no leader is needed:** the plain keys work as they always
   have, and the leader works there too.
 - **What was open under it is settled first,** from whatever view: a
@@ -1424,7 +1440,7 @@ hold ⌘, which a terminal never passes to a program.
   one of them.
 - **The help and the cheat sheet lead with the chords** while the terminal
   confirms the protocol: one row per chord, then the leader and its key
-  ("or `Alt+O` then `k`"), and the leader's own section after them. Without
+  ("or `Ctrl+X` then `k`"), and the leader's own section after them. Without
   the protocol the leader leads, and only the Alt+Shift arrows are listed
   as chords. The help's chords open with the family in force
   ([Switch to Ctrl+Shift](#switch-to-ctrlshift)). The cheat sheet names chords while an agent's terminal has the
@@ -1443,8 +1459,9 @@ hold ⌘, which a terminal never passes to a program.
   keys of their own.
 - **Every other key reads as it does without the protocol.** `Ctrl+Shift+L`
   is `Ctrl+L`, `Ctrl+Enter` is `Enter`, and so on: the protocol only adds
-  the chords of the family in force, and tells `Alt+O` from `Esc` then `o`
-  exactly ([The leader](#the-leader)). Under the default family the seven
+  the chords of the family in force, tells an Alt leader such as `Alt+O`
+  from `Esc` then `o` exactly, and tells `Ctrl+Shift+X` from the leader
+  `Ctrl+X` ([The leader](#the-leader)). Under the default family the seven
   Ctrl+Shift letters of the option are such keys too: `Ctrl+Shift+D` is
   `Ctrl+D`.
 - **A Ctrl+Shift chord is read from the protocol alone,** from a report
@@ -1693,14 +1710,16 @@ binds is not here: it is `keys.json`, beside it, which the Desktop shares
   keys of their own.
 - `ascii: true` is `--ascii`.
 - `open.detachKey` is **[the leader](#the-leader)**. When you name none
-  it is `M-o` (`Alt+O`) on Linux and Windows and `C-\` (`Ctrl+\`) on
-  macOS; `C-\` stays a key you can name on every platform. It is
+  it is `C-x` (`Ctrl+X`) on every platform. `M-o` (`Alt+O`) and `C-\`
+  (`Ctrl+\`), the defaults of earlier versions, are keys you can name, as
+  in `"open": {"detachKey": "M-o"}`; a `detachKey` your file names is
+  kept as it is. It is
   `oats tui`'s own: it never reaches the kernel, and it reaches the agent
   only when you press it twice in the agent's terminal.
   It is read as a key wherever the TUI reads keys, so it may not be a key
   an action has: `C-l` is `redraw`'s `Ctrl+L`, `C-k` the palette's
   `Ctrl+K`, `C-j` is `Enter`. That holds for the default too: a file that
-  gives `alt+o` to an action on Linux or Windows names another leader as
+  gives `ctrl+x` to an action names another leader as
   well. It is one of these, written as shown: `C-` with a letter but `h`, `i` and `m` (a
   terminal sends those as `Backspace`, `Tab` and `Enter`) or one of `\`
   `]` `^` `_`; `M-` with a lower-case letter or a digit; or `F1` to `F12`,

@@ -65,7 +65,7 @@ const FOCUSED = style({ bold: true, reverse: true });
 
 const clamp = (n, low, high) => Math.min(Math.max(n, low), high);
 const tooSmall = (size) => size.cols < MIN_SIZE.cols || size.rows < MIN_SIZE.rows;
-/** The leader's label, spelt for people (`Alt+O`, `Ctrl+\`): tui.json's open.detachKey is the
+/** The leader's label, spelt for people (`Ctrl+X` by default, `Alt+O`): tui.json's open.detachKey is the
  *  user's, so it is text from outside. */
 const leaderText = (m) => keyText(backKeyLabel(m.detachKey));
 
@@ -280,7 +280,7 @@ function types(m) {
 }
 
 /** THE CHEAT SHEET (docs/tui.md, "The cheat sheet"): the keys that apply now, one per row, the
- *  leader first in every focus (`Alt+O commands`), then the palette, `help` and `quit` last. While
+ *  leader first in every focus (`Ctrl+X commands`), then the palette, `help` and `quit` last. While
  *  the leader waits for its key it is the leader's hint (leaderHints). While what is typed goes to
  *  the agent the TUI reads the leader and the chords only: the leader then Esc gives the list the
  *  focus, and the leader twice types the leader into the terminal; while the terminal confirms the

@@ -38,6 +38,8 @@ function keyInit(keyId) {
   const upper = keyId.toUpperCase();
   return { key: keyId, code: `Key${upper}`, keyCode: upper.charCodeAt(0), shiftKey: keyId === upper };
 }
+// The leader, Ctrl+X on every platform; Alt+O and Ctrl+\, the leaders before 0.67, for a rebind.
+const CTRL_X = { key: "x", code: "KeyX", keyCode: 88, ctrlKey: true };
 const ALT_O = { key: "o", code: "KeyO", keyCode: 79, altKey: true };
 const CTRL_BACKSLASH = { key: "\\", code: "Backslash", keyCode: 220, ctrlKey: true };
 
@@ -96,8 +98,8 @@ test("every key of the table settles the leader to its row's `does`, once", t =>
   for (const row of LEADER_TABLE) for (const key of row.keys) {
     r.log.length = 0;
     r.button.focus();
-    r.press(r.button, ALT_O);
-    assert.ok(r.leader.isWaiting(), `Alt+O opens the wait before ${key}`);
+    r.press(r.button, CTRL_X);
+    assert.ok(r.leader.isWaiting(), `Ctrl+X opens the wait before ${key}`);
     const { down } = r.press(r.button, keyInit(key));
     assert.equal(down.defaultPrevented, true, `${key} is consumed`);
     if (row.does === "tab-move") {
@@ -112,7 +114,7 @@ test("every key of the table settles the leader to its row's `does`, once", t =>
 test("in a terminal: the leader and a table key reach the program in no phase", t => {
   const r = rig(t);
   r.textarea.focus();
-  r.press(r.textarea, ALT_O);
+  r.press(r.textarea, CTRL_X);
   assert.equal(r.data(), "", "the leader itself sends nothing");
   assert.ok(r.leader.isWaiting());
   const phases = r.press(r.textarea, keyInit("k"));
@@ -120,10 +122,10 @@ test("in a terminal: the leader and a table key reach the program in no phase", 
   for (const e of Object.values(phases)) if (e) assert.equal(e.defaultPrevented, true, `${e.type} is consumed`);
   assert.deepEqual(r.log.at(-1), ["settle", "palette", "terminal"]);
   // Shifted keys are read by the character they produce.
-  r.press(r.textarea, ALT_O);
+  r.press(r.textarea, CTRL_X);
   r.press(r.textarea, { key: "X", code: "KeyX", keyCode: 88, shiftKey: true });
   assert.deepEqual(r.log.at(-1), ["settle", "stop", "terminal"], "Shift+x is X");
-  r.press(r.textarea, ALT_O);
+  r.press(r.textarea, CTRL_X);
   r.press(r.textarea, { key: "|", code: "Backslash", keyCode: 220, shiftKey: true });
   assert.deepEqual(r.log.at(-1), ["settle", "split-right", "terminal"], "Shift+\\ is |");
   assert.equal(r.data(), "");
@@ -135,41 +137,93 @@ test("in a terminal: the leader and a table key reach the program in no phase", 
 test("the leader twice in a terminal is not claimed: xterm sends the chord's own bytes", t => {
   const r = rig(t);
   r.textarea.focus();
-  r.press(r.textarea, ALT_O);
-  const { down } = r.press(r.textarea, ALT_O);
-  assert.equal(r.data(), "\x1bo", "Alt+O's ESC o reaches the program");
+  r.press(r.textarea, CTRL_X);
+  assert.equal(r.data(), "", "the first press sends nothing");
+  const { down } = r.press(r.textarea, CTRL_X);
+  assert.equal(r.data(), "\x18", "Ctrl+X's 0x18 reaches the program, once");
   assert.equal(r.leader.isWaiting(), false);
   assert.deepEqual(r.log, [["open", "terminal"], ["close", "again"]], "nothing ran, and the leader did not start again");
   assert.equal(down.defaultPrevented, true, "xterm itself took it (its own cancel)");
   // Next press: the leader again.
-  r.press(r.textarea, ALT_O);
+  r.press(r.textarea, CTRL_X);
   assert.ok(r.leader.isWaiting());
   assert.equal(r.data(), "");
+  r.leader.cancel();
+  // Alt+O, the leader before 0.67, is no binding now: the program gets ESC o.
+  r.press(r.textarea, ALT_O);
+  assert.equal(r.data(), "\x1bo", "Alt+O reaches the program");
+  assert.equal(r.leader.isWaiting(), false);
 });
 
-test("on macOS Ctrl+\\ is the leader in a terminal, and twice sends 0x1c", t => {
+test("on macOS ⌃X is the leader in a terminal, and twice sends 0x18; ⌃\\ bound back too", t => {
   const r = rig(t, { isMac: true });
   r.textarea.focus();
+  r.press(r.textarea, CTRL_X);
+  assert.ok(r.leader.isWaiting(), "⌃X fires by name in a terminal (principle 3's exception)");
+  assert.equal(r.data(), "");
+  r.press(r.textarea, CTRL_X);
+  assert.equal(r.data(), "\x18", "the second press is the program's");
+  assert.equal(r.leader.isWaiting(), false);
+  // ⌃\, the leader before 0.67, bound back: it fires there too, and twice sends 0x1c.
+  setBinding("app.leader", "Ctrl+\\");
   r.press(r.textarea, CTRL_BACKSLASH);
-  assert.ok(r.leader.isWaiting(), "Ctrl+\\ fires by name in a terminal (principle 3's exception)");
+  assert.ok(r.leader.isWaiting(), "⌃\\ fires by name in a terminal");
   assert.equal(r.data(), "");
   r.press(r.textarea, CTRL_BACKSLASH);
   assert.equal(r.data(), "\x1c", "the second press is the program's (SIGQUIT's byte)");
-  assert.equal(r.leader.isWaiting(), false);
   // A rebind to another ⌃ chord stays the program's in a terminal.
-  setBinding("app.leader", "Ctrl+J");
-  r.press(r.textarea, { key: "j", code: "KeyJ", keyCode: 74, ctrlKey: true });
-  assert.equal(r.leader.isWaiting(), false, "⌃J is not the leader's shape");
-  assert.equal(r.data(), "\n");
+  setBinding("app.leader", "Ctrl+Y");
+  r.press(r.textarea, { key: "y", code: "KeyY", keyCode: 89, ctrlKey: true });
+  assert.equal(r.leader.isWaiting(), false, "⌃Y is not the leader's shape");
+  assert.equal(r.data(), "\x19");
 });
 
 test("outside a terminal the leader twice only closes the wait", t => {
   const r = rig(t);
-  r.field.focus();
-  r.press(r.field, ALT_O);
-  assert.ok(r.leader.isWaiting(), "from an editable field too: it is not a plain chord");
-  const { down } = r.press(r.field, ALT_O);
+  r.button.focus();
+  r.press(r.button, CTRL_X);
+  assert.ok(r.leader.isWaiting());
+  const { down } = r.press(r.button, CTRL_X);
   assert.equal(down.defaultPrevented, true);
+  assert.equal(r.leader.isWaiting(), false);
+  assert.deepEqual(r.log, [["open", "button"], ["close", "again"]]);
+});
+
+test("in a text field on Linux/Windows Ctrl+X is Cut: it opens nothing, and while waiting closes the wait untaken", t => {
+  const r = rig(t);
+  r.field.focus();
+  const first = r.press(r.field, CTRL_X);
+  assert.equal(first.down.defaultPrevented, false, "not prevented: Chromium's Cut runs");
+  assert.equal(r.leader.isWaiting(), false);
+  assert.deepEqual(r.log, []);
+  // The leader opened elsewhere, then Ctrl+X in the field: the wait closes, and the field keeps the key.
+  r.button.focus();
+  r.press(r.button, CTRL_X);
+  assert.ok(r.leader.isWaiting());
+  r.field.focus();
+  const again = r.press(r.field, CTRL_X);
+  assert.equal(again.down.defaultPrevented, false, "let through to the field");
+  assert.equal(r.leader.isWaiting(), false);
+  assert.deepEqual(r.log, [["open", "button"], ["close", "again"]]);
+  // A rebind to anything else fires from the field, and its second press there is taken.
+  setBinding("app.leader", "Alt+O");
+  r.log.length = 0;
+  r.press(r.field, ALT_O);
+  assert.ok(r.leader.isWaiting(), "Alt+O, not a plain chord, opens it from the field");
+  const second = r.press(r.field, ALT_O);
+  assert.equal(second.down.defaultPrevented, true);
+  assert.equal(r.leader.isWaiting(), false);
+  assert.deepEqual(r.log, [["open", "field"], ["close", "again"]]);
+});
+
+test("on macOS ⌃X opens the leader from a text field too: Cut is ⌘X there", t => {
+  const r = rig(t, { isMac: true });
+  r.field.focus();
+  const first = r.press(r.field, CTRL_X);
+  assert.equal(first.down.defaultPrevented, true);
+  assert.ok(r.leader.isWaiting());
+  const second = r.press(r.field, CTRL_X);
+  assert.equal(second.down.defaultPrevented, true, "the second press only closes the wait");
   assert.equal(r.leader.isWaiting(), false);
   assert.deepEqual(r.log, [["open", "field"], ["close", "again"]]);
 });
@@ -179,7 +233,7 @@ test("a key outside the table cancels and is dropped: nothing typed, nothing run
   r.textarea.focus();
   for (const init of [keyInit("q"), { key: "F5", code: "F5", keyCode: 116 }, { key: "Enter", code: "Enter", keyCode: 13 }]) {
     r.log.length = 0;
-    r.press(r.textarea, ALT_O);
+    r.press(r.textarea, CTRL_X);
     r.press(r.textarea, init);
     assert.equal(r.data(), "", `${init.key} sends no byte`);
     assert.deepEqual(r.log, [["open", "terminal"], ["close", "key"]], `${init.key} cancels`);
@@ -191,7 +245,7 @@ test("a follow-up held with Ctrl, Alt or ⌘ is not in the table; AltGr is", t =
   r.textarea.focus();
   for (const mods of [{ ctrlKey: true }, { altKey: true }, { metaKey: true }]) {
     r.log.length = 0;
-    r.press(r.textarea, ALT_O);
+    r.press(r.textarea, CTRL_X);
     r.press(r.textarea, { ...keyInit("k"), ...mods });
     assert.deepEqual(r.log, [["open", "terminal"], ["close", "key"]], JSON.stringify(mods));
     assert.equal(r.data(), "");
@@ -209,7 +263,7 @@ test("a follow-up held with Ctrl, Alt or ⌘ is not in the table; AltGr is", t =
 test("a lone modifier settles nothing; the key after it does", t => {
   const r = rig(t);
   r.button.focus();
-  r.press(r.button, ALT_O);
+  r.press(r.button, CTRL_X);
   r.press(r.button, { key: "Shift", code: "ShiftLeft", keyCode: 16, shiftKey: true });
   assert.ok(r.leader.isWaiting());
   assert.ok(isLoneModifier({ key: "Shift" }) && isLoneModifier({ key: "AltGraph" }) && !isLoneModifier({ key: "a" }));
@@ -220,7 +274,7 @@ test("a lone modifier settles nothing; the key after it does", t => {
 test("a held follow-up's repeats are consumed until it is released", t => {
   const r = rig(t);
   r.textarea.focus();
-  r.press(r.textarea, ALT_O);
+  r.press(r.textarea, CTRL_X);
   const init = keyInit("down");
   const fire = (type, extra = {}) => { const e = new r.window.KeyboardEvent(type, { bubbles: true, cancelable: true, ...init, ...extra }); r.textarea.dispatchEvent(e); return e; };
   fire("keydown");
@@ -244,7 +298,7 @@ test("a click, a paste, the window losing focus, a modal or the focused element 
     }],
     ["focus", async () => {
       const gone = r.doc.createElement("button"); r.doc.body.append(gone); gone.focus();
-      r.leader.cancel(); r.press(gone, ALT_O); r.log.length = 0;
+      r.leader.cancel(); r.press(gone, CTRL_X); r.log.length = 0;
       r.log.push(["open", undefined]);
       gone.remove(); await tick();
     }],
@@ -252,7 +306,7 @@ test("a click, a paste, the window losing focus, a modal or the focused element 
   for (const [why, act] of cases) {
     r.log.length = 0;
     r.button.focus();
-    r.press(r.button, ALT_O);
+    r.press(r.button, CTRL_X);
     if (why !== "focus") assert.ok(r.leader.isWaiting(), why);
     await act();
     assert.equal(r.leader.isWaiting(), false, `${why} cancels`);
@@ -266,12 +320,12 @@ test("under a shown modal the leader is not there: the chord goes where it goes 
   const modal = r.doc.createElement("div"); modal.setAttribute("role", "dialog"); modal.setAttribute("aria-modal", "true");
   r.doc.body.append(modal);
   r.textarea.focus();
-  const { down } = r.press(r.textarea, ALT_O);
+  const { down } = r.press(r.textarea, CTRL_X);
   assert.equal(r.leader.isWaiting(), false);
-  assert.equal(r.data(), "\x1bo", "the program gets Alt+O as without the leader");
+  assert.equal(r.data(), "\x18", "the program gets Ctrl+X as without the leader");
   assert.equal(r.leader.start({}), false, "nor does anything else start it");
   modal.remove();
-  r.press(r.textarea, ALT_O);
+  r.press(r.textarea, CTRL_X);
   assert.ok(r.leader.isWaiting());
   // A modal already up when the follow-up arrives: the wait ends and that key is not taken.
   r.doc.body.append(modal);

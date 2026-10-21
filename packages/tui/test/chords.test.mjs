@@ -51,6 +51,7 @@ const TABLE = [
   ["Space", " ", " "], ["Ctrl+Space", `${E}[32;5u`, "\x00"], ["Alt+Space", `${E}[32;3u`, `${E} `], ["Shift+Space", `${E}[32;2u`, " "],
   ["Ctrl+A", `${E}[97;5u`, "\x01"], ["Ctrl+C", `${E}[99;5u`, "\x03"], ["Ctrl+Z", `${E}[122;5u`, "\x1a"], ["Ctrl+Shift+A", `${E}[97:65;6u`, "\x01"],
   ["Ctrl+Alt+A", `${E}[97;7u`, `${E}\x01`], ["Alt+A", `${E}[97;3u`, `${E}a`], ["Shift+Alt+A", `${E}[97:65;4u`, `${E}A`],
+  ["Ctrl+X", `${E}[120;5u`, "\x18"], ["Ctrl+Shift+X (X reported)", `${E}[120:88;6u`, "\x18"], ["Ctrl+Alt+X", `${E}[120;7u`, `${E}\x18`],
   ["Alt+O", `${E}[111;3u`, `${E}o`], ["Ctrl+\\", `${E}[92;5u`, "\x1c"], ["Ctrl+]", `${E}[93;5u`, "\x1d"], ["Ctrl+[", `${E}[91;5u`, E],
   ["Ctrl+2", `${E}[50;5u`, "\x00"], ["Ctrl+3", `${E}[51;5u`, E], ["Ctrl+6", `${E}[54;5u`, "\x1e"], ["Ctrl+8", `${E}[56;5u`, "\x7f"], ["Ctrl+/", `${E}[47;5u`, "\x1f"],
   ["Ctrl+1", `${E}[49;5u`, "1"], ["Ctrl+,", `${E}[44;5u`, ","],
@@ -164,6 +165,18 @@ test("under the protocol Alt+O and Esc then o are told apart exactly, with no ti
   assert.deepEqual(ids(parser.feed(utf8("o"))), ["o"]);
 });
 
+test("in the list under the protocol the default leader's key Ctrl+X (CSI 120;5u) reads as ctrl+x; Ctrl+Shift+X reads as ctrl+shift+x and Ctrl+Alt+X as ctrl+alt+x, never the leader, though without the leader given Ctrl+Shift+X is Ctrl+X's legacy byte; Alt+O is alt+o (#1433)", () => {
+  const parser = createKeyParser({ now: () => 0, keyboard: 5, chords: CHORD_MAP, leader: "ctrl+x" });
+  assert.deepEqual(ids(parser.feed(utf8(`${E}[120;5u${E}[120;69u`))), ["ctrl+x", "ctrl+x"], "Ctrl+X, and with Caps Lock");
+  assert.deepEqual(ids(parser.feed(utf8(`${E}[120;6u${E}[120:88;6u${E}[120;7u${E}[111;3u`))), ["ctrl+shift+x", "ctrl+shift+x", "ctrl+alt+x", "alt+o"]);
+  assert.equal(parser.timeoutAt(), null, "nothing waits");
+  const unled = createKeyParser({ now: () => 0, keyboard: 5, chords: CHORD_MAP });
+  assert.deepEqual(ids(unled.feed(utf8(`${E}[120;6u`))), ["ctrl+x"], "no leader given: the legacy byte's key, as before");
+  // Another leader leaves Ctrl+Shift+X as Ctrl+X: only a key whose legacy bytes read as the leader is kept apart.
+  const other = createKeyParser({ now: () => 0, keyboard: 5, chords: CHORD_MAP, leader: "alt+o" });
+  assert.deepEqual(ids(other.feed(utf8(`${E}[120;6u${E}[111;3u`))), ["ctrl+x", "alt+o"]);
+});
+
 /** The chords the TUI binds on Linux and Windows (packages/client/keymap.mjs CHORDS `other`), key id
  *  -> does, in the table's order: every row pinned. */
 const LINUX_CHORDS = Object.freeze([
@@ -243,6 +256,19 @@ test("in a terminal under the protocol the back key is its one sequence, a chord
   const ctrl = createThrough({ sequences: backKeySequences("C-\\"), now: () => 0, keyboard: 5, leader: backKeyId("C-\\") });
   assert.deepEqual(shown(ctrl.feed(utf8(`${E}[92;5u`))), ["back "], "C-\\ under the protocol");
   assert.deepEqual(shown(ctrl.feed(utf8("\x1c"))), ["input 1c"], "its legacy byte is no key a terminal sends under the protocol: the agent's");
+});
+
+test("in a terminal under the protocol the default leader C-x is Ctrl+X's one sequence, with the lock keys too; Ctrl+Shift+X and Ctrl+Alt+X, whose legacy bytes hold Ctrl+X's, are typed as those bytes, and Alt+O is the agent's ESC o (#1433)", () => {
+  const leader = () => createThrough({ sequences: backKeySequences("C-x"), now: () => 0, keyboard: 5, leader: backKeyId("C-x"), chords: CHORD_MAP });
+  assert.equal(backKeyId("C-x"), "ctrl+x");
+  for (const typed of [`${E}[120;5u`, `${E}[120::120;5u`, `${E}[120;69u`, `${E}[120;133u`]) {
+    assert.deepEqual(shown(leader().feed(utf8(`a${typed}b`))), ["input 61", "back 62"], `${JSON.stringify(typed)}: the leader`);
+  }
+  for (const [name, typed, legacy] of [
+    ["Ctrl+Shift+X", `${E}[120;6u`, "\x18"], ["Ctrl+Shift+X, X reported", `${E}[120:88;6u`, "\x18"], ["Ctrl+Shift+X with Caps Lock", `${E}[120:88;70u`, "\x18"],
+    ["Ctrl+Alt+X", `${E}[120;7u`, `${E}\x18`], ["Ctrl+Alt+Shift+X", `${E}[120:88;8u`, `${E}\x18`], ["Alt+O", `${E}[111;3u`, `${E}o`],
+  ]) assert.deepEqual(shown(leader().feed(utf8(typed))), [`input ${hex(utf8(legacy))}`], `${name}: the agent's, never the leader`);
+  assert.deepEqual(shown(leader().feed(utf8("\x18"))), ["input 18"], "the legacy byte is no key a terminal sends under the protocol: the agent's");
 });
 
 test("in a terminal under the protocol a sequence split across reads waits for its end however late it comes, a lone ESC too, and a paste is a paste", () => {

@@ -1376,12 +1376,15 @@ section is the module map.
   select, contenteditable) has focus. Terminal
   policy (a default chord never takes a key a terminal program reads):
   inside `.xterm`, on macOS only ⌘-resolved chords fire, plus Ctrl+Tab for
-  tabs.next/prev; on Linux/Windows only `TERMINAL_ALLOWLIST` action ids may
+  tabs.next/prev and the leader's ⌃X (or ⌃\ bound back); on Linux/Windows only
+  `TERMINAL_ALLOWLIST` action ids may
   fire (a default xterm sends nothing for, or a byte the program still gets
-  from a plainer key, or a named exception: `focus.leaveTerminal` and the
+  from a plainer key, or a named exception: the leader's Ctrl+X, whose 0x18 the
+  leader pressed twice gives the program, `focus.leaveTerminal` and the
   Alt+Shift arrows; `test/terminal-xterm-bytes.test.mjs` pins each) —
-  plain Ctrl+letter, F6 and Alt+digit belong to the attached program, and
-  `focus.leaveTerminal` (Mod+Shift+F6) is the way out. `keymapConflicts`
+  every other plain Ctrl+letter, F6 and Alt+digit belong to the attached program, and
+  `focus.leaveTerminal` (Mod+Shift+F6) is the way out. Outside a terminal on
+  Linux/Windows the leader's Ctrl+X is a text field's Cut (`leaderLeftToField`). `keymapConflicts`
   lists clashes that involve a stored rebind; the shell marks the footer
   shortcuts button and the editor names them. The chords shared with the
   TUI (`CHORDS_READ`, read from `packages/client/keymap.mjs` CHORDS) all

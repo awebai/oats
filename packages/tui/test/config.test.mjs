@@ -19,9 +19,9 @@ const line = (clause, file = FILE) => `oats: \`oats tui\` cannot use ${file}: ${
 /** A line fit for a terminal: printable ASCII and nothing else. */
 const PRINTABLE = /^[\x20-\x7e]*$/;
 
-/** The default leader on Linux and Windows (on macOS, C-\\): the platform every test here gives
+/** The default leader, C-x (Ctrl+X) on every platform; Linux is the platform every test here gives
  *  loadConfig and effectiveConfig unless it says another, so no answer depends on the host's. */
-const LEADER = "M-o";
+const LEADER = "C-x";
 /** loadConfig over a file that exists only here, at the path read now, on `platform`. `content`
  *  is its text, or a value written as JSON; there is no file at the old path (`entry`, the move's
  *  look, finds none there), so nothing is moved. `calls` records what was asked of the file system
@@ -88,16 +88,16 @@ test("loadConfig reads the path configPath gives, whatever XDG_CONFIG_HOME says"
 
 // --- The defaults ---------------------------------------------------------------
 
-test("no file is the defaults: the action table itself, ascii false, the platform's detach key (M-o on Linux and Windows, C-\\ on macOS), and the path that was looked at; nothing is read", () => {
+test("no file is the defaults: the action table itself, ascii false, the default detach key (C-x on every platform), and the path that was looked at; nothing is read", () => {
   const loaded = load("", { stat: () => null });
   assert.deepEqual(Object.keys(loaded), ["ok", "actions", "ascii", "detachKey", "path", "calls"]);
   assert.equal(loaded.ok, true);
   assert.equal(loaded.actions, ACTIONS);
   assert.equal(loaded.ascii, false);
-  assert.equal(loaded.detachKey, "M-o");
+  assert.equal(loaded.detachKey, "C-x");
   assert.equal(loaded.path, FILE);
   assert.deepEqual(loaded.calls, [["stat", FILE]]);
-  for (const [platform, key] of [["linux", "M-o"], ["win32", "M-o"], ["freebsd", "M-o"], ["darwin", "C-\\"]]) {
+  for (const [platform, key] of [["linux", "C-x"], ["win32", "C-x"], ["freebsd", "C-x"], ["darwin", "C-x"]]) {
     assert.equal(defaultDetachKey(platform), key, platform);
     assert.equal(load("", { stat: () => null, platform }).detachKey, key, platform);
     assert.equal(effectiveConfig({}, ACTIONS, platform).detachKey, key, platform);
@@ -493,7 +493,7 @@ test("on disk: no file is the defaults, a file is read, and what it says is used
 test("on disk: with no config directory at all, or a config home that is not a directory, there is no file", () => {
   const missing = path.join(dir, "no-such-home");
   assert.deepEqual(loadConfig({ env: { OATS_HOME_DIR: missing }, home: "/nonexistent", platform: "linux" }), { ok: true, actions: ACTIONS, ascii: false, detachKey: LEADER, path: path.join(missing, "config", "tui.json") });
-  assert.deepEqual(loadConfig({ env: {}, home: missing, platform: "darwin" }), { ok: true, actions: ACTIONS, ascii: false, detachKey: "C-\\", path: path.join(missing, ".oats", "config", "tui.json") });
+  assert.deepEqual(loadConfig({ env: {}, home: missing, platform: "darwin" }), { ok: true, actions: ACTIONS, ascii: false, detachKey: LEADER, path: path.join(missing, ".oats", "config", "tui.json") });
   assert.equal(fs.existsSync(missing), false, "and nothing is made where nothing is moved");
   const notADirectory = path.join(dir, "a-file");
   fs.writeFileSync(notADirectory, "");
@@ -912,9 +912,9 @@ test("the move's lines echo a path only when it is printable ASCII of at most 20
 
 // --- open.detachKey ---------------------------------------------------------------
 
-test("open.detachKey is the back key, the key that takes the focus from an agent's terminal back to the list: any key of the TUI's own grammar, C-\\ on every platform among them, and a file without it has the platform's default", () => {
+test("open.detachKey is the back key, the key that takes the focus from an agent's terminal back to the list: any key of the TUI's own grammar, C-\\ and M-o (the defaults before C-x) on every platform among them, and a file without it has the default, C-x on every platform", () => {
   for (const platform of ["linux", "darwin"]) {
-    for (const key of ["F12", "C-]", "M-x", "S-F5", "C-\\", "M-o", "C-a", "M-0", "C-F1"]) {
+    for (const key of ["F12", "C-]", "M-x", "S-F5", "C-\\", "M-o", "C-x", "C-a", "M-0", "C-F1"]) {
       const loaded = load({ open: { detachKey: key } }, { platform });
       assert.equal(loaded.ok, true, key);
       assert.equal(loaded.detachKey, key, `${key} on ${platform}`);
@@ -922,7 +922,7 @@ test("open.detachKey is the back key, the key that takes the focus from an agent
   }
   assert.equal(load({ open: {} }).detachKey, LEADER, "an open object that names no key");
   assert.equal(load({ keys: { quit: ["q"] }, ascii: true }).detachKey, LEADER, "a file that names no key: the platform's default");
-  assert.equal(load({ keys: { quit: ["q"] }, ascii: true }, { platform: "darwin" }).detachKey, "C-\\", "and on macOS");
+  assert.equal(load({ keys: { quit: ["q"] }, ascii: true }, { platform: "darwin" }).detachKey, LEADER, "and on macOS the same");
   const all = load({ keys: { open: ["o"] }, ascii: true, open: { detachKey: "F12" } });
   assert.deepEqual([all.ok, all.ascii, all.detachKey, bindings(all.actions).get("o")], [true, true, "F12", "open"]);
 });
@@ -949,13 +949,18 @@ test("open.detachKey is the leader, read as a key wherever the TUI reads keys: a
   // Moved away, the key is free for the leader.
   const freed = load({ keys: { redraw: ["f5"] }, open: { detachKey: "C-l" } });
   assert.deepEqual([freed.ok, freed.detachKey, bindings(freed.actions).get("ctrl+l"), bindings(freed.actions).get("f5")], [true, "C-l", undefined, "redraw"]);
-  // The default leader is no action's key, on any platform: M-o reads as Alt+O, C-\\ as Ctrl+\\.
+  // The default leader is no action's key, on any platform: C-x reads as Ctrl+X.
   for (const platform of ["linux", "win32", "darwin"]) assert.equal(load({}, { platform }).ok, true, platform);
-  assert.equal(ACTIONS.some((action) => action.keys.includes("alt+o") || action.keys.includes("ctrl+\\")), false);
-  // A file that gives an action the default leader's key is refused where that is the default,
-  // and told it is the default: the file names no open.detachKey.
-  assert.deepEqual(load({ keys: { help: ["alt+o"] } }).lines, [taken("M-o", "Alt+O", "help", "the default leader M-o")]);
-  assert.equal(load({ keys: { help: ["alt+o"] } }, { platform: "darwin" }).ok, true, "on macOS the default is C-\\, and alt+o is help's");
+  assert.equal(ACTIONS.some((action) => action.keys.includes("ctrl+x")), false);
+  // A file that gives an action the default leader's key is refused on every platform, and told it
+  // is the default: the file names no open.detachKey.
+  for (const platform of ["linux", "win32", "darwin"]) {
+    assert.deepEqual(load({ keys: { help: ["ctrl+x"] } }, { platform }).lines, [taken("C-x", "Ctrl+X", "help", "the default leader C-x")], platform);
+  }
+  // Alt+O, the default before C-x, is a key an action may have, unless the file makes it the leader.
+  for (const platform of ["linux", "darwin"]) assert.equal(load({ keys: { help: ["alt+o"] } }, { platform }).ok, true, `${platform}: alt+o is help's`);
+  assert.deepEqual(load({ keys: { help: ["alt+o"] }, open: { detachKey: "M-o" } }).lines, [taken("M-o", "Alt+O", "help")]);
+  assert.equal(load({ keys: { help: ["ctrl+x"] }, open: { detachKey: "M-o" } }).ok, true, "and ctrl+x is free for an action when the file names another leader");
 });
 
 test("a file that names open-workspace, the action's name before it became open, is refused with the name it has now", () => {

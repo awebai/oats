@@ -49,7 +49,7 @@ test("the keys the TUI has beyond the shared ones stay its own", () => {
 });
 
 test("the default leader is the shared one, in the back key's spelling, and open.detachKey overrides it", () => {
-  for (const [platform, isMac, spelt] of [["darwin", true, "C-\\"], ["linux", false, "M-o"], ["win32", false, "M-o"]]) {
+  for (const [platform, isMac, spelt] of [["darwin", true, "C-x"], ["linux", false, "C-x"], ["win32", false, "C-x"]]) {
     const key = defaultDetachKey(platform);
     assert.equal(key, spelt, platform);
     assert.equal(isBackKey(key), true, `${platform}: a back key`);
@@ -57,6 +57,14 @@ test("the default leader is the shared one, in the back key's spelling, and open
     assert.equal(effectiveConfig({}, ACTIONS, platform).detachKey, spelt, `${platform}: a file that names none`);
     assert.equal(effectiveConfig({ open: { detachKey: "F12" } }, ACTIONS, platform).detachKey, "F12", `${platform}: the file's key`);
   }
+});
+
+test("the default leader is Ctrl+X on every platform: the shared leaderKey is ctrl+x on macOS and elsewhere, and defaultDetachKey C-x on each (#1433)", () => {
+  assert.equal(leaderKey(true), "ctrl+x", "macOS");
+  assert.equal(leaderKey(false), "ctrl+x", "Linux and Windows");
+  assert.deepEqual(["darwin", "linux", "win32"].map((platform) => defaultDetachKey(platform)), ["C-x", "C-x", "C-x"]);
+  assert.equal(backKeyId("C-x"), "ctrl+x", "read as the shared leader");
+  for (const platform of ["darwin", "linux", "win32"]) assert.equal(initialState({ cli: {}, home: "/h", platform }).leaderKey, "ctrl+x", `${platform}: the store's leader without a tui.json`);
 });
 
 test("the palette's own keys are the shared ones (PALETTE_KEYS), read through paletteKeys: on Linux and Windows the Alt+Shift arrows, which a terminal sends with or without the kitty keyboard protocol, and on macOS none, each of its being a Command key; each does is one the palette moves by, and the store holds the platform's", () => {

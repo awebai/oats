@@ -82,7 +82,7 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  focus: see `drawsOutcome`), held until one is; or null.
  *  It is the add of the deployment the run started in, refused.
  *  `detachKey`: tui.json's `open.detachKey`, the leader (docs/tui.md, "The leader"; without one,
- *  `platform`'s default, config.mjs defaultDetachKey), and `leaderKey` the key id it is read as
+ *  the default, C-x on every platform: config.mjs defaultDetachKey), and `leaderKey` the key id it is read as
  *  where the TUI reads keys (term/through.mjs backKeyId).
  *  `leader`: `{ read, waiting }` from the leader's read on, or null (see `leading`).
  *  `keyboard`: the flags the terminal confirmed for the kitty keyboard protocol (lib/main.mjs, the
@@ -1139,7 +1139,7 @@ function leading(state, event, keymap) {
 /** The leader twice (`state` is after it, its hint closed). While the open terminal has the focus,
  *  which it keeps, the leader's own key goes to the agent: the effect `{ input: <bytes> }`, the
  *  bytes a terminal sends for the back key (term/through.mjs backKeySequences, its first form:
- *  ESC o for M-o, 0x1c for C-\\), which the loop types into the focused tab as it types what
+ *  0x18 for C-x, the default; ESC o for M-o), which the loop types into the focused tab as it types what
  *  passes through (lib/main.mjs), so an agent that reads that key still gets it. From any other
  *  focus it does nothing else: the list is reached with the leader then Esc (LEADER). */
 function twice(state) {

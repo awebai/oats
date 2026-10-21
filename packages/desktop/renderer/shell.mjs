@@ -2824,7 +2824,7 @@ if (isMac) {
   window.addEventListener("focus", () => { void readKeyboardLayout(navigator); });
 }
 
-// ── the leader (Alt+O / Ctrl+\, the TUI's): one key after it, from every focus ──────────
+// ── the leader (Ctrl+X, the TUI's): one key after it, from every focus ─────────────────────
 // leader.mjs settles the wait on the next key; leader-keys.mjs says which rows apply and their
 // words; leader-dispatch.mjs runs a `does` (the leader's and the sidebar keys' alike); the hint
 // lists the keys while it waits and says, in one line, why something did not run.

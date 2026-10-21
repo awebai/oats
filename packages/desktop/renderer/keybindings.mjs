@@ -14,8 +14,8 @@
 // there are chords xterm sends nothing for (Ctrl+Shift+key, the GNOME Terminal /
 // Alacritty / Ghostty / kitty convention, and the Ctrl+Shift family's seven) or a byte a
 // plainer key still sends (the shared Ctrl+Alt family: ESC, then the Ctrl+letter byte or the
-// digit), and two named
-// exceptions (TERMINAL_ALLOWLIST has the rule), and the leader's Ctrl+X, so plain Ctrl+letter (Ctrl+W, Ctrl+K,
+// digit), and three named
+// exceptions (TERMINAL_ALLOWLIST has the rule), the leader's Ctrl+X among them, so every other plain Ctrl+letter (Ctrl+W, Ctrl+K,
 // Ctrl+P, Ctrl+B, Ctrl+\), F6 and Alt+digit stay the program's. app-menu.mjs follows the
 // same policy for the menu accelerators.
 // docs/desktop-keyboard.md is the keymap's reference.
@@ -689,17 +689,19 @@ function macStructuralChord(id, c) {
   return false;
 }
 
-/** True when the event target is a field Cut works in: a text input, a textarea or a
- * contenteditable. A terminal's own helper textarea is one too: the caller tells terminals apart. */
+/** True when the event target is a field Cut works in: a textarea or a text input that is not
+ * read-only, or a contenteditable. A terminal's own helper textarea is one too: the caller tells
+ * terminals apart. */
 function isTextField(target) {
   if (!target) return false;
   const tag = String(target.tagName || "").toUpperCase();
-  if (tag === "TEXTAREA") return true;
-  if (tag === "INPUT") return !NO_TEXT_INPUTS.has(String(target.type || "text").toLowerCase());
+  if (tag === "TEXTAREA") return !target.readOnly;
+  if (tag === "INPUT") return !target.readOnly && TEXT_INPUTS.has(String(target.type || "text").toLowerCase());
   return !!target.isContentEditable;
 }
-/** The input types that hold no text to cut. */
-const NO_TEXT_INPUTS = new Set(["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"]);
+/** The input types whose text Chromium cuts: not a password (Cut is disabled there), a date or
+ * time, or a control that holds no text. */
+const TEXT_INPUTS = new Set(["text", "search", "url", "tel", "email", "number"]);
 
 /** Whether this keydown, which presses app.leader's effective chord, is left to the focused field
  * (docs/desktop-keyboard.md, "The leader"): on Linux/Windows, while that chord is Ctrl+X with no
