@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { rosterKeyAction, rosterKeyDoes, moveTarget, rovingIndex } from "../renderer/roster-keys.mjs";
 import { plainKeys } from "../../client/keymap.mjs";
 import { registerAction, setBinding, resetAllBindings } from "../renderer/keybindings.mjs";
+import { pinPlatform } from "./helpers/platform.mjs";
 
 test("arrows walk rows; Right expands a collapsed branch, else moves down", () => {
   assert.deepEqual(rosterKeyAction({ key: "ArrowDown" }), { type: "move", delta: 1 });
@@ -84,6 +85,7 @@ test("PageUp/PageDown move by the rows that fit the list, clamped", () => {
 // Alt+Shift+↑/↓ (roster.openPrevious / roster.openNext) open the terminal above / below from a row, and
 // a rebind follows; an arrow chord bound to nothing (Alt+↑, Ctrl+↓) still moves, as it always did.
 test("a row gives way to the keymap's arrow chords, and only to those", t => {
+  pinPlatform(t); // the Linux and Windows keymap: Alt+Shift+↑/↓ (not the Mac's)
   resetAllBindings();
   const offs = ["roster.openPrevious", "roster.openNext", "tabs.prevPage", "tabs.nextPage"]
     .map(id => registerAction({ id, label: id, context: "global", run: () => {} }));

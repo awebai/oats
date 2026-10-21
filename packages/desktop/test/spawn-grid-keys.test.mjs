@@ -5,6 +5,7 @@ import { launchSoul } from './helpers/workspace-actions.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
+import { pinPlatform } from "./helpers/platform.mjs";
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -50,8 +51,10 @@ const key = (doc, target, key, opts = {}) => {
 test("spawn grid: '/' focuses the filter and 'b' opens brain from a FOCUSED CARD", async () => {
   const dom = new JSDOM('<!doctype html><html><body><div id=host></div></body></html>', { url: "http://localhost" });
   const oldDoc = globalThis.document, oldWin = globalThis.window;
+  let mounted = null;
   try {
-    const { spawn, opened } = await mountSpawn(dom);
+    mounted = await mountSpawn(dom);
+    const { opened } = mounted;
     const doc = dom.window.document;
     const cards = [...doc.querySelectorAll(".soul-card")];
     assert.ok(cards.length >= 2, `cards rendered (got ${cards.length})`);
@@ -66,18 +69,20 @@ test("spawn grid: '/' focuses the filter and 'b' opens brain from a FOCUSED CARD
     cards[1].focus();
     key(doc, cards[1], "b");
     assert.deepEqual(opened, ["beta"], "'b' opens the focused card's brain");
-    spawn.unmount();
   } finally {
+    mounted?.spawn.unmount();
     globalThis.document = oldDoc; globalThis.window = oldWin;
+    dom.window.close();
   }
-  dom.window.close();
 });
 
 test("spawn grid: typing '/' or 'b' inside the filter input stays text entry", async () => {
   const dom = new JSDOM('<!doctype html><html><body><div id=host></div></body></html>', { url: "http://localhost" });
   const oldDoc = globalThis.document, oldWin = globalThis.window;
+  let mounted = null;
   try {
-    const { spawn, opened } = await mountSpawn(dom);
+    mounted = await mountSpawn(dom);
+    const { opened } = mounted;
     const doc = dom.window.document;
     const filter = doc.querySelector(".filter");
     filter.focus();
@@ -86,18 +91,20 @@ test("spawn grid: typing '/' or 'b' inside the filter input stays text entry", a
     const b = key(doc, filter, "b");
     assert.equal(b.defaultPrevented, false, "'b' types into the filter");
     assert.deepEqual(opened, [], "no brain opened from an editable field");
-    spawn.unmount();
   } finally {
+    mounted?.spawn.unmount();
     globalThis.document = oldDoc; globalThis.window = oldWin;
+    dom.window.close();
   }
-  dom.window.close();
 });
 
 test("window dispatch ineligibility: view actions never match at window level; globals win (review afd2114)", async () => {
   const dom = new JSDOM('<!doctype html><html><body><div id=host></div><button id=rail>rail button</button></body></html>', { url: "http://localhost" });
   const oldDoc = globalThis.document, oldWin = globalThis.window;
+  let mounted = null;
   try {
-    const { spawn, opened } = await mountSpawn(dom);
+    mounted = await mountSpawn(dom);
+    const { opened } = mounted;
     const doc = dom.window.document;
     const kb = await import("../renderer/keybindings.mjs");
     kb.setActiveContexts(new Set(["stage:spawn"])); // the shell's spawn-stage context set
@@ -128,18 +135,20 @@ test("window dispatch ineligibility: view actions never match at window level; g
     cards[1].dispatchEvent(local);
     assert.deepEqual(opened, ["global", "beta"], "local dispatch runs the view action inside its surface");
     kb.setActiveContexts(new Set());
-    spawn.unmount();
   } finally {
+    mounted?.spawn.unmount();
     globalThis.document = oldDoc; globalThis.window = oldWin;
+    dom.window.close();
   }
-  dom.window.close();
 });
 
 test("spawn MODAL controls are excluded from view-key dispatch: '/' and 'B' from a modal select/button stay with the dialog (review 96b037b)", async () => {
   const dom = new JSDOM('<!doctype html><html><body><div id=host></div></body></html>', { url: "http://localhost" });
   const savedDoc = globalThis.document, savedWin = globalThis.window;
+  let mounted = null;
   try {
-    const { spawn, opened } = await mountSpawn(dom);
+    mounted = await mountSpawn(dom);
+    const { opened } = mounted;
     const doc = dom.window.document;
     // open the modal from the first card
     launchSoul(doc);
@@ -161,8 +170,8 @@ test("spawn MODAL controls are excluded from view-key dispatch: '/' and 'B' from
     const eB = key(doc, cancel, "B");
     assert.equal(eB.defaultPrevented, false, "'B' not swallowed from a modal button");
     assert.deepEqual(opened, [], "no Brain opened from under the open modal");
-    spawn.unmount();
   } finally {
+    mounted?.spawn.unmount();
     globalThis.document = savedDoc; globalThis.window = savedWin;
     dom.window.close();
   }
@@ -172,14 +181,16 @@ test("spawn MODAL controls are excluded from view-key dispatch: '/' and 'B' from
 // shared Alt+Shift+↑/↓ open the previous / next instance's terminal from a card too, and a rebind
 // follows; an arrow chord bound to nothing (Alt+↓) still moves between the cards. The overview canvas
 // (views/hierarchy.mjs) and the roster rows (roster-keys.mjs) give way the same way.
-test("spawn grid: the keymap's arrow chords pass the cards; an unbound arrow chord still moves", async () => {
+test("spawn grid: the keymap's arrow chords pass the cards; an unbound arrow chord still moves", async (t) => {
+  pinPlatform(t); // the Linux and Windows keymap: Alt+Shift+↑/↓ (not the Mac's)
   const dom = new JSDOM('<!doctype html><html><body><div id=host></div></body></html>', { url: "http://localhost" });
   const oldDoc = globalThis.document, oldWin = globalThis.window;
   const kb = await import("../renderer/keybindings.mjs");
   kb.resetAllBindings();
   const offs = ["roster.openPrevious", "roster.openNext"].map(id => kb.registerAction({ id, label: id, context: "global", run: () => {} }));
+  let mounted = null;
   try {
-    const { spawn } = await mountSpawn(dom);
+    mounted = await mountSpawn(dom);
     const doc = dom.window.document;
     const cards = [...doc.querySelectorAll(".soul-card")];
     cards[0].focus();
@@ -193,10 +204,10 @@ test("spawn grid: the keymap's arrow chords pass the cards; an unbound arrow cho
     const rebound = key(doc, cards[1], "ArrowUp", { ctrlKey: true, shiftKey: true });
     assert.equal(rebound.defaultPrevented, false, "the rebind is the keymap's");
     assert.equal(doc.activeElement, cards[1]);
-    spawn.unmount();
   } finally {
+    mounted?.spawn.unmount();
     offs.forEach(off => off()); kb.resetAllBindings();
     globalThis.document = oldDoc; globalThis.window = oldWin;
+    dom.window.close();
   }
-  dom.window.close();
 });

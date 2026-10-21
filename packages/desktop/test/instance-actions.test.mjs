@@ -9,6 +9,7 @@ import { createLeaderDispatch } from "../renderer/leader-dispatch.mjs";
 import { markStaleControl, ROSTER_STALE_TITLE } from "../renderer/instance-tree-view.mjs";
 import { cliRetire, parseRetireEnvelope } from "../../client/cli-adapter.mjs";
 import { HERDR, MARKUP, CONTROL, DETAIL_WITHHELD, shown } from "./helpers/speaker-cases.mjs";
+import { pinPlatform } from "./helpers/platform.mjs";
 
 // jsdom has no top-layer API. Model only its open/close events here; native
 // light-dismiss and rendering are Chromium's behavior, not this test's claim.
@@ -349,6 +350,7 @@ test("actions are app buttons with keyboard navigation, dismissal and refresh re
 // (keybindings.mjs keymapTakes): Alt+Shift+↓ opens the next instance's terminal from there too, and a
 // rebind follows; an arrow chord bound to nothing still opens the menu. The open menu's items do the same.
 test("the actions trigger gives way to the keymap's arrow chords, and only to those", t => {
+  pinPlatform(t); // the Linux and Windows keymap: Alt+Shift+↑/↓ (not the Mac's)
   const dom = menuDom(), doc = dom.window.document;
   const options = { invoke: assert.fail, openLifecycle: assert.fail, done() {}, report: assert.fail };
   const offs = ["roster.openPrevious", "roster.openNext"].map(id => registerAction({ id, label: id, context: "global", run: () => {} }));
