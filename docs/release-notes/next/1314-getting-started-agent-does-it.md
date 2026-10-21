@@ -1,7 +1,8 @@
 ## Changed
 
 - **The `oats-getting-started` agent does more of the setup itself,
-  instead of handing it to the person.** A clean-machine trial of the skill
+  instead of handing it to the person**
+  ([#1314](https://github.com/awebai/oats/issues/1314)). A clean-machine trial of the skill
   showed it handing back work at the end. Now:
   - It adds `~/.local/bin` to the shell's startup file when it set a
     per-user npm folder.
@@ -16,5 +17,3 @@
   - It quits a running Desktop before installing over it.
   - Without FUSE it uses `--appimage-extract-and-run`, which needs no
     `sudo`.
-
-  ([#1314](https://github.com/awebai/oats/issues/1314))

@@ -45,8 +45,8 @@ work, in its own home and terminal. Each workspace has a setup expert soul,
   Starting the Desktop and opening a terminal also run outside the sandbox.
 - **Their own terminal, opened by you.** When a command must run in the
   person's terminal, write it to a file (`mktemp`; it holds no secret) after
-  a first line `export PATH="<your PATH>"`, with the value your own commands
-  use written in, and a last line
+  a first line `export PATH="$HOME/.local/bin:$PATH"` (on macOS with
+  Homebrew, also `eval "$(/opt/homebrew/bin/brew shellenv)"`), and a last line
   `printf '\nDone: close this window.\n'; read -r _`. Then open a window
   that runs it, with `F` the file's path written in:
   - **macOS:** `osascript -e 'tell application "Terminal" to do script "sh F"'`.
@@ -56,9 +56,10 @@ work, in its own home and terminal. Each workspace has a setup expert soul,
     only that exists. Through `systemd-run` the window gets their desktop
     session's environment, not yours.
 
-  Tell them what to type there. Check the result with a read-only command,
-  never by reading the window, then delete the file. Only when no window
-  opens do you give them the command to run themselves.
+  Tell them what to type there, and ask whether the window opened: a
+  command that started is no proof of a window. Check the result with a
+  read-only command, never by reading the window, then delete the file.
+  Only when no window opens do you give them the command to run themselves.
 - **Touch nothing you were not asked to.** Don't edit an existing
   deployment's files (`oats-local.yaml`, `oats-lock.json`, `agents/`), and
   don't push to a repository the person did not create in step 5.
@@ -111,9 +112,11 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
 - **The harness** they chose must be installed and logged in (`claude
   --version`, `codex --version` or `pi --version`).
 - **macOS:** with Homebrew (`brew --version`), `brew install node git tmux gh`.
-  - **Without Homebrew,** they install it in their own Terminal, since it asks
-    for their password: from <https://brew.sh>, the command under “Install
-    Homebrew”, then the “Next steps” lines it prints.
+  - **Without Homebrew,** it installs in their own Terminal, which you open
+    for them ("How to work") with the command under “Install Homebrew” on
+    <https://brew.sh>, since it asks for their password. Then add its
+    `brew shellenv` line to their `~/.zprofile` yourself, as its “Next
+    steps” say.
   - Your running process does not see their new PATH. Start each later
     command with `eval "$(/opt/homebrew/bin/brew shellenv)"`
     (`/usr/local/bin/brew` on Intel), or ask them to restart you.
@@ -238,7 +241,9 @@ defaults read "$PWD/OATS Desktop.app/Contents/Info" CFBundleShortVersionString
 **Linux x64.** It needs glibc 2.34 or later (`ldd --version`). It installs
 per user, without sudo, and shows in the app launcher. If the Desktop is
 running, tell the person and quit it first; its agents keep running:
-`pkill -u "$(id -u)" -x oats-desktop; for i in $(seq 20); do pgrep -u "$(id -u)" -x oats-desktop >/dev/null || break; sleep 1; done`.
+`pkill -o -u "$(id -u)" -x oats-desktop; for i in $(seq 20); do pgrep -u "$(id -u)" -x oats-desktop >/dev/null || break; sleep 1; done; pgrep -u "$(id -u)" -x oats-desktop >/dev/null && echo STILL_RUNNING`
+(the oldest process is the Desktop's main one). On `STILL_RUNNING`, ask the
+person to quit it.
 
 ```bash
 cd "$(mktemp -d)" &&
@@ -570,7 +575,7 @@ oats spawn S --dir D --task-file D/.oats-handover.md
   every agent it starts):
 
   ```bash
-  U="oats-desktop-$(date +%s)"; systemd-run --user --collect --quiet --unit "$U" -p KillMode=process -E DISPLAY -E WAYLAND_DISPLAY -E XAUTHORITY "$HOME/.local/opt/oats-desktop/OATS-Desktop.AppImage" --dir "D" && for i in $(seq 30); do pgrep -u "$(id -u)" -x oats-desktop >/dev/null && break; sleep 1; done; sleep 3; if pgrep -u "$(id -u)" -x oats-desktop >/dev/null; then echo STARTED; else echo FAILED; journalctl --user -u "$U" -n 20 --no-pager; fi
+  U="oats-desktop-$(date +%s)"; LOG="$(mktemp)"; systemd-run --user --collect --quiet --unit "$U" -p KillMode=process -p StandardOutput="file:$LOG" -p StandardError="file:$LOG" -E DISPLAY -E WAYLAND_DISPLAY -E XAUTHORITY "$HOME/.local/opt/oats-desktop/OATS-Desktop.AppImage" --dir "D" && for i in $(seq 30); do pgrep -u "$(id -u)" -x oats-desktop >/dev/null && break; sleep 1; done; sleep 3; if pgrep -u "$(id -u)" -x oats-desktop >/dev/null; then echo STARTED; else echo FAILED; tail -n 20 "$LOG"; fi
   ```
 
   - **`STARTED`:** it shows `D`.
@@ -581,11 +586,9 @@ oats spawn S --dir D --task-file D/.oats-handover.md
 - **Never start it with an emptied environment** (`env -i`): it then loses
   HOME, and Git loses the person's login.
 
-**The TUI**, if they wanted it, runs in a terminal of its own:
-- **macOS:** open a Terminal window with
-  `osascript -e 'tell application "Terminal" to do script "oats tui --dir D"'`.
-- **Linux:** open it in their own terminal, as "How to work" says, with the
-  command `oats tui --dir "D"`.
+**The TUI**, if they wanted it, runs in a terminal of its own: open it in
+their own terminal, as "How to work" says, with the command
+`oats tui --dir "D"`.
 
 **Tell the person where the setup expert is**, and that it continues from
 here: in the Desktop or the TUI you started. Without either, they reach it
