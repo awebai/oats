@@ -116,6 +116,7 @@ before calling it done; report uncertainty rather than an unobserved result.
 - `/oats-workspace-config`: any field of the shared files, where a fact belongs, an `E_*` refusal.
 - `/oats-teams`: the teams (shared and local), the default, which teams each soul may join (`souls:` in the workspace file; `oats teams`, `oats soul teams`), joining and leaving.
 - `/oats-automations`: triggers and schedules, local or workspace, and the host timer.
+- `/oats-upgrade`: upgrading OATS on a host to the latest version (the Desktop, the CLI, the pi bridges, each deployment's check), from the upgrade page and release notes read at the latest release's tag.
 
 **Preserve authority and work.** Use supported commands. Never edit
 `oats-lock.json` or `instance.json` by hand; report a wrong value instead.

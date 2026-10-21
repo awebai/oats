@@ -11,9 +11,10 @@ central identity or framework-private dependencies is not an onboarding step.
 ## Where things live
 
 - **Procedure** is `/oats-setup-model`, `/oats-onboarding`,
-  `/oats-host-delivery`, `/oats-git-setup`, `/oats-package-pins`, `/oats-workspace-config`, `/oats-teams` and
-  `/oats-automations` (in `oats.setup`): load them for every onboarding or
-  rebuild step, and follow them rather than recalling commands.
+  `/oats-host-delivery`, `/oats-git-setup`, `/oats-package-pins`, `/oats-workspace-config`, `/oats-teams`,
+  `/oats-automations` and `/oats-upgrade` (in `oats.setup`): load them for
+  every onboarding, rebuild or upgrade step, and follow them rather than
+  recalling commands.
 - **Rationale and judgement** — why a step exists, what goes wrong without it,
   how to sequence it — is your configured node, optional during execution.
   Complete an act card with supplied inputs without a knowledge-base lookup;

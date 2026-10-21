@@ -9,7 +9,7 @@ import {
 } from "../scripts/check-package-dry-runs.mjs";
 import { EXPERT_PATH, checkKnowledgeTheoryPackage, treeFiles } from "../scripts/check-knowledge-theory-package.mjs";
 import { MIRROR_PATHS } from "../scripts/check-okf-mirror.mjs";
-import { acceptProbe } from "../packages/client/cli-locator.mjs";
+import { ACCEPT_RANGE, acceptProbe } from "../packages/client/cli-locator.mjs";
 
 function scratch(t) {
   const root = mkdtempSync(join(tmpdir(), "oats-release-packaging-"));
@@ -28,6 +28,28 @@ test("all release manifests and lock roots agree; Desktop accepts the actual CLI
   assert.ok(existsSync(join(ROOT, "docs/release-notes", `v${version}.md`)), "candidate needs matching release notes");
   assert.ok(!json("package.json").files.includes("oats-package/"), "Git-only optional payload is not an npm export");
   for (const dir of ["capabilities/", "mirrors/"]) assert.ok(!json("package.json").files.includes(dir), `${dir} is Git content, not an npm export`);
+});
+
+// The release-prep pull request updates the upgrade page with the notes (docs/release-lane.md,
+// "For the tag owner"); oats.setup's oats-upgrade reads the page at the tag, so the tag must carry it.
+// The band is the Desktop's of the version the manifests carry (up to its next minor), not ACCEPT_RANGE's:
+// a release plan moves ACCEPT_RANGE in an earlier pull request, while the manifests are still the last release's.
+test("the upgrade page opens with the version being tagged and only its Desktop band", () => {
+  const version = checkReleaseVersions();
+  const page = readFileSync(join(ROOT, "docs/upgrading.md"), "utf8");
+  const headings = [...page.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
+  assert.equal(headings[0], "Upgrading to the latest version", "the page opens with the latest version");
+  const section = page.slice(page.indexOf("## Upgrading to the latest version"), page.indexOf(`## ${headings[1]}`));
+  const [major, minor] = version.split(".").map(Number);
+  const band = [ACCEPT_RANGE.min.join("."), `${major}.${minor + 1}.0`];
+  const bandText = `>=${band[0]} <${band[1]}`;
+  for (const named of [`**OATS ${version}**`, `(release-notes/v${version}.md)`, `Desktop ${version} first`, `npm install -g @awebai/oats@${version}`, `The ${version} Desktop accepts OATS CLIs \`${bandText}\``]) {
+    assert.ok(section.includes(named), `"Upgrading to the latest version" names ${named}`);
+  }
+  for (const [other] of section.matchAll(/\b\d+\.\d+\.\d+\b/g)) {
+    assert.ok(other === version || band.includes(other), `"Upgrading to the latest version" names ${other}, not the version being tagged (${version})`);
+  }
+  assert.deepEqual([...page.matchAll(/`>=[^`<]*<[^`]*`/g)].map((m) => m[0]), [`\`${bandText}\``], "the page states only the current Desktop band");
 });
 
 test("release alignment rejects stale lock metadata even when all three manifests agree", (t) => {
