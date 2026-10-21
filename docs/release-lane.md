@@ -357,6 +357,22 @@ node scripts/assemble-release-notes.mjs --tag v0.54.0
 
   No entry file writes this line: only the tag owner knows the release's
   version when the notes are assembled.
+- **The same pull request updates "Upgrading to the latest version"**, the
+  section [Upgrading](upgrading.md) opens with: the version being tagged in
+  each place the section names it (the latest version, its notes, the
+  Desktop and the CLI install), and the CLIs that version's Desktop accepts,
+  up to its next minor (`ACCEPT_RANGE` in `packages/client/cli-locator.mjs`
+  once the release plan has moved it). The page
+  states only this band; the earlier ones stay in their notes. When the
+  release's Upgrade section asks for more than the page's steps, the order
+  of the Desktop and the CLI and an optional package pin, the pull request
+  also adds the release's entry at the top of "Coming from an older
+  version", one line that links its notes.
+  `test/release-packaging.test.mjs` checks that the section names the
+  version the manifests carry and no other, and that the page's only band
+  is that version's Desktop's. The oats.setup skill `oats-upgrade` reads
+  this page at the release's tag, so what the tag carries is what an upgrade
+  follows.
 - **A tag is refused while anything is under `docs/release-notes/next/`:** by
   the `build-and-test` job of `release.yml` and by `release-lane.mjs build`,
   each right after its notes-file gate and before anything is built. Each

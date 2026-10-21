@@ -1,7 +1,7 @@
 {
   "capability": "oats.setup",
   "version": "2.8.3",
-  "description": "The setup and config of an OATS workspace: the model (people, workspace, members, packages, capabilities, souls, teams, automations, machines), onboarding a machine, Git and GitHub setup, workspace config, teams, package pins and automations; the operator knowledge node carries the rationale.",
+  "description": "The setup and config of an OATS workspace: the model (people, workspace, members, packages, capabilities, souls, teams, automations, machines), onboarding a machine, Git and GitHub setup, workspace config, teams, package pins, automations and upgrading a host to the latest OATS; the operator knowledge node carries the rationale.",
   "compatibility": {
     "oats": ">=0.30.0"
   },
@@ -16,7 +16,8 @@
     "skills/oats-workspace-config",
     "skills/oats-teams",
     "skills/oats-package-pins",
-    "skills/oats-automations"
+    "skills/oats-automations",
+    "skills/oats-upgrade"
   ],
   "inject": "injects/setup.md"
 }

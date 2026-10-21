@@ -34,8 +34,11 @@ oats status               # the instances on this machine, and their drift
 Record capture setup is separate from workspace configuration and the host
 automation timer. The package owns its service policy and migration readers:
 from OATS 0.62.0, consult
-`packages/record/docs/capture-service.md#setup-service-migration` and
-`docs/upgrading.md#capture-service-release-order` in the installed CLI.
+`packages/record/docs/capture-service.md#setup-service-migration` in the
+installed CLI. For an upgrade, read `docs/upgrading.md` (its
+`#capture-service-release-order` included) and the release notes at the
+latest release's tag, as `/oats-upgrade` does: the installed copy describes
+the version being upgraded from.
 `oats setup` can change capture hooks and user-manager definitions and run a
 first pass; it is not a diagnostic to run implicitly.
 
