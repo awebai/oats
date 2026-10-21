@@ -70,9 +70,11 @@ test("spawn grid: '/' focuses the filter and 'b' opens brain from a FOCUSED CARD
     key(doc, cards[1], "b");
     assert.deepEqual(opened, ["beta"], "'b' opens the focused card's brain");
   } finally {
-    mounted?.spawn.unmount();
-    globalThis.document = oldDoc; globalThis.window = oldWin;
-    dom.window.close();
+    // The window closes even when the unmount throws: an open one keeps node --test from exiting.
+    try { mounted?.spawn.unmount(); } finally {
+      globalThis.document = oldDoc; globalThis.window = oldWin;
+      dom.window.close();
+    }
   }
 });
 
@@ -92,9 +94,11 @@ test("spawn grid: typing '/' or 'b' inside the filter input stays text entry", a
     assert.equal(b.defaultPrevented, false, "'b' types into the filter");
     assert.deepEqual(opened, [], "no brain opened from an editable field");
   } finally {
-    mounted?.spawn.unmount();
-    globalThis.document = oldDoc; globalThis.window = oldWin;
-    dom.window.close();
+    // The window closes even when the unmount throws: an open one keeps node --test from exiting.
+    try { mounted?.spawn.unmount(); } finally {
+      globalThis.document = oldDoc; globalThis.window = oldWin;
+      dom.window.close();
+    }
   }
 });
 
@@ -136,9 +140,11 @@ test("window dispatch ineligibility: view actions never match at window level; g
     assert.deepEqual(opened, ["global", "beta"], "local dispatch runs the view action inside its surface");
     kb.setActiveContexts(new Set());
   } finally {
-    mounted?.spawn.unmount();
-    globalThis.document = oldDoc; globalThis.window = oldWin;
-    dom.window.close();
+    // The window closes even when the unmount throws: an open one keeps node --test from exiting.
+    try { mounted?.spawn.unmount(); } finally {
+      globalThis.document = oldDoc; globalThis.window = oldWin;
+      dom.window.close();
+    }
   }
 });
 
@@ -171,9 +177,11 @@ test("spawn MODAL controls are excluded from view-key dispatch: '/' and 'B' from
     assert.equal(eB.defaultPrevented, false, "'B' not swallowed from a modal button");
     assert.deepEqual(opened, [], "no Brain opened from under the open modal");
   } finally {
-    mounted?.spawn.unmount();
-    globalThis.document = savedDoc; globalThis.window = savedWin;
-    dom.window.close();
+    // The window closes even when the unmount throws: an open one keeps node --test from exiting.
+    try { mounted?.spawn.unmount(); } finally {
+      globalThis.document = savedDoc; globalThis.window = savedWin;
+      dom.window.close();
+    }
   }
 });
 
@@ -205,9 +213,11 @@ test("spawn grid: the keymap's arrow chords pass the cards; an unbound arrow cho
     assert.equal(rebound.defaultPrevented, false, "the rebind is the keymap's");
     assert.equal(doc.activeElement, cards[1]);
   } finally {
-    mounted?.spawn.unmount();
-    offs.forEach(off => off()); kb.resetAllBindings();
-    globalThis.document = oldDoc; globalThis.window = oldWin;
-    dom.window.close();
+    // The window closes even when the unmount throws: an open one keeps node --test from exiting.
+    try { mounted?.spawn.unmount(); } finally {
+      offs.forEach(off => off()); kb.resetAllBindings();
+      globalThis.document = oldDoc; globalThis.window = oldWin;
+      dom.window.close();
+    }
   }
 });
