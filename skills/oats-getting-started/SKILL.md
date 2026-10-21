@@ -45,8 +45,10 @@ work, in its own home and terminal. Each workspace has a setup expert soul,
   Starting the Desktop and opening a terminal also run outside the sandbox.
 - **Their own terminal, opened by you.** When a command must run in the
   person's terminal, write it to a file (`mktemp`; it holds no secret) after
-  a first line `export PATH="$HOME/.local/bin:$PATH"` (on macOS with
-  Homebrew, also `eval "$(/opt/homebrew/bin/brew shellenv)"`), and a last line
+  a first line `export PATH="<node dir>:<oats dir>:<harness dir>:$HOME/.local/bin:$PATH"`,
+  with the folders `command -v node`, `command -v oats` and `command -v
+  <harness>` print written in (a window may load no shell startup file, so a
+  version manager's node would be missing), and a last line
   `printf '\nDone: close this window.\n'; read -r _`. Then open a window
   that runs it, with `F` the file's path written in:
   - **macOS:** `osascript -e 'tell application "Terminal" to do script "sh F"'`.
