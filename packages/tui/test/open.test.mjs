@@ -153,7 +153,7 @@ test("a viewer the panel could not start: no tmux, or one too old, is said in th
 test("the line stands until the next key bound to an action; a key bound to nothing and a paste leave it", () => {
   const after = returned(on(here(), ALPHA), 2).state;
   const line = [words(OPEN_WORDS.unknown(ALPHA))];
-  for (const key of ["y", "f5", "ctrl+x", "insert"]) assertSaid(press(after, [key]).state, line, S80, key);
+  for (const key of ["y", "f5", "ctrl+y", "insert"]) assertSaid(press(after, [key]).state, line, S80, key);
   assertSaid(reduce(after, { paste: "x" }).state, line, S80, "a paste");
   for (const key of ["j", "r", "ctrl+l", "?", "tab", "escape"]) assert.deepEqual(above(press(after, [key]).state).filter(Boolean), [], key);
   // The key a user's tui.json gives an action is what counts.

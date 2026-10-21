@@ -9,7 +9,7 @@
 //
 // It leads with the leader (the TUI's): a Leader group, the rebindable app.leader
 // row and then one read-only row per key of the shared table the Desktop runs
-// ("Alt+O then K or Space — Open the command palette"), with one quiet line saying
+// ("Ctrl+X then K or Space — Open the command palette"), with one quiet line saying
 // the leader matches the TUI and the direct chords are Desktop extras; then the
 // Sidebar keys; then the groups by context.
 //
@@ -428,7 +428,7 @@ export function createKeybindingsEditor({ doc = document, isMac, chordFamily = n
     };
 
     // A key of the leader's table: read-only (the table is fixed, as in the TUI), reached by Up/Down,
-    // found by its keys ("alt+o k") and by "leader".
+    // found by its keys ("ctrl+x k") and by "leader".
     const fixedRow = (leaderRow) => {
       const el = doc.createElement("div");
       el.className = "kb-row kb-row-fixed";

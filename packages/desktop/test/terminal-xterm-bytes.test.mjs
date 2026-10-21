@@ -18,19 +18,20 @@ import {
   registerAction, setActiveContexts, resetAllBindings, matchEvent, handleKeydown, setChordFamily,
 } from "../renderer/keybindings.mjs";
 import { terminalOptions, terminalKeyDecision } from "../renderer/terminal-tab.mjs";
+import { createLeader } from "../renderer/leader.mjs";
 
 const XTERM = readFileSync(createRequire(import.meta.url).resolve("@xterm/xterm"), "utf8");
 
 // The allowlisted defaults that send something, each with the plainer key (or keys, one after the
-// other: "Escape, then o") that sends the same. app.leader is the TUI's leader: Alt+O sends ESC o,
-// which the program still gets from Esc, then o (and the leader pressed twice gives it exactly that).
-// The shared Ctrl+Alt chords send ESC and the Ctrl+letter byte (with Shift too: Ctrl+Alt+Shift+E is
-// ESC Ctrl+E), or ESC and the digit, as Alt+digit does. The named exceptions have none (plainer: null):
-// focus.leaveTerminal, the way out of a terminal, and the Alt+Shift arrows (CSI 1;4 A–D), the shared
-// previous / next instance and tab moves, which no agent or readline binds.
+// other: "Escape, then o") that sends the same. The shared Ctrl+Alt chords send ESC and the Ctrl+letter
+// byte (with Shift too: Ctrl+Alt+Shift+E is ESC Ctrl+E), or ESC and the digit, as Alt+digit does. The
+// named exceptions have none (plainer: null): app.leader, the TUI's leader Ctrl+X, whose 0x18 (the
+// shell's Ctrl+X Ctrl+E, nano's exit) the leader pressed twice gives the program; focus.leaveTerminal,
+// the way out of a terminal; and the Alt+Shift arrows (CSI 1;4 A–D), the shared previous / next
+// instance and tab moves, which no agent or readline binds.
 const ctrlAlt = (letter) => ({ data: `\x1b${String.fromCharCode(letter.charCodeAt(0) - 64)}`, plainer: `Escape, then Ctrl+${letter}` });
 const SENDS = {
-  "app.leader": { data: "\x1bo", plainer: "Escape, then o" },
+  "app.leader": { data: "\x18", plainer: null },
   "app.palette": ctrlAlt("K"),
   "app.quickOpenSouls": ctrlAlt("P"),
   "app.workspaces": ctrlAlt("O"),
@@ -53,7 +54,7 @@ const SENDS = {
   "focus.leaveTerminal": { data: "\x1b[17;6~", plainer: null },
 };
 // The named exceptions of the terminal rule, exactly (docs/desktop-keyboard.md, principle 2).
-const EXCEPTIONS = ["focus.leaveTerminal", "roster.openNext", "roster.openPrevious", "tabs.nextPage", "tabs.prevPage"];
+const EXCEPTIONS = ["app.leader", "focus.leaveTerminal", "roster.openNext", "roster.openPrevious", "tabs.nextPage", "tabs.prevPage"];
 
 // What a keyboard reports for a chord's key (KeyboardEvent key/code/keyCode): a description
 // of the keydown, not of what xterm does with it.
@@ -172,16 +173,19 @@ test("the Alt+Shift arrows, a named exception: no plainer arrow sends their sequ
   }
 });
 
-// The leader on macOS is Ctrl+\ (keymap.mjs LEADER.mac), which fires in a terminal by name (principle
-// 3's exception). Pressed twice, its second press is the program's: what xterm sends for it, 0x1c (FS,
-// SIGQUIT's byte), pinned here under xterm's own macOS evaluation (navigator.platform set before load).
-test("macOS: Ctrl+\\, the leader, is the byte 0x1c in xterm, which the leader pressed twice gives the program", t => {
-  const press = xtermTerminal(t, { platform: "MacIntel" });
-  assert.equal(press.isMac, true, "xterm loaded under the macOS platform");
-  assert.equal(defaultBinding("app.leader", true), "Ctrl+\\");
-  assert.equal(press(keydownInit(defaultBinding("app.leader", true))), "\x1c");
-  // Under the Linux evaluation the same key sends the same byte.
-  assert.equal(xtermTerminal(t)(keydownInit("Ctrl+\\")), "\x1c");
+// The leader is Ctrl+X on every platform (keymap.mjs LEADER), which fires in a terminal by the allowlist
+// on Linux/Windows and by name on macOS (principle 3's exception). Pressed twice, its second press is the
+// program's: what xterm sends for it, 0x18 (CAN), pinned here under xterm's Linux, Windows and macOS
+// evaluation (navigator.platform set before load). The end of this file runs it through the leader.
+test("the leader, Ctrl+X, is the byte 0x18 in xterm on every platform, which the leader pressed twice gives the program", t => {
+  for (const [platform, isMac] of [[null, false], ["Win32", false], ["MacIntel", true]]) {
+    const press = xtermTerminal(t, { platform });
+    assert.equal(press.isMac, isMac, `xterm loaded under ${platform ?? "Linux"}`);
+    assert.equal(defaultBinding("app.leader", isMac), "Ctrl+X");
+    assert.equal(press(keydownInit(defaultBinding("app.leader", isMac))), "\x18", platform ?? "Linux");
+  }
+  // ⌃\, the macOS leader before 0.67, which macOS still fires by name when bound back: 0x1c (FS, SIGQUIT's byte).
+  assert.equal(xtermTerminal(t, { platform: "MacIntel" })(keydownInit("Ctrl+\\")), "\x1c");
 });
 
 // ---------------------------------------------------------------- the Ctrl+Shift family
@@ -348,3 +352,44 @@ test("Windows: where AltGr types nothing, the shared Ctrl+Alt chords are the Des
     assert.equal(events[0].defaultPrevented, true, `${name} is claimed`);
   }
 });
+
+// ---------------------------------------------------------------- the leader
+
+/** The shell's interceptKey (shell.mjs) behind terminal-tab.mjs's custom key handler, on a platform. */
+const shellKeyPath = (isMac) => (event) => {
+  const interceptKey = (ev) => {
+    if (!matchEvent(ev, { isMac, insideTerminal: true })) return false;
+    if (ev.type === "keydown") handleKeydown(ev, { isMac, insideTerminal: true });
+    return true;
+  };
+  return !terminalKeyDecision(event, interceptKey).handled;
+};
+
+// The leader through the shell's key path and its engine (renderer/leader.mjs), as the shell wires it:
+// Ctrl+X opens it and sends the program nothing; pressed again it closes the wait and is let through,
+// so xterm sends 0x18, once. Alt+O, the Linux/Windows leader before 0.67, is no binding: ESC o.
+for (const [platform, isMac] of [[null, false], ["Win32", false], ["MacIntel", true]]) {
+  test(`the leader in a terminal (${platform ?? "Linux"}): Ctrl+X sends nothing, twice sends 0x18 once, Alt+O is the program's`, t => {
+    resetAllBindings();
+    const press = xtermTerminal(t, { platform, keyHandler: shellKeyPath(isMac) });
+    const log = [];
+    const leader = createLeader({ win: press.window, isMac,
+      onOpen: () => log.push("open"), onSettle: does => log.push(does), onClose: why => log.push(why) });
+    const off = registerAction({ id: "app.leader", label: "Leader", context: "global", run: () => leader.start({ from: "terminal" }) });
+    t.after(() => { off(); leader.dispose(); resetAllBindings(); });
+    const ctrlX = keydownInit(defaultBinding("app.leader", isMac));
+    const first = press.sequence([["keydown", ctrlX]]);
+    assert.equal(first.data, "", "the leader itself sends nothing");
+    assert.equal(first.events[0].defaultPrevented, true, "claimed before the pty");
+    assert.ok(leader.isWaiting());
+    const second = press.sequence([["keydown", ctrlX]]);
+    assert.equal(second.data, "\x18", "the leader pressed twice: exactly 0x18, once");
+    assert.equal(leader.isWaiting(), false);
+    assert.deepEqual(log, ["open", "again"], "nothing ran");
+    // xterm's macOS evaluation reads ⌥O as the third-level ø (no macOptionIsMeta), so only elsewhere is it ESC o.
+    const altO = press.sequence([["keydown", keydownInit("Alt+O")]]);
+    if (!isMac) assert.equal(altO.data, "\x1bo", "Alt+O reaches the program as ESC o");
+    assert.equal(leader.isWaiting(), false, "Alt+O opens nothing");
+    assert.deepEqual(log, ["open", "again"]);
+  });
+}

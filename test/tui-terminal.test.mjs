@@ -180,7 +180,7 @@ test.after(() => {
 const TUI = `${shq(process.execPath)} ${shq(CLI)} tui`;
 const PROMPT = "tui-test$";
 const USAGE = "oats tui [--dir <path>] [--ascii]";
-/** The leader: the default on the platform the tests run on (M-o, C-\\ on macOS), as tmux's
+/** The leader: the default (C-x, Ctrl+X, on every platform), as tmux's
  *  send-keys names it too, and as the cheat sheet and the help spell it. */
 const LEADER_KEY = defaultDetachKey(), LEADER = backKeyLabel(LEADER_KEY);
 const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -1299,9 +1299,9 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   // At 80x24 the help has the 39 cells of the main area beside the sidebar, and its line of `quit`
   // is its 120th row or so: under the views, `workspaces` and the palette, `open` four times with
   // the agent's terminal and the leader's keys under it (whose rows depend on how the leader's label
-  // wraps: one more with `Ctrl+\` than with `Alt+O`), the switcher's `remove`, `soul-instances`, the open terminal's keys, the
+  // wraps: one more with `Ctrl+X`, the default, than with `Alt+O`), the switcher's `remove`, `soul-instances`, the open terminal's keys, the
   // split's, the four acts with the rules of a confirmation under them, and the spawn's, each
-  // sentence wrapped to that width. The movement keys scroll the help: with either leader the line
+  // sentence wrapped to that width. The movement keys scroll the help: with either of those labels the line
   // of `quit` is on the screen from 100 rows down to 121, and 110 rows down show it.
   for (let i = 0; i < 110; i++) term.press("j");
   await until(term, () => mainOf(term.screen()).some((row) => /^ *x {2,}quit$/.test(row)) && JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words(withX(HELP_SHEET))), "the help with x as the quit key, in it and in its cheat sheet, after a q that did not quit");
