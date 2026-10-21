@@ -22,7 +22,7 @@ export const CONFIG_LIMIT = 64 * 1024;
 const TOO_LARGE = `it is larger than ${CONFIG_LIMIT / 1024} KiB`;
 const NOT_AN_OBJECT = 'it is not one JSON object, like {"keys": {"quit": ["q"]}}';
 const SETTINGS = "the settings are keys, ascii and open";
-/** A key id of the shared keymap (`ctrl+\\`, `alt+o`) in the back key's spelling (`C-\\`, `M-o`):
+/** A key id of the shared keymap (`ctrl+x`, `alt+o`) in the back key's spelling (`C-x`, `M-o`):
  *  Ctrl or Alt and one character, which is what the shared leader is. Anything else: null. */
 function backKeyOf(keyId) {
   const [, mod, rest] = /^(ctrl|alt)\+(.)$/.exec(keyId) ?? [];
@@ -31,9 +31,9 @@ function backKeyOf(keyId) {
 /** The back key when tui.json names none, on `platform` (a `process.platform` value): the key that
  *  takes the focus from an agent's terminal back to the list, the leader (the setting keeps its
  *  name, `open.detachKey`, from when it left a viewer). It is the shared leader, the Desktop's too
- *  (packages/client/keymap.mjs leaderKey): `C-\\` on macOS, whose terminals send Option as Meta
- *  only when told to; `M-o` (Alt+O) elsewhere. Both are read as keys no action of ACTIONS holds
- *  (`ctrl+\\`, `alt+o`), which the check of the leader below keeps true. */
+ *  (packages/client/keymap.mjs leaderKey): `C-x` (Ctrl+X) on every platform, one byte (0x18) in
+ *  every terminal without the kitty keyboard protocol, `CSI 120;5u` under it. It is read as a key no action
+ *  of ACTIONS holds (`ctrl+x`), which the check of the leader below keeps true. */
 export const defaultDetachKey = (platform = process.platform) => backKeyOf(leaderKey(platform === "darwin"));
 /** An action id this program had and has no more, with what it is called now. */
 const RENAMED = Object.freeze({ "open-workspace": "open" });

@@ -2,7 +2,7 @@
 // starts the kernel's own viewer, `oats session attach --home <home>` with no key of its own, in a
 // pane of a private tmux server the run owns, and the TUI draws that pane's screen where the detail
 // was (docs/tui.md, "Open an agent's terminal"). Typing goes to the agent; the leader (by default
-// M-o, C-\ on macOS) then Esc gives the focus to the list, z zooms, c closes.
+// Ctrl+X) then Esc gives the focus to the list, z zooms, c closes.
 //
 // Real tmux throughout, never the operator's (the conventions of test/tui-terminal.test.mjs): the
 // fixture owns a private TMUX_TMPDIR, and every server here is a socket inside the fixture. AGENTS
@@ -217,7 +217,7 @@ test.after(() => {
 // ---- what the program says, as docs/tui.md and packages/tui/lib give it --------------------------
 const TUI = `${shq(process.execPath)} ${shq(CLI)} tui`;
 const PROMPT = "tui-panel$";
-/** The leader: the default on the platform the tests run on (M-o, C-\\ on macOS), as tmux's
+/** The leader: the default (C-x, Ctrl+X, on every platform), as tmux's
  *  send-keys names it too, and as the cheat sheet and the help spell it. */
 const LEADER_KEY = defaultDetachKey(), LEADER = backKeyLabel(LEADER_KEY);
 // The cheat sheet (docs/tui.md, "The cheat sheet") as run.sheet() reads it: its rows, each a key

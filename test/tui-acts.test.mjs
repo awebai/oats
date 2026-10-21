@@ -28,7 +28,7 @@ import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { backKeyLabel } from "../packages/tui/lib/actions.mjs";
 import { defaultDetachKey } from "../packages/tui/lib/config.mjs";
 
-/** The leader: the default on the platform the tests run on (M-o, C-\\ on macOS), as tmux's
+/** The leader: the default (C-x, Ctrl+X, on every platform), as tmux's
  *  send-keys names it too, and as the cheat sheet spells it. */
 const LEADER_KEY = defaultDetachKey(), LEADER = backKeyLabel(LEADER_KEY);
 const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

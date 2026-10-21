@@ -1722,9 +1722,9 @@ test("the help lists every action of the table it is given with its keys, and an
 });
 
 test("the help is generated from the table: another key and another action appear as given", () => {
-  const table = Object.freeze([...ACTIONS.filter((action) => action.id !== "redraw"), Object.freeze({ id: "zap", keys: Object.freeze(["f9", "ctrl+x"]), label: "zap the thing" })]);
+  const table = Object.freeze([...ACTIONS.filter((action) => action.id !== "redraw"), Object.freeze({ id: "zap", keys: Object.freeze(["f9", "ctrl+y"]), label: "zap the thing" })]);
   const lines = helpLines(golden({ actions: table }));
-  assert.equal(pair(lines, "F9, Ctrl+X", "zap the thing"), true);
+  assert.equal(pair(lines, "F9, Ctrl+Y", "zap the thing"), true);
   assert.equal(lines.some((line) => line.includes("redraw") || line.includes("Ctrl+L")), false, "an action that is not in the table is not in the help");
   const keys = lines.slice(lines.findIndex((line) => line.trim() === "Keys") + 1, lines.findIndex((line) => line.trim() === "The leader")).filter((line) => line.trim());
   // One row per action and view; under the line of opening an agent, five rows of its own (the leader then Esc, the leader twice,
@@ -3542,6 +3542,25 @@ test("once the leader's next key comes the cheat sheet is back: Esc, the leader 
   for (const key of ["escape", golden().leaderKey, "x", "q"]) assert.deepEqual(hintsOf(draw(leaderThen(golden(), key).state, S80)), SHEET_80, key);
   assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus"), "escape").state, S80)), TERMINAL_SHEET);
   assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus"), "x").state, S80)), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], ...ARROWS]);
+});
+
+test("with no tui.json the leader is Ctrl+X on every platform, and the cheat sheet, the leader's hint and the help name it so, the terminal's sheet with its Esc and its twice (#1433)", () => {
+  for (const platform of ["linux", "win32", "darwin"]) {
+    const list = golden({ detachKey: undefined, platform });
+    assert.deepEqual([list.detachKey, list.leaderKey], ["C-x", "ctrl+x"], platform);
+    assert.deepEqual(hintsOf(draw(list, S80))[0], ["Ctrl+X", "commands"], `${platform}: the cheat sheet`);
+    assert.deepEqual(hintsOf(draw(waiting(list), size(80, 40)))[0], ["Ctrl+X", "then"], `${platform}: the leader's hint`);
+    const help = helpLines(openable({ detachKey: undefined, platform })).map((line) => line.trim()), text = help.join(" ").replace(/ +/g, " ");
+    assert.equal(help.includes("Ctrl+X then one of these keys, from every focus; a terminal too:"), true, `${platform}: the leader's section`);
+    assert.equal(help.some((line) => line.replace(/ {2,}/g, "  ") === `Ctrl+X  ${LEADER_AGAIN}`), true, `${platform}: the leader again`);
+    assert.equal(text.includes("Ctrl+X Esc takes the focus from the terminal back to the list; the agent keeps running. Ctrl+X Ctrl+X types the leader into the terminal."), true, `${platform}: under the agent's line`);
+    assert.equal(text.includes("Ctrl+\\") || /(^|[^+])Alt\+O\b/.test(text), false, `${platform}: no leader of before is named`);
+    // A terminal with the focus: the leader, the leader then Esc, and the leader twice, which types it.
+    const two = stateOf(observed([instanceRow("dev", "dev-a"), instanceRow("dev", "dev-b")]), { detachKey: undefined, platform });
+    const open = keyed(Object.freeze({ ...two, selected: roster(two).rows.find(({ row }) => row.instance === "dev-a").id }), "enter");
+    const showing = reduce(open, { shown: { id: open.terminal.id } }).state;
+    assert.deepEqual(hintsOf(drawPanel(showing, S120)).slice(0, 3), [["Ctrl+X", "commands"], ["Ctrl+X Esc", "the list"], ["Ctrl+X Ctrl+X", "types Ctrl+X"]], `${platform}: the terminal's sheet`);
+  }
 });
 
 // ── The palette (T1b) ────────────────────────────────────────────────────────────────────────────

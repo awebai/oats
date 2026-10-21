@@ -147,8 +147,11 @@ export function observed(rows, { withheld, workspace = "acme-platform", observed
 export const failed = (entry, reason, at = "2026-10-11T10:05:00.000Z") => failedEntry(entry, reason, at);
 export const pending = (at = "2026-10-11T09:59:59.000Z") => pendingEntry(null, at);
 
-/** The leader the tests' states are made with, whatever platform runs them: C-\\ (macOS's default;
- *  config.test.mjs pins each platform's). An option `detachKey` gives another. */
+/** The leader the tests' states are made with, whatever platform runs them: C-\\, as a tui.json may
+ *  name it (macOS's default before C-x), so the tests show the leader is whatever open.detachKey
+ *  says. The default, C-x on every platform, is pinned in config.test.mjs, keymap.test.mjs and
+ *  leader.test.mjs, and drawn in views.test.mjs. An option `detachKey` gives another (undefined: the
+ *  default of the option `platform`). */
 export const TEST_LEADER = "C-\\";
 /** The state of a run that took `entry` (pending when none is given). */
 export function stateOf(entry = null, options = {}) {

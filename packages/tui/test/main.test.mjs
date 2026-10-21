@@ -1430,7 +1430,7 @@ test("the leader twice from the terminal's focus types the leader's own bytes in
   leaderEscape(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
-  // M-o, the default on Linux and Windows: ESC o is the leader only as one keypress.
+  // M-o, the default on Linux and Windows before C-x, as a tui.json names it: ESC o is the leader only as one keypress.
   const m = await viewing({ config: { ...KEY_CONFIG, detachKey: "M-o" } });
   m.stdin.type("\x1bo");
   m.stdin.type("\x1bo");
@@ -1446,6 +1446,70 @@ test("the leader twice from the terminal's focus types the leader's own bytes in
   m.stdin.type("\x1b\x1b[I");
   m.stdin.type("q");
   assert.equal(await m.status, 0, "the leader then Esc, then q in the list");
+});
+
+test("the default leader, Ctrl+X on every platform: 0x18 in the list opens the leader's hint, and from the terminal's focus 0x18 twice types one 0x18 into the agent; Ctrl+Alt+X (ESC 0x18) and Alt+O (ESC o) are the agent's as typed, and in the list neither is the leader (#1433)", async () => {
+  const DEFAULT = { ...KEY_CONFIG, detachKey: "C-x" };
+  for (const platform of ["linux", "darwin"]) {
+    const l = await opening({ config: DEFAULT, platform });
+    for (const typed of ["\x1bo", "\x1b\x18"]) {
+      l.stdin.type(typed);
+      assert.doesNotMatch(wholeScreen(l), /Ctrl\+X +then/, `${platform}: ${JSON.stringify(typed)} in the list is not the leader`);
+    }
+    assert.match(wholeScreen(l), /Ctrl\+X +commands +│/, `${platform}: the cheat sheet names Ctrl+X`);
+    l.stdin.type("\x18");
+    assert.match(wholeScreen(l), /Ctrl\+X +then +│/, `${platform}: 0x18 is the leader`);
+    l.stdin.type("\x18");
+    assert.match(wholeScreen(l), /Ctrl\+X +commands +│/, `${platform}: the leader again puts the cheat sheet back`);
+    l.stdin.type("q");
+    assert.equal(await l.status, 0);
+    const r = await viewing({ config: DEFAULT, platform });
+    assert.match(wholeScreen(r), /Ctrl\+X +commands +│ Ctrl\+X Esc +the list +│ Ctrl\+X Ctrl\+X +types Ctrl\+X │/, `${platform}: the terminal's cheat sheet`);
+    r.log.length = 0;
+    r.stdin.type("\x18");
+    r.stdin.type("\x18");
+    await settle();
+    r.stdin.type("q");
+    r.stdin.type("\x1b\x18");
+    r.stdin.type("\x1bo");
+    assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [["input", "\x18"], ["input", "q"], ["input", "\x1b\x18"], ["input", "\x1bo"]], `${platform}: C-x twice is one 0x18, then q, Ctrl+Alt+X and Alt+O as typed`);
+    r.stdin.type("\x18");
+    r.stdin.type("\x1b\x1b[I");
+    r.stdin.type("q");
+    assert.equal(await r.status, 0, `${platform}: the leader then Esc, then q in the list`);
+  }
+});
+
+test("under the confirmed protocol the default leader Ctrl+X is CSI 120;5u in the list and from the terminal's focus, and twice types 0x18 into the agent; Ctrl+Shift+X and Ctrl+Alt+X are never the leader, and reach the agent as 0x18 and ESC 0x18, Alt+O as ESC o (#1433)", async () => {
+  const l = await opening({ keyboard: true, platform: "linux", config: { ...KEY_CONFIG, detachKey: "C-x" } });
+  l.stdin.type("\x1b[?5u");
+  for (const typed of ["\x1b[120;6u", "\x1b[120:88;6u", "\x1b[120;7u", "\x1b[111;3u"]) {
+    l.stdin.type(typed);
+    assert.doesNotMatch(wholeScreen(l), /Ctrl\+X +then/, `${JSON.stringify(typed)} in the list is not the leader`);
+  }
+  l.stdin.type("\x1b[120;5u");
+  assert.match(wholeScreen(l), /Ctrl\+X +then +│/, "CSI 120;5u is the leader");
+  l.stdin.type("\x1b[27u");
+  l.stdin.type("q");
+  assert.equal(await l.status, 0);
+  const r = await opening({ keyboard: true, platform: "linux", config: { ...KEY_CONFIG, detachKey: "C-x" } });
+  r.stdin.type("\x1b[?5u");
+  r.stdin.type("\r");
+  await settle();
+  r.panel.opens[0].made("@1");
+  await settle();
+  r.log.length = 0;
+  r.stdin.type("\x1b[120;5u");
+  r.stdin.type("\x1b[120;5u");
+  await settle();
+  r.stdin.type("q");
+  for (const typed of ["\x1b[120;6u", "\x1b[120:88;6u", "\x1b[120;7u", "\x1b[111;3u"]) r.stdin.type(typed);
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [["input", "\x18"], ["input", "q"], ["input", "\x18"], ["input", "\x18"], ["input", "\x1b\x18"], ["input", "\x1bo"]],
+    "the leader twice: one 0x18; then q, Ctrl+Shift+X (with and without its shifted key), Ctrl+Alt+X and Alt+O as their legacy bytes");
+  r.stdin.type("\x1b[120;5u");
+  r.stdin.type("\x1b[27u");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0, "the leader then Esc, then q in the list");
 });
 
 // ── The chords (docs/tui.md, "Chords"): the kitty keyboard protocol asked for at the start, and read

@@ -58,6 +58,21 @@ test("the back key ends the agent's bytes: what came before it goes to the agent
   assert.deepEqual(s.feed("\x1c"), [{ back: true, rest: "" }]);
 });
 
+test("the default back key, C-x (Ctrl+X, the leader on every platform), is the byte 0x18 without the protocol; ESC right before it is Ctrl+Alt+X and Alt+O is ESC o, both the agent's as typed (#1433)", () => {
+  let t = 1000;
+  const through = createThrough({ sequences: backKeySequences("C-x"), now: () => t, leader: "ctrl+x" });
+  const s = { feed: (value) => read(through.feed(bytes(value))), expire: () => read(through.expire()) };
+  assert.deepEqual(backKeySequences("C-x").map(text), ["\x18"]);
+  assert.deepEqual(s.feed("ls\x18jj"), [{ input: "ls" }, { back: true, rest: "jj" }]);
+  assert.deepEqual(s.feed("\x18"), [{ back: true, rest: "" }]);
+  assert.deepEqual(s.feed("\x1b\x18"), [{ input: "\x1b\x18" }], "Ctrl+Alt+X: never the back key");
+  assert.deepEqual(s.feed("a\x1b\x18b\x18c"), [{ input: "a\x1b\x18b" }, { back: true, rest: "c" }], "a Ctrl+X after it in the read still is");
+  assert.deepEqual(s.feed("\x1bo"), [{ input: "\x1bo" }], "Alt+O: no back key now, the agent's");
+  assert.equal(through.timeoutAt(), null, "no back key begins with ESC: nothing waits");
+  t += 60_000;
+  assert.deepEqual(s.expire(), []);
+});
+
 test("a key sequence split across reads is never held back from the agent, but a beginning of the back key's own bytes waits for the next read or BACK_KEY_SPLIT_MS, and one that may begin a paste the Esc timeout", () => {
   const plain = scanner();
   // A lone ESC (the agent's Esc) and an arrow split after its ESC go on at once with C-\ as the back key.
