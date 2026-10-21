@@ -6,11 +6,11 @@ host that comes from it.
 
 ## Upgrading to the latest version
 
-The latest version is **OATS 0.67.0** ([release notes](release-notes/v0.67.0.md)).
-The 0.67.0 Desktop accepts OATS CLIs `>=0.26.0 <0.68.0`.
+The latest version is **OATS 0.67.1** ([release notes](release-notes/v0.67.1.md)).
+The 0.67.1 Desktop accepts OATS CLIs `>=0.26.0 <0.68.0`.
 
 **First, read the `## Upgrade` section of every release after yours, up to
-0.67.0,** in the [release notes](release-notes/): it says what to do before
+0.67.1,** in the [release notes](release-notes/): it says what to do before
 the CLI changes, and what else must change with it (the Desktop, another
 tool, a package pin). [Coming from an older version](#coming-from-an-older-version)
 names the releases that ask for more than the steps below. `oats version`
@@ -19,8 +19,8 @@ prints the version you have.
 Then, on each host:
 
 ```sh
-                                     # 0. where the Desktop is installed: Desktop 0.67.0 first
-npm install -g @awebai/oats@0.67.0   # 1. the CLI
+                                     # 0. where the Desktop is installed: Desktop 0.67.1 first
+npm install -g @awebai/oats@0.67.1   # 1. the CLI
 oats update                          # 2. in each deployment: the plan, then it asks before it runs
 oats doctor                          # 3. in the same deployment
 ```
@@ -110,9 +110,9 @@ of the Desktop and the CLI, and an optional package pin. A change a script
 must follow is in its release's Upgrade section whether or not it is listed
 here.
 
-- **[0.67.0](release-notes/v0.67.0.md#upgrade):** the leader is Ctrl+X in
-  OATS Desktop and in `oats tui`, on every platform; a leader you rebound is
-  kept. A `tui.json` that gives `ctrl+x` to an action and names no leader
+- **[0.67.0](release-notes/v0.67.0.md#upgrade), first published as
+  0.67.1:** the leader is Ctrl+X in OATS Desktop and in `oats tui`, on every
+  platform; a leader you rebound is kept. A `tui.json` that gives `ctrl+x` to an action and names no leader
   stops `oats tui` from starting: give that action another key, or name a
   leader ([Change the keys](tui.md#change-the-keys-tuijson)). On Linux and
   Windows the shared shortcuts are Ctrl+Alt; a terminal that passes
