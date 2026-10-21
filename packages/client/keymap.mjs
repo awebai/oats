@@ -12,7 +12,7 @@
  * (`ctrl+alt+shift+e`, `alt+shift+up`), and `cmd+`, first, for macOS's Command (`cmd+k`, the
  * Desktop's ⌘K), which a terminal never passes to a program.
  *
- *   leaderKey(isMac)        -> the leader's key id on that platform        "ctrl+\\" / "alt+o"
+ *   leaderKey(isMac)        -> the leader's key id on that platform        "ctrl+x" on both
  *   leaderDoes(key)         -> what the leader then does for a key id, or null
  *   plainKeys(does)         -> the plain key ids of an action (empty when it has none)
  *   leaderRows()            -> LEADER_TABLE
@@ -22,8 +22,11 @@
  *
  * `does` names an action, not a client's code: each client maps it to its own. */
 
-/** The leader per platform: Ctrl+\ on macOS, Alt+O elsewhere. */
-export const LEADER = Object.freeze({ mac: "ctrl+\\", other: "alt+o" });
+/** The leader per platform: Ctrl+X on both, as Emacs has it (#1433). Without the kitty keyboard
+ * protocol it is one byte, 0x18, in every terminal; pressed twice it sends that byte to the program
+ * (the shell's Ctrl+X Ctrl+E, nano's exit). The Desktop leaves it to Cut in an editable field on
+ * Linux and Windows (packages/desktop/docs/desktop-keyboard.md, "The leader"). */
+export const LEADER = Object.freeze({ mac: "ctrl+x", other: "ctrl+x" });
 
 /** The keys read after the leader, in the TUI's order, and what each does. `terminal`: named in
  * the hint only while a terminal is open. The leader pressed twice is not here: it is the user's

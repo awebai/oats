@@ -7,7 +7,7 @@
 // Terminal safety (the rule: a default chord never takes a key a program inside
 // the terminal reads). When the keydown target is inside `.xterm`, on macOS ONLY
 // chords whose `Mod` resolves to ⌘ (meta) may fire — ⌘ never reaches the pty —
-// plus two shapes named by action id, Ctrl+Tab tab cycling and the leader's ⌃\;
+// plus two shapes named by action id, Ctrl+Tab tab cycling and the leader's ⌃X (or ⌃\);
 // every other chord (⌃digits, F6, Ctrl+letters) belongs to the attached program.
 // On Linux/Windows the Ctrl key IS the terminal's control key, so only an explicit allowlist of action ids may
 // fire inside the terminal; every other chord passes through. Their defaults
@@ -15,7 +15,7 @@
 // Alacritty / Ghostty / kitty convention, and the Ctrl+Shift family's seven) or a byte a
 // plainer key still sends (the shared Ctrl+Alt family: ESC, then the Ctrl+letter byte or the
 // digit), and two named
-// exceptions (TERMINAL_ALLOWLIST has the rule), so plain Ctrl+letter (Ctrl+W, Ctrl+K,
+// exceptions (TERMINAL_ALLOWLIST has the rule), and the leader's Ctrl+X, so plain Ctrl+letter (Ctrl+W, Ctrl+K,
 // Ctrl+P, Ctrl+B, Ctrl+\), F6 and Alt+digit stay the program's. app-menu.mjs follows the
 // same policy for the menu accelerators.
 // docs/desktop-keyboard.md is the keymap's reference.
@@ -309,9 +309,10 @@ function chordDefault(does, family) {
 function keymapIn(family) {
   const chordOf = (id) => chordDefault(CHORDS_READ.find((each) => each.id === id).does, family);
   return Object.freeze({
-    // The leader (docs/desktop-keyboard.md, "The leader"): the TUI's, read from the shared keymap.
-    // Ctrl+\ on macOS fires in a terminal by name (macStructuralChord); Alt+O on Linux/Windows is
-    // terminal-allowlisted (it sends ESC o, which the program still gets from Esc, then o).
+    // The leader (docs/desktop-keyboard.md, "The leader"): the TUI's, read from the shared keymap,
+    // Ctrl+X on every platform. ⌃X on macOS fires in a terminal by name (macStructuralChord); on
+    // Linux/Windows it is terminal-allowlisted, a named exception (0x18 is a byte a program reads:
+    // the leader pressed twice gives it); in a text field there Cut keeps it (leaderLeftToField).
     "app.leader": { mac: chordFromKeyId(LEADER.mac), other: chordFromKeyId(LEADER.other) },
     ...Object.fromEntries(SIDEBAR_KEYS.map(({ id, does }) => [id, plainDefault(does)])),
     // The leader's Tab, as a chord (CHORDS group-next).
@@ -428,14 +429,15 @@ export function defaultBinding(actionId, isMac = defaultIsMac(), family = chordF
 // defaults and Ctrl+Shift+Space (xterm's Ctrl+letter and Ctrl+Space bytes need
 // Shift up), Ctrl+1, Ctrl+2, Ctrl+, and the zoom chords Ctrl+= Ctrl+- Ctrl+0.
 // A byte the program still gets: Ctrl+3 (ESC: Esc), Ctrl+Tab (Tab), Ctrl+Shift+Tab
-// (back-tab: Shift+Tab), app.leader (Alt+O sends ESC o: Esc, then o; the key the TUI
-// reads its leader from too), the shared Ctrl+Alt chords (Ctrl+Alt+letter, with Shift
+// (back-tab: Shift+Tab), the shared Ctrl+Alt chords (Ctrl+Alt+letter, with Shift
 // or without, sends ESC and the Ctrl+letter byte: Esc, then Ctrl+letter; Ctrl+Alt+digit
 // ESC and the digit: Alt+digit) and Ctrl+Shift+Alt+W (ESC Ctrl+W: Esc, then Ctrl+W).
 // On Windows xterm sends nothing for Ctrl+Alt+letter or digit: it reads them as AltGr.
 // Named exceptions, sequences no plainer key sends: Ctrl+Shift+F6, without which F6
-// cannot get out of a terminal, and the Alt+Shift arrows (CSI 1;4 A–D: the shared
-// previous / next instance and tab moves), which no agent or readline binds.
+// cannot get out of a terminal, the Alt+Shift arrows (CSI 1;4 A–D: the shared
+// previous / next instance and tab moves), which no agent or readline binds, and app.leader,
+// the TUI's leader Ctrl+X (0x18, the shell's Ctrl+X Ctrl+E and nano's exit), which the leader
+// pressed twice gives the program.
 // The chord family changes the key, never the list: in the Ctrl+Shift family (keys.json) the
 // seven rows it moves (app.palette, app.quickOpenSouls, app.workspaces, terminal.focusMode,
 // tabs.close, split.vertical, split.horizontal) are Ctrl+Shift+K P S M W E D, which xterm sends
@@ -673,23 +675,47 @@ export function isPlainChord(chord) {
 
 // ---------------------------------------------------------------- dispatch
 
-/** On macOS inside a terminal, one non-⌘ shape still belongs to the app, by
+/** On macOS inside a terminal, a few non-⌘ shapes still belong to the app, by
  * action id AND chord shape (a rebind to another Ctrl chord stays the program's):
  * Ctrl+Tab / Ctrl+Shift+Tab cycling tabs (standard on macOS too; a terminal
- * program never sees Ctrl+Tab as anything but Tab). */
+ * program never sees Ctrl+Tab as anything but Tab), and the leader's ⌃X or ⌃\\. */
 function macStructuralChord(id, c) {
   if (c.mod || c.alt) return false;
   if (id === "tabs.next" || id === "tabs.prev") return c.key === "tab" && c.ctrl;
-  // The leader (a named exception to principle 3): bound to a ⌃-only chord on `\`, as shipped.
-  // A rebind to ⌘something fires by the ⌘ rule; a rebind to another ⌃ chord stays the program's.
-  if (id === "app.leader") return c.ctrl && !c.shift && c.key === "\\";
+  // The leader (a named exception to principle 3): ⌃ alone with `x`, as shipped, or with `\`, the
+  // leader before 0.67, for whoever binds it back. A rebind to ⌘something fires by the ⌘ rule; a
+  // rebind to another ⌃ chord stays the program's.
+  if (id === "app.leader") return c.ctrl && !c.shift && (c.key === "x" || c.key === "\\");
   return false;
+}
+
+/** True when the event target is a field Cut works in: a text input, a textarea or a
+ * contenteditable. A terminal's own helper textarea is one too: the caller tells terminals apart. */
+function isTextField(target) {
+  if (!target) return false;
+  const tag = String(target.tagName || "").toUpperCase();
+  if (tag === "TEXTAREA") return true;
+  if (tag === "INPUT") return !NO_TEXT_INPUTS.has(String(target.type || "text").toLowerCase());
+  return !!target.isContentEditable;
+}
+/** The input types that hold no text to cut. */
+const NO_TEXT_INPUTS = new Set(["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"]);
+
+/** Whether this keydown, which presses app.leader's effective chord, is left to the focused field
+ * (docs/desktop-keyboard.md, "The leader"): on Linux/Windows, while that chord is Ctrl+X with no
+ * other modifier, in a text field that is not a terminal (xterm's helper textarea is one, and there
+ * the leader fires), Ctrl+X stays Chromium's Cut. The rule is the chord's, not the default's: a
+ * rebind to Ctrl+X follows it, a rebind to anything else does not. macOS cuts with ⌘X. */
+export function leaderLeftToField(e, isMac = defaultIsMac()) {
+  if (isMac || !e || e.target?.closest?.(".xterm") || !isTextField(e.target)) return false;
+  const c = parseChord(getBinding("app.leader", isMac) || "");
+  return !!c && (c.mod || c.ctrl) && !c.alt && !c.shift && c.key === "x";
 }
 
 /** Whether an action bound to `chord` may fire while a terminal has focus: on
  * Linux/Windows when its id is in TERMINAL_ALLOWLIST, whatever the chord; on macOS
  * when the chord holds ⌘ and not ⌃ (⌘ never reaches the pty), or is the Ctrl+Tab
- * shape of tabs.next/prev, or the ⌃\\ shape of app.leader. matchEvent applies it; the shortcuts
+ * shape of tabs.next/prev, or the ⌃X or ⌃\\ shape of app.leader. matchEvent applies it; the shortcuts
  * editor shows it. */
 export function terminalAllows(actionId, chord, isMac = defaultIsMac()) {
   const c = typeof chord === "string" ? parseChord(chord) : chord;
@@ -731,6 +757,8 @@ export function matchEvent(e, opts = {}) {
       // Inside a terminal, every other chord stays with the attached program, even after
       // a custom rebind (on macOS the event's chord equals the bound one here).
       if (insideTerminal && !terminalAllows(action.id, chord, isMac)) continue;
+      // The leader's Ctrl+X is Cut in a text field on Linux/Windows (leaderLeftToField).
+      if (action.id === "app.leader" && !insideTerminal && leaderLeftToField(e, isMac)) continue;
       const tier = hits[hasOverride(action.id) ? "own" : "fixed"];
       if (action.context === "global") tier.global = tier.global || action;
       else tier.context = tier.context || action;

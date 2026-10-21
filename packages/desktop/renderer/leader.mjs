@@ -1,6 +1,6 @@
 /* oats desktop — the leader (docs/desktop-keyboard.md, "The leader").
 
-   The leader chord (app.leader: Alt+O on Linux/Windows, Ctrl+\ on macOS, rebindable) opens a
+   The leader chord (app.leader: Ctrl+X on every platform, rebindable) opens a
    wait; the next keydown that is not a lone modifier settles it. A key of the shared table
    (packages/client/keymap.mjs LEADER_TABLE) runs what it does, once; any other key cancels.
    Either way that key is consumed whole: its keydown, its keypress and its keyup (and its
@@ -8,8 +8,9 @@
 
    The leader pressed again (the effective app.leader chord) closes the wait. In a terminal that
    second press is not claimed (keybindings.mjs `letThrough`): xterm sends exactly what it sends
-   for the chord (Alt+O ESC o, Ctrl+\ 0x1c), so the program still has the key. Elsewhere it only
-   closes the wait.
+   for the chord (Ctrl+X 0x18), so the program still has the key. In a text field on Linux/Windows
+   (keybindings.mjs leaderLeftToField) it closes the wait and stays the field's Cut, as Ctrl+X there
+   never opens it. Elsewhere it only closes the wait.
 
    A click, a paste, the window losing focus, a modal opening or the focused element leaving the
    document cancels the wait, with nothing run. A modal already shown when a key arrives cancels it
@@ -25,7 +26,7 @@
    settles, on which `does`, and which events it eats. */
 
 import { leaderDoes } from "../../client/keymap.mjs";
-import { eventMatchesBinding, letThrough } from "./keybindings.mjs";
+import { eventMatchesBinding, leaderLeftToField, letThrough } from "./keybindings.mjs";
 
 const NAMED = Object.freeze({
   __proto__: null,
@@ -121,7 +122,7 @@ export function createLeader({ win, isMac, modalOpen = () => false, supports = (
     if (eventMatchesBinding(e, "app.leader", isMac)) {
       const inTerminal = !!e.target?.closest?.(".xterm");
       close("again");
-      if (inTerminal) letThrough(e);
+      if (inTerminal || leaderLeftToField(e, isMac)) letThrough(e);
       else eat(e);
       return;
     }
