@@ -115,8 +115,13 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
   `sudo` in their own terminal, or set a per-user prefix:
   `npm config set prefix ~/.local`. Then put `~/.local/bin` on PATH: start
   each later command of yours with `export PATH="$HOME/.local/bin:$PATH"`
-  (your shell does not reread their profile), and ask them to add that line
-  to their shell's startup file so their own terminal finds `oats` too.
+  (your shell does not reread their profile). Add that line to their shell's
+  startup file yourself, so their own terminal finds `oats` too, and tell
+  them you did: `~/.zshrc` when `$SHELL` ends in `zsh`, else `~/.bashrc`.
+
+  ```bash
+  RC="$HOME/.bashrc"; case "$SHELL" in *zsh) RC="$HOME/.zshrc";; esac; grep -qsF '$HOME/.local/bin' "$RC" || printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$RC"; echo "$RC"
+  ```
 - **Windows** is not supported.
 
 ## 3. Log in to GitHub
@@ -197,7 +202,8 @@ defaults read "$PWD/OATS Desktop.app/Contents/Info" CFBundleShortVersionString
 - **Download with `gh`, never through a browser.** `gh` sets no quarantine
   on what it downloads, and that copy starts from Finder. A browser download
   would be quarantined.
-- **Install it.** If the Desktop is running, ask the person to quit it. Then,
+- **Install it.** If the Desktop is running, tell the person and quit it
+  (`osascript -e 'quit app "OATS Desktop"'`); its agents keep running. Then,
   with the folder `pwd` printed:
 
   ```bash
@@ -234,10 +240,9 @@ Categories=Development;
 ```
 
 - **Without FUSE** (the AppImage fails with a FUSE message; Ubuntu 22.04
-  and later ship without `libfuse2`), either they install it in their own
-  terminal (`sudo apt install libfuse2`, or `libfuse2t64` on Ubuntu 24.04),
-  or add ` --appimage-extract-and-run` after the AppImage's path in `Exec=`
-  and wherever you start it.
+  and later ship without `libfuse2`), add ` --appimage-extract-and-run` after
+  the AppImage's path in `Exec=` and wherever you start it. That needs no
+  `sudo`; installing `libfuse2` (`libfuse2t64` on Ubuntu 24.04) does.
 - **Linux arm64** (`uname -m` says `aarch64`) has no Desktop: skip the
   download, say so and go on.
 
@@ -537,23 +542,33 @@ oats spawn S --dir D --task-file D/.oats-handover.md
 **The Desktop**, if installed, starts on the new deployment:
 - **macOS:** `open -n -a "OATS Desktop" --args --dir D`. If the Desktop is
   already running, the new launch hands `--dir` to it and exits.
-- **Linux:** the person opens **OATS Desktop** from their app launcher, so it
-  starts with their own session's environment, not yours. Then they pick `D`
-  in its switcher (listed there from OATS 0.65.0). If it isn't listed, they
-  add it with **Add local workspace… → Browse**.
+- **Linux:** start it yourself, detached from your process, when your shell
+  reaches their desktop session (`$WAYLAND_DISPLAY` or `$DISPLAY` is set),
+  with `<home>` written in:
+
+  ```bash
+  echo "${WAYLAND_DISPLAY:-}${DISPLAY:-}" | grep -q . && setsid -f "<home>/.local/opt/oats-desktop/OATS-Desktop.AppImage" --dir "D" >/dev/null 2>&1 && sleep 5 && pgrep -f OATS-Desktop.AppImage >/dev/null && echo STARTED
+  ```
+
+  Only when it doesn't print `STARTED` does the person open **OATS Desktop**
+  from their app launcher; it then shows `D` in its switcher (listed there
+  from OATS 0.65.0).
 - **Never start it with an emptied environment** (`env -i`): it then loses
   HOME, and Git loses the person's login.
 
 **The TUI**, if they wanted it, runs in a terminal of its own:
 - **macOS:** open a Terminal window with
   `osascript -e 'tell application "Terminal" to do script "oats tui --dir D"'`.
-- **Linux:** give them `oats tui --dir D` for their terminal.
+- **Linux:** open a terminal window for it, when your shell reaches their
+  desktop session, with `<oats>` the path `command -v oats` prints (a new
+  terminal may not have `~/.local/bin` on PATH yet):
+  `setsid -f xdg-terminal-exec "<oats>" tui --dir "D"`, or
+  `setsid -f x-terminal-emulator -e "<oats>" tui --dir "D"` where that
+  exists. Without either, give them `oats tui --dir D`.
 
-**Tell the person how to reach the setup expert**, and that it continues
-from here:
-- the Desktop;
-- `oats tui --dir D`;
-- `oats session attach --home H` in a terminal.
+**Tell the person where the setup expert is**, and that it continues from
+here: in the Desktop or the TUI you started. Without either, they reach it
+with `oats session attach --home H` in a terminal.
 
 It will ask them only what the hand-over leaves open, and it opens a pane in
 its own window when they need to type a secret. You are done.
