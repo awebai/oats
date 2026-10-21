@@ -110,10 +110,13 @@ of the Desktop and the CLI, and an optional package pin. A change a script
 must follow is in its release's Upgrade section whether or not it is listed
 here.
 
-- **[0.67.0](release-notes/v0.67.0.md#upgrade):** on Linux and Windows the
-  shared shortcuts are Ctrl+Alt, in OATS Desktop and in `oats tui`; a
-  terminal that passes Ctrl+Shift apart from Ctrl takes the Ctrl+Shift
-  option.
+- **[0.67.0](release-notes/v0.67.0.md#upgrade):** the leader is Ctrl+X in
+  OATS Desktop and in `oats tui`, on every platform; a leader you rebound is
+  kept. A `tui.json` that gives `ctrl+x` to an action and names no leader
+  stops `oats tui` from starting: give that action another key, or name a
+  leader ([Change the keys](tui.md#change-the-keys-tuijson)). On Linux and
+  Windows the shared shortcuts are Ctrl+Alt; a terminal that passes
+  Ctrl+Shift apart from Ctrl takes the Ctrl+Shift option.
 - **[0.66.0](release-notes/v0.66.0.md#upgrade):** `oats tui` moves its key
   file to `~/.oats/config/tui.json`; `oats server connect` needs `--dir`.
 - **[0.62.0](release-notes/v0.62.0.md#upgrade):** after the CLI, run
