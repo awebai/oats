@@ -124,11 +124,12 @@ next read and prepare take it without a second kernel call.
 
 **The dialog** (`spawn-dialog.mjs`, rules in `packages/client/spawn-naming.mjs`)
 asks only while the name field is empty and has never been typed in (for the
-dialog's lifetime, restored with a draft), after the task text rests for
-`SUGGEST_PAUSE_MS` (1.5 s) with at least `SUGGEST_MIN_WORDS` (3) words. It
+dialog's lifetime, restored with a draft), `SUGGEST_DEBOUNCE_MS` (300 ms) after
+an edit leaves the task text with at least `SUGGEST_MIN_WORDS` (7) words: the
+debounce only keeps typing from making one read per keystroke. It
 keeps every answer by the exact task text and the soul (`namingKey`). A
 suggestion for the current text becomes the choices' `name`, so the preview,
-prepare and apply all bind it, and the placeholder reads "will be named …". With
+prepare and apply all bind it, and the placeholder shows the suggested name itself. With
 no name yet, the preview's Name reads "named from its task" and the facts that
 follow from the numbered name (its home and new branch) are left out
 (`previewFacts`'s `unnamed`): Spawn would not create them.

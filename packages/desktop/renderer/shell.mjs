@@ -300,7 +300,7 @@ ctx.openCapability = async (name) => {
 ctx.showPendingSpawn = (id) => showPendingSpawn(id);
 // Spec E: the press closed the dialog; reveal its pending row (no focus taken) and follow it to its instance.
 ctx.followSpawn = (id) => { spawnFollow.follow(id); revealPendingSpawn(id); };
-// The spawn dialog's own keys (Mod+Enter, Mod+1–7): listed and rebindable in the editor from the start;
+// The spawn dialog's own keys (Mod+Enter, Mod+1–7 in the form's order): listed and rebindable in the editor from the start;
 // only the open dialog dispatches them (spawn-dialog-keys.mjs).
 registerSpawnDialogKeys();
 spawnJobs.recover();

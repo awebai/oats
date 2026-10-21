@@ -603,8 +603,8 @@ export function onKeymapChange(fn) {
 /** A modal dialog's own context (`spawn-dialog-local`): while the dialog is open
  * its keys are its own and it stops them, so nothing behind the modal sees them;
  * while it is closed they do nothing. Its chords collide only with each other,
- * never with a global action (Spec E: Mod+1 jumps to Name in the spawn dialog and
- * shows Active everywhere else). */
+ * never with a global action (Spec E: Mod+1 jumps to the Opening instruction in the
+ * spawn dialog and shows Deployments everywhere else). */
 const isModalContext = (context) => typeof context === "string" && context.endsWith("-dialog-local");
 
 /** Two contexts the shell has on at once (shell.mjs updateActiveContexts): the sidebar's, while

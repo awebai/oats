@@ -723,7 +723,7 @@ control.
   whenever the dialog opens for a chosen soul (a card, the soul page, Quick
   Open, Reopen spawn, a pick in the soul list), without scrolling, with the
   caret at the end of a restored instruction (never selected). Name is optional
-  and the form's last field; its section key (Mod+1) reaches it, with the caret
+  and the form's last field; its section key (Mod+6) reaches it, with the caret
   at the end of a restored name. Quick Open from a tab opens the dialog just before the
   Workspace stage is shown; the first field takes focus once it is, unless the
   operator has focused something else by then.
@@ -751,17 +751,20 @@ control.
 
   | Section | macOS | Linux / Windows | Lands on |
   |---|---|---|---|
-  | Name (`spawn.jumpName`) | ⌘1 | Ctrl+1 | the Name field |
+  | Opening instruction (`spawn.jumpTask`) | ⌘1 | Ctrl+1 | the instruction |
   | Harness (`spawn.jumpHarness`) | ⌘2 | Ctrl+2 | the Harness picker |
   | Model (`spawn.jumpModel`) | ⌘3 | Ctrl+3 | the Model field |
   | Relationship (`spawn.jumpRelationship`) | ⌘4 | Ctrl+4 | the selected segment |
   | Teams (`spawn.jumpTeams`) | ⌘5 | Ctrl+5 | the first team that can be ticked (nothing when Teams is not shown) |
-  | Opening instruction (`spawn.jumpTask`) | ⌘6 | Ctrl+6 | the instruction |
+  | Name (`spawn.jumpName`) | ⌘6 | Ctrl+6 | the Name field |
   | Developer settings (`spawn.toggleAdvanced`) | ⌘7 | Ctrl+7 | opens it on its first control; again closes it back on its summary |
 
-  Name keeps ⌘1 though it is now the form's last field, and the Opening
-  instruction keeps ⌘6 though it is now the first: the chords name sections,
-  not positions. A closed disclosure holding the target opens first. Each chord shows as a
+  The section keys follow the form's order: ⌘1–⌘7 reach the fields in the
+  order they are on screen, so the Opening instruction, the form's first
+  field, is ⌘1 and Name, its last before Developer settings, ⌘6 (in 0.67.1
+  and earlier Name was ⌘1 and the Opening instruction ⌘6; a rebind of either
+  is kept, by action id). Where a rebind of yours shares a chord with another section's
+  default, yours runs, as everywhere in the keymap. A closed disclosure holding the target opens first. Each chord shows as a
   quiet hint beside its section's label (`aria-hidden`; the control carries
   `aria-keyshortcuts`). They are actions of the `spawn-dialog-local` context
   (`renderer/spawn-dialog-keys.mjs`, with Mod+Enter): the shortcuts editor

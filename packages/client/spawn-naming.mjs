@@ -3,10 +3,10 @@
  * remembers an answer, and how it says a numbered one. */
 import { HARNESS_NAMES } from './harness-names.mjs';
 
-/** How long the task text must rest before the dialog asks (about 1.5 s): never on each keystroke. */
-export const SUGGEST_PAUSE_MS = 1500;
-/** The words a task needs before the dialog asks while it is typed. Spawn asks whatever the length. */
-export const SUGGEST_MIN_WORDS = 3;
+/** The debounce before the dialog asks: it only keeps typing from making one read per keystroke. */
+export const SUGGEST_DEBOUNCE_MS = 300;
+/** The words a task needs before the dialog asks while it is typed (more than six). Spawn asks whatever the length. */
+export const SUGGEST_MIN_WORDS = 7;
 
 /** The words of `text`: whitespace-separated runs that hold a letter or a digit. */
 export const taskWords = text => (String(text ?? '').match(/\S+/g) || []).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
