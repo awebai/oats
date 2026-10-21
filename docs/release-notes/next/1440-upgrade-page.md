@@ -5,8 +5,8 @@
   `npm view @awebai/oats version`, reads [Upgrading](../upgrading.md) and
   the `## Upgrade` section of every release after the installed one at the
   tag `v<latest>`, never the copy in the installed CLI, and walks the person
-  through the Desktop, the CLI, the pi bridges, `oats doctor` and each
-  release's own steps, one step on each yes. On a tag whose page does not
+  through each release's own steps, the Desktop, the CLI, the pi bridges in
+  every deployment and `oats doctor`, one step on each yes. On a tag whose page does not
   open with the latest version yet (up to v0.67.0), it takes the order from
   the page and the version and the Desktop's CLIs from the latest release's
   notes. `/oats-setup-model` points at it instead of the installed copy. It

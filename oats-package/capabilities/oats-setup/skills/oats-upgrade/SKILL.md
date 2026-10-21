@@ -35,46 +35,55 @@ step on its own yes.
 ```sh
 oats version --json               # "version": the installed CLI
 npm view @awebai/oats version     # the latest release
-npm view @awebai/oats versions --json
 ```
 
-The releases to read are every version in that list above the installed one,
-up to the latest, without prereleases (a version with `-`, like
-`0.53.0-rc.1`). Ask the person, with any other question you have, whether the
-Desktop is installed on this host. When the installed CLI is already the
-latest, there is no release to read: run step 3 below and report.
+Use the latest only if it is three numbers (`^[0-9]+\.[0-9]+\.[0-9]+$`);
+anything else, stop and show what npm answered. A CLI ahead of the latest (a
+checkout, an unpublished build) is not upgraded: say so and stop.
 
-A CLI ahead of the latest (a checkout, an unpublished build) is not
-upgraded: say so and stop.
+Ask the person, with any other question you have, whether the Desktop is
+installed on this host, and at which version. When the CLI is already the
+latest there are no notes to read, but the Desktop, the bridges and the
+check may still lag: make the plan of section 3 without its notes steps.
 
 ## 2. Read the page and the notes at the latest tag
 
-The repository is public, so a plain HTTPS read needs no login:
+The repository is public, so plain HTTPS reads need no login. The listing of
+`docs/release-notes/` at the tag names every release that has notes:
 
 ```sh
-V=0.67.0                          # the latest, from npm view
+V=$(npm view @awebai/oats version)
 curl -fsSL "https://raw.githubusercontent.com/awebai/oats/v$V/docs/upgrading.md"
-curl -fsSL "https://raw.githubusercontent.com/awebai/oats/v$V/docs/release-notes/v0.66.0.md"
+curl -fsSL "https://api.github.com/repos/awebai/oats/contents/docs/release-notes?ref=v$V"
+curl -fsSL "https://raw.githubusercontent.com/awebai/oats/v$V/docs/release-notes/v<version>.md"
 ```
 
-`gh api "repos/awebai/oats/contents/docs/upgrading.md?ref=v$V" -H "Accept: application/vnd.github.raw"`
-reads the same file where `gh` is signed in. Read every notes file from the
-tag `v$V`, the latest: that tag holds the notes of every earlier release too.
+Where `gh` is signed in, `gh api "repos/awebai/oats/contents/<path>?ref=v$V"`
+reads the same, with `-H "Accept: application/vnd.github.raw"` for a file.
+Read every notes file from the tag `v$V`: it holds the notes of every
+earlier release too.
+
+**The releases to read** are the `v<version>.md` files above the installed
+version, up to `v$V`, without prereleases (a version with `-`), oldest
+first. **From each, from 0.53.0 on,** take its `## Upgrade` section; a
+release with none asks for nothing more. **For a release before 0.53.0,**
+read the whole notes: up to 0.39.0 the section may be called `## Upgrading`
+or `## Upgrading from <version>`, and some releases give their order under
+another heading (0.49.0's oats.okf 5.0 cutover, for one).
 
 **From the page**, take "Upgrading to the latest version": the version it
-names, the CLIs its Desktop accepts, and its steps. **From each release's
-notes**, oldest first, take the `## Upgrade` section. Notes before 0.38.0 may
-call it `## Upgrading` or `## Upgrading from <version>`. A release with no
-such section asks for nothing more.
+names, the CLIs its Desktop accepts, and its steps. "Coming from an older
+version" is a guide to the notes, never a replacement for reading them.
 
 **A tag up to v0.67.0** has a page without "Upgrading to the latest
 version". Take the order from its "The steps" section, and the version and
 the CLIs its Desktop accepts from the latest release's own Upgrade section,
 which gives them.
 
-**Stop and say so** when the page names a version other than the latest npm
-lists, or when a notes file of a release in your list cannot be read. Name
-what you could not read; never fill the gap from the installed copy.
+**Stop and say so** when the page's "Upgrading to the latest version" names
+a version other than `$V`, or when a notes file of a release in your list
+cannot be read. Name what you could not read; never fill the gap from the
+installed copy.
 
 ## 3. The plan
 
@@ -82,50 +91,58 @@ Write one plan, in this order, each step with the release or the page that
 asks for it:
 
 1. **Before the CLI:** what an Upgrade section says to do with the old CLI
-   still installed. Those steps run with the installed CLI, so they may use
-   only commands it has.
-2. **The Desktop**, where it is installed: the latest version's, from the
-   assets of the GitHub Release `v$V`
-   (`https://github.com/awebai/oats/releases/tag/v$V`). The person installs
+   still installed, or before `oats sync` (a host tool such as aw, for
+   one). Those steps run with the installed CLI, so they may use only
+   commands it has.
+2. **The Desktop**, where it is installed: version `$V`, from the assets of
+   `https://github.com/awebai/oats/releases/tag/v$V`. The person installs
    it; you give the link and the CLIs it accepts. It goes before the CLI
    because the older Desktop refuses the new CLI.
-3. **The CLI and the pi bridges:** `oats update` in each deployment on the
-   host. Its plan installs the CLI when npm lists a newer one and moves every
-   pi folder's bridge to that version.
-4. **The check:** `oats doctor` in each deployment.
+3. **The CLI:** `npm install -g @awebai/oats@$V`, as the page says.
+4. **The pi bridges:** `oats update`, run by the new CLI, in every
+   deployment on the host. Do not let the old CLI's `oats update` install
+   the CLI: before 0.53.0 it moves the default pi folder only.
 5. **After the CLI:** the rest of the Upgrade sections, in their releases'
-   order. Steps that several releases ask for (a rerun of `oats setup`, a
-   restart) are done once, with the new CLI, unless a release's notes say
+   order. A step that several releases ask for (a rerun of `oats setup`, a
+   restart) is done once, with the new CLI, unless a release's notes say
    otherwise.
-6. **Restarts:** the pi sessions that were running, and any instance an
+6. **The check:** `oats doctor` in each deployment, after the steps above:
+   a check run before a conversion the notes ask for reports what that
+   conversion fixes.
+7. **Restarts:** the pi sessions that were running, and any instance an
    Upgrade section names.
 
-A package version the notes mention (the official catalog's pins) is not
-part of the upgrade: `oats update` moves no package. If the person wants it,
-it is `/oats-package-pins`, after the plan, with its own trust step.
+**Package pins are the person's choice,** and `oats update` moves none. When
+the notes tie a step to a pin (a tool before `oats sync`, a rerun after it,
+a pin that is itself the fix), keep that step with the pin, in the notes'
+order, and take the pin through `/oats-package-pins` and its trust step. A
+pin with no step tied to it is offered after the plan.
 
 ## 4. Walking the person through it
 
 For each step: say what it does and which release asks for it, wait for the
 person's yes, run it or hand it over, then read back what it did.
 
+**The CLI install.** Run it yourself only when the kernel in use is the one
+npm installs over:
+
+```sh
+realpath "$(oats root)"
+realpath "$(npm prefix -g)/lib/node_modules/@awebai/oats"   # Windows: <prefix>/node_modules/@awebai/oats
+```
+
+When they differ (a Node version manager, another prefix), or npm answers
+`EACCES`, hand the person `npm install -g @awebai/oats@$V` to run from
+their own shell. Then `oats version --json` must report `$V`.
+
 **The deployments on the host** are listed by `oats deployments` (from OATS
-0.65.0); on an older CLI, ask the person. Run step 3 and 4 in each, from
-inside it or with `--dir` (`oats update --dir`, from OATS 0.53.0):
+0.65.0); on an older CLI, ask the person. With the new CLI, in each one:
 
 ```sh
 oats update --check --dir <deployment>   # the plan; runs nothing
 oats update --yes --dir <deployment>     # on the person's yes: your shell has no terminal
-oats doctor <deployment>
+oats doctor <deployment>                 # after the steps that come after the CLI
 ```
-
-The first `oats update` that installs the CLI installs it for every
-deployment; the next ones only move bridges. Before it runs, check that
-`oats root` is `"$(npm prefix -g)/lib/node_modules/@awebai/oats"` in your
-shell: the kernel in use is then the one npm installs over. With a Node
-version manager they can differ, and the install would land in another
-Node's folder: hand the person `npm install -g @awebai/oats@<version>` to
-run from their own shell instead, then run `oats update` for the bridges.
 
 **What the person runs themselves:** the Desktop install, and every step an
 Upgrade section says to run from the user's own shell or login session (the
@@ -145,10 +162,10 @@ you think works.
 
 The upgrade is done when:
 
-- `oats version --json` reports the latest version;
-- each deployment's `oats doctor` shows no version-skew warning, and you
-  read its other warnings to the person;
-- where the Desktop is installed, it is the latest version and lists the
+- `oats version --json` reports `$V`;
+- each deployment's `oats doctor`, run after the last step, shows no
+  version-skew warning, and you read its other warnings to the person;
+- where the Desktop is installed, it is version `$V` and lists the
   deployment's instances;
 - every step of the plan is done, or the person declined it.
 

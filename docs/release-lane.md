@@ -361,7 +361,8 @@ node scripts/assemble-release-notes.mjs --tag v0.54.0
   section [Upgrading](upgrading.md) opens with: the version being tagged in
   each place the section names it (the latest version, its notes, the
   Desktop and the CLI install), and the CLIs that version's Desktop accepts,
-  from `ACCEPT_RANGE_TEXT` in `packages/client/cli-locator.mjs`. The page
+  up to its next minor (`ACCEPT_RANGE` in `packages/client/cli-locator.mjs`
+  once the release plan has moved it). The page
   states only this band; the earlier ones stay in their notes. When the
   release's Upgrade section asks for more than the page's steps, the order
   of the Desktop and the CLI and an optional package pin, the pull request
@@ -369,7 +370,7 @@ node scripts/assemble-release-notes.mjs --tag v0.54.0
   version", one line that links its notes.
   `test/release-packaging.test.mjs` checks that the section names the
   version the manifests carry and no other, and that the page's only band
-  is the one `ACCEPT_RANGE` gives. The oats.setup skill `oats-upgrade` reads
+  is that version's Desktop's. The oats.setup skill `oats-upgrade` reads
   this page at the release's tag, so what the tag carries is what an upgrade
   follows.
 - **A tag is refused while anything is under `docs/release-notes/next/`:** by

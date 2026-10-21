@@ -69,8 +69,7 @@ packages pinned in `oats-workspace.yaml`; change a pin, then run `oats sync`
 ([Packages](packages.md)).
 
 Run steps 2 and 3 in every deployment on the host, or name one from anywhere
-with `oats update --dir <deployment>`. Then restart the pi sessions that were
-running: a session keeps the bridge it loaded when it started.
+with `oats update --dir <deployment>`.
 
 In a terminal, `oats update` shows its plan and asks before it runs anything.
 Without a terminal (a script, an agent's shell) it runs only with `--yes`.
@@ -104,10 +103,12 @@ installed over it.
 ## Coming from an older version
 
 Read the `## Upgrade` section of every release after yours, up to the
-latest: each release's own steps are there, and only there. This list names,
-newest first, the releases whose Upgrade section asks for more than
-[the steps](#the-steps), the order of the Desktop and the CLI, and an
-optional package pin. A release that is not listed asks for nothing more.
+latest: each release's own steps are there, and only there. This list is a
+guide to them, not a replacement: it names, newest first, the releases whose
+Upgrade section asks a host for more than [the steps](#the-steps), the order
+of the Desktop and the CLI, and an optional package pin. A change a script
+must follow is in its release's Upgrade section whether or not it is listed
+here.
 
 - **[0.67.0](release-notes/v0.67.0.md#upgrade):** on Linux and Windows the
   shared shortcuts are Ctrl+Alt, in OATS Desktop and in `oats tui`; a
@@ -138,18 +139,22 @@ optional package pin. A release that is not listed asks for nothing more.
   scripts; `open-workspace` in `tui.json` is `open`; a launch gets only its
   capabilities' declared environment.
 - **[0.55.1](release-notes/v0.55.1.md#upgrade):** pin oats.aweb 1.27.3 and run
-  `oats sync`.
+  `oats sync`: on 1.27.2, readiness reports every home the host wake broker
+  serves as `unavailable`.
 - **[0.55.0](release-notes/v0.55.0.md#upgrade):** the first capture after the
   upgrade takes longer.
 - **[0.53.0](release-notes/v0.53.0.md#upgrade):** from 0.51 or earlier, do
-  0.52.0's steps first (aw 1.36.33 or later, before `oats sync`); run
-  `oats setup` again where it was run; rerun `oats aweb resident create` for
-  an existing resident custody unit; `oats doctor` names unmatched
-  `souls.launch` keys.
+  0.52.0's steps first (aw 1.36.33 or later, before `oats sync`); once the
+  CLI is 0.53.0, run `oats update` in each deployment that launches pi (an
+  older CLI's `oats update` moves the default pi folder only); run
+  `oats setup` again where it was run; restart Claude Code instances on a
+  Homebrew `node`; rerun `oats aweb resident create` for an existing
+  resident custody unit; `oats doctor` names unmatched `souls.launch` keys.
 
-**Coming from before 0.53.0:** read the notes of every release after yours.
-Before 0.38.0 the section may be called `## Upgrading` or
-`## Upgrading from <version>`.
+**Coming from before 0.53.0:** read the whole notes of every release after
+yours: up to 0.39.0 the section may be called `## Upgrading` or
+`## Upgrading from <version>`, and some releases give their order under
+another heading (0.49.0's oats.okf 5.0 cutover, for one).
 
 ### Capture service release order
 
