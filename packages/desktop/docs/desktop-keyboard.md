@@ -148,7 +148,8 @@ TUI has no handler for a row). It is
 action; the table after it is fixed, as in the TUI). Changed in 0.67.0: it was
 Alt+O on Linux and Windows and ⌃\ on macOS. A leader you set yourself is kept,
 and ⌃\ bound back still fires in a terminal on macOS; Alt+O now reaches the
-focused control or the program (ESC o in a terminal).
+focused control or the program (ESC o in a terminal on Linux and Windows; on
+macOS Option+O types its character, `ø` on a US layout).
 
 **The leader, the keys after it and the shared chords are the TUI's; the
 other direct shortcuts are Desktop extras.** So the two can differ, on purpose: leader then 1 is

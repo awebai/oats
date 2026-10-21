@@ -22,6 +22,7 @@
     area, an editable region) that is not a terminal, on Linux and Windows.
     On macOS Cut is ⌘X, so the leader works there too
     ([desktop-keyboard.md](../../packages/desktop/docs/desktop-keyboard.md#the-leader)).
-  - **Alt+O and ⌃\ go back to the programs:** an agent gets Alt+O as Esc
-    then `o`, and ⌃\ as it is typed, unless you bind either as the leader
-    again.
+  - **Alt+O and ⌃\ go back to the programs:** on Linux and Windows an agent
+    gets Alt+O as Esc then `o` (on macOS Option+O types its character, `ø`
+    on a US layout, unless the terminal sends Option as Meta), and ⌃\ as it
+    is typed, unless you bind either as the leader again.
