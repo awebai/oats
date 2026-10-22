@@ -501,8 +501,11 @@ async function card(t, { instances, deployments = null, agents = () => ({ agents
 test("the card offers exactly two acts, Go to instance then Go to soul: no Git, Restart with…, Brain, Workspace or notes", async (t) => {
   const u = await card(t, { instances: [row("dev-1")] });
   await u.select("dev-1");
-  assert.deepEqual([...u.host.querySelectorAll(".hier-pop button")].map((b) => [b.className, b.textContent]),
+  // The acts row; the activity section's own Load activity button is part of the facts, not an act.
+  assert.deepEqual([...u.host.querySelectorAll(".hier-pop .pacts button")].map((b) => [b.className, b.textContent]),
     [["act pterm", "Go to instance"], ["act psoul", "Go to soul"]]);
+  const anywhere = [...u.host.querySelectorAll(".hier-pop button")].map((b) => b.textContent.trim());
+  for (const gone of ["Git", "Restart with…", "Brain", "Workspace", "Terminal"]) assert.ok(!anywhere.includes(gone), `no ${gone} button anywhere in the popover`);
   for (const gone of [".pgit", ".prestart", ".pbrain", ".pworkspace", ".pactions-note"]) assert.equal(u.host.querySelector(gone), null, gone);
   assert.doesNotMatch(u.host.querySelector(".hier-pop").textContent, /K1\/P1|Brain|choose the exact soul/);
 });
