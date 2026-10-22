@@ -997,11 +997,12 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
   assert.equal(doc.querySelector('.ws-option[data-other-window] .ws-option-meta').textContent, 'In another window');
-  // The needs-input dot is a non-text mark: --warn, hidden from assistive tech, its words in the row's
+  // The needs-input dot is a non-text mark: a yellow fill (--attn-dot) in a --warn ring, hidden from assistive tech, its words in the row's
   // name and tooltip; painted as it is, with no opacity on it or under it.
   const dot = doc.querySelector('.ws-option[data-other-window] .ws-waiting'); assert.ok(dot, 'the waiting row carries the dot');
   assert.equal(doc.querySelectorAll('.ws-waiting').length, 1, 'only the waiting row');
-  assert.equal(dom.window.getComputedStyle(dot).background, 'var(--warn)');
+  assert.equal(dom.window.getComputedStyle(dot).background, 'var(--attn-dot)');
+  assert.deepEqual([dom.window.getComputedStyle(dot).borderTopWidth, dom.window.getComputedStyle(dot).borderTopStyle], ['1px', 'solid'], 'its ring (its colour is pinned below)');
   assert.equal(dot.getAttribute('aria-hidden'), 'true'); assert.equal(dot.textContent, '');
   assert.match(dot.closest('.ws-option').textContent, /, needs input/); assert.match(dot.closest('.ws-option').title, /An instance here needs input/);
   for (let parent = dot; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
@@ -1010,11 +1011,12 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
 // The workspace list's needs-input dot is the only visible sign that a workspace waits (its words are for assistive
 // tech and the tooltip), so WCAG 1.4.11 holds it to 3:1 on every fill a row paints under it: the sidebar at rest
 // (--surface), a hovered row (--surface-2), the current or a focused row (--sel). The terminal tab's glyph (#558)
-// and an instance's dot (contrast-inventory.mjs GRAPHIC_PAIRS) are held the same way. It is --warn, the needs-input
-// colour of the roster's pill and the tab's glyph: --attn-dot is below 3:1 on these in White and Solarized.
+// and an instance's dot (contrast-inventory.mjs GRAPHIC_PAIRS) are held the same way. Its fill is the yellow --attn-dot,
+// below 3:1 on these in White and Solarized, so its 1px ring carries the contrast: --warn, the needs-input colour of
+// the roster's pill and the tab's glyph.
 for (const [name, palette] of palettes) test(`${name}: the workspace list's needs-input dot meets 3:1 on every row fill`, () => {
   const shellCss = readFileSync(new URL('shell.css', renderer), 'utf8');
-  assert.match(shellCss, /\.ws-waiting \{[^}]*background: var\(--warn\)/);
+  assert.match(shellCss, /\.ws-waiting \{[^}]*background: var\(--attn-dot\); border-width: 1px; border-style: solid; border-color: var\(--warn\);/);
   assert.match(shellCss, /\.ws-option:hover \{ background: var\(--surface-2\); \}/);
   assert.match(shellCss, /\.ws-option\[aria-current="true"\] \{ background: var\(--sel\); \}/);
   for (const bg of ['surface', 'surface-2', 'sel']) {

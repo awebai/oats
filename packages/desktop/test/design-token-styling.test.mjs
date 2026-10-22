@@ -91,7 +91,8 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, 24px brand and 16
   assert.equal(u.style(".ws-option").padding, "6px 8px");
   // The needs-input dot: the roster's attention token, a 7px graphic that never shrinks.
   const dot = u.style(".ws-waiting");
-  assert.deepEqual([dot.width, dot.height, dot.borderRadius, dot.flexShrink, dot.background], ["7px", "7px", "50%", "0", "var(--warn)"]);
+  assert.deepEqual([dot.width, dot.height, dot.boxSizing, dot.borderRadius, dot.flexShrink, dot.background, dot.borderTopWidth, dot.borderTopStyle],
+    ["8px", "8px", "border-box", "50%", "0", "var(--attn-dot)", "1px", "solid"], "a yellow fill in a ring (its --warn colour and 3:1: theme-contrast)");
   // #482 UI spec: a switcher entry is its name (with a status mark beside it) and ONE muted line of machines.
   assert.equal(u.style(".ws-option-line").display, "flex");
   assert.equal(u.style(".ws-option-meta").fontSize, "10.5px"); assert.equal(u.style(".ws-option-meta").color, "var(--muted)");
