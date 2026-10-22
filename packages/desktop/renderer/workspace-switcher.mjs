@@ -141,11 +141,15 @@ export function createWorkspaceSwitcher({
   const openInWindow = (id) => { openInNewWindow(id); };
   /** Pick `id` (selectWorkspace: the shell's switch, which may answer `{ ok }`). It is the pending pick until the
    * switch lands here (reset) or is refused. */
+  let pickToken = 0;
   const pick = (id) => {
+    // Each pick owns its own answer: a refused or superseded older pick never clears a newer one, even of the same id.
+    const mine = ++pickToken;
     pickedId = id;
+    const done = () => { if (pickToken === mine) pickedId = ""; };
     let answer;
     try { answer = selectWorkspace(id); } catch { answer = { ok: false }; }
-    Promise.resolve(answer).then((r) => { if (pickedId === id && r?.ok === false) pickedId = ""; }, () => { if (pickedId === id) pickedId = ""; });
+    Promise.resolve(answer).then((r) => { if (r?.ok === false) done(); }, done);
   };
   const setMenuStatus = (message = "") => { menuStatus.textContent = message; menuStatus.hidden = !message; };
   /** A newer choice in this window (a served workspace, an add or pick from the dialog) takes the pending

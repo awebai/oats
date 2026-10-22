@@ -463,3 +463,18 @@ test("the latest pick wins: the current row picked while another pick is on its 
   s.row(A.id).click();
   assert.deepEqual(s.calls.selected, [HELD.id, A.id, HELD.id], "the refused pick is no pick: the current row is just current");
 });
+
+test("an older pick's answer never clears a newer pick of the same workspace: D on its way, then B, C, B; the first B superseded", async (t) => {
+  const D = view("delta"), answers = [];
+  const s = setup(t, { selectWorkspace: (id) => { s.calls.selected.push(id); const gate = {}; gate.promise = new Promise((r) => { gate.resolve = r; }); answers.push(gate); return gate.promise; } });
+  s.controller.begin()(A, [A, B, C, D]); await tick();
+  s.row(D.id).click();
+  for (const row of [B, C, B]) s.row(row.id).click();
+  assert.deepEqual(s.calls.selected, [D.id, B.id, C.id, B.id]);
+  answers[0].resolve({ ok: true }); s.controller.reset(D.id); // D lands
+  answers[1].resolve({ ok: false, code: "superseded" }); answers[2].resolve({ ok: false, code: "superseded" });
+  await tick(); await tick();
+  assert.equal(s.current().dataset.workspaceId, D.id, "D is shown");
+  assert.equal(s.controller.step(1), true, "the newest pick, B, is still on its way: the move goes on from it");
+  assert.equal(s.calls.selected.at(-1), C.id);
+});
