@@ -4016,7 +4016,7 @@ hashes the facts. Each moving module reports `{capability,
 from:{version,commit,digest}, to:{version,commit,integrity},
 skills:{added,removed,changed}, inject, hooks, provider:{decision,reason}}`.
 `inject` and `hooks` indicate changes. The plan also lists kept modules and
-member drift (excluded from `planRevision`), plus `homeChangedSinceSpawn`.
+member drift and `homeChangedSinceSpawn` (both excluded from `planRevision`).
 A package no longer in the lock is kept. Member modules and
 the soul body never move. A provider refusal refuses the whole act.
 

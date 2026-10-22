@@ -44,7 +44,7 @@ It runs from the deployment, or from a parent's home, with the same instance res
 
 The plan is read-only. It returns:
 - `homeChangedSinceSpawn`, whether retirement must preserve home changes;
-- a revision, sha256 over the package-move facts (member drift is informational), the same `planRevision` pattern as stop and retire;
+- a revision, sha256 over the package-move facts (member drift and home-change reporting are informational), the same `planRevision` pattern as stop and retire;
 - per moving module: `{capability, from:{version,commit,digest}, to:{version,commit,integrity}, skills:{added,removed,changed}, inject:changed?, hooks:changed?, provider:{decision, reason}}`;
 - kept modules, with the reason;
 - member drift, for information.
