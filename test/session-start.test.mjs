@@ -210,7 +210,8 @@ test("package module upgrade unsafe receipt state refuses start before session e
   rmSync(receiptPath);
   renameSync(receipts, join(f.home, ".oats-real"));
   symlinkSync(".oats-real", receipts);
-  refuses();
+  assert.throws(() => startInstanceSession(f.home, { io }), e => e.code === "E_LAUNCH_SHIM");
+  assert.equal(effects, 0);
 });
 
 test("package module upgrade committed cleanup warns on start and restart without blocking the session", async () => {
@@ -218,7 +219,8 @@ test("package module upgrade committed cleanup warns on start and restart withou
   const receiptPath = join(f.home, ".oats", "upgrade-receipt.cleanup-retry.json");
   const receipt = { action: "upgrade", status: "complete", instance: f.meta.instance, idempotencyKey: "cleanup-retry", planRevision: "committed-revision", steps: { cleaned: false } };
   writeFileSync(receiptPath, JSON.stringify(receipt));
-  try { tmux("has-session", "-t", session); } catch { tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", base); }
+  let createdSession = false;
+  try { tmux("has-session", "-t", session); } catch { tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", base); createdSession = true; }
   try {
     const result = startInstanceSession(f.home);
     await harnessReady(f);
@@ -235,7 +237,7 @@ test("package module upgrade committed cleanup warns on start and restart withou
     const complete = restartInstanceSession(f.home, { stopGraceMs: 5000 });
     assert.equal(complete.warnings.some((message) => message.includes("cleanup-retry")), false, "the warning clears after cleanup finishes");
   } finally {
-    try { tmux("kill-window", "-t", `=${session}:=upgradecleanup`); } catch { /* absent */ }
+    try { tmux(createdSession ? "kill-session" : "kill-window", "-t", createdSession ? `=${session}` : `=${session}:=upgradecleanup`); } catch { /* absent */ }
   }
 });
 

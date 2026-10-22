@@ -5741,9 +5741,9 @@ Features `session-start`, `session-restart`, and `launch-config` for the
 selection flags. See [the start workflow](desktop-instance-start.md).
 
 Start and restart keep the home's recorded module copies. Their successful
-results include `drift:[{capability, recorded:{version,commit},
+results with package drift include `drift:[{capability, recorded:{version,commit},
 locked:{version,commit}}]` for package modules behind the deployment lock,
-empty when none are behind. Text prints one line after the start:
+and omit the field when none are behind. Text prints one line after the start:
 `<n> package module(s) behind the lock (<cap> <version> @ <shortcommit> → <version> @ <shortcommit>); to move them: oats instance stop <instance>; oats instance upgrade <instance> --plan`.
 Restart has no upgrade flag. A partial upgrade receipt refuses a start with
 `E_UPGRADE_PARTIAL`, naming the retry with the original idempotency key.

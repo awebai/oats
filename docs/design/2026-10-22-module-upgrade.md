@@ -139,7 +139,8 @@ Apply runs under the claim, with the plan revision re-checked. A stale plan refu
 - When a home has package drift, both print one line after the start, and the JSON gets `drift:[{capability, recorded, locked}]`: `<n> package module(s) behind the lock (<cap> <recorded> → <locked>); to move them: oats instance stop <i>; oats instance upgrade <i> --plan`.
   `recorded` and `locked` are each `{version, commit}`. The text renders each
   as `<version> @ <shortcommit>`, so a moved commit is visible even when the
-  version string is unchanged.
+  version string is unchanged. Homes without package drift omit this field and
+  preserve the existing start/restart answer shape.
 - No flag on restart runs the upgrade.
 
 ## Kernel stays runtime-neutral (condition 5)

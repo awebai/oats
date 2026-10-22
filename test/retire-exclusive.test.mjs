@@ -718,7 +718,7 @@ test("a holder that cannot be established alive or gone is never taken over; a c
   writeFileSync(lock, "{not json");
   await refused({}, (e) => {
     assert.deepEqual(e.details, { instance: name, home: inst.home, lock, holder: "unknown" });
-    assert.equal(e.message, `${lock} is not a readable claim; nothing was done — inspect it and remove it if no oats retire, oats instance stop or oats instance upgrade holds it, then retry`);
+    assert.equal(e.message, `${lock} is not a readable claim; nothing was done — inspect it and remove it if no oats retire or oats instance stop holds it, then retry`);
   });
   // The way out the refusals name: once the file is removed, the retire runs.
   rmSync(lock);
@@ -747,7 +747,7 @@ test("a dangling symbolic link where the claim belongs: the retire is refused in
   assert.deepEqual([r.status, r.stderr], [1, ""], r.stdout + r.stderr);
   const e = JSON.parse(r.stdout);
   assert.deepEqual({ schemaVersion: e.schemaVersion, ok: e.ok }, { schemaVersion: 1, ok: false });
-  assert.deepEqual(e.error, { code: "E_LIFECYCLE_BUSY", message: `${lock} is not a readable claim; nothing was done — inspect it and remove it if no oats retire, oats instance stop or oats instance upgrade holds it, then retry`,
+  assert.deepEqual(e.error, { code: "E_LIFECYCLE_BUSY", message: `${lock} is not a readable claim; nothing was done — inspect it and remove it if no oats retire or oats instance stop holds it, then retry`,
     details: { instance: name, home: inst.home, lock, holder: "unknown" } });
   assert.doesNotMatch(e.error.message, /already running|wait for it to finish/, "nobody is said to be running");
   assert.equal(lstatSync(lock).isSymbolicLink(), true, "the link is still there");
@@ -779,7 +779,7 @@ test("a claim whose holder is gone and that cannot be taken over (its nonce is n
       assert.equal(r.status, 1, `${what}: ${r.stdout}${r.stderr}`);
       const e = r.json().error;
       assert.deepEqual(e, { code: "E_LIFECYCLE_BUSY",
-        message: `the process that held ${lock} (pid ${pid}) is gone, and this file is not a claim this kernel can take over (its nonce is not the 32 hexadecimal digits a claim carries); nothing was done — inspect ${lock} and remove it if no oats retire, oats instance stop or oats instance upgrade holds it, then retry`,
+        message: `the process that held ${lock} (pid ${pid}) is gone, and this file is not a claim this kernel can take over (its nonce is not the 32 hexadecimal digits a claim carries); nothing was done — inspect ${lock} and remove it if no oats retire or oats instance stop holds it, then retry`,
         details: { instance: name, home: inst.home, lock, pid, since: "2026-10-10T00:00:00.000Z", action: "retire", holder: "none" } }, what);
       assert.doesNotMatch(e.message, /already running|wait for it to finish/, `${what}: nobody is said to be running`);
       assert.equal(readFileSync(lock, "utf8"), held, `${what}: the file is byte for byte as it was`);

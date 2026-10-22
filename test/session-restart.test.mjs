@@ -506,7 +506,7 @@ test("package module drift appears on start and restart in JSON and text without
     write(lockPath, JSON.stringify(locked));
     run = deployment.cli(["session", "restart", "--home", homes[0].home], { env: { PATH: process.env.PATH } });
     assert.equal(run.status, 0, run.stdout + run.stderr);
-    assert.deepEqual(JSON.parse(run.stdout).drift, []);
+    assert.equal(Object.hasOwn(JSON.parse(run.stdout), "drift"), false, "no drift preserves the existing start answer shape");
     assert.doesNotMatch(run.stderr, /package module\(s\) behind/);
   } finally {
     for (const f of homes) { try { tmux("kill-window", "-t", `=${session}:=${f.name}`); } catch { /* absent */ } }
