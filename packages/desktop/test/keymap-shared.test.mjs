@@ -17,7 +17,7 @@ import {
 } from "../renderer/keybindings.mjs";
 import {
   CHORDS, CHORD_FAMILIES, CHORD_FAMILY_LABELS, DEFAULT_CHORD_FAMILY, LEADER, LEADER_TABLE, PALETTE_KEYS, PLAIN_KEYS,
-  chordKey, chordKeyOf, leaderKey, leaderDoes, paletteKey, plainKeys, leaderRows,
+  chordKey, chordKeyOf, leaderKey, leaderDoes, paletteKey, plainKeys, leaderRows, doesLabel,
 } from "../../client/keymap.mjs";
 
 test("the leader is Ctrl+X on macOS and elsewhere", () => {
@@ -33,8 +33,8 @@ test("the leader's table: every row, in order, with its keys and what it does", 
     ["1", "instances", false],
     ["2", "souls", false],
     ["3", "capabilities", false],
-    ["up", "previous", false],
-    ["down", "next", false],
+    ["up", "workspace-previous", false],
+    ["down", "workspace-next", false],
     ["z", "zoom", true],
     ["w", "close-terminal", true],
     ["left", "tab-previous", true],
@@ -56,6 +56,24 @@ test("the leader's table: every row, in order, with its keys and what it does", 
     ["escape", "list", false],
   ]);
   for (const row of LEADER_TABLE) assert.equal(typeof row.label, "string", `${row.does} has a label`);
+  // ↑ ↓ move between workspaces; the previous / next instance has no leader key, only its chord.
+  assert.deepEqual(LEADER_TABLE.filter((row) => row.keys.includes("up") || row.keys.includes("down")).map(({ keys, does, label }) => [keys.join(" "), does, label]),
+    [["up", "workspace-previous", "previous workspace"], ["down", "workspace-next", "next workspace"]]);
+  assert.equal(LEADER_TABLE.some((row) => row.does === "previous" || row.does === "next"), false, "no leader row for the instance moves");
+  assert.deepEqual([leaderDoes("up"), leaderDoes("down")], ["workspace-previous", "workspace-next"]);
+});
+
+test("an action's label: its leader row's, else its chord's; only the instance moves carry one in CHORDS", () => {
+  assert.deepEqual(CHORDS.filter((entry) => Object.hasOwn(entry, "label")).map(({ does, label }) => [does, label]),
+    [["previous", "previous instance"], ["next", "next instance"]]);
+  for (const entry of CHORDS) if (Object.hasOwn(entry, "label")) {
+    assert.equal(LEADER_TABLE.some((row) => row.does === entry.does), false, `${entry.does}: a chord's label only where no leader row names it`);
+  }
+  assert.deepEqual(["previous", "next", "workspace-previous", "workspace-next", "palette", "tab-next", "edit-instance", "tab-1", "nothing"].map(doesLabel),
+    ["previous instance", "next instance", "previous workspace", "next workspace", "palette", "next tab", null, null, null]);
+  for (const row of LEADER_TABLE) assert.equal(doesLabel(row.does), row.label, `${row.does}: the leader row's label`);
+  assert.equal(chordKey("workspace-previous", false), null, "no chord for the workspace moves");
+  assert.equal(chordKey("workspace-next", true), null);
 });
 
 test("the plain keys: every action, with its keys", () => {
@@ -178,7 +196,7 @@ test("the Desktop's chords are the module's entries, each read by one action", (
   assert.deepEqual(CHORDS_READ.map(({ does }) => does), CHORDS.map(({ does }) => does), "every chord is read, once, in the table's order");
   assert.equal(new Set(CHORDS_READ.map(({ id }) => id)).size, CHORDS_READ.length, "one action per chord");
   // Who reads what: the shared tab moves are the second tab-cycling chords (Ctrl+Tab and Ctrl+Shift+Tab
-  // stay the Desktop's own tabs.next / tabs.prev), and the leader's ↑ ↓ z have actions of their own.
+  // stay the Desktop's own tabs.next / tabs.prev), the instance moves (previous, next) and zoom have actions of their own.
   assert.deepEqual(Object.fromEntries(CHORDS_READ.map(({ id, does }) => [does, id])), {
     palette: "app.palette", spawn: "app.quickOpenSouls", workspaces: "app.workspaces",
     previous: "roster.openPrevious", next: "roster.openNext", "tab-previous": "tabs.prevPage", "tab-next": "tabs.nextPage",
@@ -228,7 +246,7 @@ test("change the module's entry in a copy: the Desktop's default follows, and ke
   const module = readFileSync(MODULE, "utf8");
   const changed = module.replace('other: "ctrl+x"', 'other: "alt+l"').replace('{ does: "refresh", keys: ["r"] }', '{ does: "refresh", keys: ["F"] }')
     .replace('{ does: "palette", mac: "cmd+k", other: "ctrl+alt+k", shift: "ctrl+shift+k" }', '{ does: "palette", mac: "cmd+j", other: "ctrl+shift+j" }')
-    .replace('{ does: "previous", mac: "cmd+alt+up", other: "alt+shift+up" }', '{ does: "previous", mac: "cmd+alt+u", other: "ctrl+alt+u" }')
+    .replace('{ does: "previous", mac: "cmd+alt+up", other: "alt+shift+up", label: "previous instance" }', '{ does: "previous", mac: "cmd+alt+u", other: "ctrl+alt+u", label: "previous instance" }')
     .replace('`ctrl+alt+${i + 1}`', '`ctrl+shift+alt+${i + 1}`');
   assert.notEqual(changed, module);
   writeFileSync(join(root, "client", "keymap.mjs"), changed);
