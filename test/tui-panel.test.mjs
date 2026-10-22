@@ -233,8 +233,11 @@ const backWith = (tabs) => [`${LEADER} commands   ${LEADER} Esc the list   ${LEA
   ...(process.platform === "darwin" ? [] : ["Alt+Shift+Up/Down agent", ...(tabs > 1 ? ["Alt+Shift+Left/Right tab"] : [])])].join("   ");
 const BACK = backWith(1);
 /** The leader, then a key in a later read (docs/tui.md, "The leader"): nothing on the screen says
- *  the leader waits, so the key is pressed this long after it, by a send-keys of its own. */
-const LEADER_GAP_MS = 300;
+ *  the leader waits, so the key is pressed LEADER_GAP_MS after it, by a send-keys of its own. A
+ *  TUI busy for longer reads both in one read, which cancels the leader and drops the key: nothing
+ *  happens. So leaderThen waits PAIR_WAIT_MS for what the key does, and presses the pair again
+ *  when it has not come, LEADER_TRIES times in all. */
+const LEADER_GAP_MS = 300, PAIR_WAIT_MS = 5000, LEADER_TRIES = 3;
 /** The whole sheet while the list has the focus beside the open terminal: Enter goes to it; the
  *  terminal's own keys (zoom, close, the tabs) are the leader's and the help's, not the sheet's. */
 const LIST_HINTS = `${LEAD}Enter focus terminal   n spawn   w workspaces   ? help   q quit`;
@@ -265,6 +268,21 @@ async function until(term, predicate, what, faults = () => [], ms = 15000) {
     if (!/^timed out waiting for /.test(error?.message ?? "")) throw error;
     const missing = faults();
     assert.fail(`${error.message}${left === 0 ? ` (this file's budget of ${BUDGET_MS / 1000}s was spent before the wait began)` : ""}${missing.length ? `: ${missing.join("; ")}` : ""}; ${term.id} shows:\n${term.shows()}${panelState(lastRun, lastWatch)}`);
+  }
+}
+
+/** The leader, then `key` LEADER_GAP_MS later, until `done()` holds: a pair whose effect has not
+ *  come within PAIR_WAIT_MS was read as one, which does nothing, and is pressed again; the last of
+ *  LEADER_TRIES waits as `until` does, and its timeout says the pair was pressed that often. */
+async function leaderThen(term, key, done, what) {
+  for (let tries = 1; ; tries++) {
+    term.press(LEADER_KEY);
+    await pause(LEADER_GAP_MS);
+    term.press(key);
+    if (tries === LEADER_TRIES) return until(term, done, `${what}, after the leader then ${key}, pressed ${LEADER_TRIES} times`);
+    try { return await waitUntil(done, what, Math.min(PAIR_WAIT_MS, Math.max(0, FILE_DEADLINE - Date.now()))); } catch (error) {
+      if (!/^timed out waiting for /.test(error?.message ?? "")) throw error;
+    }
   }
 }
 
@@ -444,12 +462,11 @@ async function tui(term, { tmp = tmpFor() } = {}) {
     zoomed(after = "") { return term.screen().some((text) => text.startsWith(`pane-ready:${after}`)) && run.row() === null; },
     /** Enter would open the agent now: its row is selected and running, and the cheat sheet says so. */
     openable() { return RUNNING_ROW.test(run.row() ?? "") && run.sheet().startsWith(OPEN_HINT); },
-    /** The leader then Esc from the terminal: the leader read on its own, then Esc in a later read
-     *  (LEADER_GAP_MS after it), which gives the focus to the list. */
+    /** The leader then Esc from the terminal, which gives the focus to the list: its cheat sheet,
+     *  the leader then the palette, is drawn (leaderThen). From the list the pair again changes
+     *  nothing, so it is pressed again safely. */
     async back() {
-      term.press(LEADER_KEY);
-      await pause(LEADER_GAP_MS);
-      term.press("Escape");
+      await leaderThen(term, "Escape", () => run.sheet().startsWith(LEAD), "the list's focus, its cheat sheet drawn");
     },
     async ready(why) {
       await until(term, () => run.openable(), `the agent's row, selected and running, with "Enter open" in the cheat sheet after the leader and the palette, ${why}`);
@@ -1254,16 +1271,14 @@ const stripNames = (run) => (run.panel()[0] ?? "").split("│").map((tab) => tab
 /** The row of agent `name` is selected and running, read from the list's columns. */
 const selectedRunning = (term, name) => term.screen().some((text) => new RegExp(`^> +● ${name}$`).test([...text].slice(0, LIST_BESIDE).join("").trimEnd()));
 /** The tab of FOUR[k]: Enter on the selected agent for the first, then for each next one the leader
- *  and Down LEADER_GAP_MS after it (the next key counts only in a later read), from the terminal shown.
+ *  then Down (leaderThen), from the terminal shown, until its row is selected or the tab bar names it.
  *  Resolves once its viewer's session is attached, its screen is in the panel with the focus in it,
  *  its row is selected, and the strip names every agent opened so far, in the order opened. */
 async function openTab(term, run, k) {
   const name = FOUR[k], before = new Set(viewerSessions());
   if (k === 0) term.press("Enter");
   else {
-    term.press(LEADER_KEY);
-    await pause(LEADER_GAP_MS);
-    term.press("Down");
+    await leaderThen(term, "Down", () => selectedRunning(term, name) || stripNames(run).includes(name), `${name} opened: its row selected or its tab in the bar`);
   }
   const opened = FOUR.slice(0, k + 1);
   await until(term, () => {

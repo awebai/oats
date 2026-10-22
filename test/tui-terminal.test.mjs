@@ -271,13 +271,31 @@ function sheetOf(screen, cols = 80) {
 const words = (hints) => hints.map(([key, word]) => `${key} ${word}`);
 /** Whether the cheat sheet on a screen begins with `hints`. */
 const sheetStarts = (screen, hints) => JSON.stringify(sheetOf(screen).slice(0, hints.length)) === JSON.stringify(words(hints));
-/** The leader, then `key` in a later read (docs/tui.md, "The leader"): nothing on the screen says
- *  the leader waits, so the key is pressed a pause after it, by a send-keys of its own. */
-const LEADER_GAP_MS = 300;
-async function leaderThen(term, key) {
-  term.press(LEADER_KEY);
-  await new Promise((done) => setTimeout(done, LEADER_GAP_MS));
-  term.press(key);
+/** The leader, then `key` in a later read (docs/tui.md, "The leader"), until `done()` holds. Nothing
+ *  on the screen says the leader waits, so `key` is pressed LEADER_GAP_MS after it, by a send-keys
+ *  of its own. A TUI busy for longer reads both in one read, which cancels the leader and drops the
+ *  key: nothing happens. So a pair whose effect has not come within PAIR_WAIT_MS is pressed again;
+ *  the last of LEADER_TRIES waits as `until` does, and its timeout says the pair was pressed that
+ *  often. */
+const LEADER_GAP_MS = 300, PAIR_WAIT_MS = 5000, LEADER_TRIES = 3;
+async function leaderThen(term, key, done, what) {
+  for (let tries = 1; ; tries++) {
+    term.press(LEADER_KEY);
+    await new Promise((resolve) => setTimeout(resolve, LEADER_GAP_MS));
+    term.press(key);
+    if (tries === LEADER_TRIES) return until(term, done, `${what}, after the leader then ${key}, pressed ${LEADER_TRIES} times`);
+    try { return await waitUntil(done, what, Math.min(PAIR_WAIT_MS, Math.max(0, FILE_DEADLINE - Date.now()))); } catch (error) {
+      if (!/^timed out waiting for /.test(error?.message ?? "")) throw error;
+    }
+  }
+}
+/** Whether `name`'s view is the open one: its heading under a rule, the view before it just above
+ *  the rule (the accordion: an open view's list stands under its heading, so the next heading has a
+ *  rule above it, and the one before the open view has none between them). Opening a view that is
+ *  open changes nothing, so leaderThen presses its pair again safely. */
+function viewOpen(screen, name, key, before) {
+  const side = sidebarOf(screen), at = side.indexOf(viewRow(name, key));
+  return at >= 2 && side[at - 1] === UTF8.rule.repeat(listCols(80)) && side[at - 2] === before;
 }
 /** The open view's list on a screen: the sidebar's rows under its heading (`heading`, that row as
  *  it stands), down to the rule under them. */
@@ -1406,7 +1424,7 @@ test("the Souls view, with the real `oats souls`: the leader then 2 shows the wo
   const term = await terminal(t);
   const run = await tui(term);
   const row = (name) => term.screen().find((line) => new RegExp(`^[> ] ■ ${name}\\b`).test(line)) ?? null;
-  await leaderThen(term, "2");
+  await leaderThen(term, "2", () => viewOpen(term.screen(), "Souls", "2", viewRow("Instances", "1")), "the Souls view open");
   await until(term, () => row("dev") !== null && row("reviewer") !== null, "the souls, read with `oats souls`");
   assert.match(row("dev"), /^[> ] ■ dev ·2(?: |│|$)/, "dev has alpha and beta here");
   assert.match(row("reviewer"), /^[> ] ■ reviewer ·1(?: |│|$)/, "reviewer has gamma");
@@ -1442,7 +1460,7 @@ test("the Capabilities view, with the real `oats capabilities` and `oats souls`:
   const run = await tui(term, {}, { world });
   const list = () => listUnder(term.screen(), viewRow("Capabilities", "3"));
   const detail = () => term.screen().map((line) => (line.split("│")[1] ?? "").trimEnd());
-  await leaderThen(term, "3");
+  await leaderThen(term, "3", () => viewOpen(term.screen(), "Capabilities", "3", viewRow("Souls", "2")), "the Capabilities view open");
   await until(term, () => list().some((line) => /^> +acme\.notes$/.test(line)), "the capabilities, read with `oats capabilities`, the first selected");
   assert.equal(list()[0], " Workspace owned", `the section of the member's capabilities heads the list:\n${term.shows()}`);
   assert.match(list()[1], /^ {2}\S.* · member repo · host$/, "then the group of its repository, the host's");
