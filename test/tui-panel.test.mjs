@@ -24,6 +24,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
+import { leaderPairs } from "./helpers/leader-pairs.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { backKeyLabel } from "../packages/tui/lib/actions.mjs";
 import { defaultDetachKey } from "../packages/tui/lib/config.mjs";
@@ -232,12 +233,6 @@ const OPEN_HINT = `${LEAD}Enter open   `;
 const backWith = (tabs) => [`${LEADER} commands   ${LEADER} Esc the list   ${LEADER} ${LEADER} types ${LEADER}`,
   ...(process.platform === "darwin" ? [] : ["Alt+Shift+Up/Down agent", ...(tabs > 1 ? ["Alt+Shift+Left/Right tab"] : [])])].join("   ");
 const BACK = backWith(1);
-/** The leader, then a key in a later read (docs/tui.md, "The leader"): nothing on the screen says
- *  the leader waits, so the key is pressed LEADER_GAP_MS after it, by a send-keys of its own. A
- *  TUI busy for longer reads both in one read, which cancels the leader and drops the key: nothing
- *  happens. So leaderThen waits PAIR_WAIT_MS for what the key does, and presses the pair again
- *  when it has not come, LEADER_TRIES times in all. */
-const LEADER_GAP_MS = 300, PAIR_WAIT_MS = 5000, LEADER_TRIES = 3;
 /** The whole sheet while the list has the focus beside the open terminal: Enter goes to it; the
  *  terminal's own keys (zoom, close, the tabs) are the leader's and the help's, not the sheet's. */
 const LIST_HINTS = `${LEAD}Enter focus terminal   n spawn   w workspaces   ? help   q quit`;
@@ -271,20 +266,8 @@ async function until(term, predicate, what, faults = () => [], ms = 15000) {
   }
 }
 
-/** The leader, then `key` LEADER_GAP_MS later, until `done()` holds: a pair whose effect has not
- *  come within PAIR_WAIT_MS was read as one, which does nothing, and is pressed again; the last of
- *  LEADER_TRIES waits as `until` does, and its timeout says the pair was pressed that often. */
-async function leaderThen(term, key, done, what) {
-  for (let tries = 1; ; tries++) {
-    term.press(LEADER_KEY);
-    await pause(LEADER_GAP_MS);
-    term.press(key);
-    if (tries === LEADER_TRIES) return until(term, done, `${what}, after the leader then ${key}, pressed ${LEADER_TRIES} times`);
-    try { return await waitUntil(done, what, Math.min(PAIR_WAIT_MS, Math.max(0, FILE_DEADLINE - Date.now()))); } catch (error) {
-      if (!/^timed out waiting for /.test(error?.message ?? "")) throw error;
-    }
-  }
-}
+/** The leader, then a key in a later read, pressed until what the key does is seen (helpers/leader-pairs.mjs). */
+const pairs = leaderPairs({ leaderKey: LEADER_KEY, pause, waitUntil, deadline: FILE_DEADLINE, until });
 
 /** The run `until` reports on, the last one started, and the watch of its server, while one runs. */
 let lastRun = null, lastWatch = null;
@@ -463,10 +446,10 @@ async function tui(term, { tmp = tmpFor() } = {}) {
     /** Enter would open the agent now: its row is selected and running, and the cheat sheet says so. */
     openable() { return RUNNING_ROW.test(run.row() ?? "") && run.sheet().startsWith(OPEN_HINT); },
     /** The leader then Esc from the terminal, which gives the focus to the list: its cheat sheet,
-     *  the leader then the palette, is drawn (leaderThen). From the list the pair again changes
-     *  nothing, so it is pressed again safely. */
+     *  the leader then the palette, is drawn. From the list the pair again changes nothing, so it
+     *  repeats safely. */
     async back() {
-      await leaderThen(term, "Escape", () => run.sheet().startsWith(LEAD), "the list's focus, its cheat sheet drawn");
+      await pairs.repeatable(term, "Escape", () => run.sheet().startsWith(LEAD), "the list's focus, its cheat sheet drawn");
     },
     async ready(why) {
       await until(term, () => run.openable(), `the agent's row, selected and running, with "Enter open" in the cheat sheet after the leader and the palette, ${why}`);
@@ -1271,14 +1254,25 @@ const stripNames = (run) => (run.panel()[0] ?? "").split("│").map((tab) => tab
 /** The row of agent `name` is selected and running, read from the list's columns. */
 const selectedRunning = (term, name) => term.screen().some((text) => new RegExp(`^> +● ${name}$`).test([...text].slice(0, LIST_BESIDE).join("").trimEnd()));
 /** The tab of FOUR[k]: Enter on the selected agent for the first, then for each next one the leader
- *  then Down (leaderThen), from the terminal shown, until its row is selected or the tab bar names it.
+ *  then Down from the terminal shown, until its row is selected or the tab bar names it. The pair
+ *  does not repeat safely (a second Down opens the agent after), so while its effect is not seen a
+ *  frame drawn after it says whether it acted (pairs.checked): the leader then Esc (back, which
+ *  repeats safely) gives the list the focus, and the list's sheet is drawn only after what Down
+ *  did; Enter on the shown terminal's row then gives it the focus again.
  *  Resolves once its viewer's session is attached, its screen is in the panel with the focus in it,
  *  its row is selected, and the strip names every agent opened so far, in the order opened. */
 async function openTab(term, run, k) {
   const name = FOUR[k], before = new Set(viewerSessions());
   if (k === 0) term.press("Enter");
   else {
-    await leaderThen(term, "Down", () => selectedRunning(term, name) || stripNames(run).includes(name), `${name} opened: its row selected or its tab in the bar`);
+    const acted = () => selectedRunning(term, name) || stripNames(run).includes(name);
+    await pairs.checked(term, "Down", acted, async () => {
+      await run.back();
+      const did = acted();
+      term.press("Enter");
+      await until(term, () => run.sheet() === backWith(did ? k + 1 : k), `the focus back in the shown terminal, ${did ? `${name}'s: the leader then Down had acted` : "the leader then Down to be pressed again"}`);
+      return did;
+    }, `${name} opened: its row selected or its tab in the bar`);
   }
   const opened = FOUR.slice(0, k + 1);
   await until(term, () => {
