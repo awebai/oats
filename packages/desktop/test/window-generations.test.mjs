@@ -83,3 +83,36 @@ test('onboarding registers its deployment through the add of the window that ask
   assert.equal((await onboard('token', 'github.com/o/r', '7')).ok, true);
   assert.deepEqual(adds, [['/d/new', '7']]);
 });
+
+test('suggestions with io.waiting: the current call sets the rows read, and each openable row carries its last answer', async () => {
+  const gates = [], set = [];
+  const answers = new Map([['/d/a', true], ['/d/b', false]]); // /d/new: never read (null)
+  const lists = [
+    [{ path: '/d/old', state: 'ok', removable: false }],
+    [{ path: '/d/a', state: 'ok', removable: false }, { path: '/d/b', state: 'ok', removable: true }, { path: '/d/new', state: 'ok', removable: false },
+      { path: '/d/gone', state: 'missing', removable: true }],
+  ];
+  let n = 0;
+  const calls = createSuggestionCalls({ generations: createGenerations(),
+    refresh: () => { const g = deferred(); gates.push(g); return g.promise; },
+    list: async () => ({ suggestions: lists[n++], list: { state: 'ok' } }),
+    waiting: { setPaths: (paths) => set.push(paths), waiting: (path) => (answers.has(path) ? answers.get(path) : null) } });
+  const older = calls.suggest('1'), newer = calls.suggest('1');
+  gates[0].resolve(); assert.deepEqual(await older, { stale: true, suggestions: [] });
+  gates[1].resolve();
+  assert.deepEqual(await newer, { stale: false, list: { state: 'ok' }, suggestions: [
+    { path: '/d/a', state: 'ok', removable: false, waiting: true },
+    { path: '/d/b', state: 'ok', removable: true, waiting: false },
+    { path: '/d/new', state: 'ok', removable: false, waiting: null },
+    { path: '/d/gone', state: 'missing', removable: true },
+  ] }, 'a row that cannot be opened carries no waiting');
+  assert.deepEqual(set, [['/d/a', '/d/b', '/d/new']], 'only the current call\'s openable rows, never the superseded call\'s');
+});
+
+test('suggestions without io.waiting: the rows are unchanged, with no waiting', async () => {
+  const rows = [{ path: '/d/a', state: 'ok', removable: false }];
+  const calls = createSuggestionCalls({ generations: createGenerations(), refresh: async () => {}, list: async () => ({ suggestions: rows, list: { state: 'ok' } }) });
+  const answer = await calls.suggest('1');
+  assert.equal(answer.suggestions, rows, 'the very rows the list read');
+  assert.equal(Object.hasOwn(answer.suggestions[0], 'waiting'), false);
+});
