@@ -75,7 +75,7 @@ body {
 .ws-option[aria-current="true"] { background: var(--sel); }
 /* A workspace with an instance that needs input: the roster's attention dot, a graphic beside the name
    (its words are in the name, sr-only, and the tooltip). */
-.ws-waiting { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); } /* the needs-input colour of the roster and the tabs: 3:1 on every row fill */
+.ws-waiting { flex: none; box-sizing: border-box; width: 8px; height: 8px; border-radius: 50%; background: var(--attn-dot); border-width: 1px; border-style: solid; border-color: var(--warn); } /* a yellow dot; its ring, the needs-input colour of the roster and the tabs, holds 3:1 on every row fill */
 /* One window per workspace (#481): each option and, beside it, its Open in new window button. */
 .ws-option-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .ws-option-row > .ws-option { flex: 1 1 auto; }

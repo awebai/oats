@@ -443,7 +443,7 @@ split into sections) is `packages/client/roster-sections.mjs`.
   - The current row is `aria-current="true"` with the check; the section's `aria-description`
     names the current workspace.
   - The dot: `choice.waiting` / a listed row's `waiting`, only `true` draws it (`.ws-waiting`,
-    `--warn`, the needs-input colour of the roster and the tabs: 3:1 on every row fill), with `WAITING_NAME` (", needs input", sr-only in the name) and
+    a yellow `--attn-dot` fill in a 1px `--warn` ring, the needs-input colour of the roster and the tabs, which holds 3:1 on every row fill), with `WAITING_NAME` (", needs input", sr-only in the name) and
     `WAITING_TITLE` in the tooltip. A stale listed row never shows one. It never reorders.
   - Keys (`onListKey`): one roving stop (`stopKey`, the row last focused, else the current
     one), Up/Down/Home/End over every row, Enter opens, Right Arrow reaches the row's own
