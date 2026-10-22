@@ -515,9 +515,14 @@ runs): a local row is exact when exactly one catalog row has its key, source and
 agents root and the key is not in `catalog.ambiguous`; a remote row when exactly
 one of its host's agent dirs has its name, root and server. The Workspace page
 shows only the view's primary deployment's souls, so a row of another
-deployment is disabled before any read. Every other case is disabled with a
-title that says why (nothing recorded, not in the catalog now, several, the
-read failed, still checking). A late answer is kept only while its read is
+deployment is disabled before any read. The soul page inspects by bare name
+and root (`inspectSoul`'s selector `{ soul, agentsRoot }`, which
+`inspect-boundary.mjs` refuses when two souls of the root share the name), so
+an exact soul whose name another soul of its root shares is disabled too. A
+`catalog.reason` reply is a failed read and a deployment whose catalog is not
+read yet keeps it checking, as the Workspace page reads them. Every other case
+is disabled with a title that says why (nothing recorded, not in the catalog
+now, several, the read failed, still checking). A late answer is kept only while its read is
 still the popover's (`s.soulRead`, dropped by `closePop`), and a miss on arrival
 is said in the popover's status line, or as a notification once the page has
 gone.

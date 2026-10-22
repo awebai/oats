@@ -52,6 +52,7 @@ import { computeClusters, siblingEdges } from "./clusters.mjs";
 import { runtimeState, runtimeCounts } from "../../../client/instance-presentation.mjs";
 import { serverLabel } from "../../../client/remote-address.mjs";
 import { unsupportedLine, speakerParts, keptFailureLine, heldLine, heldStatus } from "../speaker-line.mjs";
+import { displayLine } from "../../../client/display-text.mjs";
 import { keptFailure } from "../../../client/deployment-facts.mjs";
 import { createInstanceEventsView, instanceEventsCSS } from "../instance-events-view.mjs";
 import { instanceId, resolveLinkId, heldHome } from "../../../client/instance-tree.mjs";
@@ -1098,7 +1099,8 @@ function openTerm(s, id) {
  *   a local row   its recorded soul key (`soulKey`, the roster's agent `key`) and soul source (`soul.repoKey`) name
  *                 exactly one catalog row of its agents root, and the key is not ambiguous in the catalog;
  *   a remote row  its agent dir names exactly one of the host's agent dirs of its root (unique per root).
- * Anything else is disabled with why. */
+ * The soul page itself is read by bare name and root, so an exact soul that shares its name with another soul of
+ * its root cannot be shown, and says so. Anything else is disabled with why. */
 
 /** Whether the Workspace page can show the souls of row `i`'s deployment: null when it can, else why not. */
 function soulScopeReason(s, i) {
@@ -1122,7 +1124,7 @@ function soulTarget(s, i) {
   if (!key || !i.agentsRoot || (!remote && !repoKey)) return { reason: 'This instance does not record the soul it was spawned from.' };
   const read = soulCatalog(s, rowDeployment(i)), answer = read.state === 'pending' ? read.prev : read;
   if (!answer) return { reason: "Checking this instance's soul…" };
-  if (answer.state === 'failed') return { reason: `Could not read this deployment's souls: ${answer.error}.` };
+  if (answer.state === 'failed') return { reason: catalogFailureTitle(answer.error) };
   const several = { reason: `Several souls match ${key}; open it from the Workspace page.` };
   if (!remote && answer.ambiguous.includes(key)) return several;
   const matches = answer.agents.filter(a => a.agentsRoot === i.agentsRoot && (remote
@@ -1131,14 +1133,29 @@ function soulTarget(s, i) {
   if (!matches.length) return { reason: `${key} is not among this deployment's souls now.` };
   if (matches.length > 1) return several;
   const a = matches[0];
+  // The Workspace page's soul page inspects a soul by its bare name and root (inspect-boundary.mjs refuses a name
+  // two souls of one root share): the exact soul is found, but its page could not load. Said, never opened.
+  if (answer.agents.filter(x => x.name === a.name && x.agentsRoot === a.agentsRoot && (x.server || '') === (a.server || '')).length > 1) {
+    return { reason: `Another soul in this deployment is also named ${a.name}, so the Workspace page cannot open ${key}.` };
+  }
   return { label: key, ref: remote ? { name: a.name, agentsRoot: a.agentsRoot, server: a.server }
     : { name: a.name, key, repoKey, agentsRoot: a.agentsRoot } };
+}
+
+/** A failed catalog read's title. `error` is `{ lead, line }` (speaker-line.mjs speakerParts): the kernel's own
+ * words after "OATS says:", a transport failure's as the cause, nothing when there is nothing to show. */
+function catalogFailureTitle({ lead, line }) {
+  if (lead && line) return `Could not read this deployment's souls. ${lead} ${line}`;
+  return line ? `Could not read this deployment's souls: ${line.replace(/\.$/, '')}.` : "Could not read this deployment's souls.";
 }
 
 /** The open popover's read of `deployment`'s soul catalog for the current roster observation: `{ state: 'pending' |
  * 'ok' | 'failed', agents, ambiguous, error, prev }`. A new observation reads again; until it answers, the last
  * answer for this popover and deployment (`prev`) stands, so a focused Go to soul is not disabled by every poll.
- * An answer is kept only while it is still this popover's read (closePop and every reselection drop it). */
+ * An answer is kept only while it is still this popover's read (closePop and every reselection drop it).
+ * The reply is read as the Workspace page reads it (spawn.mjs settleGridState): a `catalog.reason` is a failed
+ * read, its souls the last good list and never proof; a deployment whose catalog is not observed yet (no
+ * `catalog`, or `refreshing` with no souls) is still being read, so the read stays pending. */
 function soulCatalog(s, deployment) {
   const held = s.soulRead, gen = workspaceGeneration(), pop = s.pop, id = s.popFor;
   if (held && held.pop === pop && held.id === id && held.deployment === deployment && held.gen === gen && held.observed === s.observed) return held;
@@ -1146,13 +1163,18 @@ function soulCatalog(s, deployment) {
   const entry = s.soulRead = { pop, id, deployment, gen, observed: s.observed, state: 'pending',
     prev: same ? (held.state === 'pending' ? held.prev : held) : null };
   const owns = () => s.alive && s.soulRead === entry && s.pop === pop && s.popFor === id && gen === workspaceGeneration() && dataCurrent(s);
-  const settle = answer => { if (!owns()) return; Object.assign(entry, answer); updatePop(s); };
+  // A settled read needs no earlier answer: only the latest one is ever shown.
+  const settle = answer => { if (!owns()) return; Object.assign(entry, answer, { prev: null }); updatePop(s); };
   // No deployment selected at all (a bare harness): the server's first, as wsQuery() reads it.
   apiJson(s.ctx, `/api/agents${deployment ? `?ws=${encodeURIComponent(deployment)}` : ''}`).then(data => {
     if (!Array.isArray(data?.agents)) throw Error('The souls list could not be read');
+    const reason = data.catalog?.reason;
+    if (reason) { settle({ state: 'failed', error: speakerParts('kernel', reason.message) }); return; }
+    const remote = typeof data.workspace?.server === 'string';
+    if (!data.agents.length && (data.refreshing === true || (!remote && !data.catalog))) return; // not read yet: still checking
     const ambiguous = Array.isArray(data.catalog?.ambiguous) ? data.catalog.ambiguous.filter(k => typeof k === 'string') : [];
     settle({ state: 'ok', agents: data.agents.filter(a => a && typeof a === 'object'), ambiguous });
-  }).catch(error => settle({ state: 'failed', error: String(error?.message || 'read failed').replace(/\.$/, '').slice(0, 300) }));
+  }).catch(error => settle({ state: 'failed', error: { lead: null, line: displayLine(String(error?.message || '')) } }));
   return entry;
 }
 
@@ -1172,6 +1194,9 @@ function openSoul(s, id) {
   const failed = error => say(`Workspace unavailable: ${String(error?.message || 'navigation failed').slice(0, 300)}`);
   import('./spawn.mjs').then(mod => {
     if (!owned() || !dataCurrent(s) || gen !== workspaceGeneration()) return;
+    // The roster may have moved while the module loaded: hand over only the soul the row still resolves to, now.
+    const now = selectedInstance(s, id), still = now ? soulTarget(s, now) : null;
+    if (!still?.ref || JSON.stringify(still.ref) !== JSON.stringify(target.ref)) return;
     mod.preselectSoul({ ...target.ref, onMiss: count => say(count
       ? `Several souls match ${target.label}; open it from the Workspace page.` : `${target.label} is not among this deployment's souls now.`) });
     return ctx.openView('spawn');

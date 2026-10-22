@@ -441,9 +441,10 @@ const OKF = "github.com/awebai/oats-okf", ACME = "github.com/acme/agents";
 // A row of the package soul oats.okf/dev, whose agent dir (dev-pkg) is not the catalog's name for it (dev).
 const row = (name, fields = {}) => ({ instance: name, agent: "dev-pkg", agentsRoot: "/team/agents", home: `/team/agents/dev-pkg/instances/${name}`,
   running: true, soulKey: "oats.okf/dev", soul: { repoKey: OKF }, ...fields });
-// The deployment's catalog: the package soul and a member soul of the same bare name.
+// The package soul, and member souls of the same bare name: at the same root, and at another.
 const PACKAGE_SOUL = { name: "dev", key: "oats.okf/dev", agentsRoot: "/team/agents", soulSource: { repoKey: OKF }, description: "The package's dev soul", work: "worktree" };
 const MEMBER_SOUL = { name: "dev", key: "dev", agentsRoot: "/team/agents", soulSource: { repoKey: ACME }, description: "The member's dev soul", work: "worktree" };
+const ELSEWHERE_SOUL = { ...MEMBER_SOUL, agentsRoot: "/other/agents", description: "Another root's dev soul" };
 
 const CLI_OK = { ok: true, bin: "/seed/oats", version: "0.18.0", source: "path", required: { desktopApi: 1, range: ">=0.18.0 <0.21.0" }, probedAt: 1, tried: [] };
 /** The Workspace page (the Spawn view), mounted beside the canvas on the same deployment with `souls` as its catalog. */
@@ -462,7 +463,7 @@ const workspacePage = (souls) => async (el) => {
 };
 
 /** The Deployments page mounted on a fixture roster. `agents(path)` answers /api/agents (a value, a promise, or a throw). */
-async function card(t, { instances, deployments = null, agents = () => ({ agents: [PACKAGE_SOUL, MEMBER_SOUL] }), ctx: extra = {}, mountSpawn = null } = {}) {
+async function card(t, { instances, deployments = null, agents = () => ({ agents: [PACKAGE_SOUL, ELSEWHERE_SOUL] }), ctx: extra = {}, mountSpawn = null } = {}) {
   const { JSDOM } = await import("jsdom");
   const dom = new JSDOM('<body><main id="host"></main><div id="spawn"></div></body>', { url: "http://localhost" });
   const doc = dom.window.document, host = doc.querySelector("main");
@@ -531,6 +532,8 @@ test("Go to instance: a running row opens its exact terminal, a stopped one says
 });
 
 test("Go to soul: a package soul is found by its key, source and root (not its agent dir), and the press hands that exact soul to the Workspace page and shows it", async (t) => {
+  // The Workspace page's catalog has gained a member soul named dev at the same root since the card read its own:
+  // only the key and source handed over tell the two apart.
   const u = await card(t, { instances: [row("dev-1")], mountSpawn: workspacePage([PACKAGE_SOUL, MEMBER_SOUL]) });
   await u.select("dev-1");
   assert.equal(u.soul().disabled, false);
@@ -541,7 +544,7 @@ test("Go to soul: a package soul is found by its key, source and root (not its a
   assert.equal(u.agentsReads().length, 2); assert.equal(u.soul().disabled, false);
   u.soul().click(); await tick(); await tick();
   assert.deepEqual(u.views, ["spawn"]);
-  // By name alone the Workspace page would have two souls named dev and open neither: the key and source chose one.
+  // By name and root alone the Workspace page would have two souls named dev and open neither.
   const page = u.doc.querySelector(".workspace-soul-page");
   assert.equal(page.hidden, false, "the soul's page is open");
   assert.match(page.textContent, /The package's dev soul/); assert.doesNotMatch(page.textContent, /The member's dev soul/);
@@ -568,16 +571,18 @@ test("Go to soul: a remote row's soul is its agent dir on its own host and root"
   assert.equal(u.soul().title, "remote-dev is not among this deployment's souls now.");
 });
 
-test("Go to soul is disabled with why: no recorded soul, no catalog row, several, ambiguous, another source or root, a failed read", async (t) => {
+test("Go to soul is disabled with why: no recorded soul, no catalog row, several, ambiguous, another source or root, a shared name, a failed read", async (t) => {
   const failing = new Set();
   const u = await card(t, {
     instances: [row("bare", { soulKey: undefined, soul: undefined }), row("nul", { soulKey: null }), row("nosrc", { soul: undefined }),
       row("gone", { soulKey: "oats.okf/gone" }), row("twin", { soulKey: "twin" }), row("amb", { soulKey: "amb" }),
       row("moved", { soul: { repoKey: "github.com/fork/oats-okf" } }), row("rooted", { agentsRoot: "/elsewhere/agents", home: "/elsewhere/agents/dev-pkg/instances/rooted" }),
-      row("failing")],
+      row("shared", { soulKey: "oats.okf/ops" }), row("failing")],
     agents: () => {
       if (failing.size) throw new Error("HTTP 500");
-      return { agents: [PACKAGE_SOUL, MEMBER_SOUL, { ...PACKAGE_SOUL, name: "twin-a", key: "twin" }, { ...PACKAGE_SOUL, name: "twin-b", key: "twin" }],
+      return { agents: [PACKAGE_SOUL, ELSEWHERE_SOUL, { ...PACKAGE_SOUL, name: "twin-a", key: "twin" }, { ...PACKAGE_SOUL, name: "twin-b", key: "twin" },
+        // A package soul and a member soul both named ops at one root: the soul page reads a soul by name and root.
+        { ...PACKAGE_SOUL, name: "ops", key: "oats.okf/ops" }, { ...MEMBER_SOUL, name: "ops", key: "ops" }],
         catalog: { reason: null, ambiguous: ["amb"] } };
     } });
   const NOT_RECORDED = "This instance does not record the soul it was spawned from.";
@@ -588,7 +593,8 @@ test("Go to soul is disabled with why: no recorded soul, no catalog row, several
   assert.deepEqual(u.agentsReads(), [], "an instance that records no soul reads no catalog");
   for (const [name, title] of [["gone", "oats.okf/gone is not among this deployment's souls now."],
     ["twin", "Several souls match twin; open it from the Workspace page."], ["amb", "Several souls match amb; open it from the Workspace page."],
-    ["moved", "oats.okf/dev is not among this deployment's souls now."], ["rooted", "oats.okf/dev is not among this deployment's souls now."]]) {
+    ["moved", "oats.okf/dev is not among this deployment's souls now."], ["rooted", "oats.okf/dev is not among this deployment's souls now."],
+    ["shared", "Another soul in this deployment is also named ops, so the Workspace page cannot open oats.okf/ops."]]) {
     await u.select(name);
     assert.deepEqual([u.soul().disabled, u.soul().title], [true, title], name);
     u.soul().click(); assert.deepEqual(u.views, [], `${name}: a disabled Go to soul opens nothing`);
@@ -636,4 +642,49 @@ test("Go to soul in a view of two deployments: the primary deployment's row goes
   assert.equal(u.soul().disabled, true);
   assert.equal(u.soul().title, "This instance is on altair · ~/srv; the Workspace page shows only the souls of This Mac · ~/team.");
   assert.deepEqual(u.agentsReads(), ["/api/agents?ws=%2Fteam"], "no catalog read for a deployment the Workspace page cannot show");
+});
+
+test("Go to soul reads the catalog's reply as the Workspace page does: a kernel failure is a failed read, a catalog not read yet is still checking", async (t) => {
+  let reply = null;
+  const u = await card(t, { instances: [row("dev-1")], agents: () => reply });
+  const title = async (answer) => { reply = answer; await u.select("dev-1"); return [u.soul().disabled, u.soul().title]; };
+  const reason = { code: "E_GIT_TIMEOUT", message: "timed out" };
+  // The last good list beside a failure is never proof, and an empty one does not mean the soul is gone.
+  assert.deepEqual(await title({ agents: [PACKAGE_SOUL], catalog: { reason, ambiguous: [] } }), [true, "Could not read this deployment's souls. OATS says: timed out"]);
+  assert.deepEqual(await title({ agents: [], catalog: { reason, ambiguous: [] } }), [true, "Could not read this deployment's souls. OATS says: timed out"]);
+  assert.deepEqual(await title({ agents: [], catalog: { reason: { code: "E_GIT_TIMEOUT" }, ambiguous: [] } }), [true, "Could not read this deployment's souls."]);
+  assert.deepEqual(await title({ agents: [], catalog: { reason: { message: "token: abc123" }, ambiguous: [] } }), [true, "Could not read this deployment's souls: [withheld]."]);
+  // Still being read: an observed catalog's first read, and a deployment whose catalog is not observed yet.
+  assert.deepEqual(await title({ agents: [], refreshing: true, observedAt: null, catalog: { reason: null, ambiguous: [] } }), [true, "Checking this instance's soul…"]);
+  assert.deepEqual(await title({ workspace: { id: "/team", name: "Team" }, agents: [], observedAt: null, refreshing: false }), [true, "Checking this instance's soul…"]);
+  // A read that listed nothing is an answer.
+  assert.deepEqual(await title({ agents: [], refreshing: false, catalog: { reason: null, ambiguous: [] } }), [true, "oats.okf/dev is not among this deployment's souls now."]);
+  assert.deepEqual(await title({ agents: [PACKAGE_SOUL], refreshing: true, catalog: { reason: null, ambiguous: [] } }), [false, "Open oats.okf/dev on the Workspace page"]);
+});
+
+test("Go to soul: a press whose row no longer resolves to the same soul when the Workspace page's module arrives hands nothing over", async (t) => {
+  let replaced = false;
+  const listeners = new Set();
+  // The shell's held set (#1247) redraws the canvas at once, without a roster read: here it carries the row's new soul.
+  const u = await card(t, { instances: [row("dev-1")], ctx: {
+    retiringRows: (rows) => rows.map((r) => replaced ? { ...r, soulKey: "oats.okf/replacement" } : r),
+    subscribeRetires: (fn) => { listeners.add(fn); return () => listeners.delete(fn); } } });
+  await u.select("dev-1");
+  assert.equal(u.soul().disabled, false);
+  const pop = u.host.querySelector(".hier-pop");
+  u.soul().click(); // the module import is in flight
+  replaced = true; for (const fn of listeners) fn();
+  assert.equal(u.host.querySelector(".hier-pop"), pop, "the same popover, for the same home");
+  await tick(); await tick();
+  assert.deepEqual(u.views, [], "the old soul is not opened, and the Workspace page is not shown");
+  assert.deepEqual([u.soul().disabled, u.soul().title], [true, "oats.okf/replacement is not among this deployment's souls now."]);
+});
+
+test("why a shared name fails closed: the soul page's inspection admits a soul by bare name and root only when no other soul of the root shares it", async () => {
+  const { capabilityAdmission } = await import("../../client/inspect-boundary.mjs");
+  const context = (agents) => ({ workspace: { id: "/team", scope: "/team", name: "Team" }, cli: { ok: true, operationsApi: 2 }, agents });
+  // What the Workspace page's soul page sends for the soul Go to soul opened (spawn.mjs inspectSoul).
+  const request = { action: "inspect", selector: { soul: "dev", agentsRoot: "/team/agents" } };
+  assert.equal(capabilityAdmission(request, context([PACKAGE_SOUL, ELSEWHERE_SOUL])).soul, "dev", "unique at its root: admitted");
+  assert.throws(() => capabilityAdmission(request, context([PACKAGE_SOUL, MEMBER_SOUL])), /Select one soul and its agents root/);
 });

@@ -370,10 +370,10 @@ feature (OATS 0.36.0); without it each deployment has its own entry.
   what it reports and two buttons. **Go to instance** opens its terminal tab;
   for a stopped instance it reads **Start…** and opens the Start dialog.
   **Go to soul** opens the soul it was spawned from on the Workspace page. It
-  is disabled, and says why, when that soul can't be told exactly: the
-  instance records none, it is no longer among the deployment's souls, several
-  match, or the instance is on a deployment other than the one the Workspace
-  page shows. Restart with… stays in the instance's menu and its panel.
+  is disabled, and says why, when that soul can't be told or shown exactly:
+  the instance records none, it is no longer among the deployment's souls,
+  several match, another soul of the deployment has the same name, or the
+  instance is on a deployment other than the one the Workspace page shows. Restart with… stays in the instance's menu and its panel.
 - **Not shown live.** A deployment that can't be shown live says why in a few
   words on its heading ("ssh needs a prompt", "Timed out", "OATS too old to
   report its workspace"), and **How to fix** under it gives the full sentence
