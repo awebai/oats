@@ -24,10 +24,13 @@ test('modules-upgraded has its Desktop label and remains a readable event row', 
   assert.equal(eventsData(data([upgraded]), target).events[0].kind, 'modules-upgraded');
 });
 
-test('upgrade-refused has its Desktop label and keeps its reported reason', () => {
-  const refused = event({ kind: 'upgrade-refused', data: { step: 'stage', reason: 'acme.tools: package not locked' } });
+test('upgrade-refused has its Desktop label and keeps its failed step and reported reason', () => {
+  const refused = event({ kind: 'upgrade-refused', data: { step: 'hook acme.tools', reason: 'upgrade hook exited 1' } });
   assert.equal(EVENT_TITLES['upgrade-refused'], 'Module upgrade refused');
   const [row] = eventsData(data([refused]), target).events;
   assert.equal(row.kind, 'upgrade-refused');
-  assert.deepEqual(row.data, { reason: 'acme.tools: package not locked' });
+  assert.deepEqual(row.data, { step: 'hook acme.tools', reason: 'upgrade hook exited 1' });
+  // A malformed step drops only that fact, never the read.
+  for (const step of [7, '', 'x'.repeat(4097)])
+    assert.deepEqual(eventsData(data([event({ kind: 'upgrade-refused', data: { step, reason: 'r' } })]), target).events[0].data, { reason: 'r' });
 });
