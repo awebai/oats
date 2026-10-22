@@ -163,9 +163,11 @@ in section 2). The instance home is
 `agents/<soul>/instances/<instance>/`; `work/` is its repository view;
 `.oats/modules/<cap>/` are the copied capabilities and `.agents/skills/<skill>/` their skills;
 `instance.json` records `modules` (from, commit, digest), `providers` and
-`workspace`. A running instance never changes under itself — a member that
-moves affects only new spawns, and `oats status` shows the drift
-(`member moved since (now @ …)` / `capability no longer present`).
+`workspace`. A running instance never changes under itself; a stopped one can
+be moved to the locked package versions with `oats instance upgrade`. Member
+modules and the soul body still require a new spawn. `oats status` shows the
+drift (`member moved since (now @ …)` / `capability no longer present`). See
+[upgrading package modules](upgrading.md#moving-existing-homes-to-locked-package-versions).
 
 Instance-specific provider values belong to the spawn:
 `oats spawn <soul> --provider <cap> key=value` (repeatable; dotted keys nest),

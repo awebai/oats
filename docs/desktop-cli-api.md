@@ -89,6 +89,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `schedule-history`, `schedule-read-2` | run history with identity and provenance (gate on `schedule-read-2`) | `scheduleHistoryApi: 3` |
 | `workspace-v2` | `onboard`, `sync`, `package`, `workspace status`, `capabilities`, `souls` | `workspaceApi: 2` |
 | `instance-modules` | `instance.json` `modules`/`providers`/`workspace`; module drift in status; preview `modules[]` | |
+| `instance-upgrade` | `oats instance upgrade` plan/apply/undo for stopped local homes; optional `upgrade` hook; `modules.<cap>.previous`; `modules-upgraded` event; start/restart package `drift` | |
 | `spawn-provider-payload` | `oats spawn … --provider <cap> <key>=<value>` | |
 | `served-identity` | `decision.effective.providers`; the served `identity` in inspect and status | |
 | `packages-no-approval` | no package approval anywhere | |
@@ -3029,6 +3030,11 @@ the keyed-spawn fields `decision`, `spawnIdempotencyKey`, `spawnCompleted` and
   the copy at `<home>/.oats/modules/<cap>/`. Module skills are copied flat to
   `<home>/.agents/skills/<skill>/` (homes spawned by 0.30.1 or earlier keep
   `<home>/.agents/skills/<cap>/<skill>/`).
+  After a package upgrade, the moved row also carries
+  `previous: {from, commit, digest, materializedAt, receipt}`: one level, for
+  its latest move. Readers tolerate this additive field. The verified copy
+  for undo lives at `<home>/.oats/previous/<receipt>/`; each move replaces the
+  previous state, and retirement preserves it in recovery.
 - `branch`: for a worktree instance, the branch its worktree was created on.
   For an attached or checkout instance, the branch the tree's HEAD named at
   the spawn, or `null` when HEAD was detached or named a ref OATS carries no
@@ -3751,6 +3757,10 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   bytes}`. Only a regular file is opened (no symlinks, same device and inode
   after open), and at most its last 4 MiB is read (`"tail"`).
 - **Kinds:** `spawned`, `launched`, `restarted`, `stopped`, `stop-refused`,
+  `modules-upgraded` (`data: {receipt, modules:[{capability, from, to}]}`,
+  written after the module swap and retirement baseline complete),
+  `upgrade-refused` (a failure before any provider apply hook succeeds,
+  naming the failed step or module; older clients tolerate the unknown kind),
   `retire-planned`, `retired`, `retire-refused` (0.53.0,
   [below](#retire-refused-event)), `worktree-retained`, `worktree-removed`,
   `branch-deleted` (not written since 0.41.0: no retire deletes a branch;
@@ -3982,6 +3992,69 @@ oats instance attention [--message <text>] [--clear] --json
 - Errors: `E_BAD_ARGS`, `E_USAGE` (attention), `E_SESSION_UNKNOWN` (no
   readable `instance.json`), `E_HOME_MISMATCH`, `E_EVENTS_FAILED` (the write
   failed; nothing else is affected).
+
+## Upgrading an instance's package modules
+
+```text
+oats instance upgrade <instance> --plan [--json]
+oats instance upgrade <instance> --plan-revision <revision> --idempotency-key <key> [--json]
+oats instance upgrade <instance> --undo --plan [--json]
+oats instance upgrade <instance> --undo --plan-revision <revision> --idempotency-key <key> [--json]
+```
+
+This local act resolves an instance like `oats retire`, from its deployment
+or a parent's home. It uses the lifecycle claim and requires a stopped,
+readable session. A running or unreadable session is `E_SESSION_RUNNING`,
+naming `oats instance stop <instance>`, upgrade, then session start. It does
+not support `--server` or several homes in one call.
+
+A read-only plan stages package copies outside the home, verifies the locked
+commit and integrity as spawn does, then removes that staging. Its revision
+hashes the facts. Each moving module reports `{capability,
+from:{version,commit,digest}, to:{version,commit,integrity},
+skills:{added,removed,changed}, inject, hooks, provider:{decision,reason}}`.
+`inject` and `hooks` indicate changes. The plan also lists kept modules and
+member drift; a package no longer in the lock is kept. Member modules and
+the soul body never move. A provider refusal refuses the whole act.
+
+Apply rechecks the revision under the lifecycle claim (`E_PLAN_STALE` with
+a fresh plan on mismatch) and records an idempotency receipt. It stages the
+whole modules, skills, inject and hook composition through spawn's composer,
+using the soul at its recorded commit. It saves and verifies the previous
+state before provider hooks run, swaps the composition, retakes the retirement
+baseline and appends `modules-upgraded`. The moved module record's `previous`
+is described under [`instance.json`](#instancejson).
+Upgrade runs no launch hooks. When a moved module's new manifest has no launch
+hook, apply removes its recorded launch/environment contribution in the same
+journaled metadata swap. When it still declares a launch hook, the existing
+contribution stays with settings and trust refreshed, until the next start
+replaces it wholesale. Undo restores the recorded contribution from the
+backed-up `instance.json`. There is no pending dropped-hook state to resolve
+at start, so consecutive upgrades need no intervening start.
+Receipts live at `<home>/.oats/upgrade-receipt.<key>.json`. Retirement's baseline
+excludes only that exact receipt filename pattern and `.oats/.staging-upgrade-*`;
+`.oats/previous/` is ordinary home content covered by the baseline.
+
+Before the commit boundary, failure before any provider apply hook succeeds
+restores composed home bytes
+and removes staging and the saved previous state. A hook reporting failure
+must leave no effects of its own; provider host effects are its responsibility.
+After any hook succeeds, failure records `partial`: the error names pending
+work and asks for the same `--idempotency-key` to finish forward. The retry
+runs only pending work. Start refuses with `E_UPGRADE_PARTIAL` while the receipt
+is partial. If completion is impossible, the remedy is respawn.
+
+The commit boundary is after swap, baseline and event: the receipt becomes
+`status: "complete"` with `steps.cleaned: false` before staging cleanup.
+Successful cleanup sets `steps.cleaned: true`. A failure after that boundary
+leaves the upgrade committed. The same-key retry runs cleanup only, without
+hooks or copies. Start is allowed with one warning naming that retry; a new
+upgrade or undo plan refuses until cleanup finishes. `E_UPGRADE_PARTIAL`
+applies only before commit. Retirement adds no special cleanup behavior.
+
+`--undo` uses the latest verified previous state and the restored version's
+`upgrade` hook, under the same adoption and failure protocol. A version
+without that hook cannot be restored through this act; respawn instead.
 
 ## Lifecycle: stop and retire
 
@@ -4359,6 +4432,7 @@ in flight.
 
 Feature `lifecycle-claim-stop`, OATS 0.52.0 (#866). A retire and a stop apply
 hold the home's claim for their whole run, and `oats worktree add` reads it.
+This table covers those three commands; the upgrade pairs follow separately.
 Each cell is the answer of the command that **arrives**. It is given at once
 and before any effect: that command stopped, ran, copied, made and removed
 nothing, and the command already on the home is not disturbed.
@@ -4372,6 +4446,24 @@ nothing, and the command already on the home is not disturbed.
 | a stop whose liveness cannot be read holds the claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
 | the claim file is no readable claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` |
 | the holder of the claim is gone | not refused | not refused | not refused | not refused |
+
+<a id="upgrade-lifecycle-pairs"></a>
+The `instance-upgrade` pairs use the same home's lifecycle claim:
+
+| On the home | Arriving command | Answer |
+|---|---|---|
+| a retire is running | `oats instance upgrade` apply | `E_INSTANCE_RETIRING` |
+| a self-retire is scheduled | `oats instance upgrade` apply | `E_INSTANCE_RETIRING` |
+| a stop or upgrade apply is running | `oats instance upgrade` apply | `E_LIFECYCLE_BUSY` |
+| a holder's verb is unknown, its liveness cannot be read, or the claim is unreadable | `oats instance upgrade` apply | `E_LIFECYCLE_BUSY` |
+| the holder of the claim is gone | `oats instance upgrade` apply | not refused after claim takeover checks |
+| an upgrade apply is running | `oats retire` or `oats instance stop --apply` | `E_LIFECYCLE_BUSY` |
+| an upgrade apply is running | `oats worktree add` | not refused |
+
+Upgrade requires a stopped session. Start and restart do not take or read the
+lifecycle claim: upgrade instead holds their existing `.oats-start.lock`
+mutex through its swap. A partial receipt refuses starts through the remaining
+finalization. The following stop/retire notes describe the original table.
 
 - **A holder is answered before a stale plan, by both verbs.** A guarded
   retire and a stop apply compare the revision they were sent only once
@@ -4448,7 +4540,7 @@ since, action}`, with `holder` on `E_LIFECYCLE_BUSY`:
   stop this may be a child of the instance asked for.**
 - `lock`: the file that names the holder. `pid` and `since`: the holder's
   pid and when it took the claim.
-- **`action`: the holder's verb**, `"retire"` or `"stop"`. A claim written
+- **`action`: the holder's verb**, `"retire"`, `"stop"` or `"upgrade"`. A claim written
   by a kernel before this feature has no verb and reads as `"retire"`. A
   reader treats a value it does not know as busy.
 - <a id="claim-file-text"></a>**Text of a claim file is never part of an
@@ -5637,6 +5729,16 @@ oats session restart --home <abs> [the same options] [--stop-grace <1-300 s>] --
 
 Features `session-start`, `session-restart`, and `launch-config` for the
 selection flags. See [the start workflow](desktop-instance-start.md).
+
+Start and restart keep the home's recorded module copies. Their successful
+results include `drift:[{capability, recorded:{version,commit},
+locked:{version,commit}}]` for package modules behind the deployment lock,
+empty when none are behind. Text prints one line after the start:
+`<n> package module(s) behind the lock (<cap> <version> @ <shortcommit> → <version> @ <shortcommit>); to move them: oats instance stop <instance>; oats instance upgrade <instance> --plan`.
+Restart has no upgrade flag. A partial upgrade receipt refuses a start with
+`E_UPGRADE_PARTIAL`, naming the retry with the original idempotency key.
+A committed receipt with `steps.cleaned: false` permits start and adds one
+warning naming the same-key cleanup retry.
 
 - The result is `{instance, agent, home, harness, backend, model,
   launchConfig, yolo, target, startedAt, restartCount, reused, warnings}`,

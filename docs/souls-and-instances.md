@@ -197,8 +197,10 @@ For current settings and the respawn/cleanup sequence, see [knowledge.md](knowle
   A running home's hooks and messaging commands read the teams live
   ([capabilities.md](capabilities.md#teams-in-the-provider-environment)).
 
-A running instance never changes under itself: a member moving or a package
-bump affects only new spawns.
+A running instance never changes under itself; a stopped one can be moved to
+the locked package versions with `oats instance upgrade`. Member modules and
+the soul body still require a new spawn. See
+[upgrading package modules](upgrading.md#moving-existing-homes-to-locked-package-versions).
 
 ### The harness starts normally
 

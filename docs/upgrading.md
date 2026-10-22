@@ -66,7 +66,8 @@ before either.
 **Package versions are a different thing.** `oats update` moves the CLI and
 the bridge, never a package. A deployment's capabilities come from the
 packages pinned in `oats-workspace.yaml`; change a pin, then run `oats sync`
-([Packages](packages.md)).
+([Packages](packages.md)). To move an existing stopped home to those locked
+versions, follow [the package-module deploy step](#moving-existing-homes-to-locked-package-versions).
 
 Run steps 2 and 3 in every deployment on the host, or name one from anywhere
 with `oats update --dir <deployment>`.
@@ -99,6 +100,56 @@ Versions are compared as semver, so a prerelease is below its release:
 `0.53.0-rc.1` is ahead of `0.52.0` and behind `0.53.0`. Build metadata makes
 no other version: a local build `0.53.0+build.1` is `0.53.0`, and nothing is
 installed over it.
+
+## Moving existing homes to locked package versions
+
+After changing a package pin and running `oats sync`, move each existing home
+explicitly. Run these from its deployment or a parent's home:
+
+```sh
+oats instance stop <instance>
+oats instance upgrade <instance> --plan --json
+oats instance upgrade <instance> --plan-revision <revision> --idempotency-key <key> --json
+oats session start --home <absolute-home>
+```
+
+Read the plan before applying it. It lists every moving package module,
+skill/inject/hook changes and provider adoption decisions, modules kept
+because their package is no longer locked, and member drift for information.
+One provider refusal refuses the whole move. A running or unreadable session
+refuses with `E_SESSION_RUNNING`; stop it first. A stale plan returns
+`E_PLAN_STALE` and a fresh plan to review.
+
+Modules move whole, with skills, instructions and hooks recomposed from the
+same sources as spawn. The soul body stays at its recorded commit, and member
+modules stay unchanged. `oats status` drift clears after the move. Start and
+restart keep the recorded copies; when they lag the lock they report drift
+and print the stop/upgrade command.
+
+Before commit, if no provider apply hook has succeeded, a failure restores the
+composed home bytes. A hook reporting failure is responsible for leaving no provider effects
+of its own. After any hook succeeds, a failure records `partial` and moves
+forward only: retry the same command with the same `--idempotency-key` to
+finish pending work. Start refuses with `E_UPGRADE_PARTIAL` until it finishes.
+If it cannot finish, respawn the instance. Do not restore old modules by hand
+under host registrations already adopted by the new provider.
+
+After swap, baseline and event, the receipt commits before staging cleanup.
+If cleanup fails, the upgrade is complete and the same-key retry cleans up
+only, without hooks or copies. Start is allowed with one warning naming that
+retry. A new upgrade or undo plan refuses until cleanup finishes. Retirement
+keeps its normal behavior; it does not finish upgrade cleanup.
+
+The latest previous state is kept in `.oats/previous/<receipt>/`. To request
+the reverse move, use `oats instance upgrade <instance> --undo --plan --json`,
+then apply with `--undo --plan-revision <revision> --idempotency-key <key>`.
+Undo verifies that copy and asks the version being restored to adopt the
+current state through its own `upgrade` hook. A version lacking that hook
+cannot be restored through undo; respawn instead. Each successful move replaces
+the one previous state, and retirement carries it into recovery.
+
+This act handles one local home at a time. A deployment loops over its homes;
+it does not upgrade automatically or through `--server`.
 
 ## Coming from an older version
 
