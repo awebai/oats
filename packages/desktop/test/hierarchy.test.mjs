@@ -532,9 +532,7 @@ test("Go to instance: a running row opens its exact terminal, a stopped one says
 });
 
 test("Go to soul: a package soul is found by its key, source and root (not its agent dir), and the press hands that exact soul to the Workspace page and shows it", async (t) => {
-  // The Workspace page's catalog has gained a member soul named dev at the same root since the card read its own:
-  // only the key and source handed over tell the two apart.
-  const u = await card(t, { instances: [row("dev-1")], mountSpawn: workspacePage([PACKAGE_SOUL, MEMBER_SOUL]) });
+  const u = await card(t, { instances: [row("dev-1")], mountSpawn: workspacePage([PACKAGE_SOUL, ELSEWHERE_SOUL]) });
   await u.select("dev-1");
   assert.equal(u.soul().disabled, false);
   assert.equal(u.soul().title, "Open oats.okf/dev on the Workspace page");
@@ -544,10 +542,9 @@ test("Go to soul: a package soul is found by its key, source and root (not its a
   assert.equal(u.agentsReads().length, 2); assert.equal(u.soul().disabled, false);
   u.soul().click(); await tick(); await tick();
   assert.deepEqual(u.views, ["spawn"]);
-  // By name and root alone the Workspace page would have two souls named dev and open neither.
   const page = u.doc.querySelector(".workspace-soul-page");
   assert.equal(page.hidden, false, "the soul's page is open");
-  assert.match(page.textContent, /The package's dev soul/); assert.doesNotMatch(page.textContent, /The member's dev soul/);
+  assert.match(page.textContent, /The package's dev soul/); assert.doesNotMatch(page.textContent, /Another root's dev soul/);
   assert.equal(u.status(), "");
 });
 
@@ -557,6 +554,25 @@ test("Go to soul: a miss on arrival (the catalog changed in between) is said in 
   u.soul().click(); await tick(); await tick();
   assert.equal(u.status(), "oats.okf/dev is not among this deployment's souls now.");
   assert.equal(u.doc.querySelector(".workspace-soul-page").hidden, true, "the member soul of the same name is never opened instead");
+});
+
+test("Go to soul: the soul's source is handed over too: the same key from another source on arrival is a miss", async (t) => {
+  const u = await card(t, { instances: [row("dev-1")], mountSpawn: workspacePage([{ ...PACKAGE_SOUL, soulSource: { repoKey: "github.com/fork/oats-okf" } }]) });
+  await u.select("dev-1");
+  u.soul().click(); await tick(); await tick();
+  assert.equal(u.status(), "oats.okf/dev is not among this deployment's souls now.");
+  assert.equal(u.doc.querySelector(".workspace-soul-page").hidden, true);
+});
+
+test("Go to soul: a namesake that joined the soul's root by the time the handoff arrives stops it, and says why", async (t) => {
+  // The card read one dev at the root; the Workspace page's catalog has gained a member soul named dev there since.
+  const u = await card(t, { instances: [row("dev-1")], agents: () => ({ agents: [PACKAGE_SOUL], catalog: { reason: null, ambiguous: [] } }),
+    mountSpawn: workspacePage([PACKAGE_SOUL, MEMBER_SOUL]) });
+  await u.select("dev-1");
+  assert.equal(u.soul().disabled, false);
+  u.soul().click(); await tick(); await tick();
+  assert.equal(u.status(), "Another soul in this deployment is also named dev, so the Workspace page cannot open oats.okf/dev.");
+  assert.equal(u.doc.querySelector(".workspace-soul-page").hidden, true, "a page whose inspection would be refused is never opened");
 });
 
 test("Go to soul: a remote row's soul is its agent dir on its own host and root", async (t) => {
@@ -613,7 +629,7 @@ test("Go to soul: checking until the catalog answers, and a late answer for an e
   assert.equal(reads.length, 2, "a new selection reads again");
   reads[0].resolve({ agents: [PACKAGE_SOUL] }); await tick(); await tick();
   assert.deepEqual([u.soul().disabled, u.soul().title], [true, "Checking this instance's soul…"], "a's late answer is not b's");
-  reads[1].resolve({ agents: [] }); await tick(); await tick();
+  reads[1].resolve({ agents: [], catalog: { reason: null, ambiguous: [] } }); await tick(); await tick();
   assert.deepEqual([u.soul().disabled, u.soul().title], [true, "oats.okf/dev is not among this deployment's souls now."]);
   // A roster refresh reads again; until it answers, the last answer stands (no "Checking…" on every poll).
   await u.poll();

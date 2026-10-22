@@ -196,7 +196,9 @@ function inspectSoul(s, agent, intent = nextSelectionIntent()) {
 }
 
 /** `ref`: `{ name, agentsRoot?, server?, key?, repoKey?, onMiss? }`. A `key` (the kernel's soul key) and a `repoKey`
- * (the soul source's) narrow the match to that exact soul: the Deployments page's Go to soul hands both. */
+ * (the soul source's) narrow the match to that exact soul: the Deployments page's Go to soul hands both. A keyed
+ * soul whose bare name another soul of its root shares is not opened: its page is inspected by name and root, which
+ * inspect-boundary.mjs refuses for a shared name. `onMiss(count, { sharedName })` says so. */
 export function preselectSoul(ref) {
   const intent = nextSelectionIntent();
   pendingWorkspaceTab = { name: "souls", ...intent };
@@ -243,6 +245,9 @@ function applyPreselect(s) {
   // an incomplete identity must not pick a twin; the caller says why nothing opened
   if (matches.length !== 1) { ref.onMiss?.(matches.length); return; }
   const a = matches[0];
+  if (ref.key !== undefined && s.souls.agents.filter((x) => x.name === a.name && x.agentsRoot === a.agentsRoot && (x.server || "") === (a.server || "")).length > 1) {
+    ref.onMiss?.(matches.length, { sharedName: a.name }); return;
+  }
   if (ref.spawn && canLaunchSoul(s, a)) {
     openSpawnModal(s, a, ref.draft || {});
     if (s.modalEl) s.spawnReturn = ref.onDismiss;

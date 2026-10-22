@@ -1197,8 +1197,9 @@ function openSoul(s, id) {
     // The roster may have moved while the module loaded: hand over only the soul the row still resolves to, now.
     const now = selectedInstance(s, id), still = now ? soulTarget(s, now) : null;
     if (!still?.ref || JSON.stringify(still.ref) !== JSON.stringify(target.ref)) return;
-    mod.preselectSoul({ ...target.ref, onMiss: count => say(count
-      ? `Several souls match ${target.label}; open it from the Workspace page.` : `${target.label} is not among this deployment's souls now.`) });
+    mod.preselectSoul({ ...target.ref, onMiss: (count, { sharedName } = {}) => say(sharedName
+      ? `Another soul in this deployment is also named ${sharedName}, so the Workspace page cannot open ${target.label}.`
+      : count ? `Several souls match ${target.label}; open it from the Workspace page.` : `${target.label} is not among this deployment's souls now.`) });
     return ctx.openView('spawn');
   }).catch(failed);
 }

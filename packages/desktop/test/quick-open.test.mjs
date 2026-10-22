@@ -253,20 +253,33 @@ test("preselect is consumed once: closing inspection keeps it closed", async (t)
   assert.equal(doc.querySelector(".spawn-dialog"), null, "modal stays closed");
 });
 
-test("preselectSoul with a key (and a repoKey) opens only that exact soul; by name alone two of a name open none", async (t) => {
-  const PKG = { name: "dev", key: "oats.okf/dev", agentsRoot: "/r1", work: "worktree", description: "package dev", soulSource: { repoKey: "github.com/awebai/oats-okf" } };
-  const MEMBER = { name: "dev", key: "dev", agentsRoot: "/r1", work: "worktree", description: "member dev", soulSource: { repoKey: "github.com/acme/agents" } };
-  const { doc, spawn } = await mountSpawn(t, { agents: [PKG, MEMBER] });
+const KEYED_PKG = { name: "dev", key: "oats.okf/dev", agentsRoot: "/r1", work: "worktree", description: "package dev", soulSource: { repoKey: "github.com/awebai/oats-okf" } };
+const KEYED_MEMBER = { name: "dev", key: "dev", agentsRoot: "/r2", work: "worktree", description: "member dev", soulSource: { repoKey: "github.com/acme/agents" } };
+
+test("preselectSoul with a key and a repoKey opens only that exact soul", async (t) => {
+  const { doc, spawn } = await mountSpawn(t, { agents: [KEYED_PKG, KEYED_MEMBER] });
   const misses = [];
-  spawn.preselectSoul({ name: "dev", agentsRoot: "/r1", onMiss: (count) => misses.push(count) });
-  assert.deepEqual(misses, [2], "today's callers, by name: two souls named dev, none opened");
+  const miss = (count, detail) => misses.push([count, detail ?? null]);
+  spawn.preselectSoul({ name: "dev", agentsRoot: "/r1", key: "dev", onMiss: miss });
+  assert.deepEqual(misses, [[0, null]], "the root's dev is not the soul of that key");
+  spawn.preselectSoul({ name: "dev", agentsRoot: "/r1", key: "oats.okf/dev", repoKey: "github.com/acme/agents", onMiss: miss });
+  assert.deepEqual(misses, [[0, null], [0, null]], "the key's soul from another source is not it");
   assert.equal(doc.querySelector(".workspace-soul-page").hidden, true);
-  spawn.preselectSoul({ name: "dev", agentsRoot: "/r1", key: "oats.okf/dev", repoKey: "github.com/acme/agents", onMiss: (count) => misses.push(count) });
-  assert.deepEqual(misses, [2, 0], "the key's soul from another source is not it");
-  spawn.preselectSoul({ name: "dev", agentsRoot: "/r1", key: "oats.okf/dev", repoKey: "github.com/awebai/oats-okf", onMiss: (count) => misses.push(count) });
-  assert.deepEqual(misses, [2, 0]);
+  spawn.preselectSoul({ name: "dev", agentsRoot: "/r1", key: "oats.okf/dev", repoKey: "github.com/awebai/oats-okf", onMiss: miss });
+  assert.equal(misses.length, 2);
   const page = onPage(doc, "dev");
   assert.match(page.textContent, /package dev/); assert.doesNotMatch(page.textContent, /member dev/);
+});
+
+test("preselectSoul: a keyed soul whose name another soul of its root shares is not opened (its page is read by name and root)", async (t) => {
+  const { doc, spawn } = await mountSpawn(t, { agents: [KEYED_PKG, { ...KEYED_MEMBER, agentsRoot: "/r1" }] });
+  const misses = [];
+  const miss = (count, detail) => misses.push([count, detail ?? null]);
+  spawn.preselectSoul({ name: "dev", agentsRoot: "/r1", onMiss: miss });
+  assert.deepEqual(misses, [[2, null]], "today's callers, by name: two souls named dev, none opened");
+  spawn.preselectSoul({ name: "dev", agentsRoot: "/r1", key: "oats.okf/dev", repoKey: "github.com/awebai/oats-okf", onMiss: miss });
+  assert.deepEqual(misses, [[2, null], [1, { sharedName: "dev" }]]);
+  assert.equal(doc.querySelector(".workspace-soul-page").hidden, true);
 });
 
 test("preselectSoul for a soul not in this workspace's roster is a silent no-op", async (t) => {

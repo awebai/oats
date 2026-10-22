@@ -518,7 +518,9 @@ shows only the view's primary deployment's souls, so a row of another
 deployment is disabled before any read. The soul page inspects by bare name
 and root (`inspectSoul`'s selector `{ soul, agentsRoot }`, which
 `inspect-boundary.mjs` refuses when two souls of the root share the name), so
-an exact soul whose name another soul of its root shares is disabled too. A
+an exact soul whose name another soul of its root shares is disabled too, and
+`preselectSoul` refuses a keyed handoff that meets one on arrival (`onMiss`
+with `sharedName`). A
 `catalog.reason` reply is a failed read and a deployment whose catalog is not
 read yet keeps it checking, as the Workspace page reads them. Every other case
 is disabled with a title that says why (nothing recorded, not in the catalog
