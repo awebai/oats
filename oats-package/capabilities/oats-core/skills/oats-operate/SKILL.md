@@ -86,6 +86,13 @@ oats worktree remove --purpose <p>
   instance whose session is running or cannot be read (`E_CHILDREN_RUNNING`):
   stop that instance (`oats instance stop <instance>`) or retire it, then
   remove again.
+- If Git partly deletes a clean extra tree but fails on read-only ignored
+  output, `remove` finishes the deletion without following symlinks. A retry
+  of an unregistered residue with a dangling `.git` file first checks its
+  surviving files against the recorded branch: deleted files are allowed,
+  modified or nonignored untracked paths are `E_WORKTREE_DIRTY`. A failure
+  keeps the record and explains any partial removal; resolve the named
+  problem and retry. This recovery is for extra-tree `remove`, not retire.
 
 ## Modules: what you were given
 
