@@ -1377,9 +1377,11 @@ which edits the command line in your editor, is `Ctrl+X` twice, then
   cancels it and is dropped: nothing is typed.
 - **Only a key in a later read counts.** A key that came in the same read of
   input as the leader cancels it and is dropped, with the rest of that
-  read, so a paste can never run a command. In a terminal the bytes before
-  the leader in that read still go to the agent. A leader inside a
-  bracketed paste is pasted text.
+  read, so a paste can never run a command. The line under the title says
+  so: `Ctrl+X and the next key came in one read, so nothing ran: press them
+  one after the other.` In a terminal the bytes before the leader in that
+  read still go to the agent. A leader inside a bracketed paste is pasted
+  text.
 - **`Ctrl+X` is one byte.** Without the kitty keyboard protocol
   ([Chords](#chords)) every terminal sends it as `0x18`, which no read
   splits and nothing has to time; under the protocol it is `CSI 120;5u`,

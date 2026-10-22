@@ -385,6 +385,11 @@ const LEADER_CLOSE = LEADER.find((entry) => entry.does === "close-terminal").key
 export const TAB_WORDS = Object.freeze({
   full: (limit, leader) => [{ own: `${limit} terminals are open; close one with ` }, { own: `${leader} ${keyLabel(LEADER_CLOSE)}`, whole: true }, { own: "." }],
 });
+/** The line of a leader whose key came in its own read (docs/tui.md, "The leader"): dropped, and
+ *  why. */
+export const LEADER_WORDS = Object.freeze({
+  merged: (leader) => [{ own: leader, whole: true }, { own: " and the next key came in one read, so nothing ran: press them one after the other." }],
+});
 /** The lines of a split that is not made (docs/tui.md, "Splits"): a second split, and a panel too
  *  small for two groups (`min` views/split.mjs SPLIT_MIN). */
 export const SPLIT_WORDS = Object.freeze({
