@@ -11,7 +11,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { contentDigest } from "../lib/remote.mjs";
-import { driftOf, materialize as materializeHome, refForKey } from "../lib/materialize.mjs";
+import { driftOf, materialize as materializeHome, refForKey, stageMaterialize } from "../lib/materialize.mjs";
 
 const roots = [];
 function scratch() { const d = mkdtempSync(join(tmpdir(), "oats-materialize-")); roots.push(d); return d; }
@@ -676,4 +676,95 @@ test("LOW: lock must be v3 when given (E_LOCK_SCHEMA); `...` is not a skill name
   const calls = [];
   await materialize(r, makeHome(scratch()), { fetch: memoryFetch({ calls }), lock });
   assert.ok(calls.some((c) => c.ref === `git:${PKG_KEY}` && c.dir === "oats-package/capabilities/oats.okf"));
+});
+
+
+test("staged materialize: replacement composes without touching the home and commits whole roots", async () => {
+  const home = makeHome(scratch(), { instance: { instance: "release-expert-1", capabilityMeta: { retained: true } } });
+  await materialize(resolution(), home, { fetch: memoryFetch(), lock: LOCK });
+  const oldJson = readFileSync(join(home, "instance.json"), "utf8");
+  const oldAgents = readFileSync(join(home, "AGENTS.md"), "utf8");
+  const next = resolution({ modules: [resolution().modules[1]], skills: [], injects: [resolution().injects[1]] });
+  const staging = join(home, ".oats", ".staging-upgrade-test");
+  const tx = await stageMaterialize(next, home, {
+    staging, replace: true, soulAgentsMd: "# Recorded soul\n", fetch: memoryFetch(),
+    instanceJson: (merged, outcome) => ({ ...merged, instructions: outcome.blocks.map(b => b.source) }),
+  });
+  assert.equal(readFileSync(join(home, "instance.json"), "utf8"), oldJson);
+  assert.equal(readFileSync(join(home, "AGENTS.md"), "utf8"), oldAgents);
+  assert.equal(tx.staging, staging);
+  assert.deepEqual(tx.outcome.instanceJson.instructions, ["capability:nw-house-style"]);
+  tx.updateInstance({ ...tx.outcome.instanceJson, adopted: true });
+  tx.commit();
+  assert.deepEqual(readdirSync(join(home, ".oats", "modules")), ["nw-house-style"]);
+  assert.deepEqual(readdirSync(join(home, ".agents", "skills")), []);
+  assert.match(readFileSync(join(home, "AGENTS.md"), "utf8"), /^# Recorded soul/);
+  assert.equal(JSON.parse(readFileSync(join(home, "instance.json"))).adopted, true);
+  assert.equal(existsSync(staging), false);
+});
+
+test("staged materialize: unchanged recorded modules are verified copies without resolving the current lock", async () => {
+  const home = makeHome(scratch());
+  const before = await materialize(resolution(), home, { fetch: memoryFetch(), lock: LOCK });
+  const modules = resolution().modules.map(m => ({ ...m, digest: before.instanceJson.modules[m.name].digest }));
+  const existingModules = Object.fromEntries(modules.map(m => [m.name, join(home, ".oats", "modules", m.name)]));
+  const tx = await stageMaterialize(resolution({ modules }), home, {
+    replace: true, existingModules, lock: { lockfileVersion: 3, packages: {} }, soulAgentsMd: "# Soul\n",
+    fetch: () => assert.fail("unchanged copies must not fetch"),
+  });
+  assert.deepEqual(tx.outcome.instanceJson.modules, before.instanceJson.modules);
+  tx.discard();
+  assert.equal(existsSync(tx.staging), false);
+});
+
+test("staged materialize: a preserved failed swap resumes from its durable rename journal", async () => {
+  const home = makeHome(scratch());
+  await materialize(resolution(), home, { fetch: memoryFetch(), lock: LOCK });
+  const next = resolution({ modules: [resolution().modules[1]], skills: [], injects: [resolution().injects[1]] });
+  const tx = await stageMaterialize(next, home, { replace: true, soulAgentsMd: "# Upgraded\n", fetch: memoryFetch() });
+  // Lose a staged file after the module/skill swaps, then restore it as a transient failure recovery.
+  const agents = readFileSync(join(tx.staging, "AGENTS.md"));
+  rmSync(join(tx.staging, "AGENTS.md"));
+  assert.throws(() => tx.commit({ preserveOnFailure: true }));
+  assert.deepEqual(readdirSync(join(home, ".oats", "modules")), ["nw-house-style"], "never restores old modules after adoption");
+  writeFileSync(join(tx.staging, "AGENTS.md"), agents);
+  const resumed = await stageMaterialize(null, home, { staging: tx.staging, resume: true });
+  resumed.commit({ preserveOnFailure: true, retainStaging: true });
+  assert.equal(existsSync(tx.staging), true);
+  const completed = await stageMaterialize(null, home, { staging: tx.staging, resume: true });
+  completed.commit({ preserveOnFailure: true });
+  assert.match(readFileSync(join(home, "AGENTS.md"), "utf8"), /^# Upgraded/);
+  assert.deepEqual(readdirSync(join(home, ".agents", "skills")), []);
+  assert.equal(existsSync(tx.staging), false);
+});
+
+
+test("staged materialize: ordinary replacement failure rolls back modules, skills and metadata", async () => {
+  const home = makeHome(scratch());
+  await materialize(resolution(), home, { fetch: memoryFetch(), lock: LOCK });
+  const before = { modules: contentDigest(join(home, ".oats", "modules")), skills: contentDigest(join(home, ".agents", "skills")), agents: readFileSync(join(home, "AGENTS.md"), "utf8"), instance: readFileSync(join(home, "instance.json"), "utf8") };
+  const next = resolution({ modules: [resolution().modules[1]], skills: [], injects: [resolution().injects[1]] });
+  const tx = await stageMaterialize(next, home, { replace: true, soulAgentsMd: "# Upgraded\n", fetch: memoryFetch() });
+  rmSync(join(tx.staging, "AGENTS.md"));
+  assert.throws(() => tx.commit());
+  assert.equal(contentDigest(join(home, ".oats", "modules")), before.modules);
+  assert.equal(contentDigest(join(home, ".agents", "skills")), before.skills);
+  assert.equal(readFileSync(join(home, "AGENTS.md"), "utf8"), before.agents);
+  assert.equal(readFileSync(join(home, "instance.json"), "utf8"), before.instance);
+  assert.equal(existsSync(tx.staging), false);
+});
+
+
+test("staged materialize: a retained completed swap can roll back if no provider adopted", async () => {
+  const home = makeHome(scratch());
+  await materialize(resolution(), home, { fetch: memoryFetch(), lock: LOCK });
+  const before = readFileSync(join(home, "instance.json"), "utf8");
+  const next = resolution({ modules: [resolution().modules[1]], skills: [], injects: [resolution().injects[1]] });
+  const tx = await stageMaterialize(next, home, { replace: true, soulAgentsMd: "# Upgraded\n", fetch: memoryFetch() });
+  tx.commit({ retainStaging: true });
+  const reopened = await stageMaterialize(null, home, { staging: tx.staging, resume: true });
+  reopened.rollback();
+  assert.equal(readFileSync(join(home, "instance.json"), "utf8"), before);
+  assert.deepEqual(readdirSync(join(home, ".oats", "modules")).sort(), ["nw-house-style", "nw-release-tooling", "oats.okf"]);
+  assert.deepEqual(readdirSync(join(home, ".agents", "skills")).sort(), ["cut-release", "okf"]);
 });
