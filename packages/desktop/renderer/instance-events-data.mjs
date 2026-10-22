@@ -13,7 +13,8 @@ export const EVENT_TITLES = Object.freeze({ spawned: 'Spawned', launched: 'Launc
   'stop-refused': 'Stop refused', 'retire-planned': 'Retirement planned', retired: 'Retired',
   'worktree-retained': 'Worktree retained', 'worktree-removed': 'Worktree removed', 'branch-deleted': 'Branch deleted',
   'child-spawn-refused': 'Child spawn refused', 'launch-prompt': 'Launch prompt', recomposed: 'Instructions recomposed', waiting: 'Waiting claim',
-  'worktree-added': 'Worktree added', 'modules-upgraded': 'Modules upgraded' });
+  'worktree-added': 'Worktree added', 'modules-upgraded': 'Modules upgraded',
+  'upgrade-refused': 'Module upgrade refused' });
 const strings = {
   spawned: ['agent', 'work', 'branch', 'model', 'parentInstance', 'relation'], launched: ['backend', 'launchConfig'],
   restarted: ['phase', 'signal'], stopped: ['signal', 'state'], 'stop-refused': ['phase', 'signal', 'state'],
@@ -29,8 +30,9 @@ const booleans = { spawned: ['launched'], retired: ['keepDir', 'self', 'quaranti
  * confirmation it matched. A row's facts follow the kernel that wrote it, and a log keeps its rows:
  * `consentSource` (listed above) is only on rows a 0.44 to 0.51 kernel wrote, `claudeVersion` and `differed`
  * only on rows from 0.52.0. The pane's identity, `startId`, `key`, `signatureDigest` and
- * `claudeVersionSource` are not read. */
-const tolerant = { 'worktree-added': ['purpose', 'path', 'branch', 'base', 'member'], 'launch-prompt': ['claudeVersion', 'signatureId'] };
+ * `claudeVersionSource` are not read. `upgrade-refused`: the step that failed (`hook <capability>` names the module). */
+const tolerant = { 'worktree-added': ['purpose', 'path', 'branch', 'base', 'member'], 'launch-prompt': ['claudeVersion', 'signatureId'],
+  'upgrade-refused': ['step'] };
 const tolerantText = v => typeof v === 'string' && !!v && v.length <= 4096 ? detail(v, 4096) : undefined;
 /** A `worktree` hooks' receipt (`worktree-added` `hooks`, `spawned` `worktreeHooks`, 0.49.0) as `[{capability, ok,
  * log}]`, `log` the hook's log file or null (a rolled-back spawn's log is removed). Anything malformed, the value
