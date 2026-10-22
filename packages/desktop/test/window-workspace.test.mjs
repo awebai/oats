@@ -338,3 +338,34 @@ test('handedLayout: the layout is the bound workspace\'s only (a deployment id\'
   await v.common.switchWorkspace(C, { takeOver: true });
   assert.deepEqual(got, [LAYOUT], 'the view main bound gets it');
 });
+
+test('a release naming the view of the deployment this window holds it under (main rekeyed it first) leaves it', async () => {
+  // History C, then B; on the deployment /d/oats now, which main has already bound as the view ws:oats….
+  const OATS = '/d/oats', VIEW = 'ws:oooooooooooooooooooo';
+  const w = await windowWith({ hash: workspaceHash(C) });
+  for (const id of [B, OATS]) assert.deepEqual(await w.common.switchWorkspace(id), { ok: true });
+  w.claims.length = 0;
+  const served = [{ id: VIEW, deployments: [OATS] }, { id: B }, { id: C }];
+  assert.deepEqual([...w.common.takenWorkspaceIds(VIEW, served)], [VIEW, OATS]);
+  await w.common.leaveTakenWorkspace(VIEW, served);
+  assert.deepEqual(w.claims, [[B, { focus: false }]], 'it leaves, for the newest of its history that is not the workspace taken');
+  assert.equal(w.common.currentWorkspace(), B);
+});
+
+test('the latest pick wins: a take-over still waiting on main, then a switch back, ends on the switch back', async () => {
+  // Main answers B's take-over only after the release wait; meanwhile the window is switched back to A.
+  const gate = deferred(), bound = [];
+  const w = await windowWith({ hash: workspaceHash(A), claim: async (id, options) => {
+    if (id === B) await gate.promise;
+    bound.push(id); return { ok: true };
+  } });
+  const toB = w.common.switchWorkspace(B, { takeOver: true });
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(w.claims, [[B, { takeOver: true }]], "B's claim is with main");
+  const backToA = w.common.switchWorkspace(A, { takeOver: true });
+  gate.resolve();
+  assert.deepEqual(await toB, { ok: true }, 'main had bound B: this window follows it');
+  assert.deepEqual(await backToA, { ok: true });
+  assert.deepEqual(bound, [B, A], 'main binds A last');
+  assert.equal(w.common.currentWorkspace(), A, 'and so does this window');
+});

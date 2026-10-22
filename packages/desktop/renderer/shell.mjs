@@ -9,7 +9,7 @@
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
 import { currentWorkspace, workspaceGeneration, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, postJson, rowDeployment, httpError,
-  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices, leaveTakenWorkspace, handedLayout } from "./views/common.mjs";
+  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices, leaveTakenWorkspace, handedLayout, takenWorkspaceIds } from "./views/common.mjs";
 import { describeLayout, composeLayout } from "./layout-handover.mjs";
 import { instanceActions, captureInstanceActionMenu, pendingActionReason } from "./instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
@@ -524,7 +524,7 @@ const workspaceLabel = createWorkspaceSwitcher({
   document,
   // Main binds a switch first (#481). A pick from the list always shows the workspace in THIS window: one
   // another window shows moves here (main takes it over from that window, which shows its previous one).
-  selectWorkspace: (id) => { void switchWorkspace(id, { takeOver: true }); },
+  selectWorkspace: (id) => switchWorkspace(id, { takeOver: true }),
   openInNewWindow: typeof desktopBridge.windowOpenWorkspace === "function" ? (id) => { void desktopBridge.windowOpenWorkspace(id); } : null,
   mac: navigator.platform.includes("Mac"),
   // Feature-detected while tui-dev lands the approved privileged contract.
@@ -3057,17 +3057,20 @@ desktopBridge?.onWorkspaceRelease?.((message) => { void releaseTakenWorkspace(me
 async function releaseTakenWorkspace(message) {
   const workspace = typeof message?.workspace === "string" && message.workspace ? message.workspace : null;
   if (!workspace) return;
-  const layout = currentWorkspace() === workspace ? describeLayout(tabs, split, activeTab, workspace) : null;
+  // Under any id it names here: main may have rekeyed this window from a deployment id to its view first.
+  const taken = takenWorkspaceIds(workspace, message.workspaces);
+  const shown = currentWorkspace();
+  const layout = taken.has(shown) ? describeLayout(tabs, split, activeTab, shown) : null;
   try { await desktopBridge.windowReleaseAnswer?.(message.request, layout ? { layout } : null); } catch { /* main moves it after its wait */ }
   try { await leaveTakenWorkspace(workspace, message.workspaces); }
-  finally { closeWorkspaceTabs(workspace); }
+  finally { closeWorkspaceTabs(taken); }
 }
-/** Close every tab of `workspace` (one this window no longer shows): a background close, which cancels no
- * pending open and moves no focus, and a terminal's goes through its own teardown (its viewer closed). */
-function closeWorkspaceTabs(workspace) {
-  for (const [id, t] of [...tabs]) if (t.workspace === workspace) closeTab(id, false, { explicit: false, background: true, passive: true });
-  workspaceTabMemory.forget(workspace);
-  wsActiveTerminal.delete(workspace);
+/** Close every tab of the workspace `taken` names (a Set of its ids: one this window no longer shows): a
+ * background close, which cancels no pending open and moves no focus, and a terminal's goes through its own
+ * teardown (its viewer closed). */
+function closeWorkspaceTabs(taken) {
+  for (const [id, t] of [...tabs]) if (taken.has(t.workspace)) closeTab(id, false, { explicit: false, background: true, passive: true });
+  for (const workspace of taken) { workspaceTabMemory.forget(workspace); wsActiveTerminal.delete(workspace); }
 }
 /** A take-over's layout (layout-handover.mjs), handed over by the window the workspace came from: its terminals
  * opened here again (fresh viewers; the agents keep running) and laid out as they were, under ONE intent ticket, so
@@ -3119,7 +3122,7 @@ function restoreWorkspaceTabs() {
   contextRosterGen++;
   brainIntents.invalidate();
   tabOpenIntents.invalidate();
-  workspaceLabel.reset();
+  workspaceLabel.reset(currentWorkspace());
   workspaceTabMemory.remember(tabWorkspace, { split, activeTab, sidebarMode, tabLayerVisible });
   // Hide synchronously and park ALL nodes before replacing group identities.
   // Workspace-local group ids can overlap; deleting old cells first would

@@ -672,19 +672,33 @@ terminal owner).
 - **Binding.** A window switches through `window:claim-workspace`: main
   refuses a workspace another window holds and brings that window to the
   front (or, for a view that moved under a window, doesn't); a deployment id
-  is bound as the view that holds it. The renderer runs one claim at a time
+  is bound as the view that holds it. A take-over (`takeOver`: a pick from
+  the list of workspaces, a view's workspace select, going to an instance in
+  another workspace) is never refused for that: main asks the holder to
+  release it (`window:release-workspace`, answered once with
+  `window:release-answer`, from that window only, for its open request), and
+  moves the binding when it answers or after 2 seconds. The holder, bound to
+  nothing from then, leaves the workspace whenever its renderer runs, on time
+  or late: it shows its previous workspace, else the switcher, and closes its
+  tabs of it. Its answer may hand the workspace's terminals and split over
+  (`renderer/layout-handover.mjs`), passed on whole when valid, else not at
+  all. The renderer runs one claim at a time
   and commits a switch only after main's yes (`switchWorkspace` in
   `renderer/views/common.mjs`), so a switch never leaves its hash and main's
   registry apart.
 - **A view observed under a window.** A window bound to a deployment whose
   identity is observed later (its view gets a `ws:` id) is moved to that view
   in main as soon as the served list names it (`noteServed`), focusing
-  nothing, so no other window can take the workspace meanwhile. Its hash
+  nothing, so no other window can claim the workspace meanwhile (a take-over
+  still can). Its hash
   still names the deployment until its next roster read follows the view
   (the #482 rehome claim, a no-op in main by then); its requests stay
   valid in between, the deployment id being served. If another window
   already has the view, nothing moves, and that follow leaves this window
-  choosing.
+  choosing. A take-over in between names the view, which this window still
+  holds under the deployment id: its release matches every id the served
+  view holds (`takenWorkspaceIds`), so it leaves, hands over and closes the
+  same workspace.
 - **No workspace.** A New Window, a window whose view moved to a
   workspace another window has, or the first window of a launch with no
   local deployment to serve, is *choosing*: main's refusal carries the

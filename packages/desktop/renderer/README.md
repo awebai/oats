@@ -435,9 +435,14 @@ split into sections) is `packages/client/roster-sections.mjs`.
   `packages/client/workspace-choices.mjs` (`workspaceChoiceRows`); this module draws it. Each
   entry is its name and ONE muted line: a view's machines (`choice.machines`, "This Mac ·
   altair") with a status mark (`deploymentMark`, words as its label) when `notLive > 0`, or
-  `OTHER_WINDOW_TEXT` ("In another window", and a newWindow icon in place of the check) when
-  `choice.shown` and it is not this window's; an unattached view's machine and its `short`
-  reason; a listed row's folder tail. Choosing an unattached entry also calls
+  `OTHER_WINDOW_TEXT` ("In another window", in words: the row's one window icon is its Open
+  in new window) when `choice.shown` and it is not this window's; an unattached view's machine
+  and its `short` reason; a listed row's folder tail, or for one that can't be opened its state
+  in a word (`LISTED_STATE_WORD`, no mark), the sentence (`LISTED_STATE_TEXT`) in its tooltip
+  and, sr-only, its name. Rows cut off below the bounded height are counted under the list
+  (`.ws-more`, `moreBelowText`, aria-hidden). `reset(current)` (a switch landed) keeps the rows and
+  marks `current`; a pick on its way (`pickedId`) is where `step` goes on from, and a pick of the
+  current row supersedes it. Choosing an unattached entry also calls
   `requestDeploymentTab`, so the Deployments page opens on its tab. Never an id, a path or a
   reason sentence (paths only in tooltips); twins of one name show their key.
   - The current row is `aria-current="true"` with the check; the section's `aria-description`

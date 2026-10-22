@@ -90,7 +90,9 @@ body {
 .ws-remove-listed:hover { background: var(--surface-2); color: var(--fg); }
 .ws-remove-listed:focus-visible { background: var(--sel); color: var(--fg); }
 .ws-remove-listed[aria-disabled="true"], .ws-local-option[aria-disabled="true"] { cursor: default; }
-.ws-option-meta.ws-listed-state { white-space: normal; }
+/* Rows cut off below the list's bounded height: said under it, in words (no fade over text). */
+.ws-more { margin: 2px 8px 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.ws-more[hidden] { display: none; }
 .ws-local-note { margin: 2px 8px 6px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .ws-check { color: var(--accent); font-weight: 750; }
 .ws-option-copy { min-width: 0; }

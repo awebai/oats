@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import {
-  createWorkspaceSwitcher, LISTED_STATE_TEXT, LOCAL_SECTION, OTHER_WINDOW_TEXT, WAITING_NAME, WAITING_TITLE,
+  createWorkspaceSwitcher, LISTED_STATE_TEXT, LISTED_STATE_WORD, moreBelowText, LOCAL_SECTION, OTHER_WINDOW_TEXT, WAITING_NAME, WAITING_TITLE,
   LISTED_EVERY_MS, LISTED_BLURRED_MS,
 } from "../renderer/workspace-switcher.mjs";
 import { UNMATCHED_SECTION } from "../../client/workspace-choices.mjs";
@@ -109,15 +109,19 @@ test("the current row: aria-current and the check, on that row only; the list's 
   assert.equal(s.row(B.id).querySelector(".ws-check").childElementCount, 0);
 });
 
-test("rows that can't be opened keep their state words and are not selectable; the moves pass over them", async (t) => {
+test("rows that can't be opened say their state in a word on one line (the sentence said and in the tooltip, no mark) and are not selectable; the moves pass over them", async (t) => {
   const states = ["missing", "not-a-deployment", "unreadable"];
   const s = setup(t, { suggestions: [...states.map((state) => listed(state, { state })), listed("ok")] });
   s.controller.begin()(A, [A]); await tick();
   for (const state of states) {
     const button = s.row(`/h/Agents/${state}`);
     assert.equal(button.getAttribute("aria-disabled"), "true", state);
-    assert.equal(button.querySelector(".ws-option-meta").textContent, LISTED_STATE_TEXT[state]);
-    assert.equal(button.querySelector(".deployment-mark").getAttribute("aria-label"), LISTED_STATE_TEXT[state], "never the mark alone");
+    const meta = button.querySelector(".ws-option-meta");
+    assert.equal(meta.textContent, LISTED_STATE_WORD[state], "one short line");
+    assert.equal(meta.getAttribute("aria-hidden"), "true", "the word is for the eye");
+    assert.equal(button.querySelector(".sr-only").textContent, `, ${LISTED_STATE_TEXT[state]}`, "the sentence is in the accessible name");
+    assert.equal(button.title, `/h/Agents/${state}\n${LISTED_STATE_TEXT[state]}`, "and in the tooltip");
+    assert.equal(button.querySelector(".deployment-mark"), null, "no warning mark: that is a view's not live");
     button.click();
   }
   await tick();
@@ -173,7 +177,8 @@ test("the dot on this computer's rows: true draws it; false and null (unknown) n
     assert.equal(s.row(`/h/Agents/${name}`).title, `/h/Agents/${name}`);
   }
   const gone = s.row("/h/Agents/gone");
-  assert.equal(dotOf(gone), null, "its read is not the deployment's"); assert.equal(gone.querySelector(".sr-only"), null);
+  assert.equal(dotOf(gone), null, "its read is not the deployment's");
+  assert.deepEqual([...gone.querySelectorAll(".sr-only")].map((el) => el.textContent), [`, ${LISTED_STATE_TEXT.missing}`], "its state, never needs input");
   assert.equal(gone.title, `/h/Agents/gone\n${LISTED_STATE_TEXT.missing}`);
 });
 
@@ -187,14 +192,15 @@ test("the dot never reorders the list", async (t) => {
 });
 
 /* ── a workspace another window shows ── */
-test("a row another window shows says so (words and a mark); picking it takes it over into this window", async (t) => {
+test("a row another window shows says so in words (its Open in new window is its one window icon); picking it takes it over into this window", async (t) => {
   const s = setup(t);
   s.controller.begin()(A, [A, HELD, { ...B, shown: false }]); await tick();
   const held = s.row(HELD.id);
   assert.equal(held.dataset.otherWindow, "true");
   assert.equal(held.querySelector(".ws-option-meta").textContent, OTHER_WINDOW_TEXT);
   assert.equal(OTHER_WINDOW_TEXT, "In another window");
-  assert.equal(held.querySelector(".ws-check svg").outerHTML, s.icon("newWindow", 13), "the new-window mark in place of the check");
+  assert.equal(held.querySelector(".ws-check").childElementCount, 0, "no mark in the check's place");
+  assert.equal(held.closest(".ws-option-row").querySelectorAll("svg.shell-icon").length, 1, "one window icon on the row: its Open in new window");
   assert.equal(held.getAttribute("aria-current"), null);
   assert.equal(held.getAttribute("aria-disabled"), null, "it can be picked");
   assert.equal(s.row(B.id).dataset.otherWindow, undefined);
@@ -212,20 +218,23 @@ test("a row another window shows says so (words and a mark); picking it takes it
 test("step: the next row as drawn, onto a held row, then an unattached one, then this computer's, past what can't be opened", async (t) => {
   const s = setup(t, { suggestions: [listed("gone", { state: "missing" }), listed("next")] });
   const list = [A, HELD, LOOSE];
+  // Each switch lands as the shell lands it: reset(the workspace now selected), then its roster's answer.
+  const land = (workspace) => { s.controller.reset(workspace.id); s.controller.begin()(workspace, list); };
   s.controller.begin()(A, list); await tick();
   assert.equal(s.controller.step(1), true);
   assert.deepEqual(s.calls.selected, [HELD.id], "a held row is not passed over: the move takes it over");
-  s.controller.begin()(HELD, list); // main moved it here
+  land(HELD); // main moved it here
   assert.equal(s.controller.step(1), true);
   assert.deepEqual(s.calls.selected, [HELD.id, LOOSE.id], "down into the unattached section");
   assert.deepEqual(s.calls.tabs, [{ view: LOOSE.id, tab: LOOSE.deployments[0] }], "as a click does: its deployment's tab");
-  s.controller.begin()(LOOSE, list);
+  land(LOOSE);
   assert.equal(s.controller.step(1), true, "past the stale row");
   assert.deepEqual(s.calls.added, ["/h/Agents/next"], "a listed row is admitted, as its click");
   await tick();
   assert.deepEqual(s.calls.selected, [HELD.id, LOOSE.id, "/h/Agents/next"], "then opened in this window");
   assert.equal(s.current()?.dataset.workspaceId, "/h/Agents/next");
-  s.controller.begin()(HELD, list);
+  s.controller.reset("/h/Agents/next"); // that switch lands
+  land(HELD);
   assert.equal(s.controller.step(-1), true);
   assert.equal(s.calls.selected.at(-1), A.id, "up");
 });
@@ -381,4 +390,76 @@ test("before the first answer of this computer's rows, the list says it is looki
   assert.equal(empty.textContent, "Looking for workspaces on this computer…");
   answer({ stale: false, suggestions: [], list: { state: "ok" } }); await tick();
   assert.equal(empty.textContent, "No workspace choices reported.", "an answer with nothing says so");
+});
+
+/* ── the bounded height ── */
+test("rows cut off below the list's bounded height are said under it, at any scroll; none when all fit", async (t) => {
+  const s = setup(t);
+  const options = s.document.getElementById("ws-options"), more = s.document.querySelector(".ws-more");
+  assert.equal(more.getAttribute("aria-hidden"), "true", "a cue for the eye: every row is in the list");
+  // Layout, as a browser gives it: 40px rows in a 100px list, scrolled by scrollTop.
+  let scrollTop = 0;
+  options.getBoundingClientRect = () => ({ top: 0, bottom: 100 });
+  const rowRect = (button) => { const i = s.rows().indexOf(button); return { top: i * 40 - scrollTop, bottom: (i + 1) * 40 - scrollTop }; };
+  t.after(() => { delete s.dom.window.HTMLButtonElement.prototype.getBoundingClientRect; });
+  s.dom.window.HTMLButtonElement.prototype.getBoundingClientRect = function () { return rowRect(this); };
+  s.controller.begin()(A, [A, B, C, HELD]); await tick();
+  assert.equal(more.hidden, false);
+  assert.equal(more.textContent, moreBelowText(2), "the third row is cut: it and the fourth are below");
+  assert.equal(moreBelowText(2), "2 more below");
+  scrollTop = 60; options.dispatchEvent(new s.dom.window.Event("scroll"));
+  assert.equal(more.hidden, true, "scrolled to the end: nothing below");
+  scrollTop = 0; s.controller.begin()(A, [A, B]); await tick();
+  assert.equal(more.hidden, true, "all fit"); assert.equal(more.textContent, "");
+});
+
+test("this computer's rows: the full path is the tooltip, whatever the visible line cuts", async (t) => {
+  const s = setup(t, { suggestions: [listed("deep")] });
+  s.controller.begin()(A, [A]); await tick();
+  const row = s.row("/h/Agents/deep");
+  assert.equal(row.title, "/h/Agents/deep");
+  assert.equal(row.querySelector(".ws-option-meta").textContent, "Agents/deep");
+});
+
+/* ── a switch on its way ── */
+test("a switch landing here keeps every row (the list never empties while the new roster is read, or when it fails); the next move goes on", async (t) => {
+  const s = setup(t);
+  s.controller.begin()(A, [A, B, C]); await tick();
+  assert.equal(s.controller.step(1), true);
+  assert.deepEqual(s.calls.selected, [B.id]);
+  s.controller.reset(B.id); // the shell's restoreWorkspaceTabs, as the switch lands: B's roster not read yet
+  assert.deepEqual(s.rows().map(s.keyOf), [A.id, B.id, C.id], "the rows stay");
+  assert.equal(s.current().dataset.workspaceId, B.id, "B is current at once");
+  assert.equal(s.controller.step(1), true, "B's read has not answered (or failed): the next move still reaches C");
+  assert.deepEqual(s.calls.selected, [B.id, C.id]);
+  s.controller.reset("ws:unknown00000000000000");
+  assert.equal(s.rows().length, 3, "a workspace not among the rows yet: the rows stay too");
+  assert.equal(s.current(), null);
+});
+
+test("moves faster than a switch go on from the pick on its way, not from what is shown", async (t) => {
+  const s = setup(t, { selectWorkspace: (id) => { s.calls.selected.push(id); return new Promise(() => {}); } });
+  s.controller.begin()(A, [A, B, C]); await tick();
+  assert.equal(s.controller.step(1), true); assert.equal(s.controller.step(1), true);
+  assert.deepEqual(s.calls.selected, [B.id, C.id], "two presses, two moves");
+  assert.equal(s.controller.step(1), false, "C is the last");
+  assert.equal(s.controller.step(-1), true);
+  assert.deepEqual(s.calls.selected, [B.id, C.id, B.id]);
+});
+
+test("the latest pick wins: the current row picked while another pick is on its way supersedes it; a refused pick leaves none", async (t) => {
+  let answer = () => new Promise(() => {});
+  const s = setup(t, { selectWorkspace: (id) => { s.calls.selected.push(id); return answer(id); } });
+  s.controller.begin()(A, [A, HELD]); await tick();
+  s.row(HELD.id).click();
+  s.row(HELD.id).click();
+  assert.deepEqual(s.calls.selected, [HELD.id], "a second click on the pick on its way picks nothing again");
+  s.row(A.id).click();
+  assert.deepEqual(s.calls.selected, [HELD.id, A.id], "the current row, picked after: it is what this window ends on");
+  s.row(A.id).click();
+  assert.deepEqual(s.calls.selected, [HELD.id, A.id], "and once is enough");
+  answer = async () => ({ ok: false, code: "failed" });
+  s.row(HELD.id).click(); await tick(); await tick();
+  s.row(A.id).click();
+  assert.deepEqual(s.calls.selected, [HELD.id, A.id, HELD.id], "the refused pick is no pick: the current row is just current");
 });

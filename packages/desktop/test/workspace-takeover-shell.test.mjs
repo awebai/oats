@@ -33,6 +33,7 @@ import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
 import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
 import { describeLayout, composeLayout } from "../renderer/layout-handover.mjs";
+import { takenWorkspaceIds } from "../renderer/views/common.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const tick = () => new Promise(setImmediate);
@@ -57,7 +58,7 @@ function shell(t) {
     document, window: dom.window, canAddressRemote, rowReason, navigator: { platform: "MacIntel" },
     // A restore's quiet notes (a terminal left out) are recorded, not printed.
     warned: [], console: { ...console, warn: message => c.warned.push(message) },
-    describeLayout, composeLayout,
+    describeLayout, composeLayout, takenWorkspaceIds,
     getBinding, formatChord, stableFocusTarget: () => null,
     connectionGeneration: 0, subscribeConnections: () => () => {},
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
@@ -105,9 +106,11 @@ function shell(t) {
     answerResult: { ok: true },
     desktopBridge: { async windowReleaseAnswer(request, payload) { log.push(["answer", request, payload]); return c.answerResult; } },
     async leaveTakenWorkspace(workspace, workspaces) {
-      log.push(["leave", workspace, workspaces, [...c.tabs.values()].filter(tab => tab.workspace === workspace).length]);
+      // As views/common.mjs's does: the workspace under any id the served view gives it (a rekeyed deployment id).
+      const taken = takenWorkspaceIds(workspace, workspaces);
+      log.push(["leave", workspace, workspaces, [...c.tabs.values()].filter(tab => taken.has(tab.workspace)).length]);
       await tick();
-      if (c.workspace === workspace) { c.workspace = c.leaveTo; c.generation++; s.restoreWorkspaceTabs(); }
+      if (taken.has(c.workspace)) { c.workspace = c.leaveTo; c.generation++; s.restoreWorkspaceTabs(); }
     },
     leaveTo: "B",
   };
@@ -349,4 +352,24 @@ test("restore: a terminal of the workspace already open here joins the composed 
   await restore(s, { terminals: [ref("a1"), ref("a2")], split: { orientation: "row", focused: 0, groups: [{ tabs: [0], active: 0 }, { tabs: [1], active: 1 }] }, active: 0 },
     [instance("a1"), instance("a2"), instance("a5")]);
   assert.ok(s.c.split.groups.some(group => group.tabs.includes(own.id)), "a5 is in a group");
+});
+
+// Main rekeys a window bound to a deployment id to the view that holds it (#482) before this window's selection
+// follows: a take-over then names the view. The release is of what this window holds under the deployment id.
+test("a release naming the view of the deployment this window still holds it under: described, left and closed the same", async t => {
+  for (const late of [false, true]) {
+    const { s, a1, a2, b1 } = await holder(t);
+    if (late) s.c.answerResult = { ok: false, code: "unknown-request" };
+    s.log.length = 0;
+    const views = [{ id: "ws:aaaa", name: "a", deployments: ["A"] }, { id: "B", name: "b" }];
+    const shown = describeLayout(s.c.tabs, s.c.split, s.c.activeTab, "A");
+    await s.releaseTakenWorkspace({ request: 5, workspace: "ws:aaaa", workspaces: views });
+    await settle();
+    assert.deepEqual(plain(s.log[0]), ["answer", 5, { layout: plain(shown) }], "its terminals and split are handed over");
+    assert.deepEqual(tabsOf(s, "A"), [], late ? "late: no tab of it is left" : "no tab of it is left");
+    assert.deepEqual(s.detached.sort(), [a1.handle, a2.handle].sort(), "both viewers detached: nothing stays attached");
+    assert.equal(s.c.wsActiveTerminal.has("A"), false);
+    assert.equal(s.c.workspace, "B", "it left");
+    assert.equal(b1.term.disposed, 0, "B's terminal stays");
+  }
 });

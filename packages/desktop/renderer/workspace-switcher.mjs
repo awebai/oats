@@ -36,6 +36,10 @@ export const LISTED_STATE_TEXT = Object.freeze({
   "not-a-deployment": "Not a deployment any more: no oats-local.yaml",
   unreadable: "Can't be checked: OATS couldn't read this folder",
 });
+/** The same states in a word or two, the row's one visible line (the sentence is its tooltip and is said). */
+export const LISTED_STATE_WORD = Object.freeze({ missing: "Missing", "not-a-deployment": "Not a deployment", unreadable: "Can't be checked" });
+/** Below the list while rows are cut off below its bounded height (a sighted cue: every row is in the list). */
+export const moreBelowText = (count) => `${count} more below`;
 /** What the section says when this computer's list could not be read: its CLI has no list, or the read failed. */
 export const LIST_UNSUPPORTED_TEXT = "This oats can't list this computer's deployments. Update oats.";
 export const listFailedText = (message) => `Couldn't read this computer's deployments: ${message}`;
@@ -75,6 +79,8 @@ export function createWorkspaceSwitcher({
   addOpen.setAttribute('aria-label', 'Add local workspace…'); addOpen.title = 'Add local workspace…';
   const empty = document.createElement('p'); empty.className = 'ws-menu-empty'; empty.setAttribute('role', 'status'); empty.hidden = true;
   options.after(empty);
+  const more = document.createElement('p'); more.className = 'ws-more'; more.setAttribute('aria-hidden', 'true'); more.hidden = true;
+  options.after(more);
   // What a one-click add from the list is doing, or why it failed (#518).
   const menuStatus = document.createElement('p'); menuStatus.className = 'ws-menu-status'; menuStatus.setAttribute('role', 'status'); menuStatus.tabIndex = -1;
   menuStatus.hidden = true;
@@ -119,6 +125,9 @@ export function createWorkspaceSwitcher({
   // the list's tab stop (the row last focused), else the current one.
   let local = [], localLooking = false, localGeneration = 0, localAdding = "", localAddGeneration = 0;
   let localRemoving = "", listNote = "", listedTimer = null, stopped = false, stopKey = "";
+  // The workspace last picked here while its switch is still on its way (main may be taking it over from another
+  // window), else "": the moves go on from it, and a pick of the current row supersedes it.
+  let pickedId = "";
 
   const setStatus = (message = "", error = false) => {
     status.textContent = message;
@@ -130,6 +139,14 @@ export function createWorkspaceSwitcher({
   /** Where focus goes in the list: its tab stop, else the current row, else the first row. */
   const focusTarget = () => rowOf(stopKey) || rowOf(activeId) || menuItems()[0] || addOpen;
   const openInWindow = (id) => { openInNewWindow(id); };
+  /** Pick `id` (selectWorkspace: the shell's switch, which may answer `{ ok }`). It is the pending pick until the
+   * switch lands here (reset) or is refused. */
+  const pick = (id) => {
+    pickedId = id;
+    let answer;
+    try { answer = selectWorkspace(id); } catch { answer = { ok: false }; }
+    Promise.resolve(answer).then((r) => { if (pickedId === id && r?.ok === false) pickedId = ""; }, () => { if (pickedId === id) pickedId = ""; });
+  };
   const setMenuStatus = (message = "") => { menuStatus.textContent = message; menuStatus.hidden = !message; };
   /** A newer choice in this window (a served workspace, an add or pick from the dialog) takes the pending
    * one-click add's say over this window away, at once: the add still completes in main, but its
@@ -191,7 +208,8 @@ export function createWorkspaceSwitcher({
       const check = document.createElement("span");
       check.className = "ws-check";
       check.setAttribute("aria-hidden", "true");
-      check.replaceChildren(...(current ? [iconElement(document, "check", { size: 14 })] : elsewhere ? [iconElement(document, "newWindow", { size: 13 })] : []));
+      // Another window's row says so in words alone: its Open in new window button is the one window icon.
+      check.replaceChildren(...(current ? [iconElement(document, "check", { size: 14 })] : []));
       const copy = document.createElement("span");
       copy.className = "ws-option-copy";
       const line = document.createElement("span");
@@ -226,7 +244,9 @@ export function createWorkspaceSwitcher({
       }
       const choose = () => {
         supersedeLocalAdd();
-        if (!current) selectWorkspace(workspace.id);
+        // Picked unless it is already what this window shows or is about to show: the current row while another
+        // pick is on its way supersedes that pick (the latest pick wins).
+        if (workspace.id !== (pickedId || activeId)) pick(workspace.id);
         // A deployment no workspace matched: the Deployments page opens on its tab, where the full
         // reason and its fix are.
         if (said.deployment) requestDeploymentTab(workspace.id, said.deployment);
@@ -250,6 +270,14 @@ export function createWorkspaceSwitcher({
     else if (focusedKey) (rowOf(focusedKey) || focusTarget()).focus();
     else if (focused) focusTarget().focus();
     revealInScrollport(options, rowOf(activeId));
+    noteMore();
+  };
+  /** "N more below" while rows are cut off by the list's bounded height, at any scroll; none otherwise. */
+  const noteMore = () => {
+    const bottom = options.getBoundingClientRect().bottom;
+    const below = menuItems().filter((button) => button.getBoundingClientRect().bottom > bottom + 0.5).length;
+    more.hidden = !below;
+    more.textContent = below ? moreBelowText(below) : "";
   };
   // This computer's deployments: each option adds its deployment and opens it in this window (the Add dialog's
   // add, from the list). A row of the list that can't be opened (missing, not a deployment any more,
@@ -284,10 +312,16 @@ export function createWorkspaceSwitcher({
       const line = document.createElement("span"); line.className = "ws-option-line";
       const name = document.createElement("span"); name.className = "ws-option-name"; name.textContent = label;
       line.append(name);
-      if (stale) line.append(deploymentMark(document, stale));
-      const meta = document.createElement("span"); meta.className = "ws-option-meta"; meta.textContent = stale || pathTail(path, 2);
-      if (stale) meta.classList.add("ws-listed-state");
+      // A row that can't be opened says so in a word on its one line (no mark: the triangle is a view's "not
+      // live"); the sentence is its tooltip and what a screen reader hears.
+      const meta = document.createElement("span"); meta.className = "ws-option-meta";
+      meta.textContent = stale ? LISTED_STATE_WORD[candidate.state] : pathTail(path, 2);
       copy.append(line, meta);
+      if (stale) {
+        meta.classList.add("ws-listed-state"); meta.setAttribute("aria-hidden", "true");
+        const said = document.createElement("span"); said.className = "sr-only"; said.textContent = `, ${stale}`;
+        copy.append(said);
+      }
       button.append(createWorkspaceMark(document, { id: path, name: label }), copy, check);
       // A row that can't be opened has no dot: its read is not the deployment's.
       button.title = stale ? `${path}\n${stale}` : waitingMark(button, candidate.waiting, path);
@@ -585,7 +619,7 @@ export function createWorkspaceSwitcher({
     const list = [...workspaces.filter((candidate) => candidate.id !== workspace.id), workspace];
     render(workspace, list);
     closeModal(false);
-    selectWorkspace(candidateId(workspace));
+    pick(candidateId(workspace));
     focusTarget()?.focus();
   };
   const resolvedMutation = (result) => {
@@ -684,6 +718,7 @@ export function createWorkspaceSwitcher({
 
   const render = (workspace, list = []) => {
     activeId = workspace?.id || "";
+    if (activeId && activeId === pickedId) pickedId = ""; // the pick has landed
     if (workspace) choosing = false; // a window showing a workspace is not choosing one
     workspaces = Array.isArray(list) ? [...list] : [];
     if (workspace && !workspaces.some((candidate) => candidate.id === activeId)) workspaces.unshift(workspace);
@@ -749,6 +784,11 @@ export function createWorkspaceSwitcher({
   };
 
   options.addEventListener("keydown", onListKey);
+  options.addEventListener("scroll", () => noteMore());
+  // The list's height changes with the window and the sidebar: what is cut off is measured again.
+  const resized = typeof (document.defaultView ?? globalThis).ResizeObserver === "function"
+    ? new (document.defaultView ?? globalThis).ResizeObserver(() => noteMore()) : null;
+  resized?.observe(options);
   // The tab stop follows the row last focused (the roster's roving pattern).
   options.addEventListener("focusin", (event) => {
     const button = event.target?.closest?.(".ws-option");
@@ -788,16 +828,27 @@ export function createWorkspaceSwitcher({
         return true;
       };
     },
-    reset() { generation++; choosing = false; render(null); },
+    /** A switch landed here (shell.mjs restoreWorkspaceTabs): an older roster answer may not paint any more, and
+     * `current` (the workspace now selected) is marked current at once. The rows stay: the list never empties
+     * while the new workspace's roster is read, or when that read fails. */
+    reset(current = "") {
+      generation++;
+      choosing = false;
+      if (pickedId === current) pickedId = "";
+      const known = workspaces.find((candidate) => candidate.id === current) ?? null;
+      render(known, workspaces);
+      if (!known && current) { activeId = current; renderOptions(); }
+    },
     /** This window has no workspace (#481): the served choices main gave it, none current. Called again
      * as main serves more (#521), it repaints the list in place. */
     choose(list) { generation++; choosing = true; render(null, list); },
     /** Focus the list's current row, else its tab stop (the `w` key, the leader's `o`, app.workspaces). */
-    focusList() { const target = rowOf(activeId) || focusTarget(); target?.focus(); revealInScrollport(options, target); return !!target; },
+    focusList() { const target = rowOf(activeId) || focusTarget(); target?.focus(); revealInScrollport(options, target); noteMore(); return !!target; },
     /** The leader's ↑/↓ (`step` -1 / 1): select the previous / next row that can be opened, as a click does,
      * passing over those that can't be opened (a row another window shows is taken over). False at an end. */
     step(delta) {
-      const key = workspaceStep(drawn.map(({ key, openable }) => ({ key, openable })), activeId || null, delta);
+      // From the pick still on its way, else the current row: presses faster than a switch make as many moves.
+      const key = workspaceStep(drawn.map(({ key, openable }) => ({ key, openable })), pickedId || activeId || null, delta);
       const row = key === null ? null : drawn.find((entry) => entry.key === key);
       if (!row) return false;
       row.open();
@@ -808,6 +859,7 @@ export function createWorkspaceSwitcher({
     openModal,
     dispose() {
       stopped = true;
+      resized?.disconnect();
       timers.clearTimeout?.(listedTimer);
       win?.removeEventListener?.("focus", onFocus);
       win?.removeEventListener?.("blur", onBlur);

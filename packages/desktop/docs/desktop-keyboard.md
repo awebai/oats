@@ -608,8 +608,8 @@ It is a list of buttons, not a listbox, so the sidebar keys work on its rows.
   previous / next workspace of the list (see [the leader](#the-leader)); no
   chord does.
 
-**A workspace another window shows** is marked "In another window", with a
-new-window mark in place of the check. Picking it (a click, Enter, the
+**A workspace another window shows** says "In another window", in words.
+Picking it (a click, Enter, the
 leader's ↑ / ↓, the workspace select of Deployments or Workspace, or a spawn
 that hands off to its new instance there) moves it to this window; nothing
 else is focused. The other window lets it go: it shows the workspace it showed

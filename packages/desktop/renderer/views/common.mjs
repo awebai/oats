@@ -277,17 +277,27 @@ export function switchWorkspace(id, { focus = true, takeOver = false } = {}) {
 }
 /* Another window took this window's workspace `id` over (main's window:release-workspace; main has
    moved the binding, or moves it once this window answers or after its wait). This window shows the
-   most recent workspace of its session history that is not `id`, that main serves (`served`, the
+   most recent workspace of its session history that is not `id` (under any of its ids,
+   takenWorkspaceIds), that main serves (`served`, the
    choices main sent) and that no other window has; with none, it has no workspace and shows the
    switcher. It runs in the switch queue, after any switch already queued: one that moved this window
    away already leaves nothing to do. Late or on time, it ends the same way. Resolves when done. */
+/* The ids that name workspace `id` in a release (main's view id) here: it, and each deployment the served view
+   holds. Main may rekey a window bound to a deployment id to the view that holds it (#482) before this
+   window's own selection follows, so a release of the view is a release of what this window holds under
+   any of those ids. */
+export function takenWorkspaceIds(id, served) {
+  const view = (Array.isArray(served) ? served : []).find((w) => w?.id === id);
+  return new Set([id, ...(Array.isArray(view?.deployments) ? view.deployments : [])].filter((each) => typeof each === "string" && each));
+}
 export function leaveTakenWorkspace(id, served) {
   const choices = Array.isArray(served) ? served : [];
   const ids = new Set(choices.map((w) => w?.id).filter(Boolean));
+  const taken = takenWorkspaceIds(id, choices);
   const run = switching.then(async () => {
-    if (wsCurrent !== id) return;
+    if (!taken.has(wsCurrent)) return;
     for (const candidate of [...shownHistory].reverse()) {
-      if (candidate === id || !ids.has(candidate)) continue;
+      if (taken.has(candidate) || !ids.has(candidate)) continue;
       if (!claimBridge()) { setWorkspace(candidate); return; }
       // Main's binding is followed, as every switch's is.
       const r = await claim(candidate, { focus: false });

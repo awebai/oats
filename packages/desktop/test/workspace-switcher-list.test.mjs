@@ -6,7 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
-import { createWorkspaceSwitcher, LISTED_STATE_TEXT, LIST_UNSUPPORTED_TEXT, LOCAL_SECTION, REMOVE_HINT, listFailedText } from "../renderer/workspace-switcher.mjs";
+import { createWorkspaceSwitcher, LISTED_STATE_TEXT, LISTED_STATE_WORD, LIST_UNSUPPORTED_TEXT, LOCAL_SECTION, REMOVE_HINT, listFailedText } from "../renderer/workspace-switcher.mjs";
 
 const html = readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -40,13 +40,14 @@ function setup({ suggestions = [], list = { state: "ok" }, ...overrides } = {}) 
     note: () => document.querySelector(".ws-local-note")?.textContent ?? null };
 }
 
-test("the workspace list shows this computer's rows: an openable one with its path, a stale one with its state in words and a warning mark", async () => {
+test("the workspace list shows this computer's rows: an openable one with its path, a stale one with its state in a word, the sentence said and in its tooltip", async () => {
   const s = setup({ suggestions: [saved("tsm"), live("acme"), stale("gone", "missing"), stale("old", "not-a-deployment"), stale("locked", "unreadable")] });
   s.controller.choose([]); await tick();
   const group = s.document.querySelector(".ws-local-group");
   assert.equal(s.document.getElementById(group.getAttribute("aria-labelledby")).textContent, LOCAL_SECTION, "the section's heading names the group");
   assert.deepEqual(s.options().map((b) => b.querySelector(".ws-option-meta").textContent), [
-    "h/tsm", "h/acme", LISTED_STATE_TEXT.missing, LISTED_STATE_TEXT["not-a-deployment"], LISTED_STATE_TEXT.unreadable]);
+    "h/tsm", "h/acme", "Missing", "Not a deployment", "Can't be checked"]);
+  assert.deepEqual(LISTED_STATE_WORD, { missing: "Missing", "not-a-deployment": "Not a deployment", unreadable: "Can't be checked" });
   assert.deepEqual(LISTED_STATE_TEXT, {
     missing: "Missing: the folder is gone, or its volume isn't mounted",
     "not-a-deployment": "Not a deployment any more: no oats-local.yaml",
@@ -54,7 +55,8 @@ test("the workspace list shows this computer's rows: an openable one with its pa
   });
   const gone = s.row("gone");
   assert.equal(gone.getAttribute("aria-disabled"), "true", "a stale row can't be opened");
-  assert.equal(gone.querySelector(".deployment-mark").getAttribute("aria-label"), LISTED_STATE_TEXT.missing, "its state is never the mark alone");
+  assert.equal(gone.querySelector(".sr-only").textContent, `, ${LISTED_STATE_TEXT.missing}`, "its state, said in full");
+  assert.equal(gone.querySelector(".deployment-mark"), null, "no warning mark: the word says it");
   assert.equal(gone.title, `/h/gone\n${LISTED_STATE_TEXT.missing}`);
   assert.equal(s.row("acme").getAttribute("aria-disabled"), null);
   gone.click(); await tick();

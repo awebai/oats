@@ -199,23 +199,27 @@ instances, and is always shown. Its header holds **Add local workspace…** (the
    deployments list and the saved ones that are not open yet.
 
 With one workspace the list is one compact row. With many it scrolls within
-about six rows, and the current row stays in view.
+about six rows, the current row stays in view, and while rows are cut off
+below, a line under the list says how many ("2 more below").
 
 - **The current workspace** has the selection's background and a check; a
   screen reader hears it as current, and the list's description names it.
 - **What a row says.** A workspace: its name and one line of its machines
   ("This Mac · altair"), with a mark when one of them isn't live. A row on
-  this computer: its name and folder. A row of this computer's list that can't
-  be opened says why on its line and opens nothing: missing (the folder is
-  gone, or its volume isn't mounted), not a deployment any more (no
-  `oats-local.yaml`), or can't be checked (OATS couldn't read the folder).
+  this computer: its name and folder (the full path is its tooltip). A row of
+  this computer's list that can't be opened says why in a word on its one line
+  and opens nothing: **Missing** (the folder is gone, or its volume isn't
+  mounted), **Not a deployment** (no `oats-local.yaml` any more), or **Can't be
+  checked** (OATS couldn't read the folder). The full sentence is its tooltip
+  and what a screen reader hears; the warning mark is a workspace's "not live"
+  alone.
   With an oats that has no deployments list, the section shows the saved
   deployments and says "This oats can't list this computer's deployments.
   Update oats."; a list read that failed says "Couldn't read this computer's
   deployments:" and why.
 - **In another window.** A workspace another window of this Desktop shows
-  says "In another window" on its line, with a new-window mark in place of
-  the check.
+  says "In another window" on its line, in words: the row's one window icon
+  is its **Open in new window** button.
 - **The yellow dot.** A row has a small yellow dot when an instance of that
   workspace needs input: the claim the instance roster shows for that
   instance, from a running session (OATS with the `waiting-on-you` feature).

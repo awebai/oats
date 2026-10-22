@@ -79,7 +79,10 @@ test("the workspace list is disambiguated, keeps the focused row across a repain
   assert.deepEqual(selected, ["/org-a/oats"]);
   assert.equal(document.activeElement.dataset.workspaceId, "/org-a/oats", "the list stays where it is: there is no menu to close");
   document.querySelector('.ws-option[aria-current="true"]').click();
-  assert.deepEqual(selected, ["/org-a/oats"], "the current workspace is not selected again");
+  assert.deepEqual(selected, ["/org-a/oats", "/org-b/oats"], "the current row, picked while A's switch is on its way, supersedes it");
+  controller.reset("/org-b/oats"); // that switch lands
+  document.querySelector('.ws-option[aria-current="true"]').click();
+  assert.deepEqual(selected, ["/org-a/oats", "/org-b/oats"], "with no pick on its way, the current workspace is not selected again");
   controller.dispose(); dom.window.close();
 });
 
