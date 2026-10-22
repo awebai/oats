@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { instanceId, observeIdentities, observedEntry, panelInstances, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { memoryKey, paletteItems, preflightLine, roster } from "../lib/model.mjs";
 import { TAB_LIMIT, reduce } from "../lib/store.mjs";
-import { CLI, instanceRow, observed, rosterOf, stateOf, took } from "./helpers.mjs";
+import { CLI, DEPLOYMENT, failed, instanceRow, observed, rosterOf, stateOf, took } from "./helpers.mjs";
 
 /** The geometry of the frame before each key, and the panel's room (a split needs one). */
 const AT = Object.freeze({ page: 19, extent: 0, room: 19, cols: 38, panel: Object.freeze({ cols: 89, rows: 40 }) });
@@ -240,9 +240,10 @@ test("a workspace that goes from the views while it is open forgets its memory: 
 const KEYED = Object.freeze({ ...CLI, remote: Object.freeze(["roster", "session"]) });
 const IDENTITY = Object.freeze({ key: "github.com/acme/platform", ref: "main", keyFrom: "workspace", standalone: false, defaultTeam: Object.freeze({ label: "eng", team: "team-1" }), teams: Object.freeze({ eng: "team-1" }), teamsFrom: "observed" });
 const ALPHA = "dev-alpha", FAR = "/home/dev/Agents/acme", FAR_A = "dev-far-a";
-/** This machine's entry, reporting the workspace garnet's group joins. */
-function reporting(rows) {
-  const document = { ...rosterOf(rows), workspace: { reachable: true, ...IDENTITY } }, listed = rosterRows(document, KEYED);
+/** This machine's entry, reporting the workspace garnet's group joins (or `identity`'s), of the
+ *  deployment at `dir`. */
+function reporting(rows, { identity = IDENTITY, dir = DEPLOYMENT } = {}) {
+  const document = { ...rosterOf(rows), root: `${dir}/agents`, workspace: { reachable: true, ...identity } }, listed = rosterRows(document, KEYED);
   return observedEntry({ roster: document, workspaceStatus: { workspace: { name: "acme-platform" } }, observedAt: "2026-10-11T09:59:00.000Z" }, panelInstances(listed, listed.map((row) => ({ running: row.running, runtimeState: row.runtimeState, tmux: row.tmux }))), "2026-10-11T10:00:00.000Z");
 }
 const QUARTZ = "/home/dev/Agents/ledger", QUARTZ_A = "ledger-a";
@@ -265,3 +266,86 @@ function heardGroups(state, groups) {
 }
 /** Workspace A on this machine (dev-alpha) and on garnet (dev-far-a), the roster of other machines read. */
 const remoteA = (groups = [garnet()]) => heardGroups(stateOf(reporting([instanceRow("dev", ALPHA)]), { cli: KEYED }), groups).state;
+
+test("the process stopped while a restore asks another machine first: the preflight is given up and that tab is asked again, first, on the next event the restore hears; nothing opens in between", () => {
+  const a = remoteA();
+  const id = idOf(a, FAR_A);
+  const far = shown(reduce(key(on(a, FAR_A), "enter").state, { prepared: { id } }).state).state;
+  const back = go(toB(enter(far, ALPHA)), a.open).state;
+  assert.equal(back.opening?.id, id);
+  // The loop takes the state alone of this event (lib/main.mjs stopPreflight).
+  const stopped = reduce(back, { given: true });
+  assert.deepEqual([stopped.effect, stopped.state.opening, stopped.state.tabs], [null, null, []], "nothing opens while it is stopped, and no tab is left starting");
+  assert.deepEqual(stopped.state.restoring.queue.map((tab) => tab.name), [FAR_A, ALPHA]);
+  // Nor on the other events whose effect the loop does not take.
+  for (const event of [{ collecting: false }, { keyboard: "kitty" }, { capabilitiesTop: 0 }]) assert.equal(reduce(stopped.state, event).effect, null, Object.keys(event)[0]);
+  // Resumed: the next read asks garnet again, then the rest opens.
+  const resumed = reduce(stopped.state, { id: DEPLOYMENT, entry: reporting([instanceRow("dev", ALPHA)]), number: ++cycle });
+  assert.deepEqual([resumed.effect?.open?.id, resumed.state.opening?.id], [id, id]);
+  const done = settle(reduce(resumed.state, { prepared: { id } }).state).state;
+  assert.deepEqual([done.tabs.map((tab) => tab.name), done.restoring], [[FAR_A, ALPHA], null]);
+});
+
+const SECOND = "/srv/deploy-b", SECOND_A = "dev-second";
+const LOCKED = Object.freeze({ code: "E_LOCK_HELD", message: "another oats command holds the lock", origin: "kernel" });
+const secondRows = () => [instanceRow("dev", SECOND_A, { home: `${SECOND}/agents/dev/instances/${SECOND_A}`, repo: `${SECOND}/oats` })];
+
+test("a remembered tab of another deployment of the view, whose read failed with nothing kept, is not taken for gone: the restore waits for it, in its order, and opens it once that deployment is read again", () => {
+  // Workspace A on two deployments of this machine, a tab of each: the second's first.
+  let s = stateOf(reporting([instanceRow("dev", ALPHA)]), { cli: KEYED });
+  s = go(s, SECOND).state;
+  s = reduce(s, { id: SECOND, entry: reporting(secondRows(), { dir: SECOND }), number: ++cycle }).state;
+  s = go(s, DEPLOYMENT).state;
+  assert.equal(memoryKey(s, SECOND), memoryKey(s, DEPLOYMENT), "one view");
+  const a = opened(s, SECOND_A, ALPHA);
+  const b = toB(a);
+  const lost = reduce(b, { id: SECOND, entry: failed(b.entries.get(SECOND), LOCKED), number: ++cycle }).state;
+  const back = go(lost, DEPLOYMENT);
+  assert.deepEqual([back.effect?.open, back.state.tabs, back.state.restoring?.queue.map((tab) => tab.name)], [undefined, [], [SECOND_A, ALPHA]], "it waits, and the ones after it with it");
+  const read = reduce(back.state, { id: SECOND, entry: reporting(secondRows(), { dir: SECOND }), number: ++cycle });
+  assert.equal(read.effect?.open?.id, idOf(a, SECOND_A));
+  const done = settle(read.state).state;
+  assert.deepEqual([done.tabs.map((tab) => tab.name), done.terminal.name, done.restoring], [[SECOND_A, ALPHA], ALPHA, null]);
+});
+
+test("a split left with its focused group empty comes back so: the other group's tabs, its shown one, and the empty group focused", () => {
+  let a = opened(A(), "dev-a", "dev-b", "dev-c");
+  a = leaderThen(leaderThen(a, "left").state, "|").state;
+  const EMPTY = { tabs: ["dev-a:0", "dev-b:0", "dev-c:0"], split: "right", group: 1, shown: null, aside: "dev-b", focus: null, zoom: null };
+  assert.deepEqual(laid(a), EMPTY);
+  const back = settle(go(toB(leaderThen(a, "o").state), a.open).state).state;
+  assert.deepEqual([laid(back), back.restoring], [EMPTY, null]);
+  assert.equal(nameOf(back.recent.get(memoryKey(a, a.open))[0]), "dev-b", "the shown one is the most recent");
+});
+
+test("a workspace that goes from the views while another is open forgets its memory, and comes back with none; a read that failed with nothing kept forgets nothing, and the restore runs once it is read again", () => {
+  // quartz's workspace, opened from the switcher with a tab of quartz, then left for A.
+  let s = ["w", "j", "enter"].reduce((state, k) => key(state, k).state, remoteA([garnet(), quartz()]));
+  const id = idOf(s, QUARTZ_A), k = memoryKey(s, s.open);
+  s = shown(reduce(key(on(s, QUARTZ_A), "enter").state, { prepared: { id } }).state).state;
+  s = go(s, s.ctxs[0]).state;
+  const memory = (state) => [state.layouts.has(k), state.recent.has(k), state.places.has(k)];
+  assert.deepEqual(memory(s), [true, true, true]);
+  // The roster of other machines lists quartz no more: hidden, its memory goes; A is as it was.
+  const lost = heardGroups(s, [garnet()]);
+  assert.deepEqual(memory(lost.state), [false, false, false]);
+  assert.deepEqual([lost.state.view, lost.state.open, lost.effect], [s.view, s.open, null]);
+  // quartz listed again: its workspace opens with nothing of before.
+  const again = ["w", "j", "enter"].reduce((state, each) => key(state, each).state, heardGroups(lost.state, [garnet(), quartz()]).state);
+  assert.deepEqual([memoryKey(again, again.open), again.restoring, again.tabs], [k, null, []]);
+
+  // A workspace of this machine's second deployment alone, with a tab, left for A.
+  let t = go(stateOf(reporting([instanceRow("dev", ALPHA)]), { cli: KEYED }), SECOND).state;
+  t = reduce(t, { id: SECOND, entry: reporting(secondRows(), { identity: LEDGER, dir: SECOND }), number: ++cycle }).state;
+  const ledger = memoryKey(t, SECOND);
+  assert.notEqual(ledger, memoryKey(t, DEPLOYMENT));
+  t = go(enter(t, SECOND_A), DEPLOYMENT).state;
+  assert.equal(t.layouts.has(ledger), true);
+  // Its read fails with nothing kept: its view seems gone (it is in a view of its own), and nothing is forgotten.
+  t = reduce(t, { id: SECOND, entry: failed(t.entries.get(SECOND), LOCKED), number: ++cycle }).state;
+  assert.equal(memoryKey(t, SECOND), SECOND);
+  assert.deepEqual([t.layouts.has(ledger), t.recent.has(ledger)], [true, true]);
+  t = reduce(t, { id: SECOND, entry: reporting(secondRows(), { identity: LEDGER, dir: SECOND }), number: ++cycle }).state;
+  const home = go(t, SECOND);
+  assert.equal(home.effect?.open?.id, secondRows()[0].home, "its tab opens again");
+});

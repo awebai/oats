@@ -12,7 +12,7 @@
 import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings, chordKeys, chordsRead, paletteKeys } from "./actions.mjs";
 import { CHORDS, chordFamilyFrom, collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { defaultDetachKey } from "./config.mjs";
-import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, paletteStep, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, memoryKey, LIST_WORDS } from "./model.mjs";
+import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, paletteStep, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, memoryKey, memoryKeys, LIST_WORDS } from "./model.mjs";
 import { backKeyId, backKeySequences, isBackKey } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
 import { SPLIT_MIN, splitFits } from "./views/split.mjs";
@@ -199,8 +199,9 @@ function rehomed(before, state) {
 /** The switcher, shown: over whatever view was there. `said`: a line of its own to show. */
 const toSwitcher = (state, said = null) => next(state, { view: "switcher", switcher: Object.freeze({ ...state.switcher, editing: false, loose: false, line: said, refused: null, removing: null }) });
 
-/** After what the reader gave changed: when no view holds what was open any more (a machine that
- *  is no longer listed), the switcher is shown and says so, and nothing is open. Else the
+/** After what the reader gave changed: the memory of a workspace no view holds any more is
+ *  forgotten (remembered). When no view holds what was open any more (a machine that is no longer
+ *  listed), the switcher is shown and says so, and nothing is open. Else the
  *  collapse keys of this view whose instance is gone are forgotten, and the selection finds its
  *  place.
  *  THAT AN INSTANCE IS GONE IS KNOWN ONLY OF A DEPLOYMENT THAT WAS READ. One whose read failed
@@ -210,8 +211,8 @@ const toSwitcher = (state, said = null) => next(state, { view: "switcher", switc
  *  meanwhile (another deployment, the roster of other machines), so the next good read finds
  *  the user where they were. A machine's rows are kept by the shared rule while it does not
  *  answer, so they need no such care. */
-function settled(state, taken) {
-  const now = roster(taken);
+function settled(state, was) {
+  const taken = remembered(was), now = roster(taken);
   if (taken.open !== null && now.gone) {
     // The workspace's memory goes with it (reduceStep closes its tabs).
     const forgot = forgotten(taken, memoryKey(state, state.open));
@@ -226,6 +227,16 @@ function settled(state, taken) {
   const stillThere = [...taken.collapsed].filter((key) => !key.startsWith(mine) || present.has(key) || unknown.has(key.slice(mine.length)));
   const pruned = stillThere.length === taken.collapsed.size ? taken : next(taken, { collapsed: new Set(stillThere) });
   return { state: unknown.has(pruned.selected) ? pruned : rehomed(before, pruned), effect: null };
+}
+/** The memory of every workspace no view holds any more (memoryKeys) forgotten, a hidden one's
+ *  too, so one that comes back starts afresh; none while what the views hold is not known. */
+function remembered(state) {
+  if (!state.places.size && !state.recent.size && !state.layouts.size) return state;
+  const keys = memoryKeys(state);
+  if (keys === null) return state;
+  const kept = (map) => { const left = new Map([...map].filter(([key]) => keys.has(key))); return left.size === map.size ? map : left; };
+  const places = kept(state.places), recent = kept(state.recent), layouts = kept(state.layouts);
+  return places === state.places && recent === state.recent && layouts === state.layouts ? state : next(state, { places, recent, layouts });
 }
 
 /** A served deployment's entry from the reader, with the number of the cycle that gave it. An
@@ -702,11 +713,17 @@ function askedStill(step) {
 /** Whether `event` is the person's: a key, text, a paste, or the leader or a chord typed in a
  *  terminal. What the loop reports (a read, a viewer shown or ended, a preflight's answer) is not. */
 const personal = (event) => typeof event.key === "string" || event.text !== undefined || event.paste !== undefined || event.back !== undefined || event.chord !== undefined;
+/** The events whose effect the loop does not take (lib/main.mjs keeps their state alone): the
+ *  preflight given up and the reads dropped as the process stops, the keyboard protocol confirmed,
+ *  and what a frame drew. A restore takes no step on one of them, which would lose its open: the
+ *  next event it hears goes on. */
+const UNTAKEN = Object.freeze(["given", "collecting", "keyboard", "spawnDrawn", "spawnTop", "capabilitiesTop"]);
+const untaken = (event) => UNTAKEN.some((name) => event[name] !== undefined);
 
 /** THE MEMORY OF A WORKSPACE (docs/tui.md, "Tabs"), for the run only, per memoryKey: `places` its
  *  place in the list (opened), `recent` the palette's recency (recentWith), and `layouts` its tabs
  *  as it was left (layoutOf), which a restore opens again (restoreNext). The workspace `key` gone
- *  from the views (settled): all of it forgotten. */
+ *  from the views: all of it forgotten (settled, and remembered for the ones not open). */
 function forgotten(state, key) {
   const without = (map) => { const kept = new Map(map); kept.delete(key); return kept; };
   return { places: without(state.places), recent: without(state.recent), layouts: without(state.layouts) };
@@ -749,10 +766,12 @@ function workspaceLeft(before, step) {
 }
 /** The next step of a restore (docs/tui.md, "Tabs"): nothing while a tab is starting or another
  *  machine is asked (one open at a time), nor before the view's rows are read (an instance not
- *  read is not gone), nor, for another machine's tab, before the roster of other machines first
- *  answered. Then the next remembered tab whose instance can be opened now opens, after the ones
- *  before it, with the list keeping the focus; one that is gone or cannot be opened (retired,
- *  stopped) is dropped, the line saying nothing. Another machine's is asked first again, as an
+ *  read is not gone), nor, for a tab missing from them, before what holds it is known: the roster
+ *  of other machines first answered, for another machine's, and for this machine's, its
+ *  deployment read again when its read failed with nothing kept (unreadHolds). Then the next
+ *  remembered tab whose instance can be opened now opens, after the ones before it, with the list
+ *  keeping the focus; one that is gone or cannot be opened (retired, stopped) is dropped, the line
+ *  saying nothing. Another machine's is asked first again, as an
  *  open is, and dropped with the line that says why when that fails (prepared). The last one
  *  opened: restoreDone. */
 function restoreNext(state) {
@@ -763,7 +782,7 @@ function restoreNext(state) {
   let queue = r.queue;
   while (queue.length) {
     const tab = queue[0], row = rows.instances.find((each) => instanceId(each) === tab.id) ?? null;
-    if (row === null && tab.routed && !state.remote.rosterAnswered) break;
+    if (row === null && (tab.routed ? !state.remote.rosterAnswered : unreadHolds(state, tab.id))) break;
     queue = queue.slice(1);
     const decision = row === null ? null : openDecision(state, row, instanceActs(row));
     if (!decision?.open || state.tabs.length >= TAB_LIMIT) continue;
@@ -774,14 +793,18 @@ function restoreNext(state) {
   const left = next(state, { restoring: Object.freeze({ ...r, queue }) });
   return queue.length ? { state: left, effect: null } : restoreDone(left);
 }
+/** Whether instance `id` is one a deployment held when its read failed with nothing kept (`unread`,
+ *  see `took`): not gone, not known, until that deployment is read again. */
+const unreadHolds = (state, id) => [...state.unread.values()].some((ids) => ids.has(id));
 /** A remembered tab opened again: starting, after the others, shown in the one group a restore
  *  opens into, the list keeping the focus. */
 function restoredTab(state, { id, name, machine, routed }) {
   const tab = Object.freeze({ id, name, machine, routed, status: "starting", activity: false, group: 0 });
   return next(state, { tabs: Object.freeze([...state.tabs, tab]), terminal: Object.freeze({ id, name, machine, routed, group: 0, focus: "list", zoom: false, status: "starting" }) });
 }
-/** A restore's end: the tabs opened again take their groups, the split as remembered (when a group
- *  is left with none, the other takes the panel, as when a group's last tab closes: ungrouped);
+/** A restore's end: the tabs opened again take their groups, the split as remembered (when the
+ *  drops leave a group with none, the other takes the panel, as when a group's last tab closes:
+ *  ungrouped; a group left empty is empty again);
  *  each group shows its remembered tab, or the one a close would show in its place (the next, else
  *  the one before); the focused group's, with the remembered focus and zoom while the person has
  *  not taken the focus meanwhile, and the list's otherwise. It is the most recent for the palette
@@ -795,12 +818,17 @@ function restoreDone(state) {
     const mine = r.tabs.filter((tab) => tab.group === g), at = Math.max(0, mine.findIndex((tab) => tab.id === r.shown[g]));
     return [...mine.slice(at), ...mine.slice(0, at).reverse()].find((tab) => open.has(tab.id))?.id ?? null;
   };
-  const split = r.split !== null && shownIn(0) !== null && shownIn(1) !== null;
+  // A group that had no tab when the workspace was left is empty again; one emptied by the drops
+  // is no group.
+  const had = (g) => r.tabs.some((tab) => tab.group === g);
+  const split = r.split !== null && [0, 1].every((g) => shownIn(g) !== null || !had(g));
   const groupOf = new Map(r.tabs.map((tab) => [tab.id, tab.group]));
   const tabs = Object.freeze(s.tabs.map((tab) => { const group = split ? groupOf.get(tab.id) ?? 0 : 0; return tab.group === group ? tab : Object.freeze({ ...tab, group }); }));
   const group = split ? r.group : 0, focused = split ? shownIn(r.group) : shownIn(r.group) ?? shownIn(1 - r.group);
   const laid = next(s, { tabs, split: split ? r.split : null, group, aside: split ? shownIn(1 - r.group) : null, terminal: null });
-  const step = showTab(laid, focused, { focus: r.grant ? r.focus : "list", zoom: r.grant && r.zoom });
+  // The focused group empty, as it was left: nothing has the focus but the list, and the other
+  // group's shown tab is the most recent.
+  const step = focused === null ? { state: next(laid, { recent: recentWith(laid, laid.aside) }), effect: null } : showTab(laid, focused, { focus: r.grant ? r.focus : "list", zoom: r.grant && r.zoom });
   return { state: next(step.state, { selected: s.selected, top: s.top, loose: s.loose, detailTop: s.detailTop, filter: s.filter, collapsed: s.collapsed }), effect: step.effect };
 }
 
@@ -814,7 +842,7 @@ function reduceStep(state, event, keymap) {
   // workspace opened (its deployment of this machine, once served, in place of another machine's)
   // keeps them.
   if (step.state.open !== state.open && memoryKey(step.state, step.state.open) !== memoryKey(state, state.open)) step = workspaceLeft(state, step);
-  if (step.state.restoring !== null) { const more = restoreNext(step.state); step = { state: more.state, effect: both(step.effect, more.effect) }; }
+  if (step.state.restoring !== null && !untaken(event)) { const more = restoreNext(step.state); step = { state: more.state, effect: both(step.effect, more.effect) }; }
   // Where the focus was when another view (the switcher, the help) was shown over the list: in the
   // terminal, or in the palette opened from it, which give it to the list as they go. A workspace
   // left from that other view keeps it (layoutOf); back in the list it is forgotten.
@@ -1194,6 +1222,15 @@ function acted(state, event) {
   return { state, effect: null };
 }
 
+/** The preflight under way given up (the process stops: lib/main.mjs stopPreflight). A restore's
+ *  tab is put back first in its queue, asked again on the next event the restore hears (one whose
+ *  effect the loop takes: reduceStep). */
+function preflightGiven(state) {
+  const o = state.opening, r = state.restoring, tab = o.restore && r !== null ? r.tabs.find((each) => each.id === o.id) : undefined;
+  const back = tab !== undefined ? { restoring: Object.freeze({ ...r, queue: Object.freeze([tab, ...r.queue]) }) } : {};
+  return { state: next(state, { opening: null, ...back }), effect: null };
+}
+
 /** The instances the palette's recency keeps, per workspace. */
 const RECENT_KEPT = 50;
 /** The actions of the split (docs/tui.md, "Splits"). */
@@ -1481,7 +1518,7 @@ function reduced(state, event, keymap) {
   if (event.keyboard !== undefined) return { state: next(state, { keyboard: event.keyboard }), effect: null };
   if (event.acted !== undefined) return acted(state, event.acted);
   if (event.prepared !== undefined) return prepared(state, event.prepared);
-  if (event.given !== undefined) return state.opening?.phase === "preflight" ? { state: next(state, { opening: null }), effect: null } : stay;
+  if (event.given !== undefined) return state.opening?.phase === "preflight" ? preflightGiven(state) : stay;
   if (event.returned !== undefined) return returned(state, event.returned);
   if (event.shown !== undefined) return state.tabs.some((tab) => tab.id === event.shown.id) ? { state: tabWith(state, event.shown.id, { status: "open" }), effect: null } : stay;
   // A hidden tab's agent wrote (the panel says so once per hidden spell): its mark.

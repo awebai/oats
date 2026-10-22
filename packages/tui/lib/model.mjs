@@ -72,6 +72,13 @@ export const memoryKey = (state, id, at) => (id === null ? null : workspaceOf(st
 /** The palette's recency of the open workspace (`recent`, per memoryKey): its instances opened or
  *  shown in this run, the latest first. */
 export const recentOf = (state, at) => state.recent.get(memoryKey(state, state.open, at)) ?? [];
+/** The memoryKeys the views hold now (each view's id, and its deployments'), or null while that
+ *  is not known: a deployment whose read failed with nothing kept is in no view but its own until
+ *  it is read again (`unread`), so the view it was in may only seem gone. */
+export function memoryKeys(state, at) {
+  if (state.unread.size > 0) return null;
+  return new Set(viewModel(heldOf(state, at), TERMS).views.flatMap((v) => [v.id, ...v.deployments]));
+}
 
 const text = (value) => typeof value === "string" && value !== "";
 const pad = (n) => String(n).padStart(2, "0");

@@ -556,24 +556,30 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
   lasts.** Opening another workspace in [the switcher](#the-switcher)
   closes their viewers; their agents keep running, and nothing of a hidden
   workspace's terminals runs meanwhile. Coming back opens them again, one
-  at a time as an open goes, once the workspace's rows are read:
+  at a time as an open goes, once the workspace's rows are read; a tab of
+  one of its deployments whose last read failed waits, with the tabs after
+  it, until that deployment is read again:
   - the tabs in their order and their groups, the split, each group's
     shown tab, and the focus (the terminal's, zoomed or not, or the list's)
     as the workspace was left. The shown tab is the most recent for
     [the palette](#the-palette).
   - A tab whose instance is gone or cannot be opened now (retired,
-    stopped) is dropped, and nothing is said of it. A group left with no
-    tab goes, as when its last tab is closed; a shown tab dropped gives its
-    place to the next, else the one before.
+    stopped) is dropped, and nothing is said of it. A group the drops
+    leave with no tab goes, as when its last tab is closed; a group that
+    was empty when the workspace was left is empty again. A shown tab
+    dropped gives its place to the next, else the one before.
   - Another machine's tab is asked first again, as an open is; when that
-    fails, the line says why and the tab is dropped.
+    fails, the line says why and the tab is dropped. Suspending the TUI
+    while it is asked asks it again once the TUI is back.
   - A key pressed while the tabs open again leaves the focus where it is:
     the tabs still open, and the list keeps it. Opening an agent yourself
     meanwhile stops it: the tabs not open yet are dropped. Opening another
     workspace meanwhile closes what was opened, and keeps the rest for the
     next time.
 
-  The workspace no longer being listed closes them all, and forgets them.
+  A workspace no longer being listed forgets them, open (its tabs close)
+  or not; one listed again later starts with none. A read that failed is
+  not the workspace gone: it forgets nothing.
   Opening the same workspace again, with its deployment of this machine
   now opened beside another machine's, keeps them as they are. Nothing is
   kept after the run ends.
