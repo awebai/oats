@@ -59,9 +59,11 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  the last read that answered, and `failure`, the reason (`{ code, message }`) the last read failed
  *  with, or null once one answered. The switcher offers the rows this run does not serve.
  *  `identities`: what the identity reads learned of the rows of that list (lib/main.mjs), path ->
- *  `{ ok: true, workspace }` or `{ ok: false, reason }` (deployment-identity.mjs), the last answer for
- *  each, kept for the run: the switcher matches a listed deployment to its workspace by it, and a
- *  deployment opened from there is in its workspace's view before its first read (lib/model.mjs heldOf).
+ *  `{ ok: true, workspace, waiting }` or `{ ok: false, reason }` (deployment-identity.mjs), the last
+ *  answer for each, kept whole for the run: the switcher matches a listed deployment to its workspace
+ *  by it, a deployment opened from there is in its workspace's view before its first read
+ *  (lib/model.mjs heldOf), and its `waiting` is the list's dot until the slow schedule has answered
+ *  for that row (`listedWaiting`: path -> true | false | null, its last snapshot).
  *  `opening`: the agent of another machine whose terminal is being opened, or null:
  *  `{ id, phase: "preflight", name, machine, routed }` while that machine is asked whether its
  *  session is there; `name`, `machine` and `routed` are the row's as it was when Enter was
