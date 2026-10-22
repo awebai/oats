@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { killAndReap, oatsSocket } from "./helpers/host-fixture.mjs";
 import { join } from "node:path";
 import { CLI, v2Deployment, git } from "./helpers/v2-deployment.mjs";
@@ -358,7 +358,7 @@ for (const point of ["swap", "metadata", "baseline"]) {
     // recovers identity through the receipt. A baseline fault occurs after the
     // complete swap and must retain that new composition as well.
     const gate = point === "baseline"
-      ? { name: point, fn: "writeFileSync", path: retirementBaselinePath(home), throws: "ENOSPC" }
+      ? { name: point, fn: "renameSync", arg: 1, path: retirementBaselinePath(home), throws: "ENOSPC" }
       : { name: point, fn: "renameSync", arg: 1, path: join(home, point === "metadata" ? "instance.json" : "AGENTS.md"), throws: "EIO" };
     const failed = runFaulted(args, { cwd: fx.dep, env: fx.env, gateDir: join(fx.base, "faults-" + point), gates: [{ ...gate, armed: join(home, "adopt-acme.one") }] });
     assert.deepEqual(failed.fired, [point], "the intended filesystem operation failed");
@@ -487,7 +487,7 @@ for (const point of ["swap", "baseline"]) {
     // there rather than on adoption evidence, which a stateless move never creates.
     const gate = point === "swap"
       ? { name: point, fn: "renameSync", arg: 1, path: join(home, "AGENTS.md"), throws: "EIO" }
-      : { name: point, fn: "writeFileSync", path: baselinePath, throws: "ENOSPC" };
+      : { name: point, fn: "renameSync", arg: 1, path: baselinePath, throws: "ENOSPC" };
     const failed = runFaulted(args, { cwd: fx.dep, env: fx.env, gateDir: join(fx.base, "faults-stateless-" + point), gates: [{ ...gate, armed: receiptFile }] });
     assert.deepEqual(failed.fired, [point], "the intended operation failed after staging");
     assert.notEqual(failed.status, 0, failed.stdout + failed.stderr);
@@ -542,6 +542,49 @@ async function killAtCheckpoint(run, name, inspect) {
     await run.finish();
   }
 }
+
+test("package upgrade regression: killed short baseline write preserves session authority for same-key recovery", async t => {
+  const f = await fixture(t); const { fx, home, next } = f;
+  const baseline = retirementBaselinePath(home), original = readFileSync(baseline);
+  const current = json(join(home, "instance.json"));
+  assert.throws(() => writeRetirementBaseline(home, join(home, "work"), current.work, [], { launched: false }, { exclusive: true }), e => e.code === "EEXIST", "spawn's exclusive receipt creation still refuses an existing baseline");
+  assert.deepEqual(readFileSync(baseline), original);
+  const plan = await f.plan(), key = "short-baseline";
+  const receiptFile = join(home, ".oats", "upgrade-receipt." + key + ".json");
+  const marker = join(fx.base, "short-write-reached"), preload = join(fx.base, "short-baseline-write.mjs");
+  // Simulate a write that opens its destination and writes only a prefix before
+  // SIGKILL. Match both the old direct destination and its atomic private sibling.
+  // This never touches a host file: both paths are in the scratch deployment.
+  writeFileSync(preload, `import fs from 'node:fs'; import { syncBuiltinESMExports } from 'node:module';
+const original = fs.writeFileSync;
+fs.writeFileSync = function(path, bytes, options) {
+  if (String(path).startsWith(${JSON.stringify(baseline)}) && fs.existsSync(${JSON.stringify(join(home, "adopt-acme.one"))})) {
+    original.call(this, path, Buffer.from(bytes).subarray(0, 24), options);
+    original(${JSON.stringify(marker)}, String(path));
+    process.kill(process.pid, 'SIGKILL');
+  }
+  return original.apply(this, arguments);
+};
+syncBuiltinESMExports();
+`);
+  const args = [CLI, "instance", "upgrade", "seat", "--plan-revision", plan.planRevision, "--idempotency-key", key, "--json"];
+  const killed = spawnSync(process.execPath, ["--import", preload, ...args], { cwd: fx.dep, env: fx.env, encoding: "utf8", timeout: 30000 });
+  assert.equal(killed.signal, "SIGKILL", killed.stdout + killed.stderr);
+  assert.ok(existsSync(marker), "the replacement write was interrupted after its first bytes");
+  const receipt = json(receiptFile);
+  assert.equal(receipt.status, "partial");
+  assert.equal(receipt.step, "baseline");
+  assert.deepEqual(receipt.steps.hooks, ["acme.one"]);
+  assert.deepEqual(readFileSync(join(home, ".oats", ".staging-upgrade-" + receipt.receipt, "retirement-baseline.json")), original, "the original independent authority remains saved in staging");
+  const stillValid = readFileSync(baseline).equals(original);
+  const retried = fx.cli(args.slice(1));
+  assert.equal(retried.status, 0, retried.stdout + retried.stderr);
+  assert.equal(retried.json().result.status, "complete");
+  assert.equal(stillValid, true, "an incomplete private write never truncates published session authority");
+  assert.equal(json(join(home, "instance.json")).modules["acme.one"].commit, next.commit);
+  assert.equal(readFileSync(join(home, "adopt-acme.one"), "utf8"), "2.0.0\n", "successful hook is never repeated");
+  noStaging(home);
+});
 
 for (const checkpoint of ["before-hook", "after-hook"]) {
   test("package upgrade acceptance: killed " + checkpoint + " outcome remains uncertain across retry refusal", async t => {
