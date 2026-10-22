@@ -568,9 +568,11 @@ fs.writeFileSync = function(path, bytes, options) {
 syncBuiltinESMExports();
 `);
   const args = [CLI, "instance", "upgrade", "seat", "--plan-revision", plan.planRevision, "--idempotency-key", key, "--json"];
-  const killed = spawnSync(process.execPath, ["--import", preload, ...args], { cwd: fx.dep, env: fx.env, encoding: "utf8", timeout: 30000 });
+  const scratch = killedCliScratch(fx);
+  const killed = spawnSync(process.execPath, ["--import", preload, ...args], { cwd: fx.dep, env: scratch.env, encoding: "utf8", timeout: 30000 });
   assert.equal(killed.signal, "SIGKILL", killed.stdout + killed.stderr);
   assert.ok(existsSync(marker), "the replacement write was interrupted after its first bytes");
+  scratch.assertClean();
   const receipt = json(receiptFile);
   assert.equal(receipt.status, "partial");
   assert.equal(receipt.step, "baseline");
@@ -586,6 +588,13 @@ syncBuiltinESMExports();
   noStaging(home);
 });
 
+function killedCliScratch(fx) {
+  const path = join(fx.base, "killed-cli-tmp");
+  mkdirSync(path);
+  return { path, env: { ...fx.env, TMPDIR: path },
+    assertClean() { assert.deepEqual(readdirSync(path).filter(name => name.startsWith("oats-upgrade-plan-")), [], "planner scratch is discarded before resumable work begins"); } };
+}
+
 for (const checkpoint of ["before-hook", "after-hook"]) {
   test("package upgrade acceptance: killed " + checkpoint + " outcome remains uncertain across retry refusal", async t => {
     const f = await fixture(t, { nextMode: checkpoint === "after-hook" ? "succeed-once" : "fail" }); const { fx, home, next } = f;
@@ -595,11 +604,13 @@ for (const checkpoint of ["before-hook", "after-hook"]) {
     // Initial receipt, then inFlight receipt, then acknowledged outcome. Kill
     // after publishing inFlight but before spawning, or before the acknowledged
     // outcome replaces it after the hook has already returned successfully.
+    const scratch = killedCliScratch(fx);
     const gate = checkpoint === "before-hook"
       ? { name: checkpoint, fn: "renameSync", arg: 1, path: receiptFile, nth: 2, when: "after" }
       : { name: checkpoint, fn: "renameSync", arg: 1, path: receiptFile, armed: adoption };
-    const run = startGated(args, { cwd: fx.dep, env: fx.env, gateDir: join(fx.base, "gates-" + checkpoint), gates: [gate] });
+    const run = startGated(args, { cwd: fx.dep, env: scratch.env, gateDir: join(fx.base, "gates-" + checkpoint), gates: [gate] });
     await killAtCheckpoint(run, checkpoint, () => {
+      scratch.assertClean();
       const interrupted = json(receiptFile);
       assert.equal(interrupted.hooks.inFlight, "acme.one", "the durable receipt precedes invocation");
       assert.deepEqual(interrupted.steps.hooks, [], "no acknowledged outcome has been durably recorded");
@@ -649,11 +660,13 @@ for (const checkpoint of ["empty-mutex", "first-receipt"]) {
     const before = composed(home), plan = await f.plan(), key = "mutex-" + checkpoint;
     const mutex = join(home, ".oats-start.lock"), receiptFile = join(home, ".oats", "upgrade-receipt." + key + ".json");
     const args = [CLI, "instance", "upgrade", "seat", "--plan-revision", plan.planRevision, "--idempotency-key", key, "--json"];
+    const scratch = killedCliScratch(fx);
     const gate = checkpoint === "empty-mutex"
       ? { name: checkpoint, fn: "openSync", path: mutex, when: "after" }
       : { name: checkpoint, fn: "renameSync", arg: 1, path: receiptFile };
-    const run = startGated(args, { cwd: fx.dep, env: fx.env, gateDir: join(fx.base, "gates-" + checkpoint), gates: [gate] });
+    const run = startGated(args, { cwd: fx.dep, env: scratch.env, gateDir: join(fx.base, "gates-" + checkpoint), gates: [gate] });
     await killAtCheckpoint(run, checkpoint, () => {
+      scratch.assertClean();
       assert.equal(lstatSync(mutex).isFile(), true, "the upgrade mutex is an exclusive regular file");
       assert.equal(existsSync(receiptFile), false, "the owner has not published its first receipt");
       if (checkpoint === "empty-mutex") assert.equal(readFileSync(mutex, "utf8"), "", "the process dies after creation and before writing owner bytes");
