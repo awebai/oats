@@ -307,3 +307,34 @@ test('the workspace a window was opened on is in its history: taken over after o
   assert.deepEqual(w.claims, [[B, { focus: false }]]);
   assert.equal(w.common.currentWorkspace(), B);
 });
+
+/* ── the layout a take-over hands over (renderer/layout-handover.mjs) ── */
+const LAYOUT = { terminals: [{ instance: 'dev' }], split: null, active: 0 };
+
+test('handedLayout: a take-over\'s layout, read once by the switch\'s listeners, then null', async () => {
+  const w = await windowWith({ hash: workspaceHash(A), claim: async (id) => ({ ok: true, workspace: id, layout: LAYOUT }) });
+  const seen = [];
+  w.common.onWorkspaceChange((id) => seen.push([id, w.common.handedLayout(id), w.common.handedLayout(id)]));
+  assert.deepEqual(await w.common.switchWorkspace(B, { takeOver: true }), { ok: true });
+  assert.deepEqual(seen, [[B, LAYOUT, null]], 'once, during the listeners');
+  assert.equal(w.common.handedLayout(B), null, 'none after the switch');
+});
+
+test('handedLayout: a plain switch carries none, nor does a take-over main answered without one', async () => {
+  const w = await windowWith({ hash: workspaceHash(A), claim: async (id, options) => ({ ok: true, workspace: id, ...(options?.takeOver ? {} : { layout: LAYOUT }) }) });
+  const seen = []; w.common.onWorkspaceChange((id) => seen.push(w.common.handedLayout(id)));
+  await w.common.switchWorkspace(B);
+  await w.common.switchWorkspace(A, { takeOver: true });
+  assert.deepEqual(seen, [null, null]);
+});
+
+test('handedLayout: the layout is the bound workspace\'s only (a deployment id\'s view); another workspace gets none', async () => {
+  const w = await windowWith({ hash: workspaceHash(A), claim: async () => ({ ok: true, workspace: B, layout: LAYOUT }) });
+  const seen = []; w.common.onWorkspaceChange((id) => seen.push([id, w.common.handedLayout(C), w.common.handedLayout(id)]));
+  await w.common.switchWorkspace(C, { takeOver: true }); // C is a deployment of B: main bound B
+  assert.deepEqual(seen, [[B, null, null]], 'C, the id asked, is not the workspace bound; and a read for it spends the layout');
+  const v = await windowWith({ hash: workspaceHash(A), claim: async () => ({ ok: true, workspace: B, layout: LAYOUT }) });
+  const got = []; v.common.onWorkspaceChange((id) => got.push(v.common.handedLayout(id)));
+  await v.common.switchWorkspace(C, { takeOver: true });
+  assert.deepEqual(got, [LAYOUT], 'the view main bound gets it');
+});

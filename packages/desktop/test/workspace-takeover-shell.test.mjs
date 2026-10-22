@@ -1,9 +1,12 @@
-// A take-over, the holder's side: another window took this window's workspace over (main's
-// window:release-workspace). The shipped releaseTakenWorkspace answers main first, then leaves the workspace
+// A take-over in the shell, both sides. The holder (another window took its workspace over, main's
+// window:release-workspace): the shipped releaseTakenWorkspace answers main first, with the layout it shows of
+// the workspace (layout-handover.mjs describeLayout: its terminals and split), then leaves the workspace
 // (views/common.mjs leaveTakenWorkspace, faked here: it is pinned by window-workspace.test.mjs), then closes
 // every tab of it through the shipped background close (a terminal's through its own teardown, its viewer
-// detached) and forgets its layout. Tabs of other workspaces stay. Real shipped shell close/select/open and
-// terminal lifecycle (the harness of retired-tabs-shell.test.mjs); only xterm, IPC and panel answers are synthetic.
+// detached) and forgets its layout. Tabs of other workspaces stay. The window that took it: the shipped
+// restoreHandedLayout opens the handed terminals again, in order, and lays them out (composeLayout), under one
+// intent that a selection, a switch or a new connection ends. Real shipped shell close/select/open and terminal
+// lifecycle (the harness of retired-tabs-shell.test.mjs); only xterm, IPC and panel answers are synthetic.
 import test from "node:test";
 import { createInstanceRecency, recencyIdFromTerminalKey } from "../renderer/instance-recency.mjs";
 import { viewContext } from "./helpers/view-context.mjs";
@@ -29,6 +32,7 @@ import * as layout from "../renderer/split-layout.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
 import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
+import { describeLayout, composeLayout } from "../renderer/layout-handover.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const tick = () => new Promise(setImmediate);
@@ -50,7 +54,10 @@ function shell(t) {
   t.after(() => dom.window.close());
   const document = dom.window.document, requests = [], attachments = [], terms = [], detached = [], log = [];
   const c = {
-    document, window: dom.window, canAddressRemote, rowReason, console, navigator: { platform: "MacIntel" },
+    document, window: dom.window, canAddressRemote, rowReason, navigator: { platform: "MacIntel" },
+    // A restore's quiet notes (a terminal left out) are recorded, not printed.
+    warned: [], console: { ...console, warn: message => c.warned.push(message) },
+    describeLayout, composeLayout,
     getBinding, formatChord, stableFocusTarget: () => null,
     connectionGeneration: 0, subscribeConnections: () => () => {},
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
@@ -110,7 +117,7 @@ function shell(t) {
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "closeStage", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "walkedTabs", "visibleTabEntries", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "showTerminalContext",
     "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal", "syncTabNeedsInput", "focusNextGroup",
-    "releaseTakenWorkspace", "closeWorkspaceTabs"];
+    "releaseTakenWorkspace", "closeWorkspaceTabs", "restoreHandedLayout"];
   const functions = names.map(name => {
     const match = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];
@@ -147,15 +154,19 @@ async function holder(t) {
   assert.ok(s.c.split, "A has a split layout");
   return { s, a1, a2, b1, file };
 }
+const plain = value => JSON.parse(JSON.stringify(value)); // the vm's objects, compared by value
 const tabsOf = (s, workspace) => [...s.c.tabs.values()].filter(tab => tab.workspace === workspace);
 
 test("a take-over answers main first, then leaves the workspace, then closes every tab of it and forgets its layout", async t => {
   const { s, a1, a2, b1 } = await holder(t);
   s.log.length = 0;
+  const shown = describeLayout(s.c.tabs, s.c.split, s.c.activeTab, "A");
   await s.releaseTakenWorkspace({ request: 7, workspace: "A", workspaces: SERVED });
   await settle();
-  assert.deepEqual(s.log.slice(0, 2), [["answer", 7, null], ["leave", "A", SERVED, 3]],
-    "the answer, then the leave, while every tab of A is still open");
+  assert.deepEqual(plain(s.log.slice(0, 2)), [["answer", 7, { layout: shown }], ["leave", "A", SERVED, 3]],
+    "the answer, with the layout shown of A, then the leave, while every tab of A is still open");
+  assert.deepEqual(shown.terminals.map(ref => ref.instance), ["a1", "a2"], "its terminals only: the file tab does not move");
+  assert.deepEqual(plain(shown.split), { orientation: "row", focused: 1, groups: [{ tabs: [0], active: 0 }, { tabs: [1], active: 1 }] }, "and its split");
   assert.deepEqual(s.log.slice(2).map(([kind]) => kind).sort(), ["detach", "detach", "file-closed"], "then the closes");
   assert.deepEqual(tabsOf(s, "A"), [], "no tab of A is left");
   assert.equal(a1.term.disposed, 1); assert.equal(a2.term.disposed, 1, "each terminal's own teardown ran");
@@ -201,8 +212,10 @@ test("the tabs close even when the window could not leave (the leave failed), an
   assert.deepEqual(tabsOf(s, "A"), [], "closed in finally");
   const other = await holder(t);
   other.s.switchTo("B");
+  other.s.log.length = 0;
   await other.s.releaseTakenWorkspace({ request: 5, workspace: "A", workspaces: SERVED });
   await settle();
+  assert.deepEqual(other.s.log[0], ["answer", 5, null], "a window showing another workspace hands over no layout");
   assert.deepEqual(tabsOf(other.s, "A"), [], "a workspace it no longer shows: its tabs close all the same");
   assert.deepEqual(tabsOf(other.s, "B").map(tab => tab.title), ["b1"]);
 });
@@ -214,4 +227,126 @@ test("a release naming no workspace does nothing: no answer, no leave, no close"
   await settle();
   assert.deepEqual(s.log, []);
   assert.equal(tabsOf(s, "A").length, 3);
+});
+
+/* ── the window that took the workspace: restoreHandedLayout ── */
+
+const ref = name => ({ instance: name, home: `/synthetic/${name}`, agentsRoot: "/synthetic/agents" });
+/** A window that has just switched to A, taken over: nothing of A open here yet. */
+function receiver(t) {
+  const s = shell(t);
+  s.switchTo("X"); s.switchTo("A");
+  return s;
+}
+/** Run the restore: the panel answers `roster`, and each attach is answered as it is asked, in turn. */
+async function restore(s, layout, roster) {
+  const done = s.restoreHandedLayout("A", layout);
+  let finished = false; done.then(() => { finished = true; });
+  await tick();
+  assert.equal(s.requests.at(-1).path, "/api/panel?ws=A", "one read of the workspace's roster");
+  s.requests.at(-1).resolve({ instances: roster });
+  for (let answered = 0; !finished;) {
+    await tick();
+    while (answered < s.attachments.length) s.attachments[answered].resolve({ id: 100 + answered++ });
+  }
+  await settle();
+}
+const idOf = (s, name) => [...s.c.tabs].find(([, tab]) => tab.instanceRef?.instance === name)?.[0] ?? null;
+
+test("restore: the handed terminals open in the descriptor's order, and its split and active tab are composed", async t => {
+  const s = receiver(t);
+  const layout = { terminals: [ref("a2"), ref("a1"), ref("a3")],
+    split: { orientation: "col", focused: 1, groups: [{ tabs: [0, 2], active: 2 }, { tabs: [1], active: 1, weight: 2 }] }, active: 1 };
+  await restore(s, layout, [instance("a1"), instance("a2"), instance("a3")]);
+  assert.deepEqual(s.attachments.map(gate => gate.spec.window), ["a2", "a1", "a3"], "fresh viewers, in order");
+  const [a2, a1, a3] = ["a2", "a1", "a3"].map(name => idOf(s, name));
+  assert.ok(a1 && a2 && a3);
+  assert.deepEqual(plain(s.c.split), plain(composeLayout(layout, i => [a2, a1, a3][i]).split), "composeLayout's split");
+  assert.deepEqual(s.c.split.groups.map(group => [group.tabs, group.activeTab]), [[[a2, a3], a3], [[a1], a1]]);
+  assert.equal(s.c.split.focusedGroup, 2);
+  assert.equal(s.c.activeTab, a1, "the descriptor's active tab");
+  assert.equal(s.document.activeElement, s.c.tabs.get(a1) && s.terms[1].input, "its terminal takes the focus");
+  assert.deepEqual([...s.c.tabs.values()].map(tab => tab.kind), ["terminal", "terminal", "terminal"], "nothing but terminals opens");
+});
+
+test("restore: a handed layout described by the holder comes back with the same shape", async t => {
+  const { s: from } = await holder(t);
+  const layout = plain(describeLayout(from.c.tabs, from.c.split, from.c.activeTab, "A"));
+  const s = receiver(t);
+  await restore(s, layout, [instance("a1"), instance("a2")]);
+  assert.equal(layout.active, null, "the holder's active tab was its file tab, which does not move");
+  assert.deepEqual(plain(describeLayout(s.c.tabs, s.c.split, s.c.activeTab, "A")), { ...layout, active: 1 },
+    "the same terminals and split; active, the focused group's active terminal");
+});
+
+test("restore: a terminal that no longer resolves, or no longer runs, is left out; the rest open and lay out", async t => {
+  const s = receiver(t);
+  const layout = { terminals: [ref("gone"), ref("a1"), ref("stopped"), ref("a2")], split: null, active: 0 };
+  await restore(s, layout, [instance("a1"), instance("a2"), { ...instance("stopped"), running: false }]);
+  assert.deepEqual(s.attachments.map(gate => gate.spec.window), ["a1", "a2"]);
+  assert.deepEqual([...s.c.tabs.values()].map(tab => tab.instanceRef.instance), ["a1", "a2"]);
+  assert.equal(s.c.split, null);
+  assert.equal(s.c.activeTab, idOf(s, "a1"), "the active one left out: the first that opened");
+  assert.ok(s.c.warned.length >= 1, "quietly: no alert");
+  const none = receiver(t);
+  await restore(none, { terminals: [ref("gone")], split: null, active: 0 }, []);
+  assert.equal(none.c.tabs.size, 0); assert.equal(none.c.split, null, "nothing opened: nothing is laid out");
+});
+
+test("restore: a selection made meanwhile stops what is left: no further open, no focus taken", async t => {
+  const s = receiver(t);
+  const entry = s.c.contextRosterEl.querySelector("input");
+  const done = s.restoreHandedLayout("A", { terminals: [ref("a1"), ref("a2")], split: null, active: 1 });
+  await tick();
+  s.requests.at(-1).resolve({ instances: [instance("a1"), instance("a2")] });
+  await tick();
+  assert.equal(s.attachments.length, 1, "a1 is attaching");
+  s.c.tabOpenIntents.begin(); entry.focus(); // the operator selects something else
+  s.attachments[0].resolve({ id: 1 });
+  await done; await settle();
+  assert.equal(s.attachments.length, 1, "a2 never opens");
+  assert.equal(s.terms[0].focuses, 0); assert.equal(s.document.activeElement, entry, "focus stays where the operator put it");
+  assert.equal(s.c.split, null);
+});
+
+test("restore: a workspace switch or a new connection meanwhile stops it too", async t => {
+  const switched = receiver(t);
+  const one = switched.restoreHandedLayout("A", { terminals: [ref("a1")], split: null, active: 0 });
+  await tick();
+  switched.switchTo("B");
+  switched.requests.find(gate => gate.path === "/api/panel?ws=A").resolve({ instances: [instance("a1")] });
+  await one; await settle();
+  assert.deepEqual(switched.attachments, [], "switched away before the roster answered: nothing opens");
+  const reconnected = receiver(t);
+  const two = reconnected.restoreHandedLayout("A", { terminals: [ref("a1"), ref("a2")],
+    split: { orientation: "row", focused: 0, groups: [{ tabs: [0], active: 0 }, { tabs: [1], active: 1 }] }, active: 0 });
+  await tick();
+  reconnected.requests.at(-1).resolve({ instances: [instance("a1"), instance("a2")] });
+  await tick();
+  reconnected.c.connectionGeneration++;
+  reconnected.attachments[0].resolve({ id: 1 });
+  await two; await settle();
+  assert.equal(reconnected.attachments.length, 1, "a new connection: no further open");
+  assert.equal(reconnected.c.split, null, "and no layout composed");
+  const failed = receiver(t);
+  const three = failed.restoreHandedLayout("A", { terminals: [ref("a1")], split: null, active: 0 });
+  await tick();
+  failed.requests.at(-1).reject(new Error("panel unreachable"));
+  await three;
+  assert.deepEqual(failed.attachments, [], "an unread roster opens nothing");
+});
+
+// A window can take back a workspace it showed before (its tabs of it kept, as every switch keeps them) from the
+// window that has it now. The composed split replaces this window's own; a terminal of the workspace already
+// open here and not in the handed layout is then in no group of it. Proposed fix (shell.mjs restoreHandedLayout):
+// before `split = composed.split`, add this window's other terminal tabs of `ws` to the focused group, as
+// composeLayout does with a handed terminal no group lists.
+test("restore: a terminal of the workspace already open here joins the composed split", async t => {
+  const s = shell(t);
+  s.switchTo("A");
+  const own = await s.open("a5");
+  s.switchTo("X"); s.switchTo("A");
+  await restore(s, { terminals: [ref("a1"), ref("a2")], split: { orientation: "row", focused: 0, groups: [{ tabs: [0], active: 0 }, { tabs: [1], active: 1 }] }, active: 0 },
+    [instance("a1"), instance("a2"), instance("a5")]);
+  assert.ok(s.c.split.groups.some(group => group.tabs.includes(own.id)), "a5 is in a group");
 });

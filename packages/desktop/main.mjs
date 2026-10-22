@@ -56,6 +56,7 @@ import { createHostThemeSource, installHostThemeHandlers } from "./host-theme.mj
 import { createChordFamilySource, installChordFamilyHandlers } from "./chord-family.mjs";
 import { frameWorkspace, trustedRendererUrl, workspaceHash } from "./renderer/window-binding.mjs";
 import { validWorkspaceId } from "./renderer/workspace-id.mjs";
+import { validLayout } from "./renderer/layout-handover.mjs";
 import { createWindowSet } from "./window-set.mjs";
 import { parseWindowRecords, resolveView, restorePlan, clampBounds, windowTitle, createWindowRecords } from "./window-records.mjs";
 
@@ -843,7 +844,9 @@ function restoreWindows(launchKey = null) {
 // another workspace): a workspace another window holds moves to the asking window instead of being
 // refused, and the holder is never focused. Main asks the holder to release it
 // (window:release-workspace, answered once with window:release-answer) and moves the binding when it
-// answers or after RELEASE_WAIT_MS, whichever comes first. The holder is then bound to nothing: it
+// answers or after RELEASE_WAIT_MS, whichever comes first. Its answer may hand over the workspace's layout
+// (its terminals and its split: renderer/layout-handover.mjs), which goes on to the asking window when it is
+// valid, whole, and never in part. The holder is then bound to nothing: it
 // leaves that workspace whenever its renderer runs, on time or late (views/common.mjs
 // leaveTakenWorkspace), closing its tabs of it and showing its previous workspace, else the switcher.
 const RELEASE_WAIT_MS = 2000;
@@ -864,9 +867,14 @@ function askRelease(holder, key) {
     catch { settle(null); }
   });
 }
+/** The layout a holder's answer hands over: `{ layout }` with a descriptor renderer/layout-handover.mjs
+ * accepts, else none. An answer of any other shape is refused whole, never in part; the take-over still
+ * happens, without it. */
+const handedLayout = (answer) => (answer !== null && typeof answer === "object" && !Array.isArray(answer)
+  && Object.keys(answer).length === 1 && validLayout(answer.layout) ? answer.layout : null);
 async function takeOverWorkspace(win, key) {
   const from = windows.windowOf(key);
-  if (from && from !== win) await askRelease(from, key);
+  const layout = from && from !== win ? handedLayout(await askRelease(from, key)) : null;
   const result = windows.takeOver(win, key, from);
   if (!result.ok) return { ...result, workspaces: servedList };
   const released = result.released;
@@ -877,7 +885,7 @@ async function takeOverWorkspace(win, key) {
   }
   choosers.delete(win);
   bindWindow(win, key);
-  return { ok: true, workspace: key };
+  return { ok: true, workspace: key, ...(layout ? { layout } : {}) };
 }
 // The holder's answer to a release: accepted once, from the window asked, for a request still open.
 ipcMain.handle("window:release-answer", (e, request, payload) => {

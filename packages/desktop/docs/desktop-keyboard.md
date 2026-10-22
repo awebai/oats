@@ -621,8 +621,10 @@ waits at most 2 seconds for that window's answer; a window that answers late
 ends the same way. **Open in new window** still brings the other window to the
 front instead.
 
-No tab moves with the workspace: this window shows it with its own tabs, as
-a click on its row always does, and the other window closes its tabs of it.
+Only the terminals and the split move with the workspace: this window opens
+the same terminal tabs in the same split, each with a fresh viewer, and the
+agents keep running. File, brain and view tabs do not move: they close in the
+other window.
 
 ## Regions (F6)
 

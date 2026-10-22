@@ -14,6 +14,7 @@ import { parseWindowRecords, resolveView, restorePlan, clampBounds, windowTitle,
 import { trustedForgeFrame } from '../forge-proxy.mjs';
 import { validWorkspaceId } from '../renderer/workspace-id.mjs';
 import { workspaceHash, trustedRendererUrl } from '../renderer/window-binding.mjs';
+import { validLayout } from '../renderer/layout-handover.mjs';
 
 const RENDERER = 'file:///app/renderer/index.html';
 const A = 'ws:aaaaaaaaaaaaaaaaaaaa', B = 'ws:bbbbbbbbbbbbbbbbbbbb';
@@ -45,7 +46,7 @@ function boot({ records = [], served = SERVED, reread = null, dirs = ['/d/oats',
     // The take-over's wait (RELEASE_WAIT_MS), on fake timers: a test fires them (fire()).
     setTimeout: (fn, ms) => { const timer = { fn, ms, cleared: false }; timers.push(timer); return timer; },
     clearTimeout: (timer) => { if (timer) timer.cleared = true; },
-    createWindowSet, restorePlan, resolveView, clampBounds, windowTitle, trustedForgeFrame, validWorkspaceId, workspaceHash, trustedRendererUrl,
+    createWindowSet, restorePlan, resolveView, clampBounds, windowTitle, trustedForgeFrame, validWorkspaceId, workspaceHash, trustedRendererUrl, validLayout,
     terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(), workspaceDirs: dirs,
     // main's post of the window set to the backend (#1124), recorded: the views the windows show at each call.
     noteWindowViews: () => noted.push(main.windows.entries().map(([, key]) => key)),
@@ -467,4 +468,49 @@ test('an initial claim never takes over: it is refused as before, and the holder
   assert.deepEqual(holder.sent, []); assert.equal(b.main.windows.windowOf(B), holder);
   assert.equal((await b.claim(fresh, A, { focus: false, initial: true, takeOver: true })).code, 'choose', 'from then on it chooses');
   assert.deepEqual(holder.sent, []); assert.deepEqual(b.timers, []);
+});
+
+/* ── the layout a take-over hands over (renderer/layout-handover.mjs) ── */
+
+const LAYOUT = { terminals: [{ instance: 'dev', home: '/h/dev', agentsRoot: '/h' }, { instance: 'qa', server: 'rigel' }],
+  split: { orientation: 'row', focused: 1, groups: [{ tabs: [0], active: 0 }, { tabs: [1], active: 1, weight: 2 }] }, active: 1 };
+
+test('a holder\'s answer with a valid layout: it reaches the asker\'s claim answer as `layout`', async () => {
+  const { b, asker, holder } = twoWindows();
+  const claim = b.claim(asker, B, { takeOver: true });
+  await tick();
+  assert.deepEqual(await b.answer(holder, holder.sent[0][1].request, { layout: LAYOUT }), { ok: true });
+  assert.deepEqual(await claim, { ok: true, workspace: B, layout: LAYOUT });
+  assert.equal(b.main.windows.windowOf(B), asker);
+});
+
+test('an answer that is not exactly { layout } with a valid descriptor is refused whole: the take-over happens without it', async () => {
+  const invalid = [
+    ['a bad shape', { layout: { ...LAYOUT, terminals: [] } }],
+    ['an unknown key in the descriptor', { layout: { ...LAYOUT, tabs: [] } }],
+    ['a split index out of range', { layout: { ...LAYOUT, split: { ...LAYOUT.split, groups: [{ tabs: [0], active: 0 }, { tabs: [5], active: null }] } } }],
+    ['an extra key in the answer', { layout: LAYOUT, extra: 1 }],
+    ['a layout that is not an object', { layout: 'dev' }],
+    ['an answer that is not an object', 'layout'],
+    ['an array', [LAYOUT]],
+    ['the bare descriptor', LAYOUT],
+  ];
+  for (const [why, payload] of invalid) {
+    const { b, asker, holder } = twoWindows();
+    const claim = b.claim(asker, B, { takeOver: true });
+    await tick();
+    assert.deepEqual(await b.answer(holder, holder.sent[0][1].request, payload), { ok: true }, why);
+    assert.deepEqual(await claim, { ok: true, workspace: B }, `${why}: no layout`);
+    assert.equal(b.main.windows.windowOf(B), asker, `${why}: the binding moves all the same`);
+    assert.equal(b.main.windows.keyOf(holder), null);
+  }
+});
+
+test('a take-over that times out, or of a workspace no other window holds, carries no layout', async () => {
+  const { b, asker } = twoWindows();
+  const claim = b.claim(asker, B, { takeOver: true });
+  await tick();
+  b.fire();
+  assert.deepEqual(await claim, { ok: true, workspace: B });
+  assert.deepEqual(await b.claim(asker, 'remote:rigel:/x', { takeOver: true }), { ok: true, workspace: 'remote:rigel:/x' });
 });
