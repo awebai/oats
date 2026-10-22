@@ -89,7 +89,6 @@ see the [official catalog](official-catalog.md) for current pins.
 | `schedule-history`, `schedule-read-2` | run history with identity and provenance (gate on `schedule-read-2`) | `scheduleHistoryApi: 3` |
 | `workspace-v2` | `onboard`, `sync`, `package`, `workspace status`, `capabilities`, `souls` | `workspaceApi: 2` |
 | `instance-modules` | `instance.json` `modules`/`providers`/`workspace`; module drift in status; preview `modules[]` | |
-| `instance-upgrade` | `oats instance upgrade` plan/apply/undo for stopped local homes; optional `upgrade` hook; `modules.<cap>.previous`; `modules-upgraded` event; start/restart package `drift` | |
 | `spawn-provider-payload` | `oats spawn … --provider <cap> <key>=<value>` | |
 | `served-identity` | `decision.effective.providers`; the served `identity` in inspect and status | |
 | `packages-no-approval` | no package approval anywhere | |
@@ -3995,6 +3994,8 @@ oats instance attention [--message <text>] [--clear] --json
 
 ## Upgrading an instance's package modules
 
+Use a kernel whose `oats help` lists `instance upgrade`.
+
 ```text
 oats instance upgrade <instance> --plan [--json]
 oats instance upgrade <instance> --plan-revision <revision> --idempotency-key <key> [--json]
@@ -4456,7 +4457,7 @@ nothing, and the command already on the home is not disturbed.
 | the holder of the claim is gone | not refused | not refused | not refused | not refused |
 
 <a id="upgrade-lifecycle-pairs"></a>
-The `instance-upgrade` pairs use the same home's lifecycle claim:
+The `oats instance upgrade` pairs use the same home's lifecycle claim:
 
 | On the home | Arriving command | Answer |
 |---|---|---|

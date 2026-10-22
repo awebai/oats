@@ -143,8 +143,7 @@ stopped home's package modules can move through the upgrade act below.
 
 ## Moving a stopped home's package modules
 
-Requires a kernel whose `oats help` lists `instance upgrade` (feature
-`instance-upgrade` in `oats version --json`). A package pin and `oats sync`
+Requires a kernel whose `oats help` lists `instance upgrade`. A package pin and `oats sync`
 change the lock; they do not move an existing home's copies. When your task
 or human authorizes moving another instance, run from the deployment or a
 parent's home:
