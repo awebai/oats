@@ -89,6 +89,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `schedule-history`, `schedule-read-2` | run history with identity and provenance (gate on `schedule-read-2`) | `scheduleHistoryApi: 3` |
 | `workspace-v2` | `onboard`, `sync`, `package`, `workspace status`, `capabilities`, `souls` | `workspaceApi: 2` |
 | `instance-modules` | `instance.json` `modules`/`providers`/`workspace`; module drift in status; preview `modules[]` | |
+| `instance-upgrade` | `oats instance upgrade` plan/apply/undo for stopped local homes; optional `upgrade` hook; `modules.<cap>.previous`; `modules-upgraded` event; start/restart package `drift` | |
 | `spawn-provider-payload` | `oats spawn … --provider <cap> <key>=<value>` | |
 | `served-identity` | `decision.effective.providers`; the served `identity` in inspect and status | |
 | `packages-no-approval` | no package approval anywhere | |
@@ -3994,7 +3995,7 @@ oats instance attention [--message <text>] [--clear] --json
 
 ## Upgrading an instance's package modules
 
-Use a kernel whose `oats help` lists `instance upgrade`.
+Requires the `instance-upgrade` feature in `oats version --json` or `oats status --json`.
 
 ```text
 oats instance upgrade <instance> --plan [--json]
@@ -4457,7 +4458,7 @@ nothing, and the command already on the home is not disturbed.
 | the holder of the claim is gone | not refused | not refused | not refused | not refused |
 
 <a id="upgrade-lifecycle-pairs"></a>
-The `oats instance upgrade` pairs use the same home's lifecycle claim:
+The `instance-upgrade` pairs use the same home's lifecycle claim:
 
 | On the home | Arriving command | Answer |
 |---|---|---|
@@ -5389,7 +5390,7 @@ line and says that nothing was done:
   second for a retire, which does not wait).
   `details` is `{instance, home, lock, holder: "unknown"}`; the message is
   `<lock> is not a readable claim; nothing was done — inspect it and remove
-  it if no oats retire or oats instance stop holds it, then retry`.
+  it if no oats retire, oats instance stop or oats instance upgrade holds it, then retry`.
 - A claim whose holder is gone and that this kernel cannot take over is
   never removed either: its `nonce` is not the 32 hexadecimal digits a claim
   carries (a file written or damaged by hand); or it is the claim of a
@@ -5401,7 +5402,7 @@ line and says that nothing was done:
   The message is `the
   process that held <lock> (pid <pid>) is gone, and this file is not a claim
   this kernel can take over (<why>); nothing was done — inspect <lock> and
-  remove it if no oats retire or oats instance stop holds it, then retry` (0.52.0, #874; before,
+  remove it if no oats retire, oats instance stop or oats instance upgrade holds it, then retry` (0.52.0, #874; before,
   the first was answered as a live holder, to wait for, and the second as
   `E_LIFECYCLE_FAILED` with the system's `ENAMETOOLONG` about a file that
   does not exist). Removing that one file lets the next retire take the

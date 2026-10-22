@@ -5,7 +5,7 @@
   Apply with the plan revision and an idempotency key, then start the session.
   Providers with state must support the `upgrade` adoption hook; a provider
   refusal names the remedy. See [the deploy step](../upgrading.md#moving-existing-homes-to-locked-package-versions).
-  This command requires a kernel whose `oats help` lists `instance upgrade`; older
+  This command requires a kernel advertising `instance-upgrade`; older
   kernels keep their existing spawn-only behavior.
 
 ## Added
