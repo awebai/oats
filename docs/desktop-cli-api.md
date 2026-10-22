@@ -4016,15 +4016,19 @@ hashes the facts. Each moving module reports `{capability,
 from:{version,commit,digest}, to:{version,commit,integrity},
 skills:{added,removed,changed}, inject, hooks, provider:{decision,reason}}`.
 `inject` and `hooks` indicate changes. The plan also lists kept modules and
-member drift; a package no longer in the lock is kept. Member modules and
+member drift (excluded from `planRevision`), plus `homeChangedSinceSpawn`.
+A package no longer in the lock is kept. Member modules and
 the soul body never move. A provider refusal refuses the whole act.
 
 Apply rechecks the revision under the lifecycle claim (`E_PLAN_STALE` with
 a fresh plan on mismatch) and records an idempotency receipt. It stages the
 whole modules, skills, inject and hook composition through spawn's composer,
 using the soul at its recorded commit. It saves and verifies the previous
-state before provider hooks run, swaps the composition, retakes the retirement
-baseline and appends `modules-upgraded`. The moved module record's `previous`
+state before provider hooks run, swaps the composition, updates only a clean
+home's retirement `homeFingerprint`, commits the receipt, then appends
+`modules-upgraded`. A dirty home keeps its baseline file byte-identical, so
+older kernels also preserve its pre-upgrade edits at retirement. Work-tree
+fingerprints and digest versions always remain as recorded. The moved module record's `previous`
 is described under [`instance.json`](#instancejson).
 Upgrade runs no launch hooks. When a moved module's new manifest has no launch
 hook, apply removes its recorded launch/environment contribution in the same
@@ -4054,10 +4058,11 @@ idempotent hooks, including an uncertain one. A subsequent hook failure stays
 partial; it cannot authorize rollback. Start refuses with `E_UPGRADE_PARTIAL`
 while the receipt is partial. If completion is impossible, the remedy is respawn.
 
-The commit boundary is after swap, baseline and event: the receipt becomes
-`status: "complete"` with `steps.cleaned: false` before staging cleanup.
+The commit boundary is after swap and baseline: the receipt becomes
+`status: "complete"` with `steps.cleaned: false` before the success event and staging cleanup.
 Successful cleanup sets `steps.cleaned: true`. A failure after that boundary
-leaves the upgrade committed. The same-key retry runs cleanup only, without
+leaves the upgrade committed. The same-key retry finishes event publication
+and cleanup, without
 hooks or copies. Start is allowed with one warning naming that retry; a new
 upgrade or undo plan refuses until cleanup finishes. `E_UPGRADE_PARTIAL`
 applies only before commit. Retirement adds no special cleanup behavior.

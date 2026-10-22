@@ -857,11 +857,15 @@ the staged new copy, with the usual lifecycle environment plus:
 - `OATS_META`: the old recorded `capabilityMeta[capability]`;
 - `OATS_UPGRADE_FROM`: JSON containing the recorded `from`, `commit` and
   `digest`;
-- `OATS_UPGRADE_TO`: JSON containing the locked destination entry.
+- `OATS_UPGRADE_TO`: JSON containing the locked destination entry;
+- `OATS_UPGRADE_MODULE_DIR`: the module's final `<home>/.oats/modules/<cap>`
+  directory. Register host artifacts against this path, never the staging path,
+  which is removed after the move.
 
 In `plan`, the hook is read-only. It prints `{"adopt":true}`, or
 `{"adopt":false,"reason":"…","remedy":"…"}`. A module with recorded
-capability metadata, or one declaring `spawn` or `launch`, must declare this
+capability metadata, or whose recorded old or destination manifest declares
+`spawn` or `launch`, must declare this
 hook; otherwise the plan refuses it and names respawn as the remedy. A module
 with neither state nor those hooks can move without an upgrade hook.
 
@@ -871,7 +875,8 @@ the kernel records `meta` as the module's new capability metadata. Apply must
 be idempotent. A non-zero exit must leave no effects of its own, using
 atomicity or compensation. The kernel treats that result as a hook reporting
 failure; rollback restores composed home bytes only, and provider host effects
-remain the provider's responsibility.
+remain the provider's responsibility. The refusal error retains a bounded
+provider `warning`, or stderr when no warning was reported.
 
 Before commit, a failed upgrade rolls back only if no hook succeeded and no
 hook outcome is uncertain. A hook's non-zero result must be observed and
@@ -883,8 +888,9 @@ idempotent hook again; a later refusal does not permit restoring old modules.
 Its `partial` receipt names the same idempotency key to retry pending work,
 or respawn if it cannot finish. Start refuses a partial upgrade. See
 [the operator workflow](upgrading.md#moving-existing-homes-to-locked-package-versions).
-After swap, baseline and event commit the receipt, cleanup failure is retried
-without hooks or copies; start is allowed with a warning naming that retry.
+After swap and baseline commit the receipt, the kernel publishes the success
+event and cleans staging. A failure after commit is retried without hooks or
+copies; start is allowed with a warning naming that retry.
 Undo uses the hook of the version being restored, so it requires that version
 to support adoption too. The event must never declare `required: true`.
 

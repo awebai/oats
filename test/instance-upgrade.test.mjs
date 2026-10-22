@@ -3,7 +3,7 @@
  * checked against effects rather than a mocked composer or lifecycle implementation. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync, renameSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { killAndReap, oatsSocket } from "./helpers/host-fixture.mjs";
 import { join } from "node:path";
@@ -55,9 +55,9 @@ function lock(fx, version) {
   writeLock(fx.dep, { lockfileVersion: 3, packages: { "acme.pkg": entry } });
   return entry;
 }
-async function fixture(t, { names = ["acme.one"], oldMode = "adopt", nextMode = "adopt", memberModule = false, oldLaunch = false, nextLaunch = false } = {}) {
+async function fixture(t, { names = ["acme.one"], oldMode = "adopt", nextMode = "adopt", memberModule = false, oldLaunch = false, nextLaunch = false, workMode = "directory" } = {}) {
   const fx = v2Deployment({ t,
-    souls: { dev: { soul: { capabilities: Object.fromEntries([["oats.core", "off"], ...names.map(n => [n, { from: "package" }]), ...(memberModule ? [["local.style", { from: "here" }]] : [])]) }, skills: { "soul-guide": { text: "Keep this recorded soul skill." } } } },
+    souls: { dev: { soul: { work: workMode, capabilities: Object.fromEntries([["oats.core", "off"], ...names.map(n => [n, { from: "package" }]), ...(memberModule ? [["local.style", { from: "here" }]] : [])]) }, skills: { "soul-guide": { text: "Keep this recorded soul skill." } } } },
     files: pkg("1.0.0", oldMode, names, oldLaunch),
     capabilities: memberModule ? { "local.style": { manifest: { inject: "inject.md" }, files: { "inject.md": "Recorded member instructions." } } } : {},
   });
@@ -321,6 +321,7 @@ test("package upgrade acceptance: CLI text and JSON plan and apply operate on th
   assert.equal(text.status, 0, text.stdout + text.stderr);
   const revision = text.stdout.match(/package upgrade seat: plan ([a-f0-9]{24})/);
   assert.ok(revision, text.stdout);
+  assert.match(text.stdout, /home changed since spawn: no/);
   assert.match(text.stdout, /acme\.one: 1\.0\.0 @ [a-f0-9]+ → 2\.0\.0 @ [a-f0-9]+/);
   assert.ok(text.stdout.includes("--plan-revision " + revision[1] + " --idempotency-key <key>"));
   const planned = fx.cli(["instance", "upgrade", "seat", "--plan", "--json"]);
@@ -737,4 +738,129 @@ test("package upgrade regression: baseline projection accepts only present exact
   await fx.inEnv(() => project([".projection-file"]));
   assert.equal(json(baselinePath).homeFingerprint, JSON.parse(original).homeFingerprint, "one-time projection holds the final home bytes after the file is removed");
   rmSync(temporary);
+});
+
+for (const [scope, workMode, relativePath, expectedClass, copyRoot] of [
+  ["home", "directory", "STATE.md", "changed instance-home bytes", "home"],
+  ["worktree", "worktree", "session-work.txt", "untracked or ignored worktree bytes", "repo"],
+]) test(`package upgrade regression: pre-upgrade ${scope} edits remain retirement work`, async t => {
+  const { fx, home, plan, apply } = await fixture(t, { workMode, oldMode: "no-upgrade", nextMode: "no-upgrade" });
+  const baselineBytes = readFileSync(retirementBaselinePath(home));
+  const baselineBefore = JSON.parse(baselineBytes);
+  const bytes = "agent work written before the upgrade\n";
+  writeFileSync(join(home, ...(scope === "home" ? [] : ["work"]), relativePath), bytes);
+  const shown = await plan();
+  assert.equal(shown.homeChangedSinceSpawn, scope === "home");
+  await apply({ planRevision: shown.planRevision, idempotencyKey: "preserve-work" });
+  if (scope === "home") assert.deepEqual(readFileSync(retirementBaselinePath(home)), baselineBytes, "a dirty home preserves the entire baseline for older kernels");
+  if (scope === "home") {
+    fx.commit(pkg("3.0.0", "no-upgrade")); lock(fx, "3.0.0");
+    const later = await plan();
+    assert.equal(later.homeChangedSinceSpawn, true);
+    await apply({ planRevision: later.planRevision, idempotencyKey: "preserve-again" });
+    assert.deepEqual(readFileSync(retirementBaselinePath(home)), baselineBytes, "later moves also keep the original dirty baseline");
+  }
+  const baselineAfter = json(retirementBaselinePath(home));
+  assert.equal(baselineAfter.digestVersion, baselineBefore.digestVersion, "upgrade preserves the recorded digest version");
+  if (scope === "worktree") assert.equal(baselineAfter.generatedWorkFingerprint, baselineBefore.generatedWorkFingerprint, "upgrade never retakes the generated work baseline");
+  const retired = await fx.inEnv(() => retireInstance(fx.root, "seat", { tmuxSession: "oats-test-nosuch" }));
+  assert.ok(retired.workRecovery?.classes?.includes(expectedClass), JSON.stringify(retired.workRecovery));
+  assert.equal(readFileSync(join(retired.workRecovery.path, copyRoot, relativePath), "utf8"), bytes, "recovery keeps the pre-upgrade edit");
+});
+
+test("package upgrade regression: clean home retires without recovery", async t => {
+  const f = await fixture(t, { oldMode: "no-upgrade", nextMode: "no-upgrade" });
+  const shown = await f.plan();
+  assert.equal(shown.homeChangedSinceSpawn, false);
+  await f.apply({ planRevision: shown.planRevision, idempotencyKey: "clean-home" });
+  const retired = await f.fx.inEnv(() => retireInstance(f.fx.root, "seat", { tmuxSession: "oats-test-nosuch" }));
+  assert.equal(retired.workRecovery, undefined);
+  assert.equal(retired.removedDir, true);
+});
+
+test("package upgrade regression: stray previous entries refuse before plan hooks", async t => {
+  const f = await fixture(t); const { fx, home } = f;
+  const invoked = join(fx.base, "plan-hook-ran");
+  fx.commit({ ...pkg("2.1.0"), "oats-package/capabilities/acme.one/upgrade.mjs": `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(invoked)}, 'ran'); console.log('{"adopt":true}');` });
+  lock(fx, "2.1.0");
+  mkdirSync(join(home, ".oats/previous"));
+  writeFileSync(join(home, ".oats/previous/stray"), "inspect me");
+  await assert.rejects(f.plan(), e => e.code === "E_UPGRADE_INTEGRITY" && /previous-state entry/.test(e.message));
+  assert.equal(existsSync(invoked), false, "no hook runs before the previous-state preflight");
+});
+
+test("package upgrade regression: old spawn and launch state requires adoption even without recorded meta", async t => {
+  const f = await fixture(t, { oldLaunch: true, nextMode: "no-upgrade", nextLaunch: false });
+  const file = join(f.home, "instance.json"), meta = json(file);
+  delete meta.capabilityMeta["acme.one"];
+  writeFileSync(file, JSON.stringify(meta, null, 2) + "\n");
+  const shown = await f.plan();
+  assert.equal(shown.modules[0].provider.decision, "refuse");
+  assert.match(shown.modules[0].provider.reason, /does not declare an upgrade hook/);
+});
+
+for (const report of ["stderr", "warning"]) test(`package upgrade regression: failed hook preserves bounded ${report} diagnosis`, async t => {
+  const f = await fixture(t); const { fx } = f;
+  const diagnostic = "provider diagnosis " + report + " ";
+  fx.commit({ ...pkg("2.1.0"), "oats-package/capabilities/acme.one/upgrade.mjs": `if(process.env.OATS_UPGRADE_PHASE==='plan')console.log('{"adopt":true}');else { ${report === "warning" ? "console.log(JSON.stringify({warning:" + JSON.stringify(diagnostic) + "+'x'.repeat(6000)}));" : "process.stderr.write(" + JSON.stringify(diagnostic) + "+'x'.repeat(6000));"} process.exit(1); }` });
+  lock(fx, "2.1.0"); const shown = await f.plan();
+  await assert.rejects(f.apply({ planRevision: shown.planRevision, idempotencyKey: "diagnosis-" + report }), e => {
+    assert.ok(e.message.includes(diagnostic), e.message);
+    assert.ok(e.message.length < 4096, "provider output stays bounded");
+    return e.code === "E_UPGRADE_REFUSED";
+  });
+});
+
+test("package upgrade regression: hook receives final module directory in plan and apply", async t => {
+  const f = await fixture(t); const { fx, home } = f;
+  const final = join(home, ".oats/modules/acme.one");
+  const planPath = join(fx.base, "plan-module-dir");
+  fx.commit({ ...pkg("2.1.0"), "oats-package/capabilities/acme.one/upgrade.mjs": `import fs from 'node:fs'; const dir=process.env.OATS_UPGRADE_MODULE_DIR; if(process.env.OATS_UPGRADE_PHASE==='plan'){fs.writeFileSync(${JSON.stringify(planPath)},String(dir));console.log('{"adopt":true}');}else console.log(JSON.stringify({meta:{registeredModuleDir:dir}}));` });
+  lock(fx, "2.1.0"); const shown = await f.plan();
+  assert.equal(readFileSync(planPath, "utf8"), final);
+  await f.apply({ planRevision: shown.planRevision, idempotencyKey: "final-dir" });
+  assert.equal(json(join(home, "instance.json")).capabilityMeta["acme.one"].registeredModuleDir, final);
+  assert.equal(existsSync(final), true);
+});
+
+test("package upgrade regression: member drift stays informational across plan and apply", async t => {
+  const f = await fixture(t, { memberModule: true });
+  const shown = await f.plan();
+  f.fx.commit({ "capabilities/local.style/inject.md": "new member source, not part of the package move" });
+  const again = await f.plan();
+  assert.notDeepEqual(again.memberDrift, shown.memberDrift);
+  assert.equal(again.planRevision, shown.planRevision, "member movement must not stale a package move");
+  assert.equal((await f.apply({ planRevision: shown.planRevision, idempotencyKey: "member-info" })).status, "complete");
+});
+
+test("package upgrade regression: rendered hook commands survive a quoted home path", async t => {
+  const f = await fixture(t); const { fx } = f;
+  const root = fx.root + "'quoted";
+  renameSync(fx.root, root);
+  const home = f.home.replace(fx.root, root);
+  // Model a deployment rooted under a quoted parent with valid spawn authority.
+  // The package repository paths stay unchanged, because repo refs reject quotes.
+  const meta = json(join(home, "instance.json"));
+  meta.soulDir = meta.soulDir.replace(fx.root, root);
+  writeFileSync(join(home, "instance.json"), JSON.stringify(meta, null, 2) + "\n");
+  writeRetirementBaseline(home, join(home, "work"), meta.work, [], { launched: false });
+  const shown = await fx.inEnv(() => planUpgrade(fx.dep, root, "seat", { remoteOptions: fx.remoteOptions }));
+  await fx.inEnv(() => applyUpgrade(fx.dep, root, "seat", { remoteOptions: fx.remoteOptions, planRevision: shown.planRevision, idempotencyKey: "quote" }));
+  const row = json(join(home, "instance.json")).capabilityRuntime.find(c => c.id === "acme.one");
+  assert.ok(home.includes("'"));
+  assert.doesNotMatch(row.hooks.retire, /staging-upgrade/);
+  const ran = spawnSync(row.hooks.retire, { shell: true, cwd: home, env: fx.env, encoding: "utf8" });
+  assert.equal(ran.status, 0, ran.stderr);
+});
+
+test("package upgrade regression: stateless failure publishing commit leaves no success event", async t => {
+  const f = await fixture(t, { oldMode: "no-upgrade", nextMode: "no-upgrade" }); const { fx, home } = f;
+  const shown = await f.plan(), key = "commit-failure";
+  const args = [CLI, "instance", "upgrade", "seat", "--plan-revision", shown.planRevision, "--idempotency-key", key, "--json"];
+  const before = composed(home);
+  const failed = runFaulted(args, { cwd: fx.dep, env: fx.env, gateDir: join(fx.base, "commit-fault"), gates: [{ name: "commit", fn: "writeFileSync", prefix: "", contains: '\"status\": \"complete\"', throws: "ENOSPC" }] });
+  assert.deepEqual(failed.fired, ["commit"]);
+  assert.notEqual(failed.status, 0);
+  assert.deepEqual(composed(home), before);
+  assert.equal(readEvents(home).events.filter(e => e.kind === "modules-upgraded").length, 0, "rolled back moves must not be announced");
 });

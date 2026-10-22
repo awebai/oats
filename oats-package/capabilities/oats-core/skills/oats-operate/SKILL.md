@@ -172,8 +172,9 @@ and a refusal on retry stays partial. Start refuses with `E_UPGRADE_PARTIAL`
 until it finishes. If it cannot finish, respawn. Never restore old modules by
 hand under adopted or possibly adopted host state.
 
-After swap, baseline and event commit the receipt, cleanup failure leaves a
-complete upgrade. The same-key retry cleans up only, without hooks or copies.
+After swap and baseline commit the receipt, the success event is published
+and staging is cleaned. Failure leaves a complete upgrade. The same-key retry
+finishes event publication and cleanup, without hooks or copies.
 Start is allowed with one warning naming the retry. A new upgrade or undo
 plan refuses until that cleanup finishes; finish it before another move.
 

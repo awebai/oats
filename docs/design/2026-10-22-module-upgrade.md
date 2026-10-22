@@ -36,12 +36,15 @@ It runs from the deployment, or from a parent's home, with the same instance res
   directory. Start never reclaims the mutex and its busy message names the
   same-key upgrade retry. A partial receipt refuses starts until finalization
   completes.
+- **The previous-state directory has no stray entries.** Check it before any
+  provider plan or apply hook runs.
 - **The lock's package commit and integrity verify,** just as at spawn (`moduleSource`).
 
 ## Plan (condition 3)
 
 The plan is read-only. It returns:
-- a revision, sha256 over the facts, the same `planRevision` pattern as stop and retire;
+- `homeChangedSinceSpawn`, whether retirement must preserve home changes;
+- a revision, sha256 over the package-move facts (member drift is informational), the same `planRevision` pattern as stop and retire;
 - per moving module: `{capability, from:{version,commit,digest}, to:{version,commit,integrity}, skills:{added,removed,changed}, inject:changed?, hooks:changed?, provider:{decision, reason}}`;
 - kept modules, with the reason;
 - member drift, for information.
@@ -61,10 +64,10 @@ The plan writes nothing into the home, because the retire baseline compares home
   A hook that exits non-zero must leave no effects of its own, by atomicity or
   compensation. The kernel treats a failed hook as having made no changes;
   its rollback covers composed home bytes, not provider-owned host effects.
-  Errors identify a hook that reported failure and state that its host effects
-  are the provider's responsibility.
+  Errors retain a bounded provider `warning` or stderr diagnosis, identify a
+  hook that reported failure, and state that host effects are the provider's responsibility.
 - **Rules:**
-  - A moving module with recorded `capabilityMeta`, or one declaring `spawn` or `launch` hooks, must declare `upgrade`. Otherwise its plan decision is `refuse: <cap> does not declare an upgrade hook; respawn the instance to change it`.
+  - A moving module with recorded `capabilityMeta`, or one whose old or new manifest declares `spawn` or `launch` hooks, must declare `upgrade`. Otherwise its plan decision is `refuse: <cap> does not declare an upgrade hook; respawn the instance to change it`.
   - A module with neither (skills/inject only) is adopted without a hook.
   - One refusing module refuses the whole upgrade. There are no partial upgrades.
 - **Older kernels.** An older kernel already treats an unknown non-required event as a warning (`capability-contract.mjs:52`), so a provider can declare `upgrade` before every host has the new kernel.
@@ -89,7 +92,7 @@ Apply runs under the claim, with the plan revision re-checked. A stale plan refu
    state or `unsetEnv` JSON field is introduced; consecutive upgrades without
    a start do not depend on an older previous manifest.
 2. **Keep the previous state.** This happens before anything outside staging changes. Copy `.oats/modules/<cap>` for each moving module, and the current `instance.json` and `AGENTS.md`, to `<home>/.oats/previous/<receipt>/` with `copyTreeSafe`, then verify the copy. This is not the retirement recovery root, so it is not mistaken for a retained retire.
-3. **Provider hooks.** Run each moving module's `upgrade` hook (`apply`) from the staged copy, in the plan's module order. Hooks must be idempotent in `apply`, because a retry runs them again.
+3. **Provider hooks.** Run each moving module's `upgrade` hook (`apply`) from the staged copy, in the plan's module order. `OATS_UPGRADE_MODULE_DIR` names its final `<home>/.oats/modules/<cap>` path: host registrations must use that path, never staging. Hooks must be idempotent in `apply`, because a retry runs them again.
    Before spawning a hook, persist `step: "hook <capability>"` and
    `hooks.inFlight: <capability>`. If execution is interrupted while that
    outcome is unknown, resume must durably record `uncertain: [<capability>]`
@@ -97,32 +100,38 @@ Apply runs under the claim, with the plan revision re-checked. A stale plan refu
    `steps.hooks` contains no recorded success. A kill between that marker and
    spawn also counts as uncertain unless not-started can be proved.
 4. **Swap.** Swap in place using materialize's rollback journal. Each moved module gets `modules.<cap>.previous = {from, commit, digest, materializedAt, receipt}` (one level, the latest move). `capabilityMeta[cap]` becomes the hook's `meta`.
-5. **Baseline.** Re-take the retire baseline through `writeRetirementBaseline`, so a later retire sees no "changed instance-home bytes" because of the move.
-   Publish a replacement atomically through the existing private-file writer,
-   preserving the option to refuse an existing baseline with exclusive creation.
-   Interruption must leave
-   a complete old or new baseline, so it cannot invalidate the independent
-   session authority needed to resume forward recovery.
-   The persistent baseline exclusions are only
-   `.oats/upgrade-receipt.<key>.json` (the exact kernel receipt filename pattern)
-   and `.oats/.staging-upgrade-*`. `.oats/previous/` remains
-   ordinary home content covered by the baseline and retirement recovery.
-   `writeRetirementBaseline` also accepts call-scoped `transientHomePaths`:
-   exact relative paths only, no globs, each existing and a regular file.
-   Upgrade passes only `.oats-start.lock`. This projects the mutex out of that
-   baseline call, not future retirement reads: any mutex left behind later
-   is still hashed as changed home bytes.
-6. **Event.** Append the instance event `modules-upgraded` with `{receipt, modules:[{capability, from, to}]}`. The new kind goes in `instance-events.mjs`, in `docs/desktop-cli-api.md`, and as a Desktop label in `packages/desktop/renderer/instance-events-data.mjs` (the Desktop owner ACKs that line).
-7. **Commit, then cleanup.** After swap, baseline and event, record receipt
-   `status: complete` with `steps.cleaned: false` before removing staging.
-   This is the commit boundary. Then clean staging and record
-   `steps.cleaned: true`. A failure after the boundary leaves a committed
-   upgrade: the same-key retry performs cleanup only, without hooks or copies.
-   Start is allowed and emits one warning naming that retry; it is not
-   `E_UPGRADE_PARTIAL`. A new upgrade or undo plan refuses until cleanup is
-   finished, naming the same-key retry, so another act cannot mix with it.
-   Retirement keeps its existing behavior: staging remains excluded from its
-   baseline and previous copies remain ordinary home content.
+5. **Baseline.** Under the lifecycle claim, before staging, previous copies or
+   provider apply hooks change the home, compare it against the existing
+   retirement baseline with the same exclusions and comparison as retirement.
+   The plan shows `homeChangedSinceSpawn: true|false`. If the home is clean,
+   replace only `homeFingerprint` after the move, atomically. If it is dirty,
+   leave the entire baseline file byte-identical. Its old fingerprint keeps
+   classing the home as "changed instance-home bytes", including for older
+   kernels, which would ignore a new dirty-marker field. Later upgrades keep
+   that same dirty baseline; retirement writes its ordinary recovery copy.
+   An upgrade never re-takes `generatedWorkFingerprint` or changes the recorded
+   `digestVersion`: all work-tree changes remain compared against spawn.
+   Existing runtime authority and exclusions remain as recorded. No baseline
+   field, format migration or new recovery mechanism is introduced.
+   Upgrade receipts (the exact `upgrade-receipt.<key>.json` naming pattern)
+   and `.oats/.staging-upgrade-*` remain excluded. `.oats/previous/` is ordinary
+   home content. The comparison and clean replacement project out only the
+   upgrade's existing regular-file `.oats-start.lock`, using the exact-path
+   `transientHomePaths` validation. Future retire fingerprints still hash any
+   mutex left behind. A change made before the move is still a change at retire.
+6. **Commit.** After swap and baseline, record receipt `status: complete`
+   with `steps.cleaned: false`. This is the commit boundary: no success event
+   may be written before it, so rollback cannot leave a `modules-upgraded` row.
+7. **Event, then cleanup.** Append `modules-upgraded` with
+   `{receipt, modules:[{capability, from, to}]}`, deduplicated by receipt on
+   retry. The event kind is documented in the Desktop API and has a Desktop
+   label. Then clean staging and record `steps.cleaned: true`. A post-commit
+   failure leaves a committed upgrade: the same-key retry completes event
+   publication and cleanup without hooks or copies. Start remains allowed
+   with one warning naming that retry. A new upgrade or undo plan refuses
+   until finalization finishes, so staging cannot mix with another move.
+   Retirement keeps its existing behavior: staging is excluded and previous
+   copies remain ordinary home content.
 
 **When a step fails before the commit boundary.** The rule is set by whether any provider hook's `apply` has succeeded or has an uncertain outcome. A hook can change host state (oats.aweb's wake re-register, for example), and restoring old modules under host state the new version adopted is the same mismatch #1450 is about.
 - **No hook has succeeded or has an uncertain outcome:** roll back fully after a failure in steps 1–2. For a hook, only an explicit non-zero result observed and recorded in the same invocation, with no prior success or uncertainty, permits full rollback. Discard the staging and `<home>/.oats/previous/<receipt>`, change nothing in the home, and record a refusal event that names the step or module.
@@ -140,7 +149,9 @@ Apply runs under the claim, with the plan revision re-checked. A stale plan refu
   `recorded` and `locked` are each `{version, commit}`. The text renders each
   as `<version> @ <shortcommit>`, so a moved commit is visible even when the
   version string is unchanged. Homes without package drift omit this field and
-  preserve the existing start/restart answer shape.
+  preserve the existing start/restart answer shape. If the lock cannot be read
+  (including malformed JSON or an unsupported lock version), start/restart
+  proceed, omit `drift`, and print one warning naming the lock and the reason.
 - No flag on restart runs the upgrade.
 
 ## Kernel stays runtime-neutral (condition 5)

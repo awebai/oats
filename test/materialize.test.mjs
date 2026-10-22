@@ -12,6 +12,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { contentDigest } from "../lib/remote.mjs";
 import { driftOf, materialize as materializeHome, refForKey, stageMaterialize } from "../lib/materialize.mjs";
+import { toCapabilityRows } from "../lib/instance-resolution.mjs";
+import { git, v2Deployment } from "./helpers/v2-deployment.mjs";
+import { leaveEnclosingInstance } from "./helpers/host-fixture.mjs";
 
 const roots = [];
 function scratch() { const d = mkdtempSync(join(tmpdir(), "oats-materialize-")); roots.push(d); return d; }
@@ -678,6 +681,41 @@ test("LOW: lock must be v3 when given (E_LOCK_SCHEMA); `...` is not a skill name
   assert.ok(calls.some((c) => c.ref === `git:${PKG_KEY}` && c.dir === "oats-package/capabilities/oats.okf"));
 });
 
+
+test("constructor capability uses only own module override entries", async (t) => {
+  const manifest = { capability: "constructor", version: "1.0.0", compatibility: { oats: ">=0.24.0" }, skills: ["skills"], inject: "injects/constructor.md", hooks: { launch: "bin/launch.mjs" } };
+  const fx = v2Deployment({ capabilities: { constructor: { manifest, files: {
+    "skills/constructor-skill/SKILL.md": "---\nname: constructor-skill\ndescription: Constructor fixture.\n---\n",
+    "injects/constructor.md": "## Constructor module\n",
+    "bin/launch.mjs": "process.stdout.write('{}\\n');\n",
+  } } } });
+  const restoreCwd = leaveEnclosingInstance(fx.dep);
+  t.after(() => { restoreCwd(); fx.cleanup(); });
+  const module = { name: "constructor", from: { kind: "member", repoKey: fx.key, commit: git(fx.repo, "rev-parse", "HEAD") }, manifest };
+  const resolved = resolution({ modules: [module], skills: [{ module: "constructor", name: "constructor-skill", path: "skills/constructor-skill" }], injects: [{ module: "constructor", path: "injects/constructor.md" }], payloads: {} });
+
+  await t.test("constructor fetches with an empty existingModules map", async () => {
+    const home = makeHome(scratch());
+    const tx = await fx.inEnv(() => stageMaterialize(resolved, home, { existingModules: {}, remoteOptions: fx.remoteOptions, soulAgentsMd: "# Soul\n" }));
+    try {
+      tx.commit();
+      assert.equal(readFileSync(join(home, ".oats", "modules", "constructor", "injects", "constructor.md"), "utf8"), "## Constructor module\n");
+      assert.equal(readFileSync(join(home, ".agents", "skills", "constructor-skill", "SKILL.md"), "utf8"), "---\nname: constructor-skill\ndescription: Constructor fixture.\n---\n");
+      assert.ok(Object.hasOwn(tx.outcome.instanceJson.modules, "constructor"));
+    } finally { tx.discard(); }
+  });
+
+  await t.test("constructor rows use the published copy with a default moduleDirs map", async () => {
+    const home = makeHome(scratch());
+    await fx.inEnv(() => materialize(resolved, home, { remoteOptions: fx.remoteOptions }));
+    const [row] = toCapabilityRows(resolved, home);
+    const published = join(home, ".oats", "modules", "constructor");
+    assert.equal(row.dir, published);
+    assert.equal(row.inject, join(published, "injects", "constructor.md"));
+    assert.deepEqual(row.skills, [join(home, ".agents", "skills", "constructor-skill")]);
+    assert.deepEqual(row.hooks.launch, { command: "bin/launch.mjs", cwd: published, required: false });
+  });
+});
 
 test("staged materialize: replacement composes without touching the home and commits whole roots", async () => {
   const home = makeHome(scratch(), { instance: { instance: "release-expert-1", capabilityMeta: { retained: true } } });

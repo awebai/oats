@@ -138,7 +138,8 @@ Start refuses with `E_UPGRADE_PARTIAL` until it finishes. If it cannot finish,
 respawn the instance. Do not restore old modules by hand under adopted or
 possibly adopted host registrations.
 
-After swap, baseline and event, the receipt commits before staging cleanup.
+After swap and baseline, the receipt commits before publishing the success
+event and cleaning staging.
 If cleanup fails, the upgrade is complete and the same-key retry cleans up
 only, without hooks or copies. Start is allowed with one warning naming that
 retry. A new upgrade or undo plan refuses until cleanup finishes. Retirement

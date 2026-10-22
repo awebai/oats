@@ -158,11 +158,20 @@ file left by a killed opener, and never reclaims a directory. Start never
 reclaims this path. Upgrade releases it only after persisting its final
 invocation receipt.
 
-`writeRetirementBaseline` accepts `transientHomePaths` for one call only:
-exact relative paths, no globs, each an existing regular file. Upgrade
-passes only `.oats-start.lock` so its owned mutex is absent from the newly
-taken baseline. This is not a permanent exclusion: a later retire hashes
-any leftover mutex as changed home bytes.
+Upgrade compares the home with its independent spawn baseline before it
+changes anything there. A dirty home retains the entire baseline byte for
+byte, so older kernels also recover its edits at retire. A clean home updates
+only `homeFingerprint`; work fingerprints, digest versions, exclusions and
+runtime authority remain as recorded. `retirementHomeChanged` and
+`rebaseUpgradeRetirementBaseline` use retirement's existing comparison and
+exclusions, without changing recovery or copy semantics.
+
+The fingerprint helpers accept call-scoped `transientHomePaths`: exact
+relative paths, no globs, each an existing regular file. Upgrade projects out
+only `.oats-start.lock`. This is not a permanent exclusion: a later retire
+hashes any leftover mutex as changed home bytes. The completed receipt is
+published before the success event. A same-key retry deduplicates the event
+and removes staging, without repeating adoption or composition.
 
 Baseline replacement uses the existing atomic private-file writer. The
 exclusive-create option still refuses an existing baseline. An interrupted replacement leaves a complete

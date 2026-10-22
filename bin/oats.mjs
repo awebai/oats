@@ -1338,6 +1338,7 @@ async function instanceUpgradeCmd(name, bail) {
     for (const row of result.modules) console.log(`  ${row.capability}: ${row.from.version} @ ${row.from.commit.slice(0,12)} → ${row.to.version} @ ${row.to.commit.slice(0,12)}${row.provider?.decision === "refuse" ? `; refused: ${row.provider.reason}` : ""}`);
     for (const row of result.kept || []) console.log(`  ${row.capability}: kept (${row.reason})`);
     for (const row of result.memberDrift || []) console.log(`  ${row.module}: member drift (${row.reason || row.status}); respawn to move it`);
+    if (planOnly) console.log(`  home changed since spawn: ${result.homeChangedSinceSpawn ? "yes (retire preserves a recovery copy)" : "no"}`);
     if (planOnly) console.log(`apply with: oats instance upgrade ${name}${undo ? " --undo" : ""} --plan-revision ${result.planRevision} --idempotency-key <key>`);
   } catch (e) { return lifecycleFail(e, "E_UPGRADE_FAILED", { ...e.details, ...(e.plan ? { plan: e.plan } : {}), ...(e.candidates ? { candidates: e.candidates } : {}) }); }
 }
