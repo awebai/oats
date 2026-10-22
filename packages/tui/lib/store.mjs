@@ -49,7 +49,7 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  `rosterAt`, `memory`, `notes`, `collecting`: the roster of other machines as the shared rule
  *  left it, the time of the last outcome taken, what the machines reported, and whether a roster
  *  read is in flight. `unread`: per served deployment whose read failed with nothing kept, the
- *  instances it last held (see `took`). `loose`: the list was scrolled away from the selection
+ *  instances it last held, and `unreadKeys` the memoryKey it was under then (see `took`). `loose`: the list was scrolled away from the selection
  *  on purpose (see `scrolledList`); the switcher has its own.
  *  `selected`, `top`, `detailTop` are the open view's; `places` keeps them, with the filter, for
  *  the workspaces left behind (per lib/model.mjs memoryKey; see `opened`), and `collapsed` holds
@@ -126,7 +126,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     entries: new Map(deployment === null ? [] : [[deployment, entry]]), numbers: new Map(),
     remote: Object.freeze({ remoteGroups: Object.freeze([]), rosterAnswered: false, rosterFailure: null }), rosterAt: null,
     memory: new Map(), notes: new Map(), collecting: false, cli, home,
-    selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(),
+    selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(), unreadKeys: new Map(),
     switcher: NO_SWITCHER,
     listed: NO_LIST, identities: new Map(),
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
@@ -229,11 +229,10 @@ function settled(state, was) {
   return { state: unknown.has(pruned.selected) ? pruned : rehomed(before, pruned), effect: null };
 }
 /** The memory of every workspace no view holds any more (memoryKeys) forgotten, a hidden one's
- *  too, so one that comes back starts afresh; none while what the views hold is not known. */
+ *  too, so one that comes back starts afresh. */
 function remembered(state) {
   if (!state.places.size && !state.recent.size && !state.layouts.size) return state;
   const keys = memoryKeys(state);
-  if (keys === null) return state;
   const kept = (map) => { const left = new Map([...map].filter(([key]) => keys.has(key))); return left.size === map.size ? map : left; };
   const places = kept(state.places), recent = kept(state.recent), layouts = kept(state.layouts);
   return places === state.places && recent === state.recent && layouts === state.layouts ? state : next(state, { places, recent, layouts });
@@ -244,14 +243,18 @@ function remembered(state) {
  *  it, is dropped. Only an observed entry moves the selection or forgets a collapse: a failed
  *  read has no rows to move to, and the next good one finds the user where they were.
  *  `unread`: for a deployment whose read failed with nothing kept, the instances it held when it
- *  was last read, until it is read again. They are what `settled` must not take for gone. */
+ *  was last read, until it is read again, and (`unreadKeys`) the workspace it was in: they are what
+ *  `settled` must not take for gone, nor `remembered` forget. */
 function took(state, { id, entry, number }) {
   if (!state.ctxs.includes(id) || !(number > (state.numbers.get(id) ?? 0))) return { state, effect: null };
   const observed = entry?.deployment?.status === "observed", held = state.entries.get(id);
-  let unread = state.unread;
-  if (observed && unread.has(id)) { unread = new Map(unread); unread.delete(id); }
-  else if (!observed && held?.deployment?.status === "observed") unread = new Map(unread).set(id, new Set((Array.isArray(held.instances) ? held.instances : []).map(instanceId)));
-  const taken = next(state, { entries: new Map(state.entries).set(id, entry), numbers: new Map(state.numbers).set(id, number), unread });
+  let unread = state.unread, unreadKeys = state.unreadKeys;
+  if (observed && unread.has(id)) { unread = new Map(unread); unread.delete(id); unreadKeys = new Map(unreadKeys); unreadKeys.delete(id); }
+  else if (!observed && held?.deployment?.status === "observed") {
+    unread = new Map(unread).set(id, new Set((Array.isArray(held.instances) ? held.instances : []).map(instanceId)));
+    unreadKeys = new Map(unreadKeys).set(id, memoryKey(state, id));
+  }
+  const taken = next(state, { entries: new Map(state.entries).set(id, entry), numbers: new Map(state.numbers).set(id, number), unread, unreadKeys });
   if (!observed) return { state: taken, effect: null };
   const step = settled(state, taken);
   if (step.state.arriving?.workspace !== id) return step;
@@ -842,7 +845,9 @@ function reduceStep(state, event, keymap) {
   // workspace opened (its deployment of this machine, once served, in place of another machine's)
   // keeps them.
   if (step.state.open !== state.open && memoryKey(step.state, step.state.open) !== memoryKey(state, state.open)) step = workspaceLeft(state, step);
-  if (step.state.restoring !== null && !untaken(event)) { const more = restoreNext(step.state); step = { state: more.state, effect: both(step.effect, more.effect) }; }
+  // Nor on a step that quits, suspends or redraws (an effect of its own, which an open would
+  // take the place of): the next event goes on.
+  if (step.state.restoring !== null && !untaken(event) && typeof step.effect !== "string") { const more = restoreNext(step.state); step = { state: more.state, effect: both(step.effect, more.effect) }; }
   // Where the focus was when another view (the switcher, the help) was shown over the list: in the
   // terminal, or in the palette opened from it, which give it to the list as they go. A workspace
   // left from that other view keeps it (layoutOf); back in the list it is forgotten.

@@ -279,6 +279,12 @@ test("the process stopped while a restore asks another machine first: the prefli
   assert.deepEqual(stopped.state.restoring.queue.map((tab) => tab.name), [FAR_A, ALPHA]);
   // Nor on the other events whose effect the loop does not take.
   for (const event of [{ collecting: false }, { keyboard: "kitty" }, { capabilitiesTop: 0 }]) assert.equal(reduce(stopped.state, event).effect, null, Object.keys(event)[0]);
+  // Resumed, a key that quits, suspends or redraws before any read does that, and only that: the
+  // restore waits for the next event.
+  for (const [pressed, effect] of [["q", "quit"], ["ctrl+z", "suspend"], ["ctrl+l", "redraw"]]) {
+    const step = key(stopped.state, pressed);
+    assert.deepEqual([step.effect, step.state.opening, step.state.tabs, step.state.restoring.queue.length], [effect, null, [], 2], pressed);
+  }
   // Resumed: the next read asks garnet again, then the rest opens.
   const resumed = reduce(stopped.state, { id: DEPLOYMENT, entry: reporting([instanceRow("dev", ALPHA)]), number: ++cycle });
   assert.deepEqual([resumed.effect?.open?.id, resumed.state.opening?.id], [id, id]);
@@ -333,6 +339,17 @@ test("a workspace that goes from the views while another is open forgets its mem
   // quartz listed again: its workspace opens with nothing of before.
   const again = ["w", "j", "enter"].reduce((state, each) => key(state, each).state, heardGroups(lost.state, [garnet(), quartz()]).state);
   assert.deepEqual([memoryKey(again, again.open), again.restoring, again.tabs], [k, null, []]);
+  // So too while a deployment of another workspace is not read: this machine's, of A, whose read
+  // failed with nothing kept, keeps A's memory alone.
+  const platform = memoryKey(s, s.open);
+  const locked = reduce(s, { id: DEPLOYMENT, entry: failed(s.entries.get(DEPLOYMENT), LOCKED), number: ++cycle }).state;
+  assert.equal(locked.unread.has(DEPLOYMENT), true);
+  const gone = heardGroups(locked, [garnet()]).state;
+  assert.deepEqual([...memory(gone), gone.places.has(platform)], [false, false, false, true]);
+  // This machine's deployment is in a view of its own now: quartz's is picked where the switcher lists it.
+  const relisted = heardGroups(gone, [garnet(), quartz()]).state;
+  const listed = [0, 1, 2, 3].map((n) => ["w", ...Array(n).fill("j"), "enter"].reduce((state, each) => key(state, each).state, relisted)).find((state) => memoryKey(state, state.open) === k);
+  assert.deepEqual([listed?.restoring, listed?.tabs, listed?.opening], [null, [], null], "quartz comes back with none");
 
   // A workspace of this machine's second deployment alone, with a tab, left for A.
   let t = go(stateOf(reporting([instanceRow("dev", ALPHA)]), { cli: KEYED }), SECOND).state;
