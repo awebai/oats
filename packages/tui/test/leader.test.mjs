@@ -6,7 +6,7 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { instanceId } from "../lib/client.mjs";
-import { LIST_WORDS, paletteItems, roster } from "../lib/model.mjs";
+import { LIST_WORDS, memoryKey, paletteItems, recentOf, roster } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { CLI, instanceRow, leaderEscape, leaderThen, leaderTwice, observed, stateOf } from "./helpers.mjs";
 
@@ -299,7 +299,7 @@ test("the leader then Down or Up opens the next or previous instance that can be
   // From the selection, no terminal open: alpha (stopped) to alpha-kid.
   const first = leaderThen(state, "down", AT);
   assert.deepEqual(first.effect, { open: decision(state, "alpha-kid") });
-  assert.deepEqual([first.state.selected, first.state.terminal.id, first.state.terminal.focus, first.state.recent], [idOf(state, "alpha-kid"), idOf(state, "alpha-kid"), "terminal", [idOf(state, "alpha-kid")]]);
+  assert.deepEqual([first.state.selected, first.state.terminal.id, first.state.terminal.focus, recentOf(first.state)], [idOf(state, "alpha-kid"), idOf(state, "alpha-kid"), "terminal", [idOf(state, "alpha-kid")]]);
   // From the open terminal: each next instance opens as a tab of its own after the shown one, and
   // nothing is closed (T2, Done 3), up to the cap.
   let at = reduce(first.state, { shown: { id: idOf(state, "alpha-kid") }, ...AT }).state;
@@ -364,10 +364,10 @@ test("the palette lists the instances that can be opened under their group's lab
 test("the palette lists the instances most recently opened in this run first, then in the list's order", () => {
   const state = THREE(), a = idOf(state, "dev-a"), c = idOf(state, "dev-c");
   const openedC = opened(state, "dev-c");
-  assert.deepEqual(openedC.recent, [c]);
+  assert.deepEqual(recentOf(openedC), [c]);
   assert.deepEqual(rows(key(leaderEscape(openedC).state, "ctrl+k").state).slice(0, 3), ["group independent", "instance dev-c", "instance dev-a"]);
   const thenA = key(on(leaderEscape(openedC).state, "dev-a"), "enter").state;
-  assert.deepEqual(thenA.recent, [a, c]);
+  assert.deepEqual(recentOf(thenA), [a, c]);
   assert.deepEqual(rows(key(leaderEscape(thenA).state, "ctrl+k").state).slice(0, 3), ["group independent", "instance dev-a", "instance dev-c"]);
 });
 
@@ -417,7 +417,7 @@ test("an instance run from the palette opened from a terminal opens it as a tab 
   const ran = keys(open, "d", "e", "v", "-", "c", "enter");
   assert.deepEqual(ran.effect, { open: decision(state, "dev-c") });
   assert.deepEqual(ran.state.tabs.map((tab) => tab.id), [a, c]);
-  assert.deepEqual([ran.state.palette, ran.state.selected, ran.state.terminal.id, ran.state.terminal.focus, ran.state.recent], [null, c, c, "terminal", [c, a]]);
+  assert.deepEqual([ran.state.palette, ran.state.selected, ran.state.terminal.id, ran.state.terminal.focus, recentOf(ran.state)], [null, c, c, "terminal", [c, a]]);
   // The first row is the shown tab's instance (the most recent): the second is selected (T2, Done
   // 4), so Enter goes to the terminal before it.
   assert.equal(paletteItems(open).selected, `instance\u0000${c}`);
@@ -484,10 +484,10 @@ test("Ctrl+K opens the palette from the list and Ctrl+K again closes it; Esc clo
 // ── The palette's groups (docs/tui.md, "The palette") ─────────────────────────────────────────────
 
 /** TREE on Linux, where the palette has its own keys, with `names` opened in this run, the latest
- *  first (the store's `recent`). */
+ *  first (the store's `recent`, the open workspace's). */
 const RECENT = (names, platform = "linux") => {
   const state = TREE({ platform });
-  return Object.freeze({ ...state, recent: Object.freeze(names.map((name) => idOf(state, name))) });
+  return Object.freeze({ ...state, recent: new Map([[memoryKey(state, state.open), Object.freeze(names.map((name) => idOf(state, name)))]]) });
 };
 /** The palette's rows as `kind label`, a group's label row with its key. */
 const grouped = (state) => paletteItems(state).items.map((item) => (item.kind === "group" ? `group ${item.label} ${item.key.split("\u0000")[1]}` : `${item.kind} ${item.label}`));
@@ -553,7 +553,7 @@ test("a group's label row is never selected: the palette opens on its first row 
   // The shown terminal is solo-x's, the most recent: the palette opens on the instance shown before
   // it, grandchild, deep in lead's group: not lead, the second instance in the list.
   const shown = reduce(key(on(RECENT(["grandchild"]), "solo-x"), "enter").state, { shown: { id: idOf(open, "solo-x") }, ...AT }).state;
-  assert.deepEqual(shown.recent, [idOf(open, "solo-x"), idOf(open, "grandchild")]);
+  assert.deepEqual(recentOf(shown), [idOf(open, "solo-x"), idOf(open, "grandchild")]);
   const fromTerminal = leaderThen(shown, "k", AT).state;
   assert.deepEqual(grouped(fromTerminal).slice(0, 3), [`group independent independent:${idOf(open, "solo-x")}`, "instance solo-x", "group lead cluster:0:lead"]);
   assert.equal(paletteItems(fromTerminal).selected, rowKey(open, "grandchild"));

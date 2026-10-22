@@ -1890,6 +1890,53 @@ test("with two tabs open, another workspace opened closes each tab's viewer by i
   assert.equal(await r.status, 0);
 });
 
+test("back in the workspace left with two tabs, the loop opens their viewers again one at a time, in their order, the second once the first's window is made; the shown one is the one left shown (docs/tui.md, Tabs)", async () => {
+  const r = await viewingTwoTabs({ listed: LISTED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }) });
+  const [first, second] = r.panel.opens.map((each) => each.argv);
+  leaderEscape(r);
+  for (const k of ["w", "j", "\r"]) { r.stdin.type(k); await settle(); }
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "close"), [["close", "@1"], ["close", "@2"]]);
+  assert.equal(r.panel.opens.length, 2, "nothing opens in the other workspace");
+  r.log.length = 0;
+  for (const k of ["w", "g", "\r"]) { r.stdin.type(k); await settle(); }
+  assert.deepEqual([r.panel.opens.length, r.panel.opens[2].argv], [3, first], "the first tab's viewer, alone");
+  r.panel.opens[2].made("@3");
+  await settle();
+  assert.deepEqual([r.panel.opens.length, r.panel.opens[3].argv], [4, second], "then the second's");
+  r.panel.opens[3].made("@4");
+  await settle();
+  assert.match(wholeScreen(r), /│ acme-expert-tui │\[acme-ledger-dev\]/, "both tabs, the one left shown in brackets");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("a workspace left again before a restore's viewer is made: in the same read of input, its window is never asked for, and nothing else in the panel is closed; while it is being made, its window is closed once made; the way back opens it again (docs/tui.md, Tabs)", async () => {
+  const r = await viewingTwoTabs({ listed: LISTED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }) });
+  const [first] = r.panel.opens.map((each) => each.argv);
+  leaderEscape(r);
+  for (const k of ["w", "j", "\r"]) { r.stdin.type(k); await settle(); }
+  for (const k of ["w", "g"]) { r.stdin.type(k); await settle(); }
+  r.log.length = 0;
+  // Back and away in one read: the restore's first viewer is started, then closed, before the loop
+  // asks the panel for its window.
+  r.stdin.type("\rwj\r");
+  await settle();
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "open" || what === "close"), [], "no window asked for, and no other closed in its place");
+  assert.equal(r.panel.opens.length, 2);
+  // Back, and away while its window is being made: closed once it is made.
+  for (const k of ["w", "g", "\r"]) { r.stdin.type(k); await settle(); }
+  assert.deepEqual([r.panel.opens.length, r.panel.opens[2].argv], [3, first], "the way back opens it again");
+  r.log.length = 0;
+  for (const k of ["w", "j", "\r"]) { r.stdin.type(k); await settle(); }
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "close"), [["close"]], "the open under way given up");
+  r.panel.opens[2].made("@3");
+  await settle();
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "close"), [["close"], ["close", "@3"]], "the window made late is closed");
+  assert.equal(r.panel.opens.length, 3, "and nothing opens in the other workspace");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
 test("with a terminal focused, the leader then Down opens the next agent's terminal as a tab with the focus in it, and then Up shows the one before, a tab already; nothing reaches the agent (Spec T1b; T2)", async () => {
   const r = await viewingFirstOfTwo();
   r.stdin.type("\x1c");
