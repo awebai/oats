@@ -37,7 +37,7 @@ The plan is read-only. It returns:
 - kept modules, with the reason;
 - member drift, for information.
 
-The plan stages the new copies into `.oats/.staging-upgrade-*` to compute this, and discards the staging when it finishes.
+The plan writes nothing into the home, because the retire baseline compares home bytes. Like stop and retire plans, it touches nothing there. It stages the new copies in a temporary directory outside the home (`mkdtemp` under the OS temp dir) and removes that directory when it finishes.
 
 **Provider adoption (condition 2).** For each moving module, the kernel needs to know whether the *new* version can take over the state the old version laid out. The kernel never guesses.
 - **New lifecycle event `upgrade`.** It is approved in `lib/capability-contract.mjs` and `docs/capability-manifest.schema.json`. It must not be `required`. The kernel runs it from the **staged new copy**, with the usual `lifecycleHookEnv` plus:
@@ -59,17 +59,24 @@ The plan stages the new copies into `.oats/.staging-upgrade-*` to compute this, 
 
 Apply runs under the claim, with the plan revision re-checked. A stale plan refuses with `E_PLAN_STALE` and attaches a fresh plan. Apply is idempotent per `--idempotency-key`, with a receipt like retire's, and does the following in order:
 
-1. **Stage.** Stage the new module copies and recompose the derived files in staging, through the **same code as spawn**. Refactor `materialize()` so that composing a home from a resolution can target an existing home. Do not write a second composer. The derived files are:
+1. **Stage.** Stage the new module copies in `<home>/.oats/.staging-upgrade-<receipt>`, on the same filesystem so the renames are atomic, and recompose the derived files there. Use the **same code as spawn**: refactor `materialize()` so that composing a home from a resolution can target an existing home. Do not write a second composer. The derived files are:
    - `.agents/skills`;
    - `AGENTS.md`: the soul body at the **recorded soul commit**, the kernel blocks, then each module's inject. If the soul body at that commit can't be read, refuse;
    - in `instance.json`: `modules`, `capabilities[]`, `capabilityRuntime[]` (the absolute hook commands that retire runs), `skills[]`, `instructions[]`, `composition`, `launch.hooks.contributions`, `resolutionRevision`.
-2. **Provider hooks.** Run each moving module's `upgrade` hook (`apply`) from the staged copy. If one fails, discard the staging, change nothing, and record a refusal event that names the module.
-3. **Keep the previous state.** Copy `.oats/modules/<cap>` for each moving module, and the current `instance.json` and `AGENTS.md`, to `<home>/.oats/previous/<receipt-id>/` with `copyTreeSafe`. This is not the retirement recovery root, so it is not mistaken for a retained retire.
+2. **Keep the previous state.** This happens before anything outside staging changes. Copy `.oats/modules/<cap>` for each moving module, and the current `instance.json` and `AGENTS.md`, to `<home>/.oats/previous/<receipt>/` with `copyTreeSafe`, then verify the copy. This is not the retirement recovery root, so it is not mistaken for a retained retire.
+3. **Provider hooks.** Run each moving module's `upgrade` hook (`apply`) from the staged copy, in the plan's module order. Hooks must be idempotent in `apply`, because a retry runs them again.
 4. **Swap.** Swap in place using materialize's rollback journal. Each moved module gets `modules.<cap>.previous = {from, commit, digest, materializedAt, receipt}` (one level, the latest move). `capabilityMeta[cap]` becomes the hook's `meta`.
 5. **Baseline.** Re-take the retire baseline through `writeRetirementBaseline`, so a later retire sees no "changed instance-home bytes" because of the move.
 6. **Event.** Append the instance event `modules-upgraded` with `{receipt, modules:[{capability, from, to}]}`. The new kind goes in `instance-events.mjs`, in `docs/desktop-cli-api.md`, and as a Desktop label in `packages/desktop/renderer/instance-events-data.mjs` (the Desktop owner ACKs that line).
 
-**`--undo`** plans and applies the reverse move to `modules.<cap>.previous`, with the same steps and hooks; it is the `upgrade` hook of the version being restored. It works only for the latest move, and only while `<home>/.oats/previous/<receipt>` exists and verifies.
+**When a step fails.** The rule is set by whether any provider hook's `apply` has succeeded yet. A hook can change host state (oats.aweb's wake re-register, for example), and restoring old modules under host state the new version adopted is the same mismatch #1450 is about.
+- **No hook has succeeded yet** (failure in steps 1–2, or in the first hook): roll back fully. Discard the staging and `<home>/.oats/previous/<receipt>`, change nothing in the home, and record a refusal event that names the step or module.
+- **A hook has succeeded:** the act only finishes forward. The receipt records `partial` with the steps and modules already done. The error names what is pending, and says to retry with the same `--idempotency-key`. That retry re-runs only what is pending and finishes the swap, baseline and event. A partial act never restores the old modules. If the act can't be finished, the remedy named is a respawn. The home is never put back by hand under adopted host state.
+- **The session start** refuses while a `partial` receipt for the home exists (`E_UPGRADE_PARTIAL`, naming the retry).
+
+**`--undo`** plans and applies the reverse move to `modules.<cap>.previous`, with the same steps and hooks; it is the `upgrade` hook of the version being restored. It works only for the latest move, and only while `<home>/.oats/previous/<receipt>` exists and verifies. The same adoption rule applies, so undo works only toward a version that declares `upgrade`. A move from a version without the hook, such as the motivating oats.aweb 1.17.1, cannot be undone through the act: its `.oats/previous/<receipt>` stays for inspection by hand, and the remedy for a bad move is a respawn.
+
+**Lifetime of `.oats/previous/`.** Each home keeps one previous state, which the next move replaces. Retire carries it in its recovery copy like any other home content.
 
 ## Restart and start (condition 4)
 
@@ -91,10 +98,12 @@ The kernel knows modules, hooks, plans and receipts only. Anything aweb-specific
   - The oats-operate skill.
   - A release note.
 - **`oats status`:** no change. Drift clears by itself after a move.
+- **Desktop:** `modules.<cap>.previous` is a new field in JSON the Desktop reads. The implementation PR names lane:lfx as that reader and includes a test that the Desktop tolerates the field.
 
 ## Out of scope
 
 - Member modules and the soul body (still a respawn).
+- Remote homes (`--server`).
 - Moving several homes in one call (a deploy loops over instances).
 - Desktop UI beyond the event label.
 - Automatic upgrades.
