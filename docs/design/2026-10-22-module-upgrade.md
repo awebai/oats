@@ -27,9 +27,15 @@ It runs from the deployment, or from a parent's home, with the same instance res
 **Preconditions (all checked at plan and again at apply, under the instance's lifecycle claim):**
 - **The session is stopped.** If it is running, or its state can't be read, the act refuses with `E_SESSION_RUNNING` and the remedy `oats instance stop <instance>`, then upgrade, then `oats session start`. Nothing changes under a running harness.
 - **No retire or other lifecycle act is in flight.** Use the existing claim.
-- Upgrade also holds the existing `.oats-start.lock` mutex through its swap;
-  start/restart do not take the lifecycle claim. A partial receipt refuses
-  starts until finalization completes.
+- Upgrade also holds the existing `.oats-start.lock` mutex until its final
+  invocation receipt is persisted; start/restart do not take the lifecycle
+  claim. Start acquires this path with `mkdir`; upgrade creates an exclusive
+  regular file with `wx`, so either kind refuses an occupied path. Upgrade
+  takes the lifecycle claim first and may reclaim only a regular-file mutex,
+  including an empty file left by a killed opener. It never reclaims a
+  directory. Start never reclaims the mutex and its busy message names the
+  same-key upgrade retry. A partial receipt refuses starts until finalization
+  completes.
 - **The lock's package commit and integrity verify,** just as at spawn (`moduleSource`).
 
 ## Plan (condition 3)
@@ -84,12 +90,23 @@ Apply runs under the claim, with the plan revision re-checked. A stale plan refu
    a start do not depend on an older previous manifest.
 2. **Keep the previous state.** This happens before anything outside staging changes. Copy `.oats/modules/<cap>` for each moving module, and the current `instance.json` and `AGENTS.md`, to `<home>/.oats/previous/<receipt>/` with `copyTreeSafe`, then verify the copy. This is not the retirement recovery root, so it is not mistaken for a retained retire.
 3. **Provider hooks.** Run each moving module's `upgrade` hook (`apply`) from the staged copy, in the plan's module order. Hooks must be idempotent in `apply`, because a retry runs them again.
+   Before spawning a hook, persist `step: "hook <capability>"` and
+   `hooks.inFlight: <capability>`. If execution is interrupted while that
+   outcome is unknown, resume must durably record `uncertain: [<capability>]`
+   before any retry work. The act then remains forward-only even when
+   `steps.hooks` contains no recorded success. A kill between that marker and
+   spawn also counts as uncertain unless not-started can be proved.
 4. **Swap.** Swap in place using materialize's rollback journal. Each moved module gets `modules.<cap>.previous = {from, commit, digest, materializedAt, receipt}` (one level, the latest move). `capabilityMeta[cap]` becomes the hook's `meta`.
 5. **Baseline.** Re-take the retire baseline through `writeRetirementBaseline`, so a later retire sees no "changed instance-home bytes" because of the move.
-   Exclude only `.oats/upgrade-receipt.<key>.json` (the exact kernel receipt
-   filename pattern) and
-   `.oats/.staging-upgrade-*` from the baseline. `.oats/previous/` remains
+   The persistent baseline exclusions are only
+   `.oats/upgrade-receipt.<key>.json` (the exact kernel receipt filename pattern)
+   and `.oats/.staging-upgrade-*`. `.oats/previous/` remains
    ordinary home content covered by the baseline and retirement recovery.
+   `writeRetirementBaseline` also accepts call-scoped `transientHomePaths`:
+   exact relative paths only, no globs, each existing and a regular file.
+   Upgrade passes only `.oats-start.lock`. This projects the mutex out of that
+   baseline call, not future retirement reads: any mutex left behind later
+   is still hashed as changed home bytes.
 6. **Event.** Append the instance event `modules-upgraded` with `{receipt, modules:[{capability, from, to}]}`. The new kind goes in `instance-events.mjs`, in `docs/desktop-cli-api.md`, and as a Desktop label in `packages/desktop/renderer/instance-events-data.mjs` (the Desktop owner ACKs that line).
 7. **Commit, then cleanup.** After swap, baseline and event, record receipt
    `status: complete` with `steps.cleaned: false` before removing staging.
@@ -102,9 +119,9 @@ Apply runs under the claim, with the plan revision re-checked. A stale plan refu
    Retirement keeps its existing behavior: staging remains excluded from its
    baseline and previous copies remain ordinary home content.
 
-**When a step fails before the commit boundary.** The rule is set by whether any provider hook's `apply` has succeeded yet. A hook can change host state (oats.aweb's wake re-register, for example), and restoring old modules under host state the new version adopted is the same mismatch #1450 is about.
-- **No hook has succeeded yet** (failure in steps 1–2, or in the first hook): roll back fully. Discard the staging and `<home>/.oats/previous/<receipt>`, change nothing in the home, and record a refusal event that names the step or module.
-- **A hook has succeeded:** the act only finishes forward. The receipt records `partial` with the steps and modules already done. The error names what is pending, and says to retry with the same `--idempotency-key`. That retry re-runs only what is pending and finishes the swap, baseline and event. A partial act never restores the old modules. If the act can't be finished, the remedy named is a respawn. The home is never put back by hand under adopted host state.
+**When a step fails before the commit boundary.** The rule is set by whether any provider hook's `apply` has succeeded or has an uncertain outcome. A hook can change host state (oats.aweb's wake re-register, for example), and restoring old modules under host state the new version adopted is the same mismatch #1450 is about.
+- **No hook has succeeded or has an uncertain outcome:** roll back fully after a failure in steps 1–2. For a hook, only an explicit non-zero result observed and recorded in the same invocation, with no prior success or uncertainty, permits full rollback. Discard the staging and `<home>/.oats/previous/<receipt>`, change nothing in the home, and record a refusal event that names the step or module.
+- **A hook has succeeded or has an uncertain outcome:** the act only finishes forward. The receipt records `partial` with the steps and modules already done. The error names what is pending, and says to retry with the same `--idempotency-key`. That retry re-runs pending work, including an uncertain idempotent hook, and finishes the swap, baseline and event. If the retried hook fails, the act stays `partial`; it never restores old modules. If the act can't be finished, the remedy named is a respawn. The home is never put back by hand under adopted or possibly adopted host state.
 - **The session start** refuses while a `partial` receipt for the home exists (`E_UPGRADE_PARTIAL`, naming the retry).
 
 **`--undo`** plans and applies the reverse move to `modules.<cap>.previous`, with the same steps and hooks; it is the `upgrade` hook of the version being restored. It works only for the latest move, and only while `<home>/.oats/previous/<receipt>` exists and verifies. The same adoption rule applies, so undo works only toward a version that declares `upgrade`. A move from a version without the hook, such as the motivating oats.aweb 1.17.1, cannot be undone through the act: its `.oats/previous/<receipt>` stays for inspection by hand, and the remedy for a bad move is a respawn.

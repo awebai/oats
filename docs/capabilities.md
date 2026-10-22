@@ -873,9 +873,15 @@ atomicity or compensation. The kernel treats that result as a hook reporting
 failure; rollback restores composed home bytes only, and provider host effects
 remain the provider's responsibility.
 
-Before commit and before any successful provider hook, a failed upgrade rolls
-back. Once a hook succeeds, the act only finishes forward; its `partial` receipt names the same
-idempotency key to retry pending work. Start refuses a partial upgrade. See
+Before commit, a failed upgrade rolls back only if no hook succeeded and no
+hook outcome is uncertain. A hook's non-zero result must be observed and
+recorded in that invocation to establish that it reported failure. A killed
+or interrupted hook has an uncertain outcome, even if no success was recorded;
+the receipt preserves that uncertainty before retrying it. Once a hook succeeds
+or becomes uncertain, the act only finishes forward. Retry may run the same
+idempotent hook again; a later refusal does not permit restoring old modules.
+Its `partial` receipt names the same idempotency key to retry pending work,
+or respawn if it cannot finish. Start refuses a partial upgrade. See
 [the operator workflow](upgrading.md#moving-existing-homes-to-locked-package-versions).
 After swap, baseline and event commit the receipt, cleanup failure is retried
 without hooks or copies; start is allowed with a warning naming that retry.

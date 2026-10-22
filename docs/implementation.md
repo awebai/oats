@@ -141,6 +141,29 @@ and the rules its tests pin.
 | `harness-trust-json.mjs`, `harness-trust-toml.mjs` | bounded native parsers and byte-preserving edits of one trust leaf |
 | `pi-bridge.mjs` | the pi bridge (`@awebai/oats-pi`) in every pi folder a launch of a deployment uses: the folder list (the default, the process's own `PI_CODING_AGENT_DIR`, each pi launch configuration's, by real path), the bridge read in each, `oats doctor`'s skew warnings, and the plan `oats update` runs with its line that the Desktop goes first ([upgrading](upgrading.md)). Reads only: `bin/oats.mjs` runs the steps |
 
+An upgrade records a hook's in-flight marker before spawning it. A resumed
+unknown outcome is durably recorded as uncertain before any retry work,
+because the provider may already have changed host state even when no success
+was recorded. Success or uncertainty makes the act forward-only. Only a
+non-zero result observed and recorded in the same invocation, with no prior
+success or uncertainty, permits rollback of composed bytes. An uncertain hook
+is retried idempotently; a later refusal cannot turn that recovery into a
+rollback.
+
+Start and upgrade share the `.oats-start.lock` path through exclusive
+acquisition: start uses `mkdir`, while upgrade creates a regular file with
+`wx`. Both treat `EEXIST` as held. Upgrade takes the lifecycle claim before
+reclaiming an interrupted upgrade's regular-file mutex, including an empty
+file left by a killed opener, and never reclaims a directory. Start never
+reclaims this path. Upgrade releases it only after persisting its final
+invocation receipt.
+
+`writeRetirementBaseline` accepts `transientHomePaths` for one call only:
+exact relative paths, no globs, each an existing regular file. Upgrade
+passes only `.oats-start.lock` so its owned mutex is absent from the newly
+taken baseline. This is not a permanent exclusion: a later retire hashes
+any leftover mutex as changed home bytes.
+
 The schedule registry stores explicit concurrency caps, leaving the schedule
 cap absent for its effective default of five. `readRegistry()` is a pure,
 bounded atomic-file snapshot: it takes no lock and writes nothing, projecting

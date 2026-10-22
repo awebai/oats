@@ -164,11 +164,13 @@ inject and hook commands. Member modules and the recorded soul stay put.
 Start and restart retain those copies and report package drift; they never
 upgrade automatically.
 
-Before commit, after a provider apply hook succeeds, a failed move is `partial`
-and must finish forward. Retry with the same `--idempotency-key`; the error names what
-is pending. Start refuses with `E_UPGRADE_PARTIAL` until it finishes. If it
-cannot finish, respawn. Never restore old modules by hand under host state
-the new provider adopted.
+Before commit, a failed move is `partial` after a provider apply hook succeeds
+or its outcome becomes uncertain, such as an interruption before its result
+was recorded. It must finish forward. Retry with the same `--idempotency-key`;
+the error names what is pending. An uncertain idempotent hook may run again,
+and a refusal on retry stays partial. Start refuses with `E_UPGRADE_PARTIAL`
+until it finishes. If it cannot finish, respawn. Never restore old modules by
+hand under adopted or possibly adopted host state.
 
 After swap, baseline and event commit the receipt, cleanup failure leaves a
 complete upgrade. The same-key retry cleans up only, without hooks or copies.

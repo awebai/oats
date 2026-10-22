@@ -126,13 +126,17 @@ modules stay unchanged. `oats status` drift clears after the move. Start and
 restart keep the recorded copies; when they lag the lock they report drift
 and print the stop/upgrade command.
 
-Before commit, if no provider apply hook has succeeded, a failure restores the
-composed home bytes. A hook reporting failure is responsible for leaving no provider effects
-of its own. After any hook succeeds, a failure records `partial` and moves
-forward only: retry the same command with the same `--idempotency-key` to
-finish pending work. Start refuses with `E_UPGRADE_PARTIAL` until it finishes.
-If it cannot finish, respawn the instance. Do not restore old modules by hand
-under host registrations already adopted by the new provider.
+Before commit, a failure restores composed home bytes only when no provider
+apply hook succeeded and no outcome is uncertain. A non-zero result must be
+observed and recorded in the same invocation; a killed or interrupted hook
+can already have adopted host state even when no success was recorded. A hook
+reporting failure is responsible for leaving no provider effects of its own.
+After success or an uncertain outcome, failure records `partial` and moves
+forward only: retry with the same `--idempotency-key` to finish pending work,
+including an uncertain idempotent hook. A refusal on retry stays partial.
+Start refuses with `E_UPGRADE_PARTIAL` until it finishes. If it cannot finish,
+respawn the instance. Do not restore old modules by hand under adopted or
+possibly adopted host registrations.
 
 After swap, baseline and event, the receipt commits before staging cleanup.
 If cleanup fails, the upgrade is complete and the same-key retry cleans up

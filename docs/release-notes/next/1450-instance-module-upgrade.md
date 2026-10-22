@@ -16,7 +16,8 @@
   composition changes; apply checks the revision and supports idempotent
   retries. Undo verifies the latest saved state and asks the restored version
   to adopt it. Before commit, a partial upgrade after a successful provider
-  hook finishes forward with the same key and blocks start with
+  hook or an interrupted hook with an uncertain outcome finishes forward
+  with the same key and blocks start with
   `E_UPGRADE_PARTIAL`. After commit, a cleanup failure permits start with a
   warning and the same-key retry performs cleanup only; another move waits
   until cleanup finishes.

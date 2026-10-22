@@ -3759,7 +3759,7 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
 - **Kinds:** `spawned`, `launched`, `restarted`, `stopped`, `stop-refused`,
   `modules-upgraded` (`data: {receipt, modules:[{capability, from, to}]}`,
   written after the module swap and retirement baseline complete),
-  `upgrade-refused` (a failure before any provider apply hook succeeds,
+  `upgrade-refused` (a failure with no successful or uncertain apply-hook outcome,
   naming the failed step or module; older clients tolerate the unknown kind),
   `retire-planned`, `retired`, `retire-refused` (0.53.0,
   [below](#retire-refused-event)), `worktree-retained`, `worktree-removed`,
@@ -4035,14 +4035,22 @@ Receipts live at `<home>/.oats/upgrade-receipt.<key>.json`. Retirement's baselin
 excludes only that exact receipt filename pattern and `.oats/.staging-upgrade-*`;
 `.oats/previous/` is ordinary home content covered by the baseline.
 
-Before the commit boundary, failure before any provider apply hook succeeds
-restores composed home bytes
-and removes staging and the saved previous state. A hook reporting failure
-must leave no effects of its own; provider host effects are its responsibility.
-After any hook succeeds, failure records `partial`: the error names pending
-work and asks for the same `--idempotency-key` to finish forward. The retry
-runs only pending work. Start refuses with `E_UPGRADE_PARTIAL` while the receipt
-is partial. If completion is impossible, the remedy is respawn.
+Before the commit boundary, failure restores composed home bytes and removes
+staging and the saved previous state only when no provider hook succeeded or
+has an uncertain outcome. A non-zero hook result must be explicitly observed
+and recorded in the same invocation to permit this rollback. A hook reporting
+failure must leave no effects of its own; provider host effects are its
+responsibility.
+
+Before spawning a hook, the receipt records `step: "hook <capability>"` and
+`hooks.inFlight: <capability>`. Resuming an unknown in-flight outcome durably
+records `uncertain: [<capability>]` before retry work. Even a kill before spawn
+counts as uncertain if not-started cannot be proved. After any success or
+uncertainty, failure records `partial`: the error names pending work and asks
+for the same `--idempotency-key` to finish forward. Retry re-runs pending
+idempotent hooks, including an uncertain one. A subsequent hook failure stays
+partial; it cannot authorize rollback. Start refuses with `E_UPGRADE_PARTIAL`
+while the receipt is partial. If completion is impossible, the remedy is respawn.
 
 The commit boundary is after swap, baseline and event: the receipt becomes
 `status: "complete"` with `steps.cleaned: false` before staging cleanup.
@@ -4462,7 +4470,8 @@ The `instance-upgrade` pairs use the same home's lifecycle claim:
 
 Upgrade requires a stopped session. Start and restart do not take or read the
 lifecycle claim: upgrade instead holds their existing `.oats-start.lock`
-mutex through its swap. A partial receipt refuses starts through the remaining
+mutex until its final invocation receipt is persisted. A start blocked by an
+upgrade mutex names the same-key retry. A partial receipt refuses starts through the remaining
 finalization. The following stop/retire notes describe the original table.
 
 - **A holder is answered before a stale plan, by both verbs.** A guarded
