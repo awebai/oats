@@ -86,8 +86,8 @@ oats worktree remove --purpose <p>
   instance whose session is running or cannot be read (`E_CHILDREN_RUNNING`):
   stop that instance (`oats instance stop <instance>`) or retire it, then
   remove again.
-- If Git partly deletes a clean extra tree but fails on read-only ignored
-  output, `remove` finishes the deletion without following symlinks. A retry
+- From OATS 0.68.0, if Git partly deletes a clean extra tree but fails on
+  read-only ignored output, `remove` finishes the deletion without following symlinks. A retry
   of an unregistered residue with a dangling `.git` file first checks its
   surviving files against the recorded branch: deleted files are allowed,
   modified or nonignored untracked paths are `E_WORKTREE_DIRTY`. A failure
@@ -109,8 +109,8 @@ skills, instruction inject, scripts and hooks — from one of two sources:
 `instance.json` records each module's source, commit and content digest
 (`modules`), the provider payloads it received (`providers`), and the soul
 source (`workspace.soul`). A running instance never changes under itself;
-a stopped one can be moved to locked package versions with `oats instance
-upgrade`. Member modules and the soul body still require a new spawn.
+from OATS 0.68.0 a stopped one can be moved to locked package versions with
+`oats instance upgrade`. Member modules and the soul body still require a new spawn.
 
 **Why you have what you have:** `oats inspect --home "$OATS_INSTANCE_HOME"
 --json` reports each core capability with `layers.<slot>.from`: `soul` (your
@@ -139,12 +139,13 @@ module's recorded source. An unmarked row is current; otherwise it is marked
 `[package no longer locked]`, or `[member <reason>]` when the member is not
 confirmed. Drift is information, not a fault: the
 running instance keeps its commit. A new spawn picks up the new state; a
-stopped home's package modules can move through the upgrade act below.
+stopped home's package modules can move through the upgrade act below
+(from OATS 0.68.0).
 
 ## Moving a stopped home's package modules
 
-Requires a kernel whose `oats help` lists `instance upgrade` (feature
-`instance-upgrade` in `oats version --json`). A package pin and `oats sync`
+From OATS 0.68.0: requires a kernel whose `oats help` lists `instance
+upgrade` (feature `instance-upgrade` in `oats version --json`). A package pin and `oats sync`
 change the lock; they do not move an existing home's copies. When your task
 or human authorizes moving another instance, run from the deployment or a
 parent's home:
