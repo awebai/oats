@@ -302,6 +302,10 @@
         },
         "retire": {"$ref":"#/$defs/OptionalHook"},
         "launch": {"$ref":"#/$defs/OptionalHook"},
+        "upgrade": {
+          "$ref":"#/$defs/OptionalHook",
+          "description":"Runs from the staged destination module for a stopped home's package upgrade or undo. OATS_UPGRADE_PHASE=plan is read-only and prints {adopt:true} or {adopt:false,reason,remedy}; apply prints {meta,warning?} on success. A non-zero apply must leave no provider effects through atomicity or compensation: kernel rollback covers composed home bytes only. Receives OATS_META (recorded state), OATS_UPGRADE_FROM (recorded from/commit/digest) and OATS_UPGRADE_TO (locked destination entry) as JSON. Never required."
+        },
         "worktree": {
           "description": "Runs once in each tree the kernel creates: ./work of a work: worktree spawn (after the spawn hooks) and each `oats worktree add`. Its cwd is the new tree; see docs/capabilities.md, The worktree event.",
           "oneOf":[
