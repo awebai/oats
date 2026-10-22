@@ -13,7 +13,8 @@ export const EVENT_TITLES = Object.freeze({ spawned: 'Spawned', launched: 'Launc
   'stop-refused': 'Stop refused', 'retire-planned': 'Retirement planned', retired: 'Retired',
   'worktree-retained': 'Worktree retained', 'worktree-removed': 'Worktree removed', 'branch-deleted': 'Branch deleted',
   'child-spawn-refused': 'Child spawn refused', 'launch-prompt': 'Launch prompt', recomposed: 'Instructions recomposed', waiting: 'Waiting claim',
-  'worktree-added': 'Worktree added', 'modules-upgraded': 'Modules upgraded' });
+  'worktree-added': 'Worktree added', 'modules-upgraded': 'Modules upgraded',
+  'upgrade-refused': 'Module upgrade refused' });
 const strings = {
   spawned: ['agent', 'work', 'branch', 'model', 'parentInstance', 'relation'], launched: ['backend', 'launchConfig'],
   restarted: ['phase', 'signal'], stopped: ['signal', 'state'], 'stop-refused': ['phase', 'signal', 'state'],

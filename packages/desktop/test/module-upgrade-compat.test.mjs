@@ -23,3 +23,11 @@ test('modules-upgraded has its Desktop label and remains a readable event row', 
   assert.equal(EVENT_TITLES['modules-upgraded'], 'Modules upgraded');
   assert.equal(eventsData(data([upgraded]), target).events[0].kind, 'modules-upgraded');
 });
+
+test('upgrade-refused has its Desktop label and keeps its reported reason', () => {
+  const refused = event({ kind: 'upgrade-refused', data: { step: 'stage', reason: 'acme.tools: package not locked' } });
+  assert.equal(EVENT_TITLES['upgrade-refused'], 'Module upgrade refused');
+  const [row] = eventsData(data([refused]), target).events;
+  assert.equal(row.kind, 'upgrade-refused');
+  assert.deepEqual(row.data, { reason: 'acme.tools: package not locked' });
+});
