@@ -249,14 +249,27 @@ export async function chooseWorkspace(workspaces) {
    workspace, leaveTakenWorkspace), and nothing is focused. Switches run one at a time, so this window's
    state never differs from main's: a switch superseded before it is sent is never sent; one main has
    already bound is followed even when a newer one waits behind it. */
-let switching = Promise.resolve(), switchIntent = 0;
+let switching = Promise.resolve(), switchIntent = 0, handed = null;
+/* The layout a take-over of `workspace` brought (main's claim answer), while the switch to it lands: read
+   once by the workspace listener that restores tabs (shell.mjs restoreWorkspaceTabs), null otherwise. */
+export function handedLayout(workspace) {
+  const layout = handed?.workspace === workspace ? handed.layout : null;
+  handed = null;
+  return layout;
+}
 export function switchWorkspace(id, { focus = true, takeOver = false } = {}) {
   const intent = ++switchIntent;
   const run = switching.then(async () => {
     if (intent !== switchIntent) return { ok: false, code: "superseded" };
     if (!claimBridge()) { setWorkspace(id); return { ok: true }; }
     const r = await claim(id, takeOver ? { takeOver: true } : { focus });
-    if (r?.ok) { setWorkspace(boundTo(r, id)); return { ok: true }; }
+    if (r?.ok) {
+      // A take-over's layout (renderer/layout-handover.mjs) is the shell's to restore, as the switch lands.
+      handed = takeOver && r.layout ? { workspace: boundTo(r, id), layout: r.layout } : null;
+      setWorkspace(boundTo(r, id));
+      handed = null;
+      return { ok: true };
+    }
     return r ?? { ok: false, code: "failed" };
   });
   switching = run.catch(() => {});

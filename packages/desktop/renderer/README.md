@@ -55,7 +55,15 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   16) that main still serves and that no other window has, else `choosing`.
   Then it closes its tabs of that workspace in the background
   (`closeWorkspaceTabs`) and forgets its layout (`workspaceTabMemory.forget`).
-  A holder that answers late ends the same way. Claims run one at a
+  A holder that answers late ends the same way. Its answer hands over the
+  workspace's terminals and split (`layout-handover.mjs`: `describeLayout`, a
+  closed shape main checks with `validLayout` and passes on whole or not at
+  all, in the claim answer's `layout`); the asking window reads it once
+  (`handedLayout`, during the switch's listeners) and shell.mjs
+  `restoreHandedLayout` opens those terminals again (fresh viewers) under one
+  intent ticket, then lays them out (`composeLayout`). A selection, a switch or
+  a new connection meanwhile stops what is left. File, brain and view tabs do
+  not move. Claims run one at a
   time and a switch commits only after main's yes (`setWorkspace`). Main may
   move a window ahead of it: a window bound to a deployment whose view is
   observed later is registered under the view at once (main's

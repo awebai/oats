@@ -9,7 +9,8 @@
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
 import { currentWorkspace, workspaceGeneration, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, postJson, rowDeployment, httpError,
-  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices, leaveTakenWorkspace } from "./views/common.mjs";
+  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices, leaveTakenWorkspace, handedLayout } from "./views/common.mjs";
+import { describeLayout, composeLayout } from "./layout-handover.mjs";
 import { instanceActions, captureInstanceActionMenu, pendingActionReason } from "./instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
 import { createInstancePrAction } from "./instance-pr-action.mjs";
@@ -3044,16 +3045,20 @@ applyChordTitles();
 // surfaces, with no second/contextual sidebar and no width jump.
 initContextRoster();
 onWorkspaceChange(restoreWorkspaceTabs);
+// After it: a take-over's layout, once the workspace it came with is this window's (restoreHandedLayout).
+onWorkspaceChange((ws) => { const handed = handedLayout(ws); if (handed) void restoreHandedLayout(ws, handed); });
 // A take-over: another window took this window's workspace (main's window:release-workspace).
 desktopBridge?.onWorkspaceRelease?.((message) => { void releaseTakenWorkspace(message); });
-/** Another window took `workspace` over. This window answers main at once, then leaves it (views/common.mjs
- * leaveTakenWorkspace: its previous workspace, else the switcher), then closes every tab it has of it, each
- * terminal's viewer with it, and forgets that workspace's layout: nothing of it stays attached or writable
- * here. A late release (main moved the binding without waiting) ends the same way. */
+/** Another window took `workspace` over. This window answers main at once, with the layout it shows of it
+ * (layout-handover.mjs: its terminals and its split; file, brain and view tabs do not move), then leaves it
+ * (views/common.mjs leaveTakenWorkspace: its previous workspace, else the switcher), then closes every tab it
+ * has of it, each terminal's viewer with it, and forgets that workspace's layout: nothing of it stays attached
+ * or writable here. A late release (main moved the binding without waiting) ends the same way. */
 async function releaseTakenWorkspace(message) {
   const workspace = typeof message?.workspace === "string" && message.workspace ? message.workspace : null;
   if (!workspace) return;
-  try { await desktopBridge.windowReleaseAnswer?.(message.request, null); } catch { /* main moves it after its wait */ }
+  const layout = currentWorkspace() === workspace ? describeLayout(tabs, split, activeTab, workspace) : null;
+  try { await desktopBridge.windowReleaseAnswer?.(message.request, layout ? { layout } : null); } catch { /* main moves it after its wait */ }
   try { await leaveTakenWorkspace(workspace, message.workspaces); }
   finally { closeWorkspaceTabs(workspace); }
 }
@@ -3063,6 +3068,52 @@ function closeWorkspaceTabs(workspace) {
   for (const [id, t] of [...tabs]) if (t.workspace === workspace) closeTab(id, false, { explicit: false, background: true, passive: true });
   workspaceTabMemory.forget(workspace);
   wsActiveTerminal.delete(workspace);
+}
+/** A take-over's layout (layout-handover.mjs), handed over by the window the workspace came from: its terminals
+ * opened here again (fresh viewers; the agents keep running) and laid out as they were, under ONE intent ticket, so
+ * any selection made meanwhile (a click, a key, another open) supersedes what is left of it, as does a switch or a new
+ * connection. A terminal that no longer resolves in this workspace's roster, or no longer runs, is left out, as a
+ * stale memory's is (workspace-tab-memory.mjs recall). */
+async function restoreHandedLayout(ws, layout) {
+  const owns = tabOpenIntents.begin(), gen = workspaceGeneration(), connection = connectionGeneration;
+  const still = () => owns() && workspaceGeneration() === gen && currentWorkspace() === ws && connection === connectionGeneration;
+  const read = ++panelReads;
+  let panel;
+  try { panel = await api(`/api/panel?ws=${encodeURIComponent(ws)}`); } catch { return; }
+  if (!still()) return;
+  const quiet = (msg) => console.warn(`[take-over] ${msg}`);
+  const opened = [];
+  for (const ref of layout.terminals) {
+    opened.push(null);
+    const r = resolveTerminalOpen(panel.instances || [], ref, ws);
+    if (r.error) continue;
+    try { await whenKeyFree(r.key); } catch { return; }
+    if (!still()) return;
+    const pending = JSON.stringify([r.key, terminalOrigin(r.inst).incarnation]);
+    if (!pendingTerms.has(pending)) {
+      pendingTerms.add(pending);
+      try { await openTerminalTabInner(r.inst, ws, r.key, still, quiet, () => true, read); }
+      catch (error) { quiet(error?.message || String(error)); }
+      finally { pendingTerms.delete(pending); }
+    }
+    if (!still()) return;
+    opened[opened.length - 1] = [...tabs].find(([, t]) => t.key === r.key && t.workspace === ws)?.[0] ?? null;
+  }
+  const composed = composeLayout(layout, (i) => opened[i]);
+  if (!opened.some((id) => id !== null)) return;
+  // This window's own terminals of the workspace (kept from when it showed it before) join the focused group,
+  // as a handed one no group lists does: in a split, every terminal is in a group.
+  if (composed.split) {
+    const placed = new Set(composed.split.groups.flatMap((group) => group.tabs));
+    const into = composed.split.groups.find((group) => group.id === composed.split.focusedGroup);
+    for (const [id, t] of tabs) if (t.kind === "terminal" && t.workspace === ws && !placed.has(id)) into.tabs.push(id);
+  }
+  split = composed.split;
+  setSidebarMode("instances");
+  setNavActive(null);
+  if (composed.activeTab == null) { activateTab(null, { keepGroupFocus: true }); updateContextTabs(); return; }
+  selectTab(composed.activeTab, { intent: owns, focusContent: true });
+  updateContextTabs();
 }
 function restoreWorkspaceTabs() {
   contextRosterGen++;
