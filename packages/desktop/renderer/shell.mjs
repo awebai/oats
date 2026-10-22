@@ -2057,7 +2057,7 @@ async function openViewTab(name, title, extra = {}, key = `view:${name}`,
 
 // ── integrated terminal tab (the shell's own flagship view) ──────────────
 const pendingTerms = new Set(); // [key, incarnation] with a tab CREATION in flight (post-resolution — dedup for concurrent opens of one resolved identity)
-let terminalOpening = null; // the newest terminal open (openTerminalTabFlow): { id, owns, pending }
+let terminalOpening = null; // the newest terminal open (openTerminalTabFlow): { ref, inst (once resolved), owns, pending }
 /** ref: either a bare instance name (views, palette — resolved only when
  * unambiguous) or { instance, home?, agentsRoot? } (sidebar rows — exact).
  * opts.quiet (post-spawn auto-open): failures report via console.warn
@@ -2107,7 +2107,7 @@ async function openTerminalTabFlow(ref, notify, options = {}) {
   };
   // While it is in flight, and after it while its tab is the one shown, the instance steps go on from it
   // (openingInstanceId): a press before /api/panel answers or the terminal attaches is a move, not lost.
-  const opening = { id: ref && typeof ref === "object" ? instanceId(ref) : null, owns, pending: true };
+  const opening = { ref, inst: null, owns, pending: true };
   terminalOpening = opening;
   try {
     let panel;
@@ -2132,7 +2132,7 @@ async function openTerminalTabFlow(ref, notify, options = {}) {
         : `unknown instance "${r.name}"`);
     }
     const { inst, key } = r;
-    opening.id = instanceId(inst);
+    opening.inst = inst;
     if (options.expected && !sameInstanceActionTarget(options.expected, inst, ws)) return notify('The selected instance identity changed. Use the current roster.');
     try { await whenKeyFree(key); }
     catch (e) { if (!owns()) return; throw e; }
@@ -2884,9 +2884,12 @@ function leaderTargetId(el) {
  * one shown, as long as no other selection came since (its ticket owns); else null. */
 function openingInstanceId() {
   const opening = terminalOpening;
-  if (!opening?.id || !opening.owns()) return null;
+  // The resolved row, else the reference when it is a row (a bare name means nothing until resolved).
+  const of = opening?.inst ?? (opening?.ref && typeof opening.ref === "object" ? opening.ref : null);
+  if (!of || !opening.owns()) return null;
+  const id = instanceId(of);
   const shown = activeTab != null ? tabs.get(activeTab) : null;
-  return opening.pending || (shown?.kind === "terminal" && shown.instanceRef && instanceId(shown.instanceRef) === opening.id) ? opening.id : null;
+  return opening.pending || (shown?.kind === "terminal" && shown.instanceRef && instanceId(shown.instanceRef) === id) ? id : null;
 }
 /** What a key after the leader, a sidebar key or a chord that does one's work acts on, read when that key is
  * pressed at `el`: `targetId` (leaderTargetId), and `stepFromId` the instance ↑/↓ go on from: an open in
