@@ -281,7 +281,8 @@ function types(m) {
 
 /** THE CHEAT SHEET (docs/tui.md, "The cheat sheet"): the keys that apply now, one per row, the
  *  leader first in every focus (`Ctrl+X commands`), then the palette, `help` and `quit` last. While
- *  the leader waits for its key it is the leader's hint (leaderHints). While what is typed goes to
+ *  the leader waits for its key it is the same: nothing is drawn for the wait, and the help lists
+ *  the leader's table (views/help.mjs). While what is typed goes to
  *  the agent the TUI reads the leader and the chords only: the leader then Esc gives the list the
  *  focus, and the leader twice types the leader into the terminal; while the terminal confirms the
  *  kitty keyboard protocol the chords lead there (docs/tui.md, "Chords"; chordHints), the leader's
@@ -291,7 +292,7 @@ function types(m) {
  *  (spawnHints), a confirmation, the filter field, the help and the switcher, how to work them: the
  *  keys they read are their own, so they are the TUI's words, but for the confirmation's close key and the
  *  field's clear, which are the user's. Else it is small: a view's list or its detail names what
- *  Enter does now, and the rest stays the leader's hint's, the palette's and the help's. In the list
+ *  Enter does now, and the rest stays the leader's, the palette's and the help's. In the list
  *  of instances Enter is `open` while it would open the selected agent's terminal and `focus
  *  terminal` on the row whose terminal is open; while another machine is asked first, the key that
  *  gives the open up (`stop opening`) stands in its place. In the Souls view Enter is the detail
@@ -305,7 +306,6 @@ function types(m) {
 function cheatSheet(m) {
   const action = (id) => (m.actions ?? []).find((a) => a.id === id && a.keys.length);
   const hint = (id, label) => { const a = action(id); return a ? made(id, keyText(keyLabel(a.keys[0])), label ?? a.label) : null; };
-  if (m.leader) return leaderHints(m);
   const led = (list) => [made("leader", leaderText(m), "commands"), ...list.filter(Boolean)];
   const soul = m.view === "souls" && m.souls ? m.souls : null;
   const capability = m.view === "capabilities" && m.capabilities ? m.capabilities : null;
@@ -360,7 +360,7 @@ const SHEET_CHORDS = Object.freeze([
 /** The chord hints of a terminal's focus (docs/tui.md, "Chords"): those of SHEET_CHORDS read now
  *  (the model's `chords`: tui.json may have taken a key; without the protocol the Alt+Shift
  *  arrows alone), the tabs' only
- *  with two tabs or more, as the leader's hint has them. A pair's keys share their modifiers:
+ *  with two tabs or more, as the leader's table has them. A pair's keys share their modifiers:
  *  `Alt+Shift+Up/Down` (keysTogether). They stand in a block of their own (cheatRows). */
 function chordHints(m) {
   const keyOf = new Map((m.chords ?? []).map(([key, does]) => [does, key]));
@@ -377,41 +377,9 @@ function spawnHints(s, ascii) {
     : [...(s.enter ? [own("enter", "Enter", ownEllipsis(s.enter, ascii))] : []), own("next", "Tab", "next"), own("back", "Shift+Tab", "back"), own("esc", "Esc", "back")];
 }
 
-/** The leader's hint (docs/tui.md, "The leader"): the leader's key, then what each key after it
- *  does, from actions.mjs LEADER, the views, the instances and the acts each one hint. The keys
- *  that need a terminal are named only while one is open, the tabs' only with two or more, and the
- *  split's only where they apply; while what is typed goes to the agent, the leader again, which
- *  types it there. The last, the list's, is never given up. */
-function leaderHints(m) {
-  const by = (does) => LEADER.find((entry) => entry.does === does);
-  const one = (does) => { const entry = by(does); return own(does, keyLabel(entry.keys[0]), entry.label); };
-  const keysOf = (list) => list.map((does) => keyLabel(by(does).keys[0])).join("/");
-  const views = keysOf(["instances", "souls", "capabilities"]);
-  const typing = m.terminal?.focus === "terminal" && m.view === "instances" && !m.palette && !m.spawn;
-  return [
-    made("leader", leaderText(m), "then"),
-    own("palette", keyLabel(by("palette").keys[0]), "palette"),
-    own("views", views === "1/2/3" ? "1-3" : views, "views"),
-    own("instance", keysOf(["previous", "next"]), "instance"),
-    ...(m.terminal ? [one("zoom"), one("close-terminal")] : []),
-    // With two tabs or more, the keys that move between them.
-    ...((m.tabs?.length ?? 0) > 1 ? [own("tabs", keysOf(["tab-previous", "tab-next"]), "tab")] : []),
-    // The split's (docs/tui.md, "Splits"): to split while there is one group; with two, the next
-    // group, and the move of the shown tab, or the close of the focused group while it is empty.
-    ...(m.panelOpen && !m.split ? [own("split", keysOf(["split-right", "split-down"]), "split")] : []),
-    ...(m.split ? [one("group-next"), ...(m.terminal ? [one("tab-move")] : [one("group-close")])] : []),
-    own("acts", keysOf(["stop", "restart", "start", "retire"]), "acts"),
-    one("filter"), one("workspaces"), one("help"),
-    ...(typing ? [made("again", leaderText(m), types(m))] : []),
-    one("list"),
-  ];
-}
-
-/** The hints that stand in `count` rows: given up from the end, down to the leader alone (givenUp);
- *  the leader's hint keeps its last, the list's, while it has two rows. */
-function keptHints(m, hints, count) {
+/** The hints that stand in `count` rows: given up from the end, down to the leader alone (givenUp). */
+function keptHints(hints, count) {
   if (count >= hints.length) return hints;
-  if (m.leader && count >= 2) return [...hints.slice(0, count - 1), hints.at(-1)];
   let kept = hints;
   while (kept.length > Math.max(1, count)) kept = givenUp(kept);
   return kept;
@@ -454,7 +422,7 @@ const titleSheet = (m) => cheatSheet(m).filter((h) => m.kitty || h.block !== "ch
  *  its essential keys (the cheat sheet's, but for the leader, the palette, help and quit) at the
  *  right, dim, as many as fit after what the row holds, given up from the end. With `first`, the
  *  first key always stands (a detail page's way back): what the row holds is cut to leave it room. */
-function withKeys(given, hints, cols, { skip = ["leader", "palette", "help", "quit"], last = false, first = false } = {}) {
+function withKeys(given, hints, cols, { skip = ["leader", "palette", "help", "quit"], first = false } = {}) {
   const keys = hints.filter((h) => !skip.includes(h.id));
   const widthOf = (list) => list.reduce((sum, h) => sum + h.key.width + 1 + h.word.width, 0) + Math.max(0, list.length - 1) * GAP;
   const limit = first && keys.length ? cols - MARGIN - widthOf(keys.slice(0, 1)) - GAP : Infinity;
@@ -463,9 +431,8 @@ function withKeys(given, hints, cols, { skip = ["leader", "palette", "help", "qu
   // What the row holds ends where its text does: a span may be given more cells than its text takes.
   const end = row.reduce((most, span) => (span.text !== undefined ? Math.max(most, span.col + Math.min(span.width ?? Infinity, textWidth(textOf(span.text)))) : most), 0);
   let kept = keys;
-  // Given up from the end, the leader last (givenUp); with `last`, the last is kept as long as one
-  // other is (the leader's `Esc`).
-  while (kept.length && end + GAP + widthOf(kept) > cols - MARGIN) kept = last && kept.length > 1 ? [...kept.slice(0, -2), kept.at(-1)] : givenUp(kept);
+  // Given up from the end, the leader last (givenUp).
+  while (kept.length && end + GAP + widthOf(kept) > cols - MARGIN) kept = givenUp(kept);
   const spans = [];
   let col = cols - MARGIN - widthOf(kept);
   for (const h of kept) {
@@ -512,7 +479,7 @@ function sidebar(m, g, rows, list) {
     if (i < VIEWS.length - 1) put(rule(cols, m.ascii));
   });
   put(rule(cols, m.ascii));
-  cheatRows(keptHints(m, hints, count), cols).forEach(put);
+  cheatRows(keptHints(hints, count), cols).forEach(put);
 }
 
 /** The rule between the sidebar and the main area, over the whole height. */
@@ -640,9 +607,9 @@ function framed(m, size) {
     if (paged) rows[0] = withKeys(rows[0], cheatSheet(m), cols, { first: true });
   }
   // Over the whole screen no cheat sheet is drawn: the terminal's title row, the TUI's own, carries
-  // its keys at the right instead (the leader, then Esc for the list), and while the leader waits,
-  // the leader's hint, as many as fit, its last (`Esc the list`) kept.
-  if (zoomed) rows[area.title] = m.leader ? withKeys(rows[area.title], leaderHints(m), cols, { skip: [], last: true }) : withKeys(rows[area.title], titleSheet(m), cols, { skip: ["again"] });
+  // its keys at the right instead (the leader, then Esc for the list), the same while the leader
+  // waits.
+  if (zoomed) rows[area.title] = withKeys(rows[area.title], titleSheet(m), cols, { skip: ["again"] });
   // The focused group's terminal, when it shows one: the agent's cursor, where the agent has it,
   // while what is typed goes to the agent.
   const shownArea = area !== null && area.id !== null && m.terminal ? { title: area.title, top: area.top, col: area.col, cols: area.cols, rows: area.rows, whole: area.whole } : null;

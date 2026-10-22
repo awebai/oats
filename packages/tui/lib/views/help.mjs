@@ -148,7 +148,7 @@ const sentences = (list, cols) => list.flatMap((sentence) => {
 });
 
 /** What the leader pressed again does, the last line of the leader's table. */
-export const LEADER_AGAIN = "the leader again: types it into the terminal that has the focus; with the list focused, closes the hint";
+export const LEADER_AGAIN = "the leader again: types it into the terminal that has the focus; with the list focused, cancels the leader";
 
 /** THE CHORDS (docs/tui.md, "Chords"): the chords read now, the extras of the leader, which is the
  *  key that always works. While the terminal confirms the kitty keyboard protocol they lead the
@@ -271,7 +271,7 @@ function leaderRows(detachKey, cols) {
     ...table([...LEADER.map((entry) => [entry.keys.map(keyLabel).join(", "),
       words(entry.terminal ? `${entry.label}, while a terminal is open` : entry.label)]),
     // The leader again is the user's key, so it is not in the table: it types the leader into the
-    // terminal that has the focus, and with the list focused only closes the hint.
+    // terminal that has the focus, and with the list focused only cancels the leader.
     [key, words(LEADER_AGAIN)]], cols, KEYS),
   ];
 }

@@ -80,11 +80,14 @@ test("view-local defaults are first-class engine bindings (registerAction defaul
   assert.match(spawn, /id: "spawn\.brain", label:.*defaultChord: "B"/, "spawn.brain default B");
 });
 
-test("the leader is wired as one rebindable global action, inert under a modal, with its hint and footer button", () => {
+test("the leader is wired as one rebindable global action, inert under a modal, with its hint and no footer button", () => {
   const src = read("renderer/shell.mjs");
   assert.match(src, /registerAction\(\{ id: "app\.leader", label: "Leader: the commands that follow one key", context: "global", when: \(\) => !modalOpen\(\),/);
   assert.match(src, /const leader = createLeader\(\{ win: window, isMac, modalOpen,/);
-  assert.match(src, /onSettle: \(does, origin\) => \{ const why = notApplicable\(does\); if \(why\) sayInHint\(why\); else leaderDispatch\.run\(does, origin\); \}/);
+  assert.match(src, /onSettle: does => \{ const why = notApplicable\(does\); if \(why\) sayInHint\(why\); else leaderDispatch\.run\(does, leaderOrigin\(document\.activeElement\)\); \}/);
+  // The wait shows nothing: it is announced (leader-hint.mjs announce), and the keys are the shortcuts editor's.
+  assert.match(src, /onOpen: \(\) => leaderHint\.announce\(\),/);
+  assert.doesNotMatch(src, /showKeys|leaderRowsNow/);
   assert.match(src, /createLeaderHint\(\{ doc: document, host: document\.getElementById\("main"\), before: document\.getElementById\("show-panel"\) \}\)/);
   assert.match(src, /registerAction\(\{ id: "split\.focusNextGroup", label: "Focus the next editor group", context: "tabs",/);
   // The footer has no leader button: the shortcuts editor is where the commands are listed.

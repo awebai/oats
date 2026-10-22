@@ -433,20 +433,16 @@ body {
                      display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
                      font: inherit; cursor: pointer; }
 .main-edge-control[hidden] { display: none; }
-/* The leader's hint (leader-hint.mjs): a quiet, opaque panel at the bottom of the main area, over
-   the terminal, never focusable. Idle it is an empty live region kept out of sight (not display:none,
-   so what is put into it is announced). Keys flow in columns, one key and its label per line. */
+/* The leader's hint (leader-hint.mjs): one quiet, opaque line at the bottom of the main area, over
+   the terminal, never focusable, after a key that could not act. Otherwise (idle, and while the leader
+   waits, announced to a screen reader only) it is a live region kept out of sight (not display:none,
+   so what is put into it is announced). */
 .leader-hint { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 9; box-sizing: border-box;
                max-height: 50%; overflow: hidden; padding: 10px 14px; border: 1px solid var(--border);
                border-radius: 8px; background: var(--surface-2); color: var(--fg); box-shadow: var(--shadow-popover);
                font-size: 12px; line-height: 1.5; pointer-events: none; }
-.leader-hint:not([data-mode]) { width: 1px; height: 1px; left: 0; right: auto; bottom: 0; padding: 0; margin: -1px;
-                                border: 0; overflow: hidden; clip-path: inset(50%); box-shadow: none; }
-.leader-hint-keys { margin: 0; padding: 0; list-style: none; columns: 3 15em; column-gap: 20px; }
-.leader-hint-keys li { display: flex; gap: 10px; align-items: baseline; break-inside: avoid; white-space: nowrap; }
-.leader-hint-key { flex: none; min-width: 6.5em; color: var(--fg); font: 600 11.5px var(--mono); }
-.leader-hint-key kbd { font: inherit; }
-.leader-hint-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.leader-hint:not([data-mode="line"]) { width: 1px; height: 1px; left: 0; right: auto; bottom: 0; padding: 0; margin: -1px;
+                                       border: 0; overflow: hidden; clip-path: inset(50%); box-shadow: none; }
 .leader-hint-line { margin: 0; color: var(--fg); }
 #show-sidebar { left: 6px; }
 #show-panel { right: 6px; }

@@ -1136,7 +1136,7 @@ function leading(state, event, keymap) {
   return { pass: plain };
 }
 
-/** The leader twice (`state` is after it, its hint closed). While the open terminal has the focus,
+/** The leader twice (`state` is after it, the leader cancelled). While the open terminal has the focus,
  *  which it keeps, the leader's own key goes to the agent: the effect `{ input: <bytes> }`, the
  *  bytes a terminal sends for the back key (term/through.mjs backKeySequences, its first form:
  *  0x18 for C-x, the default; ESC o for M-o), which the loop types into the focused tab as it types what

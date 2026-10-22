@@ -297,18 +297,13 @@ test("zoomed, the focused group's terminal has the whole screen and the other is
   assert.equal(draw(toList(both("-")), { cols: 70, rows: 30 }).regions.length, 0, "the list alone with its focus (T1)");
 });
 
-test("the leader's hint names the split's keys where they apply", () => {
-  // The hint is the sidebar's cheat sheet, a row per key: the sidebar's rows (30 columns while a
-  // tab is open, the empty group's too), trimmed, one per line.
-  const hint = (s) => {
-    const w = reduce(s, s.terminal?.focus === "terminal" ? { back: true, read: ++reads, ...AT } : { key: s.leaderKey, read: ++reads, ...AT }).state, size = { cols: 200, rows: 40 };
-    const cols = layout(null, size, { terminal: w.tabs.length > 0 }).listCols;
-    return draw(w, size).cells.map((line) => line.slice(0, cols).map((cell) => cell.text).join("").trim()).join("\n");
-  };
-  assert.match(hint(opened(SIX(), "dev-a")), /\nw {9}close terminal\n\|\/- {7}split\n/);
-  assert.match(hint(splitOf()), /\nTab {7}next group\nx {9}close group\n/);
-  assert.match(hint(both("|")), /\nTab {7}next group\nm {9}move tab\n/);
-  assert.doesNotMatch(hint(SIX()), /split/);
+test("while the leader waits the screen is the one without it, with one group, a split with an empty group and two groups each with a tab: the split's keys are the help's", () => {
+  const armed = (s) => reduce(s, s.terminal?.focus === "terminal" ? { back: true, read: ++reads, ...AT } : { key: s.leaderKey, read: ++reads, ...AT }).state;
+  for (const [how, s] of [["no terminal", SIX()], ["one group", opened(SIX(), "dev-a")], ["a split", splitOf()], ["two groups", both("|")], ["two groups, the list", toList(both("|"))]]) {
+    const w = armed(s);
+    assert.equal(w.leader.waiting, true, `${how}: the leader waits`);
+    for (const size of [S80, S120, S200]) assert.deepEqual(draw(w, size).lines, draw(s, size).lines, `${how} at ${size.cols}x${size.rows}`);
+  }
 });
 
 test("the panel's place is the Instances view's with the terminal's focus, whatever is drawn over it: behind the help and the palette the frame draws no region, and panelPlace still measures the panel (round 1 of the review)", () => {

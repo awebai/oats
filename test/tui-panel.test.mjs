@@ -24,6 +24,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
+import { leaderPairs } from "./helpers/leader-pairs.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { backKeyLabel } from "../packages/tui/lib/actions.mjs";
 import { defaultDetachKey } from "../packages/tui/lib/config.mjs";
@@ -232,10 +233,8 @@ const OPEN_HINT = `${LEAD}Enter open   `;
 const backWith = (tabs) => [`${LEADER} commands   ${LEADER} Esc the list   ${LEADER} ${LEADER} types ${LEADER}`,
   ...(process.platform === "darwin" ? [] : ["Alt+Shift+Up/Down agent", ...(tabs > 1 ? ["Alt+Shift+Left/Right tab"] : [])])].join("   ");
 const BACK = backWith(1);
-/** The sheet while the leader waits for its key (docs/tui.md, "The leader"). */
-const LEADER_HINT = `${LEADER} then   k palette`;
 /** The whole sheet while the list has the focus beside the open terminal: Enter goes to it; the
- *  terminal's own keys (zoom, close, the tabs) are the leader's hint's, not the sheet's. */
+ *  terminal's own keys (zoom, close, the tabs) are the leader's and the help's, not the sheet's. */
 const LIST_HINTS = `${LEAD}Enter focus terminal   n spawn   w workspaces   ? help   q quit`;
 const FAILED = `${NAME} could not be opened.`;
 /** The agent's row in the list, selected and running: the green mark and its name, and nothing
@@ -266,6 +265,9 @@ async function until(term, predicate, what, faults = () => [], ms = 15000) {
     assert.fail(`${error.message}${left === 0 ? ` (this file's budget of ${BUDGET_MS / 1000}s was spent before the wait began)` : ""}${missing.length ? `: ${missing.join("; ")}` : ""}; ${term.id} shows:\n${term.shows()}${panelState(lastRun, lastWatch)}`);
   }
 }
+
+/** The leader, then a key in a later read, pressed until what the key does is seen (helpers/leader-pairs.mjs). */
+const pairs = leaderPairs({ leaderKey: LEADER_KEY, pause, waitUntil, deadline: FILE_DEADLINE, until });
 
 /** The run `until` reports on, the last one started, and the watch of its server, while one runs. */
 let lastRun = null, lastWatch = null;
@@ -425,12 +427,12 @@ async function tui(term, { tmp = tmpFor() } = {}) {
     /** The sidebar's rows: each row of the screen up to the rule after the sidebar, trimmed (the
      *  whole row on a screen with no sidebar: a zoomed terminal's). */
     sidebar() { return term.screen().map((text) => text.split("│")[0].trim()); },
-    /** The cheat sheet, as the constants above spell it: its rows from the leader's (`commands`,
-     *  or `then` while the leader waits) to the first empty one, each with its run of blanks made
-     *  one space; "" when none is drawn (a zoomed terminal has no sidebar). */
+    /** The cheat sheet, as the constants above spell it: its rows from the leader's (`commands`)
+     *  to the first empty one, each with its run of blanks made one space; "" when none is drawn
+     *  (a zoomed terminal has no sidebar). */
     sheet() {
       const side = run.sidebar().map((text) => text.replace(/ {2,}/g, " "));
-      const first = side.findIndex((text) => text === `${LEADER} commands` || text === `${LEADER} then`);
+      const first = side.findIndex((text) => text === `${LEADER} commands`);
       if (first < 0) return "";
       const end = side.indexOf("", first);
       return side.slice(first, end < 0 ? undefined : end).join("   ");
@@ -443,15 +445,11 @@ async function tui(term, { tmp = tmpFor() } = {}) {
     zoomed(after = "") { return term.screen().some((text) => text.startsWith(`pane-ready:${after}`)) && run.row() === null; },
     /** Enter would open the agent now: its row is selected and running, and the cheat sheet says so. */
     openable() { return RUNNING_ROW.test(run.row() ?? "") && run.sheet().startsWith(OPEN_HINT); },
-    /** The leader then Esc from the terminal: the leader read on its own, then Esc in a later read,
-     *  which gives the focus to the list. Beside the sidebar the leader's hint stands in the cheat
-     *  sheet, and Esc waits for it. Zoomed (`zoomed`) the terminal has the whole screen, and the
-     *  hint stands on its title row instead: Esc waits for that. */
-    async back(why, { zoomed = false } = {}) {
-      term.press(LEADER_KEY);
-      if (zoomed) await until(term, () => (term.screen()[0] ?? "").includes(`${LEADER} then`) && (term.screen()[0] ?? "").endsWith("Esc the list"), `the leader's hint on the zoomed terminal's title row, ${why}`);
-      else await until(term, () => run.sheet().startsWith(LEADER_HINT), `the leader's hint, ${why}`);
-      term.press("Escape");
+    /** The leader then Esc from the terminal, which gives the focus to the list: its cheat sheet,
+     *  the leader then the palette, is drawn. From the list the pair again changes nothing, so it
+     *  repeats safely. */
+    async back() {
+      await pairs.repeatable(term, "Escape", () => run.sheet().startsWith(LEAD), "the list's focus, its cheat sheet drawn");
     },
     async ready(why) {
       await until(term, () => run.openable(), `the agent's row, selected and running, with "Enter open" in the cheat sheet after the leader and the palette, ${why}`);
@@ -532,7 +530,7 @@ test(`Enter on the running agent shows its terminal in the panel beside the list
   assert.match(viewers[0], /\bsession attach\b/, "the pane's process is the viewer itself");
   assert.doesNotMatch(viewers[0], /^\S*sh -c /, "no shell between the pane and the viewer");
 
-  await run.back("from the terminal");
+  await run.back();
   await until(term, () => run.sheet().startsWith(LIST_HINTS), "the list's focus, with Enter focus terminal in the cheat sheet");
   term.press("c");
   await until(term, () => !run.beside() && run.detailBeside() && viewerSessions().length === 0,
@@ -556,7 +554,7 @@ test("what is typed reaches the agent and shows in the panel; the leader then Es
   await until(term, () => typed() === "abc", `what was typed reached the agent (it read ${JSON.stringify(typed())})`);
   await until(term, () => run.beside("abc"), "the agent's screen, with what it read, in the panel");
 
-  await run.back("after typing");
+  await run.back();
   await until(term, () => run.sheet().startsWith(LIST_HINTS), "the list's focus after the leader then Esc");
   assert.equal(typed(), "abc", "the leader and the Esc after it were taken from the agent's input");
   // The terminal goes on being drawn while the list has the focus: a key typed from outside shows.
@@ -567,7 +565,7 @@ test("what is typed reaches the agent and shows in the panel; the leader then Es
   await until(term, () => run.zoomed("abcd") && term.screen()[0].startsWith(`[${NAME}] `) && term.screen()[0].endsWith(`${LEADER} commands   ${LEADER} Esc the list`) && run.sheet() === "", "the terminal zoomed: its tab bar on the first row, the shown tab bracketed, with the leader's keys at its right, and the agent's screen from the first column, no list and no cheat sheet");
   term.type("e");
   await until(term, () => typed() === "abcde", "typing reaches the agent while zoomed");
-  await run.back("while zoomed", { zoomed: true });
+  await run.back();
   await until(term, () => run.beside("abcde") && RUNNING_ROW.test(run.row() ?? "") && run.sheet().startsWith(LIST_HINTS), "the list back, with the panel beside it");
   assert.equal(typed(), "abcde");
 
@@ -604,7 +602,7 @@ test("an idle open terminal draws no frame for the 2 s it is watched: a frame co
   t.diagnostic(`frames in each 2 s window: ${JSON.stringify(watched)}`);
   assert.equal(watched.includes(0), true, `an idle open terminal drew a frame in every window it was watched: ${JSON.stringify(watched)}`);
   assert.equal(run.beside("x"), true, "the terminal is still drawn");
-  await run.back("before q");
+  await run.back();
   await until(term, () => run.sheet().startsWith(LIST_HINTS), "the list's focus before q");
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
@@ -708,7 +706,7 @@ function viewerFaults(kept, before) {
 }
 
 for (const [how, end, expected] of [
-  ["q", async (term, run) => { await run.back("before q"); await until(term, () => run.sheet().startsWith(LIST_HINTS), "the list's focus before q"); term.press("q"); }, 0],
+  ["q", async (term, run) => { await run.back(); await until(term, () => run.sheet().startsWith(LIST_HINTS), "the list's focus before q"); term.press("q"); }, 0],
   ["SIGTERM", (term, run) => process.kill(run.pid, "SIGTERM"), 143],
   ["kill -9", (term, run) => process.kill(run.pid, "SIGKILL"), 137],
 ]) {
@@ -840,7 +838,7 @@ test("a run's sweep removes what a dead run left, its directory (its server SIGK
   await live.open("in the live run");
   const liveDir = live.dir();
   assert.equal(answers(panelSocket(liveDir)), true);
-  await live.back("in the live run");
+  await live.back();
   await until(liveTerm, () => live.sheet().startsWith(LIST_HINTS), "the live run's list focused, its terminal open");
   // A dead run: opened, then killed with no way to clean up. Its directory is the one that is new
   // since it started: made at its first open, or before it by the add of its deployment to this
@@ -1256,16 +1254,25 @@ const stripNames = (run) => (run.panel()[0] ?? "").split("│").map((tab) => tab
 /** The row of agent `name` is selected and running, read from the list's columns. */
 const selectedRunning = (term, name) => term.screen().some((text) => new RegExp(`^> +● ${name}$`).test([...text].slice(0, LIST_BESIDE).join("").trimEnd()));
 /** The tab of FOUR[k]: Enter on the selected agent for the first, then for each next one the leader
- *  (its hint waited for: the next key counts only in a later read) and Down, from the terminal shown.
+ *  then Down from the terminal shown, until its row is selected or the tab bar names it. The pair
+ *  does not repeat safely (a second Down opens the agent after), so while its effect is not seen a
+ *  frame drawn after it says whether it acted (pairs.checked): the leader then Esc (back, which
+ *  repeats safely) gives the list the focus, and the list's sheet is drawn only after what Down
+ *  did; Enter on the shown terminal's row then gives it the focus again.
  *  Resolves once its viewer's session is attached, its screen is in the panel with the focus in it,
  *  its row is selected, and the strip names every agent opened so far, in the order opened. */
 async function openTab(term, run, k) {
   const name = FOUR[k], before = new Set(viewerSessions());
   if (k === 0) term.press("Enter");
   else {
-    term.press(LEADER_KEY);
-    await until(term, () => run.sheet().startsWith(LEADER_HINT), `the leader's hint, before the leader and Down open ${name}`);
-    term.press("Down");
+    const acted = () => selectedRunning(term, name) || stripNames(run).includes(name);
+    await pairs.checked(term, "Down", acted, async () => {
+      await run.back();
+      const did = acted();
+      term.press("Enter");
+      await until(term, () => run.sheet() === backWith(did ? k + 1 : k), `the focus back in the shown terminal, ${did ? `${name}'s: the leader then Down had acted` : "the leader then Down to be pressed again"}`);
+      return did;
+    }, `${name} opened: its row selected or its tab in the bar`);
   }
   const opened = FOUR.slice(0, k + 1);
   await until(term, () => {
@@ -1277,7 +1284,7 @@ async function openTab(term, run, k) {
 }
 
 for (const [how, end, expected] of [
-  ["q", async (term, run) => { await run.back("before q"); await until(term, () => run.sheet().startsWith(LIST_HINTS), "the list's focus before q"); term.press("q"); }, 0],
+  ["q", async (term, run) => { await run.back(); await until(term, () => run.sheet().startsWith(LIST_HINTS), "the list's focus before q"); term.press("q"); }, 0],
   ["kill -9", (term, run) => process.kill(run.pid, "SIGKILL"), 137],
 ]) {
   test(`${how} with four agents' terminals open as tabs of the real oats tui: the private server is gone, no viewer session of any tab and no viewer's own key table is left on the agents' server, and every agent keeps running${how === "kill -9" ? "; the run directory is left for the next run's sweep" : "; the run directory is removed"}`, { skip: NO_TMUX }, async (t) => {

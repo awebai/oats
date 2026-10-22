@@ -65,7 +65,7 @@ function shell(t, shellSource = source) {
     ctx: {},
   };
   const names = ["closeStage", "showStage", "setNavActive", "showTabLayer", "updateActiveContexts", "setSidebarMode", "updateContextTabs",
-    "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "onTabKeydown", "renderSplit", "selectEmptyGroup", "restoreWorkspaceTabs", "showTerminalContext", "openViewTab"];
+    "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "onTabKeydown", "walkedTabs", "visibleTabEntries", "renderSplit", "selectEmptyGroup", "restoreWorkspaceTabs", "showTerminalContext", "openViewTab"];
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];

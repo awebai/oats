@@ -15,7 +15,6 @@ import {
   registerAction, resetAllBindings, setBinding, matchEvent, handleKeydown,
 } from "../renderer/keybindings.mjs";
 import { createLeader, followUpKey, isLoneModifier } from "../renderer/leader.mjs";
-import { leaderRowsNow, leaderLabel } from "../renderer/leader-keys.mjs";
 import { createLeaderHint, LEADER_ANNOUNCEMENT } from "../renderer/leader-hint.mjs";
 import { terminalKeyDecision, terminalOptions } from "../renderer/terminal-tab.mjs";
 import { LEADER_TABLE } from "../../client/keymap.mjs";
@@ -337,7 +336,7 @@ test("under a shown modal the leader is not there: the chord goes where it goes 
 
 // ---------------------------------------------------------------- the hint
 
-test("the hint: role=status, announced once, the keys for the eye, never focusable; a line says why", t => {
+test("the hint: role=status; the wait is announced once and draws nothing; never focusable; a line says why", t => {
   const dom = new JSDOM(`<main id="main"><button id="show-panel"></button></main>`);
   t.after(() => dom.window.close());
   const doc = dom.window.document;
@@ -346,18 +345,20 @@ test("the hint: role=status, announced once, the keys for the eye, never focusab
   assert.equal(el.getAttribute("role"), "status");
   assert.equal(doc.getElementById("main").lastElementChild.id, "show-panel", "Show instance panel stays last");
   assert.equal(el.textContent, "", "idle: an empty live region");
-  hint.showKeys(leaderRowsNow({}).map(row => ({ keys: row.keys, label: leaderLabel(row.does) })), { isMac: false });
-  assert.equal(el.querySelector(".sr-only").textContent, LEADER_ANNOUNCEMENT);
-  assert.equal(el.querySelector(".leader-hint-keys").getAttribute("aria-hidden"), "true");
-  const lines = [...el.querySelectorAll("li")].map(li => li.textContent);
-  assert.equal(lines[0], `K Space${leaderLabel("palette")}`);
-  assert.ok(lines.includes("EscInstance roster"));
-  assert.equal(lines.length, leaderRowsNow({}).length);
+  hint.announce();
+  // For a screen reader only: one sr-only line, no keys, nothing drawn (the shortcuts editor lists the keys).
+  assert.deepEqual([...el.children].map(child => [child.className, child.textContent]), [["sr-only", LEADER_ANNOUNCEMENT]]);
+  assert.equal(el.querySelectorAll("ul, li, kbd, .leader-hint-line").length, 0, "no keys panel");
+  assert.equal(hint.mode(), "wait");
+  assert.equal(hint.isShown(), false, "the wait shows nothing");
+  assert.notEqual(el.dataset.mode, "line", "the region stays out of sight (shell.css shows only a line)");
   assert.equal(el.querySelectorAll("button, a, input, [tabindex]").length, 0, "nothing in it takes focus");
   assert.equal(el.hasAttribute("tabindex"), false);
   hint.say("No instance is focused or selected.");
   assert.equal(el.textContent, "No instance is focused or selected.");
   assert.equal(hint.mode(), "line");
+  assert.equal(hint.isShown(), true);
+  assert.equal(el.dataset.mode, "line");
   hint.hide();
   assert.equal(el.textContent, "");
   assert.equal(hint.isShown(), false);

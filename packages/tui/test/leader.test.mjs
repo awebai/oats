@@ -46,8 +46,8 @@ const leader = (state, read = ++reads, rest = false) => (state.terminal?.focus =
   ? reduce(state, { back: true, read, rest, ...AT })
   : reduce(state, { key: state.leaderKey, read, ...AT }));
 /** The leader twice, each in a read of its own, from any focus (helpers.mjs leaderTwice is the
- *  terminal's: from the list its `{ back }` is no key). From the list's focus it only closes the
- *  hint; from the terminal's it types the leader's bytes into the agent. */
+ *  terminal's: from the list its `{ back }` is no key). From the list's focus it only cancels the
+ *  leader; from the terminal's it types the leader's bytes into the agent. */
 const twice = (state) => key(leader(state).state, state.leaderKey);
 /** The instance's id and its row, by name. */
 const idOf = (state, name) => instanceId(rowOf(state, name));
@@ -170,7 +170,7 @@ test("the leader then Esc from the terminal gives the list the focus, unzoomed, 
   }
 });
 
-test("the leader twice from the terminal types the leader's own bytes into the agent, the terminal keeping the focus and its zoom; the hint closes: 0x18 for C-x (the default), ESC o for M-o, 0x1c for C-\\, a function key's first form", () => {
+test("the leader twice from the terminal types the leader's own bytes into the agent, the terminal keeping the focus and its zoom; the leader is spent: 0x18 for C-x (the default), ESC o for M-o, 0x1c for C-\\, a function key's first form", () => {
   const state = opened(THREE(), "dev-a");
   const zoomed = leaderThen(state, "z", AT).state;
   assert.deepEqual([zoomed.terminal.focus, zoomed.terminal.zoom], ["terminal", true]);
@@ -196,7 +196,7 @@ test("the leader twice from the terminal types the leader's own bytes into the a
   assert.deepEqual([again.state.leader.waiting, again.state.terminal.focus, [...again.effect.input]], [false, "terminal", [0x1c]]);
 });
 
-test("the leader twice from the list's focus, or the leader then Esc, only closes the hint: nothing else changes, also with a terminal open (Settled 5)", () => {
+test("the leader twice from the list's focus, or the leader then Esc, only cancels the leader: nothing else changes, also with a terminal open (Settled 5)", () => {
   const plain = THREE(), withTerminal = leaderEscape(opened(THREE(), "dev-a")).state;
   for (const state of [plain, withTerminal]) {
     for (const step of [twice(state), leaderThen(state, "escape", AT)]) {
@@ -205,7 +205,7 @@ test("the leader twice from the list's focus, or the leader then Esc, only close
     }
   }
   // From the detail, the help and an open filter field, the leader then Esc gives the list its
-  // focus; the leader twice only closes the hint there too.
+  // focus; the leader twice only cancels the leader there too.
   const detail = key(plain, "tab").state;
   assert.equal(detail.focus, "detail");
   assert.deepEqual(butLeader(leaderThen(detail, "escape", AT).state), butLeader(plain));
@@ -238,7 +238,7 @@ test("the default leader twice from the terminal types 0x18 once into the agent,
     const state = opened(base, "dev-a");
     const step = leaderTwice(state);
     assert.deepEqual([step.state.terminal.focus, step.state.leader.waiting, Object.keys(step.effect), [...step.effect.input]], ["terminal", false, ["input"], [0x18]], platform);
-    // From the list's focus, alt+o neither opens the leader's hint nor closes it.
+    // From the list's focus, alt+o neither arms the leader nor cancels it.
     const list = key(base, "alt+o");
     assert.equal(list.state.leader?.waiting ?? false, false, `${platform}: alt+o is not the leader`);
     const open = leader(base);
