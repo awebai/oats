@@ -50,7 +50,10 @@ test('actual hierarchy loads only after explicit selected click; popup controls 
   button.click(); await tick(); assert.equal(u.count(), 1);
   assert.match(u.one('.pavailability').textContent, /Spawned.*Current recorded incarnation/);
   assert.doesNotMatch(u.host.textContent, /Activity\/waiting: available after K7/);
-  assert.equal(u.one('.pgit').disabled, true); assert.equal(u.one('.pbrain').disabled, true);
+  // The two acts stay beside the activity; a row that records no soul offers no Go to soul, and reads no catalog.
+  assert.deepEqual([...u.host.querySelectorAll('.pacts button')].map(b => b.textContent), ['Go to instance', 'Go to soul']);
+  assert.equal(u.one('.psoul').disabled, true); assert.equal(u.one('.psoul').title, 'This instance does not record the soul it was spawned from.');
+  assert.ok(u.calls.every(c => !c.path.startsWith('/api/agents')));
   assert.equal(u.terminals.length + u.starts.length, 0);
   const disclosure = u.one('.events-details summary');
   for (const key of ['Enter', ' ', 'ArrowDown', 'T']) {

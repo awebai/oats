@@ -24,15 +24,18 @@
    Node cards show reported runtime state (running = filled orange dot;
    stopped = hollow dot + dashed card; unknown distinct). Activity is NOT
    inferred from task/transcript prose: K7 reads are explicit and selected-only. Click
-   selects and shows the action popover; double-click / Enter opens the
-   terminal; hovering highlights the lineage.
+   selects and shows the action popover: its facts and exactly two acts, Go to
+   instance (the terminal tab; Start… on a stopped row) and Go to soul (the
+   Workspace page's page of this instance's exact soul, or disabled with why);
+   double-click / Enter take Go to instance's act; hovering highlights the lineage.
    Canvas: pan by drag, zoom by pinch/⌘-wheel or the −/+/fit controls; the
    graph auto-fits the visible screen on first paint and after workspace
    switches; each agent box can be grabbed and moved freely (drag past the
    click threshold — spawn edges follow live, and offsets persist across the
    4s refresh).
-   Keyboard: arrows walk the tree, Enter/t opens the terminal, b Brain,
-   s Spawn view, o action popover, +/- zoom, f fits, Escape clears.
+   Keyboard: arrows walk the tree, Enter/t go to the instance (Start… when
+   stopped), s Workspace (the Spawn view), o action popover, +/- zoom, f fits,
+   Escape clears.
    Loading (desktop/loading-states): the shared controller in loading.mjs owns
    the pending / refreshing presentation. Pending (no roster for this workspace
    yet) shows a skeleton pill in .hier-sum after 150ms, aria-busy on the view
@@ -53,7 +56,7 @@ import { keptFailure } from "../../../client/deployment-facts.mjs";
 import { createInstanceEventsView, instanceEventsCSS } from "../instance-events-view.mjs";
 import { instanceId, resolveLinkId, heldHome } from "../../../client/instance-tree.mjs";
 import { instanceActs, openAct } from "../../../client/instance-acts.mjs";
-import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
+import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance } from "../active-observation.mjs";
 import {
   apiJson, ensureTheme,
   currentWorkspace, switchWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange,
@@ -146,12 +149,11 @@ export const hierarchyCSS = `
 .hier-pop .pname { margin:0 0 8px; font-size:12.5px; font-weight:650; }
 .hier-pop .pstate, .hier-pop .pavailability, .hier-pop .pstatus { margin:0 0 8px; color:var(--muted); line-height:1.5; }
 .hier-pop .pstatus:empty { display:none; }
-.hier-pop .pactions-note { color:var(--muted); font-size:11px; line-height:1.5; margin:8px 0 0; }
 .hier-pop .pidentity { color:var(--muted); font:11px/1.5 var(--mono,monospace); margin:0 0 8px; }
 .hier-pop .pidentity[hidden] { display:none; }
 .hier-pop .pchips { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 9px; }
-/* Actions wrap as whole buttons (never letter by letter), design-sized. */
-.hier-pop .pacts { display:grid; grid-template-columns:repeat(auto-fill, minmax(62px, 1fr)); gap:6px; }
+/* The two acts, one per row: each label whole at the popover's width (never cut, never letter by letter). */
+.hier-pop .pacts { display:grid; grid-template-columns:1fr; gap:6px; }
 .hier-pop .pacts button { min-width:0; padding:6px 4px; font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .hier-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
 ${deploymentsPageCSS}
@@ -470,8 +472,7 @@ export function mount(el, ctx) {
     { id: "hier.fit", defaultChord: "F", label: "Hierarchy: fit to screen", run: () => fit(s) },
     // Spec F: the canvas's zoom keys are - / = / 0 (zoom out, in, fit); 0 is fit's second shortcut.
     { id: "hier.fitZero", defaultChord: "0", label: "Hierarchy: fit to screen (second shortcut)", run: () => fit(s) },
-    { id: "hier.terminal", defaultChord: "T", label: "Hierarchy: open terminal of selection", run: () => { if (s.sel) openTerm(s, s.sel); } },
-    { id: "hier.brain", defaultChord: "B", label: "Hierarchy: open Brain of selection", run: () => openSelBrain(s) },
+    { id: "hier.terminal", defaultChord: "T", label: "Hierarchy: go to the instance of selection", run: () => { if (s.sel) openTerm(s, s.sel); } },
     { id: "hier.spawn", defaultChord: "S", label: "Hierarchy: open the Spawn view", run: () => openWorkspace(s) },
     { id: "hier.popover", defaultChord: "O", label: "Hierarchy: open the action popover", run: () => { if (s.sel) { openPop(s, s.sel); s.pop?.querySelector('button:not(:disabled)')?.focus(); } } },
     { id: "hier.zoomIn", defaultChord: "=", label: "Hierarchy: zoom in", run: () => zoomBy(s, 1.2) },
@@ -1056,24 +1057,23 @@ function selectedInstance(s, id) {
   const matches = (s.panel.instances || []).filter(i => instanceId(i) === id);
   return matches.length === 1 ? matches[0] : null;
 }
-/** What the popover's two row acts may do, from the shared table (packages/client/instance-acts.mjs), as the roster
- * menu decides it: `restart` and `start` when `instanceActs` lists them enabled, `open` (Terminal) when `openAct` is
- * enabled, that is when the row runs. A held home (#802), a blocked row and a Herdr-recorded one get none. */
+/** What Go to instance may do, from the shared table (packages/client/instance-acts.mjs), as the roster menu
+ * decides it: `start` when `instanceActs` lists it enabled (a stopped row: Start…), `open` (the terminal) when
+ * `openAct` is enabled, that is when the row runs. A held home (#802), a blocked row and a Herdr-recorded one get none. */
 function rowActs(i) {
-  const { acts } = instanceActs(i), on = verb => acts.some(act => act.verb === verb && act.enabled);
-  return { restart: on('restart'), start: on('start'), open: openAct(i)?.enabled === true };
+  const { acts } = instanceActs(i);
+  return { start: acts.some(act => act.verb === 'start' && act.enabled), open: openAct(i)?.enabled === true };
 }
 
 function invokeInstance(s, id, action) {
   const i = selectedInstance(s, id);
-  // #802: a held home (spawning, being retired, or left half cleaned) starts, restarts and opens nothing.
+  // #802: a held home (spawning, being retired, or left half cleaned) starts and opens nothing.
   if (!rowActionsCurrent(s, i) || !visibleOwner(s) || !canAddressInstance(i) || heldHome(i)) return;
   // The keyboard and double-click paths act exactly when the popover's buttons would (updatePop).
   const acts = rowActs(i);
   const call = action === 'terminal' && acts.open && s.ctx.openTerminal ? () => s.ctx.openTerminal({
     instance: i.instance, home: i.home || undefined, agentsRoot: i.agentsRoot || undefined, ...(i.server ? { server: i.server } : {}),
-  }) : action === 'start' && acts.start && s.ctx.startInstance ? () => s.ctx.startInstance(i)
-    : action === 'restart' && acts.restart && s.ctx.restartInstance ? () => s.ctx.restartInstance(i) : null;
+  }) : action === 'start' && acts.start && s.ctx.startInstance ? () => s.ctx.startInstance(i) : null;
   if (!call) return;
   const ticket = s.actionTicket = (s.actionTicket || 0) + 1, gen = workspaceGeneration(), epoch = s.renderEpoch, pop = s.pop;
   const failed = error => {
@@ -1087,6 +1087,95 @@ function invokeInstance(s, id, action) {
 function openTerm(s, id) {
   const i = selectedInstance(s, id);
   if (i) invokeInstance(s, id, i.running === false ? 'start' : 'terminal');
+}
+
+/* ── Go to soul ──
+ * The Workspace page's page of this instance's EXACT soul, never one found by a bare agent name. The Workspace page
+ * reads the souls of one deployment (`/api/agents?ws=<view>`: the view's primary, desktop-deployment-model.md "The
+ * primary deployment"), so only a row of that deployment can go there; any other row's button says so. The catalog
+ * read is that deployment's own (`/api/agents?ws=<rowDeployment(row)>`), once per popover per roster observation.
+ * Exact means:
+ *   a local row   its recorded soul key (`soulKey`, the roster's agent `key`) and soul source (`soul.repoKey`) name
+ *                 exactly one catalog row of its agents root, and the key is not ambiguous in the catalog;
+ *   a remote row  its agent dir names exactly one of the host's agent dirs of its root (unique per root).
+ * Anything else is disabled with why. */
+
+/** Whether the Workspace page can show the souls of row `i`'s deployment: null when it can, else why not. */
+function soulScopeReason(s, i) {
+  const list = s.panel.deployments || [], id = rowDeployment(i);
+  // An untagged row, or a view of one deployment: the view is the deployment the Workspace page reads.
+  if (!i.deployment?.id || list.length < 2) return null;
+  const primary = list.find(d => d.primary);
+  if (primary?.id === id) return null;
+  const label = d => d ? deploymentLabel(d, DESKTOP_TERMS) : 'another deployment';
+  return `This instance is on ${label(list.find(d => d.id === id))}; the Workspace page shows only the souls of ${primary ? label(primary) : "this view's primary deployment"}.`;
+}
+
+/** Go to soul's target for row `i`: `{ ref, label }` (what preselectSoul is handed, and the soul's name in the
+ * title), or `{ reason }`. Starts the catalog read when this popover has none for the current observation. */
+function soulTarget(s, i) {
+  if (!s.ctx.openView) return { reason: 'The Workspace page is not available here.' };
+  if (!rowActionsCurrent(s, i)) return { reason: 'Requires a current roster.' };
+  const scope = soulScopeReason(s, i);
+  if (scope) return { reason: scope };
+  const remote = !!i.server, key = remote ? i.agent : i.soulKey, repoKey = i.soul?.repoKey;
+  if (!key || !i.agentsRoot || (!remote && !repoKey)) return { reason: 'This instance does not record the soul it was spawned from.' };
+  const read = soulCatalog(s, rowDeployment(i)), answer = read.state === 'pending' ? read.prev : read;
+  if (!answer) return { reason: "Checking this instance's soul…" };
+  if (answer.state === 'failed') return { reason: `Could not read this deployment's souls: ${answer.error}.` };
+  const several = { reason: `Several souls match ${key}; open it from the Workspace page.` };
+  if (!remote && answer.ambiguous.includes(key)) return several;
+  const matches = answer.agents.filter(a => a.agentsRoot === i.agentsRoot && (remote
+    ? a.name === key && a.server === i.server
+    : a.key === key && a.soulSource?.repoKey === repoKey));
+  if (!matches.length) return { reason: `${key} is not among this deployment's souls now.` };
+  if (matches.length > 1) return several;
+  const a = matches[0];
+  return { label: key, ref: remote ? { name: a.name, agentsRoot: a.agentsRoot, server: a.server }
+    : { name: a.name, key, repoKey, agentsRoot: a.agentsRoot } };
+}
+
+/** The open popover's read of `deployment`'s soul catalog for the current roster observation: `{ state: 'pending' |
+ * 'ok' | 'failed', agents, ambiguous, error, prev }`. A new observation reads again; until it answers, the last
+ * answer for this popover and deployment (`prev`) stands, so a focused Go to soul is not disabled by every poll.
+ * An answer is kept only while it is still this popover's read (closePop and every reselection drop it). */
+function soulCatalog(s, deployment) {
+  const held = s.soulRead, gen = workspaceGeneration(), pop = s.pop, id = s.popFor;
+  if (held && held.pop === pop && held.id === id && held.deployment === deployment && held.gen === gen && held.observed === s.observed) return held;
+  const same = held && held.pop === pop && held.id === id && held.deployment === deployment && held.gen === gen;
+  const entry = s.soulRead = { pop, id, deployment, gen, observed: s.observed, state: 'pending',
+    prev: same ? (held.state === 'pending' ? held.prev : held) : null };
+  const owns = () => s.alive && s.soulRead === entry && s.pop === pop && s.popFor === id && gen === workspaceGeneration() && dataCurrent(s);
+  const settle = answer => { if (!owns()) return; Object.assign(entry, answer); updatePop(s); };
+  // No deployment selected at all (a bare harness): the server's first, as wsQuery() reads it.
+  apiJson(s.ctx, `/api/agents${deployment ? `?ws=${encodeURIComponent(deployment)}` : ''}`).then(data => {
+    if (!Array.isArray(data?.agents)) throw Error('The souls list could not be read');
+    const ambiguous = Array.isArray(data.catalog?.ambiguous) ? data.catalog.ambiguous.filter(k => typeof k === 'string') : [];
+    settle({ state: 'ok', agents: data.agents.filter(a => a && typeof a === 'object'), ambiguous });
+  }).catch(error => settle({ state: 'failed', error: String(error?.message || 'read failed').replace(/\.$/, '').slice(0, 300) }));
+  return entry;
+}
+
+/** Go to soul pressed: hand the exact soul to the Workspace page and show it. A miss on arrival (the catalog changed
+ * in between) and a failed navigation are said in this popover's status line while it is on screen, else as a
+ * notification, as openWorkspace does. */
+function openSoul(s, id) {
+  const pop = s.pop, i = selectedInstance(s, id), target = i ? soulTarget(s, i) : null;
+  if (!target?.ref || !visibleOwner(s, pop) || s.popFor !== id) return;
+  const gen = workspaceGeneration(), ticket = s.actionTicket = (s.actionTicket || 0) + 1, ctx = s.ctx;
+  const owned = () => s.alive && ticket === s.actionTicket && s.pop === pop && s.popFor === id && visibleOwner(s, pop);
+  const say = message => {
+    if (gen !== workspaceGeneration()) return;
+    if (owned()) setText(pop.querySelector('.pstatus'), message);
+    else { try { ctx.notify?.(message); } catch { /* optional host feedback */ } }
+  };
+  const failed = error => say(`Workspace unavailable: ${String(error?.message || 'navigation failed').slice(0, 300)}`);
+  import('./spawn.mjs').then(mod => {
+    if (!owned() || !dataCurrent(s) || gen !== workspaceGeneration()) return;
+    mod.preselectSoul({ ...target.ref, onMiss: count => say(count
+      ? `Several souls match ${target.label}; open it from the Workspace page.` : `${target.label} is not among this deployment's souls now.`) });
+    return ctx.openView('spawn');
+  }).catch(failed);
 }
 
 /* Edge between a parent and child node, from their FINAL (fx/fy) positions:
@@ -1280,7 +1369,7 @@ function paintSelection(s) {
 
 function closePop(s) {
   s.activity?.dispose(); s.activity = null;
-  s.pop?.remove(); s.pop = null; s.popFor = null;
+  s.pop?.remove(); s.pop = null; s.popFor = null; s.soulRead = null;
   s.actionTicket = (s.actionTicket || 0) + 1;
 }
 const setText = (el, text) => { if (el && el.textContent !== text) el.textContent = text; };
@@ -1295,20 +1384,17 @@ function openPop(s, id, retained = null) {
     pop.append(node(s, 'h2', '', 'pname'), node(s, 'p', '', 'pidentity'), node(s, 'p', '', 'pstate'),
       node(s, 'p', 'Activity: unknown · Waiting on you: unknown', 'pavailability'));
     const chips = node(s, 'div', undefined, 'pchips'); chips.append(node(s, 'span', '', 'chip rt'), node(s, 'span', '', 'chip pbranch')); pop.append(chips);
+    // Exactly two acts, in this order: the instance (its terminal tab, or Start… when stopped) and its soul.
+    // Restart with… lives in the roster row's menu and the instance panel's footer, Git on the panel's
+    // Developer page, the soul's own facts on the panel's Soul tab; the Workspace page is the rail's and S here.
     const actions = node(s, 'div', undefined, 'pacts');
     const button = (label, cls) => { const el = node(s, 'button', label, `act ${cls}`); el.type = 'button'; actions.append(el); return el; };
-    const terminal = button('Terminal', 'pterm'), git = button('Git', 'pgit');
-    git.disabled = true; git.title = 'Available after K1/P1';
-    const restart = s.ctx.restartInstance ? button('Restart with…', 'prestart') : null;
-    const brain = button('Brain', 'pbrain'); brain.disabled = true; brain.title = BRAIN_UNAVAILABLE;
-    const workspace = s.ctx.openView ? button('Workspace', 'pworkspace') : null;
+    const terminal = button('Go to instance', 'pterm'), soul = button('Go to soul', 'psoul');
     const owns = () => dataCurrent(s) && visibleOwner(s, pop) && s.pop === pop && s.popFor === id;
     terminal.addEventListener('click', () => { if (owns()) openTerm(s, id); });
-    restart?.addEventListener('click', () => { if (owns()) invokeInstance(s, id, 'restart'); });
-    workspace?.addEventListener('click', () => openWorkspace(s, owns));
+    soul.addEventListener('click', () => { if (owns()) openSoul(s, id); });
     const status = node(s, 'p', '', 'pstatus'); status.setAttribute('role', 'status');
-    pop.append(actions, node(s, 'p', 'Git: available after K1/P1.', 'pactions-note'),
-      node(s, 'p', 'Brain: choose the exact soul in Workspace.', 'pactions-note'), status);
+    pop.append(actions, status);
   }
   s.pop = pop; s.popFor = id;
   // Keep action text screen-sized: camera zoom transforms nodes, not the popup.
@@ -1345,14 +1431,18 @@ function updatePop(s) {
   setText(pop.querySelector('.rt'), i.harness || 'Harness not reported');
   setText(pop.querySelector('.pbranch'), i.branch ? `Reported branch: ${i.branch}` : 'Branch not reported');
   // Which acts are enabled is the shared table's (rowActs); a current roster, a well-formed address and the shell's
-  // own handler are this view's conditions on top. Terminal/Start… is the Start act on a stopped row, open otherwise.
+  // own handler are this view's conditions on top. Go to instance is the Start act on a stopped row (a stopped
+  // instance has no terminal: the press is an informed Start…), open otherwise (running or unknown).
   const allowed = rowActionsCurrent(s, i) && canAddressInstance(i), acts = rowActs(i);
   const terminal = pop.querySelector('.pterm');
-  setText(terminal, i.running === false ? 'Start…' : 'Terminal');
+  setText(terminal, i.running === false ? 'Start…' : 'Go to instance');
   terminal.disabled = !allowed || (i.running === false ? !acts.start || !s.ctx.startInstance : !acts.open || !s.ctx.openTerminal);
   // A Herdr row's reason is said with who made it (speaker-line.mjs).
-  terminal.title = unsupportedLine(i) || heldLine(held) || (terminal.disabled ? 'Requires a current, addressed instance with known runtime state and an available route.' : i.running === false ? 'Open the existing Start dialog' : 'Open this exact instance terminal');
-  const restart = pop.querySelector('.prestart'); if (restart) { restart.disabled = !allowed || !acts.restart; restart.title = unsupportedLine(i) || heldLine(held) || ''; }
+  terminal.title = unsupportedLine(i) || heldLine(held) || (terminal.disabled ? 'Requires a current, addressed instance with known runtime state and an available route.' : i.running === false ? 'Stopped: no terminal to go to. Opens the Start dialog.' : 'Open this exact instance terminal');
+  // Go to soul: enabled only for the exact soul (soulTarget); disabled, its title says why.
+  const soul = pop.querySelector('.psoul'), target = soulTarget(s, i);
+  soul.disabled = !target.ref;
+  soul.title = target.ref ? `Open ${target.label} on the Workspace page` : target.reason;
   s.activity?.sync();
   positionPop(s);
 }
@@ -1374,15 +1464,6 @@ function positionPop(s) {
   pop.style.left = `${x}px`; pop.style.top = `${y}px`;
 }
 
-/* /api/panel enumerates INSTANCES, not every soul definition. Even one local
- * instance cannot prove that a bare agent name identifies a unique Brain.
- * Keep the shortcut visible but fail closed; Workspace has the soul roster. */
-function openSelBrain(s) {
-  if (!visibleOwner(s) || !selectedInstance(s, s.sel)) return;
-  if (!s.pop) openPop(s, s.sel);
-  setText(s.pop?.querySelector('.pstatus'), BRAIN_UNAVAILABLE);
-}
-
 /* keyboard tree-walk over the laid-out nodes. Escape/Enter/arrows are the
    tree's structural keys (not rebindable); everything else resolves through
    the engine keymap so shortcut-editor rebinds take effect here. */
@@ -1392,7 +1473,7 @@ function onKey(s, e) {
   if (!list.length) return;
   if (e.key === 'Escape') { e.preventDefault(); s.sel = null; paintSelection(s); closePop(s); s.canvas.focus?.({ preventScroll: true }); return; }
   // Native popup buttons own Enter/Space; tree commands must not also open a
-  // terminal when the focused button's intent is Start, Restart or Workspace.
+  // terminal when the focused button's intent is Start… or Go to soul.
   if (e.target.closest?.('.hier-pop,button,input,select,textarea,summary,[contenteditable=true]')) return;
   if (e.repeat && !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
   // [ / ] hop between clusters (selects the hopped-to cluster's first node)

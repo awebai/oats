@@ -18,7 +18,9 @@ import { retireData } from './retire-state.mjs';
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /** One row per instance of a roster (deployment-data.mjs `deploymentStatusData`): the kernel's row,
- * with `agent`, `description` and `team` from its soul and `agentsRoot` from the roster.
+ * with `agent`, `description` and `team` from its soul and `agentsRoot` from the roster, and `soulKey`, the
+ * agent row's soul key (`key`, feature launch-preference: a string, or null when no instance records a
+ * workspace soul), present only when the agent row has `key`.
  * Needs input: a row keeps the kernel's `waitingOnYou` only when this CLI advertises waiting-on-you.
  * Gate on the feature, never the version: a pre-feature kernel emitting the field is dropped. A row
  * without the key stays without it. */
@@ -27,7 +29,7 @@ export function rosterRows(roster, cli) {
   return roster.agents.flatMap((agent) => agent.instances.map(({ waitingOnYou, ...instance }) => ({
     ...instance, ...(waitingFeature && waitingOnYou !== undefined ? { waitingOnYou } : {}),
     agent: instance.agent || agent.name, description: agent.description || "",
-    team: agent.team || null, agentsRoot: roster.root,
+    team: agent.team || null, agentsRoot: roster.root, ...(Object.hasOwn(agent, "key") ? { soulKey: agent.key } : {}),
   })));
 }
 
@@ -93,6 +95,8 @@ export function panelInstance(i) {
     // present only when a provider reported one — never synthesized.
     ...(i.modules !== undefined ? { modules: i.modules } : {}),
     ...(i.soul !== undefined ? { soul: i.soul } : {}),
+    // The soul key the instance was spawned from (rosterRows), as the roster reported it: string or null; absent stays absent.
+    ...(i.soulKey !== undefined ? { soulKey: i.soulKey } : {}),
     ...(i.identity !== undefined ? { identity: i.identity } : {}),
     // desktop-facts: the last session start, where the model came from, the messaging identity's address.
     ...(i.startedAt !== undefined ? { startedAt: i.startedAt } : {}),

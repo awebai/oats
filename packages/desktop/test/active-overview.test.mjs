@@ -56,7 +56,9 @@ test('frame07 counts relation groups separately from independents, named by thei
   assert.equal(u.all('.hier-edges .sib').length, 1);
   u.mouse(u.nodes().find(n => n.dataset.name === 'root'), 'click');
   assert.equal(u.one('.pavailability').textContent, 'Activity: unknown · Waiting on you: unknown');
-  assert.equal(u.one('.pgit').disabled, true); assert.match(u.one('.pgit').title, /K1\/P1/);
+  // Exactly two acts, in this order; the K1/P1 Git and Brain stand-ins and their notes are gone.
+  assert.deepEqual(u.all('.pacts button').map(b => [b.className, b.textContent]), [['act pterm', 'Go to instance'], ['act psoul', 'Go to soul']]);
+  assert.equal(u.one('.pactions-note'), null);
   assert.match(u.one('.pbranch').textContent, /Reported branch: reported-branch/);
   assert.doesNotMatch(u.host.textContent, /invented-group|#412|±42|Asked about|blocked/);
   assert.equal(u.one('.ptask'), null);
@@ -234,7 +236,7 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: actual Activ
     ['.hier-sum', '.hier-bar', 'muted', 'surface'], ['.hier-chead .cct', '.hier-cluster', 'muted', 'surface-2'],
     ['.hier-chead .cnm', '.hier-cluster', 'muted', 'surface-2'], ['.hnode.sel .nm', '.hnode.sel', 'fg', 'surface'],
     ['.hnode.sel .hmeta', '.hnode.sel', 'muted', 'surface'], ['.pavailability', '.hier-pop', 'muted', 'surface'],
-    ['.pname', '.hier-pop', 'fg', 'surface'], ['.pidentity', '.hier-pop', 'muted', 'surface'], ['.pgit', '.pgit', 'faint', 'surface-2'],
+    ['.pname', '.hier-pop', 'fg', 'surface'], ['.pidentity', '.hier-pop', 'muted', 'surface'], ['.psoul', '.psoul', 'faint', 'surface-2'],
   ]) {
     const el = u.one(selector), painted = u.one(background); assert.ok(el && painted);
     assert.equal(u.dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
@@ -245,7 +247,7 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: actual Activ
   }
 });
 
-test('remote twins preserve server/home identity; unknown or unaddressed nodes cannot act, and Brain never guesses', async t => {
+test('remote twins preserve server/home identity; unknown or unaddressed nodes cannot act, and Go to soul never guesses', async t => {
   const shared = { home: '/same/home', agentsRoot: '/same/agents', addressable: true };
   const u = await setup(t, { instances: [instance('twin', { ...shared, server: 'a' }), instance('twin', { ...shared, server: 'b' }),
     instance('unknown', { running: null }), instance('unrouted', { server: 'c', savedRoute: true, addressable: false }),
@@ -254,8 +256,12 @@ test('remote twins preserve server/home identity; unknown or unaddressed nodes c
   assert.deepEqual(u.opened.map(i => i.server), ['a', 'b']); assert.ok(u.opened.every(i => i.home === '/same/home'));
   for (const n of u.nodes().filter(n => n.dataset.name !== 'twin')) { u.mouse(n, 'dblclick'); u.mouse(n, 'click'); assert.equal(u.one('.pterm').disabled, true); }
   assert.equal(u.opened.length, 2); assert.equal(u.started.length, 0);
-  u.mouse(twins[0], 'click'); u.key('B'); assert.equal(u.brains.length, 0); assert.equal(u.one('.pbrain').disabled, true);
-  u.one('.pworkspace').click(); assert.deepEqual(u.views, ['spawn']);
+  // The B key and its Brain stand-in are gone: B does nothing here. A remote twin's soul is its host's agent dir,
+  // read from the host's catalog (none here: the read answers no souls list), so Go to soul stays disabled.
+  u.mouse(twins[0], 'click'); u.key('B'); assert.equal(u.brains.length, 0); assert.deepEqual(u.views, []);
+  await tick(); await tick();
+  assert.equal(u.one('.psoul').disabled, true); assert.match(u.one('.psoul').title, /^Could not read this deployment's souls: /);
+  u.one('.psoul').click(); assert.deepEqual(u.views, [], 'a disabled Go to soul opens nothing');
 });
 
 test('popup native controls own Enter; detached popup buttons and late action failures cannot beat a new selection', async t => {
@@ -420,7 +426,7 @@ test('a Deployments stage mounted in a window that is already unfocused starts a
   assert.equal(reads(), before, 'no read every 4 s');
 });
 
-test('#802: a held home on the canvas names its state and starts, restarts or opens nothing', async t => {
+test('#802: a held home on the canvas names its state and starts or opens nothing', async t => {
   const roster = [instance('spawning', { running: false, spawnInProgress: true }), instance('left', { running: true, rollbackIncomplete: true }),
     instance('both', { running: false, spawnInProgress: true, rollbackIncomplete: true })];
   const u = await setup(t, { instances: roster });
@@ -432,8 +438,8 @@ test('#802: a held home on the canvas names its state and starts, restarts or op
   for (const name of ['spawning', 'left']) {
     u.mouse(node(name), 'click');
     const terminal = u.one('.pterm');
-    assert.equal(terminal.disabled, true, `${name}: no Start or Terminal`);
-    assert.equal(u.one('.prestart').disabled, true, `${name}: no Restart`);
+    assert.equal(terminal.disabled, true, `${name}: no Start… or Go to instance`);
+    assert.equal(u.one('.prestart'), null, `${name}: Restart with… is the roster menu's and the instance panel's, not the popover's`);
     terminal.dispatchEvent(new u.dom.window.Event('click')); u.mouse(node(name), 'dblclick');
   }
   assert.match(u.one('.pstate').textContent, /Reported state: Spawn didn't finish/);

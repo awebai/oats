@@ -4,6 +4,9 @@ import assert from "node:assert/strict";
 
 const hier = await import("../renderer/views/hierarchy.mjs");
 const common = await import("../renderer/views/common.mjs");
+const { heldLine } = await import("../renderer/speaker-line.mjs");
+const { heldHome } = await import("../../client/instance-tree.mjs");
+const { pinPlatform } = await import("./helpers/platform.mjs");
 
 test("layoutForest: children sit below and centered under their parent; no overlaps", () => {
   const { nodes, width, height } = hier.layoutForest([
@@ -343,41 +346,6 @@ test("full-roster scope covers SIBLING edges too: globally-ambiguous sibling nam
     "ambiguous sibling name stays dropped — no false arc from cluster-local uniqueness");
 });
 
-test("keyboard Brain fails closed: a qualified instance is not proof of a unique soul-name reader", async t => {
-  const { JSDOM } = await import("jsdom");
-  const dom = new JSDOM(`<div id="root"></div>`, { pretendToBeVisual: true });
-  const g = globalThis;
-  const prev = { window: g.window, document: g.document, localStorage: g.localStorage };
-  g.window = dom.window; g.document = dom.window.document;
-  g.localStorage = { getItem: () => null, setItem: () => {} };
-  try {
-    const panel = { instances: [
-      { instance: "dev", agent: "dev-soul", agentsRoot: "/a/agents", home: "/a/agents/dev/i/dev", running: true },
-    ], workspaces: [], workspace: null };
-    const brains = [];
-    const ctx = { api: async () => ({ ok: true, status: 200, json: async () => panel }),
-                  openTerminal: () => {}, openBrain: (agent) => brains.push(agent) };
-    const el = dom.window.document.getElementById("root");
-    const un = hier.mount(el, ctx); t.after(() => { un(); dom.window.close(); });
-    await new Promise((r) => setTimeout(r, 30));
-    const node = el.querySelector(".hnode");
-    assert.ok(node, "node rendered");
-    // select the node (its dataset.id is the COMPOSITE instanceId — home)
-    node.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
-    // dispatch the Brain default chord on the canvas (the keydown host):
-    // Composite instance selection still works, but the Brain reader only
-    // accepts a soul name. An instance roster cannot prove that name unique.
-    const canvas = el.querySelector(".hier-canvas");
-    canvas.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "B", bubbles: true, cancelable: true }));
-    assert.deepEqual(brains, [], 'instance roster cannot prove that no uninstantiated same-named soul exists elsewhere');
-    assert.equal(el.querySelector('.pbrain').disabled, true);
-    assert.match(el.querySelector('.pstatus').textContent, /exact soul in Workspace/);
-    un();
-  } finally {
-    g.window = prev.window; g.document = prev.document; g.localStorage = prev.localStorage;
-  }
-});
-
 test("remote overview opens the selected server and shows unknown separately from stopped", async () => {
   const { JSDOM } = await import("jsdom");
   const dom = new JSDOM('<div id="root"></div>', { pretendToBeVisual: true });
@@ -392,10 +360,10 @@ test("remote overview opens the selected server and shows unknown separately fro
       { instance: "unreachable", home: "/unknown", server: "two", running: null },
       { instance: "ended", home: "/stopped", server: "two", running: false },
     ], workspaces: [], workspace: null };
-    const opened = [], brains = [];
+    const opened = [];
     const el = dom.window.document.getElementById("root");
     un = hier.mount(el, { api: async () => ({ ok: true, json: async () => panel }),
-      openTerminal: (ref) => opened.push(ref), openBrain: (ref) => brains.push(ref) });
+      openTerminal: (ref) => opened.push(ref) });
     await new Promise((r) => setTimeout(r, 30));
     const nodes = [...el.querySelectorAll('.hnode')];
     const twins = nodes.filter((n) => n.dataset.name === 'dev');
@@ -408,9 +376,9 @@ test("remote overview opens the selected server and shows unknown separately fro
     assert.equal(unknown.classList.contains('idle'), false);
     assert.match(el.querySelector('.hier-sum').textContent, /2 running.*1 stopped.*1 unknown/);
     twins[0].dispatchEvent(new dom.window.Event('click', { bubbles: true }));
-    assert.equal(el.querySelector('.pbrain').disabled, true);
-    el.querySelector('.hier-canvas').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'b', bubbles: true }));
-    assert.deepEqual(brains, []);
+    // No Workspace page to go to in this host: Go to soul says so, and reads no catalog.
+    assert.equal(el.querySelector('.psoul').disabled, true);
+    assert.equal(el.querySelector('.psoul').title, 'The Workspace page is not available here.');
   } finally { un?.(); Object.assign(globalThis, prev); dom.window.close(); }
 });
 
@@ -463,4 +431,209 @@ test("edges follow OAS: parent→child is a bottom-centre to top-centre S-curve;
   } finally {
     g.window = prev.window; g.document = prev.document; g.localStorage = prev.localStorage;
   }
+});
+
+/* ── the card's two acts: Go to instance and Go to soul ── */
+
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
+const OKF = "github.com/awebai/oats-okf", ACME = "github.com/acme/agents";
+// A row of the package soul oats.okf/dev, whose agent dir (dev-pkg) is not the catalog's name for it (dev).
+const row = (name, fields = {}) => ({ instance: name, agent: "dev-pkg", agentsRoot: "/team/agents", home: `/team/agents/dev-pkg/instances/${name}`,
+  running: true, soulKey: "oats.okf/dev", soul: { repoKey: OKF }, ...fields });
+// The deployment's catalog: the package soul and a member soul of the same bare name.
+const PACKAGE_SOUL = { name: "dev", key: "oats.okf/dev", agentsRoot: "/team/agents", soulSource: { repoKey: OKF }, description: "The package's dev soul", work: "worktree" };
+const MEMBER_SOUL = { name: "dev", key: "dev", agentsRoot: "/team/agents", soulSource: { repoKey: ACME }, description: "The member's dev soul", work: "worktree" };
+
+const CLI_OK = { ok: true, bin: "/seed/oats", version: "0.18.0", source: "path", required: { desktopApi: 1, range: ">=0.18.0 <0.21.0" }, probedAt: 1, tried: [] };
+/** The Workspace page (the Spawn view), mounted beside the canvas on the same deployment with `souls` as its catalog. */
+const workspacePage = (souls) => async (el) => {
+  const { refreshCli, resetCliStateForTests } = await import("../renderer/views/cli-status.mjs");
+  const spawn = await import("../renderer/views/spawn.mjs");
+  await refreshCli({ api: async () => ({ ok: true, status: 200, json: async () => CLI_OK }) });
+  spawn.mount(el, { openTerminal() {}, api: async (path) => {
+    if (path.startsWith("/api/cli")) return { ok: true, status: 200, json: async () => CLI_OK };
+    if (path.startsWith("/api/agents")) return { ok: true, status: 200, json: async () => ({ agents: souls }) };
+    if (path.startsWith("/api/panel")) return { ok: true, status: 200, json: async () => ({ instances: [], workspace: { id: "/team" }, workspaces: [] }) };
+    throw new Error(`unexpected ${path}`);
+  } });
+  await tick(); await tick();
+  return () => { spawn.unmount(); resetCliStateForTests(); };
+};
+
+/** The Deployments page mounted on a fixture roster. `agents(path)` answers /api/agents (a value, a promise, or a throw). */
+async function card(t, { instances, deployments = null, agents = () => ({ agents: [PACKAGE_SOUL, MEMBER_SOUL] }), ctx: extra = {}, mountSpawn = null } = {}) {
+  const { JSDOM } = await import("jsdom");
+  const dom = new JSDOM('<body><main id="host"></main><div id="spawn"></div></body>', { url: "http://localhost" });
+  const doc = dom.window.document, host = doc.querySelector("main");
+  const old = { window: globalThis.window, document: globalThis.document, setInterval: globalThis.setInterval, ws: common.currentWorkspace() };
+  globalThis.window = dom.window; globalThis.document = doc;
+  doc.hasFocus = () => true;
+  common.setWorkspace("/team");
+  const unmounts = [];
+  t.after(() => { for (const off of unmounts.reverse()) off(); common.setWorkspace(old.ws); Object.assign(globalThis, { window: old.window, document: old.document, setInterval: old.setInterval }); dom.window.close(); });
+  // The Workspace page first, on its own timers (its unmount clears them); the canvas's roster poll is the test's to run.
+  if (mountSpawn) unmounts.push(await mountSpawn(doc.getElementById("spawn")));
+  const polls = [];
+  globalThis.setInterval = (fn) => { polls.push(fn); return 0; };
+  const calls = [], opened = [], started = [], views = [], notes = [];
+  const api = (path) => {
+    calls.push(path);
+    if (path.startsWith("/api/panel")) return { instances, workspace: { id: "/team" }, workspaces: [{ id: "/team", name: "Team" }], generatedAt: "now", ...(deployments ? { deployments } : {}) };
+    if (path.startsWith("/api/agents")) return agents(path);
+    throw new Error(`unexpected ${path}`);
+  };
+  const ctx = { hasWorkspaceSwitcher: true, api, openTerminal: (ref) => opened.push(ref), startInstance: (ref) => started.push(ref),
+    openView: (name) => views.push(name), notify: (message) => notes.push(message), ...extra };
+  unmounts.push(hier.mount(host, ctx));
+  await tick();
+  host.querySelector(".hier-canvas").getBoundingClientRect = () => ({ left: 0, top: 0, width: 1200, height: 800 });
+  const node = (name) => [...host.querySelectorAll(".hnode")].find((n) => n.dataset.name === name);
+  return { dom, doc, host, calls, opened, started, views, notes, node,
+    select: async (name) => { node(name).dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, button: 0 })); await tick(); await tick(); },
+    poll: async () => { polls[0](); await tick(); await tick(); },
+    key: (key) => { const e = new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }); host.querySelector(".hier-canvas").dispatchEvent(e); return e; },
+    term: () => host.querySelector(".pterm"), soul: () => host.querySelector(".psoul"), status: () => host.querySelector(".pstatus").textContent,
+    agentsReads: () => calls.filter((p) => p.startsWith("/api/agents")) };
+}
+
+test("the card offers exactly two acts, Go to instance then Go to soul: no Git, Restart with…, Brain, Workspace or notes", async (t) => {
+  const u = await card(t, { instances: [row("dev-1")] });
+  await u.select("dev-1");
+  assert.deepEqual([...u.host.querySelectorAll(".hier-pop button")].map((b) => [b.className, b.textContent]),
+    [["act pterm", "Go to instance"], ["act psoul", "Go to soul"]]);
+  for (const gone of [".pgit", ".prestart", ".pbrain", ".pworkspace", ".pactions-note"]) assert.equal(u.host.querySelector(gone), null, gone);
+  assert.doesNotMatch(u.host.querySelector(".hier-pop").textContent, /K1\/P1|Brain|choose the exact soul/);
+});
+
+test("Go to instance: a running row opens its exact terminal, a stopped one says Start… and opens the Start dialog; unknown, held, unsupported and unaddressable rows are disabled with why", async (t) => {
+  pinPlatform(t);
+  const HERDR = "E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.";
+  const GENERIC = "Requires a current, addressed instance with known runtime state and an available route.";
+  const held = row("held", { running: false, spawnInProgress: true });
+  const u = await card(t, { instances: [row("run"), row("stop", { running: false }), row("unk", { running: null }), held,
+    row("herdr", { running: null, runtimeState: "unsupported", runtimeError: HERDR }),
+    row("far", { server: "altair", addressable: false, savedRoute: true, home: "/srv/agents/dev-pkg/instances/far", agentsRoot: "/srv/agents" })] });
+  const expect = { run: ["Go to instance", false, "Open this exact instance terminal"], stop: ["Start…", false, "Stopped: no terminal to go to. Opens the Start dialog."],
+    unk: ["Go to instance", true, GENERIC], held: ["Start…", true, heldLine(heldHome(held))], herdr: ["Go to instance", true, HERDR], far: ["Go to instance", true, GENERIC] };
+  for (const [name, [label, disabled, title]] of Object.entries(expect)) {
+    await u.select(name);
+    assert.deepEqual([u.term().textContent, u.term().disabled, u.term().title], [label, disabled, title], name);
+    u.term().click(); // a disabled button's click acts on nothing
+  }
+  assert.deepEqual(u.opened, [{ instance: "run", home: "/team/agents/dev-pkg/instances/run", agentsRoot: "/team/agents" }]);
+  assert.deepEqual(u.started.map((i) => [i.instance, i.home]), [["stop", "/team/agents/dev-pkg/instances/stop"]]);
+  // Double-click, Enter and T take exactly the button's act.
+  u.node("run").dispatchEvent(new u.dom.window.Event("dblclick", { bubbles: true }));
+  await u.select("stop"); u.key("Enter"); u.key("T");
+  for (const name of ["unk", "held", "herdr", "far"]) { u.node(name).dispatchEvent(new u.dom.window.Event("dblclick", { bubbles: true })); await u.select(name); u.key("Enter"); u.key("T"); }
+  assert.deepEqual([u.opened.length, u.started.length], [2, 3], "one more terminal (double-click), two more Start dialogs (Enter, T); nothing for the rest");
+});
+
+test("Go to soul: a package soul is found by its key, source and root (not its agent dir), and the press hands that exact soul to the Workspace page and shows it", async (t) => {
+  const u = await card(t, { instances: [row("dev-1")], mountSpawn: workspacePage([PACKAGE_SOUL, MEMBER_SOUL]) });
+  await u.select("dev-1");
+  assert.equal(u.soul().disabled, false);
+  assert.equal(u.soul().title, "Open oats.okf/dev on the Workspace page");
+  assert.deepEqual(u.agentsReads(), ["/api/agents?ws=%2Fteam"], "the row's own deployment's catalog, read once");
+  // A roster refresh reads it again, once.
+  await u.poll();
+  assert.equal(u.agentsReads().length, 2); assert.equal(u.soul().disabled, false);
+  u.soul().click(); await tick(); await tick();
+  assert.deepEqual(u.views, ["spawn"]);
+  // By name alone the Workspace page would have two souls named dev and open neither: the key and source chose one.
+  const page = u.doc.querySelector(".workspace-soul-page");
+  assert.equal(page.hidden, false, "the soul's page is open");
+  assert.match(page.textContent, /The package's dev soul/); assert.doesNotMatch(page.textContent, /The member's dev soul/);
+  assert.equal(u.status(), "");
+});
+
+test("Go to soul: a miss on arrival (the catalog changed in between) is said in the card's status line", async (t) => {
+  const u = await card(t, { instances: [row("dev-1")], mountSpawn: workspacePage([MEMBER_SOUL]) }); // the package soul is gone now
+  await u.select("dev-1");
+  u.soul().click(); await tick(); await tick();
+  assert.equal(u.status(), "oats.okf/dev is not among this deployment's souls now.");
+  assert.equal(u.doc.querySelector(".workspace-soul-page").hidden, true, "the member soul of the same name is never opened instead");
+});
+
+test("Go to soul: a remote row's soul is its agent dir on its own host and root", async (t) => {
+  const remote = { instance: "far-1", agent: "remote-dev", agentsRoot: "/srv/agents", home: "/srv/agents/remote-dev/instances/far-1", server: "altair", addressable: true, running: true };
+  const u = await card(t, { instances: [remote, { ...remote, instance: "far-2", home: "/srv/agents/remote-dev/instances/far-2", server: "vega" }],
+    agents: () => ({ agents: [{ name: "remote-dev", agentsRoot: "/srv/agents", server: "altair" }, { name: "remote-dev", agentsRoot: "/other/agents", server: "vega" }] }) });
+  await u.select("far-1");
+  assert.equal(u.soul().disabled, false); assert.equal(u.soul().title, "Open remote-dev on the Workspace page");
+  const second = [...u.host.querySelectorAll(".hnode")].find((n) => n.dataset.name === "far-2");
+  second.dispatchEvent(new u.dom.window.MouseEvent("click", { bubbles: true, button: 0 })); await tick(); await tick();
+  assert.equal(u.soul().disabled, true, "vega's remote-dev is of another root");
+  assert.equal(u.soul().title, "remote-dev is not among this deployment's souls now.");
+});
+
+test("Go to soul is disabled with why: no recorded soul, no catalog row, several, ambiguous, another source or root, a failed read", async (t) => {
+  const failing = new Set();
+  const u = await card(t, {
+    instances: [row("bare", { soulKey: undefined, soul: undefined }), row("nul", { soulKey: null }), row("nosrc", { soul: undefined }),
+      row("gone", { soulKey: "oats.okf/gone" }), row("twin", { soulKey: "twin" }), row("amb", { soulKey: "amb" }),
+      row("moved", { soul: { repoKey: "github.com/fork/oats-okf" } }), row("rooted", { agentsRoot: "/elsewhere/agents", home: "/elsewhere/agents/dev-pkg/instances/rooted" }),
+      row("failing")],
+    agents: () => {
+      if (failing.size) throw new Error("HTTP 500");
+      return { agents: [PACKAGE_SOUL, MEMBER_SOUL, { ...PACKAGE_SOUL, name: "twin-a", key: "twin" }, { ...PACKAGE_SOUL, name: "twin-b", key: "twin" }],
+        catalog: { reason: null, ambiguous: ["amb"] } };
+    } });
+  const NOT_RECORDED = "This instance does not record the soul it was spawned from.";
+  for (const [name, title] of [["bare", NOT_RECORDED], ["nul", NOT_RECORDED], ["nosrc", NOT_RECORDED]]) {
+    await u.select(name);
+    assert.deepEqual([u.soul().disabled, u.soul().title], [true, title], name);
+  }
+  assert.deepEqual(u.agentsReads(), [], "an instance that records no soul reads no catalog");
+  for (const [name, title] of [["gone", "oats.okf/gone is not among this deployment's souls now."],
+    ["twin", "Several souls match twin; open it from the Workspace page."], ["amb", "Several souls match amb; open it from the Workspace page."],
+    ["moved", "oats.okf/dev is not among this deployment's souls now."], ["rooted", "oats.okf/dev is not among this deployment's souls now."]]) {
+    await u.select(name);
+    assert.deepEqual([u.soul().disabled, u.soul().title], [true, title], name);
+    u.soul().click(); assert.deepEqual(u.views, [], `${name}: a disabled Go to soul opens nothing`);
+  }
+  failing.add("all");
+  await u.select("failing");
+  assert.deepEqual([u.soul().disabled, u.soul().title], [true, "Could not read this deployment's souls: HTTP 500."]);
+});
+
+test("Go to soul: checking until the catalog answers, and a late answer for an earlier selection never enables the button", async (t) => {
+  const reads = [];
+  const u = await card(t, { instances: [row("a"), row("b")], agents: () => { const d = deferred(); reads.push(d); return d.promise; } });
+  await u.select("a");
+  assert.deepEqual([u.soul().disabled, u.soul().title], [true, "Checking this instance's soul…"]);
+  await u.select("b");
+  assert.equal(reads.length, 2, "a new selection reads again");
+  reads[0].resolve({ agents: [PACKAGE_SOUL] }); await tick(); await tick();
+  assert.deepEqual([u.soul().disabled, u.soul().title], [true, "Checking this instance's soul…"], "a's late answer is not b's");
+  reads[1].resolve({ agents: [] }); await tick(); await tick();
+  assert.deepEqual([u.soul().disabled, u.soul().title], [true, "oats.okf/dev is not among this deployment's souls now."]);
+  // A roster refresh reads again; until it answers, the last answer stands (no "Checking…" on every poll).
+  await u.poll();
+  assert.equal(reads.length, 3);
+  assert.deepEqual([u.soul().disabled, u.soul().title], [true, "oats.okf/dev is not among this deployment's souls now."]);
+  reads[2].resolve({ agents: [PACKAGE_SOUL] }); await tick(); await tick();
+  assert.deepEqual([u.soul().disabled, u.soul().title], [false, "Open oats.okf/dev on the Workspace page"]);
+  // An answer after the popover closed changes nothing and reads nothing more.
+  await u.select("a"); u.key("Escape");
+  reads[3].resolve({ agents: [PACKAGE_SOUL] }); await tick(); await tick();
+  assert.equal(u.host.querySelector(".hier-pop"), null); assert.equal(reads.length, 4);
+});
+
+test("Go to soul in a view of two deployments: the primary deployment's row goes, another deployment's row says why and reads nothing", async (t) => {
+  const deployments = [
+    { id: "/team", machine: "", path: "/team", label: "~/team", local: true, reachable: true, identityFrom: "reported", primary: true },
+    { id: "remote:altair", machine: "altair", path: "/srv", label: "~/srv", local: false, reachable: true, identityFrom: "reported", primary: false },
+  ];
+  const u = await card(t, { deployments, instances: [row("here", { deployment: { id: "/team", path: "/team" } }),
+    row("there", { deployment: { id: "remote:altair", machine: "altair", path: "/srv" }, server: "altair", addressable: true,
+      agentsRoot: "/srv/agents", home: "/srv/agents/dev-pkg/instances/there" })] });
+  await u.select("here");
+  assert.equal(u.soul().disabled, false);
+  assert.deepEqual(u.agentsReads(), ["/api/agents?ws=%2Fteam"]);
+  await u.select("there");
+  assert.equal(u.soul().disabled, true);
+  assert.equal(u.soul().title, "This instance is on altair · ~/srv; the Workspace page shows only the souls of This Mac · ~/team.");
+  assert.deepEqual(u.agentsReads(), ["/api/agents?ws=%2Fteam"], "no catalog read for a deployment the Workspace page cannot show");
 });

@@ -192,7 +192,7 @@ test('#1247: a failed retire keeps its Retire in the panel; the kernel\'s messag
   }
 });
 
-/* ── the overview popover: Restart with… and Terminal/Start… ── */
+/* ── the overview popover: Go to instance / Start… (Restart with… is the roster menu's and the instance panel's) ── */
 async function canvas(t, rows, extra = {}) {
   const dom = new JSDOM('<body><main id="host"></main></body>', { url: 'http://localhost' });
   const doc = dom.window.document, host = doc.querySelector('main');
@@ -212,15 +212,15 @@ async function canvas(t, rows, extra = {}) {
   return { host, mouse, node, opened, started, restarted };
 }
 
-test('#855: the overview popover enables Restart with… and Terminal/Start… exactly as the shared acts do', async t => {
+test('#855: the overview popover enables Go to instance / Start… exactly as the shared acts do, and offers no Restart with…', async t => {
   const rows = Object.values(ROWS).map(([row]) => row), u = await canvas(t, rows);
   for (const [name, [row]] of Object.entries(ROWS)) {
     u.mouse(u.node(row.instance), 'click');
-    const terminal = u.host.querySelector('.pterm'), restart = u.host.querySelector('.prestart');
-    assert.ok(terminal && restart, `${name}: the popover is open`);
+    const terminal = u.host.querySelector('.pterm');
+    assert.ok(terminal, `${name}: the popover is open`);
+    assert.equal(u.host.querySelector('.prestart'), null, `${name}: Restart with… is the roster menu's, not the popover's`);
     const menu = new Map(menuOffer(row).offer), stopped = row.running === false;
-    assert.equal(!restart.disabled, menu.get('restart') === true, `${name}: Restart with… as the menu's Restart`);
-    assert.equal(terminal.textContent, stopped ? 'Start…' : 'Terminal', name);
+    assert.equal(terminal.textContent, stopped ? 'Start…' : 'Go to instance', name);
     const enabled = stopped ? menu.get('start') === true : openAct(row)?.enabled === true;
     assert.equal(!terminal.disabled, enabled, `${name}: ${terminal.textContent} as the ${stopped ? 'menu\'s Start' : 'shared open act'}`);
     // The double-click and Enter paths act exactly when the button would.
@@ -228,7 +228,7 @@ test('#855: the overview popover enables Restart with… and Terminal/Start… e
     u.mouse(u.node(row.instance), 'dblclick');
     assert.deepEqual([u.opened.length - before[0], u.started.length - before[1]], enabled ? stopped ? [0, 1] : [1, 0] : [0, 0], `${name}: a double-click`);
   }
-  // The rows the spec names, read off the canvas: only the running row opens and restarts, only the stopped one starts.
+  // The rows the spec names, read off the canvas: only the running row opens, only the stopped one starts, and nothing restarts here.
   assert.deepEqual(u.opened, ['running']); assert.deepEqual(u.started, ['stopped']); assert.deepEqual(u.restarted, []);
 });
 
@@ -242,7 +242,7 @@ test('#1247: the overview reads a held retire as the roster does; the shell\'s o
   const label = name => u.node(name).getAttribute('aria-label'), state = () => u.host.querySelector('.pstate').textContent;
   const inert = name => {
     u.mouse(u.node(name), 'click');
-    assert.equal(u.host.querySelector('.pterm').disabled, true, `${name}: Terminal`); assert.equal(u.host.querySelector('.prestart').disabled, true, `${name}: Restart with…`);
+    assert.equal(u.host.querySelector('.pterm').disabled, true, `${name}: Go to instance`); assert.equal(u.host.querySelector('.prestart'), null, `${name}: no Restart with…`);
     u.mouse(u.node(name), 'dblclick');
   };
   assert.match(label('older'), /^older, Retiring…/);

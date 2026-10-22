@@ -8,6 +8,7 @@ import { retireData } from '../../client/retire-state.mjs';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const text = value => typeof value === 'string' ? value : typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
+const soulText = value => typeof value === 'string' && value.length > 0 && value.length <= 512 && !/[\0\n\r]/.test(value);
 const identityFields = ['home', 'agentsRoot', 'server'];
 const displayed = ['agent', 'repoName', 'harness', 'branch', 'model', 'backend']; // model/backend preserve existing Start/Restart handoffs
 const reported = ['runtimeState', 'runtimeError']; // the kernel's unsupported state and its reason, shown on disabled controls
@@ -44,6 +45,10 @@ export function projectActivePanel(panel) {
     // #1421 §2: the instance's colour, a palette name only (instanceColor), for the canvas's dot; in the signature, so a change redraws.
     const color = instanceColor(raw);
     if (color) instance.color = color;
+    // The exact soul the instance records (Go to soul): its soul key (string, or null when none is recorded) and
+    // its soul source's repoKey, each kept only as a well-formed string, never guessed from the agent name.
+    if (raw.soulKey === null || soulText(raw.soulKey)) instance.soulKey = raw.soulKey;
+    if (object(raw.soul) && soulText(raw.soul.repoKey)) instance.soul = { repoKey: raw.soul.repoKey };
     const id = instanceId(instance);
     if (seen.has(id)) throw new Error('The roster contains duplicate instance identities; actions are unavailable.');
     seen.add(id);
@@ -85,5 +90,3 @@ export function activeTargetLabel(instance, roster) {
   const tag = distinguishingRootTags(scopes).get(scope) || scope || 'address unknown';
   return `${host} · ${tag}`;
 }
-
-export const BRAIN_UNAVAILABLE = 'Choose the exact soul in Workspace. The overview roster cannot qualify the name-only Brain reader against all soul definitions.';

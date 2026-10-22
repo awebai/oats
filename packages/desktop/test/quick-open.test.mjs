@@ -177,7 +177,7 @@ test("palette and quick open share the overlay-picker machinery (no duplicated c
 
 const CLI_OK = { ok: true, bin: "/seed/oats", version: "0.18.0", source: "path", required: { desktopApi: 1, range: ">=0.18.0 <0.21.0" }, probedAt: 1, tried: [] };
 
-async function mountSpawn(t, { cliOk = true } = {}) {
+async function mountSpawn(t, { cliOk = true, agents = AGENTS } = {}) {
   const dom = new JSDOM("<!doctype html><body><div id=host></div>", { url: "http://localhost" });
   const oldDoc = globalThis.document, oldWin = globalThis.window;
   globalThis.document = dom.window.document;
@@ -190,7 +190,7 @@ async function mountSpawn(t, { cliOk = true } = {}) {
   const ctx = {
     api: async (pathname) => {
       if (pathname.startsWith("/api/cli")) return { ok: cliOk, status: cliOk ? 200 : 503, json: async () => (cliOk ? CLI_OK : { ok: false, error: "cli-unavailable", tried: [] }) };
-      if (pathname.startsWith("/api/agents")) return { ok: true, status: 200, json: async () => ({ agents: AGENTS }) };
+      if (pathname.startsWith("/api/agents")) return { ok: true, status: 200, json: async () => ({ agents }) };
       if (pathname.startsWith("/api/panel")) return { ok: true, status: 200, json: async () => ({ instances: [], workspace: { id: "" }, workspaces: [] }) };
       throw new Error(`unexpected ${pathname}`);
     },
@@ -251,6 +251,22 @@ test("preselect is consumed once: closing inspection keeps it closed", async (t)
   // a later roster paint (poll) must not resurrect the consumed preselect
   await tick(); await tick();
   assert.equal(doc.querySelector(".spawn-dialog"), null, "modal stays closed");
+});
+
+test("preselectSoul with a key (and a repoKey) opens only that exact soul; by name alone two of a name open none", async (t) => {
+  const PKG = { name: "dev", key: "oats.okf/dev", agentsRoot: "/r1", work: "worktree", description: "package dev", soulSource: { repoKey: "github.com/awebai/oats-okf" } };
+  const MEMBER = { name: "dev", key: "dev", agentsRoot: "/r1", work: "worktree", description: "member dev", soulSource: { repoKey: "github.com/acme/agents" } };
+  const { doc, spawn } = await mountSpawn(t, { agents: [PKG, MEMBER] });
+  const misses = [];
+  spawn.preselectSoul({ name: "dev", agentsRoot: "/r1", onMiss: (count) => misses.push(count) });
+  assert.deepEqual(misses, [2], "today's callers, by name: two souls named dev, none opened");
+  assert.equal(doc.querySelector(".workspace-soul-page").hidden, true);
+  spawn.preselectSoul({ name: "dev", agentsRoot: "/r1", key: "oats.okf/dev", repoKey: "github.com/acme/agents", onMiss: (count) => misses.push(count) });
+  assert.deepEqual(misses, [2, 0], "the key's soul from another source is not it");
+  spawn.preselectSoul({ name: "dev", agentsRoot: "/r1", key: "oats.okf/dev", repoKey: "github.com/awebai/oats-okf", onMiss: (count) => misses.push(count) });
+  assert.deepEqual(misses, [2, 0]);
+  const page = onPage(doc, "dev");
+  assert.match(page.textContent, /package dev/); assert.doesNotMatch(page.textContent, /member dev/);
 });
 
 test("preselectSoul for a soul not in this workspace's roster is a silent no-op", async (t) => {
