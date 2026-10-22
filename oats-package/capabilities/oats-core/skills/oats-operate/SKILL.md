@@ -92,7 +92,10 @@ oats worktree remove --purpose <p>
   surviving files against the recorded branch: deleted files are allowed,
   modified or nonignored untracked paths are `E_WORKTREE_DIRTY`. A failure
   keeps the record and explains any partial removal; resolve the named
-  problem and retry. This recovery is for extra-tree `remove`, not retire.
+  problem and retry. Deleted `.gitignore` rules still apply. If the `.git`
+  marker is missing too, the refusal names the manual step: save any work,
+  remove the directory by hand, then retry to drop the record. This recovery
+  is for extra-tree `remove`, not retire.
 
 ## Modules: what you were given
 

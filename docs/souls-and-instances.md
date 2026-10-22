@@ -1945,9 +1945,17 @@ A retry of an unregistered tree whose `.git` file points at a missing gitdir
 first compares its surviving files with the recorded branch through a
 temporary Git index. Deleted files are allowed; modified files and untracked
 files that are not ignored are `E_WORKTREE_DIRTY`, with their paths listed.
+Deleted entries are marked skip-worktree in that private index so Git can
+still read deleted `.gitignore` files from the branch when checking ignored
+output. This never changes the clone's index. Cleanup grants directories
+owner read, write and search access, and keeps `.git` until all other entries
+are deleted, so a failed deletion can be retried.
 An unreadable branch or a failed inspection keeps the tree and record.
 Failures after Git started removing files say that removal may be partial
-and that a retry finishes the job once the problem is resolved.
+and name the retry. If Git already removed `.git` too, automatic comparison
+is refused: save any work and remove the directory by hand, then run
+`oats worktree remove --purpose <p>` again to drop the record. The refusal
+names that step.
 On a `creating` record whose process is gone, `remove`
 completes the rollback instead. Its answer then says whether the branch was
 kept (`branchKept`, `branchKeptReason`).

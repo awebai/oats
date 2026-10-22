@@ -11,13 +11,14 @@ function writable(path) {
   let st;
   try { st = lstatSync(path); } catch (e) { if (e.code === "ENOENT") return; throw e; }
   if (st.isSymbolicLink()) return;
-  chmodSync(path, st.mode | 0o200);
+  chmodSync(path, st.mode | (st.isDirectory() ? 0o700 : 0o200));
   if (st.isDirectory()) for (const name of readdirSync(path)) writable(join(path, name));
 }
 
 async function fixture(t) {
   const fx = v2Deployment({ souls: { dev: { soul: { work: "checkout" } } }, files: {
-    ".gitignore": "cache/\n", "tracked.txt": "committed\n", "deleted.txt": "also committed\n",
+    ".gitignore": "cache/\nblocked-*/\n", "tracked.txt": "committed\n", "deleted.txt": "also committed\n",
+    "cli/go/.gitignore": ".cache/\n", "cli/go/tracked.txt": "nested committed\n",
   } });
   t.after(() => { writable(fx.base); fx.cleanup(); });
   const { home } = await fx.spawn("dev", { instance: "dev-residue", work: "checkout" });
@@ -66,15 +67,30 @@ test("remove retries an unregistered tree with missing tracked files and a read-
   w.removed();
 });
 
-for (const [name, file, contents] of [["modified tracked", "tracked.txt", "changed\n"], ["untracked", "scratch.txt", "new work\n"]]) {
+test("remove retries ignored caches after partial deletion removed their tracked .gitignore files", async (t) => {
+  const w = await fixture(t);
+  w.orphan();
+  const nested = join(w.tree, "cli", "go", ".cache", "mod");
+  mkdirSync(nested, { recursive: true });
+  writeFileSync(join(nested, "go.mod"), "module example.invalid/nested\n", { mode: 0o444 });
+  chmodSync(nested, 0o555);
+  rmSync(join(w.tree, ".gitignore"));
+  rmSync(join(w.tree, "cli", "go", ".gitignore"));
+  w.removed();
+});
+
+for (const [name, file, contents] of [["modified tracked", "tracked.txt", "changed\n"], ["untracked", "scratch.txt", "new work\n"], ["untracked nested", "cli/go/scratch.txt", "nested work\n"]]) {
   test(`remove refuses ${name} residue, lists its path and keeps the record`, async (t) => {
     const w = await fixture(t);
     w.orphan();
+    rmSync(join(w.tree, ".gitignore"));
+    rmSync(join(w.tree, "cli", "go", ".gitignore"));
     writeFileSync(join(w.tree, file), contents);
     const result = w.cli("remove");
     assert.notEqual(result.status, 0);
     assert.equal(result.json().error.code, "E_WORKTREE_DIRTY", result.stdout);
     assert.ok(result.json().error.message.includes(file), result.stdout);
+    assert.doesNotMatch(result.json().error.message, /cache\/module/, "deleted ignore rules still apply");
     assert.equal(readFileSync(join(w.tree, file), "utf8"), contents);
     assert.ok(existsSync(w.record));
     assert.equal(lstatSync(w.cache).mode & 0o777, 0o555, "refusal changes no permissions");
@@ -127,6 +143,52 @@ test("remove keeps the record when the recorded path is a dangling symlink", asy
   assert.equal(result.json().error.code, "E_WORK_PRESERVATION_FAILED", result.stdout);
   assert.ok(existsSync(w.record));
   assert.ok(lstatSync(w.tree).isSymbolicLink());
+});
+
+test("remove gives an actionable manual recovery when the unregistered residue has no .git marker", async (t) => {
+  const w = await fixture(t);
+  w.orphan();
+  rmSync(join(w.tree, ".git"));
+  const result = w.cli("remove");
+  assert.equal(result.json().error.code, "E_WORK_PRESERVATION_FAILED", result.stdout);
+  assert.match(result.json().error.message, /by hand/);
+  assert.match(result.json().error.message, /oats worktree remove --purpose residue/);
+  assert.ok(existsSync(w.record));
+  assert.equal(readFileSync(join(w.tree, "tracked.txt"), "utf8"), "committed\n");
+  writable(w.tree);
+  rmSync(w.tree, { recursive: true });
+  w.removed();
+});
+
+for (const mode of [0o000, 0o200]) {
+  test(`remove restores directory access to ignored residue with mode ${mode.toString(8)}`, async (t) => {
+    const w = await fixture(t);
+    w.orphan();
+    chmodSync(w.cache, mode);
+    w.removed();
+  });
+}
+
+test("a failed residue deletion keeps .git until all other entries are gone", { skip: process.platform !== "darwin" }, async (t) => {
+  const w = await fixture(t);
+  w.orphan();
+  // Choose a directory after .git in this filesystem's actual enumeration order;
+  // recursive rm would delete the marker before reaching the entry that fails.
+  for (let i = 0; i < 32; i++) mkdirSync(join(w.tree, `blocked-${i}`));
+  const entries = readdirSync(w.tree);
+  const blocked = entries.slice(entries.indexOf(".git") + 1).find((name) => name.startsWith("blocked-"));
+  assert.ok(blocked, "the fixture has a failing entry enumerated after .git");
+  const locked = join(w.tree, blocked, "locked-link");
+  symlinkSync(join(w.fx.base, "external-target"), locked);
+  // An immutable symlink survives chmod's no-follow walk but refuses unlink.
+  execFileSync("chflags", ["-h", "uchg", locked]);
+  try {
+    const result = w.cli("remove");
+    assert.equal(result.json().error.code, "E_WORK_PRESERVATION_FAILED", result.stdout);
+    assert.ok(existsSync(w.record));
+    assert.ok(existsSync(join(w.tree, ".git")), "a failed cleanup preserves the retry marker");
+  } finally { execFileSync("chflags", ["-h", "nouchg", locked]); }
+  w.removed();
 });
 
 test("a failure after Git's partial deletion describes it truthfully and can be retried", { skip: process.platform !== "darwin" }, async (t) => {
