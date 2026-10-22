@@ -37,6 +37,8 @@ import { cliWorkspace, validWorkspaceRef } from "../client/workspace-cli.mjs";
 import { onboardData } from "../client/deployment-data.mjs";
 import { validateWorkspace } from "../client/workspace-admission.mjs";
 import { cliDeploymentList } from "../client/deployment-list-cli.mjs";
+import { cliDeploymentIdentity } from "../client/deployment-identity.mjs";
+import { createListedWaiting } from "../client/listed-waiting.mjs";
 import { workspaceSuggestions, listState, createRemoveListed, unsavedOpenSet, importDesktopLists, createSerialQueue, settledCli, listDeployment, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, commitOpenSet, startupOpenSet, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor,
   savedWorkspacePaths, persistableDirs, stageDirs, pickedFolderChoices, createPerformAdd, createSuggestionCalls } from "./workspace-registry.mjs";
 import { workspaceNotServed } from "./renderer/deployment-header.mjs";
@@ -404,9 +406,28 @@ const executeAdd = createAddExecutor({
   advertises: async (id) => { await panelWorkspaces(); return allowedWs.has(id); },
 });
 
+// Needs input in this computer's deployments no window serves (the yellow dot of the sidebar's list of
+// workspaces): each row's identity read (packages/client/deployment-identity.mjs, its `waiting`), run again
+// on listed-waiting.mjs's slow schedule. One reader for every window: one read in flight, each row at most
+// every 60 s while a window is focused, 5 min while none is, `--max-age 300`. A window's ask for the list
+// never starts a read; it carries what was answered. A failed or timed-out read answers null (no dot,
+// never a stale one), and a row that leaves the list loses its answer.
+const listedWaiting = createListedWaiting({
+  read: async (path, options) => {
+    let cli;
+    try { cli = await readServedCli(); } catch { return null; }
+    return cliDeploymentIdentity(cli, path, options, { env: cliEnvironment(process.env) });
+  },
+});
+const noteListedFocus = () => listedWaiting.setFocused(BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w.isFocused()));
+app.on("browser-window-focus", noteListedFocus);
+app.on("browser-window-blur", noteListedFocus);
+app.on("will-quit", () => listedWaiting.stop());
+
 // Each window's latest call, and the canonical paths it offered (createSuggestionCalls).
 const suggestionCalls = createSuggestionCalls({
   generations: wsGens,
+  waiting: listedWaiting,
   refresh: () => panelWorkspaces(), // refresh allowedWs from the live server
   list: async () => {
     const read = await deploymentList({ action: "list" });
