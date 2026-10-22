@@ -45,7 +45,7 @@ const labels = { agent: 'Soul', work: 'Work mode', branch: 'Branch', harness: 'H
   waitingOnYou: 'Waiting claim', reason: 'Reported reason', message: 'Note',
   status: 'Reported outcome', class: 'Prompt class', action: 'Launch action', consentSource: 'Consent source',
   claudeVersion: 'Claude version', signatureId: 'Recognised screen',
-  purpose: 'Purpose', path: 'Path', base: 'Base', member: 'Member' };
+  purpose: 'Purpose', path: 'Path', base: 'Base', member: 'Member', step: 'Failed step' };
 /** The facts of a kind new in 0.49.0, each shown through displayLine. */
 const LINE_KINDS = new Set(['worktree-added']);
 /** Facts added to an older kind, shown through displayLine alone: `launch-prompt` keeps its earlier facts
