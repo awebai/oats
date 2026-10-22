@@ -26,6 +26,7 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import { doctorCaptureWarnings } from "../lib/doctor-capture.mjs";
+import { assertNoPartialUpgrade } from "../lib/upgrade-state.mjs";
 import { runtimeNameWarning, noteRuntimeName } from "../lib/deprecation.mjs";
 import { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect, spawnRefusalDetails } from "../lib/errors.mjs";
 import {
@@ -107,7 +108,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental",
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running", "deployments-list", "soul-composed-skills", "instance-color", "spawn-suggest-name"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running", "deployments-list", "soul-composed-skills", "instance-color", "spawn-suggest-name", "instance-upgrade"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -1318,9 +1319,34 @@ function retiredInstanceAddresses(root, name, home) {
  *  instance's work tree. The instance is addressed qualified: an explicit
  *  --home, or a name under the --dir scope (team roots included) that resolves
  *  to exactly one home; several homes refuse with every candidate named. */
-function instanceCmd() {
+async function instanceUpgradeCmd(name, bail) {
+  const usage = "usage: oats instance upgrade <instance> [--undo] (--plan | --plan-revision <rev> --idempotency-key <key>) [--home <abs>] [--dir <d>] [--json]";
+  if (!name || name.startsWith("--")) return bail("E_BAD_ARGS", usage);
+  if (serverFlagOf(args)) return bail("E_BAD_ARGS", "instance upgrade supports local homes only; run it on the deployment host");
+  const home = flag("home"), revision = flag("plan-revision"), key = flag("idempotency-key");
+  if (home === true || (home !== undefined && !isAbsolute(home))) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
+  const planOnly = args.includes("--plan"), undo = args.includes("--undo");
+  if (revision === true || key === true || (planOnly && (revision !== undefined || key !== undefined))) return bail("E_BAD_ARGS", usage);
+  dropAmbientRoot();
+  try {
+    const root = ensureRoot(dirFlag());
+    const { planUpgrade, applyUpgrade } = await import("../lib/instance-upgrade.mjs");
+    const result = planOnly ? await planUpgrade(dirFlag(), root, name, { home, undo })
+      : await applyUpgrade(dirFlag(), root, name, { home, undo, planRevision: revision, idempotencyKey: key });
+    if (JSON_MODE) { jsonOk(result); return; }
+    console.log(`${undo ? "undo package upgrade" : "package upgrade"} ${name}: ${planOnly ? `plan ${result.planRevision}` : result.status}${result.replayed ? " (replayed receipt)" : ""}`);
+    for (const row of result.modules) console.log(`  ${row.capability}: ${row.from.version} @ ${row.from.commit.slice(0,12)} → ${row.to.version} @ ${row.to.commit.slice(0,12)}${row.provider?.decision === "refuse" ? `; refused: ${row.provider.reason}` : ""}`);
+    for (const row of result.kept || []) console.log(`  ${row.capability}: kept (${row.reason})`);
+    for (const row of result.memberDrift || []) console.log(`  ${row.module}: member drift (${row.reason || row.status}); respawn to move it`);
+    if (planOnly) console.log(`  home changed since spawn: ${result.homeChangedSinceSpawn ? "yes (retire preserves a recovery copy)" : "no"}`);
+    if (planOnly) console.log(`apply with: oats instance upgrade ${name}${undo ? " --undo" : ""} --plan-revision ${result.planRevision} --idempotency-key <key>`);
+  } catch (e) { return lifecycleFail(e, "E_UPGRADE_FAILED", { ...e.details, ...(e.plan ? { plan: e.plan } : {}), ...(e.candidates ? { candidates: e.candidates } : {}) }); }
+}
+
+async function instanceCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const sub = args[1], name = args[2];
+  if (sub === "upgrade") return instanceUpgradeCmd(name, bail);
   if (sub === "waiting" || sub === "attention") return instanceWaitingCmd(sub, bail);
   const usage = "usage: oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--dir <d>] [--json] | oats instance attention [--message <text>] [--clear] [--json] | oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--dir <d>] [--json] | oats instance git <instance> [--home <abs>] [--dir <d>] [--json] | oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json] | oats instance stop <instance> (--plan | --apply --plan-revision <rev> --idempotency-key <key>) [--no-recursive] [--grace-ms <n>] [--home <abs>] [--dir <d>] [--json] | oats instance color <instance> (<color> | --clear) [--home <abs>] [--dir <d>] [--json]";
   if (!["git", "diff", "stop", "events", "color"].includes(sub) || !name || name.startsWith("--")) return bail("E_BAD_ARGS", usage);
@@ -3533,6 +3559,8 @@ async function sessionCmd() {
       // recorded launch stays frozen (a changed preference never reaches an existing home on its own).
       const reselectLaunch = args.includes("--reselect-launch");
       if (reselectLaunch && launchConfig !== undefined) bad("--reselect-launch applies the launch preferences; --launch-config names one explicitly — choose one");
+      // Refuse before launch selection or live-team discovery can prepare this home.
+      assertNoPartialUpgrade(home);
       const opts = { model: model || undefined, launchConfig, harness, yolo: yoloFlag(), ...(reselectLaunch ? { reselectLaunch: true, launchOffered: await homeLaunchOffered(home, { named: harness !== undefined }) } : {}), env: process.env, ...(await homeLiveTeams(home)) };
       if (args[1] === "restart") {
         const grace = flag("stop-grace");
@@ -3562,6 +3590,11 @@ async function sessionCmd() {
       console.log(JSON.stringify(result, null, 2));
       // A start's launch-hook warnings, as spawn prints its own (stderr keeps stdout one JSON document).
       for (const w of result?.warnings || []) console.error(`  WARNING: ${terminalText(w)}`);
+      if (result?.drift?.length) {
+        const version = (v) => `${v.version ?? "?"} @ ${String(v.commit ?? "?").slice(0, 7)}`;
+        const modules = result.drift.map((d) => `${d.capability} ${version(d.recorded)} → ${version(d.locked)}`).join(", ");
+        console.error(terminalText(`${result.drift.length} package module(s) behind the lock (${modules}); to move them: oats instance stop ${shellQuote(result.instance)}; oats instance upgrade ${shellQuote(result.instance)} --plan`));
+      }
     }
   } catch (e) { lifecycleFail(e, "E_SESSION_FAILED", e.details); }
 }
@@ -4746,6 +4779,7 @@ else {
 // `okf harvest --help` spawned a harvester (BeadHub, 2026-09-05).
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
+if (cmd === "instance" && args[1] === "upgrade" && flag("server") !== undefined) cmdFail("E_BAD_ARGS", "instance upgrade supports local homes only; run it on the deployment host");
 if (flag("server") !== undefined && ROUTED_COMMANDS.has(cmd)) await serverRouteCmd();
 else if (cmd === "server") await serverCmd();
 else if (cmd === "deployments") deploymentsCmd();
@@ -4765,7 +4799,7 @@ else if (cmd === "update") {
 }
 else if (cmd === "harness") harnessTrustCmd();
 else if (cmd === "readiness") await readinessCmd();
-else if (cmd === "instance") instanceCmd();
+else if (cmd === "instance") await instanceCmd();
 else if (cmd === "worktree") await worktreeCmd();
 else if (cmd === "root") console.log(resolve(new URL("..", import.meta.url).pathname));
 else if (cmd === "sync") await syncCmd();
@@ -5146,6 +5180,10 @@ Usage:
   oats instance attention [--message <text>] [--clear] [--json]
                                              run by the agent from its home: "I need a human's
                                              answer" (waiting --producer agent --reason attention)
+  oats instance upgrade <instance> --plan [--undo] [--json]
+      Preview package module moves and provider adoption; session must be stopped.
+  oats instance upgrade <instance> --plan-revision <rev> --idempotency-key <key> [--undo] [--json]
+      Move whole package modules to the verified lock; --undo uses the latest previous copies.
   oats instance stop <instance> --plan [--no-recursive] [--json]
                                              what Stop would touch: session state, recorded
                                              children, dirty work; a planRevision to apply

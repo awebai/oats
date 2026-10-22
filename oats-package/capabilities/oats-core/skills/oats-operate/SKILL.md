@@ -3,7 +3,7 @@ name: oats-operate
 description: >-
   Use when operating OATS from inside an instance: your home and work
   directories, extra trees (`oats worktree add|remove`), what a module is, reading `oats status` (modules, soul source,
-  drift), spawning with preview then apply, relations, stopping or retiring
+  drift), spawning with preview then apply, relations, upgrading stopped homes' package modules, stopping or retiring
   instances you spawned, setting needs-input whenever you need anything
   from a human (`oats instance attention`), being spawned by a trigger, lifecycle events
   and doctor. oats.core is day-to-day OATS operation, working with OATS from
@@ -108,8 +108,9 @@ skills, instruction inject, scripts and hooks — from one of two sources:
 
 `instance.json` records each module's source, commit and content digest
 (`modules`), the provider payloads it received (`providers`), and the soul
-source (`workspace.soul`). A running instance never changes under itself: a
-member moving or a package being bumped affects only new spawns.
+source (`workspace.soul`). A running instance never changes under itself;
+a stopped one can be moved to locked package versions with `oats instance
+upgrade`. Member modules and the soul body still require a new spawn.
 
 **Why you have what you have:** `oats inspect --home "$OATS_INSTANCE_HOME"
 --json` reports each core capability with `layers.<slot>.from`: `soul` (your
@@ -137,7 +138,51 @@ module's recorded source. An unmarked row is current; otherwise it is marked
 `[soul no longer present]`, `[capability no longer present]`,
 `[package no longer locked]`, or `[member <reason>]` when the member is not
 confirmed. Drift is information, not a fault: the
-running instance keeps its commit; a re-spawn picks up the new state.
+running instance keeps its commit. A new spawn picks up the new state; a
+stopped home's package modules can move through the upgrade act below.
+
+## Moving a stopped home's package modules
+
+Requires a kernel whose `oats help` lists `instance upgrade` (feature
+`instance-upgrade` in `oats version --json`). A package pin and `oats sync`
+change the lock; they do not move an existing home's copies. When your task
+or human authorizes moving another instance, run from the deployment or a
+parent's home:
+
+```bash
+oats instance stop <instance>
+oats instance upgrade <instance> --plan --json
+oats instance upgrade <instance> --plan-revision <revision> --idempotency-key <key> --json
+oats session start --home <absolute-home>
+```
+
+Read the plan's module changes and provider adoption decisions before apply.
+One refusal refuses the whole move; the remedy may be respawn. A running or
+unreadable session refuses with `E_SESSION_RUNNING`; a stale plan returns
+`E_PLAN_STALE` with a fresh plan. Modules move whole, including skills,
+inject and hook commands. Member modules and the recorded soul stay put.
+Start and restart retain those copies and report package drift; they never
+upgrade automatically.
+
+Before commit, a failed move is `partial` after a provider apply hook succeeds
+or its outcome becomes uncertain, such as an interruption before its result
+was recorded. It must finish forward. Retry with the same `--idempotency-key`;
+the error names what is pending. An uncertain idempotent hook may run again,
+and a refusal on retry stays partial. Start refuses with `E_UPGRADE_PARTIAL`
+until it finishes. If it cannot finish, respawn. Never restore old modules by
+hand under adopted or possibly adopted host state.
+
+After swap and baseline commit the receipt, the success event is published
+and staging is cleaned. Failure leaves a complete upgrade. The same-key retry
+finishes event publication and cleanup, without hooks or copies.
+Start is allowed with one warning naming the retry. A new upgrade or undo
+plan refuses until that cleanup finishes; finish it before another move.
+
+For the latest move only, `oats instance upgrade <instance> --undo --plan`
+plans the reverse; apply with `--undo --plan-revision <revision>
+--idempotency-key <key>`. Undo needs the verified `.oats/previous/<receipt>/`
+copy and the restored version's `upgrade` hook. If that version cannot adopt
+the current state, respawn. The next move replaces the previous state.
 
 Other read-only views:
 

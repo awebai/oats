@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, execFile, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
@@ -130,6 +130,116 @@ function heldWindow(f, window = f.meta.instance) {
   return harnessReady(f, window);
 }
 const pendingFor = (f, target, fields = {}) => ({ id: `test-${f.meta.instance}`, target, command: f.command, model: null, startedAt: "2026-09-06T00:00:00.000Z", ...fields });
+
+test("package module upgrade partial receipts block start and restart before any session or hook effects", async () => {
+  const f = await makeHome("upgradepartial", { launched: false });
+  const receipts = join(f.home, ".oats");
+  const receiptPath = join(receipts, "upgrade-receipt.retry-upgrade.json");
+  mkdirSync(receipts, { recursive: true });
+  writeFileSync(receiptPath, JSON.stringify({ action: "upgrade", status: "partial", instance: f.meta.instance, idempotencyKey: "retry-upgrade", planRevision: "revision-partial" }));
+  const before = readFileSync(join(f.home, "instance.json"), "utf8");
+  let effects = 0;
+  const io = { exec: () => { effects++; throw new Error("must not execute"); }, kill: () => { effects++; throw new Error("must not signal"); } };
+  for (const restart of [false, true]) {
+    writeFileSync(receiptPath, JSON.stringify({ action: "upgrade", status: "partial", undo: restart, instance: f.meta.instance, idempotencyKey: "retry-upgrade", planRevision: "revision-partial" }));
+    assert.throws(() => startInstanceSession(f.home, { restart, io }), (e) => e.code === "E_UPGRADE_PARTIAL" && e.message.includes("retry-upgrade") && e.message.includes("oats instance upgrade") && e.message.includes("--idempotency-key") && e.message.includes("revision-partial") && e.message.includes("--undo") === restart);
+    assert.equal(effects, 0);
+    assert.equal(existsSync(join(f.home, ".oats-start.lock")), false);
+    assert.equal(readFileSync(join(f.home, "instance.json"), "utf8"), before);
+    const run = spawnSync(process.execPath, [bin, "session", restart ? "restart" : "start", "--home", f.home, "--json"], { encoding: "utf8" });
+    assert.equal(run.status, 1, run.stdout + run.stderr);
+    assert.equal(JSON.parse(run.stdout).error.code, "E_UPGRADE_PARTIAL");
+  }
+});
+
+test("package module upgrade file mutex refuses starts while active and after owner exit, naming the same-key retry", async () => {
+  const f = await makeHome("upgradefilemutex", { launched: false });
+  const lock = join(f.home, ".oats-start.lock");
+  const owner = { action: "upgrade", instance: f.meta.instance, home: f.home, planRevision: "file-mutex-revision", idempotencyKey: "file-mutex-key", undo: true };
+  const child = execFile(process.execPath, ["--input-type=module", "-e", `import { openSync, writeFileSync } from "node:fs";
+const fd = openSync(process.argv[1], "wx");
+writeFileSync(fd, process.argv[2]);
+process.stdout.write("ready\\n");
+setInterval(() => {}, 1000);`, lock, JSON.stringify(owner)], { cwd: f.home });
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  let effects = 0;
+  const io = { exec: () => { effects++; throw new Error("must not execute"); } };
+  const refuses = () => {
+    for (const restart of [false, true]) assert.throws(() => startInstanceSession(f.home, { restart, io }), (e) => e.code === "E_SESSION_START_BUSY"
+      && e.message.includes("oats instance upgrade upgradefilemutex --undo --plan-revision file-mutex-revision --idempotency-key file-mutex-key")
+      && !e.message.includes("remove that directory"));
+    assert.equal(effects, 0);
+    assert.equal(readFileSync(lock, "utf8"), JSON.stringify(owner), "start never reclaims the upgrade mutex");
+  };
+  try {
+    await new Promise((resolve, reject) => { child.stdout.once("data", resolve); child.once("error", reject); });
+    refuses();
+    child.kill("SIGTERM");
+    await exited;
+    refuses();
+    writeFileSync(lock, "");
+    assert.throws(() => startInstanceSession(f.home, { io }), (e) => e.code === "E_SESSION_START_BUSY" && e.message.includes("oats instance upgrade upgradefilemutex")
+      && e.message.includes("--plan-revision") && e.message.includes("original") && e.message.includes("--idempotency-key") && !e.message.includes("remove that directory"));
+    assert.equal(readFileSync(lock, "utf8"), "", "an empty crashed write is retained too");
+    rmSync(lock);
+    mkdirSync(lock);
+    assert.throws(() => startInstanceSession(f.home, { io }), (e) => e.code === "E_SESSION_START_BUSY" && e.message.includes("another start") && e.message.includes("remove that directory"));
+  } finally {
+    child.kill("SIGTERM");
+    await exited;
+    rmSync(lock, { recursive: true, force: true });
+  }
+});
+
+test("package module upgrade unsafe receipt state refuses start before session effects", async () => {
+  const f = await makeHome("upgradeunsafe", { launched: false });
+  const receipts = join(f.home, ".oats");
+  const receiptPath = join(receipts, "upgrade-receipt.unsafe.json");
+  let effects = 0;
+  const io = { exec: () => { effects++; throw new Error("must not execute"); } };
+  const refuses = () => {
+    assert.throws(() => startInstanceSession(f.home, { io }), (e) => e.code === "E_UPGRADE_PARTIAL" && e.message.includes(receipts) && /inspect|respawn/.test(e.message));
+    assert.equal(effects, 0);
+    assert.equal(existsSync(join(f.home, ".oats-start.lock")), false);
+  };
+  writeFileSync(receiptPath, "{not json");
+  refuses();
+  rmSync(receiptPath);
+  symlinkSync(join(f.home, "instance.json"), receiptPath);
+  refuses();
+  rmSync(receiptPath);
+  renameSync(receipts, join(f.home, ".oats-real"));
+  symlinkSync(".oats-real", receipts);
+  assert.throws(() => startInstanceSession(f.home, { io }), e => e.code === "E_LAUNCH_SHIM");
+  assert.equal(effects, 0);
+});
+
+test("package module upgrade committed cleanup warns on start and restart without blocking the session", async () => {
+  const f = await makeHome("upgradecleanup", { launched: false });
+  const receiptPath = join(f.home, ".oats", "upgrade-receipt.cleanup-retry.json");
+  const receipt = { action: "upgrade", status: "complete", instance: f.meta.instance, idempotencyKey: "cleanup-retry", planRevision: "committed-revision", steps: { cleaned: false } };
+  writeFileSync(receiptPath, JSON.stringify(receipt));
+  let createdSession = false;
+  try { tmux("has-session", "-t", session); } catch { tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", base); createdSession = true; }
+  try {
+    const result = startInstanceSession(f.home);
+    await harnessReady(f);
+    const warning = result.warnings.find((message) => message.includes("cleanup-retry"));
+    assert.ok(warning, JSON.stringify(result.warnings));
+    assert.match(warning, /complete.*cleanup/i);
+    assert.match(warning, /oats instance upgrade upgradecleanup --plan-revision committed-revision --idempotency-key cleanup-retry/);
+    const run = spawnSync(process.execPath, [bin, "session", "restart", "--home", f.home], { encoding: "utf8" });
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+    assert.ok(JSON.parse(run.stdout).warnings.includes(warning));
+    assert.ok(run.stderr.includes(`WARNING: ${warning}`), run.stderr);
+    await harnessReady(f);
+    writeFileSync(receiptPath, JSON.stringify({ ...receipt, steps: { cleaned: true } }));
+    const complete = restartInstanceSession(f.home, { stopGraceMs: 5000 });
+    assert.equal(complete.warnings.some((message) => message.includes("cleanup-retry")), false, "the warning clears after cleanup finishes");
+  } finally {
+    try { tmux(createdSession ? "kill-session" : "kill-window", "-t", createdSession ? `=${session}` : `=${session}:=upgradecleanup`); } catch { /* absent */ }
+  }
+});
 
 // #762: a missing receipt says where it was looked for, why it can be missing and what to do.
 test("a home without its session receipt is refused naming the receipt path, the oats status spelling first, and the retire remedy; an unreadable instance.json keeps its own message", async () => {

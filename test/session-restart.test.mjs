@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { restartInstanceSession, startInstanceSession, inspectInstanceSession } from "../lib/core.mjs";
 import { soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
+import { packageRepo } from "./helpers/package-repo.mjs";
 import { isolateSessionEnvironment, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -454,6 +455,96 @@ test("0.30 launch-hook warnings: session start and restart answer them (JSON `wa
   assert.doesNotMatch(r.stderr, /WARNING/);
   assert.ok(await waitFor(() => runningPid(home) !== null));
   assert.equal(warningEvents().length, 3, "no event for a hook without warnings");
+});
+
+test("package module drift appears on start and restart in JSON and text without moving frozen modules", async (t) => {
+  const pkg = packageRepo();
+  t.after(pkg.cleanup);
+  const deployment = v2Deployment({ workspace: { packages: { "acme.pkg": `${pkg.ref}@v1.0.0` } } });
+  t.after(deployment.cleanup);
+  assert.equal(deployment.cli(["sync", "--json"]).status, 0);
+  const homes = [];
+  for (const name of ["driftjson", "drifttext"]) {
+    const spawned = deployment.cli(["spawn", "acme.pkg/keeper", "--name", name, "--harness", "claude", "--no-launch", "--json"]);
+    assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+    const { home } = JSON.parse(spawned.stdout).result;
+    const meta = readJson(join(home, "instance.json"));
+    write(join(home, "instance.json"), JSON.stringify({ ...meta, tmux: { session, window: name, socket }, command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(binDir, "polite") }) }));
+    write(join(home, ".oats", "upgrade-receipt.completed.json"), JSON.stringify({ action: "upgrade", status: "complete", idempotencyKey: "completed" }));
+    homes.push({ name, home, modules: meta.modules, agents: readFileSync(join(home, "AGENTS.md"), "utf8"), skill: readFileSync(join(home, ".agents", "skills", "tool-skill", "SKILL.md"), "utf8") });
+  }
+  const next = pkg.release("1.1.0", { keeper: {} });
+  deployment.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [deployment.ref], teams: { global: { description: "Fixture team" } }, defaults: { messaging: "none", tasks: "none", knowledge: "none" }, packages: { "acme.pkg": `${pkg.ref}@v1.1.0` } } } }, "bump package");
+  assert.equal(deployment.cli(["sync", "--json"]).status, 0);
+  const expected = [{ capability: "acme-tool", recorded: { version: "1.0.0", commit: pkg.commit1 }, locked: { version: "1.1.0", commit: next } }];
+  try {
+    for (const [i, f] of homes.entries()) {
+      ensureSession(base);
+      for (const verb of ["start", "restart"]) {
+        const run = deployment.cli(["session", verb, "--home", f.home, ...(i === 0 ? ["--json"] : [])], { env: { PATH: process.env.PATH } });
+        assert.equal(run.status, 0, run.stdout + run.stderr);
+        const result = i === 0 ? JSON.parse(run.stdout).result : JSON.parse(run.stdout);
+        assert.deepEqual(result.drift, expected);
+        if (i === 1) assert.match(run.stderr, new RegExp(`1 package module\\(s\\) behind the lock \\(acme-tool 1.0.0 @ ${pkg.commit1.slice(0, 7)} → 1.1.0 @ ${next.slice(0, 7)}\\); to move them: oats instance stop ${f.name}; oats instance upgrade ${f.name} --plan`));
+        assert.ok(await waitFor(() => runningPid(f.home) !== null));
+        const after = readJson(join(f.home, "instance.json"));
+        assert.deepEqual(after.modules, f.modules, "start and restart retain the recorded module copies");
+        assert.equal(readFileSync(join(f.home, "AGENTS.md"), "utf8"), f.agents);
+        assert.equal(readFileSync(join(f.home, ".agents", "skills", "tool-skill", "SKILL.md"), "utf8"), f.skill);
+      }
+    }
+    // Commit drift also matters when a package keeps its version string.
+    const lockPath = join(deployment.dep, "oats-lock.json");
+    const locked = readJson(lockPath);
+    locked.packages["acme.pkg"].version = "1.0.0";
+    write(lockPath, JSON.stringify(locked));
+    let run = deployment.cli(["session", "restart", "--home", homes[0].home, "--json"], { env: { PATH: process.env.PATH } });
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+    assert.deepEqual(JSON.parse(run.stdout).result.drift, [{ ...expected[0], locked: { version: "1.0.0", commit: next } }]);
+    // A removed package is kept, rather than being offered as an upgrade.
+    delete locked.packages["acme.pkg"];
+    write(lockPath, JSON.stringify(locked));
+    run = deployment.cli(["session", "restart", "--home", homes[0].home], { env: { PATH: process.env.PATH } });
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+    assert.equal(Object.hasOwn(JSON.parse(run.stdout), "drift"), false, "no drift preserves the existing start answer shape");
+    assert.doesNotMatch(run.stderr, /package module\(s\) behind/);
+  } finally {
+    for (const f of homes) { try { tmux("kill-window", "-t", `=${session}:=${f.name}`); } catch { /* absent */ } }
+  }
+});
+
+test("package module upgrade refreshes launch contributions without inheriting the prior environment", async () => {
+  const name = "upgraded-refreshed";
+  const home = homeOf(name, "renew");
+  const old = { capability: "test.renew", layer: null, level: home, settings: {}, trust: { trusted: true, integrity: null }, launch: { claude: "--old-hook" }, env: ["TEST_UPGRADE_OLD_ENV"] };
+  const launch = { ...recipeFor(home, name, { executable: join(binDir, "polite") }), hooks: { launch: old.launch, env: { TEST_UPGRADE_OLD_ENV: "old" }, contributions: [old] } };
+  await makeHome(name, { soul: "renew", command: renderFor(home, name, join(binDir, "polite")), launch });
+  ensureSession(base);
+  try {
+    const manifestPath = join(home, ".oats", "modules", "test.renew", "oats.json");
+    const manifest = readJson(manifestPath);
+    write(manifestPath, JSON.stringify({ ...manifest, environment: ["TEST_UPGRADE_OLD_ENV"] }));
+    write(join(home, "answer.json"), JSON.stringify({ launch: { claude: "--old-hook" }, env: { TEST_UPGRADE_OLD_ENV: "old" } }));
+    startInstanceSession(home, { env: env() });
+    assert.ok(await waitFor(() => runningPid(home) !== null));
+    assert.equal(paneEnvOf(home).TEST_UPGRADE_OLD_ENV, "old", "the old module's real launch supplied its environment");
+
+    write(manifestPath, JSON.stringify({ ...manifest, environment: ["TEST_UPGRADE_NEW_ENV"] }));
+    write(join(home, "answer.json"), JSON.stringify({ launch: { claude: "--new-hook" }, env: { TEST_UPGRADE_NEW_ENV: "new" } }));
+    restartInstanceSession(home, { env: env() });
+    assert.ok(await waitFor(() => runningPid(home) !== null));
+    const args = readFileSync(join(home, "argv.txt"), "utf8");
+    const actualEnv = paneEnvOf(home);
+    assert.doesNotMatch(args, /--old-hook/);
+    assert.match(args, /--new-hook/);
+    assert.equal(actualEnv.TEST_UPGRADE_OLD_ENV, undefined, "the prior environment is not inherited after its declaration is removed");
+    assert.equal(actualEnv.TEST_UPGRADE_NEW_ENV, "new");
+    const current = readJson(join(home, "instance.json")).launch.hooks;
+    assert.equal(Object.hasOwn(current.env, "TEST_UPGRADE_OLD_ENV"), false);
+    assert.deepEqual(current.contributions[0].env, ["TEST_UPGRADE_NEW_ENV"]);
+  } finally {
+    try { tmux("kill-window", "-t", `=${session}:=${name}`); } catch { /* absent */ }
+  }
 });
 
 test("a captured provider with no contribution at spawn still takes part (launch hook, conditional requirement); package probes run under the launch's effective environment, not the ambient one", async () => {

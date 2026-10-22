@@ -93,7 +93,9 @@ and the rules its tests pin.
 | `resolve.mjs` | a soul's resolution: capabilities, slots, provenance |
 | `packages.mjs` | `packages:`, the catalog, `oats sync`, `oats-lock.json` |
 | `capability-show.mjs` | `oats capabilities show`: one catalog row's inject and skill files, read at its commit. Its text rules (`decodeText`, `skillDocDescription`, the limits) are also the rules of `inspect --soul --skills` (`instance-inspect.mjs` `soulSkills`), which reads a soul copy's own skills locally, and of `--composed-skills` (`composedSkillsIn`), which adds the capability skills of the scratch composition |
-| `materialize.mjs` | copying modules into a home and composing it; `moduleSkills` is the one rule for which skills a module gives, read over the fetched tree, or over a remote listing for the spawn preview (`plannedModuleSkills`) |
+| `materialize.mjs` | the shared home composer for spawn and module upgrade: `stageMaterialize` stages module copies and derived files, then a durable rename journal commits or rolls back a replacement in an existing home; `moduleSkills` is the one rule for which skills a module gives, read over the fetched tree, or over a remote listing for the spawn preview (`plannedModuleSkills`) |
+| `instance-upgrade.mjs` | `planUpgrade` and `applyUpgrade`: verified package-module staging, provider adoption, idempotent forward completion, undo and retirement baseline refresh for a stopped local home, using the shared composer for derived home files |
+| `upgrade-state.mjs` | upgrade receipt state and the partial-upgrade guard used before session start; receipts remain lifecycle state, and provider adoption stays in the module's upgrade hook |
 | `core.mjs` | spawn, retire, sessions, hooks, launch recipes, instance metadata. A home's record (`instance.json`) is read with `readHomeRecord`, which never throws: a record, an absent one, or one that is there and cannot be read, with the reason. Code that walks other homes (the listing, a retire's lineage repair) uses it, so that one home's record decides only for that home; `identifiedHomeRecord` is the one refusal (`E_UNIDENTIFIED_INSTANCE_HOME`) a lifecycle verb makes when it has resolved its home: `resolveRetireHome`, `startInstanceSession`, and `resolveTarget` in `instance-lifecycle.mjs` for the stop and retire plans. A plan reads its own home's record with `targetRecord` (the same refusal) and any other home's with `otherRecord` (absent or unreadable: nobody's parent or child) |
 | `instruction-composition.mjs` | the generated `AGENTS.md`; `renderInstructionParts` is the span-reporting renderer (`renderInstructionText` is its text) |
 | `soul-composition.mjs` | the instructions a spawn of a soul would write, composed without a spawn (kernel half + materialize into a scratch home): the one path behind `doctor --soul`, `inspect --soul --instructions` and `--composed-skills` (its `inScratch` reads the scratch home before it is removed, so the two flags share one materialization) |
@@ -138,6 +140,43 @@ and the rules its tests pin.
 | `harness-trust-write.mjs` | explicit operator plan/apply, cooperating locks, durable deployment audit and no-rollback outcomes |
 | `harness-trust-json.mjs`, `harness-trust-toml.mjs` | bounded native parsers and byte-preserving edits of one trust leaf |
 | `pi-bridge.mjs` | the pi bridge (`@awebai/oats-pi`) in every pi folder a launch of a deployment uses: the folder list (the default, the process's own `PI_CODING_AGENT_DIR`, each pi launch configuration's, by real path), the bridge read in each, `oats doctor`'s skew warnings, and the plan `oats update` runs with its line that the Desktop goes first ([upgrading](upgrading.md)). Reads only: `bin/oats.mjs` runs the steps |
+
+An upgrade records a hook's in-flight marker before spawning it. A resumed
+unknown outcome is durably recorded as uncertain before any retry work,
+because the provider may already have changed host state even when no success
+was recorded. Success or uncertainty makes the act forward-only. Only a
+non-zero result observed and recorded in the same invocation, with no prior
+success or uncertainty, permits rollback of composed bytes. An uncertain hook
+is retried idempotently; a later refusal cannot turn that recovery into a
+rollback.
+
+Start and upgrade share the `.oats-start.lock` path through exclusive
+acquisition: start uses `mkdir`, while upgrade creates a regular file with
+`wx`. Both treat `EEXIST` as held. Upgrade takes the lifecycle claim before
+reclaiming an interrupted upgrade's regular-file mutex, including an empty
+file left by a killed opener, and never reclaims a directory. Start never
+reclaims this path. Upgrade releases it only after persisting its final
+invocation receipt.
+
+Upgrade compares the home with its independent spawn baseline before it
+changes anything there. A dirty home retains the entire baseline byte for
+byte, so older kernels also recover its edits at retire. A clean home updates
+only `homeFingerprint`; work fingerprints, digest versions, exclusions and
+runtime authority remain as recorded. `retirementHomeChanged` and
+`rebaseUpgradeRetirementBaseline` use retirement's existing comparison and
+exclusions, without changing recovery or copy semantics.
+
+The fingerprint helpers accept call-scoped `transientHomePaths`: exact
+relative paths, no globs, each an existing regular file. Upgrade projects out
+only `.oats-start.lock`. This is not a permanent exclusion: a later retire
+hashes any leftover mutex as changed home bytes. The completed receipt is
+published before the success event. A same-key retry deduplicates the event
+and removes staging, without repeating adoption or composition.
+
+Baseline replacement uses the existing atomic private-file writer. The
+exclusive-create option still refuses an existing baseline. An interrupted replacement leaves a complete
+old or new baseline, preserving the independent session authority required
+to resume forward recovery.
 
 The schedule registry stores explicit concurrency caps, leaving the schedule
 cap absent for its effective default of five. `readRegistry()` is a pure,
