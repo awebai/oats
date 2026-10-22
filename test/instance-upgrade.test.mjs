@@ -3,17 +3,17 @@
  * checked against effects rather than a mocked composer or lifecycle implementation. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { oatsSocket } from "./helpers/host-fixture.mjs";
+import { killAndReap, oatsSocket } from "./helpers/host-fixture.mjs";
 import { join } from "node:path";
 import { CLI, v2Deployment, git } from "./helpers/v2-deployment.mjs";
-import { runFaulted } from "./helpers/fs-gate-preload.mjs";
+import { runFaulted, startGated } from "./helpers/fs-gate-preload.mjs";
 import { recordLaunch } from "./helpers/recorded-tmux-server.mjs";
 import { contentDigest } from "../lib/remote.mjs";
 import { readLock, writeLock } from "../lib/packages.mjs";
 import { planUpgrade, applyUpgrade } from "../lib/instance-upgrade.mjs";
-import { claimHomeFor, homeClaimHolder, releaseHomeClaim, retirementBaselinePath, retireInstance, startInstanceSession } from "../lib/core.mjs";
+import { claimHomeFor, homeClaimHolder, releaseHomeClaim, retirementBaselinePath, writeRetirementBaseline, retireInstance, startInstanceSession } from "../lib/core.mjs";
 import { readEvents } from "../lib/instance-events.mjs";
 
 const json = p => JSON.parse(readFileSync(p, "utf8"));
@@ -40,6 +40,7 @@ if (process.env.OATS_UPGRADE_PHASE === 'plan') console.log(JSON.stringify(${beha
 else {
   if (${JSON.stringify(behavior)} === 'fail' && !fs.existsSync(path.join(process.env.OATS_INSTANCE_HOME, 'allow'))) process.exit(1);
   const p = path.join(process.env.OATS_INSTANCE_HOME, 'adopt-' + process.env.OATS_CAPABILITY);
+  if (${JSON.stringify(behavior)} === 'succeed-once' && fs.existsSync(p) && !fs.existsSync(path.join(process.env.OATS_INSTANCE_HOME, 'allow'))) process.exit(1);
   fs.appendFileSync(p, '${version}\\n');
   console.log(JSON.stringify({meta:{version:'${version}',before:JSON.parse(process.env.OATS_META),from:JSON.parse(process.env.OATS_UPGRADE_FROM),to:JSON.parse(process.env.OATS_UPGRADE_TO)}}));
 }
@@ -95,7 +96,7 @@ test("package upgrade acceptance: read-only plan; whole-module apply, replay and
   assert.equal(contentDigest(home, { allowSymlinks: () => true }), before, "planning writes no home bytes");
   assert.equal((await f.plan()).planRevision, plan.planRevision, "unchanged facts produce the same revision");
   assert.equal(plan.modules[0].from.commit, old.commit);
-  assert.equal(plan.modules[0].to.commit, next.commit);
+  assert.deepEqual(plan.modules[0].to, { version: next.version, commit: next.commit, integrity: next.integrity });
   assert.deepEqual(plan.modules[0].skills.changed, ["acme.one"]);
   assert.equal(plan.modules[0].inject, true);
   const result = await f.apply({ planRevision: plan.planRevision, idempotencyKey: "move" });
@@ -110,7 +111,7 @@ test("package upgrade acceptance: read-only plan; whole-module apply, replay and
   assert.ok(meta.capabilityRuntime[0].hooks.retire.includes(join(home, ".oats/modules/acme.one/retire.mjs")));
   assert.equal(meta.capabilityMeta["acme.one"].version, "2.0.0");
   assert.equal(meta.capabilityMeta["acme.one"].from.commit, old.commit);
-  assert.equal(meta.capabilityMeta["acme.one"].to.commit, next.commit);
+  assert.deepEqual(meta.capabilityMeta["acme.one"].to, next, "hook receives the full locked entry");
   noStaging(home);
   assert.equal(readEvents(home).events.filter(e => e.kind === "modules-upgraded").length, 1);
   const fresh = await fx.spawn("dev", { name: "fresh", noLaunch: true });
@@ -503,3 +504,181 @@ for (const point of ["swap", "baseline"]) {
     assert.equal((await f.plan()).planRevision, plan.planRevision, "the original move can be planned again after rollback");
   });
 }
+
+for (const mode of ["adopt", "no-upgrade"]) test("package upgrade regression: new declared skill and inject paths use the " + mode + " new tree", async t => {
+  const f = await fixture(t, { oldMode: mode, nextMode: mode }); const { fx, home } = f;
+  fx.commit({
+    ...pkg("2.1.0"),
+    "oats-package/capabilities/acme.one/oats.json": { json: { capability: "acme.one", version: "2.1.0", description: "Changed layout", skills: ["abilities"], inject: "instructions/new.md", hooks: { ...(mode === "adopt" ? { upgrade: "upgrade.mjs" } : {}), retire: "hooks/retire.mjs" } } },
+    "oats-package/capabilities/acme.one/skills": null,
+    "oats-package/capabilities/acme.one/abilities/new-guide/SKILL.md": "---\nname: new-guide\ndescription: New layout\n---\nNew layout skill.\n",
+    "oats-package/capabilities/acme.one/instructions/new.md": "New layout instruction.",
+    "oats-package/capabilities/acme.one/hooks/retire.mjs": "console.log('{}');",
+  });
+  lock(fx, "2.1.0");
+  const plan = await f.plan();
+  assert.deepEqual(plan.modules[0].skills.added, ["new-guide"]);
+  assert.deepEqual(plan.modules[0].skills.removed, ["acme.one"]);
+  await f.apply({ planRevision: plan.planRevision, idempotencyKey: "changed-layout" });
+  assert.equal(existsSync(join(home, ".agents/skills/acme.one")), false);
+  assert.match(readFileSync(join(home, ".agents/skills/new-guide/SKILL.md"), "utf8"), /New layout skill/);
+  assert.match(readFileSync(join(home, "AGENTS.md"), "utf8"), /New layout instruction/);
+  assert.ok(json(join(home, "instance.json")).capabilityRuntime[0].hooks.retire.includes("/hooks/retire.mjs"));
+});
+
+
+/** Every killed process belongs to this gated CLI. Never release a still-live
+ * process on an assertion failure: terminate and reap it before fixture cleanup. */
+async function killAtCheckpoint(run, name, inspect) {
+  try {
+    await run.waitGate(name);
+    inspect();
+    await killAndReap(run.child.pid);
+    const exited = await run.done;
+    assert.equal(exited.signal, "SIGKILL");
+    assert.deepEqual(exited.timedOut, []);
+  } finally {
+    if (run.child.exitCode === null && run.child.signalCode === null) await killAndReap(run.child.pid);
+    await run.finish();
+  }
+}
+
+for (const checkpoint of ["before-hook", "after-hook"]) {
+  test("package upgrade acceptance: killed " + checkpoint + " outcome remains uncertain across retry refusal", async t => {
+    const f = await fixture(t, { nextMode: checkpoint === "after-hook" ? "succeed-once" : "fail" }); const { fx, home, next } = f;
+    const plan = await f.plan(), key = "killed-" + checkpoint;
+    const receiptFile = join(home, ".oats", "upgrade-receipt." + key + ".json"), adoption = join(home, "adopt-acme.one");
+    const args = [CLI, "instance", "upgrade", "seat", "--plan-revision", plan.planRevision, "--idempotency-key", key, "--json"];
+    // Initial receipt, then inFlight receipt, then acknowledged outcome. Kill
+    // after publishing inFlight but before spawning, or before the acknowledged
+    // outcome replaces it after the hook has already returned successfully.
+    const gate = checkpoint === "before-hook"
+      ? { name: checkpoint, fn: "renameSync", arg: 1, path: receiptFile, nth: 2, when: "after" }
+      : { name: checkpoint, fn: "renameSync", arg: 1, path: receiptFile, armed: adoption };
+    const run = startGated(args, { cwd: fx.dep, env: fx.env, gateDir: join(fx.base, "gates-" + checkpoint), gates: [gate] });
+    await killAtCheckpoint(run, checkpoint, () => {
+      const interrupted = json(receiptFile);
+      assert.equal(interrupted.hooks.inFlight, "acme.one", "the durable receipt precedes invocation");
+      assert.deepEqual(interrupted.steps.hooks, [], "no acknowledged outcome has been durably recorded");
+      assert.equal(existsSync(adoption), checkpoint === "after-hook");
+    });
+    const retried = fx.cli(args.slice(1));
+    assert.notEqual(retried.status, 0, retried.stdout + retried.stderr);
+    assert.equal(retried.json().error.code, "E_UPGRADE_PARTIAL", "an uncertain prior outcome forbids rollback even when retry refuses");
+    const uncertain = json(receiptFile);
+    assert.equal(uncertain.status, "partial");
+    assert.deepEqual(uncertain.uncertain, ["acme.one"]);
+    assert.deepEqual(uncertain.steps.hooks, []);
+    const staging = join(home, ".oats", ".staging-upgrade-" + uncertain.receipt);
+    assert.ok(existsSync(staging), "retry refusal keeps the exact staged versions");
+    assert.ok(existsSync(join(home, ".oats/previous", uncertain.receipt)), "previous-state evidence remains available");
+    await assert.rejects(fx.inEnv(() => startInstanceSession(home)), e => e.code === "E_UPGRADE_PARTIAL");
+    if (checkpoint === "after-hook") assert.equal(readFileSync(adoption, "utf8"), "2.0.0\n", "the retry refused before applying another effect");
+    else assert.equal(existsSync(adoption), false, "conservative uncertainty also covers an invocation that never began");
+    // A later integrity refusal has the same irreversible boundary. Restore only
+    // the staged new version's fixture bytes, so the original act can finish.
+    const stagedInject = join(staging, "modules/acme.one/inject.md"), inject = readFileSync(stagedInject);
+    try {
+      writeFileSync(stagedInject, "tampered staged bytes");
+      const invalid = fx.cli(args.slice(1));
+      assert.notEqual(invalid.status, 0, invalid.stdout + invalid.stderr);
+      assert.equal(invalid.json().error.code, "E_UPGRADE_PARTIAL");
+      assert.deepEqual(json(receiptFile).uncertain, ["acme.one"]);
+      assert.ok(existsSync(staging));
+      await assert.rejects(fx.inEnv(() => startInstanceSession(home)), e => e.code === "E_UPGRADE_PARTIAL");
+    } finally {
+      writeFileSync(stagedInject, inject);
+    }
+    writeFileSync(join(home, "allow"), "provider is ready to adopt");
+    const completed = fx.cli(args.slice(1));
+    assert.equal(completed.status, 0, completed.stdout + completed.stderr);
+    assert.equal(completed.json().result.status, "complete");
+    assert.equal(json(join(home, "instance.json")).modules["acme.one"].commit, next.commit);
+    assert.equal(readFileSync(adoption, "utf8"), checkpoint === "after-hook" ? "2.0.0\n2.0.0\n" : "2.0.0\n");
+    assert.equal(readEvents(home).events.filter(e => e.kind === "modules-upgraded").length, 1);
+    noStaging(home);
+  });
+}
+
+for (const checkpoint of ["empty-mutex", "first-receipt"]) {
+  test("package upgrade acceptance: killed " + checkpoint + " owner is reclaimed without deleting its mutex by hand", async t => {
+    const f = await fixture(t); const { fx, home, next } = f;
+    const before = composed(home), plan = await f.plan(), key = "mutex-" + checkpoint;
+    const mutex = join(home, ".oats-start.lock"), receiptFile = join(home, ".oats", "upgrade-receipt." + key + ".json");
+    const args = [CLI, "instance", "upgrade", "seat", "--plan-revision", plan.planRevision, "--idempotency-key", key, "--json"];
+    const gate = checkpoint === "empty-mutex"
+      ? { name: checkpoint, fn: "openSync", path: mutex, when: "after" }
+      : { name: checkpoint, fn: "renameSync", arg: 1, path: receiptFile };
+    const run = startGated(args, { cwd: fx.dep, env: fx.env, gateDir: join(fx.base, "gates-" + checkpoint), gates: [gate] });
+    await killAtCheckpoint(run, checkpoint, () => {
+      assert.equal(lstatSync(mutex).isFile(), true, "the upgrade mutex is an exclusive regular file");
+      assert.equal(existsSync(receiptFile), false, "the owner has not published its first receipt");
+      if (checkpoint === "empty-mutex") assert.equal(readFileSync(mutex, "utf8"), "", "the process dies after creation and before writing owner bytes");
+      else {
+        const owner = json(mutex);
+        assert.equal(owner.idempotencyKey, key);
+        assert.equal(owner.planRevision, plan.planRevision);
+        assert.equal(owner.undo, false);
+      }
+      assert.deepEqual(composed(home), before);
+    });
+    assert.equal(lstatSync(mutex).isFile(), true, "SIGKILL leaves the mutex for the retry to reclaim");
+    const completed = fx.cli(args.slice(1));
+    assert.equal(completed.status, 0, completed.stdout + completed.stderr);
+    assert.equal(completed.json().result.status, "complete");
+    assert.equal(json(join(home, "instance.json")).modules["acme.one"].commit, next.commit);
+    assert.equal(readFileSync(join(home, "adopt-acme.one"), "utf8"), "2.0.0\n");
+    assert.equal(existsSync(mutex), false, "completion releases the recovered mutex");
+    noStaging(home);
+  });
+}
+
+test("package upgrade acceptance: a start's directory mutex excludes upgrade and is never reclaimed", async t => {
+  const f = await fixture(t); const { home } = f;
+  const plan = await f.plan(), before = composed(home), mutex = join(home, ".oats-start.lock");
+  mkdirSync(mutex);
+  try {
+    await assert.rejects(f.apply({ planRevision: plan.planRevision, idempotencyKey: "start-holds" }), e => e.code === "E_SESSION_RUNNING");
+    assert.equal(lstatSync(mutex).isDirectory(), true, "only the start which made this directory may remove it");
+    assert.deepEqual(composed(home), before);
+    assert.ok(!existsSync(join(home, "adopt-acme.one")));
+    noStaging(home);
+  } finally {
+    rmSync(mutex, { recursive: true });
+  }
+});
+
+test("package upgrade acceptance: a leftover regular upgrade mutex remains changed home bytes at retirement", async t => {
+  const f = await fixture(t); const { fx, home } = f;
+  const plan = await f.plan(), key = "mutex-debt";
+  const moved = await f.apply({ planRevision: plan.planRevision, idempotencyKey: key });
+  assert.equal(moved.status, "complete");
+  assert.equal(existsSync(join(home, ".oats-start.lock")), false);
+  // Model an interrupted final release after the completed receipt. The
+  // baseline's one-time projection must not hide a later regular file here.
+  const debt = JSON.stringify({ idempotencyKey: key, planRevision: plan.planRevision, undo: false }) + "\n";
+  writeFileSync(join(home, ".oats-start.lock"), debt, { mode: 0o600 });
+  const retired = await fx.inEnv(() => retireInstance(fx.root, "seat", { tmuxSession: "oats-test-nosuch" }));
+  assert.ok(retired.workRecovery?.classes?.includes("changed instance-home bytes"), JSON.stringify(retired.workRecovery));
+  assert.equal(readFileSync(join(retired.workRecovery.path, "home/.oats-start.lock"), "utf8"), debt, "retirement preserves the unexplained mutex bytes in recovery");
+  assert.equal(retired.removedDir, true);
+});
+
+test("package upgrade regression: baseline projection accepts only present exact regular files", async t => {
+  const f = await fixture(t); const { fx, home } = f;
+  const baselinePath = retirementBaselinePath(home), original = readFileSync(baselinePath);
+  const project = paths => writeRetirementBaseline(home, join(home, "work"), "directory", [], { launched: false }, { transientHomePaths: paths });
+  for (const paths of [["../outside"], [".oats/*"]]) {
+    assert.throws(() => project(paths), e => e.code === "E_BAD_ARGS");
+    assert.deepEqual(readFileSync(baselinePath), original);
+  }
+  for (const paths of [[".missing-projection"], [".agents/skills"]]) {
+    assert.throws(() => project(paths), e => e.code === "E_WORK_INSPECTION_FAILED");
+    assert.deepEqual(readFileSync(baselinePath), original);
+  }
+  const temporary = join(home, ".projection-file");
+  writeFileSync(temporary, "transaction-owned temporary file");
+  await fx.inEnv(() => project([".projection-file"]));
+  assert.equal(json(baselinePath).homeFingerprint, JSON.parse(original).homeFingerprint, "one-time projection holds the final home bytes after the file is removed");
+  rmSync(temporary);
+});

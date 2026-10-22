@@ -152,6 +152,45 @@ test("package module upgrade partial receipts block start and restart before any
   }
 });
 
+test("package module upgrade file mutex refuses starts while active and after owner exit, naming the same-key retry", async () => {
+  const f = await makeHome("upgradefilemutex", { launched: false });
+  const lock = join(f.home, ".oats-start.lock");
+  const owner = { action: "upgrade", instance: f.meta.instance, home: f.home, planRevision: "file-mutex-revision", idempotencyKey: "file-mutex-key", undo: true };
+  const child = execFile(process.execPath, ["--input-type=module", "-e", `import { openSync, writeFileSync } from "node:fs";
+const fd = openSync(process.argv[1], "wx");
+writeFileSync(fd, process.argv[2]);
+process.stdout.write("ready\\n");
+setInterval(() => {}, 1000);`, lock, JSON.stringify(owner)], { cwd: f.home });
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  let effects = 0;
+  const io = { exec: () => { effects++; throw new Error("must not execute"); } };
+  const refuses = () => {
+    for (const restart of [false, true]) assert.throws(() => startInstanceSession(f.home, { restart, io }), (e) => e.code === "E_SESSION_START_BUSY"
+      && e.message.includes("oats instance upgrade upgradefilemutex --undo --plan-revision file-mutex-revision --idempotency-key file-mutex-key")
+      && !e.message.includes("remove that directory"));
+    assert.equal(effects, 0);
+    assert.equal(readFileSync(lock, "utf8"), JSON.stringify(owner), "start never reclaims the upgrade mutex");
+  };
+  try {
+    await new Promise((resolve, reject) => { child.stdout.once("data", resolve); child.once("error", reject); });
+    refuses();
+    child.kill("SIGTERM");
+    await exited;
+    refuses();
+    writeFileSync(lock, "");
+    assert.throws(() => startInstanceSession(f.home, { io }), (e) => e.code === "E_SESSION_START_BUSY" && e.message.includes("oats instance upgrade upgradefilemutex")
+      && e.message.includes("--plan-revision") && e.message.includes("original") && e.message.includes("--idempotency-key") && !e.message.includes("remove that directory"));
+    assert.equal(readFileSync(lock, "utf8"), "", "an empty crashed write is retained too");
+    rmSync(lock);
+    mkdirSync(lock);
+    assert.throws(() => startInstanceSession(f.home, { io }), (e) => e.code === "E_SESSION_START_BUSY" && e.message.includes("another start") && e.message.includes("remove that directory"));
+  } finally {
+    child.kill("SIGTERM");
+    await exited;
+    rmSync(lock, { recursive: true, force: true });
+  }
+});
+
 test("package module upgrade unsafe receipt state refuses start before session effects", async () => {
   const f = await makeHome("upgradeunsafe", { launched: false });
   const receipts = join(f.home, ".oats");
