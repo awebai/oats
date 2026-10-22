@@ -6,7 +6,7 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { instanceId } from "../lib/client.mjs";
-import { LIST_WORDS, memoryKey, paletteItems, recentOf, roster } from "../lib/model.mjs";
+import { LEADER_WORDS, LIST_WORDS, memoryKey, paletteItems, recentOf, roster } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { CLI, instanceRow, leaderEscape, leaderThen, leaderTwice, observed, stateOf } from "./helpers.mjs";
 
@@ -85,18 +85,26 @@ test("in the list, the leader then a key of its table in a later read does what 
   assert.deepEqual([back.state.view, back.state.back, back.state.selected, back.effect], ["instances", "instances", state.selected, null]);
 });
 
-test("a key in the leader's own read cancels it and does nothing: a paste cannot run a command, and the key after it in a later read is a plain key again", () => {
+/** The line of a leader whose key came in its own read, with the test's leader. */
+const MERGED = { said: LEADER_WORDS.merged("Ctrl+\\"), under: [] };
+
+test("a key in the leader's own read cancels it and does nothing but say so: a paste cannot run a command, and the key after it in a later read is a plain key again", () => {
   const state = THREE();
   const read = ++reads, waiting = leader(state, read).state;
   assert.deepEqual(waiting.leader, { read, waiting: true });
   for (const k of ["?", "2", "o", "X", "k", "escape"]) {
     const same = key(waiting, k, read);
     assert.deepEqual([same.state.leader, same.effect], [{ read, waiting: false }, null], k);
-    assert.deepEqual(butLeader(same.state), butLeader(state), `${k}: nothing else changed`);
+    assert.deepEqual(same.state.outcome, MERGED, `${k}: the line says why nothing ran`);
+    assert.deepEqual(butLeader({ ...same.state, outcome: null }), butLeader(state), `${k}: nothing else changed`);
+    // The rest of that read is dropped too, and the line stays.
+    const rest = key(same.state, "j", read);
+    assert.deepEqual([rest.state.outcome, rest.state.selected, rest.effect], [MERGED, same.state.selected, null], `${k}: the rest of the read`);
   }
   // The leader no longer waits: `o` is the leader's workspaces only after it, and bound to nothing in the list.
   const after = key(key(waiting, "?", read).state, "o");
   assert.deepEqual([after.state.view, after.state.leader, after.effect], ["instances", null, null]);
+  assert.equal(key(after.state, "j").state.outcome, null, "a key of the list in a later read clears the line, as it clears any");
 });
 
 test("a key not in the leader's table cancels it and is dropped: no action runs, and nothing is typed into an open filter field, nor pasted", () => {
@@ -139,7 +147,7 @@ test("from the terminal's focus the leader waits and the terminal keeps the focu
 test("the leader typed in the terminal with more bytes after it in the same read does not wait: what followed it cancelled it", () => {
   const state = opened(THREE(), "dev-a");
   const read = ++reads, step = leader(state, read, true);
-  assert.deepEqual([step.state.leader, step.state.terminal, step.effect], [{ read, waiting: false }, state.terminal, null]);
+  assert.deepEqual([step.state.leader, step.state.terminal, step.state.outcome, step.effect], [{ read, waiting: false }, state.terminal, MERGED, null]);
   // The next leader, alone in its read, waits again.
   assert.deepEqual(leader(step.state).state.leader.waiting, true);
 });

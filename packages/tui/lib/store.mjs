@@ -12,7 +12,7 @@
 import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings, chordKeys, chordsRead, paletteKeys } from "./actions.mjs";
 import { CHORDS, chordFamilyFrom, collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { defaultDetachKey } from "./config.mjs";
-import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, paletteStep, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, memoryKey, memoryKeys, LIST_WORDS } from "./model.mjs";
+import { BUTTON_ORDER, SPAWN_WORDS, LEADER_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, paletteStep, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, memoryKey, memoryKeys, LIST_WORDS } from "./model.mjs";
 import { backKeyId, backKeySequences, isBackKey } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
 import { SPLIT_MIN, splitFits } from "./views/split.mjs";
@@ -836,7 +836,8 @@ function restoreDone(state) {
 }
 
 function reduceStep(state, event, keymap) {
-  if (state.outcome !== null && typeof event.key === "string" && keymap.has(event.key)) state = next(state, { outcome: null });
+  // (Not the rest of a read the leader came in: that is dropped, and the line says so.)
+  if (state.outcome !== null && typeof event.key === "string" && keymap.has(event.key) && !(state.leader !== null && sameRead(state.leader, event))) state = next(state, { outcome: null });
   // A key of the person's while a restore runs: the focus is theirs from then on (restoreDone).
   if (state.restoring?.grant && personal(event)) state = next(state, { restoring: Object.freeze({ ...state.restoring, grant: false }) });
   let step = reduced(state, event, keymap);
@@ -1252,6 +1253,8 @@ export const TAB_LIMIT = 4;
 const leaderAt = (read, waiting) => Object.freeze({ read: Number.isInteger(read) ? read : null, waiting });
 /** Whether an event came in the same read of input as the leader. */
 const sameRead = (leader, event) => leader.read !== null && event.read === leader.read;
+/** The line of a leader cancelled by what came in its own read: nothing ran, and why. */
+const mergedLine = (state) => Object.freeze({ said: LEADER_WORDS.merged(backKeyLabel(state.detachKey)), under: Object.freeze([]) });
 /** Two effects as one: the dismissal of a confirmation the leader closed, and what it then ran. */
 const both = (a, b) => (a === null ? b : b === null ? a : typeof b === "string" ? b : { ...a, ...b });
 
@@ -1272,7 +1275,7 @@ function leading(state, event, keymap) {
   if (event.back !== undefined) {
     if (state.terminal?.focus !== "terminal") return { state, effect: null };
     if (l !== null && l.waiting && !sameRead(l, event)) return twice(next(state, { leader: leaderAt(event.read, false) }));
-    return { state: next(state, { leader: leaderAt(event.read, event.rest !== true) }), effect: null };
+    return { state: next(state, { leader: leaderAt(event.read, event.rest !== true), ...(event.rest === true ? { outcome: mergedLine(state) } : {}) }), effect: null };
   }
   // A chord typed in a terminal (term/through.mjs): the leader then its key, at once. Only one
   // that is read now (chordsRead): the scanner takes no other.
@@ -1281,7 +1284,7 @@ function leading(state, event, keymap) {
     return led(l === null ? state : next(state, { leader: null }), event.chord, event, keymap);
   }
   if (typeof event.key !== "string" && !("paste" in event)) return { pass: state };
-  if (l !== null && sameRead(l, event)) return { state: l.waiting ? next(state, { leader: leaderAt(l.read, false) }) : state, effect: null };
+  if (l !== null && sameRead(l, event)) return { state: l.waiting ? next(state, { leader: leaderAt(l.read, false), outcome: mergedLine(state) }) : state, effect: null };
   if (l !== null && l.waiting) {
     const after = next(state, { leader: leaderAt(event.read, false) });
     if (event.key === state.leaderKey) return twice(after);
