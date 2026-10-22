@@ -552,12 +552,37 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
   - A hidden tab: the shown tab and the focus stay as they were.
 - **Zoom** (`z`, or the leader then `z`) gives the shown tab the whole
   screen. The tab bar stays its top row, and the other tabs stay open.
-- **The tabs are the open workspace's.** Opening another workspace in
-  [the switcher](#the-switcher) closes them all, and so does the open
-  workspace no longer being listed; their agents keep running. Coming back
-  opens none of them again. Opening the same workspace again, with its
-  deployment of this machine now opened beside another machine's, keeps
-  them.
+- **The tabs are the open workspace's, and it keeps them while the run
+  lasts.** Opening another workspace in [the switcher](#the-switcher)
+  closes their viewers; their agents keep running, and nothing of a hidden
+  workspace's terminals runs meanwhile. Coming back opens them again, one
+  at a time as an open goes, once the workspace's rows are read; a tab of
+  one of its deployments whose last read failed waits, with the tabs after
+  it, until that deployment is read again:
+  - the tabs in their order and their groups, the split, each group's
+    shown tab, and the focus (the terminal's, zoomed or not, or the list's)
+    as the workspace was left. The shown tab is the most recent for
+    [the palette](#the-palette).
+  - A tab whose instance is gone or cannot be opened now (retired,
+    stopped) is dropped, and nothing is said of it. A group the drops
+    leave with no tab goes, as when its last tab is closed; a group that
+    was empty when the workspace was left is empty again. A shown tab
+    dropped gives its place to the next, else the one before.
+  - Another machine's tab is asked first again, as an open is; when that
+    fails, the line says why and the tab is dropped. Suspending the TUI
+    while it is asked asks it again once the TUI is back.
+  - A key pressed while the tabs open again leaves the focus where it is:
+    the tabs still open, and the list keeps it. Opening an agent yourself
+    meanwhile stops it: the tabs not open yet are dropped. Opening another
+    workspace meanwhile closes what was opened, and keeps the rest for the
+    next time.
+
+  A workspace no longer being listed forgets them, open (its tabs close)
+  or not; one listed again later starts with none. A read that failed is
+  not the workspace gone: it forgets nothing.
+  Opening the same workspace again, with its deployment of this machine
+  now opened beside another machine's, keeps them as they are. Nothing is
+  kept after the run ends.
 
 ## Splits
 
@@ -937,10 +962,12 @@ A workspace this run has open has no Remove here.
 would make the file refused at the start. To use another key, give it to
 `remove` there, for example `{ "keys": { "remove": ["x"] } }`.
 
-**Each view keeps its place while the run lasts:** the selected instance,
-where its list and its detail were scrolled, and what was folded away are
-found again when the view is opened again. A filter is not kept from one
-view to another, and nothing is kept after the run ends.
+**Each workspace keeps its place while the run lasts:** the selected
+instance, where its list and its detail were scrolled, the filter, and what
+was folded away are found again when the workspace is opened again, through
+any of its deployments. A filter still being typed in is kept as `Enter`
+keeps it. Another workspace starts with no filter, or with its own. Nothing
+is kept after the run ends.
 
 **When the open workspace stops being listed** (it was a machine, and the
 kernel's answer stopped naming it), the switcher is shown with
@@ -1587,10 +1614,12 @@ TUI reads the keys. The help lists its keys under The palette.
   that can be opened is not listed.
 - **The group last used comes first,** as in the Desktop's palette, and so
   does the cluster, the root and the child: the one with the instance opened
-  or shown most recently in this run first, then the list's order (the
-  sidebar keeps its own order). When the first instance is the shown tab's,
-  the palette opens on the instance shown before it, wherever its group puts
-  it (the second instance, when none was shown before): `Enter` goes back to
+  or shown most recently in this workspace in this run first, then the
+  list's order (the sidebar keeps its own order). Each workspace keeps its
+  own recency, its last 50 instances, so working in another leaves it as it
+  was. When the first instance is the shown tab's, the palette opens on the
+  instance shown before it in this workspace, wherever its group puts it
+  (the second instance, when none was shown before): `Enter` goes back to
   that terminal.
 - **An instance's row** has its state mark, its name, for another machine
   `on <machine>`, and, dim, its siblings as the detail names them

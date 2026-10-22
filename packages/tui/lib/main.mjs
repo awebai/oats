@@ -612,14 +612,19 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     // The focused group's screen as the Instances view gives it, also behind the help or another
     // overlay, which draw no panel (round 1 of T3's review).
     const region = placed()?.focused ?? { cols: Math.max(1, size.cols), rows: Math.max(1, size.rows - 6) };
-    const mine = { id, panel: null, cols: region.cols, rows: region.rows };
+    const mine = { id, panel: null, asked: false, cols: region.cols, rows: region.rows };
     viewers.set(id, mine);
     // Shown or hidden as this frame draws the panel: behind an overlay it shows once that closes.
     fitPanel(composed().made);
+    // The window is asked for after this step's effects: one closed by then (a workspace left in the
+    // same read of input) is never asked for, and a window made for a viewer the loop no longer
+    // holds (closed, or replaced) is closed, not left open in the panel.
     Promise.resolve()
-      .then(() => panel.open({ argv: [process.execPath, bin, ...args], cols: region.cols, rows: region.rows, instead: null }))
-      .then(({ id: made }) => {
-        if (viewers.get(id) !== mine) return;
+      .then(() => { if (viewers.get(id) !== mine) return null; mine.asked = true; return panel.open({ argv: [process.execPath, bin, ...args], cols: region.cols, rows: region.rows, instead: null }); })
+      .then((opened) => {
+        if (opened === null) return;
+        const made = opened.id;
+        if (viewers.get(id) !== mine) { panel.close(made); return; }
         mine.panel = made;
         // The panel displays it, and it takes the keys; a frame of another size meanwhile is the
         // next fitPanel's.
@@ -641,7 +646,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     const v = viewers.get(id);
     if (v === undefined) return;
     forgetViewer(v);
-    if (v.panel === null) panel.close(); else panel.close(v.panel);
+    if (v.panel !== null) panel.close(v.panel);
+    else if (v.asked) panel.close();
   }
   /** The panel brought to what the frame drew (`made.regions`, one per group drawn): shown or not
    *  (no capture runs while it is hidden, and one runs when it shows again); every tab of a drawn
@@ -801,7 +807,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     onEnd() { ended = true; spawnTimers.end(); dismiss(confirmation?.n); panel.end(); identities.stop(); reader.stop(); if (dir !== null) { try { effects.removeDir(dir); } catch { /* not empty, or gone */ } } },
   });
   function refresh(how) { Promise.resolve(reader.request(how)).catch(() => {}); }
-  /** A preflight under way when the process stops: given up, and the store told. */
+  /** A preflight under way when the process stops: given up, and the store told. Its state alone is
+   *  taken, as of the other events the store names UNTAKEN (store.mjs): a restore steps on none. */
   function stopPreflight() {
     if (preflight === null) return;
     giveUpPreflight();
