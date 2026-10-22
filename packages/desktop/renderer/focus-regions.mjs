@@ -10,7 +10,7 @@
 //   panel   its selected tab (or the first control of a stage's content). A closed panel is out
 //           of the cycle (Spec B): from a terminal, panel.toggle's chord opens it.
 // The tab strip, the split controls and Show sidebar / Show instance panel count as main; the
-// workspace switcher and the sidebar footer as nav (they are reached with Tab from the nav item).
+// list of workspaces (above the nav item: Shift+Tab) and the sidebar footer (below it: Tab) as nav.
 
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 
@@ -113,7 +113,7 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
     if (!active || active === doc.body) return null;
     if (byId("nav")?.contains(active)) return "nav";
     if (byId("instance-roster")?.contains(active)) return "roster";
-    if (byId("sidebar")?.contains(active)) return "nav"; // switcher, footer tools
+    if (byId("sidebar")?.contains(active)) return "nav"; // the list of workspaces, footer tools
     if (byId("main")?.contains(active)) return "main";
     if (byId("context-panel")?.contains(active)) return "panel";
     return null;

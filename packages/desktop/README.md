@@ -147,7 +147,7 @@ does what they call: `remotePanel` (`remote-roster.mjs`) takes the time its
 panel is made at as a required argument and throws without one; the views
 give it `held.at`.
 
-And it holds the rules for other machines and for the switcher, each a
+And it holds the rules for other machines and for the list of workspaces, each a
 function over what its caller holds:
 
 - **What a roster answer becomes** (`remote-roster.mjs`). `remoteRosterState`
@@ -175,13 +175,33 @@ function over what its caller holds:
   nothing on disk starts with two empty Maps: a machine that answered once in
   its run and then stops is shown in its workspace as not reached, and one
   that never answered in that run is shown under its own name.
-- **The words the switcher shows** (`workspace-choices.mjs`).
+- **The words the list of workspaces shows** (`workspace-choices.mjs`).
   `workspaceChoiceRows` answers, for each view of `workspaceChoices`, its
   name, its one muted line, how many deployments are not live and the words
   for that, its tooltip and the deployment an unattached view opens;
-  `choiceMatches` is the menu's filter. `renderer/workspace-switcher.mjs`
-  draws the menu from the rows and keeps what is only its own: the "On this
-  computer" group, the new-window hint and adding a folder.
+  `choiceMatches` is the TUI switcher's filter (the Desktop's list has none).
+  `renderer/workspace-switcher.mjs` draws the sidebar's list from the rows
+  and keeps what is only its own: the "On this computer" group, the "In
+  another window" and needs-input words, the new-window hint and adding a
+  folder.
+- **Moving in the list of workspaces** (`workspace-step.mjs`).
+  `workspaceStep(rows, currentKey, step)` is the leader's ↑ / ↓
+  (`workspace-previous`, `workspace-next`): the key of the next row that can
+  be opened in one direction, or null at an end; no wrap. Pure, imports
+  nothing, so the page loads it. Each client draws its own rows and opens
+  what it answers.
+- **Who waits in a workspace** (the yellow dot). For a served view,
+  `workspaceChoices` carries `waiting`, rolled up from the instances the
+  client holds (`waiting-on-you.mjs` `waitingClaim`, live deployments only):
+  no read. For a deployment of this computer's list that no window serves,
+  `deployment-identity.mjs` `cliDeploymentIdentity` also answers `waiting`
+  (true, false, or null without feature `waiting-on-you`), and
+  `listed-waiting.mjs` `createListedWaiting` runs that read again on a slow,
+  bounded schedule: one read in flight, each path at most every 60 s while
+  focused and every 5 min while not, `--max-age 300`, a failure read as
+  null. It runs no CLI itself; main gives it the read and the focus, and
+  `workspace-registry.mjs` `createSuggestionCalls` hands each answer to the
+  rows a window asks for. `test/listed-waiting.test.mjs` pins the bounds.
 - **This computer's deployments list** (`deployment-list.mjs`, #1390). The
   kernel keeps it (`oats deployments`); `readDeploymentList` reads the answer
   into rows of `{ path, name, state }` and refuses a document it cannot read
@@ -250,8 +270,8 @@ and Quick Open and the TUI's palette and switcher.
   the backend and a terminal client only. A function the page needs goes in
   a module that imports none: `deploymentUnavailableText` is in
   `deployment-facts.mjs` for that reason, not beside the panel's functions,
-  and the switcher's words are in `workspace-choices.mjs`, not beside the
-  views.
+  and the words of the list of workspaces are in `workspace-choices.mjs`,
+  not beside the views.
   `test/inventory.test.mjs` walks what the page loads and fails on a `node:`
   import anywhere in it.
 - **What goes there, and what stays here.** A function belongs in the shared

@@ -174,7 +174,8 @@ function shellRoster(t) {
     api(path) { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); requests.push({ path, resolve, reject }); return promise; },
     renderContextRoster(instances) { rendered.push(instances.map((i) => i.instance)); },
     refreshPanelInstance() {}, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} },
-    workspaceLabel: createWorkspaceSwitcher({ document, selectWorkspace: (id) => selected.push(id), discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) }),
+    workspaceLabel: createWorkspaceSwitcher({ document, selectWorkspace: (id) => selected.push(id), discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}),
+      timers: { setTimeout: () => 0, clearTimeout() {} } }), // the list's slow re-read never fires here
   };
   const s = runInNewContext(`${fn("refreshContextRoster")}\n({ refreshContextRoster });`, withShellWindowGlobals(c));
   return { c, s, document, requests, rendered, selected };
@@ -193,10 +194,9 @@ test("shell roster: a stale stored selection adopts the served workspace, render
   assert.equal(common.currentWorkspace(), SERVED.id);
   assert.equal(stored(), SERVED.id, "persisted");
   assert.deepEqual(c.contextDeployments, [], "a reply naming no deployments groups by none (#482)");
-  // The switcher shows the served workspace active and another choice still switches.
-  document.getElementById("ws-trigger").click();
+  // The workspace list shows the served workspace current and another choice still switches.
   const options = [...document.querySelectorAll(".ws-option")];
-  assert.deepEqual(options.map((o) => [o.dataset.workspaceId, o.getAttribute("aria-selected")]), [[SERVED.id, "true"], [OTHER.id, "false"]]);
+  assert.deepEqual(options.map((o) => [o.dataset.workspaceId, o.getAttribute("aria-current")]), [[SERVED.id, "true"], [OTHER.id, null]]);
   options[1].click();
   assert.deepEqual(selected, [OTHER.id]);
 });

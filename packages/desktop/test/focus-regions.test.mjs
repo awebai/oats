@@ -17,7 +17,9 @@ function shell(t, { tabs = false } = {}) {
   t.after(() => dom.window.close());
   const doc = dom.window.document;
   const style = doc.createElement("style"); style.textContent = read("shell.css"); doc.head.append(style);
-  // What the shell paints: nav items, roster rows (one roving stop), a stage and a panel with tabs.
+  // What the shell paints: the workspace list (one roving stop, the current row), nav items, roster rows
+  // (one roving stop), a stage and a panel with tabs.
+  doc.getElementById("ws-options").innerHTML = `<ul class="ws-group"><li class="ws-option-row"><button type="button" class="ws-option" aria-current="true" tabindex="0" data-workspace-id="/w/a">Team A</button></li><li class="ws-option-row"><button type="button" class="ws-option" tabindex="-1" data-workspace-id="/w/b">Team B</button></li></ul>`;
   doc.getElementById("nav").innerHTML = `<button class="nav-item" data-view="hierarchy">Deployments</button><button class="nav-item active" data-view="spawn" aria-current="page">Workspace</button><button class="nav-item" data-view="automations">Automations</button>`;
   doc.querySelector("#instance-roster .ctx-list").innerHTML = `<div class="ctx-tree-row"><button class="ctx-inst" tabindex="-1" data-tree-instance="a">a</button></div><div class="ctx-tree-row active"><button class="ctx-inst active" tabindex="0" data-tree-instance="b">b</button><span class="ctx-row-tools"><button class="ctx-start">Start…</button></span></div>`;
   doc.getElementById("stagehost").innerHTML = `<div><div class="workspace-tabs"><button role="tab" aria-selected="true" tabindex="0">Souls</button></div><input class="filter"></div>`;
@@ -48,10 +50,14 @@ test("F6 order: nav → roster → main → panel → nav, each on its current i
   assert.deepEqual(back, ["Soul", "Souls", "b", "Workspace"], "Shift+F6 walks it backwards");
 });
 
-test("from a control inside a region (the switcher, a row's tools) F6 moves on to the next region", t => {
+test("from a control inside a region (the workspace list, a row's tools) F6 moves on to the next region", t => {
   const s = shell(t);
-  s.doc.getElementById("ws-trigger").focus(); s.regions.cycle(1);
-  assert.equal(s.where(), "b", "the switcher counts as the sidebar nav: next is the roster");
+  s.doc.querySelector('#ws-options .ws-option[aria-current="true"]').focus(); s.regions.cycle(1);
+  assert.equal(s.where(), "b", "the workspace list counts as the sidebar nav: next is the roster");
+  s.doc.getElementById("ws-add-open").focus(); s.regions.cycle(1);
+  assert.equal(s.where(), "b", "so does the list's Add local workspace…");
+  s.doc.querySelector('#ws-options .ws-option[tabindex="-1"]').focus(); s.regions.cycle(-1);
+  assert.equal(s.where(), "Soul", "Shift+F6 from the list goes back to the panel");
   s.doc.querySelector(".ctx-start").focus(); s.regions.cycle(1);
   assert.equal(s.where(), "Souls");
 });
@@ -181,7 +187,8 @@ test("a stage return that a newer action overtakes does not steal focus", async 
   const origin = u.back.capture(captureFocusReturn(u.doc));
   u.move();
   u.back.restore(origin);
-  u.doc.getElementById("ws-trigger").focus(); // the operator is already elsewhere when the stage mounts
+  const row = u.doc.querySelector('#ws-options .ws-option[aria-current="true"]');
+  row.focus(); // the operator is already elsewhere (the workspace list) when the stage mounts
   await new Promise(setImmediate);
-  assert.equal(u.doc.activeElement, u.doc.getElementById("ws-trigger"));
+  assert.equal(u.doc.activeElement, row);
 });

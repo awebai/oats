@@ -356,9 +356,11 @@ probe's `deployments-list` feature. The shared reader
 (`packages/client/deployment-list.mjs`) turns the answer into rows of
 `{ path, name, state }`; a document it cannot read is refused whole.
 
-- **What the switcher shows.** A window with no workspace lists, under **On
-  this computer**, the saved entries that are not served and the list's rows
-  that are not served (`workspaceSuggestions`), read each time its menu opens.
+- **What the list of workspaces shows.** Every window lists, under **On this
+  computer**, the saved entries that are not served and the list's rows that
+  are not served (`workspaceSuggestions`), asked of main when the list starts,
+  when the window comes to the front and every 60 s (5 min behind other
+  windows).
   The Add dialog's suggestions are the same minus the stale rows.
   - A row the kernel calls `ok` is offered only while it validates here too,
     and one click is the normal add.
@@ -689,8 +691,8 @@ terminal owner).
   served choices, and the window reads nothing until it binds. Its choices
   follow what is served: its roster poll asks main (`window:choices`, which
   re-reads `/api/panel` and binds nothing), so the remote views served a few
-  seconds after launch appear. Its switcher menu also lists the suggestions
-  under **On this computer**, looked up each time the menu opens; one click
+  seconds after launch appear. Its list of workspaces also lists the suggestions
+  under **On this computer**, as every window's does; one click
   runs the normal add and opens the deployment in this window. Only with
   nothing served and nothing suggested does it say no choices are reported.
 - **Records.** `windows.json` (`window-records.mjs`) keeps each window's

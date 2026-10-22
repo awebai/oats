@@ -9,7 +9,7 @@
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
 import { currentWorkspace, workspaceGeneration, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, postJson, rowDeployment, httpError,
-  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices } from "./views/common.mjs";
+  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices, leaveTakenWorkspace } from "./views/common.mjs";
 import { instanceActions, captureInstanceActionMenu, pendingActionReason } from "./instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
 import { createInstancePrAction } from "./instance-pr-action.mjs";
@@ -388,11 +388,11 @@ async function showChooser() {
   text.textContent = "This window has no workspace yet.";
   const choose = document.createElement("button");
   choose.type = "button"; choose.className = "primary"; choose.textContent = "Choose a workspace…";
-  choose.addEventListener("click", () => workspaceLabel.openMenu());
+  choose.addEventListener("click", () => focusWorkspaceList());
   el.append(heading, text, choose);
   stageHost.replaceChildren(el);
   workspaceLabel.choose(choosingWorkspaces());
-  workspaceLabel.openMenu();
+  focusWorkspaceList();
 }
 onWindowState((state) => {
   if (state === "choosing") { void showChooser(); return; }
@@ -521,8 +521,9 @@ const noteUnlisted = (result) => {
 };
 const workspaceLabel = createWorkspaceSwitcher({
   document,
-  // Main binds a switch first; a workspace another window has is focused there instead (#481).
-  selectWorkspace: (id) => { void switchWorkspace(id); },
+  // Main binds a switch first (#481). A pick from the list always shows the workspace in THIS window: one
+  // another window shows moves here (main takes it over from that window, which shows its previous one).
+  selectWorkspace: (id) => { void switchWorkspace(id, { takeOver: true }); },
   openInNewWindow: typeof desktopBridge.windowOpenWorkspace === "function" ? (id) => { void desktopBridge.windowOpenWorkspace(id); } : null,
   mac: navigator.platform.includes("Mac"),
   // Feature-detected while tui-dev lands the approved privileged contract.
@@ -539,6 +540,16 @@ const workspaceLabel = createWorkspaceSwitcher({
     void showStage("spawn");
   },
 });
+window.addEventListener("pagehide", () => workspaceLabel.dispose(), { once: true });
+/** The list of workspaces at the sidebar's top (`w`, the leader's `o`, Ctrl+Alt+O / ⌘⌥O, the palette's
+ * "Workspace: switch…", the chooser's button): shown (focus mode left, the sidebar back), its current row
+ * focused, or the row last focused there. */
+function focusWorkspaceList() {
+  tabOpenIntents.invalidate();
+  contextPanel.setFocusMode(false);
+  setSidebarHidden(false);
+  workspaceLabel.focusList();
+}
 
 // ── keybinding contexts ──────────────────────────────────────────────────────────
 // The engine dispatches an action only when its context is active. "tabs"
@@ -552,12 +563,12 @@ function updateActiveContexts(tabLayerOn = tabLayerVisible) {
   if (tabLayerOn) set.add("tabs");
   else if (stage) set.add(`stage:${stage.name}`);
   // The sidebar's plain keys (context `sidebar`, sidebar.key.*): live while focus is in the sidebar
-  // (its nav, the roster rows, the footer), never inside an open popup there (an instance's actions
-  // menu, the workspace switcher's menu) and never in an editable field (the roster filter), where a
+  // (its nav, the list of workspaces, the roster rows, the footer), never inside an open popup there (an
+  // instance's actions menu) and never in an editable field (the roster filter), where a
   // rebind to a modified chord would otherwise take the field's own key. Editable as the engine's
   // plain-key guard reads it (keybindings.mjs isEditableTarget).
   const focused = document.activeElement;
-  if (focused && document.getElementById("sidebar")?.contains(focused) && !focused.closest('[role="menu"], [role="listbox"], .ws-menu')
+  if (focused && document.getElementById("sidebar")?.contains(focused) && !focused.closest('[role="menu"], [role="listbox"]')
     && !/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName || "") && !focused.isContentEditable) set.add("sidebar");
   if (activeInstanceMenu?.element.isConnected && activeInstanceMenu.element.dataset.instanceMenuOpen === 'true' && activeInstanceMenu.element.contains(document.activeElement) && activeInstanceMenu.owns()) set.add('instance-menu');
   setActiveContexts(set);
@@ -2352,7 +2363,7 @@ const palette = createPalette({
     ...THEMES.map(({ id, label }) => ({ label: `Theme: ${label}`, detail: chordDetail(`app.theme.${id}`), run: () => runAction(`app.theme.${id}`) })),
     { label: "Shortcuts: edit keyboard shortcuts…", detail: chordDetail("app.shortcuts"), run: () => openShortcutsEditor() },
     { label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: () => openConnections() },
-    { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => workspaceLabel.openMenu() },
+    { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => focusWorkspaceList() },
     // One window per workspace (#481): on macOS also File → New Window ⌘⇧N; elsewhere no default chord.
     ...(typeof desktopBridge.windowOpenWorkspace === "function" ? [{ label: "Window: new window",
       detail: () => chordDetail("app.newWindow")() || (isMac ? formatChord("Mod+Shift+N", true) : ""), run: () => runAction("app.newWindow") }] : []),
@@ -2774,7 +2785,7 @@ registerAction({ id: "app.themeToggle", label: "Cycle White / Solarized / Dark /
 THEMES.forEach(({ id, label }) => registerAction({
   id: `app.theme.${id}`, label: `Theme: ${label}`, context: "global", run: () => setTheme(id),
 }));
-registerAction({ id: "app.workspaces", label: "Open the workspace switcher", context: "global", run: () => workspaceLabel.openMenu() });
+registerAction({ id: "app.workspaces", label: "Focus the list of workspaces", context: "global", run: () => focusWorkspaceList() });
 registerAction({ id: "sidebar.focusFilter", label: "Focus the instance roster filter", context: "global", run: () => focusRoster() });
 registerAction({ id: "sidebar.toggle", label: "Toggle the sidebar", context: "global", run: () => toggleSidebar() });
 registerAction({ id: "panel.toggle", label: "Show or hide the instance panel", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggle(); } });
@@ -2958,6 +2969,7 @@ const leaderDispatch = createLeaderDispatch({
   quickOpen: () => runAction("app.quickOpenSouls"),
   filter: () => runAction("sidebar.focusFilter"),
   workspaces: () => runAction("app.workspaces"),
+  workspaceStep: delta => workspaceLabel.step(delta),
   help: () => runAction("app.shortcuts"),
   list: () => {
     if (sidebarHidden() || contextPanel.isFocusMode()) runAction("sidebar.toggle");
@@ -2992,9 +3004,10 @@ function runAsLeaderKey(does, e) {
 for (const { id, does } of SIDEBAR_KEYS) {
   registerAction({ id, label: leaderLabel(does, actionLabel), context: "sidebar", run: (e) => runAsLeaderKey(does, e) });
 }
-// The leader's ↑ / ↓ / z on chords of their own (the shared CHORDS previous, next, zoom: Alt+Shift+↑/↓
-// and Ctrl+Alt+Z, ⌘⌥↑/↓ and ⌘⌥Z): each runs exactly what the leader then that key runs, for the
-// same target, from every focus. Inert under a modal dialog or the palette, as the leader is.
+// The previous / next instance and the leader's z on chords (the shared CHORDS previous, next, zoom:
+// Alt+Shift+↑/↓ and Ctrl+Alt+Z, ⌘⌥↑/↓ and ⌘⌥Z): the instance steps have no leader key (the leader's ↑ / ↓
+// move between workspaces); each runs the one dispatch, for the leader's target, from every focus.
+// Inert under a modal dialog or the palette, as the leader is.
 for (const [id, does] of [["roster.openPrevious", "previous"], ["roster.openNext", "next"], ["terminal.focusMode", "zoom"]]) {
   registerAction({ id, label: leaderLabel(does, actionLabel), context: "global", when: () => !modalOpen(), run: (e) => runAsLeaderKey(does, e) });
 }
@@ -3031,6 +3044,26 @@ applyChordTitles();
 // surfaces, with no second/contextual sidebar and no width jump.
 initContextRoster();
 onWorkspaceChange(restoreWorkspaceTabs);
+// A take-over: another window took this window's workspace (main's window:release-workspace).
+desktopBridge?.onWorkspaceRelease?.((message) => { void releaseTakenWorkspace(message); });
+/** Another window took `workspace` over. This window answers main at once, then leaves it (views/common.mjs
+ * leaveTakenWorkspace: its previous workspace, else the switcher), then closes every tab it has of it, each
+ * terminal's viewer with it, and forgets that workspace's layout: nothing of it stays attached or writable
+ * here. A late release (main moved the binding without waiting) ends the same way. */
+async function releaseTakenWorkspace(message) {
+  const workspace = typeof message?.workspace === "string" && message.workspace ? message.workspace : null;
+  if (!workspace) return;
+  try { await desktopBridge.windowReleaseAnswer?.(message.request, null); } catch { /* main moves it after its wait */ }
+  try { await leaveTakenWorkspace(workspace, message.workspaces); }
+  finally { closeWorkspaceTabs(workspace); }
+}
+/** Close every tab of `workspace` (one this window no longer shows): a background close, which cancels no
+ * pending open and moves no focus, and a terminal's goes through its own teardown (its viewer closed). */
+function closeWorkspaceTabs(workspace) {
+  for (const [id, t] of [...tabs]) if (t.workspace === workspace) closeTab(id, false, { explicit: false, background: true, passive: true });
+  workspaceTabMemory.forget(workspace);
+  wsActiveTerminal.delete(workspace);
+}
 function restoreWorkspaceTabs() {
   contextRosterGen++;
   brainIntents.invalidate();

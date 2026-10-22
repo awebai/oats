@@ -12,6 +12,9 @@ const deferred = () => {
   const promise = new Promise((ok) => { resolve = ok; });
   return { promise, resolve };
 };
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+// The list's slow re-read never fires here (its cadence is workspace-list.test.mjs).
+const INERT = { setTimeout: () => 0, clearTimeout() {} };
 const setup = (overrides = {}) => {
   const dom = new JSDOM(html, { url: "file:///renderer/index.html" });
   const selected = [];
@@ -21,6 +24,7 @@ const setup = (overrides = {}) => {
     discoverSuggestions: async () => [],
     addWorkspace: async (path) => ({ ok: true, workspace: { id: path, path, name: "workspace" } }),
     pickWorkspace: async () => ({ ok: false, code: "cancelled", reason: "cancelled" }),
+    timers: INERT,
     ...overrides,
   });
   return { dom, document: dom.window.document, selected, controller };
@@ -35,6 +39,10 @@ test("workspace choice labels disambiguate duplicate names with team and the fol
   ]);
 });
 
+// The list says which workspace is current: the row's aria-current and, for the whole list, its description.
+const current = (document) => document.querySelector('.ws-option[aria-current="true"]')?.dataset.workspaceId ?? null;
+const said = (document) => document.getElementById("ws-list").getAttribute("aria-description");
+
 test("workspace switcher: deferred A completing after B cannot overwrite B", async () => {
   const { dom, document, controller } = setup();
   const aGate = deferred(), bGate = deferred();
@@ -44,61 +52,51 @@ test("workspace switcher: deferred A completing after B cannot overwrite B", asy
   const b = bGate.promise.then((workspace) => commitB(workspace, [workspace]));
   bGate.resolve(B);
   assert.equal(await b, true);
-  assert.equal(document.getElementById("ws-name").textContent, "oats");
-  assert.equal(document.getElementById("ws-trigger").title, "Active workspace: /org-b/oats");
+  assert.equal(current(document), B.id);
+  assert.equal(document.querySelector(".ws-option .ws-option-name").textContent, "oats");
+  assert.equal(said(document), "Current workspace: /org-b/oats");
   aGate.resolve(A);
   assert.equal(await a, false);
-  assert.equal(document.getElementById("ws-trigger").title, "Active workspace: /org-b/oats");
-  dom.window.close();
+  assert.equal(current(document), B.id);
+  assert.equal(said(document), "Current workspace: /org-b/oats");
+  controller.dispose(); dom.window.close();
 });
 
-test("workspace menu is searchable, disambiguated, keyboard closable, and switches explicitly", () => {
+test("the workspace list is disambiguated, keeps the focused row across a repaint, and switches explicitly", () => {
   const { dom, document, selected, controller } = setup();
   controller.begin()(B, [A, B]);
-  assert.equal(document.getElementById("ws-name").textContent, "oats — beta · org-b/oats");
-  document.getElementById("ws-trigger").click();
-  assert.equal(document.getElementById("ws-trigger").getAttribute("aria-expanded"), "true");
   const options = [...document.querySelectorAll(".ws-option")];
   assert.deepEqual(options.map((option) => option.querySelector(".ws-option-name").textContent), [
     "oats — alpha · org-a/oats", "oats — beta · org-b/oats",
   ]);
-  assert.equal(options[1].getAttribute("aria-selected"), "true");
+  assert.equal(said(document), "Current workspace: /org-b/oats");
+  assert.deepEqual(options.map((option) => option.getAttribute("aria-current")), [null, "true"]);
   options[0].focus();
   controller.begin()(B, [A, B]);
   assert.equal(document.activeElement.dataset.workspaceId, "/org-a/oats",
     "roster refresh preserves the focused workspace option identity");
   document.activeElement.click();
   assert.deepEqual(selected, ["/org-a/oats"]);
-  assert.equal(document.getElementById("ws-menu").hidden, true);
-  assert.equal(document.activeElement, document.getElementById("ws-trigger"));
-
-  document.getElementById("ws-trigger").click();
-  const search = document.getElementById("ws-menu-search");
-  search.value = "beta";
-  search.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-  assert.equal(document.querySelectorAll(".ws-option").length, 1);
-  search.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  assert.equal(document.activeElement, document.getElementById("ws-trigger"));
-  dom.window.close();
+  assert.equal(document.activeElement.dataset.workspaceId, "/org-a/oats", "the list stays where it is: there is no menu to close");
+  document.querySelector('.ws-option[aria-current="true"]').click();
+  assert.deepEqual(selected, ["/org-a/oats"], "the current workspace is not selected again");
+  controller.dispose(); dom.window.close();
 });
 
-test("workspace choice notice distinguishes nothing reported from no match without creating a selectable option", () => {
+test("workspace choice notice says nothing is reported without creating a selectable option; a repainted-away row selects nothing", async () => {
   const { dom, document, controller, selected } = setup();
-  controller.openMenu();
+  controller.choose([]); await settle();
   const note = document.querySelector('.ws-menu-empty'), list = document.getElementById('ws-options');
   assert.equal(note.getAttribute('role'), 'status'); assert.equal(note.hidden, false);
   assert.equal(note.textContent, 'No workspace choices reported.'); assert.equal(list.contains(note), false);
   assert.equal(document.querySelector('.ws-option'), null);
-  controller.begin()(A, [A, B]); assert.equal(note.hidden, true);
+  controller.begin()(A, [A, B]); assert.equal(note.hidden, true); assert.equal(note.textContent, '');
   const old = document.querySelectorAll('.ws-option')[1];
-  const input = document.getElementById('ws-menu-search'); input.value = 'does-not-match';
-  input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-  assert.equal(note.textContent, 'No workspaces match this filter.'); assert.equal(note.hidden, false);
-  assert.equal(document.activeElement, input); assert.equal(document.querySelector('.ws-option'), null);
-  old.dispatchEvent(new dom.window.Event('click')); assert.deepEqual(selected, [], 'removed option cannot select through the empty state');
-  input.value = ''; input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-  assert.equal(note.hidden, true); assert.equal(document.querySelectorAll('.ws-option').length, 2);
-  dom.window.close();
+  controller.begin()(A, [A, B]);
+  assert.equal(old.isConnected, false, "the repaint drew new rows");
+  old.dispatchEvent(new dom.window.Event('click')); assert.deepEqual(selected, [], 'a removed row cannot select');
+  assert.equal(document.querySelectorAll('.ws-option').length, 2);
+  controller.dispose(); dom.window.close();
 });
 
 test("add workspace modal discovers, filters, selects and confirms a suggestion", async () => {
@@ -109,8 +107,10 @@ test("add workspace modal discovers, filters, selects and confirms a suggestion"
     addWorkspace: async (path) => { calls.push(path); return { ok: true, workspace: C }; },
   });
   controller.begin()(B, [B]);
-  document.getElementById("ws-trigger").click();
-  document.getElementById("ws-add-open").click();
+  const addOpen = document.getElementById("ws-add-open");
+  assert.equal(addOpen.getAttribute("aria-label"), "Add local workspace…", "the list's header button");
+  assert.equal(addOpen.title, "Add local workspace…");
+  addOpen.click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   const modal = document.getElementById("ws-modal");
   assert.equal(modal.hidden, false);
@@ -130,7 +130,8 @@ test("add workspace modal discovers, filters, selects and confirms a suggestion"
   assert.deepEqual(calls, ["/org-c/tools"]);
   assert.deepEqual(selected, ["/org-c/tools"]);
   assert.equal(modal.hidden, true);
-  assert.equal(document.activeElement, document.getElementById("ws-trigger"));
+  assert.equal(document.activeElement.dataset.workspaceId, "/org-c/tools", "focus on the added workspace's row");
+  assert.equal(document.activeElement.getAttribute("aria-current"), "true");
   dom.window.close();
 });
 
@@ -339,7 +340,8 @@ test("pending add is single-flight, cannot be dismissed, and always reconciles",
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(modal.hidden, true);
   assert.deepEqual(selected, ["/org-a/oats"]);
-  assert.equal(document.getElementById("ws-trigger").title, "Active workspace: /org-a/oats");
+  assert.equal(said(document), "Current workspace: /org-a/oats");
+  assert.equal(current(document), "/org-a/oats");
   dom.window.close();
 });
 
@@ -364,47 +366,54 @@ test("pending native picker parks focus inside the modal and restores Browse on 
 });
 
 test("stale suggestion discovery cannot repaint a reopened modal", async () => {
-  const first = deferred(), second = deferred();
-  let request = 0;
+  // Every ask is held until the test answers it: the list's own first ask, then each opening of the dialog.
+  const asks = [];
   const { dom, document, controller } = setup({
-    discoverSuggestions: () => (++request === 1 ? first.promise : second.promise),
+    discoverSuggestions: () => { const ask = deferred(); asks.push(ask); return ask.promise; },
   });
   controller.begin()(B, [B]);
-  const one = controller.openModal();
+  asks[0].resolve([]);
+  const one = controller.openModal(), first = asks.at(-1);
   document.querySelector(".ws-dialog").dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  const two = controller.openModal();
+  const two = controller.openModal(), second = asks.at(-1);
+  assert.notEqual(first, second, "each opening asks again");
   second.resolve({ suggestions: [{ id: "/new", name: "new" }] });
   await two;
   assert.equal(document.querySelector(".ws-suggestion-title").textContent, "new");
   first.resolve({ suggestions: [{ id: "/stale", name: "stale" }] });
   await one;
   assert.equal(document.querySelector(".ws-suggestion-title").textContent, "new");
-  dom.window.close();
+  controller.dispose(); dom.window.close();
 });
 
-// Spec F audit: Up from the first option returns to the search; Home/End in the search move its
-// caret; tabbing out of the open menu closes it.
-test("keyboard: the switcher menu's search and options connect, and Tab out closes it", () => {
+// The list's keys (a list of buttons, the roster's pattern): Up/Down/Home/End move between rows and stop at
+// the ends; a modified arrow is not the list's (the chords and the leader keep theirs).
+test("keyboard: Up/Down/Home/End move through the rows and stop at either end; modified arrows are left alone", () => {
   const { dom, document, controller } = setup();
-  controller.begin()(A, [A, B]);
-  document.getElementById("ws-trigger").click();
-  const search = document.getElementById("ws-menu-search"), menu = document.getElementById("ws-menu");
-  search.focus();
-  const home = new dom.window.KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true });
-  search.dispatchEvent(home); assert.equal(home.defaultPrevented, false, "Home stays the search field's");
-  search.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
-  const options = [...document.querySelectorAll(".ws-option")];
-  assert.equal(document.activeElement, options[0]);
-  options[0].dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
-  assert.equal(document.activeElement, search, "Up from the first option");
-  search.dispatchEvent(new dom.window.FocusEvent("focusout", { bubbles: true, relatedTarget: document.getElementById("sidebar-spawn") }));
-  assert.equal(menu.hidden, true, "Tab out of the menu closes it");
-  dom.window.close();
+  const C = { id: "/org-c/tools", path: "/org-c/tools", name: "tools" };
+  controller.begin()(A, [A, B, C]);
+  const key = (k, init = {}) => {
+    const event = new dom.window.KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...init });
+    document.activeElement.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  const at = () => document.activeElement.dataset.workspaceId;
+  assert.equal(controller.focusList(), true);
+  assert.equal(at(), A.id, "the list's tab stop: the current row");
+  assert.equal(key("ArrowUp"), true); assert.equal(at(), A.id, "Up from the first row stays: no wrap");
+  key("ArrowDown"); assert.equal(at(), B.id);
+  key("End"); assert.equal(at(), C.id);
+  key("ArrowDown"); assert.equal(at(), C.id, "Down from the last row stays: no wrap");
+  key("Home"); assert.equal(at(), A.id);
+  for (const init of [{ altKey: true, shiftKey: true }, { ctrlKey: true }, { metaKey: true }]) {
+    assert.equal(key("ArrowDown", init), false, JSON.stringify(init));
+    assert.equal(at(), A.id);
+  }
+  controller.dispose(); dom.window.close();
 });
 
 /* ── #461: a picked folder that is not a deployment ── */
 const REFUSAL = "This folder isn't an OATS deployment: it has no oats-local.yaml. Choose the deployment folder itself, the one that contains oats-local.yaml.";
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 test("a parent folder is refused with the explanation and its deployments as one-click adds; nothing is added until one is chosen", async () => {
   const added = [];

@@ -838,7 +838,56 @@ function restoreWindows(launchKey = null) {
 // or not when `focus` is false (`open-elsewhere`). A New Window's first claim of the shared default
 // (`initial`) is refused with `choose`: it shows the switcher instead. A default the server does not
 // serve is refused with `not-served`. A refusal carries the served choices (the switcher's list), so
-// a window left choosing reads no workspace to offer them.
+// a window left choosing reads no workspace to offer them. `takeOver`: see takeOverWorkspace above.
+// A take-over (a pick from the list of workspaces, a view's workspace select, going to an instance in
+// another workspace): a workspace another window holds moves to the asking window instead of being
+// refused, and the holder is never focused. Main asks the holder to release it
+// (window:release-workspace, answered once with window:release-answer) and moves the binding when it
+// answers or after RELEASE_WAIT_MS, whichever comes first. The holder is then bound to nothing: it
+// leaves that workspace whenever its renderer runs, on time or late (views/common.mjs
+// leaveTakenWorkspace), closing its tabs of it and showing its previous workspace, else the switcher.
+const RELEASE_WAIT_MS = 2000;
+const releases = new Map(); // request id -> { holder, settle(payload) }
+let releaseRequests = 0;
+/** Ask `holder` to release `key`; resolves with its answer's payload, or null when it did not answer in time. */
+function askRelease(holder, key) {
+  return new Promise((resolve) => {
+    const request = ++releaseRequests;
+    let timer = null;
+    const settle = (payload) => {
+      if (!releases.has(request)) return;
+      releases.delete(request); clearTimeout(timer); resolve(payload);
+    };
+    releases.set(request, { holder, settle });
+    timer = setTimeout(() => settle(null), RELEASE_WAIT_MS);
+    try { holder.webContents.send("window:release-workspace", { request, workspace: key, workspaces: servedList }); }
+    catch { settle(null); }
+  });
+}
+async function takeOverWorkspace(win, key) {
+  const from = windows.windowOf(key);
+  if (from && from !== win) await askRelease(from, key);
+  const result = windows.takeOver(win, key, from);
+  if (!result.ok) return { ...result, workspaces: servedList };
+  const released = result.released;
+  if (released && !released.isDestroyed()) {
+    choosers.add(released); // it has nothing to read until it binds again
+    windowRecords?.close(released, { served: true }); // the workspace's record is the asking window's now
+    released.setTitle(windowTitle(null, servedList));
+  }
+  choosers.delete(win);
+  bindWindow(win, key);
+  return { ok: true, workspace: key };
+}
+// The holder's answer to a release: accepted once, from the window asked, for a request still open.
+ipcMain.handle("window:release-answer", (e, request, payload) => {
+  if (!trustedForgeFrame(e, RENDERER_URL)) return { ok: false, code: "forbidden" };
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const pending = Number.isSafeInteger(request) ? releases.get(request) : undefined;
+  if (!win || !pending || pending.holder !== win) return { ok: false, code: "unknown-request" };
+  pending.settle(payload ?? null);
+  return { ok: true };
+});
 ipcMain.handle("window:claim-workspace", (e, id, options) => {
   if (!trustedForgeFrame(e, RENDERER_URL)) return { ok: false, code: "forbidden" };
   const win = BrowserWindow.fromWebContents(e.sender);
@@ -856,6 +905,7 @@ ipcMain.handle("window:claim-workspace", (e, id, options) => {
   // the verified workspace and adopts the one served, as before, then binds that.
   if (options?.initial === true && !served(id)) return { ok: false, code: "not-served" };
   const key = viewKey(id);
+  if (options?.takeOver === true && options?.initial !== true) return takeOverWorkspace(win, key);
   const result = windows.claim(win, key, { focus: options?.focus !== false });
   if (!result.ok) {
     // A first claim refused because another window has the default: this window chooses from now on.

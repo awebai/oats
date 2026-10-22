@@ -39,10 +39,11 @@ function brainStyles() {
 }
 
 const markup = `<div id="app"><aside id="sidebar">
-  <div class="side-head"><button id="ws-trigger" type="button">Workspace</button></div>
-  <div class="ws-menu"><input id="ws-menu-search" type="search"><div class="ws-options">
-    <button class="ws-option" aria-selected="false">One</button></div>
-    <button class="ws-add-open" type="button">Add</button></div>
+  <div class="side-head"><span class="ws-brand-mark"></span><span id="ws-heading" class="ws-heading">Workspaces</span>
+    <button id="ws-add-open" class="ws-add-open icon-button" type="button" aria-label="Add local workspace…"></button></div>
+  <section id="ws-list" class="ws-list"><div id="ws-options" class="ws-options"><ul class="ws-group">
+    <li class="ws-option-row"><button class="ws-option ws-current" aria-current="true">One</button></li>
+    <li class="ws-option-row"><button class="ws-option ws-other">Two</button></li></ul></div></section>
   <nav id="nav"><button class="nav-item">Workspace</button><button class="nav-item active">Active</button></nav>
   <section id="instance-roster">
     <label class="ctx-filter-field"><span class="ctx-filter-icon"></span><input class="ctx-filter" placeholder="Filter instances"><kbd class="shortcut-hint" hidden></kbd></label>
@@ -132,6 +133,14 @@ test("segmented control: selected segment is --sel/--accent at 650, unselected i
   assert.equal(u.rule(".oats-view .ws-segmented button:focus-visible").background, "var(--sel)", "keyboard focus tints an unselected segment");
 });
 
+test("workspace list: the current row is the selection surface (--sel), named by aria-current; the others rest transparent", t => {
+  const u = fixture(t);
+  assert.equal(u.rule('.ws-option[aria-current="true"]').background, "var(--sel)");
+  assert.equal(u.style(".ws-option.ws-current").background, "var(--sel)");
+  assert.match(u.style(".ws-option.ws-other").background, /^(transparent|rgba\(0, 0, 0, 0\))$/);
+  assert.equal(u.rules.filter(r => /\.ws-option\[aria-selected/.test(r.selectorText || "")).length, 0, "a list of buttons: no listbox selection rule");
+});
+
 // ── rule 2: no ring on pointer interaction; tint + 1px accent edge on keyboard focus ──
 test("focus: one global 1px inset accent edge and tint replace every 2px ring and :focus visual", t => {
   const u = fixture(t);
@@ -151,7 +160,7 @@ test("focus: one global 1px inset accent edge and tint replace every 2px ring an
 
 test("focus: keyboard focus on plain shell controls paints the tint and the edge", t => {
   const u = fixture(t);
-  for (const selector of ["#ws-trigger", ".ws-option", ".ws-add-open", ".nav-item:not(.active)", ".ctx-inst", ".tab-trigger", ".tab .close",
+  for (const selector of [".ws-option.ws-other", ".ws-option.ws-current", ".ws-add-open", ".nav-item:not(.active)", ".ctx-inst", ".tab-trigger", ".tab .close",
     "#tab-actions button", ".ws-suggestion", ".ws-dialog-foot .secondary", ".kb-chord", ".kb-close", ".ws-segmented [aria-pressed=false]",
     ".ctx-instance-menu button", ".ctx-instance-actions", ".lifecycle-close", ".lifecycle-review", ".lifecycle-check", ".oats-view .act:not(.primary):not(.danger)"]) {
     const s = u.focused(selector);
@@ -191,11 +200,16 @@ test("search fields: the wrapper or the field's own border is the only frame; th
   assert.equal(filter.outline, "none", "focused filter input draws no inner ring (board 7 Before)");
   assert.equal(filter.borderWidth, "0px");
   assert.equal(filter.background, "var(--bg)");
-  assert.equal(u.rule("#ws-menu-search, #ws-suggestion-search").border, "1px solid var(--border)", "bare search inputs: own 1px frame");
-  assert.equal(u.rule("#ws-menu-search, #ws-suggestion-search").outline, "none");
+  // The workspace list has no search field any more (the Add dialog's search is the one left).
+  assert.equal(u.rules.filter(r => /#ws-menu-search/.test(r.selectorText || "")).length, 0, "no rule for the dropdown's search");
+  // Two rules name the Add dialog's search alone now: its frame, and its place in the dialog (width, margin).
+  const frames = u.rules.filter(r => r.selectorText === "#ws-suggestion-search" && r.style.border);
+  assert.equal(frames.length, 1, "one rule frames the bare search input");
+  assert.equal(frames[0].style.border, "1px solid var(--border)", "bare search inputs: own 1px frame");
+  assert.equal(frames[0].style.outline, "none");
   // jsdom does not resolve var() in computed border colours: focus frames are read from the declared rules.
-  assert.equal(u.rule("#ws-menu-search:focus-visible, #ws-suggestion-search:focus-visible").borderColor, "var(--accent)");
-  for (const selector of ["#ws-menu-search", "#ws-suggestion-search", ".oats-view input.field", ".palette-input"]) {
+  assert.equal(u.rule("#ws-suggestion-search:focus-visible").borderColor, "var(--accent)");
+  for (const selector of ["#ws-suggestion-search", ".oats-view input.field", ".palette-input"]) {
     assert.equal(u.focused(selector).outline, "none", `${selector} draws no outline when focused`);
   }
   const fieldRule = u.rule(".oats-view input.field:focus-visible, .oats-view textarea.field:focus-visible, select.field:focus-visible");
