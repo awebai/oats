@@ -58,8 +58,16 @@ contextBridge.exposeInMainWorld("oatsDesktop", {
   workspaceRemoveListed: (path) => ipcRenderer.invoke("workspace:remove-listed", path),
 
   /** One window per workspace (#481). Bind this window to a workspace in place (null: to none); a
-   * workspace another window holds is refused, and that window focused unless `focus` is false. */
+   * workspace another window holds is refused, and that window focused unless `focus` is false; with
+   * `takeOver`, it moves here from that window instead. */
   windowClaimWorkspace: (id, options) => ipcRenderer.invoke("window:claim-workspace", id, options),
+  /** A take-over: another window took this window's workspace. `cb({ request, workspace, workspaces })`;
+   * the window answers `request` once (windowReleaseAnswer), then leaves that workspace. */
+  onWorkspaceRelease: (cb) => {
+    const fn = (_e, message) => cb(message); ipcRenderer.on("window:release-workspace", fn);
+    return () => ipcRenderer.removeListener("window:release-workspace", fn);
+  },
+  windowReleaseAnswer: (request, payload) => ipcRenderer.invoke("window:release-answer", request, payload),
   /** A window with no workspace: the served choices, re-read now (#521). */
   windowChoices: () => ipcRenderer.invoke("window:choices"),
   /** Open a workspace's window, or focus the one it has; null opens a New Window (the switcher). */

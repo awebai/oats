@@ -146,7 +146,7 @@ let rosterAnsweredAt = null; // the time of the last roster answer
    remembered remote identities, the kernel record), and reads it without changing it. */
 const held = () => ({
   ctxs, snapshot, remoteGroups, remembered: remoteIdentities, rosterAnswered, rosterFailure, keptReadAt, cli: cliState,
-  observing, remoteCollecting: remoteRead !== null, home: homedir(), at: new Date().toISOString(),
+  observing, remoteCollecting: remoteRead !== null, home: homedir(), at: new Date().toISOString(), windowViews,
 });
 
 /** Spawnable souls of a local v2 deployment: the kernel's spawn catalog

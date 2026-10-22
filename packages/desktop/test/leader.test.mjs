@@ -133,6 +133,25 @@ test("in a terminal: the leader and a table key reach the program in no phase", 
   assert.equal(r.data(), "k");
 });
 
+// The leader's ↑ / ↓ are the workspace moves (keymap.mjs LEADER_TABLE workspace-previous / workspace-next): ⌃X then
+// an arrow, on macOS and elsewhere, from a terminal and from a control, settles them, and the arrow reaches no program.
+for (const isMac of [false, true]) test(`${isMac ? "macOS" : "Linux/Windows"}: Ctrl+X then ↑ / ↓ settle the previous / next workspace, and no arrow reaches the terminal`, t => {
+  const r = rig(t, { isMac });
+  for (const [key, does] of [["up", "workspace-previous"], ["down", "workspace-next"]]) {
+    r.textarea.focus();
+    r.press(r.textarea, CTRL_X);
+    const phases = r.press(r.textarea, keyInit(key));
+    assert.equal(phases.down.defaultPrevented, true, `${key} is consumed`);
+    assert.deepEqual(r.log.at(-1), ["settle", does, "terminal"]);
+    assert.equal(r.data(), "", "no arrow sequence");
+    r.button.focus();
+    r.press(r.button, CTRL_X);
+    r.press(r.button, keyInit(key));
+    assert.deepEqual(r.log.at(-1), ["settle", does, "button"]);
+  }
+  assert.equal(r.log.some(([kind, does]) => kind === "settle" && (does === "previous" || does === "next")), false, "the leader steps no instance");
+});
+
 test("the leader twice in a terminal is not claimed: xterm sends the chord's own bytes", t => {
   const r = rig(t);
   r.textarea.focus();

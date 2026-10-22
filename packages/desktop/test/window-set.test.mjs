@@ -1,7 +1,8 @@
 // One Desktop window per workspace (#481): the window registry in main. At most one window per
 // workspace key; opening a workspace that already has a window restores, shows and focuses it and
 // creates nothing; a claim for a key another window holds focuses that window (or, for a view that
-// moved under a window, does not) and changes nothing; closing removes a window.
+// moved under a window, does not) and changes nothing; a take-over moves the key from the window asked
+// to release it, presenting nothing; closing removes a window.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWindowSet } from '../window-set.mjs';
@@ -105,4 +106,47 @@ test('creation options reach create(); focusRecent presents the most recent wind
   assert.deepEqual(made, [['/d/a', { record: 1 }], [null, { record: 2 }]]);
   set.focused(a);
   assert.equal(set.focusRecent(), a); assert.deepEqual(a.log, ['restore', 'show', 'focus']); assert.deepEqual(b.log, []);
+});
+
+test('a take-over moves the key from the window that held it, which holds none, and presents nothing', () => {
+  let changes = 0;
+  const log = [];
+  const make = (key) => ({ key, isDestroyed: () => false, isMinimized: () => false,
+    restore() { log.push(['restore', key]); }, show() { log.push(['show', key]); }, focus() { log.push(['focus', key]); } });
+  const set = createWindowSet({ create: make, onChange: () => { changes++; } });
+  const a = set.open('/d/a').win, b = set.open('/d/b').win;
+  changes = 0;
+  assert.deepEqual(set.takeOver(a, '/d/b', b), { ok: true, released: b });
+  assert.equal(set.windowOf('/d/b'), a); assert.equal(set.keyOf(a), '/d/b');
+  assert.equal(set.keyOf(b), null, 'the holder is left bound to nothing'); assert.equal(set.windowOf('/d/a'), null, 'the asker\'s old key is freed');
+  assert.ok(changes > 0, 'main is told of the new window set');
+  assert.deepEqual(log, [], 'neither window is restored, shown or focused');
+});
+
+test('a take-over of a free key, or of its own, binds in place and releases nothing', () => {
+  const f = fixture();
+  const a = f.set.open('/d/a').win;
+  assert.deepEqual(f.set.takeOver(a, '/d/a', null), { ok: true, released: null }, 'its own key');
+  assert.deepEqual(f.set.takeOver(a, '/d/b', null), { ok: true, released: null }, 'a key nobody holds');
+  assert.equal(f.set.windowOf('/d/b'), a); assert.equal(f.set.windowOf('/d/a'), null);
+  const b = f.set.open('/d/c').win; b.destroyed = true;
+  assert.deepEqual(f.set.takeOver(a, '/d/c', b), { ok: true, released: null }, 'a holder destroyed meanwhile holds nothing');
+  assert.equal(f.set.windowOf('/d/c'), a);
+  assert.deepEqual(f.log, []);
+});
+
+test('a take-over is refused when a third window holds the key by now, and for an unknown window', () => {
+  const f = fixture();
+  const a = f.set.open('/d/a').win, b = f.set.open('/d/b').win, c = f.set.open('/d/c').win;
+  // b was asked to release /d/b, but /d/b is c's by the time it answers (c took it over first).
+  f.set.takeOver(c, '/d/b', b);
+  f.log.length = 0;
+  assert.deepEqual(f.set.takeOver(a, '/d/b', b), { ok: false, code: 'open-elsewhere' });
+  assert.equal(f.set.windowOf('/d/b'), c); assert.equal(f.set.keyOf(a), '/d/a', 'nothing changes');
+  assert.deepEqual(f.log, [], 'and nothing is presented');
+  f.set.remove(a);
+  assert.deepEqual(f.set.takeOver(a, '/d/b', c), { ok: false, code: 'unknown-window' });
+  assert.equal(f.set.windowOf('/d/b'), c);
+  const gone = f.set.open('/d/d').win; gone.destroyed = true;
+  assert.deepEqual(f.set.takeOver(gone, '/d/b', c), { ok: false, code: 'unknown-window' }, 'a destroyed window is unknown');
 });

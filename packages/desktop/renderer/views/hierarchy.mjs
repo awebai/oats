@@ -410,8 +410,8 @@ export function mount(el, ctx) {
   s.q('hier-retry').addEventListener('click', () => { if (s.alive) void refresh(s, { user: true }); });
   // Re-add: a deployment this Desktop's server does not serve, through the normal add (#461).
   s.q('hier-readd').addEventListener('click', () => { if (s.alive) void reAdd(s); });
-  // Main binds the switch first; a workspace another window has is focused there instead (#481).
-  s.q("wssel").addEventListener("change", (e) => { void switchWorkspace(e.target.value).then((r) => { if (!r.ok) e.target.value = currentWorkspace(); }); });
+  // Main binds the switch first; a workspace another window shows moves here (a take-over, as a pick from the list does).
+  s.q("wssel").addEventListener("change", (e) => { void switchWorkspace(e.target.value, { takeOver: true }).then((r) => { if (!r.ok) e.target.value = currentWorkspace(); }); });
   s.q("zin").addEventListener("click", () => zoomBy(s, 1.2));
   s.q("zout").addEventListener("click", () => zoomBy(s, 1 / 1.2));
   s.q("zfit").addEventListener("click", () => { if (visibleOwner(s)) fit(s); });

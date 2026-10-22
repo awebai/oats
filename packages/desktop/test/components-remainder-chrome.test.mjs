@@ -126,13 +126,18 @@ test('workspace rows show stable decorative identity and only reported metadata;
   const html = readFileSync(new URL('../renderer/index.html', import.meta.url), 'utf8'), dom = new JSDOM(html), doc = dom.window.document; t.after(() => dom.window.close());
   const chosen = [], switcher = createWorkspaceSwitcher({ document: doc, selectWorkspace: v => chosen.push(v), discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) });
   const choices = [{ id: '/a/team', name: 'same', team: { name: 'Org' }, instances: 99 }, { id: '/b/team', name: 'same', server: 'peer', machines: ['peer'] }];
-  switcher.begin()(choices[0], choices); switcher.openMenu();
+  t.after(() => switcher.dispose());
+  switcher.begin()(choices[0], choices); // the list is always shown: no menu to open
   const first = doc.querySelector('.ws-option'), color = first.querySelector('.workspace-avatar').dataset.avatarColor;
   assert.equal(first.querySelector('.workspace-avatar').getAttribute('aria-hidden'), 'true'); assert.match(first.textContent, /Org/); assert.equal(doc.querySelectorAll('.ws-option')[1].querySelector('.ws-option-meta').textContent, 'peer', 'its machine, never a Server: line (#482)');
   assert.doesNotMatch(doc.querySelector('#ws-options').textContent, /Server:|\/a\/team|\/b\/team/);
-  assert.match(doc.querySelector('#ws-add-open').textContent, /Add local workspace…/); assert.doesNotMatch(doc.querySelector('#ws-menu').textContent, /Join|Manage workspaces|99|offline|online/);
+  // Add local workspace… is the head's icon button, named in words; the list invents nothing.
+  assert.equal(doc.querySelector('#ws-add-open').getAttribute('aria-label'), 'Add local workspace…'); assert.equal(doc.querySelector('#ws-add-open').title, 'Add local workspace…');
+  assert.doesNotMatch(`${doc.querySelector('.side-head').textContent} ${doc.querySelector('#ws-list').textContent}`, /Join|Manage workspaces|99|offline|online/);
   switcher.begin()(choices[0], [...choices].reverse()); assert.equal([...doc.querySelectorAll('.ws-option')].find(b => b.dataset.workspaceId === choices[0].id).querySelector('.workspace-avatar').dataset.avatarColor, color);
+  // A row from an earlier paint opens nothing; the current row is already shown; the other one is chosen.
   first.click(); assert.deepEqual(chosen, []);
-  const search = doc.querySelector('#ws-menu-search'); search.value = 'peer'; search.dispatchEvent(new dom.window.Event('input')); assert.equal(doc.querySelectorAll('.ws-option').length, 1);
-  doc.querySelector('.ws-option').click(); assert.deepEqual(chosen, ['/b/team']);
+  const row = id => [...doc.querySelectorAll('.ws-option')].find(b => b.dataset.workspaceId === id);
+  row('/a/team').click(); assert.deepEqual(chosen, []);
+  row('/b/team').click(); assert.deepEqual(chosen, ['/b/team']);
 });

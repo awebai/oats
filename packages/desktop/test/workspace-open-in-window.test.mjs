@@ -1,4 +1,4 @@
-// One Desktop window per workspace (#481): the switcher's Open in new window action and the window
+// One Desktop window per workspace (#481): the workspace list's Open in new window action and the window
 // that has no workspace yet. Each workspace option has a trailing button OUTSIDE the option, labelled
 // "Open <label> in a new window" (aria-label and tooltip), reached with ArrowRight from its option and
 // left with ArrowLeft or Escape; ⌘Enter (macOS) / Ctrl+Enter on the option does the same, and the
@@ -13,16 +13,17 @@ const html = readFileSync(new URL('../renderer/index.html', import.meta.url), 'u
 const A = { id: 'ws:aaaaaaaaaaaaaaaaaaaa', name: 'oats', machines: ['This Mac'] };
 const B = { id: 'ws:bbbbbbbbbbbbbbbbbbbb', name: 'tsm', machines: ['This Mac', 'altair'] };
 const LOOSE = { id: 'remote:rigel:/x', name: 'rigel', unattached: true, deployments: ['remote:rigel:/x'], machines: ['rigel'], short: 'Not reached' };
+// The list's slow re-read never fires here (its cadence is workspace-list.test.mjs).
+const INERT = { setTimeout: () => 0, clearTimeout() {} };
 
 function setup({ mac = true, openInNewWindow = true } = {}) {
   const dom = new JSDOM(html, { url: 'file:///renderer/index.html' });
   const document = dom.window.document, selected = [], opened = [];
-  const controller = createWorkspaceSwitcher({ document, mac,
+  const controller = createWorkspaceSwitcher({ document, mac, timers: INERT,
     selectWorkspace: (id) => selected.push(id), discoverSuggestions: async () => [],
     addWorkspace: async () => ({ ok: false }), pickWorkspace: async () => ({ ok: false, code: 'cancelled' }),
     ...(openInNewWindow ? { openInNewWindow: (id) => opened.push(id) } : {}) });
   controller.begin()(A, [A, B, LOOSE]);
-  document.getElementById('ws-trigger').click();
   const key = (el, init) => el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }));
   return { dom, document, controller, selected, opened, key };
 }
@@ -59,7 +60,16 @@ test('clicking the button opens that workspace in a new window, never selecting 
   const { document, selected, opened } = setup();
   action(document, B.id).click();
   assert.deepEqual(opened, [B.id]); assert.deepEqual(selected, []);
-  assert.equal(document.getElementById('ws-menu').hidden, true, 'the menu closes');
+  assert.equal(option(document, A.id).getAttribute('aria-current'), 'true', 'this window still shows its own');
+});
+
+test('a row another window shows keeps its button: Open in new window focuses that window, a pick here takes it over', () => {
+  const { document, controller, selected, opened } = setup();
+  controller.begin()(A, [A, { ...B, shown: true }, LOOSE]);
+  action(document, B.id).click();
+  assert.deepEqual(opened, [B.id], 'the explicit action: main focuses the window that has it');
+  option(document, B.id).click();
+  assert.deepEqual(selected, [B.id], 'the row itself selects it here (the shell asks main to take it over)');
 });
 
 test('ArrowRight moves to the option\'s button; ArrowLeft and Escape return to the option; Enter activates it', () => {
@@ -72,7 +82,6 @@ test('ArrowRight moves to the option\'s button; ArrowLeft and Escape return to t
   key(option(document, B.id), { key: 'ArrowRight' });
   key(document.activeElement, { key: 'Escape' });
   assert.equal(document.activeElement, option(document, B.id), 'Escape on the button returns to its option');
-  assert.equal(document.getElementById('ws-menu').hidden, false, '…without closing the menu');
   key(option(document, B.id), { key: 'ArrowRight' });
   document.activeElement.click(); // a native button: Enter and Space click it
   assert.deepEqual(opened, [B.id]);
@@ -104,15 +113,16 @@ test('without a window bridge (the browser harness) there is no action and no hi
   assert.equal(option(document, A.id).hasAttribute('aria-describedby'), false);
 });
 
-test('a window with no workspace: the trigger asks to choose one, the choices come from main, none is selected', () => {
+test('a window with no workspace: the list says none is chosen, the choices come from main, none is current', () => {
   const { document, controller } = setup();
   controller.choose([A, B]);
-  assert.equal(document.getElementById('ws-name').textContent, 'Choose a workspace');
-  assert.equal(document.getElementById('ws-trigger').title, 'This window has no workspace yet');
-  document.getElementById('ws-trigger').click(); document.getElementById('ws-trigger').click();
+  assert.equal(document.getElementById('ws-list').getAttribute('aria-description'), 'Current workspace: none chosen yet');
   const options = [...document.querySelectorAll('.ws-option')];
   assert.deepEqual(options.map((o) => o.dataset.workspaceId), [A.id, B.id]);
-  assert.ok(options.every((o) => o.getAttribute('aria-selected') === 'false'));
+  assert.ok(options.every((o) => !o.hasAttribute('aria-current')));
+  assert.ok(options.every((o) => !o.querySelector('.ws-check svg')), 'no check: nothing is current');
+  controller.reset();
+  assert.equal(document.getElementById('ws-list').getAttribute('aria-description'), 'Current workspace: resolving', 'before main answers');
 });
 
 test('a window with no workspace hides its whole instance section (the shipped CSS honours [hidden])', () => {

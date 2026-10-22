@@ -1,6 +1,7 @@
 // One Desktop window per workspace (#481): main's shipped window section, run in a vm with the real
 // registry (window-set.mjs) and records (window-records.mjs) over fake BrowserWindows. Covers the window
-// channels (claim in place, open, New Window), restore at launch, titles, and closing.
+// channels (claim in place, open, New Window), the take-over relay (window:release-workspace and its
+// answer), restore at launch, titles, and closing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
@@ -41,16 +42,19 @@ function boot({ records = [], served = SERVED, reread = null, dirs = ['/d/oats',
     BrowserWindow: Object.assign(FakeWindow, { fromWebContents: (wc) => FakeWindow.all.find((w) => w.webContents === wc) }),
     screen: { getAllDisplays: () => displays }, RENDERER_URL: RENDERER, servedList: served, allowedWs: new Set(served.map((w) => w.id)),
     advertisedBefore: new Set(), quitStarted: false, console, Menu: {}, shell: {},
+    // The take-over's wait (RELEASE_WAIT_MS), on fake timers: a test fires them (fire()).
+    setTimeout: (fn, ms) => { const timer = { fn, ms, cleared: false }; timers.push(timer); return timer; },
+    clearTimeout: (timer) => { if (timer) timer.cleared = true; },
     createWindowSet, restorePlan, resolveView, clampBounds, windowTitle, trustedForgeFrame, validWorkspaceId, workspaceHash, trustedRendererUrl,
     terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(), workspaceDirs: dirs,
     // main's post of the window set to the backend (#1124), recorded: the views the windows show at each call.
     noteWindowViews: () => noted.push(main.windows.entries().map(([, key]) => key)),
   };
-  const noted = [];
+  const noted = [], timers = [];
   context.advertisedNow = () => context.allowedWs;
   // The server's answer to main's re-read of /api/panel: `reread`, else what it served before.
   context.panelWorkspaces = async () => { context.rereads = (context.rereads ?? 0) + 1; if (reread) { context.servedList = reread; context.allowedWs = new Set(reread.map((w) => w.id)); } return context.servedList; };
-  main = runInNewContext(`${section}\n${windowBlock}\n${noteServedBlock}\n({ noteServed, windows, choosers, openWorkspaceWindow, openNewWindow, restoreWindows, setRecords: (r) => { windowRecords = r; }, setAdvertised: (set) => { allowedWs = set; }, setServed: (list) => { servedList = list; }, get windowRecords() { return windowRecords; } })`, context);
+  main = runInNewContext(`${section}\n${windowBlock}\n${noteServedBlock}\n({ noteServed, windows, choosers, openWorkspaceWindow, openNewWindow, restoreWindows, RELEASE_WAIT_MS, setRecords: (r) => { windowRecords = r; }, setAdvertised: (set) => { allowedWs = set; }, setServed: (list) => { servedList = list; }, get windowRecords() { return windowRecords; } })`, context);
   Object.defineProperty(main, 'quitStarted', { set: (v) => { context.quitStarted = v; } });
   main.setRecords(createWindowRecords({ file, initial: records, timers: { setTimeout: () => 1, clearTimeout() {} } }));
   const event = (win) => ({ sender: Object.assign(win.webContents, { isDestroyed: () => false }), senderFrame: win.webContents.mainFrame });
@@ -58,7 +62,9 @@ function boot({ records = [], served = SERVED, reread = null, dirs = ['/d/oats',
   const plain = (value) => JSON.parse(JSON.stringify(value));
   return { main, handlers, event, file, claim: async (win, id, options) => plain(await handlers.get('window:claim-workspace')(event(win), id, options)),
     open: async (win, id) => plain(await handlers.get('window:open-workspace')(event(win), id)),
-    choices: async (win, e = event(win)) => plain(await handlers.get('window:choices')(e)), rereads: () => context.rereads ?? 0, noted };
+    choices: async (win, e = event(win)) => plain(await handlers.get('window:choices')(e)), rereads: () => context.rereads ?? 0, noted,
+    answer: async (win, request, payload = null, e = event(win)) => plain(await handlers.get('window:release-answer')(e, request, payload)),
+    timers, fire: () => { for (const timer of timers.splice(0)) if (!timer.cleared) timer.fn(); } };
 }
 const record = (workspace, x = 50) => ({ workspace, bounds: { x, y: 60, width: 900, height: 700 }, maximized: false });
 
@@ -316,4 +322,149 @@ test('window:choices: a window main knows gets the served list as re-read now; a
   const stranger = new FakeWindow({ width: 10, height: 10 });
   assert.deepEqual(await b.choices(stranger), { ok: false, code: 'unknown-window' });
   assert.equal(b.rereads(), 1, 'a refusal reads nothing');
+});
+
+/* ── the take-over (a pick from the list of workspaces) ── */
+
+/** Two restored windows, on A and on B (the holder), each recording what main sends it. */
+function twoWindows() {
+  const b = boot({ records: [record(A), record(B, 300)] });
+  b.main.restoreWindows();
+  const [asker, holder] = FakeWindow.all;
+  for (const win of FakeWindow.all) { win.sent = []; win.webContents.send = (channel, message) => win.sent.push([channel, JSON.parse(JSON.stringify(message))]); }
+  return { b, asker, holder };
+}
+/** A claim's promise, and whether it has settled yet. */
+function watched(promise) {
+  const w = { settled: false, promise: promise.then((value) => { w.settled = true; return value; }) };
+  return w;
+}
+
+test('a take-over of a workspace another window holds asks that window only to release it, and focuses nothing', async () => {
+  const { b, asker, holder } = twoWindows();
+  const claim = watched(b.claim(asker, B, { takeOver: true }));
+  await tick();
+  assert.deepEqual(holder.sent, [['window:release-workspace', { request: holder.sent[0]?.[1]?.request, workspace: B, workspaces: SERVED }]]);
+  assert.ok(Number.isSafeInteger(holder.sent[0][1].request), 'a request id to answer');
+  assert.deepEqual(asker.sent, [], 'only the holder is asked');
+  assert.equal(claim.settled, false, 'main waits for the answer');
+  assert.equal(b.main.windows.windowOf(B), holder, 'nothing moves before it');
+  assert.deepEqual(b.timers.map((t) => t.ms), [b.main.RELEASE_WAIT_MS], 'one wait, of RELEASE_WAIT_MS');
+  assert.equal(b.main.RELEASE_WAIT_MS, 2000);
+  assert.deepEqual(holder.calls, [], 'the holder is never restored, shown or focused');
+  assert.deepEqual(await b.answer(holder, holder.sent[0][1].request), { ok: true });
+  assert.deepEqual(await claim.promise, { ok: true, workspace: B });
+  assert.deepEqual([holder.calls, asker.calls], [[], []], 'nor is any window afterwards');
+});
+
+test('the holder\'s answer moves the binding: the asker has the workspace, its title and its record; the holder has none and chooses', async () => {
+  const { b, asker, holder } = twoWindows();
+  const claim = b.claim(asker, B, { takeOver: true });
+  await tick();
+  await b.answer(holder, holder.sent[0][1].request);
+  assert.deepEqual(await claim, { ok: true, workspace: B });
+  assert.equal(b.main.windows.windowOf(B), asker); assert.equal(b.main.windows.keyOf(holder), null);
+  assert.equal(b.main.windows.windowOf(A), null, 'the asker\'s old workspace is free');
+  assert.equal(asker.title, 'tsm'); assert.equal(holder.title, 'OATS Desktop');
+  assert.deepEqual(b.main.windowRecords.records().map((r) => [r.workspace, r.bounds.x]), [[B, 50]], 'one record for B, the asker\'s (its bounds), none left for the holder');
+  assert.equal(b.main.choosers.has(holder), true, 'the holder has nothing to read until it binds again');
+  assert.equal(b.main.choosers.has(asker), false);
+  assert.equal((await b.claim(holder, A, { focus: false, initial: true })).code, 'choose', 'never the shared default');
+  assert.deepEqual(b.noted.at(-1), [B, null], 'the backend is told the views shown: B, and the holder with none');
+  assert.equal(b.timers.every((t) => t.cleared), true, 'the wait is cleared');
+  b.fire();
+  assert.equal(b.main.windows.windowOf(B), asker, 'a cleared wait does nothing');
+});
+
+test('a holder that does not answer: the binding moves after RELEASE_WAIT_MS, and its late answer is refused', async () => {
+  const { b, asker, holder } = twoWindows();
+  const claim = watched(b.claim(asker, B, { takeOver: true }));
+  await tick();
+  const { request } = holder.sent[0][1];
+  assert.equal(claim.settled, false);
+  b.fire(); // RELEASE_WAIT_MS passes
+  assert.deepEqual(await claim.promise, { ok: true, workspace: B });
+  assert.equal(b.main.windows.windowOf(B), asker); assert.equal(b.main.windows.keyOf(holder), null);
+  assert.equal(holder.title, 'OATS Desktop'); assert.equal(b.main.choosers.has(holder), true);
+  assert.deepEqual(b.main.windowRecords.records().map((r) => r.workspace), [B]);
+  // The holder answers late (it leaves the workspace all the same: views/common.mjs leaveTakenWorkspace).
+  assert.deepEqual(await b.answer(holder, request), { ok: false, code: 'unknown-request' });
+  assert.equal(b.main.windows.windowOf(B), asker, 'already the asker\'s; nothing changes');
+  assert.deepEqual(holder.calls, []);
+});
+
+test('a holder main cannot send to is not waited for', async () => {
+  const { b, asker, holder } = twoWindows();
+  holder.webContents.send = () => { throw new Error('destroyed'); };
+  assert.deepEqual(await b.claim(asker, B, { takeOver: true }), { ok: true, workspace: B });
+  assert.equal(b.main.windows.keyOf(holder), null);
+});
+
+test('the release answer is accepted once, from the window asked, for a request still open, from a trusted frame', async () => {
+  const { b, asker, holder } = twoWindows();
+  const third = b.main.openNewWindow();
+  const claim = watched(b.claim(asker, B, { takeOver: true }));
+  await tick();
+  const { request } = holder.sent[0][1];
+  const foreign = { sender: Object.assign(holder.webContents, { isDestroyed: () => false }), senderFrame: { url: 'https://evil.example/' } };
+  const subframe = { sender: holder.webContents, senderFrame: { url: RENDERER } };
+  const refusals = [
+    [await b.answer(asker, request), 'the asker'],
+    [await b.answer(third, request), 'another window'],
+    [await b.answer(holder, request + 1), 'an unknown request'],
+    [await b.answer(holder, String(request)), 'a request id that is not an integer'],
+    [await b.answer(holder, request, null, foreign), 'a foreign frame'],
+    [await b.answer(holder, request, null, subframe), 'a frame that is not the main frame'],
+  ];
+  assert.deepEqual(refusals.map(([r, why]) => [r.code, why]), [['unknown-request', 'the asker'], ['unknown-request', 'another window'],
+    ['unknown-request', 'an unknown request'], ['unknown-request', 'a request id that is not an integer'], ['forbidden', 'a foreign frame'], ['forbidden', 'a frame that is not the main frame']]);
+  const stranger = new FakeWindow({ width: 10, height: 10 }); // a window main never registered
+  assert.deepEqual(await b.answer(stranger, request), { ok: false, code: 'unknown-request' });
+  await tick();
+  assert.equal(claim.settled, false, 'no refused answer ends the wait');
+  assert.equal(b.main.windows.windowOf(B), holder, 'nor moves anything');
+  assert.deepEqual(await b.answer(holder, request), { ok: true });
+  assert.deepEqual(await b.answer(holder, request), { ok: false, code: 'unknown-request' }, 'a second answer to one request');
+  assert.deepEqual(await claim.promise, { ok: true, workspace: B });
+});
+
+test('two take-overs of one workspace: the first answered wins; the other is refused, open elsewhere, with the choices', async () => {
+  const { b, asker, holder } = twoWindows();
+  const other = b.main.openNewWindow();
+  assert.deepEqual(await b.claim(other, 'remote:rigel:/x'), { ok: true, workspace: 'remote:rigel:/x' });
+  const first = b.claim(asker, B, { takeOver: true }), second = b.claim(other, B, { takeOver: true });
+  await tick();
+  const [askerRequest, otherRequest] = holder.sent.map(([, m]) => m.request);
+  assert.notEqual(askerRequest, otherRequest, 'each take-over its own request');
+  await b.answer(holder, otherRequest);
+  assert.deepEqual(await second, { ok: true, workspace: B });
+  await b.answer(holder, askerRequest);
+  const refused = await first;
+  assert.deepEqual([refused.ok, refused.code, refused.workspaces], [false, 'open-elsewhere', SERVED]);
+  assert.equal(b.main.windows.windowOf(B), other); assert.equal(b.main.windows.keyOf(asker), A, 'the refused asker is unchanged');
+  assert.deepEqual([asker.calls, holder.calls, other.calls], [[], [], []], 'nothing is focused');
+});
+
+test('a take-over of a workspace no other window holds binds at once, with no release event', async () => {
+  const b = boot({ records: [record(A)] });
+  b.main.restoreWindows();
+  const [win] = FakeWindow.all;
+  win.webContents.send = () => assert.fail('nobody to ask');
+  assert.deepEqual(await b.claim(win, B, { takeOver: true }), { ok: true, workspace: B });
+  assert.deepEqual(await b.claim(win, B, { takeOver: true }), { ok: true, workspace: B }, 'its own workspace');
+  assert.deepEqual(b.timers, [], 'no wait');
+  assert.equal(win.title, 'tsm'); assert.deepEqual(b.main.windowRecords.records().map((r) => r.workspace), [B]);
+  const chooser = b.main.openNewWindow();
+  assert.deepEqual(await b.claim(chooser, A, { takeOver: true }), { ok: true, workspace: A }, 'a choosing window binds by one too');
+  assert.equal(b.main.choosers.has(chooser), false);
+});
+
+test('an initial claim never takes over: it is refused as before, and the holder is not asked', async () => {
+  const { b, holder } = twoWindows();
+  const fresh = b.main.openNewWindow(); b.main.choosers.delete(fresh); // a window opened with no workspace, adopting
+  fresh.webContents.send = () => {};
+  assert.equal((await b.claim(fresh, B, { focus: false, initial: true, takeOver: true })).code, 'open-elsewhere');
+  assert.deepEqual(holder.sent, []); assert.equal(b.main.windows.windowOf(B), holder);
+  assert.equal((await b.claim(fresh, A, { focus: false, initial: true, takeOver: true })).code, 'choose', 'from then on it chooses');
+  assert.deepEqual(holder.sent, []); assert.deepEqual(b.timers, []);
 });
