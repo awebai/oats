@@ -24,7 +24,7 @@ import { NOW, instanceRow, observed, readTerminalOutput, rowStrings, stateOf } f
 const size = (cols, rows) => ({ cols, rows });
 const S60 = size(60, 15), S80 = size(80, 24), S120 = size(120, 40);
 const AT = new Date(NOW).toISOString();
-/** The leader's hint, the cheat sheet's first row: the tests' leader, C-\\, spelt for people. */
+/** The leader's row, the cheat sheet's first: the tests' leader, C-\\, spelt for people. */
 const LEAD = ["Ctrl+\\", "commands"];
 /** The prompt's first row: the screen's, as there is no header. */
 const TOP = 0;

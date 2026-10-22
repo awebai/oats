@@ -80,13 +80,12 @@ export const ACTIONS = Object.freeze([
 /** THE LEADER'S TABLE (docs/tui.md, "The leader"): the keys read after the leader (tui.json's
  *  open.detachKey) and what each does, from every focus. It is the shared one, the Desktop's too
  *  (packages/client/keymap.mjs LEADER_TABLE), in its order, with its labels and its `terminal`
- *  rows: named in the hint only while a terminal is open, and nothing without one. What the TUI
- *  adds to a row is its own, keyed by `does`: the hint's filters (views/frame.mjs leaderHints:
- *  the tab keys only with two tabs or more, the split's only where they apply). Fixed: tui.json's
+ *  rows, which do nothing without a terminal open. Nothing is drawn while the leader waits: the
+ *  help lists the table (views/help.mjs). Fixed: tui.json's
  *  `keys` rebinds the plain keys of ACTIONS only. Each `does` is handled by the TUI
  *  (leaderHandles); the leader pressed again is not in the table, as it is the user's key: from the
  *  open terminal's focus it types the leader's own bytes into the agent, the focus staying there,
- *  and from any other focus it only closes the hint (lib/store.mjs `twice`). */
+ *  and from any other focus it only cancels the leader (lib/store.mjs `twice`). */
 export const LEADER = LEADER_TABLE;
 /** What the leader does that no action of ACTIONS does (lib/store.mjs `led`): `previous` and
  *  `next` (the instance before or after the shown terminal's, or the selection's: its tab shown,

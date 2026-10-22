@@ -792,8 +792,8 @@ export function model(state, { page, body = page, now, at, cols, area = cols }) 
     split: state.split, group: state.group, panelOpen: state.tabs.length > 0, groups: groupsOf(state),
     tabs: groupsOf(state)[state.group].tabs,
     act: state.view === "act" && state.act ? actView(state) : null,
-    // The leader waits for its key (the cheat sheet is its hint), and the palette, while it is open.
-    leader: state.leader?.waiting === true, palette: state.palette === null ? null : paletteView(state, body, at),
+    // The palette, while it is open.
+    palette: state.palette === null ? null : paletteView(state, body, at),
     souls: under === "souls" ? soulsView(state, page, at) : null,
     capabilities: under === "capabilities" ? capabilitiesView(state, page, at) : null,
     spawn: state.spawn === null ? null : spawnView(state, body, at),

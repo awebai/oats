@@ -410,17 +410,16 @@ function sheet(state, size) {
   return rows.slice(from, to < 0 ? rows.length : to);
 }
 
-test("with tabs open the list's cheat sheet is small, from the list and from the detail: no zoom, close terminal or [/] tab, which the leader's hint names, its tabs' keys while two tabs or more are open; on short rows the sheet gives up its rows from the end", () => {
+test("with tabs open the list's cheat sheet is small, from the list and from the detail: no zoom, close terminal or [/] tab, which the help names, and the same while the leader waits; on short rows the sheet gives up its rows from the end", () => {
   const one = toList(opened(SIX(), "dev-a")), two = toList(opened(SIX(), "dev-a", "dev-b"));
   const tall = { cols: 120, rows: 30 };
   const all = [" Ctrl+\\   commands", " Ctrl+K   palette", " Enter    focus terminal", " n        spawn", " w        workspaces", " ?        help", " q        quit"];
   assert.deepEqual(sheet(one, tall), all, "one tab");
   assert.deepEqual(sheet(two, tall), all, "two tabs: the same sheet");
   assert.deepEqual(sheet(key(two, "tab").state, tall), [...all.slice(0, 2), " Tab      back", ...all.slice(2)], "from the detail: Tab back after the palette");
-  // The leader's hint keeps the open terminal's keys, and the tabs' only with two or more.
-  const hint = (s) => sheet(reduce(s, { key: s.leaderKey, read: ++reads, ...AT }).state, tall);
-  assert.deepEqual(hint(two).slice(4, 7), [" z            zoom", " w            close terminal", " Left/Right   tab"]);
-  assert.equal(hint(one).some((row) => row.endsWith(" tab")), false, "one tab: nothing to switch to");
+  // While the leader waits the sheet stays as it is: the leader's table is the help's.
+  const armed = (s) => reduce(s, { key: s.leaderKey, read: ++reads, ...AT }).state;
+  for (const s of [one, two]) { assert.equal(armed(s).leader.waiting, true); assert.deepEqual(sheet(armed(s), tall), all, `${s.tabs.length} tabs, the leader waiting`); }
   assert.deepEqual(sheet(two, { cols: 100, rows: 24 }), all, "the rows hold it whole");
   assert.deepEqual(sheet(two, { cols: 100, rows: 17 }), all.slice(0, 4), "given up from its end: quit, help and workspaces");
   assert.deepEqual(sheet(two, { cols: 100, rows: 15 }), all.slice(0, 2), "the list keeps its rows");

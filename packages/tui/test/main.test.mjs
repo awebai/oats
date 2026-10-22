@@ -582,22 +582,15 @@ test("a resize while a frame is being written makes no second write until the fi
   assert.equal(await r.status, 0);
 });
 
-test("Ctrl+L sets the terminal's modes again and redraws in full; Ctrl+\\ in the list is the leader, whose hint takes the cheat sheet's rows until a second Ctrl+\\ puts the cheat sheet back and does nothing else", async () => {
+test("Ctrl+L sets the terminal's modes again and redraws in full; Ctrl+\\ in the list is the leader, which writes nothing while it waits, and a second Ctrl+\\ cancels it and writes nothing either", async () => {
   const r = await started();
   const first = r.stdout.take();
   assert.equal(first.startsWith(ENTER), true);
   r.log.length = 0;
   r.stdin.type("\x1c");
-  const hint = r.stdout.take();
-  // The leader's hint stands on rows 9 to 17 (1 to 9 of the sidebar are its title, the views and the
-  // rules); the cheat sheet, shorter, on rows 9 to 13, and the rows under it are written empty.
-  const sheetRows = Array.from({ length: 9 }, (_, i) => [9 + i, 1]);
-  assert.deepEqual([...hint.matchAll(/\x1b\[(\d+);(\d+)H/g)].map(([, row, col]) => [Number(row), Number(col)]), sheetRows, "only the cheat sheet's rows are written");
-  assert.equal(words(textOf(hint)), " Ctrl+\\ then │ k palette │ 1-3 views │ Up/Down instance │ X/R/S/D acts │ / filter │ o workspaces │ ? help │ Esc the list │");
+  assert.equal(r.stdout.take(), "", "while the leader waits the screen is as it was: nothing is written");
   r.stdin.type("\x1c");
-  const back = r.stdout.take();
-  assert.deepEqual([...back.matchAll(/\x1b\[(\d+);(\d+)H/g)].map(([, row, col]) => [Number(row), Number(col)]), sheetRows);
-  assert.equal(words(textOf(back)), " Ctrl+\\ commands │ Ctrl+K palette │ n spawn │ w workspaces │ ? help │ q quit │ │ │ │");
+  assert.equal(r.stdout.take(), "", "the leader again cancels it, and nothing is written");
   assert.deepEqual(readerDid(r), [["touch"], ["touch"]], "the leader reads nothing");
   r.log.length = 0;
   r.stdin.type("\x0c");
@@ -1448,19 +1441,26 @@ test("the leader twice from the terminal's focus types the leader's own bytes in
   assert.equal(await m.status, 0, "the leader then Esc, then q in the list");
 });
 
-test("the default leader, Ctrl+X on every platform: 0x18 in the list opens the leader's hint, and from the terminal's focus 0x18 twice types one 0x18 into the agent; Ctrl+Alt+X (ESC 0x18) and Alt+O (ESC o) are the agent's as typed, and in the list neither is the leader (#1433)", async () => {
+test("the default leader, Ctrl+X on every platform: 0x18 in the list is the leader (k after it opens the palette), and from the terminal's focus 0x18 twice types one 0x18 into the agent; Ctrl+Alt+X (ESC 0x18) and Alt+O (ESC o) are the agent's as typed, and in the list neither is the leader (#1433)", async () => {
   const DEFAULT = { ...KEY_CONFIG, detachKey: "C-x" };
   for (const platform of ["linux", "darwin"]) {
     const l = await opening({ config: DEFAULT, platform });
+    // Nothing on the screen says the leader waits: k in a later read says it, by the palette it opens.
     for (const typed of ["\x1bo", "\x1b\x18"]) {
       l.stdin.type(typed);
-      assert.doesNotMatch(wholeScreen(l), /Ctrl\+X +then/, `${platform}: ${JSON.stringify(typed)} in the list is not the leader`);
+      l.stdin.type("k");
+      assert.doesNotMatch(wholeScreen(l), /acme-expert-tui +instance/, `${platform}: ${JSON.stringify(typed)} in the list is not the leader`);
     }
     assert.match(wholeScreen(l), /Ctrl\+X +commands +│/, `${platform}: the cheat sheet names Ctrl+X`);
     l.stdin.type("\x18");
-    assert.match(wholeScreen(l), /Ctrl\+X +then +│/, `${platform}: 0x18 is the leader`);
     l.stdin.type("\x18");
-    assert.match(wholeScreen(l), /Ctrl\+X +commands +│/, `${platform}: the leader again puts the cheat sheet back`);
+    l.stdin.type("k");
+    assert.doesNotMatch(wholeScreen(l), /acme-expert-tui +instance/, `${platform}: the leader again cancels it`);
+    l.stdin.type("\x18");
+    assert.match(wholeScreen(l), /Ctrl\+X +commands +│/, `${platform}: the cheat sheet as it was while the leader waits`);
+    l.stdin.type("k");
+    assert.match(wholeScreen(l), /acme-expert-tui +instance/, `${platform}: 0x18 is the leader`);
+    l.stdin.type("\x1b\x1b[I");
     l.stdin.type("q");
     assert.equal(await l.status, 0);
     const r = await viewing({ config: DEFAULT, platform });
@@ -1483,12 +1483,15 @@ test("the default leader, Ctrl+X on every platform: 0x18 in the list opens the l
 test("under the confirmed protocol the default leader Ctrl+X is CSI 120;5u in the list and from the terminal's focus, and twice types 0x18 into the agent; Ctrl+Shift+X and Ctrl+Alt+X are never the leader, and reach the agent as 0x18 and ESC 0x18, Alt+O as ESC o (#1433)", async () => {
   const l = await opening({ keyboard: true, platform: "linux", config: { ...KEY_CONFIG, detachKey: "C-x" } });
   l.stdin.type("\x1b[?5u");
+  // Nothing on the screen says the leader waits: k in a later read says it, by the palette it opens.
   for (const typed of ["\x1b[120;6u", "\x1b[120:88;6u", "\x1b[120;7u", "\x1b[111;3u"]) {
     l.stdin.type(typed);
-    assert.doesNotMatch(wholeScreen(l), /Ctrl\+X +then/, `${JSON.stringify(typed)} in the list is not the leader`);
+    l.stdin.type("k");
+    assert.doesNotMatch(wholeScreen(l), /acme-expert-tui +instance/, `${JSON.stringify(typed)} in the list is not the leader`);
   }
   l.stdin.type("\x1b[120;5u");
-  assert.match(wholeScreen(l), /Ctrl\+X +then +│/, "CSI 120;5u is the leader");
+  l.stdin.type("k");
+  assert.match(wholeScreen(l), /acme-expert-tui +instance/, "CSI 120;5u is the leader");
   l.stdin.type("\x1b[27u");
   l.stdin.type("q");
   assert.equal(await l.status, 0);
@@ -1800,14 +1803,18 @@ test("two groups: a split resizes the first group's windows to its region; a tab
 test("keys typed after a switch of group or tab reach the agent switched to, also while the output is blocked and no frame is written: the panel is fitted first (T3, round 1 of the review)", async () => {
   const r = await viewingTwoTabs({ columns: 120, rows: 40 });
   for (const k of ["|", "\t", "m"]) { r.stdin.type("\x1c"); r.stdin.type(k); await settle(); } // @1 in the first group, @2 in the second, focused
+  // A redraw in full (a resize to the same size) is the frame that blocks; the leader draws
+  // nothing, and Tab, in a later read, is drawn by no frame.
+  r.stdout.accepts = false;
+  r.stdout.resize(r.stdout.columns, r.stdout.rows);
+  r.stdout.accepts = true;
+  r.stdout.take();
   r.log.length = 0;
   const did = () => { const d = panelDid(r).filter(([what]) => what !== "refresh"); r.log.length = 0; return d; };
-  // The leader's hint is the frame that blocks; Tab, in a later read, is drawn by none.
-  r.stdout.accepts = false;
   r.stdin.type("\x1c");
-  r.stdout.accepts = true;
   r.stdin.type("\t");
   await settle();
+  assert.equal(r.stdout.take(), "", "no frame is written while the output is blocked");
   r.stdin.type("for-first-agent");
   assert.deepEqual(did(), [["focus", "@1"], ["input", "for-first-agent"]], "the keys go to @1, never to @2");
   r.stdout.emit("drain"); await settle();
@@ -1820,10 +1827,11 @@ test("keys typed after a switch of group or tab reach the agent switched to, als
   h.stdin.type("\x1c"); h.stdin.type("|"); await settle();
   h.stdout.resize(80, 24); await settle();
   assert.deepEqual(panelDid(h).filter(([what]) => what === "hide"), [["hide", "@2"]], "the focused empty group alone");
-  h.log.length = 0;
   h.stdout.accepts = false;
-  h.stdin.type("\x1c");
+  h.stdout.resize(h.stdout.columns, h.stdout.rows);
   h.stdout.accepts = true;
+  h.log.length = 0;
+  h.stdin.type("\x1c");
   h.stdin.type("\t");
   await settle();
   h.stdin.type("keep-these-bytes");
@@ -1835,8 +1843,9 @@ test("keys typed after a switch of group or tab reach the agent switched to, als
   // A tab switched within one group, blocked the same way: the tab before shown first, then the keys.
   const t = await viewingTwoTabs();
   t.stdout.accepts = false;
-  t.stdin.type("\x1c");
+  t.stdout.resize(t.stdout.columns, t.stdout.rows);
   t.stdout.accepts = true;
+  t.stdin.type("\x1c");
   t.stdin.type("\x1b[D");
   await settle();
   t.log.length = 0;

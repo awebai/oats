@@ -251,7 +251,7 @@ const LEAD = Object.freeze([LEADER_KEY, "commands"]);
 const ARROWS = Object.freeze(process.platform === "darwin" ? [] : [["Alt+Shift+Up/Down", "agent"]]);
 /** The cheat sheet of the list. The selected row of the fixture runs, so Enter opens it and `open`
  *  stands after the leader and the palette; then `n spawn`, and `help` and `quit` last. The sheet
- *  is small: the acts, the list's own keys and the views are the leader's hint's, the palette's and
+ *  is small: the acts, the list's own keys and the views are the leader's, the palette's and
  *  the help's (each row of the accordion carries its view's key). Where the rows are short the sheet
  *  gives hints up from its end: under the fixture's roster at 80x24 all six stand, at 60x15 the
  *  leader alone. */
@@ -3266,8 +3266,8 @@ function drawPanel(state, sz) {
 }
 const PANEL_WIDE = [size(80, 24), size(100, 30), S120, size(200, 50)];
 /** The cheat sheet of the list while a terminal is open: what Enter does on the row whose terminal
- *  is open, then the list's `n spawn`. The terminal's keys (zoom, close, the tabs) are the leader's
- *  hint's, the palette's and the help's. */
+ *  is open, then the list's `n spawn`. The terminal's keys (zoom, close, the tabs) are the leader's,
+ *  the palette's and the help's. */
 const TERMINAL_SHEET = Object.freeze([LEAD, ["Ctrl+K", "palette"], ["Enter", "focus terminal"], ["n", "spawn"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]]);
 
 test("Enter: the terminal stands beside the sidebar, where the detail was, edge to edge to the right and over every row; its top row names the agent, and its screen is placed from the row under it, the agent's colours kept and clipped to the panel", () => {
@@ -3447,109 +3447,63 @@ test("the leader then Esc from a terminal opened from the detail's focus draws t
   assert.deepEqual(hintsOf(narrow), TERMINAL_SHEET);
 });
 
-// ── The leader's hint (T1b) ──────────────────────────────────────────────────────────────────────
+// ── While the leader waits (T1b) ─────────────────────────────────────────────────────────────────
 
 /** The state while the leader waits for its key: the leader alone, from the focus the state has. */
 const waiting = (state) => leaderThen(state, "escape").leader.state;
-/** What the hint names after the leader's key, in the leader's table's order (actions.mjs LEADER);
- *  the terminal's keys only while one is open ("Settled" 4). `Esc the list` stands last, always. */
-const HINTS = Object.freeze([["k", "palette"], ["1-3", "views"], ["Up/Down", "instance"], ["X/R/S/D", "acts"], ["/", "filter"], ["o", "workspaces"], ["?", "help"]]);
-// With one tab open the split keys are named too (T3: one group, so `|/- split`).
-const TERMINAL_HINTS = Object.freeze([["k", "palette"], ["1-3", "views"], ["Up/Down", "instance"], ["z", "zoom"], ["w", "close terminal"], ["|/-", "split"], ["X/R/S/D", "acts"], ["/", "filter"], ["o", "workspaces"], ["?", "help"]]);
-const LAST_HINT = Object.freeze(["Esc", "the list"]);
-/** The leader's hint whole: its key, the hints, while what is typed goes to the agent the leader
- *  again (which types it there), and `Esc the list`. */
-const leaderHint = (hints = HINTS, { key = LEADER_KEY, typing = false } = {}) => [[key, "then"], ...hints, ...(typing ? [[key, `types ${key}`]] : []), LAST_HINT];
-/** The hint in `count` rows: given up from the end, down to the leader alone; `Esc the list` kept
- *  last while there are two rows. */
-const keptHint = (whole, count) => (count >= whole.length ? whole : count >= 2 ? [...whole.slice(0, count - 1), whole.at(-1)] : whole.slice(0, 1));
-/** The row of the cheat sheet's last hint. */
-const sheetEnd = (d) => d.cells.findLastIndex((_, r) => isRule(d, r)) + sheetOf(d).length;
-/** The tab bar of a terminal over the whole screen while the leader waits, `cols` wide: its one
- *  tab (the agent's name in brackets), then as many of the hint's keys as fit before the last
- *  column, three cells after the tab and between two, given up from the end, `Esc the list` kept
- *  last. */
-function leaderTitle(cols, whole, name = "dev-a") {
-  const text = (list) => list.map(([key, word]) => `${key} ${word}`).join("   ");
-  let kept = whole;
-  const tab = `[${name}]`;
-  while (kept.length > 1 && tab.length + 3 + text(kept).length > cols - 1) kept = [...kept.slice(0, -2), kept.at(-1)];
-  return `${tab.padEnd(cols - 1 - text(kept).length)}${text(kept)}`;
-}
-
-test("while the leader waits, the cheat sheet is its hint and nothing else on the screen changes: at 80x24, cell for cell, the leader's key in bold, then what the keys after it do, a row each, the ones that do not fit given up from the end and `Esc the list` last", () => {
-  const HINT_80 = [[LEADER_KEY, "then"], ["k", "palette"], ["1-3", "views"], ["Up/Down", "instance"], ["X/R/S/D", "acts"], LAST_HINT];
-  assert.deepEqual(keptHint(leaderHint(), 6), HINT_80);
-  for (const ascii of [false, true]) {
-    const d = draw(waiting(golden({ ascii })), S80), before = draw(golden({ ascii }), S80), from = d.cells.findLastIndex((_, r) => isRule(d, r)) + 1;
-    assert.deepEqual(d.lines.slice(0, from), before.lines.slice(0, from), `${ascii ? "ascii: " : ""}the sidebar above the sheet`);
-    for (const r of bodyRows(S80)) assert.equal(cellText(d, r, d.cols), cellText(before, r, d.cols), `${ascii ? "ascii: " : ""}row ${r} of the main area`);
-    assert.deepEqual(sheetOf(d), sheet(HINT_80), ascii ? "the hint is printable ASCII as it is" : "UTF-8");
-    assert.equal(sheetEnd(d), S80.rows - 1, "to the last row");
-    d.cells[from].slice(0, d.cols).forEach((cell, x) => assert.deepEqual(cell.style, x >= 1 && x <= LEADER_KEY.length ? style({ bold: true }) : PLAIN, `the leader's row, cell ${x}`));
-  }
+/** What a frame shows: every cell, its text and its style, the cursor, and the terminal's place. */
+const seen = (d) => ({ cells: d.cells, cursor: d.cursor, terminal: d.terminal });
+/** dev-a's and dev-b's terminals open, each a tab, dev-b's with the focus (the leader then Down). */
+const twoTabs = () => { const s = leaderThen(panelIn("focus"), "down").state; return reduce(s, { shown: { id: s.terminal.id } }).state; };
+/** Every view, focus and overlay the leader can be pressed in, each as it stands before it. */
+const ARMED = () => ({
+  "the list": golden(), "the list, ascii": golden({ ascii: true }), "the detail's focus": press(golden(), ["tab"]).state,
+  "the default leader": golden({ detachKey: undefined }), "Alt+O": openable({ detachKey: "M-o" }), "F12": openable({ detachKey: "F12" }),
+  "the terminal's focus": panelIn("focus"), "the terminal's focus, Alt+O": panelIn("focus", { detachKey: "M-o" }),
+  "the terminal's focus, kitty": reduce(panelIn("focus"), { keyboard: 5 }).state, "the terminal's focus, ascii": Object.freeze({ ...panelIn("focus"), ascii: true }),
+  "the list beside a terminal": panelIn("list"), "a zoomed terminal": panelIn("zoom"), "the detail beside a terminal": panelIn("detail"),
+  "two tabs": twoTabs(), "two tabs, kitty": reduce(twoTabs(), { keyboard: 5 }).state, "two tabs, the list": leaderThen(twoTabs(), "escape").state,
+  "a split": leaderThen(twoTabs(), "|").state, "a split, kitty": reduce(leaderThen(twoTabs(), "|").state, { keyboard: 5 }).state,
+  "the switcher": press(golden(), ["w"]).state, "the Souls view": press(golden(), ["2"]).state, "the Capabilities view": press(golden(), ["3"]).state,
+  "the help": press(golden(), ["?"]).state, "the palette": paletteOpen(golden()), "the palette over a terminal": leaderThen(panelIn("focus"), "k").state,
+  "the spawn prompt": press(golden(), ["n"]).state, "the filter field": press(golden(), ["/"]).state,
 });
 
-test("the leader's hint at every height from 15 to 40 rows and at 60, 80 and 120 columns: as many hints as fit, given up from the end, `Esc the list` never while it has two rows; the terminal's `z zoom` and `w close terminal` named only while a terminal is open, and the leader again only while the terminal has the focus (Settled 4)", () => {
-  assert.deepEqual(leaderHint(), [[LEADER_KEY, "then"], ...HINTS, LAST_HINT], "where every row is there, every key is named");
-  for (const cols of [60, 80, 120]) for (let rows = MIN_SIZE.rows; rows <= 40; rows++) {
-    const sz = size(cols, rows), at = `${cols}x${rows}`;
-    const cases = [["no terminal", draw(waiting(golden()), sz), leaderHint()], ["the list's focus", drawPanel(waiting(panelIn("list")), sz), leaderHint(TERMINAL_HINTS)]];
-    // Under 80 columns a terminal with the focus has the whole screen: no sidebar (the next test).
-    if (cols >= WIDE) cases.push(["the terminal's focus", drawPanel(waiting(panelIn("focus")), sz), leaderHint(TERMINAL_HINTS, { typing: true })]);
-    for (const [how, d, whole] of cases) {
-      const hints = hintsOf(d);
-      assert.deepEqual(hints, keptHint(whole, hints.length), `${at} ${how}`);
-      assert.equal(hints.length === whole.length || sheetEnd(d) === rows - 1, true, `${at} ${how}: the sheet gives rows up only when it reaches the last row`);
-      if (how === "no terminal") assert.equal(hints.some(([key]) => key === "z" || key === "w"), false, `${at}: no terminal, so no key of one`);
-    }
-  }
-  // The roster of the fixture at 60x15: the list scrolls, and the leader alone is left.
-  assert.deepEqual(hintsOf(draw(waiting(golden()), S60)), [[LEADER_KEY, "then"]]);
-  assert.deepEqual(hintsOf(draw(waiting(golden()), size(80, 40))), leaderHint());
-});
-
-test("over the whole screen a terminal's title row is the leader's hint at its right while the leader waits, dim, as many as fit after the agent's name, `Esc the list` kept last; the leader again named, as the terminal has the focus", () => {
-  const whole = leaderHint(TERMINAL_HINTS, { typing: true });
-  assert.equal(leaderTitle(80, whole), "[dev-a]   Ctrl+\\ then   k palette   1-3 views   Up/Down instance   Esc the list");
-  assert.equal(leaderTitle(60, whole), "[dev-a]              Ctrl+\\ then   k palette   Esc the list", "the bracketed tab leaves no room for 1-3 views at 60");
-  for (let cols = MIN_SIZE.cols; cols <= 200; cols++) {
-    const cases = [["zoom", panelIn("zoom")], ...(cols < WIDE ? [["focus", panelIn("focus")]] : [])];
-    for (const [how, state] of cases) {
-      const d = drawPanel(waiting(state), size(cols, 24)), at = `${cols} ${how}`;
-      assert.equal(d.terminal.whole, true, at);
-      assert.equal(cellText(d, 0), leaderTitle(cols, whole), at);
-      const keys = leaderTitle(cols, whole).slice("[dev-a]".length).trimStart();
-      assert.equal(d.cells[0].slice(cols - 1 - keys.length, cols - 1).every((cell) => cell.text === " " || cell.style.dim), true, `${at}: dim`);
-      assert.equal(d.lines[1], "$ hello", `${at}: the agent's screen unchanged`);
+test("while the leader waits nothing on the screen changes: in every view, focus and overlay, at every size from 60x15 to 200x50, with the default leader, a rebound one and in ASCII, the frame is cell for cell the one before it, its cheat sheet the same rows and a zoomed terminal's title row the same keys", () => {
+  const SIZES_ARMED = [S60, size(60, 24), size(79, 24), S80, size(80, 15), size(100, 30), S120, size(200, 50)];
+  for (const [how, state] of Object.entries(ARMED())) {
+    const armed = waiting(state);
+    assert.equal(armed.leader?.waiting, true, `${how}: the leader waits`);
+    for (const sz of SIZES_ARMED) {
+      const at = `${how} at ${sz.cols}x${sz.rows}`, before = drawPanel(state, sz), after = drawPanel(armed, sz);
+      assert.deepEqual(hintsOf(after), hintsOf(before), `${at}: the cheat sheet`);
+      assert.deepEqual(after.lines, before.lines, `${at}: every row`);
+      assert.deepEqual(seen(after), seen(before), `${at}: every cell and the cursor`);
     }
   }
 });
 
-test("a rebound leader is named in its hint, by the key tui.json gave it spelt for people, at 60, 80 and 120 columns", () => {
-  for (const detachKey of ["F12", "C-a", "C-F5", "M-x"]) {
-    const key = backKeyLabel(detachKey);
-    for (const sz of [S60, S80, S120]) {
-      const hints = hintsOf(draw(waiting(openable({ detachKey })), sz));
-      assert.deepEqual(hints, keptHint(leaderHint(HINTS, { key }), hints.length), `${detachKey} at ${sz.cols}`);
-    }
-    // Once its next key came, the cheat sheet names it first again, with `commands`.
-    assert.deepEqual(hintsOf(draw(leaderThen(openable({ detachKey }), "escape").state, S80)).slice(0, 3), [[key, "commands"], ["Ctrl+K", "palette"], ["Enter", "open"]], detachKey);
-  }
+test("while the leader waits the sheet is the one it stands in: the leader's `commands` first, in the list and beside a terminal; the terminal's three, then its chords, without the kitty keyboard protocol; with two tabs and a split", () => {
+  assert.deepEqual(hintsOf(draw(waiting(golden()), S80)), SHEET_80, "the list at 80x24");
+  assert.deepEqual(hintsOf(draw(waiting(golden()), S60)), [LEAD], "at 60x15 the leader alone");
+  assert.deepEqual(hintsOf(drawPanel(waiting(panelIn("list")), S80)), TERMINAL_SHEET.slice(0, hintsOf(drawPanel(panelIn("list"), S80)).length), "the list beside a terminal");
+  assert.deepEqual(hintsOf(drawPanel(waiting(panelIn("focus")), S120)), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], ...ARROWS], "the terminal's focus");
+  for (const state of [twoTabs(), leaderThen(twoTabs(), "|").state]) assert.deepEqual(hintsOf(drawPanel(waiting(state), S120)), hintsOf(drawPanel(state, S120)));
+  assert.equal(hintsOf(drawPanel(waiting(golden()), size(80, 40))).some(([, word]) => word === "then"), false, "no `then`: the leader's table is the help's");
 });
 
-test("once the leader's next key comes the cheat sheet is back: Esc, the leader again, or a key not in its table in the list; from a terminal, Esc gives the list's sheet, and a key not in the table leaves the terminal's", () => {
+test("once the leader's next key comes the cheat sheet is as it was: Esc, the leader again, or a key not in its table in the list; from a terminal, Esc gives the list's sheet, and a key not in the table leaves the terminal's", () => {
   for (const key of ["escape", golden().leaderKey, "x", "q"]) assert.deepEqual(hintsOf(draw(leaderThen(golden(), key).state, S80)), SHEET_80, key);
   assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus"), "escape").state, S80)), TERMINAL_SHEET);
   assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus"), "x").state, S80)), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], ...ARROWS]);
 });
 
-test("with no tui.json the leader is Ctrl+X on every platform, and the cheat sheet, the leader's hint and the help name it so, the terminal's sheet with its Esc and its twice (#1433)", () => {
+test("with no tui.json the leader is Ctrl+X on every platform, and the cheat sheet (the same while it waits) and the help name it so, the terminal's sheet with its Esc and its twice (#1433)", () => {
   for (const platform of ["linux", "win32", "darwin"]) {
     const list = golden({ detachKey: undefined, platform });
     assert.deepEqual([list.detachKey, list.leaderKey], ["C-x", "ctrl+x"], platform);
     assert.deepEqual(hintsOf(draw(list, S80))[0], ["Ctrl+X", "commands"], `${platform}: the cheat sheet`);
-    assert.deepEqual(hintsOf(draw(waiting(list), size(80, 40)))[0], ["Ctrl+X", "then"], `${platform}: the leader's hint`);
+    assert.deepEqual(hintsOf(draw(waiting(list), size(80, 40))), hintsOf(draw(list, size(80, 40))), `${platform}: the same while the leader waits`);
     const help = helpLines(openable({ detachKey: undefined, platform })).map((line) => line.trim()), text = help.join(" ").replace(/ +/g, " ");
     assert.equal(help.includes("Ctrl+X then one of these keys, from every focus; a terminal too:"), true, `${platform}: the leader's section`);
     assert.equal(help.some((line) => line.replace(/ {2,}/g, "  ") === `Ctrl+X  ${LEADER_AGAIN}`), true, `${platform}: the leader again`);
@@ -3956,7 +3910,7 @@ test("at 60 columns the help's `The leader` section has every row whole: the sen
       "  Esc        the list",
       `  ${key.padEnd(11)}the leader again: types it into the terminal`,
       "             that has the focus; with the list focused,",
-      "             closes the hint",
+      "             cancels the leader",
     ], key);
     for (const line of lines.slice(from, to)) assert.equal(textWidth(line) <= 60 - 2, true, `the right margin is kept: ${line}`);
   }

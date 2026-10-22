@@ -137,8 +137,7 @@ while a terminal is open); under 80 columns it has the whole width.
   view's heading is bold and its list stands under it, with a rule between
   it and the views before and after it. `1`, `2` and `3` open them in the
   list, and [the leader](#the-leader) then `1`, `2` or `3` from anywhere;
-  the leader's hint, [the palette](#the-palette) and the help name those
-  keys. [The Souls view](#the-souls-view) lists the open workspace's souls,
+  [the palette](#the-palette) and the help name those keys. [The Souls view](#the-souls-view) lists the open workspace's souls,
   and [the Capabilities view](#the-capabilities-view) its capabilities. A
   workspace with no instances reads `No agents yet: n spawns one`, with the
   key `spawn` has (`No agents yet.` when it has none).
@@ -153,10 +152,10 @@ while a terminal is open); under 80 columns it has the whole width.
   and `? help` and `q quit` last; with the detail's focus `Tab back`
   comes before `Enter`. The other keys (the acts, `/`, `Tab`, `r`,
   and a terminal's `z`, `c`, `[` and `]`) are not listed there:
-  the leader's hint, the palette and the help name them. While the
+  the palette and the help name them. While the
   terminal has the focus, in an overlay and in the filter field it names
-  the keys that work them. While the leader waits for its key the rows are
-  the leader's hint.
+  the keys that work them. While the leader waits for its key the rows do
+  not change.
   Everything flows from the top, so empty rows are at the bottom. On a
   short screen the list keeps its rows first: the cheat sheet gives up rows
   from its end, down to the leader alone, then the empty row under the
@@ -403,7 +402,7 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   taken.
 - **With the list focused** the terminal stays open, and the agent's screen
   is still drawn as it changes. The cheat sheet names `Enter focus terminal`
-  on its row; the leader's hint names `z zoom` and `w close terminal`.
+  on its row; the help names the leader's `z` (zoom) and `w` (close terminal).
   - `Enter` on the shown terminal's row gives it the focus again.
   - `z` gives it the focus and the whole screen: the sidebar is hidden. The
     leader then `Esc` brings the sidebar back beside it, and the leader then
@@ -425,9 +424,8 @@ fit; the detail shows them whole. The TUI's own words end the same way:
 - **With the whole screen** (zoomed, or a narrow terminal) no cheat sheet is
   drawn. The terminal's tab bar carries the keys at its right, dim:
   `Ctrl+X commands   Ctrl+X Esc the list`, after the chords under the kitty
-  keyboard protocol, as many as fit, and while the leader waits, the
-  leader's hint, as many keys as fit, `Esc the list` last. The agent's
-  screen keeps every row under it.
+  keyboard protocol, as many as fit, the same while the leader waits. The
+  agent's screen keeps every row under it.
 - **A terminal also closes by itself** when its viewer ends, shown or
   hidden ([which tab is shown then](#tabs)): the agent's
   window ended, its session went away, or the link to its machine dropped.
@@ -522,8 +520,7 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
     opened says why, as it does with no tab open.
 - **Switching.** `[` and `]` in the Instances view, from the list or the
   detail, show the tab before or after the shown one; the help names them,
-  and the leader's hint names the leader's own while two tabs or more are
-  open. The leader then
+  and the leader's own. The leader then
   `Left` or `Right` does the same from any focus, and from another view
   goes to the Instances view first.
   - The bar does not wrap: on the first tab `[` does nothing, and on the
@@ -1345,18 +1342,12 @@ which edits the command line in your editor, is `Ctrl+X` twice, then
 | `o` | [the switcher](#the-switcher) |
 | `?` | the help |
 | `Esc` | gives the list the focus |
-| the leader again | types the leader into the terminal that has the focus, which keeps it; with the list focused, only closes the hint |
+| the leader again | types the leader into the terminal that has the focus, which keeps it; with the list focused, only cancels the leader |
 
-- **While the leader waits** for its key the cheat sheet's rows are its
-  hint: `Ctrl+X then`, then a row per key, `Esc the list` last. It names
-  these keys but `n` and `N` (`z` and `w` only while a terminal is open,
-  `Left` and `Right` only with two tabs or more, `|` and `-` while the
-  panel has one group, `Tab` with two, then `m` while the focused group
-  shows a tab or `x` while it is empty, and the leader again while a
-  terminal has the focus). On a short screen it gives up rows before its
-  last. It waits
-  with no time limit. A key not in the table cancels it and is dropped:
-  nothing is typed.
+- **While the leader waits** for its key nothing on the screen changes:
+  the cheat sheet stays as it was, and the help (`?`) lists the whole
+  table above. It waits with no time limit. A key not in the table
+  cancels it and is dropped: nothing is typed.
 - **Only a key in a later read counts.** A key that came in the same read of
   input as the leader cancels it and is dropped, with the rest of that
   read, so a paste can never run a command. In a terminal the bytes before

@@ -257,11 +257,11 @@ const mainOf = (screen, cols = 80) => screen.map((text) => [...text].slice(listC
  *  names a filter). */
 const viewRow = (name, key, width = listCols(80)) => `${` ${name}`.padEnd(width - 2)}${key}`;
 /** The cheat sheet on a screen as words: each row its key and what it does with the run of blanks
- *  between them made one space, from the leader's row (`commands`, or `then` while the leader
- *  waits) to the first empty row; [] when the screen draws no sheet. */
+ *  between them made one space, from the leader's row (`commands`) to the first empty row; []
+ *  when the screen draws no sheet. */
 function sheetOf(screen, cols = 80) {
   const side = sidebarOf(screen, cols).map((text) => text.trim().replace(/ {2,}/g, " "));
-  const first = side.findIndex((text) => text === `${LEADER} commands` || text === `${LEADER} then`);
+  const first = side.findIndex((text) => text === `${LEADER} commands`);
   if (first < 0) return [];
   const end = side.indexOf("", first);
   return side.slice(first, end < 0 ? undefined : end);
@@ -271,8 +271,14 @@ function sheetOf(screen, cols = 80) {
 const words = (hints) => hints.map(([key, word]) => `${key} ${word}`);
 /** Whether the cheat sheet on a screen begins with `hints`. */
 const sheetStarts = (screen, hints) => JSON.stringify(sheetOf(screen).slice(0, hints.length)) === JSON.stringify(words(hints));
-/** The leader's hint, while it waits for its key (docs/tui.md, "The leader"): its first rows. */
-const LEADER_HINT = [[LEADER, "then"], ["k", "palette"]];
+/** The leader, then `key` in a later read (docs/tui.md, "The leader"): nothing on the screen says
+ *  the leader waits, so the key is pressed a pause after it, by a send-keys of its own. */
+const LEADER_GAP_MS = 300;
+async function leaderThen(term, key) {
+  term.press(LEADER_KEY);
+  await new Promise((done) => setTimeout(done, LEADER_GAP_MS));
+  term.press(key);
+}
 /** The open view's list on a screen: the sidebar's rows under its heading (`heading`, that row as
  *  it stands), down to the rule under them. */
 function listUnder(screen, heading, cols = 80) {
@@ -1400,9 +1406,7 @@ test("the Souls view, with the real `oats souls`: the leader then 2 shows the wo
   const term = await terminal(t);
   const run = await tui(term);
   const row = (name) => term.screen().find((line) => new RegExp(`^[> ] ■ ${name}\\b`).test(line)) ?? null;
-  term.press(LEADER_KEY);
-  await until(term, () => sheetStarts(term.screen(), LEADER_HINT), "the leader's hint");
-  term.press("2");
+  await leaderThen(term, "2");
   await until(term, () => row("dev") !== null && row("reviewer") !== null, "the souls, read with `oats souls`");
   assert.match(row("dev"), /^[> ] ■ dev ·2(?: |│|$)/, "dev has alpha and beta here");
   assert.match(row("reviewer"), /^[> ] ■ reviewer ·1(?: |│|$)/, "reviewer has gamma");
@@ -1438,9 +1442,7 @@ test("the Capabilities view, with the real `oats capabilities` and `oats souls`:
   const run = await tui(term, {}, { world });
   const list = () => listUnder(term.screen(), viewRow("Capabilities", "3"));
   const detail = () => term.screen().map((line) => (line.split("│")[1] ?? "").trimEnd());
-  term.press(LEADER_KEY);
-  await until(term, () => sheetStarts(term.screen(), LEADER_HINT), "the leader's hint");
-  term.press("3");
+  await leaderThen(term, "3");
   await until(term, () => list().some((line) => /^> +acme\.notes$/.test(line)), "the capabilities, read with `oats capabilities`, the first selected");
   assert.equal(list()[0], " Workspace owned", `the section of the member's capabilities heads the list:\n${term.shows()}`);
   assert.match(list()[1], /^ {2}\S.* · member repo · host$/, "then the group of its repository, the host's");
