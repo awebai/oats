@@ -16,7 +16,9 @@ export { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } fro
 export { createRefreshLoop } from "../../client/refresh-loop.mjs";
 export { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
 export { panelData, cliReadsRemotes, workspaceChoices, viewModel, listedViews, deployments } from "../../client/panel-views.mjs";
-export { cliDeploymentIdentity, identityReadable, identityTimedOut } from "../../client/deployment-identity.mjs";
+export { cliDeploymentIdentity, identityReadable, identityTimedOut, waitingReadable } from "../../client/deployment-identity.mjs";
+export { workspaceStep } from "../../client/workspace-step.mjs";
+export { createListedWaiting } from "../../client/listed-waiting.mjs";
 export { remoteRosterState } from "../../client/remote-roster.mjs";
 export { observeIdentities, identityMemory } from "../../client/remote-identity-memory.mjs";
 export { workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION } from "../../client/workspace-choices.mjs";
@@ -51,7 +53,7 @@ export { subsequenceScore } from "../../client/subsequence-score.mjs";
 export { createCapabilityCatalog, capabilityCatalogKey } from "../../client/capability-catalog.mjs";
 export { memberNames, capabilitySource, groupCapabilities, hostKeyOf, capabilitySections, matchCapabilities, soulsComposition, rosterAgentName, layerLabel, capabilityUsers } from "../../client/capability-rows.mjs";
 export { capabilityFacts, CAPABILITY_COPY } from "../../client/capability-facts.mjs";
-export { CHORDS, CHORD_FAMILY_LABELS, DEFAULT_CHORD_FAMILY, LEADER_TABLE, PALETTE_KEYS, PLAIN_KEYS, chordKeyOf, leaderKey, plainKeys } from "../../client/keymap.mjs";
+export { CHORDS, CHORD_FAMILY_LABELS, DEFAULT_CHORD_FAMILY, LEADER_TABLE, PALETTE_KEYS, PLAIN_KEYS, chordKeyOf, doesLabel, leaderKey, plainKeys } from "../../client/keymap.mjs";
 // keys.json, the chord family both clients bind (docs/tui.md, "Switch to Ctrl+Shift"): the TUI reads the file
 // itself, at its start (lib/config.mjs loadKeys), and the shared reader says what its text means.
 export { KEYS_LIMIT, chordFamilyFrom, chordFamilyNote, keysPath } from "../../client/keys-file.mjs";

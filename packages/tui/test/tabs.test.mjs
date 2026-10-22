@@ -89,8 +89,9 @@ test("at the cap nothing closes on its own and nothing opens: the line says that
   assert.equal(step.state.outcome.said.map((part) => part.own).join(""), FULL);
   // A tab that is open is still shown at the cap.
   assert.deepEqual(key(on(s, "dev-a"), "enter").effect, { show: idOf(s, "dev-a") });
-  // The leader's Up and Down open with the same rule (Settled 8): the cap's line, nothing opened.
-  const led = leaderThen(opened(SIX(), "dev-a", "dev-b", "dev-c", "dev-d"), "down");
+  // Alt+Shift+Up and Down (the previous and the next instance, from the terminal's focus as its
+  // scanner hands them on) open with the same rule (Settled 8): the cap's line, nothing opened.
+  const led = reduce(opened(SIX(), "dev-a", "dev-b", "dev-c", "dev-d"), { chord: "next", read: 9000 });
   assert.deepEqual([led.state.tabs.length, led.state.outcome.said.map((part) => part.own).join("")], [4, FULL]);
 });
 

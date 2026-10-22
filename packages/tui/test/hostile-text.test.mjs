@@ -306,12 +306,12 @@ const printed = async (...groups) => ({ envelope: await cliRemoteRoster(CLI.bin,
 /** A key on a state, with the geometry of an 80x24 frame: these keys read none of it. */
 const key = (state, ...ids) => ids.reduce((s, id) => reduce(s, { key: id, page: 19, extent: 0, room: 19, cols: 38 }).state, state);
 /** The second choice of the switcher, opened: the view of a machine that is in no view with this one. */
-const second = (state) => key(state, "w", "j", "enter");
+const second = (state) => key(state, "w", "w", "j", "enter");
 /** A workspace key whose last segment, the name a view of machines alone is shown under, is `value`. */
 const named = (value) => ({ ...IDENTITY, key: `acme/${value}` });
 
 /** The switcher, shown over the Instances view of `state`. */
-const switching = (state) => key(state, "w");
+const switching = (state) => key(state, "w", "w");
 
 /** Each place a machine, a registration, a roster read or this computer's deployments list can put
  *  text, and a state that shows `value` there: in the Instances view, or for what a Remove
@@ -410,7 +410,7 @@ for (const [field, { make, seen, lead = null, inSwitcher = false }] of Object.en
       }
       // With a locale that is not UTF-8: the list and the switcher, where the screen has the most to replace.
       const plain = await make(value, { ascii: true });
-      for (const [view, state] of [["the list and the detail", key(plain, "G")], ["the switcher", key(plain, "G", "w")]]) {
+      for (const [view, state] of [["the list and the detail", key(plain, "G")], ["the switcher", key(plain, "G", "w", "w")]]) {
         const at = `${name}, ${view}, 80x24, not UTF-8`, drawn = draw(state, S80, { utf8: false });
         census(drawn.rows, S80, NOT_UTF8, at, drawn.cells);
         within(drawn, S80, at);
@@ -419,24 +419,28 @@ for (const [field, { make, seen, lead = null, inSwitcher = false }] of Object.en
   });
 }
 
-test("a hostile machine name in the sidebar's title, `on <machine>`, leaves no control byte of its own on the screen: an escape sequence, a bidi override and wide characters, each cut inside the title's row, where no count stands any more", () => {
+test("a hostile machine name in the open workspace's row of the sidebar's list of workspaces, `on <machine>`, leaves no control byte of its own on the screen: an escape sequence, a bidi override and wide characters, each cut inside that row, where no count stands any more", () => {
   const names = { "an escape sequence": `gar${ESC}[2J${ESC}]0;owned${BEL}net`, "a bidi override": "gar\u202Enet", "wide characters": "名前".repeat(80) };
   for (const [name, value] of Object.entries(names)) for (const look of [UTF8, NOT_UTF8]) for (const size of [S80, S120, S60]) {
     const state = second(heard(reporting({ ascii: look.ascii }), answered(group({ label: value, workspace: ELSEWHERE })), T1)), at = `${name}, ${size.cols}x${size.rows}${look.utf8 ? "" : ", not UTF-8"}`;
     const drawn = draw(state, size, { utf8: look.utf8 }), m = model(state, { page: drawn.page, now: NOW, at: new Date(NOW).toISOString(), cols: drawn.cols });
     assert.deepEqual([m.here, m.machines, m.machine], [false, 1, value], `${at}: the model hands the frame the machine's name as the shared entry has it`);
-    // The title is the sidebar's first row: its cells up to the rule beside it (`drawn.cols` wide).
-    const text = census(drawn.rows, size, look, at, drawn.cells), title = drawn.cells[0].slice(0, drawn.cols).map((cell) => cell.text).join("").trimEnd();
+    // The open workspace's row of the list at the top of the sidebar (the second, marked `*`, under
+    // this machine's acme-platform): its cells up to the rule beside it (`drawn.cols` wide).
+    const text = census(drawn.rows, size, look, at, drawn.cells);
+    const row = drawn.cells.findIndex((cells) => cells.slice(0, 3).map((cell) => cell.text).join("") === " * ");
+    assert.equal(row, 1, `${at}: the open workspace is the list's second row`);
+    const title = drawn.cells[row].slice(0, drawn.cols).map((cell) => cell.text).join("").trimEnd();
     within(drawn, size, at);
-    assert.equal(title.startsWith(" billing  on "), true, `${at}: the workspace's name and the TUI's own word stand whole: ${title}`);
-    assert.equal(drawn.cells[0][drawn.cols - 1].text === " " && (size.cols < WIDE || drawn.cells[0][drawn.cols].text === (look.ascii ? "|" : "│")), true, `${at}: the name is cut inside the sidebar's margin, and from 80 columns the rule beside it stands: ${drawn.lines[0]}`);
-    assert.equal(title.includes("running"), false, `${at}: no count stands on the title: ${title}`);
-    const shownName = title.slice(" billing  on ".length).trim();
+    assert.equal(title.startsWith(" * billing  on "), true, `${at}: the workspace's name and the TUI's own word stand whole: ${title}`);
+    assert.equal(drawn.cells[row][drawn.cols - 1].text === " " && (size.cols < WIDE || drawn.cells[row][drawn.cols].text === (look.ascii ? "|" : "│")), true, `${at}: the name is cut inside the sidebar's margin, and from 80 columns the rule beside it stands: ${drawn.lines[row]}`);
+    assert.equal(title.includes("running"), false, `${at}: no count stands on the row: ${title}`);
+    const shownName = title.slice(" * billing  on ".length).trim();
     if (name === "an escape sequence") assert.equal(shownName, "[withheld]", `${at}: a name with a control character is withheld whole`);
     if (name === "a bidi override") assert.equal(shownName, look.utf8 ? "gar\uFFFDnet" : "gar?net", `${at}: a bidi override is replaced, never written`);
     if (name === "wide characters") {
       assert.equal(shownName.endsWith(look.ascii ? "..." : "…"), true, `${at}: a name longer than its cells is cut with the mark: ${shownName}`);
-      if (look.utf8) assert.equal(drawn.cells[0].filter((cell) => cell.width === 2).length >= 4, true, `${at}: in two-cell graphemes, none split`);
+      if (look.utf8) assert.equal(drawn.cells[row].filter((cell) => cell.width === 2).length >= 4, true, `${at}: in two-cell graphemes, none split`);
       else assert.match(shownName, /^\?+\.\.\.$/, `${at}: each replaced by the screen`);
     }
     assert.equal(text.includes("owned"), false, at);
@@ -476,22 +480,24 @@ test("200 machines are drawn in bounded work: the shared home reads each machine
     const last = drawn.lines.findIndex((line) => line.startsWith(" Souls")) - 2;
     assert.equal(drawn.lines[last + 1].startsWith("─".repeat(drawn.cols)), true, `${at}: the rule after the list`);
     assert.equal(drawn.lines[last].slice(0, drawn.cols).trim(), cutNote(0, items - (drawn.page - 1)), `${at}: the list's last row in the sidebar says so`);
-    assert.equal(draw(walked, S80).lines[0].includes(`+${count} machines`), true, `${at}: the sidebar's title counts them`);
+    assert.equal(draw(walked, S80).lines[0].includes(`+${count} machines`), true, `${at}: the open workspace's row of the list counts them`);
     census(drawn.rows, S80, UTF8, at, drawn.cells);
     within(drawn, S80, at);
     // The switcher asks the shared home at each paint, and that too is a fixed number of reads a machine.
-    const switching = key(state, "w"), before = { ...reads }, listed = draw(switching, S80);
+    const switching = key(state, "w", "w"), before = { ...reads }, listed = draw(switching, S80);
     each[count].switcher = { instances: (reads.instances - before.instances) / count, probe: (reads.probe - before.probe) / count };
     census(listed.rows, S80, UTF8, `${at}, the switcher`, listed.cells);
     within(listed, S80, `${at}, the switcher`);
   }
   assert.deepEqual(each[200], each[50], "a machine is read as many times among 200 as among 50: the work grows with the machines, not with their square");
   for (const n of [each[200].taking.instances, each[200].taking.probe, each[200].switcher.probe]) assert.equal(Number.isInteger(n) && n > 0, true, "a whole number of reads a machine");
-  assert.equal(each[200].switcher.instances, 0, "the switcher reads no machine's rows");
+  // The switcher's rows say whether an instance of each workspace needs input (the shared
+  // workspaceChoices' `waiting`): a fixed number of reads of a live machine's rows a paint.
+  assert.equal(Number.isInteger(each[200].switcher.instances) && each[200].switcher.instances > 0, true, "the switcher reads each machine's rows a whole number of times, for whether one needs input");
   // 200 machines matched to no workspace, in the switcher: one screen of them, and the rest counted.
   const never = Array.from({ length: 200 }, (_, i) => group({ id: `quartz-${i}:acme-1`, server: `quartz-${i}`, label: `quartz-${i}`, probe: { ok: false, error: { code: "E_SSH", message: "Permission denied (publickey)." } }, workspace: null, instances: [] }));
   // The switcher has the main area, every row of it: its window is the screen's height.
-  const unmatched = draw(key(heard(reporting(), answered(...never), T1), "w"), S80);
+  const unmatched = draw(key(heard(reporting(), answered(...never), T1), "w", "w"), S80);
   assert.equal(unmatched.lines.slice(0, 23).filter((line) => line.includes("quartz-")).length, 20, "the area holds the open workspace, its line (this machine), the heading and twenty machines");
   assert.equal(unmatched.lines[23].slice(unmatched.cols + 1).trim(), cutNote(0, 203 - 23), "the area's last row says what is cut off");
   within(unmatched, S80, "200 unmatched machines");

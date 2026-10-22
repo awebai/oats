@@ -237,7 +237,7 @@ async function tui(term, { shadow = false, stderr = "pane" } = {}) {
     async ended(why) { let status = null; await until(term, () => (status = run.status()) !== null, `oats tui in ${term.id} to end ${why}`); return status; },
     /** A frame is on the screen: the title names the fixture's workspace, and the cheat sheet
      *  offers `q quit`. */
-    drawn() { const screen = term.screen(); return /^ fixture(?: |│|$)/.test(screen[0] ?? "") && screen.some((row) => QUIT_ROW.test(row)); },
+    drawn() { const screen = term.screen(); return /^ \* fixture(?: |│|$)/.test(screen[0] ?? "") && screen.some((row) => QUIT_ROW.test(row)); },
     /** The list of instances is on the screen: drawn, with the list's cheat sheet (`n spawn`)
      *  and no confirmation's buttons. A confirmation draws no such sheet, so a row's absence means
      *  nothing then. */

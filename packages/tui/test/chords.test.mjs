@@ -602,8 +602,9 @@ const on = (state, name) => Object.freeze({ ...state, selected: idOf(state, name
 /** Each name opened with Enter in turn, its window shown: the last is the shown tab, with the focus in it. */
 const opened = (state, ...names) => names.reduce((s, name) => { const step = key(on(s, name), "enter").state; return reduce(step, { shown: { id: idOf(s, name) }, ...AT }).state; }, state);
 const kitty = (state) => reduce(state, { keyboard: 5 }).state;
-/** The leader's key for a `does` of the chords that has one. */
-const leaderKeyOf = (does) => ({ palette: "k", spawn: "n", workspaces: "o", previous: "up", next: "down", "tab-previous": "left", "tab-next": "right", zoom: "z", "close-terminal": "w", "split-right": "|", "split-down": "-", "group-next": "tab", filter: "/" })[does];
+/** The leader's key for a `does` of the chords that has one. The previous and the next instance have
+ *  none: the leader's Up and Down move between workspaces (actions.mjs CHORD_MOVES). */
+const leaderKeyOf = (does) => ({ palette: "k", spawn: "n", workspaces: "o", "tab-previous": "left", "tab-next": "right", zoom: "z", "close-terminal": "w", "split-right": "|", "split-down": "-", "group-next": "tab", filter: "/" })[does];
 /** The state and the effect, the leader's wait left out (the chord has none). */
 const outcome = (step) => ({ state: { ...step.state, leader: null }, effect: step.effect });
 
@@ -622,7 +623,7 @@ test("from the list a chord does what the leader then its key does: every one on
   }
   assert.notEqual(key(list[0], "alt+shift+down").state.terminal, null, "Alt+Shift+Down opened the next instance's terminal, without the protocol");
   assert.deepEqual(key(list[0], "ctrl+alt+k"), { state: list[0], effect: null }, "ESC and Ctrl+K without the protocol: no key");
-  assert.equal(key(kitty(list[0]), "ctrl+alt+o").state.view, "switcher", "Ctrl+Alt+O: the switcher");
+  assert.deepEqual([key(kitty(list[0]), "ctrl+alt+o").state.view, key(kitty(list[0]), "ctrl+alt+o").state.focus], ["instances", "workspaces"], "Ctrl+Alt+O: the list of workspaces' focus");
   const waiting = reduce(kitty(list[0]), { key: list[0].leaderKey, read: ++reads, ...AT }).state;
   const cancelled = key(waiting, "ctrl+alt+k").state;
   assert.equal(cancelled.palette, null, "while the leader waits a chord is a key not in its table: it cancels the leader");
@@ -645,8 +646,8 @@ test("a chord typed in a terminal is the leader then its key from there, and typ
   assert.notEqual(chorded(kitty(base), "palette").state.palette, null, "Ctrl+Alt+K: the palette, from the terminal's focus");
   assert.equal(chorded(base, "palette").state.palette, null, "without the protocol no Ctrl+Alt chord comes");
   assert.equal(chorded(base, "tab-previous").state.terminal.name, "dev-b", "Alt+Shift+Left without the protocol: the tab before");
-  // An action's own (the switcher, the filter) is run once, as the leader then its key runs it.
-  assert.equal(chorded(kitty(base), "workspaces").state.view, "switcher", "Ctrl+Alt+O from a terminal: the switcher");
+  // An action's own (the list of workspaces, the filter) is run once, as the leader then its key runs it.
+  assert.equal(chorded(kitty(base), "workspaces").state.focus, "workspaces", "Ctrl+Alt+O from a terminal: the list of workspaces' focus");
   assert.equal(chorded(kitty(base), "filter").state.filter.editing, true, "Ctrl+Alt+F from a terminal: the filter field");
 });
 
@@ -691,12 +692,13 @@ test("tab-1 to tab-8 show the focused group's Nth tab and tab-9 its last, the fo
 const helpLines = (chords, lead, ascii = false) => rowStrings(helpRows(ACTIONS, ascii, 140, "M-o", chords, lead), 140).map((line) => line.trimEnd());
 /** A section's table rows as the help draws them: from the indent, the left column as wide as its widest entry, three cells, the meaning. */
 const tableRows = (pairs) => { const widest = Math.max(...pairs.map(([left]) => left.length)); return pairs.map(([left, said]) => `  ${left.padEnd(widest)}   ${said}`); };
-/** The chords' rows under the protocol, as the help says them: each with the leader and its key. */
+/** The chords' rows under the protocol, as the help says them: each with the leader and its key,
+ *  but the previous and the next instance, which the leader's Up and Down no longer do. */
 const LED_ROWS = Object.freeze([
   ["Ctrl+Alt+K", "palette, or Alt+O then k"],
   ["Ctrl+Alt+P", "spawn, or Alt+O then n"],
   ["Ctrl+Alt+O", "workspaces, or Alt+O then o"],
-  ["Alt+Shift+Up/Down", "previous and next instance, or Alt+O then Up and Down"],
+  ["Alt+Shift+Up/Down", "previous and next instance"],
   ["Alt+Shift+Left/Right", "previous and next tab, or Alt+O then Left and Right"],
   ["Ctrl+Alt+1 … Ctrl+Alt+9", "the focused group's first to eighth tab, 9 its last"],
   ["Ctrl+Alt+Z", "zoom, or Alt+O then z"],
@@ -733,7 +735,7 @@ test("without the protocol the leader leads, and a short chords' section after i
   // A key tui.json took: the other of its pair stands alone, still from the table.
   const rebound = ACTIONS.map((action) => (action.id === "help" ? { ...action, keys: ["alt+shift+up"] } : action));
   const alone = rowStrings(helpRows(rebound, false, 140, "M-o", [...chordsRead(chordKeys(false, rebound), true)], true), 140).map((line) => line.trimEnd());
-  assert.equal(alone.some((line) => /^ {2}Alt\+Shift\+Down +next instance, or Alt\+O then Down$/.test(line)), true);
+  assert.equal(alone.some((line) => /^ {2}Alt\+Shift\+Down +next instance$/.test(line)), true);
   assert.equal(alone.some((line) => line.includes("Alt+Shift+Up/")), false);
 });
 
@@ -861,7 +863,7 @@ test("without the protocol the option reads no chord but the Alt+Shift arrows: a
   const base = stateOf(observed([instanceRow("dev", "dev-a")]), { platform: "linux", keysRead: SHIFT_READ });
   assert.deepEqual(outcome(key(base, "ctrl+shift+k")), outcome({ state: base, effect: null }), "before the protocol is confirmed: nothing");
   assert.notEqual(key(kitty(base), "ctrl+shift+k").state.palette, null, "under it: the palette");
-  assert.equal(key(kitty(base), "ctrl+shift+s").state.view, "switcher", "Ctrl+Shift+S: the switcher");
+  assert.equal(key(kitty(base), "ctrl+shift+s").state.focus, "workspaces", "Ctrl+Shift+S: the list of workspaces' focus");
   assert.equal(key(kitty(base), "ctrl+alt+k").state.palette, null, "Ctrl+Alt+K is no chord under the option");
 });
 

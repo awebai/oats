@@ -549,6 +549,16 @@ export const LIST_WORDS = Object.freeze({
   leaving: "oats: a change to this computer's list of deployments is still running; `oats deployments` shows the list.",
 });
 
+/** The lines of the list of workspaces (docs/tui.md, "The list of workspaces"): the leader's Up or
+ *  Down at an end of it, and a row picked there that is not a deployment any more. */
+export const WORKSPACE_WORDS = Object.freeze({
+  above: () => [{ own: "No workspace above this one." }],
+  below: () => [{ own: "No workspace below this one." }],
+  refused: (name) => [{ shown: name }, { own: ": not an OATS deployment any more." }],
+});
+/** The switcher's choice of key `key`, with no filter (workspaceList's rows are its keys), or null. */
+export const listChoice = (state, key, at = new Date(0).toISOString()) => switcherOf(state, at, "").made.items.find((item) => item.key !== undefined && item.key === key) ?? null;
+
 /** What the switcher says above its rows, as views/switcher.mjs leadRows reads it. */
 const leadOf = (state) => ({ said: state.switcher.line, failure: state.listed.failure?.message ?? null, removing: state.switcher.removing !== null });
 /** How many rows stand above the switcher's choices in an area `cols` wide (the switcher's is the
@@ -590,13 +600,21 @@ function indicatorState(info) {
  *  cuts the path and keeps it).
  *  `keys` are the choices in order; `selected` is the key the selection stands on (the first choice
  *  when the state's own is not listed). */
-export function switcher(state, at = new Date(0).toISOString()) {
+export const switcher = (state, at = new Date(0).toISOString()) => switcherOf(state, at, state.switcher.query).made;
+/** The switcher's rows for `query` (`made`), and of each choice's key (`facts`) whether some instance
+ *  of it needs input (`waiting`) and whether none of its deployments is live (`unlive`), which the
+ *  list of workspaces says (workspaceList). */
+function switcherOf(state, at, query) {
   const held = heldOf(state, at);
   const unserved = state.listed.rows.filter((row) => !state.ctxs.includes(row.path));
   // Only a row the kernel says is a deployment is matched: a stale one (missing, not one any more) says so instead.
   const views = listedViews(held, unserved.filter((row) => row.state === "ok"), TERMS);
-  const rows = workspaceChoiceRows(workspaceChoices(held, TERMS, views));
-  const query = state.switcher.query;
+  const choices = workspaceChoices(held, TERMS, views), rows = workspaceChoiceRows(choices);
+  // Whether some instance of a choice needs input: of its served deployments (the shared choice's
+  // `waiting`), or of a listed one this run does not serve (listedWaiting).
+  const waits = new Map(choices.map((choice) => [choice.id, choice.waiting === true || choice.deployments.some((id) => listedWaiting(state, id) === true)]));
+  const facts = new Map();
+  const fact = (id) => facts.set(`view\u0000${id}`, { waiting: waits.get(id) === true, unlive: !(viewOf(id)?.deployments ?? []).some((d) => { const info = views.infos.get(d); return info && !info.listed && deploymentState(info).key === "live"; }) });
   const viewOf = (id) => views.views.find((v) => v.id === id);
   const openView = state.open === null ? null : views.views.find((v) => v.id === state.open || v.deployments.includes(state.open))?.id ?? null;
   const items = [];
@@ -610,11 +628,13 @@ export function switcher(state, at = new Date(0).toISOString()) {
     const join = infos.filter((info) => info.listed).map((info) => info.id);
     items.push({ key: `view\u0000${row.id}`, label: row.label, open: row.id === openView, primary: view.primary, join,
       opens: infos.map((info) => info.id) });
+    fact(row.id);
     for (const line of lines) items.push({ indicator: line });
   }
   const unmatched = rows.filter((row) => row.unattached && choiceMatches(row, query)).map((row) => ({
     key: `view\u0000${row.id}`, label: row.label, place: row.place, notLiveText: row.notLiveText, open: row.id === openView, primary: viewOf(row.id)?.primary ?? null,
   }));
+  for (const row of unmatched) fact(row.key.slice("view\u0000".length));
   const why = new Map(views.unmatched.map((info) => [info.id, info.short]));
   const taken = new Set([...views.infos.keys()]);
   const offered = unserved.filter((row) => !taken.has(row.path))
@@ -622,16 +642,103 @@ export function switcher(state, at = new Date(0).toISOString()) {
       key: `path\u0000${path}`, label: name, place: [why.get(path), shortPath(path, { home: state.home })].filter(Boolean).join(" · "), path, state: listedState, refused: state.switcher.refused === path,
     }))
     .filter((item) => choiceMatches(item, query));
+  for (const item of offered) facts.set(item.key, { waiting: item.state === "ok" && listedWaiting(state, item.path) === true, unlive: false });
   items.push(
     ...(unmatched.length ? [{ heading: UNMATCHED_SECTION, shared: true }, ...unmatched] : []),
     ...(offered.length ? [{ heading: OFFERED_SECTION, shared: false }, ...offered] : []),
   );
   const keys = items.filter((item) => item.key !== undefined).map((item) => item.key);
   const total = rows.length + unserved.filter((row) => !taken.has(row.path)).length;
-  return {
+  const made = {
     items, keys, selected: keys.includes(state.switcher.selected) ? state.switcher.selected : keys[0] ?? null,
     empty: keys.length ? null : total ? "nomatch" : "none",
   };
+  return { made, facts };
+}
+/** Whether an instance of deployment `path` of this computer's list, which this run does not serve,
+ *  needs input: the last read of the slow schedule (`listedWaiting`, lib/main.mjs; the shared
+ *  listed-waiting.mjs), else what the identity read said (`identities`), else null: not known. */
+function listedWaiting(state, path) {
+  if (state.listedWaiting.has(path)) return state.listedWaiting.get(path);
+  const read = state.identities.get(path);
+  return read?.ok === true && typeof read.waiting === "boolean" ? read.waiting : null;
+}
+
+/** THE LIST OF WORKSPACES (docs/tui.md, "The list of workspaces"): the switcher's choices with no
+ *  filter, in its order (the workspaces, then the views matched to no workspace, under the shared
+ *  heading when workspaces stand above them, then this computer's deployments not opened), at the
+ *  top of the sidebar.
+ *  `lines`: `{ heading }` or a row `{ key, label, current, openable, waiting, word }`: `current` the
+ *  open workspace's row; `openable` whether its pick opens it (as the switcher's Enter: a stale
+ *  row of the list does not, nor a view with nothing to open); `waiting` whether some instance of
+ *  it needs input, as far as is known (an unknown never says so); `word` its state when it is not
+ *  live or not opened (`not opened`, `not live`, or a stale row's kernel state in short words), or
+ *  null, and always null on the open workspace's row, whose state the sidebar says under the list. `rows`: the rows as `{ key, openable }`, for workspaceStep. `current`: the open row's key,
+ *  or null. Kept while what it is made from (LIST_MADE_FROM) is the same: every frame and every
+ *  key asks for it, and the shared home walks every machine to make it, so it is not asked again
+ *  for a key or a paint that changed none of that (as `roster` is kept). */
+const LIST_STATES = Object.freeze({ missing: "missing", "not-a-deployment": "not a deployment", unreadable: "unreadable" });
+export const NOT_LIVE = "not live";
+const LIST_MADE_FROM = ["entries", "remote", "memory", "notes", "rosterAt", "collecting", "ctxs", "open", "cli", "home", "identities", "listed", "listedWaiting"];
+let listKept = null;
+export function workspaceList(state, at) {
+  if (listKept !== null && LIST_MADE_FROM.every((name) => listKept.state[name] === state[name])) return listKept.list;
+  const lines = [], { made, facts } = switcherOf(state, at, "");
+  for (const item of made.items) {
+    // A heading parts what is under it from the rows above, as the switcher's do: the shared one the
+    // views matched to no workspace, the TUI's this computer's deployments not opened. With no row
+    // above, it parts nothing and is not drawn.
+    if (item.heading !== undefined) { if (lines.length) lines.push(Object.freeze({ heading: item.heading })); continue; }
+    if (item.key === undefined) continue;
+    const listed = item.path !== undefined;
+    const openable = listed ? item.state === "ok" : item.join?.length > 0 || item.primary !== null;
+    const fact = facts.get(item.key) ?? { waiting: false, unlive: false };
+    // The open workspace's state is the sidebar's to say, under the list (its notice): its row has no word.
+    // A row of this computer's list stands under its heading, which says it is not opened: its word is a state that keeps it from opening.
+    const word = item.open === true ? null : listed ? LIST_STATES[item.state] ?? null
+      : item.join?.length > 0 && item.join.length === item.opens.length ? NOT_OPENED
+        : fact.unlive ? NOT_LIVE : null;
+    lines.push(Object.freeze({ key: item.key, label: item.label, current: item.open === true, openable, waiting: fact.waiting, word }));
+  }
+  const rows = lines.filter((line) => line.key !== undefined);
+  const list = Object.freeze({ lines: Object.freeze(lines), rows: Object.freeze(rows.map(({ key, openable }) => Object.freeze({ key, openable }))), current: rows.find((row) => row.current)?.key ?? null });
+  listKept = { state, list };
+  return list;
+}
+/** The most lines the list stands on; more are windowed, and the last line says how many are not
+ *  shown (`+N`). */
+export const LIST_LINES = 5;
+/** How many rows stand at the top of the sidebar (views/frame.mjs layout's `list`): the list's,
+ *  LIST_LINES at most, while a workspace is open and the switcher is not shown; else the title's
+ *  one. */
+export function listRowsOf(state, at) {
+  const under = state.view === "help" || state.view === "act" ? state.back : state.view;
+  const list = listModel(state, under, at);
+  return list === null ? 1 : list.lines.length + (list.more > 0 ? 1 : 0);
+}
+/** The list as the sidebar draws it (views/workspaces.mjs): its lines windowed around the cursor
+ *  while the list has the focus, else around the open workspace's row; `more` how many are not
+ *  shown; `focused`; `cursor` the cursor's row key, null without the focus. Null while nothing is
+ *  listed (no workspace open, or the switcher shown): the title stands there. */
+function listModel(state, under, at) {
+  if (under === "switcher" || state.open === null) return null;
+  const list = workspaceList(state, at);
+  if (!list.lines.length) return null;
+  const focused = state.view === "instances" && state.focus === "workspaces";
+  const cursor = focused ? (list.rows.some((row) => row.key === state.workspaceCursor) ? state.workspaceCursor : list.current) : null;
+  return { ...listWindow(list.lines, cursor ?? list.current), focused, cursor };
+}
+/** The lines the list draws, windowed around `keep` (the focused row, else the open one): all of
+ *  them when they fit, else LIST_LINES - 1 of them, less a heading the window would end on (it would
+ *  head nothing), and `more`, how many workspaces are not shown (a heading is no workspace). */
+export function listWindow(lines, keep) {
+  if (lines.length <= LIST_LINES) return { lines, more: 0 };
+  const height = LIST_LINES - 1, at = Math.max(0, lines.findIndex((line) => line.key !== undefined && line.key === keep));
+  const top = Math.min(Math.max(0, at - Math.floor(height / 2)), lines.length - height);
+  let shown = lines.slice(top, top + height);
+  if (shown.at(-1).heading !== undefined) shown = shown.slice(0, -1);
+  const rows = (some) => some.filter((line) => line.key !== undefined).length;
+  return { lines: shown, more: rows(lines) - rows(shown) };
 }
 /** The window of the switcher's `items` in a pane `height` rows tall, from `top`, that holds the choice
  *  `key` and, while they fit, the indicator lines under it (scroll.mjs windowOf, asked to keep the last
@@ -817,6 +924,8 @@ export function model(state, { page, body = page, now, at, cols, area = cols }) 
     spawn: state.spawn === null ? null : spawnView(state, body, at),
     // The line under the sidebar's title: the last outcome, else a spawn under way (outcomeOf).
     outcome: outcomeOf(state),
+    // The list of workspaces at the top of the sidebar, and whether colour may say the dot.
+    workspaces: listModel(state, under, at), colour: state.colour !== false,
   };
   if (under === "switcher") {
     const s = switcher(state, at);
