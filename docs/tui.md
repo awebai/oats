@@ -63,7 +63,7 @@ a path that is in no deployment: the `E_NO_DEPLOYMENT` line that names
 where you are or from `--dir`, is added to this computer's list once, as the
 TUI's (`oats deployments add <path> --via tui --json`), also when you had
 removed it from the list. It is best effort: a failure opens nothing less,
-and is said once, in the line under the title, in the kernel's words. When
+and is said once, in the line under the list of workspaces, in the kernel's words. When
 it comes while the switcher, the help, a confirmation, the palette, the
 spawn prompt, a detail or a terminal has the screen or the focus, it is said
 once a view's list has the focus again, so no screen that covers the
@@ -95,7 +95,7 @@ runs.
 ## What it shows
 
 ```
- acme-platform                        │   dev
+ * acme-platform                      │   dev
                                       │   soul     dev
  Instances                          1 │   state    running
 > ● dev                               │   harness  claude, claude-opus-5-5 (so…
@@ -121,13 +121,16 @@ a rule between them over every row. There is no header and no footer. From
 80 columns the sidebar takes about half the width (36 to 60 columns, 30
 while a terminal is open); under 80 columns it has the whole width.
 
-- **The title** is the sidebar's first row: the workspace's name, then what
-  the view holds of other machines. Beside a deployment of this machine the
+- **[The list of workspaces](#the-list-of-workspaces)** is the sidebar's
+  first rows, five at most: every workspace this run can show, the open one
+  marked `*`. Its row is the title: the workspace's name, then what the
+  view holds of other machines. Beside a deployment of this machine the
   other machines are counted: `+1 machine`, `+2 machines`. A view that holds
   no deployment of this machine names its one machine, `on garnet`, or
   counts them when there are two or more, `2 machines`. While
-  [the switcher](#the-switcher) is shown the title is `workspaces`.
-- **Under the title** stands what the view needs to say first, wrapped to
+  [the switcher](#the-switcher) is shown the list gives way to the title
+  `workspaces`.
+- **Under the list** stands what the view needs to say first, wrapped to
   the sidebar's width: a deployment's state when it is not live, with
   `since …` and its reason on rows of its own; the note of a view of one
   deployment; and the line that says what happened after an open, an act or
@@ -148,7 +151,7 @@ while a terminal is open); under 80 columns it has the whole width.
   `Ctrl+K palette`. In a view's list it names what `Enter` does now
   (`open`, `focus terminal` on the row whose terminal is open, `detail`
   in the Souls and Capabilities views), then `n spawn` where it spawns,
-  `w workspaces` (the [switcher](#the-switcher)) in the Instances view,
+  `w workspaces` ([the list of workspaces](#the-list-of-workspaces)) in the Instances view,
   and `? help` and `q quit` last; with the detail's focus `Tab back`
   comes before `Enter`. The other keys (the acts, `/`, `Tab`, `r`,
   and a terminal's `z`, `c`, `[` and `]`) are not listed there:
@@ -259,7 +262,7 @@ deployments on one machine) is one list, grouped as the Desktop groups it:
   deployment, such as `garnet now reports workspace other.` for a machine
   that reported another workspace before, or that a deployment's teams are
   local only. It stands under the deployment's heading. In a view of one
-  deployment, which has no heading, it stands under the title.
+  deployment, which has no heading, it stands under the list of workspaces.
 - **The detail has a `machine` line**, the machine the selected instance is
   on. When that deployment is not live, the whole sentence that says why
   follows it.
@@ -268,7 +271,7 @@ deployments on one machine) is one list, grouped as the Desktop groups it:
 `other  on garnet` for one machine, `2 machines` after the name for
 two or more. The time on the help's top row is then the time the machines'
 rows were read. A view of one machine has no heading, so its state, when it
-is not live, is said under the title with the reason, as for a deployment
+is not live, is said under the list of workspaces with the reason, as for a deployment
 of this machine. When no row of that machine is kept either, nothing is drawn
 under the reason: no list and no detail.
 
@@ -331,7 +334,7 @@ last rows stay as they were; or they stay and are marked `stale`, with the
 time of the last read that succeeded (a remote that could not be read
 again); or the
 deployment is `not observed` and no row is drawn. A state that is not live
-is said in words under the title, with the reason on rows of its own. When
+is said in words under the list of workspaces, with the reason on rows of its own. When
 the kernel refused the read and no rows are kept, the reason says so and
 quotes it: `OATS answered with an error (<code>). It says: <message>`. When
 the last rows are kept as `stale`, the reason says so and then quotes the
@@ -436,7 +439,7 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   terminal without it when it has not come. A tmux built with libutempter
   (Ubuntu's and Debian's are) can lose that status: while it waits,
   `oats tui` has tmux look for it again once a second, so the terminal
-  still closes within a second or two with the line its status calls for. The instances are then read again at once, and the line under the title
+  still closes within a second or two with the line its status calls for. The instances are then read again at once, and the line under the list of workspaces
   says what happened: that it could not be opened, that the connection to
   its machine ended, or that the viewer ended without saying why. What the
   viewer printed on its error output stands under that line in quotation
@@ -504,7 +507,7 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
     stays whole while the row can hold it, and is cut last.
   - The TUI takes no mouse input: a tab is shown with the keys below.
 - **Opening.** `Enter` on a row, an instance in
-  [the palette](#the-palette), the leader then `Up` or `Down`, and a
+  [the palette](#the-palette), `Alt+Shift+Up` or `Alt+Shift+Down`, and a
   [spawn](#spawning-an-agent)'s new agent open a terminal the same way:
   - an instance that has a tab: that tab is shown, with the focus in it;
   - any other: a new tab, after the shown one, is shown with the focus in
@@ -513,7 +516,7 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
     machine is asked whether it can be opened, another open does nothing,
     and neither does a key that shows another tab.
   - **At four tabs nothing closes by itself.** The open does nothing, and
-    the line under the title says `4 terminals are open; close one with Ctrl+X w.`
+    the line under the list of workspaces says `4 terminals are open; close one with Ctrl+X w.`
     (with your leader, when [`tui.json`](#change-the-keys-tuijson) names
     another). A tab still starting, and an agent of another machine while
     it is asked, hold a place among the four. An instance that cannot be
@@ -545,7 +548,7 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
   - Closing the last tab closes the panel: the right side is the detail
     again, and the list has the focus.
 - **A tab that closes by itself**, when its viewer ends, says so on the line
-  under the title in the words [above](#open-an-agents-terminal), for that
+  under the list of workspaces in the words [above](#open-an-agents-terminal), for that
   tab's agent (no line when it ended cleanly).
   - The shown tab: the tab to its right is shown, else the one to its left,
     and the list takes the focus.
@@ -612,7 +615,7 @@ tab and the marks of its hidden ones.
   (left, or top). The second group starts empty and is the focused group.
   - A split needs a tab open, and none starting.
   - **There are at most two groups.** With two, the split keys do nothing,
-    and the line under the title says `The panel has two groups already.`
+    and the line under the list of workspaces says `The panel has two groups already.`
   - **Each group needs 40 columns side by side, and 8 rows one above the
     other**, its tab bar counted. The panel beside the sidebar then needs 81
     columns (a terminal of 112), or 17 rows. A split that would leave a
@@ -638,7 +641,7 @@ tab and the marks of its hidden ones.
   - **Zoom** (`z`, or the leader then `z`) gives the focused group's shown
     terminal the whole screen, and the same key brings the split back. With
     the empty group focused it does nothing.
-- **Opening.** `Enter`, the palette, the leader then `Up`/`Down` and a
+- **Opening.** `Enter`, the palette, `Alt+Shift+Up`/`Alt+Shift+Down` and a
   spawn open as with one group:
   - an instance that has a tab, in either group: that tab is shown in its
     group, and that group takes the focus;
@@ -831,9 +834,83 @@ them, from the same code.
 each with where it comes from; choosing one shows this view with it
 selected.
 
+## The list of workspaces
+
+```
+ * acme-platform  +1 machine          │   dev
+   acme-billing                     ● │   soul     dev
+ On this machine, not opened          │   state    running
+   acme-docs                          │   harness  claude, claude-opus-5-5 (so…
+   +2                                 │   work     worktree, agents/dev
+                                      │   team     eng
+ Instances                          1 │   started  11:00
+```
+
+The sidebar's first rows list the workspaces this run can show, as
+[the switcher](#the-switcher) lists them and in its order: the workspaces,
+then `Not matched to a workspace` (the machines the rules shared with the
+Desktop matched to no workspace), then `On this machine, not opened` (the
+rows of this computer's list of deployments that this run has not opened).
+A heading stands only under a row; with one workspace the list is its row.
+
+- **The open workspace** is marked `*` and its row is in reverse video, with
+  what the title says beside its name (`+1 machine`, `on garnet`). Its
+  state is said under the list, so its row has no state word.
+- **A row that cannot be opened** is dim, with its state word at the right:
+  `missing`, `not a deployment`, `unreadable` for a row of this computer's
+  list, `not live` for a workspace none of whose deployments is live, and
+  `not opened` for one whose deployments this run has not opened. The word
+  gives way when the name would keep fewer than eight cells.
+- **The dot**, `●` in yellow at the row's right edge, says that an instance
+  of that workspace needs input, the claim the list of instances shows, the
+  open workspace's included. With colour off (`NO_COLOR`) or in ASCII it is
+  `!`, and the help's Marks name it. A workspace whose instances are not
+  known (never read, stale, not reached) has no dot, never a false one. The
+  dot never moves a row.
+  - A workspace this run serves has it from its own reads; another
+    machine's rows count only from a read that is not stale.
+  - A row of this computer's list has it from the kernel's identity read
+    (`oats status --dir <path> --json --max-age 300`), run again on a slow
+    schedule shared with the Desktop (`packages/client/listed-waiting.mjs`):
+    one read at a time, each row at most once a minute. The TUI reads no
+    focus of its terminal, so the minute holds whether or not it is
+    focused. A kernel that does not report needs-input claims is not asked,
+    and its rows have no dot.
+- **Five rows at most.** With more, four stand around the open row (around
+  the cursor's while the list has the focus), and `+N` says how many
+  workspaces are not shown. A heading the four would end on is left out.
+  Under 80 columns or beside a terminal (30 columns) the names are cut as
+  the list of instances cuts them.
+
+**The keys:**
+
+- **The leader then `Up` or `Down`** opens the workspace before or after the
+  open one, as the list draws them. Rows that cannot be opened are passed
+  over, and it does not wrap: at an end nothing moves, and the line under
+  the list says `No workspace above this one.` or `No workspace below this
+  one.` A row of this computer's list is admitted and opened as the
+  switcher's `Enter` opens it, and when it is no deployment any more the
+  line says so: `acme-docs: not an OATS deployment any more.` What the
+  workspace left had open is kept for it, as for a switch from the
+  switcher ([Tabs](#tabs)), and from a terminal's focus the focus is kept
+  too.
+- **`w`**, the leader then `o`, and `Ctrl+Alt+O` (`Ctrl+Shift+S` with the
+  option) give the list the focus, on the open workspace's row. The row
+  under the cursor carries `>` and the reverse video. `Up`/`k`,
+  `Down`/`j`, `g`/`Home` and `G`/`End` move the cursor over the rows that
+  open; `Enter` opens its row and gives the list of instances the focus;
+  `Esc` gives that focus back with nothing opened; `w` again opens the
+  switcher, for what the list does not hold. Any other key gives the list
+  of instances the focus, then does what it does there. The cheat sheet
+  says `Enter open`, `Up/Down move`, `Esc back`, `w all workspaces`.
+- The list is no stop of `Tab`, and the TUI takes no mouse input.
+
 ## The switcher
 
-`w` opens the switcher: what this run can show, over the main area. The
+`w` from [the list of workspaces](#the-list-of-workspaces)' focus (`w` twice
+from the list of instances) opens the switcher: what this run can show, over
+the main area, with what the list does not hold: each deployment's line, the
+filter, and Remove. With no workspace open, `w` opens it at once. The
 sidebar's title says `workspaces` and no view is open; under 80 columns the
 switcher covers the whole screen.
 
@@ -999,7 +1076,7 @@ confirmation, which is needed only when the first retire's holder can't be
 read, since the kernel refuses a second retire while one runs. The
 palette offers the acts the selected instance offers now, and the leader's
 hint and the help name their keys. A key for an act
-the instance does not offer opens nothing, and the line under the title
+the instance does not offer opens nothing, and the line under the list of workspaces
 says why. The keys are yours to change in
 [`tui.json`](#change-the-keys-tuijson): the actions are `stop`, `retire`,
 `start` and `restart`.
@@ -1166,14 +1243,15 @@ that kind.
 |---|---|---|---|---|---|
 | the palette | `Ctrl+K` | `Ctrl+Alt+K` | `Ctrl+Shift+K` | `⌘K` | `k`, `Space` |
 | spawn an agent (the Desktop's Quick Open) | `n` | `Ctrl+Alt+P` | `Ctrl+Shift+P` | `⌘P` | `n` |
-| the switcher | `w` | `Ctrl+Alt+O` | `Ctrl+Shift+S` | `⌥⌘O` | `o` |
+| the list of workspaces (`w` there: the switcher) | `w` | `Ctrl+Alt+O` | `Ctrl+Shift+S` | `⌥⌘O` | `o` |
+| the workspace before, after | – | – | – | – | `Up`, `Down` |
 | zoom the shown terminal | `z` | `Ctrl+Alt+Z` | `Ctrl+Shift+M` | `⌥⌘Z` | `z` |
 | close the shown terminal's tab | `c` | `Ctrl+Alt+W` | `Ctrl+Shift+W` | `⌘W` | `w` |
 | split side by side | `\|` | `Ctrl+Alt+E` | `Ctrl+Shift+E` | `⌘\` | `\|` |
 | split one above the other | `-` | `Ctrl+Alt+Shift+E` | `Ctrl+Shift+D` | `⌘⇧\` | `-` |
 | the other group | – | `Ctrl+Alt+A` | `Ctrl+Alt+A` (kept) | `⌥⌘A` | `Tab` |
 | the filter | `/` | `Ctrl+Alt+F` | `Ctrl+Alt+F` (kept) | `⌘F` | `/` |
-| the terminal of the instance before, after | – | `Alt+Shift+Up`, `Alt+Shift+Down` | `Alt+Shift+Up`, `Alt+Shift+Down` (kept) | `⌥⌘↑`, `⌥⌘↓` | `Up`, `Down` |
+| the terminal of the instance before, after | – | `Alt+Shift+Up`, `Alt+Shift+Down` | `Alt+Shift+Up`, `Alt+Shift+Down` (kept) | `⌥⌘↑`, `⌥⌘↓` | – |
 | the tab before, after | `[`, `]` | `Alt+Shift+Left`, `Alt+Shift+Right` | `Alt+Shift+Left`, `Alt+Shift+Right` (kept) | `⌥⌘←`, `⌥⌘→` | `Left`, `Right` |
 | the first to eighth tab, the last | – | `Ctrl+Alt+1` to `Ctrl+Alt+9` | `Ctrl+Alt+1` to `Ctrl+Alt+9` (kept) | `⌥⌘1` to `⌥⌘9` | – |
 | an instance's name and colour (OATS Desktop only) | – | `Ctrl+Alt+R` | `Ctrl+Alt+R` (kept) | `⌥⌘R` | – |
@@ -1295,7 +1373,7 @@ every focus, an agent's terminal included: the agent never gets them.
 | `1` | the Instances view |
 | `2` | [the Souls view](#the-souls-view); `Esc` or `1` goes back |
 | `3` | [the Capabilities view](#the-capabilities-view); `Esc` or `1` goes back |
-| `w` | opens [the switcher](#the-switcher) |
+| `w` | gives [the list of workspaces](#the-list-of-workspaces) the focus; `w` there opens [the switcher](#the-switcher) |
 | `Delete` | in the switcher, asks whether to remove the selected row from this computer's list of deployments; `Enter` removes it |
 | `Enter` | in the list of instances, opens the selected agent's terminal in a new [tab](#tabs) beside the sidebar, or shows its tab when it has one, with the focus in it; in the switcher, opens the selected row; in a confirmation, presses the button with the focus |
 | `z` | gives the shown terminal the focus and the whole screen |
@@ -1304,7 +1382,7 @@ every focus, an agent's terminal included: the agent never gets them.
 | `\|`, `-` | in the Instances view, [splits](#splits) the panel side by side or one above the other |
 | `Ctrl+X` | [the leader](#the-leader), from every focus ([`tui.json`](#change-the-keys-tuijson) can name another key) |
 | `Ctrl+K` | opens [the palette](#the-palette); `Ctrl+K` again closes it |
-| `Ctrl+Alt+K`, `Alt+Shift+Up` and the other [chords](#chords) (`Ctrl+Shift+K` and the rest [with the option](#switch-to-ctrlshift)) | what the leader then a key does, from every focus; the Ctrl+Alt and Ctrl+Shift ones where your terminal sends them. While [the palette](#the-palette) is open, `Alt+Shift+Up` and `Alt+Shift+Down` are its own |
+| `Ctrl+Alt+K`, `Alt+Shift+Up` and the other [chords](#chords) (`Ctrl+Shift+K` and the rest [with the option](#switch-to-ctrlshift)) | what the leader then a key does, from every focus (`Alt+Shift+Up`, `Alt+Shift+Down`: the instance before or after, which the leader has no key for); the Ctrl+Alt and Ctrl+Shift ones where your terminal sends them. While [the palette](#the-palette) is open, `Alt+Shift+Up` and `Alt+Shift+Down` are its own |
 | `X`, `D`, `S`, `R` | stop, retire, start, restart the selected agent, [after a confirmation](#stopping-starting-restarting-and-retiring) |
 | `n` | [spawns an agent](#spawning-an-agent): the soul picker, then the preview |
 | `N` | spawns another of the selected instance's soul: its preview |
@@ -1355,7 +1433,7 @@ which edits the command line in your editor, is `Ctrl+X` twice, then
 |---|---|
 | `k` or `Space` | opens [the palette](#the-palette) |
 | `1`, `2`, `3` | the Instances, Souls and Capabilities views |
-| `Up`, `Down` | opens the terminal of the instance before or after, in the list as it is drawn, the focus in it: from the shown terminal's instance, or from the selection when none is open. It shows the instance's tab when it has one, else opens a new [tab](#tabs). Rows that cannot be opened are passed over, and the list does not wrap |
+| `Up`, `Down` | opens the workspace before or after the open one, in [the list of workspaces](#the-list-of-workspaces) as it is drawn. Rows that cannot be opened are passed over, and the list does not wrap. The terminal of the instance before or after is `Alt+Shift+Up`, `Alt+Shift+Down` ([Chords](#chords)) |
 | `Left`, `Right` | shows the tab before or after the shown one; the tab bar does not wrap, and the focus stays where it was |
 | `z` | zooms the shown terminal in or out; with the list focused, gives it the focus and the whole screen |
 | `w` | closes the shown terminal's tab and shows the tab beside it; the agent keeps running |
@@ -1366,7 +1444,7 @@ which edits the command line in your editor, is `Ctrl+X` twice, then
 | `X`, `R`, `S`, `D` | stop, restart, start, retire, [after a confirmation](#stopping-starting-restarting-and-retiring): from a terminal's focus on that terminal's instance, which has the focus again when the confirmation closes |
 | `n`, `N` | [spawns an agent](#spawning-an-agent); `N` of the shown terminal's soul from its focus |
 | `/` | the filter |
-| `o` | [the switcher](#the-switcher) |
+| `o` | gives [the list of workspaces](#the-list-of-workspaces) the focus |
 | `?` | the help |
 | `Esc` | gives the list the focus |
 | the leader again | types the leader into the terminal that has the focus, which keeps it; with the list focused, only cancels the leader |
@@ -1377,7 +1455,7 @@ which edits the command line in your editor, is `Ctrl+X` twice, then
   cancels it and is dropped: nothing is typed.
 - **Only a key in a later read counts.** A key that came in the same read of
   input as the leader cancels it and is dropped, with the rest of that
-  read, so a paste can never run a command. The line under the title says
+  read, so a paste can never run a command. The line under the list of workspaces says
   so: `Ctrl+X and the next key came in one read, so nothing ran: press them
   one after the other.` In a terminal the bytes before the leader in that
   read still go to the agent. A leader inside a bracketed paste is pasted
@@ -1415,7 +1493,14 @@ which edits the command line in your editor, is `Ctrl+X` twice, then
 ### Chords
 
 A chord does in one keypress what the leader then a key does, from every
-focus, an agent's terminal too, and never reaches the agent. The OATS
+focus, an agent's terminal too, and never reaches the agent. One pair has
+no leader key: `Alt+Shift+Up` and `Alt+Shift+Down` open the terminal of
+the instance before or after, in the list as it is drawn, the focus in it
+(from the shown terminal's instance, or from the selection when none is
+open; its tab when it has one, else a new [tab](#tabs); rows that cannot be
+opened are passed over, and the list does not wrap), since the leader's
+`Up` and `Down` move between workspaces. On macOS, where `oats tui` has no
+chords, the list's `Up` or `Down` then `Enter` does it. The OATS
 Desktop has the same chords (`CHORDS` in `packages/client/keymap.mjs`, which
 both read; the TUI keeps no copy). The leader stays the key that always
 works, and the one for help, the views and the acts (stop, restart, start,
@@ -1431,7 +1516,7 @@ colour dialog). The TUI has no such action, so it binds no key for it and
 `Ctrl+Alt+R` stays the agent's.
 
 They are one family: Ctrl+Alt with a letter or a digit acts, and Alt+Shift
-with the leader's arrow moves. No terminal in the table below takes them by
+with an arrow moves. No terminal in the table below takes them by
 default, and no agent (Claude Code, Codex, pi) reads them. Ctrl+Shift with a
 letter, the obvious family, is mostly the terminals' own: kitty binds 22 of
 those letters, Ghostty 13, and foot, GNOME Terminal, WezTerm, Konsole and
@@ -1654,7 +1739,8 @@ TUI reads the keys. The help lists its keys under The palette.
   row. While the palette is open these keys are its own: they win over the
   chords `Alt+Shift+Up` and `Alt+Shift+Down` ([Chords](#chords)), so they
   open no agent and leave the palette open, with or without the kitty
-  keyboard protocol. The leader then `Up` or `Down` still opens one. The
+  keyboard protocol. The leader then `Up` or `Down` closes it and opens the
+  workspace before or after. The
   Desktop's palette has the same pair (`PALETTE_KEYS` in
   `packages/client/keymap.mjs`, which both read).
 - **On macOS there is no group key:** the Desktop's hold `⌘`, which a
@@ -2057,7 +2143,7 @@ version:
 - **A row of another machine shows what its host reported at the last
   read,** not what is true at this moment. The time of that read is on the
   machine's heading when it is not the time of this machine's read. A view
-  of one machine has no heading: there the title names the machine
+  of one machine has no heading: there the open workspace's row names the machine
   (`on garnet`) and the help's top row carries the time.
 - The Souls and Capabilities views list a workspace of this machine's
   souls and capabilities: both are this machine's.

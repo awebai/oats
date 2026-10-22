@@ -12,9 +12,9 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
-import { TERMS, capabilityCatalogKey, cliDeploymentList, deploymentsListSupported, createCapabilityCatalog, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
+import { TERMS, capabilityCatalogKey, cliDeploymentIdentity, cliDeploymentList, createListedWaiting, waitingReadable, deploymentsListSupported, createCapabilityCatalog, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
 import { loadConfig, loadKeys } from "./config.mjs";
-import { ACT_WORDS, LIST_WORDS, actContext, actCwd, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
+import { ACT_WORDS, LIST_WORDS, actContext, actCwd, listRowsOf, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
 import { CHANGE_FILES, admitDeployment, createIdentityReads, createReader, findDeployment, leaveInstance, probeKernel, realpath, startExec, tellable } from "./read.mjs";
 import { initialState, reduce } from "./store.mjs";
@@ -95,7 +95,7 @@ function errorLines(error) {
  *  list, through the kernel: awebai/oats#1390), and `startExec` the exec it is handed before the
  *  terminal is taken; replaceable so a test can answer the list. `loadKeys` reads keys.json, the
  *  chord family (lib/config.mjs), replaceable so no test reads a user's file. */
-const EFFECTS = Object.freeze({ loadConfig, loadKeys, findDeployment, probeKernel, createReader, createIdentityReads, deploymentList: cliDeploymentList, startExec, admitDeployment, prepareRemoteTerm, createPanel, sweep,
+const EFFECTS = Object.freeze({ loadConfig, loadKeys, findDeployment, probeKernel, createReader, createIdentityReads, createListedWaiting, deploymentIdentity: cliDeploymentIdentity, deploymentList: cliDeploymentList, startExec, admitDeployment, prepareRemoteTerm, createPanel, sweep,
   runDir: CHANGE_FILES.dir, removeDir: CHANGE_FILES.remove, realpath, tellable, startInstance, createLifecycleConfirmation, createLifecycleBoundary, createSoulCatalog,
   createCapabilityCatalog, createSpawnPreview, createSpawnApplyBoundary, createSpawnTransaction });
 
@@ -167,7 +167,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   const clock = () => new Date(now()).toISOString();
   const look = glyphs(env, { ascii: options.ascii || config.ascii });
   const screen = createScreen({ ...look, color: colorEnabled(env) });
-  let state = initialState({ deployment: found.ok ? found.deployment : null, cli: probe.cli, home, entry: found.ok ? pendingEntry(null, clock()) : null, actions: config.actions, ascii: look.ascii, platform: proc.platform, detachKey: config.detachKey, keysRead });
+  let state = initialState({ deployment: found.ok ? found.deployment : null, cli: probe.cli, home, entry: found.ok ? pendingEntry(null, clock()) : null, actions: config.actions, ascii: look.ascii, colour: colorEnabled(env), platform: proc.platform, detachKey: config.detachKey, keysRead });
   const keymap = bindings(state.actions);
   // THE KITTY KEYBOARD PROTOCOL (docs/tui.md, "Chords"): asked for as the terminal is taken (the
   // guard's PUSH and QUERY), "asking" until it answers or KEYBOARD_WAIT_MS passes, then the flags
@@ -429,6 +429,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
    *  each finds is an event of its own. */
   function took(step) {
     state = step.state;
+    followWaiting();
     const effect = step.effect;
     if (effect === "quit") { guard.finish(0); return true; }
     if (effect === "suspend") guard.suspend();
@@ -510,7 +511,24 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   const identities = effects.createIdentityReads({ cli: probe.cli, exec: reader.exec, env, onRead: (identity) => heard({ identity }) });
   function identify() {
     if (ended) return;
-    identities.start(state.listed.rows.filter((row) => row.state === "ok" && !state.ctxs.includes(row.path)).map((row) => row.path));
+    identities.start(unservedListed());
+  }
+  /** The rows of this computer's list that this run does not serve and that the kernel says are deployments. */
+  const unservedListed = () => state.listed.rows.filter((row) => row.state === "ok" && !state.ctxs.includes(row.path)).map((row) => row.path);
+  // THE DOT OF A LISTED DEPLOYMENT (docs/tui.md, "The list of workspaces"; the shared listed-waiting.mjs):
+  // whether an instance of a deployment of that list that this run does not serve needs input, read
+  // again on the shared slow schedule (one read in flight, each path at most once a minute; the TUI
+  // reads no focus of its terminal, so it is always the focused interval), with a kernel that reports
+  // needs-input claims. What changed goes to the store; the set follows the list and what is served
+  // (took). Ended with the run.
+  const waiting = waitingReadable(probe.cli) && typeof reader.exec === "function"
+    ? effects.createListedWaiting({ read: (path, options) => effects.deploymentIdentity(probe.cli, path, options, { exec: reader.exec, env }), onChange: () => heard({ listedWaiting: waiting.snapshot() }) })
+    : null;
+  let waitingPaths = "";
+  function followWaiting() {
+    if (waiting === null || ended) return;
+    const paths = unservedListed(), key = paths.join("\u0000");
+    if (key !== waitingPaths) { waitingPaths = key; waiting.setPaths(paths); }
   }
   /** Remove the row the store asked about (`{ path, name }`) from the list: nothing on disk is
    *  touched. Its answer goes to the store, which asks for the list again. */
@@ -692,7 +710,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     const under = state.view === "help" || state.view === "act" ? state.back : state.view;
     const listing = under === "switcher";
     const r = listing ? { notice: null, note: null } : roster(state, at);
-    const g = layout(r.notice, size, { note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.tabs.length > 0, open: listing ? null : under });
+    const g = layout(r.notice, size, { note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.tabs.length > 0, open: listing ? null : under, list: listRowsOf(state, at) });
     const area = mainArea(g, size.cols).cols;
     const m = { ...model(state, { page: g.page, body: g.body, now: now(), at, cols: g.listCols, area }), screen: screens.get(state.terminal?.id) ?? null, screens };
     return { size, g, m, area };
@@ -804,7 +822,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     // The run's directory goes last, made for whichever of the two needed it first: the reader
     // removes it only when it wrote a change there, and one it cannot remove (a change still
     // writing) stays.
-    onEnd() { ended = true; spawnTimers.end(); dismiss(confirmation?.n); panel.end(); identities.stop(); reader.stop(); if (dir !== null) { try { effects.removeDir(dir); } catch { /* not empty, or gone */ } } },
+    onEnd() { ended = true; spawnTimers.end(); dismiss(confirmation?.n); panel.end(); identities.stop(); waiting?.stop(); reader.stop(); if (dir !== null) { try { effects.removeDir(dir); } catch { /* not empty, or gone */ } } },
   });
   function refresh(how) { Promise.resolve(reader.request(how)).catch(() => {}); }
   /** A preflight under way when the process stops: given up, and the store told. Its state alone is

@@ -134,7 +134,7 @@ function fits(d, sz, at) {
 test("the Capabilities view at 80x24 in UTF-8, cell for cell: the sections and groups in the sidebar under the open view's heading, the sidebar's rule over the whole height, the selected capability's detail beside it from the top, and the small cheat sheet under the list", () => {
   const d = drawModel(capsModel(), S80);
   assert.deepEqual(d.lines, [
-    " acme-platform                        │   aweb Messaging",
+    " * acme-platform                      │   aweb Messaging",
     "                                      │   Messaging over aweb: mail and chat",
     " Instances                          1 │   between the instances of the",
     " Souls                              2 │   workspace, and its channel.",

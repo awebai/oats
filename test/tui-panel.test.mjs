@@ -1253,27 +1253,15 @@ async function fourAgents(t) {
 const stripNames = (run) => (run.panel()[0] ?? "").split("│").map((tab) => tab.trim().replace(/^\[(.*)\]$/, "$1").replace(/•$/, "")).filter(Boolean);
 /** The row of agent `name` is selected and running, read from the list's columns. */
 const selectedRunning = (term, name) => term.screen().some((text) => new RegExp(`^> +● ${name}$`).test([...text].slice(0, LIST_BESIDE).join("").trimEnd()));
-/** The tab of FOUR[k]: Enter on the selected agent for the first, then for each next one the leader
- *  then Down from the terminal shown, until its row is selected or the tab bar names it. The pair
- *  does not repeat safely (a second Down opens the agent after), so while its effect is not seen a
- *  frame drawn after it says whether it acted (pairs.checked): the leader then Esc (back, which
- *  repeats safely) gives the list the focus, and the list's sheet is drawn only after what Down
- *  did; Enter on the shown terminal's row then gives it the focus again.
+/** The tab of FOUR[k]: Enter on the selected agent for the first, then for each next one
+ *  Alt+Shift+Down (`next`, the instance move: the leader's Down moves between workspaces) from the
+ *  terminal shown. It is one key, so no read can split it from a leader; it does not repeat safely
+ *  (a second one opens the agent after), so it is pressed once.
  *  Resolves once its viewer's session is attached, its screen is in the panel with the focus in it,
  *  its row is selected, and the strip names every agent opened so far, in the order opened. */
 async function openTab(term, run, k) {
   const name = FOUR[k], before = new Set(viewerSessions());
-  if (k === 0) term.press("Enter");
-  else {
-    const acted = () => selectedRunning(term, name) || stripNames(run).includes(name);
-    await pairs.checked(term, "Down", acted, async () => {
-      await run.back();
-      const did = acted();
-      term.press("Enter");
-      await until(term, () => run.sheet() === backWith(did ? k + 1 : k), `the focus back in the shown terminal, ${did ? `${name}'s: the leader then Down had acted` : "the leader then Down to be pressed again"}`);
-      return did;
-    }, `${name} opened: its row selected or its tab in the bar`);
-  }
+  term.press(k === 0 ? "Enter" : "M-S-Down");
   const opened = FOUR.slice(0, k + 1);
   await until(term, () => {
     assert.equal(run.status(), null, `oats tui ended opening ${name}`);

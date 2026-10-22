@@ -132,6 +132,9 @@ exit 255
   /** How often the fake `ssh` was started. */
   world.sshCalls = () => numbers(world.sshCallsFile).length;
   world.holdSsh = () => writeFileSync(world.sshHoldFile, "");
+  // The list of workspaces under the fixture's row: the shared heading, then the machine, which
+  // matched no workspace, with its state word at the edge (whatever the roster read said of it).
+  world.listed = [" Not matched to a workspace", /^ {3}garnet(?: {2,}\S.*)?$/];
   const releaseTmux = world.release;
   world.release = () => { releaseTmux(); rmSync(world.sshHoldFile, { force: true }); };
 
@@ -290,14 +293,16 @@ function listUnder(screen, heading, cols = 80) {
 }
 
 /** The sidebar, the same in every view: what is wrong with it (docs/tui.md, "What it shows").
- *  From the top: the title (`title`: the fixture's name alone, no count), the rows `above` (each a
+ *  From the top: the list of workspaces, whose first row is the open one's (`title`: `*` and the
+ *  fixture's name alone, no count) and its other rows `listed` (each a string, or what it
+ *  matches), or the title alone where no workspace is listed (the switcher's), the rows `above` (each a
  *  string, or what it matches: a deployment's state and reason), an empty row, then the views
  *  Instances, Souls and Capabilities, each with its key, the `open` one's heading (`heading`, its
  *  row unless given) with its list under it and a rule between it and each view beside it; a
  *  rule, then the cheat sheet `sheet` (its first rows, as many as the rows left hold, the leader's
  *  at least), and nothing under it. From 80 columns the rule between the sidebar and the main
  *  area (`look.bar`) stands on every row. Answers the faults and the rows of the open view's list. */
-function sidebarFaults(screen, { cols = 80, rows = 24, look = UTF8, title = " fixture", above = [], open = "instances", heading, sheet }) {
+function sidebarFaults(screen, { cols = 80, rows = 24, look = UTF8, title = " * fixture", listed = [], above = [], open = "instances", heading, sheet }) {
   const faults = [], width = listCols(cols), side = sidebarOf(screen, cols), rule = look.rule.repeat(width);
   const expect = (row, want, what) => {
     const got = side[row] ?? "";
@@ -308,6 +313,7 @@ function sidebarFaults(screen, { cols = 80, rows = 24, look = UTF8, title = " fi
   if (cols >= 80) screen.forEach((text, i) => { if ([...text][width] !== look.bar) faults.push(`row ${i + 1} has no ${look.bar} in column ${width + 1}, between the sidebar and the main area: ${JSON.stringify(text)}`); });
   let r = 0, list = [];
   expect(r++, title, "the title");
+  for (const want of listed) expect(r++, want, "a row of the list of workspaces");
   for (const want of above) expect(r++, want, "a row under the title");
   expect(r++, "", "the empty row over the views");
   const views = [["Instances", "1", "instances"], ["Souls", "2", "souls"], ["Capabilities", "3", "capabilities"]];
@@ -337,8 +343,8 @@ function sidebarFaults(screen, { cols = 80, rows = 24, look = UTF8, title = " fi
  *  the single instance. With something hidden only what the shared grouping promises whatever it
  *  hides is asserted: which rows are drawn, each once, and which is selected; not where a row
  *  stands among the groups (awebai/oats#971). */
-function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, selected = "alpha", folded = false, gone = [], extra = [], detail = false, heading, sheet = LIST_SHEET } = {}) {
-  const { faults, list } = sidebarFaults(screen, { cols, rows, look, heading, sheet });
+function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, listed = [], selected = "alpha", folded = false, gone = [], extra = [], detail = false, heading, sheet = LIST_SHEET } = {}) {
+  const { faults, list } = sidebarFaults(screen, { cols, rows, look, listed, heading, sheet });
   const hidden = new Set([...gone, ...(folded ? ["beta"] : [])]);
   // A row is its mark and its name, indented by its level: no disclosure mark and no word (every
   // row here is stopped, which the mark says). A folded row says how many it folds away.
@@ -371,8 +377,8 @@ function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, selected = "alp
  *  own cheat sheet; in the main area the time of the last read on the help's top row (it is on no
  *  other screen: docs/tui.md, "The help"), then the title `Keys` and a `Keys` list with one row per
  *  action in the table's order, as many as the area holds over its last row, and no detail. */
-function helpFaults(screen, { cols = 80, rows = 24, look = UTF8 } = {}) {
-  const { faults } = sidebarFaults(screen, { cols, rows, look, sheet: HELP_SHEET });
+function helpFaults(screen, { cols = 80, rows = 24, look = UTF8, listed = [] } = {}) {
+  const { faults } = sidebarFaults(screen, { cols, rows, look, listed, sheet: HELP_SHEET });
   const pane = mainOf(screen, cols);
   if (!/^ {2}read \d\d:\d\d:\d\d$/.test(pane[0] ?? "")) faults.push(`the help's top row is ${JSON.stringify(pane[0])}, not the time of the last read`);
   const area = pane.slice(1);
@@ -391,7 +397,7 @@ function helpFaults(screen, { cols = 80, rows = 24, look = UTF8 } = {}) {
  *  no instance is drawn and no detail; and that the cheat sheet is the list's with no instance
  *  selected. `title` is what the title row matches; `reason`: the most rows the reason takes (it
  *  is wrapped to the sidebar's width, and the frame gives a long one up to four at 24 rows). */
-function notReadFaults(screen, { cols = 80, rows = 24, title = /^ \S+$/, reason = 4 } = {}) {
+function notReadFaults(screen, { cols = 80, rows = 24, title = /^ \* \S+$/, reason = 4 } = {}) {
   const side = sidebarOf(screen, cols), said = side.indexOf("", 1) - 1;
   const { faults, list } = sidebarFaults(screen, { cols, rows, title, above: Array(Math.max(0, said)).fill(/^ \S/), sheet: LIST_SHEET });
   if (said < 2 || said > 1 + reason) faults.push(`the rows under the title do not say what state the deployment is in and why, on at most ${reason} rows: ${JSON.stringify(side.slice(1, Math.max(3, said + 1)))}`);
@@ -512,9 +518,10 @@ async function terminal(t, { cols = 80, rows = 24, locale = UTF8.locale, command
  *  the word's arguments: the deployment by `--dir`, unless a test says otherwise. The shell
  *  records the exit status unless `record` is false. Resolves once the Instances view of that
  *  deployment is on the screen, read (or once `first(run, term)` has seen the first screen of a
- *  run that starts on another): `at` is what `viewFaults` is told about every screen of this run
- *  (its size, its look). */
-async function tui(term, at = {}, { record = true, world = WORLD, args = `--dir ${shq(world.dep)}`, first = (run) => run.view("after the start") } = {}) {
+ *  run that starts on another): `given` is what `viewFaults` is told about every screen of this run
+ *  (its size, its look), with the rows the world lists under the open workspace (`world.listed`) unless it says. */
+async function tui(term, given = {}, { record = true, world = WORLD, args = `--dir ${shq(world.dep)}`, first = (run) => run.view("after the start") } = {}) {
+  const at = { listed: world.listed ?? [], ...given };
   const n = ++started;
   const pidFile = join(base, `tui-${n}.pid`), statusFile = join(base, `tui-${n}.status`);
   await term.command(`sh -c ${shq(`echo $$ > ${shq(pidFile)}; exec ${TUI} ${args}`)}${record ? `; echo $? > ${shq(statusFile)}` : ""}`, "the oats tui command");
@@ -684,7 +691,7 @@ test("on a terminal of 80x24 `oats tui --dir` shows the fixture's instances, gro
   // The sidebar: the title (the name alone: no count, and no time of a read), an empty row, the
   // views with the open one's list, and the cheat sheet; the detail beside it from the first row.
   const rule = "─".repeat(38);
-  const side = [" fixture", "", viewRow("Instances", "1"), "> ○ alpha", "    ○ beta", "", "  ○ gamma", rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(LIST_SHEET)];
+  const side = [" * fixture", "", viewRow("Instances", "1"), "> ○ alpha", "    ○ beta", "", "  ○ gamma", rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(LIST_SHEET)];
   const detail = ["   alpha", "   soul     dev", "   state    stopped", "   harness  claude", "   work     directory", "   home     …/agents/dev/instances/alpha"];
   assert.deepEqual(term.screen(), Array.from({ length: 24 }, (_, i) => two(side[i] ?? "", detail[i] ?? "")), "the Instances view, row for row");
 
@@ -826,8 +833,9 @@ test("the terminal is intact after q with the switcher open and a roster read in
     how: "q in the switcher", status: 0, world: MACHINES, leave: (term) => term.press("q"),
     arrive: async (term, run) => {
       const reading = await run.rosterReading("before the switcher is opened");
-      term.press("w");
-      await run.switcher("after w, with a roster read in flight", { body: MACHINES_SWITCHER });
+      // The first w gives the list of workspaces the focus, the second opens the switcher.
+      term.press("w", "w");
+      await run.switcher("after w twice, with a roster read in flight", { body: MACHINES_SWITCHER });
       assertRunningModes(term, "with the switcher open");
       assert.ok(reading.every(alive), `the roster read is still in flight with the switcher open (${reading})`);
       return reading;
@@ -876,7 +884,7 @@ test("the reason the kernel gives for an instance it could not observe stands in
   const screenOf = (selected, detail) => {
     const at = (name) => (name === selected ? ">" : " "), rule = "─".repeat(38);
     const list = [`${at("alpha")} ○ alpha`, `${at("beta")}   ○ beta`, "", listed(`${at("gamma")} ? gamma`, "state unknown")];
-    const side = [" fixture", "", viewRow("Instances", "1"), ...list, rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(LIST_SHEET)];
+    const side = [" * fixture", "", viewRow("Instances", "1"), ...list, rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(LIST_SHEET)];
     return Array.from({ length: 24 }, (_, i) => two(side[i] ?? "", detail[i] ?? ""));
   };
   /** What keeps a screen from being `want`, row for row, but for its clock time: when the
@@ -1114,7 +1122,7 @@ test("it follows the terminal's size: at 60x15 the view still draws, the sidebar
     ...(screen.some((row) => [...row].length > 79) ? ["a row is longer than 79 cells"] : []),
     ...(screen[0] === `${" > beta".padEnd(78 - pageKeys.length)}${pageKeys}` ? [] : [`row 1 is ${JSON.stringify(screen[0])}, not the detail's title with its keys`]),
     ...(screen.includes("   parent   alpha") ? [] : ["no row names the parent"]),
-    ...(screen.some((row) => row === " fixture" || /^[> ] +○ \w/.test(row) || LEAD_ROW.test(row)) ? ["a row of the sidebar is still shown"] : []),
+    ...(screen.some((row) => row === " * fixture" || /^[> ] +○ \w/.test(row) || LEAD_ROW.test(row)) ? ["a row of the sidebar is still shown"] : []),
   ];
   await untilScreen(term, pageFaults, "the detail as a page at 79x24");
   term.press("Escape");
@@ -1181,7 +1189,7 @@ test("outside every deployment with no --dir and nothing on this computer's list
   assert.deepEqual(await term.state("after the refusal"), before, "the terminal and the server after the refusal");
 });
 
-test("started outside a deployment and with no --dir, it opens on the switcher when this computer's list of deployments holds one: it is listed by its name and its path under the heading for what is not opened; Enter opens it and the Instances view of that deployment is drawn, which says that it is not observed and why; w returns to the switcher, where it is now the open one; q exits 0 and the terminal is what it was. With a --dir that is in no deployment, it prints the E_NO_DEPLOYMENT line as before", { skip: NO_TMUX || NO_LIST }, async (t) => {
+test("started outside a deployment and with no --dir, it opens on the switcher when this computer's list of deployments holds one: it is listed by its name and its path under the heading for what is not opened; Enter opens it and the Instances view of that deployment is drawn, which says that it is not observed and why; w twice (the list of workspaces, then the switcher) returns to the switcher, where it is now the open one; q exits 0 and the terminal is what it was. With a --dir that is in no deployment, it prints the E_NO_DEPLOYMENT line as before", { skip: NO_TMUX || NO_LIST }, async (t) => {
   // A home and a list of the test's own, for its terminals only. test/helpers/v2-deployment.mjs
   // makes a deployment in a base of its own and nowhere else, so the folder holds only a regular
   // `oats-local.yaml` (the fixture deployment's own): a deployment for the list's existence check
@@ -1208,13 +1216,13 @@ test("started outside a deployment and with no --dir, it opens on the switcher w
       term.press("Enter");
       // The view of that deployment: its folder's name in the title, and the state and the
       // reason of a deployment that was not read, which are the shared home's words.
-      await untilScreen(term, (screen) => notReadFaults(screen, { cols, title: /^ acme-ledger$/, reason: 4 }), "the Instances view of the folder's deployment after Enter");
+      await untilScreen(term, (screen) => notReadFaults(screen, { cols, title: /^ \* acme-ledger$/, reason: 4 }), "the Instances view of the folder's deployment after Enter");
       assert.equal(run.status(), null, "oats tui still runs after Enter");
-      term.press("w");
+      term.press("w", "w");
       // It is served now, so it is no folder to open: it is this run's one workspace, which the
       // shared home lists by its machine and a short reason, under its heading for what it
       // matched to no workspace.
-      await run.switcher("after w", { body: [UNMATCHED, choiceLike("acme-ledger", "This machine \\S+ \\S.*", { selected: true, open: true }, cols)] });
+      await run.switcher("after w twice", { body: [UNMATCHED, choiceLike("acme-ledger", "This machine \\S+ \\S.*", { selected: true, open: true }, cols)] });
       return []; // no read is held
     },
   });

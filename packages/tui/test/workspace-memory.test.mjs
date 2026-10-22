@@ -68,8 +68,9 @@ const LAID = Object.freeze({ tabs: ["dev-a:0", "dev-b:0", "dev-c:0", "dev-d:1"],
 test("switching away closes every viewer of the workspace left and remembers its tabs; coming back opens them again one at a time, in their order, and the layout, the shown tabs, the focus and the zoom are as they were", () => {
   const a = laidOut();
   assert.deepEqual(laid(a), LAID);
-  // Away, from the switcher (the leader then o), which takes the focus from the terminal.
-  const picking = leaderThen(a, "o").state;
+  // Away, from the switcher (the leader then o, the list of workspaces' focus, then w), which takes
+  // the focus from the terminal.
+  const picking = key(leaderThen(a, "o").state, "w").state;
   assert.equal(picking.view, "switcher");
   const away = go(picking, OTHER);
   assert.deepEqual(away.effect.close, ["dev-a", "dev-b", "dev-c", "dev-d"].map((name) => idOf(a, name)), "the viewers of the workspace left end");
@@ -216,7 +217,7 @@ test("a switch while another machine is asked first: the preflight is given up, 
 
 test("a workspace that goes from the views while it is open forgets its memory: its tabs close, and nothing of it is kept", () => {
   // quartz's workspace, opened from the switcher, with a tab of quartz open.
-  let s = ["w", "j", "enter"].reduce((state, k) => key(state, k).state, remoteA([garnet(), quartz()]));
+  let s = ["w", "w", "j", "enter"].reduce((state, k) => key(state, k).state, remoteA([garnet(), quartz()]));
   assert.equal(roster(s).instances.some((row) => row.instance === QUARTZ_A), true, "quartz's view is open");
   const id = idOf(s, QUARTZ_A);
   s = shown(reduce(key(on(s, QUARTZ_A), "enter").state, { prepared: { id } }).state).state;
@@ -225,7 +226,7 @@ test("a workspace that goes from the views while it is open forgets its memory: 
   // Away and back: its place is kept.
   s = settle(reduce(go(s, s.ctxs[0]).state, { prepared: { id } }).state).state;
   assert.equal(s.places.has(k), true);
-  s = ["w", "j", "enter"].reduce((state, each) => key(state, each).state, s);
+  s = ["w", "w", "j", "enter"].reduce((state, each) => key(state, each).state, s);
   s = settle(reduce(s, { prepared: { id } }).state).state;
   assert.equal(memoryKey(s, s.open), k);
   // The roster of other machines lists quartz no more: its view goes, and the switcher is shown.
@@ -326,7 +327,7 @@ test("a split left with its focused group empty comes back so: the other group's
 
 test("a workspace that goes from the views while another is open forgets its memory, and comes back with none; a read that failed with nothing kept forgets nothing, and the restore runs once it is read again", () => {
   // quartz's workspace, opened from the switcher with a tab of quartz, then left for A.
-  let s = ["w", "j", "enter"].reduce((state, k) => key(state, k).state, remoteA([garnet(), quartz()]));
+  let s = ["w", "w", "j", "enter"].reduce((state, k) => key(state, k).state, remoteA([garnet(), quartz()]));
   const id = idOf(s, QUARTZ_A), k = memoryKey(s, s.open);
   s = shown(reduce(key(on(s, QUARTZ_A), "enter").state, { prepared: { id } }).state).state;
   s = go(s, s.ctxs[0]).state;
@@ -337,7 +338,7 @@ test("a workspace that goes from the views while another is open forgets its mem
   assert.deepEqual(memory(lost.state), [false, false, false]);
   assert.deepEqual([lost.state.view, lost.state.open, lost.effect], [s.view, s.open, null]);
   // quartz listed again: its workspace opens with nothing of before.
-  const again = ["w", "j", "enter"].reduce((state, each) => key(state, each).state, heardGroups(lost.state, [garnet(), quartz()]).state);
+  const again = ["w", "w", "j", "enter"].reduce((state, each) => key(state, each).state, heardGroups(lost.state, [garnet(), quartz()]).state);
   assert.deepEqual([memoryKey(again, again.open), again.restoring, again.tabs], [k, null, []]);
   // So too while a deployment of another workspace is not read: this machine's, of A, whose read
   // failed with nothing kept, keeps A's memory alone.
@@ -348,7 +349,7 @@ test("a workspace that goes from the views while another is open forgets its mem
   assert.deepEqual([...memory(gone), gone.places.has(platform)], [false, false, false, true]);
   // This machine's deployment is in a view of its own now: quartz's is picked where the switcher lists it.
   const relisted = heardGroups(gone, [garnet(), quartz()]).state;
-  const listed = [0, 1, 2, 3].map((n) => ["w", ...Array(n).fill("j"), "enter"].reduce((state, each) => key(state, each).state, relisted)).find((state) => memoryKey(state, state.open) === k);
+  const listed = [0, 1, 2, 3].map((n) => ["w", "w", ...Array(n).fill("j"), "enter"].reduce((state, each) => key(state, each).state, relisted)).find((state) => memoryKey(state, state.open) === k);
   assert.deepEqual([listed?.restoring, listed?.tabs, listed?.opening], [null, [], null], "quartz comes back with none");
 
   // A workspace of this machine's second deployment alone, with a tab, left for A.
