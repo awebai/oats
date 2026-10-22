@@ -22,6 +22,10 @@ successor, with a link to its full text.
 - [Team model 3](2026-10-02-team-model-3.md): the teams a soul may join, and
   its default, are committed in the workspace; local teams only where the
   workspace allows them.
+- [Module upgrade](2026-10-22-module-upgrade.md): `oats instance upgrade` moves
+  a stopped home's package modules to the locked versions, with plan, apply,
+  provider adoption and undo (supersedes workspace model v2 items 10–11 for
+  package modules).
 
 The Desktop's design brief for designers is in
 [packages/desktop/docs](../../packages/desktop/docs/design-brief.md).
