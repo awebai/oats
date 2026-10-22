@@ -60,7 +60,7 @@ export function leaderLabel(does, labelOf = () => null) {
 /**
  * Does a row of the table apply now? `state`:
  *   terminalOpen   a terminal tab is open in this window's workspace
- *   tabs           the visible tabs in the strip
+ *   tabs           the tabs the tab keys walk now (shell.mjs walkedTabs: the focused group's when split)
  *   canSplitRow / canSplitCol   the tab layer can split right / down now (split-controls.mjs)
  *   split          the tab layer is split (two groups or more)
  * Rows marked `terminal` apply only with a terminal open; the tab keys with two tabs or more; the

@@ -656,21 +656,27 @@ test("split with an empty focused group: the tab keys do nothing there", t => {
   }
 });
 
-test("flat strip: three presses over three tabs visit each once, in strip order; from a stage next is the first, previous the last", t => {
+test("flat strip: three presses over three tabs visit each once, in strip order", t => {
   const s = shell(t);
   const ids = ["one", "two", "three"].map(name => s.seed(name));
   const seen = [];
   for (let i = 0; i < 3; i++) { s.actions.get("tabs.next")(); seen.push(s.c.activeTab); }
   assert.deepEqual(seen, ids);
-  s.showTabLayer(false);
-  assert.equal(s.c.activeTab, null);
-  s.actions.get("tabs.next")();
-  assert.equal(s.c.activeTab, ids[0], "a stage shown: next is the first tab");
-  s.showTabLayer(false);
-  s.actions.get("tabs.prev")();
-  assert.equal(s.c.activeTab, ids.at(-1), "and previous the last");
 });
 
+// cycleTab's rule for a strip with no active tab. The tab keys are not live on a stage (context `tabs`,
+// updateActiveContexts), so this is the shipped function's own rule, run directly.
+test("cycleTab with no active tab: next is the first tab, previous the last (not the second)", t => {
+  const s = shell(t);
+  const ids = ["one", "two", "three"].map(name => s.seed(name));
+  s.showTabLayer(false);
+  assert.equal(s.c.activeTab, null);
+  s.cycleTab(1);
+  assert.equal(s.c.activeTab, ids[0]);
+  s.showTabLayer(false);
+  s.cycleTab(-1);
+  assert.equal(s.c.activeTab, ids.at(-1));
+});
 // ── the instance steps (the leader's ↑/↓, roster.openPrevious/openNext): N presses, N moves ──────
 const steps = ["A", "B", "C", "D"].map(instance => ({ instance, running: true, agentsRoot: "/team/agents", home: `/team/${instance}` }));
 function stepShell(t) {
@@ -778,4 +784,31 @@ test("the leader shows nothing while it waits, announced once; a key after it th
   s.dispatch(s.document.activeElement, "keydown", { key: "?", code: "Slash", shiftKey: true });
   assert.equal(editor, 1);
   assert.equal(s.c.leaderHint.mode(), null, "a key that ran: the wait's announcement is gone, nothing shows");
+});
+
+test("the leader's ← / → in a split: an empty or one-tab focused group says there is no other tab, and nothing moves", async t => {
+  const s = shell(t, { leader: true });
+  const A = s.seed("A"), C = s.seed("C");
+  s.splitPane("row");
+  const press = key => {
+    s.actions.get("app.leader")({ target: s.document.activeElement ?? s.document.body });
+    s.dispatch(s.document.activeElement ?? s.document.body, "keydown", { key, code: key });
+  };
+  assert.equal(s.c.activeTab, null, "G2 is empty and focused");
+  for (const key of ["ArrowRight", "ArrowLeft"]) {
+    s.c.said.length = 0; press(key);
+    assert.deepEqual(s.c.said, ["There is no other tab."], `empty group, ${key}`);
+    assert.equal(s.c.activeTab, null);
+  }
+  const B = s.seed("B");
+  assert.deepEqual(s.c.split.groups.map(g => g.tabs), [[A, C], [B]]);
+  for (const key of ["ArrowRight", "ArrowLeft"]) {
+    s.c.said.length = 0; press(key);
+    assert.deepEqual(s.c.said, ["There is no other tab."], `one-tab group, ${key}`);
+    assert.equal(s.c.activeTab, B);
+  }
+  s.selectTab(A);
+  s.c.said.length = 0; press("ArrowRight");
+  assert.deepEqual(s.c.said, []);
+  assert.equal(s.c.activeTab, C, "two tabs in the focused group: → moves within it");
 });

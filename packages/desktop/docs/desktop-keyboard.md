@@ -195,7 +195,8 @@ the instance's menu would not offer, no other tab, nothing to split), one quiet
 line at the bottom of the main area says why, and is announced; it stays until
 the next key, click or focus change. It is the only answer such a key gets. The
 rows the TUI marks as terminal rows (`z`, `w`, the tab and split keys) act only
-while a terminal tab is open; besides, ←/→ need two tabs or more, `|`/`-` an
+while a terminal tab is open; besides, ←/→ need two tabs or more in the strip
+they walk (with the tabs split, the focused group's), `|`/`-` an
 active tab that can split that way, and Tab and `x` tabs that are split.
 
 **The target instance** of `X` `R` `S` `D` `N` and the roster moves is read
@@ -218,7 +219,7 @@ they cannot act.
 | `2` | Workspace › Souls |
 | `3` | Workspace › Capabilities |
 | ↑, ↓ | opens the terminal of the roster row before / after the target, as the roster is drawn (filter applied, collapsed rows absent), passing over rows whose Enter would not open a terminal; no wrap. With no target, ↓ opens the first and ↑ the last. Also `roster.openPrevious`, `roster.openNext` |
-| ←, → | previous / next tab of the active tab's strip, in the order drawn: with the tabs split, the focused group's, each press another tab of it; from a stage, → is the first tab and ← the last (`tabs.prev`, `tabs.next`; the Desktop's cycling wraps, the TUI's does not) |
+| ←, → | previous / next tab of the active tab's strip, in the order drawn: with the tabs split, the focused group's, each press another tab of it; an empty or one-tab group says "There is no other tab." (`tabs.prev`, `tabs.next`; the Desktop's cycling wraps, the TUI's does not) |
 | `z` | focus mode on or off (`app.focusMode`), and the active terminal takes focus. Also `terminal.focusMode` |
 | `w` | closes the active tab (`tabs.close`); the agent keeps running |
 | `\|`, `-` | split right / split down (`split.vertical`, `split.horizontal`) |

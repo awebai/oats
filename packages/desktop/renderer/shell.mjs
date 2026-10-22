@@ -2691,8 +2691,8 @@ function walkedTabs(id = activeTab) {
   return group ? group.tabs.map((tid) => [tid, tabs.get(tid)]).filter(([, t]) => t) : visibleTabEntries();
 }
 
-/** Next / previous tab of the active tab's strip, wrapping; with no active tab (a stage shown) next is the
- * first and previous the last. */
+/** Next / previous tab of the active tab's strip, wrapping; with no active tab in a strip that has tabs,
+ * next is the first and previous the last. (The tab keys are off on a stage: context `tabs`.) */
 function cycleTab(delta) {
   const vis = walkedTabs();
   if (!vis.length) return;
@@ -2865,7 +2865,8 @@ function leaderState() {
   const terminalOpen = tabLayerVisible && [...tabs.values()].some(t => t.kind === "terminal" && canActivateTab(t, ws));
   const active = activeTab != null ? tabs.get(activeTab) : null;
   const controls = splitControlsState(split, activeTab, active?.kind ?? null, tabLayerVisible);
-  return { terminalOpen, tabs: tabLayerVisible ? visibleTabEntries().length : 0,
+  // The tabs ←/→ walk (walkedTabs): with the tabs split, the focused group's, so an empty or one-tab group says why.
+  return { terminalOpen, tabs: tabLayerVisible ? walkedTabs().length : 0,
     canSplitRow: !!controls.splitRow, canSplitCol: !!controls.splitCol, split: tabLayerVisible && !!split && split.groups.length >= 2 };
 }
 /** The instance a key acts on, read where it was pressed: the focused roster row's, else the shown
