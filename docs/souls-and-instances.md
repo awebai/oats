@@ -1935,7 +1935,28 @@ that is `E_WORKTREE_DIRTY`, with Git's message, and the record is kept;
 commit and push the work, or discard it, then run `remove` again. A purpose
 with no record is `E_BAD_ARGS`: remove a tree made another way with
 `git worktree remove`. Any other refusal is `E_WORK_PRESERVATION_FAILED`,
-and nothing is removed. On a `creating` record whose process is gone, `remove`
+and the record is kept. Git can remove its registration and some files before
+failing on read-only ignored output (for example, a Go module cache). Once
+Git's clean check has passed and its registration is gone, `remove` makes
+the remaining files writable and deletes them, without following symlinks
+outside the tree. It then prunes, verifies removal and drops the record.
+
+A retry of an unregistered tree whose `.git` file points at a missing gitdir
+first compares its surviving files with the recorded branch through a
+temporary Git index. Deleted files are allowed; modified files and untracked
+files that are not ignored are `E_WORKTREE_DIRTY`, with their paths listed.
+Deleted entries are marked skip-worktree in that private index so Git can
+still read deleted `.gitignore` files from the branch when checking ignored
+output. This never changes the clone's index. Cleanup grants directories
+owner read, write and search access, and keeps `.git` until all other entries
+are deleted, so a failed deletion can be retried.
+An unreadable branch or a failed inspection keeps the tree and record.
+Failures after Git started removing files say that removal may be partial
+and name the retry. If Git already removed `.git` too, automatic comparison
+is refused: save any work and remove the directory by hand, then run
+`oats worktree remove --purpose <p>` again to drop the record. The refusal
+names that step.
+On a `creating` record whose process is gone, `remove`
 completes the rollback instead. Its answer then says whether the branch was
 kept (`branchKept`, `branchKeptReason`).
 
