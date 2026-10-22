@@ -98,6 +98,11 @@ Apply runs under the claim, with the plan revision re-checked. A stale plan refu
    spawn also counts as uncertain unless not-started can be proved.
 4. **Swap.** Swap in place using materialize's rollback journal. Each moved module gets `modules.<cap>.previous = {from, commit, digest, materializedAt, receipt}` (one level, the latest move). `capabilityMeta[cap]` becomes the hook's `meta`.
 5. **Baseline.** Re-take the retire baseline through `writeRetirementBaseline`, so a later retire sees no "changed instance-home bytes" because of the move.
+   Publish a replacement atomically through the existing private-file writer,
+   preserving the option to refuse an existing baseline with exclusive creation.
+   Interruption must leave
+   a complete old or new baseline, so it cannot invalidate the independent
+   session authority needed to resume forward recovery.
    The persistent baseline exclusions are only
    `.oats/upgrade-receipt.<key>.json` (the exact kernel receipt filename pattern)
    and `.oats/.staging-upgrade-*`. `.oats/previous/` remains

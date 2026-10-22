@@ -164,6 +164,11 @@ passes only `.oats-start.lock` so its owned mutex is absent from the newly
 taken baseline. This is not a permanent exclusion: a later retire hashes
 any leftover mutex as changed home bytes.
 
+Baseline replacement uses the existing atomic private-file writer. The
+exclusive-create option still refuses an existing baseline. An interrupted replacement leaves a complete
+old or new baseline, preserving the independent session authority required
+to resume forward recovery.
+
 The schedule registry stores explicit concurrency caps, leaving the schedule
 cap absent for its effective default of five. `readRegistry()` is a pure,
 bounded atomic-file snapshot: it takes no lock and writes nothing, projecting
