@@ -36,15 +36,26 @@ import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { rosterKeyAction, moveTarget } from "../renderer/roster-keys.mjs";
 import { revealInStrip, revealInScrollport } from "../renderer/reveal-in-scrollport.mjs";
+import { createLeader } from "../renderer/leader.mjs";
+import { createLeaderDispatch } from "../renderer/leader-dispatch.mjs";
+import { leaderApplies, leaderLabel } from "../renderer/leader-keys.mjs";
+import { createLeaderHint, LEADER_ANNOUNCEMENT } from "../renderer/leader-hint.mjs";
+import { LEADER_TABLE } from "../../client/keymap.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const names = [
   "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "showStage",
   "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips",
   "openViewTab", "openTerminalTabFlow", "openTerminalTabInner", "focusActiveTerminal",
-  "visibleTabEntries", "switchTab", "cycleTab", "gotoTab", "restoreWorkspaceTabs", "showTerminalContext",
+  "visibleTabEntries", "walkedTabs", "switchTab", "cycleTab", "gotoTab", "restoreWorkspaceTabs", "showTerminalContext",
   "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow", "showInRoster", "syncTabNeedsInput",
 ];
+// The leader's part of the shell (shell.mjs "the leader"): what a key after it, or a chord that does
+// one's work, acts on, and the shipped dispatch and engine that run it.
+const leaderNames = ["leaderTargetId", "leaderOrigin", "openingInstanceId", "runAsLeaderKey", "notApplicable", "leaderState"];
+const leaderSetup = [/let terminalOpening = [^\n]+/, /const rosterInstance = [^\n]+/,
+  /const leaderDispatch = createLeaderDispatch\(\{[^]*?\n\}\);/, /const leader = createLeader\(\{[^]*?\n\}\);/,
+  /registerAction\(\{ id: "app\.leader"[^\n]*\n[^\n]*/, /for \(const \[id, does\] of \[\["roster\.openPrevious"[^]*?\n\}/];
 function deferred() {
   let resolve, reject;
   const promise = new Promise((a, b) => { resolve = a; reject = b; });
@@ -52,7 +63,7 @@ function deferred() {
 }
 const flush = () => new Promise(setImmediate);
 
-function shell(t, { shellSource = source, ownership = createSelectionOwnership, terminal = createTerminalTab } = {}) {
+function shell(t, { shellSource = source, ownership = createSelectionOwnership, terminal = createTerminalTab, leader = false } = {}) {
   const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><aside id="sidebar"><div id="instance-roster"><input id="entry" class="ctx-filter"><span class="ctx-count"></span><div class="ctx-list"></div></div><nav id="nav"><button class="nav-item active">Hierarchy</button></nav></aside>`);
   t.after(() => dom.window.close());
   const document = dom.window.document;
@@ -105,7 +116,8 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
       parser = { registerOscHandler: () => ({ dispose() {} }) };
       constructor() { this.cols = 80; this.rows = 24; this.focuses = 0; this.disposed = 0; terms.push(this); }
       loadAddon() {}
-      open(wrap) { this.input = document.createElement("textarea"); wrap.append(this.input); }
+      // xterm's own element holds its input, as the leader's target reads it (leaderTargetId).
+      open(wrap) { const xterm = document.createElement("div"); xterm.className = "xterm"; this.input = document.createElement("textarea"); xterm.append(this.input); wrap.append(xterm); }
       onData() {} onResize() {} attachCustomKeyEventHandler() {} write() {}
       focus() { this.focuses++; this.input.focus(); }
       dispose() { this.disposed++; }
@@ -119,15 +131,31 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
   };
   c.splitOpenState = () => ({ split: c.split, activeId: c.activeTab, tabs: c.tabs, workspace: c.workspace, visible: c.tabLayerVisible });
   c.ownsInstanceTarget = target => target?.workspace === c.workspace && c.contextInstances.filter(row => sameInstanceActionTarget(target, row, c.workspace)).length === 1;
-  const functions = names.map(name => {
+  if (leader) Object.assign(c, {
+    window: dom.window, createLeader, createLeaderDispatch, LEADER_TABLE, leaderApplies, leaderLabel, actionLabel: () => null, rosterActsHeld: () => null,
+    said: [], sayInHint: line => { c.said.push(line); c.leaderHint.say(line); }, leaderHint: createLeaderHint({ doc: document, host: document.body }),
+    // A roster row's click opens its terminal (renderContextRoster); the opens are recorded, then run as shipped.
+    opened: [], failed: [], openTerminalTab: ref => {
+      c.opened.push(ref.instance);
+      const flow = c.openTerminalTabFlow(ref, message => assert.fail(message));
+      flow.catch(e => c.failed.push(e.message));
+      return flow;
+    },
+    resolveTerminalOpen: (instances, ref, ws) => ({ inst: { ...ref, tmux: { session: "synthetic", window: ref.instance } }, key: `${ws}:${ref.instance}` }),
+  });
+  const functions = [...names, ...(leader ? leaderNames : [])].map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `exercise shipped ${name}`); return match[0];
   });
   // The shipped modal guard for tab switching (unlessModal), over a modal flag the test sets.
-  const setup = `${shellSource.match(/const tabOpenIntents = [^\n]+/)[0]}\n${shellSource.match(/const unlessModal = [^\n]+/)[0]}`;
+  const setup = [/const tabOpenIntents = [^\n]+/, /const unlessModal = [^\n]+/, /for \(let n = 1; n <= 9; n\+\+\) \{\n[^\n]+\n\}/, ...(leader ? leaderSetup : [])].map(re => {
+    const match = shellSource.match(re);
+    assert.ok(match, `exercise shipped ${re}`); return match[0];
+  }).join("\n");
   const registry = shellSource.split("\n").filter(line => /^registerAction\(/.test(line)
     && /id: "(?:tabs\.|split\.close|terminal\.focusActive)/.test(line));
-  const s = runInNewContext(`${setup}\n${functions.join("\n")}\n${registry.join("\n")}\n({ ${names.join(", ")}, tabOpenIntents });`, c);
+  const s = runInNewContext(`${setup}\n${functions.join("\n")}\n${registry.join("\n")}\n({ ${names.join(", ")}, tabOpenIntents${leader ? `, ${leaderNames.join(", ")}, leader` : ""} });`, c);
+  if (leader) { c.openTerminalTabFlow = s.openTerminalTabFlow; t.after(() => s.leader.dispose()); }
   s.initContextRoster();
   // refreshContextRoster is stubbed here: the roster's loading state reads as observed, so rows paint.
   c.rosterState.succeed();
@@ -574,4 +602,180 @@ test("showInRoster: the row with that server and home is revealed (a filter clea
   assert.equal(s.document.getElementById("entry").value, "", "the filter that hid it is cleared");
   assert.equal(s.c.collapsedInstances.size, 0, "its collapsed parent is opened");
   assert.equal(await s.showInRoster({ server: "build", home: "/srv/agents/dev/instances/nobody" }), false);
+});
+
+// ── the tab keys walk the focused group's strip (docs/desktop-keyboard.md, "The keymap as shipped") ──
+// G1 [A, C], G2 [B, D]: creation order A B D C, so a walk of every tab would leave the group.
+function twoGroups(t) {
+  const s = shell(t);
+  const A = s.seed("A"); s.splitPane("row");
+  const B = s.seed("B"), D = s.seed("D");
+  s.selectTab(A);
+  const C = s.seed("C");
+  const group = id => s.c.split.groups.find(g => g.tabs.includes(id));
+  assert.deepEqual([group(A).tabs, group(B).tabs], [[A, C], [B, D]]);
+  return { s, A, B, C, D, group };
+}
+
+test("split: each next / previous press (Ctrl+Tab, the second chord) changes the focused group's tab and stays in it", t => {
+  const { s, A, C, group } = twoGroups(t);
+  s.selectTab(A);
+  const g1 = group(A);
+  for (const id of ["tabs.next", "tabs.nextPage", "tabs.prev", "tabs.prevPage", "tabs.next"]) {
+    const before = s.c.activeTab;
+    s.actions.get(id)();
+    assert.notEqual(s.c.activeTab, before, `${id} changes the shown tab`);
+    assert.ok(g1.tabs.includes(s.c.activeTab), `${id} stays in the focused group`);
+    assert.equal(s.c.split.focusedGroup, g1.id);
+    assert.equal(s.c.split.groups.find(g => g.id === g1.id).activeTab, s.c.activeTab, `${id}: the group shows it`);
+  }
+  assert.equal(s.c.activeTab, C);
+});
+
+test("split: go to tab N picks the Nth tab of the focused group, go to the last its last", t => {
+  const { s, A, B, C, D } = twoGroups(t);
+  s.selectTab(D);
+  s.actions.get("tabs.goto1")();
+  assert.equal(s.c.activeTab, B, "G2's first, not the window's");
+  s.actions.get("tabs.goto9")();
+  assert.equal(s.c.activeTab, D, "G2's last");
+  s.actions.get("tabs.goto3")();
+  assert.equal(s.c.activeTab, D, "G2 has no third tab: nothing moves");
+  s.selectTab(A);
+  s.actions.get("tabs.goto2")();
+  assert.equal(s.c.activeTab, C);
+});
+
+test("split with an empty focused group: the tab keys do nothing there", t => {
+  const s = shell(t);
+  s.seed("A"); s.seed("B"); s.splitPane("row");
+  assert.equal(s.c.activeTab, null, "the new group is empty and focused");
+  for (const id of ["tabs.next", "tabs.prev", "tabs.nextPage", "tabs.prevPage", "tabs.goto1", "tabs.goto9"]) {
+    s.actions.get(id)();
+    assert.equal(s.c.activeTab, null, id);
+  }
+});
+
+test("flat strip: three presses over three tabs visit each once, in strip order; from a stage next is the first, previous the last", t => {
+  const s = shell(t);
+  const ids = ["one", "two", "three"].map(name => s.seed(name));
+  const seen = [];
+  for (let i = 0; i < 3; i++) { s.actions.get("tabs.next")(); seen.push(s.c.activeTab); }
+  assert.deepEqual(seen, ids);
+  s.showTabLayer(false);
+  assert.equal(s.c.activeTab, null);
+  s.actions.get("tabs.next")();
+  assert.equal(s.c.activeTab, ids[0], "a stage shown: next is the first tab");
+  s.showTabLayer(false);
+  s.actions.get("tabs.prev")();
+  assert.equal(s.c.activeTab, ids.at(-1), "and previous the last");
+});
+
+// ── the instance steps (the leader's ↑/↓, roster.openPrevious/openNext): N presses, N moves ──────
+const steps = ["A", "B", "C", "D"].map(instance => ({ instance, running: true, agentsRoot: "/team/agents", home: `/team/${instance}` }));
+function stepShell(t) {
+  const s = shell(t, { leader: true });
+  s.c.contextInstances = steps; s.renderContextRoster(steps);
+  let attached = 90;
+  s.open = async (row) => {
+    const result = s.c.openTerminalTab(row);
+    s.requests.at(-1).resolve({ instances: [] }); await flush();
+    s.attachments.at(-1).resolve({ id: attached++ }); await result;
+    assert.equal(s.c.tabs.get(s.c.activeTab).instanceRef.home, row.home);
+    s.c.opened.length = 0;
+  };
+  // The leader then ↓, or the chord, pressed where focus is (or on the body), as the shipped actions run.
+  s.press = (how, delta = 1) => {
+    const at = s.document.activeElement ?? s.document.body;
+    if (how === "chord") { s.actions.get(delta > 0 ? "roster.openNext" : "roster.openPrevious")({ target: at }); return; }
+    s.actions.get("app.leader")({ target: at });
+    s.dispatch(s.document.activeElement ?? s.document.body, "keydown", { key: delta > 0 ? "ArrowDown" : "ArrowUp", code: delta > 0 ? "ArrowDown" : "ArrowUp" });
+  };
+  s.row = name => [...s.document.querySelectorAll(".ctx-inst")].find(row => row.dataset.treeInstance === `/team/${name}`);
+  return s;
+}
+
+for (const how of ["leader", "chord"]) for (const from of ["terminal", "roster"]) {
+  test(`${how} from the ${from}: a second press while the first open still waits for /api/panel moves on, not back`, async t => {
+    const s = stepShell(t);
+    await s.open(steps[0]);
+    if (from === "roster") s.row("A").focus();
+    s.press(how);
+    assert.deepEqual(s.c.opened, ["B"]);
+    const first = s.requests.at(-1);
+    s.press(how);
+    assert.deepEqual(s.c.opened, ["B", "C"], "the second press steps from B, the open in flight");
+    s.press(how);
+    assert.deepEqual(s.c.opened, ["B", "C", "D"], "and the third from C");
+    s.press(how);
+    assert.deepEqual(s.c.opened, ["B", "C", "D"], "at the end nothing moves");
+    assert.equal(s.c.said.at(-1), "No instance below this one has a terminal to open.");
+    s.press(how, -1);
+    assert.deepEqual(s.c.opened, ["B", "C", "D", "C"], "back up from D, still opening");
+    first.resolve({ instances: [] }); await flush();
+    assert.equal(s.attachments.length, 1, "the superseded opens attach nothing");
+  });
+}
+
+test("the leader pressed, then the open resolves and attaches, then ↓: the target is read at the key", async t => {
+  const s = stepShell(t);
+  await s.open(steps[0]);
+  s.press("chord");
+  assert.deepEqual(s.c.opened, ["B"]);
+  s.actions.get("app.leader")({ target: s.document.activeElement });
+  s.requests.at(-1).resolve({ instances: [] }); await flush();
+  s.attachments.at(-1).resolve({ id: 99 }); await flush();
+  assert.equal(s.c.tabs.get(s.c.activeTab).instanceRef.home, "/team/B");
+  s.dispatch(s.document.activeElement, "keydown", { key: "ArrowDown", code: "ArrowDown" });
+  assert.deepEqual(s.c.opened, ["B", "C"]);
+});
+
+test("focus left in a hidden pane counts for nothing: the shown terminal is the target", async t => {
+  const s = stepShell(t);
+  await s.open(steps[0]);
+  const hiddenInput = s.c.tabs.get(s.c.activeTab).paneEl.querySelector("textarea");
+  await s.open(steps[1]);
+  hiddenInput.focus();
+  assert.equal(s.c.tabs.get(s.c.activeTab).instanceRef.home, "/team/B");
+  assert.equal(s.c.tabs.get(1).paneEl.hidden, true, "focus is in A's hidden pane");
+  assert.equal(s.document.activeElement, hiddenInput);
+  for (const how of ["chord", "leader"]) {
+    s.c.opened.length = 0;
+    hiddenInput.focus();
+    s.press(how);
+    assert.deepEqual(s.c.opened, ["C"], how);
+    s.requests.at(-1).resolve({ instances: [] }); await flush();
+    s.attachments.at(-1).resolve({ id: how === "chord" ? 101 : 102 }); await flush();
+    s.selectTab([...s.c.tabs].find(([, tab]) => tab.instanceRef.home === "/team/B")[0]);
+  }
+});
+
+test("an open that fails leaves no target behind: the next press steps from what is shown", async t => {
+  const s = stepShell(t);
+  await s.open(steps[0]);
+  s.press("chord");
+  assert.deepEqual(s.c.opened, ["B"]);
+  s.requests.at(-1).reject(new Error("panel unreadable"));
+  await flush();
+  assert.deepEqual(s.c.failed, ["panel unreadable"]);
+  s.press("chord");
+  assert.deepEqual(s.c.opened, ["B", "B"], "A is still shown: the step is from A again, not from the dead B");
+});
+
+test("the leader shows nothing while it waits, announced once; a key after it that cannot act says why in the line", async t => {
+  const s = stepShell(t);
+  await s.open(steps[0]);
+  const hint = s.c.leaderHint.element;
+  s.actions.get("app.leader")({ target: s.document.activeElement });
+  assert.deepEqual([...hint.children].map(child => [child.className, child.textContent]), [["sr-only", LEADER_ANNOUNCEMENT]], "no keys panel");
+  assert.equal(s.c.leaderHint.isShown(), false);
+  s.dispatch(s.document.activeElement, "keydown", { key: "ArrowRight", code: "ArrowRight" });
+  assert.equal(s.c.leaderHint.mode(), "line", "one tab: → cannot act");
+  assert.equal(hint.textContent, "There is no other tab.");
+  // The leader's ? is the shortcuts editor, which lists its keys.
+  let editor = 0; s.actions.set("app.shortcuts", () => editor++);
+  s.actions.get("app.leader")({ target: s.document.activeElement });
+  s.dispatch(s.document.activeElement, "keydown", { key: "?", code: "Slash", shiftKey: true });
+  assert.equal(editor, 1);
+  assert.equal(s.c.leaderHint.mode(), null, "a key that ran: the wait's announcement is gone, nothing shows");
 });

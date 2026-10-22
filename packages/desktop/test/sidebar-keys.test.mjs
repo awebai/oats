@@ -113,7 +113,7 @@ test("rebindable and unbindable in the editor's terms", t => {
 test("shell wiring: the sidebar context follows focus; the keys run the leader's `does`", () => {
   assert.match(shell, /document\.addEventListener\("focusin", \(\) => updateActiveContexts\(\)\);/);
   assert.match(shell, /for \(const \{ id, does \} of SIDEBAR_KEYS\) \{\n  registerAction\(\{ id, label: leaderLabel\(does, actionLabel\), context: "sidebar",/);
-  assert.match(shell, /leaderDispatch\.run\(does, \{ targetId: leaderTargetId\(/);
+  assert.match(shell, /leaderDispatch\.run\(does, leaderOrigin\(/);
 });
 
 // Amendment 8: the context is off in an editable field. A rebind to a modified chord (which the
@@ -157,8 +157,9 @@ test("a key on a row's tool targets that row, not the active terminal's instance
   context.activeTab = null;
   assert.equal(leaderTargetId(trigger), "/h/b", "with no terminal open too");
   assert.equal(leaderTargetId(doc.getElementById("sidebar-spawn")), null);
-  // Both paths hand it the focused element: a sidebar key, and the leader.
-  assert.match(shell, /leaderDispatch\.run\(does, \{ targetId: leaderTargetId\(e\?\.target \?\? document\.activeElement\) \}\)/);
-  assert.match(shell, /const at = e\?\.target \?\? document\.activeElement; leader\.start\(\{ targetId: leaderTargetId\(at\) \}\)/);
+  // Both paths hand it the focused element when their key is pressed: a sidebar key, and the key after the leader.
+  assert.match(shell, /leaderDispatch\.run\(does, leaderOrigin\(e\?\.target \?\? document\.activeElement\)\)/);
+  assert.match(shell, /else leaderDispatch\.run\(does, leaderOrigin\(document\.activeElement\)\)/);
+  assert.match(shell, /function leaderOrigin\(el\) \{\n  const targetId = leaderTargetId\(el\);/);
   dom.window.close();
 });

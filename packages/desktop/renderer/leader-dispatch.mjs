@@ -6,10 +6,12 @@
    one thing in both. The operations are the shell's (registered actions and the roster's own
    paths), passed in; what is decided here is the part with rules of its own:
 
-   - the target instance: the shell resolves it (the terminal's instance when the leader was
-     pressed in a terminal, else the focused roster row's, else the selected row's, else none);
-   - previous / next: the roster as drawn, rows whose Enter would not open a terminal passed over,
-     no wrap; with no target, next opens the first openable row and previous the last;
+   - the target instance: the shell resolves it when the key is pressed (the focused roster row's,
+     else the shown terminal tab's, else none);
+   - previous / next: from the instance an open still in flight is opening, else from the target
+     (the shell's `stepFrom`), so presses faster than an open make as many moves; the roster as
+     drawn, rows whose Enter would not open a terminal passed over, no wrap; with none, next opens
+     the first openable row and previous the last;
    - stop / restart / start / retire: the same availability as the row's actions menu
      (packages/client/instance-acts.mjs, and the menu's own block while the roster is stale or an
      act is pending); when the menu would not offer it, nothing runs and one line says why;
@@ -56,6 +58,7 @@ export function actAvailability(instance, verb, menuReason = null) {
  * @param {object} d   the shell's operations and reads:
  *   say(line)                        one line, shown and announced until the next key, click or focus change
  *   targetId(origin) / target(origin)   the target instance's id / its current roster row, or null
+ *   stepFrom(origin)                 the instance id previous / next go on from (default: targetId)
  *   rosterRows()                     [{ id, openable, open() }] as drawn
  *   menuReason(instance)             the row menu's own block, or null
  *   openAct(verb, instance)          the menu's dialog for the act (Stop…/Retire… plans, Start…/Restart…)
@@ -72,7 +75,7 @@ export function createLeaderDispatch(d) {
     d.openAct(verb, instance);
   };
   const step = (delta) => (origin) => {
-    const row = rosterStep(d.rosterRows(), d.targetId(origin), delta);
+    const row = rosterStep(d.rosterRows(), (d.stepFrom ?? d.targetId)(origin), delta);
     if (row) row.open();
     else d.say(delta > 0 ? "No instance below this one has a terminal to open." : "No instance above this one has a terminal to open.");
   };

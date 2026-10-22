@@ -1395,7 +1395,12 @@ section is the module map.
   and Ctrl+P stay the program's (readline's kill-line, shell history).
   The leader's ↑ ↓ z have actions of their own (`roster.openPrevious`,
   `roster.openNext`, `terminal.focusMode`, shell.mjs `runAsLeaderKey`), which run
-  what the leader then that key runs.
+  what the leader then that key runs. Both read their origin when the key is
+  pressed (`leaderOrigin`): the target (`leaderTargetId`), and for ↑ ↓ the
+  instance an open still in flight is opening (`openingInstanceId`, from
+  `openTerminalTabFlow`'s `terminalOpening`), so presses faster than an open each move.
+  The leader's wait draws nothing (`leader-hint.mjs` `announce`, for a screen
+  reader); its line says why a key could not act.
   `keymapTakes(e)` tells a view's own key handler that the keymap binds this
   keydown (matchEvent's answer, nothing run); the roster tree, the overview
   canvas, the Souls grid and a row's actions button give way to it on their
@@ -1734,7 +1739,11 @@ creates a new empty group that takes focus with no globally active tab — the n
 any path (sidebar roster, palette, quick-open) lands in the FOCUSED group
 (`openTabInFocusedGroup`); group focus follows the active tab (`focusTab`).
 Switching tabs within a group, or focusing another group, never dismantles
-the split — the layout belongs to the tab layer, not to any tab. The former
+the split — the layout belongs to the tab layer, not to any tab. The tab keys
+(`tabs.next`/`prev`, their second chords, `tabs.goto1..9`) and a strip's own
+arrows walk one strip (`walkedTabs`): while the split renders, the active (or
+focused) tab's group, an empty focused group walking nothing; else the flat
+strip. They never cross into another group. The former
 pending-slot indirection (split → absorb next terminal) is gone: an empty
 focused group with a placeholder plays that role directly. While the split
 is visible the top `#tabstrip` row is hidden (each group has its own strip;

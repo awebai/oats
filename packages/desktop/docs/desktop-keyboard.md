@@ -12,7 +12,7 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 bind; see "The Ctrl+Shift option"), `renderer/leader.mjs` (the
 leader's wait), `renderer/leader-keys.mjs` (which rows apply, the Desktop's
 labels), `renderer/leader-dispatch.mjs` (what each key does),
-`renderer/leader-hint.mjs` (the hint), `renderer/focus-regions.mjs` (F6),
+`renderer/leader-hint.mjs` (the hint's announcement and its line), `renderer/focus-regions.mjs` (F6),
 `renderer/surface-return.mjs` (back to where you were),
 `renderer/instance-recency.mjs` (the palette's last-focus record),
 `renderer/shell.mjs` (action registration). Tests: `test/keymap-linux.test.mjs`,
@@ -178,8 +178,8 @@ lone modifier settles it:
   the focused control.
 - The leader again: in a terminal, that second press is the program's, so it
   gets exactly what the chord sends (Ctrl+X 0x18, once: the shell's Ctrl+X
-  Ctrl+E, nano's exit). In a text field on Linux/Windows it closes the hint and
-  stays the field's Cut. Elsewhere it only closes the hint.
+  Ctrl+E, nano's exit). In a text field on Linux/Windows it closes the wait and
+  stays the field's Cut. Elsewhere it only closes the wait.
 - Any other key cancels it and is dropped: nothing is typed, nothing else runs.
 - A key is matched by what it types (`KeyboardEvent.key`: Shift+x is `X`,
   Shift+\ is `|`), whatever Shift or AltGr produced it. A key held with Ctrl,
@@ -187,23 +187,29 @@ lone modifier settles it:
 - A click, a paste, the window losing focus, a modal opening or the focused
   element leaving the document cancels it, with nothing run.
 
-**The hint.** While it waits, a quiet panel at the bottom of the main area
-lists the keys that apply now, key then label, and is announced once ("Leader:
-press a key, Esc for the instances list"). It never takes focus. The rows the TUI
-marks as terminal rows (`z`, `w`, the tab and split keys) show only while a
-terminal tab is open; besides, ←/→ need two tabs or more, `|`/`-` an active
-tab that can split that way, and Tab and `x` tabs that are split. When a key cannot act (no target
-instance, an act the instance's menu would not offer, nothing to split), the
-panel says why in one line, which stays until the next key, click or focus
-change.
+**The hint.** While it waits, nothing shows: no panel lists the keys. The wait is announced once to
+a screen reader ("Leader: press a key, Esc for the instances list", a visually
+hidden `role="status"`), and the keys after it are listed in the shortcuts
+editor (the leader's `?`). When a key cannot act (no target instance, an act
+the instance's menu would not offer, no other tab, nothing to split), one quiet
+line at the bottom of the main area says why, and is announced; it stays until
+the next key, click or focus change. It is the only answer such a key gets. The
+rows the TUI marks as terminal rows (`z`, `w`, the tab and split keys) act only
+while a terminal tab is open; besides, ←/→ need two tabs or more, `|`/`-` an
+active tab that can split that way, and Tab and `x` tabs that are split.
 
-**The target instance** of `X` `R` `S` `D` `N` and the roster moves: the
-terminal's instance when the leader was pressed in a terminal; else the
-focused roster row's; else the active terminal tab's; else none. The chords
-that do what ↑, ↓ and `z` do (`roster.openPrevious`, `roster.openNext`,
-`terminal.focusMode`) run exactly what the leader then that key runs, for the
-target where the chord was pressed, and say why in the same line when they
-cannot act.
+**The target instance** of `X` `R` `S` `D` `N` and the roster moves is read
+when the key after the leader is pressed, not when the leader is: the focused
+roster row's; else the shown terminal tab's (in a terminal, or with focus
+nowhere; a terminal pane keeps focus only as the shown one counts, so a pane
+hidden since names nothing); else none. ↑ and ↓ go on from the instance an open
+still in flight is opening (until it fails, or another selection supersedes
+it), else from the target: presses faster than `/api/panel` answers or a
+terminal attaches make one move each, and none re-opens the instance being
+opened. The chords that do what ↑, ↓ and `z` do (`roster.openPrevious`,
+`roster.openNext`, `terminal.focusMode`) run exactly what the leader then that
+key runs, read where the chord was pressed, and say why in the same line when
+they cannot act.
 
 | Leader, then | Desktop does |
 |---|---|
@@ -212,7 +218,7 @@ cannot act.
 | `2` | Workspace › Souls |
 | `3` | Workspace › Capabilities |
 | ↑, ↓ | opens the terminal of the roster row before / after the target, as the roster is drawn (filter applied, collapsed rows absent), passing over rows whose Enter would not open a terminal; no wrap. With no target, ↓ opens the first and ↑ the last. Also `roster.openPrevious`, `roster.openNext` |
-| ←, → | previous / next tab (`tabs.prev`, `tabs.next`; the Desktop's cycling wraps, the TUI's does not) |
+| ←, → | previous / next tab of the active tab's strip, in the order drawn: with the tabs split, the focused group's, each press another tab of it; from a stage, → is the first tab and ← the last (`tabs.prev`, `tabs.next`; the Desktop's cycling wraps, the TUI's does not) |
 | `z` | focus mode on or off (`app.focusMode`), and the active terminal takes focus. Also `terminal.focusMode` |
 | `w` | closes the active tab (`tabs.close`); the agent keeps running |
 | `\|`, `-` | split right / split down (`split.vertical`, `split.horizontal`) |
@@ -228,7 +234,7 @@ cannot act.
 
 **Cannot apply:** `m` (move the tab to the other group). The Desktop has no
 way to move a tab between groups; the key cancels like any key not in the
-table, and the hint leaves it out.
+table, and the shortcuts editor leaves it out.
 
 ## The keymap as shipped
 
@@ -247,9 +253,9 @@ The keys come in three layers, as in `oats tui`:
 | Focus mode on or off, in the active terminal (`terminal.focusMode`; the leader's `z`) | ⌥⌘Z | Ctrl+Alt+Z | Ctrl+Shift+M | yes |
 | Spawn instance: choose a soul in Workspace (`app.chooseSoul`) | ⌘N | Ctrl+Shift+N | the same | yes |
 | Close tab (`tabs.close`) | ⌘W | Ctrl+Alt+W | Ctrl+Shift+W | yes |
-| Next / previous tab (`tabs.next`, `tabs.prev`) | ⌃Tab / ⌃⇧Tab | Ctrl+Tab / Ctrl+Shift+Tab | the same | yes |
+| Next / previous tab of the active tab's strip, wrapping; split, the focused group's (`tabs.next`, `tabs.prev`) | ⌃Tab / ⌃⇧Tab | Ctrl+Tab / Ctrl+Shift+Tab | the same | yes |
 | Next / previous tab, second chord (`tabs.nextPage`, `tabs.prevPage`; the leader's → ←) | ⌥⌘→ / ⌥⌘← | Alt+Shift+→ / Alt+Shift+← | Alt+Shift+→ / Alt+Shift+← (kept) | yes (a named exception, principle 2) |
-| Go to tab 1–8, last tab (`tabs.goto1`…`tabs.goto9`) | ⌥⌘1–⌥⌘9 | Ctrl+Alt+1–Ctrl+Alt+9 | Ctrl+Alt+1–Ctrl+Alt+9 (kept) | yes (ESC and the digit, which Alt+digit still sends) |
+| Go to tab 1–8, last tab, of the active tab's strip; split, the focused group's (`tabs.goto1`…`tabs.goto9`) | ⌥⌘1–⌥⌘9 | Ctrl+Alt+1–Ctrl+Alt+9 | Ctrl+Alt+1–Ctrl+Alt+9 (kept) | yes (ESC and the digit, which Alt+digit still sends) |
 | Split right (`split.vertical`) | ⌘\ | Ctrl+Alt+E | Ctrl+Shift+E | yes |
 | Split down (`split.horizontal`) | ⌘⇧\ | Ctrl+Alt+Shift+E | Ctrl+Shift+D | yes |
 | Focus the next editor group (`split.focusNextGroup`; the leader's Tab) | ⌥⌘A | Ctrl+Alt+A | Ctrl+Alt+A (kept) | yes |
@@ -389,7 +395,8 @@ leader's `z`), close tab (W), split right (E) and split down (Shift+E), the
 next editor group (A, the leader's Tab), filter instances (F) and the
 instance's name and colour (R; `instance.edit`, ⌥⌘R on macOS, never with
 Shift, no leader key). Ctrl+Alt with
-a digit goes to tab 1–9 (9 is the last). Alt+Shift with the leader's arrows
+a digit goes to tab 1–8 of the active tab's strip, 9 to its last (with the
+tabs split, the focused group's). Alt+Shift with the leader's arrows
 moves: the previous / next instance's terminal (↑ ↓) and the previous / next
 tab (← →). With the Ctrl+Shift option seven of them are Ctrl+Shift chords
 instead, in both clients (see "The Ctrl+Shift option"). The TUI binds the

@@ -39,7 +39,7 @@ import { createChordFamily } from "./chord-family.mjs";
 import { createLeader } from "./leader.mjs";
 import { createLeaderHint } from "./leader-hint.mjs";
 import { createLeaderDispatch } from "./leader-dispatch.mjs";
-import { leaderApplies, leaderLabel, leaderRowsNow } from "./leader-keys.mjs";
+import { leaderApplies, leaderLabel } from "./leader-keys.mjs";
 import { LEADER_TABLE } from "../../client/keymap.mjs";
 import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
@@ -1718,14 +1718,8 @@ function restoreTerminalGroups() {
  * tab's deferred cleanup queues behind it instead of being dropped or torn
  * down by the stale lifecycle. */
 function onTabKeydown(e, id) {
-  // Per-group keyboard navigation: while the split renders, arrows/Home/End
-  // walk the CLOSED SET of the tab's own group strip (each .group-tabbar is
-  // its own tablist); the flat strip walks all context-visible tabs.
-  const group = tabLayerVisible && (activeTab == null || tabs.get(activeTab)?.kind === "terminal")
-    ? groupOfTab(split, id) : null;
-  const visible = group
-    ? group.tabs.map((tid) => [tid, tabs.get(tid)]).filter(([, t]) => t)
-    : [...tabs].filter(([, t]) => !t.tabEl.hidden);
+  // Per-group keyboard navigation: arrows/Home/End walk the strip the tab is in (walkedTabs).
+  const visible = walkedTabs(id);
   const at = visible.findIndex(([tid]) => tid === id);
   if (at < 0) return;
   const action = tabKeyAction(e, at, visible.length);
@@ -2063,6 +2057,7 @@ async function openViewTab(name, title, extra = {}, key = `view:${name}`,
 
 // ── integrated terminal tab (the shell's own flagship view) ──────────────
 const pendingTerms = new Set(); // [key, incarnation] with a tab CREATION in flight (post-resolution — dedup for concurrent opens of one resolved identity)
+let terminalOpening = null; // the newest terminal open (openTerminalTabFlow): { id, owns, pending }
 /** ref: either a bare instance name (views, palette — resolved only when
  * unambiguous) or { instance, home?, agentsRoot? } (sidebar rows — exact).
  * opts.quiet (post-spawn auto-open): failures report via console.warn
@@ -2110,53 +2105,62 @@ async function openTerminalTabFlow(ref, notify, options = {}) {
     if (!owns() || instanceSplitIdentity(splitOpenState()) !== layoutIdentity) return false;
     split = planned.split; return true;
   };
-  let panel;
-  // The shown answer keeps the stamp of the read that brought it; only a request of this open's own takes a new one.
-  const reuse = shown && shown.ws === ws ? shown : null;
-  const read = reuse ? reuse.read : ++panelReads;
+  // While it is in flight, and after it while its tab is the one shown, the instance steps go on from it
+  // (openingInstanceId): a press before /api/panel answers or the terminal attaches is a move, not lost.
+  const opening = { id: ref && typeof ref === "object" ? instanceId(ref) : null, owns, pending: true };
+  terminalOpening = opening;
   try {
-    panel = reuse ? { instances: reuse.instances } : await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
-  } catch (e) {
-    if (!owns()) return; // stale rejection belongs to the old workspace
-    throw e;
-  }
-  if (!owns()) return;
-  // Identity-aware resolution BEFORE any key/tab decision (resolveTerminalOpen
-  // encodes the ordering; review 7d740f9): an exact home/agentsRoot reference
-  // finds ITS instance; a bare name resolves only when unambiguous — the
-  // first same-named match could be another agents root's tmux session.
-  const r = resolveTerminalOpen(panel.instances, ref, ws);
-  if (r.error) {
-    return notify(r.error === "ambiguous"
-      ? `several instances are named "${r.name}" — open it from the sidebar tree, which addresses the exact one`
-      : `unknown instance "${r.name}"`);
-  }
-  const { inst, key } = r;
-  if (options.expected && !sameInstanceActionTarget(options.expected, inst, ws)) return notify('The selected instance identity changed. Use the current roster.');
-  try { await whenKeyFree(key); }
-  catch (e) { if (!owns()) return; throw e; }
-  if (!owns()) return;
-  // Every jump path through here is user-initiated (palette, roster row,
-  // quick-open, post-spawn open) — activating an existing tab focuses its
-  // terminal input so the user can type into tmux immediately.
-  // Only a tab of this incarnation (#1237): a respawn under the same home opens its own tab.
-  for (const [tid, t] of tabs) if (t.key === key && !otherIncarnation(t.origin?.incarnation, inst.createdAt)) {
-    if (!commitDestination()) return notify('The terminal destination changed. Select the instance again.');
-    t.instanceRef = inst;
-    split = fillEmptyGroup(split, tid);
-    selectTab(tid, { intent: owns, focusContent: true }); return;
-  }
-  // A caller's own refusal of a NEW tab for the resolved row (the palette's: a held home opens nothing new, #802,
-  // #1247); its tab already open is shown above, as any open tab is.
-  const refused = options.refuse?.(inst);
-  if (refused) return notify(refused);
-  const pending = JSON.stringify([key, terminalOrigin(inst).incarnation]); // one incarnation's creation
-  if (pendingTerms.has(pending)) return; // an open for this key is already in flight
-  pendingTerms.add(pending);
-  try {
-    await openTerminalTabInner(inst, ws, key, owns, notify, commitDestination, read);
+    let panel;
+    // The shown answer keeps the stamp of the read that brought it; only a request of this open's own takes a new one.
+    const reuse = shown && shown.ws === ws ? shown : null;
+    const read = reuse ? reuse.read : ++panelReads;
+    try {
+      panel = reuse ? { instances: reuse.instances } : await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
+    } catch (e) {
+      if (!owns()) return; // stale rejection belongs to the old workspace
+      throw e;
+    }
+    if (!owns()) return;
+    // Identity-aware resolution BEFORE any key/tab decision (resolveTerminalOpen
+    // encodes the ordering; review 7d740f9): an exact home/agentsRoot reference
+    // finds ITS instance; a bare name resolves only when unambiguous — the
+    // first same-named match could be another agents root's tmux session.
+    const r = resolveTerminalOpen(panel.instances, ref, ws);
+    if (r.error) {
+      return notify(r.error === "ambiguous"
+        ? `several instances are named "${r.name}" — open it from the sidebar tree, which addresses the exact one`
+        : `unknown instance "${r.name}"`);
+    }
+    const { inst, key } = r;
+    opening.id = instanceId(inst);
+    if (options.expected && !sameInstanceActionTarget(options.expected, inst, ws)) return notify('The selected instance identity changed. Use the current roster.');
+    try { await whenKeyFree(key); }
+    catch (e) { if (!owns()) return; throw e; }
+    if (!owns()) return;
+    // Every jump path through here is user-initiated (palette, roster row,
+    // quick-open, post-spawn open) — activating an existing tab focuses its
+    // terminal input so the user can type into tmux immediately.
+    // Only a tab of this incarnation (#1237): a respawn under the same home opens its own tab.
+    for (const [tid, t] of tabs) if (t.key === key && !otherIncarnation(t.origin?.incarnation, inst.createdAt)) {
+      if (!commitDestination()) return notify('The terminal destination changed. Select the instance again.');
+      t.instanceRef = inst;
+      split = fillEmptyGroup(split, tid);
+      selectTab(tid, { intent: owns, focusContent: true }); return;
+    }
+    // A caller's own refusal of a NEW tab for the resolved row (the palette's: a held home opens nothing new, #802,
+    // #1247); its tab already open is shown above, as any open tab is.
+    const refused = options.refuse?.(inst);
+    if (refused) return notify(refused);
+    const pending = JSON.stringify([key, terminalOrigin(inst).incarnation]); // one incarnation's creation
+    if (pendingTerms.has(pending)) return; // an open for this key is already in flight
+    pendingTerms.add(pending);
+    try {
+      await openTerminalTabInner(inst, ws, key, owns, notify, commitDestination, read);
+    } finally {
+      pendingTerms.delete(pending);
+    }
   } finally {
-    pendingTerms.delete(pending);
+    opening.pending = false;
   }
 }
 
@@ -2675,17 +2679,31 @@ function switchTab(id) {
   if (!inContent && tabbar.contains(active)) tabs.get(id)?.triggerEl.focus();
 }
 
+/** The tabs the tab keys walk, in the order their strip draws them: [[id, tab]]. While the split
+ * renders, the CLOSED SET of one group's strip (each .group-tabbar is its own tablist): `id`'s group,
+ * or with no tab the focused group, which may be empty. Else every context-visible tab of the flat
+ * strip, which split-dom.mjs keeps in creation order. tabs.next/prev and their second chords,
+ * tabs.goto1..9 (the active tab's strip) and the strip's own arrows (the focused trigger's). */
+function walkedTabs(id = activeTab) {
+  const splitShown = tabLayerVisible && !!split && (activeTab == null || tabs.get(activeTab)?.kind === "terminal");
+  const group = !splitShown ? null
+    : id == null ? split.groups.find(g => g.id === split.focusedGroup) ?? null : groupOfTab(split, id);
+  return group ? group.tabs.map((tid) => [tid, tabs.get(tid)]).filter(([, t]) => t) : visibleTabEntries();
+}
+
+/** Next / previous tab of the active tab's strip, wrapping; with no active tab (a stage shown) next is the
+ * first and previous the last. */
 function cycleTab(delta) {
-  const vis = visibleTabEntries();
+  const vis = walkedTabs();
   if (!vis.length) return;
-  const at = Math.max(0, vis.findIndex(([tid]) => tid === activeTab));
-  const [nextId] = vis[(at + delta + vis.length) % vis.length];
+  const at = vis.findIndex(([tid]) => tid === activeTab);
+  const [nextId] = vis[at < 0 ? (delta > 0 ? 0 : vis.length - 1) : (at + delta + vis.length) % vis.length];
   switchTab(nextId);
 }
 
-/** Go to tab n (1-based) of the visible strip; 9 is the last tab, as in browsers. */
+/** Go to tab n (1-based) of the active tab's strip; 9 is the last tab, as in browsers. */
 function gotoTab(n) {
-  const vis = visibleTabEntries();
+  const vis = walkedTabs();
   if (!vis.length) return;
   const [id] = n >= 9 ? vis.at(-1) : vis[n - 1] ?? [];
   if (id != null) switchTab(id);
@@ -2827,7 +2845,8 @@ if (isMac) {
 // ── the leader (Ctrl+X, the TUI's): one key after it, from every focus ─────────────────────
 // leader.mjs settles the wait on the next key; leader-keys.mjs says which rows apply and their
 // words; leader-dispatch.mjs runs a `does` (the leader's and the sidebar keys' alike); the hint
-// lists the keys while it waits and says, in one line, why something did not run.
+// shows nothing while it waits (the wait is announced to a screen reader; the shortcuts editor lists
+// the keys) and says, in one line, why a key did not run.
 const actionLabel = id => listActions().find(action => action.id === id)?.label ?? null;
 const leaderHint = createLeaderHint({ doc: document, host: document.getElementById("main"), before: document.getElementById("show-panel") });
 let hintLineArmed = false;
@@ -2849,13 +2868,10 @@ function leaderState() {
   return { terminalOpen, tabs: tabLayerVisible ? visibleTabEntries().length : 0,
     canSplitRow: !!controls.splitRow, canSplitCol: !!controls.splitCol, split: tabLayerVisible && !!split && split.groups.length >= 2 };
 }
-/** The instance a key acts on: the terminal's when it was pressed in one, else the focused roster
- * row's, else the selected row's (the active terminal tab's), else none. Its instanceId. */
+/** The instance a key acts on, read where it was pressed: the focused roster row's, else the shown
+ * terminal tab's (a key pressed in a terminal, or nowhere), else none. Its instanceId. A terminal
+ * holding focus counts only as the shown one: focus can stay in a pane hidden since. */
 function leaderTargetId(el) {
-  if (el?.closest?.(".xterm")) {
-    const tab = [...tabs.values()].find(t => t.kind === "terminal" && t.paneEl?.contains(el));
-    if (tab?.instanceRef) return instanceId(tab.instanceRef);
-  }
   // The row itself, or one of its tools (Start…, the actions trigger, the PR link), which sit beside
   // it in its .ctx-tree-row.
   const row = el?.closest?.("#instance-roster .ctx-inst") ?? el?.closest?.("#instance-roster .ctx-tree-row")?.querySelector(".ctx-inst");
@@ -2863,9 +2879,24 @@ function leaderTargetId(el) {
   const active = activeTab != null ? tabs.get(activeTab) : null;
   return active?.kind === "terminal" && active.instanceRef ? instanceId(active.instanceRef) : null;
 }
+/** The instance the newest terminal open is opening while it is in flight, and after it while its tab is the
+ * one shown, as long as no other selection came since (its ticket owns); else null. */
+function openingInstanceId() {
+  const opening = terminalOpening;
+  if (!opening?.id || !opening.owns()) return null;
+  const shown = activeTab != null ? tabs.get(activeTab) : null;
+  return opening.pending || (shown?.kind === "terminal" && shown.instanceRef && instanceId(shown.instanceRef) === opening.id) ? opening.id : null;
+}
+/** What a key after the leader, a sidebar key or a chord that does one's work acts on, read when that key is
+ * pressed at `el`: `targetId` (leaderTargetId), and `stepFromId` the instance ↑/↓ go on from: an open in
+ * flight's (a press faster than /api/panel or the attach moves on from it), else the target. */
+function leaderOrigin(el) {
+  const targetId = leaderTargetId(el);
+  return { targetId, stepFromId: openingInstanceId() ?? targetId };
+}
 const rosterInstance = id => (id == null ? null : shownRows(contextInstances).find(i => instanceId(i) === id) ?? null);
-/** Why a key cannot do its row's work now (the leader's hint does not list such a row, but the key,
- * after the leader or in the sidebar, says why rather than doing nothing silently). */
+/** Why a key cannot do its row's work now (leader-keys.mjs leaderApplies): the key, after the leader or in
+ * the sidebar, says why in the hint's line rather than doing nothing silently. */
 function notApplicable(does) {
   const row = LEADER_TABLE.find(r => r.does === does);
   if (!row) return null;
@@ -2888,6 +2919,7 @@ function rosterActsHeld(instance) {
 const leaderDispatch = createLeaderDispatch({
   say: sayInHint,
   targetId: origin => origin.targetId ?? null,
+  stepFrom: origin => origin.stepFromId ?? null,
   target: origin => rosterInstance(origin.targetId ?? null),
   rosterRows: () => [...(contextRosterEl?.querySelectorAll(".ctx-list .ctx-inst:not(.pending):not([data-filter-context])") || [])].map(row => {
     const instance = rosterInstance(row.dataset.treeInstance);
@@ -2934,21 +2966,22 @@ const leader = createLeader({ win: window, isMac, modalOpen,
   // A key the Desktop has no operation for (m) cancels, as one outside the table does. A key whose row
   // does not apply now (nothing to split, no terminal) settles, and its line says why.
   supports: does => leaderDispatch.supports(does),
-  onOpen: () => leaderHint.showKeys(leaderRowsNow(leaderState()).map(row => ({ keys: row.keys, label: leaderLabel(row.does, actionLabel) })), { isMac }),
-  onClose: () => { if (leaderHint.mode() === "keys") leaderHint.hide(); },
-  onSettle: (does, origin) => { const why = notApplicable(does); if (why) sayInHint(why); else leaderDispatch.run(does, origin); },
+  onOpen: () => leaderHint.announce(),
+  onClose: () => { if (leaderHint.mode() === "wait") leaderHint.hide(); },
+  // The target is read at the key, not when the leader was pressed: whatever moved focus meanwhile is what the user sees.
+  onSettle: does => { const why = notApplicable(does); if (why) sayInHint(why); else leaderDispatch.run(does, leaderOrigin(document.activeElement)); },
 });
 window.addEventListener("pagehide", () => leader.dispose(), { once: true });
 // The chord, from every focus, a terminal's and an editable field's included. Under a modal dialog
 // or the palette it is not there at all (`when`): the key goes where it goes without it.
 registerAction({ id: "app.leader", label: "Leader: the commands that follow one key", context: "global", when: () => !modalOpen(),
-  run: (e) => { const at = e?.target ?? document.activeElement; leader.start({ targetId: leaderTargetId(at) }); } });
+  run: () => { leader.start(); } });
 /** A key that does what the leader then a key does, from where it was pressed: the leader's own
- * target (leaderTargetId) and rules (notApplicable's line when it cannot act). */
+ * target (leaderOrigin) and rules (notApplicable's line when it cannot act). */
 function runAsLeaderKey(does, e) {
   const why = notApplicable(does);
   if (why) { sayInHint(why); return; }
-  leaderDispatch.run(does, { targetId: leaderTargetId(e?.target ?? document.activeElement) });
+  leaderDispatch.run(does, leaderOrigin(e?.target ?? document.activeElement));
 }
 // The sidebar's plain keys (the TUI's, shared PLAIN_KEYS): one action per key, the same `does` as
 // the leader's, acting on the focused roster row (on a nav or footer control: the selected row).

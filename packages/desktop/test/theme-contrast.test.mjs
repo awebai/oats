@@ -1989,9 +1989,9 @@ for (const [name] of palettes) test(`${name}: the shortcuts editor's search, hea
   assert.ok(contrast(opaqueChannels(value("muted")), opaqueChannels(value("surface"))) >= 4.5);
 });
 
-// The leader (docs/desktop-keyboard.md, "The leader"): its hint over the main area, drawn by the
-// shipped code and rules, in every theme. Each text is an
-// inventoried token on the surface actually painted under it, with no opacity on the way.
+// The leader (docs/desktop-keyboard.md, "The leader"): its hint's line over the main area, drawn by the
+// shipped code and rules, in every theme. Its text is an inventoried token on the surface actually painted
+// under it, with no opacity on the way. While the leader waits, nothing is drawn: the region stays clipped.
 for (const [name] of palettes) test(`${name}: the leader's hint meets AA on its effective colours`, async t => {
   const { createLeaderHint } = await import("../renderer/leader-hint.mjs");
   const dom = new JSDOM(readFileSync(new URL("index.html", renderer), "utf8"));
@@ -2002,7 +2002,8 @@ for (const [name] of palettes) test(`${name}: the leader's hint meets AA on its 
   }
   const root = dom.window.getComputedStyle(doc.documentElement);
   const hint = createLeaderHint({ doc, host: doc.getElementById("main"), before: doc.getElementById("show-panel") });
-  hint.showKeys([{ keys: ["k", "space"], label: "Open the command palette" }, { keys: ["escape"], label: "Instance roster" }], { isMac: false });
+  hint.announce();
+  assert.equal(dom.window.getComputedStyle(hint.element).clipPath, "inset(50%)", "the wait draws nothing");
   const check = (selector, fg, surfaceSelector, bg) => {
     const el = doc.querySelector(selector), surface = doc.querySelector(surfaceSelector);
     assert.ok(el && surface, selector);
@@ -2012,10 +2013,9 @@ for (const [name] of palettes) test(`${name}: the leader's hint meets AA on its 
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector} on ${bg}`);
     for (let node = el; node; node = node.parentElement) assert.equal(dom.window.getComputedStyle(node).opacity, "1", `${selector}: no opacity`);
   };
-  check(".leader-hint-key", "fg", ".leader-hint", "surface-2");
-  check(".leader-hint-label", "muted", ".leader-hint", "surface-2");
   hint.say("No instance is focused or selected.");
   check(".leader-hint-line", "fg", ".leader-hint", "surface-2");
   // The hint is opaque: its surface is a token, never a blend over the terminal behind it.
   assert.equal(dom.window.getComputedStyle(hint.element).background, "var(--surface-2)");
+  assert.notEqual(dom.window.getComputedStyle(hint.element).clipPath, "inset(50%)", "a line is drawn");
 });

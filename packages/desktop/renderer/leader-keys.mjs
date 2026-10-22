@@ -2,17 +2,17 @@
 
    The table itself is the shared one (packages/client/keymap.mjs LEADER_TABLE, the TUI's, with
    its terse labels). Here: the Desktop's word for each `does`, which rows apply in the window's
-   present state (the hint lists exactly those; a key whose row does not apply now still settles,
-   and the shell says why in the hint's line: shell.mjs onSettle, notApplicable. Only `m`, which
-   the Desktop has no operation for, cancels like a key outside the table), and how a key id is
-   drawn. The shell supplies the state and runs the
+   present state (a key whose row does not apply now still settles, and the shell says why in the
+   hint's line: shell.mjs onSettle, notApplicable. Only `m`, which the Desktop has no operation
+   for, cancels like a key outside the table), and how a key id is drawn (the shortcuts editor's
+   Leader group lists the rows). The shell supplies the state and runs the
    rows (shell.mjs, leader-dispatch.mjs); docs/desktop-keyboard.md, "The leader", is the table. */
 
 import { LEADER_TABLE } from "../../client/keymap.mjs";
 import { chordFromKeyId, chordKeys } from "./keybindings.mjs";
 
-/** A `does` that runs one registered action: its label is that action's, so the editor, the hint
- * and the palette show one name for one thing. */
+/** A `does` that runs one registered action: its label is that action's, so the editor and the
+ * palette show one name for one thing. */
 export const LEADER_ACTIONS = Object.freeze({
   __proto__: null,
   palette: "app.palette",
@@ -48,7 +48,7 @@ export const LEADER_LABELS = Object.freeze({
 });
 
 /** What the Desktop cannot do from the leader: `m`, moving a tab to the other group (no input
- * moves a tab between groups today). Such a key cancels, and the hint omits it. */
+ * moves a tab between groups today). Such a key cancels, and the shortcuts editor omits it. */
 export const LEADER_UNSUPPORTED = Object.freeze(new Set(["tab-move"]));
 
 /** The Desktop's label for `does`: its action's (`labelOf(actionId)`, the registry's), else its own. */
@@ -76,11 +76,6 @@ export function leaderApplies(row, state = {}) {
     case "group-next": case "group-close": return !!state.split;
     default: return true;
   }
-}
-
-/** The table's rows that apply now, in the table's order. */
-export function leaderRowsNow(state, rows = LEADER_TABLE) {
-  return rows.filter((row) => leaderApplies(row, state));
 }
 
 /** The row a key id belongs to, or null. */

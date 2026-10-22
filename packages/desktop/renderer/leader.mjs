@@ -21,7 +21,7 @@
    the TUI, which reads it as ctrl+/alt+ something.
 
    The engine listens on the window in the capture phase, before xterm's textarea and every
-   focused control's own handlers. What a key does, what the hint shows and who the target is
+   focused control's own handlers. What a key does, what the hint says and who the target is
    belong to the shell (leader-keys.mjs, shell.mjs); this module only decides when the wait
    settles, on which `does`, and which events it eats. */
 
@@ -64,7 +64,7 @@ const physical = (e) => e.code || String(e.key ?? "").toLowerCase();
  * @param {boolean} [o.isMac]
  * @param {() => boolean} o.modalOpen       a modal dialog or the palette is shown (aria-modal)
  * @param {(does: string) => boolean} [o.supports]   whether the Desktop runs this `does` now
- * @param {(origin: object) => void} [o.onOpen]      the wait began (show the hint)
+ * @param {(origin: object) => void} [o.onOpen]      the wait began (the shell announces it)
  * @param {(does: string, origin: object) => void} [o.onSettle]   a table key settled it
  * @param {(why: string) => void} [o.onClose]        the wait ended: "settled", "again", "key",
  *                                                  "pointer", "paste", "blur", "modal", "focus"
@@ -100,8 +100,9 @@ export function createLeader({ win, isMac, modalOpen = () => false, supports = (
       attributeFilter: ["hidden", "open", "aria-modal", "class", "style", "inert"] });
   }
 
-  /** Begin the wait. `origin` is the shell's (where the leader was pressed); the focused element
-   * is noted here. Returns false, and does nothing, under a modal. */
+  /** Begin the wait. `origin`, the caller's, is handed back to onSettle (the shell passes none: it
+   * reads its target at the key); the focused element is noted here. Returns false, and does
+   * nothing, under a modal. */
   function start(origin = {}) {
     if (modalOpen()) return false;
     if (waiting) close("again");

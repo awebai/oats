@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  leaderApplies, leaderRowsNow, leaderLabel, keyIdCaps, rowKeysText, supportedLeaderRows, LEADER_ACTIONS,
+  leaderApplies, leaderLabel, keyIdCaps, rowKeysText, supportedLeaderRows, LEADER_ACTIONS,
 } from "../renderer/leader-keys.mjs";
 import { createLeaderDispatch, rosterStep, actAvailability, NO_TARGET } from "../renderer/leader-dispatch.mjs";
 import { LEADER_TABLE } from "../../client/keymap.mjs";
@@ -22,8 +22,8 @@ function shellFunction(name, context) {
 }
 
 const STATE = { terminalOpen: true, tabs: 2, canSplitRow: true, canSplitCol: true, split: true };
-test("the hint's rows: terminal rows with a terminal, tab keys with two tabs, split keys as the layer allows, never m", () => {
-  const does = (state) => leaderRowsNow(state).map(row => row.does);
+test("the rows that apply: terminal rows with a terminal, tab keys with two tabs, split keys as the layer allows, never m", () => {
+  const does = (state) => LEADER_TABLE.filter(row => leaderApplies(row, state)).map(row => row.does);
   assert.deepEqual(does(STATE), LEADER_TABLE.map(row => row.does).filter(d => d !== "tab-move"));
   const none = does({});
   assert.deepEqual(none, ["palette", "instances", "souls", "capabilities", "previous", "next", "stop", "restart", "start", "retire", "spawn", "spawn-another", "filter", "workspaces", "help", "list"]);
@@ -161,7 +161,7 @@ test("the shell's menu block holds a stale target's acts whether or not its row 
 // Desktop has no operation for, and a key outside the table cancel.
 test("a leader key whose row does not apply now says why; only an unsupported key cancels silently", () => {
   assert.match(shellSource, /\n  supports: does => leaderDispatch\.supports\(does\),\n/);
-  assert.match(shellSource, /onSettle: \(does, origin\) => \{ const why = notApplicable\(does\); if \(why\) sayInHint\(why\); else leaderDispatch\.run\(does, origin\); \},/);
+  assert.match(shellSource, /onSettle: does => \{ const why = notApplicable\(does\); if \(why\) sayInHint\(why\); else leaderDispatch\.run\(does, leaderOrigin\(document\.activeElement\)\); \},/);
   let state = {};
   const why = shellFunction("notApplicable", { LEADER_TABLE, leaderApplies, leaderState: () => state });
   assert.equal(why("zoom"), "No terminal tab is open.");
@@ -179,23 +179,24 @@ test("a leader key whose row does not apply now says why; only an unsupported ke
 
 // The leader's ↑ / ↓ / z on chords of their own (packages/client/keymap.mjs CHORDS previous, next,
 // zoom): roster.openPrevious, roster.openNext and terminal.focusMode run the shipped runAsLeaderKey, as the
-// sidebar keys do. Driven here beside the leader's own settle (onSettle, as shipped and pinned above,
-// with the origin leader.start gets: the target where the key was pressed), over one roster.
+// sidebar keys do. Driven here beside the leader's own settle (onSettle, as shipped and pinned above:
+// the origin read at the key, leaderOrigin, as shipped), over one roster. Both step from an open in flight.
 test("roster.openPrevious, roster.openNext and terminal.focusMode run what the leader's ↑, ↓ and z run", () => {
   assert.match(shellSource, /for \(const \[id, does\] of \[\["roster\.openPrevious", "previous"\], \["roster\.openNext", "next"\], \["terminal\.focusMode", "zoom"\]\]\) \{\n  registerAction\(\{ id, label: leaderLabel\(does, actionLabel\), context: "global", when: \(\) => !modalOpen\(\), run: \(e\) => runAsLeaderKey\(does, e\) \}\);/);
-  assert.match(shellSource, /const at = e\?\.target \?\? document\.activeElement; leader\.start\(\{ targetId: leaderTargetId\(at\) \}\)/);
+  assert.match(shellSource, /run: \(\) => \{ leader\.start\(\); \} \}\);/, "the leader notes no target: its key reads it");
   assert.deepEqual(["previous", "next", "zoom"].map(does => leaderLabel(does)),
     ["Open the previous instance's terminal", "Open the next instance's terminal", "Focus mode on or off, in the active terminal"]);
   const calls = [];
   const rows = ["a", "b", "c"].map(id => ({ id, openable: id !== "b", open: () => calls.push(["open", id]) }));
   const d = createLeaderDispatch({ say: line => calls.push(["say", line]), targetId: origin => origin.targetId ?? null,
-    target: () => null, rosterRows: () => rows, zoom: () => calls.push(["zoom"]) });
-  let state = STATE;
+    stepFrom: origin => origin.stepFromId ?? null, target: () => null, rosterRows: () => rows, zoom: () => calls.push(["zoom"]) });
+  let state = STATE, opening = null;
   const notApplicable = shellFunction("notApplicable", { LEADER_TABLE, leaderApplies, leaderState: () => state });
   const leaderTargetId = el => el?.instance ?? null;
+  const leaderOrigin = shellFunction("leaderOrigin", { leaderTargetId, openingInstanceId: () => opening });
   const sayInHint = line => calls.push(["say", line]);
-  const runAsLeaderKey = shellFunction("runAsLeaderKey", { notApplicable, sayInHint, leaderDispatch: d, leaderTargetId, document: { activeElement: null } });
-  const viaLeader = (does, at) => { const why = notApplicable(does); if (why) sayInHint(why); else d.run(does, { targetId: leaderTargetId(at) }); };
+  const runAsLeaderKey = shellFunction("runAsLeaderKey", { notApplicable, sayInHint, leaderDispatch: d, leaderOrigin, document: { activeElement: null } });
+  const viaLeader = (does, at) => { const why = notApplicable(does); if (why) sayInHint(why); else d.run(does, leaderOrigin(at)); };
   const both = (does, at) => {
     calls.length = 0; viaLeader(does, at); const leader = [...calls];
     calls.length = 0; runAsLeaderKey(does, { target: at });
@@ -207,8 +208,28 @@ test("roster.openPrevious, roster.openNext and terminal.focusMode run what the l
   assert.deepEqual(both("previous", null), [["open", "c"]], "no target: the last");
   assert.deepEqual(both("next", { instance: "c" }), [["say", "No instance below this one has a terminal to open."]]);
   assert.deepEqual(both("zoom", { instance: "a" }), [["zoom"]]);
+  opening = "a";
+  assert.deepEqual(both("next", { instance: "c" }), [["open", "c"]], "an open of a in flight: the step is from a");
+  opening = null;
   state = {};
   assert.deepEqual(both("zoom", null), [["say", "No terminal tab is open."]]);
+});
+
+test("dispatch: previous / next go on from stepFrom, the acts stay on the target", () => {
+  const calls = [];
+  const rows = ["a", "b", "c"].map(id => ({ id, openable: true, open: () => calls.push(["open", id]) }));
+  const instance = { instance: "a", running: true, home: "/h/a", agent: "dev" };
+  const d = createLeaderDispatch({ say: line => calls.push(["say", line]), targetId: origin => origin.targetId ?? null,
+    stepFrom: origin => origin.stepFromId ?? null, target: origin => (origin.targetId === "a" ? instance : null),
+    rosterRows: () => rows, menuReason: () => null, openAct: (verb, i) => calls.push(["act", verb, i.instance]) });
+  d.run("next", { targetId: "a", stepFromId: "b" });
+  d.run("previous", { targetId: "a", stepFromId: "b" });
+  d.run("stop", { targetId: "a", stepFromId: "b" });
+  assert.deepEqual(calls, [["open", "c"], ["open", "a"], ["act", "stop", "a"]]);
+  // Without stepFrom (a dispatch of its own), the step is from the target.
+  calls.length = 0;
+  createLeaderDispatch({ say() {}, targetId: origin => origin.targetId, rosterRows: () => rows }).run("next", { targetId: "a", stepFromId: "b" });
+  assert.deepEqual(calls, [["open", "b"]]);
 });
 
 // The consumed follow-up is consumed whole, each phase, until its own keyup, whatever else goes down
