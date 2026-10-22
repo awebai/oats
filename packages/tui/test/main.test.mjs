@@ -1890,6 +1890,26 @@ test("with two tabs open, another workspace opened closes each tab's viewer by i
   assert.equal(await r.status, 0);
 });
 
+test("back in the workspace left with two tabs, the loop opens their viewers again one at a time, in their order, the second once the first's window is made; the shown one is the one left shown (docs/tui.md, Tabs)", async () => {
+  const r = await viewingTwoTabs({ listed: LISTED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }) });
+  const [first, second] = r.panel.opens.map((each) => each.argv);
+  leaderEscape(r);
+  for (const k of ["w", "j", "\r"]) { r.stdin.type(k); await settle(); }
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "close"), [["close", "@1"], ["close", "@2"]]);
+  assert.equal(r.panel.opens.length, 2, "nothing opens in the other workspace");
+  r.log.length = 0;
+  for (const k of ["w", "g", "\r"]) { r.stdin.type(k); await settle(); }
+  assert.deepEqual([r.panel.opens.length, r.panel.opens[2].argv], [3, first], "the first tab's viewer, alone");
+  r.panel.opens[2].made("@3");
+  await settle();
+  assert.deepEqual([r.panel.opens.length, r.panel.opens[3].argv], [4, second], "then the second's");
+  r.panel.opens[3].made("@4");
+  await settle();
+  assert.match(wholeScreen(r), /│ acme-expert-tui │\[acme-ledger-dev\]/, "both tabs, the one left shown in brackets");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
 test("with a terminal focused, the leader then Down opens the next agent's terminal as a tab with the focus in it, and then Up shows the one before, a tab already; nothing reaches the agent (Spec T1b; T2)", async () => {
   const r = await viewingFirstOfTwo();
   r.stdin.type("\x1c");

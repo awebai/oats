@@ -65,6 +65,13 @@ export function workspaceOf(state, id, at) {
   if (id === null) return null;
   return viewModel(heldOf(state, at), TERMS).views.find((v) => v.id === id || v.deployments.includes(id))?.id ?? null;
 }
+/** What a workspace's memory for the run is kept under (docs/tui.md, "Tabs"): the workspace that
+ *  holds deployment `id` (workspaceOf), so another of its deployments finds the same memory; a
+ *  deployment that reports no workspace, by its own id. Null for no deployment. */
+export const memoryKey = (state, id, at) => (id === null ? null : workspaceOf(state, id, at) ?? id);
+/** The palette's recency of the open workspace (`recent`, per memoryKey): its instances opened or
+ *  shown in this run, the latest first. */
+export const recentOf = (state, at) => state.recent.get(memoryKey(state, state.open, at)) ?? [];
 
 const text = (value) => typeof value === "string" && value !== "";
 const pad = (n) => String(n).padStart(2, "0");
@@ -669,7 +676,7 @@ export function paletteItems(state, at = new Date(0).toISOString()) {
     const r = roster(state, at);
     const openable = r.instances.filter((row) => openDecision(state, row, instanceActs(row)).open);
     // The record of focus the shared order reads: larger is more recent, `recent` is the latest first.
-    const lastFocus = new Map(state.recent.map((id, i) => [id, state.recent.length - i]));
+    const recent = recentOf(state, at), lastFocus = new Map(recent.map((id, i) => [id, recent.length - i]));
     const item = (row) => {
       const machine = elsewhere(row) ? row.deployment?.machine ?? row.server : null;
       // `sibling`: the shared words for its siblings, or null; never part of what a query matches.
@@ -721,9 +728,9 @@ export function paletteItems(state, at = new Date(0).toISOString()) {
   const items = runs.flat(), selectable = items.filter((each) => each.kind !== "group"), instances = selectable.filter((each) => each.kind === "instance");
   // With nothing chosen yet, the first row that can be selected; but in the palette as it opens (no
   // query), when that is the shown tab's instance (the most recent), the instance shown before it
-  // (`recent`'s second, wherever its group puts it), else the second instance: the palette and Enter
-  // go back to the terminal before it, as the Desktop's recent group did.
-  const before = instances.find((each) => each.id === state.recent[1]) ?? instances[1];
+  // (the second of this workspace's recency, wherever its group puts it), else the second instance:
+  // the palette and Enter go back to the terminal before it, as the Desktop's recent group did.
+  const before = instances.find((each) => each.id === recentOf(state, at)[1]) ?? instances[1];
   const first = p.query === "" && instances.length > 1 && selectable[0] === instances[0] && instances[0].id === state.terminal?.id ? before : selectable[0];
   return {
     items, runs: runs.map((run) => run.filter((each) => each.kind !== "group").map((each) => each.key)),

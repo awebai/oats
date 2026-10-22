@@ -10,7 +10,7 @@ import {
   viewModel, workspaceChoices, workspaceChoiceRows,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
-import { LIST_WORDS, OFFERED_SECTION, ROSTER_FAILED, model, roster, switcher, switcherLead } from "../lib/model.mjs";
+import { LIST_WORDS, OFFERED_SECTION, ROSTER_FAILED, memoryKey, model, roster, switcher, switcherLead } from "../lib/model.mjs";
 import { QUERY_LIMIT, initialState, reduce } from "../lib/store.mjs";
 import { marksOf } from "../lib/views/instances.mjs";
 import { windowOf } from "../lib/views/scroll.mjs";
@@ -1401,22 +1401,22 @@ test("the deployment the run started in, not added to this computer's list, is s
   for (const key of ["j", "r", "w"]) assert.equal(press(told.state, [key]).state.outcome, null, key);
 });
 
-test("selection, the list's scroll and the detail's are kept per open view: away and back returns to the same row at the same place, each view's collapse stays its own, and a filter is not kept", () => {
+test("selection, the list's scroll, the detail's and the filter are kept per workspace: away and back returns to the same row at the same place with the same filter, and each view's collapse stays its own", () => {
   const far = Array.from({ length: 5 }, (_, i) => remoteRow("/home/dev/Agents/quartz", `quartz-${i}`));
   const read = heard(stateOf(reporting([...TREE, ...MANY]), { cli: READS }), answer(machine("quartz", { workspace: LEDGER, instances: far })), tick(0));
   let state = goTo(press(goTo(read, "child-a"), ["h"]).state, "inst-30");
   state = hit(hit(state, "tab", { extent: 30, room: 10 }).state, "G", { extent: 30, room: 10 }).state;
-  const left = { selected: state.selected, top: state.top, detailTop: state.detailTop };
+  const left = { selected: state.selected, top: state.top, detailTop: state.detailTop, filter: { editing: false, query: "" } };
   assert.deepEqual([left.selected, left.detailTop, left.top > 0], [idOf("inst-30"), 21, true], "a row far down, its list and its detail scrolled");
   const away = press(state, ["w", "j", "enter"]).state;
   assert.equal(away.open, QUARTZ);
   assert.deepEqual({ selected: selectedName(away), top: away.top, detailTop: away.detailTop, focus: away.focus }, { selected: "quartz-0", top: 0, detailTop: 0, focus: "list" });
-  assert.deepEqual(away.places.get(DEPLOYMENT), left, "the place left behind is kept under what was open");
+  assert.deepEqual(away.places.get(memoryKey(state, DEPLOYMENT)), left, "the place left behind is kept under the workspace that was open");
   const there = press(away, ["j", "j"]).state;
   assert.equal(selectedName(there), "quartz-2");
   const back = press(there, ["w", "g", "enter"]).state;
   assert.equal(back.open, DEPLOYMENT);
-  assert.deepEqual({ selected: back.selected, top: back.top, detailTop: back.detailTop }, left);
+  assert.deepEqual({ selected: back.selected, top: back.top, detailTop: back.detailTop, filter: back.filter }, left);
   assert.equal(selectedName(back), "inst-30");
   assert.deepEqual([...back.collapsed], [keyOf("child-a")], "what was collapsed in this view is still collapsed");
   assert.equal(drawn(back).includes("grandchild"), false);
@@ -1428,12 +1428,13 @@ test("selection, the list's scroll and the detail's are kept per open view: away
   // A read while away moves nothing of the view left behind: its row is found again.
   const meanwhile = take(again, reporting([...TREE, ...MANY, instanceRow("dev", "aaa-new")]));
   assert.equal(selectedName(press(meanwhile, ["w", "g", "enter"]).state), "inst-30");
-  // A filter belongs to the view it was typed in: another view starts without one, and so does the way back.
+  // A filter belongs to the workspace it was typed in: another starts without one (or with its own),
+  // and the way back finds it.
   const filtered = press(back, ["/", "i", "n", "s", "t", "enter"]).state;
   assert.equal(filtered.filter.query, "inst");
   const other = press(filtered, ["w", "j", "enter"]).state;
   assert.deepEqual(other.filter, { editing: false, query: "" });
-  assert.deepEqual(press(other, ["w", "g", "enter"]).state.filter, { editing: false, query: "" });
+  assert.deepEqual(press(other, ["w", "g", "enter"]).state.filter, { editing: false, query: "inst" });
   // The same view picked again keeps it: nothing was left.
   assert.equal(press(filtered, ["w", "g", "enter"]).state.filter.query, "inst");
 });
@@ -1452,7 +1453,7 @@ test("when the open view loses its last deployment the switcher is shown and say
     { view: lost.state.view, back: lost.state.back, open: lost.state.open, selected: lost.state.selected, top: lost.state.top, detailTop: lost.state.detailTop, focus: lost.state.focus, line: lost.state.switcher.line },
     { view: "switcher", back: "switcher", open: null, selected: null, top: 0, detailTop: 0, focus: "list", line: "gone" },
   );
-  assert.equal(lost.state.places.has(QUARTZ), false);
+  assert.equal(lost.state.places.has(memoryKey(there, QUARTZ)), false);
   assert.equal(model(lost.state, { page: 19, now: NOW, at: AT, cols: 80 }).switcher.said, "gone");
   assert.deepEqual(choices(lost.state), ["acme-platform"]);
   const closing = hit(lost.state, "escape");
