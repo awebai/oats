@@ -156,7 +156,7 @@ before for a row without one. The places: a roster row's title and
 description and its hover card's Status, the actions menu (its trigger,
 Start's reason, Open in split's reason), the notice of a terminal that
 cannot open, the start dialog's status, the context panel's Start, the
-overview's Terminal and Restart, the roster's failure notice and the
+overview's Go to instance and Start…, the roster's failure notice and the
 overview's.
 
 ### A kept failure

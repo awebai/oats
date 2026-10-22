@@ -471,8 +471,10 @@ Those are per-instance identity cues, never invented group names.
 
 Activity and waiting-on-you are explicitly **unknown / available after K7**.
 `TASK`, `STATE`, transcript prose, unnegotiated activity/group labels and the old
-aggregate `instance.git` are not consumed by this projection. Git stays disabled
-with a K1/P1 note; no Tasks destination or new Stop/Retire surface is introduced.
+aggregate `instance.git` are not consumed by this projection. The popover offers
+exactly two acts, **Go to instance** and **Go to soul** (below); Git, Restart
+with… and the soul's own facts live in the roster row's menu and the instance
+panel, and no Tasks destination or Stop/Retire surface is introduced.
 
 `active-observation.mjs` validates the roster/address shape and rejects duplicate
 identities rather than silently losing nodes. Local request tickets and global
@@ -496,16 +498,36 @@ its own native click window rather than swallowing a future intentional click. P
 controls survive meaningful updates for the same identity and resolve the current
 record, not a captured stale object. Hidden/disposed/replaced controls cannot
 act or reclaim focus. Action text remains screen-sized outside the scaled stage,
-bounded to the viewport during zoom/pan/resize. Terminal/Start/Restart use the
-current full home/root/server and require known runtime state and an available
-route; terminal key handling itself is unchanged.
+bounded to the viewport during zoom/pan/resize. Go to instance (the terminal tab,
+or **Start…** on a stopped row, which has no terminal) uses the current full
+home/root/server and requires known runtime state and an available route;
+double-click, Enter and `T` take exactly its act. Terminal key handling itself is
+unchanged.
 
-**Brain is fail-closed here.** The existing Brain reader takes only a soul name,
-and `/api/panel` enumerates instances, not every configured soul. Even one local
-instance cannot prove there is no uninstantiated same-named soul elsewhere. The
-button/keyboard explanation directs users to Workspace's exact soul selection;
-the overview never guesses or adds a filesystem/IPC seam. This is a bounded7a
-surface, not final K7 or native/rendered acceptance.
+**Go to soul never guesses.** It opens the Workspace page's page of the
+instance's exact soul, handed over with `preselectSoul({ name, key, repoKey,
+agentsRoot, server })` and `ctx.openView('spawn')`. The facts are the row's
+`soulKey` (the roster agent row's `key`, carried by `rosterRows`/`panelInstance`
+and kept by `active-observation.mjs`) and `soul.repoKey`, matched against the
+row's own deployment's catalog (`/api/agents?ws=<rowDeployment(row)>`, read once
+per popover per roster observation, the last answer standing while a re-read
+runs): a local row is exact when exactly one catalog row has its key, source and
+agents root and the key is not in `catalog.ambiguous`; a remote row when exactly
+one of its host's agent dirs has its name, root and server. The Workspace page
+shows only the view's primary deployment's souls, so a row of another
+deployment is disabled before any read. The soul page inspects by bare name
+and root (`inspectSoul`'s selector `{ soul, agentsRoot }`, which
+`inspect-boundary.mjs` refuses when two souls of the root share the name), so
+an exact soul whose name another soul of its root shares is disabled too, and
+`preselectSoul` refuses a keyed handoff that meets one on arrival (`onMiss`
+with `sharedName`). A
+`catalog.reason` reply is a failed read and a deployment whose catalog is not
+read yet keeps it checking, as the Workspace page reads them. Every other case
+is disabled with a title that says why (nothing recorded, not in the catalog
+now, several, the read failed, still checking). A late answer is kept only while its read is
+still the popover's (`s.soulRead`, dropped by `closePop`), and a miss on arrival
+is said in the popover's status line, or as a notification once the page has
+gone.
 
 ## Spawn dialog — workspace model v2
 
@@ -1506,8 +1528,8 @@ footer control (Restart…, Start…, Stop…, Retire…) is shown exactly when 
 is listed and enabled exactly when the act is, so a stopped row and one whose
 state is unknown offer Stop, `inspect` has none there, and a `blocked` row shows
 no control but one muted line with the blocked reason instead (nothing more for
-a row gone from its server, whose Work note already says it); the popover's **Restart with…** is the `restart` act and its
-**Start…**/**Terminal** the `start` act on a stopped row and `openAct` on any
+a row gone from its server, whose Work note already says it); the popover's
+**Start…**/**Go to instance** is the `start` act on a stopped row and `openAct` on any
 other, with the view's own conditions (a current roster, a well-formed address,
 the shell's handler) on top. A held home (#802, #1247; `heldHome`) reads its state
 on the row in words ("Setting up worktree…", "Spawn didn't finish", "Retiring…",

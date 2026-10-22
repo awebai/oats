@@ -326,13 +326,13 @@ test("a failed read that kept no rows, over an observation already on screen: th
   assert.equal(await after({ error: '' }), `Roster unavailable. ${LAST}`);
 });
 
-test('a Herdr-recorded instance: the popover disables Terminal and Restart with the kernel reason as their title', async t => {
+test('a Herdr-recorded instance: the popover disables Go to instance with the kernel reason as its title, and offers no Restart', async t => {
   const reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
   const u = await setup(t, { instances: [instance('h1', { running: null, runtimeState: 'unsupported', runtimeError: reason })] }); await tick();
   u.mouse(u.nodes()[0], 'click');
-  const terminal = u.one('.pterm'), restart = u.one('.prestart');
-  assert.equal(terminal.disabled, true); assert.equal(terminal.title, reason);
-  assert.equal(restart.disabled, true); assert.equal(restart.title, reason);
+  const terminal = u.one('.pterm');
+  assert.equal(terminal.disabled, true); assert.equal(terminal.title, reason); assert.equal(terminal.textContent, 'Go to instance');
+  assert.equal(u.one('.prestart'), null, 'Restart with… is the roster menu\'s and the instance panel\'s');
 });
 
 test('a Herdr-recorded instance: the popover says who made the reason (#982): each speaker the panel names, none, and a hostile text as text or withheld', async t => {
@@ -342,8 +342,8 @@ test('a Herdr-recorded instance: the popover says who made the reason (#982): ea
   for (const [origin, line] of cases) {
     const u = await setup(t, { instances: [instance('h1', { running: null, runtimeState: 'unsupported', runtimeError: reason, ...(origin ? { runtimeErrorOrigin: origin } : {}) })] }); await tick();
     u.mouse(u.nodes()[0], 'click');
-    assert.equal(u.one('.pterm').title, line, String(origin)); assert.equal(u.one('.prestart').title, line, String(origin));
-    assert.equal(u.one('.pterm').disabled, true); assert.equal(u.one('.prestart').disabled, true);
+    assert.equal(u.one('.pterm').title, line, String(origin));
+    assert.equal(u.one('.pterm').disabled, true);
     u.dispose();
   }
   for (const [text, line] of [['E_HERDR_REMOVED: <b>bold</b>', 'OATS says: E_HERDR_REMOVED: <b>bold</b>'], ['E_HERDR_REMOVED: gone\u001b[2J', '[withheld]']]) {

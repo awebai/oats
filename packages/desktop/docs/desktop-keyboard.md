@@ -811,7 +811,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Empty split group | Tab; F6 (main) | Focus selects the group |
 | Deployments: Retry (no Spawn button: `S` on the canvas, the sidebar, ⌘N, Quick Open and the soul cards spawn) | First stops of the stage; F6 (main) | Enter; `S` on the canvas |
 | Deployments tabs (All, then one per deployment) | Tab (the selected tab) | ←/→ move and select; Home/End; the choice is remembered per workspace |
-| Overview canvas | Tab | Arrows walk the tree; **Up/Down move between rows when there is no parent/child, so every Independent node is reachable (fixed)**; `[` `]` hop groups; Enter opens the terminal (Start when stopped); `T` `B` `O`; Esc clears; **the selected node is panned into view (fixed)** |
+| Overview canvas | Tab | Arrows walk the tree; **Up/Down move between rows when there is no parent/child, so every Independent node is reachable (fixed)**; `[` `]` hop groups; Enter and `T` go to the instance (Start… when stopped); `S` Workspace; `O` the node popup; Esc clears; **the selected node is panned into view (fixed)** |
 | Overview zoom − + fit | Tab after the canvas; **`-` `=` `0` on the canvas (fixed: `0`)**; `F` also fits | Enter |
 | Overview node popup | Tab after the zoom buttons; `O` | Native buttons; Esc back to the canvas |
 | Workspace tabs (Souls, Capabilities, Setup, Teams) | One roving stop; F6 (main) | Left/Right/Home/End |

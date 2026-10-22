@@ -34,9 +34,12 @@ test("shell registers global + tabs actions covered by the engine's DEFAULT_KEYM
 
 test("hierarchy and spawn views register rebindable view-local actions and dispose them", () => {
   const hier = read("renderer/views/hierarchy.mjs");
-  for (const id of ["hier.fit", "hier.terminal", "hier.brain", "hier.spawn", "hier.popover", "hier.zoomIn", "hier.zoomOut"]) {
+  for (const id of ["hier.fit", "hier.terminal", "hier.spawn", "hier.popover", "hier.zoomIn", "hier.zoomOut"]) {
     assert.match(hier, new RegExp(`id: "${id.replace(".", "\\.")}", defaultChord:`), `hierarchy action ${id} declared`);
   }
+  // The B key only ever reported Brain unavailable: gone, with its stand-in. Go to soul is the popover's.
+  assert.doesNotMatch(hier, /hier\.brain|openSelBrain|BRAIN_UNAVAILABLE/, "no hier.brain action");
+  assert.match(hier, /id: "hier\.terminal", defaultChord: "T", label: "Hierarchy: go to the instance of selection"/);
   assert.match(hier, /context: "view:hierarchy"/, "hierarchy actions use a never-activated view context (editor-visible, window-dispatch-ineligible — review afd2114)");
   assert.match(hier, /run: guarded\(a\.run\)|context: "view:hierarchy"/, "outside keypresses cannot be swallowed");
   assert.match(hier, /s\.disposers = s\.viewActions\.map/, "hierarchy keeps action disposers");
@@ -66,7 +69,7 @@ test("view-local defaults are first-class engine bindings (registerAction defaul
   // so the editor shows real defaults and Backspace-unbind kills the key.
   const hier = read("renderer/views/hierarchy.mjs");
   const expected = {
-    "hier.fit": "F", "hier.terminal": "T", "hier.brain": "B", "hier.spawn": "S",
+    "hier.fit": "F", "hier.terminal": "T", "hier.spawn": "S",
     "hier.popover": "O", "hier.zoomIn": "=", "hier.zoomOut": "-",
   };
   for (const [id, chord] of Object.entries(expected)) {

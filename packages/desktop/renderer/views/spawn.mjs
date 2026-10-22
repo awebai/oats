@@ -195,11 +195,17 @@ function inspectSoul(s, agent, intent = nextSelectionIntent()) {
   if (canFocusCard(s, back)) back.focus({ preventScroll: true });
 }
 
+/** `ref`: `{ name, agentsRoot?, server?, key?, repoKey?, onMiss? }`. A `key` (the kernel's soul key) and a `repoKey`
+ * (the soul source's) narrow the match to that exact soul: the Deployments page's Go to soul hands both. A keyed
+ * soul whose bare name another soul of its root shares is not opened: its page is inspected by name and root, which
+ * inspect-boundary.mjs refuses for a shared name. `onMiss(count, { sharedName })` says so. */
 export function preselectSoul(ref) {
   const intent = nextSelectionIntent();
   pendingWorkspaceTab = { name: "souls", ...intent };
   pendingPreselect = ref && ref.name
-    ? { name: String(ref.name), agentsRoot: ref.agentsRoot, server: ref.server, onMiss: typeof ref.onMiss === 'function' ? ref.onMiss : null, ...intent }
+    ? { name: String(ref.name), agentsRoot: ref.agentsRoot, server: ref.server,
+      ...(typeof ref.key === "string" ? { key: ref.key } : {}), ...(typeof ref.repoKey === "string" ? { repoKey: ref.repoKey } : {}),
+      onMiss: typeof ref.onMiss === 'function' ? ref.onMiss : null, ...intent }
     : null;
   // Already mounted with a current roster: apply on the spot, including an
   // empty roster (a no-match is consumed once, never resurrected by polling).
@@ -234,10 +240,14 @@ function applyPreselect(s) {
   const ref = pendingPreselect;
   pendingPreselect = null; // consumed-once, match or not
   const matches = s.souls.agents.filter((x) => x.name === ref.name
-    && (!ref.agentsRoot || x.agentsRoot === ref.agentsRoot) && (!ref.server || x.server === ref.server));
+    && (!ref.agentsRoot || x.agentsRoot === ref.agentsRoot) && (!ref.server || x.server === ref.server)
+    && (ref.key === undefined || x.key === ref.key) && (ref.repoKey === undefined || x.soulSource?.repoKey === ref.repoKey));
   // an incomplete identity must not pick a twin; the caller says why nothing opened
   if (matches.length !== 1) { ref.onMiss?.(matches.length); return; }
   const a = matches[0];
+  if (ref.key !== undefined && s.souls.agents.filter((x) => x.name === a.name && x.agentsRoot === a.agentsRoot && (x.server || "") === (a.server || "")).length > 1) {
+    ref.onMiss?.(matches.length, { sharedName: a.name }); return;
+  }
   if (ref.spawn && canLaunchSoul(s, a)) {
     openSpawnModal(s, a, ref.draft || {});
     if (s.modalEl) s.spawnReturn = ref.onDismiss;

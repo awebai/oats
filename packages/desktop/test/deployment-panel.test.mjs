@@ -58,6 +58,23 @@ test('rosterRows: waitingOnYou is kept only when cli.features lists waiting-on-y
   }
 });
 
+test('rosterRows and panelInstance carry soulKey: the agent row\'s key (a string or null), absent when the row has none', () => {
+  const keyed = frozen({ root: '/d/agents', agents: [
+    { name: 'dev', key: 'oats.okf/dev', dir: '/d/agents/dev', instances: [{ instance: 'dev-a', home: '/d/agents/dev/instances/dev-a', soul: { repoKey: 'github.com/awebai/oats-okf' } }] },
+    { name: 'ops', key: null, dir: '/d/agents/ops', instances: [{ instance: 'ops-a', home: '/d/agents/ops/instances/ops-a' }] },
+    { name: 'qa', dir: '/d/agents/qa', instances: [{ instance: 'qa-a', home: '/d/agents/qa/instances/qa-a' }] },
+  ] });
+  const rows = rosterRows(keyed, WAITING);
+  assert.deepEqual(rows.map(r => [r.instance, Object.hasOwn(r, 'soulKey'), r.soulKey]),
+    [['dev-a', true, 'oats.okf/dev'], ['ops-a', true, null], ['qa-a', false, undefined]]);
+  const served = rows.map(panelInstance);
+  assert.deepEqual(served.map(r => [r.instance, Object.hasOwn(r, 'soulKey'), r.soulKey]),
+    [['dev-a', true, 'oats.okf/dev'], ['ops-a', true, null], ['qa-a', false, undefined]]);
+  assert.deepEqual(served[0].soul, { repoKey: 'github.com/awebai/oats-okf' }, 'the soul source rides beside it');
+  // A roster from a kernel before launch-preference reports no key: its rows carry no soulKey.
+  assert.equal(Object.hasOwn(rosterRows(roster(), WAITING)[0], 'soulKey'), false);
+});
+
 test('livenessInput: one per row, in order, with the six fields the collector reads and nothing else', () => {
   const rows = frozen(rosterRows(roster(), WAITING));
   assert.deepEqual(livenessInput(rows), [
