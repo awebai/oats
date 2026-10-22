@@ -132,9 +132,10 @@ for (const grouped of [false, true]) test(`${grouped ? "grouped" : "flat"} tab k
   // Exercise the shipped shell handler, not a test-only reimplementation of
   // its group filtering / selection / focus order. No Electron entry import.
   const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
-  const handler = shell.match(/function onTabKeydown\([^]*?\n\}/)?.[0];
-  assert.ok(handler, "shipped keyboard composition exists");
-  const onTabKeydown = runInNewContext(`${handler}\nonTabKeydown`, context);
+  // onTabKeydown walks the strip walkedTabs gives (the focused group's, else the flat strip's).
+  const shipped = ["onTabKeydown", "walkedTabs", "visibleTabEntries"].map(name => shell.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))?.[0]);
+  assert.ok(shipped.every(Boolean), "shipped keyboard composition exists");
+  const onTabKeydown = runInNewContext(`${shipped.join("\n")}\nonTabKeydown`, context);
   for (const [id, { triggerEl }] of tabs) triggerEl.addEventListener("keydown", event => onTabKeydown(event, id));
 
   doc.getElementById("stable").focus();
