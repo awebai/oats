@@ -113,7 +113,7 @@ ${tabBarCSS('.workspace-tabs')}
 /* The Capabilities toolbar keeps its 16px below: 8px inside the edge, 7px + the 1px edge outside. */
 .workspace-discovery > .ws-toolbar.ws-sticky { padding-bottom:8px; margin-bottom:7px; }
 /* Jumping to a section or focusing a row never leaves it under the pinned block. */
-.workspace-discovery :is(.capability-section-title, .catalog-group, [data-capability], .catalog-row, .ws-default-slot, .ws-default-cap, .computer-teams .ct-body :is(button, a[href], input, select, textarea, [tabindex])) { scroll-margin-top:var(--ws-sticky-h, 60px); }
+.workspace-discovery :is(.capability-section-title, .catalog-group, [data-capability], .catalog-row, .ws-default-cell, .computer-teams .ct-body :is(button, a[href], input, select, textarea, [tabindex])) { scroll-margin-top:var(--ws-sticky-h, 60px); }
 .discovery-status { margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .discovery-status:empty { display:none; }
 .discovery-status[hidden] { display:none; }

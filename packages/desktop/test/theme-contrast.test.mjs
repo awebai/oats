@@ -109,7 +109,7 @@ test("the shared inventory holds token names only, covers the 16 ANSI colours, a
   assert.equal(new Set(pairs.map(pair => pair.join(" on "))).size, pairs.length, "no pair twice");
   assert.equal(ansi.length, 16);
   for (const token of ansi) assert.ok(pairs.some(([fg, bg]) => fg === token && bg === "term-bg"), `--${token} is held on --term-bg`);
-  assert.deepEqual(GRAPHIC_PAIRS, [["graph-edge", "bg"], ["graph-edge", "surface"], ["graph-edge", "surface-2"], ["tree-link", "surface"], ["tree-link", "surface-2"], ["tree-link", "sel"], ["muted", "surface"], ["muted", "surface-2"], ["muted", "chip-bg"], ["term-sel", "term-bg"], ["accent", "surface"],
+  assert.deepEqual(GRAPHIC_PAIRS, [["graph-edge", "bg"], ["graph-edge", "surface"], ["graph-edge", "surface-2"], ["tree-link", "surface"], ["tree-link", "surface-2"], ["tree-link", "sel"], ["muted", "surface"], ["muted", "surface-2"], ["term-sel", "term-bg"], ["accent", "surface"],
     ...soulTones.flatMap(tone => ["bg", "surface", "surface-2", "sel"].map(bg => [`instance-${tone}`, bg]))]);
   assert.deepEqual(PAINTED_OVER, [["md-code-bg", "bg"]]);
   assert.deepEqual(HOST_UNADJUSTED_PAIRS, ansi.map(token => [token, "term-bg"]), "the host theme's one exception: its terminal colours, unadjusted");
@@ -627,17 +627,18 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   }
 });
 
-// Workspace › Capabilities' Workspace defaults panel (filled and empty slots, a default capability, one the workspace
-// turned off) and the "About capabilities" dialog in the lifecycle frame: every text on its computed surface.
+// Workspace › Capabilities' Workspace defaults panel (filled and empty core slots, additional defaults from a package
+// and a member repository, one the workspace turned off) and the "About capabilities" dialog in the lifecycle frame: every text on its computed surface.
 for (const [name] of palettes) test(`${name}: Workspace defaults and the About dialog use AA tokens on their computed surfaces`, t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><div class="sections"></div><div class="tools"></div></main></body></html>`, { pretendToBeVisual: true });
   const doc = dom.window.document;
   for (const source of [css, identityCSS, discoveryCSS, lifecycleCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   t.after(() => dom.window.close());
-  const rows = [{ name: 'oats.okf', kind: 'package', package: 'oats.okf', version: '2.1.3', layer: 'knowledge' }, { name: 'oats.core', kind: 'package', package: 'oats.core', version: '1.0.0' }];
+  const rows = [{ name: 'oats.okf', kind: 'package', package: 'oats.okf', version: '2.1.3', layer: 'knowledge' }, { name: 'oats.core', kind: 'package', package: 'oats.core', version: '1.0.0' },
+    { name: 'house-style', kind: 'member', repoKey: 'github.com/nw/agents' }];
   const status = { workspace: { key: 'github.com/nw/agents', name: 'northwind' }, members: [],
     defaults: { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null },
-      capabilities: [{ name: 'oats.core', from: 'package', off: false }, { name: 'house-style', from: null, off: true }] } };
+      capabilities: [{ name: 'oats.core', from: 'package', off: false }, { name: 'house-style', from: 'here', off: false }, { name: 'old-style', from: null, off: true }] } };
   const sections = capabilitySections(rows);
   renderCapabilitySections(doc.querySelector('.sections'), { sections, shown: sections.workspace, filterHost: null, privateListed: false, status, instances: [], onOpen() {} });
   const about = createAboutDialog(doc, { copy: ABOUT_COPY.capabilities, id: 'about' });
@@ -645,15 +646,17 @@ for (const [name] of palettes) test(`${name}: Workspace defaults and the About d
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
     ['.ws-defaults-scope', '.ws-defaults-panel', 'fg', 'surface'], ['.ws-defaults-sub', '.ws-defaults-panel', 'muted', 'surface'],
-    ['button.ws-default-slot .ws-default-slot-head', 'button.ws-default-slot', 'muted', 'surface'],
-    ['button.ws-default-slot .ws-default-name', 'button.ws-default-slot', 'fg', 'surface'],
-    ['button.ws-default-slot .source-chip', 'button.ws-default-slot', 'muted', 'surface'], ['button.ws-default-slot .source-chip-name', 'button.ws-default-slot', 'fg', 'surface'],
-    ['div.ws-default-slot .ws-default-none', 'div.ws-default-slot', 'muted', 'surface'], ['div.ws-default-slot .ws-default-note', 'div.ws-default-slot', 'muted', 'surface'],
-    ['.ws-default-slot-icon[data-tint=slate]', '.ws-default-slot-icon[data-tint=slate]', 'soul-slate-fg', 'soul-slate-bg'],
-    ['.ws-default-slot-icon.is-empty', '.ws-default-slot-icon.is-empty', 'muted', 'chip-bg'],
-    ['.ws-defaults-more-label', '.ws-defaults-panel', 'muted', 'surface'],
-    ['button.ws-default-cap .ws-default-name', 'button.ws-default-cap', 'fg', 'surface'],
-    ['.ws-default-cap.off .ws-default-name', '.ws-default-cap.off', 'muted', 'surface'], ['.ws-default-cap.off .ws-default-note', '.ws-default-cap.off', 'muted', 'surface'],
+    // The two groups' headings and leads, the one cell's words, its chip and tiles (core tints, an empty slot and a
+    // package neutral, a member capability clay), an additional default turned off.
+    ['.ws-defaults-group-head', '.ws-defaults-panel', 'fg', 'surface'], ['.ws-defaults-group-lead', '.ws-defaults-panel', 'muted', 'surface'],
+    ['button.ws-default-cell .ws-default-label', 'button.ws-default-cell', 'muted', 'surface'],
+    ['button.ws-default-cell .ws-default-name', 'button.ws-default-cell', 'fg', 'surface'],
+    ['button.ws-default-cell .source-chip', 'button.ws-default-cell', 'muted', 'surface'], ['button.ws-default-cell .source-chip-name', 'button.ws-default-cell', 'fg', 'surface'],
+    ['div.ws-default-cell .ws-default-none', 'div.ws-default-cell', 'muted', 'surface'], ['div.ws-default-cell .ws-default-note', 'div.ws-default-cell', 'muted', 'surface'],
+    ['.ws-default-tile[data-tint=slate]', '.ws-default-tile[data-tint=slate]', 'soul-slate-fg', 'soul-slate-bg'],
+    ['.ws-default-tile[data-tint=clay]', '.ws-default-tile[data-tint=clay]', 'soul-clay-fg', 'soul-clay-bg'],
+    ['.ws-default-tile:not([data-tint])', '.ws-default-tile:not([data-tint])', 'chip-fg', 'chip-bg'],
+    ['.ws-default-cell.off .ws-default-name', '.ws-default-cell.off', 'muted', 'surface'], ['.ws-default-cell.off .ws-default-note', '.ws-default-cell.off', 'muted', 'surface'],
     ['.ws-info-button', '.ws-info-button', 'muted', 'surface'],
     ['.about-dialog h2', '.about-dialog', 'fg', 'surface'], ['.about-dialog > p', '.about-dialog', 'fg', 'surface'],
     ['.about-dialog .lifecycle-mark', '.about-dialog .lifecycle-mark', 'accent', 'surface-2'],

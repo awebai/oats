@@ -196,7 +196,7 @@ test('Capabilities: Workspace defaults first, the "i" after the jump across repa
   assert.equal(info.getAttribute('aria-label'), 'About capabilities');
   assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => el.dataset.jump), ['defaults', 'workspace', 'packages']);
   assert.equal(u.doc.querySelector('.capability-section').dataset.section, 'defaults');
-  const slot = u.doc.querySelector('.ws-default-slot[data-slot=knowledge]');
+  const slot = u.doc.querySelector('.ws-default-cell[data-slot=knowledge]');
   assert.equal(slot.getAttribute('aria-label'), 'Knowledge: oats.okf, the workspace default — open its page');
   // A repaint (a search) keeps the same "i", focused, and never narrows the defaults.
   info.focus();
@@ -204,9 +204,9 @@ test('Capabilities: Workspace defaults first, the "i" after the jump across repa
   search.value = 'no-such'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); await settle();
   assert.equal(lead.querySelector('.ws-info-button'), info, 'the same element'); assert.equal(u.doc.activeElement, info, 'focus stays on it');
   assert.equal(lead.lastElementChild, info, 'still after the jump');
-  assert.equal(u.doc.querySelectorAll('.ws-default-slot').length, 3, 'the search does not narrow the defaults');
+  assert.equal(u.doc.querySelectorAll('[data-group=core] .ws-default-cell').length, 3, 'the search does not narrow the defaults');
   // A focused default column keeps focus across a repaint (its data-focus-key).
-  u.doc.querySelector('.ws-default-slot[data-slot=knowledge]').focus();
+  u.doc.querySelector('.ws-default-cell[data-slot=knowledge]').focus();
   search.value = 'okf'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); await settle();
   assert.equal(u.doc.activeElement?.dataset.focusKey, 'defaults:knowledge');
   // The dialog: open, then leave the tab: it closes and focus is not moved.
@@ -241,10 +241,10 @@ test('Capabilities: Back returns to the default that opened the page, filtered o
   const find = text => { search.value = text; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); return settle(); };
   await find('nw-');
   assert.equal(u.rows().some(row => row.dataset.capability === 'oats.okf'), false, 'the search hides oats.okf\'s row');
-  const slot = q('.ws-default-slot[data-slot=knowledge]'); slot.focus(); slot.click(); await settle();
+  const slot = q('.ws-default-cell[data-slot=knowledge]'); slot.focus(); slot.click(); await settle();
   await back('click');
   assert.equal(u.doc.activeElement?.dataset.focusKey, 'defaults:knowledge', 'Back lands on the Knowledge default');
-  const chip = q('button.ws-default-cap'); chip.focus(); chip.click(); await settle();
+  const chip = q('[data-group=additional] button.ws-default-cell'); chip.focus(); chip.click(); await settle();
   await back('escape');
   assert.equal(u.doc.activeElement?.dataset.focusKey, 'defaults:cap:oats.core', 'Escape too, on the chip');
   await find('');
@@ -264,7 +264,7 @@ test('Capabilities: the page of an unlisted package default follows a catalog re
   const defaults = { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null }, capabilities: [] };
   const u = await setup(t, { status: { ...statusOf('workspace-status'), defaults }, sync: () => (reads++ ? full : without) });
   await u.tab('capabilities');
-  const slot = u.doc.querySelector('.ws-default-slot[data-slot=knowledge]');
+  const slot = u.doc.querySelector('.ws-default-cell[data-slot=knowledge]');
   assert.equal(slot.querySelector('.source-chip-name').textContent, 'package', 'unlisted: the kind alone');
   slot.focus(); slot.click(); await settle();
   const page = u.doc.querySelector('.workspace-cap-page');

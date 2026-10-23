@@ -1286,16 +1286,18 @@ workspace is observed through its server and never synced from here.
   jump's first segment (**Defaults**, counting the filled slots plus the default
   capabilities not turned off) whenever `oats workspace status` reports
   `defaults`; without it there is no section and nothing is inferred. It is one
-  panel: a scope line, the three core slots in a fixed order (Knowledge,
-  Messaging, Tasks) and an "Also for every soul" line. `defaultRow` matches each
+  panel: a scope line, then two groups drawn with one cell (tile | slot label, id,
+  source chip). Core capabilities holds the three slots in a fixed order (Knowledge,
+  Messaging, Tasks). Additional capabilities holds the rest, or says there are none.
+  Each group's list is labelled by its heading. `defaultRow` matches each
   default to a catalog row (`from: "package"` a package row, a member key that
   member's row, `"here"` the host's) across every section, so the search and the
   pills never narrow it. An unmatched default gets a minimal row whose source chip
   names the member repository with no version (`source-chip.mjs` `version: false`),
   or, for a package, only the kind ("package"): the package that holds it is not known
   and a capability's id is not its package's. It still opens the page, which says the
-  capability is not listed. Focusable columns and
-  chips carry `data-focus-key`s (`defaults:<slot>`, `defaults:cap:<name>`), which
+  capability is not listed. Focusable cells carry
+  `data-focus-key`s (`defaults:<slot>`, `defaults:cap:<name>`), which
   the tab host restores after a repaint (`captureFocusState` on the sections).
   The toolbar's round "i" (`about-dialog.mjs` `createAboutDialog`) is built
   once by `workspace-discovery.mjs` and kept after the jump across repaints, as

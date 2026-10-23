@@ -45,7 +45,10 @@ function mount(t) {
   const key = (el, name, init = {}) => el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...init }));
   return { dom, doc, $, $$, opened, render, key };
 }
-const slotCells = u => u.$$('.ws-defaults-slots > li > .ws-default-slot');
+const slotCells = u => u.$$('.ws-defaults-group[data-group=core] .ws-defaults-cells > li > .ws-default-cell');
+const addCells = u => u.$$('.ws-defaults-group[data-group=additional] .ws-defaults-cells > li > .ws-default-cell');
+// A tile's icon, by its Lucide drawing.
+const drawn = (u, name) => iconElement(u.doc, name, { size: 14 }).innerHTML;
 // The words as they read: every text run, one space apart (a chip's name and version are separate spans).
 const text = el => { const walk = el.ownerDocument.createTreeWalker(el, 4), out = []; while (walk.nextNode()) { const t = walk.currentNode.textContent.trim(); if (t) out.push(t); } return out.join(' '); };
 
@@ -84,35 +87,42 @@ test('filled slots and other defaults: Knowledge, Messaging, Tasks with their id
   assert.equal(text(u.$('.ws-defaults-scope')), 'Every soul in northwind starts with these, unless it turns one off.');
   assert.equal(u.$('.ws-defaults-scope .ws-defaults-ws').textContent, 'northwind');
   assert.equal(u.$('.ws-defaults-panel .identity-mark'), null, 'no identity mark');
+  // Two groups in the panel, Core then Additional, each headed (h3) with its lead; each list is labelled by its heading.
+  assert.deepEqual(u.$$('.ws-defaults-group').map(g => [g.dataset.group, g.querySelector('h3').firstChild.textContent, g.querySelector('.ws-defaults-group-lead').textContent]),
+    [['core', 'Core capabilities', 'at most one of each per soul'], ['additional', 'Additional capabilities', 'any number per soul']]);
+  for (const g of u.$$('.ws-defaults-group')) assert.equal(g.querySelector('ul').getAttribute('aria-labelledby'), g.querySelector('h3').id);
   const cells = slotCells(u);
-  assert.deepEqual(cells.map(c => [c.tagName, c.dataset.slot, c.querySelector('.ws-default-slot-head').textContent, c.querySelector('.ws-default-name').textContent, text(c.querySelector('.source-chip'))]), [
+  assert.deepEqual(cells.map(c => [c.tagName, c.dataset.slot, c.querySelector('.ws-default-label').textContent, c.querySelector('.ws-default-name').textContent, text(c.querySelector('.source-chip'))]), [
     ['BUTTON', 'knowledge', 'Knowledge', 'oats.okf', 'oats.okf 2.1.3'],
     ['BUTTON', 'messaging', 'Messaging', 'oats.aweb', 'oats.aweb 1.28.0'],
     ['BUTTON', 'tasks', 'Tasks', 'nw-tasks', 'agents'],
   ]);
-  assert.deepEqual(cells.map(c => c.querySelector('.ws-default-slot-icon').dataset.tint), ['slate', 'sage', 'mauve']);
+  assert.deepEqual(cells.map(c => c.querySelector('.ws-default-tile').dataset.tint), ['slate', 'sage', 'mauve']);
+  assert.deepEqual(cells.map(c => c.querySelector('.ws-default-tile svg').innerHTML), [drawn(u, 'knowledge'), drawn(u, 'mail'), drawn(u, 'tasks')]);
   assert.equal(cells[0].getAttribute('aria-label'), 'Knowledge: oats.okf, the workspace default — open its page');
   assert.deepEqual(cells.map(c => c.dataset.focusKey), ['defaults:knowledge', 'defaults:messaging', 'defaults:tasks']);
   cells[0].click(); cells[2].click();
   assert.equal(u.opened[0], ROWS[0], 'the catalog row itself');
   assert.deepEqual(u.opened[1], { name: 'nw-tasks', kind: 'member', repoKey: HOST }, 'unlisted: a minimal row, still opened (the page says it is not listed)');
   assert.equal(cells[2].querySelector('.source-chip-version'), null, 'never a guessed version');
-  // Also for every soul: chips, the one turned off is a span, struck through, with its note.
-  const more = u.$('.ws-defaults-more');
-  assert.equal(more.querySelector('.ws-defaults-more-label').textContent, 'Also for every soul');
-  const chips = [...more.querySelectorAll('.ws-default-cap')];
-  assert.deepEqual(chips.map(c => [c.tagName, c.dataset.defaultCapability, text(c)]), [
-    ['BUTTON', 'oats.core', 'oats.core oats.framework 1.11.0'],
-    ['BUTTON', 'nw-brand-voice', 'nw-brand-voice marketing latest'],
-    ['SPAN', 'nw-house-style', 'nw-house-style turned off by the workspace'],
+  // Additional: the same cell, no slot label; the one turned off is a plain cell, struck through, with its note.
+  const extra = addCells(u);
+  assert.deepEqual(extra.map(c => [c.tagName, c.dataset.defaultCapability, text(c), c.querySelector('.ws-default-label')]), [
+    ['BUTTON', 'oats.core', 'oats.core oats.framework 1.11.0', null],
+    ['BUTTON', 'nw-brand-voice', 'nw-brand-voice marketing latest', null],
+    ['DIV', 'nw-house-style', 'nw-house-style turned off by the workspace', null],
   ]);
-  assert.equal(chips[0].getAttribute('aria-label'), 'oats.core, from oats.framework 1.11.0, a workspace default — open its page');
-  assert.equal(chips[1].dataset.focusKey, 'defaults:cap:nw-brand-voice');
-  assert.ok(chips[2].classList.contains('off')); assert.equal(chips[2].dataset.focusKey, undefined); assert.equal(chips[2].querySelector('.source-chip'), null);
-  chips[1].click(); assert.equal(u.opened[2], ROWS[4]);
+  // Tiles: a package neutral with the package icon, a member capability clay with the repository icon, a default turned
+  // off (no source reported) neutral with no source's icon.
+  assert.deepEqual(extra.map(c => [c.querySelector('.ws-default-tile').dataset.tint ?? null, c.querySelector('.ws-default-tile svg').innerHTML]),
+    [[null, drawn(u, 'package')], ['clay', drawn(u, 'repo')], [null, drawn(u, 'layers')]]);
+  assert.equal(extra[0].getAttribute('aria-label'), 'oats.core, from oats.framework 1.11.0, a workspace default — open its page');
+  assert.equal(extra[1].dataset.focusKey, 'defaults:cap:nw-brand-voice');
+  assert.ok(extra[2].classList.contains('off')); assert.equal(extra[2].dataset.focusKey, undefined); assert.equal(extra[2].querySelector('.source-chip'), null);
+  extra[1].click(); assert.equal(u.opened[2], ROWS[4]);
 });
 
-test('empty slots: None and the note, not interactive, a neutral tile; an off-only list still shows the strip', t => {
+test('empty slots: None and the note, not interactive, a neutral tile; no additional defaults: the group says so', t => {
   const u = mount(t);
   u.render(status(MIXED));
   const cells = slotCells(u);
@@ -120,12 +130,16 @@ test('empty slots: None and the note, not interactive, a neutral tile; an off-on
   for (const cell of cells.slice(1)) {
     assert.equal(cell.querySelector('.ws-default-none').textContent, 'None');
     assert.equal(cell.querySelector('.ws-default-note').textContent, 'No workspace default. Each soul chooses its own.');
-    assert.ok(cell.querySelector('.ws-default-slot-icon').classList.contains('is-empty'));
+    assert.equal(cell.querySelector('.ws-default-tile').dataset.tint, undefined, 'neutral: --chip-bg / --chip-fg');
     assert.equal(cell.getAttribute('tabindex'), null); assert.equal(cell.dataset.focusKey, undefined);
   }
-  assert.equal(text(u.$('.ws-default-cap')), 'nw-house-style agents latest', '"here" is the host repository');
+  assert.equal(text(addCells(u)[0]), 'nw-house-style agents latest', '"here" is the host repository');
+  u.render(status({ ...MIXED, capabilities: [] }));
+  assert.equal(addCells(u).length, 0);
+  assert.equal(u.$('[data-group=additional] .ws-defaults-none').textContent, 'None. Each soul adds its own.');
+  assert.equal(u.$('[data-group=additional] ul'), null);
   u.render(status({ slots: { knowledge: null, messaging: null, tasks: null }, capabilities: [{ name: 'x', from: null, off: true }] }));
-  assert.equal(slotCells(u).length, 3, 'a turned-off default is still something the workspace says');
+  assert.equal(slotCells(u).length, 3, 'a turned-off default is still something the workspace says'); assert.equal(addCells(u).length, 1);
   assert.equal(u.$('[data-jump=defaults] .capability-nav-count').textContent, '0');
 });
 
@@ -133,16 +147,18 @@ test('an unlisted package default never presents the capability as its package: 
   const u = mount(t);
   // oats.core is listed nowhere here (its package, oats.framework, is not locked yet): the id says nothing about the package.
   u.render(status({ slots: { knowledge: { name: 'oats.okf', from: 'package' } }, capabilities: [{ name: 'oats.core', from: 'package', off: false }] }), { rows: ROWS.filter(r => r.name !== 'oats.core' && r.name !== 'oats.okf') });
-  for (const owner of [slotCells(u)[0], u.$('button.ws-default-cap')]) {
+  const extra = () => addCells(u)[0];
+  for (const owner of [slotCells(u)[0], extra()]) {
     const chip = owner.querySelector('.source-chip');
     assert.equal(chip.querySelector('.source-chip-name').textContent, 'package');
     assert.equal(chip.querySelector('.source-chip-version'), null);
     assert.equal(chip.title, 'A locked package; not in the workspace’s capability list');
     assert.equal(chip.querySelector('svg').innerHTML, iconElement(u.doc, 'package', { size: 13 }).innerHTML, 'the package icon');
   }
-  assert.equal(text(u.$('button.ws-default-cap')), 'oats.core package', 'the id once, never as a package name');
-  assert.equal(u.$('button.ws-default-cap').getAttribute('aria-label'), 'oats.core, from a package, a workspace default — open its page');
-  u.$('button.ws-default-cap').click();
+  assert.equal(text(extra()), 'oats.core package', 'the id once, never as a package name');
+  assert.equal(extra().getAttribute('aria-label'), 'oats.core, from a package, a workspace default — open its page');
+  assert.equal(extra().querySelector('.ws-default-tile svg').innerHTML, drawn(u, 'package'));
+  extra().click();
   assert.deepEqual(u.opened.at(-1), { name: 'oats.core', kind: 'package' }, 'the page still opens, with no package claimed');
 });
 
@@ -151,7 +167,7 @@ test('empty state: no slot and no capability (a standalone deployment too): the 
   u.render(status({ slots: { knowledge: null, messaging: 'none', tasks: null }, capabilities: [] }));
   assert.equal(text(u.$('.ws-defaults-scope')), 'northwind sets no defaults. Each soul chooses all of its own capabilities.');
   assert.equal(u.$('.ws-defaults-sub').textContent, 'Each soul chooses all of its own capabilities.');
-  assert.equal(u.$('.ws-defaults-slots'), null); assert.equal(u.$('.ws-defaults-more'), null);
+  assert.equal(u.$('.ws-defaults-group'), null, 'no groups');
   assert.equal(u.$('[data-jump=defaults]').textContent, 'Defaults0');
   // No workspace name: "this workspace". A name with markup is text, never HTML.
   u.render(status({ slots: {}, capabilities: [] }, { key: HOST }));
@@ -188,7 +204,7 @@ test('the Defaults segment comes first, counts filled slots plus defaults not tu
 test('search and the repository pills never narrow the defaults', t => {
   const u = mount(t);
   u.render(status(FULL), { query: 'no-such-capability', shown: [] });
-  assert.equal(slotCells(u).length, 3); assert.equal(u.$$('.ws-default-cap').length, 3);
+  assert.equal(slotCells(u).length, 3); assert.equal(addCells(u).length, 3);
   assert.equal(u.$('[data-jump=defaults] .capability-nav-count').textContent, '5');
   assert.equal(slotCells(u)[0].querySelector('.source-chip-version').textContent, '2.1.3', 'matched against every catalog row, not the filtered ones');
 });
@@ -202,22 +218,27 @@ test('a catalog with no rows still says what every soul gets, with no section ju
   assert.equal(slotCells(u)[0].querySelector('.source-chip-version'), null, 'nothing listed: no version');
 });
 
-test('the panel\'s look: one --surface panel, 24px tiles, rules in --tag-bg, columns stacking below 700px', () => {
+test('the panel\'s look: one --surface panel, two headed groups of one 3-column cell grid, 24px tiles, rules in --tag-bg, stacking below 700px', () => {
   assert.match(defaultsCSS, /\.ws-defaults-panel \{ background:var\(--surface\); border:1px solid var\(--border\); border-radius:10px;/);
-  assert.match(defaultsCSS, /\.ws-defaults-slots \{ display:grid; grid-template-columns:repeat\(3, minmax\(0,1fr\)\);/);
-  assert.match(defaultsCSS, /\.ws-defaults-slots > li \{[^}]*border-left:1px solid var\(--tag-bg\)/);
-  assert.match(defaultsCSS, /@container \(max-width:700px\) \{\n \.ws-defaults-slots \{ grid-template-columns:minmax\(0,1fr\); \}\n \.ws-defaults-slots > li \{ border-left:0; border-top:1px solid var\(--tag-bg\); \}/);
-  assert.match(defaultsCSS, /\.ws-default-slot-icon \{[^}]*width:24px; height:24px;/);
-  assert.match(defaultsCSS, /\.ws-default-slot-icon\.is-empty \{ background:var\(--chip-bg\); color:var\(--muted\); \}/);
-  assert.match(defaultsCSS, /\.ws-default-slot-head \{[^}]*color:var\(--muted\); font:600 12px/);
-  assert.doesNotMatch(defaultsCSS, /uppercase/);
-  assert.match(defaultsCSS, /\.ws-default-name \{[^}]*font:650 14px var\(--mono/);
+  assert.match(defaultsCSS, /\.ws-defaults-group \+ \.ws-defaults-group \{ border-top:1px solid var\(--border\); \}/);
+  assert.match(defaultsCSS, /\.ws-defaults-group-head \{[^}]*padding:12px 18px 0; color:var\(--fg\); font-size:12\.5px; font-weight:650; \}/);
+  assert.match(defaultsCSS, /\.ws-defaults-group-lead \{ color:var\(--muted\); font-size:12px; font-weight:400; \}/);
+  assert.match(defaultsCSS, /\.ws-defaults-cells \{ display:grid; grid-template-columns:repeat\(3, minmax\(0,1fr\)\); margin:0; padding:6px 0 4px;/);
+  assert.match(defaultsCSS, /\.ws-defaults-cells > li \{[^}]*border-left:1px solid var\(--tag-bg\)/);
+  assert.match(defaultsCSS, /\.ws-defaults-cells > li:nth-child\(3n\+1\) \{ border-left:0; \}/);
+  assert.match(defaultsCSS, /@container \(max-width:700px\) \{\n \.ws-defaults-cells \{ grid-template-columns:minmax\(0,1fr\); \}/);
+  assert.match(defaultsCSS, /\.ws-defaults-none \{ margin:0; padding:8px 18px 14px; color:var\(--muted\); font-size:12px; \}/);
+  assert.match(defaultsCSS, /\.oats-view \.ws-default-cell, \.ws-default-cell \{[^}]*display:grid; grid-template-columns:24px minmax\(0,1fr\); column-gap:12px;[^}]*padding:10px 18px 12px;/);
+  assert.match(defaultsCSS, /\.ws-default-tile \{[^}]*width:24px; height:24px; border-radius:6px; background:var\(--chip-bg\); color:var\(--chip-fg\); \}/);
+  assert.match(defaultsCSS, /\.ws-default-tile\[data-tint=clay\] \{ background:var\(--soul-clay-bg\); color:var\(--soul-clay-fg\); \}/);
+  assert.match(defaultsCSS, /\.ws-default-label \{ height:24px; color:var\(--muted\); font:600 12px var\(--sans,system-ui\); line-height:24px; \}/);
+  assert.doesNotMatch(defaultsCSS, /uppercase|dashed/);
+  assert.match(defaultsCSS, /\.ws-default-name \{[^}]*font:650 14px var\(--mono,monospace\); line-height:24px;/);
   assert.match(defaultsCSS, /\.ws-default-none \{ color:var\(--muted\); font:500 14px/);
-  assert.match(defaultsCSS, /\.oats-view \.ws-default-cap, \.ws-default-cap \{[^}]*height:30px;[^}]*border:1px solid var\(--border\)/);
-  assert.match(defaultsCSS, /\.ws-default-cap\.off \{ border-style:dashed;/);
-  assert.match(defaultsCSS, /\.ws-default-cap\.off \.ws-default-name \{ color:var\(--muted\); text-decoration:line-through; \}/);
-  assert.match(defaultsCSS, /\.oats-view button\.ws-default-slot:focus-visible, \.oats-view button\.ws-default-cap:focus-visible \{ background:var\(--sel\); \}/, 'keyboard focus keeps the shell tint');
-  assert.equal(DEFAULTS_COPY.more, 'Also for every soul');
+  assert.match(defaultsCSS, /\.ws-default-cell\.off \.ws-default-name \{ color:var\(--muted\); text-decoration:line-through; \}/);
+  assert.match(defaultsCSS, /\.oats-view button\.ws-default-cell:focus-visible \{ background:var\(--sel\); \}/, 'keyboard focus keeps the shell tint');
+  assert.deepEqual([DEFAULTS_COPY.core, DEFAULTS_COPY.coreLead, DEFAULTS_COPY.additional, DEFAULTS_COPY.additionalLead, DEFAULTS_COPY.additionalNone],
+    ['Core capabilities', 'at most one of each per soul', 'Additional capabilities', 'any number per soul', 'None. Each soul adds its own.']);
 });
 
 function about(t) {
@@ -253,6 +274,7 @@ test('About capabilities: the lifecycle frame, labelled by its title, the exact 
     'A capability is a reusable bundle of skills, commands and instructions, given to every soul whose work needs it.',
     'A soul names the capabilities it needs. When an instance starts, it gets a copy of each one, and the capability’s instructions are injected into the instance’s composed AGENTS.md, after the soul’s own.',
     'Each capability comes from one of three places:',
+    'Three capabilities are core: knowledge (what an instance knows and learns), messaging (who it can talk to) and tasks (where its work is tracked). A soul has at most one of each. Every other capability is additional: a soul can have any number.',
     'Workspace defaults are capabilities the workspace gives to every soul. A soul gets them without asking. It can turn a default off and name its own in its place, or leave a core capability (knowledge, messaging or tasks) empty.',
   ]);
   assert.equal(dialog.querySelector('p code').textContent, 'AGENTS.md');

@@ -51,6 +51,8 @@ export const ABOUT_COPY = Object.freeze({
         ['home', 'Repo owned', 'Defined in one repo and kept to it. Only souls from that same repo can use it.'],
         ['package', 'Packages', 'Installed into the workspace at a pinned version, the same on every machine.'],
       ] },
+      // Checked against design-brief §5 and the kernel's one-per-slot rule (design owner, 2026-10-23).
+      { p: ['Three capabilities are core: knowledge (what an instance knows and learns), messaging (who it can talk to) and tasks (where its work is tracked). A soul has at most one of each. Every other capability is additional: a soul can have any number.'] },
       { p: [{ strong: 'Workspace defaults' }, ' are capabilities the workspace gives to every soul. A soul gets them without asking. It can turn a default off and name its own in its place, or leave a core capability (knowledge, messaging or tasks) empty.'] },
     ]),
   }),

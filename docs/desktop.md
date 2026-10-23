@@ -201,15 +201,16 @@ repository at a time; "N of M shown" appears while a pill or the search
 narrows the list.
 
 Above those sections, **Workspace defaults** shows what every soul of the
-workspace starts with, unless it turns one off. It is one
-panel with a column per core capability, always **Knowledge**, **Messaging**
-and **Tasks**. A slot the workspace fills shows the capability and its source
-(a package and its pinned version, or a repository and "latest"); click it to
-open the capability's page. An empty slot shows **None**: there is no
-workspace default, and each soul chooses its own. Other capabilities the
-workspace gives every soul are listed under **Also for every soul**, each
-opening its page; one the workspace turned off is struck through and says
-"turned off by the workspace". A workspace that sets no defaults, a
+workspace starts with, unless it turns one off. It is one panel with two
+groups. **Core capabilities** (at most one of each per soul) is always
+**Knowledge**, **Messaging** and **Tasks**. **Additional capabilities** (any
+number per soul) lists the other capabilities the workspace gives every soul,
+or says there are none. Each default is shown the same way: its tile, the
+capability and its source (a package and its pinned version, or a repository
+and "latest"). Click it to open the capability's page. An empty core slot
+shows **None**: there is no workspace default, and each soul chooses its
+own. An additional default the workspace turned off is struck through and
+says "turned off by the workspace". A workspace that sets no defaults, a
 standalone deployment for example, shows one line saying so. The search and
 the repository pills never narrow or hide this section. It is read from
 `oats workspace status --json`: an OATS that does not report the defaults
@@ -222,8 +223,10 @@ The round **i** button after the section jump (**About capabilities**) opens
 **What capabilities are**: what a capability gives a soul's instances (skills,
 commands and instructions, the instructions injected into each instance's
 composed `AGENTS.md` after the soul's own), the three places one comes from
-(Workspace owned, Repo owned, Packages) and what workspace defaults are: every
-soul gets them, and a soul can turn one off and name its own in its place.
+(Workspace owned, Repo owned, Packages), which three capabilities are core
+(knowledge, messaging and tasks, at most one of each per soul) and that every
+other one is additional, and what workspace defaults are: every soul gets
+them, and a soul can turn one off and name its own in its place.
 **Close** or Esc closes it and returns the focus to the button; leaving the
 tab or the workspace closes it too. **Workspace › Souls** has the same button
 at the end of its toolbar, **About souls**, which explains what a soul is.

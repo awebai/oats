@@ -2,9 +2,9 @@
  *
  * The section is what the workspace itself gives every soul, read from `oats workspace status --json`
  * `defaults` (deployment-data.mjs defaultsFacts) and matched to the `oats capabilities` rows already held:
- * one panel with a scope line, a strip of the three core slots (always Knowledge, Messaging, Tasks: a slot
- * holds one capability, so the strip is the slot model itself) and, when the workspace defaults others, an
- * "Also for every soul" line. Without a reported `defaults` nothing is shown: nothing is inferred from the
+ * one panel with a scope line, then two groups drawn with one cell: Core capabilities (always Knowledge, Messaging,
+ * Tasks: a soul has at most one of each) and Additional capabilities (any number per soul; design 2026-10-23,
+ * round 4). Without a reported `defaults` nothing is shown: nothing is inferred from the
  * souls or the roster. Search and the repository pills never narrow it (it is not a list of the catalog).
  * Teams add no capabilities since 0.30, so there are no team defaults to show. The "About capabilities"
  * dialog the toolbar's "i" opens is about-dialog.mjs. */
@@ -20,41 +20,39 @@ export const defaultsCSS = `
 .ws-defaults-scope:not(:last-child) { border-bottom:1px solid var(--border); }
 .ws-defaults-ws { font-weight:650; }
 .ws-defaults-sub { display:block; color:var(--muted); font-size:12px; }
-/* One column per core slot, 1px --tag-bg rules between them; stacked (rules between rows) below 700px. */
-.ws-defaults-slots { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); margin:0; padding:0; list-style:none; }
-.ws-defaults-slots > li { display:flex; min-width:0; border-left:1px solid var(--tag-bg); }
-.ws-defaults-slots > li:first-child { border-left:0; }
-.oats-view .ws-default-slot, .ws-default-slot { appearance:none; -webkit-appearance:none; display:flex; flex-direction:column; align-items:flex-start; gap:6px; flex:1; width:100%; min-width:0; height:auto; min-height:0; margin:0; padding:14px 18px 16px; border:0; border-radius:0; background:var(--surface); color:var(--fg); font:inherit; text-align:left; box-sizing:border-box; }
-.oats-view button.ws-default-slot { cursor:pointer; }
-.oats-view button.ws-default-slot:hover { background:var(--surface-2); }
+/* Two groups, Core then Additional, each a heading (with its lead) over the same 3-column grid of cells, 1px
+   --tag-bg rules between columns; stacked (rules between rows) below 700px. */
+.ws-defaults-group + .ws-defaults-group { border-top:1px solid var(--border); }
+.ws-defaults-group-head { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 10px; margin:0; padding:12px 18px 0; color:var(--fg); font-size:12.5px; font-weight:650; }
+.ws-defaults-group-lead { color:var(--muted); font-size:12px; font-weight:400; }
+.ws-defaults-cells { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); margin:0; padding:6px 0 4px; list-style:none; }
+.ws-defaults-cells > li { display:flex; min-width:0; border-left:1px solid var(--tag-bg); }
+.ws-defaults-cells > li:nth-child(3n+1) { border-left:0; }
+.ws-defaults-none { margin:0; padding:8px 18px 14px; color:var(--muted); font-size:12px; }
+/* One cell for both groups: the 24px tile beside a text stack (core: the slot's name, then the id or None and its
+   note; then the source chip, or "turned off by the workspace"). The whole cell is the button when it opens a page. */
+.oats-view .ws-default-cell, .ws-default-cell { appearance:none; -webkit-appearance:none; display:grid; grid-template-columns:24px minmax(0,1fr); column-gap:12px; align-items:start; flex:1; width:100%; min-width:0; height:auto; min-height:0; margin:0; padding:10px 18px 12px; border:0; border-radius:0; background:var(--surface); color:var(--fg); font:inherit; text-align:left; box-sizing:border-box; }
+.oats-view button.ws-default-cell { cursor:pointer; }
+.oats-view button.ws-default-cell:hover { background:var(--surface-2); }
 /* Keyboard focus: the shell's tint (rule 2) under the global accent edge; the background rule above would out-rank the global one. */
-.oats-view button.ws-default-slot:focus-visible, .oats-view button.ws-default-cap:focus-visible { background:var(--sel); }
-.ws-default-slot-head { display:flex; align-items:center; gap:8px; color:var(--muted); font:600 12px var(--sans,system-ui); }
-.ws-default-slot-icon { display:grid; place-items:center; flex:none; width:24px; height:24px; border-radius:6px; }
-.ws-default-slot-icon[data-tint=slate] { background:var(--soul-slate-bg); color:var(--soul-slate-fg); }
-.ws-default-slot-icon[data-tint=sage] { background:var(--soul-sage-bg); color:var(--soul-sage-fg); }
-.ws-default-slot-icon[data-tint=mauve] { background:var(--soul-mauve-bg); color:var(--soul-mauve-fg); }
-.ws-default-slot-icon.is-empty { background:var(--chip-bg); color:var(--muted); }
-.ws-default-name { min-width:0; max-width:100%; color:var(--fg); font:650 14px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.ws-default-slot .source-chip { max-width:100%; }
-.ws-default-none { color:var(--muted); font:500 14px var(--sans,system-ui); }
+.oats-view button.ws-default-cell:focus-visible { background:var(--sel); }
+.ws-default-tile { display:grid; place-items:center; width:24px; height:24px; border-radius:6px; background:var(--chip-bg); color:var(--chip-fg); }
+.ws-default-tile[data-tint=slate] { background:var(--soul-slate-bg); color:var(--soul-slate-fg); }
+.ws-default-tile[data-tint=sage] { background:var(--soul-sage-bg); color:var(--soul-sage-fg); }
+.ws-default-tile[data-tint=mauve] { background:var(--soul-mauve-bg); color:var(--soul-mauve-fg); }
+.ws-default-tile[data-tint=clay] { background:var(--soul-clay-bg); color:var(--soul-clay-fg); }
+.ws-default-stack { display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0; }
+.ws-default-label { height:24px; color:var(--muted); font:600 12px var(--sans,system-ui); line-height:24px; }
+.ws-default-name { min-width:0; max-width:100%; color:var(--fg); font:650 14px var(--mono,monospace); line-height:24px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ws-default-none { color:var(--muted); font:500 14px var(--sans,system-ui); line-height:24px; }
 .ws-default-note { color:var(--muted); font-size:12px; line-height:1.4; }
-/* Every other default: one wrapping line under the strip, one 30px chip each. */
-.ws-defaults-more { display:flex; align-items:center; flex-wrap:wrap; gap:8px 10px; padding:12px 18px; border-top:1px solid var(--border); }
-.ws-defaults-more-label { margin-right:4px; color:var(--muted); font:600 12px var(--sans,system-ui); }
-.oats-view .ws-default-cap, .ws-default-cap { appearance:none; -webkit-appearance:none; display:inline-flex; align-items:center; gap:10px; min-width:0; max-width:100%; height:30px; min-height:0; margin:0; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:inherit; box-sizing:border-box; }
-.oats-view button.ws-default-cap { cursor:pointer; }
-.oats-view button.ws-default-cap:hover { background:var(--surface-2); }
-.ws-default-cap .ws-default-name { font-size:12.5px; }
-.ws-default-cap .source-chip { font-size:11.5px; }
-/* Turned off by the workspace: named, never offered (dashed, the id struck through in --muted). */
-.ws-default-cap.off { border-style:dashed; cursor:default; }
-.ws-default-cap.off .ws-default-name { color:var(--muted); text-decoration:line-through; }
-.ws-default-cap.off .ws-default-note { white-space:nowrap; }
+.ws-default-cell .source-chip { max-width:100%; }
+/* Turned off by the workspace: named, never offered (the id struck through in --muted). */
+.ws-default-cell.off .ws-default-name { color:var(--muted); text-decoration:line-through; }
 @container (max-width:700px) {
- .ws-defaults-slots { grid-template-columns:minmax(0,1fr); }
- .ws-defaults-slots > li { border-left:0; border-top:1px solid var(--tag-bg); }
- .ws-defaults-slots > li:first-child { border-top:0; }
+ .ws-defaults-cells { grid-template-columns:minmax(0,1fr); }
+ .ws-defaults-cells > li, .ws-defaults-cells > li:nth-child(3n+1) { border-left:0; border-top:1px solid var(--tag-bg); }
+ .ws-defaults-cells > li:first-child { border-top:0; }
 }
 `;
 
@@ -73,11 +71,14 @@ export const DEFAULTS_COPY = Object.freeze({
   unless: 'unless it turns one off.',
   none: ' sets no defaults.',
   noneSub: 'Each soul chooses all of its own capabilities.',
+  core: 'Core capabilities',
+  coreLead: 'at most one of each per soul',
+  additional: 'Additional capabilities',
+  additionalLead: 'any number per soul',
+  additionalNone: 'None. Each soul adds its own.',
   emptySlot: 'None',
   emptyNote: 'No workspace default. Each soul chooses its own.',
-  more: 'Also for every soul',
   off: 'turned off by the workspace',
-  strip: 'Core capability defaults',
   // An unlisted package default: which package holds it is unknown here, so the chip names the kind alone.
   unlistedPackage: 'package',
   unlistedPackageTitle: 'A locked package; not in the workspace’s capability list',
@@ -135,10 +136,14 @@ function chipFor(doc, match, names) {
 const sourceWords = (match, names) => unlistedPackage(match) ? DEFAULTS_COPY.unlistedPackageWords
   : match.listed ? sourceText(match.row, names).label : sourceText(match.row, names).name;
 
-let moreIds = 0; // ids for the "Also for every soul" label, unique in the document
+let groupIds = 0; // ids for the group headings, unique in the document
+/** An additional default's tile, by what its source says: a package (neutral), a member repository (clay, the catalog's
+ * tint rule), or nothing known (a default turned off reports no source): neutral, with no source's icon. */
+const additionalTile = (cap, match) => cap.off !== true && match ? (match.row.kind === 'member' ? { icon: 'repo', tint: 'clay' } : { icon: 'package', tint: null }) : { icon: 'layers', tint: null };
+
 /** Paint the defaults panel into `section` (a .capability-section the caller made). `rows`: the catalog's
  * rows; `onOpen(row)`: the catalog rows' own opener (a page), or null for a panel with nothing to open.
- * Names are text nodes only. Focusable controls carry `data-focus-key`s (`defaults:<slot>`,
+ * Names are text nodes only. Focusable cells carry `data-focus-key`s (`defaults:<slot>`,
  * `defaults:cap:<name>`) so a repaint can put focus back on the same one. */
 export function renderWorkspaceDefaults(section, { status, rows, onOpen = null }) {
   const doc = section.ownerDocument, defaults = workspaceDefaults(status);
@@ -154,50 +159,58 @@ export function renderWorkspaceDefaults(section, { status, rows, onOpen = null }
   section.append(panel);
   if (defaults.empty) return true;
   const opens = typeof onOpen === 'function';
-  const strip = node(doc, 'ul', null, 'ws-defaults-slots'); strip.setAttribute('aria-label', DEFAULTS_COPY.strip);
+  /** A group: its heading (the title, then its lead), then its cells' list, labelled by the heading. */
+  const group = (key, title, lead) => {
+    const el = node(doc, 'div', null, 'ws-defaults-group'); el.dataset.group = key;
+    const head = node(doc, 'h3', null, 'ws-defaults-group-head'); head.id = `ws-defaults-${key}-${++groupIds}`;
+    head.append(node(doc, 'span', title), ' ', node(doc, 'span', lead, 'ws-defaults-group-lead'));
+    el.append(head); panel.append(el);
+    const list = node(doc, 'ul', null, 'ws-defaults-cells'); list.setAttribute('aria-labelledby', head.id);
+    return { el, list };
+  };
+  /** One cell: a button opening `match.row` when it can (`label`: its accessible name, `focusKey`), else a plain div. */
+  const cell = ({ tile, tint, empty = false, stack, match, label, focusKey, off = false }) => {
+    const button = !!match && opens && !off;
+    const el = node(doc, button ? 'button' : 'div', null, `ws-default-cell${off ? ' off' : ''}`);
+    const square = node(doc, 'span', null, 'ws-default-tile'); square.setAttribute('aria-hidden', 'true');
+    if (tint && !empty) square.dataset.tint = tint;
+    square.append(iconElement(doc, tile, { size: 14 }));
+    const words = node(doc, 'span', null, 'ws-default-stack'); words.append(...stack);
+    el.append(square, words);
+    if (button) {
+      el.type = 'button'; el.dataset.focusKey = focusKey; el.setAttribute('aria-label', label);
+      el.addEventListener('click', () => onOpen(match.row)); // the native button turns Enter and Space into this click
+    }
+    const item = node(doc, 'li'); item.append(el); return { item, el };
+  };
+  const name = value => { const el = node(doc, 'span', value, 'ws-default-name'); el.title = value; return el; };
+  const core = group('core', DEFAULTS_COPY.core, DEFAULTS_COPY.coreLead);
   for (const { slot, label, icon, tint, value } of defaults.slots) {
     const match = value ? defaultRow(rows, value, hostKey) : null;
-    const button = !!match && opens;
-    const cell = node(doc, button ? 'button' : 'div', null, 'ws-default-slot'); cell.dataset.slot = slot;
-    const head = node(doc, 'span', null, 'ws-default-slot-head');
-    const tile = node(doc, 'span', null, `ws-default-slot-icon${value ? '' : ' is-empty'}`); tile.dataset.tint = tint; tile.setAttribute('aria-hidden', 'true');
-    tile.append(iconElement(doc, icon, { size: 14 }));
-    head.append(tile, node(doc, 'span', label));
-    cell.append(head);
-    if (value) {
-      const name = node(doc, 'span', value.name, 'ws-default-name'); name.title = value.name;
-      cell.append(name);
-      if (match) cell.append(chipFor(doc, match, names));
-    } else cell.append(node(doc, 'span', DEFAULTS_COPY.emptySlot, 'ws-default-none'), node(doc, 'span', DEFAULTS_COPY.emptyNote, 'ws-default-note'));
-    if (button) {
-      cell.type = 'button'; cell.dataset.focusKey = `defaults:${slot}`;
-      cell.setAttribute('aria-label', `${label}: ${value.name}, the workspace default — open its page`);
-      cell.addEventListener('click', () => onOpen(match.row)); // the native button turns Enter and Space into this click
-    }
-    const item = node(doc, 'li'); item.append(cell); strip.append(item);
+    const stack = [node(doc, 'span', label, 'ws-default-label')];
+    if (value) stack.push(name(value.name), ...(match ? [chipFor(doc, match, names)] : []));
+    else stack.push(node(doc, 'span', DEFAULTS_COPY.emptySlot, 'ws-default-none'), node(doc, 'span', DEFAULTS_COPY.emptyNote, 'ws-default-note'));
+    const { item, el } = cell({ tile: icon, tint, empty: !value, stack, match, focusKey: `defaults:${slot}`,
+      label: value ? `${label}: ${value.name}, the workspace default — open its page` : '' });
+    el.dataset.slot = slot;
+    core.list.append(item);
   }
-  panel.append(strip);
-  if (defaults.capabilities.length) {
-    const more = node(doc, 'div', null, 'ws-defaults-more'); more.setAttribute('role', 'group');
-    const heading = node(doc, 'span', DEFAULTS_COPY.more, 'ws-defaults-more-label'); heading.id = `ws-defaults-more-${++moreIds}`;
-    more.setAttribute('aria-labelledby', heading.id); more.append(heading);
+  core.el.append(core.list);
+  const additional = group('additional', DEFAULTS_COPY.additional, DEFAULTS_COPY.additionalLead);
+  if (!defaults.capabilities.length) additional.el.append(node(doc, 'p', DEFAULTS_COPY.additionalNone, 'ws-defaults-none'));
+  else {
     for (const cap of defaults.capabilities) {
       const off = cap.off === true;
       const match = off ? null : defaultRow(rows, cap, hostKey);
-      const button = !!match && opens;
-      const chip = node(doc, button ? 'button' : 'span', null, `ws-default-cap${off ? ' off' : ''}`); chip.dataset.defaultCapability = cap.name; // not data-capability: a catalog row's Back finds its own row by that
-      const name = node(doc, 'span', cap.name, 'ws-default-name'); name.title = cap.name;
-      chip.append(name);
-      if (off) chip.append(' ', node(doc, 'span', DEFAULTS_COPY.off, 'ws-default-note')); // the space keeps the words apart for assistive tech
-      else if (match) chip.append(chipFor(doc, match, names));
-      if (button) {
-        chip.type = 'button'; chip.dataset.focusKey = `defaults:cap:${cap.name}`;
-        chip.setAttribute('aria-label', `${cap.name}, from ${sourceWords(match, names)}, a workspace default — open its page`);
-        chip.addEventListener('click', () => onOpen(match.row));
-      }
-      more.append(chip);
+      // The space keeps an off cell's id and note apart for assistive tech.
+      const stack = [name(cap.name), ...(off ? [' ', node(doc, 'span', DEFAULTS_COPY.off, 'ws-default-note')] : match ? [chipFor(doc, match, names)] : [])];
+      const { icon, tint } = additionalTile(cap, match);
+      const { item, el } = cell({ tile: icon, tint, stack, match, off, focusKey: `defaults:cap:${cap.name}`,
+        label: match ? `${cap.name}, from ${sourceWords(match, names)}, a workspace default — open its page` : '' });
+      el.dataset.defaultCapability = cap.name; // not data-capability: a catalog row's Back finds its own row by that
+      additional.list.append(item);
     }
-    panel.append(more);
+    additional.el.append(additional.list);
   }
   return true;
 }
