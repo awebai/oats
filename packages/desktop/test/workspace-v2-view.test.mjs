@@ -282,6 +282,48 @@ test('Capabilities: the page of an unlisted package default follows a catalog re
   assert.equal(spawn.contentsRow({ name: 'oats.okf', kind: 'package' }, null, [...rows, { ...rows.find(r => r.name === 'oats.okf'), package: 'other.pkg' }]), null, 'two packages: ambiguous, none');
 });
 
+// A default keeps its declaration's focus key wherever the panel draws it: a catalog refresh that moves a focused named
+// default from Additional into its Core cell keeps focus on it, and of two same-name declarations (the slot's, from one
+// repository; a named one, from another) Back returns to the one that opened the page.
+test('Capabilities: focus follows a default\'s declaration across a catalog refresh that moves it from Additional to Core', async t => {
+  const AGENTS = 'local//fixture/base/fx/remotes/agents.git';
+  const full = catalog('capabilities'), base = full.capabilities.capabilities;
+  const chat = repoKey => ({ ...base.find(c => c.name === 'nw-house-style'), name: 'nw-chat', repoKey, origin: `member ${repoKey}`, layer: 'messaging', path: 'capabilities/nw-chat' });
+  const withRows = rows => ({ ...full, capabilities: { ...full.capabilities, capabilities: rows } });
+  // The first read does not list nw-chat; the next one lists it with layer messaging.
+  let reads = 0;
+  {
+    const defaults = { slots: { knowledge: null, messaging: null, tasks: null }, capabilities: [{ name: 'nw-chat', from: 'here', off: false }] };
+    const u = await setup(t, { status: { ...statusOf('workspace-status'), defaults }, sync: () => (reads++ ? withRows([...base, chat(AGENTS)]) : full) });
+    await u.tab('capabilities');
+    const additional = u.doc.querySelector('[data-group=additional] button.ws-default-cell');
+    assert.equal(additional.dataset.defaultCapability, 'nw-chat'); additional.focus();
+    await refreshCli({ api: async () => ({ ...CLI, version: `${CLI.version}-later` }) }); await settle();
+    assert.ok(reads >= 2, 'the catalog was read again');
+    const messaging = u.doc.querySelector('.ws-default-cell[data-slot=messaging]');
+    assert.equal(messaging.querySelector('.ws-default-name').textContent, 'nw-chat', 'now in its Core cell');
+    assert.equal(u.doc.activeElement, messaging, 'focus followed it');
+    assert.equal(u.doc.querySelector('[data-group=additional] .ws-default-cell'), null);
+  }
+});
+test('Capabilities: Back from the second of two same-name defaults returns to it, not to the first', async t => {
+  const AGENTS = 'local//fixture/base/fx/remotes/agents.git', MARKETING = 'local//fixture/base/fx/remotes/marketing.git';
+  const full = catalog('capabilities'), base = full.capabilities.capabilities;
+  const chat = repoKey => ({ ...base.find(c => c.name === 'nw-house-style'), name: 'nw-chat', repoKey, origin: `member ${repoKey}`, layer: 'messaging', path: 'capabilities/nw-chat' });
+  const rows = { ...full, capabilities: { ...full.capabilities, capabilities: [...base, chat(AGENTS), chat(MARKETING)] } };
+  const defaults = { slots: { knowledge: null, messaging: { name: 'nw-chat', from: AGENTS }, tasks: null }, capabilities: [{ name: 'nw-chat', from: MARKETING, off: false }] };
+  const u = await setup(t, { status: { ...statusOf('workspace-status'), defaults }, sync: () => rows });
+  await u.tab('capabilities');
+  const entries = () => [...u.doc.querySelectorAll('.ws-default-cell[data-slot=messaging] button.ws-default-entry')];
+  assert.deepEqual(entries().map(e => e.querySelector('.source-chip-name').textContent), ['agents', 'marketing'], 'the slot\'s first');
+  entries()[1].focus(); entries()[1].click(); await settle();
+  const page = u.doc.querySelector('.workspace-cap-page');
+  assert.equal(page.hidden, false);
+  page.querySelector('.page-back').click(); await settle();
+  assert.equal(u.doc.activeElement, entries()[1], 'Back lands on the marketing declaration');
+  assert.equal(u.doc.activeElement.querySelector('.source-chip-name').textContent, 'marketing');
+});
+
 // Workspace v4 (human decision 2026-09-26; replaces the header search): the search is
 // the Capabilities view's own toolbar, above the sections.
 test('the view search narrows every section by capability name', async t => {

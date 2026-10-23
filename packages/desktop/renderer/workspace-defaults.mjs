@@ -148,8 +148,9 @@ const additionalTile = (cap, match) => cap.off !== true && match ? (match.row.ki
 
 /** Paint the defaults panel into `section` (a .capability-section the caller made). `rows`: the catalog's
  * rows; `onOpen(row)`: the catalog rows' own opener (a page), or null for a panel with nothing to open.
- * Names are text nodes only. Focusable cells carry `data-focus-key`s (`defaults:<slot>`,
- * `defaults:cap:<name>`) so a repaint can put focus back on the same one. */
+ * Names are text nodes only. Every focusable control carries its declaration's `data-focus-key` (`defaults:<slot>` for
+ * a slot default, `defaults:cap:<name>` for a named one, whichever group or cell draws it), so a repaint and a page's
+ * Back put focus back on the same declaration. */
 export function renderWorkspaceDefaults(section, { status, rows, onOpen = null }) {
   const doc = section.ownerDocument, defaults = workspaceDefaults(status);
   if (!defaults) return false;
@@ -196,14 +197,17 @@ export function renderWorkspaceDefaults(section, { status, rows, onOpen = null }
   const coreNamed = new Map(DEFAULT_SLOTS.map(([slot]) => [slot, []])), additionalCaps = [];
   for (const cap of defaults.capabilities) {
     const match = cap.off === true ? null : defaultRow(rows, cap, hostKey);
-    if (match?.listed && coreNamed.has(match.row.layer)) coreNamed.get(match.row.layer).push({ name: cap.name, match });
+    if (match?.listed && coreNamed.has(match.row.layer)) coreNamed.get(match.row.layer).push({ name: cap.name, match, key: `defaults:cap:${cap.name}` });
     else additionalCaps.push(cap);
   }
   const core = group('core', DEFAULTS_COPY.core, DEFAULTS_COPY.coreLead);
   for (const { slot, label, icon, tint, value } of defaults.slots) {
     // The slot declaration first, then a same-layer named default. Both at once is the workspace's own conflict
     // (the kernel refuses every soul): both are shown as declared, each opening its own page.
-    const entries = [...(value ? [{ name: value.name, match: defaultRow(rows, value, hostKey) }] : []), ...coreNamed.get(slot)];
+    // Each entry keeps its declaration's focus key wherever it is drawn (a slot's `defaults:<slot>`, a named default's
+    // `defaults:cap:<name>`, unique by the map it is named in): a refresh that moves a named default between the
+    // groups, or turns one cell into two, puts focus back on the same declaration.
+    const entries = [...(value ? [{ name: value.name, match: defaultRow(rows, value, hostKey), key: `defaults:${slot}` }] : []), ...coreNamed.get(slot)];
     const stack = [node(doc, 'span', label, 'ws-default-label')];
     const opener = entry => `${label}: ${entry.name}, the workspace default — open its page`;
     if (!entries.length) stack.push(node(doc, 'span', DEFAULTS_COPY.emptySlot, 'ws-default-none'), node(doc, 'span', DEFAULTS_COPY.emptyNote, 'ws-default-note'));
@@ -213,13 +217,13 @@ export function renderWorkspaceDefaults(section, { status, rows, onOpen = null }
       const line = node(doc, button ? 'button' : 'span', null, 'ws-default-entry');
       line.append(name(entry.name), ...(entry.match ? [chipFor(doc, entry.match, names)] : []));
       if (button) {
-        line.type = 'button'; line.dataset.focusKey = `defaults:${slot}:${entry.name}`; line.setAttribute('aria-label', opener(entry));
+        line.type = 'button'; line.dataset.focusKey = entry.key; line.setAttribute('aria-label', opener(entry));
         line.addEventListener('click', () => onOpen(entry.match.row));
       }
       stack.push(line);
     }
     const one = entries.length === 1 ? entries[0] : null;
-    const { item, el } = cell({ tile: icon, tint, empty: !entries.length, stack, match: one?.match ?? null, focusKey: `defaults:${slot}`, label: one ? opener(one) : '' });
+    const { item, el } = cell({ tile: icon, tint, empty: !entries.length, stack, match: one?.match ?? null, focusKey: one?.key, label: one ? opener(one) : '' });
     el.dataset.slot = slot;
     core.list.append(item);
   }

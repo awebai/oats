@@ -11,6 +11,7 @@ import { ABOUT_COPY, aboutCSS, createAboutDialog } from '../renderer/about-dialo
 import { takePickerFocusReturn } from '../renderer/overlay-picker.mjs';
 import { capabilitySections } from '../../client/capability-rows.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
+import { captureFocusState } from '../renderer/loading.mjs';
 
 const HOST = 'github.com/nw/agents', MKT = 'github.com/nw/marketing';
 const ROWS = [
@@ -158,7 +159,7 @@ test('a core capability named under defaults.capabilities fills its core cell, a
     assert.equal(cell.querySelector('.ws-default-none'), null, 'not "None"');
     assert.equal(cell.querySelector('.ws-default-tile').dataset.tint, 'sage', 'the slot\'s tile');
     assert.equal(cell.getAttribute('aria-label'), 'Messaging: nw-chat, the workspace default — open its page');
-    assert.equal(cell.dataset.focusKey, 'defaults:messaging');
+    assert.equal(cell.dataset.focusKey, 'defaults:cap:nw-chat', 'its declaration\'s key, wherever it is drawn');
     assert.deepEqual(addCells(u).map(c => c.dataset.defaultCapability), ['oats.core'], 'not under Additional');
     assert.equal(u.$('[data-jump=defaults] .capability-nav-count').textContent, '3', 'the count is unchanged by where it shows');
     cell.click(); assert.equal(u.opened.at(-1), CHAT);
@@ -181,12 +182,42 @@ test('a slot declared and a same-layer named default (the workspace\'s own confl
   assert.equal(cell.tagName, 'DIV', 'two pages: the cell is not one button'); assert.equal(cell.dataset.focusKey, undefined);
   const entries = [...cell.querySelectorAll('button.ws-default-entry')];
   assert.deepEqual(entries.map(e => [text(e), e.dataset.focusKey, e.getAttribute('aria-label')]), [
-    ['oats.aweb oats.aweb 1.28.0', 'defaults:messaging:oats.aweb', 'Messaging: oats.aweb, the workspace default — open its page'],
-    ['nw-chat agents latest', 'defaults:messaging:nw-chat', 'Messaging: nw-chat, the workspace default — open its page'],
+    ['oats.aweb oats.aweb 1.28.0', 'defaults:messaging', 'Messaging: oats.aweb, the workspace default — open its page'],
+    ['nw-chat agents latest', 'defaults:cap:nw-chat', 'Messaging: nw-chat, the workspace default — open its page'],
   ]);
   assert.equal(cell.querySelector('.ws-default-label').textContent, 'Messaging'); assert.equal(cell.querySelectorAll('.ws-default-note').length, 0, 'no new copy');
   entries[1].click(); assert.equal(u.opened.at(-1), CHAT); entries[0].click(); assert.equal(u.opened.at(-1), ROWS[1]);
   assert.equal(addCells(u).length, 0);
+});
+
+// A repaint (the tab host's captureFocusState on the sections) puts focus back on the same declaration when a refresh
+// moves it between the groups, turns one cell into two, or two declarations share a name.
+test('focus follows the declaration across repaints: Additional → Core, one entry → two, the same name from two sources', t => {
+  const u = mount(t);
+  const CHAT = { name: 'nw-chat', kind: 'member', repoKey: HOST, layer: 'messaging', origin: `member ${HOST}` };
+  const CHAT2 = { ...CHAT, repoKey: MKT, origin: `member ${MKT}` };
+  const repaint = (st, opts) => { const restore = captureFocusState(u.$('.sections'), { scroller: null }); u.render(st, opts); return restore(); };
+  // Unlisted (Additional), then listed with layer messaging (Core): the same declaration keeps focus.
+  const named = status({ slots: {}, capabilities: [{ name: 'nw-chat', from: 'here', off: false }] });
+  u.render(named, { rows: ROWS });
+  addCells(u)[0].focus();
+  assert.equal(repaint(named, { rows: [...ROWS, CHAT] }), true);
+  assert.equal(u.doc.activeElement, slotCells(u)[1], 'now the Messaging cell');
+  // One entry, then two (a named default of that layer joins the slot's): focus stays on the slot declaration.
+  const slotOnly = status({ slots: { messaging: { name: 'oats.aweb', from: 'package' } }, capabilities: [] });
+  u.render(slotOnly, { rows: [...ROWS, CHAT] });
+  slotCells(u)[1].focus();
+  assert.equal(repaint(status({ ...slotOnly.defaults, capabilities: [{ name: 'nw-chat', from: 'here', off: false }] }), { rows: [...ROWS, CHAT] }), true);
+  assert.equal(u.doc.activeElement.textContent.startsWith('oats.aweb'), true, 'the slot\'s own entry');
+  // The same name declared in the slot (one repository) and by name (another): each keeps its own focus.
+  const twice = status({ slots: { messaging: { name: 'nw-chat', from: HOST } }, capabilities: [{ name: 'nw-chat', from: MKT, off: false }] });
+  u.render(twice, { rows: [...ROWS, CHAT, CHAT2] });
+  const second = () => [...slotCells(u)[1].querySelectorAll('button.ws-default-entry')][1];
+  assert.notEqual(second().dataset.focusKey, [...slotCells(u)[1].querySelectorAll('button.ws-default-entry')][0].dataset.focusKey, 'two declarations, two keys');
+  second().focus();
+  assert.equal(repaint(twice, { rows: [...ROWS, CHAT, CHAT2] }), true);
+  assert.equal(u.doc.activeElement, second()); assert.equal(text(u.doc.activeElement), 'nw-chat marketing latest');
+  u.doc.activeElement.click(); assert.equal(u.opened.at(-1), CHAT2);
 });
 
 test('an unlisted package default never presents the capability as its package: the chip names the kind alone', t => {
