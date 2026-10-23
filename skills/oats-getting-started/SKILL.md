@@ -312,11 +312,12 @@ members:
   - git:github.com/acme/acme-oats     # the host is a member too
 packages:
   oats.framework: v1.13.5             # the installed CLI's catalog versions (below)
-  oats.aweb: v1.30.0                  # messaging: agent identities, mail and chat
+  oats.aweb: v1.31.0                  # messaging, and tasks: agent identities, mail, chat and tasks
 defaults:
   capabilities:
     oats.core: { from: package }
   messaging: { oats.aweb: { from: package } }
+  tasks: { oats.aweb-tasks: { from: package } }   # aweb tasks: assignment, claims, status and handoff
 teams:
   acme: { description: The acme workspace's aweb team, team: "default:acme-ana.aweb.ai" }
 defaultTeam: acme                     # every soul starts in this team
@@ -325,11 +326,18 @@ defaultTeam: acme                     # every soul starts in this team
 - **The versions** are the installed CLI's catalog's:
   `"$(oats root)/package-catalog.json"`, `packages."oats.framework".ref`
   (for example `oats-framework/v1.13.5`: write the part after the `/`) and
-  `packages."oats.aweb".ref` (for example `v1.30.0`).
+  `packages."oats.aweb".ref`, but never below `v1.31.0`: that release
+  carries `oats.aweb-tasks`, and a bare version resolves through the
+  catalog's tag convention even when the installed catalog names an older
+  one.
 - **The team** is `default:N.aweb.ai`, with `N` the username from step 1;
   its label (here `acme`) is the workspace name.
+- **Tasks** use aweb, the same identities as messaging: agents assign,
+  claim and hand off work as aweb tasks the person sees on the aweb
+  dashboard. A workspace that uses Jira or Linear writes that provider in
+  `tasks:` instead (the setup expert sets it up).
 - **Without messaging,** leave out the `oats.aweb` line, the `messaging`
-  line, `teams` and `defaultTeam`.
+  line, the `tasks` line, `teams` and `defaultTeam`.
 - **Add nothing else:** knowledge and the person's own repositories come
   with the setup expert.
 

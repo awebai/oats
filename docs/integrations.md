@@ -57,7 +57,8 @@ tasks:
 # souls/support-triager/soul.yaml: opt out of one slot, replace another
 knowledge: none                            # empties the slot
 capabilities:
-  oats.jira: { from: package }             # its manifest says layer: tasks, so it replaces the default
+  oats.linear: off                         # removes the tasks default...
+  oats.jira: { from: package }             # ...so this one fills the slot (two would be E_SLOT_CONFLICT)
 ```
 
 - A soul's slot key is either `none` or that slot's payload (settings for the
@@ -92,6 +93,16 @@ operations in full.
   soul-only `knowledge: { harvest: off }` forbids harvest while retaining
   consultation. No host switch or automatic transcript/retire capture remains;
   `knowledge-maintainer` reviews the resulting Git PRs.
+- **`oats.aweb-tasks`** (in the `oats.aweb` package from 1.31.0) fills the
+  tasks slot with aweb tasks, acting as the instance's own `oats.aweb`
+  identity in its default team. **An existing workspace opts in** by pinning
+  `oats.aweb: v1.31.0` (or later), adding
+  `tasks: { oats.aweb-tasks: { from: package } }` to `defaults`, and running
+  `oats sync`. Only new spawns get it. A soul that names its own tasks
+  provider in `capabilities:` (`oats.jira`, `oats.linear`) then holds two and
+  fails with `E_SLOT_CONFLICT`: to keep its own, it adds
+  `oats.aweb-tasks: off` to its `capabilities:`. A soul opts out of tasks
+  entirely with `tasks: none`.
 - **`oats.aweb`** mints a messaging identity for each instance at spawn and
   removes it at retire, contributes the aweb messaging skills, and wires the
   channel so sessions are woken by mail. Under `delivery: channel`, Claude Code
