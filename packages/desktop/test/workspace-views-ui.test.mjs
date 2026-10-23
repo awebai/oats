@@ -1,4 +1,4 @@
-// Workspace views (#482), renderer side: nothing above the sidebar navigation, the roster grouped by
+// Workspace views (#482), renderer side: no deployments block in the sidebar, the roster grouped by
 // deployment ONLY with two or more deployments (one deployment looks exactly as before), the
 // workspace list's one-line entries (unmatched views among them, by name), and the "On <deployment>"
 // line of deployment-level surfaces. DOM and computed-token checks in jsdom; no Electron, HTTP or CLI.
@@ -45,7 +45,7 @@ const tag = (d) => ({ id: d.id, machine: d.machine, path: d.path });
 const row = (name, d, fields = {}) => ({ instance: name, agent: "soul", agentsRoot: `${d.path}/agents`, home: `${d.path}/agents/soul/instances/${name}`,
   repoName: "repo", running: true, deployment: tag(d), ...(d.local ? {} : { server: d.machine, addressable: true }), ...fields });
 
-/* ── deployment states, and nothing above the navigation ── */
+/* ── deployment states, and no deployments block in the sidebar ── */
 test("deploymentState says live, remembered, not reached and not observed in words", () => {
   assert.deepEqual(vd.deploymentState(LOCAL), { key: "live", text: "live", detail: "" });
   assert.deepEqual(vd.deploymentState(ALTAIR), { key: "remembered", text: "remembered", detail: `Last report, not live now. ${ALTAIR.reason}` });
@@ -53,11 +53,13 @@ test("deploymentState says live, remembered, not reached and not observed in wor
   assert.deepEqual(vd.deploymentState({ ...LOCAL, reachable: false, reason: "Reading the deployment…" }), { key: "unobserved", text: "not observed", detail: "Reading the deployment…" });
 });
 
-test("UI spec: no deployments block above the sidebar navigation; the workspace list sits right on the nav", (t) => {
+// Pepe's sidebar layout (2026-10-23): the Workspaces heading, its list, then Instances; the navigation is at the foot.
+test("UI spec: no deployments block in the sidebar; the workspace list sits under its heading, the Instances right after it, the nav in the foot", (t) => {
   const dom = new JSDOM(html); t.after(() => dom.window.close());
   const doc = dom.window.document;
   assert.equal(doc.getElementById("ws-deployments"), null);
-  assert.deepEqual([...doc.getElementById("sidebar").children].slice(0, 3).map((el) => el.id || el.className), ["side-head", "ws-list", "nav"]);
+  assert.deepEqual([...doc.getElementById("sidebar").children].map((el) => el.id || el.className), ["ctx-head ws-head", "ws-list", "instance-roster", "nav-foot"]);
+  assert.equal(doc.getElementById("nav").parentElement, doc.getElementById("nav-foot"), "the main views are at the bottom");
   assert.equal(vd.renderDeploymentList, undefined, "the list renderer is gone");
   assert.doesNotMatch(`${css}\n${shellSource}`, /ws-deployment|renderDeploymentList|ctx-deployment-tag|ws-option-reason/);
 });
@@ -317,7 +319,8 @@ for (const name of ["light", "solarized", "dark"]) test(`${name}: roster heading
   list.append(vd.deploymentHeading(doc, { deployment: LOCAL, label: "This Mac", count: 1 }), vd.deploymentHeading(doc, { deployment: ALTAIR, label: "altair", count: 1 }));
   const sw = createWorkspaceSwitcher({ document: doc, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) });
   t.after(() => sw.dispose());
-  // The current entry (painted --sel) and an inactive one (on the sidebar's --surface): the name is all a row says.
+  // The current entry (bold over an accent edge, no fill of its own since b761a2a27: --sel is the nav's current view)
+  // and an inactive one, both on the sidebar's --surface: the name is all a row says.
   const marked = [views[0], views[1], views[2]];
   sw.begin()(marked[0], marked);
   const section = doc.createElement("section"); section.className = "oats-view automations"; doc.body.append(section);
@@ -327,7 +330,7 @@ for (const name of ["light", "solarized", "dark"]) test(`${name}: roster heading
   const active = '.ws-option[aria-current="true"]', inactive = `.ws-option[data-workspace-id="${marked[2].id}"]`;
   const checks = [
     [".ctx-deployment-label", "muted", "surface"], [".ctx-deployment .deployment-mark", "warn", "surface"],
-    [`${active} .ws-option-name`, "fg", "sel"], [`${inactive} .ws-option-name`, "fg", "surface"], [".auto-scope", "muted", "surface"],
+    [`${active} .ws-option-name`, "fg", "surface"], [`${inactive} .ws-option-name`, "fg", "surface"], [".auto-scope", "muted", "surface"],
   ];
   for (const [selector, fg, surface] of checks) {
     const el = doc.querySelector(selector); assert.ok(el, selector);
@@ -338,7 +341,7 @@ for (const name of ["light", "solarized", "dark"]) test(`${name}: roster heading
     assert.ok(r >= 4.5, `${selector}: ${fg} on ${bg} is ${r.toFixed(2)}:1`);
     for (let p = el; p; p = p.parentElement) assert.equal(win.getComputedStyle(p).opacity, "1", `${selector}: no opacity over text`);
   }
-  // Hover paints --surface-2 under an entry: its name holds there too.
-  for (const fg of ["fg"]) assert.ok(ratio(root.getPropertyValue(`--${fg}`).trim(), root.getPropertyValue("--surface-2").trim()) >= 4.5, `${fg} on surface-2`);
+  // Hover paints --surface-2 under an entry, and keyboard focus --sel: its name holds on both.
+  for (const fill of ["surface-2", "sel"]) assert.ok(ratio(root.getPropertyValue("--fg").trim(), root.getPropertyValue(`--${fill}`).trim()) >= 4.5, `fg on ${fill}`);
   line.dispose();
 });

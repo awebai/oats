@@ -12,9 +12,19 @@ export const NAV = [
   // #482 (UI spec): the Active overview became Deployments: the overview trees, split by deployment, one tab each.
   { name: "hierarchy", label: "Deployments", icon: "layers", title: "Deployments" },
   { name: "spawn", label: "Workspace", icon: "workspace", title: "Workspace" },
-  // Schedules and Triggers are one destination with two subtabs (human, 2026-09-28).
-  { name: "automations", label: "Automations", icon: "automations", title: "Automations" },
 ];
+
+/** Destinations that are a tab of a NAV page, not a page of their own (Pepe, 2026-10-23): Automations
+ * (Schedules | Triggers) is the Workspace page's Automations tab. Its action (`stage.automations`, ⌘3 /
+ * Ctrl+3), its palette command and every open of the name land on that page and tab. */
+export const NAV_TABS = [
+  { name: "automations", label: "Automations", page: "spawn", tab: "automations" },
+];
+
+/** The NAV_TABS entry `name` opens, or null for a page of its own (or nothing). */
+export function navTab(name) {
+  return NAV_TABS.find((entry) => entry.name === name) ?? null;
+}
 
 /** Sidebar mode a stage view pairs with (spawn shows the souls context). */
 export function stageSidebarMode(name) {

@@ -1110,11 +1110,18 @@ export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: 
   };
 }
 
-// ── The Automations stage: one nav item, Schedules | Triggers as subtabs (human, 2026-09-28) ──
+// ── The Automations stage: Schedules | Triggers as subtabs (human, 2026-09-28), the Workspace page's
+// Automations tab since Pepe's sidebar layout (2026-10-23; views/spawn.mjs mounts it there) ──
 export const AUTOMATION_KINDS = Object.freeze(['schedule', 'trigger']);
 let chosenKind = 'schedule', stage = null;
-/** Open the stage on a subtab (a soul's "Schedule…" opens Schedules); the choice persists for the session. */
-export function preselectAutomationsTab(kind) { if (AUTOMATION_KINDS.includes(kind)) chosenKind = kind; }
+const liveStages = new Set(); // every stage on screen, so a preselect reaches one already open
+/** Open the stage on a subtab (a soul's "Schedule…" opens Schedules); the choice persists for the session,
+ * and a stage already on screen shows it at once. */
+export function preselectAutomationsTab(kind) {
+  if (!AUTOMATION_KINDS.includes(kind)) return;
+  chosenKind = kind;
+  for (const live of [...liveStages]) void live.select(kind);
+}
 export function mount(el, ctx) { stage = createAutomationsStage(el, ctx); }
 export function unmount() { stage?.dispose(); stage = null; }
 
@@ -1135,7 +1142,7 @@ export function createAutomationsStage(el, ctx, { cli: readCli = cliStatus, subs
   }
   const frame = {
     heading(d) {
-      // No title in the bar (human, 2026-09-28): the sidebar already says Automations; the tabs lead.
+      // No title in the bar (human, 2026-09-28): the Workspace tab above already says Automations; the subtabs lead.
       const wrap = d.createElement('div'); wrap.className = 'auto-heading';
       const tabs = d.createElement('div'); tabs.className = 'auto-tabs'; tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Automations');
       for (const k of AUTOMATION_KINDS) {
@@ -1189,8 +1196,10 @@ export function createAutomationsStage(el, ctx, { cli: readCli = cliStatus, subs
   }
   const offWs = onWorkspaceChange(() => { counts.clear(); paintCounts(); void countOther(); });
   void select(kind, { force: true });
-  return {
+  const handle = {
     get kind() { return kind; }, select,
-    dispose() { alive = false; op++; countSerial++; offWs(); page?.dispose(); page = null; host.remove(); },
+    dispose() { alive = false; op++; countSerial++; liveStages.delete(handle); offWs(); page?.dispose(); page = null; host.remove(); },
   };
+  liveStages.add(handle);
+  return handle;
 }

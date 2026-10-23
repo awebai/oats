@@ -63,7 +63,7 @@ import { revealInStrip } from "./reveal-in-scrollport.mjs";
 import { createIntentGate, prepareOwnedOpen, runOpenFlow } from "./open-intent.mjs";
 import { createSelectionOwnership, wirePaneSelection } from "./selection-ownership.mjs";
 import { createWorkspaceSwitcher } from "./workspace-switcher.mjs";
-import { NAV, stageSidebarMode, loadStageView } from "./shell-nav.mjs";
+import { NAV, NAV_TABS, navTab, stageSidebarMode, loadStageView } from "./shell-nav.mjs";
 import { shellIcon, mountShellIcons, iconElement } from "./shell-icons.mjs";
 import { createRuntimeBadge, identityCSS } from "./identity-marks.mjs";
 import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
@@ -333,6 +333,9 @@ async function closeStage() {
 async function showStage(name) {
   // A window with no workspace shows only its choice (#481): no view may read with no workspace.
   if (windowState() === "choosing") { void showChooser(); return; }
+  // A destination that is a tab of a page (Automations, of Workspace): that page, on that tab.
+  const asTab = navTab(name);
+  if (asTab) return openWorkspaceSouls(asTab.tab);
   tabOpenIntents.invalidate(); // navigating away supersedes pending tab selections
   const v = NAV.find((x) => x.name === name);
   setSidebarMode(stageSidebarMode(name));
@@ -411,9 +414,9 @@ onWindowState((state) => {
  * control: where it was when that is still shown (the nav button), else the stage's first
  * control — never <body> after the terminal it was in is hidden (spec F audit). */
 async function showStageFocused(name) {
-  const op = stageOp;
+  const op = stageOp, page = navTab(name)?.page ?? name;
   await showStage(name);
-  if (stage?.name !== name || tabLayerVisible || (stageOp !== op && stageOp !== op + 1)) return;
+  if (stage?.name !== page || tabLayerVisible || (stageOp !== op && stageOp !== op + 1)) return;
   const active = document.activeElement;
   if (!active || active === document.body || !isShown(active)) focusRegions.focusRegion("main");
 }
@@ -2308,14 +2311,15 @@ for (const v of NAV) {
   navEl.append(b);
 }
 
-// Persistent footer controls use exactly the same registry as keyboard actions.
-for (const button of document.querySelectorAll("#nav-foot [data-action]")) {
+// Persistent footer tools use exactly the same registry as keyboard actions (the nav's buttons run theirs above).
+for (const button of document.querySelectorAll("#sidebar-tools [data-action]")) {
   button.addEventListener("click", () => runAction(button.dataset.action));
 }
 
 // This is a chooser entry, not a launch or an inspection preselection. Capture
 // workspace visit + selection before import, and contain stale rejections too.
-// The leader's 3 opens the same way on Capabilities (`tab`).
+// The leader's 3 opens the same way on Capabilities (`tab`), and stage.automations on Automations.
+const WORKSPACE_TAB_NAMES = { souls: "Souls", capabilities: "Capabilities", automations: "Automations" };
 async function openWorkspaceSouls(tab = "souls") {
   const selectionOwns = tabOpenIntents.begin();
   const owns = () => selectionOwns() && ![...document.querySelectorAll('[aria-modal="true"]')]
@@ -2324,12 +2328,12 @@ async function openWorkspaceSouls(tab = "souls") {
   try { mod = await import("./views/spawn.mjs"); }
   catch (e) {
     if (!owns()) return;
-    ctx.notify(`Could not open Workspace ${tab === "souls" ? "Souls" : "Capabilities"}: ${e.message || e}`);
+    ctx.notify(`Could not open Workspace ${WORKSPACE_TAB_NAMES[tab] ?? tab}: ${e.message || e}`);
     return;
   }
   if (!owns()) return;
   mod.preselectWorkspaceTab(tab);
-  showStage("spawn");
+  await showStage("spawn");
 }
 
 // ── command palette (⌘K): jump to an instance or run a command ─────────
@@ -2360,7 +2364,7 @@ const palette = createPalette({
   commands: [
     // View commands derive from the nav manifest so a new rail destination
     // can never be palette-invisible (review 8441961 nit).
-    ...NAV.map((v) => ({ label: `View: ${v.label}`, detail: chordDetail(`stage.${v.name}`), run: () => showStageFocused(v.name) })),
+    ...[...NAV, ...NAV_TABS].map((v) => ({ label: `View: ${v.label}`, detail: chordDetail(`stage.${v.name}`), run: () => showStageFocused(v.name) })),
     { label: "Spawn instance: choose a soul in Workspace…", detail: chordDetail("app.chooseSoul"), run: () => runAction("app.chooseSoul") },
     { label: "Souls: quick open…", detail: chordDetail("app.quickOpenSouls"), run: () => runAction("app.quickOpenSouls") },
     { label: "File: open read-only…", detail: chordDetail("app.openFile"), run: () => runAction("app.openFile") },
@@ -2780,7 +2784,7 @@ const unregisterOpenFile = registerAction({ id: "app.openFile", label: "File: op
 window.addEventListener("pagehide", () => { tabOpenIntents.invalidate(); unregisterOpenFile(); fileOpener.dispose(); }, { once: true });
 // stage-switch actions derive from the nav manifest (same rule as the
 // palette): a new rail destination can never be shortcut-invisible.
-NAV.forEach((v) => registerAction({
+[...NAV, ...NAV_TABS].forEach((v) => registerAction({
   id: `stage.${v.name}`, label: `View: ${v.label}`, context: "global",
   run: () => showStageFocused(v.name),
 }));
@@ -2825,8 +2829,8 @@ registerAction({ id: "tabs.prevPage", label: "Previous tab (second shortcut)", c
 for (let n = 1; n <= 9; n++) {
   registerAction({ id: `tabs.goto${n}`, label: n === 9 ? "Go to the last tab" : `Go to tab ${n}`, context: "tabs", run: unlessModal(() => gotoTab(n)) });
 }
-// Regions: sidebar nav → instance roster → main → instance panel (focus-regions.mjs).
-registerAction({ id: "focus.nextRegion", label: "Focus the next region (sidebar, instances, main, panel)", context: "global", run: () => cycleRegion(1) });
+// Regions: workspaces → instance roster → sidebar footer → main → instance panel (focus-regions.mjs).
+registerAction({ id: "focus.nextRegion", label: "Focus the next region (workspaces, instances, footer, main, panel)", context: "global", run: () => cycleRegion(1) });
 registerAction({ id: "focus.prevRegion", label: "Focus the previous region", context: "global", run: () => cycleRegion(-1) });
 // F6 stays the program's inside a terminal (mc, htop, nano): this terminal-allowlisted chord
 // leaves it for the next region, same order as F6; from there plain F6 works.
@@ -3046,8 +3050,8 @@ function applyChordTitles() {
 onKeymapChange(() => applyChordTitles());
 applyChordTitles();
 
-// Persistent recursive instance tree: always available below the three nav
-// surfaces, with no second/contextual sidebar and no width jump.
+// Persistent recursive instance tree: always available between the list of
+// workspaces and the footer, with no second/contextual sidebar and no width jump.
 initContextRoster();
 onWorkspaceChange(restoreWorkspaceTabs);
 // After it: a take-over's layout, once the workspace it came with is this window's (restoreHandedLayout).

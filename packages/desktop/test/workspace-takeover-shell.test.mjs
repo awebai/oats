@@ -34,6 +34,7 @@ import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
 import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
 import { describeLayout, composeLayout, validLayout } from "../renderer/layout-handover.mjs";
 import { takenWorkspaceIds } from "../renderer/views/common.mjs";
+import { navTab } from "../renderer/shell-nav.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const tick = () => new Promise(setImmediate);
@@ -71,7 +72,7 @@ function shell(t) {
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"), contextRosterEl: document.getElementById("roster"),
     stageHost: document.getElementById("stagehost"), stage: { name: "hierarchy" }, navEl: document.getElementById("nav"),
-    NAV: [{ name: "hierarchy" }], stageSidebarMode: () => "overview",
+    NAV: [{ name: "hierarchy" }], navTab /* the shipped NAV_TABS lookup: showStage reads it first */, stageSidebarMode: () => "overview",
     brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(), workspaceLabel: { reset() {} },
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     updateActiveContexts: on => { c.tabLayerVisible = on; },

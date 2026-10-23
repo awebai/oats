@@ -86,9 +86,12 @@ test('electron-builder wires the derived icons per platform; only the sidebar ma
   assert.equal(scripts.icons, 'node build-icons.mjs', 'regenerate from source is one command');
 });
 
-test('the renderer shows the generated sidebar mark; nothing references a download path', () => {
+// Pepe's sidebar layout (2026-10-23): the Workspaces head is a plain heading, so the renderer shows no sidebar
+// mark. The generated sidebar-48.png and its packaging stay as they are (pinned above); only its use is gone.
+test('the renderer no longer shows the sidebar mark; nothing references a download path', () => {
   const html = read('renderer/index.html').toString('utf8');
-  assert.match(html, /<img class="ws-brand-image" src="\.\.\/assets\/brand\/generated\/sidebar-48\.png" width="24" height="24" alt=""/);
+  assert.doesNotMatch(html, /ws-brand-image|ws-brand-mark|sidebar-\d+\.png/, 'index.html shows no sidebar mark');
+  assert.doesNotMatch(read('renderer/shell.css').toString('utf8'), /\.ws-brand-(image|mark)\b/, 'no style is left for it');
   for (const file of ['renderer/index.html', 'electron-builder.config.cjs', 'build-icons.mjs', 'package.json', `${GENERATED}/manifest.json`]) {
     assert.doesNotMatch(read(file).toString('utf8'), /Downloads|\/Users\/|~\//, file);
   }

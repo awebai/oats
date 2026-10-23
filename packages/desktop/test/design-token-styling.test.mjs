@@ -10,19 +10,18 @@ const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url
 const theme = read("theme.css"), shell = read("shell.css");
 const icon = shellIcon("workspace");
 const markup = `<div id="app"><aside id="sidebar">
-  <div class="side-head"><span class="ws-brand-mark">${icon}</span><span id="ws-heading" class="ws-heading">Workspaces</span>
+  <div class="ctx-head ws-head"><span id="ws-heading" class="ws-heading">Workspaces</span>
     <button id="ws-add-open" class="ws-add-open icon-button" type="button" aria-label="Add local workspace…">${icon}</button></div>
   <section id="ws-list" class="ws-list" aria-labelledby="ws-heading"><div id="ws-options" class="ws-options"><ul class="ws-group">
     <li class="ws-option-row"><button class="ws-option" aria-current="true"><span class="ws-option-name">fixture</span><span class="sr-only">, needs input</span><span class="ws-waiting" aria-hidden="true"></span></button></li>
     <li class="ws-option-row"><button class="ws-option"><span class="ws-option-name">other</span></button></li>
   </ul></div></section>
-  <nav id="nav"><button class="nav-item active"><span class="icon">${icon}</span>Workspace</button></nav>
-  <section id="instance-roster"><div class="ctx-head">Instances</div><input class="ctx-filter">
+  <section id="instance-roster"><div class="ctx-head roster-head">Instances</div><input class="ctx-filter">
     <div class="ctx-list"><div class="ctx-deployment" role="heading" aria-level="3"><span class="ctx-deployment-label">altair</span><span class="deployment-mark" role="img" aria-label="remembered">${icon}</span></div><div class="ctx-tree-row"><button class="ctx-inst active"><span class="ctx-dot on"></span>
       <span class="ctx-copy"><span class="ctx-name">Fixture instance</span><span class="ctx-repo-label">fixture</span></span>
     </button></div></div></section>
-  <div id="nav-foot"><button id="sidebar-spawn" class="primary">${icon}Spawn instance</button>
-    <div id="sidebar-tools">${["Sidebar", "Theme", "Shortcuts", "Palette"].map(label => `<button class="nav-item" aria-label="${label}">${icon}</button>`).join("")}</div>
+  <div id="nav-foot"><nav id="nav"><button class="nav-item active"><span class="icon">${icon}</span><span class="label">Deployments</span></button><button class="nav-item"><span class="icon">${icon}</span><span class="label">Workspace</span></button></nav>
+    <div id="sidebar-tools">${["Sidebar", "Theme", "Shortcuts"].map(label => `<button class="nav-item icon-button" aria-label="${label}">${icon}</button>`).join("")}<button id="sidebar-spawn" class="nav-item icon-button" aria-label="Spawn instance">${icon}</button></div>
   </div></aside>
   <main id="main"><button id="show-sidebar" class="main-edge-control" hidden>${icon}</button><div id="tabstrip"><div id="tabbar-row"><div id="tabbar">
     <div class="tab active"><button class="tab-trigger">Fixture tab</button><button class="close">×</button></div>
@@ -53,7 +52,7 @@ function fixture(t, palette = "light") {
     style: selector => dom.window.getComputedStyle(doc.querySelector(selector)) };
 }
 
-test("visual shell geometry: 264px sidebar, aligned 48px bars, 24px brand and 16px icons", t => {
+test("visual shell geometry: 264px sidebar, aligned 48px bars, two alike section heads and 16px icons", t => {
   const u = fixture(t);
   assert.equal(u.style("#sidebar").width, "264px");
   assert.equal(u.style("#sidebar").minWidth, "264px");
@@ -61,18 +60,22 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, 24px brand and 16
   assert.equal(u.rule(':root, [data-theme="dark"]').getPropertyValue("--bar-h"), "48px");
   // Every bar is 48px including its 1px rule; the flat strip's inner row
   // yields that rule to #tabstrip so the active tab keeps its bottom border.
-  for (const selector of [".side-head", "#tabstrip", ".group-tabbar"]) assert.equal(u.style(selector).height, "var(--bar-h)", selector);
+  for (const selector of ["#tabstrip", ".group-tabbar"]) assert.equal(u.style(selector).height, "var(--bar-h)", selector);
   for (const selector of ["#tabstrip", ".group-tabbar"]) assert.equal(u.style(selector).boxSizing, "border-box", selector);
   assert.equal(u.style("#tabbar").height, "calc(var(--bar-h) - 1px)");
-  assert.equal(u.style(".side-head").padding, "0px 10px 0px 12px");
-  // The head: the 24px brand, the list's heading 9px after it, and Add local workspace… as a 28px icon button.
-  assert.equal(u.style(".ws-heading").marginLeft, "9px");
-  assert.equal(u.style(".ws-heading").flexGrow, "1");
-  assert.equal(u.style(".ws-heading").minWidth, "0px");
+  // Pepe's sidebar layout (2026-10-23): the Workspaces head is the Instances head (.ctx-head), with no bar, logo or
+  // rule of its own; the heading, then Add local workspace… as a 28px icon button pushed to the right end.
+  assert.equal(shell.match(/\.side-head\b|\.ws-brand-(?:mark|image)\b|\.ws-heading\s*[,{]/), null, "no rules left for the old head, its mark or a heading style of its own");
+  const [wsHead, rosterHead] = [u.style(".ws-head"), u.style(".roster-head")];
+  for (const prop of ["height", "padding", "display", "alignItems", "gap", "color", "fontSize", "fontWeight"]) {
+    assert.equal(wsHead[prop], rosterHead[prop], `the two heads share ${prop}`);
+  }
+  assert.deepEqual([wsHead.height, wsHead.color, wsHead.fontSize], ["36px", "var(--nav-fg)", "13px"]);
+  assert.equal(u.style(".ws-head > .ws-add-open").marginLeft, "auto", "Add local workspace… at the head's right end");
   assert.deepEqual([u.style(".ws-add-open").width, u.style(".ws-add-open").height, u.style(".ws-add-open").flexShrink], ["28px", "28px", "0"]);
   assert.equal(u.style(".ws-add-open").display, "grid");
   assert.equal(u.style(".ws-add-open").color, "var(--muted)");
-  for (const [selector, size] of [[".ws-brand-mark", "24px"], [".shell-icon", "16px"]]) {
+  for (const [selector, size] of [[".shell-icon", "16px"]]) {
     assert.equal(u.style(selector).width, size); assert.equal(u.style(selector).height, size);
     assert.equal(u.style(selector).flexShrink, "0");
   }
@@ -80,11 +83,12 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, 24px brand and 16
     assert.equal(u.style(selector).whiteSpace, "nowrap", selector);
     assert.equal(u.style(selector).textOverflow, "ellipsis", selector);
   }
-  assert.equal(u.style(".ws-heading").fontSize, "13.5px");
-  assert.equal(u.style(".ws-heading").textOverflow, "ellipsis");
   // The list: always shown under the head, about six rows at most, then it scrolls inside itself.
   assert.equal(u.style(".ws-list").flexShrink, "0");
-  assert.equal(u.rule(".ws-list").borderBottom, "1px solid var(--border)", "one rule between the list and the navigation");
+  // No rule between the list and Instances: none under the list, none on the roster's top.
+  for (const prop of ["border", "borderBottom", "borderBottomWidth", "borderBottomStyle"]) assert.equal(u.rule(".ws-list")[prop], "", `.ws-list ${prop}`);
+  for (const prop of ["border", "borderTop", "borderTopWidth", "borderTopStyle"]) assert.equal(u.rule("#instance-roster")[prop], "", `#instance-roster ${prop}`);
+  assert.equal(u.rule(".ws-list").paddingTop, "0px", "the list starts right under its heading");
   assert.equal(u.style(".ws-options").maxHeight, "276px");
   assert.equal(u.style(".ws-options").overflowY, "auto");
   assert.equal(u.style(".ws-option").alignItems, "center");
@@ -113,17 +117,28 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, 24px brand and 16
 
 test("nav/footer rhythm stays separate from the 48px roster rows", t => {
   const u = fixture(t);
-  assert.equal(u.style("#nav").padding, "8px 8px 14px", "room before the Instances separator (human, 2026-09-28)");
-  assert.equal(u.style("#nav").gap, "1px");
-  assert.equal(u.style("#nav .nav-item").minHeight, "30px");
-  assert.equal(u.style("#nav .nav-item").gap, "9px");
+  // The nav is at the bottom, in the footer (Pepe, 2026-10-23): Deployments and Workspace side by side, sharing the
+  // width evenly, each label on one line.
+  assert.deepEqual([u.style("#nav").display, u.style("#nav").flexDirection, u.style("#nav").flexShrink, u.style("#nav").gap], ["flex", "row", "0", "4px"]);
+  const item = u.style("#nav .nav-item");
+  // JSDOM's CSSOM drops a unitless `flex: 1 1 0`: read the shipped declaration.
+  assert.match(shell.match(/^#nav \.nav-item \{([^}]*)\}/m)?.[1] ?? "", /(?:^|;)\s*flex:\s*1 1 0(?:px|%)?\s*;/, "two equal halves that may shrink");
+  assert.equal(item.minWidth, "0px");
+  assert.deepEqual([item.justifyContent, item.gap, item.padding, item.whiteSpace], ["center", "7px", "5px 7px", "nowrap"]);
+  assert.equal(item.minHeight, "30px");
+  const label = u.style("#nav .nav-item .label");
+  assert.deepEqual([label.minWidth, label.overflow, label.textOverflow], ["0px", "hidden", "ellipsis"], "a label gives way, never wraps");
   assert.equal(u.style("#nav-foot").padding, "10px");
   assert.equal(u.style("#nav-foot").gap, "8px");
-  assert.equal(u.style("#sidebar-spawn").minHeight, "32px");
+  assert.equal(u.rule("#nav-foot").borderTop, "1px solid var(--border)", "the footer keeps its one rule above it");
   assert.equal(u.style("#sidebar-tools").gap, "2px");
+  // The tools: sidebar, theme, shortcuts, then Spawn instance, all the same small icon button.
   assert.equal(u.doc.querySelectorAll("#sidebar-tools .nav-item").length, 4);
-  assert.equal(u.style("#sidebar-tools .nav-item").height, "26px");
-  assert.equal(u.style("#sidebar-tools .nav-item").flexGrow, "1");
+  for (const button of u.doc.querySelectorAll("#sidebar-tools .nav-item")) {
+    const style = u.doc.defaultView.getComputedStyle(button);
+    assert.deepEqual([style.height, style.minHeight, style.flexGrow, style.padding, style.justifyContent], ["26px", "26px", "1", "0px", "center"], button.getAttribute("aria-label"));
+  }
+  assert.equal(shell.match(/#sidebar-spawn\b/), null, "Spawn instance has no styling of its own: it is one of the tools");
   assert.equal(u.style(".ctx-tree-row").minHeight, "48px");
   assert.equal(u.style(".ctx-inst").minHeight, "44px");
   assert.equal(u.style(".ctx-inst").height, "auto");
@@ -133,7 +148,12 @@ test("nav/footer rhythm stays separate from the 48px roster rows", t => {
 
 for (const palette of ["light", "solarized", "dark"]) test(`${palette}: primary, danger, disabled and focus states keep their own semantic pairs`, t => {
   const u = fixture(t, palette);
-  for (const selector of ["#sidebar-spawn", ".ws-dialog-foot .primary", ".oats-view .primary"]) {
+  // Spawn instance is no longer a primary button (Pepe, 2026-10-23): it is a footer tool, painted like the others.
+  for (const selector of ["#sidebar-tools .nav-item:first-child", "#sidebar-spawn"]) {
+    assert.equal(u.style(selector).color, "var(--nav-fg)", selector);
+    assert.notEqual(u.style(selector).background, "var(--primary-bg)", selector);
+  }
+  for (const selector of [".ws-dialog-foot .primary", ".oats-view .primary"]) {
     assert.equal(u.style(selector).color, "var(--primary-fg)", selector);
     assert.equal(u.style(selector).background, "var(--primary-bg)", selector);
     u.get(selector).disabled = true;

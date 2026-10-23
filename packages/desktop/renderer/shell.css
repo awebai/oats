@@ -37,18 +37,11 @@ body {
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
 }
-.side-head {
-  height: var(--bar-h); flex: none; display: flex; align-items: center;
-  padding: 0 10px 0 12px; border-bottom: 1px solid var(--border); white-space: nowrap;
-}
 .side-kicker { color: var(--muted); font-size: 10px; line-height: 1.2; font-weight: 650; letter-spacing: .075em; text-transform: uppercase; }
 .shell-icon { display: block; width: 16px; height: 16px; flex: none; }
-/* Brand stays a single 24px mark; the list's heading beside it, and Add local workspace… at the end. */
-.ws-brand-mark { width: 24px; height: 24px; flex: none; display: grid; place-items: center; }
-/* The supplied artwork (transparent ground) at 2x; decorative — the heading beside it is the text. */
-.ws-brand-image { width: 24px; height: 24px; display: block; }
-.ws-heading { flex: 1; min-width: 0; margin-left: 9px; color: var(--fg); font-size: 13.5px; line-height: 1.2; font-weight: 700;
-              overflow: hidden; text-overflow: ellipsis; }
+/* The Workspaces heading is the Instances heading (.ctx-head), with Add local workspace… at its right end:
+   no logo, no bar of its own, no rule under the list (Pepe, 2026-10-23). */
+.ws-head > .ws-add-open { margin-left: auto; }
 .ws-add-open { flex: none; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px;
                background: transparent; color: var(--muted); cursor: pointer; }
 .ws-add-open:hover { background: var(--surface-2); color: var(--fg); }
@@ -61,7 +54,7 @@ body {
 #ws-suggestion-search::placeholder { color: var(--faint); }
 /* The workspace list (workspace-switcher.mjs): always shown under the sidebar's head, about six rows tall at
    most, then it scrolls inside itself, the current row kept in view. One workspace is one compact row. */
-.ws-list { flex: none; padding: 4px 8px 6px; border-bottom: 1px solid var(--border); }
+.ws-list { flex: none; padding: 0 8px 6px; }
 .ws-options { max-height: 276px; overflow-y: auto; }
 .ws-group { margin: 0; padding: 0; list-style: none; }
 .ws-menu-empty { margin: 4px 8px 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
@@ -90,24 +83,26 @@ body {
    its words for assistive tech and as the tooltip, so the state is never colour alone. */
 .deployment-mark { flex: none; display: inline-flex; color: var(--warn); }
 .deployment-mark > .shell-icon { width: 12px; height: 12px; }
-/* Room below the last item before the Instances separator (human, 2026-09-28). */
-#nav { display: flex; flex: none; flex-direction: column; padding: 8px 8px 14px; gap: 1px; }
+/* The main views, at the bottom: Deployments and Workspace side by side, each its icon and label. A nav too
+   narrow for both labels shows the icons alone (the label stays the button's name, visually hidden; the title is
+   its tooltip), never a wrapped label. */
+#nav { display: flex; flex: none; flex-direction: row; gap: 4px; container-type: inline-size; container-name: nav; }
+#nav .nav-item { flex: 1 1 0; min-width: 0; justify-content: center; gap: 7px; padding: 5px 7px; white-space: nowrap; }
+#nav .nav-item .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@container nav (max-width: 200px) {
+  #nav .nav-item .label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden;
+                          clip-path: inset(50%); white-space: nowrap; }
+}
 #nav-foot { margin-top: auto; flex: none; display: flex; flex-direction: column; padding: 10px; gap: 8px;
             border-top: 1px solid var(--border); }
-#sidebar-spawn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 32px;
-                 padding: 5px 10px; border: 1px solid var(--primary-bg); border-radius: 7px;
-                 background: var(--primary-bg); color: var(--primary-fg); font-family: inherit; font-size: 12.5px;
-                 line-height: 1.45; font-weight: 650; cursor: pointer; }
 .shortcut-hint { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                  font: 500 10.5px var(--mono); }
 .shortcut-hint[hidden] { display: none; }
-#sidebar-spawn:hover:not(:disabled) { background: var(--primary-bg); color: var(--primary-fg); }
-#sidebar-spawn:disabled { border-color: var(--border); background: var(--surface-2); color: var(--faint); cursor: default; }
 #sidebar-tools { display: flex; gap: 2px; }
 #sidebar-tools .nav-item { flex: 1; min-width: 0; height: 26px; min-height: 26px; justify-content: center; padding: 0; border-radius: 5px; }
 
 /* ── persistent instance tree (the same shell sidebar, never a second) ── */
-#instance-roster { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+#instance-roster { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 /* A window with no workspace has no instances to list (#481, shell.mjs showChooser). */
 #instance-roster[hidden] { display: none; }
 .ctx-head { height: 36px; flex: none; padding: 6px 12px 0 17px; display: flex; align-items: center; gap: 6px;
@@ -436,9 +431,8 @@ body {
 .main-edge-dot { position: absolute; right: 2px; top: 2px; width: 7px; height: 7px; box-sizing: border-box;
                  border-radius: 50%; background: var(--accent); border: 1px solid var(--surface); }
 .main-edge-dot[hidden] { display: none; }
-/* One bar height everywhere, border included (like .side-head): the strip's
-   bottom border lines up with the sidebar header's and runs unbroken under
-   every tab, the active one included (human preference). */
+/* One bar height everywhere, border included: the strip's bottom border runs
+   unbroken under every tab, the active one included (human preference). */
 #tabstrip { display: flex; flex-direction: column; flex: none; box-sizing: border-box; height: var(--bar-h);
             background: var(--bg); border-bottom: 1px solid var(--border); }
 #tabstrip:has(> #tabbar-row > #tabbar:empty) { display: none; }
@@ -538,9 +532,8 @@ body {
 .split-resizer:hover, .split-resizer:focus-visible { background: var(--accent); outline: none; }
 #tabhost.split-row > .group-cell + .group-cell { border-left: 1px solid var(--border); }
 #tabhost.split-col > .group-cell + .group-cell { border-top: 1px solid var(--border); }
-/* 48px including the bottom rule, like .side-head: tabs fill the 47px
-   above it, so the rule aligns with the sidebar header's and stays visible
-   under the active tab. */
+/* 48px including the bottom rule, like the tab strip: tabs fill the 47px
+   above it, so the rule stays visible under the active tab. */
 .group-tabbar { display: flex; flex: none; box-sizing: border-box; min-width: 0; overflow-x: auto; overflow-y: hidden;
                 height: var(--bar-h); background: var(--bg); border-bottom: 1px solid var(--border);
                 margin-left: var(--main-lead-inset); margin-right: var(--main-trail-inset); }

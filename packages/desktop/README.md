@@ -25,7 +25,8 @@ Flags/env:
 
 `assets/brand/oats-logo.png` is the one source of the app's brand artwork
 (the human-supplied logo, SHA-256 `b1d21d9a…de69e`). Every derived icon —
-the macOS `oats.icns`, the Linux `NxN.png` set and the 2x sidebar mark — lives
+the macOS `oats.icns`, the Linux `NxN.png` set and the 2x sidebar mark (still
+generated and packaged, though the sidebar shows no logo since 2026-10-23) — lives
 in `assets/brand/generated/` and is regenerated from the source by one
 command:
 

@@ -1,20 +1,23 @@
 // oats desktop — keyboard regions (spec F, Part 4): F6 / Shift+F6 move focus between the
-// window's regions, in order: sidebar nav → instance roster → main → instance panel → back.
+// window's regions, in the sidebar's order top to bottom, then the main area (Pepe's sidebar layout,
+// 2026-10-23): workspaces → instance roster → sidebar footer → main → instance panel → back.
 //
 // A region that is hidden (the sidebar while hidden or in focus mode, the panel while closed or when
 // there is nothing to show) is skipped. Focus lands on the region's current item, never on <body>:
-//   nav     the current view's nav item (aria-current), else the first one
+//   workspaces  the list of workspaces' tab stop (the row last focused, else the current one), else
+//               the heading's Add local workspace…
 //   roster  the roster's tab stop (the selected row), else the filter
+//   footer  the current view's nav item (aria-current), else the first one, else the first tool
 //   main    the active tab's content (a terminal's input) through the shell's hook, else the
 //           stage's first control
 //   panel   its selected tab (or the first control of a stage's content). A closed panel is out
 //           of the cycle (Spec B): from a terminal, panel.toggle's chord opens it.
-// The tab strip, the split controls and Show sidebar / Show instance panel count as main; the
-// list of workspaces (above the nav item: Shift+Tab) and the sidebar footer (below it: Tab) as nav.
+// The tab strip, the split controls and Show sidebar / Show instance panel count as main; the footer's
+// tools (after the nav items: Tab) as footer.
 
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 
-export const REGIONS = Object.freeze(["nav", "roster", "main", "panel"]);
+export const REGIONS = Object.freeze(["workspaces", "roster", "footer", "main", "panel"]);
 
 const TABBABLE = 'button, [href], input, select, textarea, summary, [tabindex]';
 
@@ -51,10 +54,12 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
   const app = () => doc.getElementById("app");
   const byId = id => doc.getElementById(id);
   const sidebarShown = () => !app()?.classList.contains("sidebar-hidden") && !app()?.classList.contains("focus-mode") && isShown(byId("sidebar"));
-  const root = name => ({ nav: byId("sidebar"), roster: byId("instance-roster"), main: byId("main"), panel: byId("context-panel") })[name];
+  // The workspaces region: the list and its heading (the heading holds Add local workspace…).
+  const inWorkspaces = el => !!el && (!!byId("ws-list")?.contains(el) || !!byId("ws-add-open")?.parentElement?.contains(el));
 
   function visible(name) {
-    if (name === "nav") return sidebarShown() && isShown(byId("nav"));
+    if (name === "workspaces") return sidebarShown() && isShown(byId("ws-list"));
+    if (name === "footer") return sidebarShown() && isShown(byId("nav-foot"));
     if (name === "roster") return sidebarShown() && isShown(byId("instance-roster"));
     if (name === "main") return isShown(byId("main"));
     if (name === "panel") return isShown(byId("context-panel"));
@@ -62,10 +67,14 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
   }
 
   function currentItem(name) {
-    if (name === "nav") {
-      const nav = byId("nav");
-      const items = [...(nav?.querySelectorAll("button") || [])].filter(focusable);
-      return items.find(b => b.getAttribute("aria-current") === "page") || items[0] || null;
+    if (name === "workspaces") {
+      const stop = [...(byId("ws-options")?.querySelectorAll('[tabindex="0"]') || [])].find(focusable);
+      const add = byId("ws-add-open");
+      return stop || (focusable(add) ? add : firstTabbable(byId("ws-list")));
+    }
+    if (name === "footer") {
+      const items = [...(byId("nav")?.querySelectorAll("button") || [])].filter(focusable);
+      return items.find(b => b.getAttribute("aria-current") === "page") || items[0] || firstTabbable(byId("nav-foot"));
     }
     if (name === "roster") {
       const roster = byId("instance-roster");
@@ -111,9 +120,10 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
   function regionOfFocus() {
     const active = doc.activeElement;
     if (!active || active === doc.body) return null;
-    if (byId("nav")?.contains(active)) return "nav";
+    if (inWorkspaces(active)) return "workspaces";
     if (byId("instance-roster")?.contains(active)) return "roster";
-    if (byId("sidebar")?.contains(active)) return "nav"; // the list of workspaces, footer tools
+    if (byId("nav-foot")?.contains(active)) return "footer";
+    if (byId("sidebar")?.contains(active)) return "workspaces"; // anything else the sidebar holds sits above the roster
     if (byId("main")?.contains(active)) return "main";
     if (byId("context-panel")?.contains(active)) return "panel";
     return null;

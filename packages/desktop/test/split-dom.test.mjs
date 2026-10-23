@@ -278,9 +278,15 @@ test("index.html ships the split buttons and shell wires the group projection th
   assert.ok(toggle, "sidebar toggle is a footer button");
   assert.equal(toggle.getAttribute("aria-label"), "Hide the sidebar", "icon-only button has an accessible name");
   assert.equal(toggle.dataset.action, "sidebar.toggle");
-  const wiring = src.match(/for \(const button of document\.querySelectorAll\("#nav-foot \[data-action\]"\)\) \{[^]*?\n\}/)?.[0];
+  // The footer holds the nav too since Pepe's sidebar layout: the tools row is wired here, the nav's buttons by
+  // their own listener (shell.mjs nav rail), so no click runs twice.
+  const wiring = src.match(/for \(const button of document\.querySelectorAll\("#sidebar-tools \[data-action\]"\)\) \{[^]*?\n\}/)?.[0];
   const registration = src.split("\n").find(line => line.startsWith('registerAction({ id: "sidebar.toggle"'));
   assert.ok(wiring && registration, "exercise shipped footer dispatch and registry binding");
+  // A nav button, as the nav rail adds them before this wiring runs (it carries its stage action too).
+  assert.ok(document.querySelector("#nav-foot > #nav"), "the nav is in the footer");
+  const navButton = document.createElement("button"); navButton.dataset.action = "sidebar.toggle";
+  document.getElementById("nav").append(navButton);
   let toggles = 0;
   runInNewContext(`${wiring}\n${registration}`, {
     document, runAction, toggleSidebar: () => toggles++,
@@ -288,6 +294,8 @@ test("index.html ships the split buttons and shell wires the group projection th
   });
   toggle.click();
   assert.equal(toggles, 1, "footer click runs sidebar.toggle through the actual action registry");
+  navButton.click();
+  assert.equal(toggles, 1, "the tools' wiring never adds a second dispatch to the nav's buttons");
   const css = read("renderer/shell.css");
   assert.doesNotMatch(css, /#sidebar-restore/);
   assert.match(css, /\.main-edge-control\[hidden\] \{ display: none; \}/);
