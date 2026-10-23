@@ -44,11 +44,22 @@ test('servers: every remote group, reached or not; an unreached group keeps its 
   const down = group('down', { probe: { ok: false, error: { code: 'E_SSH', message: 'ssh failed: timeout' } }, instances: [remoteRow('kept')] });
   const result = project({ rows: [], groups: [group('build'), down] });
   assert.deepEqual(result.servers, [
-    { server: 'build', label: 'build box', group: 'build:1a2b', deployment: 'remote:build:1a2b', reached: true, error: null, registered: true },
-    { server: 'down', label: 'down box', group: 'down:1a2b', deployment: 'remote:down:1a2b', reached: false, error: 'ssh failed: timeout', registered: true },
+    { server: 'build', label: 'build box', group: 'build:1a2b', deployment: 'remote:build:1a2b', reached: true, error: null, registered: true, features: null },
+    { server: 'down', label: 'down box', group: 'down:1a2b', deployment: 'remote:down:1a2b', reached: false, error: 'ssh failed: timeout', registered: true, features: null },
   ]);
   assert.equal(result.members[0].running, null, 'last-known, state unknown');
   assert.equal(result.members[0].reason, 'ssh failed: timeout');
+});
+
+test('servers: a reached group carries the host\'s own features as relayed (server-probe-features); unknown is null', () => {
+  const listed = group('build', { probe: { ok: true, features: ['spawn-name', 'spawn-preview-2'] } });
+  const failed = group('down', { probe: { ok: false, features: ['spawn-name'], error: { message: 'ssh failed' } } });
+  const notList = group('odd', { probe: { ok: true, features: 'spawn-name' } });
+  const [build, down, odd] = project({ rows: [], groups: [listed, failed, notList] }).servers;
+  assert.deepEqual(build.features, ['spawn-name', 'spawn-preview-2']);
+  assert.notEqual(build.features, listed.probe.features, 'a copy, never the held list');
+  assert.equal(down.features, null, 'a failed read says nothing of its host');
+  assert.equal(odd.features, null, 'only a list counts');
 });
 
 test('not reached: every failed group holding no rows is named; one with last-known rows is a group on the cards instead; nothing before the first answer', () => {

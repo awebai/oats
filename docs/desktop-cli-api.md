@@ -2731,6 +2731,9 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
   `E_INSTANCE_NAME_TAKEN {instance, home, session?}`; a typed name never gets
   a silent `-2`.
 - The name is part of the decision.
+- Routed (`--server`), `--name` needs a host that advertises `spawn-name`:
+  `E_REMOTE_INCOMPATIBLE` otherwise, with nothing sent. A saved route here
+  under that name is `E_ROUTE_EXISTS`, before the spawn is sent.
 - `--preview --suggest-name` (feature `spawn-suggest-name`) chooses a
   descriptive name for the task, `<descriptive>-<role>`, which the apply then
   passes as `--name` ([The suggested name](#the-suggested-name-feature-spawn-suggest-name)).

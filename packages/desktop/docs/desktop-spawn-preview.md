@@ -35,8 +35,12 @@ Choices include purpose **or** name (exclusive; the kernel owns naming rules and
 refuses with `E_INSTANCE_NAME_INVALID`/`E_INSTANCE_NAME_TAKEN`). The spawn
 dialog sends a typed name as `name`, with the soul's role as its suffix
 (`nameWithRole`, `packages/client/instance-name.mjs`), when the CLI advertises
-`spawn-name` and the spawn is local; otherwise (an older kernel, a server's
-`/api/spawn`, which takes a purpose) as `purpose`. An empty name sends neither,
+`spawn-name` and, for a spawn on a server (`/api/spawn` with `serverId`), so
+does that host: the CLI relays host features (`server-probe-features`) and the
+server's registered roster group (`/api/team-members` `servers[].features`)
+names `spawn-name` (`roleNamed`, read through `answeringFeatures`). Otherwise
+(an older kernel on either side, a host whose features are unknown) it goes as
+`purpose`; `/api/spawn` refuses both together. An empty name sends neither,
 and the kernel numbers the instance, unless the dialog has a suggested name for
 the task (below): then the choices carry that name as `name`. Also work
 (`worktree` for a checkout soul), worktree-only branch/base, advertised

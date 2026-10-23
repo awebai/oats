@@ -1276,8 +1276,9 @@ function openSpawnModal(s, a, draft = {}) {
     },
     // #517: the window's own machines when the probe has the gates (the answer, with what Add a machine needs), else the registered list.
     servers: a.server ? [] : () => apiJson(s.ctx, `/api/servers${wsQuery()}`).then(d => d?.filtered === true && Array.isArray(d.servers) ? d : Array.isArray(d?.servers) ? d.servers : []),
-    // "Where to run": each server's disabled state and, once chosen, its rows for the relation picker (held observations only).
-    serverFacts: () => a.server ? [] : serverFacts(s),
+    // "Where to run": each server's disabled state and, once chosen, its rows for the relation picker; a remote soul's
+    // host features (held observations only).
+    serverFacts: () => serverFacts(s),
     serverRows: group => serverRows(s, group),
     // #482: the view's deployments; with two or more the Deployment field replaces "Where to run".
     deployments: () => s.spawnDeployments || [],
@@ -1514,7 +1515,7 @@ export async function doSpawn(s, fields) {
     const d = await postJson(s.ctx, "/api/spawn", {
       // A chosen remote deployment (#482) spawns its own catalog's soul row (the root is that deployment's).
       agent: a.name, agentsRoot: typeof fields.agentsRoot === "string" && fields.agentsRoot ? fields.agentsRoot : a.agentsRoot, serverId: fields.server, task: fields.task || "",
-      purpose: fields.purpose || undefined,
+      purpose: fields.purpose || undefined, name: fields.name || undefined, // the dialog sends one: an exact name where the host takes one
       relation: relation !== "unrelated" ? relation : undefined,
       relativeTo: relation !== "unrelated" ? fields.relativeTo : undefined,
       relativeRoot: relation !== "unrelated" ? (fields.relativeRoot || undefined) : undefined,

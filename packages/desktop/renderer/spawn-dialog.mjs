@@ -26,6 +26,7 @@ import { postJson, workspaceGeneration, wsQuery } from './views/common.mjs';
 import { previewSupported, previewChoices, previewData, previewTarget, previewFailure, INSTANCE_NAME_MAX, suggestSupported } from '../../client/spawn-preview-contract.mjs';
 import { SUGGEST_DEBOUNCE_MS, SUGGEST_MIN_WORDS, taskWords, namingKey, numberedLine } from '../../client/spawn-naming.mjs';
 import { nameWithRole } from '../../client/instance-name.mjs';
+import { answeringFeatures } from '../../client/lifecycle-contract.mjs';
 import { spawnApplySupported, spawnPrepareInput, spawnApplyReason, ROLLED_BACK_CODES } from '../../client/spawn-apply-contract.mjs';
 import { createSpawnTransaction } from '../../client/spawn-transaction.mjs';
 import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from '../../client/spawn-messages.mjs';
@@ -52,6 +53,8 @@ const BUSY_RETRIES = 75;
 import { HARNESS_NAMES as RUNTIME_NAMES } from '../../client/harness-names.mjs';
 export { RUNTIME_NAMES };
 const PURPOSE = /^[a-z0-9][a-z0-9-]*$/i;
+/** The kernel's name refusals: said next to the Name field, not only in the footer. */
+const NAME_REFUSALS = ['E_INSTANCE_NAME_INVALID', 'E_INSTANCE_NAME_TAKEN'];
 
 /** The one-column dialog: the stylesheet's media query and the preview's place (placePreview) read it. */
 export const SPAWN_NARROW = '(max-width:760px)';
@@ -612,10 +615,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const selectionSummary = el('span', `Selected soul ${soul.name}${soul.server ? ` on ${soul.server}` : ''}`, 'workspace-sr-only');
   selectionSummary.id = 'spawn-selection-summary'; dialog.setAttribute('aria-describedby', selectionSummary.id);
   // Name (optional, the last field): what is typed gets the soul's role as its suffix and goes as
-  // --name <typed>-<role> (packages/client/instance-name.mjs) where the CLI advertises spawn-name and
-  // the spawn is local; elsewhere (an older kernel, a remote target, whose route takes a purpose)
-  // it is a purpose, named <soul>-<typed>, with that prefix shown. Empty: the kernel numbers it, or, where the CLI
-  // advertises spawn-suggest-name and the field was never typed in, names it from its task (the suggestion below).
+  // --name <typed>-<role> (packages/client/instance-name.mjs) where the CLI advertises spawn-name and,
+  // for a spawn on another machine, so does that host (roleNamed); elsewhere (an older kernel on either
+  // side, or a host whose features are unknown) it is a purpose, named <soul>-<typed>, with that prefix
+  // shown. Empty: the kernel numbers it, or, where the CLI advertises spawn-suggest-name and the field was never typed in, names it from its task (the suggestion below).
   const nameField = el('div', undefined, 'spawn-field spawn-name');
   const nameLabel = el('label', 'Name '); nameLabel.htmlFor = 'spawn-purpose'; nameLabel.append(el('small', '· optional'), keyHint('name'));
   const nameInput = el('div', undefined, 'spawn-name-input');
@@ -891,6 +894,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   let spawnJob = null;
   let flight = null, phase = 'idle', intent = null, submitted = false, delivered = false, modelsReq = 0, configsReq = 0, remoteBusy = false, modelsFor = null;
   let notice = null; // a refusal from the last Spawn stays visible until the operator edits
+  // A remote spawn's name refusal from its host ({ code, sent }), beside the field while the form still sends what was
+  // refused (sent: remoteNamingKey() at the press), and until the next edit.
+  let hostNameRefusal = null;
   // ── the suggested name (feature spawn-suggest-name, awebai/oats#1421 §3 "The Desktop's use of it")
   // namings: every answer of this dialog, by the exact task text and the soul (namingKey): { source: 'suggested', name }
   // or { source: 'numbered', reason, harness }. asking: the one call in the air ({ key, promise }); a newer one ends it
@@ -902,8 +908,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   let asking = null, suggestTimer = null, nameTouched = draft.nameTouched === true || !!String(draft.purpose || '').trim(), suggestedNow = null, pressNaming = null;
   const current = () => alive && owns() && mount === workspaceGeneration();
   const remoteTarget = () => deploymentField ? deploymentField.server() : soul.server || server.value || '';
-  // Each server's registered group (where `spawn --server` goes), from the route's facts; its label for the hint.
+  // Each server's registered group (where `spawn --server` goes), from the roster's facts, whichever way the
+  // dialog targets that server: Where to run, the Deployment field or a soul listed from it. Its label for the hint.
   const serverGroups = new Map(), serverNames = new Map();
+  const registeredGroup = (facts, id) => facts.find(f => f.server === id && f.registered === true);
   async function fillRelatives() {
     const target = soul.server || deploymentField ? '' : server.value, ticket = ++relativesReq, group = serverGroups.get(target);
     relativesPending = !!target; syncButton();
@@ -922,14 +930,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   let machines = null; // the filtered /api/servers answer, or null (gates off: today's list)
   /** One machine in Where to run: disabled with why from its roster group, as before. */
   function addServerOption(srv, facts = []) {
-    const groups = facts.filter(f => f.server === srv.id), group = groups.find(f => f.registered === true);
+    const groups = facts.filter(f => f.server === srv.id), group = registeredGroup(facts, srv.id);
     const why = !groups.length ? null : !group ? 'not registered' : !group.reached ? 'not reached' : null;
     const label = srv.label || srv.id;
     const o = el('option', why ? `${label} (${why})` : label !== srv.id ? `${label} (${srv.id})` : label);
     o.value = srv.id; o.disabled = !!why;
     const add = [...server.options].find(option => option.value === ADD_MACHINE);
     if (add) add.before(o); else server.append(o);
-    if (group) serverGroups.set(srv.id, group);
     serverNames.set(srv.id, label);
   }
   function openAddMachine({ select }) {
@@ -963,8 +970,15 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     openAddMachine({ select: true });
   });
   const local = () => !remoteTarget() && (!!deploymentField || !workspace()?.remote && !workspace()?.server);
-  /** A typed name goes as --name with the soul's role: a local spawn whose CLI advertises spawn-name. Else a purpose. */
-  const roleNamed = () => local() && !!cli()?.features?.includes('spawn-name');
+  /** A typed name goes as --name with the soul's role where the CLI advertises spawn-name and, on another machine,
+   * the host does too: its registered group's last roster read relayed a list that names it (answeringFeatures).
+   * Unknown is a purpose: never decided from a refusal, never by probing. */
+  const roleNamed = () => {
+    if (!cli()?.features?.includes('spawn-name')) return false;
+    if (local()) return true;
+    const group = serverGroups.get(remoteTarget());
+    return !!answeringFeatures({ cli: cli(), routed: true, group: group && { probe: { ok: group.reached === true, features: group.features } } })?.includes('spawn-name');
+  };
   /** The instance name a typed value gives: <typed>-<role> (once), or <soul>-<purpose>. --name is used exactly as
    * given (the kernel slugs a purpose, never a name), so a typed name is lowercased first; PURPOSE admits only ASCII. */
   const finalName = (typed, named) => named ? nameWithRole(typed.toLowerCase(), soul.name) : `${soul.name}-${typed}`;
@@ -1075,11 +1089,12 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     const suggestion = suggestionNow();
     purpose.placeholder = suggestion ? suggestion : named ? 'e.g. desktop-improvements' : 'purpose, e.g. api-v2';
     // The kernel's name refusals belong next to the field, not only in the footer.
-    const nameRefusal = shown?.failure && shown.key === choiceKey(draftChoice.value) && ['E_INSTANCE_NAME_INVALID', 'E_INSTANCE_NAME_TAKEN'].includes(shown.failure.code) ? shown.failure : null;
+    const nameRefusal = !local() ? hostNameRefusal?.sent === remoteNamingKey() ? hostNameRefusal : null
+      : shown?.failure && shown.key === choiceKey(draftChoice.value) && NAME_REFUSALS.includes(shown.failure.code) ? shown.failure : null;
     nameResult.classList.toggle('err', !!(draftChoice.error && draftChoice.field === 'name' || nameRefusal));
     if (draftChoice.error && draftChoice.field === 'name') nameResult.textContent = draftChoice.error;
     else if (nameRefusal) nameResult.textContent = spawnText(spawnProblem(nameRefusal));
-    else if (!local()) nameResult.textContent = `Named by ${remoteTarget()} when it spawns.`;
+    else if (!local() && !named) nameResult.textContent = `Named by ${remoteTarget()} when it spawns.`;
     else if (named && !typed && suggestion) { nameResult.replaceChildren('Instance name: '); nameResult.append(el('strong', nameNow().name), ' (from the task)'); }
     // Only what is true now: an empty name is named from its task where the kernel suggests names and the field was
     // never typed in, else numbered by the kernel (its number is the preview's "What will be created").
@@ -1294,7 +1309,6 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   }
   // The problem as the dialog said it: the shared answer with the Desktop's sentence (spawn-words.mjs) as `text`.
   const showProblem = (reason, stage) => { const problem = spawnProblem(reason, stage), text = spawnText(problem, stage); setStatus(text, true, problem); return { ...problem, text }; };
-  const NAME_REFUSALS = ['E_INSTANCE_NAME_INVALID', 'E_INSTANCE_NAME_TAKEN'];
 
   // ── background preview (latest intent wins)
   function schedule(delay = debounce) {
@@ -1312,7 +1326,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     // The chosen deployment does not offer this soul: nothing to read, and Spawn says why.
     if (deploymentField?.blocked()) { endPress(); shown = settled = null; setStatus(`${deploymentField.blockText()}.`, true); render(); return; }
     // A read that cannot answer the pressed choices ends the press: it never spawns later on its own.
-    if (!local()) { endPress(); shown = settled = null; setStatus(''); render(); return; }
+    if (!local()) { endPress(); shown = settled = hostNameRefusal = null; setStatus(''); render(); return; }
     if (!previewable()) {
       endPress(); shown = settled = null;
       if (soul.work === 'attached') setStatus('Attached souls are started by the instance they attach to.', true);
@@ -1586,17 +1600,27 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       if (flight === token) { flight = null; if (alive) syncButton(); }
     }
   }
+  /** What a remote spawn sends as its name: role-named, the final name, as for a local spawn; else the purpose as
+   * typed (the host prefixes it). The key adds the target, so a refusal speaks only for the same name on the same host. */
+  const remoteNaming = () => roleNamed() ? { name: choices().value?.name } : { purpose: purpose.value.trim() };
+  const remoteNamingKey = () => JSON.stringify([remoteTarget(), remoteNaming()]);
   async function runRemote() {
     let wakeValue;
     try { wakeValue = wake.read(); } catch (error) { setStatus(error.message, true); return; }
     const draftChoice = choices();
     if (draftChoice.error) { setStatus(draftChoice.error, true); return; }
+    const naming = remoteNaming(), sent = remoteNamingKey();
+    // The host's own name refusal is said beside the Name field too, as a local preview's is, for the name it refused.
+    const status = (text, error = false, problem = null) => {
+      hostNameRefusal = error && NAME_REFUSALS.includes(problem?.code) ? { code: problem.code, sent } : null;
+      setStatus(text, error, problem); if (alive) render();
+    };
     remoteBusy = true; syncButton();
     try {
       const outcome = await remoteSpawn({ server: remoteTarget(), ...(deploymentField ? { agentsRoot: selector.agentsRoot, deployment: address() } : {}),
-        purpose: purpose.value.trim(), task: task.value, harness: runtime.value, model: model.value.trim(),
+        ...naming, task: task.value, harness: runtime.value, model: model.value.trim(),
         backend: backend.value, launchConfig: config.value, yolo: yolo.value === '' ? undefined : yolo.value === 'true', wake: wakeValue,
-        relation: rel.value, relativeTo: relTo.value, relativeRoot: relTo.selectedOptions[0]?.dataset.root || '', status: setStatus, button: spawn });
+        relation: rel.value, relativeTo: relTo.value, relativeRoot: relTo.selectedOptions[0]?.dataset.root || '', status, button: spawn });
       if (outcome?.created) deploymentField?.remember(); // the host created it (the dialog may already be closed)
       if (outcome?.created && alive) phase = 'complete'; // created on the host: never a second spawn
     } finally { remoteBusy = false; if (alive) syncButton(); }
@@ -1671,11 +1695,14 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   // last entry here, or (two or more deployments, no Where to run) a button under the Deployment field.
   Promise.all([Promise.resolve(typeof servers === 'function' ? servers() : servers),
     Promise.resolve().then(() => serverFacts()).catch(() => [])]).then(([answer, facts]) => {
-    if (!current() || soul.server) return;
+    if (!current()) return;
+    facts = Array.isArray(facts) ? facts : [];
+    for (const f of facts) if (!serverGroups.has(f.server) && f === registeredGroup(facts, f.server)) serverGroups.set(f.server, f);
+    render(); // a remote target's naming follows its host's features (roleNamed)
+    if (soul.server) return;
     const list = Array.isArray(answer) ? answer : Array.isArray(answer?.servers) ? answer.servers : null;
     if (!list) return;
     machines = !Array.isArray(answer) && answer.filtered === true ? answer : null;
-    facts = Array.isArray(facts) ? facts : [];
     for (const srv of list) addServerOption(srv, facts);
     // The server is still learning unknown keys: read again until it is done, adding the machines it found.
     if (machines?.backfilling === true && typeof servers === 'function') stopBackfill = followBackfill({ read: servers, owns: current, delay: backfillDelay,
@@ -1694,7 +1721,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const onEdit = event => {
     if (!current()) return;
     if (event.target === model) nativeModel = false;
-    notice = null; dropPress();
+    notice = hostNameRefusal = null; dropPress();
     if (phase === 'drifted') phase = 'idle';
     if (event.target === runtime || event.target === server) void fillModels();
     if (event.target === server) { shown = settled = null; void fillConfigs(); void fillRelatives(); paintServerHint(); }

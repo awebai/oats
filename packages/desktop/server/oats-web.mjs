@@ -280,7 +280,7 @@ function spawnErrorPayload(e) {
 
 /** Execution-server spawn only (`--server`). A local spawn is always the
  * preview-bound prepare → apply of packages/client/spawn-apply.mjs. */
-async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, harness, backend, model, yolo, launchConfig, serverId, wake }) {
+async function spawnAgent({ agent, agentsRoot, task, purpose, name: instanceName, relation, relativeTo, relativeRoot, harness, backend, model, yolo, launchConfig, serverId, wake }) {
   const name = String(agent || "");
   const root = resolve(String(agentsRoot || ""));
   const server = String(serverId);
@@ -304,6 +304,13 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   // is held to what the REMOTE advertises by the router (checkRemoteSupport),
   // and the local guard only needs the remote surface itself.
   locator.requireRemoteSupport(cliState, "spawn");
+  // An exact name (--name, feature spawn-name) or a purpose, never both; the host's own spawn-name is the
+  // route's check (E_REMOTE_INCOMPATIBLE), this computer's CLI must know the flag to forward it.
+  if (instanceName !== undefined && typeof instanceName !== "string") throw Object.assign(new Error("Invalid name"), { code: "E_BAD_ARGS" });
+  if (instanceName) {
+    if (purpose !== undefined && purpose !== null && purpose !== "") throw Object.assign(new Error("A spawn takes a name or a purpose, not both"), { code: "E_BAD_ARGS" });
+    if (!cliState.features?.includes("spawn-name")) throw Object.assign(new Error("Update OATS to give a spawn on another machine its exact name"), { code: "cli-no-spawn-name" });
+  }
   if (launchConfig !== undefined) {
     if (!cliState.features?.includes("launch-config")) throw Object.assign(new Error("Update OATS to choose a launch configuration"), { code: "cli-no-launch-config" });
     locator.requireRemoteSupport(cliState, "launch-config");
@@ -325,6 +332,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
     workspaceDir: ctxs[0] ?? homedir(), // SSH routes choose their own remote cwd
     task: task ? String(task) : "",
     purpose: purpose ? String(purpose) : undefined,
+    name: instanceName || undefined,
     relation: relation ? String(relation) : undefined,
     relativeTo: relativeTo ? String(relativeTo) : undefined,
     // Anchor disambiguation: the renderer picker knows each instance's
