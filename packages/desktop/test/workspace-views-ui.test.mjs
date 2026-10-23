@@ -190,7 +190,7 @@ const views = [
 // Nothing of where a workspace is deployed or how it is: its own pages say that (pr3-simplify).
 const RAW = /ws:|remote:|\/Users\/|~\/|\/srv|Server:|Reports |run oats sync|github\.com\/org\/loose|This Mac|altair|vega|not live|OATS too old/;
 
-test("switcher entries: one line, the name; no machine, place, mark or state, and the tooltip is the name alone", (t) => {
+test("switcher entries: one line, the roster's circle and the name; no machine, place, other mark or state, and the tooltip is the name alone", (t) => {
   const s = switcher(t);
   s.sw.begin()(views[0], views);
   assert.equal(s.document.getElementById("ws-list").getAttribute("aria-description"), "Current workspace: oats", "the list never names a ws: id");
@@ -198,7 +198,7 @@ test("switcher entries: one line, the name; no machine, place, mark or state, an
   assert.deepEqual(s.options().map((o) => o.dataset.workspaceId), [views[0].id, views[2].id, views[1].id], "matched views first, then the unmatched one");
   assert.deepEqual(s.options().map((o) => o.textContent), ["oats", "tsm", "loose"]);
   for (const option of s.options()) {
-    assert.deepEqual([...option.children].map((c) => c.className), ["ws-option-name"], `${option.dataset.workspaceId}: the name and nothing else`);
+    assert.deepEqual([...option.children].map((c) => c.className), [option.dataset.workspaceId === views[0].id ? "ctx-dot on" : "ctx-dot off", "ws-option-name"], `${option.dataset.workspaceId}: the circle, the name and nothing else`);
     assert.equal(option.title, option.textContent, "the tooltip is the whole name: never a path or machine");
     assert.doesNotMatch(`${option.textContent} ${option.title}`, RAW, option.dataset.workspaceId);
   }

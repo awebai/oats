@@ -1064,7 +1064,7 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
   const notifications = createNotificationCenter({ document: doc, workspace: () => 'team' });
   notifications.notify('dev-1 spawned', { descriptor: { kind: 'open-instance', target: instanceActionTarget('team', row), connectionEpoch: 0 }, activate: async () => {} });
   const switcher = createWorkspaceSwitcher({ document: doc, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}), openInNewWindow() {} });
-  // The workspace list, always shown: the current row (--sel), and another row at rest, with the needs-input dot.
+  // The workspace list, always shown: the current row, and another row at rest, with the needs-input dot.
   const team = { id: '/team', name: 'Team', team: { name: 'Organization' } };
   switcher.begin()(team, [team, { id: '/other', name: 'Other', waiting: true }]);
   const menu = instanceActions(doc, row, { extra: [{ action: 'open-split', label: 'Open in split', reason: 'Choose a terminal destination.' }], invoke: async () => {} }); doc.body.append(menu);
@@ -1077,8 +1077,8 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     ['#show-panel', '#sidebar', 'muted', 'surface'],
     ['.context-panel-tab-count', '#context-panel', 'muted', 'surface'], // W6: the Developer tab's thread count
     ['.ctx-instance-menu small', '.ctx-instance-menu button:disabled', 'muted', 'surface-2'],
-    // The workspace list sits on the sidebar's --surface: a row is its name, the current one included (a row paints
-    // no fill of its own; the current one is an accent edge), and the head's Add local workspace… icon.
+    // The workspace list sits on the sidebar's --surface: a row is its circle and its name, the current one included (a
+    // row paints no fill of its own; the current one's circle is filled), and the head's Add local workspace… icon.
     ['.ws-option[aria-current="true"] .ws-option-name', '#sidebar', 'fg', 'surface'],
     ['.ws-option:not([aria-current]) .ws-option-name', '#sidebar', 'fg', 'surface'],
     ['#ws-add-open', '#sidebar', 'muted', 'surface'],
@@ -1100,12 +1100,21 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
   for (const row of ['.ws-option:not([aria-current])', '.ws-option[aria-current="true"]']) assert.equal(dom.window.getComputedStyle(doc.querySelector(row)).backgroundColor, 'rgba(0, 0, 0, 0)', `${row}: the sidebar shows under it`);
+  // Each row's circle is the instance roster's (.ctx-dot): the current workspace's filled in --accent like a running
+  // instance's, the others a --faint ring like a stopped one's, in the row's own fill; hidden from assistive tech.
+  // JSDOM drops a var() border, so the rings are pinned on the rule's text (the 3:1 test below); the fills are read here.
+  for (const [selector, fill] of [['.ws-option[aria-current="true"] .ctx-dot', 'accent'], ['.ws-option:not([aria-current]) .ctx-dot', 'surface']]) {
+    const mark = doc.querySelector(selector); assert.ok(mark, selector);
+    assert.equal(dom.window.getComputedStyle(mark).background, `var(--${fill})`, selector);
+    assert.equal(mark.getAttribute('aria-hidden'), 'true');
+    for (let parent = mark; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
   // The needs-input dot is a non-text mark: a yellow fill (--attn-dot) in a --warn ring, hidden from assistive tech, its words in the row's
   // name and tooltip; painted as it is, with no opacity on it or under it. It sits after the name, on the row's one line.
   const dot = doc.querySelector('.ws-option[data-workspace-id="/other"] .ws-waiting'); assert.ok(dot, 'the waiting row carries the dot');
   assert.equal(doc.querySelectorAll('.ws-waiting').length, 1, 'only the waiting row');
   assert.equal(dot.parentElement, dot.closest('.ws-option'));
-  assert.deepEqual([...dot.parentElement.children].map(c => c.className), ['ws-option-name', 'sr-only', 'ws-waiting'], 'the name, its words, then the dot');
+  assert.deepEqual([...dot.parentElement.children].map(c => c.className), ['ctx-dot off', 'ws-option-name', 'sr-only', 'ws-waiting'], 'the circle, the name, its words, then the dot');
   assert.equal(dom.window.getComputedStyle(dot).background, 'var(--attn-dot)');
   assert.deepEqual([dom.window.getComputedStyle(dot).borderTopWidth, dom.window.getComputedStyle(dot).borderTopStyle], ['1px', 'solid'], 'its ring (its colour is pinned below)');
   assert.equal(dot.getAttribute('aria-hidden'), 'true'); assert.equal(dot.textContent, '');
@@ -1116,19 +1125,25 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
 // The workspace list's needs-input dot is the only visible sign that a workspace waits (its words are for assistive
 // tech and the tooltip), so WCAG 1.4.11 holds it to 3:1 on every fill a row paints under it: the sidebar at rest
 // (--surface), a hovered row (--surface-2), the current or a focused row (--sel). The terminal tab's glyph (#558)
-// and an instance's dot (contrast-inventory.mjs GRAPHIC_PAIRS) are held the same way, as is the current row's accent edge. Its fill is the yellow --attn-dot,
+// and an instance's dot (contrast-inventory.mjs GRAPHIC_PAIRS) are held the same way, as is each row's circle: the
+// current workspace's --accent fill, the one visible sign beside its bold name, and the others' --faint ring. Its fill is the yellow --attn-dot,
 // below 3:1 on these in White and Solarized, so its 1px ring carries the contrast: --warn, the needs-input colour of
 // the roster's pill and the tab's glyph.
-for (const [name, palette] of palettes) test(`${name}: the workspace list's needs-input dot and current-row edge meet 3:1 on every row fill`, () => {
+for (const [name, palette] of palettes) test(`${name}: the workspace list's needs-input dot and its rows' circles meet 3:1 on every row fill`, () => {
   const shellCss = readFileSync(new URL('shell.css', renderer), 'utf8');
   assert.match(shellCss, /\.ws-waiting \{[^}]*background: var\(--attn-dot\); border-width: 1px; border-style: solid; border-color: var\(--warn\);/);
   // A row's fills: none at rest or current (the sidebar's --surface shows), --surface-2 hovered, --sel focused.
   assert.match(shellCss, /\.ws-option \{[^}]*background: transparent;/);
-  assert.match(shellCss, /\.ws-option:hover \{ background: var\(--surface-2\); \}/);
-  assert.match(shellCss, /\.ws-option:focus-visible \{ background: var\(--sel\); \}/);
-  assert.match(shellCss, /\.ws-option\[aria-current="true"\] \{ box-shadow: inset 3px 0 0 var\(--accent\); \}/);
-  // The dot's ring, and the current row's edge (the one visible sign of the current workspace beside its bold name).
-  for (const mark of ['warn', 'accent']) for (const bg of ['surface', 'surface-2', 'sel']) {
+  // The circle's 2px ring of the row's own fill follows it (--row-solid, as on the roster's rows).
+  assert.match(shellCss, /\.ws-option \{ --row-solid: var\(--surface\);/);
+  assert.match(shellCss, /\.ws-option:hover \{ --row-solid: var\(--surface-2\); background: var\(--surface-2\); \}/);
+  assert.match(shellCss, /\.ws-option:focus-visible \{ --row-solid: var\(--sel\); background: var\(--sel\); \}/);
+  assert.doesNotMatch(shellCss, /\.ws-option\[aria-current="true"\] \{/, "no accent edge (Pepe, 2026-10-23)");
+  // The circles are the roster's own rule: the filled --accent, and the --faint ring.
+  assert.match(shellCss, /^\.ctx-dot \{[^}]*border: 1\.5px solid var\(--faint\);/m);
+  assert.match(shellCss, /^\.ctx-dot\.on \{ border-color: var\(--accent\); background: var\(--accent\); \}/m);
+  // The dot's ring, the current workspace's filled circle and the others' ring.
+  for (const mark of ['warn', 'accent', 'faint']) for (const bg of ['surface', 'surface-2', 'sel']) {
     const ratio = contrast(opaqueChannels(palette.get(mark)), backgroundChannels(bg, palette));
     assert.ok(ratio >= GRAPHIC_CONTRAST, `${name} --${mark} on --${bg}: ${ratio.toFixed(2)}:1 < 3:1`);
   }

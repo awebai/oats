@@ -132,14 +132,14 @@ test("segmented control: selected segment is --sel/--accent at 650, unselected i
   assert.equal(u.rule(".oats-view .ws-segmented button:focus-visible").background, "var(--sel)", "keyboard focus tints an unselected segment");
 });
 
-// The nav's current view is the selection fill (--sel): the list's current workspace has a mark of its own, so the
-// sidebar shows one filled "you are here" row, not two.
-test("workspace list: the current row, named by aria-current, is an accent edge with no fill, never the nav's --sel; the others rest transparent", t => {
+// The nav's current view is the selection fill (--sel): the list's current workspace has a mark of its own (its
+// circle filled, workspace-switcher.mjs), so the sidebar shows one filled "you are here" row, not two.
+test("workspace list: the current row, named by aria-current, has no fill and no edge, never the nav's --sel; the others rest transparent", t => {
   const u = fixture(t);
-  assert.equal(u.rule('.ws-option[aria-current="true"]').boxShadow, "inset 3px 0 0 var(--accent)");
-  assert.equal(u.rule('.ws-option[aria-current="true"]').background, "", "no fill of its own");
+  assert.equal(u.rules.filter(r => r.selectorText?.replace(/\s+/g, " ") === '.ws-option[aria-current="true"]').length, 0, "no rule on the row itself (Pepe, 2026-10-23: no accent edge)");
+  assert.equal(u.rule('.ws-option[aria-current="true"] .ws-option-name').fontWeight, "650", "its name in bold");
   assert.match(u.style(".ws-option.ws-current").background, /^(transparent|rgba\(0, 0, 0, 0\))$/);
-  assert.equal(u.style(".ws-option.ws-current").boxShadow, "inset 3px 0 0 var(--accent)");
+  assert.equal(u.style(".ws-option.ws-current").boxShadow, "");
   assert.match(u.style(".ws-option.ws-other").background, /^(transparent|rgba\(0, 0, 0, 0\))$/);
   assert.equal(u.style(".ws-option.ws-other").boxShadow, "");
   assert.equal(u.rule(".nav-item.active").background, "var(--sel)", "the nav's current view keeps the selection fill");

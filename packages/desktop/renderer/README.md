@@ -436,7 +436,8 @@ split into sections) is `packages/client/roster-sections.mjs`.
   Workspace side by side (icons alone in a nav too narrow for both labels: a container query
   hides each label visually, and it stays the button's name), then the tools: sidebar, theme,
   shortcuts and **Spawn instance** (a small icon button). Settings and the palette have no
-  button: the palette has **Settings: Connections…**, and its own chord.
+  button: the palette has **Settings: Connections…**, and its own chord. The shortcuts editor
+  teaches both on its rows (keybindings-editor.mjs), with no line of its own for them.
 - **No deployments above the navigation.** The sidebar lists no deployments; the Deployments
   page and the roster headings say where things run (UI spec, after the operator rejected a
   deployments block under the workspace switcher). The list of workspaces lists views.
@@ -444,18 +445,21 @@ split into sections) is `packages/client/roster-sections.mjs`.
   always shown; docs/desktop.md, "Workspaces"): one row per served view, whatever machine it is
   on, the matched views first, then the unattached ones, in ONE `<ul>` with no heading. A list
   of buttons, not a listbox, so the sidebar's plain keys stay live on it (shell.mjs
-  `updateActiveContexts`). A row is one line, the name alone (`rowNames`: twins of one name
-  show their team and key, never a folder or a machine, which the shared `workspaceChoiceLabels`
-  falls back to for the TUI): no mark, no
+  `updateActiveContexts`). A row is one line: the instance roster's circle (its own `.ctx-dot`
+  rule, `on` for the current workspace, `off` for the others, aria-hidden; its ring in the row's
+  fill through `--row-solid`, and in the column of the roster's top-level dots) and the name
+  (`rowNames`: twins of one name show their team and key, never a folder or a machine, which the
+  shared `workspaceChoiceLabels` falls back to for the TUI): no other mark, no
   muted line, no not-live mark, no per-row button. Its tooltip is the whole name (a long one is
   cut by an ellipsis), never a path or a machine. Rows cut off below the bounded height are
-  counted under the list (`.ws-more`, `moreBelowText`, aria-hidden). `reset(current)` (a switch
+  counted under the list (`.ws-more`, `moreBelowText`, aria-hidden), with the rows' `.ws-waiting`
+  dot after the count when one of them waits (the TUI's `+N ●`). `reset(current)` (a switch
   landed) keeps the rows and marks `current`; a pick on its way (`pickedId`) is where `step`
   goes on from, and a pick of the current row supersedes it. Choosing an unattached row also
   calls `requestDeploymentTab`, so the Deployments page opens on its tab.
-  - The current row is `aria-current="true"`, marked by style alone (`--sel`, the name in
-    bold); the section's `aria-description` names the current workspace by its row's name, never a path.
-  - The dot: `choice.waiting`, only `true` draws it (`.ws-waiting` after the name, a yellow
+  - The current row is `aria-current="true"`, marked by style alone (its circle filled in
+    `--accent`, the name in bold; no fill or edge of its own, `--sel` is the nav's); the section's `aria-description` names the current workspace by its row's name, never a path.
+  - The dot: `choice.waiting`, only `true` draws it (`.ws-waiting` at the row's far right, `margin-left: auto`, the name cut off before it; a yellow
     `--attn-dot` fill in a 1px `--warn` ring, the needs-input colour of the roster and the tabs, which holds 3:1 on every row fill), with `WAITING_NAME` (", needs input", sr-only in the name) and
     `WAITING_TITLE` in the tooltip. It reads only what the client observes (panel-views.mjs
     `workspaceChoices`); it never reorders.
