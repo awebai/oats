@@ -344,7 +344,7 @@ test('W2 Setup graph: this computer → the lock → the workspace → members a
   assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-attn').hidden, true);
   assert.equal([...u.doc.querySelectorAll('.catalog-note.warn')].some(el => /messaging\.byTeam/.test(el.textContent)), false, 'not a Setup note');
   await u.tab('teams');
-  assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.firstChild.textContent), ['Teams', 'Souls', 'Capabilities', 'Setup']);
+  assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.firstChild.textContent), ['Souls', 'Capabilities', 'Teams', 'Setup']);
   assert.deepEqual([...u.doc.querySelectorAll('.workspace-discovery .setup-box')].map(el => el.dataset.box), ['Teams']);
   assert.match(u.doc.querySelector('.setup-team[data-team=global] .setup-team-warn').textContent, /team "global" has no messaging\.byTeam entry/);
   assert.equal(u.doc.querySelector('.setup-team[data-team=engineering] .setup-team-warn'), null);

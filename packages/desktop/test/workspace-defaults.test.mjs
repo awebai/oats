@@ -38,6 +38,7 @@ function mount(t) {
   const opened = [];
   const render = (st, { rows = ROWS, query = '', shown, onOpen = row => opened.push(row) } = {}) => {
     const sections = capabilitySections(rows);
+    $('.lead').replaceChildren(); // the tab host clears its toolbar's jump before each paint
     renderCapabilitySections($('.sections'), { sections, shown: shown ?? sections.workspace, filterHost: null, navHost: $('.lead'), privateListed: false, status: st, instances: [], query, onOpen });
   };
   const key = (el, name, init = {}) => el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...init }));
