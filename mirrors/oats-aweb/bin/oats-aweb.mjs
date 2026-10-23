@@ -66,7 +66,7 @@ import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../
 import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
 import { renewalGrantTTL, resolveGrantTTL } from "../lib/grant-duration.mjs";
-import { parseTimestamp } from "../lib/wake-receive.mjs";
+import { mintedExpiryProblem } from "../lib/grant-expiry.mjs";
 import { childOutcome } from "../lib/child-outcome.mjs";
 import { newSeatId, seatGrantLabel, sweepSeatGrants, unrevokedGrant } from "../lib/seat-grants.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
@@ -625,12 +625,6 @@ function retainedLaunchOutput(meta = {}, identityHome = priorGrantHome(meta)) {
 }
 function grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }) {
   return ["aw", "id", "grant", "mint", flagEq("--team", team), flagEq("--scope", scopes.join(",")), flagEq("--ttl", ttl), flagEq("--label", seatGrantLabel(instance, seat)), flagEq("--out", grantHome), flagEq("--custody-socket", custodySocket), "--json"];
-}
-/** A minted grant's expiry must answer its request: "never" for a never-grant,
- *  a timestamp for a duration. Anything else is a failed mint. */
-function mintedExpiryProblem(expiresAt, ttl) {
-  if (ttl === "never") return expiresAt === "never" ? undefined : `aw id grant mint returned expires_at ${JSON.stringify(expiresAt).slice(0, 64)} for a never-expiring grant`;
-  return expiresAt !== "never" && Number.isFinite(parseTimestamp(expiresAt)) ? undefined : `aw id grant mint returned expires_at ${JSON.stringify(expiresAt).slice(0, 64)} for a ${ttl} grant`;
 }
 function validateMintedGrant(minted, grantHome, ttl) {
   const grantId = typeof minted.grant_id === "string" ? minted.grant_id : undefined;

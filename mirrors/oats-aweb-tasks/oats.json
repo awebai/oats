@@ -1,0 +1,23 @@
+{
+  "capability": "oats.aweb-tasks",
+  "version": "1.31.0",
+  "compatibility": {
+    "oats": ">=0.52.0"
+  },
+  "layer": "tasks",
+  "description": "Tasks layer via aweb: assignment, claims, status, blockers and handoff using the instance messaging identity.",
+  "requires": [
+    {
+      "command": "aw",
+      "why": "aw >= 1.36.33: task and work commands using the instance's oats.aweb identity",
+      "install": "https://aweb.ai/docs (aw CLI)"
+    }
+  ],
+  "skills": [
+    "skills/aweb-tasks"
+  ],
+  "inject": "injects/aweb-tasks.md",
+  "hooks": {
+    "spawn": "bin/oats-aweb-tasks.mjs spawn"
+  }
+}
