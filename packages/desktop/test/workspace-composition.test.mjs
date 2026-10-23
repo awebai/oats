@@ -194,7 +194,7 @@ test('03: cards have one semantic Details entry with compact identity, descripti
 // openWorkspaceSouls → preselectWorkspaceTab; the shell's own tests pin that side). Here the shell's route is played
 // back on the mounted view: it ends on Automations, on Schedules, even when Triggers was the last subtab.
 test("a soul's Schedule… ends on the Workspace's Automations tab, on Schedules", async t => {
-  assert.deepEqual(navTab('automations'), { name: 'automations', label: 'Automations', page: 'spawn', tab: 'automations' }, 'the shell routes the name to this page, on this tab');
+  assert.deepEqual(navTab('automations'), { name: 'automations', label: 'Workspace › Automations', page: 'spawn', tab: 'automations' }, 'the shell routes the name to this page, on this tab');
   preselectAutomationsTab('trigger'); t.after(() => preselectAutomationsTab('schedule'));
   const kernelList = kind => JSON.parse(readFileSync(new URL(`./fixtures/automations/kernel/${kind}-list.json`, import.meta.url), 'utf8')).result;
   const u = await fixture(t, { cli: { ...CLI, scheduleApi: 2, automationsApi: 1, features: [...CLI.features, 'schedule', 'automations'] },
