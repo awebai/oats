@@ -894,7 +894,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   let spawnJob = null;
   let flight = null, phase = 'idle', intent = null, submitted = false, delivered = false, modelsReq = 0, configsReq = 0, remoteBusy = false, modelsFor = null;
   let notice = null; // a refusal from the last Spawn stays visible until the operator edits
-  let hostNameRefusal = null; // a remote spawn's name refusal from its host ({ code }), beside the field until the next edit
+  // A remote spawn's name refusal from its host ({ code, sent }), beside the field while the form still sends what was
+  // refused (sent: remoteNamingKey() at the press), and until the next edit.
+  let hostNameRefusal = null;
   // ── the suggested name (feature spawn-suggest-name, awebai/oats#1421 §3 "The Desktop's use of it")
   // namings: every answer of this dialog, by the exact task text and the soul (namingKey): { source: 'suggested', name }
   // or { source: 'numbered', reason, harness }. asking: the one call in the air ({ key, promise }); a newer one ends it
@@ -1087,7 +1089,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     const suggestion = suggestionNow();
     purpose.placeholder = suggestion ? suggestion : named ? 'e.g. desktop-improvements' : 'purpose, e.g. api-v2';
     // The kernel's name refusals belong next to the field, not only in the footer.
-    const nameRefusal = !local() ? hostNameRefusal
+    const nameRefusal = !local() ? hostNameRefusal?.sent === remoteNamingKey() ? hostNameRefusal : null
       : shown?.failure && shown.key === choiceKey(draftChoice.value) && NAME_REFUSALS.includes(shown.failure.code) ? shown.failure : null;
     nameResult.classList.toggle('err', !!(draftChoice.error && draftChoice.field === 'name' || nameRefusal));
     if (draftChoice.error && draftChoice.field === 'name') nameResult.textContent = draftChoice.error;
@@ -1598,16 +1600,19 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       if (flight === token) { flight = null; if (alive) syncButton(); }
     }
   }
+  /** What a remote spawn sends as its name: role-named, the final name, as for a local spawn; else the purpose as
+   * typed (the host prefixes it). The key adds the target, so a refusal speaks only for the same name on the same host. */
+  const remoteNaming = () => roleNamed() ? { name: choices().value?.name } : { purpose: purpose.value.trim() };
+  const remoteNamingKey = () => JSON.stringify([remoteTarget(), remoteNaming()]);
   async function runRemote() {
     let wakeValue;
     try { wakeValue = wake.read(); } catch (error) { setStatus(error.message, true); return; }
     const draftChoice = choices();
     if (draftChoice.error) { setStatus(draftChoice.error, true); return; }
-    // Role-named: the final name, as for a local spawn; else the purpose as typed (the host prefixes it).
-    const naming = roleNamed() ? { name: draftChoice.value.name } : { purpose: purpose.value.trim() };
-    // The host's own name refusal is said beside the Name field too, as a local preview's is.
+    const naming = remoteNaming(), sent = remoteNamingKey();
+    // The host's own name refusal is said beside the Name field too, as a local preview's is, for the name it refused.
     const status = (text, error = false, problem = null) => {
-      hostNameRefusal = error && NAME_REFUSALS.includes(problem?.code) ? { code: problem.code } : null;
+      hostNameRefusal = error && NAME_REFUSALS.includes(problem?.code) ? { code: problem.code, sent } : null;
       setStatus(text, error, problem); if (alive) render();
     };
     remoteBusy = true; syncButton();

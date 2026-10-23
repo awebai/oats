@@ -365,6 +365,20 @@ test('the host\'s name refusal is said next to the Name field, as a local one is
   assert.equal(u.q('.spawn-name-result').classList.contains('err'), false); assert.equal(u.text('.spawn-name-result'), 'Instance name: api-v3-manager');
 });
 
+test('a host\'s late name refusal speaks only for the name it refused: a name edited meanwhile is not marked taken', async t => {
+  const reply = deferred();
+  const u = await mountSpawn(t, { spawnName: true, cli: RELAYING, servers: [HOST], teamMembers: hostFacts(['spawn-name']), remote: () => reply.promise });
+  await u.open(); u.q('.spawn-advanced').open = true;
+  await u.change('.fserver', 'build'); await u.type('.fpurpose', 'api-v2');
+  const pressed = u.spawn();
+  await u.type('.fpurpose', 'api-v3');
+  reply.reject(Object.assign(new Error('instance name "api-v2-manager" is taken'), { code: 'E_INSTANCE_NAME_TAKEN' })); await pressed; await settle();
+  assert.equal(u.q('.fstatus').dataset.code, 'E_INSTANCE_NAME_TAKEN', 'the footer reports the refusal');
+  assert.equal(u.q('.spawn-name-result').classList.contains('err'), false); assert.equal(u.text('.spawn-name-result'), 'Instance name: api-v3-manager');
+  await u.type('.fpurpose', 'api-v2');
+  assert.equal(u.q('.spawn-name-result').classList.contains('err'), false, 'an edit clears it, as for a local refusal');
+});
+
 test('model suggestions follow the kernel\'s harness; "the harness\'s own default" is the native-default choice', async t => {
   const asked = [];
   const u = await mountSpawn(t, { models: body => { asked.push(body.harness); return { models: [{ id: 'anthropic/claude-sonnet', label: 'Sonnet' }] }; } });
