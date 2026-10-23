@@ -148,7 +148,7 @@ test("the current row: aria-current on that row only, marked by style alone (no 
   assert.deepEqual(s.rows().map((b) => b.getAttribute("aria-current")), [null, "true", null]);
   assert.equal(s.current().querySelector(".ws-check, svg"), null, "no icon");
   assert.equal(list.getAttribute("aria-description"), "Current workspace: beta");
-  assert.match(css, /\.ws-option\[aria-current="true"\]\s*\{[^}]*background:\s*var\(--sel\)/, "a background");
+  assert.match(css, /\.ws-option\[aria-current="true"\]\s*\{[^}]*box-shadow:\s*inset 3px 0 0 var\(--accent\)/, "an accent edge (the nav's current view has the --sel fill)");
   assert.match(css, /\.ws-option\[aria-current="true"\] \.ws-option-name\s*\{[^}]*font-weight:\s*650/, "and bold");
   s.controller.begin()(A, [A, B, HELD]);
   assert.equal(s.current(), s.row(A.id), "it follows what this window shows");

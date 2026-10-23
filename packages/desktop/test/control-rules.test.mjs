@@ -133,11 +133,18 @@ test("segmented control: selected segment is --sel/--accent at 650, unselected i
   assert.equal(u.rule(".oats-view .ws-segmented button:focus-visible").background, "var(--sel)", "keyboard focus tints an unselected segment");
 });
 
-test("workspace list: the current row is the selection surface (--sel), named by aria-current; the others rest transparent", t => {
+// The nav's current view is the selection fill (--sel): the list's current workspace has a mark of its own, so the
+// sidebar shows one filled "you are here" row, not two.
+test("workspace list: the current row, named by aria-current, is an accent edge with no fill, never the nav's --sel; the others rest transparent", t => {
   const u = fixture(t);
-  assert.equal(u.rule('.ws-option[aria-current="true"]').background, "var(--sel)");
-  assert.equal(u.style(".ws-option.ws-current").background, "var(--sel)");
+  assert.equal(u.rule('.ws-option[aria-current="true"]').boxShadow, "inset 3px 0 0 var(--accent)");
+  assert.equal(u.rule('.ws-option[aria-current="true"]').background, "", "no fill of its own");
+  assert.match(u.style(".ws-option.ws-current").background, /^(transparent|rgba\(0, 0, 0, 0\))$/);
+  assert.equal(u.style(".ws-option.ws-current").boxShadow, "inset 3px 0 0 var(--accent)");
   assert.match(u.style(".ws-option.ws-other").background, /^(transparent|rgba\(0, 0, 0, 0\))$/);
+  assert.equal(u.style(".ws-option.ws-other").boxShadow, "");
+  assert.equal(u.rule(".nav-item.active").background, "var(--sel)", "the nav's current view keeps the selection fill");
+  assert.equal(u.rules.filter(r => /\.ws-option\[aria-current/.test(r.selectorText || "") && /var\(--sel\)/.test(r.style.cssText)).length, 0, "no --sel on the current workspace");
   assert.equal(u.rules.filter(r => /\.ws-option\[aria-selected/.test(r.selectorText || "")).length, 0, "a list of buttons: no listbox selection rule");
   // The Add dialog's found deployments are buttons that add (#518): no radio selection to paint.
   assert.equal(u.rules.filter(r => /\.ws-suggestion\[aria-checked|\.ws-radio/.test(r.selectorText || "")).length, 0, "no radio rules");

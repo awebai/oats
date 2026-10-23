@@ -218,9 +218,11 @@ below, a line under the list says how many ("2 more below").
 - **A row is one line: the workspace's name.** No icon, no machine, no state:
   a workspace's own pages show its machines and deployments. A long name ends
   in an ellipsis, and the row's tooltip is the whole name.
-- **The current workspace** has the selection's background and its name in
-  bold; a screen reader hears it as current, and the list's description names
-  it, by the same name as its row.
+- **The current workspace** has an accent edge on its left and its name in
+  bold, with no background of its own: the selection's background marks the
+  current page below (Deployments, Workspace…), so the sidebar fills one "you
+  are here" row. A screen reader hears it as current, and the list's
+  description names it, by the same name as its row.
 - **The yellow dot.** A row has a small yellow dot after its name when an
   instance of that workspace needs input: the claim the instance roster shows
   for that instance, from a running session (OATS with the `waiting-on-you`
@@ -251,9 +253,10 @@ below, a line under the list says how many ("2 more below").
 **Add local workspace…** lists the deployments on this computer that are not
 open: those on this computer's deployments list and a saved one. Each is one
 button: a click, or Enter on it, adds it (checked first) and opens it in this
-window; a failure says why in the dialog, with focus back on it. After them
-come the rows of this computer's list that can't be opened, each saying why in
-a word, and they open nothing: **Missing** (the folder is gone, or its volume
+window; a failure says why in the dialog, with focus back on it. The dialog
+counts these alone ("2 workspaces to add"). After them, under **Can't be
+opened**, come the rows of this computer's list that can't be opened, each
+saying why in a word, and they open nothing: **Missing** (the folder is gone, or its volume
 isn't mounted), **Not a deployment** (no `oats-local.yaml` any more), or
 **Can't be checked** (OATS couldn't read the folder). The full sentence is the
 row's tooltip and what a screen reader hears. **Remove** beside such a row
