@@ -217,14 +217,15 @@ export async function refreshChoices() {
    A window whose hash names its workspace confirms that binding with main first, without focusing
    anything: its page may have loaded or reloaded while another window took the workspace over (the
    ask to release it then never reached this page), and a workspace main no longer binds here is
-   never shown here: the window chooses. Main refusing for any other reason leaves it bound, as
-   before. Resolves to the window's state. */
+   never shown here: the window chooses, and tells main it holds nothing (chooseWorkspace), since
+   main may still bind it there (the window that asked closed before the take-over landed). Main
+   refusing for any other reason leaves it bound, as before. Resolves to the window's state. */
 export async function startWindow() {
   if (!claimBridge()) return windowMode === "adopting" ? "bound" : windowMode;
   if (windowMode === "bound") {
     const shown = wsCurrent, r = await claim(shown, { focus: false });
     if (r?.ok) { wsCurrent = boundTo(r, shown); noteShown(wsCurrent); writeHash(wsCurrent); }
-    else if (r?.code === "open-elsewhere") enterChoosing(r.workspaces);
+    else if (r?.code === "open-elsewhere") await chooseWorkspace(r.workspaces);
     return windowMode;
   }
   if (windowMode !== "adopting") return windowMode;

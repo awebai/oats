@@ -575,6 +575,44 @@ test('the asker closes during the wait: the holder leaves as asked, and the work
   assert.equal(b.main.windows.windowOf(B), null); assert.equal(b.main.releases.size, 0);
 });
 
+/** The shipped renderer start (views/common.mjs, fresh) of `win`'s page, its hash `#ws=<id>`, claiming through main. */
+let pages = 0;
+const PAGE_GLOBALS = ['location', 'localStorage', 'history', 'oatsDesktop'];
+test.after(() => { for (const name of PAGE_GLOBALS) delete globalThis[name]; });
+async function pageOf(b, win, id) {
+  globalThis.location = { hash: workspaceHash(id), pathname: '/app/renderer/index.html', search: '' };
+  globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.history = { state: null, replaceState: (_state, _title, url) => { globalThis.location.hash = url.startsWith('#') ? url : ''; } };
+  globalThis.oatsDesktop = { windowClaimWorkspace: (claimed, options) => b.claim(win, claimed, options) };
+  return import(`../renderer/views/common.mjs?page=${++pages}`); // its bridge is read at each claim: the globals stay
+}
+
+test('the shipped start of a page taken over while it loaded: it chooses, and main binds it to nothing', async () => {
+  const { b, asker, holder } = twoWindows();
+  const claim = b.claim(asker, B, { takeOver: true });
+  await tick();
+  const page = await pageOf(b, holder, B);
+  assert.equal(await page.startWindow(), 'choosing');
+  assert.deepEqual(await claim, { ok: true, workspace: B });
+  assert.equal(b.main.windows.windowOf(B), asker); assert.equal(b.main.windows.keyOf(holder), null);
+  assert.equal(b.main.choosers.has(holder), true);
+});
+
+test('the asker closes during the wait, then the holder\'s page starts: it chooses, and the workspace is in no window', async () => {
+  const { b, asker, holder } = twoWindows();
+  const claim = b.claim(asker, B, { takeOver: true });
+  await tick();
+  asker.close();
+  const page = await pageOf(b, holder, B);
+  assert.equal(await page.startWindow(), 'choosing');
+  assert.equal((await claim).code, 'unknown-window');
+  await page.leaveTakenWorkspace(B, SERVED); // the kept ask, handed to the shell: nothing left to leave
+  assert.equal(b.main.windows.keyOf(holder), null, 'no workspace main still binds to a window that shows none');
+  assert.equal(b.main.choosers.has(holder), true); assert.equal(holder.title, 'OATS Desktop');
+  assert.equal(b.main.windows.windowOf(B), null);
+  assert.equal(b.main.openWorkspaceWindow(B).opened, true, 'Open in new window opens B, never focuses the chooser');
+});
+
 test('holdsHash: a window reads the workspace main binds it to, under its deployment id or its view; nothing else', async () => {
   const { b, asker, holder } = twoWindows();
   assert.equal(b.main.holdsHash(asker, A), true); assert.equal(b.main.holdsHash(asker, '/d/oats'), true, 'the deployment id of its view');

@@ -39,10 +39,11 @@ test('the workspace comes from the hash, not the shared selection', async () => 
 // #1488: a page that loaded or reloaded while another window took its workspace over never heard the ask
 // to release it; main has moved the binding. Its hash still names the workspace, and it must not show it.
 test('a window whose hash names a workspace main no longer binds to it chooses at start, and reads nothing', async () => {
-  const w = await windowWith({ hash: workspaceHash(A), stored: A, claim: async () => ({ ok: false, code: 'open-elsewhere', workspaces: CHOICES }) });
+  const w = await windowWith({ hash: workspaceHash(A), stored: A, claim: async (id) => (id === null ? { ok: true } : { ok: false, code: 'open-elsewhere', workspaces: CHOICES }) });
   const states = [], seen = []; w.common.onWindowState((state) => states.push(state)); w.common.onWorkspaceChange((ws) => seen.push(ws));
   const gen = w.common.workspaceGeneration();
   assert.equal(await w.common.startWindow(), 'choosing');
+  assert.deepEqual(w.claims, [[A, { focus: false }], [null, undefined]], 'then main is told it holds nothing');
   assert.equal(w.common.currentWorkspace(), '');
   assert.deepEqual(w.common.choosingWorkspaces(), CHOICES);
   assert.deepEqual(w.replaced, ['/app/renderer/index.html'], 'the hash is cleared');

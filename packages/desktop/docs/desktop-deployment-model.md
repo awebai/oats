@@ -684,7 +684,9 @@ terminal owner).
   until the shell subscribes (`onWorkspaceRelease`). A page with a hash
   confirms it with main at start (`startWindow`, a claim with focus false);
   a holder's claim of the workspace it is being asked to release settles the
-  ask, with no layout, and is answered `open-elsewhere`, so it chooses. As a
+  ask, with no layout, and is answered `open-elsewhere`, so it chooses and
+  unbinds itself (`chooseWorkspace`: main may still bind it there when the
+  asking window closed before the take-over landed). As a
   backstop, main refuses every workspace-scoped read (409
   `E_WINDOW_NOT_BOUND`) and terminal open (`E_TERM_FORBIDDEN_FRAME`, the
   terminal owner's `admitFrame`) from a frame whose hash names a workspace
