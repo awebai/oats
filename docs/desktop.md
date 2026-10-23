@@ -304,6 +304,42 @@ pills (**All**, then one per repository, each with its count) show one
 repository at a time; "N of M shown" appears while a pill or the search
 narrows the list.
 
+Above those sections, **Workspace defaults** shows what every soul of the
+workspace starts with, unless it turns one off. It is one panel with two
+groups. **Core capabilities** (at most one of each per soul) is always
+**Knowledge**, **Messaging** and **Tasks**. **Additional capabilities** (any
+number per soul) lists the other capabilities the workspace gives every soul,
+or says there are none. Each default is shown the same way: its tile, the
+capability and its source (a package and its pinned version, or a repository
+and "latest"). Click it to open the capability's page. An empty core slot
+shows **None**: there is no workspace default, and each soul chooses its
+own. A core capability the workspace names among its other defaults, rather
+than in its slot, is shown under Core, in that slot, as the kernel fills the
+slot with it. An additional default the workspace turned off is struck through and
+says "turned off by the workspace". A workspace that sets no defaults, a
+standalone deployment for example, shows one line saying so. The search and
+the repository pills never narrow or hide this section. It is read from
+`oats workspace status --json`: an OATS that does not report the defaults
+shows no section, and the Desktop does not guess them from the souls. The
+section jump at the top of the tab starts with **Defaults**, whose count is
+the filled slots plus the other default capabilities not turned off. Teams
+add no capabilities (removed in 0.30), so there are no team defaults to show.
+
+The round **i** button after the section jump (**About capabilities**) opens
+**What capabilities are**: what a capability gives a soul's instances (skills,
+commands and instructions, the instructions injected into each instance's
+composed `AGENTS.md` after the soul's own), the three places one comes from
+(Workspace owned, Repo owned, Packages), which three capabilities are core
+(knowledge, messaging and tasks, at most one of each per soul) and that every
+other one is additional, and what workspace defaults are and why they
+matter: every soul gets them, they give an organisation's agents one shared
+way of working, and a knowledge default keeps what agents learn and the
+procedures the organisation writes down for later instances; a soul can turn
+one off and name its own in its place.
+**Close** or Esc closes it and returns the focus to the button; leaving the
+tab or the workspace closes it too. **Workspace › Souls** has the same button
+at the end of its toolbar, **About souls**, which explains what a soul is.
+
 A soul's page (open a soul from **Workspace › Souls**) ends with
 **Instructions**, what its instances are told, read like a capability's
 injected instructions (a navigation tree on the left, the file on the right).
@@ -364,10 +400,13 @@ name, as its suffix:
 `desktop-improvements` for `oats-desktop-expert` becomes
 `desktop-improvements-expert`. A name that already ends in the role, or is
 the role, stays as typed. The line under the field shows the final name, and a
-name that is too long, invalid or already taken is explained there. With an
-OATS older than 0.26.0, which can't take an exact name, and for a spawn on a
-server, what you type is a purpose instead: the instance is named
-`<soul>-<purpose>`, and the field shows that prefix.
+name that is too long, invalid or already taken is explained there. A spawn
+on a server takes the exact name the same way when that machine's OATS can
+take one (feature `spawn-name`, read from its last roster answer), and its
+name is explained there too when that machine refuses it. With an OATS older
+than 0.26.0 on either side, which can't take an exact name, or a server whose
+OATS this computer has not heard from, what you type is a purpose instead: the
+instance is named `<soul>-<purpose>`, and the field shows that prefix.
 
 **Named from its task.** When the installed OATS can suggest names (feature
 `spawn-suggest-name`), the help under an empty Name reads "Left empty, the
@@ -387,8 +426,24 @@ example "Named oats-desktop-expert-3: naming took longer than 20 seconds."
 That happens when there is no instruction, when the harness doesn't suggest
 names (Codex), when there is no answer within 20 seconds, when the harness
 couldn't be asked, and when its reply wasn't a name. Each request is a call
-to the harness's model: nothing is asked before you type, nothing runs on a
-timer, and a spawn on a server is not named this way.
+to the harness's model: nothing is asked before you type, and nothing runs on
+a timer.
+
+A spawn on a server whose OATS takes an exact name is named from its task the
+same way, with one difference: the name is chosen on this computer. The
+Opening instruction is sent to this computer's harness and model, as for a
+spawn here: the Harness you chose, else the soul's default on that server,
+else Claude Code, with this computer's launch configuration for it. That needs
+an OATS here that can name a spawn for another machine (feature
+`instance-suggest-name`). When it can't, or the name couldn't be chosen here,
+the server names the instance itself from its task if its OATS can (feature
+`spawn-apply-suggest-name`): the help reads "Left empty, the instance is named
+from its task on <server>." Otherwise the server numbers it, and the help reads
+"Named by <server> when it spawns." Naming never stops a spawn on a server.
+When the instance is numbered where it would have been named, a notification
+says why, as for a spawn here. A name chosen here is not checked on the server
+until the spawn: one that is already taken there is refused, and explained
+under the field.
 
 When capabilities set up the new worktree (OATS 0.49.0 and later), **Setup**
 names them, in the order they run, and says this can take several minutes. Such

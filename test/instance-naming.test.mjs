@@ -12,7 +12,12 @@
 //   started included), stdout read up to 4 KiB, a message that never carries the output;
 // - the closed reason set, each one, and that a failure is never an error;
 // - the CLI: the refusals, the answer's `naming`, a suggested name previewed as --name (the same
-//   decision, which an apply with --expect-decision matches), numbered otherwise, the feature.
+//   decision, which an apply with --expect-decision matches), numbered otherwise, the feature;
+// - an apply's --suggest-name (feature spawn-apply-suggest-name, awebai/oats#1490 §3): the name placed
+//   as --name places it, unique as today, numbered on any failure, within its own 20 s;
+// - `oats instance suggest-name` (feature instance-suggest-name, #1490 §2): the preview's name for a
+//   soul that needn't exist here, not made unique, through this machine's launch configurations,
+//   writing and recording nothing, never routed.
 import test from "node:test";
 import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
@@ -238,7 +243,7 @@ test("oats spawn --preview --suggest-name: the suggested name previewed as --nam
   assert.equal(existsSync(fake.record), false, "no call without a task");
 
   // The refusals, before anything is read.
-  for (const [argv, words] of [[["--suggest-name"], "pass --preview"], [["--preview", "--suggest-name", "--name", "x-dev"], "takes no --name or --purpose"], [["--preview", "--suggest-name", "--purpose", "x"], "takes no --name or --purpose"], [["--preview", "--suggest-name", "--purpose=x"], "takes no --name or --purpose"]]) {
+  for (const [argv, words] of [[["--preview", "--suggest-name", "--expect-decision", "r1"], "already binds one"], [["--preview", "--suggest-name", "--name", "x-dev"], "takes no --name or --purpose"], [["--preview", "--suggest-name", "--purpose", "x"], "takes no --name or --purpose"], [["--preview", "--suggest-name", "--purpose=x"], "takes no --name or --purpose"]]) {
     const e = refused(fx.cli(["spawn", "dev", ...argv, "--json"]), argv.join(" "));
     assert.equal(e.code, "E_BAD_ARGS", argv.join(" "));
     assert.match(e.message, new RegExp(words.replace(/[-]/g, "\\-")));
@@ -323,4 +328,172 @@ test("the naming call runs the executable the preview reports: a relative PATH e
   assert.deepEqual([r.instance, r.naming.source], ["fix-login-dev", "suggested"]);
   assert.deepEqual(fake.read().argv, NAMING_CALLS.claude.argv("haiku"), "the naming call ran that executable");
   assert.equal(existsSync(join(fake.dir, "wrong")), false, "and not the one instances/ would find");
+});
+
+test("oats spawn --suggest-name on an apply (#1490 §3): named <descriptive>-<role> and placed as --name, unique as today, numbered on any failure, with its own time limit", async (t) => {
+  const fake = fakeHarness(t);
+  const local = { "launch-configs": { fake: { harness: "claude", executable: fake.bin } } };
+  const fx = v2Deployment({ t, local });
+  const env = { FAKE_RECORD: fake.record, FAKE_REPLY: "fix-login\n" };
+  const apply = (extra = [], e = env) => fx.cli(["spawn", "dev", "--suggest-name", "--launch-config", "fake", "--task", "Fix the login bug", "--no-launch", ...extra, "--json"], { env: e });
+
+  const first = okResult(apply(), "apply");
+  assert.equal(first.instance, "fix-login-dev");
+  assert.equal(first.home, join(fx.root, "dev", "instances", "fix-login-dev"));
+  assert.ok(existsSync(join(first.home, "instance.json")), "placed");
+  assert.deepEqual({ ...first.naming, ms: 0 }, { source: "suggested", ms: 0, harness: "claude", model: "haiku" });
+  assert.equal(fake.read().stdin, namingPrompt("Fix the login bug"));
+  assert.deepEqual(fake.read().argv, NAMING_CALLS.claude.argv("haiku"));
+  // Taken now: made unique as today.
+  assert.equal(okResult(apply(), "again").instance, "fix-login-dev-2");
+  // The preview's budget is not the apply's: an apply's call takes its own NAMING_TIMEOUT_MS.
+  assert.equal(okResult(apply([], { ...env, FAKE_REPLY: "budget-free\n", OATS_PREVIEW_PREFLIGHT_BUDGET_MS: "1" }), "no preview budget").instance, "budget-free-dev");
+  // Any failure numbers the instance as today, and says why; never an error.
+  const numberedName = () => okResult(fx.cli(["spawn", "dev", "--preview", "--launch-config", "fake", "--json"]), "numbered preview").instance;
+  for (const [e, reason] of [[{ FAKE_EXIT: "1" }, "harness-failed"], [{ FAKE_SLEEP_MS: "5000", OATS_TEST_NAMING_TIMEOUT_MS: "300" }, "timeout"], [{ FAKE_REPLY: "dev\n" }, "invalid-reply"]]) {
+    const expected = numberedName();
+    const r = okResult(apply([], { ...env, ...e }), reason);
+    assert.deepEqual([r.instance, r.naming.source, r.naming.reason], [expected, "numbered", reason], reason);
+    assert.ok(existsSync(r.home), `${reason}: the numbered instance exists`);
+  }
+  const expected = numberedName();
+  const noTask = okResult(fx.cli(["spawn", "dev", "--suggest-name", "--launch-config", "fake", "--no-launch", "--json"], { env }), "no task");
+  assert.deepEqual([noTask.instance, noTask.naming.reason], [expected, "no-task"]);
+  // Without --suggest-name an apply is today's: numbered, no naming, no call.
+  rmSync(fake.record, { force: true });
+  const plain = okResult(fx.cli(["spawn", "dev", "--launch-config", "fake", "--task", "Fix the login bug", "--no-launch", "--json"], { env }), "plain");
+  assert.equal("naming" in plain, false);
+  assert.equal(existsSync(fake.record), false, "no naming call without --suggest-name");
+  // Its human answer says how the name was chosen.
+  const human = fx.cli(["spawn", "dev", "--suggest-name", "--launch-config", "fake", "--task", "Fix the login bug", "--no-launch"], { env: { ...env, FAKE_REPLY: "human-answer\n" } });
+  assert.equal(human.status, 0, human.stderr);
+  assert.match(human.stdout, /^Spawned human-answer-dev /m);
+  assert.match(human.stdout, /^ {2}name: {3}suggested by claude \(haiku\) in \d+ ms$/m);
+
+  // --suggest-name chooses the name: with --name, --purpose or --expect-decision it is refused, by the
+  // CLI before anything is read and by the kernel for its other callers.
+  for (const [argv, words] of [[["--name", "x-dev"], "takes no --name or --purpose"], [["--purpose", "x"], "takes no --name or --purpose"], [["--expect-decision", "r1"], "already binds one"], [["--expect-decision=r1"], "already binds one"]]) {
+    const e = refused(fx.cli(["spawn", "dev", "--suggest-name", ...argv, "--no-launch", "--json"]), argv.join(" "));
+    assert.deepEqual([e.code, words.length > 0], ["E_BAD_ARGS", true], argv.join(" "));
+    assert.ok(e.message.includes(words), `${argv.join(" ")}: ${e.message}`);
+  }
+  for (const [opts, words] of [[{ name: "x-dev" }, "takes no --name or --purpose"], [{ purpose: "x" }, "takes no --name or --purpose"], [{ expectDecision: "r1" }, "already binds one"]]) {
+    await assert.rejects(fx.spawn("dev", { suggestName: true, task: "Fix it", ...opts }), (e) => e.code === "E_BAD_ARGS" && e.message.includes(words), JSON.stringify(opts));
+  }
+  assert.ok(JSON.parse(fx.cli(["version", "--json"]).stdout).features.includes("spawn-apply-suggest-name"));
+});
+
+test("oats instance suggest-name (#1490 §2): the preview's name for a soul that needn't exist here, not made unique, by this machine's launch configurations; numbered with a reason, never an error", async (t) => {
+  const fake = fakeHarness(t);
+  const missing = join(fake.dir, "not-there");
+  const local = { "launch-configs": {
+    fake: { harness: "claude", executable: fake.bin, default: true },
+    fakepi: { harness: "pi", executable: fake.bin, model: "acme/pi-model" },
+    fakecodex: { harness: "codex", executable: fake.bin },
+    gone: { harness: "claude", executable: missing },
+    unset: { harness: "claude", executable: fake.bin, env: { ACME_TOKEN: { fromEnv: "OATS_TEST_SURELY_UNSET" } } },
+  } };
+  const fx = v2Deployment({ t, local });
+  const env = { FAKE_RECORD: fake.record, FAKE_REPLY: "fix-flaky-login\n" };
+  const suggest = (extra, e = env) => fx.cli(["instance", "suggest-name", ...extra, "--json"], { env: e });
+
+  // The soul is only a name: oats-kernel-developer is no soul of this deployment. claude, through the
+  // machine's default configuration for it.
+  const r = okResult(suggest(["--soul", "oats-kernel-developer", "--task", "Fix the flaky login test"]), "suggest");
+  assert.deepEqual(Object.keys(r).sort(), ["name", "naming"]);
+  assert.equal(r.name, "fix-flaky-login-developer");
+  assert.deepEqual({ ...r.naming, ms: 0 }, { source: "suggested", ms: 0, harness: "claude", model: "haiku" });
+  assert.deepEqual(fake.read().argv, NAMING_CALLS.claude.argv("haiku"));
+  assert.equal(fake.read().stdin, namingPrompt("Fix the flaky login test"));
+  // A package-qualified soul gives its role; the words, role and length rules are the preview's.
+  assert.equal(okResult(suggest(["--soul", "acme/pkg--ops-lead", "--task", "x"]), "qualified").name, "fix-flaky-login-lead");
+  const long = okResult(suggest(["--soul", "oats-kernel-developer", "--task", "x"], { ...env, FAKE_REPLY: `${"abcdefghijklmnop-".repeat(6)}\n` }), "long").name;
+  assert.equal(long, named(`${"abcdefghijklmnop-".repeat(6)}\n`, "oats-kernel-developer"));
+  assert.ok(long.length <= 64 && long.endsWith("-developer"), long);
+  // Not made unique: a name taken in this deployment is answered as it is (the landing host decides).
+  okResult(fx.cli(["spawn", "dev", "--name", "fix-login-dev", "--launch-config", "fake", "--no-launch", "--json"]), "premise: taken");
+  assert.equal(okResult(suggest(["--soul", "dev", "--task", "x"], { ...env, FAKE_REPLY: "fix-login\n" }), "taken").name, "fix-login-dev");
+  // pi: the configuration's model, else --model; --harness agrees with the configuration or is refused.
+  const pi = okResult(suggest(["--soul", "dev", "--task", "x", "--launch-config", "fakepi"]), "pi");
+  assert.deepEqual([pi.naming.harness, pi.naming.model], ["pi", "acme/pi-model"]);
+  assert.deepEqual(fake.read().argv, NAMING_CALLS.pi.argv("acme/pi-model"));
+  assert.equal(okResult(suggest(["--soul", "dev", "--task", "x", "--harness", "pi", "--launch-config", "fakepi", "--model", "acme/other"]), "pi model").naming.model, "acme/other");
+  // The model: @native-default is none, and a preference list names its first entry with no catalogue
+  // probe: the naming call is the only process started (a `pi` on PATH that a probe would run, and hang
+  // on, is never run).
+  const trap = join(fake.dir, "trap");
+  mkdirSync(trap);
+  writeFileSync(join(trap, "pi"), `#!/bin/sh\necho ran > ${JSON.stringify(join(fake.dir, "trap-ran"))}\nsleep 30\n`);
+  chmodSync(join(trap, "pi"), 0o755);
+  const trapped = { ...env, PATH: `${trap}:${fx.env.PATH}` };
+  for (const [list, first] of [["first-model,second-model", "first-model"], ["acme/first,acme/second", "acme/first"], ["acme/first:high, acme/second", "acme/first:high"]]) {
+    const listed = okResult(suggest(["--soul", "dev", "--task", "x", "--launch-config", "fakepi", "--model", list], trapped), list);
+    assert.deepEqual([listed.naming.source, listed.naming.model, fake.read().argv], ["suggested", first, NAMING_CALLS.pi.argv(first)], list);
+  }
+  assert.equal(existsSync(join(fake.dir, "trap-ran")), false, "no catalogue probe ran");
+  const native = okResult(suggest(["--soul", "dev", "--task", "x", "--launch-config", "fakepi", "--model", "@native-default"]), "pi native");
+  assert.deepEqual([native.naming.model, fake.read().argv], [null, NAMING_CALLS.pi.argv(null)]);
+
+  // Each reachable reason, ok:true and no name.
+  const numbered = (extra, e, reason) => {
+    const n = okResult(suggest(["--soul", "dev", ...extra], { ...env, ...e }), reason);
+    assert.equal("name" in n, false, reason);
+    assert.deepEqual([n.naming.source, n.naming.reason], ["numbered", reason], reason);
+    return n.naming;
+  };
+  rmSync(fake.record, { force: true });
+  numbered(["--task", ""], {}, "no-task");
+  const empty = join(fake.dir, "empty.md");
+  writeFileSync(empty, " \n");
+  numbered(["--task-file", empty], {}, "no-task");
+  assert.equal(existsSync(fake.record), false, "no call without a task");
+  numbered(["--task", "x", "--launch-config", "fakecodex"], {}, "unsupported-harness");
+  numbered(["--task", "x", "--harness", "codex", "--launch-config", "none"], {}, "unsupported-harness");
+  assert.equal(numbered(["--task", "x"], { FAKE_EXIT: "1" }, "harness-failed").message, "claude exited with 1");
+  numbered(["--task", "x"], { FAKE_SLEEP_MS: "5000", OATS_TEST_NAMING_TIMEOUT_MS: "300" }, "timeout");
+  numbered(["--task", "x"], { FAKE_REPLY: "dev\n" }, "invalid-reply");
+  // No executable, or a reference not set here: harness-failed, naming the cause, never a value.
+  assert.match(numbered(["--task", "x", "--launch-config", "gone"], {}, "harness-failed").message, /^claude could not be run: launch configuration gone: .*does not exist$/);
+  assert.equal(numbered(["--task", "x", "--launch-config", "unset"], {}, "harness-failed").message, "claude could not be run: launch configuration unset references OATS_TEST_SURELY_UNSET, not set in this environment");
+  // Outside any deployment: no configurations, the harness's own executable on this PATH.
+  const outside = fixtureBase("oats-suggest-outside-");
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  mkdirSync(join(outside, "bin"));
+  writeFileSync(join(outside, "bin", "claude"), readFileSync(fake.bin));
+  chmodSync(join(outside, "bin", "claude"), 0o755);
+  const bare = fx.cli(["instance", "suggest-name", "--soul", "dev", "--task", "x", "--dir", outside, "--json"], { cwd: outside, env: { ...env, PATH: `${join(outside, "bin")}:${fx.env.PATH}` } });
+  assert.equal(okResult(bare, "outside").name, "fix-flaky-login-dev");
+
+  // It writes nothing and reserves nothing in the deployment (this computer's deployments list:
+  // test/deployments.test.mjs, outside the temporary directories).
+  const tree = () => execFileSync("find", [fx.dep, "-not", "-path", "*/.git/*"], { encoding: "utf8" });
+  const before = tree();
+  okResult(suggest(["--soul", "dev", "--task", "x"]), "writes nothing");
+  assert.equal(tree(), before);
+
+  // Refusals: bad arguments are errors.
+  for (const [argv, code, words] of [
+    [["--soul", "dev", "--task", "x", "--server", "build"], "E_BAD_ARGS", "takes no --server"],
+    [["--task", "x"], "E_BAD_ARGS", "--soul is required"],
+    [["--soul", "Bad Soul", "--task", "x"], "E_BAD_ARGS", "is not a soul name"],
+    [["--soul", "dev"], "E_BAD_ARGS", "one of --task or --task-file"],
+    [["--soul", "dev", "--task", "x", "--task-file", empty], "E_BAD_ARGS", "one of --task or --task-file"],
+    [["--soul", "dev", "--task"], "E_BAD_ARGS", "--task needs a value"],
+    [["--soul", "dev", "--task", "x", "--harness", "gpt"], "E_BAD_ARGS", "--harness must be one of pi|claude|codex"],
+    [["--soul", "dev", "--task", "x", "--harness", "claude", "--launch-config", "fakepi"], "E_BAD_ARGS", "a named configuration is a unit"],
+    [["--soul", "dev", "--task", "x", "--launch-config", "nope"], "E_LAUNCH_CONFIG_UNKNOWN", "\"nope\""],
+    [["--soul", "dev", "--task", "x", "--name", "y"], "E_BAD_ARGS", "unexpected flag \"--name\""],
+    [["--soul", "dev", "--task", "x", "extra"], "E_BAD_ARGS", "unexpected argument \"extra\""],
+  ]) {
+    const e = refused(suggest(argv), argv.join(" "));
+    assert.equal(e.code, code, `${argv.join(" ")}: ${e.message}`);
+    assert.ok(e.message.includes(words), `${argv.join(" ")}: ${e.message}`);
+  }
+  // Text: the name, or how it was numbered.
+  const text = fx.cli(["instance", "suggest-name", "--soul", "dev", "--task", "x"], { env });
+  assert.equal(text.status, 0, text.stderr);
+  assert.equal(text.stdout, "fix-flaky-login-dev\n");
+  const textNumbered = fx.cli(["instance", "suggest-name", "--soul", "dev", "--task", " "], { env });
+  assert.equal(textNumbered.stdout, "numbered (no-task: the task is empty: there is nothing to name the instance from)\n");
+  assert.ok(JSON.parse(fx.cli(["version", "--json"]).stdout).features.includes("instance-suggest-name"));
 });

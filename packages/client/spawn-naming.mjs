@@ -11,8 +11,9 @@ export const SUGGEST_MIN_WORDS = 7;
 /** The words of `text`: whitespace-separated runs that hold a letter or a digit. */
 export const taskWords = text => (String(text ?? '').match(/\S+/g) || []).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
 
-/** What an answer is remembered by: the exact task text and the soul (its root and name). */
-export const namingKey = (selector, text) => JSON.stringify([selector?.agentsRoot ?? null, selector?.soul ?? null, String(text ?? '')]);
+/** What an answer is remembered by: the exact task text, the soul (its root and name) and, for a spawn on another
+ * machine, that machine (`target`, its server id; null on this computer), so one host's answer never names another's. */
+export const namingKey = (selector, text, target = null) => JSON.stringify([selector?.agentsRoot ?? null, selector?.soul ?? null, String(text ?? ''), target || null]);
 
 const harnessName = harness => HARNESS_NAMES[harness] ?? (typeof harness === 'string' && harness ? harness : 'the harness');
 /** Why a spawn was numbered, in the Desktop's words. The kernel's `message` is never shown: it can carry an exit

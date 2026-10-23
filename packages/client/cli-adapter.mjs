@@ -32,6 +32,7 @@ import { validMaxAge, maxAgeArgv } from './deployment-contract.mjs';
 import { MACHINE_ID, machineFieldProblem } from './machine-contract.mjs';
 import { kernelMade } from './kernel-made.mjs';
 import { SOUL_COLORS } from './soul-colors.mjs';
+import { NAMING_TIMEOUT_MS } from './spawn-preview-contract.mjs';
 
 const ENVELOPE_TIMEOUT_MS = 60_000;
 
@@ -58,6 +59,9 @@ export function parseEnvelope(stdout) {
  * silently degrade into different spawn behavior. */
 const SPAWN_ARG_RULES = {
   purpose: { flag: "--purpose", re: /^[a-z0-9][a-z0-9-]*$/i },              // instance-name slug
+  // The exact instance name (feature spawn-name): the kernel's instance-name grammar, lowercase,
+  // used as given; the kernel refuses the rest of its rule itself (E_INSTANCE_NAME_INVALID). Never with a purpose.
+  name:    { flag: "--name",    re: /^[a-z0-9][a-z0-9-]*$/ },
   repo:    { flag: "--repo",    re: /^[^-][^\0]*$/ },                       // path — anything not option-shaped
   work:    { flag: "--work",    re: /^(worktree|checkout|attached|workspace|directory)$/ },
   backend: { flag: "--backend", re: /^tmux$/ },
@@ -92,6 +96,13 @@ export function spawnArgv(agent, workspaceDir, taskFile, opts = {}) {
       : "--relative-to requires a relation (child|sibling|parent)");
     e.code = "E_BAD_ARGS"; throw e;
   }
+  // A name is the instance's whole name; a purpose is the part after `<soul>-`: one or the other.
+  const given = v => v !== undefined && v !== null && v !== "";
+  if (given(opts.name) && given(opts.purpose)) { const e = new Error("a spawn takes --name or --purpose, not both"); e.code = "E_BAD_ARGS"; throw e; }
+  // --suggest-name on an apply (feature spawn-apply-suggest-name): the machine that spawns names it from its task, so
+  // never beside a name or a purpose.
+  if (opts.suggestName !== undefined && typeof opts.suggestName !== "boolean") throw Object.assign(new Error("suggestName must be a boolean"), { code: "E_BAD_ARGS" });
+  if (opts.suggestName && (given(opts.name) || given(opts.purpose))) throw Object.assign(new Error("--suggest-name chooses the name: it takes no --name or --purpose"), { code: "E_BAD_ARGS" });
   // relativeRoot rides along with the pair only — alone it is meaningless
   if (!hasRef && opts.relativeRoot !== undefined && opts.relativeRoot !== null && opts.relativeRoot !== "") {
     const e = new Error("--relative-root requires --relation and --relative-to");
@@ -113,6 +124,7 @@ export function spawnArgv(agent, workspaceDir, taskFile, opts = {}) {
     if (typeof opts.yolo !== "boolean") throw Object.assign(new Error("yolo must be a boolean"), { code: "E_BAD_ARGS" });
     argv.push(opts.yolo ? "--yolo" : "--no-yolo");
   }
+  if (opts.suggestName) argv.push("--suggest-name");
   argv.push("--json");
   return argv;
 }
@@ -292,7 +304,9 @@ export async function cliSpawn(bin, { agent, workspaceDir, task, ...opts }, io =
   let wakeFile;
   try {
     if (wake) { wakeFile = writeTaskFile(JSON.stringify(wake), io); argv.push("--wake-file", wakeFile.file); }
-    return await runJson(bin, argv, { cwd: workspaceDir, exec: io.exec, timeout: io.timeout });
+    // An apply that names its instance makes the kernel's naming call first: its deadline allows for it.
+    const timeout = io.timeout ?? (opts.suggestName ? ENVELOPE_TIMEOUT_MS + NAMING_TIMEOUT_MS : undefined);
+    return await runJson(bin, argv, { cwd: workspaceDir, exec: io.exec, timeout });
   } finally { wakeFile?.cleanup(); cleanup(); }
 }
 

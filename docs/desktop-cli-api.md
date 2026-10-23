@@ -141,6 +141,8 @@ see the [official catalog](official-catalog.md) for current pins.
 | `instance-color` | `oats instance color <instance> (<color> \| --clear)`, local and `--server` ([An instance's colour](#an-instances-colour-oats-instance-color)); `color` on `oats status --json` instance rows, on `oats server roster --json` rows and on `oats inspect --home` `instance` (`null` for none). Gate on the probe, locally or in the host's `probe.features`: an older kernel's rows have no `color` | `instanceColorApi: 1` (payload only) |
 | `deployments-list` | `oats deployments [list]\|add\|remove\|import --json`, this computer's list of its deployments (`~/.oats/config/deployments.json`); `listed` on `oats onboard --json`; a kernel command run in an unlisted deployment lists it ([This computer's deployments](#this-computers-deployments-oats-deployments)). Gate on the probe: there is no fallback scan | `deploymentsApi: 1` |
 | `status-retire-state` | `retire` on `oats status --json` instance rows and on remote roster rows: whether a retire of the home is running, cannot be told, failed or was interrupted, read only from the files beside the home, OATS 0.59.0 ([`retire`](#row-retire)). `retirePending` is unchanged. Gate on the probe: a kernel without it never carries the field, so its absence there says nothing | |
+| `instance-suggest-name` | `oats instance suggest-name --soul <soul> (--task <t> \| --task-file <f>) [--harness claude\|pi] [--model <m>] [--launch-config <n>] --json`: the name a `--suggest-name` spawn of `<soul>` would get, chosen on this machine for a spawn that may land on another, not made unique ([A name for a spawn elsewhere](#a-name-for-a-spawn-elsewhere-oats-instance-suggest-name)). Local only: `--server` is `E_BAD_ARGS`. Gate on the local probe; without it, the spawn goes unnamed (numbered, or named where it lands) | |
+| `spawn-apply-suggest-name` | `--suggest-name` on a spawn apply, without `--preview`: the apply names the instance as a preview's `--suggest-name` would, on the machine that spawns, and its result carries `naming` ([On an apply](#on-an-apply-feature-spawn-apply-suggest-name)). Routed, the host needs the feature (`E_REMOTE_INCOMPATIBLE`, nothing sent): gate on the host's `probe.features` and don't send the flag to a host without it | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -2510,8 +2512,9 @@ oats spawn <soul> --preview --suggest-name --task-file <f> [the flags of a real 
 
 A preview that also chooses the instance's name, from the task (`--task-file`,
 or `--task <text>`). Like every preview it writes nothing and runs no hooks.
-- `--suggest-name` without `--preview`, or with `--name` or `--purpose`, is
-  `E_BAD_ARGS`.
+- `--suggest-name` with `--name`, `--purpose` or `--expect-decision` is
+  `E_BAD_ARGS`. Without `--preview` it names an apply
+  ([On an apply](#on-an-apply-feature-spawn-apply-suggest-name)).
 - **The call.** The kernel makes one non-interactive call through the
   harness, executable and environment the spawn would launch (the launch
   configuration's `env`, not its `args`), with this prompt on stdin, never in
@@ -2598,6 +2601,40 @@ or `--task <text>`). Like every preview it writes nothing and runs no hooks.
   not advertise `spawn-suggest-name` is refused (`E_REMOTE_INCOMPATIBLE`)
   before the spawn is sent.
 
+#### On an apply (feature `spawn-apply-suggest-name`)
+
+```text
+oats spawn <soul> --suggest-name --task-file <f> [the flags of a real spawn] [--json]
+```
+
+An apply with `--suggest-name` and no `--name`, `--purpose` or
+`--expect-decision` names the instance on the machine that spawns, by the
+preview's call and rules above, through the soul's harness.
+- The name is `<descriptive>-<role>`, made unique as a preview's is, and it is
+  placed exactly as `--name <name>` would be.
+- On any failure the instance is numbered as it is today, and `naming` says
+  why. A failed call is never an error: the spawn goes on.
+- The call is made before anything is placed, after the executable is
+  resolved and the harness packages probed. An apply has no preflight
+  budget: the call has its own 20 s. Every later bound of the apply (the
+  hooks, the launch) starts after it, so the apply can take up to 20 s longer
+  than without the flag. A caller with its own deadline on the apply allows
+  for that.
+- The result carries `naming`, in the preview's shape and with its closed
+  `reason` set, whenever `--suggest-name` was given
+  ([Apply](#apply), its result). The text answer prints a
+  `name: suggested by …` or `name: numbered (…)` line.
+- **A race.** Another soul's spawn that takes the name between the naming
+  and the placement makes this apply `E_INSTANCE_NAME_TAKEN`, as for `--name`
+  (nothing was created by this call; spawn again for another name). The same
+  soul's is `E_PLACEMENT_TAKEN`, as for any name.
+- Without `--suggest-name`, an apply is unchanged: numbered, with no call.
+- **`--server`:** the call runs on the host, through the routed apply. A host
+  that does not advertise `spawn-apply-suggest-name` is refused
+  (`E_REMOTE_INCOMPATIBLE`) before the spawn is sent; the route never drops
+  the flag. A caller that would rather have the host number the instance
+  checks the host's `probe.features` and does not send the flag.
+
 **Provider settings.**
 - `providers` is the `--provider` map as typed.
 - `settings.<cap>`: the merged payload (manifest defaults, then workspace,
@@ -2637,7 +2674,8 @@ Feature `spawn-apply-2`, `spawnApplyApi: 1`. The Desktop gates on
 - The home is reserved with a non-recursive `mkdir`. A concurrent loser
   refuses `E_PLACEMENT_TAKEN {instance, home}` having touched nothing. Names
   are deployment-wide: a same-name race with another soul ends in
-  `E_INSTANCE_NAME_TAKEN` (for `--name`) or `E_PLACEMENT_TAKEN`.
+  `E_INSTANCE_NAME_TAKEN` (for `--name` and a suggested name) or
+  `E_PLACEMENT_TAKEN`.
 - A refused child spawn appends `child-spawn-refused` to the parent's log (on
   apply only).
 - `--max-age <s>` with `--expect-decision <revision>` (feature
@@ -2714,7 +2752,9 @@ with `--expect-decision` records the key and decision in `instance.json`.
   `wakeScheduleError` (a requested wake), `worktreeHooks` (feature
   `worktree-event`: only when the spawn ran `worktree` hooks, the receipt
   `[{capability, ok, required, log, exitCode, signal?, timedOut?,
-  contract?}]`, `log` being the hook's log file).
+  contract?}]`, `log` being the hook's log file), `naming` (feature
+  `spawn-apply-suggest-name`: only with `--suggest-name`, `{source, reason?,
+  message?, ms, harness?, model?}` as on the preview).
 - A spawn that runs `worktree` hooks can take up to 30 minutes per hook
   ([the worktree event](capabilities.md#the-worktree-event)).
 
@@ -2731,9 +2771,90 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
   `E_INSTANCE_NAME_TAKEN {instance, home, session?}`; a typed name never gets
   a silent `-2`.
 - The name is part of the decision.
+- Routed (`--server`), `--name` needs a host that advertises `spawn-name`:
+  `E_REMOTE_INCOMPATIBLE` otherwise, with nothing sent. A saved route here
+  under that name is `E_ROUTE_EXISTS`, before the spawn is sent.
 - `--preview --suggest-name` (feature `spawn-suggest-name`) chooses a
   descriptive name for the task, `<descriptive>-<role>`, which the apply then
   passes as `--name` ([The suggested name](#the-suggested-name-feature-spawn-suggest-name)).
+  An apply with `--suggest-name` (feature `spawn-apply-suggest-name`) chooses
+  it itself ([On an apply](#on-an-apply-feature-spawn-apply-suggest-name)).
+- `oats instance suggest-name` (feature `instance-suggest-name`) chooses one on
+  this machine for a spawn on another
+  ([A name for a spawn elsewhere](#a-name-for-a-spawn-elsewhere-oats-instance-suggest-name)).
+
+### A name for a spawn elsewhere (`oats instance suggest-name`)
+
+Feature `instance-suggest-name`.
+
+```text
+oats instance suggest-name --soul <soul> (--task <t> | --task-file <f>) [--harness claude|pi] [--model <m>] [--launch-config <n>] [--dir <d>] --json
+```
+
+The name a spawn of `<soul>` would get by `--suggest-name`, chosen on the
+machine that asks (a Desktop's, with the spawn dialog open) for a spawn that
+may land on another.
+
+- **What it touches.** It resolves no workspace, writes nothing, records
+  nothing and reserves no name. It reads only this machine's launch
+  configurations (the `oats-local.yaml` in reach of `--dir`, else the working
+  directory) and the OATS tmux server's environment, as a spawn's pane would
+  have it; it resolves no souls, members, lock or remote. The deployment it
+  reads is not added to this computer's deployments list.
+- **The soul is only a name.** It gives the role (the last word of the name,
+  after any package qualifier) and needn't exist on this machine. It is
+  checked as a soul name's shape (`<soul>`, `<package>/<soul>`,
+  `<package>--<soul>`), never resolved.
+- **Not made unique.** The words, role and length rules are the preview's
+  ([The suggested name](#the-suggested-name-feature-spawn-suggest-name)), but no
+  `-2` is added: the machine the spawn lands on owns uniqueness, and a name
+  taken there is its `E_INSTANCE_NAME_TAKEN` at the apply.
+- **The harness and model.** The harness is `--harness`, else the
+  configuration's, else claude. Its executable and environment are what a
+  spawn on this machine would launch it with: `--launch-config` if given
+  (`none` for the bare harness), else this machine's default configuration
+  for that harness, else the harness's own executable. The model is
+  `--model`, else the configuration's: `@native-default` is the harness's
+  own, and a preference list names its first entry (no catalogue is
+  probed: the naming call is the only process the command starts). It
+  matters for pi; claude always names with `haiku`. The task text goes to this machine's harness and model, as the
+  preview's naming does.
+- **The call** is the preview's, with the same prompt, argv and isolation,
+  and its model call is bounded as the preview's is: at most 20 s and 4 KiB
+  of output.
+- **The answer** is the usual envelope, `ok: true` whether the name was
+  suggested or numbered:
+
+  ```json
+  {"schemaVersion": 1, "ok": true, "result": {"name": "fix-flaky-login-developer", "naming": {"source": "suggested", "ms": 2310, "harness": "claude", "model": "haiku"}}}
+  ```
+
+  ```json
+  {"schemaVersion": 1, "ok": true, "result": {"naming": {"source": "numbered", "reason": "harness-failed", "message": "claude could not be run: claude is not installed on this machine (claude binary not found on PATH)", "ms": 0}}}
+  ```
+
+  - `name` is present only when `naming.source` is `"suggested"`.
+  - `naming` has the preview's shape, and `naming.reason` its closed set:
+    `no-task` (`--task ""`, or a blank task file; no call is made),
+    `unsupported-harness` (codex; no call is made), `timeout`,
+    `harness-failed` (a nonzero exit, a signal, or no executable here: no
+    such executable, or a configuration's `{fromEnv}` reference not set
+    here; `message` names the cause, never a value), `invalid-reply`.
+  - A naming failure is not an error: `ok: true` with
+    `naming.source: "numbered"`.
+  - The text answer is the name, or `numbered (<reason>: <message>)`.
+- **Refusals** (`E_BAD_ARGS` unless named): no `--soul`, or one that is not
+  a soul name's shape; neither or both of `--task` and `--task-file`, or one
+  that cannot be read; a `--harness` other than pi, claude or codex; a
+  `--harness` that is not the named configuration's; a flag or argument it
+  does not take; `--server`. An unknown `--launch-config` is
+  `E_LAUNCH_CONFIG_UNKNOWN`.
+- **Never routed.** `oats instance` commands route through `--server`, but
+  this one runs where it is asked: a name for another machine is decided
+  here. `--server` is refused before anything is sent.
+- **When the feature is missing** (an older local kernel), a client spawns
+  without a name: the host numbers the instance, or names it itself if it
+  advertises `spawn-apply-suggest-name` and the client sends `--suggest-name`.
 
 ### Spawn origin
 

@@ -33,7 +33,7 @@ import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
 } from "../lib/core.mjs";
 import {
@@ -108,7 +108,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental",
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running", "deployments-list", "soul-composed-skills", "instance-color", "spawn-suggest-name", "instance-upgrade"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running", "deployments-list", "soul-composed-skills", "instance-color", "spawn-suggest-name", "instance-upgrade", "instance-suggest-name", "spawn-apply-suggest-name"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -1343,11 +1343,44 @@ async function instanceUpgradeCmd(name, bail) {
   } catch (e) { return lifecycleFail(e, "E_UPGRADE_FAILED", { ...e.details, ...(e.plan ? { plan: e.plan } : {}), ...(e.candidates ? { candidates: e.candidates } : {}) }); }
 }
 
+/** The flags `oats instance suggest-name` reads, each taking a value (`--json` aside). */
+const SUGGEST_NAME_FLAGS = new Set(["soul", "task", "task-file", "harness", "model", "launch-config", "dir"]);
+/** `oats instance suggest-name` (feature instance-suggest-name, awebai/oats#1490 §2): the name a spawn
+ *  of a soul would get by --suggest-name, chosen here for a spawn that may land on another machine
+ *  (lib/core.mjs suggestSpawnName). Never routed: --server is refused before the route dispatch. */
+async function instanceSuggestNameCmd(bail) {
+  const usage = "usage: oats instance suggest-name --soul <soul> (--task <t> | --task-file <f>) [--harness claude|pi] [--model <m>] [--launch-config <n>] [--dir <d>] [--json]";
+  // A flag's value as given, the empty text included (`--task ""` is an empty task, not a missing one).
+  const value = (name) => {
+    const i = args.indexOf(`--${name}`);
+    if (i < 0) return undefined;
+    const v = inlineValues.has(name) ? inlineValues.get(name) : args[i + 1];
+    if (v === undefined || (!inlineValues.has(name) && v.startsWith("--"))) return bail("E_BAD_ARGS", `--${name} needs a value; ${usage}`);
+    return v;
+  };
+  for (let i = 2; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--json") continue;
+    if (!a.startsWith("--") || !SUGGEST_NAME_FLAGS.has(a.slice(2))) return bail("E_BAD_ARGS", `oats instance suggest-name: unexpected ${a.startsWith("--") ? "flag" : "argument"} ${JSON.stringify(a)}; ${usage}`);
+    if (!inlineValues.has(a.slice(2))) i++;
+  }
+  const soul = value("soul"), task = value("task"), taskFile = value("task-file");
+  if (soul === undefined) return bail("E_BAD_ARGS", `--soul is required; ${usage}`);
+  if ((task === undefined) === (taskFile === undefined)) return bail("E_BAD_ARGS", `give the task with one of --task or --task-file; ${usage}`);
+  let text = task;
+  if (taskFile !== undefined) { try { text = readFileSync(taskFile, "utf8"); } catch (e) { return bail("E_BAD_ARGS", `--task-file ${taskFile} cannot be read (${e.code || "error"})`); } }
+  let r;
+  try { r = await suggestSpawnName({ dir: dirFlag(), soul, task: text, harness: value("harness"), model: value("model"), launchConfig: value("launch-config") }); }
+  catch (e) { return bail(e.code || "E_BAD_ARGS", e.message, e.details); }
+  if (JSON_MODE) { jsonOk(r); return; }
+  console.log(r.name ?? namingLine(r.naming));
+}
 async function instanceCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const sub = args[1], name = args[2];
   if (sub === "upgrade") return instanceUpgradeCmd(name, bail);
   if (sub === "waiting" || sub === "attention") return instanceWaitingCmd(sub, bail);
+  if (sub === "suggest-name") return instanceSuggestNameCmd(bail);
   const usage = "usage: oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--dir <d>] [--json] | oats instance attention [--message <text>] [--clear] [--json] | oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--dir <d>] [--json] | oats instance git <instance> [--home <abs>] [--dir <d>] [--json] | oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json] | oats instance stop <instance> (--plan | --apply --plan-revision <rev> --idempotency-key <key>) [--no-recursive] [--grace-ms <n>] [--home <abs>] [--dir <d>] [--json] | oats instance color <instance> (<color> | --clear) [--home <abs>] [--dir <d>] [--json]";
   if (!["git", "diff", "stop", "events", "color"].includes(sub) || !name || name.startsWith("--")) return bail("E_BAD_ARGS", usage);
   dropAmbientRoot();
@@ -2759,12 +2792,14 @@ const livenessWord = (i) => i.running === true ? "RUNNING" : i.running === false
  *  apply bound by --expect-decision: the dispatch allow-list (maxAgeRefusal) refuses it otherwise. */
 const SPAWN_VALUE_FLAGS = new Set(["agents-root", "backend", "base", "branch", "dir", "expect-decision", "harness", "idempotency-key", "instance", "launch-config", "max-age", "model", "name", "parent", "purpose", "relation", "relative-root", "relative-to", "repo", "runtime", "task", "task-file", "trigger-event", "wake-cron", "wake-every", "wake-file", "wake-json", "wake-message", "wake-message-file", "wake-tz", "work", "work-dir"]);
 const SPAWN_SWITCHES = new Set(["allow-child-spawns", "json", "no-child-spawns", "no-launch", "no-yolo", "preview", "suggest-name", "yolo"]);
-/** `--suggest-name` (feature spawn-suggest-name): a preview's, with no --name or --purpose. The kernel
- *  refuses the same (core.mjs spawnBody); the CLI says it before anything is read or sent. */
+/** `--suggest-name` (features spawn-suggest-name, spawn-apply-suggest-name): a preview's or an apply's,
+ *  with no --name, --purpose or --expect-decision. The kernel refuses the same (core.mjs spawnBody); the
+ *  CLI says it before anything is read or sent. */
 function suggestNameProblem(argv) {
   if (!argv.includes("--suggest-name")) return undefined;
-  if (!argv.includes("--preview")) return "--suggest-name is a preview's: it chooses the name a spawn would get; pass --preview";
-  if (argv.some((a) => ["--name", "--purpose"].includes(a.split("=")[0]))) return "--suggest-name chooses the name: it takes no --name or --purpose";
+  const given = (flag) => argv.some((a) => a.split("=")[0] === flag);
+  if (given("--expect-decision")) return "--suggest-name chooses the name, and --expect-decision's decision already binds one: apply the previewed name with --name <instance> --expect-decision <revision>";
+  if (given("--name") || given("--purpose")) return "--suggest-name chooses the name: it takes no --name or --purpose";
   return undefined;
 }
 /** Why `argv` (after `spawn`, the soul first) is not a spawn, or undefined: a positional after the
@@ -2793,6 +2828,13 @@ function herdrSpawnFlag() {
   if (flag("herdr-socket") !== undefined) return "--herdr-socket";
   return undefined;
 }
+/** How a name was chosen (`naming`: features spawn-suggest-name, spawn-apply-suggest-name,
+ *  instance-suggest-name), for a text line; null without one. */
+function namingLine(naming) {
+  if (naming?.source === "suggested") return `suggested by ${terminalText(naming.harness)}${naming.model ? ` (${terminalText(naming.model)})` : ""} in ${naming.ms} ms`;
+  if (naming?.source === "numbered") return `numbered (${terminalText(naming.reason)}: ${terminalText(naming.message)})`;
+  return null;
+}
 /** A spawn preview's text: the local one, or a host's answer to a routed
  *  preview (`server`, its id), which this side printed the same way (#610). */
 function printSpawnPreview(r, { server, soulFetched = false } = {}) {
@@ -2800,8 +2842,7 @@ function printSpawnPreview(r, { server, soulFetched = false } = {}) {
   const harness = r.harness ?? r.runtime;
   console.log(`preview ${r.agent} → ${r.instance}${server ? ` on ${server}` : ""} (${r.work}${r.branch ? `, branch ${r.branch}${r.base ? ` from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}` : ""}) harness ${harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (${server ? "the server's" : "this machine's"} ${harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
   // Feature spawn-suggest-name: how the name was chosen.
-  if (r.naming?.source === "suggested") console.log(`name: suggested by ${terminalText(r.naming.harness)}${r.naming.model ? ` (${terminalText(r.naming.model)})` : ""} in ${r.naming.ms} ms`);
-  else if (r.naming?.source === "numbered") console.log(`name: numbered (${terminalText(r.naming.reason)}: ${terminalText(r.naming.message)})`);
+  { const line = namingLine(r.naming); if (line) console.log(`name: ${line}`); }
   if (Array.isArray(r.worktreeHooks)) console.log(r.worktreeHooks.length ? `worktree hooks: ${r.worktreeHooks.map((h) => `${h.capability}${h.required ? " (required)" : ""}`).join(", ")}` : "worktree hooks: none");
   for (const w of r.warnings || []) console.log(`  WARNING: ${terminalText(w)}`);
 }
@@ -2820,7 +2861,7 @@ async function spawnCmd() {
   };
   checkDirectoryOptions(requestedWork); // before anything is resolved or written
   const name = args[1];
-  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>] [--preview [--suggest-name]] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--no-launch] [--json]");
+  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>|--suggest-name] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--no-launch] [--json]");
   // Retired boundary flags (maintainer transport ruling): fail LOUDLY before
   // ANY side effect, including root discovery.
   // Local souls (local-agents/) are gone with the workspace model: a soul is a member
@@ -3082,11 +3123,14 @@ async function spawnCmd() {
       launchConfig: r.launch?.launchConfig ?? null, launch: r.launch || null, // already redacted by the kernel
       // #796: the worktree hooks this spawn ran, with their logs; only when it ran any.
       ...(r.worktreeHooks ? { worktreeHooks: r.worktreeHooks } : {}),
+      // Feature spawn-apply-suggest-name: how the name was chosen; only with --suggest-name.
+      ...(r.naming ? { naming: r.naming } : {}),
     });
     return;
   }
   console.log(`Spawned ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux.window}"` : " — not launched"}`);
   console.log(`  home:   ${shortPath(r.home)}`);
+  { const line = namingLine(r.naming); if (line) console.log(`  name:   ${line}`); }
   if (r.base) console.log(`  base:   ${r.base.oid.slice(0, 12)} (${r.base.ref === r.workspace?.soul?.repoKey ? `observed head of ${r.base.ref}` : r.base.ref})`);
   for (const h of r.worktreeHooks || []) console.log(`  setup:  ${h.capability} worktree hook ${h.ok ? "ok" : "FAILED"} (log: ${shortPath(h.log)})`);
   if (wakeSchedule) console.log(`  wake:   schedule ${wakeSchedule.id} (${wakeSchedule.cron} ${wakeSchedule.tz}), next ${wakeSchedule.nextRun || "disabled"}`);
@@ -4673,6 +4717,7 @@ async function serverRouteCmd() {
   else if (cmd === "spawn") {
     console.log(`Spawned ${r.instance} on ${id} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux?.window}" on ${r.target.sshHost}` : " — not launched"}`);
     console.log(`  remote home: ${r.home}`);
+    { const line = namingLine(r.naming); if (line) console.log(`  name: ${line}`); }
     console.log(`  route snapshot: ${r.snapshot ? shortPath(r.snapshot) : "none (see the warning)"}`);
     for (const w of r.warnings || []) console.log(`  WARNING: ${terminalText(w)}`);
     console.log(`  attach: oats session attach --server ${shellQuote(id)} --instance ${shellQuote(r.instance)}`);
@@ -4767,7 +4812,8 @@ try {
 // listResolved): a listed deployment costs one bounded read of the list. Never on --server (the remote's path is not this computer's), never for
 // help, and silent: no output, no change to the command's answer or exit status.
 const LISTS_ITS_DEPLOYMENT = new Set(["automations", "capabilities", "doctor", "harness", "inspect", "instance", "launch-config", "operation", "package", "pane", "readiness", "retire", "schedule", "session", "soul", "souls", "spawn", "status", "sync", "teams", "trigger", "update", "workspace", "worktree"]);
-if (LISTS_ITS_DEPLOYMENT.has(cmd) && flag("server") === undefined && !args.slice(1).some((a) => a === "--help" || a === "-h")) observeResolvedDeployment(listResolved);
+// `instance suggest-name` records nothing (#1490 §2): the oats-local.yaml it reads is not listed.
+if (LISTS_ITS_DEPLOYMENT.has(cmd) && flag("server") === undefined && !(cmd === "instance" && args[1] === "suggest-name") && !args.slice(1).some((a) => a === "--help" || a === "-h")) observeResolvedDeployment(listResolved);
 if (cmd === "onboard") {
   if (args.includes("--help") || args.includes("-h")) { if (JSON_MODE) jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); else usageFor(cmd); process.exit(0); }
   await onboardCmd();
@@ -4780,6 +4826,8 @@ else {
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
 if (cmd === "instance" && args[1] === "upgrade" && flag("server") !== undefined) cmdFail("E_BAD_ARGS", "instance upgrade supports local homes only; run it on the deployment host");
+// #1490 §2: the name is decided on the machine that asks, for a spawn that lands elsewhere.
+if (cmd === "instance" && args[1] === "suggest-name" && flag("server") !== undefined) cmdFail("E_BAD_ARGS", "instance suggest-name takes no --server: it runs this machine's harness, for a spawn that may land on another; the host it lands on makes the name unique (or names an unnamed --suggest-name spawn itself)");
 if (flag("server") !== undefined && ROUTED_COMMANDS.has(cmd)) await serverRouteCmd();
 else if (cmd === "server") await serverCmd();
 else if (cmd === "deployments") deploymentsCmd();
@@ -5039,10 +5087,12 @@ Usage:
                                             instance.json providers.<capability>)
       [--preview]                           decide everything, create no instance; --json
                                             includes the decision revision for confirmation
-      [--suggest-name]                      with --preview, no --name or --purpose: the soul's
-                                            harness names the instance for its task
-                                            (<descriptive>-<role>); else it is numbered, and
-                                            naming.reason says why (claude and pi)
+      [--suggest-name]                      no --name, --purpose or --expect-decision: the
+                                            soul's harness, on the machine that spawns, names
+                                            the instance for its task (<descriptive>-<role>,
+                                            made unique); else it is numbered, and
+                                            naming.reason says why (claude and pi); on a
+                                            preview or an apply
       [--expect-decision <rev>]              bind apply to the previewed decision; drift refuses
       [--idempotency-key <key>]              with --expect-decision, replay the completed receipt
                                             for the same key and confirmed decision; a different
@@ -5193,6 +5243,14 @@ Usage:
   oats instance color <instance> (<color> | --clear) [--home <abs>] [--json]
                                              the instance's colour, presentation only: sand,
                                              sage, slate, mauve, clay or olive; --clear removes it
+  oats instance suggest-name --soul <soul> (--task <t> | --task-file <f>) [--harness claude|pi]
+      [--model <m>] [--launch-config <n>] [--dir <d>] [--json]
+                                             a name for a spawn of <soul> (only a name: it gives
+                                             the role) by this machine's harness, as a preview's
+                                             --suggest-name chooses it, not made unique (where it
+                                             lands decides that); else numbered, and naming.reason
+                                             says why. Reads only this machine's launch
+                                             configurations; writes and reserves nothing; no --server
   oats worktree add --purpose <p> --branch <b> --base <remote-branch>  from an instance home: make the
       [--repo <member key|clone path>]      extra tree <home>/.work-<p> on a new branch at origin's
       [--preview] [--json]                  <base> (the clone's refs are not moved), then run the
