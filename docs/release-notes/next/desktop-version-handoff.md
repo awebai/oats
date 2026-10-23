@@ -11,4 +11,4 @@
   started again, it says to quit Desktop and open it again. This takes effect
   once the running Desktop is this version or later: an older running Desktop
   still opens its own window, so quit it once, by hand
-  ([desktop.md](../../desktop.md#updating)).
+  ([desktop.md](../desktop.md#updating)).
