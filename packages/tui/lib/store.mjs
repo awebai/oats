@@ -59,11 +59,9 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  the last read that answered, and `failure`, the reason (`{ code, message }`) the last read failed
  *  with, or null once one answered. The switcher offers the rows this run does not serve.
  *  `identities`: what the identity reads learned of the rows of that list (lib/main.mjs), path ->
- *  `{ ok: true, workspace, waiting }` or `{ ok: false, reason }` (deployment-identity.mjs), the last
- *  answer for each, kept whole for the run: the switcher matches a listed deployment to its workspace
- *  by it, a deployment opened from there is in its workspace's view before its first read
- *  (lib/model.mjs heldOf), and its `waiting` is the list's dot until the slow schedule has answered
- *  for that row (`listedWaiting`: path -> true | false | null, its last snapshot).
+ *  `{ ok: true, workspace }` or `{ ok: false, reason }` (deployment-identity.mjs), the last answer for
+ *  each, kept for the run: the switcher matches a listed deployment to its workspace by it, and a
+ *  deployment opened from there is in its workspace's view before its first read (lib/model.mjs heldOf).
  *  `opening`: the agent of another machine whose terminal is being opened, or null:
  *  `{ id, phase: "preflight", name, machine, routed }` while that machine is asked whether its
  *  session is there; `name`, `machine` and `routed` are the row's as it was when Enter was
@@ -130,7 +128,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     entries: new Map(deployment === null ? [] : [[deployment, entry]]), numbers: new Map(),
     remote: Object.freeze({ remoteGroups: Object.freeze([]), rosterAnswered: false, rosterFailure: null }), rosterAt: null,
     memory: new Map(), notes: new Map(), collecting: false, cli, home,
-    selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(), unreadKeys: new Map(), listedWaiting: new Map(), workspaceCursor: null, colour,
+    selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(), unreadKeys: new Map(), workspaceCursor: null, colour,
     switcher: NO_SWITCHER,
     listed: NO_LIST, identities: new Map(),
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
@@ -1641,7 +1639,6 @@ function reduced(state, event, keymap) {
   }
   // What the slow schedule last read of whether anyone waits in this computer's listed deployments
   // this run does not serve (lib/main.mjs; the shared listed-waiting.mjs): path -> true, false or null.
-  if (event.listedWaiting !== undefined) return { state: next(state, { listedWaiting: event.listedWaiting }), effect: null };
   if (event.souls !== undefined) return soulsHeard(state, event.souls);
   if (event.capabilities !== undefined) return capabilitiesHeard(state, event.capabilities);
   if (event.capabilitiesTop !== undefined) return capabilitiesTop(state, event.capabilitiesTop);

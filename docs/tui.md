@@ -122,14 +122,11 @@ a rule between them over every row. There is no header and no footer. From
 while a terminal is open); under 80 columns it has the whole width.
 
 - **[The list of workspaces](#the-list-of-workspaces)** is the sidebar's
-  first rows, five at most: every workspace this run can show, the open one
-  marked `*`. Its row is the title: the workspace's name, then what the
-  view holds of other machines. Beside a deployment of this machine the
-  other machines are counted: `+1 machine`, `+2 machines`. A view that holds
-  no deployment of this machine names its one machine, `on garnet`, or
-  counts them when there are two or more, `2 machines`. While
-  [the switcher](#the-switcher) is shown the list gives way to the title
-  `workspaces`.
+  first rows, five at most: every workspace this run can show, one line
+  each with its name, the open one in reverse video. Its machines are the
+  workspace's own pages' to say: the headings of its list of instances and
+  the detail's `machine` line. While [the switcher](#the-switcher) is
+  shown the list gives way to the title `workspaces`.
 - **Under the list** stands what the view needs to say first, wrapped to
   the sidebar's width: a deployment's state when it is not live, with
   `since …` and its reason on rows of its own; the note of a view of one
@@ -266,11 +263,12 @@ deployments on one machine) is one list, grouped as the Desktop groups it:
 - **The detail has a `machine` line**, the machine the selected instance is
   on. When that deployment is not live, the whole sentence that says why
   follows it.
+- **In a view of one deployment of another machine**, which has no heading,
+  the detail has the `machine` line too: nothing else names the machine.
 
-**A view that holds no deployment of this machine** says so in its title:
-`other  on garnet` for one machine, `2 machines` after the name for
-two or more. The time on the help's top row is then the time the machines'
-rows were read. A view of one machine has no heading, so its state, when it
+**A view that holds no deployment of this machine** names its machines in
+its headings, or, with one machine, in the detail's `machine` line. The time
+on the help's top row is then the time the machines' rows were read. A view of one machine has no heading, so its state, when it
 is not live, is said under the list of workspaces with the reason, as for a deployment
 of this machine. When no row of that machine is kept either, nothing is drawn
 under the reason: no list and no detail.
@@ -837,66 +835,54 @@ selected.
 ## The list of workspaces
 
 ```
- * acme-platform  +1 machine          │   dev
-   acme-billing                     ● │   soul     dev
- On this machine, not opened          │   state    running
-   acme-docs                          │   harness  claude, claude-opus-5-5 (so…
-   +2                                 │   work     worktree, agents/dev
+  acme-platform                       │   dev
+  acme-billing ●                      │   soul     dev
+  lfx                                 │   state    running
+  garnet                              │   harness  claude, claude-opus-5-5 (so…
+  +2                                  │   work     worktree, agents/dev
                                       │   team     eng
  Instances                          1 │   started  11:00
 ```
 
-The sidebar's first rows list the workspaces this run can show, as
-[the switcher](#the-switcher) lists them and in its order: the workspaces,
-then `Not matched to a workspace` (the machines the rules shared with the
-Desktop matched to no workspace), then `On this machine, not opened` (the
-rows of this computer's list of deployments that this run has not opened).
-A heading stands only under a row; with one workspace the list is its row.
+The sidebar's first rows list the workspaces this run can show, one row a
+workspace, whatever machines it is on, in [the switcher](#the-switcher)'s
+order: `lfx` is one row however many machines hold it, and a machine the
+rules shared with the Desktop matched to no workspace is a row by its own
+name, in the same flat list. A row is one line: the name. With one
+workspace the list is its row.
 
-- **The open workspace** is marked `*` and its row is in reverse video, with
-  what the title says beside its name (`+1 machine`, `on garnet`). Its
-  state is said under the list, so its row has no state word.
-- **A row's state word** stands at its right, dim: `not opened` for a
-  workspace with a deployment of this machine that this run has not opened
-  (the switcher's `This machine · not opened`; the row opens), whatever its
-  other machines' state, else `not live` for a workspace none of whose
-  deployments is live. **A row that cannot be opened** is dim, with its
-  word: `missing`, `not a deployment`, `unreadable` for a row of this
-  computer's list. The word gives way when the name would keep fewer than
-  eight cells.
-- **The dot**, `●` in yellow at the row's right edge, says that an instance
+- **Not in the list:** this computer's deployments that this run has not
+  opened (a workspace only they make), and the rows that cannot be opened
+  (missing, not a deployment, unreadable, a machine with nothing to open).
+  The switcher keeps them: `w` twice.
+- **The open workspace's row** is in reverse video. Its state, when it is
+  not live, is said under the list.
+- **The dot**, `●` in yellow one cell after the name, says that an instance
   of that workspace needs input, the claim the list of instances shows, the
-  open workspace's included. On a row in reverse video the reverse ends
-  before it: the dot is on the normal background. With colour off (`NO_COLOR`) or in ASCII it is
-  `!`, and the help's Marks name it. A workspace whose instances are not
-  known (never read, stale, not reached) has no dot, never a false one. The
-  dot never moves a row.
-  - A workspace this run serves has it from its own reads; another
-    machine's rows count only from a read that is not stale.
-  - A row of this computer's list has it from the kernel's identity read
-    (`oats status --dir <path> --json --max-age 300`), run again on a slow
-    schedule shared with the Desktop (`packages/client/listed-waiting.mjs`):
-    one read at a time, each row at most once a minute. The TUI reads no
-    focus of its terminal, so the minute holds whether or not it is
-    focused. A kernel that does not report needs-input claims is not asked,
-    and its rows have no dot.
+  open workspace's included. On a row in reverse video its cell is a gap in
+  the bar: the dot is on the normal background. With colour off
+  (`NO_COLOR`) or in ASCII it is `!`, and the help's Marks name it. It
+  comes from what this run observes alone, its reads of the deployments it
+  serves and of other machines: a workspace whose instances are not known
+  (never read, stale, not reached) has no dot, never a false one. The dot
+  never moves a row.
+- **A long name** is cut with `…` (`...` in ASCII), the dot after what is
+  shown of it.
 - **Five rows at most.** With more, four stand around the open row (around
   the cursor's while the list has the focus), and `+N` says how many
-  workspaces are not shown. A heading the four would end on is left out.
-  Under 80 columns or beside a terminal (30 columns) the names are cut as
-  the list of instances cuts them.
+  workspaces are not shown. Under 80 columns or beside a terminal (30
+  columns) the names are cut as the list of instances cuts them.
 
 **The keys:**
 
 - **The leader then `Up` or `Down`** opens the workspace before or after the
-  open one, as the list draws them. Rows that cannot be opened are passed
-  over, and it does not wrap: at an end nothing moves, and the line under
-  the list says `No workspace above this one.` or `No workspace below this
-  one.` until the next key, of any kind (one typed to an agent too), or a
-  resize. A row of this computer's list is admitted and opened as the
-  switcher's `Enter` opens it, and when it is no deployment any more the
-  line says so: `acme-docs: not an OATS deployment any more.` What the
-  workspace left had open is kept for it, as for a switch from the
+  open one, as the list draws them. It does not wrap: at an end nothing
+  moves, and the line under the list says `No workspace above this one.` or
+  `No workspace below this one.` until the next key, of any kind (one typed
+  to an agent too), or a resize. A workspace with a deployment of this
+  machine not opened yet (lfx, with `~/Work/lfx` on this computer's list)
+  opens it first, as the switcher's `Enter` does. What the workspace left
+  had open is kept for it, as for a switch from the
   switcher ([Tabs](#tabs)), and from a terminal's focus the focus is kept
   too.
 - **`w`**, the leader then `o`, and `Ctrl+Alt+O` (`Ctrl+Shift+S` with the
@@ -918,7 +904,8 @@ A heading stands only under a row; with one workspace the list is its row.
 
 `w` from [the list of workspaces](#the-list-of-workspaces)' focus (`w` twice
 from the list of instances) opens the switcher: what this run can show, over
-the main area, with what the list does not hold: each deployment's line, the
+the main area, with what the list does not hold: each deployment's line,
+this computer's deployments not opened, the rows that cannot be opened, the
 filter, and Remove. With no workspace open, `w` opens it at once. The
 sidebar's title says `workspaces` and no view is open; under 80 columns the
 switcher covers the whole screen.
@@ -1442,7 +1429,7 @@ which edits the command line in your editor, is `Ctrl+X` twice, then
 |---|---|
 | `k` or `Space` | opens [the palette](#the-palette) |
 | `1`, `2`, `3` | the Instances, Souls and Capabilities views |
-| `Up`, `Down` | opens the workspace before or after the open one, in [the list of workspaces](#the-list-of-workspaces) as it is drawn. Rows that cannot be opened are passed over, and the list does not wrap. The terminal of the instance before or after is `Alt+Shift+Up`, `Alt+Shift+Down` ([Chords](#chords)) |
+| `Up`, `Down` | opens the workspace before or after the open one, in [the list of workspaces](#the-list-of-workspaces) as it is drawn. Every row opens, and the list does not wrap. The terminal of the instance before or after is `Alt+Shift+Up`, `Alt+Shift+Down` ([Chords](#chords)) |
 | `Left`, `Right` | shows the tab before or after the shown one; the tab bar does not wrap, and the focus stays where it was |
 | `z` | zooms the shown terminal in or out; with the list focused, gives it the focus and the whole screen |
 | `w` | closes the shown terminal's tab and shows the tab beside it; the agent keeps running |
@@ -2152,8 +2139,8 @@ version:
 - **A row of another machine shows what its host reported at the last
   read,** not what is true at this moment. The time of that read is on the
   machine's heading when it is not the time of this machine's read. A view
-  of one machine has no heading: there the open workspace's row names the machine
-  (`on garnet`) and the help's top row carries the time.
+  of one machine has no heading: there the detail's `machine` line names the
+  machine and the help's top row carries the time.
 - The Souls and Capabilities views list a workspace of this machine's
   souls and capabilities: both are this machine's.
 - There is no sorting and no mouse, and a deployment's heading cannot be

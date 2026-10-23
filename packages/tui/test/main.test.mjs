@@ -103,11 +103,7 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
   // the transaction's submits and checks, each with a way to answer; what the boundary was made with.
   // `identities`: what the run asked of its identity reads (lib/read.mjs createIdentityReads, faked): each
   // start's paths in order, how many times they were stopped, and what the run made them with.
-  // `waiting`: the slow schedule of the listed deployments' needs input (the shared createListedWaiting,
-  // faked): each set of paths it was given, whether it was stopped, and what the run made it with;
-  // `reads` what its `read` asked of the identity read (the shared cliDeploymentIdentity, faked), and
-  // `answer` what that read answers.
-  const r = { stdin, stdout, proc, timers, errors, log, listed, keysAsked: [], lists: [], identities: { starts: [], stops: 0, options: null }, waiting: { sets: [], stopped: false, options: null, reads: [], answer: { ok: true, workspace: null, waiting: true } }, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
+  const r = { stdin, stdout, proc, timers, errors, log, listed, keysAsked: [], lists: [], identities: { starts: [], stops: 0, options: null }, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
     spawn: { preview: null, previewExec: null, reads: [], applyRead: null, applyExec: null, applyCalls: [], request: null, submits: [], checks: [] } };
   r.listAnswer = listAnswer ?? ((asked) => (asked.action === "list" ? { ok: true, value: { ok: true, rows: r.listed } } : { ok: true, value: asked.action === "add" ? { path: asked.path, added: true } : { path: asked.path, removed: true } }));
   let up;
@@ -122,10 +118,6 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
     createReader(options) { r.reader = fakeReader(log, options); const start = r.reader.start; r.reader.start = () => { const answer = start(); queueMicrotask(up); return answer; }; return r.reader; },
     // The identity reads, faked: nothing is read; the test answers through `r.identities.options.onRead`.
     createIdentityReads(options) { r.identities.options = options; return { start(paths) { r.identities.starts.push([...paths]); }, stop() { r.identities.stops += 1; } }; },
-    // The slow schedule, faked: nothing is read on its own; the test calls `r.waiting.options.read(path)` as its timer would.
-    // The identity read the slow schedule's `read` runs, faked: what it was asked, and whether through the reader's exec.
-    async deploymentIdentity(cli, path, options, io) { r.waiting.reads.push({ cli, path, options, exec: io.exec === r.reader?.exec }); return r.waiting.answer; },
-    createListedWaiting(options) { r.waiting.options = options; return { setPaths(paths) { r.waiting.sets.push([...paths]); }, setFocused() {}, waiting: () => null, snapshot: () => new Map(), stop() { r.waiting.stopped = true; } }; },
     // This computer's deployments list (the shared cliDeploymentList), faked: each call is logged
     // with what it asked and the exec it was handed: `start` (the effect below, the exec of the one
     // read before the terminal is taken), `read` (the reader's own exec) or `change` (any other: the
@@ -443,10 +435,10 @@ test("a run says it is reading, draws the instances when the reader answers (the
   const r = await started();
   assert.deepEqual([r.reader.options.getServed(), r.reader.options.cli], [[DEPLOYMENT], CLI], "the reader reads the deployment that was found, with the kernel that was accepted");
   assert.equal(r.reader.options.getEntry(DEPLOYMENT).deployment.status, "pending", "and is told the entry the store holds");
-  assert.match(textOf(r.stdout.take()), /^ \* deploy +│.*Instances +1 │ +Reading the deployment\..*Souls +2 │ Capabilities +3 │.*Ctrl\+\\ +commands.*\? +help.*q +quit/s);
+  assert.match(textOf(r.stdout.take()), /^ {2}deploy +│.*Instances +1 │ +Reading the deployment\..*Souls +2 │ Capabilities +3 │.*Ctrl\+\\ +commands.*\? +help.*q +quit/s);
   r.reader.answer(ENTRY);
   const answered = textOf(r.stdout.take());
-  assert.match(answered, /^ \* acme-platform +│.*● acme-expert-tui.*○ acme-maintainer-ops/s);
+  assert.match(answered, /^ {2}acme-platform +│.*● acme-expert-tui.*○ acme-maintainer-ops/s);
   assert.doesNotMatch(answered, /\d+ (running|stopped)/, "no counts: the header that held them is gone");
   assert.equal(r.reader.options.getEntry(DEPLOYMENT), ENTRY);
   r.stdin.type("?");
@@ -558,7 +550,7 @@ test("a resize redraws in full; below 60x15 the screen is the too-small line, an
   r.stdout.resize(60, 15);
   let out = r.stdout.take();
   assert.equal(out.startsWith("\x1b[?2026h\x1b[0m\x1b[2J"), true, "a resize clears first, inside the frame's synchronized update");
-  assert.match(textOf(out), /^ \* acme-platform.*acme-maintainer-ops.*Ctrl\+\\ +commands +Ctrl\+K +palette +n +spawn +w +workspaces +\? +help +q +quit$/s, "at 15 rows the small cheat sheet gives up nothing");
+  assert.match(textOf(out), /^ {2}acme-platform.*acme-maintainer-ops.*Ctrl\+\\ +commands +Ctrl\+K +palette +n +spawn +w +workspaces +\? +help +q +quit$/s, "at 15 rows the small cheat sheet gives up nothing");
   r.stdout.resize(59, 14);
   out = r.stdout.take();
   assert.equal(textOf(out), "Terminal too small: 59x14, oats tui needs 60x15.");
@@ -820,8 +812,8 @@ test("an add the kernel refuses is said once, under the sidebar's list of worksp
   r.reader.answer(ENTRY);
   // A redraw that types nothing: screenOf's Ctrl+L is a key bound to an action, which puts the line away.
   const said = sidebarOf(r);
-  // Under the list of workspaces: the open one, then the listed deployment this run does not serve, under its heading.
-  assert.match(said, /^\* acme-platform On this machine, not opened acme-ledger This deployment was not added to this computer's list: This computer's list of deployments is busy; try again\. /, said);
+  // Under the list of workspaces, the open one's row (this computer's listed deployments are the switcher's).
+  assert.match(said, /^acme-platform This deployment was not added to this computer's list: This computer's list of deployments is busy; try again\. /, said);
   assert.match(said, /acme-expert-tui.*acme-maintainer-ops/s, "the deployment is read and drawn all the same");
   r.stdin.type("j");
   const after = screenOf(r);
@@ -957,15 +949,14 @@ test("Enter on a row of this computer's list asks whether it is a deployment now
   assert.deepEqual(readerDid(r), [["touch"], ["request", { live: true }]], "it is read at once");
   assert.notEqual(r.stdout.take(), "");
   const opened = screenOf(r);
-  // The list of workspaces names it the open one (the listed row it was admitted from stays listed
-  // under its own path until the list is read again).
-  assert.match(opened, /^ {3}acme-platform .*\* acme-ledger .*Instances +1 │ +Reading the deployment\..*Souls +2 │ Capabilities +3 │.*Ctrl\+\\ +commands +│ Ctrl\+K +palette +│ n +spawn +│ w +workspaces +│ \? +help +│ q +quit +│/s);
+  // The list of workspaces has it as a row of its own, the open one.
+  assert.match(opened, /^ {2}acme-platform .* {2}acme-ledger .*Instances +1 │ +Reading the deployment\..*Souls +2 │ Capabilities +3 │.*Ctrl\+\\ +commands +│ Ctrl\+K +palette +│ n +spawn +│ w +workspaces +│ \? +help +│ q +quit +│/s);
   assert.doesNotMatch(opened, /acme-expert-tui|~\/acme-ledger/, "the switcher is closed (no row of it names the folder), and the view is the new deployment's");
   // From then on: the reader's answer for it is taken and drawn.
   r.reader.answer(observedAt("/srv/acme-ledger", [instanceRow("acme-clerk", "acme-clerk-books")], { workspace: reportedWorkspace("git.example.com/acme-ledger/books", "aweb:acme-ledger"), name: "acme-ledger" }), "/srv/acme-ledger");
   assert.match(textOf(r.stdout.take()), /acme-clerk-books/);
   const read = screenOf(r);
-  assert.match(read, /^ {3}acme-platform .*\* acme-ledger .*acme-clerk-books/s);
+  assert.match(read, /^ {2}acme-platform .* {2}acme-ledger .*acme-clerk-books/s);
   assert.doesNotMatch(read, /1 running/, "no counts on the screen");
   // And the switcher no longer offers it: the list holds canonical paths, as the served ids are,
   // and a row that is a deployment this run serves is left out.
@@ -977,45 +968,6 @@ test("Enter on a row of this computer's list asks whether it is a deployment now
   assert.doesNotMatch(screenOf(r), /On this machine, not opened/);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
-});
-
-test("the dot of a deployment of this computer's list the run does not serve: the slow schedule is given the rows the kernel says are deployments and the run does not serve, reads each through the shared identity read on the reader's exec, and what it heard is drawn as the row's dot; served, a row leaves the set; ended with the run. A kernel without needs-input claims has no schedule", async () => {
-  const r = await started({ listed: [...LISTED, Object.freeze({ path: "/home/u/gone", name: "gone", state: "missing" })], admit: () => ({ ok: true, deployment: LEDGER }), columns: 120 });
-  await settle();
-  r.reader.answer(HOME_ENTRY);
-  assert.deepEqual(r.waiting.sets.at(-1), [LEDGER], "the row that is a deployment, not the missing one");
-  assert.doesNotMatch(sidebarOf(r), /acme-ledger ●/, "nothing read yet: no dot");
-  const asked = await r.waiting.options.read(LEDGER, { maxAge: 300 });
-  await settle();
-  assert.deepEqual([asked, r.waiting.reads.map(({ cli, path, options, exec }) => [cli === CLI, path, options, exec])], [{ ok: true, workspace: null, waiting: true }, [[true, LEDGER, { maxAge: 300 }, true]]]);
-  assert.match(sidebarOf(r), /On this machine, not opened acme-ledger ●/, "the dot on its row");
-  // A read that fails says nothing is known: no dot, whatever was heard before.
-  r.waiting.answer = { ok: false, reason: { code: "E_CLI_TIMEOUT", message: "late" } };
-  await r.waiting.options.read(LEDGER, { maxAge: 300 });
-  await settle();
-  assert.doesNotMatch(sidebarOf(r), /acme-ledger ●/, "unknown: no dot");
-  r.waiting.answer = { ok: true, workspace: null, waiting: true };
-  await r.waiting.options.read(LEDGER, { maxAge: 300 });
-  await settle();
-  assert.match(sidebarOf(r), /acme-ledger ●/);
-  // Opened from the list: served now, so it leaves the schedule's set.
-  r.stdin.type("w"); r.stdin.type("j"); r.stdin.type("j"); r.stdin.type("\r");
-  await settle();
-  assert.deepEqual(r.reader.options.getServed(), [DEPLOYMENT, LEDGER]);
-  assert.deepEqual(r.waiting.sets.at(-1), [], "a served deployment's dot is its own observation's");
-  // Read with no instance, it has no dot: what the schedule read before it was served is no word on it.
-  r.reader.answer(observedAt(LEDGER, [], { workspace: reportedWorkspace("git.example.com/acme-ledger/agents"), name: "acme-ledger" }), LEDGER);
-  await settle();
-  assert.match(sidebarOf(r), /\* acme-ledger/);
-  assert.doesNotMatch(sidebarOf(r), /acme-ledger ●/, "no dot left from the schedule");
-  r.stdin.type("q");
-  assert.equal(await r.status, 0);
-  assert.equal(r.waiting.stopped, true, "the schedule ends with the run");
-  const old = await started({ kernel: { ok: true, cli: Object.freeze({ ...CLI, features: Object.freeze(CLI.features.filter((feature) => feature !== "waiting-on-you")) }) }, listed: LISTED });
-  await settle();
-  assert.equal(old.waiting.options, null, "no schedule: the dot is unknown, so none is drawn");
-  old.stdin.type("q");
-  assert.equal(await old.status, 0);
 });
 
 test("Enter on a row of this computer's list that is no deployment any more: its row says so, and nothing else changed", async () => {
@@ -1041,7 +993,7 @@ test("Enter on a row of this computer's list that is no deployment any more: its
   r.stdin.type("\x1b");
   r.tick(50);
   r.timers.fire();
-  assert.match(screenOf(r), /^ \* acme-platform.*acme-expert-tui.*acme-maintainer-ops/s);
+  assert.match(screenOf(r), /^ {2}acme-platform.*acme-expert-tui.*acme-maintainer-ops/s);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1227,7 +1179,7 @@ test("Enter on a workspace opens its view and asks for a live read", async () =>
   assert.deepEqual(effectsOf(r), [], "a workspace is not a folder: nothing is asked of the file system");
   assert.notEqual(r.stdout.take(), "");
   const opened = screenOf(r);
-  assert.match(opened, /^ {3}acme-platform .*\* charts +on onyx .*Instances +1 │.*dev-east.*Enter +open +│ n +spawn +│ w +workspaces +│ \? +help +│ q +quit +│/s, "the machine's view, the open one of the list's two rows");
+  assert.match(opened, /^ {2}acme-platform .* {2}charts .*Instances +1 │.*dev-east.*Enter +open +│ n +spawn +│ w +workspaces +│ \? +help +│ q +quit +│/s, "the machine's view, the open one of the list's two rows");
   assert.doesNotMatch(opened, /acme-expert-tui/);
   // The time of the roster read it is drawn from: the help's top row, beside the sidebar (this
   // machine's own was read at 10:00:00).
@@ -1255,7 +1207,7 @@ test("the roster of other machines: a read that began changes nothing on the scr
   r.reader.roster({ envelope: rosterAnswer([garnet()]) });
   assert.notEqual(r.stdout.take(), "", "the answer is drawn when it arrives");
   const two = screenOf(r);
-  assert.match(two, /^ \* acme-platform\s+\+1 machine\s+│.*This machine.*acme-expert-tui.*acme-maintainer-ops.*garnet\s+read 10:00:45.*● dev-far.*○ dev-held  not reachable on g…/s, "the name before its word: the word is cut to what the name leaves");
+  assert.match(two, /^ {2}acme-platform\s+│.*This machine.*acme-expert-tui.*acme-maintainer-ops.*garnet\s+read 10:00:45.*● dev-far.*○ dev-held  not reachable on g…/s, "the name before its word: the word is cut to what the name leaves");
   assert.doesNotMatch(two, /\d+ (running|stopped)/, "no counts on the screen");
   // What the loop holds is what the shared rule made of the answer, and the reader is told it.
   const now = r.reader.options.getRoster(), made = rosterEvent(held, { envelope: rosterAnswer([garnet()]) }, "2026-10-11T10:00:45.000Z").roster;
@@ -1267,7 +1219,7 @@ test("the roster of other machines: a read that began changes nothing on the scr
   r.reader.collecting();
   r.reader.roster({ thrown: "spawn EMFILE" });
   const lost = screenOf(r);
-  assert.match(lost, /\+1 machine.*This machine.*garnet\s+remembered\s+Not reached.*\? dev-far\s+garnet not reached.*\? dev-held\s+garnet not reached/s);
+  assert.match(lost, /This machine.*garnet\s+remembered\s+Not reached.*\? dev-far\s+garnet not reached.*\? dev-held\s+garnet not reached/s);
   assert.doesNotMatch(lost, /\d+ (running|stopped|unknown)/, "no counts on the screen");
   assert.doesNotMatch(lost, /garnet\s+read /, "a heading that is not live carries no time");
   r.stdin.type("q");
@@ -1289,7 +1241,7 @@ test("Ctrl+Z with a roster read in flight: every read is made void before the pr
   r.stdout.take();
   r.reader.collecting();
   r.reader.roster({ envelope: rosterAnswer([garnet()]) });
-  assert.match(screenOf(r), /\+1 machine.*garnet\s+read 10:00:30.*dev-far/s);
+  assert.match(screenOf(r), /garnet\s+read 10:00:30.*dev-far/s);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -2311,35 +2263,6 @@ test("Esc during a preflight gives it up through its signal, and what it answers
   await settle();
   const screen = screenOf(r);
   assert.doesNotMatch(screen, /Esc +stop opening|could not|timed out/, "nothing is said");
-  r.stdin.type("q");
-  assert.equal(await r.status, 0);
-});
-
-test("an answer of the slow schedule asked before its row left the list and came back is dropped, as the scheduler drops it: only a read asked since gives the dot", async () => {
-  const r = await started({ listed: LISTED, columns: 120 });
-  await settle();
-  r.reader.answer(HOME_ENTRY);
-  assert.deepEqual(r.waiting.sets.at(-1), [LEDGER]);
-  let late;
-  r.waiting.answer = new Promise((resolve) => { late = resolve; });
-  const asked = r.waiting.options.read(LEDGER, { maxAge: 300 });
-  // The list read again without the row, then with it: in the set again, a new stay.
-  r.stdin.type("w"); r.stdin.type("w"); await settle();
-  r.listed = []; r.stdin.type("r"); await settle();
-  assert.deepEqual(r.waiting.sets.at(-1), []);
-  r.listed = [...LISTED]; r.stdin.type("r"); await settle();
-  assert.deepEqual(r.waiting.sets.at(-1), [LEDGER]);
-  r.stdin.type("\x1b");
-  r.tick(50);
-  r.timers.fire();
-  late({ ok: true, workspace: null, waiting: true });
-  await asked;
-  await settle();
-  assert.doesNotMatch(sidebarOf(r), /acme-ledger ●/, "asked in the stay before: no dot");
-  r.waiting.answer = { ok: true, workspace: null, waiting: true };
-  await r.waiting.options.read(LEDGER, { maxAge: 300 });
-  await settle();
-  assert.match(sidebarOf(r), /On this machine, not opened acme-ledger ●/, "asked in this stay: the dot");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });

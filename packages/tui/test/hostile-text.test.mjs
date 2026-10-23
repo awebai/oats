@@ -419,31 +419,31 @@ for (const [field, { make, seen, lead = null, inSwitcher = false }] of Object.en
   });
 }
 
-test("a hostile machine name in the open workspace's row of the sidebar's list of workspaces, `on <machine>`, leaves no control byte of its own on the screen: an escape sequence, a bidi override and wide characters, each cut inside that row, where no count stands any more", () => {
+test("a hostile machine name where the detail alone names it (a view whose only deployment is that machine's) leaves no control byte of its own on the screen: an escape sequence, a bidi override and wide characters, each cut inside the detail; the open workspace's row of the list is its name alone", () => {
   const names = { "an escape sequence": `gar${ESC}[2J${ESC}]0;owned${BEL}net`, "a bidi override": "gar\u202Enet", "wide characters": "名前".repeat(80) };
   for (const [name, value] of Object.entries(names)) for (const look of [UTF8, NOT_UTF8]) for (const size of [S80, S120, S60]) {
     const state = second(heard(reporting({ ascii: look.ascii }), answered(group({ label: value, workspace: ELSEWHERE })), T1)), at = `${name}, ${size.cols}x${size.rows}${look.utf8 ? "" : ", not UTF-8"}`;
     const drawn = draw(state, size, { utf8: look.utf8 }), m = model(state, { page: drawn.page, now: NOW, at: new Date(NOW).toISOString(), cols: drawn.cols });
-    assert.deepEqual([m.here, m.machines, m.machine], [false, 1, value], `${at}: the model hands the frame the machine's name as the shared entry has it`);
-    // The open workspace's row of the list at the top of the sidebar (the second, marked `*`, under
-    // this machine's acme-platform): its cells up to the rule beside it (`drawn.cols` wide).
+    assert.deepEqual([m.here, m.machines, m.machine], [false, 1, value], `${at}: the model has the machine's name as the shared entry has it`);
     const text = census(drawn.rows, size, look, at, drawn.cells);
-    const row = drawn.cells.findIndex((cells) => cells.slice(0, 3).map((cell) => cell.text).join("") === " * ");
-    assert.equal(row, 1, `${at}: the open workspace is the list's second row`);
-    const title = drawn.cells[row].slice(0, drawn.cols).map((cell) => cell.text).join("").trimEnd();
     within(drawn, size, at);
-    assert.equal(title.startsWith(" * billing  on "), true, `${at}: the workspace's name and the TUI's own word stand whole: ${title}`);
-    assert.equal(drawn.cells[row][drawn.cols - 1].text === " " && (size.cols < WIDE || drawn.cells[row][drawn.cols].text === (look.ascii ? "|" : "│")), true, `${at}: the name is cut inside the sidebar's margin, and from 80 columns the rule beside it stands: ${drawn.lines[row]}`);
-    assert.equal(title.includes("running"), false, `${at}: no count stands on the row: ${title}`);
-    const shownName = title.slice(" * billing  on ".length).trim();
+    // The open workspace's row of the list at the top of the sidebar: the second, under this
+    // machine's acme-platform, in reverse video, its name alone.
+    const row = drawn.cells.findIndex((cells, r) => r < 6 && cells[0].text !== ">" && cells[2].text !== " " && cells[2].style.reverse === true);
+    assert.equal(row, 1, `${at}: the open workspace is the list's second row`);
+    assert.equal(drawn.cells[row].slice(0, drawn.cols).map((cell) => cell.text).join("").trimEnd(), "  billing", `${at}: no machine stands on the row`);
+    assert.equal(text.includes("owned"), false, at);
+    if (size.cols < WIDE) continue;
+    // The detail beside the list names the machine, on its `machine` line, inside the main area.
+    const line = drawn.lines.map((each) => [...each].slice(drawn.cols + 1).join("").trim()).find((each) => each.startsWith("machine "));
+    assert.notEqual(line, undefined, `${at}: the detail has a machine line`);
+    const shownName = line.slice("machine".length).trim();
     if (name === "an escape sequence") assert.equal(shownName, "[withheld]", `${at}: a name with a control character is withheld whole`);
     if (name === "a bidi override") assert.equal(shownName, look.utf8 ? "gar\uFFFDnet" : "gar?net", `${at}: a bidi override is replaced, never written`);
     if (name === "wide characters") {
       assert.equal(shownName.endsWith(look.ascii ? "..." : "…"), true, `${at}: a name longer than its cells is cut with the mark: ${shownName}`);
-      if (look.utf8) assert.equal(drawn.cells[row].filter((cell) => cell.width === 2).length >= 4, true, `${at}: in two-cell graphemes, none split`);
-      else assert.match(shownName, /^\?+\.\.\.$/, `${at}: each replaced by the screen`);
+      if (!look.utf8) assert.match(shownName, /^\?+\.\.\.$/, `${at}: each replaced by the screen`);
     }
-    assert.equal(text.includes("owned"), false, at);
   }
 });
 
@@ -480,7 +480,7 @@ test("200 machines are drawn in bounded work: the shared home reads each machine
     const last = drawn.lines.findIndex((line) => line.startsWith(" Souls")) - 2;
     assert.equal(drawn.lines[last + 1].startsWith("─".repeat(drawn.cols)), true, `${at}: the rule after the list`);
     assert.equal(drawn.lines[last].slice(0, drawn.cols).trim(), cutNote(0, items - (drawn.page - 1)), `${at}: the list's last row in the sidebar says so`);
-    assert.equal(draw(walked, S80).lines[0].includes(`+${count} machines`), true, `${at}: the open workspace's row of the list counts them`);
+    assert.equal(draw(walked, S80).lines[0].slice(0, drawn.cols).trimEnd(), "  acme-platform", `${at}: the open workspace's row of the list is its name alone`);
     census(drawn.rows, S80, UTF8, at, drawn.cells);
     within(drawn, S80, at);
     // The switcher asks the shared home at each paint, and that too is a fixed number of reads a machine.

@@ -12,7 +12,7 @@ import {
   identityMemory, remoteRosterState, observeIdentities, viewModel, listedViews, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, isMultiDeployment,
   cliRemoteRoster, originLead, displayLine, DETAIL_WITHHELD, instanceSiblings, siblingText,
 } from "../lib/client.mjs";
-import { LIST_WORDS, NOT_LIVE, NOT_OPENED, OFFERED_SECTION, ROSTER_FAILED, SENTENCE_INDENT, WORD_MAX, clockTime, disclosure, heldOf as modelHeld, model, panelOf, roster, switcher, switcherLead, workspaceList, listChoice } from "../lib/model.mjs";
+import { LIST_WORDS, OFFERED_SECTION, ROSTER_FAILED, SENTENCE_INDENT, WORD_MAX, clockTime, disclosure, heldOf as modelHeld, model, panelOf, roster, switcher, switcherLead, workspaceList, listChoice } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { shown, shownLines, textOf } from "../lib/term/text.mjs";
 import { windowOf } from "../lib/views/scroll.mjs";
@@ -405,11 +405,11 @@ test("the facts of a live deployment for the sidebar's title and the help's top 
   assert.equal(view(stateOf(observed(TREE), { ascii: true })).ascii, true);
   // The time stands on the help's top row, at the start of the main area (no header holds it),
   // and nowhere on the view's own frame; the title is the list of workspaces' one row: the open
-  // workspace's, `*` and its name.
+  // workspace's name.
   const help = draw(press(state, ["?"]).state);
   assert.equal(help.lines[0].slice(help.cols + 1).trim(), "read 14:03:27");
   assert.equal(draw(state).lines.some((line) => line.includes("14:03:27")), false, "the view's frame shows no time of the read");
-  assert.equal(draw(state).lines[0].slice(0, help.cols).trim(), "* acme-platform");
+  assert.equal(draw(state).lines[0].slice(0, help.cols).trim(), "acme-platform");
 });
 
 // --- Marks and words --------------------------------------------------------------------
@@ -1438,7 +1438,7 @@ test("a kept row of a machine that was not reached reads `<machine> not reached`
 
 // --- The detail in a view of more than one deployment -----------------------------------
 
-test("the detail names the machine only in a view of two or more deployments, and under it says in the shared sentence why that deployment is not live", () => {
+test("the detail names the machine in a view of two or more deployments, and under it says in the shared sentence why that deployment is not live; in a view of one deployment only when it is another machine's", () => {
   const { near, answered, timedOut, moved } = walk();
   assert.equal(isMultiDeployment(sharedPanel(answered).deployments), true);
   assert.deepEqual(labels(detailOf(answered, "lead")).slice(0, 3), ["soul", "machine", "state"]);
@@ -1454,13 +1454,15 @@ test("the detail names the machine only in a view of two or more deployments, an
     assert.deepEqual(labels(detailOf(timedOut, name)).slice(0, 4), ["soul", "machine", "", "state"], name);
   }
   assert.equal(after(detailOf(timedOut, "lead"), "machine").label, "state");
-  // A view of one deployment: no such line, on this machine or on another.
+  // A view of one deployment: no such line on this machine; on another, the line, which nothing
+  // else names it by (no heading, and the list of workspaces' row is the workspace's name alone).
   assert.equal(fact(detailOf(near, "lead"), "machine"), null);
   assert.equal(fact(detailOf(moved, "lead"), "machine"), null);
   const there = second(moved);
   assert.equal(isMultiDeployment(sharedPanel(there).deployments), false);
-  assert.equal(fact(detailOf(there, "garnet-a"), "machine"), null);
-  assert.deepEqual(labels(detailOf(there, "garnet-a")).slice(0, 2), ["soul", "state"]);
+  assert.deepEqual(fact(detailOf(there, "garnet-a"), "machine"), { label: "machine", value: "garnet", form: "line" });
+  assert.equal(after(detailOf(there, "garnet-a"), "machine").label, "state", "no sentence under it: the state under the list says it");
+  assert.deepEqual(labels(detailOf(there, "garnet-a")).slice(0, 3), ["soul", "machine", "state"]);
 });
 
 test("a remote row that cannot be addressed: when its server was not reached its reason stands once, under its state after the words that say the read of other machines gave it, with no held line; on a reached machine the held line carries the shared sentence", () => {
@@ -1920,41 +1922,31 @@ test("Pepe's shape, drawn: the workspace rows with their dim lines under them, i
   assert.deepEqual(main.slice(0, 5), ["> * acme-platform", "      This machine", "      athenea", "    lfx", "      This machine · not opened"]);
 });
 
-test("Pepe's shape in the list of workspaces: lfx says not opened, as the switcher's line for its deployment of this machine does, whether athenea answered the last read or not; a workspace of other machines only that none answered says not live", () => {
+test("Pepe's shape in the list of workspaces: one row per workspace, by its name, whatever its machines; ~/Work/lfx not opened is no row of its own, and once its identity is read lfx is one row, \"lfx\", whether athenea answered the last read or not", () => {
+  const labels = (state) => workspaceList(state, AT).lines.map((line) => line.label);
+  assert.deepEqual(labels(pepe()), ["acme-platform", "lfx-oats-workspace"], "athenea's lfx; this machine's ~/Work/lfx stays in the switcher");
   const state = identityOf(pepe(), LFX_PATH, learnedOf(LFX));
-  const word = (s, label) => workspaceList(s, AT).lines.find((line) => line.label === label);
-  assert.deepEqual([word(state, "lfx").word, word(state, "lfx").openable], [NOT_OPENED, true]);
-  // The next read did not reach athenea: lfx still opens, and still says so.
-  const lost = heard(state, { thrown: "the pipe closed" }, tick(1));
-  assert.equal(lost.remote.remoteGroups.every((group) => group.probe.ok === false), true);
-  assert.deepEqual([word(lost, "lfx").word, word(lost, "lfx").openable], [NOT_OPENED, true]);
-  assert.deepEqual([word(heard(lost, answer(machine("athenea"), machine("athenea", { id: "athenea:lfx-1", label: "athenea (lfx)", workspace: LFX, target: { workspace: "/home/dev/Work/lfx", sshHost: "athenea.example" } })), tick(2)), "lfx").word], [NOT_OPENED]);
-  // Before the identity read lfx is athenea's alone (lfx-oats-workspace): not live once athenea is not reached.
-  assert.equal(word(heard(pepe(), { thrown: "the pipe closed" }, tick(1)), "lfx-oats-workspace").word, NOT_LIVE);
-  assert.equal(word(pepe(), "lfx-oats-workspace").word, null, "live: no word");
+  assert.deepEqual(labels(state), ["acme-platform", "lfx"]);
+  assert.deepEqual(workspaceList(state, AT).lines.map((line) => Object.keys(line).sort()), [["current", "key", "label", "waiting"], ["current", "key", "label", "waiting"]], "a row is its name: no state, no place");
+  assert.deepEqual(labels(heard(state, { thrown: "the pipe closed" }, tick(1))), ["acme-platform", "lfx"], "athenea not reached: the same rows");
+  // A workspace only ~/Work/lfx is of is not a row: it is this computer's deployment not opened.
+  const own = identityOf(pepe(), LFX_PATH, learnedOf({ ...LFX, key: "github.com/josep-reyero/elsewhere" }));
+  assert.deepEqual(labels(own), ["acme-platform", "lfx-oats-workspace"]);
+  assert.equal(switcher(own, AT).keys.length, 3, "the switcher offers it");
 });
 
-test("the list of workspaces' cursor on a listed row follows its deployment into its workspace's row when an identity read places it there, and back to a row of its own when a later answer takes it away: Enter opens what was under the cursor", () => {
-  const listedKey = `path\u0000${LFX_PATH}`;
-  const focused = press(pepe(), ["w", "down", "down"]).state;
-  assert.equal(focused.workspaceCursor, listedKey);
+test("the list of workspaces' cursor follows its row's deployments when an identity read changes the rows: on athenea's lfx, it stays on lfx's row once ~/Work/lfx joins it, and Enter opens what was under the cursor", () => {
+  const focused = press(pepe(), ["w", "down"]).state;
+  const athenea = focused.workspaceCursor;
+  assert.equal(listChoice(focused, athenea).label, "lfx-oats-workspace");
+  assert.deepEqual(press(focused, ["enter"]).effects.at(-1) !== undefined, true);
   const placed = identityOf(focused, LFX_PATH, learnedOf(LFX));
   const lfx = workspaceList(placed, AT).rows.find((row) => listChoice(placed, row.key)?.label === "lfx");
-  assert.equal(placed.workspaceCursor, lfx.key, "on lfx's row, which holds ~/Work/lfx now");
-  assert.match(draw(placed, { cols: 100, rows: 24 }).lines.find((line) => line.startsWith(">")), /^> {2}lfx\b/);
+  assert.equal(placed.workspaceCursor, lfx.key, "on lfx's row, which holds athenea's lfx and ~/Work/lfx now");
+  assert.match(draw(placed, { cols: 100, rows: 24 }).lines.find((line) => line.startsWith(">")), /^> lfx\b/);
   assert.deepEqual(press(placed, ["enter"]).effects.at(-1), { join: { paths: [LFX_PATH], opens: [LFX_PATH, ATHENEA_LFX] } });
-  // A later answer that takes it away: lfx's row is athenea's alone again, still listed, so the cursor stays on it.
   const away = identityOf(placed, LFX_PATH, { ok: true, workspace: null });
-  assert.equal(away.workspaceCursor, lfx.key);
-  // A workspace only ~/Work/lfx is of: its row goes when the answer is taken away, and the cursor is on ~/Work/lfx's own.
-  const own = identityOf(focused, LFX_PATH, learnedOf({ ...LFX, key: "github.com/josep-reyero/elsewhere" }));
-  const ownRow = workspaceList(own, AT).rows.find((row) => row.key.startsWith("view\u0000") && listChoice(own, row.key)?.opens?.includes(LFX_PATH));
-  assert.equal(own.workspaceCursor, ownRow.key, "the listed row became a workspace's: the cursor is on it");
-  assert.deepEqual(press(own, ["enter"]).effects.at(-1), { join: { paths: [LFX_PATH], opens: [LFX_PATH] } });
-  const back = identityOf(own, LFX_PATH, { ok: true, workspace: null });
-  assert.equal(workspaceList(back, AT).rows.some((row) => row.key === ownRow.key), false, "that workspace's row is gone");
-  assert.equal(back.workspaceCursor, listedKey, "back on ~/Work/lfx's own row");
-  assert.deepEqual(press(back, ["enter"]).effects.at(-1), { admit: LFX_PATH });
+  assert.equal(listChoice(away, away.workspaceCursor).label, "lfx-oats-workspace", "taken away again: back on athenea's");
 });
 
 test("a listed deployment whose identity read failed or timed out stays a row of its own, saying why; one whose identity attaches to no workspace says the shared reason; a stale row of the list is never matched", () => {

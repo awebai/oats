@@ -1,58 +1,44 @@
 // The list of workspaces at the top of the sidebar (docs/tui.md, "The list of workspaces"): (the
 // model's `workspaces`, a width) -> rows of spans. Pure: no IO, no clock, no escape byte.
-// A workspace's name is the shared home's and goes through shown(); the marks, the state words and
-// `+N` are the TUI's. Nothing is told by colour alone: the open workspace carries `*` as well as
-// reverse video, the row under the cursor (the list has the focus) `>`, and a workspace where an
-// instance needs input a dot, `●` in yellow, `!` without colour or in ASCII.
+// A row is one line, a workspace's name, which is the shared home's and goes through shown(); `>`,
+// the dot and `+N` are the TUI's. The open workspace's row is in reverse video, the row under the
+// cursor (the list has the focus) carries `>` as well, and a workspace where an instance needs input
+// a dot after its name, `●` in yellow, `!` without colour or in ASCII.
 import { lit, shown } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { measured } from "./instances.mjs";
-import { OPEN_MARK } from "./switcher.mjs";
 
 /** The dot of a workspace where an instance needs input: in yellow, or, with no colour to say it
  *  (NO_COLOR) or in ASCII, the needs-input mark of the rows. */
 export const WAITING_DOT = Object.freeze({ utf8: "●", ascii: "!" });
-const CURSOR = 0, OPEN = 1, NAME = 3, MARGIN = 1, GAP = 2, NAME_LEAST = 8;
-const PLAIN = style(), DIM = style({ dim: true }), BOLD = style({ bold: true }), BAR = style({ bold: true, reverse: true });
+const CURSOR = 0, NAME = 2, MARGIN = 1;
+const PLAIN = style(), BOLD = style({ bold: true }), BAR = style({ bold: true, reverse: true });
 const YELLOW = style({ fg: "yellow", bold: true });
 
-/** One row of the list, `cols` wide: `>` under the cursor, `*` for the open workspace, its name
- *  (the open one's with what the title said beside it: `nameSpans(col, room)`), then at the edge
- *  its state word, dim, when there is room for it, and its dot. A row that does not open is dim.
- *  The open workspace's row is in reverse video while the list does not have the focus, the
- *  cursor's while it has; the reverse ends before the dot, which stands on the normal background
- *  (a yellow cell with a dark dot in it would read as something else). */
-function row(line, cols, { focused, cursor, ascii, colour, nameSpans }) {
+/** One row of the list, `cols` wide: `>` under the cursor, the name, cut with an ellipsis where it
+ *  does not fit, and one cell after it the dot. The open workspace's row is in reverse video across
+ *  the row while the list does not have the focus, the cursor's while it has; the dot's cell is a
+ *  gap in it, on the normal background (a yellow cell with a dark dot in it would read as
+ *  something else). */
+function row(line, cols, { focused, cursor, ascii, colour }) {
   const under = focused && line.key === cursor, barred = under || (!focused && line.current);
-  const look = (own) => (barred ? BAR : own);
-  const dot = line.waiting ? cols - MARGIN - 1 : null;
-  const spans = barred ? [{ col: 0, width: dot ?? cols, style: BAR }] : [];
+  const spans = barred ? [{ col: 0, width: cols, style: BAR }] : [];
   if (under) spans.push({ col: CURSOR, text: lit(">"), style: BAR, width: 1 });
-  if (line.current) spans.push({ col: OPEN, text: lit(OPEN_MARK), style: look(BOLD), width: 1 });
-  let edge = cols - MARGIN;
-  if (dot !== null) {
+  // The name keeps the row less the margin, and less the dot and the cell before it when there is one.
+  const room = Math.max(0, cols - MARGIN - NAME - (line.waiting ? 2 : 0));
+  const width = Math.min(room, measured(line.label).width);
+  if (width > 0) spans.push({ col: NAME, text: shown(line.label), style: barred ? BAR : PLAIN, width });
+  if (line.waiting) {
     const yellow = colour && !ascii;
-    spans.push({ col: dot, text: lit(yellow ? WAITING_DOT.utf8 : WAITING_DOT.ascii), style: yellow ? YELLOW : BOLD, width: 1 });
-    edge = dot - 1;
+    spans.push({ col: NAME + width + 1, text: lit(yellow ? WAITING_DOT.utf8 : WAITING_DOT.ascii), style: yellow ? YELLOW : BOLD, width: 1 });
   }
-  // The word gives way to the name: it stands while the name keeps NAME_LEAST cells.
-  if (line.word && edge - line.word.length - GAP - NAME >= NAME_LEAST) {
-    edge -= line.word.length;
-    spans.push({ col: edge, text: lit(line.word), style: look(DIM), width: line.word.length });
-    edge -= GAP;
-  }
-  const room = Math.max(0, edge - NAME);
-  if (line.current && nameSpans) for (const span of nameSpans(NAME, room)) spans.push({ ...span, style: look(span.style ?? BOLD) });
-  else if (room) spans.push({ col: NAME, text: shown(line.label), style: look(line.openable ? PLAIN : DIM), width: Math.min(room, measured(line.label).width) });
-  return spans.filter((span) => span.width > 0);
+  return spans;
 }
 
 /** The list's rows: `w` the model's `workspaces` (`lines` windowed, `more`, `focused`, `cursor`), in
- *  `cols`; a heading dim, from the margin; `+N` last when N lines are not shown. */
-export function workspaceRows(w, cols, { ascii = false, colour = true, nameSpans = null } = {}) {
-  const rows = w.lines.map((line) => (line.heading !== undefined
-    ? [{ col: MARGIN, text: shown(line.heading), style: DIM, width: Math.max(0, cols - 2 * MARGIN) }]
-    : row(line, cols, { focused: w.focused, cursor: w.cursor, ascii, colour, nameSpans })));
-  if (w.more > 0) rows.push([{ col: NAME, text: lit(`+${w.more}`), style: DIM, width: String(w.more).length + 1 }]);
+ *  `cols`; `+N` last when N workspaces are not shown. */
+export function workspaceRows(w, cols, { ascii = false, colour = true } = {}) {
+  const rows = w.lines.map((line) => row(line, cols, { focused: w.focused, cursor: w.cursor, ascii, colour }));
+  if (w.more > 0) rows.push([{ col: NAME, text: lit(`+${w.more}`), style: style({ dim: true }), width: String(w.more).length + 1 }]);
   return rows;
 }

@@ -12,7 +12,7 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
-import { TERMS, capabilityCatalogKey, cliDeploymentIdentity, cliDeploymentList, createListedWaiting, waitingReadable, deploymentsListSupported, createCapabilityCatalog, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
+import { TERMS, capabilityCatalogKey, cliDeploymentList, deploymentsListSupported, createCapabilityCatalog, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
 import { loadConfig, loadKeys } from "./config.mjs";
 import { ACT_WORDS, LIST_WORDS, actContext, actCwd, listRowsOf, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
@@ -95,7 +95,7 @@ function errorLines(error) {
  *  list, through the kernel: awebai/oats#1390), and `startExec` the exec it is handed before the
  *  terminal is taken; replaceable so a test can answer the list. `loadKeys` reads keys.json, the
  *  chord family (lib/config.mjs), replaceable so no test reads a user's file. */
-const EFFECTS = Object.freeze({ loadConfig, loadKeys, findDeployment, probeKernel, createReader, createIdentityReads, createListedWaiting, deploymentIdentity: cliDeploymentIdentity, deploymentList: cliDeploymentList, startExec, admitDeployment, prepareRemoteTerm, createPanel, sweep,
+const EFFECTS = Object.freeze({ loadConfig, loadKeys, findDeployment, probeKernel, createReader, createIdentityReads, deploymentList: cliDeploymentList, startExec, admitDeployment, prepareRemoteTerm, createPanel, sweep,
   runDir: CHANGE_FILES.dir, removeDir: CHANGE_FILES.remove, realpath, tellable, startInstance, createLifecycleConfirmation, createLifecycleBoundary, createSoulCatalog,
   createCapabilityCatalog, createSpawnPreview, createSpawnApplyBoundary, createSpawnTransaction });
 
@@ -429,7 +429,6 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
    *  each finds is an event of its own. */
   function took(step) {
     state = step.state;
-    followWaiting();
     const effect = step.effect;
     if (effect === "quit") { guard.finish(0); return true; }
     if (effect === "suspend") guard.suspend();
@@ -511,56 +510,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   const identities = effects.createIdentityReads({ cli: probe.cli, exec: reader.exec, env, onRead: (identity) => heard({ identity }) });
   function identify() {
     if (ended) return;
-    identities.start(unservedListed());
-  }
-  /** The rows of this computer's list that this run does not serve and that the kernel says are deployments. */
-  const unservedListed = () => state.listed.rows.filter((row) => row.state === "ok" && !state.ctxs.includes(row.path)).map((row) => row.path);
-  // THE DOT OF A LISTED DEPLOYMENT (docs/tui.md, "The list of workspaces"; the shared listed-waiting.mjs):
-  // whether an instance of a deployment of that list that this run does not serve needs input, read
-  // again on the shared slow schedule (one read in flight, each path at most once a minute; the TUI
-  // reads no focus of its terminal, so it is always the focused interval), with a kernel that reports
-  // needs-input claims. The set follows the list and what is served (took). Ended with the run.
-  // The store is told every read's answer, a failed one's unknown too, and the set each time it
-  // changes: `read` (path -> true | false | null) holds the paths of the set the schedule has read,
-  // so a path it has not read yet keeps what its identity read said, and one it read keeps that,
-  // failed or not, which the scheduler's own onChange (a change of value only) would not say.
-  // Each stay of a path in the set has its own token (`waitingSet`: path -> token): an answer is
-  // taken only while the stay it was asked in lasts, so one asked before the path left the set and
-  // came back is dropped, as the scheduler drops it.
-  const waiting = waitingReadable(probe.cli) && typeof reader.exec === "function"
-    ? effects.createListedWaiting({ read: (path, options) => readWaiting(path, options) })
-    : null;
-  let waitingPaths = "", waitingSet = new Map();
-  const waitingRead = new Map();
-  function readWaiting(path, options) {
-    const stay = waitingSet.get(path);
-    const answer = Promise.resolve(effects.deploymentIdentity(probe.cli, path, options, { exec: reader.exec, env }));
-    const take = (value) => {
-      if (ended || stay === undefined || waitingSet.get(path) !== stay) return;
-      waitingRead.set(path, value);
-      tellWaiting();
-    };
-    answer.then((a) => take(a?.ok === true && typeof a.waiting === "boolean" ? a.waiting : null), () => take(null));
-    return answer;
-  }
-  /** The store told what the schedule read, when that changed: through `heard` for an answer; in
-   *  place (`inStep`) from followWaiting, which runs inside a step being taken, drawn after it. */
-  function tellWaiting(inStep = false) {
-    const now = new Map([...waitingRead].filter(([path]) => waitingSet.has(path)));
-    const was = state.listedWaiting;
-    if (now.size === was.size && [...now].every(([path, value]) => was.has(path) && was.get(path) === value)) return;
-    if (inStep) state = reduce(state, { listedWaiting: now }, keymap).state;
-    else heard({ listedWaiting: now });
-  }
-  function followWaiting() {
-    if (waiting === null || ended) return;
-    const paths = unservedListed(), key = paths.join("\u0000");
-    if (key === waitingPaths) return;
-    waitingPaths = key; waitingSet = new Map(paths.map((path) => [path, waitingSet.get(path) ?? {}]));
-    // A path that left the set forgets its reads: given again, it is not read yet.
-    for (const path of [...waitingRead.keys()]) if (!waitingSet.has(path)) waitingRead.delete(path);
-    waiting.setPaths(paths);
-    tellWaiting(true);
+    identities.start(state.listed.rows.filter((row) => row.state === "ok" && !state.ctxs.includes(row.path)).map((row) => row.path));
   }
   /** Remove the row the store asked about (`{ path, name }`) from the list: nothing on disk is
    *  touched. Its answer goes to the store, which asks for the list again. */
@@ -861,7 +811,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     // The run's directory goes last, made for whichever of the two needed it first: the reader
     // removes it only when it wrote a change there, and one it cannot remove (a change still
     // writing) stays.
-    onEnd() { ended = true; spawnTimers.end(); dismiss(confirmation?.n); panel.end(); identities.stop(); waiting?.stop(); reader.stop(); if (dir !== null) { try { effects.removeDir(dir); } catch { /* not empty, or gone */ } } },
+    onEnd() { ended = true; spawnTimers.end(); dismiss(confirmation?.n); panel.end(); identities.stop(); reader.stop(); if (dir !== null) { try { effects.removeDir(dir); } catch { /* not empty, or gone */ } } },
   });
   function refresh(how) { Promise.resolve(reader.request(how)).catch(() => {}); }
   /** A preflight under way when the process stops: given up, and the store told. Its state alone is

@@ -16,9 +16,8 @@ export { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } fro
 export { createRefreshLoop } from "../../client/refresh-loop.mjs";
 export { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
 export { panelData, cliReadsRemotes, workspaceChoices, viewModel, listedViews, deployments } from "../../client/panel-views.mjs";
-export { cliDeploymentIdentity, identityReadable, identityTimedOut, waitingReadable } from "../../client/deployment-identity.mjs";
+export { cliDeploymentIdentity, identityReadable, identityTimedOut } from "../../client/deployment-identity.mjs";
 export { workspaceStep } from "../../client/workspace-step.mjs";
-export { createListedWaiting } from "../../client/listed-waiting.mjs";
 export { remoteRosterState } from "../../client/remote-roster.mjs";
 export { observeIdentities, identityMemory } from "../../client/remote-identity-memory.mjs";
 export { workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION } from "../../client/workspace-choices.mjs";

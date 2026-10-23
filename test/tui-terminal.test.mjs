@@ -132,9 +132,9 @@ exit 255
   /** How often the fake `ssh` was started. */
   world.sshCalls = () => numbers(world.sshCallsFile).length;
   world.holdSsh = () => writeFileSync(world.sshHoldFile, "");
-  // The list of workspaces under the fixture's row: the shared heading, then the machine, which
-  // matched no workspace, with its state word at the edge (whatever the roster read said of it).
-  world.listed = [" Not matched to a workspace", /^ {3}garnet(?: {2,}\S.*)?$/];
+  // The list of workspaces under the fixture's row: the machine, which matched no workspace, a row
+  // of the same flat list, its name alone (whatever the roster read said of it).
+  world.listed = [/^ {2}garnet$/];
   const releaseTmux = world.release;
   world.release = () => { releaseTmux(); rmSync(world.sshHoldFile, { force: true }); };
 
@@ -302,7 +302,7 @@ function listUnder(screen, heading, cols = 80) {
  *  rule, then the cheat sheet `sheet` (its first rows, as many as the rows left hold, the leader's
  *  at least), and nothing under it. From 80 columns the rule between the sidebar and the main
  *  area (`look.bar`) stands on every row. Answers the faults and the rows of the open view's list. */
-function sidebarFaults(screen, { cols = 80, rows = 24, look = UTF8, title = " * fixture", listed = [], above = [], open = "instances", heading, sheet }) {
+function sidebarFaults(screen, { cols = 80, rows = 24, look = UTF8, title = "  fixture", listed = [], above = [], open = "instances", heading, sheet }) {
   const faults = [], width = listCols(cols), side = sidebarOf(screen, cols), rule = look.rule.repeat(width);
   const expect = (row, want, what) => {
     const got = side[row] ?? "";
@@ -397,7 +397,7 @@ function helpFaults(screen, { cols = 80, rows = 24, look = UTF8, listed = [] } =
  *  no instance is drawn and no detail; and that the cheat sheet is the list's with no instance
  *  selected. `title` is what the title row matches; `reason`: the most rows the reason takes (it
  *  is wrapped to the sidebar's width, and the frame gives a long one up to four at 24 rows). */
-function notReadFaults(screen, { cols = 80, rows = 24, title = /^ \* \S+$/, reason = 4 } = {}) {
+function notReadFaults(screen, { cols = 80, rows = 24, title = /^ {2}\S+$/, reason = 4 } = {}) {
   const side = sidebarOf(screen, cols), said = side.indexOf("", 1) - 1;
   const { faults, list } = sidebarFaults(screen, { cols, rows, title, above: Array(Math.max(0, said)).fill(/^ \S/), sheet: LIST_SHEET });
   if (said < 2 || said > 1 + reason) faults.push(`the rows under the title do not say what state the deployment is in and why, on at most ${reason} rows: ${JSON.stringify(side.slice(1, Math.max(3, said + 1)))}`);
@@ -691,7 +691,7 @@ test("on a terminal of 80x24 `oats tui --dir` shows the fixture's instances, gro
   // The sidebar: the title (the name alone: no count, and no time of a read), an empty row, the
   // views with the open one's list, and the cheat sheet; the detail beside it from the first row.
   const rule = "─".repeat(38);
-  const side = [" * fixture", "", viewRow("Instances", "1"), "> ○ alpha", "    ○ beta", "", "  ○ gamma", rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(LIST_SHEET)];
+  const side = ["  fixture", "", viewRow("Instances", "1"), "> ○ alpha", "    ○ beta", "", "  ○ gamma", rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(LIST_SHEET)];
   const detail = ["   alpha", "   soul     dev", "   state    stopped", "   harness  claude", "   work     directory", "   home     …/agents/dev/instances/alpha"];
   assert.deepEqual(term.screen(), Array.from({ length: 24 }, (_, i) => two(side[i] ?? "", detail[i] ?? "")), "the Instances view, row for row");
 
@@ -884,7 +884,7 @@ test("the reason the kernel gives for an instance it could not observe stands in
   const screenOf = (selected, detail) => {
     const at = (name) => (name === selected ? ">" : " "), rule = "─".repeat(38);
     const list = [`${at("alpha")} ○ alpha`, `${at("beta")}   ○ beta`, "", listed(`${at("gamma")} ? gamma`, "state unknown")];
-    const side = [" * fixture", "", viewRow("Instances", "1"), ...list, rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(LIST_SHEET)];
+    const side = ["  fixture", "", viewRow("Instances", "1"), ...list, rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(LIST_SHEET)];
     return Array.from({ length: 24 }, (_, i) => two(side[i] ?? "", detail[i] ?? ""));
   };
   /** What keeps a screen from being `want`, row for row, but for its clock time: when the
@@ -1122,7 +1122,7 @@ test("it follows the terminal's size: at 60x15 the view still draws, the sidebar
     ...(screen.some((row) => [...row].length > 79) ? ["a row is longer than 79 cells"] : []),
     ...(screen[0] === `${" > beta".padEnd(78 - pageKeys.length)}${pageKeys}` ? [] : [`row 1 is ${JSON.stringify(screen[0])}, not the detail's title with its keys`]),
     ...(screen.includes("   parent   alpha") ? [] : ["no row names the parent"]),
-    ...(screen.some((row) => row === " * fixture" || /^[> ] +○ \w/.test(row) || LEAD_ROW.test(row)) ? ["a row of the sidebar is still shown"] : []),
+    ...(screen.some((row) => row === "  fixture" || /^[> ] +○ \w/.test(row) || LEAD_ROW.test(row)) ? ["a row of the sidebar is still shown"] : []),
   ];
   await untilScreen(term, pageFaults, "the detail as a page at 79x24");
   term.press("Escape");
@@ -1216,7 +1216,7 @@ test("started outside a deployment and with no --dir, it opens on the switcher w
       term.press("Enter");
       // The view of that deployment: its folder's name in the title, and the state and the
       // reason of a deployment that was not read, which are the shared home's words.
-      await untilScreen(term, (screen) => notReadFaults(screen, { cols, title: /^ \* acme-ledger$/, reason: 4 }), "the Instances view of the folder's deployment after Enter");
+      await untilScreen(term, (screen) => notReadFaults(screen, { cols, title: /^ {2}acme-ledger$/, reason: 4 }), "the Instances view of the folder's deployment after Enter");
       assert.equal(run.status(), null, "oats tui still runs after Enter");
       term.press("w", "w");
       // It is served now, so it is no folder to open: it is this run's one workspace, which the

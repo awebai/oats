@@ -15,7 +15,7 @@ import {
   originLead, panelInstances, primaryDeployment, remoteRosterState, rosterRows, rowReason, runtimeState, waitedText, waitingBelowText, waitingClock, waitingLabel, workspaceChoiceRows, workspaceChoices,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
-import { OFFERED_SECTION, ROSTER_FAILED, heldOf, model, paletteItems, panelOf, roster } from "../lib/model.mjs";
+import { OFFERED_SECTION, ROSTER_FAILED, heldOf, model, paletteItems, panelOf, roster, switcher } from "../lib/model.mjs";
 import { reduce } from "../lib/store.mjs";
 import { captureRows } from "../lib/term/capture.mjs";
 import { createScreen } from "../lib/term/screen.mjs";
@@ -144,19 +144,18 @@ function sheet(hints) {
 /** A row of the accordion `cols` cells wide: the view's name (or what its heading holds) from the
  *  margin, its key at the right edge, one cell before it. */
 const viewLine = (name, key, cols = 38) => `${` ${name}`.padEnd(cols - 1 - key.length)}${key}`;
-/** The open workspace's row of the list of workspaces, the sidebar's first row, as cellText reads it
- *  in a sidebar `cols` cells wide: `*` in its second cell, the name and what the title said beside
- *  it from the fourth, and, where an instance there needs input, the dot one cell before the edge
- *  (`●`, or `!` in ASCII or without colour). */
-const workspaceLine = (name, cols = 38, { waiting = false, ascii = false } = {}) => (waiting ? `${` ${OPEN_MARK} ${name}`.padEnd(cols - 2)}${ascii ? WAITING_DOT.ascii : WAITING_DOT.utf8}` : ` ${OPEN_MARK} ${name}`);
+/** A row of the list of workspaces, as cellText reads it: the name from the row's third cell and,
+ *  where an instance there needs input, the dot one cell after it (`●`, or `!` in ASCII or without
+ *  colour). `cols`, the sidebar's width, is the caller's to say: the row holds no more. */
+const workspaceLine = (name, _cols = 38, { waiting = false, ascii = false } = {}) => `  ${name}${waiting ? ` ${ascii ? WAITING_DOT.ascii : WAITING_DOT.utf8}` : ""}`;
 /** Whether every cell of row `r` from `from` up to `to` is drawn in reverse video and bold: the open
  *  workspace's row of the list of workspaces while the list does not have the focus. */
 const barred = (d, r, from, to) => d.cells[r].slice(from, to).every((cell, x) => reversed(d.cells[r], from + x) && (cell.width === 0 ? d.cells[r][from + x - 1] : cell).style.bold);
-/** The open workspace's row, `cols` wide, in bold reverse video up to its dot, if it has one, and the
- *  dot and the margin after it not: the dot stands on the normal background. */
+/** The open workspace's row, `cols` wide, in bold reverse video across it but for its dot, if it has
+ *  one, a gap in the bar: the dot stands on the normal background. */
 const openBarred = (d, cols) => {
   const dot = d.cells[0].slice(0, cols).findIndex((cell) => cell.text === WAITING_DOT.utf8 || cell.text === WAITING_DOT.ascii);
-  return dot < 0 ? barred(d, 0, 0, cols) : barred(d, 0, 0, dot) && d.cells[0].slice(dot, cols).every((cell) => cell.style.reverse !== true);
+  return dot < 0 ? barred(d, 0, 0, cols) : barred(d, 0, 0, dot) && d.cells[0][dot].style.reverse !== true && barred(d, 0, dot + 1, cols);
 };
 /** One of the sidebar's rules, `cols` cells. */
 const ruleLine = (cols, ascii = false) => glyphsOf(ascii).rule.repeat(cols);
@@ -354,10 +353,10 @@ test("at every size and in both modes the frame has its shape: the sidebar from 
     assert.equal(d.cols, pane, `${at}: the sidebar's width`);
     // The list of workspaces: the open workspace's one row, `*` in its second cell and the name from
     // its fourth, the dot of a waiting instance at its edge, in bold reverse video over the sidebar's
-    // width up to the dot, which is on the normal background; no count and no time.
+    // width but for the dot, which is on the normal background; no count and no time.
     assert.equal(cellText(d, 0, 0, pane), workspaceLine("acme-platform", pane, { waiting: true, ascii }), at);
     assert.equal(d.cells[0][1].style.bold, true, at);
-    assert.equal(openBarred(d, pane), true, `${at}: the open workspace's row is in bold reverse video over the sidebar's width, up to its dot`);
+    assert.equal(openBarred(d, pane), true, `${at}: the open workspace's row is in bold reverse video over the sidebar's width, but for its dot`);
     // The heading under an empty row; at 60x15 the empty row is given up for the list.
     const heading = sz.rows > 15 ? 2 : 1;
     assert.equal(openRow(d), heading, at);
@@ -511,7 +510,7 @@ test("on a terminal 3000 columns wide the sidebar stays 60 cells, its rules 60 c
     assert.equal(d.cells[r].length, 3000, `row ${r}`);
   }
   assert.equal(cellText(d, 0, 0, 60), workspaceLine("acme-platform", 60, { waiting: true }));
-  assert.equal(openBarred(d, 60), true, "the open workspace's row is in bold reverse video over the sidebar's 60 cells, up to its dot");
+  assert.equal(openBarred(d, 60), true, "the open workspace's row is in bold reverse video over the sidebar's 60 cells, but for its dot");
   assert.equal(d.cells[0].slice(61).some((cell) => cell.style.reverse), false, "and not past the sidebar");
   assert.equal(cellText(d, 14), `${"─".repeat(60)}│`, "row 14: the rule after the list, the sidebar's width, and nothing past the rule column");
   assert.deepEqual(sheetOf(d), sheet(SHEET_80));
@@ -1028,7 +1027,7 @@ test("the selected row is drawn in reverse video over the whole width of its pan
       // The accordion's open view is bold, never in reverse: the selection, the tags and the open
       // workspace's row of the list of workspaces (the top row, the sidebar's width, while the list
       // does not have the focus) are the only cells in reverse.
-      assert.equal(openBarred(d, pane), true, `${at}: the open workspace's row of the list of workspaces is in bold reverse video over the sidebar's width, up to its dot`);
+      assert.equal(openBarred(d, pane), true, `${at}: the open workspace's row of the list of workspaces is in bold reverse video over the sidebar's width, but for its dot`);
       const otherReverse = (line, r) => (r === 0 ? false : line.slice(0, (tagAt(d, r, pane) ?? { col: pane }).col).some((cell) => cell.style.reverse)) || line.slice(pane).some((cell) => cell.style.reverse);
       assert.deepEqual(d.cells.flatMap((line, r) => (r !== selected && otherReverse(line, r) ? [r] : [])), [], `${at}: no other row is in reverse video, but for its tag and the open workspace's row of the list of workspaces in the sidebar`);
       assert.deepEqual(bodyRows(sz).filter((r) => r !== selected && d.cells[r][0].text === ">"), [], `${at}: no other row carries the selection mark`);
@@ -2038,9 +2037,9 @@ function fits(d, sz, at) {
   });
 }
 
-test("this machine and a reached machine in one view at 80x24 in UTF-8, cell for cell: `+1 machine` in the open workspace's row of the list of workspaces, a heading per deployment, the machine's with the time of the roster read, and a `machine` line in the detail", () => {
+test("this machine and a reached machine in one view at 80x24 in UTF-8, cell for cell: the open workspace's name alone in its row of the list of workspaces, a heading per deployment, the machine's with the time of the roster read, and a `machine` line in the detail", () => {
   const d = draw(reached(), S80);
-  assert.deepEqual(d.lines, beside(instancesSide(workspaceLine("acme-platform  +1 machine"), [
+  assert.deepEqual(d.lines, beside(instancesSide(workspaceLine("acme-platform"), [
     " This machine",
     "> ● acme-ledger-expert-retire",
     "    ● acme-ledger-developer-note…",
@@ -2061,19 +2060,18 @@ test("this machine and a reached machine in one view at 80x24 in UTF-8, cell for
     "   home     …s/acme-ledger-expert-retire",
   ]));
   // What the cells say beyond their text: a heading's label is bold and is no row of the selection,
-  // the time of the roster read is dim, and the count of machines stands in the open workspace's
-  // bar, bold reverse video, as the rest of its row of the list of workspaces.
+  // and the time of the roster read is dim. The machines are the headings' to name: the open
+  // workspace's row says nothing of them.
   for (const [r, label] of [[3, "This machine"], [8, "garnet"]]) {
     for (const cell of d.cells[r].slice(1, 1 + label.length)) assert.equal(cell.style.bold && !cell.style.reverse, true, `${label} is bold`);
     assert.equal(d.cells[r][0].text, " ", "a heading carries no selection mark");
   }
   for (const cell of d.cells[8].slice(24, 37)) assert.equal(cell.style, DIM, "the time of the roster read is dim");
-  for (const cell of d.cells[0].slice(18, 28)) assert.deepEqual(cell.style, style({ bold: true, reverse: true }), "the count of machines is in the open workspace's bar");
-  assert.equal(cellText(d, 0, 18, 28), "+1 machine");
+  assert.equal(cellText(d, 0, 0, 38), "  acme-platform");
 });
 
 test("this machine and a reached machine at 80x24 in ASCII, cell for cell: the same screen with the rules, the marks and the cut mark in ASCII", () => {
-  assert.deepEqual(draw(reached({ ascii: true }), S80).lines, beside(instancesSide(workspaceLine("acme-platform  +1 machine"), [
+  assert.deepEqual(draw(reached({ ascii: true }), S80).lines, beside(instancesSide(workspaceLine("acme-platform"), [
     " This machine",
     "> * acme-ledger-expert-retire",
     "    * acme-ledger-developer-no...",
@@ -2102,7 +2100,7 @@ test("the same view with the machine not reached, at 80x24 in UTF-8 and in ASCII
     const cut = (text, cells) => `${text.slice(0, cells - g.cut.length)}${g.cut}`;
     // The selected row's machine was not reached and the kernel does not report it addressable: no
     // Enter, and no act in the palette. A name keeps 16 cells, and the word is cut to what is left.
-    assert.deepEqual(draw(state, S80).lines, beside(instancesSide(workspaceLine("acme-platform  +1 machine"), [
+    assert.deepEqual(draw(state, S80).lines, beside(instancesSide(workspaceLine("acme-platform"), [
       " This machine",
       `  ${marks.running} ${KERNEL_EXPERT}`,
       `    ${marks.running} ${cut(KERNEL_DEV, 27)}`,
@@ -2159,7 +2157,7 @@ test("the view of two deployments at 120x40, 79x24 and 60x15: the same headings 
       placed([2, `${marks.running} ${FAR_A}`]),
       placed([2, `${marks.stopped} ${FAR_B}`], [word, cutTo(AWAY(), 20, ascii)]),
     ], at);
-    assert.equal(cellText(d, 0, 0, pane), workspaceLine("acme-platform  +1 machine"), `${at}: the open workspace's row of the list of workspaces, and no count`);
+    assert.equal(cellText(d, 0, 0, pane), workspaceLine("acme-platform"), `${at}: the open workspace's row of the list of workspaces, and no count`);
     assert.equal(d.lines.some((line) => line.includes("read 10:00:00")), false, `${at}: this machine's own read time is not beside the list: the help's top row has it`);
     const rows = listRows(d);
     assert.deepEqual([d.cells[rows[5]][pane - 2].text, d.cells[rows[5]][pane - 1].text], ["0", " "], `${at}: the heading's time ends one cell before the sidebar's edge`);
@@ -2173,10 +2171,10 @@ test("the view of two deployments at 120x40, 79x24 and 60x15: the same headings 
 });
 
 test("the open workspace's row of the list of workspaces says `+1 machine` after the workspace's name at every width; two machines are counted once each, and a view of this machine alone says nothing of machines", () => {
-  for (const sz of SIZES) assert.equal(cellText(draw(lost(), sz), 0, 0, paneOf(sz)), workspaceLine("acme-platform  +1 machine"), `${sz.cols}x${sz.rows}`);
+  for (const sz of SIZES) assert.equal(cellText(draw(lost(), sz), 0, 0, paneOf(sz)), workspaceLine("acme-platform"), `${sz.cols}x${sz.rows}`);
   // Two machines are counted once each, whatever number of deployments each holds.
   const two = heard(local(), answered(group(), quartz(), quartz({ id: "quartz:acme-8", target: { workspace: "/srv/acme-two", sshHost: "quartz.example" }, instances: [] })), T1);
-  assert.equal(cellText(draw(two, S120), 0, 0, 57), workspaceLine("acme-platform  +2 machines"));
+  assert.equal(cellText(draw(two, S120), 0, 0, 57), workspaceLine("acme-platform"));
   assert.equal(cellText(draw(local(), S80), 0, 0, 38), workspaceLine("acme-platform"), "this machine alone: nothing about machines");
   assert.equal(cellText(draw(heard(local(), answered(), T1), S80), 0, 0, 38), workspaceLine("acme-platform"), "no registered machine: nothing about machines");
 });
@@ -2249,7 +2247,7 @@ test("a deployment's note stands under its heading in a view of several deployme
     ], at);
     if (sz === S80) assert.equal(rows.length, 2, "at 80 columns the note wraps");
     // The list of workspaces: acme-platform, then billing, the open one, its machines beside its name.
-    assert.deepEqual([0, 1].map((r) => cellText(d, r, 0, pane)), ["   acme-platform", workspaceLine("billing  2 machines")], `${at}: ${cellText(d, 0)}`);
+    assert.deepEqual([0, 1].map((r) => cellText(d, r, 0, pane)), ["  acme-platform", workspaceLine("billing")], `${at}: ${cellText(d, 0)}`);
     const help = draw(press(state, ["?"], sz).state, sz);
     assert.equal(cellText(help, 0, sz.cols >= WIDE ? help.cols + 2 : 0).startsWith("  read 10:00:25"), true, `${at}: in a view with no deployment of this machine the help's time is the roster read's`);
     for (const r of listRows(d).slice(1, 1 + rows.length)) assert.equal(d.cells[r].slice(0, pane).some((cell) => cell.style.reverse || cell.style.bold), false, `${at}: a note is no heading and no row of the selection`);
@@ -2268,7 +2266,7 @@ test("a deployment's note stands under the list of workspaces in a view of one d
   const top = 2;
   for (const ascii of [false, true]) for (const sz of SIZES) {
     const d = draw({ ...alone, ascii }, sz), pane = paneOf(sz), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`, rows = wrap(note, pane - 2);
-    assert.deepEqual([0, 1].map((r) => cellText(d, r, 0, pane)), ["   acme-platform", workspaceLine("billing  on garnet")], `${at}: the list of workspaces`);
+    assert.deepEqual([0, 1].map((r) => cellText(d, r, 0, pane)), ["  acme-platform", workspaceLine("billing")], `${at}: the list of workspaces`);
     assert.equal(rows.length <= 2, true, `${at}: the note fits its two rows`);
     assert.deepEqual(rows.map((_, i) => cellText(d, top + i, 0, pane)), rows.map((row) => ` ${row}`), `${at}: the note under the list of workspaces, on rows of its own, from the margin`);
     assert.deepEqual([cellText(d, top + rows.length, 0, pane), openRow(d)], ["", top + 1 + rows.length], `${at}: an empty row, then the heading`);
@@ -2339,7 +2337,7 @@ test("a deployment that is not live and has no row is listed after the sections:
   // A machine that answers with no row is live: it has no section and is not listed.
   const empty = heard(local(), answered(group({ instances: [] })), T1);
   assert.equal(listLines(draw(empty, S80), S80).some((line) => line.includes("garnet")), false);
-  assert.equal(cellText(draw(empty, S80), 0, 0, 38), workspaceLine("acme-platform  +1 machine"), "the open workspace's row still counts it");
+  assert.equal(cellText(draw(empty, S80), 0, 0, 38), workspaceLine("acme-platform"), "the open workspace's row still counts it");
 });
 
 test("the roster read's own failure, while no answer has arrived, stands after the list: the TUI's line, and the failure on the rows after it", () => {
@@ -2377,7 +2375,7 @@ test("the roster read's own failure, while no answer has arrived, stands after t
 
 // ── The detail of a machine's row ────────────────────────────────────────────────────────────────
 
-test("in a view of several deployments the detail says which machine the instance is on, under its soul, and a view of one deployment has no such line", () => {
+test("in a view of several deployments the detail says which machine the instance is on, under its soul, and a view of one deployment says it only when it is another machine's", () => {
   const state = reached();
   assert.deepEqual(labels(detailOf(selecting(state, FAR_A))), ["soul", "machine", "state", "harness", "work", "home"]);
   assert.deepEqual(fact(detailOf(selecting(state, FAR_A)), "machine").rows, ["garnet"]);
@@ -2385,7 +2383,7 @@ test("in a view of several deployments the detail says which machine the instanc
   assert.deepEqual(labels(detailOf(selecting(state, KERNEL_DEV))), ["soul", "machine", "state", "harness", "work", "team", "parent", "started", "home"]);
   assert.equal(fact(detailOf(local()), "machine"), null, "this machine alone");
   const alone = press(heard(reached(), answered(group({ workspace: ELSEWHERE })), T2), ["w", "w", "j", "enter"]).state;
-  assert.equal(draw(selecting(alone, FAR_A), S160).lines.some((line) => line.includes("   machine  ")), false, "a machine alone in its view: the open workspace's row names it");
+  assert.equal(draw(selecting(alone, FAR_A), S160).lines.some((line) => line.includes("   machine  garnet")), true, "a machine alone in its view: the detail names it, as nothing else does");
   // At 79 columns the detail is a page: the line is there too.
   const page = draw(press(selecting(state, FAR_A, S79), ["tab"], S79).state, S79);
   assert.equal(page.lines[2], "   machine  garnet");
@@ -2621,16 +2619,16 @@ const ownRows = (d, sz) => mainRows(d, sz).map((line, r) => (r === 0 && sz.cols 
  *  reached since its first answer, with the shared word for its state. */
 const PLATFORM_LINES = Object.freeze(["This machine", "garnet · remembered"]);
 
-test("the list of workspaces holds what the switcher does, in its order and under its headings: a machine matched to no workspace under the shared heading, this computer's rows not opened under the TUI's; windowed to five rows, the open one kept, a heading the window would end on left out, and +N for the workspaces not shown; the leader then Down opens the machine", () => {
+test("the list of workspaces holds the switcher's workspaces, in its order, one line each with the name alone: a machine matched to no workspace is a row of the same flat list, with no heading and no state word, and this computer's rows not opened stay in the switcher; the leader then Down opens the machine", () => {
   const listed = press(choosing(), ["escape"]).state;
-  const d = draw(listed, S80), side = d.cells.slice(0, 6).map((_, r) => cellText(d, r, 0, 38));
-  // Six lines: the open workspace, the shared heading and its machine, the TUI's heading and its two
-  // rows. The window of four ends on the second heading, which is left out: three lines and +2.
-  assert.deepEqual(side, [" * acme-platform  +1 machine", ` ${UNMATCHED_SECTION}`, `${"   quartz".padEnd(29)}not live`, "   +2", "", " Instances                          1"]);
+  const d = draw(listed, S80), side = d.cells.slice(0, 4).map((_, r) => cellText(d, r, 0, 38));
+  assert.deepEqual(side, ["  acme-platform", "  quartz", "", " Instances                          1"]);
+  assert.deepEqual(switcher(listed, AT).items.filter((item) => item.key !== undefined).map((item) => item.label), ["acme-platform", "quartz", "acme-billing", "acme-docs"], "the switcher still offers this computer's rows");
   // The leader then Down: the machine, opened as the switcher's Enter opens it.
   const moved = draw(leaderThen(listed, "down").state, S80);
-  assert.match(cellText(moved, 0, 0, 38), /^ {3}acme-platform/, "acme-platform is no longer the open one");
-  assert.match(cellText(moved, 2, 0, 38), /^ \* quartz/, "quartz is");
+  assert.notEqual(moved.cells[0][2].style.reverse, true, "acme-platform is no longer the open one");
+  assert.equal(cellText(moved, 1, 0, 38), "  quartz");
+  assert.equal(moved.cells[1][2].style.reverse, true, "quartz is");
 });
 
 test("the switcher at 80x24 in UTF-8, cell for cell: in the main area beside the sidebar, a workspace on two machines with a dim line under it per deployment (the one not live with its state word), the open mark, the shared heading over a machine matched to no workspace, the TUI's own over the rows of this computer's list not opened, and the selection", () => {
@@ -3036,7 +3034,7 @@ test("the help over the switcher keeps the switcher's sidebar, with the help's o
     // Over the list the sidebar is the workspace's, and the help is the same help.
     const over = draw(press(reached(), ["?"], sz).state, sz);
     if (sz.cols >= WIDE) {
-      assert.equal(cellText(over, 0, 0, over.cols), workspaceLine("acme-platform  +1 machine"), at);
+      assert.equal(cellText(over, 0, 0, over.cols), workspaceLine("acme-platform"), at);
       assert.deepEqual(hintsOf(over), HELP_SHEET, at);
       assert.deepEqual(over.cells[2][1].style, style({ bold: true }), `${at}: over the list, Instances is the open view`);
     }
@@ -3063,97 +3061,35 @@ const onBoth = (key = ELSEWHERE.key) => second(heard(local(), answered(group({ w
 /** What the model says of a view's machines, as the frame is given it. */
 const machinesOf = (state) => { const d = draw(state, S80), m = model(state, { page: d.page, now: NOW, at: AT, cols: d.cols }); return { here: m.here, machines: m.machines, machine: m.machine }; };
 const LONG_MACHINE = "garnet-machine-of-the-ledger-team-in-the-far-rack-number-0007", LONG_KEY = "github.com/acme/billing-of-the-ledger-team-and-friends", LONG_WORKSPACE = LONG_KEY.split("/").at(-1);
-/** The row of the list of workspaces that is the open workspace's: `*` in its second cell, in
- *  reverse video while the list does not have the focus. */
+/** The row of the list of workspaces that is the open workspace's: in reverse video while the list
+ *  does not have the focus. */
 function openWorkspaceRow(d) {
-  const found = d.cells.slice(0, 6).flatMap((line, r) => (line[1].text === OPEN_MARK && line[1].style.reverse ? [r] : []));
+  const found = d.cells.slice(0, 6).flatMap((line, r) => (line[0].text !== ">" && line[2].text !== " " && line[2].style.reverse ? [r] : []));
   assert.equal(found.length, 1, "one row of the list of workspaces is the open workspace's");
   return found[0];
 }
 /** The open workspace's row of the list of workspaces, which says what the title said. */
 const titleOf = (state, sz) => { const d = draw(state, sz); return cellText(d, openWorkspaceRow(d), 0, d.cols); };
 
-test("a view that holds a deployment of this machine and other machines says `+N machine(s)` after the workspace's name", () => {
+test("the open workspace's row of the list of workspaces is its name alone, whatever machines its view holds: they are the workspace's own pages' to say; a long name is cut with the mark inside the sidebar's margin", () => {
   const one = reached(), two = heard(local(), answered(group(), quartz()), T1);
   assert.deepEqual(machinesOf(one), { here: true, machines: 1, machine: null });
   assert.deepEqual(machinesOf(two), { here: true, machines: 2, machine: null });
-  assert.equal(titleOf(one, S80), placed([1, OPEN_MARK], [3, "acme-platform"], [18, "+1 machine"]));
-  assert.equal(titleOf(two, S80), placed([1, OPEN_MARK], [3, "acme-platform"], [18, "+2 machines"]));
-  assert.deepEqual(panelOf(one, AT).deployments.map((d) => d.local), [true, false], "this machine's deployment and the machine's, by the shared entries' own word");
-  for (const cell of draw(two, S80).cells[0].slice(18, 29)) assert.deepEqual(cell.style, style({ bold: true, reverse: true }), "in the open workspace's bar, as the rest of its row");
-  assert.deepEqual(machinesOf(local()), { here: true, machines: 0, machine: null }, "this machine alone: nothing follows the name");
-  assert.equal(titleOf(local(), S80), workspaceLine("acme-platform"));
-});
-
-test("a view that holds no deployment of this machine and one machine says `on <machine>` after the workspace's name: nothing else names the machine, since such a view has no heading", () => {
-  const state = onGarnet();
-  assert.equal(state.open, GARNET);
-  assert.deepEqual(machinesOf(state), { here: false, machines: 1, machine: "garnet" });
-  assert.deepEqual(panelOf(state, AT).deployments.map((d) => [d.local, d.machine]), [[false, "garnet"]], "one deployment, not this machine's, named by the shared entry");
-  const d = draw(state, S80), r = openWorkspaceRow(d);
-  assert.equal(titleOf(state, S80), placed([1, OPEN_MARK], [3, "billing"], [12, "on garnet"]));
-  for (const cell of d.cells[r].slice(12, 21).filter((c) => c.text !== " ")) assert.deepEqual(cell.style, style({ bold: true, reverse: true }), "the TUI's `on` and the machine's name are in the open workspace's bar, as the rest of its row");
-  assert.equal(d.cells[r][3].style.dim, false, "the workspace's name is not dim");
-  assert.equal(listLines(d, S80).some((line) => line.startsWith(" garnet")), false, "no heading names it");
-  // The same for a run started outside every deployment that picked a machine's workspace.
-  const outside = press(heard(stateOf(null, { deployment: null, cli: REMOTE_CLI }), answered(group()), T1), ["enter"]).state;
-  assert.equal(outside.open, GARNET);
-  assert.deepEqual(machinesOf(outside), { here: false, machines: 1, machine: "garnet" });
-  assert.equal(titleOf(outside, S80), placed([1, OPEN_MARK], [3, "platform"], [13, "on garnet"]));
-});
-
-test("a view that holds no deployment of this machine and two or more machines says `N machines` after the workspace's name, without the plus", () => {
-  const state = onBoth();
-  assert.deepEqual(machinesOf(state), { here: false, machines: 2, machine: null });
-  assert.deepEqual(panelOf(state, AT).deployments.map((d) => [d.local, d.machine]), [[false, "garnet"], [false, "quartz"]]);
-  const d = draw(state, S80), r = openWorkspaceRow(d);
-  assert.equal(titleOf(state, S80), placed([1, OPEN_MARK], [3, "billing"], [12, "2 machines"]));
-  for (const cell of d.cells[r].slice(12, 22).filter((c) => c.text !== " ")) assert.deepEqual(cell.style, style({ bold: true, reverse: true }), "in the open workspace's bar, as the rest of its row");
-  // Two deployments of one machine are one machine: it is named.
-  const twice = second(heard(local(), answered(group({ workspace: ELSEWHERE }), group({ id: "garnet:acme-2", target: { workspace: "/home/dev/Agents/acme-two", sshHost: "garnet.example" }, workspace: ELSEWHERE, instances: [] })), T1));
-  assert.deepEqual(machinesOf(twice), { here: false, machines: 1, machine: "garnet" });
-  assert.equal(titleOf(twice, S80), workspaceLine("billing  on garnet"));
-});
-
-test("the open workspace's row of the list of workspaces never says `+N` when no deployment of the view is this machine's, at 80 and at 60 columns", () => {
-  const states = {
-    "one machine": onGarnet(), "one machine, not reached": heard(onGarnet(), TIMEOUT, T2), "one machine with a long name": onGarnet({ label: LONG_MACHINE }),
-    "two machines": onBoth(), "two machines, not reached": heard(onBoth(), { thrown: "spawn oats ENOENT" }, T2), "two machines in a workspace with a long name": onBoth(LONG_KEY),
-  };
-  for (const [name, state] of Object.entries(states)) for (const ascii of [false, true]) for (const sz of [S80, S60]) {
-    const d = draw({ ...state, ascii }, sz), title = cellText(d, openWorkspaceRow(d), 0, d.cols), at = `${name} at ${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
-    assert.equal(machinesOf(state).here, false, at);
-    assert.equal(title.includes("+"), false, `${at}: ${title}`);
-    assert.match(title, name.startsWith("one") ? /^ \* billing {2}on garnet/ : / \d machines$/, at);
-    fits(d, sz, at);
+  assert.deepEqual(machinesOf(onGarnet()), { here: false, machines: 1, machine: "garnet" });
+  assert.deepEqual(machinesOf(onBoth()), { here: false, machines: 2, machine: null });
+  for (const sz of [S60, S80, S120]) {
+    for (const state of [one, two, local()]) assert.equal(titleOf(state, sz), workspaceLine("acme-platform"), `${sz.cols}`);
+    for (const state of [onGarnet(), onBoth(), heard(onGarnet(), TIMEOUT, T2)]) assert.equal(titleOf(state, sz), workspaceLine("billing"), `${sz.cols}`);
   }
-  // And with one of this machine's in the view it always does.
-  for (const sz of [S80, S60]) assert.match(titleOf(reached(), sz), /^ \* acme-platform {2}\+1 machine$/);
-});
-
-test("the workspace's name in the open workspace's row of the list of workspaces is cut with the mark before what follows it is: at 80 columns the name and what follows it have 34 cells, from the row's fourth, and at 60 their 56 hold a long name whole", () => {
+  for (const cell of draw(two, S80).cells[0].slice(0, 38)) assert.equal(cell.style.reverse, true, "the open workspace's bar, across the row");
   const named = heard(stateOf(reporting(NEAR(), { workspace: "acme-platform-of-the-ledger-team-and-friends" }), { cli: REMOTE_CLI }), answered(group()), T1);
-  assert.equal(titleOf(named, S80), placed([1, OPEN_MARK], [3, "acme-platform-of-the-…"], [27, "+1 machine"]));
-  assert.equal(titleOf(named, S60), workspaceLine("acme-platform-of-the-ledger-team-and-friends  +1 machine"));
-  assert.equal(titleOf(onBoth(LONG_KEY), S80), placed([1, OPEN_MARK], [3, `${LONG_WORKSPACE.slice(0, 21)}…`], [27, "2 machines"]));
-  assert.equal(titleOf(onGarnet({}, LONG_KEY), S80), placed([1, OPEN_MARK], [3, `${LONG_WORKSPACE.slice(0, 22)}…`], [28, "on garnet"]));
-  // Beside a long machine's name, the machine's is cut down to eight cells before the workspace's is.
-  assert.equal(titleOf(onGarnet({ label: LONG_MACHINE }, LONG_KEY), S80), placed([1, OPEN_MARK], [3, `${LONG_WORKSPACE.slice(0, 20)}…`], [26, `on ${LONG_MACHINE.slice(0, 7)}…`]));
-  for (const sz of [S60, S80, S120]) for (const state of [named, onBoth(LONG_KEY), onGarnet({}, LONG_KEY), onGarnet({ label: LONG_MACHINE }, LONG_KEY)]) {
+  assert.equal(titleOf(named, S80), workspaceLine("acme-platform-of-the-ledger-team-a\u2026"));
+  assert.equal(titleOf(named, S60), workspaceLine("acme-platform-of-the-ledger-team-and-friends"));
+  for (const sz of [S60, S80, S120]) for (const state of [named, onBoth(LONG_KEY), onGarnet({ label: LONG_MACHINE }, LONG_KEY)]) {
     assert.equal(textWidth(titleOf(state, sz)) <= paneOf(sz) - 1, true, `${sz.cols}: inside the sidebar's margin: ${titleOf(state, sz)}`);
   }
 });
 
-test("in `on <machine>` a long machine name is cut before the workspace's name is", () => {
-  // A workspace's name of seven cells is whole beside a machine's name cut with the mark.
-  assert.equal(titleOf(onGarnet({ label: LONG_MACHINE }), S60), placed([1, OPEN_MARK], [3, "billing"], [12, `on ${LONG_MACHINE.slice(0, 43)}…`]));
-  assert.equal(titleOf(onGarnet({ label: LONG_MACHINE }), S80), placed([1, OPEN_MARK], [3, "billing"], [12, `on ${LONG_MACHINE.slice(0, 21)}…`]));
-  // A workspace's name of twelve cells has the room to be whole too, at 60 columns and at 80: it is
-  // the machine's name that gives its cells up.
-  const KEY = "github.com/acme/acme-billing";
-  assert.equal(titleOf(onGarnet({ label: LONG_MACHINE }, KEY), S60), placed([1, OPEN_MARK], [3, "acme-billing"], [17, `on ${LONG_MACHINE.slice(0, 38)}…`]));
-  assert.equal(titleOf(onGarnet({ label: LONG_MACHINE }, KEY), S80), placed([1, OPEN_MARK], [3, "acme-billing"], [17, `on ${LONG_MACHINE.slice(0, 16)}…`]));
-});
 test("a view whose only deployment is a machine that is not live and has no row kept is drawn as an unavailable deployment is: its state, its reason on rows of its own, and an empty list with no line about instances", () => {
   const state = heard(onGarnet({ instances: [] }), TIMEOUT, T2), said = deploymentState(deploymentOf(state));
   assert.equal(state.open, GARNET);
@@ -3162,7 +3098,7 @@ test("a view whose only deployment is a machine that is not live and has no row 
     const d = draw({ ...state, ascii }, sz), g = glyphsOf(ascii), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     // The list of workspaces has two rows, acme-platform and billing, the open one; the state under them.
     const reason = reasonRows(d, textOf(shown(said.detail)), g.cut, 3);
-    assert.deepEqual([0, 1].map((r) => cellText(d, r, 0, d.cols)), ["   acme-platform", workspaceLine("billing  on garnet")], `${at}: the open workspace's row names the machine and counts nothing`);
+    assert.deepEqual([0, 1].map((r) => cellText(d, r, 0, d.cols)), ["  acme-platform", workspaceLine("billing")], `${at}: the open workspace's row is its name`);
     assert.equal(cellText(d, 2, 0, d.cols).trim(), said.text, `${at}: the state in the shared home's word`);
     assert.equal(reason.whole && reason.rows[0] === 3, true, `${at}: its reason, whole, on the rows under it`);
     assert.deepEqual(listLines(d), [], `${at}: and the list holds nothing: no line that says no instance is listed`);

@@ -54,11 +54,6 @@ const LIST_LEAST = 3;
 const SOUL_WORD = "soul";
 /** What the title says in the workspace's place while the switcher is shown. */
 const WORKSPACES = "workspaces";
-/** The TUI's word before the one machine of a view that holds no deployment of this machine. */
-const ON = "on";
-/** The cells the workspace's name keeps (all of them, when it is shorter) before the title says
- *  how many other machines it is on: under that the name comes first. */
-const NAME_MIN = 8;
 
 const BOLD = style({ bold: true });
 const DIM = style({ dim: true });
@@ -180,42 +175,17 @@ const layoutOf = (m, size, given = {}) => layout(m.notice, size, { note: m.note,
 /** The rows the top of the sidebar takes: the list of workspaces' (views/workspaces.mjs), else the title's. */
 const listRows = (m) => (m.workspaces ? Math.max(1, m.workspaces.lines.length + (m.workspaces.more > 0 ? 1 : 0)) : 1);
 
-/** The title, from `col` on in `room` cells: the workspace's name and, when the view
- *  holds other machines, what says so, in the TUI's words and dim:
- *    `+N machine(s)`  beside a deployment of this machine;
- *    `on <machine>`   the one machine of a view that holds no deployment of this machine (no
- *                     heading names it there);
- *    `N machines`     two or more of them and no deployment of this machine.
- *  Whether a deployment is this machine's is the shared entries' word (the model's `here`), and
- *  the machine's name is theirs. What stands after the name gives way before the name is cut
- *  short of NAME_MIN cells, and a machine's name is cut before the workspace's. While the
- *  switcher is shown no workspace is named: the title says what is listed instead. */
+/** The title, from `col` on in `room` cells, where the list of workspaces does not stand (nothing
+ *  is open, or the switcher is shown): the workspace's name, else what is listed. Its machines are
+ *  the workspace's own pages' to say (the list of instances' sections). */
 function nameSpans(m, col, room) {
   if (room <= 0) return [];
   if (m.under === "switcher") return [{ col, text: lit(WORKSPACES), width: room }];
-  const name = measured(m.workspace), alone = [{ col, text: name.text, width: room }];
-  if (!(m.machines > 0)) return alone;
-  const least = Math.min(name.width, NAME_MIN);
-  // Two cells between the name and what follows it.
-  const after = (width) => col + width + (width ? 2 : 0);
-  if (!m.here && m.machine !== null) {
-    const where = measured(m.machine), left = room - 2 - ON.length - 1;
-    // The machine's name is cut first, down to the cells that still say something: the
-    // workspace's name has what that leaves.
-    const kept = Math.min(where.width, NAME_MIN);
-    if (left - least < kept) return alone;
-    const width = Math.min(name.width, left - kept), at = after(width);
-    return [...(width ? [{ col, text: name.text, width }] : []), { col: at, text: lit(ON), style: DIM, width: ON.length }, { col: at + ON.length + 1, text: where.text, style: DIM, width: Math.min(where.width, left - width) }];
-  }
-  const more = `${m.here ? "+" : ""}${m.machines} ${m.machines === 1 ? "machine" : "machines"}`;
-  const left = room - 2 - more.length;
-  if (left < least) return alone;
-  const width = Math.min(name.width, left);
-  return [...(width ? [{ col, text: name.text, width }] : []), { col: after(width), text: lit(more), style: DIM, width: more.length }];
+  return [{ col, text: measured(m.workspace).text, width: room }];
 }
 
-/** The title, the sidebar's first row: the workspace's name in bold and what the view holds of
- *  other machines (nameSpans), or `workspaces` while the switcher is shown. */
+/** The title, the sidebar's first row where the list does not stand: the workspace's name in bold,
+ *  or `workspaces` while the switcher is shown (nameSpans). */
 function titleRow(m, cols) {
   return nameSpans(m, MARGIN, cols - 2 * MARGIN).map((span) => (span.style ? span : { ...span, style: BOLD }));
 }
@@ -475,7 +445,7 @@ function sidebar(m, g, rows, list) {
   const cols = g.listCols;
   let r = 0;
   const put = (spans) => { if (r < rows.length) rows[r] = spans; r += 1; };
-  if (m.workspaces) workspaceRows(m.workspaces, cols, { ascii: m.ascii, colour: m.colour, nameSpans: (col, room) => nameSpans(m, col, room) }).forEach(put);
+  if (m.workspaces) workspaceRows(m.workspaces, cols, { ascii: m.ascii, colour: m.colour }).forEach(put);
   else put(titleRow(m, cols));
   sayings(m, g).forEach(put);
   let n = list.length;
