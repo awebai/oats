@@ -429,7 +429,11 @@ export function contentsRow(row, from, catalog, facts = null) {
   if (row?.kind === "external") return row;
   if (!Array.isArray(catalog)) return from ? null : row;
   const wanted = capabilitySelector(row);
-  const matches = wanted ? catalog.filter(r => sameSelector(capabilitySelector(r), wanted)) : [];
+  // A package default the catalog did not list when it was opened names no package (workspace-defaults.mjs defaultRow):
+  // once listed, it is its one package row of that name. A row with a full selector keeps full-selector matching.
+  const unresolved = !wanted && row?.kind === "package" && !row.package;
+  const matches = wanted ? catalog.filter(r => sameSelector(capabilitySelector(r), wanted))
+    : unresolved ? catalog.filter(r => r?.kind === "package" && r.name === row.name) : [];
   return matches.length === 1 ? matches[0] : from ? facts : null;
 }
 /** The page's age line mirrors the catalog controller (stale with Retry, or an old observation): the same

@@ -255,6 +255,33 @@ test('Capabilities: Back returns to the default that opened the page, filtered o
   }
 });
 
+// A package default the catalog does not list yet names no package (its id is not its package's). Its page, once open,
+// follows a catalog refresh that lists it: the one package row of that name (spawn.mjs contentsRow).
+test('Capabilities: the page of an unlisted package default follows a catalog read that lists it', async t => {
+  const full = catalog('capabilities');
+  const without = { ...full, capabilities: { ...full.capabilities, capabilities: full.capabilities.capabilities.filter(c => c.name !== 'oats.okf') } };
+  let reads = 0;
+  const defaults = { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null }, capabilities: [] };
+  const u = await setup(t, { status: { ...statusOf('workspace-status'), defaults }, sync: () => (reads++ ? full : without) });
+  await u.tab('capabilities');
+  const slot = u.doc.querySelector('.ws-default-slot[data-slot=knowledge]');
+  assert.equal(slot.querySelector('.source-chip-name').textContent, 'package', 'unlisted: the kind alone');
+  slot.focus(); slot.click(); await settle();
+  const page = u.doc.querySelector('.workspace-cap-page');
+  assert.equal(page.hidden, false);
+  assert.equal(page.textContent.includes('2.1.3'), false, 'no version while the catalog does not list it');
+  // A CLI change re-reads the catalog, which now lists oats.okf in its package: the open page follows, in place.
+  await refreshCli({ api: async () => ({ ...CLI, version: `${CLI.version}-later` }) }); await settle();
+  assert.ok(reads >= 2, 'the catalog was read again');
+  assert.equal(page.hidden, false, 'the page stays open');
+  assert.ok(page.textContent.includes('2.1.3'), 'the listed package row\'s facts');
+  // Only a package row of that name, and only one: contentsRow never guesses.
+  const rows = full.capabilities.capabilities;
+  assert.equal(spawn.contentsRow({ name: 'oats.okf', kind: 'package' }, null, rows).package, 'oats.okf');
+  assert.equal(spawn.contentsRow({ name: 'nw-house-style', kind: 'package' }, null, rows), null, 'a member row of that name is not it');
+  assert.equal(spawn.contentsRow({ name: 'oats.okf', kind: 'package' }, null, [...rows, { ...rows.find(r => r.name === 'oats.okf'), package: 'other.pkg' }]), null, 'two packages: ambiguous, none');
+});
+
 // Workspace v4 (human decision 2026-09-26; replaces the header search): the search is
 // the Capabilities view's own toolbar, above the sections.
 test('the view search narrows every section by capability name', async t => {
