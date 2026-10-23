@@ -954,10 +954,10 @@ async function shippedRows() {
 }
 
 for (const [platform, isMac] of [["macOS", true], ["Linux", false]]) {
-  for (const family of ["ctrl+alt", "ctrl+shift"]) {
+  for (const family of ["alt", "ctrl+alt", "ctrl+shift"]) {
     test(`what lost its button is taught by its rows: ${platform}, ${family} family`, async (t) => {
       setChordFamily(family);
-      t.after(() => setChordFamily("ctrl+alt"));
+      t.after(() => setChordFamily("alt"));
       const shipped = await shippedRows();
       const f = setupLinux(t, { isMac, extra: [LEADER_EXTRA[0], ...shipped] });
       f.editor.open();
@@ -972,7 +972,7 @@ for (const [platform, isMac] of [["macOS", true], ["Linux", false]]) {
       assert.deepEqual(caps(leaderRow), [isMac ? "⌃X" : "Ctrl+X", "K", "Space"]);
       assert.equal(leaderRow.querySelector(".kb-chord .sr-only").textContent, `${isMac ? "⌃X" : "Ctrl+X"} then K or Space, fixed`);
       const palette = rowIn("Global", "Open the command palette");
-      const paletteKeys = isMac ? ["⌘", "K"] : family === "ctrl+alt" ? ["Ctrl", "Alt", "K"] : ["Ctrl", "Shift", "K"];
+      const paletteKeys = isMac ? ["⌘", "K"] : { alt: ["Alt", "K"], "ctrl+alt": ["Ctrl", "Alt", "K"], "ctrl+shift": ["Ctrl", "Shift", "K"] }[family];
       assert.deepEqual(caps(palette), paletteKeys);
       assert.equal(palette.querySelector("button.kb-chord").getAttribute("aria-label"),
         `Change shortcut for Open the command palette, currently ${paletteKeys.join(isMac ? "" : "+")}, works in a terminal`);
@@ -1015,32 +1015,44 @@ for (const [platform, isMac] of [["macOS", true], ["Linux", false]]) {
 // ── Most useful: the editor's first section, a read-only table from the live keymap ───────────────
 const usefulShown = (doc) => [...doc.querySelectorAll(".kb-useful tbody tr")]
   .map((tr) => [tr.querySelector("th").textContent, tr.querySelector("td").textContent]);
+// macOS has no family: its rows are the same in each. The workspace moves have a chord in the Alt
+// family alone (Ctrl+Alt and Ctrl+Shift leave Alt+↑ / ↓ to the program), so there the leader's ↑ / ↓
+// stand in.
+const MAC_USEFUL = [
+  ["Command palette", "⌘K"], ["Quick open a soul to spawn", "⌘P"], ["Previous / next tab", "⌥← / ⌥→"],
+  ["Go to tab 1–9", "⌥⌘1 to ⌥⌘9"], ["Previous / next workspace", "⌥↑ / ⌥↓"], ["Split right / split down", "⌘\\ / ⇧⌘\\"],
+  ["Previous / next split pane", "⌥⇧← / ⌥⇧→"], ["Close tab", "⌘W"], ["Focus mode", "⌥⌘Z"],
+  ["The leader, then ? for everything", "⌃X then ?"],
+];
 const MOST_USEFUL = {
-  mac: [
-    ["Command palette", "⌘K"], ["Quick open a soul to spawn", "⌘P"], ["Previous / next tab", "⌥⌘← / ⌥⌘→"],
-    ["Go to tab 1–9", "⌥⌘1 to ⌥⌘9"], ["Previous / next workspace", "⌃X then ↑ / ↓"], ["Split right / split down", "⌘\\ / ⇧⌘\\"],
-    ["Next split pane", "⌥⌘A"], ["Close tab", "⌘W"], ["Focus mode", "⌥⌘Z"], ["Filter instances", "⌘F"],
-    ["The leader, then ? for everything", "⌃X then ?"],
-  ],
-  "ctrl+alt": [
-    ["Command palette", "Ctrl+Alt+K"], ["Quick open a soul to spawn", "Ctrl+Alt+P"], ["Previous / next tab", "Alt+Shift+← / Alt+Shift+→"],
-    ["Go to tab 1–9", "Ctrl+Alt+1 to Ctrl+Alt+9"], ["Previous / next workspace", "Ctrl+X then ↑ / ↓"],
-    ["Split right / split down", "Ctrl+Alt+E / Ctrl+Alt+Shift+E"], ["Next split pane", "Ctrl+Alt+A"], ["Close tab", "Ctrl+Alt+W"],
-    ["Focus mode", "Ctrl+Alt+Z"], ["Filter instances", "Ctrl+Alt+F"], ["The leader, then ? for everything", "Ctrl+X then ?"],
-  ],
-  "ctrl+shift": [
-    ["Command palette", "Ctrl+Shift+K"], ["Quick open a soul to spawn", "Ctrl+Shift+P"], ["Previous / next tab", "Alt+Shift+← / Alt+Shift+→"],
-    ["Go to tab 1–9", "Ctrl+Alt+1 to Ctrl+Alt+9"], ["Previous / next workspace", "Ctrl+X then ↑ / ↓"],
-    ["Split right / split down", "Ctrl+Shift+E / Ctrl+Shift+D"], ["Next split pane", "Ctrl+Alt+A"], ["Close tab", "Ctrl+Shift+W"],
-    ["Focus mode", "Ctrl+Shift+M"], ["Filter instances", "Ctrl+Alt+F"], ["The leader, then ? for everything", "Ctrl+X then ?"],
-  ],
+  mac: { alt: MAC_USEFUL, "ctrl+alt": MAC_USEFUL, "ctrl+shift": MAC_USEFUL },
+  linux: {
+    alt: [
+      ["Command palette", "Alt+K"], ["Quick open a soul to spawn", "Alt+P"], ["Previous / next tab", "Alt+← / Alt+→"],
+      ["Go to tab 1–9", "Alt+1 to Alt+9"], ["Previous / next workspace", "Alt+↑ / Alt+↓"],
+      ["Split right / split down", "Alt+E / Alt+Shift+E"], ["Previous / next split pane", "Alt+Shift+← / Alt+Shift+→"],
+      ["Close tab", "Alt+W"], ["Focus mode", "Alt+Z"], ["The leader, then ? for everything", "Ctrl+X then ?"],
+    ],
+    "ctrl+alt": [
+      ["Command palette", "Ctrl+Alt+K"], ["Quick open a soul to spawn", "Ctrl+Alt+P"], ["Previous / next tab", "Alt+Shift+← / Alt+Shift+→"],
+      ["Go to tab 1–9", "Ctrl+Alt+1 to Ctrl+Alt+9"], ["Previous / next workspace", "Ctrl+X then ↑ / ↓"],
+      ["Split right / split down", "Ctrl+Alt+E / Ctrl+Alt+Shift+E"], ["Previous / next split pane", "Ctrl+Alt+Shift+A / Ctrl+Alt+A"],
+      ["Close tab", "Ctrl+Alt+W"], ["Focus mode", "Ctrl+Alt+Z"], ["The leader, then ? for everything", "Ctrl+X then ?"],
+    ],
+    "ctrl+shift": [
+      ["Command palette", "Ctrl+Shift+K"], ["Quick open a soul to spawn", "Ctrl+Shift+P"], ["Previous / next tab", "Alt+Shift+← / Alt+Shift+→"],
+      ["Go to tab 1–9", "Ctrl+Alt+1 to Ctrl+Alt+9"], ["Previous / next workspace", "Ctrl+X then ↑ / ↓"],
+      ["Split right / split down", "Ctrl+Shift+E / Ctrl+Shift+D"], ["Previous / next split pane", "Ctrl+Alt+Shift+A / Ctrl+Alt+A"],
+      ["Close tab", "Ctrl+Shift+W"], ["Focus mode", "Ctrl+Shift+M"], ["The leader, then ? for everything", "Ctrl+X then ?"],
+    ],
+  },
 };
 
 for (const [platform, isMac] of [["macOS", true], ["Linux", false]]) {
-  for (const family of ["ctrl+alt", "ctrl+shift"]) {
+  for (const family of ["alt", "ctrl+alt", "ctrl+shift"]) {
     test(`Most useful: the first section, a table of the live keys: ${platform}, ${family} family`, (t) => {
       setChordFamily(family);
-      t.after(() => setChordFamily("ctrl+alt"));
+      t.after(() => setChordFamily("alt"));
       const f = setupLinux(t, { isMac, extra: [LEADER_EXTRA[0]] });
       f.editor.open();
       const section = f.doc.querySelector(".kb-body").firstElementChild;
@@ -1054,11 +1066,13 @@ for (const [platform, isMac] of [["macOS", true], ["Linux", false]]) {
         assert.equal(tr.firstElementChild.scope, "row");
         assert.equal(tr.lastElementChild.tagName, "TD");
       }
-      assert.deepEqual(usefulShown(f.doc), MOST_USEFUL[isMac ? "mac" : family]);
+      assert.deepEqual(usefulShown(f.doc), MOST_USEFUL[isMac ? "mac" : "linux"][family]);
       // Keycaps are the list's (.kb-keys kbd), the words the leader rows' (.kb-then); nothing in it is a control.
       const palette = table.querySelector("tbody tr td");
-      assert.deepEqual([...palette.querySelectorAll(".kb-keys kbd")].map((k) => k.textContent), [MOST_USEFUL[isMac ? "mac" : family][0][1]]);
-      assert.deepEqual([...table.querySelectorAll("tbody tr")[4].querySelectorAll(".kb-then")].map((w) => w.textContent), ["then", "/"]);
+      assert.deepEqual([...palette.querySelectorAll(".kb-keys kbd")].map((k) => k.textContent), [MOST_USEFUL[isMac ? "mac" : "linux"][family][0][1]]);
+      // The workspace moves: their chords, or the leader once and its two keys where the family has none.
+      const leaderStandsIn = !isMac && family !== "alt";
+      assert.deepEqual([...table.querySelectorAll("tbody tr")[4].querySelectorAll(".kb-then")].map((w) => w.textContent), leaderStandsIn ? ["then", "/"] : ["/"]);
       assert.equal(section.querySelector("button, input, [tabindex]"), null, "read-only");
       assert.equal(section.querySelector(".kb-row, .kb-chord"), null, "not a row of the list: the search and the arrows walk the list alone");
       assert.equal(f.doc.querySelectorAll('style[data-kb-useful]').length, 1, "its rules, once");
@@ -1066,7 +1080,10 @@ for (const [platform, isMac] of [["macOS", true], ["Linux", false]]) {
   }
 }
 
-test("Most useful follows a rebind, an unbind and a reset in the list below, and a search shows the list alone", (t) => {
+test("Most useful follows a rebind, an unbind and a reset in the list below, the leader standing in for a missing chord, and a search shows the list alone", (t) => {
+  // The Ctrl+Alt family, where the workspace moves have no chord: the leader's keys show.
+  setChordFamily("ctrl+alt");
+  t.after(() => setChordFamily("alt"));
   const f = setupLinux(t, { extra: [LEADER_EXTRA[0]] });
   f.editor.open();
   const useful = (name) => usefulShown(f.doc).find(([n]) => n === name)[1];
@@ -1096,7 +1113,7 @@ test("Most useful follows a rebind, an unbind and a reset in the list below, and
   assert.equal(useful("Command palette"), "Ctrl+Shift+J", "a chord needs no leader");
   // Reset all: the defaults again.
   f.doc.querySelector(".kb-reset-all").click();
-  assert.deepEqual(usefulShown(f.doc), MOST_USEFUL["ctrl+alt"]);
+  assert.deepEqual(usefulShown(f.doc), MOST_USEFUL.linux["ctrl+alt"]);
   // A search shows the list alone; cleared, the section is back.
   f.type("palette");
   assert.equal(f.doc.querySelector(".kb-useful").hidden, true);
