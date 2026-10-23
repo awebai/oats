@@ -26,6 +26,7 @@ import { shownLaunch, launchHarnessName } from "../../../client/launch-view.mjs"
 import { harnessOf } from "../../../client/harness-names.mjs";
 import { memberState } from "../workspace-catalog.mjs";
 import { iconElement } from "../shell-icons.mjs";
+import { ABOUT_COPY, createAboutDialog } from "../about-dialog.mjs";
 import { groupHeading, groupHeadingCSS } from "../group-heading.mjs";
 import {
   apiJson, postJson, ensureTheme,
@@ -365,7 +366,11 @@ function openCapability(s, row, from = null, why = null) {
     // Its Trigger sources row appeared or left: the Provides card is rebuilt around it (the signature below holds it).
     onProvidesChange: () => { if (s.alive && s.capOpen?.contents === contents) paintCapabilityPage(s); },
   });
-  s.capOpen = { row, from, why: from ? why : null, gen: workspaceGeneration(), scrollTop: from ? null : list?.scrollTop ?? null, signature: null, contents };
+  // Back returns focus to the control that opened it: a keyed one (a Workspace defaults column or chip) by its key,
+  // which outlives a repaint and is never filtered out; a catalog row by its capability's name (closeCapability).
+  const active = s.el.ownerDocument.activeElement;
+  const openerKey = !from && list?.contains(active) ? active.dataset?.focusKey || null : null;
+  s.capOpen = { row, from, why: from ? why : null, gen: workspaceGeneration(), scrollTop: from ? null : list?.scrollTop ?? null, signature: null, contents, openerKey };
   paintCapabilityPage(s);
   showPage(s, "capability");
   s.q("workspace-cap-page").querySelector(".page-back")?.focus({ preventScroll: true });
@@ -424,7 +429,11 @@ export function contentsRow(row, from, catalog, facts = null) {
   if (row?.kind === "external") return row;
   if (!Array.isArray(catalog)) return from ? null : row;
   const wanted = capabilitySelector(row);
-  const matches = wanted ? catalog.filter(r => sameSelector(capabilitySelector(r), wanted)) : [];
+  // A package default the catalog did not list when it was opened names no package (workspace-defaults.mjs defaultRow):
+  // once listed, it is its one package row of that name. A row with a full selector keeps full-selector matching.
+  const unresolved = !wanted && row?.kind === "package" && !row.package;
+  const matches = wanted ? catalog.filter(r => sameSelector(capabilitySelector(r), wanted))
+    : unresolved ? catalog.filter(r => r?.kind === "package" && r.name === row.name) : [];
   return matches.length === 1 ? matches[0] : from ? facts : null;
 }
 /** The page's age line mirrors the catalog controller (stale with Retry, or an old observation): the same
@@ -451,6 +460,7 @@ function syncCapabilityPage(s) {
   if (s.capOpen.gen !== workspaceGeneration()) { closeCapability(s); return; }
   paintCapabilityPage(s);
 }
+const focusable = el => el.isConnected && !el.disabled && (el.matches("button, a[href], input, select, textarea") || el.tabIndex >= 0);
 function closeCapability(s, { restoreFocus = false } = {}) {
   const open = s.capOpen; s.capOpen = null;
   open?.contents.dispose();
@@ -465,7 +475,14 @@ function closeCapability(s, { restoreFocus = false } = {}) {
   if (!restoreFocus) return;
   const scope = backToSoul ? s.q("workspace-soul-page") : list;
   // The row is already in view at the restored offset: focus without scrolling it again.
-  [...(scope?.querySelectorAll("[data-capability]") || [])].find(el => el.dataset.capability === open.row.name)?.focus({ preventScroll: !backToSoul && Number.isFinite(open.scrollTop) });
+  const preventScroll = !backToSoul && Number.isFinite(open.scrollTop);
+  const keyed = !backToSoul && open.openerKey ? [...(scope?.querySelectorAll("[data-focus-key]") || [])].find(el => el.dataset.focusKey === open.openerKey && focusable(el)) : null;
+  // Else the capability's row: a focusable one first (a listed name may also be a plain line).
+  const named = [...(scope?.querySelectorAll("[data-capability]") || [])].filter(el => el.dataset.capability === open.row.name);
+  const target = keyed || named.find(focusable) || named[0];
+  target?.focus({ preventScroll });
+  // The opener is gone (filtered out, or left the catalog): the list itself, never <body>.
+  if (!backToSoul && scope && !scope.contains(s.el.ownerDocument.activeElement)) scope.focus({ preventScroll: true });
 }
 
 export function mount(el, ctx) {
@@ -585,6 +602,7 @@ ${spawnDialogCSS}</style>
     onTeamMember: (action, member) => void teamMemberAction(s, action, member),
     onOpenTeam: label => openTeam(s, label),
     onTab: tab => {
+      if (tab !== "souls") s.aboutSouls?.close({ focus: "none" }); // leaving Souls closes its dialog, moving no focus
       s.spawnOp++; closeSpawnModal(s); s.inspector.close(); closeCapability(s); closeTeam(s); s.page.close();
       s.q("souls-bar").hidden = tab !== "souls"; s.q("souls-notice").hidden = tab !== "souls";
     },
@@ -605,6 +623,9 @@ ${spawnDialogCSS}</style>
   applyCapability(s); // a handoff made before the mount: its tab now, its page when the catalog lands
   s.q("filter").addEventListener("input", (e) => { s.filterText = e.target.value; renderGrid(s); });
   s.q("filter").before(iconElement(el.ownerDocument, "search", { size: 14 }));
+  // "About souls": the Souls toolbar's "i" (about-dialog.mjs), at the row's end after Group by; built once.
+  s.aboutSouls = createAboutDialog(el.ownerDocument, { copy: ABOUT_COPY.souls, id: "workspace-souls-about", onIntent: () => nextSelectionIntent() });
+  s.q("souls-group-by").after(s.aboutSouls.button);
   for (const button of s.q("souls-group-by").querySelectorAll("button")) button.addEventListener("click", () => {
     if (s.groupBy === button.dataset.groupBy) return;
     s.groupBy = button.dataset.groupBy;
@@ -674,7 +695,7 @@ ${spawnDialogCSS}</style>
     // immediately, remove its DOM before B loads, and clear A's agentsRoot.
     s.spawnOp++;
     s.rosterReq++; s.rosterGen = null; s.souls = { agents: [] }; s.panelInstances = []; s.spawnDeployments = []; s.spawnViews = [];
-    s.discovery.reset();
+    s.discovery.reset(); s.aboutSouls.close({ focus: "none" });
     s.inspector.close(); closeCapability(s); closeTeam(s, { gone: true }); s.page.close();
     closeSpawnModal(s, { repaint: false }); // the switch replaces the grid below
     // Another workspace's cards leave at once; the new one is pending (a skeleton after 150ms, never a text block nor an empty message).
@@ -709,7 +730,7 @@ export function unmount() {
   state.inspector.dispose(); state.page.dispose(); state.capOpen?.contents.dispose();
   state.presentation?.dispose();
   state.gridState?.dispose();
-  state.discovery.dispose();
+  state.discovery.dispose(); state.aboutSouls?.dispose();
   state.timers.forEach(clearInterval);
   (state.disposers || []).forEach((off) => { try { off(); } catch {} });
   if (state.unsubWs) state.unsubWs();

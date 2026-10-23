@@ -7,7 +7,9 @@ import { createCapabilityMark, createSoulMark } from './identity-marks.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { ROSTER_STALE_TITLE, SOULS_STALE_TITLE } from './loading.mjs';
 import { groupHeading, groupHeadingCSS } from './group-heading.mjs';
-import { memberNames, capabilitySource, capabilityUse, soulsUsing, capabilityGroup, groupCapabilities, hostKeyOf, matchCapabilities, layerLabel } from '../../client/capability-rows.mjs';
+import { sourceChip, sourceText } from './source-chip.mjs';
+import { renderWorkspaceDefaults, workspaceDefaults, DEFAULTS_COPY } from './workspace-defaults.mjs';
+import { memberNames, capabilityUse, soulsUsing, capabilityGroup, groupCapabilities, hostKeyOf, matchCapabilities, layerLabel } from '../../client/capability-rows.mjs';
 
 export const catalogCSS = `
 /* Workspace v4.1: a segmented section jump, section titles with a lead, repository pills
@@ -100,6 +102,7 @@ ${groupHeadingCSS}.source-chip { display:inline-flex; align-items:center; gap:7p
 }
 `;
 
+export { sourceChip, sourceText };
 const list = value => Array.isArray(value) ? value : [];
 const text = value => typeof value === 'string' && value ? value : null;
 const short = value => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) ? value.slice(0, 7) : value;
@@ -198,27 +201,6 @@ const TINTS = { knowledge: 'slate', messaging: 'sage', tasks: 'mauve' };
 const tint = row => TINTS[row.layer] || (row.kind === 'package' ? 'neutral' : 'clay');
 const TILE_ICONS = { knowledge: 'knowledge', messaging: 'mail', tasks: 'tasks' };
 const tileIcon = row => TILE_ICONS[row.layer] || (row.kind === 'package' ? 'package' : 'soul');
-
-/** The source chip's words: the package with its pinned version, or the repository at latest. */
-function sourceText(row, names = new Map()) {
-  const source = capabilitySource(row, names);
-  const name = row.kind === 'package' ? text(row.package) || source.label : source.label;
-  const version = row.kind === 'package' ? text(row.version) : row.kind === 'member' ? 'latest' : null;
-  return { source, name, version, label: [name, version].filter(Boolean).join(' ') };
-}
-
-/** Where a capability comes from, as one chip: a package with its pinned
- * version, a member repository at its latest, or (repo owned) this soul's own
- * repository at its latest. `boxed` draws it as a bordered chip. */
-export function sourceChip(doc, row, names = new Map(), { boxed = false } = {}) {
-  const { source, name, version, label } = sourceText(row, names);
-  const el = node(doc, 'span', null, `source-chip${boxed ? ' boxed' : ''}`); el.dataset.source = source.kind;
-  const icon = row.kind === 'package' ? 'package' : row.private === true ? 'home' : 'repo';
-  el.append(iconElement(doc, icon, { size: 13 }), node(doc, 'span', name, 'source-chip-name'));
-  if (version) el.append(node(doc, 'span', version, 'source-chip-version'));
-  el.title = text(row.origin) || label;
-  return el;
-}
 
 /** A workspace default ("Every soul"): the row is one of status.defaults.capabilities
  * not turned off, or fills its layer's default slot. Without reported defaults
@@ -343,10 +325,11 @@ export function lockNotes(status) {
   return lines;
 }
 
-/** The Capabilities tab: the section jump, then Workspace owned (grouped by repository, with its
+/** The Capabilities tab: the section jump, then Workspace defaults when the kernel reports them
+ * (workspace-defaults.mjs: `status.defaults`, never filtered), Workspace owned (grouped by repository, with its
  * repository pills), Repo owned grouped the same way when the kernel lists it (feature
  * capabilities-private), then Packages grouped by package. `shown`: the Workspace owned rows the pills leave;
- * `filterHost` is the discovery's persistent pill row; `query` narrows every section by name.
+ * `filterHost` is the discovery's persistent pill row; `query` narrows every catalog section by name.
  * `navHost`, when given, takes the section jump (the view's toolbar row). `souls` and `composition`:
  * renderCapabilities' "Used by" inputs. */
 export function renderCapabilitySections(host, { sections, shown, filterHost, navHost = null, privateListed, status, instances, souls = [], composition = false, root, onOpen = null, query = '', rosterState = 'ready' }) {
@@ -354,10 +337,27 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
   host.replaceChildren();
   const match = rows => matchCapabilities(rows, query);
   const table = (parent, rows, opts) => { const box = node(doc, 'div'); parent.append(box); renderCapabilities(box, { rows, status, instances, souls, composition, root, onOpen, rosterState, ...opts }); };
-  // Nothing at all: one factual line, not three empty sections.
-  if (!sections.workspace.length && !sections.packages.length && !sections.repo.length) { table(host, [], {}); return; }
-  // Workspace owned → Repo owned (when listed) → Packages: the nav segments and the sections, in one order.
+  // The workspace's defaults (null when the kernel reports none): matched against every catalog row, whatever the filters leave.
+  const defaults = workspaceDefaults(status), allRows = [...sections.workspace, ...sections.repo, ...sections.packages];
+  const section = def => {
+    const el = node(doc, 'section', null, 'capability-section'); el.dataset.section = def.id;
+    const head = node(doc, 'h2', null, 'capability-section-title'); head.id = `capability-section-${def.id}`; head.tabIndex = -1;
+    head.append(node(doc, 'span', def.title));
+    if (def.lead) head.append(node(doc, 'span', def.lead, 'capability-section-lead'));
+    // The title row (board 4): the title and its lead, then (Workspace owned) the repository pills at its right.
+    const row = node(doc, 'div', null, 'capability-section-head'); row.append(head);
+    el.setAttribute('aria-labelledby', head.id); el.append(row); host.append(el); return el;
+  };
+  const defaultsDef = { id: 'defaults', title: DEFAULTS_COPY.title, nav: DEFAULTS_COPY.nav, count: defaults?.count ?? 0 };
+  const renderDefaults = el => renderWorkspaceDefaults(el, { status, rows: allRows, onOpen });
+  // Nothing at all: one factual line, not three empty sections (the defaults, when reported, still say what every soul gets).
+  if (!sections.workspace.length && !sections.packages.length && !sections.repo.length) {
+    if (defaults) renderDefaults(section(defaultsDef));
+    table(host, [], {}); return;
+  }
+  // Defaults (when reported) → Workspace owned → Repo owned (when listed) → Packages: the nav segments and the sections, in one order.
   const defs = [
+    ...(defaults ? [defaultsDef] : []),
     { id: 'workspace', title: 'Workspace owned', lead: 'latest from member repos', count: sections.workspace.length },
     ...(privateListed ? [{ id: 'repo', title: 'Repo owned', lead: 'only for souls of the same repo', count: sections.repo.length }] : []),
     { id: 'packages', title: 'Packages', lead: 'pinned versions, same everywhere', count: sections.packages.length },
@@ -367,7 +367,7 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
   const nav = node(doc, 'nav', null, 'capability-nav ws-segmented'); nav.setAttribute('aria-label', 'Capability sections');
   for (const def of defs) {
     const jump = node(doc, 'button', null); jump.type = 'button'; jump.dataset.jump = def.id;
-    jump.append(node(doc, 'span', def.title), node(doc, 'span', String(def.count), 'capability-nav-count'));
+    jump.append(node(doc, 'span', def.nav || def.title), node(doc, 'span', String(def.count), 'capability-nav-count'));
     markCurrent(jump, def.id === defs[0].id);
     jump.addEventListener('click', () => {
       const head = host.querySelector(`#capability-section-${def.id}`);
@@ -377,15 +377,8 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
     nav.append(jump);
   }
   (navHost || host).append(nav);
-  const section = def => {
-    const el = node(doc, 'section', null, 'capability-section'); el.dataset.section = def.id;
-    const head = node(doc, 'h2', null, 'capability-section-title'); head.id = `capability-section-${def.id}`; head.tabIndex = -1;
-    head.append(node(doc, 'span', def.title), node(doc, 'span', def.lead, 'capability-section-lead'));
-    // The title row (board 4): the title and its lead, then (Workspace owned) the repository pills at its right.
-    const row = node(doc, 'div', null, 'capability-section-head'); row.append(head);
-    el.setAttribute('aria-labelledby', head.id); el.append(row); host.append(el); return el;
-  };
   const render = {
+    defaults: renderDefaults,
     workspace: owned => {
       if (filterHost) owned.querySelector('.capability-section-head').append(filterHost);
       const groups = groupCapabilities(match(shown), names, hostKey);

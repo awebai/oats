@@ -14,6 +14,7 @@ import { renderCapabilities, renderCapabilitySections, renderRepoPills, repoChoi
 import { capabilitySections, hostKeyOf, memberNames } from "../../client/capability-rows.mjs";
 import { renderSetup, teamsBox } from "../renderer/workspace-setup.mjs";
 import { discoveryCSS } from "../renderer/workspace-discovery.mjs";
+import { ABOUT_COPY, createAboutDialog } from "../renderer/about-dialog.mjs";
 import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
 import { createTerminalSettings, settingsTerminalCSS } from '../renderer/settings-terminal.mjs';
 import { createForgePrPanel } from '../renderer/forge-pr.mjs';
@@ -624,6 +625,52 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     assert.ok(pairs.some(([f, b]) => f === fg && b === 'sel'), `--${fg} on --sel is inventoried`);
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue('--sel').trim())) >= 4.5, `focused pill: --${fg} on --sel`);
   }
+});
+
+// Workspace › Capabilities' Workspace defaults panel (filled and empty core slots, additional defaults from a package
+// and a member repository, one the workspace turned off) and the "About capabilities" dialog in the lifecycle frame: every text on its computed surface.
+for (const [name] of palettes) test(`${name}: Workspace defaults and the About dialog use AA tokens on their computed surfaces`, t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><div class="sections"></div><div class="tools"></div></main></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, identityCSS, discoveryCSS, lifecycleCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  t.after(() => dom.window.close());
+  const rows = [{ name: 'oats.okf', kind: 'package', package: 'oats.okf', version: '2.1.3', layer: 'knowledge' }, { name: 'oats.core', kind: 'package', package: 'oats.core', version: '1.0.0' },
+    { name: 'house-style', kind: 'member', repoKey: 'github.com/nw/agents' }];
+  const status = { workspace: { key: 'github.com/nw/agents', name: 'northwind' }, members: [],
+    defaults: { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null },
+      capabilities: [{ name: 'oats.core', from: 'package', off: false }, { name: 'house-style', from: 'here', off: false }, { name: 'old-style', from: null, off: true }] } };
+  const sections = capabilitySections(rows);
+  renderCapabilitySections(doc.querySelector('.sections'), { sections, shown: sections.workspace, filterHost: null, privateListed: false, status, instances: [], onOpen() {} });
+  const about = createAboutDialog(doc, { copy: ABOUT_COPY.capabilities, id: 'about' });
+  doc.querySelector('.tools').append(about.button); about.open();
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.ws-defaults-scope', '.ws-defaults-panel', 'fg', 'surface'], ['.ws-defaults-sub', '.ws-defaults-panel', 'muted', 'surface'],
+    // The two groups' headings and leads, the one cell's words, its chip and tiles (core tints, an empty slot and a
+    // package neutral, a member capability clay), an additional default turned off.
+    ['.ws-defaults-group-head', '.ws-defaults-panel', 'fg', 'surface'], ['.ws-defaults-group-lead', '.ws-defaults-panel', 'muted', 'surface'],
+    ['button.ws-default-cell .ws-default-label', 'button.ws-default-cell', 'muted', 'surface'],
+    ['button.ws-default-cell .ws-default-name', 'button.ws-default-cell', 'fg', 'surface'],
+    ['button.ws-default-cell .source-chip', 'button.ws-default-cell', 'muted', 'surface'], ['button.ws-default-cell .source-chip-name', 'button.ws-default-cell', 'fg', 'surface'],
+    ['div.ws-default-cell .ws-default-none', 'div.ws-default-cell', 'muted', 'surface'], ['div.ws-default-cell .ws-default-note', 'div.ws-default-cell', 'muted', 'surface'],
+    ['.ws-default-tile[data-tint=slate]', '.ws-default-tile[data-tint=slate]', 'soul-slate-fg', 'soul-slate-bg'],
+    ['.ws-default-tile[data-tint=clay]', '.ws-default-tile[data-tint=clay]', 'soul-clay-fg', 'soul-clay-bg'],
+    ['.ws-default-tile:not([data-tint])', '.ws-default-tile:not([data-tint])', 'chip-fg', 'chip-bg'],
+    ['.ws-default-cell.off .ws-default-name', '.ws-default-cell.off', 'muted', 'surface'], ['.ws-default-cell.off .ws-default-note', '.ws-default-cell.off', 'muted', 'surface'],
+    ['.ws-info-button', '.ws-info-button', 'muted', 'surface'],
+    ['.about-dialog h2', '.about-dialog', 'fg', 'surface'], ['.about-dialog > p', '.about-dialog', 'fg', 'surface'],
+    ['.about-dialog .lifecycle-mark', '.about-dialog .lifecycle-mark', 'accent', 'surface-2'],
+    ['.about-terms dt', '.about-terms', 'fg', 'surface-2'], ['.about-terms dd', '.about-terms', 'muted', 'surface-2'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted);
+    assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
+    assert.ok(pairs.some(pair => pair[0] === fg && pair[1] === bg) || GRAPHIC_PAIRS.some(pair => pair[0] === fg && pair[1] === bg), `--${fg} on --${bg} is inventoried`);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector} on ${bg}`);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+  about.dispose();
 });
 
 // Schedules + Triggers (§2.3a): the list (header, toolbar, groups, rows, tags), the host
