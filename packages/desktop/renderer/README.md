@@ -437,7 +437,8 @@ split into sections) is `packages/client/roster-sections.mjs`.
   Instances), the main views (`#nav`, Workspace and Deployments side by side, no title) on the list's 8px
   sides, 8px under the line and 8px before the Instances heading, then the Instances heading (its text, the
   count, then **Spawn instance**, `#sidebar-spawn`, a `.ws-add-open` **+**
-  running `app.chooseSoul`; CSS `order: 1` keeps it after the "Refreshing…" that loading.mjs appends) over the
+  running `app.chooseSoul`; CSS `order: 1` keeps it after the "Refreshing…" that loading.mjs appends, which this
+  heading shows as its dot alone, the words clipped for assistive tech, so the + never leaves its column) over the
   roster; the bottom bar (`#nav-foot`, `role="group"` "Sidebar tools", under a `--border` line). The headings
   are the nav items' 13px at 650 in `--fg`, the workspace rows' names 14px at 500 (the current one at 650), the
   roster's machine labels (`.ctx-deployment`) 12px 400 muted
@@ -834,7 +835,7 @@ Every data region runs on one state model, owned by the controller
 |---|---|---|
 | pending | no data for this subject yet | after 150ms a skeleton shaped like the final content; `aria-busy` on the region; the status line says "Loading <noun>…" once — never an empty-state message |
 | ready / empty | the last read succeeded | the content, or the surface's own empty copy after a successful zero read |
-| refreshing | data present, a read in flight | the content stays interactive; "Refreshing…" with a static dot after 400ms in the surface header; no `aria-busy`, no announcement |
+| refreshing | data present, a read in flight | the content stays interactive; "Refreshing…" with a static dot after 400ms in the surface header (the Instances heading: the dot alone, its words clipped); no `aria-busy`, no announcement |
 | stale | data present, the read failed | content kept; "Couldn't refresh <noun> · observed <age>" with **Retry** in the attention style and the cause behind a **Details** disclosure (and in the line's title, which never holds a refusal's detail: that stays in Details, alone in its `<bdi>`; the controller repaints both from the cause it was given, never from the title); announced once through the status line, which is then clipped (`.loading-quiet`, its box kept) so the amber line is the one visible message — never the error red; actions that need current state are held by the surface with `aria-disabled` (never `disabled`: Chromium blurs a focused control that becomes disabled) and an accessible reason (`aria-description` + title: "Unavailable: roster is not current", "Unavailable: inspection is not current"), and every handler on a held control checks the mark first |
 | failed | no data, the read failed | the cause, a **Details** disclosure with the code (and a refusal's detail after it, alone in its `<bdi>`) and **Retry**, where the skeleton stood |
 

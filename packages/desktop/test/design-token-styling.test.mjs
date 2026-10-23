@@ -260,6 +260,24 @@ test("the right-hand column: the headings' +, the workspace rows' needs-input ma
   assert.match(shell, /^\.ctx-list \{ scrollbar-width: none; \}/m, "as the roster's");
 });
 
+// "Refreshing…" in the Instances heading (loading.mjs appends it after the count) is its dot alone, a fixed 6px box
+// with the words clipped (kept for assistive tech): the review found the words pushed the heading's + 21px past the
+// sidebar's edge at 12 running. The fixed parts of the refreshing heading leave the title and the count 177px.
+test("the refreshing Instances heading keeps its + in the column: the indicator is a fixed 6px dot, its words clipped, not removed", t => {
+  const u = fixture(t), px = value => parseFloat(value);
+  const rule = shell.match(/^\.ctx-head > \.loading-refreshing \{([^}]*)\}/m);
+  assert.ok(rule, "the heading's own rule for the indicator");
+  for (const decl of ["flex: none", "width: 6px", "overflow: hidden", "white-space: nowrap", "margin-left: 6px"]) assert.ok(rule[1].includes(decl), decl);
+  assert.doesNotMatch(rule[1], /display:\s*none|visibility|clip-path|font-size:\s*0/, "clipped, never hidden from assistive tech");
+  const loading = read("loading.css");
+  assert.match(loading, /^\.loading-refreshing \.loading-dot \{ width: 6px;/m, "the dot is the box's first 6px");
+  // The budget: the sidebar's 263px inside its edge, less the head's padding, the +, the indicator and its margin,
+  // and the head's gaps between its four children.
+  const head = u.style(".roster-head"), gap = px(shell.match(/^\.ctx-head \{[^}]*?\bgap: (\d+px);/m)[1]); // jsdom computes no gap
+  const left = 263 - px(head.paddingLeft) - px(head.paddingRight) - px(u.style("#sidebar-spawn").width) - 6 - 6 - 3 * gap;
+  assert.equal(left, 177, "room for \"Instances\" and \"● N running\" (about 140px at 13px and 11.5px)");
+});
+
 // The foot (2026-10-23): [mark] … [toggle][cog]. The OATS mark's centre on the workspace rows' circles (22px in from
 // the left), the settings cog's in the right-hand column (25px in from the right, as the headings' +), the sidebar
 // toggle 2px left of the cog, all computed from the rules.

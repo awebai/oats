@@ -154,10 +154,12 @@ body {
 .ctx-list { scrollbar-width: none; }
 .ctx-list::-webkit-scrollbar { display: none; }
 /* Loading states (renderer/loading.mjs): the stale line sits between the head and the list;
-   "Refreshing…" closes the head after the count; the count's skeleton pill keeps its width. */
+   "Refreshing…" closes the head after the count (its dot only, below); the count's skeleton pill keeps its width. */
 .ctx-status { flex: none; margin: 0 10px 6px; }
 .ctx-status:empty { display: none; }
-.ctx-head > .loading-refreshing { flex: none; margin-left: 6px; }
+/* "Refreshing…" in the Instances heading shows its dot alone: the heading's count and its + leave no room for the
+   words, which stay in the element for assistive tech (clipped, not removed) and never move the + (review). */
+.ctx-head > .loading-refreshing { flex: none; width: 6px; overflow: hidden; white-space: nowrap; margin-left: 6px; }
 .ctx-count .skeleton-pill { width: 5.5em; }
 .ctx-count-reserve { display: inline-block; width: 5.5em; height: 1em; } /* failed: the pill's box, nothing in it */
 /* A stale count is the last observation: muted, its dot no longer the live accent. */

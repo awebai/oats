@@ -6,6 +6,8 @@
 // below), ↓/↑ on the trigger open it on the first / last item, ↑/↓/Home/End move, Esc and Tab close it, Esc back
 // on the cog.
 import { iconElement } from "./shell-icons.mjs";
+import { joinPickerFocusReturn } from "./overlay-picker.mjs";
+import { captureFocusReturn } from "./focus-return.mjs";
 
 export const SETTINGS_LABEL = "Settings";
 /** The menu's items, in order: what each says, the action it runs and its icon. */
@@ -57,10 +59,17 @@ export function createSettingsMenu(doc, trigger, { run, shortcut = () => "" }) {
     position();
     items[last ? items.length - 1 : 0].focus();
   }
+  // While it is open the menu joins the overlays' focus handoff (overlay-picker.mjs), as a dialog does: a dialog or
+  // picker that opens over it (a chord: the palette, the shortcuts editor, the theme picker…) takes the cog as its
+  // return target and closes the menu without moving focus. Any other move of focus out of it closes it the same way.
+  let release = null;
+  const leave = () => { release?.(); release = null; };
   menu.addEventListener("beforetoggle", (event) => {
     const expanded = event.newState === "open";
     trigger.setAttribute("aria-expanded", String(expanded));
-    if (!expanded) return;
+    if (!expanded) { leave(); return; }
+    if (doc.activeElement !== trigger) trigger.focus({ preventScroll: true });
+    leave(); release = joinPickerFocusReturn(doc, { opener: captureFocusReturn(doc), dismiss: () => close(false) });
     refresh();
     // A pointer opening can run before the popover is measurable: place it again before the next paint.
     doc.defaultView.requestAnimationFrame(() => { if (isOpen()) position(); });
@@ -69,6 +78,9 @@ export function createSettingsMenu(doc, trigger, { run, shortcut = () => "" }) {
   menu.addEventListener("toggle", (event) => {
     if (event.newState === "open" && !menu.contains(doc.activeElement)) { position(); items[0].focus(); }
   });
+  doc.addEventListener("focusin", (event) => {
+    if (isOpen() && !menu.contains(event.target) && event.target !== trigger) close(false);
+  }, true);
   trigger.addEventListener("keydown", (event) => {
     if (!["ArrowDown", "ArrowUp"].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     event.preventDefault(); event.stopPropagation(); open(event.key === "ArrowUp");

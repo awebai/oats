@@ -6,6 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { createSettingsMenu, SETTINGS_ITEMS, SETTINGS_LABEL } from "../renderer/sidebar-settings.mjs";
+import { takePickerFocusReturn } from "../renderer/overlay-picker.mjs";
 
 // jsdom has no top-layer API: model a popover's open state, its beforetoggle (synchronous) and toggle events, :popover-open,
 // and an invoker's click (a button's popoverTargetElement toggles it). The toggle event is queued, as the HTML spec
@@ -266,4 +267,35 @@ test("placed as the instance actions' menu: its right edge on the cog's, above t
   r.trigger.getBoundingClientRect = () => box(226, 30, 24, 24);
   r.key(r.trigger, { key: "ArrowDown" });
   assert.equal(r.menu.style.top, "8px", "never above the window's top 8px margin");
+});
+
+// Another overlay opened by its chord while the menu is open (the palette, the shortcuts editor, the theme picker:
+// each takes the handoff through takePickerFocusReturn before it mounts) closes the menu without moving focus, and
+// takes the cog as its return target, never the menu's item (review: the menu stayed above the editor's scrim).
+test("an overlay opened over the open menu closes it through the handoff and returns to the cog", async (t) => {
+  const r = rig(t);
+  r.trigger.focus(); r.trigger.click(); await r.tick();
+  assert.equal(r.isShown(), true); assert.equal(r.doc.activeElement, r.items[0]);
+  const opener = takePickerFocusReturn(r.doc);
+  assert.equal(r.isShown(), false, "closed by the overlay that took over");
+  assert.equal(r.trigger.getAttribute("aria-expanded"), "false");
+  assert.equal(r.doc.activeElement, r.items[0], "the handoff moves no focus: the overlay does");
+  r.doc.body.focus();
+  assert.equal(opener.restore(), true); assert.equal(r.doc.activeElement, r.trigger, "the overlay's return target is the cog");
+  // Closed, the menu has left the handoff: the next overlay captures whatever has focus then.
+  r.items[1].tabIndex = 0; r.doc.getElementById("sidebar-toggle").focus();
+  const later = takePickerFocusReturn(r.doc); r.doc.body.focus();
+  assert.equal(later.restore(), true); assert.equal(r.doc.activeElement, r.doc.getElementById("sidebar-toggle"));
+});
+
+test("focus moving anywhere else (a dialog that skips the handoff) closes the menu without taking focus back", async (t) => {
+  const r = rig(t);
+  r.trigger.click(); await r.tick();
+  assert.equal(r.isShown(), true);
+  const other = r.doc.getElementById("sidebar-toggle"); other.focus();
+  assert.equal(r.isShown(), false); assert.equal(r.doc.activeElement, other);
+  // Moving within the menu, or back to the cog, keeps it open.
+  r.trigger.click(); await r.tick();
+  r.key(r.items[0], { key: "ArrowDown" }); assert.equal(r.isShown(), true); assert.equal(r.doc.activeElement, r.items[1]);
+  r.trigger.focus(); assert.equal(r.isShown(), true);
 });
