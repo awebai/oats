@@ -309,11 +309,6 @@ export function createGenerations() {
  * @param {() => Promise<unknown>} io.refresh   refresh the advertised set from the live server
  * @param {() => Promise<{ suggestions: Array<{ path: string, state: string, removable: boolean }>, list: object }>} io.list
  *        the suggestions (workspaceSuggestions) and what became of this computer's list read (`list`)
- * @param {{ setPaths(paths: string[]): void, waiting(path: string): boolean | null }} [io.waiting]
- *        whether anyone waits in each row that can be opened (packages/client/listed-waiting.mjs): a current
- *        call gives it those rows, the set its reads cover (a row that left drops its answer), and each such
- *        row of the answer carries `waiting` (true, false, or null: unknown, never read or its read failed).
- *        Asking reads nothing: the rows carry what was last answered. Without it, no row has `waiting`.
  */
 export function createSuggestionCalls(io) {
   const offered = new Map(), removable = new Map();
@@ -324,12 +319,9 @@ export function createSuggestionCalls(io) {
       await io.refresh();
       const { suggestions, list } = await io.list();
       if (!io.generations.isCurrent(verb, gen)) return { stale: true, suggestions: [] };
-      const openable = suggestions.filter((s) => s.state === "ok").map((s) => s.path);
-      offered.set(scope, new Set(openable));
+      offered.set(scope, new Set(suggestions.filter((s) => s.state === "ok").map((s) => s.path)));
       removable.set(scope, new Set(suggestions.filter((s) => s.removable).map((s) => s.path)));
-      if (!io.waiting) return { stale: false, suggestions, list };
-      io.waiting.setPaths(openable);
-      return { stale: false, suggestions: suggestions.map((s) => (s.state === "ok" ? { ...s, waiting: io.waiting.waiting(s.path) } : s)), list };
+      return { stale: false, suggestions, list };
     },
     offered: (scope) => offered.get(scope) ?? new Set(),
     removable: (scope) => removable.get(scope) ?? new Set(),
