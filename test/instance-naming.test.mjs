@@ -418,6 +418,11 @@ test("oats instance suggest-name (#1490 §2): the preview's name for a soul that
   assert.deepEqual([pi.naming.harness, pi.naming.model], ["pi", "acme/pi-model"]);
   assert.deepEqual(fake.read().argv, NAMING_CALLS.pi.argv("acme/pi-model"));
   assert.equal(okResult(suggest(["--soul", "dev", "--task", "x", "--harness", "pi", "--launch-config", "fakepi", "--model", "acme/other"]), "pi model").naming.model, "acme/other");
+  // The model is read as a spawn reads it: a preference list resolved for the harness, @native-default for none.
+  assert.equal(okResult(suggest(["--soul", "dev", "--task", "x", "--launch-config", "fakepi", "--model", "first-model,second-model"]), "pi list").naming.model, "first-model");
+  assert.deepEqual(fake.read().argv, NAMING_CALLS.pi.argv("first-model"));
+  const native = okResult(suggest(["--soul", "dev", "--task", "x", "--launch-config", "fakepi", "--model", "@native-default"]), "pi native");
+  assert.deepEqual([native.naming.model, fake.read().argv], [null, NAMING_CALLS.pi.argv(null)]);
 
   // Each reachable reason, ok:true and no name.
   const numbered = (extra, e, reason) => {

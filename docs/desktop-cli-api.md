@@ -2814,8 +2814,9 @@ may land on another.
   spawn on this machine would launch it with: `--launch-config` if given
   (`none` for the bare harness), else this machine's default configuration
   for that harness, else the harness's own executable. The model is
-  `--model`, else the configuration's (pi; claude always names with
-  `haiku`). The task text goes to this machine's harness and model, as the
+  `--model`, else the configuration's, read as a spawn reads it (a
+  preference list resolves for the harness; `@native-default` is the
+  harness's own). It matters for pi; claude always names with `haiku`. The task text goes to this machine's harness and model, as the
   preview's naming does.
 - **The call** is the preview's, with the same prompt, argv and isolation,
   and its model call is bounded as the preview's is: at most 20 s and 4 KiB
