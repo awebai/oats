@@ -64,13 +64,14 @@ export function startSingleInstance(app, onSecondLaunch, start, launch = ownLaun
 }
 
 /** The native message box for a launch of `launched` reaching a running `running`: Restart (0) or Keep
- * (1, also Esc) when the launch can be relaunched, else one OK. */
-export function versionHandoffBox(launched, running, restartable) {
+ * (1, also Esc) naming `restartPath`, the file Restart starts, when the launch can be relaunched (a
+ * path), else one OK (null). */
+export function versionHandoffBox(launched, running, restartPath) {
   const message = `OATS Desktop ${launched} was opened, but ${running} is still running.`;
   const first = "The version you opened takes effect only after this one quits.";
-  return restartable
+  return restartPath
     ? { type: "info", title: "OATS Desktop", message, noLink: true,
-      detail: `${first} Restarting closes Desktop's windows and starts ${launched}; your agents keep running in their sessions.`,
+      detail: `${first} Restarting closes Desktop's windows and starts ${launched} from ${restartPath}; your agents keep running in their sessions.`,
       buttons: [`Restart into ${launched}`, `Keep ${running}`], defaultId: 0, cancelId: 1 }
     : { type: "info", title: "OATS Desktop", message, noLink: true,
       detail: `${first} Quit OATS Desktop, then open it again.`, buttons: ["OK"], defaultId: 0, cancelId: 0 };
@@ -100,11 +101,13 @@ export function createVersionHandoff({ running, ask, isRegularFile, relaunch, qu
     asking = true;
     try {
       const restartable = runnable(launch.execPath);
-      const { response } = await ask(win ?? null, versionHandoffBox(launch.version, running, restartable));
+      // The box names the very path relaunch runs.
+      const { response } = await ask(win ?? null, versionHandoffBox(launch.version, running,
+        restartable ? relaunchOptions(launch).execPath : null));
       if (!restartable || response !== 0) return;
       // Checked again: the file may have gone while the box was open. Never relaunch a path that is not one.
       if (!runnable(launch.execPath)) {
-        await ask(win ?? null, versionHandoffBox(launch.version, running, false));
+        await ask(win ?? null, versionHandoffBox(launch.version, running, null));
         return;
       }
       relaunch(relaunchOptions(launch));

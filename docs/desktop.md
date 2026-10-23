@@ -122,9 +122,9 @@ again.
 
 From this version on, a launch of a different version says so: the running
 Desktop opens or focuses the window as usual, then asks whether to **Restart
-into** the version you opened or **Keep** the running one. Restarting closes
-Desktop's windows and starts the version you opened; your agents keep running
-in their sessions. When the copy you opened can't be found again (its file was
+into** the version you opened, naming the file it starts, or **Keep** the
+running one. Restarting closes Desktop's windows and starts the version you
+opened; your agents keep running in their sessions. When the copy you opened can't be found again (its file was
 moved or removed), the message only tells you to quit and open it again. Both
 copies must be this version or later: a running Desktop older than this one
 can't tell you, and neither can a launch of one.

@@ -145,16 +145,16 @@ test("a launch whose handling fails is not followed by the version box", async (
 });
 
 test("the box: Restart into the launched version (default) or Keep the running one (cancel, Esc)", () => {
-  assert.deepEqual(versionHandoffBox("0.67.1", "0.65.0", true), {
+  assert.deepEqual(versionHandoffBox("0.67.1", "0.65.0", "/home/j/OATS.AppImage"), {
     type: "info", title: "OATS Desktop", noLink: true,
     message: "OATS Desktop 0.67.1 was opened, but 0.65.0 is still running.",
-    detail: "The version you opened takes effect only after this one quits. Restarting closes Desktop's windows and starts 0.67.1; your agents keep running in their sessions.",
+    detail: "The version you opened takes effect only after this one quits. Restarting closes Desktop's windows and starts 0.67.1 from /home/j/OATS.AppImage; your agents keep running in their sessions.",
     buttons: ["Restart into 0.67.1", "Keep 0.65.0"], defaultId: 0, cancelId: 1,
   });
 });
 
 test("the box with no usable relaunch path: one OK, and how to switch by hand", () => {
-  assert.deepEqual(versionHandoffBox("0.67.1", "0.65.0", false), {
+  assert.deepEqual(versionHandoffBox("0.67.1", "0.65.0", null), {
     type: "info", title: "OATS Desktop", noLink: true,
     message: "OATS Desktop 0.67.1 was opened, but 0.65.0 is still running.",
     detail: "The version you opened takes effect only after this one quits. Quit OATS Desktop, then open it again.",
@@ -204,6 +204,17 @@ test("Restart relaunches the launched copy and quits through the normal path", a
   await h.offer(SENT, "win");
   assert.deepEqual(h.log, [["stat", SENT.execPath], ["ask", "win", ["Restart into 0.67.1", "Keep 0.65.0"]], ["stat", SENT.execPath],
     ["relaunch", { execPath: SENT.execPath, args: ["--dir", "/d/a"] }], ["quit"]]);
+});
+
+test("the box names the very path Restart relaunches", async () => {
+  const shown = [], relaunched = [];
+  const launch = { ...SENT, execPath: "/opt/OATS Desktop/oats-desktop" };
+  const offer = createVersionHandoff({ running: "0.65.0", ask: async (_win, box) => { shown.push(box.detail); return { response: 0 }; },
+    isRegularFile: () => true, relaunch: (o) => relaunched.push(o), quit: () => {} });
+  await offer(launch, "win");
+  assert.equal(relaunched.length, 1);
+  assert.ok(shown[0].includes(` from ${relaunched[0].execPath};`), shown[0]);
+  assert.equal(relaunched[0].execPath, launch.execPath, "the validated sent execPath, verbatim");
 });
 
 test("Keep (or Esc) changes nothing, and the next launch asks again", async () => {
