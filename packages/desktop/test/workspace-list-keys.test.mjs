@@ -35,6 +35,7 @@ import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs"
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/tab-a11y.mjs";
+import { numberTabStrips } from "../renderer/tab-numbers.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
 import * as layout from "../renderer/split-layout.mjs";
@@ -247,7 +248,7 @@ function tabsRig(t) {
     wsActiveTerminal: new Map(), workspaceTabMemory: createWorkspaceTabMemory(), brainIntents: createIntentGate(),
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     setActiveContexts() {}, workspaceLabel: { reset() {} }, refreshContextRoster() {}, renderContextRoster() {}, updateSplitControls() {},
-    revealInStrip, tabStripResize: null,
+    revealInStrip, tabStripResize: null, numberTabStrips, tabNumberObserver: null,
     createSelectionOwnership, wirePaneSelection, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab,
     reserveKey, whenKeyFree, prepareOwnedOpen, projectSplitDom, ...layout, ...workspaceTabs,
     loadStageView: () => new Promise(() => {}), syncContextPanel() {}, contextPanel: {}, createPanelOwner: () => ({ dispose() {} }), ctx: {},

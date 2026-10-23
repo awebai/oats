@@ -79,7 +79,7 @@ The shell has three navigation contexts:
   "This computer" theme choice: reads and follows Omarchy's `colors.toml`, else
   the system's light or dark appearance, and sends plain state to the windows.
 - `chord-family.mjs` — keys.json, the chord family both clients bind on
-  Linux/Windows (Ctrl+Alt or Ctrl+Shift; `packages/client/keys-file.mjs` says
+  Linux/Windows (Alt, the default, Ctrl+Alt or Ctrl+Shift; `packages/client/keys-file.mjs` says
   what its text means): reads it when a window asks and at app focus, writes it
   when the Shortcuts page asks (only `chords`, atomically: a temporary file in
   the same directory, then a rename), and sends plain state to every window

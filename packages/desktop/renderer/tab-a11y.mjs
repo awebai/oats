@@ -27,7 +27,10 @@ export function tabNameTailStart(name, soul = "") {
  *  { color } the instance's colour on that dot, a palette name (instance-dot.mjs);
  *  { tailAt, tailEnd } splits the title: a head that ellipsizes, the tail
  *  [tailAt, tailEnd) that never shrinks (tabNameTailStart), then any rest of
- *  the title (a remote tab's " · host"), which gives way before the head. */
+ *  the title (a remote tab's " · host"), which gives way before the head.
+ *  Every trigger ends with an empty, hidden .tab-num: the tab's go-to-tab
+ *  number, which numberTabStrips (tab-numbers.mjs) fills in once the tab is in
+ *  its strip; decorative too. */
 export function createTabChrome(document, id, title, isMac = false, decor = {}) {
   const tabEl = document.createElement("div");
   tabEl.className = "tab";
@@ -67,6 +70,9 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
     const extra = document.createElement("span"); extra.className = "tab-detail"; extra.setAttribute("aria-hidden", "true");
     extra.textContent = detail; triggerEl.append(extra);
   }
+  // The go-to-tab number, last and empty: tab-numbers.mjs numbers each strip's tabs.
+  const num = document.createElement("span"); num.className = "tab-num"; num.setAttribute("aria-hidden", "true"); num.hidden = true;
+  triggerEl.append(num);
   triggerEl.title = title;
   triggerEl.setAttribute("aria-label", title);
 
@@ -75,7 +81,7 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
   closeEl.className = "close";
   closeEl.append(iconElement(document, "close", { size: 13 }));
   closeEl.setAttribute("aria-label", `Close ${title}`);
-  // The chord half is the keymap's tabs.close on this platform (⌘W / Ctrl+Alt+W), or none when unbound.
+  // The chord half is the keymap's tabs.close on this platform (⌘W / Alt+W), or none when unbound.
   const chord = getBinding("tabs.close", isMac);
   closeEl.title = `Close ${title} (${chord ? `Delete or ${formatChord(chord, isMac)}` : "Delete"})`;
   tabEl.append(triggerEl, closeEl);
@@ -98,7 +104,7 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
 
 export function tabKeyAction(event, index, count) {
   const key = event.key;
-  // Delete closes the focused tab. The close chord (⌘W / Ctrl+Alt+W) is the keymap's
+  // Delete closes the focused tab. The close chord (⌘W / Alt+W) is the keymap's
   // tabs.close, never hard-coded here: a rebind or unbind must hold on the strip too (spec F).
   if (key === "Delete" && !event.metaKey && !event.ctrlKey && !event.altKey) return { type: "close" };
   if (!count || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.defaultPrevented) return null;

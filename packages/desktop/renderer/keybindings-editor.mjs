@@ -13,8 +13,8 @@
 // the leader matches the TUI and the direct chords are Desktop extras; then the
 // Sidebar keys; then the groups by context.
 //
-// On Linux/Windows its top holds the chord family (docs/desktop-keyboard.md, "Switch to
-// Ctrl+Shift"): a two-way choice, "Shortcut family, shared with oats tui", Ctrl+Alt (the default) or Ctrl+Shift, which
+// On Linux/Windows its top holds the chord family (docs/desktop-keyboard.md, "The chord
+// families"): a three-way choice, "Shortcut family, shared with oats tui", Alt (the default), Ctrl+Alt or Ctrl+Shift, which
 // names the family in use. A change writes keys.json through main at once (renderer/chord-family.mjs)
 // and the keymap switches at once; the TUI, which shares the file, takes it at its next start, as
 // the line under the choice says, with the note main sends when keys.json was there and not taken.
@@ -113,10 +113,11 @@ const clashWords = (isMac) => ({ chord, actions: [a, b], own = [true, true] }) =
 export const CHORD_FAMILY_WORDS = Object.freeze({
   title: "Shortcut family, shared with oats tui",
   options: Object.freeze({
-    "ctrl+alt": `${CHORD_FAMILY_LABELS["ctrl+alt"]} (default)`,
+    alt: `${CHORD_FAMILY_LABELS.alt} (default)`,
+    "ctrl+alt": `${CHORD_FAMILY_LABELS["ctrl+alt"]} (for programs that read Alt)`,
     "ctrl+shift": `${CHORD_FAMILY_LABELS["ctrl+shift"]} (foot, Alacritty)`,
   }),
-  tui: "Both work here; pick the one your terminal passes to oats tui. oats tui uses it from its next start.",
+  tui: "All three work here; pick the one your terminal passes to oats tui. oats tui uses it from its next start.",
   /** When main could not write keys.json: the family in use stays. */
   unwritten: (family) => `Could not write keys.json: the shortcuts stay ${CHORD_FAMILY_LABELS[family] ?? CHORD_FAMILY_LABELS[DEFAULT_CHORD_FAMILY]}. Fix or remove the file, then choose again.`,
 });

@@ -9,7 +9,7 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 `TERMINAL_ALLOWLIST`, `SIDEBAR_KEYS`, `CHORDS_READ`), `packages/client/keymap.mjs`
 (the leader, its table, the plain keys and the chords, the TUI's too, and the palette's own keys,
 `PALETTE_KEYS`), `packages/client/keys-file.mjs` (keys.json, the chord family both clients
-bind; see "The Ctrl+Shift option"), `renderer/leader.mjs` (the
+bind; see "The chord families"), `renderer/tab-numbers.mjs` (the tabs' numbers), `renderer/leader.mjs` (the
 leader's wait), `renderer/leader-keys.mjs` (which rows apply, the Desktop's
 labels), `renderer/leader-dispatch.mjs` (what each key does),
 `renderer/leader-hint.mjs` (the hint's announcement and its line), `renderer/focus-regions.mjs` (F6),
@@ -32,49 +32,74 @@ Show instance panel and the closed sidebar and panel).
 1. **Super/Meta belongs to the window manager on Linux.** Omarchy (Hyprland),
    GNOME and KDE bind Super+* heavily. The Desktop never binds Super on
    Linux/Windows: `Mod` is ⌘ on macOS and Ctrl everywhere else.
-2. **A default chord never takes a key that a program inside the terminal
-   reads.** Plain Ctrl+letter: Ctrl+W deletes a word, Ctrl+K kills to the end
-   of the line, Ctrl+\ is SIGQUIT, Ctrl+P is shell history, Ctrl+B is the tmux
-   prefix. Function keys: F1 and F6 in htop, mc and nano. Alt+digit (ESC and a
-   digit): readline's numeric argument, irssi/weechat windows, a common tmux
-   select-window binding. Ctrl+PgUp/PgDn in vim and weechat. On macOS the
+2. **What a program in the terminal keeps.** Plain Ctrl+letter: Ctrl+W
+   deletes a word, Ctrl+K kills to the end of the line, Ctrl+\ is SIGQUIT,
+   Ctrl+P is shell history, Ctrl+B is the tmux prefix. Function keys: F1 and
+   F6 in htop, mc and nano. Ctrl+PgUp/PgDn in vim and weechat. On macOS the
    ⌃digits, which are control bytes (⌃3 ESC, ⌃4–⌃7 FS/GS/RS/US, ⌃8 DEL; ⌃6 is
-   vim's alternate file). Such a key may stay bound for focus outside a
-   terminal, but it is never terminal-allowlisted, with one named exception:
-   the leader's Ctrl+X (the TUI's, as in Emacs), whose 0x18 the leader pressed
-   twice gives the program (see "The leader"). On Linux/Windows a chord
-   fires in a terminal only when xterm sends nothing for it, or when what it
-   sends is a byte the program still gets from a plainer key. Two families do
-   that. **Ctrl+Shift+key** sends nothing, the convention of GNOME Terminal,
-   Alacritty, Ghostty and kitty; Omarchy's terminals follow it. So the
-   Ctrl+Shift option's seven letter chords fire in a terminal (see "The
-   Ctrl+Shift option").
-   **Ctrl+Alt+key**, the family the Desktop shares with the TUI (see "Shared
-   with the TUI"), sends ESC and then what the key sends with Ctrl alone (ESC
-   and the digit, for a digit): the program still gets exactly that from Esc,
-   then that key. xterm also
-   sends nothing for Ctrl+1, Ctrl+2, Ctrl+, and Ctrl+= Ctrl+- Ctrl+0. The
-   allowlisted defaults that do send something:
+   vim's alternate file), and every ⌥ key. Such a key may stay bound for focus
+   outside a terminal, but it is never terminal-allowlisted, with one named
+   exception: the leader's Ctrl+X (the TUI's, as in Emacs), whose 0x18 the
+   leader pressed twice gives the program (see "The leader").
+
+   **The Alt family takes keys a program reads, on purpose.** Changed in the
+   next release: the rule was that a default chord never takes a key that a
+   program inside the terminal reads. For the Alt family, the default on
+   Linux and Windows, Pepe (the owner) overrode it on 2026-10-22, and the
+   maintainer set its keys (see "The chord families"). Alt+letter, Alt+digit
+   and the Alt arrows are what readline, Emacs, Claude Code and others bind
+   (M-b, M-f, M-d, M-digit, Alt+P…). [The collision table](#what-the-alt-family-takes)
+   names each key it takes and how the program still gets it: in a terminal,
+   Alt+key sends ESC and then the key, so **Esc, then the key** sends the same
+   bytes, and a program that reads Meta reads it as Alt+key. Or choose the
+   Ctrl+Alt family, which keeps the old rule. Alt keys that no chord holds
+   (Alt+B, Alt+D, Alt+., Alt+T…) are still the program's.
+
+   On Linux/Windows a chord fires in a terminal when xterm sends nothing for
+   it, when what it sends is a byte the program still gets from a plainer
+   key, or when it is one of the Alt family's.
+   - **Ctrl+Shift+key** sends nothing: the convention of GNOME Terminal,
+     Alacritty, Ghostty and kitty, which Omarchy's terminals follow. So the
+     Ctrl+Shift family's seven letter chords fire in a terminal (see "The
+     chord families").
+   - **Ctrl+Alt+key** sends ESC and then what the key sends with Ctrl alone
+     (ESC and the digit, for a digit). The program still gets exactly that
+     from Esc, then that key.
+   - **Alt+key** (the Alt family) sends ESC and the key, which Esc, then the
+     key still sends. An Alt arrow is sent as the Ctrl arrow (`CSI 1;5` and
+     its letter: xterm.js does so on Linux and Windows), which Ctrl+arrow
+     still sends.
+   - xterm also sends nothing for Ctrl+1, Ctrl+2, Ctrl+, and Ctrl+= Ctrl+-
+     Ctrl+0.
+
+   The allowlisted defaults that do send something:
 
    | Chord | xterm sends | The program still gets it from |
    |---|---|---|
    | Ctrl+X (the leader) | 0x18 (CAN) | no plainer key: a named exception. The leader pressed twice sends it, so the shell's Ctrl+X Ctrl+E and nano's exit stay the program's |
-   | Ctrl+Alt+K, P, O, Z, W, E, A, F (palette, Quick Open, the list of workspaces, focus mode, close tab, split right, next editor group, filter) | ESC, then Ctrl+that letter (ESC 0x0b for K) | Esc, then Ctrl+that letter |
-   | Ctrl+Alt+Shift+E (split down) | ESC Ctrl+E | Esc, then Ctrl+E |
-   | Ctrl+Alt+1–Ctrl+Alt+9 (go to tab) | ESC and the digit | Alt+digit |
+   | Alt+K, P, O, Z, W, E, F, R (palette, Quick Open, the list of workspaces, focus mode, close tab, split right, filter, name and colour; the Alt family) | ESC and the letter (ESC k for K) | Esc, then the letter |
+   | Alt+Shift+E (split down; the Alt family) | ESC E | Esc, then Shift+E |
+   | Alt+1–Alt+9 (go to tab; the Alt family) | ESC and the digit | Esc, then the digit |
+   | Alt+← / Alt+→ (previous / next tab; the Alt family) | ESC [ 1 ; 5 D / C, what Ctrl+← / → sends (xterm.js sends an Alt arrow as the Ctrl arrow on Linux and Windows) | Ctrl+← / Ctrl+→ |
+   | Alt+↑ / Alt+↓ (previous / next workspace, every family) | ESC [ 1 ; 5 A / B, as for Alt+← / → | Ctrl+↑ / Ctrl+↓ |
+   | Ctrl+Alt+K, P, O, Z, W, E, A, F, R (the Ctrl+Alt family) | ESC, then Ctrl+that letter (ESC 0x0b for K) | Esc, then Ctrl+that letter |
+   | Ctrl+Alt+Shift+E, Ctrl+Alt+Shift+A (split down, previous editor group; the Ctrl+Alt family) | ESC Ctrl+E, ESC Ctrl+A | Esc, then Ctrl+E or Ctrl+A |
+   | Ctrl+Alt+1–Ctrl+Alt+9 (go to tab; the Ctrl+Alt family) | ESC and the digit | Alt+digit, or Esc, then the digit |
    | Ctrl+3 (Automations) | ESC | Esc (Ctrl+[ stays the program's too) |
    | Ctrl+Tab (next tab) | Tab | Tab |
    | Ctrl+Shift+Tab (previous tab) | ESC [ Z | Shift+Tab |
    | Ctrl+Shift+Alt+W (close the split) | ESC Ctrl+W | Esc, then Ctrl+W |
-   | Alt+Shift+↑ / ↓ / ← / → (previous / next instance, previous / next tab) | ESC [ 1 ; 4 A / B / D / C | no plainer key: a named exception. No agent, shell or readline binds them |
+   | Alt+Shift+↑ / ↓ (previous / next instance, every family), Alt+Shift+← / → (previous / next editor group in the Alt family, previous / next tab in the others) | ESC [ 1 ; 4 A / B / D / C | no plainer key: a named exception. No agent, shell or readline binds them (Esc, then Shift+arrow sends something else) |
    | Ctrl+Shift+F6 (leave the terminal) | ESC [ 17 ; 6 ~ | no plainer key: a named exception, because without it F6 cannot get out of a terminal |
 
    On Windows xterm sends nothing for Ctrl+Alt with a letter or a digit: it
-   reads them as AltGr (see "AltGr" below).
-   `test/terminal-xterm-bytes.test.mjs` presses every allowlisted default in
-   the installed xterm.js and pins exactly what it sends, that each plainer key
-   sends the same and is no default's in a terminal, and that the named
-   exceptions are exactly these, so an xterm upgrade that changes one fails CI.
+   reads them as AltGr (see "AltGr" below). AltGr is never Alt, on Linux or
+   Windows: a key it presses types its character and fires no Alt chord.
+   `test/terminal-xterm-bytes.test.mjs` presses every allowlisted default, in
+   each family, in the installed xterm.js and pins exactly what it sends, that
+   each plainer key sends the same and is no default's in a terminal, and that
+   the named exceptions are exactly these, so an xterm upgrade that changes
+   one fails CI.
 3. **macOS keeps ⌘.** ⌘ never reaches the pty, so the macOS column changes only
    where a chord is wrong for macOS users too. One named exception: the leader,
    ⌃X (the TUI's), fires in a terminal, checked by action id *and* shape (⌃
@@ -182,8 +207,11 @@ lone modifier settles it:
   stays the field's Cut. Elsewhere it only closes the wait.
 - Any other key cancels it and is dropped: nothing is typed, nothing else runs.
 - A key is matched by what it types (`KeyboardEvent.key`: Shift+x is `X`,
-  Shift+\ is `|`), whatever Shift or AltGr produced it. A key held with Ctrl,
-  ⌘ or Alt (AltGr aside) is not in the table, as in the TUI, and cancels.
+  Shift+\ is `|`), whatever Shift or AltGr produced it. A named key that Shift
+  moves (Tab, an arrow, Home, End, PgUp, PgDn) is read with Shift, as the TUI
+  reads it: Shift+Tab is the previous group, and Shift+↑ is no row and
+  cancels. A key held with Ctrl, ⌘ or Alt (AltGr aside) is not in the table,
+  as in the TUI, and cancels.
 - A click, a paste, the window losing focus, a modal opening or the focused
   element leaving the document cancels it, with nothing run.
 
@@ -197,7 +225,7 @@ the next key, click or focus change. It is the only answer such a key gets. The
 rows the TUI marks as terminal rows (`z`, `w`, the tab and split keys) act only
 while a terminal tab is open; besides, ←/→ need two tabs or more in the strip
 they walk (with the tabs split, the focused group's), `|`/`-` an
-active tab that can split that way, and Tab and `x` tabs that are split.
+active tab that can split that way, and Tab, Shift+Tab and `x` tabs that are split.
 
 **The target instance** of `X` `R` `S` `D` `N` is read when the key after the
 leader is pressed, not when the leader is: the focused roster row's; else the
@@ -222,12 +250,12 @@ say why in the same line when they cannot act.
 | `1` | Instances: the workspace's terminals again when any is open, else Deployments |
 | `2` | Workspace › Souls |
 | `3` | Workspace › Capabilities |
-| ↑, ↓ | shows the previous / next workspace of the sidebar's [list of workspaces](#the-list-of-workspaces) in this window, as a click on its row does (`workspace-previous`, `workspace-next`). A row another window shows is not passed over: the move takes it over, and it moves here. No wrap: at an end nothing moves and the line says "No workspace above this one." / "No workspace below this one." With no workspace shown, ↓ goes to the first row and ↑ to the last. No chord |
+| ↑, ↓ | shows the previous / next workspace of the sidebar's [list of workspaces](#the-list-of-workspaces) in this window, as a click on its row does (`workspace-previous`, `workspace-next`). A row another window shows is not passed over: the move takes it over, and it moves here. No wrap: at an end nothing moves and the line says "No workspace above this one." / "No workspace below this one." With no workspace shown, ↓ goes to the first row and ↑ to the last. Also the chords `workspace.previous`, `workspace.next`: Alt+↑ / Alt+↓ on Linux and Windows; none on macOS |
 | ←, → | previous / next tab of the active tab's strip, in the order drawn: with the tabs split, the focused group's, each press another tab of it; an empty or one-tab group says "There is no other tab." (`tabs.prev`, `tabs.next`; the Desktop's cycling wraps, the TUI's does not) |
 | `z` | focus mode on or off (`app.focusMode`), and the active terminal takes focus. Also `terminal.focusMode` |
 | `w` | closes the active tab (`tabs.close`); the agent keeps running |
 | `\|`, `-` | split right / split down (`split.vertical`, `split.horizontal`) |
-| Tab | focuses the next editor group's active tab, or the group when it is empty, wrapping (`split.focusNextGroup`) |
+| Tab, Shift+Tab | focuses the next / previous editor group's active tab, or the group when it is empty, wrapping (`split.focusNextGroup`, `split.focusPrevGroup`). On macOS the previous group has no chord, so Shift+Tab here is its key |
 | `x` | closes the split, every tab kept (`split.close`) |
 | `X`, `R`, `S`, `D` | Stop… / Restart… / Start… / Retire… for the target: the same dialogs and availability as its roster menu |
 | `n` | Quick Open: pick a soul, then the spawn dialog (`app.quickOpenSouls`) |
@@ -243,52 +271,67 @@ table, and the shortcuts editor leaves it out.
 
 Changed in the next release: ↑ and ↓ move between workspaces. They opened the
 previous / next instance's terminal before; Alt+Shift+↑ / ↓ (⌥⌘↑ / ⌥⌘↓) still
-do that, from every focus.
+do that, from every focus. New: Shift+Tab, the previous editor group.
 
 ## The keymap as shipped
 
 The keys come in three layers, as in `oats tui`:
 
 1. **In the sidebar:** plain keys, such as `n` to spawn, `w` for the list of workspaces, `/` to filter ([Sidebar keys](#sidebar-keys)).
-2. **Anywhere, a terminal included:** the shortcuts below, ⌘K and the rest on macOS, `Ctrl+Alt+K` and the rest on Linux and Windows by default, `Ctrl+Shift+K` and the rest [as the option](#the-ctrlshift-option). Not plain `Ctrl+K`: that is the program's, kill to the end of the line in Claude Code, Codex, pi and the shell.
+2. **Anywhere, a terminal included:** the shortcuts below, ⌘K and the rest on macOS, `Alt+K` and the rest on Linux and Windows by default, `Ctrl+Alt+K` or `Ctrl+Shift+K` and the rest [as an option](#the-chord-families). Not plain `Ctrl+K`: that is the program's, kill to the end of the line in Claude Code, Codex, pi and the shell.
 3. **Always:** [the leader](#the-leader), `Ctrl+X` then a key, on every platform (in a text field on Linux and Windows, Ctrl+X is Cut).
 
-| Action (id) | macOS | Linux / Windows (Ctrl+Alt, the default) | Ctrl+Shift option (Linux / Windows) | Works in a terminal (Linux/Win) |
-|---|---|---|---|---|
-| Command palette (`app.palette`) | ⌘K | Ctrl+Alt+K | Ctrl+Shift+K | yes (plain Ctrl+K, kill to the end of the line, stays the program's) |
-| Quick open a soul (`app.quickOpenSouls`) | ⌘P | Ctrl+Alt+P | Ctrl+Shift+P | yes (plain Ctrl+P, shell history, stays the program's) |
-| Focus the list of workspaces (`app.workspaces`; the leader's `o`, the sidebar's `w`, the palette's **Workspace: switch…**) | ⌥⌘O | Ctrl+Alt+O | Ctrl+Shift+S | yes |
-| Open the previous / next instance's terminal (`roster.openPrevious`, `roster.openNext`; no leader key: the leader's ↑ ↓ move between workspaces) | ⌥⌘↑ / ⌥⌘↓ | Alt+Shift+↑ / Alt+Shift+↓ | Alt+Shift+↑ / Alt+Shift+↓ (kept) | yes (a named exception, principle 2) |
-| Focus mode on or off, in the active terminal (`terminal.focusMode`; the leader's `z`) | ⌥⌘Z | Ctrl+Alt+Z | Ctrl+Shift+M | yes |
-| Spawn instance: choose a soul in Workspace (`app.chooseSoul`) | ⌘N | Ctrl+Shift+N | the same | yes |
-| Close tab (`tabs.close`) | ⌘W | Ctrl+Alt+W | Ctrl+Shift+W | yes |
-| Next / previous tab of the active tab's strip, wrapping; split, the focused group's (`tabs.next`, `tabs.prev`) | ⌃Tab / ⌃⇧Tab | Ctrl+Tab / Ctrl+Shift+Tab | the same | yes |
-| Next / previous tab, second chord (`tabs.nextPage`, `tabs.prevPage`; the leader's → ←) | ⌥⌘→ / ⌥⌘← | Alt+Shift+→ / Alt+Shift+← | Alt+Shift+→ / Alt+Shift+← (kept) | yes (a named exception, principle 2) |
-| Go to tab 1–8, last tab, of the active tab's strip; split, the focused group's (`tabs.goto1`…`tabs.goto9`) | ⌥⌘1–⌥⌘9 | Ctrl+Alt+1–Ctrl+Alt+9 | Ctrl+Alt+1–Ctrl+Alt+9 (kept) | yes (ESC and the digit, which Alt+digit still sends) |
-| Split right (`split.vertical`) | ⌘\ | Ctrl+Alt+E | Ctrl+Shift+E | yes |
-| Split down (`split.horizontal`) | ⌘⇧\ | Ctrl+Alt+Shift+E | Ctrl+Shift+D | yes |
-| Focus the next editor group (`split.focusNextGroup`; the leader's Tab) | ⌥⌘A | Ctrl+Alt+A | Ctrl+Alt+A (kept) | yes |
-| Close the split (`split.close`; no button since spec F) | ⌥⌘W | Ctrl+Shift+Alt+W | the same | yes |
-| Deployments / Workspace / Automations (`stage.hierarchy`, `stage.spawn`, `stage.automations`) | ⌘1 / ⌘2 / ⌘3 | Ctrl+1 / Ctrl+2 / Ctrl+3 | the same | yes (Ctrl+3 is ESC, which Esc still sends) |
-| Focus next / previous region (`focus.nextRegion`, `focus.prevRegion`) | F6 / ⇧F6 | F6 / Shift+F6 | the same | no (mc, htop, nano) |
-| Leave the terminal for the next region (`focus.leaveTerminal`) | ⇧⌘F6 | Ctrl+Shift+F6 | the same | yes |
-| Sidebar (`sidebar.toggle`; also the footer's sidebar button, and Show sidebar while it is hidden) | ⌘B | Ctrl+Shift+B | the same | yes (plain Ctrl+B, the tmux prefix, stays the program's) |
-| Filter instances (`sidebar.focusFilter`) | ⌘F | Ctrl+Alt+F | Ctrl+Alt+F (kept) | yes |
-| An instance's name and colour, for the leader's target (`instance.edit`; also **Instance: name and colour…**; no leader key, never with Shift) | ⌥⌘R | Ctrl+Alt+R | Ctrl+Alt+R (kept) | yes (ESC and Ctrl+R, which Esc then Ctrl+R still sends) |
-| Instance panel (`panel.toggle`; also Show instance panel while it is closed, and the panel's own close button) | ⌘I | Ctrl+Shift+I | the same | yes (plain Ctrl+I, the Tab byte, stays the program's) |
-| Theme picker (`app.themePicker`; also the theme button and **Theme: choose…**) | ⇧⌘Space | Ctrl+Shift+Space | the same | yes |
-| Theme cycle: White, Solarized, Dark, This computer (`app.themeToggle`) | none | none | none | – (the palette keeps it) |
-| Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | the same | yes |
-| The leader, then one key (`app.leader`; see "The leader") | ⌃X | Ctrl+X | the same | yes (a named exception, principle 2: it sends 0x18, which the leader pressed twice gives the program; on macOS by principle 3's exception; not in a text field on Linux/Windows, where Ctrl+X is Cut) |
-| Copy the terminal selection (`terminal.copySelection`) | ⌘C (Edit › Copy, the menu role; the action has no macOS default) | Ctrl+Shift+C | the same | yes |
-| Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | the same | yes |
-| Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | the same | no (Ctrl+O is a byte programs read) |
-| New window, with no workspace (`app.newWindow`) | ⌘⇧N (File → New Window, the menu's accelerator) | none (the palette's **Window: new window**) | none | – |
-| Cycle the app's windows | ⌘\` (macOS's own, Window menu) | none (the window manager's) | none | – |
+The three Linux / Windows columns are [the chord families](#the-chord-families): Alt is the default, and Ctrl+Alt and Ctrl+Shift are options. "Works in a terminal" is for Linux and Windows.
 
-The Ctrl+Shift column is an option, off by default: "The Ctrl+Shift
-option" below says what it changes and how to switch. Elsewhere on this
-page a chord is named in the default family.
+| Action (id) | macOS | Alt (the default) | Ctrl+Alt | Ctrl+Shift | Works in a terminal |
+|---|---|---|---|---|---|
+| Command palette (`app.palette`) | ⌘K | Alt+K | Ctrl+Alt+K | Ctrl+Shift+K | yes (plain Ctrl+K, kill to the end of the line, stays the program's) |
+| Quick open a soul (`app.quickOpenSouls`) | ⌘P | Alt+P | Ctrl+Alt+P | Ctrl+Shift+P | yes (plain Ctrl+P, shell history, stays the program's) |
+| Focus the list of workspaces (`app.workspaces`; the leader's `o`, the sidebar's `w`, the palette's **Workspace: switch…**) | ⌥⌘O | Alt+O | Ctrl+Alt+O | Ctrl+Shift+S | yes |
+| Open the previous / next instance's terminal (`roster.openPrevious`, `roster.openNext`; no leader key: the leader's ↑ ↓ move between workspaces) | ⌥⌘↑ / ⌥⌘↓ | Alt+Shift+↑ / ↓ | the same | the same | yes (a named exception, principle 2) |
+| Show the previous / next workspace of the list (`workspace.previous`, `workspace.next`; the leader's ↑ ↓) | none (the leader) | Alt+↑ / Alt+↓ | the same | the same | yes |
+| Focus mode on or off, in the active terminal (`terminal.focusMode`; the leader's `z`) | ⌥⌘Z | Alt+Z | Ctrl+Alt+Z | Ctrl+Shift+M | yes |
+| Spawn instance: choose a soul in Workspace (`app.chooseSoul`) | ⌘N | Ctrl+Shift+N | the same | the same | yes |
+| Close tab (`tabs.close`) | ⌘W | Alt+W | Ctrl+Alt+W | Ctrl+Shift+W | yes |
+| Next / previous tab of the active tab's strip, wrapping; split, the focused group's (`tabs.next`, `tabs.prev`) | ⌃Tab / ⌃⇧Tab | Ctrl+Tab / Ctrl+Shift+Tab | the same | the same | yes |
+| Next / previous tab, second chord (`tabs.nextPage`, `tabs.prevPage`; the leader's → ←) | ⌥⌘→ / ⌥⌘← | Alt+→ / Alt+← | Alt+Shift+→ / Alt+Shift+← | Alt+Shift+→ / Alt+Shift+← | yes (in Ctrl+Alt and Ctrl+Shift, a named exception, principle 2) |
+| Go to tab 1–8, last tab, of the active tab's strip; split, the focused group's (`tabs.goto1`…`tabs.goto9`; each tab shows its number) | ⌥⌘1–⌥⌘9 | Alt+1–Alt+9 | Ctrl+Alt+1–Ctrl+Alt+9 | Ctrl+Alt+1–Ctrl+Alt+9 | yes (ESC and the digit, which Esc, then the digit still sends) |
+| Split right (`split.vertical`) | ⌘\ | Alt+E | Ctrl+Alt+E | Ctrl+Shift+E | yes |
+| Split down (`split.horizontal`) | ⌘⇧\ | Alt+Shift+E | Ctrl+Alt+Shift+E | Ctrl+Shift+D | yes |
+| Focus the previous / next editor group (`split.focusPrevGroup`, `split.focusNextGroup`; the leader's Shift+Tab, Tab) | none (the leader) / ⌥⌘A | Alt+Shift+← / Alt+Shift+→ | Ctrl+Alt+Shift+A / Ctrl+Alt+A | Ctrl+Alt+Shift+A / Ctrl+Alt+A | yes (in the Alt family, a named exception, principle 2) |
+| Close the split (`split.close`; no button since spec F) | ⌥⌘W | Ctrl+Shift+Alt+W | the same | the same | yes |
+| Deployments / Workspace / Automations (`stage.hierarchy`, `stage.spawn`, `stage.automations`) | ⌘1 / ⌘2 / ⌘3 | Ctrl+1 / Ctrl+2 / Ctrl+3 | the same | the same | yes (Ctrl+3 is ESC, which Esc still sends) |
+| Focus next / previous region (`focus.nextRegion`, `focus.prevRegion`) | F6 / ⇧F6 | F6 / Shift+F6 | the same | the same | no (mc, htop, nano) |
+| Leave the terminal for the next region (`focus.leaveTerminal`) | ⇧⌘F6 | Ctrl+Shift+F6 | the same | the same | yes |
+| Sidebar (`sidebar.toggle`; also the footer's sidebar button, and Show sidebar while it is hidden) | ⌘B | Ctrl+Shift+B | the same | the same | yes (plain Ctrl+B, the tmux prefix, stays the program's) |
+| Filter instances (`sidebar.focusFilter`) | ⌘F | Alt+F | Ctrl+Alt+F | Ctrl+Alt+F | yes |
+| An instance's name and colour, for the leader's target (`instance.edit`; also **Instance: name and colour…**; no leader key) | ⌥⌘R | Alt+R | Ctrl+Alt+R | Ctrl+Alt+R | yes |
+| Instance panel (`panel.toggle`; also Show instance panel while it is closed, and the panel's own close button) | ⌘I | Ctrl+Shift+I | the same | the same | yes (plain Ctrl+I, the Tab byte, stays the program's) |
+| Theme picker (`app.themePicker`; also the theme button and **Theme: choose…**) | ⇧⌘Space | Ctrl+Shift+Space | the same | the same | yes |
+| Theme cycle: White, Solarized, Dark, This computer (`app.themeToggle`) | none | none | none | none | – (the palette keeps it) |
+| Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | the same | the same | yes |
+| The leader, then one key (`app.leader`; see "The leader") | ⌃X | Ctrl+X | the same | the same | yes (a named exception, principle 2: it sends 0x18, which the leader pressed twice gives the program; on macOS by principle 3's exception; not in a text field on Linux/Windows, where Ctrl+X is Cut) |
+| Copy the terminal selection (`terminal.copySelection`) | ⌘C (Edit › Copy, the menu role; the action has no macOS default) | Ctrl+Shift+C | the same | the same | yes |
+| Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | the same | the same | yes |
+| Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | the same | the same | no (Ctrl+O is a byte programs read) |
+| New window, with no workspace (`app.newWindow`) | ⌘⇧N (File → New Window, the menu's accelerator) | none (the palette's **Window: new window**) | none | none | – |
+| Cycle the app's windows | ⌘\` (macOS's own, Window menu) | none (the window manager's) | none | none | – |
+
+The Ctrl+Alt and Ctrl+Shift columns are options, off by default: "The chord
+families" below says what each changes and how to switch. Elsewhere on this
+page a chord is named in the default family, Alt.
+
+**The tabs' numbers.** Each tab shows a small number at its end: the N that
+go to tab (Alt+N; ⌥⌘N on macOS) reaches in its strip. Tabs 1 to 8 show 1 to
+8, and the last tab shows 9 once its strip has nine or more; the other tabs
+past the eighth show none. With the tabs split, each group numbers its own
+tabs, as the tab keys walk them. The number shows in every family and on
+macOS: it is a position, not a key label. It is visual only (`aria-hidden`):
+the tab's accessible name stays its name, and go to tab is in the shortcuts
+editor. It never crowds out the name: as a strip narrows, the name truncates
+first, down to the minimum the tab's floor keeps ("oats-…" and the last
+eight characters), and then the number hides whole (`renderer/tab-numbers.mjs`,
+`.tab-num` in `shell.css`; `test/tab-numbers.test.mjs`).
 
 While the command palette is open, its group keys take their presses over
 every binding (see "The command palette"): ⌘N and ⌥⌘N on macOS, Alt+Shift+↓
@@ -297,7 +340,26 @@ File → New Window, a key the menu shows, so the palette doesn't shadow it. So 
 palette is closed, and Alt+Shift+↓ / ↑ are `roster.openNext` /
 `roster.openPrevious` only while it is closed.
 
-Changed in the next release on Linux/Windows: the chords shared with the TUI
+Changed in the next release on Linux/Windows: the default family is Alt,
+in both clients. The palette is Alt+K (was Ctrl+Alt+K), Quick Open Alt+P,
+the list of workspaces Alt+O, focus mode Alt+Z, close tab Alt+W, split right
+Alt+E and split down Alt+Shift+E, filter instances Alt+F, an instance's name
+and colour Alt+R, and go to tab Alt+1–Alt+9 (were Ctrl+Alt with the same
+key). The second tab-cycling chords are Alt+← / Alt+→ (were Alt+Shift+← /
+→), and Alt+Shift+← / → now move between the editor groups: the previous
+group, new, and the next (was Ctrl+Alt+A). New in every family:
+the previous / next workspace of the list on Alt+↑ / Alt+↓, and the
+previous editor group (Ctrl+Alt+Shift+A in the other two families; the
+leader's Shift+Tab everywhere). Alt+Shift+↑ / ↓, the previous / next
+instance, are unchanged. Whoever chose a family keeps it: a keys.json that
+says `"ctrl+alt"` or `"ctrl+shift"` keeps that family, with today's keys, and
+only a user who never chose moves to Alt. A binding you set yourself is kept
+as it is; when it is a chord a default now takes, the shortcuts editor shows
+the clash. On macOS nothing moved: the previous group and the workspace moves
+have no chord there, and the leader reaches them. Each tab now shows its
+number (see "The tabs' numbers" above).
+
+Changed in 0.67.0 on Linux/Windows: the chords shared with the TUI
 are one Ctrl+Alt family. The palette is Ctrl+Alt+K (was Ctrl+Shift+K), Quick
 Open Ctrl+Alt+P (was Ctrl+Shift+P), close tab Ctrl+Alt+W (was Ctrl+Shift+W),
 filter instances Ctrl+Alt+F (was Ctrl+Shift+F), split right Ctrl+Alt+E (was
@@ -339,7 +401,7 @@ Ctrl+Shift+F6 to leave a terminal.
 On macOS the "works in a terminal" column is simpler: every ⌘ chord works there
 (⌘ never reaches the pty), and so do ⌃Tab and the leader's ⌃X; ⌃digits and F6 are the program's.
 From a terminal, Ctrl+Tab switches tabs on every platform, and go to tab works
-there too: ⌥⌘digit on macOS, Ctrl+Alt+digit on Linux/Windows.
+there too: ⌥⌘digit on macOS, Alt+digit on Linux/Windows.
 
 Copy and paste in a terminal (#672). A drag, double-click or triple-click is
 xterm's own selection. Ctrl+Shift+C (`terminal.copySelection`, allowlisted)
@@ -372,7 +434,7 @@ Inside the theme picker: ↑/↓ move between the themes (wrapping), Home/End go
 the first and last, Enter, Space or a click chooses (nothing applies before
 that), Escape, the close button or the backdrop closes with nothing changed,
 and Tab / Shift+Tab stay inside it; a background shortcut that moves focus
-(⌘F / Ctrl+Alt+F to the roster filter) cannot take it out. Focus returns to what had
+(⌘F / Alt+F to the roster filter) cannot take it out. Focus returns to what had
 it, also to a control in a dialog that stays open under the picker (Stop or
 Retire, Connections). The picker is on the palette layer, so it never opens where it
 cannot be seen: while a dialog above that layer is shown (the spawn dialog,
@@ -395,123 +457,235 @@ pull request.
 Rebinding applies everywhere a chord is shown: tooltips, the footer hints, the
 palette's command details and the spawn dialog's Spawn button.
 
-**Shared with the TUI.** Twenty-three of these chords are written down once, in
+**Shared with the TUI.** Twenty-six of these chords are written down once, in
 `CHORDS` in `packages/client/keymap.mjs`, and `DEFAULT_KEYMAP` reads them from
-there (`CHORDS_READ`, one action each): one family on Linux/Windows, ⌘ or ⌥⌘
-on macOS. Ctrl+Alt with a letter does an action: the palette (K), Quick open
-(P; a spawn, in the TUI), the list of workspaces (O), focus mode (Z, the
-leader's `z`), close tab (W), split right (E) and split down (Shift+E), the
-next editor group (A, the leader's Tab), filter instances (F) and the
-instance's name and colour (R; `instance.edit`, ⌥⌘R on macOS, never with
-Shift, no leader key). Ctrl+Alt with
-a digit goes to tab 1–8 of the active tab's strip, 9 to its last (with the
-tabs split, the focused group's). Alt+Shift with an arrow moves: the
-previous / next instance's terminal (↑ ↓, which have no leader key: the
-leader's ↑ ↓ move between workspaces) and the previous / next tab (← →, the
-leader's ← →). With the Ctrl+Shift option seven of them are Ctrl+Shift chords
-instead, in both clients (see "The Ctrl+Shift option"). The TUI binds the
-same chords from every focus (docs/tui.md,
-"Chords"); the leader stays the key that always works. Ctrl+Tab /
-Ctrl+Shift+Tab, the stages' ⌘1–⌘3 / Ctrl+1–Ctrl+3 and the shortcuts editor's
-⌘, / Ctrl+, are the Desktop's own and are not shared; help is the leader's
-`?`. `edit-instance` (Ctrl+Alt+R) is the Desktop's alone so far: the TUI has
-no such action and binds no key for it. `test/keymap-shared.test.mjs` pins the
-table and the whole default keymap.
+there (`CHORDS_READ`, one action each), per family on Linux/Windows, ⌘ or ⌥⌘
+on macOS. In the Alt family, Alt with a letter does an action: the palette
+(K), Quick open (P; a spawn, in the TUI), the list of workspaces (O), focus
+mode (Z, the leader's `z`), close tab (W), split right (E) and split down
+(Shift+E), filter instances (F) and the instance's name and colour (R;
+`instance.edit`, ⌥⌘R on macOS, no leader key). Alt with a digit goes to tab
+1–8 of the active tab's strip, 9 to its last (with the tabs split, the
+focused group's). Alt with an arrow moves between tabs (← →, the leader's
+← →) and workspaces (↑ ↓, the leader's ↑ ↓); Alt+Shift with an arrow
+between editor groups (← →, the leader's Shift+Tab and Tab) and instances
+(↑ ↓, which have no leader key). The Ctrl+Alt and Ctrl+Shift families move
+some of them (see "The chord families"), in both clients. The TUI binds the
+same chords from every focus (docs/tui.md, "Chords"); the leader stays the
+key that always works. Ctrl+Tab / Ctrl+Shift+Tab, the stages' ⌘1–⌘3 /
+Ctrl+1–Ctrl+3 and the shortcuts editor's ⌘, / Ctrl+, are the Desktop's own
+and are not shared; help is the leader's `?`. `edit-instance` (Alt+R) is the
+Desktop's alone so far: the TUI has no such action and binds no key for it.
+`test/keymap-shared.test.mjs` pins the table and the whole default keymap in
+each family.
 
-**AltGr.** On Windows, Ctrl+Alt is AltGr. On a layout that types a character
-on a Ctrl+Alt chord (Spanish: € on E, | @ # on 1 2 3; Polish: ą ę ó ż on A E O
-Z), that chord is the layout's: the key types its character, in a text field
-and in a terminal, and runs nothing, because the engine matches the character
-a key types (`KeyboardEvent.key`). The chords whose keys type nothing there are
-the Desktop's as everywhere (Spanish Ctrl+Alt+K is the palette). For the
-others the leader still works (Ctrl+X, then the key: `|` splits right, `z` is
-focus mode), Ctrl+Tab still cycles the tabs where go to tab is the layout's,
-and the shortcuts editor can rebind the action. German gives up Ctrl+Alt+E (€)
+**AltGr.** AltGr is never Alt. On Linux it is a key of its own (the event
+reports `getModifierState("AltGraph")`, not Alt); on Windows it is Ctrl+Alt.
+Either way, a key that types a character with AltGr types it and fires no
+Alt chord: on a German layout AltGr+E is €, never Alt+E (split right), and
+Polish AltGr+A is ą, never the Alt family's anything. The engine matches the
+character a key types (`KeyboardEvent.key`), and on Linux and Windows it
+reads Alt as not held when AltGraph is and Ctrl is not (`chordFromEvent`).
+In the Ctrl+Alt family, on Windows, a layout that types a character on a
+Ctrl+Alt chord (Spanish: € on E, | @ # on 1 2 3; Polish: ą ę ó ż on A E O Z)
+keeps that chord: the key types its character, in a text field and in a
+terminal, and runs nothing. The chords whose keys type nothing there are the
+Desktop's as everywhere (Spanish Ctrl+Alt+K is the palette). For the others
+the leader still works (Ctrl+X, then the key: `|` splits right, `z` is focus
+mode), Ctrl+Tab still cycles the tabs where go to tab is the layout's, and
+the shortcuts editor can rebind the action. German gives up Ctrl+Alt+E (€)
 and the digits 2, 3, 7, 8 and 9 the same way. On AZERTY the digit row types
-& é " ' … without Shift, so on Linux and Windows Ctrl+Alt+1 arrives as `&`
-and go to tab never matches there (as Alt+digit did not before); on macOS
-⌘⌥ with the digit key matches, whatever the layout types on it. A character AltGr types is never
-read as another key: Spanish AltGr+1 is `|`, never a binding on `Ctrl+Alt+\`.
-On Linux AltGr is a key of its own. `test/terminal-xterm-bytes.test.mjs` pins both layouts through the
-terminal's own key path.
+& é " ' … without Shift, so on Linux and Windows Alt+1 arrives as Alt+& and
+go to tab never matches there; on macOS ⌘⌥ with the digit key matches,
+whatever the layout types on it. A character AltGr types is never read as
+another key: Spanish AltGr+1 is `|`, never a binding on `Ctrl+Alt+\`.
+`test/terminal-xterm-bytes.test.mjs` pins both layouts through the terminal's
+own key path, and `test/keymap-linux.test.mjs` that an AltGr press fires no
+Alt chord.
 
-### The Ctrl+Shift option
+### The chord families
 
-On Linux and Windows the chords shared with the TUI come in two families.
-Ctrl+Alt is the default. The option, one choice per user for both clients,
-moves seven of them to Ctrl+Shift: the palette (K), Quick Open (P), the
-list of workspaces (S), focus mode (M), close tab (W), split right (E) and
-split down (D). The others keep their key in both families, marked kept:
-the Alt+Shift arrows, since Ctrl+Shift with an arrow selects text in an
-input; go to tab, since Ctrl+Shift with a digit is a shifted symbol on most
-layouts; the next editor group and filter instances, whose Ctrl+Shift+A
-and Ctrl+Shift+F terminals and agents take; and an instance's name and
-colour (Ctrl+Alt+R), the Desktop's alone, not one of the seven. With the option on, a moved
-row's Ctrl+Alt chord runs nothing and reaches the focused control or the
-program. macOS has no option: ⌘ stays.
+On Linux and Windows the chords shared with the TUI come in three families,
+one choice per user for both clients. macOS has no choice: ⌘ stays.
 
-In the Desktop both families work. The option is for the terminal you run
-`oats tui` in, where only foot and Alacritty let the seven through
-(docs/tui.md, "Which family for my terminal"). None of the seven is one of
-the Desktop's own Ctrl+Shift chords (N, B, I, C, Space, Tab, Alt+W, F6), and
-the Desktop installs no menu on Linux or Windows, so no accelerator takes
-one.
+- **Alt, the default.** Alt with a letter or a digit for an action, Alt with
+  an arrow to move between tabs and workspaces, Alt+Shift with an arrow
+  between editor groups and instances. Changed in the next release (Pepe's
+  call, 2026-10-22; the maintainer set the keys): it takes keys programs in
+  a terminal read, listed in [what the Alt family takes](#what-the-alt-family-takes).
+- **Ctrl+Alt, the option for whoever needs Alt in their programs.** The
+  default until the next release, with its keys unchanged: Ctrl+Alt with a
+  letter or a digit for an action, Alt+Shift with an arrow to move between
+  tabs and instances, and Ctrl+Alt+A / Ctrl+Alt+Shift+A between editor
+  groups. The workspace moves are Alt+↑ / Alt+↓ here too: nothing else in
+  the family takes them.
+- **Ctrl+Shift, the option for a terminal that passes Ctrl+Shift apart from
+  Ctrl** (foot, Alacritty). Seven of the Ctrl+Alt family's chords move to
+  Ctrl+Shift: the palette (K), Quick Open (P), the list of workspaces (S),
+  focus mode (M), close tab (W), split right (E) and split down (D). The
+  others keep their Ctrl+Alt key: the Alt+Shift arrows, since Ctrl+Shift with
+  an arrow selects text in an input; go to tab, since Ctrl+Shift with a digit
+  is a shifted symbol on most layouts; the editor groups and filter
+  instances, whose Ctrl+Shift+A and Ctrl+Shift+F terminals and agents take;
+  an instance's name and colour (Ctrl+Alt+R), the Desktop's alone; and the
+  workspace moves.
 
-- **In a terminal.** xterm sends nothing for a Ctrl+Shift letter, so by
-  principle 2 the seven fire while a terminal has focus: they are on
-  `TERMINAL_ALLOWLIST`, by action id, as their Ctrl+Alt chords are. While
-  the option is off a Ctrl+Shift letter of the seven is no binding at all.
-  `test/terminal-xterm-bytes.test.mjs` pins that each sends nothing through
-  xterm under the option.
+**Who gets which.** A user who never chose has the default, Alt. A choice is
+kept: keys.json's `"chords": "ctrl+alt"`, written by the Shortcuts page or by
+hand, keeps the Ctrl+Alt family, with the keys it had. No file, or one with
+no `chords`, is no choice. An older client that does not know the Alt family
+reads `"chords": "alt"` as a value it cannot take, so it binds its own
+default and says so.
+
+In the Desktop every family works. The options are for the programs in a
+terminal (Ctrl+Alt) and for the terminal you run `oats tui` in (Ctrl+Shift:
+only foot and Alacritty let the seven through; docs/tui.md, "Which family
+for my terminal"). None of the families' chords is one of the Desktop's own
+(Ctrl+Shift N, B, I, C, Space, Tab, Alt+W, F6), and the Desktop installs no
+menu on Linux or Windows (`app-menu.mjs`), so no accelerator takes one, and
+Alt alone opens no menu bar.
+
+- **In a terminal.** Each family's chords fire while a terminal has focus:
+  they are on `TERMINAL_ALLOWLIST`, by action id (principle 2). A chord of
+  another family is no binding at all: in the Alt family, Ctrl+Alt+K and
+  Ctrl+Shift+K reach the program; in the Ctrl+Alt family, Alt+K does.
+  `test/terminal-xterm-bytes.test.mjs` pins what each family's chords send
+  through xterm.
 - **Your own bindings still win, row by row.** An action you rebound in the
-  shortcuts editor keeps your chord in either family. A rebind of another
-  action to one of the seven Ctrl+Shift chords clashes with the option's
-  default: the editor shows the clash, as it shows any, and your rebind is the
-  one that fires, until you rebind or reset one side. On any chord two
-  actions share, the one you bound wins over the one holding it by default.
-- **The palette's cycle.** Its chord with Shift moves up (Ctrl+Alt+Shift+K
-  by default). Ctrl+Shift+K already holds Shift, so under the option the
-  palette moves up with ArrowUp.
+  shortcuts editor keeps your chord in every family. A rebind of another
+  action to a chord a family's default now holds (an Alt+letter you bound
+  before, say) clashes with it: the editor shows the clash, as it shows
+  any, and your rebind is the one that fires, until you rebind or reset one
+  side. On any chord two actions share, the one you bound wins over the one
+  holding it by default.
+- **Text fields.** No field of the Desktop reads Alt+letter or an Alt arrow:
+  every one is a native input or text area (the roster filter, the palette's
+  and Quick Open's inputs, the dialogs' fields, the shortcuts editor's
+  search), which moves by word with Ctrl+← / Ctrl+→ on Linux and Windows, and
+  the Desktop has no code editor. So the Alt family's chords fire from a
+  field as from anywhere, and take nothing from it.
+- **The palette's cycle.** Its chord with Shift moves up: Alt+Shift+K by
+  default, Ctrl+Alt+Shift+K in the Ctrl+Alt family. Ctrl+Shift+K already
+  holds Shift, so in the Ctrl+Shift family the palette moves up with
+  ArrowUp. The palette's own group keys, Alt+Shift+↓ / ↑, win over the
+  instance moves while it is open, in every family (see "The command
+  palette").
+
+### What the Alt family takes
+
+These are the keys the Alt family takes from a program in a terminal, by
+the program's own key documentation (researched 2026-10-23; sources below).
+"Esc, then the key" works where the program says an ESC prefix is Meta:
+readline, zsh, Emacs and irssi do. Where its docs don't say, the way is
+marked unknown, and the Ctrl+Alt family gives the key back
+([Switch family](#switch-family)). An Alt key no chord holds (Alt+B, Alt+D,
+Alt+T, Alt+.) is still the program's.
+
+The Alt arrows take nothing in the Desktop. Its terminal (xterm.js) sends an
+Alt arrow as the Ctrl arrow on Linux and Windows (`CSI 1;5`), before and after
+this change, so a program never got Alt+arrow from it, and Ctrl+arrow still
+sends exactly what it sent. Programs bind Alt arrows too (Codex's agent
+threads, irssi's split windows, WeeChat's buffers, readline's and pi's word
+moves): in `oats tui`, in a terminal that sends `CSI 1;3`, the Alt family
+takes those (docs/tui.md).
+
+| Program | Key the Alt family takes | What the program does with it | How it still gets it |
+|---|---|---|---|
+| Claude Code | Alt+P | the model picker | unknown: its docs don't say whether Esc, then P is Meta+P, and Esc alone interrupts; switch to Ctrl+Alt |
+| Claude Code | Alt+O | fast mode on or off | as Alt+P |
+| Claude Code | Alt+F | forward a word | as Alt+P |
+| Codex | Alt+R | raw output on or off | unknown; switch to Ctrl+Alt |
+| Codex | Alt+F | a word right | Ctrl+→, its other key for it |
+| pi | Alt+F | a word right | Esc, then f: pi reads ESC f as a word right |
+| bash (readline) | Alt+P, Alt+F, Alt+R | search history back; forward a word; revert the line | Esc, then p, f or r |
+| bash (readline) | Alt+1–Alt+9 | a numeric argument | Esc, then the digit |
+| zsh (emacs keymap) | Alt+P, Alt+Z, Alt+W, Alt+A, Alt+F | history search back; run the last named command; copy the region; accept and hold; forward a word | Esc, then the letter |
+| zsh (emacs keymap) | Alt+1–Alt+9 | a numeric argument | Esc, then the digit |
+| irssi | Alt+1–Alt+9; Alt+W, E, R, O | go to window 1–9; to window 12, 13, 14, 19 | Esc, then the key |
+| irssi | Alt+K, A, P, F | erase completion; the most active window; page back; forward a word | Esc, then the key |
+| WeeChat | Alt+1–Alt+9 | go to buffer 1–9 | unknown; switch to Ctrl+Alt |
+| WeeChat | Alt+K, R, F, P, A, Z, W | grab a key; delete the line; next word; previous highlight; next active buffer; zoom; Alt+W starts the window keys | unknown; switch to Ctrl+Alt |
+| tmux | nothing without the prefix (the root table binds only the mouse) | after the prefix: Alt+1–Alt+7 the preset layouts, Alt+O / P / N rotate panes and go to a window with an alert | its commands (`select-layout`, `resize-pane`); Esc, then the key is read as Alt only within `escape-time` (10 ms by default in tmux 3.7c), so not by hand; or switch to Ctrl+Alt |
+| Emacs (`emacs -nw`) | Alt+K, E, Shift+E, A, Z, W, F, R | kill-sentence, forward- and backward-sentence, zap-to-char, kill-ring-save, forward-word, move-to-window-line | Esc, then the letter |
+| Emacs | Alt+1–Alt+9 | a numeric argument | Esc, then the digit |
+
+Not taken from these programs, by their docs: Alt+K, Z, W, E, A and R in
+Claude Code; the Alt+Shift arrows everywhere above but in WeeChat's cursor
+mode; Alt+O in Emacs since 28. On macOS nothing here
+applies: the Desktop binds no ⌥ chord a terminal sees, and most macOS
+terminals don't send Option as Meta unless set to.
+
+Sources: Claude Code [interactive mode](https://code.claude.com/docs/en/interactive-mode)
+and [keybindings](https://code.claude.com/docs/en/keybindings); Codex
+[`keymap.rs`](https://github.com/openai/codex/blob/d6817454d76885e9d0e118bbf82e507aed6f715a/codex-rs/tui/src/keymap.rs)
+and [`app/input.rs`](https://github.com/openai/codex/blob/d6817454d76885e9d0e118bbf82e507aed6f715a/codex-rs/tui/src/app/input.rs);
+pi [`keybindings.md`](https://github.com/badlogic/pi-mono/blob/42cb822f1c5d3153069dd0661bfd297424666cf1/packages/coding-agent/docs/keybindings.md)
+and [`keys.ts`](https://github.com/badlogic/pi-mono/blob/42cb822f1c5d3153069dd0661bfd297424666cf1/packages/tui/src/keys.ts);
+the [Readline manual](https://tiswww.case.edu/php/chet/readline/readline.html)
+("Typing 'ESC f' is equivalent to typing M-f") and readline 8.3's `readline.c`
+for the Alt arrows; the [zsh line editor](https://zsh.sourceforge.io/Doc/Release/Zsh-Line-Editor.html);
+irssi's [startup HOWTO](https://github.com/irssi/irssi/blob/43f1727ef9fe1cb51d5031ee2dd0e1965217e4cb/docs/startup-HOWTO.txt)
+and [`gui-readline.c`](https://github.com/irssi/irssi/blob/43f1727ef9fe1cb51d5031ee2dd0e1965217e4cb/src/fe-text/gui-readline.c);
+the [WeeChat user guide](https://weechat.org/files/doc/weechat/stable/weechat_user.en.html#key_bindings) (4.10.1);
+[tmux(1)](https://man7.org/linux/man-pages/man1/tmux.1.html); the
+[Emacs manual](https://www.gnu.org/software/emacs/manual/html_node/emacs/User-Input.html)
+(ESC as Meta) and its Sentences, Words, Moving Point, Other Kill Commands and
+Arguments nodes.
 
 ### Which family for my terminal
 
 The choice is shared with `oats tui`, so pick it by the terminal you run
-`oats tui` in. In the Desktop both families work. `✓` is a family whose
+`oats tui` in. In the Desktop every family works. `✓` is a family whose
 chords reach `oats tui` in that terminal, `✗` one whose chords do not, with
 the reason (docs/tui.md, [Which family for my
 terminal](../../../docs/tui.md#which-family-for-my-terminal), and its full
-matrix).
+matrix). The Alt family needs no kitty keyboard protocol: Alt+letter and
+Alt+digit are ESC and the key, and the Alt arrows have sequences of their own,
+in every terminal below.
 
-| Terminal | Ctrl+Alt (default) | Ctrl+Shift (the option) |
-|---|---|---|
-| foot | ✓ | ✓ |
-| Alacritty | ✓ | ✓ |
-| Ghostty | ✓ | ✗ Ghostty closes its own tab on Ctrl+Shift+W, taking oats tui with it |
-| kitty | ✓ | ✗ kitty takes Ctrl+Shift+K, P, S, W and E for itself; W closes its window, `oats tui` with it |
-| WezTerm | ✓ with `enable_kitty_keyboard`; without it only the Alt+Shift arrows | ✗ WezTerm takes Ctrl+Shift+K, P, M and W for itself: clear the scrollback, its command palette, hide the window, close the tab |
-| GNOME Terminal | ✗ no kitty keyboard protocol (VTE has none): only the Alt+Shift arrows arrive | ✗ no kitty keyboard protocol: a Ctrl+Shift letter reaches a program as the Ctrl letter |
-| Konsole | ✓ since 26.08 | ✗ Konsole takes all seven for itself; Ctrl+Shift+W closes the tab |
-| Windows Terminal | ✓, but `Ctrl+Alt+1` to `9` are its tabs, and the Alt+Shift arrows resize its split panes | ✗ Windows Terminal takes Ctrl+Shift+K, P, M, W and D for itself; W closes the pane |
+| Terminal | Alt (default) | Ctrl+Alt | Ctrl+Shift |
+|---|---|---|---|
+| foot | ✓ | ✓ | ✓ |
+| Alacritty | ✓ | ✓ | ✓ |
+| Ghostty | ✓, but on Linux Alt+1 to 8 are its tabs and Alt+9 its last, when the tab changes | ✓ | ✗ Ghostty closes its own tab on Ctrl+Shift+W, taking oats tui with it |
+| kitty | ✓ | ✓ | ✗ kitty takes Ctrl+Shift+K, P, S, W and E for itself; W closes its window, `oats tui` with it |
+| WezTerm | ✓ | ✓ with `enable_kitty_keyboard`; without it only the Alt+Shift arrows | ✗ WezTerm takes Ctrl+Shift+K, P, M and W for itself: clear the scrollback, its command palette, hide the window, close the tab |
+| GNOME Terminal | ✓, but with two tabs or more Alt+1 to 9 are its tabs | ✗ no kitty keyboard protocol (VTE has none): only the Alt+Shift arrows arrive | ✗ no kitty keyboard protocol: a Ctrl+Shift letter reaches a program as the Ctrl letter |
+| Konsole | ✓, but with two tabs or more Alt+1 to 9 are its tabs | ✓ since 26.08 | ✗ Konsole takes all seven for itself; Ctrl+Shift+W closes the tab |
+| Windows Terminal | ✓, but with split panes the Alt arrows move between them and the Alt+Shift arrows resize them | ✓, but `Ctrl+Alt+1` to `9` are its tabs, and the Alt+Shift arrows resize its split panes | ✗ Windows Terminal takes Ctrl+Shift+K, P, M, W and D for itself; W closes the pane |
 
-### Switch to Ctrl+Shift
+Where a terminal takes go to tab's Alt+digit, go to tab is still Ctrl+Tab or
+the leader's ← →, or choose Ctrl+Alt. On macOS `oats tui` reads Option as Alt
+only where the terminal sends it as Meta, which most do not by default
+(Terminal.app's "Use Option as Meta key", iTerm2's Option key "Esc+").
+Sources: [GNOME Terminal's
+accelerators](https://gitlab.gnome.org/GNOME/gnome-terminal/-/blob/master/src/terminal-accels.cc),
+[Konsole's tab shortcuts](https://invent.kde.org/utilities/konsole/-/blob/master/src/ViewManager.cpp),
+[Ghostty's default keybinds](https://github.com/ghostty-org/ghostty/blob/main/src/config/Config.zig),
+[Windows Terminal's defaults](https://github.com/microsoft/terminal/blob/main/src/cascadia/TerminalSettingsModel/defaults.json),
+and each terminal's own key reference for the rest.
+
+### Switch family
 
 - **On the Shortcuts page** (`app.shortcuts`, Ctrl+,), at its top,
   Linux/Windows only: **Shortcut family, shared with oats tui**, with
-  **Ctrl+Alt (default)** and **Ctrl+Shift (foot, Alacritty)**. Under it: "Both
-  work here; pick the one your terminal passes to oats tui. oats tui uses it
-  from its next start." A change writes the file at once and switches the keymap at once,
-  in every window, with no restart.
+  **Alt (default)**, **Ctrl+Alt (for programs that read Alt)** and
+  **Ctrl+Shift (foot, Alacritty)**. Under it: "All three work here; pick the
+  one your terminal passes to oats tui. oats tui uses it from its next start."
+  A change writes the file at once and switches the keymap at once, in every
+  window, with no restart.
 - **Or by hand:** `$OATS_HOME_DIR/config/keys.json`, else
   `~/.oats/config/keys.json`, beside the TUI's `tui.json`:
-  `{ "chords": "ctrl+shift" }` (`"ctrl+alt"` is the default). The main
-  process reads it as each window opens, and again each time the Desktop
-  gets the focus, and hands the family to every window: a change by hand
-  applies when you switch back to the Desktop. `oats tui` reads it at its start.
-- **A file it cannot take means Ctrl+Alt.** A missing file, one that cannot
-  be read or is larger than 16 KiB, not a JSON object, with no `chords` or
-  another value: each is the default, and the Shortcuts page says why under
-  the choice ("keys.json: unknown chords value, using Ctrl+Alt"). Nothing
-  needs fixing.
+  `{ "chords": "ctrl+alt" }` or `{ "chords": "ctrl+shift" }` (`"alt"` is the
+  default, and no file is the default too). The main process reads it as
+  each window opens, and again each time the Desktop gets the focus, and
+  hands the family to every window: a change by hand applies when you switch
+  back to the Desktop. `oats tui` reads it at its start.
+- **A file it cannot take means Alt.** A file that cannot be read or is
+  larger than 16 KiB, not a JSON object, with no `chords` or another value:
+  each is the default, and the Shortcuts page says why under the choice
+  ("keys.json: unknown chords value, using Alt"). A missing file is the
+  default with nothing to say. Nothing needs fixing.
 - **The Desktop writes only `chords`** and keeps every other key, so a key
   a later client adds survives an older Desktop. It writes a temp file in
   the same directory, then renames it over the file, so the file is never
@@ -519,8 +693,8 @@ matrix).
   link leads, and the link stays. A file it cannot keep whole (one it
   cannot read, not a JSON object, or too large once `chords` is set) it
   leaves as it is, and the page says what to do: "Could not write
-  keys.json: the shortcuts stay Ctrl+Alt. Fix or remove the file, then
-  choose again."
+  keys.json: the shortcuts stay Alt. Fix or remove the file, then choose
+  again."
 - **It is the clients' file.** The kernel never reads it.
 - The reader is `packages/client/keys-file.mjs`, which the TUI reads too.
 
@@ -570,7 +744,7 @@ tree's own keys, as the arrows are, and are not in the shortcuts editor.
   manager and ⌘Q own that.
 - Ctrl+Z, Ctrl+L: a terminal program's suspend and redraw; nothing to do in a
   window.
-- Ctrl+K: the Desktop's palette is ⌘K / Ctrl+Alt+K, and plain Ctrl+K is the
+- Ctrl+K: the Desktop's palette is ⌘K / Alt+K, and plain Ctrl+K is the
   program's in a terminal, so it would work in only half the places; the
   leader's `k` is the shared key.
 - `C` (check an unknown spawn): the Desktop reports a spawn's outcome in its
@@ -587,7 +761,7 @@ on its rows.
 
 - **Reaching it.** One tab stop: the row last focused there, else the current
   one. It is in the nav region: F6 lands on the nav item, and Shift+Tab from
-  there reaches the list. `w` in the sidebar, the leader's `o`, ⌥⌘O / Ctrl+Alt+O
+  there reaches the list. `w` in the sidebar, the leader's `o`, ⌥⌘O / Alt+O
   (`app.workspaces`, "Focus the list of workspaces") and the palette's
   **Workspace: switch…** focus its current row from anywhere: a hidden sidebar
   is shown and focus mode is left first.
@@ -601,8 +775,9 @@ on its rows.
   key, or a right-click) has **Open in new window** too: Enter runs it, Esc or
   Tab closes the menu, back on the row.
 - **Moving between workspaces from anywhere.** The leader's ↑ / ↓ show the
-  previous / next workspace of the list (see [the leader](#the-leader)); no
-  chord does.
+  previous / next workspace of the list (see [the leader](#the-leader)), and
+  so do Alt+↑ / Alt+↓ on Linux and Windows, in every family
+  (`workspace.previous`, `workspace.next`). macOS has no chord for them.
 
 **A workspace another window shows** is a row like any other. Picking it (a
 click, Enter, the
@@ -668,10 +843,10 @@ tab; a chord pressed in a terminal opens or closes either and leaves focus in
 the terminal. Entering focus mode is the exception: focus that was in the
 sidebar goes to the active tab, the content focus mode is for. Opening an instance's terminal never opens the panel: whether it
 is open is the user's, kept on this computer, and it starts closed. While a modal
-dialog or the palette is open, F6 and the tab switches (Ctrl+Tab, Alt+Shift+→/←,
+dialog or the palette is open, F6 and the tab switches (Ctrl+Tab, Alt+→/←,
 go to tab) do nothing; the dialog keeps focus.
 
-Tab switches from the keyboard (Ctrl+Tab, Alt+Shift+→, go to tab) keep focus in
+Tab switches from the keyboard (Ctrl+Tab, Alt+→, go to tab) keep focus in
 the new tab's content when it was in content, and on the strip when it was on
 the strip. Whenever another terminal tab becomes active (any of these, a click
 or an arrow on the strip, a close's successor, a pane of another split group),
@@ -685,7 +860,7 @@ control.
 
 ## The command palette (⌘K)
 
-- **⌘K / Ctrl+Alt+K** opens the palette: the sidebar's tree, in the modal,
+- **⌘K / Alt+K** opens the palette: the sidebar's tree, in the modal,
   ordered by last focus. Every instance of the window's workspace is listed
   once, in the sidebar's deployment sections, relation groups and runs of
   independent instances, indented by depth (the sidebar's collapsed state is
@@ -733,15 +908,15 @@ control.
   <name>", visually hidden and read once with the option; the lines show both,
   so no relation text is drawn. Only direct links within one deployment count,
   and a sibling's name does not match the row.
-- **While the palette is open, its own chord cycles**: ⌘K / Ctrl+Alt+K moves
-  the active row down, ⇧⌘K / Ctrl+Alt+Shift+K up, both wrapping past the ends
+- **While the palette is open, its own chord cycles**: ⌘K / Alt+K moves
+  the active row down, ⇧⌘K / Alt+Shift+K up, both wrapping past the ends
   (under the Ctrl+Shift option, Ctrl+Shift+K down and ArrowUp up).
   Releasing commits nothing: **Enter** opens the active row and **Esc** closes.
   The arrows move too and stop at the ends. The cycle follows a rebind of
   `app.palette`. A chord that already holds Shift (a rebind to Ctrl+Shift+K,
   say) has no Shift form, so ArrowUp moves up there. A plain-key binding never
   cycles: typing belongs to the input. Quick Open's chord does not cycle: a
-  second ⌘P / Ctrl+Alt+P closes it.
+  second ⌘P / Alt+P closes it.
 - **While the palette is open, its group keys jump between groups**: ⌘N /
   Alt+Shift+↓ moves the active row to the first row of the next group, ⌥⌘N /
   Alt+Shift+↑ to the first row of the group before, both wrapping past the
@@ -766,7 +941,7 @@ control.
 
 ## Quick Open and the spawn dialog
 
-- **⌘P / Ctrl+Alt+P** finds a soul, from a terminal too; picking it opens
+- **⌘P / Alt+P** finds a soul, from a terminal too; picking it opens
   the spawn dialog scoped to that soul, exactly as its card's Spawn does (the
   Workspace stage behind it). A soul
   that can't be spawned here (attached only, refused, no verified CLI) opens
@@ -845,19 +1020,19 @@ the rig). "Fixed" marks a gap this change closed.
 
 | Element | How it is reached | How it is operated |
 |---|---|---|
-| List of workspaces (`#ws-list`: a list of buttons, the current one `aria-current`) | One roving stop, the row last focused, else the current row; Tab from the header's Add; Shift+Tab from the nav item (F6 lands there); `w` in the sidebar, the leader's `o`, ⌥⌘O / Ctrl+Alt+O and the palette's **Workspace: switch…** focus its current row | Up/Down/Home/End move over every row; Enter/Space show the workspace in this window (one another window shows moves here); ⌘Enter (macOS) / Ctrl+Enter (Linux/Windows) opens it in a new window, as the row's description says; the sidebar keys work on a row. The leader's ↑ / ↓ show the previous / next row from anywhere |
+| List of workspaces (`#ws-list`: a list of buttons, the current one `aria-current`) | One roving stop, the row last focused, else the current row; Tab from the header's Add; Shift+Tab from the nav item (F6 lands there); `w` in the sidebar, the leader's `o`, ⌥⌘O / Alt+O and the palette's **Workspace: switch…** focus its current row | Up/Down/Home/End move over every row; Enter/Space show the workspace in this window (one another window shows moves here); ⌘Enter (macOS) / Ctrl+Enter (Linux/Windows) opens it in a new window, as the row's description says; the sidebar keys work on a row. The leader's ↑ / ↓, and Alt+↑ / ↓ on Linux and Windows, show the previous / next row from anywhere |
 | A row's context menu (`role="menu"`, one item: **Open in new window**) | Shift+F10 or the Menu key on a row, or a right-click; focus on its item | Enter/Space open the workspace in its own window (or bring that window to the front), back on the row; Esc or Tab close it, back on the row |
 | Add local workspace… (the **+** in the sidebar's header) | Tab (first stop of the sidebar) | Enter/Space open the Add / onboard dialog |
 | Add / onboard workspace dialog | From the header's Add, or the chooser's button; opened by itself in a window with no workspace when the Desktop serves none | Each found deployment is a button, then each row of this computer's list that can't be opened (`aria-disabled`, its state in words); one Tab stop among them, Up/Down/Home/End move: Enter/Space on a found one adds it and opens it here; Right Arrow on a row that can't be opened reaches its **Remove**, Left Arrow or Esc go back; Esc elsewhere closes; trapped; returns to what opened it, or to the list after an add |
 | Sidebar nav (Deployments, Workspace, Automations) | F6 (current item); Tab; ⌘1/⌘2/⌘3 | Enter/Space |
-| Roster filter | Tab; ⌘F / Ctrl+Alt+F; **Down from it enters the rows (fixed): while filtering, at the first match, never a parent kept only to show its tree path** | Typing filters |
+| Roster filter | Tab; ⌘F / Alt+F; **Down from it enters the rows (fixed): while filtering, at the first match, never a parent kept only to show its tree path** | Typing filters |
 | Roster rows | One roving stop, **the selected row, else the first filter match (fixed: was the first enabled)**; F6; the leader then Esc; Up/Down/Home/End (and the TUI's `k` `j` `g` `G`), PageUp/PageDown by the rows that fit; Right (`l`) expands, Left (`h`) collapses or goes to the parent; the sidebar keys (see "Sidebar keys"). A collapse or a filter never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is. The list shows no scrollbar (the wheel and the touchpad scroll it): a row that takes keyboard focus (these keys, the filter's Down, F6) is revealed whole, its tools included, by scrolling the list alone, never an ancestor | Enter/Space open the terminal (running) or Start (stopped); an arrow chord the keymap binds is the keymap's, so Alt+Shift+↑/↓ (⌥⌘↑/↓) open the terminal of the row above / below, as from anywhere |
 | Rows whose state is unknown or that the kernel does not report addressable | **Focusable, `aria-disabled` with the reason as a description (fixed: were `disabled`, which hid their tools from the keyboard)** | Activation does nothing; their tools work |
 | Row tools: PR link, Start…, actions menu | Tab from the focused row (shown on focus) | Enter/Space; the menu: arrows, Home/End, Esc back on its trigger, Tab closes |
 | Start / Restart dialog, lifecycle dialog | From the row or its menu | Esc (Cancel before anything is sent, Close or Done after); trapped; the lifecycle dialog starts on Cancel and focuses Close or Done when it ends; **focus returns to the row when its tool is hidden again (fixed: fell to `<body>`)**, and after a retire to the row that followed it |
 | Sidebar footer: Spawn instance, sidebar, theme, shortcuts, settings, palette | Tab | Enter/Space run the same registered actions as the chords |
 | Show sidebar (start of the main area's top bar, while the sidebar is hidden or in focus mode) | Tab, first in the Main region; hiding the sidebar moves focus to it | Enter/Space: `sidebar.toggle` (leaves focus mode too) |
-| Tab bar | One roving stop per tablist (per group when split); F6 (main). Tabs shrink to fit (spec F); the active tab is scrolled fully into view in its own strip on every activation, close and strip resize, and a focused control is revealed in its strip, never by scrolling an ancestor | Left/Right/Home/End select; Delete closes the focused tab, and the keymap's `tabs.close` (⌘W / Ctrl+Alt+W, rebindable; the close button's tooltip names it) closes the active one; Ctrl+Tab, Alt+Shift+→/← (⌥⌘→/←) and go-to-tab from anywhere in the tab layer, a terminal included, **keeping focus in the content (fixed: fell to `<body>`)** |
+| Tab bar | One roving stop per tablist (per group when split); F6 (main). Tabs shrink to fit (spec F); the active tab is scrolled fully into view in its own strip on every activation, close and strip resize, and a focused control is revealed in its strip, never by scrolling an ancestor | Left/Right/Home/End select; Delete closes the focused tab, and the keymap's `tabs.close` (⌘W / Alt+W, rebindable; the close button's tooltip names it) closes the active one; Ctrl+Tab, Alt+→/← (⌥⌘→/←) and go-to-tab (each tab shows its number) from anywhere in the tab layer, a terminal included, **keeping focus in the content (fixed: fell to `<body>`)** |
 | Terminal | Enter on its roster row; F6 (main) | Every key reaches the program except the terminal-allowlisted chords; ⇧⌘F6 / Ctrl+Shift+F6 leaves for the next region; ⌘C / Ctrl+Shift+C copy the selection and ⌘V / Ctrl+Shift+V paste |
 | Tab close buttons | Tab | Enter |
 | Split right / down (the only buttons after the tabs: closing the split and the instance panel are on their chords and the palette) | Tab (shown for a terminal) | Enter; their chords |
@@ -886,7 +1061,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Show instance panel (end of the main area's top bar, while the panel is closed and has something to show) | Tab, last in the Main region; closing the panel moves focus to it | Enter/Space: `panel.toggle`, then focus on the panel's selected tab |
 | Panel sections: soul link, copy, details, Open soul page, Teams, Git, lifecycle Restart…/Start…/Stop…/Retire… | Tab | Native buttons and summaries |
 | Spawn dialog | Spawn on a card, a soul page, Quick Open | See above |
-| Command palette, Quick Open | ⌘K / Ctrl+Alt+K, ⌘P / Ctrl+Alt+P (from a terminal too) | Type, arrows, Enter, Esc; Tab stays in the input; in the palette its chord cycles rows (⇧ + it: up), skipping context rows, and ⌘N / ⌥⌘N (Alt+Shift+↓ / ↑ on Linux/Windows) move to the next / previous group's first row, named in its footer (see "The command palette") |
+| Command palette, Quick Open | ⌘K / Alt+K, ⌘P / Alt+P (from a terminal too) | Type, arrows, Enter, Esc; Tab stays in the input; in the palette its chord cycles rows (⇧ + it: up), skipping context rows, and ⌘N / ⌥⌘N (Alt+Shift+↓ / ↑ on Linux/Windows) move to the next / previous group's first row, named in its footer (see "The command palette") |
 | Shortcuts editor | ⌘, / Ctrl+, (from a terminal too); focus starts in its search | The **Leader** group comes first (the leader's own row, then one fixed row per key after it), then **Sidebar keys**; typing in the search filters by name, group or keys (`shift+b` and `ctrl shift b` find Ctrl+Shift+B, `ctrl+x k` finds the leader's `k`), and the count is announced; Down enters the rows, Up/Down move between them, Up from the first returns to the search; Tab reaches each row's shortcut and Reset; Enter records, Esc cancels a recording, Backspace unbinds; Esc clears the search, then closes; trapped, the search its first stop. A row shows "terminal" when its shortcut works while a terminal has focus and "changed" when it differs from the default |
 | Settings (Connections, Terminal) | Footer settings | Trapped, through the Terminal size field too; the sign-in terminal has an explicit Shift+Tab exit; the font size stepper's − and + stay focusable at 9 and 28 (aria-disabled) and a typed size applies on Enter or on leaving the field |
 | Notifications | Tab (they come last in the document) | Open and Dismiss are buttons; focus moves on after dismissing |

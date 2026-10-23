@@ -606,7 +606,7 @@ draws its own way; the dialog draws them. **Change soul** switches the same dial
 the **picker** (the soul chooser, grouped by source, alphabetical, externals
 last, keyed by `agentsRoot + name + server`); switching soul keeps the typed
 name and instruction, and a soul chosen there reopens in the picker. Quick
-Open (⌘P / Ctrl+Alt+P) opens the scoped layout too (`preselectSpawn`), and
+Open (⌘P / Alt+P) opens the scoped layout too (`preselectSpawn`), and
 dismissing that dialog returns to where the operator was.
 
 Keyboard (spec F; `../docs/desktop-keyboard.md`): Mod+Enter (`spawn.submit`)
@@ -1421,7 +1421,7 @@ The keymap, its per-platform defaults, the terminal policy, the F6 regions and
 the keyboard audit are documented in `../docs/desktop-keyboard.md`; this
 section is the module map.
 
-- **⌘F / Ctrl+Alt+F** reveals the sidebar and focuses the instance filter; **⌘N /
+- **⌘F / Alt+F** reveals the sidebar and focuses the instance filter; **⌘N /
   Ctrl+Shift+N** opens Workspace's soul chooser, never automatically spawning
   an instance. Visible hints and tooltips follow the effective bindings
   (including explicit unbinds). Existing user overrides are retained.
@@ -1432,9 +1432,9 @@ section is the module map.
   `DEFAULT_KEYMAP` entry — override wins, explicit unbind kills it),
   `DEFAULT_KEYMAP` (one entry per action: a chord, or `{ mac, other }`
   when the platforms differ; `defaultBinding(id, isMac)`), one such keymap
-  per chord family (`DEFAULT_KEYMAPS`: Ctrl+Alt, the default and
-  `DEFAULT_KEYMAP`, and Ctrl+Shift, which moves the Linux/Windows key of seven
-  `CHORDS_READ` rows; `setChordFamily` binds one, from
+  per chord family (`DEFAULT_KEYMAPS`: Alt, the default and
+  `DEFAULT_KEYMAP`; Ctrl+Alt; and Ctrl+Shift, which moves the Linux/Windows key
+  of seven of Ctrl+Alt's `CHORDS_READ` rows; `setChordFamily` binds one, from
   `chord-family.mjs`, and every reader of a default follows at once), user overrides
   persisted under `localStorage["oats-desktop-keymap"]`, chord
   parse/format/match, and dispatch (`matchEvent`/`handleKeydown`).
@@ -1448,28 +1448,34 @@ section is the module map.
   skips already-consumed (`defaultPrevented`) events, and unmodified/
   shift-only chords never fire while an editable field (input, textarea,
   select, contenteditable) has focus. Terminal
-  policy (a default chord never takes a key a terminal program reads):
+  policy (plain Ctrl+letter and the F-keys are the program's; the Alt
+  family's keys are taken on purpose, and the program still gets each from
+  Esc, then the key):
   inside `.xterm`, on macOS only ⌘-resolved chords fire, plus Ctrl+Tab for
   tabs.next/prev and the leader's ⌃X (or ⌃\ bound back); on Linux/Windows only
   `TERMINAL_ALLOWLIST` action ids may
   fire (a default xterm sends nothing for, or a byte the program still gets
-  from a plainer key, or a named exception: the leader's Ctrl+X, whose 0x18 the
-  leader pressed twice gives the program, `focus.leaveTerminal` and the
-  Alt+Shift arrows; `test/terminal-xterm-bytes.test.mjs` pins each) —
-  every other plain Ctrl+letter, F6 and Alt+digit belong to the attached program, and
+  from a plainer key, or one of the Alt family's, or a named exception: the leader's
+  Ctrl+X, whose 0x18 the leader pressed twice gives the program, `focus.leaveTerminal`
+  and the Alt+Shift arrows; `test/terminal-xterm-bytes.test.mjs` pins each) —
+  every other plain Ctrl+letter, F6 and every Alt key no chord holds belong to the attached program, and
+  AltGr is never Alt (`chordFromEvent`), and
   `focus.leaveTerminal` (Mod+Shift+F6) is the way out. Outside a terminal on
   Linux/Windows the leader's Ctrl+X is a text field's Cut (`leaderLeftToField`). `keymapConflicts`
   lists clashes that involve a stored rebind; the shell marks the footer
   shortcuts button and the editor names them. The chords shared with the
   TUI (`CHORDS_READ`, read from `packages/client/keymap.mjs` CHORDS) all
-  fire from a focused terminal: `app.palette` (⌘K / Ctrl+Alt+K) and
-  `app.quickOpenSouls` (⌘P / Ctrl+Alt+P) among them, while plain Ctrl+K
+  fire from a focused terminal: `app.palette` (⌘K / Alt+K) and
+  `app.quickOpenSouls` (⌘P / Alt+P) among them, while plain Ctrl+K
   and Ctrl+P stay the program's (readline's kill-line, shell history).
-  The previous / next instance and the leader's `z` are chords of their own
-  (`roster.openPrevious`, `roster.openNext`, `terminal.focusMode`, shell.mjs
+  The previous / next instance, the previous / next workspace and the leader's
+  `z` are chords of their own (`roster.openPrevious`, `roster.openNext`,
+  `workspace.previous`, `workspace.next`, `terminal.focusMode`, shell.mjs
   `runAsLeaderKey`), which run the leader's dispatch (leader-dispatch.mjs
-  `previous`, `next`, `zoom`). The instance steps have no leader key: the
-  leader's ↑ ↓ are `workspace-previous` / `workspace-next`, the list of
+  `previous`, `next`, `workspace-previous`, `workspace-next`, `zoom`); the
+  editor groups' are `split.focusNextGroup` / `split.focusPrevGroup`, the
+  leader's Tab / Shift+Tab (shell.mjs `focusGroup`). The instance steps have no
+  leader key: the leader's ↑ ↓ are `workspace-previous` / `workspace-next`, the list of
   workspaces' `step` (their labels are leader-keys.mjs `LEADER_LABELS`, which
   also names `previous` / `next` for the chords). All read their origin when
   the key is pressed (`leaderOrigin`): the target (`leaderTargetId`), and for
@@ -1527,7 +1533,7 @@ section is the module map.
   `onTerminalTypographyChange`), so every open terminal and the control follow
   each other. A typed size applies on Enter or on leaving the field, never per
   keystroke. The font family stays on the palette's prompt.
-- **quick-open.mjs** — Quick Open for souls (⌘P / Ctrl+Alt+P, also “Souls: quick
+- **quick-open.mjs** — Quick Open for souls (⌘P / Alt+P, also “Souls: quick
   open…” in the palette): fuzzy-find a soul from the Spawn view's data
   source and hand off through `views/spawn.mjs` `preselectSpawn()`: the
   spawn dialog scoped to that soul, as its card's Spawn opens it, with focus
@@ -1545,7 +1551,7 @@ section is the module map.
   differs from the default, click-to-record (Esc cancels, Backspace
   unbinds), conflict warnings via `findConflict`, reset-all. On Linux/Windows,
   given the page's chord family, its top holds the family choice ("Shortcuts
-  anywhere": Ctrl+Alt or Ctrl+Shift), which writes keys.json through main and
+  anywhere": Alt, Ctrl+Alt or Ctrl+Shift), which writes keys.json through main and
   switches the keymap at once, with main's note when the file was not taken.
 - **chord-family.mjs** — the chord family in the page: asks main
   (`../chord-family.mjs`) as the window starts, follows its pushes, writes the
@@ -1616,7 +1622,7 @@ with no plan, which sends `{server, instance}` once to `/api/server-forget`
 ([desktop-deployment-model.md](../docs/desktop-deployment-model.md#remote-rows)).
 
 An instance's colour (#1421 §2) has no row menu item: the palette's **Instance: name and
-colour…** and `instance.edit` (CHORDS `edit-instance`, Ctrl+Alt+R / ⌥⌘R) open
+colour…** and `instance.edit` (CHORDS `edit-instance`, Alt+R / ⌥⌘R) open
 `instance-color-dialog.mjs` for the leader's target (`leaderTargetId`; the palette captures
 it when it opens). The dialog is Forget's pattern: it asks `/api/instance-color` with
 `check: true` on open (nothing runs), then sends one `{instance, home, color}` at a time,
@@ -1870,6 +1876,18 @@ focus on a tab's trigger or close uses the same helper. In a group strip the spl
 buttons scroll with the tabs, so they are pinned to its end (`position: sticky`)
 and the strip declares their width as `scroll-padding-right`, which
 `revealInStrip` honours: a revealed tab never sits under them.
+**Each tab ends with its number** (`.tab-num`, aria-hidden, empty from
+`createTabChrome`): the N that go to tab reaches in its strip, 1–8 and 9 for
+the last of nine or more (`tab-numbers.mjs` `tabNumber`, `numberTabStrips`).
+`observeTabStrips()` numbers every current strip and points a
+`MutationObserver` (`tabNumberObserver`) at each, so a tab added, closed,
+hidden by context or moved between groups renumbers them; the observer ignores
+its own `.tab-num` writes. Harnesses that run `observeTabStrips` by its text give
+it `numberTabStrips` and `tabNumberObserver: null`. The number never crowds out
+the name: the trigger wraps and shows only its first line, and the label's flex
+basis is `--tab-name-min` (102px, what the floor budgets the name), so line
+breaking sees the name at its minimum and the number wraps out of sight, whole,
+only when even that does not fit (`shell.css`, `.tab-trigger`).
 
 ### Workspace-local tab memory
 

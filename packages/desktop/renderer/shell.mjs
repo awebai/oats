@@ -58,6 +58,7 @@ import { createTerminalAtlasRecovery } from "./terminal-atlas-recovery.mjs";
 import { attachClipboardWrite, attachSelectionCopy, copyTerminalSelection } from "./terminal-clipboard.mjs";
 import { attachTerminalMouse } from "./terminal-mouse.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "./tab-a11y.mjs";
+import { numberTabStrips } from "./tab-numbers.mjs";
 import { dotColor, paintDotColor } from "./instance-dot.mjs";
 import { revealInStrip } from "./reveal-in-scrollport.mjs";
 import { createIntentGate, prepareOwnedOpen, runOpenFlow } from "./open-intent.mjs";
@@ -547,7 +548,7 @@ const workspaceLabel = createWorkspaceSwitcher({
   },
 });
 window.addEventListener("pagehide", () => workspaceLabel.dispose(), { once: true });
-/** The list of workspaces at the sidebar's top (`w`, the leader's `o`, Ctrl+Alt+O / ⌘⌥O, the palette's
+/** The list of workspaces at the sidebar's top (`w`, the leader's `o`, Alt+O / ⌘⌥O, the palette's
  * "Workspace: switch…", the chooser's button): shown (focus mode left, the sidebar back), its current row
  * focused, or the row last focused there. */
 function focusWorkspaceList() {
@@ -1645,8 +1646,17 @@ function revealActiveTabs() {
   }
 }
 const tabStripResize = typeof ResizeObserver === "function" ? new ResizeObserver(() => revealActiveTabs()) : null;
-/** Group strips come and go with the split: observe exactly the current ones. */
+// The tabs' numbers (tab-numbers.mjs): any change to a strip's tabs (addTab, closeTab, updateContextTabs'
+// hidden flips, the split moving tabs between strips) renumbers every strip. The observer ignores its own
+// .tab-num writes, and a pass with nothing to change writes nothing.
+const tabNumberObserver = typeof MutationObserver === "function" ? new MutationObserver(records => { if (records.some(r => !r.target.closest?.(".tab-num"))) numberTabStrips(tabStrips()); }) : null;
+/** Group strips come and go with the split: observe exactly the current ones, and number them now. */
 function observeTabStrips() {
+  if (tabNumberObserver) {
+    tabNumberObserver.disconnect(); // drops records queued for strips that left; the pass below covers them
+    for (const strip of tabStrips()) tabNumberObserver.observe(strip, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
+  }
+  numberTabStrips(tabStrips());
   if (!tabStripResize) return;
   tabStripResize.disconnect();
   for (const strip of tabStrips()) tabStripResize.observe(strip);
@@ -2245,7 +2255,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     // Terminal-allowlisted shortcuts (engine policy: TERMINAL_ALLOWLIST, e.g.
     // app.palette, tabs.next/prev/close, split.*, focus.leaveTerminal) must be
     // intercepted BEFORE xterm writes to the pty — its handler consumes e.g.
-    // Ctrl+Alt+K or ⌘⇧F6 and stops propagation, so the bubble-phase window
+    // Alt+K or ⌘⇧F6 and stops propagation, so the bubble-phase window
     // listener never sees it. matchEvent applies the allowlist (insideTerminal);
     // the action runs once on keydown, and every phase of a matched chord
     // is claimed so no control byte leaks to the attached program.
@@ -2351,7 +2361,7 @@ const palette = createPalette({
   // A held home (spawning, retiring, left half cleaned) opens nothing from here either, as its roster row does not:
   // the row as this window reads it (its own retires in flight held), said as the row says it.
   openTerminal: (name) => openTerminalTab(name, { refuse: (inst) => { const held = heldHome(shownRows([inst])[0]); return held ? heldLine(held) : null; } }),
-  // While open, ⌘K / Ctrl+Alt+K moves down and Shift + it up (live keymap); Esc closes, Enter opens.
+  // While open, ⌘K / Alt+K moves down and Shift + it up (live keymap); Esc closes, Enter opens.
   cycleKey: (e) => pickerCycleDirection(e, "app.palette", isMac),
   // While open, ⌘N / ⌥⌘N (Alt+Shift+↓ / ↑ elsewhere) jump to the next / previous group, over
   // app.chooseSoul and roster.openNext / openPrevious; the footer names them.
@@ -2402,8 +2412,8 @@ const palette = createPalette({
 // refused, no verified CLI) opens its page instead, which says why.
 // Dismissing the dialog returns to where the operator was before Quick Open
 // (surface-return.mjs). Terminal policy (documented): app.quickOpenSouls is
-// terminal-allowlisted — ⌘P on macOS, Ctrl+Alt+P on Linux/Windows, which xterm
-// sends as ESC Ctrl+P (Esc, then Ctrl+P); plain Ctrl+P stays the shell's history.
+// terminal-allowlisted — ⌘P on macOS, Alt+P on Linux/Windows (ESC P: Esc, then P), or
+// Ctrl+Alt+P (ESC Ctrl+P) in that family; plain Ctrl+P stays the shell's history.
 const quickOpen = createQuickOpen({
   loadSouls: async () => {
     const ws = currentWorkspace();
@@ -2832,13 +2842,16 @@ registerAction({ id: "focus.prevRegion", label: "Focus the previous region", con
 // leaves it for the next region, same order as F6; from there plain F6 works.
 registerAction({ id: "focus.leaveTerminal", label: "Leave the terminal (focus the next region)", context: "global", run: () => cycleRegion(1) });
 
-// The leader's Tab (docs/desktop-keyboard.md, "The leader"): the next editor group's active tab, or
-// the group itself when it is empty, wrapping. Its chord is the shared group-next (Ctrl+Alt+A / ⌘⌥A).
-registerAction({ id: "split.focusNextGroup", label: "Focus the next editor group", context: "tabs", run: unlessModal(() => focusNextGroup()) });
-function focusNextGroup() {
+// The leader's Tab and Shift+Tab (docs/desktop-keyboard.md, "The leader"): the next / previous editor
+// group's active tab, or the group itself when it is empty, wrapping. Their chords are the shared
+// group-next and group-previous (Alt+Shift+→/←; Ctrl+Alt+A / Ctrl+Alt+Shift+A; ⌘⌥A, none on macOS).
+registerAction({ id: "split.focusNextGroup", label: "Focus the next editor group", context: "tabs", run: unlessModal(() => focusGroup(1)) });
+registerAction({ id: "split.focusPrevGroup", label: "Focus the previous editor group", context: "tabs", run: unlessModal(() => focusGroup(-1)) });
+/** The group `delta` (1 next, -1 previous) from the focused one, wrapping. */
+function focusGroup(delta) {
   if (!tabLayerVisible || !split || split.groups.length < 2) return;
   const at = split.groups.findIndex(g => g.id === split.focusedGroup);
-  const next = split.groups[(at + 1) % split.groups.length];
+  const next = split.groups[(at + delta + split.groups.length) % split.groups.length];
   tabOpenIntents.invalidate();
   if (next.activeTab != null) { selectTab(next.activeTab, { focusContent: true }); return; }
   if (selectEmptyGroup(next.id)) tabOpenIntents.applyFocus(() => tabhost.querySelector(".focused-group > .split-empty")?.focus());
@@ -2971,6 +2984,7 @@ const leaderDispatch = createLeaderDispatch({
   splitRight: () => runAction("split.vertical"),
   splitDown: () => runAction("split.horizontal"),
   nextGroup: () => runAction("split.focusNextGroup"),
+  previousGroup: () => runAction("split.focusPrevGroup"),
   closeSplit: () => runAction("split.close"),
   quickOpen: () => runAction("app.quickOpenSouls"),
   filter: () => runAction("sidebar.focusFilter"),
@@ -3010,11 +3024,13 @@ function runAsLeaderKey(does, e) {
 for (const { id, does } of SIDEBAR_KEYS) {
   registerAction({ id, label: leaderLabel(does, actionLabel), context: "sidebar", run: (e) => runAsLeaderKey(does, e) });
 }
-// The previous / next instance and the leader's z on chords (the shared CHORDS previous, next, zoom:
-// Alt+Shift+↑/↓ and Ctrl+Alt+Z, ⌘⌥↑/↓ and ⌘⌥Z): the instance steps have no leader key (the leader's ↑ / ↓
-// move between workspaces); each runs the one dispatch, for the leader's target, from every focus.
+// The previous / next instance, the previous / next workspace and the leader's z on chords (the shared
+// CHORDS previous, next, workspace-previous, workspace-next, zoom: Alt+Shift+↑/↓, Alt+↑/↓ and Alt+Z;
+// ⌘⌥↑/↓ and ⌘⌥Z, and no workspace chord, on macOS): the instance steps have no leader key (the leader's
+// ↑ / ↓ move between workspaces); each runs the one dispatch, for the leader's target, from every focus.
 // Inert under a modal dialog or the palette, as the leader is.
-for (const [id, does] of [["roster.openPrevious", "previous"], ["roster.openNext", "next"], ["terminal.focusMode", "zoom"]]) {
+for (const [id, does] of [["roster.openPrevious", "previous"], ["roster.openNext", "next"],
+  ["workspace.previous", "workspace-previous"], ["workspace.next", "workspace-next"], ["terminal.focusMode", "zoom"]]) {
   registerAction({ id, label: leaderLabel(does, actionLabel), context: "global", when: () => !modalOpen(), run: (e) => runAsLeaderKey(does, e) });
 }
 // The instance's name and colour (#1421; CHORDS edit-instance, no leader key): the leader's target, from

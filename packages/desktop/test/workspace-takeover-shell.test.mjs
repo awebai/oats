@@ -20,6 +20,7 @@ import { createSelectionOwnership, wirePaneSelection } from "../renderer/selecti
 import { createIntentGate } from "../renderer/open-intent.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "../renderer/terminal-tab.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "../renderer/tab-a11y.mjs";
+import { numberTabStrips } from "../renderer/tab-numbers.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { resolveTerminalOpen, terminalKey } from "../renderer/instance-tree-view.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
@@ -115,11 +116,11 @@ function shell(t) {
     leaveTo: "B",
   };
   c.tabOpenIntents = createSelectionOwnership(c);
-  c.revealInStrip = revealInStrip; c.tabStripResize = null;
+  c.revealInStrip = revealInStrip; c.tabStripResize = null; c.numberTabStrips = numberTabStrips; c.tabNumberObserver = null;
   c.splitOpenState = () => ({ split: c.split, activeId: c.activeTab, tabs: c.tabs, workspace: c.workspace, visible: c.tabLayerVisible });
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "closeStage", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "walkedTabs", "visibleTabEntries", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "showTerminalContext",
-    "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal", "syncTabNeedsInput", "focusNextGroup",
+    "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal", "syncTabNeedsInput", "focusGroup",
     "releaseTakenWorkspace", "closeWorkspaceTabs", "restoreHandedLayout"];
   const functions = names.map(name => {
     const match = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));

@@ -72,7 +72,7 @@ export function actAvailability(instance, verb, menuReason = null) {
  *   openAct(verb, instance)          the menu's dialog for the act (Stop…/Retire… plans, Start…/Restart…)
  *   spawnSoul(instance)              the spawn dialog for the instance's soul, as Quick Open opens it
  *   palette, instances, souls, capabilities, zoom, closeTab, tabPrevious, tabNext, splitRight,
- *   splitDown, nextGroup, closeSplit, quickOpen, filter, workspaces, help, list, refresh
+ *   splitDown, nextGroup, previousGroup, closeSplit, quickOpen, filter, workspaces, help, list, refresh
  */
 export function createLeaderDispatch(d) {
   const lifecycle = (verb) => (origin) => {
@@ -107,6 +107,7 @@ export function createLeaderDispatch(d) {
     "split-right": () => d.splitRight(),
     "split-down": () => d.splitDown(),
     "group-next": () => d.nextGroup(),
+    "group-previous": () => d.previousGroup(),
     "group-close": () => d.closeSplit(),
     stop: lifecycle("stop"),
     restart: lifecycle("restart"),

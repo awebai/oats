@@ -16,7 +16,8 @@ import { createQuickOpen } from "../renderer/quick-open.mjs";
 import { treeConnectors } from "../renderer/instance-tree-view.mjs";
 import { rosterGroups, instanceId } from "../../client/instance-tree.mjs";
 import { rosterSections } from "../../client/roster-sections.mjs";
-import { pickerCycleDirection, paletteGroupDirection, paletteGroupHint, setBinding, resetBinding, DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
+import { pickerCycleDirection, paletteGroupDirection, paletteGroupHint, setBinding, resetBinding, setChordFamily, DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
+import { DEFAULT_CHORD_FAMILY } from "../../client/keymap.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
 
 const at = (instance, extra = {}) => ({ instance, agent: "dev", home: `/w/${instance}`, agentsRoot: "/w", running: true, ...extra });
@@ -81,16 +82,24 @@ test("'>' restricts to commands, and commands keep their own cap after the insta
 test("the palette's chord cycles: Mod+K down, Shift down to up; a chord holding Shift has no Shift form; rebinds follow", t => {
   t.after(() => resetBinding("app.palette"));
   const ev = (key, mods = {}) => ({ key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...mods });
-  assert.deepEqual(DEFAULT_KEYMAP["app.palette"], { mac: "Mod+K", other: "Ctrl+Alt+K" });
+  assert.deepEqual(DEFAULT_KEYMAP["app.palette"], { mac: "Mod+K", other: "Alt+K" });
   assert.equal(pickerCycleDirection(ev("k", { metaKey: true }), "app.palette", true), 1);
   assert.equal(pickerCycleDirection(ev("K", { metaKey: true, shiftKey: true }), "app.palette", true), -1);
   assert.equal(pickerCycleDirection(ev("j", { metaKey: true }), "app.palette", true), 0);
   assert.equal(pickerCycleDirection(ev("k", { ctrlKey: true }), "app.palette", true), 0, "⌃K is not ⌘K on macOS");
-  // Linux/Windows: Ctrl+Alt+K down, Ctrl+Alt+Shift+K up.
+  // Linux/Windows, the default Alt family: Alt+K down, Alt+Shift+K up.
+  assert.equal(pickerCycleDirection(ev("k", { altKey: true }), "app.palette", false), 1);
+  assert.equal(pickerCycleDirection(ev("K", { altKey: true, shiftKey: true }), "app.palette", false), -1);
+  assert.equal(pickerCycleDirection(ev("k", { ctrlKey: true }), "app.palette", false), 0, "plain Ctrl+K is the program's");
+  assert.equal(pickerCycleDirection(ev("k", { ctrlKey: true, altKey: true }), "app.palette", false), 0, "Ctrl+Alt+K is no binding in the Alt family");
+  assert.equal(pickerCycleDirection(ev("p", { altKey: true }), "app.palette", false), 0, "Alt+P is Quick Open's");
+  // The Ctrl+Alt family: Ctrl+Alt+K down, Ctrl+Alt+Shift+K up, and Alt+K is nothing.
+  setChordFamily("ctrl+alt");
+  t.after(() => setChordFamily(DEFAULT_CHORD_FAMILY));
   assert.equal(pickerCycleDirection(ev("k", { ctrlKey: true, altKey: true }), "app.palette", false), 1);
   assert.equal(pickerCycleDirection(ev("K", { ctrlKey: true, altKey: true, shiftKey: true }), "app.palette", false), -1);
-  assert.equal(pickerCycleDirection(ev("k", { ctrlKey: true }), "app.palette", false), 0, "plain Ctrl+K is the program's");
-  assert.equal(pickerCycleDirection(ev("p", { ctrlKey: true, altKey: true }), "app.palette", false), 0, "Ctrl+Alt+P is Quick Open's");
+  assert.equal(pickerCycleDirection(ev("k", { altKey: true }), "app.palette", false), 0);
+  setChordFamily(DEFAULT_CHORD_FAMILY);
   // A rebind that already holds Shift has no reverse chord: ArrowUp moves up there.
   setBinding("app.palette", "Ctrl+Shift+K");
   assert.equal(pickerCycleDirection(ev("K", { ctrlKey: true, shiftKey: true }), "app.palette", false), 1);
@@ -269,7 +278,7 @@ test("Linux/Windows: Alt+Shift+↓ / ↑ move between groups, over roster.openNe
   assert.deepEqual(p.reachedShell, [], "roster.openNext / openPrevious never see them while open");
   // The plain arrows and the cycle chord are unchanged.
   p.key("ArrowDown"); assert.equal(p.active(), "alpha-kid");
-  p.key("k", { ctrlKey: true, altKey: true }); assert.equal(p.active(), "lead");
+  p.key("k", { altKey: true }); assert.equal(p.active(), "lead");
   assert.equal(p.doc.querySelector(".palette-footer").textContent, "Alt+Shift+↓ next group · Alt+Shift+↑ previous");
 });
 

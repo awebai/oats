@@ -13,8 +13,9 @@ import { createTabChrome } from "../renderer/tab-a11y.mjs";
 import { canActivateTab } from "../renderer/workspace-tabs.mjs";
 import {
   defaultBinding, TERMINAL_ALLOWLIST, parseChord, matchEvent, registerAction,
-  setActiveContexts,
+  setActiveContexts, setChordFamily,
 } from "../renderer/keybindings.mjs";
+import { DEFAULT_CHORD_FAMILY } from "../../client/keymap.mjs";
 import {
   requestSplit, openTabInFocusedGroup,
 } from "../renderer/split-layout.mjs";
@@ -29,10 +30,12 @@ test("split + sidebar actions have parseable default chords and are terminal-all
       assert.ok(parseChord(defaultBinding(id, isMac)), `${id} chord parses`);
     }
   }
-  // Linux/Windows: the shared Ctrl+Alt splits (packages/client/keymap.mjs CHORDS), never Ctrl+\
-  // (SIGQUIT in a terminal).
-  assert.equal(defaultBinding("split.vertical", false), "Ctrl+Alt+E");
-  assert.equal(defaultBinding("split.horizontal", false), "Ctrl+Alt+Shift+E");
+  // Linux/Windows: the shared Alt splits (packages/client/keymap.mjs CHORDS; Ctrl+Alt in that family),
+  // never Ctrl+\ (SIGQUIT in a terminal).
+  assert.equal(defaultBinding("split.vertical", false), "Alt+E");
+  assert.equal(defaultBinding("split.horizontal", false), "Alt+Shift+E");
+  assert.equal(defaultBinding("split.vertical", false, "ctrl+alt"), "Ctrl+Alt+E");
+  assert.equal(defaultBinding("split.horizontal", false, "ctrl+alt"), "Ctrl+Alt+Shift+E");
   assert.equal(defaultBinding("split.close", false), "Ctrl+Shift+Alt+W");
   // The sidebar is Ctrl+Shift+B there: plain Ctrl+B is the tmux prefix, Ctrl+Shift+B is no byte.
   assert.equal(defaultBinding("sidebar.toggle", false), "Ctrl+Shift+B");
@@ -131,12 +134,19 @@ test("split default chords match REAL key events — Shift+\\ arrives as event.k
     { key: "\\", metaKey: true, shiftKey: false, ctrlKey: false, altKey: false, defaultPrevented: false },
     { isMac: true, insideTerminal: false, editableTarget: false },
   ), "split.vertical");
-  // non-mac inside xterm: allowlisted; the REAL events report "e" for Ctrl+Alt+E and "E" for Ctrl+Alt+Shift+E
+  // non-mac inside xterm: allowlisted; the REAL events report "e" for Alt+E and "E" for Alt+Shift+E
   const linux = (key, extra = {}) => matchEvent(
     { key, ctrlKey: true, altKey: true, shiftKey: false, metaKey: false, defaultPrevented: false, ...extra },
     { isMac: false, insideTerminal: true, editableTarget: false });
+  assert.equal(linux("e", { ctrlKey: false }), "split.vertical");
+  assert.equal(linux("E", { ctrlKey: false, shiftKey: true }), "split.horizontal");
+  // Ctrl+Alt+E is the Ctrl+Alt family's: no binding in the default, so the program has it.
+  assert.equal(linux("e"), null);
+  setChordFamily("ctrl+alt");
+  t.after(() => setChordFamily(DEFAULT_CHORD_FAMILY));
   assert.equal(linux("e"), "split.vertical");
   assert.equal(linux("E", { shiftKey: true }), "split.horizontal");
+  setChordFamily(DEFAULT_CHORD_FAMILY);
   // 0.66's Ctrl+Shift+E and Ctrl+Shift+O reach the program now.
   assert.equal(linux("E", { altKey: false, shiftKey: true }), null);
   assert.equal(linux("O", { altKey: false, shiftKey: true }), null);
