@@ -1,4 +1,4 @@
-## Getting started
+## Changed
 
 - **New workspaces get aweb tasks.** The getting-started skill's workspace
   file pins `oats.aweb` at v1.31.0 or later and sets
