@@ -133,10 +133,11 @@ test("provided workspace header structure and brand artwork are decorative; the 
   const switcher = createWorkspaceSwitcher({ document, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) });
   t.after(() => switcher.dispose());
   switcher.begin()({ id: "/fixture/A", name: "A" }, [{ id: "/fixture/A", name: "A" }, { id: "/fixture/B", name: "B" }]);
-  // Always shown: the rows are drawn with no menu to open, the current one marked in text.
+  // Always shown: the rows are drawn with no menu to open, the current one marked by aria-current and style alone.
   const rows = [...document.querySelectorAll("#ws-options .ws-option")];
   assert.deepEqual(rows.map(row => row.dataset.workspaceId), ["/fixture/A", "/fixture/B"]);
   assert.deepEqual(rows.map(row => row.getAttribute("aria-current")), ["true", null]);
+  assert.deepEqual(rows.map(row => row.textContent), ["A", "B"], "no check or other mark beside the name");
   assert.ok(rows.every(row => row.tagName === "BUTTON" && row.getAttribute("role") === null), "a list of buttons");
   assert.deepEqual(rows.map(row => row.tabIndex), [0, -1], "one tab stop: the current row");
   assert.equal(list.getAttribute("aria-description"), "Current workspace: /fixture/A");
@@ -357,7 +358,7 @@ for (const outcome of ["resolve", "reject"]) test(`reported workspace/root/host 
   assert.equal(document.querySelectorAll("#ws-options .ws-option").length, 1, "the stale answer adds no row");
   assert.equal(document.querySelector(".ctx-list").textContent, "");
   assert.equal(document.getElementById("ws-list").getAttribute("aria-description"), "Current workspace: same <b>name</b>", "a remote id is never the description");
-  assert.equal(current().title, "", "a remote id is never the tooltip");
+  assert.equal(current().title, 'same <b>name</b>', "the tooltip is the whole name: never a remote id or machine");
 });
 
 test('White, Solarized, Dark and This computer have explicit registry/palette choices without new default chords; the cycle keeps its label', t => {

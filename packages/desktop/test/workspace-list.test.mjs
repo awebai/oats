@@ -1,88 +1,77 @@
-// The workspace list (renderer/workspace-switcher.mjs): always shown at the sidebar's top, one row per
-// workspace. Its rows and their order (served views, then unattached ones, then this computer's rows), the
-// current row, the rows that can't be opened, the needs-input dot and its words, a row another window shows,
-// the leader's moves (`step`), the roving tab stop, and how often this computer's rows are asked of main.
-// The Add dialog, Remove and Open in new window are workspace-switcher*.test.mjs and
-// workspace-open-in-window.test.mjs; the pure move rule is workspace-step.test.mjs.
+// The workspace list (renderer/workspace-switcher.mjs): always shown at the sidebar's top, one row per workspace
+// this window can show, whatever machine it is on. Its rows and their order (the matched views, then the unattached
+// ones, in one flat list with no heading), a row as one line with the name alone, the current row (marked by style
+// alone), the needs-input dot and its words, picking a row another window shows, an unattached row's deployment
+// tab, the leader's moves (`step`), the arrow keys and the roving tab stop, the empty message, the bounded height,
+// a switch on its way and the pick tokens. Nothing is asked of main for the list itself.
+// The Add dialog is workspace-switcher.test.mjs; Open in new window (⌘Enter / Ctrl+Enter, the row's context
+// menu) is workspace-open-in-window.test.mjs; the pure move rule is workspace-step.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
-import {
-  createWorkspaceSwitcher, LISTED_STATE_TEXT, LISTED_STATE_WORD, moreBelowText, LOCAL_SECTION, OTHER_WINDOW_TEXT, WAITING_NAME, WAITING_TITLE,
-  LISTED_EVERY_MS, LISTED_BLURRED_MS,
-} from "../renderer/workspace-switcher.mjs";
+import { createWorkspaceSwitcher, moreBelowText, WAITING_NAME, WAITING_TITLE } from "../renderer/workspace-switcher.mjs";
 import { UNMATCHED_SECTION } from "../../client/workspace-choices.mjs";
-import { iconElement } from "../renderer/shell-icons.mjs";
 import { onDeploymentTabRequest } from "../renderer/deployment-tabs.mjs";
 
 const html = readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
+const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-const deferred = () => { let resolve; const promise = new Promise((ok) => { resolve = ok; }); return { promise, resolve }; };
-// The list's slow re-read never fires unless a test drives the clock.
-const INERT = { setTimeout: () => 0, clearTimeout() {} };
-/** A clock the test drives: what is pending (each delay), and firing the next one. */
-function fakeTimers() {
-  const pending = new Map(); let next = 1;
-  return {
-    setTimeout(fn, ms) { const id = next++; pending.set(id, { fn, ms }); return id; },
-    clearTimeout(id) { pending.delete(id); },
-    delays: () => [...pending.values()].map((entry) => entry.ms),
-    fire() { const [[id, entry]] = [...pending]; pending.delete(id); entry.fn(); },
-  };
-}
 
-const view = (name, fields = {}) => ({ id: `ws:${name.padEnd(20, "0")}`, name, team: null, deployments: [`/h/${name}`], machines: ["This Mac"], notLive: 0, ...fields });
-const listed = (name, fields = {}) => ({ id: `/h/Agents/${name}`, path: `/h/Agents/${name}`, name, team: null, reason: "On this computer", state: "ok", removable: true, ...fields });
+// Views as the server sends them, with everything a row no longer draws (machines, places, not live, labels).
+const view = (name, fields = {}) => ({ id: `ws:${name.padEnd(20, "0")}`, name, team: null, deployments: [`/h/${name}`], machines: ["This Mac"],
+  deploymentLabels: [`This Mac · ~/${name}`], notLive: 0, ...fields });
 const A = view("alpha"), B = view("beta"), C = view("gamma");
+// A stale `shown` (main no longer sends it) changes nothing.
 const HELD = view("held", { shown: true });
-const LOOSE = view("loose", { id: "remote:vega:loose", deployments: ["remote:vega:loose"], machines: ["vega"], unattached: true, short: "Not reached" });
+const LOOSE = view("loose", { id: "remote:vega:loose", deployments: ["remote:vega:loose"], machines: ["vega"], deploymentLabels: ["vega · loose"],
+  unattached: true, short: "Not reached" });
 
-function setup(t, { suggestions = [], discover = null, timers = INERT, focused = true, ...overrides } = {}) {
+function setup(t, overrides = {}) {
   const dom = new JSDOM(html, { url: "file:///renderer/index.html" });
   const document = dom.window.document;
-  // Whether the window is in front decides the re-read's delay: the test says so.
-  const state = { focused };
-  document.hasFocus = () => state.focused;
-  const calls = { selected: [], added: [], asked: 0, tabs: [] };
+  const calls = { selected: [], asked: 0, tabs: [] };
   t.after(onDeploymentTabRequest((request) => calls.tabs.push(request)));
   const controller = createWorkspaceSwitcher({
-    document, timers,
+    document,
     selectWorkspace: (id) => calls.selected.push(id),
-    discoverSuggestions: discover ?? (async () => { calls.asked++; return { stale: false, suggestions, list: { state: "ok" } }; }),
-    addWorkspace: async (path) => { calls.added.push(path); return { ok: true, workspace: { id: path, path, name: path.split("/").pop() } }; },
+    discoverSuggestions: async () => { calls.asked++; return { stale: false, suggestions: [] }; },
+    addWorkspace: async (path) => ({ ok: true, workspace: { id: path, path, name: path.split("/").pop() } }),
     pickWorkspace: async () => ({ ok: false, code: "cancelled" }),
-    removeListed: async () => ({ ok: true }),
     openInNewWindow: () => {},
     ...overrides,
   });
   t.after(() => { controller.dispose(); dom.window.close(); });
   const rows = () => [...document.querySelectorAll("#ws-options .ws-option")];
-  const keyOf = (button) => button.dataset.workspaceId || button.dataset.workspacePath;
+  const keyOf = (button) => button.dataset.workspaceId;
   const row = (key) => rows().find((button) => keyOf(button) === key) ?? null;
   const current = () => document.querySelector('.ws-option[aria-current="true"]');
-  const icon = (name, size) => iconElement(document, name, { size }).outerHTML;
-  return { dom, document, controller, calls, state, rows, row, keyOf, current, icon };
+  const key = (k) => document.activeElement.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: k, bubbles: true }));
+  return { dom, document, controller, calls, rows, row, keyOf, current, key };
 }
 
 /* ── the rows ── */
-test("rows: served views, then unattached ones under their heading, then this computer's rows under theirs; buttons, not a listbox", async (t) => {
-  const s = setup(t, { suggestions: [listed("one"), listed("gone", { state: "missing" }), listed("two")] });
-  s.controller.begin()(A, [A, LOOSE, HELD]); await tick();
-  assert.deepEqual(s.rows().map(s.keyOf), [A.id, HELD.id, LOOSE.id, "/h/Agents/one", "/h/Agents/gone", "/h/Agents/two"], "the order as drawn");
+test("rows: the matched views, then the unattached ones, in one flat list with no heading; buttons, not a listbox", async (t) => {
+  const s = setup(t);
+  s.controller.begin()(A, [LOOSE, A, HELD]); await tick();
+  assert.deepEqual(s.rows().map(s.keyOf), [A.id, HELD.id, LOOSE.id], "matched first, in their order, then the unattached");
   const list = s.document.getElementById("ws-list");
   assert.equal(s.document.getElementById(list.getAttribute("aria-labelledby")).textContent, "Workspaces");
-  const groups = [...s.document.querySelectorAll("#ws-options > ul.ws-group")];
-  assert.equal(groups.length, 3);
+  const groups = [...s.document.querySelectorAll("#ws-options > *")];
+  assert.equal(groups.length, 1, "one list");
+  assert.equal(groups[0].tagName, "UL"); assert.ok(groups[0].classList.contains("ws-group"));
   assert.equal(groups[0].getAttribute("aria-label"), "Workspaces");
-  assert.deepEqual(groups.slice(1).map((g) => s.document.getElementById(g.getAttribute("aria-labelledby")).textContent), [UNMATCHED_SECTION, LOCAL_SECTION]);
-  assert.deepEqual(groups.map((g) => [...g.querySelectorAll(".ws-option")].map(s.keyOf).length), [2, 1, 3]);
+  assert.equal(groups[0].getAttribute("aria-labelledby"), null);
+  assert.ok(!list.textContent.includes(UNMATCHED_SECTION), "no section heading for the unattached");
+  assert.ok(!list.textContent.includes("On this computer"), "no rows of this computer's deployments not opened");
   for (const button of s.rows()) {
     assert.equal(button.tagName, "BUTTON"); assert.equal(button.type, "button");
     assert.equal(button.parentElement.tagName, "LI"); assert.ok(button.parentElement.classList.contains("ws-option-row"));
+    assert.equal(button.parentElement.parentElement, groups[0]);
     assert.equal(button.getAttribute("role"), null);
+    assert.equal(button.getAttribute("aria-disabled"), null, "every row can be opened");
   }
-  assert.equal(list.querySelector('[role="listbox"], [role="option"], [role="menu"]'), null, "the sidebar's plain keys stay live on it");
+  assert.equal(list.querySelector('[role="listbox"], [role="option"]'), null, "the sidebar's plain keys stay live on it");
 });
 
 test("one workspace only: the list still shows it, one current row", async (t) => {
@@ -96,90 +85,99 @@ test("one workspace only: the list still shows it, one current row", async (t) =
   assert.deepEqual(s.calls.selected, []);
 });
 
-test("the current row: aria-current and the check, on that row only; the list's description names it", async (t) => {
-  const s = setup(t, { suggestions: [listed("one")] });
-  s.controller.begin()(B, [A, B, HELD]); await tick();
-  assert.deepEqual(s.rows().map((b) => b.getAttribute("aria-current")), [null, "true", null, null]);
-  assert.equal(s.current().querySelector(".ws-check svg").outerHTML, s.icon("check", 14));
-  assert.equal(s.row(A.id).querySelector(".ws-check").childElementCount, 0, "no mark on another row");
-  assert.equal(s.row("/h/Agents/one").querySelector(".ws-check").childElementCount, 0);
-  assert.equal(s.document.getElementById("ws-list").getAttribute("aria-description"), "Current workspace: beta");
-  s.controller.begin()(A, [A, B, HELD]);
-  assert.equal(s.current(), s.row(A.id), "it follows what this window shows");
-  assert.equal(s.row(B.id).querySelector(".ws-check").childElementCount, 0);
+test("a row is one line, the name alone: no mark, icon, machine, state or button; the tooltip is the name, never a path or machine", async (t) => {
+  const s = setup(t);
+  const busy = view("busy", { notLive: 2 });
+  s.controller.begin()(A, [A, HELD, busy, LOOSE]); await tick();
+  for (const button of s.rows()) {
+    const item = button.closest(".ws-option-row");
+    const name = button.querySelector(".ws-option-name");
+    assert.deepEqual([...button.children], [name], `${button.dataset.workspaceId}: the name and nothing else`);
+    assert.deepEqual([...item.children], [button], "no button beside the row");
+    for (const selector of [".workspace-avatar", ".ws-option-meta", ".ws-check", "svg", ".ws-open-window", ".deployment-mark"]) {
+      assert.equal(item.querySelector(selector), null, `${button.dataset.workspaceId}: no ${selector}`);
+    }
+    assert.equal(button.textContent, name.textContent);
+    assert.equal(button.title, name.textContent, "the tooltip is the name");
+    assert.ok(!/This Mac|vega|\/h\/|~\//.test(button.title), "no machine, no path");
+  }
+  assert.deepEqual(s.rows().map((b) => b.textContent), ["alpha", "held", "busy", "loose"]);
+  assert.equal(s.row(HELD.id).dataset.otherWindow, undefined, "not marked as another window's");
+  assert.ok(!s.document.getElementById("ws-options").textContent.includes("In another window"));
+  assert.ok(!s.document.getElementById("ws-options").textContent.includes("not live"));
+  assert.ok(!s.document.getElementById("ws-options").textContent.includes("Not reached"), "an unattached row's state is its tab's to say");
 });
 
-test("rows that can't be opened say their state in a word on one line (the sentence said and in the tooltip, no mark) and are not selectable; the moves pass over them", async (t) => {
-  const states = ["missing", "not-a-deployment", "unreadable"];
-  const s = setup(t, { suggestions: [...states.map((state) => listed(state, { state })), listed("ok")] });
-  s.controller.begin()(A, [A]); await tick();
-  for (const state of states) {
-    const button = s.row(`/h/Agents/${state}`);
-    assert.equal(button.getAttribute("aria-disabled"), "true", state);
-    const meta = button.querySelector(".ws-option-meta");
-    assert.equal(meta.textContent, LISTED_STATE_WORD[state], "one short line");
-    assert.equal(meta.getAttribute("aria-hidden"), "true", "the word is for the eye");
-    assert.equal(button.querySelector(".sr-only").textContent, `, ${LISTED_STATE_TEXT[state]}`, "the sentence is in the accessible name");
-    assert.equal(button.title, `/h/Agents/${state}\n${LISTED_STATE_TEXT[state]}`, "and in the tooltip");
-    assert.equal(button.querySelector(".deployment-mark"), null, "no warning mark: that is a view's not live");
-    button.click();
-  }
-  await tick();
-  assert.deepEqual(s.calls.added, [], "a click opens nothing");
-  assert.equal(s.row("/h/Agents/ok").getAttribute("aria-disabled"), null);
-  assert.equal(s.controller.step(1), true, "past the three, to the one that can be opened");
-  assert.deepEqual(s.calls.added, ["/h/Agents/ok"]);
+test("two of one name are told apart by the shared label, still on one line", async (t) => {
+  const s = setup(t);
+  const one = view("oats", { id: "ws:oats1".padEnd(23, "0"), key: "github.com/a/oats" });
+  const two = view("oats", { id: "ws:oats2".padEnd(23, "0"), key: "github.com/b/oats" });
+  s.controller.begin()(one, [one, two]); await tick();
+  assert.deepEqual(s.rows().map((b) => b.textContent), ["oats — github.com/a/oats", "oats — github.com/b/oats"]);
+  assert.deepEqual(s.rows().map((b) => b.title), ["oats — github.com/a/oats", "oats — github.com/b/oats"]);
+});
+
+test("a long name: the line cuts it with an ellipsis (CSS) and the tooltip gives the whole name", async (t) => {
+  const s = setup(t);
+  const long = view("a-very-long-workspace-name-that-will-never-fit-in-the-sidebar-at-any-width-anyone-uses");
+  s.controller.begin()(long, [long]); await tick();
+  assert.equal(s.rows()[0].title, long.name);
+  assert.equal(s.rows()[0].querySelector(".ws-option-name").textContent, long.name, "the whole name is drawn: CSS cuts it");
+  const rule = css.match(/^\.ws-option-name\s*\{([^}]*)\}/m)[1];
+  assert.match(rule, /text-overflow:\s*ellipsis/); assert.match(rule, /white-space:\s*nowrap/); assert.match(rule, /overflow:\s*hidden/);
+});
+
+test("the current row: aria-current on that row only, marked by style alone (no check icon); the list's description names it", async (t) => {
+  const s = setup(t);
+  const list = s.document.getElementById("ws-list");
+  assert.equal(list.getAttribute("aria-description"), "Current workspace: resolving", "before the first answer");
+  s.controller.begin()(B, [A, B, HELD]); await tick();
+  assert.deepEqual(s.rows().map((b) => b.getAttribute("aria-current")), [null, "true", null]);
+  assert.equal(s.current().querySelector(".ws-check, svg"), null, "no icon");
+  assert.equal(list.getAttribute("aria-description"), "Current workspace: beta");
+  assert.match(css, /\.ws-option\[aria-current="true"\]\s*\{[^}]*background:\s*var\(--sel\)/, "a background");
+  assert.match(css, /\.ws-option\[aria-current="true"\] \.ws-option-name\s*\{[^}]*font-weight:\s*650/, "and bold");
+  s.controller.begin()(A, [A, B, HELD]);
+  assert.equal(s.current(), s.row(A.id), "it follows what this window shows");
+  assert.equal(list.getAttribute("aria-description"), "Current workspace: alpha");
+  const local = { id: "/h/Agents/here", path: "/h/Agents/here", name: "here" };
+  s.controller.begin()(local, [A, local]);
+  assert.equal(list.getAttribute("aria-description"), "Current workspace: /h/Agents/here", "a local folder by its path");
+  s.controller.choose([A, B]);
+  assert.equal(s.current(), null);
+  assert.equal(list.getAttribute("aria-description"), "Current workspace: none chosen yet");
 });
 
 /* ── the dot ── */
 const dotOf = (button) => button.querySelector(".ws-waiting");
-const saidOf = (button) => button.querySelector(".ws-option-name").nextElementSibling;
 
-test("the dot: an instance needs input (waiting true) draws it, says it in the row's name and its tooltip", async (t) => {
-  const tipped = view("tipped", { waiting: true, deploymentLabels: ["This Mac · ~/Agents/tipped"] });
-  const plain = view("plain", { waiting: true, machines: [], deployments: [] });
+test("the dot: an instance needs input (waiting true) draws it after the name, says it in the row's name and its tooltip", async (t) => {
+  const tipped = view("tipped", { waiting: true });
+  const loose = { ...LOOSE, waiting: true };
   const s = setup(t);
-  s.controller.begin()(tipped, [tipped, plain]); await tick();
-  for (const button of [s.row(tipped.id), s.row(plain.id)]) {
-    const dot = dotOf(button);
-    assert.ok(dot, "the dot, the current row included");
+  s.controller.begin()(tipped, [tipped, loose]); await tick();
+  for (const button of [s.row(tipped.id), s.row(loose.id)]) {
+    const name = button.querySelector(".ws-option-name"), words = name.nextElementSibling, dot = dotOf(button);
+    assert.ok(dot, "the dot, the current row and an unattached one included");
     assert.equal(dot.getAttribute("aria-hidden"), "true", "a graphic: its words are the name's");
-    assert.equal(dot.parentElement, button.querySelector(".ws-option-line"), "beside the name");
-    assert.ok(saidOf(button).classList.contains("sr-only"));
-    assert.equal(saidOf(button).textContent, WAITING_NAME);
+    assert.deepEqual([...button.children], [name, words, dot], "on the same line, after the name");
+    assert.ok(words.classList.contains("sr-only"));
+    assert.equal(words.textContent, WAITING_NAME);
+    assert.equal(button.textContent, `${name.textContent}${WAITING_NAME}`, "the accessible name reads it after the name");
+    assert.equal(button.title, `${name.textContent}\n${WAITING_TITLE}`, "after the name in the tooltip");
   }
   assert.equal(WAITING_NAME, ", needs input"); assert.equal(WAITING_TITLE, "An instance here needs input");
-  assert.equal(s.row(tipped.id).querySelector(".ws-option-line").textContent, `tipped${WAITING_NAME}`, "the accessible name reads it after the name");
-  assert.equal(s.row(tipped.id).title, `This Mac · ~/Agents/tipped\n${WAITING_TITLE}`, "after the row's own tooltip");
-  assert.equal(s.row(plain.id).title, WAITING_TITLE, "the whole tooltip when the row has none");
 });
 
 test("the dot: false, unknown (null, absent) or anything but true draws none and says nothing", async (t) => {
   const s = setup(t);
-  const choices = [false, null, undefined, "true", 1, {}].map((waiting, i) => view(`w${i}`, { waiting, deploymentLabels: [`This Mac · ~/w${i}`] }));
+  const choices = [false, null, undefined, "true", 1, {}].map((waiting, i) => view(`w${i}`, { waiting }));
   s.controller.begin()(choices[0], choices); await tick();
   for (const [i, button] of s.rows().entries()) {
     assert.equal(dotOf(button), null, String(choices[i].waiting));
     assert.equal(button.querySelector(".sr-only"), null);
-    assert.equal(button.title, `This Mac · ~/w${i}`);
+    assert.equal(button.title, `w${i}`);
   }
-});
-
-test("the dot on this computer's rows: true draws it; false and null (unknown) none; a stale row never shows one", async (t) => {
-  const s = setup(t, { suggestions: [listed("yes", { waiting: true }), listed("no", { waiting: false }), listed("unknown", { waiting: null }),
-    listed("gone", { state: "missing", waiting: true })] });
-  s.controller.begin()(A, [A]); await tick();
-  const yes = s.row("/h/Agents/yes");
-  assert.ok(dotOf(yes)); assert.equal(saidOf(yes).textContent, WAITING_NAME);
-  assert.equal(yes.title, `/h/Agents/yes\n${WAITING_TITLE}`);
-  for (const name of ["no", "unknown"]) {
-    assert.equal(dotOf(s.row(`/h/Agents/${name}`)), null, name);
-    assert.equal(s.row(`/h/Agents/${name}`).title, `/h/Agents/${name}`);
-  }
-  const gone = s.row("/h/Agents/gone");
-  assert.equal(dotOf(gone), null, "its read is not the deployment's");
-  assert.deepEqual([...gone.querySelectorAll(".sr-only")].map((el) => el.textContent), [`, ${LISTED_STATE_TEXT.missing}`], "its state, never needs input");
-  assert.equal(gone.title, `/h/Agents/gone\n${LISTED_STATE_TEXT.missing}`);
 });
 
 test("the dot never reorders the list", async (t) => {
@@ -191,96 +189,89 @@ test("the dot never reorders the list", async (t) => {
   assert.ok(dotOf(s.row(C.id)));
 });
 
-/* ── a workspace another window shows ── */
-test("a row another window shows says so in words (its Open in new window is its one window icon); picking it takes it over into this window", async (t) => {
+/* ── picking a row ── */
+test("picking a row another window shows takes it over into this window; no words say where it is", async (t) => {
   const s = setup(t);
-  s.controller.begin()(A, [A, HELD, { ...B, shown: false }]); await tick();
-  const held = s.row(HELD.id);
-  assert.equal(held.dataset.otherWindow, "true");
-  assert.equal(held.querySelector(".ws-option-meta").textContent, OTHER_WINDOW_TEXT);
-  assert.equal(OTHER_WINDOW_TEXT, "In another window");
-  assert.equal(held.querySelector(".ws-check").childElementCount, 0, "no mark in the check's place");
-  assert.equal(held.closest(".ws-option-row").querySelectorAll("svg.shell-icon").length, 1, "one window icon on the row: its Open in new window");
-  assert.equal(held.getAttribute("aria-current"), null);
-  assert.equal(held.getAttribute("aria-disabled"), null, "it can be picked");
-  assert.equal(s.row(B.id).dataset.otherWindow, undefined);
-  assert.equal(s.row(B.id).querySelector(".ws-option-meta").textContent, "This Mac");
-  held.click();
+  s.controller.begin()(A, [A, HELD]); await tick();
+  assert.ok(!s.document.getElementById("ws-list").textContent.includes("In another window"));
+  s.row(HELD.id).click();
   assert.deepEqual(s.calls.selected, [HELD.id], "selected here: the shell asks main to take it over");
-  // This window's own workspace is never "in another window", whatever `shown` says.
-  s.controller.begin()(HELD, [A, HELD]);
-  assert.equal(s.row(HELD.id).dataset.otherWindow, undefined);
-  assert.equal(s.row(HELD.id).querySelector(".ws-check svg").outerHTML, s.icon("check", 14));
-  assert.equal(s.row(HELD.id).querySelector(".ws-option-meta").textContent, "This Mac");
+  assert.deepEqual(s.calls.tabs, [], "a matched view opens no deployment tab");
+  s.row(A.id).click();
+  assert.deepEqual(s.calls.selected, [HELD.id, A.id], "the current row picked after the pick on its way is what this window ends on");
+});
+
+test("an unattached row's pick also opens its deployment's tab on the Deployments page", async (t) => {
+  const s = setup(t);
+  s.controller.begin()(A, [A, LOOSE]); await tick();
+  s.row(LOOSE.id).click();
+  assert.deepEqual(s.calls.selected, [LOOSE.id]);
+  assert.deepEqual(s.calls.tabs, [{ view: LOOSE.id, tab: LOOSE.deployments[0] }]);
+  s.controller.begin()(LOOSE, [A, LOOSE]);
+  s.row(LOOSE.id).click();
+  assert.deepEqual(s.calls.selected, [LOOSE.id], "already shown: not picked again");
+  assert.equal(s.calls.tabs.length, 2, "but its tab is asked for again: where its reason and fix are");
 });
 
 /* ── the leader's moves ── */
-test("step: the next row as drawn, onto a held row, then an unattached one, then this computer's, past what can't be opened", async (t) => {
-  const s = setup(t, { suggestions: [listed("gone", { state: "missing" }), listed("next")] });
-  const list = [A, HELD, LOOSE];
+test("step: the next row as drawn, onto a row another window shows, then into the unattached ones", async (t) => {
+  const s = setup(t);
+  const list = [A, LOOSE, HELD];
   // Each switch lands as the shell lands it: reset(the workspace now selected), then its roster's answer.
   const land = (workspace) => { s.controller.reset(workspace.id); s.controller.begin()(workspace, list); };
   s.controller.begin()(A, list); await tick();
   assert.equal(s.controller.step(1), true);
-  assert.deepEqual(s.calls.selected, [HELD.id], "a held row is not passed over: the move takes it over");
-  land(HELD); // main moved it here
+  assert.deepEqual(s.calls.selected, [HELD.id], "as drawn (matched first), and a held row is not passed over");
+  land(HELD);
   assert.equal(s.controller.step(1), true);
-  assert.deepEqual(s.calls.selected, [HELD.id, LOOSE.id], "down into the unattached section");
+  assert.deepEqual(s.calls.selected, [HELD.id, LOOSE.id], "down into the unattached rows");
   assert.deepEqual(s.calls.tabs, [{ view: LOOSE.id, tab: LOOSE.deployments[0] }], "as a click does: its deployment's tab");
   land(LOOSE);
-  assert.equal(s.controller.step(1), true, "past the stale row");
-  assert.deepEqual(s.calls.added, ["/h/Agents/next"], "a listed row is admitted, as its click");
-  await tick();
-  assert.deepEqual(s.calls.selected, [HELD.id, LOOSE.id, "/h/Agents/next"], "then opened in this window");
-  assert.equal(s.current()?.dataset.workspaceId, "/h/Agents/next");
-  s.controller.reset("/h/Agents/next"); // that switch lands
-  land(HELD);
   assert.equal(s.controller.step(-1), true);
-  assert.equal(s.calls.selected.at(-1), A.id, "up");
+  assert.equal(s.calls.selected.at(-1), HELD.id, "up");
 });
 
 test("step: no wrap; false at either end, nothing selected", async (t) => {
-  const s = setup(t, { suggestions: [listed("gone", { state: "unreadable" })] });
+  const s = setup(t);
   s.controller.begin()(A, [A, LOOSE]); await tick();
   assert.equal(s.controller.step(-1), false, "the first row: nothing above");
   s.controller.begin()(LOOSE, [A, LOOSE]);
-  assert.equal(s.controller.step(1), false, "only a row that can't be opened below: nothing to move to");
-  assert.deepEqual(s.calls.selected, []); assert.deepEqual(s.calls.added, []);
+  assert.equal(s.controller.step(1), false, "the last row: nothing below");
+  assert.deepEqual(s.calls.selected, []); assert.deepEqual(s.calls.tabs, []);
   assert.equal(s.controller.step(-1), true); assert.deepEqual(s.calls.selected, [A.id]);
 });
 
-test("step with nothing current: the first openable row going down, the last going up", async (t) => {
-  const down = setup(t, { suggestions: [listed("last"), listed("gone", { state: "missing" })] });
-  down.controller.choose([A, B]); await tick();
+test("step with nothing current: the first row going down, the last going up (an unattached one included)", async (t) => {
+  const down = setup(t);
+  down.controller.choose([A, LOOSE, B]); await tick();
   assert.equal(down.controller.step(1), true); assert.deepEqual(down.calls.selected, [A.id]);
-  const up = setup(t, { suggestions: [listed("last"), listed("gone", { state: "missing" })] });
-  up.controller.choose([A, B]); await tick();
-  assert.equal(up.controller.step(-1), true); assert.deepEqual(up.calls.added, ["/h/Agents/last"], "the last row that can be opened");
+  const up = setup(t);
+  up.controller.choose([A, LOOSE, B]); await tick();
+  assert.equal(up.controller.step(-1), true); assert.deepEqual(up.calls.selected, [LOOSE.id], "the last row as drawn");
+  const none = setup(t);
+  none.controller.choose([]); await tick();
+  assert.equal(none.controller.step(1), false); assert.equal(none.controller.step(-1), false);
 });
 
-test("step: this computer's rows wait while an add is running; an add whose window moved on opens nothing here", async (t) => {
-  const add = deferred();
-  const s = setup(t, { suggestions: [listed("one"), listed("two")], addWorkspace: (path) => { s.calls.added.push(path); return add.promise; } });
-  s.controller.begin()(B, [A, B]); await tick();
-  assert.equal(s.controller.step(1), true);
-  assert.deepEqual(s.calls.added, ["/h/Agents/one"]);
-  assert.deepEqual(["/h/Agents/one", "/h/Agents/two"].map((key) => s.row(key).getAttribute("aria-disabled")), ["true", "true"], "busy");
-  assert.equal(s.controller.step(1), false, "busy rows are not openable");
-  assert.deepEqual(s.calls.added, ["/h/Agents/one"], "one add at a time");
-  s.controller.begin()(A, [A, B]); // another workspace became current meanwhile
-  add.resolve({ ok: true, workspace: { id: "/h/Agents/one", path: "/h/Agents/one", name: "one" } }); await tick();
-  assert.deepEqual(s.calls.selected, [], "its result is dropped");
-  assert.equal(s.current().dataset.workspaceId, A.id);
-  assert.equal(s.row("/h/Agents/one").getAttribute("aria-disabled"), null, "not left busy");
+/* ── the keys and the roving tab stop ── */
+test("Arrow keys, Home and End move focus through the rows as one list, matched and unattached, without wrapping or picking", async (t) => {
+  const s = setup(t);
+  s.controller.choose([A, LOOSE, B]); await tick();
+  s.controller.focusList(); assert.equal(s.document.activeElement, s.row(A.id), "nothing current: the first row");
+  s.key("ArrowUp"); assert.equal(s.document.activeElement, s.row(A.id), "no wrap at the top");
+  s.key("ArrowDown"); assert.equal(s.document.activeElement, s.row(B.id));
+  s.key("ArrowDown"); assert.equal(s.document.activeElement, s.row(LOOSE.id), "into the unattached row");
+  s.key("ArrowDown"); assert.equal(s.document.activeElement, s.row(LOOSE.id), "no wrap at the bottom");
+  s.key("Home"); assert.equal(s.document.activeElement, s.row(A.id));
+  s.key("End"); assert.equal(s.document.activeElement, s.row(LOOSE.id));
+  assert.deepEqual(s.calls.selected, [], "moving focus picks nothing");
 });
 
-/* ── the roving tab stop ── */
 test("roving stop: one row in the Tab order, the current one, then the last focused; focusList goes to the current row", async (t) => {
   const s = setup(t);
   const stops = () => s.rows().filter((b) => b.tabIndex === 0).map(s.keyOf);
   s.controller.begin()(B, [A, B, C]); await tick();
   assert.deepEqual(stops(), [B.id], "the current row");
-  assert.ok([...s.document.querySelectorAll(".ws-open-window")].every((b) => b.tabIndex === -1), "a row's own button is reached with Right Arrow");
   s.row(C.id).focus();
   assert.deepEqual(stops(), [C.id], "the row last focused");
   s.controller.begin()(B, [A, B, C]);
@@ -307,89 +298,57 @@ test("roving stop with nothing current is the first row; an empty list's focus i
   assert.equal(empty.document.activeElement, empty.document.getElementById("ws-add-open"));
 });
 
-/* ── how often this computer's rows are asked ── */
-test("the list asks at start, on window focus, and on a timer: every LISTED_EVERY_MS in front, LISTED_BLURRED_MS behind", async (t) => {
-  const clock = fakeTimers();
-  const s = setup(t, { timers: clock, suggestions: [listed("one")] });
-  assert.equal(LISTED_EVERY_MS, 60_000); assert.equal(LISTED_BLURRED_MS, 300_000);
-  assert.equal(s.calls.asked, 1, "at start");
-  assert.deepEqual(clock.delays(), [LISTED_EVERY_MS], "one timer, the window in front");
-  clock.fire(); await tick();
-  assert.equal(s.calls.asked, 2);
-  assert.deepEqual(clock.delays(), [LISTED_EVERY_MS], "asked again, then the next one set");
-  s.state.focused = false; s.dom.window.dispatchEvent(new s.dom.window.Event("blur"));
-  assert.equal(s.calls.asked, 2, "a blur asks nothing");
-  assert.deepEqual(clock.delays(), [LISTED_BLURRED_MS], "the slower delay replaces the pending one");
-  clock.fire(); await tick();
-  assert.equal(s.calls.asked, 3);
-  assert.deepEqual(clock.delays(), [LISTED_BLURRED_MS]);
-  s.state.focused = true; s.dom.window.dispatchEvent(new s.dom.window.Event("focus"));
-  assert.equal(s.calls.asked, 4, "the window coming to the front asks at once");
-  await tick();
-  assert.deepEqual(clock.delays(), [LISTED_EVERY_MS]);
-  assert.equal(s.row("/h/Agents/one") !== null, true, "and paints");
+test("new served choices repaint the list in place without moving focus or asking main again (#521); a focused row gone falls back to the tab stop", async (t) => {
+  const s = setup(t);
+  s.controller.choose([A, B]); await tick();
+  s.row(B.id).focus();
+  s.controller.choose([C, A, B]);
+  assert.deepEqual(s.rows().map(s.keyOf), [C.id, A.id, B.id]);
+  assert.equal(s.document.activeElement, s.row(B.id), "focus kept by identity");
+  assert.equal(s.calls.asked, 0, "choices arriving ask nothing");
+  s.controller.choose([C, A]);
+  assert.equal(s.document.activeElement, s.row(C.id), "its row is gone: the list's tab stop (the first row, nothing being current)");
+  assert.equal(s.document.activeElement.tabIndex, 0);
 });
 
-test("no ask of the list while the Add dialog is open; it asks again as the dialog closes", async (t) => {
-  const clock = fakeTimers();
-  const s = setup(t, { timers: clock });
-  assert.equal(s.calls.asked, 1);
-  const closers = [
-    ["Cancel", () => s.document.getElementById("ws-cancel").click()],
-    ["the close button", () => s.document.getElementById("ws-dialog-close").click()],
-    ["the backdrop", () => s.document.getElementById("ws-modal").dispatchEvent(new s.dom.window.MouseEvent("mousedown", { bubbles: true }))],
-    ["Escape", () => s.document.querySelector("#ws-modal .ws-dialog").dispatchEvent(new s.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }))],
-  ];
-  for (const [how, close] of closers) {
-    const before = s.calls.asked;
-    await s.controller.openModal();
-    assert.equal(s.calls.asked, before + 1, "the dialog's own ask");
-    clock.fire(); await tick();
-    s.dom.window.dispatchEvent(new s.dom.window.Event("focus")); await tick();
-    s.controller.refreshListed(); await tick();
-    assert.equal(s.calls.asked, before + 1, `${how}: the timer, a focus and a refresh ask nothing while it is open`);
-    assert.deepEqual(clock.delays(), [LISTED_EVERY_MS], "the timer keeps running");
-    close(); await tick();
-    assert.equal(s.document.getElementById("ws-modal").hidden, true);
-    assert.equal(s.calls.asked, before + 2, `${how}: asked again as it closes`);
-  }
-});
-
-test("only the latest ask paints; a stale answer keeps what the list shows", async (t) => {
-  const asks = [];
-  const s = setup(t, { discover: () => { const ask = deferred(); asks.push(ask); return ask.promise; } });
-  s.controller.begin()(A, [A]);
-  s.dom.window.dispatchEvent(new s.dom.window.Event("focus"));
-  assert.equal(asks.length, 2);
-  asks[1].resolve({ stale: false, suggestions: [listed("new")] }); await tick();
-  asks[0].resolve({ stale: false, suggestions: [listed("old")] }); await tick();
-  assert.deepEqual(s.rows().map(s.keyOf), [A.id, "/h/Agents/new"], "the older answer, landing last, paints nothing");
-  s.controller.refreshListed();
-  asks[2].resolve({ stale: true }); await tick();
-  assert.deepEqual(s.rows().map(s.keyOf), [A.id, "/h/Agents/new"], "a superseded (stale) answer changes nothing");
-});
-
-test("dispose stops the timer and the focus listener; nothing asks afterwards", async (t) => {
-  const clock = fakeTimers();
-  const s = setup(t, { timers: clock });
-  assert.deepEqual(clock.delays(), [LISTED_EVERY_MS]);
-  s.controller.dispose();
-  assert.deepEqual(clock.delays(), [], "the pending re-read is cleared");
-  s.dom.window.dispatchEvent(new s.dom.window.Event("focus"));
-  s.dom.window.dispatchEvent(new s.dom.window.Event("blur"));
-  s.controller.refreshListed(); await tick();
-  assert.equal(s.calls.asked, 1, "only the first ask, at start");
-  assert.deepEqual(clock.delays(), [], "no timer comes back");
-});
-
-test("before the first answer of this computer's rows, the list says it is looking, never that nothing was found", async (t) => {
-  let answer;
-  const s = setup(t, { discover: () => new Promise((resolve) => { answer = resolve; }) });
+/* ── the empty message ── */
+test("the empty message says nothing is reported only once an answer came; a superseded answer is none", async (t) => {
+  const s = setup(t);
   const empty = s.document.querySelector(".ws-menu-empty");
+  assert.equal(empty.hidden, true, "before any answer: nothing said");
+  assert.equal(empty.textContent, "");
+  const older = s.controller.begin(), newer = s.controller.begin();
+  assert.equal(older(null, []), false, "an older answer does not paint");
+  assert.equal(empty.hidden, true, "and is no answer");
+  assert.equal(newer(null, []), true);
   assert.equal(empty.hidden, false);
-  assert.equal(empty.textContent, "Looking for workspaces on this computer…");
-  answer({ stale: false, suggestions: [], list: { state: "ok" } }); await tick();
-  assert.equal(empty.textContent, "No workspace choices reported.", "an answer with nothing says so");
+  assert.equal(empty.textContent, "No workspace choices reported.");
+  s.controller.begin()(A, [A]);
+  assert.equal(empty.hidden, true, "a row: no message");
+  const chosen = setup(t);
+  chosen.controller.choose([]);
+  const chosenEmpty = chosen.document.querySelector(".ws-menu-empty");
+  assert.equal(chosenEmpty.hidden, false, "choose() is an answer too");
+  assert.equal(chosenEmpty.textContent, "No workspace choices reported.");
+});
+
+/* ── nothing asked of main ── */
+test("nothing is asked of discoverSuggestions at start or on window focus, only as the Add dialog opens; dispose is safe", async (t) => {
+  const s = setup(t);
+  s.controller.begin()(A, [A]); await tick();
+  assert.equal(s.calls.asked, 0, "not at start");
+  s.dom.window.dispatchEvent(new s.dom.window.Event("blur"));
+  s.dom.window.dispatchEvent(new s.dom.window.Event("focus")); await tick();
+  assert.equal(s.calls.asked, 0, "not on window focus");
+  await s.controller.openModal();
+  assert.equal(s.calls.asked, 1, "the Add dialog's own ask");
+  s.document.getElementById("ws-cancel").click(); await tick();
+  assert.equal(s.calls.asked, 1, "closing it asks nothing");
+  s.controller.dispose();
+  s.controller.dispose();
+  s.dom.window.dispatchEvent(new s.dom.window.Event("focus")); await tick();
+  assert.equal(s.calls.asked, 1);
+  assert.deepEqual(s.rows().map(s.keyOf), [A.id], "the rows stay drawn");
 });
 
 /* ── the bounded height ── */
@@ -411,14 +370,6 @@ test("rows cut off below the list's bounded height are said under it, at any scr
   assert.equal(more.hidden, true, "scrolled to the end: nothing below");
   scrollTop = 0; s.controller.begin()(A, [A, B]); await tick();
   assert.equal(more.hidden, true, "all fit"); assert.equal(more.textContent, "");
-});
-
-test("this computer's rows: the full path is the tooltip, whatever the visible line cuts", async (t) => {
-  const s = setup(t, { suggestions: [listed("deep")] });
-  s.controller.begin()(A, [A]); await tick();
-  const row = s.row("/h/Agents/deep");
-  assert.equal(row.title, "/h/Agents/deep");
-  assert.equal(row.querySelector(".ws-option-meta").textContent, "Agents/deep");
 });
 
 /* ── a switch on its way ── */

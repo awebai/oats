@@ -1,7 +1,7 @@
 // This computer's deployments list in the Desktop's privileged side (#1390): what the switcher is told of a
 // list read, the suggestions fed from it, the Remove's provenance and its saved entry, each committed add
 // listed after the commit, and the one-time import of the Desktop's own lists (the recents file renamed).
-// The switcher's DOM is workspace-switcher-list.test.mjs.
+// The switcher's DOM (the Add dialog, where this computer's stale rows and their Remove are) is workspace-switcher.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, renameSync, rmSync } from "node:fs";

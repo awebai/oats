@@ -222,7 +222,7 @@ say why in the same line when they cannot act.
 | `1` | Instances: the workspace's terminals again when any is open, else Deployments |
 | `2` | Workspace › Souls |
 | `3` | Workspace › Capabilities |
-| ↑, ↓ | shows the previous / next workspace of the sidebar's [list of workspaces](#the-list-of-workspaces) in this window, as a click on its row does (`workspace-previous`, `workspace-next`). Rows that can't be opened are passed over. A row another window shows is not passed over: the move takes it over, and it moves here. A row "On this computer" is added and opened, as a click adds it. No wrap: at an end nothing moves and the line says "No workspace above this one." / "No workspace below this one." With no workspace shown, ↓ goes to the first row that can be opened and ↑ to the last. No chord |
+| ↑, ↓ | shows the previous / next workspace of the sidebar's [list of workspaces](#the-list-of-workspaces) in this window, as a click on its row does (`workspace-previous`, `workspace-next`). A row another window shows is not passed over: the move takes it over, and it moves here. No wrap: at an end nothing moves and the line says "No workspace above this one." / "No workspace below this one." With no workspace shown, ↓ goes to the first row and ↑ to the last. No chord |
 | ←, → | previous / next tab of the active tab's strip, in the order drawn: with the tabs split, the focused group's, each press another tab of it; an empty or one-tab group says "There is no other tab." (`tabs.prev`, `tabs.next`; the Desktop's cycling wraps, the TUI's does not) |
 | `z` | focus mode on or off (`app.focusMode`), and the active terminal takes focus. Also `terminal.focusMode` |
 | `w` | closes the active tab (`tabs.close`); the agent keeps running |
@@ -580,10 +580,10 @@ tree's own keys, as the arrows are, and are not in the shortcuts editor.
 
 ### The list of workspaces
 
-The sidebar's top lists every workspace this window can show, then this
-computer's deployments not opened yet, under **On this computer**
-([OATS Desktop](../../../docs/desktop.md#workspaces) says what each row shows).
-It is a list of buttons, not a listbox, so the sidebar keys work on its rows.
+The sidebar's top lists every workspace this window can show, one line each:
+its name ([OATS Desktop](../../../docs/desktop.md#workspaces) says what the
+list shows). It is a list of buttons, not a listbox, so the sidebar keys work
+on its rows.
 
 - **Reaching it.** One tab stop: the row last focused there, else the current
   one. It is in the nav region: F6 lands on the nav item, and Shift+Tab from
@@ -592,30 +592,26 @@ It is a list of buttons, not a listbox, so the sidebar keys work on its rows.
   **Workspace: switch…** focus its current row from anywhere: a hidden sidebar
   is shown and focus mode is left first.
 - **Moving.** Up/Down move between the rows, Home/End go to the first and the
-  last, over every row (those that can't be opened and those another window
-  shows included); moving focus selects nothing. The list scrolls within about
-  six rows, the current row kept in view.
-- **Opening.** Enter or Space shows the row's workspace in this window. A row
-  "On this computer" is added and opened. A row that can't be opened
-  (`aria-disabled`, its state in words) does nothing.
-- **A row's own button.** Right Arrow reaches the button beside the row (not a
-  Tab stop): **Open in new window** on a workspace, **Remove** on a row of this
-  computer's list. Left Arrow or Esc returns to the row; Up/Down move between
-  rows as from the row. On a workspace's row, ⌘Enter (macOS) / Ctrl+Enter
-  (Linux/Windows) opens it in its own window, or brings that window to the
-  front; the row's description says so.
+  last; moving focus selects nothing. The list scrolls within about six rows,
+  the current row kept in view.
+- **Opening.** Enter or Space shows the row's workspace in this window.
+- **Open in new window.** ⌘Enter (macOS) / Ctrl+Enter (Linux/Windows) on a row
+  opens its workspace in its own window, or brings that window to the front;
+  the row's description says so. The row's context menu (Shift+F10 or the Menu
+  key, or a right-click) has **Open in new window** too: Enter runs it, Esc or
+  Tab closes the menu, back on the row.
 - **Moving between workspaces from anywhere.** The leader's ↑ / ↓ show the
   previous / next workspace of the list (see [the leader](#the-leader)); no
   chord does.
 
-**A workspace another window shows** says "In another window", in words.
-Picking it (a click, Enter, the
+**A workspace another window shows** is a row like any other. Picking it (a
+click, Enter, the
 leader's ↑ / ↓, the workspace select of Deployments or Workspace, or a spawn
 that hands off to its new instance there) moves it to this window; nothing
 else is focused. The other window lets it go: it shows the workspace it showed
 most recently before that one among those the Desktop still serves and no
 other window shows, else no workspace ("Choose a workspace", its list
-focused).
+focused, or the Add dialog when the Desktop serves no workspace).
 It then closes every tab it had of that workspace and forgets its layout. Main
 waits at most 2 seconds for that window's answer; a window that answers late
 ends the same way. **Open in new window** still brings the other window to the
@@ -849,10 +845,10 @@ the rig). "Fixed" marks a gap this change closed.
 
 | Element | How it is reached | How it is operated |
 |---|---|---|
-| List of workspaces (`#ws-list`: a list of buttons, the current one `aria-current`) | One roving stop, the row last focused, else the current row; Tab from the header's Add; Shift+Tab from the nav item (F6 lands there); `w` in the sidebar, the leader's `o`, ⌥⌘O / Ctrl+Alt+O and the palette's **Workspace: switch…** focus its current row | Up/Down/Home/End move over every row; Enter/Space show the workspace in this window (one another window shows moves here; a row "On this computer" is added and opened; a row that can't be opened does nothing); the sidebar keys work on a row. The leader's ↑ / ↓ show the previous / next openable row from anywhere |
-| A row's **Open in new window** or **Remove** button (beside the row, not inside it) | Right Arrow from its row (not a Tab stop); Left Arrow or Esc returns to the row; Up/Down move between rows as from the row | Enter/Space: Open in new window opens the workspace in its own window (or brings that window to the front); Remove takes the row off this computer's list. On a workspace's row itself, ⌘Enter (macOS) / Ctrl+Enter (Linux/Windows) opens it in a new window; the row's description says so |
+| List of workspaces (`#ws-list`: a list of buttons, the current one `aria-current`) | One roving stop, the row last focused, else the current row; Tab from the header's Add; Shift+Tab from the nav item (F6 lands there); `w` in the sidebar, the leader's `o`, ⌥⌘O / Ctrl+Alt+O and the palette's **Workspace: switch…** focus its current row | Up/Down/Home/End move over every row; Enter/Space show the workspace in this window (one another window shows moves here); ⌘Enter (macOS) / Ctrl+Enter (Linux/Windows) opens it in a new window, as the row's description says; the sidebar keys work on a row. The leader's ↑ / ↓ show the previous / next row from anywhere |
+| A row's context menu (`role="menu"`, one item: **Open in new window**) | Shift+F10 or the Menu key on a row, or a right-click; focus on its item | Enter/Space open the workspace in its own window (or bring that window to the front), back on the row; Esc or Tab close it, back on the row |
 | Add local workspace… (the **+** in the sidebar's header) | Tab (first stop of the sidebar) | Enter/Space open the Add / onboard dialog |
-| Add / onboard workspace dialog | From the header's Add | Radio-style suggestions with arrows; Esc; trapped; returns to the Add button, or to the list after a pick |
+| Add / onboard workspace dialog | From the header's Add, or the chooser's button; opened by itself in a window with no workspace when the Desktop serves none | Each found deployment is a button, then each row of this computer's list that can't be opened (`aria-disabled`, its state in words); one Tab stop among them, Up/Down/Home/End move: Enter/Space on a found one adds it and opens it here; Right Arrow on a row that can't be opened reaches its **Remove**, Left Arrow or Esc go back; Esc elsewhere closes; trapped; returns to what opened it, or to the list after an add |
 | Sidebar nav (Deployments, Workspace, Automations) | F6 (current item); Tab; ⌘1/⌘2/⌘3 | Enter/Space |
 | Roster filter | Tab; ⌘F / Ctrl+Alt+F; **Down from it enters the rows (fixed): while filtering, at the first match, never a parent kept only to show its tree path** | Typing filters |
 | Roster rows | One roving stop, **the selected row, else the first filter match (fixed: was the first enabled)**; F6; the leader then Esc; Up/Down/Home/End (and the TUI's `k` `j` `g` `G`), PageUp/PageDown by the rows that fit; Right (`l`) expands, Left (`h`) collapses or goes to the parent; the sidebar keys (see "Sidebar keys"). A collapse or a filter never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is. The list shows no scrollbar (the wheel and the touchpad scroll it): a row that takes keyboard focus (these keys, the filter's Down, F6) is revealed whole, its tools included, by scrolling the list alone, never an ancestor | Enter/Space open the terminal (running) or Start (stopped); an arrow chord the keymap binds is the keymap's, so Alt+Shift+↑/↓ (⌥⌘↑/↓) open the terminal of the row above / below, as from anywhere |

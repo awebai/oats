@@ -57,10 +57,7 @@ function shipped(what) {
 
 // ---------------------------------------------------------------- the list, the leader, focusWorkspaceList
 
-const A = { id: "/w/a", name: "Alpha" }, B = { id: "/w/b", name: "Beta", shown: true /* another window shows it */ };
-const C = { id: "/w/c", name: "Gamma" };
-// This computer's rows not served (main's discoverSuggestions): one that opens, one whose folder is gone.
-const LISTED = [{ path: C.id, name: "Gamma", state: "ok" }, { path: "/w/gone", name: "Gone", state: "missing" }];
+const A = { id: "/w/a", name: "Alpha" }, B = { id: "/w/b", name: "Beta" }, C = { id: "/w/c", name: "Gamma" };
 
 /** The shipped shell's list (workspaceLabel), leader (the hint, onSettle, the dispatch), app.workspaces and
  * focusWorkspaceList, on the shipped index.html, with the platform pinned. */
@@ -70,13 +67,14 @@ function rig(t, { platform = "Linux x86_64" } = {}) {
   const dom = new JSDOM(html, { pretendToBeVisual: true, url: "https://fixture.invalid" });
   const document = dom.window.document;
   const switched = [], added = [], offs = [];
+  let asked = 0;
   const c = {
     document, window: dom.window, navigator: { platform }, console, setTimeout, clearTimeout, queueMicrotask,
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     // The list (shell.mjs workspaceLabel), its main-side calls recorded.
     createWorkspaceSwitcher, switchWorkspace: (id, options) => { switched.push([id, { ...options }]); return Promise.resolve({ ok: true }); },
     desktopBridge: {
-      workspaceSuggestions: async () => ({ suggestions: LISTED }),
+      workspaceSuggestions: async () => { asked++; return { suggestions: [] }; },
       workspaceAdd: async path => { added.push(path); return { ok: true, workspace: { ...C } }; },
       windowOpenWorkspace() {},
     },
@@ -121,9 +119,9 @@ function rig(t, { platform = "Linux x86_64" } = {}) {
   };
   const rows = () => [...document.querySelectorAll("#ws-options .ws-option")];
   return {
-    ...s, c, dom, document, switched, added, rows,
+    ...s, c, dom, document, switched, added, rows, asked: () => asked,
     current: () => document.querySelector('#ws-options .ws-option[aria-current="true"]'),
-    row: key => rows().find(row => (row.dataset.workspaceId || row.dataset.workspacePath) === key) ?? null,
+    row: key => rows().find(row => row.dataset.workspaceId === key) ?? null,
     line: () => document.querySelector("#leader-hint .leader-hint-line")?.textContent ?? null,
     /** Ctrl+X (the leader on both platforms), then `key`, pressed where focus is. */
     leaderThen(key) {
@@ -141,30 +139,31 @@ function rig(t, { platform = "Linux x86_64" } = {}) {
 
 for (const platform of ["Linux x86_64", "MacIntel"]) test(`${platform}: Ctrl+X then ↓ / ↑ step the list as drawn, as a click does; at an end the hint says so`, async t => {
   const r = rig(t, { platform });
-  r.shows(A, [A, B]); await flush(); // this computer's rows arrive (the list asks main as it starts)
-  assert.deepEqual(r.rows().map(row => row.dataset.workspaceId || row.dataset.workspacePath), [A.id, B.id, C.id, "/w/gone"]);
+  r.shows(A, [A, B, C]); await flush();
+  // The rows are the served views alone: the list asks main for nothing (this computer's deployments are Add's).
+  assert.deepEqual(r.rows().map(row => row.dataset.workspaceId), [A.id, B.id, C.id]);
+  assert.equal(r.asked(), 0);
   // At the top: ↑ moves nothing and says why, in the hint's line.
   r.leaderThen("up");
   assert.deepEqual(r.switched, []);
   assert.equal(r.line(), NO_WORKSPACE_ABOVE);
   assert.equal(r.line(), "No workspace above this one.");
-  // ↓: B, which another window shows, is not passed over: it is taken over into this window, as its click is.
+  // ↓: B, even if another window shows it: it is taken over into this window, as its click is.
   r.leaderThen("down");
   assert.deepEqual(r.switched, [[B.id, { takeOver: true }]], "a pick from the list always shows the workspace here");
   r.row(B.id).click();
   assert.deepEqual(r.switched.at(-1), [B.id, { takeOver: true }], "the click: the same switch");
   r.switched.length = 0;
-  r.shows(B, [A, { ...B, shown: false }]);
-  // ↓ from B: Gamma, this computer's not served yet, is admitted and opened, as its click does (the one-click add).
-  r.leaderThen("down"); await flush();
-  assert.deepEqual(r.added, [C.id]);
+  r.shows(B, [A, B, C]);
+  // ↓ from B: Gamma, the last row; every row opens, so nothing is passed over.
+  r.leaderThen("down");
   assert.deepEqual(r.switched, [[C.id, { takeOver: true }]]);
-  assert.equal(r.current()?.dataset.workspaceId, C.id, "the added workspace is the current row");
-  // ↓ from Gamma: only Gone, whose folder is missing, is below: passed over, so this is the end.
+  r.shows(C, [A, B, C]);
+  assert.equal(r.current()?.dataset.workspaceId, C.id);
+  // ↓ from Gamma: the end.
   r.switched.length = 0;
   r.leaderThen("down");
   assert.deepEqual(r.switched, []);
-  assert.deepEqual(r.added, [C.id], "the missing row is never added");
   assert.equal(r.line(), NO_WORKSPACE_BELOW);
   assert.equal(r.line(), "No workspace below this one.");
   // ↑ from Gamma: Beta, then Alpha.
@@ -173,13 +172,14 @@ for (const platform of ["Linux x86_64", "MacIntel"]) test(`${platform}: Ctrl+X t
   r.shows(B, [A, B, C]);
   r.leaderThen("up");
   assert.deepEqual(r.switched.at(-1), [A.id, { takeOver: true }]);
+  assert.deepEqual(r.added, [], "a move adds nothing");
   // No instance was opened or stepped: the leader's arrows are the workspace moves only.
   assert.equal(r.c.tabs.size, 0);
 });
 
 test("the leader's ↓ from a row of the list itself moves the workspace, not the list's focus", async t => {
   const r = rig(t);
-  r.shows(A, [A, { ...B, shown: false }]); await flush();
+  r.shows(A, [A, B]); await flush();
   r.current().focus();
   r.leaderThen("down");
   assert.deepEqual(r.switched, [[B.id, { takeOver: true }]]);

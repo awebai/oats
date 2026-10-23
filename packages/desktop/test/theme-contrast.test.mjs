@@ -937,7 +937,7 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
   }
 });
 
-for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel, disabled menu reasons, workspace metadata, explicit Open toast and the Needs input pill meet computed AA`, async t => {
+for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel, disabled menu reasons, workspace rows, explicit Open toast and the Needs input pill meet computed AA`, async t => {
   const dom = new JSDOM(readFileSync(new URL('index.html', renderer), 'utf8'), { pretendToBeVisual: true }), doc = dom.window.document;
   doc.documentElement.dataset.theme = name;
   for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), identityCSS, contextPanelCSS, notificationCSS, rosterPrCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
@@ -959,9 +959,9 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
   const notifications = createNotificationCenter({ document: doc, workspace: () => 'team' });
   notifications.notify('dev-1 spawned', { descriptor: { kind: 'open-instance', target: instanceActionTarget('team', row), connectionEpoch: 0 }, activate: async () => {} });
   const switcher = createWorkspaceSwitcher({ document: doc, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}), openInNewWindow() {} });
-  // The workspace list, always shown: the current row (--sel), and a row another window shows, with the needs-input dot.
+  // The workspace list, always shown: the current row (--sel), and another row at rest, with the needs-input dot.
   const team = { id: '/team', name: 'Team', team: { name: 'Organization' } };
-  switcher.begin()(team, [team, { id: '/other', name: 'Other', shown: true, waiting: true }]);
+  switcher.begin()(team, [team, { id: '/other', name: 'Other', waiting: true }]);
   const menu = instanceActions(doc, row, { extra: [{ action: 'open-split', label: 'Open in split', reason: 'Choose a terminal destination.' }], invoke: async () => {} }); doc.body.append(menu);
   t.after(() => { panel.dispose(); notifications.dispose(); switcher.dispose(); dom.window.close(); });
   const root = dom.window.getComputedStyle(doc.documentElement);
@@ -972,13 +972,11 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     ['#show-panel', '#sidebar', 'muted', 'surface'],
     ['.context-panel-tab-count', '#context-panel', 'muted', 'surface'], // W6: the Developer tab's thread count
     ['.ctx-instance-menu small', '.ctx-instance-menu button:disabled', 'muted', 'surface-2'],
-    // The workspace list sits on the sidebar's --surface: the current row's line on its --sel, another row's
-    // "In another window" at rest, and the head's Add local workspace… icon.
-    ['.ws-option[aria-current="true"] .ws-option-meta', '.ws-option[aria-current="true"]', 'muted', 'sel'],
-    ['.ws-option[data-other-window] .ws-option-meta', '#sidebar', 'muted', 'surface'],
+    // The workspace list sits on the sidebar's --surface: a row is its name, on the current row's --sel or at
+    // rest (a row paints no fill of its own), and the head's Add local workspace… icon.
+    ['.ws-option[aria-current="true"] .ws-option-name', '.ws-option[aria-current="true"]', 'fg', 'sel'],
+    ['.ws-option:not([aria-current]) .ws-option-name', '#sidebar', 'fg', 'surface'],
     ['#ws-add-open', '#sidebar', 'muted', 'surface'],
-    // Open in new window (#481): the icon at rest beside a row, on the sidebar (focused, it is --fg on --sel, as a row).
-    ['.ws-open-window', '#sidebar', 'muted', 'surface'],
     ['.app-toast-open', '.app-toast-open', 'primary-fg', 'primary-bg'],
     ['.ctx-pr[data-pr-state=open]', '.ctx-pr[data-pr-state=open]', 'fg', 'tag-bg'],
     ['.ctx-pr[data-pr-state=merged]', '.ctx-pr[data-pr-state=merged]', 'fg', 'tag-bg'],
@@ -996,11 +994,13 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
-  assert.equal(doc.querySelector('.ws-option[data-other-window] .ws-option-meta').textContent, 'In another window');
+  assert.equal(dom.window.getComputedStyle(doc.querySelector('.ws-option:not([aria-current])')).backgroundColor, 'rgba(0, 0, 0, 0)', 'a row at rest shows the sidebar under it');
   // The needs-input dot is a non-text mark: a yellow fill (--attn-dot) in a --warn ring, hidden from assistive tech, its words in the row's
-  // name and tooltip; painted as it is, with no opacity on it or under it.
-  const dot = doc.querySelector('.ws-option[data-other-window] .ws-waiting'); assert.ok(dot, 'the waiting row carries the dot');
+  // name and tooltip; painted as it is, with no opacity on it or under it. It sits after the name, on the row's one line.
+  const dot = doc.querySelector('.ws-option[data-workspace-id="/other"] .ws-waiting'); assert.ok(dot, 'the waiting row carries the dot');
   assert.equal(doc.querySelectorAll('.ws-waiting').length, 1, 'only the waiting row');
+  assert.equal(dot.parentElement, dot.closest('.ws-option'));
+  assert.deepEqual([...dot.parentElement.children].map(c => c.className), ['ws-option-name', 'sr-only', 'ws-waiting'], 'the name, its words, then the dot');
   assert.equal(dom.window.getComputedStyle(dot).background, 'var(--attn-dot)');
   assert.deepEqual([dom.window.getComputedStyle(dot).borderTopWidth, dom.window.getComputedStyle(dot).borderTopStyle], ['1px', 'solid'], 'its ring (its colour is pinned below)');
   assert.equal(dot.getAttribute('aria-hidden'), 'true'); assert.equal(dot.textContent, '');
@@ -1017,7 +1017,10 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
 for (const [name, palette] of palettes) test(`${name}: the workspace list's needs-input dot meets 3:1 on every row fill`, () => {
   const shellCss = readFileSync(new URL('shell.css', renderer), 'utf8');
   assert.match(shellCss, /\.ws-waiting \{[^}]*background: var\(--attn-dot\); border-width: 1px; border-style: solid; border-color: var\(--warn\);/);
+  // A row's fills: none at rest (the sidebar's --surface shows), --surface-2 hovered, --sel current or focused.
+  assert.match(shellCss, /\.ws-option \{[^}]*background: transparent;/);
   assert.match(shellCss, /\.ws-option:hover \{ background: var\(--surface-2\); \}/);
+  assert.match(shellCss, /\.ws-option:focus-visible \{ background: var\(--sel\); \}/);
   assert.match(shellCss, /\.ws-option\[aria-current="true"\] \{ background: var\(--sel\); \}/);
   for (const bg of ['surface', 'surface-2', 'sel']) {
     const ratio = contrast(opaqueChannels(palette.get('warn')), backgroundChannels(bg, palette));

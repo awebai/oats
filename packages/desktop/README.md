@@ -180,28 +180,22 @@ function over what its caller holds:
   name, its one muted line, how many deployments are not live and the words
   for that, its tooltip and the deployment an unattached view opens;
   `choiceMatches` is the TUI switcher's filter (the Desktop's list has none).
-  `renderer/workspace-switcher.mjs` draws the sidebar's list from the rows
-  and keeps what is only its own: the "On this computer" group, the "In
-  another window" and needs-input words, the new-window hint and adding a
-  folder.
+  `renderer/workspace-switcher.mjs` draws the sidebar's list from the rows,
+  one line each (the name and the dot: it shows no muted line, no not-live
+  mark and no section), and keeps what is only its own: the needs-input
+  words, the new-window hint and context menu, and the Add dialog (this
+  computer's deployments to add, the stale rows to remove).
 - **Moving in the list of workspaces** (`workspace-step.mjs`).
   `workspaceStep(rows, currentKey, step)` is the leader's ↑ / ↓
   (`workspace-previous`, `workspace-next`): the key of the next row that can
   be opened in one direction, or null at an end; no wrap. Pure, imports
   nothing, so the page loads it. Each client draws its own rows and opens
   what it answers.
-- **Who waits in a workspace** (the yellow dot). For a served view,
-  `workspaceChoices` carries `waiting`, rolled up from the instances the
+- **Who waits in a workspace** (the yellow dot). `workspaceChoices`
+  carries `waiting` for each served view, rolled up from the instances the
   client holds (`waiting-on-you.mjs` `waitingClaim`, live deployments only):
-  no read. For a deployment of this computer's list that no window serves,
-  `deployment-identity.mjs` `cliDeploymentIdentity` also answers `waiting`
-  (true, false, or null without feature `waiting-on-you`), and
-  `listed-waiting.mjs` `createListedWaiting` runs that read again on a slow,
-  bounded schedule: one read in flight, each path at most every 60 s while
-  focused and every 5 min while not, `--max-age 300`, a failure read as
-  null. It runs no CLI itself; main gives it the read and the focus, and
-  `workspace-registry.mjs` `createSuggestionCalls` hands each answer to the
-  rows a window asks for. `test/listed-waiting.test.mjs` pins the bounds.
+  no read of its own. The list shows only served views, so nothing reads
+  needs input for a deployment no window serves; unknown or stale is no dot.
 - **This computer's deployments list** (`deployment-list.mjs`, #1390). The
   kernel keeps it (`oats deployments`); `readDeploymentList` reads the answer
   into rows of `{ path, name, state }` and refuses a document it cannot read

@@ -174,8 +174,7 @@ function shellRoster(t) {
     api(path) { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); requests.push({ path, resolve, reject }); return promise; },
     renderContextRoster(instances) { rendered.push(instances.map((i) => i.instance)); },
     refreshPanelInstance() {}, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} },
-    workspaceLabel: createWorkspaceSwitcher({ document, selectWorkspace: (id) => selected.push(id), discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}),
-      timers: { setTimeout: () => 0, clearTimeout() {} } }), // the list's slow re-read never fires here
+    workspaceLabel: createWorkspaceSwitcher({ document, selectWorkspace: (id) => selected.push(id), discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) }),
   };
   const s = runInNewContext(`${fn("refreshContextRoster")}\n({ refreshContextRoster });`, withShellWindowGlobals(c));
   return { c, s, document, requests, rendered, selected };

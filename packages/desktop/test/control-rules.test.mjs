@@ -56,8 +56,8 @@ const markup = `<div id="app"><aside id="sidebar">
   </div><div id="tab-actions"><button id="split-right">▥</button></div></div></div>
   <div id="tabhost" class="split-row"><div class="group-cell focused-group"><button class="split-empty">Empty</button></div></div></main></div>
   <div class="ws-modal"><section class="ws-dialog"><input id="ws-suggestion-search" type="search">
-    <div class="ws-suggestions"><button class="ws-suggestion" aria-checked="false">Suggestion</button></div>
-    <footer class="ws-dialog-foot"><button class="secondary">Cancel</button><button class="primary">Add workspace</button></footer></section></div>
+    <div class="ws-suggestions"><button class="ws-suggestion">Suggestion</button></div>
+    <footer class="ws-dialog-foot"><button class="secondary">Cancel</button><button class="primary">Onboard</button></footer></section></div>
   <div class="palette-overlay"><div class="palette"><input class="palette-input"></div></div>
   <div class="kb-editor"><button class="kb-chord">⌘K</button><button class="kb-close">Close</button></div>
   <div class="oats-view"><div class="ws-segmented" role="group" aria-label="Setup view">
@@ -139,6 +139,8 @@ test("workspace list: the current row is the selection surface (--sel), named by
   assert.equal(u.style(".ws-option.ws-current").background, "var(--sel)");
   assert.match(u.style(".ws-option.ws-other").background, /^(transparent|rgba\(0, 0, 0, 0\))$/);
   assert.equal(u.rules.filter(r => /\.ws-option\[aria-selected/.test(r.selectorText || "")).length, 0, "a list of buttons: no listbox selection rule");
+  // The Add dialog's found deployments are buttons that add (#518): no radio selection to paint.
+  assert.equal(u.rules.filter(r => /\.ws-suggestion\[aria-checked|\.ws-radio/.test(r.selectorText || "")).length, 0, "no radio rules");
 });
 
 // ── rule 2: no ring on pointer interaction; tint + 1px accent edge on keyboard focus ──

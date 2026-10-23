@@ -167,39 +167,35 @@ test('the rows of what panel-views.mjs `workspaceChoices` answers: the switcher 
 
 /* ── The Desktop's list is drawn from the rows: every string it shows is a row's ── */
 const html = readFileSync(new URL('../renderer/index.html', import.meta.url), 'utf8');
-// The list's slow re-read never fires here (its cadence is workspace-list.test.mjs).
-const INERT = { setTimeout: () => 0, clearTimeout() {} };
 function menu(t, list, { active = list[0] } = {}) {
   const dom = new JSDOM(html, { url: 'https://fixture.invalid' }); t.after(() => dom.window.close());
   const document = dom.window.document; mountShellIcons(document);
   const selected = [], tabRequests = [];
   t.after(onDeploymentTabRequest((request) => tabRequests.push(request)));
   const sw = createWorkspaceSwitcher({ document, selectWorkspace: (id) => selected.push(id), discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}),
-    openInNewWindow: () => {}, timers: INERT });
+    openInNewWindow: () => {} });
   t.after(() => sw.dispose());
   sw.begin()(active, list);
-  // A row is in the unmatched section when its group is labelled by that section's heading.
-  const section = (o) => document.getElementById(o.closest('ul').getAttribute('aria-labelledby') || '')?.textContent ?? null;
   const options = () => [...document.querySelectorAll('#ws-options .ws-option')];
   return { document, sw, selected, tabRequests, options,
-    shown: () => options().map(o => ({ id: o.dataset.workspaceId, label: o.querySelector('.ws-option-name').textContent, place: o.querySelector('.ws-option-meta').textContent,
-      placeHidden: o.querySelector('.ws-option-meta').hidden, notLiveText: o.querySelector('.deployment-mark')?.getAttribute('aria-label') ?? '', tooltip: o.title,
-      unattached: section(o) === UNMATCHED_SECTION, opens: o.parentElement.querySelector('.ws-open-window').getAttribute('aria-label') })) };
+    shown: () => options().map(o => ({ id: o.dataset.workspaceId, parts: [...o.children].map(c => c.className), label: o.querySelector('.ws-option-name').textContent, tooltip: o.title })) };
 }
-const drawnFrom = (rows) => [...rows.filter(r => !r.unattached), ...rows.filter(r => r.unattached)].map(r => ({ id: r.id, label: r.label, place: r.place, placeHidden: !r.place,
-  notLiveText: r.notLiveText, tooltip: r.tooltip, unattached: r.unattached, opens: `Open ${r.label} in a new window` }));
+// A row is one line, its label (pr3-simplify): of the row's words, only the label is drawn, and it is the tooltip too.
+const drawnFrom = (rows) => [...rows.filter(r => !r.unattached), ...rows.filter(r => r.unattached)].map(r => ({ id: r.id, parts: ['ws-option-name'], label: r.label, tooltip: r.label }));
 
-test('the Desktop\'s list shows each row\'s words and nothing else of the choice', (t) => {
+test('the Desktop\'s list shows each row\'s label and nothing else of the choice', (t) => {
   const twin = { ...TSM, id: 'ws:dddddddddddddddddddd', key: 'github.com/other/tsm', machines: ['altair'], notLive: 2, deploymentLabels: ['altair · /srv/tsm'] };
   const list = [OATS, LOOSE, TSM, RIGEL, twin, { id: 'ws:eeeeeeeeeeeeeeeeeeee', name: 'old', team: null, deployments: ['remote:vega:t9', '/Users/op/x'] }];
   const rows = workspaceChoiceRows(list);
   assert.deepEqual(menu(t, list).shown(), drawnFrom(rows));
   // The list has no filter: every row is drawn, always (the TUI's switcher still filters with choiceMatches).
-  assert.equal(menu(t, list).document.getElementById('ws-menu-search'), null);
-  // The unattached rows are the section's, under the shared heading.
-  const m = menu(t, list), group = m.document.querySelector('#ws-options ul[aria-labelledby]');
-  assert.equal(m.document.getElementById(group.getAttribute('aria-labelledby')).textContent, UNMATCHED_SECTION);
-  assert.deepEqual([...group.querySelectorAll('.ws-option')].map(o => o.dataset.workspaceId), rows.filter(r => r.unattached).map(r => r.id));
+  const m = menu(t, list);
+  assert.equal(m.document.getElementById('ws-menu-search'), null);
+  // The unattached rows close the same flat list: no section, no heading.
+  const groups = [...m.document.querySelectorAll('#ws-options ul')];
+  assert.equal(groups.length, 1); assert.equal(groups[0].hasAttribute('aria-labelledby'), false);
+  assert.equal(m.document.querySelector('#ws-options').textContent.includes(UNMATCHED_SECTION), false);
+  assert.deepEqual(m.options().slice(-rows.filter(r => r.unattached).length).map(o => o.dataset.workspaceId), rows.filter(r => r.unattached).map(r => r.id));
   // A click opens the row's deployment, when it has one.
   for (const r of rows) {
     const one = menu(t, list, { active: OATS });
@@ -214,13 +210,13 @@ test('the renderer holds none of the rule: it declares no name the shared module
   const moved = [...Object.keys(choices), 'choiceTooltip', 'machinesOf'];
   assert.deepEqual(Object.keys(choices).sort(), ['UNMATCHED_SECTION', 'choiceMatches', 'isLocalPath', 'workspaceChoiceLabels', 'workspaceChoicePlace', 'workspaceChoiceRows']);
   assert.deepEqual(moved.filter(declared), []);
-  assert.match(source, /import \{ isLocalPath, workspaceChoiceLabels, workspaceChoiceRows, UNMATCHED_SECTION \} from "\.\.\/\.\.\/client\/workspace-choices\.mjs";/);
+  assert.match(source, /import \{ isLocalPath, workspaceChoiceLabels, workspaceChoiceRows \} from "\.\.\/\.\.\/client\/workspace-choices\.mjs";/);
   // It reads a row (`said`), never the choice's own fields for words, and spells none of the words itself.
   assert.doesNotMatch(source, /"deployments?"|Not matched to a workspace|deploymentLabels|workspace\.(?:notLive|short|machines|unattached|key)\b/);
-  assert.match(source, /const said = rows\[index\];/);
+  assert.match(source, /const said = workspaceChoiceRows\(workspaces\);/); assert.match(source, /row = said\[index\];/);
   assert.doesNotMatch(source, /choiceMatches/, 'the list filters nothing');
   // What stays the renderer's.
-  for (const name of ['LOCAL_SECTION', 'openInNewWindowHint', 'createWorkspaceSwitcher']) assert.equal(declared(name), true, name);
+  for (const name of ['OPEN_IN_NEW_WINDOW', 'WAITING_NAME', 'openInNewWindowHint', 'createWorkspaceSwitcher']) assert.equal(declared(name), true, name);
   // The check finds a declaration when there is one, and the module the page loads imports no Node builtin.
   assert.doesNotMatch(readFileSync(new URL('../../client/workspace-choices.mjs', import.meta.url), 'utf8'), /from\s*["']node:|import\(\s*["']node:/);
 });

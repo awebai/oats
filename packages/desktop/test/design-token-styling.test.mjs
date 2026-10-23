@@ -13,12 +13,12 @@ const markup = `<div id="app"><aside id="sidebar">
   <div class="side-head"><span class="ws-brand-mark">${icon}</span><span id="ws-heading" class="ws-heading">Workspaces</span>
     <button id="ws-add-open" class="ws-add-open icon-button" type="button" aria-label="Add local workspace…">${icon}</button></div>
   <section id="ws-list" class="ws-list" aria-labelledby="ws-heading"><div id="ws-options" class="ws-options"><ul class="ws-group">
-    <li class="ws-option-row"><button class="ws-option" aria-current="true"><span class="ws-option-copy"><span class="ws-option-line"><span class="ws-option-name">fixture</span>
-      <span class="deployment-mark" role="img" aria-label="1 deployment not live">${icon}</span><span class="ws-waiting" aria-hidden="true"></span></span><span class="ws-option-meta">This Mac · altair</span></span><span class="ws-check">✓</span></button></li>
+    <li class="ws-option-row"><button class="ws-option" aria-current="true"><span class="ws-option-name">fixture</span><span class="sr-only">, needs input</span><span class="ws-waiting" aria-hidden="true"></span></button></li>
+    <li class="ws-option-row"><button class="ws-option"><span class="ws-option-name">other</span></button></li>
   </ul></div></section>
   <nav id="nav"><button class="nav-item active"><span class="icon">${icon}</span>Workspace</button></nav>
   <section id="instance-roster"><div class="ctx-head">Instances</div><input class="ctx-filter">
-    <div class="ctx-list"><div class="ctx-deployment" role="heading" aria-level="3"><span class="ctx-deployment-label">altair</span></div><div class="ctx-tree-row"><button class="ctx-inst active"><span class="ctx-dot on"></span>
+    <div class="ctx-list"><div class="ctx-deployment" role="heading" aria-level="3"><span class="ctx-deployment-label">altair</span><span class="deployment-mark" role="img" aria-label="remembered">${icon}</span></div><div class="ctx-tree-row"><button class="ctx-inst active"><span class="ctx-dot on"></span>
       <span class="ctx-copy"><span class="ctx-name">Fixture instance</span><span class="ctx-repo-label">fixture</span></span>
     </button></div></div></section>
   <div id="nav-foot"><button id="sidebar-spawn" class="primary">${icon}Spawn instance</button>
@@ -31,7 +31,7 @@ const markup = `<div id="app"><aside id="sidebar">
     <div class="group-tabbar"></div><button class="split-empty">Open an instance in this panel</button>
   </div></div></main></div>
   <div class="ws-modal" hidden><section class="ws-dialog"><footer class="ws-dialog-foot">
-    <button class="primary">Add workspace</button></footer></section></div>
+    <button class="primary">Onboard</button></footer></section></div>
   <div class="oats-view"><button class="act primary">Primary</button><button class="act danger">Danger</button>
     <button class="act">Secondary</button><input class="field"><textarea class="field"></textarea><select class="field"><option>Fixture</option></select></div>
   <div class="ctx-instance-menu"><button data-action="retire">Retire instance</button></div>`;
@@ -76,7 +76,7 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, 24px brand and 16
     assert.equal(u.style(selector).width, size); assert.equal(u.style(selector).height, size);
     assert.equal(u.style(selector).flexShrink, "0");
   }
-  for (const selector of [".ws-option-name", ".ws-option-meta", ".ctx-deployment-label"]) {
+  for (const selector of [".ws-option-name", ".ctx-deployment-label"]) {
     assert.equal(u.style(selector).whiteSpace, "nowrap", selector);
     assert.equal(u.style(selector).textOverflow, "ellipsis", selector);
   }
@@ -93,10 +93,15 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, 24px brand and 16
   const dot = u.style(".ws-waiting");
   assert.deepEqual([dot.width, dot.height, dot.boxSizing, dot.borderRadius, dot.flexShrink, dot.background, dot.borderTopWidth, dot.borderTopStyle],
     ["8px", "8px", "border-box", "50%", "0", "var(--attn-dot)", "1px", "solid"], "a yellow fill in a ring (its --warn colour and 3:1: theme-contrast)");
-  // #482 UI spec: a switcher entry is its name (with a status mark beside it) and ONE muted line of machines.
-  assert.equal(u.style(".ws-option-line").display, "flex");
-  assert.equal(u.style(".ws-option-meta").fontSize, "10.5px"); assert.equal(u.style(".ws-option-meta").color, "var(--muted)");
-  // The mark: the warning shape in --warn at the 12px icon size the filter uses, never the 16px default.
+  // A row is one line (pr3-simplify): the name, which gives way and ends in an ellipsis, then the dot; the current
+  // row is told by style alone, its name in bold (and the --sel fill: theme-contrast).
+  assert.deepEqual([u.style(".ws-option").display, u.style(".ws-option").gap], ["flex", "6px"]);
+  const name = u.style(".ws-option-name");
+  assert.deepEqual([name.flexGrow, name.flexShrink, name.minWidth, name.overflow], ["0", "1", "0px", "hidden"]);
+  assert.equal(u.style('.ws-option[aria-current="true"] .ws-option-name').fontWeight, "650");
+  assert.notEqual(u.style('.ws-option:not([aria-current]) .ws-option-name').fontWeight, "650", "another row's name is not bold");
+  assert.equal(shell.match(/\.ws-option-(?:meta|line|copy|section)\b|\.ws-check\b|\.ws-open-window\b|\.ws-option \.workspace-avatar/), null, "no mark, machine line, check or button rules");
+  // The deployment mark (the roster's headings): the warning shape in --warn at the 12px icon size the filter uses, never the 16px default.
   assert.equal(u.style(".deployment-mark").color, "var(--warn)"); assert.equal(u.style(".deployment-mark").flexShrink, "0");
   assert.equal(u.style(".deployment-mark > .shell-icon").width, "12px");
   // Deployment headings in the roster's group-label type (the clusters' label on the Deployments page).

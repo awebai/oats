@@ -119,12 +119,11 @@ launched with (`--dir`, or the folder it was started from) when that is an
 OATS deployment — the directory (the operator's choice) holding
 `oats-local.yaml` and `agents/`. A folder that is not a deployment is never
 opened: started from Finder, with nothing open to restore, the window shows
-"Choose a workspace" and focuses the sidebar's [list of
-workspaces](#workspaces). Under **On this computer** the list has the
-deployments on this computer that are not open: those on this computer's
-deployments list (`oats deployments`, see [Workspaces](workspaces.md)) and a
-saved one. Click one to open it in this window. **Add local workspace… →
-Browse** (the **+** at the top of the sidebar) points it at any other
+"Choose a workspace" and opens **Add local workspace…** (the **+** at the top
+of the sidebar). The dialog lists the deployments on this computer that are
+not open: those on this computer's deployments list (`oats deployments`, see
+[Workspaces](workspaces.md)) and a saved one. Click one, or press Enter on it,
+to add it and open it in this window. **Browse…** points it at any other
 deployment.
 A picked folder without `oats-local.yaml` is offered onboarding instead. The
 Desktop never parses the deployment: its members, lock state and header come
@@ -149,10 +148,10 @@ workspace on a server: `name — server`).
   other window shows another workspace ([A workspace another window
   shows](#a-workspace-another-window-shows)). No other window comes to the
   front.
-- **Open in new window.** Each workspace in the list has an **Open in new
-  window** button beside it. From the keyboard: Right Arrow on the workspace,
-  then Enter, or ⌘Enter on macOS / Ctrl+Enter on Linux and Windows. A
-  workspace that already has a window is brought to the front.
+- **Open in new window.** A workspace's row in the list opens it in its own
+  window from its context menu (a right-click, or Shift+F10 or the Menu key),
+  or with ⌘Enter on macOS / Ctrl+Enter on Linux and Windows. A workspace that
+  already has a window is brought to the front.
 - **New Window.** On macOS, **File → New Window** (⌘⇧N); everywhere,
   **Window: new window** in the command palette. The new window has no
   workspace yet: it shows "Choose a workspace" and focuses the list of
@@ -189,68 +188,72 @@ workspace on a server: `name — server`).
 
 The top of the sidebar lists the workspaces, above the views and the
 instances, and is always shown. Its header holds **Add local workspace…** (the
-**+**). One row per workspace, in this order:
-
-1. the workspaces this window can show: every workspace the Desktop serves,
-   those only on servers included, then the deployments no workspace matched,
-   under **Not matched to a workspace** ([One workspace, several
-   machines](#one-workspace-several-machines));
-2. then, under **On this computer**, the deployments on this computer's
-   deployments list and the saved ones that are not open yet.
+**+**). The list has one row per workspace this window can show, whatever
+machine it is on: every workspace the Desktop serves, those only on servers
+included, and the deployments no workspace matched ([One workspace, several
+machines](#one-workspace-several-machines)), after them in the same list.
 
 With one workspace the list is one compact row. With many it scrolls within
 about six rows, the current row stays in view, and while rows are cut off
 below, a line under the list says how many ("2 more below").
 
-- **The current workspace** has the selection's background and a check; a
-  screen reader hears it as current, and the list's description names it.
-- **What a row says.** A workspace: its name and one line of its machines
-  ("This Mac · altair"), with a mark when one of them isn't live. A row on
-  this computer: its name and folder (the full path is its tooltip). A row of
-  this computer's list that can't be opened says why in a word on its one line
-  and opens nothing: **Missing** (the folder is gone, or its volume isn't
-  mounted), **Not a deployment** (no `oats-local.yaml` any more), or **Can't be
-  checked** (OATS couldn't read the folder). The full sentence is its tooltip
-  and what a screen reader hears; the warning mark is a workspace's "not live"
-  alone.
-  With an oats that has no deployments list, the section shows the saved
-  deployments and says "This oats can't list this computer's deployments.
-  Update oats."; a list read that failed says "Couldn't read this computer's
-  deployments:" and why.
-- **In another window.** A workspace another window of this Desktop shows
-  says "In another window" on its line, in words: the row's one window icon
-  is its **Open in new window** button.
-- **The yellow dot.** A row has a small yellow dot when an instance of that
-  workspace needs input: the claim the instance roster shows for that
-  instance, from a running session (OATS with the `waiting-on-you` feature).
+- **A row is one line: the workspace's name.** No icon, no machine, no state:
+  a workspace's own pages show its machines and deployments. A long name ends
+  in an ellipsis, and the row's tooltip is the whole name.
+- **The current workspace** has the selection's background and its name in
+  bold; a screen reader hears it as current, and the list's description names
+  it.
+- **The yellow dot.** A row has a small yellow dot after its name when an
+  instance of that workspace needs input: the claim the instance roster shows
+  for that instance, from a running session (OATS with the `waiting-on-you`
+  feature), as the Desktop already reads it for the workspaces it serves.
   Every row can have it, the current one included. The row's name then ends
   in ", needs input" for a screen reader, and its tooltip says "An instance
   here needs input". What isn't known shows no dot, never a guess: a
-  deployment that isn't live (stale, not reached, its last read failed), a
-  row on this computer not read yet or whose read failed, a row that can't be
-  opened, and an oats without `waiting-on-you`. The dot never moves a row:
-  the order stays the same whoever waits.
+  deployment that isn't live (stale, not reached, its last read failed) and
+  an oats without `waiting-on-you`. The dot never moves a row: the order
+  stays the same whoever waits.
 - **Picking a row** (a click, Enter, or the leader's ↑ / ↓, Ctrl+X then ↑ /
   ↓) shows that workspace in this window, with its own tabs, layout and
-  selection. A row on this computer is added (the Add dialog's add, so it is
-  checked first) and then opened; a failure is said in the list, and focus
-  stays on that row. The leader's ↑ / ↓ go to the previous / next row that can
-  be opened, and stop at the ends ("No workspace above this one." / "No
-  workspace below this one.").
-- **Remove** beside a row of this computer's list takes it off the list
-  (Right Arrow, then Enter, from the keyboard); nothing on disk changes.
-- **Open in new window** beside a workspace opens it in its own window, or
-  brings the window that shows it to the front (Right Arrow, then Enter, or
-  ⌘Enter on macOS / Ctrl+Enter on Linux and Windows).
+  selection; one another window shows moves here ([A workspace another window
+  shows](#a-workspace-another-window-shows)). The leader's ↑ / ↓ go to the
+  previous / next row, and stop at the ends ("No workspace above this one." /
+  "No workspace below this one.").
+- **Open in new window** is in a row's context menu (a right-click, or
+  Shift+F10 or the Menu key), and ⌘Enter on macOS / Ctrl+Enter on Linux and
+  Windows does it from the keyboard. It opens the workspace in its own window,
+  or brings the window that shows it to the front.
 - **Keyboard.** The list is one Tab stop, Up/Down/Home/End move in it, and
   `w` in the sidebar, Ctrl+X then `o`, ⌥⌘O / Ctrl+Alt+O and the palette's
   **Workspace: switch…** focus it. The full keys are in [the keyboard
   reference](../packages/desktop/docs/desktop-keyboard.md#the-list-of-workspaces).
 
+**Add local workspace…** lists the deployments on this computer that are not
+open: those on this computer's deployments list and a saved one. Each is one
+button: a click, or Enter on it, adds it (checked first) and opens it in this
+window; a failure says why in the dialog, with focus back on it. After them
+come the rows of this computer's list that can't be opened, each saying why in
+a word, and they open nothing: **Missing** (the folder is gone, or its volume
+isn't mounted), **Not a deployment** (no `oats-local.yaml` any more), or
+**Can't be checked** (OATS couldn't read the folder). The full sentence is the
+row's tooltip and what a screen reader hears. **Remove** beside such a row
+takes it off the list (Right Arrow, then Enter, from the keyboard); nothing on
+disk changes. With an oats that has no deployments list, the dialog offers the
+saved deployments alone and says "This oats can't list this computer's
+deployments. Update oats."; a list read that failed says "Couldn't read this
+computer's deployments:" and why. **Browse…** chooses any other folder, and one without
+`oats-local.yaml` is offered onboarding.
+
+A window with no workspace (a New Window, or one whose workspace moved to
+another window) shows "Choose a workspace" and focuses the list. When the
+Desktop serves no workspace at all, so the list is empty, it opens **Add local
+workspace…** instead. Closing the dialog leaves "Choose a workspace", whose
+button opens it again.
+
 ### A workspace another window shows
 
 Picking a workspace another window shows moves it to this window: a pick from
-the list (its row says "In another window"), the workspace select of
+the list, the workspace select of
 Deployments or Workspace, and a spawn whose new instance is in that workspace.
 Nothing else comes to the front. The other window lets the workspace go: it
 shows the workspace it showed most recently before that one among those the
@@ -264,26 +267,6 @@ Only the terminals and the split move with the workspace: this window opens
 the same terminal tabs in the same split, each with a fresh viewer, and the
 agents keep running. File, brain and view tabs do not move: they close in the
 other window.
-
-### How rows on this computer are read
-
-A workspace a window serves gets its dot from the roster the Desktop already
-reads: nothing more is read for it. A row on this computer has no roster, so
-the Desktop reads it again on a slow schedule, with the same `oats status
---dir <folder> --json` that matches the row to its workspace:
-
-- one read at a time, for every window together;
-- each row at most once every 60 seconds while a Desktop window is focused,
-  every 5 minutes while none is;
-- with `--max-age 300`, so the kernel may answer from an observation up to
-  five minutes old instead of reading the deployment again;
-- a read that fails gives no dot until the next one; a row that leaves the
-  list forgets its answer.
-
-Each window asks for the rows when it starts, when it comes to the front, and
-then every 60 seconds (5 minutes while it is in the background); asking
-starts no read, it gets the last answers. Rows that can't be opened are never
-read.
 
 ## Capabilities and spawning
 

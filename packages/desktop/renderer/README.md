@@ -427,50 +427,46 @@ split into sections) is `packages/client/roster-sections.mjs`.
   deployments block under the workspace switcher). The list of workspaces above the
   navigation lists views.
 - **The list of workspaces** (`workspace-switcher.mjs`, `#ws-list` under the sidebar's head,
-  always shown; docs/desktop.md, "Workspaces"): views first, then unattached views under
-  "Not matched to a workspace", then this computer's deployments not served under "On this
-  computer" (the saved entries and the rows of this computer's deployments list, #1390). A list
-  of buttons in `<ul>` groups, not a listbox, so the sidebar's plain keys stay live on it
-  (shell.mjs `updateActiveContexts`). What an entry says is decided in
-  `packages/client/workspace-choices.mjs` (`workspaceChoiceRows`); this module draws it. Each
-  entry is its name and ONE muted line: a view's machines (`choice.machines`, "This Mac ·
-  altair") with a status mark (`deploymentMark`, words as its label) when `notLive > 0`, or
-  `OTHER_WINDOW_TEXT` ("In another window", in words: the row's one window icon is its Open
-  in new window) when `choice.shown` and it is not this window's; an unattached view's machine
-  and its `short` reason; a listed row's folder tail, or for one that can't be opened its state
-  in a word (`LISTED_STATE_WORD`, no mark), the sentence (`LISTED_STATE_TEXT`) in its tooltip
-  and, sr-only, its name. Rows cut off below the bounded height are counted under the list
-  (`.ws-more`, `moreBelowText`, aria-hidden). `reset(current)` (a switch landed) keeps the rows and
-  marks `current`; a pick on its way (`pickedId`) is where `step` goes on from, and a pick of the
-  current row supersedes it. Choosing an unattached entry also calls
-  `requestDeploymentTab`, so the Deployments page opens on its tab. Never an id, a path or a
-  reason sentence (paths only in tooltips); twins of one name show their key.
-  - The current row is `aria-current="true"` with the check; the section's `aria-description`
-    names the current workspace.
-  - The dot: `choice.waiting` / a listed row's `waiting`, only `true` draws it (`.ws-waiting`,
-    a yellow `--attn-dot` fill in a 1px `--warn` ring, the needs-input colour of the roster and the tabs, which holds 3:1 on every row fill), with `WAITING_NAME` (", needs input", sr-only in the name) and
-    `WAITING_TITLE` in the tooltip. A stale listed row never shows one. It never reorders.
+  always shown; docs/desktop.md, "Workspaces"): one row per served view, whatever machine it is
+  on, the matched views first, then the unattached ones, in ONE `<ul>` with no heading. A list
+  of buttons, not a listbox, so the sidebar's plain keys stay live on it (shell.mjs
+  `updateActiveContexts`). A row is one line, the name alone (`workspaceChoiceRows` `label`
+  from `packages/client/workspace-choices.mjs`; twins of one name show their key): no mark, no
+  muted line, no not-live mark, no per-row button. Its tooltip is the whole name (a long one is
+  cut by an ellipsis), never a path or a machine. Rows cut off below the bounded height are
+  counted under the list (`.ws-more`, `moreBelowText`, aria-hidden). `reset(current)` (a switch
+  landed) keeps the rows and marks `current`; a pick on its way (`pickedId`) is where `step`
+  goes on from, and a pick of the current row supersedes it. Choosing an unattached row also
+  calls `requestDeploymentTab`, so the Deployments page opens on its tab.
+  - The current row is `aria-current="true"`, marked by style alone (`--sel`, the name in
+    bold); the section's `aria-description` names the current workspace.
+  - The dot: `choice.waiting`, only `true` draws it (`.ws-waiting` after the name, a yellow
+    `--attn-dot` fill in a 1px `--warn` ring, the needs-input colour of the roster and the tabs, which holds 3:1 on every row fill), with `WAITING_NAME` (", needs input", sr-only in the name) and
+    `WAITING_TITLE` in the tooltip. It reads only what the client observes (panel-views.mjs
+    `workspaceChoices`); it never reorders.
   - Keys (`onListKey`): one roving stop (`stopKey`, the row last focused, else the current
-    one), Up/Down/Home/End over every row, Enter opens, Right Arrow reaches the row's own
-    button (Open in new window, or Remove) and Left Arrow or Escape come back; ⌘Enter /
-    Ctrl+Enter opens a view in a new window. `focusList()` (the current row, else the stop) is `app.workspaces` (shell.mjs
+    one), Up/Down/Home/End over every row, Enter opens; ⌘Enter / Ctrl+Enter opens a row in a
+    new window (`aria-describedby` the hint). `focusList()` (the current row, else the stop) is `app.workspaces` (shell.mjs
     `focusWorkspaceList`, which also leaves focus mode and shows a hidden sidebar).
+  - The row's context menu (a `contextmenu` event: a right-click, Shift+F10, the Menu key) is
+    the page's own `role="menu"` popover (`.ctx-instance-menu.ws-row-menu`, styled as the
+    instance menu) with one item, `OPEN_IN_NEW_WINDOW`; the event is default-prevented, so
+    main's native Copy/Paste menu never shows for a row. Esc or Tab close it, back on the row.
+    No IPC of its own: the item calls `openInNewWindow`, as ⌘Enter does.
   - `step(±1)` is the leader's ↑ / ↓ (`workspace-previous` / `workspace-next`,
     leader-dispatch.mjs, which says `NO_WORKSPACE_ABOVE` / `NO_WORKSPACE_BELOW` at an end):
-    `packages/client/workspace-step.mjs` over the rows as drawn (`drawn`), a stale or busy
-    listed row not openable, a row another window shows openable; it opens the row as a click
-    does.
+    `packages/client/workspace-step.mjs` over the rows as drawn (`drawn`, every one openable);
+    it opens the row as a click does.
   - A pick (click, Enter, `step`) calls `selectWorkspace`, which the shell runs as
-    `switchWorkspace(id, { takeOver: true })` (see common.mjs above). A listed row is added
-    (`addFromMenu`, the dialog's add) and opened; an add whose window has shown another
-    workspace since opens nothing.
-  - A stale listed row says its state in words (`LISTED_STATE_TEXT`) beside a status mark and
-    opens nothing; a list row has **Remove** beside it, reached like Open in new window.
-  - This computer's rows are asked of main (`discoverSuggestions`) at start, on window focus
-    and every `LISTED_EVERY_MS` (`LISTED_BLURRED_MS` while the window is in the background),
-    never while the Add dialog is open; the shell calls `dispose()` on `pagehide`. Main answers
-    from what it holds: each openable row's `waiting` comes from its one
-    `packages/client/listed-waiting.mjs` scheduler, and asking starts no read.
+    `switchWorkspace(id, { takeOver: true })` (see common.mjs above).
+  - **Add local workspace…** (`openModal(opener)`, focus back on `opener` when it closes): this
+    computer's deployments not served (`discoverSuggestions`, asked only as it opens), each a
+    button that adds it and opens it here (`runAdd`, the main-validated add); then the stale rows
+    of this computer's list, each its state in a word (`LISTED_STATE_WORD`, the sentence
+    `LISTED_STATE_TEXT` in its tooltip and sr-only), opening nothing, with **Remove** beside it
+    (`runRemove`, `removeListed`: Right Arrow reaches it, Left Arrow or Esc come back). One
+    roving stop over them (`suggestionStop`). `#ws-confirm` is Onboard's alone. A window with
+    no workspace opens it at once when nothing is served (shell.mjs `showChooser`).
 - **Grouping by deployment** only when a view has two or more deployments: the sidebar
   roster (`rosterSections`, a heading per deployment named by `machineLabels` in the
   cluster-label type, a status mark when not live, none for a deployment without rows) and

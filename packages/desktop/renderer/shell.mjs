@@ -389,11 +389,15 @@ async function showChooser() {
   text.textContent = "This window has no workspace yet.";
   const choose = document.createElement("button");
   choose.type = "button"; choose.className = "primary"; choose.textContent = "Choose a workspace…";
-  choose.addEventListener("click", () => focusWorkspaceList());
+  // With workspaces to show, the button focuses the list; with none served (#518), it opens Add local workspace….
+  const chooseOne = () => { if (choosingWorkspaces().length) focusWorkspaceList(); else void workspaceLabel.openModal(choose); };
+  choose.addEventListener("click", chooseOne);
   el.append(heading, text, choose);
   stageHost.replaceChildren(el);
   workspaceLabel.choose(choosingWorkspaces());
-  focusWorkspaceList();
+  // Nothing served, so the list is empty: the window opens the Add dialog at once. Closing it leaves this
+  // stage, whose button opens it again.
+  chooseOne();
 }
 onWindowState((state) => {
   if (state === "choosing") { void showChooser(); return; }
@@ -533,6 +537,7 @@ const workspaceLabel = createWorkspaceSwitcher({
   addWorkspace: desktopBridge.workspaceAdd ? (path) => desktopBridge.workspaceAdd(path).then(noteUnlisted) : unavailableWorkspaceService,
   pickWorkspace: desktopBridge.workspacePick ? () => desktopBridge.workspacePick().then(noteUnlisted) : unavailableWorkspaceService,
   onboardWorkspace: desktopBridge.workspaceOnboard ? (token, ref) => desktopBridge.workspaceOnboard(token, ref).then((result) => { noteUnlisted(result?.added); return result; }) : null,
+  // The Add dialog's Remove of a row of this computer's list that can't be opened (#1390).
   removeListed: desktopBridge.workspaceRemoveListed || null,
   // After the kernel onboarded and the add selected the new deployment: land
   // on its Workspace view.

@@ -370,11 +370,9 @@ const deploymentWaits = (held, d, info) => info?.live === true && (deploymentPan
 /** The switcher's list: views, not deployments. Each names its deployments (a client lets a caller
  * select any of these ids); an unattached view keeps today's remote fields and says why. `waiting`
  * (boolean): some deployment of the view is live and has an instance that needs input
- * (`deploymentWaits`), from what the client holds, with no read; a deployment the client does not serve
- * is not here (listed-waiting.mjs says for those). `shown: true` when a window of this client shows the
- * view (`held.windowViews`, the Desktop's: the views its windows show, #1124); absent otherwise, and in a
- * client that holds no window views. `model` is a view model already built for this call (`viewModel`);
- * without one, it is built here. */
+ * (`deploymentWaits`), from what the client holds, with no read: a view the client does not serve has no
+ * row here, and so no dot. `model` is a view model already built for this call (`viewModel`); without
+ * one, it is built here. */
 export function workspaceChoices(held, terms, model) {
   requireTerms(terms, 'workspaceChoices');
   if (model === undefined) model = viewModel(held, terms);
@@ -392,7 +390,6 @@ export function workspaceChoices(held, terms, model) {
       machines: [...new Set(v.deployments.map((id) => model.infos.get(id)?.machine).filter(Boolean))],
       notLive: v.deployments.filter((id) => !model.infos.get(id)?.live).length,
       waiting: v.deployments.some((id) => { const d = served.find((w) => w.id === id); return !!d && deploymentWaits(held, d, model.infos.get(id)); }),
-      ...(Array.isArray(held.windowViews) && held.windowViews.includes(v.id) ? { shown: true } : {}),
       ...(v.key ? { key: v.key } : {}), ...(unmatched ? { unattached: true } : {}), ...(unmatched && v.reason ? { reason: v.reason } : {}), ...(unmatched && v.short ? { short: v.short } : {}), ...(unmatched && v.ref ? { ref: v.ref } : {}),
       ...(remoteOnly && primary?.remote ? { server: primary.server, remote: true } : {}) };
   });
