@@ -32,7 +32,7 @@ const knownDirsBlock = source.match(/const knownDirs = new Set\(\);\nconst knowD
 const suggestionListBlock = source.match(/\n  list: (async \(\) => \{\n    const read = await deploymentList\([^]*?\n  \}),\n/)[1];
 const startupBody = (() => {
   const head = 'const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => openLaunch(launchDirectory(argv, workingDirectory)), async () => {';
-  return between(head, '\n});\n\nif (primaryInstance)').slice(head.length);
+  return between(head, '\n}, ownLaunch(app), offerVersionRestart);\n\nif (primaryInstance)').slice(head.length);
 })();
 const FakeWindow = fakeWindowClass(RENDERER);
 
