@@ -40,17 +40,17 @@ function brainStyles() {
 
 const markup = `<div id="app"><aside id="sidebar">
   <div class="ctx-head ws-head"><span id="ws-heading" class="ws-heading">Workspaces</span>
-    <button id="ws-add-open" class="ws-add-open icon-button" type="button" aria-label="Add local workspace…"></button></div>
+    <button id="ws-add-open" class="ws-add-open side-icon-button icon-button" type="button" aria-label="Add local workspace…"></button></div>
   <section id="ws-list" class="ws-list"><div id="ws-options" class="ws-options"><ul class="ws-group">
     <li class="ws-option-row"><button class="ws-option ws-current" aria-current="true">One</button></li>
     <li class="ws-option-row"><button class="ws-option ws-other">Two</button></li></ul></div></section>
   <nav id="nav"><button class="nav-item active" aria-current="page"><span class="icon"></span><span class="label">Deployments</span></button><button class="nav-item"><span class="icon"></span><span class="label">Workspace</span></button></nav>
   <section id="instance-roster">
-    <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span><button id="sidebar-spawn" class="ws-add-open ctx-head-add icon-button" aria-label="Spawn instance">+</button></div>
+    <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span><button id="sidebar-spawn" class="side-icon-button ctx-head-add icon-button" aria-label="Spawn instance">+</button></div>
     <div class="ctx-list"><div class="ctx-tree-row"><button class="ctx-inst">Row</button>
       <span class="ctx-row-tools"><button class="ctx-instance-actions">…</button></span></div></div></section>
-  <div id="nav-foot" role="group" aria-label="Sidebar tools"><button id="sidebar-toggle" class="ws-add-open icon-button" type="button" aria-label="Hide the sidebar">S</button>
-    <button id="sidebar-settings" class="ws-add-open sidebar-settings icon-button" type="button" aria-label="Settings" aria-haspopup="menu"></button>
+  <div id="nav-foot" role="group" aria-label="Sidebar tools"><button id="sidebar-toggle" class="side-icon-button icon-button" type="button" aria-label="Hide the sidebar">S</button>
+    <button id="sidebar-settings" class="side-icon-button sidebar-settings icon-button" type="button" aria-label="Settings" aria-haspopup="menu"></button>
     <div id="sidebar-settings-menu" class="ctx-instance-menu sidebar-settings-menu" role="menu"><button role="menuitem" data-menu-action="app.themePicker">Theme…</button></div></div></aside>
   <main id="main"><div id="tabstrip"><div id="tabbar-row"><div id="tabbar">
     <div class="tab active"><button class="tab-trigger">Tab</button><button class="close">×</button></div>
@@ -172,7 +172,7 @@ test("focus: keyboard focus on plain shell controls paints the tint and the edge
   const u = fixture(t);
   // The nav's items, the headings' controls (Add local workspace…, Spawn instance), the foot's (the sidebar toggle,
   // the settings cog: the sidebar layout) and the settings menu's items are plain controls.
-  for (const selector of [".ws-option.ws-other", ".ws-option.ws-current", ".ws-add-open", "#nav .nav-item:not(.active)", "#nav .nav-item.active", "#ws-add-open", "#sidebar-spawn", "#sidebar-toggle", "#sidebar-settings",
+  for (const selector of [".ws-option.ws-other", ".ws-option.ws-current", ".side-icon-button", "#nav .nav-item:not(.active)", "#nav .nav-item.active", "#ws-add-open", "#sidebar-spawn", "#sidebar-toggle", "#sidebar-settings",
     ".sidebar-settings-menu [role=menuitem]", ".ctx-inst", ".tab-trigger", ".tab .close",
     "#tab-actions button", ".ws-suggestion", ".ws-dialog-foot .secondary", ".kb-chord", ".kb-close", ".ws-segmented [aria-pressed=false]",
     ".ctx-instance-menu button", ".ctx-instance-actions", ".lifecycle-close", ".lifecycle-review", ".lifecycle-check", ".oats-view .act:not(.primary):not(.danger)"]) {

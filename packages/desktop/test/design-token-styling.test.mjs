@@ -11,19 +11,19 @@ const theme = read("theme.css"), shell = read("shell.css");
 const icon = shellIcon("workspace");
 const markup = `<div id="app"><aside id="sidebar">
   <div class="ctx-head ws-head"><span id="ws-heading" class="ws-heading">Workspaces</span>
-    <button id="ws-add-open" class="ws-add-open icon-button" type="button" aria-label="Add local workspace…">${icon}</button></div>
+    <button id="ws-add-open" class="ws-add-open side-icon-button icon-button" type="button" aria-label="Add local workspace…">${icon}</button></div>
   <section id="ws-list" class="ws-list" aria-labelledby="ws-heading"><div id="ws-options" class="ws-options"><ul class="ws-group">
     <li class="ws-option-row"><button class="ws-option" aria-current="true"><span class="ctx-dot on" aria-hidden="true"></span><span class="ws-option-name">fixture</span><span class="sr-only">, needs input</span><span class="ws-waiting attn-mark" aria-hidden="true"></span></button></li>
     <li class="ws-option-row"><button class="ws-option"><span class="ws-option-name">other</span></button></li>
   </ul></div></section>
   <section id="ws-current" class="ws-current" aria-label="Current workspace"><nav id="nav"><button class="nav-item active"><span class="icon">${icon}</span><span class="label">Deployments</span></button><button class="nav-item"><span class="icon">${icon}</span><span class="label">Workspace</span></button></nav>
-  <section id="instance-roster"><div class="ctx-head roster-head"><span>Instances</span><span class="ctx-count">● 1 running</span><button id="sidebar-spawn" class="ws-add-open ctx-head-add icon-button" type="button" aria-label="Spawn instance">${icon}</button></div>
+  <section id="instance-roster"><div class="ctx-head roster-head"><span>Instances</span><span class="ctx-count">● 1 running</span><button id="sidebar-spawn" class="side-icon-button ctx-head-add icon-button" type="button" aria-label="Spawn instance">${icon}</button></div>
     <div class="ctx-list"><div class="ctx-deployment" role="heading" aria-level="3"><span class="ctx-deployment-label">altair</span><span class="deployment-mark" role="img" aria-label="remembered">${icon}</span></div><div class="ctx-tree-row"><button class="ctx-inst active"><span class="ctx-dot on"></span>
       <span class="ctx-copy"><span class="ctx-name">Fixture instance</span><span class="ctx-repo-label">fixture</span></span>
       <span class="runtime-badge ctx-runtime" data-runtime="claude">C</span>
     </button></div></div></section></section>
-  <div id="nav-foot" role="group" aria-label="Sidebar tools"><span class="sidebar-brand" aria-hidden="true"><img class="sidebar-brand-image" width="20" height="20" alt=""></span><button id="sidebar-toggle" class="ws-add-open icon-button" type="button" aria-label="Hide the sidebar">${icon}</button>
-    <button id="sidebar-settings" class="ws-add-open sidebar-settings icon-button" type="button" aria-label="Settings">${icon}</button>
+  <div id="nav-foot" role="group" aria-label="Sidebar tools"><span class="sidebar-brand" aria-hidden="true"><img class="sidebar-brand-image" width="20" height="20" alt=""></span><button id="sidebar-toggle" class="side-icon-button icon-button" type="button" aria-label="Hide the sidebar">${icon}</button>
+    <button id="sidebar-settings" class="side-icon-button sidebar-settings icon-button" type="button" aria-label="Settings">${icon}</button>
   </div></aside>
   <main id="main"><button id="show-sidebar" class="main-edge-control" hidden>${icon}</button><div id="tabstrip"><div id="tabbar-row"><div id="tabbar">
     <div class="tab active"><button class="tab-trigger">Fixture tab</button><button class="close">×</button></div>
@@ -209,7 +209,7 @@ test("nav and foot rhythm stays separate from the 48px roster rows", t => {
   }
   // The tools row went (2026-10-23): no rule is left for it, nor for the old foot buttons by id.
   assert.equal(shell.match(/#sidebar-(?:tools|toggle|theme|shortcuts)\b/), null, "no rule left for the tools row or its buttons");
-  // Spawn instance is the Instances heading's + now: the headings' icon button (.ws-add-open), with no styling of
+  // Spawn instance is the Instances heading's + now: the sidebar's icon button (.side-icon-button), with no styling of
   // its own but its place (last, after the count and "Refreshing…", which loading.mjs appends to the heading).
   assert.equal(shell.match(/#sidebar-spawn\b/), null, "Spawn instance has no styling of its own: it is the headings' +");
   const spawn = u.style("#sidebar-spawn");

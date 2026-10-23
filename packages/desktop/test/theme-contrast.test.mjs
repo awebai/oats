@@ -844,7 +844,7 @@ for (const [name] of palettes) test(`${name}: the nav's items meet computed AA i
 });
 
 // The sidebar's icon buttons (2026-10-23): Add local workspace…, the Instances heading's Spawn instance +, and the foot's
-// sidebar toggle and settings cog are one control style (.ws-add-open): --muted on the sidebar's --surface at rest, --fg on
+// sidebar toggle and settings cog are one control style (.side-icon-button): --muted on the sidebar's --surface at rest, --fg on
 // --surface-2 hovered, --fg on the --sel tint focused. The cog's menu (the instance actions' popover) holds its items in
 // --fg, their chords in --muted, on its --surface or the --sel of a hovered or focused item. A clash (keymapConflicts)
 // marks the cog and the menu's Keyboard shortcuts… with a --warn dot (WCAG 1.4.11, 3:1 on what it sits on).
@@ -866,18 +866,18 @@ for (const [name] of palettes) test(`${name}: Add local workspace…, Spawn inst
   const rule = selector => [...doc.styleSheets].flatMap(sheet => [...sheet.cssRules]).find(r => r.selectorText === selector)?.style;
   const noOpacity = (el, what) => { for (let node = el; node; node = node.parentElement) assert.equal(win.getComputedStyle(node).opacity, "1", `${what}: no opacity over it`); };
   assert.equal(token(win.getComputedStyle(doc.getElementById("sidebar")).background), "surface");
-  // One control style: each is a .ws-add-open, with no colour rule of its own.
+  // One control style: each is a .side-icon-button, with no colour rule of its own.
   const buttons = ["ws-add-open", "sidebar-spawn", "sidebar-toggle", "sidebar-settings"].map(id => doc.getElementById(id));
   for (const button of buttons) {
-    assert.ok(button.classList.contains("ws-add-open"), `${button.id}: the sidebar's icon-button style`);
+    assert.ok(button.classList.contains("side-icon-button"), `${button.id}: the sidebar's icon-button style`);
     const idle = win.getComputedStyle(button);
     assert.match(idle.background, /^(none|transparent|rgba\(0, 0, 0, 0\))?$/, `${button.id}: no fill at rest`);
     held(token(idle.color), "surface", TEXT_CONTRAST, `${button.id} at rest`);
     noOpacity(button, button.id);
   }
   assert.deepEqual([...shellCss.matchAll(/^([^{}]*#sidebar-(?:settings|spawn|toggle)[^{}]*)\{([^}]*)\}/gm)].filter(m => /(^|[\s;])(color|background)\s*:/.test(m[2]) && !/has-clash/.test(m[1])).map(m => m[1].trim()), [],
-    "none has a colour of its own: the .ws-add-open tokens are theirs");
-  for (const [state, selector] of [["hovered", ".ws-add-open:hover"], ["focused", ".ws-add-open:focus-visible"]]) {
+    "none has a colour of its own: the .side-icon-button tokens are theirs");
+  for (const [state, selector] of [["hovered", ".side-icon-button:hover"], ["focused", ".side-icon-button:focus-visible"]]) {
     const r = rule(selector); assert.ok(r, selector);
     held(token(r.color), token(r.background), TEXT_CONTRAST, `the headings' icon buttons ${state}`);
   }
@@ -1158,7 +1158,7 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     ['.ws-option[aria-current="true"] .ws-option-name', '#sidebar', 'fg', 'surface'],
     ['.ws-option:not([aria-current]) .ws-option-name', '#sidebar', 'fg', 'surface'],
     ['#ws-add-open', '#sidebar', 'muted', 'surface'],
-    // The sidebar's other icon buttons (2026-10-23), on the same .ws-add-open tokens: Spawn instance, the foot's toggle and cog.
+    // The sidebar's other icon buttons (2026-10-23), on the same .side-icon-button tokens: Spawn instance, the foot's toggle and cog.
     ['#sidebar-spawn', '#sidebar', 'muted', 'surface'], ['#sidebar-toggle', '#sidebar', 'muted', 'surface'], ['#sidebar-settings', '#sidebar', 'muted', 'surface'],
     // The sections' headings, the sidebar's top level (14px 600): --fg on the sidebar.
     ['.ctx-head.ws-head', '#sidebar', 'fg', 'surface'], ['#instance-roster > .ctx-head', '#sidebar', 'fg', 'surface'],

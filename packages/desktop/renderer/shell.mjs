@@ -955,7 +955,7 @@ function renderContextRoster(instances) {
   const rowHeldStale = (row) => rosterStale || rowStale(row, contextDeployments);
   // Needs input (Spec D): waiting rows a collapse hides, on their nearest visible ancestor. Derived on every
   // paint over the full roster, so expanding the parent drops it and the children show their own marks.
-  const waitingBelow = waitingRollup(instances, collapsedInstances, ws, { filtering: false, stale: rowHeldStale, section: rowSection });
+  const waitingBelow = waitingRollup(instances, collapsedInstances, ws, { stale: rowHeldStale, section: rowSection });
   if (!visible.length) {
     listEl.innerHTML = `<div class="ctx-empty">No instances.</div>`;
     paintNote();
@@ -2593,18 +2593,23 @@ const themePicker = createThemePicker({ doc: document, themes: THEMES, current: 
 window.addEventListener('pagehide', () => themePicker.dispose(), { once: true });
 
 /** The sidebar's way into the instances, never nothing (the roster's filter was that once): the roster's current
- * row (the roving stop), else its first row, else a control the roster shows (Retry, after a failed read), else the
- * list of workspaces' stop, else its Add local workspace…, always shown with the sidebar. */
+ * row (the roving stop), else its first row, else a control the roster shows (Retry, after a failed read), else, on
+ * an empty roster, its one action, the Instances heading's Spawn instance + (F6's stop there too, focus-regions.mjs:
+ * one way into an empty roster), else, while the roster is hidden (no workspace), the list of workspaces' stop, else
+ * its Add local workspace…, always shown with the sidebar. */
 function rosterEntry() {
   const list = contextRosterEl?.querySelector(".ctx-list");
-  // A control the roster shows (Retry, in its notice or its failed block), never its heading's Spawn instance +.
+  const spawn = document.getElementById("sidebar-spawn");
+  // A control the roster shows (Retry, in its notice or its failed block) before its heading's Spawn instance +.
   return list?.querySelector('.ctx-inst[tabindex="0"]') || list?.querySelector(".ctx-inst")
     || contextRosterEl?.querySelector(':scope > :not(.ctx-head) button:not([disabled])')
+    || (spawn && !spawn.disabled && !spawn.closest("[hidden]") ? spawn : null)
     || document.querySelector('#ws-options [tabindex="0"]') || document.getElementById("ws-add-open");
 }
 
 /** sidebar.focusFilter, kept under its id (a keys.json rebind still applies) since the roster's filter went
- * (the command palette finds an instance by name): focus the roster's current row, else rosterEntry's next best. */
+ * (the command palette finds an instance by name): focus the roster's current row, else rosterEntry's next best
+ * (an empty roster's Spawn instance +). */
 function focusRoster() {
   tabOpenIntents.invalidate(); // also when the roster already has DOM focus
   contextPanel.setFocusMode(false);

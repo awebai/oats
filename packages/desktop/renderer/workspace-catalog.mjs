@@ -411,12 +411,12 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, pr
 }
 
 /** The jump segment for the section at the top of the scroller (called on scroll): All capabilities' sections
- * only, so the defaults above them never make one current. The jump is looked for in `navHost`, then in `host`
- * (where it sits now, under All capabilities' title). The top is the pinned toolbar's bottom edge when `navHost`
- * sits in one (spec G), so a section under it is not "in view". */
-export function syncCapabilityNav(host, scroller, navHost = host) {
-  const nav = navHost.querySelector('.capability-nav') || host.querySelector('.capability-nav'); if (!nav || !scroller?.getBoundingClientRect) return;
-  const pinned = navHost.closest?.('.ws-sticky');
+ * only, so the defaults above them never make one current. The jump sits in `host`, under All capabilities'
+ * title. The top is the pinned toolbar's bottom edge when `toolbar` sits in one (spec G), so a section under it
+ * is not "in view"; else the scroller's own top. */
+export function syncCapabilityNav(host, scroller, toolbar = null) {
+  const nav = host.querySelector('.capability-nav'); if (!nav || !scroller?.getBoundingClientRect) return;
+  const pinned = toolbar?.closest?.('.ws-sticky');
   const top = (pinned ? pinned.getBoundingClientRect().bottom : scroller.getBoundingClientRect().top) + 24;
   let current = null;
   for (const el of host.querySelectorAll('.capability-part .capability-section')) if (el.getBoundingClientRect().top <= top) current = el.dataset.section;

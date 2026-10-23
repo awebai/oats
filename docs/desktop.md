@@ -222,7 +222,9 @@ each with its shortcut. Connections is in the command palette (**Settings:
 Connections…**), and the palette opens with its shortcut or Ctrl+X then `k`.
 The instances have no search field: to find one by name, type it in the
 command palette, which opens its terminal. ⌘F / Alt+F (**Focus the
-instance roster**) and `/` in the sidebar go to the roster's current row.
+instance roster**) and `/` in the sidebar go to the roster's current row;
+on an empty roster, to its one action, **Spawn instance +**, where F6 lands
+too (a failed read's **Retry** comes first).
 
 The list of workspaces is always shown. Its heading holds **Add local
 workspace…** (the **+**). The list has one row per workspace this window can show, whatever

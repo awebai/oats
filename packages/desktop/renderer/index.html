@@ -28,7 +28,7 @@
            the settings cog at its right end. -->
       <div class="ctx-head ws-head">
         <span id="ws-heading" class="ws-heading">Workspaces</span>
-        <button id="ws-add-open" class="ws-add-open icon-button" type="button" aria-label="Add local workspace…" title="Add local workspace…"></button>
+        <button id="ws-add-open" class="ws-add-open side-icon-button icon-button" type="button" aria-label="Add local workspace…" title="Add local workspace…"></button>
       </div>
       <!-- The workspace list (workspace-switcher.mjs): always shown, one row per workspace, a list of buttons. -->
       <section id="ws-list" class="ws-list" aria-labelledby="ws-heading">
@@ -38,7 +38,7 @@
       <section id="ws-current" class="ws-current" aria-label="Current workspace">
         <nav id="nav" aria-label="Main views"></nav>
         <section id="instance-roster" aria-label="Instances">
-          <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span><button id="sidebar-spawn" class="ws-add-open ctx-head-add icon-button"
+          <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span><button id="sidebar-spawn" class="side-icon-button ctx-head-add icon-button"
             type="button" data-action="app.chooseSoul" title="Spawn instance" aria-label="Spawn instance"><span data-shell-icon="plus" aria-hidden="true"></span></button></div>
           <div class="ctx-list"></div>
         </section>
@@ -47,9 +47,9 @@
            builds its menu). -->
       <div id="nav-foot" role="group" aria-label="Sidebar tools">
         <span class="sidebar-brand" aria-hidden="true"><img class="sidebar-brand-image" src="../assets/brand/generated/sidebar-48.png" width="20" height="20" alt="" draggable="false"></span>
-        <button id="sidebar-toggle" class="ws-add-open icon-button" type="button" data-action="sidebar.toggle"
+        <button id="sidebar-toggle" class="side-icon-button icon-button" type="button" data-action="sidebar.toggle"
                 title="Hide the sidebar" aria-label="Hide the sidebar" aria-controls="sidebar" aria-expanded="true"><span data-shell-icon="sidebar" aria-hidden="true"></span></button>
-        <button id="sidebar-settings" class="ws-add-open sidebar-settings icon-button" type="button" aria-label="Settings" title="Settings"></button>
+        <button id="sidebar-settings" class="side-icon-button sidebar-settings icon-button" type="button" aria-label="Settings" title="Settings"></button>
       </div>
     </aside>
     <div id="workbench">

@@ -134,16 +134,19 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
     return null;
   }
 
-  /** Move to the next (delta 1) or previous (-1) visible region that can take focus. */
+  /** Move to the next (delta 1) or previous (-1) visible region that can take focus. The walk goes
+   * through every region in order from where focus is, skipping the hidden ones, so a hidden anchor
+   * keeps its place: F6 from the foot with the roster hidden (no workspace) goes on to main. */
   function cycle(delta) {
-    const order = REGIONS.filter(visible);
-    if (!order.length) return false;
+    if (!REGIONS.some(visible)) return false;
     // From the foot (below the roster): F6 goes on as from the roster, Shift+F6 back as from main.
     const inFoot = !!byId("nav-foot")?.contains(doc.activeElement);
-    const at = inFoot ? order.indexOf(delta > 0 ? "roster" : "main") : order.indexOf(regionOfFocus());
-    for (let i = 1; i <= order.length; i++) {
-      const index = at < 0 ? (delta > 0 ? i - 1 : order.length - i) : (at + delta * i + order.length * i) % order.length;
-      if (focusRegion(order[index])) return true;
+    const at = REGIONS.indexOf(inFoot ? (delta > 0 ? "roster" : "main") : regionOfFocus());
+    const n = REGIONS.length;
+    for (let i = 1; i <= n; i++) {
+      // Outside every region (body, a dialog): the first region F6 meets, or the last for Shift+F6.
+      const index = at < 0 ? (delta > 0 ? i - 1 : n - i) : (((at + delta * i) % n) + n) % n;
+      if (focusRegion(REGIONS[index])) return true;
     }
     return false;
   }

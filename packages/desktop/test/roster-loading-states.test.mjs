@@ -126,11 +126,14 @@ test('createRosterLoading wires the shipped chrome: list region, head indicator,
   status.querySelector('.loading-retry').focus(); state.begin(); state.succeed({ observedAt: new Date(c.now()).toISOString() });
   assert.equal(doc.activeElement, list.querySelector('.ctx-inst[tabindex="0"]'));
   assert.equal(status.children.length, 0);
-  // With no rows (an empty roster): the list of workspaces' stop, else its Add local workspace…; never nothing.
+  // With no rows (an empty roster): its one action, the heading's Spawn instance + (the shell's rosterEntry rule),
+  // else (no + to take it) the list of workspaces' stop, else its Add local workspace…; never nothing.
   const retryAgain = () => { state.begin(); c.advance(1_000); state.fail(new Error('boom')); status.querySelector('.loading-retry').focus();
     state.begin(); state.succeed({ observedAt: new Date(c.now()).toISOString() }); };
   list.innerHTML = '<div class="ctx-empty">No instances.</div>';
   doc.getElementById('ws-options').innerHTML = '<ul class="ws-group"><li class="ws-option-row"><button type="button" class="ws-option" aria-current="true" tabindex="0">A</button></li></ul>';
+  retryAgain(); assert.equal(doc.activeElement, doc.getElementById('sidebar-spawn'), 'an empty roster: Spawn instance +');
+  doc.getElementById('sidebar-spawn').hidden = true;
   retryAgain(); assert.equal(doc.activeElement, doc.querySelector('#ws-options .ws-option'));
   doc.getElementById('ws-options').innerHTML = '';
   retryAgain(); assert.equal(doc.activeElement, doc.getElementById('ws-add-open'));
@@ -958,9 +961,9 @@ test('a read releases this window\'s retire only when it observed the row\'s dep
 });
 
 // The stale line's Retry hands focus to the last answer's row (focusFallback) as it goes, before this answer is
-// painted; that row may not survive the paint. Focus then goes to rosterEntry(): this answer's row, else the
-// heading's Add local workspace… (no workspace row in this fixture), never <body>.
-for (const [rows, expected] of [[[row('new-row')], 'the new row'], [[], 'Add local workspace…']]) test(`a stale Retry whose row the answer removes lands on ${expected}`, async t => {
+// painted; that row may not survive the paint. Focus then goes to rosterEntry(): this answer's row, else, the
+// roster now empty, its one action, the Instances heading's Spawn instance +; never <body>.
+for (const [rows, expected] of [[[row('new-row')], 'the new row'], [[], 'Spawn instance +']]) test(`a stale Retry whose row the answer removes lands on ${expected}`, async t => {
   const s = shell(t);
   await s.reply(0, panelOf('A', [row('old-row')]));
   s.refreshContextRoster(); await s.fail(1, new Error('bridge down'));
@@ -968,7 +971,7 @@ for (const [rows, expected] of [[[row('new-row')], 'the new row'], [[], 'Add loc
   retry.focus(); retry.click(); assert.equal(s.doc.activeElement, retry);
   await s.reply(2, panelOf('A', rows));
   assert.equal(s.status().querySelector('.loading-notice'), null, 'the stale line went');
-  const want = rows.length ? s.list().querySelector('.ctx-inst') : s.doc.getElementById('ws-add-open');
+  const want = rows.length ? s.list().querySelector('.ctx-inst') : s.doc.getElementById('sidebar-spawn');
   assert.ok(want, expected);
   assert.equal(s.doc.activeElement, want);
   if (rows.length) assert.equal(s.list().querySelectorAll('.ctx-inst[tabindex="0"]').length, 1, 'one roving stop');

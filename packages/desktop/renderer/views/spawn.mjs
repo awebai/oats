@@ -152,16 +152,19 @@ let pendingWorkspaceTab = null;
 let selectionIntent = 0;
 function nextSelectionIntent() {
   // A newer choice in an already-mounted Workspace must also supersede a
-  // shell/footer handoff still waiting on its module import. Shell handoffs
-  // check their ticket before entering here; never mint a fresh ticket on
-  // behalf of an arrival that has already lost foreground ownership.
+  // shell handoff still waiting on its module import (a Workspace tab opened
+  // from outside the page: Spawn instance's +, ⌘3, the palette; Quick Open;
+  // a roster row's Inspect). Shell handoffs check their ticket before
+  // entering here; never mint a fresh ticket on behalf of an arrival that
+  // has already lost foreground ownership.
   if (state?.alive) state.ctx.onSelectionIntent?.();
   return { intent: ++selectionIntent, gen: workspaceGeneration() };
 }
 function ownsSelection(s, ref) {
   return s.alive && ref.gen === workspaceGeneration() && ref.intent === selectionIntent;
 }
-/** Shell footer navigation is an inspection intent, never a launch. */
+/** The shell's navigation to a Workspace tab (Spawn instance's + and its chord on Souls, ⌘3 on
+ * Automations, the leader's 3 on Capabilities, the palette's) is an inspection intent, never a launch. */
 export function preselectWorkspaceTab(name) {
   if (!workspaceTabs.includes(name)) return false;
   pendingWorkspaceTab = { name, ...nextSelectionIntent() };

@@ -132,6 +132,24 @@ test("from a control inside a region (the workspace list, a row's tools, a headi
   }
 });
 
+// A window with no workspace hides the roster (shell.mjs): the foot, below where the roster would be, still
+// moves on as from there.
+test("F6 with the roster hidden: from the foot on to main, Shift+F6 back to the views, never the first region", t => {
+  const s = shell(t);
+  s.doc.getElementById("instance-roster").hidden = true;
+  assert.deepEqual(REGIONS.filter(s.regions.visible), ["workspaces", "views", "main", "panel"]);
+  for (const id of ["sidebar-toggle", "sidebar-settings"]) {
+    s.doc.getElementById(id).focus(); assert.equal(s.regions.cycle(1), true);
+    assert.equal(s.where(), "Souls", `from the foot's ${id}, main (not the workspaces)`);
+    s.doc.getElementById(id).focus(); assert.equal(s.regions.cycle(-1), true);
+    assert.equal(s.where(), "Workspace", `Shift+F6 from the foot's ${id}, the views above the hidden roster`);
+  }
+  s.doc.querySelector("#nav button").focus(); s.regions.cycle(1);
+  assert.equal(s.where(), "Souls", "from the views past the hidden roster, main");
+  s.regions.cycle(-1);
+  assert.equal(s.where(), "Workspace", "and Shift+F6 from main back to the views");
+});
+
 test("hidden regions are skipped: a hidden sidebar, focus mode, an empty panel", t => {
   const s = shell(t);
   s.doc.getElementById("app").classList.add("sidebar-hidden");
@@ -258,6 +276,38 @@ test("return: from a roster row while a terminal was visible, the tab comes back
   assert.equal(u.back.restore(origin), true);
   assert.deepEqual(u.calls, [["tab", 1, false]], "same stage under it: no stage switch; the tab without taking focus");
   assert.equal(u.doc.activeElement, row);
+});
+
+test("return: a terminal tab over Workspace › Automations comes back with Automations under it, not Souls", async t => {
+  // Workspace › Automations, a terminal tab opened over it, Quick Open, a soul picked (the dialog opens on Souls), Esc.
+  const u = surfaces(t, { stage: "spawn", tab: 1, workspaceTab: "automations" });
+  u.terminal.focus();
+  const origin = u.back.capture(captureFocusReturn(u.doc));
+  assert.equal(origin.workspaceTab, "automations", "the page under the tabs is part of where they were");
+  u.move();
+  assert.equal(u.back.restore(origin), true);
+  assert.deepEqual(u.calls, [["workspaceTab", "automations"], ["tab", 1, true]], "the page's tab first, then the terminal, focused");
+  assert.equal(u.doc.activeElement, u.terminal);
+  // Closing the terminal shows the stage under it: Automations, not the Souls tab the dialog opened on.
+  u.state.layer = false;
+  assert.equal(u.state.stage, "spawn");
+  assert.equal(u.state.workspaceTab, "automations");
+  // A tab the page can't show any more: the terminal still comes back (the page stays where it is).
+  const v = surfaces(t, { stage: "spawn", tab: 1, workspaceTab: "automations" });
+  v.terminal.focus();
+  const again = v.back.capture(captureFocusReturn(v.doc));
+  v.move(); v.hooks.selectable = false;
+  assert.equal(v.back.restore(again), true);
+  assert.deepEqual(v.calls, [["workspaceTab", "automations"], ["tab", 1, true]]);
+  assert.equal(v.doc.activeElement, v.terminal);
+  assert.equal(v.state.workspaceTab, "souls");
+  // Already on that tab: no tab switch.
+  const w = surfaces(t, { stage: "spawn", tab: 1, workspaceTab: "souls" });
+  w.terminal.focus();
+  const same = w.back.capture(captureFocusReturn(w.doc));
+  w.move();
+  assert.equal(w.back.restore(same), true);
+  assert.deepEqual(w.calls, [["tab", 1, true]]);
 });
 
 // Workspace › Automations: the dialog opens on Souls, and leaving Automations disposes its panel (syncAutomations).

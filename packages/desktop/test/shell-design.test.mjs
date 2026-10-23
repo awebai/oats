@@ -18,6 +18,7 @@ import { createSettingsMenu } from "../renderer/sidebar-settings.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
 import { revealInScrollport } from "../renderer/reveal-in-scrollport.mjs";
+import { createFocusRegions } from "../renderer/focus-regions.mjs";
 import { rosterResponseOwns, rosterSignature } from "../renderer/instance-tree-view.mjs";
 import { staleWorkspaceSelection } from "../renderer/views/common.mjs";
 import { createPendingWatch, NOT_SERVED_CODE, NO_ANSWER_CODE } from "../renderer/deployment-header.mjs";
@@ -276,7 +277,8 @@ test("the foot is the OATS mark, the sidebar toggle and the settings cog (theme,
   assert.equal(foot, q("sidebar").lastElementChild, "the sidebar's bottom row");
   for (const button of [q("sidebar-toggle"), q("sidebar-settings")]) {
     assert.equal(button.type, "button"); assert.equal(button.hidden, false); assert.equal(button.disabled, false); assert.ok(button.tabIndex >= 0);
-    assert.ok(button.classList.contains("ws-add-open") && button.classList.contains("icon-button"), `${button.id}: the sidebar's small icon button`);
+    assert.ok(button.classList.contains("side-icon-button") && button.classList.contains("icon-button"), `${button.id}: the sidebar's small icon button`);
+    assert.equal(button.classList.contains("ws-add-open"), false, `${button.id}: not Add local workspace…'s own class`);
     assert.ok(button.querySelector('svg[aria-hidden="true"]'), `${button.id}: an icon, hidden from assistive tech`);
     assert.equal(button.textContent.trim(), "", `${button.id}: icon only`);
   }
@@ -299,7 +301,7 @@ test("the foot is the OATS mark, the sidebar toggle and the settings cog (theme,
   assert.equal(toggle.getAttribute("aria-expanded"), "true");
   assert.equal(toggle.querySelector("[data-shell-icon]")?.dataset.shellIcon, "sidebar");
   assert.equal(toggle.title, "Hide the sidebar (Ctrl+Shift+B)", "the title is the label, then the bound chord");
-  assert.match(html, /<button id="sidebar-toggle" class="ws-add-open icon-button" type="button" data-action="sidebar\.toggle"\s+title="Hide the sidebar" aria-label="Hide the sidebar" aria-controls="sidebar" aria-expanded="true">/, "the markup says the same before scripts run");
+  assert.match(html, /<button id="sidebar-toggle" class="side-icon-button icon-button" type="button" data-action="sidebar\.toggle"\s+title="Hide the sidebar" aria-label="Hide the sidebar" aria-controls="sidebar" aria-expanded="true">/, "the markup says the same before scripts run");
   // The cog: an icon button with its name, its menu's state and its menu.
   const cog = q("sidebar-settings");
   assert.equal(cog.getAttribute("aria-label"), "Settings"); assert.equal(cog.title, "Settings");
@@ -318,9 +320,11 @@ test("the foot is the OATS mark, the sidebar toggle and the settings cog (theme,
   assert.deepEqual([...head.children].map(el => el.id || el.className || el.textContent), ["Instances", "ctx-count", "sidebar-spawn"]);
   const spawn = q("sidebar-spawn");
   assert.equal(spawn.type, "button"); assert.equal(spawn.hidden, false); assert.equal(spawn.disabled, false); assert.ok(spawn.tabIndex >= 0);
-  assert.ok(spawn.classList.contains("ws-add-open") && spawn.classList.contains("ctx-head-add") && spawn.classList.contains("icon-button"), "the headings' +, as Add local workspace…");
+  assert.ok(spawn.classList.contains("side-icon-button") && spawn.classList.contains("ctx-head-add") && spawn.classList.contains("icon-button"), "the headings' +, as Add local workspace…");
+  assert.equal(spawn.classList.contains("ws-add-open"), false, "not Add local workspace…'s own class");
+  assert.ok(q("ws-add-open").classList.contains("side-icon-button") && q("ws-add-open").classList.contains("ws-add-open"), "Add local workspace…: the shared style and its own class");
   assert.equal(spawn.getAttribute("aria-label"), "Spawn instance");
-  assert.match(html, /id="sidebar-spawn" class="ws-add-open ctx-head-add icon-button"\s+type="button" data-action="app\.chooseSoul" title="Spawn instance" aria-label="Spawn instance">/, "the markup says the same before scripts run");
+  assert.match(html, /id="sidebar-spawn" class="side-icon-button ctx-head-add icon-button"\s+type="button" data-action="app\.chooseSoul" title="Spawn instance" aria-label="Spawn instance">/, "the markup says the same before scripts run");
   assert.equal(spawn.title, "Spawn instance (Ctrl+Shift+N)", "the title is the label, then the bound chord");
   assert.equal(spawn.querySelector("[data-shell-icon]")?.dataset.shellIcon, "plus");
   assert.ok(spawn.querySelector('svg[aria-hidden="true"]'));
@@ -839,7 +843,7 @@ test('focusRoster exits focus mode, reveals the sidebar and focuses the roster\'
   assert.equal(listActions().find(a => a.id === 'sidebar.focusFilter')?.label, 'Focus the instance roster', 'same id, relabelled');
 });
 
-test('focusRoster without a roving stop lands on the first row, else Retry, else the workspace list: never nothing', t => {
+test('focusRoster without a roving stop lands on the first row, else Retry, else Spawn instance +, else (no roster) the workspace list: never nothing', t => {
   const s = shell(t), q = id => s.document.getElementById(id), list = s.document.querySelector('#instance-roster .ctx-list');
   const rows = s.paintRows(-1);
   q('sidebar-spawn').focus(); runAction('sidebar.focusFilter');
@@ -855,13 +859,35 @@ test('focusRoster without a roving stop lands on the first row, else Retry, else
   q('sidebar-spawn').focus(); runAction('sidebar.focusFilter');
   assert.equal(s.document.activeElement, notice.firstElementChild, "a stale notice's Retry");
   notice.remove();
+  // No instances: the roster's one action, Spawn instance + (as F6's: see the next test), never the workspaces.
   list.innerHTML = '<div class="ctx-empty">No instances.</div>';
   q('ws-options').innerHTML = '<ul class="ws-group"><li class="ws-option-row"><button type="button" class="ws-option" aria-current="true" tabindex="0">A</button></li></ul>';
-  q('sidebar-spawn').focus(); runAction('sidebar.focusFilter');
-  assert.equal(s.document.activeElement, q('ws-options').querySelector('.ws-option'), 'no instances: the list of workspaces\' stop');
+  q('ws-add-open').focus(); runAction('sidebar.focusFilter');
+  assert.equal(s.document.activeElement, q('sidebar-spawn'), 'an empty roster: its Spawn instance +');
+  // A window with no workspace hides the roster, its + included: the list of workspaces' stop.
+  q('instance-roster').hidden = true;
+  q('sidebar-spawn').blur(); runAction('sidebar.focusFilter');
+  assert.equal(s.document.activeElement, q('ws-options').querySelector('.ws-option'), 'no roster: the list of workspaces\' stop');
   q('ws-options').innerHTML = '';
-  q('sidebar-spawn').focus(); runAction('sidebar.focusFilter');
+  s.document.body.focus(); runAction('sidebar.focusFilter');
   assert.equal(s.document.activeElement, q('ws-add-open'), 'and with no workspace row: Add local workspace…');
+});
+
+// One rule for an empty roster (the product owner): its keyboard way in is its one action, Spawn instance +, by
+// F6 (the region cycle needs a stop inside the roster) and by ⌘F / Alt+F alike; a failed read's Retry comes first.
+test('an empty roster: F6 and ⌘F / Alt+F (sidebar.focusFilter) both land on Spawn instance +, a Retry before it', t => {
+  const s = shell(t), q = id => s.document.getElementById(id), list = s.document.querySelector('#instance-roster .ctx-list');
+  const regions = createFocusRegions({ doc: s.document });
+  s.document.getElementById('nav').innerHTML = '<button type="button" class="nav-item" aria-current="page">Workspace</button>';
+  q('ws-options').innerHTML = '<ul class="ws-group"><li class="ws-option-row"><button type="button" class="ws-option" aria-current="true" tabindex="0">A</button></li></ul>';
+  list.innerHTML = '<div class="ctx-empty">No instances.</div>';
+  const ways = {
+    F6: () => { s.document.querySelector('#nav button').focus(); regions.cycle(1); },
+    'sidebar.focusFilter': () => { q('ws-add-open').focus(); runAction('sidebar.focusFilter'); },
+  };
+  for (const [name, go] of Object.entries(ways)) { go(); assert.equal(s.document.activeElement, q('sidebar-spawn'), `${name}: Spawn instance +`); }
+  list.innerHTML = '<div class="loading-failed"><button type="button" class="act">Retry</button></div>';
+  for (const [name, go] of Object.entries(ways)) { go(); assert.equal(s.document.activeElement, list.querySelector('.act'), `${name}: a failed read's Retry first`); }
 });
 
 test('panel.toggle defaults to ⌘I / Ctrl+Shift+I (no conflict) and fires in a terminal; focus mode has no default and does not', t => {

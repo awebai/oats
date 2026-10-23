@@ -481,7 +481,7 @@ answers the view that holds it; no `?ws=` answers the first view.
 - `workspaces` is the switcher's list of views, each with its `deployments`
   ids, `deploymentLabels`, `machines` (each machine once, in order) and
   `notLive` (how many of its deployments aren't live, stale ones included). The Desktop's list
-  shows the name alone, one line, and the dot (`waiting`): never a machine, a
+  shows the name alone, one line, and the needs-input mark (`waiting`): never a machine, a
   path, an id or a reason. Unattached views carry `unattached`, their
   `reason`, `short` and the `ref` they report, and are listed after the
   matched ones in the same list; choosing one opens its tab on the Deployments page

@@ -13,7 +13,8 @@
 // Within Workspace, the page's own tab is part of the surface: the dialog opens on Souls, and a tab
 // left behind may have disposed its panel (Automations, views/spawn.mjs syncAutomations). The return
 // goes back to that tab, then to the control they left or, while the tab's panel is still loading
-// its controls, to the tab itself.
+// its controls, to the tab itself. A terminal tab over the Workspace page comes back with the page
+// under it on its tab too, so closing the terminal shows the tab they left.
 
 /**
  * @param {object} deps
@@ -59,6 +60,11 @@ export function createSurfaceReturn({ doc, currentWorkspace, workspaceGeneration
       if (!pane) return false;
       // The stage under the tabs is part of where they were too (the nav highlight, the sidebar).
       if (origin.stage && origin.stage !== now.stage) void showStage(origin.stage);
+      // The Workspace page under the tabs keeps its own tab: the dialog opened on Souls, and closing the
+      // terminal later must show the tab they left (Automations), not Souls. A tab the page can't show any
+      // more leaves it on Souls; the terminal comes back regardless, being where they were. Before the tab:
+      // the page's choice is a selection intent, which supersedes older ones, and selectTab's begins after it.
+      else if (origin.workspaceTab && origin.workspaceTab !== now.workspaceTab) selectWorkspaceTab(origin.workspaceTab);
       const inPane = !!origin.original && pane.contains(origin.original);
       if (!selectTab(origin.tab, { focusContent: inPane || !origin.opener })) return false;
       // Focus was outside the tab's content (the roster, the tab strip): put it back there.

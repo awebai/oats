@@ -436,7 +436,7 @@ split into sections) is `packages/client/roster-sections.mjs`.
   `--border` line over it (`.ws-current::before`, the sidebar's full width, under the list; none before
   Instances), the main views (`#nav`, Workspace and Deployments side by side, no title) on the list's 8px
   sides, 8px under the line and 8px before the Instances heading, then the Instances heading (its text, the
-  count, then **Spawn instance**, `#sidebar-spawn`, a `.ws-add-open` **+**
+  count, then **Spawn instance**, `#sidebar-spawn`, a `.side-icon-button` **+**
   running `app.chooseSoul`; CSS `order: 1` keeps it after the "Refreshing…" that loading.mjs appends, which this
   heading shows as its dot alone, the words clipped for assistive tech, so the + never leaves its column) over the
   roster; the bottom bar (`#nav-foot`, `role="group"` "Sidebar tools", under a `--border` line). The headings
@@ -447,8 +447,9 @@ split into sections) is `packages/client/roster-sections.mjs`.
   mark (`.sidebar-brand`, the generated `sidebar-48.png` drawn at 20px, decorative: `aria-hidden`, an empty
   alt, no tab stop), then at the right end, 2px apart, the sidebar toggle (`#sidebar-toggle`,
   `sidebar.toggle`, its `aria-expanded` kept by `updateSidebarControls`) and the settings cog
-  (`#sidebar-settings`, `sidebar-settings.mjs`: Theme…, Keyboard shortcuts…), 24px `.ws-add-open` boxes with
-  14px icons. The palette has no button: it has its own chord, and **Settings: Connections…**, Connections'
+  (`#sidebar-settings`, `sidebar-settings.mjs`: Theme…, Keyboard shortcuts…), 24px `.side-icon-button` boxes with
+  14px icons. `.side-icon-button` is the sidebar's one icon-button style (box, colours, hover, focus), on these
+  four; `.ws-add-open` stays on Add local workspace… alone, for its place at the heading's end. The palette has no button: it has its own chord, and **Settings: Connections…**, Connections'
   only entry. **One right-hand column**: the headings' + (28px boxes, `.ctx-head`'s 11px right padding), the
   workspace rows' 14px needs-input mark (the list's 8px, the row's 8px, `.ws-waiting`'s 2px margin), the
   instance rows' 18px harness mark (the list's 8px, `.ctx-inst`'s 8px) and the bottom bar's cog (its 13px,
@@ -459,8 +460,11 @@ split into sections) is `packages/client/roster-sections.mjs`.
   filter field (the TUI keeps its own): the palette finds an instance by name. `sidebar.focusFilter`
   keeps its id, chord and leader key (**Focus the instance roster**): `focusRoster` lands on
   `rosterEntry()`, the roster's current row, else its first row, else a control it shows under its heading
-  (Retry; never the heading's Spawn instance), else the list of workspaces' stop, else **Add local
-  workspace…**, so focus never falls to `<body>`. The same entry takes focus when the last terminal tab closes.
+  (Retry, before the heading's Spawn instance), else, on an empty roster, its one action, the heading's
+  **Spawn instance +** (F6's stop in an empty roster too: one way in, the product owner's rule), else, while the
+  roster is hidden (a window with no workspace), the list of workspaces' stop, else **Add local workspace…**, so
+  focus never falls to `<body>`. The same entry takes focus when the last terminal tab closes, and a focused Retry
+  that goes on an empty answer hands focus to the same + (instance-tree-view.mjs `focusFallback`).
 - **No deployments above the navigation.** The sidebar lists no deployments; the Deployments
   page and the roster headings say where things run (UI spec, after the operator rejected a
   deployments block under the workspace switcher). The list of workspaces lists views.
@@ -475,15 +479,15 @@ split into sections) is `packages/client/roster-sections.mjs`.
   shared `workspaceChoiceLabels` falls back to for the TUI): no other mark, no
   muted line, no not-live mark, no per-row button. Its tooltip is the whole name (a long one is
   cut by an ellipsis), never a path or a machine. Rows cut off below the bounded height are
-  counted under the list (`.ws-more`, `moreBelowText`, aria-hidden), with the rows' `.ws-waiting`
-  dot after the count when one of them waits (the TUI's `+N ●`). `reset(current)` (a switch
+  counted under the list (`.ws-more`, `moreBelowText`, aria-hidden), with the rows' needs-input
+  mark (`.ws-waiting.attn-mark`, the "!" disc) after the count when one of them waits (the TUI's `+N ●`). `reset(current)` (a switch
   landed) keeps the rows and marks `current`; a pick on its way (`pickedId`) is where `step`
   goes on from, and a pick of the current row supersedes it. Choosing an unattached row also
   calls `requestDeploymentTab`, so the Deployments page opens on its tab.
   - The current row is `aria-current="true"`, marked by style alone (its circle filled in
     `--accent`, the name in bold; no fill or edge of its own, `--sel` is the nav's); the section's `aria-description` names the current workspace by its row's name, never a path.
-  - The dot: `choice.waiting`, only `true` draws it (`.ws-waiting` at the row's far right, `margin-left: auto`, the name cut off before it; a yellow
-    `--attn-dot` fill in a 1px `--warn` ring, the needs-input colour of the roster and the tabs, which holds 3:1 on every row fill), with `WAITING_NAME` (", needs input", sr-only in the name) and
+  - The needs-input mark: `choice.waiting`, only `true` draws it (`.ws-waiting` at the row's far right, `margin-left: auto`, the name cut off before it;
+    the `.attn-mark` icon, shell-icons.mjs `attention`: a `--warn` disc with the "!" cut out in `--surface`, the mark of an instance's Needs input pill too, which holds 3:1 on every row fill), with `WAITING_NAME` (", needs input", sr-only in the name) and
     `WAITING_TITLE` in the tooltip. It reads only what the client observes (panel-views.mjs
     `workspaceChoices`); it never reorders.
   - Keys (`onListKey`): one roving stop (`stopKey`, the row last focused, else the current
@@ -1352,7 +1356,7 @@ workspace is observed through its server and never synced from here.
   jump (Workspace owned / Repo owned, when the CLI lists it / Packages, with no
   Defaults segment; the sections in the same order; navigation, so the section
   in view carries `aria-current`), then those sections as its h3 subsections.
-  `syncCapabilityNav` finds the jump in the toolbar or the sections and tracks
+  `syncCapabilityNav` measures from the pinned toolbar's bottom edge and tracks
   only All capabilities' sections (`.capability-part .capability-section`), so
   the defaults above them never make a segment current. Each section is one 58px row
   card per capability (design board 4): a tile tinted by kind (Knowledge,
@@ -1512,7 +1516,8 @@ The keymap, its per-platform defaults, the terminal policy, the F6 regions and
 the keyboard audit are documented in `../docs/desktop-keyboard.md`; this
 section is the module map.
 
-- **⌘F / Alt+F** reveals the sidebar and focuses the instance filter; **⌘N /
+- **⌘F / Alt+F** reveals the sidebar and focuses the instance roster (its current row; on an empty roster, its
+  Spawn instance +); **⌘N /
   Ctrl+Shift+N** opens Workspace's soul chooser, never automatically spawning
   an instance. Visible hints and tooltips follow the effective bindings
   (including explicit unbinds). Existing user overrides are retained.
