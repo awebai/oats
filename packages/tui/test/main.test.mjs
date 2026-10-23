@@ -79,6 +79,8 @@ function fakePanel(log, options) {
   };
   return p;
 }
+/** The help is on the screen: its first heading, the chords' on Linux and Windows, the keys' on macOS. */
+const HELP_HEADING = /\b(Chords|Keys)\b/;
 /** `oats tui` on a fake terminal: the run, its streams and what it wrote. Everything outside the
  *  terminal (the user's file, the deployment, the kernel, the reader) is the test's own. */
 function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false, detachKey: "C-\\" }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", listed = [], listAnswer = null, admit = (path) => ({ ok: true, deployment: path }), prepare = null, confirm = null, start = null, tellable = () => false, keyboard = false, platform, keys = chordFamilyFrom(null) } = {}) {
@@ -442,9 +444,13 @@ test("a run says it is reading, draws the instances when the reader answers (the
   assert.doesNotMatch(answered, /\d+ (running|stopped)/, "no counts: the header that held them is gone");
   assert.equal(r.reader.options.getEntry(DEPLOYMENT), ENTRY);
   r.stdin.type("?");
-  // Beside the sidebar, its top row the time of the read the screen shows. Enter has a line per view,
-  // and rows of its own under the first: at 24 rows its first page ends before Esc.
-  assert.match(textOf(r.stdout.take()), /│ {3}read 10:00:00 .*Keys.*w +workspaces.*Enter +open the selected agent's .*terminal as a tab beside .*more below/s);
+  // Beside the sidebar, its top row the time of the read the screen shows. On Linux and Windows the
+  // Alt family's chords lead (every one is read in any terminal), each with its leader key; on macOS
+  // the keys do: Enter has a line per view, and rows of its own under the first. Either way, at 24
+  // rows its first page ends before Esc.
+  assert.match(textOf(r.stdout.take()), process.platform === "darwin"
+    ? /│ {3}read 10:00:00 .*Keys.*w +workspaces.*Enter +open the selected agent's .*terminal as a tab beside .*more below/s
+    : /│ {3}read 10:00:00 .*Chords.*Shortcuts: Alt\..*Alt\+K +palette, or.*Ctrl\+\\ then k.*more below/s);
   r.stdin.type("G");
   // Its last page: the last section's commands, `oats server connect`'s on two rows, and the close.
   assert.match(textOf(r.stdout.take()), /oats session attach --home <home>.*oats server connect <id> --ssh <alias>.*--dir <path on that machine>.*closes this help.*more above/s, "the movement keys scroll the help to its end");
@@ -1423,14 +1429,14 @@ test("while the terminal has the focus every byte but the leader goes to the age
   r.stdin.type("x");
   await settle();
   assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [["input", "ab"], ["input", "x"]], "the ? was dropped, and the next key is the agent's again");
-  assert.doesNotMatch(wholeScreen(r), /Keys/, "nothing opened the help");
+  assert.doesNotMatch(wholeScreen(r), HELP_HEADING, "nothing opened the help");
   r.log.length = 0;
   r.stdin.type("\x1c");
   r.stdin.type("?");
   await settle();
   assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [], "the leader and its key are not the agent's");
   assert.equal(over, false, "a view that draws no terminal (the help) leaves the panel hidden, and the run goes on");
-  assert.match(wholeScreen(r), /Keys/, "the leader then ? opened the help");
+  assert.match(wholeScreen(r), HELP_HEADING, "the leader then ? opened the help");
   r.stdin.type("\x1b");
   r.tick(50);
   r.timers.fire();
@@ -1466,12 +1472,14 @@ test("the leader twice from the terminal's focus types the leader's own bytes in
   assert.equal(await m.status, 0, "the leader then Esc, then q in the list");
 });
 
-test("the default leader, Ctrl+X on every platform: 0x18 in the list is the leader (k after it opens the palette), and from the terminal's focus 0x18 twice types one 0x18 into the agent; Ctrl+Alt+X (ESC 0x18) and Alt+O (ESC o) are the agent's as typed, and in the list neither is the leader (#1433)", async () => {
+test("the default leader, Ctrl+X on every platform: 0x18 in the list is the leader (k after it opens the palette), and from the terminal's focus 0x18 twice types one 0x18 into the agent; Ctrl+Alt+X (ESC 0x18) and an Alt key no chord takes are the agent's as typed (Alt+B, ESC b; on macOS Alt+O, ESC o, the leader of before #1433 there too), and in the list neither is the leader (#1433)", async () => {
   const DEFAULT = { ...KEY_CONFIG, detachKey: "C-x" };
   for (const platform of ["linux", "darwin"]) {
+    // On Linux and Windows Alt+O is the workspaces chord of the Alt family (packages/client/keymap.mjs).
+    const alt = platform === "darwin" ? "\x1bo" : "\x1bb", altName = platform === "darwin" ? "Alt+O" : "Alt+B";
     const l = await opening({ config: DEFAULT, platform });
     // Nothing on the screen says the leader waits: k in a later read says it, by the palette it opens.
-    for (const typed of ["\x1bo", "\x1b\x18"]) {
+    for (const typed of [alt, "\x1b\x18"]) {
       l.stdin.type(typed);
       l.stdin.type("k");
       assert.doesNotMatch(wholeScreen(l), /acme-expert-tui +instance/, `${platform}: ${JSON.stringify(typed)} in the list is not the leader`);
@@ -1496,8 +1504,8 @@ test("the default leader, Ctrl+X on every platform: 0x18 in the list is the lead
     await settle();
     r.stdin.type("q");
     r.stdin.type("\x1b\x18");
-    r.stdin.type("\x1bo");
-    assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [["input", "\x18"], ["input", "q"], ["input", "\x1b\x18"], ["input", "\x1bo"]], `${platform}: C-x twice is one 0x18, then q, Ctrl+Alt+X and Alt+O as typed`);
+    r.stdin.type(alt);
+    assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [["input", "\x18"], ["input", "q"], ["input", "\x1b\x18"], ["input", alt]], `${platform}: C-x twice is one 0x18, then q, Ctrl+Alt+X and ${altName} as typed`);
     r.stdin.type("\x18");
     r.stdin.type("\x1b\x1b[I");
     r.stdin.type("q");
@@ -1505,11 +1513,11 @@ test("the default leader, Ctrl+X on every platform: 0x18 in the list is the lead
   }
 });
 
-test("under the confirmed protocol the default leader Ctrl+X is CSI 120;5u in the list and from the terminal's focus, and twice types 0x18 into the agent; Ctrl+Shift+X and Ctrl+Alt+X are never the leader, and reach the agent as 0x18 and ESC 0x18, Alt+O as ESC o (#1433)", async () => {
+test("under the confirmed protocol the default leader Ctrl+X is CSI 120;5u in the list and from the terminal's focus, and twice types 0x18 into the agent; Ctrl+Shift+X and Ctrl+Alt+X are never the leader, and reach the agent as 0x18 and ESC 0x18, an Alt key no chord takes (Alt+B) as ESC b (#1433)", async () => {
   const l = await opening({ keyboard: true, platform: "linux", config: { ...KEY_CONFIG, detachKey: "C-x" } });
   l.stdin.type("\x1b[?5u");
   // Nothing on the screen says the leader waits: k in a later read says it, by the palette it opens.
-  for (const typed of ["\x1b[120;6u", "\x1b[120:88;6u", "\x1b[120;7u", "\x1b[111;3u"]) {
+  for (const typed of ["\x1b[120;6u", "\x1b[120:88;6u", "\x1b[120;7u", "\x1b[98;3u"]) {
     l.stdin.type(typed);
     l.stdin.type("k");
     assert.doesNotMatch(wholeScreen(l), /acme-expert-tui +instance/, `${JSON.stringify(typed)} in the list is not the leader`);
@@ -1531,9 +1539,9 @@ test("under the confirmed protocol the default leader Ctrl+X is CSI 120;5u in th
   r.stdin.type("\x1b[120;5u");
   await settle();
   r.stdin.type("q");
-  for (const typed of ["\x1b[120;6u", "\x1b[120:88;6u", "\x1b[120;7u", "\x1b[111;3u"]) r.stdin.type(typed);
-  assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [["input", "\x18"], ["input", "q"], ["input", "\x18"], ["input", "\x18"], ["input", "\x1b\x18"], ["input", "\x1bo"]],
-    "the leader twice: one 0x18; then q, Ctrl+Shift+X (with and without its shifted key), Ctrl+Alt+X and Alt+O as their legacy bytes");
+  for (const typed of ["\x1b[120;6u", "\x1b[120:88;6u", "\x1b[120;7u", "\x1b[98;3u"]) r.stdin.type(typed);
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [["input", "\x18"], ["input", "q"], ["input", "\x18"], ["input", "\x18"], ["input", "\x1b\x18"], ["input", "\x1bb"]],
+    "the leader twice: one 0x18; then q, Ctrl+Shift+X (with and without its shifted key), Ctrl+Alt+X and Alt+B as their legacy bytes");
   r.stdin.type("\x1b[120;5u");
   r.stdin.type("\x1b[27u");
   r.stdin.type("q");
@@ -1556,11 +1564,11 @@ test("a run asks for the kitty keyboard protocol in the write that sets its mode
   r.stdin.type("?");
   r.stdin.type("\x1b");
   r.tick(50);
-  assert.match(wholeScreen(r), /Keys/, "the help, its Esc kept");
+  assert.match(wholeScreen(r), HELP_HEADING, "the help, its Esc kept");
   r.log.length = 0;
   r.timers.fire();
   assert.deepEqual(writes(r).filter((bytes) => bytes.includes("\x1b[<")), [POP], "popped at the wait's end");
-  assert.doesNotMatch(wholeScreen(r), /Keys/, "the kept Esc closed the help at the wait's end");
+  assert.doesNotMatch(wholeScreen(r), HELP_HEADING, "the kept Esc closed the help at the wait's end");
   r.stdin.type("\x1b[?5u");
   r.stdin.type("\x1b[107;7u");
   assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/, "an answer after the wait is not taken");
@@ -1573,8 +1581,8 @@ test("a run asks for the kitty keyboard protocol in the write that sets its mode
   assert.deepEqual(writes(r), [LEAVE], "nothing pushed is left to pop");
 });
 
-test("once the terminal answers with flags 1 and 4, Ctrl+Alt+K opens the palette from the list and from a terminal's focus, where no byte of it reaches the agent; every other key reaches the agent as its legacy bytes; the help lists the chords; quit pops the protocol before the modes", async () => {
-  const r = await opening({ keyboard: true, platform: "linux" });
+test("with the Ctrl+Alt family chosen in keys.json, once the terminal answers with flags 1 and 4, Ctrl+Alt+K opens the palette from the list and from a terminal's focus, where no byte of it reaches the agent; every other key reaches the agent as its legacy bytes; the help lists the chords; quit pops the protocol before the modes", async () => {
+  const r = await opening({ keyboard: true, platform: "linux", keys: chordFamilyFrom('{ "chords": "ctrl+alt" }') });
   r.stdin.type("\x1b[?5u");
   assert.deepEqual(r.timers.delays(), [], "the answer ends the wait");
   assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/);
@@ -1633,7 +1641,7 @@ test("under keys.json's Ctrl+Shift and the confirmed protocol, Ctrl+Shift+K open
   const r = await opening({ keyboard: true, platform: "linux", keys: chordFamilyFrom('{ "chords": "ctrl+shift" }') });
   r.stdin.type("\x1b[?5u");
   r.stdin.type("\x1b[107;7u");
-  assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/, "Ctrl+Alt+K: no chord under the option");
+  assert.doesNotMatch(wholeScreen(r), /acme-expert-tui +instance/, "Ctrl+Alt+K: no chord in the Ctrl+Shift family");
   r.stdin.type("\x1b[107;6u");
   assert.match(wholeScreen(r), /acme-expert-tui +instance/, "Ctrl+Shift+K: the palette");
   r.stdin.type("\x1b[27u");
@@ -1666,9 +1674,10 @@ test("under keys.json's Ctrl+Shift and the confirmed protocol, Ctrl+Shift+K open
   assert.equal(await d.status, 0);
 });
 
-test("with the protocol confirmed, a split chord typed in a terminal is the leader then its key: the panel splits as after the leader then |, and no byte reaches the agent", async () => {
-  const split = async (keys) => {
-    const r = await opening({ keyboard: true, platform: "linux", columns: 120, rows: 40 });
+test("with the protocol confirmed, a split chord typed in a terminal is the leader then its key: the panel splits as after the leader then |, and no byte reaches the agent: Ctrl+Alt+E with the Ctrl+Alt family chosen, Alt+E with the default Alt family (as CSI u: under the protocol ESC e is Esc then e, chords.test.mjs reads it without)", async () => {
+  const CTRL_ALT = chordFamilyFrom('{ "chords": "ctrl+alt" }');
+  const split = async (keys, family = chordFamilyFrom(null)) => {
+    const r = await opening({ keyboard: true, platform: "linux", columns: 120, rows: 40, keys: family });
     r.stdin.type("\x1b[?5u");
     r.stdin.type("\r");
     await settle();
@@ -1683,10 +1692,13 @@ test("with the protocol confirmed, a split chord typed in a terminal is the lead
     assert.equal(await r.status, 0);
     return did;
   };
-  const chorded = await split(["\x1b[101;7u"]);
-  assert.deepEqual(chorded, await split(["\x1b[92;5u", "|"]), "Ctrl+Alt+E is the leader then |");
-  assert.equal(chorded.some(([what]) => what === "resize"), true, "the panel was split");
-  assert.equal(chorded.some(([what]) => what === "input" || what === "paste"), false, "nothing reached the agent");
+  const led = await split(["\x1b[92;5u", "|"]);
+  assert.equal(led.some(([what]) => what === "resize"), true, "the leader then | split the panel");
+  for (const [keys, family, name] of [[["\x1b[101;7u"], CTRL_ALT, "Ctrl+Alt+E"], [["\x1b[101;3u"], undefined, "Alt+E as CSI u"]]) {
+    const chorded = await split(keys, family);
+    assert.deepEqual(chorded, led, `${name} is the leader then |`);
+    assert.equal(chorded.some(([what]) => what === "input" || what === "paste"), false, `${name}: nothing reached the agent`);
+  }
 });
 
 test("with the protocol confirmed, Ctrl+Z (a CSI u key) suspends: the protocol is popped with the modes before the stop, and pushed again with them on the return", async () => {
@@ -1768,19 +1780,19 @@ async function viewingTwoTabs(options = {}) {
 
 test("a hidden tab's output marks it on the strip and draws nothing of its screen; the shown tab's screen is drawn (T2)", async () => {
   const r = await viewingTwoTabs();
-  assert.match(wholeScreen(r), /│ acme-expert-tui │\[acme-ledger-dev\]/, "the tab bar: both tabs, the shown one in brackets, no mark");
+  assert.match(wholeScreen(r), /│ acme-expert-tui 1 │\[acme-ledger-dev 2\]/, "the tab bar: both tabs, each with its number, the shown one in brackets, no mark");
   r.panel.activity("@1");
   r.panel.screen("@1", "hidden words");
   await settle();
   const marked = wholeScreen(r);
-  assert.match(marked, /│ acme-expert-tui\u2022 │\[acme-ledger-dev\]/, "the hidden tab is marked");
+  assert.match(marked, /│ acme-expert-tui\u2022 1 │\[acme-ledger-dev 2\]/, "the hidden tab is marked");
   assert.doesNotMatch(marked, /hidden words/, "a hidden tab's screen is not drawn");
   r.panel.activity("@2");
   r.panel.screen("@2", "shown words");
   await settle();
   const shown = wholeScreen(r);
   assert.match(shown, /shown words/);
-  assert.match(shown, /│ acme-expert-tui\u2022 │\[acme-ledger-dev\](?!\u2022)/, "the shown tab is never marked");
+  assert.match(shown, /│ acme-expert-tui\u2022 1 │\[acme-ledger-dev 2\]/, "the shown tab is never marked");
   leaderEscape(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
@@ -1929,7 +1941,7 @@ test("back in the workspace left with two tabs, the loop opens their viewers aga
   assert.deepEqual([r.panel.opens.length, r.panel.opens[3].argv], [4, second], "then the second's");
   r.panel.opens[3].made("@4");
   await settle();
-  assert.match(wholeScreen(r), /│ acme-expert-tui │\[acme-ledger-dev\]/, "both tabs, the one left shown in brackets");
+  assert.match(wholeScreen(r), /│ acme-expert-tui 1 │\[acme-ledger-dev 2\]/, "both tabs, each with its number, the one left shown in brackets");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });

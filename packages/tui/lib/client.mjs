@@ -53,7 +53,7 @@ export { createCapabilityCatalog, capabilityCatalogKey } from "../../client/capa
 export { memberNames, capabilitySource, groupCapabilities, hostKeyOf, capabilitySections, matchCapabilities, soulsComposition, rosterAgentName, layerLabel, capabilityUsers } from "../../client/capability-rows.mjs";
 export { capabilityFacts, CAPABILITY_COPY } from "../../client/capability-facts.mjs";
 export { CHORDS, CHORD_FAMILY_LABELS, DEFAULT_CHORD_FAMILY, LEADER_TABLE, PALETTE_KEYS, PLAIN_KEYS, chordKeyOf, doesLabel, leaderKey, plainKeys } from "../../client/keymap.mjs";
-// keys.json, the chord family both clients bind (docs/tui.md, "Switch to Ctrl+Shift"): the TUI reads the file
+// keys.json, the chord family both clients bind (docs/tui.md, "Switch family"): the TUI reads the file
 // itself, at its start (lib/config.mjs loadKeys), and the shared reader says what its text means.
 export { KEYS_LIMIT, chordFamilyFrom, chordFamilyNote, keysPath } from "../../client/keys-file.mjs";
 

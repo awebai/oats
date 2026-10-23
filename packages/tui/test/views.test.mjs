@@ -261,9 +261,17 @@ const STARTED = waitingClock("2026-10-11T09:00:00.000Z", NOW);
  *  helpers.mjs TEST_LEADER) spelt for people. It is the cheat sheet's first row in every focus. */
 const LEADER_KEY = "Ctrl+\\";
 const LEAD = Object.freeze([LEADER_KEY, "commands"]);
-/** Without the kitty keyboard protocol a terminal's cheat sheet names the Alt+Shift arrows after the
- *  leader's three; on macOS the TUI has no chords, so none. */
+/** In the Ctrl+Alt family, without the kitty keyboard protocol, a terminal's cheat sheet names the
+ *  Alt+Shift arrows after the leader's three; on macOS the TUI has no chords, so none. */
 const ARROWS = Object.freeze(process.platform === "darwin" ? [] : [["Alt+Shift+Up/Down", "agent"]]);
+/** keys.json with Ctrl+Alt chosen: the family whose chords the kitty keyboard protocol decides. */
+const CTRL_ALT_READ = chordFamilyFrom('{ "chords": "ctrl+alt" }');
+/** In the Alt family, the default, every chord comes without the protocol, so a terminal's cheat sheet
+ *  leads with them (one tab: no tab hint); on macOS the TUI has no chords, so none. */
+const FOCUS_CHORDS = Object.freeze(process.platform === "darwin" ? [] : [["Alt+K", "palette"], ["Alt+Shift+Up/Down", "agent"], ["Alt+W", "close"], ["Alt+Z", "zoom"]]);
+/** A terminal's cheat sheet with the focus in it, in the default family: its chords, then the
+ *  leader, the leader then Esc and the leader twice. */
+const FOCUS_SHEET = Object.freeze([...FOCUS_CHORDS, LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`]]);
 /** The cheat sheet of the list. The selected row of the fixture runs, so Enter opens it and `open`
  *  stands after the leader and the palette; then `n spawn`, and `help` and `quit` last. The sheet
  *  is small: the acts, the list's own keys and the views are the leader's, the palette's and
@@ -1664,7 +1672,7 @@ test("a query of 200 characters is cut inside the heading, open and kept, with t
 
 test("at 60 columns, the smallest width the frame is drawn at, the help still names every command whole: what this version does not do is said with the oats command that does it", () => {
   for (const ascii of [false, true]) {
-    const lines = helpLines(golden({ ascii }), size(60, 250)), cut = glyphsOf(ascii).cut;
+    const lines = helpLines(golden({ ascii }), size(60, 330)), cut = glyphsOf(ascii).cut;
     for (const command of [...NOT_YET.map((entry_) => entry_.command), ...VIEWS.flatMap((view) => view.commands)]) {
       assert.equal(commandIn(lines, command), true, `${command} is whole at 60 columns${ascii ? ", in ASCII" : ""}`);
     }
@@ -1672,17 +1680,19 @@ test("at 60 columns, the smallest width the frame is drawn at, the help still na
   }
 });
 
-test("at 60 columns the help's family lines (keys.json, docs/tui.md \"Switch to Ctrl+Shift\") stand whole in the chords' section: each word once, in order, no row cut, in every family, the note too", () => {
+test("at 60 columns the help's family lines (keys.json, docs/tui.md \"Switch family\") stand whole in the chords' section: each word once, in order, no row cut, in every family, the note too", () => {
+  const ALT = 'Shortcuts: Alt. To leave Alt to the programs in your terminals, set "chords": "ctrl+alt" in keys.json (or "ctrl+shift", for foot and Alacritty) and restart.';
   const SAID = Object.freeze([
-    [null, ['Shortcuts: Ctrl+Alt. For Ctrl+Shift (foot, Alacritty), set "chords": "ctrl+shift" in keys.json and restart.']],
+    [null, [ALT]],
+    [chordFamilyFrom('{ "chords": "ctrl+alt" }'), ["Shortcuts: Ctrl+Alt, from keys.json, but this terminal does not confirm the kitty keyboard protocol: use the leader."]],
     [chordFamilyFrom('{ "chords": "ctrl+shift" }'), ["Shortcuts: Ctrl+Shift, from keys.json, but this terminal does not confirm the kitty keyboard protocol: use the leader."]],
-    [chordFamilyFrom('{ "chords": 7 }'), ['Shortcuts: Ctrl+Alt. For Ctrl+Shift (foot, Alacritty), set "chords": "ctrl+shift" in keys.json and restart.', "keys.json: unknown chords value, using Ctrl+Alt"]],
+    [chordFamilyFrom('{ "chords": 7 }'), [ALT, "keys.json: unknown chords value, using Alt"]],
   ]);
   for (const [keysRead, sentences] of SAID) {
     const state = golden({ platform: "linux", ...(keysRead ? { keysRead } : {}) });
-    const lines = helpLines(state, size(60, 250)), cut = glyphsOf(false).cut;
+    const lines = helpLines(state, size(60, 330)), cut = glyphsOf(false).cut;
     const from = lines.findIndex((line) => line.trim() === "Chords"), to = nextHeading(lines, from);
-    assert.equal(from > 0 && to > from, true, "the chords' section, after the leader's (no protocol)");
+    assert.equal(from >= 0 && to > from, true, "the chords' section: first in the Alt family, after the leader's in the others (no protocol)");
     const section = lines.slice(from + 1, to).map((line) => line.trim()).filter(Boolean).join(" ");
     assert.equal(section.startsWith(sentences.join(" ")), true, `${section.slice(0, 160)}`);
     for (const line of lines.slice(from, to)) assert.equal(line.endsWith(cut), false, `no row is cut: ${line.trim()}`);
@@ -1692,9 +1702,9 @@ test("at 60 columns the help's family lines (keys.json, docs/tui.md \"Switch to 
 // ── The help ─────────────────────────────────────────────────────────────────────────────────────
 
 // Wide enough that the help, in the main area beside the sidebar, has 140 columns (203 less the
-// sidebar's 60 and three cells), and tall enough for the whole help (T3 added the split's rows, and
-// keymap phase 3 the chords' section on Linux and Windows).
-const HELP_SIZE = size(203, 200);
+// sidebar's 60 and three cells), and tall enough for the whole help (T3 added the split's rows,
+// keymap phase 3 the chords' section on Linux and Windows, and the Alt family all its chords there).
+const HELP_SIZE = size(203, 260);
 /** The help's rows under its top row (the time of the read), opened with `key`: the main area's
  *  cells from 80 columns, the whole width under them. */
 function helpLines(state, sz = HELP_SIZE, key = "?") {
@@ -1702,6 +1712,9 @@ function helpLines(state, sz = HELP_SIZE, key = "?") {
   assert.equal(d.extent <= d.room, true, "the whole help is on this screen");
   return d.cells.slice(1).map((_, i) => cellText(d, i + 1, from));
 }
+/** The help's first heading: the chords on Linux and Windows, where the default family, Alt, is read
+ *  without the kitty keyboard protocol; the keys on macOS, which has no chords. */
+const FIRST_HEADING = process.platform === "darwin" ? "Keys" : "Chords";
 /** The help's headings, in no order: a section of the help runs from its heading to the next. */
 const HELP_HEADINGS = Object.freeze(["Keys", "Chords", "The leader", "The palette", "The spawn prompt", "Marks", "Views", "Machines", "Not in this version"]);
 /** The row of the heading after row `from` of the help's `lines` (trimmed or not), or -1. The
@@ -1727,7 +1740,7 @@ const pair = (lines, left, right) => lines.some((line) => { const text = line.tr
 test("the help lists every action of the table it is given with its keys, and an unbound action as `(no key)`", () => {
   const lines = helpLines(golden());
   // An action that does one thing in each view has a line per view, its keys on each.
-  // An action with no key by default (the split's group-next, tab-move and group-close, which the
+  // An action with no key by default (the split's group-next, group-previous, tab-move and group-close, which the
   // leader reaches) is listed as `(no key)`, as one tui.json unbinds.
   const labelOf = (action) => (action.keys.length ? keysLabel(action) : "(no key)");
   for (const action of ACTIONS) for (const said of action.views ? action.views.map(([, words]) => words) : [action.label]) assert.equal(pair(lines, labelOf(action), said), true, `${action.id}: ${labelOf(action)} ${said}`);
@@ -1804,7 +1817,7 @@ test("the help says what each view holds, and names no command for a view: the S
 });
 
 test("the help's last section, `Not in this version`, names every act this version does not have with the oats command that does it", () => {
-  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 250), size(79, 220), size(200, 170)]) {
+  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 330), size(79, 300), size(200, 230)]) {
     const lines = helpLines(golden({ ascii }), sz), text = lines.map((line) => line.trim());
     const at = text.indexOf("Not in this version");
     assert.equal(at > 0, true);
@@ -1833,7 +1846,7 @@ test("the help scrolls: at 60x15 it does not fit, the screen's last row says wha
   assert.equal(d.extent > d.room, true);
   assert.equal(d.room, sz.rows - 1, "every row but the help's top row");
   const visible = d.room - 1;
-  assert.equal(d.lines[1].trim(), "Keys");
+  assert.equal(d.lines[1].trim(), FIRST_HEADING, "the Alt family's chords lead the help on Linux and Windows");
   assert.equal(d.lines[sz.rows - 1].trim(), cutNote(0, d.extent - visible));
   const down = draw(press(open, ["j"], sz).state, sz);
   assert.equal(down.lines[sz.rows - 1].trim(), cutNote(1, d.extent - visible - 1));
@@ -1847,7 +1860,7 @@ test("the help scrolls: at 60x15 it does not fit, the screen's last row says wha
   assert.deepEqual(draw(press(ended, ["g"], sz).state, sz).lines, d.lines, "and goes back to its start");
   assert.deepEqual(draw(press(ended, ["k"], sz).state, sz).lines[sz.rows - 1].trim(), cutNote(d.extent - visible - 1, 1));
   // Every row of the help is reached by scrolling: nothing is lost behind the note.
-  const whole = helpLines(golden(), size(60, 250)).map((line) => line.trim()).filter(Boolean), seen = new Set();
+  const whole = helpLines(golden(), size(60, 330)).map((line) => line.trim()).filter(Boolean), seen = new Set();
   let state = open;
   for (let i = 0; i < d.extent; i++) { for (const line of draw(state, sz).lines.slice(1, sz.rows - 1)) seen.add(line.trim()); state = press(state, ["j"], sz).state; }
   for (const line of whole) assert.equal(seen.has(line), true, line);
@@ -1883,7 +1896,7 @@ test("every key a tui.json may give an action is drawn: the cheat sheet and the 
       assert.equal(cellIndexOf(d.cells[help].slice(0, d.cols), "help"), cellIndexOf(d.cells[quit].slice(0, d.cols), "quit"));
     }
     // Tall enough for the whole help, the switcher's Remove among it.
-    const big = size(163, 200), lines = helpLines(state, big, "日");
+    const big = size(163, 260), lines = helpLines(state, big, "日");
     for (const id of Object.keys(keys)) assert.ok(lines.some((line) => line.trim().startsWith(`${labelOf(id)}  `)), `the help lists ${id} under ${labelOf(id)}`);
     assert.ok(lines.some((line) => line.trim() === `${labelOf("close").split(", ")[0]} or 日 closes this help`), "the closing line names the two keys");
     // The meanings stand in one column, whatever cells the keys take.
@@ -2990,7 +3003,7 @@ test("the switcher's cheat sheet names the remove key on a row of this computer'
 // ── The help, with machines and the switcher ─────────────────────────────────────────────────────
 
 test("the help says every limit of this version: adding, checking and removing a machine and opening a deployment that is not listed with the oats command that does it, and what no command lifts in sentences of its own", () => {
-  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 250), size(79, 220), size(200, 170)]) {
+  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 330), size(79, 300), size(200, 230)]) {
     const lines = helpLines(reached({ ascii }), sz), text = lines.map((line) => line.trim()), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     const machines = text.indexOf("Machines"), last = text.indexOf("Not in this version");
     assert.equal(machines > text.indexOf("Views") && last > machines, true, `${at}: Machines stands between Views and what is not in this version`);
@@ -3029,7 +3042,7 @@ test("the help over the switcher keeps the switcher's sidebar, with the help's o
       assert.deepEqual(hintsOf(d), HELP_SHEET, at);
       assert.equal(cellText(d, 0, from), "", `${at}: no time on the help's top row: no deployment is read`);
     } else assert.equal(cellText(d, 0).trim(), "Esc close", `${at}: the help's first row holds its key and no time`);
-    assert.equal(cellText(d, 1, from).trim(), "Keys", at);
+    assert.equal(cellText(d, 1, from).trim(), FIRST_HEADING, at);
     for (const key of ["escape", "?"]) assert.deepEqual(draw(press(helping, [key], sz).state, sz).lines, draw(under, sz).lines, `${at}: ${key} returns to the switcher`);
     // Over the list the sidebar is the workspace's, and the help is the same help.
     const over = draw(press(reached(), ["?"], sz).state, sz);
@@ -3185,9 +3198,11 @@ test("the help lists Enter once per view with what it does there, the keys of th
   // The leader's section, after the keys and before the marks (the chords' where there are chords,
   // the palette's and the spawn prompt's sections stand between it and them): the leader, then each
   // key of its table (actions.mjs LEADER) and what it does, from every focus, and last the leader
-  // again. Without the kitty keyboard protocol the chords' section follows it, where there are chords.
+  // again. The chords' section leads the help where there are chords (the Alt family is read
+  // without the kitty keyboard protocol), so the palette's follows it.
   const leader = lines.slice(lines.indexOf("The leader") + 1, nextHeading(lines, lines.indexOf("The leader"))).filter(Boolean);
-  assert.equal(lines[nextHeading(lines, lines.indexOf("The leader"))], process.platform === "darwin" ? "The palette" : "Chords", "the leader leads: the chords after it");
+  assert.equal(lines[nextHeading(lines, lines.indexOf("The leader"))], "The palette", "the palette's section after the leader's");
+  assert.equal(lines.indexOf("Chords") < lines.indexOf("Keys"), process.platform !== "darwin", "the chords first, where there are any");
   assert.equal(lines.indexOf("The leader") > lines.indexOf("Keys") && lines.indexOf("The leader") < lines.indexOf("Marks"), true, "between the keys and the marks");
   assert.deepEqual(leader.map((line) => line.replace(/ {2,}/g, "  ")), [
     "Ctrl+\\ then one of these keys, from every focus; a terminal too:",
@@ -3195,7 +3210,7 @@ test("the help lists Enter once per view with what it does there, the keys of th
     "z  zoom, while a terminal is open", "w  close terminal, while a terminal is open",
     "Left  previous tab, while a terminal is open", "Right  next tab, while a terminal is open",
     "|  split right, while a terminal is open", "-  split down, while a terminal is open", "Tab  next group, while a terminal is open",
-    "m  move tab, while a terminal is open", "x  close group, while a terminal is open",
+    "Shift+Tab  previous group, while a terminal is open", "m  move tab, while a terminal is open", "x  close group, while a terminal is open",
     "X  stop", "R  restart", "S  start", "D  retire", "n  spawn", "N  spawn another", "/  filter", "o  workspaces", "?  help",
     "Esc  the list",
     `Ctrl+\\  ${LEADER_AGAIN}`,
@@ -3231,12 +3246,13 @@ test("a tui.json that unbinds open, or close, is drawn with a kept filter: the h
 // ── The terminal panel (T1) ───────────────────────────────────────────────────────────────────────
 
 /** Two running agents, dev-a selected, and a key pressed as the loop hands it on. */
-const PANEL_STATE = () => { const s = stateOf(observed([instanceRow("dev", "dev-a"), instanceRow("dev", "dev-b")])); return Object.freeze({ ...s, selected: roster(s).rows.find(({ row }) => row.instance === "dev-a").id }); };
+const PANEL_STATE = (options = {}) => { const s = stateOf(observed([instanceRow("dev", "dev-a"), instanceRow("dev", "dev-b")]), options); return Object.freeze({ ...s, selected: roster(s).rows.find(({ row }) => row.instance === "dev-a").id }); };
 const keyed = (state, id) => reduce(state, { key: id, ...(id.length === 1 ? { text: id } : {}), page: 19, extent: 0, room: 19, cols: 38 }).state;
 /** dev-a's terminal, open: "focus" (it has the focus), "list" (the leader, then Esc), "zoom" (z
- *  from the list), "detail" (Tab from the list); with `detachKey` as tui.json's. */
-function panelIn(how, { detachKey, status = "open" } = {}) {
-  let s = keyed(PANEL_STATE(), "enter");
+ *  from the list), "detail" (Tab from the list); with `detachKey` as tui.json's, and keys.json's
+ *  `keysRead` (none: the default family). */
+function panelIn(how, { detachKey, status = "open", keysRead } = {}) {
+  let s = keyed(PANEL_STATE(keysRead ? { keysRead } : {}), "enter");
   if (status === "open") s = reduce(s, { shown: { id: s.terminal.id } }).state;
   if (detachKey !== undefined) s = Object.freeze({ ...s, detachKey });
   if (how === "focus") return s;
@@ -3266,7 +3282,7 @@ test("Enter: the terminal stands beside the sidebar, where the detail was, edge 
     assert.equal(t.rows, sz.rows - 1, `${at}: every row of the screen but the title`);
     // The list stays on screen, both rows of it.
     for (const name of ["dev-a", "dev-b"]) assert.equal(listLines(d).some((line) => line.includes(name)), true, `${at}: ${name} in the list`);
-    assert.equal(d.lines[0].slice(t.col).trim(), "[dev-a]", `${at}: the tab bar names the agent, its one tab the shown one`);
+    assert.equal(d.lines[0].slice(t.col).trim(), "[dev-a 1]", `${at}: the tab bar names the agent, its one tab the shown one, numbered 1`);
     assert.equal(d.cells[0][t.col + 1].style.bold && d.cells[0][t.col + 1].style.reverse, true, `${at}: the title of a focused terminal is drawn focused`);
     assert.equal(d.lines[1].slice(t.col), "$ hello", at);
     assert.equal(d.lines[2].slice(t.col, t.col + 7), "red and", at);
@@ -3277,15 +3293,21 @@ test("Enter: the terminal stands beside the sidebar, where the detail was, edge 
   }
 });
 
-test("while the terminal has the focus the cheat sheet names the leader, the leader then Esc back to the list and the leader twice, which types it, then (without the kitty keyboard protocol, except on macOS) the Alt+Shift arrows that come; over the whole screen the terminal's title row carries the leader's keys at its right, and no chord, dim: each size, starting or open, zoomed or not, the default key and a rebound one (QA note 2)", () => {
+test("in the Ctrl+Alt family, while the terminal has the focus the cheat sheet names the leader, the leader then Esc back to the list and the leader twice, which types it, then (without the kitty keyboard protocol, except on macOS) the Alt+Shift arrows that come; over the whole screen the terminal's title row carries the leader's keys at its right, and no chord, dim: each size, starting or open, zoomed or not, the default key and a rebound one (QA note 2); in the Alt family the chords lead both", () => {
   for (const sz of [S60, S79, S80, S120, size(200, 50)]) for (const detachKey of [undefined, "F12", "M-x", "C-]"]) for (const [how, status] of [["focus", "starting"], ["focus", "open"], ["zoom", "open"]]) {
-    const d = drawPanel(panelIn(how, { detachKey, status }), sz), key = detachKey === undefined ? LEADER_KEY : backKeyLabel(detachKey), at = `${sz.cols}x${sz.rows} ${how} ${status} ${detachKey}`;
+    const d = drawPanel(panelIn(how, { detachKey, status, keysRead: CTRL_ALT_READ }), sz), key = detachKey === undefined ? LEADER_KEY : backKeyLabel(detachKey), at = `${sz.cols}x${sz.rows} ${how} ${status} ${detachKey}`;
     if (sz.cols < WIDE || how === "zoom") {
       const keys = `${key} commands   ${key} Esc the list`, row = cellText(d, 0);
-      assert.equal(row.startsWith("[dev-a] ") && row.endsWith(keys), true, `${at}: ${row}`);
+      assert.equal(row.startsWith("[dev-a 1] ") && row.endsWith(keys), true, `${at}: ${row}`);
       assert.equal(d.cells[0].slice(sz.cols - 1 - keys.length, sz.cols - 1).every((cell) => cell.text === " " || cell.style.dim), true, `${at}: dim, a cell before the edge`);
       assert.equal(d.cells[0][sz.cols - 1].text, " ", `${at}: the last cell left empty`);
     } else assert.deepEqual(hintsOf(d), [[key, "commands"], [`${key} Esc`, "the list"], [`${key} ${key}`, `types ${key}`], ...ARROWS], at);
+  }
+  // The default family: the chords lead, in the rows and in a title row.
+  assert.deepEqual(hintsOf(drawPanel(panelIn("focus"), S120)), FOCUS_SHEET, "the Alt family, 120x40");
+  if (process.platform !== "darwin") {
+    const title = cellText(drawPanel(panelIn("zoom"), S80), 0);
+    assert.match(title, /^\[dev-a 1\] +Alt\+K palette   Alt\+Shift\+Up\/Down agent   Ctrl\+\\ commands$/, `a title row: the chords first, the leader last: ${title}`);
   }
 });
 
@@ -3308,7 +3330,7 @@ test("zoom gives the terminal the whole screen: its title row on the first, the 
     assert.deepEqual([t.col, t.cols, t.title, t.top, t.rows, t.whole], [0, sz.cols, 0, 1, sz.rows - 1, true], at);
     assert.equal(d.lines.some((line) => line.includes("dev-b") || line.includes("acme-platform")), false, `${at}: no sidebar`);
     assert.equal(d.cells.some((line) => line.some((cell) => cell.text === "│")), false, `${at}: no rule column`);
-    assert.equal(d.lines[0].startsWith("[dev-a] "), true, at);
+    assert.equal(d.lines[0].startsWith("[dev-a 1] "), true, at);
     assert.equal(d.lines[1], "$ hello", `${at}: the agent's screen from column 0`);
     assert.equal(d.lines[2].length, sz.cols, `${at}: to the last column`);
     const back = drawPanel(leaderEscape(panelIn("zoom")).state, sz);
@@ -3474,7 +3496,8 @@ test("while the leader waits the sheet is the one it stands in: the leader's `co
   assert.deepEqual(hintsOf(draw(waiting(golden()), S80)), SHEET_80, "the list at 80x24");
   assert.deepEqual(hintsOf(draw(waiting(golden()), S60)), [LEAD], "at 60x15 the leader alone");
   assert.deepEqual(hintsOf(drawPanel(waiting(panelIn("list")), S80)), TERMINAL_SHEET.slice(0, hintsOf(drawPanel(panelIn("list"), S80)).length), "the list beside a terminal");
-  assert.deepEqual(hintsOf(drawPanel(waiting(panelIn("focus")), S120)), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], ...ARROWS], "the terminal's focus");
+  assert.deepEqual(hintsOf(drawPanel(waiting(panelIn("focus")), S120)), FOCUS_SHEET, "the terminal's focus");
+  assert.deepEqual(hintsOf(drawPanel(waiting(panelIn("focus", { keysRead: CTRL_ALT_READ })), S120)), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], ...ARROWS], "the terminal's focus, in the Ctrl+Alt family");
   for (const state of [twoTabs(), leaderThen(twoTabs(), "|").state]) assert.deepEqual(hintsOf(drawPanel(waiting(state), S120)), hintsOf(drawPanel(state, S120)));
   assert.equal(hintsOf(drawPanel(waiting(golden()), size(80, 40))).some(([, word]) => word === "then"), false, "no `then`: the leader's table is the help's");
 });
@@ -3482,7 +3505,8 @@ test("while the leader waits the sheet is the one it stands in: the leader's `co
 test("once the leader's next key comes the cheat sheet is as it was: Esc, the leader again, or a key not in its table in the list; from a terminal, Esc gives the list's sheet, and a key not in the table leaves the terminal's", () => {
   for (const key of ["escape", golden().leaderKey, "x", "q"]) assert.deepEqual(hintsOf(draw(leaderThen(golden(), key).state, S80)), SHEET_80, key);
   assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus"), "escape").state, S80)), TERMINAL_SHEET);
-  assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus"), "x").state, S80)), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], ...ARROWS]);
+  assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus"), "x").state, S80)), FOCUS_SHEET);
+  assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus", { keysRead: CTRL_ALT_READ }), "x").state, S80)), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], ...ARROWS], "in the Ctrl+Alt family");
 });
 
 test("with no tui.json the leader is Ctrl+X on every platform, and the cheat sheet (the same while it waits) and the help name it so, the terminal's sheet with its Esc and its twice (#1433)", () => {
@@ -3495,12 +3519,12 @@ test("with no tui.json the leader is Ctrl+X on every platform, and the cheat she
     assert.equal(help.includes("Ctrl+X then one of these keys, from every focus; a terminal too:"), true, `${platform}: the leader's section`);
     assert.equal(help.some((line) => line.replace(/ {2,}/g, "  ") === `Ctrl+X  ${LEADER_AGAIN}`), true, `${platform}: the leader again`);
     assert.equal(text.includes("Ctrl+X Esc takes the focus from the terminal back to the list; the agent keeps running. Ctrl+X Ctrl+X types the leader into the terminal."), true, `${platform}: under the agent's line`);
-    assert.equal(text.includes("Ctrl+\\") || /(^|[^+])Alt\+O\b/.test(text), false, `${platform}: no leader of before is named`);
+    assert.equal(text.includes("Ctrl+\\") || /Alt\+O then/.test(text), false, `${platform}: no leader of before is named (Alt+O is the Alt family's chord for the workspaces)`);
     // A terminal with the focus: the leader, the leader then Esc, and the leader twice, which types it.
     const two = stateOf(observed([instanceRow("dev", "dev-a"), instanceRow("dev", "dev-b")]), { detachKey: undefined, platform });
     const open = keyed(Object.freeze({ ...two, selected: roster(two).rows.find(({ row }) => row.instance === "dev-a").id }), "enter");
     const showing = reduce(open, { shown: { id: open.terminal.id } }).state;
-    assert.deepEqual(hintsOf(drawPanel(showing, S120)).slice(0, 3), [["Ctrl+X", "commands"], ["Ctrl+X Esc", "the list"], ["Ctrl+X Ctrl+X", "types Ctrl+X"]], `${platform}: the terminal's sheet`);
+    assert.deepEqual(hintsOf(drawPanel(showing, S120)).filter(([keys]) => keys.startsWith("Ctrl+X")), [["Ctrl+X", "commands"], ["Ctrl+X Esc", "the list"], ["Ctrl+X Ctrl+X", "types Ctrl+X"]], `${platform}: the terminal's sheet`);
   }
 });
 
@@ -3662,7 +3686,7 @@ test("while the palette is open no terminal is drawn, even with one open: from 8
   ]);
   const closed = drawPanel(press(opened, ["escape"]).state, S80);
   assert.equal(closed.terminal.whole, false);
-  assert.deepEqual(hintsOf(closed), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], ...ARROWS]);
+  assert.deepEqual(hintsOf(closed), FOCUS_SHEET);
 });
 
 test("hostile text in an instance's name or in the query goes through shown(): no control or bidi character in any cell of the palette, and every row inside the terminal, at 80x24 and 60x15, in UTF-8 and in ASCII", () => {
@@ -3862,7 +3886,7 @@ test("the Capabilities view of a table that lists none says so in the sidebar an
 
 test("at 60 columns the help's `The leader` section has every row whole: the sentence after the leader's key wrapped under its first row, the table's rows uncut, the leader again's wrapped under its words, none past the edge", () => {
   for (const [detachKey, key, lead] of [[undefined, "Ctrl+\\", ["  Ctrl+\\ then one of these keys, from every focus; a", "         terminal too:"]], ["C-F5", "Ctrl+F5", ["  Ctrl+F5 then one of these keys, from every focus; a", "          terminal too:"]]]) {
-    const lines = helpLines(golden(detachKey ? { detachKey } : {}), size(60, 250));
+    const lines = helpLines(golden(detachKey ? { detachKey } : {}), size(60, 330));
     // The section ends where the next begins, the chords' or the palette's (spawn-view.test.mjs holds the spawn prompt's).
     const from = lines.indexOf("  The leader"), to = nextHeading(lines, from);
     assert.equal(from > 0 && to > from, true);
@@ -3870,34 +3894,35 @@ test("at 60 columns the help's `The leader` section has every row whole: the sen
       "  The leader",
       "",
       ...lead,
-      "  k, Space   palette",
-      "  1          instances",
-      "  2          souls",
-      "  3          capabilities",
-      "  Up         previous workspace",
-      "  Down       next workspace",
-      "  z          zoom, while a terminal is open",
-      "  w          close terminal, while a terminal is open",
-      "  Left       previous tab, while a terminal is open",
-      "  Right      next tab, while a terminal is open",
-      "  |          split right, while a terminal is open",
-      "  -          split down, while a terminal is open",
-      "  Tab        next group, while a terminal is open",
-      "  m          move tab, while a terminal is open",
-      "  x          close group, while a terminal is open",
-      "  X          stop",
-      "  R          restart",
-      "  S          start",
-      "  D          retire",
-      "  n          spawn",
-      "  N          spawn another",
-      "  /          filter",
-      "  o          workspaces",
-      "  ?          help",
-      "  Esc        the list",
-      `  ${key.padEnd(11)}the leader again: types it into the terminal`,
-      "             that has the focus; with the list focused,",
-      "             cancels the leader",
+      "  k, Space    palette",
+      "  1           instances",
+      "  2           souls",
+      "  3           capabilities",
+      "  Up          previous workspace",
+      "  Down        next workspace",
+      "  z           zoom, while a terminal is open",
+      "  w           close terminal, while a terminal is open",
+      "  Left        previous tab, while a terminal is open",
+      "  Right       next tab, while a terminal is open",
+      "  |           split right, while a terminal is open",
+      "  -           split down, while a terminal is open",
+      "  Tab         next group, while a terminal is open",
+      "  Shift+Tab   previous group, while a terminal is open",
+      "  m           move tab, while a terminal is open",
+      "  x           close group, while a terminal is open",
+      "  X           stop",
+      "  R           restart",
+      "  S           start",
+      "  D           retire",
+      "  n           spawn",
+      "  N           spawn another",
+      "  /           filter",
+      "  o           workspaces",
+      "  ?           help",
+      "  Esc         the list",
+      `  ${key.padEnd(12)}the leader again: types it into the terminal`,
+      "              that has the focus; with the list focused,",
+      "              cancels the leader",
     ], key);
     for (const line of lines.slice(from, to)) assert.equal(textWidth(line) <= 60 - 2, true, `the right margin is kept: ${line}`);
   }

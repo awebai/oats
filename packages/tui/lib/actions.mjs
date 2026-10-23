@@ -53,11 +53,14 @@ export const ACTIONS = Object.freeze([
   { id: "tab-previous", label: "previous tab", views: [["instances", "show the terminal of the tab before the shown one"]] },
   { id: "tab-next", label: "next tab", views: [["instances", "show the terminal of the tab after the shown one"]] },
   // The split (docs/tui.md, "Splits"): two groups of tabs at most, side by side or one above the
-  // other. `group-next`, `tab-move` and `group-close` have no key of their own here by default
-  // (Tab is the detail's, and `m` and `x` are often a tui.json's): the leader's are.
+  // other. `group-next`, `group-previous`, `tab-move` and `group-close` have no key of their own
+  // here by default (Tab is the detail's, and `m` and `x` are often a tui.json's): the leader's are.
+  // With two groups at most, the previous group is the other one, as the next is: `group-previous`
+  // is the shared table's own row (the Desktop's splits have more), and does what `group-next` does.
   { id: "split-right", label: "split right", views: [["instances", "split the panel side by side; the new group, on the right, is empty and focused"]] },
   { id: "split-down", label: "split down", views: [["instances", "split the panel one above the other; the new group, below, is empty and focused"]] },
   { id: "group-next", keys: [], label: "next group", views: [["instances", "go to the other group's terminal, or to the focused group's from the list"]] },
+  { id: "group-previous", keys: [], label: "previous group", views: [["instances", "the same as next group: a split has two groups"]] },
   { id: "tab-move", keys: [], label: "move tab", views: [["instances", "move the shown tab to the other group, and go there"]] },
   { id: "group-close", keys: [], label: "close group", views: [["instances", "close the focused group while it is empty"]] },
   // The four acts on an instance: each opens a confirmation, and nothing is done before a move and
@@ -114,17 +117,29 @@ export const LEADER_KEYS = new Map(LEADER.flatMap((entry) => entry.keys.map((key
  *  CHORDS) on macOS (`isMac`) or elsewhere, in the table's order, each doing what the leader then
  *  its key does, or a tab by its place (CHORD_OWN; lib/store.mjs `led`), from every focus. Each
  *  row's key is the one of `family` (keymap.mjs chordKeyOf: CHORD_FAMILIES, keys.json's `chords`,
- *  lib/config.mjs loadKeys): `ctrl+alt`, the default, binds the `other` keys; `ctrl+shift` the
- *  `shift` ones (seven rows move, the others keep their key); macOS ignores it. Left out: a chord
- *  with `cmd+` (a terminal never passes macOS's Command to a program: with the shared table that is
- *  every chord of macOS), and one whose key an action of `actions` binds (a user's tui.json keeps
- *  its key, row by row, whichever the family), and one whose `does` the TUI does not handle
- *  (leaderHandles: a row may be the Desktop's alone): packages/tui/test/chords.test.mjs. `chords`
- *  is the shared table. Which of them are read depends on the kitty keyboard protocol (chordsRead). */
-export function chordKeys(isMac, actions = ACTIONS, chords = CHORDS, family = DEFAULT_CHORD_FAMILY) {
+ *  lib/config.mjs loadKeys): `alt`, the default, binds the `alt` keys; `ctrl+alt` the `other`
+ *  ones; `ctrl+shift` the `shift` ones (seven rows move, the others keep their `other` key); macOS
+ *  ignores it. A key is the TUI's key id (tuiChordKey): Alt+Shift with a letter is `alt+E`, as a
+ *  terminal sends it. Left out: a row with no key there (keymap.mjs `mac: null`: the rows new with
+ *  the Alt family have none on macOS, and none is borrowed from another platform), a chord with
+ *  `cmd+` (a terminal never passes macOS's Command to a program: with the shared table that is
+ *  every chord of macOS), one whose key an action of `actions` binds (a user's tui.json keeps its
+ *  key, row by row, whichever the family), one whose key is `leader` (the leader's key id, null for
+ *  none: a tui.json's open.detachKey M-o is Alt+O, and the leader wins, in the list and in a
+ *  terminal), and one whose `does` the TUI does not handle (leaderHandles: a row may be the
+ *  Desktop's alone): packages/tui/test/chords.test.mjs. `chords` is the shared table. Which of them
+ *  are read depends on the kitty keyboard protocol (chordsRead). */
+export function chordKeys(isMac, actions = ACTIONS, chords = CHORDS, family = DEFAULT_CHORD_FAMILY, leader = null) {
   const bound = new Set(actions.flatMap((action) => action.keys));
-  return new Map(chords.map((entry) => [chordKeyOf(entry, isMac, family) ?? entry.other, entry.does]).filter(([key, does]) => !key.startsWith("cmd+") && !bound.has(key) && leaderHandles(does)));
+  return new Map(chords.map((entry) => [chordKeyOf(entry, isMac, family), entry.does])
+    .filter(([key]) => key !== null && !key.startsWith("cmd+")).map(([key, does]) => [tuiChordKey(key), does])
+    .filter(([key, does]) => !bound.has(key) && key !== leader && leaderHandles(does)));
 }
+
+/** A shared chord's key (keymap.mjs's spelling) as the TUI's key id (term/keys.mjs keyId): Alt+Shift
+ *  with a letter is `alt+E`, the capital after ESC that a terminal sends for it; every other key is
+ *  spelled the same in both. */
+export const tuiChordKey = (key) => (/^alt\+shift\+[a-z]$/.test(key) ? `alt+${key.at(-1).toUpperCase()}` : key);
 
 /** THE PALETTE'S OWN KEYS (docs/tui.md, "The palette"): key id -> `does`, the shared ones
  *  (packages/client/keymap.mjs PALETTE_KEYS) on macOS (`isMac`) or elsewhere, in the table's order:
@@ -142,12 +157,14 @@ export function paletteKeys(isMac, table = PALETTE_KEYS) {
 }
 
 /** The chords of `chords` (chordKeys) the TUI reads while the terminal confirms the kitty keyboard
- *  protocol (`kitty`) or not: all of them under it; without it only the Alt+Shift arrows
- *  (term/kitty.mjs LEGACY_CHORDS), whose sequence is their own, in either family. A Ctrl+Alt chord
- *  without the protocol is the bytes of two keys (ESC, then Ctrl+K), the agent's, and in the list
- *  no key. A Ctrl+Shift one is Ctrl and its letter's byte, the same as Ctrl alone (Ctrl+Shift+D is
- *  0x04, EOF; Ctrl+Shift+M is 0x0d, Enter): never a chord, the agent's in its terminal and the
- *  list's key in the list (term/kitty.mjs kittyId reads one only from the protocol's event). */
+ *  protocol (`kitty`) or not: all of them under it; without it those whose bytes are their own
+ *  (term/kitty.mjs legacyChordText): every chord of the Alt family (Alt with a letter or a digit is
+ *  ESC and the character, an Alt arrow `CSI 1 ; 3 A`, an Alt+Shift one `CSI 1 ; 4 A`), and the
+ *  arrow chords of the other two. A Ctrl+Alt chord without the protocol is the bytes of two
+ *  keys (ESC, then Ctrl+K), the agent's, and in the list no key. A Ctrl+Shift one is Ctrl and its
+ *  letter's byte, the same as Ctrl alone (Ctrl+Shift+D is 0x04, EOF; Ctrl+Shift+M is 0x0d, Enter):
+ *  never a chord, the agent's in its terminal and the list's key in the list (term/kitty.mjs kittyId
+ *  reads one only from the protocol's event). */
 export function chordsRead(chords, kitty) {
   return kitty ? chords : new Map([...chords].filter(([key]) => legacyChord(key)));
 }
@@ -163,9 +180,11 @@ export function bindings(actions = ACTIONS) {
 }
 
 const NAMES = Object.freeze({ escape: "Esc", enter: "Enter", tab: "Tab", backspace: "Backspace", space: "Space", up: "Up", down: "Down", left: "Left", right: "Right", home: "Home", end: "End", pageup: "PageUp", pagedown: "PageDown", insert: "Insert", delete: "Delete", ctrl: "Ctrl", alt: "Alt", shift: "Shift" });
-/** A key id as a person reads it: `ctrl+c` is `Ctrl+C`, `escape` is `Esc`, `?` is `?`. */
+/** A key id as a person reads it: `ctrl+c` is `Ctrl+C`, `escape` is `Esc`, `?` is `?`, and `alt+E`,
+ *  Alt with a capital, is `Alt+Shift+E`, the keys pressed for it. */
 export function keyLabel(key) {
   if (key.length === 1) return key;
+  if (/^alt\+[A-Z]$/.test(key)) return `Alt+Shift+${key.at(-1)}`;
   const parts = key.split("+"), last = parts.pop();
   const name = NAMES[last] ?? (/^f\d+$/.test(last) ? last.toUpperCase() : parts.length && last.length === 1 ? last.toUpperCase() : last);
   return [...parts.map((part) => NAMES[part] ?? part), name].join("+");

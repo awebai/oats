@@ -90,9 +90,9 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  `leader`: `{ read, waiting }` from the leader's read on, or null (see `leading`).
  *  `keyboard`: the flags the terminal confirmed for the kitty keyboard protocol (lib/main.mjs, the
  *  event `{ keyboard }`), or null while it has not; `chords`: the chords of `platform`, key id ->
- *  `does` (actions.mjs chordKeys), in the family keys.json chose, every one read while `keyboard`
- *  is not null, and the Alt+Shift arrows alone while it is null (actions.mjs chordsRead; see
- *  `leading`). `keysRead`: what keys.json said at the start (lib/config.mjs loadKeys, the shared
+ *  `does` (actions.mjs chordKeys), in the family keys.json chose, but the one the leader's key
+ *  takes, every one read while `keyboard` is not null, and those with bytes of their own while it
+ *  is null: the whole Alt family, the arrows of the others (actions.mjs chordsRead; see `leading`). `keysRead`: what keys.json said at the start (lib/config.mjs loadKeys, the shared
  *  reader's frozen `{ family, why }`; no file when none is given): the family `chords` are bound
  *  in, and why it is the default when the file did not choose it. The help names both.
  *  `palette`: the palette while it is open (see `paletteOpened`), or null; `paletteKeys` its own
@@ -132,7 +132,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     switcher: NO_SWITCHER,
     listed: NO_LIST, identities: new Map(),
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
-    leaderKey: backKeyId(detachKey), leader: null, keyboard: null, keysRead, chords: chordKeys(platform === "darwin", actions, CHORDS, keysRead.family), palette: null, paletteKeys: paletteKeys(platform === "darwin"), recent: new Map(), layouts: new Map(), restoring: null, leftFocus: null, souls: NO_SOULS, capabilities: NO_CAPABILITIES,
+    leaderKey: backKeyId(detachKey), leader: null, keyboard: null, keysRead, chords: chordKeys(platform === "darwin", actions, CHORDS, keysRead.family, backKeyId(detachKey)), palette: null, paletteKeys: paletteKeys(platform === "darwin"), recent: new Map(), layouts: new Map(), restoring: null, leftFocus: null, souls: NO_SOULS, capabilities: NO_CAPABILITIES,
     spawn: null, spawning: null, spawnCheck: null, arriving: null, previews: 0, tabs: Object.freeze([]), split: null, group: 0, aside: null,
     notice: null,
   });
@@ -1169,7 +1169,7 @@ export function splitRefused(state, does, room, inTerminal = false) {
       return splitFits(dir, room) ? null : Object.freeze({ said: SPLIT_WORDS.small(dir, SPLIT_MIN), under: Object.freeze([]) });
     }
     // One group: only from the list, to its terminal.
-    case "group-next": return state.split === null && (inTerminal || state.terminal === null) ? true : null;
+    case "group-next": case "group-previous": return state.split === null && (inTerminal || state.terminal === null) ? true : null;
     case "tab-move": return state.split === null || state.terminal === null ? true : null;
     case "group-close": return state.split === null || state.terminal !== null ? true : null;
     default: return true;
@@ -1179,9 +1179,9 @@ export function splitRefused(state, does, room, inTerminal = false) {
  *  when it came from the terminal's focus:
  *    split-right, split-down: the tabs stay in the first group (left or top), and the second, empty,
  *      is the focused one; the keys are the list's (Settled 2 of T3), so Enter on a row opens there;
- *    group-next: to the other group's shown terminal, with the focus (to the empty group: focused,
- *      the keys the list's); from the list, to the focused group's terminal, or with that group
- *      empty to the other's;
+ *    group-next, group-previous: to the other group's shown terminal, with the focus (to the empty
+ *      group: focused, the keys the list's); from the list, to the focused group's terminal, or with
+ *      that group empty to the other's (with two groups the previous is the next);
  *    tab-move: the focused group's shown tab to the other group, after its shown tab, shown there
  *      with the focus; the group it leaves shows its neighbour, or stays, empty;
  *    group-close: the empty focused group goes; the other takes the panel and is focused, and the
@@ -1191,7 +1191,7 @@ function splitKey(state, does, inTerminal) {
   switch (does) {
     case "split-right": case "split-down":
       return { state: next(state, { split: does === "split-right" ? "right" : "down", group: 1, aside: t?.id ?? null, terminal: null, focus: "list" }), effect: null };
-    case "group-next": {
+    case "group-next": case "group-previous": {
       if (state.split === null || (!inTerminal && t !== null)) return { state: terminalWith(state, { focus: "terminal" }), effect: null };
       const there = shownOf(state, other);
       if (there !== null) return showTab(state, there, { focus: "terminal", zoom: false });
@@ -1327,7 +1327,7 @@ function preflightGiven(state) {
 /** The instances the palette's recency keeps, per workspace. */
 const RECENT_KEPT = 50;
 /** The actions of the split (docs/tui.md, "Splits"). */
-const SPLIT_KEYS = Object.freeze(["split-right", "split-down", "group-next", "tab-move", "group-close"]);
+const SPLIT_KEYS = Object.freeze(["split-right", "split-down", "group-next", "group-previous", "tab-move", "group-close"]);
 /** The palette's recency with `id` the most recent in the open workspace's (memoryKey): an open, and
  *  a tab shown. */
 function recentWith(state, id) {
@@ -1386,8 +1386,8 @@ function leading(state, event, keymap) {
   // A chord typed in a terminal (`{ chord }`, above) never comes then: the terminal has no focus.
   if (state.palette !== null && typeof event.key === "string" && state.paletteKeys.has(event.key)) return { pass: plain };
   // THE CHORDS (docs/tui.md, "Chords"): a chord does what the leader then its key does, from
-  // whatever was open: every one while the terminal confirms the kitty keyboard protocol, the
-  // Alt+Shift arrows without it too (chordsRead). While the leader waits it is a key not in the
+  // whatever was open: every one while the terminal confirms the kitty keyboard protocol, those with
+  // bytes of their own without it too (chordsRead: the Alt family, the arrows). While the leader waits it is a key not in the
   // leader's table (above): it cancels the leader and is dropped.
   const chord = typeof event.key !== "string" ? undefined : chordsRead(state.chords, state.keyboard !== null).get(event.key);
   if (chord !== undefined) return led(plain, chord, event, keymap);
@@ -1719,7 +1719,7 @@ function reduced(state, event, keymap) {
     case "open": return at < 0 ? stay : openAgent(state, r.items[at].row);
     case "zoom": case "close-terminal": return terminalKey(state, action);
     case "tab-previous": case "tab-next": return tabPicked(state, TAB_PICKS[action]);
-    case "split-right": case "split-down": case "group-next": case "tab-move": case "group-close": {
+    case "split-right": case "split-down": case "group-next": case "group-previous": case "tab-move": case "group-close": {
       const refused = splitRefused(state, action, event.panel);
       return refused === true ? { state, effect: null } : refused !== null ? { state: next(state, { outcome: refused }), effect: null } : splitKey(state, action, false);
     }

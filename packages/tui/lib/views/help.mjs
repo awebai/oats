@@ -152,43 +152,49 @@ const sentences = (list, cols) => list.flatMap((sentence) => {
 export const LEADER_AGAIN = "the leader again: types it into the terminal that has the focus; with the list focused, cancels the leader";
 
 /** THE CHORDS (docs/tui.md, "Chords"): the chords read now, the extras of the leader, which is the
- *  key that always works. While the terminal confirms the kitty keyboard protocol they lead the
- *  help, first of all; without it only the Alt+Shift arrows are read, listed after the leader's
- *  section. What a
- *  terminal may take first is said, and where the table of terminals is, as sentences the help
- *  flows. */
+ *  key that always works. While every chord bound is read (under the kitty keyboard protocol, or
+ *  in the Alt family, whose keys need none) they lead the help, first of all; else only those with
+ *  bytes of their own are read (the arrows of the other two families), listed after the leader's
+ *  section. What a terminal may take first, how a program in a terminal still gets an Alt key the
+ *  TUI takes, and where the tables are, as sentences the help flows. */
 export const CHORD_RULES = Object.freeze([
-  "Your terminal may take some first: Windows Terminal takes Ctrl+Alt+1 to Ctrl+Alt+9 for its own tabs, and the Alt+Shift arrows while its panes are split.",
-  "Terminals without the kitty keyboard protocol (GNOME Terminal and the other VTE terminals, Konsole before 26.08, WezTerm unless enable_kitty_keyboard is set) send only the Alt+Shift arrows.",
-  "On a keyboard layout where AltGr is Ctrl+Alt (Windows), a Ctrl+Alt key that types a character types it.",
+  "Your terminal may take some first: GNOME Terminal and Konsole take Alt+1 to Alt+9 for their own tabs while they have two or more, and Ghostty when the tab changes; Windows Terminal takes the Alt and Alt+Shift arrows while its panes are split, and Ctrl+Alt+1 to Ctrl+Alt+9 for its own tabs.",
+  "A program in a terminal still gets an Alt key the TUI takes as Esc, then the key, where it reads Esc as Meta, as the shell does.",
+  "The Ctrl+Alt and Ctrl+Shift chords need the kitty keyboard protocol: terminals without it (GNOME Terminal and the other VTE terminals, Konsole before 26.08, WezTerm unless enable_kitty_keyboard is set) send only their arrows.",
+  "A key that types a character with AltGr types it.",
   "The leader works in every terminal.",
-  "docs/tui.md, \"Chords\", has the table of terminals.",
+  "docs/tui.md, \"Chords\", has the tables of terminals and of what the Alt family takes.",
 ]);
-/** THE FAMILY (docs/tui.md, "Switch to Ctrl+Shift"): the sentences that lead the chords' section,
- *  for `keys`, the model's `{ family, label, note }` (keys.json as lib/config.mjs loadKeys read it, and
+/** THE FAMILY (docs/tui.md, "Switch family"): the sentences that lead the chords' section, for
+ *  `keys`, the model's `{ family, label, note }` (keys.json as lib/config.mjs loadKeys read it, and
  *  the shared chordFamilyNote's line, or null), while the terminal confirms the kitty keyboard
- *  protocol (`confirmed`) or not. Which family is bound: Ctrl+Alt, with how to switch; Ctrl+Shift,
- *  from keys.json, and, without the protocol, that this terminal cannot send it, so the leader is
- *  the way (the Alt+Shift arrows still come). Then the note, when the file was there and not taken.
- *  No `keys` (a view drawn without a run): none. macOS has no chords, so no section and no line. */
+ *  protocol (`confirmed`) or not. Which family is bound: Alt, the default, with how to switch;
+ *  Ctrl+Alt or Ctrl+Shift, from keys.json, and, without the protocol, that this terminal cannot
+ *  send it, so the leader is the way (their arrows still come). Then the note, when the file was
+ *  there and not taken. No `keys` (a view drawn without a run): none. macOS has no chords, so no
+ *  section and no line. */
 export function chordFamilyLines(keys, confirmed) {
   if (!keys) return [];
-  const shift = "Ctrl+Shift";
-  const said = keys.family !== "ctrl+shift"
-    ? `Shortcuts: ${keys.label}. For ${shift} (foot, Alacritty), set "chords": "ctrl+shift" in keys.json and restart.`
-    : confirmed ? `Shortcuts: ${shift}, from keys.json.`
-      : `Shortcuts: ${shift}, from keys.json, but this terminal does not confirm the kitty keyboard protocol: use the leader.`;
+  const chosen = keys.family === "ctrl+alt" || keys.family === "ctrl+shift" ? keys.family : null;
+  const label = chosen === "ctrl+alt" ? "Ctrl+Alt" : chosen === "ctrl+shift" ? "Ctrl+Shift" : keys.label;
+  const said = chosen === null
+    ? `Shortcuts: ${label}. To leave Alt to the programs in your terminals, set "chords": "ctrl+alt" in keys.json (or "ctrl+shift", for foot and Alacritty) and restart.`
+    : confirmed ? `Shortcuts: ${label}, from keys.json.`
+      : `Shortcuts: ${label}, from keys.json, but this terminal does not confirm the kitty keyboard protocol: use the leader.`;
   return typeof keys.note === "string" ? [said, keys.note] : [said];
 }
 
 /** The chords listed on one row of their own, both keys first, their modifiers said once
- *  (`Alt+Shift+Up/Down`, actions.mjs keysTogether, as the cheat sheet says them): the leader's Up
- *  and Down, its Left and Right. The table's left column stays narrow enough for the help beside
- *  the sidebar at 80 columns. */
-const CHORD_PAIRS = Object.freeze([Object.freeze(["previous", "next"]), Object.freeze(["tab-previous", "tab-next"])]);
+ *  (`Alt+Shift+Up/Down`, actions.mjs keysTogether, as the cheat sheet says them): the instances,
+ *  the workspaces (the leader's Up and Down), the tabs (its Left and Right) and the groups (its
+ *  Shift+Tab and Tab). The table's left column stays narrow enough for the help beside the sidebar
+ *  at 80 columns. */
+const CHORD_PAIRS = Object.freeze([["previous", "next"], ["workspace-previous", "workspace-next"], ["tab-previous", "tab-next"], ["group-previous", "group-next"]].map((pair) => Object.freeze(pair)));
 /** The chords' own (actions.mjs CHORD_OWN), the Nth tab: one row for the nine, as the TUI's words. */
 const TAB_N = /^tab-([1-9])$/;
 const TABS_SAID = "the focused group's first to eighth tab, 9 its last";
+/** Whether keysTogether says the keys' modifiers once (`Alt+Shift+Up/Down`), not each key whole. */
+const sharesModifiers = (keys) => keysTogether(keys) !== keys.map(keyLabel).join("/");
 /** Two labels of the leader's table as one: `previous instance` and `next instance` are
  *  `previous and next instance`. */
 function bothSaid(a, b) {
@@ -197,7 +203,9 @@ function bothSaid(a, b) {
 }
 /** The chords' rows: `chords` are `[key id, does]` in the table's order, each said by its label
  *  (the shared doesLabel: the leader's table's, else the chord's own), then, for one the leader's
- *  table has a key for, `or <the leader> then <its key>` (`detachKey`'s label, when one is given); a pair of CHORD_PAIRS on one row, and the nine tab-N on one, `Ctrl+Alt+1 … Ctrl+Alt+9`
+ *  table has a key for, `or <the leader> then <its key>` (`detachKey`'s label, when one is given); a pair of CHORD_PAIRS on one row
+ *  where its keys share their modifiers (`Alt+Shift+Up/Down`; Ctrl+Alt+Shift+A and Ctrl+Alt+A, which do not, a row each, so the
+ *  keys' column stays narrow enough for the meanings beside it at 80 columns), and the nine tab-N on one, `Ctrl+Alt+1 … Ctrl+Alt+9`
  *  (`...` in ASCII), which no leader's key does. The family's lines lead them (chordFamilyLines:
  *  `keys`, under the protocol or not, `confirmed`). */
 function chordRows(chords, cols, detachKey, ascii, keys = null, confirmed = false) {
@@ -209,7 +217,7 @@ function chordRows(chords, cols, detachKey, ascii, keys = null, confirmed = fals
   const done = new Set(), rows = [];
   for (const [key, does] of chords) {
     if (done.has(does)) continue;
-    const pair = CHORD_PAIRS.find((each) => each.includes(does) && each.every((one) => keyOf.has(one)));
+    const pair = CHORD_PAIRS.find((each) => each.includes(does) && each.every((one) => keyOf.has(one)) && sharesModifiers(each.map((one) => keyOf.get(one))));
     if (pair) {
       pair.forEach((one) => done.add(one));
       rows.push([keysTogether(pair.map((one) => keyOf.get(one))), `${bothSaid(doesLabel(pair[0]), doesLabel(pair[1]))}${then(pair)}`]);

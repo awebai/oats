@@ -875,9 +875,12 @@ export function model(state, { page, body = page, now, at, cols, area = cols }) 
     workspace: r.workspace, machines: r.machines, here: r.here, machine: r.machine, counts: r.counts, readAt: r.readAt, notice: r.notice, note: r.note, empty: r.empty, observed: r.observed,
     detailTop: state.detailTop, helpTop: state.helpTop, open: state.open !== null,
     detachKey: state.detachKey, opening: state.opening, openable: false,
-    // The chords read now, `[key id, does]` (actions.mjs chordsRead), and whether the terminal
-    // confirms the kitty keyboard protocol: then the help and a terminal's cheat sheet lead with them.
+    // The chords read now, `[key id, does]` (actions.mjs chordsRead), whether the terminal confirms
+    // the kitty keyboard protocol, and whether every chord bound is read now (under the protocol, or
+    // the Alt family, whose keys all come without it): then the help and a terminal's cheat sheet
+    // lead with them.
     chords: [...chordsRead(state.chords, state.keyboard !== null)], kitty: state.keyboard !== null,
+    chordsLead: state.chords.size > 0 && chordsRead(state.chords, state.keyboard !== null).size === state.chords.size,
     // The family the chords are bound in (keys.json, lib/config.mjs loadKeys), its name, and the line that says
     // why the file was not taken, or null (the shared chordFamilyNote): the help's chords section names both.
     keys: state.keysRead ? Object.freeze({ family: state.keysRead.family, label: CHORD_FAMILY_LABELS[state.keysRead.family] ?? CHORD_FAMILY_LABELS[DEFAULT_CHORD_FAMILY], note: chordFamilyNote(state.keysRead) }) : null,

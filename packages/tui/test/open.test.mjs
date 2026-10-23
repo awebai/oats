@@ -76,9 +76,10 @@ function assertSaid(state, texts, sz = S80, message) {
 }
 /** The cheat sheet, the sidebar's rows after its last rule: each hint as `key word`, one space
  *  between them (the sheet sets the word in a column of its own). */
-/** After the leader's three, a terminal's sheet names the Alt+Shift arrows without the kitty
- *  keyboard protocol (docs/tui.md, "Chords"); on macOS the TUI has no chords. */
-const ARROWS = Object.freeze(process.platform === "darwin" ? [] : ["Alt+Shift+Up/Down agent"]);
+/** In the Alt family, the default, every chord is read without the kitty keyboard protocol, so a
+ *  terminal's sheet leads with them, before the leader's three (docs/tui.md, "Chords"); on macOS
+ *  the TUI has no chords. */
+const CHORDS_FIRST = Object.freeze(process.platform === "darwin" ? [] : ["Alt+K palette", "Alt+Shift+Up/Down agent", "Alt+W close", "Alt+Z zoom"]);
 function sheetOf(state, sz = S80) {
   const rows = sidebarOf(state, sz), rule = rows.findLastIndex((line) => /^[─-]+$/.test(line));
   return rows.slice(rule + 1).filter(Boolean).map((line) => line.split(/ {2,}/).join(" "));
@@ -394,7 +395,7 @@ test("opening, terminal, outcome and detachKey are kept by the store and read by
   // detachKey: the cheat sheet names it, it then Esc, and it twice, while the terminal has the
   // focus, and the help names the two, in a main area wide enough for each sentence on one row.
   const f12 = Object.freeze({ ...terminal, detachKey: "F12" });
-  assert.deepEqual(sheetOf(f12), ["F12 commands", "F12 Esc the list", "F12 F12 types F12", ...ARROWS]);
+  assert.deepEqual(sheetOf(f12), [...CHORDS_FIRST, "F12 commands", "F12 Esc the list", "F12 F12 types F12"]);
   assert.notDeepEqual(draw(f12).lines, draw(terminal).lines);
   const helped = draw(press(on(both([group()], { detachKey: "F12" }), FAR_A), ["?"]).state, size(200, 100)).lines.join("\n");
   assert.match(helped, /F12 Esc takes the focus from the terminal back to the list; the agent keeps running\./);
@@ -426,13 +427,13 @@ test("a sentence from outside is wrapped as a reason is, on the reason's rows, n
   assert.equal(said.some((line) => line.endsWith("\u2026")), false, "nothing cut");
 });
 
-test("a preflight that ends while the filter field is open gives the terminal the focus and settles the field, its text kept: the cheat sheet names the leader, the leader then Esc and the leader twice alone, and no key goes to the field (round 1 of the review)", () => {
+test("a preflight that ends while the filter field is open gives the terminal the focus and settles the field, its text kept: the cheat sheet names the chords, then the leader, the leader then Esc and the leader twice, and none of the field's keys; no key goes to the field (round 1 of the review)", () => {
   const state = on(both(), FAR_A), id = instanceId(rowOf(state));
   const typing = press(press(state, ["enter"]).state, ["/", "d", "e", "v"]).state;
   assert.deepEqual([typing.filter.editing, typing.opening?.phase], [true, "preflight"]);
   const started = reduce(typing, { prepared: { id } }).state;
   assert.deepEqual([started.terminal.focus, started.filter, started.focus], ["terminal", { editing: false, query: "dev" }, "list"]);
-  const focused = ["Ctrl+\\ commands", "Ctrl+\\ Esc the list", "Ctrl+\\ Ctrl+\\ types Ctrl+\\", ...ARROWS];
+  const focused = [...CHORDS_FIRST, "Ctrl+\\ commands", "Ctrl+\\ Esc the list", "Ctrl+\\ Ctrl+\\ types Ctrl+\\"];
   assert.deepEqual(sheetOf(started), focused);
   assert.deepEqual(sheetOf(started, S120), focused);
 });
