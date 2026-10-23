@@ -2,7 +2,7 @@
  * cannot be bypassed by an alias or by omitting the transaction discriminator. */
 import { apiUrl, apiInit } from './api-url.mjs';
 import { trustedForgeFrame } from './forge-proxy.mjs';
-import { record, absolute } from '../client/spawn-preview-contract.mjs';
+import { record, absolute, NAMING_TIMEOUT_MS } from '../client/spawn-preview-contract.mjs';
 import { spawnPrepareInput, spawnRefInput, spawnApplyView, spawnApplyFailure } from '../client/spawn-apply-contract.mjs';
 export async function proxySpawnApply(event, pathname, opts, { rendererURL, connection, fetch: fetcher = globalThis.fetch } = {}) {
   let frame, start, dispatched = false, mutation = false, legacy = false, input;
@@ -28,7 +28,9 @@ export async function proxySpawnApply(event, pathname, opts, { rendererURL, conn
     const url = apiUrl(pathname, start.base, start.wsId, start.allowedWs, { bound: start.bound === true });
     if (url.pathname !== '/api/spawn' || url.searchParams.getAll('ws').length > 1
       || [...url.searchParams.keys()].some(k => k !== 'ws') || !legacy && !url.searchParams.get('ws')) return fail('E_BAD_ARGS', 400);
-    const timeout = mutation ? 65000 : input.action === 'prepare' ? 35000 : 10000;
+    // A remote spawn the host names from its task (suggestName, #1490 §3) runs the kernel's naming call first: the CLI's
+    // deadline grows by NAMING_TIMEOUT_MS (cli-adapter.mjs cliSpawn), and this one keeps its margin above it.
+    const timeout = mutation ? 65000 + (legacy && input.suggestName === true ? NAMING_TIMEOUT_MS : 0) : input.action === 'prepare' ? 35000 : 10000;
     dispatched = true;
     const response = await fetcher(url, { ...init, signal: AbortSignal.timeout(timeout) });
     const raw = await response.text();

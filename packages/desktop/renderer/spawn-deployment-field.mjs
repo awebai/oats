@@ -192,6 +192,8 @@ export function createSpawnDeploymentField(doc, { ctx, soul, viewId, deployments
     server: () => serverOf(deployment(), catalogs.get(deployment().id)?.row),
     /** The selector for the chosen deployment: its catalog's row for the soul (the root differs per deployment). */
     selector: () => { const r = catalogs.get(deployment().id)?.row; return { soul: soul.name, agentsRoot: r?.agentsRoot ?? soul.agentsRoot }; },
+    /** The soul's default harness in the chosen deployment's catalog, as its machine reports it; null while unknown. */
+    harness: () => { const h = catalogs.get(deployment().id)?.row?.harness; return typeof h === 'string' && h ? h : null; },
     /** Some catalog is still being read and the operator has not chosen: the default may still move. */
     pending: () => !touched && [...catalogs.values()].some(c => c.state === 'pending'),
     /** The chosen deployment does not offer the soul (or is not reached, so offers none): Spawn is blocked. */

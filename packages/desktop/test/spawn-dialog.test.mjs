@@ -307,7 +307,7 @@ test('a spawn on a server whose host advertises spawn-name is named as a local o
   await u.change('.fserver', 'build'); const before = u.previews().length;
   assert.ok(u.q('.spawn-name-input').classList.contains('unprefixed'), 'no <soul>- prefix');
   assert.equal(u.q('.fpurpose').placeholder, 'e.g. desktop-improvements');
-  assert.equal(u.text('.spawn-name-result'), 'Left empty, the kernel numbers it.');
+  assert.equal(u.text('.spawn-name-result'), 'Named by build when it spawns.', 'neither this CLI nor the host names it from its task');
   await u.type('.fpurpose', 'API-v2');
   assert.equal(u.text('.spawn-name-result'), 'Instance name: api-v2-manager', 'lowercased, with the soul\'s role once');
   assert.equal(u.previews().length, before, 'still decided on the host: no local preview');

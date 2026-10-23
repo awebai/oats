@@ -176,7 +176,7 @@ test('the main proxy lets a suggest read carry its task (64 KiB); a preview stay
   assert.equal((await proxySpawnPreview(event, '/api/workspace-spawn-preview?ws=northwind', { method: 'POST', body: JSON.stringify(suggestRequest('x'.repeat(65536))) }, deps)).body.reason.code, 'E_BAD_ARGS');
   assert.equal(fetched, 1);
   const server = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
-  assert.match(server, /readStrictBody\(req, 65536, true\);\n\s*const suggest = request\.action === 'suggest';\n\s*if \(!suggest && bytes > 16384\) throw/, 'the route: 64 KiB for a suggest read, 16 KiB for a preview');
+  assert.match(server, /readStrictBody\(req, 65536, true\);\n(?:\s*\/\/.*\n)*\s*const suggest = request\.action === 'suggest' \|\| request\.action === 'suggest-name';\n\s*if \(!suggest && bytes > 16384\) throw/, 'the route: 64 KiB for a suggest or suggest-name read, 16 KiB for a preview');
   assert.match(server, /if \(suggest\) return send\(res, 200, await spawnPreview\.suggest\(request, getContext\)\);\n\s*return send\(res, 200, await spawnPreview\.read\(request, getContext\)\);/);
   assert.match(readFileSync(new URL('../../client/spawn-preview.mjs', import.meta.url), 'utf8'), /suggest: createSpawnSuggestBoundary\(\{ invoke, cache, maxAge, flights, exec \}\),/, 'the suggest lane shares the preview\'s cache and clock');
 });

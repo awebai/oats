@@ -41,6 +41,8 @@ import { inspectSupported } from "../../../client/inspect-contract.mjs";
 import { createDataState, skeleton, statusLine, captureFocusState } from "../loading.mjs";
 import { canAddressRemote } from "../../../client/remote-address.mjs";
 import { instanceActionTarget } from "../instance-action-target.mjs";
+import { namingOf } from "../../../client/spawn-preview-contract.mjs";
+import { numberedLine } from "../../../client/spawn-naming.mjs";
 
 /** True while the CLI probe has never SETTLED (no response classified yet).
  * Pending is card-less by design, so disabled buttons must explain
@@ -1516,6 +1518,7 @@ export async function doSpawn(s, fields) {
       // A chosen remote deployment (#482) spawns its own catalog's soul row (the root is that deployment's).
       agent: a.name, agentsRoot: typeof fields.agentsRoot === "string" && fields.agentsRoot ? fields.agentsRoot : a.agentsRoot, serverId: fields.server, task: fields.task || "",
       purpose: fields.purpose || undefined, name: fields.name || undefined, // the dialog sends one: an exact name where the host takes one
+      ...(fields.suggestName ? { suggestName: true } : {}), // or neither, and the host names it from its task (spawn-apply-suggest-name)
       relation: relation !== "unrelated" ? relation : undefined,
       relativeTo: relation !== "unrelated" ? fields.relativeTo : undefined,
       relativeRoot: relation !== "unrelated" ? (fields.relativeRoot || undefined) : undefined,
@@ -1523,6 +1526,11 @@ export async function doSpawn(s, fields) {
       model: fields.model || undefined, launchConfig: fields.launchConfig || undefined, wake: fields.wake,
     });
     if (!owns()) return;
+    // Numbered where it would have been named from its task: by the host (its `naming`, re-validated), or here before the
+    // press (fields.numbered, when nothing asked the host to name it). Said as the local spawn says it.
+    const hostNaming = fields.suggestName ? namingOf(d.naming) : null;
+    const numbered = hostNaming?.source === 'numbered' ? { reason: hostNaming.reason, harness: null } : !fields.suggestName && fields.numbered ? fields.numbered : null;
+    if (numbered && typeof d.instance === "string") s.ctx.notify?.(numberedLine(d.instance, numbered.reason, numbered.harness));
     if (d.wakeScheduleError) {
       const problem = { code: d.wakeScheduleError.code || "E_SCHEDULE", detail: `${d.wakeScheduleError.code || "E_SCHEDULE"} · ${d.wakeScheduleError.message || ""}` };
       fields.status(`Created ${d.instance}, but its wake schedule was not saved. Add it from Schedules.`, true, problem);

@@ -425,8 +425,24 @@ example "Named oats-desktop-expert-3: naming took longer than 20 seconds."
 That happens when there is no instruction, when the harness doesn't suggest
 names (Codex), when there is no answer within 20 seconds, when the harness
 couldn't be asked, and when its reply wasn't a name. Each request is a call
-to the harness's model: nothing is asked before you type, nothing runs on a
-timer, and a spawn on a server is not named this way.
+to the harness's model: nothing is asked before you type, and nothing runs on
+a timer.
+
+A spawn on a server whose OATS takes an exact name is named from its task the
+same way, with one difference: the name is chosen on this computer. The
+Opening instruction is sent to this computer's harness and model, as for a
+spawn here: the Harness you chose, else the soul's default on that server,
+else Claude Code, with this computer's launch configuration for it. That needs
+an OATS here that can name a spawn for another machine (feature
+`instance-suggest-name`). When it can't, or the name couldn't be chosen here,
+the server names the instance itself from its task if its OATS can (feature
+`spawn-apply-suggest-name`): the help reads "Left empty, the instance is named
+from its task on <server>." Otherwise the server numbers it, and the help reads
+"Named by <server> when it spawns." Naming never stops a spawn on a server.
+When the instance is numbered where it would have been named, a notification
+says why, as for a spawn here. A name chosen here is not checked on the server
+until the spawn: one that is already taken there is refused, and explained
+under the field.
 
 When capabilities set up the new worktree (OATS 0.49.0 and later), **Setup**
 names them, in the order they run, and says this can take several minutes. Such

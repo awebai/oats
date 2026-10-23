@@ -144,6 +144,56 @@ background spawn says "Named <instance>: <reason in words>." when it is
 created (`numberedLine`). A suggested name that a `--name` preview finds
 taken is forgotten, and a waiting press names again.
 
+## A spawn on another machine named from its task (features `instance-suggest-name`, `spawn-apply-suggest-name`)
+
+A spawn on a server takes an exact name only where this CLI and the host
+advertise `spawn-name` (`roleNamed`, the host's half from its roster group's
+relayed `probe.features`, `answeringFeatures`). There, an empty, untouched
+name is named from its task in one of three ways (awebai/oats#1490 §2, §3), and
+the help under it says which before the press:
+
+1. **Here** ("Left empty, the instance is named from its task."): this CLI
+   advertises `instance-suggest-name` (`instanceSuggestSupported`) and the view
+   has a deployment on this computer (`suggestDeployment`). The same route
+   takes `{action:"suggest-name",soul,task,harness?,model?}`
+   (`instanceSuggestRequest`): the soul is only a name (the host's, which
+   needn't exist here), `harness` is the dialog's Harness choice, else the
+   soul's default as its host reports it (a server-listed soul's row, or the
+   Deployment field's catalog row), else omitted (the kernel's default), and
+   `model` goes only with `pi`. It runs, with the task in a private temporary
+   file and no `--launch-config` (the dialog's configurations are the host's):
+
+   ```text
+   instance suggest-name --soul <soul> --task-file <tmp> [--harness <h>] [--model <m>]
+     --dir <local deployment> --json
+   ```
+
+   The answer is `{workspace, data:{name?, naming}}` (`instanceSuggestion`:
+   `name`, a slug of at most 64, exactly when `naming.source` is `suggested`),
+   re-validated by the Electron proxy, which also checks that `workspace` is
+   the deployment it asked. Its lane is its own, one per deployment, the newer
+   ending the older, as the suggest read's. The dialog asks exactly when and
+   how a local suggestion is asked (debounce, seven words, one call in the air,
+   "Naming…" at the press), and keeps answers by `namingKey` with the target
+   server, so one host's answer never names a spawn on another. A suggestion is
+   sent as `name`; nothing here makes it unique, and a host that finds it
+   taken refuses it (`E_INSTANCE_NAME_TAKEN`, beside the field).
+2. **On the host** ("Left empty, the instance is named from its task on
+   <host>."): nothing was named here (no feature here, a numbered answer, or a
+   failed read: a spawn is never failed or blocked over naming) and both this
+   CLI and the host advertise `spawn-apply-suggest-name` (`hostNames`). The
+   remote spawn sends `suggestName: true`, which `/api/spawn` passes as
+   `--suggest-name` (never beside a name or a purpose: `E_BAD_ARGS`; without
+   the feature here, `cli-no-apply-suggest-name`), with the CLI deadline
+   extended by `NAMING_TIMEOUT_MS`. The result's `naming` is re-validated
+   (`namingOf`) by the server and again by the view.
+3. **Numbered on the host** ("Named by <host> when it spawns."): neither is
+   sent. A name the field was typed in, then emptied, is always this case.
+
+When the instance was numbered where it would have been named (the host's
+`naming` is `numbered`, or this computer's answer was and nothing asked the
+host), the view says "Named <instance>: <reason in words>." (`numberedLine`).
+
 **The reuse window.** The preview and the apply broker are boundaries of the shared
 home (`packages/client/spawn-preview.mjs`, `spawn-apply.mjs`) that a client creates
 and owns: the backend makes one preview (`createSpawnPreview`) and one broker
