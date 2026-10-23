@@ -78,7 +78,7 @@ test("a soul's Schedule… opens Automations on Schedules; an older OATS gets ea
 });
 
 // The Workspace's Automations tab is reached while its stage may already be on screen: a preselect (a soul's
-// Schedule…, the palette's View: Automations after a Triggers visit) switches the live stage at once, and a
+// Schedule…, the palette's View: Workspace › Automations after a Triggers visit) switches the live stage at once, and a
 // disposed stage is no longer reached, so it reads nothing.
 test('preselectAutomationsTab switches a stage already on screen; a disposed one is not reached and reads nothing', async t => {
   preselectAutomationsTab('schedule'); t.after(() => preselectAutomationsTab('schedule'));

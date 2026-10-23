@@ -17,9 +17,11 @@ export const NAV = [
 
 /** Destinations that are a tab of a NAV page, not a page of their own (2026-10-23): Automations
  * (Schedules | Triggers) is the Workspace page's Automations tab. Its action (`stage.automations`, ⌘3 /
- * Ctrl+3), its palette command and every open of the name land on that page and tab. */
+ * Ctrl+3), its palette command and every open of the name land on that page and tab. Its `label` says
+ * where that is, the page's label, then the tab's ("View: Workspace › Automations" in the palette and
+ * the shortcuts editor). */
 export const NAV_TABS = [
-  { name: "automations", label: "Automations", page: "spawn", tab: "automations" },
+  { name: "automations", label: "Workspace › Automations", page: "spawn", tab: "automations" },
 ];
 
 /** The NAV_TABS entry `name` opens, or null for a page of its own (or nothing). */

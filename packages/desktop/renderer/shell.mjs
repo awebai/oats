@@ -2793,7 +2793,7 @@ registerAction({ id: "app.palette", label: "Open the command palette", context: 
 registerAction({ id: "app.quickOpenSouls", label: "Quick open a soul to spawn", context: "global", run: () => { tabOpenIntents.invalidate(); quickOpen.toggle(); } });
 registerAction({ id: "app.chooseSoul", label: "Spawn instance: choose a soul in Workspace", context: "global", run: () => openWorkspaceSouls() });
 registerAction({ id: "app.shortcuts", label: "Edit keyboard shortcuts", context: "global", run: () => openShortcutsEditor() });
-registerAction({ id: "app.connections", label: "Settings: Connections", context: "global", run: () => openConnections() });
+registerAction({ id: "app.connections", label: "Settings: Connections…", context: "global", run: () => openConnections() });
 // A window with no workspace, showing the switcher (#481). No default chord: Ctrl+Shift+N stays Choose soul.
 if (typeof desktopBridge.windowOpenWorkspace === "function") {
   registerAction({ id: "app.newWindow", label: "Window: new window", context: "global", run: () => { void desktopBridge.windowOpenWorkspace(null); } });
