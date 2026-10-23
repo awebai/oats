@@ -48,7 +48,7 @@ import { proxyReadiness } from './readiness-proxy.mjs';
 import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
 import { proxyInstanceEvents } from './instance-events-proxy.mjs';
 import { proxySpawnApply } from './spawn-apply-proxy.mjs';
-import { startSingleInstance, launchDirectory, createLaunchOpener } from "./single-instance.mjs";
+import { startSingleInstance, launchDirectory, createLaunchOpener, createVersionHandoff, ownLaunch } from "./single-instance.mjs";
 import { createActivityNotifier, createViewsNotifier } from "./window-activity.mjs";
 import { createHostThemeSource, installHostThemeHandlers } from "./host-theme.mjs";
 import { createChordFamilySource, installChordFamilyHandlers } from "./chord-family.mjs";
@@ -1022,8 +1022,17 @@ const openLaunch = createLaunchOpener({
     if (!result?.ok) return null;
     return resolveView(result.workspace.id, (await panelWorkspaces()) ?? servedList);
   },
-  open: (key) => { openWorkspaceWindow(key); },
-  focusRecent: () => { windows.focusRecent(); },
+  open: (key) => openWorkspaceWindow(key).win,
+  focusRecent: () => windows.focusRecent(),
+});
+// A repeated launch of another version (an installer replaced while this app runs): after its window is
+// opened or focused, a box over that window says so and offers to restart into the launched copy.
+const offerVersionRestart = createVersionHandoff({
+  running: app.getVersion(),
+  ask: (win, box) => (win && !win.isDestroyed() ? dialog.showMessageBox(win, box) : dialog.showMessageBox(box)),
+  isRegularFile: (path) => statSync(path).isFile(),
+  relaunch: (options) => app.relaunch(options),
+  quit: () => app.quit(),
 });
 
 const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => openLaunch(launchDirectory(argv, workingDirectory)), async () => {
@@ -1084,7 +1093,7 @@ const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => ope
   });
   app.on("browser-window-blur", noteWindowActivity);
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) restoreWindows(); });
-});
+}, ownLaunch(app), offerVersionRestart);
 
 if (primaryInstance) app.on("window-all-closed", () => { app.quit(); });
 
