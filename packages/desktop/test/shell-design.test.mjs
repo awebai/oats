@@ -16,6 +16,7 @@ import { NAV, NAV_TABS, navTab } from "../renderer/shell-nav.mjs";
 import { shellIcon, mountShellIcons } from "../renderer/shell-icons.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
+import { revealInScrollport } from "../renderer/reveal-in-scrollport.mjs";
 import { rosterResponseOwns, rosterSignature } from "../renderer/instance-tree-view.mjs";
 import { staleWorkspaceSelection } from "../renderer/views/common.mjs";
 import { createPendingWatch, NOT_SERVED_CODE, NO_ANSWER_CODE } from "../renderer/deployment-header.mjs";
@@ -70,7 +71,7 @@ function shell(t, shellSource = source, { storage = {}, gitPanel } = {}) {
     splitPane: orientation => events.push(["split", orientation]), closeSplit: () => events.push(["split", "close"]),
     fileOpener: { choose() {}, dispose() {} },
     getBinding, formatChord, paletteGroupDirection, paletteGroupHint, isMac: false, contextRosterEl: document.getElementById("instance-roster"),
-    activeTrigger: null, activeTabTrigger: () => c.activeTrigger,
+    activeTrigger: null, activeTabTrigger: () => c.activeTrigger, revealInScrollport,
   };
   c.tabOpenIntents = createSelectionOwnership(c);
   const start = shellSource.indexOf('const navEl = document.getElementById("nav");');
@@ -80,7 +81,7 @@ function shell(t, shellSource = source, { storage = {}, gitPanel } = {}) {
   const actionsEnd = shellSource.indexOf('// THE one window keydown listener', actionsStart);
   const registry = shellSource.slice(actionsStart, actionsEnd);
   const titleCode = shellSource.slice(shellSource.indexOf("const baseTitles ="), shellSource.indexOf("onKeymapChange(() => applyChordTitles"));
-  const functions = ["setNavActive", "sidebarHidden", "setSidebarHidden", "updateSidebarControls", "toggleSidebar", "focusRoster", "openShortcutsEditor", "openConnections", "stableFocusTarget"].map(name => fn(name, shellSource));
+  const functions = ["setNavActive", "sidebarHidden", "setSidebarHidden", "updateSidebarControls", "toggleSidebar", "rosterEntry", "setRovingRow", "focusRoster", "openShortcutsEditor", "openConnections", "stableFocusTarget"].map(name => fn(name, shellSource));
   const panelSetup = shellSource.slice(shellSource.indexOf("const contextPanel = createContextPanel"), shellSource.indexOf("/** Projection only:"));
   const s = runInNewContext(`${panelSetup}\n${navigation}\nconst SIDEBAR_HIDDEN_KEY = "oats-desktop-sidebar-hidden";\n${functions.join("\n")}\n${registry}\n${titleCode}\napplyChordTitles();\n({ openWorkspaceSouls, setNavActive, setSidebarHidden, applyChordTitles, contextPanel });`, withShellWindowGlobals(c));
   offs.push(onKeymapChange(s.applyChordTitles));
@@ -91,6 +92,12 @@ function shell(t, shellSource = source, { storage = {}, gitPanel } = {}) {
   for (const line of reopen) runInNewContext(line, c);
   t.after(() => { offs.forEach(off => off()); setActiveContexts(new Set()); });
   return { ...s, c, document, loads, events, notices,
+    /** Paint roster rows as renderContextRoster does (one roving stop, on `stop`); returns the row buttons. */
+    paintRows(stop = 1) {
+      const list = document.querySelector("#instance-roster .ctx-list");
+      list.innerHTML = ["a", "b", "c"].map((id, i) => `<div class="ctx-tree-row"><button type="button" class="ctx-inst" data-tree-instance="/h/${id}" tabindex="${i === stop ? 0 : -1}">${id}</button></div>`).join("");
+      return [...list.querySelectorAll(".ctx-inst")];
+    },
     switchTo(workspace) { c.workspace = workspace; c.generation++; },
     async settle(gate, outcome) {
       if (outcome === "resolve") gate.resolve({
@@ -313,8 +320,8 @@ test("sidebar shortcuts keep Ctrl+B/F/N/P with the pty and dispatch Cmd+F/N on m
   for (const [key, action] of [["f", "sidebar.focusFilter"], ["n", "app.chooseSoul"]]) {
     assert.equal(matchEvent({ key, metaKey: true }, { isMac: true, insideTerminal: true }), action);
   }
-  // Linux/Windows: the filter is Alt+F (the default family) and "Spawn instance" Ctrl+Shift+N, both
-  // inside the terminal and out, while plain Ctrl+F and Ctrl+N stay the program's.
+  // Linux/Windows: "Focus the instance roster" is Alt+F (the default family) and "Spawn instance" Ctrl+Shift+N,
+  // both inside the terminal and out, while plain Ctrl+F and Ctrl+N stay the program's.
   for (const key of ["f", "n"]) assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: false }), null);
   for (const insideTerminal of [false, true]) {
     assert.equal(matchEvent({ key: "f", altKey: true }, { isMac: false, insideTerminal }), "sidebar.focusFilter");
@@ -334,38 +341,27 @@ test("visible shortcut hints and tooltips follow rebind, unbind and platform wit
   setBinding("app.chooseSoul", null); assert.equal(spawn.title, "Spawn instance");
   assert.equal(spawn.getAttribute("aria-label"), "Spawn instance", "the name never carries the chord");
   resetBinding("app.chooseSoul"); assert.equal(spawn.title, "Spawn instance (⌘N)");
-  for (const [action, initial, selector] of [
-    ["sidebar.focusFilter", "⌘F", ".ctx-filter"],
-  ]) {
-    const hint = [...s.document.querySelectorAll('[data-shortcut]')].find(el => el.dataset.shortcut === action);
-    const control = s.document.querySelector(selector), label = control.getAttribute("aria-label");
-    assert.equal(hint.textContent, initial); assert.equal(hint.hidden, false);
-    assert.equal(hint.getAttribute("aria-hidden"), "true");
-    setBinding(action, "Mod+Shift+J");
-    assert.equal(hint.textContent, "⇧⌘J"); assert.match(control.title, /⇧⌘J/);
-    s.c.isMac = false; s.applyChordTitles();
-    assert.equal(hint.textContent, "Ctrl+Shift+J");
-    setBinding(action, null);
-    assert.equal(hint.hidden, true); assert.equal(hint.textContent, "");
-    assert.doesNotMatch(control.title, /Ctrl|⌘/); assert.equal(control.getAttribute("aria-label"), label);
-    resetBinding(action); s.c.isMac = true; s.applyChordTitles();
-    assert.equal(hint.textContent, initial); assert.equal(hint.hidden, false);
-  }
+  s.c.isMac = false; s.applyChordTitles(); assert.equal(spawn.title, "Spawn instance (Ctrl+Shift+N)", "the platform's chord");
+  // The roster filter's ⌘F hint went with the filter: the shipped chrome has no visible hint, and the
+  // command keeps its chord with no control to title (the palette and the shortcuts editor show it).
+  assert.equal(s.document.querySelector("[data-shortcut], .shortcut-hint, .ctx-filter"), null, "no visible shortcut hint ships");
+  assert.equal(s.document.querySelector('[data-action="sidebar.focusFilter"]'), null);
+  assert.equal(getBinding("sidebar.focusFilter", true), "Mod+F");
 });
 
-for (const outcome of ["resolve", "reject"]) test(`filter command reveals hidden sidebar and supersedes pending chooser ${outcome}`, async t => {
-  const s = shell(t); s.document.getElementById("sidebar-spawn").click();
+for (const outcome of ["resolve", "reject"]) test(`Focus the instance roster reveals hidden sidebar and supersedes pending chooser ${outcome}`, async t => {
+  const s = shell(t), rows = s.paintRows(1); s.document.getElementById("sidebar-spawn").click();
   s.setSidebarHidden(true);
   assert.equal(s.document.getElementById("app").classList.contains("sidebar-hidden"), true);
   const intent = s.c.tabOpenIntents.begin();
   runAction("sidebar.focusFilter");
   assert.equal(intent(), false);
   assert.equal(s.document.getElementById("app").classList.contains("sidebar-hidden"), false);
-  assert.equal(s.document.activeElement, s.document.querySelector(".ctx-filter"));
+  assert.equal(s.document.activeElement, rows[1], "the roster's current row");
   assert.equal(s.document.getElementById("sidebar-toggle").getAttribute("aria-expanded"), "true");
   await s.settle(s.loads[0], outcome);
   assert.deepEqual(s.events, []); assert.deepEqual(s.notices, []);
-  assert.equal(s.document.activeElement, s.document.querySelector(".ctx-filter"));
+  assert.equal(s.document.activeElement, rows[1], "the stale chooser does not take focus back");
 });
 
 async function staleChooser(t, outcome, superseder, shellSource = source) {
@@ -743,8 +739,8 @@ test('Spec B: the soul inspector keeps opening on soul selection, whatever the i
   s.contextPanel.setContext(terminalOf('/A/one')); assert.equal(q('context-panel').hidden, true, 'an instance terminal still opens closed');
 });
 
-test('focusRoster exits focus mode, reveals the sidebar and focuses its filter through the registered command', t => {
-  const s = shell(t), q = id => s.document.getElementById(id);
+test('focusRoster exits focus mode, reveals the sidebar and focuses the roster\'s current row through the registered command', t => {
+  const s = shell(t), q = id => s.document.getElementById(id), rows = s.paintRows(2);
   s.setSidebarHidden(true); runAction('app.focusMode');
   assert.equal(s.contextPanel.isFocusMode(), true);
   const pending = s.c.tabOpenIntents.begin(); runAction('sidebar.focusFilter');
@@ -752,7 +748,27 @@ test('focusRoster exits focus mode, reveals the sidebar and focuses its filter t
   assert.equal(q('app').classList.contains('sidebar-hidden'), false);
   assert.equal(s.c.localStorage.getItem('oats-desktop-sidebar-hidden'), null);
   assert.equal(q('sidebar-toggle').getAttribute('aria-expanded'), 'true');
-  assert.equal(s.document.activeElement, s.document.querySelector('.ctx-filter'));
+  assert.equal(s.document.activeElement, rows[2], 'the roving stop');
+  assert.equal(rows.filter(r => r.tabIndex === 0).length, 1, 'still one stop');
+  assert.equal(listActions().find(a => a.id === 'sidebar.focusFilter')?.label, 'Focus the instance roster', 'same id, relabelled');
+});
+
+test('focusRoster without a roving stop lands on the first row, else Retry, else the workspace list: never nothing', t => {
+  const s = shell(t), q = id => s.document.getElementById(id), list = s.document.querySelector('#instance-roster .ctx-list');
+  const rows = s.paintRows(-1);
+  q('sidebar-spawn').focus(); runAction('sidebar.focusFilter');
+  assert.equal(s.document.activeElement, rows[0], 'the first row');
+  assert.equal(rows[0].tabIndex, 0, 'and it becomes the stop');
+  list.innerHTML = '<div class="loading-failed"><button type="button" class="act">Retry</button></div>';
+  q('sidebar-spawn').focus(); runAction('sidebar.focusFilter');
+  assert.equal(s.document.activeElement.textContent, 'Retry', 'a failed first read: its Retry');
+  list.innerHTML = '<div class="ctx-empty">No instances.</div>';
+  q('ws-options').innerHTML = '<ul class="ws-group"><li class="ws-option-row"><button type="button" class="ws-option" aria-current="true" tabindex="0">A</button></li></ul>';
+  q('sidebar-spawn').focus(); runAction('sidebar.focusFilter');
+  assert.equal(s.document.activeElement, q('ws-options').querySelector('.ws-option'), 'no instances: the list of workspaces\' stop');
+  q('ws-options').innerHTML = '';
+  q('sidebar-spawn').focus(); runAction('sidebar.focusFilter');
+  assert.equal(s.document.activeElement, q('ws-add-open'), 'and with no workspace row: Add local workspace…');
 });
 
 test('panel.toggle defaults to ⌘I / Ctrl+Shift+I (no conflict) and fires in a terminal; focus mode has no default and does not', t => {

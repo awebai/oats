@@ -149,11 +149,21 @@ test("a closed panel is out of the cycle (Spec B), the hidden-region rule; main 
   assert.equal(s.regions.regionOfFocus(), "main", "and so does Show sidebar");
 });
 
-test("the roster without a selected row lands on its first row's stop, else its filter", t => {
+test("the roster without a row stop lands on its first control (a Retry), else it is passed over: it has no filter", t => {
   const s = shell(t);
-  s.doc.querySelector(".ctx-list").innerHTML = "";
-  s.regions.focusRegion("roster");
-  assert.ok(s.doc.activeElement.classList.contains("ctx-filter"));
+  const roster = s.doc.getElementById("instance-roster");
+  assert.equal(roster.querySelector(".ctx-filter, input"), null, "the shipped roster has no filter field");
+  assert.deepEqual([...roster.children].map(el => el.className), ["ctx-head", "ctx-list"], "its head, then its list");
+  // A failed first read: no rows, only the failed block's Retry.
+  s.doc.querySelector(".ctx-list").innerHTML = `<div class="loading-failed"><button type="button" class="act">Retry</button></div>`;
+  assert.equal(s.regions.focusRegion("roster"), true);
+  assert.equal(s.where(), "Retry");
+  // Nothing to focus (an empty roster): the region is skipped, never <body>.
+  s.doc.querySelector(".ctx-list").innerHTML = `<div class="ctx-empty">No instances.</div>`;
+  s.doc.querySelector('#ws-options [tabindex="0"]').focus();
+  assert.equal(s.regions.focusRegion("roster"), false);
+  s.regions.cycle(1);
+  assert.equal(s.where(), "Workspace", "from the workspaces past the empty roster, the footer");
 });
 
 // ── surface-return: back to where the operator was ─────────────────────

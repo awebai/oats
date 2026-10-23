@@ -522,7 +522,7 @@ test("Windows AltGr: a layout's character on a Ctrl+Alt chord matches no chord a
   inFamily(t, DEFAULT_CHORD_FAMILY);
   const press = xtermTerminal(t, { platform: "Win32", keyHandler: windowsKeyPath });
   assert.equal(press.isWindows, true, "xterm loaded under the Windows platform");
-  const dom = new JSDOM(`<input class="ctx-filter"><textarea class="ftask"></textarea>`);
+  const dom = new JSDOM(`<input class="palette-input"><textarea class="ftask"></textarea>`);
   t.after(() => dom.window.close());
   const fields = [...dom.window.document.querySelectorAll("input, textarea")];
   for (const family of CHORD_FAMILIES) for (const [layout, keys] of Object.entries(ALTGR)) for (const [k, char] of keys) {
@@ -556,7 +556,7 @@ test("Windows, Ctrl+Alt family: where AltGr types nothing, the shared Ctrl+Alt c
   const ran = registerDefaults(t);
   inFamily(t, "ctrl+alt");
   const press = xtermTerminal(t, { platform: "Win32", keyHandler: windowsKeyPath });
-  const dom = new JSDOM(`<input class="ctx-filter">`);
+  const dom = new JSDOM(`<input class="palette-input">`);
   t.after(() => dom.window.close());
   const input = dom.window.document.querySelector("input");
   // Spanish and Polish type nothing on K, P, W, F; Spanish nothing on O, Z, A either.

@@ -45,7 +45,7 @@ const markup = `<div id="app"><aside id="sidebar">
     <li class="ws-option-row"><button class="ws-option ws-current" aria-current="true">One</button></li>
     <li class="ws-option-row"><button class="ws-option ws-other">Two</button></li></ul></div></section>
   <section id="instance-roster">
-    <label class="ctx-filter-field"><span class="ctx-filter-icon"></span><input class="ctx-filter" placeholder="Filter instances"><kbd class="shortcut-hint" hidden></kbd></label>
+    <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div>
     <div class="ctx-list"><div class="ctx-tree-row"><button class="ctx-inst">Row</button>
       <span class="ctx-row-tools"><button class="ctx-instance-actions">…</button></span></div></div></section>
   <div id="nav-foot"><nav id="nav"><button class="nav-item active" aria-current="page"><span class="icon"></span><span class="label">Deployments</span></button><button class="nav-item"><span class="icon"></span><span class="label">Workspace</span></button></nav>
@@ -199,16 +199,12 @@ test("focus: controls with their own opaque pair keep it and show the edge only"
 });
 
 // ── rule 3: search and filter fields have one border ──
-test("search fields: the wrapper or the field's own border is the only frame; the input never outlines", t => {
+test("search fields: the field's own border is the only frame; the input never outlines", t => {
   const u = fixture(t);
-  const wrapper = u.rule(".ctx-filter-field"), focusWithin = u.rule(".ctx-filter-field:focus-within");
-  assert.equal(wrapper.border, "1px solid var(--border)"); assert.equal(focusWithin.borderColor, "var(--accent)");
-  const idle = u.style(".ctx-filter");
-  assert.equal(idle.outline, "none"); assert.equal(idle.borderWidth, "0px");
-  const filter = u.focused(".ctx-filter");
-  assert.equal(filter.outline, "none", "focused filter input draws no inner ring (board 7 Before)");
-  assert.equal(filter.borderWidth, "0px");
-  assert.equal(filter.background, "var(--bg)");
+  // The sidebar has no search field since the roster filter went (the command palette finds an instance by name):
+  // no rule styles it, and the roster is its head, then its list.
+  assert.deepEqual(u.rules.filter(r => /\.ctx-filter/.test(r.selectorText || "")).map(r => r.selectorText), [], "no roster filter rule ships");
+  assert.deepEqual([...u.get("#instance-roster").children].map(el => el.className), ["ctx-head", "ctx-list"]);
   // The workspace list has no search field any more (the Add dialog's search is the one left).
   assert.equal(u.rules.filter(r => /#ws-menu-search/.test(r.selectorText || "")).length, 0, "no rule for the dropdown's search");
   // Two rules name the Add dialog's search alone now: its frame, and its place in the dialog (width, margin).
@@ -240,7 +236,7 @@ for (const palette of ["light", "solarized", "dark"]) test(`${palette}: selected
     assert.ok(contrast(accent, on) >= 3, `${palette}: --accent edge on --${name} ${contrast(accent, on).toFixed(2)}:1`);
   }
   assert.equal(u.style(".ws-segmented [aria-pressed=true]").color, "var(--accent)");
-  assert.equal(u.rule(".ctx-filter-field:focus-within").borderColor, "var(--accent)");
+  assert.equal(u.rule("#ws-suggestion-search:focus-visible").borderColor, "var(--accent)");
   // The footer's nav items and its Spawn instance icon button (the sidebar layout): their ink, idle and
   // keyboard-focused, on the --sel tint they focus to, through the effective tokens (the edge is checked above).
   for (const selector of ["#nav .nav-item:not(.active)", "#nav .nav-item.active", "#sidebar-toggle", "#sidebar-spawn"]) {

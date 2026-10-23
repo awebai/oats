@@ -6,7 +6,7 @@
 // there is nothing to show) is skipped. Focus lands on the region's current item, never on <body>:
 //   workspaces  the list of workspaces' tab stop (the row last focused, else the current one), else
 //               the heading's Add local workspace…
-//   roster  the roster's tab stop (the selected row), else the filter
+//   roster  the roster's tab stop (the selected row), else its first control (Retry after a failed read)
 //   footer  the current view's nav item (aria-current), else the first one, else the first tool
 //   main    the active tab's content (a terminal's input) through the shell's hook, else the
 //           stage's first control
@@ -79,8 +79,7 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
     if (name === "roster") {
       const roster = byId("instance-roster");
       const stop = [...(roster?.querySelectorAll('.ctx-list [tabindex="0"]') || [])].find(focusable);
-      const filter = roster?.querySelector(".ctx-filter");
-      return stop || (focusable(filter) ? filter : firstTabbable(roster));
+      return stop || firstTabbable(roster);
     }
     if (name === "panel") {
       const panel = byId("context-panel");

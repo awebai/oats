@@ -392,7 +392,7 @@ global part, views follow them in their own CSS). `test/control-rules.test.mjs` 
    canvases, `pre` blocks) get the edge only. Padding-free text tabs and links
    (`.workspace-tabs`, `.auto-tabs`, Setup links) give the tint a layout-neutral inset
    on focus (`padding: 0 6px; margin: 0 -6px`) so it does not hug the label.
-3. **Search/filter fields have one border.** A wrapped field (`.ctx-filter-field`) turns
+3. **Search/filter fields have one border.** A wrapped field (`.kb-search-field`) turns
    its wrapper border accent on `:focus-within`; the `<input>` inside has `border: 0;
    outline: none` in every state. A bare field (`.field`, `#ws-suggestion-search`, the palette
    input's bottom rule) turns its own border accent on `:focus-visible` and never outlines.
@@ -436,8 +436,12 @@ split into sections) is `packages/client/roster-sections.mjs`.
   Workspace side by side (icons alone in a nav too narrow for both labels: a container query
   hides each label visually, and it stays the button's name), then the tools: sidebar, theme,
   shortcuts and **Spawn instance** (a small icon button). Settings and the palette have no
-  button: the palette has **Settings: Connections…**, and its own chord. The shortcuts editor
-  teaches both on its rows (keybindings-editor.mjs), with no line of its own for them.
+  button: the palette has **Settings: Connections…**, and its own chord. The roster has no
+  filter field (the TUI keeps its own): the palette finds an instance by name. `sidebar.focusFilter`
+  keeps its id, chord and leader key (**Focus the instance roster**): `focusRoster` lands on
+  `rosterEntry()`, the roster's current row, else its first row, else a control it shows (Retry),
+  else the list of workspaces' stop, else **Add local workspace…**, so focus never falls to
+  `<body>`. The same entry takes focus when the last terminal tab closes.
 - **No deployments above the navigation.** The sidebar lists no deployments; the Deployments
   page and the roster headings say where things run (UI spec, after the operator rejected a
   deployments block under the workspace switcher). The list of workspaces lists views.

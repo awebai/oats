@@ -2,8 +2,8 @@
 // click or arrow, Ctrl+Tab, go to tab, a close's successor, another split group's tab), the roster
 // scrolls just enough to show that instance's row and marks it selected, never taking focus. A click
 // on the already-active tab reveals too; a re-projection of the same tab never does. Not while the
-// sidebar is hidden or in focus mode; a row the filter hides means no scroll; under a collapsed parent
-// the nearest shown ancestor's row is revealed. The shipped addTab, selectTab, activateTab and
+// sidebar is hidden or in focus mode; under a collapsed parent the nearest shown ancestor's row is revealed;
+// a row the roster does not paint, with no shown ancestor, means no scroll. The shipped addTab, selectTab, activateTab and
 // revealActiveRosterRow over a modelled list layout (jsdom has none).
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -33,7 +33,7 @@ const inst = (name, extra = {}) => ({ instance: name, agent: "dev", agentsRoot: 
 const roster = [...["a0", "a1", "a2", "a3", "a4", "a5"].map(name => inst(name)), inst("lead"), inst("kid", { parentInstance: "lead" })];
 
 function fixture(t) {
-  const dom = new JSDOM(`<!doctype html><body><div id="app"><aside id="sidebar"><section id="instance-roster"><input class="ctx-filter"><div class="ctx-list"></div></section></aside>
+  const dom = new JSDOM(`<!doctype html><body><div id="app"><aside id="sidebar"><section id="instance-roster"><div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div><div class="ctx-list"></div></section></aside>
     <main id="main"><div id="tabbar"></div><div id="tabhost"></div><input id="elsewhere"></main></div></body>`);
   t.after(() => dom.window.close());
   const doc = dom.window.document, list = doc.querySelector(".ctx-list");
@@ -56,7 +56,7 @@ function fixture(t) {
     instanceRecency: createInstanceRecency({ storage: null }), recencyIdFromTerminalKey,
     createTabChrome, wirePaneSelection, canActivateTab, ...layout, onTabKeydown() {}, closeTab() {},
     setSidebarMode() {}, setNavActive() {}, refreshContextRoster() {}, showTabLayer() {}, renderSplit() {}, updateSplitControls() {}, revealActiveTabs() {},
-    contextRosterEl: doc.getElementById("instance-roster"), contextWorkspace: "A", contextInstances: roster, contextFilter: "",
+    contextRosterEl: doc.getElementById("instance-roster"), contextWorkspace: "A", contextInstances: roster,
     terminalKey, instanceId, rosterParentId, revealInScrollport, tabShowsRow, otherIncarnation,
   };
   c.tabOpenIntents = createSelectionOwnership(c);
@@ -108,13 +108,12 @@ test("focus inside the roster stays on its row; the roving stop does not move un
   assert.deepEqual(u.selected(), ["a4"]);
 });
 
-test("a row the filter hides stays hidden: no scroll and nothing selected", t => {
+test("a row the roster does not paint, with no shown ancestor, is not revealed: no scroll and nothing selected", t => {
   const u = fixture(t);
-  u.c.contextFilter = "a";
-  u.paint(["a0", "a1", "a2", "a3", "a4"]); // a5 matches nothing the user typed (modelled)
+  u.paint(["a0", "a1", "a2", "a3", "a4"]); // a5 is not painted (yet), and has no parent to stand in for it
   u.list.scrollTop = 30;
   u.select("a5");
-  assert.equal(u.list.scrollTop, 30, "the filter is the user's: it is not cleared and nothing scrolls");
+  assert.equal(u.list.scrollTop, 30, "nothing scrolls");
   assert.deepEqual(u.selected(), []);
   assert.equal(u.doc.activeElement, u.elsewhere);
 });

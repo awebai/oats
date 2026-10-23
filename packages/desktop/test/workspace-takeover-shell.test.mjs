@@ -32,7 +32,9 @@ import { sameInstanceActionTarget } from '../renderer/instance-action-target.mjs
 import * as layout from "../renderer/split-layout.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
-import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
+import { revealInStrip, revealInScrollport } from "../renderer/reveal-in-scrollport.mjs";
+import { tabShowsRow } from "../renderer/retired-tabs.mjs";
+import { instanceId, rosterParentId } from "../../client/instance-tree.mjs";
 import { describeLayout, composeLayout, validLayout } from "../renderer/layout-handover.mjs";
 import { takenWorkspaceIds } from "../renderer/views/common.mjs";
 import { navTab } from "../renderer/shell-nav.mjs";
@@ -52,7 +54,7 @@ const SERVED = [{ id: "A", name: "a" }, { id: "B", name: "b" }];
 function shell(t) {
   const dom = new JSDOM(`<div id="app"><span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div>
     <div id="tab-actions"><button id="split-right"></button><button id="split-down"></button></div>
-    </div></div><div id="tabhost"></div><aside id="roster"><input class="ctx-filter"></aside>
+    </div></div><div id="tabhost"></div><aside id="roster"><div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div><div class="ctx-list"></div></aside>
     <nav id="nav"><button class="nav-item active">Overview</button></nav></div>`);
   t.after(() => dom.window.close());
   const document = dom.window.document, requests = [], attachments = [], terms = [], detached = [], log = [];
@@ -80,7 +82,8 @@ function shell(t) {
     refreshContextRoster() {}, renderContextRoster() {}, setNavActive() {},
     // The instance panel is exercised by retired-tabs-shell.test.mjs; it is inert here.
     syncContextPanel() {}, refreshPanelInstance() {}, contextPanel: { setFocusMode() {} },
-    focusRoster() { c.tabOpenIntents.invalidate(); c.contextRosterEl.querySelector("input").focus(); },
+    focusRoster() { c.tabOpenIntents.invalidate(); c.rosterEntry()?.focus(); },
+    tabShowsRow, instanceId, rosterParentId, revealInScrollport, // the shipped revealActiveRosterRow's
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },
     updateSidebarControls() {},
     resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle,
@@ -122,7 +125,7 @@ function shell(t) {
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "closeStage", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "walkedTabs", "visibleTabEntries", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "showTerminalContext",
     "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal", "syncTabNeedsInput", "focusGroup",
-    "releaseTakenWorkspace", "closeWorkspaceTabs", "restoreHandedLayout"];
+    "releaseTakenWorkspace", "closeWorkspaceTabs", "restoreHandedLayout", "rosterEntry"];
   const functions = names.map(name => {
     const match = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];
@@ -184,14 +187,20 @@ test("a take-over answers main first, then leaves the workspace, then closes eve
   assert.equal(s.c.workspace, "B");
 });
 
+/** A roster row as renderContextRoster paints it (the roster's one roving stop). */
+function rosterRowOf(s) {
+  s.c.contextRosterEl.querySelector(".ctx-list").innerHTML = `<div class="ctx-tree-row"><button class="ctx-inst" tabindex="0" data-tree-instance="/synthetic/r">r</button></div>`;
+  return s.c.contextRosterEl.querySelector(".ctx-inst");
+}
+
 test("the background close moves no focus and reopens no layer of the workspace left", async t => {
   const { s } = await holder(t);
-  const filter = s.c.contextRosterEl.querySelector("input");
+  const rosterRow = rosterRowOf(s); // a roster row, where the operator goes
   s.c.leaveTo = "B";
   await s.releaseTakenWorkspace({ request: 1, workspace: "A", workspaces: SERVED });
-  filter.focus();
+  rosterRow.focus();
   await settle();
-  assert.equal(s.document.activeElement, filter, "where the operator is, focus stays");
+  assert.equal(s.document.activeElement, rosterRow, "where the operator is, focus stays");
   assert.ok(![...s.c.tabs.values()].some(tab => tab.workspace === "A"));
 });
 
@@ -310,7 +319,7 @@ test("restore: a layout off the shape (a terminals array with holes) restores no
 
 test("restore: a selection made meanwhile stops what is left: no further open, no focus taken", async t => {
   const s = receiver(t);
-  const entry = s.c.contextRosterEl.querySelector("input");
+  const entry = rosterRowOf(s);
   const done = s.restoreHandedLayout("A", { terminals: [ref("a1"), ref("a2")], split: null, active: 1 });
   await tick();
   s.requests.at(-1).resolve({ instances: [instance("a1"), instance("a2")] });

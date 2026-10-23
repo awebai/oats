@@ -211,6 +211,9 @@ theme, the keyboard shortcuts, and **Spawn instance** (a small **+**). In a
 sidebar too narrow for both labels the views show their icons alone, each
 named in its tooltip. Settings is in the command palette (**Settings:
 Connections…**), and the palette opens with its shortcut or Ctrl+X then `k`.
+The instances have no search field: to find one by name, type it in the
+command palette, which opens its terminal. ⌘F / Ctrl+Alt+F (**Focus the
+instance roster**) and `/` in the sidebar go to the roster's current row.
 
 The list of workspaces is always shown. Its heading holds **Add local
 workspace…** (the **+**). The list has one row per workspace this window can show, whatever

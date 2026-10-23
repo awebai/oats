@@ -16,7 +16,7 @@ const markup = `<div id="app"><aside id="sidebar">
     <li class="ws-option-row"><button class="ws-option" aria-current="true"><span class="ws-option-name">fixture</span><span class="sr-only">, needs input</span><span class="ws-waiting" aria-hidden="true"></span></button></li>
     <li class="ws-option-row"><button class="ws-option"><span class="ws-option-name">other</span></button></li>
   </ul></div></section>
-  <section id="instance-roster"><div class="ctx-head roster-head">Instances</div><input class="ctx-filter">
+  <section id="instance-roster"><div class="ctx-head roster-head">Instances</div>
     <div class="ctx-list"><div class="ctx-deployment" role="heading" aria-level="3"><span class="ctx-deployment-label">altair</span><span class="deployment-mark" role="img" aria-label="remembered">${icon}</span></div><div class="ctx-tree-row"><button class="ctx-inst active"><span class="ctx-dot on"></span>
       <span class="ctx-copy"><span class="ctx-name">Fixture instance</span><span class="ctx-repo-label">fixture</span></span>
     </button></div></div></section>

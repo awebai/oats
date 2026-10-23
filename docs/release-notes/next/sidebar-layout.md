@@ -9,6 +9,10 @@
   The logo, the Settings button and the palette button are gone: Settings is
   in the palette ("Settings: Connections…"), and the palette is on ⌘K / its
   chord and Ctrl+X then `k`.
+- **Desktop: the instances have no filter field.** To find an instance by
+  name, type it in the command palette. ⌘F / Ctrl+Alt+F, renamed **Focus the
+  instance roster** and still rebindable under its old id, goes to the
+  roster's current row. The TUI keeps its filter.
 - **Desktop: Automations is a tab of the Workspace page**, after Souls and
   Capabilities. ⌘3 / Ctrl+3, the palette and every link to Automations open
   it there.

@@ -78,7 +78,7 @@ Show instance panel and the closed sidebar and panel).
    | Chord | xterm sends | The program still gets it from |
    |---|---|---|
    | Ctrl+X (the leader) | 0x18 (CAN) | no plainer key: a named exception. The leader pressed twice sends it, so the shell's Ctrl+X Ctrl+E and nano's exit stay the program's |
-   | Alt+K, P, O, Z, W, E, F, R (palette, Quick Open, the list of workspaces, focus mode, close tab, split right, filter, name and colour; the Alt family) | ESC and the letter (ESC k for K) | Esc, then the letter |
+   | Alt+K, P, O, Z, W, E, F, R (palette, Quick Open, the list of workspaces, focus mode, close tab, split right, the instance roster, name and colour; the Alt family) | ESC and the letter (ESC k for K) | Esc, then the letter |
    | Alt+Shift+E (split down; the Alt family) | ESC E | Esc, then Shift+E |
    | Alt+1–Alt+9 (go to tab; the Alt family) | ESC and the digit | Esc, then the digit |
    | Alt+← / Alt+→ (previous / next tab; the Alt family) | ESC [ 1 ; 5 D / C, what Ctrl+← / → sends (xterm.js sends an Alt arrow as the Ctrl arrow on Linux and Windows) | Ctrl+← / Ctrl+→ |
@@ -262,7 +262,7 @@ on from the instance an open still in flight is opening (until it fails, or
 another selection supersedes it), else from the target: presses faster than
 `/api/panel` answers or a terminal attaches make one move each, and none
 re-opens the instance being opened. They open the terminal of the roster row
-before / after the target, as the roster is drawn (filter applied, collapsed
+before / after the target, as the roster is drawn (collapsed
 rows absent), passing over rows whose Enter would not open a terminal; no wrap.
 With no target, the next opens the first and the previous the last. These two
 and `terminal.focusMode` (the leader's `z`) run the leader's own dispatch, and
@@ -284,7 +284,7 @@ say why in the same line when they cannot act.
 | `X`, `R`, `S`, `D` | Stop… / Restart… / Start… / Retire… for the target: the same dialogs and availability as its roster menu |
 | `n` | Quick Open: pick a soul, then the spawn dialog (`app.quickOpenSouls`) |
 | `N` | the spawn dialog for the target's soul, as Quick Open opens it |
-| `/` | the roster filter (`sidebar.focusFilter`) |
+| `/` | the instance roster's current row (`sidebar.focusFilter`) |
 | `o` | focuses the [list of workspaces](#the-list-of-workspaces) on its current row (`app.workspaces`) |
 | `?` | the shortcuts editor (`app.shortcuts`), the Desktop's help |
 | Esc | the instance roster, its one tab stop; a hidden sidebar or focus mode is shown first |
@@ -301,7 +301,7 @@ do that, from every focus. New: Shift+Tab, the previous editor group.
 
 The keys come in three layers, as in `oats tui`:
 
-1. **In the sidebar:** plain keys, such as `n` to spawn, `w` for the list of workspaces, `/` to filter ([Sidebar keys](#sidebar-keys)).
+1. **In the sidebar:** plain keys, such as `n` to spawn, `w` for the list of workspaces, `/` for the roster's current row ([Sidebar keys](#sidebar-keys)).
 2. **Anywhere, a terminal included:** the shortcuts below, ⌘K and the rest on macOS, `Alt+K` and the rest on Linux and Windows by default, `Ctrl+Alt+K` or `Ctrl+Shift+K` and the rest [as an option](#the-chord-families). Not plain `Ctrl+K`: that is the program's, kill to the end of the line in Claude Code, Codex, pi and the shell.
 3. **Always:** [the leader](#the-leader), `Ctrl+X` then a key, on every platform (in a text field on Linux and Windows, Ctrl+X is Cut).
 
@@ -328,7 +328,7 @@ The three Linux / Windows columns are [the chord families](#the-chord-families):
 | Focus next / previous region (`focus.nextRegion`, `focus.prevRegion`) | F6 / ⇧F6 | F6 / Shift+F6 | the same | the same | no (mc, htop, nano) |
 | Leave the terminal for the next region (`focus.leaveTerminal`) | ⇧⌘F6 | Ctrl+Shift+F6 | the same | the same | yes |
 | Sidebar (`sidebar.toggle`; also the footer's sidebar button, and Show sidebar while it is hidden) | ⌘B | Ctrl+Shift+B | the same | the same | yes (plain Ctrl+B, the tmux prefix, stays the program's) |
-| Filter instances (`sidebar.focusFilter`) | ⌘F | Alt+F | Ctrl+Alt+F | Ctrl+Alt+F | yes |
+| Focus the instance roster, on its current row (`sidebar.focusFilter`, its id from when the roster had a filter; to find an instance by name, use the command palette) | ⌘F | Alt+F | Ctrl+Alt+F | Ctrl+Alt+F | yes |
 | An instance's name and colour, for the leader's target (`instance.edit`; also **Instance: name and colour…**; no leader key) | ⌥⌘R | Alt+R | Ctrl+Alt+R | Ctrl+Alt+R | yes |
 | Instance panel (`panel.toggle`; also Show instance panel while it is closed, and the panel's own close button) | ⌘I | Ctrl+Shift+I | the same | the same | yes (plain Ctrl+I, the Tab byte, stays the program's) |
 | Theme picker (`app.themePicker`; also the theme button and **Theme: choose…**) | ⇧⌘Space | Ctrl+Shift+Space | the same | the same | yes |
@@ -371,7 +371,7 @@ palette is closed, and Alt+Shift+↓ / ↑ are `roster.openNext` /
 Changed in the next release on Linux/Windows: the default family is Alt,
 in both clients. The palette is Alt+K (was Ctrl+Alt+K), Quick Open Alt+P,
 the list of workspaces Alt+O, focus mode Alt+Z, close tab Alt+W, split right
-Alt+E and split down Alt+Shift+E, filter instances Alt+F, an instance's name
+Alt+E and split down Alt+Shift+E, focus the instance roster Alt+F, an instance's name
 and colour Alt+R, and go to tab Alt+1–Alt+9 (were Ctrl+Alt with the same
 key). The second tab-cycling chords are Alt+← / Alt+→ (were Alt+Shift+← /
 →), and Alt+Shift+← / → now move between the editor groups: the previous
@@ -397,7 +397,7 @@ above).
 Changed in 0.67.0 on Linux/Windows: the chords shared with the TUI
 are one Ctrl+Alt family. The palette is Ctrl+Alt+K (was Ctrl+Shift+K), Quick
 Open Ctrl+Alt+P (was Ctrl+Shift+P), close tab Ctrl+Alt+W (was Ctrl+Shift+W),
-filter instances Ctrl+Alt+F (was Ctrl+Shift+F), split right Ctrl+Alt+E (was
+focus the instance roster Ctrl+Alt+F (was Ctrl+Shift+F), split right Ctrl+Alt+E (was
 Ctrl+Shift+E) and split down Ctrl+Alt+Shift+E (was Ctrl+Shift+O). Go to tab is
 Ctrl+Alt+1–Ctrl+Alt+9 (was Alt+1–Alt+9), and the second tab-cycling chords
 are Alt+Shift+→ / Alt+Shift+← (were Ctrl+PgDn / Ctrl+PgUp); both now work
@@ -469,7 +469,7 @@ Inside the theme picker: ↑/↓ move between the themes (wrapping), Home/End go
 the first and last, Enter, Space or a click chooses (nothing applies before
 that), Escape, the close button or the backdrop closes with nothing changed,
 and Tab / Shift+Tab stay inside it; a background shortcut that moves focus
-(⌘F / Alt+F to the roster filter) cannot take it out. Focus returns to what had
+(⌘F / Alt+F to the instance roster) cannot take it out. Focus returns to what had
 it, also to a control in a dialog that stays open under the picker (Stop or
 Retire, Connections). The picker is on the palette layer, so it never opens where it
 cannot be seen: while a dialog above that layer is shown (the spawn dialog,
@@ -498,7 +498,7 @@ there (`CHORDS_READ`, one action each), per family on Linux/Windows; on
 macOS ⌘ or ⌥⌘ with a letter or a digit, and ⌥ with an arrow. In the Alt family, Alt with a letter does an action: the palette
 (K), Quick open (P; a spawn, in the TUI), the list of workspaces (O), focus
 mode (Z, the leader's `z`), close tab (W), split right (E) and split down
-(Shift+E), filter instances (F) and the instance's name and colour (R;
+(Shift+E), the instance roster (F) and the instance's name and colour (R;
 `instance.edit`, ⌥⌘R on macOS, no leader key). Alt with a digit goes to tab
 1–8 of the active tab's strip, 9 to its last (with the tabs split, the
 focused group's). Alt with an arrow moves between tabs (← →, the leader's
@@ -563,8 +563,8 @@ letters and digits, and ⌥ with an arrow moves (principle 3).
   focus mode (M), close tab (W), split right (E) and split down (D). The
   others keep their Ctrl+Alt key: the Alt+Shift arrows, since Ctrl+Shift with
   an arrow selects text in an input; go to tab, since Ctrl+Shift with a digit
-  is a shifted symbol on most layouts; the editor groups and filter
-  instances, whose Ctrl+Shift+A and Ctrl+Shift+F terminals and agents take;
+  is a shifted symbol on most layouts; the editor groups and the instance
+  roster, whose Ctrl+Shift+A and Ctrl+Shift+F terminals and agents take;
   an instance's name and colour (Ctrl+Alt+R), the Desktop's alone. Like the
   Ctrl+Alt family it has no workspace move: Alt+↑ / Alt+↓ are the program's,
   and the leader's ↑ ↓ move.
@@ -598,8 +598,8 @@ Alt alone opens no menu bar.
   side. On any chord two actions share, the one you bound wins over the one
   holding it by default.
 - **Text fields, on Linux and Windows.** No text field of the Desktop reads Alt+letter or an Alt
-  arrow: every one is a native input or text area (the roster filter, the
-  palette's and Quick Open's inputs, the dialogs' fields, the shortcuts
+  arrow: every one is a native input or text area (the palette's and Quick
+  Open's inputs, the dialogs' fields, the shortcuts
   editor's search), which moves by word with Ctrl+← / Ctrl+→ on Linux and
   Windows, and the Desktop has no code editor. So the Alt family's chords
   fire from a field as from anywhere, and take nothing from it.
@@ -778,15 +778,15 @@ nav, a roster row, the footer), the TUI's plain keys work there too (`PLAIN_KEYS
 `packages/client/keymap.mjs`). Each is its own action in the `sidebar`
 context (`sidebar.key.*`, `SIDEBAR_KEYS`), rebindable and unbindable in the
 shortcuts editor's **Sidebar keys** group, and each does what the same key
-does after the leader. They never fire in an editable field (the roster
-filter types them) or inside a menu open there (an instance's actions menu),
+does after the leader. They never fire in an editable field (one there would
+type them) or inside a menu open there (an instance's actions menu),
 and never with focus outside the sidebar.
 
 | Key | Action id | Does |
 |---|---|---|
 | `1` `2` `3` | `sidebar.key.instances`, `…souls`, `…capabilities` | Instances, Workspace › Souls, Workspace › Capabilities |
 | `w` | `sidebar.key.workspaces` | focuses the [list of workspaces](#the-list-of-workspaces), as the leader's `o` does |
-| `/` | `sidebar.key.filter` | the roster filter |
+| `/` | `sidebar.key.filter` | the instance roster's current row |
 | `r` | `sidebar.key.refresh` | reads the instance roster now |
 | `z` | `sidebar.key.zoom` | focus mode on or off, then the active terminal |
 | `c` | `sidebar.key.closeTerminal` | closes the active tab |
@@ -884,8 +884,9 @@ F6 moves focus to the next region, Shift+F6 to the previous one, in this order:
    current one), else the heading's **Add local workspace…** (Shift+Tab from
    the list reaches it).
 2. **Instance roster**: its one tab stop, the selected row (the one whose
-   terminal is the active tab), else the first row that matches the filter,
-   else the filter.
+   terminal is the active tab), else the first row; with no rows, a control it
+   shows (Retry), if any. It has no filter: the command palette finds an
+   instance by name.
 3. **Sidebar footer**: the current view's nav button (Deployments or
    Workspace, `aria-current`), else the first; the tools after them (sidebar,
    theme, shortcuts, Spawn instance) are reached with Tab from there.
@@ -932,8 +933,7 @@ the strip. Whenever another terminal tab becomes active (any of these, a click
 or an arrow on the strip, a close's successor, a pane of another split group),
 and on a click on the tab that is already active, its roster row reads as
 selected and the roster scrolls just enough to show it, without taking focus.
-It does not scroll while the sidebar is hidden or in focus mode, nor for a row
-the filter hides; under a collapsed parent it shows the nearest visible
+It does not scroll while the sidebar is hidden or in focus mode; under a collapsed parent it shows the nearest visible
 ancestor's row and leaves the parent collapsed. A stage switch from a chord, the palette or a nav button leaves
 focus where it was when that is still shown, else on the stage's first
 control.
@@ -972,7 +972,7 @@ control.
   dimmed for context, in the same order as the unfiltered list: the order is
   decided on the full roster and the query only decides which rows show, so a
   group's place never changes while you type. A match stays in its relation
-  group, as in the filtered sidebar: one match out of a group of five is listed
+  group, as in the sidebar: one match out of a group of five is listed
   under that group's name, not under independent. The active row is the first
   match. A context row is `aria-disabled`: the arrows, the chord and the pointer
   skip it, and it opens nothing.
@@ -1105,8 +1105,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Add local workspace… (the **+** at the end of the sidebar's Workspaces heading) | Tab (first stop of the sidebar) | Enter/Space open the Add / onboard dialog |
 | Add / onboard workspace dialog | From the header's Add, or the chooser's button; opened by itself in a window with no workspace when the Desktop serves none | Each found deployment is a button, then each row of this computer's list that can't be opened (`aria-disabled`, its state in words); one Tab stop among them, Up/Down/Home/End move: Enter/Space on a found one adds it and opens it here; Right Arrow on a row that can't be opened reaches its **Remove**, Left Arrow or Esc go back; Esc elsewhere closes; trapped; returns to what opened it, or to the list after an add |
 | Sidebar nav, at the bottom (Deployments, Workspace; side by side, icons alone when the sidebar is too narrow for their labels) | F6 (current item); Tab; ⌘1/⌘2 (⌘3: Workspace on its Automations tab) | Enter/Space |
-| Roster filter | Tab; ⌘F / Alt+F; **Down from it enters the rows (fixed): while filtering, at the first match, never a parent kept only to show its tree path** | Typing filters |
-| Roster rows | One roving stop, **the selected row, else the first filter match (fixed: was the first enabled)**; F6; the leader then Esc; Up/Down/Home/End (and the TUI's `k` `j` `g` `G`), PageUp/PageDown by the rows that fit; Right (`l`) expands, Left (`h`) collapses or goes to the parent; the sidebar keys (see "Sidebar keys"). A collapse or a filter never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is. The list shows no scrollbar (the wheel and the touchpad scroll it): a row that takes keyboard focus (these keys, the filter's Down, F6) is revealed whole, its tools included, by scrolling the list alone, never an ancestor | Enter/Space open the terminal (running) or Start (stopped); an arrow chord the keymap binds is the keymap's, so Alt+Shift+↑/↓ (⌥⌘↑/↓) open the terminal of the row above / below, as from anywhere |
+| Roster rows | One roving stop, the selected row, else the first; F6; ⌘F / Alt+F (`sidebar.focusFilter`) and the sidebar's `/` land on it; the leader then Esc; Up/Down/Home/End (and the TUI's `k` `j` `g` `G`), PageUp/PageDown by the rows that fit; Right (`l`) expands, Left (`h`) collapses or goes to the parent; the sidebar keys (see "Sidebar keys"). A collapse never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is. The list shows no scrollbar (the wheel and the touchpad scroll it): a row that takes keyboard focus (these keys, ⌘F / Alt+F, F6) is revealed whole, its tools included, by scrolling the list alone, never an ancestor | Enter/Space open the terminal (running) or Start (stopped); an arrow chord the keymap binds is the keymap's, so Alt+Shift+↑/↓ (⌥⌘↑/↓) open the terminal of the row above / below, as from anywhere |
 | Rows whose state is unknown or that the kernel does not report addressable | **Focusable, `aria-disabled` with the reason as a description (fixed: were `disabled`, which hid their tools from the keyboard)** | Activation does nothing; their tools work |
 | Row tools: PR link, Start…, actions menu | Tab from the focused row (shown on focus) | Enter/Space; the menu: arrows, Home/End, Esc back on its trigger, Tab closes |
 | Start / Restart dialog, lifecycle dialog | From the row or its menu | Esc (Cancel before anything is sent, Close or Done after); trapped; the lifecycle dialog starts on Cancel and focuses Close or Done when it ends; **focus returns to the row when its tool is hidden again (fixed: fell to `<body>`)**, and after a retire to the row that followed it |

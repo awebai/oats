@@ -48,7 +48,7 @@ function fixture(t, extra = {}) {
     ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge,
     iconElement, setTabTitle, NO_ANSWER_CODE, unservedError, instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
-    contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
+    contextRosterEl: doc.querySelector("#instance-roster"), contextWorkspace: "A",
     rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, ...viewContext(),
     currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(),
     rosterTip: { bind(el, facts) { tips.set(el.dataset.treeInstance, facts); }, hide() {}, sync() {} }, rosterTipFacts,
@@ -314,13 +314,9 @@ test("names up to three, then “and N more”; nested collapses attribute to th
   assert.equal(u.fact("root", "Below"), "5 need input: k1, k2, k3 and 2 more");
 });
 
-test("no roll-up while filtering, and none from a stale or non-running row", async t => {
+test("no roll-up from a stale or non-running row", async t => {
   const rows = [instance("root"), instance("dev-a", "root", { waitingOnYou: claim() }), instance("dev-b", "root", { waitingOnYou: claim(), running: false, runtimeState: "shell" })];
   const collapsed = new Set([tree.collapseKey("A", "/synthetic/root")]);
-  const filtering = fixture(t, { context: { collapsedInstances: collapsed, contextFilter: "dev" } });
-  filtering.render(rows);
-  assert.equal(filtering.list.querySelector(".ctx-attn.rollup"), null, "nothing is collapsed while filtering");
-  assert.equal(filtering.marks("dev-a")[0].textContent, "Needs input");
   const only = fixture(t, { context: { collapsedInstances: collapsed } });
   only.render(rows);
   assert.equal(only.marks("root")[0].textContent, "1 below need input", "the shell row is not counted");

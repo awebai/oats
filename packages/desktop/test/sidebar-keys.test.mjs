@@ -56,6 +56,9 @@ function rig(t) {
   const xterm = doc.createElement("div"); xterm.className = "xterm";
   const textarea = doc.createElement("textarea"); textarea.className = "xterm-helper-textarea"; xterm.append(textarea);
   doc.getElementById("main").append(xterm);
+  // The shipped sidebar has no text field since the roster filter went; the guard still holds one added
+  // later (shell.mjs updateActiveContexts): a plain text input in the sidebar stands in for it.
+  const field = doc.createElement("input"); field.type = "text"; doc.getElementById("sidebar").append(field);
   const ran = [];
   const offs = SIDEBAR_KEYS.map(({ id }) => registerAction({ id, label: id, context: "sidebar", run: () => ran.push(id) }));
   t.after(() => { offs.forEach(off => off()); setActiveContexts(new Set()); resetAllBindings(); win.close(); });
@@ -68,7 +71,7 @@ function rig(t) {
     return matchEvent(e, { isMac: false });
   };
   return { win, doc, row, nav, item, textarea, pressAt, ran, sidebarKeysLive, wsRow, addOpen: doc.getElementById("ws-add-open"),
-    filter: doc.querySelector(".ctx-filter"), tools: [...doc.querySelectorAll("#sidebar-tools button")], main: doc.getElementById("show-panel") };
+    field, tools: [...doc.querySelectorAll("#sidebar-tools button")], main: doc.getElementById("show-panel") };
 }
 
 test("each sidebar key fires on a workspace list row, the list's Add, a roster row, a nav button and every footer tool, by its real (shifted) keydown", t => {
@@ -88,12 +91,14 @@ test("each sidebar key fires on a workspace list row, the list's Add, a roster r
   }
 });
 
-test("never in the roster filter, never in an open menu, never with focus in main or a terminal", t => {
+test("the shipped sidebar has no text field (no roster filter); never in a field, an open menu, main or a terminal", t => {
   const r = rig(t);
+  assert.deepEqual([...r.doc.querySelectorAll("#sidebar :is(input, textarea, select), .ctx-filter")].filter(el => el !== r.field), [],
+    "the shipped sidebar holds no editable field");
   r.main.hidden = false;
   for (const { id } of SIDEBAR_KEYS) {
     const chord = getBinding(id, false);
-    assert.equal(r.pressAt(r.filter, chord), null, `${id}: the filter types it`);
+    assert.equal(r.pressAt(r.field, chord), null, `${id}: a text field types it`);
     assert.equal(r.pressAt(r.item, chord), null, `${id}: an instance's actions menu is its own`);
     assert.equal(r.pressAt(r.textarea, chord), null, `${id}: the terminal's`);
     assert.equal(r.pressAt(r.main, chord), null, `${id}: the main area's`);
@@ -130,13 +135,13 @@ test("shell wiring: the sidebar context follows focus; the keys run the leader's
 
 // Amendment 8: the context is off in an editable field. A rebind to a modified chord (which the
 // engine's plain-key guard does not hold back) must still leave the field its own key.
-test("off in an editable field, a modified rebind included: the filter keeps Ctrl+X", t => {
+test("off in an editable field, a modified rebind included: a sidebar text field keeps Ctrl+X", t => {
   const r = rig(t);
   setBinding("sidebar.key.stop", "Ctrl+X");
   const ctrlX = el => { el.focus(); r.sidebarKeysLive(); const e = new r.win.KeyboardEvent("keydown", { key: "x", ctrlKey: true, bubbles: true, cancelable: true });
     Object.defineProperty(e, "target", { value: el }); return matchEvent(e, { isMac: false }); };
   assert.equal(ctrlX(r.row), "sidebar.key.stop", "on a row it is the sidebar key");
-  assert.equal(ctrlX(r.filter), null, "in the filter it is Cut");
+  assert.equal(ctrlX(r.field), null, "in a text field it is Cut");
   assert.equal(r.sidebarKeysLive(), false);
   const editable = r.doc.createElement("div"); editable.contentEditable = "true"; editable.tabIndex = 0;
   Object.defineProperty(editable, "isContentEditable", { value: true }); // jsdom does not compute it

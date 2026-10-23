@@ -745,31 +745,21 @@ for (const [name] of palettes) test(`${name}: automation summaries, argv, run st
   }
 });
 
-for (const [name] of palettes) test(`${name}: shipped sidebar shortcut hints meet AA on their actual painted controls`, t => {
+// The sidebar's one visible shortcut hint was the roster filter's ⌘F; it went with the filter. The sidebar paints
+// none now, so no hint ink sits on a sidebar surface (the spawn dialog's hints are held in spawn-dialog.test.mjs).
+for (const [name] of palettes) test(`${name}: the shipped sidebar paints no shortcut hint, and a hidden hint takes no box`, t => {
   const dom = new JSDOM(readFileSync(new URL("index.html", renderer), "utf8"));
   t.after(() => dom.window.close());
   const doc = dom.window.document; doc.documentElement.dataset.theme = name;
   for (const source of [css, readFileSync(new URL("shell.css", renderer), "utf8")]) {
     const style = doc.createElement("style"); style.textContent = source; doc.head.append(style);
   }
-  const root = dom.window.getComputedStyle(doc.documentElement);
-  for (const [selector, foreground, background] of [
-    [".ctx-filter-field", "muted", "bg"],
-  ]) {
-    const control = doc.querySelector(selector), hint = control.querySelector(".shortcut-hint");
-    hint.hidden = false; hint.textContent = "Ctrl+Shift+J";
-    const hintStyle = dom.window.getComputedStyle(hint), controlStyle = dom.window.getComputedStyle(control);
-    assert.equal(hintStyle.color, `var(--${foreground})`);
-    assert.equal(controlStyle.background, `var(--${background})`);
-    for (let node = hint; node; node = node.parentElement) {
-      assert.equal(dom.window.getComputedStyle(node).opacity, "1");
-    }
-    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${foreground}`).trim()),
-      opaqueChannels(root.getPropertyValue(`--${background}`).trim())) >= 4.5);
-    hint.hidden = true; assert.equal(dom.window.getComputedStyle(hint).display, "none");
-  }
-  // The Spawn instance icon button carries no visible hint (its tooltip does): nothing to paint there.
+  assert.equal(doc.querySelector("#sidebar .shortcut-hint, #sidebar [data-shortcut], .ctx-filter-field, .ctx-filter"), null,
+    "no hint and no filter field in the sidebar");
+  // The Spawn instance icon button carries no visible hint (its tooltip does): nothing to paint there either.
   assert.equal(doc.querySelector("#sidebar-spawn .shortcut-hint, #nav-foot .shortcut-hint"), null);
+  const hint = doc.createElement("kbd"); hint.className = "shortcut-hint"; hint.hidden = true; doc.body.append(hint);
+  assert.equal(dom.window.getComputedStyle(hint).display, "none");
 });
 
 // The sidebar layout (2026-10-23): the nav (Deployments, Workspace) and the tools row, Spawn instance now one of

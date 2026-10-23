@@ -43,7 +43,7 @@ function fixture(t, stylesheet = css) {
     ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge,
     instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
-    contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
+    contextRosterEl: doc.querySelector("#instance-roster"), contextWorkspace: "A",
     rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, ...viewContext(), // loading state: a read succeeded
     contextInstances: roster, currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} },
     tabs: new Map([[1, { kind: "terminal", key: tree.terminalKey("A", roster[1]) }]]), activeTab: 1,
@@ -56,7 +56,7 @@ function fixture(t, stylesheet = css) {
   context.ownsInstanceTarget = target => context.contextInstances.filter(row => sameInstanceActionTarget(target, row, 'A')).length === 1;
   const render = runInNewContext(`${renderSource}\nrenderContextRoster`, context);
   render(roster);
-  return { doc, rule, render, rows: [...doc.querySelectorAll(".ctx-tree-row")],
+  return { doc, rules, rule, render, rows: [...doc.querySelectorAll(".ctx-tree-row")],
     computed: node => dom.window.getComputedStyle(node) };
 }
 
@@ -71,8 +71,8 @@ function assertRoom(u) {
   assert.equal(u.rule(".ctx-inst").minHeight, "44px", "the whole painted row is one click target");
   assert.equal(u.rule(".ctx-inst").height, "auto", "never squeeze two labels into a fixed box");
   assert.equal(u.rule(".ctx-copy").gap, "3px", "name/meta gap follows the supplied 3px stack");
-  assert.equal(u.computed(u.doc.querySelector(".ctx-filter-field")).marginBottom, "6px", "filter/list separation");
-  assert.equal(u.computed(u.doc.querySelector(".ctx-filter-field")).height, "30px");
+  assert.equal(u.rule(".ctx-head").height, "36px", "the head is the only chrome above the list");
+  assert.match(u.rule(".ctx-head").flex, /^(none|0 0 auto)$/, "it never shrinks into the list");
   for (const row of u.rows) {
     const button = row.querySelector(".ctx-inst");
     for (const el of [row, button]) {
@@ -87,14 +87,16 @@ function assertRoom(u) {
   }
 }
 
-test("roster spacing (non-layout): 48px rows with a 4px gap, padded controls and filter/list separation", t => {
+test("roster spacing (non-layout): 48px rows with a 4px gap, padded controls, the list right under the head", t => {
   const u = fixture(t);
   assertRoom(u);
-  const filter = u.doc.querySelector(".ctx-filter");
-  assert.equal(filter.parentElement.nextElementSibling.className, "ctx-list");
-  assert.equal(filter.getAttribute("aria-label"), "Filter instances");
-  assert.equal(filter.getAttribute("placeholder"), "Filter instances");
-  assert.equal(u.computed(filter.parentElement.nextElementSibling).overflowY, "auto", "longer rosters still scroll");
+  // No filter field since the product owner removed it (the command palette finds an instance by name).
+  const roster = u.doc.getElementById("instance-roster");
+  assert.equal(roster.querySelector(".ctx-filter, .ctx-filter-field, input"), null, "the roster has no filter");
+  assert.deepEqual([...roster.children].map(el => el.className), ["ctx-head", "ctx-list"]);
+  const head = roster.querySelector(".ctx-head");
+  assert.equal(head.nextElementSibling.className, "ctx-list");
+  assert.equal(u.computed(head.nextElementSibling).overflowY, "auto", "longer rosters still scroll");
 });
 
 test("roster spacing (non-layout): a selected or hovered row keeps its 4px gap (human, 2026-10-03)", t => {
@@ -113,11 +115,9 @@ test("roster spacing (non-layout): a selected or hovered row keeps its 4px gap (
 
 test("roster typography (non-layout): valid control family and supplied sidebar label scale", t => {
   const u = fixture(t);
-  assert.equal(u.rule(".ctx-filter").getPropertyValue("font"), "", "no invalid 'size/line-height inherit' shorthand");
-  assert.equal(u.rule(".ctx-filter").fontFamily, "inherit");
-  assert.equal(u.rule(".ctx-filter").fontSize, "12px");
+  assert.deepEqual(u.rules.filter(r => /\.ctx-filter/.test(r.selectorText || "")).map(r => r.selectorText), [], "no roster filter rule ships");
   assert.equal(u.rule(".ctx-group").height, "14px", "Workspace v4: groups read from a 14px gap, no title");
-  assert.equal(u.rule(".ctx-group:first-child").height, "7px", "the first row sits closer to the filter (human, 2026-09-29)");
+  assert.equal(u.rule(".ctx-group:first-child").height, "7px", "the first row sits closer to the head (human, 2026-09-29)");
   assert.equal(u.rule(".ctx-inst").getPropertyValue("font"), "inherit");
   assert.equal(u.rule(".ctx-name").fontSize, "12.5px");
   assert.equal(u.rule(".ctx-name").fontWeight, "600");
