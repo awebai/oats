@@ -4,12 +4,12 @@
 import { createDataState, statusLine, skeleton, skeletonBlock, ROSTER_STALE_TITLE } from './loading.mjs';
 import { instanceId, resolveLinkId, findRosterInstance } from '../../client/instance-tree.mjs';
 
-/** Agent-group boundary for the instances sidebar (Workspace v4): groups
- * read from spacing alone — a 14px gap, no title — and the boundary is still
- * exposed to assistive technology (role=separator with the group's name and
+/** Agent-group boundary for the instances sidebar (Workspace v4): no title,
+ * a 6px gap (2026-10-23; was 14px), with the cluster's indent and its root,
+ * and the boundary is still exposed to assistive technology (role=separator with the group's name and
  * the number of rows shown under it). The group is the relation cluster
- * (never the repo), decided on the full roster, so a filter or a collapse
- * never moves a row to another group; unrelated instances share one
+ * (never the repo), decided on the full roster, so a collapse never moves
+ * a row to another group; unrelated instances share one
  * "independent" group. Importable so the regression exercises the exact
  * builder the shell uses. */
 export function clusterSeparator(doc, { label, count } = {}) {
@@ -233,10 +233,10 @@ export const ROSTER_SKELETON_ROWS = 5;
  * to the shipped chrome of `#instance-roster`:
  *   region / skeletonHost   .ctx-list  (aria-busy while pending; the skeleton or the failed block live here)
  *   indicatorHost           .ctx-head  ("Refreshing…" after the count)
- *   noticeHost              .ctx-status, created between the filter field and the list (the stale line + Retry)
+ *   noticeHost              .ctx-status, created between the head and the list (the stale line + Retry)
  *   status                  a visually hidden role="status" line appended to the roster (the sidebar shows none)
- *   focusFallback           the filter input, when a focused Retry has to go
- * Test DOMs may lack the head or the filter field: the controller then has
+ *   focusFallback           the roster's current row, else the workspace list's stop or its Add, when a focused Retry has to go
+ * Test DOMs may lack the head: the controller then has
  * no indicator host and the status host sits right before the list.
  * `now` / `setTimeout` / `clearTimeout` are the primitive's injectable clock. */
 export function createRosterLoading(doc, rosterEl, { onRetry = null, now, setTimeout, clearTimeout } = {}) {
@@ -254,7 +254,8 @@ export function createRosterLoading(doc, rosterEl, { onRetry = null, now, setTim
     doc, noun: "instances", region: listEl, skeletonHost: listEl,
     skeleton: () => skeletonBlock(doc, "roster-row", { count: ROSTER_SKELETON_ROWS }),
     status, indicatorHost: rosterEl.querySelector(".ctx-head"), noticeHost, onRetry,
-    focusFallback: () => rosterEl.querySelector(".ctx-filter"),
+    focusFallback: () => rosterEl.querySelector('.ctx-list .ctx-inst[tabindex="0"]') || rosterEl.querySelector(".ctx-list .ctx-inst")
+      || doc.querySelector('#ws-options [tabindex="0"]') || doc.getElementById("ws-add-open"),
     now, setTimeout, clearTimeout,
   });
 }

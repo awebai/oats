@@ -42,6 +42,7 @@ import { createLeaderDispatch } from "../renderer/leader-dispatch.mjs";
 import { leaderApplies, leaderLabel } from "../renderer/leader-keys.mjs";
 import { createLeaderHint, LEADER_ANNOUNCEMENT } from "../renderer/leader-hint.mjs";
 import { LEADER_TABLE } from "../../client/keymap.mjs";
+import { navTab } from "../renderer/shell-nav.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const names = [
@@ -49,7 +50,7 @@ const names = [
   "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips",
   "openViewTab", "openTerminalTabFlow", "openTerminalTabInner", "focusActiveTerminal",
   "visibleTabEntries", "walkedTabs", "switchTab", "cycleTab", "gotoTab", "restoreWorkspaceTabs", "showTerminalContext",
-  "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow", "showInRoster", "syncTabNeedsInput",
+  "initContextRoster", "renderContextRoster", "rosterEntry", "focusRoster", "onRosterRowKey", "setRovingRow", "showInRoster", "syncTabNeedsInput",
 ];
 // The leader's part of the shell (shell.mjs "the leader"): what a key after it, or a chord that does
 // one's work, acts on, and the shipped dispatch and engine that run it.
@@ -65,7 +66,7 @@ function deferred() {
 const flush = () => new Promise(setImmediate);
 
 function shell(t, { shellSource = source, ownership = createSelectionOwnership, terminal = createTerminalTab, leader = false } = {}) {
-  const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><aside id="sidebar"><div id="instance-roster"><input id="entry" class="ctx-filter"><span class="ctx-count"></span><div class="ctx-list"></div></div><nav id="nav"><button class="nav-item active">Hierarchy</button></nav></aside>`);
+  const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><aside id="sidebar"><div class="ctx-head ws-head"><button id="ws-add-open" class="ws-add-open" type="button">+</button></div><div id="ws-options"></div><nav id="nav"><button class="nav-item active">Deployments</button></nav><div id="instance-roster"><span class="ctx-count"></span><div class="ctx-list"></div></div><div id="nav-foot"></div></aside>`);
   t.after(() => dom.window.close());
   const document = dom.window.document;
   // The shell's one window keydown listener (shell.mjs), on this harness's platform.
@@ -79,7 +80,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     modal: false, modalOpen: () => c.modal,
     menuState() {}, getBinding: () => null, formatChord: c => c, isMac: true, applyChordTitles() {}, runAction: id => actions.get(id)?.(),
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
-    contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(),
+    contextRosterGen: 0, contextInstances: [], collapsedInstances: new Set(), focusRegions: { focusRegion: () => false },
     rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null, // initContextRoster builds the real controller; tests mark it ready before rendering rows
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} },
     // The palette's last-focus record (Spec C), inert here: the shell code under test writes to it.
@@ -90,7 +91,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     stageHost: document.getElementById("stagehost"), stage: { name: "hierarchy" },
     navEl: document.getElementById("nav"), contextRosterEl: null,
     brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(),
-    workspaceLabel: { reset() {} }, stageSidebarMode: () => "overview", NAV: [{ name: "hierarchy" }],
+    workspaceLabel: { reset() {} }, stageSidebarMode: () => "overview", NAV: [{ name: "hierarchy" }], navTab /* the shipped NAV_TABS lookup: showStage reads it first */,
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     updateActiveContexts: (on = c.tabLayerVisible) => { c.tabLayerVisible = on; },
     // Panel behavior is covered with the real presenter in split-empty-shell.
@@ -245,7 +246,7 @@ for (const action of ["cycle", "pointer", "focus", "active-pointer", "active-foc
 for (const outcome of ["resolve", "reject"]) for (const visits of [["B"], ["B", "A"]]) {
   test(`pending attachment ${outcome} across ${["A", ...visits].join("→")} cannot focus, detach or reacquire`, async t => {
     const s = shell(t), pending = await s.pending("one");
-    const entry = s.document.getElementById("entry"); entry.focus();
+    const entry = s.document.getElementById("ws-add-open"); entry.focus();
     for (const workspace of visits) s.switchTo(workspace);
     if (outcome === "resolve") pending.gate.resolve({ id: 72 });
     else pending.gate.reject(new Error("attachment unavailable"));
@@ -263,7 +264,7 @@ test("fresh open and later direct focus work; pending focus uses the NEW explici
   assert.equal(first.term.focuses, 0, "no input focus before attachment readiness");
   first.gate.resolve({ id: 73 }); await first.result;
   assert.equal(first.term.focuses, 1, "normal direct open focuses exactly once (including native focusin)");
-  s.document.getElementById("entry").focus();
+  s.document.getElementById("ws-add-open").focus();
   s.actions.get("terminal.focusActive")();
   assert.equal(first.term.focuses, 2);
   const second = await s.pending("two");
@@ -290,7 +291,7 @@ test("focusActive on a pending tab schedules readiness focus without an extra at
 test("strip focus, side-effect projection and workspace restoration do not focus retained ready inputs", async t => {
   const s = shell(t), pending = await s.pending("one");
   pending.gate.resolve({ id: 76 }); await pending.result;
-  const entry = s.document.getElementById("entry"); entry.focus();
+  const entry = s.document.getElementById("ws-add-open"); entry.focus();
   s.activateTab(pending.id); s.switchTo("B"); s.switchTo("A");
   s.c.tabs.get(pending.id).triggerEl.click();
   assert.equal(pending.term.focuses, 1); assert.equal(s.document.activeElement, entry);
@@ -418,23 +419,25 @@ for (const outcome of ["resolve", "reject"]) {
       assert.equal(s.document.activeElement, focused);
       if (action === "close-last") {
         assert.equal(s.c.tabLayerVisible, false);
-        assert.equal(focused, s.document.getElementById("entry"));
+        assert.equal(focused, s.document.getElementById("ws-add-open"));
       }
     });
   }
 }
 
 const roster = ["one", "two"].map(instance => ({ instance, running: true, agentsRoot: "/team/agents", home: `/team/${instance}` }));
+// A sidebar control other than the roster's rows: the workspace list's Add local workspace… (the roster had a
+// filter field until the product owner removed it).
 function sidebarIntent(s, kind) {
-  const filter = s.document.getElementById("entry");
-  if (kind === "pointer-filter") {
-    // A pointerdown is still an intent when the filter was already focused
+  const add = s.document.getElementById("ws-add-open");
+  if (kind === "pointer-add") {
+    // A pointerdown is still an intent when the control was already focused
     // before the open began and the browser emits no new focusin.
-    s.dispatch(filter, "pointerdown"); filter.focus();
-  } else if (kind === "keyboard-filter") {
+    s.dispatch(add, "pointerdown"); add.focus();
+  } else if (kind === "keyboard-add") {
     // JSDOM does not implement Tab's default focus traversal. Use native DOM
     // focus (which emits focusin), not a synthetic focusin or focusRoster().
-    filter.focus();
+    add.focus();
   } else if (kind === "keyboard-roster") {
     s.dispatch(s.document.activeElement, "keydown", { key: "ArrowDown" });
   } else if (kind === "pointer-sidebar") {
@@ -445,7 +448,9 @@ function sidebarIntent(s, kind) {
 function prepareSidebar(s, kind) {
   s.c.contextInstances = roster; s.renderContextRoster(roster);
   if (kind === "keyboard-roster") s.c.contextRosterEl.querySelector(".ctx-inst").focus();
-  else if (["pointer-filter", "command-filter"].includes(kind)) s.focusRoster();
+  else if (kind === "pointer-add") s.document.getElementById("ws-add-open").focus();
+  // sidebar.focusFilter's run, already on the roster's row: the command is still an intent.
+  else if (kind === "command-roster") s.focusRoster();
 }
 
 async function sidebarAttachment(t, kind, outcome, shellSource = source) {
@@ -465,7 +470,7 @@ async function sidebarAttachment(t, kind, outcome, shellSource = source) {
   assert.equal(s.attachments.length, 1);
 }
 
-for (const kind of ["pointer-filter", "keyboard-filter", "keyboard-roster", "pointer-sidebar", "command-filter"]) {
+for (const kind of ["pointer-add", "keyboard-add", "keyboard-roster", "pointer-sidebar", "command-roster"]) {
   for (const outcome of ["resolve", "reject"]) test(`sidebar ${kind} revokes delayed attachment focus on ${outcome} without closing it`, async t => {
     await sidebarAttachment(t, kind, outcome);
   });
@@ -523,11 +528,11 @@ for (const ambiguity of ["same-root", "cross-root"]) {
 }
 
 for (const [kind, from] of [
-  ["pointer-filter", 'sidebar.addEventListener("pointerdown", () => tabOpenIntents.invalidate());'],
-  ["keyboard-filter", 'if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate();'],
-  ["command-filter", 'tabOpenIntents.invalidate(); // also when the filter already has DOM focus'],
+  ["pointer-add", 'sidebar.addEventListener("pointerdown", () => tabOpenIntents.invalidate());'],
+  ["keyboard-add", 'if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate();'],
+  ["command-roster", 'tabOpenIntents.invalidate(); // also when the roster already has DOM focus'],
 ]) test(`mutation: sidebar ${kind} must revoke pending content-focus authority`, async t => {
-  const name = kind === "command-filter" ? "focusRoster" : "initContextRoster";
+  const name = kind === "command-roster" ? "focusRoster" : "initContextRoster";
   const block = source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))?.[0];
   assert.ok(block); assert.equal(block.split(from).length, 2, 'weaken this sidebar owner, not another component with the same guard');
   const mutant = source.replace(block, block.replace(from, "/* mutation: sidebar did not cancel */"));
@@ -535,25 +540,27 @@ for (const [kind, from] of [
   await assert.rejects(sidebarAttachment(t, kind, "resolve", mutant), /sidebar owns input/);
 });
 
-test("filtering: ArrowDown and the tab stop land on the first match, never an ancestor shown for context", t => {
+// The roster's filter is gone (the product owner; the command palette finds an instance by name). Its command,
+// sidebar.focusFilter, focuses the roster's current row, and with no row still lands in the sidebar.
+test("sidebar.focusFilter's run focuses the roster's tab stop, else the sidebar's next way in, never nothing", t => {
   const s = shell(t);
+  assert.equal(s.c.contextRosterEl.querySelector("input"), null, "no filter field in the roster");
   const team = [
     { instance: "lead", home: "/t/lead", agentsRoot: "/t/agents", running: true },
-    { instance: "worker-keyboard", home: "/t/worker-keyboard", agentsRoot: "/t/agents", parentInstance: "lead", running: true },
+    { instance: "worker", home: "/t/worker", agentsRoot: "/t/agents", parentInstance: "lead", running: true },
   ];
-  s.c.contextInstances = team;
-  const filter = s.document.getElementById("entry");
-  filter.focus(); filter.value = "keyboard"; s.dispatch(filter, "input");
+  s.c.contextInstances = team; s.renderContextRoster(team);
   const rows = [...s.c.contextRosterEl.querySelectorAll(".ctx-inst")];
-  assert.deepEqual(rows.map(r => r.dataset.filterContext ?? null), ["true", null], "the lead stays visible, marked as context");
-  assert.deepEqual(rows.map(r => r.tabIndex), [-1, 0], "the tab stop is the match");
-  s.dispatch(filter, "keydown", { key: "ArrowDown" });
-  assert.equal(s.document.activeElement, rows[1], "ArrowDown enters at the match, not the ancestor");
-  filter.focus(); filter.value = ""; s.dispatch(filter, "input");
-  s.dispatch(filter, "keydown", { key: "ArrowDown" });
-  assert.equal(s.document.activeElement.dataset.treeInstance, s.c.contextRosterEl.querySelector('.ctx-inst[tabindex="0"]').dataset.treeInstance,
-    "no filter: the rows' tab stop");
+  rows[0].tabIndex = -1; rows[1].tabIndex = 0;
+  s.focusRoster();
+  assert.equal(s.document.activeElement, rows[1], "the roving stop, not the first row");
+  assert.deepEqual(rows.map(r => r.tabIndex), [-1, 0]);
+  // No instances: the list of workspaces' Add (always shown with the sidebar), never <body>.
+  s.c.contextInstances = []; s.renderContextRoster([]);
+  s.focusRoster();
+  assert.equal(s.document.activeElement, s.document.getElementById("ws-add-open"));
 });
+
 
 test("under an open modal the tab-switch actions do nothing (as F6 doesn't); close still works", t => {
   const s = shell(t);
@@ -589,21 +596,19 @@ test("a remote row's terminal tab carries the row's server label, else the serve
   }
 });
 
-test("showInRoster: the row with that server and home is revealed (a filter cleared, a collapsed parent opened), selected and focused", async t => {
+test("showInRoster: the row with that server and home is revealed (a collapsed parent opened), selected and focused", async t => {
   const s = shell(t);
   const row = (name, extra = {}) => ({ instance: name, agent: "dev", agentsRoot: "/srv/agents", home: `/srv/agents/dev/instances/${name}`,
     server: "build", addressable: true, running: true, repoName: "Build box", ...extra });
   const parent = row("lead"), child = row("helper", { parentInstance: "lead" }), twin = row("helper", { server: "other", repoName: "Other box" });
   s.c.contextInstances = [parent, child, twin];
   s.c.collapsedInstances.add(s.c.collapseKey("A", s.c.instanceId(parent)));
-  s.c.contextFilter = "lead"; s.document.getElementById("entry").value = "lead";
   s.renderContextRoster(s.c.contextInstances);
   assert.equal([...s.document.querySelectorAll(".ctx-inst")].some(b => b.dataset.treeInstance === s.c.instanceId(child)), false, "hidden to begin with");
   assert.equal(await s.showInRoster({ server: "build", home: child.home }), true);
   const active = s.document.activeElement;
   assert.equal(active.dataset.treeInstance, s.c.instanceId(child), "the build row, not its same-named twin on another server");
   assert.equal(active.tabIndex, 0);
-  assert.equal(s.document.getElementById("entry").value, "", "the filter that hid it is cleared");
   assert.equal(s.c.collapsedInstances.size, 0, "its collapsed parent is opened");
   assert.equal(await s.showInRoster({ server: "build", home: "/srv/agents/dev/instances/nobody" }), false);
 });

@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import * as spawn from '../renderer/views/spawn.mjs';
+import { preselectAutomationsTab } from '../renderer/views/automations.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli } from '../renderer/views/cli-status.mjs';
 import { workspaceStatusData, deploymentStatusData, syncData } from '../../client/deployment-data.mjs';
@@ -35,7 +36,7 @@ const instances = roster.agents.flatMap(agent => agent.instances.map(i => ({ ...
 const catalog = name => ({ workspaceSyncApi: 1, status: 'ok', report: null, capabilities: { capabilitiesApi: 1, ...fx(name).result }, reason: null });
 const report = (name, status) => ({ workspaceSyncApi: 1, status, report: syncData(f2(name), dir), capabilities: null, reason: null });
 
-async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, members, workspace = {}, deployment } = {}) {
+async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, members, automations, workspace = {}, deployment, beforeMount } = {}) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>', { url: 'http://localhost' });
   const previous = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
   const polls = [];
@@ -52,12 +53,14 @@ async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, m
     if (path.startsWith('/api/workspace-sync')) return sync ? sync(body, calls) : catalog('capabilities');
     if (teams && path.startsWith('/api/workspace-teams')) return teams(body, calls);
     if (members && path.startsWith('/api/team-members')) return members();
+    if (automations && path.startsWith('/api/automations')) return automations(body, calls);
     if (path.startsWith('/api/servers')) return { servers: [] };
     throw new Error(`Unexpected fixture API request: ${path}`);
   } };
   t.after(() => { spawn.unmount(); setWorkspace(previous.ws); globalThis.document = previous.document; globalThis.window = previous.window; globalThis.setInterval = previous.setInterval; dom.window.close(); });
   setWorkspace('/team');
   await refreshCli({ api: async () => cli });
+  beforeMount?.(); // a handoff made before the view exists (the shell preselects, then shows the stage)
   spawn.mount(dom.window.document.querySelector('#host'), ctx); await settle();
   const doc = dom.window.document;
   return { doc, dom, calls, ctx,
@@ -184,17 +187,19 @@ test('Workspace owned is split by repository, headed as on the Souls tab: the ho
 });
 
 // Workspace defaults (product owner, 2026-10-23): the Capabilities tab opens with what the workspace gives every
-// soul (status.defaults), never narrowed by the search; its "i" is built once, sits right after the section jump and
-// survives every repaint; leaving the tab closes its dialog without moving focus. Souls has its own "i".
-test('Capabilities: Workspace defaults first, the "i" after the jump across repaints, its dialog closes with the tab', async t => {
+// soul (status.defaults), never narrowed by the search; its "i" is built once, sits in the toolbar's lead (the section
+// jump is All capabilities' own, under its title) and survives every repaint; leaving the tab closes its dialog without
+// moving focus. Souls has its own "i".
+test('Capabilities: Workspace defaults first, the "i" in the toolbar across repaints, its dialog closes with the tab', async t => {
   const defaults = { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null }, capabilities: [] };
   const u = await setup(t, { status: { ...statusOf('workspace-status'), defaults } });
   await u.tab('capabilities');
   const lead = u.doc.querySelector('.ws-toolbar[data-tools=capabilities] .ws-toolbar-lead');
   const info = lead.querySelector('.ws-info-button');
-  assert.deepEqual([...lead.children].map(el => el.className), ['capability-nav ws-segmented', 'ws-info-button'], 'right after the section jump');
+  assert.deepEqual([...lead.children].map(el => el.className), ['ws-info-button'], 'the toolbar\'s lead: the "i" alone');
   assert.equal(info.getAttribute('aria-label'), 'About capabilities');
-  assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => el.dataset.jump), ['defaults', 'workspace', 'packages']);
+  assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => el.dataset.jump), ['workspace', 'packages'], 'no Defaults segment');
+  assert.equal(u.doc.querySelector('.capability-nav').closest('.capability-part').querySelector(':scope > h2').textContent, 'All capabilities');
   assert.equal(u.doc.querySelector('.capability-section').dataset.section, 'defaults');
   const slot = u.doc.querySelector('.ws-default-cell[data-slot=knowledge]');
   assert.equal(slot.getAttribute('aria-label'), 'Knowledge: oats.okf, the workspace default — open its page');
@@ -203,7 +208,7 @@ test('Capabilities: Workspace defaults first, the "i" after the jump across repa
   const search = u.doc.querySelector('.ws-toolbar[data-tools=capabilities] input');
   search.value = 'no-such'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); await settle();
   assert.equal(lead.querySelector('.ws-info-button'), info, 'the same element'); assert.equal(u.doc.activeElement, info, 'focus stays on it');
-  assert.equal(lead.lastElementChild, info, 'still after the jump');
+  assert.equal(lead.lastElementChild, info, 'still the lead\'s');
   assert.equal(u.doc.querySelectorAll('[data-group=core] .ws-default-cell').length, 3, 'the search does not narrow the defaults');
   // A focused default column keeps focus across a repaint (its data-focus-key).
   u.doc.querySelector('.ws-default-cell[data-slot=knowledge]').focus();
@@ -332,7 +337,8 @@ test('the view search narrows every section by capability name', async t => {
   const search = u.doc.querySelector('.ws-toolbar[data-tools=capabilities] input');
   assert.equal(search.closest('.workspace-header'), null, 'not in the header');
   assert.equal(search.closest('.ws-toolbar').hidden, false);
-  assert.ok(search.closest('.ws-toolbar').querySelector('.ws-toolbar-lead .capability-nav'), 'the section pills share the search row');
+  assert.equal(search.closest('.ws-toolbar').querySelector('.capability-nav'), null, 'the section pills are All capabilities\', not the search row\'s');
+  assert.ok(u.doc.querySelector('.capability-part > .capability-nav'));
   search.focus();
   search.value = 'OKF'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); await settle();
   assert.deepEqual(u.rows().map(el => el.dataset.capability), ['oats.okf']);
@@ -445,7 +451,7 @@ test('W2 Setup graph: this computer → the lock → the workspace → members a
   assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-attn').hidden, true);
   assert.equal([...u.doc.querySelectorAll('.catalog-note.warn')].some(el => /messaging\.byTeam/.test(el.textContent)), false, 'not a Setup note');
   await u.tab('teams');
-  assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.firstChild.textContent), ['Souls', 'Capabilities', 'Teams', 'Setup']);
+  assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.firstChild.textContent), ['Souls', 'Capabilities', 'Automations', 'Teams', 'Setup']);
   assert.deepEqual([...u.doc.querySelectorAll('.workspace-discovery .setup-box')].map(el => el.dataset.box), ['Teams']);
   assert.match(u.doc.querySelector('.setup-team[data-team=global] .setup-team-warn').textContent, /team "global" has no messaging\.byTeam entry/);
   assert.equal(u.doc.querySelector('.setup-team[data-team=engineering] .setup-team-warn'), null);
@@ -610,20 +616,21 @@ test('a failed catalog read names the failure and offers an explicit retry', asy
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }, { action: 'read', refresh: true }], 'Retry reads live');
 });
 
-// Team model v2 (0.30, D2): the Workspace's Teams tab, first (human, 2026-09-28), holds "Teams on this
+// Team model v2 (0.30, D2): the Workspace's Teams tab (first on 2026-09-28; fourth since 2026-10-23) holds "Teams on this
 // computer" from the kernel's `oats teams` (K1's example document, feat/030-team-model 8dd82158);
 // its problems light the tab's dot. A workspace on another computer keeps its teams there.
 const { teamsData } = await import('../../client/deployment-data.mjs');
 // The REAL 0.30 kernel's `oats teams` (K1 @bba0a9b8, test/fixtures/team-model-v2/teams-after, #269), decoded as the route answers it.
 const K1_TEAMS = () => teamsData(JSON.parse(readFileSync(new URL('./fixtures/team-model-v2/teams-after.json', import.meta.url), 'utf8')), dir);
-test('Teams tab (team-model-2): third, after Capabilities; the Teams page from oats teams; its problems light the dot; Setup has no teams', async t => {
+test('Teams tab (team-model-2): fourth, after Automations; the Teams page from oats teams; its problems light the dot; Setup has no teams', async t => {
   const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: K1_TEAMS() }) });
-  // Souls, Capabilities, Teams, Setup (product owner, 2026-10-23, superseding 2026-09-28's "Teams first").
-  assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.id), ['workspace-tab-souls', 'workspace-tab-capabilities', 'workspace-tab-teams', 'workspace-tab-sources']);
+  // Souls, Capabilities, Automations, Teams, Setup (product owner, 2026-10-23, superseding 2026-09-28's "Teams first";
+  // Automations joined as a tab in the sidebar layout the same day).
+  assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.id), ['workspace-tab-souls', 'workspace-tab-capabilities', 'workspace-tab-automations', 'workspace-tab-teams', 'workspace-tab-sources']);
   assert.equal(u.doc.getElementById('workspace-tab-souls').getAttribute('aria-selected'), 'true', 'Souls stays where the Workspace opens');
-  // The roving keys follow the order: Right from Capabilities is Teams, Left from Souls wraps to Setup, Home is Souls.
+  // The roving keys follow the order: Right from Capabilities is Automations, then Teams; Left from Souls wraps to Setup, Home is Souls.
   const key = name => { const tab = u.doc.querySelector('.workspace-tabs [aria-selected=true]'); tab.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true })); return u.doc.activeElement.id; };
-  assert.equal(key('ArrowRight'), 'workspace-tab-capabilities'); assert.equal(key('ArrowRight'), 'workspace-tab-teams');
+  assert.equal(key('ArrowRight'), 'workspace-tab-capabilities'); assert.equal(key('ArrowRight'), 'workspace-tab-automations'); assert.equal(key('ArrowRight'), 'workspace-tab-teams');
   assert.equal(key('Home'), 'workspace-tab-souls'); assert.equal(key('ArrowLeft'), 'workspace-tab-sources'); assert.equal(key('Home'), 'workspace-tab-souls');
   await u.tab('teams');
   const card = u.doc.querySelector('.workspace-discovery .computer-teams');
@@ -756,9 +763,9 @@ for (const outcome of ['success', 'rejection']) test(`Teams: opening a team supe
   assert.equal(u.doc.activeElement, page.querySelector('.page-back'));
 });
 
-// The Workspace header and its scope line are hidden while a team's page is open: in a view of two deployments the
-// page's card says which one its Make default and Remove edit (the primary), and stops following once it closes.
-test('Teams: in a view of two deployments a team\'s page says which deployment it edits, under its label', async t => {
+// The Workspace pages do not name the deployment they read (the product owner, 2026-10-23): in a view of two
+// deployments a team's page edits the primary, as before (#482), with no "On <deployment>" line.
+test('Teams: in a view of two deployments a team\'s page shows no "On <deployment>" line', async t => {
   const doc = () => { const d = K1_TEAMS(); d.teams.push({ label: 'spare', team: 'spare:juan.aweb.ai', from: 'local', default: false, description: null }); return d; };
   const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: doc() }) });
   t.after(resetViewDeployments);
@@ -770,17 +777,47 @@ test('Teams: in a view of two deployments a team\'s page says which deployment i
   await u.tab('teams');
   u.doc.querySelector('.ct-card[data-team="spare"] .ct-open').click(); await settle();
   const page = u.doc.querySelector('.workspace-team-page');
-  const scope = () => page.querySelector('.ct-page-card .ct-head > .deployment-scope');
-  assert.equal(scope().textContent, 'On This Mac · ~/Agents/first'); assert.equal(scope().hidden, false);
-  assert.deepEqual([...page.querySelectorAll('.ct-page-card .ct-act')].map(b => b.textContent), ['Make default', 'Remove'], 'the actions it scopes');
-  assert.ok(scope().previousElementSibling.classList.contains('ct-id'), 'under the label');
-  // One deployment: no line, as on every deployment-level surface.
+  assert.equal(page.hidden, false);
+  assert.deepEqual([...page.querySelectorAll('.ct-page-card .ct-act')].map(b => b.textContent), ['Make default', 'Remove']);
+  assert.equal(page.querySelector('.deployment-scope'), null, 'no scope line on the page');
+  assert.doesNotMatch(page.textContent, /On This Mac/);
+  assert.equal(u.doc.querySelector('.workspace-main .deployment-scope'), null, 'nor under the Workspace header');
   notePanel({ workspace: { id: '/team' }, deployments: deployments(false) }); await settle();
-  assert.equal(scope().hidden, true);
-  const line = scope();
-  page.querySelector('.page-back').click(); await settle();
-  notePanel({ workspace: { id: '/team' }, deployments: deployments(true) }); await settle();
-  assert.equal(line.textContent, '', 'closed: the page\'s line no longer follows the view');
+  assert.equal(page.querySelector('.deployment-scope'), null);
+});
+
+// #482 (unchanged by the Workspace pages losing their "On <deployment>" line, 2026-10-23): in a view of two or more
+// deployments of one workspace the Workspace pages read the view's primary deployment, as before. They address every
+// read by the view id (the server answers deployment-level reads from the primary: workspace-views-server.test.mjs),
+// never by a deployment id, and offer no choice of deployment; only the side panel and the Deployments page name one.
+test('#482: in a view of two deployments the Workspace pages read the primary through the view id, with no deployment choice or line', async t => {
+  t.after(resetViewDeployments);
+  const deployments = [
+    { id: '/d1', machine: 'This Mac', path: '/Users/ana/Agents/first', label: '~/Agents/first', local: true, primary: true, reachable: true },
+    { id: '/d2', machine: 'altair', path: '/srv/first', label: '~/first', local: false, primary: false, reachable: true },
+  ];
+  const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: K1_TEAMS() }),
+    workspace: { primary: '/d1' }, beforeMount: () => notePanel({ workspace: { id: '/team', primary: '/d1' }, deployments }) });
+  for (const tab of ['souls', 'capabilities', 'teams', 'sources']) {
+    await u.tab(tab);
+    assert.equal(u.doc.querySelector('.workspace-main .deployment-scope'), null, `${tab}: no "On <deployment>" line`);
+    assert.doesNotMatch(u.doc.querySelector('.workspace-main').textContent, /On This Mac|~\/Agents\/first|altair/, `${tab}: no deployment named`);
+  }
+  // A capability's page and a soul's page: no line either.
+  await u.tab('capabilities');
+  u.rows()[0].click(); await settle();
+  const capPage = u.doc.querySelector('.workspace-cap-page');
+  assert.equal(capPage.hidden, false, 'the capability page is open'); assert.equal(capPage.querySelector('.deployment-scope'), null, 'none on the capability page');
+  capPage.querySelector('.page-back').click(); await settle();
+  await u.tab('souls');
+  u.doc.querySelector('.soul-card').click(); await settle();
+  const soulPage = u.doc.querySelector('.workspace-soul-page');
+  assert.equal(soulPage.hidden, false, 'the soul page is open'); assert.equal(soulPage.querySelector('.deployment-scope'), null, 'none on the soul page');
+  const addressed = u.calls.map(call => call.path).filter(path => !/^\/api\/(cli|servers)\b/.test(path));
+  assert.ok(addressed.some(path => path.startsWith('/api/agents')) && addressed.some(path => path.startsWith('/api/workspace-sync'))
+    && addressed.some(path => path.startsWith('/api/workspace-teams')), 'the souls, the catalog and the teams were read');
+  for (const path of addressed) assert.match(path, /[?&]ws=%2Fteam(?:&|$)/, `${path}: by the view id`);
+  assert.equal(addressed.some(path => /ws=%2Fd[12]\b/.test(path)), false, 'never by a deployment id');
 });
 
 // 0.30 automation trust: the REAL kernel's workspace-status warnings (fixtures/automations-trust, kernel
@@ -798,4 +835,95 @@ test('Setup: automation-untrusted and automation-trust-stale are said verbatim, 
   assert.deepEqual(items.filter(([, message]) => said.some(w => w.message === message)), [
     ['Warning', said[0].message, said[0].remedy], ['Warning', said[1].message, null]]);
   assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-attn').hidden, false, 'Setup carries the attention dot');
+});
+
+// Automations is the Workspace page's tab (the sidebar layout, 2026-10-23): its panel is the view's own, like the
+// Souls grid, and the Schedules | Triggers stage (views/automations.mjs) lives in it only while the tab is shown.
+const kernelList = kind => JSON.parse(readFileSync(new URL(`./fixtures/automations/kernel/${kind}-list.json`, import.meta.url), 'utf8')).result;
+const AUTOMATIONS_CLI = { ...CLI, automationsApi: 1, features: [...CLI.features, 'automations'] };
+const automationsReply = body => ({ automationsViewApi: 1, status: 'ok', kind: body.kind, action: body.action, result: kernelList(body.kind), reason: null });
+async function automationsSetup(t, options = {}) {
+  preselectAutomationsTab('schedule'); t.after(() => preselectAutomationsTab('schedule')); // the subtab choice is session state
+  const u = await setup(t, { cli: AUTOMATIONS_CLI, automations: automationsReply, ...options });
+  return { ...u,
+    panel: () => u.doc.getElementById('workspace-automations'),
+    reads: () => u.calls.filter(c => c.path.startsWith('/api/automations')).map(c => c.body),
+    subtab: () => u.doc.querySelector('#workspace-automations .auto-tabs [aria-selected=true]')?.dataset.kind ?? null };
+}
+
+test('Automations tab: the view\'s own tabpanel, labelled by its tab, holds the Schedules | Triggers stage; the grid and the discovery panel are hidden and the discovery paints nothing', async t => {
+  const u = await automationsSetup(t);
+  const tab = u.doc.getElementById('workspace-tab-automations');
+  assert.equal(tab.getAttribute('aria-controls'), 'workspace-automations');
+  assert.equal(u.panel().hidden, true, 'not shown while Souls is'); assert.equal(u.panel().childElementCount, 0, 'and nothing mounted in it');
+  assert.deepEqual(u.reads(), [], 'nothing read before the tab is chosen');
+  await u.tab('automations');
+  const panel = u.panel();
+  assert.equal(u.doc.querySelectorAll('#workspace-automations').length, 1, 'one element carries the id the tab controls');
+  assert.equal(panel.getAttribute('role'), 'tabpanel'); assert.equal(panel.getAttribute('aria-labelledby'), 'workspace-tab-automations');
+  assert.equal(tab.getAttribute('aria-selected'), 'true'); assert.equal(panel.hidden, false);
+  assert.equal(u.doc.querySelector('.souls-grid').hidden, true, 'the souls grid is hidden');
+  const discovery = u.doc.querySelector('.workspace-discovery');
+  assert.equal(discovery.hidden, true, 'the discovery panel is hidden');
+  assert.equal(discovery.dataset.tab, 'automations');
+  assert.equal(discovery.querySelector('.catalog-notes').childElementCount, 0, 'no notes painted');
+  assert.equal(discovery.lastElementChild.childElementCount, 0, 'no body painted');
+  assert.equal(discovery.querySelector('.catalog-row, .setup-box, .computer-teams'), null);
+  // The stage: its subtabs, Schedules open, its page reading through POST /api/automations.
+  assert.deepEqual([...panel.querySelectorAll('.auto-tabs [role=tab]')].map(b => [b.id, b.getAttribute('aria-selected')]),
+    [['automations-tab-schedule', 'true'], ['automations-tab-trigger', 'false']]);
+  assert.equal(panel.querySelector('.automations').dataset.kind, 'schedule');
+  assert.deepEqual(u.reads().map(b => [b.kind, b.action]), [['schedule', 'list'], ['trigger', 'list']], 'the page\'s read and the other tab\'s count');
+});
+
+test('Automations tab: choosing another tab disposes the stage (it reads no more), and the tab chosen again mounts a fresh one', async t => {
+  const u = await automationsSetup(t);
+  await u.tab('automations');
+  const first = u.panel().querySelector('.automations-host');
+  assert.ok(first);
+  await u.tab('capabilities');
+  assert.equal(u.panel().hidden, true); assert.equal(u.panel().childElementCount, 0, 'the stage is gone from its panel');
+  assert.equal(first.isConnected, false);
+  const before = u.reads().length;
+  // A disposed stage is no longer live: a preselect reaches nothing, and it reads nothing.
+  preselectAutomationsTab('trigger'); await settle();
+  assert.equal(u.reads().length, before, 'no /api/automations request after leaving');
+  assert.equal(u.panel().childElementCount, 0, 'nothing remounted behind the other tab');
+  await u.tab('automations');
+  assert.notEqual(u.panel().querySelector('.automations-host'), first, 'a fresh stage');
+  assert.equal(u.subtab(), 'trigger', 'on the subtab chosen meanwhile');
+});
+
+test('Automations tab: unmounting the view disposes the stage; it reads no more', async t => {
+  const u = await automationsSetup(t);
+  await u.tab('automations');
+  const host = u.panel().querySelector('.automations-host');
+  spawn.unmount();
+  assert.equal(host.isConnected, false);
+  const before = u.reads().length;
+  preselectAutomationsTab('trigger'); await settle();
+  assert.equal(u.reads().length, before, 'no /api/automations request after unmount');
+});
+
+test('Automations tab: preselectWorkspaceTab(\'automations\') before the view mounts lands on it, the stage mounted on the subtab preselected', async t => {
+  const u = await automationsSetup(t, { beforeMount: () => { assert.equal(spawn.preselectWorkspaceTab('automations'), true); preselectAutomationsTab('trigger'); } });
+  assert.equal(u.doc.getElementById('workspace-tab-automations').getAttribute('aria-selected'), 'true');
+  assert.equal(u.panel().hidden, false); assert.equal(u.doc.querySelector('.souls-grid').hidden, true);
+  assert.equal(u.doc.querySelector('.workspace-discovery').hidden, true);
+  assert.equal(u.subtab(), 'trigger', 'a stage made after the preselect opens on Triggers');
+});
+
+test('Automations tab: preselectAutomationsTab(\'trigger\') switches the stage on screen to Triggers; made before the stage, the fresh one opens on Triggers', async t => {
+  const u = await automationsSetup(t);
+  await u.tab('automations');
+  assert.equal(u.subtab(), 'schedule');
+  const before = u.reads().length;
+  preselectAutomationsTab('trigger'); await settle();
+  assert.equal(u.subtab(), 'trigger', 'the live stage shows Triggers at once');
+  assert.deepEqual(u.reads().slice(before), [{ kind: 'trigger', action: 'list' }], 'and reads its page (what a disposed stage never does)');
+  assert.equal(u.panel().querySelector('.automations').dataset.kind, 'trigger');
+  await u.tab('souls');
+  preselectAutomationsTab('schedule'); preselectAutomationsTab('trigger'); // chosen while no stage is on screen
+  await u.tab('automations');
+  assert.equal(u.subtab(), 'trigger', 'a fresh stage opens on the preselected subtab');
 });

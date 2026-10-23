@@ -114,9 +114,13 @@ for (const outcome of ['success', 'rejection']) test(`roster per-path tickets re
 test('subtab preselection is consumed on mount/current view, drops stale generations and never spawns', async t => {
   const u = await setup(t, { beforeMount: () => spawn.preselectWorkspaceTab('sources') });
   await tick(); assert.equal(u.doc.getElementById('workspace-tab-sources').getAttribute('aria-selected'), 'true');
+  // The page's tab, as the shell's surface reads it (surface-return.mjs): what shows, null once unmounted.
+  assert.equal(spawn.currentWorkspaceTab(), 'sources');
   assert.equal(spawn.preselectWorkspaceTab('knowledge'), false);
   spawn.preselectWorkspaceTab('souls'); assert.equal(u.doc.querySelector('.souls-grid').hidden, false);
-  spawn.unmount(); spawn.preselectWorkspaceTab('sources'); setWorkspace('/other');
+  assert.equal(spawn.currentWorkspaceTab(), 'souls');
+  spawn.unmount(); assert.equal(spawn.currentWorkspaceTab(), null);
+  spawn.preselectWorkspaceTab('sources'); setWorkspace('/other');
   spawn.mount(u.doc.querySelector('#host'), u.ctx); await tick();
   assert.equal(u.doc.getElementById('workspace-tab-souls').getAttribute('aria-selected'), 'true');
   assert.equal(u.doc.querySelector('.spawn-dialog'), null);
@@ -208,10 +212,11 @@ test('instance rows reflect exact root/host identity and open only read-only sna
 
 function tabGeometry(u) {
   const strip = u.doc.querySelector('.workspace-tabs');
-  // Teams (first since 2026-09-28) widens the strip by its own 62px, so Setup sits where it did.
+  // Five tabs: Souls, Capabilities, Automations, Teams, Setup (2026-10-23). Setup keeps its place and width, at
+  // 246px in a 287px strip, so 41px of it shows until the strip scrolls 32px.
   Object.defineProperties(strip, { clientWidth: { value: 287, configurable: true }, clientLeft: { value: 0 } });
   strip.getBoundingClientRect = () => ({ left: 100, right: 387, width: 287 });
-  const widths = [60, 80, 100, 73], starts = [0, 62, 144, 246];
+  const widths = [50, 70, 60, 50, 73], starts = [0, 52, 124, 186, 246];
   const controls = [...strip.querySelectorAll('button')];
   controls.forEach((control, i) => { control.getBoundingClientRect = () => ({ left: 100 + starts[i] - strip.scrollLeft, right: 100 + starts[i] + widths[i] - strip.scrollLeft, width: widths[i] }); });
   // Any scrollIntoView could move the outer page. Only strip.scrollLeft is allowed.
@@ -223,7 +228,7 @@ function tabGeometry(u) {
 }
 
 test('1100px Sources focus reveals all 73px in-strip without selecting, inspecting or moving outer scroll', async t => {
-  const u = await setup(t), g = tabGeometry(u), source = g.controls[3];
+  const u = await setup(t), g = tabGeometry(u), source = g.controls[4];
   assert.equal(g.visible(source), 41);
   source.focus({ preventScroll: true });
   assert.equal(u.doc.activeElement, source); assert.equal(g.visible(source), 73); assert.equal(g.strip.scrollLeft, 32);
@@ -234,7 +239,7 @@ test('1100px Sources focus reveals all 73px in-strip without selecting, inspecti
 });
 
 test('Sources activation, repeated current-tab activation and keyboard movement reveal only the strip', async t => {
-  const u = await setup(t), g = tabGeometry(u), [teams, souls, caps, source] = g.controls;
+  const u = await setup(t), g = tabGeometry(u), [souls, caps, , teams, source] = g.controls;
   const input = u.doc.querySelector('.filter'); input.focus({ preventScroll: true });
   u.tab('sources'); await tick();
   assert.equal(u.doc.activeElement, input, 'programmatic current-tab activation must not steal focus');
@@ -248,12 +253,12 @@ test('Sources activation, repeated current-tab activation and keyboard movement 
     control.focus = options => { focusOptions.push(options); focus(options); };
   }
   const key = (control, value) => control.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true }));
-  key(source, 'Home'); assert.equal(u.doc.activeElement, teams); assert.equal(g.strip.scrollLeft, 0);
-  key(teams, 'ArrowRight'); assert.equal(u.doc.activeElement, souls);
-  key(souls, 'End'); assert.equal(u.doc.activeElement, source); assert.equal(g.visible(source), 73);
-  key(source, 'ArrowLeft'); assert.equal(u.doc.activeElement, caps);
-  g.strip.scrollLeft = 0; key(caps, 'ArrowRight'); assert.equal(u.doc.activeElement, source); assert.equal(g.visible(source), 73);
-  key(source, 'ArrowRight'); assert.equal(u.doc.activeElement, teams, 'wraps to the first tab'); assert.equal(g.strip.scrollLeft, 0);
+  key(source, 'Home'); assert.equal(u.doc.activeElement, souls); assert.equal(g.strip.scrollLeft, 0);
+  key(souls, 'ArrowRight'); assert.equal(u.doc.activeElement, caps);
+  key(caps, 'End'); assert.equal(u.doc.activeElement, source); assert.equal(g.visible(source), 73);
+  key(source, 'ArrowLeft'); assert.equal(u.doc.activeElement, teams);
+  g.strip.scrollLeft = 0; key(teams, 'ArrowRight'); assert.equal(u.doc.activeElement, source); assert.equal(g.visible(source), 73);
+  key(source, 'ArrowRight'); assert.equal(u.doc.activeElement, souls, 'wraps to the first tab'); assert.equal(g.strip.scrollLeft, 0);
   assert.ok(focusOptions.length >= 5 && focusOptions.every(options => options?.preventScroll === true));
   const syncCalls = u.calls.filter(call => call.path.startsWith('/api/workspace-sync'));
   // Passing through Capabilities reads its catalog once; nothing ever mutates.
@@ -264,8 +269,8 @@ test('a settled catalog count keeps the current tab revealed without moving focu
   const pending = deferred(), u = await setup(t, { sync: () => pending.promise }), g = tabGeometry(u);
   u.tab('sources'); assert.equal(g.strip.scrollLeft, 32);
   const before = u.doc.activeElement;
-  g.widths[3] = 147; u.tab('sources'); await tick();
-  assert.equal(g.visible(g.controls[3]), 147); assert.equal(g.strip.scrollLeft, 106);
+  g.widths[4] = 147; u.tab('sources'); await tick();
+  assert.equal(g.visible(g.controls[4]), 147); assert.equal(g.strip.scrollLeft, 106);
   assert.equal(u.doc.activeElement, before); g.assertOuter();
   pending.resolve({ workspaceSyncApi: 1, status: 'ok', capabilities: { capabilitiesApi: 1, ...catalogFixture.result } });
 });

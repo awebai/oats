@@ -39,18 +39,19 @@ function brainStyles() {
 }
 
 const markup = `<div id="app"><aside id="sidebar">
-  <div class="side-head"><span class="ws-brand-mark"></span><span id="ws-heading" class="ws-heading">Workspaces</span>
+  <div class="ctx-head ws-head"><span id="ws-heading" class="ws-heading">Workspaces</span>
     <button id="ws-add-open" class="ws-add-open icon-button" type="button" aria-label="Add local workspace…"></button></div>
   <section id="ws-list" class="ws-list"><div id="ws-options" class="ws-options"><ul class="ws-group">
     <li class="ws-option-row"><button class="ws-option ws-current" aria-current="true">One</button></li>
     <li class="ws-option-row"><button class="ws-option ws-other">Two</button></li></ul></div></section>
-  <nav id="nav"><button class="nav-item">Workspace</button><button class="nav-item active">Active</button></nav>
+  <nav id="nav"><button class="nav-item active" aria-current="page"><span class="icon"></span><span class="label">Deployments</span></button><button class="nav-item"><span class="icon"></span><span class="label">Workspace</span></button></nav>
   <section id="instance-roster">
-    <label class="ctx-filter-field"><span class="ctx-filter-icon"></span><input class="ctx-filter" placeholder="Filter instances"><kbd class="shortcut-hint" hidden></kbd></label>
+    <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span><button id="sidebar-spawn" class="ws-add-open ctx-head-add icon-button" aria-label="Spawn instance">+</button></div>
     <div class="ctx-list"><div class="ctx-tree-row"><button class="ctx-inst">Row</button>
       <span class="ctx-row-tools"><button class="ctx-instance-actions">…</button></span></div></div></section>
-  <div id="nav-foot"><button id="sidebar-spawn" class="primary">Spawn</button>
-    <div id="sidebar-tools"><button id="sidebar-toggle" class="nav-item">S</button></div></div></aside>
+  <div id="nav-foot" role="group" aria-label="Sidebar tools"><button id="sidebar-toggle" class="ws-add-open icon-button" type="button" aria-label="Hide the sidebar">S</button>
+    <button id="sidebar-settings" class="ws-add-open sidebar-settings icon-button" type="button" aria-label="Settings" aria-haspopup="menu"></button>
+    <div id="sidebar-settings-menu" class="ctx-instance-menu sidebar-settings-menu" role="menu"><button role="menuitem" data-menu-action="app.themePicker">Theme…</button></div></div></aside>
   <main id="main"><div id="tabstrip"><div id="tabbar-row"><div id="tabbar">
     <div class="tab active"><button class="tab-trigger">Tab</button><button class="close">×</button></div>
   </div><div id="tab-actions"><button id="split-right">▥</button></div></div></div>
@@ -133,11 +134,18 @@ test("segmented control: selected segment is --sel/--accent at 650, unselected i
   assert.equal(u.rule(".oats-view .ws-segmented button:focus-visible").background, "var(--sel)", "keyboard focus tints an unselected segment");
 });
 
-test("workspace list: the current row is the selection surface (--sel), named by aria-current; the others rest transparent", t => {
+// The nav's current view is the selection fill (--sel): the list's current workspace has a mark of its own (its
+// circle filled, workspace-switcher.mjs), so the sidebar shows one filled "you are here" row, not two.
+test("workspace list: the current row, named by aria-current, has no fill and no edge, never the nav's --sel; the others rest transparent", t => {
   const u = fixture(t);
-  assert.equal(u.rule('.ws-option[aria-current="true"]').background, "var(--sel)");
-  assert.equal(u.style(".ws-option.ws-current").background, "var(--sel)");
+  assert.equal(u.rules.filter(r => r.selectorText?.replace(/\s+/g, " ") === '.ws-option[aria-current="true"]').length, 0, "no rule on the row itself (2026-10-23: no accent edge)");
+  assert.equal(u.rule('.ws-option[aria-current="true"] .ws-option-name').fontWeight, "650", "its name in bold");
+  assert.match(u.style(".ws-option.ws-current").background, /^(transparent|rgba\(0, 0, 0, 0\))$/);
+  assert.equal(u.style(".ws-option.ws-current").boxShadow, "");
   assert.match(u.style(".ws-option.ws-other").background, /^(transparent|rgba\(0, 0, 0, 0\))$/);
+  assert.equal(u.style(".ws-option.ws-other").boxShadow, "");
+  assert.equal(u.rule(".nav-item.active").background, "var(--sel)", "the nav's current view keeps the selection fill");
+  assert.equal(u.rules.filter(r => /\.ws-option\[aria-current/.test(r.selectorText || "") && /var\(--sel\)/.test(r.style.cssText)).length, 0, "no --sel on the current workspace");
   assert.equal(u.rules.filter(r => /\.ws-option\[aria-selected/.test(r.selectorText || "")).length, 0, "a list of buttons: no listbox selection rule");
   // The Add dialog's found deployments are buttons that add (#518): no radio selection to paint.
   assert.equal(u.rules.filter(r => /\.ws-suggestion\[aria-checked|\.ws-radio/.test(r.selectorText || "")).length, 0, "no radio rules");
@@ -162,7 +170,10 @@ test("focus: one global 1px inset accent edge and tint replace every 2px ring an
 
 test("focus: keyboard focus on plain shell controls paints the tint and the edge", t => {
   const u = fixture(t);
-  for (const selector of [".ws-option.ws-other", ".ws-option.ws-current", ".ws-add-open", ".nav-item:not(.active)", ".ctx-inst", ".tab-trigger", ".tab .close",
+  // The nav's items, the headings' controls (Add local workspace…, Spawn instance), the foot's (the sidebar toggle,
+  // the settings cog: the sidebar layout) and the settings menu's items are plain controls.
+  for (const selector of [".ws-option.ws-other", ".ws-option.ws-current", ".ws-add-open", "#nav .nav-item:not(.active)", "#nav .nav-item.active", "#ws-add-open", "#sidebar-spawn", "#sidebar-toggle", "#sidebar-settings",
+    ".sidebar-settings-menu [role=menuitem]", ".ctx-inst", ".tab-trigger", ".tab .close",
     "#tab-actions button", ".ws-suggestion", ".ws-dialog-foot .secondary", ".kb-chord", ".kb-close", ".ws-segmented [aria-pressed=false]",
     ".ctx-instance-menu button", ".ctx-instance-actions", ".lifecycle-close", ".lifecycle-review", ".lifecycle-check", ".oats-view .act:not(.primary):not(.danger)"]) {
     const s = u.focused(selector);
@@ -174,7 +185,7 @@ test("focus: keyboard focus on plain shell controls paints the tint and the edge
 
 test("focus: controls with their own opaque pair keep it and show the edge only", t => {
   const u = fixture(t);
-  for (const [selector, bg, fg, edge = "accent"] of [["#sidebar-spawn", "primary-bg", "primary-fg"], [".ws-dialog-foot .primary", "primary-bg", "primary-fg"],
+  for (const [selector, bg, fg, edge = "accent"] of [[".ws-dialog-foot .primary", "primary-bg", "primary-fg"],
     [".oats-view .act.primary", "primary-bg", "primary-fg"], [".lifecycle-confirm", "danger", "primary-fg"], [".lifecycle-done", "primary-bg", "primary-fg"],
     [".app-toast-dismiss", "primary-fg", "primary-bg", "primary-fg"] /* toast buttons invert inside the dark toast, edge in its ink */]) {
     const s = u.focused(selector);
@@ -192,16 +203,12 @@ test("focus: controls with their own opaque pair keep it and show the edge only"
 });
 
 // ── rule 3: search and filter fields have one border ──
-test("search fields: the wrapper or the field's own border is the only frame; the input never outlines", t => {
+test("search fields: the field's own border is the only frame; the input never outlines", t => {
   const u = fixture(t);
-  const wrapper = u.rule(".ctx-filter-field"), focusWithin = u.rule(".ctx-filter-field:focus-within");
-  assert.equal(wrapper.border, "1px solid var(--border)"); assert.equal(focusWithin.borderColor, "var(--accent)");
-  const idle = u.style(".ctx-filter");
-  assert.equal(idle.outline, "none"); assert.equal(idle.borderWidth, "0px");
-  const filter = u.focused(".ctx-filter");
-  assert.equal(filter.outline, "none", "focused filter input draws no inner ring (board 7 Before)");
-  assert.equal(filter.borderWidth, "0px");
-  assert.equal(filter.background, "var(--bg)");
+  // The sidebar has no search field since the roster filter went (the command palette finds an instance by name):
+  // no rule styles it, and the roster is its head, then its list.
+  assert.deepEqual(u.rules.filter(r => /\.ctx-filter/.test(r.selectorText || "")).map(r => r.selectorText), [], "no roster filter rule ships");
+  assert.deepEqual([...u.get("#instance-roster").children].map(el => el.className), ["ctx-head", "ctx-list"]);
   // The workspace list has no search field any more (the Add dialog's search is the one left).
   assert.equal(u.rules.filter(r => /#ws-menu-search/.test(r.selectorText || "")).length, 0, "no rule for the dropdown's search");
   // Two rules name the Add dialog's search alone now: its frame, and its place in the dialog (width, margin).
@@ -233,7 +240,20 @@ for (const palette of ["light", "solarized", "dark"]) test(`${palette}: selected
     assert.ok(contrast(accent, on) >= 3, `${palette}: --accent edge on --${name} ${contrast(accent, on).toFixed(2)}:1`);
   }
   assert.equal(u.style(".ws-segmented [aria-pressed=true]").color, "var(--accent)");
-  assert.equal(u.rule(".ctx-filter-field:focus-within").borderColor, "var(--accent)");
+  assert.equal(u.rule("#ws-suggestion-search:focus-visible").borderColor, "var(--accent)");
+  // The nav's items, the sidebar's icon buttons (Spawn instance, the foot's sidebar toggle and settings cog: the
+  // sidebar layout) and the settings menu's items: their ink, idle and keyboard-focused, on the --sel tint they focus to, through the
+  // effective tokens (the edge is checked above).
+  for (const selector of ["#nav .nav-item:not(.active)", "#nav .nav-item.active", "#sidebar-spawn", "#sidebar-toggle", "#sidebar-settings", ".sidebar-settings-menu [role=menuitem]"]) {
+    const idle = u.style(selector).color, focus = u.focused(selector);
+    for (const ink of [idle, focus.color]) {
+      const name = ink.match(/^var\(--([\w-]+)\)$/)?.[1];
+      assert.ok(name, `${selector}: a token ink, never a raw colour (${ink})`);
+      assert.ok(contrast(u.token(name), sel) >= 4.5, `${palette}: ${selector} --${name} on --sel ${contrast(u.token(name), sel).toFixed(2)}:1`);
+    }
+    assert.equal(focus.background, "var(--sel)", `${selector} tint`);
+    assert.equal(focus.opacity, "1", `${selector}: no opacity over text`);
+  }
 });
 
 test("view search fields and tab strips follow rules 2 and 3 (Capabilities search, Automations search, workspace tabs)", () => {

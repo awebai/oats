@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
-import { createWorkspaceSwitcher, LISTED_STATE_TEXT, LISTED_STATE_WORD, LIST_UNSUPPORTED_TEXT, REMOVE_HINT, listFailedText } from "../renderer/workspace-switcher.mjs";
+import { createWorkspaceSwitcher, LISTED_STATE_TEXT, LISTED_STATE_WORD, LIST_UNSUPPORTED_TEXT, REMOVE_HINT, listFailedText, addableText, STALE_HEADING } from "../renderer/workspace-switcher.mjs";
 import { workspaceChoiceLabels } from "../../client/workspace-choices.mjs";
 import { createAddExecutor } from "../workspace-registry.mjs";
 
@@ -119,7 +119,7 @@ test("a found deployment is one click: it is added, the dialog closes, it is pic
   assert.equal(modal.hidden, false);
   assert.equal(document.activeElement, document.getElementById("ws-suggestion-search"));
   assert.deepEqual([...document.querySelectorAll(".ws-suggestion-title")].map((node) => node.textContent), ["oats", "tools"]);
-  assert.equal(document.getElementById("ws-dialog-status").textContent, "2 suggested workspaces");
+  assert.equal(document.getElementById("ws-dialog-status").textContent, "2 workspaces to add");
   assert.equal(document.getElementById("ws-confirm").hidden, true, "no confirm step: the confirm is Onboard's alone");
   suggestion(document, C.id).click();
   await settle();
@@ -251,7 +251,7 @@ test("a deployment a served view already holds is not offered (#482)", async () 
   await controller.openModal();
   assert.deepEqual(suggestionButtons(document).map((button) => button.dataset.workspaceId), [C.id],
     "B is a view's own id; A is a deployment a view names");
-  assert.equal(document.getElementById("ws-dialog-status").textContent, "1 suggested workspace");
+  assert.equal(document.getElementById("ws-dialog-status").textContent, "1 workspace to add");
   controller.dispose(); dom.window.close();
 });
 
@@ -283,7 +283,7 @@ test("a stale row is not offered as an add: it is listed after the found deploym
   assert.deepEqual(suggestionButtons(document).map((b) => [b.dataset.workspaceId, b.classList.contains("ws-suggestion-stale")]), [
     ["/h/acme", false], ["/h/found", false], ["/h/gone", true], ["/h/old", true], ["/h/locked", true]],
     "the ones that can be opened first (an ok row, a found deployment with no state), then the stale ones");
-  assert.equal(s.status().textContent, "2 suggested workspaces", "a stale row is not counted as a suggestion");
+  assert.equal(s.status().textContent, "2 workspaces to add", "a stale row is not counted as a suggestion");
   assert.deepEqual(LISTED_STATE_WORD, { missing: "Missing", "not-a-deployment": "Not a deployment", unreadable: "Can't be checked" });
   assert.deepEqual(LISTED_STATE_TEXT, {
     missing: "Missing: the folder is gone, or its volume isn't mounted",
@@ -306,6 +306,42 @@ test("a stale row is not offered as an add: it is listed after the found deploym
   assert.deepEqual(s.calls.added, [], "a stale row opens nothing");
   assert.deepEqual(s.selected, []);
   assert.equal(document.getElementById("ws-modal").hidden, false);
+  s.controller.dispose(); s.dom.window.close();
+});
+
+// The dialog is named as its button is (Add local workspace…), and its count is what can be added: the rows that
+// can't be opened sit after them, under their own heading, as their own group.
+test("the Add dialog: titled as its button, counting only what can be added; the rows that can't be opened under their own heading", async () => {
+  const s = staleSetup([listed("gone", "missing"), listed("acme", "ok"), { id: "/h/found", path: "/h/found", name: "found" }]);
+  const { document } = s;
+  assert.equal(document.getElementById("ws-dialog-title").textContent, "Add local workspace");
+  assert.equal(document.getElementById("ws-add-open").getAttribute("aria-label"), "Add local workspace…", "the button it is named after");
+  assert.equal(document.getElementById("ws-dialog-close").getAttribute("aria-label"), "Close Add local workspace");
+  await s.controller.openModal();
+  assert.equal(s.status().textContent, "2 workspaces to add", "three rows, two to add");
+  assert.deepEqual([addableText(1), addableText(0), STALE_HEADING], ["1 workspace to add", "No OATS workspaces to add.", "Can't be opened"]);
+  const list = document.getElementById("ws-suggestions");
+  const heading = list.querySelector(".ws-suggestions-heading");
+  assert.equal(heading.tagName, "H3"); assert.equal(heading.textContent, STALE_HEADING);
+  const group = heading.nextElementSibling;
+  assert.equal(group.getAttribute("role"), "group"); assert.equal(group.getAttribute("aria-labelledby"), heading.id);
+  assert.deepEqual([...group.querySelectorAll(".ws-suggestion")].map((b) => b.dataset.workspaceId), ["/h/gone"], "the stale row, in its group");
+  assert.deepEqual([...list.children].map((el) => el.className), ["ws-suggestion", "ws-suggestion", "ws-suggestions-heading", "ws-stale-group"],
+    "those to add first, then the heading and its rows");
+  // The rows are one list to the keys: Down from the last to add goes to the stale row.
+  suggestion(document, "/h/found").focus(); s.key("ArrowDown");
+  assert.equal(document.activeElement, suggestion(document, "/h/gone"));
+  // A filter that leaves no stale row leaves no heading.
+  const search = document.getElementById("ws-suggestion-search"); search.value = "acme"; search.dispatchEvent(new s.dom.window.Event("input", { bubbles: true }));
+  assert.equal(list.querySelector(".ws-suggestions-heading"), null);
+  s.controller.dispose(); s.dom.window.close();
+});
+
+test("with only rows that can't be opened, the count says there is nothing to add, and they keep their heading", async () => {
+  const s = staleSetup([listed("gone", "missing")]);
+  await s.controller.openModal();
+  assert.equal(s.status().textContent, "No OATS workspaces to add.");
+  assert.equal(s.document.querySelector("#ws-suggestions .ws-suggestions-heading").textContent, STALE_HEADING);
   s.controller.dispose(); s.dom.window.close();
 });
 
@@ -436,11 +472,11 @@ test("a failed Remove says why and keeps focus on its Remove; a thrown one too",
 
 test("the discovery status says when this computer's list can't be read: unsupported, failed (with or without a reason); ok or absent says nothing more", async () => {
   const cases = [
-    [{ state: "unsupported" }, `1 suggested workspace. ${LIST_UNSUPPORTED_TEXT}`],
-    [{ state: "failed", message: "the file is not JSON" }, `1 suggested workspace. ${listFailedText("the file is not JSON")}`],
-    [{ state: "failed" }, `1 suggested workspace. ${listFailedText("the installed OATS CLI could not read it.")}`],
-    [{ state: "ok" }, "1 suggested workspace"],
-    [undefined, "1 suggested workspace"],
+    [{ state: "unsupported" }, `1 workspace to add. ${LIST_UNSUPPORTED_TEXT}`],
+    [{ state: "failed", message: "the file is not JSON" }, `1 workspace to add. ${listFailedText("the file is not JSON")}`],
+    [{ state: "failed" }, `1 workspace to add. ${listFailedText("the installed OATS CLI could not read it.")}`],
+    [{ state: "ok" }, "1 workspace to add"],
+    [undefined, "1 workspace to add"],
   ];
   assert.equal(LIST_UNSUPPORTED_TEXT, "This oats can't list this computer's deployments. Update oats.");
   assert.equal(listFailedText("x"), "Couldn't read this computer's deployments: x");
@@ -456,7 +492,7 @@ test("the discovery status says when this computer's list can't be read: unsuppo
   const { dom, document, controller } = setup({ discoverSuggestions: async () => ({ suggestions: [], list: { state: "unsupported" } }) });
   controller.begin()(B, [B]);
   await controller.openModal();
-  assert.equal(document.getElementById("ws-dialog-status").textContent, `No additional OATS workspaces were discovered. ${LIST_UNSUPPORTED_TEXT}`,
+  assert.equal(document.getElementById("ws-dialog-status").textContent, `No OATS workspaces to add. ${LIST_UNSUPPORTED_TEXT}`,
     "a sentence that already ends in a period gets no second one");
   controller.dispose(); dom.window.close();
 });
@@ -574,7 +610,7 @@ test("picker cancellation does not orphan an in-flight discovery loading state",
     "loading remains truthful while the still-owned discovery is pending");
   discovery.resolve({ stale: false, suggestions: [A] });
   await opening;
-  assert.equal(document.getElementById("ws-dialog-status").textContent, "1 suggested workspace");
+  assert.equal(document.getElementById("ws-dialog-status").textContent, "1 workspace to add");
   assert.equal(document.querySelector(".ws-suggestion").dataset.workspaceId, "/org-a/oats");
   dom.window.close();
 });
@@ -813,7 +849,7 @@ test("a parent folder is refused with the explanation and its deployments as one
   assert.equal(choices[0].querySelector(".ws-pick-name").textContent, "Add aweb");
   assert.equal(document.querySelector(".ws-pick-more").textContent, "and 3 more. Only the first 200 entries of this folder were checked.");
   assert.equal(document.querySelector(".ws-pick-setup"), null, "onboarding is not offered beside deployments");
-  assert.equal(document.getElementById("ws-dialog-title").textContent, "Add workspace", "not the onboarding dialog");
+  assert.equal(document.getElementById("ws-dialog-title").textContent, "Add local workspace", "not the onboarding dialog");
   assert.equal(document.activeElement, choices[0], "focus lands on the first choice");
   assert.deepEqual(added, []); assert.deepEqual(selected, []);
   choices[1].click();
@@ -849,7 +885,7 @@ test("a folder with no deployment near it is refused, with onboarding only as th
   document.getElementById("ws-browse").click();
   await settle();
   assert.equal(document.getElementById("ws-dialog-status").textContent, REFUSAL);
-  assert.equal(document.getElementById("ws-dialog-title").textContent, "Add workspace", "the refusal stands; onboarding is not entered on its own");
+  assert.equal(document.getElementById("ws-dialog-title").textContent, "Add local workspace", "the refusal stands; onboarding is not entered on its own");
   const setupButton = document.querySelector(".ws-pick-setup");
   assert.equal(setupButton.textContent, "Set up a new deployment here…");
   assert.equal(document.activeElement, setupButton);

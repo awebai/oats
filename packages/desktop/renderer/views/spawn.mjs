@@ -36,7 +36,7 @@ import { registerAction, getBinding, formatChord, onKeymapChange, keymapTakes } 
 import { resolveViewKey } from "../view-keys.mjs";
 import { cliAvailable, cliKnownUnavailable, cliStatus, refreshCli, onCliChange, cliCard } from "./cli-status.mjs";
 import { preselectSchedule } from "./schedules.mjs";
-import { preselectAutomationsTab } from "./automations.mjs";
+import { preselectAutomationsTab, createAutomationsStage } from "./automations.mjs";
 import { inspectSupported } from "../../../client/inspect-contract.mjs";
 import { createDataState, skeleton, statusLine, captureFocusState } from "../loading.mjs";
 import { canAddressRemote } from "../../../client/remote-address.mjs";
@@ -128,6 +128,9 @@ ${groupHeadingCSS}
 .oats-view .souls .soul-tile > button.soul-spawn:disabled { color:var(--muted); }
 .oats-view .souls button.spawn-act:not(:disabled), .oats-view .souls button.fspawn:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
 .souls-grid[hidden] { display:none; }
+/* The Automations tab (Schedules | Triggers, views/automations.mjs): its stage fills the panel, as it filled the page. */
+.workspace-automations { flex:1; min-height:0; min-width:0; display:flex; flex-direction:column; }
+.workspace-automations[hidden] { display:none; }
 .spawn-modal { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 24px; background: var(--scrim); }
 .spawn-dialog { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
 .spawn-dialog-head { display: flex; }
@@ -164,6 +167,10 @@ export function preselectWorkspaceTab(name) {
   pendingWorkspaceTab = { name, ...nextSelectionIntent() };
   if (state?.alive) applyWorkspaceTab(state);
   return true;
+}
+/** The Workspace page's tab while it is mounted (the shell's surface, surface-return.mjs), else null. */
+export function currentWorkspaceTab() {
+  return state?.alive ? state.discovery?.tab ?? null : null;
 }
 function applyWorkspaceTab(s) {
   if (!pendingWorkspaceTab) return;
@@ -314,7 +321,17 @@ function showPage(s, mode) {
   s.q("souls-grid").hidden = !!mode || !souls;
   s.q("souls-bar").hidden = !!mode || !souls;
   s.q("souls-notice").hidden = !!mode || !souls; // the grid's stale line belongs to the grid
-  s.q("workspace-discovery").hidden = !!mode || souls;
+  const automations = s.discovery?.tab === "automations";
+  s.q("workspace-automations").hidden = !!mode || !automations;
+  s.q("workspace-discovery").hidden = !!mode || souls || automations;
+}
+/** The Automations tab's stage (views/automations.mjs createAutomationsStage): mounted while the tab is shown, on
+ * the subtab last chosen (or preselected: a soul's "Schedule…"), and disposed when another tab is chosen or the
+ * view leaves, so it reads nothing in the background. */
+function syncAutomations(s) {
+  const shown = s.alive && s.discovery?.tab === "automations";
+  if (shown && !s.automations) s.automations = createAutomationsStage(s.q("workspace-automations"), s.ctx);
+  else if (!shown && s.automations) { s.automations.dispose(); s.automations = null; }
 }
 /** A team's page, from its card on the Teams board (packages/desktop/docs/desktop-teams.md "A team's page"). The
  * Teams page paints it (computer-teams.mjs showTeam) and keeps it current; Back and Esc return to the board, at its
@@ -521,6 +538,7 @@ ${spawnDialogCSS}</style>
             </div>
             <div class="souls-notice"></div>
             <div class="souls-grid"></div>
+            <div class="workspace-automations" hidden></div>
             <section class="workspace-discovery" hidden></section>
             <section id="workspace-soul-page" class="workspace-page workspace-soul-page" aria-label="Soul details" hidden></section>
             <section class="workspace-page workspace-cap-page" aria-label="Capability details" hidden></section>
@@ -596,7 +614,7 @@ ${spawnDialogCSS}</style>
     },
   });
   s.discovery = createWorkspaceDiscovery(s.q("workspace-header"), s.q("workspace-discovery"), {
-    ctx, soulsPanel: s.q("souls-grid"), onIntent: () => nextSelectionIntent(),
+    ctx, soulsPanel: s.q("souls-grid"), automationsPanel: s.q("workspace-automations"), onIntent: () => nextSelectionIntent(),
     // A catalog read settled (or began, or was reset): the open page follows, and a capability handoff waiting for it opens.
     onCatalog: () => { syncCapabilityPage(s); applyCapability(s); },
     rosterState: () => rosterSettledState(s), // "Used by" claims are roster-derived: none while the roster is not settled-good
@@ -607,6 +625,7 @@ ${spawnDialogCSS}</style>
       if (tab !== "souls") s.aboutSouls?.close({ focus: "none" }); // leaving Souls closes its dialog, moving no focus
       s.spawnOp++; closeSpawnModal(s); s.inspector.close(); closeCapability(s); closeTeam(s); s.page.close();
       s.q("souls-bar").hidden = tab !== "souls"; s.q("souls-notice").hidden = tab !== "souls";
+      syncAutomations(s);
     },
   });
   // Capture actual tab choices before discovery projects them. Its onTab
@@ -732,6 +751,7 @@ export function unmount() {
   state.inspector.dispose(); state.page.dispose(); state.capOpen?.contents.dispose();
   state.presentation?.dispose();
   state.gridState?.dispose();
+  state.automations?.dispose(); state.automations = null;
   state.discovery.dispose(); state.aboutSouls?.dispose();
   state.timers.forEach(clearInterval);
   (state.disposers || []).forEach((off) => { try { off(); } catch {} });
@@ -816,8 +836,9 @@ function rosterSettledState(s) {
 /** What the reply says about the souls list (spec 02's fields are optional; they must not be needed):
  * `catalog.reason` (the kernel could not read the catalog) is a failed read: stale with cards, failed
  * without; an observed deployment still reading (`refreshing: true`, no souls, no reason) stays pending;
- * an unobserved deployment stays pending with the deployment's own copy in the grid; else the read
- * succeeded, empty when it listed nothing. */
+ * an unobserved deployment stays pending with the deployment's own copy in the grid; an empty list that
+ * read no observed deployment (no `catalog`) beside a panel that says it is observed stays pending too;
+ * else the read succeeded, empty when it listed nothing. */
 function settleGridState(s, souls) {
   const load = s.gridState; if (!load) return;
   const agents = souls.agents, reason = souls.catalog?.reason || null;
@@ -831,6 +852,11 @@ function settleGridState(s, souls) {
   }
   if (s.deployment && s.deployment.status !== "observed") { load.defer(); return; }
   if (!agents.length && souls.refreshing === true) { load.defer({ keepSkeleton: true }); return; }
+  // The two reads run side by side: at launch (the Workspace page is the home surface) /api/agents can be
+  // answered before the server's first observation of the deployment (agentsData: no `catalog`, nothing listed)
+  // and /api/panel just after it. That empty list is no read of the souls: the grid keeps loading, never
+  // "No souls are materialized", and the next poll reads the list. (A remote view's panel names no deployment.)
+  if (!agents.length && !souls.catalog && s.deployment?.status === "observed") { load.defer({ keepSkeleton: true }); return; }
   load.succeed({ observedAt, empty: !agents.length });
 }
 /** Pending: one group's worth of card skeletons at the real card size — one row plus one. */
@@ -896,7 +922,11 @@ function renderGrid(s, { restoreFocus = true } = {}) {
   // is a truthful state of its own, said in the deployment's words (the controller shows no skeleton then).
   const unobserved = !!s.deployment && s.deployment.status !== "observed";
   const hasData = s.gridState ? s.gridState.hasData : true;
-  if (!hasData && !unobserved) { s.gridSignature = null; return; }
+  if (!hasData && !unobserved) {
+    // The grid is the loading controller's again: an unobserved deployment's copy painted before goes.
+    grid.querySelector(":scope > .empty")?.remove();
+    s.gridSignature = null; return;
+  }
   // Skip unchanged repaints: an identical poll never rebuilds the cards under focus or a hover.
   const signature = JSON.stringify([hasData, unobserved && s.deployment, s.souls.agents, s.filterText, s.groupBy, noCli, cliKnownUnavailable(), cliProbePending(), cliStatus()?.features ?? null,
     s.panelInstances.map((i) => [i.instance, i.agent, i.agentsRoot, i.running === true]), s.deployment?.workspaceStatus?.members ?? null,

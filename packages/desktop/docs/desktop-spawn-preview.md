@@ -604,8 +604,8 @@ restarted, and its record of the spawn is gone) is an unknown outcome with
 **After the press** (Spec E): once the dialog has closed and returned focus, the
 shell reveals the pending row (its ancestors expanded, scrolled into view in the
 roster, and highlighted with the selection's fill) without taking focus or
-cancelling anything pending. An operator's roster filter that hides it stays;
-**Show its row** is the explicit request that clears it.
+cancelling anything pending. **Show its row** is the explicit request that
+also moves focus to it.
 
 The handoff carries the press token, the prepare input, the decision on screen,
 the relation and the draft (name, every choice, teams, opening instruction,

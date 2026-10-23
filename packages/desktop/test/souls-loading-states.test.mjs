@@ -116,6 +116,42 @@ test('an observed deployment still reading its list (refreshing, nothing held) k
   assert.equal(u.skeleton(), null); assert.equal(u.cards().length, 2);
 });
 
+// The Workspace page is the home surface (2026-10-23), so the Souls grid reads at launch, while the server makes its
+// first observation. Its two reads run side by side: /api/agents answered before that observation (the server's
+// agentsData: nothing listed, no `catalog`) and /api/panel after it (observed) is no read of the souls. The grid keeps
+// its loading state until the first read of the list lands, never "No souls are materialized".
+test('launch: an empty souls answer from before the first observation, beside an observed panel, keeps the grid loading until the list lands', async t => {
+  const u = await setup(t);
+  await u.resolve(0, { workspace: { id: '/team', name: 'Team' }, agents: [], observedAt: null, refreshing: false });
+  assert.doesNotMatch(u.text(), /No souls are materialized/);
+  assert.equal(u.grid().getAttribute('aria-busy'), 'true', 'still loading'); assert.equal(u.status().textContent, 'Loading souls…');
+  u.timers.advance(PENDING_DELAY_MS); assert.ok(u.skeleton(), 'the skeleton, as for any first read');
+  // The next poll reads the list: the cards replace the skeleton.
+  u.poll(); await tick(); await u.resolve(1, { agents: ROSTER, catalog: { reason: null, ambiguous: [] } });
+  assert.equal(u.skeleton(), null); assert.equal(u.cards().length, 2); assert.equal(u.grid().getAttribute('aria-busy'), null);
+  // A real zero read (a `catalog` with nothing listed) is still empty, and a remote view's (its panel names no deployment) too.
+  const v = await setup(t);
+  await v.resolve(0, { agents: [], catalog: { reason: null, ambiguous: [] }, refreshing: false });
+  assert.equal(v.text(), 'No souls are materialized in this deployment yet.');
+  const remote = await setup(t, { panel: { deployment: undefined, workspace: { id: '/team', remote: true } } });
+  await remote.resolve(0, { workspace: { id: '/team', server: 'altair' }, agents: [], observedAt: null, refreshing: false });
+  assert.equal(remote.text(), 'No souls are materialized in this deployment yet.');
+});
+
+test('launch: a deployment read first as pending, then observed with its list still being read, drops its own copy for the skeleton', async t => {
+  const u = await setup(t, { panel: { deployment: { status: 'pending' } } });
+  await u.resolve(0, { agents: [], observedAt: null, refreshing: false });
+  assert.equal(u.text(), 'Reading the deployment through the installed OATS CLI…');
+  u.setPanel({ deployment: observed });
+  u.poll(); await tick();
+  await u.resolve(1, { agents: [], catalog: { reason: null, ambiguous: [] }, observedAt: null, refreshing: true });
+  assert.equal(u.text(), '', 'the deployment\'s copy is gone: the list is being read');
+  assert.equal(u.grid().getAttribute('aria-busy'), 'true');
+  u.timers.advance(PENDING_DELAY_MS); assert.ok(u.skeleton(), 'the skeleton arrives');
+  u.poll(); await tick(); await u.resolve(2, { agents: ROSTER, catalog: { reason: null, ambiguous: [] } });
+  assert.equal(u.skeleton(), null); assert.equal(u.cards().length, 2);
+});
+
 test('refreshing: the cards stay and keep focus; "Refreshing…" only after 400ms; an unchanged poll does not rebuild the cards', async t => {
   const u = await setup(t);
   await u.resolve(0, { agents: ROSTER, catalog: { reason: null, ambiguous: [] } });

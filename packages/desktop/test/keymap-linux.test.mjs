@@ -18,8 +18,10 @@ import {
   setKeyboardLayoutMap, readKeyboardLayout, getBinding, formatChord, isPlainChord,
   registerAction, setActiveContexts, resetAllBindings, setBinding, matchEvent, handleKeydown, findConflict, keymapConflicts,
   eventMatchesBinding, pickerCycleDirection, paletteGroupDirection, paletteGroupHint, chordFromKeyId,
-  setChordFamily, parseChord, terminalAllows, leaderLeftToField,
+  setChordFamily, parseChord, terminalAllows, leaderLeftToField, listActions, runAction, resetBinding,
 } from "../renderer/keybindings.mjs";
+import { runInNewContext } from "node:vm";
+import { NAV, NAV_TABS } from "../renderer/shell-nav.mjs";
 import { readdirSync } from "node:fs";
 import { appMenuTemplate } from "../app-menu.mjs";
 import { CHORDS, CHORD_FAMILIES, DEFAULT_CHORD_FAMILY, PALETTE_KEYS, paletteKey } from "../../client/keymap.mjs";
@@ -388,18 +390,50 @@ test("shell wiring: the new actions are registered, rebindable and discoverable"
   const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
   for (const id of ["tabs.nextPage", "tabs.prevPage", "focus.nextRegion", "focus.prevRegion", "focus.leaveTerminal", "terminal.copySelection"]) assert.match(src, new RegExp(`id: "${id.replace(".", "\\.")}"`), id);
   assert.match(src, /id: `tabs\.goto\$\{n\}`/, "go to tab 1–9");
-  assert.match(src, /NAV\.forEach\(\(v\) => registerAction\(\{\n  id: `stage\.\$\{v\.name\}`/, "stage.automations comes from the nav manifest");
+  assert.match(src, /\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(\{\n  id: `stage\.\$\{v\.name\}`/, "stage.automations comes from the nav manifests (NAV_TABS)");
+});
+
+// Automations left the nav for a tab of the Workspace page (2026-10-23); its action did not move:
+// the shipped registration, run as shipped, still makes stage.automations a global, rebindable action
+// on Mod+3 with its label, and it opens the name (showStage routes it to the page and tab).
+test("stage.automations: registered from NAV_TABS as shipped, \"View: Workspace › Automations\", Ctrl+3 / ⌘3, rebindable", t => {
+  resetAllBindings();
+  const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  const statement = src.match(/\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(\{[^]*?\n\}\)\);/)?.[0];
+  assert.ok(statement, "the shipped stage registration");
+  const offs = [], opened = [];
+  runInNewContext(statement, { NAV, NAV_TABS, registerAction: action => { offs.push(registerAction(action)); }, showStageFocused: name => opened.push(name) });
+  t.after(() => { offs.forEach(off => off()); resetAllBindings(); });
+  const stages = listActions().filter(a => a.id.startsWith("stage.") && !a.id.includes(".", 6));
+  assert.deepEqual(stages.map(a => [a.id, a.label, a.context]), [
+    // In NAV's order, Workspace first since 2026-10-23; each keeps its own chord (bound by id).
+    ["stage.spawn", "View: Workspace", "global"], ["stage.hierarchy", "View: Deployments", "global"], ["stage.automations", "View: Workspace › Automations", "global"],
+  ]);
+  assert.deepEqual(["stage.hierarchy", "stage.spawn"].map(id => getBinding(id, false)), ["Mod+1", "Mod+2"], "⌘1 / Ctrl+1 is still Deployments");
+  assert.equal(getBinding("stage.automations", false), "Mod+3"); assert.equal(getBinding("stage.automations", true), "Mod+3");
+  const out = { isMac: false, insideTerminal: false };
+  assert.equal(matchEvent(linux("3"), out), "stage.automations");
+  assert.equal(matchEvent(ev("3", { metaKey: true }), { isMac: true, insideTerminal: true }), "stage.automations", "⌘3, a terminal focused too");
+  assert.equal(runAction("stage.automations"), true); assert.deepEqual(opened, ["automations"]);
+  // A chord no default takes, in any family (Ctrl+Alt+Shift+A is a split move's in the Ctrl+Alt family).
+  setBinding("stage.automations", "Ctrl+Alt+Shift+Y");
+  assert.equal(matchEvent(linux("Y", { altKey: true, shiftKey: true }), out), "stage.automations", "rebound");
+  assert.equal(matchEvent(linux("3"), out), null, "the old chord is free");
+  setBinding("stage.automations", null);
+  assert.equal(getBinding("stage.automations", false), null, "unbound");
+  resetBinding("stage.automations");
+  assert.equal(matchEvent(linux("3"), out), "stage.automations", "reset to Mod+3");
 });
 
 test("real targets: F6 cycles from text fields; in xterm's textarea F6 is the program's and Mod+Shift+F6 leaves", t => {
   registerAll(t);
-  const dom = new JSDOM(`<div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div><input class="ctx-filter"><textarea class="ftask"></textarea>`);
+  const dom = new JSDOM(`<div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div><input class="palette-input"><textarea class="ftask"></textarea>`);
   t.after(() => dom.window.close());
   const doc = dom.window.document;
   // Real targets: matchEvent derives insideTerminal and editable from them (function keys never
   // type, so the editable-field guard does not drop F6 in a text field).
   const term = doc.querySelector(".xterm-helper-textarea");
-  for (const target of [doc.querySelector(".ctx-filter"), doc.querySelector(".ftask")]) {
+  for (const target of [doc.querySelector(".palette-input"), doc.querySelector(".ftask")]) {
     for (const isMac of [true, false]) {
       assert.equal(matchEvent(ev("F6", { target }), { isMac }), "focus.nextRegion", `${target.className} mac=${isMac}`);
       assert.equal(matchEvent(ev("F6", { target, shiftKey: true }), { isMac }), "focus.prevRegion", `${target.className} mac=${isMac}`);
@@ -416,7 +450,7 @@ test("real targets: F6 cycles from text fields; in xterm's textarea F6 is the pr
   // Keys that type stay the field's: a plain-letter binding never fires while typing.
   setBinding("sidebar.toggle", "B");
   assert.equal(isPlainChord("B"), true);
-  assert.equal(matchEvent(ev("b", { target: doc.querySelector(".ctx-filter") }), { isMac: false }), null);
+  assert.equal(matchEvent(ev("b", { target: doc.querySelector(".palette-input") }), { isMac: false }), null);
   assert.equal(matchEvent(ev("b", { target: doc.querySelector(".xterm-helper-textarea") }), { isMac: true }), null);
 });
 
@@ -443,9 +477,9 @@ test("theme picker: Ctrl+Shift+Space on Linux/Windows, ⇧⌘Space on macOS, fro
     assert.equal(matchEvent(space({ ctrlKey: true, shiftKey: true }), macOpts), null);
     assert.equal(matchEvent(space({ metaKey: true, ctrlKey: true, shiftKey: true }), macOpts), null, "⌃⇧⌘Space is not the macOS chord");
   }
-  // In a text field (the roster filter, the spawn form): a modified chord is not typing, so the engine's
+  // In a text field (the palette's input, the spawn form): a modified chord is not typing, so the engine's
   // editable-field guard (plain chords only) lets it fire there.
-  const dom = new JSDOM(`<input class="ctx-filter"><textarea class="ftask"></textarea><div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div>`);
+  const dom = new JSDOM(`<input class="palette-input"><textarea class="ftask"></textarea><div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div>`);
   t.after(() => dom.window.close());
   for (const target of dom.window.document.querySelectorAll("input, textarea")) {
     assert.equal(matchEvent(space({ target, ctrlKey: true, shiftKey: true }), { isMac: false }), "app.themePicker", target.className);
@@ -605,7 +639,7 @@ test("the leader: Ctrl+X fires app.leader inside a terminal on Linux/Windows, an
 
 test("the leader in a text field: Linux/Windows leave Ctrl+X to Cut; a terminal's own textarea, a field with nothing to cut and macOS open it", t => {
   registerAll(t);
-  const dom = new JSDOM(`<input class="ctx-filter"><input type="search" class="search"><textarea class="ftask"></textarea>
+  const dom = new JSDOM(`<input class="palette-input"><input type="search" class="search"><textarea class="ftask"></textarea>
     <div class="editable" contenteditable="true"></div><input type="checkbox" class="check"><button class="button">b</button>
     <input class="readonly" readonly><textarea class="readonly-area" readonly></textarea><input type="password" class="password"><input type="date" class="date">
     <div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div>`);
@@ -613,7 +647,7 @@ test("the leader in a text field: Linux/Windows leave Ctrl+X to Cut; a terminal'
   const doc = dom.window.document;
   const editable = doc.querySelector(".editable");
   Object.defineProperty(editable, "isContentEditable", { value: true }); // jsdom does not compute it
-  const fields = [doc.querySelector(".ctx-filter"), doc.querySelector(".search"), doc.querySelector(".ftask"), editable];
+  const fields = [doc.querySelector(".palette-input"), doc.querySelector(".search"), doc.querySelector(".ftask"), editable];
   const ctrlX = target => linux("x", { target });
   // Linux and Windows are one path (isMac false): Ctrl+X in a text input, a textarea or a contenteditable
   // matches nothing and is not prevented, so Chromium's Cut runs.
@@ -734,14 +768,14 @@ test("the leader's, the sidebar's and the shared chords clash with no other defa
   setChordFamily(DEFAULT_CHORD_FAMILY);
 });
 
-// Desktop text fields (the roster filter, the spawn dialog's fields, the palette's input): no default
+// Desktop text fields (the spawn dialog's fields, the palette's input): no default
 // takes a key a field edits with, on either platform, so a field keeps every one of them (the leader's
 // Ctrl+X is Cut's in a field on Linux/Windows: leaderLeftToField; on macOS the ⌥ arrows, which move
 // between tabs, groups and workspaces elsewhere, are the field's caret moves and give way there); the
 // other shared chords are not such keys, and fire from a field as from anywhere (they type nothing).
 test("text fields keep their own keys: no default takes an editing key, and the shared chords fire from a field", t => {
   registerAll(t);
-  const dom = new JSDOM(`<input class="ctx-filter"><textarea class="ftask"></textarea>`);
+  const dom = new JSDOM(`<input class="palette-input"><textarea class="ftask"></textarea>`);
   t.after(() => dom.window.close());
   const fields = [...dom.window.document.querySelectorAll("input, textarea")];
   const arrows = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
@@ -804,7 +838,7 @@ test("text fields keep their own keys: no default takes an editing key, and the 
 // terminal's helper textarea, a button or a row is no such field, and the moves fire from it.
 test("macOS: the ⌥ arrow moves give way to a field of text, never to a terminal; a user's own binding fires there", t => {
   registerAll(t);
-  const dom = new JSDOM(`<input class="ctx-filter"><input class="secret" type="password"><input class="ro" readonly><textarea class="ftask"></textarea>
+  const dom = new JSDOM(`<input class="palette-input"><input class="secret" type="password"><input class="ro" readonly><textarea class="ftask"></textarea>
     <button class="b">b</button><input class="check" type="checkbox">
     <div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div>`);
   t.after(() => dom.window.close());
@@ -815,7 +849,7 @@ test("macOS: the ⌥ arrow moves give way to a field of text, never to a termina
   const press = (e, target) => { const keyed = ev(e.key, { ...e, target }); return [matchEvent(keyed, { isMac: true }), keyed]; };
   // jsdom has no isContentEditable: a contenteditable, as Chromium reports it.
   const editor = { tagName: "DIV", className: "contenteditable", isContentEditable: true, closest: () => null };
-  for (const target of [...doc.querySelectorAll(".ctx-filter, .secret, .ro, .ftask"), editor]) {
+  for (const target of [...doc.querySelectorAll(".palette-input, .secret, .ro, .ftask"), editor]) {
     for (const [e] of moves) {
       const [id, keyed] = press(e, target);
       assert.equal(id, null, `${e.key}${e.shiftKey ? "+⇧" : ""} in ${target.className}`);
@@ -826,7 +860,7 @@ test("macOS: the ⌥ arrow moves give way to a field of text, never to a termina
     for (const [e, want] of moves) assert.equal(press(e, target)[0], want, `${want} from ${target.className}`);
   }
   // Linux and Windows have no such rule: their word moves are Ctrl+←/→, and Alt+← is the tab move in a field.
-  assert.equal(matchEvent(ev("ArrowLeft", { altKey: true, target: doc.querySelector(".ctx-filter") }), { isMac: false }), "tabs.prevPage");
+  assert.equal(matchEvent(ev("ArrowLeft", { altKey: true, target: doc.querySelector(".palette-input") }), { isMac: false }), "tabs.prevPage");
   // A user's own binding of a ⌥ arrow fires from a field, as one of Alt+↑/↓ does from a select.
   setBinding("tabs.prevPage", "Alt+←");
   assert.equal(press(ev("ArrowLeft", { altKey: true }), doc.querySelector(".ftask"))[0], "tabs.prevPage", "the user's own ⌥←");
@@ -1140,7 +1174,7 @@ test("Ctrl+Shift family: every action's Linux/Windows default, as the shortcuts 
 test("Ctrl+Shift family: the seven fire from real (shifted) events, in a terminal and in a text field; their Ctrl+Alt keys are no binding", t => {
   registerAll(t);
   shiftFamily(t);
-  const dom = new JSDOM(`<input class="ctx-filter"><textarea class="ftask"></textarea>`);
+  const dom = new JSDOM(`<input class="palette-input"><textarea class="ftask"></textarea>`);
   t.after(() => dom.window.close());
   const fields = [...dom.window.document.querySelectorAll("input, textarea")];
   for (const [id, letter] of SEVEN) {

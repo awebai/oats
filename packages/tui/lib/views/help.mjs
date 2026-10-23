@@ -356,6 +356,7 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = 
       [marks.selected, "the selected row, and the pane the movement keys act on"],
       [OPEN_MARK, "among the workspaces: the one that is open"],
       [ascii ? WAITING_DOT.ascii : WAITING_DOT.utf8, ascii ? "among the workspaces: an instance there needs input" : `among the workspaces, in yellow: an instance there needs input (${WAITING_DOT.ascii} without colour)`],
+      [`+N ${ascii ? WAITING_DOT.ascii : WAITING_DOT.utf8}`, "among the workspaces: N not shown, and an instance in one of them needs input"],
       [ascii ? SOUL_MARK.ascii : SOUL_MARK.utf8, "among the souls: a soul, in its colour"],
       ["!", "among the souls: a spawn of it here would be refused"],
     ].map(([mark, meaning]) => [mark, words(meaning)]), cols),

@@ -214,7 +214,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   // stay valid across a refresh of the same subject, which no longer rebuilds them.
   let alive = true, serial = 0, subject = 0, operationSerial = 0, selectionGen = null, selection, data, teamsPanel = null, teamsHere = null;
   // The loading controller of the shown subject (loading.mjs), and the signature of what the content paints.
-  let loading = null, painted = null, scopeLine = null; // scopeLine: "On <primary deployment>" (#482)
+  // scopeLine: "On <primary deployment>" (#482), the side panel's only: the soul page names no deployment (2026-10-23).
+  let loading = null, painted = null, scopeLine = null;
   // The soul page's Instructions section (soul-instructions.mjs): one controller per subject, re-appended by every repaint.
   // `instructionCapabilities`: the shown inspection's capabilities by id, each with its core or composition entry, so a
   // composed part's "Open capability" takes the tables' own path.
@@ -298,7 +299,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     container.hidden = false;
     if (presentation) presentation.setPresent(true);
     else if (layout !== 'page') container.parentElement?.classList.add('inspecting'); // the page replaces the list; no side column
-    subject++; warningTargets = new Map(); scopeLine?.dispose(); scopeLine = createDeploymentScopeLine(doc, { inline: layout === 'page' }); readiness?.dispose(); readiness = null; loading?.dispose(); loading = null; painted = null; teamsHere?.dispose(); teamsHere = null; instructionsSection?.dispose(); instructionsSection = null;
+    subject++; warningTargets = new Map(); scopeLine?.dispose(); scopeLine = layout === 'page' ? null : createDeploymentScopeLine(doc); readiness?.dispose(); readiness = null; loading?.dispose(); loading = null; painted = null; teamsHere?.dispose(); teamsHere = null; instructionsSection?.dispose(); instructionsSection = null;
     container.replaceChildren();
     const head = node('div', undefined, 'inspector-head');
     container.classList.toggle('soul-page', layout === 'page');
@@ -322,7 +323,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       const copy = node('div', undefined, 'page-identity-copy');
       facts$ = node('div', undefined, 'page-facts-row');
       if (selection.agent) head.append(createSoulMark(doc, selection.agent));
-      copy.append(heading, ...(selection.agent ? [scopeLine.element] : []), facts$); head.append(copy); summary.append(head);
+      copy.append(heading, facts$); head.append(copy); summary.append(head);
       side = node('div', undefined, 'soul-page-side');
       const body = node('div', undefined, 'page-body'), main = node('div', undefined, 'page-main'), column = node('div', undefined, 'page-side');
       main.append(summary, status, notice, content); column.append(side); body.append(main, column);

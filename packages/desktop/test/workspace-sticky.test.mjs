@@ -55,13 +55,16 @@ const opaqueBg = () => {
   }
 };
 
-test('Capabilities: the section pills and search are one sticky block, flush at the top on the opaque page background', async t => {
+test('Capabilities: the search is one sticky block, flush at the top on the opaque page background; the section pills scroll with All capabilities', async t => {
   const u = await mountWorkspace(t);
   u.get('#workspace-tab-capabilities').click(); await tick(); await tick();
   const panel = u.get('.workspace-discovery'), block = u.get('.workspace-discovery > .ws-toolbar');
   assert.equal(panel.dataset.tab, 'capabilities');
   assert.ok(block.classList.contains('ws-sticky'));
-  assert.ok(block.querySelector('.capability-nav [data-jump]'), 'the section pills are in the pinned block');
+  // The section pills are All capabilities' own (the product owner, 2026-10-23): under its title, scrolling with it.
+  assert.equal(block.querySelector('.capability-nav'), null, 'the section pills are not pinned');
+  assert.equal(u.get('.capability-nav').closest('.ws-sticky'), null);
+  assert.equal(u.get('.capability-nav').previousElementSibling, u.get('#capability-part-all'), 'under All capabilities\' title');
   assert.ok(block.querySelector('.ws-search input'), 'and the search');
   assert.equal(panel.firstElementChild, block, 'the block opens the scroller');
   const style = u.css(block);

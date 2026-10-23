@@ -8,10 +8,11 @@ import { isLocalPath, workspaceChoiceRows } from "../../client/workspace-choices
 
 /* The workspace list (docs/desktop.md, "Workspaces"): always shown at the top of the sidebar, one row per
    workspace this window can show, whatever machine it is on: the served views, remote-only ones included, then
-   the views no workspace identity matched, in the same flat list. A row is one line, the workspace's name: no
-   mark, no machine, no state. The current row is `aria-current` and marked by style alone; picking a row (a
+   the views no workspace identity matched, in the same flat list. A row is one line, the instance roster's circle
+   and the workspace's name: no machine, no state. The current row is `aria-current` and marked by style alone (its
+   circle filled, its name bold); picking a row (a
    click, Enter or a move) shows it in this window, taking it over from another window that shows it (#481 as
-   changed: never focus the other window). A row with an instance that needs input carries a dot after its name
+   changed: never focus the other window). A row with an instance that needs input carries the needs-input mark (.attn-mark) at its far right
    (and the words, for assistive tech and in its tooltip), from the served views' roll-up alone.
 
    A list of buttons, not a listbox (the sidebar's plain keys stay live on it): one tab stop (the current row,
@@ -25,7 +26,7 @@ import { isLocalPath, workspaceChoiceRows } from "../../client/workspace-choices
 
 /** Below the list while rows are cut off below its bounded height (a sighted cue: every row is in the list). */
 export const moreBelowText = (count) => `${count} more below`;
-/** A workspace with an instance that needs input: the dot's words, in the row's name and as its tooltip. */
+/** A workspace with an instance that needs input: the mark's words, in the row's name and as its tooltip. */
 export const WAITING_NAME = ", needs input";
 export const WAITING_TITLE = "An instance here needs input";
 /** The row's context-menu item (#481). */
@@ -41,6 +42,10 @@ export const LISTED_STATE_WORD = Object.freeze({ missing: "Missing", "not-a-depl
 /** What the dialog adds when this computer's list could not be read: its CLI has no list, or the read failed. */
 export const LIST_UNSUPPORTED_TEXT = "This oats can't list this computer's deployments. Update oats.";
 export const listFailedText = (message) => `Couldn't read this computer's deployments: ${message}`;
+/** The Add dialog's count (its status line): what can be added, never the rows that can't be opened. */
+export const addableText = (count) => (count ? `${count} workspace${count === 1 ? "" : "s"} to add` : "No OATS workspaces to add.");
+/** The heading over this computer's list's rows that can't be opened, in the Add dialog after those to add. */
+export const STALE_HEADING = "Can't be opened";
 /** The keyboard route to a row's Remove, said once for every removable row. */
 export const REMOVE_HINT = "Press Right Arrow, then Enter, to remove it from this computer's list.";
 
@@ -184,14 +189,17 @@ export function createWorkspaceSwitcher({
       button.type = "button"; button.className = "ws-option"; button.tabIndex = -1;
       if (workspace.id === activeId) button.setAttribute("aria-current", "true");
       button.dataset.workspaceId = workspace.id;
+      // The instance roster's circle, its own rule (shell.css .ctx-dot): filled like a running instance's on the current
+      // workspace, a ring like a stopped one's on the others. Decorative: aria-current says which row is current.
+      const mark = document.createElement("span"); mark.className = workspace.id === activeId ? "ctx-dot on" : "ctx-dot off";
+      mark.setAttribute("aria-hidden", "true");
       const name = document.createElement("span"); name.className = "ws-option-name"; name.textContent = label;
-      button.append(name);
-      // The dot (the view's `waiting === true`): after the name, and in the row's name and tooltip. Unknown is none.
+      button.append(mark, name);
+      // The mark (the view's `waiting === true`): at the row's far right, and in the row's name and tooltip. Unknown is none.
       let tooltip = label;
       if (workspace.waiting === true) {
         const words = document.createElement("span"); words.className = "sr-only"; words.textContent = WAITING_NAME;
-        const dot = document.createElement("span"); dot.className = "ws-waiting"; dot.setAttribute("aria-hidden", "true");
-        button.append(words, dot);
+        button.append(words, iconElement(document, "attention", { size: 14, className: "ws-waiting attn-mark" }));
         tooltip = `${tooltip}\n${WAITING_TITLE}`;
       }
       // The whole name, for a name cut off: never a path or a machine.
@@ -228,9 +236,13 @@ export function createWorkspaceSwitcher({
   /** "N more below" while rows are cut off by the list's bounded height, at any scroll; none otherwise. */
   const noteMore = () => {
     const bottom = options.getBoundingClientRect().bottom;
-    const below = menuItems().filter((button) => button.getBoundingClientRect().bottom > bottom + 0.5).length;
-    more.hidden = !below;
-    more.textContent = below ? moreBelowText(below) : "";
+    const below = menuItems().filter((button) => button.getBoundingClientRect().bottom > bottom + 0.5);
+    more.hidden = !below.length;
+    more.replaceChildren(below.length ? moreBelowText(below.length) : "");
+    // A row cut off below waits on you: the line carries the rows' mark, as the TUI's "+N ●" (the rows keep their words).
+    if (below.some((button) => button.querySelector(".ws-waiting"))) {
+      more.append(iconElement(document, "attention", { size: 14, className: "ws-waiting attn-mark" }));
+    }
   };
 
   const menuOpen = () => { try { return rowMenu.matches(":popover-open"); } catch { return false; } };
@@ -300,6 +312,15 @@ export function createWorkspaceSwitcher({
       button.addEventListener("click", () => { if (!adding) void runAdd(id, name, button); });
       suggestionsEl.append(button);
     }
+    // Under their own heading, as their own group: they are not workspaces to add, and the count says so.
+    let staleGroup = null;
+    if (staleVisible.length) {
+      const heading = document.createElement("h3"); heading.className = "ws-suggestions-heading"; heading.id = "ws-stale-heading";
+      heading.textContent = STALE_HEADING;
+      staleGroup = document.createElement("div"); staleGroup.className = "ws-stale-group";
+      staleGroup.setAttribute("role", "group"); staleGroup.setAttribute("aria-labelledby", heading.id);
+      suggestionsEl.append(heading, staleGroup);
+    }
     for (const candidate of staleVisible) {
       const { id, name, button, copy } = entry(candidate);
       const sentence = LISTED_STATE_TEXT[candidate.state];
@@ -324,7 +345,7 @@ export function createWorkspaceSwitcher({
         remove.addEventListener("click", () => { if (!adding) void runRemove(id, name); });
         row.append(remove);
       }
-      suggestionsEl.append(row);
+      staleGroup.append(row);
     }
     if (focusId) {
       [...suggestionsEl.querySelectorAll(".ws-suggestion")]
@@ -454,7 +475,7 @@ export function createWorkspaceSwitcher({
         // Without the list (an older oats, a refused read) what is found is the saved deployments alone: said so.
         const note = result?.list?.state === "unsupported" ? LIST_UNSUPPORTED_TEXT
           : result?.list?.state === "failed" ? listFailedText(result.list.message || "the installed OATS CLI could not read it.") : "";
-        const foundText = suggestions.length ? `${suggestions.length} suggested workspace${suggestions.length === 1 ? "" : "s"}` : "No additional OATS workspaces were discovered.";
+        const foundText = addableText(suggestions.length);
         discoveryState = { message: note ? `${foundText.replace(/\.?$/, ".")} ${note}` : foundText, error: false };
       }
       if (!adding) paintDiscoveryState();
