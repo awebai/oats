@@ -113,7 +113,11 @@ test('createRosterLoading wires the shipped chrome: list region, head indicator,
   assert.equal(list.getAttribute('aria-busy'), null); assert.equal(list.querySelector('[data-skeleton]'), null);
   state.begin(); c.advance(REFRESHING_DELAY_MS);
   const indicator = rosterEl.querySelector('.ctx-head .loading-refreshing');
-  assert.equal(indicator.textContent, 'Refreshing…'); assert.equal(indicator.previousElementSibling.className, 'ctx-count', 'after the count');
+  // After the count: appended last in the heading, after its Spawn instance +, which the CSS orders last (the
+  // sidebar layout, 2026-10-23: shell.css `.ctx-head > .ctx-head-add { order: 1 }`).
+  assert.equal(indicator.textContent, 'Refreshing…'); assert.equal(indicator.nextElementSibling, null, 'appended last');
+  assert.equal(indicator.previousElementSibling.id, 'sidebar-spawn'); assert.equal(indicator.previousElementSibling.previousElementSibling.className, 'ctx-count', 'after the count');
+  assert.match(readFileSync(new URL('../renderer/shell.css', import.meta.url), 'utf8'), /^\.ctx-head > \.ctx-head-add \{ order: 1; \}/m, 'the + shown after it');
   c.advance(30_000); state.fail(new Error('boom'));
   assert.equal(status.querySelector('.loading-notice-text').textContent, "Couldn't refresh instances · observed 30s ago");
   assert.equal(status.querySelector('.loading-retry').textContent, 'Retry');
@@ -285,7 +289,9 @@ test('refreshing keeps rows and focus; "Refreshing…" appears in the head only 
   s.c.advance(REFRESHING_DELAY_MS - 1); assert.equal(s.rosterEl.querySelector('.loading-refreshing'), null);
   s.c.advance(1);
   const indicator = s.rosterEl.querySelector('.ctx-head > .loading-refreshing');
-  assert.equal(indicator.textContent, 'Refreshing…'); assert.equal(indicator.previousElementSibling, s.count());
+  assert.equal(indicator.textContent, 'Refreshing…'); assert.equal(indicator.nextElementSibling, null, 'appended last');
+  assert.equal(indicator.previousElementSibling.id, 'sidebar-spawn', 'after the heading\'s +, which the CSS orders after it');
+  assert.equal(indicator.previousElementSibling.previousElementSibling, s.count(), 'and the count');
   await s.reply(1, panelOf('A', roster.map(r => ({ ...r }))));
   assert.equal(s.rosterEl.querySelector('.loading-refreshing'), null);
   assert.deepEqual(s.rows(), before, 'identical data: the very same nodes'); assert.equal(s.doc.activeElement, focused);

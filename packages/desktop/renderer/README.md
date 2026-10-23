@@ -12,7 +12,7 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   (`workspace-discovery.mjs` `workspaceTabs`). Souls and Automations are panels the view owns:
   Automations mounts `automations.mjs` `createAutomationsStage` (Schedules | Triggers) while its
   tab is shown and disposes it on leaving (`syncAutomations`). It was a page of its own until
-  The sidebar layout (2026-10-23): `shell-nav.mjs` NAV is Workspace and Deployments (the foot's order), and its
+  The sidebar layout (2026-10-23): `shell-nav.mjs` NAV is Workspace and Deployments (the nav's order, under the list of workspaces), and its
   NAV_TABS route `stage.automations` (⌘3 / Ctrl+3), the palette's **View: Automations** and
   every `showStage("automations")` / `ctx.openView("automations")` to this page on that tab.
   Souls come from `GET /api/agents` (the kernel's `oats souls` catalog),
@@ -31,7 +31,7 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   (see below), which previews through the kernel and applies through the
   confirmed `/api/spawn?ws=` transaction. An empty opening instruction waits
   for instructions; attached-mode souls cannot launch standalone. The shell's
-  **Spawn instance** (the sidebar tools' small **+**) navigates to soul selection; it does not launch.
+  **Spawn instance** (the **+** at the end of the sidebar's Instances heading) navigates to soul selection; it does not launch.
   Capability facts and source provenance use negotiated read-only inspection,
   never inferred membership, installation or remote discovery. Shared CLI recovery
   stays visible across subtabs; incompatible installations are observation-only.
@@ -91,7 +91,7 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
 
 `theme.css` carries semantic WCAG AA tokens for **White**, **Solarized**, and
 **Dark**. A fourth choice, **This computer** (`host`), has no palette of its
-own: it shows the theme of the computer that runs Desktop. The theme button,
+own: it shows the theme of the computer that runs Desktop. The settings cog's **Theme…**,
 the palette's **Theme: choose…** and Ctrl+Shift+Space (⇧⌘Space on macOS;
 `app.themePicker`) open the theme picker (`theme-picker.mjs`), a modal in the
 middle of the window that applies a choice through `setTheme`. The other
@@ -431,19 +431,35 @@ not read the panel. What they say (a deployment's state in words, the primary, t
 split into sections) is `packages/client/roster-sections.mjs`.
 
 - **The sidebar, top to bottom** (2026-10-23): the Workspaces heading (a `.ctx-head`, as
-  the Instances one, with **Add local workspace…** at its end; no logo, no rule) over the list;
-  one 1px `--border` line (`#instance-roster::before`, the sidebar's full width); the Instances
-  heading over the roster. The headings are the nav items' 13px at 650 in `--fg`, the roster's machine
-  labels (`.ctx-deployment`) 12px 400 muted capitals under them; at the bottom (`#nav-foot`, compact, its icons 14px) the
-  foot's title (`#nav-title`, "Workspace details"), then the nav, Workspace and Deployments side by side (icons alone in a nav too narrow for both labels: a container query
-  hides each label visually, and it stays the button's name), then the tools: sidebar, theme,
-  shortcuts and **Spawn instance** (a small icon button). Settings and the palette have no
-  button: the palette has **Settings: Connections…**, and its own chord. The roster has no
+  the Instances one, with **Add local workspace…** at its end; no logo, no rule) over the list; then the
+  current workspace's section (`#ws-current`, a `section` labelled "Current workspace"): one 1px
+  `--border` line over it (`.ws-current::before`, the sidebar's full width, under the list; none before
+  Instances), the main views (`#nav`, Workspace and Deployments side by side, no title) on the list's 8px
+  sides, 8px under the line and 8px before the Instances heading, then the Instances heading (its text, the
+  count, then **Spawn instance**, `#sidebar-spawn`, a `.ws-add-open` **+**
+  running `app.chooseSoul`; CSS `order: 1` keeps it after the "Refreshing…" that loading.mjs appends) over the
+  roster; the bottom bar (`#nav-foot`, `role="group"` "Sidebar tools", under a `--border` line). The headings
+  are the nav items' 13px at 650 in `--fg`, the workspace rows' names 14px at 500 (the current one at 650), the
+  roster's machine labels (`.ctx-deployment`) 12px 400 muted
+  capitals under them. The nav's icons are 14px, and in a nav too narrow for both labels a container query
+  hides each label visually (it stays the button's name). The bottom bar is `[mark] … [toggle][cog]`: the OATS
+  mark (`.sidebar-brand`, the generated `sidebar-48.png` drawn at 20px, decorative: `aria-hidden`, an empty
+  alt, no tab stop), then at the right end, 2px apart, the sidebar toggle (`#sidebar-toggle`,
+  `sidebar.toggle`, its `aria-expanded` kept by `updateSidebarControls`) and the settings cog
+  (`#sidebar-settings`, `sidebar-settings.mjs`: Theme…, Keyboard shortcuts…), 24px `.ws-add-open` boxes with
+  14px icons. The palette has no button: it has its own chord, and **Settings: Connections…**, Connections'
+  only entry. **One right-hand column**: the headings' + (28px boxes, `.ctx-head`'s 11px right padding), the
+  workspace rows' 14px needs-input mark (the list's 8px, the row's 8px, `.ws-waiting`'s 2px margin), the
+  instance rows' 18px harness mark (the list's 8px, `.ctx-inst`'s 8px) and the bottom bar's cog (its 13px,
+  half its 24px) all centre 25px in from the sidebar's right edge; the workspace list hides its scrollbar as
+  the roster does, so a long list keeps them there. The mark centres on the workspace rows' circles, 22px in
+  (the bar's 12px, half its 20px). design-token-styling pins these sums.
+  The roster has no
   filter field (the TUI keeps its own): the palette finds an instance by name. `sidebar.focusFilter`
   keeps its id, chord and leader key (**Focus the instance roster**): `focusRoster` lands on
-  `rosterEntry()`, the roster's current row, else its first row, else a control it shows (Retry),
-  else the list of workspaces' stop, else **Add local workspace…**, so focus never falls to
-  `<body>`. The same entry takes focus when the last terminal tab closes.
+  `rosterEntry()`, the roster's current row, else its first row, else a control it shows under its heading
+  (Retry; never the heading's Spawn instance), else the list of workspaces' stop, else **Add local
+  workspace…**, so focus never falls to `<body>`. The same entry takes focus when the last terminal tab closes.
 - **No deployments above the navigation.** The sidebar lists no deployments; the Deployments
   page and the roster headings say where things run (UI spec, after the operator rejected a
   deployments block under the workspace switcher). The list of workspaces lists views.
@@ -847,7 +863,9 @@ no pixel value is copied into loading.css. The Capabilities table's skeleton
 (`catalogSkeleton` in `workspace-discovery.mjs`) is a disabled, `aria-hidden`
 `button.catalog-row` for the same reason. `defer({ keepSkeleton: true })` is
 for a server that answers "still reading" (`refreshing: true` with nothing
-held): the subject is loading, so the skeleton stays.
+held): the subject is loading, so the skeleton stays, or arrives when an
+earlier `defer()` (an unobserved deployment's copy, no skeleton) left the
+state pending.
 `loading.css` (linked from `index.html` and the harness) derives their fill
 from the theme tokens (`color-mix` of `--fg` over the host), shimmers at 1.6s
 and stops every animation — including the older `.spinner` — under
@@ -883,10 +901,16 @@ real card size), the failed block in the grid and the stale line in
 `.souls-notice` above it; `settleGridState()` reads the reply — the kernel's
 `catalog.reason` is a failed read (stale beside a partial list, failed with
 none), an unobserved deployment defers with the deployment's own copy, and
-`refreshing: true` with no souls keeps the skeleton. `renderGrid()` leaves the
-grid to the controller while there is no data (the one exception is the
-unobserved deployment's copy) and skips an unchanged paint behind
-`s.gridSignature`. The Capabilities tab (`workspace-discovery.mjs`): the held
+`refreshing: true` with no souls keeps the skeleton. So does an empty list
+with no `catalog` beside a panel that says the deployment is observed: the two
+reads run side by side, and at launch (the Workspace page is the home surface)
+`/api/agents` can be answered before the server's first observation and
+`/api/panel` just after it; that answer is no read of the souls, so the grid
+keeps loading until the next poll, never "No souls are materialized". A remote
+view's panel names no deployment, so its zero read stays empty.
+`renderGrid()` leaves the grid to the controller while there is no data (the
+one exception is the unobserved deployment's copy, removed once the deployment
+is observed) and skips an unchanged paint behind `s.gridSignature`. The Capabilities tab (`workspace-discovery.mjs`): the held
 table is never set to null within one workspace generation — a CLI emit or a
 sync re-reads it in place (live after a sync, `refresh: true`), a failed
 re-read marks it stale with Retry, and spec 02's held-table shapes (`status:
@@ -1521,8 +1545,8 @@ section is the module map.
   AltGr is never Alt (`chordFromEvent`), and
   `focus.leaveTerminal` (Mod+Shift+F6) is the way out. Outside a terminal on
   Linux/Windows the leader's Ctrl+X is a text field's Cut (`leaderLeftToField`). `keymapConflicts`
-  lists clashes that involve a stored rebind; the shell marks the footer
-  shortcuts button and the editor names them. The chords shared with the
+  lists clashes that involve a stored rebind; the shell marks the settings
+  cog and its **Keyboard shortcuts…** item (`markShortcutClashes`) and the editor names them. The chords shared with the
   TUI (`CHORDS_READ`, read from `packages/client/keymap.mjs` CHORDS) all
   fire from a focused terminal: `app.palette` (⌘K / Alt+K) and
   `app.quickOpenSouls` (⌘P / Alt+P) among them, while plain Ctrl+K
@@ -1550,10 +1574,24 @@ section is the module map.
   `KeyboardEvent.code`, as the layout labels it (`readKeyboardLayout`, called
   by the shell at startup and on window focus; `setKeyboardLayoutMap` for
   tests), since ⌥ changes `key`; a character AltGr typed is never aliased.
+- **sidebar-settings.mjs** — the settings cog's menu (`createSettingsMenu`, `SETTINGS_ITEMS`,
+  `SETTINGS_LABEL`), the cog at the right end of the sidebar's bottom bar: Theme… (`app.themePicker`) and
+  Keyboard shortcuts… (`app.shortcuts`), each a `role="menuitem"` with its icon and its chord in a `<kbd>` (hidden without
+  one; `refresh()` reads them again, and the shell calls it from `applyChordTitles`). The instance actions'
+  pattern: a native `popover="auto"` with `role="menu"`, the cog its invoker (`aria-haspopup="menu"`,
+  `aria-expanded` kept by `beforetoggle`, `aria-controls`), placed as the instance actions' menu (its right
+  edge on the cog's, clamped to the window's 8px margin, above the cog when there is no room below); ↓ / ↑ on the cog open it on the first / last
+  item, ↑/↓ (wrapping) and Home/End move, Esc closes back on the cog, Tab closes. Choosing an item closes
+  the menu and focuses the cog before it runs the action, so a dialog it opens returns to the cog. The
+  shell marks the cog and Keyboard shortcuts… on a clash (`markShortcutClashes`). Tests:
+  `test/sidebar-settings.test.mjs`.
 - **focus-regions.mjs** — F6 / Shift+F6 (`focus.nextRegion`/`prevRegion`,
   outside a terminal; `focus.leaveTerminal` from inside one): workspaces →
-  roster → sidebar footer (the nav) → main → instance panel, hidden regions skipped, each region's
-  current item focused, never `<body>`. F6 and the tab switches are no-ops
+  views (`#nav`, under the list) → roster → main → instance panel, hidden regions skipped, each region's
+  current item focused, never `<body>`. A heading's control counts with its section: Add local workspace…
+  as workspaces, Spawn instance as roster, which lands on it only when it shows no row and no Retry. The
+  bottom bar (the toggle, the cog and its menu) is no region: F6 from it goes on to main, Shift+F6 back to
+  the roster. F6 and the tab switches are no-ops
   under an open modal.
 - **surface-return.mjs** — "back to where you were" after a flow that moved
   the main surface (Quick Open's spawn dialog): the same tab or stage and
@@ -1903,7 +1941,7 @@ active tab selects its adjacent group-mate, or leaves that panel empty.
 explicitly joins back to the flat strip. **Split: return to terminal
 groups** in the palette restores a covered layout, including an all-empty one.
 There is no new default shortcut. Clickable controls mirror the chords with no duplicated
-logic: the split-right/down buttons and the sidebar toggles (the footer button + Show
+logic: the split-right/down buttons and the sidebar toggles (the bottom bar's toggle + Show
 sidebar, shown while hidden) all dispatch the
 registered actions through `runAction(id)` — context-gated exactly like
 chord dispatch — and their enablement dry-runs the same model transition

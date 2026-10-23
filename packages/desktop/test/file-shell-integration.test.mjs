@@ -74,7 +74,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     <div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div>
     <div id="tabhost"></div>
     <aside id="sidebar"><div id="instance-roster"><div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div><div class="ctx-list"></div></div>
-    <div id="nav-foot"><nav id="nav"><button class="nav-item active">Workspace</button></nav></div></aside>
+    <nav id="nav"><button class="nav-item active">Workspace</button></nav><div id="nav-foot"></div></aside>
     <button id="destination">Newer destination</button>
   </body>`, { url: "http://127.0.0.1/" });
   const document = dom.window.document, navigator = { platform };
@@ -89,6 +89,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     document, window: dom.window, navigator, console, ...keys, THEMES,
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A", connectionGeneration: 0,
     instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity, baseTitles: new WeakMap(), menuState() {},
+    settingsMenu: { refresh() {} }, // applyChordTitles refreshes the settings cog's chords (sidebar-settings.test.mjs covers it)
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, contextRosterEl: null,
     rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null, // initContextRoster builds the real controller (instance-tree-view createRosterLoading)

@@ -274,17 +274,18 @@ test("index.html ships the split buttons and shell wires the group projection th
   const footerDom = new JSDOM(html);
   t.after(() => footerDom.window.close());
   const document = footerDom.window.document;
-  const toggle = document.querySelector('#nav-foot button#sidebar-toggle');
-  assert.ok(toggle, "sidebar toggle is a footer button");
+  const toggle = document.querySelector('#nav-foot > button#sidebar-toggle');
+  assert.ok(toggle, "the sidebar toggle is in the bottom bar");
+  assert.equal(toggle, document.querySelector("#nav-foot > button"), "its first button, after the OATS mark");
   assert.equal(toggle.getAttribute("aria-label"), "Hide the sidebar", "icon-only button has an accessible name");
   assert.equal(toggle.dataset.action, "sidebar.toggle");
-  // The footer holds the nav too since the sidebar layout: the tools row is wired here, the nav's buttons by
-  // their own listener (shell.mjs nav rail), so no click runs twice.
-  const wiring = src.match(/for \(const button of document\.querySelectorAll\("#sidebar-tools \[data-action\]"\)\) \{[^]*?\n\}/)?.[0];
+  // The nav sits under the list of workspaces since the sidebar layout: the toggle and Spawn instance are wired
+  // here by id, the nav's buttons by their own listener (shell.mjs nav rail), so no click runs twice.
+  const wiring = src.match(/for \(const button of \[document\.getElementById\("sidebar-spawn"\), document\.getElementById\("sidebar-toggle"\)\]\) \{[^]*?\n\}/)?.[0];
   const registration = src.split("\n").find(line => line.startsWith('registerAction({ id: "sidebar.toggle"'));
-  assert.ok(wiring && registration, "exercise shipped footer dispatch and registry binding");
+  assert.ok(wiring && registration, "exercise shipped sidebar dispatch and registry binding");
   // A nav button, as the nav rail adds them before this wiring runs (it carries its stage action too).
-  assert.ok(document.querySelector("#nav-foot > #nav"), "the nav is in the footer");
+  assert.equal(document.querySelector("#nav-foot #nav"), null, "the nav is not in the foot");
   const navButton = document.createElement("button"); navButton.dataset.action = "sidebar.toggle";
   document.getElementById("nav").append(navButton);
   let toggles = 0;
@@ -293,9 +294,9 @@ test("index.html ships the split buttons and shell wires the group projection th
     registerAction: action => { t.after(registerAction(action)); },
   });
   toggle.click();
-  assert.equal(toggles, 1, "footer click runs sidebar.toggle through the actual action registry");
+  assert.equal(toggles, 1, "the foot's toggle runs sidebar.toggle through the actual action registry");
   navButton.click();
-  assert.equal(toggles, 1, "the tools' wiring never adds a second dispatch to the nav's buttons");
+  assert.equal(toggles, 1, "that wiring never adds a second dispatch to the nav's buttons");
   const css = read("renderer/shell.css");
   assert.doesNotMatch(css, /#sidebar-restore/);
   assert.match(css, /\.main-edge-control\[hidden\] \{ display: none; \}/);

@@ -53,13 +53,14 @@ test("deploymentState says live, remembered, not reached and not observed in wor
   assert.deepEqual(vd.deploymentState({ ...LOCAL, reachable: false, reason: "Reading the deployment…" }), { key: "unobserved", text: "not observed", detail: "Reading the deployment…" });
 });
 
-// The sidebar layout (2026-10-23): the Workspaces heading, its list, then Instances; the navigation is at the foot.
-test("UI spec: no deployments block in the sidebar; the workspace list sits under its heading, the Instances right after it, the nav in the foot", (t) => {
+// The sidebar layout (2026-10-23): the Workspaces heading, its list, the main views under it, then Instances; the foot last.
+test("UI spec: no deployments block in the sidebar; the workspace list sits under its heading, the nav under it, then the Instances", (t) => {
   const dom = new JSDOM(html); t.after(() => dom.window.close());
   const doc = dom.window.document;
   assert.equal(doc.getElementById("ws-deployments"), null);
-  assert.deepEqual([...doc.getElementById("sidebar").children].map((el) => el.id || el.className), ["ctx-head ws-head", "ws-list", "instance-roster", "nav-foot"]);
-  assert.equal(doc.getElementById("nav").parentElement, doc.getElementById("nav-foot"), "the main views are at the bottom");
+  assert.deepEqual([...doc.getElementById("sidebar").children].map((el) => el.id || el.className), ["ctx-head ws-head", "ws-list", "ws-current", "nav-foot"]);
+  assert.deepEqual([...doc.getElementById("ws-current").children].map((el) => el.id), ["nav", "instance-roster"], "the current workspace's section: its views, then its Instances");
+  assert.equal(doc.getElementById("ws-current").previousElementSibling, doc.getElementById("ws-list"), "the main views are under the list of workspaces");
   assert.equal(vd.renderDeploymentList, undefined, "the list renderer is gone");
   assert.doesNotMatch(`${css}\n${shellSource}`, /ws-deployment|renderDeploymentList|ctx-deployment-tag|ws-option-reason/);
 });

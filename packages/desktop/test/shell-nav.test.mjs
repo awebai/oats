@@ -17,6 +17,7 @@ import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import { NAV, NAV_TABS, navTab, stageSidebarMode, loadStageView } from "../renderer/shell-nav.mjs";
 import { shellIcon } from "../renderer/shell-icons.mjs";
+import { createSettingsMenu } from "../renderer/sidebar-settings.mjs";
 import { workspaceTabs } from "../renderer/workspace-discovery.mjs";
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -108,19 +109,24 @@ test("showStage routes a NAV_TABS name to openWorkspaceSouls(tab); showStageFocu
   assert.match(src, /const WORKSPACE_TAB_NAMES = \{ souls: "Souls", capabilities: "Capabilities", automations: "Automations" \};/);
 });
 
-// The nav now sits inside #nav-foot: the footer's click loop is the tools row's alone, so a nav button
-// runs its action once (its own listener), not twice. The shipped nav build and footer wiring, run on
-// the shipped index.html.
-test("a nav button runs its stage action once; each footer tool runs its own; the nav is in the footer", () => {
+// The nav sits under the list of workspaces; the sidebar's other controls (Spawn instance, the Instances heading's
+// +, the foot's sidebar toggle and its settings cog's menu) are wired by id, so a nav button runs its action once
+// (its own listener), not twice. The shipped nav build and that wiring, run on the shipped index.html.
+test("a nav button runs its stage action once; Spawn instance, the sidebar toggle and each settings item run their own once; the nav is under the list", () => {
   const src = shellSource();
   assert.ok(!src.includes('querySelectorAll("#nav-foot [data-action]")'), "no footer-wide loop that would catch the nav too");
+  assert.ok(!src.includes("#sidebar-tools"), "the foot's tools row is gone");
   const block = src.slice(src.indexOf('const navEl = document.getElementById("nav");'), src.indexOf("// This is a chooser entry"));
-  assert.match(block, /for \(const button of document\.querySelectorAll\("#sidebar-tools \[data-action\]"\)\)/);
+  assert.match(block, /for \(const button of \[document\.getElementById\("sidebar-spawn"\), document\.getElementById\("sidebar-toggle"\)\]\) \{\n  button\.addEventListener\("click", \(\) => runAction\(button\.dataset\.action\)\);\n\}/);
+  assert.match(block, /const settingsMenu = createSettingsMenu\(document, document\.getElementById\("sidebar-settings"\), \{\n  run: \(id\) => runAction\(id\),/);
   const dom = new JSDOM(readFileSync(join(PKG, "renderer", "index.html"), "utf8"));
   const document = dom.window.document, ran = [];
-  runInNewContext(block, { document, NAV, shellIcon, runAction: (id) => ran.push(id) });
+  const wired = runInNewContext(`${block}\n({ settingsMenu });`, { document, NAV, shellIcon, createSettingsMenu, runAction: (id) => ran.push(id),
+    getBinding: () => null, formatChord: String, isMac: false });
   const nav = document.getElementById("nav");
-  assert.ok(document.getElementById("nav-foot").contains(nav), "the nav sits in the sidebar's footer");
+  assert.equal(nav.parentElement.id, "ws-current", "the nav opens the current workspace's section");
+  assert.equal(nav.parentElement.previousElementSibling, document.getElementById("ws-list"), "the nav sits under the list of workspaces");
+  assert.equal(document.getElementById("nav-foot").contains(nav), false, "not in the foot");
   const buttons = [...nav.querySelectorAll("button")];
   assert.deepEqual(buttons.map((b) => [b.dataset.view, b.dataset.action, b.querySelector(".label").textContent, b.title]),
     [["spawn", "stage.spawn", "Workspace", "Workspace"], ["hierarchy", "stage.hierarchy", "Deployments", "Deployments"]]);
@@ -128,13 +134,26 @@ test("a nav button runs its stage action once; each footer tool runs its own; th
     ran.length = 0; b.click();
     assert.deepEqual(ran, [b.dataset.action], `${b.dataset.view}: one run per click`);
   }
-  const tools = [...document.querySelectorAll("#sidebar-tools [data-action]")];
-  assert.deepEqual(tools.map((b) => [b.id, b.dataset.action]), [["sidebar-toggle", "sidebar.toggle"], ["sidebar-theme", "app.themePicker"],
-    ["sidebar-shortcuts", "app.shortcuts"], ["sidebar-spawn", "app.chooseSoul"]]);
-  for (const b of tools) {
-    ran.length = 0; b.click();
-    assert.deepEqual(ran, [b.dataset.action], `${b.id}: one run per click`);
+  const spawn = document.getElementById("sidebar-spawn");
+  assert.equal(spawn.dataset.action, "app.chooseSoul");
+  for (let click = 1; click <= 2; click++) {
+    ran.length = 0; spawn.click();
+    assert.deepEqual(ran, ["app.chooseSoul"], `Spawn instance, click ${click}: one run`);
   }
+  const toggle = document.getElementById("sidebar-toggle");
+  assert.equal(toggle.dataset.action, "sidebar.toggle");
+  for (let click = 1; click <= 2; click++) {
+    ran.length = 0; toggle.click();
+    assert.deepEqual(ran, ["sidebar.toggle"], `the sidebar toggle, click ${click}: one run`);
+  }
+  const items = wired.settingsMenu.items;
+  assert.deepEqual(items.map((b) => b.dataset.menuAction), ["app.themePicker", "app.shortcuts"]);
+  for (const b of items) {
+    ran.length = 0; b.click();
+    assert.deepEqual(ran, [b.dataset.menuAction], `${b.dataset.menuAction}: one run per click`);
+  }
+  ran.length = 0; document.getElementById("sidebar-settings").click();
+  assert.deepEqual(ran, [], "the cog itself runs nothing: it opens its menu");
   dom.window.close();
 });
 
@@ -146,4 +165,32 @@ test("inventory: the Instances stage view is gone and nothing references it", ()
     assert.ok(!/views\/instances\.mjs/.test(src), `${f}: imports the deleted Instances view`);
     assert.ok(!/data-view="instances"/.test(src), `${f}: dormant Instances tab entry`);
   }
+});
+
+// The home surface (the product owner, 2026-10-23): the Workspace page, not Deployments, when no instance is open: at
+// start, after choosing a workspace, and as the nav's fallback when the last terminal closes or a workspace switch
+// restores no stage.
+test("the home surface is the Workspace page: at start, after a choice, and as the nav's fallback", async () => {
+  const src = shellSource();
+  const topLevel = src.match(/^showStage\("[a-z]+"\);$/gm);
+  assert.deepEqual(topLevel, ['showStage("spawn");'], "the shell's one start-up stage is Workspace");
+  assert.ok(src.lastIndexOf('showStage("spawn");') > src.indexOf("// Home surface:"), "under its comment");
+  assert.doesNotMatch(src, /showStage\("hierarchy"\)/, "Deployments is never shown on its own");
+  const fallbacks = src.match(/setNavActive\(stage\?\.name \|\| "[a-z]+"\)/g);
+  assert.deepEqual(fallbacks, ['setNavActive(stage?.name || "spawn")', 'setNavActive(stage?.name || "spawn")'],
+    "the last terminal closing, and a workspace switch that restores no tab, mark Workspace");
+  // After a choice (or an adoption) the window leaves the chooser for the home surface: run the shipped handler.
+  const handler = src.match(/^onWindowState\(\(state\) => \{[^]*?\n\}\);$/m)?.[0];
+  assert.ok(handler, "exercise the shipped onWindowState handler");
+  const shown = [], roster = { hidden: true };
+  let callback;
+  runInNewContext(handler, { onWindowState: (fn) => { callback = fn; }, contextRosterEl: roster,
+    showChooser: async () => shown.push("chooser"), showStage: async (name) => shown.push(name) });
+  callback("choosing");
+  assert.deepEqual(shown, ["chooser"]);
+  roster.hidden = true; callback("bound");
+  assert.deepEqual(shown, ["chooser", "spawn"], "bound again: the Workspace page");
+  assert.equal(roster.hidden, false, "and the roster comes back");
+  callback("bound");
+  assert.deepEqual(shown, ["chooser", "spawn"], "already bound: the shown stage is kept");
 });

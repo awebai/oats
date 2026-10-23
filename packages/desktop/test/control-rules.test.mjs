@@ -44,12 +44,14 @@ const markup = `<div id="app"><aside id="sidebar">
   <section id="ws-list" class="ws-list"><div id="ws-options" class="ws-options"><ul class="ws-group">
     <li class="ws-option-row"><button class="ws-option ws-current" aria-current="true">One</button></li>
     <li class="ws-option-row"><button class="ws-option ws-other">Two</button></li></ul></div></section>
+  <nav id="nav"><button class="nav-item active" aria-current="page"><span class="icon"></span><span class="label">Deployments</span></button><button class="nav-item"><span class="icon"></span><span class="label">Workspace</span></button></nav>
   <section id="instance-roster">
-    <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div>
+    <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span><button id="sidebar-spawn" class="ws-add-open ctx-head-add icon-button" aria-label="Spawn instance">+</button></div>
     <div class="ctx-list"><div class="ctx-tree-row"><button class="ctx-inst">Row</button>
       <span class="ctx-row-tools"><button class="ctx-instance-actions">…</button></span></div></div></section>
-  <div id="nav-foot"><nav id="nav"><button class="nav-item active" aria-current="page"><span class="icon"></span><span class="label">Deployments</span></button><button class="nav-item"><span class="icon"></span><span class="label">Workspace</span></button></nav>
-    <div id="sidebar-tools"><button id="sidebar-toggle" class="nav-item icon-button">S</button><button id="sidebar-spawn" class="nav-item icon-button" aria-label="Spawn instance">+</button></div></div></aside>
+  <div id="nav-foot" role="group" aria-label="Sidebar tools"><button id="sidebar-toggle" class="ws-add-open icon-button" type="button" aria-label="Hide the sidebar">S</button>
+    <button id="sidebar-settings" class="ws-add-open sidebar-settings icon-button" type="button" aria-label="Settings" aria-haspopup="menu"></button>
+    <div id="sidebar-settings-menu" class="ctx-instance-menu sidebar-settings-menu" role="menu"><button role="menuitem" data-menu-action="app.themePicker">Theme…</button></div></div></aside>
   <main id="main"><div id="tabstrip"><div id="tabbar-row"><div id="tabbar">
     <div class="tab active"><button class="tab-trigger">Tab</button><button class="close">×</button></div>
   </div><div id="tab-actions"><button id="split-right">▥</button></div></div></div>
@@ -168,8 +170,10 @@ test("focus: one global 1px inset accent edge and tint replace every 2px ring an
 
 test("focus: keyboard focus on plain shell controls paints the tint and the edge", t => {
   const u = fixture(t);
-  // The footer's nav items and tools (Spawn instance among them since the sidebar layout) are plain controls.
-  for (const selector of [".ws-option.ws-other", ".ws-option.ws-current", ".ws-add-open", "#nav .nav-item:not(.active)", "#nav .nav-item.active", "#sidebar-toggle", "#sidebar-spawn", ".ctx-inst", ".tab-trigger", ".tab .close",
+  // The nav's items, the headings' controls (Add local workspace…, Spawn instance), the foot's (the sidebar toggle,
+  // the settings cog: the sidebar layout) and the settings menu's items are plain controls.
+  for (const selector of [".ws-option.ws-other", ".ws-option.ws-current", ".ws-add-open", "#nav .nav-item:not(.active)", "#nav .nav-item.active", "#ws-add-open", "#sidebar-spawn", "#sidebar-toggle", "#sidebar-settings",
+    ".sidebar-settings-menu [role=menuitem]", ".ctx-inst", ".tab-trigger", ".tab .close",
     "#tab-actions button", ".ws-suggestion", ".ws-dialog-foot .secondary", ".kb-chord", ".kb-close", ".ws-segmented [aria-pressed=false]",
     ".ctx-instance-menu button", ".ctx-instance-actions", ".lifecycle-close", ".lifecycle-review", ".lifecycle-check", ".oats-view .act:not(.primary):not(.danger)"]) {
     const s = u.focused(selector);
@@ -237,9 +241,10 @@ for (const palette of ["light", "solarized", "dark"]) test(`${palette}: selected
   }
   assert.equal(u.style(".ws-segmented [aria-pressed=true]").color, "var(--accent)");
   assert.equal(u.rule("#ws-suggestion-search:focus-visible").borderColor, "var(--accent)");
-  // The footer's nav items and its Spawn instance icon button (the sidebar layout): their ink, idle and
-  // keyboard-focused, on the --sel tint they focus to, through the effective tokens (the edge is checked above).
-  for (const selector of ["#nav .nav-item:not(.active)", "#nav .nav-item.active", "#sidebar-toggle", "#sidebar-spawn"]) {
+  // The nav's items, the sidebar's icon buttons (Spawn instance, the foot's sidebar toggle and settings cog: the
+  // sidebar layout) and the settings menu's items: their ink, idle and keyboard-focused, on the --sel tint they focus to, through the
+  // effective tokens (the edge is checked above).
+  for (const selector of ["#nav .nav-item:not(.active)", "#nav .nav-item.active", "#sidebar-spawn", "#sidebar-toggle", "#sidebar-settings", ".sidebar-settings-menu [role=menuitem]"]) {
     const idle = u.style(selector).color, focus = u.focused(selector);
     for (const ink of [idle, focus.color]) {
       const name = ink.match(/^var\(--([\w-]+)\)$/)?.[1];

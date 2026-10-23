@@ -231,7 +231,7 @@ function memoryStorage() {
 /** The shipped tab layer (addTab, selectTab, activateTab, restoreWorkspaceTabs…), the record it writes (Spec C,
  * instance-recency.mjs) and the palette's shipped loadInstances over the same record. */
 function tabsRig(t) {
-  const dom = new JSDOM(`<body><aside><section id="ws-list"><div id="ws-options"></div></section><div id="nav-foot"><nav id="nav"></nav></div></aside>
+  const dom = new JSDOM(`<body><aside><section id="ws-list"><div id="ws-options"></div></section><nav id="nav"></nav><div id="nav-foot"></div></aside>
     <div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div>`);
   t.after(() => dom.window.close());
   const document = dom.window.document, navEl = document.getElementById("nav");

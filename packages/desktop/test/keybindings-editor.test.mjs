@@ -339,13 +339,20 @@ test("a stored rebind that clashes with another binding is surfaced, never chang
   assert.equal(doc.querySelector(".kb-clashes").hidden, true);
 });
 
-test("shell wiring: the footer shortcuts button carries the clash marker, recomputed on keymap change", async () => {
+test("shell wiring: the settings cog and its Keyboard shortcuts… item carry the clash marker, recomputed on keymap change", async () => {
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
-  assert.match(src, /function markShortcutClashes\(\) \{[^]*?keymapConflicts\(isMac\)[^]*?classList\.toggle\("has-clash"[^]*?aria-description/);
+  const mark = src.match(/function markShortcutClashes\(\) \{[^]*?\n\}/)?.[0];
+  assert.ok(mark, "markShortcutClashes");
+  assert.match(mark, /keymapConflicts\(isMac\)/);
+  assert.match(mark, /settingsMenu\.items\.find\(el => el\.dataset\.menuAction === "app\.shortcuts"\)/, "the menu's Keyboard shortcuts… item");
+  assert.match(mark, /for \(const button of \[document\.getElementById\("sidebar-settings"\), item\]\) \{[^]*?classList\.toggle\("has-clash"[^]*?aria-description/,
+    "the cog and the item, both");
   assert.match(src, /onKeymapChange\(\(\) => \{[^]*?markShortcutClashes\(\)/);
   const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
-  assert.match(css, /#sidebar-shortcuts\.has-clash::after \{[^}]*background: var\(--warn\)/);
+  assert.match(css, /#sidebar-settings\.has-clash::after \{[^}]*background: var\(--warn\)/);
+  assert.match(css, /\.sidebar-settings-menu button\.has-clash > \.sidebar-settings-label::after \{[^}]*background: var\(--warn\)/);
+  assert.doesNotMatch(css, /#sidebar-shortcuts/, "the foot's shortcuts button is gone");
 });
 
 // ── Spec A, PR 2: search, keycaps and markers ──────────────────────────────────────────────

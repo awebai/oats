@@ -42,6 +42,9 @@ body {
 /* The Workspaces heading is the Instances heading (.ctx-head), with Add local workspace… at its right end:
    no logo, no bar of its own, no rule under the list (2026-10-23). */
 .ws-head > .ws-add-open { margin-left: auto; }
+/* The right-hand column (2026-10-23): the headings' + (their 28px boxes, the .ctx-head's 11px), the workspace rows'
+   needs-input mark and the instance rows' harness mark all centre 25px in from the sidebar's right edge. */
+.ctx-head > .ctx-head-add { order: 1; } /* last, after the count and "Refreshing…" */
 .ws-add-open { flex: none; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px;
                background: transparent; color: var(--muted); cursor: pointer; }
 .ws-add-open:hover { background: var(--surface-2); color: var(--fg); }
@@ -55,7 +58,8 @@ body {
 /* The workspace list (workspace-switcher.mjs): always shown under the sidebar's head, about six rows tall at
    most, then it scrolls inside itself, the current row kept in view. One workspace is one compact row. */
 .ws-list { flex: none; padding: 0 8px 6px; }
-.ws-options { max-height: 276px; overflow-y: auto; }
+.ws-options { max-height: 276px; overflow-y: auto; scrollbar-width: none; } /* as the roster's: "N more below" says it */
+.ws-options::-webkit-scrollbar { display: none; }
 .ws-group { margin: 0; padding: 0; list-style: none; }
 .ws-menu-empty { margin: 4px 8px 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .ws-menu-empty[hidden] { display: none; }
@@ -74,7 +78,7 @@ body {
 .ws-option[aria-current="true"] .ws-option-name { font-weight: 650; }
 /* A workspace with an instance that needs input: the needs-input mark (.attn-mark, below) at the row's far right,
    after the name, which is cut off before it (its words are in the name, sr-only, and the tooltip). */
-.ws-waiting { flex: none; margin-left: auto; }
+.ws-waiting { flex: none; margin-left: auto; margin-right: 2px; } /* 14px, centred in the right-hand column */
 /* The needs-input mark (2026-10-23; shell-icons.mjs OWN_ICONS.attention), on the workspace rows and in an instance's
    Needs input pill: a --warn disc with the "!" cut out in --surface. Both hold 3:1 on every fill they sit on
    (theme-contrast): the disc on the sidebar, a selected or hovered row and the pill's --attn-bg; the "!" on the disc. */
@@ -87,19 +91,24 @@ body {
 .ws-more { display: flex; align-items: center; gap: 9px; margin: 2px 8px 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .ws-more[hidden] { display: none; }
 /* A long name ends in an ellipsis; the tooltip holds the whole name. */
-.ws-option-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-option-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                  font-size: 14px; font-weight: 500; } /* a bit more prominent than the body text (2026-10-23) */
 /* A deployment status mark (#482, view-deployments.mjs deploymentMark): the warning shape in --warn,
    its words for assistive tech and as the tooltip, so the state is never colour alone. */
 .deployment-mark { flex: none; display: inline-flex; color: var(--warn); }
 .deployment-mark > .shell-icon { width: 12px; height: 12px; }
-/* The main views, at the bottom: Workspace and Deployments side by side, each its icon and label. A nav too
+/* The main views, under the list of workspaces (2026-10-23): Workspace and Deployments side by side, each its icon
+   and label, first in the current workspace's section (.ws-current, below), on the list's 8px sides, 8px under the
+   section's line and 8px before the Instances heading. A nav too
    narrow for both labels shows the icons alone (the label stays the button's name, visually hidden; the title is
    its tooltip), never a wrapped label. Each button starts from its own label's width, so the longer one
    (Deployments; both are at 650) is not squeezed to half; both fit down to a nav of about 219px with the bundled
-   Linux UI font, and the 264px sidebar's nav is 247px. The cutoff sits above that fit, so a wider system font
-   switches to icons before a label is cut. */
-#nav { display: flex; flex: none; flex-direction: row; gap: 4px; container-type: inline-size; container-name: nav; }
-/* The foot's buttons are compact (2026-10-23): the views 26px tall, the tools 24px, 6px around them. */
+   Linux UI font, and the 264px sidebar's nav is 247px (its 263px inside the border, less the 8px sides). The
+   cutoff sits above that fit, so a wider system font switches to icons before a label is cut. */
+#nav { display: flex; flex: none; flex-direction: row; gap: 4px; margin: 2px 8px 8px; container-type: inline-size; container-name: nav; }
+/* Compact (2026-10-23): the views 26px tall, their icons 14px. */
+#nav .nav-item .icon { width: 14px; }
+#nav .shell-icon { width: 14px; height: 14px; }
 #nav .nav-item { flex: 1 1 auto; min-width: 0; min-height: 26px; justify-content: center; gap: 6px; padding: 3px 6px; white-space: nowrap;
                  font-weight: 650; } /* both always bold (2026-10-23): the current one is told by its fill and aria-current */
 #nav .nav-item .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -107,30 +116,34 @@ body {
   #nav .nav-item .label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden;
                           clip-path: inset(50%); white-space: nowrap; }
 }
-/* The foot's title (2026-10-23), "Workspace details", over the views, on one line: the headings' 13px,
-   on their 17px left edge (the foot's 8px + 9px), 4px more before the buttons, bold like them. Its icons are 14px. */
-.nav-title { margin: 0 0 4px; padding-left: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
-             color: var(--fg); font-size: 13px; font-weight: 650; line-height: 18px; }
-#nav-foot .nav-item .icon { width: 14px; }
+/* The foot (2026-10-23): the OATS mark at the left, then the sidebar toggle and the settings cog together at the
+   right, 24px boxes with 14px icons, 2px apart. The mark (20px) centres on the rows' circles (22px in: the foot's
+   12px and half its 20px), the cog in the right-hand column (25px in from the right: the foot's 13px and half its
+   24px), the toggle 2px left of it. */
+#nav-foot { margin-top: auto; flex: none; display: flex; align-items: center; gap: 2px;
+            padding: 4px 13px 4px 12px; border-top: 1px solid var(--border); }
+#nav-foot > .ws-add-open { width: 24px; height: 24px; border-radius: 5px; position: relative; }
+/* The supplied artwork (transparent ground) at 2x; decorative, so it holds no tab stop and no name. */
+.sidebar-brand { width: 20px; height: 20px; flex: none; display: grid; place-items: center; margin-right: auto; }
+.sidebar-brand-image { width: 20px; height: 20px; display: block; }
 #nav-foot .shell-icon { width: 14px; height: 14px; }
-#nav-foot { margin-top: auto; flex: none; display: flex; flex-direction: column; padding: 6px 8px; gap: 4px;
-            border-top: 1px solid var(--border); }
 .shortcut-hint { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                  font: 500 10.5px var(--mono); }
 .shortcut-hint[hidden] { display: none; }
-#sidebar-tools { display: flex; gap: 2px; }
-#sidebar-tools .nav-item { flex: 1; min-width: 0; height: 24px; min-height: 24px; justify-content: center; padding: 0; border-radius: 5px; }
 
 /* ── persistent instance tree (the same shell sidebar, never a second) ── */
 #instance-roster { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-/* The one line between the sections: under the workspace list, over the Instances heading, the sidebar's full
-   width, in the sidebar edge's own --border (2026-10-23). None under the Workspaces heading. */
-#instance-roster::before { content: ""; flex: none; border-top: 1px solid var(--border); }
+/* The current workspace's section (2026-10-23): the views (Workspace | Deployments), then the instances. The one
+   line is over it, under the list of workspaces, the sidebar's full width in the sidebar edge's own --border; none
+   under the Workspaces heading and none before Instances. */
+.ws-current { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ws-current::before { content: ""; flex: none; border-top: 1px solid var(--border); }
+.ws-current > #nav { margin-top: 8px; }
 /* A window with no workspace has no instances to list (#481, shell.mjs showChooser). */
 #instance-roster[hidden] { display: none; }
 /* The sections' headings (Workspaces, Instances) are the sidebar's top level: the nav items' 13px, bolder (650) and
    in --fg, above the machine labels' 12px 400 muted capitals (2026-10-23). "● 4 running" only, the full breakdown in its title. */
-.ctx-head { height: 36px; flex: none; padding: 6px 12px 0 17px; display: flex; align-items: center; gap: 6px;
+.ctx-head { height: 36px; flex: none; padding: 6px 11px 0 17px; display: flex; align-items: center; gap: 6px;
             color: var(--fg); font-size: 13px; font-weight: 650; white-space: nowrap; }
 .ctx-count { margin-left: auto; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11.5px; font-weight: 500;
              white-space: nowrap; }
@@ -743,10 +756,17 @@ body {
 .kb-marks { flex: none; width: 112px; display: flex; justify-content: flex-end; gap: 8px; }
 .kb-mark { color: var(--muted); font-size: 11px; }
 .kb-clashes { margin: 0; padding: 8px 16px; color: var(--warn); font-size: 12px; border-bottom: 1px solid var(--border); }
-/* The footer shortcuts button, while a stored rebind clashes (keymapConflicts): a warn dot. */
-#sidebar-shortcuts { position: relative; }
-#sidebar-shortcuts.has-clash::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px;
+/* The settings cog and its Keyboard shortcuts… item, while a stored rebind clashes (keymapConflicts): a warn dot
+   (the words are their aria-description). */
+#sidebar-settings.has-clash::after { content: ""; position: absolute; top: 4px; right: 4px; width: 7px; height: 7px;
   border-radius: 50%; background: var(--warn); }
+.sidebar-settings-menu button.has-clash > .sidebar-settings-label::after { content: ""; display: inline-block; width: 7px; height: 7px;
+  margin-left: 6px; border-radius: 50%; background: var(--warn); vertical-align: middle; }
+/* The settings menu's items: the icon, the words, the chord. */
+.sidebar-settings-menu { width: 220px; }
+.ctx-instance-menu.sidebar-settings-menu button { grid-template-columns: 15px minmax(0, 1fr) auto; align-items: center; }
+.sidebar-settings-menu .ctx-menu-icon { display: grid; }
+.sidebar-settings-menu .ctx-menu-icon > .shell-icon { width: 15px; height: 15px; }
 /* The chord: a button holding one keycap per key, right-aligned in a fixed column (four keys fit)
    so keycaps and the markers before them line up from row to row. The button fits its keycaps,
    and its own focus ring replaces the global --sel tint, so its text stays on the row's surface. */

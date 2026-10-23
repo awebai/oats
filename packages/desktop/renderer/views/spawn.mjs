@@ -836,8 +836,9 @@ function rosterSettledState(s) {
 /** What the reply says about the souls list (spec 02's fields are optional; they must not be needed):
  * `catalog.reason` (the kernel could not read the catalog) is a failed read: stale with cards, failed
  * without; an observed deployment still reading (`refreshing: true`, no souls, no reason) stays pending;
- * an unobserved deployment stays pending with the deployment's own copy in the grid; else the read
- * succeeded, empty when it listed nothing. */
+ * an unobserved deployment stays pending with the deployment's own copy in the grid; an empty list that
+ * read no observed deployment (no `catalog`) beside a panel that says it is observed stays pending too;
+ * else the read succeeded, empty when it listed nothing. */
 function settleGridState(s, souls) {
   const load = s.gridState; if (!load) return;
   const agents = souls.agents, reason = souls.catalog?.reason || null;
@@ -851,6 +852,11 @@ function settleGridState(s, souls) {
   }
   if (s.deployment && s.deployment.status !== "observed") { load.defer(); return; }
   if (!agents.length && souls.refreshing === true) { load.defer({ keepSkeleton: true }); return; }
+  // The two reads run side by side: at launch (the Workspace page is the home surface) /api/agents can be
+  // answered before the server's first observation of the deployment (agentsData: no `catalog`, nothing listed)
+  // and /api/panel just after it. That empty list is no read of the souls: the grid keeps loading, never
+  // "No souls are materialized", and the next poll reads the list. (A remote view's panel names no deployment.)
+  if (!agents.length && !souls.catalog && s.deployment?.status === "observed") { load.defer({ keepSkeleton: true }); return; }
   load.succeed({ observedAt, empty: !agents.length });
 }
 /** Pending: one group's worth of card skeletons at the real card size — one row plus one. */
@@ -916,7 +922,11 @@ function renderGrid(s, { restoreFocus = true } = {}) {
   // is a truthful state of its own, said in the deployment's words (the controller shows no skeleton then).
   const unobserved = !!s.deployment && s.deployment.status !== "observed";
   const hasData = s.gridState ? s.gridState.hasData : true;
-  if (!hasData && !unobserved) { s.gridSignature = null; return; }
+  if (!hasData && !unobserved) {
+    // The grid is the loading controller's again: an unobserved deployment's copy painted before goes.
+    grid.querySelector(":scope > .empty")?.remove();
+    s.gridSignature = null; return;
+  }
   // Skip unchanged repaints: an identical poll never rebuilds the cards under focus or a hover.
   const signature = JSON.stringify([hasData, unobserved && s.deployment, s.souls.agents, s.filterText, s.groupBy, noCli, cliKnownUnavailable(), cliProbePending(), cliStatus()?.features ?? null,
     s.panelInstances.map((i) => [i.instance, i.agent, i.agentsRoot, i.running === true]), s.deployment?.workspaceStatus?.members ?? null,

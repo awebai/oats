@@ -35,7 +35,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 function shell(t, shellSource = source) {
-  const dom = new JSDOM(`<body><span id="ws-context"></span><aside><section id="ws-list"><div id="ws-options"><button type="button" class="ws-option" tabindex="0" data-workspace-id="B">B</button></div></section><div id="nav-foot"><nav id="nav"></nav></div></aside>
+  const dom = new JSDOM(`<body><span id="ws-context"></span><aside><section id="ws-list"><div id="ws-options"><button type="button" class="ws-option" tabindex="0" data-workspace-id="B">B</button></div></section><nav id="nav"></nav><div id="nav-foot"></div></aside>
     <div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div>`);
   t.after(() => dom.window.close());
   const document = dom.window.document, loads = [], contexts = [], focusCalls = [], navWrites = [], preselected = [], regionCalls = [];

@@ -9,7 +9,7 @@
  * shell's permanent sidebar roster (below the rail), not a rail destination
  * (scope correction of PR #29 — the human rejected the extra tab/sidebar). */
 export const NAV = [
-  // In the sidebar's foot's order, Workspace first (2026-10-23); ⌘1 / Ctrl+1 stays Deployments (bound by id).
+  // In the nav's order under the list of workspaces, Workspace first (2026-10-23); ⌘1 / Ctrl+1 stays Deployments (bound by id).
   { name: "spawn", label: "Workspace", icon: "workspace", title: "Workspace" },
   // #482 (UI spec): the Active overview became Deployments: the overview trees, split by deployment, one tab each.
   { name: "hierarchy", label: "Deployments", icon: "layers", title: "Deployments" },

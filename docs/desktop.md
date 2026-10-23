@@ -204,14 +204,21 @@ workspace on a server: `name — server`).
 
 ## Workspaces
 
-The sidebar has two sections, each a heading over its list: **Workspaces**,
-then, after a thin line, **Instances**. The two headings are the sidebar's
-largest type, above the smaller machine labels ("THIS MAC") in the list of
-instances. At the bottom, under the title **Workspace details**, are the two main
-views, **Workspace** and **Deployments**, side by side, and under them the tools: hide the sidebar, the
-theme, the keyboard shortcuts, and **Spawn instance** (a small **+**). In a
-sidebar too narrow for both labels the views show their icons alone, each
-named in its tooltip. Settings is in the command palette (**Settings:
+The sidebar has two sections: **Workspaces**, a heading over the list of
+workspaces, then, after a thin line, the current workspace's: its two main
+views, **Workspace** and **Deployments**, side by side, then **Instances**,
+a heading over its list. The two headings are the sidebar's largest type,
+above the smaller machine labels ("THIS MAC") in the list of instances; the
+workspaces' names are a little larger than body text. In a sidebar too
+narrow for both labels the views show their icons alone, each named in its
+tooltip. A window opens on the **Workspace** page: at launch, and after you
+choose a workspace for it. **Spawn instance** is the **+** at the end of the **Instances**
+heading, after the running count. The headings' **+** buttons, the
+workspaces' needs-input marks and the instances' harness marks line up in
+one column at the sidebar's right edge. The bottom bar shows the OATS mark
+at its left, and at its right the sidebar toggle (**Hide the sidebar**) and
+the settings cog, whose menu holds **Theme…** and **Keyboard shortcuts…**,
+each with its shortcut. Connections is in the command palette (**Settings:
 Connections…**), and the palette opens with its shortcut or Ctrl+X then `k`.
 The instances have no search field: to find one by name, type it in the
 command palette, which opens its terminal. ⌘F / Alt+F (**Focus the
@@ -236,7 +243,7 @@ input.
 - **The current workspace** has its circle filled, like a running
   instance's, and its name in bold; the others have the ring a stopped
   instance has. It has no background of its own: the selection's background
-  marks the current page at the bottom (Workspace or Deployments), so the
+  marks the current page (Workspace or Deployments), so the
   sidebar fills one "you are here" row. A screen reader hears it as current,
   and the list's description names it, by the same name as its row.
 - **The needs-input mark.** A row has an exclamation mark (a small amber

@@ -66,7 +66,7 @@ function deferred() {
 const flush = () => new Promise(setImmediate);
 
 function shell(t, { shellSource = source, ownership = createSelectionOwnership, terminal = createTerminalTab, leader = false } = {}) {
-  const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><aside id="sidebar"><div class="ctx-head ws-head"><button id="ws-add-open" class="ws-add-open" type="button">+</button></div><div id="ws-options"></div><div id="instance-roster"><span class="ctx-count"></span><div class="ctx-list"></div></div><div id="nav-foot"><nav id="nav"><button class="nav-item active">Deployments</button></nav></div></aside>`);
+  const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><aside id="sidebar"><div class="ctx-head ws-head"><button id="ws-add-open" class="ws-add-open" type="button">+</button></div><div id="ws-options"></div><nav id="nav"><button class="nav-item active">Deployments</button></nav><div id="instance-roster"><span class="ctx-count"></span><div class="ctx-list"></div></div><div id="nav-foot"></div></aside>`);
   t.after(() => dom.window.close());
   const document = dom.window.document;
   // The shell's one window keydown listener (shell.mjs), on this harness's platform.

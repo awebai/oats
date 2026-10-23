@@ -1,21 +1,28 @@
 ## Changed
 
 - **Desktop: a simpler sidebar.** Top to bottom:
-  - **Workspaces**, a plain heading with **+** and the list right under it;
-  - a thin line, then **Instances**;
-  - at the foot, compact, **Workspace details**: **Workspace** and
-    **Deployments** side by side, then the sidebar, theme and shortcuts
-    buttons and a small **Spawn instance**.
+  - **Workspaces**, a plain heading with **+** and the list right under it,
+    the names a little larger;
+  - a thin line, then the current workspace: **Workspace** and
+    **Deployments** side by side, then **Instances**, with **Spawn
+    instance** as the **+** at the end of its heading;
+  - a bottom bar: the OATS mark at its left, the sidebar toggle and a
+    settings cog at its right; the cog's menu holds **Theme…** and
+    **Keyboard shortcuts…**.
 
-  The logo, the Settings button and the palette button are gone: Settings is
-  in the palette ("Settings: Connections…"), and the palette is on ⌘K / its
-  chord and Ctrl+X then `k`. The two headings are the sidebar's top level,
+  The headings' **+** buttons, the workspaces' needs-input marks and the
+  instances' harness marks line up in one column on the right. The logo in
+  the heading, the palette button and the row of buttons at the foot are
+  gone: Connections is in the palette ("Settings: Connections…"), and the
+  palette is on ⌘K / its chord and Ctrl+X then `k`. The two headings are the sidebar's top level,
   larger and heavier than the machine labels ("THIS MAC") under Instances.
   The gap after an instance cluster is smaller, and a parent is as close
   to its first child as any two instances.
   A workspace whose instance needs input shows an exclamation mark at the
   end of its row, and the instance's own **Needs input** pill leads with
   the same mark.
+- **Desktop: a window opens on the Workspace page**, at launch and after you
+  choose a workspace, rather than on Deployments.
 - **Desktop: what a deployment is.** The Deployments page has a round **i**
   after its tabs, **What is a deployment?**, that explains it in plain words.
 - **Desktop: the instances have no filter field.** To find an instance by

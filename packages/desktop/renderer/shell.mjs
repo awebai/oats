@@ -66,6 +66,7 @@ import { createSelectionOwnership, wirePaneSelection } from "./selection-ownersh
 import { createWorkspaceSwitcher } from "./workspace-switcher.mjs";
 import { NAV, NAV_TABS, navTab, stageSidebarMode, loadStageView } from "./shell-nav.mjs";
 import { shellIcon, mountShellIcons, iconElement } from "./shell-icons.mjs";
+import { createSettingsMenu } from "./sidebar-settings.mjs";
 import { createRuntimeBadge, identityCSS } from "./identity-marks.mjs";
 import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
 import { createInstanceTeamsSection, teamsCSS } from "./instance-teams.mjs";
@@ -408,7 +409,7 @@ onWindowState((state) => {
   // Bound again (a choice, or an adoption): leaving the choice shows the home surface.
   if (!contextRosterEl?.hidden) return;
   contextRosterEl.hidden = false;
-  void showStage("hierarchy");
+  void showStage("spawn"); // the home surface: Workspace (2026-10-23)
 });
 
 /** A stage switch from the keyboard (a chord, the palette, a nav button) keeps focus on a
@@ -572,8 +573,8 @@ function updateActiveContexts(tabLayerOn = tabLayerVisible) {
   if (tabLayerOn) set.add("tabs");
   else if (stage) set.add(`stage:${stage.name}`);
   // The sidebar's plain keys (context `sidebar`, sidebar.key.*): live while focus is in the sidebar
-  // (its nav, the list of workspaces, the roster rows, the footer), never inside an open popup there (an
-  // instance's actions menu) and never in an editable field (the sidebar has none since its roster filter
+  // (the list of workspaces, its nav, the roster rows, the headings' controls, the foot), never inside an open
+  // popup there (an instance's actions menu, the settings cog's menu) and never in an editable field (the sidebar has none since its roster filter
   // went; one added later keeps its own keys), where a rebind to a modified chord would otherwise take the
   // field's own key. Editable as the engine's plain-key guard reads it (keybindings.mjs isEditableTarget).
   const focused = document.activeElement;
@@ -1401,7 +1402,7 @@ function showTerminalContext() {
   // terminal restores the prior stage surface.
   setSidebarMode(stageSidebarMode(stage?.name));
   showTabLayer(false);
-  setNavActive(stage?.name || "hierarchy");
+  setNavActive(stage?.name || "spawn");
 }
 
 // ── tabs ──────────────────────────────────────────────────────────────────
@@ -2303,10 +2304,14 @@ for (const v of NAV) {
   navEl.append(b);
 }
 
-// Persistent footer tools use exactly the same registry as keyboard actions (the nav's buttons run theirs above).
-for (const button of document.querySelectorAll("#sidebar-tools [data-action]")) {
+// The sidebar's other controls use exactly the same registry as keyboard actions (the nav's buttons run theirs
+// above): Spawn instance (the Instances heading's +), the foot's sidebar toggle and its settings cog's menu.
+for (const button of [document.getElementById("sidebar-spawn"), document.getElementById("sidebar-toggle")]) {
   button.addEventListener("click", () => runAction(button.dataset.action));
 }
+const settingsMenu = createSettingsMenu(document, document.getElementById("sidebar-settings"), {
+  run: (id) => runAction(id), shortcut: (id) => { const chord = getBinding(id, isMac); return chord ? formatChord(chord, isMac) : ""; },
+});
 
 // This is a chooser entry, not a launch or an inspection preselection. Capture
 // workspace visit + selection before import, and contain stale rejections too.
@@ -2436,17 +2441,19 @@ onWorkspaceChange(() => {
   palette.close();
 });
 
-// ── shortcuts editor (rail-footer button + palette + Mod+,) ────────────
+// ── shortcuts editor (the settings cog's Keyboard shortcuts… + palette + Mod+,) ────────────
 const shortcutsEditor = createKeybindingsEditor({ doc: document, isMac, chordFamily });
 // Stored rebinds vs the effective keymap (spec F review): a clash is never resolved silently;
-// the footer button carries a warn dot and a description until the operator rebinds or resets.
+// the settings cog and its Keyboard shortcuts… item carry a warn dot and a description until the operator rebinds or resets.
 function markShortcutClashes() {
-  const button = document.getElementById("sidebar-shortcuts");
-  if (!button) return;
   const clashes = keymapConflicts(isMac).length;
-  button.classList.toggle("has-clash", clashes > 0);
-  if (clashes) button.setAttribute("aria-description", `${clashes === 1 ? "1 shortcut you set clashes" : `${clashes} shortcuts you set clash`} with another: open to review`);
-  else button.removeAttribute("aria-description");
+  const item = settingsMenu.items.find(el => el.dataset.menuAction === "app.shortcuts");
+  for (const button of [document.getElementById("sidebar-settings"), item]) {
+    if (!button) continue;
+    button.classList.toggle("has-clash", clashes > 0);
+    if (clashes) button.setAttribute("aria-description", `${clashes === 1 ? "1 shortcut you set clashes" : `${clashes} shortcuts you set clash`} with another: open Keyboard shortcuts… to review`);
+    else button.removeAttribute("aria-description");
+  }
 }
 let clashCheckQueued = false;
 onKeymapChange(() => {
@@ -2579,7 +2586,7 @@ function openInstanceEdit(id) {
   instanceColorDialog.open(instance, { held: held ? heldLine(held) : null });
 }
 window.addEventListener('pagehide', () => instanceColorDialog.dispose(), { once: true });
-// The theme button, the palette and the chord (app.themePicker) open it; a choice goes through setTheme,
+// The settings cog's Theme…, the palette and the chord (app.themePicker) open it; a choice goes through setTheme,
 // so it is stored as a palette choice is.
 const themePicker = createThemePicker({ doc: document, themes: THEMES, current: currentTheme, choose: setTheme,
   subscribe: onThemeChange, onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn) });
@@ -2590,8 +2597,9 @@ window.addEventListener('pagehide', () => themePicker.dispose(), { once: true })
  * list of workspaces' stop, else its Add local workspace…, always shown with the sidebar. */
 function rosterEntry() {
   const list = contextRosterEl?.querySelector(".ctx-list");
+  // A control the roster shows (Retry, in its notice or its failed block), never its heading's Spawn instance +.
   return list?.querySelector('.ctx-inst[tabindex="0"]') || list?.querySelector(".ctx-inst")
-    || contextRosterEl?.querySelector('button:not([disabled])')
+    || contextRosterEl?.querySelector(':scope > :not(.ctx-head) button:not([disabled])')
     || document.querySelector('#ws-options [tabindex="0"]') || document.getElementById("ws-add-open");
 }
 
@@ -2642,7 +2650,7 @@ function toggleSidebar() {
 }
 // Spec B: a closed sidebar leaves nothing behind. Show sidebar, at the start of the main area's top bar
 // (shown only while the sidebar is hidden or focus mode is on), runs the SAME sidebar.toggle as the
-// chord, the palette and the footer button (it leaves focus mode too). Show instance panel, at its end,
+// chord, the palette and the foot's sidebar toggle (it leaves focus mode too). Show instance panel, at its end,
 // runs panel.toggle and then moves focus into the panel it opened.
 document.getElementById("show-sidebar").addEventListener("click", () => runAction("sidebar.toggle"));
 document.getElementById("show-panel").addEventListener("click", () => { runAction("panel.toggle"); contextPanel.focus(); });
@@ -2839,8 +2847,8 @@ registerAction({ id: "tabs.prevPage", label: "Previous tab (second shortcut)", c
 for (let n = 1; n <= 9; n++) {
   registerAction({ id: `tabs.goto${n}`, label: n === 9 ? "Go to the last tab" : `Go to tab ${n}`, context: "tabs", run: unlessModal(() => gotoTab(n)) });
 }
-// Regions: workspaces → instance roster → sidebar footer → main → instance panel (focus-regions.mjs).
-registerAction({ id: "focus.nextRegion", label: "Focus the next region (workspaces, instances, footer, main, panel)", context: "global", run: () => cycleRegion(1) });
+// Regions: workspaces → views (the nav) → instance roster → main → instance panel (focus-regions.mjs).
+registerAction({ id: "focus.nextRegion", label: "Focus the next region (workspaces, views, instances, main, panel)", context: "global", run: () => cycleRegion(1) });
 registerAction({ id: "focus.prevRegion", label: "Focus the previous region", context: "global", run: () => cycleRegion(-1) });
 // F6 stays the program's inside a terminal (mc, htop, nano): this terminal-allowlisted chord
 // leaves it for the next region, same order as F6; from there plain F6 works.
@@ -3024,7 +3032,7 @@ function runAsLeaderKey(does, e) {
   leaderDispatch.run(does, leaderOrigin(e?.target ?? document.activeElement));
 }
 // The sidebar's plain keys (the TUI's, shared PLAIN_KEYS): one action per key, the same `does` as
-// the leader's, acting on the focused roster row (on a nav or footer control: the selected row).
+// the leader's, acting on the focused roster row (on a nav or heading control: the selected row).
 for (const { id, does } of SIDEBAR_KEYS) {
   registerAction({ id, label: leaderLabel(does, actionLabel), context: "sidebar", run: (e) => runAsLeaderKey(does, e) });
 }
@@ -3046,11 +3054,7 @@ registerAction({ id: "instance.edit", label: "Instance: name and colour…", con
 // declares data-action gets “ … (chord)” appended to its base title.
 const baseTitles = new WeakMap();
 function applyChordTitles() {
-  const themeButton = document.getElementById("sidebar-theme");
-  if (themeButton) {
-    const label = "Choose a theme";
-    baseTitles.set(themeButton, label); themeButton.setAttribute("aria-label", label);
-  }
+  settingsMenu.refresh();
   for (const el of document.querySelectorAll("[data-action]")) {
     if (!baseTitles.has(el)) baseTitles.set(el, el.title || "");
     const chord = getBinding(el.dataset.action, isMac);
@@ -3067,7 +3071,7 @@ onKeymapChange(() => applyChordTitles());
 applyChordTitles();
 
 // Persistent recursive instance tree: always available between the list of
-// workspaces and the footer, with no second/contextual sidebar and no width jump.
+// workspaces' views and the foot, with no second/contextual sidebar and no width jump.
 initContextRoster();
 onWorkspaceChange(restoreWorkspaceTabs);
 // After it: a take-over's layout, once the workspace it came with is this window's (restoreHandedLayout).
@@ -3172,7 +3176,7 @@ function restoreWorkspaceTabs() {
     activateTab(restored.activeTab, { keepGroupFocus: true });
   } else {
     setSidebarMode(stageSidebarMode(stage?.name));
-    setNavActive(stage?.name || "hierarchy");
+    setNavActive(stage?.name || "spawn");
   }
   updateContextTabs();
   refreshContextRoster();
@@ -3230,5 +3234,5 @@ import("./views/cli-status.mjs").then(({ refreshCli, reprobeCli }) => {
   desk.onAppFocus?.(() => reprobeCli(ctx));
 });
 
-// Home surface: the agent hierarchy — running instances and how they relate.
-showStage("hierarchy");
+// Home surface: the Workspace page (the product owner, 2026-10-23: Workspace, not Deployments, when no instance is open).
+showStage("spawn");

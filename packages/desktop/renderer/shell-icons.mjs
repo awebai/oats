@@ -6,7 +6,7 @@ import { LUCIDE_ICONS } from "./lucide-icons.mjs";
 /** App icon name → Lucide icon. The shell's semantic names stay stable. */
 export const ICONS = Object.freeze({
   overview: "circle-dot", workspace: "house", schedules: "clock", plus: "plus", sidebar: "panel-left", panel: "panel-right",
-  theme: "contrast", shortcuts: "keyboard", palette: "terminal", settings: "sliders-horizontal",
+  theme: "contrast", shortcuts: "keyboard", palette: "terminal", settings: "sliders-horizontal", cog: "settings",
   chevron: "chevron-down", chevronDown: "chevron-down", chevronRight: "chevron-right", chevronLeft: "chevron-left",
   splitRight: "columns-2", splitDown: "rows-2",
   search: "search", more: "ellipsis", close: "x", check: "check", refresh: "refresh-cw", reset: "rotate-ccw",

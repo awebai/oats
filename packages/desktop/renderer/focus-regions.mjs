@@ -1,23 +1,26 @@
 // oats desktop — keyboard regions (spec F, Part 4): F6 / Shift+F6 move focus between the
 // window's regions, in the sidebar's order top to bottom, then the main area (the sidebar layout,
-// 2026-10-23): workspaces → instance roster → sidebar footer → main → instance panel → back.
+// 2026-10-23): workspaces → views (the nav under the list) → instance roster → main → instance panel → back.
 //
 // A region that is hidden (the sidebar while hidden or in focus mode, the panel while closed or when
 // there is nothing to show) is skipped. Focus lands on the region's current item, never on <body>:
 //   workspaces  the list of workspaces' tab stop (the row last focused, else the current one), else
 //               the heading's Add local workspace…
-//   roster  the roster's tab stop (the selected row), else its first control (Retry after a failed read)
-//   footer  the current view's nav item (aria-current), else the first one, else the first tool
+//   roster  the roster's tab stop (the selected row), else its first control under the heading (Retry after
+//           a failed read), else the heading's Spawn instance +
+//   views   the current view's nav item (aria-current), else the first one
 //   main    the active tab's content (a terminal's input) through the shell's hook, else the
 //           stage's first control
 //   panel   its selected tab (or the first control of a stage's content). A closed panel is out
 //           of the cycle (Spec B): from a terminal, panel.toggle's chord opens it.
-// The tab strip, the split controls and Show sidebar / Show instance panel count as main; the footer's
-// tools (after the nav items: Tab) as footer.
+// The tab strip, the split controls and Show sidebar / Show instance panel count as main. A heading's controls
+// count with their section: Add local workspace… as workspaces, Spawn instance (the Instances heading's +) as
+// roster. The sidebar's bottom bar (the OATS mark, the sidebar toggle, the settings cog and its menu) is not a region: Tab reaches it,
+// and F6 from there moves on as from between the roster and main (on to main, Shift+F6 back to the roster).
 
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 
-export const REGIONS = Object.freeze(["workspaces", "roster", "footer", "main", "panel"]);
+export const REGIONS = Object.freeze(["workspaces", "views", "roster", "main", "panel"]);
 
 const TABBABLE = 'button, [href], input, select, textarea, summary, [tabindex]';
 
@@ -59,7 +62,7 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
 
   function visible(name) {
     if (name === "workspaces") return sidebarShown() && isShown(byId("ws-list"));
-    if (name === "footer") return sidebarShown() && isShown(byId("nav-foot"));
+    if (name === "views") return sidebarShown() && isShown(byId("nav"));
     if (name === "roster") return sidebarShown() && isShown(byId("instance-roster"));
     if (name === "main") return isShown(byId("main"));
     if (name === "panel") return isShown(byId("context-panel"));
@@ -72,14 +75,16 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
       const add = byId("ws-add-open");
       return stop || (focusable(add) ? add : firstTabbable(byId("ws-list")));
     }
-    if (name === "footer") {
+    if (name === "views") {
       const items = [...(byId("nav")?.querySelectorAll("button") || [])].filter(focusable);
-      return items.find(b => b.getAttribute("aria-current") === "page") || items[0] || firstTabbable(byId("nav-foot"));
+      return items.find(b => b.getAttribute("aria-current") === "page") || items[0] || null;
     }
     if (name === "roster") {
       const roster = byId("instance-roster");
       const stop = [...(roster?.querySelectorAll('.ctx-list [tabindex="0"]') || [])].find(focusable);
-      return stop || firstTabbable(roster);
+      // Under the heading first: a Retry before the heading's Spawn instance +, which comes first in the DOM.
+      const body = [...(roster?.children || [])].filter(el => !el.classList.contains("ctx-head"));
+      return stop || body.map(firstTabbable).find(Boolean) || firstTabbable(roster);
     }
     if (name === "panel") {
       const panel = byId("context-panel");
@@ -121,7 +126,8 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
     if (!active || active === doc.body) return null;
     if (inWorkspaces(active)) return "workspaces";
     if (byId("instance-roster")?.contains(active)) return "roster";
-    if (byId("nav-foot")?.contains(active)) return "footer";
+    if (byId("nav")?.contains(active)) return "views";
+    if (byId("nav-foot")?.contains(active)) return null; // the foot is not a region (cycle places it)
     if (byId("sidebar")?.contains(active)) return "workspaces"; // anything else the sidebar holds sits above the roster
     if (byId("main")?.contains(active)) return "main";
     if (byId("context-panel")?.contains(active)) return "panel";
@@ -132,7 +138,9 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
   function cycle(delta) {
     const order = REGIONS.filter(visible);
     if (!order.length) return false;
-    const at = order.indexOf(regionOfFocus());
+    // From the foot (below the roster): F6 goes on as from the roster, Shift+F6 back as from main.
+    const inFoot = !!byId("nav-foot")?.contains(doc.activeElement);
+    const at = inFoot ? order.indexOf(delta > 0 ? "roster" : "main") : order.indexOf(regionOfFocus());
     for (let i = 1; i <= order.length; i++) {
       const index = at < 0 ? (delta > 0 ? i - 1 : order.length - i) : (at + delta * i + order.length * i) % order.length;
       if (focusRegion(order[index])) return true;
