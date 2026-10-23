@@ -25,7 +25,8 @@ Flags/env:
 
 `assets/brand/oats-logo.png` is the one source of the app's brand artwork
 (the human-supplied logo, SHA-256 `b1d21d9a…de69e`). Every derived icon —
-the macOS `oats.icns`, the Linux `NxN.png` set and the 2x sidebar mark — lives
+the macOS `oats.icns`, the Linux `NxN.png` set and the 2x sidebar mark (still
+generated and packaged, though the sidebar shows no logo since 2026-10-23) — lives
 in `assets/brand/generated/` and is regenerated from the source by one
 command:
 
@@ -181,7 +182,7 @@ function over what its caller holds:
   for that, its tooltip and the deployment an unattached view opens;
   `choiceMatches` is the TUI switcher's filter (the Desktop's list has none).
   `renderer/workspace-switcher.mjs` draws the sidebar's list from the rows,
-  one line each (the name and the dot: it shows no muted line, no not-live
+  one line each (the instance roster's circle, the name and the dot: it shows no muted line, no not-live
   mark and no section; its own `rowNames` tells twins apart by team and key,
   never by folder or machine), and keeps what is only its own: the needs-input
   words, the new-window hint and context menu, and the Add dialog (this

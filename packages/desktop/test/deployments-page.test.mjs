@@ -10,6 +10,7 @@ import * as hierarchy from "../renderer/views/hierarchy.mjs";
 import { currentWorkspace, setWorkspace } from "../renderer/views/common.mjs";
 import { requestDeploymentTab, rememberDeploymentTab, rememberedDeploymentTab } from "../renderer/deployment-tabs.mjs";
 import { createDeploymentTabBar } from "../renderer/deployments-page.mjs";
+import { lifecycleCSS } from "../renderer/lifecycle-dialog.mjs";
 
 const theme = readFileSync(new URL("../renderer/theme.css", import.meta.url), "utf8");
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -349,6 +350,98 @@ test("header: the counts sit at the right, never against the tabs, and no Spawn 
   const win = u.dom.window;
   assert.equal(win.getComputedStyle(u.one(".hier-tabs")).overflowX, "auto");
   assert.equal(win.getComputedStyle(u.one(".hier-sum")).whiteSpace, "nowrap");
+});
+
+/* ── "What is a deployment?" (the product owner asked for an info icon that explains what a deployment is):
+   the Workspace page's round "i" and its About dialog (about-dialog.mjs), after the tabs. ── */
+const DEPLOYMENT_TEXT = [
+  "A deployment is this workspace set up in a folder on a machine, where its instances live and run.",
+  "A workspace can have several deployments, on one machine or on several. This page shows each one, with its machine and its instances.",
+];
+const aboutOf = (u) => ({ button: u.one(".hier-bar .ws-info-button"), overlay: () => u.doc.querySelector(".palette-overlay.lifecycle-overlay"),
+  dialog: () => u.doc.querySelector("section.lifecycle-dialog.about-dialog"), close: () => u.doc.querySelector(".about-dialog .lifecycle-close") });
+
+test('the "i": named "What is a deployment?", right after the tabs, the About pattern\'s 28px round button, closed until pressed', async (t) => {
+  const u = await page(t, THREE()), about = aboutOf(u), b = about.button;
+  assert.ok(b, "one info button in the page header");
+  assert.equal(u.all(".ws-info-button").length, 1);
+  assert.equal(b.tagName, "BUTTON"); assert.equal(b.type, "button");
+  assert.equal(b.getAttribute("aria-label"), "What is a deployment?", "its accessible name");
+  assert.equal(b.title, "What is a deployment?"); assert.equal(b.getAttribute("aria-haspopup"), "dialog");
+  assert.equal(b.querySelector("svg").getAttribute("width"), "15", "the About pattern's icon size");
+  assert.equal(b.previousElementSibling, u.one(".hier-tabs"), "beside the tabs, which lead the header");
+  const style = u.dom.window.getComputedStyle(b);
+  assert.equal(style.width, "28px"); assert.equal(style.height, "28px"); assert.equal(style.borderRadius, "50%");
+  assert.equal(style.marginLeft, "-12px", "against the strip, not the room kept before the counts");
+  assert.equal(about.overlay(), null, "closed until pressed");
+  // With no tabs (an older server reports no deployments) it leads the header, with no pull to the left.
+  const old = await page(t, { instances: [row("lead", LOCAL)], workspace: view, workspaces: [view] });
+  const lone = aboutOf(old).button;
+  assert.ok(lone); assert.equal(old.one(".hier-tabs").hidden, true);
+  assert.equal(old.dom.window.getComputedStyle(lone).marginLeft, "0px");
+});
+
+test('"What is a deployment?": click opens the dialog with the text, Escape and Close close it back on the "i"', async (t) => {
+  const u = await page(t, THREE()), about = aboutOf(u);
+  about.button.focus(); about.button.click();
+  const dialog = about.dialog();
+  assert.ok(dialog, "the About dialog");
+  assert.equal(dialog.getAttribute("role"), "dialog"); assert.equal(dialog.getAttribute("aria-modal"), "true");
+  assert.equal(u.doc.getElementById(dialog.getAttribute("aria-labelledby")).textContent, "What a deployment is");
+  assert.deepEqual([...dialog.querySelectorAll(":scope > p")].map((p) => p.textContent), DEPLOYMENT_TEXT, "the text, in the dialog a screen reader reads");
+  assert.doesNotMatch(dialog.textContent, /oats-local|\.yaml|`/, "plain words: no file names, no code");
+  assert.equal(dialog.querySelector("code"), null);
+  assert.equal(u.doc.activeElement, about.close(), "opening focuses Close");
+  let outside = 0; u.doc.body.addEventListener("keydown", (e) => { if (e.key === "Escape") outside++; });
+  u.key(about.close(), "Escape");
+  assert.equal(about.overlay(), null, "Escape closes it"); assert.equal(outside, 0, "the Escape is the dialog's, not the canvas's");
+  assert.equal(u.doc.activeElement, about.button, "focus back on the \"i\"");
+  about.button.click(); about.close().click();
+  assert.equal(about.overlay(), null); assert.equal(u.doc.activeElement, about.button);
+  // The canvas keeps its own Escape: the page's keys are untouched by the "i".
+  assert.equal(u.all(".hnode").length, 4);
+});
+
+test('"What is a deployment?": a workspace change closes it without moving focus; leaving the page removes it', async (t) => {
+  const u = await page(t, THREE()), about = aboutOf(u);
+  about.button.focus(); about.button.click(); assert.ok(about.overlay());
+  setWorkspace("ws:other");
+  assert.equal(about.overlay(), null, "closed by the workspace change");
+  assert.notEqual(u.doc.activeElement, about.button, "no focus return to the \"i\" (close({ focus: 'none' }))");
+  setWorkspace("ws:view"); await tick(); await tick();
+  aboutOf(u).button.click(); assert.ok(about.overlay());
+  hierarchy.unmount();
+  assert.equal(about.overlay(), null, "unmounting the page disposes its dialog");
+});
+
+for (const name of ["light", "solarized", "dark"]) test(`${name}: the "i", its focus tint and the dialog's text meet computed AA`, async (t) => {
+  const u = await page(t, THREE());
+  u.doc.documentElement.dataset.theme = name;
+  const frame = u.doc.createElement("style"); frame.textContent = lifecycleCSS; u.doc.head.append(frame); // the shell's sheet
+  const win = u.dom.window, root = win.getComputedStyle(u.doc.documentElement), about = aboutOf(u);
+  const pass = (fg, bg, what) => {
+    const r = ratio(root.getPropertyValue(`--${fg}`).trim(), root.getPropertyValue(`--${bg}`).trim());
+    assert.ok(r >= 4.5, `${what}: ${fg} on ${bg} is ${r.toFixed(2)}:1`);
+  };
+  const b = about.button;
+  assert.equal(win.getComputedStyle(b).color, "var(--muted)");
+  assert.equal(painted(win, b), "surface", "the button paints the header's surface");
+  pass("muted", "surface", "the \"i\"");
+  // Keyboard focus: the About pattern's --sel tint under the shell's 1px --accent ring (theme.css :focus-visible).
+  // (jsdom does not resolve :focus-visible: the declared rules are read.)
+  const rules = [...u.doc.styleSheets].flatMap((sheet) => [...sheet.cssRules]);
+  assert.ok(rules.some((r) => r.selectorText === ".oats-view button.ws-info-button:focus-visible" && r.style.background === "var(--sel)"), "the focus tint");
+  assert.ok(rules.some((r) => r.selectorText === ":focus-visible" && r.style.outline === "1px solid var(--accent)"), "the focus ring");
+  pass("muted", "sel", "the focused \"i\"");
+  for (let e = b; e; e = e.parentElement) assert.equal(win.getComputedStyle(e).opacity, "1", "no opacity over the icon");
+  b.click();
+  for (const el of [about.dialog().querySelector("h2"), ...about.dialog().querySelectorAll(":scope > p")]) {
+    assert.equal(win.getComputedStyle(el).color, "var(--fg)", el.textContent);
+    assert.equal(painted(win, el), "surface", el.textContent);
+    pass("fg", "surface", el.textContent);
+    for (let e = el; e; e = e.parentElement) assert.equal(win.getComputedStyle(e).opacity, "1", "no opacity over the text");
+  }
+  about.close().click();
 });
 
 test("tab strip overflow: a newly selected or focused tab is scrolled into the strip, and only the strip scrolls", () => {

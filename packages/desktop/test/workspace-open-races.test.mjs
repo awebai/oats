@@ -11,6 +11,7 @@ import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { fillEmptyGroup } from "../renderer/split-layout.mjs";
 import { otherIncarnation, terminalOrigin } from "../renderer/retired-tabs.mjs";
+import { navTab } from "../renderer/shell-nav.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const extract = name => source.match(new RegExp(`async function ${name}\\([^]*?\\n\\}`))[0];
@@ -80,7 +81,7 @@ test("navigating to a stage cancels an older terminal open", async t => {
   const f = fixture(t, "terminal");
   const pendingTerminal = f.run("first");
   const navigate = runInNewContext(`${extract("closeStage")}\n(${extract("showStage")})`, withShellWindowGlobals({
-    ...f.context, NAV: [{ name: "hierarchy" }], stage: { name: "hierarchy" },
+    ...f.context, NAV: [{ name: "hierarchy" }], navTab /* the shipped NAV_TABS lookup: showStage reads it first */, stage: { name: "hierarchy" },
     stageSidebarMode: () => "overview", showTabLayer() {},
   }));
   await navigate("hierarchy");

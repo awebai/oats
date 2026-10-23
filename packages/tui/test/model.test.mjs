@@ -1871,13 +1871,13 @@ test("two hundred roster groups: the switcher lists every one in the order the s
 
 // --- One workspace across machines in the switcher (#482) --------------------------------
 
-/** Pepe's shape: this deployment (acme-platform) on this machine and on athenea, and a second
+/** The product owner's shape: this deployment (acme-platform) on this machine and on athenea, and a second
  *  workspace (lfx) on athenea under the label `athenea (lfx)` and on this machine at ~/Work/lfx,
  *  which is on this computer's list and not opened. */
 const LFX_PATH = "/home/u/Work/lfx";
-const LFX = Object.freeze({ ...IDENTITY, key: "github.com/josep-reyero/lfx-oats-workspace", defaultTeam: Object.freeze({ label: "eng", team: "team-lfx" }), teams: Object.freeze({ eng: "team-lfx" }) });
+const LFX = Object.freeze({ ...IDENTITY, key: "github.com/example-org/lfx-oats-workspace", defaultTeam: Object.freeze({ label: "eng", team: "team-lfx" }), teams: Object.freeze({ eng: "team-lfx" }) });
 const ATHENEA_LFX = "remote:athenea:lfx-1";
-function pepe() {
+function productOwnerShape() {
   const athenea = machine("athenea"), lfx = machine("athenea", { id: "athenea:lfx-1", label: "athenea (lfx)", workspace: LFX, target: { workspace: "/home/dev/Work/lfx", sshHost: "athenea.example" } });
   const state = heard(stateOf(reporting(NEAR), { cli: READS }), answer(athenea, lfx), tick(0));
   return reduce(state, { listed: { rows: [listedRow(DEPLOYMENT, "deploy"), listedRow(LFX_PATH, "lfx")] } }).state;
@@ -1886,8 +1886,8 @@ function pepe() {
 const learnedOf = (identity) => ({ ok: true, workspace: { reachable: true, ...identity } });
 const identityOf = (state, path, read) => reduce(state, { identity: { path, read } }).state;
 
-test("Pepe's shape: before the identity of ~/Work/lfx is read it is a row of its own under the TUI's heading; once read, the switcher has one row per workspace, each with a line per deployment, and nothing is left under the heading", () => {
-  const before = pepe();
+test("The product owner's shape: before the identity of ~/Work/lfx is read it is a row of its own under the TUI's heading; once read, the switcher has one row per workspace, each with a line per deployment, and nothing is left under the heading", () => {
+  const before = productOwnerShape();
   assert.deepEqual(said(switcher(before, AT).items), [
     ["acme-platform", null, null], "· This machine", "· athenea",
     ["lfx-oats-workspace", null, null], "· athenea (lfx)",
@@ -1915,28 +1915,28 @@ test("Pepe's shape: before the identity of ~/Work/lfx is read it is a row of its
   assert.deepEqual(switcher(asked(after, "ATHENEA (LFX)"), AT).keys, [s.keys[1]]);
 });
 
-test("Pepe's shape, drawn: the workspace rows with their dim lines under them, in the switcher's columns", () => {
-  const state = press(identityOf(pepe(), LFX_PATH, learnedOf(LFX)), ["w", "w"]).state;
+test("The product owner's shape, drawn: the workspace rows with their dim lines under them, in the switcher's columns", () => {
+  const state = press(identityOf(productOwnerShape(), LFX_PATH, learnedOf(LFX)), ["w", "w"]).state;
   const { lines, area } = draw(state, { cols: 100, rows: 24 });
   const main = lines.map((line) => line.slice(100 - area - 1).trimEnd()).filter(Boolean);
   assert.deepEqual(main.slice(0, 5), ["> * acme-platform", "      This machine", "      athenea", "    lfx", "      This machine · not opened"]);
 });
 
-test("Pepe's shape in the list of workspaces: one row per workspace, by its name, whatever its machines; ~/Work/lfx not opened is no row of its own, and once its identity is read lfx is one row, \"lfx\", whether athenea answered the last read or not", () => {
+test("The product owner's shape in the list of workspaces: one row per workspace, by its name, whatever its machines; ~/Work/lfx not opened is no row of its own, and once its identity is read lfx is one row, \"lfx\", whether athenea answered the last read or not", () => {
   const labels = (state) => workspaceList(state, AT).lines.map((line) => line.label);
-  assert.deepEqual(labels(pepe()), ["acme-platform", "lfx-oats-workspace"], "athenea's lfx; this machine's ~/Work/lfx stays in the switcher");
-  const state = identityOf(pepe(), LFX_PATH, learnedOf(LFX));
+  assert.deepEqual(labels(productOwnerShape()), ["acme-platform", "lfx-oats-workspace"], "athenea's lfx; this machine's ~/Work/lfx stays in the switcher");
+  const state = identityOf(productOwnerShape(), LFX_PATH, learnedOf(LFX));
   assert.deepEqual(labels(state), ["acme-platform", "lfx"]);
   assert.deepEqual(workspaceList(state, AT).lines.map((line) => Object.keys(line).sort()), [["current", "key", "label", "waiting"], ["current", "key", "label", "waiting"]], "a row is its name: no state, no place");
   assert.deepEqual(labels(heard(state, { thrown: "the pipe closed" }, tick(1))), ["acme-platform", "lfx"], "athenea not reached: the same rows");
   // A workspace only ~/Work/lfx is of is not a row: it is this computer's deployment not opened.
-  const own = identityOf(pepe(), LFX_PATH, learnedOf({ ...LFX, key: "github.com/josep-reyero/elsewhere" }));
+  const own = identityOf(productOwnerShape(), LFX_PATH, learnedOf({ ...LFX, key: "github.com/example-org/elsewhere" }));
   assert.deepEqual(labels(own), ["acme-platform", "lfx-oats-workspace"]);
   assert.equal(switcher(own, AT).keys.length, 3, "the switcher offers it");
 });
 
 test("the list of workspaces' cursor follows its row's deployments when an identity read changes the rows: on athenea's lfx, it stays on lfx's row once ~/Work/lfx joins it, and Enter opens what was under the cursor", () => {
-  const focused = press(pepe(), ["w", "down"]).state;
+  const focused = press(productOwnerShape(), ["w", "down"]).state;
   const athenea = focused.workspaceCursor;
   assert.equal(listChoice(focused, athenea).label, "lfx-oats-workspace");
   assert.deepEqual(press(focused, ["enter"]).effects.at(-1) !== undefined, true);
@@ -1950,7 +1950,7 @@ test("the list of workspaces' cursor follows its row's deployments when an ident
 });
 
 test("a listed deployment whose identity read failed or timed out stays a row of its own, saying why; one whose identity attaches to no workspace says the shared reason; a stale row of the list is never matched", () => {
-  const base = pepe();
+  const base = productOwnerShape();
   const at = (state) => switcher(state, AT).items.filter((item) => item.path !== undefined).map((item) => [item.label, item.place]);
   assert.deepEqual(at(identityOf(base, LFX_PATH, { ok: false, reason: { code: "E_CLI_TIMEOUT", message: "The deployment observation exceeded its time limit." } })), [["lfx", "Timed out · ~/Work/lfx"]]);
   assert.deepEqual(at(identityOf(base, LFX_PATH, { ok: false, reason: { code: "E_NO_DEPLOYMENT", message: "no deployment here", origin: "kernel" } })), [["lfx", "Not read · ~/Work/lfx"]]);
@@ -1966,7 +1966,7 @@ test("a listed deployment whose identity read failed or timed out stays a row of
 });
 
 test("Enter on the lfx workspace opens ~/Work/lfx in this run and shows athenea (lfx) in the same view, before its first read: the identity read placed it; a folder that is no longer a deployment opens nothing", () => {
-  const state = identityOf(pepe(), LFX_PATH, learnedOf(LFX));
+  const state = identityOf(productOwnerShape(), LFX_PATH, learnedOf(LFX));
   const { state: asking, effects } = press(state, ["w", "w", "j", "enter"]);
   assert.deepEqual(effects.at(-1), { join: { paths: [LFX_PATH], opens: [LFX_PATH, ATHENEA_LFX] } });
   assert.equal(asking.ctxs.includes(LFX_PATH), false, "nothing is served before it is admitted");
@@ -1996,13 +1996,13 @@ test("Enter on the lfx workspace opens ~/Work/lfx in this run and shows athenea 
 });
 
 test("a failed identity read's reason is drawn at 80 columns: the reason comes before the path, so the path is what a narrow row cuts", () => {
-  const failedRead = identityOf(press(pepe(), ["w", "w"]).state, LFX_PATH, { ok: false, reason: { code: "E_CLI_TIMEOUT", message: "The deployment observation exceeded its time limit." } });
+  const failedRead = identityOf(press(productOwnerShape(), ["w", "w"]).state, LFX_PATH, { ok: false, reason: { code: "E_CLI_TIMEOUT", message: "The deployment observation exceeded its time limit." } });
   const row = draw(failedRead, { cols: 80, rows: 24 }).lines.find((line) => / lfx /.test(line) && !line.includes("· athenea"));
   assert.match(row, /lfx +Timed out/);
 });
 
 test("the switcher's selection follows the deployment it stood on: a listed row whose identity is learned is selected in its workspace's row, so Enter opens that workspace; when a later answer takes the workspace away the selection is back on the row", () => {
-  const before = press(pepe(), ["w", "w", "j", "j"]).state;
+  const before = press(productOwnerShape(), ["w", "w", "j", "j"]).state;
   const chosen = (state) => { const s = switcher(state, AT); return s.items.find((item) => item.key === s.selected); };
   assert.equal(chosen(before).path, LFX_PATH);
   const learned = identityOf(before, LFX_PATH, learnedOf(LFX));
@@ -2018,7 +2018,7 @@ test("the switcher's selection follows the deployment it stood on: a listed row 
 
 test("Enter on the workspace already open from another machine, once its deployment of this machine is learned, opens that one in the same workspace and keeps its tabs; opening another workspace still closes them", () => {
   // The lfx workspace open on athenea, an agent's terminal open there as a tab.
-  let state = press(pepe(), ["w", "w", "j", "enter"]).state;
+  let state = press(productOwnerShape(), ["w", "w", "j", "enter"]).state;
   assert.equal(state.open, ATHENEA_LFX);
   state = { ...state, cli: { ...state.cli, remote: ["roster", "session"] } };
   state = press(state, ["enter"]).state;
@@ -2041,7 +2041,7 @@ test("Enter on the workspace already open from another machine, once its deploym
 });
 
 test("a later identity answer replaces the one before it, and a deployment this run serves is never offered or read for: the switcher is drawn from what has come in so far", () => {
-  const base = pepe();
+  const base = productOwnerShape();
   const timedOut = identityOf(base, LFX_PATH, { ok: false, reason: { code: "E_CLI_TIMEOUT", message: "late" } });
   const read = identityOf(timedOut, LFX_PATH, learnedOf(LFX));
   assert.equal(read.identities.get(LFX_PATH).ok, true);

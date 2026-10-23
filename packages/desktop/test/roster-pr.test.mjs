@@ -83,7 +83,7 @@ test('the shipped roster row: the chip beside the name, the link in the row tool
     iconElement, prChip, prText, rosterPrs: { get: home => rows.get(home) ?? null }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, ctx: { openExternal: url => opened.push(url) },
     rosterTip: { bind(el, facts) { tips.set(el.dataset.treeInstance, facts); }, hide() {}, sync() {} }, rosterTipFacts,
     connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: c => c, isMac: true,
-    contextRosterEl: doc.querySelector('#instance-roster'), contextFilter: '', contextWorkspace: 'A', contextInstances: roster,
+    contextRosterEl: doc.querySelector('#instance-roster'), contextWorkspace: 'A', contextInstances: roster,
     rosterState: { hasData: true, state: 'ready' }, rosterStale: false, contextDeploymentNote: null, ...viewContext(), // the roster's loading state (instance-tree createRosterLoading): a read succeeded
     currentWorkspace: () => 'A', workspaceGeneration: () => 0, collapsedInstances: new Set(), tabs: new Map(), activeTab: null,
     tabOpenIntents: { applyFocus: fn => fn() }, openTerminalTab: assert.fail, openInstanceStart: assert.fail, onRosterRowKey: assert.fail,

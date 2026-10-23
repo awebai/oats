@@ -6,6 +6,9 @@ import {
 } from "../renderer/keybindings.mjs";
 import { createKeybindingsEditor, groupActions, shortcutMatches, CHORD_FAMILY_WORDS } from "../renderer/keybindings-editor.mjs";
 import { createChordFamily } from "../renderer/chord-family.mjs";
+import { NAV, NAV_TABS } from "../renderer/shell-nav.mjs";
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 
 // storage stub so overrides work in node
 const map = new Map();
@@ -338,13 +341,20 @@ test("a stored rebind that clashes with another binding is surfaced, never chang
   assert.equal(doc.querySelector(".kb-clashes").hidden, true);
 });
 
-test("shell wiring: the footer shortcuts button carries the clash marker, recomputed on keymap change", async () => {
+test("shell wiring: the settings cog and its Keyboard shortcuts… item carry the clash marker, recomputed on keymap change", async () => {
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
-  assert.match(src, /function markShortcutClashes\(\) \{[^]*?keymapConflicts\(isMac\)[^]*?classList\.toggle\("has-clash"[^]*?aria-description/);
+  const mark = src.match(/function markShortcutClashes\(\) \{[^]*?\n\}/)?.[0];
+  assert.ok(mark, "markShortcutClashes");
+  assert.match(mark, /keymapConflicts\(isMac\)/);
+  assert.match(mark, /settingsMenu\.items\.find\(el => el\.dataset\.menuAction === "app\.shortcuts"\)/, "the menu's Keyboard shortcuts… item");
+  assert.match(mark, /for \(const button of \[document\.getElementById\("sidebar-settings"\), item\]\) \{[^]*?classList\.toggle\("has-clash"[^]*?aria-description/,
+    "the cog and the item, both");
   assert.match(src, /onKeymapChange\(\(\) => \{[^]*?markShortcutClashes\(\)/);
   const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
-  assert.match(css, /#sidebar-shortcuts\.has-clash::after \{[^}]*background: var\(--warn\)/);
+  assert.match(css, /#sidebar-settings\.has-clash::after \{[^}]*background: var\(--warn\)/);
+  assert.match(css, /\.sidebar-settings-menu button\.has-clash > \.sidebar-settings-label::after \{[^}]*background: var\(--warn\)/);
+  assert.doesNotMatch(css, /#sidebar-shortcuts/, "the foot's shortcuts button is gone");
 });
 
 // ── Spec A, PR 2: search, keycaps and markers ──────────────────────────────────────────────
@@ -659,6 +669,20 @@ const LEADER_EXTRA = [
   ["sidebar.key.help", "Edit keyboard shortcuts", "sidebar"],
 ];
 
+// The stage rows above are labelled as the shell labels them: `View: <label>` of NAV and NAV_TABS, so
+// Automations, now a tab of the Workspace page (NAV_TABS), still reads "View: Automations" in the editor.
+test("the stage rows' labels are the shell's, Automations' from NAV_TABS", async () => {
+  const { readFileSync } = await import("node:fs");
+  const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  assert.match(shell, /\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(\{\n  id: `stage\.\$\{v\.name\}`, label: `View: \$\{v\.label\}`/);
+  for (const [id, label] of LEADER_EXTRA.filter(([id]) => id.startsWith("stage."))) {
+    const entry = [...NAV, ...NAV_TABS].find((v) => `stage.${v.name}` === id);
+    assert.ok(entry, `${id} is a shell destination`);
+    assert.equal(label, `View: ${entry.label}`, id);
+  }
+  assert.ok(NAV_TABS.some((v) => v.name === "automations"));
+});
+
 // The group moves as the shell registers them (shell.mjs), so the leader's Tab and Shift+Tab rows
 // carry their labels.
 const GROUP_MOVES = [
@@ -884,4 +908,27 @@ test("chord family: a stored override on one of the seven keys shows its clash w
   const row = f.doc.querySelector('.kb-chord[data-action-id="sidebar.toggle"]').closest(".kb-row");
   assert.match(row.querySelector(".kb-conflict").textContent, /Also bound to “Command palette”/);
   assert.equal(getBinding("sidebar.toggle", false), "Ctrl+Shift+K", "the stored rebind is kept");
+});
+
+// Settings: Connections (#1497) left the sidebar's settings menu (2026-10-23): it stays findable from the shortcuts
+// list, where the shell's registry entry (app.connections) is listed under Global with its label, and found by search.
+test("Settings: Connections is in the shortcuts list (Global, by its label) and its search, from the shell's own registry entry", (t) => {
+  const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  const line = shell.match(/^registerAction\(\{ id: "app\.connections",[^\n]*\}\);$/m)?.[0];
+  assert.ok(line, "the shipped registration");
+  let opened = 0;
+  const f = setupLinux(t);
+  const off = runInNewContext(line, { registerAction, openConnections: () => { opened++; } });
+  t.after(off);
+  assert.equal(groupActions().find((g) => g.context === "global")?.actions.some((a) => a.id === "app.connections" && a.label === "Settings: Connections"), true);
+  f.editor.open();
+  const row = f.rowFor("Settings: Connections");
+  assert.ok(row, "listed");
+  assert.equal(row.closest(".kb-group").dataset.label, "Global");
+  assert.equal(row.querySelector(".kb-chord").textContent, "unbound", "no default key, rebindable like every row");
+  for (const q of ["connections", "Settings: Conn", "settings"]) {
+    f.type(q);
+    assert.ok(f.shown().includes("Settings: Connections"), `"${q}" finds it`);
+  }
+  assert.equal(opened, 0, "listing it runs nothing");
 });

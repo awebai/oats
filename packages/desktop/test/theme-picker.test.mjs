@@ -222,8 +222,9 @@ test('no saved theme and the "host" fallback: This computer is marked current, a
 // With the keymap engine and the shell's one window keydown listener present (Linux chords).
 function withEngine(t, f) {
   const offs = [
-    // The shell's sidebar.focusFilter (Ctrl+Alt+F) focuses the roster filter behind the modal.
-    registerAction({ id: 'sidebar.focusFilter', label: 'Filter', context: 'global', run: () => f.doc.getElementById('field').focus() }),
+    // The shell's sidebar.focusFilter (Alt+F, "Focus the instance roster") moves focus behind the modal: here to a
+    // control outside the picker.
+    registerAction({ id: 'sidebar.focusFilter', label: 'Focus the instance roster', context: 'global', run: () => f.doc.getElementById('field').focus() }),
     registerAction({ id: 'app.themePicker', label: 'Choose a theme…', context: 'global', run: e => { if (!e?.repeat) f.picker.toggle(); } }),
   ];
   const listener = event => handleKeydown(event, { isMac: false });
