@@ -418,9 +418,19 @@ test("oats instance suggest-name (#1490 §2): the preview's name for a soul that
   assert.deepEqual([pi.naming.harness, pi.naming.model], ["pi", "acme/pi-model"]);
   assert.deepEqual(fake.read().argv, NAMING_CALLS.pi.argv("acme/pi-model"));
   assert.equal(okResult(suggest(["--soul", "dev", "--task", "x", "--harness", "pi", "--launch-config", "fakepi", "--model", "acme/other"]), "pi model").naming.model, "acme/other");
-  // The model is read as a spawn reads it: a preference list resolved for the harness, @native-default for none.
-  assert.equal(okResult(suggest(["--soul", "dev", "--task", "x", "--launch-config", "fakepi", "--model", "first-model,second-model"]), "pi list").naming.model, "first-model");
-  assert.deepEqual(fake.read().argv, NAMING_CALLS.pi.argv("first-model"));
+  // The model: @native-default is none, and a preference list names its first entry with no catalogue
+  // probe: the naming call is the only process started (a `pi` on PATH that a probe would run, and hang
+  // on, is never run).
+  const trap = join(fake.dir, "trap");
+  mkdirSync(trap);
+  writeFileSync(join(trap, "pi"), `#!/bin/sh\necho ran > ${JSON.stringify(join(fake.dir, "trap-ran"))}\nsleep 30\n`);
+  chmodSync(join(trap, "pi"), 0o755);
+  const trapped = { ...env, PATH: `${trap}:${fx.env.PATH}` };
+  for (const [list, first] of [["first-model,second-model", "first-model"], ["acme/first,acme/second", "acme/first"], ["acme/first:high, acme/second", "acme/first:high"]]) {
+    const listed = okResult(suggest(["--soul", "dev", "--task", "x", "--launch-config", "fakepi", "--model", list], trapped), list);
+    assert.deepEqual([listed.naming.source, listed.naming.model, fake.read().argv], ["suggested", first, NAMING_CALLS.pi.argv(first)], list);
+  }
+  assert.equal(existsSync(join(fake.dir, "trap-ran")), false, "no catalogue probe ran");
   const native = okResult(suggest(["--soul", "dev", "--task", "x", "--launch-config", "fakepi", "--model", "@native-default"]), "pi native");
   assert.deepEqual([native.naming.model, fake.read().argv], [null, NAMING_CALLS.pi.argv(null)]);
 
