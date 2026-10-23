@@ -33,7 +33,7 @@ export const automationsCSS = `
 .auto-header.auto-framed > .auto-spacer { margin-left:-10px; }
 .auto-heading { display:flex; align-items:stretch; gap:22px; min-width:0; }
 .auto-tabs { display:flex; flex-wrap:nowrap; overflow-x:auto; gap:22px; min-width:0; scrollbar-width:none; }
-.oats-view .auto-tabs button { flex:none; display:inline-flex; align-items:center; gap:6px; height:auto; min-height:0; padding:0; border:0; border-radius:0; background:none; color:var(--nav-fg); font:500 13px var(--sans,system-ui); cursor:pointer; }
+.oats-view .auto-tabs button { flex:none; display:inline-flex; align-items:center; gap:6px; height:auto; min-height:0; padding:0; border:0; border-radius:0; background:none; color:var(--nav-fg); font:500 13px var(--ui-font,system-ui); cursor:pointer; }
 .oats-view .auto-tabs button:hover { color:var(--fg); }
 .oats-view .auto-tabs button[aria-selected=true] { color:var(--fg); font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
 .oats-view .auto-tabs button:focus-visible { background:var(--sel); border-radius:6px; padding:0 6px; margin:0 -6px; } /* layout-neutral inset */
@@ -53,7 +53,7 @@ export const automationsCSS = `
 .auto-banner .shell-icon { flex:none; color:var(--warn); }
 .auto-toolbar { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:8px 10px; margin:0 0 14px; min-width:0; }
 .auto-seg { display:inline-flex; height:28px; border:1px solid var(--border); border-radius:7px; overflow:hidden; background:var(--surface); }
-.oats-view .auto-seg button { display:inline-flex; align-items:center; gap:6px; height:100%; min-height:0; padding:0 10px; border:0; border-radius:0; background:transparent; color:var(--muted); font:12px var(--sans,system-ui); }
+.oats-view .auto-seg button { display:inline-flex; align-items:center; gap:6px; height:100%; min-height:0; padding:0 10px; border:0; border-radius:0; background:transparent; color:var(--muted); font:12px var(--ui-font,system-ui); }
 .oats-view .auto-seg button + button { border-left:1px solid var(--border); }
 .oats-view .auto-seg button[aria-pressed=true] { background:var(--surface-2); color:var(--fg); font-weight:650; }
 .auto-seg-count { font:10.5px var(--mono,monospace); }

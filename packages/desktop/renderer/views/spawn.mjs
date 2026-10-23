@@ -124,7 +124,7 @@ ${groupHeadingCSS}
 .soul-tile > .soul-card { grid-area:1/1; }
 .soul-tile.can-spawn > .soul-card .sfoot { padding-right:100px; }
 .oats-view .souls .soul-tile > button.soul-spawn { grid-area:1/1; align-self:end; justify-self:end; display:inline-flex; align-items:center; gap:4px; box-sizing:border-box; height:24px; min-height:24px; margin:0 14px 13px 0; padding:0 9px;
-  border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:600 12px var(--sans,system-ui); }
+  border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:600 12px var(--ui-font,system-ui); }
 .oats-view .souls .soul-tile > button.soul-spawn:hover:not(:disabled) { background:var(--surface-2); }
 .oats-view .souls .soul-tile > button.soul-spawn:disabled { color:var(--muted); }
 .oats-view .souls button.spawn-act:not(:disabled), .oats-view .souls button.fspawn:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }

@@ -17,6 +17,10 @@
   font-weight: 200 900; font-stretch: 50% 200%; font-style: normal; font-display: block;
 }
 :root { --mono: "Inconsolata", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+/* --ui-font, the UI's face, is set only by the font choice (theme.mjs fontStacks: Omarchy's font, the
+   default), inline on the root with --mono and, on Linux and Windows, --term-font-family. Every UI
+   font rule reads it as var(--ui-font, <its own stack>), so System font, which sets none of them, is
+   each rule's own stack exactly as before. */
 
 :root, [data-theme="dark"] {
   color-scheme: dark;     /* native lists, scrollbars and pickers follow the theme */
@@ -222,7 +226,7 @@ input:is([type="checkbox"], [type="radio"]):focus-visible { outline-offset: 1px;
 
 /* ── shared primitives ── */
 .oats-view { display: flex; min-height: 0; height: 100%; background: var(--bg); color: var(--fg);
-            font: 13px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
+            font: 13px/1.45 var(--ui-font, -apple-system, "Segoe UI", system-ui, sans-serif);
             -webkit-font-smoothing: antialiased; }
 .oats-view * { box-sizing: border-box; }
 .oats-view .chip { background: var(--chip-bg); color: var(--chip-fg); border-radius: 999px; font-size: 10.5px;

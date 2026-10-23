@@ -75,11 +75,11 @@ export const spawnDialogCSS = `
 .spawn-dialog[data-layout=scoped] .spawn-head-copy { flex-direction:column; align-items:stretch; gap:1px; }
 .spawn-modal .spawn-dialog[data-layout=scoped] .spawn-dialog-head h2 { font-size:16px; }
 /* A link, not a button: the soul is the dialog's subject, changing it is a side path. */
-.spawn-change-soul { flex:none; border:0; background:none; padding:0; font:600 12px var(--sans,system-ui); color:var(--accent); cursor:pointer; }
+.spawn-change-soul { flex:none; border:0; background:none; padding:0; font:600 12px var(--ui-font,system-ui); color:var(--accent); cursor:pointer; }
 .spawn-change-soul:hover { text-decoration:underline; text-underline-offset:2px; }
 /* Add a machine under the Deployment field (two or more deployments): a side path, a link. */
 .spawn-add-machine { gap:4px; }
-.spawn-add-machine-button { align-self:flex-start; border:0; background:none; padding:0; font:600 12px var(--sans,system-ui); color:var(--accent); cursor:pointer; }
+.spawn-add-machine-button { align-self:flex-start; border:0; background:none; padding:0; font:600 12px var(--ui-font,system-ui); color:var(--accent); cursor:pointer; }
 .spawn-add-machine-button:hover { text-decoration:underline; text-underline-offset:2px; }
 .spawn-add-machine-button:focus-visible { outline:none; background:var(--sel); border-radius:4px; }
 .spawn-add-machine-note:empty { display:none; }
@@ -206,10 +206,10 @@ export const spawnDialogCSS = `
 .spawn-run .spawn-choice-trigger .runtime-badge, .spawn-choice-menu .runtime-badge { flex:none; width:20px; height:20px; border-radius:5px; display:grid; place-items:center; font-size:9.5px; font-weight:700; }
 .spawn-choice-menu button.has-mark { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .spawn-choice-menu button.has-mark small { flex-basis:100%; margin-left:30px; margin-top:-2px; }
-.spawn-trigger-tag, .spawn-input-tag { flex:none; padding:1px 7px; border-radius:999px; background:var(--chip-bg); color:var(--muted); font:600 10.5px var(--sans,system-ui); }
+.spawn-trigger-tag, .spawn-input-tag { flex:none; padding:1px 7px; border-radius:999px; background:var(--chip-bg); color:var(--muted); font:600 10.5px var(--ui-font,system-ui); }
 .spawn-trigger-tag { margin-left:2px; }
 .spawn-input-tag:empty { display:none; }
-.spawn-model-default { position:absolute; left:11px; right:80px; top:50%; transform:translateY(-50%); pointer-events:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 12.5px var(--sans,system-ui); color:var(--fg); }
+.spawn-model-default { position:absolute; left:11px; right:80px; top:50%; transform:translateY(-50%); pointer-events:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 12.5px var(--ui-font,system-ui); color:var(--fg); }
 .spawn-model-default:empty, .spawn-model-field input.field:not(:placeholder-shown) ~ .spawn-model-default { display:none; }
 .spawn-model-controls { display:flex; gap:4px; min-width:0; }
 .spawn-model-field { position:relative; flex:1; min-width:0; display:flex; }
@@ -298,7 +298,7 @@ ${launchDifferedCSS}
 .spawn-footer .fspawn::after { content:attr(data-chord); margin-left:8px; font:10.5px var(--mono,monospace); }
 .oats-view .spawn-footer button.fspawn:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
 .spawn-choice-popover { position:relative; min-width:0; }
-.spawn-choice-trigger { width:100%; min-height:36px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12.5px var(--sans,system-ui); text-align:left; padding:0 10px; display:flex; align-items:center; gap:8px; cursor:pointer; }
+.spawn-choice-trigger { width:100%; min-height:36px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12.5px var(--ui-font,system-ui); text-align:left; padding:0 10px; display:flex; align-items:center; gap:8px; cursor:pointer; }
 .spawn-choice-trigger::after { content:''; flex:none; width:6px; height:6px; margin:-3px 3px 0 auto; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(45deg); color:var(--muted); }
 .spawn-choice-menu { position:absolute; left:0; top:calc(100% + 4px); width:min(300px,calc(100vw - 60px)); max-height:260px; overflow:auto; z-index:2; border:1px solid var(--border); border-radius:9px; padding:6px; box-shadow:var(--shadow-popover); background:var(--surface); }
 .spawn-dialog .spawn-popup-search input.field { min-height:30px; height:30px; padding:0 8px; font-size:12px; }
@@ -306,7 +306,7 @@ ${launchDifferedCSS}
 .spawn-popup-group { padding:6px 8px 3px; font-size:10px; font-weight:650; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
 .spawn-popup-status { padding:6px 8px; margin:0; color:var(--muted); font-size:11.5px; }
 .spawn-popup-status:empty { display:none; }
-.spawn-choice-menu button { width:100%; min-height:36px; border:0; border-radius:6px; background:var(--surface); color:var(--fg); text-align:left; padding:8px 9px; font:12.5px var(--sans,system-ui); cursor:pointer; }
+.spawn-choice-menu button { width:100%; min-height:36px; border:0; border-radius:6px; background:var(--surface); color:var(--fg); text-align:left; padding:8px 9px; font:12.5px var(--ui-font,system-ui); cursor:pointer; }
 .spawn-choice-menu button[aria-selected=true] { background:var(--sel); }
 .spawn-choice-menu button:disabled { color:var(--muted); cursor:default; }
 .spawn-choice-menu small { display:block; font-size:10.5px; color:var(--muted); }

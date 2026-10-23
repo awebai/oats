@@ -75,8 +75,8 @@ export const setupCSS = `
 .setup-clone { display:flex; align-items:baseline; gap:10px; min-width:0; }
 .setup-clone dt { flex:0 1 auto; min-width:90px; max-width:45%; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
 .setup-clone dd { flex:1 1 0; margin:0; min-width:0; color:var(--fg); font:14px var(--mono,monospace); overflow-wrap:anywhere; }
-.setup-clone dd.warn { color:var(--warn); font:13px var(--sans,system-ui); line-height:1.45; }
-.setup-clone dd.muted { color:var(--muted); font:13px var(--sans,system-ui); }
+.setup-clone dd.warn { color:var(--warn); font:13px var(--ui-font,system-ui); line-height:1.45; }
+.setup-clone dd.muted { color:var(--muted); font:13px var(--ui-font,system-ui); }
 /* A box: its title and a muted lead, then rows. Its own width lays out its rows (setup-rows). */
 .setup-box { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; min-width:0; container:setup-rows / inline-size; }
 .setup-box-head { display:flex; align-items:baseline; flex-wrap:wrap; gap:2px 10px; padding:16px 20px 10px; box-sizing:border-box; min-width:0; }
@@ -96,7 +96,7 @@ export const setupCSS = `
 .setup-name-text { min-width:0; color:var(--fg); font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .setup-version { flex:none; color:var(--muted); font:13px var(--mono,monospace); }
 /* The host's tag (Host · its file, accent tint): the name gives way, never the tag. */
-.setup-badge { display:inline-flex; align-items:center; gap:4px; flex:none; height:20px; padding:0 7px; box-sizing:border-box; border-radius:5px; font:600 11.5px var(--sans,system-ui); white-space:nowrap; }
+.setup-badge { display:inline-flex; align-items:center; gap:4px; flex:none; height:20px; padding:0 7px; box-sizing:border-box; border-radius:5px; font:600 11.5px var(--ui-font,system-ui); white-space:nowrap; }
 .setup-badge.host { background:var(--sel); color:var(--accent); }
 .setup-badge .mono { font-family:var(--mono,monospace); font-size:12.5px; font-weight:500; }
 /* A member's state: confirmed is a check and a muted word; anything else a warn chip. */
@@ -108,7 +108,7 @@ export const setupCSS = `
 .setup-end { justify-self:end; color:var(--muted); font-size:12px; white-space:nowrap; }
 .setup-end.newer { color:var(--fg); font-size:13px; font-weight:650; }
 .setup-end.warn { color:var(--warn); font-size:13px; font-weight:650; }
-.oats-view .setup button.setup-link-act { justify-self:end; height:auto; min-height:0; padding:2px 0; border:0; background:transparent; color:var(--accent); font:600 12px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
+.oats-view .setup button.setup-link-act { justify-self:end; height:auto; min-height:0; padding:2px 0; border:0; background:transparent; color:var(--accent); font:600 12px var(--ui-font,system-ui); white-space:nowrap; cursor:pointer; }
 .oats-view .setup button.setup-link-act:hover { text-decoration:underline; }
 .oats-view .setup button.setup-link-act:focus-visible { background:var(--sel); border-radius:4px; padding:2px 4px; margin:0 -4px; } /* layout-neutral inset */
 /* Narrow (the box under 860px): two lines per row. Line one the name, with the state (Members) or the
@@ -137,7 +137,7 @@ export const setupCSS = `
 .setup-def dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:4px 16px; color:var(--fg); font-size:13px; }
 .setup-def dd.muted { color:var(--muted); }
 .setup-def-cap { display:inline-flex; align-items:baseline; gap:5px; min-width:0; overflow-wrap:anywhere; }
-.setup-def-name { font:600 13.5px var(--sans,system-ui); color:var(--fg); }
+.setup-def-name { font:600 13.5px var(--ui-font,system-ui); color:var(--fg); }
 .setup-def-from { color:var(--muted); font-size:12px; }
 .setup-def-cap.off .setup-def-name { color:var(--muted); text-decoration:line-through; }
 .setup-team-adds { display:flex; flex-wrap:wrap; gap:2px 12px; color:var(--muted); font-size:11.5px; line-height:1.45; }

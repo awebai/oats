@@ -23,12 +23,12 @@ export const LEAD_INS = Object.freeze({
 
 export const sourceQuoteCSS = `
 .source-quote { display:flex; flex-direction:column; gap:4px; min-width:0; margin:0; }
-.source-quote-lead { margin:0; color:var(--muted); font:11.5px var(--sans,system-ui); }
+.source-quote-lead { margin:0; color:var(--muted); font:11.5px var(--ui-font,system-ui); }
 .source-quote-lines { display:flex; flex-direction:column; gap:4px; margin:0; padding:0; list-style:none; min-width:0; }
 .source-quote-line { display:flex; flex-direction:column; gap:2px; min-width:0; }
 .source-quote-text { margin:0; padding:1px 0 1px 8px; border-left:2px solid var(--border); color:var(--fg); font:12px/1.5 var(--mono,monospace); white-space:normal; overflow-wrap:anywhere; }
 .source-quote-label { color:var(--fg); font:600 12px/1.45 var(--mono,monospace); overflow-wrap:anywhere; }
-.source-quote-note { color:var(--muted); font:11.5px/1.45 var(--sans,system-ui); overflow-wrap:anywhere; }
+.source-quote-note { color:var(--muted); font:11.5px/1.45 var(--ui-font,system-ui); overflow-wrap:anywhere; }
 `;
 
 const serials = new WeakMap();

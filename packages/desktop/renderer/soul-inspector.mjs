@@ -125,7 +125,7 @@ ${soulTeamsHereCSS}
 .soul-team-name { display:flex; align-items:center; gap:8px; color:var(--fg); font-size:13px; font-weight:650; }
 .soul-team-name .page-tag { height:18px; padding:0 6px; border-radius:4px; font-size:10.5px; }
 .soul-team-note { color:var(--muted); font-size:12px; }
-.knowledge-role { margin-left:auto; flex:none; color:var(--muted); font:600 11px var(--sans,system-ui); }
+.knowledge-role { margin-left:auto; flex:none; color:var(--muted); font:600 11px var(--ui-font,system-ui); }
 .knowledge-role.owns { color:var(--accent); }
 .oats-view .soul-page button.inspector-instance { display:flex; align-items:center; gap:8px; width:100%; min-height:28px; height:auto; margin:0; padding:0 4px; box-sizing:border-box; border:0; border-radius:6px; background:var(--surface); color:var(--fg); text-align:left; font:inherit; font-size:12.5px; font-weight:500; white-space:nowrap; }
 .oats-view .soul-page button.inspector-instance:hover:not(:disabled) { background:var(--surface-2); color:var(--fg); }
@@ -180,7 +180,7 @@ ${soulTeamsHereCSS}
 .inspector-card .inspector-facts { font-size:12px; margin:0; }
 .inspector-core dd { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; min-width:0; }
 .inspector-core-id { font-family:var(--mono,monospace); overflow-wrap:anywhere; min-width:0; }
-.inspector-core-id.none { color:var(--muted); font-family:var(--sans,system-ui); }
+.inspector-core-id.none { color:var(--muted); font-family:var(--ui-font,system-ui); }
 .inspector-core-note { flex-basis:100%; color:var(--muted); font-size:11px; line-height:1.4; }
 .inspector-list { border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:hidden; }
 .inspector-item { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:4px; align-items:center; padding:9px 12px; }

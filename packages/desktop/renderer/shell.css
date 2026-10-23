@@ -11,7 +11,7 @@ body { position: relative; overflow: clip; }
 body {
   background: var(--bg);
   color: var(--fg);
-  font: 13px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
+  font: 13px/1.45 var(--ui-font, -apple-system, "Segoe UI", system-ui, sans-serif); /* the font choice: theme.css */
 }
 /* The sidebar's width (sidebar-width.mjs): one custom property, set inline by its handle within 240px and
    min(480px, 45% of the window); 288px until it is moved. */

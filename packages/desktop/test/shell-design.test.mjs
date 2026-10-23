@@ -70,6 +70,7 @@ function shell(t, shellSource = source, { storage = {}, gitPanel } = {}) {
     shortcutsEditor: { close() {}, open: () => events.push(["shortcuts"]) },
     THEMES, setTheme: id => events.push(["theme", id]),
     toggleTheme: () => events.push(["theme"]), themePicker: { toggle: () => events.push(["themePicker"]) },
+    fontPicker: { toggle: () => events.push(["fontPicker"]) },
     splitPane: orientation => events.push(["split", orientation]), closeSplit: () => events.push(["split", "close"]),
     sidebarWidth: { reset: () => events.push(["sidebarWidth", "reset"]) },
     fileOpener: { choose() {}, dispose() {} },
@@ -253,7 +254,7 @@ test("static SVG inventory stays 16px, hidden to AT and rejects arbitrary markup
   }
 });
 
-test("the foot is one bar: the OATS mark, Spawn instance (Quick Open), the sidebar toggle and the settings cog (theme, shortcuts); all dispatch the real registry", async t => {
+test("the foot is one bar: the OATS mark, Spawn instance (Quick Open), the sidebar toggle and the settings cog (theme, font, shortcuts); all dispatch the real registry", async t => {
   const s = shell(t), q = id => s.document.getElementById(id);
   // The tools row is gone again (the product owner, 2026-10-26): no theme, shortcuts, leader or palette button
   // anywhere. The shortcuts editor (the cog's Keyboard shortcuts…, Mod+, and the palette) lists the leader's commands;
@@ -301,13 +302,14 @@ test("the foot is one bar: the OATS mark, Spawn instance (Quick Open), the sideb
   assert.equal(cog.dataset.action, undefined, "the cog runs no action of its own: it opens its menu");
   assert.equal(cog.getAttribute("aria-haspopup"), "menu"); assert.equal(cog.getAttribute("aria-controls"), "sidebar-settings-menu");
   assert.deepEqual(s.settingsMenu.items.map(b => [b.dataset.menuAction, b.querySelector(".sidebar-settings-label").textContent]),
-    [["app.themePicker", "Theme…"], ["app.shortcuts", "Keyboard shortcuts…"]], "no Connections, no Hide sidebar");
+    [["app.themePicker", "Theme…"], ["app.fontPicker", "Font…"], ["app.shortcuts", "Keyboard shortcuts…"]], "no Connections, no Hide sidebar");
   // Each item shows its effective chord.
-  assert.deepEqual(s.settingsMenu.items.map(b => { const k = b.querySelector("kbd"); return k.hidden ? null : k.textContent; }), ["Ctrl+Shift+Space", "Ctrl+,"]);
+  assert.deepEqual(s.settingsMenu.items.map(b => { const k = b.querySelector("kbd"); return k.hidden ? null : k.textContent; }), ["Ctrl+Shift+Space", null, "Ctrl+,"],
+    "Font… has no default chord");
   for (const item of s.settingsMenu.items) item.click();
-  assert.deepEqual(s.events, [["themePicker"], ["shortcuts"]], "each item runs its action, once");
-  cog.click(); assert.deepEqual(s.events, [["themePicker"], ["shortcuts"]], "the cog itself runs nothing");
-  // Spawn instance (the product owner, 2026-10-26): the bar's small primary button, its words and the plus, no visible
+  assert.deepEqual(s.events, [["themePicker"], ["fontPicker"], ["shortcuts"]], "each item runs its action, once");
+  cog.click(); assert.deepEqual(s.events, [["themePicker"], ["fontPicker"], ["shortcuts"]], "the cog itself runs nothing");
+  // Spawn instance (the product owner, 2026-10-26): the bar's words alone, no visible
   // hint; it runs Quick Open (app.quickOpenSouls: pick a soul by name), the chord appended to its title.
   const spawn = q("sidebar-spawn");
   assert.equal(spawn.type, "button"); assert.equal(spawn.hidden, false); assert.equal(spawn.disabled, false); assert.ok(spawn.tabIndex >= 0);
@@ -572,6 +574,37 @@ test('White, Solarized, Dark and This computer have explicit registry/palette ch
   assert.equal(handleKeydown(chord(true), { isMac: false, insideTerminal: false }), true, 'a repeat is still claimed');
   assert.deepEqual(s.events.slice(before), [['themePicker']]);
   assert.equal(commands.some(item => /light\/dark/i.test(item.label)), false);
+});
+
+test('Font: choose… opens the font picker from the palette, the shortcuts editor\'s Global group and a chord given there (app.fontPicker, no default)', t => {
+  const s = shell(t);
+  t.after(() => resetBinding('app.fontPicker'));
+  const action = listActions().find(each => each.id === 'app.fontPicker');
+  assert.equal(action?.label, 'Font: choose…');
+  assert.equal(action.context, 'global', "in the theme rows' group of the shortcuts editor");
+  assert.equal(listActions().find(each => each.id === 'app.themePicker')?.context, action.context);
+  const start = source.indexOf('// ── command palette');
+  const end = source.indexOf('// ── Quick Open', start);
+  const commands = runInNewContext(`${source.slice(start, end)}\npalette.commands`, {
+    ...s.c, navigator: { platform: 'Linux' }, createPalette: options => options,
+  });
+  const choose = commands.filter(item => item.label === 'Font: choose…');
+  assert.equal(choose.length, 1, 'one palette entry opens the picker');
+  assert.equal(choose[0].detail(), '', 'no default chord, so no hint');
+  assert.equal(commands.indexOf(choose[0]), commands.findLastIndex(item => /^Theme: /.test(item.label)) + 1, 'right after the theme commands');
+  setBinding('app.fontPicker', 'Ctrl+Alt+F12');
+  assert.equal(choose[0].detail(), 'Ctrl+Alt+F12', 'a rebind follows');
+  choose[0].run(); assert.deepEqual(s.events.at(-1), ['fontPicker']);
+  // A chord given in the shortcuts editor toggles the picker once; a held chord (key repeat) does nothing.
+  const before = s.events.length;
+  const chord = (repeat) => ({ key: 'F12', code: 'F12', ctrlKey: true, altKey: true, shiftKey: false, metaKey: false, repeat, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } });
+  assert.equal(handleKeydown(chord(false), { isMac: false, insideTerminal: false }), true);
+  assert.equal(handleKeydown(chord(true), { isMac: false, insideTerminal: false }), true, 'a repeat is still claimed');
+  assert.deepEqual(s.events.slice(before), [['fontPicker']]);
+  resetBinding('app.fontPicker');
+  const space = { key: ' ', code: 'Space', ctrlKey: true, altKey: true, shiftKey: true, metaKey: false, repeat: false, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+  assert.equal(handleKeydown(space, { isMac: false, insideTerminal: false }), false, 'the chord it once had is nobody\'s');
+  assert.deepEqual(s.events.slice(before), [['fontPicker']]);
 });
 
 test('shell icons are the pinned Lucide set: 24-unit geometry, stroke 2, decorative, brand excluded', t => {

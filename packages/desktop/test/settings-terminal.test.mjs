@@ -154,7 +154,7 @@ test("Settings mounts Terminal after Connections, traps Tab through its field, a
   const html = read("index.html");
   // The sidebar layout (2026-10-23): Connections lives in the palette (Settings: Connections…) and the registry
   // (app.connections), both opening this dialog. The sidebar has no button for it, and the settings cog's menu
-  // (Theme…, Keyboard shortcuts…) leaves it out.
+  // (Theme…, Font…, Keyboard shortcuts…) leaves it out.
   assert.doesNotMatch(html, /data-action="app\.connections"/);
   assert.match(html, /<button id="sidebar-settings" class="side-icon-button sidebar-settings icon-button" type="button" aria-label="Settings" title="Settings"><\/button>/,
     "the cog carries no action of its own: its menu does");

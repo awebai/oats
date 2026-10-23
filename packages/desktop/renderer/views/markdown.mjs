@@ -199,7 +199,7 @@ export function renderCodeHtml(text, fileName) {
 
 export const MARKDOWN_CSS = `
 .mdv-scroll { height: 100%; overflow-y: auto; background: var(--bg); color: var(--fg); }
-.mdv { max-width: 860px; margin: 0 auto; padding: 28px 36px 72px; font: 15px/1.7 -apple-system, "Segoe UI", sans-serif; }
+.mdv { max-width: 860px; margin: 0 auto; padding: 28px 36px 72px; font: 15px/1.7 var(--ui-font, -apple-system, "Segoe UI", sans-serif); }
 .mdv h1 { font-size: 1.7em; margin: 1.2em 0 .6em; }
 .mdv h2 { font-size: 1.35em; margin: 1.4em 0 .5em; }
 .mdv h3 { font-size: 1.12em; margin: 1.3em 0 .4em; }
@@ -213,7 +213,7 @@ export const MARKDOWN_CSS = `
                    background: var(--md-code-bg); border: 1px solid var(--md-rule); }
 .mdv pre.md-code .md-copy { position: absolute; top: 6px; right: 6px; border: 1px solid var(--border);
                             background: var(--surface); color: var(--muted); border-radius: 6px;
-                            font: 11px -apple-system, sans-serif; padding: 3px 9px; cursor: pointer; }
+                            font: 11px var(--ui-font, -apple-system, sans-serif); padding: 3px 9px; cursor: pointer; }
 .mdv pre.md-code .md-copy:hover { color: var(--fg); border-color: var(--accent); }
 .mdv code { font: 13px/1.55 "SF Mono", ui-monospace, Menlo, monospace; }
 /* Shared by fenced Markdown and read-only code files. Semantic foregrounds
@@ -248,7 +248,7 @@ export const MARKDOWN_CSS = `
 .mdv .mdv-meta .crumb { word-break: break-all; }
 .mdv .mdv-error { color: var(--danger); }
 .mdv .mdv-loading { display: flex; align-items: center; gap: 10px; color: var(--muted);
-                    font: 13px -apple-system, sans-serif; padding: 48px 0; justify-content: center; }
+                    font: 13px var(--ui-font, -apple-system, sans-serif); padding: 48px 0; justify-content: center; }
 @keyframes mdv-spin { to { transform: rotate(360deg); } }
 .mdv .mdv-spinner { width: 14px; height: 14px; border: 2px solid var(--md-rule);
                     border-top-color: var(--accent); border-radius: 50%;

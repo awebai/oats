@@ -194,6 +194,117 @@ export function onTerminalTypographyChange(fn) {
   return () => terminalListeners.delete(fn);
 }
 
+/* The font (the product owner's call, 2026-10-23): "Omarchy's font", the default, or "System font",
+   the faces Desktop had before. Omarchy's font is fontconfig's `monospace` alias (`omarchy font
+   current` is `fc-match monospace`), which Chromium on Linux resolves the CSS generic `monospace`
+   through, so the stack follows `omarchy font set` with nothing read from the host. Omarchy's font
+   sets this platform's stacks inline on the root (fontStacks); System font sets none, so --mono and
+   --term-font-family are theme.css's and --ui-font is unset, which every UI font rule reads as
+   var(--ui-font, <its own stack>). The choice is per computer, stored like the theme; the shell
+   passes the platform, because this module imports nothing and reads no platform. */
+const FONT_KEY = "oats.desktop.font";
+export const FONTS = Object.freeze([
+  Object.freeze({ id: "omarchy", label: "Omarchy's font" }),
+  Object.freeze({ id: "system", label: "System font" }),
+]);
+/** Where no font was ever chosen, on every platform. */
+export const DEFAULT_FONT = "omarchy";
+const validFont = id => FONTS.some(font => font.id === id);
+// Never the bare `monospace`: alone, it changes the default font size (the generic's quirk).
+const FONTCONFIG_MONO = "ui-monospace, monospace";
+// macOS has no fontconfig alias to follow: Omarchy's default face by name, then the system's monospace.
+const MAC_OMARCHY_UI = `"JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace`;
+
+/** The custom properties a font choice sets on the root, on macOS (`isMac`) or elsewhere: none for
+ * System font (theme.css's tokens apply). Omarchy's font is the UI and the terminals in fontconfig's
+ * monospace on Linux and Windows (on Windows Chromium's `monospace` is its own default, Consolas), and
+ * only the UI on macOS, where the terminals keep Inconsolata. --mono (the UI's code, paths and chord
+ * hints) follows the UI, so the UI is one face. */
+export function fontStacks(font, isMac) {
+  if (font !== "omarchy") return Object.freeze({});
+  if (isMac) return Object.freeze({ "--ui-font": MAC_OMARCHY_UI, "--mono": MAC_OMARCHY_UI });
+  return Object.freeze({ "--ui-font": FONTCONFIG_MONO, "--mono": FONTCONFIG_MONO, "--term-font-family": FONTCONFIG_MONO });
+}
+
+/** The Omarchy row's note when this computer's monospace font does not draw at a fixed width (fontDraws). */
+export const FONT_FALLBACK_NOTE = "No monospace font on this computer: showing System font";
+
+/** The picker's rows for this platform: on macOS Omarchy's font is named by its face, since what it
+ * shows there is JetBrains Mono, not a font Omarchy chose. `fallback` (fontFallsBack) says Omarchy's
+ * font is showing System font's faces. */
+export function fontChoices(isMac, fallback = false) {
+  return FONTS.map(({ id, label }) => id !== "omarchy" ? { id, label }
+    : isMac ? { id, label: "JetBrains Mono", note: fallback ? FONT_FALLBACK_NOTE : "Terminals keep Inconsolata" }
+    : { id, label, note: fallback ? FONT_FALLBACK_NOTE : "This computer's monospace font" });
+}
+
+/* Whether a stack draws at a fixed width here: ten i's and ten M's in it, on a canvas, are wider than
+   nothing and as wide as each other (within 1%). Chromium on Linux takes fontconfig's best match when
+   there is no monospace font (a proportional sans, which breaks the terminals), skips a bitmap font
+   (Skia draws outline fonts only) for the next match, and draws nothing when that was the only font;
+   document.fonts.check says yes to all of them. Without a canvas (nothing to measure with) the stack
+   is taken as it is. */
+export function fontDraws(stack, doc = document) {
+  try {
+    const context = doc.createElement("canvas").getContext("2d");
+    if (!context) return true;
+    context.font = `13px ${stack}`;
+    const narrow = context.measureText("iiiiiiiiii").width, wide = context.measureText("MMMMMMMMMM").width;
+    return narrow > 0 && Math.abs(narrow - wide) <= 0.5 + 0.01 * wide;
+  } catch { return true; }
+}
+
+let fontChosen = DEFAULT_FONT, fontIsMac = false, fontOverrides = [], fontFallback = false, fontCheck = fontDraws;
+const fontListeners = new Set();
+
+/** The font choice: an id of FONTS. */
+export function currentFont() { return fontChosen; }
+/** Whether Omarchy's font shows System font's faces here: this computer's monospace font does not draw
+ * at a fixed width (fontDraws, checked at start and on each choice, whichever is chosen, so the picker's
+ * note is right before Omarchy's font is chosen). The stored choice stays. */
+export function fontFallsBack() { return fontFallback; }
+
+function applyFont(id) {
+  const root = document.documentElement;
+  for (const property of fontOverrides) root.style.removeProperty(property);
+  fontOverrides = [];
+  fontChosen = validFont(id) ? id : DEFAULT_FONT;
+  // Omarchy's font is used only once it draws at a fixed width; otherwise System font's faces (none set).
+  fontFallback = !fontCheck(fontStacks("omarchy", fontIsMac)["--ui-font"], document);
+  const stacks = fontChosen === "omarchy" && fontFallback ? {} : fontStacks(fontChosen, fontIsMac);
+  for (const [property, value] of Object.entries(stacks)) {
+    root.style.setProperty(property, value); fontOverrides.push(property);
+  }
+  root.dataset.font = fontChosen;
+  if (fontChosen === "omarchy" && fontFallback) root.dataset.fontFallback = "system"; else delete root.dataset.fontFallback;
+  for (const fn of [...fontListeners]) { try { fn(fontChosen); } catch { /* one listener must not break others */ } }
+  // Open terminals take the new family in place, and refit (a stored terminal family still wins).
+  if (terminalListeners.size) notifyTerminalTypography();
+  return fontChosen;
+}
+
+/** At start: the saved choice, else DEFAULT_FONT, which is not stored (it stays a default, as the
+ * theme's does). `isMac` picks the platform's stacks for this window's life; `check` is fontDraws but
+ * for tests. */
+export function initFont(isMac = false, check = fontDraws) {
+  fontIsMac = !!isMac; fontCheck = check;
+  let saved = null;
+  try { saved = localStorage.getItem(FONT_KEY); } catch { /* storage-less */ }
+  return applyFont(validFont(saved) ? saved : DEFAULT_FONT);
+}
+
+/** A choice: stored, then applied in place (no reload: open terminals keep their state). */
+export function setFont(id) {
+  const next = validFont(id) ? id : DEFAULT_FONT;
+  try { localStorage.setItem(FONT_KEY, next); } catch { /* the choice still works in memory */ }
+  return applyFont(next);
+}
+
+export function onFontChange(fn) {
+  fontListeners.add(fn);
+  return () => fontListeners.delete(fn);
+}
+
 /* Build the xterm.js theme object from the live CSS tokens so the embedded
    terminal always matches the app theme (incl. the solarized light remap). */
 const ANSI = [

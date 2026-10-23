@@ -1,12 +1,16 @@
-// oats desktop — the theme picker: a modal in the middle of the window that lists the
-// themes (THEMES order), marks the current one, and applies a choice through the
-// caller's `choose` (the shell passes setTheme, so it is stored like any choice).
-// Built like lifecycle-dialog.mjs (the shared .palette-overlay backdrop, focus
-// provenance through takePickerFocusReturn, its own Escape and Tab handling) with
+// oats desktop — the theme picker and the font picker: one choice picker (createChoicePicker), a
+// modal in the middle of the window that lists the choices (THEMES order; fontChoices order), marks
+// the current one, and applies a choice through the caller's `choose` (the shell passes setTheme or
+// setFont, so it is stored like any choice). Both share the picker's classes (.theme-picker-*: the
+// CSS below) and differ in their title, close label, rows and the overlay's own class
+// (.theme-picker-overlay, .font-picker-overlay). Built like lifecycle-dialog.mjs (the shared
+// .palette-overlay backdrop, focus provenance through takePickerFocusReturn, its own Escape and Tab handling) with
 // the spawn dialog's centring and header. Nothing is applied while moving between
 // rows (no preview). The rows never rebuild while open: a theme changed by another
 // path (the palette, a key, the host) only moves the marks. It is on the palette layer, so it
 // does not open while a dialog above that layer is shown (the spawn dialog, the workspace dialog).
+// The one picker opened over the other (its chord while the other is open) stacks over it, as over
+// any dialog on the palette layer, and closing it returns focus to the row it was opened from.
 import { takePickerFocusReturn } from './overlay-picker.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { isShown } from './focus-regions.mjs';
@@ -31,16 +35,37 @@ export const themePickerCSS = `
 const plainKey = event => !event.ctrlKey && !event.metaKey && !event.altKey;
 
 /**
+ * The theme picker: THEMES, This computer with its second line.
+ * @param {object} spec  createChoicePicker's, with `themes` (THEMES, in its order) for its choices
+ */
+export function createThemePicker({ themes, ...spec } = {}) {
+  return createChoicePicker({ ...spec, kind: 'theme', title: 'Theme', closeLabel: 'Close theme picker',
+    choices: themes.map(({ id, label }) => (id === 'host' ? { id, label, note: "Follows this computer's theme" } : { id, label })) });
+}
+
+/**
+ * The font picker (app.fontPicker): Omarchy's font and System font.
+ * @param {object} spec  createChoicePicker's, with `fonts` (theme.mjs fontChoices for this platform)
+ */
+export function createFontPicker({ fonts, ...spec } = {}) {
+  return createChoicePicker({ ...spec, kind: 'font', title: 'Font', closeLabel: 'Close font picker', choices: fonts });
+}
+
+/**
  * @param {object} spec
  * @param {Document} spec.doc
- * @param {ReadonlyArray<{id: string, label: string}>} spec.themes  THEMES, in its order
- * @param {() => string} spec.current  the current choice's id (currentTheme)
- * @param {(id: string) => void} spec.choose  applies and stores a choice (setTheme)
- * @param {(fn: Function) => Function} [spec.subscribe]  onThemeChange; returns its unsubscribe
+ * @param {string} spec.kind  names the overlay's class (`<kind>-picker-overlay`) and the title's id
+ * @param {string} spec.title  the dialog's heading and name
+ * @param {string} spec.closeLabel  the close button's name
+ * @param {ReadonlyArray<{id: string, label: string, note?: string}>} spec.choices  the rows, in order;
+ *   a note is the row's muted second line
+ * @param {() => string} spec.current  the current choice's id (currentTheme, currentFont)
+ * @param {(id: string) => void} spec.choose  applies and stores a choice (setTheme, setFont)
+ * @param {(fn: Function) => Function} [spec.subscribe]  onThemeChange, onFontChange; returns its unsubscribe
  * @param {() => void} [spec.onIntent]  opening is a user intent (the shell's selection ownership)
  * @param {(fn: Function) => void} [spec.applyFocus]  wraps every focus move the picker makes
  */
-export function createThemePicker({ doc, themes, current, choose, subscribe = () => () => {},
+export function createChoicePicker({ doc, kind, title: heading, closeLabel, choices, current, choose, subscribe = () => () => {},
   onIntent = () => {}, applyFocus = fn => fn() } = {}) {
   let overlay = null, rows = [], restore = null, held = null, lastInside = null, life = 0;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
@@ -72,7 +97,7 @@ export function createThemePicker({ doc, themes, current, choose, subscribe = ()
     let id = null;
     try { id = current(); } catch { /* no mark rather than a wrong one */ }
     for (const row of rows) {
-      const isCurrent = row.dataset.themeId === id;
+      const isCurrent = row.dataset.choiceId === id;
       const shown = row.querySelector('.theme-picker-current');
       if (isCurrent) row.setAttribute('aria-current', 'true'); else row.removeAttribute('aria-current');
       if (isCurrent && !shown) {
@@ -91,20 +116,20 @@ export function createThemePicker({ doc, themes, current, choose, subscribe = ()
     if (higherDialogShown()) return; // the picker never opens where it cannot be seen
     onIntent(); const prior = doc.activeElement; restore = takePickerFocusReturn(doc); const mounted = ++life;
     held = stillOpen(prior) ? prior : null; // a palette or Quick Open opener was just dismissed: not still open
-    overlay = node('div', undefined, 'palette-overlay theme-picker-overlay');
-    const dialog = node('section', undefined, 'theme-picker'), titleId = `theme-picker-title-${mounted}`;
+    overlay = node('div', undefined, 'palette-overlay theme-picker-overlay'); overlay.classList.add(`${kind}-picker-overlay`);
+    const dialog = node('section', undefined, 'theme-picker'), titleId = `${kind}-picker-title-${mounted}`;
     dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', titleId);
-    const head = node('div', undefined, 'theme-picker-head'), title = node('h2', 'Theme'); title.id = titleId;
+    const head = node('div', undefined, 'theme-picker-head'), title = node('h2', heading); title.id = titleId;
     const closeButton = node('button', undefined, 'theme-picker-close'); closeButton.type = 'button';
-    closeButton.setAttribute('aria-label', 'Close theme picker'); closeButton.append(iconElement(doc, 'close', { size: 14 }));
+    closeButton.setAttribute('aria-label', closeLabel); closeButton.append(iconElement(doc, 'close', { size: 14 }));
     head.append(title, closeButton);
     const list = node('ul', undefined, 'theme-picker-list');
     const owns = () => overlay && life === mounted;
     const pick = id => { if (!owns()) return; close(); choose(id); };
-    rows = themes.map(({ id, label }) => {
-      const item = node('li'), row = node('button', undefined, 'theme-picker-row'); row.type = 'button'; row.dataset.themeId = id;
+    rows = choices.map(({ id, label, note }) => {
+      const item = node('li'), row = node('button', undefined, 'theme-picker-row'); row.type = 'button'; row.dataset.choiceId = id;
       const text = node('span', undefined, 'theme-picker-text'); text.append(node('span', label, 'theme-picker-label'));
-      if (id === 'host') text.append(node('span', "Follows this computer's theme", 'theme-picker-note'));
+      if (note) text.append(node('span', note, 'theme-picker-note'));
       row.append(text); row.addEventListener('click', () => pick(id));
       item.append(row); list.append(item); return row;
     });
@@ -127,7 +152,7 @@ export function createThemePicker({ doc, themes, current, choose, subscribe = ()
       const at = rows.indexOf(event.target);
       if (at < 0 || !plainKey(event)) return;
       if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault(); event.stopPropagation(); if (!event.repeat) pick(rows[at].dataset.themeId); return;
+        event.preventDefault(); event.stopPropagation(); if (!event.repeat) pick(rows[at].dataset.choiceId); return;
       }
       const to = { ArrowDown: (at + 1) % rows.length, ArrowUp: (at - 1 + rows.length) % rows.length, Home: 0, End: rows.length - 1 }[event.key];
       if (to === undefined) return;

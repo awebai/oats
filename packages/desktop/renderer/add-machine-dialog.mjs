@@ -26,7 +26,7 @@ export const addMachineCSS = `
 /* The shared modal backdrop (.palette-overlay, shell.css), raised over the spawn dialog it can open from. */
 .palette-overlay.machine-overlay { z-index:200; align-items:center; padding:24px 0; }
 .machine-dialog { width:min(560px,calc(100vw - 32px)); max-height:88vh; overflow:auto; display:flex; flex-direction:column; gap:14px; padding:20px; box-sizing:border-box;
-  border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); font:12.5px var(--sans,system-ui); }
+  border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); font:12.5px var(--ui-font,system-ui); }
 .machine-dialog h2 { margin:0; font-size:15px; font-weight:700; }
 .machine-dialog p { margin:0; line-height:1.5; overflow-wrap:anywhere; }
 .machine-lede { color:var(--muted); }

@@ -35,7 +35,7 @@ export const machinesCSS = `
 .machine-state .shell-icon { flex:none; color:var(--ok); }
 .machine-state[data-reachable=false] { height:20px; padding:0 7px; box-sizing:border-box; border-radius:5px; background:var(--attn-bg); color:var(--warn); font-size:11.5px; font-weight:650; }
 .machine-acts { display:flex; gap:14px; justify-self:end; }
-.oats-view .setup button.machine-act, .oats-view .setup button.machines-add, .oats-view .setup button.machines-retry { height:auto; min-height:0; padding:2px 0; border:0; background:transparent; color:var(--accent); font:600 12px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
+.oats-view .setup button.machine-act, .oats-view .setup button.machines-add, .oats-view .setup button.machines-retry { height:auto; min-height:0; padding:2px 0; border:0; background:transparent; color:var(--accent); font:600 12px var(--ui-font,system-ui); white-space:nowrap; cursor:pointer; }
 .oats-view .setup button.machine-act:hover, .oats-view .setup button.machines-add:hover, .oats-view .setup button.machines-retry:hover { text-decoration:underline; }
 .oats-view .setup button.machine-act:disabled { color:var(--muted); cursor:default; text-decoration:none; }
 .oats-view .setup button.machine-act:focus-visible, .oats-view .setup button.machines-add:focus-visible, .oats-view .setup button.machines-retry:focus-visible { background:var(--sel); border-radius:4px; padding:2px 4px; margin:0 -4px; }
@@ -45,7 +45,7 @@ export const machinesCSS = `
 .machine-confirm { display:flex; flex-direction:column; gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); }
 .machine-confirm p { margin:0; color:var(--fg); font-size:12px; line-height:1.45; }
 .machine-confirm-acts { display:flex; gap:8px; }
-.oats-view .setup .machine-confirm button { height:26px; padding:0 12px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:600 12px var(--sans,system-ui); cursor:pointer; }
+.oats-view .setup .machine-confirm button { height:26px; padding:0 12px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:600 12px var(--ui-font,system-ui); cursor:pointer; }
 .oats-view .setup .machine-confirm button:focus-visible { background:var(--sel); }
 .oats-view .setup .machine-confirm button.machine-confirm-remove { background:var(--danger); color:var(--primary-fg); border-color:var(--danger); }
 .machine-error { color:var(--danger); font-size:12px; }

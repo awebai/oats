@@ -42,9 +42,9 @@ export const defaultsCSS = `
 .ws-default-tile[data-tint=mauve] { background:var(--soul-mauve-bg); color:var(--soul-mauve-fg); }
 .ws-default-tile[data-tint=clay] { background:var(--soul-clay-bg); color:var(--soul-clay-fg); }
 .ws-default-stack { display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0; }
-.ws-default-label { height:24px; color:var(--muted); font:600 12px var(--sans,system-ui); line-height:24px; }
+.ws-default-label { height:24px; color:var(--muted); font:600 12px var(--ui-font,system-ui); line-height:24px; }
 .ws-default-name { min-width:0; max-width:100%; color:var(--fg); font:650 14px var(--mono,monospace); line-height:24px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.ws-default-none { color:var(--muted); font:500 14px var(--sans,system-ui); line-height:24px; }
+.ws-default-none { color:var(--muted); font:500 14px var(--ui-font,system-ui); line-height:24px; }
 .ws-default-note { color:var(--muted); font-size:12px; line-height:1.4; }
 .ws-default-cell .source-chip { max-width:100%; }
 /* A core cell with two declared ids (the workspace's own conflict): each id and its chip is its own button. */
