@@ -836,7 +836,7 @@ test("text fields keep their own keys: no default takes an editing key, and the 
 // terminal's helper textarea, a button or a row is no such field, and the moves fire from it.
 test("macOS: the ⌥ arrow moves give way to a field of text, never to a terminal; a user's own binding fires there", t => {
   registerAll(t);
-  const dom = new JSDOM(`<input class="ctx-filter"><input class="secret" type="password"><input class="ro" readonly><textarea class="ftask"></textarea>
+  const dom = new JSDOM(`<input class="palette-input"><input class="secret" type="password"><input class="ro" readonly><textarea class="ftask"></textarea>
     <button class="b">b</button><input class="check" type="checkbox">
     <div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div>`);
   t.after(() => dom.window.close());
@@ -847,7 +847,7 @@ test("macOS: the ⌥ arrow moves give way to a field of text, never to a termina
   const press = (e, target) => { const keyed = ev(e.key, { ...e, target }); return [matchEvent(keyed, { isMac: true }), keyed]; };
   // jsdom has no isContentEditable: a contenteditable, as Chromium reports it.
   const editor = { tagName: "DIV", className: "contenteditable", isContentEditable: true, closest: () => null };
-  for (const target of [...doc.querySelectorAll(".ctx-filter, .secret, .ro, .ftask"), editor]) {
+  for (const target of [...doc.querySelectorAll(".palette-input, .secret, .ro, .ftask"), editor]) {
     for (const [e] of moves) {
       const [id, keyed] = press(e, target);
       assert.equal(id, null, `${e.key}${e.shiftKey ? "+⇧" : ""} in ${target.className}`);
@@ -858,7 +858,7 @@ test("macOS: the ⌥ arrow moves give way to a field of text, never to a termina
     for (const [e, want] of moves) assert.equal(press(e, target)[0], want, `${want} from ${target.className}`);
   }
   // Linux and Windows have no such rule: their word moves are Ctrl+←/→, and Alt+← is the tab move in a field.
-  assert.equal(matchEvent(ev("ArrowLeft", { altKey: true, target: doc.querySelector(".ctx-filter") }), { isMac: false }), "tabs.prevPage");
+  assert.equal(matchEvent(ev("ArrowLeft", { altKey: true, target: doc.querySelector(".palette-input") }), { isMac: false }), "tabs.prevPage");
   // A user's own binding of a ⌥ arrow fires from a field, as one of Alt+↑/↓ does from a select.
   setBinding("tabs.prevPage", "Alt+←");
   assert.equal(press(ev("ArrowLeft", { altKey: true }), doc.querySelector(".ftask"))[0], "tabs.prevPage", "the user's own ⌥←");

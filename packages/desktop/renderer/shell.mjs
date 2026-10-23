@@ -772,7 +772,7 @@ async function refreshContextRoster({ user = false } = {}) {
   // A deployment the kernel could not observe is not an empty one: name the
   // missing feature or keep the kernel's refusal (never an optimistic read).
   // It is its own truthful state, painted above the rows by renderContextRoster
-  // on every path (module state, so a filter edit or a collapse keeps it).
+  // on every path (module state, so a collapse keeps it).
   contextDeploymentNote = panel.deployment && panel.deployment.status !== "observed" && !panel.workspace?.remote && !failure
     ? deploymentUnavailableText(panel.deployment, DESKTOP_TERMS) : null;
   const signature = rosterSignature(contextInstances, {
@@ -807,9 +807,12 @@ async function refreshContextRoster({ user = false } = {}) {
   // empty copy). A reported failure with data already present skips
   // succeed(): its stale line then updates in place instead of being
   // announced anew on every poll.
-  // A focused Retry in the failed block goes with succeed(), before any row is painted: focusFallback holds focus
-  // (the list of workspaces, at worst) until the rows below exist, and the roster's current row then takes it.
-  const retryLeaving = !!contextRosterEl.querySelector(".loading-failed")?.contains(document.activeElement);
+  // A focused Retry goes with succeed(), before this answer's rows are painted: the failed block's (no row yet:
+  // focusFallback holds focus outside the roster) or the stale line's (focusFallback's row is the last answer's,
+  // which the paint below may remove). After the paint, a Retry that went (a stale line updated in place keeps
+  // its own) leaves focus on a row, else on rosterEntry().
+  const focusedRetry = [...contextRosterEl.querySelectorAll(".loading-failed, .loading-notice")]
+    .some(el => el.contains(document.activeElement)) ? document.activeElement : null;
   if (rosterState && (!reportedFailure || !rosterState.hasData)) {
     rosterState.succeed({ observedAt: typeof panel.observedAt === "string" ? panel.observedAt : null, empty: !contextInstances.length });
   }
@@ -829,9 +832,10 @@ async function refreshContextRoster({ user = false } = {}) {
     rosterSignaturePainted = signature;
     renderContextRoster(contextInstances);
   }
-  if (retryLeaving && !contextRosterEl.contains(document.activeElement)) {
+  if (focusedRetry && !focusedRetry.isConnected && !contextRosterEl.querySelector(".ctx-list")?.contains(document.activeElement)) {
     const entry = rosterEntry();
     if (entry?.classList.contains("ctx-inst")) setRovingRow(entry.closest(".ctx-list"), entry);
+    else if (!document.activeElement || document.activeElement === document.body) entry?.focus({ preventScroll: true });
   }
   if (reportedFailure) rosterState?.fail(failure);
   // #1247: an observed read begun after a retire's answer says what the retire left: its row is let go (and the
@@ -900,7 +904,7 @@ function renderContextRoster(instances) {
   // #558: every paint re-syncs the open terminal tabs through the row's own gate, before any early return:
   // a stale paint (an overdue read) or a pending one (a reset subject: no rows yet) clears their cues too.
   syncTabNeedsInput(pending ? [] : instances, ws);
-  // The deployment note is painted on every path (poll, filter, collapse, PR change), first in the list.
+  // The deployment note is painted on every path (poll, collapse, PR change), first in the list.
   const paintNote = () => {
     if (contextDeploymentNote === null) return;
     const note = document.createElement("div"); note.className = "ctx-empty ctx-deployment-note"; note.setAttribute("role", "status");

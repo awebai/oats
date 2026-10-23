@@ -950,3 +950,20 @@ test('a read releases this window\'s retire only when it observed the row\'s dep
   s.refreshContextRoster(); await s.reply(7, panelOf('A', roster, { deployment: { status: 'unavailable', reason: { code: 'E_X', message: 'no' } } }));
   assert.equal(c.retires.ids().size, 1);
 });
+
+// The stale line's Retry hands focus to the last answer's row (focusFallback) as it goes, before this answer is
+// painted; that row may not survive the paint. Focus then goes to rosterEntry(): this answer's row, else the
+// heading's Add local workspace… (no workspace row in this fixture), never <body>.
+for (const [rows, expected] of [[[row('new-row')], 'the new row'], [[], 'Add local workspace…']]) test(`a stale Retry whose row the answer removes lands on ${expected}`, async t => {
+  const s = shell(t);
+  await s.reply(0, panelOf('A', [row('old-row')]));
+  s.refreshContextRoster(); await s.fail(1, new Error('bridge down'));
+  const retry = s.status().querySelector('.loading-notice .loading-retry');
+  retry.focus(); retry.click(); assert.equal(s.doc.activeElement, retry);
+  await s.reply(2, panelOf('A', rows));
+  assert.equal(s.status().querySelector('.loading-notice'), null, 'the stale line went');
+  const want = rows.length ? s.list().querySelector('.ctx-inst') : s.doc.getElementById('ws-add-open');
+  assert.ok(want, expected);
+  assert.equal(s.doc.activeElement, want);
+  if (rows.length) assert.equal(s.list().querySelectorAll('.ctx-inst[tabindex="0"]').length, 1, 'one roving stop');
+});
