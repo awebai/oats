@@ -1447,12 +1447,18 @@ section is the module map.
   spawn dialog's section keys among them). The engine
   skips already-consumed (`defaultPrevented`) events, and unmodified/
   shift-only chords never fire while an editable field (input, textarea,
-  select, contenteditable) has focus. Terminal
+  select, contenteditable) has focus. Two defaults give way to the focused
+  control, a user's own binding of the same keys still firing: Alt+↑ / ↓ to a
+  select, a datalist input or a date picker (`opensOnAltArrow`), and on macOS ⌥
+  with an arrow, ⇧ or not, to a field of text, a terminal's textarea aside
+  (`movesCaretOnOption`: its word and paragraph moves). Terminal
   policy (plain Ctrl+letter and the F-keys are the program's; the Alt
   family's keys are taken on purpose, and the program still gets each from
   Esc, then the key):
   inside `.xterm`, on macOS only ⌘-resolved chords fire, plus Ctrl+Tab for
-  tabs.next/prev and the leader's ⌃X (or ⌃\ bound back); on Linux/Windows only
+  tabs.next/prev, the leader's ⌃X (or ⌃\ bound back) and ⌥ with an arrow for
+  the moves between tabs, groups and workspaces (`MAC_ARROW_MOVES`; each by
+  action id and shape, `macStructuralChord`); on Linux/Windows only
   `TERMINAL_ALLOWLIST` action ids may
   fire (a default xterm sends nothing for, or a byte the program still gets
   from a plainer key, or one of the Alt family's, or a named exception: the leader's
@@ -1883,7 +1889,14 @@ the last of nine or more (`tab-numbers.mjs` `tabNumber`, `numberTabStrips`).
 `MutationObserver` (`tabNumberObserver`) at each, so a tab added, closed,
 hidden by context or moved between groups renumbers them; the observer ignores
 its own `.tab-num` writes. Harnesses that run `observeTabStrips` by its text give
-it `numberTabStrips` and `tabNumberObserver: null`. The number never crowds out
+it `numberTabStrips` and `tabNumberObserver: null`. The number is aria-hidden, so
+the trigger's tooltip names the key it stands for, the live binding of
+`tabs.goto<N>` ("name (Alt+3)", "name (⌥⌘3)" on macOS); the shell renumbers on
+`onKeymapChange` too, so a rebind or a chord family switch shows there. The
+tooltip has three writers, each setting only its part through `tab-a11y.mjs`
+`setTabTitle`: the name (`createTabChrome`), the key (`numberTabStrips`) and the
+needs-input note (`syncTabNeedsInput`); harnesses that run `syncTabNeedsInput` by
+its text give it `setTabTitle`. The number never crowds out
 the name: the trigger wraps and shows only its first line, and the label's flex
 basis is `--tab-name-min` (102px, what the floor budgets the name), so line
 breaking sees the name at its minimum and the number wraps out of sight, whole,

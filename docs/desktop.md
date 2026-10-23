@@ -232,7 +232,8 @@ below, a line under the list says how many ("2 more below").
   an oats without `waiting-on-you`. The dot never moves a row: the order
   stays the same whoever waits.
 - **Picking a row** (a click, Enter, or the leader's ↑ / ↓, Ctrl+X then ↑ /
-  ↓, which are Alt+↑ / Alt+↓ on Linux and Windows too) shows that workspace in this window, with its own tabs, layout and
+  ↓, which are also ⌥↑ / ⌥↓ on macOS and Alt+↑ / Alt+↓ on Linux and Windows
+  in the Alt family, the default) shows that workspace in this window, with its own tabs, layout and
   selection; one another window shows moves here ([A workspace another window
   shows](#a-workspace-another-window-shows)). The leader's ↑ / ↓ go to the
   previous / next row, and stop at the ends ("No workspace above this one." /

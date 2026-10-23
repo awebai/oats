@@ -21,6 +21,22 @@ export function tabNameTailStart(name, soul = "") {
   return start > 0 && start < name.length ? start : null;
 }
 
+// A trigger's tooltip has three parts, each kept by its own writer: the tab's name (createTabChrome),
+// the key that goes to the tab (numberTabStrips, tab-numbers.mjs: "Alt+3", "⌥⌘3") and a note on its
+// own line (shell.mjs syncTabNeedsInput: "Needs input: …"). Each writer sets only its part, and the
+// title is rebuilt from all three, so no writer puts back a part another has since changed.
+const titleParts = new WeakMap();
+/** Set some of a tab trigger's tooltip parts ({ name, key, note }; null clears key or note) and write
+ * the title they make: "name (key)\nnote". A trigger not drawn by createTabChrome starts from its
+ * own title as the name. */
+export function setTabTitle(trigger, parts) {
+  const own = titleParts.get(trigger) ?? { name: trigger.title, key: null, note: null };
+  Object.assign(own, parts);
+  titleParts.set(trigger, own);
+  const title = `${own.name}${own.key ? ` (${own.key})` : ""}${own.note ? `\n${own.note}` : ""}`;
+  if (trigger.title !== title) trigger.title = title;
+}
+
 /** decor (all decorative; the accessible name stays the bare title):
  *  { kind } or { icon } an app icon for artifact tabs; { dot, detail } a
  *  live-state dot and the instance branch for terminal tabs (Redesign v3);
@@ -30,7 +46,8 @@ export function tabNameTailStart(name, soul = "") {
  *  the title (a remote tab's " · host"), which gives way before the head.
  *  Every trigger ends with an empty, hidden .tab-num: the tab's go-to-tab
  *  number, which numberTabStrips (tab-numbers.mjs) fills in once the tab is in
- *  its strip; decorative too. */
+ *  its strip; decorative too, and the tooltip names the key that number stands
+ *  for (setTabTitle). */
 export function createTabChrome(document, id, title, isMac = false, decor = {}) {
   const tabEl = document.createElement("div");
   tabEl.className = "tab";
@@ -73,7 +90,7 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
   // The go-to-tab number, last and empty: tab-numbers.mjs numbers each strip's tabs.
   const num = document.createElement("span"); num.className = "tab-num"; num.setAttribute("aria-hidden", "true"); num.hidden = true;
   triggerEl.append(num);
-  triggerEl.title = title;
+  setTabTitle(triggerEl, { name: title });
   triggerEl.setAttribute("aria-label", title);
 
   const closeEl = document.createElement("button");

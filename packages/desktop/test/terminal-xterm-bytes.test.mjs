@@ -16,7 +16,7 @@ import { createRequire } from "node:module";
 import { JSDOM, VirtualConsole } from "jsdom";
 import {
   DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, defaultBinding, parseChord,
-  registerAction, setActiveContexts, resetAllBindings, matchEvent, handleKeydown, setChordFamily,
+  registerAction, setActiveContexts, resetAllBindings, setBinding, matchEvent, handleKeydown, setChordFamily,
 } from "../renderer/keybindings.mjs";
 import { CHORD_FAMILIES, DEFAULT_CHORD_FAMILY } from "../../client/keymap.mjs";
 import { terminalOptions, terminalKeyDecision } from "../renderer/terminal-tab.mjs";
@@ -29,8 +29,8 @@ const XTERM = readFileSync(createRequire(import.meta.url).resolve("@xterm/xterm"
 // The Ctrl+Alt chords send ESC and the Ctrl+letter byte (with Shift too: Ctrl+Alt+Shift+E is ESC
 // Ctrl+E), or ESC and the digit, as Alt+digit does.
 // The Alt family's Alt+letter and Alt+digit send ESC and the key (with Shift, the upper-case letter):
-// exactly what Esc, then the key sends. Its Alt arrows, and the workspace moves' Alt+↑/↓ in every
-// family, send what Ctrl with the arrow sends: xterm.js maps Alt+arrow to Ctrl+arrow on Linux and
+// exactly what Esc, then the key sends. Its Alt arrows, the tab moves and the workspace moves (which no
+// other family has: #1491 B1), send what Ctrl with the arrow sends: xterm.js maps Alt+arrow to Ctrl+arrow on Linux and
 // Windows (CSI 1;5 A–D, its "Alt+arrow behaves like Ctrl+arrow" hack), never CSI 1;3 A–D, so Ctrl+arrow
 // is their plainer key, byte for byte (the Alt arrows test below pins what Esc, then the arrow sends).
 // The named exceptions have none (plainer: null): app.leader, the TUI's leader Ctrl+X, whose 0x18 (the
@@ -47,8 +47,6 @@ const SHARED_SENDS = {
   "app.leader": { data: "\x18", plainer: null },
   "roster.openPrevious": altShiftArrow("A"),
   "roster.openNext": altShiftArrow("B"),
-  "workspace.previous": altArrow("↑", "A"),
-  "workspace.next": altArrow("↓", "B"),
   "stage.automations": { data: "\x1b", plainer: "Escape" },
   "tabs.next": { data: "\t", plainer: "Tab" },
   "tabs.prev": { data: "\x1b[Z", plainer: "Shift+Tab" },
@@ -84,6 +82,8 @@ const SENDS = {
     "terminal.focusMode": alt("z"),
     "tabs.nextPage": altArrow("→", "C"),
     "tabs.prevPage": altArrow("←", "D"),
+    "workspace.previous": altArrow("↑", "A"),
+    "workspace.next": altArrow("↓", "B"),
     ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tabs.goto${i + 1}`, alt(`${i + 1}`)])),
     "tabs.close": alt("w"),
     "split.vertical": alt("e"),
@@ -214,6 +214,8 @@ for (const family of CHORD_FAMILIES) {
     const press = xtermTerminal(t);
     for (const id of TERMINAL_ALLOWLIST) {
       const chord = defaultBinding(id, false);
+      // The workspace moves have no key outside the Alt family: Alt+↑/↓ are the program's there (#1491 B1).
+      if (family !== "alt" && /^workspace\./.test(id)) { assert.equal(chord, null, `${id}: no key in ${family}`); continue; }
       assert.ok(chord, `${id} has a Linux/Windows default`);
       assert.equal(press(keydownInit(chord)), SENDS[family][id]?.data ?? "", `${id} (${chord}), ${family}`);
     }
@@ -253,7 +255,7 @@ test("Alt family: the exact bytes of its keys, and ESC with a letter or a digit 
   }
 });
 
-// The Alt arrows (the Alt family's tab moves, and the workspace moves' Alt+↑/↓ in every family): xterm.js
+// The Alt arrows (the Alt family's tab moves and workspace moves): xterm.js
 // sends Ctrl+arrow's CSI 1;5 for them on Linux and Windows, where a terminal such as xterm or kitty sends
 // CSI 1;3. Ctrl+arrow, which no default takes, sends exactly the same bytes. Esc, then the arrow, the key a
 // program that binds the Meta arrow reads as it (ESC as Meta), sends ESC and the arrow's own sequence:
@@ -270,10 +272,10 @@ test("the Alt arrows: xterm sends Ctrl+arrow's CSI 1;5 for them; Esc, then the a
     assert.equal(pressPlainer(press, `Escape, then ${arrow}`), `\x1b${plain}`, `Esc, then ${arrow}: ESC and the arrow`);
     assert.notEqual(`\x1b${plain}`, sent);
   }
-  // Which defaults hold them, per family: the tab moves and the workspace moves in the Alt family, the
-  // workspace moves alone in the other two (their tab moves are the Alt+Shift arrows).
+  // Which defaults hold them, per family: the tab moves and the workspace moves in the Alt family, none in
+  // the other two (their tab moves are the Alt+Shift arrows, and they leave Alt+↑/↓ to the program).
   for (const [family, ids] of [["alt", ["tabs.prevPage", "tabs.nextPage", "workspace.previous", "workspace.next"]],
-    ["ctrl+alt", ["workspace.previous", "workspace.next"]], ["ctrl+shift", ["workspace.previous", "workspace.next"]]]) {
+    ["ctrl+alt", []], ["ctrl+shift", []]]) {
     const holders = TERMINAL_ALLOWLIST.filter(id => /^Alt\+[←→↑↓]$/.test(defaultBinding(id, false, family) ?? ""));
     assert.deepEqual(holders.sort(), [...ids].sort(), family);
   }
@@ -310,6 +312,57 @@ test("the leader, Ctrl+X, is the byte 0x18 in xterm on every platform, which the
   assert.equal(xtermTerminal(t, { platform: "MacIntel" })(keydownInit("Ctrl+\\")), "\x1c");
 });
 
+// ---------------------------------------------------------------- macOS: the ⌥ arrows
+
+// macOS moves between tabs, groups and workspaces with ⌥ and an arrow (Pepe's call, 2026-10-23), which fire
+// in a terminal by name (keybindings.mjs macStructuralChord). Under xterm's macOS evaluation (navigator.platform
+// set before load) this is what the program would get without them: for ⌥←/→ readline's word moves, ESC b and
+// ESC f (xterm.js's macOS form of its "Alt+arrow moves a word" hack, whatever macOptionIsMeta says), which
+// Esc, then b or f still sends; for ⌥↑/↓ CSI 1;3 A/B; for ⌥⇧ with an arrow CSI 1;4. Behind the shell's key
+// path the chord takes each: its move runs and the program gets nothing. A user who wants the bytes back
+// unbinds or rebinds the move in the shortcuts editor (docs/desktop-keyboard.md).
+const MAC_ARROW_SENDS = {
+  "tabs.prevPage": "\x1bb", "tabs.nextPage": "\x1bf",
+  "split.focusPrevGroup": "\x1b[1;4D", "split.focusNextGroup": "\x1b[1;4C",
+  "workspace.previous": "\x1b[1;3A", "workspace.next": "\x1b[1;3B",
+};
+/** The shell's interceptKey (shell.mjs) behind terminal-tab.mjs's custom key handler, on macOS. */
+const macKeyPath = (event) => {
+  const interceptKey = (ev) => {
+    if (!matchEvent(ev, { isMac: true, insideTerminal: true })) return false;
+    if (ev.type === "keydown") handleKeydown(ev, { isMac: true, insideTerminal: true });
+    return true;
+  };
+  return !terminalKeyDecision(event, interceptKey).handled;
+};
+
+test("macOS: what xterm sends for the ⌥ arrow moves, and in a terminal each runs its move and sends the program nothing", t => {
+  const bare = xtermTerminal(t, { platform: "MacIntel" });
+  assert.equal(bare.isMac, true, "xterm loaded under macOS");
+  for (const [id, data] of Object.entries(MAC_ARROW_SENDS)) {
+    const chord = defaultBinding(id, true);
+    assert.match(chord, /^Alt\+(Shift\+)?[←→↑↓]$/, `${id}: ⌥ with an arrow`);
+    assert.equal(bare(keydownInit(chord)), data, `${id} (${chord})`);
+  }
+  assert.equal(pressPlainer(bare, "Escape, then b"), MAC_ARROW_SENDS["tabs.prevPage"], "Esc, then b is still readline's backward-word");
+  assert.equal(pressPlainer(bare, "Escape, then f"), MAC_ARROW_SENDS["tabs.nextPage"], "and Esc, then f its forward-word");
+  const ran = registerDefaults(t);
+  const press = xtermTerminal(t, { platform: "MacIntel", keyHandler: macKeyPath });
+  for (const id of Object.keys(MAC_ARROW_SENDS)) {
+    ran.length = 0;
+    const { data, events } = press.sequence([["keydown", keydownInit(defaultBinding(id, true))]]);
+    assert.deepEqual(ran, [id], `${id} runs in a terminal`);
+    assert.equal(data, "", `${id}: no byte reaches the pty`);
+    assert.equal(events[0].defaultPrevented, true, `${id} is claimed`);
+  }
+  // Unbound (the shortcuts editor's Backspace), ⌥← and ⌥→ are the program's word moves again.
+  setBinding("tabs.prevPage", null); setBinding("tabs.nextPage", null);
+  ran.length = 0;
+  assert.equal(press.sequence([["keydown", keydownInit("Alt+←")]]).data, "\x1bb");
+  assert.equal(press.sequence([["keydown", keydownInit("Alt+→")]]).data, "\x1bf");
+  assert.deepEqual(ran, []);
+});
+
 // ---------------------------------------------------------------- the Alt family through the shell's key path
 
 /** The shell's interceptKey (shell.mjs) behind terminal-tab.mjs's custom key handler, on Linux. */
@@ -323,8 +376,8 @@ const linuxKeyPath = (event) => {
 };
 
 // The Alt family's keys are claimed in a terminal: each runs its action and xterm sends the program
-// nothing, the Alt arrows included; in the other two families the same keys are no binding (the
-// workspace moves' Alt+↑/↓ aside) and reach the program as the rows above pin.
+// nothing, the Alt arrows included; in the other two families the same keys are no binding, Alt+↑/↓
+// too (#1491 B1), and reach the program as the rows above pin.
 test("Alt family: each of its keys in a terminal runs its action and sends the program nothing; in the other families it reaches the program", t => {
   const ran = registerDefaults(t);
   inFamily(t, "alt");
@@ -352,18 +405,21 @@ test("Alt family: each of its keys in a terminal runs its action and sends the p
       if (family === "alt") assert.equal(holder, id, `${chord} is ${id}'s in the Alt family`);
     }
   }
-  // The Alt arrows, by name: in the Alt family all four are the Desktop's; in the Ctrl+Alt family ←/→ are the program's (CSI 1;5 C/D).
+  // The Alt arrows, by name: in the Alt family all four are the Desktop's; in the Ctrl+Alt and Ctrl+Shift
+  // families all four are the program's (CSI 1;5 A–D), the workspace moves' ↑/↓ included (#1491 B1).
   setChordFamily("alt");
   for (const [arrow, id] of [["←", "tabs.prevPage"], ["→", "tabs.nextPage"], ["↑", "workspace.previous"], ["↓", "workspace.next"]]) {
     ran.length = 0;
     assert.equal(press.sequence([["keydown", keydownInit(`Alt+${arrow}`)]]).data, "", `Alt+${arrow}: nothing reaches the pty`);
     assert.deepEqual(ran, [id]);
   }
-  setChordFamily("ctrl+alt");
-  for (const [arrow, final] of [["←", "D"], ["→", "C"]]) {
-    ran.length = 0;
-    assert.equal(press.sequence([["keydown", keydownInit(`Alt+${arrow}`)]]).data, `\x1b[1;5${final}`, `Alt+${arrow} is the program's under ctrl+alt`);
-    assert.deepEqual(ran, []);
+  for (const family of ["ctrl+alt", "ctrl+shift"]) {
+    setChordFamily(family);
+    for (const [arrow, final] of [["←", "D"], ["→", "C"], ["↑", "A"], ["↓", "B"]]) {
+      ran.length = 0;
+      assert.equal(press.sequence([["keydown", keydownInit(`Alt+${arrow}`)]]).data, `\x1b[1;5${final}`, `Alt+${arrow} is the program's under ${family}`);
+      assert.deepEqual(ran, []);
+    }
   }
 });
 

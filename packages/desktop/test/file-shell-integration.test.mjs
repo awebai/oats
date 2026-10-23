@@ -18,7 +18,7 @@ import { createSelectionOwnership, wirePaneSelection } from "../renderer/selecti
 import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs";
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "../renderer/terminal-tab.mjs";
-import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "../renderer/tab-a11y.mjs";
+import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle } from "../renderer/tab-a11y.mjs";
 import { numberTabStrips } from "../renderer/tab-numbers.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
@@ -123,7 +123,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     },
     createQuickOpen: options => createQuickOpen({ ...options, doc: document }),
     createSelectionOwnership, wirePaneSelection, prepareOwnedOpen, createViewLifecycle,
-    createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, reserveKey, whenKeyFree, projectSplitDom, splitControlsState,
+    createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle, reserveKey, whenKeyFree, projectSplitDom, splitControlsState,
     ...tree, ...layout, ...workspaceTabs, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, rosterKeyAction, moveTarget,
     terminalOptions, wireTerminalSelection: () => () => {}, fitTerminal, createGlyphRenderer, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}), terminalFontWeight: () => 400,
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {}, requestAnimationFrame: cb => cb(),

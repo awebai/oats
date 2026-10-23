@@ -116,12 +116,14 @@ test("a row gives way to every arrow chord of the keymap's family, and only to t
     assert.equal(rosterKeyAction(press(chord), row), null, `${chord} is ${id}'s`);
   }
   // Every family: what it binds to an arrow is the keymap's on a row; the arrow chords it leaves free are the tree's.
+  // The Ctrl+Alt and Ctrl+Shift families bind four: the Alt+Shift arrows (the instances and the tabs); their
+  // groups are Ctrl+Alt+A, and they have no workspace move (#1491 B1), so Alt+↑/↓ are the tree's there.
   for (const family of CHORD_FAMILIES) {
     setChordFamily(family);
-    const bound = new Set(ARROW_ACTIONS.map(([id]) => getBinding(id, false)).filter(chord => press(chord)));
-    assert.ok(bound.size >= 6, `${family}: its arrow chords`);
+    const bound = new Set(ARROW_ACTIONS.map(([id]) => getBinding(id, false)).filter(chord => chord && press(chord)));
+    assert.equal(bound.size, family === "alt" ? 8 : 4, `${family}: its arrow chords`);
     for (const chord of bound) assert.equal(rosterKeyAction(press(chord), row), null, `${family}: ${chord}`);
-    for (const chord of ["Ctrl+Shift+↓", "Ctrl+↑", "Alt+Shift+←", "Alt+←"].filter(chord => !bound.has(chord))) {
+    for (const chord of ["Ctrl+Shift+↓", "Ctrl+↑", "Alt+Shift+←", "Alt+←", "Alt+↑", "Alt+↓"].filter(chord => !bound.has(chord))) {
       assert.notEqual(rosterKeyAction(press(chord), row), null, `${family}: ${chord} is bound to nothing: the tree's`);
     }
   }

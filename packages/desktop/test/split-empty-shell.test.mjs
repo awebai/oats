@@ -13,7 +13,7 @@ import { JSDOM } from "jsdom";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate } from "../renderer/open-intent.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "../renderer/terminal-tab.mjs";
-import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "../renderer/tab-a11y.mjs";
+import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle } from "../renderer/tab-a11y.mjs";
 import { numberTabStrips } from "../renderer/tab-numbers.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createContextPanel } from "../renderer/context-panel.mjs";
@@ -73,7 +73,7 @@ function shell(t, shellSource = source) {
     focusRoster() { c.tabOpenIntents.invalidate(); c.contextRosterEl.querySelector("input").focus(); },
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },
     updateSidebarControls() {}, // chrome is exercised by shell-design.test.mjs
-    resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart,
+    resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle,
     splitControlsState, instanceSplitPlan, instanceSplitIdentity, sameInstanceActionTarget, ...layout, ...workspaceTabs,
     projectSplitDom(els, ...args) { projections.push(els); return projectSplitDom(els, ...args); },
     terminalOptions, wireTerminalSelection: () => () => {}, fitTerminal, createGlyphRenderer, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}), terminalFontWeight: () => 400,

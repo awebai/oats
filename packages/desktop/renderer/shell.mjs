@@ -57,7 +57,7 @@ import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } 
 import { createTerminalAtlasRecovery } from "./terminal-atlas-recovery.mjs";
 import { attachClipboardWrite, attachSelectionCopy, copyTerminalSelection } from "./terminal-clipboard.mjs";
 import { attachTerminalMouse } from "./terminal-mouse.mjs";
-import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "./tab-a11y.mjs";
+import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle } from "./tab-a11y.mjs";
 import { numberTabStrips } from "./tab-numbers.mjs";
 import { dotColor, paintDotColor } from "./instance-dot.mjs";
 import { revealInStrip } from "./reveal-in-scrollport.mjs";
@@ -1554,9 +1554,9 @@ function refreshPanelInstance(instances, workspace) {
  * (refreshPanelInstance): each terminal tab of that workspace, in whichever editor group holds it, finds
  * its row by its qualified key (terminalKey: a home, never a bare name) and reads it through the one
  * gate (waitingClaim, with the sidebar's held-stale rule). It MUTATES only the trigger's mark,
- * aria-label and title — never rebuilds the trigger or the tab — so strip focus, an open tab menu or a
- * drag survive the poll. Cleared (or unknown), the tab gets back exactly the mark, label and title it
- * was drawn with. The same pass keeps the dot's colour (instance-dot.mjs) the row's, so a colour set
+ * aria-label and the title's note (setTabTitle: the name and the tab's key stay their writers') — never
+ * rebuilds the trigger or the tab — so strip focus, an open tab menu or a drag survive the poll. Cleared
+ * (or unknown), the tab gets back exactly the mark and label it was drawn with, and no note. The same pass keeps the dot's colour (instance-dot.mjs) the row's, so a colour set
  * or cleared reaches an open tab; the dot's state stays as it was drawn. */
 let tabNeedsInputRoster = { instances: [], workspace: null };
 function syncTabNeedsInput(instances, workspace) {
@@ -1568,10 +1568,10 @@ function syncTabNeedsInput(instances, workspace) {
     const rows = instances.filter((i) => tabShowsRow(tab, workspace, i));
     const row = rows.length === 1 ? rows[0] : null;
     const claim = row ? waitingClaim(row, { stale: rosterStale || rowStale(row, contextDeployments) }) : null;
-    const drawn = tab.needsInputDrawn ??= { mark: trigger.querySelector(":scope > .tab-dot"), label: trigger.getAttribute("aria-label"), title: trigger.title };
+    const drawn = tab.needsInputDrawn ??= { mark: trigger.querySelector(":scope > .tab-dot"), label: trigger.getAttribute("aria-label") };
     if (row && drawn.mark) paintDotColor(drawn.mark, row, drawn.mark.classList.contains("on") ? "running" : "stopped");
     let attn = trigger.querySelector(":scope > .tab-attn");
-    let label = drawn.label, title = drawn.title;
+    let label = drawn.label, note = null;
     if (claim) {
       if (!attn) {
         attn = document.createElement("span"); attn.className = "tab-attn"; attn.setAttribute("aria-hidden", "true");
@@ -1579,12 +1579,12 @@ function syncTabNeedsInput(instances, workspace) {
         if (drawn.mark?.parentNode === trigger) drawn.mark.replaceWith(attn); else trigger.prepend(attn);
       }
       label = `${drawn.label}, needs input`;
-      title = `${drawn.title}\nNeeds input: ${claim.message ?? waitingLabel(claim)} since ${waitingClock(claim.since, now)}`;
+      note = `Needs input: ${claim.message ?? waitingLabel(claim)} since ${waitingClock(claim.since, now)}`;
     } else if (attn) {
       if (drawn.mark) attn.replaceWith(drawn.mark); else attn.remove();
     }
     if (trigger.getAttribute("aria-label") !== label) trigger.setAttribute("aria-label", label);
-    if (trigger.title !== title) trigger.title = title;
+    setTabTitle(trigger, { note });
   }
 }
 const workspaceTabMemory = createWorkspaceTabMemory();
@@ -1662,6 +1662,9 @@ function observeTabStrips() {
   for (const strip of tabStrips()) tabStripResize.observe(strip);
 }
 observeTabStrips();
+// A tab's tooltip names the key its number stands for (tab-numbers.mjs): a rebind of a go-to-tab
+// key, or another chord family, changes it.
+onKeymapChange(() => numberTabStrips(tabStrips()));
 
 /** Explicit empty-destination selection. Never leave terminal commands aimed
  * at the previously active tab; projection and native focus are separate. */

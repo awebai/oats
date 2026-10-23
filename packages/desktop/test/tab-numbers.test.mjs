@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { tabNumber, numberTabStrips } from "../renderer/tab-numbers.mjs";
-import { createTabChrome, tabNameTailStart } from "../renderer/tab-a11y.mjs";
+import { createTabChrome, tabNameTailStart, setTabTitle } from "../renderer/tab-a11y.mjs";
+import { setBinding, resetAllBindings, setChordFamily } from "../renderer/keybindings.mjs";
+import { DEFAULT_CHORD_FAMILY } from "../../client/keymap.mjs";
+import { pinPlatform } from "./helpers/platform.mjs";
 
 const shellCss = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
 
@@ -35,6 +38,7 @@ test("tabNumber: 1–8 by position, 9 for the last of nine or more, nothing for 
 });
 
 test("numberTabStrips numbers each strip's shown tabs in DOM order; the number is decorative", t => {
+  pinPlatform(t); // the tooltips name the Linux and Windows keys (Alt+N)
   const { doc } = fixture(t);
   const titles = Array.from({ length: 10 }, (_, i) => `oats-desktop-developer-tab-${i}`);
   const { bar, tabs } = strip(doc, titles);
@@ -48,7 +52,7 @@ test("numberTabStrips numbers each strip's shown tabs in DOM order; the number i
   assert.deepEqual(shown(tabs), ["1", "2", "3", "4", "5", "6", "7", "8", null, "9"]);
   tabs.forEach(({ triggerEl }, i) => {
     assert.equal(triggerEl.getAttribute("aria-label"), titles[i], "the accessible name stays the bare title");
-    assert.equal(triggerEl.title, titles[i]);
+    assert.equal(triggerEl.title, i === 8 ? titles[i] : `${titles[i]} (Alt+${i === 9 ? 9 : i + 1})`, "the tooltip names the tab's key, if it has one");
     assert.equal(triggerEl.getAttribute("role"), "tab");
     assert.equal(triggerEl.querySelector(".tab-num").getAttribute("aria-hidden"), "true");
   });
@@ -78,6 +82,62 @@ test("two group strips number their tabs independently, and a moved tab takes it
   numberTabStrips([left.bar, right.bar]);
   assert.deepEqual(shown([left.tabs[0], left.tabs[2]]), ["1", "2"]);
   assert.deepEqual(shown([left.tabs[1], ...right.tabs]), ["1", "2", "3"]);
+});
+
+// F3 (#1491): the number is aria-hidden, so the tooltip names the key it stands for, the keymap's live
+// binding of tabs.goto1..9 as the platform shows it: Alt+N in the default family, the active family's
+// otherwise, ⌥⌘N on macOS, and a rebind once it is made. A tab with no number names no key.
+test("the tooltip names the tab's key: the active family's, macOS's, a rebind's; a tab with no number, none", t => {
+  t.after(() => { resetAllBindings(); setChordFamily(DEFAULT_CHORD_FAMILY); });
+  const { doc } = fixture(t);
+  const { bar, tabs } = strip(doc, Array.from({ length: 10 }, (_, i) => `tab-${i}`));
+  const titles = () => tabs.map(({ triggerEl }) => triggerEl.title);
+  const keyed = keys => keys.map((key, i) => (key ? `tab-${i} (${key})` : `tab-${i}`));
+  const digits = prefix => [..."12345678"].map(n => `${prefix}${n}`).concat(null, `${prefix}9`);
+  numberTabStrips([bar], false);
+  assert.deepEqual(titles(), keyed(digits("Alt+")), "Alt+N; the ninth of ten has no number and names no key, the last is 9");
+  setChordFamily("ctrl+alt"); numberTabStrips([bar], false);
+  assert.deepEqual(titles(), keyed(digits("Ctrl+Alt+")), "the Ctrl+Alt family's");
+  setChordFamily("ctrl+shift"); numberTabStrips([bar], false);
+  assert.deepEqual(titles(), keyed(digits("Ctrl+Alt+")), "the Ctrl+Shift family keeps Ctrl+Alt+1–9");
+  setChordFamily(DEFAULT_CHORD_FAMILY);
+  numberTabStrips([bar], true);
+  assert.deepEqual(titles(), keyed(digits("⌥⌘")), "⌥⌘N on macOS");
+  setBinding("tabs.goto2", "Mod+Shift+2"); setBinding("tabs.goto3", null);
+  numberTabStrips([bar], false);
+  assert.deepEqual(titles().slice(0, 4), ["tab-0 (Alt+1)", "tab-1 (Ctrl+Shift+2)", "tab-2", "tab-3 (Alt+4)"], "a rebind shows, an unbound key is not named");
+  for (const { triggerEl } of tabs) {
+    assert.equal(triggerEl.getAttribute("aria-label"), triggerEl.querySelector(".tab-label").textContent, "the accessible name stays the bare title");
+    assert.equal(triggerEl.querySelector(".tab-num").getAttribute("aria-hidden"), "true", "the number stays decorative");
+  }
+  // Without isMac, the keymap's own platform (navigator.platform), as the shell calls it.
+  pinPlatform(t, "MacIntel");
+  numberTabStrips([bar]);
+  assert.equal(tabs[0].triggerEl.title, "tab-0 (⌥⌘1)");
+  // A hidden tab loses its key with its number; the rest take their new ones.
+  tabs[0].tabEl.hidden = true; numberTabStrips([bar]);
+  assert.deepEqual(titles().slice(0, 2), ["tab-0", "tab-1 (⌥⌘1)"]);
+});
+
+// The tooltip's parts (setTabTitle): the key (numberTabStrips) and the needs-input note (shell.mjs
+// syncTabNeedsInput) are written apart, in either order, and neither puts back the other's old part.
+test("the key and a note compose in the tooltip, whichever is written last", t => {
+  pinPlatform(t);
+  const { doc } = fixture(t);
+  const { bar, tabs } = strip(doc, ["a", "b"]);
+  const trigger = tabs[1].triggerEl;
+  setTabTitle(trigger, { note: "Needs input: Pick one?" });
+  assert.equal(trigger.title, "b\nNeeds input: Pick one?");
+  numberTabStrips([bar]);
+  assert.equal(trigger.title, "b (Alt+2)\nNeeds input: Pick one?");
+  tabs[0].tabEl.remove(); numberTabStrips([bar]);
+  assert.equal(trigger.title, "b (Alt+1)\nNeeds input: Pick one?", "a renumber keeps the note");
+  setTabTitle(trigger, { note: null });
+  assert.equal(trigger.title, "b (Alt+1)", "clearing the note keeps the key");
+  // A trigger the chrome did not draw starts from its own title as the name.
+  const bare = doc.createElement("button"); bare.title = "plain";
+  setTabTitle(bare, { key: "Alt+5" });
+  assert.equal(bare.title, "plain (Alt+5)");
 });
 
 test("numberTabStrips writes only what changed, so a strip observer sees nothing on a no-op pass", async t => {
