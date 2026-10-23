@@ -58,7 +58,9 @@ function validSplit(split, count) {
 export function validLayout(value) {
   if (!plainObject(value) || !onlyKeys(value, ["terminals", "split", "active"]) || !("split" in value) || !("active" in value)) return false;
   const terminals = value.terminals;
-  if (!Array.isArray(terminals) || terminals.length < 1 || terminals.length > MAX_HANDED_TERMINALS || !terminals.every(validRef)) return false;
+  if (!Array.isArray(terminals) || terminals.length < 1 || terminals.length > MAX_HANDED_TERMINALS) return false;
+  // Every index, a hole's too (a structured clone keeps holes, and `every` would skip them).
+  for (let i = 0; i < terminals.length; i++) if (!validRef(terminals[i])) return false;
   if (value.active !== null && !index(value.active, terminals.length)) return false;
   return validSplit(value.split, terminals.length);
 }

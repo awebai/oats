@@ -32,7 +32,7 @@ import * as layout from "../renderer/split-layout.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
 import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
-import { describeLayout, composeLayout } from "../renderer/layout-handover.mjs";
+import { describeLayout, composeLayout, validLayout } from "../renderer/layout-handover.mjs";
 import { takenWorkspaceIds } from "../renderer/views/common.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
@@ -58,7 +58,7 @@ function shell(t) {
     document, window: dom.window, canAddressRemote, rowReason, navigator: { platform: "MacIntel" },
     // A restore's quiet notes (a terminal left out) are recorded, not printed.
     warned: [], console: { ...console, warn: message => c.warned.push(message) },
-    describeLayout, composeLayout, takenWorkspaceIds,
+    describeLayout, composeLayout, validLayout, takenWorkspaceIds,
     getBinding, formatChord, stableFocusTarget: () => null,
     connectionGeneration: 0, subscribeConnections: () => () => {},
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
@@ -294,6 +294,16 @@ test("restore: a terminal that no longer resolves, or no longer runs, is left ou
   const none = receiver(t);
   await restore(none, { terminals: [ref("gone")], split: null, active: 0 }, []);
   assert.equal(none.c.tabs.size, 0); assert.equal(none.c.split, null, "nothing opened: nothing is laid out");
+});
+
+test("restore: a layout off the shape (a terminals array with holes) restores nothing, reads nothing and throws nothing", async t => {
+  for (const layout of [{ terminals: new Array(3), split: null, active: null }, { terminals: [, ref("a1")], split: null, active: 0 }, null]) { // eslint-disable-line no-sparse-arrays
+    const s = receiver(t);
+    const before = s.requests.length;
+    await s.restoreHandedLayout("A", layout);
+    assert.equal(s.requests.length, before, "no roster read");
+    assert.equal(s.c.tabs.size, 0); assert.deepEqual(s.attachments, []);
+  }
 });
 
 test("restore: a selection made meanwhile stops what is left: no further open, no focus taken", async t => {

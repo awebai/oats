@@ -49,6 +49,18 @@ test('anything off the shape or past a bound is refused whole', () => {
   for (const variant of variants) assert.equal(validLayout(variant), false, JSON.stringify(variant));
 });
 
+// A structured clone keeps an array's holes, and `every` skips them: each index is checked, a hole's too.
+test('a terminals array with holes is refused, as is a split group\'s', () => {
+  const sparse = [ref('a'), ref('b'), ref('c')]; delete sparse[1];
+  const variants = [
+    { terminals: new Array(3), split: null, active: null },
+    { terminals: [, { instance: 'a' }], split: null, active: 0 }, // eslint-disable-line no-sparse-arrays
+    { ...good(), terminals: sparse },
+    { ...good(), split: { ...good().split, groups: [{ tabs: [0, , 2], active: 2 }, { tabs: [1], active: 1 }] } }, // eslint-disable-line no-sparse-arrays
+  ];
+  for (const variant of variants) assert.equal(validLayout(structuredClone(variant)), false, String(variant.terminals.length));
+});
+
 test('describe: the workspace\'s terminal tabs only, in strip order, with their split and active tab', () => {
   const tabs = new Map([
     [1, { kind: 'terminal', workspace: A, instanceRef: { instance: 'a', home: '/d/agents/a', running: true } }],

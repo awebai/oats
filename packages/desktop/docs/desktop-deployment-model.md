@@ -679,7 +679,18 @@ terminal owner).
   or late: it shows its previous workspace, else the switcher, and closes its
   tabs of it. Its answer may hand the workspace's terminals and split over
   (`renderer/layout-handover.mjs`), passed on whole when valid, else not at
-  all. The renderer runs one claim at a time
+  all; every index is checked, so an array with holes is not valid. A holder
+  whose page is loading or reloading still gets the ask: the preload keeps it
+  until the shell subscribes (`onWorkspaceRelease`). A page with a hash
+  confirms it with main at start (`startWindow`, a claim with focus false);
+  a holder's claim of the workspace it is being asked to release settles the
+  ask, with no layout, and is answered `open-elsewhere`, so it chooses. As a
+  backstop, main refuses every workspace-scoped read (409
+  `E_WINDOW_NOT_BOUND`) and terminal open (`E_TERM_FORBIDDEN_FRAME`, the
+  terminal owner's `admitFrame`) from a frame whose hash names a workspace
+  main doesn't bind its window to (`holdsHash`, through the view of a
+  deployment id), and a terminal open from a window with no workspace.
+  The renderer runs one claim at a time
   and commits a switch only after main's yes (`switchWorkspace` in
   `renderer/views/common.mjs`), so a switch never leaves its hash and main's
   registry apart.

@@ -32,7 +32,32 @@ test('the workspace comes from the hash, not the shared selection', async () => 
   const w = await windowWith({ hash: workspaceHash(A), stored: B });
   assert.equal(w.common.currentWorkspace(), A);
   assert.equal(await w.common.startWindow(), 'bound');
-  assert.deepEqual(w.claims, [], 'a bound window asks main nothing at start');
+  assert.deepEqual(w.claims, [[A, { focus: false }]], 'a bound window confirms its binding, focusing nothing');
+  assert.deepEqual(w.replaced, [workspaceHash(A)]);
+});
+
+// #1488: a page that loaded or reloaded while another window took its workspace over never heard the ask
+// to release it; main has moved the binding. Its hash still names the workspace, and it must not show it.
+test('a window whose hash names a workspace main no longer binds to it chooses at start, and reads nothing', async () => {
+  const w = await windowWith({ hash: workspaceHash(A), stored: A, claim: async () => ({ ok: false, code: 'open-elsewhere', workspaces: CHOICES }) });
+  const states = [], seen = []; w.common.onWindowState((state) => states.push(state)); w.common.onWorkspaceChange((ws) => seen.push(ws));
+  const gen = w.common.workspaceGeneration();
+  assert.equal(await w.common.startWindow(), 'choosing');
+  assert.equal(w.common.currentWorkspace(), '');
+  assert.deepEqual(w.common.choosingWorkspaces(), CHOICES);
+  assert.deepEqual(w.replaced, ['/app/renderer/index.html'], 'the hash is cleared');
+  assert.ok(w.common.workspaceGeneration() > gen, 'nothing in flight may paint the workspace');
+  assert.deepEqual(states, ['choosing']); assert.deepEqual(seen, ['']);
+  assert.equal(w.store.get(WS_KEY), A, 'the shared default is left as it is');
+});
+
+test('a hash-bound window main refuses for another reason (or whose claim throws) stays bound, as before', async () => {
+  for (const claim of [async () => ({ ok: false, code: 'bad-workspace' }), async () => ({ ok: false, code: 'unknown-window' }), async () => { throw new Error('ipc'); }]) {
+    const w = await windowWith({ hash: workspaceHash(A), claim });
+    assert.equal(await w.common.startWindow(), 'bound');
+    assert.equal(w.common.currentWorkspace(), A);
+    assert.deepEqual(w.replaced, []);
+  }
 });
 
 test('a window with no hash takes the shared default when main says no other window has it, and binds its hash', async () => {
@@ -298,10 +323,10 @@ test('without the window bridge, a leave is a plain selection of the newest serv
 });
 
 // The workspace a window was opened on (its hash, or a restored window's) is the first of its session
-// history, though startWindow asks main nothing for a window bound at start.
+// history: startWindow confirms it with main and keeps it.
 test('the workspace a window was opened on is in its history: taken over after one switch, it goes back there', async () => {
   const w = await windowWith({ hash: workspaceHash(B) });
-  await w.common.startWindow();
+  assert.equal(await w.common.startWindow(), 'bound');
   await w.common.switchWorkspace(A); w.claims.length = 0;
   await w.common.leaveTakenWorkspace(A, CHOICES);
   assert.deepEqual(w.claims, [[B, { focus: false }]]);

@@ -218,7 +218,9 @@ below, a line under the list says how many ("2 more below").
   selection; one another window shows moves here ([A workspace another window
   shows](#a-workspace-another-window-shows)). The leader's ↑ / ↓ go to the
   previous / next row, and stop at the ends ("No workspace above this one." /
-  "No workspace below this one.").
+  "No workspace below this one."). Each is a pick, so walking the list with
+  them moves every workspace it passes that another window shows into this
+  window.
 - **Open in new window** is in a row's context menu (a right-click, or
   Shift+F10 or the Menu key), and ⌘Enter on macOS / Ctrl+Enter on Linux and
   Windows does it from the keyboard. It opens the workspace in its own window,
@@ -260,8 +262,9 @@ shows the workspace it showed most recently before that one among those the
 Desktop still serves and no other window shows, else no workspace ("Choose a
 workspace"). It closes every tab it had of the workspace that moved. The
 Desktop waits at most 2 seconds for the other window; one that answers late
-ends the same way. **Open in new window** still brings the other window to
-the front instead.
+ends the same way, and so does one that was still opening or reloading:
+once it comes up it shows no workspace, never the one that moved. **Open in
+new window** still brings the other window to the front instead.
 
 Only the terminals and the split move with the workspace: this window opens
 the same terminal tabs in the same split, each with a fresh viewer, and the

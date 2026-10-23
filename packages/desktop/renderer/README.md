@@ -41,7 +41,9 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   the sidebar's list of workspaces can drive it too. One window per workspace: the
   window's workspace is its URL's hash (`#ws=<id>`, window-binding.mjs),
   rewritten with `history.replaceState`; localStorage only holds the default
-  a new window takes when main says no other window has it (`startWindow`).
+  a new window takes when main says no other window has it (`startWindow`;
+  a window with a hash confirms that binding there, and chooses when main
+  answers `open-elsewhere`: a take-over moved it while the page loaded).
   Every switch goes through `switchWorkspace`, which main binds first
   (`window:claim-workspace`): a workspace another window has brings that
   window to the front and leaves this one unchanged, unless the switch is a

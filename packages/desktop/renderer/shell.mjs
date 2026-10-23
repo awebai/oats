@@ -10,7 +10,7 @@
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
 import { currentWorkspace, workspaceGeneration, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, postJson, rowDeployment, httpError,
   switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices, leaveTakenWorkspace, handedLayout, takenWorkspaceIds } from "./views/common.mjs";
-import { describeLayout, composeLayout } from "./layout-handover.mjs";
+import { describeLayout, composeLayout, validLayout } from "./layout-handover.mjs";
 import { instanceActions, captureInstanceActionMenu, pendingActionReason } from "./instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
 import { createInstancePrAction } from "./instance-pr-action.mjs";
@@ -3081,8 +3081,10 @@ function closeWorkspaceTabs(taken) {
  * opened here again (fresh viewers; the agents keep running) and laid out as they were, under ONE intent ticket, so
  * any selection made meanwhile (a click, a key, another open) supersedes what is left of it, as does a switch or a new
  * connection. A terminal that no longer resolves in this workspace's roster, or no longer runs, is left out, as a
- * stale memory's is (workspace-tab-memory.mjs recall). */
+ * stale memory's is (workspace-tab-memory.mjs recall). A layout off the descriptor's shape (main refuses one; this
+ * is the backstop) restores nothing, and throws nothing. */
 async function restoreHandedLayout(ws, layout) {
+  if (!validLayout(layout)) return;
   const owns = tabOpenIntents.begin(), gen = workspaceGeneration(), connection = connectionGeneration;
   const still = () => owns() && workspaceGeneration() === gen && currentWorkspace() === ws && connection === connectionGeneration;
   const read = ++panelReads;
