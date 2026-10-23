@@ -23,6 +23,14 @@
   the same mark.
 - **Desktop: a window opens on the Workspace page**, at launch and after you
   choose a workspace, rather than on Deployments.
+- **Desktop: Workspace › Capabilities in two parts.** **Workspace defaults**
+  first, then **All capabilities**, each with its title; the segments that
+  jump to Workspace owned, Repo owned and Packages sit under the All
+  capabilities title, and there is no Defaults segment.
+- **Desktop: the Workspace pages name no deployment.** The "On This Mac ·
+  ~/…" line is gone from every Workspace tab, Automations included, and from
+  a capability's, a team's and a soul's page. They read the same deployment
+  as before; the side panel and the Deployments page still say which.
 - **Desktop: what a deployment is.** The Deployments page has a round **i**
   after its tabs, **What is a deployment?**, that explains it in plain words.
 - **Desktop: the instances have no filter field.** To find an instance by

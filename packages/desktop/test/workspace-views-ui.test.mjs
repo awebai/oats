@@ -26,6 +26,7 @@ import { onDeploymentTabRequest } from "../renderer/deployment-tabs.mjs";
 import { mountShellIcons } from "../renderer/shell-icons.mjs";
 import { deploymentScopeLabel, createDeploymentScopeLine, deploymentScopeCSS } from "../renderer/deployment-scope-line.mjs";
 import { createAutomationsView, automationsCSS } from "../renderer/views/automations.mjs";
+import { inspectorCSS } from "../renderer/soul-inspector.mjs";
 import { currentWorkspace, setWorkspace } from "../renderer/views/common.mjs";
 import { viewContext } from "./helpers/view-context.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
@@ -292,7 +293,8 @@ test("a deployment-level surface shows 'On <primary>' only in a view of two or m
   one.dispose(); two.dispose(); byDeployment.dispose();
 });
 
-test("Automations (and Schedules, the same view) carry the line under their header", async (t) => {
+// Automations is a Workspace tab, and no Workspace tab names the deployment it reads (the product owner, 2026-10-23).
+test("Automations (and Schedules, the same view) carry no 'On <deployment>' line, even in a view of two", async (t) => {
   const dom = new JSDOM("<body><div id=host></div></body>"); t.after(() => dom.window.close());
   const doc = dom.window.document;
   const was = currentWorkspace(); t.after(() => setWorkspace(was));
@@ -300,10 +302,11 @@ test("Automations (and Schedules, the same view) carry the line under their head
   vd.notePanel({ workspace: { id: "ws:auto" }, deployments: [LOCAL, ALTAIR] });
   const v = createAutomationsView(doc.getElementById("host"), { kind: "schedule", read: async () => ({ rows: [] }) });
   t.after(() => v.dispose());
-  const header = doc.querySelector(".auto-header"), line = header.nextElementSibling;
-  assert.ok(line.classList.contains("deployment-scope")); assert.equal(line.textContent, "On This Mac · ~/Agents/oats"); assert.equal(line.hidden, false);
-  vd.notePanel({ workspace: { id: "ws:auto" }, deployments: [LOCAL] });
-  assert.equal(line.hidden, true, "one deployment: no line");
+  const header = doc.querySelector(".auto-header");
+  assert.equal(header.nextElementSibling, doc.querySelector(".auto-body"), "the body right under the header");
+  assert.equal(doc.querySelector(".deployment-scope, .auto-scope"), null);
+  assert.doesNotMatch(doc.body.textContent, /On This Mac/);
+  assert.doesNotMatch(automationsCSS, /auto-scope/, "no rule left for it");
 });
 
 /* ── contrast: every new text on its computed surface, in every theme ── */
@@ -315,7 +318,7 @@ const painted = (win, el) => { for (let p = el; p; p = p.parentElement) { const 
 for (const name of ["light", "solarized", "dark"]) test(`${name}: roster headings and marks, workspace list entries and the scope line meet computed AA`, async (t) => {
   const dom = new JSDOM(html, { url: "https://fixture.invalid" }); t.after(() => dom.window.close());
   const doc = dom.window.document, win = dom.window; doc.documentElement.dataset.theme = name; mountShellIcons(doc);
-  for (const source of [theme, css, deploymentScopeCSS, automationsCSS]) { const style = doc.createElement("style"); style.textContent = source; doc.head.append(style); }
+  for (const source of [theme, css, deploymentScopeCSS, inspectorCSS]) { const style = doc.createElement("style"); style.textContent = source; doc.head.append(style); }
   const list = doc.querySelector("#instance-roster .ctx-list");
   list.append(vd.deploymentHeading(doc, { deployment: LOCAL, label: "This Mac", count: 1 }), vd.deploymentHeading(doc, { deployment: ALTAIR, label: "altair", count: 1 }));
   const sw = createWorkspaceSwitcher({ document: doc, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) });
@@ -324,14 +327,15 @@ for (const name of ["light", "solarized", "dark"]) test(`${name}: roster heading
   // and an inactive one, both on the sidebar's --surface: the name is all a row says.
   const marked = [views[0], views[1], views[2]];
   sw.begin()(marked[0], marked);
-  const section = doc.createElement("section"); section.className = "oats-view automations"; doc.body.append(section);
+  // The scope line where it shows: the side panel's soul inspector, on its --surface.
+  const section = doc.createElement("aside"); section.className = "soul-inspector"; doc.body.append(section);
   vd.notePanel({ workspace: { id: "ws:contrast" }, deployments: [LOCAL, ALTAIR] });
-  const line = createDeploymentScopeLine(doc, { workspace: "ws:contrast", className: "auto-scope" }); section.append(line.element);
+  const line = createDeploymentScopeLine(doc, { workspace: "ws:contrast" }); section.append(line.element);
   const root = win.getComputedStyle(doc.documentElement);
   const active = '.ws-option[aria-current="true"]', inactive = `.ws-option[data-workspace-id="${marked[2].id}"]`;
   const checks = [
     [".ctx-deployment-label", "muted", "surface"], [".ctx-deployment .deployment-mark", "warn", "surface"],
-    [`${active} .ws-option-name`, "fg", "surface"], [`${inactive} .ws-option-name`, "fg", "surface"], [".auto-scope", "muted", "surface"],
+    [`${active} .ws-option-name`, "fg", "surface"], [`${inactive} .ws-option-name`, "fg", "surface"], [".soul-inspector > .deployment-scope", "muted", "surface"],
   ];
   for (const [selector, fg, surface] of checks) {
     const el = doc.querySelector(selector); assert.ok(el, selector);

@@ -531,10 +531,15 @@ split into sections) is `packages/client/roster-sections.mjs`.
   deployment?"), built once by `views/hierarchy.mjs`; a workspace change and unmounting close it
   with no focus move, and opening it revokes an act still in flight (`actionTicket`).
 - **"On <deployment>"** (`deployment-scope-line.mjs`): deployment-level surfaces read the
-  view's primary deployment and say which in a line under their heading, only with two or
-  more deployments (Workspace header, Automations/Schedules, the soul inspector for a soul,
-  a capability page, Brain, the Sync sheet). Teams configuration, launch configurations and
-  spawn are not wired here.
+  view's primary deployment, and some say which in a line under their heading, only with two
+  or more deployments: the side panel's soul inspector for a soul, Brain and the Sync sheet.
+  No Workspace page does (the product owner, 2026-10-23), and none makes the line: not the
+  Workspace header (`workspace-discovery.mjs`) or any tab, Automations/Schedules
+  (`views/automations.mjs`) included, nor a capability's page (`capability-page.mjs`), a
+  team's page (`computer-teams.mjs`) or a soul's page (`soul-inspector.mjs` in
+  `layout: 'page'`). They read the primary all the same (#482: their reads carry the view id, which the
+  server answers from the primary), with no choice of deployment. The Deployments page names
+  each deployment on its own tab. Launch configurations and spawn are not wired here.
 - **Re-homing** (`workspace-rehome.mjs`, shell `rehomeWorkspaceState`, on every roster
   read): state under a deployment id (a selection, tab layout and active-terminal memory,
   open tabs with their `term:`/view keys, collapsed rows, stored spawn jobs) moves to the view
@@ -1339,10 +1344,16 @@ workspace is observed through its server and never synced from here.
   (`docs/desktop-load-path.md`); the tab reads
   the held table via `POST /api/workspace-sync?ws=<id>` `{action:"read"}`
   when it opens (`refresh: true` forces a live read; after a sync the table
-  is re-read). A
-  segmented jump (Workspace owned / Repo owned, when the CLI lists it / Packages,
-  the sections in the same order; navigation, so the
-  section in view carries `aria-current`), then one 58px row
+  is re-read). The tab is in two parts (2026-10-23), each titled by an h2
+  (`.capability-part-title`, 18px at 700): **Workspace defaults** (below), when
+  reported, then **All capabilities** (`section.capability-part`, its title
+  `#capability-part-all`). Under that title, on a row of its own, a segmented
+  jump (Workspace owned / Repo owned, when the CLI lists it / Packages, with no
+  Defaults segment; the sections in the same order; navigation, so the section
+  in view carries `aria-current`), then those sections as its h3 subsections.
+  `syncCapabilityNav` finds the jump in the toolbar or the sections and tracks
+  only All capabilities' sections (`.capability-part .capability-section`), so
+  the defaults above them never make a segment current. Each section is one 58px row
   card per capability (design board 4): a tile tinted by kind (Knowledge,
   Messaging, Tasks, other, package), the name with its kind chip over a
   one-line description, *Used by* and a chevron; the columns are
@@ -1381,10 +1392,11 @@ workspace is observed through its server and never synced from here.
   member's `publishes` never absorbs its package's capabilities). A remembered
   repository the catalog stops offering falls back to All. "N of M shown" counts
   what the pill and the search leave.
-  **Workspace defaults** (`workspace-defaults.mjs`) is the first section and the
-  jump's first segment (**Defaults**, counting the filled slots plus the default
-  capabilities not turned off) whenever `oats workspace status` reports
-  `defaults`; without it there is no section and nothing is inferred. It is one
+  **Workspace defaults** (`workspace-defaults.mjs`) is the first part, a section of
+  its own outside All capabilities and no segment of its jump, whenever `oats
+  workspace status` reports `defaults`; without it there is no such part and
+  nothing is inferred (`workspaceDefaults().count`, the filled slots plus the
+  default capabilities not turned off, is no longer shown). It is one
   panel: a scope line, then two groups drawn with one cell (tile | slot label, id,
   source chip). Core capabilities holds the three slots in a fixed order (Knowledge,
   Messaging, Tasks), including a named default (`defaults.capabilities`) whose listed
@@ -1403,8 +1415,8 @@ workspace is observed through its server and never synced from here.
   `data-focus-key`s (`defaults:<slot>`, `defaults:cap:<name>`), which
   the tab host restores after a repaint (`captureFocusState` on the sections).
   The toolbar's round "i" (`about-dialog.mjs` `createAboutDialog`) is built
-  once by `workspace-discovery.mjs` and kept after the jump across repaints, as
-  the search field is. Workspace › Souls has its own "i", built once by
+  once by `workspace-discovery.mjs` and kept in the toolbar's lead across
+  repaints, as the search field is. Workspace › Souls has its own "i", built once by
   `views/spawn.mjs` (the Deployments page has a third, above). The dialogs are the lifecycle dialog's frame, with focus
   handling from `forget-dialog.mjs`: they join the overlay handoff, and leaving the
   tab or the workspace closes them with `close({ focus: 'none' })`. All their
@@ -1463,8 +1475,9 @@ which also carries Setup's List/Graph switch) and the Souls bar sit outside the
 content scrollers (`.souls-grid`, `.workspace-discovery`). Each scroller is
 positioned, `min-height:0` and `overscroll-behavior: contain`; the view root
 (`.souls`) is `position:relative; overflow:clip`. Inside the Capabilities
-scroller the section pills + search (`.ws-toolbar.ws-sticky`) and the Teams page
-head (`.ct-page-head.ws-sticky`) are `position:sticky` on the opaque `--bg`.
+scroller the search and its "i" (`.ws-toolbar.ws-sticky`) and the Teams page
+head (`.ct-page-head.ws-sticky`) are `position:sticky` on the opaque `--bg`; the
+section pills are All capabilities' own and scroll with it.
 Chromium insets a sticky box by its scroller's padding, so they pin at
 `top: -var(--ws-pad-top)` (flush with the scrollport; nothing shows above
 them) and keep an 8px inner top. Their 1px bottom edge is always there,

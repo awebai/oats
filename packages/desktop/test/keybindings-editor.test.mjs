@@ -7,6 +7,8 @@ import {
 import { createKeybindingsEditor, groupActions, shortcutMatches, CHORD_FAMILY_WORDS } from "../renderer/keybindings-editor.mjs";
 import { createChordFamily } from "../renderer/chord-family.mjs";
 import { NAV, NAV_TABS } from "../renderer/shell-nav.mjs";
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 
 // storage stub so overrides work in node
 const map = new Map();
@@ -906,4 +908,27 @@ test("chord family: a stored override on one of the seven keys shows its clash w
   const row = f.doc.querySelector('.kb-chord[data-action-id="sidebar.toggle"]').closest(".kb-row");
   assert.match(row.querySelector(".kb-conflict").textContent, /Also bound to “Command palette”/);
   assert.equal(getBinding("sidebar.toggle", false), "Ctrl+Shift+K", "the stored rebind is kept");
+});
+
+// Settings: Connections (#1497) left the sidebar's settings menu (2026-10-23): it stays findable from the shortcuts
+// list, where the shell's registry entry (app.connections) is listed under Global with its label, and found by search.
+test("Settings: Connections is in the shortcuts list (Global, by its label) and its search, from the shell's own registry entry", (t) => {
+  const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  const line = shell.match(/^registerAction\(\{ id: "app\.connections",[^\n]*\}\);$/m)?.[0];
+  assert.ok(line, "the shipped registration");
+  let opened = 0;
+  const f = setupLinux(t);
+  const off = runInNewContext(line, { registerAction, openConnections: () => { opened++; } });
+  t.after(off);
+  assert.equal(groupActions().find((g) => g.context === "global")?.actions.some((a) => a.id === "app.connections" && a.label === "Settings: Connections"), true);
+  f.editor.open();
+  const row = f.rowFor("Settings: Connections");
+  assert.ok(row, "listed");
+  assert.equal(row.closest(".kb-group").dataset.label, "Global");
+  assert.equal(row.querySelector(".kb-chord").textContent, "unbound", "no default key, rebindable like every row");
+  for (const q of ["connections", "Settings: Conn", "settings"]) {
+    f.type(q);
+    assert.ok(f.shown().includes("Settings: Connections"), `"${q}" finds it`);
+  }
+  assert.equal(opened, 0, "listing it runs nothing");
 });

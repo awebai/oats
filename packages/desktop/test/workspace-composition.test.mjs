@@ -71,10 +71,10 @@ test('03 (F7): a soul opens as a page in the main area — it replaces the grid,
   assert.equal(header.hidden, true, 'the page bar replaces the Workspace header while the page is open');
   assert.ok(page.querySelector('.page-bar .inspector-back'), 'the back control lives in the page bar');
   assert.equal(main.firstElementChild, header);
-  // #482: the "On <deployment>" line sits under the header; hidden (no box) in a one-deployment view.
-  const scope = header.nextElementSibling;
-  assert.ok(scope.classList.contains('deployment-scope')); assert.equal(scope.hidden, true); assert.equal(scope.textContent, '');
-  assert.equal(scope.nextElementSibling, u.get('.workspace-recovery'));
+  // No "On <deployment>" line under the header: the Workspace pages do not name the deployment they read (the
+  // product owner, 2026-10-23; #482's rule, docs/desktop-deployment-model.md); the side panel and Deployments do.
+  assert.equal(header.nextElementSibling, u.get('.workspace-recovery'));
+  assert.equal(main.querySelector('.deployment-scope'), null);
   assert.equal(u.get('.workspace-recovery').hidden, true, 'compatible CLI adds no visible row before the cards');
   // Workspace v4 (human decision 2026-09-26; replaces the header-placed filter): the
   // search and Team/Repo control are the view's own toolbar, directly above the cards.

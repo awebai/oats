@@ -26,7 +26,6 @@ import { warningOf } from '../../client/capability-warnings-contract.mjs';
 import { createWarningsList, capabilityWarningsCSS } from './capability-warnings.mjs';
 import { displayLine } from '../../client/display-text.mjs';
 import { trackStickyTop, trackScrolledEdge } from './sticky-top.mjs';
-import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 
 export const workspaceTabs = ['souls', 'capabilities', 'automations', 'teams', 'sources'];
 // What a person reads (the ids stay stable): Souls, Capabilities, Automations, Teams, Setup (product owner, 2026-10-23,
@@ -56,8 +55,6 @@ ${syncCSS}
 ${capabilityWarningsCSS}
 .workspace-header { height:var(--bar-h); min-height:48px; flex:none; display:flex; align-items:stretch; flex-wrap:nowrap; gap:22px; padding:0 calc(16px + var(--main-trail-inset, 0px)) 0 calc(16px + var(--main-lead-inset, 0px)); border-bottom:1px solid var(--border); background:var(--surface); box-sizing:border-box; }
 .workspace-header[hidden] { display:none; }
-.workspace-header[hidden] + .deployment-scope { display:none; } /* a soul or capability page shows its own line */
-.workspace-header + .deployment-scope { flex:none; padding:6px 16px 6px; border-bottom:1px solid var(--border); background:var(--surface); }
 .oats-view .workspace-header .field { min-height:28px; height:28px; padding:4px 8px; font-size:12px; }
 ${tabBarCSS('.workspace-tabs')}
 .workspace-count { color:var(--muted); font:10.5px var(--mono,monospace); }
@@ -242,9 +239,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, autom
   header.className = 'workspace-header';
   // No title in the bar (human, 2026-09-28): the sidebar already says Workspace; the tabs lead.
   const tabs = node('div', undefined, 'workspace-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Workspace sections'); header.append(tabs);
-  // #482: in a view of two or more deployments, which one every Workspace tab reads (the primary).
-  const scope = createDeploymentScopeLine(doc);
-  header.after(scope.element);
+  // #482: every Workspace tab reads the view's primary deployment, without naming it (the product owner, 2026-10-23).
   const controls = new Map(), counts = new Map();
   const attns = new Map();
   for (const name of workspaceTabs) {
@@ -282,8 +277,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, autom
   // The Capabilities search lives in the view itself (human, 2026-09-26): a toolbar row above the sections.
   const capTools = node('div', undefined, 'ws-toolbar ws-sticky'); capTools.dataset.tools = 'capabilities';
   const capLead = node('div', undefined, 'ws-toolbar-lead'); capTools.append(capLead);
-  // "About capabilities": built once, right after the section jump (the repaint puts the jump before it), so a
-  // catalog repaint never rebuilds it under focus.
+  // "About capabilities": built once, in the toolbar's lead (the section jump is All capabilities' own now, under
+  // its title: workspace-catalog.mjs), so a catalog repaint never rebuilds it under focus.
   const about = createAboutDialog(doc, { copy: ABOUT_COPY.capabilities, id: 'workspace-capabilities-about', onIntent: () => onIntent?.() });
   capLead.append(about.button);
   const search = node('label', undefined, 'ws-search');
@@ -476,9 +471,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, autom
     const shown = filterCapabilities(sections.workspace, { repo }, names, hostKey);
     renderRepoPills(filterHost, { repos, value: repo, total: sections.workspace.length, shown: matchCapabilities(shown, query).length,
       narrowed: !!repo || !!String(query || '').trim(), onChange: next => { repo = next; render(); refocusPill(repo ?? ''); } });
-    renderCapabilitySections(body, { sections, shown, filterHost, navHost: capLead, privateListed: privateListed(), query,
+    renderCapabilitySections(body, { sections, shown, filterHost, privateListed: privateListed(), query,
       status: s, instances, souls, composition: soulsComposition(cliStatus()), root: workspace?.id, rosterState: rosterState(), onOpen: onOpenCapability });
-    const jump = capLead.querySelector('.capability-nav'); if (jump) capLead.insertBefore(jump, about.button);
     restoreBody?.();
     if (focusedPill !== null) refocusPill(focusedPill);
     reveal();
@@ -563,6 +557,6 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, autom
       serial++; rosterGen = null; workspace = null; deployment = null; instances = []; catalog = null; loading = false; failure = '';
       repo = null; sync.reset(); loadState.reset(); updateCounts('pending'); render(); onCatalog?.();
     },
-    dispose() { alive = false; serial++; about.dispose(); sync.dispose(); computerTeams?.dispose(); machines?.dispose(); loadState.dispose(); stickyTop.dispose(); soulsEdge.dispose(); scope.dispose(); scope.element.remove(); },
+    dispose() { alive = false; serial++; about.dispose(); sync.dispose(); computerTeams?.dispose(); machines?.dispose(); loadState.dispose(); stickyTop.dispose(); soulsEdge.dispose(); },
   };
 }

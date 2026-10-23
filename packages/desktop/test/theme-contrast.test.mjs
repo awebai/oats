@@ -1633,7 +1633,8 @@ for (const [name] of palettes) test(`${name}: team model 3 card facts, address, 
 
 // Round 5: a team's page (showTeam): the counts and the default note on the page's --bg, each machine's head band on
 // --surface-2 (an unreached one in the warn colour), the table's header and rows on --surface (and --surface-2 under a
-// row's hover), the dimmed soul prefix, the pill words on --sel, --attn-bg and no fill, and the scope line.
+// row's hover), the dimmed soul prefix, and the pill words on --sel, --attn-bg and no fill. No scope line: the
+// Workspace pages show no "On <deployment>" line (the product owner, 2026-10-23).
 for (const [name] of palettes) test(`${name}: a team's page (counts, machine cards, instance rows and pills) meets computed AA`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div class="board"></div><section class="workspace-page"></section></div></body></html>`, { pretendToBeVisual: true });
   const doc = dom.window.document;
@@ -1660,8 +1661,8 @@ for (const [name] of palettes) test(`${name}: a team's page (counts, machine car
   const pair = (fg, bg, what) => assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${what}: ${fg} on ${bg}`);
   const opaque = el => { for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1'); };
   const rows = [
-    // The team's card on its page: the label and the deployment it edits (hidden in a one-deployment view; its colour still counts).
-    ['h2.ct-page-label', '.ct-page-card', 'fg', 'surface'], ['.ct-head > .deployment-scope', '.ct-page-card', 'muted', 'surface'],
+    // The team's card on its page: the label.
+    ['h2.ct-page-label', '.ct-page-card', 'fg', 'surface'],
     // A machine's head band.
     ['.ct-mcard:not(.unreached) .ct-mcard-head', '.ct-mcard:not(.unreached) .ct-mcard-head', 'muted', 'surface-2'],
     ['.ct-mcard:not(.unreached) .ct-machine', '.ct-mcard:not(.unreached) .ct-mcard-head', 'fg', 'surface-2'],
@@ -1683,6 +1684,7 @@ for (const [name] of palettes) test(`${name}: a team's page (counts, machine car
     pair(fg, bg, selector); opaque(el);
   }
   assert.deepEqual([...host.querySelectorAll('.ct-member-state .ct-state-word')].map(w => w.textContent), ['Running', 'Stopped', 'not reachable on build', 'unknown']);
+  assert.equal(host.querySelector('.deployment-scope'), null, 'no scope line on the team page');
   // A row's hover lays --surface-2 under its text: every colour on a row that has no fill of its own holds there too.
   const rule = selector => [...doc.styleSheets].flatMap(sheet => [...sheet.cssRules]).find(r => r.selectorText === selector)?.style;
   assert.equal(rule('.computer-teams .ct-irow:not(.ct-ihead):hover').background, 'var(--surface-2)');

@@ -319,8 +319,10 @@ other window.
 
 ## Capabilities and spawning
 
-**Workspace › Capabilities** lists what the workspace offers, in three
-sections: **Workspace owned** (from the member repos, for every soul),
+**Workspace › Capabilities** is in two parts, each with its title:
+**Workspace defaults** (below), then **All capabilities**, what the
+workspace offers. Under the **All capabilities** title, a row of segments
+jumps to its three sections: **Workspace owned** (from the member repos, for every soul),
 **Repo owned** (only for souls of the same repo) and **Packages** (pinned
 versions). Workspace owned and Repo owned are grouped by the repository
 that defines each capability. The groups are headed like the Souls tab:
@@ -331,7 +333,7 @@ pills (**All**, then one per repository, each with its count) show one
 repository at a time; "N of M shown" appears while a pill or the search
 narrows the list.
 
-Above those sections, **Workspace defaults** shows what every soul of the
+Above All capabilities, **Workspace defaults** shows what every soul of the
 workspace starts with, unless it turns one off. It is one panel with two
 groups. **Core capabilities** (at most one of each per soul) is always
 **Knowledge**, **Messaging** and **Tasks**. **Additional capabilities** (any
@@ -347,12 +349,12 @@ says "turned off by the workspace". A workspace that sets no defaults, a
 standalone deployment for example, shows one line saying so. The search and
 the repository pills never narrow or hide this section. It is read from
 `oats workspace status --json`: an OATS that does not report the defaults
-shows no section, and the Desktop does not guess them from the souls. The
-section jump at the top of the tab starts with **Defaults**, whose count is
-the filled slots plus the other default capabilities not turned off. Teams
-add no capabilities (removed in 0.30), so there are no team defaults to show.
+shows no such part, and the Desktop does not guess them from the souls. The
+defaults have no segment of their own: the segments are All capabilities'.
+Teams add no capabilities (removed in 0.30), so there are no team defaults
+to show.
 
-The round **i** button after the section jump (**About capabilities**) opens
+The round **i** button in the toolbar, beside the search (**About capabilities**), opens
 **What capabilities are**: what a capability gives a soul's instances (skills,
 commands and instructions, the instructions injected into each instance's
 composed `AGENTS.md` after the soul's own), the three places one comes from
@@ -581,8 +583,11 @@ feature (OATS 0.36.0); without it each deployment has its own entry.
 - **Actions.** Everything you do to an instance goes to that instance's own
   deployment. Workspace-wide pages (Setup, Capabilities, Sync, Automations,
   Schedules, Teams configuration) act on the workspace's first deployment on
-  this Mac, else its first, and say "On <deployment>" when there are two or
-  more.
+  this Mac, else its first. No Workspace page names it: not Souls,
+  Capabilities, Automations, Teams or Setup, nor a soul's, a capability's or
+  a team's page. The side panel names it ("On This Mac · ~/acme", under a
+  soul's name) when there are two or more, as do Brain and the Sync sheet,
+  and the Deployments page shows each deployment on its own tab.
 - **Spawn.** With two or more deployments, the Spawn dialog asks first which
   one to spawn in (and says "Runs on" in its summary), starting on the one you last used in that workspace when it
   offers the soul, else the first that does (this Mac first). With one, it
