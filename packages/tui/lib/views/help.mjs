@@ -111,8 +111,8 @@ function commandRows(command, at, cols) {
  *  takes, what it does not do, and where the keys that can be the back key are listed (the help
  *  does not restate the grammar). */
 export const OPEN_RULES = Object.freeze([
-  "While the terminal has the focus every other key goes to the agent, Ctrl+C and Ctrl+Z too.",
-  "Up to 4 terminals are open at a time, each a tab. They have no scrollback but the viewer's own, and no mouse.",
+  "While the terminal has the focus every other key but Shift+PageUp goes to the agent, Ctrl+C and Ctrl+Z too.",
+  "Up to 4 terminals are open at a time, each a tab, with no mouse. Shift+PageUp scrolls back; PageUp, PageDown move, q leaves.",
   "docs/tui.md has the keys that can be the leader.",
 ]);
 /** The rows under the line of `open`, in `room` cells: the leader then Esc, which takes the focus
