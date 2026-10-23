@@ -172,7 +172,7 @@ test('team members: the view\'s deployments only, each tagged; any view, a remot
   const oats = views.teamMembersFor(V_OATS);
   assert.deepEqual(oats.members.map(m => [m.instance, m.workspace, m.deployment]), [
     ['dev-a', A, tag(A, 'This Mac', A)], ['idle', A, tag(A, 'This Mac', A)], ['dev-b', B, tag(B, 'This Mac', B)], ['far-a', R, tag(R, 'altair', '/home/juan/oats')]]);
-  assert.deepEqual(oats.servers, [{ server: 'altair', label: 'altair', group: 'altair:a1', deployment: R, reached: true, error: null, registered: true }]);
+  assert.deepEqual(oats.servers, [{ server: 'altair', label: 'altair', group: 'altair:a1', deployment: R, reached: true, error: null, registered: true, features: null }]);
   assert.deepEqual(oats.notReached, []);
   assert.deepEqual(views.teamMembersFor(A), oats, 'a deployment id reads its view');
   const lab = views.teamMembersFor(V_LAB);

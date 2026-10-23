@@ -58,7 +58,7 @@ export function parseEnvelope(stdout) {
  * silently degrade into different spawn behavior. */
 const SPAWN_ARG_RULES = {
   purpose: { flag: "--purpose", re: /^[a-z0-9][a-z0-9-]*$/i },              // instance-name slug
-  // The exact instance name (feature spawn-name): the kernel's grammar (lib/core.mjs INSTANCE_NAME_RE), lowercase,
+  // The exact instance name (feature spawn-name): the kernel's instance-name grammar, lowercase,
   // used as given; the kernel refuses the rest of its rule itself (E_INSTANCE_NAME_INVALID). Never with a purpose.
   name:    { flag: "--name",    re: /^[a-z0-9][a-z0-9-]*$/ },
   repo:    { flag: "--repo",    re: /^[^-][^\0]*$/ },                       // path — anything not option-shaped
