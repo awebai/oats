@@ -439,12 +439,10 @@ with `E_REMOVED`.
 - **How it works:** a working soul whose knowledge slot is `oats.okf`
   reads the compulsory `okf-propose` skill from its IMPORTANT inject and
   checks `oats okf status`. At each harvest checkpoint the skill names (a PR
-  handed over, a finished task, and in a long-lived role a feature ready, a
-  release or deploy shipped, or a direction decision with the human), new
-  durable claims become one proposal, launched one harvester at a time under
-  a name the skill prints. The harvester opens owned-node PRs for
-  the review trigger (section 3). The duty does not depend on a task briefing;
-  only new spawns get it after the 5.3.0 pin and sync.
+  handed over, a task finished, a feature ready, a release shipped), new claims
+  become one proposal for one harvester at a time, under a name the skill
+  prints. The harvester opens owned-node PRs for the review trigger (section 3).
+  The duty needs no task briefing; only new spawns get it after the 5.3.0 pin.
 - **The one switch is the soul's own opt-out:** `knowledge: { harvest: off }`
   in its `soul.yaml`. Its instances get the shared conditional instructions
   but no duty; `oats okf status` reports `off` from the spawn-written policy.
