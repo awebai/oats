@@ -182,7 +182,8 @@ function over what its caller holds:
   `choiceMatches` is the TUI switcher's filter (the Desktop's list has none).
   `renderer/workspace-switcher.mjs` draws the sidebar's list from the rows,
   one line each (the name and the dot: it shows no muted line, no not-live
-  mark and no section), and keeps what is only its own: the needs-input
+  mark and no section; its own `rowNames` tells twins apart by team and key,
+  never by folder or machine), and keeps what is only its own: the needs-input
   words, the new-window hint and context menu, and the Add dialog (this
   computer's deployments to add, the stale rows to remove).
 - **Moving in the list of workspaces** (`workspace-step.mjs`).

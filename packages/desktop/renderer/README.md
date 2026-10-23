@@ -430,8 +430,9 @@ split into sections) is `packages/client/roster-sections.mjs`.
   always shown; docs/desktop.md, "Workspaces"): one row per served view, whatever machine it is
   on, the matched views first, then the unattached ones, in ONE `<ul>` with no heading. A list
   of buttons, not a listbox, so the sidebar's plain keys stay live on it (shell.mjs
-  `updateActiveContexts`). A row is one line, the name alone (`workspaceChoiceRows` `label`
-  from `packages/client/workspace-choices.mjs`; twins of one name show their key): no mark, no
+  `updateActiveContexts`). A row is one line, the name alone (`rowNames`: twins of one name
+  show their team and key, never a folder or a machine, which the shared `workspaceChoiceLabels`
+  falls back to for the TUI): no mark, no
   muted line, no not-live mark, no per-row button. Its tooltip is the whole name (a long one is
   cut by an ellipsis), never a path or a machine. Rows cut off below the bounded height are
   counted under the list (`.ws-more`, `moreBelowText`, aria-hidden). `reset(current)` (a switch

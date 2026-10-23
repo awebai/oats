@@ -210,13 +210,14 @@ test('the renderer holds none of the rule: it declares no name the shared module
   const moved = [...Object.keys(choices), 'choiceTooltip', 'machinesOf'];
   assert.deepEqual(Object.keys(choices).sort(), ['UNMATCHED_SECTION', 'choiceMatches', 'isLocalPath', 'workspaceChoiceLabels', 'workspaceChoicePlace', 'workspaceChoiceRows']);
   assert.deepEqual(moved.filter(declared), []);
-  assert.match(source, /import \{ isLocalPath, workspaceChoiceLabels, workspaceChoiceRows \} from "\.\.\/\.\.\/client\/workspace-choices\.mjs";/);
+  // The row's name is the Desktop's own (rowNames: never a folder or a machine); the shared labels are the TUI's.
+  assert.match(source, /import \{ isLocalPath, workspaceChoiceRows \} from "\.\.\/\.\.\/client\/workspace-choices\.mjs";/);
   // It reads a row (`said`), never the choice's own fields for words, and spells none of the words itself.
   assert.doesNotMatch(source, /"deployments?"|Not matched to a workspace|deploymentLabels|workspace\.(?:notLive|short|machines|unattached|key)\b/);
-  assert.match(source, /const said = workspaceChoiceRows\(workspaces\);/); assert.match(source, /row = said\[index\];/);
+  assert.match(source, /const said = workspaceChoiceRows\(workspaces\), names = rowNames\(workspaces\);/); assert.match(source, /row = said\[index\], label = names\[index\];/);
   assert.doesNotMatch(source, /choiceMatches/, 'the list filters nothing');
   // What stays the renderer's.
-  for (const name of ['OPEN_IN_NEW_WINDOW', 'WAITING_NAME', 'openInNewWindowHint', 'createWorkspaceSwitcher']) assert.equal(declared(name), true, name);
+  for (const name of ['OPEN_IN_NEW_WINDOW', 'WAITING_NAME', 'openInNewWindowHint', 'rowNames', 'createWorkspaceSwitcher']) assert.equal(declared(name), true, name);
   // The check finds a declaration when there is one, and the module the page loads imports no Node builtin.
   assert.doesNotMatch(readFileSync(new URL('../../client/workspace-choices.mjs', import.meta.url), 'utf8'), /from\s*["']node:|import\(\s*["']node:/);
 });

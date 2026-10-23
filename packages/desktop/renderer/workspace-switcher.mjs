@@ -2,9 +2,9 @@ import { iconElement } from "./shell-icons.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { workspaceStep } from "../../client/workspace-step.mjs";
 import { requestDeploymentTab } from "./deployment-tabs.mjs";
-// A row's name (two of one name told apart) and, for a view no workspace matched, its deployment are the shared
-// home's: this module draws the row. The needs-input words, the new-window hint and adding a folder are its own.
-import { isLocalPath, workspaceChoiceLabels, workspaceChoiceRows } from "../../client/workspace-choices.mjs";
+// For a view no workspace matched, the deployment its pick opens is the shared home's (workspaceChoiceRows); the
+// row's name (rowNames), the needs-input words, the new-window hint and adding a folder are this module's.
+import { isLocalPath, workspaceChoiceRows } from "../../client/workspace-choices.mjs";
 
 /* The workspace list (docs/desktop.md, "Workspaces"): always shown at the top of the sidebar, one row per
    workspace this window can show, whatever machine it is on: the served views, remote-only ones included, then
@@ -49,6 +49,24 @@ const candidateId = (candidate) => text(candidate?.id || candidate?.path);
 const candidateName = (candidate) => candidate?.name
   || candidateId(candidate).split("/").filter(Boolean).at(-1)
   || "Workspace";
+
+/** Each row's name, in order: the workspace's name, else a local folder's last segment, else "Workspace". Two
+ * of one name are told apart by what names the workspace, its team and its key ("tsm — github.com/a/tsm"),
+ * never by where it is: no folder, no machine (the shared workspaceChoiceLabels falls back to those, for the
+ * TUI's switcher). Twins with nothing of the kind keep the same name. */
+export function rowNames(choices) {
+  const short = (value) => typeof value === "string" && value.length > 0 && value.length <= 512 ? value : "";
+  const base = choices.map((choice) => choice.name
+    || (isLocalPath(choice.id) ? String(choice.id).split("/").filter(Boolean).at(-1) : "")
+    || "Workspace");
+  const counts = new Map();
+  for (const name of base) counts.set(name, (counts.get(name) || 0) + 1);
+  return choices.map((choice, index) => {
+    if (counts.get(base[index]) === 1) return base[index];
+    const suffix = [short(choice.team?.name), short(choice.key)].filter(Boolean).join(" · ");
+    return suffix ? `${base[index]} — ${suffix}` : base[index];
+  });
+}
 
 /** The keyboard route to a workspace's Open in new window (#481), said once for every row. */
 export function openInNewWindowHint(mac) {
@@ -152,7 +170,7 @@ export function createWorkspaceSwitcher({
    * another window shows is taken over). */
   let drawn = [];
   const renderOptions = () => {
-    const said = workspaceChoiceRows(workspaces);
+    const said = workspaceChoiceRows(workspaces), names = rowNames(workspaces);
     const focused = options.contains(document.activeElement) ? document.activeElement : null;
     const focusedKey = focused?.classList?.contains("ws-option") ? rowKey(focused) : "";
     options.replaceChildren();
@@ -161,15 +179,15 @@ export function createWorkspaceSwitcher({
     // The views a workspace identity matched, then those none matched: one flat list, no heading.
     const order = [...said.keys()].filter((i) => !said[i].unattached).concat([...said.keys()].filter((i) => said[i].unattached));
     for (const index of order) {
-      const workspace = workspaces[index], row = said[index];
+      const workspace = workspaces[index], row = said[index], label = names[index];
       const button = document.createElement("button");
       button.type = "button"; button.className = "ws-option"; button.tabIndex = -1;
       if (workspace.id === activeId) button.setAttribute("aria-current", "true");
       button.dataset.workspaceId = workspace.id;
-      const name = document.createElement("span"); name.className = "ws-option-name"; name.textContent = row.label;
+      const name = document.createElement("span"); name.className = "ws-option-name"; name.textContent = label;
       button.append(name);
       // The dot (the view's `waiting === true`): after the name, and in the row's name and tooltip. Unknown is none.
-      let tooltip = row.label;
+      let tooltip = label;
       if (workspace.waiting === true) {
         const words = document.createElement("span"); words.className = "sr-only"; words.textContent = WAITING_NAME;
         const dot = document.createElement("span"); dot.className = "ws-waiting"; dot.setAttribute("aria-hidden", "true");
@@ -579,7 +597,7 @@ export function createWorkspaceSwitcher({
     if (workspace) choosing = false; // a window showing a workspace is not choosing one
     workspaces = Array.isArray(list) ? [...list] : [];
     if (workspace && !workspaces.some((candidate) => candidate.id === activeId)) workspaces.unshift(workspace);
-    const labels = workspaceChoiceLabels(workspaces);
+    const labels = rowNames(workspaces);
     const activeIndex = workspaces.findIndex((candidate) => candidate.id === activeId);
     // A window with no workspace (#481) asks for one; otherwise, before the first answer, it is resolving.
     const current = workspace ? (labels[activeIndex] || candidateName(workspace)) : choosing ? "none chosen yet" : "resolving";

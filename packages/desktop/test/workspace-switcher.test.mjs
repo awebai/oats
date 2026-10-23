@@ -63,9 +63,8 @@ test("the workspace list is disambiguated, keeps the focused row across a repain
   const { dom, document, selected, controller } = setup();
   controller.begin()(B, [A, B]);
   const options = [...document.querySelectorAll(".ws-option")];
-  assert.deepEqual(options.map((option) => option.querySelector(".ws-option-name").textContent), [
-    "oats — alpha · org-a/oats", "oats — beta · org-b/oats",
-  ]);
+  // By their teams, never their folders (the shared labels above are the TUI's): a row names no place.
+  assert.deepEqual(options.map((option) => option.querySelector(".ws-option-name").textContent), ["oats — alpha", "oats — beta"]);
   assert.equal(said(document), "Current workspace: /org-b/oats");
   assert.deepEqual(options.map((option) => option.getAttribute("aria-current")), [null, "true"]);
   options[0].focus();

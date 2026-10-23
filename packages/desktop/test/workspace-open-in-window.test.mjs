@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
+import vm from 'node:vm';
 import { createWorkspaceSwitcher, openInNewWindowHint, OPEN_IN_NEW_WINDOW } from '../renderer/workspace-switcher.mjs';
 
 const html = readFileSync(new URL('../renderer/index.html', import.meta.url), 'utf8');
@@ -180,23 +181,44 @@ test('a window with no workspace hides its whole instance section (the shipped C
   dom.window.close();
 });
 
-// The chooser stage (shell.mjs showChooser) needs the whole shell to run, so its rule is pinned in the source:
-// one function, used by the chooser's button and run as the stage is entered, focuses the list when main
-// served workspaces to choose from, and otherwise opens Add local workspace… with the chooser's button as
-// the opener (focus goes back to it when the dialog closes). Whitespace is ignored.
-test('the chooser\'s button and entering the chooser stage share one rule: the list when it has rows, else the Add dialog', () => {
+// The chooser stage (shell.mjs showChooser), run on its own: its text is extracted and run with the shell's
+// names it uses stubbed, as the shell harnesses do. Entering the stage and its button share one rule: the list
+// when main served workspaces to choose from, else Add local workspace…, with the button as the opener.
+function chooserStage(choices) {
   const source = readFileSync(new URL('../renderer/shell.mjs', import.meta.url), 'utf8');
-  const body = source.match(/async function showChooser\(\)\s*\{([\s\S]*?)\n\}/)?.[1];
-  assert.ok(body, 'showChooser is found');
-  const flat = body.replace(/\s+/g, '');
-  assert.match(flat, /constchoose=document\.createElement\("button"\);/, 'the chooser\'s button is `choose`');
-  const rule = flat.match(/const(\w+)=\(\)=>\{if\(choosingWorkspaces\(\)\.length\)focusWorkspaceList\(\);else(?:void)?workspaceLabel\.openModal\(choose\);?\};/);
-  assert.ok(rule, 'one function: the list when there are choices, else the Add dialog opened by the chooser\'s button');
-  const name = rule[1];
-  assert.ok(flat.includes(`choose.addEventListener("click",${name});`), 'the button runs it');
-  const painted = flat.indexOf('workspaceLabel.choose(choosingWorkspaces());');
-  const entered = flat.lastIndexOf(`${name}();`);
-  assert.ok(painted >= 0, 'the list is given the choices');
-  assert.ok(entered > painted, 'entering the stage runs it at once, after the list has its rows');
-  assert.equal(flat.split('workspaceLabel.openModal(').length - 1, 1, 'the stage opens the dialog only through that rule');
+  const fn = source.match(/async function showChooser\(\)[^]*?\n\}/)?.[0];
+  assert.ok(fn, 'showChooser is found');
+  const dom = new JSDOM('<main id="stage"></main>');
+  const calls = [], list = { now: choices };
+  const context = {
+    document: dom.window.document, stageHost: dom.window.document.getElementById('stage'), contextRosterEl: null,
+    tabOpenIntents: { invalidate() {} }, showTabLayer() {}, closeStage: async () => true, windowState: () => 'choosing',
+    choosingWorkspaces: () => list.now, focusWorkspaceList: () => calls.push(['focus']),
+    workspaceLabel: { choose: (rows) => calls.push(['choose', rows.length]), openModal: (opener) => { calls.push(['modal', opener?.textContent]); } },
+  };
+  vm.runInNewContext(`${fn}\nglobalThis.showChooser = showChooser;`, context);
+  return { dom, calls, list, run: () => context.showChooser(), button: () => context.stageHost.querySelector('button') };
+}
+
+test('a window with no workspace and choices to show: the stage focuses the list, and so does its button', async () => {
+  const s = chooserStage([{ id: 'ws:a' }]);
+  await s.run();
+  assert.deepEqual(s.calls, [['choose', 1], ['focus']]);
+  s.button().click();
+  assert.deepEqual(s.calls.at(-1), ['focus']);
+  s.dom.window.close();
 });
+
+test('a window with no workspace and nothing served: the stage opens the Add dialog at once, its button opens it again', async () => {
+  const s = chooserStage([]);
+  await s.run();
+  assert.deepEqual(s.calls, [['choose', 0], ['modal', 'Choose a workspace…']], 'opened by the chooser\'s button: focus goes back to it');
+  s.button().click();
+  assert.deepEqual(s.calls.at(-1), ['modal', 'Choose a workspace…']);
+  // Choices served since (#521): the button goes to the list now.
+  s.list.now = [{ id: 'ws:a' }];
+  s.button().click();
+  assert.deepEqual(s.calls.at(-1), ['focus']);
+  s.dom.window.close();
+});
+

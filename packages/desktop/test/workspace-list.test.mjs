@@ -108,13 +108,24 @@ test("a row is one line, the name alone: no mark, icon, machine, state or button
   assert.ok(!s.document.getElementById("ws-options").textContent.includes("Not reached"), "an unattached row's state is its tab's to say");
 });
 
-test("two of one name are told apart by the shared label, still on one line", async (t) => {
+test("two of one name are told apart by their workspace keys, still on one line", async (t) => {
   const s = setup(t);
   const one = view("oats", { id: "ws:oats1".padEnd(23, "0"), key: "github.com/a/oats" });
   const two = view("oats", { id: "ws:oats2".padEnd(23, "0"), key: "github.com/b/oats" });
   s.controller.begin()(one, [one, two]); await tick();
   assert.deepEqual(s.rows().map((b) => b.textContent), ["oats — github.com/a/oats", "oats — github.com/b/oats"]);
   assert.deepEqual(s.rows().map((b) => b.title), ["oats — github.com/a/oats", "oats — github.com/b/oats"]);
+});
+
+test("two of one name without keys are never told apart by where they are: no folder, no machine, in the row or its tooltip", async (t) => {
+  const s = setup(t);
+  // Local folders (an older server, an unmatched deployment) and remote ones, named alike, with no workspace key.
+  const a = { id: "/org-a/oats", name: "oats" }, b = { id: "/org-b/oats", name: "oats" };
+  const c = { id: "remote:vega:t1", name: "tsm", machines: ["vega"] }, d = { id: "remote:rigel:t2", name: "tsm", machines: ["rigel"], team: { name: "Acme" } };
+  s.controller.begin()(a, [a, b, c, d]); await tick();
+  assert.deepEqual(s.rows().map((r) => r.textContent), ["oats", "oats", "tsm", "tsm — Acme"], "a team names a workspace; a folder or a machine does not");
+  assert.deepEqual(s.rows().map((r) => r.title), ["oats", "oats", "tsm", "tsm — Acme"]);
+  for (const r of s.rows()) assert.doesNotMatch(`${r.textContent} ${r.title}`, /org-a|org-b|\/|vega|rigel/);
 });
 
 test("a long name: the line cuts it with an ellipsis (CSS) and the tooltip gives the whole name", async (t) => {
