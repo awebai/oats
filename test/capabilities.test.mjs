@@ -3214,7 +3214,7 @@ test("capability instructions and package skills give an independent harvester t
   assert.match(instructions, /IMPORTANT/);
   assert.match(instructions, /\*\*okf-propose\*\* skill is \*\*compulsory\*\*/);
   assert.deepEqual(f.cli(["okf", "status", "--json"], f.as(f.source)), { harvest: "on", reason: "default" });
-  assert.match(readFileSync(join(f.home, ".agents/skills/okf-propose/SKILL.md"), "utf8"), /oats spawn oats\.okf\/knowledge-harvester --task-file <proposal> --relation unrelated/);
+  assert.match(readFileSync(join(f.home, ".agents/skills/okf-propose/SKILL.md"), "utf8"), /oats spawn oats\.okf\/knowledge-harvester --name <harvester-name> --task-file <proposal> --relation unrelated/);
   const file = f.proposal(), run = f.propose({ file });
   assert.equal(lstatSync(join(run.home, "work")).isSymbolicLink(), false);
   assert.ok(readFileSync(join(run.home, "TASK.md"), "utf8").includes(readFileSync(file, "utf8").trim()));
@@ -3303,7 +3303,7 @@ test("the package mirrors carry the versions package-catalog.json pins", () => {
     assert.equal(catalog.capabilities[id], "oats.engineering", `${id} is supplied by the oats.engineering package`);
     assert.equal(Object.hasOwn(manifest, "agents"), false, `${id} declares no capability agent: the code-reviewer is oats.engineering's package soul`);
   }
-  assert.equal(catalog.packages["oats.engineering"].ref, "v1.10.0");
+  assert.equal(catalog.packages["oats.engineering"].ref, "v1.11.0");
   // oats.cloning exports one capability under the package's own id: no alias; the cloner is a package soul.
   assert.equal(catalog.packages["oats.cloning"].ref, "v1.0.1");
   assert.equal(catalog.capabilities["oats.cloning"], undefined, "an identity mapping needs no alias");

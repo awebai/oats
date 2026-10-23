@@ -14,10 +14,22 @@ to situate the task and to stay coherent with what your soul already knows.
 
 > **IMPORTANT — keep instance knowledge current and harvest at checkpoints.**
 > You MUST keep STATE.md, log.md and notes/ up to date, and MUST launch a
-> knowledge harvest at important checkpoints when the procedure's gates pass.
-> Reading the **okf-propose** skill is **compulsory** at task start and before
-> a harvest checkpoint; it defines the narrow rule (at most one proposal per
-> finished task or PR hand-over), the promotion test and the spawn limits.
+> knowledge harvest at every harvest checkpoint:
+> - when you **hand over a PR for review**;
+> - when you **finish a task**;
+> - in a long-lived role such as a maintainer's, when **a feature is ready**,
+>   when you **ship a release or a deploy**, and when **a direction decision**
+>   is taken with your human.
+>
+> Reading the **okf-propose** skill is **compulsory** at task start and at
+> each checkpoint; it defines the proposal, the promotion test, the
+> checkpoint record in log.md and the one-harvester-at-a-time rule.
+> Name each harvester explicitly: **okf-propose** gives the source-derived,
+> per-proposal UUID recipe (a slug of at most 64 characters). Record the name
+> before preview and use it unchanged in both preview and launch:
+> `oats spawn oats.okf/knowledge-harvester --name <harvester-name> --task-file <proposal> --relation unrelated`.
+> Never use the default numbered name. On `E_INSTANCE_NAME_TAKEN` or a
+> messaging identity failure, stop and report; no automatic rename or retry.
 > Run `oats okf status` from instance home to read your spawn-recorded duty.
 > A soul declaring `knowledge: { harvest: off }` has no harvest duty; it still
 > consults and keeps instance knowledge current.
@@ -31,9 +43,13 @@ The work mode:
   links; do not bulk-load.
 - **Before compaction and before a task boundary:** update STATE.md, log.md
   and notes/ first, so your future self can continue.
-- **At an important checkpoint**—a decision made, a PR handed over, a task
-  finished—first update STATE.md, log.md and relevant notes. Capture as it
-  happens; launch only at the harvest checkpoints defined by **okf-propose**.
+- **At a decision you make while working, as it happens:** write it into
+  notes/; the next harvest checkpoint carries it. A direction decision taken
+  with your human is a checkpoint of its own.
+- **At a harvest checkpoint** (a PR handed over, a task finished, a feature
+  ready, a release or deploy shipped, a direction decision taken with your
+  human): first update STATE.md, log.md and relevant notes, then follow
+  **okf-propose** and record the checkpoint's outcome in log.md.
 - **Every so often while working, and always before a design decision or
   before re-deriving something:** `oats okf search` / `cat` the relevant
   concepts and re-read your own notes. Consult prior decisions before
