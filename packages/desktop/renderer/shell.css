@@ -59,23 +59,26 @@ body {
 .ws-group { margin: 0; padding: 0; list-style: none; }
 .ws-menu-empty { margin: 4px 8px 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .ws-menu-empty[hidden] { display: none; }
-/* A row is one line, the workspace's name (and the dot after it): no mark, no machine, no state. */
-.ws-option { width: 100%; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 0;
+/* A row is one line: the instance roster's circle, the workspace's name, and at the far right the needs-input dot;
+   no machine, no state. The circle is the roster's own .ctx-dot, its ring in the row's fill (--row-solid), in the
+   column of the roster's top-level dots (the list's 8px and the row's 10px, as .ctx-list and .ctx-inst). */
+.ws-option { --row-solid: var(--surface); width: 100%; min-width: 0; display: flex; align-items: center; gap: 9px; padding: 6px 8px 6px 10px; border: 0;
              border-radius: 6px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
-.ws-option:hover { background: var(--surface-2); }
-.ws-option:focus-visible { background: var(--sel); }
-/* The current workspace, by style alone (aria-current says it to assistive tech): in bold, with an accent edge on
-   its left and no fill of its own. The selection fill (--sel) is the nav's current view (.nav-item.active), so the
-   sidebar shows one filled "you are here" row; the edge holds 3:1 on every fill the row paints (TEXT_PAIRS holds
-   --accent at 4.5:1 on --surface, --surface-2 and --sel). */
-.ws-option[aria-current="true"] { box-shadow: inset 3px 0 0 var(--accent); }
+.ws-option:hover { --row-solid: var(--surface-2); background: var(--surface-2); }
+.ws-option:focus-visible { --row-solid: var(--sel); background: var(--sel); }
+/* The current workspace, by style alone (aria-current says it to assistive tech): its circle filled like a running
+   instance's (.ctx-dot.on, --accent), the others a ring like a stopped one's (.ctx-dot.off), and its name in bold; no
+   fill of its own. The selection fill (--sel) is the nav's current view (.nav-item.active), so the sidebar shows
+   one filled "you are here" row; the filled circle holds 3:1 on every fill the row paints (TEXT_PAIRS holds --accent
+   at 4.5:1 on --surface, --surface-2 and --sel). */
 .ws-option[aria-current="true"] .ws-option-name { font-weight: 650; }
-/* A workspace with an instance that needs input: the roster's attention dot, a graphic after the name
-   (its words are in the name, sr-only, and the tooltip). */
-.ws-waiting { flex: none; box-sizing: border-box; width: 8px; height: 8px; border-radius: 50%; background: var(--attn-dot); border-width: 1px; border-style: solid; border-color: var(--warn); } /* a yellow dot; its ring, the needs-input colour of the roster and the tabs, holds 3:1 on every row fill */
+/* A workspace with an instance that needs input: the roster's attention dot, a graphic at the row's far right, after
+   the name, which is cut off before it (its words are in the name, sr-only, and the tooltip). */
+.ws-waiting { flex: none; margin-left: auto; box-sizing: border-box; width: 8px; height: 8px; border-radius: 50%; background: var(--attn-dot); border-width: 1px; border-style: solid; border-color: var(--warn); } /* a yellow dot; its ring, the needs-input colour of the roster and the tabs, holds 3:1 on every row fill */
 .ws-option-row { min-width: 0; }
-/* Rows cut off below the list's bounded height: said under it, in words (no fade over text). */
-.ws-more { margin: 2px 8px 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+/* Rows cut off below the list's bounded height: said under it, in words (no fade over text), and with the rows' dot,
+   in their column at the far right, when one of them waits on you. */
+.ws-more { display: flex; align-items: center; gap: 9px; margin: 2px 8px 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .ws-more[hidden] { display: none; }
 /* A long name ends in an ellipsis; the tooltip holds the whole name. */
 .ws-option-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

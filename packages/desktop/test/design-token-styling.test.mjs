@@ -92,14 +92,17 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, two alike section
   assert.equal(u.style(".ws-options").maxHeight, "276px");
   assert.equal(u.style(".ws-options").overflowY, "auto");
   assert.equal(u.style(".ws-option").alignItems, "center");
-  assert.equal(u.style(".ws-option").padding, "6px 8px");
+  assert.equal(u.style(".ws-option").padding, "6px 8px 6px 10px", "its circle in the column of the roster's top-level dots");
   // The needs-input dot: the roster's attention token, a 7px graphic that never shrinks.
   const dot = u.style(".ws-waiting");
   assert.deepEqual([dot.width, dot.height, dot.boxSizing, dot.borderRadius, dot.flexShrink, dot.background, dot.borderTopWidth, dot.borderTopStyle],
     ["8px", "8px", "border-box", "50%", "0", "var(--attn-dot)", "1px", "solid"], "a yellow fill in a ring (its --warn colour and 3:1: theme-contrast)");
-  // A row is one line (pr3-simplify): the name, which gives way and ends in an ellipsis, then the dot; the current
-  // row is told by style alone, its name in bold (and the --sel fill: theme-contrast).
-  assert.deepEqual([u.style(".ws-option").display, u.style(".ws-option").gap], ["flex", "6px"]);
+  // A row is one line (pr3-simplify): the roster's circle, the name, which gives way and ends in an ellipsis, then the
+  // dot at the far right; the current row is told by style alone, its circle filled and its name in bold
+  // (theme-contrast). The circle sits from the name as an instance's dot does (.ctx-inst's 9px).
+  assert.deepEqual([u.style(".ws-option").display, u.style(".ws-option").gap], ["flex", "9px"]);
+  assert.equal(u.style(".ws-option").gap, u.style(".ctx-inst").gap);
+  assert.equal(u.style(".ws-waiting").marginLeft, "auto", "the dot at the row's far right");
   const name = u.style(".ws-option-name");
   assert.deepEqual([name.flexGrow, name.flexShrink, name.minWidth, name.overflow], ["0", "1", "0px", "hidden"]);
   assert.equal(u.style('.ws-option[aria-current="true"] .ws-option-name').fontWeight, "650");

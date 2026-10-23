@@ -220,17 +220,20 @@ machines](#one-workspace-several-machines)), after them in the same list.
 
 With one workspace the list is one compact row. With many it scrolls within
 about six rows, the current row stays in view, and while rows are cut off
-below, a line under the list says how many ("2 more below").
+below, a line under the list says how many ("2 more below"), with the yellow
+dot at its right when one of them has an instance that needs input.
 
-- **A row is one line: the workspace's name.** No icon, no machine, no state:
-  a workspace's own pages show its machines and deployments. A long name ends
-  in an ellipsis, and the row's tooltip is the whole name.
-- **The current workspace** has an accent edge on its left and its name in
-  bold, with no background of its own: the selection's background marks the
-  current page at the bottom (Deployments or Workspace), so the sidebar fills
-  one "you are here" row. A screen reader hears it as current, and the list's
-  description names it, by the same name as its row.
-- **The yellow dot.** A row has a small yellow dot after its name when an
+- **A row is one line: a circle and the workspace's name.** No icon, no
+  machine, no state: a workspace's own pages show its machines and
+  deployments. The circle is the one an instance row has, in the same place.
+  A long name ends in an ellipsis, and the row's tooltip is the whole name.
+- **The current workspace** has its circle filled, like a running
+  instance's, and its name in bold; the others have the ring a stopped
+  instance has. It has no background of its own: the selection's background
+  marks the current page at the bottom (Deployments or Workspace), so the
+  sidebar fills one "you are here" row. A screen reader hears it as current,
+  and the list's description names it, by the same name as its row.
+- **The yellow dot.** A row has a small yellow dot at its right end when an
   instance of that workspace needs input: the claim the instance roster shows
   for that instance, from a running session (OATS with the `waiting-on-you`
   feature), as the Desktop already reads it for the workspaces it serves.
