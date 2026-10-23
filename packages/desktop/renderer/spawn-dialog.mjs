@@ -1477,9 +1477,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       return data.naming.source === 'suggested' ? { source: 'suggested', name: data.name } : { source: 'numbered', reason: data.naming.reason, harness: choice ?? 'claude' };
     } catch (error) { return { failure: previewFailure(error?.code === 'E_FORBIDDEN_FRAME' ? 'E_FORBIDDEN_FRAME' : 'E_CLI_FAILED').reason }; }
   }
-  /** The soul's default harness where it will run, as that machine reports it: a soul listed from a server, or the
-   * chosen remote deployment's catalog row; null when this computer does not know it. */
-  const remoteSoulHarness = () => (soul.server ? soul.harness : deploymentField?.harness()) || null;
+  /** The soul's default harness where it will run, as that machine reports it: the chosen deployment's catalog row when
+   * the Deployment field chooses (another deployment is another catalog), else a soul listed from a server; null when
+   * this computer does not know it. */
+  const remoteSoulHarness = () => (deploymentField ? deploymentField.harness() : soul.server ? soul.harness : null) || null;
   /** Spawn with an empty, untouched name and no suggestion for this text: name it first ("Naming…"), whatever the
    * text's length, then spawn. An empty task makes no call: it is numbered, and the dialog says why. A suggestion
    * spawns under its name (the choices carry it); a numbered answer spawns the numbered name and says why. An edit

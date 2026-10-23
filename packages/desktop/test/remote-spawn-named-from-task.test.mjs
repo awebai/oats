@@ -12,6 +12,7 @@ import { instanceSuggestion, instanceSuggestRequest, instanceSuggestSupported, N
 import { namingKey } from '../../client/spawn-naming.mjs';
 import { spawnArgv, cliSpawn } from '../../client/cli-adapter.mjs';
 import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
+import { proxySpawnApply } from '../spawn-apply-proxy.mjs';
 import { cli as CLI, deferred, DEPLOYMENT } from './helpers/spawn-preview-fixture.mjs';
 import { mountSpawn, settle } from './helpers/spawn-dialog-host.mjs';
 
@@ -28,7 +29,8 @@ test('instanceSuggestion: a name exactly when suggested, a kernel slug within 64
   assert.deepEqual(instanceSuggestion(numbered('timeout').result), { naming: { source: 'numbered', reason: 'timeout', ms: 4 } }, 'the kernel\'s message never travels');
   for (const bad of [null, {}, { naming: { source: 'suggested', ms: 1, harness: 'claude', model: null } }, { ...suggested().result, name: 'Bad-Name' },
     { ...suggested().result, name: 'a--b' }, { ...suggested().result, name: 'x'.repeat(65) }, { ...numbered('timeout').result, name: 'x' },
-    { ...suggested().result, extra: 1 }, numbered('nope').result]) assert.equal(instanceSuggestion(bad), null, JSON.stringify(bad));
+    { ...suggested().result, extra: 1 }, numbered('nope').result, { ...suggested().result, name: 123 }, { ...suggested().result, name: ['release-notes-manager'] }])
+    assert.equal(instanceSuggestion(bad), null, JSON.stringify(bad));
 });
 
 test('instanceSuggestRequest: the soul as a name only, the task as at apply, codex allowed, a model only with pi', () => {
@@ -227,4 +229,46 @@ test('an answer names a spawn on its own machine only: another server asks again
   assert.equal(u.names.length, 2, 'asked again for altair');
   await u.change('.fserver', 'build'); await settle(20);
   assert.equal(u.names.length, 2, 'build\'s answer is kept');
+});
+
+test('the Electron proxy waits for a remote spawn the host names longer than the CLI may run, as it does for one it doesn\'t', async t => {
+  // The CLI's deadline (cliSpawn) and the proxy's, read where they are set, with no real wait.
+  const cliMs = async suggestName => {
+    let ms; await cliSpawn('/oats', { agent: 'dev', workspaceDir: '/ws', task: 'go', server: 'build', ...(suggestName ? { suggestName } : {}) },
+      { exec: (b, a, opts, done) => { ms = opts.timeout; done(null, JSON.stringify({ schemaVersion: 1, ok: true, result: { instance: 'x', agent: 'dev', home: '/h' } })); } });
+    return ms;
+  };
+  const renderer = 'file:///fixture/index.html', frame = { url: renderer }, event = { senderFrame: frame, sender: { mainFrame: frame, isDestroyed: () => false } };
+  const connection = { base: 'http://localhost:4820', wsId: 'northwind', allowedWs: new Set(['northwind']), epoch: 0, transition: false };
+  const timeouts = [], real = AbortSignal.timeout;
+  AbortSignal.timeout = ms => { timeouts.push(ms); return real.call(AbortSignal, ms); };
+  t.after(() => { AbortSignal.timeout = real; });
+  const deps = { rendererURL: renderer, connection: () => connection, fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ spawned: true, instance: 'x', home: '/h' }) }) };
+  const proxyMs = async suggestName => {
+    await proxySpawnApply(event, '/api/spawn', { method: 'POST', body: JSON.stringify({ agent: 'dev', agentsRoot: '/srv/agents', serverId: 'build', task: 'go', ...(suggestName ? { suggestName } : {}) }) }, deps);
+    return timeouts.at(-1);
+  };
+  for (const named of [false, true]) {
+    const [c, p] = [await cliMs(named), await proxyMs(named)];
+    assert.ok(p - c >= 5000, `suggestName ${named}: the proxy (${p} ms) outlasts the CLI (${c} ms) by its margin`);
+  }
+  assert.equal(await proxyMs(true) - await proxyMs(false), NAMING_TIMEOUT_MS);
+});
+
+test('the Deployment field: the harness that names it is the chosen deployment\'s default for the soul, not the first one\'s', async t => {
+  const local = { id: DEPLOYMENT, machine: 'This Mac', path: DEPLOYMENT, label: 'northwind', local: true, reachable: true, identityFrom: 'reported', primary: true };
+  const remoteDeployment = (server, key) => ({ id: `remote:${server}:${key}`, machine: server, path: `/srv/${server}`, label: server, local: false, reachable: true, identityFrom: 'reported', primary: false });
+  const BUILD = remoteDeployment('build', 'k1'), ALTAIR = remoteDeployment('altair', 'k2');
+  const row = (server, harness) => ({ name: 'builder', description: '', kind: 'persistent', work: 'worktree', agentsRoot: `/srv/${server}/agents`, server, remote: true, repoName: server, harness });
+  const fact = (server, key) => ({ server, label: server, group: `${server}:${key}`, deployment: `remote:${server}:${key}`, reached: true, error: null, registered: true, features: ['spawn-name'] });
+  const u = await mountSpawn(t, { spawnName: true, cli: NAMING_CLI, deployments: [local, BUILD, ALTAIR], agents: [row('build', 'codex')],
+    catalogs: { [DEPLOYMENT]: [], [BUILD.id]: [row('build', 'codex')], [ALTAIR.id]: [row('altair', 'pi')] },
+    teamMembers: { members: [], notReached: [], servers: [fact('build', 'k1'), fact('altair', 'k2')] }, nameHere: r => suggested('release-notes-builder', r.harness) });
+  await u.open('builder'); await settle(20);
+  [...u.q('.fdeployment').querySelectorAll('input')].find(i => i.value === ALTAIR.id).click(); await settle(20);
+  await u.type('.ftask', TASK); await settle(20);
+  assert.equal(u.names.at(-1).harness, 'pi', 'altair\'s default for builder');
+  [...u.q('.fdeployment').querySelectorAll('input')].find(i => i.value === BUILD.id).click(); await settle(20);
+  assert.equal(u.names.at(-1).harness, 'codex', 'asked again for build, with build\'s');
+  assert.ok(u.names.every(n => n.dir === DEPLOYMENT), 'always through this computer\'s deployment');
 });

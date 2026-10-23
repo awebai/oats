@@ -167,7 +167,7 @@ export function instanceSuggestion(v) {
   if (!record(v) || Object.keys(v).some(k => !['name', 'naming'].includes(k))) return null;
   const naming = namingOf(v.naming);
   if (!naming) return null;
-  if (naming.source === 'suggested') return SUGGESTED.test(v.name ?? '') ? { name: v.name, naming } : null;
+  if (naming.source === 'suggested') return typeof v.name === 'string' && SUGGESTED.test(v.name) ? { name: v.name, naming } : null;
   return Object.hasOwn(v, 'name') ? null : { naming };
 }
 /** The request of the dialog's suggest-name read: `{ action: 'suggest-name', soul, task, harness?, model? }`, or null.
