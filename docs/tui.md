@@ -1813,8 +1813,11 @@ with an arrow (the product owner's call, 2026-10-23): `⌥←` and `⌥→` the 
 after, `⌥⇧←` and `⌥⇧→` the group before or after, `⌥↑` and `⌥↓` the
 workspace before or after. Its help and cheat sheet say them `Alt+Left` and
 so on, and lead with them. The other chords hold ⌘ (`⌘K`, `⌥⌘1` to `⌥⌘9`,
-`⌥⌘↑`), which a terminal never passes to a program: the leader does them,
-and no tab carries a number ([Tabs](#tabs)). ⌥ with a letter or a digit
+`⌥⌘↑`), which a terminal never passes to a program, so the TUI binds none
+of them. The leader does the actions it has a key for (`Ctrl+X` then `K`
+for the palette, for instance); the list's `Up` or `Down`, then `Enter`,
+steps between instances; and no key goes to a tab by its place, so no tab
+carries a number ([Tabs](#tabs)). ⌥ with a letter or a digit
 types a character on many layouts (`⌥2` is `@` on a Spanish one), so none
 of them is a chord. There is no family to choose: keys.json's `chords` is
 not read there.
@@ -1823,8 +1826,9 @@ A chord comes only where the terminal sends ⌥ with an arrow as its xterm
 sequence, `CSI 1;3` (`Esc [1;3D` for `⌥←`), and ⌥⇧ with one as `CSI 1;4`.
 Where it comes, the TUI takes it from the program in the terminal, as on
 Linux; where it does not, the bytes reach the program as before (`Esc b`
-and `Esc f` move a shell by word), and the leader then `Left`, `Right`,
-`Up` or `Down` does what the chord would. What each terminal sends by
+and `Esc f` move a shell by word), and the leader does what the chord
+would: then `Left` or `Right` for the tabs, `Shift+Tab` or `Tab` for the
+groups, `Up` or `Down` for the workspaces. What each terminal sends by
 default, read from its source or its documentation on 2026-10-23 (their
 main branches):
 

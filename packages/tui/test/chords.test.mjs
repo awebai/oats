@@ -787,7 +787,7 @@ test("under the protocol the help leads with the Ctrl+Alt family's chords, first
   assert.equal(ascii.some((line) => line.includes("…")), false);
 });
 
-test("without the protocol, in the Ctrl+Alt family, the leader leads, and a short chords' section after it names only the arrows; with no chord (macOS) there is none", () => {
+test("without the protocol, in the Ctrl+Alt family, the leader leads, and a short chords' section after it names only the arrows; with no chord there is none", () => {
   const lines = helpLines([...chordsRead(CHORD_MAP, false)], false);
   const chords = lines.indexOf("  Chords"), leader = lines.indexOf("  The leader");
   assert.ok(leader > 0 && chords > leader, "the leader first");

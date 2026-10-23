@@ -37,8 +37,8 @@ export const LEADER = Object.freeze({ mac: "ctrl+x", other: "ctrl+x" });
  * key, and each client says what it does. ↑ and ↓ move to the previous and the next workspace of
  * the sidebar's list (`workspace-previous`, `workspace-next`); the previous and the next instance
  * are the chords' alone (CHORDS `previous`, `next`), which carry their own labels for it. Tab and
- * Shift+Tab go to the next and the previous group of a split; macOS has no chord for the previous
- * group, so on macOS the leader is its only key. */
+ * Shift+Tab go to the next and the previous group of a split, as the chords `group-next` and
+ * `group-previous` do. */
 export const LEADER_TABLE = Object.freeze([
   { keys: ["k", "space"], does: "palette", label: "palette" },
   { keys: ["1"], does: "instances", label: "instances" },

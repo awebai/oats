@@ -262,12 +262,12 @@ const STARTED = waitingClock("2026-10-11T09:00:00.000Z", NOW);
 const LEADER_KEY = "Ctrl+\\";
 const LEAD = Object.freeze([LEADER_KEY, "commands"]);
 /** In the Ctrl+Alt family, without the kitty keyboard protocol, a terminal's cheat sheet names the
- *  Alt+Shift arrows after the leader's three; on macOS the TUI has no chords, so none. */
+ *  Alt+Shift arrows after the leader's three. */
 const ARROWS = Object.freeze([["Alt+Shift+Up/Down", "agent"]]);
 /** keys.json with Ctrl+Alt chosen: the family whose chords the kitty keyboard protocol decides. */
 const CTRL_ALT_READ = chordFamilyFrom('{ "chords": "ctrl+alt" }');
 /** In the Alt family, the default, every chord comes without the protocol, so a terminal's cheat sheet
- *  leads with them (one tab: no tab hint); on macOS the TUI has no chords, so none. */
+ *  leads with them (one tab: no tab hint). */
 const FOCUS_CHORDS = Object.freeze([["Alt+K", "palette"], ["Alt+Shift+Up/Down", "agent"], ["Alt+W", "close"], ["Alt+Z", "zoom"]]);
 /** A terminal's cheat sheet with the focus in it, in the default family: its chords, then the
  *  leader, the leader then Esc and the leader twice. */
@@ -1712,14 +1712,14 @@ function helpLines(state, sz = HELP_SIZE, key = "?") {
   assert.equal(d.extent <= d.room, true, "the whole help is on this screen");
   return d.cells.slice(1).map((_, i) => cellText(d, i + 1, from));
 }
-/** The help's first heading: the chords on Linux and Windows, where the default family, Alt, is read
- *  without the kitty keyboard protocol; the keys on macOS, which has no chords. */
+/** The help's first heading: the chords, where the default family, Alt, is read without the kitty
+ *  keyboard protocol (the tests' platform is Linux: helpers.mjs TEST_PLATFORM). */
 const FIRST_HEADING = "Chords";
 /** The help's headings, in no order: a section of the help runs from its heading to the next. */
 const HELP_HEADINGS = Object.freeze(["Keys", "Chords", "The leader", "The palette", "The spawn prompt", "Marks", "Views", "Machines", "Not in this version"]);
 /** The row of the heading after row `from` of the help's `lines` (trimmed or not), or -1. The
- *  leader's section is followed by the chords' on Linux and Windows, whose Alt+Shift arrows are read
- *  without the kitty keyboard protocol, and by the palette's on macOS, where there are no chords. */
+ *  leader's section is followed by the chords', whose Alt+Shift arrows are read without the kitty
+ *  keyboard protocol. */
 const nextHeading = (lines, from) => lines.findIndex((line, i) => i > from && HELP_HEADINGS.includes(line.trim()));
 /** Whether `command` starts on row `i` of the help's `lines` (as drawn, not trimmed): alone on it,
  *  or, wider than the area, broken before its flags onto the rows under it, each of those 2 cells
@@ -3535,8 +3535,8 @@ const paletteOpen = (state) => leaderThen(state, "k").state;
  *  and its rows' texts there. */
 const areaOf = (d, sz) => (sz.cols >= WIDE ? [d.cols + 2, sz.cols - d.cols - 3] : [0, sz.cols]);
 const areaLines = (d, sz) => { const [from, width] = areaOf(d, sz); return d.cells.map((_, r) => cellText(d, r, from, from + width)); };
-/** The palette's own keys, last on its cheat sheet, where the TUI has them: not on macOS
- *  (the tests' platform is the host's). */
+/** The palette's own keys, last on its cheat sheet (the tests' platform is Linux: helpers.mjs
+ *  TEST_PLATFORM; on macOS they hold ⌘, which no terminal passes). */
 const PALETTE_GROUP = Object.freeze([["Alt+Shift+Up/Down", "group"]]);
 /** The cheat sheet while the palette is open: how to work it. */
 const PALETTE_SHEET = Object.freeze([LEAD, ["Enter", "run"], ["Up/Down", "move"], ["Esc", "close"], ...PALETTE_GROUP]);

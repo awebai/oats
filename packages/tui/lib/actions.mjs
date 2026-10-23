@@ -120,10 +120,10 @@ export const LEADER_KEYS = new Map(LEADER.flatMap((entry) => entry.keys.map((key
  *  lib/config.mjs loadKeys): `alt`, the default, binds the `alt` keys; `ctrl+alt` the `other`
  *  ones; `ctrl+shift` the `shift` ones (seven rows move, the others keep their `other` key); macOS
  *  ignores it. A key is the TUI's key id (tuiChordKey): Alt+Shift with a letter is `alt+E`, as a
- *  terminal sends it. Left out: a row with no key there (keymap.mjs `mac: null`: the rows new with
- *  the Alt family have none on macOS, and none is borrowed from another platform), a chord with
- *  `cmd+` (a terminal never passes macOS's Command to a program: with the shared table that is
- *  every chord of macOS), one whose key an action of `actions` binds (a user's tui.json keeps its
+ *  terminal sends it. Left out: a row with no key there (a `null` key: the Ctrl+Alt and Ctrl+Shift
+ *  families leave the workspace moves to the program, and none is borrowed from another family), a
+ *  chord with `cmd+` (a terminal never passes macOS's Command to a program: with the shared table
+ *  that is every chord of macOS but the six ⌥ arrows), one whose key an action of `actions` binds (a user's tui.json keeps its
  *  key, row by row, whichever the family), one whose key is `leader` (the leader's key id, null for
  *  none: a tui.json's open.detachKey M-o is Alt+O, and the leader wins, in the list and in a
  *  terminal), and one whose `does` the TUI does not handle (leaderHandles: a row may be the
