@@ -714,18 +714,19 @@ export const tabNumber = (index, count) => (index < 8 ? index + 1 : index === co
  *  and the whole tab is in reverse video while what is typed goes to it; a hidden tab is dim.
  *  Each tab ends with its number in its group's strip (tabNumber), after a blank cell and before
  *  its closing side, dim (dim in the reverse video of the focused shown tab): a position, the same
- *  in every chord family and on every platform. The numbers are drawn only while every tab fits
+ *  in every chord family, drawn while a chord shows the Nth tab (`numbers`, the model's
+ *  `tabNumbers`: never on macOS, where none reaches the TUI). The numbers are drawn only while every tab fits
  *  whole with them, its name and its machine; else no tab has one, and the row is cut as follows.
  *  What does not fit is cut in this order: the hidden tabs' machines, then their names, each to an
  *  equal share of what the shown tab leaves with `…`, then the shown tab's machine, then the hidden
  *  tabs farthest from the shown one are left out (each takes its divider with it). The shown tab's
  *  name stays whole while the row can hold it, and is cut last. */
-function stripRow(given, area, { focused, ascii }) {
+function stripRow(given, area, { focused, ascii, numbers = true }) {
   const mark = ascii ? "*" : ACTIVITY, dot = tabDot(ascii);
   const tabs = given.map((tab, i) => ({ ...tab, name: measured(tab.name), machine: tab.machine ? measured(tab.machine) : null, mark: !tab.shown && tab.activity === true, number: tabNumber(i, given.length) }));
   const machineCells = (tab) => (tab.machine ? 3 + tab.machine.width : 0);
   // The numbers, while drawn: a blank cell and the digit.
-  let numbered = true;
+  let numbered = numbers;
   const numberCells = (tab) => (numbered && tab.number !== null ? 2 : 0);
   const cellsOf = (tab, { machine, name = tab.name.width, dropped = false }) => (dropped ? 0 : 1 + name + (tab.mark ? 1 : 0) + (machine ? machineCells(tab) : 0) + numberCells(tab) + 1);
   const plan = tabs.map((tab) => ({ machine: true, name: tab.name.width, dropped: false }));
@@ -824,7 +825,7 @@ function regionRows(m, area) {
   const focused = area.focused && m.terminal?.focus === "terminal";
   // A model made by hand may name its terminal and no tabs: its one tab is that terminal.
   const tabs = group.tabs.length ? group.tabs : [{ name: m.terminal?.name, machine: m.terminal?.routed ? m.terminal.machine : null, shown: true, activity: false }];
-  const title = stripRow(tabs, area, { focused, ascii: m.ascii });
+  const title = stripRow(tabs, area, { focused, ascii: m.ascii, numbers: m.tabNumbers !== false });
   const screenOf = area.focused ? m.screen : m.screens?.get(group.shown) ?? null;
   const lines = screenOf?.lines ?? [];
   const body = Array.from({ length: area.rows }, (_, r) => (lines[r] ?? [])

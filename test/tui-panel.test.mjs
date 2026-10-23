@@ -230,10 +230,15 @@ const OPEN_HINT = `${LEAD}Enter open   `;
  *  Alt family's chords first, as every one is read in any terminal, the protocol or not (docs/tui.md,
  *  "Chords"): the palette, the instance before or after, the tab before or after with two tabs or
  *  more, close and zoom; then the leader, the leader then Esc (the list's focus) and the leader
- *  twice (the leader typed into the terminal). On macOS the TUI has no chords. */
-const backWith = (tabs) => [...(process.platform === "darwin" ? [] : ["Alt+K palette", "Alt+Shift+Up/Down agent", ...(tabs > 1 ? ["Alt+Left/Right tab"] : []), "Alt+W close", "Alt+Z zoom"]),
+ *  twice (the leader typed into the terminal). On macOS the TUI's chords are the Alt arrows alone,
+ *  so the sheet names the tab before or after, with two tabs or more. */
+const backWith = (tabs) => [...(process.platform === "darwin" ? (tabs > 1 ? ["Alt+Left/Right tab"] : []) : ["Alt+K palette", "Alt+Shift+Up/Down agent", ...(tabs > 1 ? ["Alt+Left/Right tab"] : []), "Alt+W close", "Alt+Z zoom"]),
   `${LEADER} commands   ${LEADER} Esc the list   ${LEADER} ${LEADER} types ${LEADER}`].join("   ");
 const BACK = backWith(1);
+/** Whether the tabs carry their numbers: not on macOS, where no chord reaches them (docs/tui.md, "Tabs"). */
+const NUMBERED = process.platform !== "darwin";
+/** The shown tab of agent `name` alone, as its bar draws it. */
+const oneTab = (name) => `[${name}${NUMBERED ? " 1" : ""}]`;
 /** The whole sheet while the list has the focus beside the open terminal: Enter goes to it; the
  *  terminal's own keys (zoom, close, the tabs) are the leader's and the help's, not the sheet's. */
 const LIST_HINTS = `${LEAD}Enter focus terminal   n spawn   w workspaces   ? help   q quit`;
@@ -518,7 +523,7 @@ test(`Enter on the running agent shows its terminal in the panel beside the list
   assert.equal(early === null || !existsSync(join(early, "owner.json")), true, "no panel's directory before the first open");
   await run.open("on the running agent");
   assert.equal(run.sheet(), BACK, `the cheat sheet names the leader, the leader then Esc and the leader twice:\n${term.shows()}`);
-  assert.equal(run.panel()[0].trim(), `[${NAME} 1]`, "the panel's top row, the screen's first, is the tab bar: the agent's tab, the shown one, bracketed, with its number");
+  assert.equal(run.panel()[0].trim(), oneTab(NAME), "the panel's top row, the screen's first, is the tab bar: the agent's tab, the shown one, bracketed, with its number (none on macOS)");
   const dir = run.dir();
   assert.ok(dir, "the run directory, made at the first open or at the add before it");
   if (early !== null) assert.equal(dir, early, "the open takes the run's directory the add made");
@@ -565,7 +570,7 @@ test("what is typed reaches the agent and shows in the panel; the leader then Es
   await until(term, () => run.beside("abcd"), "the panel redrawn with the list focused");
 
   term.press("z");
-  await until(term, () => run.zoomed("abcd") && term.screen()[0].startsWith(`[${NAME} 1] `) && term.screen()[0].endsWith(`${LEADER} commands   ${LEADER} Esc the list`) && run.sheet() === "", "the terminal zoomed: its tab bar on the first row, the shown tab bracketed, with the leader's keys at its right, and the agent's screen from the first column, no list and no cheat sheet");
+  await until(term, () => run.zoomed("abcd") && term.screen()[0].startsWith(`${oneTab(NAME)} `) && term.screen()[0].endsWith(`${LEADER} commands   ${LEADER} Esc the list`) && run.sheet() === "", "the terminal zoomed: its tab bar on the first row, the shown tab bracketed, with the leader's keys at its right, and the agent's screen from the first column, no list and no cheat sheet");
   term.type("e");
   await until(term, () => typed() === "abcde", "typing reaches the agent while zoomed");
   await run.back();
@@ -1273,7 +1278,7 @@ async function openTab(term, run, k) {
     assert.equal(run.status(), null, `oats tui ended opening ${name}`);
     const session = viewerSessions().find((s) => !before.has(s));
     return session !== undefined && attached().includes(session) && run.beside() && run.sheet() === backWith(k + 1) && selectedRunning(term, name) && JSON.stringify(stripNames(run)) === JSON.stringify(opened)
-      && JSON.stringify(stripNumbers(run)) === JSON.stringify(opened.map((_, i) => String(i + 1)));
+      && JSON.stringify(stripNumbers(run)) === JSON.stringify(opened.map((_, i) => (NUMBERED ? String(i + 1) : null)));
   }, `the tab of ${name}: its viewer attached, its screen in the panel with the focus in it, its row selected, and the tab bar naming ${JSON.stringify(opened)}, numbered from 1 (at ${COLS} columns all four fit with their numbers)`,
   () => [`the tab bar names ${JSON.stringify(stripNames(run))}, numbered ${JSON.stringify(stripNumbers(run))}`, `viewer sessions: ${JSON.stringify(viewerSessions())}, attached: ${JSON.stringify(attached())}`], 30000);
 }

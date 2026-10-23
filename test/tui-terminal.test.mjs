@@ -219,26 +219,22 @@ const sheetRows = (hints) => {
 const UNMATCHED = "  Not matched to a workspace";
 const OFFERED = "  On this machine, not opened";
 const ROSTER_FAILED = "Other machines were not read.";
-/** The help's `Keys` list at 80x24, in the 39 cells the main area gives it beside the sidebar: its
- *  first rows, one action after another in the table's order, each sentence on as many rows as it
- *  needs. A page of the help at 80x24 holds the first twenty; the rows after these, under the line
- *  of `open`, wrap by the width of the leader's label (views/help.mjs `openRows`). */
-const HELP_KEYS = [
-  /^ *Up, k {2,}up$/, /^ *Down, j {2,}down$/, /^ *g, Home {2,}first$/, /^ *G, End {2,}last$/, /^ *PageUp {2,}page up$/, /^ *PageDown {2,}page down$/,
-  /^ *Left, h {2,}collapse, or go to the$/, /^ {2,}parent$/, /^ *Right, l {2,}expand, or go to the$/, /^ {2,}first child$/,
-  /^ *Tab {2,}detail$/, /^ *\/ {2,}filter$/, /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *2 {2,}souls$/, /^ *3 {2,}capabilities$/, /^ *w {2,}workspaces$/, /^ *Ctrl\+K {2,}palette$/,
-  /^ *Enter {2,}open the selected agent's$/, /^ {2,}terminal as a tab beside$/, /^ {2,}the list, or show its tab$/, /^ {2,}when it has one, in the$/, /^ {2,}list of instances$/,
-];
 /** The help's first rows on Linux and Windows, where the Alt family's chords lead it (every one is
  *  read in any terminal): the family's line, then a row per chord with the leader's key under it. */
 const HELP_CHORDS = [
   /^ *Alt\+K {2,}palette, or$/, /^ {2,}Ctrl\+X then k$/, /^ *Alt\+P {2,}spawn, or$/, /^ {2,}Ctrl\+X then n$/,
   /^ *Alt\+O {2,}workspaces, or$/, /^ {2,}Ctrl\+X then o$/, /^ *Alt\+Shift\+Up\/Down {2,}previous and$/, /^ {2,}next instance$/,
 ];
-/** The help's first section and its rows: the chords' on Linux and Windows, the keys' on macOS,
- *  where the TUI has no chords (docs/tui.md, "Chords"). */
+/** The help's first rows on macOS, where the chords are the Alt (Option) arrows alone (docs/tui.md,
+ *  "Chords on macOS"): a row per pair with the leader's keys under it. */
+const HELP_MAC_CHORDS = [
+  /^ *Alt\+Up\/Down {2,}previous and$/, /^ {2,}next$/, /^ {2,}workspace, or$/, /^ {2,}Ctrl\+X then Up$/, /^ {2,}and Down$/,
+  /^ *Alt\+Left\/Right {2,}previous and$/, /^ {2,}next tab, or$/, /^ {2,}Ctrl\+X then$/, /^ {2,}Left and Right$/,
+];
+/** The help's first section and its rows: the chords lead it everywhere (every one is read in any
+ *  terminal), the Alt family's on Linux and Windows, the Alt arrows on macOS (docs/tui.md, "Chords"). */
 const HELP_FIRST = process.platform === "darwin"
-  ? { title: "Keys", rows: HELP_KEYS, first: "`Up, k  up`" }
+  ? { title: "Chords", rows: HELP_MAC_CHORDS, first: "`Alt+Up/Down  previous and`", lead: /^ {2}Shortcuts on macOS: / }
   : { title: "Chords", rows: HELP_CHORDS, first: "`Alt+K  palette, or`", lead: /^ {2}Shortcuts: Alt\. / };
 const NO_TERMINAL = "oats: `oats tui` needs a terminal on stdin and stdout (E_NO_TERMINAL); `oats status` prints the instances once";
 const noDeployment = (dir) => `oats: no OATS deployment at or above ${dir} (E_NO_DEPLOYMENT); name one with \`oats tui --dir <path>\``;
@@ -386,10 +382,9 @@ function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, listed = [], se
 }
 /** The same for the help: the sidebar beside it as the Instances view draws it, with the help's
  *  own cheat sheet; in the main area the time of the last read on the help's top row (it is on no
- *  other screen: docs/tui.md, "The help"), then its first section (HELP_FIRST): on Linux and
- *  Windows the title `Chords`, the family's line and a row per chord; on macOS the title `Keys`
- *  and a row per action in the table's order; as many rows as the area holds over its last row,
- *  and no detail. */
+ *  other screen: docs/tui.md, "The help"), then its first section (HELP_FIRST): the title
+ *  `Chords`, the line of the family (on macOS, of its Alt arrows) and a row per chord; as many rows
+ *  as the area holds over its last row, and no detail. */
 function helpFaults(screen, { cols = 80, rows = 24, look = UTF8, listed = [] } = {}) {
   const { faults } = sidebarFaults(screen, { cols, rows, look, listed, sheet: HELP_SHEET });
   const pane = mainOf(screen, cols);
@@ -1331,15 +1326,15 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   term.press("q"); // no key now: read, and nothing happens
   term.press("?");
   // At 80x24 the help has the 39 cells of the main area beside the sidebar, and its line of `quit`
-  // is its 130th row or so on macOS, its 208th on Linux and Windows, where the chords lead the help
-  // (HELP_FIRST): under the views, `workspaces` and the palette, `open` four times with
+  // is its 168th row or so on macOS, its 208th on Linux and Windows, under the chords that lead
+  // the help (HELP_FIRST), the views, `workspaces` and the palette, `open` four times with
   // the agent's terminal and the leader's keys under it (whose rows depend on how the leader's label
   // wraps: one more with `Ctrl+X`, the default, than with `Alt+O`), the switcher's `remove`, `soul-instances`, the open terminal's keys, the
   // split's, the four acts with the rules of a confirmation under them, and the spawn's, each
   // sentence wrapped to that width. The movement keys scroll the help: with either of those labels the line
-  // of `quit` is on the screen from 108 rows down to 128 on macOS, from 187 to 205 elsewhere, and
-  // 118 and 196 rows down show it.
-  const down = process.platform === "darwin" ? 118 : 196;
+  // of `quit` is on the screen from 147 rows down to 167 on macOS, from 187 to 205 elsewhere, and
+  // 157 and 196 rows down show it.
+  const down = process.platform === "darwin" ? 157 : 196;
   for (let i = 0; i < down; i++) term.press("j");
   await until(term, () => mainOf(term.screen()).some((row) => /^ *x {2,}quit$/.test(row)) && JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words(withX(HELP_SHEET))), "the help with x as the quit key, in it and in its cheat sheet, after a q that did not quit");
   assert.equal(mainOf(term.screen()).some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);

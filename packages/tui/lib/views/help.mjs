@@ -165,16 +165,27 @@ export const CHORD_RULES = Object.freeze([
   "The leader works in every terminal.",
   "docs/tui.md, \"Chords\", has the tables of terminals and of what the Alt family takes.",
 ]);
+/** THE CHORDS ON MACOS (docs/tui.md, "Chords on macOS"): Alt (Option) with an arrow alone, read
+ *  where the terminal sends it as one (`CSI 1;3` and `CSI 1;4`), said Alt as the keys' labels are. What leads the chords' section
+ *  there, and what follows its rows in place of CHORD_RULES. */
+export const MAC_CHORD_LINE = "Shortcuts on macOS: Alt (Option) with an arrow, where your terminal sends it as one. Alt with a letter or a digit types a character, so none is a chord.";
+export const MAC_CHORD_RULES = Object.freeze([
+  "Terminal.app, Ghostty and VS Code's terminal send Alt+Left and Alt+Right as the shell's word moves, Esc then b or f: there those chords do not come, and the shell moves by word.",
+  "Where the chord comes, the TUI takes it from the agent.",
+  "The leader works in every terminal.",
+  "docs/tui.md, \"Chords on macOS\", has the terminals and their settings.",
+]);
 /** THE FAMILY (docs/tui.md, "Switch family"): the sentences that lead the chords' section, for
  *  `keys`, the model's `{ family, label, note }` (keys.json as lib/config.mjs loadKeys read it, and
  *  the shared chordFamilyNote's line, or null), while the terminal confirms the kitty keyboard
  *  protocol (`confirmed`) or not. Which family is bound: Alt, the default, with how to switch;
  *  Ctrl+Alt or Ctrl+Shift, from keys.json, and, without the protocol, that this terminal cannot
  *  send it, so the leader is the way (their arrows still come). Then the note, when the file was
- *  there and not taken. No `keys` (a view drawn without a run): none. macOS has no chords, so no
- *  section and no line. */
+ *  there and not taken. No `keys` (a view drawn without a run): none. macOS (`keys.mac`) has no
+ *  family: MAC_CHORD_LINE. */
 export function chordFamilyLines(keys, confirmed) {
   if (!keys) return [];
+  if (keys.mac === true) return [MAC_CHORD_LINE];
   const chosen = keys.family === "ctrl+alt" || keys.family === "ctrl+shift" ? keys.family : null;
   const label = chosen === "ctrl+alt" ? "Ctrl+Alt" : chosen === "ctrl+shift" ? "Ctrl+Shift" : keys.label;
   const said = chosen === null
@@ -235,7 +246,7 @@ function chordRows(chords, cols, detachKey, ascii, keys = null, confirmed = fals
     ...sentences(chordFamilyLines(keys, confirmed), cols),
     ...sentences(["One keypress each, from every focus, a terminal's too: none reaches the agent."], cols),
     ...table(rows.map(([keys, said]) => [keyText(keys), words(said)]), cols, KEYS),
-    ...sentences(CHORD_RULES, cols),
+    ...sentences(keys?.mac === true ? MAC_CHORD_RULES : CHORD_RULES, cols),
   ];
 }
 

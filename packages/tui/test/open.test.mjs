@@ -77,9 +77,9 @@ function assertSaid(state, texts, sz = S80, message) {
 /** The cheat sheet, the sidebar's rows after its last rule: each hint as `key word`, one space
  *  between them (the sheet sets the word in a column of its own). */
 /** In the Alt family, the default, every chord is read without the kitty keyboard protocol, so a
- *  terminal's sheet leads with them, before the leader's three (docs/tui.md, "Chords"); on macOS
- *  the TUI has no chords. */
-const CHORDS_FIRST = Object.freeze(process.platform === "darwin" ? [] : ["Alt+K palette", "Alt+Shift+Up/Down agent", "Alt+W close", "Alt+Z zoom"]);
+ *  terminal's sheet leads with them, before the leader's three (docs/tui.md, "Chords"). The states
+ *  are Linux's (helpers.mjs TEST_PLATFORM). */
+const CHORDS_FIRST = Object.freeze(["Alt+K palette", "Alt+Shift+Up/Down agent", "Alt+W close", "Alt+Z zoom"]);
 function sheetOf(state, sz = S80) {
   const rows = sidebarOf(state, sz), rule = rows.findLastIndex((line) => /^[─-]+$/.test(line));
   return rows.slice(rule + 1).filter(Boolean).map((line) => line.split(/ {2,}/).join(" "));

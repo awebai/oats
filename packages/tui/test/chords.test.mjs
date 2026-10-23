@@ -12,7 +12,7 @@ import { ESC_TIMEOUT_MS, createKeyParser, keyId, legacyEvents } from "../lib/ter
 import { KEYBOARD_FLAGS, US_SHIFTED, confirmed, kittyId, kittyKey, legacyBytes, legacyChord, legacyChordText } from "../lib/term/kitty.mjs";
 import { BACK_KEY_SPLIT_MS, backKeyId, backKeySequences, createThrough } from "../lib/term/through.mjs";
 import { ENTER, LEAVE, POP, PUSH, QUERY, SIGNAL_STATUS, createGuard } from "../lib/term/tty.mjs";
-import { CHORD_OPEN_RULE, CHORD_RULES, chordFamilyLines, helpRows } from "../lib/views/help.mjs";
+import { CHORD_OPEN_RULE, CHORD_RULES, MAC_CHORD_LINE, MAC_CHORD_RULES, chordFamilyLines, helpRows } from "../lib/views/help.mjs";
 import { draw, fakeProcess, fakeStdin, fakeStdout, fakeTimers, instanceRow, observed, readTerminalOutput, rowStrings, stateOf } from "./helpers.mjs";
 
 const E = "\x1b";
@@ -185,7 +185,7 @@ test("in the list under the protocol the default leader's key Ctrl+X (CSI 120;5u
  *  CHORDS `other`), key id -> does, in the table's order: every row pinned. */
 const CTRL_ALT_CHORDS = Object.freeze([
   ["ctrl+alt+k", "palette"], ["ctrl+alt+p", "spawn"], ["ctrl+alt+o", "workspaces"],
-  ["alt+shift+up", "previous"], ["alt+shift+down", "next"], ["alt+up", "workspace-previous"], ["alt+down", "workspace-next"],
+  ["alt+shift+up", "previous"], ["alt+shift+down", "next"],
   ["alt+shift+left", "tab-previous"], ["alt+shift+right", "tab-next"],
   ["ctrl+alt+1", "tab-1"], ["ctrl+alt+2", "tab-2"], ["ctrl+alt+3", "tab-3"], ["ctrl+alt+4", "tab-4"], ["ctrl+alt+5", "tab-5"],
   ["ctrl+alt+6", "tab-6"], ["ctrl+alt+7", "tab-7"], ["ctrl+alt+8", "tab-8"], ["ctrl+alt+9", "tab-9"],
@@ -338,6 +338,20 @@ test("in a terminal without the protocol the Ctrl+Alt family's arrows are the TU
     for (const typed of [`${E}[1;68A`, `${E}[1;8A`, `${E}[1;5A`, `${E}[;4A`, `${E}[1;4E`]) assert.deepEqual(settled(make, utf8(typed)), [`input ${hex(utf8(typed))}`], `${JSON.stringify(typed)}: the agent's (${keyboard})`);
   }
   assert.deepEqual(hex(legacyBytes(kittyKey("107;7"), 5)), "1b0b", "Ctrl+Alt+K without the protocol is ESC, then Ctrl+K");
+});
+
+test("in the Ctrl+Alt and Ctrl+Shift families Alt+Up and Alt+Down are the program's (#1491 B1): CSI 1;3A and 1;3B reach the agent whole, with the protocol and without it; in the list they are no key (the leader's Up and Down still move between workspaces: workspace-list.test.mjs)", () => {
+  for (const [family, map] of [["ctrl+alt", CHORD_MAP], ["ctrl+shift", SHIFT_MAP]]) {
+    for (const keyboard of [null, "asking", 5]) {
+      const make = (now) => createThrough({ sequences: backKeySequences("M-o"), now, keyboard, leader: backKeyId("M-o"), chords: map });
+      for (const typed of [`${E}[1;3A`, `${E}[1;3B`]) assert.deepEqual(settled(make, utf8(typed)), [`input ${hex(utf8(typed))}`], `${JSON.stringify(typed)}: the agent's (${family}, ${keyboard})`);
+      // The Alt family's own: the TUI's.
+      const alt = createThrough({ sequences: backKeySequences("M-o"), now: () => 0, keyboard, leader: backKeyId("M-o"), chords: ALT_MAP });
+      assert.deepEqual(shown(alt.feed(utf8(`${E}[1;3A`))), ["chord workspace-previous "], `the Alt family takes it (${keyboard})`);
+    }
+    const base = stateOf(observed([instanceRow("dev", "dev-a")]), { platform: "linux", keysRead: chordFamilyFrom(`{ "chords": "${family}" }`) });
+    for (const state of [base, kitty(base)]) assert.deepEqual(outcome(key(state, "alt+up")), outcome({ state, effect: null }), `${family}: Alt+Up in the list is no key`);
+  }
 });
 
 test("without the protocol an Alt+Shift arrow is one keypress, as the back key is: split across reads within BACK_KEY_SPLIT_MS it is the chord, further apart its bytes reach the agent as typed, and what may begin one waits no longer than that", () => {
@@ -559,17 +573,32 @@ const ALT_CHORDS = Object.freeze([
 ]);
 const ALT_MAP = chordKeys(false);
 /** The table's `other` column, the Ctrl+Alt family, as the TUI binds it. */
-const CHORD_MAP_ROWS = () => CHORDS.filter((entry) => leaderHandles(entry.does)).map((entry) => [entry.other, entry.does]);
+const CHORD_MAP_ROWS = () => CHORDS.filter((entry) => leaderHandles(entry.does) && entry.other !== null).map((entry) => [entry.other, entry.does]);
+/** The chords of macOS: the table's `mac` keys without ⌘, which are ⌥ with an arrow (Pepe, 2026-10-23). */
+const MAC_CHORDS = Object.freeze([
+  ["alt+up", "workspace-previous"], ["alt+down", "workspace-next"], ["alt+left", "tab-previous"], ["alt+right", "tab-next"],
+  ["alt+shift+left", "group-previous"], ["alt+shift+right", "group-next"],
+]);
 
-test("the chords are the shared ones (CHORDS), every row pinned, each one the TUI handles, and a row of an action the TUI does not have is skipped; none of phase 2's; on macOS none (every key there holds ⌘, and a row with none borrows no other platform's); a key a user's tui.json binds stays the user's", () => {
+test("the chords are the shared ones (CHORDS), every row pinned, each one the TUI handles, and a row of an action the TUI does not have is skipped; none of phase 2's; on macOS the ⌥ arrows alone (every other key there holds ⌘); a key a user's tui.json binds stays the user's", () => {
   assert.deepEqual([...ALT_MAP], ALT_CHORDS, "the Alt family by default");
   assert.deepEqual([...ALT_MAP], CHORDS.filter((entry) => leaderHandles(entry.does)).map((entry) => [tuiChordKey(entry.alt), entry.does]), "the table's own, in its order");
   assert.deepEqual([...CHORD_MAP], CHORD_MAP_ROWS(), "the Ctrl+Alt family: the table's `other` column");
   for (const key of PHASE_2) assert.equal(ALT_MAP.has(key) || CHORD_MAP.has(key), false, `${key} is no chord`);
-  for (const family of ["alt", "ctrl+alt", "ctrl+shift"]) assert.deepEqual([...chordKeys(true, ACTIONS, CHORDS, family)], [], `macOS, ${family}: the TUI has no chords`);
-  assert.equal(CHORDS.every((entry) => entry.mac === null || entry.mac.startsWith("cmd+")), true);
-  // The rows new with the Alt family have no macOS key: the TUI binds none for them there, never the Linux one.
-  assert.deepEqual(CHORDS.filter((entry) => entry.mac === null).map((entry) => entry.does), ["workspace-previous", "workspace-next", "group-previous"]);
+  // macOS: the rows whose key holds no ⌘, ⌥ with an arrow, in every family (macOS has none).
+  for (const family of ["alt", "ctrl+alt", "ctrl+shift"]) assert.deepEqual([...chordKeys(true, ACTIONS, CHORDS, family)], MAC_CHORDS, `macOS, ${family}: the arrow chords`);
+  assert.deepEqual(CHORDS.filter((entry) => !entry.mac.startsWith("cmd+")).map((entry) => [entry.mac, entry.does]), MAC_CHORDS, "every other macOS key holds ⌘");
+  for (const [key] of MAC_CHORDS) assert.equal(legacyChord(key), true, `${key}: bytes of its own, read without the protocol`);
+  // In a macOS terminal: CSI 1;3D is the chord; ESC b and ESC f, which Terminal.app sends for ⌥←/→
+  // by default, are the shell's word moves and reach the agent.
+  const mac = (now) => createThrough({ sequences: backKeySequences("C-x"), now, keyboard: null, leader: backKeyId("C-x"), chords: chordKeys(true) });
+  assert.deepEqual(shown(mac(() => 0).feed(utf8(`${E}[1;3D`))), ["chord tab-previous "]);
+  for (const typed of [`${E}b`, `${E}f`]) assert.deepEqual(settled(mac, utf8(typed)), [`input ${hex(utf8(typed))}`], `macOS: ${JSON.stringify(typed)} is the agent's`);
+  // Outside the Alt family the workspace moves have no chord: Alt+Up and Alt+Down are the program's.
+  for (const family of ["ctrl+alt", "ctrl+shift"]) {
+    const map = chordKeys(false, ACTIONS, CHORDS, family);
+    assert.deepEqual([map.has("alt+up"), map.has("alt+down"), [...map.values()].some((does) => does.startsWith("workspace-"))], [false, false, false], family);
+  }
   for (const [, does] of [...ALT_CHORDS, ...CTRL_ALT_CHORDS]) assert.equal(leaderHandles(does), true, `${does} is one the TUI handles`);
   // A row the Desktop has and the TUI not (edit-instance, the Desktop's name and colour dialog) is no key of the TUI's:
   // Alt+R and Ctrl+Alt+R stay the program's in the TUI's terminal.
@@ -591,7 +620,7 @@ test("the chords are the shared ones (CHORDS), every row pinned, each one the TU
   assert.equal(chordKeys(false, rebound).has("alt+shift+up"), false, "the user's key wins");
   assert.equal(chordKeys(false, ACTIONS.map((action) => (action.id === "help" ? { ...action, keys: ["alt+E"] } : action))).has("alt+E"), false, "Alt+Shift+E too, by the TUI's id");
   assert.equal(initialState({ cli: {}, home: "/h", platform: "linux" }).chords.get("alt+k"), "palette");
-  assert.equal(initialState({ cli: {}, home: "/h", platform: "darwin" }).chords.size, 0);
+  assert.deepEqual([...initialState({ cli: {}, home: "/h", platform: "darwin" }).chords], MAC_CHORDS);
   // The leader's key wins: a tui.json leader M-o is Alt+O, which then is no chord, in the list or in a terminal.
   assert.equal(chordKeys(false, ACTIONS, CHORDS, "alt", "alt+o").has("alt+o"), false);
   assert.equal(initialState({ cli: {}, home: "/h", platform: "linux", detachKey: "M-o" }).chords.has("alt+o"), false);
@@ -599,7 +628,7 @@ test("the chords are the shared ones (CHORDS), every row pinned, each one the TU
   assert.equal(initialState({ cli: {}, home: "/h", platform: "linux", detachKey: "M-o", keysRead: CTRL_ALT_READ }).chords.get("ctrl+alt+o"), "workspaces", "Ctrl+Alt+O is not the leader");
   // Without the protocol: the whole Alt family; of Ctrl+Alt, its arrows.
   assert.deepEqual([...chordsRead(ALT_MAP, false)], ALT_CHORDS);
-  assert.deepEqual([...chordsRead(CHORD_MAP, false)], [["alt+shift+up", "previous"], ["alt+shift+down", "next"], ["alt+up", "workspace-previous"], ["alt+down", "workspace-next"], ["alt+shift+left", "tab-previous"], ["alt+shift+right", "tab-next"]]);
+  assert.deepEqual([...chordsRead(CHORD_MAP, false)], [["alt+shift+up", "previous"], ["alt+shift+down", "next"], ["alt+shift+left", "tab-previous"], ["alt+shift+right", "tab-next"]]);
   assert.equal(chordsRead(CHORD_MAP, true).size, CTRL_ALT_CHORDS.length);
 });
 
@@ -670,7 +699,7 @@ test("a Ctrl+Alt family chord typed in a terminal is the leader then its key fro
       const step = chorded(state, does);
       assert.equal(step.effect?.input, undefined, `${does}: no byte for the agent`);
       if (!leaderKeyOf(does)) continue;
-      const read = state.keyboard !== null || ["previous", "next", "workspace-previous", "workspace-next", "tab-previous", "tab-next"].includes(does);
+      const read = state.keyboard !== null || ["previous", "next", "tab-previous", "tab-next"].includes(does);
       const [chord, led] = both(state, { does }, leaderKeyOf(does));
       assert.deepEqual(chord, read ? led : { state: { ...state, leader: null }, effect: null }, `${does}, ${state.keyboard === null ? "without" : "under"} the protocol`);
     }
@@ -731,7 +760,6 @@ const LED_ROWS = Object.freeze([
   ["Ctrl+Alt+P", "spawn, or Alt+O then n"],
   ["Ctrl+Alt+O", "workspaces, or Alt+O then o"],
   ["Alt+Shift+Up/Down", "previous and next instance"],
-  ["Alt+Up/Down", "previous and next workspace, or Alt+O then Up and Down"],
   ["Alt+Shift+Left/Right", "previous and next tab, or Alt+O then Left and Right"],
   ["Ctrl+Alt+1 … Ctrl+Alt+9", "the focused group's first to eighth tab, 9 its last"],
   ["Ctrl+Alt+Z", "zoom, or Alt+O then z"],
@@ -763,7 +791,7 @@ test("without the protocol, in the Ctrl+Alt family, the leader leads, and a shor
   const lines = helpLines([...chordsRead(CHORD_MAP, false)], false);
   const chords = lines.indexOf("  Chords"), leader = lines.indexOf("  The leader");
   assert.ok(leader > 0 && chords > leader, "the leader first");
-  inOrder(lines.slice(chords), tableRows(LED_ROWS.slice(3, 6)));
+  inOrder(lines.slice(chords), tableRows(LED_ROWS.slice(3, 5)));
   assert.equal(lines.slice(chords).some((line) => line.startsWith("  Ctrl+Alt")), false, "no Ctrl+Alt chord listed");
   for (const none of [[], null]) assert.equal(helpLines(none, false).some((line) => /Chords|chords \(below\)/.test(line)), false, `${JSON.stringify(none)}: no chords' section`);
   // A key tui.json took: the other of its pair stands alone, still from the table.
@@ -844,7 +872,7 @@ const UNKNOWN_READ = chordFamilyFrom('{ "chords": "ctrl+meta" }');
  *  seven move to Ctrl+Shift, the arrows, Ctrl+Alt+1–9, the groups and filter keep their key. */
 const SHIFT_CHORDS = Object.freeze([
   ["ctrl+shift+k", "palette"], ["ctrl+shift+p", "spawn"], ["ctrl+shift+s", "workspaces"],
-  ["alt+shift+up", "previous"], ["alt+shift+down", "next"], ["alt+up", "workspace-previous"], ["alt+down", "workspace-next"],
+  ["alt+shift+up", "previous"], ["alt+shift+down", "next"],
   ["alt+shift+left", "tab-previous"], ["alt+shift+right", "tab-next"],
   ["ctrl+alt+1", "tab-1"], ["ctrl+alt+2", "tab-2"], ["ctrl+alt+3", "tab-3"], ["ctrl+alt+4", "tab-4"], ["ctrl+alt+5", "tab-5"],
   ["ctrl+alt+6", "tab-6"], ["ctrl+alt+7", "tab-7"], ["ctrl+alt+8", "tab-8"], ["ctrl+alt+9", "tab-9"],
@@ -859,15 +887,15 @@ function sentShift(id) {
   return [`${E}[${code};6u`, `${E}[${code}:${upper};6u`, `${E}[${code}:${upper}:${code};6u`, `${E}[${code};70u`];
 }
 
-test("each family's chords, every row pinned: Alt by default (no file, or one not taken), Ctrl+Alt when chosen, the seven Ctrl+Shift rows in the Ctrl+Shift family, the others' key kept; macOS has none in any", () => {
+test("each family's chords, every row pinned: Alt by default (no file, or one not taken), Ctrl+Alt when chosen, the seven Ctrl+Shift rows in the Ctrl+Shift family, the others' key kept but the workspace moves; macOS has the arrow chords in any", () => {
   assert.deepEqual([...chordKeys(false, ACTIONS, CHORDS, "ctrl+alt")], CTRL_ALT_CHORDS);
   assert.deepEqual([...chordKeys(false, ACTIONS, CHORDS, "alt")], ALT_CHORDS);
   assert.deepEqual([...chordKeys(false, ACTIONS, CHORDS)], ALT_CHORDS, "the default family is Alt");
   assert.deepEqual([...SHIFT_MAP], SHIFT_CHORDS);
-  assert.deepEqual([...SHIFT_MAP], CHORDS.filter((entry) => leaderHandles(entry.does)).map((entry) => [entry.shift, entry.does]), "the table's `shift` column, in its order");
+  assert.deepEqual([...SHIFT_MAP], CHORDS.filter((entry) => leaderHandles(entry.does) && entry.shift !== null).map((entry) => [entry.shift, entry.does]), "the table's `shift` column, in its order");
   const moved = SHIFT_CHORDS.filter(([key]) => key.startsWith("ctrl+shift+")).map(([, does]) => does);
   assert.deepEqual(moved, ["palette", "spawn", "workspaces", "zoom", "close-terminal", "split-right", "split-down"]);
-  for (const family of ["alt", "ctrl+alt", "ctrl+shift"]) assert.deepEqual([...chordKeys(true, ACTIONS, CHORDS, family)], [], `macOS, ${family}: no chords, as before`);
+  for (const family of ["alt", "ctrl+alt", "ctrl+shift"]) assert.deepEqual([...chordKeys(true, ACTIONS, CHORDS, family)], MAC_CHORDS, `macOS, ${family}: the arrow chords`);
   // The store binds the family keys.json chose; with no file, or a file not taken, Alt. A Ctrl+Alt
   // written in it is a choice, and stays Ctrl+Alt now that the default is Alt.
   const state = (keysRead, platform = "linux") => initialState({ cli: {}, home: "/h", platform, ...(keysRead ? { keysRead } : {}) });
@@ -879,7 +907,7 @@ test("each family's chords, every row pinned: Alt by default (no file, or one no
   assert.deepEqual([...state(chordFamilyFrom('{ "chords": "alt" }')).chords], ALT_CHORDS, "Alt chosen");
   assert.deepEqual([...state(SHIFT_READ).chords], SHIFT_CHORDS, "the Ctrl+Shift family");
   assert.equal(state(SHIFT_READ).keysRead, SHIFT_READ, "the store keeps what keys.json said, for the help");
-  assert.equal(state(SHIFT_READ, "darwin").chords.size, 0, "macOS: none, whatever the file says");
+  assert.deepEqual([...state(SHIFT_READ, "darwin").chords], MAC_CHORDS, "macOS: the arrow chords, whatever the file says");
 });
 
 test("a key a user's tui.json binds keeps its key in the Ctrl+Shift family too, row by row: the chord that has it drops, the other rows stay", () => {
@@ -899,7 +927,7 @@ test("a key a user's tui.json binds keeps its key in the Ctrl+Shift family too, 
 });
 
 test("without the protocol the Ctrl+Shift family reads no chord but the arrows: a Ctrl+Shift letter is Ctrl and its letter's byte, the agent's", () => {
-  assert.deepEqual([...chordsRead(SHIFT_MAP, false)], [["alt+shift+up", "previous"], ["alt+shift+down", "next"], ["alt+up", "workspace-previous"], ["alt+down", "workspace-next"], ["alt+shift+left", "tab-previous"], ["alt+shift+right", "tab-next"]]);
+  assert.deepEqual([...chordsRead(SHIFT_MAP, false)], [["alt+shift+up", "previous"], ["alt+shift+down", "next"], ["alt+shift+left", "tab-previous"], ["alt+shift+right", "tab-next"]]);
   assert.equal(chordsRead(SHIFT_MAP, true).size, SHIFT_CHORDS.length);
   const base = stateOf(observed([instanceRow("dev", "dev-a")]), { platform: "linux", keysRead: SHIFT_READ });
   assert.deepEqual(outcome(key(base, "ctrl+shift+k")), outcome({ state: base, effect: null }), "before the protocol is confirmed: nothing");
@@ -989,9 +1017,34 @@ test("the help says which family is bound, at the top of the chords' section: Al
   const shownHelp = draw(key(state, "?").state, { cols: 140, rows: 60 }).lines.join("\n");
   assert.equal(shownHelp.includes(SHIFT_LINE), true, "the help drawn from the run's state");
   assert.equal(draw(key(kitty(stateOf(observed([instanceRow("dev", "dev-a")]), { platform: "linux", keysRead: UNKNOWN_READ })), "?").state, { cols: 140, rows: 60 }).lines.join("\n").includes("keys.json: unknown chords value, using Alt"), true);
-  // macOS: no chords, no section, no line.
+  // macOS has no family: keys.json's is not named there (its own test below).
   const mac = stateOf(observed([instanceRow("dev", "dev-a")]), { platform: "darwin", keysRead: SHIFT_READ });
-  assert.equal(draw(key(kitty(mac), "?").state, { cols: 140, rows: 60 }).lines.join("\n").includes("Shortcuts:"), false);
+  assert.equal(draw(key(kitty(mac), "?").state, { cols: 140, rows: 60 }).lines.join("\n").includes("Shortcuts: Ctrl+Shift"), false);
+});
+
+test("on macOS the help's chords are the Alt (Option) arrows alone, first, with or without the protocol, whatever keys.json says: its own line, a row per pair with the leader's keys, its own rules; no tab-N, no family, no palette group keys (#1491)", () => {
+  const mac = stateOf(observed([instanceRow("dev", "dev-a")]), { platform: "darwin", keysRead: SHIFT_READ });
+  assert.deepEqual([...mac.chords.keys()], ["alt+up", "alt+down", "alt+left", "alt+right", "alt+shift+left", "alt+shift+right"]);
+  assert.equal(mac.paletteKeys.size, 0, "the palette's group keys hold ⌘ there");
+  for (const state of [mac, kitty(mac)]) {
+    const lines = draw(key(state, "?").state, { cols: 140, rows: 200 }).lines.map((line) => [...line].slice(61).join("").trim());
+    assert.equal(lines.indexOf("Chords") >= 0 && lines.indexOf("Chords") < lines.indexOf("Keys"), true, `the chords first (${state.keyboard === null ? "without" : "under"} the protocol)`);
+    assert.equal(lines.some((line) => line.startsWith("Shortcuts on macOS: Alt (Option)")), true);
+  }
+  const rows = rowStrings(helpRows(ACTIONS, false, 140, "M-o", [...mac.chords], true, [], { mac: true }), 140).map((line) => line.trimEnd());
+  inOrder(rows, tableRows([
+    ["Alt+Up/Down", "previous and next workspace, or Alt+O then Up and Down"],
+    ["Alt+Left/Right", "previous and next tab, or Alt+O then Left and Right"],
+    ["Alt+Shift+Left/Right", "previous and next group, or Alt+O then Shift+Tab and Tab"],
+  ]));
+  // The sentences, as the help wraps them: the line before the rows, the rules after.
+  const text = rows.map((line) => line.trim()).join(" ").replace(/ +/g, " ");
+  const at = (sentence) => text.indexOf(sentence);
+  assert.equal(at(MAC_CHORD_LINE) >= 0 && at(MAC_CHORD_LINE) < at("Alt+Up/Down"), true, "the line leads the rows");
+  for (const sentence of MAC_CHORD_RULES) assert.equal(at(sentence) > at("Alt+Shift+Left/Right"), true, sentence);
+  assert.equal(rows.some((line) => /focused group's (first|last|tab [1-9])/.test(line)), false, "no tab-N row");
+  assert.equal(rows.some((line) => line.includes(CHORD_RULES[0].slice(0, 30))), false, "not the Linux and Windows rules");
+  assert.equal(rows.some((line) => line.includes("keys.json")), false, "no family");
 });
 
 test("in the Ctrl+Shift family a terminal's cheat sheet names the Ctrl+Shift chords it shows: the palette, close and zoom", () => {

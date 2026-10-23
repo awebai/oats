@@ -5,7 +5,7 @@ process.env.TZ = "UTC";
 // the shared functions (helpers.mjs); no test needs a terminal or tmux.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { collapseKey, instanceId } from "../lib/client.mjs";
+import { chordFamilyFrom, collapseKey, instanceId } from "../lib/client.mjs";
 import { paletteItems, roster } from "../lib/model.mjs";
 import { MAX_TERMINALS } from "../lib/panel.mjs";
 import { TAB_LIMIT, reduce } from "../lib/store.mjs";
@@ -304,8 +304,8 @@ test("opening another workspace closes every tab: one close for each, and no ter
 
 /** dev-alpha (hidden, with output), dev-beta-with-a-long-name (hidden, on garnet), dev-gamma
  *  (shown, the focus in it). */
-function three({ ascii = false } = {}) {
-  let s = opened(stateOf(observed(["dev-alpha", "dev-beta-with-a-long-name", "dev-gamma"].map((name) => instanceRow("dev", name))), { ascii }), "dev-alpha", "dev-beta-with-a-long-name", "dev-gamma");
+function three({ ascii = false, ...options } = {}) {
+  let s = opened(stateOf(observed(["dev-alpha", "dev-beta-with-a-long-name", "dev-gamma"].map((name) => instanceRow("dev", name))), { ascii, ...options }), "dev-alpha", "dev-beta-with-a-long-name", "dev-gamma");
   s = reduce(s, { activity: { id: idOf(s, "dev-alpha") }, ...AT }).state;
   return Object.freeze({ ...s, tabs: Object.freeze(s.tabs.map((tab) => (tab.name === "dev-beta-with-a-long-name" ? Object.freeze({ ...tab, routed: true, machine: "garnet" }) : tab))) });
 }
@@ -420,6 +420,15 @@ test("each tab's number, the N its tab-N chord reaches, stands at its end after 
   assert.deepEqual([list.style.dim, list.style.reverse], [true, false], "from the list: dim, not in reverse");
   // In ASCII the numbers are the same digits.
   assert.equal(stripAt(three({ ascii: true }), 120).text, " dev-alpha* 1 | dev-beta-with-a-long-name - garnet 2 |[dev-gamma 3]");
+});
+
+test("the numbers are drawn while a chord shows the Nth tab: in every family on Linux and Windows, and never on macOS, where no key reaches them (#1491 F1)", () => {
+  const numbered = " dev-alpha• 1 │ dev-beta-with-a-long-name · garnet 2 │[dev-gamma 3]";
+  for (const chords of ["ctrl+alt", "ctrl+shift"]) assert.equal(stripAt(three({ keysRead: chordFamilyFrom(`{ "chords": "${chords}" }`) }), 120).text, numbered, chords);
+  const mac = three({ platform: "darwin" });
+  assert.equal([...mac.chords.values()].some((does) => does.startsWith("tab-") && /\d$/.test(does)), false, "macOS binds no tab-N: ⌥⌘N never reaches a terminal");
+  assert.equal(stripAt(mac, 120).text, " dev-alpha• │ dev-beta-with-a-long-name · garnet │[dev-gamma]", "macOS: no numbers, and no cell kept for them");
+  assert.equal(stripAt(three({ platform: "darwin", ascii: true }), 120).text, " dev-alpha* | dev-beta-with-a-long-name - garnet |[dev-gamma]");
 });
 
 test("tabNumber: the first eight tabs are 1 to 8, the last of nine or more is 9 (tab-9 shows the last), and any other past the eighth has no number", () => {

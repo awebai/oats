@@ -379,7 +379,7 @@ fit; the detail shows them whole. The TUI's own words end the same way:
 - **`Enter` on an instance that runs** opens its terminal on the right of
   the sidebar, where the detail was, over every row. Its top row is the
   [tab bar](#tabs), here one tab: the agent's name and the tab's number in
-  brackets (and ` · <machine>` for one of another machine); under it is the
+  brackets (no number on macOS; and ` · <machine>` for one of another machine); under it is the
   agent's screen, as the agent draws it, in its own colours. While a
   terminal is open the sidebar keeps 30 columns at most, also while the
   detail stands in the terminal's place, and a name longer than its row is
@@ -519,7 +519,9 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
     shows 9 (`tab-9` shows the last tab) and the others past the eighth
     show none; with four tabs at most today, that is never reached. The
     number is a position, not a key label: it is the same in every chord
-    family and on every platform, and the same in ASCII.
+    family, and the same in ASCII. On macOS no tab has one: `⌥⌘1` to `⌥⌘9`,
+    the Desktop's keys for them, never reach a terminal, so no key would
+    reach the numbers.
   - **The numbers go first, and all together.** They are drawn only while
     every tab fits whole with them, every name and every machine.
     Otherwise no tab shows a number, and the row is cut as below. A number
@@ -911,7 +913,8 @@ workspace the list is its row.
 **The keys:**
 
 - **The leader then `Up` or `Down`**, or the [chords](#chords) `Alt+Up` and
-  `Alt+Down` (in every family; on macOS the leader alone), opens the
+  `Alt+Down` (in the Alt family and on macOS; the Ctrl+Alt and Ctrl+Shift
+  families leave them to the programs, and the leader does it), opens the
   workspace before or after the open one, as the list draws them. It does not wrap: at an end nothing
   moves, and the line under the list says `No workspace above this one.` or
   `No workspace below this one.` until the next key, of any kind (one typed
@@ -1272,25 +1275,26 @@ The keys come in three layers:
 
 The same keys in `oats tui` and in OATS Desktop. A column per way in: the
 list's key (the Desktop's sidebar has the same, but `Ctrl+K`), the chord in
-each family on Linux and Windows, the Desktop's chord on macOS (where
-`oats tui` has no chords), and the key after the leader. `–` is no key of
+each family on Linux and Windows, the chord on macOS (the Desktop's;
+`oats tui` has those without ⌘, the ⌥ arrows: [Chords on
+macOS](#chords-on-macos)), and the key after the leader. `–` is no key of
 that kind.
 
-| Action | In the list | Alt (default) | Ctrl+Alt | Ctrl+Shift | macOS Desktop | The leader then |
+| Action | In the list | Alt (default) | Ctrl+Alt | Ctrl+Shift | macOS | The leader then |
 |---|---|---|---|---|---|---|
 | the palette | `Ctrl+K` | `Alt+K` | `Ctrl+Alt+K` | `Ctrl+Shift+K` | `⌘K` | `k`, `Space` |
 | spawn an agent (the Desktop's Quick Open) | `n` | `Alt+P` | `Ctrl+Alt+P` | `Ctrl+Shift+P` | `⌘P` | `n` |
 | the list of workspaces (`w` there: the switcher) | `w` | `Alt+O` | `Ctrl+Alt+O` | `Ctrl+Shift+S` | `⌥⌘O` | `o` |
-| the workspace before, after | – | `Alt+Up`, `Alt+Down` | `Alt+Up`, `Alt+Down` | `Alt+Up`, `Alt+Down` | – | `Up`, `Down` |
+| the workspace before, after | – | `Alt+Up`, `Alt+Down` | – | – | `⌥↑`, `⌥↓` | `Up`, `Down` |
 | zoom the shown terminal | `z` | `Alt+Z` | `Ctrl+Alt+Z` | `Ctrl+Shift+M` | `⌥⌘Z` | `z` |
 | close the shown terminal's tab | `c` | `Alt+W` | `Ctrl+Alt+W` | `Ctrl+Shift+W` | `⌘W` | `w` |
 | split side by side | `\|` | `Alt+E` | `Ctrl+Alt+E` | `Ctrl+Shift+E` | `⌘\` | `\|` |
 | split one above the other | `-` | `Alt+Shift+E` | `Ctrl+Alt+Shift+E` | `Ctrl+Shift+D` | `⌘⇧\` | `-` |
-| the next group | – | `Alt+Shift+Right` | `Ctrl+Alt+A` | `Ctrl+Alt+A` | `⌥⌘A` | `Tab` |
-| the previous group | – | `Alt+Shift+Left` | `Ctrl+Alt+Shift+A` | `Ctrl+Alt+Shift+A` | – | `Shift+Tab` |
+| the next group | – | `Alt+Shift+Right` | `Ctrl+Alt+A` | `Ctrl+Alt+A` | `⌥⇧→` | `Tab` |
+| the previous group | – | `Alt+Shift+Left` | `Ctrl+Alt+Shift+A` | `Ctrl+Alt+Shift+A` | `⌥⇧←` | `Shift+Tab` |
 | the filter | `/` | `Alt+F` | `Ctrl+Alt+F` | `Ctrl+Alt+F` | `⌘F` | `/` |
 | the terminal of the instance before, after | – | `Alt+Shift+Up`, `Alt+Shift+Down` | `Alt+Shift+Up`, `Alt+Shift+Down` | `Alt+Shift+Up`, `Alt+Shift+Down` | `⌥⌘↑`, `⌥⌘↓` | – |
-| the tab before, after | `[`, `]` | `Alt+Left`, `Alt+Right` | `Alt+Shift+Left`, `Alt+Shift+Right` | `Alt+Shift+Left`, `Alt+Shift+Right` | `⌥⌘←`, `⌥⌘→` | `Left`, `Right` |
+| the tab before, after | `[`, `]` | `Alt+Left`, `Alt+Right` | `Alt+Shift+Left`, `Alt+Shift+Right` | `Alt+Shift+Left`, `Alt+Shift+Right` | `⌥←`, `⌥→` | `Left`, `Right` |
 | the first to eighth tab, the last | – | `Alt+1` to `Alt+9` | `Ctrl+Alt+1` to `Ctrl+Alt+9` | `Ctrl+Alt+1` to `Ctrl+Alt+9` | `⌥⌘1` to `⌥⌘9` | – |
 | an instance's name and colour (OATS Desktop only) | – | `Alt+R` | `Ctrl+Alt+R` | `Ctrl+Alt+R` | `⌥⌘R` | – |
 | move the tab to the other group | – | – | – | – | – | `m` |
@@ -1307,11 +1311,15 @@ selects text in inputs and editors, Ctrl+Shift with a digit is a shifted
 symbol on most layouts, and Ctrl+Shift+A and Ctrl+Shift+F are taken by
 terminals (kitty, Ghostty, and for F Alacritty and GNOME Terminal too) and
 by agents (Codex's Ctrl+Shift+A, pi's Ctrl+Shift+F). The workspace moves
-and the previous group are new in this version. The workspace moves have
-the same keys in all three families; the previous group is
-`Alt+Shift+Left` in the Alt family, beside `Alt+Shift+Right` for the next,
-and `Ctrl+Alt+Shift+A` in the other two, beside `Ctrl+Alt+A`. On macOS
-they have no chord: the leader does them.
+and the previous group are new in this version. The workspace moves are
+`Alt+Up` and `Alt+Down` in the Alt family alone: the Ctrl+Alt and
+Ctrl+Shift families are for whoever needs Alt in their programs, so they
+leave those keys to them, and the leader's `Up` and `Down` move between
+workspaces there. The previous group is `Alt+Shift+Left` in the Alt
+family, beside `Alt+Shift+Right` for the next, and `Ctrl+Alt+Shift+A` in
+the other two, beside `Ctrl+Alt+A`. On macOS the moves between tabs,
+groups and workspaces are ⌥ with an arrow, in both clients; the letters
+and digits keep ⌘, since ⌥ with one types a character.
 `Alt+R` (`Ctrl+Alt+R` in the other families) is the Desktop's alone:
 `oats tui` has no such action and binds no key for it. The list's own keys for moving and reading are in
 [In the list](#in-the-list). The tables come from
@@ -1333,18 +1341,19 @@ every terminal below.
 | Alacritty | ✓ | ✓ | ✓ |
 | Ghostty | ✓, but on Linux `Alt+1` to `8` are its tabs and `Alt+9` its last, when the tab changes | ✓ | ✗ Ghostty closes its own tab on Ctrl+Shift+W, taking oats tui with it |
 | kitty | ✓ | ✓ | ✗ kitty takes Ctrl+Shift+K, P, S, W and E for itself; W closes its window, `oats tui` with it |
-| WezTerm | ✓ | ✓ with `enable_kitty_keyboard`; without it only the Alt+Shift arrows, `Alt+Up` and `Alt+Down` | ✗ WezTerm takes Ctrl+Shift+K, P, M and W for itself: clear the scrollback, its command palette, hide the window, close the tab |
-| GNOME Terminal | ✓, but with two tabs or more `Alt+1` to `9` are its tabs | ✗ no kitty keyboard protocol (VTE has none): only the Alt+Shift arrows, `Alt+Up` and `Alt+Down` arrive | ✗ no kitty keyboard protocol: a Ctrl+Shift letter reaches a program as the Ctrl letter |
+| WezTerm | ✓ | ✓ with `enable_kitty_keyboard`; without it only the Alt+Shift arrows | ✗ WezTerm takes Ctrl+Shift+K, P, M and W for itself: clear the scrollback, its command palette, hide the window, close the tab |
+| GNOME Terminal | ✓, but with two tabs or more `Alt+1` to `9` are its tabs | ✗ no kitty keyboard protocol (VTE has none): only the Alt+Shift arrows arrive | ✗ no kitty keyboard protocol: a Ctrl+Shift letter reaches a program as the Ctrl letter |
 | Konsole | ✓, but with two tabs or more `Alt+1` to `9` are its tabs | ✓ since 26.08 | ✗ Konsole takes all seven for itself; Ctrl+Shift+W closes the tab |
 | Windows Terminal | ✓, but with split panes the Alt arrows move between them and the Alt+Shift arrows resize them | ✓, but `Ctrl+Alt+1` to `9` are its tabs, and the Alt+Shift arrows resize its split panes | ✗ Windows Terminal takes Ctrl+Shift+K, P, M, W and D for itself; W closes the pane |
 
 Where a terminal takes `Alt` with a digit, the leader then `Left` or
 `Right` and `Alt+Left`, `Alt+Right` still go from tab to tab, or choose
-Ctrl+Alt. On macOS `oats tui` has no chords; a macOS terminal sends
-Option with a letter as a character (`Option+K` is `˚`) unless it is set
-to send Option as Meta (Terminal.app's "Use Option as Meta key", iTerm2's
-Option key "Esc+"), and then the program in the terminal gets it. Each
-terminal's defaults at the release
+Ctrl+Alt. On macOS `oats tui` has the ⌥ arrows alone, and which macOS
+terminals send them is in [Chords on macOS](#chords-on-macos); a macOS
+terminal sends Option with a letter as a character (`Option+K` is `˚`)
+unless it is set to send Option as Meta (Terminal.app's "Use Option as
+Meta key", iTerm2's Option key "Esc+"), and then the program in the
+terminal gets it. Each terminal's defaults at the release
 [the full matrix](#which-terminals-let-the-chords-through) names.
 
 <a id="switch-to-ctrlshift"></a>
@@ -1352,7 +1361,8 @@ terminal's defaults at the release
 ### Switch family
 
 On Linux and Windows. macOS has no choice: the Desktop keeps its ⌘ chords
-there, and `oats tui` the leader.
+and its ⌥ arrows there, and `oats tui` the ⌥ arrows ([Chords on
+macOS](#chords-on-macos)) and the leader.
 
 - **In OATS Desktop:** the Shortcuts page (`Ctrl+,`), at its top, **Shortcut
   family, shared with oats tui**: **Alt (default)**, **Ctrl+Alt (for
@@ -1420,9 +1430,9 @@ chord holds (`Alt+B`, `Alt+D`, `Alt+T`, `Alt+.`) is still the program's.
 Unlike the Desktop's terminal, which sends an Alt arrow as the Ctrl arrow,
 the terminal you run `oats tui` in sends the Alt arrows as `CSI 1;3` (`Esc
 [1;3C` for `Alt+Right`), which programs read. So the TUI takes the Alt
-arrows from them too, in the Alt family. `Alt+Up` and `Alt+Down`, the
-workspace moves, are taken in every family; `Alt+Left` and `Alt+Right` go
-back to the programs in the Ctrl+Alt and Ctrl+Shift families.
+arrows from them too, in the Alt family. All four go back to the programs
+in the Ctrl+Alt and Ctrl+Shift families: `Alt+Up` and `Alt+Down`, the
+workspace moves, are the Alt family's alone.
 
 | Program | Key the Alt family takes | What the program does with it | How it still gets it |
 |---|---|---|---|
@@ -1461,7 +1471,9 @@ since the Alt family leaves it alone (the next group is `Alt+Shift+Right`
 there); and `Alt+R` from every one of them in `oats tui`, which binds no
 key for the Desktop's `edit-instance` ([Chords](#chords)): Codex's raw
 output, readline's revert-line, WeeChat's delete-line and Emacs's
-move-to-window-line keep it here, though the Desktop takes it. On macOS nothing here applies: `oats tui` binds no chord there.
+move-to-window-line keep it here, though the Desktop takes it. On macOS only
+the arrow rows apply: there `oats tui` takes the ⌥ arrows alone, where the
+terminal sends them as such ([Chords on macOS](#chords-on-macos)).
 
 **Inside tmux.** `oats tui` run in a tmux pane gets its keys through tmux,
 which reads an `Esc` followed by a key within its `escape-time` (10 ms by
@@ -1657,8 +1669,9 @@ the instance before or after, in the list as it is drawn, the focus in it
 (from the shown terminal's instance, or from the selection when none is
 open; its tab when it has one, else a new [tab](#tabs); rows that cannot be
 opened are passed over, and the list does not wrap), since the leader's
-`Up` and `Down` move between workspaces. On macOS, where `oats tui` has no
-chords, the list's `Up` or `Down` then `Enter` does it. The OATS
+`Up` and `Down` move between workspaces. On macOS, where that pair holds ⌘
+(`⌥⌘↑`, `⌥⌘↓`), which a terminal never passes on, the list's `Up` or
+`Down` then `Enter` does it. The OATS
 Desktop has the same chords (`CHORDS` in `packages/client/keymap.mjs`, which
 both read; the TUI keeps no copy). The leader stays the key that always
 works, and the one for help, the views and the acts (stop, restart, start,
@@ -1682,10 +1695,13 @@ There are three families, one choice per user for both clients
   protocol, and takes keys that programs in a terminal read
   ([What the Alt family takes](#what-the-alt-family-takes)).
 - **Ctrl+Alt, for whoever needs Alt in their programs.** The default
-  before this version, with its keys unchanged: Ctrl+Alt with a letter or a
-  digit acts, and Alt+Shift with an arrow moves between tabs and instances;
-  the workspace moves are `Alt+Up` and `Alt+Down` here too. No terminal in
-  [the matrix](#which-terminals-let-the-chords-through) takes them by
+  before this version, with its keys: Ctrl+Alt with a letter or a digit
+  acts, and Alt+Shift with an arrow moves between tabs and instances. It
+  leaves Alt alone, the Alt arrows included: the workspace moves have no
+  chord here, so `Alt+Up` and `Alt+Down` reach the program (Codex's edit
+  the queued message, pi's restore the queued messages), and the leader's
+  `Up` and `Down` move between workspaces. No terminal in [the
+  matrix](#which-terminals-let-the-chords-through) takes its chords by
   default, and no agent (Claude Code, Codex, pi) reads them. It needs the
   kitty keyboard protocol.
 - **Ctrl+Shift, for a terminal that passes Ctrl+Shift apart from Ctrl**
@@ -1699,7 +1715,8 @@ There are three families, one choice per user for both clients
 
 A chord of another family is no chord: in the Alt family `Ctrl+Alt+K`
 reaches the agent as it would without the TUI, and in the Ctrl+Alt family
-`Alt+K` does. On macOS the TUI has no chords: the Desktop's hold ⌘, which a
+`Alt+K` does. On macOS the TUI has the ⌥ arrows alone ([Chords on
+macOS](#chords-on-macos)): the Desktop's other chords hold ⌘, which a
 terminal never passes to a program.
 
 - **The Alt family in every terminal.** A terminal sends `Alt` with a
@@ -1725,14 +1742,13 @@ terminal never passes to a program.
   when the answer holds flag 1 does it read the protocol and take the
   chords of those families. With no answer within 2 seconds, or one without flag 1,
   it pops the protocol, and the rest of the run is as without it: of those
-  families' chords only the arrows are taken (the Alt+Shift arrows,
-  `Alt+Up` and `Alt+Down`). The
+  families' chords only the arrows are taken (the Alt+Shift arrows). The
   answer may come split and late over a slow link, so until it comes (at
   most those 2 seconds) an `Esc` pressed on its own may wait for the next
   key or for the wait's end, as it may begin the answer.
 - **The help and the cheat sheet lead with the chords** while every chord
-  of the family in force is read: always in the Alt family, and in the
-  others while the terminal confirms the protocol. Then the help has one
+  of the family in force is read: always in the Alt family and on macOS,
+  and in the others while the terminal confirms the protocol. Then the help has one
   row per chord, then the leader and its key ("or `Ctrl+X` then `k`"), and
   the leader's own section after them; a pair whose keys share their
   modifiers is one row (`Alt+Shift+Up/Down`), and `Ctrl+Alt+Shift+A` and
@@ -1790,19 +1806,80 @@ terminal never passes to a program.
   terminal: the shell at a suspend is the only one `oats tui` ever gives
   it to.
 
+#### Chords on macOS
+
+On macOS `oats tui` binds the chords of `CHORDS` whose key holds no ⌘, ⌥
+with an arrow (Pepe's call, 2026-10-23): `⌥←` and `⌥→` the tab before or
+after, `⌥⇧←` and `⌥⇧→` the group before or after, `⌥↑` and `⌥↓` the
+workspace before or after. Its help and cheat sheet say them `Alt+Left` and
+so on, and lead with them. The other chords hold ⌘ (`⌘K`, `⌥⌘1` to `⌥⌘9`,
+`⌥⌘↑`), which a terminal never passes to a program: the leader does them,
+and no tab carries a number ([Tabs](#tabs)). ⌥ with a letter or a digit
+types a character on many layouts (`⌥2` is `@` on a Spanish one), so none
+of them is a chord. There is no family to choose: keys.json's `chords` is
+not read there.
+
+A chord comes only where the terminal sends ⌥ with an arrow as its xterm
+sequence, `CSI 1;3` (`Esc [1;3D` for `⌥←`), and ⌥⇧ with one as `CSI 1;4`.
+Where it comes, the TUI takes it from the program in the terminal, as on
+Linux; where it does not, the bytes reach the program as before (`Esc b`
+and `Esc f` move a shell by word), and the leader then `Left`, `Right`,
+`Up` or `Down` does what the chord would. What each terminal sends by
+default, read from its source or its documentation on 2026-10-23 (their
+main branches):
+
+| Terminal | `⌥←`, `⌥→` | `⌥↑`, `⌥↓` | `⌥⇧←`, `⌥⇧→` | For the chords |
+|---|---|---|---|---|
+| Terminal.app | `Esc b`, `Esc f`, the shell's word moves ([ncurses' `nsterm` entry][nsterm], [Apple][apple-keys]) | unknown | unknown | unknown: [Apple][apple-kbd] does not say whether "Use Option as Meta key" or the profile's key list changes what an arrow sends |
+| iTerm2 | the chord | the chord | the chord | the default ([its profile][iterm-profile], [the encoder][iterm-encoder]: "Treat ⌥ as Alt for special keys"); its presets "Natural Text Editing" and "Terminal.app Compatibility" ([presets][iterm-presets]) map `⌥←`, `⌥→` (the second `⌥↑`, `⌥↓` too) to the shell's moves instead |
+| Ghostty | `Esc b`, `Esc f`, its own default keybinds ([config][ghostty-binds], [#3106][ghostty-3106]) | the chord ([encoder][ghostty-encoder]) | the chord | `keybind = alt+left=unbind` and `keybind = alt+right=unbind` |
+| kitty | the chord ([Option is Alt][kitty-option], [encoder][kitty-encoder]) | the chord | the chord | the default |
+| WezTerm | the chord ([config][wezterm-config], [encoder][wezterm-encoder]) | the chord | the chord | the default |
+| Alacritty | the chord ([Alt on named keys][alacritty-keys]) | the chord | the chord | the default |
+| Warp | the chord in a full-screen program, as `oats tui` is ([encoder][warp-encoder], [binds][warp-binds]) | its own default bind (bookmarks); unknown whether it takes them from a full-screen program | the chord | its keybinding editor |
+| VS Code's terminal | `Esc b`, `Esc f` ([its default bindings][vscode-binds]) | `CSI 1;5A`, `CSI 1;5B`, which is `Ctrl+Up`, `Ctrl+Down`: no chord | the chord | remove its `workbench.action.terminal.sendSequence` bindings of `alt+left`, `alt+right`, `alt+up` and `alt+down` in keybindings.json |
+
+iTerm2's, WezTerm's and Warp's rows were read from their code, not run.
+Neither "Use Option as Meta key" (Terminal.app) nor Option as Alt or Meta in
+the others (iTerm2's Left/Right Option key, Ghostty's
+`macos-option-as-alt`, kitty's `macos_option_as_alt`, Alacritty's
+`option_as_alt`, VS Code's `terminal.integrated.macOptionIsMeta`) changes
+what the arrows send, by those terminals' code; for Terminal.app it is
+unknown. The TUI reads no other bytes as these chords: `Esc b` and `Esc f`
+are readline's word moves, and `CSI 1;5A` is `Ctrl+Up`.
+
+[nsterm]: https://github.com/ThomasDickey/ncurses-snapshots/blob/master/misc/terminfo.src
+[apple-keys]: https://support.apple.com/guide/terminal/keyboard-shortcuts-trmlshtcts/mac
+[apple-kbd]: https://support.apple.com/guide/terminal/profiles-keyboard-settings-trmlkbrd/mac
+[iterm-profile]: https://github.com/gnachman/iTerm2/blob/7f4ff739721f95d0b93003d8701c4523a7edf261/sources/Settings/iTermProfilePreferences.m#L1254
+[iterm-encoder]: https://github.com/gnachman/iTerm2/blob/7f4ff739721f95d0b93003d8701c4523a7edf261/sources/VT100/VT100Output.m#L1242
+[iterm-presets]: https://github.com/gnachman/iTerm2/blob/7f4ff739721f95d0b93003d8701c4523a7edf261/plists/PresetKeyMappings.plist#L127
+[ghostty-binds]: https://github.com/ghostty-org/ghostty/blob/08a9518340e19487bd5fdf96963583fb32f0c41f/src/config/Config.zig#L7383
+[ghostty-3106]: https://github.com/ghostty-org/ghostty/issues/3106
+[ghostty-encoder]: https://github.com/ghostty-org/ghostty/blob/08a9518340e19487bd5fdf96963583fb32f0c41f/src/input/function_keys.zig#L81
+[kitty-option]: https://github.com/kovidgoyal/kitty/blob/34eda431940fc8d66ffd0ada7d4a6451fdbd6699/kitty/options/definition.py#L3499
+[kitty-encoder]: https://github.com/kovidgoyal/kitty/blob/34eda431940fc8d66ffd0ada7d4a6451fdbd6699/kitty/key_encoding.c#L160
+[wezterm-config]: https://github.com/wezterm/wezterm/blob/e2a98e1b8af156988ad0ac778658ac27b60a55fb/config/src/config.rs#L461
+[wezterm-encoder]: https://github.com/wezterm/wezterm/blob/e2a98e1b8af156988ad0ac778658ac27b60a55fb/termwiz/src/input.rs#L421
+[alacritty-keys]: https://github.com/alacritty/alacritty/blob/542147067dd016fc5f49120ef0ba605a98a4e3a7/alacritty/src/input/keyboard.rs#L105
+[warp-encoder]: https://github.com/warpdotdev/warp/blob/1e6c3ae465d6a925a9b97ae03877aaadd159b8f1/crates/warp_terminal/src/model/escape_sequences.rs#L526
+[warp-binds]: https://github.com/warpdotdev/warp/blob/1e6c3ae465d6a925a9b97ae03877aaadd159b8f1/app/src/terminal/view/init.rs#L405
+[vscode-binds]: https://github.com/microsoft/vscode/blob/b04b50a28f70d834c4d039deb1d52dd3f9242293/src/vs/workbench/contrib/terminalContrib/sendSequence/browser/terminal.sendSequence.contribution.ts#L181
+
 #### Which terminals let the chords through
 
 Each terminal's documented default key bindings, read from its source or
 manual at the release named. `✗` is a chord the terminal takes for itself
 by default, `~` one it takes only in a state it names, `·` one it passes on.
 WT is Windows Terminal; iTerm2 and Terminal.app are on macOS, where the TUI
-has no chords (above) and the column is for reference.
+binds the ⌥ arrows alone ([Chords on macOS](#chords-on-macos)) and the
+other rows are for reference.
 
 | Chord | foot | kitty | Ghostty | Alacritty | GNOME Terminal | WezTerm | Konsole | WT | iTerm2 | Terminal.app |
 |---|---|---|---|---|---|---|---|---|---|---|
 | `Alt+K` `P` `O` `Z` `W` `E` `F`, `Alt+Shift+E` | · | · | · | · | · | · | · | · | – | – |
 | `Alt+1` to `9` | · | · | ~ on Linux its tabs, when the tab changes | · | ~ its tabs, with two or more | · | ~ its tabs, with two or more | · | – | – |
-| `Alt` arrows | · | · | · | · | · | · | · | ~ pane focus, passed on with one pane | – | – |
+| `Alt` arrows | · | · | · | · | · | · | · | ~ pane focus, passed on with one pane | · | ✗ `⌥←` `⌥→`, sent as the shell's word moves; `⌥↑` `⌥↓` unknown ([Chords on macOS](#chords-on-macos)) |
 | `Ctrl+Alt+K` `P` `O` `Z` `W` `E` `A` `F` | · | · | · | · | · | · | · | · | · | · |
 | `Ctrl+Alt+Shift+E` | · | · | · | · | · | · | · | · | · | · |
 | `Ctrl+Alt+1` to `9` | · | · | · | · | · | · | · | ✗ its tabs | · | · |
@@ -1815,7 +1892,8 @@ Where a terminal has no protocol, its cells for the Ctrl+Alt and
 Ctrl+Shift chords say only what it takes: those chords do not reach the
 TUI there anyway. On macOS the Alt family is not bound and there is no
 choice of family, hence `–`: a macOS terminal sends Option with a letter
-as a character unless it is set to send Option as Meta. The three Alt rows were read from each terminal's
+as a character unless it is set to send Option as Meta, and its arrows
+are in [Chords on macOS](#chords-on-macos). The three Alt rows were read from each terminal's
 source and manual as they stood on 2026-10-23 (their main branches), not
 at the releases in the last row. What the
 terminals take besides, near these chords:
@@ -1944,7 +2022,8 @@ TUI reads the keys. The help lists its keys under The palette.
   chords `Alt+Shift+Up` and `Alt+Shift+Down` ([Chords](#chords)), so they
   open no agent and leave the palette open, with or without the kitty
   keyboard protocol. The leader then `Up` or `Down`, or `Alt+Up` or
-  `Alt+Down`, closes it and opens the workspace before or after. The
+  `Alt+Down` where they are chords, closes it and opens the workspace
+  before or after. The
   Desktop's palette has the same pair (`PALETTE_KEYS` in
   `packages/client/keymap.mjs`, which both read).
 - **On macOS there is no group key:** the Desktop's hold `⌘`, which a

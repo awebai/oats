@@ -444,12 +444,11 @@ test("a run says it is reading, draws the instances when the reader answers (the
   assert.doesNotMatch(answered, /\d+ (running|stopped)/, "no counts: the header that held them is gone");
   assert.equal(r.reader.options.getEntry(DEPLOYMENT), ENTRY);
   r.stdin.type("?");
-  // Beside the sidebar, its top row the time of the read the screen shows. On Linux and Windows the
-  // Alt family's chords lead (every one is read in any terminal), each with its leader key; on macOS
-  // the keys do: Enter has a line per view, and rows of its own under the first. Either way, at 24
-  // rows its first page ends before Esc.
+  // Beside the sidebar, its top row the time of the read the screen shows. The chords lead (every
+  // one is read in any terminal), each with its leader key: on Linux and Windows the Alt family's,
+  // on macOS the Alt (Option) arrows alone. Either way, at 24 rows its first page ends before Esc.
   assert.match(textOf(r.stdout.take()), process.platform === "darwin"
-    ? /│ {3}read 10:00:00 .*Keys.*w +workspaces.*Enter +open the selected agent's .*terminal as a tab beside .*more below/s
+    ? /│ {3}read 10:00:00 .*Chords.*Shortcuts on macOS: Alt \(Option\).*Alt\+Up\/Down +previous and.*Alt\+Left\/Right +previous and.*more below/s
     : /│ {3}read 10:00:00 .*Chords.*Shortcuts: Alt\..*Alt\+K +palette, or.*Ctrl\+\\ then k.*more below/s);
   r.stdin.type("G");
   // Its last page: the last section's commands, `oats server connect`'s on two rows, and the close.

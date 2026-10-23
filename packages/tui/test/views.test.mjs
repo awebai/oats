@@ -263,12 +263,12 @@ const LEADER_KEY = "Ctrl+\\";
 const LEAD = Object.freeze([LEADER_KEY, "commands"]);
 /** In the Ctrl+Alt family, without the kitty keyboard protocol, a terminal's cheat sheet names the
  *  Alt+Shift arrows after the leader's three; on macOS the TUI has no chords, so none. */
-const ARROWS = Object.freeze(process.platform === "darwin" ? [] : [["Alt+Shift+Up/Down", "agent"]]);
+const ARROWS = Object.freeze([["Alt+Shift+Up/Down", "agent"]]);
 /** keys.json with Ctrl+Alt chosen: the family whose chords the kitty keyboard protocol decides. */
 const CTRL_ALT_READ = chordFamilyFrom('{ "chords": "ctrl+alt" }');
 /** In the Alt family, the default, every chord comes without the protocol, so a terminal's cheat sheet
  *  leads with them (one tab: no tab hint); on macOS the TUI has no chords, so none. */
-const FOCUS_CHORDS = Object.freeze(process.platform === "darwin" ? [] : [["Alt+K", "palette"], ["Alt+Shift+Up/Down", "agent"], ["Alt+W", "close"], ["Alt+Z", "zoom"]]);
+const FOCUS_CHORDS = Object.freeze([["Alt+K", "palette"], ["Alt+Shift+Up/Down", "agent"], ["Alt+W", "close"], ["Alt+Z", "zoom"]]);
 /** A terminal's cheat sheet with the focus in it, in the default family: its chords, then the
  *  leader, the leader then Esc and the leader twice. */
 const FOCUS_SHEET = Object.freeze([...FOCUS_CHORDS, LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`]]);
@@ -1714,7 +1714,7 @@ function helpLines(state, sz = HELP_SIZE, key = "?") {
 }
 /** The help's first heading: the chords on Linux and Windows, where the default family, Alt, is read
  *  without the kitty keyboard protocol; the keys on macOS, which has no chords. */
-const FIRST_HEADING = process.platform === "darwin" ? "Keys" : "Chords";
+const FIRST_HEADING = "Chords";
 /** The help's headings, in no order: a section of the help runs from its heading to the next. */
 const HELP_HEADINGS = Object.freeze(["Keys", "Chords", "The leader", "The palette", "The spawn prompt", "Marks", "Views", "Machines", "Not in this version"]);
 /** The row of the heading after row `from` of the help's `lines` (trimmed or not), or -1. The
@@ -1775,7 +1775,7 @@ test("the help is generated from the table: another key and another action appea
   const rules = keys.filter((line) => ACT_RULES.some((sentence) => sentence.includes(line.trim())));
   assert.equal(rules.length >= ACT_RULES.length, true, "the rules of the acts stand under them");
   const chorded = keys.some((line) => line.trim() === CHORD_OPEN_RULE);
-  assert.equal(chorded, process.platform !== "darwin", "the chords' rule under the agent's line where there are chords");
+  assert.equal(chorded, true, "the chords' rule under the agent's line");
   assert.equal(keys.length, table.reduce((n, action) => n + (action.views?.length ?? 1), 0) + 5 + (chorded ? 1 : 0) + rules.length, "one row per action, and one more per view of an action that has two");
 });
 
@@ -3202,8 +3202,7 @@ test("the help lists Enter once per view with what it does there, the keys of th
   // without the kitty keyboard protocol), so the palette's follows it.
   const leader = lines.slice(lines.indexOf("The leader") + 1, nextHeading(lines, lines.indexOf("The leader"))).filter(Boolean);
   assert.equal(lines[nextHeading(lines, lines.indexOf("The leader"))], "The palette", "the palette's section after the leader's");
-  if (process.platform === "darwin") assert.equal(lines.includes("Chords"), false, "no chords on macOS: no section of them");
-  else assert.equal(lines.indexOf("Chords") >= 0 && lines.indexOf("Chords") < lines.indexOf("Keys"), true, "the chords first, where there are any");
+  assert.equal(lines.indexOf("Chords") >= 0 && lines.indexOf("Chords") < lines.indexOf("Keys"), true, "the chords first");
   assert.equal(lines.indexOf("The leader") > lines.indexOf("Keys") && lines.indexOf("The leader") < lines.indexOf("Marks"), true, "between the keys and the marks");
   assert.deepEqual(leader.map((line) => line.replace(/ {2,}/g, "  ")), [
     "Ctrl+\\ then one of these keys, from every focus; a terminal too:",
@@ -3217,10 +3216,10 @@ test("the help lists Enter once per view with what it does there, the keys of th
     `Ctrl+\\  ${LEADER_AGAIN}`,
   ]);
   // The palette's section, between the leader's and the spawn prompt's: its keys are its own, and
-  // after Up and Down its group keys, where the TUI has them (not on macOS).
+  // after Up and Down its group keys (macOS has none: views.test's macOS help test).
   const palette = lines.slice(lines.indexOf("The palette") + 1, lines.indexOf("The spawn prompt")).filter(Boolean);
   const said = PALETTE_KEYS.map(([keys_, words_]) => `${keys_}  ${words_}`);
-  if (process.platform !== "darwin") said.splice(1, 0, `Alt+Shift+Up, Alt+Shift+Down  ${PALETTE_GROUP_WORDS}`);
+  said.splice(1, 0, `Alt+Shift+Up, Alt+Shift+Down  ${PALETTE_GROUP_WORDS}`);
   assert.deepEqual(palette.map((line) => line.replace(/ {2,}/g, "  ")), said);
   // The leader is tui.json's, text from outside: the help names it, then Esc and twice under the agent's line.
   const rebound = helpLines(openable({ detachKey: "F12" })).map((line) => line.trim());
@@ -3306,10 +3305,8 @@ test("in the Ctrl+Alt family, while the terminal has the focus the cheat sheet n
   }
   // The default family: the chords lead, in the rows and in a title row.
   assert.deepEqual(hintsOf(drawPanel(panelIn("focus"), S120)), FOCUS_SHEET, "the Alt family, 120x40");
-  if (process.platform !== "darwin") {
-    const title = cellText(drawPanel(panelIn("zoom"), S80), 0);
-    assert.match(title, /^\[dev-a 1\] +Alt\+K palette   Alt\+Shift\+Up\/Down agent   Ctrl\+\\ commands$/, `a title row: the chords first, the leader last: ${title}`);
-  }
+  const title = cellText(drawPanel(panelIn("zoom"), S80), 0);
+  assert.match(title, /^\[dev-a 1\] +Alt\+K palette   Alt\+Shift\+Up\/Down agent   Ctrl\+\\ commands$/, `a title row: the chords first, the leader last: ${title}`);
 });
 
 test("with the list focused and a terminal open, the cheat sheet names, after the leader and the palette, Enter to go to it on its row and Enter to open another on another row, and no key of the terminal's", () => {
@@ -3540,7 +3537,7 @@ const areaOf = (d, sz) => (sz.cols >= WIDE ? [d.cols + 2, sz.cols - d.cols - 3] 
 const areaLines = (d, sz) => { const [from, width] = areaOf(d, sz); return d.cells.map((_, r) => cellText(d, r, from, from + width)); };
 /** The palette's own keys, last on its cheat sheet, where the TUI has them: not on macOS
  *  (the tests' platform is the host's). */
-const PALETTE_GROUP = Object.freeze(process.platform === "darwin" ? [] : [["Alt+Shift+Up/Down", "group"]]);
+const PALETTE_GROUP = Object.freeze([["Alt+Shift+Up/Down", "group"]]);
 /** The cheat sheet while the palette is open: how to work it. */
 const PALETTE_SHEET = Object.freeze([LEAD, ["Enter", "run"], ["Up/Down", "move"], ["Esc", "close"], ...PALETTE_GROUP]);
 /** A palette row as the spec draws it in `cols` cells: `>` on the selected one, an instance's state

@@ -90,7 +90,7 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  `leader`: `{ read, waiting }` from the leader's read on, or null (see `leading`).
  *  `keyboard`: the flags the terminal confirmed for the kitty keyboard protocol (lib/main.mjs, the
  *  event `{ keyboard }`), or null while it has not; `chords`: the chords of `platform`, key id ->
- *  `does` (actions.mjs chordKeys), in the family keys.json chose, but the one the leader's key
+ *  `does` (actions.mjs chordKeys: on macOS the arrow chords alone, `mac` true), in the family keys.json chose, but the one the leader's key
  *  takes, every one read while `keyboard` is not null, and those with bytes of their own while it
  *  is null: the whole Alt family, the arrows of the others (actions.mjs chordsRead; see `leading`). `keysRead`: what keys.json said at the start (lib/config.mjs loadKeys, the shared
  *  reader's frozen `{ family, why }`; no file when none is given): the family `chords` are bound
@@ -132,7 +132,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     switcher: NO_SWITCHER,
     listed: NO_LIST, identities: new Map(),
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
-    leaderKey: backKeyId(detachKey), leader: null, keyboard: null, keysRead, chords: chordKeys(platform === "darwin", actions, CHORDS, keysRead.family, backKeyId(detachKey)), palette: null, paletteKeys: paletteKeys(platform === "darwin"), recent: new Map(), layouts: new Map(), restoring: null, leftFocus: null, souls: NO_SOULS, capabilities: NO_CAPABILITIES,
+    leaderKey: backKeyId(detachKey), leader: null, keyboard: null, keysRead, mac: platform === "darwin", chords: chordKeys(platform === "darwin", actions, CHORDS, keysRead.family, backKeyId(detachKey)), palette: null, paletteKeys: paletteKeys(platform === "darwin"), recent: new Map(), layouts: new Map(), restoring: null, leftFocus: null, souls: NO_SOULS, capabilities: NO_CAPABILITIES,
     spawn: null, spawning: null, spawnCheck: null, arriving: null, previews: 0, tabs: Object.freeze([]), split: null, group: 0, aside: null,
     notice: null,
   });
