@@ -199,7 +199,7 @@ test("only current destinations render, dispatch unchanged stage ids, and projec
   assert.equal(getBinding("stage.spawn"), "Mod+2", "Workspace is a label change, not a chord change");
   // stage.automations keeps its chord and its registry entry, though it has no nav item of its own.
   assert.equal(getBinding("stage.automations"), "Mod+3");
-  assert.equal(listActions().find(action => action.id === "stage.automations")?.label, "View: Automations");
+  assert.equal(listActions().find(action => action.id === "stage.automations")?.label, "View: Workspace › Automations");
   runAction("stage.automations"); assert.deepEqual(s.events.at(-1), ["stage", "automations"]);
 });
 

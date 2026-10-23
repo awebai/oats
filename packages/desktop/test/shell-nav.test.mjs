@@ -35,16 +35,17 @@ test("NAV is exactly Workspace and Deployments, in that order, and keeps the ins
   }
 });
 
-// A destination that is a tab of a page keeps its name (stage.automations, "View: Automations") and
-// says which page and tab it opens.
+// A destination that is a tab of a page keeps its name (stage.automations), says which page and tab it
+// opens, and its label says it too: the page's label, then the tab's ("View: Workspace › Automations").
 test("NAV_TABS maps automations to the Workspace page's Automations tab; navTab() finds it, and nothing else", () => {
-  assert.deepEqual(NAV_TABS, [{ name: "automations", label: "Automations", page: "spawn", tab: "automations" }]);
+  assert.deepEqual(NAV_TABS, [{ name: "automations", label: "Workspace › Automations", page: "spawn", tab: "automations" }]);
   assert.equal(navTab("automations"), NAV_TABS[0]);
   for (const name of ["hierarchy", "spawn", "souls", "capabilities", undefined, null, ""]) assert.equal(navTab(name), null, String(name));
   for (const entry of NAV_TABS) {
     assert.ok(NAV.some((v) => v.name === entry.page), `${entry.name}: its page is a NAV page`);
     assert.ok(!NAV.some((v) => v.name === entry.name), `${entry.name}: not a page of its own as well`);
     assert.ok(workspaceTabs.includes(entry.tab), `${entry.name}: a tab the Workspace page has`);
+    assert.ok(entry.label.startsWith(`${NAV.find((v) => v.name === entry.page).label} › `), `${entry.name}: its label names its page`);
   }
   assert.equal(workspaceTabs.indexOf("automations"), 2, "Souls, Capabilities, Automations, Teams, Setup");
 });
@@ -75,7 +76,7 @@ test("shell.mjs consumes the manifest: rail built from shell-nav NAV, openView r
 test("palette view commands derive from NAV and NAV_TABS — no hard-coded destination list to drift", () => {
   const src = shellSource();
   assert.match(src, /\.\.\.\[\.\.\.NAV, \.\.\.NAV_TABS\]\.map\(\(v\) => \(\{ label: `View: \$\{v\.label\}`,.*run: \(\) => showStageFocused\(v\.name\) \}\)\)/,
-    "palette view commands (View: Automations among them) are generated from the manifests");
+    "palette view commands (View: Workspace › Automations among them) are generated from the manifests");
   assert.ok(!/label:\s*"View: /.test(src), "no hard-coded View: palette entries remain");
 });
 

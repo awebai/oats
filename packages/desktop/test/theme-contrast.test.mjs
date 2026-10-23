@@ -2307,3 +2307,41 @@ for (const [name] of palettes) test(`${name}: the leader's hint meets AA on its 
   assert.equal(dom.window.getComputedStyle(hint.element).background, "var(--surface-2)");
   assert.notEqual(dom.window.getComputedStyle(hint.element).clipPath, "inset(50%)", "a line is drawn");
 });
+
+// The shortcuts editor's Most useful section (its first): the heading, each action's name, the keycaps and the
+// leader's words, on the surfaces they are painted on, in every theme. Its rules are the editor's own (usefulCSS,
+// injected with it), on top of the list's keycaps and words in shell.css; nothing over its text is composited.
+for (const [name] of palettes) test(`${name}: the shortcuts editor's Most useful section meets computed AA`, async t => {
+  const { registerAction, resetAllBindings } = await import("../renderer/keybindings.mjs");
+  const { createKeybindingsEditor, usefulCSS } = await import("../renderer/keybindings-editor.mjs");
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, readFileSync(new URL("shell.css", renderer), "utf8")]) {
+    const style = doc.createElement("style"); style.textContent = source; doc.head.append(style);
+  }
+  resetAllBindings();
+  const offs = [registerAction({ id: "app.leader", label: "Leader", context: "global", run: () => {} })];
+  const editor = createKeybindingsEditor({ doc, isMac: false });
+  t.after(() => { editor.close(); offs.forEach(off => off()); resetAllBindings(); dom.window.close(); });
+  editor.open();
+  assert.equal(doc.querySelector("style[data-kb-useful]").textContent, usefulCSS, "its rules are on the page");
+  assert.doesNotMatch(usefulCSS, /#[0-9a-f]{3,8}\b|rgba?\(|opacity|color-mix/i, "tokens only, no compositing");
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const value = token => root.getPropertyValue(`--${token}`).trim();
+  for (const [selector, fg, painted, bg] of [
+    [".kb-useful .kb-context", "muted", ".kb-useful .kb-context", "surface"],
+    [".kb-useful-name", "fg", ".kb-editor", "surface"],
+    [".kb-useful kbd", "fg", ".kb-useful kbd", "bg"],
+    [".kb-useful .kb-then", "muted", ".kb-editor", "surface"],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
+    for (let node = el === surface ? null : el.parentElement; node && node !== surface; node = node.parentElement) {
+      assert.ok(["", "none", "transparent", "rgba(0, 0, 0, 0)"].includes(dom.window.getComputedStyle(node).background), `${selector}: nothing painted between it and ${painted}`);
+    }
+    assert.ok(pairs.some(([f, b]) => f === fg && b === bg), `--${fg} on --${bg} is in the inventory`);
+    assert.ok(contrast(opaqueChannels(value(fg)), opaqueChannels(value(bg))) >= 4.5, `${selector}: ${fg} on ${bg}`);
+    for (let node = el; node; node = node.parentElement) assert.equal(dom.window.getComputedStyle(node).opacity, "1", `${selector}: no opacity`);
+  }
+});
