@@ -112,6 +112,23 @@ PATH, not the Desktop's. A tmux server that was already running keeps its own
 environment; restart it if its sessions should get the new PATH, which ends
 its sessions: `tmux -L oats kill-server` for the OATS tmux server, where instances run, and `tmux kill-server` for your default server, where an instance started by an earlier kernel may still be.
 
+## Updating
+
+Installing a new version doesn't change a Desktop that is already running: an
+AppImage runs from its own mount, and a DEB or another copy of the app hands
+its launch to the running app, which opens or focuses a window and carries on
+in the old version. To switch, quit Desktop (close every window) and open it
+again.
+
+From this version on, a launch of a different version says so: the running
+Desktop opens or focuses the window as usual, then asks whether to **Restart
+into** the version you opened, naming the file it starts, or **Keep** the
+running one. Restarting closes Desktop's windows and starts the version you
+opened; your agents keep running in their sessions. When the copy you opened can't be found again (its file was
+moved or removed), the message only tells you to quit and open it again. Both
+copies must be this version or later: a running Desktop older than this one
+can't tell you, and neither can a launch of one.
+
 ## Opening a workspace
 
 The app opens the workspaces you had open, plus the directory it was
@@ -169,7 +186,8 @@ workspace on a server: `name — server`).
 - **Launching again.** Running the app again (`open -a "OATS Desktop" --args
   --dir <deployment>`, or from inside a deployment) adds that deployment if
   needed and brings its window to the front, opening one if it has none. Any
-  other launch brings the most recently used window to the front.
+  other launch brings the most recently used window to the front. A launch of
+  another version also offers to restart into it ([Updating](#updating)).
 - **Closing.** Closing a window leaves the other windows, and their
   terminals, running. Closing the last window quits the app.
 - Tabs belong to their window: a workspace's terminals and tabs stay in the

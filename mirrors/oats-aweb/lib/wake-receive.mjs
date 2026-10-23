@@ -11,7 +11,7 @@
 // Under delivery: channel a runtime with no native surface (Codex, unknown) is
 // an external-session home like any session home (brokerDelivers).
 import {lstatSync, readFileSync, realpathSync, statSync} from 'node:fs';
-import {dirname, isAbsolute, join, resolve} from 'node:path';
+import {basename, dirname, isAbsolute, join, resolve} from 'node:path';
 import {approvedChannelPolicyWarning} from './claude-managed-policy.mjs';
 
 const JOINED_EVENT_CLASSES = ['mail', 'chat'];
@@ -310,7 +310,7 @@ export function expectedReceive(home, {delivery = 'channel', policy} = {}) {
   // Incomplete projections retain known joins but do not manufacture an exact
   // primary plan from settings or the broker's supplied binding list.
   if (!incomplete && primaryBroker) bindings.unshift({identity_home: primary, team: meta.identity?.team || meta.team || meta.defaultTeam?.team, label: joined.length ? 'default' : undefined, controls: true, event_classes: []});
-  return {problems: [], warnings, runtimeDelivery, runtime, primary, primaryTeam: meta.identity?.team || meta.team || meta.defaultTeam?.team, primaryBroker, capturedDelivery: meta.delivery, joined, bindings, native, incomplete, brokerRequired: primaryBroker || joined.length > 0};
+  return {problems: [], warnings, runtimeDelivery, runtime, primary, ...(grant ? {grantHome: primary} : {}), primaryTeam: meta.identity?.team || meta.team || meta.defaultTeam?.team, primaryBroker, capturedDelivery: meta.delivery, joined, bindings, native, incomplete, brokerRequired: primaryBroker || joined.length > 0};
 }
 
 /** Milliseconds since the epoch of an RFC 3339 timestamp as aw writes them,
@@ -344,10 +344,42 @@ export function wakeDaemonAssessment(status, {minimumVersion}) {
   return {problems: [], warnings};
 }
 
+// aw v1.36.37 wake/stream.go's complete StreamPhase vocabulary. Unknown phases
+// must not be treated as reconnects. Phase determines grant-stream readiness:
+// stream.go:269-279,326 gives retrying its recoverable error text.
+const STREAM_PHASES = ['starting', 'streaming', 'retrying', 'quarantined', 'stopped'];
+const TRANSIENT_STREAM_PHASES = ['starting', 'retrying'];
+const GRANT_BROKER_REMEDY = 'restart the seat to re-register the broker with the current grant home';
+
+/** Errors are arbitrary server text. Extract only HTTP status, recognized
+ * denial/service details and network failure phrases; never echo headers,
+ * URLs, tokens or arbitrary response/request data. */
+function grantStreamSummary(hit) {
+  const phase = STREAM_PHASES.includes(hit.stream_phase) ? hit.stream_phase : `unknown (${typeof hit.stream_phase === 'string' ? JSON.stringify(hit.stream_phase).slice(0, 160) : hit.stream_phase === undefined ? 'absent' : typeof hit.stream_phase})`;
+  const match = /^aweb: http ([1-5]\d{2})(?: \([^)]*\))?:\s*(.*)$/s.exec(hit.stream_error || '');
+  let detail;
+  try { detail = match && JSON.parse(match[2]).detail; } catch { /* not a structured HTTP error */ }
+  const safeDetail = typeof detail === 'string' && /^(?:grant (?:revoked|expired|subject inactive|issuer revoked|freshness unavailable)|service unavailable|internal server error|bad gateway|gateway timeout|upstream temporarily unavailable|too many requests)$/.test(detail) ? `: ${detail}` : '';
+  const network = /\b(?:dial tcp: )?(?:network is unreachable|connection refused|connection reset by peer|context deadline exceeded|i\/o timeout|no such host|TLS handshake timeout|unexpected EOF|EOF)\b/.exec(hit.stream_error || '')?.[0];
+  const remedy = TRANSIENT_STREAM_PHASES.includes(hit.stream_phase) && hit.stream_admitted === true ? 'the broker reconnects automatically' : GRANT_BROKER_REMEDY;
+  return `broker receive stream is ${phase}${match ? ` (HTTP ${match[1]}${safeDetail})` : network ? ` (${network})` : hit.stream_error ? ' (stream error reported)' : ''}${hit.stream_admitted !== true ? '; stream admission is not confirmed' : ''}; ${remedy}`;
+}
+
+function receiveStreamAssessment(hit, grantHome, fallback) {
+  if (grantHome && samePath(hit.identity_home, grantHome)) {
+    if (hit.stream_admitted === true && hit.stream_phase === 'streaming') return null;
+    const diagnostic = problem('wake-stream-unavailable', grantStreamSummary(hit));
+    return hit.stream_admitted === true && TRANSIENT_STREAM_PHASES.includes(hit.stream_phase)
+      ? {warning: diagnostic} : {problem: diagnostic};
+  }
+  if (hit.stream_admitted === true && !hit.stream_error && hit.stream_phase === 'streaming') return null;
+  return {problem: problem('wake-stream-unavailable', fallback)};
+}
+
 /** Released aw status is a transport observation. Worker telemetry is absent at
  * the CLI floor; that is unknown, not permission to invent a healthy worker.
  * No generation/start witness is required or inferred from historical inputs. */
-export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime, capturedDelivery, primary, primaryTeam, bindings, incomplete = false}, {minimumVersion, now = Date.now(), clientVersion} = {}) {
+export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime, capturedDelivery, primary, grantHome, primaryTeam, bindings, incomplete = false}, {minimumVersion, now = Date.now(), clientVersion} = {}) {
   const warnings = [];
   const fail = (code, message) => ({problems: [problem(code, message)], warnings});
   if (!object(status) || !Array.isArray(status.instances)) return fail('wake-status-unavailable', 'aw wake status is unavailable or malformed');
@@ -371,6 +403,14 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
   // malformed/duplicate identities and same-size substitutions remain binding
   // failures. Unknown legacy ownership must not acquire a primary requirement.
   const actual = row.receive_identities;
+  const grantSession = pathValue(grantHome) && capturedDelivery === 'session';
+  if (grantSession) {
+    // Compare the registration locator and the primary receive locator with
+    // the recorded grant, even when other policy fields are contradictory.
+    const foreign = [row.identity_home, ...(Array.isArray(actual) ? actual.filter(r => r?.controls === true).map(r => r.identity_home) : [])]
+      .find(locator => pathValue(locator) && !samePath(locator, grantHome));
+    if (foreign) return fail('wake-target-binding', `broker is bound to a grant home other than the seat's current one (broker: ${basename(foreign)}; current: ${basename(grantHome)}); ${GRANT_BROKER_REMEDY}`);
+  }
   if (codexPrimary && (actual === undefined || (Array.isArray(actual) && !actual.length))) return fail('wake-stream-missing', 'Codex primary has no broker receive streams');
   if (codexPrimary && Array.isArray(actual) &&
       actual.every(r => object(r) && pathValue(r.identity_home)) &&
@@ -409,7 +449,9 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
         if (hit.team_id !== undefined && primaryTeam !== undefined && hit.team_id !== primaryTeam) return fail('wake-target-binding', 'broker primary team contradicts the retained identity');
         if (capturedDelivery === 'session' && (hit.controls !== true || classes.length)) return fail('wake-target-binding', 'broker primary policy contradicts the retained session route');
       }
-      if (hit.stream_admitted !== true || hit.stream_error || hit.stream_phase !== 'streaming') return fail('wake-stream-unavailable', 'supplied receive stream is missing, refused or not connected');
+      const stream = receiveStreamAssessment(hit, grantSession ? grantHome : undefined, 'supplied receive stream is missing, refused or not connected');
+      if (stream?.problem) return {problems: [stream.problem], warnings};
+      if (stream?.warning) warnings.push(stream.warning);
     }
   }
   for (const expected of bindings) {
@@ -421,7 +463,9 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
     if ((hit.label !== undefined && typeof hit.label !== 'string') || (hit.label || undefined) !== expected.label || (hit.team_id !== undefined && hit.team_id !== expected.team) || hit.delivery_owner !== 'session-hints' ||
         (hit.controls !== undefined && typeof hit.controls !== 'boolean') || (hit.controls === true) !== expected.controls ||
         !Array.isArray(classes) || classes.length !== expected.event_classes.length || classes.some(c => typeof c !== 'string') || JSON.stringify([...classes].sort()) !== JSON.stringify([...expected.event_classes].sort())) return fail('wake-target-binding', 'broker receive ownership, label or event policy differs from the captured home');
-    if (hit.stream_admitted !== true || hit.stream_error || hit.stream_phase !== 'streaming') return fail('wake-stream-unavailable', 'required receive stream is missing, refused or not connected');
+    const stream = receiveStreamAssessment(hit, grantSession ? grantHome : undefined, 'required receive stream is missing, refused or not connected');
+    if (stream?.problem) return {problems: [stream.problem], warnings};
+    if (stream?.warning && !incomplete) warnings.push(stream.warning);
   }
   const core = row.channel_core;
   if (!object(core) || core.running !== true) return fail('wake-worker-unavailable', 'broker worker is stopped or current worker evidence is unavailable');

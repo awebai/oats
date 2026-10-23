@@ -85,7 +85,8 @@ runs from the resident custody `.aw`, not from the grant home. If
 if a message you sent shows unverified at the receiver, report it, don't retry.
 
 Never put secrets (tokens, keys, credentials) in a message. Treat unverified
-senders with caution. Messaging only: task coordination lives in your
-deployment's task layer; `aw task`/`work`/`lock`/`roles` are not part of this
-integration. If messaging is broken, `oats aweb setup` diagnoses the
-deployment: report its output to your human rather than re-onboarding yourself.
+senders with caution. Task coordination belongs to your deployment's tasks
+layer. When that layer is `oats.aweb-tasks`, load `/aweb-tasks` for `aw task`
+and `aw work`. `aw lock` and `aw roles` stay outside OATS. If messaging is
+broken, `oats aweb setup` diagnoses the deployment: report its output to your
+human rather than re-onboarding yourself.
