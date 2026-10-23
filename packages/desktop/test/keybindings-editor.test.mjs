@@ -935,8 +935,8 @@ test("Settings: Connections is in the shortcuts list (Global, by its label) and 
 });
 
 // ── What has no button (the sidebar's simpler foot) is taught by the editor's own rows ───────────
-// The palette and Settings have no button; Spawn instance, Deployments, Workspace and Automations
-// are small buttons or tabs. The product owner: these are all taught in the shortcuts editor, by
+// The palette and Connections have no button (the settings cog's menu holds Theme… and Keyboard
+// shortcuts… alone); Spawn instance, Deployments, Workspace and Automations are small buttons or tabs. The product owner: these are all taught in the shortcuts editor, by
 // their rows alone (no line above them). The rows are the shipped registrations, run as shipped.
 async function shippedRows() {
   const { readFileSync } = await import("node:fs");
@@ -976,9 +976,9 @@ for (const [platform, isMac] of [["macOS", true], ["Linux", false]]) {
       assert.deepEqual(caps(palette), paletteKeys);
       assert.equal(palette.querySelector("button.kb-chord").getAttribute("aria-label"),
         `Change shortcut for Open the command palette, currently ${paletteKeys.join(isMac ? "" : "+")}, works in a terminal`);
-      // Settings: listed with no default chord, named as the palette names it, rebindable from its row.
+      // Connections: listed with no default chord, named as the palette names it, rebindable from its row.
       const settings = rowIn("Global", "Settings: Connections…");
-      assert.ok(settings, "Settings is a row of its own");
+      assert.ok(settings, "Connections is a row of its own");
       assert.equal(settings.querySelector("button.kb-chord").textContent, "unbound");
       assert.ok(settings.querySelector("button.kb-chord").classList.contains("kb-unbound"));
       assert.equal(settings.querySelector("button.kb-chord").getAttribute("aria-label"), "Change shortcut for Settings: Connections…, currently unbound");
@@ -1003,7 +1003,7 @@ for (const [platform, isMac] of [["macOS", true], ["Linux", false]]) {
       f.type("automations");
       assert.deepEqual(f.shown(), ["View: Workspace › Automations"]);
       f.type("");
-      // Settings is rebound from its row, and its row then shows the chord.
+      // Connections is rebound from its row, and its row then shows the chord.
       chord("Settings: Connections…").click();
       f.doc.dispatchEvent(key(f.doc, "j", isMac ? { code: "KeyJ", metaKey: true, altKey: true } : { ctrlKey: true, altKey: true }));
       assert.equal(getBinding("app.connections", isMac), "Mod+Alt+J");

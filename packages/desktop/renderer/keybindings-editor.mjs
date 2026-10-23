@@ -16,8 +16,8 @@
 //
 // What has no button teaches its keys here, on its own rows (no line of its own above them): the
 // command palette, the Leader group's first row (the leader then K or Space) and a Global row (its
-// chord in the family in use), and Settings, the Global row "Settings: Connections…", named as the
-// palette names it, unbound by default and rebindable there. The stage rows say where they land
+// chord in the family in use), and Connections (not in the settings cog's menu), the Global row
+// "Settings: Connections…", named as the palette names it, unbound by default and rebindable there. The stage rows say where they land
 // ("View: Workspace › Automations": NAV_TABS).
 //
 // On Linux/Windows its top holds the chord family (docs/desktop-keyboard.md, "The chord
