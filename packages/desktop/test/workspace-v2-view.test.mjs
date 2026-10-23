@@ -223,6 +223,38 @@ test('Capabilities: Workspace defaults first, the "i" after the jump across repa
   assert.equal(u.doc.querySelector('.about-dialog'), null, 'leaving Souls closes its dialog');
 });
 
+// Back from a capability page lands on the control that opened it: a default (by its focus key) even when the search
+// hides that capability's catalog row; a catalog row, never a default that carries the same name.
+test('Capabilities: Back returns to the default that opened the page, filtered or not; a catalog row\'s Back skips its defaults', async t => {
+  const defaults = { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null },
+    capabilities: [{ name: 'oats.core', from: 'package', off: false }, { name: 'nw-house-style', from: null, off: true }] };
+  const u = await setup(t, { status: { ...statusOf('workspace-status'), defaults } });
+  await u.tab('capabilities');
+  const q = sel => u.doc.querySelector(sel);
+  const back = async how => {
+    const page = q('.workspace-cap-page'); assert.equal(page.hidden, false, 'the page is open');
+    const control = page.querySelector('.page-back');
+    if (how === 'escape') control.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); else control.click();
+    await settle();
+  };
+  const search = q('.ws-toolbar[data-tools=capabilities] input');
+  const find = text => { search.value = text; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); return settle(); };
+  await find('nw-');
+  assert.equal(u.rows().some(row => row.dataset.capability === 'oats.okf'), false, 'the search hides oats.okf\'s row');
+  const slot = q('.ws-default-slot[data-slot=knowledge]'); slot.focus(); slot.click(); await settle();
+  await back('click');
+  assert.equal(u.doc.activeElement?.dataset.focusKey, 'defaults:knowledge', 'Back lands on the Knowledge default');
+  const chip = q('button.ws-default-cap'); chip.focus(); chip.click(); await settle();
+  await back('escape');
+  assert.equal(u.doc.activeElement?.dataset.focusKey, 'defaults:cap:oats.core', 'Escape too, on the chip');
+  await find('');
+  for (const name of ['oats.core', 'nw-house-style']) {
+    const row = u.rows().find(el => el.dataset.capability === name); row.focus(); row.click(); await settle();
+    await back('click');
+    assert.equal(u.doc.activeElement, u.rows().find(el => el.dataset.capability === name), `${name}: Back lands on its catalog row`);
+  }
+});
+
 // Workspace v4 (human decision 2026-09-26; replaces the header search): the search is
 // the Capabilities view's own toolbar, above the sections.
 test('the view search narrows every section by capability name', async t => {

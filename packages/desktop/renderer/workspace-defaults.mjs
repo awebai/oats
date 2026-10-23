@@ -172,7 +172,7 @@ export function renderWorkspaceDefaults(section, { status, rows, onOpen = null }
       const off = cap.off === true;
       const match = off ? null : defaultRow(rows, cap, hostKey);
       const button = !!match && opens;
-      const chip = node(doc, button ? 'button' : 'span', null, `ws-default-cap${off ? ' off' : ''}`); chip.dataset.capability = cap.name;
+      const chip = node(doc, button ? 'button' : 'span', null, `ws-default-cap${off ? ' off' : ''}`); chip.dataset.defaultCapability = cap.name; // not data-capability: a catalog row's Back finds its own row by that
       const name = node(doc, 'span', cap.name, 'ws-default-name'); name.title = cap.name;
       chip.append(name);
       if (off) chip.append(' ', node(doc, 'span', DEFAULTS_COPY.off, 'ws-default-note')); // the space keeps the words apart for assistive tech

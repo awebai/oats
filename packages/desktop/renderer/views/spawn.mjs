@@ -366,7 +366,11 @@ function openCapability(s, row, from = null, why = null) {
     // Its Trigger sources row appeared or left: the Provides card is rebuilt around it (the signature below holds it).
     onProvidesChange: () => { if (s.alive && s.capOpen?.contents === contents) paintCapabilityPage(s); },
   });
-  s.capOpen = { row, from, why: from ? why : null, gen: workspaceGeneration(), scrollTop: from ? null : list?.scrollTop ?? null, signature: null, contents };
+  // Back returns focus to the control that opened it: a keyed one (a Workspace defaults column or chip) by its key,
+  // which outlives a repaint and is never filtered out; a catalog row by its capability's name (closeCapability).
+  const active = s.el.ownerDocument.activeElement;
+  const openerKey = !from && list?.contains(active) ? active.dataset?.focusKey || null : null;
+  s.capOpen = { row, from, why: from ? why : null, gen: workspaceGeneration(), scrollTop: from ? null : list?.scrollTop ?? null, signature: null, contents, openerKey };
   paintCapabilityPage(s);
   showPage(s, "capability");
   s.q("workspace-cap-page").querySelector(".page-back")?.focus({ preventScroll: true });
@@ -452,6 +456,7 @@ function syncCapabilityPage(s) {
   if (s.capOpen.gen !== workspaceGeneration()) { closeCapability(s); return; }
   paintCapabilityPage(s);
 }
+const focusable = el => el.isConnected && !el.disabled && (el.matches("button, a[href], input, select, textarea") || el.tabIndex >= 0);
 function closeCapability(s, { restoreFocus = false } = {}) {
   const open = s.capOpen; s.capOpen = null;
   open?.contents.dispose();
@@ -466,7 +471,14 @@ function closeCapability(s, { restoreFocus = false } = {}) {
   if (!restoreFocus) return;
   const scope = backToSoul ? s.q("workspace-soul-page") : list;
   // The row is already in view at the restored offset: focus without scrolling it again.
-  [...(scope?.querySelectorAll("[data-capability]") || [])].find(el => el.dataset.capability === open.row.name)?.focus({ preventScroll: !backToSoul && Number.isFinite(open.scrollTop) });
+  const preventScroll = !backToSoul && Number.isFinite(open.scrollTop);
+  const keyed = !backToSoul && open.openerKey ? [...(scope?.querySelectorAll("[data-focus-key]") || [])].find(el => el.dataset.focusKey === open.openerKey && focusable(el)) : null;
+  // Else the capability's row: a focusable one first (a listed name may also be a plain line).
+  const named = [...(scope?.querySelectorAll("[data-capability]") || [])].filter(el => el.dataset.capability === open.row.name);
+  const target = keyed || named.find(focusable) || named[0];
+  target?.focus({ preventScroll });
+  // The opener is gone (filtered out, or left the catalog): the list itself, never <body>.
+  if (!backToSoul && scope && !scope.contains(s.el.ownerDocument.activeElement)) scope.focus({ preventScroll: true });
 }
 
 export function mount(el, ctx) {

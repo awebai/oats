@@ -100,7 +100,7 @@ test('filled slots and other defaults: Knowledge, Messaging, Tasks with their id
   const more = u.$('.ws-defaults-more');
   assert.equal(more.querySelector('.ws-defaults-more-label').textContent, 'Also for every soul');
   const chips = [...more.querySelectorAll('.ws-default-cap')];
-  assert.deepEqual(chips.map(c => [c.tagName, c.dataset.capability, text(c)]), [
+  assert.deepEqual(chips.map(c => [c.tagName, c.dataset.defaultCapability, text(c)]), [
     ['BUTTON', 'oats.core', 'oats.core oats.framework 1.11.0'],
     ['BUTTON', 'nw-brand-voice', 'nw-brand-voice marketing latest'],
     ['SPAN', 'nw-house-style', 'nw-house-style turned off by the workspace'],
