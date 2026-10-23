@@ -146,6 +146,41 @@ export function namingOf(v) {
   if (v.source === 'numbered') return NAMING_REASONS.includes(v.reason) ? { source: 'numbered', reason: v.reason, ms: v.ms } : null;
   return null;
 }
+/** How long the kernel's naming call may take (its own bound, the preview's and the apply's): an apply that also names
+ *  its instance (`--suggest-name`) may take this much longer, and a caller's deadline allows for it. */
+export const NAMING_TIMEOUT_MS = 20_000;
+/** Feature instance-suggest-name (awebai/oats#1490 §2): `oats instance suggest-name` names, on this computer, a spawn that
+ *  lands on another machine. The Desktop asks only where it can pass the name on (`spawn-name`). */
+export const INSTANCE_SUGGEST_FEATURE = 'instance-suggest-name';
+export const instanceSuggestSupported = cli => cli?.ok === true && absolute(cli.bin) && Array.isArray(cli.features)
+  && cli.features.includes(INSTANCE_SUGGEST_FEATURE) && cli.features.includes('spawn-name');
+/** Feature spawn-apply-suggest-name (awebai/oats#1490 §3): an apply with `--suggest-name` names its instance itself, on the
+ *  machine that spawns. Routed, the host must advertise it too: the route refuses the flag toward one that doesn't. */
+export const APPLY_SUGGEST_FEATURE = 'spawn-apply-suggest-name';
+/** The harnesses a suggest-name call may name (codex answers numbered, `unsupported-harness`, with no call). */
+export const SUGGEST_HARNESSES = ['claude', 'pi', 'codex'];
+/** The exact name a suggestion gives: the kernel's slug, within its cap. */
+const SUGGESTED = new RegExp(`^(?=.{1,${INSTANCE_NAME_MAX}}$)[a-z0-9]+(?:-[a-z0-9]+)*$`);
+/** `oats instance suggest-name`'s answer, `{ name?, naming }`, or null when it is malformed: `naming` as a preview's
+ *  (namingOf), and `name` exactly when it was suggested. */
+export function instanceSuggestion(v) {
+  if (!record(v) || Object.keys(v).some(k => !['name', 'naming'].includes(k))) return null;
+  const naming = namingOf(v.naming);
+  if (!naming) return null;
+  if (naming.source === 'suggested') return SUGGESTED.test(v.name ?? '') ? { name: v.name, naming } : null;
+  return Object.hasOwn(v, 'name') ? null : { naming };
+}
+/** The request of the dialog's suggest-name read: `{ action: 'suggest-name', soul, task, harness?, model? }`, or null.
+ *  The soul is only a name (the host's, which needn't exist here); the model goes only with pi, the one harness whose
+ *  naming follows it. */
+export function instanceSuggestRequest(v) {
+  if (!exact(v, ['action', 'soul', 'task', 'harness', 'model']) || v.action !== 'suggest-name' || !soulName(v.soul) || !suggestTask(v.task)) return null;
+  if (v.harness !== undefined && !SUGGEST_HARNESSES.includes(v.harness)) return null;
+  if (v.model !== undefined && (v.harness !== 'pi' || !arg(v.model, 256))) return null;
+  return { action: 'suggest-name', soul: v.soul, task: v.task, ...(v.harness !== undefined ? { harness: v.harness } : {}), ...(v.model !== undefined ? { model: v.model } : {}) };
+}
+/** A soul's name as the kernel reads one: `<soul>`, `<package>/<soul>` or `<package>--<soul>`. */
+const soulName = v => typeof v === 'string' && v.length <= 256 && v.split('/').length <= 2 && v.split('/').every(name);
 export function previewSelector(v) {
   return exact(v, ['soul', 'agentsRoot']) && name(v.soul) && absolute(v.agentsRoot) ? { soul: v.soul, agentsRoot: v.agentsRoot } : null;
 }

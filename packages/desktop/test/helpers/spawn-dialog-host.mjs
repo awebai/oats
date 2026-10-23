@@ -9,7 +9,7 @@ import * as spawn from '../../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace, postJson } from '../../renderer/views/common.mjs';
 import { createSpawnJobs } from '../../renderer/spawn-jobs.mjs';
 import { refreshCli } from '../../renderer/views/cli-status.mjs';
-import { createSpawnPreview, createSpawnPreviewBoundary, createSpawnPreviewFlights, createSpawnSuggestBoundary } from '../../../client/spawn-preview.mjs';
+import { createSpawnPreview, createSpawnPreviewBoundary, createSpawnPreviewFlights, createSpawnSuggestBoundary, createInstanceSuggestBoundary } from '../../../client/spawn-preview.mjs';
 import { createSpawnApplyBoundary } from '../../../client/spawn-apply.mjs';
 import { soulsData, workspaceStatusData } from '../../../client/deployment-data.mjs';
 import { cli as CLI, kernel, DEPLOYMENT, ROOT, anchor, anchorHome, deferred } from './spawn-preview-fixture.mjs';
@@ -60,7 +60,7 @@ export async function mountSpawn(t, options = {}) {
   const naming = value => options.spawnName || !Array.isArray(value?.features) ? value : { ...value, features: value.features.filter(f => f !== 'spawn-name') };
   let cli = naming(structuredClone(options.cli ?? CLI)), agents = options.agents ?? catalogAgents();
   let instances = options.instances ?? [{ ...anchor, home: anchorHome, running: true, createdAt: 'first', tmux: { session: 's', window: 'w' } }];
-  const calls = [], opens = [], notified = [], applied = [];
+  const calls = [], opens = [], notified = [], applied = [], toasts = [];
   // options.deployments (#482): the view's deployments as /api/panel lists them; the preview and spawn routes then
   // answer for the deployment their ?ws= names (the server echoes it), and options.catalogs[<id>] is that
   // deployment's /api/agents catalog (an array, or a function returning one or a promise of one).
@@ -77,6 +77,13 @@ export async function mountSpawn(t, options = {}) {
   // A suggest read (feature spawn-suggest-name) goes to the suggest lane: the Desktop's own (options.previewNow), or
   // one of its own here. options.kernel answers it too: its args then carry `task` and `signal`.
   const suggestRead = desktopPreview ? desktopPreview.suggest : createSpawnSuggestBoundary({ flights: createSpawnPreviewFlights(), invoke: invokePreview });
+  // A suggest-name read (#1490 §2: this computer names a spawn on another machine) goes through the real boundary;
+  // options.nameHere(request, { dir, signal }) is this computer's CLI: it answers the kernel's envelope (or a promise of one).
+  const names = [];
+  const suggestNameRead = createInstanceSuggestBoundary({ invoke: async (_cli, args) => {
+    names.push({ ...args.request, dir: args.dir });
+    return options.nameHere ? options.nameHere(args.request, args) : { schemaVersion: 1, ok: true, result: { naming: { source: 'numbered', reason: 'harness-failed', ms: 0 } } };
+  } });
   let ids = 0;
   // u.restartBroker() is a backend restart: a new broker, which knows no reference the old one prepared.
   const newBroker = () => createSpawnApplyBoundary({ mint: () => (++ids).toString(16).padStart(64, '0'), read: prepareRead,
@@ -107,7 +114,7 @@ export async function mountSpawn(t, options = {}) {
       if (path.startsWith('/api/panel?ws=remote')) return { workspace: { id: decodeURIComponent(path.split('ws=')[1]), remote: true }, instances: options.serverPanels?.[decodeURIComponent(path.split('ws=')[1])] ?? [] };
       if (path.startsWith('/api/panel')) return panel();
       if (path.startsWith('/api/team-members')) return options.teamMembers ?? { members: [], servers: [], notReached: [] };
-      if (path.startsWith('/api/workspace-spawn-preview')) { await options.previewGate?.(body, wsOf(path)); return (body?.action === 'suggest' ? suggestRead : previewBoundary)(body, () => context(wsOf(path))); }
+      if (path.startsWith('/api/workspace-spawn-preview')) { await options.previewGate?.(body, wsOf(path)); return (body?.action === 'suggest' ? suggestRead : body?.action === 'suggest-name' ? suggestNameRead : previewBoundary)(body, () => context(wsOf(path))); }
       if (path.startsWith('/api/spawn?')) { await options.spawnGate?.(body); return broker(body, () => context(wsOf(path))); }
       if (path === '/api/spawn') return options.remote ? options.remote(body) : assert.fail('no unguarded spawn in these tests');
       if (path === '/api/models') return options.models ? options.models(body) : { models: [] };
@@ -120,7 +127,7 @@ export async function mountSpawn(t, options = {}) {
       if (path.startsWith('/api/workspace-readiness')) return { readinessViewApi: 1, status: 'unavailable', reason: { code: 'E_UNSUPPORTED', message: 'x' } };
       throw new Error(`Unexpected fixture API request: ${path}`);
     },
-    openTerminal: (ref, o) => opens.push({ ref, o }), notifySpawn: (row, ws) => notified.push({ row, ws }), notify: () => {}, openBrain: () => {} };
+    openTerminal: (ref, o) => opens.push({ ref, o }), notifySpawn: (row, ws) => notified.push({ row, ws }), notify: message => toasts.push(message), openBrain: () => {} };
   // options.jobs: the shell's background-spawn store (Spec C), wired as shell.mjs wires it; its options override.
   const notices = [], reopened = [], schedules = [], shownRows = [], followed = [];
   if (options.jobs) {
@@ -141,7 +148,7 @@ export async function mountSpawn(t, options = {}) {
   spawn.mount(dom.window.document.querySelector('#host'), ctx); await settle();
   const doc = dom.window.document;
   const u = {
-    doc, dom, calls, opens, notified, applied, polls, ctx, notices, reopened, schedules, shownRows, followed, jobs: ctx.spawnJobs,
+    doc, dom, calls, opens, notified, applied, polls, ctx, names, toasts, notices, reopened, schedules, shownRows, followed, jobs: ctx.spawnJobs,
     kernelPreviews: () => kernelPreviews,
     restartBroker() { broker = newBroker(); },
     dialog: () => doc.querySelector('.spawn-dialog'),

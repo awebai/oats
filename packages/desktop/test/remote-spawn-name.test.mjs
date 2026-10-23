@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawnArgv, cliSpawn } from '../../client/cli-adapter.mjs';
+import { namingOf, APPLY_SUGGEST_FEATURE } from '../../client/spawn-preview-contract.mjs';
 
 test('spawnArgv: --name is the kernel\'s lowercase slug, used as given; never beside --purpose', () => {
   assert.deepEqual(spawnArgv('dev', '/ws', '/t/TASK.md', { name: 'api-v2-dev', server: 'build' }),
@@ -20,7 +21,7 @@ test('cliSpawn: a name with a purpose resolves E_BAD_ARGS without running the CL
 });
 
 /** The shipped spawnAgent, with doubles for what it reads: this computer's CLI and the adapter call it makes. */
-function spawnAgentWith(features) {
+function spawnAgentWith(features, answer = {}) {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('async function spawnAgent('), end = source.indexOf('\n}\n', start) + 2;
   const sent = [];
@@ -28,8 +29,8 @@ function spawnAgentWith(features) {
     deployments: () => [], held: () => ({}), remoteGroups: [{ server: 'build' }],
     remote: { remoteAgents: () => [{ name: 'dev', agentsRoot: '/srv/agents' }], spawnedWorkspace: () => null },
     cliState: { ok: true, bin: '/oats', features }, locator: { requireRemoteSupport: () => {}, relationSupportError: () => null },
-    adapter: { cliSpawn: async (_bin, opts) => { sent.push(opts); return { ok: true, result: { instance: opts.name || `dev-${opts.purpose}`, agent: 'dev', home: '/h' } }; } },
-    ctxs: [], homedir: () => '/home', resolve, harnessFlag: () => '--harness', refreshRemoteSnapshot: async () => {}, viewFor: () => null, DESKTOP_TERMS: {},
+    adapter: { cliSpawn: async (_bin, opts) => { sent.push(opts); return { ok: true, result: { instance: opts.name || `dev-${opts.purpose}`, agent: 'dev', home: '/h', ...answer } }; } },
+    ctxs: [], homedir: () => '/home', resolve, namingOf, APPLY_SUGGEST_FEATURE, harnessFlag: () => '--harness', refreshRemoteSnapshot: async () => {}, viewFor: () => null, DESKTOP_TERMS: {},
   };
   const spawnAgent = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn spawnAgent;`)(...Object.values(deps));
   return { spawnAgent, sent };
@@ -52,4 +53,17 @@ test('spawnAgent: refuses a name beside a purpose (E_BAD_ARGS), a name that is n
   await assert.rejects(older.spawnAgent({ ...body, name: 'api-v2-dev' }), e => e.code === 'cli-no-spawn-name');
   assert.equal((await older.spawnAgent({ ...body, purpose: 'api-v2' })).instance, 'dev-api-v2', 'a purpose needs no spawn-name');
   assert.equal(sent.length + older.sent.length, 1, 'only the purpose spawn reached the CLI');
+});
+
+test('spawnAgent: --suggest-name only where this CLI knows it, never beside a name or a purpose; the host\'s naming re-validated', async () => {
+  const naming = { source: 'numbered', reason: 'timeout', message: 'PRIVATE', ms: 20000 };
+  const { spawnAgent, sent } = spawnAgentWith(['spawn-name', APPLY_SUGGEST_FEATURE], { naming });
+  const r = await spawnAgent({ ...body, suggestName: true });
+  assert.equal(sent[0].suggestName, true); assert.deepEqual(r.naming, { source: 'numbered', reason: 'timeout', ms: 20000 }, 'no kernel message');
+  assert.equal(Object.hasOwn(await spawnAgent({ ...body, purpose: 'x' }), 'naming'), false, 'only an apply that asked carries it');
+  for (const extra of [{ name: 'x-dev' }, { purpose: 'x' }]) await assert.rejects(spawnAgent({ ...body, suggestName: true, ...extra }), e => e.code === 'E_BAD_ARGS');
+  await assert.rejects(spawnAgent({ ...body, suggestName: 'yes' }), e => e.code === 'E_BAD_ARGS');
+  await assert.rejects(spawnAgentWith(['spawn-name']).spawnAgent({ ...body, suggestName: true }), e => e.code === 'cli-no-apply-suggest-name');
+  const odd = spawnAgentWith(['spawn-name', APPLY_SUGGEST_FEATURE], { naming: { source: 'auto' } });
+  assert.equal(Object.hasOwn(await odd.spawnAgent({ ...body, suggestName: true }), 'naming'), false, 'a malformed naming is dropped');
 });
