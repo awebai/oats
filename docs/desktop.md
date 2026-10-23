@@ -220,7 +220,7 @@ add no capabilities (removed in 0.30), so there are no team defaults to show.
 
 The round **i** button after the section jump (**About capabilities**) opens
 **What capabilities are**: what a capability gives a soul's instances (skills,
-commands and instructions, the instructions added to each instance's
+commands and instructions, the instructions injected into each instance's
 composed `AGENTS.md` after the soul's own), the three places one comes from
 (Workspace owned, Repo owned, Packages) and what workspace defaults are.
 **Close** or Esc closes it and returns the focus to the button; leaving the

@@ -1291,8 +1291,10 @@ workspace is observed through its server and never synced from here.
   default to a catalog row (`from: "package"` a package row, a member key that
   member's row, `"here"` the host's) across every section, so the search and the
   pills never narrow it. An unmatched default gets a minimal row whose source chip
-  names the source with no version (`source-chip.mjs` `version: false`); it still
-  opens the page, which says the capability is not listed. Focusable columns and
+  names the member repository with no version (`source-chip.mjs` `version: false`),
+  or, for a package, only the kind ("package"): the package that holds it is not known
+  and a capability's id is not its package's. It still opens the page, which says the
+  capability is not listed. Focusable columns and
   chips carry `data-focus-key`s (`defaults:<slot>`, `defaults:cap:<name>`), which
   the tab host restores after a repaint (`captureFocusState` on the sections).
   The toolbar's round "i" (`about-dialog.mjs` `createAboutDialog`) is built

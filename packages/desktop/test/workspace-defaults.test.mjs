@@ -10,6 +10,7 @@ import { workspaceDefaults, defaultRow, defaultsCSS, DEFAULTS_COPY } from '../re
 import { ABOUT_COPY, aboutCSS, createAboutDialog } from '../renderer/about-dialog.mjs';
 import { takePickerFocusReturn } from '../renderer/overlay-picker.mjs';
 import { capabilitySections } from '../../client/capability-rows.mjs';
+import { iconElement } from '../renderer/shell-icons.mjs';
 
 const HOST = 'github.com/nw/agents', MKT = 'github.com/nw/marketing';
 const ROWS = [
@@ -66,7 +67,7 @@ test('defaultRow: a package by name and kind, a member by its key, "here" as the
   assert.equal(defaultRow(ROWS, { name: 'nw-house-style', from: 'here' }, HOST).row, ROWS[3]);
   const other = defaultRow(ROWS, { name: 'nw-tasks', from: 'here' }, HOST);
   assert.deepEqual(other, { row: { name: 'nw-tasks', kind: 'member', repoKey: HOST }, listed: false }, 'the same name in another repository is not the host\'s');
-  assert.deepEqual(defaultRow(ROWS, { name: 'nw-house-style', from: 'package' }, HOST), { row: { name: 'nw-house-style', kind: 'package', package: 'nw-house-style' }, listed: false }, 'a member row is never taken for a package');
+  assert.deepEqual(defaultRow(ROWS, { name: 'nw-house-style', from: 'package' }, HOST), { row: { name: 'nw-house-style', kind: 'package' }, listed: false }, 'a member row is never taken for a package, and no package is named');
   assert.equal(defaultRow(ROWS, { name: 'x', from: null }, HOST), null, 'no source: nothing to name');
   assert.equal(defaultRow(ROWS, { name: 'x', from: 'here' }, null), null, 'no host key: "here" names nothing');
 });
@@ -126,6 +127,23 @@ test('empty slots: None and the note, not interactive, a neutral tile; an off-on
   u.render(status({ slots: { knowledge: null, messaging: null, tasks: null }, capabilities: [{ name: 'x', from: null, off: true }] }));
   assert.equal(slotCells(u).length, 3, 'a turned-off default is still something the workspace says');
   assert.equal(u.$('[data-jump=defaults] .capability-nav-count').textContent, '0');
+});
+
+test('an unlisted package default never presents the capability as its package: the chip names the kind alone', t => {
+  const u = mount(t);
+  // oats.core is listed nowhere here (its package, oats.framework, is not locked yet): the id says nothing about the package.
+  u.render(status({ slots: { knowledge: { name: 'oats.okf', from: 'package' } }, capabilities: [{ name: 'oats.core', from: 'package', off: false }] }), { rows: ROWS.filter(r => r.name !== 'oats.core' && r.name !== 'oats.okf') });
+  for (const owner of [slotCells(u)[0], u.$('button.ws-default-cap')]) {
+    const chip = owner.querySelector('.source-chip');
+    assert.equal(chip.querySelector('.source-chip-name').textContent, 'package');
+    assert.equal(chip.querySelector('.source-chip-version'), null);
+    assert.equal(chip.title, 'A locked package; not in the workspace’s capability list');
+    assert.equal(chip.querySelector('svg').innerHTML, iconElement(u.doc, 'package', { size: 13 }).innerHTML, 'the package icon');
+  }
+  assert.equal(text(u.$('button.ws-default-cap')), 'oats.core package', 'the id once, never as a package name');
+  assert.equal(u.$('button.ws-default-cap').getAttribute('aria-label'), 'oats.core, from a package, a workspace default — open its page');
+  u.$('button.ws-default-cap').click();
+  assert.deepEqual(u.opened.at(-1), { name: 'oats.core', kind: 'package' }, 'the page still opens, with no package claimed');
 });
 
 test('empty state: no slot and no capability (a standalone deployment too): the scope line alone', t => {

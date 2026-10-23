@@ -78,6 +78,10 @@ export const DEFAULTS_COPY = Object.freeze({
   more: 'Also for every soul',
   off: 'turned off by the workspace',
   strip: 'Core capability defaults',
+  // An unlisted package default: which package holds it is unknown here, so the chip names the kind alone.
+  unlistedPackage: 'package',
+  unlistedPackageTitle: 'A locked package; not in the workspace’s capability list',
+  unlistedPackageWords: 'a package',
 });
 
 const record = value => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -108,7 +112,8 @@ export function defaultRow(rows, { name, from }, hostKey) {
   const repoKey = from === 'here' ? hostKey : from;
   const found = list(rows).find(row => row?.name === name && (from === 'package' ? row.kind === 'package' : row.kind === 'member' && row.repoKey === repoKey));
   if (found) return { row: found, listed: true };
-  return { row: from === 'package' ? { name, kind: 'package', package: name } : { name, kind: 'member', repoKey }, listed: false };
+  // An unlisted package row names no package: the capability's id is not its package's (oats.core is oats.framework's).
+  return { row: from === 'package' ? { name, kind: 'package' } : { name, kind: 'member', repoKey }, listed: false };
 }
 
 function node(doc, tag, value, cls) {
@@ -118,9 +123,17 @@ function node(doc, tag, value, cls) {
   return el;
 }
 
-/** The source chip for a matched default; an unlisted one names its source and nothing more (no version). */
-const chipFor = (doc, match, names) => sourceChip(doc, match.row, names, { version: match.listed });
-const sourceWords = (match, names) => { const words = sourceText(match.row, names); return match.listed ? words.label : words.name; };
+const unlistedPackage = match => !match.listed && match.row.kind === 'package';
+/** The source chip for a matched default; an unlisted one names its source and nothing more (no version), and an
+ * unlisted package only its kind (the package is not known). */
+function chipFor(doc, match, names) {
+  if (!unlistedPackage(match)) return sourceChip(doc, match.row, names, { version: match.listed });
+  const chip = node(doc, 'span', null, 'source-chip'); chip.dataset.source = 'package'; chip.title = DEFAULTS_COPY.unlistedPackageTitle;
+  chip.append(iconElement(doc, 'package', { size: 13 }), node(doc, 'span', DEFAULTS_COPY.unlistedPackage, 'source-chip-name'));
+  return chip;
+}
+const sourceWords = (match, names) => unlistedPackage(match) ? DEFAULTS_COPY.unlistedPackageWords
+  : match.listed ? sourceText(match.row, names).label : sourceText(match.row, names).name;
 
 let moreIds = 0; // ids for the "Also for every soul" label, unique in the document
 /** Paint the defaults panel into `section` (a .capability-section the caller made). `rows`: the catalog's
