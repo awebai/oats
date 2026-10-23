@@ -123,11 +123,15 @@ The launchers are looked up on `PATH`. The window gets nothing of the
 agent's environment but the three display variables above (Linux). Its
 command puts the directories of the `node` and the `oats` that answered
 first on its `PATH`, ahead of the window's own, because a window may read no
-shell startup file: `env PATH=<node's dir>:<oats's dir>:"$PATH" oats tui
---dir <path>`. The `oats` is the first one on `PATH` that is this kernel, an
-instance home's `.oats/bin` passed over. With none, the window runs this
-kernel's `bin/oats.mjs` by its path. Every word is quoted as every command
-the kernel prints is.
+shell startup file, and runs that `oats` by its path, so another `oats` in
+node's directory cannot take its place: `env PATH=<node's dir>:<oats's
+dir>:"$PATH" <oats's dir>/oats tui --dir <path>`. The `oats` is the first one
+on `PATH` that is this kernel, an instance home's `.oats/bin` passed over.
+With none, the window runs this kernel's `bin/oats.mjs` by its path. Every
+word is quoted as every command the kernel prints is. On Linux each `$` of
+what `systemd-run` gets is doubled, because the service manager expands
+`$VAR` and `${VAR}` in a command's arguments, quoted or not: the shell gets
+the command as it was written.
 
 The answer says a window was requested, never that one appeared: `oats`
 cannot see it. With `--json`:

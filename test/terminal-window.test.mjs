@@ -15,6 +15,8 @@ const SYSTEMD_RUN = ["--user", "--collect", "--quiet", "-p", "KillMode=process",
 /** A lookup that finds exactly `tools`, each in /usr/bin. */
 const finding = (...tools) => (name) => tools.includes(name) ? `/usr/bin/${name}` : null;
 const TEXT = `env PATH=/n/bin:"$PATH" oats tui --dir /d`;
+/** TEXT as systemd-run gets it: each `$` doubled, for its manager to read as one. */
+const SYSTEMD_TEXT = `env PATH=/n/bin:"$$PATH" oats tui --dir /d`;
 
 test("the plain command quotes each word by the kernel's one rule, and a shell reads back the same words", () => {
   const words = ["oats", "tui", "--dir", "/home/a b/it's \"here\" $HOME `x` \\"];
@@ -49,11 +51,18 @@ test("on macOS Terminal is asked through osascript, the command in an AppleScrip
 
 test("on Linux systemd-run carries the display variables to xdg-terminal-exec, else x-terminal-emulator -e, running sh -c", () => {
   assert.deepEqual(terminalLaunch(TEXT, { platform: "linux", find: finding("systemd-run", "xdg-terminal-exec", "x-terminal-emulator") }), {
-    via: "xdg-terminal-exec", file: "/usr/bin/systemd-run", args: [...SYSTEMD_RUN, "/usr/bin/xdg-terminal-exec", "/bin/sh", "-c", TEXT],
+    via: "xdg-terminal-exec", file: "/usr/bin/systemd-run", args: [...SYSTEMD_RUN, "/usr/bin/xdg-terminal-exec", "/bin/sh", "-c", SYSTEMD_TEXT],
   });
   assert.deepEqual(terminalLaunch(TEXT, { platform: "linux", find: finding("systemd-run", "x-terminal-emulator") }), {
-    via: "x-terminal-emulator", file: "/usr/bin/systemd-run", args: [...SYSTEMD_RUN, "/usr/bin/x-terminal-emulator", "-e", "/bin/sh", "-c", TEXT],
+    via: "x-terminal-emulator", file: "/usr/bin/systemd-run", args: [...SYSTEMD_RUN, "/usr/bin/x-terminal-emulator", "-e", "/bin/sh", "-c", SYSTEMD_TEXT],
   });
+});
+
+test("systemd-run's manager expands $ in a command's arguments, so every $ reaches it doubled and the shell gets the text as it was", () => {
+  const text = `env PATH=/n/bin:"$PATH" oats tui --dir '/srv/cost$$' '/srv/\${HOME}/d'`;
+  const { args } = terminalLaunch(text, { platform: "linux", find: (name) => name === "systemd-run" ? "/usr/bin/systemd-run" : name === "xdg-terminal-exec" ? "/opt/$x/xdg-terminal-exec" : null });
+  assert.deepEqual(args.slice(SYSTEMD_RUN.length), ["/opt/$$x/xdg-terminal-exec", "/bin/sh", "-c", text.replace(/\$/g, "$$$$")]);
+  assert.equal(args.at(-1).replace(/\$\$/g, "$"), text, "the manager's $$ -> $ gives the text back");
 });
 
 test("without a launcher the answer is E_OPEN_UNAVAILABLE, naming what was tried", () => {
@@ -94,7 +103,7 @@ test("an open runs the launcher once and answers that a window was requested, wi
   assert.deepEqual(openTerminalWindow(["oats", "tui", "--dir", "/d d"], io), { opened: "requested", via: "xdg-terminal-exec", command: "oats tui --dir '/d d'" });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].file, "/usr/bin/systemd-run");
-  assert.equal(calls[0].args.at(-1), `env PATH=/n/bin:/o/bin:"$PATH" oats tui --dir '/d d'`);
+  assert.equal(calls[0].args.at(-1), `env PATH=/n/bin:/o/bin:"$$PATH" /o/bin/oats tui --dir '/d d'`, "the oats found, by its path");
   assert.equal(calls[0].options.env, undefined, "the launcher runs in this process's environment; nothing is added or removed");
 
   const failing = { ...io, exec: () => { throw Object.assign(new Error("Command failed"), { stderr: "Failed to connect to bus\n" }); } };
@@ -107,6 +116,22 @@ test("an open runs the launcher once and answers that a window was requested, wi
     return true;
   });
   assert.throws(() => openTerminalWindow(["oats", "tui"], { ...io, find: finding() }), (e) => e.code === "E_OPEN_UNAVAILABLE" && e.details.command === "oats tui" && /oats tui$/.test(e.message));
+});
+
+test("the window runs the oats that was found even when node's directory, first on its PATH, holds another oats", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "oats-tw-")));
+  try {
+    for (const [sub, says] of [["node-bin", "another oats"], ["oats-bin", "this kernel"]]) {
+      mkdirSync(join(dir, sub));
+      writeFileSync(join(dir, sub, "oats"), `#!/bin/sh\necho "${says} $*"\n`);
+      chmodSync(join(dir, sub, "oats"), 0o755);
+    }
+    let text;
+    const io = { platform: "darwin", find: finding("osascript"), exec: (file, args) => { text = args[1]; return ""; }, node: join(dir, "node-bin", "node"), oatsDir: join(dir, "oats-bin") };
+    assert.equal(openTerminalWindow(["oats", "tui"], io).command, "oats tui");
+    const script = /do script "(.*)"$/.exec(text)[1].replace(/\\(.)/g, "$1");
+    assert.equal(execFileSync("/bin/sh", ["-c", script], { encoding: "utf8", env: { PATH: "/usr/bin:/bin" } }), "this kernel tui\n");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("with no oats of this kernel on PATH, the window runs this kernel by its path", () => {
