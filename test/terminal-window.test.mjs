@@ -58,10 +58,12 @@ test("on Linux systemd-run carries the display variables to xdg-terminal-exec, e
   });
 });
 
-test("systemd-run's manager expands $ in a command's arguments, so every $ reaches it doubled and the shell gets the text as it was", () => {
+test("systemd-run's manager expands $ in a command's arguments, so every $ of them reaches it doubled and the shell gets the text as it was; the terminal's path, which systemd-run finds itself, stays as it is", () => {
   const text = `env PATH=/n/bin:"$PATH" oats tui --dir '/srv/cost$$' '/srv/\${HOME}/d'`;
   const { args } = terminalLaunch(text, { platform: "linux", find: (name) => name === "systemd-run" ? "/usr/bin/systemd-run" : name === "xdg-terminal-exec" ? "/opt/$x/xdg-terminal-exec" : null });
-  assert.deepEqual(args.slice(SYSTEMD_RUN.length), ["/opt/$$x/xdg-terminal-exec", "/bin/sh", "-c", text.replace(/\$/g, "$$$$")]);
+  assert.deepEqual(args.slice(SYSTEMD_RUN.length), ["/opt/$x/xdg-terminal-exec", "/bin/sh", "-c", text.replace(/\$/g, "$$$$")]);
+  const viaX = terminalLaunch(text, { platform: "linux", find: (name) => name === "systemd-run" ? "/usr/bin/systemd-run" : name === "x-terminal-emulator" ? "/opt/$x/x-terminal-emulator" : null });
+  assert.deepEqual(viaX.args.slice(SYSTEMD_RUN.length), ["/opt/$x/x-terminal-emulator", "-e", "/bin/sh", "-c", text.replace(/\$/g, "$$$$")]);
   assert.equal(args.at(-1).replace(/\$\$/g, "$"), text, "the manager's $$ -> $ gives the text back");
 });
 

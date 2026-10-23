@@ -128,10 +128,11 @@ node's directory cannot take its place: `env PATH=<node's dir>:<oats's
 dir>:"$PATH" <oats's dir>/oats tui --dir <path>`. The `oats` is the first one
 on `PATH` that is this kernel, an instance home's `.oats/bin` passed over.
 With none, the window runs this kernel's `bin/oats.mjs` by its path. Every
-word is quoted as every command the kernel prints is. On Linux each `$` of
-what `systemd-run` gets is doubled, because the service manager expands
+word is quoted as every command the kernel prints is. On Linux each `$` in
+the terminal's arguments is doubled, because the service manager expands
 `$VAR` and `${VAR}` in a command's arguments, quoted or not: the shell gets
-the command as it was written.
+the command as it was written. The terminal's own path is passed as it is:
+`systemd-run` finds it before anything is expanded.
 
 The answer says a window was requested, never that one appeared: `oats`
 cannot see it. With `--json`:
