@@ -363,10 +363,13 @@ name, as its suffix:
 `desktop-improvements` for `oats-desktop-expert` becomes
 `desktop-improvements-expert`. A name that already ends in the role, or is
 the role, stays as typed. The line under the field shows the final name, and a
-name that is too long, invalid or already taken is explained there. With an
-OATS older than 0.26.0, which can't take an exact name, and for a spawn on a
-server, what you type is a purpose instead: the instance is named
-`<soul>-<purpose>`, and the field shows that prefix.
+name that is too long, invalid or already taken is explained there. A spawn
+on a server takes the exact name the same way when that machine's OATS can
+take one (feature `spawn-name`, read from its last roster answer), and its
+name is explained there too when that machine refuses it. With an OATS older
+than 0.26.0 on either side, which can't take an exact name, or a server whose
+OATS this computer has not heard from, what you type is a purpose instead: the
+instance is named `<soul>-<purpose>`, and the field shows that prefix.
 
 **Named from its task.** When the installed OATS can suggest names (feature
 `spawn-suggest-name`), the help under an empty Name reads "Left empty, the

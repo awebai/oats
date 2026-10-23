@@ -779,6 +779,54 @@ test("routed spawn --preview --suggest-name (#1421 §3) needs a host that advert
   }
 });
 
+test("routed spawn --name needs a host that advertises spawn-name: refused before the spawn is sent, else the exact name travels; a saved route under that name refuses first (E_ROUTE_EXISTS)", () => {
+  const base = mkdtempSync("/tmp/oats-rsn-");
+  const prevHomeDir = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = join(base, "oats-home"); mkdirSync(process.env.OATS_HOME_DIR);
+  try {
+    const server = { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" };
+    const probe = (features) => ({ schemaVersion: 1, name: "@awebai/oats", version: "0.25.0", desktopApi: 1, harnesses: ["pi", "claude"], sessionBackends: ["tmux"], launchOptions: [], remote: ["spawn", "status"], features });
+    const status = { schemaVersion: 1, ok: true, result: { root: "/w/agents", agents: [{ name: "dev", harness: "claude", instances: [] }] } };
+    const made = { instance: "api-v2-dev", agent: "dev", home: "/w/agents/dev/instances/api-v2-dev", launched: false, warnings: [] };
+    const remote = (features) => {
+      const sent = [];
+      const exec = (bin, argv) => {
+        const word = String(argv.at(-1));
+        sent.push(word);
+        if (word.includes("version --json")) return JSON.stringify(probe(features));
+        if (word.includes(" status ")) return JSON.stringify(status);
+        if (word.includes(" spawn ")) return JSON.stringify({ schemaVersion: 1, ok: true, result: made });
+        throw new Error(`unexpected remote call: ${word}`);
+      };
+      return { sent, exec, spawned: () => sent.filter((w) => w.includes(" spawn ")) };
+    };
+    const args = ["dev", "--name", "api-v2-dev", "--task", "Ship it"];
+    // A host before 0.26 takes no exact name: refused here, nothing sent.
+    const old = remote(["spawn-preview-2"]);
+    assert.throws(() => routeCommand("build", "spawn", args, { server, execFileSync: old.exec }),
+      (e) => e.code === "E_REMOTE_INCOMPATIBLE" && e.message === "remote oats 0.25.0 at h does not advertise spawn-name; upgrade it there; nothing was sent");
+    assert.deepEqual(old.spawned(), []);
+    // A purpose needs no spawn-name: today's route, unchanged.
+    const purposeOnly = remote([]);
+    routeCommand("build", "spawn", ["dev", "--purpose", "api-v2", "--task", "Ship it"], { server, execFileSync: purposeOnly.exec });
+    assert.match(purposeOnly.spawned()[0], / spawn dev --purpose api-v2 --task 'Ship it' --dir \/w --json$/);
+    rmSync(REMOTE_SNAPSHOT_DIR(), { recursive: true, force: true });
+    // A host with spawn-name: --name travels untouched, and the route is saved under the name the host reports.
+    const current = remote(["spawn-name"]);
+    const routed = routeCommand("build", "spawn", args, { server, execFileSync: current.exec });
+    assert.equal(current.spawned().length, 1);
+    assert.match(current.spawned()[0], / spawn dev --name api-v2-dev --task 'Ship it' --dir \/w --json$/);
+    assert.equal(routed.envelope.result.instance, "api-v2-dev");
+    assert.equal(routed.envelope.result.snapshot, snapshotPath("build", "api-v2-dev"));
+    // That name now has a saved route here: a second --name spawn of it is refused before the spawn is sent.
+    const again = remote(["spawn-name"]);
+    assert.throws(() => routeCommand("build", "spawn", args, { server, execFileSync: again.exec }), (e) => e.code === "E_ROUTE_EXISTS" && e.message.startsWith("a saved route for api-v2-dev through server build already exists"));
+    assert.deepEqual(again.spawned(), []);
+  } finally {
+    if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("routed spawn --preview (#610), text: the host's answer picks the printer: a pre-0.27 host's preview reads its runtime, its default launch configuration is the server's; an answer that spawned prints as the spawn it was, its route saved", () => {
   const base = mkdtempSync("/tmp/oats-pvt-");
   const prevHomeDir = process.env.OATS_HOME_DIR;
