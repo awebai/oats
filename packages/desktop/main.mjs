@@ -297,8 +297,8 @@ const hostTheme = createHostThemeSource({
 installHostThemeHandlers({ ipc: ipcMain, guard, source: hostTheme });
 
 // ---- IPC: the chord family, keys.json (chord-family.mjs) -------------------
-// On Linux/Windows the shared chords are Ctrl+Alt or, by this user's keys.json (shared with the
-// TUI, beside tui.json), Ctrl+Shift. Main reads the file when a window asks and when the operator
+// On Linux/Windows the shared chords are Alt or, by this user's keys.json (shared with the
+// TUI, beside tui.json), Ctrl+Alt or Ctrl+Shift. Main reads the file when a window asks and when the operator
 // comes back to Desktop, writes it when the Shortcuts page changes the choice (only `chords`,
 // atomically), and hands the family to every window at once. Plain state only: no path, no content.
 const chordFamily = createChordFamilySource({

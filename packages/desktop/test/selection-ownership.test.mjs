@@ -18,7 +18,8 @@ import { wireTerminalAttachments } from '../renderer/terminal-attachments.mjs';
 import { createSyncGate } from '../renderer/terminal-sync.mjs';
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
-import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "../renderer/tab-a11y.mjs";
+import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle } from "../renderer/tab-a11y.mjs";
+import { numberTabStrips } from "../renderer/tab-numbers.mjs";
 import * as keymap from "../renderer/keybindings.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
@@ -94,7 +95,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     updateActiveContexts: (on = c.tabLayerVisible) => { c.tabLayerVisible = on; },
     // Panel behavior is covered with the real presenter in split-empty-shell.
     syncContextPanel() {}, contextPanel: { setFocusMode() {} },
-    updateSplitControls() {}, revealInStrip, revealInScrollport, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {},
+    updateSplitControls() {}, revealInStrip, revealInScrollport, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */, numberTabStrips, tabNumberObserver: null, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {},
     ...instanceTree, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, rosterKeyAction, moveTarget,
     api: () => { const gate = deferred(); requests.push(gate); return gate.promise; },
     prepareOwnedOpen: opts => prepareOwnedOpen({ ...opts, load() {
@@ -102,7 +103,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     } }),
     // Keep identity resolution out of this test; keys/targets remain distinct.
     resolveTerminalOpen: (instances, ref, ws) => ({ inst: { instance: ref, running: true, tmux: { session: "synthetic", window: ref } }, key: `${ws}:${ref}` }),
-    ctx: {}, reserveKey, whenKeyFree, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart,
+    ctx: {}, reserveKey, whenKeyFree, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle,
     createSelectionOwnership: ownership, wirePaneSelection, terminalOptions, wireTerminalSelection: () => () => {}, fitTerminal, createGlyphRenderer,
     ...workspaceTabs, ...layout, projectSplitDom, splitControlsState,
     // tabs.close also goes into the real keymap: the strip's close chord is the keymap's, not tab-a11y's.

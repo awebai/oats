@@ -9,7 +9,7 @@ import { DEFAULT_CHORD_STATE, chordFamilyState, createChordFamily } from "../ren
 import { activeChordFamily, getBinding, setChordFamily } from "../renderer/keybindings.mjs";
 
 /** A bridge that answers `answer`, pushes on demand, and writes as told. */
-function fakeDesk({ answer = { family: "ctrl+alt", why: "missing", note: null }, fail = false } = {}) {
+function fakeDesk({ answer = { family: "alt", why: "missing", note: null }, fail = false } = {}) {
   const pushes = new Set(), writes = [];
   return {
     writes, pushes,
@@ -21,18 +21,19 @@ function fakeDesk({ answer = { family: "ctrl+alt", why: "missing", note: null },
 }
 
 test("what main sends is checked again: an unknown family is the default, and the note is a short line or nothing", () => {
-  assert.deepEqual(DEFAULT_CHORD_STATE, { family: "ctrl+alt", note: null });
+  assert.deepEqual(DEFAULT_CHORD_STATE, { family: "alt", note: null });
   assert.deepEqual(chordFamilyState({ family: "ctrl+shift", why: null, note: null }), { family: "ctrl+shift", note: null });
-  assert.deepEqual(chordFamilyState({ family: "ctrl+alt", note: "keys.json is not JSON, using Ctrl+Alt" }), { family: "ctrl+alt", note: "keys.json is not JSON, using Ctrl+Alt" });
-  for (const value of [null, undefined, "ctrl+shift", {}, { family: "Ctrl+Shift" }, { family: ["ctrl+shift"] }]) {
+  assert.deepEqual(chordFamilyState({ family: "ctrl+alt", why: null, note: null }), { family: "ctrl+alt", note: null }, "Ctrl+Alt, chosen, stays");
+  assert.deepEqual(chordFamilyState({ family: "alt", note: "keys.json is not JSON, using Alt" }), { family: "alt", note: "keys.json is not JSON, using Alt" });
+  for (const value of [null, undefined, "ctrl+shift", {}, { family: "Ctrl+Shift" }, { family: "Alt" }, { family: ["ctrl+shift"] }]) {
     assert.deepEqual(chordFamilyState(value), DEFAULT_CHORD_STATE, JSON.stringify(value));
   }
-  for (const note of [1, "", "   ", "x".repeat(201), { text: "x" }]) assert.equal(chordFamilyState({ family: "ctrl+alt", note }).note, null, JSON.stringify(note));
+  for (const note of [1, "", "   ", "x".repeat(201), { text: "x" }]) assert.equal(chordFamilyState({ family: "alt", note }).note, null, JSON.stringify(note));
   assert.ok(Object.isFrozen(chordFamilyState({ family: "ctrl+shift" })));
 });
 
 test("start: main's answer is applied before start resolves; without a bridge, or an answer, the family is the default", async t => {
-  t.after(() => setChordFamily("ctrl+alt"));
+  t.after(() => setChordFamily("alt"));
   const applied = [];
   const desk = fakeDesk({ answer: { family: "ctrl+shift", why: null, note: null } });
   const family = createChordFamily({ desk, apply: (f) => applied.push(f) });
@@ -50,6 +51,10 @@ test("start: main's answer is applied before start resolves; without a bridge, o
   await engine.start();
   assert.equal(activeChordFamily(), "ctrl+shift");
   assert.equal(getBinding("app.workspaces", false), "Ctrl+Shift+S");
+  const ctrlAlt = createChordFamily({ desk: fakeDesk({ answer: { family: "ctrl+alt", why: null, note: null } }), apply: setChordFamily });
+  await ctrlAlt.start();
+  assert.equal(activeChordFamily(), "ctrl+alt");
+  assert.equal(getBinding("app.workspaces", false), "Ctrl+Alt+O");
 });
 
 test("pushes: another window's choice or a hand edit is applied at once, and listeners hear family and note changes", async t => {
@@ -61,13 +66,14 @@ test("pushes: another window's choice or a hand edit is applied at once, and lis
   desk.push({ family: "ctrl+shift", why: null, note: null });
   assert.deepEqual(family.current(), { family: "ctrl+shift", note: null });
   desk.push({ family: "ctrl+shift", why: null, note: null });
-  desk.push({ family: "ctrl+alt", why: "unknown-chords", note: "keys.json: unknown chords value, using Ctrl+Alt" });
-  assert.deepEqual(applied, ["ctrl+shift", "ctrl+alt"]);
-  assert.deepEqual(heard.map((s) => [s.family, s.note]), [["ctrl+shift", null], ["ctrl+alt", "keys.json: unknown chords value, using Ctrl+Alt"]]);
+  desk.push({ family: "ctrl+alt", why: null, note: null });
+  desk.push({ family: "alt", why: "unknown-chords", note: "keys.json: unknown chords value, using Alt" });
+  assert.deepEqual(applied, ["ctrl+shift", "ctrl+alt", "alt"]);
+  assert.deepEqual(heard.map((s) => [s.family, s.note]), [["ctrl+shift", null], ["ctrl+alt", null], ["alt", "keys.json: unknown chords value, using Alt"]]);
   off();
   family.dispose();
   desk.push({ family: "ctrl+shift" });
-  assert.equal(family.current().family, "ctrl+alt", "disposed: main's pushes no longer reach it");
+  assert.equal(family.current().family, "alt", "disposed: main's pushes no longer reach it");
   assert.equal(desk.pushes.size, 0);
 });
 
@@ -77,14 +83,15 @@ test("set: written through main, the answer applied; a failed write, or no bridg
   const family = createChordFamily({ desk, apply: (f) => applied.push(f) });
   await family.start();
   assert.deepEqual(await family.set("ctrl+shift"), { family: "ctrl+shift", note: null });
-  assert.deepEqual(desk.writes, ["ctrl+shift"]);
-  assert.deepEqual(applied, ["ctrl+shift"]);
+  assert.deepEqual(await family.set("ctrl+alt"), { family: "ctrl+alt", note: null });
+  assert.deepEqual(desk.writes, ["ctrl+shift", "ctrl+alt"]);
+  assert.deepEqual(applied, ["ctrl+shift", "ctrl+alt"]);
   const failing = createChordFamily({ desk: fakeDesk({ fail: true }), apply: (f) => applied.push(f) });
   await failing.start();
   await assert.rejects(failing.set("ctrl+shift"), /EACCES/);
   assert.deepEqual(failing.current(), DEFAULT_CHORD_STATE);
   await assert.rejects(createChordFamily({ desk: {} }).set("ctrl+shift"), /cannot write keys\.json/);
-  assert.deepEqual(applied, ["ctrl+shift"]);
+  assert.deepEqual(applied, ["ctrl+shift", "ctrl+alt"]);
 });
 
 test("the shell has the family before it listens to its first key, and hands it to the Shortcuts page", () => {

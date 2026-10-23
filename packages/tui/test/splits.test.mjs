@@ -260,7 +260,7 @@ test("both strips drawn, the rule between: the focused group's shown tab in reve
   const s = both("|"), d = draw(s, S120);
   // The strips stand on the screen's first row, beside the sidebar's title.
   const line = d.lines[0];
-  assert.match(line, /│ dev-a │\[dev-b\] +│\[dev-c\]/, "group 0's tab bar, the rule, group 1's: the shown tab of each in brackets");
+  assert.match(line, /│ dev-a 1 │\[dev-b 2\] +│\[dev-c 1\]/, "group 0's tab bar, the rule, group 1's: the shown tab of each in brackets, each group's tabs numbered from 1");
   const at = (word) => line.indexOf(word);
   assert.deepEqual([d.cells[0][at("dev-c")].style.reverse, d.cells[0][at("dev-b")].style.reverse, d.cells[0][at("dev-b")].style.bold], [true, false, true]);
   // The rule stands on every row of the panel, which is every row of the screen.

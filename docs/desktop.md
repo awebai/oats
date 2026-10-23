@@ -232,7 +232,8 @@ below, a line under the list says how many ("2 more below").
   an oats without `waiting-on-you`. The dot never moves a row: the order
   stays the same whoever waits.
 - **Picking a row** (a click, Enter, or the leader's ↑ / ↓, Ctrl+X then ↑ /
-  ↓) shows that workspace in this window, with its own tabs, layout and
+  ↓, which are also ⌥↑ / ⌥↓ on macOS and Alt+↑ / Alt+↓ on Linux and Windows
+  in the Alt family, the default) shows that workspace in this window, with its own tabs, layout and
   selection; one another window shows moves here ([A workspace another window
   shows](#a-workspace-another-window-shows)). The leader's ↑ / ↓ go to the
   previous / next row, and stop at the ends ("No workspace above this one." /
@@ -244,7 +245,7 @@ below, a line under the list says how many ("2 more below").
   Windows does it from the keyboard. It opens the workspace in its own window,
   or brings the window that shows it to the front.
 - **Keyboard.** The list is one Tab stop, Up/Down/Home/End move in it, and
-  `w` in the sidebar, Ctrl+X then `o`, ⌥⌘O / Ctrl+Alt+O and the palette's
+  `w` in the sidebar, Ctrl+X then `o`, ⌥⌘O / Alt+O and the palette's
   **Workspace: switch…** focus it. The full keys are in [the keyboard
   reference](../packages/desktop/docs/desktop-keyboard.md#the-list-of-workspaces).
 
@@ -777,7 +778,7 @@ instance whose state is unknown keeps the warning dot, and one without a colour
 looks as before. The shape says the state, never the colour alone.
 
 To set it, open **Instance: name and colour…** from the command palette, or
-press Ctrl+Alt+R (⌥⌘R on macOS). It acts on the instance of the terminal you
+press Alt+R (⌥⌘R on macOS; Ctrl+Alt+R in the Ctrl+Alt family). It acts on the instance of the terminal you
 are in, else the focused sidebar row, else the active terminal tab's instance.
 The dialog shows the instance's name, which can't be changed yet, and the
 colours as buttons: **None** and the six. Arrow keys move between them; Enter,

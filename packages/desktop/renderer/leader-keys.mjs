@@ -23,6 +23,7 @@ export const LEADER_ACTIONS = Object.freeze({
   "split-right": "split.vertical",
   "split-down": "split.horizontal",
   "group-next": "split.focusNextGroup",
+  "group-previous": "split.focusPrevGroup",
   "group-close": "split.close",
   spawn: "app.quickOpenSouls",
   filter: "sidebar.focusFilter",
@@ -67,7 +68,7 @@ export function leaderLabel(does, labelOf = () => null) {
  *   canSplitRow / canSplitCol   the tab layer can split right / down now (split-controls.mjs)
  *   split          the tab layer is split (two groups or more)
  * Rows marked `terminal` apply only with a terminal open; the tab keys with two tabs or more; the
- * split keys while the layer can split that way; Tab and `x` while it is split. `m` never.
+ * split keys while the layer can split that way; Tab, Shift+Tab and `x` while it is split. `m` never.
  */
 export function leaderApplies(row, state = {}) {
   if (LEADER_UNSUPPORTED.has(row.does)) return false;
@@ -76,7 +77,7 @@ export function leaderApplies(row, state = {}) {
     case "tab-previous": case "tab-next": return (state.tabs ?? 0) >= 2;
     case "split-right": return !!state.canSplitRow;
     case "split-down": return !!state.canSplitCol;
-    case "group-next": case "group-close": return !!state.split;
+    case "group-next": case "group-previous": case "group-close": return !!state.split;
     default: return true;
   }
 }

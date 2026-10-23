@@ -1896,6 +1896,42 @@ for (const [name] of palettes) test(`${name}: the terminal tab's Needs input gly
   for (let parent = doc.querySelector('.tab-attn'); parent; parent = parent.parentElement) assert.equal(view.getComputedStyle(parent).opacity, '1');
 });
 
+// A tab's go-to-tab number (tab-numbers.mjs) is text, if decorative: its colour token must hold 4.5:1 on every
+// background a tab paints, the strip at rest (--bg, a split group's strip too), the active tab (--surface) and a
+// keyboard-focused trigger (--sel), in every palette, with nothing composited over it.
+import { createTabChrome as tabChrome } from '../renderer/tab-a11y.mjs';
+import { numberTabStrips } from '../renderer/tab-numbers.mjs';
+for (const [name, palette] of palettes) test(`${name}: a tab's number meets 4.5:1 on every tab background`, t => {
+  const dom = new JSDOM(readFileSync(new URL('index.html', renderer), 'utf8'), { pretendToBeVisual: true }), doc = dom.window.document;
+  t.after(() => dom.window.close());
+  doc.documentElement.dataset.theme = name;
+  const shellCss = readFileSync(new URL('shell.css', renderer), 'utf8');
+  for (const source of [css, shellCss]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const bar = doc.querySelector('#tabbar'), view = dom.window;
+  for (const active of [false, true]) {
+    const { tabEl } = tabChrome(doc, `n${active}`, 'oats-desktop-developer-tabs-palette', false, { dot: 'on' });
+    if (active) tabEl.classList.add('active');
+    bar.append(tabEl);
+  }
+  numberTabStrips([bar]);
+  const nums = [...doc.querySelectorAll('#tabbar .tab-num')];
+  assert.deepEqual(nums.map(num => [num.textContent, num.hidden]), [['1', false], ['2', false]]);
+  const token = view.getComputedStyle(nums[0]).color.match(/^var\(--([\w-]+)\)$/)?.[1];
+  assert.equal(token, 'faint', 'the number is quiet text: --faint');
+  for (const num of nums) assert.equal(view.getComputedStyle(num).color, `var(--${token})`);
+  const fill = el => { const s = view.getComputedStyle(el); return s.background || s.backgroundColor; };
+  assert.equal(fill(doc.querySelector('#tabstrip')), 'var(--bg)', 'a tab at rest shows the strip');
+  assert.equal(fill(doc.querySelector('.tab.active')), 'var(--surface)');
+  assert.match(shellCss, /\.tab-trigger:focus-visible \{ background: var\(--sel\); \}/);
+  assert.match(shellCss, /\.group-tabbar \{[^}]*background: var\(--bg\)/, 'a split group strip paints --bg too');
+  for (const bg of ['bg', 'surface', 'sel']) {
+    assert.ok(pairs.some(([f, b]) => f === token && b === bg), `--${token} on --${bg} is in the inventory`);
+    const ratio = contrast(opaqueChannels(palette.get(token)), backgroundChannels(bg, palette));
+    assert.ok(ratio >= TEXT_CONTRAST, `${name} --${token} on --${bg}: ${ratio.toFixed(2)}:1 < 4.5:1`);
+  }
+  for (const num of nums) for (let parent = num; parent; parent = parent.parentElement) assert.equal(view.getComputedStyle(parent).opacity, '1');
+});
+
 // Capability warnings (OATS 0.49.0, capability-warnings.mjs): one list, six hosts. In each, the list sits in the host's
 // real classes and CSS; every text part is held to AA against the ground actually painted under it, with no opacity.
 import { createWarningsList, capabilityWarningsCSS } from '../renderer/capability-warnings.mjs';

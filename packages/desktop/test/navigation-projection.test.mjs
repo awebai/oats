@@ -15,6 +15,7 @@ import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs"
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/tab-a11y.mjs";
+import { numberTabStrips } from "../renderer/tab-numbers.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
 import * as layout from "../renderer/split-layout.mjs";
@@ -55,7 +56,7 @@ function shell(t, shellSource = source) {
     wsActiveTerminal: new Map(), workspaceTabMemory: createWorkspaceTabMemory(), brainIntents: createIntentGate(),
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     setActiveContexts: value => contexts.splice(0, contexts.length, ...value),
-    workspaceLabel: { reset() {} }, refreshContextRoster() {}, renderContextRoster() {}, updateSplitControls() {}, revealInStrip, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */,
+    workspaceLabel: { reset() {} }, refreshContextRoster() {}, renderContextRoster() {}, updateSplitControls() {}, revealInStrip, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */, numberTabStrips, tabNumberObserver: null,
     createSelectionOwnership, wirePaneSelection, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab,
     reserveKey, whenKeyFree, prepareOwnedOpen, projectSplitDom, ...layout, ...workspaceTabs,
     loadStageView(name) { const gate = { ...deferred(), name }; loads.push(gate); return gate.promise; },

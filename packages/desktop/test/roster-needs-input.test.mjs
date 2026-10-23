@@ -19,7 +19,7 @@ import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { iconElement } from "../renderer/shell-icons.mjs";
 import { createRosterTip, rosterTipFacts } from "../renderer/roster-tip.mjs";
 import { waitingClock } from "../../client/waiting-on-you.mjs";
-import { createTabChrome } from "../renderer/tab-a11y.mjs";
+import { createTabChrome, setTabTitle } from "../renderer/tab-a11y.mjs";
 import { prChip, prText } from "../renderer/roster-pr.mjs";
 import { NO_ANSWER_CODE, unservedError } from "../renderer/deployment-header.mjs";
 import { remotePanel, unavailableGroups } from "../../client/remote-roster.mjs";
@@ -46,7 +46,7 @@ function fixture(t, extra = {}) {
   const tips = new Map();
   const context = {
     ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge,
-    iconElement, NO_ANSWER_CODE, unservedError, instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
+    iconElement, setTabTitle, NO_ANSWER_CODE, unservedError, instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
     rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, ...viewContext(),

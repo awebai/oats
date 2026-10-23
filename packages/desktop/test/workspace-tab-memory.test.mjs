@@ -8,6 +8,7 @@ import { JSDOM } from "jsdom";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import { canActivateTab, tabVisibleInContext } from "../renderer/workspace-tabs.mjs";
 import { createTabChrome } from "../renderer/tab-a11y.mjs";
+import { numberTabStrips } from "../renderer/tab-numbers.mjs";
 import { createIntentGate } from "../renderer/open-intent.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
@@ -58,7 +59,7 @@ function shell(t) {
   };
   context.tabOpenIntents = createSelectionOwnership(context);
   // Spec F: the shipped active-tab reveal runs too (jsdom has no layout or ResizeObserver).
-  context.revealInStrip = revealInStrip; context.tabStripResize = null;
+  context.revealInStrip = revealInStrip; context.tabStripResize = null; context.numberTabStrips = numberTabStrips; context.tabNumberObserver = null;
   const api = runInNewContext([
     "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "activateTab", "revealActiveRosterRow", "tabStrips", "revealActiveTabs", "observeTabStrips", "restoreWorkspaceTabs",
   ].map(shellFunction).join("\n") + "\n({ activateTab, restoreWorkspaceTabs, renderSplit });", context);

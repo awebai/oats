@@ -13,7 +13,8 @@ import { JSDOM } from "jsdom";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate } from "../renderer/open-intent.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "../renderer/terminal-tab.mjs";
-import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "../renderer/tab-a11y.mjs";
+import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle } from "../renderer/tab-a11y.mjs";
+import { numberTabStrips } from "../renderer/tab-numbers.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createContextPanel } from "../renderer/context-panel.mjs";
 import { createInstanceGitPanel } from "../renderer/instance-git.mjs";
@@ -72,7 +73,7 @@ function shell(t, shellSource = source) {
     focusRoster() { c.tabOpenIntents.invalidate(); c.contextRosterEl.querySelector("input").focus(); },
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },
     updateSidebarControls() {}, // chrome is exercised by shell-design.test.mjs
-    resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart,
+    resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle,
     splitControlsState, instanceSplitPlan, instanceSplitIdentity, sameInstanceActionTarget, ...layout, ...workspaceTabs,
     projectSplitDom(els, ...args) { projections.push(els); return projectSplitDom(els, ...args); },
     terminalOptions, wireTerminalSelection: () => () => {}, fitTerminal, createGlyphRenderer, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}), terminalFontWeight: () => 400,
@@ -97,12 +98,12 @@ function shell(t, shellSource = source) {
   };
   c.tabOpenIntents = createSelectionOwnership(c);
   // Spec F: the shipped active-tab reveal runs too (jsdom has no layout or ResizeObserver).
-  c.revealInStrip = revealInStrip; c.tabStripResize = null;
+  c.revealInStrip = revealInStrip; c.tabStripResize = null; c.numberTabStrips = numberTabStrips; c.tabNumberObserver = null;
   c.splitOpenState = () => ({ split: c.split, activeId: c.activeTab, tabs: c.tabs, workspace: c.workspace, visible: c.tabLayerVisible });
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "closeStage", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "walkedTabs", "visibleTabEntries", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "showTerminalContext",
     "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal",
-    "syncContextPanel", "refreshPanelInstance", "syncTabNeedsInput", "focusNextGroup"];
+    "syncContextPanel", "refreshPanelInstance", "syncTabNeedsInput", "focusGroup"];
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];
@@ -256,6 +257,30 @@ test("split.focusNextGroup: the next group's active tab, or the empty group itse
   }
   assert.equal(s.c.split.focusedGroup, start, "three presses are a full round");
   assert.deepEqual(visited.map(String).sort(), [first.id, second.id, null].map(String).sort());
+});
+
+// The leader's Shift+Tab and the chord group-previous: the shipped split.focusPrevGroup, the mirror.
+test("split.focusPrevGroup: the previous group's active tab, or the empty group itself, wrapping; nothing without a split", async t => {
+  const s = shell(t);
+  const first = await s.open("first");
+  s.actions.get("split.focusPrevGroup")();
+  assert.equal(s.c.split, null); assert.equal(s.c.activeTab, first.id, "no split: nothing moves");
+  s.splitPane("row");
+  await s.open("second"); s.splitPane("row");
+  const ids = () => s.c.split.groups.map(g => g.id);
+  const start = s.c.split.focusedGroup;
+  for (let i = 0; i < 3; i++) {
+    const from = ids().indexOf(s.c.split.focusedGroup);
+    s.actions.get("split.focusPrevGroup")();
+    const to = ids().indexOf(s.c.split.focusedGroup);
+    assert.equal(to, (from + 2) % 3, "the previous group, wrapping");
+    const group = s.c.split.groups[to];
+    if (group.activeTab != null) assert.equal(s.c.activeTab, group.activeTab, "its active tab is selected");
+    else assert.equal(s.document.activeElement, s.empty(group.id), "an empty group takes focus itself");
+  }
+  assert.equal(s.c.split.focusedGroup, start, "three presses are a full round");
+  s.actions.get("split.focusNextGroup")(); s.actions.get("split.focusPrevGroup")();
+  assert.equal(s.c.split.focusedGroup, start, "next then previous comes back");
 });
 
 test("closing a focused group's last tab keeps that empty group, not a neighboring terminal", async t => {

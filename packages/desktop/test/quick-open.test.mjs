@@ -10,7 +10,7 @@ import { createOverlayPicker } from "../renderer/overlay-picker.mjs";
 import { subsequenceScore } from "../../client/subsequence-score.mjs";
 import { quickOpenRows, createQuickOpen } from "../renderer/quick-open.mjs";
 import { paletteRows } from "../renderer/palette.mjs";
-import { DEFAULT_KEYMAP, TERMINAL_ALLOWLIST } from "../renderer/keybindings.mjs";
+import { DEFAULT_KEYMAP, DEFAULT_KEYMAPS, TERMINAL_ALLOWLIST } from "../renderer/keybindings.mjs";
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (f) => readFileSync(join(PKG, f), "utf8");
@@ -147,10 +147,11 @@ test("paletteRows: '>' restricts to commands; live chord detail functions re-eva
 
 // ── keymap + terminal policy pins ────────────────────────────────────────
 
-test("app.quickOpenSouls defaults to ⌘P / Ctrl+Alt+P and is terminal-allowlisted", () => {
-  assert.deepEqual(DEFAULT_KEYMAP["app.quickOpenSouls"], { mac: "Mod+P", other: "Ctrl+Alt+P" });
+test("app.quickOpenSouls defaults to ⌘P / Alt+P (Ctrl+Alt+P in that family) and is terminal-allowlisted", () => {
+  assert.deepEqual(DEFAULT_KEYMAP["app.quickOpenSouls"], { mac: "Mod+P", other: "Alt+P" });
+  assert.deepEqual(DEFAULT_KEYMAPS["ctrl+alt"]["app.quickOpenSouls"], { mac: "Mod+P", other: "Ctrl+Alt+P" });
   assert.ok(TERMINAL_ALLOWLIST.includes("app.quickOpenSouls"),
-    "Ctrl+Alt+P fires from a focused terminal on Linux/Windows; plain Ctrl+P stays the shell's history");
+    "Alt+P fires from a focused terminal on Linux/Windows; plain Ctrl+P stays the shell's history");
 });
 
 // ── shell wiring pins (source-level, house style) ────────────────────────

@@ -472,6 +472,7 @@ body {
 .tab {
   --tab-min: 168px; --tab-max: 280px;
   --tab-chrome: 51px; /* padding 14 + 8, gap 8, close 20, the 1px border: what the trigger cannot use */
+  --tab-name-min: 102px; /* the name the floor budgets: --tab-min less --tab-chrome less the dot and its gap (7 + 8) */
   display: flex; flex: 1 1 0px; align-items: center; gap: 8px; min-width: var(--tab-min); max-width: fit-content;
   white-space: nowrap; padding: 0 8px 0 14px; background: transparent; border-right: 1px solid var(--border);
   color: var(--muted); font-size: 12.5px;
@@ -482,10 +483,25 @@ body {
   appearance: none; border: 0; background: none; color: inherit; font: inherit; cursor: pointer;
 }
 .tab-trigger:focus-visible { background: var(--sel); }
-/* dot · name · branch (Redesign v3): the name keeps priority, the branch
-   takes what is left and ellipsizes first. */
-.tab-trigger { align-self: stretch; display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto;
+/* dot · name · branch · number (Redesign v3): the name keeps priority, the branch
+   takes what is left and ellipsizes first.
+   The number (.tab-num, tab-numbers.mjs) never crowds out the name: the trigger
+   wraps, and only its first line shows. Line breaking sees the name at no more
+   than --tab-name-min (its flex basis; it grows from there to its whole width,
+   max-content, never past it), so while the strip has room the name shows whole
+   beside its number; under pressure the name truncates down to that minimum,
+   and only then does the number move to the second line, clipped by the
+   trigger's overflow: it disappears whole, never as a half-clipped digit. A name
+   shorter than the minimum keeps its number for as long as both fit, at the
+   floor too. The basis is also never more than the line holds after the widest
+   lead (an artifact's 14px icon and its gap), so the name itself never wraps.
+   The ::before is a zero-width spacer of the trigger's full height, its gap
+   cancelled: the first line is the whole tab tall, so its content stays
+   vertically centred, and everything that wraps lands below the clip. */
+.tab-trigger { align-self: stretch; display: flex; flex-wrap: wrap; align-content: flex-start; align-items: center; gap: 8px;
+               min-width: 0; flex: 1 1 auto;
                max-width: calc(var(--tab-max) - var(--tab-chrome)); overflow: hidden; padding: 0; text-align: left; }
+.tab-trigger::before { content: ""; flex: none; width: 0; height: 100%; margin-right: -8px; }
 .tab-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--accent); }
 .tab-dot.off { box-sizing: border-box; background: transparent; border: 1.5px solid var(--faint); }
 .tab-dot.on[data-instance-color] { background: var(--instance-color); }
@@ -496,7 +512,9 @@ body {
 .tab-attn > .shell-icon { width: 12px; height: 12px; }
 .tab-icon { flex: none; display: grid; place-items: center; color: var(--muted); }
 .tab-icon > .shell-icon { width: 14px; height: 14px; }
-.tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The name grows (weighted 1000:1 over the branch) from its minimum to its whole width and no further. */
+.tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+             flex-grow: 1000; flex-shrink: 1; flex-basis: min(var(--tab-name-min), 100% - 22px); max-width: max-content; }
 /* Middle truncation: names share long prefixes (the soul), so the head gives way
    and the end of the name stays ("oats-…palette"); a name that fits shows whole. */
 .tab-label.split { display: flex; }
@@ -510,6 +528,9 @@ body {
 .tab-detail { min-width: 0; flex: 1 1 0px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
               margin-left: -8px; padding-left: 8px;
               font: 400 11px ui-monospace, Menlo, monospace; color: var(--faint); }
+/* The go-to-tab number, last: quiet text like the branch (--faint holds 4.5:1 on --bg, --surface and --sel). */
+.tab-num { flex: none; white-space: nowrap; font: 400 11px ui-monospace, Menlo, monospace; color: var(--faint); }
+.tab-num[hidden] { display: none; }
 .tab .close { display: grid; place-items: center; flex: none; width: 20px; height: 20px; color: var(--faint);
               margin: 0; padding: 0; border-radius: 4px; font-size: 13px; }
 .tab .close > .shell-icon { width: 13px; height: 13px; }

@@ -153,9 +153,13 @@ export const pending = (at = "2026-10-11T09:59:59.000Z") => pendingEntry(null, a
  *  leader.test.mjs, and drawn in views.test.mjs. An option `detachKey` gives another (undefined: the
  *  default of the option `platform`). */
 export const TEST_LEADER = "C-\\";
+/** The platform the tests' states are made on, whatever platform runs them: Linux, whose chords
+ *  (the Alt family's) and tab numbers the tests draw. An option `platform` gives another (macOS's
+ *  are pinned with `platform: "darwin"`). */
+export const TEST_PLATFORM = "linux";
 /** The state of a run that took `entry` (pending when none is given). */
 export function stateOf(entry = null, options = {}) {
-  const first = initialState({ deployment: DEPLOYMENT, cli: CLI, home: "/home/u", entry: pending(), detachKey: TEST_LEADER, ...options });
+  const first = initialState({ deployment: DEPLOYMENT, cli: CLI, home: "/home/u", entry: pending(), detachKey: TEST_LEADER, platform: TEST_PLATFORM, ...options });
   return entry ? took(first, entry, 1) : first;
 }
 /** A state after the reader gave `entry` for the fixture's deployment, as cycle `number`. */

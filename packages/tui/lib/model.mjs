@@ -566,6 +566,8 @@ export const listChoices = (state, at = new Date(0).toISOString()) => switcherOf
 /** The switcher's choice of key `key`, with no filter, or null. */
 export const listChoice = (state, key, at) => listChoices(state, at).find((item) => item.key === key) ?? null;
 
+/** The help's `keys` on macOS (views/help.mjs chordFamilyLines): no family, no file's note. */
+const MAC_KEYS = Object.freeze({ family: null, label: null, note: null, mac: true });
 /** What the switcher says above its rows, as views/switcher.mjs leadRows reads it. */
 const leadOf = (state) => ({ said: state.switcher.line, failure: state.listed.failure?.message ?? null, removing: state.switcher.removing !== null });
 /** How many rows stand above the switcher's choices in an area `cols` wide (the switcher's is the
@@ -875,12 +877,19 @@ export function model(state, { page, body = page, now, at, cols, area = cols }) 
     workspace: r.workspace, machines: r.machines, here: r.here, machine: r.machine, counts: r.counts, readAt: r.readAt, notice: r.notice, note: r.note, empty: r.empty, observed: r.observed,
     detailTop: state.detailTop, helpTop: state.helpTop, open: state.open !== null,
     detachKey: state.detachKey, opening: state.opening, openable: false,
-    // The chords read now, `[key id, does]` (actions.mjs chordsRead), and whether the terminal
-    // confirms the kitty keyboard protocol: then the help and a terminal's cheat sheet lead with them.
+    // The chords read now, `[key id, does]` (actions.mjs chordsRead), whether the terminal confirms
+    // the kitty keyboard protocol, and whether every chord bound is read now (under the protocol, or
+    // the Alt family, whose keys all come without it): then the help and a terminal's cheat sheet
+    // lead with them.
     chords: [...chordsRead(state.chords, state.keyboard !== null)], kitty: state.keyboard !== null,
+    chordsLead: state.chords.size > 0 && chordsRead(state.chords, state.keyboard !== null).size === state.chords.size,
+    // Whether a chord shows the Nth tab (tab-1 to tab-9): the tabs carry their numbers only then
+    // (views/frame.mjs stripRow). On macOS none does: ⌥⌘N never reaches a terminal.
+    tabNumbers: [...state.chords.values()].some((does) => /^tab-[1-9]$/.test(does)),
     // The family the chords are bound in (keys.json, lib/config.mjs loadKeys), its name, and the line that says
     // why the file was not taken, or null (the shared chordFamilyNote): the help's chords section names both.
-    keys: state.keysRead ? Object.freeze({ family: state.keysRead.family, label: CHORD_FAMILY_LABELS[state.keysRead.family] ?? CHORD_FAMILY_LABELS[DEFAULT_CHORD_FAMILY], note: chordFamilyNote(state.keysRead) }) : null,
+    // macOS has no family (`mac`): its chords are the arrows, whatever keys.json says.
+    keys: state.mac === true ? MAC_KEYS : state.keysRead ? Object.freeze({ family: state.keysRead.family, label: CHORD_FAMILY_LABELS[state.keysRead.family] ?? CHORD_FAMILY_LABELS[DEFAULT_CHORD_FAMILY], note: chordFamilyNote(state.keysRead) }) : null,
     // The palette's own keys, `[key id, does]` (actions.mjs paletteKeys; none on macOS): its cheat
     // sheet and the help name them.
     paletteKeys: [...state.paletteKeys],

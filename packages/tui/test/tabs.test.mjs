@@ -5,12 +5,13 @@ process.env.TZ = "UTC";
 // the shared functions (helpers.mjs); no test needs a terminal or tmux.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { collapseKey, instanceId } from "../lib/client.mjs";
+import { chordFamilyFrom, collapseKey, instanceId } from "../lib/client.mjs";
 import { paletteItems, roster } from "../lib/model.mjs";
 import { MAX_TERMINALS } from "../lib/panel.mjs";
 import { TAB_LIMIT, reduce } from "../lib/store.mjs";
 import { createScreen } from "../lib/term/screen.mjs";
 import { textWidth } from "../lib/term/width.mjs";
+import { tabNumber } from "../lib/views/frame.mjs";
 import { draw, instanceRow, observed, stateOf } from "./helpers.mjs";
 
 /** The geometry of the frame before each key: the store reads it for a move, never keeps it. */
@@ -303,8 +304,8 @@ test("opening another workspace closes every tab: one close for each, and no ter
 
 /** dev-alpha (hidden, with output), dev-beta-with-a-long-name (hidden, on garnet), dev-gamma
  *  (shown, the focus in it). */
-function three({ ascii = false } = {}) {
-  let s = opened(stateOf(observed(["dev-alpha", "dev-beta-with-a-long-name", "dev-gamma"].map((name) => instanceRow("dev", name))), { ascii }), "dev-alpha", "dev-beta-with-a-long-name", "dev-gamma");
+function three({ ascii = false, ...options } = {}) {
+  let s = opened(stateOf(observed(["dev-alpha", "dev-beta-with-a-long-name", "dev-gamma"].map((name) => instanceRow("dev", name))), { ascii, ...options }), "dev-alpha", "dev-beta-with-a-long-name", "dev-gamma");
   s = reduce(s, { activity: { id: idOf(s, "dev-alpha") }, ...AT }).state;
   return Object.freeze({ ...s, tabs: Object.freeze(s.tabs.map((tab) => (tab.name === "dev-beta-with-a-long-name" ? Object.freeze({ ...tab, routed: true, machine: "garnet" }) : tab))) });
 }
@@ -318,10 +319,11 @@ const cellsOf = (s, word) => { const at = s.text.indexOf(word); assert.notEqual(
 /** Each cell of `word` in the strip is dim, a blank one passed over. */
 const dimCells = (s, word) => cellsOf(s, word).filter((each) => each.text !== " ").every((cell) => cell.style.dim === true);
 
-test("the tab bar at 120 columns: every tab in opening order, a dim │ between two; the shown one in brackets, bold and in reverse while its terminal has the focus, its sides included; a hidden one dim, with output marked; another machine's · <machine> dim inside its tab", () => {
+test("the tab bar at 120 columns: every tab in opening order, a dim │ between two, each with its number at its end; the shown one in brackets, bold and in reverse while its terminal has the focus, its sides included; a hidden one dim, with output marked; another machine's · <machine> dim inside its tab", () => {
   const s = stripAt(three(), 120);
-  assert.equal(s.text, " dev-alpha• │ dev-beta-with-a-long-name · garnet │[dev-gamma]");
-  for (const cell of cellsOf(s, "[dev-gamma]")) assert.deepEqual([cell.style.reverse, cell.style.bold], [true, true], "the front tab, sides and all");
+  assert.equal(s.text, " dev-alpha• 1 │ dev-beta-with-a-long-name · garnet 2 │[dev-gamma 3]");
+  for (const cell of cellsOf(s, "[dev-gamma 3]")) assert.equal(cell.style.reverse, true, "the front tab, sides and number and all");
+  for (const cell of cellsOf(s, "[dev-gamma")) assert.equal(cell.style.bold, true, "the front tab is bold but for its number");
   for (const cell of cellsOf(s, "dev-alpha")) assert.deepEqual([cell.style.reverse, cell.style.bold, cell.style.dim], [false, false, true], "a hidden tab is dim");
   assert.equal(cellsOf(s, "•")[0].style.dim, false, "the activity mark is not dim");
   assert.equal(dimCells(s, "· garnet"), true, "the machine is dim");
@@ -331,18 +333,18 @@ test("the tab bar at 120 columns: every tab in opening order, a dim │ between 
   // From the list the shown one is bold, not reverse; it keeps its brackets, the mark no style is needed for.
   const list = stripAt(toList(three()), 120);
   assert.equal(list.text, s.text);
-  for (const cell of cellsOf(list, "[dev-gamma]")) assert.deepEqual([cell.style.reverse, cell.style.bold], [false, true]);
+  for (const cell of cellsOf(list, "[dev-gamma")) assert.deepEqual([cell.style.reverse, cell.style.bold], [false, true]);
 });
 
 test("the tab bar of another machine's agent while it is the shown tab: its machine dim inside the brackets, in the tab's reverse video", () => {
   let s = opened(SIX(), "dev-a");
   s = Object.freeze({ ...s, tabs: Object.freeze(s.tabs.map((tab) => Object.freeze({ ...tab, routed: true, machine: "garnet" }))), terminal: Object.freeze({ ...s.terminal, routed: true, machine: "garnet" }) });
   const bar = stripAt(s, 120);
-  assert.equal(bar.text, "[dev-a · garnet]");
+  assert.equal(bar.text, "[dev-a · garnet 1]");
   for (const cell of cellsOf(bar, "· garnet").filter((each) => each.text !== " ")) assert.deepEqual([cell.style.dim, cell.style.reverse], [true, true]);
   for (const cell of cellsOf(bar, "dev-a")) assert.deepEqual([cell.style.bold, cell.style.reverse, cell.style.dim], [true, true, false]);
   const list = stripAt(toList(s), 120);
-  assert.equal(list.text, "[dev-a · garnet]");
+  assert.equal(list.text, "[dev-a · garnet 1]");
   for (const cell of cellsOf(list, "garnet")) assert.deepEqual([cell.style.dim, cell.style.reverse], [true, false]);
 });
 
@@ -359,26 +361,27 @@ test("the tab bar at 60 columns (the terminal zoomed to the whole width) cuts th
   assert.equal(s.cols, 60);
   assert.equal(s.text, " dev-alpha• │ dev-beta-with-a-long-name │[dev-gamma]");
   const wide = stripAt(three({ ascii: true }), 120);
-  assert.equal(wide.text, " dev-alpha* | dev-beta-with-a-long-name - garnet |[dev-gamma]");
+  assert.equal(wide.text, " dev-alpha* 1 | dev-beta-with-a-long-name - garnet 2 |[dev-gamma 3]");
   const ascii = stripAt(three({ ascii: true }), 80);
   assert.match(ascii.text, /^ dev-alpha\* \| dev-beta-with\S*\.\.\. \|\[dev-gamma\]$/);
   assert.equal(textWidth(ascii.text) <= ascii.cols, true);
   assert.equal([...ascii.text].every((ch) => ch.charCodeAt(0) < 128), true, "printable ASCII");
 });
 
-test("with a single tab the top row is still a tab bar: the one tab, in brackets, and no divider; back to one tab after a close, the same", () => {
+test("with a single tab the top row is still a tab bar: the one tab, in brackets, numbered 1, and no divider; back to one tab after a close, the same", () => {
   const one = opened(SIX(), "dev-a");
   const s = stripAt(one, 120);
-  assert.equal(s.text, "[dev-a]");
-  for (const cell of cellsOf(s, "[dev-a]")) assert.deepEqual([cell.style.bold, cell.style.reverse], [true, true]);
+  assert.equal(s.text, "[dev-a 1]");
+  for (const cell of cellsOf(s, "[dev-a ")) assert.deepEqual([cell.style.bold, cell.style.reverse], [true, true]);
   const after = stripAt(leaderThen(opened(SIX(), "dev-a", "dev-b"), "w").state, 120);
-  assert.equal(after.text, "[dev-a]", "back to one tab");
+  assert.equal(after.text, "[dev-a 1]", "back to one tab");
 });
 
 test("under NO_COLOR the shown tab still reads as the front one: its brackets are text, and only attributes are written", () => {
   const sz = { cols: 120, rows: 24 }, d = draw(three(), sz);
   const bytes = createScreen({ utf8: true, color: false }).render(d.rows, sz, { full: true });
-  assert.equal(bytes.includes("[dev-gamma]"), true);
+  assert.equal(bytes.includes("[dev-gamma"), true);
+  assert.match(bytes, /3(\u001b\[[0-9;]*m)*\]/, "its closing bracket is text too, after its number");
   // Every SGR written is a reset and attributes (1 bold, 2 dim, 7 reverse): no colour parameter.
   for (const [, params] of bytes.matchAll(/\u001b\[([0-9;]*)m/g)) for (const p of params.split(";").filter(Boolean)) assert.equal(["0", "1", "2", "3", "4", "7", "9"].includes(p), true, `SGR ${params}`);
 });
@@ -396,11 +399,79 @@ test("a shown name that fits the panel stays whole however many tabs are hidden:
   assert.equal(shownName(first), LONG);
   assert.equal(stripAt(first, 80).text, `[${LONG}]│ a`);
   // Wider, every tab is there.
-  assert.equal(stripAt(last, 120).text, ` a │ b │ c │[${LONG}]`);
+  assert.equal(stripAt(last, 120).text, ` a 1 │ b 2 │ c 3 │[${LONG} 4]`);
   // A shown name wider than the panel is cut, its brackets kept, and no hidden tab is drawn.
   const huge = "x".repeat(60);
   const lone = stripAt(opened(stateOf(observed(["a", huge].map((name) => instanceRow("dev", name)))), "a", huge), 80);
   assert.equal(lone.text, `[${"x".repeat(46)}…]`);
+});
+
+/** The cell of the number `n` at the end of the tab named `name` in the strip `s`. */
+const numberCell = (s, name, n) => { const at = s.text.indexOf(`${name} ${n}`); assert.notEqual(at, -1, `${name} ${n}`); return s.cells[at + name.length + 1]; };
+
+test("each tab's number, the N its tab-N chord reaches, stands at its end after a blank cell: dim in a hidden tab and in the shown one from the list, dim in the reverse video of the shown one while its terminal has the focus", () => {
+  const s = stripAt(three(), 120);
+  assert.equal(s.text, " dev-alpha• 1 │ dev-beta-with-a-long-name · garnet 2 │[dev-gamma 3]", "name, mark, machine, then the number");
+  for (const [name, n] of [["dev-alpha•", 1], ["garnet", 2]]) assert.deepEqual([numberCell(s, name, n).style.dim, numberCell(s, name, n).style.reverse], [true, false], `${name}: dim`);
+  const front = numberCell(s, "[dev-gamma", 3);
+  assert.deepEqual([front.style.dim, front.style.reverse, front.style.bold], [true, true, false], "the focused shown tab's number: dim in its reverse video");
+  assert.equal(s.cells[s.text.indexOf("[dev-gamma") + "[dev-gamma".length].style.reverse, true, "the blank cell before it is in the tab's reverse video");
+  const list = numberCell(stripAt(toList(three()), 120), "[dev-gamma", 3);
+  assert.deepEqual([list.style.dim, list.style.reverse], [true, false], "from the list: dim, not in reverse");
+  // In ASCII the numbers are the same digits.
+  assert.equal(stripAt(three({ ascii: true }), 120).text, " dev-alpha* 1 | dev-beta-with-a-long-name - garnet 2 |[dev-gamma 3]");
+});
+
+test("the numbers are drawn while a chord shows the Nth tab: in every family on Linux and Windows, and never on macOS, where no key reaches them (#1491 F1)", () => {
+  const numbered = " dev-alpha• 1 │ dev-beta-with-a-long-name · garnet 2 │[dev-gamma 3]";
+  for (const chords of ["ctrl+alt", "ctrl+shift"]) assert.equal(stripAt(three({ keysRead: chordFamilyFrom(`{ "chords": "${chords}" }`) }), 120).text, numbered, chords);
+  const mac = three({ platform: "darwin" });
+  assert.equal([...mac.chords.values()].some((does) => does.startsWith("tab-") && /\d$/.test(does)), false, "macOS binds no tab-N: ⌥⌘N never reaches a terminal");
+  assert.equal(stripAt(mac, 120).text, " dev-alpha• │ dev-beta-with-a-long-name · garnet │[dev-gamma]", "macOS: no numbers, and no cell kept for them");
+  assert.equal(stripAt(three({ platform: "darwin", ascii: true }), 120).text, " dev-alpha* | dev-beta-with-a-long-name - garnet |[dev-gamma]");
+});
+
+test("tabNumber: the first eight tabs are 1 to 8, the last of nine or more is 9 (tab-9 shows the last), and any other past the eighth has no number", () => {
+  assert.deepEqual(Array.from({ length: 3 }, (_, i) => tabNumber(i, 3)), [1, 2, 3], "fewer than nine: the last its own place");
+  assert.deepEqual(Array.from({ length: 8 }, (_, i) => tabNumber(i, 8)), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(Array.from({ length: 9 }, (_, i) => tabNumber(i, 9)), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.deepEqual(Array.from({ length: 10 }, (_, i) => tabNumber(i, 10)), [1, 2, 3, 4, 5, 6, 7, 8, null, 9]);
+  assert.deepEqual(Array.from({ length: 12 }, (_, i) => tabNumber(i, 12)), [1, 2, 3, 4, 5, 6, 7, 8, null, null, null, 9]);
+});
+
+test("ten tabs in a strip (more than the store opens, made by hand): 1 to 8, the ninth without a number, the tenth 9", () => {
+  const s = opened(SIX(), "dev-a"), tab = s.tabs[0];
+  const tabs = Object.freeze([tab, ..."bcdefghij"].map((name, i) => (i === 0 ? name : Object.freeze({ ...tab, id: `hand-${name}`, name }))));
+  const bar = stripAt(Object.freeze({ ...s, tabs }), 120);
+  assert.equal(bar.text, "[dev-a 1]│ b 2 │ c 3 │ d 4 │ e 5 │ f 6 │ g 7 │ h 8 │ i │ j 9");
+  assert.equal(numberCell(bar, " j", 9).style.dim, true);
+});
+
+test("in a split each group numbers its own tabs from 1, as its tab-N chords walk them", () => {
+  // The split asks the panel's room at 120x40 (splits.test.mjs ROOM).
+  const at = { ...AT, panel: { cols: 89, rows: 40 } }, two = opened(SIX(), "dev-a", "dev-b");
+  const lead = reduce(two, { back: true, read: ++reads, ...at }).state;
+  const s = opened(reduce(lead, { key: "-", text: "-", read: ++reads, ...at }).state, "dev-c", "dev-d");
+  const d = draw(s, { cols: 120, rows: 40 });
+  assert.equal(d.regions.length, 2);
+  // One above the other: group 0's tab bar on the first row, the focused group 1's on its terminal's title row.
+  const t = d.terminal;
+  assert.equal(t.title > 0, true, "group 1 is the lower one, focused");
+  const bars = [d.lines[0].slice(t.col), d.lines[t.title].slice(t.col)];
+  // The cap counts both groups (TAB_LIMIT): two tabs in each.
+  assert.deepEqual(bars, [" dev-a 1 │[dev-b 2]", " dev-c 1 │[dev-d 2]"]);
+});
+
+test("the numbers go first and all together: drawn only while every tab fits whole with them; else none has one and the row is cut as it would be without them", () => {
+  const WHOLE = " dev-alpha• │ dev-beta-with-a-long-name · garnet │[dev-gamma]";
+  // 61 cells without the numbers, 67 with them: the terminal zoomed to the whole width.
+  assert.equal(stripAt(three(), 67).text, " dev-alpha• 1 │ dev-beta-with-a-long-name · garnet 2 │[dev-gamma 3]", "67 columns: whole, with the numbers");
+  for (const cols of [66, 64, 61]) assert.equal(stripAt(three(), cols).text, WHOLE, `${cols} columns: every tab whole, and no number`);
+  // Narrower, the existing cut order runs, still without a number.
+  assert.equal(stripAt(three(), 60).text, " dev-alpha• │ dev-beta-with-a-long-name │[dev-gamma]", "60 columns: the hidden machine cut");
+  const cut = stripAt(three(), 80);
+  assert.match(cut.text, /^ dev-alpha• │ dev-beta-with\S*… │\[dev-gamma\]$/, "the names cut, and no number");
+  assert.equal(/\d/.test(cut.text), false);
 });
 
 /** The cheat sheet as drawn at `size`: the sidebar's rows from the leader's on, to the first empty one. */

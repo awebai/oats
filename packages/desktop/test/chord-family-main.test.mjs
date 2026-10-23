@@ -39,19 +39,21 @@ test("the path is config/keys.json in OATS_HOME_DIR, else in ~/.oats", () => {
   assert.equal(createChordFamilySource({ fs: realFs, env: { OATS_HOME_DIR: "" }, home: "/home/u" }).path, "/home/u/.oats/config/keys.json");
 });
 
-test("read: the family the file names, and every way it can fail is Ctrl+Alt, with the note the page shows", t => {
+test("read: the family the file names, and every way it can fail is Alt, with the note the page shows", t => {
   const h = home(t);
-  assert.deepEqual(readChordFamily(realFs, join(h.dir, "nowhere", "config", "keys.json")), state("ctrl+alt", "missing"), "no OATS_HOME_DIR yet");
-  assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+alt", "missing"), "no file: the default, nothing to say");
+  assert.deepEqual(readChordFamily(realFs, join(h.dir, "nowhere", "config", "keys.json")), state("alt", "missing"), "no OATS_HOME_DIR yet");
+  assert.deepEqual(readChordFamily(realFs, h.file), state("alt", "missing"), "no file: the default, nothing to say");
   for (const [text, expected] of [
     ['{ "chords": "ctrl+shift" }', state("ctrl+shift")],
     ['{ "chords": "ctrl+alt", "later": { "key": 1 } }', state("ctrl+alt")],
-    ["{ chords: ctrl+shift", state("ctrl+alt", "not-json", "keys.json is not JSON, using Ctrl+Alt")],
-    ["", state("ctrl+alt", "not-json", "keys.json is not JSON, using Ctrl+Alt")],
-    ['["ctrl+shift"]', state("ctrl+alt", "not-object", "keys.json is not an object, using Ctrl+Alt")],
-    ["{}", state("ctrl+alt", "no-chords", "keys.json names no chords, using Ctrl+Alt")],
-    ['{ "chords": "Ctrl+Shift" }', state("ctrl+alt", "unknown-chords", "keys.json: unknown chords value, using Ctrl+Alt")],
-    ['{ "chords": "ctrl+meta" }', state("ctrl+alt", "unknown-chords", "keys.json: unknown chords value, using Ctrl+Alt")],
+    ['{ "chords": "alt" }', state("alt")],
+    ["{ chords: ctrl+shift", state("alt", "not-json", "keys.json is not JSON, using Alt")],
+    ["", state("alt", "not-json", "keys.json is not JSON, using Alt")],
+    ['["ctrl+shift"]', state("alt", "not-object", "keys.json is not an object, using Alt")],
+    ["{}", state("alt", "no-chords", "keys.json names no chords, using Alt")],
+    ['{ "chords": "Ctrl+Shift" }', state("alt", "unknown-chords", "keys.json: unknown chords value, using Alt")],
+    ['{ "chords": "Alt" }', state("alt", "unknown-chords", "keys.json: unknown chords value, using Alt")],
+    ['{ "chords": "ctrl+meta" }', state("alt", "unknown-chords", "keys.json: unknown chords value, using Alt")],
   ]) {
     h.write(text);
     const read = readChordFamily(realFs, h.file);
@@ -63,17 +65,33 @@ test("read: the family the file names, and every way it can fail is Ctrl+Alt, wi
   h.write(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('{ "chords": "ctrl+shift" }')]));
   assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+shift"), "a byte-order mark");
   h.write(Buffer.concat([Buffer.from('{ "chords": "ctrl+shift", "x": "'), Buffer.from([0xc3]), Buffer.from('" }')]));
-  assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+alt", "not-utf8", "keys.json is not UTF-8 text, using Ctrl+Alt"));
+  assert.deepEqual(readChordFamily(realFs, h.file), state("alt", "not-utf8", "keys.json is not UTF-8 text, using Alt"));
   // A directory where the file should be: a file that cannot be read.
   rmSync(h.file); mkdirSync(h.file);
-  assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+alt", "unreadable", "keys.json cannot be read, using Ctrl+Alt"));
+  assert.deepEqual(readChordFamily(realFs, h.file), state("alt", "unreadable", "keys.json cannot be read, using Alt"));
+});
+
+// A user who chose Ctrl+Alt before Alt became the default keeps it: a `chords` written is a choice.
+// No file, or a file with no `chords`, is no choice: the default, Alt.
+test("read: a stored explicit ctrl+alt stays ctrl+alt; a missing file or a missing chords is the default, Alt", t => {
+  const h = home(t);
+  assert.deepEqual(readChordFamily(realFs, h.file), state("alt", "missing"), "no file");
+  h.write('{ "chords": "ctrl+alt" }');
+  assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+alt"), "chosen: the file chose it, why null, no note");
+  h.write('{ "later": 1 }');
+  assert.deepEqual(readChordFamily(realFs, h.file), state("alt", "no-chords", "keys.json names no chords, using Alt"), "no chords");
+  h.write('{ "chords": "ctrl+alt", "later": 1 }');
+  const source = createChordFamilySource({ fs: realFs, env: h.env, home: NO_HOME });
+  assert.deepEqual(source.get(), state("ctrl+alt"), "the source hands the window the choice");
+  rmSync(h.file);
+  assert.deepEqual(source.get(), state("alt", "missing"), "and the default once the file is gone");
 });
 
 test("read: a file this user may not read is unreadable", { skip: process.getuid?.() === 0 && "root reads every file" }, t => {
   const h = home(t);
   h.write('{ "chords": "ctrl+shift" }');
   chmodSync(h.file, 0o000); // removed with its directory: a file's own mode does not stop that
-  assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+alt", "unreadable", "keys.json cannot be read, using Ctrl+Alt"));
+  assert.deepEqual(readChordFamily(realFs, h.file), state("alt", "unreadable", "keys.json cannot be read, using Alt"));
 });
 
 test("read: at most KEYS_LIMIT + 1 bytes; a longer file is too large, one at the limit is read", t => {
@@ -83,7 +101,7 @@ test("read: at most KEYS_LIMIT + 1 bytes; a longer file is too large, one at the
   assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+shift"), "exactly the limit");
   h.write(json + " ".repeat(1024 * 1024));
   const { fs, calls } = recording();
-  assert.deepEqual(readChordFamily(fs, h.file), state("ctrl+alt", "too-large", "keys.json is too large, using Ctrl+Alt"));
+  assert.deepEqual(readChordFamily(fs, h.file), state("alt", "too-large", "keys.json is too large, using Alt"));
   const asked = calls.filter(([name]) => name === "readSync").reduce((sum, [, , , , length]) => sum + length, 0);
   assert.ok(asked <= KEYS_LIMIT + 1, `asked for ${asked} bytes`);
   // A long multi-byte file is too large too, not "not UTF-8" because the read cut a character.
@@ -120,6 +138,19 @@ test("write: a missing config/ is made, mode 0700, and the file is { chords }", 
   assert.equal(statSync(h.config).mode & 0o777, 0o700);
   assert.equal(readFileSync(h.file, "utf8"), '{\n  "chords": "ctrl+shift"\n}\n');
   assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+shift"));
+});
+
+test("write: \"alt\" is written as a choice and read back as it, every other key kept", t => {
+  const h = home(t);
+  writeChordFamily(realFs, h.file, "alt");
+  assert.equal(readFileSync(h.file, "utf8"), '{\n  "chords": "alt"\n}\n');
+  assert.deepEqual(readChordFamily(realFs, h.file), state("alt"), "the file chose it: why null, no note");
+  h.write('{ "chords": "ctrl+alt", "later": 1 }');
+  writeChordFamily(realFs, h.file, "alt", { stamp: "alt" });
+  assert.deepEqual(JSON.parse(readFileSync(h.file, "utf8")), { chords: "alt", later: 1 });
+  assert.deepEqual(readChordFamily(realFs, h.file), state("alt"));
+  writeChordFamily(realFs, h.file, "ctrl+alt", { stamp: "back" });
+  assert.deepEqual(readChordFamily(realFs, h.file), state("ctrl+alt"), "and back to Ctrl+Alt");
 });
 
 test("write: a file whose keys cannot all be kept is refused, and left as it was", t => {
@@ -171,9 +202,9 @@ test("write: a keys.json that is a symbolic link is written where it leads, and 
   assert.deepEqual(JSON.parse(readFileSync(dangling, "utf8")), { chords: "ctrl+alt" });
 });
 
-test("write: a family that is not one of the two is refused before anything is touched", t => {
+test("write: a family that is not one of the three is refused before anything is touched", t => {
   const h = home(t);
-  for (const family of ["ctrl+meta", "Ctrl+Shift", "", null, undefined, 1, { chords: "ctrl+shift" }]) {
+  for (const family of ["ctrl+meta", "Ctrl+Shift", "Alt", "", null, undefined, 1, { chords: "ctrl+shift" }]) {
     const { fs, calls } = recording();
     assert.throws(() => writeChordFamily(fs, h.file, family), TypeError, String(family));
     assert.deepEqual(calls, [], `${String(family)}: nothing read, made or written`);
@@ -201,7 +232,7 @@ test("source: get reads now, set writes and reads back, and every window hears a
   assert.equal(source.path, h.file);
   source.refresh();
   assert.deepEqual(sent, [], "nothing read yet, nothing to refresh");
-  assert.deepEqual(source.get(), state("ctrl+alt", "missing"));
+  assert.deepEqual(source.get(), state("alt", "missing"));
   assert.deepEqual(sent, [], "the first read is the first window's answer, not a change");
   assert.deepEqual(source.set("ctrl+shift"), state("ctrl+shift"));
   assert.deepEqual(sent, [state("ctrl+shift")], "every window hears it");
@@ -210,12 +241,16 @@ test("source: get reads now, set writes and reads back, and every window hears a
   // A hand edit: the next window's get, or the next app focus, takes it, and every window hears it.
   h.write('{ "chords": "nope" }');
   source.refresh();
-  assert.deepEqual(sent.at(-1), state("ctrl+alt", "unknown-chords", "keys.json: unknown chords value, using Ctrl+Alt"));
+  assert.deepEqual(sent.at(-1), state("alt", "unknown-chords", "keys.json: unknown chords value, using Alt"));
   h.write('{ "chords": "ctrl+shift" }');
   assert.deepEqual(source.get(), state("ctrl+shift"));
   assert.equal(sent.length, 3);
   assert.throws(() => source.set("ctrl+meta"), TypeError);
   assert.equal(sent.length, 3);
+  // Alt, chosen, is a choice like the others: written, and every window hears it.
+  assert.deepEqual(source.set("alt"), state("alt"));
+  assert.deepEqual(sent.at(-1), state("alt"));
+  assert.equal(sent.length, 4);
   // A window that closes while it is told must not stop the next read.
   const throwing = createChordFamilySource({ fs: realFs, env: h.env, home: NO_HOME, send: () => { throw new Error("closed"); } });
   throwing.get();
@@ -231,13 +266,15 @@ test("IPC: chord-family:get and chord-family:set answer the app's own renderer o
   installChordFamilyHandlers({ ipc, guard, source: createChordFamilySource({ fs: realFs, env: h.env, home: NO_HOME }) });
   assert.deepEqual([...handlers.keys()], ["chord-family:get", "chord-family:set"]);
   const call = async (channel, event, ...args) => handlers.get(channel)(event, ...args);
-  assert.deepEqual(await call("chord-family:get", trusted), state("ctrl+alt", "missing"));
+  assert.deepEqual(await call("chord-family:get", trusted), state("alt", "missing"));
   await assert.rejects(call("chord-family:get", { senderFrame: { url: "https://elsewhere" } }), /forbidden/);
   await assert.rejects(call("chord-family:set", { senderFrame: { url: "https://elsewhere" } }, "ctrl+shift"), /forbidden/);
   assert.equal(realFs.existsSync(h.file), false, "a foreign frame writes nothing");
   await assert.rejects(call("chord-family:set", trusted, "ctrl+meta"), TypeError);
   assert.deepEqual(await call("chord-family:set", trusted, "ctrl+shift"), state("ctrl+shift"));
   assert.deepEqual(JSON.parse(readFileSync(h.file, "utf8")), { chords: "ctrl+shift" });
+  assert.deepEqual(await call("chord-family:set", trusted, "alt"), state("alt"));
+  assert.deepEqual(JSON.parse(readFileSync(h.file, "utf8")), { chords: "alt" });
   // Only plain state crosses: no path, no file content.
   assert.deepEqual(Object.keys(await call("chord-family:get", trusted)).sort(), ["family", "note", "why"]);
 });

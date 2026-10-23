@@ -1,11 +1,13 @@
 /* oats desktop — keys.json, the chord family both clients bind (main).
 
-   On Linux and Windows the shared chords are one of two families (packages/client/keymap.mjs
-   CHORD_FAMILIES): Ctrl+Alt, the default, or Ctrl+Shift, the option for a terminal that passes
-   Ctrl+Shift apart from Ctrl (foot, Alacritty). The choice is one file of this user's, shared with
-   the TUI: `config/keys.json` in `$OATS_HOME_DIR`, else `~/.oats` (beside tui.json), shaped
-   `{ "chords": "ctrl+alt" | "ctrl+shift" }`. It is the clients' file: the kernel never reads it, and
-   it is in no deployment's configuration (docs/desktop-keyboard.md, "Switch to Ctrl+Shift").
+   On Linux and Windows the shared chords are one of three families (packages/client/keymap.mjs
+   CHORD_FAMILIES): Alt, the default; Ctrl+Alt, the option for whoever needs Alt in their
+   programs; or Ctrl+Shift, the option for a terminal that passes Ctrl+Shift apart from Ctrl (foot,
+   Alacritty). The choice is one file of this user's, shared with the TUI: `config/keys.json` in
+   `$OATS_HOME_DIR`, else `~/.oats` (beside tui.json), shaped
+   `{ "chords": "alt" | "ctrl+alt" | "ctrl+shift" }`; no file, or no `chords`, is no choice, the
+   default. It is the clients' file: the kernel never reads it, and it is in no deployment's
+   configuration (docs/desktop-keyboard.md, "The chord families").
 
    The file's text means what packages/client/keys-file.mjs says it means, there and only there:
    this module does the IO around it. Main reads the file and hands the family to every window
@@ -51,7 +53,7 @@ export function readKeysBytes(fs, path) {
 
 /** The chord family keys.json at `path` names, as the page gets it: frozen `{ family, why, note }`
  * (chordFamilyFrom's family and why, and chordFamilyNote's line or null). Every way the file can
- * fail is the default, Ctrl+Alt. */
+ * fail is the default, Alt. */
 export function readChordFamily(fs, path) {
   const { bytes = null, error = null } = readKeysBytes(fs, path);
   const read = chordFamilyFrom(bytes, error);

@@ -145,7 +145,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   if (!isTerminal({ stdin, stdout, env })) { stderr.write(`${NO_TERMINAL}\n`); return 1; }
   const config = effects.loadConfig({ env, home, platform: proc.platform });
   if (!config.ok) { stderr.write(config.lines.map((line) => `${line}\n`).join("")); return 1; }
-  // keys.json, the chord family (docs/tui.md, "Switch to Ctrl+Shift"): read once, here, and never
+  // keys.json, the chord family (docs/tui.md, "Switch family"): read once, here, and never
   // a reason not to start: what is wrong with it is the default, and the help says why.
   const keysRead = effects.loadKeys({ env, home });
   const found = effects.findDeployment(resolve(cwd(), options.dir ?? "."));

@@ -181,7 +181,10 @@ test("flat and grouped strips share their width: tabs shrink evenly to a floor, 
     const detail = window.getComputedStyle(tabs[1].triggerEl.querySelector(".tab-detail"));
     assert.deepEqual([detail.flexGrow, detail.flexBasis, detail.minWidth], ["1", "0px", "0px"]);
     assert.deepEqual([detail.marginLeft, detail.paddingLeft], ["-8px", "8px"], "a hidden branch takes no gap from the name");
-    assert.equal(window.getComputedStyle(tabs[1].triggerEl.querySelector(".tab-label")).flexGrow, "0", "the name never grows at the branch's expense");
+    // The name grows from its minimum (tab-numbers.test.mjs) to its whole width and no further, weighted
+    // 1000:1 over the branch, so the branch only takes what the whole name leaves.
+    const label = window.getComputedStyle(tabs[1].triggerEl.querySelector(".tab-label"));
+    assert.deepEqual([label.flexGrow, label.maxWidth], ["1000", "max-content"], "the name never grows at the branch's expense");
     assert.equal(window.getComputedStyle(actions).flexShrink, "0", "do not remove or compress group controls");
     assert.deepEqual([...bar.children], [...tabs.map(tab => tab.tabEl), actions], "no reordering or auto-collapse");
     bar.remove();
