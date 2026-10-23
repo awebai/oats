@@ -133,9 +133,10 @@ export const CHORD_FAMILY_WORDS = Object.freeze({
 // One row per entry, named here, its keys read from the live keymap at every render: the platform,
 // the chord family and the user's rebinds as they are. Each `does` is a row of the shared keymap
 // (packages/client/keymap.mjs): its action is the CHORDS_READ one, and where that action has no chord
-// (none in the keymap, or unbound in the list below) the leader's key for the same `does` stands in
-// ("Ctrl+X then ↑": the workspace moves have no chord at all). A pair is one row, "A / B"; the tab
-// keys one row, "first to last", while the nine follow one pattern. The help row is the leader's `?`.
+// (none in the active family, or unbound in the list below) the leader's key for the same `does`
+// stands in ("Ctrl+X then ↑ / ↓": the workspace moves in the Ctrl+Alt and Ctrl+Shift families). A pair
+// is one row, "A / B"; the tab keys one row, "first to last", while the nine follow one pattern. The
+// help row is the leader's `?`. The roster's filter is gone, so no row teaches `sidebar.focusFilter`.
 const USEFUL = Object.freeze([
   { name: "Command palette", does: ["palette"] },
   { name: "Quick open a soul to spawn", does: ["spawn"] },
@@ -143,10 +144,9 @@ const USEFUL = Object.freeze([
   { name: "Go to tab 1–9", does: Array.from({ length: 9 }, (_, i) => `tab-${i + 1}`), range: true },
   { name: "Previous / next workspace", does: ["workspace-previous", "workspace-next"] },
   { name: "Split right / split down", does: ["split-right", "split-down"] },
-  { name: "Next split pane", does: ["group-next"] },
+  { name: "Previous / next split pane", does: ["group-previous", "group-next"] },
   { name: "Close tab", does: ["close-terminal"] },
   { name: "Focus mode", does: ["zoom"] },
-  { name: "Filter instances", does: ["filter"] },
   { name: "The leader, then ? for everything", does: ["help"], leaderOnly: true },
 ].map((row) => Object.freeze({ ...row, does: Object.freeze(row.does) })));
 
