@@ -40,7 +40,7 @@ body {
 .side-kicker { color: var(--muted); font-size: 10px; line-height: 1.2; font-weight: 650; letter-spacing: .075em; text-transform: uppercase; }
 .shell-icon { display: block; width: 16px; height: 16px; flex: none; }
 /* The Workspaces heading is the Instances heading (.ctx-head), with Add local workspace… at its right end:
-   no logo, no bar of its own, no rule under the list (Pepe, 2026-10-23). */
+   no logo, no bar of its own, no rule under the list (2026-10-23). */
 .ws-head > .ws-add-open { margin-left: auto; }
 .ws-add-open { flex: none; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px;
                background: transparent; color: var(--muted); cursor: pointer; }

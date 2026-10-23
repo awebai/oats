@@ -314,7 +314,7 @@ window.addEventListener('pagehide', () => spawnJobs.dispose(), { once: true });
 // you accumulate and close, not places you navigate. Selecting a nav item
 // hides the tab layer; activating a tab covers the stage.
 const stageHost = document.getElementById("stagehost");
-let stage = null;           // { name, life, el }
+let stage = null;           // { name, life, el, mod }
 let stageOp = 0;            // switch generation — a slow mount must not paint over a newer switch
 
 /** Unmount the stage on screen. Resolves to this switch's generation, or null when a newer switch
@@ -360,7 +360,7 @@ async function showStage(name) {
   el.style.height = "100%";
   stageHost.innerHTML = "";
   stageHost.append(el);
-  const mounted = stage = { name, life, el };
+  const mounted = stage = { name, life, el, mod };
   mounted.panelOwner = createPanelOwner(contextPanel, mounted, workspaceGeneration);
   syncContextPanel();
   // Re-derive contexts from the CURRENT layer state: the user may have
@@ -2769,9 +2769,13 @@ function cycleRegion(delta) {
   focusRegions.cycle(delta);
 }
 const surfaceReturn = createSurfaceReturn({ doc: document, currentWorkspace, workspaceGeneration,
-  surface: () => ({ stage: stage?.name ?? null, tab: activeTab, tabLayerVisible }),
+  surface: () => ({ stage: stage?.name ?? null, tab: activeTab, tabLayerVisible,
+    workspaceTab: stage?.name === "spawn" ? stage.mod?.currentWorkspaceTab?.() ?? null : null }),
   tabPane: id => { const t = tabs.get(id); return t && canActivateTab(t, currentWorkspace()) ? t.paneEl : null; },
-  showStage, selectTab: (id, opts) => selectTab(id, opts), focusRegion: name => focusRegions.focusRegion(name), host: "spawn" });
+  showStage, selectTab: (id, opts) => selectTab(id, opts), focusRegion: name => focusRegions.focusRegion(name),
+  selectWorkspaceTab: name => stage?.name === "spawn" && stage.mod?.preselectWorkspaceTab?.(name)
+    && stage.mod.currentWorkspaceTab?.() === name ? document.getElementById(`workspace-tab-${name}`) : null,
+  host: "spawn" });
 
 // ── action registry: every mouse affordance, one keyboard action ────────
 // Default chords live in the engine's DEFAULT_KEYMAP (keybindings.mjs);

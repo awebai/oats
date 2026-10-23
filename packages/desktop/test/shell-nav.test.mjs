@@ -22,7 +22,7 @@ import { workspaceTabs } from "../renderer/workspace-discovery.mjs";
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 const shellSource = () => readFileSync(join(PKG, "renderer", "shell.mjs"), "utf8");
 
-// Pepe's sidebar layout (2026-10-23): the footer's nav is two buttons side by side, Deployments and
+// The sidebar layout (2026-10-23): the footer's nav is two buttons side by side, Deployments and
 // Workspace; Automations (Schedules | Triggers) became the Workspace page's Automations tab.
 test("NAV is exactly Deployments and Workspace, and keeps the instance roster in the sidebar", () => {
   assert.deepEqual(NAV.map((v) => v.name), ["hierarchy", "spawn"],
@@ -100,6 +100,11 @@ test("showStage routes a NAV_TABS name to openWorkspaceSouls(tab); showStageFocu
   // openWorkspaceSouls names each tab it can open (its failure notice) and awaits the page.
   const open = src.match(/async function openWorkspaceSouls\(tab = "souls"\) \{[^]*?\n\}/)[0];
   assert.match(open, /mod\.preselectWorkspaceTab\(tab\);\n  await showStage\("spawn"\);/);
+  // Quick Open's return (surface-return.mjs) knows the Workspace tab it left and goes back to it, through the
+  // mounted view's own module: never a tab the page can't show (its control only once it shows).
+  assert.match(src, /workspaceTab: stage\?\.name === "spawn" \? stage\.mod\?\.currentWorkspaceTab\?\.\(\) \?\? null : null/);
+  assert.match(src, /selectWorkspaceTab: name => stage\?\.name === "spawn" && stage\.mod\?\.preselectWorkspaceTab\?\.\(name\)\s*&& stage\.mod\.currentWorkspaceTab\?\.\(\) === name \? document\.getElementById\(`workspace-tab-\$\{name\}`\) : null/);
+  assert.match(src, /const mounted = stage = \{ name, life, el, mod \};/);
   assert.match(src, /const WORKSPACE_TAB_NAMES = \{ souls: "Souls", capabilities: "Capabilities", automations: "Automations" \};/);
 });
 

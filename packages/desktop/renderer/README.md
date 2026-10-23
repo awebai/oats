@@ -12,7 +12,7 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   (`workspace-discovery.mjs` `workspaceTabs`). Souls and Automations are panels the view owns:
   Automations mounts `automations.mjs` `createAutomationsStage` (Schedules | Triggers) while its
   tab is shown and disposes it on leaving (`syncAutomations`). It was a page of its own until
-  Pepe's sidebar layout (2026-10-23): `shell-nav.mjs` NAV is Deployments and Workspace, and its
+  The sidebar layout (2026-10-23): `shell-nav.mjs` NAV is Deployments and Workspace, and its
   NAV_TABS route `stage.automations` (⌘3 / Ctrl+3), the palette's **View: Automations** and
   every `showStage("automations")` / `ctx.openView("automations")` to this page on that tab.
   Souls come from `GET /api/agents` (the kernel's `oats souls` catalog),
@@ -430,7 +430,7 @@ A window shows a workspace **view**: one matched workspace identity across machi
 not read the panel. What they say (a deployment's state in words, the primary, the roster
 split into sections) is `packages/client/roster-sections.mjs`.
 
-- **The sidebar, top to bottom** (Pepe, 2026-10-23): the Workspaces heading (a `.ctx-head`, as
+- **The sidebar, top to bottom** (2026-10-23): the Workspaces heading (a `.ctx-head`, as
   the Instances one, with **Add local workspace…** at its end; no logo, no rule) over the list;
   the Instances heading over the roster; at the bottom (`#nav-foot`) the nav, Deployments and
   Workspace side by side (icons alone in a nav too narrow for both labels: a container query

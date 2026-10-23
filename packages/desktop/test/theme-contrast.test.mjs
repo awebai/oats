@@ -772,7 +772,7 @@ for (const [name] of palettes) test(`${name}: shipped sidebar shortcut hints mee
   assert.equal(doc.querySelector("#sidebar-spawn .shortcut-hint, #nav-foot .shortcut-hint"), null);
 });
 
-// Pepe's sidebar layout (2026-10-23): the nav (Deployments, Workspace) and the tools row, Spawn instance now one of
+// The sidebar layout (2026-10-23): the nav (Deployments, Workspace) and the tools row, Spawn instance now one of
 // its icon buttons, sit in the footer on the sidebar's --surface. Each one's ink, at rest, hovered, current and under
 // the keyboard tint, is a token pair the inventory holds to AA (so "This computer" is held too, host-theme.mjs), and
 // meets it here on the effective colours, with no opacity on it or under it.
@@ -1138,7 +1138,7 @@ for (const [name, palette] of palettes) test(`${name}: the workspace list's need
   assert.match(shellCss, /\.ws-option \{ --row-solid: var\(--surface\);/);
   assert.match(shellCss, /\.ws-option:hover \{ --row-solid: var\(--surface-2\); background: var\(--surface-2\); \}/);
   assert.match(shellCss, /\.ws-option:focus-visible \{ --row-solid: var\(--sel\); background: var\(--sel\); \}/);
-  assert.doesNotMatch(shellCss, /\.ws-option\[aria-current="true"\] \{/, "no accent edge (Pepe, 2026-10-23)");
+  assert.doesNotMatch(shellCss, /\.ws-option\[aria-current="true"\] \{/, "no accent edge (2026-10-23)");
   // The circles are the roster's own rule: the filled --accent, and the --faint ring.
   assert.match(shellCss, /^\.ctx-dot \{[^}]*border: 1\.5px solid var\(--faint\);/m);
   assert.match(shellCss, /^\.ctx-dot\.on \{ border-color: var\(--accent\); background: var\(--accent\); \}/m);

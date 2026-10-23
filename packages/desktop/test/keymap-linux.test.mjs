@@ -393,7 +393,7 @@ test("shell wiring: the new actions are registered, rebindable and discoverable"
   assert.match(src, /\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(\{\n  id: `stage\.\$\{v\.name\}`/, "stage.automations comes from the nav manifests (NAV_TABS)");
 });
 
-// Automations left the nav for a tab of the Workspace page (Pepe, 2026-10-23); its action did not move:
+// Automations left the nav for a tab of the Workspace page (2026-10-23); its action did not move:
 // the shipped registration, run as shipped, still makes stage.automations a global, rebindable action
 // on Mod+3 with its label, and it opens the name (showStage routes it to the page and tab).
 test("stage.automations: registered from NAV_TABS as shipped, \"View: Automations\", Ctrl+3 / ⌘3, rebindable", t => {
@@ -413,8 +413,9 @@ test("stage.automations: registered from NAV_TABS as shipped, \"View: Automation
   assert.equal(matchEvent(linux("3"), out), "stage.automations");
   assert.equal(matchEvent(ev("3", { metaKey: true }), { isMac: true, insideTerminal: true }), "stage.automations", "⌘3, a terminal focused too");
   assert.equal(runAction("stage.automations"), true); assert.deepEqual(opened, ["automations"]);
-  setBinding("stage.automations", "Ctrl+Alt+Shift+A");
-  assert.equal(matchEvent(linux("A", { altKey: true, shiftKey: true }), out), "stage.automations", "rebound");
+  // A chord no default takes, in any family (Ctrl+Alt+Shift+A is a split move's in the Ctrl+Alt family).
+  setBinding("stage.automations", "Ctrl+Alt+Shift+Y");
+  assert.equal(matchEvent(linux("Y", { altKey: true, shiftKey: true }), out), "stage.automations", "rebound");
   assert.equal(matchEvent(linux("3"), out), null, "the old chord is free");
   setBinding("stage.automations", null);
   assert.equal(getBinding("stage.automations", false), null, "unbound");

@@ -1,6 +1,6 @@
 // Automations (human 2026-09-28): ONE destination, with Schedules | Triggers as subtabs in the
 // Workspace's tab style — the bar holds (no title) the two tabs (each with its row count), then
-// the shown page's own tools. Since Pepe's sidebar layout (2026-10-23) the destination is the Workspace
+// the shown page's own tools. Since the sidebar layout (2026-10-23) the destination is the Workspace
 // page's Automations tab (views/spawn.mjs mounts this stage there; workspace-v2-view.test.mjs pins that side).
 // On the captured kernel lists (test/fixtures/automations/kernel).
 import test from 'node:test';

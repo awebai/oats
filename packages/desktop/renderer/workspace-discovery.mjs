@@ -32,7 +32,7 @@ export const workspaceTabs = ['souls', 'capabilities', 'automations', 'teams', '
 // What a person reads (the ids stay stable): Souls, Capabilities, Automations, Teams, Setup (product owner, 2026-10-23,
 // superseding 2026-09-28's "Teams first"). Teams is who can work together; Setup is what the workspace is
 // built from (repos, packages, external souls). Automations (Schedules | Triggers) was a page of its own until
-// Pepe's sidebar layout (2026-10-23): its panel is the Workspace view's (views/spawn.mjs), as the Souls grid is.
+// The sidebar layout (2026-10-23): its panel is the Workspace view's (views/spawn.mjs), as the Souls grid is.
 /** The tabs whose panel the Workspace view owns: this module shows and hides it, and paints nothing in it. */
 const OWN_PANELS = ['souls', 'automations'];
 const TAB_LABELS = { teams: 'Teams', souls: 'Souls', capabilities: 'Capabilities', automations: 'Automations', sources: 'Setup' };

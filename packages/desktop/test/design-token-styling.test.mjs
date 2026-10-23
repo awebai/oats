@@ -63,7 +63,7 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, two alike section
   for (const selector of ["#tabstrip", ".group-tabbar"]) assert.equal(u.style(selector).height, "var(--bar-h)", selector);
   for (const selector of ["#tabstrip", ".group-tabbar"]) assert.equal(u.style(selector).boxSizing, "border-box", selector);
   assert.equal(u.style("#tabbar").height, "calc(var(--bar-h) - 1px)");
-  // Pepe's sidebar layout (2026-10-23): the Workspaces head is the Instances head (.ctx-head), with no bar, logo or
+  // The sidebar layout (2026-10-23): the Workspaces head is the Instances head (.ctx-head), with no bar, logo or
   // rule of its own; the heading, then Add local workspace… as a 28px icon button pushed to the right end.
   assert.equal(shell.match(/\.side-head\b|\.ws-brand-(?:mark|image)\b|\.ws-heading\s*[,{]/), null, "no rules left for the old head, its mark or a heading style of its own");
   const [wsHead, rosterHead] = [u.style(".ws-head"), u.style(".roster-head")];
@@ -120,7 +120,7 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, two alike section
 
 test("nav/footer rhythm stays separate from the 48px roster rows", t => {
   const u = fixture(t);
-  // The nav is at the bottom, in the footer (Pepe, 2026-10-23): Deployments and Workspace side by side, each from its
+  // The nav is at the bottom, in the footer (2026-10-23): Deployments and Workspace side by side, each from its
   // own label's width (the longer one is not squeezed to half), each label on one line.
   assert.deepEqual([u.style("#nav").display, u.style("#nav").flexDirection, u.style("#nav").flexShrink, u.style("#nav").gap], ["flex", "row", "0", "4px"]);
   const item = u.style("#nav .nav-item");
@@ -151,7 +151,7 @@ test("nav/footer rhythm stays separate from the 48px roster rows", t => {
 
 for (const palette of ["light", "solarized", "dark"]) test(`${palette}: primary, danger, disabled and focus states keep their own semantic pairs`, t => {
   const u = fixture(t, palette);
-  // Spawn instance is no longer a primary button (Pepe, 2026-10-23): it is a footer tool, painted like the others.
+  // Spawn instance is no longer a primary button (2026-10-23): it is a footer tool, painted like the others.
   for (const selector of ["#sidebar-tools .nav-item:first-child", "#sidebar-spawn"]) {
     assert.equal(u.style(selector).color, "var(--nav-fg)", selector);
     assert.notEqual(u.style(selector).background, "var(--primary-bg)", selector);

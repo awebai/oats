@@ -53,7 +53,7 @@ test("deploymentState says live, remembered, not reached and not observed in wor
   assert.deepEqual(vd.deploymentState({ ...LOCAL, reachable: false, reason: "Reading the deployment…" }), { key: "unobserved", text: "not observed", detail: "Reading the deployment…" });
 });
 
-// Pepe's sidebar layout (2026-10-23): the Workspaces heading, its list, then Instances; the navigation is at the foot.
+// The sidebar layout (2026-10-23): the Workspaces heading, its list, then Instances; the navigation is at the foot.
 test("UI spec: no deployments block in the sidebar; the workspace list sits under its heading, the Instances right after it, the nav in the foot", (t) => {
   const dom = new JSDOM(html); t.after(() => dom.window.close());
   const doc = dom.window.document;

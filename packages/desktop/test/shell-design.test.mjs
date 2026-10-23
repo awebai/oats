@@ -107,7 +107,7 @@ test("the Workspaces head is a plain section heading with Add local workspace…
   const { document } = shell(t);
   const sidebar = document.getElementById("sidebar");
   const head = document.getElementById("ws-heading").parentElement;
-  // Pepe's sidebar layout (2026-10-23): the Instances heading's style (.ctx-head), the heading then Add local
+  // The sidebar layout (2026-10-23): the Instances heading's style (.ctx-head), the heading then Add local
   // workspace… at its right end; no logo, no bar of its own, no trigger, no popup menu.
   assert.equal(head.parentElement, sidebar);
   assert.ok(head.classList.contains("ctx-head"), "the same heading style as Instances");
@@ -188,7 +188,7 @@ test("only current destinations render, dispatch unchanged stage ids, and projec
 test("the nav sits in the footer above the tools: two items side by side whose labels never wrap and hide, not wrap, when narrow", t => {
   const s = shell(t), q = id => s.document.getElementById(id), win = s.document.defaultView;
   const nav = q("nav"), foot = q("nav-foot");
-  // Pepe's sidebar layout (2026-10-23): the nav took the old wide Spawn instance button's place.
+  // The sidebar layout (2026-10-23): the nav took the old wide Spawn instance button's place.
   assert.equal(nav.parentElement, foot);
   assert.equal(nav.tagName, "NAV"); assert.equal(nav.getAttribute("aria-label"), "Main views");
   assert.deepEqual([...foot.children].map(el => el.id), ["nav", "sidebar-tools"]);
@@ -241,7 +241,7 @@ test("footer tools are sidebar toggle, theme, shortcuts and a Spawn instance ico
   const s = shell(t), q = id => s.document.getElementById(id);
   const foot = q("nav-foot"), tools = [...q("sidebar-tools").children];
   // No leader button: the shortcuts editor (a tool here, Mod+, and the palette) lists the leader's commands.
-  // Settings and the command palette left the row (Pepe, 2026-10-23): both stay in the palette and on their chords.
+  // Settings and the command palette left the row (2026-10-23): both stay in the palette and on their chords.
   assert.deepEqual(tools.map(b => b.id), ["sidebar-toggle", "sidebar-theme", "sidebar-shortcuts", "sidebar-spawn"]);
   assert.deepEqual(tools.map(b => b.dataset.action), ["sidebar.toggle", "app.themePicker", "app.shortcuts", "app.chooseSoul"]);
   for (const id of ["sidebar-settings", "sidebar-palette"]) assert.equal(q(id), null, `${id} is gone`);
@@ -325,7 +325,7 @@ test("sidebar shortcuts keep Ctrl+B/F/N/P with the pty and dispatch Cmd+F/N on m
 test("visible shortcut hints and tooltips follow rebind, unbind and platform without changing labels", t => {
   const s = shell(t); s.c.isMac = true; s.applyChordTitles();
   t.after(() => { resetBinding("sidebar.focusFilter"); resetBinding("app.chooseSoul"); });
-  // The Spawn instance icon button has no visible hint (Pepe's sidebar layout): its tooltip carries the chord.
+  // The Spawn instance icon button has no visible hint (the sidebar layout): its tooltip carries the chord.
   const spawn = s.document.getElementById("sidebar-spawn");
   assert.equal(spawn.querySelector("[data-shortcut]"), null);
   assert.equal(s.document.querySelector('[data-shortcut="app.chooseSoul"]'), null);

@@ -239,7 +239,7 @@ test("mutation: restored focusin must not re-enter tab selection", async t => {
   await assert.rejects(reentrantFocus(t, source.replace(guard, "isApplyingFocus: () => false,")), /restoring first input focus must not re-enter/);
 });
 
-// ── Automations is a tab of the Workspace page (Pepe, 2026-10-23) ─────────────────────────────
+// ── Automations is a tab of the Workspace page (2026-10-23) ─────────────────────────────
 // stage.automations (⌘3 / Ctrl+3), the palette's "View: Automations" and ctx.openView("automations")
 // all run showStage("automations"): the shipped showStage routes the NAV_TABS name through
 // openWorkspaceSouls, which preselects the tab and shows the Workspace page. No "automations" page loads.

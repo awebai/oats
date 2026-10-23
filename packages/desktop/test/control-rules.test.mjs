@@ -136,7 +136,7 @@ test("segmented control: selected segment is --sel/--accent at 650, unselected i
 // circle filled, workspace-switcher.mjs), so the sidebar shows one filled "you are here" row, not two.
 test("workspace list: the current row, named by aria-current, has no fill and no edge, never the nav's --sel; the others rest transparent", t => {
   const u = fixture(t);
-  assert.equal(u.rules.filter(r => r.selectorText?.replace(/\s+/g, " ") === '.ws-option[aria-current="true"]').length, 0, "no rule on the row itself (Pepe, 2026-10-23: no accent edge)");
+  assert.equal(u.rules.filter(r => r.selectorText?.replace(/\s+/g, " ") === '.ws-option[aria-current="true"]').length, 0, "no rule on the row itself (2026-10-23: no accent edge)");
   assert.equal(u.rule('.ws-option[aria-current="true"] .ws-option-name').fontWeight, "650", "its name in bold");
   assert.match(u.style(".ws-option.ws-current").background, /^(transparent|rgba\(0, 0, 0, 0\))$/);
   assert.equal(u.style(".ws-option.ws-current").boxShadow, "");
@@ -168,7 +168,7 @@ test("focus: one global 1px inset accent edge and tint replace every 2px ring an
 
 test("focus: keyboard focus on plain shell controls paints the tint and the edge", t => {
   const u = fixture(t);
-  // The footer's nav items and tools (Spawn instance among them since Pepe's sidebar layout) are plain controls.
+  // The footer's nav items and tools (Spawn instance among them since the sidebar layout) are plain controls.
   for (const selector of [".ws-option.ws-other", ".ws-option.ws-current", ".ws-add-open", "#nav .nav-item:not(.active)", "#nav .nav-item.active", "#sidebar-toggle", "#sidebar-spawn", ".ctx-inst", ".tab-trigger", ".tab .close",
     "#tab-actions button", ".ws-suggestion", ".ws-dialog-foot .secondary", ".kb-chord", ".kb-close", ".ws-segmented [aria-pressed=false]",
     ".ctx-instance-menu button", ".ctx-instance-actions", ".lifecycle-close", ".lifecycle-review", ".lifecycle-check", ".oats-view .act:not(.primary):not(.danger)"]) {
@@ -241,7 +241,7 @@ for (const palette of ["light", "solarized", "dark"]) test(`${palette}: selected
   }
   assert.equal(u.style(".ws-segmented [aria-pressed=true]").color, "var(--accent)");
   assert.equal(u.rule(".ctx-filter-field:focus-within").borderColor, "var(--accent)");
-  // The footer's nav items and its Spawn instance icon button (Pepe's sidebar layout): their ink, idle and
+  // The footer's nav items and its Spawn instance icon button (the sidebar layout): their ink, idle and
   // keyboard-focused, on the --sel tint they focus to, through the effective tokens (the edge is checked above).
   for (const selector of ["#nav .nav-item:not(.active)", "#nav .nav-item.active", "#sidebar-toggle", "#sidebar-spawn"]) {
     const idle = u.style(selector).color, focus = u.focused(selector);

@@ -1,5 +1,5 @@
 // oats desktop — keyboard regions (spec F, Part 4): F6 / Shift+F6 move focus between the
-// window's regions, in the sidebar's order top to bottom, then the main area (Pepe's sidebar layout,
+// window's regions, in the sidebar's order top to bottom, then the main area (the sidebar layout,
 // 2026-10-23): workspaces → instance roster → sidebar footer → main → instance panel → back.
 //
 // A region that is hidden (the sidebar while hidden or in focus mode, the panel while closed or when

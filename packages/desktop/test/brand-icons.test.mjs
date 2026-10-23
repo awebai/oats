@@ -86,7 +86,7 @@ test('electron-builder wires the derived icons per platform; only the sidebar ma
   assert.equal(scripts.icons, 'node build-icons.mjs', 'regenerate from source is one command');
 });
 
-// Pepe's sidebar layout (2026-10-23): the Workspaces head is a plain heading, so the renderer shows no sidebar
+// The sidebar layout (2026-10-23): the Workspaces head is a plain heading, so the renderer shows no sidebar
 // mark. The generated sidebar-48.png and its packaging stay as they are (pinned above); only its use is gone.
 test('the renderer no longer shows the sidebar mark; nothing references a download path', () => {
   const html = read('renderer/index.html').toString('utf8');

@@ -1,5 +1,5 @@
 // Spec F, Part 4: F6 / Shift+F6 cycle the window's regions — the sidebar's, top to bottom
-// (workspaces → instance roster → footer), then main → instance panel (Pepe's sidebar layout,
+// (workspaces → instance roster → footer), then main → instance panel (the sidebar layout,
 // 2026-10-23) — skipping hidden ones and landing on each region's current item, never <body>.
 // And "back to where you were" after a flow that moved the main surface.
 // The shipped index.html and shell.css (scripts are not run), so ids and hiding rules are real.
@@ -160,18 +160,22 @@ test("the roster without a selected row lands on its first row's stop, else its 
 
 function surfaces(t, start) {
   const s = shell(t, { tabs: start.tab != null });
-  const state = { workspace: "A", generation: 0, stage: start.stage, tab: start.tab ?? null, layer: start.tab != null };
+  const state = { workspace: "A", generation: 0, stage: start.stage, tab: start.tab ?? null, layer: start.tab != null, workspaceTab: start.workspaceTab ?? null };
   const calls = [];
   const pane = s.doc.querySelector(".tab-pane");
   const back = createSurfaceReturn({ doc: s.doc, currentWorkspace: () => state.workspace, workspaceGeneration: () => state.generation,
-    surface: () => ({ stage: state.stage, tab: state.tab, tabLayerVisible: state.layer }),
+    surface: () => ({ stage: state.stage, tab: state.tab, tabLayerVisible: state.layer, workspaceTab: state.stage === "spawn" ? state.workspaceTab : null }),
     tabPane: id => (id === 1 ? pane : null),
     showStage: async name => { calls.push(["stage", name]); state.stage = name; state.layer = false; },
     selectTab: (id, opts) => { calls.push(["tab", id, opts.focusContent]); state.layer = true; state.tab = id; if (opts.focusContent) s.terminal.focus(); return true; },
-    focusRegion: name => { calls.push(["region", name]); return s.regions.focusRegion(name); }, host: "spawn" });
-  // Quick Open → the Workspace stage with the dialog (the flow under test moves the surface).
-  const move = () => { state.stage = "spawn"; state.layer = false; s.doc.activeElement?.blur(); };
-  return { ...s, state, calls, back, move };
+    focusRegion: name => { calls.push(["region", name]); return s.regions.focusRegion(name); },
+    // The Workspace page's tabs, as views/spawn.mjs answers them: the tab shown, its panel (re)mounted, its control.
+    selectWorkspaceTab: name => { calls.push(["workspaceTab", name]); if (!hooks.selectable) return null; state.workspaceTab = name; hooks.remount?.(name); return s.doc.getElementById(`workspace-tab-${name}`); },
+    host: "spawn" });
+  const hooks = { selectable: true, remount: null };
+  // Quick Open → the Workspace stage with the dialog, which opens on Souls (the flow under test moves the surface).
+  const move = () => { state.stage = "spawn"; state.layer = false; state.workspaceTab = "souls"; s.doc.activeElement?.blur(); };
+  return { ...s, state, calls, back, move, hooks };
 }
 
 test("return: from a terminal tab, re-activate it with its terminal focused (and the stage under it)", async t => {
@@ -208,6 +212,55 @@ test("return: from a roster row while a terminal was visible, the tab comes back
   assert.equal(u.back.restore(origin), true);
   assert.deepEqual(u.calls, [["tab", 1, false]], "same stage under it: no stage switch; the tab without taking focus");
   assert.equal(u.doc.activeElement, row);
+});
+
+// Workspace › Automations: the dialog opens on Souls, and leaving Automations disposes its panel (syncAutomations).
+function onAutomations(t) {
+  const u = surfaces(t, { stage: "spawn", workspaceTab: "automations" });
+  const tabs = u.doc.querySelector("#stagehost .workspace-tabs");
+  tabs.insertAdjacentHTML("beforeend", `<button role="tab" id="workspace-tab-automations" aria-selected="true" tabindex="0">Automations</button>`);
+  tabs.insertAdjacentHTML("afterend", `<div id="workspace-automations" role="tabpanel"></div>`);
+  const panel = u.doc.getElementById("workspace-automations");
+  const mount = () => { panel.innerHTML = `<button id="automations-tab-trigger" role="tab">Triggers</button><button class="auto-new">New</button>`; };
+  mount();
+  // The dialog over Souls: Automations' panel is gone.
+  const moveAndDispose = () => { u.move(); panel.replaceChildren(); };
+  return { ...u, panel, mount, moveAndDispose };
+}
+
+test("return within Workspace: back on the tab left (Automations), its panel remounted, on the control left", async t => {
+  const u = onAutomations(t);
+  u.doc.getElementById("automations-tab-trigger").focus();
+  const origin = u.back.capture(captureFocusReturn(u.doc));
+  assert.equal(origin.workspaceTab, "automations", "the page's tab is part of where they were");
+  u.moveAndDispose();
+  u.hooks.remount = () => u.mount();
+  assert.equal(u.back.restore(origin), true);
+  assert.deepEqual(u.calls, [["workspaceTab", "automations"]], "no stage switch: the same stage, its tab");
+  assert.equal(u.state.workspaceTab, "automations");
+  assert.equal(u.doc.activeElement, u.doc.getElementById("automations-tab-trigger"), "the control left, by its identity, in the remounted panel");
+});
+
+test("return within Workspace: a panel still loading its controls lands on its tab, never a neighbour", async t => {
+  const u = onAutomations(t);
+  u.panel.querySelector(".auto-new").focus(); // no id: only its ancestors could find a replacement
+  const origin = u.back.capture(captureFocusReturn(u.doc));
+  u.moveAndDispose();
+  assert.equal(u.back.restore(origin), true);
+  assert.equal(u.doc.activeElement, u.doc.getElementById("workspace-tab-automations"), "the tab itself, not the Souls tab or the sidebar");
+  // A tab the page can't show any more: refused, the dialog restores focus itself.
+  const v = onAutomations(t);
+  v.doc.getElementById("automations-tab-trigger").focus();
+  const again = v.back.capture(captureFocusReturn(v.doc));
+  v.moveAndDispose(); v.hooks.selectable = false;
+  assert.equal(v.back.restore(again), false);
+  // The same tab (Souls, where the dialog opens): no tab switch, the control left as before.
+  const w = surfaces(t, { stage: "spawn", workspaceTab: "souls" });
+  const filter = w.doc.querySelector("#stagehost .filter"); filter.focus();
+  const same = w.back.capture(captureFocusReturn(w.doc));
+  w.move();
+  assert.equal(w.back.restore(same), true);
+  assert.deepEqual(w.calls, []); assert.equal(w.doc.activeElement, filter);
 });
 
 test("return is refused when the operator moved on: another workspace, a tab over the dialog, another stage, a closed tab", async t => {

@@ -1111,7 +1111,7 @@ export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: 
 }
 
 // ── The Automations stage: Schedules | Triggers as subtabs (human, 2026-09-28), the Workspace page's
-// Automations tab since Pepe's sidebar layout (2026-10-23; views/spawn.mjs mounts it there) ──
+// Automations tab since the sidebar layout (2026-10-23; views/spawn.mjs mounts it there) ──
 export const AUTOMATION_KINDS = Object.freeze(['schedule', 'trigger']);
 let chosenKind = 'schedule', stage = null;
 const liveStages = new Set(); // every stage on screen, so a preselect reaches one already open

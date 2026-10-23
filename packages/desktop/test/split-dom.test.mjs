@@ -278,7 +278,7 @@ test("index.html ships the split buttons and shell wires the group projection th
   assert.ok(toggle, "sidebar toggle is a footer button");
   assert.equal(toggle.getAttribute("aria-label"), "Hide the sidebar", "icon-only button has an accessible name");
   assert.equal(toggle.dataset.action, "sidebar.toggle");
-  // The footer holds the nav too since Pepe's sidebar layout: the tools row is wired here, the nav's buttons by
+  // The footer holds the nav too since the sidebar layout: the tools row is wired here, the nav's buttons by
   // their own listener (shell.mjs nav rail), so no click runs twice.
   const wiring = src.match(/for \(const button of document\.querySelectorAll\("#sidebar-tools \[data-action\]"\)\) \{[^]*?\n\}/)?.[0];
   const registration = src.split("\n").find(line => line.startsWith('registerAction({ id: "sidebar.toggle"'));

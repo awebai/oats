@@ -168,6 +168,10 @@ export function preselectWorkspaceTab(name) {
   if (state?.alive) applyWorkspaceTab(state);
   return true;
 }
+/** The Workspace page's tab while it is mounted (the shell's surface, surface-return.mjs), else null. */
+export function currentWorkspaceTab() {
+  return state?.alive ? state.discovery?.tab ?? null : null;
+}
 function applyWorkspaceTab(s) {
   if (!pendingWorkspaceTab) return;
   const intent = pendingWorkspaceTab; pendingWorkspaceTab = null;

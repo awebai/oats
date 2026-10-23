@@ -189,7 +189,7 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   assert.equal(u.css('.souls-body').gridTemplateColumns, 'minmax(0,1fr)');
 });
 
-// A soul's Schedule… (Pepe's sidebar layout, 2026-10-23): Automations is the Workspace page's tab, so the view asks
+// A soul's Schedule… (the sidebar layout, 2026-10-23): Automations is the Workspace page's tab, so the view asks
 // the shell for 'automations' and the shell routes that name to this page on that tab (shell.mjs showStage → navTab →
 // openWorkspaceSouls → preselectWorkspaceTab; the shell's own tests pin that side). Here the shell's route is played
 // back on the mounted view: it ends on Automations, on Schedules, even when Triggers was the last subtab.

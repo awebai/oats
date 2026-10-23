@@ -14,7 +14,7 @@ export const NAV = [
   { name: "spawn", label: "Workspace", icon: "workspace", title: "Workspace" },
 ];
 
-/** Destinations that are a tab of a NAV page, not a page of their own (Pepe, 2026-10-23): Automations
+/** Destinations that are a tab of a NAV page, not a page of their own (2026-10-23): Automations
  * (Schedules | Triggers) is the Workspace page's Automations tab. Its action (`stage.automations`, ⌘3 /
  * Ctrl+3), its palette command and every open of the name land on that page and tab. */
 export const NAV_TABS = [

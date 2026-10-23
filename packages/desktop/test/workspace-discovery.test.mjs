@@ -114,9 +114,13 @@ for (const outcome of ['success', 'rejection']) test(`roster per-path tickets re
 test('subtab preselection is consumed on mount/current view, drops stale generations and never spawns', async t => {
   const u = await setup(t, { beforeMount: () => spawn.preselectWorkspaceTab('sources') });
   await tick(); assert.equal(u.doc.getElementById('workspace-tab-sources').getAttribute('aria-selected'), 'true');
+  // The page's tab, as the shell's surface reads it (surface-return.mjs): what shows, null once unmounted.
+  assert.equal(spawn.currentWorkspaceTab(), 'sources');
   assert.equal(spawn.preselectWorkspaceTab('knowledge'), false);
   spawn.preselectWorkspaceTab('souls'); assert.equal(u.doc.querySelector('.souls-grid').hidden, false);
-  spawn.unmount(); spawn.preselectWorkspaceTab('sources'); setWorkspace('/other');
+  assert.equal(spawn.currentWorkspaceTab(), 'souls');
+  spawn.unmount(); assert.equal(spawn.currentWorkspaceTab(), null);
+  spawn.preselectWorkspaceTab('sources'); setWorkspace('/other');
   spawn.mount(u.doc.querySelector('#host'), u.ctx); await tick();
   assert.equal(u.doc.getElementById('workspace-tab-souls').getAttribute('aria-selected'), 'true');
   assert.equal(u.doc.querySelector('.spawn-dialog'), null);
@@ -208,7 +212,7 @@ test('instance rows reflect exact root/host identity and open only read-only sna
 
 function tabGeometry(u) {
   const strip = u.doc.querySelector('.workspace-tabs');
-  // Five tabs: Souls, Capabilities, Automations, Teams, Setup (Pepe, 2026-10-23). Setup keeps its place and width, at
+  // Five tabs: Souls, Capabilities, Automations, Teams, Setup (2026-10-23). Setup keeps its place and width, at
   // 246px in a 287px strip, so 41px of it shows until the strip scrolls 32px.
   Object.defineProperties(strip, { clientWidth: { value: 287, configurable: true }, clientLeft: { value: 0 } });
   strip.getBoundingClientRect = () => ({ left: 100, right: 387, width: 287 });

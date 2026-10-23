@@ -151,7 +151,7 @@ test("the current row: aria-current on that row only, marked by style alone (no 
   assert.deepEqual(s.rows().map((b) => b.getAttribute("aria-current")), [null, "true", null]);
   assert.equal(s.current().querySelector(".ws-check, svg"), null, "no icon");
   assert.equal(list.getAttribute("aria-description"), "Current workspace: beta");
-  // Its circle filled like a running instance's, the others a ring (Pepe, 2026-10-23: no accent edge); its name bold.
+  // Its circle filled like a running instance's, the others a ring (2026-10-23: no accent edge); its name bold.
   const marks = () => s.rows().map((b) => b.querySelector(".ctx-dot").className);
   assert.deepEqual(marks(), ["ctx-dot off", "ctx-dot on", "ctx-dot off"]);
   assert.doesNotMatch(css, /\.ws-option\[aria-current="true"\]\s*\{/, "no rule of its own on the row: no edge, no fill");

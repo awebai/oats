@@ -151,7 +151,7 @@ test("Settings mounts Terminal after Connections, traps Tab through its field, a
   assert.equal(disposed, 1, "closing Settings drops the section's subscription");
   assert.equal(doc.querySelector('[role="dialog"]'), null);
   const html = read("index.html");
-  // Pepe's sidebar layout (2026-10-23): no Settings button in the sidebar; Settings stays in the palette and the
+  // The sidebar layout (2026-10-23): no Settings button in the sidebar; Settings stays in the palette and the
   // registry (app.connections), both opening this dialog.
   assert.doesNotMatch(html, /id="sidebar-settings"|data-action="app\.connections"/);
   assert.match(shell, /\{ label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: \(\) => openConnections\(\) \}/);

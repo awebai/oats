@@ -622,7 +622,7 @@ const K1_TEAMS = () => teamsData(JSON.parse(readFileSync(new URL('./fixtures/tea
 test('Teams tab (team-model-2): fourth, after Automations; the Teams page from oats teams; its problems light the dot; Setup has no teams', async t => {
   const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: K1_TEAMS() }) });
   // Souls, Capabilities, Automations, Teams, Setup (product owner, 2026-10-23, superseding 2026-09-28's "Teams first";
-  // Automations joined as a tab in Pepe's sidebar layout the same day).
+  // Automations joined as a tab in the sidebar layout the same day).
   assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.id), ['workspace-tab-souls', 'workspace-tab-capabilities', 'workspace-tab-automations', 'workspace-tab-teams', 'workspace-tab-sources']);
   assert.equal(u.doc.getElementById('workspace-tab-souls').getAttribute('aria-selected'), 'true', 'Souls stays where the Workspace opens');
   // The roving keys follow the order: Right from Capabilities is Automations, then Teams; Left from Souls wraps to Setup, Home is Souls.
@@ -804,7 +804,7 @@ test('Setup: automation-untrusted and automation-trust-stale are said verbatim, 
   assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-attn').hidden, false, 'Setup carries the attention dot');
 });
 
-// Automations is the Workspace page's tab (Pepe's sidebar layout, 2026-10-23): its panel is the view's own, like the
+// Automations is the Workspace page's tab (the sidebar layout, 2026-10-23): its panel is the view's own, like the
 // Souls grid, and the Schedules | Triggers stage (views/automations.mjs) lives in it only while the tab is shown.
 const kernelList = kind => JSON.parse(readFileSync(new URL(`./fixtures/automations/kernel/${kind}-list.json`, import.meta.url), 'utf8')).result;
 const AUTOMATIONS_CLI = { ...CLI, automationsApi: 1, features: [...CLI.features, 'automations'] };
