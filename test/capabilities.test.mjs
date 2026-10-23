@@ -3214,7 +3214,7 @@ test("capability instructions and package skills give an independent harvester t
   assert.match(instructions, /IMPORTANT/);
   assert.match(instructions, /\*\*okf-propose\*\* skill is \*\*compulsory\*\*/);
   assert.deepEqual(f.cli(["okf", "status", "--json"], f.as(f.source)), { harvest: "on", reason: "default" });
-  assert.match(readFileSync(join(f.home, ".agents/skills/okf-propose/SKILL.md"), "utf8"), /oats spawn oats\.okf\/knowledge-harvester --task-file <proposal> --relation unrelated/);
+  assert.match(readFileSync(join(f.home, ".agents/skills/okf-propose/SKILL.md"), "utf8"), /oats spawn oats\.okf\/knowledge-harvester --name <harvester-name> --task-file <proposal> --relation unrelated/);
   const file = f.proposal(), run = f.propose({ file });
   assert.equal(lstatSync(join(run.home, "work")).isSymbolicLink(), false);
   assert.ok(readFileSync(join(run.home, "TASK.md"), "utf8").includes(readFileSync(file, "utf8").trim()));

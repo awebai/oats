@@ -407,7 +407,7 @@ try {
   assert.doesNotMatch(readFileSync(join(probeHome, "TASK.md"), "utf8"), /harvest|propos|okf-propose/i);
   assert.match(composed, /IMPORTANT/);
   assert.match(composed, /\*\*okf-propose\*\* skill is \*\*compulsory\*\*/);
-  assert.match(readFileSync(join(skillsRoot, "okf-propose/SKILL.md"), "utf8"), /oats spawn oats\.okf\/knowledge-harvester --task-file <proposal> --relation unrelated/);
+  assert.match(readFileSync(join(skillsRoot, "okf-propose/SKILL.md"), "utf8"), /oats spawn oats\.okf\/knowledge-harvester --name <harvester-name> --task-file <proposal> --relation unrelated/);
   assert.deepEqual(boundary(["okf", "status", "--json"], { cwd: probeHome, identity: true }), { harvest: "on", reason: "default" });
   assert.ok(!existsSync(join(probeHome, "knowledge")), "okf 3.0.0 materializes no ./knowledge/ view: instances consult the accepted state");
   const doctor = JSON.parse(cli(["doctor", deployment, "--json"]));
