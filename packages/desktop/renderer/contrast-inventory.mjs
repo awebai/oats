@@ -57,6 +57,8 @@ export const GRAPHIC_PAIRS = Object.freeze([
   ...["surface", "surface-2", "sel"].map(bg => Object.freeze(["tree-link", bg])),
   // A native select's chevron (theme.css select.field): --muted, on the field and on a disabled field.
   ...["surface", "surface-2"].map(bg => Object.freeze(["muted", bg])),
+  // Workspace defaults: an empty slot's icon tile (workspace-defaults.mjs .ws-default-slot-icon.is-empty).
+  Object.freeze(["muted", "chip-bg"]),
   Object.freeze(["term-sel", "term-bg"]),
   // A running lifecycle confirmation's spinner arc (lifecycle-dialog.mjs .spinner) on the dialog's --surface.
   Object.freeze(["accent", "surface"]),

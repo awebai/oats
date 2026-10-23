@@ -14,6 +14,7 @@ import { renderCapabilities, renderCapabilitySections, renderRepoPills, repoChoi
 import { capabilitySections, hostKeyOf, memberNames } from "../../client/capability-rows.mjs";
 import { renderSetup, teamsBox } from "../renderer/workspace-setup.mjs";
 import { discoveryCSS } from "../renderer/workspace-discovery.mjs";
+import { ABOUT_COPY, createAboutDialog } from "../renderer/about-dialog.mjs";
 import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
 import { createTerminalSettings, settingsTerminalCSS } from '../renderer/settings-terminal.mjs';
 import { createForgePrPanel } from '../renderer/forge-pr.mjs';
@@ -624,6 +625,49 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     assert.ok(pairs.some(([f, b]) => f === fg && b === 'sel'), `--${fg} on --sel is inventoried`);
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue('--sel').trim())) >= 4.5, `focused pill: --${fg} on --sel`);
   }
+});
+
+// Workspace › Capabilities' Workspace defaults panel (filled and empty slots, a default capability, one the workspace
+// turned off) and the "About capabilities" dialog in the lifecycle frame: every text on its computed surface.
+for (const [name] of palettes) test(`${name}: Workspace defaults and the About dialog use AA tokens on their computed surfaces`, t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><div class="sections"></div><div class="tools"></div></main></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, identityCSS, discoveryCSS, lifecycleCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  t.after(() => dom.window.close());
+  const rows = [{ name: 'oats.okf', kind: 'package', package: 'oats.okf', version: '2.1.3', layer: 'knowledge' }, { name: 'oats.core', kind: 'package', package: 'oats.core', version: '1.0.0' }];
+  const status = { workspace: { key: 'github.com/nw/agents', name: 'northwind' }, members: [],
+    defaults: { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null },
+      capabilities: [{ name: 'oats.core', from: 'package', off: false }, { name: 'house-style', from: null, off: true }] } };
+  const sections = capabilitySections(rows);
+  renderCapabilitySections(doc.querySelector('.sections'), { sections, shown: sections.workspace, filterHost: null, privateListed: false, status, instances: [], onOpen() {} });
+  const about = createAboutDialog(doc, { copy: ABOUT_COPY.capabilities, id: 'about' });
+  doc.querySelector('.tools').append(about.button); about.open();
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.ws-defaults-scope', '.ws-defaults-panel', 'fg', 'surface'], ['.ws-defaults-sub', '.ws-defaults-panel', 'muted', 'surface'],
+    ['button.ws-default-slot .ws-default-slot-head', 'button.ws-default-slot', 'muted', 'surface'],
+    ['button.ws-default-slot .ws-default-name', 'button.ws-default-slot', 'fg', 'surface'],
+    ['button.ws-default-slot .source-chip', 'button.ws-default-slot', 'muted', 'surface'], ['button.ws-default-slot .source-chip-name', 'button.ws-default-slot', 'fg', 'surface'],
+    ['div.ws-default-slot .ws-default-none', 'div.ws-default-slot', 'muted', 'surface'], ['div.ws-default-slot .ws-default-note', 'div.ws-default-slot', 'muted', 'surface'],
+    ['.ws-default-slot-icon[data-tint=slate]', '.ws-default-slot-icon[data-tint=slate]', 'soul-slate-fg', 'soul-slate-bg'],
+    ['.ws-default-slot-icon.is-empty', '.ws-default-slot-icon.is-empty', 'muted', 'chip-bg'],
+    ['.ws-defaults-more-label', '.ws-defaults-panel', 'muted', 'surface'],
+    ['button.ws-default-cap .ws-default-name', 'button.ws-default-cap', 'fg', 'surface'],
+    ['.ws-default-cap.off .ws-default-name', '.ws-default-cap.off', 'muted', 'surface'], ['.ws-default-cap.off .ws-default-note', '.ws-default-cap.off', 'muted', 'surface'],
+    ['.ws-info-button', '.ws-info-button', 'muted', 'surface'],
+    ['.about-dialog h2', '.about-dialog', 'fg', 'surface'], ['.about-dialog > p', '.about-dialog', 'fg', 'surface'],
+    ['.about-dialog .lifecycle-mark', '.about-dialog .lifecycle-mark', 'accent', 'surface-2'],
+    ['.about-terms dt', '.about-terms', 'fg', 'surface-2'], ['.about-terms dd', '.about-terms', 'muted', 'surface-2'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted);
+    assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
+    assert.ok(pairs.some(pair => pair[0] === fg && pair[1] === bg) || GRAPHIC_PAIRS.some(pair => pair[0] === fg && pair[1] === bg), `--${fg} on --${bg} is inventoried`);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector} on ${bg}`);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+  about.dispose();
 });
 
 // Schedules + Triggers (§2.3a): the list (header, toolbar, groups, rows, tags), the host

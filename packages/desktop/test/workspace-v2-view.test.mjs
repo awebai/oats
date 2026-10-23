@@ -183,6 +183,46 @@ test('Workspace owned is split by repository, headed as on the Souls tab: the ho
   assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-group .souls-group-name')].map(el => el.textContent), ['data']);
 });
 
+// Workspace defaults (product owner, 2026-10-23): the Capabilities tab opens with what the workspace gives every
+// soul (status.defaults), never narrowed by the search; its "i" is built once, sits right after the section jump and
+// survives every repaint; leaving the tab closes its dialog without moving focus. Souls has its own "i".
+test('Capabilities: Workspace defaults first, the "i" after the jump across repaints, its dialog closes with the tab', async t => {
+  const defaults = { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null }, capabilities: [] };
+  const u = await setup(t, { status: { ...statusOf('workspace-status'), defaults } });
+  await u.tab('capabilities');
+  const lead = u.doc.querySelector('.ws-toolbar[data-tools=capabilities] .ws-toolbar-lead');
+  const info = lead.querySelector('.ws-info-button');
+  assert.deepEqual([...lead.children].map(el => el.className), ['capability-nav ws-segmented', 'ws-info-button'], 'right after the section jump');
+  assert.equal(info.getAttribute('aria-label'), 'About capabilities');
+  assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => el.dataset.jump), ['defaults', 'workspace', 'packages']);
+  assert.equal(u.doc.querySelector('.capability-section').dataset.section, 'defaults');
+  const slot = u.doc.querySelector('.ws-default-slot[data-slot=knowledge]');
+  assert.equal(slot.getAttribute('aria-label'), 'Knowledge: oats.okf, the workspace default — open its page');
+  // A repaint (a search) keeps the same "i", focused, and never narrows the defaults.
+  info.focus();
+  const search = u.doc.querySelector('.ws-toolbar[data-tools=capabilities] input');
+  search.value = 'no-such'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); await settle();
+  assert.equal(lead.querySelector('.ws-info-button'), info, 'the same element'); assert.equal(u.doc.activeElement, info, 'focus stays on it');
+  assert.equal(lead.lastElementChild, info, 'still after the jump');
+  assert.equal(u.doc.querySelectorAll('.ws-default-slot').length, 3, 'the search does not narrow the defaults');
+  // A focused default column keeps focus across a repaint (its data-focus-key).
+  u.doc.querySelector('.ws-default-slot[data-slot=knowledge]').focus();
+  search.value = 'okf'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); await settle();
+  assert.equal(u.doc.activeElement?.dataset.focusKey, 'defaults:knowledge');
+  // The dialog: open, then leave the tab: it closes and focus is not moved.
+  info.click();
+  assert.ok(u.doc.querySelector('.about-dialog')); assert.equal(u.doc.activeElement.textContent, 'Close');
+  await u.tab('souls');
+  assert.equal(u.doc.querySelector('.about-dialog'), null, 'leaving Capabilities closes it');
+  assert.notEqual(u.doc.activeElement, info, 'no focus return: the person moved on');
+  // Souls: its own "i" at the end of its toolbar row.
+  const souls = u.doc.querySelector('.souls-bar .ws-info-button');
+  assert.equal(souls.getAttribute('aria-label'), 'About souls'); assert.equal(souls.previousElementSibling.classList.contains('souls-group-by'), true);
+  souls.click(); assert.ok(u.doc.querySelector('.about-dialog'));
+  await u.tab('capabilities');
+  assert.equal(u.doc.querySelector('.about-dialog'), null, 'leaving Souls closes its dialog');
+});
+
 // Workspace v4 (human decision 2026-09-26; replaces the header search): the search is
 // the Capabilities view's own toolbar, above the sections.
 test('the view search narrows every section by capability name', async t => {
@@ -297,7 +337,7 @@ test('W2 Setup graph: this computer → the lock → the workspace → members a
   // The kernel's workspace warnings, verbatim (#185 warnings[]); a kernel before #185 sends none.
   assert.deepEqual(statusOf('workspace-status').warnings, []);
   assert.equal(statusOf('f7/workspace-status').warnings[0].code, 'unmapped-team-label');
-  // An unmapped team label is said on its team's row on the Teams tab (first, before Souls), in the
+  // An unmapped team label is said on its team's row on the Teams tab, in the
   // kernel's words; Teams carries the attention dot for it, and Setup neither repeats it nor counts it.
   assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-attn').hidden, false);
   assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-sr-only').textContent, ' — 2 items need attention', 'global and marketing');
@@ -475,10 +515,15 @@ test('a failed catalog read names the failure and offers an explicit retry', asy
 const { teamsData } = await import('../../client/deployment-data.mjs');
 // The REAL 0.30 kernel's `oats teams` (K1 @bba0a9b8, test/fixtures/team-model-v2/teams-after, #269), decoded as the route answers it.
 const K1_TEAMS = () => teamsData(JSON.parse(readFileSync(new URL('./fixtures/team-model-v2/teams-after.json', import.meta.url), 'utf8')), dir);
-test('Teams tab (team-model-2): first, before Souls; the Teams page from oats teams; its problems light the dot; Setup has no teams', async t => {
+test('Teams tab (team-model-2): third, after Capabilities; the Teams page from oats teams; its problems light the dot; Setup has no teams', async t => {
   const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: K1_TEAMS() }) });
-  assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.id), ['workspace-tab-teams', 'workspace-tab-souls', 'workspace-tab-capabilities', 'workspace-tab-sources']);
+  // Souls, Capabilities, Teams, Setup (product owner, 2026-10-23, superseding 2026-09-28's "Teams first").
+  assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.id), ['workspace-tab-souls', 'workspace-tab-capabilities', 'workspace-tab-teams', 'workspace-tab-sources']);
   assert.equal(u.doc.getElementById('workspace-tab-souls').getAttribute('aria-selected'), 'true', 'Souls stays where the Workspace opens');
+  // The roving keys follow the order: Right from Capabilities is Teams, Left from Souls wraps to Setup, Home is Souls.
+  const key = name => { const tab = u.doc.querySelector('.workspace-tabs [aria-selected=true]'); tab.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true })); return u.doc.activeElement.id; };
+  assert.equal(key('ArrowRight'), 'workspace-tab-capabilities'); assert.equal(key('ArrowRight'), 'workspace-tab-teams');
+  assert.equal(key('Home'), 'workspace-tab-souls'); assert.equal(key('ArrowLeft'), 'workspace-tab-sources'); assert.equal(key('Home'), 'workspace-tab-souls');
   await u.tab('teams');
   const card = u.doc.querySelector('.workspace-discovery .computer-teams');
   assert.ok(card, 'the page'); assert.equal(card.dataset.box, 'Teams'); assert.equal(card.querySelector('.ct-title').textContent, 'Teams');

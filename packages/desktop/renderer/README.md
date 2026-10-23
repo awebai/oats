@@ -1282,6 +1282,26 @@ workspace is observed through its server and never synced from here.
   member's `publishes` never absorbs its package's capabilities). A remembered
   repository the catalog stops offering falls back to All. "N of M shown" counts
   what the pill and the search leave.
+  **Workspace defaults** (`workspace-defaults.mjs`) is the first section and the
+  jump's first segment (**Defaults**, counting the filled slots plus the default
+  capabilities not turned off) whenever `oats workspace status` reports
+  `defaults`; without it there is no section and nothing is inferred. It is one
+  panel: a scope line, the three core slots in a fixed order (Knowledge,
+  Messaging, Tasks) and an "Also for every soul" line. `defaultRow` matches each
+  default to a catalog row (`from: "package"` a package row, a member key that
+  member's row, `"here"` the host's) across every section, so the search and the
+  pills never narrow it. An unmatched default gets a minimal row whose source chip
+  names the source with no version (`source-chip.mjs` `version: false`); it still
+  opens the page, which says the capability is not listed. Focusable columns and
+  chips carry `data-focus-key`s (`defaults:<slot>`, `defaults:cap:<name>`), which
+  the tab host restores after a repaint (`captureFocusState` on the sections).
+  The toolbar's round "i" (`about-dialog.mjs` `createAboutDialog`) is built
+  once by `workspace-discovery.mjs` and kept after the jump across repaints, as
+  the search field is. Workspace › Souls has its own "i", built once by
+  `views/spawn.mjs`. Both dialogs are the lifecycle dialog's frame, with focus
+  handling from `forget-dialog.mjs`: they join the overlay handoff, and leaving the
+  tab or the workspace closes them with `close({ focus: 'none' })`. All their
+  words live in `ABOUT_COPY`.
 - **Teams** (kernel feature `team-model-2` or `team-model-3`, `teamModelOf`;
   `computer-teams.mjs`) is the
   *Teams* page: *Shared with the workspace* (read-only, edited by PR) and

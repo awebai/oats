@@ -221,7 +221,8 @@ test('the section jump is one ws-segmented group of navigation segments (aria-cu
   const u = mount(t);
   const sections = capabilitySections([...ROWS, { name: 'nw-runbook', kind: 'member', repoKey: 'github.com/awebai/oats', private: true, origin: 'member github.com/awebai/oats' }]);
   const opened = [];
-  renderCapabilitySections(u.$('.sections'), { sections, shown: sections.workspace, filterHost: null, privateListed: true, status: STATUS, instances: INSTANCES, onOpen: row => opened.push(row.name) });
+  // The catalog's own segments (Workspace defaults, which status.defaults adds first, is workspace-defaults.test.mjs's).
+  renderCapabilitySections(u.$('.sections'), { sections, shown: sections.workspace, filterHost: null, privateListed: true, status: { ...STATUS, defaults: undefined }, instances: INSTANCES, onOpen: row => opened.push(row.name) });
   const nav = u.$('.capability-nav');
   assert.ok(nav.classList.contains('ws-segmented'));
   assert.equal(u.css(nav).padding, '2px'); assert.equal(u.css(nav).borderRadius, '8px'); assert.equal(u.css(nav).gap, '2px');

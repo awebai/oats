@@ -200,6 +200,33 @@ pills (**All**, then one per repository, each with its count) show one
 repository at a time; "N of M shown" appears while a pill or the search
 narrows the list.
 
+Above those sections, **Workspace defaults** shows what every soul of the
+workspace starts with, unless it chooses its own or turns one off. It is one
+panel with a column per core capability, always **Knowledge**, **Messaging**
+and **Tasks**. A slot the workspace fills shows the capability and its source
+(a package and its pinned version, or a repository and "latest"); click it to
+open the capability's page. An empty slot shows **None**: there is no
+workspace default, and each soul chooses its own. Other capabilities the
+workspace gives every soul are listed under **Also for every soul**, each
+opening its page; one the workspace turned off is struck through and says
+"turned off by the workspace". A workspace that sets no defaults, a
+standalone deployment for example, shows one line saying so. The search and
+the repository pills never narrow or hide this section. It is read from
+`oats workspace status --json`: an OATS that does not report the defaults
+shows no section, and the Desktop does not guess them from the souls. The
+section jump at the top of the tab starts with **Defaults**, whose count is
+the filled slots plus the other default capabilities not turned off. Teams
+add no capabilities (removed in 0.30), so there are no team defaults to show.
+
+The round **i** button after the section jump (**About capabilities**) opens
+**What capabilities are**: what a capability gives a soul's instances (skills,
+commands and instructions, the instructions added to each instance's
+composed `AGENTS.md` after the soul's own), the three places one comes from
+(Workspace owned, Repo owned, Packages) and what workspace defaults are.
+**Close** or Esc closes it and returns the focus to the button; leaving the
+tab or the workspace closes it too. **Workspace › Souls** has the same button
+at the end of its toolbar, **About souls**, which explains what a soul is.
+
 A soul's page (open a soul from **Workspace › Souls**) ends with
 **Instructions**, what its instances are told, read like a capability's
 injected instructions (a navigation tree on the left, the file on the right).

@@ -26,6 +26,7 @@ import { shownLaunch, launchHarnessName } from "../../../client/launch-view.mjs"
 import { harnessOf } from "../../../client/harness-names.mjs";
 import { memberState } from "../workspace-catalog.mjs";
 import { iconElement } from "../shell-icons.mjs";
+import { ABOUT_COPY, createAboutDialog } from "../about-dialog.mjs";
 import { groupHeading, groupHeadingCSS } from "../group-heading.mjs";
 import {
   apiJson, postJson, ensureTheme,
@@ -585,6 +586,7 @@ ${spawnDialogCSS}</style>
     onTeamMember: (action, member) => void teamMemberAction(s, action, member),
     onOpenTeam: label => openTeam(s, label),
     onTab: tab => {
+      if (tab !== "souls") s.aboutSouls?.close({ focus: "none" }); // leaving Souls closes its dialog, moving no focus
       s.spawnOp++; closeSpawnModal(s); s.inspector.close(); closeCapability(s); closeTeam(s); s.page.close();
       s.q("souls-bar").hidden = tab !== "souls"; s.q("souls-notice").hidden = tab !== "souls";
     },
@@ -605,6 +607,9 @@ ${spawnDialogCSS}</style>
   applyCapability(s); // a handoff made before the mount: its tab now, its page when the catalog lands
   s.q("filter").addEventListener("input", (e) => { s.filterText = e.target.value; renderGrid(s); });
   s.q("filter").before(iconElement(el.ownerDocument, "search", { size: 14 }));
+  // "About souls": the Souls toolbar's "i" (about-dialog.mjs), at the row's end after Group by; built once.
+  s.aboutSouls = createAboutDialog(el.ownerDocument, { copy: ABOUT_COPY.souls, id: "workspace-souls-about", onIntent: () => nextSelectionIntent() });
+  s.q("souls-group-by").after(s.aboutSouls.button);
   for (const button of s.q("souls-group-by").querySelectorAll("button")) button.addEventListener("click", () => {
     if (s.groupBy === button.dataset.groupBy) return;
     s.groupBy = button.dataset.groupBy;
@@ -674,7 +679,7 @@ ${spawnDialogCSS}</style>
     // immediately, remove its DOM before B loads, and clear A's agentsRoot.
     s.spawnOp++;
     s.rosterReq++; s.rosterGen = null; s.souls = { agents: [] }; s.panelInstances = []; s.spawnDeployments = []; s.spawnViews = [];
-    s.discovery.reset();
+    s.discovery.reset(); s.aboutSouls.close({ focus: "none" });
     s.inspector.close(); closeCapability(s); closeTeam(s, { gone: true }); s.page.close();
     closeSpawnModal(s, { repaint: false }); // the switch replaces the grid below
     // Another workspace's cards leave at once; the new one is pending (a skeleton after 150ms, never a text block nor an empty message).
@@ -709,7 +714,7 @@ export function unmount() {
   state.inspector.dispose(); state.page.dispose(); state.capOpen?.contents.dispose();
   state.presentation?.dispose();
   state.gridState?.dispose();
-  state.discovery.dispose();
+  state.discovery.dispose(); state.aboutSouls?.dispose();
   state.timers.forEach(clearInterval);
   (state.disposers || []).forEach((off) => { try { off(); } catch {} });
   if (state.unsubWs) state.unsubWs();
