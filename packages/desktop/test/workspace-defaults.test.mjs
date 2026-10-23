@@ -232,7 +232,8 @@ test('About capabilities: the lifecycle frame, labelled by its title, the exact 
   assert.ok(dialog.querySelector('.lifecycle-mark svg'));
   const paragraphs = [...dialog.querySelectorAll(':scope > p')].map(p => p.textContent);
   assert.deepEqual(paragraphs, [
-    'A capability is a set of skills, commands and instructions that a soul’s instances get when they start. Its instructions are injected into each instance’s composed AGENTS.md, after the soul’s own.',
+    'A capability is a reusable bundle of skills, commands and instructions, given to every soul whose work needs it.',
+    'A soul names the capabilities it needs. When an instance starts, it gets a copy of each one, and the capability’s instructions are injected into the instance’s composed AGENTS.md, after the soul’s own.',
     'Each capability comes from one of three places:',
     'Workspace defaults are capabilities the workspace gives to every soul. A soul gets them without asking; it can still pick its own knowledge, messaging or tasks capability, or turn a default off.',
   ]);
@@ -294,6 +295,12 @@ test('About souls: the same dialog with its own button and copy', t => {
   const dialog = u.$('.about-dialog');
   assert.equal(u.doc.getElementById(dialog.getAttribute('aria-labelledby')).textContent, ABOUT_COPY.souls.title);
   assert.equal(u.doc.activeElement, dialog.querySelector('.lifecycle-close'));
+  assert.equal(ABOUT_COPY.souls.title, 'What a soul is');
+  assert.deepEqual([...dialog.querySelectorAll(':scope > p')].map(p => p.textContent), [
+    'A soul defines a kind of agent: the work it specialises in, and the capabilities it gets to do that work.',
+    'A team organises its specialist agents as souls, and souls can also organise knowledge: what each one is responsible for knowing, and what it reads to get started. Each running agent is an instance of a soul. Every instance gets the workspace’s default capabilities first, then the soul’s own choices: a soul can add capabilities, turn a default off, or leave a core capability (knowledge, messaging or tasks) empty.',
+  ]);
+  assert.equal(dialog.querySelector('dl'), null, 'no term list');
   assert.ok(Object.isFrozen(ABOUT_COPY) && Object.isFrozen(ABOUT_COPY.souls) && Object.isFrozen(ABOUT_COPY.capabilities), 'one frozen copy object');
   u.key(u.doc.activeElement, 'Escape'); assert.equal(u.doc.activeElement, souls.button);
 });

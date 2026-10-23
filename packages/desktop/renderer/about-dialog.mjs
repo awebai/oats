@@ -42,8 +42,9 @@ export const ABOUT_COPY = Object.freeze({
     button: 'About capabilities',
     title: 'What capabilities are',
     body: Object.freeze([
+      { p: ['A capability is a reusable bundle of skills, commands and instructions, given to every soul whose work needs it.'] },
       // The composed AGENTS.md (product owner, 2026-10-23: injects go into the composed instance AGENTS.md).
-      { p: ['A capability is a set of skills, commands and instructions that a soul’s instances get when they start. Its instructions are injected into each instance’s composed ', { code: 'AGENTS.md' }, ', after the soul’s own.'] },
+      { p: ['A soul names the capabilities it needs. When an instance starts, it gets a copy of each one, and the capability’s instructions are injected into the instance’s composed ', { code: 'AGENTS.md' }, ', after the soul’s own.'] },
       { p: ['Each capability comes from one of three places:'] },
       { terms: [
         ['repo', 'Workspace owned', 'Defined in one of the workspace’s repos. Any soul can use it, always at that repo’s latest version.'],
@@ -56,9 +57,9 @@ export const ABOUT_COPY = Object.freeze({
   souls: Object.freeze({
     button: 'About souls',
     title: 'What a soul is',
-    // PLACEHOLDER: the final copy comes from the design owner before hand-back.
     body: Object.freeze([
-      { p: ['A soul is a lasting agent definition: who it is, its instructions and the capabilities it uses. Each instance you start from it is one running copy, with its own home and work.'] },
+      { p: ['A soul defines a kind of agent: the work it specialises in, and the capabilities it gets to do that work.'] },
+      { p: ['A team organises its specialist agents as souls, and souls can also organise knowledge: what each one is responsible for knowing, and what it reads to get started. Each running agent is an instance of a soul. Every instance gets the workspace’s default capabilities first, then the soul’s own choices: a soul can add capabilities, turn a default off, or leave a core capability (knowledge, messaging or tasks) empty.'] },
     ]),
   }),
 });
