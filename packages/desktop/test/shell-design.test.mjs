@@ -214,6 +214,13 @@ test("the nav sits in the footer above the tools: two items side by side whose l
     assert.match(query[1], decl);
   }
   assert.doesNotMatch(query[1], /display:\s*none|visibility:\s*hidden/);
+  // The cutoff, against geometry measured in Chromium with the shipped theme.css and shell.css (2026-10-23): both labels,
+  // the active Deployments at 650, fit whole down to a nav of 219px; the 264px sidebar's nav is 243px. The query must
+  // switch to icons above the fit (a label is never cut, with room for a wider system font) and below the default nav
+  // (whose labels show).
+  const cutoff = Number(css.match(/@container nav \(max-width: (\d+)px\)/)[1]);
+  assert.ok(cutoff > 219 && cutoff < 243, `the narrow-nav cutoff (${cutoff}px) sits between the labels' fit and the default nav`);
+  assert.match(css, /^#sidebar \{[^}]*\bwidth: 264px; min-width: 264px;/m, "the default nav width above assumes the 264px sidebar");
 });
 
 test("static SVG inventory stays 16px, hidden to AT and rejects arbitrary markup or inherited keys", t => {

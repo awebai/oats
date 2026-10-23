@@ -117,14 +117,14 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, two alike section
 
 test("nav/footer rhythm stays separate from the 48px roster rows", t => {
   const u = fixture(t);
-  // The nav is at the bottom, in the footer (Pepe, 2026-10-23): Deployments and Workspace side by side, sharing the
-  // width evenly, each label on one line.
+  // The nav is at the bottom, in the footer (Pepe, 2026-10-23): Deployments and Workspace side by side, each from its
+  // own label's width (the longer one is not squeezed to half), each label on one line.
   assert.deepEqual([u.style("#nav").display, u.style("#nav").flexDirection, u.style("#nav").flexShrink, u.style("#nav").gap], ["flex", "row", "0", "4px"]);
   const item = u.style("#nav .nav-item");
-  // JSDOM's CSSOM drops a unitless `flex: 1 1 0`: read the shipped declaration.
-  assert.match(shell.match(/^#nav \.nav-item \{([^}]*)\}/m)?.[1] ?? "", /(?:^|;)\s*flex:\s*1 1 0(?:px|%)?\s*;/, "two equal halves that may shrink");
+  // Read the shipped declaration, as JSDOM's CSSOM may drop or rewrite the shorthand.
+  assert.match(shell.match(/^#nav \.nav-item \{([^}]*)\}/m)?.[1] ?? "", /(?:^|;)\s*flex:\s*1 1 auto\s*;/, "each from its label's width, sharing the rest, and may shrink");
   assert.equal(item.minWidth, "0px");
-  assert.deepEqual([item.justifyContent, item.gap, item.padding, item.whiteSpace], ["center", "7px", "5px 7px", "nowrap"]);
+  assert.deepEqual([item.justifyContent, item.gap, item.padding, item.whiteSpace], ["center", "6px", "5px 6px", "nowrap"]);
   assert.equal(item.minHeight, "30px");
   const label = u.style("#nav .nav-item .label");
   assert.deepEqual([label.minWidth, label.overflow, label.textOverflow], ["0px", "hidden", "ellipsis"], "a label gives way, never wraps");
