@@ -73,7 +73,7 @@ test("workspaces lands on the list's tab stop, else Add local workspace…; foot
   const nav = s.doc.getElementById("nav");
   assert.equal(s.regions.focusRegion("footer"), true); assert.equal(s.where(), "Workspace", "the current view's nav item");
   nav.querySelector('[aria-current="page"]').removeAttribute("aria-current"); // a terminal in front: no current view
-  assert.equal(s.regions.focusRegion("footer"), true); assert.equal(s.where(), "Deployments", "else the first nav item");
+  assert.equal(s.regions.focusRegion("footer"), true); assert.equal(s.where(), "Workspace", "else the first nav item (Workspace, first since 2026-10-23)");
   nav.innerHTML = "";
   assert.equal(s.regions.focusRegion("footer"), true); assert.equal(s.where(), "#sidebar-toggle", "else the first tool");
 });

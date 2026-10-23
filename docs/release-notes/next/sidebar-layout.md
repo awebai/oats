@@ -3,15 +3,21 @@
 - **Desktop: a simpler sidebar.** Top to bottom:
   - **Workspaces**, a plain heading with **+** and the list right under it;
   - a thin line, then **Instances**;
-  - at the foot, **Deployments** and **Workspace** side by side, then the
-    sidebar, theme and shortcuts buttons and a small **Spawn instance**.
+  - at the foot, compact, **Workspace details**: **Workspace** and
+    **Deployments** side by side, then the sidebar, theme and shortcuts
+    buttons and a small **Spawn instance**.
 
   The logo, the Settings button and the palette button are gone: Settings is
   in the palette ("Settings: Connections…"), and the palette is on ⌘K / its
   chord and Ctrl+X then `k`. The two headings are the sidebar's top level,
   larger and heavier than the machine labels ("THIS MAC") under Instances.
-  Instance clusters no longer have a gap after them: a cluster's last
-  instance and the next one are as close as any two instances.
+  The gap after an instance cluster is smaller, and a parent is as close
+  to its first child as any two instances.
+  A workspace whose instance needs input shows an exclamation mark at the
+  end of its row, and the instance's own **Needs input** pill leads with
+  the same mark.
+- **Desktop: what a deployment is.** The Deployments page has a round **i**
+  after its tabs, **What is a deployment?**, that explains it in plain words.
 - **Desktop: the instances have no filter field.** To find an instance by
   name, type it in the command palette. ⌘F / Alt+F, renamed **Focus the
   instance roster** and still rebindable under its old id, goes to the

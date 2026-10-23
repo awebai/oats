@@ -207,8 +207,8 @@ workspace on a server: `name — server`).
 The sidebar has two sections, each a heading over its list: **Workspaces**,
 then, after a thin line, **Instances**. The two headings are the sidebar's
 largest type, above the smaller machine labels ("THIS MAC") in the list of
-instances. At the bottom are the two main views, **Deployments** and
-**Workspace**, side by side, and under them the tools: hide the sidebar, the
+instances. At the bottom, under the title **Workspace details**, are the two main
+views, **Workspace** and **Deployments**, side by side, and under them the tools: hide the sidebar, the
 theme, the keyboard shortcuts, and **Spawn instance** (a small **+**). In a
 sidebar too narrow for both labels the views show their icons alone, each
 named in its tooltip. Settings is in the command palette (**Settings:
@@ -235,7 +235,7 @@ dot at its right when one of them has an instance that needs input.
 - **The current workspace** has its circle filled, like a running
   instance's, and its name in bold; the others have the ring a stopped
   instance has. It has no background of its own: the selection's background
-  marks the current page at the bottom (Deployments or Workspace), so the
+  marks the current page at the bottom (Workspace or Deployments), so the
   sidebar fills one "you are here" row. A screen reader hears it as current,
   and the list's description names it, by the same name as its row.
 - **The yellow dot.** A row has a small yellow dot at its right end when an
@@ -540,7 +540,9 @@ feature (OATS 0.36.0); without it each deployment has its own entry.
   ~/acme", "altair · ~/northwind"). Then each deployment has a tab of
   its own, named by its machine ("altair"; "This Mac · oats-v2" when this Mac
   holds two). A workspace with one deployment shows just that deployment's
-  tab. The tab you chose is remembered per workspace. With two or more
+  tab. The tab you chose is remembered per workspace. The round **i** after
+  the tabs, **What is a deployment?**, explains in plain words what a
+  deployment is (click it, or Enter or Space on it; Esc or Close closes it). With two or more
   deployments, the sidebar's instance list is grouped under one heading per
   machine; with one, it has no headings.
 - **An instance's card.** Clicking an instance on the Deployments page shows

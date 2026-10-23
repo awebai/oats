@@ -20,8 +20,17 @@ export const ICONS = Object.freeze({
   // Setup's "For developers" drawing: the host lists a member, the member names the workspace back.
   arrowRight: "arrow-right", arrowLeft: "arrow-left",
 });
+/** Marks drawn here, not Lucide's, on the same 24-unit grid. `attention`, the needs-input mark (2026-10-23): a full
+ * disc with a rounded bar and a separate dot, the "!" of Lucide's circle-alert made bold enough to read as one at
+ * 12–14px (its 2-unit strokes leave half a pixel between bar and dot there). Colours are shell.css's (.attn-mark). */
+export const OWN_ICONS = Object.freeze({
+  attention: [["circle", [["class", "attn-disc"], ["cx", "12"], ["cy", "12"], ["r", "12"]]],
+    ["rect", [["class", "attn-glyph"], ["x", "10.3"], ["y", "5"], ["width", "3.4"], ["height", "9.4"], ["rx", "1.7"]]],
+    ["circle", [["class", "attn-glyph"], ["cx", "12"], ["cy", "18.4"], ["r", "2"]]]],
+});
 const ATTR = /^[-0-9a-zA-Z .,]*$/;
 function iconNodes(name) {
+  if (Object.hasOwn(OWN_ICONS, name)) return OWN_ICONS[name];
   if (!Object.hasOwn(ICONS, name)) throw new TypeError("Unknown shell icon");
   return LUCIDE_ICONS[ICONS[name]];
 }

@@ -12,7 +12,7 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   (`workspace-discovery.mjs` `workspaceTabs`). Souls and Automations are panels the view owns:
   Automations mounts `automations.mjs` `createAutomationsStage` (Schedules | Triggers) while its
   tab is shown and disposes it on leaving (`syncAutomations`). It was a page of its own until
-  The sidebar layout (2026-10-23): `shell-nav.mjs` NAV is Deployments and Workspace, and its
+  The sidebar layout (2026-10-23): `shell-nav.mjs` NAV is Workspace and Deployments (the foot's order), and its
   NAV_TABS route `stage.automations` (⌘3 / Ctrl+3), the palette's **View: Automations** and
   every `showStage("automations")` / `ctx.openView("automations")` to this page on that tab.
   Souls come from `GET /api/agents` (the kernel's `oats souls` catalog),
@@ -432,10 +432,10 @@ split into sections) is `packages/client/roster-sections.mjs`.
 
 - **The sidebar, top to bottom** (2026-10-23): the Workspaces heading (a `.ctx-head`, as
   the Instances one, with **Add local workspace…** at its end; no logo, no rule) over the list;
-  one 1px `--border` line (`#instance-roster::before`, inset to the rows' 8px gutters); the Instances
-  heading over the roster. The headings are 14px 600 in `--fg`, the roster's machine labels
-  (`.ctx-deployment`) 11px 500 muted capitals under them; at the bottom (`#nav-foot`) the nav, Deployments and
-  Workspace side by side (icons alone in a nav too narrow for both labels: a container query
+  one 1px `--border` line (`#instance-roster::before`, the sidebar's full width); the Instances
+  heading over the roster. The headings are the nav items' 13px at 650 in `--fg`, the roster's machine
+  labels (`.ctx-deployment`) 12px 400 muted capitals under them; at the bottom (`#nav-foot`, compact, its icons 14px) the
+  foot's title (`#nav-title`, "Workspace details"), then the nav, Workspace and Deployments side by side (icons alone in a nav too narrow for both labels: a container query
   hides each label visually, and it stays the button's name), then the tools: sidebar, theme,
   shortcuts and **Spawn instance** (a small icon button). Settings and the palette have no
   button: the palette has **Settings: Connections…**, and its own chord. The roster has no
@@ -510,7 +510,10 @@ split into sections) is `packages/client/roster-sections.mjs`.
   the choice remembered per view); All stacks one section per deployment, a deployment's tab
   shows its tree alone. A non-live deployment's heading has a state chip, its `short` reason
   and **How to fix** (the `fix` steps, else the sentence, and any note); a live deployment's
-  note shows under **Details** with no chip (`deploymentHasWords`).
+  note shows under **Details** with no chip (`deploymentHasWords`). After the tabs, the
+  Workspace page's round "i" (`about-dialog.mjs`, `ABOUT_COPY.deployments`, "What is a
+  deployment?"), built once by `views/hierarchy.mjs`; a workspace change and unmounting close it
+  with no focus move, and opening it revokes an act still in flight (`actionTicket`).
 - **"On <deployment>"** (`deployment-scope-line.mjs`): deployment-level surfaces read the
   view's primary deployment and say which in a line under their heading, only with two or
   more deployments (Workspace header, Automations/Schedules, the soul inspector for a soul,
@@ -1378,7 +1381,7 @@ workspace is observed through its server and never synced from here.
   The toolbar's round "i" (`about-dialog.mjs` `createAboutDialog`) is built
   once by `workspace-discovery.mjs` and kept after the jump across repaints, as
   the search field is. Workspace › Souls has its own "i", built once by
-  `views/spawn.mjs`. Both dialogs are the lifecycle dialog's frame, with focus
+  `views/spawn.mjs` (the Deployments page has a third, above). The dialogs are the lifecycle dialog's frame, with focus
   handling from `forget-dialog.mjs`: they join the overlay handoff, and leaving the
   tab or the workspace closes them with `close({ focus: 'none' })`. All their
   words live in `ABOUT_COPY`.

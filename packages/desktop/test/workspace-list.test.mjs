@@ -1,7 +1,7 @@
 // The workspace list (renderer/workspace-switcher.mjs): always shown at the sidebar's top, one row per workspace
 // this window can show, whatever machine it is on. Its rows and their order (the matched views, then the unattached
 // ones, in one flat list with no heading), a row as one line with the name alone, the current row (marked by style
-// alone), the needs-input dot and its words, picking a row another window shows, an unattached row's deployment
+// alone), the needs-input mark and its words, picking a row another window shows, an unattached row's deployment
 // tab, the leader's moves (`step`), the arrow keys and the roving tab stop, the empty message, the bounded height,
 // a switch on its way and the pick tokens. Nothing is asked of main for the list itself.
 // The Add dialog is workspace-switcher.test.mjs; Open in new window (⌘Enter / Ctrl+Enter, the row's context
@@ -171,7 +171,7 @@ test("the current row: aria-current on that row only, marked by style alone (no 
 /* ── the dot ── */
 const dotOf = (button) => button.querySelector(".ws-waiting");
 
-test("the dot: an instance needs input (waiting true) draws it at the row's far right, says it in the row's name and its tooltip", async (t) => {
+test("the needs-input mark: an instance needs input (waiting true) draws it at the row's far right, says it in the row's name and its tooltip", async (t) => {
   const tipped = view("tipped", { waiting: true });
   const loose = { ...LOOSE, waiting: true };
   const s = setup(t);
@@ -192,7 +192,7 @@ test("the dot: an instance needs input (waiting true) draws it at the row's far 
   assert.equal(WAITING_NAME, ", needs input"); assert.equal(WAITING_TITLE, "An instance here needs input");
 });
 
-test("the dot: false, unknown (null, absent) or anything but true draws none and says nothing", async (t) => {
+test("the needs-input mark: false, unknown (null, absent) or anything but true draws none and says nothing", async (t) => {
   const s = setup(t);
   const choices = [false, null, undefined, "true", 1, {}].map((waiting, i) => view(`w${i}`, { waiting }));
   s.controller.begin()(choices[0], choices); await tick();
@@ -203,7 +203,7 @@ test("the dot: false, unknown (null, absent) or anything but true draws none and
   }
 });
 
-test("the dot never reorders the list", async (t) => {
+test("the needs-input mark never reorders the list", async (t) => {
   const s = setup(t);
   s.controller.begin()(A, [A, B, C]);
   const before = s.rows().map(s.keyOf);
@@ -395,7 +395,7 @@ test("rows cut off below the list's bounded height are said under it, at any scr
   assert.equal(more.hidden, true, "all fit"); assert.equal(more.textContent, "");
 });
 
-test("the line under the list carries the rows' dot when a row cut off below waits on you, as the TUI's +N ●", async (t) => {
+test("the line under the list carries the rows' mark when a row cut off below waits on you, as the TUI's +N ●", async (t) => {
   const s = setup(t);
   const options = s.document.getElementById("ws-options"), more = s.document.querySelector(".ws-more");
   let scrollTop = 0;

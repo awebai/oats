@@ -72,11 +72,17 @@ body {
    one filled "you are here" row; the filled circle holds 3:1 on every fill the row paints (TEXT_PAIRS holds --accent
    at 4.5:1 on --surface, --surface-2 and --sel). */
 .ws-option[aria-current="true"] .ws-option-name { font-weight: 650; }
-/* A workspace with an instance that needs input: the roster's attention dot, a graphic at the row's far right, after
-   the name, which is cut off before it (its words are in the name, sr-only, and the tooltip). */
-.ws-waiting { flex: none; margin-left: auto; box-sizing: border-box; width: 8px; height: 8px; border-radius: 50%; background: var(--attn-dot); border-width: 1px; border-style: solid; border-color: var(--warn); } /* a yellow dot; its ring, the needs-input colour of the roster and the tabs, holds 3:1 on every row fill */
+/* A workspace with an instance that needs input: the needs-input mark (.attn-mark, below) at the row's far right,
+   after the name, which is cut off before it (its words are in the name, sr-only, and the tooltip). */
+.ws-waiting { flex: none; margin-left: auto; }
+/* The needs-input mark (2026-10-23; shell-icons.mjs OWN_ICONS.attention), on the workspace rows and in an instance's
+   Needs input pill: a --warn disc with the "!" cut out in --surface. Both hold 3:1 on every fill they sit on
+   (theme-contrast): the disc on the sidebar, a selected or hovered row and the pill's --attn-bg; the "!" on the disc. */
+.attn-mark { display: block; flex: none; stroke: none; }
+.attn-mark .attn-disc { fill: var(--warn); }
+.attn-mark .attn-glyph { fill: var(--surface); }
 .ws-option-row { min-width: 0; }
-/* Rows cut off below the list's bounded height: said under it, in words (no fade over text), and with the rows' dot,
+/* Rows cut off below the list's bounded height: said under it, in words (no fade over text), and with the rows' mark,
    in their column at the far right, when one of them waits on you. */
 .ws-more { display: flex; align-items: center; gap: 9px; margin: 2px 8px 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .ws-more[hidden] { display: none; }
@@ -86,38 +92,45 @@ body {
    its words for assistive tech and as the tooltip, so the state is never colour alone. */
 .deployment-mark { flex: none; display: inline-flex; color: var(--warn); }
 .deployment-mark > .shell-icon { width: 12px; height: 12px; }
-/* The main views, at the bottom: Deployments and Workspace side by side, each its icon and label. A nav too
+/* The main views, at the bottom: Workspace and Deployments side by side, each its icon and label. A nav too
    narrow for both labels shows the icons alone (the label stays the button's name, visually hidden; the title is
    its tooltip), never a wrapped label. Each button starts from its own label's width, so the longer one (the
    active Deployments, at 650) is not squeezed to half; both fit down to a nav of about 219px with the bundled
-   Linux UI font, and the 264px sidebar's nav is 243px. The cutoff sits above that fit, so a wider system font
+   Linux UI font, and the 264px sidebar's nav is 247px. The cutoff sits above that fit, so a wider system font
    switches to icons before a label is cut. */
 #nav { display: flex; flex: none; flex-direction: row; gap: 4px; container-type: inline-size; container-name: nav; }
-#nav .nav-item { flex: 1 1 auto; min-width: 0; justify-content: center; gap: 6px; padding: 5px 6px; white-space: nowrap; }
+/* The foot's buttons are compact (2026-10-23): the views 26px tall, the tools 24px, 6px around them. */
+#nav .nav-item { flex: 1 1 auto; min-width: 0; min-height: 26px; justify-content: center; gap: 6px; padding: 3px 6px; white-space: nowrap; }
 #nav .nav-item .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @container nav (max-width: 228px) {
   #nav .nav-item .label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden;
                           clip-path: inset(50%); white-space: nowrap; }
 }
-#nav-foot { margin-top: auto; flex: none; display: flex; flex-direction: column; padding: 10px; gap: 8px;
+/* The foot's title (2026-10-23), "Workspace details", over the views, on one line: the headings' 13px, not bold,
+   on their 17px left edge (the foot's 8px + 9px), 4px more before the buttons. Its icons are 14px. */
+.nav-title { margin: 0 0 4px; padding-left: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
+             color: var(--fg); font-size: 13px; font-weight: 400; line-height: 18px; }
+#nav-foot .nav-item .icon { width: 14px; }
+#nav-foot .shell-icon { width: 14px; height: 14px; }
+#nav-foot { margin-top: auto; flex: none; display: flex; flex-direction: column; padding: 6px 8px; gap: 4px;
             border-top: 1px solid var(--border); }
 .shortcut-hint { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                  font: 500 10.5px var(--mono); }
 .shortcut-hint[hidden] { display: none; }
 #sidebar-tools { display: flex; gap: 2px; }
-#sidebar-tools .nav-item { flex: 1; min-width: 0; height: 26px; min-height: 26px; justify-content: center; padding: 0; border-radius: 5px; }
+#sidebar-tools .nav-item { flex: 1; min-width: 0; height: 24px; min-height: 24px; justify-content: center; padding: 0; border-radius: 5px; }
 
 /* ── persistent instance tree (the same shell sidebar, never a second) ── */
 #instance-roster { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-/* The one line between the sections: under the workspace list, over the Instances heading, inset to the rows'
-   8px gutters, in the sidebar edge's own --border (2026-10-23). None under the Workspaces heading. */
-#instance-roster::before { content: ""; flex: none; margin: 0 8px; border-top: 1px solid var(--border); }
+/* The one line between the sections: under the workspace list, over the Instances heading, the sidebar's full
+   width, in the sidebar edge's own --border (2026-10-23). None under the Workspaces heading. */
+#instance-roster::before { content: ""; flex: none; border-top: 1px solid var(--border); }
 /* A window with no workspace has no instances to list (#481, shell.mjs showChooser). */
 #instance-roster[hidden] { display: none; }
-/* The sections' headings (Workspaces, Instances) are the sidebar's top level: 14px 600 in --fg, above the
-   machine labels' 11px 500 muted capitals (2026-10-23). "● 4 running" only, the full breakdown in its title. */
+/* The sections' headings (Workspaces, Instances) are the sidebar's top level: the nav items' 13px, bolder (650) and
+   in --fg, above the machine labels' 12px 400 muted capitals (2026-10-23). "● 4 running" only, the full breakdown in its title. */
 .ctx-head { height: 36px; flex: none; padding: 6px 12px 0 17px; display: flex; align-items: center; gap: 6px;
-            color: var(--fg); font-size: 14px; font-weight: 600; white-space: nowrap; }
+            color: var(--fg); font-size: 13px; font-weight: 650; white-space: nowrap; }
 .ctx-count { margin-left: auto; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11.5px; font-weight: 500;
              white-space: nowrap; }
 .ctx-count-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent); }
@@ -136,17 +149,18 @@ body {
 /* A stale count is the last observation: muted, its dot no longer the live accent. */
 .ctx-count[data-stale] { color: var(--muted); }
 .ctx-count[data-stale] .ctx-count-dot { background: var(--muted); }
-/* Agent groups (Workspace v4): no title, and no gap since 2026-10-23: a cluster's last row meets the next group's
-   first at the rows' own 4px (each row's 2px transparent borders, its fill inside them), and the indent and the
-   cluster's root say where a cluster ends. The separator stays, at no height, to name the group for AT.
+/* Agent groups (Workspace v4): no title, and a 6px gap (2026-10-23; was 14px): a cluster's last row and the next
+   group's first are 10px apart, the rows' own 4px (each row's 2px transparent borders, its fill inside them) plus
+   it. Inside a group every step is those 4px, a parent to its child as one independent row to the next: no rule
+   spaces rows by depth (roster-spacing). The separator names the group for AT.
    The first one sits just under the head (human, 2026-09-29). */
-.ctx-group { height: 0; }
+.ctx-group { height: 6px; }
 .ctx-group:first-child { height: 7px; }
-/* Deployment headings (#482), only in a view of two or more deployments: the machine label in muted 11px
-   500 capitals, a step under the section headings (2026-10-23), a status mark beside it when not live, then
+/* Deployment headings (#482), only in a view of two or more deployments: the machine label in muted 12px
+   400 capitals, a step under the section headings (2026-10-23), a status mark beside it when not live, then
    the deployment's agent groups as before. */
 .ctx-deployment { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 12px 6px 0; color: var(--muted);
-                  font-size: 11px; line-height: 1.3; font-weight: 500; text-transform: uppercase; letter-spacing: .06em; }
+                  font-size: 12px; line-height: 1.3; font-weight: 400; text-transform: uppercase; letter-spacing: .06em; }
 .ctx-deployment:first-child { margin-top: 6px; }
 .ctx-deployment + .ctx-group { height: 4px; }
 .ctx-deployment-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -310,6 +324,9 @@ body {
 .ctx-attn { flex: none; display: inline-flex; align-items: center; gap: 3px; padding: 0 5px; border: 1px solid var(--attn-border);
   border-radius: 999px; background-color: var(--attn-bg); color: var(--warn); font-size: 10.5px; font-weight: 600; line-height: 15px; white-space: nowrap; }
 .ctx-attn > .shell-icon { flex: none; }
+/* The needs-input mark leads the pill at two thirds of its inner 15px (10px), concentric with its rounded end:
+   1px border + 2.5px + the disc's 5px radius is the 17px pill's 8.5px radius (2026-10-23). */
+.ctx-attn:has(> .attn-mark:first-child) { padding-left: 2.5px; }
 /* The mark in place of the meta line's text: the line keeps its place, so the row never reorders or grows (48px). */
 .ctx-meta.ctx-attn-line { display: flex; min-width: 0; }
 .ctx-repo-label { display: block; color: var(--muted); font-family: var(--mono); font-size: 11.5px; font-weight: 400; line-height: normal; }
@@ -657,7 +674,7 @@ body {
    under the list, in the muted ink on the palette's surface, set off by the input's rule. */
 .palette-footer { padding: 6px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11.5px; line-height: 1.4; }
 /* Instances as the sidebar draws them (spec F, #1383): relation groups set apart by the
-   palette's own 14px gap (the sidebar's groups have none; each is a named role=group for AT), and a match's ancestor
+   palette's own 14px gap (the sidebar's is 6px; each is a named role=group for AT), and a match's ancestor
    shown only for its place in the tree is dimmed by colour (the muted token, never
    opacity; its lines are not dimmed) and is not a target. A tree row (.tree: one with
    connectors) takes the sidebar's indent and dot column, a 10px inset plus --depth ×

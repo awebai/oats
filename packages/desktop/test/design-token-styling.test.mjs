@@ -13,14 +13,14 @@ const markup = `<div id="app"><aside id="sidebar">
   <div class="ctx-head ws-head"><span id="ws-heading" class="ws-heading">Workspaces</span>
     <button id="ws-add-open" class="ws-add-open icon-button" type="button" aria-label="Add local workspace…">${icon}</button></div>
   <section id="ws-list" class="ws-list" aria-labelledby="ws-heading"><div id="ws-options" class="ws-options"><ul class="ws-group">
-    <li class="ws-option-row"><button class="ws-option" aria-current="true"><span class="ws-option-name">fixture</span><span class="sr-only">, needs input</span><span class="ws-waiting" aria-hidden="true"></span></button></li>
+    <li class="ws-option-row"><button class="ws-option" aria-current="true"><span class="ws-option-name">fixture</span><span class="sr-only">, needs input</span><span class="ws-waiting attn-mark" aria-hidden="true"></span></button></li>
     <li class="ws-option-row"><button class="ws-option"><span class="ws-option-name">other</span></button></li>
   </ul></div></section>
   <section id="instance-roster"><div class="ctx-head roster-head">Instances</div>
     <div class="ctx-list"><div class="ctx-deployment" role="heading" aria-level="3"><span class="ctx-deployment-label">altair</span><span class="deployment-mark" role="img" aria-label="remembered">${icon}</span></div><div class="ctx-tree-row"><button class="ctx-inst active"><span class="ctx-dot on"></span>
       <span class="ctx-copy"><span class="ctx-name">Fixture instance</span><span class="ctx-repo-label">fixture</span></span>
     </button></div></div></section>
-  <div id="nav-foot"><nav id="nav"><button class="nav-item active"><span class="icon">${icon}</span><span class="label">Deployments</span></button><button class="nav-item"><span class="icon">${icon}</span><span class="label">Workspace</span></button></nav>
+  <div id="nav-foot"><p id="nav-title" class="nav-title">oats</p><nav id="nav"><button class="nav-item active"><span class="icon">${icon}</span><span class="label">Deployments</span></button><button class="nav-item"><span class="icon">${icon}</span><span class="label">Workspace</span></button></nav>
     <div id="sidebar-tools">${["Sidebar", "Theme", "Shortcuts"].map(label => `<button class="nav-item icon-button" aria-label="${label}">${icon}</button>`).join("")}<button id="sidebar-spawn" class="nav-item icon-button" aria-label="Spawn instance">${icon}</button></div>
   </div></aside>
   <main id="main"><button id="show-sidebar" class="main-edge-control" hidden>${icon}</button><div id="tabstrip"><div id="tabbar-row"><div id="tabbar">
@@ -70,8 +70,8 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, two alike section
   for (const prop of ["height", "padding", "display", "alignItems", "gap", "color", "fontSize", "fontWeight"]) {
     assert.equal(wsHead[prop], rosterHead[prop], `the two heads share ${prop}`);
   }
-  // The two headings are the sidebar's top level (2026-10-23): 14px 600 in --fg, on one line, the row's 36px kept.
-  assert.deepEqual([wsHead.height, wsHead.color, wsHead.fontSize, wsHead.fontWeight, wsHead.whiteSpace], ["36px", "var(--fg)", "14px", "600", "nowrap"]);
+  // The two headings are the sidebar's top level (2026-10-23): the nav items' 13px at 650 in --fg, on one line, the row's 36px kept.
+  assert.deepEqual([wsHead.height, wsHead.color, wsHead.fontSize, wsHead.fontWeight, wsHead.whiteSpace], ["36px", "var(--fg)", "13px", "650", "nowrap"]);
   assert.equal(u.style(".ws-head > .ws-add-open").marginLeft, "auto", "Add local workspace… at the head's right end");
   assert.deepEqual([u.style(".ws-add-open").width, u.style(".ws-add-open").height, u.style(".ws-add-open").flexShrink], ["28px", "28px", "0"]);
   assert.equal(u.style(".ws-add-open").display, "grid");
@@ -86,22 +86,22 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, two alike section
   }
   // The list: always shown under the head, about six rows at most, then it scrolls inside itself.
   assert.equal(u.style(".ws-list").flexShrink, "0");
-  // One line between the list and Instances (2026-10-23): the roster's ::before, a 1px --border rule inset to the
-  // rows' 8px gutters; no border of the list's or the roster's own, which would run edge to edge.
+  // One line between the list and Instances (2026-10-23): the roster's ::before, a 1px --border rule across the
+  // sidebar's full width; no border of the list's or the roster's own.
   for (const prop of ["border", "borderBottom", "borderBottomWidth", "borderBottomStyle"]) assert.equal(u.rule(".ws-list")[prop], "", `.ws-list ${prop}`);
   for (const prop of ["border", "borderTop", "borderTopWidth", "borderTopStyle"]) assert.equal(u.rule("#instance-roster")[prop], "", `#instance-roster ${prop}`);
   const line = u.rule("#instance-roster::before");
   // JSDOM drops a var() border's longhands: the shorthand's text is pinned.
-  assert.deepEqual([line.content, line.flexShrink, line.margin, line.getPropertyValue("border-top")], ['""', "0", "0px 8px", "1px solid var(--border)"]);
+  assert.deepEqual([line.content, line.flexShrink, line.margin, line.getPropertyValue("border-top")], ['""', "0", "", "1px solid var(--border)"]);
   assert.equal(u.rule(".ws-list").paddingTop, "0px", "the list starts right under its heading");
   assert.equal(u.style(".ws-options").maxHeight, "276px");
   assert.equal(u.style(".ws-options").overflowY, "auto");
   assert.equal(u.style(".ws-option").alignItems, "center");
   assert.equal(u.style(".ws-option").padding, "6px 8px 6px 10px", "its circle in the column of the roster's top-level dots");
-  // The needs-input dot: the roster's attention token, a 7px graphic that never shrinks.
+  // The needs-input mark (2026-10-23): the drawn "!" badge (its size from the switcher, its colours and 3:1 in
+  // theme-contrast), a block graphic that never shrinks, with no stroke of its own.
   const dot = u.style(".ws-waiting");
-  assert.deepEqual([dot.width, dot.height, dot.boxSizing, dot.borderRadius, dot.flexShrink, dot.background, dot.borderTopWidth, dot.borderTopStyle],
-    ["8px", "8px", "border-box", "50%", "0", "var(--attn-dot)", "1px", "solid"], "a yellow fill in a ring (its --warn colour and 3:1: theme-contrast)");
+  assert.deepEqual([dot.display, dot.flexShrink, u.rule(".attn-mark").getPropertyValue("stroke")], ["block", "0", "none"]);
   // A row is one line (pr3-simplify): the roster's circle, the name, which gives way and ends in an ellipsis, then the
   // dot at the far right; the current row is told by style alone, its circle filled and its name in bold
   // (theme-contrast). The circle sits from the name as an instance's dot does (.ctx-inst's 9px).
@@ -116,35 +116,43 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, two alike section
   // The deployment mark (the roster's headings): the warning shape in --warn at the 12px icon size the filter uses, never the 16px default.
   assert.equal(u.style(".deployment-mark").color, "var(--warn)"); assert.equal(u.style(".deployment-mark").flexShrink, "0");
   assert.equal(u.style(".deployment-mark > .shell-icon").width, "12px");
-  // Deployment headings: muted 11px capitals at 500, a step under the sections' headings (2026-10-23).
+  // Deployment headings: muted 12px capitals at 400, a step under the sections' headings (2026-10-23).
   const heading = u.style(".ctx-deployment");
   assert.deepEqual([heading.color, heading.fontSize, heading.fontWeight, heading.textTransform, heading.letterSpacing],
-    ["var(--muted)", "11px", "500", "uppercase", "0.06em"]);
+    ["var(--muted)", "12px", "400", "uppercase", "0.06em"]);
   assert.equal(u.get("#ws-deployments"), null);
 });
 
 test("nav/footer rhythm stays separate from the 48px roster rows", t => {
   const u = fixture(t);
-  // The nav is at the bottom, in the footer (2026-10-23): Deployments and Workspace side by side, each from its
+  // The nav is at the bottom, in the footer (2026-10-23): Workspace and Deployments side by side, each from its
   // own label's width (the longer one is not squeezed to half), each label on one line.
   assert.deepEqual([u.style("#nav").display, u.style("#nav").flexDirection, u.style("#nav").flexShrink, u.style("#nav").gap], ["flex", "row", "0", "4px"]);
   const item = u.style("#nav .nav-item");
   // Read the shipped declaration, as JSDOM's CSSOM may drop or rewrite the shorthand.
   assert.match(shell.match(/^#nav \.nav-item \{([^}]*)\}/m)?.[1] ?? "", /(?:^|;)\s*flex:\s*1 1 auto\s*;/, "each from its label's width, sharing the rest, and may shrink");
   assert.equal(item.minWidth, "0px");
-  assert.deepEqual([item.justifyContent, item.gap, item.padding, item.whiteSpace], ["center", "6px", "5px 6px", "nowrap"]);
-  assert.equal(item.minHeight, "30px");
+  assert.deepEqual([item.justifyContent, item.gap, item.padding, item.whiteSpace], ["center", "6px", "3px 6px", "nowrap"]);
+  assert.equal(item.minHeight, "26px", "compact (2026-10-23; was 30px)");
   const label = u.style("#nav .nav-item .label");
   assert.deepEqual([label.minWidth, label.overflow, label.textOverflow], ["0px", "hidden", "ellipsis"], "a label gives way, never wraps");
-  assert.equal(u.style("#nav-foot").padding, "10px");
-  assert.equal(u.style("#nav-foot").gap, "8px");
+  assert.equal(u.style("#nav-foot").padding, "6px 8px", "6px around the foot's buttons (2026-10-23; was 10px)");
+  assert.equal(u.style("#nav-foot").gap, "4px");
+  // The foot's title (2026-10-23): first in the foot, over the views, on one line at the headings' size and left
+  // edge (17px: the foot's 8px + its 9px), not bold, 4px more before the buttons; its icons are 14px.
+  const title = u.doc.getElementById("nav-title"), navTitle = u.style("#nav-title");
+  assert.equal(title.nextElementSibling, u.doc.getElementById("nav"));
+  assert.deepEqual([navTitle.textAlign, navTitle.whiteSpace, navTitle.textOverflow, navTitle.overflow, navTitle.fontSize, navTitle.fontWeight, navTitle.paddingLeft, navTitle.marginBottom],
+    ["left", "nowrap", "ellipsis", "hidden", u.style(".ctx-head").fontSize, "400", "9px", "4px"]);
+  assert.equal(parseFloat(u.style("#nav-foot").paddingLeft) + parseFloat(navTitle.paddingLeft), parseFloat(u.style(".ctx-head").paddingLeft), "on the headings' left edge");
+  assert.deepEqual([u.rule("#nav-foot .shell-icon").width, u.rule("#nav-foot .shell-icon").height, u.rule("#nav-foot .nav-item .icon").width], ["14px", "14px", "14px"]);
   assert.equal(u.rule("#nav-foot").borderTop, "1px solid var(--border)", "the footer keeps its one rule above it");
   assert.equal(u.style("#sidebar-tools").gap, "2px");
   // The tools: sidebar, theme, shortcuts, then Spawn instance, all the same small icon button.
   assert.equal(u.doc.querySelectorAll("#sidebar-tools .nav-item").length, 4);
   for (const button of u.doc.querySelectorAll("#sidebar-tools .nav-item")) {
     const style = u.doc.defaultView.getComputedStyle(button);
-    assert.deepEqual([style.height, style.minHeight, style.flexGrow, style.padding, style.justifyContent], ["26px", "26px", "1", "0px", "center"], button.getAttribute("aria-label"));
+    assert.deepEqual([style.height, style.minHeight, style.flexGrow, style.padding, style.justifyContent], ["24px", "24px", "1", "0px", "center"], button.getAttribute("aria-label"));
   }
   assert.equal(shell.match(/#sidebar-spawn\b/), null, "Spawn instance has no styling of its own: it is one of the tools");
   assert.equal(u.style(".ctx-tree-row").minHeight, "48px");

@@ -751,15 +751,15 @@ for (const [name] of palettes) test(`${name}: automation summaries, argv, run st
 // test below reads them). The machine labels step under them: smaller, lighter, muted. The line between the sections
 // is decorative, like the sidebar's own right edge, and in that edge's token: no minimum applies, and it shows in every
 // built-in theme at the edge's own ratio.
-for (const [name, palette] of palettes) test(`${name}: the sections' headings over the machine labels; one --border line between the sections, as visible as the sidebar's edge`, () => {
+for (const [name, palette] of palettes) test(`${name}: the sections' headings (the nav's 13px, bolder) over the machine labels; one full-width --border line between the sections, as visible as the sidebar's edge`, () => {
   const shellCss = readFileSync(new URL("shell.css", renderer), "utf8");
   const rule = selector => shellCss.match(new RegExp(`^${selector.replace(/[.#()]/g, m => `\\${m}`)} \\{([^}]*)\\}`, "m"))?.[1] ?? "";
   const head = rule(".ctx-head"), label = rule(".ctx-deployment");
-  assert.match(head, /color: var\(--fg\);/); assert.match(head, /font-size: 14px;/); assert.match(head, /font-weight: 600;/);
+  assert.match(head, /color: var\(--fg\);/); assert.match(head, /font-size: 13px;/); assert.match(head, /font-weight: 650;/);
   assert.match(head, /height: 36px;/, "the heading row keeps its height"); assert.match(head, /white-space: nowrap;/, "never wraps");
-  assert.match(label, /color: var\(--muted\);/); assert.match(label, /font-size: 11px;/); assert.match(label, /font-weight: 500;/);
+  assert.match(label, /color: var\(--muted\);/); assert.match(label, /font-size: 12px;/); assert.match(label, /font-weight: 400;/);
   assert.match(label, /text-transform: uppercase;/);
-  assert.match(rule("#instance-roster::before"), /^ content: ""; flex: none; margin: 0 8px; border-top: 1px solid var\(--border\); $/);
+  assert.match(rule("#instance-roster::before"), /^ content: ""; flex: none; border-top: 1px solid var\(--border\); $/);
   assert.match(rule("#sidebar"), /border-right: 1px solid var\(--border\);/, "the sidebar's edge, the line's token");
   assert.doesNotMatch(shellCss, /\.ws-head[^{]*\{[^}]*border|\.ws-list[^{]*\{[^}]*border|#ws-list[^{]*\{[^}]*border/, "nothing under the Workspaces heading or along the list");
   const ratio = contrast(opaqueChannels(palette.get("border")), opaqueChannels(palette.get("surface")));
@@ -1094,6 +1094,8 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     ['#ws-add-open', '#sidebar', 'muted', 'surface'],
     // The sections' headings, the sidebar's top level (14px 600): --fg on the sidebar.
     ['.ctx-head.ws-head', '#sidebar', 'fg', 'surface'], ['#instance-roster > .ctx-head', '#sidebar', 'fg', 'surface'],
+    // The foot's title over the views (2026-10-23): the workspace's name.
+    ['#nav-title', '#sidebar', 'fg', 'surface'],
     ['.app-toast-open', '.app-toast-open', 'primary-fg', 'primary-bg'],
     ['.ctx-pr[data-pr-state=open]', '.ctx-pr[data-pr-state=open]', 'fg', 'tag-bg'],
     ['.ctx-pr[data-pr-state=merged]', '.ctx-pr[data-pr-state=merged]', 'fg', 'tag-bg'],
@@ -1121,14 +1123,17 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     assert.equal(mark.getAttribute('aria-hidden'), 'true');
     for (let parent = mark; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
-  // The needs-input dot is a non-text mark: a yellow fill (--attn-dot) in a --warn ring, hidden from assistive tech, its words in the row's
-  // name and tooltip; painted as it is, with no opacity on it or under it. It sits after the name, on the row's one line.
-  const dot = doc.querySelector('.ws-option[data-workspace-id="/other"] .ws-waiting'); assert.ok(dot, 'the waiting row carries the dot');
+  // The needs-input mark is a non-text mark (2026-10-23): the --warn disc with its "!" (shell-icons OWN_ICONS.attention),
+  // hidden from assistive tech, its words in the row's name and tooltip; painted as it is, with no opacity on it or
+  // under it. It sits after the name, on the row's one line.
+  const dot = doc.querySelector('.ws-option[data-workspace-id="/other"] .ws-waiting'); assert.ok(dot, 'the waiting row carries the mark');
   assert.equal(doc.querySelectorAll('.ws-waiting').length, 1, 'only the waiting row');
   assert.equal(dot.parentElement, dot.closest('.ws-option'));
-  assert.deepEqual([...dot.parentElement.children].map(c => c.className), ['ctx-dot off', 'ws-option-name', 'sr-only', 'ws-waiting'], 'the circle, the name, its words, then the dot');
-  assert.equal(dom.window.getComputedStyle(dot).background, 'var(--attn-dot)');
-  assert.deepEqual([dom.window.getComputedStyle(dot).borderTopWidth, dom.window.getComputedStyle(dot).borderTopStyle], ['1px', 'solid'], 'its ring (its colour is pinned below)');
+  assert.deepEqual([...dot.parentElement.children].map(c => c.getAttribute('class')), ['ctx-dot off', 'ws-option-name', 'sr-only', 'ws-waiting attn-mark'], 'the circle, the name, its words, then the mark');
+  assert.equal(dot.localName, 'svg');
+  assert.deepEqual([...dot.children].map(c => c.getAttribute('class')), ['attn-disc', 'attn-glyph', 'attn-glyph'], 'the disc, then the "!" bar and dot');
+  assert.equal(dom.window.getComputedStyle(dot.querySelector('.attn-disc')).fill, 'var(--warn)');
+  assert.equal(dom.window.getComputedStyle(dot.querySelector('.attn-glyph')).fill, 'var(--surface)');
   assert.equal(dot.getAttribute('aria-hidden'), 'true'); assert.equal(dot.textContent, '');
   assert.match(dot.closest('.ws-option').textContent, /, needs input/); assert.match(dot.closest('.ws-option').title, /An instance here needs input/);
   for (let parent = dot; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
@@ -1141,9 +1146,19 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
 // current workspace's --accent fill, the one visible sign beside its bold name, and the others' --faint ring. Its fill is the yellow --attn-dot,
 // below 3:1 on these in White and Solarized, so its 1px ring carries the contrast: --warn, the needs-input colour of
 // the roster's pill and the tab's glyph.
-for (const [name, palette] of palettes) test(`${name}: the workspace list's needs-input dot and its rows' circles meet 3:1 on every row fill`, () => {
+for (const [name, palette] of palettes) test(`${name}: the needs-input mark and the workspace rows' circles meet 3:1 on every fill they sit on`, () => {
   const shellCss = readFileSync(new URL('shell.css', renderer), 'utf8');
-  assert.match(shellCss, /\.ws-waiting \{[^}]*background: var\(--attn-dot\); border-width: 1px; border-style: solid; border-color: var\(--warn\);/);
+  // The needs-input mark (2026-10-23): a --warn disc with the "!" cut out in --surface, on the workspace rows and in an
+  // instance's Needs input pill (--attn-bg).
+  assert.match(shellCss, /^\.attn-mark \.attn-disc \{ fill: var\(--warn\); \}/m);
+  assert.match(shellCss, /^\.attn-mark \.attn-glyph \{ fill: var\(--surface\); \}/m);
+  assert.match(shellCss, /^\.attn-mark \{[^}]*stroke: none;/m, 'no inherited stroke blurs the "!"');
+  for (const bg of ['surface', 'surface-2', 'sel', 'attn-bg']) {
+    const ratio = contrast(opaqueChannels(palette.get('warn')), backgroundChannels(bg, palette));
+    assert.ok(ratio >= GRAPHIC_CONTRAST, `${name} the disc on --${bg}: ${ratio.toFixed(2)}:1 < 3:1`);
+  }
+  const glyph = contrast(opaqueChannels(palette.get('surface')), opaqueChannels(palette.get('warn')));
+  assert.ok(glyph >= GRAPHIC_CONTRAST, `${name} the "!" on the disc: ${glyph.toFixed(2)}:1 < 3:1`);
   // A row's fills: none at rest or current (the sidebar's --surface shows), --surface-2 hovered, --sel focused.
   assert.match(shellCss, /\.ws-option \{[^}]*background: transparent;/);
   // The circle's 2px ring of the row's own fill follows it (--row-solid, as on the roster's rows).
@@ -1154,8 +1169,8 @@ for (const [name, palette] of palettes) test(`${name}: the workspace list's need
   // The circles are the roster's own rule: the filled --accent, and the --faint ring.
   assert.match(shellCss, /^\.ctx-dot \{[^}]*border: 1\.5px solid var\(--faint\);/m);
   assert.match(shellCss, /^\.ctx-dot\.on \{ border-color: var\(--accent\); background: var\(--accent\); \}/m);
-  // The dot's ring, the current workspace's filled circle and the others' ring.
-  for (const mark of ['warn', 'accent', 'faint']) for (const bg of ['surface', 'surface-2', 'sel']) {
+  // The current workspace's filled circle and the others' ring.
+  for (const mark of ['accent', 'faint']) for (const bg of ['surface', 'surface-2', 'sel']) {
     const ratio = contrast(opaqueChannels(palette.get(mark)), backgroundChannels(bg, palette));
     assert.ok(ratio >= GRAPHIC_CONTRAST, `${name} --${mark} on --${bg}: ${ratio.toFixed(2)}:1 < 3:1`);
   }

@@ -169,9 +169,9 @@ test("the Workspaces head is a plain section heading with Add local workspace…
 
 test("only current destinations render, dispatch unchanged stage ids, and project aria-current", t => {
   const s = shell(t), buttons = [...s.document.querySelectorAll("#nav button")];
-  // Deployments and Workspace only: Automations is the Workspace page's tab (NAV_TABS), not a nav item.
-  assert.deepEqual(buttons.map(b => b.textContent), ["Deployments", "Workspace"]);
-  assert.deepEqual(buttons.map(b => b.dataset.action), ["stage.hierarchy", "stage.spawn"]);
+  // Workspace and Deployments only: Automations is the Workspace page's tab (NAV_TABS), not a nav item.
+  assert.deepEqual(buttons.map(b => b.textContent), ["Workspace", "Deployments"], "Workspace first (2026-10-23)");
+  assert.deepEqual(buttons.map(b => b.dataset.action), ["stage.spawn", "stage.hierarchy"]);
   assert.equal(s.document.querySelector('#nav [data-view="automations"]'), null);
   assert.deepEqual(NAV_TABS.map(({ name, page, tab }) => ({ name, page, tab })), [{ name: "automations", page: "spawn", tab: "automations" }]);
   for (const button of buttons) {
@@ -198,7 +198,7 @@ test("the nav sits in the footer above the tools: two items side by side whose l
   // The sidebar layout (2026-10-23): the nav took the old wide Spawn instance button's place.
   assert.equal(nav.parentElement, foot);
   assert.equal(nav.tagName, "NAV"); assert.equal(nav.getAttribute("aria-label"), "Main views");
-  assert.deepEqual([...foot.children].map(el => el.id), ["nav", "sidebar-tools"]);
+  assert.deepEqual([...foot.children].map(el => el.id), ["nav-title", "nav", "sidebar-tools"], "the title over the views (2026-10-23), then the tools");
   assert.equal(win.getComputedStyle(nav).display, "flex");
   assert.equal(win.getComputedStyle(nav).flexDirection, "row", "Deployments and Workspace side by side");
   for (const button of nav.querySelectorAll(".nav-item")) {

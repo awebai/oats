@@ -9,9 +9,10 @@
  * shell's permanent sidebar roster (below the rail), not a rail destination
  * (scope correction of PR #29 — the human rejected the extra tab/sidebar). */
 export const NAV = [
+  // In the sidebar's foot's order, Workspace first (2026-10-23); ⌘1 / Ctrl+1 stays Deployments (bound by id).
+  { name: "spawn", label: "Workspace", icon: "workspace", title: "Workspace" },
   // #482 (UI spec): the Active overview became Deployments: the overview trees, split by deployment, one tab each.
   { name: "hierarchy", label: "Deployments", icon: "layers", title: "Deployments" },
-  { name: "spawn", label: "Workspace", icon: "workspace", title: "Workspace" },
 ];
 
 /** Destinations that are a tab of a NAV page, not a page of their own (2026-10-23): Automations

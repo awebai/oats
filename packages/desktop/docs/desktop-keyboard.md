@@ -887,8 +887,8 @@ F6 moves focus to the next region, Shift+F6 to the previous one, in this order:
    terminal is the active tab), else the first row; with no rows, a control it
    shows (Retry), if any. It has no filter: the command palette finds an
    instance by name.
-3. **Sidebar footer**: the current view's nav button (Deployments or
-   Workspace, `aria-current`), else the first; the tools after them (sidebar,
+3. **Sidebar footer**: the current view's nav button (Workspace or
+   Deployments, `aria-current`), else the first; the tools after them (sidebar,
    theme, shortcuts, Spawn instance) are reached with Tab from there.
 4. **Main**: with tabs open, the active tab's content (a terminal's input,
    through the same selection intent as any explicit terminal focus), else a
@@ -1104,7 +1104,7 @@ the rig). "Fixed" marks a gap this change closed.
 | A row's context menu (`role="menu"`, one item: **Open in new window**) | Shift+F10 or the Menu key on a row, or a right-click; focus on its item | Enter/Space open the workspace in its own window (or bring that window to the front), back on the row; Esc or Tab close it, back on the row |
 | Add local workspace… (the **+** at the end of the sidebar's Workspaces heading) | Tab (first stop of the sidebar) | Enter/Space open the Add / onboard dialog |
 | Add / onboard workspace dialog | From the header's Add, or the chooser's button; opened by itself in a window with no workspace when the Desktop serves none | Each found deployment is a button, then each row of this computer's list that can't be opened (`aria-disabled`, its state in words); one Tab stop among them, Up/Down/Home/End move: Enter/Space on a found one adds it and opens it here; Right Arrow on a row that can't be opened reaches its **Remove**, Left Arrow or Esc go back; Esc elsewhere closes; trapped; returns to what opened it, or to the list after an add |
-| Sidebar nav, at the bottom (Deployments, Workspace; side by side, icons alone when the sidebar is too narrow for their labels) | F6 (current item); Tab; ⌘1/⌘2 (⌘3: Workspace on its Automations tab) | Enter/Space |
+| Sidebar nav, at the bottom (Workspace, Deployments; side by side, icons alone when the sidebar is too narrow for their labels) | F6 (current item); Tab; ⌘1/⌘2 (⌘3: Workspace on its Automations tab) | Enter/Space |
 | Roster rows | One roving stop, the selected row, else the first; F6; ⌘F / Alt+F (`sidebar.focusFilter`) and the sidebar's `/` land on it; the leader then Esc; Up/Down/Home/End (and the TUI's `k` `j` `g` `G`), PageUp/PageDown by the rows that fit; Right (`l`) expands, Left (`h`) collapses or goes to the parent; the sidebar keys (see "Sidebar keys"). A collapse never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is. The list shows no scrollbar (the wheel and the touchpad scroll it): a row that takes keyboard focus (these keys, ⌘F / Alt+F, F6) is revealed whole, its tools included, by scrolling the list alone, never an ancestor | Enter/Space open the terminal (running) or Start (stopped); an arrow chord the keymap binds is the keymap's, so Alt+Shift+↑/↓ (⌥⌘↑/↓) open the terminal of the row above / below, as from anywhere |
 | Rows whose state is unknown or that the kernel does not report addressable | **Focusable, `aria-disabled` with the reason as a description (fixed: were `disabled`, which hid their tools from the keyboard)** | Activation does nothing; their tools work |
 | Row tools: PR link, Start…, actions menu | Tab from the focused row (shown on focus) | Enter/Space; the menu: arrows, Home/End, Esc back on its trigger, Tab closes |
@@ -1119,6 +1119,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Empty split group | Tab; F6 (main) | Focus selects the group |
 | Deployments: Retry (no Spawn button: `S` on the canvas, the sidebar, ⌘N, Quick Open and the soul cards spawn) | First stops of the stage; F6 (main) | Enter; `S` on the canvas |
 | Deployments tabs (All, then one per deployment) | Tab (the selected tab) | ←/→ move and select; Home/End; the choice is remembered per workspace |
+| Deployments: **What is a deployment?** (the round "i" after the tabs) and its dialog | Tab | As About capabilities below; a workspace change or leaving the page closes it |
 | Overview canvas | Tab | Arrows walk the tree; **Up/Down move between rows when there is no parent/child, so every Independent node is reachable (fixed)**; `[` `]` hop groups; Enter and `T` go to the instance (Start… when stopped); `S` Workspace; `O` the node popup; Esc clears; **the selected node is panned into view (fixed)** |
 | Overview zoom − + fit | Tab after the canvas; **`-` `=` `0` on the canvas (fixed: `0`)**; `F` also fits | Enter |
 | Overview node popup | Tab after the zoom buttons; `O` | Native buttons; Esc back to the canvas |

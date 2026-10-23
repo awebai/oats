@@ -22,12 +22,12 @@ import { workspaceTabs } from "../renderer/workspace-discovery.mjs";
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 const shellSource = () => readFileSync(join(PKG, "renderer", "shell.mjs"), "utf8");
 
-// The sidebar layout (2026-10-23): the footer's nav is two buttons side by side, Deployments and
-// Workspace; Automations (Schedules | Triggers) became the Workspace page's Automations tab.
-test("NAV is exactly Deployments and Workspace, and keeps the instance roster in the sidebar", () => {
-  assert.deepEqual(NAV.map((v) => v.name), ["hierarchy", "spawn"],
+// The sidebar layout (2026-10-23): the footer's nav is two buttons side by side, Workspace then Deployments (the
+// product owner's order); Automations (Schedules | Triggers) became the Workspace page's Automations tab.
+test("NAV is exactly Workspace and Deployments, in that order, and keeps the instance roster in the sidebar", () => {
+  assert.deepEqual(NAV.map((v) => v.name), ["spawn", "hierarchy"],
     "page destinations are Deployments (formerly Active overview) and Workspace; Automations is a tab of Workspace");
-  assert.deepEqual(NAV.map((v) => v.label), ["Deployments", "Workspace"],
+  assert.deepEqual(NAV.map((v) => v.label), ["Workspace", "Deployments"],
     "Knowledge/Tasks remain deferred; Workspace keeps the internal spawn route");
   for (const v of NAV) {
     assert.ok(v.label && v.icon && v.title, `${v.name} entry carries full rail chrome`);
@@ -123,7 +123,7 @@ test("a nav button runs its stage action once; each footer tool runs its own; th
   assert.ok(document.getElementById("nav-foot").contains(nav), "the nav sits in the sidebar's footer");
   const buttons = [...nav.querySelectorAll("button")];
   assert.deepEqual(buttons.map((b) => [b.dataset.view, b.dataset.action, b.querySelector(".label").textContent, b.title]),
-    [["hierarchy", "stage.hierarchy", "Deployments", "Deployments"], ["spawn", "stage.spawn", "Workspace", "Workspace"]]);
+    [["spawn", "stage.spawn", "Workspace", "Workspace"], ["hierarchy", "stage.hierarchy", "Deployments", "Deployments"]]);
   for (const b of buttons) {
     ran.length = 0; b.click();
     assert.deepEqual(ran, [b.dataset.action], `${b.dataset.view}: one run per click`);

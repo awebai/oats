@@ -12,7 +12,7 @@ import { isLocalPath, workspaceChoiceRows } from "../../client/workspace-choices
    and the workspace's name: no machine, no state. The current row is `aria-current` and marked by style alone (its
    circle filled, its name bold); picking a row (a
    click, Enter or a move) shows it in this window, taking it over from another window that shows it (#481 as
-   changed: never focus the other window). A row with an instance that needs input carries a dot at its far right
+   changed: never focus the other window). A row with an instance that needs input carries the needs-input mark (.attn-mark) at its far right
    (and the words, for assistive tech and in its tooltip), from the served views' roll-up alone.
 
    A list of buttons, not a listbox (the sidebar's plain keys stay live on it): one tab stop (the current row,
@@ -26,7 +26,7 @@ import { isLocalPath, workspaceChoiceRows } from "../../client/workspace-choices
 
 /** Below the list while rows are cut off below its bounded height (a sighted cue: every row is in the list). */
 export const moreBelowText = (count) => `${count} more below`;
-/** A workspace with an instance that needs input: the dot's words, in the row's name and as its tooltip. */
+/** A workspace with an instance that needs input: the mark's words, in the row's name and as its tooltip. */
 export const WAITING_NAME = ", needs input";
 export const WAITING_TITLE = "An instance here needs input";
 /** The row's context-menu item (#481). */
@@ -195,12 +195,11 @@ export function createWorkspaceSwitcher({
       mark.setAttribute("aria-hidden", "true");
       const name = document.createElement("span"); name.className = "ws-option-name"; name.textContent = label;
       button.append(mark, name);
-      // The dot (the view's `waiting === true`): at the row's far right, and in the row's name and tooltip. Unknown is none.
+      // The mark (the view's `waiting === true`): at the row's far right, and in the row's name and tooltip. Unknown is none.
       let tooltip = label;
       if (workspace.waiting === true) {
         const words = document.createElement("span"); words.className = "sr-only"; words.textContent = WAITING_NAME;
-        const dot = document.createElement("span"); dot.className = "ws-waiting"; dot.setAttribute("aria-hidden", "true");
-        button.append(words, dot);
+        button.append(words, iconElement(document, "attention", { size: 14, className: "ws-waiting attn-mark" }));
         tooltip = `${tooltip}\n${WAITING_TITLE}`;
       }
       // The whole name, for a name cut off: never a path or a machine.
@@ -240,10 +239,9 @@ export function createWorkspaceSwitcher({
     const below = menuItems().filter((button) => button.getBoundingClientRect().bottom > bottom + 0.5);
     more.hidden = !below.length;
     more.replaceChildren(below.length ? moreBelowText(below.length) : "");
-    // A row cut off below waits on you: the line carries the rows' dot, as the TUI's "+N ●" (the rows keep their words).
+    // A row cut off below waits on you: the line carries the rows' mark, as the TUI's "+N ●" (the rows keep their words).
     if (below.some((button) => button.querySelector(".ws-waiting"))) {
-      const dot = document.createElement("span"); dot.className = "ws-waiting"; dot.setAttribute("aria-hidden", "true");
-      more.append(dot);
+      more.append(iconElement(document, "attention", { size: 14, className: "ws-waiting attn-mark" }));
     }
   };
 

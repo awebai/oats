@@ -113,10 +113,29 @@ test("roster spacing (non-layout): a selected or hovered row keeps its 4px gap (
   }
 });
 
+// The product owner (2026-10-23): a parent and its child are as far apart as two independent instances. Every row
+// is the one .ctx-tree-row box (min-height 48px, 2px transparent borders); depth only indents it. No other rule may
+// space a row, its button or its children by depth, relation or state.
+test("a parent and its child are spaced as two independent rows: no rule spaces rows by depth", t => {
+  const u = fixture(t);
+  const base = u.rule(".ctx-tree-row");
+  assert.equal(base.minHeight, "48px");
+  assert.equal(base.borderTop, "var(--row-gap) solid transparent"); assert.equal(base.borderBottom, "var(--row-gap) solid transparent");
+  assert.equal(base.paddingLeft, "calc(var(--depth) * var(--tree-step))", "depth indents, nothing else");
+  const SPACING = ["margin", "margin-top", "margin-bottom", "padding-top", "padding-bottom", "border-top", "border-bottom",
+    "border-top-width", "border-bottom-width", "border-width", "min-height", "height", "--row-gap"];
+  for (const rule of u.rules.filter(r => /\.ctx-(?:tree-row|inst)\b/.test(r.selectorText || ""))) {
+    if (rule.selectorText === ".ctx-tree-row" || rule.selectorText === ".ctx-inst") continue;
+    // A row's own descendants (its name, meta line, tools) are inside the 48px box: only the row boxes themselves count.
+    if (!/\.ctx-(?:tree-row|inst)(?:[.:\[][^ >+~]*)?$/.test(rule.selectorText.split(",").at(-1).trim())) continue;
+    for (const prop of SPACING) assert.equal(rule.style.getPropertyValue(prop), "", `${rule.selectorText} sets ${prop}`);
+  }
+});
+
 test("roster typography (non-layout): valid control family and supplied sidebar label scale", t => {
   const u = fixture(t);
   assert.deepEqual(u.rules.filter(r => /\.ctx-filter/.test(r.selectorText || "")).map(r => r.selectorText), [], "no roster filter rule ships");
-  assert.equal(u.rule(".ctx-group").height, "0px", "no gap between groups (2026-10-23): rows meet at their own 4px");
+  assert.equal(u.rule(".ctx-group").height, "6px", "a 6px gap after a group (2026-10-23; was 14px)");
   assert.equal(u.rule(".ctx-group:first-child").height, "7px", "the first row sits closer to the head (human, 2026-09-29)");
   assert.equal(u.rule(".ctx-inst").getPropertyValue("font"), "inherit");
   assert.equal(u.rule(".ctx-name").fontSize, "12.5px");
