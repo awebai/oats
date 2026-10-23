@@ -1427,7 +1427,6 @@ back to the programs in the Ctrl+Alt and Ctrl+Shift families.
 | Claude Code | `Alt+O` | fast mode on or off | as `Alt+P` |
 | Claude Code | `Alt+F` | forward a word | as `Alt+P` |
 | Claude Code | `Alt+Up`, `Alt+Down` | in the `/diff` panel, the file list; in the agents view (`claude agents`), the group before or after | in the `/diff` panel `Ctrl+Up`, `Ctrl+Down`; in the agents view unknown |
-| Codex | `Alt+R` | raw output on or off | unknown; switch to Ctrl+Alt |
 | Codex | `Alt+F` | a word right | `Ctrl+Right`, its other key for it |
 | Codex | `Alt+Left`, `Alt+Right` | the agent thread before or after, while the composer is empty; else a word left or right | the word moves: `Ctrl+Left`, `Ctrl+Right`; the threads: unknown, switch to Ctrl+Alt |
 | Codex | `Alt+Up` | edit the queued message | `Shift+Left` |
@@ -1436,27 +1435,30 @@ back to the programs in the Ctrl+Alt and Ctrl+Shift families.
 | pi | `Alt+Left`, `Alt+Right` | a word left or right; in the session tree, fold or unfold | `Esc`, then `b` or `f`, which pi reads as `Alt+Left` and `Alt+Right` |
 | pi | `Alt+Up` | restore the queued messages to the editor; in the model selector, move a model up | `Esc`, then `p`, which pi reads as `Alt+Up` |
 | pi | `Alt+Down` | in the model selector, move a model down | `Esc`, then `n`, which pi reads as `Alt+Down` |
-| bash (readline) | `Alt+P`, `Alt+F`, `Alt+R` | search history back; forward a word; revert the line | `Esc`, then `p`, `f` or `r` |
+| bash (readline) | `Alt+P`, `Alt+F` | search history back; forward a word | `Esc`, then `p` or `f` |
 | bash (readline) | `Alt+1` to `Alt+9` | a numeric argument | `Esc`, then the digit |
 | bash (readline) | `Alt+Left`, `Alt+Right` | a word back or forward | `Esc`, then `b` or `f` |
 | zsh (emacs keymap) | `Alt+P`, `Alt+Z`, `Alt+W`, `Alt+F` | history search back; run the last named command; copy the region; forward a word | `Esc`, then the letter |
 | zsh (emacs keymap) | `Alt+1` to `Alt+9` | a numeric argument | `Esc`, then the digit |
-| irssi | `Alt+1` to `Alt+9`; `Alt+W`, `E`, `R`, `O` | go to window 1 to 9; to window 12, 13, 14, 19 | `Esc`, then the key |
+| irssi | `Alt+1` to `Alt+9`; `Alt+W`, `E`, `O` | go to window 1 to 9; to window 12, 13, 19 | `Esc`, then the key |
 | irssi | `Alt+K`, `P`, `F` | erase completion; page back; forward a word | `Esc`, then the key |
 | irssi | `Alt+Left`, `Alt+Right`; `Alt+Up`, `Alt+Down` | the window before or after in the split; the split window above or below | its `/window` commands; for `Alt+Left`, `Alt+Right`, switch to Ctrl+Alt |
 | WeeChat | `Alt+1` to `Alt+9` | go to buffer 1 to 9 | unknown; switch to Ctrl+Alt |
-| WeeChat | `Alt+K`, `R`, `F`, `P`, `Z`, `W` | grab a key; delete the line; next word; previous highlight; zoom; `Alt+W` starts the window keys | unknown; switch to Ctrl+Alt |
+| WeeChat | `Alt+K`, `F`, `P`, `Z`, `W` | grab a key; next word; previous highlight; zoom; `Alt+W` starts the window keys | unknown; switch to Ctrl+Alt |
 | WeeChat | `Alt+Left`, `Alt+Up`; `Alt+Right`, `Alt+Down` | the buffer before; after | `F5`, `F6` |
 | tmux | nothing without the prefix (the root table binds only the mouse) | after the prefix: `Alt+1` to `Alt+7` the preset layouts, `Alt+O`, `P`, `N` rotate the panes and go to a window with an alert, the Alt arrows resize the pane | its commands (`select-layout`, `resize-pane`), or switch to Ctrl+Alt: `Esc`, then the key is read as Alt only within `escape-time` (below), so not by hand |
-| Emacs (`emacs -nw`) | `Alt+K`, `E`, `Shift+E`, `Z`, `W`, `F`, `R` | kill-sentence, forward-sentence (with Shift too), zap-to-char, kill-ring-save, forward-word, move-to-window-line | `Esc`, then the letter |
+| Emacs (`emacs -nw`) | `Alt+K`, `E`, `Shift+E`, `Z`, `W`, `F` | kill-sentence, forward-sentence (with Shift too), zap-to-char, kill-ring-save, forward-word | `Esc`, then the letter |
 | Emacs | `Alt+1` to `Alt+9` | a numeric argument | `Esc`, then the digit |
 | Emacs | `Alt+Left`, `Alt+Right` | a word left or right | `Esc`, then `b` or `f` |
 
 Not taken from these programs, by their docs: `Alt+K`, `Z`, `W`, `E` and `R`
 in Claude Code; the Alt+Shift arrows everywhere above but in WeeChat's
-cursor mode; `Alt+O` in Emacs since 28; and `Alt+A` from every one of them,
+cursor mode; `Alt+O` in Emacs since 28; `Alt+A` from every one of them,
 since the Alt family leaves it alone (the next group is `Alt+Shift+Right`
-there). On macOS nothing here applies: `oats tui` binds no chord there.
+there); and `Alt+R` from every one of them in `oats tui`, which binds no
+key for the Desktop's `edit-instance` ([Chords](#chords)): Codex's raw
+output, readline's revert-line, WeeChat's delete-line and Emacs's
+move-to-window-line keep it here, though the Desktop takes it. On macOS nothing here applies: `oats tui` binds no chord there.
 
 **Inside tmux.** `oats tui` run in a tmux pane gets its keys through tmux,
 which reads an `Esc` followed by a key within its `escape-time` (10 ms by

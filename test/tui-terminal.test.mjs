@@ -229,6 +229,17 @@ const HELP_KEYS = [
   /^ *Tab {2,}detail$/, /^ *\/ {2,}filter$/, /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *2 {2,}souls$/, /^ *3 {2,}capabilities$/, /^ *w {2,}workspaces$/, /^ *Ctrl\+K {2,}palette$/,
   /^ *Enter {2,}open the selected agent's$/, /^ {2,}terminal as a tab beside$/, /^ {2,}the list, or show its tab$/, /^ {2,}when it has one, in the$/, /^ {2,}list of instances$/,
 ];
+/** The help's first rows on Linux and Windows, where the Alt family's chords lead it (every one is
+ *  read in any terminal): the family's line, then a row per chord with the leader's key under it. */
+const HELP_CHORDS = [
+  /^ *Alt\+K {2,}palette, or$/, /^ {2,}Ctrl\+X then k$/, /^ *Alt\+P {2,}spawn, or$/, /^ {2,}Ctrl\+X then n$/,
+  /^ *Alt\+O {2,}workspaces, or$/, /^ {2,}Ctrl\+X then o$/, /^ *Alt\+Shift\+Up\/Down {2,}previous and$/, /^ {2,}next instance$/,
+];
+/** The help's first section and its rows: the chords' on Linux and Windows, the keys' on macOS,
+ *  where the TUI has no chords (docs/tui.md, "Chords"). */
+const HELP_FIRST = process.platform === "darwin"
+  ? { title: "Keys", rows: HELP_KEYS, first: "`Up, k  up`" }
+  : { title: "Chords", rows: HELP_CHORDS, first: "`Alt+K  palette, or`", lead: /^ {2}Shortcuts: Alt\. / };
 const NO_TERMINAL = "oats: `oats tui` needs a terminal on stdin and stdout (E_NO_TERMINAL); `oats status` prints the instances once";
 const noDeployment = (dir) => `oats: no OATS deployment at or above ${dir} (E_NO_DEPLOYMENT); name one with \`oats tui --dir <path>\``;
 /** The same start with no `--dir`, when this computer's list of deployments holds none (awebai/oats#1390). */
@@ -375,17 +386,21 @@ function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, listed = [], se
 }
 /** The same for the help: the sidebar beside it as the Instances view draws it, with the help's
  *  own cheat sheet; in the main area the time of the last read on the help's top row (it is on no
- *  other screen: docs/tui.md, "The help"), then the title `Keys` and a `Keys` list with one row per
- *  action in the table's order, as many as the area holds over its last row, and no detail. */
+ *  other screen: docs/tui.md, "The help"), then its first section (HELP_FIRST): on Linux and
+ *  Windows the title `Chords`, the family's line and a row per chord; on macOS the title `Keys`
+ *  and a row per action in the table's order; as many rows as the area holds over its last row,
+ *  and no detail. */
 function helpFaults(screen, { cols = 80, rows = 24, look = UTF8, listed = [] } = {}) {
   const { faults } = sidebarFaults(screen, { cols, rows, look, listed, sheet: HELP_SHEET });
   const pane = mainOf(screen, cols);
   if (!/^ {2}read \d\d:\d\d:\d\d$/.test(pane[0] ?? "")) faults.push(`the help's top row is ${JSON.stringify(pane[0])}, not the time of the last read`);
   const area = pane.slice(1);
-  if (area[0]?.trim() !== "Keys") faults.push(`the help's second row is ${JSON.stringify(area[0])}, not the title \`Keys\``);
-  const start = area.findIndex((text) => HELP_KEYS[0].test(text));
-  if (start < 0) faults.push("no row under the title is `Up, k  up`");
-  else HELP_KEYS.slice(0, area.length - 1 - start).forEach((pattern, i) => { if (!pattern.test(area[start + i] ?? "")) faults.push(`row ${start + i + 2} is ${JSON.stringify(area[start + i])}, which is not ${pattern}`); });
+  const { title, rows: wanted, first, lead } = HELP_FIRST;
+  if (area[0]?.trim() !== title) faults.push(`the help's second row is ${JSON.stringify(area[0])}, not the title \`${title}\``);
+  if (lead && !area.some((text) => lead.test(text))) faults.push(`no row under the title says the family in force (${lead})`);
+  const start = area.findIndex((text) => wanted[0].test(text));
+  if (start < 0) faults.push(`no row under the title is ${first}`);
+  else wanted.slice(0, area.length - 1 - start).forEach((pattern, i) => { if (!pattern.test(area[start + i] ?? "")) faults.push(`row ${start + i + 2} is ${JSON.stringify(area[start + i])}, which is not ${pattern}`); });
   if (pane.some((text) => /^ {2}soul {5}/.test(text))) faults.push("the detail is still drawn beside the help");
   return faults;
 }

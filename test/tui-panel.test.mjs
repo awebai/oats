@@ -226,12 +226,13 @@ const LEADER_KEY = defaultDetachKey(), LEADER = backKeyLabel(LEADER_KEY);
 /** The leader and the palette, which the sheet names first in every focus of the list. */
 const LEAD = `${LEADER} commands   Ctrl+K palette   `;
 const OPEN_HINT = `${LEAD}Enter open   `;
-/** The whole sheet while the terminal has the focus, with `tabs` tabs open: the leader, the leader
- *  then Esc (the list's focus) and the leader twice (the leader typed into the terminal); then, as
- *  the terminal here confirms no kitty keyboard protocol, the Alt+Shift arrows (docs/tui.md,
- *  "Chords"), the tabs' with two or more; on macOS the TUI has no chords. */
-const backWith = (tabs) => [`${LEADER} commands   ${LEADER} Esc the list   ${LEADER} ${LEADER} types ${LEADER}`,
-  ...(process.platform === "darwin" ? [] : ["Alt+Shift+Up/Down agent", ...(tabs > 1 ? ["Alt+Shift+Left/Right tab"] : [])])].join("   ");
+/** The whole sheet while the terminal has the focus, with `tabs` tabs open: on Linux and Windows the
+ *  Alt family's chords first, as every one is read in any terminal, the protocol or not (docs/tui.md,
+ *  "Chords"): the palette, the instance before or after, the tab before or after with two tabs or
+ *  more, close and zoom; then the leader, the leader then Esc (the list's focus) and the leader
+ *  twice (the leader typed into the terminal). On macOS the TUI has no chords. */
+const backWith = (tabs) => [...(process.platform === "darwin" ? [] : ["Alt+K palette", "Alt+Shift+Up/Down agent", ...(tabs > 1 ? ["Alt+Left/Right tab"] : []), "Alt+W close", "Alt+Z zoom"]),
+  `${LEADER} commands   ${LEADER} Esc the list   ${LEADER} ${LEADER} types ${LEADER}`].join("   ");
 const BACK = backWith(1);
 /** The whole sheet while the list has the focus beside the open terminal: Enter goes to it; the
  *  terminal's own keys (zoom, close, the tabs) are the leader's and the help's, not the sheet's. */
@@ -432,8 +433,10 @@ async function tui(term, { tmp = tmpFor() } = {}) {
      *  (a zoomed terminal has no sidebar). */
     sheet() {
       const side = run.sidebar().map((text) => text.replace(/ {2,}/g, " "));
-      const first = side.findIndex((text) => text === `${LEADER} commands`);
+      let first = side.findIndex((text) => text === `${LEADER} commands`);
       if (first < 0) return "";
+      // The chords that lead it stand right above the leader's row, under the rule over the sheet.
+      while (first > 0 && side[first - 1] !== "" && !/^[─-]+$/.test(side[first - 1].trim())) first--;
       const end = side.indexOf("", first);
       return side.slice(first, end < 0 ? undefined : end).join("   ");
     },
@@ -515,7 +518,7 @@ test(`Enter on the running agent shows its terminal in the panel beside the list
   assert.equal(early === null || !existsSync(join(early, "owner.json")), true, "no panel's directory before the first open");
   await run.open("on the running agent");
   assert.equal(run.sheet(), BACK, `the cheat sheet names the leader, the leader then Esc and the leader twice:\n${term.shows()}`);
-  assert.equal(run.panel()[0].trim(), `[${NAME}]`, "the panel's top row, the screen's first, is the tab bar: the agent's tab, the shown one, bracketed");
+  assert.equal(run.panel()[0].trim(), `[${NAME} 1]`, "the panel's top row, the screen's first, is the tab bar: the agent's tab, the shown one, bracketed, with its number");
   const dir = run.dir();
   assert.ok(dir, "the run directory, made at the first open or at the add before it");
   if (early !== null) assert.equal(dir, early, "the open takes the run's directory the add made");
@@ -562,7 +565,7 @@ test("what is typed reaches the agent and shows in the panel; the leader then Es
   await until(term, () => run.beside("abcd"), "the panel redrawn with the list focused");
 
   term.press("z");
-  await until(term, () => run.zoomed("abcd") && term.screen()[0].startsWith(`[${NAME}] `) && term.screen()[0].endsWith(`${LEADER} commands   ${LEADER} Esc the list`) && run.sheet() === "", "the terminal zoomed: its tab bar on the first row, the shown tab bracketed, with the leader's keys at its right, and the agent's screen from the first column, no list and no cheat sheet");
+  await until(term, () => run.zoomed("abcd") && term.screen()[0].startsWith(`[${NAME} 1] `) && term.screen()[0].endsWith(`${LEADER} commands   ${LEADER} Esc the list`) && run.sheet() === "", "the terminal zoomed: its tab bar on the first row, the shown tab bracketed, with the leader's keys at its right, and the agent's screen from the first column, no list and no cheat sheet");
   term.type("e");
   await until(term, () => typed() === "abcde", "typing reaches the agent while zoomed");
   await run.back();
@@ -1249,8 +1252,11 @@ async function fourAgents(t) {
   for (const name of FOUR) await agentWindow(name);
 }
 /** The names in the tab bar, the panel's top row (the screen's first), in its order: the tabs
- *  between its dividers (`│`), the shown tab's brackets and a hidden tab's mark (`•`) dropped. */
-const stripNames = (run) => (run.panel()[0] ?? "").split("│").map((tab) => tab.trim().replace(/^\[(.*)\]$/, "$1").replace(/•$/, "")).filter(Boolean);
+ *  between its dividers (`│`), the shown tab's brackets, its number and a hidden tab's mark (`•`)
+ *  dropped. The numbers are checked by stripNumbers. */
+const stripNames = (run) => (run.panel()[0] ?? "").split("│").map((tab) => tab.trim().replace(/^\[(.*)\]$/, "$1").replace(/ \d$/, "").replace(/•$/, "")).filter(Boolean);
+/** The tabs' numbers in the tab bar, in its order, or null for a tab with none. */
+const stripNumbers = (run) => (run.panel()[0] ?? "").split("│").map((tab) => tab.trim().replace(/^\[(.*)\]$/, "$1")).filter(Boolean).map((tab) => / (\d)$/.exec(tab)?.[1] ?? null);
 /** The row of agent `name` is selected and running, read from the list's columns. */
 const selectedRunning = (term, name) => term.screen().some((text) => new RegExp(`^> +● ${name}$`).test([...text].slice(0, LIST_BESIDE).join("").trimEnd()));
 /** The tab of FOUR[k]: Enter on the selected agent for the first, then for each next one
@@ -1266,9 +1272,10 @@ async function openTab(term, run, k) {
   await until(term, () => {
     assert.equal(run.status(), null, `oats tui ended opening ${name}`);
     const session = viewerSessions().find((s) => !before.has(s));
-    return session !== undefined && attached().includes(session) && run.beside() && run.sheet() === backWith(k + 1) && selectedRunning(term, name) && JSON.stringify(stripNames(run)) === JSON.stringify(opened);
-  }, `the tab of ${name}: its viewer attached, its screen in the panel with the focus in it, its row selected, and the tab bar naming ${JSON.stringify(opened)}`,
-  () => [`the tab bar names ${JSON.stringify(stripNames(run))}`, `viewer sessions: ${JSON.stringify(viewerSessions())}, attached: ${JSON.stringify(attached())}`], 30000);
+    return session !== undefined && attached().includes(session) && run.beside() && run.sheet() === backWith(k + 1) && selectedRunning(term, name) && JSON.stringify(stripNames(run)) === JSON.stringify(opened)
+      && JSON.stringify(stripNumbers(run)) === JSON.stringify(opened.map((_, i) => String(i + 1)));
+  }, `the tab of ${name}: its viewer attached, its screen in the panel with the focus in it, its row selected, and the tab bar naming ${JSON.stringify(opened)}, numbered from 1 (at ${COLS} columns all four fit with their numbers)`,
+  () => [`the tab bar names ${JSON.stringify(stripNames(run))}, numbered ${JSON.stringify(stripNumbers(run))}`, `viewer sessions: ${JSON.stringify(viewerSessions())}, attached: ${JSON.stringify(attached())}`], 30000);
 }
 
 for (const [how, end, expected] of [

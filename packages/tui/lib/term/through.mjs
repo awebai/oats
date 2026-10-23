@@ -302,11 +302,12 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
       } else bytes = legacySequence(params, final);
       if (bytes === null) continue; // a key that sends nothing without the protocol: nothing
       // What the bytes read as without the protocol: the back key, or a chord with bytes of its own. A
-      // key with an id of its own (kittyId: Ctrl+Shift or Ctrl+Alt with a letter) is never the back
-      // key, though its legacy bytes may read as it (Ctrl+Shift+X is 0x18, as Ctrl+X): it types them.
+      // key with an id of its own (kittyId: Ctrl+Shift or Ctrl+Alt with a letter or a digit) is never
+      // either, though its legacy bytes may read as one (Ctrl+Shift+X is 0x18, as Ctrl+X; Ctrl+Alt+1
+      // is ESC 1, as Alt+1, which the Alt family binds): it types them.
       const events = legacyEvents(bytes), id = events.length === 1 ? keyId(events[0]) : null;
       if (id !== null && id === leader && own === null) { out.push({ back: true, rest: data.subarray(end) }); return; }
-      if (legacyChord(id) && chords.has(id)) { out.push({ chord: chords.get(id), rest: data.subarray(end) }); return; }
+      if (own === null && legacyChord(id) && chords.has(id)) { out.push({ chord: chords.get(id), rest: data.subarray(end) }); return; }
       out.push({ input: bytes });
     }
     handOn(data.length);

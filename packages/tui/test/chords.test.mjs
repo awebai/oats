@@ -1072,6 +1072,21 @@ test("in a terminal the Alt family's chords are the TUI's, with the protocol and
   assert.deepEqual(shown(back.feed(utf8(`${E}o`))), ["back "]);
 });
 
+test("under the protocol a key with an id of its own is never an Alt family chord, though its legacy bytes are one's: Ctrl+Alt+1 and Ctrl+Alt+9 (ESC 1, ESC 9, as Alt+1 and Alt+9) are their own keys in the list, which nothing binds, and the agent's legacy bytes in a terminal; Alt+1 and Alt+9 are the chords", () => {
+  for (const [digit, does] of [["1", "tab-1"], ["9", "tab-9"]]) {
+    const code = digit.charCodeAt(0), ctrlAlt = `${E}[${code};7u`, alt = `${E}[${code};3u`;
+    assert.deepEqual(ids(createKeyParser({ now: () => 0, keyboard: 5, chords: ALT_MAP }).feed(utf8(ctrlAlt))), [`ctrl+alt+${digit}`], `Ctrl+Alt+${digit} in the list: its own key`);
+    assert.deepEqual(ids(createKeyParser({ now: () => 0, keyboard: 5, chords: ALT_MAP }).feed(utf8(alt))), [`alt+${digit}`], `Alt+${digit} in the list: the chord`);
+    const make = () => createThrough({ sequences: backKeySequences("C-x"), now: () => 0, keyboard: 5, leader: backKeyId("C-x"), chords: ALT_MAP });
+    assert.deepEqual(shown(make().feed(utf8(ctrlAlt))), [`input ${hex(utf8(`${E}${digit}`))}`], `Ctrl+Alt+${digit} in a terminal: the agent's ESC ${digit}`);
+    assert.deepEqual(shown(make().feed(utf8(alt))), [`chord ${does} `], `Alt+${digit} in a terminal: the chord`);
+  }
+  // And in the store: Ctrl+Alt+1 in the list runs nothing.
+  const state = on(opened(FOUR(chordFamilyFrom(null)), "dev-a", "dev-b"), "dev-a");
+  const listed = leaderThen(state, "escape").state;
+  assert.deepEqual(key(listed, "ctrl+alt+1").state.terminal, listed.terminal, "no tab is shown for Ctrl+Alt+1");
+});
+
 test("from the list and from a terminal an Alt family chord does what the leader then its key does, with the protocol or without it", () => {
   const base = FOUR(chordFamilyFrom(null));
   assert.deepEqual([...base.chords], ALT_CHORDS, "no keys.json: the Alt family");
