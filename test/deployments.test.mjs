@@ -526,6 +526,17 @@ test("auto-add: never on --server, never for a command outside the table, never 
   assert.equal(readFileSync(g.file, "utf8"), "not json\n");
 });
 
+test("auto-add: never for `oats instance suggest-name`, which records nothing (#1490 §2), though it reads the deployment's launch configurations; a command that reads the same file lists it", { skip: OUTSIDE ?? false }, (t) => {
+  const f = fixture(t, { outside: true });
+  const acme = f.deployment("acme");
+  const r = f.ok(["instance", "suggest-name", "--soul", "dev", "--task", ""], { cwd: acme });
+  assert.equal(r.naming.reason, "no-task");
+  f.ok(["instance", "suggest-name", "--soul", "dev", "--task", "", "--dir", acme]);
+  assert.equal(existsSync(f.file), false, "nothing listed acme, and nothing touched the list");
+  f.ok(["launch-config", "list"], { cwd: acme });
+  assert.deepEqual(f.stored().deployments.map((d) => d.path), [acme], "premise: a command that reads its oats-local.yaml lists it");
+});
+
 test("auto-add: a tombstoned deployment is not listed again by a plain command; an explicit add clears it", { skip: OUTSIDE ?? false }, (t) => {
   const f = fixture(t, { outside: true });
   const acme = f.deployment("acme");
