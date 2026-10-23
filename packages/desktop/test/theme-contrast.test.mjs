@@ -747,6 +747,26 @@ for (const [name] of palettes) test(`${name}: automation summaries, argv, run st
 
 // The sidebar's one visible shortcut hint was the roster filter's ⌘F; it went with the filter. The sidebar paints
 // none now, so no hint ink sits on a sidebar surface (the spawn dialog's hints are held in spawn-dialog.test.mjs).
+// The sidebar's type and its one line (2026-10-23). The headings are text: --fg on the sidebar at AA (the computed
+// test below reads them). The machine labels step under them: smaller, lighter, muted. The line between the sections
+// is decorative, like the sidebar's own right edge, and in that edge's token: no minimum applies, and it shows in every
+// built-in theme at the edge's own ratio.
+for (const [name, palette] of palettes) test(`${name}: the sections' headings over the machine labels; one --border line between the sections, as visible as the sidebar's edge`, () => {
+  const shellCss = readFileSync(new URL("shell.css", renderer), "utf8");
+  const rule = selector => shellCss.match(new RegExp(`^${selector.replace(/[.#()]/g, m => `\\${m}`)} \\{([^}]*)\\}`, "m"))?.[1] ?? "";
+  const head = rule(".ctx-head"), label = rule(".ctx-deployment");
+  assert.match(head, /color: var\(--fg\);/); assert.match(head, /font-size: 14px;/); assert.match(head, /font-weight: 600;/);
+  assert.match(head, /height: 36px;/, "the heading row keeps its height"); assert.match(head, /white-space: nowrap;/, "never wraps");
+  assert.match(label, /color: var\(--muted\);/); assert.match(label, /font-size: 11px;/); assert.match(label, /font-weight: 500;/);
+  assert.match(label, /text-transform: uppercase;/);
+  assert.match(rule("#instance-roster::before"), /^ content: ""; flex: none; margin: 0 8px; border-top: 1px solid var\(--border\); $/);
+  assert.match(rule("#sidebar"), /border-right: 1px solid var\(--border\);/, "the sidebar's edge, the line's token");
+  assert.doesNotMatch(shellCss, /\.ws-head[^{]*\{[^}]*border|\.ws-list[^{]*\{[^}]*border|#ws-list[^{]*\{[^}]*border/, "nothing under the Workspaces heading or along the list");
+  const ratio = contrast(opaqueChannels(palette.get("border")), opaqueChannels(palette.get("surface")));
+  assert.ok(ratio > 1.2, `${name}: the line shows on the sidebar (${ratio.toFixed(2)}:1)`);
+  assert.ok(contrast(opaqueChannels(palette.get("fg")), opaqueChannels(palette.get("surface"))) >= 4.5, `${name}: the headings`);
+});
+
 for (const [name] of palettes) test(`${name}: the shipped sidebar paints no shortcut hint, and a hidden hint takes no box`, t => {
   const dom = new JSDOM(readFileSync(new URL("index.html", renderer), "utf8"));
   t.after(() => dom.window.close());
@@ -1072,6 +1092,8 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     ['.ws-option[aria-current="true"] .ws-option-name', '#sidebar', 'fg', 'surface'],
     ['.ws-option:not([aria-current]) .ws-option-name', '#sidebar', 'fg', 'surface'],
     ['#ws-add-open', '#sidebar', 'muted', 'surface'],
+    // The sections' headings, the sidebar's top level (14px 600): --fg on the sidebar.
+    ['.ctx-head.ws-head', '#sidebar', 'fg', 'surface'], ['#instance-roster > .ctx-head', '#sidebar', 'fg', 'surface'],
     ['.app-toast-open', '.app-toast-open', 'primary-fg', 'primary-bg'],
     ['.ctx-pr[data-pr-state=open]', '.ctx-pr[data-pr-state=open]', 'fg', 'tag-bg'],
     ['.ctx-pr[data-pr-state=merged]', '.ctx-pr[data-pr-state=merged]', 'fg', 'tag-bg'],

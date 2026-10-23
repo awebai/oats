@@ -432,7 +432,9 @@ split into sections) is `packages/client/roster-sections.mjs`.
 
 - **The sidebar, top to bottom** (2026-10-23): the Workspaces heading (a `.ctx-head`, as
   the Instances one, with **Add local workspace…** at its end; no logo, no rule) over the list;
-  the Instances heading over the roster; at the bottom (`#nav-foot`) the nav, Deployments and
+  one 1px `--border` line (`#instance-roster::before`, inset to the rows' 8px gutters); the Instances
+  heading over the roster. The headings are 14px 600 in `--fg`, the roster's machine labels
+  (`.ctx-deployment`) 11px 500 muted capitals under them; at the bottom (`#nav-foot`) the nav, Deployments and
   Workspace side by side (icons alone in a nav too narrow for both labels: a container query
   hides each label visually, and it stays the button's name), then the tools: sidebar, theme,
   shortcuts and **Spawn instance** (a small icon button). Settings and the palette have no

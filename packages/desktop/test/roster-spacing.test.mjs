@@ -116,7 +116,7 @@ test("roster spacing (non-layout): a selected or hovered row keeps its 4px gap (
 test("roster typography (non-layout): valid control family and supplied sidebar label scale", t => {
   const u = fixture(t);
   assert.deepEqual(u.rules.filter(r => /\.ctx-filter/.test(r.selectorText || "")).map(r => r.selectorText), [], "no roster filter rule ships");
-  assert.equal(u.rule(".ctx-group").height, "14px", "Workspace v4: groups read from a 14px gap, no title");
+  assert.equal(u.rule(".ctx-group").height, "0px", "no gap between groups (2026-10-23): rows meet at their own 4px");
   assert.equal(u.rule(".ctx-group:first-child").height, "7px", "the first row sits closer to the head (human, 2026-09-29)");
   assert.equal(u.rule(".ctx-inst").getPropertyValue("font"), "inherit");
   assert.equal(u.rule(".ctx-name").fontSize, "12.5px");

@@ -205,7 +205,9 @@ workspace on a server: `name — server`).
 ## Workspaces
 
 The sidebar has two sections, each a heading over its list: **Workspaces**,
-then **Instances**. At the bottom are the two main views, **Deployments** and
+then, after a thin line, **Instances**. The two headings are the sidebar's
+largest type, above the smaller machine labels ("THIS MAC") in the list of
+instances. At the bottom are the two main views, **Deployments** and
 **Workspace**, side by side, and under them the tools: hide the sidebar, the
 theme, the keyboard shortcuts, and **Spawn instance** (a small **+**). In a
 sidebar too narrow for both labels the views show their icons alone, each
