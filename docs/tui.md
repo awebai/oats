@@ -855,8 +855,9 @@ workspace the list is its row.
   opened (a workspace only they make), and the rows that cannot be opened
   (missing, not a deployment, unreadable, a machine with nothing to open).
   The switcher keeps them: `w` twice.
-- **The open workspace's row** is in reverse video. Its state, when it is
-  not live, is said under the list.
+- **The open workspace's row** is in reverse video, and while the list has
+  the focus its name is underlined instead (the cursor has the reverse
+  video). Its state, when it is not live, is said under the list.
 - **The dot**, `●` in yellow one cell after the name, says that an instance
   of that workspace needs input, the claim the list of instances shows, the
   open workspace's included. On a row in reverse video its cell is a gap in
@@ -866,8 +867,9 @@ workspace the list is its row.
   serves and of other machines: a workspace whose instances are not known
   (never read, stale, not reached) has no dot, never a false one. The dot
   never moves a row.
-- **A long name** is cut with `…` (`...` in ASCII), the dot after what is
-  shown of it.
+- **A long name** is cut with `…` (`...` in ASCII), the dot one cell after
+  what is drawn of it, as it is after a name drawn in `?` where the locale
+  is not UTF-8.
 - **Five rows at most.** With more, four stand around the open row (around
   the cursor's while the list has the focus), and `+N` says how many
   workspaces are not shown. Under 80 columns or beside a terminal (30
@@ -887,7 +889,8 @@ workspace the list is its row.
   too.
 - **`w`**, the leader then `o`, and `Ctrl+Alt+O` (`Ctrl+Shift+S` with the
   option) give the list the focus, on the open workspace's row. The row
-  under the cursor carries `>` and the reverse video; the list of
+  under the cursor carries `>` and the reverse video, and the open
+  workspace's name is underlined until `Enter` opens another; the list of
   instances keeps its selection in reverse video, without its `>`. `Up`/`k`,
   `Down`/`j`, `g`/`Home` and `G`/`End` move the cursor over the rows that
   open; `Enter` opens its row and gives the list of instances the focus;

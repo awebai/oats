@@ -50,6 +50,9 @@ export function glyphs(env, { ascii = false } = {}) {
  *  `rows[r]` is the spans of row r, drawn in order, a later one over an earlier one:
  *  `{ col, text, style?, width? }`, `text` safe text, `width` the cells the span may take (default:
  *  to the right edge); or a fill, `{ col, width, style? }`, `width` blank cells in that style.
+ *  A text span with `after: true` follows the text span drawn just before it: it is drawn that
+ *  many cells to the left of `col` as that span left blank of its width, because its text was cut
+ *  or a character of it drew narrower than counted (a mark right after a name: views/workspaces.mjs).
  *  `cells(rows, size)` answers the same frame as cells and writes nothing: `{ text, width, style }`
  *  per cell, the second cell of a two-cell grapheme with `width: 0`. */
 export function createScreen({ utf8 = true, ascii = !utf8, color = true } = {}) {
@@ -66,10 +69,14 @@ export function createScreen({ utf8 = true, ascii = !utf8, color = true } = {}) 
     else if (line[x].width === 2) line[x + 1] = BLANK;
     line[x] = BLANK;
   }
-  function place(line, span) {
-    const { col, style = PLAIN } = span;
+  /** Draws one span on a line and answers the cells a text span left blank of its width (0 for
+   *  a fill and for a span with no width), which the next span pulls back over when it is drawn
+   *  `after` it. */
+  function place(line, span, left = 0) {
+    const { style = PLAIN } = span;
     if (!isStyle(style)) throw new TypeError("a span's style is a style value: make one with style()");
-    if (!Number.isInteger(col) || col < 0) throw new RangeError("a span's column is a cell index from 0");
+    if (!Number.isInteger(span.col) || span.col < 0) throw new RangeError("a span's column is a cell index from 0");
+    const col = span.after === true ? Math.max(0, span.col - left) : span.col;
     const limit = span.width === undefined ? line.length : Math.min(line.length, col + span.width);
     // A fill: no text, a width. Blank cells in the span's style, which is how a bar is drawn
     // (a selected row in reverse video): text.mjs rightly makes no text of a run of spaces.
@@ -78,10 +85,10 @@ export function createScreen({ utf8 = true, ascii = !utf8, color = true } = {}) 
       if (!Number.isInteger(span.width) || span.width < 0) throw new RangeError("a fill has a width in cells");
       const blank = cell(" ", 1, style);
       for (let x = col; x < limit; x++) { clear(line, x); line[x] = blank; }
-      return;
+      return 0;
     }
     const source = textOf(span.text);
-    if (col >= limit) return;
+    if (col >= limit) return 0;
     let drawn = cells(source);
     // A terminal that is not reading UTF-8 would show each byte of a character on its own.
     if (!utf8) drawn = drawn.map((g) => (PRINTABLE_ASCII.test(g.text) ? g : { text: "?", width: 1 }));
@@ -100,11 +107,13 @@ export function createScreen({ utf8 = true, ascii = !utf8, color = true } = {}) 
       line[x] = cell(g.text, g.width, style);
       x += g.width;
     }
+    return span.width === undefined ? 0 : limit - x;
   }
   function layout(rows, size) {
     return Array.from({ length: size.rows }, (_, r) => {
       const line = Array.from({ length: size.cols }, () => BLANK);
-      for (const span of rows[r] ?? []) place(line, span);
+      let left = 0;
+      for (const span of rows[r] ?? []) left = place(line, span, left);
       return line;
     });
   }

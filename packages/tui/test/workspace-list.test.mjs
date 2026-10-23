@@ -52,6 +52,7 @@ const withListed = (state) => listing(state, [["acme-ledger", "ok"], ["gone", "m
 /** The list's rows as the sidebar draws them, from the top (the frame at 80x24: 38 cells). */
 const listRows = (state, n) => draw(state).lines.slice(0, n).map((line) => [...line].slice(0, 38).join("").trimEnd());
 const REVERSE = (cell) => cell.style.reverse === true;
+const UNDERLINE = (cell) => cell.style.underline === true;
 const QUESTION = Object.freeze({ since: "2026-10-11T09:56:00.000Z", producer: "claude", reason: "question", message: "Which base should it use?" });
 
 /** A and `names.length` more workspaces served, each a deployment of its own at /srv/<name>, A open again. */
@@ -105,6 +106,15 @@ test("the dot: one cell after the name of each workspace where an instance needs
   // A long name is cut with an ellipsis, and the dot stays after what is shown of it.
   const long = served({ b: { "ops-b": { waitingOnYou: { ...QUESTION } } }, bWorkspace: "a-workspace-with-a-very-long-name-indeed" });
   assert.equal(listRows(long, 2)[1], `  a-workspace-with-a-very-long-nam… ${WAITING_DOT.utf8}`);
+  // The dot follows the name as the screen draws it: a name of wide characters cut where one would
+  // not fit, at either parity of the sidebar's width, and a name drawn in ? without UTF-8.
+  const wide = served({ b: { "ops-b": { waitingOnYou: { ...QUESTION } } }, bWorkspace: "名前".repeat(30) });
+  for (const size of [{ cols: 80, rows: 24 }, { cols: 120, rows: 40 }]) {
+    const d = draw(wide, size);
+    assert.match(d.cells[1].slice(0, d.cols).map((c) => c.text).join("").trimEnd(), new RegExp(`^ {2}(名前)+名?… ${WAITING_DOT.utf8}$`), `at ${size.cols} columns`);
+  }
+  const named = served({ b: { "ops-b": { waitingOnYou: { ...QUESTION } } }, bWorkspace: "名前" });
+  assert.equal(draw({ ...named, ascii: true }, { cols: 80, rows: 24 }, { utf8: false }).lines[1].slice(0, 38).trimEnd(), `  ?? ${WAITING_DOT.ascii}`);
   // The open workspace's own.
   const here = served({ a: { "dev-b": { waitingOnYou: { ...QUESTION } } } });
   assert.equal(workspaceList(here).lines[0].waiting, true);
@@ -170,6 +180,8 @@ test("w gives the list the focus on the open row; Up and Down move the cursor, E
   assert.equal(key(second, "down").state.workspaceCursor, second.workspaceCursor, "the last row: the cursor stays");
   assert.ok(draw(second).cells[1].slice(0, 38).every(REVERSE), "the cursor's row is in reverse video");
   assert.ok(!draw(second).cells[0].slice(0, 38).some(REVERSE), "the open row is not, while the list has the focus");
+  assert.ok(draw(second).cells[0].slice(2, 15).every(UNDERLINE), "but its name is underlined: the open workspace is still told apart");
+  assert.ok(!draw(second).cells[1].some(UNDERLINE) && !draw(state).cells[0].some(UNDERLINE), "the cursor's name is not, nor the open row's without the focus");
   const picked = key(second, "enter");
   assert.deepEqual([picked.state.open, picked.state.focus], [OTHER, "list"]);
   const escaped = key(second, "escape");

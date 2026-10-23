@@ -1637,8 +1637,6 @@ function reduced(state, event, keymap) {
     const said = state.view === "switcher" ? {} : { outcome: Object.freeze({ said: WORKSPACE_WORDS.refused(name), under: Object.freeze([]) }) };
     return { state: next(state, { switcher: Object.freeze({ ...state.switcher, refused: event.refused }), ...said }), effect: null };
   }
-  // What the slow schedule last read of whether anyone waits in this computer's listed deployments
-  // this run does not serve (lib/main.mjs; the shared listed-waiting.mjs): path -> true, false or null.
   if (event.souls !== undefined) return soulsHeard(state, event.souls);
   if (event.capabilities !== undefined) return capabilitiesHeard(state, event.capabilities);
   if (event.capabilitiesTop !== undefined) return capabilitiesTop(state, event.capabilitiesTop);

@@ -351,9 +351,9 @@ test("at every size and in both modes the frame has its shape: the sidebar from 
     assert.equal(d.cells.length, sz.rows, at);
     for (const line of d.cells) assert.equal(line.length, sz.cols, at);
     assert.equal(d.cols, pane, `${at}: the sidebar's width`);
-    // The list of workspaces: the open workspace's one row, `*` in its second cell and the name from
-    // its fourth, the dot of a waiting instance at its edge, in bold reverse video over the sidebar's
-    // width but for the dot, which is on the normal background; no count and no time.
+    // The list of workspaces: the open workspace's one row, its name from the third cell and one cell
+    // after it the dot of a waiting instance, in bold reverse video over the sidebar's width but for
+    // the dot, which is on the normal background; no count and no time.
     assert.equal(cellText(d, 0, 0, pane), workspaceLine("acme-platform", pane, { waiting: true, ascii }), at);
     assert.equal(d.cells[0][1].style.bold, true, at);
     assert.equal(openBarred(d, pane), true, `${at}: the open workspace's row is in bold reverse video over the sidebar's width, but for its dot`);
@@ -2170,9 +2170,9 @@ test("the view of two deployments at 120x40, 79x24 and 60x15: the same headings 
   }
 });
 
-test("the open workspace's row of the list of workspaces says `+1 machine` after the workspace's name at every width; two machines are counted once each, and a view of this machine alone says nothing of machines", () => {
+test("the open workspace's row of the list of workspaces is its name alone at every width, whatever machines its view holds: one, two (one of them with two deployments), this machine alone, or none registered", () => {
   for (const sz of SIZES) assert.equal(cellText(draw(lost(), sz), 0, 0, paneOf(sz)), workspaceLine("acme-platform"), `${sz.cols}x${sz.rows}`);
-  // Two machines are counted once each, whatever number of deployments each holds.
+  // Two machines, one with two deployments: still the name alone.
   const two = heard(local(), answered(group(), quartz(), quartz({ id: "quartz:acme-8", target: { workspace: "/srv/acme-two", sshHost: "quartz.example" }, instances: [] })), T1);
   assert.equal(cellText(draw(two, S120), 0, 0, 57), workspaceLine("acme-platform"));
   assert.equal(cellText(draw(local(), S80), 0, 0, 38), workspaceLine("acme-platform"), "this machine alone: nothing about machines");
@@ -2246,7 +2246,7 @@ test("a deployment's note stands under its heading in a view of several deployme
       placed([2, `● ${FAR_Q}`]),
     ], at);
     if (sz === S80) assert.equal(rows.length, 2, "at 80 columns the note wraps");
-    // The list of workspaces: acme-platform, then billing, the open one, its machines beside its name.
+    // The list of workspaces: acme-platform, then billing, the open one, by its name alone.
     assert.deepEqual([0, 1].map((r) => cellText(d, r, 0, pane)), ["  acme-platform", workspaceLine("billing")], `${at}: ${cellText(d, 0)}`);
     const help = draw(press(state, ["?"], sz).state, sz);
     assert.equal(cellText(help, 0, sz.cols >= WIDE ? help.cols + 2 : 0).startsWith("  read 10:00:25"), true, `${at}: in a view with no deployment of this machine the help's time is the roster read's`);
@@ -2337,7 +2337,7 @@ test("a deployment that is not live and has no row is listed after the sections:
   // A machine that answers with no row is live: it has no section and is not listed.
   const empty = heard(local(), answered(group({ instances: [] })), T1);
   assert.equal(listLines(draw(empty, S80), S80).some((line) => line.includes("garnet")), false);
-  assert.equal(cellText(draw(empty, S80), 0, 0, 38), workspaceLine("acme-platform"), "the open workspace's row still counts it");
+  assert.equal(cellText(draw(empty, S80), 0, 0, 38), workspaceLine("acme-platform"), "the open workspace's row is its name alone");
 });
 
 test("the roster read's own failure, while no answer has arrived, stands after the list: the TUI's line, and the failure on the rows after it", () => {
