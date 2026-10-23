@@ -431,7 +431,8 @@ not read the panel. What they say (a deployment's state in words, the primary, t
 split into sections) is `packages/client/roster-sections.mjs`.
 
 - **The sidebar, top to bottom** (2026-10-23): the Workspaces heading (a `.ctx-head`, as
-  the Instances one, with **Add local workspace…** at its end; no logo, no rule) over the list; then the
+  the Instances one, with **Show only the current workspace** and **Add local workspace…** at its end; no
+  logo, no rule) over the list; then the
   current workspace's section (`#ws-current`, a `section` labelled "Current workspace"): one 1px
   `--border` line over it (`.ws-current::before`, the sidebar's full width, under the list; none before
   Instances), the main views (`#nav`, Workspace and Deployments side by side, no title) on the list's 8px
@@ -449,7 +450,7 @@ split into sections) is `packages/client/roster-sections.mjs`.
   `sidebar.toggle`, its `aria-expanded` kept by `updateSidebarControls`) and the settings cog
   (`#sidebar-settings`, `sidebar-settings.mjs`: Theme…, Keyboard shortcuts…), 24px `.side-icon-button` boxes with
   14px icons. `.side-icon-button` is the sidebar's one icon-button style (box, colours, hover, focus), on these
-  four; `.ws-add-open` stays on Add local workspace… alone, for its place at the heading's end. The palette has no button: it has its own chord, and **Settings: Connections…**, Connections'
+  four and the Workspaces heading's Show only the current workspace; `.ws-add-open` stays on Add local workspace… alone, for its place at the heading's end. The palette has no button: it has its own chord, and **Settings: Connections…**, Connections'
   only entry. **One right-hand column**: the headings' + (28px boxes, `.ctx-head`'s 11px right padding), the
   workspace rows' 14px needs-input mark (the list's 8px, the row's 8px, `.ws-waiting`'s 2px margin), the
   instance rows' 18px harness mark (the list's 8px, `.ctx-inst`'s 8px) and the bottom bar's cog (its 13px,
@@ -505,6 +506,16 @@ split into sections) is `packages/client/roster-sections.mjs`.
     it opens the row as a click does.
   - A pick (click, Enter, `step`) calls `selectWorkspace`, which the shell runs as
     `switchWorkspace(id, { takeOver: true })` (see common.mjs above).
+  - **Show only the current workspace** (2026-10-23): `#ws-current-only`, a `.side-icon-button` toggle before
+    Add in the heading (`aria-pressed`; the `collapse` icon, Lucide chevrons-down-up; `--accent` when pressed,
+    at rest, hovered and focused alike), `toggleCurrentOnly()` and the `currentOnly` getter, run by the
+    global `workspaces.currentOnly` action (⌥⇧⌘O / Ctrl+Alt+Shift+O, the same in every family, terminal
+    allowlisted; the palette lists it). On, every row but the current one is `hidden` with its `<li>`, so
+    the keys and `menuItems` skip them, and `.ws-more` is hidden and empty: nothing stands for them, no count
+    and no needs-input dot. With no current row (a choosing window) every row shows. A focused row that goes
+    hands focus to the current row. `step` still walks every workspace (`drawn` keeps the hidden ones). The
+    choice is `CURRENT_ONLY_KEY` ("1", else removed) in the `storage` the shell passes (the window's
+    localStorage), read once at creation; a storage that throws leaves it unremembered.
   - **Add local workspace…** (`openModal(opener)`, focus back on `opener` when it closes): this
     computer's deployments not served (`discoverSuggestions`, asked only as it opens), each a
     button that adds it and opens it here (`runAdd`, the main-validated add); then the stale rows
@@ -1607,8 +1618,8 @@ section is the module map.
 - **focus-regions.mjs** — F6 / Shift+F6 (`focus.nextRegion`/`prevRegion`,
   outside a terminal; `focus.leaveTerminal` from inside one): workspaces →
   views (`#nav`, under the list) → roster → main → instance panel, hidden regions skipped, each region's
-  current item focused, never `<body>`. A heading's control counts with its section: Add local workspace…
-  as workspaces, Spawn instance as roster, which lands on it only when it shows no row and no Retry. The
+  current item focused, never `<body>`. A heading's control counts with its section: Show only the current
+  workspace and Add local workspace… as workspaces, Spawn instance as roster, which lands on it only when it shows no row and no Retry. The
   bottom bar (the toggle, the cog and its menu) is no region: F6 from it goes on to main, Shift+F6 back to
   the roster. F6 and the tab switches are no-ops
   under an open modal.

@@ -116,12 +116,13 @@ test("the Workspaces head is a plain section heading with Add local workspace…
   const { document } = shell(t);
   const sidebar = document.getElementById("sidebar");
   const head = document.getElementById("ws-heading").parentElement;
-  // The sidebar layout (2026-10-23): the Instances heading's style (.ctx-head), the heading then Add local
-  // workspace… at its right end; no logo, no bar of its own, no cog (it is the foot's), no trigger, no popup menu.
+  // The sidebar layout (2026-10-23): the Instances heading's style (.ctx-head), the heading then Show only the
+  // current workspace and Add local workspace… at its right end; no logo, no bar of its own, no cog (it is the
+  // foot's), no trigger, no popup menu.
   assert.equal(head.parentElement, sidebar);
   assert.ok(head.classList.contains("ctx-head"), "the same heading style as Instances");
-  assert.deepEqual([...head.children].map(el => el.id), ["ws-heading", "ws-add-open"]);
-  assert.match(html, /<div class="ctx-head ws-head">\s*<span id="ws-heading" class="ws-heading">Workspaces<\/span>\s*<button id="ws-add-open"/, "the markup says the same");
+  assert.deepEqual([...head.children].map(el => el.id), ["ws-heading", "ws-current-only", "ws-add-open"]);
+  assert.match(html, /<div class="ctx-head ws-head">\s*<span id="ws-heading" class="ws-heading">Workspaces<\/span>\s*<button id="ws-current-only" class="side-icon-button ws-current-only icon-button" type="button" aria-pressed="false" data-action="workspaces\.currentOnly"><\/button>\s*<button id="ws-add-open"/, "the markup says the same");
   assert.equal(document.querySelector(".side-head, .ws-brand-mark, .ws-brand-image, .ws-brand-icon, [data-shell-icon=\"oats\"]"), null, "no logo or mark in the head");
   assert.equal(head.querySelector("img"), null, "the heading shows no artwork");
   assert.deepEqual([...sidebar.querySelectorAll("img")].map(img => img.className), ["sidebar-brand-image"], "the sidebar's one artwork: the bottom bar's mark");

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import {
-  registerAction, setBinding, resetAllBindings, getBinding, defaultBinding, keymapConflicts, setChordFamily, activeChordFamily,
+  registerAction, setBinding, resetAllBindings, getBinding, defaultBinding, keymapConflicts, setChordFamily, activeChordFamily, runAction, listActions,
 } from "../renderer/keybindings.mjs";
 import { createKeybindingsEditor, groupActions, shortcutMatches, CHORD_FAMILY_WORDS } from "../renderer/keybindings-editor.mjs";
 import { createChordFamily } from "../renderer/chord-family.mjs";
@@ -931,4 +931,28 @@ test("Settings: Connections is in the shortcuts list (Global, by its label) and 
     assert.ok(f.shown().includes("Settings: Connections"), `"${q}" finds it`);
   }
   assert.equal(opened, 0, "listing it runs nothing");
+});
+
+// Show only the current workspace (2026-10-23): the shell's own registration, run as shipped, is a Global row of the
+// shortcuts list with its label and default chord (⌥⇧⌘O on macOS, Ctrl+Alt+Shift+O elsewhere), found by search, in
+// the palette's list of actions, and running it toggles the list of workspaces (workspaceLabel.toggleCurrentOnly).
+for (const isMac of [true, false]) test(`Show only the current workspace: the shell's registration is a Global row (${isMac ? "macOS" : "Linux/Windows"}), and runs the toggle`, (t) => {
+  const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  const line = shell.match(/^registerAction\(\{ id: "workspaces\.currentOnly",[^\n]*\}\);$/m)?.[0];
+  assert.ok(line, "the shipped registration");
+  assert.match(line, /run: \(\) => workspaceLabel\.toggleCurrentOnly\(\)/);
+  const f = setupLinux(t, { isMac });
+  let toggled = 0;
+  const off = runInNewContext(line, { registerAction, workspaceLabel: { toggleCurrentOnly: () => { toggled++; } } });
+  t.after(off);
+  const action = listActions().find((a) => a.id === "workspaces.currentOnly");
+  assert.deepEqual([action?.label, action?.context], ["Show only the current workspace", "global"], "the palette lists it by this label");
+  f.editor.open();
+  const row = f.rowFor("Show only the current workspace");
+  assert.ok(row, "listed"); assert.equal(row.closest(".kb-group").dataset.label, "Global");
+  assert.equal(row.querySelector(".kb-chord").textContent, isMac ? "⌥⇧⌘O" : "CtrlAltShiftO", "its keycaps");
+  f.type("current workspace"); assert.ok(f.shown().includes("Show only the current workspace"));
+  assert.equal(toggled, 0, "listing it runs nothing");
+  runAction("workspaces.currentOnly"); runAction("workspaces.currentOnly");
+  assert.equal(toggled, 2, "each run toggles once");
 });

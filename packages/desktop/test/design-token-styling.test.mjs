@@ -11,6 +11,7 @@ const theme = read("theme.css"), shell = read("shell.css");
 const icon = shellIcon("workspace");
 const markup = `<div id="app"><aside id="sidebar">
   <div class="ctx-head ws-head"><span id="ws-heading" class="ws-heading">Workspaces</span>
+    <button id="ws-current-only" class="side-icon-button ws-current-only icon-button" type="button" aria-pressed="false" aria-label="Show only the current workspace">${icon}</button>
     <button id="ws-add-open" class="ws-add-open side-icon-button icon-button" type="button" aria-label="Add local workspace…">${icon}</button></div>
   <section id="ws-list" class="ws-list" aria-labelledby="ws-heading"><div id="ws-options" class="ws-options"><ul class="ws-group">
     <li class="ws-option-row"><button class="ws-option" aria-current="true"><span class="ctx-dot on" aria-hidden="true"></span><span class="ws-option-name">fixture</span><span class="sr-only">, needs input</span><span class="ws-waiting attn-mark" aria-hidden="true"></span></button></li>
@@ -100,9 +101,11 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, two alike section
   assert.equal(shell.match(/\.ws-head\s*\{|\.ws-head > \.sidebar-settings|\.ctx-head\.ws-head/), null, "no rule moves the Workspaces heading");
   // The two headings are the sidebar's top level (2026-10-23): the nav items' 13px at 650 in --fg, on one line, the row's 36px kept.
   assert.deepEqual([wsHead.height, wsHead.color, wsHead.fontSize, wsHead.fontWeight, wsHead.whiteSpace], ["36px", "var(--fg)", "13px", "650", "nowrap"]);
-  assert.equal(u.style("#ws-add-open").marginLeft, "auto", "Add local workspace… at the head's right end");
+  // The toggle before it carries the auto margin that pushes the pair to the head's right end (the + stays last).
+  assert.equal(u.style("#ws-current-only").marginLeft, "auto", "Show only the current workspace and Add at the head's right end");
+  assert.equal(u.style("#ws-add-open").marginLeft, "0px", "Add right after the toggle");
   assert.deepEqual([u.style("#ws-add-open").width, u.style("#ws-add-open").height, u.style("#ws-add-open").flexShrink], ["28px", "28px", "0"]);
-  for (const id of ["#ws-add-open", "#sidebar-spawn", "#sidebar-toggle", "#sidebar-settings"]) {
+  for (const id of ["#ws-current-only", "#ws-add-open", "#sidebar-spawn", "#sidebar-toggle", "#sidebar-settings"]) {
     assert.equal(u.style(id).display, "grid", id);
     assert.equal(u.style(id).color, "var(--muted)", id);
   }
@@ -244,6 +247,14 @@ test("the right-hand column: the headings' +, the workspace rows' needs-input ma
   // Each is the last thing on its line: the + after the count, the mark after the name, the badge after the copy.
   assert.equal(u.get(".roster-head").lastElementChild, u.get("#sidebar-spawn"));
   assert.equal(u.get(".ws-head").lastElementChild, u.get("#ws-add-open"));
+  // Show only the current workspace (2026-10-23): the toggle right before Add, the pair pushed to the head's right
+  // end (the toggle's auto margin; Add's is 0 after it), the same 28px box: its centre the +'s 28px and the head's
+  // 6px gap further in, 59px.
+  assert.deepEqual([...u.get(".ws-head").children].map(el => el.id), ["ws-heading", "ws-current-only", "ws-add-open"]);
+  assert.deepEqual([u.cascaded("#ws-current-only", "margin-left"), u.cascaded("#ws-add-open", "margin-left")], ["auto", "0px"]);
+  assert.deepEqual([u.style("#ws-current-only").width, u.style("#ws-current-only").height], ["28px", "28px"]);
+  const toggleCentre = px(u.style(".ws-head").paddingRight) + px(u.style("#ws-add-open").width) + px(u.style(".ws-head").gap) + px(u.style("#ws-current-only").width) / 2;
+  assert.equal(toggleCentre, 59, "the toggle, 34px left of the +'s centre");
   assert.equal(u.get(".ws-option .ws-waiting").nextElementSibling, null);
   assert.equal(u.get(".ctx-inst .ctx-runtime").nextElementSibling, null);
   assert.equal(u.style(".ws-waiting").marginLeft, "auto"); assert.equal(u.style(".ctx-copy").flexGrow, "1");

@@ -26,6 +26,10 @@ import { isLocalPath, workspaceChoiceRows } from "../../client/workspace-choices
 
 /** Below the list while rows are cut off below its bounded height (a sighted cue: every row is in the list). */
 export const moreBelowText = (count) => `${count} more below`;
+/** "Show only the current workspace" (2026-10-23, the product owner: "for people that prefer working like we used to
+ * work"): the toggle's name and the key it is remembered under. Nothing stands for the rows it hides. */
+export const CURRENT_ONLY_LABEL = "Show only the current workspace";
+export const CURRENT_ONLY_KEY = "oats-desktop-workspaces-current-only";
 /** A workspace with an instance that needs input: the mark's words, in the row's name and as its tooltip. */
 export const WAITING_NAME = ", needs input";
 export const WAITING_TITLE = "An instance here needs input";
@@ -84,6 +88,8 @@ export function createWorkspaceSwitcher({
   removeListed = null,
   // One window per workspace (#481): opens (or focuses) a workspace's own window. Absent, no action.
   openInNewWindow = null, mac = false,
+  // Where "Show only the current workspace" is remembered (a Storage: localStorage), else not at all.
+  storage = null,
 }) {
   const q = (id) => document.getElementById(id);
   const section = q("ws-list"), options = q("ws-options"), addOpen = q("ws-add-open");
@@ -93,6 +99,15 @@ export function createWorkspaceSwitcher({
   options.after(empty);
   const more = document.createElement('p'); more.className = 'ws-more'; more.setAttribute('aria-hidden', 'true'); more.hidden = true;
   options.after(more);
+  // Show only the current workspace: a toggle at the heading, before Add (index.html #ws-current-only). Its state is
+  // aria-pressed; the rows it hides leave the list and its keys, and no line stands for them.
+  const currentOnlyButton = q("ws-current-only");
+  let currentOnly = (() => { try { return storage?.getItem(CURRENT_ONLY_KEY) === "1"; } catch { return false; } })();
+  if (currentOnlyButton) {
+    currentOnlyButton.replaceChildren(iconElement(document, "collapse", { size: 14 }));
+    currentOnlyButton.setAttribute("aria-label", CURRENT_ONLY_LABEL); currentOnlyButton.title = CURRENT_ONLY_LABEL;
+    currentOnlyButton.setAttribute("aria-pressed", String(currentOnly));
+  }
   // The rows' description: how to reach Open in new window from the keyboard (one hidden element).
   const hint = document.createElement('p'); hint.id = 'ws-open-window-hint'; hint.hidden = true; hint.textContent = openInNewWindowHint(mac);
   if (openInNewWindow) empty.after(hint);
@@ -215,6 +230,8 @@ export function createWorkspaceSwitcher({
       };
       button.addEventListener("click", () => { if (button.isConnected && options.contains(button)) choose(); });
       const item = document.createElement("li"); item.className = "ws-option-row";
+      // Only the current workspace: the others are hidden (never with no current row: then every row shows).
+      if (currentOnly && workspace.id !== activeId && workspaces.some((w) => w.id === activeId)) { button.hidden = true; item.hidden = true; }
       item.append(button);
       list.append(item);
       drawn.push({ key: workspace.id, openable: true, open: choose });
@@ -235,6 +252,10 @@ export function createWorkspaceSwitcher({
   };
   /** "N more below" while rows are cut off by the list's bounded height, at any scroll; none otherwise. */
   const noteMore = () => {
+    more.setAttribute("aria-hidden", "true");
+    // Only the current workspace: the others are not shown at all, not even as a line (the product owner); the
+    // pressed toggle says the list is narrowed.
+    if (options.querySelector(".ws-option[hidden]")) { more.hidden = true; more.replaceChildren(); return; }
     const bottom = options.getBoundingClientRect().bottom;
     const below = menuItems().filter((button) => button.getBoundingClientRect().bottom > bottom + 0.5);
     more.hidden = !below.length;
@@ -730,7 +751,20 @@ export function createWorkspaceSwitcher({
 
   confirm.hidden = true;
   render(null);
+  /** Show only the current workspace, or every one; remembered on this computer. Focus on a row that goes moves to
+   * the current row. */
+  const setCurrentOnly = (on) => {
+    currentOnly = !!on;
+    try { if (currentOnly) storage?.setItem(CURRENT_ONLY_KEY, "1"); else storage?.removeItem(CURRENT_ONLY_KEY); } catch { /* not remembered */ }
+    currentOnlyButton?.setAttribute("aria-pressed", String(currentOnly));
+    renderOptions();
+  };
+  currentOnlyButton?.addEventListener("click", () => setCurrentOnly(!currentOnly));
+
   return {
+    /** The "Show only the current workspace" toggle (workspaces.currentOnly). */
+    toggleCurrentOnly() { setCurrentOnly(!currentOnly); },
+    get currentOnly() { return currentOnly; },
     begin() {
       const token = ++generation;
       return (workspace, list) => {

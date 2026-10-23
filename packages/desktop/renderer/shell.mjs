@@ -535,6 +535,7 @@ const workspaceLabel = createWorkspaceSwitcher({
   selectWorkspace: (id) => switchWorkspace(id, { takeOver: true }),
   openInNewWindow: typeof desktopBridge.windowOpenWorkspace === "function" ? (id) => { void desktopBridge.windowOpenWorkspace(id); } : null,
   mac: navigator.platform.includes("Mac"),
+  storage: (() => { try { return window.localStorage; } catch { return null; } })(),
   // Feature-detected while tui-dev lands the approved privileged contract.
   // The final adapter names are intentionally isolated to these three lines.
   discoverSuggestions: desktopBridge.workspaceSuggestions || unavailableWorkspaceService,
@@ -2819,6 +2820,7 @@ THEMES.forEach(({ id, label }) => registerAction({
   id: `app.theme.${id}`, label: `Theme: ${label}`, context: "global", run: () => setTheme(id),
 }));
 registerAction({ id: "app.workspaces", label: "Focus the list of workspaces", context: "global", run: () => focusWorkspaceList() });
+registerAction({ id: "workspaces.currentOnly", label: "Show only the current workspace", context: "global", run: () => workspaceLabel.toggleCurrentOnly() });
 registerAction({ id: "sidebar.focusFilter", label: "Focus the instance roster", context: "global", run: () => focusRoster() });
 registerAction({ id: "sidebar.toggle", label: "Toggle the sidebar", context: "global", run: () => toggleSidebar() });
 registerAction({ id: "panel.toggle", label: "Show or hide the instance panel", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggle(); } });

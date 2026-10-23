@@ -40,6 +40,7 @@ function brainStyles() {
 
 const markup = `<div id="app"><aside id="sidebar">
   <div class="ctx-head ws-head"><span id="ws-heading" class="ws-heading">Workspaces</span>
+    <button id="ws-current-only" class="side-icon-button ws-current-only icon-button" type="button" aria-pressed="true" aria-label="Show only the current workspace"></button>
     <button id="ws-add-open" class="ws-add-open side-icon-button icon-button" type="button" aria-label="Add local workspace…"></button></div>
   <section id="ws-list" class="ws-list"><div id="ws-options" class="ws-options"><ul class="ws-group">
     <li class="ws-option-row"><button class="ws-option ws-current" aria-current="true">One</button></li>
@@ -172,7 +173,7 @@ test("focus: keyboard focus on plain shell controls paints the tint and the edge
   const u = fixture(t);
   // The nav's items, the headings' controls (Add local workspace…, Spawn instance), the foot's (the sidebar toggle,
   // the settings cog: the sidebar layout) and the settings menu's items are plain controls.
-  for (const selector of [".ws-option.ws-other", ".ws-option.ws-current", ".side-icon-button", "#nav .nav-item:not(.active)", "#nav .nav-item.active", "#ws-add-open", "#sidebar-spawn", "#sidebar-toggle", "#sidebar-settings",
+  for (const selector of [".ws-option.ws-other", ".ws-option.ws-current", ".side-icon-button", "#nav .nav-item:not(.active)", "#nav .nav-item.active", "#ws-current-only", "#ws-add-open", "#sidebar-spawn", "#sidebar-toggle", "#sidebar-settings",
     ".sidebar-settings-menu [role=menuitem]", ".ctx-inst", ".tab-trigger", ".tab .close",
     "#tab-actions button", ".ws-suggestion", ".ws-dialog-foot .secondary", ".kb-chord", ".kb-close", ".ws-segmented [aria-pressed=false]",
     ".ctx-instance-menu button", ".ctx-instance-actions", ".lifecycle-close", ".lifecycle-review", ".lifecycle-check", ".oats-view .act:not(.primary):not(.danger)"]) {
@@ -244,7 +245,9 @@ for (const palette of ["light", "solarized", "dark"]) test(`${palette}: selected
   // The nav's items, the sidebar's icon buttons (Spawn instance, the foot's sidebar toggle and settings cog: the
   // sidebar layout) and the settings menu's items: their ink, idle and keyboard-focused, on the --sel tint they focus to, through the
   // effective tokens (the edge is checked above).
-  for (const selector of ["#nav .nav-item:not(.active)", "#nav .nav-item.active", "#sidebar-spawn", "#sidebar-toggle", "#sidebar-settings", ".sidebar-settings-menu [role=menuitem]"]) {
+  // Show only the current workspace, pressed (the fixture's): its --accent icon, idle and focused alike.
+  assert.deepEqual([u.style("#ws-current-only").color, u.focused("#ws-current-only").color], ["var(--accent)", "var(--accent)"]);
+  for (const selector of ["#nav .nav-item:not(.active)", "#nav .nav-item.active", "#ws-current-only", "#sidebar-spawn", "#sidebar-toggle", "#sidebar-settings", ".sidebar-settings-menu [role=menuitem]"]) {
     const idle = u.style(selector).color, focus = u.focused(selector);
     for (const ink of [idle, focus.color]) {
       const name = ink.match(/^var\(--([\w-]+)\)$/)?.[1];

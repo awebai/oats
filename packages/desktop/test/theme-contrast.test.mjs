@@ -867,7 +867,7 @@ for (const [name] of palettes) test(`${name}: Add local workspace…, Spawn inst
   const noOpacity = (el, what) => { for (let node = el; node; node = node.parentElement) assert.equal(win.getComputedStyle(node).opacity, "1", `${what}: no opacity over it`); };
   assert.equal(token(win.getComputedStyle(doc.getElementById("sidebar")).background), "surface");
   // One control style: each is a .side-icon-button, with no colour rule of its own.
-  const buttons = ["ws-add-open", "sidebar-spawn", "sidebar-toggle", "sidebar-settings"].map(id => doc.getElementById(id));
+  const buttons = ["ws-current-only", "ws-add-open", "sidebar-spawn", "sidebar-toggle", "sidebar-settings"].map(id => doc.getElementById(id));
   for (const button of buttons) {
     assert.ok(button.classList.contains("side-icon-button"), `${button.id}: the sidebar's icon-button style`);
     const idle = win.getComputedStyle(button);
@@ -881,6 +881,19 @@ for (const [name] of palettes) test(`${name}: Add local workspace…, Spawn inst
     const r = rule(selector); assert.ok(r, selector);
     held(token(r.color), token(r.background), TEXT_CONTRAST, `the headings' icon buttons ${state}`);
   }
+  // Show only the current workspace, pressed: its icon in --accent (the current nav item's), on the sidebar at rest,
+  // and on the hover and focus fills, which keep it (3:1 for a graphic; the --accent pairs hold 4.5:1 too).
+  const toggle = doc.getElementById("ws-current-only");
+  toggle.setAttribute("aria-pressed", "true");
+  assert.equal(token(win.getComputedStyle(toggle).color), "accent", "pressed: the accent");
+  held("accent", "surface", GRAPHIC_CONTRAST, "the pressed toggle at rest");
+  const pressed = rule('.ws-current-only[aria-pressed="true"], .ws-current-only[aria-pressed="true"]:hover, .ws-current-only[aria-pressed="true"]:focus-visible');
+  assert.ok(pressed, "one rule for the pressed toggle in every state"); assert.equal(token(pressed.color), "accent");
+  for (const [state, selector] of [["hovered", ".side-icon-button:hover"], ["focused", ".side-icon-button:focus-visible"]]) {
+    held("accent", token(rule(selector).background), GRAPHIC_CONTRAST, `the pressed toggle ${state}`);
+  }
+  toggle.setAttribute("aria-pressed", "false");
+  assert.equal(token(win.getComputedStyle(toggle).color), "muted", "not pressed: the icon buttons' --muted");
   // The menu: its surface, its items' ink and their chords, at rest and on a hovered or focused item.
   const menu = settings.menu, menuBg = token(rule(".ctx-instance-menu").background);
   assert.equal(menuBg, "surface");

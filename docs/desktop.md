@@ -238,6 +238,17 @@ below, a line under the list says how many ("2 more below"), with the
 needs-input mark at its right when one of them has an instance that needs
 input.
 
+**Show only the current workspace** is the toggle before the **+** in the
+heading, for working in one workspace at a time. Pressed (its icon in the
+accent colour), the list shows the current workspace's row alone. Nothing
+stands for the others: no "N more" line, and no needs-input mark for one of
+them that waits. Press it again, or use ⌥⇧⌘O on macOS / Ctrl+Alt+Shift+O on
+Linux and Windows (the same in every chord family, and from a terminal) or the
+palette's **Show only the current workspace**, to see every workspace again.
+Ctrl+X then ↑ / ↓ still move to the previous / next workspace, which then
+shows alone. A window choosing a workspace shows them all. The choice is remembered on this
+computer.
+
 - **A row is one line: a circle and the workspace's name.** No icon, no
   machine, no state: a workspace's own pages show its machines and
   deployments. The circle is the one an instance row has, in the same place.

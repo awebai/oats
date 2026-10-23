@@ -45,12 +45,18 @@ body {
 /* The right-hand column (2026-10-23): the headings' + (their 28px boxes, the .ctx-head's 11px), the workspace rows'
    needs-input mark and the instance rows' harness mark all centre 25px in from the sidebar's right edge. */
 .ctx-head > .ctx-head-add { order: 1; } /* last, after the count and "Refreshing…" */
-/* The sidebar's icon buttons, one control style: the headings' + (Add local workspace…, Spawn instance) and the
-   foot's sidebar toggle and settings cog. */
+/* The sidebar's icon buttons, one control style: the headings' + (Add local workspace…, Spawn instance), the
+   Workspaces heading's Show only the current workspace, and the foot's sidebar toggle and settings cog. */
 .side-icon-button { flex: none; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px;
                     background: transparent; color: var(--muted); cursor: pointer; }
 .side-icon-button:hover { background: var(--surface-2); color: var(--fg); }
 .side-icon-button:focus-visible { background: var(--sel); color: var(--fg); }
+/* Show only the current workspace (2026-10-23): a toggle before Add, the pair pushed to the right end (its own auto
+   margin; Add's is 0 after it). Pressed, its icon is the accent, as the current nav item's, at rest, hovered and
+   focused alike (the --accent pairs on --surface, --surface-2 and --sel: theme-contrast). */
+.ws-head > .ws-current-only { margin-left: auto; }
+.ws-head > .ws-current-only + .ws-add-open { margin-left: 0; }
+.ws-current-only[aria-pressed="true"], .ws-current-only[aria-pressed="true"]:hover, .ws-current-only[aria-pressed="true"]:focus-visible { color: var(--accent); }
 .ws-modal[hidden] { display: none; }
 /* Bare search inputs (no wrapper): their own 1px border is the single frame (rule 3). */
 #ws-suggestion-search { width: 100%; height: 32px; padding: 0 9px; border: 1px solid var(--border);

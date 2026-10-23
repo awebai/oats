@@ -83,12 +83,12 @@ test("workspaces lands on the list's tab stop, else Add local workspace…; view
   assert.equal(s.doc.activeElement, before, "focus stays where it was, never <body>");
 });
 
-// A heading's control belongs to the section it heads: Add local workspace… to the workspaces, Spawn instance to
+// A heading's control belongs to the section it heads: Show only the current workspace and Add local workspace… to the workspaces, Spawn instance to
 // the roster. The views are the nav. The foot (the sidebar toggle, the settings cog and its menu) is no region.
-test("regionOfFocus: the head's + and the rows are workspaces; the nav items are views; Spawn instance is roster; the foot is none", t => {
+test("regionOfFocus: the head's toggle and +, and the rows, are workspaces; the nav items are views; Spawn instance is roster; the foot is none", t => {
   const s = shell(t);
   assert.equal(s.doc.getElementById("sidebar-tools"), null, "the tools row is gone");
-  for (const el of [s.doc.getElementById("ws-add-open"), ...s.doc.querySelectorAll("#ws-options .ws-option")]) {
+  for (const el of [s.doc.getElementById("ws-current-only"), s.doc.getElementById("ws-add-open"), ...s.doc.querySelectorAll("#ws-options .ws-option")]) {
     el.focus(); assert.equal(s.regions.regionOfFocus(), "workspaces", s.where());
   }
   for (const el of s.doc.querySelectorAll("#nav button")) { el.focus(); assert.equal(s.regions.regionOfFocus(), "views", s.where()); }
@@ -111,6 +111,8 @@ test("from a control inside a region (the workspace list, a row's tools, a headi
   assert.equal(s.where(), "Workspace", "so is the heading's Add local workspace…");
   s.doc.getElementById("ws-add-open").focus(); s.regions.cycle(-1);
   assert.equal(s.where(), "Soul", "Shift+F6 from the heading's + goes back to the panel");
+  s.doc.getElementById("ws-current-only").focus(); s.regions.cycle(1);
+  assert.equal(s.where(), "Workspace", "and from the heading's Show only the current workspace");
   s.doc.querySelector('#ws-options .ws-option[tabindex="-1"]').focus(); s.regions.cycle(-1);
   assert.equal(s.where(), "Soul", "Shift+F6 from the list goes back to the panel");
   s.doc.querySelector(".ctx-start").focus(); s.regions.cycle(1);

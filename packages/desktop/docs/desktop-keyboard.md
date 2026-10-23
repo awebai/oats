@@ -91,6 +91,7 @@ Show instance panel and the closed sidebar and panel).
    | Ctrl+Tab (next tab) | Tab | Tab |
    | Ctrl+Shift+Tab (previous tab) | ESC [ Z | Shift+Tab |
    | Ctrl+Shift+Alt+W (close the split) | ESC Ctrl+W | Esc, then Ctrl+W |
+   | Ctrl+Alt+Shift+O (show only the current workspace, every family) | ESC Ctrl+O | Esc, then Ctrl+O |
    | Alt+Shift+↑ / ↓ (previous / next instance, every family), Alt+Shift+← / → (previous / next editor group in the Alt family, previous / next tab in the others) | ESC [ 1 ; 4 A / B / D / C | no plainer key: a named exception. No agent, shell or readline binds them (Esc, then Shift+arrow sends something else) |
    | Ctrl+Shift+F6 (leave the terminal) | ESC [ 17 ; 6 ~ | no plainer key: a named exception, because without it F6 cannot get out of a terminal |
 
@@ -314,6 +315,7 @@ The three Linux / Windows columns are [the chord families](#the-chord-families):
 | Command palette (`app.palette`) | ⌘K | Alt+K | Ctrl+Alt+K | Ctrl+Shift+K | yes (plain Ctrl+K, kill to the end of the line, stays the program's) |
 | Quick open a soul (`app.quickOpenSouls`) | ⌘P | Alt+P | Ctrl+Alt+P | Ctrl+Shift+P | yes (plain Ctrl+P, shell history, stays the program's) |
 | Focus the list of workspaces (`app.workspaces`; the leader's `o`, the sidebar's `w`, the palette's **Workspace: switch…**) | ⌥⌘O | Alt+O | Ctrl+Alt+O | Ctrl+Shift+S | yes |
+| Show only the current workspace, or every one again (`workspaces.currentOnly`; the toggle in the Workspaces heading, the palette's **Show only the current workspace**; no leader key) | ⌥⇧⌘O | Ctrl+Alt+Shift+O | the same | the same | yes (ESC Ctrl+O, which Esc, then Ctrl+O still sends) |
 | Open the previous / next instance's terminal (`roster.openPrevious`, `roster.openNext`; no leader key: the leader's ↑ ↓ move between workspaces) | ⌥⌘↑ / ⌥⌘↓ | Alt+Shift+↑ / ↓ | the same | the same | yes (a named exception, principle 2) |
 | Show the previous / next workspace of the list (`workspace.previous`, `workspace.next`; the leader's ↑ ↓) | ⌥↑ / ⌥↓ | Alt+↑ / Alt+↓ | none (the leader): Alt+↑ / ↓ are the program's | none (the leader) | yes |
 | Focus mode on or off, in the active terminal (`terminal.focusMode`; the leader's `z`) | ⌥⌘Z | Alt+Z | Ctrl+Alt+Z | Ctrl+Shift+M | yes |
@@ -848,6 +850,14 @@ on its rows.
 - **Moving.** Up/Down move between the rows, Home/End go to the first and the
   last; moving focus selects nothing. The list scrolls within about six rows,
   the current row kept in view.
+- **Show only the current workspace.** The toggle before **Add local
+  workspace…** in the heading (`aria-pressed`), ⌥⇧⌘O / Ctrl+Alt+Shift+O
+  (`workspaces.currentOnly`, the same in every family) or the palette's
+  **Show only the current workspace** hides every row but the current one;
+  Up/Down/Home/End then stay on it; the leader's ↑ / ↓ and the workspace
+  moves still go to the previous / next workspace of the list, which then shows
+  alone. A focused row that goes hands focus to the current row. With no
+  current row (a window choosing), every row shows.
 - **Opening.** Enter or Space shows the row's workspace in this window.
 - **Open in new window.** ⌘Enter (macOS) / Ctrl+Enter (Linux/Windows) on a row
   opens its workspace in its own window, or brings that window to the front;
@@ -884,7 +894,8 @@ F6 moves focus to the next region, Shift+F6 to the previous one, in this order:
 
 1. **Workspaces**: the list's one tab stop (the row last focused, else the
    current one), else the heading's **Add local workspace…** (Shift+Tab from
-   the list reaches it).
+   the list reaches it, and the heading's **Show only the current workspace**
+   before it, which belongs here too).
 2. **Views**: the current view's nav button (Workspace or Deployments,
    `aria-current`), else the first; the nav sits under the list.
 3. **Instance roster**: its one tab stop, the selected row (the one whose
@@ -1107,7 +1118,8 @@ the rig). "Fixed" marks a gap this change closed.
 |---|---|---|
 | List of workspaces (`#ws-list`: a list of buttons, the current one `aria-current`) | One roving stop, the row last focused, else the current row; Tab from the heading's Add; F6 (the first region); `w` in the sidebar, the leader's `o`, ⌥⌘O / Alt+O and the palette's **Workspace: switch…** focus its current row | Up/Down/Home/End move over every row; Enter/Space show the workspace in this window (one another window shows moves here); ⌘Enter (macOS) / Ctrl+Enter (Linux/Windows) opens it in a new window, as the row's description says; the sidebar keys work on a row. The leader's ↑ / ↓, and Alt+↑ / ↓ on Linux and Windows, show the previous / next row from anywhere |
 | A row's context menu (`role="menu"`, one item: **Open in new window**) | Shift+F10 or the Menu key on a row, or a right-click; focus on its item | Enter/Space open the workspace in its own window (or bring that window to the front), back on the row; Esc or Tab close it, back on the row |
-| Add local workspace… (the **+** at the end of the sidebar's Workspaces heading) | Tab (first stop of the sidebar) | Enter/Space open the Add / onboard dialog |
+| Show only the current workspace (the toggle before Add in the sidebar's Workspaces heading, `aria-pressed`) | Tab (first stop of the sidebar); ⌥⇧⌘O / Ctrl+Alt+Shift+O and the palette run it from anywhere | Enter/Space hide every row of the list but the current one, or show them all again; the choice is remembered on this computer |
+| Add local workspace… (the **+** at the end of the sidebar's Workspaces heading) | Tab, after the toggle | Enter/Space open the Add / onboard dialog |
 | Add / onboard workspace dialog | From the header's Add, or the chooser's button; opened by itself in a window with no workspace when the Desktop serves none | Each found deployment is a button, then each row of this computer's list that can't be opened (`aria-disabled`, its state in words); one Tab stop among them, Up/Down/Home/End move: Enter/Space on a found one adds it and opens it here; Right Arrow on a row that can't be opened reaches its **Remove**, Left Arrow or Esc go back; Esc elsewhere closes; trapped; returns to what opened it, or to the list after an add |
 | Sidebar nav, under the list of workspaces (Workspace, Deployments; side by side, icons alone when the sidebar is too narrow for their labels) | F6 (current item, the second region); Tab; ⌘1/⌘2 (⌘3: Workspace on its Automations tab) | Enter/Space |
 | Roster rows | One roving stop, the selected row, else the first; F6; ⌘F / Alt+F (`sidebar.focusFilter`) and the sidebar's `/` land on it; the leader then Esc; Up/Down/Home/End (and the TUI's `k` `j` `g` `G`), PageUp/PageDown by the rows that fit; Right (`l`) expands, Left (`h`) collapses or goes to the parent; the sidebar keys (see "Sidebar keys"). A collapse never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is. The list shows no scrollbar (the wheel and the touchpad scroll it): a row that takes keyboard focus (these keys, ⌘F / Alt+F, F6) is revealed whole, its tools included, by scrolling the list alone, never an ancestor | Enter/Space open the terminal (running) or Start (stopped); an arrow chord the keymap binds is the keymap's, so Alt+Shift+↑/↓ (⌥⌘↑/↓) open the terminal of the row above / below, as from anywhere |
