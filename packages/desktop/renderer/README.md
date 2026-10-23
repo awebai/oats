@@ -1671,8 +1671,8 @@ section is the module map.
   anywhere": Alt, Ctrl+Alt or Ctrl+Shift), which writes keys.json through main and
   switches the keymap at once, with main's note when the file was not taken.
   What has no sidebar button is taught by its rows: the palette is the Leader group's first
-  key (the leader then K or Space) and a Global row with its chord; Settings is the Global
-  row **Settings: Connections…** (`app.connections`, the palette's name), unbound by default
+  key (the leader then K or Space) and a Global row with its chord; Connections (not in the
+  settings cog's menu) is the Global row **Settings: Connections…** (`app.connections`, the palette's name), unbound by default
   and bound there; the stage rows say where they land (**View: Workspace › Automations**).
 - **chord-family.mjs** — the chord family in the page: asks main
   (`../chord-family.mjs`) as the window starts, follows its pushes, writes the
