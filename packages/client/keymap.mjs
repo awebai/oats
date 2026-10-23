@@ -18,9 +18,13 @@
  *   leaderRows()            -> LEADER_TABLE
  *   chordKey(does, isMac, family)    -> the chord's key id on that platform and in that family, or null
  *   chordKeyOf(entry, isMac, family) -> the same for a CHORDS row
+ *   doesLabel(does)         -> an action's label (its LEADER_TABLE row's, else its CHORDS row's), or null
  *   paletteKey(does, isMac) -> the palette's own key id on that platform, or null
  *
- * `does` names an action, not a client's code: each client maps it to its own. */
+ * `does` names an action, not a client's code: each client maps it to its own. Its label, the words a
+ * help names it by, is its LEADER_TABLE row's, else its CHORDS row's (`doesLabel`): a CHORDS row carries
+ * a label only for an action the leader has no key for. The TUI's help reads it; the Desktop names its
+ * actions in its own words (packages/desktop/renderer/leader-keys.mjs). */
 
 /** The leader per platform: Ctrl+X on both, as Emacs has it (#1433). Without the kitty keyboard
  * protocol it is one byte, 0x18, in every terminal; pressed twice it sends that byte to the program
@@ -30,14 +34,16 @@ export const LEADER = Object.freeze({ mac: "ctrl+x", other: "ctrl+x" });
 
 /** The keys read after the leader, in the TUI's order, and what each does. `terminal`: named in
  * the hint only while a terminal is open. The leader pressed twice is not here: it is the user's
- * key, and each client says what it does. */
+ * key, and each client says what it does. ↑ and ↓ move to the previous and the next workspace of
+ * the sidebar's list (`workspace-previous`, `workspace-next`); the previous and the next instance
+ * are the chords' alone (CHORDS `previous`, `next`), which carry their own labels for it. */
 export const LEADER_TABLE = Object.freeze([
   { keys: ["k", "space"], does: "palette", label: "palette" },
   { keys: ["1"], does: "instances", label: "instances" },
   { keys: ["2"], does: "souls", label: "souls" },
   { keys: ["3"], does: "capabilities", label: "capabilities" },
-  { keys: ["up"], does: "previous", label: "previous instance" },
-  { keys: ["down"], does: "next", label: "next instance" },
+  { keys: ["up"], does: "workspace-previous", label: "previous workspace" },
+  { keys: ["down"], does: "workspace-next", label: "next workspace" },
   { keys: ["z"], does: "zoom", label: "zoom", terminal: true },
   { keys: ["w"], does: "close-terminal", label: "close terminal", terminal: true },
   { keys: ["left"], does: "tab-previous", label: "previous tab", terminal: true },
@@ -92,13 +98,15 @@ export const PLAIN_KEYS = Object.freeze([
 ].map((entry) => Object.freeze({ ...entry, keys: Object.freeze([...entry.keys]) })));
 
 /** The chords: one key that does what the leader then a key does, from every focus, the same in
- * both clients, per platform (`mac`, `other`). The Desktop's DEFAULT_KEYMAP reads these entries from
+ * both clients, per platform (`mac`, `other`). Three have no leader key: `previous` and `next` (the
+ * previous / next instance, whose `label` is here, since no LEADER_TABLE row names them) and
+ * `edit-instance`; the workspace moves, the leader's ↑ ↓, have no chord. The Desktop's DEFAULT_KEYMAP reads these entries from
  * here (CHORDS_READ, docs/desktop-keyboard.md); the TUI binds the `other` ones, and the `mac` ones
  * without `cmd+`, from every focus (docs/tui.md, "Chords"). The leader stays the key that always
  * works: help, the views and the acts (stop, restart, start, retire) are reached by it alone.
  *
  * One family, so that no terminal's own keys take them (the matrix in docs/tui.md, "Chords"):
- * Ctrl+Alt with a letter or a digit for an action, Alt+Shift with the leader's arrow to move. On
+ * Ctrl+Alt with a letter or a digit for an action, Alt+Shift with an arrow to move. On
  * macOS the Desktop holds ⌘ (⌘⌥ for the rows new in phase 3). A Ctrl+Alt chord reaches the TUI only
  * under the kitty keyboard protocol (ESC then Ctrl+K is what Ctrl+Alt+K sends without it); an
  * Alt+Shift arrow has a sequence of its own (`CSI 1;4A`) and reaches it with or without. `tab-N`
@@ -117,8 +125,8 @@ export const CHORDS = Object.freeze([
   { does: "palette", mac: "cmd+k", other: "ctrl+alt+k", shift: "ctrl+shift+k" },
   { does: "spawn", mac: "cmd+p", other: "ctrl+alt+p", shift: "ctrl+shift+p" },
   { does: "workspaces", mac: "cmd+alt+o", other: "ctrl+alt+o", shift: "ctrl+shift+s" },
-  { does: "previous", mac: "cmd+alt+up", other: "alt+shift+up" },
-  { does: "next", mac: "cmd+alt+down", other: "alt+shift+down" },
+  { does: "previous", mac: "cmd+alt+up", other: "alt+shift+up", label: "previous instance" },
+  { does: "next", mac: "cmd+alt+down", other: "alt+shift+down", label: "next instance" },
   { does: "tab-previous", mac: "cmd+alt+left", other: "alt+shift+left" },
   { does: "tab-next", mac: "cmd+alt+right", other: "alt+shift+right" },
   ...Array.from({ length: 9 }, (_, i) => ({ does: `tab-${i + 1}`, mac: `cmd+alt+${i + 1}`, other: `ctrl+alt+${i + 1}` })),
@@ -185,6 +193,12 @@ export function chordKeyOf(entry, isMac, family = DEFAULT_CHORD_FAMILY) {
 export function chordKey(does, isMac, family = DEFAULT_CHORD_FAMILY) {
   const entry = CHORDS.find((each) => each.does === does);
   return entry === undefined ? null : chordKeyOf(entry, isMac, family);
+}
+
+/** The label of the action `does`: its LEADER_TABLE row's, else its CHORDS row's, else null (an action
+ * no table names in words, such as `edit-instance`, or none). */
+export function doesLabel(does) {
+  return LEADER_TABLE.find((row) => row.does === does)?.label ?? CHORDS.find((entry) => entry.does === does)?.label ?? null;
 }
 
 /** The key id of the palette's own key that does `does` on macOS (`true`) or elsewhere, or null. */

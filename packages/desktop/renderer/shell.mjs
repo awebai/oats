@@ -9,7 +9,8 @@
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
 import { currentWorkspace, workspaceGeneration, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, postJson, rowDeployment, httpError,
-  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices } from "./views/common.mjs";
+  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices, leaveTakenWorkspace, handedLayout, takenWorkspaceIds } from "./views/common.mjs";
+import { describeLayout, composeLayout, validLayout } from "./layout-handover.mjs";
 import { instanceActions, captureInstanceActionMenu, pendingActionReason } from "./instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
 import { createInstancePrAction } from "./instance-pr-action.mjs";
@@ -388,11 +389,15 @@ async function showChooser() {
   text.textContent = "This window has no workspace yet.";
   const choose = document.createElement("button");
   choose.type = "button"; choose.className = "primary"; choose.textContent = "Choose a workspace…";
-  choose.addEventListener("click", () => workspaceLabel.openMenu());
+  // With workspaces to show, the button focuses the list; with none served (#518), it opens Add local workspace….
+  const chooseOne = () => { if (choosingWorkspaces().length) focusWorkspaceList(); else void workspaceLabel.openModal(choose); };
+  choose.addEventListener("click", chooseOne);
   el.append(heading, text, choose);
   stageHost.replaceChildren(el);
   workspaceLabel.choose(choosingWorkspaces());
-  workspaceLabel.openMenu();
+  // Nothing served, so the list is empty: the window opens the Add dialog at once. Closing it leaves this
+  // stage, whose button opens it again.
+  chooseOne();
 }
 onWindowState((state) => {
   if (state === "choosing") { void showChooser(); return; }
@@ -521,8 +526,9 @@ const noteUnlisted = (result) => {
 };
 const workspaceLabel = createWorkspaceSwitcher({
   document,
-  // Main binds a switch first; a workspace another window has is focused there instead (#481).
-  selectWorkspace: (id) => { void switchWorkspace(id); },
+  // Main binds a switch first (#481). A pick from the list always shows the workspace in THIS window: one
+  // another window shows moves here (main takes it over from that window, which shows its previous one).
+  selectWorkspace: (id) => switchWorkspace(id, { takeOver: true }),
   openInNewWindow: typeof desktopBridge.windowOpenWorkspace === "function" ? (id) => { void desktopBridge.windowOpenWorkspace(id); } : null,
   mac: navigator.platform.includes("Mac"),
   // Feature-detected while tui-dev lands the approved privileged contract.
@@ -531,6 +537,7 @@ const workspaceLabel = createWorkspaceSwitcher({
   addWorkspace: desktopBridge.workspaceAdd ? (path) => desktopBridge.workspaceAdd(path).then(noteUnlisted) : unavailableWorkspaceService,
   pickWorkspace: desktopBridge.workspacePick ? () => desktopBridge.workspacePick().then(noteUnlisted) : unavailableWorkspaceService,
   onboardWorkspace: desktopBridge.workspaceOnboard ? (token, ref) => desktopBridge.workspaceOnboard(token, ref).then((result) => { noteUnlisted(result?.added); return result; }) : null,
+  // The Add dialog's Remove of a row of this computer's list that can't be opened (#1390).
   removeListed: desktopBridge.workspaceRemoveListed || null,
   // After the kernel onboarded and the add selected the new deployment: land
   // on its Workspace view.
@@ -539,6 +546,16 @@ const workspaceLabel = createWorkspaceSwitcher({
     void showStage("spawn");
   },
 });
+window.addEventListener("pagehide", () => workspaceLabel.dispose(), { once: true });
+/** The list of workspaces at the sidebar's top (`w`, the leader's `o`, Ctrl+Alt+O / ⌘⌥O, the palette's
+ * "Workspace: switch…", the chooser's button): shown (focus mode left, the sidebar back), its current row
+ * focused, or the row last focused there. */
+function focusWorkspaceList() {
+  tabOpenIntents.invalidate();
+  contextPanel.setFocusMode(false);
+  setSidebarHidden(false);
+  workspaceLabel.focusList();
+}
 
 // ── keybinding contexts ──────────────────────────────────────────────────────────
 // The engine dispatches an action only when its context is active. "tabs"
@@ -552,12 +569,12 @@ function updateActiveContexts(tabLayerOn = tabLayerVisible) {
   if (tabLayerOn) set.add("tabs");
   else if (stage) set.add(`stage:${stage.name}`);
   // The sidebar's plain keys (context `sidebar`, sidebar.key.*): live while focus is in the sidebar
-  // (its nav, the roster rows, the footer), never inside an open popup there (an instance's actions
-  // menu, the workspace switcher's menu) and never in an editable field (the roster filter), where a
+  // (its nav, the list of workspaces, the roster rows, the footer), never inside an open popup there (an
+  // instance's actions menu) and never in an editable field (the roster filter), where a
   // rebind to a modified chord would otherwise take the field's own key. Editable as the engine's
   // plain-key guard reads it (keybindings.mjs isEditableTarget).
   const focused = document.activeElement;
-  if (focused && document.getElementById("sidebar")?.contains(focused) && !focused.closest('[role="menu"], [role="listbox"], .ws-menu')
+  if (focused && document.getElementById("sidebar")?.contains(focused) && !focused.closest('[role="menu"], [role="listbox"]')
     && !/^(INPUT|TEXTAREA|SELECT)$/i.test(focused.tagName || "") && !focused.isContentEditable) set.add("sidebar");
   if (activeInstanceMenu?.element.isConnected && activeInstanceMenu.element.dataset.instanceMenuOpen === 'true' && activeInstanceMenu.element.contains(document.activeElement) && activeInstanceMenu.owns()) set.add('instance-menu');
   setActiveContexts(set);
@@ -2352,7 +2369,7 @@ const palette = createPalette({
     ...THEMES.map(({ id, label }) => ({ label: `Theme: ${label}`, detail: chordDetail(`app.theme.${id}`), run: () => runAction(`app.theme.${id}`) })),
     { label: "Shortcuts: edit keyboard shortcuts…", detail: chordDetail("app.shortcuts"), run: () => openShortcutsEditor() },
     { label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: () => openConnections() },
-    { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => workspaceLabel.openMenu() },
+    { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => focusWorkspaceList() },
     // One window per workspace (#481): on macOS also File → New Window ⌘⇧N; elsewhere no default chord.
     ...(typeof desktopBridge.windowOpenWorkspace === "function" ? [{ label: "Window: new window",
       detail: () => chordDetail("app.newWindow")() || (isMac ? formatChord("Mod+Shift+N", true) : ""), run: () => runAction("app.newWindow") }] : []),
@@ -2774,7 +2791,7 @@ registerAction({ id: "app.themeToggle", label: "Cycle White / Solarized / Dark /
 THEMES.forEach(({ id, label }) => registerAction({
   id: `app.theme.${id}`, label: `Theme: ${label}`, context: "global", run: () => setTheme(id),
 }));
-registerAction({ id: "app.workspaces", label: "Open the workspace switcher", context: "global", run: () => workspaceLabel.openMenu() });
+registerAction({ id: "app.workspaces", label: "Focus the list of workspaces", context: "global", run: () => focusWorkspaceList() });
 registerAction({ id: "sidebar.focusFilter", label: "Focus the instance roster filter", context: "global", run: () => focusRoster() });
 registerAction({ id: "sidebar.toggle", label: "Toggle the sidebar", context: "global", run: () => toggleSidebar() });
 registerAction({ id: "panel.toggle", label: "Show or hide the instance panel", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggle(); } });
@@ -2958,6 +2975,7 @@ const leaderDispatch = createLeaderDispatch({
   quickOpen: () => runAction("app.quickOpenSouls"),
   filter: () => runAction("sidebar.focusFilter"),
   workspaces: () => runAction("app.workspaces"),
+  workspaceStep: delta => workspaceLabel.step(delta),
   help: () => runAction("app.shortcuts"),
   list: () => {
     if (sidebarHidden() || contextPanel.isFocusMode()) runAction("sidebar.toggle");
@@ -2992,9 +3010,10 @@ function runAsLeaderKey(does, e) {
 for (const { id, does } of SIDEBAR_KEYS) {
   registerAction({ id, label: leaderLabel(does, actionLabel), context: "sidebar", run: (e) => runAsLeaderKey(does, e) });
 }
-// The leader's ↑ / ↓ / z on chords of their own (the shared CHORDS previous, next, zoom: Alt+Shift+↑/↓
-// and Ctrl+Alt+Z, ⌘⌥↑/↓ and ⌘⌥Z): each runs exactly what the leader then that key runs, for the
-// same target, from every focus. Inert under a modal dialog or the palette, as the leader is.
+// The previous / next instance and the leader's z on chords (the shared CHORDS previous, next, zoom:
+// Alt+Shift+↑/↓ and Ctrl+Alt+Z, ⌘⌥↑/↓ and ⌘⌥Z): the instance steps have no leader key (the leader's ↑ / ↓
+// move between workspaces); each runs the one dispatch, for the leader's target, from every focus.
+// Inert under a modal dialog or the palette, as the leader is.
 for (const [id, does] of [["roster.openPrevious", "previous"], ["roster.openNext", "next"], ["terminal.focusMode", "zoom"]]) {
   registerAction({ id, label: leaderLabel(does, actionLabel), context: "global", when: () => !modalOpen(), run: (e) => runAsLeaderKey(does, e) });
 }
@@ -3031,11 +3050,86 @@ applyChordTitles();
 // surfaces, with no second/contextual sidebar and no width jump.
 initContextRoster();
 onWorkspaceChange(restoreWorkspaceTabs);
+// After it: a take-over's layout, once the workspace it came with is this window's (restoreHandedLayout).
+onWorkspaceChange((ws) => { const handed = handedLayout(ws); if (handed) void restoreHandedLayout(ws, handed); });
+// A take-over: another window took this window's workspace (main's window:release-workspace).
+desktopBridge?.onWorkspaceRelease?.((message) => { void releaseTakenWorkspace(message); });
+/** Another window took `workspace` over. This window answers main at once, with the layout it shows of it
+ * (layout-handover.mjs: its terminals and its split; file, brain and view tabs do not move), then leaves it
+ * (views/common.mjs leaveTakenWorkspace: its previous workspace, else the switcher), then closes every tab it
+ * has of it, each terminal's viewer with it, and forgets that workspace's layout: nothing of it stays attached
+ * or writable here. A late release (main moved the binding without waiting) ends the same way. */
+async function releaseTakenWorkspace(message) {
+  const workspace = typeof message?.workspace === "string" && message.workspace ? message.workspace : null;
+  if (!workspace) return;
+  // Under any id it names here: main may have rekeyed this window from a deployment id to its view first.
+  const taken = takenWorkspaceIds(workspace, message.workspaces);
+  const shown = currentWorkspace();
+  const layout = taken.has(shown) ? describeLayout(tabs, split, activeTab, shown) : null;
+  try { await desktopBridge.windowReleaseAnswer?.(message.request, layout ? { layout } : null); } catch { /* main moves it after its wait */ }
+  try { await leaveTakenWorkspace(workspace, message.workspaces); }
+  finally { closeWorkspaceTabs(taken); }
+}
+/** Close every tab of the workspace `taken` names (a Set of its ids: one this window no longer shows): a
+ * background close, which cancels no pending open and moves no focus, and a terminal's goes through its own
+ * teardown (its viewer closed). */
+function closeWorkspaceTabs(taken) {
+  for (const [id, t] of [...tabs]) if (taken.has(t.workspace)) closeTab(id, false, { explicit: false, background: true, passive: true });
+  for (const workspace of taken) { workspaceTabMemory.forget(workspace); wsActiveTerminal.delete(workspace); }
+}
+/** A take-over's layout (layout-handover.mjs), handed over by the window the workspace came from: its terminals
+ * opened here again (fresh viewers; the agents keep running) and laid out as they were, under ONE intent ticket, so
+ * any selection made meanwhile (a click, a key, another open) supersedes what is left of it, as does a switch or a new
+ * connection. A terminal that no longer resolves in this workspace's roster, or no longer runs, is left out, as a
+ * stale memory's is (workspace-tab-memory.mjs recall). A layout off the descriptor's shape (main refuses one; this
+ * is the backstop) restores nothing, and throws nothing. */
+async function restoreHandedLayout(ws, layout) {
+  if (!validLayout(layout)) return;
+  const owns = tabOpenIntents.begin(), gen = workspaceGeneration(), connection = connectionGeneration;
+  const still = () => owns() && workspaceGeneration() === gen && currentWorkspace() === ws && connection === connectionGeneration;
+  const read = ++panelReads;
+  let panel;
+  try { panel = await api(`/api/panel?ws=${encodeURIComponent(ws)}`); } catch { return; }
+  if (!still()) return;
+  const quiet = (msg) => console.warn(`[take-over] ${msg}`);
+  const opened = [];
+  for (const ref of layout.terminals) {
+    opened.push(null);
+    const r = resolveTerminalOpen(panel.instances || [], ref, ws);
+    if (r.error) continue;
+    try { await whenKeyFree(r.key); } catch { return; }
+    if (!still()) return;
+    const pending = JSON.stringify([r.key, terminalOrigin(r.inst).incarnation]);
+    if (!pendingTerms.has(pending)) {
+      pendingTerms.add(pending);
+      try { await openTerminalTabInner(r.inst, ws, r.key, still, quiet, () => true, read); }
+      catch (error) { quiet(error?.message || String(error)); }
+      finally { pendingTerms.delete(pending); }
+    }
+    if (!still()) return;
+    opened[opened.length - 1] = [...tabs].find(([, t]) => t.key === r.key && t.workspace === ws)?.[0] ?? null;
+  }
+  const composed = composeLayout(layout, (i) => opened[i]);
+  if (!opened.some((id) => id !== null)) return;
+  // This window's own terminals of the workspace (kept from when it showed it before) join the focused group,
+  // as a handed one no group lists does: in a split, every terminal is in a group.
+  if (composed.split) {
+    const placed = new Set(composed.split.groups.flatMap((group) => group.tabs));
+    const into = composed.split.groups.find((group) => group.id === composed.split.focusedGroup);
+    for (const [id, t] of tabs) if (t.kind === "terminal" && t.workspace === ws && !placed.has(id)) into.tabs.push(id);
+  }
+  split = composed.split;
+  setSidebarMode("instances");
+  setNavActive(null);
+  if (composed.activeTab == null) { activateTab(null, { keepGroupFocus: true }); updateContextTabs(); return; }
+  selectTab(composed.activeTab, { intent: owns, focusContent: true });
+  updateContextTabs();
+}
 function restoreWorkspaceTabs() {
   contextRosterGen++;
   brainIntents.invalidate();
   tabOpenIntents.invalidate();
-  workspaceLabel.reset();
+  workspaceLabel.reset(currentWorkspace());
   workspaceTabMemory.remember(tabWorkspace, { split, activeTab, sidebarMode, tabLayerVisible });
   // Hide synchronously and park ALL nodes before replacing group identities.
   // Workspace-local group ids can overlap; deleting old cells first would

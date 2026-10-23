@@ -1,118 +1,172 @@
-// One Desktop window per workspace (#481): the switcher's Open in new window action and the window
-// that has no workspace yet. Each workspace option has a trailing button OUTSIDE the option, labelled
-// "Open <label> in a new window" (aria-label and tooltip), reached with ArrowRight from its option and
-// left with ArrowLeft or Escape; ⌘Enter (macOS) / Ctrl+Enter on the option does the same, and the
-// option's aria-describedby hint says so.
+// One Desktop window per workspace (#481): the workspace list's Open in new window and the window that has no
+// workspace yet. No button is drawn for it: ⌘Enter (macOS) / Ctrl+Enter on a row does it, the rows'
+// aria-describedby hint says so, and the row's context menu (the page's own popover, one menuitem) offers it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { createWorkspaceSwitcher } from '../renderer/workspace-switcher.mjs';
+import vm from 'node:vm';
+import { createWorkspaceSwitcher, openInNewWindowHint, OPEN_IN_NEW_WINDOW } from '../renderer/workspace-switcher.mjs';
 
 const html = readFileSync(new URL('../renderer/index.html', import.meta.url), 'utf8');
-const A = { id: 'ws:aaaaaaaaaaaaaaaaaaaa', name: 'oats', machines: ['This Mac'] };
-const B = { id: 'ws:bbbbbbbbbbbbbbbbbbbb', name: 'tsm', machines: ['This Mac', 'altair'] };
-const LOOSE = { id: 'remote:rigel:/x', name: 'rigel', unattached: true, deployments: ['remote:rigel:/x'], machines: ['rigel'], short: 'Not reached' };
+const A = { id: 'ws:aaaaaaaaaaaaaaaaaaaa', name: 'oats' };
+const B = { id: 'ws:bbbbbbbbbbbbbbbbbbbb', name: 'tsm' };
+const LOOSE = { id: 'remote:rigel:/x', name: 'rigel', unattached: true, deployments: ['remote:rigel:/x'] };
 
 function setup({ mac = true, openInNewWindow = true } = {}) {
   const dom = new JSDOM(html, { url: 'file:///renderer/index.html' });
+  // jsdom has no popover API: the menu's show and hide are recorded.
+  const popovers = [];
+  dom.window.HTMLElement.prototype.showPopover = function () { popovers.push(['show', this]); };
+  dom.window.HTMLElement.prototype.hidePopover = function () { popovers.push(['hide', this]); };
   const document = dom.window.document, selected = [], opened = [];
   const controller = createWorkspaceSwitcher({ document, mac,
     selectWorkspace: (id) => selected.push(id), discoverSuggestions: async () => [],
     addWorkspace: async () => ({ ok: false }), pickWorkspace: async () => ({ ok: false, code: 'cancelled' }),
     ...(openInNewWindow ? { openInNewWindow: (id) => opened.push(id) } : {}) });
   controller.begin()(A, [A, B, LOOSE]);
-  document.getElementById('ws-trigger').click();
-  const key = (el, init) => el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }));
-  return { dom, document, controller, selected, opened, key };
+  const key = (el, init) => {
+    const event = new dom.window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+    el.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  const contextmenu = (el) => {
+    const event = new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    el.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  return { dom, document, controller, selected, opened, popovers, key, contextmenu };
 }
 const option = (document, id) => document.querySelector(`.ws-option[data-workspace-id="${id}"]`);
-const action = (document, id) => document.querySelector(`.ws-open-window[data-workspace-id="${id}"]`);
+const menu = (document) => document.querySelector('.ws-row-menu');
 
-test('every option has its Open in new window button, outside the option, labelled for assistive technology', () => {
+test('no per-row button: a row is its name alone', () => {
   const { document } = setup();
+  assert.equal(document.querySelector('.ws-open-window'), null);
   for (const [choice, label] of [[A, 'oats'], [B, 'tsm'], [LOOSE, 'rigel']]) {
-    const button = action(document, choice.id), opt = option(document, choice.id);
-    assert.ok(button, choice.id); assert.equal(button.tagName, 'BUTTON'); assert.equal(button.type, 'button');
-    assert.equal(opt.contains(button), false, 'never nested inside the option');
-    assert.equal(button.getAttribute('aria-label'), `Open ${label} in a new window`);
-    assert.equal(button.title, `Open ${label} in a new window`);
-    assert.equal(button.tabIndex, -1, 'reached with ArrowRight, not a second Tab stop per row');
-    assert.equal(button.querySelector('svg').getAttribute('aria-hidden'), 'true');
+    const row = option(document, choice.id);
+    assert.deepEqual([...row.children].map((child) => child.className), ['ws-option-name'], choice.id);
+    assert.equal(row.textContent, label);
+    assert.equal(row.parentElement.querySelectorAll('button').length, 1, 'nothing beside the row either');
   }
 });
 
-test('the option says how to reach the action (aria-describedby hint, platform chord)', () => {
+test('the rows say how to open in a new window (one shared aria-describedby hint, the platform chord in words)', () => {
   for (const [mac, chord] of [[true, '⌘Enter'], [false, 'Ctrl+Enter']]) {
     const { document } = setup({ mac });
     const hintId = option(document, A.id).getAttribute('aria-describedby');
-    assert.ok(hintId);
+    assert.equal(hintId, 'ws-open-window-hint');
     const hint = document.getElementById(hintId);
     assert.ok(hint, 'the hint exists in the document');
-    assert.match(hint.textContent, new RegExp(`${chord.replace('+', '\\+')}.*new window`, 'i'));
-    assert.match(hint.textContent, /Right Arrow/);
-    assert.equal(option(document, B.id).getAttribute('aria-describedby'), hintId, 'one shared hint');
+    assert.equal(hint.hidden, true, 'said, not shown');
+    assert.equal(hint.textContent, openInNewWindowHint(mac));
+    assert.equal(hint.textContent, `Press ${chord} to open this workspace in a new window.`);
+    assert.doesNotMatch(hint.textContent, /Right Arrow/, 'no button to reach');
+    for (const id of [B.id, LOOSE.id]) assert.equal(option(document, id).getAttribute('aria-describedby'), hintId, 'one shared hint');
   }
 });
 
-test('clicking the button opens that workspace in a new window, never selecting it here', () => {
-  const { document, selected, opened } = setup();
-  action(document, B.id).click();
-  assert.deepEqual(opened, [B.id]); assert.deepEqual(selected, []);
-  assert.equal(document.getElementById('ws-menu').hidden, true, 'the menu closes');
-});
-
-test('ArrowRight moves to the option\'s button; ArrowLeft and Escape return to the option; Enter activates it', () => {
-  const { document, key, opened } = setup();
-  option(document, B.id).focus();
-  key(option(document, B.id), { key: 'ArrowRight' });
-  assert.equal(document.activeElement, action(document, B.id));
-  key(document.activeElement, { key: 'ArrowLeft' });
-  assert.equal(document.activeElement, option(document, B.id));
-  key(option(document, B.id), { key: 'ArrowRight' });
-  key(document.activeElement, { key: 'Escape' });
-  assert.equal(document.activeElement, option(document, B.id), 'Escape on the button returns to its option');
-  assert.equal(document.getElementById('ws-menu').hidden, false, '…without closing the menu');
-  key(option(document, B.id), { key: 'ArrowRight' });
-  document.activeElement.click(); // a native button: Enter and Space click it
-  assert.deepEqual(opened, [B.id]);
-});
-
-test('ArrowDown and ArrowUp from a button move between options, as from the option', () => {
-  const { document, key } = setup();
-  option(document, A.id).focus();
-  key(option(document, A.id), { key: 'ArrowRight' });
-  key(document.activeElement, { key: 'ArrowDown' });
-  assert.equal(document.activeElement, option(document, B.id));
-});
-
-test('⌘Enter on macOS, Ctrl+Enter elsewhere, on an option opens it in a new window; plain Enter still selects', () => {
+test('⌘Enter on macOS, Ctrl+Enter elsewhere, on a row opens it in a new window; plain Enter selects', () => {
   for (const [mac, chord] of [[true, { metaKey: true }], [false, { ctrlKey: true }]]) {
     const { document, key, opened, selected } = setup({ mac });
     option(document, B.id).focus();
-    assert.equal(key(option(document, B.id), { key: 'Enter', ...chord }), false, 'consumed');
+    assert.equal(key(option(document, B.id), { key: 'Enter', ...chord }), true, 'consumed');
     assert.deepEqual(opened, [B.id]); assert.deepEqual(selected, []);
     const other = mac ? { ctrlKey: true } : { metaKey: true };
-    key(option(document, A.id), { key: 'Enter', ...other });
+    assert.equal(key(option(document, A.id), { key: 'Enter', ...other }), false);
+    assert.equal(key(option(document, A.id), { key: 'Enter', ...chord, shiftKey: true }), false, 'a Shift chord is not it');
     assert.deepEqual(opened, [B.id], 'the other platform\'s chord does nothing');
+    // Plain Enter is the button's own activation: left alone, its click selects (jsdom does not turn the
+    // keydown into that click, so the test sends it).
+    assert.equal(key(option(document, B.id), { key: 'Enter' }), false);
+    option(document, B.id).click();
+    assert.deepEqual(selected, [B.id]); assert.deepEqual(opened, [B.id]);
   }
 });
 
-test('without a window bridge (the browser harness) there is no action and no hint', () => {
-  const { document } = setup({ openInNewWindow: false });
-  assert.equal(document.querySelector('.ws-open-window'), null);
-  assert.equal(option(document, A.id).hasAttribute('aria-describedby'), false);
+test('the row\'s context menu: the native one is prevented, the page\'s opens with one item, focused, for that row', () => {
+  for (const [mac, chord] of [[true, '⌘Enter'], [false, 'Ctrl+Enter']]) {
+    const { document, contextmenu, popovers } = setup({ mac });
+    const rowMenu = menu(document);
+    assert.ok(rowMenu, 'drawn once, inside the list section');
+    assert.ok(document.getElementById('ws-list').contains(rowMenu));
+    assert.equal(rowMenu.getAttribute('popover'), 'auto'); assert.equal(rowMenu.getAttribute('role'), 'menu');
+    assert.ok(rowMenu.classList.contains('ctx-instance-menu'), 'the instance menu\'s look');
+    option(document, B.id).focus();
+    assert.equal(contextmenu(option(document, B.id)), true, 'default prevented: no native Copy/Paste menu for a row');
+    assert.deepEqual(popovers, [['show', rowMenu]]);
+    assert.equal(rowMenu.getAttribute('aria-label'), 'tsm', 'labelled with the row\'s name');
+    const items = [...rowMenu.querySelectorAll('[role="menuitem"]')];
+    assert.equal(items.length, 1);
+    assert.equal(items[0].dataset.action, 'open-in-new-window');
+    assert.equal(items[0].querySelector('span').textContent, OPEN_IN_NEW_WINDOW);
+    assert.equal(OPEN_IN_NEW_WINDOW, 'Open in new window');
+    assert.equal(items[0].querySelector('kbd').textContent, chord);
+    assert.equal(document.activeElement, items[0], 'focus on its item');
+    contextmenu(option(document, LOOSE.id));
+    assert.equal(rowMenu.getAttribute('aria-label'), 'rigel', 'another row\'s menu is for that row');
+  }
 });
 
-test('a window with no workspace: the trigger asks to choose one, the choices come from main, none is selected', () => {
+test('the menu\'s item opens that row in a new window, never selects it here, and focus goes back to the row', () => {
+  const { document, contextmenu, opened, selected, popovers } = setup();
+  contextmenu(option(document, B.id));
+  document.activeElement.click();
+  assert.deepEqual(opened, [B.id]); assert.deepEqual(selected, []);
+  assert.deepEqual(popovers.at(-1), ['hide', menu(document)], 'the menu closes');
+  assert.equal(document.activeElement, option(document, B.id));
+  assert.equal(option(document, A.id).getAttribute('aria-current'), 'true', 'this window still shows its own');
+});
+
+test('Escape (and Tab) close the menu and return focus to its row; the arrows stay on its one item', () => {
+  const { document, contextmenu, key, opened, popovers } = setup();
+  contextmenu(option(document, B.id));
+  const item = document.activeElement;
+  assert.equal(key(item, { key: 'ArrowDown' }), true); assert.equal(document.activeElement, item, 'the list behind does not move');
+  assert.equal(key(item, { key: 'Escape' }), true);
+  assert.deepEqual(popovers.at(-1), ['hide', menu(document)]);
+  assert.equal(document.activeElement, option(document, B.id));
+  contextmenu(option(document, LOOSE.id));
+  key(document.activeElement, { key: 'Tab' });
+  assert.deepEqual(popovers.at(-1), ['hide', menu(document)]);
+  assert.equal(document.activeElement, option(document, LOOSE.id));
+  assert.deepEqual(opened, [], 'closing opens nothing');
+});
+
+test('without a window bridge (the browser harness): no hint, no describedby, no menu, and the native context menu stays', () => {
+  const { document, contextmenu, popovers } = setup({ openInNewWindow: false });
+  assert.equal(document.getElementById('ws-open-window-hint'), null);
+  assert.equal(option(document, A.id).hasAttribute('aria-describedby'), false);
+  assert.equal(menu(document), null);
+  assert.equal(contextmenu(option(document, A.id)), false, 'not prevented');
+  assert.deepEqual(popovers, []);
+});
+
+test('a row another window shows behaves like any row: same line, a pick takes it over, its menu opens a new window', () => {
+  const { document, controller, selected, opened, contextmenu, key } = setup();
+  controller.begin()(A, [A, { ...B, shown: true }, LOOSE]);
+  const row = option(document, B.id);
+  assert.equal(row.textContent, 'tsm', 'no "In another window"');
+  assert.equal(row.title, 'tsm');
+  assert.equal(row.hasAttribute('aria-disabled'), false);
+  contextmenu(row); document.activeElement.click();
+  assert.deepEqual(opened, [B.id], 'main focuses the window that has it');
+  key(option(document, B.id), { key: 'Enter', metaKey: true });
+  assert.deepEqual(opened, [B.id, B.id]);
+  option(document, B.id).click();
+  assert.deepEqual(selected, [B.id], 'the row itself selects it here (the shell asks main to take it over)');
+});
+
+test('a window with no workspace: the list says none is chosen, the choices come from main, none is current', () => {
   const { document, controller } = setup();
   controller.choose([A, B]);
-  assert.equal(document.getElementById('ws-name').textContent, 'Choose a workspace');
-  assert.equal(document.getElementById('ws-trigger').title, 'This window has no workspace yet');
-  document.getElementById('ws-trigger').click(); document.getElementById('ws-trigger').click();
+  assert.equal(document.getElementById('ws-list').getAttribute('aria-description'), 'Current workspace: none chosen yet');
   const options = [...document.querySelectorAll('.ws-option')];
   assert.deepEqual(options.map((o) => o.dataset.workspaceId), [A.id, B.id]);
-  assert.ok(options.every((o) => o.getAttribute('aria-selected') === 'false'));
+  assert.ok(options.every((o) => !o.hasAttribute('aria-current')), 'nothing is current');
+  assert.ok(options.every((o) => !o.querySelector('svg')), 'no icon of any kind on a row');
+  controller.reset();
+  assert.equal(document.getElementById('ws-list').getAttribute('aria-description'), 'Current workspace: resolving', 'before main answers');
 });
 
 test('a window with no workspace hides its whole instance section (the shipped CSS honours [hidden])', () => {
@@ -126,3 +180,45 @@ test('a window with no workspace hides its whole instance section (the shipped C
   assert.equal(dom.window.getComputedStyle(roster).display, 'none', 'no header, count pill or filter for a workspace it does not have');
   dom.window.close();
 });
+
+// The chooser stage (shell.mjs showChooser), run on its own: its text is extracted and run with the shell's
+// names it uses stubbed, as the shell harnesses do. Entering the stage and its button share one rule: the list
+// when main served workspaces to choose from, else Add local workspace…, with the button as the opener.
+function chooserStage(choices) {
+  const source = readFileSync(new URL('../renderer/shell.mjs', import.meta.url), 'utf8');
+  const fn = source.match(/async function showChooser\(\)[^]*?\n\}/)?.[0];
+  assert.ok(fn, 'showChooser is found');
+  const dom = new JSDOM('<main id="stage"></main>');
+  const calls = [], list = { now: choices };
+  const context = {
+    document: dom.window.document, stageHost: dom.window.document.getElementById('stage'), contextRosterEl: null,
+    tabOpenIntents: { invalidate() {} }, showTabLayer() {}, closeStage: async () => true, windowState: () => 'choosing',
+    choosingWorkspaces: () => list.now, focusWorkspaceList: () => calls.push(['focus']),
+    workspaceLabel: { choose: (rows) => calls.push(['choose', rows.length]), openModal: (opener) => { calls.push(['modal', opener?.textContent]); } },
+  };
+  vm.runInNewContext(`${fn}\nglobalThis.showChooser = showChooser;`, context);
+  return { dom, calls, list, run: () => context.showChooser(), button: () => context.stageHost.querySelector('button') };
+}
+
+test('a window with no workspace and choices to show: the stage focuses the list, and so does its button', async () => {
+  const s = chooserStage([{ id: 'ws:a' }]);
+  await s.run();
+  assert.deepEqual(s.calls, [['choose', 1], ['focus']]);
+  s.button().click();
+  assert.deepEqual(s.calls.at(-1), ['focus']);
+  s.dom.window.close();
+});
+
+test('a window with no workspace and nothing served: the stage opens the Add dialog at once, its button opens it again', async () => {
+  const s = chooserStage([]);
+  await s.run();
+  assert.deepEqual(s.calls, [['choose', 0], ['modal', 'Choose a workspace…']], 'opened by the chooser\'s button: focus goes back to it');
+  s.button().click();
+  assert.deepEqual(s.calls.at(-1), ['modal', 'Choose a workspace…']);
+  // Choices served since (#521): the button goes to the list now.
+  s.list.now = [{ id: 'ws:a' }];
+  s.button().click();
+  assert.deepEqual(s.calls.at(-1), ['focus']);
+  s.dom.window.close();
+});
+

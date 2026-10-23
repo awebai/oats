@@ -4,6 +4,17 @@
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 const { createTerminalBridge } = require('./terminal-bridge.cjs');
 
+// A take-over's ask to release this window's workspace (window:release-workspace) is heard from the
+// page's start: one that comes while the page is still loading, before the shell subscribes, is kept
+// (at most RELEASE_KEPT, the oldest dropped) and handed to the first subscriber, so none is lost.
+const RELEASE_KEPT = 8;
+const releaseKept = [], releaseSinks = new Set();
+ipcRenderer.on("window:release-workspace", (_e, message) => {
+  if (releaseSinks.size) { for (const sink of [...releaseSinks]) sink(message); return; }
+  releaseKept.push(message);
+  if (releaseKept.length > RELEASE_KEPT) releaseKept.shift();
+});
+
 contextBridge.exposeInMainWorld("oatsDesktop", {
   /** ctx.api backing: proxied fetch against the oats-web server. */
   api: (pathname, opts) => ipcRenderer.invoke("api", pathname, opts),
@@ -58,8 +69,18 @@ contextBridge.exposeInMainWorld("oatsDesktop", {
   workspaceRemoveListed: (path) => ipcRenderer.invoke("workspace:remove-listed", path),
 
   /** One window per workspace (#481). Bind this window to a workspace in place (null: to none); a
-   * workspace another window holds is refused, and that window focused unless `focus` is false. */
+   * workspace another window holds is refused, and that window focused unless `focus` is false; with
+   * `takeOver`, it moves here from that window instead. */
   windowClaimWorkspace: (id, options) => ipcRenderer.invoke("window:claim-workspace", id, options),
+  /** A take-over: another window took this window's workspace. `cb({ request, workspace, workspaces })`;
+   * the window answers `request` once (windowReleaseAnswer), then leaves that workspace. */
+  onWorkspaceRelease: (cb) => {
+    const sink = (message) => cb(message);
+    releaseSinks.add(sink);
+    for (const message of releaseKept.splice(0)) sink(message);
+    return () => { releaseSinks.delete(sink); };
+  },
+  windowReleaseAnswer: (request, payload) => ipcRenderer.invoke("window:release-answer", request, payload),
   /** A window with no workspace: the served choices, re-read now (#521). */
   windowChoices: () => ipcRenderer.invoke("window:choices"),
   /** Open a workspace's window, or focus the one it has; null opens a New Window (the switcher). */

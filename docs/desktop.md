@@ -136,17 +136,12 @@ launched with (`--dir`, or the folder it was started from) when that is an
 OATS deployment — the directory (the operator's choice) holding
 `oats-local.yaml` and `agents/`. A folder that is not a deployment is never
 opened: started from Finder, with nothing open to restore, the window shows
-the workspace switcher instead. It lists the deployments on this computer
-under **On this computer**: those on this computer's deployments list
-(`oats deployments`, see [Workspaces](workspaces.md)) and a saved one,
-that are not open. Click one to open it in this window. A deployment the list
-holds but that can't be opened says why: missing (the folder is gone, or its
-volume isn't mounted), not a deployment any more, or can't be checked. **Remove**
-beside a row takes it off the list (Right Arrow, then Enter, from the
-keyboard); nothing on disk changes. With an oats that has no such list, the
-switcher shows the saved deployments and says "This oats can't list this
-computer's deployments. Update oats." **Add local workspace… → Browse**
-points it at any other deployment.
+"Choose a workspace" and opens **Add local workspace…** (the **+** at the top
+of the sidebar). The dialog lists the deployments on this computer that are
+not open: those on this computer's deployments list (`oats deployments`, see
+[Workspaces](workspaces.md)) and a saved one. Click one, or press Enter on it,
+to add it and open it in this window. **Browse…** points it at any other
+deployment.
 A picked folder without `oats-local.yaml` is offered onboarding instead. The
 Desktop never parses the deployment: its members, lock state and header come
 from `oats workspace status`, and its instances from the deployment's one
@@ -165,17 +160,19 @@ Launch flags for scripted use: `--dir <workspace>` and `OATS_DESKTOP_PORT`.
 Each workspace has at most one window, titled with the workspace's name (a
 workspace on a server: `name — server`).
 
-- **Switching.** Choosing a workspace in the switcher shows it in the current
-  window. If that workspace already has a window, that window comes to the
-  front instead and the current one doesn't change.
-- **Open in new window.** Each workspace in the switcher has an **Open in new
-  window** button beside it. From the keyboard: Right Arrow on the workspace,
-  then Enter, or ⌘Enter on macOS / Ctrl+Enter on Linux and Windows. A
-  workspace that already has a window is brought to the front.
+- **Switching.** Picking a workspace in the sidebar's list shows it in the
+  current window. If another window shows it, it moves to this window, and the
+  other window shows another workspace ([A workspace another window
+  shows](#a-workspace-another-window-shows)). No other window comes to the
+  front.
+- **Open in new window.** A workspace's row in the list opens it in its own
+  window from its context menu (a right-click, or Shift+F10 or the Menu key),
+  or with ⌘Enter on macOS / Ctrl+Enter on Linux and Windows. A workspace that
+  already has a window is brought to the front.
 - **New Window.** On macOS, **File → New Window** (⌘⇧N); everywhere,
   **Window: new window** in the command palette. The new window has no
-  workspace yet: it opens the switcher, and shows "Choose a workspace" until
-  you pick one. It reads nothing until then.
+  workspace yet: it shows "Choose a workspace" and focuses the list of
+  workspaces until you pick one. It reads nothing until then.
 - **Moving between windows.** On macOS, ⌘\` cycles the app's windows, and the
   **Window** menu lists them.
 - **Restore.** Quitting and relaunching brings every window back with its
@@ -192,7 +189,8 @@ workspace on a server: `name — server`).
   terminals, running. Closing the last window quits the app.
 - Tabs belong to their window: a workspace's terminals and tabs stay in the
   window they were opened in, and switching that window back to the
-  workspace brings them back.
+  workspace brings them back. A window whose workspace another window takes
+  over closes its tabs of that workspace.
 - A tab's terminal ends ("session ended") when its instance's tmux window
   goes, whatever your tmux `detach-on-destroy` setting: a tab never shows
   another instance's terminal. Stopping an instance leaves its tab open.
@@ -203,6 +201,93 @@ workspace on a server: `name — server`).
   workspace that isn't shown closes them the next time its roster is read.
   An instance respawned under the same name is a new instance: opening it
   opens a new tab.
+
+## Workspaces
+
+The top of the sidebar lists the workspaces, above the views and the
+instances, and is always shown. Its header holds **Add local workspace…** (the
+**+**). The list has one row per workspace this window can show, whatever
+machine it is on: every workspace the Desktop serves, those only on servers
+included, and the deployments no workspace matched ([One workspace, several
+machines](#one-workspace-several-machines)), after them in the same list.
+
+With one workspace the list is one compact row. With many it scrolls within
+about six rows, the current row stays in view, and while rows are cut off
+below, a line under the list says how many ("2 more below").
+
+- **A row is one line: the workspace's name.** No icon, no machine, no state:
+  a workspace's own pages show its machines and deployments. A long name ends
+  in an ellipsis, and the row's tooltip is the whole name.
+- **The current workspace** has the selection's background and its name in
+  bold; a screen reader hears it as current, and the list's description names
+  it, by the same name as its row.
+- **The yellow dot.** A row has a small yellow dot after its name when an
+  instance of that workspace needs input: the claim the instance roster shows
+  for that instance, from a running session (OATS with the `waiting-on-you`
+  feature), as the Desktop already reads it for the workspaces it serves.
+  Every row can have it, the current one included. The row's name then ends
+  in ", needs input" for a screen reader, and its tooltip says "An instance
+  here needs input". What isn't known shows no dot, never a guess: a
+  deployment that isn't live (stale, not reached, its last read failed) and
+  an oats without `waiting-on-you`. The dot never moves a row: the order
+  stays the same whoever waits.
+- **Picking a row** (a click, Enter, or the leader's ↑ / ↓, Ctrl+X then ↑ /
+  ↓) shows that workspace in this window, with its own tabs, layout and
+  selection; one another window shows moves here ([A workspace another window
+  shows](#a-workspace-another-window-shows)). The leader's ↑ / ↓ go to the
+  previous / next row, and stop at the ends ("No workspace above this one." /
+  "No workspace below this one."). Each is a pick, so walking the list with
+  them moves every workspace it passes that another window shows into this
+  window.
+- **Open in new window** is in a row's context menu (a right-click, or
+  Shift+F10 or the Menu key), and ⌘Enter on macOS / Ctrl+Enter on Linux and
+  Windows does it from the keyboard. It opens the workspace in its own window,
+  or brings the window that shows it to the front.
+- **Keyboard.** The list is one Tab stop, Up/Down/Home/End move in it, and
+  `w` in the sidebar, Ctrl+X then `o`, ⌥⌘O / Ctrl+Alt+O and the palette's
+  **Workspace: switch…** focus it. The full keys are in [the keyboard
+  reference](../packages/desktop/docs/desktop-keyboard.md#the-list-of-workspaces).
+
+**Add local workspace…** lists the deployments on this computer that are not
+open: those on this computer's deployments list and a saved one. Each is one
+button: a click, or Enter on it, adds it (checked first) and opens it in this
+window; a failure says why in the dialog, with focus back on it. After them
+come the rows of this computer's list that can't be opened, each saying why in
+a word, and they open nothing: **Missing** (the folder is gone, or its volume
+isn't mounted), **Not a deployment** (no `oats-local.yaml` any more), or
+**Can't be checked** (OATS couldn't read the folder). The full sentence is the
+row's tooltip and what a screen reader hears. **Remove** beside such a row
+takes it off the list (Right Arrow, then Enter, from the keyboard); nothing on
+disk changes. With an oats that has no deployments list, the dialog offers the
+saved deployments alone and says "This oats can't list this computer's
+deployments. Update oats."; a list read that failed says "Couldn't read this
+computer's deployments:" and why. **Browse…** chooses any other folder, and one without
+`oats-local.yaml` is offered onboarding.
+
+A window with no workspace (a New Window, or one whose workspace moved to
+another window) shows "Choose a workspace" and focuses the list. When the
+Desktop serves no workspace at all, so the list is empty, it opens **Add local
+workspace…** instead. Closing the dialog leaves "Choose a workspace", whose
+button opens it again.
+
+### A workspace another window shows
+
+Picking a workspace another window shows moves it to this window: a pick from
+the list, the workspace select of
+Deployments or Workspace, and a spawn whose new instance is in that workspace.
+Nothing else comes to the front. The other window lets the workspace go: it
+shows the workspace it showed most recently before that one among those the
+Desktop still serves and no other window shows, else no workspace ("Choose a
+workspace"). It closes every tab it had of the workspace that moved. The
+Desktop waits at most 2 seconds for the other window; one that answers late
+ends the same way, and so does one that was still opening or reloading:
+once it comes up it shows no workspace, never the one that moved. **Open in
+new window** still brings the other window to the front instead.
+
+Only the terminals and the split move with the workspace: this window opens
+the same terminal tabs in the same split, each with a fresh viewer, and the
+agents keep running. File, brain and view tabs do not move: they close in the
+other window.
 
 ## Capabilities and spawning
 
@@ -369,7 +454,7 @@ When the retire has ended without finishing, the row says so and offers only
 
 ## One workspace, several machines
 
-The switcher lists each workspace once, however many deployments it has: the
+The list of workspaces has each workspace once, however many deployments it has: the
 deployments you opened on this Mac and those your registered servers report,
 matched by the workspace each one reports (its repository key and default
 team, by the kernel's rules). It needs a CLI with the `workspace-identity`
@@ -400,10 +485,10 @@ feature (OATS 0.36.0); without it each deployment has its own entry.
   needs `oats sync` or fixing in `oats-local.yaml`, or this computer's OATS
   can't read other machines. A server that can't be reached stays under the
   workspace it last reported, marked "remembered".
-- **The switcher.** Each workspace names its machines on one line ("This Mac ·
+- **The list of workspaces.** Each workspace names its machines on one line ("This Mac ·
   altair"), with a mark when one of them isn't live.
 - **Not matched to a workspace.** A deployment that can't be matched is
-  listed on its own under that heading in the switcher, with its machine and
+  listed on its own under that heading in the list, with its machine and
   a short reason; choosing it opens its tab on the Deployments page. When this
   computer's OATS is too old to report workspaces, nothing can be matched:
   each deployment is listed on its own, as before, and its heading says to
@@ -520,8 +605,8 @@ saved route. A machine registered for a workspace no window shows is not
 contacted, so a machine that is switched off no longer slows every window's
 roster. Opening a window on another workspace reads its machines at once. Until
 it does, that workspace's machines are shown as they were last read, marked
-stale, and the switcher still lists them, not counted live. The read covers every machine again while a window
-shows the switcher, and on the first read after the Desktop starts. With an
+stale, and the list of workspaces still lists them, not counted live. The read covers every machine again while a window
+has no workspace, and on the first read after the Desktop starts. With an
 older CLI, every registered machine is read, as before.
 
 ## Instances on servers
@@ -702,7 +787,7 @@ unknown or unreported harness shows "?". Sources and licences are in
 | Can't select/copy text in a terminal tab | A plain drag selects, and copying is a separate step: ⌘C / Edit › Copy (macOS), Ctrl+Shift+C (Linux/Windows) or right-click › Copy ([Copy from a terminal](#copy-from-a-terminal)). A drag selects only what is on screen: wheel up first for older output. In `oats session attach` in your own terminal, hold **Option** (iTerm2, Ghostty, Terminal.app) or **Shift** while dragging. |
 | macOS "app is damaged / can't be opened" | Ad-hoc-signed (not notarized) build + quarantine. Right-click → Open, or clear the quarantine attribute (above). If it persists, verify the bundle: `codesign --verify --deep --strict --verbose=2 "/Applications/OATS Desktop.app"` — a non-zero exit means a broken artifact, report it. |
 | Log says `server on 4820 — this app's server at version X (this app is Y), not started by this app — left running — starting a dedicated one on 4821` | Another OATS Desktop server holds the default port: another installed version or a dev checkout that is running, or one an earlier Desktop left running. The app serves from the port it names and never stops a server it did not start. From 0.49.0 a server the app starts exits when the app ends, however it ends (quit, crash or kill). A server left by an earlier Desktop (seen on Linux, where it outlived the app in its own `app-…scope`) must be stopped once by hand: find it with `ss -ltnp 'sport = :4820'` (or `lsof -iTCP:4820 -sTCP:LISTEN` on macOS) and stop that pid, or its scope (`systemctl --user stop <scope>`), then restart the app. |
-| Roster empty | The opened directory isn't an OATS deployment (it needs `oats-local.yaml` and `agents/`). Use the workspace switcher → Add workspace to select the right folder. |
+| Roster empty | The opened directory isn't an OATS deployment (it needs `oats-local.yaml` and `agents/`). Use **Add local workspace…** (the **+** at the top of the sidebar) to select the right folder. |
 
 For bugs, attach the terminal output of the app (`OATS Desktop` prints
 server and CLI-discovery logs to stdout) and your platform/arch.

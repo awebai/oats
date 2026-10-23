@@ -10,7 +10,7 @@ import { createTerminalIo, readTerminalCli } from '../terminal-io.mjs';
 import { runTerminalCommand } from '../../client/terminal-exec.mjs';
 import { prepareTerminalAttachments } from '../terminal-attachments.mjs';
 import { handle, opened, confirmed, ready } from './helpers/terminal-wire.mjs';
-import { workspaceHash, trustedRendererUrl } from '../renderer/window-binding.mjs';
+import { workspaceHash, trustedRendererUrl, frameWorkspace } from '../renderer/window-binding.mjs';
 import { windowTitle, clampBounds } from '../window-records.mjs';
 const { createTerminalBridge } = createRequire(import.meta.url)('../terminal-bridge.cjs');
 const flush = () => new Promise(setImmediate);
@@ -161,7 +161,7 @@ test('actual main composition registers owner BEFORE load and uses shared broker
     async loadFile(_file, options) {
       assert.equal(this.webContents.listenerCount('did-start-navigation'), 1, 'hooks precede initial document load');
       loads.push(options);
-      this.webContents.mainFrame.url = url; this.webContents.emit('did-finish-load');
+      this.webContents.mainFrame.url = `${url}#${options.hash}`; this.webContents.emit('did-finish-load');
     }
   }
   const renderer = new EventEmitter();
@@ -173,7 +173,9 @@ test('actual main composition registers owner BEFORE load and uses shared broker
       run: async (bin, args) => { commands.push([bin, args]); return { stdout: '' }; },
     }), installTerminalHandlers,
     RENDERER_URL: url, ipcMain: ipc, base: () => 'http://127.0.0.1:1111', serverEpoch: 1, serverHost: { inTransition: () => false },
-    app: { getPath: () => '/memory/app' }, HERE: '/memory', join, BrowserWindow: FakeWindow,
+    app: { getPath: () => '/memory/app' }, HERE: '/memory', join, BrowserWindow: Object.assign(FakeWindow, { fromWebContents: () => window }),
+    // The terminal frame gate (#1488): the window opens terminals of the workspace main binds it to.
+    frameWorkspace, choosers: new Set(), holdsHash: (win, id) => win === window && id === '/memory/ws',
     sweepOrphanViewers() {}, shell: {}, Menu: {}, invalidateTerminalPreparations: null,
     // One window per workspace (#481): the window's workspace, title, records and registry.
     workspaceHash, trustedRendererUrl, windowTitle, clampBounds, servedList: [], screen: { getAllDisplays: () => [] },

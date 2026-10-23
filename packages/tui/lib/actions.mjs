@@ -10,6 +10,8 @@
 // leader's table is the shared one (LEADER, below). What only the TUI has (q, Ctrl+C, Ctrl+Z, Ctrl+L,
 // Ctrl+K, Tab, Esc, Delete, C, i) keeps its keys here. packages/tui/test/keymap.test.mjs pins both.
 import { CHORDS, DEFAULT_CHORD_FAMILY, LEADER_TABLE, PALETTE_KEYS, chordKeyOf, plainKeys } from "./client.mjs";
+// An action's words, for the help (views/help.mjs): a view takes the shared home's keymap through this module only.
+export { doesLabel } from "./client.mjs";
 import { legacyChord } from "./term/kitty.mjs";
 import { isBackKey } from "./term/through.mjs";
 
@@ -87,20 +89,24 @@ export const ACTIONS = Object.freeze([
  *  open terminal's focus it types the leader's own bytes into the agent, the focus staying there,
  *  and from any other focus it only cancels the leader (lib/store.mjs `twice`). */
 export const LEADER = LEADER_TABLE;
-/** What the leader does that no action of ACTIONS does (lib/store.mjs `led`): `previous` and
- *  `next` (the instance before or after the shown terminal's, or the selection's: its tab shown,
- *  or opened as a new one, with the focus in it) and `list` (the list's focus, which Esc gives). */
-export const LEADER_OWN = Object.freeze(["previous", "next", "list"]);
+/** What the leader does that no action of ACTIONS does (lib/store.mjs `led`): `workspace-previous`
+ *  and `workspace-next` (the workspace before or after the open one in the list of workspaces) and
+ *  `list` (the list's focus, which Esc gives). */
+export const LEADER_OWN = Object.freeze(["workspace-previous", "workspace-next", "list"]);
 /** What a chord does that neither the leader's table nor an action does (lib/store.mjs `led`):
  *  `tab-1` to `tab-8`, the focused group's Nth tab shown, and `tab-9`, its last (as the Desktop and
  *  the browsers do). No key after the leader does them: LEADER has no row for them. */
 export const CHORD_OWN = Object.freeze(Array.from({ length: 9 }, (_, i) => `tab-${i + 1}`));
+/** The chords' moves between instances, which no key after the leader does either (the leader's Up
+ *  and Down move between workspaces): `previous` and `next`, the instance before or after the shown
+ *  terminal's, or the selection's, its tab shown, or opened as a new one, with the focus in it. */
+export const CHORD_MOVES = Object.freeze(["previous", "next"]);
 /** Whether the TUI acts on `does`, a `does` of the shared leader table or of the chords: it is one
  *  of the leader's own (LEADER_OWN), of the chords' own (CHORD_OWN), or the id of an action of
  *  ACTIONS, which lib/store.mjs `led` runs as its key runs it, or in its own way from the leader
  *  (the terminal's keys, the acts, the spawns). A `does` the TUI does not handle is a failure of
  *  packages/tui/test/keymap.test.mjs or chords.test.mjs, never a key that does nothing. */
-export const leaderHandles = (does) => LEADER_OWN.includes(does) || CHORD_OWN.includes(does) || ACTIONS.some((action) => action.id === does);
+export const leaderHandles = (does) => LEADER_OWN.includes(does) || CHORD_OWN.includes(does) || CHORD_MOVES.includes(does) || ACTIONS.some((action) => action.id === does);
 /** key id -> what the leader then does (LEADER's `does`). */
 export const LEADER_KEYS = new Map(LEADER.flatMap((entry) => entry.keys.map((key) => [key, entry.does])));
 

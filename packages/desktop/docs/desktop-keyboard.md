@@ -59,14 +59,14 @@ Show instance panel and the closed sidebar and panel).
    | Chord | xterm sends | The program still gets it from |
    |---|---|---|
    | Ctrl+X (the leader) | 0x18 (CAN) | no plainer key: a named exception. The leader pressed twice sends it, so the shell's Ctrl+X Ctrl+E and nano's exit stay the program's |
-   | Ctrl+Alt+K, P, O, Z, W, E, A, F (palette, Quick Open, workspace switcher, focus mode, close tab, split right, next editor group, filter) | ESC, then Ctrl+that letter (ESC 0x0b for K) | Esc, then Ctrl+that letter |
+   | Ctrl+Alt+K, P, O, Z, W, E, A, F (palette, Quick Open, the list of workspaces, focus mode, close tab, split right, next editor group, filter) | ESC, then Ctrl+that letter (ESC 0x0b for K) | Esc, then Ctrl+that letter |
    | Ctrl+Alt+Shift+E (split down) | ESC Ctrl+E | Esc, then Ctrl+E |
    | Ctrl+Alt+1–Ctrl+Alt+9 (go to tab) | ESC and the digit | Alt+digit |
    | Ctrl+3 (Automations) | ESC | Esc (Ctrl+[ stays the program's too) |
    | Ctrl+Tab (next tab) | Tab | Tab |
    | Ctrl+Shift+Tab (previous tab) | ESC [ Z | Shift+Tab |
    | Ctrl+Shift+Alt+W (close the split) | ESC Ctrl+W | Esc, then Ctrl+W |
-   | Alt+Shift+↑ / ↓ / ← / → (previous / next instance, previous / next tab) | ESC [ 1 ; 4 A / B / D / C | no plainer key: a named exception. No agent, shell or readline binds them, and they are the leader's own arrows, held with Alt+Shift |
+   | Alt+Shift+↑ / ↓ / ← / → (previous / next instance, previous / next tab) | ESC [ 1 ; 4 A / B / D / C | no plainer key: a named exception. No agent, shell or readline binds them |
    | Ctrl+Shift+F6 (leave the terminal) | ESC [ 17 ; 6 ~ | no plainer key: a named exception, because without it F6 cannot get out of a terminal |
 
    On Windows xterm sends nothing for Ctrl+Alt with a letter or a digit: it
@@ -199,18 +199,22 @@ while a terminal tab is open; besides, ←/→ need two tabs or more in the stri
 they walk (with the tabs split, the focused group's), `|`/`-` an
 active tab that can split that way, and Tab and `x` tabs that are split.
 
-**The target instance** of `X` `R` `S` `D` `N` and the roster moves is read
-when the key after the leader is pressed, not when the leader is: the focused
-roster row's; else the shown terminal tab's (in a terminal, or with focus
-nowhere; a terminal pane keeps focus only as the shown one counts, so a pane
-hidden since names nothing); else none. ↑ and ↓ go on from the instance an open
-still in flight is opening (until it fails, or another selection supersedes
-it), else from the target: presses faster than `/api/panel` answers or a
-terminal attaches make one move each, and none re-opens the instance being
-opened. The chords that do what ↑, ↓ and `z` do (`roster.openPrevious`,
-`roster.openNext`, `terminal.focusMode`) run exactly what the leader then that
-key runs, read where the chord was pressed, and say why in the same line when
-they cannot act.
+**The target instance** of `X` `R` `S` `D` `N` is read when the key after the
+leader is pressed, not when the leader is: the focused roster row's; else the
+shown terminal tab's (in a terminal, or with focus nowhere; a terminal pane
+keeps focus only as the shown one counts, so a pane hidden since names
+nothing); else none. The previous / next instance moves have no leader key:
+they are the chords' (`roster.openPrevious`, `roster.openNext`: Alt+Shift+↑ /
+↓, ⌥⌘↑ / ⌥⌘↓), which read the same target where the chord was pressed and go
+on from the instance an open still in flight is opening (until it fails, or
+another selection supersedes it), else from the target: presses faster than
+`/api/panel` answers or a terminal attaches make one move each, and none
+re-opens the instance being opened. They open the terminal of the roster row
+before / after the target, as the roster is drawn (filter applied, collapsed
+rows absent), passing over rows whose Enter would not open a terminal; no wrap.
+With no target, the next opens the first and the previous the last. These two
+and `terminal.focusMode` (the leader's `z`) run the leader's own dispatch, and
+say why in the same line when they cannot act.
 
 | Leader, then | Desktop does |
 |---|---|
@@ -218,7 +222,7 @@ they cannot act.
 | `1` | Instances: the workspace's terminals again when any is open, else Deployments |
 | `2` | Workspace › Souls |
 | `3` | Workspace › Capabilities |
-| ↑, ↓ | opens the terminal of the roster row before / after the target, as the roster is drawn (filter applied, collapsed rows absent), passing over rows whose Enter would not open a terminal; no wrap. With no target, ↓ opens the first and ↑ the last. Also `roster.openPrevious`, `roster.openNext` |
+| ↑, ↓ | shows the previous / next workspace of the sidebar's [list of workspaces](#the-list-of-workspaces) in this window, as a click on its row does (`workspace-previous`, `workspace-next`). A row another window shows is not passed over: the move takes it over, and it moves here. No wrap: at an end nothing moves and the line says "No workspace above this one." / "No workspace below this one." With no workspace shown, ↓ goes to the first row and ↑ to the last. No chord |
 | ←, → | previous / next tab of the active tab's strip, in the order drawn: with the tabs split, the focused group's, each press another tab of it; an empty or one-tab group says "There is no other tab." (`tabs.prev`, `tabs.next`; the Desktop's cycling wraps, the TUI's does not) |
 | `z` | focus mode on or off (`app.focusMode`), and the active terminal takes focus. Also `terminal.focusMode` |
 | `w` | closes the active tab (`tabs.close`); the agent keeps running |
@@ -229,7 +233,7 @@ they cannot act.
 | `n` | Quick Open: pick a soul, then the spawn dialog (`app.quickOpenSouls`) |
 | `N` | the spawn dialog for the target's soul, as Quick Open opens it |
 | `/` | the roster filter (`sidebar.focusFilter`) |
-| `o` | the workspace switcher (`app.workspaces`) |
+| `o` | focuses the [list of workspaces](#the-list-of-workspaces) on its current row (`app.workspaces`) |
 | `?` | the shortcuts editor (`app.shortcuts`), the Desktop's help |
 | Esc | the instance roster, its one tab stop; a hidden sidebar or focus mode is shown first |
 
@@ -237,11 +241,15 @@ they cannot act.
 way to move a tab between groups; the key cancels like any key not in the
 table, and the shortcuts editor leaves it out.
 
+Changed in the next release: ↑ and ↓ move between workspaces. They opened the
+previous / next instance's terminal before; Alt+Shift+↑ / ↓ (⌥⌘↑ / ⌥⌘↓) still
+do that, from every focus.
+
 ## The keymap as shipped
 
 The keys come in three layers, as in `oats tui`:
 
-1. **In the sidebar:** plain keys, such as `n` to spawn, `w` for the switcher, `/` to filter ([Sidebar keys](#sidebar-keys)).
+1. **In the sidebar:** plain keys, such as `n` to spawn, `w` for the list of workspaces, `/` to filter ([Sidebar keys](#sidebar-keys)).
 2. **Anywhere, a terminal included:** the shortcuts below, ⌘K and the rest on macOS, `Ctrl+Alt+K` and the rest on Linux and Windows by default, `Ctrl+Shift+K` and the rest [as the option](#the-ctrlshift-option). Not plain `Ctrl+K`: that is the program's, kill to the end of the line in Claude Code, Codex, pi and the shell.
 3. **Always:** [the leader](#the-leader), `Ctrl+X` then a key, on every platform (in a text field on Linux and Windows, Ctrl+X is Cut).
 
@@ -249,8 +257,8 @@ The keys come in three layers, as in `oats tui`:
 |---|---|---|---|---|
 | Command palette (`app.palette`) | ⌘K | Ctrl+Alt+K | Ctrl+Shift+K | yes (plain Ctrl+K, kill to the end of the line, stays the program's) |
 | Quick open a soul (`app.quickOpenSouls`) | ⌘P | Ctrl+Alt+P | Ctrl+Shift+P | yes (plain Ctrl+P, shell history, stays the program's) |
-| Workspace switcher (`app.workspaces`; the leader's `o`) | ⌥⌘O | Ctrl+Alt+O | Ctrl+Shift+S | yes |
-| Open the previous / next instance's terminal (`roster.openPrevious`, `roster.openNext`; the leader's ↑ ↓) | ⌥⌘↑ / ⌥⌘↓ | Alt+Shift+↑ / Alt+Shift+↓ | Alt+Shift+↑ / Alt+Shift+↓ (kept) | yes (a named exception, principle 2) |
+| Focus the list of workspaces (`app.workspaces`; the leader's `o`, the sidebar's `w`, the palette's **Workspace: switch…**) | ⌥⌘O | Ctrl+Alt+O | Ctrl+Shift+S | yes |
+| Open the previous / next instance's terminal (`roster.openPrevious`, `roster.openNext`; no leader key: the leader's ↑ ↓ move between workspaces) | ⌥⌘↑ / ⌥⌘↓ | Alt+Shift+↑ / Alt+Shift+↓ | Alt+Shift+↑ / Alt+Shift+↓ (kept) | yes (a named exception, principle 2) |
 | Focus mode on or off, in the active terminal (`terminal.focusMode`; the leader's `z`) | ⌥⌘Z | Ctrl+Alt+Z | Ctrl+Shift+M | yes |
 | Spawn instance: choose a soul in Workspace (`app.chooseSoul`) | ⌘N | Ctrl+Shift+N | the same | yes |
 | Close tab (`tabs.close`) | ⌘W | Ctrl+Alt+W | Ctrl+Shift+W | yes |
@@ -391,15 +399,16 @@ palette's command details and the spawn dialog's Spawn button.
 `CHORDS` in `packages/client/keymap.mjs`, and `DEFAULT_KEYMAP` reads them from
 there (`CHORDS_READ`, one action each): one family on Linux/Windows, ⌘ or ⌥⌘
 on macOS. Ctrl+Alt with a letter does an action: the palette (K), Quick open
-(P; a spawn, in the TUI), the workspace switcher (O), focus mode (Z, the
+(P; a spawn, in the TUI), the list of workspaces (O), focus mode (Z, the
 leader's `z`), close tab (W), split right (E) and split down (Shift+E), the
 next editor group (A, the leader's Tab), filter instances (F) and the
 instance's name and colour (R; `instance.edit`, ⌥⌘R on macOS, never with
 Shift, no leader key). Ctrl+Alt with
 a digit goes to tab 1–8 of the active tab's strip, 9 to its last (with the
-tabs split, the focused group's). Alt+Shift with the leader's arrows
-moves: the previous / next instance's terminal (↑ ↓) and the previous / next
-tab (← →). With the Ctrl+Shift option seven of them are Ctrl+Shift chords
+tabs split, the focused group's). Alt+Shift with an arrow moves: the
+previous / next instance's terminal (↑ ↓, which have no leader key: the
+leader's ↑ ↓ move between workspaces) and the previous / next tab (← →, the
+leader's ← →). With the Ctrl+Shift option seven of them are Ctrl+Shift chords
 instead, in both clients (see "The Ctrl+Shift option"). The TUI binds the
 same chords from every focus (docs/tui.md,
 "Chords"); the leader stays the key that always works. Ctrl+Tab /
@@ -431,7 +440,7 @@ terminal's own key path.
 On Linux and Windows the chords shared with the TUI come in two families.
 Ctrl+Alt is the default. The option, one choice per user for both clients,
 moves seven of them to Ctrl+Shift: the palette (K), Quick Open (P), the
-workspace switcher (S), focus mode (M), close tab (W), split right (E) and
+list of workspaces (S), focus mode (M), close tab (W), split right (E) and
 split down (D). The others keep their key in both families, marked kept:
 the Alt+Shift arrows, since Ctrl+Shift with an arrow selects text in an
 input; go to tab, since Ctrl+Shift with a digit is a shifted symbol on most
@@ -517,27 +526,26 @@ matrix).
 
 ### Sidebar keys
 
-New in 0.65.0. While focus is in the sidebar (the nav, a roster row, the
-footer), the TUI's plain keys work there too (`PLAIN_KEYS` in
+New in 0.65.0. While focus is in the sidebar (the list of workspaces, the
+nav, a roster row, the footer), the TUI's plain keys work there too (`PLAIN_KEYS` in
 `packages/client/keymap.mjs`). Each is its own action in the `sidebar`
 context (`sidebar.key.*`, `SIDEBAR_KEYS`), rebindable and unbindable in the
 shortcuts editor's **Sidebar keys** group, and each does what the same key
 does after the leader. They never fire in an editable field (the roster
-filter types them) or inside a menu or list popup open there (an instance's
-actions menu, the workspace switcher's menu), and never with focus outside the
-sidebar.
+filter types them) or inside a menu open there (an instance's actions menu),
+and never with focus outside the sidebar.
 
 | Key | Action id | Does |
 |---|---|---|
 | `1` `2` `3` | `sidebar.key.instances`, `…souls`, `…capabilities` | Instances, Workspace › Souls, Workspace › Capabilities |
-| `w` | `sidebar.key.workspaces` | the workspace switcher |
+| `w` | `sidebar.key.workspaces` | focuses the [list of workspaces](#the-list-of-workspaces), as the leader's `o` does |
 | `/` | `sidebar.key.filter` | the roster filter |
 | `r` | `sidebar.key.refresh` | reads the instance roster now |
 | `z` | `sidebar.key.zoom` | focus mode on or off, then the active terminal |
 | `c` | `sidebar.key.closeTerminal` | closes the active tab |
 | `[` `]` | `sidebar.key.tabPrevious`, `…tabNext` | previous / next tab |
 | `\|` `-` | `sidebar.key.splitRight`, `…splitDown` | split right / split down |
-| `X` `D` `S` `R` | `sidebar.key.stop`, `…retire`, `…start`, `…restart` | Stop… / Retire… / Start… / Restart… for the focused roster row (on a nav or footer control, the active terminal tab's instance) |
+| `X` `D` `S` `R` | `sidebar.key.stop`, `…retire`, `…start`, `…restart` | Stop… / Retire… / Start… / Restart… for the focused roster row (on a workspace row, a nav or a footer control, the active terminal tab's instance) |
 | `n`, `N` | `sidebar.key.spawn`, `…spawnAnother` | Quick Open; the spawn dialog for the focused row's soul |
 | `?` | `sidebar.key.help` | the shortcuts editor |
 
@@ -570,13 +578,59 @@ tree's own keys, as the arrows are, and are not in the shortcuts editor.
 - `i`, and the Souls and Capabilities views' own keys: those views keep their
   local keys.
 
+### The list of workspaces
+
+The sidebar's top lists every workspace this window can show, one line each:
+its name ([OATS Desktop](../../../docs/desktop.md#workspaces) says what the
+list shows). It is a list of buttons, not a listbox, so the sidebar keys work
+on its rows.
+
+- **Reaching it.** One tab stop: the row last focused there, else the current
+  one. It is in the nav region: F6 lands on the nav item, and Shift+Tab from
+  there reaches the list. `w` in the sidebar, the leader's `o`, ⌥⌘O / Ctrl+Alt+O
+  (`app.workspaces`, "Focus the list of workspaces") and the palette's
+  **Workspace: switch…** focus its current row from anywhere: a hidden sidebar
+  is shown and focus mode is left first.
+- **Moving.** Up/Down move between the rows, Home/End go to the first and the
+  last; moving focus selects nothing. The list scrolls within about six rows,
+  the current row kept in view.
+- **Opening.** Enter or Space shows the row's workspace in this window.
+- **Open in new window.** ⌘Enter (macOS) / Ctrl+Enter (Linux/Windows) on a row
+  opens its workspace in its own window, or brings that window to the front;
+  the row's description says so. The row's context menu (Shift+F10 or the Menu
+  key, or a right-click) has **Open in new window** too: Enter runs it, Esc or
+  Tab closes the menu, back on the row.
+- **Moving between workspaces from anywhere.** The leader's ↑ / ↓ show the
+  previous / next workspace of the list (see [the leader](#the-leader)); no
+  chord does.
+
+**A workspace another window shows** is a row like any other. Picking it (a
+click, Enter, the
+leader's ↑ / ↓, the workspace select of Deployments or Workspace, or a spawn
+that hands off to its new instance there) moves it to this window; nothing
+else is focused. The other window lets it go: it shows the workspace it showed
+most recently before that one among those the Desktop still serves and no
+other window shows, else no workspace ("Choose a workspace", its list
+focused, or the Add dialog when the Desktop serves no workspace).
+It then closes every tab it had of that workspace and forgets its layout. Main
+waits at most 2 seconds for that window's answer; a window that answers late
+ends the same way. **Open in new window** still brings the other window to the
+front instead.
+
+Only the terminals and the split move with the workspace: this window opens
+the same terminal tabs in the same split, each with a fresh viewer, and the
+agents keep running. File, brain and view tabs do not move: they close in the
+other window.
+
 ## Regions (F6)
 
 F6 moves focus to the next region, Shift+F6 to the previous one, in this order:
 
 1. **Sidebar nav**: the current view's nav item (`aria-current`), else the
-   first. The workspace switcher and the footer tools are in this region and
-   are reached with Tab and Shift+Tab from there.
+   first. The list of workspaces (above the nav: Shift+Tab from the nav item
+   reaches its tab stop, and Shift+Tab again the header's **Add local
+   workspace…**) and the footer tools are in this region and are reached with
+   Tab and Shift+Tab from there.
 2. **Instance roster**: its one tab stop, the selected row (the one whose
    terminal is the active tab), else the first row that matches the filter,
    else the filter.
@@ -791,10 +845,10 @@ the rig). "Fixed" marks a gap this change closed.
 
 | Element | How it is reached | How it is operated |
 |---|---|---|
-| Workspace switcher (`#ws-trigger`) | Tab (first stop of the sidebar); F6 lands next to it on the nav | Enter/Space/Down open the menu; Esc closes it back on the trigger |
-| Switcher menu: search, workspaces, Add | Focus starts in the search; Down enters the options, **Up from the first returns to the search (fixed)** | Enter/Space select; Home/End; **Tab out closes the menu (fixed)**; Home/End in the search move its caret (fixed) |
-| A workspace's **Open in new window** button (beside each option, not inside it) | Right Arrow from its option (not a Tab stop); Left Arrow or Esc returns to the option, menu still open; Up/Down move between options as from the option | Enter/Space open the workspace in its own window (or bring that window to the front). On the option itself, ⌘Enter (macOS) / Ctrl+Enter (Linux/Windows) does the same; the option's description says so |
-| Add / onboard workspace dialog | From the menu's Add | Radio-style suggestions with arrows; Esc; trapped; returns to the trigger |
+| List of workspaces (`#ws-list`: a list of buttons, the current one `aria-current`) | One roving stop, the row last focused, else the current row; Tab from the header's Add; Shift+Tab from the nav item (F6 lands there); `w` in the sidebar, the leader's `o`, ⌥⌘O / Ctrl+Alt+O and the palette's **Workspace: switch…** focus its current row | Up/Down/Home/End move over every row; Enter/Space show the workspace in this window (one another window shows moves here); ⌘Enter (macOS) / Ctrl+Enter (Linux/Windows) opens it in a new window, as the row's description says; the sidebar keys work on a row. The leader's ↑ / ↓ show the previous / next row from anywhere |
+| A row's context menu (`role="menu"`, one item: **Open in new window**) | Shift+F10 or the Menu key on a row, or a right-click; focus on its item | Enter/Space open the workspace in its own window (or bring that window to the front), back on the row; Esc or Tab close it, back on the row |
+| Add local workspace… (the **+** in the sidebar's header) | Tab (first stop of the sidebar) | Enter/Space open the Add / onboard dialog |
+| Add / onboard workspace dialog | From the header's Add, or the chooser's button; opened by itself in a window with no workspace when the Desktop serves none | Each found deployment is a button, then each row of this computer's list that can't be opened (`aria-disabled`, its state in words); one Tab stop among them, Up/Down/Home/End move: Enter/Space on a found one adds it and opens it here; Right Arrow on a row that can't be opened reaches its **Remove**, Left Arrow or Esc go back; Esc elsewhere closes; trapped; returns to what opened it, or to the list after an add |
 | Sidebar nav (Deployments, Workspace, Automations) | F6 (current item); Tab; ⌘1/⌘2/⌘3 | Enter/Space |
 | Roster filter | Tab; ⌘F / Ctrl+Alt+F; **Down from it enters the rows (fixed): while filtering, at the first match, never a parent kept only to show its tree path** | Typing filters |
 | Roster rows | One roving stop, **the selected row, else the first filter match (fixed: was the first enabled)**; F6; the leader then Esc; Up/Down/Home/End (and the TUI's `k` `j` `g` `G`), PageUp/PageDown by the rows that fit; Right (`l`) expands, Left (`h`) collapses or goes to the parent; the sidebar keys (see "Sidebar keys"). A collapse or a filter never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is. The list shows no scrollbar (the wheel and the touchpad scroll it): a row that takes keyboard focus (these keys, the filter's Down, F6) is revealed whole, its tools included, by scrolling the list alone, never an ancestor | Enter/Space open the terminal (running) or Start (stopped); an arrow chord the keymap binds is the keymap's, so Alt+Shift+↑/↓ (⌥⌘↑/↓) open the terminal of the row above / below, as from anywhere |

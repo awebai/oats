@@ -10,7 +10,7 @@ import { clientTerms } from '../../client/client-terms.mjs';
 import { deploymentState, primaryDeployment, isMultiDeployment, rowStale } from '../../client/roster-sections.mjs';
 import { createRemoteIdentityStore } from '../server/remote-identity.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
-import { CLI, juanState, identity, observed, unavailable, row, group, OATS, LAB, A, B, L, R, V, V_OATS, V_LAB } from './helpers/workspace-views-fixture.mjs';
+import { CLI, juanState, identity, observed, unavailable, row, remoteRow, group, OATS, LAB, A, B, L, R, V, V_OATS, V_LAB } from './helpers/workspace-views-fixture.mjs';
 
 const AT = '2026-10-11T12:00:00.000Z';
 const TUI = clientTerms({ name: 'oats tui', self: 'oats tui', selfInitial: 'oats tui', update: 'OATS', thisMachine: 'This machine' });
@@ -236,4 +236,40 @@ test('a remote view is made at `held.at`: the same `held` answers the same, what
       if (held.ctxs.length === 0) assert.equal(firstData.generatedAt, AT, `${what}: ${d.id}: and so is its view's`);
     }
   }
+});
+
+test('workspaceChoices `waiting`: a live deployment with a row that needs input, from what is held; a stale, kept or unreached one never', () => {
+  const CLAIM = { since: '2026-10-11T11:00:00.000Z', producer: 'agent', reason: 'question' };
+  const waits = (held) => Object.fromEntries(views.workspaceChoices(held, DESKTOP_TERMS).map(c => [c.id, c.waiting]));
+  const { altair, vega } = juanState();
+  // Nobody waits: every choice says false, a boolean, never absent.
+  assert.deepEqual(waits(juanHeld()), { [V_OATS]: false, [V_LAB]: false, [L]: false });
+  // A live local row with a claim marks its view, and only its view.
+  const local = juanState().state;
+  local.snapshot.byWs.set(B, observed(B, { reachable: true, ...identity() }, [row(B, 'dev-b', { runtimeState: 'running', waitingOnYou: CLAIM })]));
+  assert.deepEqual(waits(heldOf(local)), { [V_OATS]: true, [V_LAB]: false, [L]: false });
+  // The same row held from a failed re-read (a kept failure: stale) is unknown now: false.
+  const kept = juanState().state;
+  kept.snapshot.byWs.set(B, { ...observed(B, { reachable: true, ...identity() }, [row(B, 'dev-b', { runtimeState: 'running', waitingOnYou: CLAIM })]), error: 'the cache is locked' });
+  assert.equal(views.viewModel(heldOf(kept), DESKTOP_TERMS).infos.get(B).live, false);
+  assert.equal(waits(heldOf(kept))[V_OATS], false);
+  // A claim no row may show (a tmux shell, a stopped session) never counts, live or not.
+  for (const extra of [{ runtimeState: 'shell' }, { running: false }, { runtimeState: 'unreachable', running: null }]) {
+    const state = juanState().state;
+    state.snapshot.byWs.set(B, observed(B, { reachable: true, ...identity() }, [row(B, 'dev-b', { runtimeState: 'running', waitingOnYou: CLAIM, ...extra })]));
+    assert.equal(waits(heldOf(state))[V_OATS], false, JSON.stringify(extra));
+  }
+  // A remote group's row with a claim marks its view while the group is reached and current.
+  const asking = { ...vega, instances: [remoteRow('lab-a', '/srv/lab', { identity: { alias: 'lab-a', team: 'aweb:lab' }, waitingOnYou: CLAIM })] };
+  const remoteHeld = (over = {}) => heldOf(juanState({ remoteGroups: [altair, asking] }).state, over);
+  assert.deepEqual(waits(remoteHeld()), { [V_OATS]: false, [V_LAB]: true, [L]: false });
+  // Kept as last read by a filtered roster read (#1124): stale, not live, so false.
+  assert.equal(waits(remoteHeld({ keptReadAt: new Map([[asking.id, AT]]) }))[V_LAB], false);
+  // Not reached: its rows are last known, so false.
+  const down = { ...asking, probe: { ok: false, error: { code: 'E_SSH', message: 'Connection timed out' } } };
+  const unreached = views.workspaceChoices(heldOf(juanState({ remoteGroups: [altair, down] }).state), DESKTOP_TERMS).find(c => c.deployments.includes(V));
+  assert.deepEqual([unreached.id, unreached.waiting], [V, false], 'its own view, under its own id: not reached, never waiting');
+  // A deployment not observed (pending, or its read failed) has no rows to say anything: false.
+  const pending = juanState().state; pending.snapshot.byWs.delete(B);
+  assert.equal(waits(heldOf(pending))[V_OATS], false);
 });

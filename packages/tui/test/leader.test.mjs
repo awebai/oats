@@ -6,7 +6,7 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { instanceId } from "../lib/client.mjs";
-import { LIST_WORDS, memoryKey, paletteItems, recentOf, roster } from "../lib/model.mjs";
+import { LEADER_WORDS, LIST_WORDS, WORKSPACE_WORDS, memoryKey, paletteItems, recentOf, roster } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { CLI, instanceRow, leaderEscape, leaderThen, leaderTwice, observed, stateOf } from "./helpers.mjs";
 
@@ -77,7 +77,7 @@ test("in the list, the leader then a key of its table in a later read does what 
     assert.deepEqual([butLeader(led.state), led.effect], [butLeader(pressed.state), pressed.effect], `${k} after the leader is ${plain} in the list`);
   }
   assert.deepEqual([leaderThen(state, "?", AT).state.view, leaderThen(state, "?", AT).state.back], ["help", "instances"]);
-  assert.deepEqual([leaderThen(state, "o", AT).state.view, leaderThen(state, "o", AT).effect], ["switcher", { list: true, identify: true }]);
+  assert.deepEqual([leaderThen(state, "o", AT).state.view, leaderThen(state, "o", AT).state.focus, leaderThen(state, "o", AT).effect], ["instances", "workspaces", null], "o: the list of workspaces' focus");
   assert.deepEqual(leaderThen(state, "/", AT).state.filter, { editing: true, query: "" });
   const souls = leaderThen(state, "2", AT).state;
   assert.equal(souls.view, "souls");
@@ -85,18 +85,27 @@ test("in the list, the leader then a key of its table in a later read does what 
   assert.deepEqual([back.state.view, back.state.back, back.state.selected, back.effect], ["instances", "instances", state.selected, null]);
 });
 
-test("a key in the leader's own read cancels it and does nothing: a paste cannot run a command, and the key after it in a later read is a plain key again", () => {
+/** The line of a leader whose key came in its own read, with the test's leader: a line of one key. */
+const MERGED = { said: LEADER_WORDS.merged("Ctrl+\\"), under: [], once: true };
+
+test("a key in the leader's own read cancels it and does nothing but say so: a paste cannot run a command, and the key after it in a later read is a plain key again", () => {
   const state = THREE();
   const read = ++reads, waiting = leader(state, read).state;
   assert.deepEqual(waiting.leader, { read, waiting: true });
   for (const k of ["?", "2", "o", "X", "k", "escape"]) {
     const same = key(waiting, k, read);
     assert.deepEqual([same.state.leader, same.effect], [{ read, waiting: false }, null], k);
-    assert.deepEqual(butLeader(same.state), butLeader(state), `${k}: nothing else changed`);
+    assert.deepEqual(same.state.outcome, MERGED, `${k}: the line says why nothing ran`);
+    assert.deepEqual(butLeader({ ...same.state, outcome: null }), butLeader(state), `${k}: nothing else changed`);
+    // The rest of that read is dropped too, and the line stays.
+    const rest = key(same.state, "j", read);
+    assert.deepEqual([rest.state.outcome, rest.state.selected, rest.effect], [MERGED, same.state.selected, null], `${k}: the rest of the read`);
   }
   // The leader no longer waits: `o` is the leader's workspaces only after it, and bound to nothing in the list.
   const after = key(key(waiting, "?", read).state, "o");
   assert.deepEqual([after.state.view, after.state.leader, after.effect], ["instances", null, null]);
+  assert.equal(after.state.outcome, null, "a key bound to nothing, in a later read, clears the line: a line of one key");
+  assert.equal(key(key(waiting, "?", read).state, "j").state.outcome, null, "a key of the list in a later read clears the line, as it clears any");
 });
 
 test("a key not in the leader's table cancels it and is dropped: no action runs, and nothing is typed into an open filter field, nor pasted", () => {
@@ -139,7 +148,9 @@ test("from the terminal's focus the leader waits and the terminal keeps the focu
 test("the leader typed in the terminal with more bytes after it in the same read does not wait: what followed it cancelled it", () => {
   const state = opened(THREE(), "dev-a");
   const read = ++reads, step = leader(state, read, true);
-  assert.deepEqual([step.state.leader, step.state.terminal, step.effect], [{ read, waiting: false }, state.terminal, null]);
+  assert.deepEqual([step.state.leader, step.state.terminal, step.state.outcome, step.effect], [{ read, waiting: false }, state.terminal, MERGED, null]);
+  // What the person types on goes to the agent (the loop's `passed`), and the line goes with it.
+  assert.equal(reduce(step.state, { passed: true }).state.outcome, null, "typing on in the terminal clears the line");
   // The next leader, alone in its read, waits again.
   assert.deepEqual(leader(step.state).state.leader.waiting, true);
 });
@@ -293,48 +304,56 @@ test("the leader then S on the terminal's running instance opens nothing: the li
   assert.deepEqual([step.state.terminal.focus, step.state.terminal.zoom], ["list", false]);
 });
 
-test("the leader then Down or Up opens the next or previous instance that can be opened, selected and with the focus, passing over the stopped rows and the empty row, and stops at both ends without wrapping", () => {
+/** The previous or the next instance (`up`, `down`): the chords' alone, Alt+Shift+Up and Down (the
+ *  leader's Up and Down move between workspaces): from a terminal's focus as its scanner hands
+ *  them on (`{ chord }`), else as keys. */
+function stepTo(state, dir, at = AT) {
+  const does = dir === "down" ? "next" : "previous";
+  return state.terminal?.focus === "terminal" && state.view === "instances" ? reduce(state, { chord: does, read: ++reads, ...at }) : reduce(state, { key: `alt+shift+${dir}`, read: ++reads, ...at });
+}
+
+test("Alt+Shift+Down or Up opens the next or previous instance that can be opened, selected and with the focus, passing over the stopped rows and the empty row, and stops at both ends without wrapping", () => {
   const state = TREE();
   assert.equal(state.selected, idOf(state, "alpha"));
   // From the selection, no terminal open: alpha (stopped) to alpha-kid.
-  const first = leaderThen(state, "down", AT);
+  const first = stepTo(state, "down");
   assert.deepEqual(first.effect, { open: decision(state, "alpha-kid") });
   assert.deepEqual([first.state.selected, first.state.terminal.id, first.state.terminal.focus, recentOf(first.state)], [idOf(state, "alpha-kid"), idOf(state, "alpha-kid"), "terminal", [idOf(state, "alpha-kid")]]);
   // From the open terminal: each next instance opens as a tab of its own after the shown one, and
   // nothing is closed (T2, Done 3), up to the cap.
   let at = reduce(first.state, { shown: { id: idOf(state, "alpha-kid") }, ...AT }).state;
   for (const [from, to] of [["alpha-kid", "lead"], ["lead", "child-a"], ["child-a", "grandchild"]]) {
-    const step = leaderThen(at, "down", AT);
+    const step = stepTo(at, "down");
     assert.deepEqual(step.effect, { open: decision(state, to) }, `${from} down`);
     assert.deepEqual([step.state.selected, step.state.terminal.id, step.state.terminal.focus], [idOf(state, to), idOf(state, to), "terminal"], `${from} down`);
     at = reduce(step.state, { shown: { id: idOf(state, to) }, ...AT }).state;
   }
   assert.deepEqual(at.tabs.map((tab) => tab.id), ["alpha-kid", "lead", "child-a", "grandchild"].map((name) => idOf(state, name)));
   // The fifth: every tab is taken, nothing opens and nothing closes, and the line says so.
-  const full = leaderThen(at, "down", AT);
+  const full = stepTo(at, "down");
   assert.deepEqual([full.effect, full.state.tabs.length, full.state.terminal.id], [null, 4, idOf(state, "grandchild")]);
   assert.equal(full.state.outcome.said.map((part) => part.own ?? part.shown).join(""), "4 terminals are open; close one with Ctrl+\\ w.");
   // Up from the shown tab: the instance above is a tab, and is shown.
-  const shownUp = leaderThen(at, "up", AT);
+  const shownUp = stepTo(at, "up");
   assert.deepEqual([shownUp.effect, shownUp.state.terminal.id, shownUp.state.terminal.focus], [{ show: idOf(state, "child-a") }, idOf(state, "child-a"), "terminal"]);
   // solo-y under solo-x is stopped: the end. alpha above alpha-kid is stopped: the end.
   const bottom = reduce(opened(TREE(), "solo-x"), { shown: { id: idOf(state, "solo-x") }, ...AT }).state;
-  const last = leaderThen(bottom, "down", AT);
+  const last = stepTo(bottom, "down");
   assert.deepEqual([butLeader(last.state), last.effect], [butLeader(bottom), null], "no wrap at the bottom");
-  const top = opened(TREE(), "alpha-kid"), firstUp = leaderThen(top, "up", AT);
+  const top = opened(TREE(), "alpha-kid"), firstUp = stepTo(top, "up");
   assert.deepEqual([butLeader(firstUp.state), firstUp.effect], [butLeader(top), null], "no wrap at the top");
-  const back = leaderThen(bottom, "up", AT);
+  const back = stepTo(bottom, "up");
   assert.deepEqual(back.effect, { open: decision(state, "grandchild") }, "solo-x up passes over the empty row and child-b");
   // From the selection when none is open: child-b (stopped) up to grandchild.
-  const fromStopped = leaderThen(on(state, "child-b"), "up", AT);
+  const fromStopped = stepTo(on(state, "child-b"), "up");
   assert.deepEqual(fromStopped.effect, { open: decision(state, "grandchild") });
 });
 
-test("the leader then Up or Down moves from the open terminal's instance, not from the selection, also from the list's focus", () => {
+test("Alt+Shift+Up or Down moves from the open terminal's instance, not from the selection, also from the list's focus", () => {
   const state = leaderEscape(opened(TREE(), "child-a")).state, child = idOf(state, "child-a");
   const moved = on(state, "solo-x");
   for (const [k, to] of [["down", "grandchild"], ["up", "lead"]]) {
-    const step = leaderThen(moved, k, AT);
+    const step = stepTo(moved, k);
     assert.deepEqual(step.effect, { open: decision(state, to) }, k);
     assert.deepEqual(step.state.tabs.map((tab) => tab.id), [child, idOf(state, to)], `${k}: a tab of its own beside child-a's`);
     assert.deepEqual([step.state.selected, step.state.terminal.id, step.state.terminal.focus], [idOf(state, to), idOf(state, to), "terminal"], k);
@@ -457,7 +476,7 @@ test("Workspaces, Refresh and Help run from the palette do what their actions do
     const ran = run([...query]), pressed = key(state, plain);
     assert.deepEqual([butLeader(ran.state), ran.effect], [butLeader(pressed.state), pressed.effect], query);
   }
-  assert.deepEqual([run([..."works"]).state.view, run([..."works"]).effect], ["switcher", { list: true, identify: true }]);
+  assert.deepEqual([run([..."works"]).state.view, run([..."works"]).state.focus, run([..."works"]).effect], ["instances", "workspaces", null], "Workspaces: the list of workspaces' focus");
   assert.deepEqual([run([..."refr"]).state.palette, run([..."refr"]).effect], [null, { refresh: { live: true } }]);
   assert.deepEqual([run([..."help"]).state.view, run([..."help"]).state.back], ["help", "instances"]);
 });
@@ -628,8 +647,10 @@ test("while the palette is open Alt+Shift+Down and Up are its own, with and with
     assert.equal(list.selected, rowKey(fromTerminal, "solo-x"), `${how}: the terminal shown before`);
     const moved = key(fromTerminal, "alt+shift+down");
     assert.deepEqual([moved.effect, moved.state.palette.selected, moved.state.terminal.id], [null, list.runs[(at + 1) % list.runs.length][0], idOf(state, "lead")], `${how}: from a terminal`);
-    // The leader then Down is the leader's still, the palette open or not.
-    assert.equal(key(leader(open).state, "down").effect?.open?.id, idOf(state, "child-a"), `${how}: the leader then Down`);
+    // The leader then Down is the leader's still, the palette open or not: the next workspace, of
+    // which there is none here; the palette closes and the line says so.
+    const led = key(leader(open).state, "down");
+    assert.deepEqual([led.effect, led.state.palette, led.state.outcome?.said], [null, null, WORKSPACE_WORDS.below()], `${how}: the leader then Down`);
   }
   // On macOS the TUI has no group key and no chord: the key does nothing in the palette.
   const mac = key(RECENT(["solo-x", "grandchild"], "darwin"), "ctrl+k").state;
@@ -730,20 +751,18 @@ test("a view run from the palette over a confirmation closes it (the loop told),
   assert.deepEqual([fromField.state.view, fromField.state.filter.editing, fromField.state.filter.query], ["souls", false, "dev"]);
 });
 
-test("the leader then Down or Up opens the next or previous instance in the Instances view from any view, a palette over it too; at the end of the list nothing moves and the view stays", () => {
+test("Alt+Shift+Down or Up opens the next or previous instance in the Instances view from any view; at the end of the list nothing moves and the view stays (in the palette they are its own: below)", () => {
   for (const [what, reach] of SHOWN) {
     const before = reach(on(THREE(), "dev-a"));
-    for (const [how, from] of [["", before], [" under the palette", key(leader(before).state, "k").state]]) {
-      const step = key(leader(from).state, "down");
-      assert.equal(step.effect?.open?.id, idOf(before, "dev-c"), `${what}${how}`);
-      assert.deepEqual([step.state.view, step.state.palette, step.state.act, step.state.terminal?.focus, step.state.filter.editing], ["instances", null, null, "terminal", false], `${what}${how}`);
-      dismissed(before, step.effect);
-    }
+    const step = stepTo(before, "down");
+    assert.equal(step.effect?.open?.id, idOf(before, "dev-c"), what);
+    assert.deepEqual([step.state.view, step.state.palette, step.state.act, step.state.terminal?.focus, step.state.filter.editing], ["instances", null, null, "terminal", false], what);
+    dismissed(before, step.effect);
     const atEnd = reach(on(THREE(), "dev-c"));
-    const still = key(leader(atEnd).state, "down");
+    const still = stepTo(atEnd, "down");
     assert.deepEqual([still.effect, still.state.view], [null, atEnd.view], `${what}: dev-b, the last row, cannot be opened, so nothing moves`);
   }
-  const top = key(leader(key(on(THREE(), "dev-a"), "2").state).state, "up");
+  const top = stepTo(key(on(THREE(), "dev-a"), "2").state, "up");
   assert.deepEqual([top.effect, top.state.view], [null, "souls"], "Up from the first row: nothing moves");
 });
 

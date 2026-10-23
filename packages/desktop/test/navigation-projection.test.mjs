@@ -22,8 +22,8 @@ import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
 
 // Live evidence 13/14 used the hover token #f0e9d2, not selected #dce7e8.
-// The driver's last click (123.5, 112.03125) remains over Souls after the
-// workspace menu closes. JSDOM cannot prove browser hit-testing/hover; these
+// The driver's last click (123.5, 112.03125) remained over Souls after the
+// workspace menu closed (the menu is now the sidebar's always-shown list). JSDOM cannot prove browser hit-testing/hover; these
 // tests assert real .active classes instead of inferring selection from pixels.
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -33,7 +33,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 function shell(t, shellSource = source) {
-  const dom = new JSDOM(`<body><span id="ws-context"></span><aside><button id="ws-trigger">Workspace</button><nav id="nav"></nav></aside>
+  const dom = new JSDOM(`<body><span id="ws-context"></span><aside><section id="ws-list"><div id="ws-options"><button type="button" class="ws-option" tabindex="0" data-workspace-id="B">B</button></div></section><nav id="nav"></nav></aside>
     <div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div>`);
   t.after(() => dom.window.close());
   const document = dom.window.document, loads = [], contexts = [], focusCalls = [], navWrites = [];
@@ -82,6 +82,8 @@ function shell(t, shellSource = source) {
   return {
     ...s, c, document, loads, contexts, focusCalls, navWrites,
     nav: () => [...navEl.querySelectorAll(".active")].map(b => b.dataset.view),
+    // A row of the workspace list: where focus is when the operator picks a workspace there.
+    listRow: () => document.querySelector("#ws-options .ws-option"),
     seed(kind = "terminal", title = `${c.workspace}-${kind}`) {
       const made = s.addTab({ title, key: `${c.workspace}:${c.nextTabId}`, kind,
         focusContent: () => focusCalls.push(made.id) });
@@ -119,7 +121,7 @@ test("live-driver order: covered Souls stage → independent A/B splits → A ha
   const a1 = s.seed(), a2 = s.seed(); s.seed("file", "notes.md"); s.seed("file", "viewer.js"); const a3 = s.seed();
   s.c.split = filled("row", [a1.id, a2.id, a3.id], [1.3, .7]); s.selectTab(a3.id);
   terminalForeground(s); const a = s.snapshot();
-  const trigger = s.document.getElementById("ws-trigger"); trigger.focus(); s.switchTo("B");
+  const row = s.listRow(); row.focus(); s.switchTo("B");
   const b1 = s.seed(), b2 = s.seed();
   s.c.split = filled("col", [b1.id, b2.id], [1.2, .8]); s.selectTab(b2.id);
   terminalForeground(s); const b = s.snapshot();
@@ -127,7 +129,7 @@ test("live-driver order: covered Souls stage → independent A/B splits → A ha
     s.navWrites.length = 0;
     s.switchTo(ws); terminalForeground(s); assert.deepEqual(s.snapshot(), expected);
     assert.deepEqual(s.navWrites, [], "restoration must not transiently select a covered stage either");
-    assert.equal(s.document.activeElement, trigger, "workspace restoration never focuses terminal content");
+    assert.equal(s.document.activeElement, row, "workspace restoration never focuses terminal content");
   }
   assert.deepEqual(s.focusCalls, []);
   for (const tab of s.c.tabs.values()) assert.ok(tab.paneEl.isConnected && tab.tabEl.isConnected);
@@ -139,13 +141,13 @@ async function restoredFile(t, context, shellSource = source) {
   if (context === "instances") s.seed();
   const file = s.seed("file");
   assert.deepEqual(s.nav(), expected);
-  s.document.getElementById("ws-trigger").focus();
+  s.listRow().focus();
   s.switchTo("B"); await s.stage(context === "souls" ? "hierarchy" : "spawn");
   s.switchTo("A");
   assert.equal(s.c.activeTab, file.id); assert.equal(s.c.sidebarMode, context);
   assert.deepEqual(s.nav(), expected, "file restoration must project remembered context instead of inheriting the other workspace's nav");
   assert.deepEqual(s.contexts, ["tabs"]);
-  assert.equal(s.document.activeElement.id, "ws-trigger");
+  assert.equal(s.document.activeElement, s.listRow());
 }
 for (const context of ["instances", "souls"]) {
   test(`restored file projects its remembered ${context} context, not B's stage highlight`, t => restoredFile(t, context));
@@ -172,13 +174,13 @@ for (const boundary of ["load", "mount"]) for (const outcome of ["resolve", "rej
     const pending = s.showStage("hierarchy"); await tick();
     const gate = boundary === "load" ? s.loads.at(-1) : deferred();
     if (boundary === "mount") { s.loads.at(-1).resolve({ mount: () => gate.promise }); await tick(); }
-    s.selectTab(a.id); const trigger = s.document.getElementById("ws-trigger"); trigger.focus();
+    s.selectTab(a.id); const row = s.listRow(); row.focus();
     s.switchTo("B"); s.seed(); s.switchTo("A"); const before = s.snapshot();
     if (outcome === "resolve") gate.resolve(boundary === "load" ? { mount() {} } : undefined);
     else gate.reject(new Error("late stage failure"));
     await pending;
     terminalForeground(s); assert.deepEqual(s.snapshot(), before);
-    assert.equal(s.document.activeElement, trigger); assert.deepEqual(s.focusCalls, []);
+    assert.equal(s.document.activeElement, row); assert.deepEqual(s.focusCalls, []);
   });
 }
 
@@ -202,13 +204,13 @@ for (const boundary of ["load", "mount"]) for (const outcome of ["resolve", "rej
 for (const outcome of ["resolve", "reject"]) test(`older artifact module ${outcome} cannot replace restored terminal navigation`, async t => {
   const s = shell(t); await s.stage("spawn"); s.seed();
   const pending = s.openViewTab("markdown", "old file"); await tick(); const gate = s.loads.at(-1);
-  s.document.getElementById("ws-trigger").focus(); s.switchTo("B"); s.seed(); s.switchTo("A");
+  s.listRow().focus(); s.switchTo("B"); s.seed(); s.switchTo("A");
   const before = s.snapshot();
   if (outcome === "resolve") gate.resolve({ mount() { assert.fail("stale artifact must not mount"); } });
   else gate.reject(new Error("old file module failure"));
   await pending;
   terminalForeground(s); assert.deepEqual(s.snapshot(), before); assert.equal(s.c.tabs.size, 2);
-  assert.equal(s.document.activeElement.id, "ws-trigger");
+  assert.equal(s.document.activeElement, s.listRow());
 });
 
 async function reentrantFocus(t, shellSource = source) {

@@ -103,33 +103,50 @@ function shell(t, shellSource = source, { storage = {}, gitPanel } = {}) {
   };
 }
 
-test("provided workspace header structure and brand artwork are decorative; chooser semantics and ids survive", t => {
+test("provided workspace header structure and brand artwork are decorative; the list's semantics and ids survive", t => {
   const { document } = shell(t);
-  const trigger = document.querySelector(".side-head > #ws-trigger");
-  assert.deepEqual([...trigger.children].map(el => el.className), ["ws-brand-mark", "ws-heading-copy", "ws-chevron"]);
-  assert.equal(trigger.getAttribute("aria-haspopup"), "listbox");
-  assert.equal(trigger.getAttribute("aria-controls"), "ws-menu");
-  assert.equal(trigger.getAttribute("aria-expanded"), "false");
-  assert.ok(trigger.querySelector(".ws-heading-copy > #ws-name"));
-  assert.equal(trigger.querySelector("#ws-context"), null, "the trigger holds the name only");
-  // #482 UI spec: nothing between the switcher and the navigation (no deployments block).
+  const head = document.querySelector("#sidebar > .side-head");
+  // The head is the brand, the list's heading and Add local workspace…; no trigger, no popup menu.
+  assert.deepEqual([...head.children].map(el => el.id || el.className), ["ws-brand-mark", "ws-heading", "ws-add-open"]);
+  assert.equal(document.getElementById("ws-trigger"), null, "the dropdown's trigger is gone");
+  assert.equal(document.getElementById("ws-menu"), null, "the dropdown's menu is gone");
+  assert.equal(document.getElementById("ws-menu-search"), null, "the menu's search is gone");
+  assert.equal(document.getElementById("ws-heading").textContent, "Workspaces");
+  const addOpen = document.getElementById("ws-add-open");
+  assert.equal(addOpen.tagName, "BUTTON"); assert.equal(addOpen.type, "button");
+  assert.equal(addOpen.getAttribute("aria-label"), "Add local workspace…");
+  // The list sits between the head and the navigation (#482 UI spec: no deployments block there).
   assert.equal(document.getElementById("ws-deployments"), null);
-  assert.deepEqual([...document.getElementById("sidebar").children].slice(0, 3).map(el => el.id || el.className), ["side-head", "ws-menu", "nav"]);
-  const mark = trigger.querySelector(".ws-brand-mark");
+  assert.deepEqual([...document.getElementById("sidebar").children].slice(0, 3).map(el => el.id || el.className), ["side-head", "ws-list", "nav"]);
+  const list = document.getElementById("ws-list");
+  assert.equal(list.tagName, "SECTION");
+  assert.equal(list.getAttribute("aria-labelledby"), "ws-heading");
+  assert.equal(list.getAttribute("role"), null, "not a listbox: the sidebar's plain keys stay live on it");
+  assert.ok(list.querySelector(":scope > #ws-options"));
+  const mark = head.querySelector(".ws-brand-mark");
   assert.equal(mark.getAttribute("aria-hidden"), "true");
   const image = mark.querySelector("img.ws-brand-image");
   assert.equal(image.getAttribute("src"), "../assets/brand/generated/sidebar-48.png", "the generated 2x sidebar icon");
   assert.equal(image.getAttribute("alt"), ""); assert.equal(image.getAttribute("width"), "24"); assert.equal(image.getAttribute("height"), "24");
-  assert.equal(trigger.querySelector(".ws-brand-icon, [data-shell-icon=\"oats\"]"), null, "the placeholder leaf is gone");
+  assert.equal(head.querySelector(".ws-brand-icon, [data-shell-icon=\"oats\"]"), null, "the placeholder leaf is gone");
   assert.match(source, /hasWorkspaceSwitcher: true/);
   const switcher = createWorkspaceSwitcher({ document, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) });
-  switcher.begin()({ id: "/fixture/A", name: "A" }, []);
-  trigger.dispatchEvent(new document.defaultView.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-  assert.equal(trigger.getAttribute("aria-expanded"), "true");
-  assert.equal(document.activeElement.id, "ws-menu-search");
-  document.getElementById("ws-menu").dispatchEvent(new document.defaultView.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  assert.equal(document.activeElement, trigger);
-  assert.equal(trigger.getAttribute("aria-expanded"), "false");
+  t.after(() => switcher.dispose());
+  switcher.begin()({ id: "/fixture/A", name: "A" }, [{ id: "/fixture/A", name: "A" }, { id: "/fixture/B", name: "B" }]);
+  // Always shown: the rows are drawn with no menu to open, the current one marked by aria-current and style alone.
+  const rows = [...document.querySelectorAll("#ws-options .ws-option")];
+  assert.deepEqual(rows.map(row => row.dataset.workspaceId), ["/fixture/A", "/fixture/B"]);
+  assert.deepEqual(rows.map(row => row.getAttribute("aria-current")), ["true", null]);
+  assert.deepEqual(rows.map(row => row.textContent), ["A", "B"], "no check or other mark beside the name");
+  assert.ok(rows.every(row => row.tagName === "BUTTON" && row.getAttribute("role") === null), "a list of buttons");
+  assert.deepEqual(rows.map(row => row.tabIndex), [0, -1], "one tab stop: the current row");
+  assert.equal(list.getAttribute("aria-description"), "Current workspace: A", "its row's name, never its path");
+  // Focusing the list lands on the current row; Down moves the focus, and the tab stop follows it.
+  assert.equal(switcher.focusList(), true);
+  assert.equal(document.activeElement, rows[0]);
+  rows[0].dispatchEvent(new document.defaultView.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  assert.equal(document.activeElement, rows[1]);
+  assert.deepEqual(rows.map(row => row.tabIndex), [-1, 0]);
 });
 
 test("only current destinations render, dispatch unchanged stage ids, and project aria-current", t => {
@@ -328,16 +345,20 @@ for (const outcome of ["resolve", "reject"]) test(`reported workspace/root/host 
   const workspace = { id: "A", name: 'same <b>name</b>', remote: true, server: 'host<&"' };
   const deployment = { id: 'remote:host:t', machine: 'host<&"', path: "/srv/agents", label: "~/agents", local: false, reachable: true, identityFrom: "reported", primary: true };
   requests[1].resolve({ workspace, workspaces: [workspace], deployments: [deployment], instances: [] }); await fresh;
-  const name = document.getElementById("ws-name");
+  // The current row of the list carries the reported name (the dropdown's #ws-name is gone).
+  const current = () => document.querySelector('#ws-options .ws-option[aria-current="true"]');
+  const name = current().querySelector(".ws-option-name");
   const machines = () => c.contextDeployments.map(d => d.machine);
   assert.equal(name.textContent, 'same <b>name</b>', "the reported name as text, never markup"); assert.equal(name.children.length, 0);
   assert.deepEqual(machines(), ['host<&"'], "the reported deployments group the roster");
   if (outcome === "resolve") requests[0].resolve({ workspace: { ...workspace, name: "old name" }, workspaces: [{ ...workspace, name: "old name" }], deployments: [{ ...deployment, machine: "old-host" }], instances: [] });
   else requests[0].reject(new Error("stale failure"));
   await old;
-  assert.equal(name.textContent, 'same <b>name</b>'); assert.deepEqual(machines(), ['host<&"']);
+  assert.equal(current().querySelector(".ws-option-name").textContent, 'same <b>name</b>'); assert.deepEqual(machines(), ['host<&"']);
+  assert.equal(document.querySelectorAll("#ws-options .ws-option").length, 1, "the stale answer adds no row");
   assert.equal(document.querySelector(".ctx-list").textContent, "");
-  assert.equal(document.getElementById("ws-trigger").title, "Active workspace: same <b>name</b>", "a remote id is never the tooltip");
+  assert.equal(document.getElementById("ws-list").getAttribute("aria-description"), "Current workspace: same <b>name</b>", "a remote id is never the description");
+  assert.equal(current().title, 'same <b>name</b>', "the tooltip is the whole name: never a remote id or machine");
 });
 
 test('White, Solarized, Dark and This computer have explicit registry/palette choices without new default chords; the cycle keeps its label', t => {

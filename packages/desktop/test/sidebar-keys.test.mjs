@@ -39,8 +39,13 @@ function rig(t) {
     setActiveContexts: set => { contexts = new Set(set); setActiveContexts(set); } };
   const updateActiveContexts = runInNewContext(`${source}; updateActiveContexts;`, c);
   const sidebarKeysLive = () => { updateActiveContexts(); return contexts.has("sidebar"); };
-  // What the shell draws there: a roster row, a nav button, an instance's open actions menu; and in
-  // the main area a terminal's input.
+  // What the shell draws there: a row of the workspace list (a list of buttons, workspace-switcher.mjs), a
+  // roster row, a nav button, an instance's open actions menu; and in the main area a terminal's input.
+  const wsRow = doc.createElement("button"); wsRow.type = "button"; wsRow.className = "ws-option"; wsRow.tabIndex = 0;
+  wsRow.setAttribute("aria-current", "true"); wsRow.dataset.workspaceId = "/w/a";
+  const wsItem = doc.createElement("li"); wsItem.className = "ws-option-row"; wsItem.append(wsRow);
+  const wsGroup = doc.createElement("ul"); wsGroup.className = "ws-group"; wsGroup.append(wsItem);
+  doc.getElementById("ws-options").append(wsGroup);
   const row = doc.createElement("button"); row.className = "ctx-inst"; row.dataset.treeInstance = "a"; row.tabIndex = 0;
   doc.querySelector(".ctx-list").append(row);
   const nav = doc.createElement("button"); nav.className = "nav-item"; doc.getElementById("nav").append(nav);
@@ -61,16 +66,19 @@ function rig(t) {
     Object.defineProperty(e, "target", { value: el });
     return matchEvent(e, { isMac: false });
   };
-  return { win, doc, row, nav, item, textarea, pressAt, ran, sidebarKeysLive,
+  return { win, doc, row, nav, item, textarea, pressAt, ran, sidebarKeysLive, wsRow, addOpen: doc.getElementById("ws-add-open"),
     filter: doc.querySelector(".ctx-filter"), footer: doc.getElementById("sidebar-spawn"), main: doc.getElementById("show-panel") };
 }
 
-test("each sidebar key fires on a roster row, a nav button and a footer control, by its real (shifted) keydown", t => {
+test("each sidebar key fires on a workspace list row, the list's Add, a roster row, a nav button and a footer control, by its real (shifted) keydown", t => {
   const r = rig(t);
+  // The list is buttons, not a listbox, and the guard names no popup of it: the plain keys stay live there.
+  assert.equal(r.doc.querySelector('#ws-list[role], #ws-options[role], .ws-group[role="listbox"]'), null);
+  assert.doesNotMatch(shell.match(/function updateActiveContexts\([^]*?\n\}/)[0], /ws-menu/);
   for (const { id } of SIDEBAR_KEYS) {
     const chord = getBinding(id, false);
     assert.ok(chord, `${id} has a default`);
-    for (const [where, el] of [["row", r.row], ["nav", r.nav], ["footer", r.footer]]) {
+    for (const [where, el] of [["workspace row", r.wsRow], ["Add local workspace…", r.addOpen], ["row", r.row], ["nav", r.nav], ["footer", r.footer]]) {
       assert.equal(r.pressAt(el, chord), id, `${id} (${chord}) on the ${where}`);
     }
   }

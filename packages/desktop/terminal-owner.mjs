@@ -20,8 +20,10 @@ const deferred = () => { let resolve; const promise = new Promise(r => { resolve
  * io.create(spec, prepared, {current}) -> synchronous {pty,killViewer}.
  * An uncertain failed create must throw with private terminalCleanup callback.
  * killViewer resolves only when cleanup is confirmed; rejection means uncertain.
+ * admitFrame(event) -> true when the opening frame may open terminals at all (main: its window still shows
+ *   the workspace its hash names); anything else, a throw included, refuses the open with E_TERM_FORBIDDEN_FRAME.
  */
-export function createTerminalOwnerBroker({ rendererUrl, io, context = () => '',
+export function createTerminalOwnerBroker({ rendererUrl, io, context = () => '', admitFrame = () => true,
   token = () => randomBytes(32).toString('hex'), clock = { setTimeout, clearTimeout },
   leases = new Map(),
 }) {
@@ -186,6 +188,10 @@ export function createTerminalOwnerBroker({ rendererUrl, io, context = () => '',
     try {
       const owner = principal(e);
       if (!owner) return fail('E_TERM_FORBIDDEN_FRAME');
+      // The composition root's say on the frame (main: its hash is still its window's workspace).
+      let admittedFrame = false;
+      try { admittedFrame = admitFrame(e) === true; } catch { admittedFrame = false; }
+      if (!admittedFrame) return fail('E_TERM_FORBIDDEN_FRAME');
       let admitted;
       try { admitted = io.admit(input); } catch (error) { return fail(error?.code === 'E_HERDR_REMOVED' ? error.code : 'E_TERM_BAD_ARGS'); }
       if (!admitted || typeof admitted.key !== 'string' || !admitted.key || !admitted.spec) return fail('E_TERM_BAD_ARGS');
