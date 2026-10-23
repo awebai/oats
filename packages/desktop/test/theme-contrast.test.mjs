@@ -1019,9 +1019,9 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     ['#show-panel', '#sidebar', 'muted', 'surface'],
     ['.context-panel-tab-count', '#context-panel', 'muted', 'surface'], // W6: the Developer tab's thread count
     ['.ctx-instance-menu small', '.ctx-instance-menu button:disabled', 'muted', 'surface-2'],
-    // The workspace list sits on the sidebar's --surface: a row is its name, on the current row's --sel or at
-    // rest (a row paints no fill of its own), and the head's Add local workspace… icon.
-    ['.ws-option[aria-current="true"] .ws-option-name', '.ws-option[aria-current="true"]', 'fg', 'sel'],
+    // The workspace list sits on the sidebar's --surface: a row is its name, the current one included (a row paints
+    // no fill of its own; the current one is an accent edge), and the head's Add local workspace… icon.
+    ['.ws-option[aria-current="true"] .ws-option-name', '#sidebar', 'fg', 'surface'],
     ['.ws-option:not([aria-current]) .ws-option-name', '#sidebar', 'fg', 'surface'],
     ['#ws-add-open', '#sidebar', 'muted', 'surface'],
     ['.app-toast-open', '.app-toast-open', 'primary-fg', 'primary-bg'],
@@ -1041,7 +1041,7 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
-  assert.equal(dom.window.getComputedStyle(doc.querySelector('.ws-option:not([aria-current])')).backgroundColor, 'rgba(0, 0, 0, 0)', 'a row at rest shows the sidebar under it');
+  for (const row of ['.ws-option:not([aria-current])', '.ws-option[aria-current="true"]']) assert.equal(dom.window.getComputedStyle(doc.querySelector(row)).backgroundColor, 'rgba(0, 0, 0, 0)', `${row}: the sidebar shows under it`);
   // The needs-input dot is a non-text mark: a yellow fill (--attn-dot) in a --warn ring, hidden from assistive tech, its words in the row's
   // name and tooltip; painted as it is, with no opacity on it or under it. It sits after the name, on the row's one line.
   const dot = doc.querySelector('.ws-option[data-workspace-id="/other"] .ws-waiting'); assert.ok(dot, 'the waiting row carries the dot');
@@ -1058,20 +1058,21 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
 // The workspace list's needs-input dot is the only visible sign that a workspace waits (its words are for assistive
 // tech and the tooltip), so WCAG 1.4.11 holds it to 3:1 on every fill a row paints under it: the sidebar at rest
 // (--surface), a hovered row (--surface-2), the current or a focused row (--sel). The terminal tab's glyph (#558)
-// and an instance's dot (contrast-inventory.mjs GRAPHIC_PAIRS) are held the same way. Its fill is the yellow --attn-dot,
+// and an instance's dot (contrast-inventory.mjs GRAPHIC_PAIRS) are held the same way, as is the current row's accent edge. Its fill is the yellow --attn-dot,
 // below 3:1 on these in White and Solarized, so its 1px ring carries the contrast: --warn, the needs-input colour of
 // the roster's pill and the tab's glyph.
-for (const [name, palette] of palettes) test(`${name}: the workspace list's needs-input dot meets 3:1 on every row fill`, () => {
+for (const [name, palette] of palettes) test(`${name}: the workspace list's needs-input dot and current-row edge meet 3:1 on every row fill`, () => {
   const shellCss = readFileSync(new URL('shell.css', renderer), 'utf8');
   assert.match(shellCss, /\.ws-waiting \{[^}]*background: var\(--attn-dot\); border-width: 1px; border-style: solid; border-color: var\(--warn\);/);
-  // A row's fills: none at rest (the sidebar's --surface shows), --surface-2 hovered, --sel current or focused.
+  // A row's fills: none at rest or current (the sidebar's --surface shows), --surface-2 hovered, --sel focused.
   assert.match(shellCss, /\.ws-option \{[^}]*background: transparent;/);
   assert.match(shellCss, /\.ws-option:hover \{ background: var\(--surface-2\); \}/);
   assert.match(shellCss, /\.ws-option:focus-visible \{ background: var\(--sel\); \}/);
-  assert.match(shellCss, /\.ws-option\[aria-current="true"\] \{ background: var\(--sel\); \}/);
-  for (const bg of ['surface', 'surface-2', 'sel']) {
-    const ratio = contrast(opaqueChannels(palette.get('warn')), backgroundChannels(bg, palette));
-    assert.ok(ratio >= GRAPHIC_CONTRAST, `${name} --warn on --${bg}: ${ratio.toFixed(2)}:1 < 3:1`);
+  assert.match(shellCss, /\.ws-option\[aria-current="true"\] \{ box-shadow: inset 3px 0 0 var\(--accent\); \}/);
+  // The dot's ring, and the current row's edge (the one visible sign of the current workspace beside its bold name).
+  for (const mark of ['warn', 'accent']) for (const bg of ['surface', 'surface-2', 'sel']) {
+    const ratio = contrast(opaqueChannels(palette.get(mark)), backgroundChannels(bg, palette));
+    assert.ok(ratio >= GRAPHIC_CONTRAST, `${name} --${mark} on --${bg}: ${ratio.toFixed(2)}:1 < 3:1`);
   }
 });
 

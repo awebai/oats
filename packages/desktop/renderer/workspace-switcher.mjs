@@ -41,6 +41,10 @@ export const LISTED_STATE_WORD = Object.freeze({ missing: "Missing", "not-a-depl
 /** What the dialog adds when this computer's list could not be read: its CLI has no list, or the read failed. */
 export const LIST_UNSUPPORTED_TEXT = "This oats can't list this computer's deployments. Update oats.";
 export const listFailedText = (message) => `Couldn't read this computer's deployments: ${message}`;
+/** The Add dialog's count (its status line): what can be added, never the rows that can't be opened. */
+export const addableText = (count) => (count ? `${count} workspace${count === 1 ? "" : "s"} to add` : "No OATS workspaces to add.");
+/** The heading over this computer's list's rows that can't be opened, in the Add dialog after those to add. */
+export const STALE_HEADING = "Can't be opened";
 /** The keyboard route to a row's Remove, said once for every removable row. */
 export const REMOVE_HINT = "Press Right Arrow, then Enter, to remove it from this computer's list.";
 
@@ -300,6 +304,15 @@ export function createWorkspaceSwitcher({
       button.addEventListener("click", () => { if (!adding) void runAdd(id, name, button); });
       suggestionsEl.append(button);
     }
+    // Under their own heading, as their own group: they are not workspaces to add, and the count says so.
+    let staleGroup = null;
+    if (staleVisible.length) {
+      const heading = document.createElement("h3"); heading.className = "ws-suggestions-heading"; heading.id = "ws-stale-heading";
+      heading.textContent = STALE_HEADING;
+      staleGroup = document.createElement("div"); staleGroup.className = "ws-stale-group";
+      staleGroup.setAttribute("role", "group"); staleGroup.setAttribute("aria-labelledby", heading.id);
+      suggestionsEl.append(heading, staleGroup);
+    }
     for (const candidate of staleVisible) {
       const { id, name, button, copy } = entry(candidate);
       const sentence = LISTED_STATE_TEXT[candidate.state];
@@ -324,7 +337,7 @@ export function createWorkspaceSwitcher({
         remove.addEventListener("click", () => { if (!adding) void runRemove(id, name); });
         row.append(remove);
       }
-      suggestionsEl.append(row);
+      staleGroup.append(row);
     }
     if (focusId) {
       [...suggestionsEl.querySelectorAll(".ws-suggestion")]
@@ -454,7 +467,7 @@ export function createWorkspaceSwitcher({
         // Without the list (an older oats, a refused read) what is found is the saved deployments alone: said so.
         const note = result?.list?.state === "unsupported" ? LIST_UNSUPPORTED_TEXT
           : result?.list?.state === "failed" ? listFailedText(result.list.message || "the installed OATS CLI could not read it.") : "";
-        const foundText = suggestions.length ? `${suggestions.length} suggested workspace${suggestions.length === 1 ? "" : "s"}` : "No additional OATS workspaces were discovered.";
+        const foundText = addableText(suggestions.length);
         discoveryState = { message: note ? `${foundText.replace(/\.?$/, ".")} ${note}` : foundText, error: false };
       }
       if (!adding) paintDiscoveryState();

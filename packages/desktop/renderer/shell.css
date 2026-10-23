@@ -71,8 +71,11 @@ body {
              border-radius: 6px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .ws-option:hover { background: var(--surface-2); }
 .ws-option:focus-visible { background: var(--sel); }
-/* The current workspace, by style alone (aria-current says it to assistive tech): the selection surface, in bold. */
-.ws-option[aria-current="true"] { background: var(--sel); }
+/* The current workspace, by style alone (aria-current says it to assistive tech): in bold, with an accent edge on
+   its left and no fill of its own. The selection fill (--sel) is the nav's current view (.nav-item.active), so the
+   sidebar shows one filled "you are here" row; the edge holds 3:1 on every fill the row paints (TEXT_PAIRS holds
+   --accent at 4.5:1 on --surface, --surface-2 and --sel). */
+.ws-option[aria-current="true"] { box-shadow: inset 3px 0 0 var(--accent); }
 .ws-option[aria-current="true"] .ws-option-name { font-weight: 650; }
 /* A workspace with an instance that needs input: the roster's attention dot, a graphic after the name
    (its words are in the name, sr-only, and the tooltip). */
@@ -359,6 +362,8 @@ body {
 .ws-suggestion:focus-visible { background: var(--sel); }
 .ws-suggestion:disabled { cursor: default; }
 .ws-suggestion:disabled:hover { background: transparent; }
+/* The rows that can't be opened, after those to add, under their own small heading (--muted on the dialog's --surface). */
+.ws-suggestions-heading { margin: 10px 10px 4px; color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1.5; }
 /* A row of this computer's list that can't be opened (#1390): its state in a word, and its Remove beside it. */
 .ws-suggestion-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .ws-suggestion-row > .ws-suggestion { flex: 1 1 auto; min-width: 0; }
