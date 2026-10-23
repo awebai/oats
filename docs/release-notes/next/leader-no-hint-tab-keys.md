@@ -13,7 +13,7 @@
 ## Fixed
 
 - **Desktop: the tab and instance keys no longer skip a press.**
-  - In a split, the tab keys (Ctrl+Tab, Alt+Shift+←/→, ⌥⌘←/→, the leader's
+  - In a split, the tab keys (Ctrl+Tab, Alt+Shift+←/→, ⌥←/→, the leader's
     ←/→ and ⌥⌘1–9 / Ctrl+Alt+1–9) went through every tab in the order they
     were opened, across both groups. They now stay in the focused group, in
     the order its strip shows.
