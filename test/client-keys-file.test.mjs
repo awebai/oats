@@ -1,5 +1,6 @@
 // keys.json of the shared home (packages/client/keys-file.mjs): the chord family both clients bind, read from the
-// file's text with no fs, and the text the Desktop writes. Every way the file can fail is the default, Ctrl+Alt.
+// file's text with no fs, and the text the Desktop writes. Every way the file can fail is the default, Alt; a family
+// the file names stays, Ctrl+Alt included.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
@@ -14,11 +15,12 @@ test("keys.json sits beside tui.json: $OATS_HOME_DIR when set and not empty, els
 
 test("the file chooses a family only with a known chords value", () => {
   assert.deepEqual(chordFamilyFrom('{ "chords": "ctrl+shift" }'), { family: "ctrl+shift", why: null });
-  assert.deepEqual(chordFamilyFrom('{ "chords": "ctrl+alt", "later": true }'), { family: "ctrl+alt", why: null });
+  assert.deepEqual(chordFamilyFrom('{ "chords": "ctrl+alt", "later": true }'), { family: "ctrl+alt", why: null }, "a chosen Ctrl+Alt stays, now that Alt is the default");
+  assert.deepEqual(chordFamilyFrom('{ "chords": "alt" }'), { family: "alt", why: null });
   assert.ok(Object.isFrozen(chordFamilyFrom('{ "chords": "ctrl+shift" }')));
 });
 
-test("a missing file, an unreadable one, bad JSON, a missing key and an unknown value are all Ctrl+Alt", () => {
+test("a missing file, an unreadable one, bad JSON, a missing key and an unknown value are all the default, Alt", () => {
   const cases = [
     [[null], "missing"],
     [[undefined], "missing"],
@@ -39,11 +41,12 @@ test("a missing file, an unreadable one, bad JSON, a missing key and an unknown 
     [["{}"], "no-chords"],
     [['{ "chords": "Ctrl+Shift" }'], "unknown-chords"],
     [['{ "chords": "ctrl+shift+alt" }'], "unknown-chords"],
+    [['{ "chords": "Alt" }'], "unknown-chords"],
     [['{ "chords": null }'], "unknown-chords"],
     [['{ "chords": ["ctrl+shift"] }'], "unknown-chords"],
   ];
   for (const [args, why] of cases) {
-    assert.deepEqual(chordFamilyFrom(...args), { family: "ctrl+alt", why }, `${String(args[0]).slice(0, 30)} -> ${why}`);
+    assert.deepEqual(chordFamilyFrom(...args), { family: "alt", why }, `${String(args[0]).slice(0, 30)} -> ${why}`);
   }
   // A read error wins over any text handed with it.
   assert.equal(chordFamilyFrom('{ "chords": "ctrl+shift" }', Object.assign(new Error("x"), { code: "EIO" })).why, "unreadable");
@@ -57,17 +60,17 @@ test("the file's bytes: UTF-8, a byte-order mark ignored, the same family whoeve
   assert.deepEqual(chordFamilyFrom('\uFEFF{ "chords": "ctrl+shift" }'), shift, "nor in text already decoded");
   // A byte that is not UTF-8 makes the whole file no text, even inside a value nobody reads.
   const bad = Buffer.concat([Buffer.from('{ "chords": "ctrl+shift", "x": "'), Buffer.from([0xc3]), Buffer.from('" }')]);
-  assert.deepEqual(chordFamilyFrom(bad), { family: "ctrl+alt", why: "not-utf8" });
+  assert.deepEqual(chordFamilyFrom(bad), { family: "alt", why: "not-utf8" });
   // The limit is in bytes: KEYS_LIMIT two-byte characters are over it.
   assert.equal(chordFamilyFrom(Buffer.from(`{ "x": "${"é".repeat(KEYS_LIMIT / 2)}" }`)).why, "too-large");
   assert.equal(chordFamilyFrom(`{ "x": "${"é".repeat(KEYS_LIMIT / 2)}" }`).why, "too-large");
-  assert.deepEqual(chordFamilyFrom(Buffer.alloc(KEYS_LIMIT, 0x20)), { family: "ctrl+alt", why: "not-json" }, "at the limit it is read");
+  assert.deepEqual(chordFamilyFrom(Buffer.alloc(KEYS_LIMIT, 0x20)), { family: "alt", why: "not-json" }, "at the limit it is read");
 });
 
 test("the note: why the file was not taken, and nothing when it was, or when there is none", () => {
-  assert.equal(chordFamilyNote(chordFamilyFrom('{ "chords": "x" }')), "keys.json: unknown chords value, using Ctrl+Alt");
-  assert.equal(chordFamilyNote(chordFamilyFrom("{")), "keys.json is not JSON, using Ctrl+Alt");
-  assert.equal(chordFamilyNote(chordFamilyFrom(null, Object.assign(new Error("x"), { code: "EACCES" }))), "keys.json cannot be read, using Ctrl+Alt");
+  assert.equal(chordFamilyNote(chordFamilyFrom('{ "chords": "x" }')), "keys.json: unknown chords value, using Alt");
+  assert.equal(chordFamilyNote(chordFamilyFrom("{")), "keys.json is not JSON, using Alt");
+  assert.equal(chordFamilyNote(chordFamilyFrom(null, Object.assign(new Error("x"), { code: "EACCES" }))), "keys.json cannot be read, using Alt");
   assert.equal(chordFamilyNote(chordFamilyFrom('{ "chords": "ctrl+shift" }')), null);
   assert.equal(chordFamilyNote(chordFamilyFrom(null)), null, "no file is the default, with nothing to say");
   assert.equal(chordFamilyNote(null), null);
@@ -83,7 +86,7 @@ test("the Desktop's write sets chords and keeps every other key, in its place", 
   assert.deepEqual(JSON.parse(keysWithFamily('{ "a": 1 }', "ctrl+alt")), { a: 1, chords: "ctrl+alt" });
   assert.deepEqual(JSON.parse(keysWithFamily(Buffer.from('\uFEFF{ "a": 1 }'), "ctrl+shift")), { a: 1, chords: "ctrl+shift" }, "bytes, a mark dropped");
   // What it writes, it reads back.
-  for (const family of ["ctrl+alt", "ctrl+shift"]) assert.deepEqual(chordFamilyFrom(keysWithFamily('{ "z": 0 }', family)), { family, why: null });
+  for (const family of ["alt", "ctrl+alt", "ctrl+shift"]) assert.deepEqual(chordFamilyFrom(keysWithFamily('{ "z": 0 }', family)), { family, why: null });
   assert.throws(() => keysWithFamily(null, "ctrl+meta"), /unknown chord family/);
   assert.throws(() => keysWithFamily("{", "ctrl+meta"), TypeError, "the family is checked first");
   assert.throws(() => keysWithFamily(null, undefined), /unknown chord family/);
