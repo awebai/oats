@@ -1091,7 +1091,7 @@ test("Ctrl+Z, the deployment removed, fg: the view returns and says, in the shar
   assertRunningModes(term, "after fg");
   t.diagnostic(`after fg with the deployment gone the pane shows:\n${term.shows()}`);
   term.press("?");
-  await until(term, () => mainOf(term.screen()).some((row) => row.trim() === "Keys") && JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words(HELP_SHEET)), "the help, with its cheat sheet, after fg with the deployment gone");
+  await until(term, () => mainOf(term.screen()).some((row) => row.trim() === HELP_FIRST.title) && JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words(HELP_SHEET)), "the help, with its cheat sheet, after fg with the deployment gone");
   assert.equal(run.status(), null, "it still runs");
   term.press("Escape");
   await untilScreen(term, notReadFaults, "the view again after the help was closed");
@@ -1331,13 +1331,16 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   term.press("q"); // no key now: read, and nothing happens
   term.press("?");
   // At 80x24 the help has the 39 cells of the main area beside the sidebar, and its line of `quit`
-  // is its 120th row or so: under the views, `workspaces` and the palette, `open` four times with
+  // is its 130th row or so on macOS, its 208th on Linux and Windows, where the chords lead the help
+  // (HELP_FIRST): under the views, `workspaces` and the palette, `open` four times with
   // the agent's terminal and the leader's keys under it (whose rows depend on how the leader's label
   // wraps: one more with `Ctrl+X`, the default, than with `Alt+O`), the switcher's `remove`, `soul-instances`, the open terminal's keys, the
   // split's, the four acts with the rules of a confirmation under them, and the spawn's, each
   // sentence wrapped to that width. The movement keys scroll the help: with either of those labels the line
-  // of `quit` is on the screen from 100 rows down to 121, and 110 rows down show it.
-  for (let i = 0; i < 110; i++) term.press("j");
+  // of `quit` is on the screen from 108 rows down to 128 on macOS, from 187 to 205 elsewhere, and
+  // 118 and 196 rows down show it.
+  const down = process.platform === "darwin" ? 118 : 196;
+  for (let i = 0; i < down; i++) term.press("j");
   await until(term, () => mainOf(term.screen()).some((row) => /^ *x {2,}quit$/.test(row)) && JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words(withX(HELP_SHEET))), "the help with x as the quit key, in it and in its cheat sheet, after a q that did not quit");
   assert.equal(mainOf(term.screen()).some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
   term.press("Escape");
