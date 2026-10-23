@@ -314,7 +314,7 @@ test("the leader, Ctrl+X, is the byte 0x18 in xterm on every platform, which the
 
 // ---------------------------------------------------------------- macOS: the ⌥ arrows
 
-// macOS moves between tabs, groups and workspaces with ⌥ and an arrow (Pepe's call, 2026-10-23), which fire
+// macOS moves between tabs, groups and workspaces with ⌥ and an arrow (the product owner's call, 2026-10-23), which fire
 // in a terminal by name (keybindings.mjs macStructuralChord). Under xterm's macOS evaluation (navigator.platform
 // set before load) this is what the program would get without them: for ⌥←/→ readline's word moves, ESC b and
 // ESC f (xterm.js's macOS form of its "Alt+arrow moves a word" hack, whatever macOptionIsMeta says), which

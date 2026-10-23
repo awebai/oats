@@ -46,7 +46,7 @@ Show instance panel and the closed sidebar and panel).
    **The Alt family takes keys a program reads, on purpose.** Changed in the
    next release: the rule was that a default chord never takes a key that a
    program inside the terminal reads. For the Alt family, the default on
-   Linux and Windows, Pepe (the owner) overrode it on 2026-10-22, and the
+   Linux and Windows, the product owner overrode it on 2026-10-22, and the
    maintainer set its keys (see "The chord families"). Alt+letter, Alt+digit
    and the Alt arrows are what readline, Emacs, Claude Code and others bind
    (M-b, M-f, M-d, M-digit, Alt+P…). [The collision table](#what-the-alt-family-takes)
@@ -109,8 +109,8 @@ Show instance panel and the closed sidebar and panel).
      leader pressed twice gives the program exactly that. A rebind of the leader
      to a ⌘ chord fires by the ⌘ rule; a rebind to another ⌃ chord (⌃Y) stays
      the program's.
-   - **The moves between tabs, groups and workspaces** (Pepe's call,
-     2026-10-23): ⌥← / ⌥→ the tabs, ⌥⇧← / ⌥⇧→ the editor groups, ⌥↑ / ⌥↓ the
+   - **The moves between tabs, groups and workspaces** (the product
+     owner's call, 2026-10-23): ⌥← / ⌥→ the tabs, ⌥⇧← / ⌥⇧→ the editor groups, ⌥↑ / ⌥↓ the
      workspaces, the same chords as the Alt family's. Their shape is ⌥, with ⇧
      or without, and an arrow, with neither ⌘ nor ⌃: a move rebound to another
      such chord still fires in a terminal, one rebound to ⌥ with a letter does
@@ -546,8 +546,8 @@ letters and digits, and ⌥ with an arrow moves (principle 3).
 
 - **Alt, the default.** Alt with a letter or a digit for an action, Alt with
   an arrow to move between tabs and workspaces, Alt+Shift with an arrow
-  between editor groups and instances. Changed in the next release (Pepe's
-  call, 2026-10-22; the maintainer set the keys): it takes keys programs in
+  between editor groups and instances. Changed in the next release (the
+  product owner's call, 2026-10-22; the maintainer set the keys): it takes keys programs in
   a terminal read, listed in [what the Alt family takes](#what-the-alt-family-takes).
 - **Ctrl+Alt, the option for whoever needs Alt in their programs.** The
   default until the next release, with its keys unchanged: Ctrl+Alt with a

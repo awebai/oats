@@ -182,7 +182,7 @@ test("the chord families: Alt the default, Ctrl+Alt keeps its keys, Ctrl+Shift m
   assert.equal(chordKey("palette", true, "ctrl+shift"), "cmd+k");
 });
 
-// macOS's moves between tabs, groups and workspaces are ⌥ with an arrow (Pepe, 2026-10-23); the
+// macOS's moves between tabs, groups and workspaces are ⌥ with an arrow (the product owner's call, 2026-10-23); the
 // Ctrl+Alt and Ctrl+Shift families leave Alt+↑/↓ to the program (#1491 B1): the leader's ↑/↓ reach
 // the workspace moves there, as in every family.
 test("macOS: ⌥ with an arrow moves between tabs, groups and workspaces; outside the Alt family the workspace moves have no chord", () => {
@@ -376,11 +376,11 @@ test("change the module's entry in a copy: the Desktop's default follows, and ke
 // filter and the splits moved to Ctrl+Alt on Linux/Windows, the second tab-cycling chords to
 // Alt+Shift+←/→ (⌘⌥←/→, new on macOS), go to tab to Ctrl+Alt+digit; the workspace switcher and the
 // next editor group got a chord; roster.openPrevious, roster.openNext and terminal.focusMode are new.
-// 0.67 (#1433) changed only the leader, to Ctrl+X on both. The Alt family (Pepe's call, 2026-10-22)
+// 0.67 (#1433) changed only the leader, to Ctrl+X on both. The Alt family (the product owner's call, 2026-10-22)
 // made Alt the default on Linux/Windows: every shared chord there is Alt with the key (Alt+←/→ the
 // tab moves, Alt+Shift+←/→ the groups), Ctrl+Alt's keys became an option (CTRL_ALT_MOVED below), and
 // split.focusPrevGroup, workspace.previous and workspace.next are new. Then macOS took ⌥ with an
-// arrow for the moves (Pepe, 2026-10-23): ⌥←/→ the tabs, ⌥⇧←/→ the groups, ⌥↑/↓ the workspaces, the
+// arrow for the moves (the product owner's call, 2026-10-23): ⌥←/→ the tabs, ⌥⇧←/→ the groups, ⌥↑/↓ the workspaces, the
 // same chord as Linux/Windows' Alt family, so one string.
 const DEFAULTS = [
   ["app.leader",{"mac":"Ctrl+X","other":"Ctrl+X"}],

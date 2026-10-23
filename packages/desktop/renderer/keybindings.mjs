@@ -7,7 +7,7 @@
 // Terminal safety (docs/desktop-keyboard.md, principle 2). When the keydown target is inside
 // `.xterm`, on macOS ONLY chords whose `Mod` resolves to ⌘ (meta) may fire — ⌘ never reaches the
 // pty — plus shapes named by action id: Ctrl+Tab tab cycling, the leader's ⌃X (or ⌃\), and ⌥ with an
-// arrow for the moves between tabs, groups and workspaces (Pepe's call, 2026-10-23: the program loses
+// arrow for the moves between tabs, groups and workspaces (the product owner's call, 2026-10-23: the program loses
 // what xterm.js sends for them, ⌥←/→'s word moves ESC b / ESC f among them); every other chord
 // (⌃digits, F6, Ctrl+letters, the other ⌥ keys) belongs to the attached program.
 // On Linux/Windows the Ctrl key IS the terminal's control key, so only an explicit allowlist of
@@ -17,7 +17,7 @@
 // Ctrl+Alt family: ESC, then the Ctrl+letter byte or the digit), the Alt family's keys, which a
 // program reads (Alt+letter and Alt+digit are ESC and the key, which it still gets from Esc, then
 // the key; xterm.js sends an Alt arrow as the Ctrl arrow, CSI 1;5, on Linux/Windows; Alt+↑/↓ are the
-// Alt family's alone, the other two leave them to the program) (Pepe's call, 2026-10-22: the rule that a default never takes a key a
+// Alt family's alone, the other two leave them to the program) (the product owner's call, 2026-10-22: the rule that a default never takes a key a
 // program reads gives way for the Alt family; the collision table names each), and three named
 // exceptions (TERMINAL_ALLOWLIST has the rule), the leader's Ctrl+X among them. Every other plain
 // Ctrl+letter (Ctrl+W, Ctrl+K, Ctrl+P, Ctrl+B, Ctrl+\) and F6 stay the program's, and so does every
@@ -482,7 +482,7 @@ export function defaultBinding(actionId, isMac = defaultIsMac(), family = chordF
 // or without, sends ESC and the Ctrl+letter byte: Esc, then Ctrl+letter; Ctrl+Alt+digit
 // ESC and the digit: Alt+digit) and Ctrl+Shift+Alt+W (ESC Ctrl+W: Esc, then Ctrl+W).
 // On Windows xterm sends nothing for Ctrl+Alt+letter or digit: it reads them as AltGr.
-// The Alt family (the default, Pepe's call over the rule above): Alt+letter and Alt+digit send
+// The Alt family (the default, the product owner's call over the rule above): Alt+letter and Alt+digit send
 // ESC and the key, which the program still gets from Esc, then the key. An Alt arrow (the tab
 // moves and the workspace moves, the Alt family's alone) is a byte a plainer key still sends: xterm.js
 // sends it as the Ctrl arrow on Linux/Windows (CSI 1;5 A–D), so Ctrl+arrow gives the program
@@ -728,8 +728,8 @@ export function isPlainChord(chord) {
 
 // ---------------------------------------------------------------- dispatch
 
-/** The moves between tabs, groups and workspaces: on macOS ⌥ with an arrow (CHORDS `mac`, Pepe's call,
- * 2026-10-23), which fire in a terminal by name (macStructuralChord). */
+/** The moves between tabs, groups and workspaces: on macOS ⌥ with an arrow (CHORDS `mac`, the product
+ * owner's call, 2026-10-23), which fire in a terminal by name (macStructuralChord). */
 const MAC_ARROW_MOVES = new Set(["tabs.prevPage", "tabs.nextPage", "split.focusPrevGroup", "split.focusNextGroup", "workspace.previous", "workspace.next"]);
 const ARROW_KEYS = new Set(["arrowleft", "arrowright", "arrowup", "arrowdown"]);
 

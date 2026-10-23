@@ -109,7 +109,7 @@ export const PLAIN_KEYS = Object.freeze([
  * "Chords"). The leader stays the key that always works: help, the views and the acts (stop,
  * restart, start, retire) are reached by it alone.
  *
- * `alt`, the default family (Pepe's call, 2026-10-22; the maintainer's defaults, f592e979): Alt with
+ * `alt`, the default family (the product owner's call, 2026-10-22; the maintainer's defaults, f592e979): Alt with
  * a letter or a digit for an action, Alt with an arrow to move between tabs (←/→) and workspaces
  * (↑/↓), Alt+Shift with an arrow between groups (←/→) and instances (↑/↓). These take keys a program
  * in a terminal reads (readline's M-b, M-f and M-digit, an agent's Alt+P); the program still gets
@@ -137,7 +137,7 @@ export const PLAIN_KEYS = Object.freeze([
  *
  * On macOS there is no family and `mac` is the only key. The letters and digits are held by ⌘ (⌘⌥
  * for the rows new in phase 3), and the moves between tabs, groups and workspaces by ⌥ with an arrow
- * (Pepe's call, 2026-10-23): ⌥←/→ the tabs, ⌥⇧←/→ the groups, ⌥↑/↓ the workspaces; ⌥⌘↑/↓ stay the
+ * (the product owner's call, 2026-10-23): ⌥←/→ the tabs, ⌥⇧←/→ the groups, ⌥↑/↓ the workspaces; ⌥⌘↑/↓ stay the
  * instances. ⌥ with a letter or a digit types a character on many layouts (⌥2 is @ on a Spanish
  * one), so no row takes it. ⌥←/→ are the word moves of macOS text fields and of a shell in a
  * terminal: the clients give way in an editable field (docs/desktop-keyboard.md), and the TUI,

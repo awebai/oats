@@ -574,7 +574,7 @@ const ALT_CHORDS = Object.freeze([
 const ALT_MAP = chordKeys(false);
 /** The table's `other` column, the Ctrl+Alt family, as the TUI binds it. */
 const CHORD_MAP_ROWS = () => CHORDS.filter((entry) => leaderHandles(entry.does) && entry.other !== null).map((entry) => [entry.other, entry.does]);
-/** The chords of macOS: the table's `mac` keys without ⌘, which are ⌥ with an arrow (Pepe, 2026-10-23). */
+/** The chords of macOS: the table's `mac` keys without ⌘, which are ⌥ with an arrow (the product owner's call, 2026-10-23). */
 const MAC_CHORDS = Object.freeze([
   ["alt+up", "workspace-previous"], ["alt+down", "workspace-next"], ["alt+left", "tab-previous"], ["alt+right", "tab-next"],
   ["alt+shift+left", "group-previous"], ["alt+shift+right", "group-next"],

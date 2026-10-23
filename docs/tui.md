@@ -1809,7 +1809,7 @@ terminal never passes to a program.
 #### Chords on macOS
 
 On macOS `oats tui` binds the chords of `CHORDS` whose key holds no ⌘, ⌥
-with an arrow (Pepe's call, 2026-10-23): `⌥←` and `⌥→` the tab before or
+with an arrow (the product owner's call, 2026-10-23): `⌥←` and `⌥→` the tab before or
 after, `⌥⇧←` and `⌥⇧→` the group before or after, `⌥↑` and `⌥↓` the
 workspace before or after. Its help and cheat sheet say them `Alt+Left` and
 so on, and lead with them. The other chords hold ⌘ (`⌘K`, `⌥⌘1` to `⌥⌘9`,

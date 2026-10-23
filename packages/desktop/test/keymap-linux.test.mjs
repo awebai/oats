@@ -1,6 +1,6 @@
 // Spec F, Part 3: a keymap that is sane on Linux (and Omarchy) as well as macOS.
 // The rule: a default chord never takes a key a program inside the terminal reads, except the Alt
-// family's (the default on Linux/Windows, Pepe's call, 2026-10-22): Alt with a letter, a digit or an
+// family's (the default on Linux/Windows, the product owner's call, 2026-10-22): Alt with a letter, a digit or an
 // arrow, which the program still gets from Esc, then the key. Every changed default resolves per
 // platform and per chord family; inside a terminal on Linux/Windows only the allowlisted actions fire
 // (chords xterm sends nothing for, or a byte a plainer key still sends, the Alt family's keys, and the
@@ -337,7 +337,7 @@ test("macOS inside a terminal: ⌘ chords fire (they never reach the pty), plus 
     [ev("ArrowUp", { metaKey: true, altKey: true }), "roster.openPrevious"], [ev("ArrowDown", { metaKey: true, altKey: true }), "roster.openNext"],
     [ev("ø", { code: "KeyO", metaKey: true, altKey: true }), "app.workspaces"], [ev("Ω", { code: "KeyZ", metaKey: true, altKey: true }), "terminal.focusMode"],
     [ev("∑", { code: "KeyW", metaKey: true, altKey: true }), "split.close"],
-    // ⌥ with an arrow, by name (Pepe's call, 2026-10-23): the tabs, the groups (with ⇧) and the workspaces.
+    // ⌥ with an arrow, by name (the product owner's call, 2026-10-23): the tabs, the groups (with ⇧) and the workspaces.
     [ev("ArrowLeft", { altKey: true }), "tabs.prevPage"], [ev("ArrowRight", { altKey: true }), "tabs.nextPage"],
     [ev("ArrowLeft", { altKey: true, shiftKey: true }), "split.focusPrevGroup"], [ev("ArrowRight", { altKey: true, shiftKey: true }), "split.focusNextGroup"],
     [ev("ArrowUp", { altKey: true }), "workspace.previous"], [ev("ArrowDown", { altKey: true }), "workspace.next"],
@@ -993,7 +993,7 @@ test("paletteGroupDirection: ⌘N / ⌥⌘N on macOS, Alt+Shift+↓ / ↑ elsewh
 
 // ---------------------------------------------------------------- the Alt family
 
-// The default on Linux/Windows (Pepe's call, 2026-10-22). Dispatched as the shell does it, through
+// The default on Linux/Windows (the product owner's call, 2026-10-22). Dispatched as the shell does it, through
 // handleKeydown on a real target: a terminal's helper textarea (inside .xterm, so the engine reads the
 // terminal rule from it) and a roster row in the sidebar, with the contexts the shell has on there
 // (the tab layer's and the sidebar's: shell.mjs updateActiveContexts).
