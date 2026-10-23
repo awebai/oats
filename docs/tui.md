@@ -908,7 +908,10 @@ A heading stands only under a row; with one workspace the list is its row.
   `Esc` gives that focus back with nothing opened; `w` again opens the
   switcher, for what the list does not hold. Any other key gives the list
   of instances the focus, then does what it does there. The cheat sheet
-  says `Enter open`, `Up/Down move`, `Esc back`, `w all workspaces`.
+  says `Enter open`, `Up/Down move`, `Esc back`, `w all workspaces`, with
+  the keys `tui.json` gives those actions; one with no key has no hint.
+  A row whose deployment an identity read places in a workspace (or takes
+  out of one) keeps the cursor: it moves to the row that now holds it.
 - The list is no stop of `Tab`, and the TUI takes no mouse input.
 
 ## The switcher

@@ -104,6 +104,24 @@ test("the dot: on each workspace where an instance needs input, the open one inc
   assert.equal(draw(here).lines[0].slice(0, 38).trimEnd().at(-1), WAITING_DOT.utf8);
 });
 
+test("what was read of a listed deployment before this run served it is no word on it once served: its own reads alone give its dot", () => {
+  const ledger = (state) => workspaceList(state).lines.find((line) => line.label === "acme-ledger");
+  let state = reduce(withListed(served()), { identity: { path: LEDGER, read: { ok: true, workspace: null, waiting: true } } }).state;
+  assert.equal(ledger(state).waiting, true, "the identity read's, before the schedule read it");
+  state = reduce(state, { listedWaiting: new Map([[LEDGER, true]]) }).state;
+  // Opened (admitted and served), then read: no instance, so nothing needs input.
+  const read = took(go(state, LEDGER).state, observed([], { workspace: "acme-ledger" }), ++cycle, LEDGER);
+  assert.equal(read.ctxs.includes(LEDGER), true);
+  assert.deepEqual([ledger(read).current, ledger(read).waiting], [true, false]);
+  assert.equal(draw(read).lines.some((line) => [...line].slice(0, 38).includes(WAITING_DOT.utf8)), false, "no dot in the list");
+});
+
+test("a failed read of the schedule says unknown, over what the identity read said: no dot", () => {
+  const identified = reduce(withListed(served()), { identity: { path: LEDGER, read: { ok: true, workspace: null, waiting: true } } }).state;
+  const failedRead = reduce(identified, { listedWaiting: new Map([[LEDGER, null]]) }).state;
+  assert.equal(workspaceList(failedRead).lines.find((line) => line.label === "acme-ledger").waiting, false);
+});
+
 test("on a row in reverse video the reverse ends before the dot: a yellow ● on the normal background, the open row's and the cursor's", () => {
   const here = served({ a: { "dev-b": { waitingOnYou: { ...QUESTION } } } });
   const size = { cols: 80, rows: 24 };

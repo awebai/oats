@@ -519,16 +519,43 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   // whether an instance of a deployment of that list that this run does not serve needs input, read
   // again on the shared slow schedule (one read in flight, each path at most once a minute; the TUI
   // reads no focus of its terminal, so it is always the focused interval), with a kernel that reports
-  // needs-input claims. What changed goes to the store; the set follows the list and what is served
-  // (took). Ended with the run.
+  // needs-input claims. The set follows the list and what is served (took). Ended with the run.
+  // The store is told every read's answer, a failed one's unknown too, and the set each time it
+  // changes: `read` (path -> true | false | null) holds the paths of the set the schedule has read,
+  // so a path it has not read yet keeps what its identity read said, and one it read keeps that,
+  // failed or not, which the scheduler's own onChange (a change of value only) would not say.
   const waiting = waitingReadable(probe.cli) && typeof reader.exec === "function"
-    ? effects.createListedWaiting({ read: (path, options) => effects.deploymentIdentity(probe.cli, path, options, { exec: reader.exec, env }), onChange: () => heard({ listedWaiting: waiting.snapshot() }) })
+    ? effects.createListedWaiting({ read: (path, options) => readWaiting(path, options) })
     : null;
-  let waitingPaths = "";
+  let waitingPaths = "", waitingSet = new Set();
+  const waitingRead = new Map();
+  function readWaiting(path, options) {
+    const answer = Promise.resolve(effects.deploymentIdentity(probe.cli, path, options, { exec: reader.exec, env }));
+    answer.then((a) => {
+      if (ended || !waitingSet.has(path)) return;
+      waitingRead.set(path, a?.ok === true && typeof a.waiting === "boolean" ? a.waiting : null);
+      tellWaiting();
+    }, () => { if (!ended && waitingSet.has(path)) { waitingRead.set(path, null); tellWaiting(); } });
+    return answer;
+  }
+  /** The store told what the schedule read, when that changed: through `heard` for an answer; in
+   *  place (`inStep`) from followWaiting, which runs inside a step being taken, drawn after it. */
+  function tellWaiting(inStep = false) {
+    const now = new Map([...waitingRead].filter(([path]) => waitingSet.has(path)));
+    const was = state.listedWaiting;
+    if (now.size === was.size && [...now].every(([path, value]) => was.has(path) && was.get(path) === value)) return;
+    if (inStep) state = reduce(state, { listedWaiting: now }, keymap).state;
+    else heard({ listedWaiting: now });
+  }
   function followWaiting() {
     if (waiting === null || ended) return;
     const paths = unservedListed(), key = paths.join("\u0000");
-    if (key !== waitingPaths) { waitingPaths = key; waiting.setPaths(paths); }
+    if (key === waitingPaths) return;
+    waitingPaths = key; waitingSet = new Set(paths);
+    // A path that left the set forgets its reads: given again, it is not read yet.
+    for (const path of [...waitingRead.keys()]) if (!waitingSet.has(path)) waitingRead.delete(path);
+    waiting.setPaths(paths);
+    tellWaiting(true);
   }
   /** Remove the row the store asked about (`{ path, name }`) from the list: nothing on disk is
    *  touched. Its answer goes to the store, which asks for the list again. */

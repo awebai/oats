@@ -105,8 +105,9 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
   // start's paths in order, how many times they were stopped, and what the run made them with.
   // `waiting`: the slow schedule of the listed deployments' needs input (the shared createListedWaiting,
   // faked): each set of paths it was given, whether it was stopped, and what the run made it with;
-  // `reads` what its `read` asked of the identity read (the shared cliDeploymentIdentity, faked).
-  const r = { stdin, stdout, proc, timers, errors, log, listed, keysAsked: [], lists: [], identities: { starts: [], stops: 0, options: null }, waiting: { sets: [], stopped: false, options: null, values: new Map(), reads: [] }, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
+  // `reads` what its `read` asked of the identity read (the shared cliDeploymentIdentity, faked), and
+  // `answer` what that read answers.
+  const r = { stdin, stdout, proc, timers, errors, log, listed, keysAsked: [], lists: [], identities: { starts: [], stops: 0, options: null }, waiting: { sets: [], stopped: false, options: null, reads: [], answer: { ok: true, workspace: null, waiting: true } }, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
     spawn: { preview: null, previewExec: null, reads: [], applyRead: null, applyExec: null, applyCalls: [], request: null, submits: [], checks: [] } };
   r.listAnswer = listAnswer ?? ((asked) => (asked.action === "list" ? { ok: true, value: { ok: true, rows: r.listed } } : { ok: true, value: asked.action === "add" ? { path: asked.path, added: true } : { path: asked.path, removed: true } }));
   let up;
@@ -121,10 +122,10 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
     createReader(options) { r.reader = fakeReader(log, options); const start = r.reader.start; r.reader.start = () => { const answer = start(); queueMicrotask(up); return answer; }; return r.reader; },
     // The identity reads, faked: nothing is read; the test answers through `r.identities.options.onRead`.
     createIdentityReads(options) { r.identities.options = options; return { start(paths) { r.identities.starts.push([...paths]); }, stop() { r.identities.stops += 1; } }; },
-    // The slow schedule, faked: nothing is read; the test sets `r.waiting.values` and calls `r.waiting.options.onChange()`.
+    // The slow schedule, faked: nothing is read on its own; the test calls `r.waiting.options.read(path)` as its timer would.
     // The identity read the slow schedule's `read` runs, faked: what it was asked, and whether through the reader's exec.
-    async deploymentIdentity(cli, path, options, io) { r.waiting.reads.push({ cli, path, options, exec: io.exec === r.reader?.exec }); return { ok: true, workspace: null, waiting: true }; },
-    createListedWaiting(options) { r.waiting.options = options; return { setPaths(paths) { r.waiting.sets.push([...paths]); }, setFocused() {}, waiting: (path) => r.waiting.values.get(path) ?? null, snapshot: () => new Map(r.waiting.values), stop() { r.waiting.stopped = true; } }; },
+    async deploymentIdentity(cli, path, options, io) { r.waiting.reads.push({ cli, path, options, exec: io.exec === r.reader?.exec }); return r.waiting.answer; },
+    createListedWaiting(options) { r.waiting.options = options; return { setPaths(paths) { r.waiting.sets.push([...paths]); }, setFocused() {}, waiting: () => null, snapshot: () => new Map(), stop() { r.waiting.stopped = true; } }; },
     // This computer's deployments list (the shared cliDeploymentList), faked: each call is logged
     // with what it asked and the exec it was handed: `start` (the effect below, the exec of the one
     // read before the terminal is taken), `read` (the reader's own exec) or `change` (any other: the
@@ -983,17 +984,30 @@ test("the dot of a deployment of this computer's list the run does not serve: th
   await settle();
   r.reader.answer(HOME_ENTRY);
   assert.deepEqual(r.waiting.sets.at(-1), [LEDGER], "the row that is a deployment, not the missing one");
+  assert.doesNotMatch(sidebarOf(r), /acme-ledger ●/, "nothing read yet: no dot");
   const asked = await r.waiting.options.read(LEDGER, { maxAge: 300 });
+  await settle();
   assert.deepEqual([asked, r.waiting.reads.map(({ cli, path, options, exec }) => [cli === CLI, path, options, exec])], [{ ok: true, workspace: null, waiting: true }, [[true, LEDGER, { maxAge: 300 }, true]]]);
-  assert.doesNotMatch(sidebarOf(r), /acme-ledger ●/, "nothing heard yet: no dot");
-  r.waiting.values.set(LEDGER, true);
-  r.waiting.options.onChange();
   assert.match(sidebarOf(r), /On this machine, not opened acme-ledger ●/, "the dot on its row");
+  // A read that fails says nothing is known: no dot, whatever was heard before.
+  r.waiting.answer = { ok: false, reason: { code: "E_CLI_TIMEOUT", message: "late" } };
+  await r.waiting.options.read(LEDGER, { maxAge: 300 });
+  await settle();
+  assert.doesNotMatch(sidebarOf(r), /acme-ledger ●/, "unknown: no dot");
+  r.waiting.answer = { ok: true, workspace: null, waiting: true };
+  await r.waiting.options.read(LEDGER, { maxAge: 300 });
+  await settle();
+  assert.match(sidebarOf(r), /acme-ledger ●/);
   // Opened from the list: served now, so it leaves the schedule's set.
   r.stdin.type("w"); r.stdin.type("j"); r.stdin.type("j"); r.stdin.type("\r");
   await settle();
   assert.deepEqual(r.reader.options.getServed(), [DEPLOYMENT, LEDGER]);
   assert.deepEqual(r.waiting.sets.at(-1), [], "a served deployment's dot is its own observation's");
+  // Read with no instance, it has no dot: what the schedule read before it was served is no word on it.
+  r.reader.answer(observedAt(LEDGER, [], { workspace: reportedWorkspace("git.example.com/acme-ledger/agents"), name: "acme-ledger" }), LEDGER);
+  await settle();
+  assert.match(sidebarOf(r), /\* acme-ledger/);
+  assert.doesNotMatch(sidebarOf(r), /acme-ledger ●/, "no dot left from the schedule");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
   assert.equal(r.waiting.stopped, true, "the schedule ends with the run");

@@ -4061,3 +4061,12 @@ test("under 80 columns the Instances detail page's first row carries its keys at
   const rebound = effectiveConfig({ keys: { detail: ["f6", "tab"] } });
   assert.equal(page(named(46), S60, { actions: rebound.actions }).lines[0], pageTop(` > ${cutTo(named(46), 46)}`, "F6 back", 60));
 });
+
+test("the list of workspaces with the focus: its sheet names the keys as tui.json binds them, and an action with no key has no hint", () => {
+  const focused = (keys, focus = ["w"]) => press(stateOf(observed([instanceRow("dev", "dev-a")]), { actions: effectiveConfig({ keys }).actions }), focus).state;
+  assert.deepEqual(hintsOf(draw(focused({}), S120)), [LEAD, ["Enter", "open"], ["Up/Down", "move"], ["Esc", "back"], ["w", "all workspaces"], ["?", "help"], ["q", "quit"]]);
+  const rebound = focused({ open: ["o"], up: ["k"], down: ["j"], close: ["backspace"], workspaces: ["f2"] }, ["f2"]);
+  assert.equal(rebound.focus, "workspaces");
+  assert.deepEqual(hintsOf(draw(rebound, S120)), [LEAD, ["o", "open"], ["k/j", "move"], ["Backspace", "back"], ["F2", "all workspaces"], ["?", "help"], ["q", "quit"]]);
+  assert.deepEqual(hintsOf(draw(focused({ open: [], down: [] }), S120)), [LEAD, ["Up", "move"], ["Esc", "back"], ["w", "all workspaces"], ["?", "help"], ["q", "quit"]]);
+});

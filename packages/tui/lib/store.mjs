@@ -12,7 +12,7 @@
 import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings, chordKeys, chordsRead, paletteKeys } from "./actions.mjs";
 import { CHORDS, chordFamilyFrom, collapseKey, workspaceStep, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { defaultDetachKey } from "./config.mjs";
-import { BUTTON_ORDER, SPAWN_WORDS, LEADER_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, paletteStep, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, memoryKey, memoryKeys, LIST_WORDS, WORKSPACE_WORDS, listChoice, workspaceList } from "./model.mjs";
+import { BUTTON_ORDER, SPAWN_WORDS, LEADER_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, paletteStep, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, memoryKey, memoryKeys, LIST_WORDS, WORKSPACE_WORDS, listChoice, listChoices, workspaceList } from "./model.mjs";
 import { backKeyId, backKeySequences, isBackKey } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
 import { SPLIT_MIN, splitFits } from "./views/split.mjs";
@@ -329,6 +329,24 @@ function reselected(before, after) {
   const ids = choiceDeployments(was.items.find((item) => item.key === was.selected));
   const found = now.items.find((item) => item.key !== undefined && choiceDeployments(item).some((id) => ids.includes(id)));
   return found ? next(after, { switcher: Object.freeze({ ...after.switcher, selected: found.key, loose: false }) }) : after;
+}
+
+/** The list of workspaces' cursor after a step changed its rows (`before`, then `step`): kept while its
+ *  row is listed; else on the row that now holds a deployment the cursor's stood for, as the switcher's
+ *  selection follows it (`reselected`): a listed row whose workspace an identity read learned is in that
+ *  workspace's row from then on, and back on a row of its own when a later answer takes that away, so
+ *  Enter opens what was under the cursor. With no such row, the list's own rule: the open row. */
+function cursorKept(before, step) {
+  const s = step.state, key = s.workspaceCursor;
+  if (key === null || key !== before.workspaceCursor || s.open === null || before.open === null) return step;
+  const list = workspaceList(s);
+  if (list.rows.some((row) => row.key === key)) return step;
+  const was = listChoice(before, key);
+  if (was === null) return step;
+  const ids = choiceDeployments(was);
+  const keys = new Set(list.rows.map((row) => row.key));
+  const found = listChoices(s).find((item) => keys.has(item.key) && choiceDeployments(item).some((id) => ids.includes(id)));
+  return found ? { ...step, state: next(s, { workspaceCursor: found.key }) } : step;
 }
 
 /** What an identity read learned of a deployment of this computer's list (lib/main.mjs): kept for the run,
@@ -741,7 +759,7 @@ function removedHeard(state, { name, ok, reason = null }) {
  *  The line after an open stands until the next key that is bound to an action: a key bound to
  *  nothing (a stray back key is no key at all) leaves it. */
 export function reduce(state, event, keymap = bindings(state.actions)) {
-  const step = askedStill(noticed(reduceStep(state, event, keymap)));
+  const step = cursorKept(state, askedStill(noticed(reduceStep(state, event, keymap))));
   // The list of workspaces made once for what the store took (lib/model.mjs workspaceList keeps
   // it while nothing it is made from changes): no paint, resize or key asks the shared home again.
   if (step.state.open !== null) workspaceList(step.state);

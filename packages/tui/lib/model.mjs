@@ -559,8 +559,10 @@ export const WORKSPACE_WORDS = Object.freeze({
   below: () => [{ own: "No workspace below this one." }],
   refused: (name) => [{ shown: name }, { own: ": not an OATS deployment any more." }],
 });
-/** The switcher's choice of key `key`, with no filter (workspaceList's rows are its keys), or null. */
-export const listChoice = (state, key, at = new Date(0).toISOString()) => switcherOf(state, at, "").made.items.find((item) => item.key !== undefined && item.key === key) ?? null;
+/** The switcher's choices with no filter, in its order (workspaceList's rows are their keys). */
+export const listChoices = (state, at = new Date(0).toISOString()) => switcherOf(state, at, "").made.items.filter((item) => item.key !== undefined);
+/** The switcher's choice of key `key`, with no filter, or null. */
+export const listChoice = (state, key, at) => listChoices(state, at).find((item) => item.key === key) ?? null;
 
 /** What the switcher says above its rows, as views/switcher.mjs leadRows reads it. */
 const leadOf = (state) => ({ said: state.switcher.line, failure: state.listed.failure?.message ?? null, removing: state.switcher.removing !== null });
@@ -614,8 +616,9 @@ function switcherOf(state, at, query) {
   const views = listedViews(held, unserved.filter((row) => row.state === "ok"), TERMS);
   const choices = workspaceChoices(held, TERMS, views), rows = workspaceChoiceRows(choices);
   // Whether some instance of a choice needs input: of its served deployments (the shared choice's
-  // `waiting`), or of a listed one this run does not serve (listedWaiting).
-  const waits = new Map(choices.map((choice) => [choice.id, choice.waiting === true || choice.deployments.some((id) => listedWaiting(state, id) === true)]));
+  // `waiting`, from their own reads alone), or of a listed one this run does not serve (listedWaiting):
+  // what was read of a deployment before this run served it is no word on it now.
+  const waits = new Map(choices.map((choice) => [choice.id, choice.waiting === true || choice.deployments.some((id) => !state.ctxs.includes(id) && listedWaiting(state, id) === true)]));
   const facts = new Map();
   const fact = (id) => facts.set(`view\u0000${id}`, { waiting: waits.get(id) === true, unlive: !(viewOf(id)?.deployments ?? []).some((d) => { const info = views.infos.get(d); return info && !info.listed && deploymentState(info).key === "live"; }) });
   const viewOf = (id) => views.views.find((v) => v.id === id);
@@ -660,7 +663,8 @@ function switcherOf(state, at, query) {
 }
 /** Whether an instance of deployment `path` of this computer's list, which this run does not serve,
  *  needs input: the last read of the slow schedule (`listedWaiting`, lib/main.mjs; the shared
- *  listed-waiting.mjs), else what the identity read said (`identities`), else null: not known. */
+ *  listed-waiting.mjs), a failed one's null included, else, before the schedule read it, what the
+ *  identity read said (`identities`), else null: not known. */
 function listedWaiting(state, path) {
   if (state.listedWaiting.has(path)) return state.listedWaiting.get(path);
   const read = state.identities.get(path);

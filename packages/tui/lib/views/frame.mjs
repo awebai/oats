@@ -303,8 +303,9 @@ function types(m) {
  *  and from it the marked soul. With the detail's focus the key that goes back to the list
  *  (`Tab back`) comes before it, and `spawn` after it where it spawns (the list of instances, the
  *  Souls view of a workspace of this machine), then in the Instances view `workspaces` (the
- *  list of workspaces' focus). With that focus: Enter opens, Up/Down move, Esc goes back, and
- *  `workspaces` again is the switcher (`all workspaces`). An action with no key (tui.json may unbind one) has no hint. The views have no
+ *  list of workspaces' focus). With that focus: the open action's key opens, the up and down
+ *  actions' move, the close action's goes back, and `workspaces` again is the switcher (`all
+ *  workspaces`), each by its first key as tui.json binds it. An action with no key (tui.json may unbind one) has no hint. The views have no
  *  hint: the accordion names their keys. When rows are short the sheet
  *  gives up rows from its end (keptHints), down to the leader alone. */
 function cheatSheet(m) {
@@ -335,7 +336,12 @@ function cheatSheet(m) {
   // Remove stands on a row of this computer's deployments list only, after the keys that move about.
   if (m.view === "switcher") return led([hint("palette"), ...["open", "filter", ...(m.filter?.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])]), ...(m.switcher?.removable ? ["remove"] : [])].map((id) => hint(id)), hint("help"), hint("quit")]);
   // The list of workspaces with the focus: its keys, and `w` again for the switcher.
-  if (listing && m.workspaces?.focused) return led([own("open", "Enter", "open"), own("move", "Up/Down", "move"), hint("close", "back"), hint("workspaces", "all workspaces"), hint("help"), hint("quit")]);
+  // The keys are the actions' as tui.json binds them: an action with no key has no hint.
+  if (listing && m.workspaces?.focused) {
+    const moves = [action("up"), action("down")].filter(Boolean);
+    const move = moves.length ? made("move", keyText(keysTogether(moves.map((a) => a.keys[0]))), "move") : null;
+    return led([hint("open", "open"), move, hint("close", "back"), hint("workspaces", "all workspaces"), hint("help"), hint("quit")]);
+  }
   // A view's list or its detail: a small sheet; the rest is the leader's, the palette's and the help's.
   const asking = listing && m.opening?.phase === "preflight";
   const enter = asking ? [hint("close", "stop opening")] : listing && m.onTerminal ? [hint("open", "focus terminal")] : listing && m.openable ? [hint("open")]

@@ -12,7 +12,7 @@ import {
   identityMemory, remoteRosterState, observeIdentities, viewModel, listedViews, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, isMultiDeployment,
   cliRemoteRoster, originLead, displayLine, DETAIL_WITHHELD, instanceSiblings, siblingText,
 } from "../lib/client.mjs";
-import { LIST_WORDS, NOT_LIVE, NOT_OPENED, OFFERED_SECTION, ROSTER_FAILED, SENTENCE_INDENT, WORD_MAX, clockTime, disclosure, heldOf as modelHeld, model, panelOf, roster, switcher, switcherLead, workspaceList } from "../lib/model.mjs";
+import { LIST_WORDS, NOT_LIVE, NOT_OPENED, OFFERED_SECTION, ROSTER_FAILED, SENTENCE_INDENT, WORD_MAX, clockTime, disclosure, heldOf as modelHeld, model, panelOf, roster, switcher, switcherLead, workspaceList, listChoice } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { shown, shownLines, textOf } from "../lib/term/text.mjs";
 import { windowOf } from "../lib/views/scroll.mjs";
@@ -1932,6 +1932,29 @@ test("Pepe's shape in the list of workspaces: lfx says not opened, as the switch
   // Before the identity read lfx is athenea's alone (lfx-oats-workspace): not live once athenea is not reached.
   assert.equal(word(heard(pepe(), { thrown: "the pipe closed" }, tick(1)), "lfx-oats-workspace").word, NOT_LIVE);
   assert.equal(word(pepe(), "lfx-oats-workspace").word, null, "live: no word");
+});
+
+test("the list of workspaces' cursor on a listed row follows its deployment into its workspace's row when an identity read places it there, and back to a row of its own when a later answer takes it away: Enter opens what was under the cursor", () => {
+  const listedKey = `path\u0000${LFX_PATH}`;
+  const focused = press(pepe(), ["w", "down", "down"]).state;
+  assert.equal(focused.workspaceCursor, listedKey);
+  const placed = identityOf(focused, LFX_PATH, learnedOf(LFX));
+  const lfx = workspaceList(placed, AT).rows.find((row) => listChoice(placed, row.key)?.label === "lfx");
+  assert.equal(placed.workspaceCursor, lfx.key, "on lfx's row, which holds ~/Work/lfx now");
+  assert.match(draw(placed, { cols: 100, rows: 24 }).lines.find((line) => line.startsWith(">")), /^> {2}lfx\b/);
+  assert.deepEqual(press(placed, ["enter"]).effects.at(-1), { join: { paths: [LFX_PATH], opens: [LFX_PATH, ATHENEA_LFX] } });
+  // A later answer that takes it away: lfx's row is athenea's alone again, still listed, so the cursor stays on it.
+  const away = identityOf(placed, LFX_PATH, { ok: true, workspace: null });
+  assert.equal(away.workspaceCursor, lfx.key);
+  // A workspace only ~/Work/lfx is of: its row goes when the answer is taken away, and the cursor is on ~/Work/lfx's own.
+  const own = identityOf(focused, LFX_PATH, learnedOf({ ...LFX, key: "github.com/josep-reyero/elsewhere" }));
+  const ownRow = workspaceList(own, AT).rows.find((row) => row.key.startsWith("view\u0000") && listChoice(own, row.key)?.opens?.includes(LFX_PATH));
+  assert.equal(own.workspaceCursor, ownRow.key, "the listed row became a workspace's: the cursor is on it");
+  assert.deepEqual(press(own, ["enter"]).effects.at(-1), { join: { paths: [LFX_PATH], opens: [LFX_PATH] } });
+  const back = identityOf(own, LFX_PATH, { ok: true, workspace: null });
+  assert.equal(workspaceList(back, AT).rows.some((row) => row.key === ownRow.key), false, "that workspace's row is gone");
+  assert.equal(back.workspaceCursor, listedKey, "back on ~/Work/lfx's own row");
+  assert.deepEqual(press(back, ["enter"]).effects.at(-1), { admit: LFX_PATH });
 });
 
 test("a listed deployment whose identity read failed or timed out stays a row of its own, saying why; one whose identity attaches to no workspace says the shared reason; a stale row of the list is never matched", () => {
