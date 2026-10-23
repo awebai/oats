@@ -82,8 +82,9 @@ test("an action's label: its leader row's, else its chord's; only the instance m
   for (const does of ["workspace-previous", "workspace-next", "group-previous"]) {
     assert.equal(Object.hasOwn(CHORDS.find((entry) => entry.does === does), "label"), false, `${does}: no label in CHORDS`);
   }
-  assert.equal(chordKey("workspace-previous", false), "alt+up", "the workspace moves have a chord on Linux/Windows");
-  assert.equal(chordKey("workspace-next", true), null, "and none on macOS");
+  assert.equal(chordKey("workspace-previous", false), "alt+up", "the workspace moves have a chord in the Alt family");
+  assert.equal(chordKey("workspace-previous", false, "ctrl+alt"), null, "and none in Ctrl+Alt");
+  assert.equal(chordKey("workspace-next", true), "alt+down", "and ⌥↓ on macOS");
 });
 
 test("the plain keys: every action, with its keys", () => {
@@ -106,10 +107,10 @@ test("the chords: every one, per platform, and what it does", () => {
     ["workspaces", "cmd+alt+o", "alt+o", "ctrl+alt+o"],
     ["previous", "cmd+alt+up", "alt+shift+up", "alt+shift+up"],
     ["next", "cmd+alt+down", "alt+shift+down", "alt+shift+down"],
-    ["workspace-previous", null, "alt+up", "alt+up"],
-    ["workspace-next", null, "alt+down", "alt+down"],
-    ["tab-previous", "cmd+alt+left", "alt+left", "alt+shift+left"],
-    ["tab-next", "cmd+alt+right", "alt+right", "alt+shift+right"],
+    ["workspace-previous", "alt+up", "alt+up", null],
+    ["workspace-next", "alt+down", "alt+down", null],
+    ["tab-previous", "alt+left", "alt+left", "alt+shift+left"],
+    ["tab-next", "alt+right", "alt+right", "alt+shift+right"],
     ["tab-1", "cmd+alt+1", "alt+1", "ctrl+alt+1"],
     ["tab-2", "cmd+alt+2", "alt+2", "ctrl+alt+2"],
     ["tab-3", "cmd+alt+3", "alt+3", "ctrl+alt+3"],
@@ -123,20 +124,21 @@ test("the chords: every one, per platform, and what it does", () => {
     ["close-terminal", "cmd+w", "alt+w", "ctrl+alt+w"],
     ["split-right", "cmd+\\", "alt+e", "ctrl+alt+e"],
     ["split-down", "cmd+shift+\\", "alt+shift+e", "ctrl+alt+shift+e"],
-    ["group-previous", null, "alt+shift+left", "ctrl+alt+shift+a"],
-    ["group-next", "cmd+alt+a", "alt+shift+right", "ctrl+alt+a"],
+    ["group-previous", "alt+shift+left", "alt+shift+left", "ctrl+alt+shift+a"],
+    ["group-next", "alt+shift+right", "alt+shift+right", "ctrl+alt+a"],
     ["filter", "cmd+f", "alt+f", "ctrl+alt+f"],
     ["edit-instance", "cmd+alt+r", "alt+r", "ctrl+alt+r"],
   ]);
   assert.ok(Object.isFrozen(CHORDS) && CHORDS.every((entry) => Object.isFrozen(entry)));
   assert.equal(new Set(CHORDS.map((entry) => entry.does)).size, CHORDS.length, "one chord per action");
-  // No key twice on macOS (where a row may have none) nor in any family.
+  // No key twice on macOS nor in any family (where a row may have none: the workspace moves outside Alt).
   for (const column of ["mac", "alt", "other", "shift"]) {
     const keys = CHORDS.map((entry) => entry[column]).filter((key) => key !== null);
     assert.equal(new Set(keys).size, keys.length, `${column}: no chord twice`);
   }
-  assert.deepEqual(CHORDS.filter((entry) => entry.mac === null).map((entry) => entry.does), ["workspace-previous", "workspace-next", "group-previous"],
-    "only the rows new with the Alt family have no macOS key");
+  assert.deepEqual(CHORDS.filter((entry) => entry.mac === null).map((entry) => entry.does), [], "every row has a macOS key");
+  assert.deepEqual(CHORDS.filter((entry) => entry.other === null || entry.shift === null).map((entry) => entry.does), ["workspace-previous", "workspace-next"],
+    "only the workspace moves have none outside the Alt family");
   assert.equal(chordKey("palette", true), "cmd+k");
   assert.equal(chordKey("palette", false), "alt+k", "the default family is Alt");
   assert.equal(chordKey("palette", false, "ctrl+alt"), "ctrl+alt+k");
@@ -151,17 +153,17 @@ test("the chord families: Alt the default, Ctrl+Alt keeps its keys, Ctrl+Shift m
   assert.equal(DEFAULT_CHORD_FAMILY, "alt");
   assert.deepEqual({ ...CHORD_FAMILY_LABELS }, { alt: "Alt", "ctrl+alt": "Ctrl+Alt", "ctrl+shift": "Ctrl+Shift" });
   assert.ok(Object.isFrozen(CHORD_FAMILIES) && Object.isFrozen(CHORD_FAMILY_LABELS));
-  // The Alt family has a key of its own on every row but the instance and the workspace moves,
-  // which are the same in every family (the `alt` table above pins each).
-  assert.deepEqual(CHORDS.filter((entry) => entry.alt === entry.other).map((entry) => entry.does),
-    ["previous", "next", "workspace-previous", "workspace-next"]);
+  // The Alt family has a key of its own on every row but the instance moves, which are the same in
+  // every family (the `alt` table above pins each); the workspace moves are its alone.
+  assert.deepEqual(CHORDS.filter((entry) => entry.alt === entry.other).map((entry) => entry.does), ["previous", "next"]);
   // The maintainer's cut (a43470ce): K P S M W E D.
   const moved = { palette: "ctrl+shift+k", spawn: "ctrl+shift+p", workspaces: "ctrl+shift+s", zoom: "ctrl+shift+m",
     "close-terminal": "ctrl+shift+w", "split-right": "ctrl+shift+e", "split-down": "ctrl+shift+d" };
   assert.deepEqual(CHORDS.map(({ does, shift }) => [does, shift]),
     CHORDS.map(({ does, other }) => [does, moved[does] ?? other]));
   assert.deepEqual(CHORDS.filter((entry) => entry.shift !== entry.other).map((entry) => entry.does), Object.keys(moved));
-  assert.equal(new Set(CHORDS.map((entry) => entry.shift)).size, CHORDS.length, "shift: no chord twice");
+  const shifts = CHORDS.map((entry) => entry.shift).filter((key) => key !== null);
+  assert.equal(new Set(shifts).size, shifts.length, "shift: no chord twice");
   for (const entry of CHORDS) {
     for (const family of CHORD_FAMILIES) assert.equal(chordKeyOf(entry, true, family), entry.mac, `${entry.does}: macOS has no family`);
     assert.equal(chordKeyOf(entry, false), entry.alt, `${entry.does}: the default is Alt`);
@@ -180,31 +182,37 @@ test("the chord families: Alt the default, Ctrl+Alt keeps its keys, Ctrl+Shift m
   assert.equal(chordKey("palette", true, "ctrl+shift"), "cmd+k");
 });
 
-// The rows new with the Alt family have no macOS key: the leader reaches them there (↑, ↓ and
-// Shift+Tab after ⌃X). On Linux/Windows every family has one.
-test("macOS: the workspace moves and the previous group have no chord; Linux/Windows have one in every family", () => {
-  const none = { "workspace-previous": "workspace.previous", "workspace-next": "workspace.next", "group-previous": "split.focusPrevGroup" };
-  for (const [does, id] of Object.entries(none)) {
-    const entry = CHORDS.find((each) => each.does === does);
-    assert.equal(entry.mac, null, `${does}: no macOS key`);
-    assert.equal(chordKey(does, true), null, `${does}: chordKey on macOS`);
-    assert.equal(chordKeyOf(entry, true), null, `${does}: chordKeyOf on macOS`);
+// macOS's moves between tabs, groups and workspaces are ⌥ with an arrow (Pepe, 2026-10-23); the
+// Ctrl+Alt and Ctrl+Shift families leave Alt+↑/↓ to the program (#1491 B1): the leader's ↑/↓ reach
+// the workspace moves there, as in every family.
+test("macOS: ⌥ with an arrow moves between tabs, groups and workspaces; outside the Alt family the workspace moves have no chord", () => {
+  const ids = { "workspace-previous": "workspace.previous", "workspace-next": "workspace.next", "tab-previous": "tabs.prevPage", "tab-next": "tabs.nextPage",
+    "group-previous": "split.focusPrevGroup", "group-next": "split.focusNextGroup" };
+  const mac = { "workspace-previous": "alt+up", "workspace-next": "alt+down", "tab-previous": "alt+left", "tab-next": "alt+right",
+    "group-previous": "alt+shift+left", "group-next": "alt+shift+right" };
+  for (const [does, id] of Object.entries(ids)) {
     assert.equal(CHORDS_READ.find((each) => each.does === does)?.id, id, `${does} is read by ${id}`);
-    for (const family of CHORD_FAMILIES) {
-      assert.equal(chordKey(does, true, family), null, `${does}: none on macOS, ${family}`);
-      assert.equal(defaultBinding(id, true, family), null, `${id}: no macOS default, ${family}`);
+    for (const family of CHORD_FAMILIES) assert.equal(chordKey(does, true, family), mac[does], `${does}: macOS has no family, ${family}`);
+  }
+  assert.deepEqual(Object.values(ids).map((id) => defaultBinding(id, true)), ["Alt+↑", "Alt+↓", "Alt+←", "Alt+→", "Alt+Shift+←", "Alt+Shift+→"]);
+  // The instance moves keep ⌥⌘↑/↓, and the letters and digits ⌘ (⌥ with one types a character).
+  assert.deepEqual(["roster.openPrevious", "roster.openNext", "tabs.goto1", "app.palette"].map((id) => defaultBinding(id, true)), ["Mod+Alt+↑", "Mod+Alt+↓", "Mod+Alt+1", "Mod+K"]);
+  assert.equal(CHORDS.filter((entry) => /^alt\+(shift\+)?[^+]$/.test(entry.mac ?? "")).length, 0, "no macOS chord is ⌥ with a letter or a digit");
+  for (const does of ["workspace-previous", "workspace-next"]) {
+    const entry = CHORDS.find((each) => each.does === does);
+    assert.deepEqual([entry.other, entry.shift], [null, null], `${does}: no Ctrl+Alt or Ctrl+Shift key, so no fallback can bring one`);
+    for (const family of ["ctrl+alt", "ctrl+shift"]) {
+      assert.equal(chordKey(does, false, family), null, `${does}: none in ${family}`);
+      assert.equal(defaultBinding(ids[does], false, family), null, `${ids[does]}: no default in ${family}`);
     }
-    assert.equal(defaultBinding(id, true), null, `${id}: no macOS default`);
   }
   assert.deepEqual(CHORD_FAMILIES.map((family) => ["workspace.previous", "workspace.next", "split.focusPrevGroup"].map((id) => defaultBinding(id, false, family))), [
     ["Alt+↑", "Alt+↓", "Alt+Shift+←"],
-    ["Alt+↑", "Alt+↓", "Ctrl+Alt+Shift+A"],
-    ["Alt+↑", "Alt+↓", "Ctrl+Alt+Shift+A"],
+    [null, null, "Ctrl+Alt+Shift+A"],
+    [null, null, "Ctrl+Alt+Shift+A"],
   ]);
   assert.deepEqual(["workspace.previous", "workspace.next", "split.focusPrevGroup"].map((id) => defaultBinding(id, false)), ["Alt+↑", "Alt+↓", "Alt+Shift+←"],
     "the default family's");
-  // The next group keeps its macOS key.
-  assert.equal(defaultBinding("split.focusNextGroup", true), "Mod+Alt+A");
 });
 
 // A chord as the platform reads it: Mod is Ctrl on Linux/Windows, and ⌘ apart from ⌃ on macOS.
@@ -334,7 +342,7 @@ test("change the module's entry in a copy: the Desktop's default follows, and ke
   const changed = module.replace('other: "ctrl+x"', 'other: "alt+l"').replace('{ does: "refresh", keys: ["r"] }', '{ does: "refresh", keys: ["F"] }')
     .replace('{ does: "palette", mac: "cmd+k", alt: "alt+k", other: "ctrl+alt+k", shift: "ctrl+shift+k" }', '{ does: "palette", mac: "cmd+j", alt: "alt+shift+j", other: "ctrl+shift+j" }')
     .replace('{ does: "previous", mac: "cmd+alt+up", other: "alt+shift+up", label: "previous instance" }', '{ does: "previous", mac: "cmd+alt+u", other: "ctrl+alt+u", label: "previous instance" }')
-    .replace('{ does: "workspace-previous", mac: null, other: "alt+up" }', '{ does: "workspace-previous", mac: "cmd+shift+up", alt: "alt+shift+w", other: "ctrl+alt+up" }')
+    .replace('{ does: "workspace-previous", mac: "alt+up", alt: "alt+up", other: null, shift: null }', '{ does: "workspace-previous", mac: "cmd+shift+up", alt: "alt+shift+w", other: "ctrl+alt+up" }')
     .replace('`ctrl+alt+${i + 1}`', '`ctrl+shift+alt+${i + 1}`')
     .replace('`alt+${i + 1}`', '`alt+shift+${i + 1}`');
   assert.notEqual(changed, module);
@@ -371,7 +379,9 @@ test("change the module's entry in a copy: the Desktop's default follows, and ke
 // 0.67 (#1433) changed only the leader, to Ctrl+X on both. The Alt family (Pepe's call, 2026-10-22)
 // made Alt the default on Linux/Windows: every shared chord there is Alt with the key (Alt+←/→ the
 // tab moves, Alt+Shift+←/→ the groups), Ctrl+Alt's keys became an option (CTRL_ALT_MOVED below), and
-// split.focusPrevGroup, workspace.previous and workspace.next are new, with no macOS key.
+// split.focusPrevGroup, workspace.previous and workspace.next are new. Then macOS took ⌥ with an
+// arrow for the moves (Pepe, 2026-10-23): ⌥←/→ the tabs, ⌥⇧←/→ the groups, ⌥↑/↓ the workspaces, the
+// same chord as Linux/Windows' Alt family, so one string.
 const DEFAULTS = [
   ["app.leader",{"mac":"Ctrl+X","other":"Ctrl+X"}],
   ["sidebar.key.instances","1"],
@@ -393,16 +403,16 @@ const DEFAULTS = [
   ["sidebar.key.spawn","N"],
   ["sidebar.key.spawnAnother","Shift+N"],
   ["sidebar.key.help","?"],
-  ["split.focusPrevGroup",{"mac":null,"other":"Alt+Shift+←"}],
-  ["split.focusNextGroup",{"mac":"Mod+Alt+A","other":"Alt+Shift+→"}],
+  ["split.focusPrevGroup","Alt+Shift+←"],
+  ["split.focusNextGroup","Alt+Shift+→"],
   ["app.palette",{"mac":"Mod+K","other":"Alt+K"}],
   ["app.quickOpenSouls",{"mac":"Mod+P","other":"Alt+P"}],
   ["app.workspaces",{"mac":"Mod+Alt+O","other":"Alt+O"}],
   ["roster.openPrevious",{"mac":"Mod+Alt+↑","other":"Alt+Shift+↑"}],
   ["roster.openNext",{"mac":"Mod+Alt+↓","other":"Alt+Shift+↓"}],
   ["terminal.focusMode",{"mac":"Mod+Alt+Z","other":"Alt+Z"}],
-  ["workspace.previous",{"mac":null,"other":"Alt+↑"}],
-  ["workspace.next",{"mac":null,"other":"Alt+↓"}],
+  ["workspace.previous","Alt+↑"],
+  ["workspace.next","Alt+↓"],
   ["instance.edit",{"mac":"Mod+Alt+R","other":"Alt+R"}],
   ["app.chooseSoul",{"mac":"Mod+N","other":"Ctrl+Shift+N"}],
   ["app.shortcuts","Mod+,"],
@@ -413,8 +423,8 @@ const DEFAULTS = [
   ["stage.automations","Mod+3"],
   ["tabs.next","Ctrl+Tab"],
   ["tabs.prev","Ctrl+Shift+Tab"],
-  ["tabs.nextPage",{"mac":"Mod+Alt+→","other":"Alt+→"}],
-  ["tabs.prevPage",{"mac":"Mod+Alt+←","other":"Alt+←"}],
+  ["tabs.nextPage","Alt+→"],
+  ["tabs.prevPage","Alt+←"],
   ["tabs.goto1",{"mac":"Mod+Alt+1","other":"Alt+1"}],
   ["tabs.goto2",{"mac":"Mod+Alt+2","other":"Alt+2"}],
   ["tabs.goto3",{"mac":"Mod+Alt+3","other":"Alt+3"}],
@@ -453,8 +463,11 @@ test("the Desktop's default keymap, every action on both platforms, is as pinned
 // families"): the same keymap, with the Linux/Windows key of every shared chord that is not the same
 // in every family, as it was before the Alt family. The Ctrl+Shift family ("chords": "ctrl+shift"):
 // the Ctrl+Alt keymap, with the Linux/Windows key of the seven rows it moves (the maintainer's cut,
-// a43470ce) and nothing else. macOS has no family: its keys are the same in all three.
+// a43470ce) and nothing else. macOS has no family: its keys are the same in all three. Neither has a
+// workspace move: Alt+↑/↓ are left to the program (#1491 B1).
 const CTRL_ALT_MOVED = {
+  "workspace.previous": null,
+  "workspace.next": null,
   "split.focusPrevGroup": "Ctrl+Alt+Shift+A",
   "split.focusNextGroup": "Ctrl+Alt+A",
   "app.palette": "Ctrl+Alt+K",
@@ -479,7 +492,8 @@ const SHIFT_MOVED = {
   "split.vertical": "Ctrl+Shift+E",
   "split.horizontal": "Ctrl+Shift+D",
 };
-const moveIn = (table, moved) => table.map(([id, entry]) => [id, Object.hasOwn(moved, id) ? { mac: entry.mac, other: moved[id] } : entry]);
+const macOf = (entry) => (entry !== null && typeof entry === "object" ? entry.mac : entry);
+const moveIn = (table, moved) => table.map(([id, entry]) => [id, Object.hasOwn(moved, id) ? { mac: macOf(entry), other: moved[id] } : entry]);
 const CTRL_ALT_DEFAULTS = moveIn(DEFAULTS, CTRL_ALT_MOVED);
 const SHIFT_DEFAULTS = moveIn(CTRL_ALT_DEFAULTS, SHIFT_MOVED);
 
@@ -507,10 +521,10 @@ test("the Desktop's default keymap in each chord family, every action on both pl
   for (const id of Object.keys(DEFAULT_KEYMAP)) for (const family of CHORD_FAMILIES) {
     assert.equal(defaultBinding(id, true, family), defaultBinding(id, true, "alt"), `${id}: macOS has no family`);
   }
-  // The same in every family: the instance and the workspace moves.
+  // The same in every family: the instance moves. The workspace moves are the Alt family's alone.
   for (const family of CHORD_FAMILIES) {
     assert.deepEqual(["roster.openPrevious", "roster.openNext", "workspace.previous", "workspace.next"].map((id) => defaultBinding(id, false, family)),
-      ["Alt+Shift+↑", "Alt+Shift+↓", "Alt+↑", "Alt+↓"], family);
+      ["Alt+Shift+↑", "Alt+Shift+↓", ...(family === "alt" ? ["Alt+↑", "Alt+↓"] : [null, null])], family);
   }
   // The rows Ctrl+Shift keeps keep their Ctrl+Alt key: the groups, filter, the Alt+Shift arrows and Ctrl+Alt+1–9.
   assert.deepEqual(["split.focusPrevGroup", "split.focusNextGroup", "sidebar.focusFilter", "roster.openPrevious", "tabs.nextPage", "tabs.goto1", "tabs.goto9"].map((id) => defaultBinding(id, false, "ctrl+shift")),

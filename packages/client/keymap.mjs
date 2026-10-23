@@ -119,11 +119,13 @@ export const PLAIN_KEYS = Object.freeze([
  * keyboard protocol. A row without an `alt` key keeps its `other` one there.
  *
  * `other`, the Ctrl+Alt family, the option for whoever needs Alt in their programs: Ctrl+Alt with a
- * letter or a digit for an action, Alt+Shift with an arrow to move, and the workspace moves on Alt
- * ↑/↓, which nothing else there takes. A Ctrl+Alt chord reaches the TUI only under the kitty keyboard
- * protocol (ESC then Ctrl+K is what Ctrl+Alt+K sends without it). Its keys are unchanged from before
- * the Alt family; the previous group, whose Alt+Shift+← is the previous tab's here, is
- * Ctrl+Alt+Shift+A, the next group's Ctrl+Alt+A with Shift.
+ * letter or a digit for an action and Alt+Shift with an arrow to move. It leaves Alt alone, the Alt
+ * arrows included: the workspace moves have no chord there (`other: null`, and none in `shift`),
+ * so Alt+↑/↓ reach the program in a terminal; the leader's ↑/↓ move between workspaces in every
+ * family. A Ctrl+Alt chord reaches the TUI only under the kitty keyboard protocol (ESC then Ctrl+K
+ * is what Ctrl+Alt+K sends without it). Its keys are those from before the Alt family, and the
+ * previous group, whose Alt+Shift+← is the previous tab's here, is Ctrl+Alt+Shift+A, the next
+ * group's Ctrl+Alt+A with Shift.
  *
  * `shift` is the row's key in the Ctrl+Shift family, the option a user picks in keys.json
  * (packages/client/keys-file.mjs) for a terminal that passes Ctrl+Shift apart from Ctrl: foot and
@@ -133,10 +135,14 @@ export const PLAIN_KEYS = Object.freeze([
  * inputs and editors; Ctrl+Alt+1–9, since Ctrl+Shift+digit is a shifted symbol on most layouts;
  * the groups and filter, whose Ctrl+Shift A and F a terminal or an agent takes; and edit-instance.
  *
- * On macOS the Desktop holds ⌘ (⌘⌥ for the rows new in phase 3); there is no family, `mac` is the
- * only key, and the rows new with the Alt family (the previous group, the workspace moves) have none
- * (`mac: null`): the leader reaches them. `tab-N` shows the Nth tab of the focused group, `tab-9`
- * its last. The Desktop's Ctrl+Tab, Ctrl+1/2/3 (the stages) and Ctrl+, are the Desktop's own and are
+ * On macOS there is no family and `mac` is the only key. The letters and digits are held by ⌘ (⌘⌥
+ * for the rows new in phase 3), and the moves between tabs, groups and workspaces by ⌥ with an arrow
+ * (Pepe's call, 2026-10-23): ⌥←/→ the tabs, ⌥⇧←/→ the groups, ⌥↑/↓ the workspaces; ⌥⌘↑/↓ stay the
+ * instances. ⌥ with a letter or a digit types a character on many layouts (⌥2 is @ on a Spanish
+ * one), so no row takes it. ⌥←/→ are the word moves of macOS text fields and of a shell in a
+ * terminal: the clients give way in an editable field (docs/desktop-keyboard.md), and the TUI,
+ * which binds the `mac` keys without `cmd+`, reads them from every focus. `tab-N` shows the Nth tab
+ * of the focused group, `tab-9` its last. The Desktop's Ctrl+Tab, Ctrl+1/2/3 (the stages) and Ctrl+, are the Desktop's own and are
  * not here. */
 export const CHORDS = Object.freeze([
   { does: "palette", mac: "cmd+k", alt: "alt+k", other: "ctrl+alt+k", shift: "ctrl+shift+k" },
@@ -144,17 +150,18 @@ export const CHORDS = Object.freeze([
   { does: "workspaces", mac: "cmd+alt+o", alt: "alt+o", other: "ctrl+alt+o", shift: "ctrl+shift+s" },
   { does: "previous", mac: "cmd+alt+up", other: "alt+shift+up", label: "previous instance" },
   { does: "next", mac: "cmd+alt+down", other: "alt+shift+down", label: "next instance" },
-  { does: "workspace-previous", mac: null, other: "alt+up" },
-  { does: "workspace-next", mac: null, other: "alt+down" },
-  { does: "tab-previous", mac: "cmd+alt+left", alt: "alt+left", other: "alt+shift+left" },
-  { does: "tab-next", mac: "cmd+alt+right", alt: "alt+right", other: "alt+shift+right" },
+  // The Alt family's alone on Linux and Windows: the others leave Alt+↑/↓ to the program.
+  { does: "workspace-previous", mac: "alt+up", alt: "alt+up", other: null, shift: null },
+  { does: "workspace-next", mac: "alt+down", alt: "alt+down", other: null, shift: null },
+  { does: "tab-previous", mac: "alt+left", alt: "alt+left", other: "alt+shift+left" },
+  { does: "tab-next", mac: "alt+right", alt: "alt+right", other: "alt+shift+right" },
   ...Array.from({ length: 9 }, (_, i) => ({ does: `tab-${i + 1}`, mac: `cmd+alt+${i + 1}`, alt: `alt+${i + 1}`, other: `ctrl+alt+${i + 1}` })),
   { does: "zoom", mac: "cmd+alt+z", alt: "alt+z", other: "ctrl+alt+z", shift: "ctrl+shift+m" },
   { does: "close-terminal", mac: "cmd+w", alt: "alt+w", other: "ctrl+alt+w", shift: "ctrl+shift+w" },
   { does: "split-right", mac: "cmd+\\", alt: "alt+e", other: "ctrl+alt+e", shift: "ctrl+shift+e" },
   { does: "split-down", mac: "cmd+shift+\\", alt: "alt+shift+e", other: "ctrl+alt+shift+e", shift: "ctrl+shift+d" },
-  { does: "group-previous", mac: null, alt: "alt+shift+left", other: "ctrl+alt+shift+a" },
-  { does: "group-next", mac: "cmd+alt+a", alt: "alt+shift+right", other: "ctrl+alt+a" },
+  { does: "group-previous", mac: "alt+shift+left", alt: "alt+shift+left", other: "ctrl+alt+shift+a" },
+  { does: "group-next", mac: "alt+shift+right", alt: "alt+shift+right", other: "ctrl+alt+a" },
   { does: "filter", mac: "cmd+f", alt: "alt+f", other: "ctrl+alt+f" },
   // The Desktop's alone for now (#1421): its name and colour dialog. No leader key; the TUI has no
   // such action, so it binds no key for it (chordKeys skips a `does` it does not handle). Not one of
@@ -204,8 +211,8 @@ export function leaderRows() {
 }
 
 /** The key id of the CHORDS row `entry` on macOS (`true`) or elsewhere, in `family` (CHORD_FAMILIES;
- * anything else is the default, Alt), which macOS ignores; null where the row has no key (the rows
- * new with the Alt family on macOS). */
+ * anything else is the default, Alt), which macOS ignores; null where the row has no key (the
+ * workspace moves outside the Alt family). */
 export function chordKeyOf(entry, isMac, family = DEFAULT_CHORD_FAMILY) {
   if (isMac) return entry.mac ?? null;
   return (family === "ctrl+shift" ? entry.shift : family === "ctrl+alt" ? entry.other : entry.alt) ?? null;
