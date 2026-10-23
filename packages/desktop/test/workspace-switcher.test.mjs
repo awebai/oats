@@ -51,11 +51,11 @@ test("workspace switcher: deferred A completing after B cannot overwrite B", asy
   assert.equal(await b, true);
   assert.equal(current(document), B.id);
   assert.equal(document.querySelector(".ws-option .ws-option-name").textContent, "oats");
-  assert.equal(said(document), "Current workspace: /org-b/oats");
+  assert.equal(said(document), "Current workspace: oats");
   aGate.resolve(A);
   assert.equal(await a, false);
   assert.equal(current(document), B.id);
-  assert.equal(said(document), "Current workspace: /org-b/oats");
+  assert.equal(said(document), "Current workspace: oats");
   controller.dispose(); dom.window.close();
 });
 
@@ -65,7 +65,7 @@ test("the workspace list is disambiguated, keeps the focused row across a repain
   const options = [...document.querySelectorAll(".ws-option")];
   // By their teams, never their folders (the shared labels above are the TUI's): a row names no place.
   assert.deepEqual(options.map((option) => option.querySelector(".ws-option-name").textContent), ["oats — alpha", "oats — beta"]);
-  assert.equal(said(document), "Current workspace: /org-b/oats");
+  assert.equal(said(document), "Current workspace: oats — beta");
   assert.deepEqual(options.map((option) => option.getAttribute("aria-current")), [null, "true"]);
   options[0].focus();
   controller.begin()(B, [A, B]);
@@ -718,7 +718,7 @@ test("pending add is single-flight, cannot be dismissed, and always reconciles",
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(modal.hidden, true);
   assert.deepEqual(selected, ["/org-a/oats"]);
-  assert.equal(said(document), "Current workspace: /org-a/oats");
+  assert.equal(said(document), "Current workspace: oats — alpha");
   assert.equal(current(document), "/org-a/oats");
   dom.window.close();
 });

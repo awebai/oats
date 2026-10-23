@@ -202,7 +202,7 @@ below, a line under the list says how many ("2 more below").
   in an ellipsis, and the row's tooltip is the whole name.
 - **The current workspace** has the selection's background and its name in
   bold; a screen reader hears it as current, and the list's description names
-  it.
+  it, by the same name as its row.
 - **The yellow dot.** A row has a small yellow dot after its name when an
   instance of that workspace needs input: the claim the instance roster shows
   for that instance, from a running session (OATS with the `waiting-on-you`

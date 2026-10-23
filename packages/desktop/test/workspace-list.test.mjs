@@ -126,6 +126,8 @@ test("two of one name without keys are never told apart by where they are: no fo
   assert.deepEqual(s.rows().map((r) => r.textContent), ["oats", "oats", "tsm", "tsm — Acme"], "a team names a workspace; a folder or a machine does not");
   assert.deepEqual(s.rows().map((r) => r.title), ["oats", "oats", "tsm", "tsm — Acme"]);
   for (const r of s.rows()) assert.doesNotMatch(`${r.textContent} ${r.title}`, /org-a|org-b|\/|vega|rigel/);
+  // The list's description names the current workspace the same way: a screen reader hears no folder either.
+  assert.equal(s.document.getElementById("ws-list").getAttribute("aria-description"), "Current workspace: oats");
 });
 
 test("a long name: the line cuts it with an ellipsis (CSS) and the tooltip gives the whole name", async (t) => {
@@ -153,7 +155,7 @@ test("the current row: aria-current on that row only, marked by style alone (no 
   assert.equal(list.getAttribute("aria-description"), "Current workspace: alpha");
   const local = { id: "/h/Agents/here", path: "/h/Agents/here", name: "here" };
   s.controller.begin()(local, [A, local]);
-  assert.equal(list.getAttribute("aria-description"), "Current workspace: /h/Agents/here", "a local folder by its path");
+  assert.equal(list.getAttribute("aria-description"), "Current workspace: here", "a local folder by its row's name, never its path");
   s.controller.choose([A, B]);
   assert.equal(s.current(), null);
   assert.equal(list.getAttribute("aria-description"), "Current workspace: none chosen yet");

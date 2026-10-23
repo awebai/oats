@@ -440,7 +440,7 @@ split into sections) is `packages/client/roster-sections.mjs`.
   goes on from, and a pick of the current row supersedes it. Choosing an unattached row also
   calls `requestDeploymentTab`, so the Deployments page opens on its tab.
   - The current row is `aria-current="true"`, marked by style alone (`--sel`, the name in
-    bold); the section's `aria-description` names the current workspace.
+    bold); the section's `aria-description` names the current workspace by its row's name, never a path.
   - The dot: `choice.waiting`, only `true` draws it (`.ws-waiting` after the name, a yellow
     `--attn-dot` fill in a 1px `--warn` ring, the needs-input colour of the roster and the tabs, which holds 3:1 on every row fill), with `WAITING_NAME` (", needs input", sr-only in the name) and
     `WAITING_TITLE` in the tooltip. It reads only what the client observes (panel-views.mjs

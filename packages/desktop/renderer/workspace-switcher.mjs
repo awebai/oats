@@ -601,7 +601,7 @@ export function createWorkspaceSwitcher({
     const activeIndex = workspaces.findIndex((candidate) => candidate.id === activeId);
     // A window with no workspace (#481) asks for one; otherwise, before the first answer, it is resolving.
     const current = workspace ? (labels[activeIndex] || candidateName(workspace)) : choosing ? "none chosen yet" : "resolving";
-    section.setAttribute("aria-description", `Current workspace: ${activeId && isLocalPath(activeId) ? activeId : current}`);
+    section.setAttribute("aria-description", `Current workspace: ${current}`);
     renderOptions();
   };
 

@@ -140,7 +140,7 @@ test("provided workspace header structure and brand artwork are decorative; the 
   assert.deepEqual(rows.map(row => row.textContent), ["A", "B"], "no check or other mark beside the name");
   assert.ok(rows.every(row => row.tagName === "BUTTON" && row.getAttribute("role") === null), "a list of buttons");
   assert.deepEqual(rows.map(row => row.tabIndex), [0, -1], "one tab stop: the current row");
-  assert.equal(list.getAttribute("aria-description"), "Current workspace: /fixture/A");
+  assert.equal(list.getAttribute("aria-description"), "Current workspace: A", "its row's name, never its path");
   // Focusing the list lands on the current row; Down moves the focus, and the tab stop follows it.
   assert.equal(switcher.focusList(), true);
   assert.equal(document.activeElement, rows[0]);
