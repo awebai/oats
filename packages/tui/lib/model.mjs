@@ -333,11 +333,14 @@ export function disclosure(state, r, item) {
 /** One row of the list: its mark, its name, the word its mark cannot say (or null), whether it
  *  waits, and on a folded row only, how many instances are folded away under it (`folded`) and how
  *  many of those wait (`below`). A row that is not folded says nothing of its children: they
- *  stand under it, indented. */
+ *  stand under it, indented. `selected` the selected row, `cursor` whether it carries `>`. */
 function listRow(state, r, item) {
   const closed = disclosure(state, r, item) === "closed";
   return {
     id: item.id, name: item.row.instance, depth: item.depth, selected: item.id === state.selected,
+    // The selected row keeps its reverse video while the list of workspaces has the focus, but not the
+    // cursor: only the region with the focus draws `>`.
+    cursor: item.id === state.selected && state.focus !== "workspaces",
     mark: markOf(item.row), color: rowColour(item.row), word: wordOf(item.row, state.ascii),
     waiting: waitingClaim(item.row, { stale: r.stale(item.row) }) !== null,
     folded: closed ? r.folded.get(item.id) ?? 0 : 0,
@@ -672,7 +675,8 @@ function listedWaiting(state, path) {
  *  open workspace's row; `openable` whether its pick opens it (as the switcher's Enter: a stale
  *  row of the list does not, nor a view with nothing to open); `waiting` whether some instance of
  *  it needs input, as far as is known (an unknown never says so); `word` its state when it is not
- *  live or not opened (`not opened`, `not live`, or a stale row's kernel state in short words), or
+ *  live or not opened (`not opened` while a deployment of this machine is not, whatever the others',
+ *  else `not live`; a stale row's kernel state in short words), or
  *  null, and always null on the open workspace's row, whose state the sidebar says under the list. `rows`: the rows as `{ key, openable }`, for workspaceStep. `current`: the open row's key,
  *  or null. Kept while what it is made from (LIST_MADE_FROM) is the same: every frame and every
  *  key asks for it, and the shared home walks every machine to make it, so it is not asked again
@@ -695,8 +699,11 @@ export function workspaceList(state, at) {
     const fact = facts.get(item.key) ?? { waiting: false, unlive: false };
     // The open workspace's state is the sidebar's to say, under the list (its notice): its row has no word.
     // A row of this computer's list stands under its heading, which says it is not opened: its word is a state that keeps it from opening.
+    // A workspace with a deployment of this machine not opened says so, as the switcher's line for it
+    // does ("This machine · not opened"), whatever its other machines' state: it opens, and a machine
+    // that did not answer one read must not make it read "not live" until the next.
     const word = item.open === true ? null : listed ? LIST_STATES[item.state] ?? null
-      : item.join?.length > 0 && item.join.length === item.opens.length ? NOT_OPENED
+      : item.join?.length > 0 ? NOT_OPENED
         : fact.unlive ? NOT_LIVE : null;
     lines.push(Object.freeze({ key: item.key, label: item.label, current: item.open === true, openable, waiting: fact.waiting, word }));
   }

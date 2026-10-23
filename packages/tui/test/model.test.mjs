@@ -12,7 +12,7 @@ import {
   identityMemory, remoteRosterState, observeIdentities, viewModel, listedViews, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, isMultiDeployment,
   cliRemoteRoster, originLead, displayLine, DETAIL_WITHHELD, instanceSiblings, siblingText,
 } from "../lib/client.mjs";
-import { LIST_WORDS, OFFERED_SECTION, ROSTER_FAILED, SENTENCE_INDENT, WORD_MAX, clockTime, disclosure, heldOf as modelHeld, model, panelOf, roster, switcher, switcherLead } from "../lib/model.mjs";
+import { LIST_WORDS, NOT_LIVE, NOT_OPENED, OFFERED_SECTION, ROSTER_FAILED, SENTENCE_INDENT, WORD_MAX, clockTime, disclosure, heldOf as modelHeld, model, panelOf, roster, switcher, switcherLead, workspaceList } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { shown, shownLines, textOf } from "../lib/term/text.mjs";
 import { windowOf } from "../lib/views/scroll.mjs";
@@ -1918,6 +1918,20 @@ test("Pepe's shape, drawn: the workspace rows with their dim lines under them, i
   const { lines, area } = draw(state, { cols: 100, rows: 24 });
   const main = lines.map((line) => line.slice(100 - area - 1).trimEnd()).filter(Boolean);
   assert.deepEqual(main.slice(0, 5), ["> * acme-platform", "      This machine", "      athenea", "    lfx", "      This machine · not opened"]);
+});
+
+test("Pepe's shape in the list of workspaces: lfx says not opened, as the switcher's line for its deployment of this machine does, whether athenea answered the last read or not; a workspace of other machines only that none answered says not live", () => {
+  const state = identityOf(pepe(), LFX_PATH, learnedOf(LFX));
+  const word = (s, label) => workspaceList(s, AT).lines.find((line) => line.label === label);
+  assert.deepEqual([word(state, "lfx").word, word(state, "lfx").openable], [NOT_OPENED, true]);
+  // The next read did not reach athenea: lfx still opens, and still says so.
+  const lost = heard(state, { thrown: "the pipe closed" }, tick(1));
+  assert.equal(lost.remote.remoteGroups.every((group) => group.probe.ok === false), true);
+  assert.deepEqual([word(lost, "lfx").word, word(lost, "lfx").openable], [NOT_OPENED, true]);
+  assert.deepEqual([word(heard(lost, answer(machine("athenea"), machine("athenea", { id: "athenea:lfx-1", label: "athenea (lfx)", workspace: LFX, target: { workspace: "/home/dev/Work/lfx", sshHost: "athenea.example" } })), tick(2)), "lfx").word], [NOT_OPENED]);
+  // Before the identity read lfx is athenea's alone (lfx-oats-workspace): not live once athenea is not reached.
+  assert.equal(word(heard(pepe(), { thrown: "the pipe closed" }, tick(1)), "lfx-oats-workspace").word, NOT_LIVE);
+  assert.equal(word(pepe(), "lfx-oats-workspace").word, null, "live: no word");
 });
 
 test("a listed deployment whose identity read failed or timed out stays a row of its own, saying why; one whose identity attaches to no workspace says the shared reason; a stale row of the list is never matched", () => {

@@ -80,7 +80,9 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  "terminal" while what is typed goes to the agent and "list" while the TUI reads keys, and `zoom`
  *  true while it has the whole body (only with the terminal's focus).
  *  `outcome`: the line after an open (the model's `{ said, under }`), shown above the panes until
- *  the next key bound to an action, or null. `notice`: such a line that came while no view that
+ *  the next key bound to an action, or null; with `once: true` (the list of workspaces' end, said
+ *  by the leader's Up or Down) until the next key of any kind (the leader's: the key after it), one
+ *  typed to the agent included, or a resize (the loop's `{ passed }`). `notice`: such a line that came while no view that
  *  draws one at every width was shown (the switcher, the help, a detail or a terminal with the
  *  focus: see `drawsOutcome`), held until one is; or null.
  *  It is the add of the deployment the run started in, refused.
@@ -668,7 +670,7 @@ function workspaceMoved(state, step, inTerminal) {
   const settled = inTerminal ? { state, effect: null } : toList(state), s = settled.state;
   const list = workspaceList(s), key = workspaceStep(list.rows, list.current, step);
   const item = key === null ? null : listChoice(s, key);
-  if (item === null) return { state: next(s, { outcome: Object.freeze({ said: step < 0 ? WORKSPACE_WORDS.above() : WORKSPACE_WORDS.below(), under: Object.freeze([]) }) }), effect: settled.effect };
+  if (item === null) return { state: next(s, { outcome: Object.freeze({ said: step < 0 ? WORKSPACE_WORDS.above() : WORKSPACE_WORDS.below(), under: Object.freeze([]), once: true }) }), effect: settled.effect };
   const moved = picked(s, item) ?? { state: s, effect: null };
   return { state: moved.state, effect: both(settled.effect, moved.effect) };
 }
@@ -716,7 +718,9 @@ function removedHeard(state, { name, ok, reason = null }) {
  *  workspace picked in the switcher are deployments now, and the ones it may open, in order),
  *  `{ identity: { path, read } }` (what an identity read answered of a row of the list),
  *  `{ removed: { path, name, ok, reason } }` (a Remove's answer) and
- *  `{ notListed: <reason> }` (the deployment the run started in was not added to the list).
+ *  `{ notListed: <reason> }` (the deployment the run started in was not added to the list), and
+ *  `{ passed: true }` (bytes typed to the agent, or a resize: what the loop saw that the store does
+ *  not, which ends a line of one key).
  *  Opening an agent gives five more: `{ prepared: { id, error? } }` (the preflight of another
  *  machine's agent ended: `error` is what the shared prepareRemoteTerm threw), `{ given: true }`
  *  (the loop gave the preflight up itself: a suspend), `{ shown: { id } }` (the panel has the
@@ -779,7 +783,7 @@ const personal = (event) => typeof event.key === "string" || event.text !== unde
  *  preflight given up and the reads dropped as the process stops, the keyboard protocol confirmed,
  *  and what a frame drew. A restore takes no step on one of them, which would lose its open: the
  *  next event it hears goes on. */
-const UNTAKEN = Object.freeze(["given", "collecting", "keyboard", "spawnDrawn", "spawnTop", "capabilitiesTop"]);
+const UNTAKEN = Object.freeze(["given", "collecting", "passed", "keyboard", "spawnDrawn", "spawnTop", "capabilitiesTop"]);
 const untaken = (event) => UNTAKEN.some((name) => event[name] !== undefined);
 
 /** THE MEMORY OF A WORKSPACE (docs/tui.md, "Tabs"), for the run only, per memoryKey: `places` its
@@ -900,6 +904,9 @@ function reduceStep(state, event, keymap) {
   // A key of the person's while a restore runs: the focus is theirs from then on (restoreDone).
   if (state.restoring?.grant && personal(event)) state = next(state, { restoring: Object.freeze({ ...state.restoring, grant: false }) });
   let step = reduced(state, event, keymap);
+  // A line of one key (`once`) goes at the next key of any kind, bound or not, unless that key said
+  // a line of its own. Not at the leader alone: while it waits nothing on the screen changes.
+  if (state.outcome?.once === true && personal(event) && step.state.outcome === state.outcome && step.state.leader === null) step = { ...step, state: next(step.state, { outcome: null }) };
   // The tabs are the open workspace's: whatever opened another (or left it, gone), they all close,
   // and the split with them, kept in its memory (workspaceLeft). Another deployment of the same
   // workspace opened (its deployment of this machine, once served, in place of another machine's)
@@ -1596,6 +1603,8 @@ function reduced(state, event, keymap) {
   if (event.entry !== undefined) return took(state, event);
   if (event.roster !== undefined) return heard(state, event.roster);
   if (event.collecting !== undefined) return { state: event.collecting === state.collecting ? state : next(state, { collecting: event.collecting === true }), effect: null };
+  // What the loop saw that the store does not: bytes typed to the agent, a resize. A line of one key goes.
+  if (event.passed !== undefined) return { state: state.outcome?.once === true ? next(state, { outcome: null }) : state, effect: null };
   // The rows stay where they are: only what they read changes.
   if (event.retiring !== undefined) return { state: next(state, { retiring: new Set(event.retiring) }), effect: null };
   if (event.listed !== undefined) return listedHeard(state, event.listed);

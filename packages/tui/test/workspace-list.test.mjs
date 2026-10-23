@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { instanceId } from "../lib/client.mjs";
 import { LIST_LINES, WORKSPACE_WORDS, memoryKey, paletteItems, roster, workspaceList } from "../lib/model.mjs";
 import { TAB_LIMIT, reduce } from "../lib/store.mjs";
+import { createScreen } from "../lib/term/screen.mjs";
 import { WAITING_DOT } from "../lib/views/workspaces.mjs";
 import { draw, instanceRow, observed, stateOf, took } from "./helpers.mjs";
 
@@ -103,6 +104,29 @@ test("the dot: on each workspace where an instance needs input, the open one inc
   assert.equal(draw(here).lines[0].slice(0, 38).trimEnd().at(-1), WAITING_DOT.utf8);
 });
 
+test("on a row in reverse video the reverse ends before the dot: a yellow ● on the normal background, the open row's and the cursor's", () => {
+  const here = served({ a: { "dev-b": { waitingOnYou: { ...QUESTION } } } });
+  const size = { cols: 80, rows: 24 };
+  for (const state of [here, key(here, "w").state]) {
+    const d = draw(state, size);
+    assert.equal([...d.lines[0]].indexOf(WAITING_DOT.utf8), 36);
+    assert.equal(d.cells[0][35].style.reverse, true, "the row's reverse runs up to the dot");
+    assert.notEqual(d.cells[0][36].style.reverse, true, "and not under it");
+    // The escape codes the terminal is sent: the last SGR before the ● sets yellow and no reverse (7).
+    const out = createScreen().render(d.rows, size, { full: true });
+    const before = out.slice(0, out.indexOf(WAITING_DOT.utf8)), sgr = before.slice(before.lastIndexOf("\x1b[") + 2);
+    assert.match(sgr, /^[0-9;]*m$/);
+    const params = sgr.slice(0, -1).split(";");
+    assert.equal(params.includes("33"), true, `yellow: ${JSON.stringify(sgr)}`);
+    assert.equal(params.includes("7"), false, `no reverse: ${JSON.stringify(sgr)}`);
+    assert.match(before.slice(before.lastIndexOf("\x1b[1;1H")), /\x1b\[(?:[0-9]+;)*7(?:;[0-9]+)*m/, "the row before it is in reverse");
+  }
+  // ASCII: the ! stands outside the reverse too.
+  const ascii = draw({ ...here, ascii: true });
+  assert.equal(ascii.cells[0][36].text, WAITING_DOT.ascii);
+  assert.notEqual(ascii.cells[0][36].style.reverse, true);
+});
+
 test("the leader then Down opens the next workspace and Up the one before, as the list draws them: past a row that cannot be opened, a listed one admitted, and at an end nothing moves and the line says so", () => {
   const state = withListed(served());
   const up = leaderThen(state, "up");
@@ -154,6 +178,31 @@ test("w gives the list the focus on the open row; Up and Down move the cursor pa
   assert.deepEqual(all.effect, { list: true, identify: true });
   // Esc closes the switcher onto the list's focus.
   assert.equal(key(all.state, "escape").state.focus, "list");
+});
+
+test("only the region with the focus draws >: with the list of workspaces focused the list of instances keeps its selection in reverse video, without its >", () => {
+  const state = served();
+  const cursors = (d) => d.lines.map((line, row) => (line.startsWith(">") ? row : -1)).filter((row) => row >= 0);
+  const before = draw(state), row = before.lines.findIndex((line) => line.slice(0, 38).includes("dev-a"));
+  assert.deepEqual(cursors(before), [row], "the list of instances has the focus: its selected row carries >");
+  const focused = draw(key(state, "w").state);
+  assert.deepEqual(cursors(focused), [0], "the list of workspaces has it: its cursor's row alone");
+  assert.equal(focused.lines[row].startsWith(" "), true);
+  assert.equal(focused.cells[row][0].style.reverse, true, "the selection is kept, in reverse video");
+  assert.deepEqual(cursors(draw(key(key(state, "w").state, "escape").state)), [row], "Esc: the > is the instances' again");
+});
+
+test("No workspace above this one. goes at the next key of any kind, one bound to nothing included, and at what only the loop sees (a key typed to an agent, a resize); the line after an open stays at those", () => {
+  const up = leaderThen(withListed(served()), "up").state;
+  assert.deepEqual(up.outcome?.said, WORKSPACE_WORDS.above());
+  assert.equal(key(up, "x").state.outcome, null, "x is bound to nothing");
+  assert.equal(reduce(up, { passed: true }).state.outcome, null);
+  // Another line keeps the rule it had: the next key bound to an action.
+  const line = Object.freeze({ ...up, outcome: Object.freeze({ said: Object.freeze([{ own: "Opened." }]), under: Object.freeze([]) }) });
+  const passed = reduce(line, { passed: true });
+  assert.deepEqual([passed.state, passed.effect], [line, null], "nothing changes, so nothing is drawn again");
+  assert.equal(key(line, "x").state.outcome, line.outcome);
+  assert.equal(key(line, "j").state.outcome, null);
 });
 
 test("a key the focused list does not own gives the focus back first, then does what it does there", () => {

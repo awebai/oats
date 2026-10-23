@@ -731,8 +731,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
    *  read is dropped: it cancels the leader (a paste), and it is not the agent's either. */
   function typed(events) {
     for (const event of events) {
-      if (event.input) { if (keysReady()) panel.input(event.input); }
-      else if (event.paste !== undefined) { if (keysReady()) panel.paste(event.paste); }
+      if (event.input) { if (keysReady()) panel.input(event.input); passed(); }
+      else if (event.paste !== undefined) { if (keysReady()) panel.paste(event.paste); passed(); }
       else if (event.keyboard !== undefined) answered(event.keyboard);
       else if (event.back) {
         parser = newParser();
@@ -747,6 +747,13 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
       }
     }
     watchThrough();
+  }
+  /** What the store does not see, a key typed to the agent or a resize, told to it while a line of
+   *  one key stands (the store's `passed`): it goes, and the frame with it. */
+  function passed() {
+    if (state.outcome?.once !== true) return;
+    took(reduce(state, { passed: true }, keymap));
+    guard.draw();
   }
   /** The terminal's answer to the protocol's query (`flags`), or none in time (null): the protocol is
    *  read from now on when the answer holds flag 1, and popped otherwise; an answer after that is
@@ -804,7 +811,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
       if (typing()) return typed(through.feed(bytes));
       act(parser.feed(bytes)); watchEscape();
     },
-    onResize() { full = true; guard.draw(); },
+    onResize() { full = true; passed(); guard.draw(); },
     // Ctrl+L and the return from a stop: the whole screen, and the open terminal captured afresh.
     onRedraw() { full = true; if (viewers.size) panel.refresh(); guard.draw(); },
     // A cycle in flight when the process stops is no evidence about the deployment (lib/read.mjs):

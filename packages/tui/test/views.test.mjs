@@ -152,6 +152,12 @@ const workspaceLine = (name, cols = 38, { waiting = false, ascii = false } = {})
 /** Whether every cell of row `r` from `from` up to `to` is drawn in reverse video and bold: the open
  *  workspace's row of the list of workspaces while the list does not have the focus. */
 const barred = (d, r, from, to) => d.cells[r].slice(from, to).every((cell, x) => reversed(d.cells[r], from + x) && (cell.width === 0 ? d.cells[r][from + x - 1] : cell).style.bold);
+/** The open workspace's row, `cols` wide, in bold reverse video up to its dot, if it has one, and the
+ *  dot and the margin after it not: the dot stands on the normal background. */
+const openBarred = (d, cols) => {
+  const dot = d.cells[0].slice(0, cols).findIndex((cell) => cell.text === WAITING_DOT.utf8 || cell.text === WAITING_DOT.ascii);
+  return dot < 0 ? barred(d, 0, 0, cols) : barred(d, 0, 0, dot) && d.cells[0].slice(dot, cols).every((cell) => cell.style.reverse !== true);
+};
 /** One of the sidebar's rules, `cols` cells. */
 const ruleLine = (cols, ascii = false) => glyphsOf(ascii).rule.repeat(cols);
 /** The sidebar of the Instances view as the spec stacks it from the top: the list of workspaces
@@ -348,10 +354,10 @@ test("at every size and in both modes the frame has its shape: the sidebar from 
     assert.equal(d.cols, pane, `${at}: the sidebar's width`);
     // The list of workspaces: the open workspace's one row, `*` in its second cell and the name from
     // its fourth, the dot of a waiting instance at its edge, in bold reverse video over the sidebar's
-    // width; no count and no time.
+    // width up to the dot, which is on the normal background; no count and no time.
     assert.equal(cellText(d, 0, 0, pane), workspaceLine("acme-platform", pane, { waiting: true, ascii }), at);
     assert.equal(d.cells[0][1].style.bold, true, at);
-    assert.equal(barred(d, 0, 0, pane), true, `${at}: the open workspace's row is in bold reverse video over the sidebar's width`);
+    assert.equal(openBarred(d, pane), true, `${at}: the open workspace's row is in bold reverse video over the sidebar's width, up to its dot`);
     // The heading under an empty row; at 60x15 the empty row is given up for the list.
     const heading = sz.rows > 15 ? 2 : 1;
     assert.equal(openRow(d), heading, at);
@@ -505,7 +511,7 @@ test("on a terminal 3000 columns wide the sidebar stays 60 cells, its rules 60 c
     assert.equal(d.cells[r].length, 3000, `row ${r}`);
   }
   assert.equal(cellText(d, 0, 0, 60), workspaceLine("acme-platform", 60, { waiting: true }));
-  assert.equal(barred(d, 0, 0, 60), true, "the open workspace's row is in bold reverse video over the sidebar's 60 cells");
+  assert.equal(openBarred(d, 60), true, "the open workspace's row is in bold reverse video over the sidebar's 60 cells, up to its dot");
   assert.equal(d.cells[0].slice(61).some((cell) => cell.style.reverse), false, "and not past the sidebar");
   assert.equal(cellText(d, 14), `${"─".repeat(60)}│`, "row 14: the rule after the list, the sidebar's width, and nothing past the rule column");
   assert.deepEqual(sheetOf(d), sheet(SHEET_80));
@@ -1022,7 +1028,7 @@ test("the selected row is drawn in reverse video over the whole width of its pan
       // The accordion's open view is bold, never in reverse: the selection, the tags and the open
       // workspace's row of the list of workspaces (the top row, the sidebar's width, while the list
       // does not have the focus) are the only cells in reverse.
-      assert.equal(barred(d, 0, 0, pane), true, `${at}: the open workspace's row of the list of workspaces is in bold reverse video over the sidebar's width`);
+      assert.equal(openBarred(d, pane), true, `${at}: the open workspace's row of the list of workspaces is in bold reverse video over the sidebar's width, up to its dot`);
       const otherReverse = (line, r) => (r === 0 ? false : line.slice(0, (tagAt(d, r, pane) ?? { col: pane }).col).some((cell) => cell.style.reverse)) || line.slice(pane).some((cell) => cell.style.reverse);
       assert.deepEqual(d.cells.flatMap((line, r) => (r !== selected && otherReverse(line, r) ? [r] : [])), [], `${at}: no other row is in reverse video, but for its tag and the open workspace's row of the list of workspaces in the sidebar`);
       assert.deepEqual(bodyRows(sz).filter((r) => r !== selected && d.cells[r][0].text === ">"), [], `${at}: no other row carries the selection mark`);

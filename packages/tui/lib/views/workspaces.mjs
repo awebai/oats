@@ -14,25 +14,26 @@ import { OPEN_MARK } from "./switcher.mjs";
 export const WAITING_DOT = Object.freeze({ utf8: "●", ascii: "!" });
 const CURSOR = 0, OPEN = 1, NAME = 3, MARGIN = 1, GAP = 2, NAME_LEAST = 8;
 const PLAIN = style(), DIM = style({ dim: true }), BOLD = style({ bold: true }), BAR = style({ bold: true, reverse: true });
-const YELLOW = style({ fg: "yellow", bold: true }), YELLOW_BAR = style({ fg: "yellow", bold: true, reverse: true });
+const YELLOW = style({ fg: "yellow", bold: true });
 
 /** One row of the list, `cols` wide: `>` under the cursor, `*` for the open workspace, its name
  *  (the open one's with what the title said beside it: `nameSpans(col, room)`), then at the edge
  *  its state word, dim, when there is room for it, and its dot. A row that does not open is dim.
  *  The open workspace's row is in reverse video while the list does not have the focus, the
- *  cursor's while it has. */
+ *  cursor's while it has; the reverse ends before the dot, which stands on the normal background
+ *  (a yellow cell with a dark dot in it would read as something else). */
 function row(line, cols, { focused, cursor, ascii, colour, nameSpans }) {
   const under = focused && line.key === cursor, barred = under || (!focused && line.current);
   const look = (own) => (barred ? BAR : own);
-  const spans = barred ? [{ col: 0, width: cols, style: BAR }] : [];
+  const dot = line.waiting ? cols - MARGIN - 1 : null;
+  const spans = barred ? [{ col: 0, width: dot ?? cols, style: BAR }] : [];
   if (under) spans.push({ col: CURSOR, text: lit(">"), style: BAR, width: 1 });
   if (line.current) spans.push({ col: OPEN, text: lit(OPEN_MARK), style: look(BOLD), width: 1 });
   let edge = cols - MARGIN;
-  if (line.waiting) {
+  if (dot !== null) {
     const yellow = colour && !ascii;
-    edge -= 1;
-    spans.push({ col: edge, text: lit(yellow ? WAITING_DOT.utf8 : WAITING_DOT.ascii), style: yellow ? (barred ? YELLOW_BAR : YELLOW) : look(BOLD), width: 1 });
-    edge -= 1;
+    spans.push({ col: dot, text: lit(yellow ? WAITING_DOT.utf8 : WAITING_DOT.ascii), style: yellow ? YELLOW : BOLD, width: 1 });
+    edge = dot - 1;
   }
   // The word gives way to the name: it stands while the name keeps NAME_LEAST cells.
   if (line.word && edge - line.word.length - GAP - NAME >= NAME_LEAST) {

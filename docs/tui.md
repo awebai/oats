@@ -856,14 +856,18 @@ A heading stands only under a row; with one workspace the list is its row.
 - **The open workspace** is marked `*` and its row is in reverse video, with
   what the title says beside its name (`+1 machine`, `on garnet`). Its
   state is said under the list, so its row has no state word.
-- **A row that cannot be opened** is dim, with its state word at the right:
-  `missing`, `not a deployment`, `unreadable` for a row of this computer's
-  list, `not live` for a workspace none of whose deployments is live, and
-  `not opened` for one whose deployments this run has not opened. The word
-  gives way when the name would keep fewer than eight cells.
+- **A row's state word** stands at its right, dim: `not opened` for a
+  workspace with a deployment of this machine that this run has not opened
+  (the switcher's `This machine · not opened`; the row opens), whatever its
+  other machines' state, else `not live` for a workspace none of whose
+  deployments is live. **A row that cannot be opened** is dim, with its
+  word: `missing`, `not a deployment`, `unreadable` for a row of this
+  computer's list. The word gives way when the name would keep fewer than
+  eight cells.
 - **The dot**, `●` in yellow at the row's right edge, says that an instance
   of that workspace needs input, the claim the list of instances shows, the
-  open workspace's included. With colour off (`NO_COLOR`) or in ASCII it is
+  open workspace's included. On a row in reverse video the reverse ends
+  before it: the dot is on the normal background. With colour off (`NO_COLOR`) or in ASCII it is
   `!`, and the help's Marks name it. A workspace whose instances are not
   known (never read, stale, not reached) has no dot, never a false one. The
   dot never moves a row.
@@ -888,7 +892,8 @@ A heading stands only under a row; with one workspace the list is its row.
   open one, as the list draws them. Rows that cannot be opened are passed
   over, and it does not wrap: at an end nothing moves, and the line under
   the list says `No workspace above this one.` or `No workspace below this
-  one.` A row of this computer's list is admitted and opened as the
+  one.` until the next key, of any kind (one typed to an agent too), or a
+  resize. A row of this computer's list is admitted and opened as the
   switcher's `Enter` opens it, and when it is no deployment any more the
   line says so: `acme-docs: not an OATS deployment any more.` What the
   workspace left had open is kept for it, as for a switch from the
@@ -896,7 +901,8 @@ A heading stands only under a row; with one workspace the list is its row.
   too.
 - **`w`**, the leader then `o`, and `Ctrl+Alt+O` (`Ctrl+Shift+S` with the
   option) give the list the focus, on the open workspace's row. The row
-  under the cursor carries `>` and the reverse video. `Up`/`k`,
+  under the cursor carries `>` and the reverse video; the list of
+  instances keeps its selection in reverse video, without its `>`. `Up`/`k`,
   `Down`/`j`, `g`/`Home` and `G`/`End` move the cursor over the rows that
   open; `Enter` opens its row and gives the list of instances the focus;
   `Esc` gives that focus back with nothing opened; `w` again opens the
