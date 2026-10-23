@@ -91,6 +91,14 @@ operations in full.
   soul-only `knowledge: { harvest: off }` forbids harvest while retaining
   consultation. No host switch or automatic transcript/retire capture remains;
   `knowledge-maintainer` reviews the resulting Git PRs.
+- **`oats.aweb-tasks`** (in the `oats.aweb` package from 1.31.0) fills the
+  tasks slot with aweb tasks, acting as the instance's own `oats.aweb`
+  identity in its default team. **An existing workspace opts in** by pinning
+  `oats.aweb: v1.31.0` (or later), adding
+  `tasks: { oats.aweb-tasks: { from: package } }` to `defaults`, and running
+  `oats sync`. Only new spawns get it, and a soul that already has a tasks
+  provider keeps it (`E_SLOT_CONFLICT` names a soul selecting two). A soul can
+  opt out with `tasks: none`.
 - **`oats.aweb`** mints a messaging identity for each instance at spawn and
   removes it at retire, contributes the aweb messaging skills, and wires the
   channel so sessions are woken by mail. Under `delivery: channel`, Claude Code
