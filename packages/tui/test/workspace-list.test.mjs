@@ -55,12 +55,13 @@ const REVERSE = (cell) => cell.style.reverse === true;
 const UNDERLINE = (cell) => cell.style.underline === true;
 const QUESTION = Object.freeze({ since: "2026-10-11T09:56:00.000Z", producer: "claude", reason: "question", message: "Which base should it use?" });
 
-/** A and `names.length` more workspaces served, each a deployment of its own at /srv/<name>, A open again. */
-function many(names) {
+/** A and `names.length` more workspaces served, each a deployment of its own at /srv/<name>, A open
+ *  again; in those of `waiting` an instance needs input. */
+function many(names, waiting = []) {
   let state = A();
   for (const name of names) {
-    const path = `/srv/${name}`;
-    state = took(go(state, path).state, observed([instanceRow("w", `${name}-a`, { home: `${path}/agents/w/instances/${name}-a` })], { workspace: name }), ++cycle, path);
+    const path = `/srv/${name}`, asks = waiting.includes(name) ? { waitingOnYou: { ...QUESTION } } : {};
+    state = took(go(state, path).state, observed([instanceRow("w", `${name}-a`, { home: `${path}/agents/w/instances/${name}-a`, ...asks })], { workspace: name }), ++cycle, path);
   }
   return go(state, A().open).state;
 }
@@ -91,6 +92,23 @@ test(`more than ${LIST_LINES} workspaces: ${LIST_LINES - 1} of them, windowed ar
   const focused = keys(state, ["w", "down", "down", "down", "down"]);
   assert.equal(focused.focus, "workspaces");
   assert.deepEqual(listRows(focused, 6), [`  ${labels[2]}`, `  ${labels[3]}`, `> ${labels[4]}`, `  ${labels[5]}`, "  +3", ""]);
+});
+
+test(`more than ${LIST_LINES} workspaces: +N has the dot one cell after it when an instance of a workspace it counts needs input, and the help's Marks say so`, () => {
+  const names = ["w1", "w2", "w3", "w4", "w5", "w6"];
+  const hidden = many(names, ["w6"]);
+  assert.deepEqual(listRows(hidden, 5), ["  acme-platform", "  w1", "  w2", "  w3", `  +3 ${WAITING_DOT.utf8}`]);
+  assert.equal(draw(hidden).cells[4][5].style.fg, "yellow");
+  assert.equal(listRows({ ...hidden, ascii: true }, 5)[4], `  +3 ${WAITING_DOT.ascii}`);
+  assert.equal(listRows({ ...hidden, colour: false }, 5)[4], `  +3 ${WAITING_DOT.ascii}`, "no colour: !");
+  // A waiting workspace shown has its own dot, and +N has none.
+  const shownOne = many(names, ["w1"]);
+  assert.deepEqual(listRows(shownOne, 5).slice(1), [`  w1 ${WAITING_DOT.utf8}`, "  w2", "  w3", "  +3"]);
+  // The window moves with the cursor: w6 shown, the dot is on its row, and +N counts A, w1 and w2.
+  const moved = keys(hidden, ["w", "end"]);
+  assert.deepEqual(listRows(moved, 5), ["  w3", "  w4", "  w5", `> w6 ${WAITING_DOT.utf8}`, "  +3"]);
+  const help = draw(key(hidden, "?").state, { cols: 120, rows: 300 }).lines;
+  assert.ok(help.some((line) => line.includes(`+N ${WAITING_DOT.utf8}`) && line.includes("among the workspaces: N not shown, and an instance")), "the help's Marks");
 });
 
 test("the dot: one cell after the name of each workspace where an instance needs input, the open one included: ● in yellow, ! in ASCII and with no colour; unknown or stale is no dot", () => {
@@ -155,6 +173,22 @@ test("the leader then Down opens the next workspace and Up the one before, as th
   const end = leaderThen(settle(took(down.state, B_ENTRY(), ++cycle, OTHER)), "down");
   assert.equal(end.state.open, OTHER);
   assert.deepEqual(end.state.outcome?.said, WORKSPACE_WORDS.below(), "this computer's deployments not opened are not rows: nothing is below B");
+});
+
+test("with the list of workspaces focused (w), the leader then Up at the top says so and the focus stays in the list, its cursor where it was; a move opens the workspace and gives the instances the focus, as Enter does", () => {
+  const focused = key(withListed(served()), "w").state;
+  const cursors = (d) => d.lines.map((line, row) => (line.startsWith(">") ? row : -1)).filter((row) => row >= 0);
+  const up = leaderThen(focused, "up").state;
+  assert.deepEqual(up.outcome?.said, WORKSPACE_WORDS.above());
+  assert.deepEqual([up.view, up.focus, up.workspaceCursor], ["instances", "workspaces", focused.workspaceCursor]);
+  assert.deepEqual(cursors(draw(up)), [0], "the > is the list of workspaces' still, on the open row");
+  // The cursor moved to B first: the open row, A, is still the first, and the cursor stays on B.
+  const onB = key(focused, "down").state;
+  const upB = leaderThen(onB, "up").state;
+  assert.deepEqual([upB.open, upB.focus, upB.workspaceCursor, upB.outcome?.said], [focused.open, "workspaces", onB.workspaceCursor, WORKSPACE_WORDS.above()]);
+  assert.deepEqual(cursors(draw(upB)), [1]);
+  const down = leaderThen(focused, "down").state;
+  assert.deepEqual([down.open, down.focus], [OTHER, "list"]);
 });
 
 test("with no workspace open (the switcher shown, the open one gone) the leader then Down opens the first row the list would hold and Up its last", () => {
@@ -225,6 +259,32 @@ test("only the region with the focus draws >: with the list of workspaces focuse
   assert.equal(focused.lines[row].startsWith(" "), true);
   assert.equal(focused.cells[row][0].style.reverse, true, "the selection is kept, in reverse video");
   assert.deepEqual(cursors(draw(key(key(state, "w").state, "escape").state)), [row], "Esc: the > is the instances' again");
+});
+
+test("No workspace above this one. stands in the empty row under the list: nothing else moves while it shows, at any size; a list of instances that fills the sidebar, with no such row, gives up its last row for it", () => {
+  const state = withListed(served());
+  const heading = (lines) => lines.findIndex((line) => line.startsWith(" Instances"));
+  for (const size of [{ cols: 160, rows: 45 }, { cols: 100, rows: 30 }, { cols: 80, rows: 24 }, { cols: 60, rows: 24 }]) {
+    const before = draw(state, size).lines, after = draw(leaderThen(state, "up").state, size).lines;
+    const at = heading(before);
+    assert.equal(heading(after), at, `${size.cols}x${size.rows}: the list of instances has not moved`);
+    assert.equal(before[at - 1].slice(0, 38).trim(), "", "the row under the list was empty");
+    assert.equal(after[at - 1].startsWith(" No workspace above this one."), true, `${size.cols}x${size.rows}: the line stands in it`);
+    assert.deepEqual(after.filter((_, i) => i !== at - 1), before.filter((_, i) => i !== at - 1), `${size.cols}x${size.rows}: no other row changed`);
+  }
+  // Instances enough to fill the sidebar at 80x24: the list scrolls, and no row is empty under the
+  // list of workspaces. The line takes a row, and the list of instances its last one.
+  const fullA = stateOf(observed(Array.from({ length: 30 }, (_, i) => instanceRow("dev", `dev-${String(i).padStart(2, "0")}`))));
+  const long = go(took(go(fullA, OTHER).state, B_ENTRY(), ++cycle, OTHER), fullA.open).state;
+  const size = { cols: 80, rows: 24 };
+  const before = draw(long, size).lines, after = draw(leaderThen(long, "up").state, size).lines;
+  const at = heading(before);
+  assert.equal(before[at - 1].startsWith("  acme-billing"), true, "no empty row under the list");
+  assert.deepEqual([heading(after), after[at].startsWith(" No workspace above this one.")], [at + 1, true]);
+  const side = (lines) => lines.map((line) => [...line].slice(0, 38).join(""));
+  const end = before.findIndex((line) => line.includes("more below"));
+  assert.deepEqual(side(after).slice(at + 1, end), side(before).slice(at, end - 1), "the heading and the list's rows, a row lower, but for the last");
+  assert.match(after[end], /^ {3}16 more below/);
 });
 
 test("No workspace above this one. goes at the next key of any kind, one bound to nothing included, and at what only the loop sees (a key typed to an agent, a resize); the line after an open stays at those", () => {

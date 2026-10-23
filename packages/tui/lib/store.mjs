@@ -681,12 +681,16 @@ function toWorkspaces(state) {
  *  or after the open one's, as the list draws them (the shared workspaceStep: rows that do not open
  *  are passed over, and it does not wrap), opened as a pick of it opens it. From the terminal's
  *  focus it is kept for the workspace left (layoutOf); from anywhere else what is open is settled
- *  first, as for the leader's other keys (toList). At an end, the line says so and nothing moves. */
+ *  first, as for the leader's other keys (toList). At an end, the line says so and nothing moves:
+ *  with the list of workspaces' focus, the focus stays there, its cursor where it was. */
 function workspaceMoved(state, step, inTerminal) {
   const settled = inTerminal ? { state, effect: null } : toList(state), s = settled.state;
   const list = workspaceList(s), key = workspaceStep(list.rows, list.current, step);
   const item = key === null ? null : listChoice(s, key);
-  if (item === null) return { state: next(s, { outcome: Object.freeze({ said: step < 0 ? WORKSPACE_WORDS.above() : WORKSPACE_WORDS.below(), under: Object.freeze([]), once: true }) }), effect: settled.effect };
+  if (item === null) {
+    const kept = state.view === "instances" && state.focus === "workspaces" ? { focus: "workspaces", workspaceCursor: state.workspaceCursor } : {};
+    return { state: next(s, { ...kept, outcome: Object.freeze({ said: step < 0 ? WORKSPACE_WORDS.above() : WORKSPACE_WORDS.below(), under: Object.freeze([]), once: true }) }), effect: settled.effect };
+  }
   const moved = picked(s, item) ?? { state: s, effect: null };
   return { state: moved.state, effect: both(settled.effect, moved.effect) };
 }

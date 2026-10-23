@@ -683,7 +683,7 @@ export function workspaceList(state, at) {
   return list;
 }
 /** The most lines the list stands on; more are windowed, and the last line says how many are not
- *  shown (`+N`). */
+ *  shown (`+N`), with the dot when an instance of one of them needs input. */
 export const LIST_LINES = 5;
 /** How many rows stand at the top of the sidebar (views/frame.mjs layout's `list`): the list's,
  *  LIST_LINES at most, while a workspace is open and the switcher is not shown; else the title's
@@ -695,8 +695,9 @@ export function listRowsOf(state, at) {
 }
 /** The list as the sidebar draws it (views/workspaces.mjs): its lines windowed around the cursor
  *  while the list has the focus, else around the open workspace's row; `more` how many are not
- *  shown; `focused`; `cursor` the cursor's row key, null without the focus. Null while nothing is
- *  listed (no workspace open, or the switcher shown): the title stands there. */
+ *  shown, and `moreWaiting` whether one of those is waiting; `focused`; `cursor` the cursor's row
+ *  key, null without the focus. Null while nothing is listed (no workspace open, or the switcher
+ *  shown): the title stands there. */
 function listModel(state, under, at) {
   if (under === "switcher" || state.open === null) return null;
   const list = workspaceList(state, at);
@@ -706,13 +707,15 @@ function listModel(state, under, at) {
   return { ...listWindow(list.lines, cursor ?? list.current), focused, cursor };
 }
 /** The lines the list draws, windowed around `keep` (the focused row, else the open one): all of
- *  them when they fit, else LIST_LINES - 1 of them, and `more`, how many are not shown. */
+ *  them when they fit, else LIST_LINES - 1 of them, and `more`, how many are not shown, and
+ *  `moreWaiting`, whether one of those is `waiting`. */
 export function listWindow(lines, keep) {
-  if (lines.length <= LIST_LINES) return { lines, more: 0 };
+  if (lines.length <= LIST_LINES) return { lines, more: 0, moreWaiting: false };
   const height = LIST_LINES - 1, at = Math.max(0, lines.findIndex((line) => line.key === keep));
   const top = Math.min(Math.max(0, at - Math.floor(height / 2)), lines.length - height);
   const shown = lines.slice(top, top + height);
-  return { lines: shown, more: lines.length - shown.length };
+  const moreWaiting = lines.some((line, i) => (i < top || i >= top + height) && line.waiting);
+  return { lines: shown, more: lines.length - shown.length, moreWaiting };
 }
 /** The window of the switcher's `items` in a pane `height` rows tall, from `top`, that holds the choice
  *  `key` and, while they fit, the indicator lines under it (scroll.mjs windowOf, asked to keep the last

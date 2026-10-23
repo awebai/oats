@@ -131,7 +131,9 @@ while a terminal is open); under 80 columns it has the whole width.
   the sidebar's width: a deployment's state when it is not live, with
   `since …` and its reason on rows of its own; the note of a view of one
   deployment; and the line that says what happened after an open, an act or
-  a spawn. Then an empty row.
+  a spawn. Then an empty row. A line that goes at the next key and fits one
+  row (`No workspace above this one.`) stands in that empty row instead, so
+  nothing under it moves.
 - **The views** follow as an accordion, always in this order: `Instances`,
   `Souls`, `Capabilities`, each with its key dim at the right edge. The open
   view's heading is bold and its list stands under it, with a rule between
@@ -872,7 +874,8 @@ workspace the list is its row.
   is not UTF-8.
 - **Five rows at most.** With more, four stand around the open row (around
   the cursor's while the list has the focus), and `+N` says how many
-  workspaces are not shown. Under 80 columns or beside a terminal (30
+  workspaces are not shown, with the dot one cell after it when an instance
+  of one of them needs input (`+3 ●`; the help's Marks say so too). Under 80 columns or beside a terminal (30
   columns) the names are cut as the list of instances cuts them.
 
 **The keys:**
@@ -881,7 +884,11 @@ workspace the list is its row.
   open one, as the list draws them. It does not wrap: at an end nothing
   moves, and the line under the list says `No workspace above this one.` or
   `No workspace below this one.` until the next key, of any kind (one typed
-  to an agent too), or a resize. A workspace with a deployment of this
+  to an agent too), or a resize. The line stands in the empty row under the
+  list, so the list of instances does not move while it shows; only when
+  that list fills the sidebar, which then has no such row, does the line
+  take a row, the list giving up its last. With the list's focus (`w`) the
+  focus stays there, the cursor where it was. A workspace with a deployment of this
   machine not opened yet (lfx, with `~/Work/lfx` on this computer's list)
   opens it first, as the switcher's `Enter` does. What the workspace left
   had open is kept for it, as for a switch from the
