@@ -87,6 +87,10 @@ ask the PR's second reader once you approve, at that head (`/cross-review-peer`)
 ## Merge
 - Only with the authority for it, an approval at the current head, its second reader's
   verdict at that head (`/cross-review-peer`), and green CI.
+- **The release lane's sign-off at that head,** when the lane map asks for one on this
+  merge: on every merge in your lane, or on a significant one (`/cross-review-peer`, "The
+  release lane"). It is on the PR, from the release
+  lane's maintainer; a sign-off at an earlier head carries only as the verdicts do.
 - **No hold.** The PR doesn't carry the hold label, and no open issue with that label holds
   the default branch (`/cross-review-peer`).
 - **Did the default branch move since CI ran on this head?** Then CI hasn't seen what you

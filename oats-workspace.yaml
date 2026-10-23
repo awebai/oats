@@ -21,12 +21,12 @@ members:
 # decision to trust it; oats-lock.json records its commit and integrity.
 packages:
   oats.framework: v1.13.5
-  oats.okf: v5.2.1
+  oats.okf: v5.3.0
   oats.aweb: v1.31.0
   oats.jira: v1.0.1
   oats.linear: v1.0.1
   oats.authoring: v1.0.3
-  oats.engineering: v1.10.0
+  oats.engineering: v1.11.0
   oats.cloning: git:github.com/awebai/oats-cloning@v1.0.1   # bare version once every deployment's CLI carries the catalog entry
   oats.apps: git:github.com/awebai/oats-apps@v1.0.0   # bare version once every deployment's CLI carries the catalog entry
 

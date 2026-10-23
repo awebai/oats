@@ -57,7 +57,8 @@ any other, at an exact head, by its second reader: the one your lane names, or, 
 peer, the reviewer you agreed with your human (`/cross-review-peer`).
 
 ## Write the plan down
-**One maintainer owns a release:** with peers, the lane map names who (`/cross-review-peer`).
+**One maintainer owns a release:** the release lane's maintainer (`/cross-review-peer`, "The
+release lane").
 The owner writes the plan on the forge, in an issue or in the release-prep PR, before the
 first merge of the plan: the version; PRs in, and those out with their reasons; the merge
 order; who reviews the release-prep PR; the gates still to run; what users must do. Your

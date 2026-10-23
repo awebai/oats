@@ -6,7 +6,7 @@ kernel owns slot selection, composition and command dispatch; the capability
 owns its knowledge format, instructions and promotion procedure. The model is
 in [Knowledge, instances and evolving expertise](knowledge-theory.md).
 
-This is the operator guide for **oats.okf 5.2.1** (OATS **>=0.49.0**). Provider implementation and
+This is the operator guide for **oats.okf 5.3.0** (OATS **>=0.49.0**). Provider implementation and
 recovery details belong to the [oats-okf README](https://github.com/awebai/oats-okf).
 
 | Surface | What it holds |
@@ -25,7 +25,7 @@ recovery details belong to the [oats-okf README](https://github.com/awebai/oats-
 ```yaml
 # oats-workspace.yaml (excerpt)
 packages:
-  oats.okf: v5.2.1
+  oats.okf: v5.3.0
 defaults:
   knowledge: { oats.okf: { from: package } }
 stores:
@@ -50,15 +50,18 @@ settings:
 
 Upgrading from 4.x requires the ordered
 [5.0 cutover](release-notes/v0.49.0.md#oatsokf-50-cutover--order-matters), not
-just editing a version line. For 5.2.1, OATS >=0.49.0 remains required:
+just editing a version line. For 5.3.0, OATS >=0.49.0 remains required:
 that kernel first supports the public source-event lookup after retirement.
 
-**Upgrade:** pin `oats.okf: v5.2.1` and run `oats sync`. Only new spawns get
+**Upgrade:** pin `oats.okf: v5.3.0` and run `oats sync`. Only new spawns get
 the capability-owned harvest duty, skill and spawn-recorded policy. Existing
 homes keep their copied provider even after a session restart. Deployments
 whose briefings never mentioned harvesting now get knowledge proposals at
-eligible checkpoints; souls not ready for this must declare
+the harvest checkpoints; souls not ready for this must declare
 `knowledge: { harvest: off }`. Consultation and instance-memory upkeep remain.
+From 5.2.x, 5.3.0 adds the long-lived-role checkpoints and the checkpoint
+line in `log.md`, drops the available-memory gate, and has the proposer name
+each harvester (`--name`, below).
 
 ### Bindings document
 
@@ -170,13 +173,19 @@ changes the soul declaration. `knowledge: none` removes the layer entirely.
    means no harvest, and `unknown` or an error means stop and report, never
    infer permission or edit the record. Working instances never write
    accepted knowledge themselves.
-2. **Propose only at a finished task or PR hand-over.** First update state,
-   log and relevant notes. Apply `knowledge-theory` and search accepted
-   knowledge (`oats okf search`, then `cat`): already accepted with nothing
-   to add means no proposal. Most checkpoints propose nothing. Make at most
-   **one proposal for that completed unit of work**; handing over its PR and
-   closing the same task are not two opportunities. Never launch per commit,
-   per decision, per review round or merely because a PR opened.
+2. **Propose at each harvest checkpoint.** The checkpoints are a PR handed
+   over for review and a finished task. In a long-lived role whose task
+   never finishes (a maintainer, an expert holding an area, a support desk),
+   they also include a feature ready, a release or deploy shipped, and a
+   direction decision taken with the human. A commit, a review round, a new
+   head of the same PR and each decision made while working are not
+   checkpoints: those are captured in `notes/`, and the next checkpoint
+   carries them. First update state, log and relevant notes. Apply
+   `knowledge-theory` and search accepted knowledge (`oats okf search`, then
+   `cat`): already accepted with nothing to add means no proposal. Make **one
+   proposal per checkpoint, carrying only what no earlier proposal carried**,
+   and record every checkpoint in `log.md`, either with its proposal and
+   harvester or with `nothing to propose` and the reason.
 
    Write a short self-contained `proposals/<YYYY-MM-DD>-<slug>.md` in instance
    home: What (one claim per concept), Why, Evidence (observations, dates,
@@ -187,22 +196,25 @@ changes the soul declaration. `knowledge: none` removes the layer entirely.
    nodes; a lesson for a node the soul only reads is named in one line in its
    hand-back for that node's owner.
 
-   **Before spawning:** one harvester at a time per instance. Record its
-   returned name and proposal in log.md, and do not spawn another while
-   `oats status` still lists the last one. Check available memory immediately
-   before spawning: on Linux, `free -g` must show at least 8 GB available;
-   elsewhere use the host's documented check. If availability cannot be
-   established, is below the floor, or the host is under memory pressure,
-   defer. These are instructions, not a scheduler or a memory reservation.
-   Keep deferred proposals/notes and record the reason and waiting claims in
-   STATE.md, log.md and the hand-back. Reconsider at a natural task boundary,
-   never by polling, sleeping or stopping other instances to make room.
+   **Before spawning:** one harvester at a time per instance. Do not spawn
+   another while `oats status` still lists the last one: keep the proposal
+   pending in STATE.md and log.md, add the next checkpoint's claims to it,
+   and launch it at that checkpoint once the last harvester is gone. Never
+   poll, sleep or stop other instances to make room. (5.3.0 removed the
+   5.2.x available-memory gate.)
 
-   From instance home, preview and then apply the skill's command when the
-   gates permit it:
+   **The proposer names its harvester.** For each new proposal,
+   **okf-propose** prints a fresh name: up to 21 characters of the source
+   instance's name, a dash, a random UUID without dashes, and `-harvester`,
+   64 characters at most (the kernel's and aweb's alias limit). The proposer
+   records it with the proposal in log.md before the preview, checks that
+   `oats status` doesn't list it, and uses it unchanged in both the preview and
+   the apply. Never leave the name to the kernel's numbered default: a retired
+   harvester's messaging alias can stay occupied with no instance listed, and
+   a numbered name can land on it.
 
    ```sh
-   oats spawn oats.okf/knowledge-harvester --task-file <proposal> --relation unrelated
+   oats spawn oats.okf/knowledge-harvester --name <harvester-name> --task-file <proposal> --relation unrelated
    ```
 
    Never combine `--relation unrelated` with `--relative-to`, or override
@@ -214,7 +226,12 @@ changes the soul declaration. `knowledge: none` removes the layer entirely.
    evidence before capture, so do not dispose of it before capture.
    Missing source authority never permits inventing it.
 
-   A refused or uncertain spawn is reported, not retried in a loop. If the
+   A refused or uncertain spawn is reported, not retried in a loop. On
+   `E_INSTANCE_NAME_TAKEN`, the proposer stops and reports the name and the
+   refusal: no `--purpose`, no counter, no new UUID in a retry. A messaging
+   identity failure (for example a stale certificate on the alias) is
+   reported to the operator; the proposer never removes certificates or
+   renames around it. If the
    last harvester is still listed at hand-back, name it and the claims still
    waiting; do not wait for it or spawn around it. A harvester retained after
    a publication failure stays listed and holds back later proposals. Once
