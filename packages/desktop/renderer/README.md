@@ -8,7 +8,13 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
 
 ## Views (`views/`)
 
-- **spawn.mjs** — **Workspace**, with Souls / Capabilities / Sources subtabs.
+- **spawn.mjs** — **Workspace**, with Souls / Capabilities / Automations / Teams / Setup subtabs
+  (`workspace-discovery.mjs` `workspaceTabs`). Souls and Automations are panels the view owns:
+  Automations mounts `automations.mjs` `createAutomationsStage` (Schedules | Triggers) while its
+  tab is shown and disposes it on leaving (`syncAutomations`). It was a page of its own until
+  Pepe's sidebar layout (2026-10-23): `shell-nav.mjs` NAV is Deployments and Workspace, and its
+  NAV_TABS route `stage.automations` (⌘3 / Ctrl+3), the palette's **View: Automations** and
+  every `showStage("automations")` / `ctx.openView("automations")` to this page on that tab.
   Souls come from `GET /api/agents` (the kernel's `oats souls` catalog),
   grouped by **Repo** (the default: the member repository, the host first,
   then packages with their pinned version, then external souls) or **Team**
@@ -25,7 +31,7 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   (see below), which previews through the kernel and applies through the
   confirmed `/api/spawn?ws=` transaction. An empty opening instruction waits
   for instructions; attached-mode souls cannot launch standalone. The shell's
-  **Spawn instance** footer navigates to soul selection; it does not launch.
+  **Spawn instance** (the sidebar tools' small **+**) navigates to soul selection; it does not launch.
   Capability facts and source provenance use negotiated read-only inspection,
   never inferred membership, installation or remote discovery. Shared CLI recovery
   stays visible across subtabs; incompatible installations are observation-only.
@@ -424,11 +430,17 @@ A window shows a workspace **view**: one matched workspace identity across machi
 not read the panel. What they say (a deployment's state in words, the primary, the roster
 split into sections) is `packages/client/roster-sections.mjs`.
 
+- **The sidebar, top to bottom** (Pepe, 2026-10-23): the Workspaces heading (a `.ctx-head`, as
+  the Instances one, with **Add local workspace…** at its end; no logo, no rule) over the list;
+  the Instances heading over the roster; at the bottom (`#nav-foot`) the nav, Deployments and
+  Workspace side by side (icons alone in a nav too narrow for both labels: a container query
+  hides each label visually, and it stays the button's name), then the tools: sidebar, theme,
+  shortcuts and **Spawn instance** (a small icon button). Settings and the palette have no
+  button: the palette has **Settings: Connections…**, and its own chord.
 - **No deployments above the navigation.** The sidebar lists no deployments; the Deployments
   page and the roster headings say where things run (UI spec, after the operator rejected a
-  deployments block under the workspace switcher). The list of workspaces above the
-  navigation lists views.
-- **The list of workspaces** (`workspace-switcher.mjs`, `#ws-list` under the sidebar's head,
+  deployments block under the workspace switcher). The list of workspaces lists views.
+- **The list of workspaces** (`workspace-switcher.mjs`, `#ws-list` under the sidebar's Workspaces heading,
   always shown; docs/desktop.md, "Workspaces"): one row per served view, whatever machine it is
   on, the matched views first, then the unattached ones, in ONE `<ul>` with no heading. A list
   of buttons, not a listbox, so the sidebar's plain keys stay live on it (shell.mjs
@@ -1526,8 +1538,8 @@ section is the module map.
   by the shell at startup and on window focus; `setKeyboardLayoutMap` for
   tests), since ⌥ changes `key`; a character AltGr typed is never aliased.
 - **focus-regions.mjs** — F6 / Shift+F6 (`focus.nextRegion`/`prevRegion`,
-  outside a terminal; `focus.leaveTerminal` from inside one): sidebar nav →
-  roster → main → instance panel, hidden regions skipped, each region's
+  outside a terminal; `focus.leaveTerminal` from inside one): workspaces →
+  roster → sidebar footer (the nav) → main → instance panel, hidden regions skipped, each region's
   current item focused, never `<body>`. F6 and the tab switches are no-ops
   under an open modal.
 - **surface-return.mjs** — "back to where you were" after a flow that moved

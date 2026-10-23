@@ -123,7 +123,7 @@ test("the section is labelled and keyboard-operable, built from the Settings com
     "the shipped default store is the composition the tests use");
 });
 
-test("Settings mounts Terminal after Connections, traps Tab through its field, and disposes it on close; the button is titled Settings", async t => {
+test("Settings mounts Terminal after Connections, traps Tab through its field, and disposes it on close; it opens from the palette and its action", async t => {
   const dom = new JSDOM('<!doctype html><body><button id="opener">Settings</button></body>', { pretendToBeVisual: true });
   t.after(() => dom.window.close());
   const doc = dom.window.document;
@@ -151,7 +151,11 @@ test("Settings mounts Terminal after Connections, traps Tab through its field, a
   assert.equal(disposed, 1, "closing Settings drops the section's subscription");
   assert.equal(doc.querySelector('[role="dialog"]'), null);
   const html = read("index.html");
-  assert.match(html, /id="sidebar-settings"[^>]*\n?\s*title="Settings" aria-label="Settings"/);
+  // Pepe's sidebar layout (2026-10-23): no Settings button in the sidebar; Settings stays in the palette and the
+  // registry (app.connections), both opening this dialog.
+  assert.doesNotMatch(html, /id="sidebar-settings"|data-action="app\.connections"/);
+  assert.match(shell, /\{ label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: \(\) => openConnections\(\) \}/);
+  assert.match(shell, /registerAction\(\{ id: "app\.connections", label: "Settings: Connections", context: "global", run: \(\) => openConnections\(\) \}\);/);
   assert.match(shell, /sections: \[\(\) => createTerminalSettings\(\{ doc: document, chords: \{/);
   assert.match(shell, /connectionsCSS \+ settingsTerminalCSS/);
 });

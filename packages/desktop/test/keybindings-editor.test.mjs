@@ -6,6 +6,7 @@ import {
 } from "../renderer/keybindings.mjs";
 import { createKeybindingsEditor, groupActions, shortcutMatches, CHORD_FAMILY_WORDS } from "../renderer/keybindings-editor.mjs";
 import { createChordFamily } from "../renderer/chord-family.mjs";
+import { NAV, NAV_TABS } from "../renderer/shell-nav.mjs";
 
 // storage stub so overrides work in node
 const map = new Map();
@@ -658,6 +659,20 @@ const LEADER_EXTRA = [
   ["sidebar.key.instances", "Instances", "sidebar"],
   ["sidebar.key.help", "Edit keyboard shortcuts", "sidebar"],
 ];
+
+// The stage rows above are labelled as the shell labels them: `View: <label>` of NAV and NAV_TABS, so
+// Automations, now a tab of the Workspace page (NAV_TABS), still reads "View: Automations" in the editor.
+test("the stage rows' labels are the shell's, Automations' from NAV_TABS", async () => {
+  const { readFileSync } = await import("node:fs");
+  const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  assert.match(shell, /\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(\{\n  id: `stage\.\$\{v\.name\}`, label: `View: \$\{v\.label\}`/);
+  for (const [id, label] of LEADER_EXTRA.filter(([id]) => id.startsWith("stage."))) {
+    const entry = [...NAV, ...NAV_TABS].find((v) => `stage.${v.name}` === id);
+    assert.ok(entry, `${id} is a shell destination`);
+    assert.equal(label, `View: ${entry.label}`, id);
+  }
+  assert.ok(NAV_TABS.some((v) => v.name === "automations"));
+});
 
 // The group moves as the shell registers them (shell.mjs), so the leader's Tab and Shift+Tab rows
 // carry their labels.

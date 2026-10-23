@@ -12,7 +12,7 @@ import { createInstanceGitPanel } from "../renderer/instance-git.mjs";
 import { createInstanceTeamsSection } from '../renderer/instance-teams.mjs';
 import { createInstanceSoulSection } from '../renderer/instance-soul.mjs';
 import { THEMES } from "../renderer/theme.mjs";
-import { NAV } from "../renderer/shell-nav.mjs";
+import { NAV, NAV_TABS, navTab } from "../renderer/shell-nav.mjs";
 import { shellIcon, mountShellIcons } from "../renderer/shell-icons.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
@@ -52,7 +52,7 @@ function shell(t, shellSource = source, { storage = {}, gitPanel } = {}) {
   const loads = [], events = [], notices = [], offs = [];
   const c = {
     document, window: dom.window, localStorage: dom.window.localStorage,
-    NAV, shellIcon, createContextPanel, createInstanceGitPanel: gitPanel ?? createInstanceGitPanel, createInstanceTeamsSection, createInstanceSoulSection, workspace: "A", generation: 0, events, notices,
+    NAV, NAV_TABS, navTab, shellIcon, createContextPanel, createInstanceGitPanel: gitPanel ?? createInstanceGitPanel, createInstanceTeamsSection, createInstanceSoulSection, workspace: "A", generation: 0, events, notices,
     connectionGeneration: 0, subscribeConnections: () => () => {},
     connections: { close() {}, open: () => events.push(['connections']) }, lifecycleDialog: { close() {} },
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
@@ -103,11 +103,17 @@ function shell(t, shellSource = source, { storage = {}, gitPanel } = {}) {
   };
 }
 
-test("provided workspace header structure and brand artwork are decorative; the list's semantics and ids survive", t => {
+test("the Workspaces head is a plain section heading with Add local workspace…; the list's semantics and ids survive", t => {
   const { document } = shell(t);
-  const head = document.querySelector("#sidebar > .side-head");
-  // The head is the brand, the list's heading and Add local workspace…; no trigger, no popup menu.
-  assert.deepEqual([...head.children].map(el => el.id || el.className), ["ws-brand-mark", "ws-heading", "ws-add-open"]);
+  const sidebar = document.getElementById("sidebar");
+  const head = document.getElementById("ws-heading").parentElement;
+  // Pepe's sidebar layout (2026-10-23): the Instances heading's style (.ctx-head), the heading then Add local
+  // workspace… at its right end; no logo, no bar of its own, no trigger, no popup menu.
+  assert.equal(head.parentElement, sidebar);
+  assert.ok(head.classList.contains("ctx-head"), "the same heading style as Instances");
+  assert.deepEqual([...head.children].map(el => el.id), ["ws-heading", "ws-add-open"]);
+  assert.equal(document.querySelector(".side-head, .ws-brand-mark, .ws-brand-image, .ws-brand-icon, [data-shell-icon=\"oats\"]"), null, "no logo or mark anywhere");
+  assert.equal(sidebar.querySelector("img"), null, "the sidebar shows no artwork");
   assert.equal(document.getElementById("ws-trigger"), null, "the dropdown's trigger is gone");
   assert.equal(document.getElementById("ws-menu"), null, "the dropdown's menu is gone");
   assert.equal(document.getElementById("ws-menu-search"), null, "the menu's search is gone");
@@ -115,20 +121,25 @@ test("provided workspace header structure and brand artwork are decorative; the 
   const addOpen = document.getElementById("ws-add-open");
   assert.equal(addOpen.tagName, "BUTTON"); assert.equal(addOpen.type, "button");
   assert.equal(addOpen.getAttribute("aria-label"), "Add local workspace…");
-  // The list sits between the head and the navigation (#482 UI spec: no deployments block there).
+  // Top to bottom: the head, the list right under it, Instances, then the footer (#482 UI spec: no deployments
+  // block there; the nav moved into the footer).
   assert.equal(document.getElementById("ws-deployments"), null);
-  assert.deepEqual([...document.getElementById("sidebar").children].slice(0, 3).map(el => el.id || el.className), ["side-head", "ws-list", "nav"]);
+  assert.deepEqual([...sidebar.children].map(el => el.id || el.className), ["ctx-head ws-head", "ws-list", "instance-roster", "nav-foot"]);
   const list = document.getElementById("ws-list");
   assert.equal(list.tagName, "SECTION");
   assert.equal(list.getAttribute("aria-labelledby"), "ws-heading");
   assert.equal(list.getAttribute("role"), null, "not a listbox: the sidebar's plain keys stay live on it");
   assert.ok(list.querySelector(":scope > #ws-options"));
-  const mark = head.querySelector(".ws-brand-mark");
-  assert.equal(mark.getAttribute("aria-hidden"), "true");
-  const image = mark.querySelector("img.ws-brand-image");
-  assert.equal(image.getAttribute("src"), "../assets/brand/generated/sidebar-48.png", "the generated 2x sidebar icon");
-  assert.equal(image.getAttribute("alt"), ""); assert.equal(image.getAttribute("width"), "24"); assert.equal(image.getAttribute("height"), "24");
-  assert.equal(head.querySelector(".ws-brand-icon, [data-shell-icon=\"oats\"]"), null, "the placeholder leaf is gone");
+  // No rule between the two sections: none under the head or the list, none on the roster's top. JSDOM does not
+  // expand a border shorthand that uses var(), so read the declarations of every shipped rule matching each element.
+  const drawn = (el, side) => [...document.styleSheets].flatMap(sheet => [...sheet.cssRules])
+    .filter(rule => rule.selectorText && (() => { try { return el.matches(rule.selectorText); } catch { return false; } })())
+    .flatMap(rule => rule.style.cssText.split(";").map(decl => decl.trim()).filter(Boolean).map(decl => `${rule.selectorText} { ${decl} }`))
+    .filter(text => new RegExp(`border(-${side})?(-width|-style)?:`).test(text) && !/:\s*(0(px)?|none)\s*\}$/.test(text));
+  assert.deepEqual(drawn(head, "top"), []); assert.deepEqual(drawn(head, "bottom"), []);
+  assert.deepEqual(drawn(list, "bottom"), [], "no rule under the list");
+  assert.deepEqual(drawn(document.getElementById("instance-roster"), "top"), [], "no rule on the roster's top");
+  assert.ok(drawn(document.getElementById("nav-foot"), "top").length, "the probe sees a rule where there is one (the footer's)");
   assert.match(source, /hasWorkspaceSwitcher: true/);
   const switcher = createWorkspaceSwitcher({ document, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) });
   t.after(() => switcher.dispose());
@@ -151,18 +162,58 @@ test("provided workspace header structure and brand artwork are decorative; the 
 
 test("only current destinations render, dispatch unchanged stage ids, and project aria-current", t => {
   const s = shell(t), buttons = [...s.document.querySelectorAll("#nav button")];
-  assert.deepEqual(buttons.map(b => b.textContent), ["Deployments", "Workspace", "Automations"]);
-  assert.deepEqual(buttons.map(b => b.dataset.action), ["stage.hierarchy", "stage.spawn", "stage.automations"]);
+  // Deployments and Workspace only: Automations is the Workspace page's tab (NAV_TABS), not a nav item.
+  assert.deepEqual(buttons.map(b => b.textContent), ["Deployments", "Workspace"]);
+  assert.deepEqual(buttons.map(b => b.dataset.action), ["stage.hierarchy", "stage.spawn"]);
+  assert.equal(s.document.querySelector('#nav [data-view="automations"]'), null);
+  assert.deepEqual(NAV_TABS.map(({ name, page, tab }) => ({ name, page, tab })), [{ name: "automations", page: "spawn", tab: "automations" }]);
   for (const button of buttons) {
     assert.equal(button.type, "button"); assert.ok(button.title); assert.ok(button.querySelector("svg"));
     button.click(); assert.deepEqual(s.events.at(-1), ["stage", button.dataset.view]);
     s.setNavActive(button.dataset.view);
     assert.deepEqual(buttons.filter(b => b.hasAttribute("aria-current")), [button]);
+    assert.deepEqual(buttons.filter(b => b.classList.contains("active")), [button]);
     assert.equal(button.getAttribute("aria-current"), "page");
   }
   s.setNavActive(null);
   assert.equal(s.document.querySelector("#nav [aria-current]"), null);
+  assert.equal(s.document.querySelector("#nav .active"), null);
   assert.equal(getBinding("stage.spawn"), "Mod+2", "Workspace is a label change, not a chord change");
+  // stage.automations keeps its chord and its registry entry, though it has no nav item of its own.
+  assert.equal(getBinding("stage.automations"), "Mod+3");
+  assert.equal(listActions().find(action => action.id === "stage.automations")?.label, "View: Automations");
+  runAction("stage.automations"); assert.deepEqual(s.events.at(-1), ["stage", "automations"]);
+});
+
+test("the nav sits in the footer above the tools: two items side by side whose labels never wrap and hide, not wrap, when narrow", t => {
+  const s = shell(t), q = id => s.document.getElementById(id), win = s.document.defaultView;
+  const nav = q("nav"), foot = q("nav-foot");
+  // Pepe's sidebar layout (2026-10-23): the nav took the old wide Spawn instance button's place.
+  assert.equal(nav.parentElement, foot);
+  assert.equal(nav.tagName, "NAV"); assert.equal(nav.getAttribute("aria-label"), "Main views");
+  assert.deepEqual([...foot.children].map(el => el.id), ["nav", "sidebar-tools"]);
+  assert.equal(win.getComputedStyle(nav).display, "flex");
+  assert.equal(win.getComputedStyle(nav).flexDirection, "row", "Deployments and Workspace side by side");
+  for (const button of nav.querySelectorAll(".nav-item")) {
+    assert.equal(win.getComputedStyle(button).whiteSpace, "nowrap", `${button.textContent}: a label never wraps`);
+    // The label is in the DOM, the button's only text, so it is the accessible name even while visually hidden.
+    const label = button.querySelector(":scope > .label");
+    assert.ok(label); assert.equal(label.textContent, button.textContent);
+    assert.equal(label.getAttribute("aria-hidden"), null); assert.equal(button.getAttribute("aria-label"), null);
+    assert.equal(button.querySelector(":scope > .icon svg").getAttribute("aria-hidden"), "true");
+  }
+  // JSDOM does not evaluate container queries: pin the shipped rule's text. The nav is the size container, and a
+  // narrow one visually hides each label (clip, 1px box), never display:none or visibility:hidden, which would
+  // take the name away.
+  const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
+  const navRule = css.match(/^#nav \{([^}]*)\}/m)?.[1] ?? "";
+  assert.match(navRule, /container-type:\s*inline-size/); assert.match(navRule, /container-name:\s*nav/);
+  const query = css.match(/@container nav \(max-width: \d+px\) \{\s*#nav \.nav-item \.label \{([^}]*)\}\s*\}/);
+  assert.ok(query, "the container query that hides the labels exists");
+  for (const decl of [/position:\s*absolute/, /width:\s*1px/, /height:\s*1px/, /overflow:\s*hidden/, /clip-path:\s*inset\(50%\)/, /white-space:\s*nowrap/]) {
+    assert.match(query[1], decl);
+  }
+  assert.doesNotMatch(query[1], /display:\s*none|visibility:\s*hidden/);
 });
 
 test("static SVG inventory stays 16px, hidden to AT and rejects arbitrary markup or inherited keys", t => {
@@ -179,27 +230,39 @@ test("static SVG inventory stays 16px, hidden to AT and rejects arbitrary markup
   }
 });
 
-test("footer has one honest chooser and five permanently named tools, all dispatching the real registry", async t => {
+test("footer tools are sidebar toggle, theme, shortcuts and a Spawn instance icon, all dispatching the real registry", async t => {
   const s = shell(t), q = id => s.document.getElementById(id);
   const foot = q("nav-foot"), tools = [...q("sidebar-tools").children];
   // No leader button: the shortcuts editor (a tool here, Mod+, and the palette) lists the leader's commands.
-  assert.deepEqual([...foot.children].map(el => el.id), ["sidebar-spawn", "sidebar-tools"]);
-  assert.deepEqual(tools.map(b => b.dataset.action), ["sidebar.toggle", "app.themePicker", "app.shortcuts", "app.connections", "app.palette"]);
+  // Settings and the command palette left the row (Pepe, 2026-10-23): both stay in the palette and on their chords.
+  assert.deepEqual(tools.map(b => b.id), ["sidebar-toggle", "sidebar-theme", "sidebar-shortcuts", "sidebar-spawn"]);
+  assert.deepEqual(tools.map(b => b.dataset.action), ["sidebar.toggle", "app.themePicker", "app.shortcuts", "app.chooseSoul"]);
+  for (const id of ["sidebar-settings", "sidebar-palette"]) assert.equal(q(id), null, `${id} is gone`);
+  assert.equal(foot.querySelector('[data-action="app.connections"], [data-action="app.palette"]'), null);
   for (const button of foot.querySelectorAll("button")) {
     assert.equal(button.type, "button"); assert.equal(button.hidden, false); assert.equal(button.disabled, false);
-    assert.ok(button.tabIndex >= 0); assert.ok(button.getAttribute("aria-label")); assert.ok(button.title);
+    assert.ok(button.tabIndex >= 0); assert.ok(button.title); assert.ok(button.getAttribute("aria-label") || button.textContent);
     assert.ok(button.querySelector('svg[aria-hidden="true"]'));
   }
-  q("sidebar-theme").click(); q("sidebar-shortcuts").click(); q("sidebar-settings").click(); q("sidebar-palette").click();
-  assert.deepEqual(s.events, [["themePicker"], ["shortcuts"], ["connections"], ["palette"]]);
+  for (const button of tools) assert.ok(button.classList.contains("nav-item") && button.classList.contains("icon-button"), `${button.id}: a small icon button`);
+  // Spawn instance: an icon button like its neighbours, its name and tooltip the plain words, its icon the plus.
+  const spawn = q("sidebar-spawn");
+  assert.equal(spawn.getAttribute("aria-label"), "Spawn instance");
+  assert.match(html, /id="sidebar-spawn" class="nav-item icon-button" type="button" data-action="app\.chooseSoul"\s+title="Spawn instance" aria-label="Spawn instance">/, "the markup says the same before scripts run");
+  assert.equal(spawn.title, "Spawn instance (Ctrl+Shift+N)", "the title is the label, then the bound chord");
+  assert.equal(spawn.querySelector("[data-shell-icon]")?.dataset.shellIcon, "plus");
+  assert.equal(spawn.textContent.trim(), "", "icon only: no visible label, no shortcut hint");
+  q("sidebar-theme").click(); q("sidebar-shortcuts").click();
+  assert.deepEqual(s.events, [["themePicker"], ["shortcuts"]]);
   assert.equal(getBinding('app.connections'), null, 'Connections does not invent a new global chord');
-  assert.match(q("sidebar-spawn").title, /Choose a soul/);
+  assert.match(source, /label: "Settings: Connections…"/, "Settings stays in the palette");
+  assert.ok(getBinding("app.palette"), "the palette keeps its chord");
   assert.equal(getBinding("app.chooseSoul", true), "Mod+N", "redesign shortcut chooses a soul, never launches one");
   assert.equal(getBinding("app.chooseSoul", false), "Ctrl+Shift+N", "Linux/Windows: Ctrl+Shift+N (spec F), Ctrl+N stays the program's");
-  const before = s.c.tabOpenIntents.begin(); q("sidebar-spawn").click();
+  const before = s.c.tabOpenIntents.begin(); spawn.click();
   assert.equal(before(), false); assert.equal(s.loads.length, 1);
   await s.settle(s.loads[0], "resolve");
-  assert.deepEqual(s.events.slice(4), [["tab", "souls"], ["stage", "spawn"]]);
+  assert.deepEqual(s.events.slice(2), [["tab", "souls"], ["stage", "spawn"]]);
   assert.match(source, /label: "Spawn instance: choose a soul in Workspace…", detail: chordDetail\("app.chooseSoul"\), run: \(\) => runAction\("app.chooseSoul"\)/);
 });
 
@@ -255,8 +318,17 @@ test("sidebar shortcuts keep Ctrl+B/F/N/P with the pty and dispatch Cmd+F/N on m
 test("visible shortcut hints and tooltips follow rebind, unbind and platform without changing labels", t => {
   const s = shell(t); s.c.isMac = true; s.applyChordTitles();
   t.after(() => { resetBinding("sidebar.focusFilter"); resetBinding("app.chooseSoul"); });
+  // The Spawn instance icon button has no visible hint (Pepe's sidebar layout): its tooltip carries the chord.
+  const spawn = s.document.getElementById("sidebar-spawn");
+  assert.equal(spawn.querySelector("[data-shortcut]"), null);
+  assert.equal(s.document.querySelector('[data-shortcut="app.chooseSoul"]'), null);
+  assert.equal(spawn.title, "Spawn instance (⌘N)");
+  setBinding("app.chooseSoul", "Mod+Shift+J"); assert.equal(spawn.title, "Spawn instance (⇧⌘J)");
+  setBinding("app.chooseSoul", null); assert.equal(spawn.title, "Spawn instance");
+  assert.equal(spawn.getAttribute("aria-label"), "Spawn instance", "the name never carries the chord");
+  resetBinding("app.chooseSoul"); assert.equal(spawn.title, "Spawn instance (⌘N)");
   for (const [action, initial, selector] of [
-    ["sidebar.focusFilter", "⌘F", ".ctx-filter"], ["app.chooseSoul", "⌘N", "#sidebar-spawn"],
+    ["sidebar.focusFilter", "⌘F", ".ctx-filter"],
   ]) {
     const hint = [...s.document.querySelectorAll('[data-shortcut]')].find(el => el.dataset.shortcut === action);
     const control = s.document.querySelector(selector), label = control.getAttribute("aria-label");
@@ -294,7 +366,7 @@ async function staleChooser(t, outcome, superseder, shellSource = source) {
   s.document.getElementById("sidebar-spawn").click(); const older = s.loads[0];
   if (superseder === "visit") { s.switchTo("B"); s.switchTo("A"); }
   if (superseder === "selection") s.c.tabOpenIntents.begin();
-  if (superseder === "stage") s.document.querySelector('#nav [data-view="automations"]').click();
+  if (superseder === "stage") s.document.querySelector('#nav [data-view="hierarchy"]').click();
   if (superseder === "palette") { runAction("app.palette"); runAction("app.palette"); }
   if (superseder === "shortcuts") runAction("app.shortcuts");
   if (superseder === "modal") s.document.getElementById("ws-modal").hidden = false;

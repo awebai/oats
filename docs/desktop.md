@@ -204,9 +204,16 @@ workspace on a server: `name — server`).
 
 ## Workspaces
 
-The top of the sidebar lists the workspaces, above the views and the
-instances, and is always shown. Its header holds **Add local workspace…** (the
-**+**). The list has one row per workspace this window can show, whatever
+The sidebar has two sections, each a heading over its list: **Workspaces**,
+then **Instances**. At the bottom are the two main views, **Deployments** and
+**Workspace**, side by side, and under them the tools: hide the sidebar, the
+theme, the keyboard shortcuts, and **Spawn instance** (a small **+**). In a
+sidebar too narrow for both labels the views show their icons alone, each
+named in its tooltip. Settings is in the command palette (**Settings:
+Connections…**), and the palette opens with its shortcut or Ctrl+X then `k`.
+
+The list of workspaces is always shown. Its heading holds **Add local
+workspace…** (the **+**). The list has one row per workspace this window can show, whatever
 machine it is on: every workspace the Desktop serves, those only on servers
 included, and the deployments no workspace matched ([One workspace, several
 machines](#one-workspace-several-machines)), after them in the same list.
@@ -220,8 +227,8 @@ below, a line under the list says how many ("2 more below").
   in an ellipsis, and the row's tooltip is the whole name.
 - **The current workspace** has an accent edge on its left and its name in
   bold, with no background of its own: the selection's background marks the
-  current page below (Deployments, Workspace…), so the sidebar fills one "you
-  are here" row. A screen reader hears it as current, and the list's
+  current page at the bottom (Deployments or Workspace), so the sidebar fills
+  one "you are here" row. A screen reader hears it as current, and the list's
   description names it, by the same name as its row.
 - **The yellow dot.** A row has a small yellow dot after its name when an
   instance of that workspace needs input: the claim the instance roster shows
@@ -568,7 +575,8 @@ deployment. Details are in
 
 ## Scheduling agents and wake messages
 
-Open **Schedules** in the selected workspace to launch a new agent on a cron,
+Open **Workspace › Automations › Schedules** in the selected workspace (⌘3 /
+Ctrl+3 lands on Automations) to launch a new agent on a cron,
 wake an existing agent with a message, or harvest its knowledge. **Schedule…**
 on a Soul roster card preselects that soul. Choose the task or message, repeat
 pattern and time zone; new agent jobs also offer harness, model, permissions

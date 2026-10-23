@@ -42,6 +42,7 @@ import { createLeaderDispatch } from "../renderer/leader-dispatch.mjs";
 import { leaderApplies, leaderLabel } from "../renderer/leader-keys.mjs";
 import { createLeaderHint, LEADER_ANNOUNCEMENT } from "../renderer/leader-hint.mjs";
 import { LEADER_TABLE } from "../../client/keymap.mjs";
+import { navTab } from "../renderer/shell-nav.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const names = [
@@ -65,7 +66,7 @@ function deferred() {
 const flush = () => new Promise(setImmediate);
 
 function shell(t, { shellSource = source, ownership = createSelectionOwnership, terminal = createTerminalTab, leader = false } = {}) {
-  const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><aside id="sidebar"><div id="instance-roster"><input id="entry" class="ctx-filter"><span class="ctx-count"></span><div class="ctx-list"></div></div><nav id="nav"><button class="nav-item active">Hierarchy</button></nav></aside>`);
+  const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><aside id="sidebar"><div id="instance-roster"><input id="entry" class="ctx-filter"><span class="ctx-count"></span><div class="ctx-list"></div></div><div id="nav-foot"><nav id="nav"><button class="nav-item active">Deployments</button></nav></div></aside>`);
   t.after(() => dom.window.close());
   const document = dom.window.document;
   // The shell's one window keydown listener (shell.mjs), on this harness's platform.
@@ -90,7 +91,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     stageHost: document.getElementById("stagehost"), stage: { name: "hierarchy" },
     navEl: document.getElementById("nav"), contextRosterEl: null,
     brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(),
-    workspaceLabel: { reset() {} }, stageSidebarMode: () => "overview", NAV: [{ name: "hierarchy" }],
+    workspaceLabel: { reset() {} }, stageSidebarMode: () => "overview", NAV: [{ name: "hierarchy" }], navTab /* the shipped NAV_TABS lookup: showStage reads it first */,
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     updateActiveContexts: (on = c.tabLayerVisible) => { c.tabLayerVisible = on; },
     // Panel behavior is covered with the real presenter in split-empty-shell.

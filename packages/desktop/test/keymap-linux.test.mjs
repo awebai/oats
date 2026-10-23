@@ -18,8 +18,10 @@ import {
   setKeyboardLayoutMap, readKeyboardLayout, getBinding, formatChord, isPlainChord,
   registerAction, setActiveContexts, resetAllBindings, setBinding, matchEvent, handleKeydown, findConflict, keymapConflicts,
   eventMatchesBinding, pickerCycleDirection, paletteGroupDirection, paletteGroupHint, chordFromKeyId,
-  setChordFamily, parseChord, terminalAllows, leaderLeftToField,
+  setChordFamily, parseChord, terminalAllows, leaderLeftToField, listActions, runAction, resetBinding,
 } from "../renderer/keybindings.mjs";
+import { runInNewContext } from "node:vm";
+import { NAV, NAV_TABS } from "../renderer/shell-nav.mjs";
 import { readdirSync } from "node:fs";
 import { appMenuTemplate } from "../app-menu.mjs";
 import { CHORDS, CHORD_FAMILIES, DEFAULT_CHORD_FAMILY, PALETTE_KEYS, paletteKey } from "../../client/keymap.mjs";
@@ -388,7 +390,36 @@ test("shell wiring: the new actions are registered, rebindable and discoverable"
   const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
   for (const id of ["tabs.nextPage", "tabs.prevPage", "focus.nextRegion", "focus.prevRegion", "focus.leaveTerminal", "terminal.copySelection"]) assert.match(src, new RegExp(`id: "${id.replace(".", "\\.")}"`), id);
   assert.match(src, /id: `tabs\.goto\$\{n\}`/, "go to tab 1–9");
-  assert.match(src, /NAV\.forEach\(\(v\) => registerAction\(\{\n  id: `stage\.\$\{v\.name\}`/, "stage.automations comes from the nav manifest");
+  assert.match(src, /\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(\{\n  id: `stage\.\$\{v\.name\}`/, "stage.automations comes from the nav manifests (NAV_TABS)");
+});
+
+// Automations left the nav for a tab of the Workspace page (Pepe, 2026-10-23); its action did not move:
+// the shipped registration, run as shipped, still makes stage.automations a global, rebindable action
+// on Mod+3 with its label, and it opens the name (showStage routes it to the page and tab).
+test("stage.automations: registered from NAV_TABS as shipped, \"View: Automations\", Ctrl+3 / ⌘3, rebindable", t => {
+  resetAllBindings();
+  const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  const statement = src.match(/\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(\{[^]*?\n\}\)\);/)?.[0];
+  assert.ok(statement, "the shipped stage registration");
+  const offs = [], opened = [];
+  runInNewContext(statement, { NAV, NAV_TABS, registerAction: action => { offs.push(registerAction(action)); }, showStageFocused: name => opened.push(name) });
+  t.after(() => { offs.forEach(off => off()); resetAllBindings(); });
+  const stages = listActions().filter(a => a.id.startsWith("stage.") && !a.id.includes(".", 6));
+  assert.deepEqual(stages.map(a => [a.id, a.label, a.context]), [
+    ["stage.hierarchy", "View: Deployments", "global"], ["stage.spawn", "View: Workspace", "global"], ["stage.automations", "View: Automations", "global"],
+  ]);
+  assert.equal(getBinding("stage.automations", false), "Mod+3"); assert.equal(getBinding("stage.automations", true), "Mod+3");
+  const out = { isMac: false, insideTerminal: false };
+  assert.equal(matchEvent(linux("3"), out), "stage.automations");
+  assert.equal(matchEvent(ev("3", { metaKey: true }), { isMac: true, insideTerminal: true }), "stage.automations", "⌘3, a terminal focused too");
+  assert.equal(runAction("stage.automations"), true); assert.deepEqual(opened, ["automations"]);
+  setBinding("stage.automations", "Ctrl+Alt+Shift+A");
+  assert.equal(matchEvent(linux("A", { altKey: true, shiftKey: true }), out), "stage.automations", "rebound");
+  assert.equal(matchEvent(linux("3"), out), null, "the old chord is free");
+  setBinding("stage.automations", null);
+  assert.equal(getBinding("stage.automations", false), null, "unbound");
+  resetBinding("stage.automations");
+  assert.equal(matchEvent(linux("3"), out), "stage.automations", "reset to Mod+3");
 });
 
 test("real targets: F6 cycles from text fields; in xterm's textarea F6 is the program's and Mod+Shift+F6 leaves", t => {

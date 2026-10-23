@@ -9,7 +9,8 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { withShellWindowGlobals } from './helpers/shell-window-globals.mjs';
 import { JSDOM } from "jsdom";
-import { NAV, stageSidebarMode } from "../renderer/shell-nav.mjs";
+import { NAV, NAV_TABS, navTab, stageSidebarMode } from "../renderer/shell-nav.mjs";
+import { isShown } from "../renderer/focus-regions.mjs";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs";
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
@@ -34,17 +35,20 @@ function deferred() {
   return { promise, resolve, reject };
 }
 function shell(t, shellSource = source) {
-  const dom = new JSDOM(`<body><span id="ws-context"></span><aside><section id="ws-list"><div id="ws-options"><button type="button" class="ws-option" tabindex="0" data-workspace-id="B">B</button></div></section><nav id="nav"></nav></aside>
+  const dom = new JSDOM(`<body><span id="ws-context"></span><aside><section id="ws-list"><div id="ws-options"><button type="button" class="ws-option" tabindex="0" data-workspace-id="B">B</button></div></section><div id="nav-foot"><nav id="nav"></nav></div></aside>
     <div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div>`);
   t.after(() => dom.window.close());
-  const document = dom.window.document, loads = [], contexts = [], focusCalls = [], navWrites = [];
+  const document = dom.window.document, loads = [], contexts = [], focusCalls = [], navWrites = [], preselected = [], regionCalls = [];
   const navEl = document.getElementById("nav");
   for (const view of NAV) {
     const b = document.createElement("button"); b.className = "nav-item";
     b.dataset.view = view.name; b.textContent = view.label; navEl.append(b);
   }
   const c = {
-    document, console, navigator: { platform: "MacIntel" }, NAV, stageSidebarMode,
+    document, console, navigator: { platform: "MacIntel" }, NAV, NAV_TABS, navTab, stageSidebarMode, isShown,
+    // The Workspace page's module, as openWorkspaceSouls imports it: only its tab preselection is read.
+    loadSpawnView: async () => ({ preselectWorkspaceTab: tab => { preselected.push(tab); return true; } }),
+    focusRegions: { focusRegion: name => { regionCalls.push(name); return false; } },
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A", activeInstanceMenu: null,
     stage: null, stageOp: 0, stageHost: document.getElementById("stagehost"), navEl,
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "overview", tabLayerVisible: false,
@@ -63,15 +67,15 @@ function shell(t, shellSource = source) {
     // These fixtures mount inert views; panel ownership is tested separately.
     syncContextPanel() {}, contextPanel: {},
     createPanelOwner: () => ({ dispose() {} }),
-    ctx: {},
+    ctx: { notify: message => assert.fail(`unexpected notice: ${message}`) },
   };
   const names = ["closeStage", "showStage", "setNavActive", "showTabLayer", "updateActiveContexts", "setSidebarMode", "updateContextTabs",
-    "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "onTabKeydown", "walkedTabs", "visibleTabEntries", "renderSplit", "selectEmptyGroup", "restoreWorkspaceTabs", "showTerminalContext", "openViewTab"];
+    "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "onTabKeydown", "walkedTabs", "visibleTabEntries", "renderSplit", "selectEmptyGroup", "restoreWorkspaceTabs", "showTerminalContext", "openViewTab", "openWorkspaceSouls", "showStageFocused"];
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];
-  }).join("\n").replace('import(`./views/${name}.mjs`)', "loadStageView(name)");
-  const setup = shellSource.match(/const tabOpenIntents = [^\n]+/)[0];
+  }).join("\n").replace('import(`./views/${name}.mjs`)', "loadStageView(name)").replace('import("./views/spawn.mjs")', "loadSpawnView()");
+  const setup = [/const tabOpenIntents = [^\n]+/, /const WORKSPACE_TAB_NAMES = [^\n]+/].map(re => shellSource.match(re)[0]).join("\n");
   const s = runInNewContext(`${setup}\n${functions}\n({ ${names.join(", ")}, tabOpenIntents });`, withShellWindowGlobals(c));
   // Trace actual class writes, not a fake setNavActive implementation. Useful
   // when a synchronous focus restoration re-enters the shell during projection.
@@ -81,7 +85,7 @@ function shell(t, shellSource = source) {
     b.addEventListener("click", () => s.showStage(b.dataset.view));
   }
   return {
-    ...s, c, document, loads, contexts, focusCalls, navWrites,
+    ...s, c, document, loads, contexts, focusCalls, navWrites, preselected, regionCalls,
     nav: () => [...navEl.querySelectorAll(".active")].map(b => b.dataset.view),
     // A row of the workspace list: where focus is when the operator picks a workspace there.
     listRow: () => document.querySelector("#ws-options .ws-option"),
@@ -186,18 +190,20 @@ for (const boundary of ["load", "mount"]) for (const outcome of ["resolve", "rej
 }
 
 for (const boundary of ["load", "mount"]) for (const outcome of ["resolve", "reject"]) {
+  // Two pages remain (Deployments, Workspace): from no stage, the older switch and the newer one are
+  // three distinct states, so neither "the older one" nor "where it started" can pass for the newer.
   test(`late stage ${boundary} ${outcome} preserves a newer real stage selection (not a blanket nav reset)`, async t => {
-    const s = shell(t); await s.stage("spawn");
+    const s = shell(t);
     const old = s.showStage("hierarchy"); await tick();
     const gate = boundary === "load" ? s.loads.at(-1) : deferred();
     if (boundary === "mount") { s.loads.at(-1).resolve({ mount: () => gate.promise }); await tick(); }
-    const newer = s.showStage("automations");
+    const newer = s.showStage("spawn");
     if (outcome === "resolve") gate.resolve(boundary === "load" ? { mount() {} } : undefined);
     else gate.reject(new Error("superseded stage failure"));
     await old; await tick();
-    assert.equal(s.loads.at(-1).name, "automations");
+    assert.equal(s.loads.at(-1).name, "spawn");
     s.loads.at(-1).resolve({ mount() {} }); await newer;
-    assert.deepEqual(s.nav(), ["automations"]); assert.deepEqual(s.contexts, ["stage:automations"]);
+    assert.deepEqual(s.nav(), ["spawn"]); assert.deepEqual(s.contexts, ["stage:spawn"]);
     assert.equal(s.c.tabLayerVisible, false);
   });
 }
@@ -231,4 +237,53 @@ test("mutation: restored focusin must not re-enter tab selection", async t => {
   const guard = "isApplyingFocus: () => tabOpenIntents.isApplyingFocus(),";
   assert.ok(source.includes(guard));
   await assert.rejects(reentrantFocus(t, source.replace(guard, "isApplyingFocus: () => false,")), /restoring first input focus must not re-enter/);
+});
+
+// ── Automations is a tab of the Workspace page (Pepe, 2026-10-23) ─────────────────────────────
+// stage.automations (⌘3 / Ctrl+3), the palette's "View: Automations" and ctx.openView("automations")
+// all run showStage("automations"): the shipped showStage routes the NAV_TABS name through
+// openWorkspaceSouls, which preselects the tab and shows the Workspace page. No "automations" page loads.
+async function automationsFrom(t, start, shellSource = source) {
+  const s = shell(t, shellSource);
+  if (start) await s.stage(start);
+  const before = s.loads.length, done = s.showStageFocused("automations");
+  for (let i = 0; i < 3 && s.loads.length === before; i++) await tick();
+  if (start !== "spawn") { assert.equal(s.loads.at(-1).name, "spawn"); s.loads.at(-1).resolve({ mount(el) { el.textContent = "spawn"; return () => {}; } }); }
+  await done;
+  return s;
+}
+for (const start of [null, "hierarchy"]) test(`stage.automations from ${start ?? "no stage"}: the Workspace page, its Automations tab preselected`, async t => {
+  const s = await automationsFrom(t, start);
+  assert.deepEqual(s.preselected, ["automations"], "the tab is chosen before the page shows");
+  assert.equal(s.c.stage.name, "spawn");
+  assert.ok(!s.loads.some(load => load.name === "automations"), "Automations is no page of its own");
+  assert.deepEqual(s.nav(), ["spawn"], "the Workspace nav item is the current one");
+  assert.equal(s.c.sidebarMode, "souls"); assert.deepEqual(s.contexts, ["stage:spawn"]);
+  // showStageFocused compares the stage on screen with the PAGE (spawn), so a keyboard open keeps focus on a control.
+  assert.deepEqual(s.regionCalls, ["main"], "focus was on <body>: the stage's first control");
+});
+
+test("stage.automations while the Workspace page is on screen switches its tab, without reloading the page", async t => {
+  const s = await automationsFrom(t, "spawn");
+  assert.deepEqual(s.preselected, ["automations"]);
+  assert.equal(s.loads.length, 1, "the page already on screen stays mounted");
+  assert.equal(s.c.stage.name, "spawn"); assert.deepEqual(s.nav(), ["spawn"]);
+  assert.deepEqual(s.regionCalls, ["main"]);
+});
+
+test("mutation: showStageFocused must compare the stage with the NAV_TABS page, not the name", async t => {
+  const page = "page = navTab(name)?.page ?? name;";
+  assert.ok(source.includes(page));
+  const s = await automationsFrom(t, "hierarchy", source.replace(page, "page = name;"));
+  assert.equal(s.c.stage.name, "spawn");
+  assert.deepEqual(s.regionCalls, [], "comparing against \"automations\" leaves focus on <body>");
+});
+
+test("mutation: showStage must route a NAV_TABS name to its page", async t => {
+  const route = "if (asTab) return openWorkspaceSouls(asTab.tab);";
+  assert.ok(source.includes(route));
+  const s = shell(t, source.replace(route, ""));
+  void s.showStage("automations"); await tick();
+  assert.equal(s.loads.at(-1).name, "automations", "without the route it would load a page that no longer exists");
+  assert.deepEqual(s.preselected, []);
 });

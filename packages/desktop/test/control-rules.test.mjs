@@ -39,18 +39,17 @@ function brainStyles() {
 }
 
 const markup = `<div id="app"><aside id="sidebar">
-  <div class="side-head"><span class="ws-brand-mark"></span><span id="ws-heading" class="ws-heading">Workspaces</span>
+  <div class="ctx-head ws-head"><span id="ws-heading" class="ws-heading">Workspaces</span>
     <button id="ws-add-open" class="ws-add-open icon-button" type="button" aria-label="Add local workspace…"></button></div>
   <section id="ws-list" class="ws-list"><div id="ws-options" class="ws-options"><ul class="ws-group">
     <li class="ws-option-row"><button class="ws-option ws-current" aria-current="true">One</button></li>
     <li class="ws-option-row"><button class="ws-option ws-other">Two</button></li></ul></div></section>
-  <nav id="nav"><button class="nav-item">Workspace</button><button class="nav-item active">Active</button></nav>
   <section id="instance-roster">
     <label class="ctx-filter-field"><span class="ctx-filter-icon"></span><input class="ctx-filter" placeholder="Filter instances"><kbd class="shortcut-hint" hidden></kbd></label>
     <div class="ctx-list"><div class="ctx-tree-row"><button class="ctx-inst">Row</button>
       <span class="ctx-row-tools"><button class="ctx-instance-actions">…</button></span></div></div></section>
-  <div id="nav-foot"><button id="sidebar-spawn" class="primary">Spawn</button>
-    <div id="sidebar-tools"><button id="sidebar-toggle" class="nav-item">S</button></div></div></aside>
+  <div id="nav-foot"><nav id="nav"><button class="nav-item active" aria-current="page"><span class="icon"></span><span class="label">Deployments</span></button><button class="nav-item"><span class="icon"></span><span class="label">Workspace</span></button></nav>
+    <div id="sidebar-tools"><button id="sidebar-toggle" class="nav-item icon-button">S</button><button id="sidebar-spawn" class="nav-item icon-button" aria-label="Spawn instance">+</button></div></div></aside>
   <main id="main"><div id="tabstrip"><div id="tabbar-row"><div id="tabbar">
     <div class="tab active"><button class="tab-trigger">Tab</button><button class="close">×</button></div>
   </div><div id="tab-actions"><button id="split-right">▥</button></div></div></div>
@@ -169,7 +168,8 @@ test("focus: one global 1px inset accent edge and tint replace every 2px ring an
 
 test("focus: keyboard focus on plain shell controls paints the tint and the edge", t => {
   const u = fixture(t);
-  for (const selector of [".ws-option.ws-other", ".ws-option.ws-current", ".ws-add-open", ".nav-item:not(.active)", ".ctx-inst", ".tab-trigger", ".tab .close",
+  // The footer's nav items and tools (Spawn instance among them since Pepe's sidebar layout) are plain controls.
+  for (const selector of [".ws-option.ws-other", ".ws-option.ws-current", ".ws-add-open", "#nav .nav-item:not(.active)", "#nav .nav-item.active", "#sidebar-toggle", "#sidebar-spawn", ".ctx-inst", ".tab-trigger", ".tab .close",
     "#tab-actions button", ".ws-suggestion", ".ws-dialog-foot .secondary", ".kb-chord", ".kb-close", ".ws-segmented [aria-pressed=false]",
     ".ctx-instance-menu button", ".ctx-instance-actions", ".lifecycle-close", ".lifecycle-review", ".lifecycle-check", ".oats-view .act:not(.primary):not(.danger)"]) {
     const s = u.focused(selector);
@@ -181,7 +181,7 @@ test("focus: keyboard focus on plain shell controls paints the tint and the edge
 
 test("focus: controls with their own opaque pair keep it and show the edge only", t => {
   const u = fixture(t);
-  for (const [selector, bg, fg, edge = "accent"] of [["#sidebar-spawn", "primary-bg", "primary-fg"], [".ws-dialog-foot .primary", "primary-bg", "primary-fg"],
+  for (const [selector, bg, fg, edge = "accent"] of [[".ws-dialog-foot .primary", "primary-bg", "primary-fg"],
     [".oats-view .act.primary", "primary-bg", "primary-fg"], [".lifecycle-confirm", "danger", "primary-fg"], [".lifecycle-done", "primary-bg", "primary-fg"],
     [".app-toast-dismiss", "primary-fg", "primary-bg", "primary-fg"] /* toast buttons invert inside the dark toast, edge in its ink */]) {
     const s = u.focused(selector);
@@ -241,6 +241,18 @@ for (const palette of ["light", "solarized", "dark"]) test(`${palette}: selected
   }
   assert.equal(u.style(".ws-segmented [aria-pressed=true]").color, "var(--accent)");
   assert.equal(u.rule(".ctx-filter-field:focus-within").borderColor, "var(--accent)");
+  // The footer's nav items and its Spawn instance icon button (Pepe's sidebar layout): their ink, idle and
+  // keyboard-focused, on the --sel tint they focus to, through the effective tokens (the edge is checked above).
+  for (const selector of ["#nav .nav-item:not(.active)", "#nav .nav-item.active", "#sidebar-toggle", "#sidebar-spawn"]) {
+    const idle = u.style(selector).color, focus = u.focused(selector);
+    for (const ink of [idle, focus.color]) {
+      const name = ink.match(/^var\(--([\w-]+)\)$/)?.[1];
+      assert.ok(name, `${selector}: a token ink, never a raw colour (${ink})`);
+      assert.ok(contrast(u.token(name), sel) >= 4.5, `${palette}: ${selector} --${name} on --sel ${contrast(u.token(name), sel).toFixed(2)}:1`);
+    }
+    assert.equal(focus.background, "var(--sel)", `${selector} tint`);
+    assert.equal(focus.opacity, "1", `${selector}: no opacity over text`);
+  }
 });
 
 test("view search fields and tab strips follow rules 2 and 3 (Capabilities search, Automations search, workspace tabs)", () => {

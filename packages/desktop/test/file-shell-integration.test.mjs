@@ -74,7 +74,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     <div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div>
     <div id="tabhost"></div>
     <aside id="sidebar"><div id="instance-roster"><input class="ctx-filter" id="filter"><span class="ctx-count"></span><div class="ctx-list"></div></div>
-    <nav id="nav"><button class="nav-item active">Souls</button></nav></aside>
+    <div id="nav-foot"><nav id="nav"><button class="nav-item active">Workspace</button></nav></div></aside>
     <button id="destination">Newer destination</button>
   </body>`, { url: "http://127.0.0.1/" });
   const document = dom.window.document, navigator = { platform };
@@ -103,7 +103,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     // Inert presenter: this fixture owns file/chooser focus, not panel layout.
     syncContextPanel() {}, contextPanel: { setFocusMode() {} },
     updateSplitControls() {}, revealInStrip, revealInScrollport, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */, numberTabStrips, tabNumberObserver: null, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {}, stageSidebarMode: () => "souls",
-    workspaceLabel: { reset() {} }, NAV: [], ctx: {},
+    workspaceLabel: { reset() {} }, NAV: [], NAV_TABS: [], ctx: {},
     alert: message => notices.push(message), onWorkspaceChange: listener => listeners.push(listener),
     api(path) { const request = { ...deferred(), path }; requests.push(request); return request.promise; },
     loadView(name) { const gate = { ...deferred(), name }; loads.push(gate); return gate.promise; },

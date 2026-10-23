@@ -754,7 +754,7 @@ for (const [name] of palettes) test(`${name}: shipped sidebar shortcut hints mee
   }
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, foreground, background] of [
-    [".ctx-filter-field", "muted", "bg"], ["#sidebar-spawn", "primary-fg", "primary-bg"],
+    [".ctx-filter-field", "muted", "bg"],
   ]) {
     const control = doc.querySelector(selector), hint = control.querySelector(".shortcut-hint");
     hint.hidden = false; hint.textContent = "Ctrl+Shift+J";
@@ -768,6 +768,64 @@ for (const [name] of palettes) test(`${name}: shipped sidebar shortcut hints mee
       opaqueChannels(root.getPropertyValue(`--${background}`).trim())) >= 4.5);
     hint.hidden = true; assert.equal(dom.window.getComputedStyle(hint).display, "none");
   }
+  // The Spawn instance icon button carries no visible hint (its tooltip does): nothing to paint there.
+  assert.equal(doc.querySelector("#sidebar-spawn .shortcut-hint, #nav-foot .shortcut-hint"), null);
+});
+
+// Pepe's sidebar layout (2026-10-23): the nav (Deployments, Workspace) and the tools row, Spawn instance now one of
+// its icon buttons, sit in the footer on the sidebar's --surface. Each one's ink, at rest, hovered, current and under
+// the keyboard tint, is a token pair the inventory holds to AA (so "This computer" is held too, host-theme.mjs), and
+// meets it here on the effective colours, with no opacity on it or under it.
+for (const [name] of palettes) test(`${name}: the footer's nav items and tools, Spawn instance included, meet computed AA in every state`, t => {
+  const dom = new JSDOM(readFileSync(new URL("index.html", renderer), "utf8"));
+  t.after(() => dom.window.close());
+  const doc = dom.window.document, win = dom.window; doc.documentElement.dataset.theme = name;
+  const shellCss = readFileSync(new URL("shell.css", renderer), "utf8");
+  for (const source of [css, shellCss]) { const style = doc.createElement("style"); style.textContent = source; doc.head.append(style); }
+  // The nav's buttons as shell.mjs builds them from NAV: an icon, then the label; Deployments current.
+  for (const [label, current] of [["Deployments", true], ["Workspace", false]]) {
+    const b = doc.createElement("button"); b.type = "button"; b.className = `nav-item${current ? " active" : ""}`;
+    if (current) b.setAttribute("aria-current", "page");
+    b.innerHTML = `<span class="icon"><svg class="shell-icon" aria-hidden="true"></svg></span><span class="label">${label}</span>`;
+    doc.getElementById("nav").append(b);
+  }
+  const root = win.getComputedStyle(doc.documentElement);
+  const token = value => { const m = /^var\(--([\w-]+)\)$/.exec(value); assert.ok(m, `a token, never a raw colour: ${value}`); return m[1]; };
+  const ratio = (fg, bg) => contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim()));
+  const held = (fg, bg, min, what) => {
+    assert.ok((min === TEXT_CONTRAST ? pairs : [...pairs, ...GRAPHIC_PAIRS]).some(([f, b]) => f === fg && b === bg), `${what}: --${fg} on --${bg} is in the contrast inventory`);
+    assert.ok(ratio(fg, bg) >= min, `${name} ${what}: --${fg} on --${bg} ${ratio(fg, bg).toFixed(2)}:1`);
+  };
+  const rule = selector => [...doc.styleSheets].flatMap(sheet => [...sheet.cssRules]).find(r => r.selectorText === selector)?.style;
+  const sidebarBg = token(win.getComputedStyle(doc.getElementById("sidebar")).background);
+  assert.equal(sidebarBg, "surface");
+  for (const id of ["nav-foot", "nav", "sidebar-tools"]) {
+    const bg = win.getComputedStyle(doc.getElementById(id)).background;
+    assert.ok(!bg || /^(transparent|rgba\(0, 0, 0, 0\))$/.test(bg), `#${id} paints nothing of its own: the sidebar shows under it (${bg})`);
+  }
+  const controls = [...doc.querySelectorAll("#nav .nav-item, #sidebar-tools .nav-item")];
+  assert.deepEqual(controls.map(b => b.id || b.textContent), ["Deployments", "Workspace", "sidebar-toggle", "sidebar-theme", "sidebar-shortcuts", "sidebar-spawn"]);
+  for (const control of controls) {
+    const what = control.id || control.textContent, current = control.classList.contains("active");
+    const idle = win.getComputedStyle(control);
+    // At rest: its ink on its own fill (the selection tint when current, else the sidebar under it).
+    const restBg = current ? token(idle.background) : sidebarBg;
+    if (!current) assert.match(idle.background, /^(none|transparent|rgba\(0, 0, 0, 0\))?$/, `${what}: no fill at rest`);
+    held(token(idle.color), restBg, TEXT_CONTRAST, `${what} at rest`);
+    // The icon is the whole of an icon button (WCAG 1.4.11): its ink on the same fill, 3:1 at least.
+    const icon = control.querySelector(".icon, [data-shell-icon], svg");
+    if (icon) held(token(win.getComputedStyle(icon).color), restBg, current ? GRAPHIC_CONTRAST : TEXT_CONTRAST, `${what} icon`);
+    for (let node = control; node; node = node.parentElement) assert.equal(win.getComputedStyle(node).opacity, "1", `${what}: no opacity over text`);
+  }
+  // Hovered: --fg on --surface-2, through the shared .nav-item rule (jsdom does not hover).
+  const hover = rule(".nav-item:hover");
+  held(token(hover.color), token(hover.background), TEXT_CONTRAST, "hovered");
+  // Keyboard focus: the shared tint under the item's own ink (the edge is control-rules' and the 3:1 above).
+  const focus = rule(":is(button, a, summary):focus-visible");
+  assert.equal(focus.background, "var(--sel)");
+  for (const ink of ["nav-fg", "fg", "accent"]) held(ink, "sel", ink === "accent" ? GRAPHIC_CONTRAST : TEXT_CONTRAST, `focused ${ink}`);
+  // Narrow, the labels are clipped away, never faded: the container rule has no opacity.
+  assert.doesNotMatch(shellCss.match(/@container nav[^{]*\{[^}]*\}/)?.[0] ?? "@container nav missing", /opacity|missing/);
 });
 
 for (const [name] of palettes) test(`${name}: actual Stop/Retire confirmations meet computed AA without text opacity, in every phase`, async t => {
