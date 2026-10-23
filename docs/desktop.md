@@ -201,7 +201,7 @@ repository at a time; "N of M shown" appears while a pill or the search
 narrows the list.
 
 Above those sections, **Workspace defaults** shows what every soul of the
-workspace starts with, unless it chooses its own or turns one off. It is one
+workspace starts with, unless it turns one off. It is one
 panel with a column per core capability, always **Knowledge**, **Messaging**
 and **Tasks**. A slot the workspace fills shows the capability and its source
 (a package and its pinned version, or a repository and "latest"); click it to
@@ -222,7 +222,8 @@ The round **i** button after the section jump (**About capabilities**) opens
 **What capabilities are**: what a capability gives a soul's instances (skills,
 commands and instructions, the instructions injected into each instance's
 composed `AGENTS.md` after the soul's own), the three places one comes from
-(Workspace owned, Repo owned, Packages) and what workspace defaults are.
+(Workspace owned, Repo owned, Packages) and what workspace defaults are: every
+soul gets them, and a soul can turn one off and name its own in its place.
 **Close** or Esc closes it and returns the focus to the button; leaving the
 tab or the workspace closes it too. **Workspace › Souls** has the same button
 at the end of its toolbar, **About souls**, which explains what a soul is.

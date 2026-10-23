@@ -81,7 +81,7 @@ test('filled slots and other defaults: Knowledge, Messaging, Tasks with their id
   const head = u.$('#capability-section-defaults');
   assert.equal(head.tagName, 'H2'); assert.ok(head.classList.contains('capability-section-title'));
   assert.equal(head.textContent, 'Workspace defaults'); assert.equal(head.querySelector('.capability-section-lead'), null, 'no lead text');
-  assert.equal(text(u.$('.ws-defaults-scope')), 'Every soul in northwind starts with these, unless it chooses its own or turns one off.');
+  assert.equal(text(u.$('.ws-defaults-scope')), 'Every soul in northwind starts with these, unless it turns one off.');
   assert.equal(u.$('.ws-defaults-scope .ws-defaults-ws').textContent, 'northwind');
   assert.equal(u.$('.ws-defaults-panel .identity-mark'), null, 'no identity mark');
   const cells = slotCells(u);
@@ -253,7 +253,7 @@ test('About capabilities: the lifecycle frame, labelled by its title, the exact 
     'A capability is a reusable bundle of skills, commands and instructions, given to every soul whose work needs it.',
     'A soul names the capabilities it needs. When an instance starts, it gets a copy of each one, and the capability’s instructions are injected into the instance’s composed AGENTS.md, after the soul’s own.',
     'Each capability comes from one of three places:',
-    'Workspace defaults are capabilities the workspace gives to every soul. A soul gets them without asking; it can still pick its own knowledge, messaging or tasks capability, or turn a default off.',
+    'Workspace defaults are capabilities the workspace gives to every soul. A soul gets them without asking. It can turn a default off and name its own in its place, or leave a core capability (knowledge, messaging or tasks) empty.',
   ]);
   assert.equal(dialog.querySelector('p code').textContent, 'AGENTS.md');
   assert.equal(dialog.querySelector('p strong').textContent, 'Workspace defaults');

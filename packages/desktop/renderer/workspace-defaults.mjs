@@ -70,7 +70,7 @@ export const DEFAULTS_COPY = Object.freeze({
   nav: 'Defaults',
   thisWorkspace: 'this workspace',
   every: ['Every soul in ', ' starts with these,'],
-  unless: 'unless it chooses its own or turns one off.',
+  unless: 'unless it turns one off.',
   none: ' sets no defaults.',
   noneSub: 'Each soul chooses all of its own capabilities.',
   emptySlot: 'None',

@@ -2,7 +2,7 @@
 
 - **Desktop: Workspace › Capabilities shows the workspace's defaults.** A new
   **Workspace defaults** section, above Workspace owned, shows what every soul
-  starts with unless it chooses its own or turns one off:
+  starts with unless it turns one off:
   - One column for each core capability, Knowledge, Messaging and Tasks. A
     filled slot shows the capability and where it comes from, and opens its
     page. An empty one says there is no workspace default and each soul

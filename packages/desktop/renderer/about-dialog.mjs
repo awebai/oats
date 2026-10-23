@@ -51,7 +51,7 @@ export const ABOUT_COPY = Object.freeze({
         ['home', 'Repo owned', 'Defined in one repo and kept to it. Only souls from that same repo can use it.'],
         ['package', 'Packages', 'Installed into the workspace at a pinned version, the same on every machine.'],
       ] },
-      { p: [{ strong: 'Workspace defaults' }, ' are capabilities the workspace gives to every soul. A soul gets them without asking; it can still pick its own knowledge, messaging or tasks capability, or turn a default off.'] },
+      { p: [{ strong: 'Workspace defaults' }, ' are capabilities the workspace gives to every soul. A soul gets them without asking. It can turn a default off and name its own in its place, or leave a core capability (knowledge, messaging or tasks) empty.'] },
     ]),
   }),
   souls: Object.freeze({
