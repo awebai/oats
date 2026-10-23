@@ -8,8 +8,9 @@
    expand). These are DOM-local focus keys (roving tabindex), NOT global
    chords — only "focus the roster" is a registered keybinding action; the
    sidebar's other plain keys are the `sidebar` context's (keybindings.mjs).
-   A named key the keymap takes (keymapTakes: a live binding, the shared
-   Alt+Shift+↑/↓ or a rebind) is the keymap's, not the tree's.
+   A named key the keymap takes (keymapTakes: a live binding of the chord
+   family in use, Alt+↑/↓, Alt+Shift+↑/↓, Alt+←/→ and Alt+Shift+←/→ in the
+   Alt family, or a rebind) is the keymap's, not the tree's.
    Extracted so the policy is unit-testable without booting the shell. */
 
 import { plainKeys } from "../../client/keymap.mjs";
@@ -23,8 +24,10 @@ const TREE_KEYS = new Map(TREE.flatMap((does) => plainKeys(does).map((key) => [k
 
 /** What the tree does for a keydown (`up`, `collapse`, …), or null. A letter held with Ctrl, Alt
  * or ⌘ is not the tree's; the arrows, Home, End and the page keys are, with any modifier, as they
- * always were, unless the keymap binds that chord (Alt+Shift+↑/↓ and ⌘⌥↑/↓ open the previous /
- * next instance's terminal, from a row as from anywhere; a rebind follows). */
+ * always were, unless the live keymap binds that chord: the instance and workspace steps, and,
+ * while the tab layer shows, the tab and editor-group moves (in the Alt family Alt+Shift+↑/↓,
+ * Alt+↑/↓, Alt+←/→ and Alt+Shift+←/→; ⌘⌥↑/↓ and ⌘⌥←/→ on macOS), from a row as from anywhere;
+ * a rebind follows. */
 export function rosterKeyDoes(event) {
   const key = String(event.key ?? "");
   const named = NAMED[key];

@@ -3,7 +3,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { rosterKeyAction, rosterKeyDoes, moveTarget, rovingIndex } from "../renderer/roster-keys.mjs";
 import { plainKeys } from "../../client/keymap.mjs";
-import { registerAction, setBinding, resetAllBindings } from "../renderer/keybindings.mjs";
+import { registerAction, setBinding, resetAllBindings, setActiveContexts, setChordFamily, getBinding, handleKeydown } from "../renderer/keybindings.mjs";
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
+import { JSDOM } from "jsdom";
+import { CHORD_FAMILIES } from "../../client/keymap.mjs";
 import { pinPlatform } from "./helpers/platform.mjs";
 
 test("arrows walk rows; Right expands a collapsed branch, else moves down", () => {
@@ -81,22 +85,86 @@ test("PageUp/PageDown move by the rows that fit the list, clamped", () => {
   assert.equal(moveTarget({ delta: 1 }, 0, 30, 8), 1, "an arrow is still one row");
 });
 
-// A named key the keymap binds is the keymap's on a row (keybindings.mjs keymapTakes), so the shared
-// Alt+Shift+↑/↓ (roster.openPrevious / roster.openNext) open the terminal above / below from a row, and
-// a rebind follows; an arrow chord bound to nothing (Alt+↑, Ctrl+↓) still moves, as it always did.
-test("a row gives way to the keymap's arrow chords, and only to those", t => {
-  pinPlatform(t); // the Linux and Windows keymap: Alt+Shift+↑/↓ (not the Mac's)
+// A named key the keymap binds is the keymap's on a row (keybindings.mjs keymapTakes): the live keymap, never a
+// fixed list, so each chord family's arrow chords do their own work from a row, and a rebind follows; an arrow chord
+// bound to nothing (Ctrl+Shift+↓) still moves, as it always did. The actions are the shell's, with its contexts:
+// the instance and workspace steps are global; the tab and group moves are the tab layer's (`tabs`).
+const ARROW_ACTIONS = [["roster.openPrevious", "global"], ["roster.openNext", "global"], ["workspace.previous", "global"],
+  ["workspace.next", "global"], ["tabs.prevPage", "tabs"], ["tabs.nextPage", "tabs"], ["split.focusPrevGroup", "tabs"], ["split.focusNextGroup", "tabs"]];
+const ARROWS = { "↑": "ArrowUp", "↓": "ArrowDown", "←": "ArrowLeft", "→": "ArrowRight" };
+const press = (chord) => {
+  const parts = chord.split("+"), key = ARROWS[parts.at(-1)];
+  return key ? { key, altKey: parts.includes("Alt"), shiftKey: parts.includes("Shift"), ctrlKey: parts.includes("Ctrl") } : null;
+};
+function shellArrowActions(t, run = () => {}) {
+  pinPlatform(t); // the Linux and Windows keymap (not the Mac's)
   resetAllBindings();
-  const offs = ["roster.openPrevious", "roster.openNext", "tabs.prevPage", "tabs.nextPage"]
-    .map(id => registerAction({ id, label: id, context: "global", run: () => {} }));
-  t.after(() => { offs.forEach(off => off()); resetAllBindings(); });
+  const offs = ARROW_ACTIONS.map(([id, context]) => registerAction({ id, label: id, context, run: () => run(id) }));
+  setActiveContexts(["tabs"]); // the tab layer is shown
+  t.after(() => { offs.forEach(off => off()); setActiveContexts([]); setChordFamily("alt"); resetAllBindings(); });
+}
+
+test("a row gives way to every arrow chord of the keymap's family, and only to those", t => {
+  shellArrowActions(t);
   const row = { hasChildren: true, collapsed: false };
-  for (const key of ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]) {
-    assert.equal(rosterKeyAction({ key, altKey: true, shiftKey: true }, row), null, `Alt+Shift+${key} is the keymap's`);
+  // The Alt family (the default): Alt+↑/↓ the workspaces, Alt+Shift+↑/↓ the instances, Alt+←/→ the tabs and
+  // Alt+Shift+←/→ the editor groups (#1491: a row once took Alt+Shift+← as collapse).
+  for (const [chord, id] of [["Alt+↑", "workspace.previous"], ["Alt+↓", "workspace.next"], ["Alt+Shift+↑", "roster.openPrevious"],
+    ["Alt+Shift+↓", "roster.openNext"], ["Alt+←", "tabs.prevPage"], ["Alt+→", "tabs.nextPage"],
+    ["Alt+Shift+←", "split.focusPrevGroup"], ["Alt+Shift+→", "split.focusNextGroup"]]) {
+    assert.equal(getBinding(id, false), chord, id);
+    assert.equal(rosterKeyAction(press(chord), row), null, `${chord} is ${id}'s`);
   }
-  assert.deepEqual(rosterKeyAction({ key: "ArrowUp", altKey: true }, row), { type: "move", delta: -1 }, "Alt+↑ is bound to nothing");
-  assert.deepEqual(rosterKeyAction({ key: "ArrowDown", ctrlKey: true, shiftKey: true }, row), { type: "move", delta: 1 });
+  // Every family: what it binds to an arrow is the keymap's on a row; the arrow chords it leaves free are the tree's.
+  for (const family of CHORD_FAMILIES) {
+    setChordFamily(family);
+    const bound = new Set(ARROW_ACTIONS.map(([id]) => getBinding(id, false)).filter(chord => press(chord)));
+    assert.ok(bound.size >= 6, `${family}: its arrow chords`);
+    for (const chord of bound) assert.equal(rosterKeyAction(press(chord), row), null, `${family}: ${chord}`);
+    for (const chord of ["Ctrl+Shift+↓", "Ctrl+↑", "Alt+Shift+←", "Alt+←"].filter(chord => !bound.has(chord))) {
+      assert.notEqual(rosterKeyAction(press(chord), row), null, `${family}: ${chord} is bound to nothing: the tree's`);
+    }
+  }
+  setChordFamily("alt");
+  assert.deepEqual(rosterKeyAction({ key: "ArrowDown", ctrlKey: true, shiftKey: true }, row), { type: "move", delta: 1 }, "Ctrl+Shift+↓ is bound to nothing");
   setBinding("roster.openNext", "Ctrl+Shift+↓");
   assert.equal(rosterKeyAction({ key: "ArrowDown", ctrlKey: true, shiftKey: true }, row), null, "the rebind is the keymap's");
   assert.deepEqual(rosterKeyAction({ key: "ArrowDown", altKey: true, shiftKey: true }, row), { type: "move", delta: 1 }, "the old default is the tree's again");
+});
+
+test("with no tab layer (a page shown), the tab and group moves are not live: a row keeps those arrows for the tree", t => {
+  shellArrowActions(t);
+  setActiveContexts([]);
+  const row = { hasChildren: true, collapsed: false };
+  assert.deepEqual(rosterKeyAction(press("Alt+Shift+←"), row), { type: "collapse" });
+  assert.deepEqual(rosterKeyAction(press("Alt+→"), { hasChildren: true, collapsed: true }), { type: "expand" });
+  assert.equal(rosterKeyAction(press("Alt+↓"), row), null, "the workspace step is global: still the keymap's");
+});
+
+// End to end, as the shell wires it: the shipped row handler (shell.mjs onRosterRowKey) on a focused row, and the one
+// window keydown listener (handleKeydown). A chord the row gives way to bubbles, unconsumed, and its action runs.
+test("Alt+Shift+← on a focused roster row moves to the previous editor group, and the row does not collapse", t => {
+  const ran = [];
+  shellArrowActions(t, id => ran.push(id));
+  const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  const handler = source.match(/function onRosterRowKey\(e\) \{[^]*?\n\}/)[0];
+  const tree = [];
+  const { onRosterRowKey } = runInNewContext(`${handler}\n({ onRosterRowKey })`, {
+    rosterKeyAction, tabOpenIntents: { invalidate: () => tree.push("invalidate") },
+    // Anything past the policy is the tree's own work: recorded, never expected here.
+    expandRow: () => tree.push("expand"), collapseRow: () => tree.push("collapse"), toggleRosterNode: () => tree.push("toggle"),
+  });
+  const dom = new JSDOM(`<!doctype html><button data-roster-children="1" data-roster-collapsed="0">row</button>`);
+  t.after(() => dom.window.close());
+  const row = dom.window.document.querySelector("button");
+  row.addEventListener("keydown", onRosterRowKey);
+  dom.window.document.addEventListener("keydown", e => handleKeydown(e, { isMac: false }));
+  row.focus();
+  for (const [key, id] of [["ArrowLeft", "split.focusPrevGroup"], ["ArrowRight", "split.focusNextGroup"]]) {
+    const event = new dom.window.KeyboardEvent("keydown", { key, altKey: true, shiftKey: true, bubbles: true, cancelable: true });
+    row.dispatchEvent(event);
+    assert.equal(ran.at(-1), id, `Alt+Shift+${key}: the group move ran`);
+    assert.equal(event.defaultPrevented, true, "the keymap consumed it");
+  }
+  assert.deepEqual(tree, [], "the tree did nothing");
 });

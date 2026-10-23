@@ -743,7 +743,11 @@ whatever Shift the keyboard layout needs for it; a letter keeps its case, so
 On a roster row the tree also reads the TUI's `k` `j` (up, down), `g` `G`
 (first, last), `h` `l` (collapse or go to the parent, expand), beside the
 arrows, and PageUp/PageDown move by the rows that fit the list. These stay the
-tree's own keys, as the arrows are, and are not in the shortcuts editor.
+tree's own keys, as the arrows are, and are not in the shortcuts editor. An
+arrow held with a modifier is the tree's too, unless it is a shortcut: the
+shortcuts on arrows work from a row as from anywhere (in the Alt family Alt+↑ /
+↓ and Alt+Shift+↑ / ↓, and, while tabs show, Alt+← / → and Alt+Shift+← / →),
+and so does a shortcut rebound to an arrow.
 
 **Not taken, and why:**
 
