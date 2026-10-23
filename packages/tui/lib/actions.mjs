@@ -10,6 +10,8 @@
 // leader's table is the shared one (LEADER, below). What only the TUI has (q, Ctrl+C, Ctrl+Z, Ctrl+L,
 // Ctrl+K, Tab, Esc, Delete, C, i) keeps its keys here. packages/tui/test/keymap.test.mjs pins both.
 import { CHORDS, DEFAULT_CHORD_FAMILY, LEADER_TABLE, PALETTE_KEYS, chordKeyOf, plainKeys } from "./client.mjs";
+// An action's words, for the help (views/help.mjs): a view takes the shared home's keymap through this module only.
+export { doesLabel } from "./client.mjs";
 import { legacyChord } from "./term/kitty.mjs";
 import { isBackKey } from "./term/through.mjs";
 

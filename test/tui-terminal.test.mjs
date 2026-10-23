@@ -293,7 +293,7 @@ function listUnder(screen, heading, cols = 80) {
 }
 
 /** The sidebar, the same in every view: what is wrong with it (docs/tui.md, "What it shows").
- *  From the top: the list of workspaces, whose first row is the open one's (`title`: `*` and the
+ *  From the top: the list of workspaces, whose first row is the open one's (`title`: the
  *  fixture's name alone, no count) and its other rows `listed` (each a string, or what it
  *  matches), or the title alone where no workspace is listed (the switcher's), the rows `above` (each a
  *  string, or what it matches: a deployment's state and reason), an empty row, then the views
@@ -978,7 +978,9 @@ test("Ctrl+Z with the first roster read of the run in flight: the read is given 
   const before = world.sshHeld().length;
   world.holdSsh();
   term.after(world.release);
-  const run = await tui(term, {}, { world, record: false });
+  // No roster answers in this test, so the machine is no workspace yet: the list of workspaces
+  // holds the fixture's row alone on every screen (the switcher has no row of it either).
+  const run = await tui(term, { listed: [] }, { world, record: false });
   const reading = await run.rosterReading("before Ctrl+Z", { press: false, before });
 
   term.press("C-z");

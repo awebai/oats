@@ -2,8 +2,7 @@
 // text. Pure: no IO, no clock, no escape byte. The keys are generated from the table the reducer
 // acts on, so the help names every key that does something and no key that does not; the marks
 // are the ones the list and the switcher draw (views/instances.mjs, views/switcher.mjs).
-import { LEADER, backKeyLabel, keyLabel, keysTogether } from "../actions.mjs";
-import { doesLabel } from "../client.mjs";
+import { LEADER, backKeyLabel, doesLabel, keyLabel, keysTogether } from "../actions.mjs";
 import { lit, ownEllipsis } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { NEEDS_INPUT, belowText, cutNote, marksOf, measured } from "./instances.mjs";
