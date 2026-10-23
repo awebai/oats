@@ -1814,7 +1814,7 @@ after, `⌥⇧←` and `⌥⇧→` the group before or after, `⌥↑` and `⌥�
 workspace before or after. Its help and cheat sheet say them `Alt+Left` and
 so on, and lead with them. The other chords hold ⌘ (`⌘K`, `⌥⌘1` to `⌥⌘9`,
 `⌥⌘↑`), which a terminal never passes to a program, so the TUI binds none
-of them. The leader does the actions it has a key for (`Ctrl+X` then `K`
+of them. The leader does the actions it has a key for (`Ctrl+X` then `k`
 for the palette, for instance); the list's `Up` or `Down`, then `Enter`,
 steps between instances; and no key goes to a tab by its place, so no tab
 carries a number ([Tabs](#tabs)). ⌥ with a letter or a digit
