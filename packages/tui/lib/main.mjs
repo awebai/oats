@@ -524,18 +524,23 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   // changes: `read` (path -> true | false | null) holds the paths of the set the schedule has read,
   // so a path it has not read yet keeps what its identity read said, and one it read keeps that,
   // failed or not, which the scheduler's own onChange (a change of value only) would not say.
+  // Each stay of a path in the set has its own token (`waitingSet`: path -> token): an answer is
+  // taken only while the stay it was asked in lasts, so one asked before the path left the set and
+  // came back is dropped, as the scheduler drops it.
   const waiting = waitingReadable(probe.cli) && typeof reader.exec === "function"
     ? effects.createListedWaiting({ read: (path, options) => readWaiting(path, options) })
     : null;
-  let waitingPaths = "", waitingSet = new Set();
+  let waitingPaths = "", waitingSet = new Map();
   const waitingRead = new Map();
   function readWaiting(path, options) {
+    const stay = waitingSet.get(path);
     const answer = Promise.resolve(effects.deploymentIdentity(probe.cli, path, options, { exec: reader.exec, env }));
-    answer.then((a) => {
-      if (ended || !waitingSet.has(path)) return;
-      waitingRead.set(path, a?.ok === true && typeof a.waiting === "boolean" ? a.waiting : null);
+    const take = (value) => {
+      if (ended || stay === undefined || waitingSet.get(path) !== stay) return;
+      waitingRead.set(path, value);
       tellWaiting();
-    }, () => { if (!ended && waitingSet.has(path)) { waitingRead.set(path, null); tellWaiting(); } });
+    };
+    answer.then((a) => take(a?.ok === true && typeof a.waiting === "boolean" ? a.waiting : null), () => take(null));
     return answer;
   }
   /** The store told what the schedule read, when that changed: through `heard` for an answer; in
@@ -551,7 +556,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     if (waiting === null || ended) return;
     const paths = unservedListed(), key = paths.join("\u0000");
     if (key === waitingPaths) return;
-    waitingPaths = key; waitingSet = new Set(paths);
+    waitingPaths = key; waitingSet = new Map(paths.map((path) => [path, waitingSet.get(path) ?? {}]));
     // A path that left the set forgets its reads: given again, it is not read yet.
     for (const path of [...waitingRead.keys()]) if (!waitingSet.has(path)) waitingRead.delete(path);
     waiting.setPaths(paths);

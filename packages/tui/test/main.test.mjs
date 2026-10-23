@@ -2315,6 +2315,35 @@ test("Esc during a preflight gives it up through its signal, and what it answers
   assert.equal(await r.status, 0);
 });
 
+test("an answer of the slow schedule asked before its row left the list and came back is dropped, as the scheduler drops it: only a read asked since gives the dot", async () => {
+  const r = await started({ listed: LISTED, columns: 120 });
+  await settle();
+  r.reader.answer(HOME_ENTRY);
+  assert.deepEqual(r.waiting.sets.at(-1), [LEDGER]);
+  let late;
+  r.waiting.answer = new Promise((resolve) => { late = resolve; });
+  const asked = r.waiting.options.read(LEDGER, { maxAge: 300 });
+  // The list read again without the row, then with it: in the set again, a new stay.
+  r.stdin.type("w"); r.stdin.type("w"); await settle();
+  r.listed = []; r.stdin.type("r"); await settle();
+  assert.deepEqual(r.waiting.sets.at(-1), []);
+  r.listed = [...LISTED]; r.stdin.type("r"); await settle();
+  assert.deepEqual(r.waiting.sets.at(-1), [LEDGER]);
+  r.stdin.type("\x1b");
+  r.tick(50);
+  r.timers.fire();
+  late({ ok: true, workspace: null, waiting: true });
+  await asked;
+  await settle();
+  assert.doesNotMatch(sidebarOf(r), /acme-ledger ●/, "asked in the stay before: no dot");
+  r.waiting.answer = { ok: true, workspace: null, waiting: true };
+  await r.waiting.options.read(LEDGER, { maxAge: 300 });
+  await settle();
+  assert.match(sidebarOf(r), /On this machine, not opened acme-ledger ●/, "asked in this stay: the dot");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
 // ── The acts (awebai/oats#855, PR 5): what the loop does with the store's effects ─────────────────
 
 /** A kernel record that plans stops and retires and starts sessions. */
