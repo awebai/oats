@@ -79,7 +79,7 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  true while it has the whole body (only with the terminal's focus).
  *  `outcome`: the line after an open (the model's `{ said, under }`), shown above the panes until
  *  the next key bound to an action, or null; with `once: true` (the list of workspaces' end, said
- *  by the leader's Up or Down) until the next key of any kind (the leader's: the key after it), one
+ *  by the leader's Up or Down, and the leader cancelled by its own read) until the next key of any kind (the leader's: the key after it), one
  *  typed to the agent included, or a resize (the loop's `{ passed }`). `notice`: such a line that came while no view that
  *  draws one at every width was shown (the switcher, the help, a detail or a terminal with the
  *  focus: see `drawsOutcome`), held until one is; or null.
@@ -813,7 +813,9 @@ function forgotten(state, key) {
 /** The tabs of the open workspace as they stand, for its memory, or null with none:
  *  `{ tabs: [{ id, name, machine, routed, group }], split, group, shown: [group 0's, group 1's],
  *  focus, zoom }`. The focus is the terminal's, or the one it had when another view was shown over
- *  the list (`leftFocus`, the switcher a workspace is left from). During a restore it is the
+ *  the list (`leftFocus`, the switcher a workspace is left from), or the terminal's while the
+ *  palette opened from it stands (the leader's Up and Down leave from there; the palette took the
+ *  zoom, as its Esc gives the focus back unzoomed: paletteClosed). During a restore it is the
  *  remembered layout, less the tabs that went since (closed, or dropped as gone), and the focus
  *  only while the person has not taken it. */
 function layoutOf(state) {
@@ -823,7 +825,8 @@ function layoutOf(state) {
     return tabs.length ? Object.freeze({ tabs: Object.freeze(tabs), split: r.split, group: r.group, shown: r.shown, focus: r.grant ? r.focus : "list", zoom: r.grant && r.zoom }) : null;
   }
   if (!state.tabs.length) return null;
-  const t = state.terminal, left = t !== null && t.focus !== "terminal" && state.leftFocus?.id === t.id ? state.leftFocus : null;
+  const t = state.terminal, left = t === null || t.focus === "terminal" ? null
+    : state.leftFocus?.id === t.id ? state.leftFocus : state.palette?.from === "terminal" ? Object.freeze({ id: t.id, zoom: false }) : null;
   return Object.freeze({
     tabs: Object.freeze(state.tabs.map(({ id, name, machine, routed, group }) => Object.freeze({ id, name, machine, routed, group }))),
     split: state.split, group: state.group, shown: Object.freeze([shownOf(state, 0), shownOf(state, 1)]),
@@ -1337,8 +1340,9 @@ export const TAB_LIMIT = 4;
 const leaderAt = (read, waiting) => Object.freeze({ read: Number.isInteger(read) ? read : null, waiting });
 /** Whether an event came in the same read of input as the leader. */
 const sameRead = (leader, event) => leader.read !== null && event.read === leader.read;
-/** The line of a leader cancelled by what came in its own read: nothing ran, and why. */
-const mergedLine = (state) => Object.freeze({ said: LEADER_WORDS.merged(backKeyLabel(state.detachKey)), under: Object.freeze([]) });
+/** The line of a leader cancelled by what came in its own read: nothing ran, and why. A line of one
+ *  key (`once`): from a terminal's focus it goes as the person types on, not at a key bound in the list. */
+const mergedLine = (state) => Object.freeze({ said: LEADER_WORDS.merged(backKeyLabel(state.detachKey)), under: Object.freeze([]), once: true });
 /** Two effects as one: the dismissal of a confirmation the leader closed, and what it then ran. */
 const both = (a, b) => (a === null ? b : b === null ? a : typeof b === "string" ? b : { ...a, ...b });
 

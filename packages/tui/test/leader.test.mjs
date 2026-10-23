@@ -85,8 +85,8 @@ test("in the list, the leader then a key of its table in a later read does what 
   assert.deepEqual([back.state.view, back.state.back, back.state.selected, back.effect], ["instances", "instances", state.selected, null]);
 });
 
-/** The line of a leader whose key came in its own read, with the test's leader. */
-const MERGED = { said: LEADER_WORDS.merged("Ctrl+\\"), under: [] };
+/** The line of a leader whose key came in its own read, with the test's leader: a line of one key. */
+const MERGED = { said: LEADER_WORDS.merged("Ctrl+\\"), under: [], once: true };
 
 test("a key in the leader's own read cancels it and does nothing but say so: a paste cannot run a command, and the key after it in a later read is a plain key again", () => {
   const state = THREE();
@@ -104,7 +104,8 @@ test("a key in the leader's own read cancels it and does nothing but say so: a p
   // The leader no longer waits: `o` is the leader's workspaces only after it, and bound to nothing in the list.
   const after = key(key(waiting, "?", read).state, "o");
   assert.deepEqual([after.state.view, after.state.leader, after.effect], ["instances", null, null]);
-  assert.equal(key(after.state, "j").state.outcome, null, "a key of the list in a later read clears the line, as it clears any");
+  assert.equal(after.state.outcome, null, "a key bound to nothing, in a later read, clears the line: a line of one key");
+  assert.equal(key(key(waiting, "?", read).state, "j").state.outcome, null, "a key of the list in a later read clears the line, as it clears any");
 });
 
 test("a key not in the leader's table cancels it and is dropped: no action runs, and nothing is typed into an open filter field, nor pasted", () => {
@@ -148,6 +149,8 @@ test("the leader typed in the terminal with more bytes after it in the same read
   const state = opened(THREE(), "dev-a");
   const read = ++reads, step = leader(state, read, true);
   assert.deepEqual([step.state.leader, step.state.terminal, step.state.outcome, step.effect], [{ read, waiting: false }, state.terminal, MERGED, null]);
+  // What the person types on goes to the agent (the loop's `passed`), and the line goes with it.
+  assert.equal(reduce(step.state, { passed: true }).state.outcome, null, "typing on in the terminal clears the line");
   // The next leader, alone in its read, waits again.
   assert.deepEqual(leader(step.state).state.leader.waiting, true);
 });

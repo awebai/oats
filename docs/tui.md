@@ -95,7 +95,7 @@ runs.
 ## What it shows
 
 ```
- * acme-platform                      │   dev
+  acme-platform                       │   dev
                                       │   soul     dev
  Instances                          1 │   state    running
 > ● dev                               │   harness  claude, claude-opus-5-5 (so…
@@ -887,6 +887,10 @@ workspace the list is its row.
   had open is kept for it, as for a switch from the
   switcher ([Tabs](#tabs)), and from a terminal's focus the focus is kept
   too.
+  With no workspace open (a run started outside a deployment, or the open
+  one gone), the switcher is shown, and the leader then `Down` opens the
+  first row the list would hold and `Up` its last; with no such row
+  nothing happens.
 - **`w`**, the leader then `o`, and `Ctrl+Alt+O` (`Ctrl+Shift+S` with the
   option) give the list the focus, on the open workspace's row. The row
   under the cursor carries `>` and the reverse video, and the open
@@ -1455,7 +1459,8 @@ which edits the command line in your editor, is `Ctrl+X` twice, then
 - **Only a key in a later read counts.** A key that came in the same read of
   input as the leader cancels it and is dropped, with the rest of that
   read, so a paste can never run a command. The line under the list of workspaces says
-  so: `Ctrl+X and the next key came in one read, so nothing ran: press them
+  so, until the next key of any kind (one typed to an agent too) or a resize:
+  `Ctrl+X and the next key came in one read, so nothing ran: press them
   one after the other.` In a terminal the bytes before the leader in that
   read still go to the agent. A leader inside a bracketed paste is pasted
   text.

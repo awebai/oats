@@ -157,6 +157,16 @@ test("the leader then Down opens the next workspace and Up the one before, as th
   assert.deepEqual(end.state.outcome?.said, WORKSPACE_WORDS.below(), "this computer's deployments not opened are not rows: nothing is below B");
 });
 
+test("with no workspace open (the switcher shown, the open one gone) the leader then Down opens the first row the list would hold and Up its last", () => {
+  const state = served(), keys = workspaceList(state).rows.map((row) => row.key);
+  assert.equal(keys.length, 2);
+  // What a workspace gone leaves (store.mjs settled): nothing open, the switcher shown over the served rest.
+  const none = Object.freeze({ ...state, open: null, view: "switcher", back: "switcher" });
+  assert.deepEqual(workspaceList(none).rows.map((row) => row.key), keys, "the rows are the same with nothing open");
+  assert.deepEqual([leaderThen(none, "down").state.open, leaderThen(none, "down").state.view], [A().open, "instances"], "Down: the first row");
+  assert.deepEqual([leaderThen(none, "up").state.open, leaderThen(none, "up").state.view], [OTHER, "instances"], "Up: the last row");
+});
+
 test("from a terminal's focus the leader then Down moves to the next workspace; coming back with the leader then Up gives the terminal, and its focus, back", () => {
   const a = opened(served(), "dev-a");
   assert.equal(a.terminal?.focus, "terminal");
@@ -167,6 +177,18 @@ test("from a terminal's focus the leader then Down moves to the next workspace; 
   const back = settle(leaderThen(b, "up").state);
   assert.equal(back.open, a.open);
   assert.deepEqual([back.terminal?.name, back.terminal?.focus], ["dev-a", "terminal"]);
+});
+
+test("with the palette open over a terminal (the leader then k from its focus), the leader then Down closes it and moves to the next workspace; coming back gives the terminal its focus back, as Esc would have", () => {
+  const a = opened(served(), "dev-a");
+  const palette = leaderThen(a, "k").state;
+  assert.deepEqual([palette.palette?.from, palette.terminal?.focus], ["terminal", "list"], "the palette took the focus from the terminal");
+  const away = leaderThen(palette, "down");
+  assert.deepEqual([away.state.open, away.state.palette], [OTHER, null]);
+  assert.equal(away.state.layouts.get(memoryKey(a, a.open))?.focus, "terminal", "the workspace left keeps the terminal's focus, not the palette's");
+  const b = took(away.state, B_ENTRY(), ++cycle, OTHER);
+  const back = settle(leaderThen(b, "up").state);
+  assert.deepEqual([back.open, back.terminal?.name, back.terminal?.focus, back.terminal?.zoom], [a.open, "dev-a", "terminal", false]);
 });
 
 test("w gives the list the focus on the open row; Up and Down move the cursor, Enter opens the cursor's row and gives the instances the focus, Esc gives it back with nothing opened, and w again shows the switcher", () => {

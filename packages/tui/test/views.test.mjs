@@ -631,7 +631,7 @@ test("the accordion is navigation, in every state: Instances, Souls and Capabili
 
 // ── The open workspace's row of the list of workspaces ─────────────────────────────────────────
 
-test("the list of workspaces' row of the open workspace is `*` and the workspace's name from its fourth cell, in bold reverse video, and the dot of a waiting instance, nothing else: no count of the instances stands anywhere on the screen", () => {
+test("the list of workspaces' row of the open workspace is the workspace's name from its third cell, in bold reverse video, and the dot of a waiting instance, nothing else: no count of the instances stands anywhere on the screen", () => {
   const d = draw(stateOf(observed(ROSTER(), { withheld: WITHHELD, workspace: "another-workspace" })), S120);
   assert.equal(cellText(d, 0, 0, d.cols), workspaceLine("another-workspace", 57, { waiting: true }));
   for (const cell of d.cells[0].slice(0, 20)) assert.deepEqual(cell.style, style({ bold: true, reverse: true }));
@@ -3046,13 +3046,12 @@ test("the help over the switcher keeps the switcher's sidebar, with the help's o
   assert.deepEqual(draw(press(helping, ["escape"]).state, S80).lines, draw(none, S80).lines);
 });
 
-// ── The open workspace's words for other machines ────────────────────────────────────────────────
-// What follows the workspace's name in the open workspace's row of the list of workspaces (what the
-// title said, in the bar of that row) says where the view's deployments are: `+N machine(s)` beside
-// a deployment of this machine, `on <machine>` for the one machine of a view that holds none of
-// this machine's, `N machines` for two or more of them. Whether a deployment is this machine's is
-// the shared entries' `local`; each state here is a roster outcome taken by the store, and a view
-// of machines alone is opened from the switcher.
+// ── The open workspace's row, and other machines ─────────────────────────────────────────────────
+// The open workspace's row of the list of workspaces is its name alone, whatever machines its view
+// holds: no words after the name say where its deployments are. The workspace's own pages say it,
+// and a view whose only deployment is another machine's names it in the detail's `machine` line.
+// Whether a deployment is this machine's is the shared entries' `local`; each state here is a
+// roster outcome taken by the store, and a view of machines alone is opened from the switcher.
 /** The second choice of the switcher, opened with the keys a person has. */
 const second = (state) => press(state, ["w", "w", "j", "enter"]).state;
 /** garnet alone in another workspace's view, and garnet and quartz together in it. */
