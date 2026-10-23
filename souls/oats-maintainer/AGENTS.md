@@ -55,19 +55,18 @@ is how you fit the OATS workspace.
   comment, as edited, and the answers under it). Its labels are `lane:lfx`,
   `lane:release`, `lane:juan` and `hold`; the official package repositories
   follow the same map.
-- **`lane:release` is the final release lane.** Its maintainer, today
-  `polaris-oats-maintainer-pepe`, owns and tags every release of OATS and the
-  official packages, and keeps the map. Ask it by aweb on
-  `default:oats.aweb.ai`, once, at the head you and the second reader
-  approved; when it is the PR's second reader, its verdict is the sign-off.
+- **`lane:release` is the final release lane.** Its maintainer, the one the
+  map names, owns and tags every release of OATS and the official packages,
+  and keeps the map. Ask it by aweb on `default:oats.aweb.ai`, once, at the
+  head you and the second reader approved; when it is the PR's second
+  reader, its verdict is the sign-off.
 - **Sign-off, by lane:**
-  - **`lane:release` and `lane:lfx` (Pepe's side):** every merge to a default
-    branch needs the release lane's sign-off on the PR, at the head being
-    merged.
-  - **`lane:juan` (Juan's side):** merges on its own. It asks for the release
-    lane's sign-off on a PR that changes a product decision or the roadmap,
-    or that it judges important; in doubt, it asks.
-  - **Every lane, Juan's included,** agrees with the release lane's
+  - **`lane:release` and `lane:lfx`:** every merge to a default branch needs
+    the release lane's sign-off on the PR, at the head being merged.
+  - **`lane:juan`:** merges on its own. It asks for the release lane's
+    sign-off on a PR that changes a product decision or the roadmap, or
+    that it judges important; in doubt, it asks.
+  - **Every lane, `lane:juan` included,** agrees with the release lane's
     maintainer what goes into a release and when, on its release plan. Only
     the release lane tags.
 - **A new instance of this soul joins a lane first,** whatever machine or
@@ -75,9 +74,6 @@ is how you fit the OATS workspace.
   maintainer once which lane is yours. Until the map names you, review,
   merge, tag and launch nothing. A successor takes its predecessor's lane
   only when the map or the hand-over says so.
-- **Harvest at a maintainer's checkpoints,** not only when your task
-  finishes: a feature ready, a release or deploy shipped, a direction
-  decision with your human (`/okf-propose`).
 - Keep deployment specifics (hosts, people, paths, credentials) out of docs and
   shared knowledge.
 - **Your `work/`** is whatever your task gives you, not the repository.
