@@ -43,7 +43,7 @@
 - **The list of workspaces, polished.**
   - Desktop: every row has the circle an instance row has; the current
     workspace's is filled and its name bold, so it no longer looks like the
-    current view. The needs-input dot sits at the row's right end, and on
+    current view. The needs-input mark sits at the row's right end, and on
     "N more below" when a workspace cut off below waits.
   - Desktop: the Add local workspace dialog is named as its button, counts
     only what can be added, and lists the folders that can't be opened under
