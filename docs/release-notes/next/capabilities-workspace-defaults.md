@@ -17,8 +17,9 @@
 - **Desktop: "What capabilities are".** The round **i** button after the
   section jump explains what a capability gives a soul's instances, the three
   places one comes from, which capabilities are core and which are
-  additional, and what workspace defaults are. Workspace › Souls
-  has the same button, **About souls**, which explains what a soul is
+  additional, and what workspace defaults are and why they matter.
+  Workspace › Souls has the same button, **About souls**, which explains what
+  a soul is
   ([Desktop](../desktop.md#capabilities-and-spawning)).
 
 ## Changed

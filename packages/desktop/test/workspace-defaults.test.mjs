@@ -352,7 +352,7 @@ test('About capabilities: the lifecycle frame, labelled by its title, the exact 
     'A soul names the capabilities it needs. When an instance starts, it gets a copy of each one, and the capability’s instructions are injected into the instance’s composed AGENTS.md, after the soul’s own.',
     'Each capability comes from one of three places:',
     'Three capabilities are core: knowledge (what an instance knows and learns), messaging (who it can talk to) and tasks (where its work is tracked). A soul has at most one of each. Every other capability is additional: a soul can have any number.',
-    'Workspace defaults are capabilities the workspace gives to every soul. A soul gets them without asking. It can turn a default off and name its own in its place, or leave a core capability (knowledge, messaging or tasks) empty.',
+    'Workspace defaults are capabilities the workspace gives to every soul. They are how an organisation gives its agents one shared way of working: the same tools for knowledge, messaging and tasks. Knowledge matters most: with a knowledge capability, what agents learn and the procedures the organisation writes down are kept and reach later instances, instead of ending with each session. A soul gets the defaults without asking. It can turn a default off and name its own in its place, or leave a core capability (knowledge, messaging or tasks) empty.',
   ]);
   assert.equal(dialog.querySelector('p code').textContent, 'AGENTS.md');
   assert.equal(dialog.querySelector('p strong').textContent, 'Workspace defaults');

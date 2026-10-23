@@ -227,8 +227,11 @@ commands and instructions, the instructions injected into each instance's
 composed `AGENTS.md` after the soul's own), the three places one comes from
 (Workspace owned, Repo owned, Packages), which three capabilities are core
 (knowledge, messaging and tasks, at most one of each per soul) and that every
-other one is additional, and what workspace defaults are: every soul gets
-them, and a soul can turn one off and name its own in its place.
+other one is additional, and what workspace defaults are and why they
+matter: every soul gets them, they give an organisation's agents one shared
+way of working, and a knowledge default keeps what agents learn and the
+procedures the organisation writes down for later instances; a soul can turn
+one off and name its own in its place.
 **Close** or Esc closes it and returns the focus to the button; leaving the
 tab or the workspace closes it too. **Workspace › Souls** has the same button
 at the end of its toolbar, **About souls**, which explains what a soul is.
