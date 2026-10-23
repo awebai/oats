@@ -558,12 +558,18 @@ Alt alone opens no menu bar.
   any, and your rebind is the one that fires, until you rebind or reset one
   side. On any chord two actions share, the one you bound wins over the one
   holding it by default.
-- **Text fields.** No field of the Desktop reads Alt+letter or an Alt arrow:
-  every one is a native input or text area (the roster filter, the palette's
-  and Quick Open's inputs, the dialogs' fields, the shortcuts editor's
-  search), which moves by word with Ctrl+← / Ctrl+→ on Linux and Windows, and
-  the Desktop has no code editor. So the Alt family's chords fire from a
-  field as from anywhere, and take nothing from it.
+- **Text fields.** No text field of the Desktop reads Alt+letter or an Alt
+  arrow: every one is a native input or text area (the roster filter, the
+  palette's and Quick Open's inputs, the dialogs' fields, the shortcuts
+  editor's search), which moves by word with Ctrl+← / Ctrl+→ on Linux and
+  Windows, and the Desktop has no code editor. So the Alt family's chords
+  fire from a field as from anywhere, and take nothing from it.
+- **A select keeps Alt+↑ / Alt+↓.** A native control opens its popup with
+  them on Linux and Windows: a select's list (Brain's Agent selector, the
+  setup pages' selects), an input's suggestions, a date or time picker. While
+  one has focus, the workspace moves' default Alt+↑ / Alt+↓ are left to it;
+  from anywhere else they move between workspaces. A binding of those keys
+  you made yourself still fires there.
 - **The palette's cycle.** Its chord with Shift moves up: Alt+Shift+K by
   default, Ctrl+Alt+Shift+K in the Ctrl+Alt family. Ctrl+Shift+K already
   holds Shift, so in the Ctrl+Shift family the palette moves up with
@@ -599,17 +605,20 @@ takes those (docs/tui.md).
 | pi | Alt+F | a word right | Esc, then f: pi reads ESC f as a word right |
 | bash (readline) | Alt+P, Alt+F, Alt+R | search history back; forward a word; revert the line | Esc, then p, f or r |
 | bash (readline) | Alt+1–Alt+9 | a numeric argument | Esc, then the digit |
-| zsh (emacs keymap) | Alt+P, Alt+Z, Alt+W, Alt+A, Alt+F | history search back; run the last named command; copy the region; accept and hold; forward a word | Esc, then the letter |
+| zsh (emacs keymap) | Alt+P, Alt+Z, Alt+W, Alt+F | history search back; run the last named command; copy the region; forward a word | Esc, then the letter |
 | zsh (emacs keymap) | Alt+1–Alt+9 | a numeric argument | Esc, then the digit |
 | irssi | Alt+1–Alt+9; Alt+W, E, R, O | go to window 1–9; to window 12, 13, 14, 19 | Esc, then the key |
-| irssi | Alt+K, A, P, F | erase completion; the most active window; page back; forward a word | Esc, then the key |
+| irssi | Alt+K, P, F | erase completion; page back; forward a word | Esc, then the key |
 | WeeChat | Alt+1–Alt+9 | go to buffer 1–9 | unknown; switch to Ctrl+Alt |
-| WeeChat | Alt+K, R, F, P, A, Z, W | grab a key; delete the line; next word; previous highlight; next active buffer; zoom; Alt+W starts the window keys | unknown; switch to Ctrl+Alt |
+| WeeChat | Alt+K, R, F, P, Z, W | grab a key; delete the line; next word; previous highlight; zoom; Alt+W starts the window keys | unknown; switch to Ctrl+Alt |
 | tmux | nothing without the prefix (the root table binds only the mouse) | after the prefix: Alt+1–Alt+7 the preset layouts, Alt+O / P / N rotate panes and go to a window with an alert | its commands (`select-layout`, `resize-pane`); Esc, then the key is read as Alt only within `escape-time` (10 ms by default in tmux 3.7c), so not by hand; or switch to Ctrl+Alt |
-| Emacs (`emacs -nw`) | Alt+K, E, Shift+E, A, Z, W, F, R | kill-sentence, forward- and backward-sentence, zap-to-char, kill-ring-save, forward-word, move-to-window-line | Esc, then the letter |
+| Emacs (`emacs -nw`) | Alt+K, E, Shift+E, Z, W, F, R | kill-sentence, forward-sentence (with Shift too), zap-to-char, kill-ring-save, forward-word, move-to-window-line | Esc, then the letter |
 | Emacs | Alt+1–Alt+9 | a numeric argument | Esc, then the digit |
 
-Not taken from these programs, by their docs: Alt+K, Z, W, E, A and R in
+Not taken from any of them: Alt+A, which the Alt family leaves alone (the
+next group is Alt+Shift+→ there), so zsh's accept-and-hold, irssi's and
+WeeChat's next active window or buffer and Emacs's backward-sentence keep it.
+Not taken from these programs, by their docs: Alt+K, Z, W, E and R in
 Claude Code; the Alt+Shift arrows everywhere above but in WeeChat's cursor
 mode; Alt+O in Emacs since 28. On macOS nothing here
 applies: the Desktop binds no ⌥ chord a terminal sees, and most macOS

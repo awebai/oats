@@ -258,6 +258,19 @@ function isEditableTarget(target) {
   return !!target.isContentEditable;
 }
 
+/** The input types whose popup Chromium opens with Alt+↑ / Alt+↓ (a date or time picker). */
+const PICKER_INPUTS = new Set(["date", "time", "datetime-local", "month", "week"]);
+/** True when the event target is a native control that opens its popup with Alt+↑ / Alt+↓ on Linux and
+ * Windows: a select (its list), an input with a datalist (its suggestions) or a date or time input (its
+ * picker). A default chord on those keys (the workspace moves) is left to it; matchEvent applies it. */
+function opensOnAltArrow(target) {
+  if (!target) return false;
+  const tag = String(target.tagName || "").toUpperCase();
+  if (tag === "SELECT") return true;
+  if (tag !== "INPUT") return false;
+  return !!target.getAttribute?.("list") || PICKER_INPUTS.has(String(target.type || "").toLowerCase());
+}
+
 // ---------------------------------------------------------------- defaults
 
 // One entry per action: a chord string (the same on every platform, `Mod` = ⌘ on
@@ -765,6 +778,11 @@ export function matchEvent(e, opts = {}) {
   const editable = opts.editableTarget ?? isEditableTarget(e.target);
   const plainKey = isPlainChord(evChord);
   if (plainKey && editable) return null;
+  // Alt+↑ / Alt+↓ (no other modifier) open a native control's popup (opensOnAltArrow): while one has
+  // focus, a default bound there (workspace.previous / workspace.next) is left to it; a user's own
+  // binding of those keys still fires, as it does over a default anywhere.
+  const popupKeeps = !evChord.ctrl && !evChord.mod && !evChord.shift && evChord.alt
+    && (evChord.key === "arrowup" || evChord.key === "arrowdown") && opensOnAltArrow(e.target);
 
   // Two actions on one chord (a clash the editor names, keymapConflicts): the one the user bound
   // there wins over one that holds it by default, so a user's own rebinding wins over a default
@@ -782,6 +800,7 @@ export function matchEvent(e, opts = {}) {
       if (insideTerminal && !terminalAllows(action.id, chord, isMac)) continue;
       // The leader's Ctrl+X is Cut in a text field on Linux/Windows (leaderLeftToField).
       if (action.id === "app.leader" && !insideTerminal && leaderLeftToField(e, isMac)) continue;
+      if (popupKeeps && !hasOverride(action.id)) continue;
       const tier = hits[hasOverride(action.id) ? "own" : "fixed"];
       if (action.context === "global") tier.global = tier.global || action;
       else tier.context = tier.context || action;

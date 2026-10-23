@@ -535,3 +535,34 @@ test("a sidebar key and a tab shortcut on one chord clash: both contexts are on 
   assert.deepEqual(keymapConflicts(false).map((c) => c.actions.map((a) => a.id).sort()), [["sidebar.key.spawn", "tabs.close"]]);
   assert.equal(getBinding("tabs.close", false), "N", "kept as set");
 });
+
+// A native control that opens its popup with Alt+↑ / Alt+↓ on Linux and Windows (a select's list, a datalist's
+// suggestions, a date or time picker) keeps those keys from the workspace moves' defaults; a user's own binding
+// of them still fires there, and the defaults fire from any other control. Brain's Agent selector is such a select.
+test("Alt+↑ / Alt+↓ stay with a focused select, datalist or picker input; a user's own binding still fires", (t) => {
+  installStorage(); resetAllBindings();
+  withActions(t, [
+    { id: "workspace.previous", label: "Previous workspace", context: "global", run: () => {} },
+    { id: "workspace.next", label: "Next workspace", context: "global", run: () => {} },
+  ]);
+  t.after(() => resetAllBindings());
+  const opts = { isMac: false, insideTerminal: false };
+  const press = (key, target, more = {}) => matchEvent({ ...ev(key, { altKey: true, ...more }), target }, opts);
+  const select = { tagName: "SELECT" };
+  const datalist = { tagName: "INPUT", type: "text", getAttribute: (name) => (name === "list" ? "souls" : null) };
+  const date = { tagName: "INPUT", type: "date", getAttribute: () => null };
+  for (const target of [select, datalist, date]) {
+    assert.equal(press("ArrowDown", target), null, `${target.tagName}/${target.type ?? ""}: its popup's key`);
+    assert.equal(press("ArrowUp", target), null);
+  }
+  // Any other control, and none: the defaults fire.
+  assert.equal(press("ArrowDown", { tagName: "INPUT", type: "text", getAttribute: () => null }), "workspace.next");
+  assert.equal(press("ArrowDown", { tagName: "BUTTON" }), "workspace.next");
+  assert.equal(press("ArrowUp", undefined), "workspace.previous");
+  // Another chord on a select is not left to it.
+  setBinding("workspace.next", "Alt+Shift+ArrowDown");
+  assert.equal(press("ArrowDown", select, { shiftKey: true }), "workspace.next", "only Alt alone with ↑ / ↓ is the popup's");
+  // A user's own binding of Alt+↓ fires on a select, as over a default anywhere.
+  setBinding("workspace.next", "Alt+ArrowDown");
+  assert.equal(press("ArrowDown", select), "workspace.next");
+});
