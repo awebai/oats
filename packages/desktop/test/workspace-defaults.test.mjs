@@ -143,6 +143,52 @@ test('empty slots: None and the note, not interactive, a neutral tile; no additi
   assert.equal(u.$('[data-jump=defaults] .capability-nav-count').textContent, '0');
 });
 
+// A core provider may be named under defaults.capabilities rather than defaults.<slot>: the kernel fills the slot by the
+// capability's layer (test/resolve.test.mjs "layers-from"), so does the panel, from the catalog row's layer only.
+test('a core capability named under defaults.capabilities fills its core cell, also over a slot that says none; never Additional', t => {
+  const u = mount(t);
+  const CHAT = { name: 'nw-chat', kind: 'member', repoKey: HOST, layer: 'messaging', origin: `member ${HOST}` };
+  const rows = [...ROWS, CHAT];
+  for (const messaging of [null, 'none']) {
+    u.render(status({ slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging, tasks: null },
+      capabilities: [{ name: 'nw-chat', from: 'here', off: false }, { name: 'oats.core', from: 'package', off: false }] }), { rows });
+    const cell = slotCells(u)[1];
+    assert.equal(cell.tagName, 'BUTTON'); assert.equal(cell.dataset.slot, 'messaging');
+    assert.equal(text(cell), 'Messaging nw-chat agents latest');
+    assert.equal(cell.querySelector('.ws-default-none'), null, 'not "None"');
+    assert.equal(cell.querySelector('.ws-default-tile').dataset.tint, 'sage', 'the slot\'s tile');
+    assert.equal(cell.getAttribute('aria-label'), 'Messaging: nw-chat, the workspace default — open its page');
+    assert.equal(cell.dataset.focusKey, 'defaults:messaging');
+    assert.deepEqual(addCells(u).map(c => c.dataset.defaultCapability), ['oats.core'], 'not under Additional');
+    assert.equal(u.$('[data-jump=defaults] .capability-nav-count').textContent, '3', 'the count is unchanged by where it shows');
+    cell.click(); assert.equal(u.opened.at(-1), CHAT);
+  }
+  // Only the only one: with nothing else Additional says there is none.
+  u.render(status({ slots: {}, capabilities: [{ name: 'nw-chat', from: 'here', off: false }] }), { rows });
+  assert.equal(u.$('[data-group=additional] .ws-defaults-none').textContent, 'None. Each soul adds its own.');
+  // A layer the catalog does not report is not guessed: unlisted, or turned off, it stays Additional.
+  u.render(status({ slots: {}, capabilities: [{ name: 'nw-chat', from: 'here', off: false }] }), { rows: ROWS });
+  assert.deepEqual(addCells(u).map(c => c.dataset.defaultCapability), ['nw-chat']); assert.equal(slotCells(u)[1].querySelector('.ws-default-none').textContent, 'None');
+  u.render(status({ slots: {}, capabilities: [{ name: 'nw-chat', from: null, off: true }] }), { rows });
+  assert.deepEqual(addCells(u).map(c => c.dataset.defaultCapability), ['nw-chat']);
+});
+
+test('a slot declared and a same-layer named default (the workspace\'s own conflict): both ids in the cell, the slot\'s first, each opening its page', t => {
+  const u = mount(t);
+  const CHAT = { name: 'nw-chat', kind: 'member', repoKey: HOST, layer: 'messaging', origin: `member ${HOST}` };
+  u.render(status({ slots: { messaging: { name: 'oats.aweb', from: 'package' } }, capabilities: [{ name: 'nw-chat', from: 'here', off: false }] }), { rows: [...ROWS, CHAT] });
+  const cell = slotCells(u)[1];
+  assert.equal(cell.tagName, 'DIV', 'two pages: the cell is not one button'); assert.equal(cell.dataset.focusKey, undefined);
+  const entries = [...cell.querySelectorAll('button.ws-default-entry')];
+  assert.deepEqual(entries.map(e => [text(e), e.dataset.focusKey, e.getAttribute('aria-label')]), [
+    ['oats.aweb oats.aweb 1.28.0', 'defaults:messaging:oats.aweb', 'Messaging: oats.aweb, the workspace default — open its page'],
+    ['nw-chat agents latest', 'defaults:messaging:nw-chat', 'Messaging: nw-chat, the workspace default — open its page'],
+  ]);
+  assert.equal(cell.querySelector('.ws-default-label').textContent, 'Messaging'); assert.equal(cell.querySelectorAll('.ws-default-note').length, 0, 'no new copy');
+  entries[1].click(); assert.equal(u.opened.at(-1), CHAT); entries[0].click(); assert.equal(u.opened.at(-1), ROWS[1]);
+  assert.equal(addCells(u).length, 0);
+});
+
 test('an unlisted package default never presents the capability as its package: the chip names the kind alone', t => {
   const u = mount(t);
   // oats.core is listed nowhere here (its package, oats.framework, is not locked yet): the id says nothing about the package.

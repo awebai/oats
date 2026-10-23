@@ -1288,7 +1288,11 @@ workspace is observed through its server and never synced from here.
   `defaults`; without it there is no section and nothing is inferred. It is one
   panel: a scope line, then two groups drawn with one cell (tile | slot label, id,
   source chip). Core capabilities holds the three slots in a fixed order (Knowledge,
-  Messaging, Tasks). Additional capabilities holds the rest, or says there are none.
+  Messaging, Tasks), including a named default (`defaults.capabilities`) whose listed
+  catalog row has a core layer, as the kernel fills the slot by layer. A slot that is
+  declared both ways (the workspace's own conflict) shows both ids, each its own button.
+  Additional capabilities holds the rest (a layer the catalog does not report is not
+  guessed), or says there are none.
   Each group's list is labelled by its heading. `defaultRow` matches each
   default to a catalog row (`from: "package"` a package row, a member key that
   member's row, `"here"` the host's) across every section, so the search and the

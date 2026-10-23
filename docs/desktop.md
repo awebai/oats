@@ -209,7 +209,9 @@ or says there are none. Each default is shown the same way: its tile, the
 capability and its source (a package and its pinned version, or a repository
 and "latest"). Click it to open the capability's page. An empty core slot
 shows **None**: there is no workspace default, and each soul chooses its
-own. An additional default the workspace turned off is struck through and
+own. A core capability the workspace names among its other defaults, rather
+than in its slot, is shown under Core, in that slot, as the kernel fills the
+slot with it. An additional default the workspace turned off is struck through and
 says "turned off by the workspace". A workspace that sets no defaults, a
 standalone deployment for example, shows one line saying so. The search and
 the repository pills never narrow or hide this section. It is read from

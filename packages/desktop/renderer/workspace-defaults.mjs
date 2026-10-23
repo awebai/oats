@@ -47,6 +47,11 @@ export const defaultsCSS = `
 .ws-default-none { color:var(--muted); font:500 14px var(--sans,system-ui); line-height:24px; }
 .ws-default-note { color:var(--muted); font-size:12px; line-height:1.4; }
 .ws-default-cell .source-chip { max-width:100%; }
+/* A core cell with two declared ids (the workspace's own conflict): each id and its chip is its own button. */
+.oats-view .ws-default-entry, .ws-default-entry { appearance:none; -webkit-appearance:none; display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0; max-width:100%; height:auto; min-height:0; margin:0; padding:0; border:0; border-radius:4px; background:var(--surface); color:var(--fg); font:inherit; text-align:left; }
+.oats-view button.ws-default-entry { cursor:pointer; }
+.oats-view button.ws-default-entry:hover .ws-default-name { text-decoration:underline; }
+.oats-view button.ws-default-entry:focus-visible { background:var(--sel); }
 /* Turned off by the workspace: named, never offered (the id struck through in --muted). */
 .ws-default-cell.off .ws-default-name { color:var(--muted); text-decoration:line-through; }
 @container (max-width:700px) {
@@ -184,22 +189,45 @@ export function renderWorkspaceDefaults(section, { status, rows, onOpen = null }
     const item = node(doc, 'li'); item.append(el); return { item, el };
   };
   const name = value => { const el = node(doc, 'span', value, 'ws-default-name'); el.title = value; return el; };
+  // Which group a named default (defaults.capabilities) belongs to, from the catalog row's layer only: a listed,
+  // not-turned-off capability of a core layer fills that core cell (the kernel fills slots by manifest layer, whether
+  // the workspace named it under defaults.<slot> or defaults.capabilities, also when the slot itself says none).
+  // A layer the catalog does not report (unlisted, no source, turned off) is not guessed: those stay Additional.
+  const coreNamed = new Map(DEFAULT_SLOTS.map(([slot]) => [slot, []])), additionalCaps = [];
+  for (const cap of defaults.capabilities) {
+    const match = cap.off === true ? null : defaultRow(rows, cap, hostKey);
+    if (match?.listed && coreNamed.has(match.row.layer)) coreNamed.get(match.row.layer).push({ name: cap.name, match });
+    else additionalCaps.push(cap);
+  }
   const core = group('core', DEFAULTS_COPY.core, DEFAULTS_COPY.coreLead);
   for (const { slot, label, icon, tint, value } of defaults.slots) {
-    const match = value ? defaultRow(rows, value, hostKey) : null;
+    // The slot declaration first, then a same-layer named default. Both at once is the workspace's own conflict
+    // (the kernel refuses every soul): both are shown as declared, each opening its own page.
+    const entries = [...(value ? [{ name: value.name, match: defaultRow(rows, value, hostKey) }] : []), ...coreNamed.get(slot)];
     const stack = [node(doc, 'span', label, 'ws-default-label')];
-    if (value) stack.push(name(value.name), ...(match ? [chipFor(doc, match, names)] : []));
-    else stack.push(node(doc, 'span', DEFAULTS_COPY.emptySlot, 'ws-default-none'), node(doc, 'span', DEFAULTS_COPY.emptyNote, 'ws-default-note'));
-    const { item, el } = cell({ tile: icon, tint, empty: !value, stack, match, focusKey: `defaults:${slot}`,
-      label: value ? `${label}: ${value.name}, the workspace default — open its page` : '' });
+    const opener = entry => `${label}: ${entry.name}, the workspace default — open its page`;
+    if (!entries.length) stack.push(node(doc, 'span', DEFAULTS_COPY.emptySlot, 'ws-default-none'), node(doc, 'span', DEFAULTS_COPY.emptyNote, 'ws-default-note'));
+    else if (entries.length === 1) stack.push(name(entries[0].name), ...(entries[0].match ? [chipFor(doc, entries[0].match, names)] : []));
+    else for (const entry of entries) {
+      const button = !!entry.match && opens;
+      const line = node(doc, button ? 'button' : 'span', null, 'ws-default-entry');
+      line.append(name(entry.name), ...(entry.match ? [chipFor(doc, entry.match, names)] : []));
+      if (button) {
+        line.type = 'button'; line.dataset.focusKey = `defaults:${slot}:${entry.name}`; line.setAttribute('aria-label', opener(entry));
+        line.addEventListener('click', () => onOpen(entry.match.row));
+      }
+      stack.push(line);
+    }
+    const one = entries.length === 1 ? entries[0] : null;
+    const { item, el } = cell({ tile: icon, tint, empty: !entries.length, stack, match: one?.match ?? null, focusKey: `defaults:${slot}`, label: one ? opener(one) : '' });
     el.dataset.slot = slot;
     core.list.append(item);
   }
   core.el.append(core.list);
   const additional = group('additional', DEFAULTS_COPY.additional, DEFAULTS_COPY.additionalLead);
-  if (!defaults.capabilities.length) additional.el.append(node(doc, 'p', DEFAULTS_COPY.additionalNone, 'ws-defaults-none'));
+  if (!additionalCaps.length) additional.el.append(node(doc, 'p', DEFAULTS_COPY.additionalNone, 'ws-defaults-none'));
   else {
-    for (const cap of defaults.capabilities) {
+    for (const cap of additionalCaps) {
       const off = cap.off === true;
       const match = off ? null : defaultRow(rows, cap, hostKey);
       // The space keeps an off cell's id and note apart for assistive tech.
