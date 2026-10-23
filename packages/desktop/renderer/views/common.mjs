@@ -101,7 +101,9 @@ export function postJson(ctx, pathname, body) {
    history.replaceState, so a reload keeps it. The shared localStorage
    selection is only the default of a window opened with none. Main binds
    every switch first (window:claim-workspace): a workspace another window
-   has is refused, and that window is focused instead. */
+   has is refused, and that window is focused instead; a take-over (a pick
+   from the list of workspaces, PR 3) moves it to this window instead, and
+   the window that had it shows its previous one (leaveTakenWorkspace). */
 const WS_KEY = "oats.desktop.ws";
 const wsListeners = new Set();
 const startHash = (() => { try { return hashWorkspace(globalThis.location?.hash ?? ""); } catch { return { ok: false }; } })();
@@ -126,6 +128,7 @@ export function currentWorkspace() {
    plain selection where there is no window binding (the browser harness). */
 export function setWorkspace(id) {
   wsCurrent = id || "";
+  noteShown(wsCurrent);
   wsGen++;                                   // invalidate all in-flight ws-scoped work
   try { localStorage.setItem(WS_KEY, wsCurrent); } catch { /* storage-less env */ }
   writeHash(wsCurrent);
@@ -149,7 +152,7 @@ export function adoptWorkspace(id) {
   const adopted = wsCurrent, initial = windowMode === "adopting";
   void claim(adopted, initial ? { focus: false, initial: true } : { focus: false }).then((r) => {
     if (wsCurrent !== adopted) return;       // switched since: that switch was bound on its own
-    if (r?.ok) { wsCurrent = boundTo(r, adopted); writeHash(wsCurrent); setWindowState("bound"); }
+    if (r?.ok) { wsCurrent = boundTo(r, adopted); noteShown(wsCurrent); writeHash(wsCurrent); setWindowState("bound"); }
     else if (r?.code === "open-elsewhere" || r?.code === "choose") void chooseWorkspace(r.workspaces);
   });
 }
@@ -160,6 +163,14 @@ export function adoptWorkspace(id) {
    "choosing" (no workspace: the switcher and its choices, no workspace read). */
 let windowMode = boundAtStart ? "bound" : "adopting";
 let windowChoices = [];
+/* The workspaces this window has shown this session, the most recent last, each once (at most
+   SHOWN_HISTORY): where a window goes when another one takes its workspace over. */
+const SHOWN_HISTORY = 16;
+let shownHistory = boundAtStart && wsCurrent ? [wsCurrent] : []; // a window opened on its workspace has shown it
+function noteShown(id) {
+  if (!id) return;
+  shownHistory = [...shownHistory.filter((each) => each !== id), id].slice(-SHOWN_HISTORY);
+}
 const windowListeners = new Set();
 const claimBridge = () => { try { const fn = globalThis.oatsDesktop?.windowClaimWorkspace; return typeof fn === "function" ? fn : null; } catch { return null; } };
 async function claim(id, options) {
@@ -203,11 +214,23 @@ export async function refreshChoices() {
 
 /* At start: a window with no hash takes the shared default only when main says no other window has
    it (and it is not a New Window); otherwise it chooses. With no default it adopts, as before.
-   Resolves to the window's state. */
+   A window whose hash names its workspace confirms that binding with main first, without focusing
+   anything: its page may have loaded or reloaded while another window took the workspace over (the
+   ask to release it then never reached this page), and a workspace main no longer binds here is
+   never shown here: the window chooses, and tells main it holds nothing (chooseWorkspace), since
+   main may still bind it there (the window that asked closed before the take-over landed). Main
+   refusing for any other reason leaves it bound, as before. Resolves to the window's state. */
 export async function startWindow() {
-  if (windowMode !== "adopting" || !claimBridge()) return windowMode === "adopting" ? "bound" : windowMode;
+  if (!claimBridge()) return windowMode === "adopting" ? "bound" : windowMode;
+  if (windowMode === "bound") {
+    const shown = wsCurrent, r = await claim(shown, { focus: false });
+    if (r?.ok) { wsCurrent = boundTo(r, shown); noteShown(wsCurrent); writeHash(wsCurrent); }
+    else if (r?.code === "open-elsewhere") await chooseWorkspace(r.workspaces);
+    return windowMode;
+  }
+  if (windowMode !== "adopting") return windowMode;
   const r = await claim(wsCurrent, { focus: false, initial: true });
-  if (r?.ok) { wsCurrent = boundTo(r, wsCurrent); writeHash(wsCurrent); setWindowState("bound"); }
+  if (r?.ok) { wsCurrent = boundTo(r, wsCurrent); noteShown(wsCurrent); writeHash(wsCurrent); setWindowState("bound"); }
   else if (r?.code === "choose" || r?.code === "open-elsewhere") enterChoosing(r.workspaces);
   return windowMode;
 }
@@ -233,18 +256,66 @@ export async function chooseWorkspace(workspaces) {
 }
 
 /* Switch this window to `id`. Main binds it first; a workspace another window has is refused (that
-   window is focused, unless `focus` is false) and this window does not change. Switches run one at a
-   time, so this window's state never differs from main's: a switch superseded before it is sent is
-   never sent; one main has already bound is followed even when a newer one waits behind it. */
-let switching = Promise.resolve(), switchIntent = 0;
-export function switchWorkspace(id, { focus = true } = {}) {
+   window is focused, unless `focus` is false) and this window does not change. With `takeOver` it is
+   never refused for that: main moves it here from the window that has it (which shows its previous
+   workspace, leaveTakenWorkspace), and nothing is focused. Switches run one at a time, so this window's
+   state never differs from main's: a switch superseded before it is sent is never sent; one main has
+   already bound is followed even when a newer one waits behind it. */
+let switching = Promise.resolve(), switchIntent = 0, handed = null;
+/* The layout a take-over of `workspace` brought (main's claim answer), while the switch to it lands: read
+   once by the workspace listener that restores tabs (shell.mjs restoreWorkspaceTabs), null otherwise. */
+export function handedLayout(workspace) {
+  const layout = handed?.workspace === workspace ? handed.layout : null;
+  handed = null;
+  return layout;
+}
+export function switchWorkspace(id, { focus = true, takeOver = false } = {}) {
   const intent = ++switchIntent;
   const run = switching.then(async () => {
     if (intent !== switchIntent) return { ok: false, code: "superseded" };
     if (!claimBridge()) { setWorkspace(id); return { ok: true }; }
-    const r = await claim(id, { focus });
-    if (r?.ok) { setWorkspace(boundTo(r, id)); return { ok: true }; }
+    const r = await claim(id, takeOver ? { takeOver: true } : { focus });
+    if (r?.ok) {
+      // A take-over's layout (renderer/layout-handover.mjs) is the shell's to restore, as the switch lands.
+      handed = takeOver && r.layout ? { workspace: boundTo(r, id), layout: r.layout } : null;
+      setWorkspace(boundTo(r, id));
+      handed = null;
+      return { ok: true };
+    }
     return r ?? { ok: false, code: "failed" };
+  });
+  switching = run.catch(() => {});
+  return run;
+}
+/* Another window took this window's workspace `id` over (main's window:release-workspace; main has
+   moved the binding, or moves it once this window answers or after its wait). This window shows the
+   most recent workspace of its session history that is not `id` (under any of its ids,
+   takenWorkspaceIds), that main serves (`served`, the
+   choices main sent) and that no other window has; with none, it has no workspace and shows the
+   switcher. It runs in the switch queue, after any switch already queued: one that moved this window
+   away already leaves nothing to do. Late or on time, it ends the same way. Resolves when done. */
+/* The ids that name workspace `id` in a release (main's view id) here: it, and each deployment the served view
+   holds. Main may rekey a window bound to a deployment id to the view that holds it (#482) before this
+   window's own selection follows, so a release of the view is a release of what this window holds under
+   any of those ids. */
+export function takenWorkspaceIds(id, served) {
+  const view = (Array.isArray(served) ? served : []).find((w) => w?.id === id);
+  return new Set([id, ...(Array.isArray(view?.deployments) ? view.deployments : [])].filter((each) => typeof each === "string" && each));
+}
+export function leaveTakenWorkspace(id, served) {
+  const choices = Array.isArray(served) ? served : [];
+  const ids = new Set(choices.map((w) => w?.id).filter(Boolean));
+  const taken = takenWorkspaceIds(id, choices);
+  const run = switching.then(async () => {
+    if (!taken.has(wsCurrent)) return;
+    for (const candidate of [...shownHistory].reverse()) {
+      if (taken.has(candidate) || !ids.has(candidate)) continue;
+      if (!claimBridge()) { setWorkspace(candidate); return; }
+      // Main's binding is followed, as every switch's is.
+      const r = await claim(candidate, { focus: false });
+      if (r?.ok) { setWorkspace(boundTo(r, candidate)); return; }
+    }
+    await chooseWorkspace(choices);
   });
   switching = run.catch(() => {});
   return run;

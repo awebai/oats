@@ -110,7 +110,7 @@ export function rowStrings(rows, cols) {
 // Everything below goes through the same calls the program makes (lib/client.mjs re-exports them):
 // a test that built an entry or a panel by hand would test its own idea of them.
 import { failedEntry, observedEntry, panelInstances, pendingEntry, rosterRows } from "../lib/client.mjs";
-import { model, outcomeOf, roster } from "../lib/model.mjs";
+import { listRowsOf, model, outcomeOf, roster } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { createScreen } from "../lib/term/screen.mjs";
 import { frame, layout, mainArea } from "../lib/views/frame.mjs";
@@ -169,7 +169,7 @@ export function draw(state, size = { cols: 80, rows: 24 }, { now = NOW, utf8 = t
   const under = state.view === "help" || state.view === "act" ? state.back : state.view;
   const listing = under === "switcher";
   const r = listing ? { notice: null, note: null } : roster(state, at);
-  const g = layout(r.notice, size, { note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.tabs.length > 0, open: listing ? null : under });
+  const g = layout(r.notice, size, { note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.tabs.length > 0, open: listing ? null : under, list: listRowsOf(state, at) });
   // The switcher stands in the main area: the lines above its choices wrap to that area's width.
   const area = mainArea(g, size.cols).cols;
   const made = { ...frame({ ...model(state, { page: g.page, body: g.body, now, at, cols: g.listCols, area }), screen }, size), cols: g.listCols, area };

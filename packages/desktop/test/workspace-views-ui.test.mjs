@@ -1,6 +1,6 @@
 // Workspace views (#482), renderer side: nothing above the sidebar navigation, the roster grouped by
 // deployment ONLY with two or more deployments (one deployment looks exactly as before), the
-// switcher's one-line entries and its "Not matched to a workspace" section, and the "On <deployment>"
+// workspace list's one-line entries (unmatched views among them, by name), and the "On <deployment>"
 // line of deployment-level surfaces. DOM and computed-token checks in jsdom; no Electron, HTTP or CLI.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -21,7 +21,7 @@ import * as vdView from "../renderer/view-deployments.mjs";
 const vd = { ...vdShared, ...vdView };
 import * as hierarchy from "../renderer/views/hierarchy.mjs";
 import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
-import { workspaceChoiceLabels, workspaceChoicePlace, UNMATCHED_SECTION } from "../../client/workspace-choices.mjs";
+import { workspaceChoiceLabels, workspaceChoicePlace } from "../../client/workspace-choices.mjs";
 import { onDeploymentTabRequest } from "../renderer/deployment-tabs.mjs";
 import { mountShellIcons } from "../renderer/shell-icons.mjs";
 import { deploymentScopeLabel, createDeploymentScopeLine, deploymentScopeCSS } from "../renderer/deployment-scope-line.mjs";
@@ -53,11 +53,11 @@ test("deploymentState says live, remembered, not reached and not observed in wor
   assert.deepEqual(vd.deploymentState({ ...LOCAL, reachable: false, reason: "Reading the deployment…" }), { key: "unobserved", text: "not observed", detail: "Reading the deployment…" });
 });
 
-test("UI spec: no deployments block above the sidebar navigation; the switcher sits right on the nav", (t) => {
+test("UI spec: no deployments block above the sidebar navigation; the workspace list sits right on the nav", (t) => {
   const dom = new JSDOM(html); t.after(() => dom.window.close());
   const doc = dom.window.document;
   assert.equal(doc.getElementById("ws-deployments"), null);
-  assert.deepEqual([...doc.getElementById("sidebar").children].slice(0, 3).map((el) => el.id || el.className), ["side-head", "ws-menu", "nav"]);
+  assert.deepEqual([...doc.getElementById("sidebar").children].slice(0, 3).map((el) => el.id || el.className), ["side-head", "ws-list", "nav"]);
   assert.equal(vd.renderDeploymentList, undefined, "the list renderer is gone");
   assert.doesNotMatch(`${css}\n${shellSource}`, /ws-deployment|renderDeploymentList|ctx-deployment-tag|ws-option-reason/);
 });
@@ -164,13 +164,14 @@ test("rosterSections: a pending spawn without a deployment joins the primary; em
   assert.equal(vd.rosterSections(rows, rows, [LOCAL], DESKTOP_TERMS).length, 1); assert.equal(vd.rosterSections(rows, rows, [LOCAL], DESKTOP_TERMS)[0].deployment, null);
 });
 
-/* ── the switcher ── */
+/* ── the workspace list ── */
 function switcher(t) {
   const dom = new JSDOM(html, { url: "https://fixture.invalid" }); t.after(() => dom.window.close());
   const document = dom.window.document; mountShellIcons(document);
   const selected = [], tabRequests = [];
   t.after(onDeploymentTabRequest((request) => tabRequests.push(request)));
   const sw = createWorkspaceSwitcher({ document, selectWorkspace: (id) => selected.push(id), discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) });
+  t.after(() => sw.dispose());
   const key = (key, target = document.activeElement) => target.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
   return { dom, document, sw, selected, tabRequests, key, options: () => [...document.querySelectorAll(".ws-option")] };
 }
@@ -184,88 +185,70 @@ const views = [
   { id: "ws:bbbbbbbbbbbbbbbbbbbb", name: "tsm", team: null, key: "github.com/org/tsm", deployments: ["remote:vega:t1"], server: "vega", remote: true,
     deploymentLabels: ["vega · /srv/tsm"], machines: ["vega"], notLive: 0 },
 ];
-const RAW = /ws:|remote:|\/Users\/|~\/|\/srv|Server:|Reports |run oats sync|github\.com\/org\/loose/;
+// Nothing of where a workspace is deployed or how it is: its own pages say that (pr3-simplify).
+const RAW = /ws:|remote:|\/Users\/|~\/|\/srv|Server:|Reports |run oats sync|github\.com\/org\/loose|This Mac|altair|vega|not live|OATS too old/;
 
-test("switcher entries: the name, ONE muted line of machines, a status mark when a deployment is not live; never a path, id or reason", (t) => {
+test("switcher entries: one line, the name; no machine, place, mark or state, and the tooltip is the name alone", (t) => {
   const s = switcher(t);
   s.sw.begin()(views[0], views);
-  assert.equal(s.document.getElementById("ws-trigger").title, "Active workspace: oats", "the trigger never names a ws: id");
-  s.sw.openMenu();
+  assert.equal(s.document.getElementById("ws-list").getAttribute("aria-description"), "Current workspace: oats", "the list never names a ws: id");
   const listbox = s.document.getElementById("ws-options");
-  assert.deepEqual(s.options().map((o) => o.dataset.workspaceId), [views[0].id, views[2].id, views[1].id]);
-  const [oats, tsm] = s.options();
-  assert.equal(oats.querySelector(".ws-option-name").textContent, "oats");
-  assert.equal(oats.querySelector(".ws-option-meta").textContent, "This Mac · altair");
-  assert.equal(tsm.querySelector(".ws-option-meta").textContent, "vega");
-  const mark = oats.querySelector(".ws-option-line > .deployment-mark");
-  assert.equal(mark.getAttribute("role"), "img"); assert.equal(mark.getAttribute("aria-label"), "1 deployment not live"); assert.equal(mark.title, "1 deployment not live");
-  assert.equal(tsm.querySelector(".deployment-mark"), null, "every deployment live: no mark");
+  assert.deepEqual(s.options().map((o) => o.dataset.workspaceId), [views[0].id, views[2].id, views[1].id], "matched views first, then the unmatched one");
+  assert.deepEqual(s.options().map((o) => o.textContent), ["oats", "tsm", "loose"]);
   for (const option of s.options()) {
-    assert.equal(option.querySelector(".ws-option-copy").children.length, 2, "a name line and one secondary line");
-    assert.doesNotMatch(option.textContent, RAW, option.dataset.workspaceId);
-    assert.doesNotMatch(option.title, /ws:|remote:/, "a tooltip may name paths, never an id");
+    assert.deepEqual([...option.children].map((c) => c.className), ["ws-option-name"], `${option.dataset.workspaceId}: the name and nothing else`);
+    assert.equal(option.title, option.textContent, "the tooltip is the whole name: never a path or machine");
+    assert.doesNotMatch(`${option.textContent} ${option.title}`, RAW, option.dataset.workspaceId);
   }
-  assert.equal(oats.title, "This Mac · ~/Agents/oats, altair · ~/Agents/tsm", "the paths only as the tooltip");
-  assert.equal(listbox.querySelector(".ws-option-reason, .ws-option-path"), null);
+  assert.equal(listbox.querySelector(".deployment-mark, .workspace-avatar, .ws-option-meta, .ws-check, .ws-option-reason, .ws-option-path"), null);
+  // A deployment not live changes nothing in the list: that state is the workspace's own pages'.
+  const before = listbox.innerHTML;
   views[0].notLive = 2; s.sw.begin()(views[0], views); views[0].notLive = 1;
-  assert.equal(s.options()[0].querySelector(".deployment-mark").getAttribute("aria-label"), "2 deployments not live");
+  assert.equal(listbox.innerHTML, before);
 });
 
-test("switcher entries from an older server (no machines): nothing in place of the machines, never a path or id", (t) => {
+test("switcher entries from an older server (no machines): the name only, never a path or id", (t) => {
   const s = switcher(t);
   const old = [{ id: "ws:cccccccccccccccccccc", name: "old", team: null, deployments: ["remote:vega:t1", "/Users/op/x"] },
     { id: "remote:vega:t2", name: "far", team: null, deployments: ["remote:vega:t2"] }];
-  s.sw.begin()(old[0], old); s.sw.openMenu();
-  for (const option of s.options()) {
-    const meta = option.querySelector(".ws-option-meta");
-    assert.equal(meta.textContent, ""); assert.equal(meta.hidden, true);
-    assert.doesNotMatch(`${option.textContent} ${option.title}`, /ws:|remote:|\/Users/);
-  }
+  s.sw.begin()(old[0], old);
+  assert.deepEqual(s.options().map((o) => [o.textContent, o.title]), [["old", "old"], ["far", "far"]]);
   s.sw.begin()(old[1], old);
-  assert.equal(s.document.getElementById("ws-trigger").title, "Active workspace: far", "a remote id is never the tooltip");
+  assert.equal(s.document.getElementById("ws-list").getAttribute("aria-description"), "Current workspace: far", "a remote id is never the description");
 });
 
-test("Not matched: the machine and ONE short reason; selecting one opens the Deployments page on its deployment's tab", (t) => {
+test("Not matched: a row by its name in the same flat list, no heading; selecting one opens the Deployments page on its deployment's tab", (t) => {
   const s = switcher(t);
-  s.sw.begin()(views[0], views); s.sw.openMenu();
+  s.sw.begin()(views[0], views);
   const listbox = s.document.getElementById("ws-options");
-  const group = listbox.querySelector('[role="group"]');
-  assert.equal(group.parentElement, listbox); assert.equal(s.document.getElementById(group.getAttribute("aria-labelledby")).textContent, UNMATCHED_SECTION);
-  assert.equal(group.querySelectorAll(".ws-option").length, 1, "only the unattached view is in the section");
-  const loose = group.querySelector(".ws-option");
-  assert.equal(loose.querySelector(".ws-option-meta").textContent, `This Mac · ${SHORT}`);
-  assert.equal(loose.querySelector(".ws-option-copy").children.length, 2, "no reason paragraph");
-  assert.doesNotMatch(loose.textContent, RAW);
-  assert.equal(loose.title, "This Mac · ~/Agents/loose");
+  const groups = listbox.querySelectorAll("ul");
+  assert.equal(groups.length, 1, "one list"); assert.equal(groups[0].getAttribute("aria-label"), "Workspaces");
+  assert.equal(groups[0].hasAttribute("aria-labelledby"), false); assert.equal(listbox.querySelector(".ws-option-section"), null, "no section heading");
+  assert.doesNotMatch(listbox.textContent, /Not matched/);
+  const loose = s.options().at(-1);
+  assert.equal(loose.dataset.workspaceId, views[1].id); assert.equal(loose.textContent, "loose"); assert.equal(loose.title, "loose");
   s.options()[0].click();
   assert.deepEqual(s.tabRequests, [], "a matched view only switches");
-  s.sw.openMenu(); s.document.querySelector('[role="group"] .ws-option').click();
+  loose.click();
   assert.deepEqual(s.selected, [views[1].id], "selected as before");
   assert.deepEqual(s.tabRequests, [{ view: views[1].id, tab: views[1].deployments[0] }], "then its deployment's tab is requested");
-  // A remote group is named by its server: its line does not repeat the name (live check, #482).
+  // A remote group is named by its server: its row is that name.
   const rigel = { id: "remote:rigel:cccccccccccc", name: "rigel", team: null, deployments: ["remote:rigel:cccccccccccc"], machines: ["rigel"], notLive: 0,
-    unattached: true, short: "OATS too old to report its workspace", server: "rigel", remote: true };
+    unattached: true, short: SHORT, server: "rigel", remote: true };
   const r = switcher(t);
-  r.sw.begin()(views[0], [views[0], rigel]); r.sw.openMenu();
-  assert.equal(r.document.querySelector('[role="group"] .ws-option .ws-option-meta').textContent, "OATS too old to report its workspace");
+  r.sw.begin()(views[0], [views[0], rigel]);
+  assert.deepEqual(r.options().map((o) => o.textContent), ["oats", "rigel"]);
 });
 
-test("switcher: filtering and Arrow/Home/End work across the section; a filtered-out section disappears", (t) => {
+test("workspace list: Arrow/Home/End walk every row, unmatched ones included; the list has no filter field", (t) => {
   const s = switcher(t);
-  s.sw.begin()(views[0], views); s.sw.openMenu();
-  const search = s.document.getElementById("ws-menu-search");
-  s.key("ArrowDown", search); assert.equal(s.document.activeElement.dataset.workspaceId, views[0].id);
-  s.key("End"); assert.equal(s.document.activeElement.dataset.workspaceId, views[1].id, "End reaches the unattached section");
+  s.sw.begin()(views[0], views);
+  assert.equal(s.document.getElementById("ws-menu-search"), null);
+  s.sw.focusList(); assert.equal(s.document.activeElement.dataset.workspaceId, views[0].id, "the current row");
+  s.key("End"); assert.equal(s.document.activeElement.dataset.workspaceId, views[1].id, "End reaches the unmatched row");
   s.key("ArrowUp"); assert.equal(s.document.activeElement.dataset.workspaceId, views[2].id);
-  s.key("ArrowDown"); assert.equal(s.document.activeElement.dataset.workspaceId, views[1].id, "down crosses into the section");
+  s.key("ArrowDown"); assert.equal(s.document.activeElement.dataset.workspaceId, views[1].id, "down reaches it again");
   s.key("Home"); assert.equal(s.document.activeElement.dataset.workspaceId, views[0].id);
-  search.value = "too old"; search.dispatchEvent(new s.dom.window.Event("input"));
-  assert.deepEqual(s.options().map((o) => o.dataset.workspaceId), [views[1].id], "the short reason is searchable");
-  search.value = "run oats sync"; search.dispatchEvent(new s.dom.window.Event("input"));
-  assert.deepEqual(s.options().map((o) => o.dataset.workspaceId), [], "what is not shown is not matched");
-  search.value = "altair"; search.dispatchEvent(new s.dom.window.Event("input"));
-  assert.deepEqual(s.options().map((o) => o.dataset.workspaceId), [views[0].id], "a machine finds its view");
-  assert.equal(s.document.querySelector(".ws-option-group"), null, "no empty section heading");
   s.options()[0].click(); assert.deepEqual(s.selected, [], "the active view is not re-selected");
 });
 
@@ -326,26 +309,25 @@ const luminance = (hex) => { const c = channels(hex); return c[0] * .2126 + c[1]
 const ratio = (a, b) => { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
 const painted = (win, el) => { for (let p = el; p; p = p.parentElement) { const bg = win.getComputedStyle(p).background; if (/^var\(--/.test(bg)) return bg.slice(6, -1); } return null; };
 
-for (const name of ["light", "solarized", "dark"]) test(`${name}: roster headings and marks, switcher entries and section, and the scope line meet computed AA`, async (t) => {
+for (const name of ["light", "solarized", "dark"]) test(`${name}: roster headings and marks, workspace list entries and the scope line meet computed AA`, async (t) => {
   const dom = new JSDOM(html, { url: "https://fixture.invalid" }); t.after(() => dom.window.close());
   const doc = dom.window.document, win = dom.window; doc.documentElement.dataset.theme = name; mountShellIcons(doc);
   for (const source of [theme, css, deploymentScopeCSS, automationsCSS]) { const style = doc.createElement("style"); style.textContent = source; doc.head.append(style); }
   const list = doc.querySelector("#instance-roster .ctx-list");
   list.append(vd.deploymentHeading(doc, { deployment: LOCAL, label: "This Mac", count: 1 }), vd.deploymentHeading(doc, { deployment: ALTAIR, label: "altair", count: 1 }));
   const sw = createWorkspaceSwitcher({ document: doc, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) });
-  // The active entry (painted --sel) and an inactive one (on the menu's --surface) both carry a mark.
-  const marked = [views[0], views[1], { ...views[2], notLive: 1 }];
-  sw.begin()(marked[0], marked); sw.openMenu();
+  t.after(() => sw.dispose());
+  // The current entry (painted --sel) and an inactive one (on the sidebar's --surface): the name is all a row says.
+  const marked = [views[0], views[1], views[2]];
+  sw.begin()(marked[0], marked);
   const section = doc.createElement("section"); section.className = "oats-view automations"; doc.body.append(section);
   vd.notePanel({ workspace: { id: "ws:contrast" }, deployments: [LOCAL, ALTAIR] });
   const line = createDeploymentScopeLine(doc, { workspace: "ws:contrast", className: "auto-scope" }); section.append(line.element);
   const root = win.getComputedStyle(doc.documentElement);
-  const active = '.ws-option[aria-selected="true"]', inactive = `.ws-option[data-workspace-id="${marked[2].id}"]`;
+  const active = '.ws-option[aria-current="true"]', inactive = `.ws-option[data-workspace-id="${marked[2].id}"]`;
   const checks = [
     [".ctx-deployment-label", "muted", "surface"], [".ctx-deployment .deployment-mark", "warn", "surface"],
-    [`${active} .ws-option-name`, "fg", "sel"], [`${active} .ws-option-meta`, "muted", "sel"], [`${active} .deployment-mark`, "warn", "sel"],
-    [`${inactive} .ws-option-name`, "fg", "surface"], [`${inactive} .ws-option-meta`, "muted", "surface"], [`${inactive} .deployment-mark`, "warn", "surface"],
-    [".ws-option-group .ws-option-meta", "muted", "surface"], [".ws-option-section", "muted", "surface"], [".auto-scope", "muted", "surface"],
+    [`${active} .ws-option-name`, "fg", "sel"], [`${inactive} .ws-option-name`, "fg", "surface"], [".auto-scope", "muted", "surface"],
   ];
   for (const [selector, fg, surface] of checks) {
     const el = doc.querySelector(selector); assert.ok(el, selector);
@@ -356,7 +338,7 @@ for (const name of ["light", "solarized", "dark"]) test(`${name}: roster heading
     assert.ok(r >= 4.5, `${selector}: ${fg} on ${bg} is ${r.toFixed(2)}:1`);
     for (let p = el; p; p = p.parentElement) assert.equal(win.getComputedStyle(p).opacity, "1", `${selector}: no opacity over text`);
   }
-  // Hover paints --surface-2 under an entry: its line and mark hold there too.
-  for (const fg of ["muted", "warn", "fg"]) assert.ok(ratio(root.getPropertyValue(`--${fg}`).trim(), root.getPropertyValue("--surface-2").trim()) >= 4.5, `${fg} on surface-2`);
+  // Hover paints --surface-2 under an entry: its name holds there too.
+  for (const fg of ["fg"]) assert.ok(ratio(root.getPropertyValue(`--${fg}`).trim(), root.getPropertyValue("--surface-2").trim()) >= 4.5, `${fg} on surface-2`);
   line.dispose();
 });

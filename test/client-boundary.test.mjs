@@ -155,7 +155,9 @@ const SURFACE = Object.freeze({
   // The keys both clients share (#1395): the leader, its table, the plain keys of the list and the chords. The TUI reads its
   // defaults from it and holds no copy.
   "keymap.mjs": ["CHORDS", "CHORD_FAMILIES", "CHORD_FAMILY_LABELS", "DEFAULT_CHORD_FAMILY", "LEADER", "LEADER_TABLE", "PALETTE_KEYS", "PLAIN_KEYS",
-    "chordKey", "chordKeyOf", "leaderKey", "leaderDoes", "paletteKey", "plainKeys", "leaderRows"],
+    "chordKey", "chordKeyOf", "doesLabel", "leaderKey", "leaderDoes", "paletteKey", "plainKeys", "leaderRows"],
+  // The leader's Up and Down between the rows of the list of workspaces: the one pure step both clients take.
+  "workspace-step.mjs": ["workspaceStep"],
   // 3c: keys.json, the chord family both clients bind; each does its own IO.
   "keys-file.mjs": ["KEYS_LIMIT", "KEYS_WHY", "keysPath", "chordFamilyFrom", "chordFamilyNote", "keysWithFamily"],
 });
@@ -498,7 +500,7 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 68);
+  assert.equal(Object.keys(SURFACE).length, 69);
   // #482 in a switcher: a listed deployment's identity, read before it is served.
   assert.ok(Object.hasOwn(SURFACE, "deployment-identity.mjs"), "deployment-identity.mjs");
   // #1395: the keys both clients share; the TUI reads its defaults from them.

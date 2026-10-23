@@ -206,7 +206,7 @@ test('rule 2 in the card CSS: hover restyles the border and surface; focus is th
   // The shell's :focus-visible (theme.css) is the keyboard's tint + 1px accent edge; a component rule would override it.
   assert.doesNotMatch(catalogCSS, /(catalog-row|capability-nav[^{]*button):focus/);
   // The repository pills: each chip has its own 1px frame. Its background out-ranks the global focus tint, so
-  // its one focus rule restates the shell's tint (as #ws-trigger does), and nothing else: the edge stays the shell's.
+  // its one focus rule restates the shell's tint (as .ws-option does), and nothing else: the edge stays the shell's.
   assert.match(catalogCSS, /\.catalog-pills button \{[^}]*border:1px solid var\(--border\); border-radius:7px; background:var\(--surface\); color:var\(--muted\)/);
   assert.deepEqual(catalogCSS.match(/[^{}\n]*catalog-pills[^{}\n]*:focus[^{}]*\{[^}]*\}/g).map(rule => rule.trim()), ['.oats-view .catalog-pills button:focus-visible { background:var(--sel); }']);
   assert.doesNotMatch(catalogCSS, /catalog-select|catalog-clear/, 'the Team and Repo dropdowns are gone');

@@ -4,7 +4,8 @@
 //
 // A window's key is the workspace view id it is bound to, or null while it has none (a New Window
 // showing the switcher). At most one live window holds a key. Every binding goes through open()
-// (main creating a window for a workspace) or claim() (a window switching in place).
+// (main creating a window for a workspace), claim() (a window switching in place) or takeOver() (a
+// window switching in place to a workspace another window holds, which then holds none).
 
 /** Restore (if minimized), show and focus a window. */
 function present(win) {
@@ -58,6 +59,17 @@ export function createWindowSet({ create, onChange = () => {} }) {
       }
       bind(win, key);
       return { ok: true };
+    },
+    /** A take-over: bind `win` to `key` in place, from `from` (the window that held it when it was
+     * asked to release it), which is left bound to nothing when it still holds it (`released`). A key
+     * a third window holds by now is refused (`open-elsewhere`). Nothing is presented. */
+    takeOver(win, key, from) {
+      if (!live(win)) return { ok: false, code: 'unknown-window' };
+      const held = holder(key);
+      if (held && held !== win && held !== from) return { ok: false, code: 'open-elsewhere' };
+      if (held && held !== win) bind(held, null);
+      bind(win, key);
+      return { ok: true, released: held && held !== win ? held : null };
     },
     /** The window keeps running with no workspace. */
     unbind(win) {

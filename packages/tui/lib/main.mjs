@@ -14,7 +14,7 @@ import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
 import { TERMS, capabilityCatalogKey, cliDeploymentList, deploymentsListSupported, createCapabilityCatalog, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
 import { loadConfig, loadKeys } from "./config.mjs";
-import { ACT_WORDS, LIST_WORDS, actContext, actCwd, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
+import { ACT_WORDS, LIST_WORDS, actContext, actCwd, listRowsOf, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
 import { CHANGE_FILES, admitDeployment, createIdentityReads, createReader, findDeployment, leaveInstance, probeKernel, realpath, startExec, tellable } from "./read.mjs";
 import { initialState, reduce } from "./store.mjs";
@@ -167,7 +167,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   const clock = () => new Date(now()).toISOString();
   const look = glyphs(env, { ascii: options.ascii || config.ascii });
   const screen = createScreen({ ...look, color: colorEnabled(env) });
-  let state = initialState({ deployment: found.ok ? found.deployment : null, cli: probe.cli, home, entry: found.ok ? pendingEntry(null, clock()) : null, actions: config.actions, ascii: look.ascii, platform: proc.platform, detachKey: config.detachKey, keysRead });
+  let state = initialState({ deployment: found.ok ? found.deployment : null, cli: probe.cli, home, entry: found.ok ? pendingEntry(null, clock()) : null, actions: config.actions, ascii: look.ascii, colour: colorEnabled(env), platform: proc.platform, detachKey: config.detachKey, keysRead });
   const keymap = bindings(state.actions);
   // THE KITTY KEYBOARD PROTOCOL (docs/tui.md, "Chords"): asked for as the terminal is taken (the
   // guard's PUSH and QUERY), "asking" until it answers or KEYBOARD_WAIT_MS passes, then the flags
@@ -692,7 +692,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     const under = state.view === "help" || state.view === "act" ? state.back : state.view;
     const listing = under === "switcher";
     const r = listing ? { notice: null, note: null } : roster(state, at);
-    const g = layout(r.notice, size, { note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.tabs.length > 0, open: listing ? null : under });
+    const g = layout(r.notice, size, { note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.tabs.length > 0, open: listing ? null : under, list: listRowsOf(state, at) });
     const area = mainArea(g, size.cols).cols;
     const m = { ...model(state, { page: g.page, body: g.body, now: now(), at, cols: g.listCols, area }), screen: screens.get(state.terminal?.id) ?? null, screens };
     return { size, g, m, area };
@@ -713,8 +713,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
    *  read is dropped: it cancels the leader (a paste), and it is not the agent's either. */
   function typed(events) {
     for (const event of events) {
-      if (event.input) { if (keysReady()) panel.input(event.input); }
-      else if (event.paste !== undefined) { if (keysReady()) panel.paste(event.paste); }
+      if (event.input) { if (keysReady()) panel.input(event.input); passed(); }
+      else if (event.paste !== undefined) { if (keysReady()) panel.paste(event.paste); passed(); }
       else if (event.keyboard !== undefined) answered(event.keyboard);
       else if (event.back) {
         parser = newParser();
@@ -729,6 +729,13 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
       }
     }
     watchThrough();
+  }
+  /** What the store does not see, a key typed to the agent or a resize, told to it while a line of
+   *  one key stands (the store's `passed`): it goes, and the frame with it. */
+  function passed() {
+    if (state.outcome?.once !== true) return;
+    took(reduce(state, { passed: true }, keymap));
+    guard.draw();
   }
   /** The terminal's answer to the protocol's query (`flags`), or none in time (null): the protocol is
    *  read from now on when the answer holds flag 1, and popped otherwise; an answer after that is
@@ -786,7 +793,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
       if (typing()) return typed(through.feed(bytes));
       act(parser.feed(bytes)); watchEscape();
     },
-    onResize() { full = true; guard.draw(); },
+    onResize() { full = true; passed(); guard.draw(); },
     // Ctrl+L and the return from a stop: the whole screen, and the open terminal captured afresh.
     onRedraw() { full = true; if (viewers.size) panel.refresh(); guard.draw(); },
     // A cycle in flight when the process stops is no evidence about the deployment (lib/read.mjs):

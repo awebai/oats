@@ -39,6 +39,7 @@ function fixture(options = {}) {
     async attachments(items, spec, control) { calls.push(['attachments', items, control]); return options.attachments?.(items, spec, control) || ['/memory/file']; },
   };
   const broker = createTerminalOwnerBroker({ rendererUrl: url, io, context: () => context, clock, leases,
+    ...(options.admitFrame ? { admitFrame: options.admitFrame } : {}),
     token: options.token || (() => (++tokenSeq).toString(16).padStart(64, '0')) });
   installTerminalHandlers({ handle: (name, fn) => handlers.set(name, fn), on: (name, fn) => sends.set(name, fn) }, broker);
   function owner(name = 'owner', register = true) {
@@ -76,6 +77,18 @@ test('term:open refuses a Herdr session target with E_HERDR_REMOVED before any p
   assert.deepEqual(await f.open(a, { sessionTarget }), { terminalApi: 2, ok: false, code: 'E_HERDR_REMOVED', message: HERDR_REMOVED });
   assert.equal((await f.open(a, { session: '=bad' })).code, 'E_TERM_BAD_ARGS');
   assert.deepEqual(f.calls, []); assert.equal(f.ptys.length, 0); assert.equal(f.broker.counts().slots, 0);
+});
+
+// #1488: main's admitFrame refuses a window whose hash names a workspace main no longer binds it to.
+test('term:open refuses a frame admitFrame does not admit (or that throws) with E_TERM_FORBIDDEN_FRAME, before any admission or pty', async () => {
+  for (const admitFrame of [() => false, () => 'yes', () => { throw new Error('gone'); }]) {
+    const seen = [], f = fixture({ admitFrame: (e) => { seen.push(e); return admitFrame(e); }, admit: () => assert.fail('never admitted') }), a = f.owner('A');
+    assert.deepEqual(await f.open(a), terminalFailure('E_TERM_FORBIDDEN_FRAME'));
+    assert.equal(seen.length, 1); assert.equal(seen[0].sender, a, 'asked of the opening frame');
+    assert.deepEqual(f.calls, []); assert.equal(f.ptys.length, 0); assert.equal(f.broker.counts().slots, 0);
+  }
+  const f = fixture({ admitFrame: () => true }), a = f.owner('A');
+  assert.equal((await f.open(a)).ok, true, 'an admitted frame opens as before');
 });
 
 test('a remote preparation refused with E_HERDR_REMOVED returns that code and message, never E_TERM_OPEN_FAILED, and creates no pty', async () => {

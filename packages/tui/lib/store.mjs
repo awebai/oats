@@ -10,9 +10,9 @@
 // Selection is an identity (the shared `instanceId`), never an index, so it survives every read;
 // the rows it moves among are the model's, in drawn order.
 import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings, chordKeys, chordsRead, paletteKeys } from "./actions.mjs";
-import { CHORDS, chordFamilyFrom, collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
+import { CHORDS, chordFamilyFrom, collapseKey, workspaceStep, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { defaultDetachKey } from "./config.mjs";
-import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, paletteStep, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, memoryKey, memoryKeys, LIST_WORDS } from "./model.mjs";
+import { BUTTON_ORDER, SPAWN_WORDS, LEADER_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, paletteStep, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, memoryKey, memoryKeys, LIST_WORDS, WORKSPACE_WORDS, listChoice, listChoices, workspaceList } from "./model.mjs";
 import { backKeyId, backKeySequences, isBackKey } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
 import { SPLIT_MIN, splitFits } from "./views/split.mjs";
@@ -78,7 +78,9 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  "terminal" while what is typed goes to the agent and "list" while the TUI reads keys, and `zoom`
  *  true while it has the whole body (only with the terminal's focus).
  *  `outcome`: the line after an open (the model's `{ said, under }`), shown above the panes until
- *  the next key bound to an action, or null. `notice`: such a line that came while no view that
+ *  the next key bound to an action, or null; with `once: true` (the list of workspaces' end, said
+ *  by the leader's Up or Down, and the leader cancelled by its own read) until the next key of any kind (the leader's: the key after it), one
+ *  typed to the agent included, or a resize (the loop's `{ passed }`). `notice`: such a line that came while no view that
  *  draws one at every width was shown (the switcher, the help, a detail or a terminal with the
  *  focus: see `drawsOutcome`), held until one is; or null.
  *  It is the add of the deployment the run started in, refused.
@@ -119,14 +121,14 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  agentsRoot, agent, reads, words }`, until its row is opened or two reads did not show it;
  *  `previews` the number of the last preview read asked in the run, so that an answer to a prompt
  *  already closed is never taken by the next one. */
-export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false, platform = process.platform, detachKey = defaultDetachKey(platform), keysRead = NO_KEYS_FILE }) {
+export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false, colour = true, platform = process.platform, detachKey = defaultDetachKey(platform), keysRead = NO_KEYS_FILE }) {
   return Object.freeze({
     view: deployment === null ? "switcher" : "instances", back: deployment === null ? "switcher" : "instances",
     ctxs: Object.freeze(deployment === null ? [] : [deployment]), open: deployment,
     entries: new Map(deployment === null ? [] : [[deployment, entry]]), numbers: new Map(),
     remote: Object.freeze({ remoteGroups: Object.freeze([]), rosterAnswered: false, rosterFailure: null }), rosterAt: null,
     memory: new Map(), notes: new Map(), collecting: false, cli, home,
-    selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(), unreadKeys: new Map(),
+    selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(), unreadKeys: new Map(), workspaceCursor: null, colour,
     switcher: NO_SWITCHER,
     listed: NO_LIST, identities: new Map(),
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
@@ -325,6 +327,24 @@ function reselected(before, after) {
   const ids = choiceDeployments(was.items.find((item) => item.key === was.selected));
   const found = now.items.find((item) => item.key !== undefined && choiceDeployments(item).some((id) => ids.includes(id)));
   return found ? next(after, { switcher: Object.freeze({ ...after.switcher, selected: found.key, loose: false }) }) : after;
+}
+
+/** The list of workspaces' cursor after a step changed its rows (`before`, then `step`): kept while its
+ *  row is listed; else on the row that now holds a deployment the cursor's stood for, as the switcher's
+ *  selection follows it (`reselected`): a listed row whose workspace an identity read learned is in that
+ *  workspace's row from then on, and back on a row of its own when a later answer takes that away, so
+ *  Enter opens what was under the cursor. With no such row, the list's own rule: the open row. */
+function cursorKept(before, step) {
+  const s = step.state, key = s.workspaceCursor;
+  if (key === null || key !== before.workspaceCursor || s.open === null || before.open === null) return step;
+  const list = workspaceList(s);
+  if (list.rows.some((row) => row.key === key)) return step;
+  const was = listChoice(before, key);
+  if (was === null) return step;
+  const ids = choiceDeployments(was);
+  const keys = new Set(list.rows.map((row) => row.key));
+  const found = listChoices(s).find((item) => keys.has(item.key) && choiceDeployments(item).some((id) => ids.includes(id)));
+  return found ? { ...step, state: next(s, { workspaceCursor: found.key }) } : step;
 }
 
 /** What an identity read learned of a deployment of this computer's list (lib/main.mjs): kept for the run,
@@ -601,12 +621,7 @@ function switched(state, action, page, event) {
     }
     case "open": {
       const item = s.items.find((each) => each.key !== undefined && each.key === s.selected);
-      if (!item) return stay;
-      if (item.path !== undefined) return item.state === "ok" ? { state: put({ refused: null }), effect: { admit: item.path } } : stay;
-      // A workspace with deployments of this computer's list that this run does not serve: each is asked
-      // whether it is a deployment now, and served from then on (`joinedHeard`), before the workspace opens.
-      if (item.join?.length) return { state: put({ refused: null }), effect: { join: Object.freeze({ paths: item.join, opens: item.opens }) } };
-      return item.primary === null ? stay : { state: opened(state, item.primary), effect: { refresh: { live: true } } };
+      return (item && picked(state, item)) ?? stay;
     }
     case "remove": {
       const item = s.items.find((each) => each.key !== undefined && each.key === s.selected);
@@ -616,6 +631,64 @@ function switched(state, action, page, event) {
     }
     default: return stay;
   }
+}
+
+/** A choice of the switcher's (or the list of workspaces', the same choices) picked: a row of the
+ *  list that is a deployment is asked about (`admit`; a stale one does not open: its row says why);
+ *  a workspace with deployments of this computer's list that this run does not serve has each
+ *  asked whether it is a deployment now, and served from then on (`joinedHeard`), before it opens;
+ *  else its view opens here. Null when nothing opens. */
+function picked(state, item) {
+  const put = (s) => next(s, { switcher: Object.freeze({ ...s.switcher, refused: null }) });
+  if (item.path !== undefined) return item.state === "ok" ? { state: put(state), effect: { admit: item.path } } : null;
+  if (item.join?.length) return { state: put(state), effect: { join: Object.freeze({ paths: item.join, opens: item.opens }) } };
+  return item.primary === null ? null : { state: opened(state, item.primary), effect: { refresh: { live: true } } };
+}
+
+/** THE LIST OF WORKSPACES' FOCUS (docs/tui.md, "The list of workspaces"): `w` (or the leader's `o`)
+ *  gives it to the open workspace's row; the cursor (`workspaceCursor`) moves among the rows that
+ *  open, passing over the others; Enter opens its row as the switcher's Enter does, and gives the
+ *  list of instances the focus; Esc gives it back with nothing opened; `w` again shows the
+ *  switcher, with what the list does not hold. Any other key first gives the focus back, then does
+ *  what it does there. -> { state, effect }, or null for such a key. */
+function inWorkspaces(state, action) {
+  const list = workspaceList(state), cursor = list.rows.some((row) => row.key === state.workspaceCursor) ? state.workspaceCursor : list.current;
+  const back = next(state, { focus: "list", workspaceCursor: null });
+  switch (action) {
+    case "up": case "down": case "top": case "bottom": {
+      const openable = list.rows.filter((row) => row.openable);
+      const key = action === "top" ? openable[0]?.key : action === "bottom" ? openable.at(-1)?.key : workspaceStep(list.rows, cursor, action === "up" ? -1 : 1);
+      return key == null || key === cursor ? { state, effect: null } : { state: next(state, { workspaceCursor: key }), effect: null };
+    }
+    case "open": {
+      const item = cursor === null ? null : listChoice(state, cursor);
+      return (item && picked(back, item)) ?? { state, effect: null };
+    }
+    case "close": case "instances": return { state: back, effect: null };
+    case "workspaces": return { state: toSwitcher(next(back, { back: "switcher" })), effect: { list: true, identify: true } };
+    default: return null;
+  }
+}
+/** `w`: the list of workspaces' focus, on the Instances view (whatever was shown settled first), the
+ *  open workspace's row under the cursor. With no workspace open there is no list: the switcher. */
+function toWorkspaces(state) {
+  if (state.open === null) return { state: toSwitcher(next(state, { back: "switcher" })), effect: { list: true, identify: true } };
+  const settled = toInstances(state);
+  if (settled.state.view !== "instances") return settled;
+  return { state: next(settled.state, { focus: "workspaces", workspaceCursor: workspaceList(settled.state).current }), effect: settled.effect };
+}
+/** The leader's Up and Down (`workspace-previous`, `workspace-next`): the workspace of the row before
+ *  or after the open one's, as the list draws them (the shared workspaceStep: rows that do not open
+ *  are passed over, and it does not wrap), opened as a pick of it opens it. From the terminal's
+ *  focus it is kept for the workspace left (layoutOf); from anywhere else what is open is settled
+ *  first, as for the leader's other keys (toList). At an end, the line says so and nothing moves. */
+function workspaceMoved(state, step, inTerminal) {
+  const settled = inTerminal ? { state, effect: null } : toList(state), s = settled.state;
+  const list = workspaceList(s), key = workspaceStep(list.rows, list.current, step);
+  const item = key === null ? null : listChoice(s, key);
+  if (item === null) return { state: next(s, { outcome: Object.freeze({ said: step < 0 ? WORKSPACE_WORDS.above() : WORKSPACE_WORDS.below(), under: Object.freeze([]), once: true }) }), effect: settled.effect };
+  const moved = picked(s, item) ?? { state: s, effect: null };
+  return { state: moved.state, effect: both(settled.effect, moved.effect) };
 }
 
 /** A key while the switcher asks whether to remove a row of this computer's deployments list
@@ -661,7 +734,9 @@ function removedHeard(state, { name, ok, reason = null }) {
  *  workspace picked in the switcher are deployments now, and the ones it may open, in order),
  *  `{ identity: { path, read } }` (what an identity read answered of a row of the list),
  *  `{ removed: { path, name, ok, reason } }` (a Remove's answer) and
- *  `{ notListed: <reason> }` (the deployment the run started in was not added to the list).
+ *  `{ notListed: <reason> }` (the deployment the run started in was not added to the list), and
+ *  `{ passed: true }` (bytes typed to the agent, or a resize: what the loop saw that the store does
+ *  not, which ends a line of one key).
  *  Opening an agent gives five more: `{ prepared: { id, error? } }` (the preflight of another
  *  machine's agent ended: `error` is what the shared prepareRemoteTerm threw), `{ given: true }`
  *  (the loop gave the preflight up itself: a suspend), `{ shown: { id } }` (the panel has the
@@ -682,7 +757,11 @@ function removedHeard(state, { name, ok, reason = null }) {
  *  The line after an open stands until the next key that is bound to an action: a key bound to
  *  nothing (a stray back key is no key at all) leaves it. */
 export function reduce(state, event, keymap = bindings(state.actions)) {
-  return askedStill(noticed(reduceStep(state, event, keymap)));
+  const step = cursorKept(state, askedStill(noticed(reduceStep(state, event, keymap))));
+  // The list of workspaces made once for what the store took (lib/model.mjs workspaceList keeps
+  // it while nothing it is made from changes): no paint, resize or key asks the shared home again.
+  if (step.state.open !== null) workspaceList(step.state);
+  return step;
 }
 
 /** Whether the line under the sidebar's title stands now at every width (views/frame.mjs): in the
@@ -720,7 +799,7 @@ const personal = (event) => typeof event.key === "string" || event.text !== unde
  *  preflight given up and the reads dropped as the process stops, the keyboard protocol confirmed,
  *  and what a frame drew. A restore takes no step on one of them, which would lose its open: the
  *  next event it hears goes on. */
-const UNTAKEN = Object.freeze(["given", "collecting", "keyboard", "spawnDrawn", "spawnTop", "capabilitiesTop"]);
+const UNTAKEN = Object.freeze(["given", "collecting", "passed", "keyboard", "spawnDrawn", "spawnTop", "capabilitiesTop"]);
 const untaken = (event) => UNTAKEN.some((name) => event[name] !== undefined);
 
 /** THE MEMORY OF A WORKSPACE (docs/tui.md, "Tabs"), for the run only, per memoryKey: `places` its
@@ -734,7 +813,9 @@ function forgotten(state, key) {
 /** The tabs of the open workspace as they stand, for its memory, or null with none:
  *  `{ tabs: [{ id, name, machine, routed, group }], split, group, shown: [group 0's, group 1's],
  *  focus, zoom }`. The focus is the terminal's, or the one it had when another view was shown over
- *  the list (`leftFocus`, the switcher a workspace is left from). During a restore it is the
+ *  the list (`leftFocus`, the switcher a workspace is left from), or the terminal's while the
+ *  palette opened from it stands (the leader's Up and Down leave from there; the palette took the
+ *  zoom, as its Esc gives the focus back unzoomed: paletteClosed). During a restore it is the
  *  remembered layout, less the tabs that went since (closed, or dropped as gone), and the focus
  *  only while the person has not taken it. */
 function layoutOf(state) {
@@ -744,7 +825,8 @@ function layoutOf(state) {
     return tabs.length ? Object.freeze({ tabs: Object.freeze(tabs), split: r.split, group: r.group, shown: r.shown, focus: r.grant ? r.focus : "list", zoom: r.grant && r.zoom }) : null;
   }
   if (!state.tabs.length) return null;
-  const t = state.terminal, left = t !== null && t.focus !== "terminal" && state.leftFocus?.id === t.id ? state.leftFocus : null;
+  const t = state.terminal, left = t === null || t.focus === "terminal" ? null
+    : state.leftFocus?.id === t.id ? state.leftFocus : state.palette?.from === "terminal" ? Object.freeze({ id: t.id, zoom: false }) : null;
   return Object.freeze({
     tabs: Object.freeze(state.tabs.map(({ id, name, machine, routed, group }) => Object.freeze({ id, name, machine, routed, group }))),
     split: state.split, group: state.group, shown: Object.freeze([shownOf(state, 0), shownOf(state, 1)]),
@@ -836,10 +918,14 @@ function restoreDone(state) {
 }
 
 function reduceStep(state, event, keymap) {
-  if (state.outcome !== null && typeof event.key === "string" && keymap.has(event.key)) state = next(state, { outcome: null });
+  // (Not the rest of a read the leader came in: that is dropped, and the line says so.)
+  if (state.outcome !== null && typeof event.key === "string" && keymap.has(event.key) && !(state.leader !== null && sameRead(state.leader, event))) state = next(state, { outcome: null });
   // A key of the person's while a restore runs: the focus is theirs from then on (restoreDone).
   if (state.restoring?.grant && personal(event)) state = next(state, { restoring: Object.freeze({ ...state.restoring, grant: false }) });
   let step = reduced(state, event, keymap);
+  // A line of one key (`once`) goes at the next key of any kind, bound or not, unless that key said
+  // a line of its own. Not at the leader alone: while it waits nothing on the screen changes.
+  if (state.outcome?.once === true && personal(event) && step.state.outcome === state.outcome && step.state.leader === null) step = { ...step, state: next(step.state, { outcome: null }) };
   // The tabs are the open workspace's: whatever opened another (or left it, gone), they all close,
   // and the split with them, kept in its memory (workspaceLeft). Another deployment of the same
   // workspace opened (its deployment of this machine, once served, in place of another machine's)
@@ -848,12 +934,14 @@ function reduceStep(state, event, keymap) {
   // Nor on a step that quits, suspends or redraws (an effect of its own, which an open would
   // take the place of): the next event goes on.
   if (step.state.restoring !== null && !untaken(event) && typeof step.effect !== "string") { const more = restoreNext(step.state); step = { state: more.state, effect: both(step.effect, more.effect) }; }
-  // Where the focus was when another view (the switcher, the help) was shown over the list: in the
-  // terminal, or in the palette opened from it, which give it to the list as they go. A workspace
-  // left from that other view keeps it (layoutOf); back in the list it is forgotten.
-  const t0 = state.terminal, away = state.view === "instances" && step.state.view !== "instances";
+  // Where the focus was when another view (the switcher, the help) was shown over the list, or the
+  // list of workspaces took the focus: in the terminal, or in the palette opened from it, which give
+  // it to the list as they go. A workspace left from there keeps it (layoutOf); back in the list of
+  // instances it is forgotten.
+  const t0 = state.terminal, listing = (s) => s.view === "instances" && s.focus === "workspaces";
+  const away = state.view === "instances" && !listing(state) && (step.state.view !== "instances" || listing(step.state));
   if (away && t0 !== null && step.state.terminal?.id === t0.id && (t0.focus === "terminal" || state.palette?.from === "terminal")) step = { ...step, state: next(step.state, { leftFocus: Object.freeze({ id: t0.id, zoom: t0.focus === "terminal" && t0.zoom }) }) };
-  else if (step.state.view === "instances" && step.state.leftFocus !== null) step = { ...step, state: next(step.state, { leftFocus: null }) };
+  else if (step.state.view === "instances" && !listing(step.state) && step.state.leftFocus !== null) step = { ...step, state: next(step.state, { leftFocus: null }) };
   // The terminal has the focus only while the list of instances is shown: anything that shows
   // another view (a workspace gone, which shows the switcher) gives the focus back to the list.
   const t = step.state.terminal;
@@ -1252,6 +1340,9 @@ export const TAB_LIMIT = 4;
 const leaderAt = (read, waiting) => Object.freeze({ read: Number.isInteger(read) ? read : null, waiting });
 /** Whether an event came in the same read of input as the leader. */
 const sameRead = (leader, event) => leader.read !== null && event.read === leader.read;
+/** The line of a leader cancelled by what came in its own read: nothing ran, and why. A line of one
+ *  key (`once`): from a terminal's focus it goes as the person types on, not at a key bound in the list. */
+const mergedLine = (state) => Object.freeze({ said: LEADER_WORDS.merged(backKeyLabel(state.detachKey)), under: Object.freeze([]), once: true });
 /** Two effects as one: the dismissal of a confirmation the leader closed, and what it then ran. */
 const both = (a, b) => (a === null ? b : b === null ? a : typeof b === "string" ? b : { ...a, ...b });
 
@@ -1272,7 +1363,7 @@ function leading(state, event, keymap) {
   if (event.back !== undefined) {
     if (state.terminal?.focus !== "terminal") return { state, effect: null };
     if (l !== null && l.waiting && !sameRead(l, event)) return twice(next(state, { leader: leaderAt(event.read, false) }));
-    return { state: next(state, { leader: leaderAt(event.read, event.rest !== true) }), effect: null };
+    return { state: next(state, { leader: leaderAt(event.read, event.rest !== true), ...(event.rest === true ? { outcome: mergedLine(state) } : {}) }), effect: null };
   }
   // A chord typed in a terminal (term/through.mjs): the leader then its key, at once. Only one
   // that is read now (chordsRead): the scanner takes no other.
@@ -1281,7 +1372,7 @@ function leading(state, event, keymap) {
     return led(l === null ? state : next(state, { leader: null }), event.chord, event, keymap);
   }
   if (typeof event.key !== "string" && !("paste" in event)) return { pass: state };
-  if (l !== null && sameRead(l, event)) return { state: l.waiting ? next(state, { leader: leaderAt(l.read, false) }) : state, effect: null };
+  if (l !== null && sameRead(l, event)) return { state: l.waiting ? next(state, { leader: leaderAt(l.read, false), outcome: mergedLine(state) }) : state, effect: null };
   if (l !== null && l.waiting) {
     const after = next(state, { leader: leaderAt(event.read, false) });
     if (event.key === state.leaderKey) return twice(after);
@@ -1329,7 +1420,7 @@ function toList(state) {
   if (field) s = field.close(s, field.query(s).trim());
   if (s.view === "souls" || s.view === "capabilities") s = s.open === null ? toSwitcher(next(s, { back: "switcher" })) : next(s, { view: "instances", back: "instances" });
   if (s.terminal?.focus === "terminal") s = terminalWith(s, { focus: "list", zoom: false });
-  if (s.view === "instances" && s.focus === "detail") s = next(s, { focus: "list" });
+  if (s.view === "instances" && (s.focus === "detail" || s.focus === "workspaces")) s = next(s, { focus: "list", workspaceCursor: null });
   return { state: s, effect };
 }
 
@@ -1387,6 +1478,7 @@ function led(state, does, event, keymap) {
     return { state: step.state, effect: both(settledState.effect, step.effect) };
   }
   if (does === "previous" || does === "next") return stepped(state, does === "previous" ? -1 : 1, event);
+  if (does === "workspace-previous" || does === "workspace-next") return workspaceMoved(state, does === "workspace-previous" ? -1 : 1, inTerminal);
   // Another of the open terminal's soul, from its focus; from anywhere else, of the selection's.
   // The Souls view's selected soul is named before the list is shown, which leaves that view.
   if (does === "spawn" || does === "spawn-another") {
@@ -1531,6 +1623,8 @@ function reduced(state, event, keymap) {
   if (event.entry !== undefined) return took(state, event);
   if (event.roster !== undefined) return heard(state, event.roster);
   if (event.collecting !== undefined) return { state: event.collecting === state.collecting ? state : next(state, { collecting: event.collecting === true }), effect: null };
+  // What the loop saw that the store does not: bytes typed to the agent, a resize. A line of one key goes.
+  if (event.passed !== undefined) return { state: state.outcome?.once === true ? next(state, { outcome: null }) : state, effect: null };
   // The rows stay where they are: only what they read changes.
   if (event.retiring !== undefined) return { state: next(state, { retiring: new Set(event.retiring) }), effect: null };
   if (event.listed !== undefined) return listedHeard(state, event.listed);
@@ -1541,7 +1635,12 @@ function reduced(state, event, keymap) {
   if (event.admitted !== undefined) return { state: admitted(state, event), effect: { refresh: { live: true } } };
   if (event.joined !== undefined) return joinedHeard(state, { ...event.joined, at: event.at });
   if (event.identity !== undefined) return identityHeard(state, event.identity);
-  if (event.refused !== undefined) return { state: next(state, { switcher: Object.freeze({ ...state.switcher, refused: event.refused }) }), effect: null };
+  if (event.refused !== undefined) {
+    // Picked from the list of workspaces, the switcher not shown: the line says so.
+    const name = state.listed.rows.find((row) => row.path === event.refused)?.name ?? event.refused;
+    const said = state.view === "switcher" ? {} : { outcome: Object.freeze({ said: WORKSPACE_WORDS.refused(name), under: Object.freeze([]) }) };
+    return { state: next(state, { switcher: Object.freeze({ ...state.switcher, refused: event.refused }), ...said }), effect: null };
+  }
   if (event.souls !== undefined) return soulsHeard(state, event.souls);
   if (event.capabilities !== undefined) return capabilitiesHeard(state, event.capabilities);
   if (event.capabilitiesTop !== undefined) return capabilitiesTop(state, event.capabilitiesTop);
@@ -1576,13 +1675,18 @@ function reduced(state, event, keymap) {
     return windowOf({ top: moved(action, from, count, height), count, height }).top;
   };
 
+  if (state.view === "instances" && state.focus === "workspaces") {
+    const step = inWorkspaces(state, action);
+    if (step !== null) return step;
+    state = next(state, { focus: "list", workspaceCursor: null });
+  }
   switch (action) {
     case "quit": case "suspend": case "redraw": return { state, effect: action };
     // In the switcher this computer's deployments list is read again too.
     // In the Souls view it reads the souls again, and nothing else; in the Capabilities view, the capabilities.
     case "refresh": return state.view === "souls" ? inSouls(state, action, event, page, scrolled) : state.view === "capabilities" ? inCapabilities(state, action, event, page, scrolled) : { state, effect: { refresh: { live: true }, ...((state.view === "help" ? state.back : state.view) === "switcher" ? { list: true, identify: true } : {}) } };
     case "help": return { state: next(state, state.view === "help" ? { view: state.back } : { view: "help", back: state.view, helpTop: 0 }), effect: null };
-    case "workspaces": return state.view === "switcher" ? stay : { state: toSwitcher(next(state, { back: "switcher" })), effect: { list: true, identify: true } };
+    case "workspaces": return state.view === "switcher" ? stay : toWorkspaces(state);
     case "palette": return { state: paletteOpened(state, event, "list"), effect: null };
     // Souls and Capabilities are views of this machine, whatever workspace is open, or none.
     case "souls": return soulsShown(state);

@@ -132,7 +132,7 @@ const glyphs = (ascii) => (ascii ? { rule: "-", bar: "|", cut: "...", mark: "#",
 test("the Souls view at 80x24 in UTF-8, cell for cell: the sidebar with the souls under the open Souls row and the cheat sheet, the rule over the whole height, and beside it from the top row the selected soul's detail, scrolled with its cut note", () => {
   const d = drawModel(soulsModel(), S80);
   assert.deepEqual(d.lines, [
-    " acme-platform                        │   acme-ledger-developer",
+    "  acme-platform                       │   acme-ledger-developer",
     "                                      │   Builds and maintains the ledger",
     " Instances                          1 │   service: its API, its storage and its",
     "──────────────────────────────────────│   tests, end to end.",
@@ -166,7 +166,7 @@ test("the Souls view at 80x24 in UTF-8, cell for cell: the sidebar with the soul
 test("the Souls view at 60x15 in ASCII, cell for cell: the sidebar alone, with the ASCII marks, count and rules, and the cheat sheet in the rows the list leaves", () => {
   const d = drawModel(soulsModel({}, { ascii: true }), S60);
   assert.deepEqual(d.lines, [
-    " acme-platform",
+    "  acme-platform",
     "",
     " Instances                                                1",
     "-".repeat(60),
@@ -367,7 +367,7 @@ test("the detail with the focus says so with `>` beside its title, beside the si
       // At 60 columns the long title leaves no room for the last key: it is given up.
       assert.equal(paged.lines[0], pageTop(" > acme-ledger-developer", sz.cols, sz.cols === 60 ? PAGE_KEYS.slice(0, -1) : PAGE_KEYS), `${at}: the detail from the top row, at the margin, its keys at the right`);
       assert.equal(paged.lines.some((line) => line.includes("reviewer")), false, `${at}: no row of the list`);
-      assert.equal(paged.lines.some((line) => line === " acme-platform" || /^ (Souls|Capabilities)\b/.test(line) || line.includes("commands")), false, `${at}: no title, no view's row, no cheat sheet`);
+      assert.equal(paged.lines.some((line) => line.startsWith("  acme-platform") || /^ (Souls|Capabilities)\b/.test(line) || line.includes("commands")), false, `${at}: no list of workspaces, no view's row, no cheat sheet`);
       const listed = drawModel(soulsModel({ focus: "list" }, { ascii }), sz);
       assert.equal(listed.lines.some((line) => line.includes("from ")), false, `${at}: under 80 the list alone while it has the focus`);
     }

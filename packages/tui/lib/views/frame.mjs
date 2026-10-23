@@ -24,6 +24,7 @@ import { capabilitiesList, capabilitiesListed, capabilityDetail } from "./capabi
 import { spawn } from "./spawn.mjs";
 import { splitFits, splitRegions } from "./split.mjs";
 import { switcher } from "./switcher.mjs";
+import { workspaceRows } from "./workspaces.mjs";
 
 /** The frame is drawn from this size up (docs/tui.md); the design size is 80x24. */
 export const MIN_SIZE = Object.freeze({ cols: 60, rows: 15 });
@@ -53,11 +54,6 @@ const LIST_LEAST = 3;
 const SOUL_WORD = "soul";
 /** What the title says in the workspace's place while the switcher is shown. */
 const WORKSPACES = "workspaces";
-/** The TUI's word before the one machine of a view that holds no deployment of this machine. */
-const ON = "on";
-/** The cells the workspace's name keeps (all of them, when it is shorter) before the title says
- *  how many other machines it is on: under that the name comes first. */
-const NAME_MIN = 8;
 
 const BOLD = style({ bold: true });
 const DIM = style({ dim: true });
@@ -153,7 +149,7 @@ function openOf(m) {
  *  While a terminal is open (`terminal`) the sidebar keeps LIST_BESIDE cells at most, whether the
  *  terminal or the detail stands beside it, so the agent's screen keeps one size; a name longer
  *  than its row is cut there. */
-export function layout(notice, size, { note = null, ascii = false, outcome = null, terminal = false, open = "instances" } = {}) {
+export function layout(notice, size, { note = null, ascii = false, outcome = null, terminal = false, open = "instances", list = 1 } = {}) {
   const wide = size.cols >= WIDE;
   const listCols = !wide ? size.cols : terminal ? LIST_BESIDE : clamp(Math.floor(size.cols * 0.48), 36, 60);
   const across = Math.max(1, listCols - 2 * MARGIN);
@@ -168,51 +164,28 @@ export function layout(notice, size, { note = null, ascii = false, outcome = nul
   // view's list and the views after it, and one between the views before it and its heading.
   const at = VIEWS.findIndex((view) => view.id === open);
   const rules = 1 + (at < 0 ? 0 : (at > 0 ? 1 : 0) + (at < VIEWS.length - 1 ? 1 : 0));
-  const fixed = 1 + VIEWS.length + rules;
+  const fixed = list + VIEWS.length + rules;
   const said = (notice ? 1 + reason.length : 0) + noted.length + after.length;
   const above = Math.min(said, Math.max(0, size.rows - fixed - 1 - LIST_LEAST));
   const room = Math.max(0, size.rows - fixed - above);
   return { wide, listCols, reason, note: noted, outcome: after, above, open: at < 0 ? null : open, room, page: Math.max(1, room - 1), body: size.rows };
 }
 /** The layout the frame draws a model by. */
-const layoutOf = (m, size, given = {}) => layout(m.notice, size, { note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: panelOpen(m), open: openOf(m), ...given });
+const layoutOf = (m, size, given = {}) => layout(m.notice, size, { note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: panelOpen(m), open: openOf(m), list: listRows(m), ...given });
+/** The rows the top of the sidebar takes: the list of workspaces' (views/workspaces.mjs), else the title's. */
+const listRows = (m) => (m.workspaces ? Math.max(1, m.workspaces.lines.length + (m.workspaces.more > 0 ? 1 : 0)) : 1);
 
-/** The title, from `col` on in `room` cells: the workspace's name and, when the view
- *  holds other machines, what says so, in the TUI's words and dim:
- *    `+N machine(s)`  beside a deployment of this machine;
- *    `on <machine>`   the one machine of a view that holds no deployment of this machine (no
- *                     heading names it there);
- *    `N machines`     two or more of them and no deployment of this machine.
- *  Whether a deployment is this machine's is the shared entries' word (the model's `here`), and
- *  the machine's name is theirs. What stands after the name gives way before the name is cut
- *  short of NAME_MIN cells, and a machine's name is cut before the workspace's. While the
- *  switcher is shown no workspace is named: the title says what is listed instead. */
+/** The title, from `col` on in `room` cells, where the list of workspaces does not stand (nothing
+ *  is open, or the switcher is shown): the workspace's name, else what is listed. Its machines are
+ *  the workspace's own pages' to say (the list of instances' sections). */
 function nameSpans(m, col, room) {
   if (room <= 0) return [];
   if (m.under === "switcher") return [{ col, text: lit(WORKSPACES), width: room }];
-  const name = measured(m.workspace), alone = [{ col, text: name.text, width: room }];
-  if (!(m.machines > 0)) return alone;
-  const least = Math.min(name.width, NAME_MIN);
-  // Two cells between the name and what follows it.
-  const after = (width) => col + width + (width ? 2 : 0);
-  if (!m.here && m.machine !== null) {
-    const where = measured(m.machine), left = room - 2 - ON.length - 1;
-    // The machine's name is cut first, down to the cells that still say something: the
-    // workspace's name has what that leaves.
-    const kept = Math.min(where.width, NAME_MIN);
-    if (left - least < kept) return alone;
-    const width = Math.min(name.width, left - kept), at = after(width);
-    return [...(width ? [{ col, text: name.text, width }] : []), { col: at, text: lit(ON), style: DIM, width: ON.length }, { col: at + ON.length + 1, text: where.text, style: DIM, width: Math.min(where.width, left - width) }];
-  }
-  const more = `${m.here ? "+" : ""}${m.machines} ${m.machines === 1 ? "machine" : "machines"}`;
-  const left = room - 2 - more.length;
-  if (left < least) return alone;
-  const width = Math.min(name.width, left);
-  return [...(width ? [{ col, text: name.text, width }] : []), { col: after(width), text: lit(more), style: DIM, width: more.length }];
+  return [{ col, text: measured(m.workspace).text, width: room }];
 }
 
-/** The title, the sidebar's first row: the workspace's name in bold and what the view holds of
- *  other machines (nameSpans), or `workspaces` while the switcher is shown. */
+/** The title, the sidebar's first row where the list does not stand: the workspace's name in bold,
+ *  or `workspaces` while the switcher is shown (nameSpans). */
 function titleRow(m, cols) {
   return nameSpans(m, MARGIN, cols - 2 * MARGIN).map((span) => (span.style ? span : { ...span, style: BOLD }));
 }
@@ -300,7 +273,9 @@ function types(m) {
  *  and from it the marked soul. With the detail's focus the key that goes back to the list
  *  (`Tab back`) comes before it, and `spawn` after it where it spawns (the list of instances, the
  *  Souls view of a workspace of this machine), then in the Instances view `workspaces` (the
- *  switcher). An action with no key (tui.json may unbind one) has no hint. The views have no
+ *  list of workspaces' focus). With that focus: the open action's key opens, the up and down
+ *  actions' move, the close action's goes back, and `workspaces` again is the switcher (`all
+ *  workspaces`), each by its first key as tui.json binds it. An action with no key (tui.json may unbind one) has no hint. The views have no
  *  hint: the accordion names their keys. When rows are short the sheet
  *  gives up rows from its end (keptHints), down to the leader alone. */
 function cheatSheet(m) {
@@ -330,6 +305,13 @@ function cheatSheet(m) {
   // Esc closes the switcher only onto a view, and there is none before a workspace is opened.
   // Remove stands on a row of this computer's deployments list only, after the keys that move about.
   if (m.view === "switcher") return led([hint("palette"), ...["open", "filter", ...(m.filter?.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])]), ...(m.switcher?.removable ? ["remove"] : [])].map((id) => hint(id)), hint("help"), hint("quit")]);
+  // The list of workspaces with the focus: its keys, and `w` again for the switcher.
+  // The keys are the actions' as tui.json binds them: an action with no key has no hint.
+  if (listing && m.workspaces?.focused) {
+    const moves = [action("up"), action("down")].filter(Boolean);
+    const move = moves.length ? made("move", keyText(keysTogether(moves.map((a) => a.keys[0]))), "move") : null;
+    return led([hint("open", "open"), move, hint("close", "back"), hint("workspaces", "all workspaces"), hint("help"), hint("quit")]);
+  }
   // A view's list or its detail: a small sheet; the rest is the leader's, the palette's and the help's.
   const asking = listing && m.opening?.phase === "preflight";
   const enter = asking ? [hint("close", "stop opening")] : listing && m.onTerminal ? [hint("open", "focus terminal")] : listing && m.openable ? [hint("open")]
@@ -463,7 +445,8 @@ function sidebar(m, g, rows, list) {
   const cols = g.listCols;
   let r = 0;
   const put = (spans) => { if (r < rows.length) rows[r] = spans; r += 1; };
-  put(titleRow(m, cols));
+  if (m.workspaces) workspaceRows(m.workspaces, cols, { ascii: m.ascii, colour: m.colour }).forEach(put);
+  else put(titleRow(m, cols));
   sayings(m, g).forEach(put);
   let n = list.length;
   while (n > 0 && list[n - 1].length === 0) n -= 1;

@@ -2,13 +2,14 @@
 // text. Pure: no IO, no clock, no escape byte. The keys are generated from the table the reducer
 // acts on, so the help names every key that does something and no key that does not; the marks
 // are the ones the list and the switcher draw (views/instances.mjs, views/switcher.mjs).
-import { LEADER, backKeyLabel, keyLabel, keysTogether } from "../actions.mjs";
+import { LEADER, backKeyLabel, doesLabel, keyLabel, keysTogether } from "../actions.mjs";
 import { lit, ownEllipsis } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { NEEDS_INPUT, belowText, cutNote, marksOf, measured } from "./instances.mjs";
 import { windowOf } from "./scroll.mjs";
 import { SOUL_MARK } from "./souls.mjs";
 import { OPEN_MARK } from "./switcher.mjs";
+import { WAITING_DOT } from "./workspaces.mjs";
 
 const TITLE = style({ bold: true });
 const KEYS = style({ bold: true });
@@ -194,9 +195,9 @@ function bothSaid(a, b) {
   const [x, y] = [words(a), words(b)];
   return x.length > 1 && x.at(-1) === y.at(-1) ? `${x.slice(0, -1).join(" ")} and ${y.join(" ")}` : `${a} and ${b}`;
 }
-/** The chords' rows: `chords` are `[key id, does]` in the table's order, each said as the leader's
- *  table says its `does`, then `or <the leader> then <its key>` (`detachKey`'s label, when one is
- *  given); a pair of CHORD_PAIRS on one row, and the nine tab-N on one, `Ctrl+Alt+1 … Ctrl+Alt+9`
+/** The chords' rows: `chords` are `[key id, does]` in the table's order, each said by its label
+ *  (the shared doesLabel: the leader's table's, else the chord's own), then, for one the leader's
+ *  table has a key for, `or <the leader> then <its key>` (`detachKey`'s label, when one is given); a pair of CHORD_PAIRS on one row, and the nine tab-N on one, `Ctrl+Alt+1 … Ctrl+Alt+9`
  *  (`...` in ASCII), which no leader's key does. The family's lines lead them (chordFamilyLines:
  *  `keys`, under the protocol or not, `confirmed`). */
 function chordRows(chords, cols, detachKey, ascii, keys = null, confirmed = false) {
@@ -211,13 +212,13 @@ function chordRows(chords, cols, detachKey, ascii, keys = null, confirmed = fals
     const pair = CHORD_PAIRS.find((each) => each.includes(does) && each.every((one) => keyOf.has(one)));
     if (pair) {
       pair.forEach((one) => done.add(one));
-      rows.push([keysTogether(pair.map((one) => keyOf.get(one))), `${bothSaid(by(pair[0]).label, by(pair[1]).label)}${then(pair)}`]);
+      rows.push([keysTogether(pair.map((one) => keyOf.get(one))), `${bothSaid(doesLabel(pair[0]), doesLabel(pair[1]))}${then(pair)}`]);
     } else if (TAB_N.test(does) && tabs.length === 9) {
       tabs.forEach(([, one]) => done.add(one));
       rows.push([ownEllipsis(`${keyLabel(tabs[0][0])} \u2026 ${keyLabel(tabs[8][0])}`, ascii), TABS_SAID]);
     } else {
       const n = TAB_N.exec(does)?.[1];
-      rows.push([keyLabel(key), n === undefined ? `${by(does)?.label ?? does}${then([does])}` : n === "9" ? "the focused group's last tab" : `the focused group's tab ${n}`]);
+      rows.push([keyLabel(key), n === undefined ? `${doesLabel(does) ?? does}${then([does])}` : n === "9" ? "the focused group's last tab" : `the focused group's tab ${n}`]);
     }
   }
   return [
@@ -335,6 +336,7 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = 
       ["N", `N instances folded away below it need input: ${belowText("N")} where the whole name fits`],
       [marks.selected, "the selected row, and the pane the movement keys act on"],
       [OPEN_MARK, "among the workspaces: the one that is open"],
+      [ascii ? WAITING_DOT.ascii : WAITING_DOT.utf8, ascii ? "among the workspaces: an instance there needs input" : `among the workspaces, in yellow: an instance there needs input (${WAITING_DOT.ascii} without colour)`],
       [ascii ? SOUL_MARK.ascii : SOUL_MARK.utf8, "among the souls: a soul, in its colour"],
       ["!", "among the souls: a spawn of it here would be refused"],
     ].map(([mark, meaning]) => [mark, words(meaning)]), cols),

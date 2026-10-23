@@ -668,6 +668,13 @@ test("the editor opens on a Leader group, then Sidebar keys, then the groups as 
   assert.equal(palette.querySelector(".kb-chord .sr-only").textContent, "Ctrl+X then K or Space, fixed");
   assert.deepEqual([...palette.querySelectorAll(".kb-keys kbd")].map((k) => k.textContent), ["Ctrl+X", "K", "Space"]);
   assert.ok(fixed.some((row) => row.querySelector(".kb-label").textContent === "Instance roster"), "Esc");
+  // ↑ / ↓ are the workspace moves, in the Desktop's words; the previous / next instance are no leader row (chords alone).
+  const labelled = (text) => fixed.find((row) => row.querySelector(".kb-label").textContent === text);
+  for (const [text, cap] of [["Show the previous workspace in the list", "↑"], ["Show the next workspace in the list", "↓"]]) {
+    assert.ok(labelled(text), text);
+    assert.deepEqual([...labelled(text).querySelectorAll(".kb-keys kbd")].map((k) => k.textContent), ["Ctrl+X", cap], text);
+  }
+  assert.equal(labelled("Open the previous instance's terminal") ?? labelled("Open the next instance's terminal") ?? null, null, "not the leader's");
   // The quiet line: the leader is the TUI's, the direct chords are extras, and where 1 and 3 differ.
   const extras = leader.querySelector(".kb-extras");
   assert.match(extras.textContent, /the TUI's/);

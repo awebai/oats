@@ -142,6 +142,9 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
       return flow;
     },
     resolveTerminalOpen: (instances, ref, ws) => ({ inst: { ...ref, tmux: { session: "synthetic", window: ref.instance } }, key: `${ws}:${ref.instance}` }),
+    // The leader's ↑/↓ move between workspaces (the list's step, recorded); its X opens the Stop dialog (recorded).
+    steppedWorkspaces: [], workspaceLabel: { step: delta => { c.steppedWorkspaces.push(delta); return true; } },
+    acts: [], openLifecycleDialog: (verb, instance) => c.acts.push([verb, instance.instance]), openInstanceStart: () => assert.fail("no start here"),
   });
   const functions = [...names, ...(leader ? leaderNames : [])].map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
@@ -677,7 +680,9 @@ test("cycleTab with no active tab: next is the first tab, previous the last (not
   s.cycleTab(-1);
   assert.equal(s.c.activeTab, ids.at(-1));
 });
-// ── the instance steps (the leader's ↑/↓, roster.openPrevious/openNext): N presses, N moves ──────
+// ── the instance steps (roster.openPrevious/openNext, the chords): N presses, N moves ──────
+// The leader's ↑/↓ are the workspace moves now (packages/client/keymap.mjs); its keys with a target (X, R, S, D,
+// N) read it at the key, as the chords do.
 const steps = ["A", "B", "C", "D"].map(instance => ({ instance, running: true, agentsRoot: "/team/agents", home: `/team/${instance}` }));
 function stepShell(t) {
   const s = shell(t, { leader: true });
@@ -690,50 +695,62 @@ function stepShell(t) {
     assert.equal(s.c.tabs.get(s.c.activeTab).instanceRef.home, row.home);
     s.c.opened.length = 0;
   };
-  // The leader then ↓, or the chord, pressed where focus is (or on the body), as the shipped actions run.
-  s.press = (how, delta = 1) => {
+  // The chord, pressed where focus is (or on the body), as the shipped action runs.
+  s.press = (delta = 1) => {
     const at = s.document.activeElement ?? s.document.body;
-    if (how === "chord") { s.actions.get(delta > 0 ? "roster.openNext" : "roster.openPrevious")({ target: at }); return; }
-    s.actions.get("app.leader")({ target: at });
-    s.dispatch(s.document.activeElement ?? s.document.body, "keydown", { key: delta > 0 ? "ArrowDown" : "ArrowUp", code: delta > 0 ? "ArrowDown" : "ArrowUp" });
+    s.actions.get(delta > 0 ? "roster.openNext" : "roster.openPrevious")({ target: at });
+  };
+  // The leader then `key`, pressed where focus is.
+  s.leaderKey = key => {
+    s.actions.get("app.leader")({ target: s.document.activeElement ?? s.document.body });
+    s.dispatch(s.document.activeElement ?? s.document.body, "keydown", { key, code: key.startsWith("Arrow") ? key : `Key${key.toUpperCase()}`, shiftKey: key === "X" });
   };
   s.row = name => [...s.document.querySelectorAll(".ctx-inst")].find(row => row.dataset.treeInstance === `/team/${name}`);
   return s;
 }
 
-for (const how of ["leader", "chord"]) for (const from of ["terminal", "roster"]) {
-  test(`${how} from the ${from}: a second press while the first open still waits for /api/panel moves on, not back`, async t => {
+for (const from of ["terminal", "roster"]) {
+  test(`chord from the ${from}: a second press while the first open still waits for /api/panel moves on, not back`, async t => {
     const s = stepShell(t);
     await s.open(steps[0]);
     if (from === "roster") s.row("A").focus();
-    s.press(how);
+    s.press();
     assert.deepEqual(s.c.opened, ["B"]);
     const first = s.requests.at(-1);
-    s.press(how);
+    s.press();
     assert.deepEqual(s.c.opened, ["B", "C"], "the second press steps from B, the open in flight");
-    s.press(how);
+    s.press();
     assert.deepEqual(s.c.opened, ["B", "C", "D"], "and the third from C");
-    s.press(how);
+    s.press();
     assert.deepEqual(s.c.opened, ["B", "C", "D"], "at the end nothing moves");
     assert.equal(s.c.said.at(-1), "No instance below this one has a terminal to open.");
-    s.press(how, -1);
+    s.press(-1);
     assert.deepEqual(s.c.opened, ["B", "C", "D", "C"], "back up from D, still opening");
     first.resolve({ instances: [] }); await flush();
     assert.equal(s.attachments.length, 1, "the superseded opens attach nothing");
   });
 }
 
-test("the leader pressed, then the open resolves and attaches, then ↓: the target is read at the key", async t => {
+test("the leader's ↑/↓ move between workspaces: from a terminal they open no instance", async t => {
   const s = stepShell(t);
   await s.open(steps[0]);
-  s.press("chord");
+  s.leaderKey("ArrowDown");
+  s.leaderKey("ArrowUp");
+  assert.deepEqual(s.c.steppedWorkspaces, [1, -1], "the list's step, down then up");
+  assert.deepEqual(s.c.opened, [], "no instance step");
+});
+
+test("the leader pressed, then the open resolves and attaches, then X: the target is read at the key", async t => {
+  const s = stepShell(t);
+  await s.open(steps[0]);
+  s.press();
   assert.deepEqual(s.c.opened, ["B"]);
   s.actions.get("app.leader")({ target: s.document.activeElement });
   s.requests.at(-1).resolve({ instances: [] }); await flush();
   s.attachments.at(-1).resolve({ id: 99 }); await flush();
   assert.equal(s.c.tabs.get(s.c.activeTab).instanceRef.home, "/team/B");
-  s.dispatch(s.document.activeElement, "keydown", { key: "ArrowDown", code: "ArrowDown" });
-  assert.deepEqual(s.c.opened, ["B", "C"]);
+  s.dispatch(s.document.activeElement, "keydown", { key: "X", code: "KeyX", shiftKey: true });
+  assert.deepEqual(s.c.acts, [["stop", "B"]], "B, shown when the key was pressed, not A, shown when the leader was");
 });
 
 test("focus left in a hidden pane counts for nothing: the shown terminal is the target", async t => {
@@ -745,26 +762,25 @@ test("focus left in a hidden pane counts for nothing: the shown terminal is the 
   assert.equal(s.c.tabs.get(s.c.activeTab).instanceRef.home, "/team/B");
   assert.equal(s.c.tabs.get(1).paneEl.hidden, true, "focus is in A's hidden pane");
   assert.equal(s.document.activeElement, hiddenInput);
-  for (const how of ["chord", "leader"]) {
-    s.c.opened.length = 0;
-    hiddenInput.focus();
-    s.press(how);
-    assert.deepEqual(s.c.opened, ["C"], how);
-    s.requests.at(-1).resolve({ instances: [] }); await flush();
-    s.attachments.at(-1).resolve({ id: how === "chord" ? 101 : 102 }); await flush();
-    s.selectTab([...s.c.tabs].find(([, tab]) => tab.instanceRef.home === "/team/B")[0]);
-  }
+  s.press();
+  assert.deepEqual(s.c.opened, ["C"], "the chord steps from B");
+  s.requests.at(-1).resolve({ instances: [] }); await flush();
+  s.attachments.at(-1).resolve({ id: 101 }); await flush();
+  s.selectTab([...s.c.tabs].find(([, tab]) => tab.instanceRef.home === "/team/B")[0]);
+  hiddenInput.focus();
+  s.leaderKey("X");
+  assert.deepEqual(s.c.acts, [["stop", "B"]], "the leader's target is B too");
 });
 
 test("an open that fails leaves no target behind: the next press steps from what is shown", async t => {
   const s = stepShell(t);
   await s.open(steps[0]);
-  s.press("chord");
+  s.press();
   assert.deepEqual(s.c.opened, ["B"]);
   s.requests.at(-1).reject(new Error("panel unreadable"));
   await flush();
   assert.deepEqual(s.c.failed, ["panel unreadable"]);
-  s.press("chord");
+  s.press();
   assert.deepEqual(s.c.opened, ["B", "B"], "A is still shown: the step is from A again, not from the dead B");
 });
 

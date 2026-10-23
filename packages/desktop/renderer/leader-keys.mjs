@@ -30,13 +30,16 @@ export const LEADER_ACTIONS = Object.freeze({
   help: "app.shortcuts",
 });
 
-/** The Desktop's own words for the rest (and for the sidebar's `refresh`, which the leader lacks). */
+/** The Desktop's own words for the rest (and for the sidebar's `refresh`, which the leader lacks, and the
+ * chords' `previous` / `next`, which it has no key for). */
 export const LEADER_LABELS = Object.freeze({
   __proto__: null,
   instances: "Instances",
   capabilities: "Workspace › Capabilities",
   previous: "Open the previous instance's terminal",
   next: "Open the next instance's terminal",
+  "workspace-previous": "Show the previous workspace in the list",
+  "workspace-next": "Show the next workspace in the list",
   zoom: "Focus mode on or off, in the active terminal",
   stop: "Stop the instance…",
   restart: "Restart the instance…",

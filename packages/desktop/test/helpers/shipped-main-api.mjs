@@ -1,6 +1,8 @@
 // Main's shipped `api` IPC handler (main.mjs), run in a vm over fake I/O, for one sending window.
 //   window      the workspace the window is bound to (its #ws=), or null for a window with none
 //   chooser     the window is one main knows has no workspace to read (a New Window, a window left choosing)
+//   holds(id)   does main bind the window to the workspace its hash names (main's holdsHash)? By default yes:
+//               the hash and main's binding agree
 //   advertised  what main last learned the server advertises; `reread` is what a re-read finds
 //   served      main's served list (the switcher's choices)
 //   reply(url)  the backend's answer to a fetch: { status, body }
@@ -17,7 +19,7 @@ import { DESKTOP_TERMS } from '../../renderer/desktop-terms.mjs';
 
 export const RENDERER = 'file:///fixture/renderer/index.html';
 
-export function shippedMainApi({ window: bound, chooser = false, base = 'http://127.0.0.1:4999', wsId = '/d/first', advertised, reread = null,
+export function shippedMainApi({ window: bound, chooser = false, holds = (id) => id === bound, base = 'http://127.0.0.1:4999', wsId = '/d/first', advertised, reread = null,
   served = [], reply = () => ({ status: 200, body: { workspaces: [] } }) }) {
   const source = readFileSync(new URL('../../main.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('ipcMain.handle("api",'), end = source.indexOf('// ---- IPC: workstation forge auth', start);
@@ -36,6 +38,7 @@ export function shippedMainApi({ window: bound, chooser = false, base = 'http://
     // The re-read of the advertised set (main's panelWorkspaces): `reread` is what the server advertises now.
     panelWorkspaces: async () => { calls.rereads++; if (reread) context.allowedWs = reread; return context.servedList; },
     BrowserWindow: { fromWebContents: () => sendingWindow }, choosers: new Set(chooser ? [sendingWindow] : []),
+    holdsHash: (win, id) => { calls.holds = [...(calls.holds ?? []), id]; return win === sendingWindow && holds(id); },
     proxyReadiness: proxy, proxySpawnPreview: proxy, proxyInstanceEvents: proxy, proxySpawnApply: proxy,
     fetch, AbortSignal: { timeout: () => null }, Set, URL, JSON,
     guard: () => {},
