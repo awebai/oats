@@ -1307,8 +1307,11 @@ selects text in inputs and editors, Ctrl+Shift with a digit is a shifted
 symbol on most layouts, and Ctrl+Shift+A and Ctrl+Shift+F are taken by
 terminals (kitty, Ghostty, and for F Alacritty and GNOME Terminal too) and
 by agents (Codex's Ctrl+Shift+A, pi's Ctrl+Shift+F). The workspace moves
-and the previous group are new in this version, and have the same keys in
-all three families. On macOS they have no chord: the leader does them.
+and the previous group are new in this version. The workspace moves have
+the same keys in all three families; the previous group is
+`Alt+Shift+Left` in the Alt family, beside `Alt+Shift+Right` for the next,
+and `Ctrl+Alt+Shift+A` in the other two, beside `Ctrl+Alt+A`. On macOS
+they have no chord: the leader does them.
 `Alt+R` (`Ctrl+Alt+R` in the other families) is the Desktop's alone:
 `oats tui` has no such action and binds no key for it. The list's own keys for moving and reading are in
 [In the list](#in-the-list). The tables come from

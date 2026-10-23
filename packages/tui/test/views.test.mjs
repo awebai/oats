@@ -3202,7 +3202,8 @@ test("the help lists Enter once per view with what it does there, the keys of th
   // without the kitty keyboard protocol), so the palette's follows it.
   const leader = lines.slice(lines.indexOf("The leader") + 1, nextHeading(lines, lines.indexOf("The leader"))).filter(Boolean);
   assert.equal(lines[nextHeading(lines, lines.indexOf("The leader"))], "The palette", "the palette's section after the leader's");
-  assert.equal(lines.indexOf("Chords") < lines.indexOf("Keys"), process.platform !== "darwin", "the chords first, where there are any");
+  if (process.platform === "darwin") assert.equal(lines.includes("Chords"), false, "no chords on macOS: no section of them");
+  else assert.equal(lines.indexOf("Chords") >= 0 && lines.indexOf("Chords") < lines.indexOf("Keys"), true, "the chords first, where there are any");
   assert.equal(lines.indexOf("The leader") > lines.indexOf("Keys") && lines.indexOf("The leader") < lines.indexOf("Marks"), true, "between the keys and the marks");
   assert.deepEqual(leader.map((line) => line.replace(/ {2,}/g, "  ")), [
     "Ctrl+\\ then one of these keys, from every focus; a terminal too:",
