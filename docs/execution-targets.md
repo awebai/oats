@@ -1198,8 +1198,16 @@ oats session attach --home /abs/home --detach-key 'C-\'
   no version it can read, the client starts as before. A routed attach
   (`--server`) runs the same viewer on the host, so the host's tmux decides.
 
+  **Scrolling back.** `Shift+PageUp` (tmux's `S-PageUp`) puts the agent's
+  pane in tmux's copy mode, a page up, in every viewer, with or without a
+  detach key, even when the agent has taken the mouse (Claude Code does, and
+  then the wheel goes to it). In copy mode tmux's own copy-mode keys apply:
+  `PageUp` and `PageDown` move a page, and `q` leaves it. The agent never
+  receives `Shift+PageUp` while a viewer is attached.
+
   **Leaving the viewer.** Without `--detach-key` there is no keyboard exit:
-  every key goes to the agent, the tmux prefix included. Close the terminal.
+  every other key goes to the agent, the tmux prefix included. Close the
+  terminal.
   With `--detach-key <key>` (`--detach-key=<key>` is the same; feature
   `session-attach-detach-key`, OATS 0.51.0), pressing `<key>` detaches that
   viewer's client. The agent's window and every other viewer are untouched.
@@ -1231,8 +1239,8 @@ oats session attach --home /abs/home --detach-key 'C-\'
   kernel does not judge whether a harness reads the key: that is the
   caller's choice.
 
-  **While the pane is scrolled back.** The viewer's wheel and drag bindings
-  put the pane in tmux's copy mode, and there copy mode's key table is read
+  **While the pane is scrolled back.** The viewer's wheel, drag and
+  `Shift+PageUp` bindings put the pane in tmux's copy mode, and there copy mode's key table is read
   before the viewer's. A detach key that copy mode binds acts in copy mode
   and does not detach; it detaches once the mode is left (`q`, or scrolling
   back to the bottom). The grammar does not exclude those keys. The
