@@ -15,7 +15,7 @@ For each soul, OATS resolves zero or one implementation per slot:
 | --- | --- | --- |
 | `knowledge` | [knowledge](layers.md#the-knowledge-contract) | `oats.okf` |
 | `messaging` | [communication](layers.md#the-communication-contract) | `oats.aweb` |
-| `tasks` | [tasks](layers.md#the-tasks-contract) | `oats.jira`, `oats.linear` |
+| `tasks` | [tasks](layers.md#the-tasks-contract) | `oats.aweb-tasks`, `oats.jira`, `oats.linear` |
 
 A capability becomes an integration by declaring exactly one `layer` in its
 manifest. Capabilities without `layer` compose additively.
@@ -41,7 +41,7 @@ arrives from.
 # oats-workspace.yaml: one default per slot, for every soul
 packages:
   oats.okf: v5.2.1
-  oats.aweb: v1.30.0
+  oats.aweb: v1.31.0
   oats.linear: v1.0.1
   oats.jira: v1.0.1
 defaults:
@@ -81,6 +81,7 @@ operations in full.
 | --- | --- | --- | --- |
 | `knowledge` | `oats.okf` | `settings.oats.okf.bindings-file` and `state-dir` (absolute paths) in `oats-local.yaml`; `git` for Git-backed consultation, `git` and `gh` for proposal/review PRs; ordinary kernel/harness selection, no provider harvest-runtime setting | [awebai/oats-okf](https://github.com/awebai/oats-okf), [knowledge.md](knowledge.md) |
 | `messaging` | `oats.aweb` | the `aw` CLI at 1.36.33 or later; for channel delivery, `@awebai/pi` in pi or the `aweb-channel` plugin in Claude Code; host-only `root`, `roots` and `residents` in `oats-local.yaml` | [awebai/oats-aweb](https://github.com/awebai/oats-aweb) |
+| `tasks` | `oats.aweb-tasks` | the `aw` CLI at 1.36.33 or later, and `oats.aweb` as the soul's messaging: tasks act as the instance's own oats.aweb identity in its default team; nothing in `oats-local.yaml` | [awebai/oats-aweb](https://github.com/awebai/oats-aweb) |
 | `tasks` | `oats.jira` | `acli`, authenticated to the Jira site; `site` and `project` in the soul's `tasks:` payload or `settings.oats.jira` | [awebai/oats-jira](https://github.com/awebai/oats-jira) |
 | `tasks` | `oats.linear` | `LINEAR_API_KEY` in the environment (never in OATS config); `team` (and optionally `project`) in the soul's `tasks:` payload or `settings.oats.linear` | [awebai/oats-linear](https://github.com/awebai/oats-linear) |
 

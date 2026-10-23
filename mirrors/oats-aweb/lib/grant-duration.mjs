@@ -1,10 +1,10 @@
 /** Native aw uses Go time.ParseDuration, then requires 60s..720h; from aw
- * 1.36.32 it also takes the literal `never` (a grant that ends only when
- * revoked). Keep its component-wise nanosecond truncation (including Go's
+ * 1.36.32 it also takes the literal `never` (no requested expiry; the team
+ * or issuing certificate can still bound the grant). Keep its component-wise nanosecond truncation (including Go's
  * float64 fractional conversion), rather than comparing a numeric prefix or hours.
  */
 export const NEVER_GRANT_TTL = "never";
-/** A new seat's grant never expires unless identity.ttl sets a duration. */
+/** A new seat requests no expiry unless identity.ttl sets a duration. */
 export const DEFAULT_GRANT_TTL = NEVER_GRANT_TTL;
 /** What a grant minted before oats.aweb 1.25.0 (which records no ttl) renews at:
  *  that release's default, so an old seat never silently stops expiring. */
