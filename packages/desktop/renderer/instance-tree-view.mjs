@@ -4,8 +4,9 @@
 import { createDataState, statusLine, skeleton, skeletonBlock, ROSTER_STALE_TITLE } from './loading.mjs';
 import { instanceId, resolveLinkId, findRosterInstance } from '../../client/instance-tree.mjs';
 
-/** Agent-group boundary for the instances sidebar (Workspace v4): groups
- * read from spacing alone — a 14px gap, no title — and the boundary is still
+/** Agent-group boundary for the instances sidebar (Workspace v4): no title
+ * and, since 2026-10-23, no height (a cluster reads from its indent and its
+ * root, its rows at the roster's own spacing), and the boundary is still
  * exposed to assistive technology (role=separator with the group's name and
  * the number of rows shown under it). The group is the relation cluster
  * (never the repo), decided on the full roster, so a collapse never moves

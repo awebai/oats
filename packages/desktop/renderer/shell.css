@@ -656,8 +656,8 @@ body {
 /* The palette's footer names its group keys (overlay-picker `footer`): one quiet line of plain text
    under the list, in the muted ink on the palette's surface, set off by the input's rule. */
 .palette-footer { padding: 6px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11.5px; line-height: 1.4; }
-/* Instances as the sidebar draws them (spec F, #1383): relation groups read from the
-   sidebar's 14px gap alone (each is a named role=group for AT), and a match's ancestor
+/* Instances as the sidebar draws them (spec F, #1383): relation groups set apart by the
+   palette's own 14px gap (the sidebar's groups have none; each is a named role=group for AT), and a match's ancestor
    shown only for its place in the tree is dimmed by colour (the muted token, never
    opacity; its lines are not dimmed) and is not a target. A tree row (.tree: one with
    connectors) takes the sidebar's indent and dot column, a 10px inset plus --depth ×

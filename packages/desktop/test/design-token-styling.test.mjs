@@ -70,7 +70,8 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, two alike section
   for (const prop of ["height", "padding", "display", "alignItems", "gap", "color", "fontSize", "fontWeight"]) {
     assert.equal(wsHead[prop], rosterHead[prop], `the two heads share ${prop}`);
   }
-  assert.deepEqual([wsHead.height, wsHead.color, wsHead.fontSize], ["36px", "var(--nav-fg)", "13px"]);
+  // The two headings are the sidebar's top level (2026-10-23): 14px 600 in --fg, on one line, the row's 36px kept.
+  assert.deepEqual([wsHead.height, wsHead.color, wsHead.fontSize, wsHead.fontWeight, wsHead.whiteSpace], ["36px", "var(--fg)", "14px", "600", "nowrap"]);
   assert.equal(u.style(".ws-head > .ws-add-open").marginLeft, "auto", "Add local workspace… at the head's right end");
   assert.deepEqual([u.style(".ws-add-open").width, u.style(".ws-add-open").height, u.style(".ws-add-open").flexShrink], ["28px", "28px", "0"]);
   assert.equal(u.style(".ws-add-open").display, "grid");
@@ -85,9 +86,13 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, two alike section
   }
   // The list: always shown under the head, about six rows at most, then it scrolls inside itself.
   assert.equal(u.style(".ws-list").flexShrink, "0");
-  // No rule between the list and Instances: none under the list, none on the roster's top.
+  // One line between the list and Instances (2026-10-23): the roster's ::before, a 1px --border rule inset to the
+  // rows' 8px gutters; no border of the list's or the roster's own, which would run edge to edge.
   for (const prop of ["border", "borderBottom", "borderBottomWidth", "borderBottomStyle"]) assert.equal(u.rule(".ws-list")[prop], "", `.ws-list ${prop}`);
   for (const prop of ["border", "borderTop", "borderTopWidth", "borderTopStyle"]) assert.equal(u.rule("#instance-roster")[prop], "", `#instance-roster ${prop}`);
+  const line = u.rule("#instance-roster::before");
+  // JSDOM drops a var() border's longhands: the shorthand's text is pinned.
+  assert.deepEqual([line.content, line.flexShrink, line.margin, line.getPropertyValue("border-top")], ['""', "0", "0px 8px", "1px solid var(--border)"]);
   assert.equal(u.rule(".ws-list").paddingTop, "0px", "the list starts right under its heading");
   assert.equal(u.style(".ws-options").maxHeight, "276px");
   assert.equal(u.style(".ws-options").overflowY, "auto");
@@ -111,10 +116,10 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, two alike section
   // The deployment mark (the roster's headings): the warning shape in --warn at the 12px icon size the filter uses, never the 16px default.
   assert.equal(u.style(".deployment-mark").color, "var(--warn)"); assert.equal(u.style(".deployment-mark").flexShrink, "0");
   assert.equal(u.style(".deployment-mark > .shell-icon").width, "12px");
-  // Deployment headings in the roster's group-label type (the clusters' label on the Deployments page).
+  // Deployment headings: muted 11px capitals at 500, a step under the sections' headings (2026-10-23).
   const heading = u.style(".ctx-deployment");
   assert.deepEqual([heading.color, heading.fontSize, heading.fontWeight, heading.textTransform, heading.letterSpacing],
-    ["var(--muted)", "11px", "650", "uppercase", "0.06em"]);
+    ["var(--muted)", "11px", "500", "uppercase", "0.06em"]);
   assert.equal(u.get("#ws-deployments"), null);
 });
 
