@@ -1040,6 +1040,7 @@ oats session inspect --home /abs/home --json
 oats session input --home /abs/home --text-file message.txt --json
 oats session attach --home /abs/home
 oats session attach --home /abs/home --detach-key 'C-\'
+oats session attach --open --home /abs/home --json
 ```
 
 - **inspect** reports `backend`, `present` and `state`: `unknown` for a live
@@ -1138,7 +1139,10 @@ oats session attach --home /abs/home --detach-key 'C-\'
   operations, not model processing. Broker delivery/ack policy and harness
   acceptance evidence remain separate contracts.
 - **attach** is interactive and takes no `--json`. It opens a temporary tmux
-  session linked to the agent's window alone.
+  session linked to the agent's window alone. From an agent's shell,
+  `--open` runs the same attach in a new terminal window of the person's
+  desktop session instead, and takes `--json`: see
+  [Open it from an agent](tui.md#open-it-from-an-agent).
   Closing the viewer leaves the agent running. When the agent's window ends
   (for example, the instance is stopped or retired), the viewer ends too: it
   sets tmux's `detach-on-destroy on` for its own session, so a server
