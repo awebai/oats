@@ -514,3 +514,21 @@ test("Open in split on a Herdr row: the kernel's reason under OATS, the stand-in
   }
   assert.equal(u.list.querySelector("b, script"), null);
 });
+
+// The pill's mark at its computed size (2026-10-23): .shell-icon's 16px would otherwise win over the SVG's own 10px,
+// so the size is read through the shipped stylesheets, for the own pill and the rolled-up one.
+test("the Needs input pill's mark is 10px under the shipped stylesheets, own and rolled up, concentric with its end", () => {
+  const sheets = ["theme.css", "shell.css"].map(name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8")).join("\n");
+  const dom = new JSDOM(`<!doctype html><html><head><style>${sheets}</style></head><body></body></html>`);
+  const doc = dom.window.document;
+  const mark = runInNewContext(`(${fn("needsInputMark")})`, { document: doc, iconElement });
+  for (const pill of [mark(0), mark(2)]) {
+    doc.body.append(pill);
+    const svg = pill.querySelector("svg.attn-mark"); assert.ok(svg, "the mark leads the pill");
+    assert.equal(pill.firstElementChild, svg);
+    const style = dom.window.getComputedStyle(svg);
+    assert.deepEqual([style.width, style.height], ["10px", "10px"], pill.textContent);
+    assert.equal(dom.window.getComputedStyle(pill).paddingLeft, "2.5px", "1px border + 2.5px + 5px is the pill's 8.5px radius");
+  }
+  dom.window.close();
+});

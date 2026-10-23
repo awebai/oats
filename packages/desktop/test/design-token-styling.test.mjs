@@ -139,11 +139,11 @@ test("nav/footer rhythm stays separate from the 48px roster rows", t => {
   assert.equal(u.style("#nav-foot").padding, "6px 8px", "6px around the foot's buttons (2026-10-23; was 10px)");
   assert.equal(u.style("#nav-foot").gap, "4px");
   // The foot's title (2026-10-23): first in the foot, over the views, on one line at the headings' size and left
-  // edge (17px: the foot's 8px + its 9px), not bold, 4px more before the buttons; its icons are 14px.
+  // edge (17px: the foot's 8px + its 9px), bold like them, 4px more before the buttons; its icons are 14px.
   const title = u.doc.getElementById("nav-title"), navTitle = u.style("#nav-title");
   assert.equal(title.nextElementSibling, u.doc.getElementById("nav"));
   assert.deepEqual([navTitle.textAlign, navTitle.whiteSpace, navTitle.textOverflow, navTitle.overflow, navTitle.fontSize, navTitle.fontWeight, navTitle.paddingLeft, navTitle.marginBottom],
-    ["left", "nowrap", "ellipsis", "hidden", u.style(".ctx-head").fontSize, "400", "9px", "4px"]);
+    ["left", "nowrap", "ellipsis", "hidden", u.style(".ctx-head").fontSize, "650", "9px", "4px"]);
   assert.equal(parseFloat(u.style("#nav-foot").paddingLeft) + parseFloat(navTitle.paddingLeft), parseFloat(u.style(".ctx-head").paddingLeft), "on the headings' left edge");
   assert.deepEqual([u.rule("#nav-foot .shell-icon").width, u.rule("#nav-foot .shell-icon").height, u.rule("#nav-foot .nav-item .icon").width], ["14px", "14px", "14px"]);
   assert.equal(u.rule("#nav-foot").borderTop, "1px solid var(--border)", "the footer keeps its one rule above it");

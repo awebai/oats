@@ -225,8 +225,9 @@ machines](#one-workspace-several-machines)), after them in the same list.
 
 With one workspace the list is one compact row. With many it scrolls within
 about six rows, the current row stays in view, and while rows are cut off
-below, a line under the list says how many ("2 more below"), with the yellow
-dot at its right when one of them has an instance that needs input.
+below, a line under the list says how many ("2 more below"), with the
+needs-input mark at its right when one of them has an instance that needs
+input.
 
 - **A row is one line: a circle and the workspace's name.** No icon, no
   machine, no state: a workspace's own pages show its machines and
@@ -238,15 +239,16 @@ dot at its right when one of them has an instance that needs input.
   marks the current page at the bottom (Workspace or Deployments), so the
   sidebar fills one "you are here" row. A screen reader hears it as current,
   and the list's description names it, by the same name as its row.
-- **The yellow dot.** A row has a small yellow dot at its right end when an
-  instance of that workspace needs input: the claim the instance roster shows
+- **The needs-input mark.** A row has an exclamation mark (a small amber
+  disc with a "!") at its right end when an instance of that workspace needs
+  input, the same mark an instance's **Needs input** pill starts with: the claim the instance roster shows
   for that instance, from a running session (OATS with the `waiting-on-you`
   feature), as the Desktop already reads it for the workspaces it serves.
   Every row can have it, the current one included. The row's name then ends
   in ", needs input" for a screen reader, and its tooltip says "An instance
-  here needs input". What isn't known shows no dot, never a guess: a
+  here needs input". What isn't known shows no mark, never a guess: a
   deployment that isn't live (stale, not reached, its last read failed) and
-  an oats without `waiting-on-you`. The dot never moves a row: the order
+  an oats without `waiting-on-you`. The mark never moves a row: the order
   stays the same whoever waits.
 - **Picking a row** (a click, Enter, or the leader's ↑ / ↓, Ctrl+X then ↑ /
   ↓, which are also ⌥↑ / ⌥↓ on macOS and Alt+↑ / Alt+↓ on Linux and Windows

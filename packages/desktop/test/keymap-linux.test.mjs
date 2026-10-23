@@ -406,8 +406,10 @@ test("stage.automations: registered from NAV_TABS as shipped, \"View: Automation
   t.after(() => { offs.forEach(off => off()); resetAllBindings(); });
   const stages = listActions().filter(a => a.id.startsWith("stage.") && !a.id.includes(".", 6));
   assert.deepEqual(stages.map(a => [a.id, a.label, a.context]), [
-    ["stage.hierarchy", "View: Deployments", "global"], ["stage.spawn", "View: Workspace", "global"], ["stage.automations", "View: Automations", "global"],
+    // In NAV's order, Workspace first since 2026-10-23; each keeps its own chord (bound by id).
+    ["stage.spawn", "View: Workspace", "global"], ["stage.hierarchy", "View: Deployments", "global"], ["stage.automations", "View: Automations", "global"],
   ]);
+  assert.deepEqual(["stage.hierarchy", "stage.spawn"].map(id => getBinding(id, false)), ["Mod+1", "Mod+2"], "⌘1 / Ctrl+1 is still Deployments");
   assert.equal(getBinding("stage.automations", false), "Mod+3"); assert.equal(getBinding("stage.automations", true), "Mod+3");
   const out = { isMac: false, insideTerminal: false };
   assert.equal(matchEvent(linux("3"), out), "stage.automations");
