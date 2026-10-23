@@ -108,6 +108,8 @@ workspace defaults  →  the soul's own list
 
 **Design implication:** for any soul, the Desktop can show a **composition view**: each capability, and **why it's there** (a workspace default or the soul's own choice). The kernel reports this per core capability as `from: soul | workspace`, per other capability as `composedFrom`, and lists what the soul turned off, including a core slot it emptied with `none`. The Desktop shows the composition as two sections of one system: **Core capabilities** (always the three slots, see §5) above **Capabilities** (everything else), in the same row grammar (the capability, its source, why it's there). A core provider, or a slot the soul emptied, appears only under Core, never again under Capabilities.
 
+The first layer has its own place too: **Workspace › Capabilities** opens with the workspace's defaults, the three core slots and the other capabilities every soul starts with, so the "workspace default" a soul's composition names can be seen where it is set.
+
 ---
 
 ## 5. The core capabilities: knowledge, messaging, tasks
