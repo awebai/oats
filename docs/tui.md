@@ -86,11 +86,63 @@ was, as soon as the terminal is large enough. It follows a resize.
 
 `--dir`, `--ascii` and `--help` are the only arguments. `--server` is
 refused like any other argument (`E_BAD_ARGS`): no machine is named at the
-start. It reads every machine registered on this machine.
+start. It reads every machine registered on this machine. `--open` starts
+no TUI here: it asks for a window that runs one ([Open it from an
+agent](#open-it-from-an-agent)).
 
 **Start it again after you upgrade OATS.** It asks the kernel it shipped
 with for its version once, at the start, and does not ask again while it
 runs.
+
+## Open it from an agent
+
+```bash
+oats tui --open [--dir <path>] [--ascii] [--json]
+oats session attach --open --home <home> [--detach-key <key>] [--json]
+```
+
+An agent has no terminal of yours to draw in. `--open` asks your desktop
+for a new terminal window that runs the plain command: `oats tui --dir
+<path>`, or `oats session attach --home <home>` (with the detach key when one
+is given). The path and the home are written out absolute, since the window
+does not start where the agent is. Without `--dir`, the deployment at or
+above where `oats` runs is written in, and outside every deployment no
+`--dir` is.
+
+- **macOS:** Terminal, through
+  `osascript -e 'tell application "Terminal" to do script "<command>"'`.
+- **Linux:** `systemd-run --user --collect --quiet -p KillMode=process
+  -E DISPLAY -E WAYLAND_DISPLAY -E XAUTHORITY` then `xdg-terminal-exec`,
+  or `x-terminal-emulator -e` where only that exists, running `/bin/sh -c
+  <command>`. The window is a unit of your user's service manager, so it has
+  your desktop session's environment, not the agent's, and outlives the
+  agent's shell. Without `systemd-run` nothing is tried.
+- **Elsewhere:** nothing is tried.
+
+The launchers are looked up on `PATH`. The window gets nothing of the
+agent's environment but the three display variables above (Linux). Its
+command puts the directories of the `node` and the `oats` that answered
+first on its `PATH`, ahead of the window's own, because a window may read no
+shell startup file: `env PATH=<node's dir>:<oats's dir>:"$PATH" oats tui
+--dir <path>`. The `oats` is the first one on `PATH` that is this kernel, an
+instance home's `.oats/bin` passed over. With none, the window runs this
+kernel's `bin/oats.mjs` by its path. Every word is quoted as every command
+the kernel prints is.
+
+The answer says a window was requested, never that one appeared: `oats`
+cannot see it. With `--json`:
+
+```json
+{ "opened": "requested", "via": "xdg-terminal-exec", "command": "oats tui --dir /home/me/acme" }
+```
+
+`via` is what opens the window: `osascript`, `xdg-terminal-exec` or
+`x-terminal-emulator`. When no launcher is found, or the launcher fails, the
+answer is `E_OPEN_UNAVAILABLE`: the message says what was tried and why, and
+ends with the command to run in a terminal yourself (`details.tried`,
+`details.command`). `session attach --open` takes no `--server`
+(`E_BAD_ARGS`), and checks a detach key before anything is asked of the
+desktop.
 
 ## What it shows
 

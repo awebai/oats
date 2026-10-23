@@ -67,6 +67,8 @@ import { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } from 
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposition, withSkills, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
 import { readEvents, setWaiting, incarnationOf } from "../lib/instance-events.mjs";
+import { openTerminalWindow } from "../lib/terminal-window.mjs";
+import { requireDetachKey } from "../lib/session-viewer.mjs";
 import { CLIENT_VIA, addDeployment, deploymentAtOrAbove, importDesktopDeployments, listDeployments, listResolved, removeDeployment } from "../lib/deployments.mjs";
 import { observeResolvedDeployment } from "../lib/resolved-deployment.mjs";
 
@@ -3532,6 +3534,14 @@ async function sessionCmd() {
     if (flag("native-record") !== undefined) throw Object.assign(new Error("--native-record outcome inspection is gone (the captured/portable path was removed in 0.26)"), { code: "E_BAD_ARGS" });
     const home = flag("home");
     let result;
+    if (args[1] === "attach" && args.includes("--open")) {
+      // --open (#1483): the same attach, in a window of the person's desktop session.
+      if (home === undefined || home === true) throw Object.assign(new Error("session attach --open needs --home <absolute-home>"), { code: "E_BAD_ARGS" });
+      const detachKey = valueFlag("detach-key");
+      if (detachKey !== undefined) requireDetachKey(detachKey);
+      openWindow(["oats", "session", "attach", "--home", resolve(home), ...(detachKey !== undefined ? ["--detach-key", detachKey] : [])]);
+      return;
+    }
     if (args[1] === "attach") {
       if (JSON_MODE) throw Object.assign(new Error("session attach is interactive; omit --json"), { code: "E_BAD_ARGS" });
       // --detach-key (feature session-attach-detach-key): the one key that leaves this viewer, with
@@ -3609,9 +3619,42 @@ async function paneCmd() {
  *  TUI cannot break another word, and no other word pays for loading it (test/tui-boundary.test.mjs).
  *  packages/tui parses process.argv itself, so the word is spliced out first, as for the record. */
 async function tuiCmd() {
+  if (args.includes("--open")) return tuiOpen();
   if (args.includes("--json")) return cmdFail("E_BAD_ARGS", "oats tui is interactive and has no --json form; `oats status --json` is the machine view");
   process.argv.splice(2, 1);
   await import(new URL("../packages/tui/bin/tui.mjs", import.meta.url));
+}
+
+/** `oats tui --open [--dir D] [--ascii]` (#1483): a terminal window in the person's desktop session
+ *  running `oats tui --dir <D, absolute>`. Without --dir, the deployment at or above where this runs,
+ *  else no --dir: the window starts elsewhere, so the flag is always written out absolute. */
+function tuiOpen() {
+  const usage = "usage: oats tui --open [--dir <path>] [--ascii] [--json]";
+  let dir, ascii = false;
+  for (let i = 1; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--open" || a === "--json") continue;
+    if (a === "--ascii") { ascii = true; continue; }
+    if (a === "--dir" && typeof args[i + 1] === "string" && args[i + 1] !== "" && !args[i + 1].startsWith("--")) { dir = args[++i]; continue; }
+    if (a.startsWith("--dir=") && a.length > "--dir=".length) { dir = a.slice("--dir=".length); continue; }
+    return cmdFail("E_BAD_ARGS", a === "--dir" || a === "--dir=" ? `--dir takes a path\n${usage}` : `unknown argument ${JSON.stringify(a)}\n${usage}`);
+  }
+  const deployment = dir === undefined ? deploymentAtOrAbove(process.cwd()) : resolve(dir);
+  openWindow(["oats", "tui", ...(deployment ? ["--dir", deployment] : []), ...(ascii ? ["--ascii"] : [])]);
+}
+
+/** Ask for a terminal window running `argv` (lib/terminal-window.mjs) and say so. Never that the window
+ *  appeared: that is not observed. */
+function openWindow(argv) {
+  let opened;
+  try { opened = openTerminalWindow(argv); }
+  catch (e) {
+    if (e.code !== "E_OPEN_UNAVAILABLE") throw e;
+    return JSON_MODE ? jsonFail(e.code, e.message, e.details) : die(`${e.message} (${e.code})`);
+  }
+  if (JSON_MODE) return jsonOk(opened);
+  console.log(`asked ${opened.via} for a terminal window running: ${opened.command}`);
+  console.log("oats cannot see whether it opened; if none did, run that command in a terminal");
 }
 
 /**
@@ -4547,6 +4590,7 @@ async function serverRouteCmd() {
     return;
   }
   if (cmd === "session") {
+    if (args.includes("--open")) bail("E_BAD_ARGS", "session attach --open opens a window on this machine; --server is not accepted with it");
     const addr = { instance: flag("instance") === true ? undefined : flag("instance"), home: flag("home") === true ? undefined : flag("home") };
     if (args[1] === "inspect") {
       // Desktop preflight before a remote attach: the execution host's own
@@ -4884,6 +4928,12 @@ Usage:
                                             confirmation. ? help, w workspaces, q quit. Needs a terminal on
                                             stdin and stdout and has no --json form; --ascii = ASCII rules
                                             and marks
+  oats tui --open [--dir <path>] [--ascii] [--json]
+                                            from an agent's shell: ask the desktop for a terminal window
+                                            running \`oats tui --dir <path>\` (macOS Terminal; Linux
+                                            systemd-run + xdg-terminal-exec or x-terminal-emulator).
+                                            Answers that a window was requested, never that one opened;
+                                            E_OPEN_UNAVAILABLE names the command to run by hand
   oats server add <id> --ssh <alias>         register another machine's OATS (OpenSSH alias,
       --workspace </abs/path> [--oats <p>]   remote workspace, remote oats path; no keys stored;
       [--path <dir:dir>]                    --path = dirs prepended to the remote PATH, e.g. ~/.local/bin)
@@ -4959,6 +5009,8 @@ Usage:
                                             or digit>, F1 to F12; 'C-\\' is the suggested one)
                                             leaves it with exit status 20; without one no key
                                             leaves it: every key goes to the agent
+  oats session attach --open --home <home> [--detach-key <key>] [--json]
+                                            the same attach in a new terminal window, as tui --open
   oats schedule list|show <id>|test <id>|add <id> --file <spec.json>|update <id> --file <spec.json>
       enable|disable|run|remove|reconcile <id>   workspace-scoped, host-owned schedules (spawn,
       tick [--dry-run] [--host]                  command or wake jobs on a five-field cron with an
