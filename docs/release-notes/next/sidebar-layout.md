@@ -10,7 +10,7 @@
   in the palette ("Settings: Connections…"), and the palette is on ⌘K / its
   chord and Ctrl+X then `k`.
 - **Desktop: the instances have no filter field.** To find an instance by
-  name, type it in the command palette. ⌘F / Ctrl+Alt+F, renamed **Focus the
+  name, type it in the command palette. ⌘F / Alt+F, renamed **Focus the
   instance roster** and still rebindable under its old id, goes to the
   roster's current row. The TUI keeps its filter.
 - **Desktop: Automations is a tab of the Workspace page**, after Souls and
