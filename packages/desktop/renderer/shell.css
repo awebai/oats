@@ -85,11 +85,14 @@ body {
 .deployment-mark > .shell-icon { width: 12px; height: 12px; }
 /* The main views, at the bottom: Deployments and Workspace side by side, each its icon and label. A nav too
    narrow for both labels shows the icons alone (the label stays the button's name, visually hidden; the title is
-   its tooltip), never a wrapped label. */
+   its tooltip), never a wrapped label. Each button starts from its own label's width, so the longer one (the
+   active Deployments, at 650) is not squeezed to half; both fit down to a nav of about 219px with the bundled
+   Linux UI font, and the 264px sidebar's nav is 243px. The cutoff sits above that fit, so a wider system font
+   switches to icons before a label is cut. */
 #nav { display: flex; flex: none; flex-direction: row; gap: 4px; container-type: inline-size; container-name: nav; }
-#nav .nav-item { flex: 1 1 0; min-width: 0; justify-content: center; gap: 7px; padding: 5px 7px; white-space: nowrap; }
+#nav .nav-item { flex: 1 1 auto; min-width: 0; justify-content: center; gap: 6px; padding: 5px 6px; white-space: nowrap; }
 #nav .nav-item .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-@container nav (max-width: 200px) {
+@container nav (max-width: 228px) {
   #nav .nav-item .label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden;
                           clip-path: inset(50%); white-space: nowrap; }
 }
