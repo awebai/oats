@@ -51,6 +51,10 @@ export async function captureCommandPass(root, options, { log = console.log, err
     if (result.held.liveness === "alive") log(line); else error(line);
     return { skipped: true };
   }
+  if (result.rootCoverageOnly === true && result.outcome === 'failed') {
+    throw Object.assign(new Error('Registered root coverage is incomplete; inspect capture health and root warnings. Healthy independent work was processed.'),
+      { code: 'E_CAPTURE_ROOTS_COVERAGE', receipt: result.receipt });
+  }
   if (result.exitCode !== 0 || result.outcome === "failed")
     throw new Error(`capture worker failed (${result.reason ?? "io"})${result.message ? `: ${result.message}` : ""}; ${result.receipt ? "see capture health for confirmed progress" : "matching worker receipt unavailable; appended count is unknown"}`);
   const receipt = result.receipt;

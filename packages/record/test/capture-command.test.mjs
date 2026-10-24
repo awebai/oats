@@ -15,11 +15,12 @@ import { superviseCapturePass } from "../lib/capture-pass.mjs";
 import { acquireCaptureLock } from "../lib/capture-lock.mjs";
 import { captureSessions } from "../lib/capture-cc.mjs";
 import { captureCommandPass } from "../lib/capture-command-output.mjs";
+import { applyCaptureRoots, preflightCaptureRoots, readCaptureRoots } from "../lib/capture-roots.mjs";
 
 const url = name => new URL(`../lib/${name}.mjs`, import.meta.url).href;
 const formats = ["cc", "pi", "codex", "aw"];
 function fixture(t) {
-  const base = fs.mkdtempSync(join(tmpdir(), "capture-command-")), home = join(base, "home"), root = join(base, "record");
+  const base = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), "capture-command-"))), home = join(base, "home"), root = join(base, "record");
   fs.mkdirSync(home);
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const options = (extra = {}) => ({ owner: "fixture", plan: captureDefaultRootPlan({ home, cwd: base, env: {} }),
@@ -43,6 +44,74 @@ function fixture(t) {
 }
 const native = JSON.stringify({ timestamp: "2026-01-01T00:00:00Z", text: "native" }) + "\n";
 const aw = JSON.stringify({ ts: "2026-01-01T00:00:00Z", ch: "mail", dir: "recv", from: "peer", body: "healthy" }) + "\n";
+
+test('metadata-only configuration/map/identity warnings allow known-union completion and lastSuccess', async t => {
+  const f = fixture(t), deployment = fs.realpathSync(f.home);
+  applyCaptureRoots(preflightCaptureRoots(f.root, { schemaVersion: 1, deployment, roots: [], unavailable: [
+    { configuration: 'relative', selector: 'CODEX_HOME', reason: 'relative' },
+    { configuration: '(deployment)', selector: 'launch-configs', reason: 'unreadable' },
+  ] }));
+  const first = await f.run({ indexEnabled: true });
+  assert.equal(first.outcome, 'complete', JSON.stringify(first)); assert.equal(first.exitCode, 0);
+  const success = readCaptureStatus(f.root).lastSuccess;
+  assert.equal(success.id, readCaptureStatus(f.root).lastRun.id);
+  assert.equal(readCaptureRoots(f.root).rows.length, 2, 'health retains configuration warnings');
+  const next = await f.run({ indexEnabled: true });
+  assert.equal(next.outcome, 'complete'); assert.notEqual(readCaptureStatus(f.root).lastSuccess.id, success.id);
+  fs.renameSync(f.home, f.home + '-old'); fs.mkdirSync(f.home);
+  const replaced = await f.run({ indexEnabled: true });
+  assert.equal(replaced.outcome, 'complete', JSON.stringify(replaced));
+  assert.equal(readCaptureStatus(f.root).lastSuccess.id, readCaptureStatus(f.root).lastRun.id);
+  assert.equal(readCaptureRoots(f.root).rows[0].code, 'capture-roots-refresh-required');
+});
+
+test('invalid inventory remains a capture failure and cannot use warning-only setup classification', async t => {
+  const f = fixture(t);
+  applyCaptureRoots(preflightCaptureRoots(f.root, { schemaVersion: 1, deployment: fs.realpathSync(f.home), roots: [], unavailable: [] }));
+  await f.run({ indexEnabled: true });
+  const success = readCaptureStatus(f.root).lastSuccess;
+  fs.writeFileSync(join(f.root, 'capture-roots', fs.readdirSync(join(f.root, 'capture-roots'))[0]), '{');
+  const result = await f.run({ indexEnabled: true });
+  assert.equal(result.outcome, 'failed', JSON.stringify(result)); assert.equal(result.exitCode, 1);
+  assert.notEqual(result.rootCoverageOnly, true); assert.deepEqual(readCaptureStatus(f.root).lastSuccess, success);
+  await assert.rejects(captureCommandPass(f.root, f.options(), { run: async () => result, log() {}, error() {} }), /capture worker failed/);
+  const final = await superviseCapturePass(f.root, f.options({ indexEnabled: true }), {
+    workerPath: new URL('../lib/capture-command-worker.mjs', import.meta.url).pathname,
+    env: { HOME: f.home, TMPDIR: f.base, XDG_CACHE_HOME: f.base, PATH: process.env.PATH },
+    policy: { intervalSeconds: 900, heapMiB: 256, rssBytes: 2147483648, deadlineSeconds: 10, maxRecordBytes: 8388608 },
+  });
+  assert.equal(final.starts, 1); assert.equal(final.outcome, 'failed', JSON.stringify(final));
+  assert.notEqual(final.rootCoverageOnly, true); assert.deepEqual(readCaptureStatus(f.root).lastSuccess, success);
+});
+
+test('actual registered-root failure retains its warning-only classification through a two-start finalization', async t => {
+  const f = fixture(t), path = join(f.base, 'dangling'), workerPath = join(f.base, 'finalize-worker.mjs');
+  fs.symlinkSync(join(f.base, 'missing-target'), path);
+  applyCaptureRoots(preflightCaptureRoots(f.root, { schemaVersion: 1, deployment: fs.realpathSync(f.home), roots: [{ source: 'pi', path }], unavailable: [] }));
+  fs.writeFileSync(workerPath, `
+    import { runCaptureWorker } from ${JSON.stringify(url('capture-worker'))};
+    import { captureCommandOperation } from ${JSON.stringify(url('capture-command-operation'))};
+    import { CaptureWorkSession } from ${JSON.stringify(url('capture-work-session'))};
+    await runCaptureWorker(start => {
+      const step = CaptureWorkSession.prototype.step;
+      CaptureWorkSession.prototype.step = function() {
+        if (!start.pass.finalize && this.state.get('capture-discovery-failure', 'last')?.runId === start.pass.runId) return { stopped: true };
+        return step.call(this);
+      };
+      return captureCommandOperation(start);
+    });`);
+  const result = await superviseCapturePass(f.root, f.options({ indexEnabled: true }), { workerPath,
+    env: { HOME: f.home, TMPDIR: f.base, XDG_CACHE_HOME: f.base, PATH: process.env.PATH },
+    allowances: { workMs: 1000, finalizeMs: 1500, hardMs: 2000, finalReserveMs: 1000, finalDrainMs: 750, maxStarts: 2 } });
+  assert.equal(result.starts, 2); assert.equal(result.outcome, 'failed', JSON.stringify(result)); assert.equal(result.rootCoverageOnly, true);
+  f.state(state => {
+    const failure = state.get('capture-discovery-failure', 'last');
+    assert.equal(failure.registered, true); assert.equal(failure.source, 'pi'); assert.equal(failure.path, path);
+    assert.equal(failure.runId, readCaptureStatus(f.root).lastRun.id);
+  });
+  assert.equal(readCaptureStatus(f.root).lastSuccess, null);
+  await assert.rejects(captureCommandPass(f.root, f.options(), { run: async () => result, log() {}, error() {} }), { code: 'E_CAPTURE_ROOTS_COVERAGE' });
+});
 function seedIssues(f, n = 260) {
   return f.state(state => {
     const queue = new CaptureSourceQueue(state, { owner: "fixture", selection: "fixture" });

@@ -145,7 +145,7 @@ test('default-root admission precedes selectors and publication rollback retains
 test('format rotation and restart retain public file order within each format and native root precedence', t => {
   const f = fixture(t);
   for (const path of ['cc-a/project/a.jsonl', 'cc-a/project/z.jsonl', 'cc-b/project/a.jsonl',
-    'pi/s/a.jsonl', 'codex/y/m/d/a.jsonl', 'aw/z.jsonl', 'aw/A.jsonl', 'aw/a.jsonl', 'aw/ignored.txt']) f.put(path);
+    'pi/s/a.jsonl', 'codex/y/m/d/a.jsonl', 'aw/b.jsonl', 'aw/Z.jsonl', 'aw/A.jsonl', 'aw/ignored.txt']) f.put(path);
   const roots = [{ source: 'cc', path: join(f.base, 'cc-a') }, { source: 'cc', path: join(f.base, 'cc-b') },
     ...['pi', 'codex', 'aw'].map(source => ({ source, path: join(f.base, source) }))];
   const turns = []; let done = false;
@@ -162,7 +162,8 @@ test('format rotation and restart retain public file order within each format an
         for (const row of found.filter(row => row.source === source))
           assert.equal(row.stream, `fixture~${source}.${SESSION_FORMATS[source].sessionId(row.path)}`);
       }
-      assert.deepEqual(found.filter(row => row.source === 'aw').map(row => row.path), ['A', 'a', 'z'].map(name => join(f.base, 'aw', name + '.jsonl')));
+      // Distinct even on case-insensitive filesystems; Z before b discriminates code-unit from alphabetic order.
+      assert.deepEqual(found.filter(row => row.source === 'aw').map(row => row.path), ['A', 'Z', 'b'].map(name => join(f.base, 'aw', name + '.jsonl')));
       assert.ok(found.every(row => row.outcome === 'ready'));
       assert.equal(opened.state.transaction(() => opened.queue.finish()), false, 'enumeration is not source processing completion');
     }
@@ -355,4 +356,25 @@ test('owned page admission and atomic retirement survive publication rollback an
     assert.equal(opened.state.get('capture-run', 'current'), null, 'intent and reconciliation invent no processing counts');
     assert.equal(opened.discovery.advance({ ...owned('new-pass'), now, retry: true }).deferred, true);
   } finally { close(opened); }
+});
+
+test('registered roots isolate unavailable peers of the same format and absent roots do not block discovery', t => {
+  const f = fixture(t), good = f.put('registered/good/session.jsonl');
+  const dangling = join(f.base, 'dangling'); fs.symlinkSync(join(f.base, 'missing-target'), dangling);
+  const state = new DerivedState(f.root);
+  const queue = new CaptureSourceQueue(state, { owner: 'fixture', selection: 'registered' });
+  const discovery = new CaptureSourceDiscovery(queue, [], { registered: [
+    { source: 'pi', path: dangling }, { source: 'pi', path: join(f.base, 'registered/good') },
+    { source: 'pi', path: join(f.base, 'absent') },
+  ] });
+  try {
+    for (let n = 0; n < 20 && discovery.healthyPending(); n++) {
+      try { discovery.advance({ ...owned('registered'), limit: 1 }); }
+      catch (error) { assert.equal(error.code, 'E_CAPTURE_ROOTS_COVERAGE'); }
+    }
+    assert.deepEqual(rows(state).map(row => row.path), [good]);
+    assert.equal(queue.current().discovered, false, 'unavailable roots never certify completeness');
+    assert.equal(discovery.current().groups.at(-1).complete, true, 'proven absence is optional');
+    assert.equal(discovery.current().groups[4].failure.reason, 'io');
+  } finally { discovery.close(); state.close(); }
 });

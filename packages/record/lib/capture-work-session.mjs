@@ -21,12 +21,13 @@ import { auditCaptureCompletion, auditCaptureSourceRetirement } from "./capture-
 import { CaptureIssuePreparation } from "./capture-issue-preparation.mjs";
 
 export class CaptureWorkSession {
-  constructor(start, { owner, selection, trigger = "manual", now = Date.now, unit = {}, roots = null, indexEnabled = true, issues = null } = {}) {
+  constructor(start, { owner, selection, trigger = "manual", now = Date.now, unit = {}, roots = null, registeredRoots = [], rootCoverageIncomplete = false, indexEnabled = true, issues = null } = {}) {
     if (typeof start?.root !== "string" || typeof start.workerNonce !== "string" || !start.workerNonce ||
         typeof start.pass?.runId !== "string" || !start.pass.runId ||
         typeof start.pass.finalize !== "boolean" || typeof start.pass.reset !== "boolean" || typeof now !== "function" ||
         typeof indexEnabled !== "boolean")
       throw new Error("capture work session requires a supervised pass");
+    this.rootCoverageIncomplete = rootCoverageIncomplete;
     this.start = start; this.now = now; this.unit = unit; this.indexEnabled = indexEnabled;
     try {
       start.budget.check();
@@ -56,7 +57,7 @@ export class CaptureWorkSession {
         this.queue = new CaptureSourceQueue(this.state, { owner, selection });
       }
       if (roots !== null) {
-        this.sourceDiscovery = new CaptureSourceDiscovery(this.queue, roots);
+        this.sourceDiscovery = new CaptureSourceDiscovery(this.queue, roots, { registered: registeredRoots });
         this.sourceDiscovery.reconcile(start, { reason: reasonFor(this.sourceDiscovery.active()?.runId), now: now() });
       }
       if (issues !== null) this.issues = new CaptureIssuePreparation(this.state, this.queue,
@@ -210,7 +211,8 @@ export class CaptureWorkSession {
   }
 
   finish({ reason = "input" } = {}) {
-    const snapshot = this.run.finish({ outcome: reason === "interrupted" ? "failed" : "partial", reason,
+    const snapshot = this.run.finish({ outcome: reason === "interrupted" || this.rootCoverageIncomplete ? "failed" : "partial",
+      reason: reason === "interrupted" ? reason : this.rootCoverageIncomplete ? "io" : reason,
       pending: true, peakRssBytes: this.start.budget.peakRssBytes });
     return { outcome: snapshot.lastRun.outcome, reason: snapshot.lastRun.reason, continuation: false };
   }
@@ -226,9 +228,9 @@ export class CaptureWorkSession {
     // Also retain a caught failure if an owning caller continues in this worker.
     const failure = ["capture-run-failure", "capture-index-reset-failure", "capture-cleanup-failure", "capture-discovery-failure"]
       .map(kind => this.state.get(kind, "last")).find(row => row?.runId === this.run.id);
-    const snapshot = this.run.finish({ outcome: failure ? "failed" : audit.complete ? "complete" : "partial",
-      reason: failure?.reason ?? (audit.complete ? null : "input"),
-      pending: audit.pending, peakRssBytes: this.start.budget.peakRssBytes });
+    const snapshot = this.run.finish({ outcome: failure || this.rootCoverageIncomplete ? "failed" : audit.complete ? "complete" : "partial",
+      reason: failure?.reason ?? (this.rootCoverageIncomplete ? "io" : audit.complete ? null : "input"),
+      pending: audit.pending || this.rootCoverageIncomplete, peakRssBytes: this.start.budget.peakRssBytes });
     return { outcome: snapshot.lastRun.outcome, reason: snapshot.lastRun.reason, continuation: false };
   }
 

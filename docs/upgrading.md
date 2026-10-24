@@ -574,3 +574,34 @@ PI_CODING_AGENT_DIR=<folder> pi install npm:@awebai/oats-pi@<the CLI's version>
 `oats version` prints the CLI's version. For the default folder, leave the
 assignment out only when your shell does not set `PI_CODING_AGENT_DIR`;
 when it does, name the folder: `PI_CODING_AGENT_DIR="$HOME/.pi/agent"`.
+
+## Configuration-derived capture roots (0.67)
+
+Run `oats setup` once in each deployment after upgrading and after changing a
+launch configuration's transcript location or referenced location environment.
+Setup snapshots every effective named configuration, including unselected ones,
+into the record package's deployment registry. Relative locations and unresolved
+or unsupported selectors produce named warnings; absolute roots register even
+before the first spawn creates their directory. Warning-only coverage preserves
+exit 0 when independent setup steps succeed. Real registry/publication and
+unrelated setup failures retain nonzero exits and honest partial summaries.
+Capture completion and `lastSuccess` concern the known root union; unresolved
+configuration/map/identity warnings remain visible in health without failing
+every pass. Invalid inventory and actual root/discovery/storage failures still
+fail. The scoped forget command also accepts exact stored references made
+effectively retired by a proven absent or inode-replaced deployment; active or
+indeterminate identities refuse stored-current removal.
+
+Health uses `capture-roots-invalid` (inspect unsafe/corrupt/bounded inventory),
+`capture-roots-unavailable` (repair access/selectors or explicitly forget an
+exact retired reference), and `capture-roots-refresh-required` (run setup after
+an inode replacement at a deployment path). The
+[package reference](../packages/record/docs/capture-service.md#configuration-derived-transcript-roots-oats-067)
+owns selectors, persistence, lifecycle, limits and the scoped forget command.
+
+Old binaries ignore the inventory; rollback loses the additional coverage while
+retaining entries and history. Upgrade and run setup again to restore it. An old
+service does not learn new locations. The snapshot does not cover differing
+frozen-home recipes or provider-generated locations, and registration grants no
+native-history custody. Framework skills require a separately tagged release;
+existing homes remain frozen.

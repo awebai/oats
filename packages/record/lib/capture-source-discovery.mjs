@@ -9,6 +9,8 @@ import { SESSION_FORMATS } from "./formats.mjs";
 import { awStream } from "./capture-aw.mjs";
 import { guardCapturedPath } from "./native-history.mjs";
 import { FAILURE_REASONS, retryAfterAttempt } from "./capture-failures.mjs";
+import { nativeLaunchLocations } from "./session-roots.mjs";
+import { captureRootDirectory } from "./capture-roots.mjs";
 import { CaptureStop } from "./capture-budget.mjs";
 import { captureDefaultRootPlan, resolveCaptureDefaultRoots } from "./capture-default-roots.mjs";
 
@@ -81,7 +83,9 @@ class AwDiscovery {
 }
 
 export class CaptureSourceDiscovery {
-  constructor(queue, roots) {
+  constructor(queue, roots, { registered = [] } = {}) {
+    this.sources = [...sources, ...registered.map(root => root.source)];
+    this.registered = registered;
     if (roots?.kind === "default-roots") {
       if (Object.keys(roots).some(key => !["kind", "home", "cwd", "env", "sources"].includes(key)))
         throw new Error("invalid capture discovery root plan");
@@ -92,23 +96,27 @@ export class CaptureSourceDiscovery {
         throw new Error("invalid capture discovery root plan");
       this.roots = sources.map(source => roots.filter(root => root.source === source).map(root => root.path));
     }
+    if (!this.roots) this.roots = sources.map(() => []);
+    this.roots.push(...registered.map(root => [root.path]));
     this.queue = queue;
-    this.plan = createHash("sha256").update(JSON.stringify(this.defaults ?? this.roots)).digest("hex");
+    this.plan = createHash("sha256").update(JSON.stringify([this.defaults ?? this.roots, registered])).digest("hex");
     this.readers = new Map();
     this.current();
   }
+
+  defaultGroup(index) { return Boolean(this.defaults) && index < sources.length; }
 
   current() {
     const sweep = this.queue.current();
     let row = sweep.discovery;
     if (row === null && !sweep.discovered) row = { v: this.defaults ? 2 : 1, plan: this.plan, next: 0,
-      groups: sources.map((source, index) => this.defaults ?
+      groups: this.sources.map((source, index) => this.defaultGroup(index) ?
         { root: 0, checkpoint: null, complete: !this.defaults.sources.includes(source),
           roots: this.defaults.sources.includes(source) ? null : [] } :
         { root: 0, checkpoint: null, complete: this.roots[index].length === 0 }) };
     if (!row || row.v !== (this.defaults ? 2 : 1) || row.plan !== this.plan ||
-        !Number.isSafeInteger(row.next) || row.next < 0 || row.next >= sources.length ||
-        !Array.isArray(row.groups) || row.groups.length !== sources.length || row.groups.some((group, index) => !this.validGroup(group, index)) ||
+        !Number.isSafeInteger(row.next) || row.next < 0 || row.next >= this.sources.length ||
+        !Array.isArray(row.groups) || row.groups.length !== this.sources.length || row.groups.some((group, index) => !this.validGroup(group, index)) ||
         sweep.discovered && row.groups.some(group => !group.complete))
       throw new Error("capture source discovery plan or checkpoint changed");
     return structuredClone(row);
@@ -120,25 +128,36 @@ export class CaptureSourceDiscovery {
     if (!group || !Number.isSafeInteger(group.root) || group.root < 0 ||
         group.failure != null && (group.complete || !validFailure(group.failure)) ||
         group.checkpoint !== null && (group.complete || typeof group.checkpoint !== "object")) return false;
-    if (this.defaults) {
-      if (group.roots === null) return this.defaults.sources.includes(sources[index]) &&
+    if (this.defaultGroup(index)) {
+      if (group.roots === null) return this.defaults.sources.includes(this.sources[index]) &&
         group.root === 0 && group.checkpoint === null && group.complete === false;
       if (!Array.isArray(group.roots) || group.roots.some(root => !root || !absolute(root.path) ||
-          !(validIdentity(root.identity) || sources[index] === "aw" && root.identity === null)) ||
-          !this.defaults.sources.includes(sources[index]) && group.roots.length !== 0) return false;
+          !(validIdentity(root.identity) || this.sources[index] === "aw" && root.identity === null)) ||
+          !this.defaults.sources.includes(this.sources[index]) && group.roots.length !== 0) return false;
     }
-    const count = this.defaults ? group.roots.length : this.roots[index].length;
+    const count = this.defaultGroup(index) ? group.roots.length : this.roots[index].length;
     return group.root <= count && group.complete === (group.root === count);
   }
 
   pathFor(group, index) {
-    return this.defaults ? group.roots === null ? this.defaults.home : group.roots[group.root]?.path : this.roots[index][group.root];
+    return this.defaultGroup(index) ? group.roots === null ? this.defaults.home : group.roots[group.root]?.path : this.roots[index][group.root];
   }
 
   // Resolving one format can enumerate/sort home-directory metadata. Keep it
   // outside the admission transaction but inside the worker's bounded life.
   resolveRoots(source) {
-    return resolveCaptureDefaultRoots(this.defaults, source).map(path => {
+    const registered = new Set(this.registered.filter(root => root.source === source).map(root => root.path));
+    const configured = source === 'cc' ? this.defaults.env.CLAUDE_CONFIG_DIR : source === 'codex' ? this.defaults.env.CODEX_HOME :
+      source === 'pi' ? this.defaults.env.PI_CODING_AGENT_SESSION_DIR || this.defaults.env.PI_CODING_AGENT_DIR : null;
+    // Existing default selectors require a configured root to exist. When the
+    // same location is registered, its independent group owns both absence
+    // and operational failure; do not rediscover or fail it here as well.
+    if (configured && source !== 'aw') {
+      const harness = source === 'cc' ? 'claude' : source;
+      const selected = nativeLaunchLocations(harness, { cwd: this.defaults.cwd, env: { ...this.defaults.env, HOME: this.defaults.home } });
+      if (selected.every(path => registered.has(path))) return [];
+    }
+    return resolveCaptureDefaultRoots(this.defaults, source).filter(path => !registered.has(path)).map(path => {
       guardCapturedPath(path);
       try {
         const stat = statSync(path, { bigint: true });
@@ -155,8 +174,8 @@ export class CaptureSourceDiscovery {
     const attempt = this.queue.state.get(attemptsKind, this.queue.owner);
     if (attempt !== null && (![attempt?.id, attempt?.runId, attempt?.workerNonce].every(text) ||
         attempt.scope !== this.queue.current().id || attempt.plan !== this.plan ||
-        !Number.isSafeInteger(attempt.index) || attempt.index < 0 || attempt.index >= sources.length ||
-        attempt.source !== sources[attempt.index] || !text(attempt.path) || !this.validGroup(attempt.group, attempt.index) ||
+        !Number.isSafeInteger(attempt.index) || attempt.index < 0 || attempt.index >= this.sources.length ||
+        attempt.source !== this.sources[attempt.index] || !text(attempt.path) || !this.validGroup(attempt.group, attempt.index) ||
         attempt.group.complete !== false ||
         attempt.phase !== (this.defaults && attempt.group.roots === null ? "roots" : undefined) ||
         attempt.path !== this.pathFor(attempt.group, attempt.index)))
@@ -178,10 +197,12 @@ export class CaptureSourceDiscovery {
       const attempts = (group.failure?.attempts ?? 0) + 1;
       group.failure = { runId: attempt.runId, attemptedRun: attempt.runId, reason,
         attempts, nextRetryAt: retryAfterAttempt(attempts, now) };
-      row.next = (attempt.index + 1) % sources.length;
+      row.next = (attempt.index + 1) % this.sources.length;
       this.queue.add([], row);
+      // Only registered groups need an origin marker; preserve the default failure record shape.
       this.queue.state.set("capture-discovery-failure", "last", { runId: attempt.runId, reason,
-        scope: attempt.scope, source: attempt.source, path: attempt.path });
+        scope: attempt.scope, source: attempt.source, path: attempt.path,
+        ...(attempt.index >= sources.length ? { registered: true } : {}) });
       this.queue.state.delete(attemptsKind, this.queue.owner);
     });
   }
@@ -221,8 +242,8 @@ export class CaptureSourceDiscovery {
     const row = this.current();
     if (this.queue.current().discovered) return { visited: 0, added: 0, complete: true };
     let index = -1;
-    for (let offset = 0; offset < sources.length; offset++) {
-      const candidate = (row.next + offset) % sources.length;
+    for (let offset = 0; offset < this.sources.length; offset++) {
+      const candidate = (row.next + offset) % this.sources.length;
       const group = row.groups[candidate], failure = group.failure;
       if (!group.complete && (retry ? failure && failure.attemptedRun !== runId && now >= Date.parse(failure.nextRetryAt) : !failure)) {
         index = candidate; break;
@@ -233,8 +254,8 @@ export class CaptureSourceDiscovery {
       this.queue.add([], row, { complete: true });
       return { visited: 0, added: 0, complete: true };
     }
-    const group = row.groups[index], source = sources[index], path = this.pathFor(group, index);
-    const resolving = this.defaults && group.roots === null;
+    const group = row.groups[index], source = this.sources[index], path = this.pathFor(group, index);
+    const resolving = this.defaultGroup(index) && group.roots === null;
     if (resolving && runId === null) throw new Error("capture default-root resolution requires owned discovery admission");
     const attempt = runId === null ? null : { id: randomUUID(), runId, workerNonce,
       scope: this.queue.current().id, plan: this.plan, index, source, path, group: structuredClone(group),
@@ -254,14 +275,30 @@ export class CaptureSourceDiscovery {
         }
         group.roots = resolved; group.complete = resolved.length === 0;
         delete group.failure;
-        row.next = (index + 1) % sources.length;
+        row.next = (index + 1) % this.sources.length;
         const complete = row.groups.every(group => group.complete);
         this.publish([], row, complete, attempt);
         return { source, resolvedRoots: true, visited: 0, added: 0, complete };
       }
-      let cached = this.readers.get(source);
+      // A registered root is an independent discovery group. A bad peer of
+      // the same format cannot prevent this group from making progress.
+      if (index >= sources.length) {
+        try {
+          guardCapturedPath(path);
+          if (!captureRootDirectory(path, { readable: true })) {
+            group.root++; group.checkpoint = null; group.complete = true; delete group.failure;
+            row.next = (index + 1) % this.sources.length;
+            this.publish([], row, row.groups.every(g => g.complete), attempt);
+            return { source, visited: 0, added: 0, complete: row.groups.every(g => g.complete) };
+          }
+        } catch (error) {
+          if (attempt && !(error instanceof CaptureStop)) this.failed(attempt, 'io', now);
+          throw error;
+        }
+      }
+      let cached = this.readers.get(index);
       const checkpoint = JSON.stringify(group.checkpoint);
-      const selectedIdentity = this.defaults ? group.roots[group.root].identity : null;
+      const selectedIdentity = this.defaultGroup(index) ? group.roots[group.root].identity : null;
       if (!cached || cached.root !== group.root || cached.checkpoint !== checkpoint) {
         cached?.reader.close();
         // Carry selection's witness into the first reader, not only a stat
@@ -270,7 +307,7 @@ export class CaptureSourceDiscovery {
           { after: null, identity: selectedIdentity, complete: false } :
           { format: source, root: path, complete: false, stack: [{ name: null, after: null, identity: selectedIdentity }] } : null);
         const reader = source === "aw" ? new AwDiscovery(path, initial) : new NativeCaptureDiscovery(source, path, initial);
-        cached = { root: group.root, checkpoint, reader }; this.readers.set(source, cached);
+        cached = { root: group.root, checkpoint, reader }; this.readers.set(index, cached);
       }
       let result;
       try {
@@ -298,20 +335,25 @@ export class CaptureSourceDiscovery {
         stream: source === "aw" ? awStream(this.queue.owner) : `${this.queue.owner}~${source}.${SESSION_FORMATS[source].sessionId(path)}` }));
       if (result.complete) {
         group.root++; group.checkpoint = null;
-        group.complete = group.root === (this.defaults ? group.roots.length : this.roots[index].length);
+        group.complete = group.root === (this.defaultGroup(index) ? group.roots.length : this.roots[index].length);
         delete group.failure;
       } else group.checkpoint = result.checkpoint;
       // Partial retry remains pending and receives at most one unit per pass.
       if (group.failure) group.failure.attemptedRun = runId;
-      row.next = (index + 1) % sources.length;
+      row.next = (index + 1) % this.sources.length;
       const complete = row.groups.every(group => group.complete);
       // A transaction failure must discard the advanced volatile walker. The
       // next attempt reloads the last durable page, with idempotent insertion.
       this.publish(inputs, row, complete, attempt);
       cached.checkpoint = JSON.stringify(group.checkpoint);
-      if (result.complete) { cached.reader.close(); this.readers.delete(source); }
+      if (result.complete) { cached.reader.close(); this.readers.delete(index); }
       return { source, visited: result.visited, added: inputs.length, complete };
-    } catch (error) { this.clear(); throw error; }
+    } catch (error) {
+      this.clear();
+      if (index >= sources.length && !(error instanceof CaptureStop) && this.active() === null)
+        error.code = 'E_CAPTURE_ROOTS_COVERAGE';
+      throw error;
+    }
   }
 
   clear() { for (const { reader } of this.readers.values()) reader.close(); this.readers.clear(); }

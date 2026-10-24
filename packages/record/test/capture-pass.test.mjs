@@ -22,6 +22,16 @@ function fixture(t, body) {
 const allowances = { workMs: 1000, finalizeMs: 1500, hardMs: 2000, finalReserveMs: 1000, finalDrainMs: 750, maxStarts: 8 };
 const seams = { policy: { ...CAPTURE_POLICY, deadlineSeconds: 30 }, allowances, drainSeconds: 0.1 };
 
+test('finalization preserves a root-coverage-only failure for warning-only setup classification', async t => {
+  const f = fixture(t, `await runCaptureWorker(({pass}) => pass.finalize
+    ? {outcome:'failed',reason:'io',continuation:false,rootCoverageOnly:true,receipt:{appended:0,pending:true}}
+    : {outcome:'partial',reason:'deadline',continuation:true});`);
+  const result = await superviseCapturePass(f.root, {}, { ...seams, allowances: { ...allowances, maxStarts: 2 }, workerPath: f.workerPath });
+  assert.equal(result.starts, 2); assert.equal(result.outcome, 'failed');
+  assert.equal(result.rootCoverageOnly, true); assert.deepEqual(result.receipt, { appended: 0, pending: true });
+  await assert.rejects(captureCommandPass(f.root, {}, { run: async () => result, log() {}, error() {} }), { code: 'E_CAPTURE_ROOTS_COVERAGE' });
+});
+
 // These exercise the process/lock boundary. The fixture callback stands in for
 // the future scheduler; it does not prove native recovery or status integration.
 test("eight-start ceiling includes finalization, all children share the original deadline and retained root lock", async t => {

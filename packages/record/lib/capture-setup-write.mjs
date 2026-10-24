@@ -79,32 +79,98 @@ const directoryIdentity = stat => `${stat.dev}:${stat.ino}:${stat.mode}`;
 // mode, size and mtime; pre-rename checks retain the complete identity.
 const publishedIdentity = stat => [directoryIdentity(stat), stat.size, stat.mtimeMs].join(":");
 
+// Both registration prefix preparation and publication use this exact checked
+// directory handle. Opening a directory never adopts changed ancestry.
+function setupDirectoryHandle(snapshot, createdParents, operations) {
+  const handle = { fd: null };
+  const ancestry = () => recheckCaptureSetupParents(snapshot, createdParents);
+  const changed = path => new Error(`setup publication identity changed: ${path}; re-run setup`);
+  handle.check = path => {
+    ancestry();
+    const descriptor = operations.fstatSync(handle.fd), current = operations.statSync(path);
+    if (!descriptor.isDirectory() || directoryIdentity(descriptor) !== directoryIdentity(current)) throw changed(path);
+    ancestry();
+  };
+  handle.open = path => {
+    ancestry();
+    handle.fd = operations.openSync(path, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY);
+    handle.check(path);
+  };
+  handle.close = () => { const fd = handle.fd; handle.fd = null; operations.closeSync(fd); };
+  return handle;
+}
+
+// One top-down exclusive creation loop. A reused map entry already carries
+// this apply's durable creation evidence; EEXIST never creates such evidence.
+function prepareParents(snapshot, createdParents, operations, directory, { through, stage, madeParents }) {
+  const boundary = snapshot.parents.findIndex(record => record[0] === through);
+  if (boundary < 0) throw new Error('setup parent preparation boundary is not in the original snapshot');
+  const recheck = () => recheckCaptureSetup(snapshot, createdParents);
+  for (const record of [...snapshot.parents.slice(boundary)].reverse()) {
+    if (record[1] !== null || createdParents.has(record[0])) continue;
+    stage(`create parent ${record[0]}`);
+    recheck();
+    operations.mkdirSync(record[0]);
+    madeParents.push(record[0]);
+    const stat = operations.lstatSync(record[0]);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`setup publication identity changed: ${record[0]}; re-run setup`);
+    createdParents.set(record[0], [record[0], directoryIdentity(stat), null, null]);
+    try {
+      const parent = dirname(record[0]);
+      stage(`created-parent directory open ${parent}`);
+      directory.open(parent);
+      stage(`created-parent directory fsync ${parent}`);
+      operations.fsyncSync(directory.fd);
+      directory.check(parent);
+      stage(`created-parent directory close ${parent}`);
+      directory.close();
+    } catch (error) {
+      createdParents.delete(record[0]);
+      throw error;
+    }
+  }
+}
+
+// Registration may need only its record-root prefix before the root-resident
+// claim exists. This performs no file publication and never creates descendants
+// of the explicitly named boundary. The original snapshot/map stay authoritative.
+export function prepareCaptureSetupParents(snapshot, createdParents = new Map(), { through, operations = fs } = {}) {
+  let stage = 'preflight recheck', cause;
+  const madeParents = [], cleanupErrors = [], directory = setupDirectoryHandle(snapshot, createdParents, operations);
+  try {
+    recheckCaptureSetup(snapshot, createdParents);
+    prepareParents(snapshot, createdParents, operations, directory, { through, stage: value => { stage = value; }, madeParents });
+    recheckCaptureSetup(snapshot, createdParents);
+  } catch (error) { cause = error; }
+  finally {
+    if (directory.fd !== null) try { directory.close(); } catch (error) { cleanupErrors.push(error); }
+  }
+  if (cause || cleanupErrors.length) {
+    const primary = cause ?? cleanupErrors.shift();
+    const cleanup = cleanupErrors.length ? `; cleanup failed: ${cleanupErrors.map(error => error.message).join('; ')}` : '';
+    throw Object.assign(new Error(`setup parent preparation failed for ${snapshot.path} at ${stage}: ${primary.message}${cleanup}`, { cause: primary }),
+      { path: snapshot.path, stage, published: false, cleanupErrors,
+        applied: madeParents.map(path => `created setup parent ${path} (preparation failed at ${stage}; inspect its durability)`) });
+  }
+  return { applied: madeParents.map(path => `created setup parent ${path}`) };
+}
+
 // The fourth argument is private fs-operation fault injection. Production has
 // no switch for it. Snapshots and createdParents retain their caller semantics.
 export function writeCaptureSetup(snapshot, contents, createdParents = new Map(), operations = fs) {
   let stage = "preflight recheck", published = false, cause;
-  let temporary, temporaryIdentity, temporaryPublishedIdentity, temporaryNode, fileFd = null, directoryFd = null, writing = false;
+  let temporary, temporaryIdentity, temporaryPublishedIdentity, temporaryNode, fileFd = null, writing = false;
   const cleanupErrors = [], madeParents = [];
+  const directory = setupDirectoryHandle(snapshot, createdParents, operations);
   const recheck = () => recheckCaptureSetup(snapshot, createdParents);
   const recheckAncestry = () => recheckCaptureSetupParents(snapshot, createdParents);
   const changed = path => new Error(`setup publication identity changed: ${path}; re-run setup`);
   // Detach before close: a close error does not authorize retrying a descriptor
   // whose state may be unknown (and whose number might since have been reused).
   const closeFile = () => { const fd = fileFd; fileFd = null; operations.closeSync(fd); };
-  const closeDirectory = () => { const fd = directoryFd; directoryFd = null; operations.closeSync(fd); };
-  const checkDirectory = path => {
-    recheckAncestry();
-    const descriptor = operations.fstatSync(directoryFd), current = operations.statSync(path);
-    if (!descriptor.isDirectory() || directoryIdentity(descriptor) !== directoryIdentity(current)) throw changed(path);
-    recheckAncestry();
-  };
-  const openDirectory = path => {
-    recheckAncestry();
-    // Existing approved ancestor links remain allowed: both their link and
-    // resolved identities are retained by the ancestry recheck.
-    directoryFd = operations.openSync(path, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY);
-    checkDirectory(path);
-  };
+  const closeDirectory = () => directory.close();
+  const checkDirectory = path => directory.check(path);
+  const openDirectory = path => directory.open(path);
   const checkTemporary = () => {
     recheckAncestry();
     const descriptor = operations.fstatSync(fileFd);
@@ -121,31 +187,9 @@ export function writeCaptureSetup(snapshot, contents, createdParents = new Map()
     recheck();
     // Missing ancestors are evidence, not permission to adopt an intervening
     // mkdir/link. Publish each new directory entry durably before its child.
-    for (const record of [...snapshot.parents].reverse()) {
-      if (record[1] !== null || createdParents.has(record[0])) continue;
-      stage = `create parent ${record[0]}`;
-      recheck();
-      operations.mkdirSync(record[0]);
-      madeParents.push(record[0]);
-      const stat = operations.lstatSync(record[0]);
-      if (!stat.isDirectory() || stat.isSymbolicLink()) throw changed(record[0]);
-      createdParents.set(record[0], [record[0], directoryIdentity(stat), null, null]);
-      try {
-        const parent = dirname(record[0]);
-        stage = `created-parent directory open ${parent}`;
-        openDirectory(parent);
-        stage = `created-parent directory fsync ${parent}`;
-        operations.fsyncSync(directoryFd);
-        checkDirectory(parent);
-        stage = `created-parent directory close ${parent}`;
-        closeDirectory();
-      } catch (error) {
-        // A failed durability step must not silently authorize another caller
-        // to reuse this directory through the shared per-apply map.
-        createdParents.delete(record[0]);
-        throw error;
-      }
-    }
+    prepareParents(snapshot, createdParents, operations, directory, {
+      through: dirname(snapshot.path), stage: value => { stage = value; }, madeParents,
+    });
     stage = "temporary recheck";
     recheck();
     temporary = `${snapshot.path}.tmp-${randomUUID()}`;
@@ -179,7 +223,7 @@ export function writeCaptureSetup(snapshot, contents, createdParents = new Map()
     stage = "directory fsync";
     checkDirectory(dirname(snapshot.path));
     if (publishedIdentity(operations.lstatSync(snapshot.path)) !== temporaryPublishedIdentity) throw changed(snapshot.path);
-    operations.fsyncSync(directoryFd);
+    operations.fsyncSync(directory.fd);
     checkDirectory(dirname(snapshot.path));
     if (publishedIdentity(operations.lstatSync(snapshot.path)) !== temporaryPublishedIdentity) throw changed(snapshot.path);
     stage = "directory close";
@@ -204,7 +248,7 @@ export function writeCaptureSetup(snapshot, contents, createdParents = new Map()
       }
       try { closeFile(); } catch (error) { cleanupErrors.push(error); }
     }
-    if (directoryFd !== null) {
+    if (directory.fd !== null) {
       try { closeDirectory(); } catch (error) { cleanupErrors.push(error); }
     }
     if (!published && temporaryIdentity !== undefined) {

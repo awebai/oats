@@ -68,12 +68,13 @@ export const readCaptureLockOwner = root => readOwner(captureLockPath(root));
 // labels and direct process facts only, never argv, environment or a guessed
 // external caller; an entry that is not known is left out. It never confers authority: identity, liveness and reclaim
 // read only pid, nonce, startedAt, host and worker.
-const COMMANDS = new Set(["pass", "home", "file", "reset-cursors", "retry"]);
+const COMMANDS = new Set(["pass", "home", "file", "reset-cursors", "retry", "setup-roots", "forget-retired-root"]);
+export const isCaptureLockCommand = command => COMMANDS.has(command);
 const ENTRIES = new Set(["oats", "turn-record", "hook-runner", "service-runner"]);
 const TRIGGERS = new Set(["manual", "watch", "hook", "setup", "service"]);
 export function captureLockAttribution({ command, caller, ppid = process.ppid } = {}) {
   if (command === undefined && caller === undefined) return {};
-  if (!COMMANDS.has(command) || caller?.entry !== undefined && !ENTRIES.has(caller.entry) || !TRIGGERS.has(caller?.trigger) ||
+  if (!isCaptureLockCommand(command) || caller?.entry !== undefined && !ENTRIES.has(caller.entry) || !TRIGGERS.has(caller?.trigger) ||
       Object.keys(caller).some(key => key !== "entry" && key !== "trigger")) throw new Error("invalid capture lock attribution");
   return { command, caller: { ...(caller.entry !== undefined ? { entry: caller.entry } : {}), trigger: caller.trigger },
     ...(validPid(ppid) ? { ppid } : {}) };
@@ -157,13 +158,18 @@ export function recoveryInstruction(dir, owner, liveness) {
  *  operator recovery followed by a new pass in the same long-lived process).
  *
  *  `io` exists for fault injection in tests only. */
-export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, liveness = holderLiveness, host = hostname(), reclaimHostless = RECLAIM_HOSTLESS_RECORDS, io = {}, command, caller } = {}) {
+export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, liveness = holderLiveness, host = hostname(), reclaimHostless = RECLAIM_HOSTLESS_RECORDS, io = {}, command, caller, ensureRoot } = {}) {
   if (!validPid(pid)) throw new Error("capture lock owner must have a positive process ID");
   const attribution = captureLockAttribution({ command, caller });
   const fs = { writeFileSync, rmSync, openSync, closeSync, lstatSync, fsyncSync, renameSync, ...io };
   const dir = captureLockPath(root);
   const nonce = randomBytes(8).toString("hex");
-  mkdirSync(root, { recursive: true }); // the store creates the root lazily; the lock may come first
+  // Registration alone can supply checked/durable prefix creation. Ordinary
+  // callers retain their existing lazy root initialization and lock policy.
+  if (ensureRoot !== undefined) {
+    if (typeof ensureRoot !== 'function') throw new Error('invalid capture root preparation');
+    ensureRoot(root);
+  } else mkdirSync(root, { recursive: true }); // the store creates the root lazily; the lock may come first
   let reclaimed;
   for (let attempt = 0; ; attempt++) {
     try { mkdirSync(dir, { mode: 0o700 }); break; }
@@ -263,6 +269,7 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
   return {
     path: dir,
     nonce,
+    ...(ensureRoot ? { checkOwned: () => ownCurrent('capture lock changed before root registration') } : {}),
     ...(reclaimed ? { reclaimed } : {}),
     // The child must remain idle until this durable publication succeeds.
     // A dead supervisor's lock cannot then be reclaimed while its worker lives.

@@ -36,6 +36,7 @@ import { captureCommandPass, reportLockInitializationFailure, reportReclaimedLoc
 import { captureCommandEntry } from "../lib/capture-command.mjs";
 import { captureSignalPoll } from "../lib/capture-supervisor.mjs";
 import { captureWatchQueue } from "../lib/capture-watch.mjs";
+import { forgetRetiredRoot } from "../lib/capture-roots.mjs";
 import { launchCaptureHook } from "../lib/capture-hook.mjs";
 
 // Fail closed but actionably: an unreadable ignore file must stop capture,
@@ -81,7 +82,7 @@ async function safePoint(after) {
 // hostname-derived owner, which forked the whole record into a second owner
 // namespace: 571 duplicate journals from one typo. Parsing must refuse what
 // it does not understand before anything can be written.
-const VALUE_FLAGS = new Set(["root", "owner", "home", "file", "format", "source"]);
+const VALUE_FLAGS = new Set(["root", "owner", "home", "file", "format", "source", "deployment", "forget-retired-root"]);
 const BOOL_FLAGS = new Set([
   "hook",
   "reset-cursors",
@@ -155,6 +156,9 @@ const USAGE = `capture — land sessions and aw client logs in the turn record.
                                excludes it; nothing read), E_NO_TURNS (no
                                records), E_FORMAT (no session header of that
                                format) and E_CAPTURE_FAILED (exit 1).
+  capture --forget-retired-root <absolute-root> --deployment <canonical-deployment>
+          --source cc|pi|codex [--root <record-root>] [--json]
+                               forget only that retired reference, deleting no history
   capture --install-hint       print the Claude Code hook snippet
   capture --help               this text
   capture --quiet              suppress per-pass progress
@@ -204,9 +208,11 @@ async function main() {
 let args;
 try {
   args = parseArgs(process.argv.slice(2));
-  const recovery = ["reset-cursors", "retry-set-aside", "health"].filter(key => args[key]);
+  const recovery = ["reset-cursors", "retry-set-aside", "health", "forget-retired-root"].filter(key => args[key]);
   if (recovery.length > 1) throw new UsageError("choose one recovery or health operation");
-  if (args.source !== undefined && (!args["reset-cursors"] || !CAPTURE_SOURCES.includes(args.source))) throw new UsageError("--source requires --reset-cursors and aw|cc|pi|codex");
+  if (args.source !== undefined && (!(args["reset-cursors"] || args["forget-retired-root"]) || !(args["forget-retired-root"] ? ["cc", "pi", "codex"] : CAPTURE_SOURCES).includes(args.source))) throw new UsageError("--source requires --reset-cursors and aw|cc|pi|codex");
+  if (args.deployment !== undefined && !args["forget-retired-root"]) throw new UsageError("--deployment requires --forget-retired-root");
+  if (args["forget-retired-root"] && (!args.deployment || !args.source)) throw new UsageError("--forget-retired-root requires --deployment and --source cc|pi|codex");
   if (recovery.length && ["home", "file", "format", "watch", "status", "install-hint", "current-roots", "sessions-only", "aw-only"].some(key => args[key])) throw new UsageError("recovery/health cannot be combined with another capture mode");
   if (args.hook && ["home", "file", "format", "watch", "status", "install-hint", "help", "current-roots", "json", ...recovery].some(key => args[key] !== undefined))
     throw new UsageError("--hook cannot be combined with proof, recovery, JSON or another capture mode");
@@ -233,6 +239,18 @@ if (args.help) {
 }
 
 const root = args.root ?? process.env.TURN_RECORD_ROOT ?? join(homedir(), ".turn-record");
+if (args['forget-retired-root']) {
+  try {
+    const result = forgetRetiredRoot(resolve(root), { deployment: args.deployment, source: args.source, path: args['forget-retired-root'] }, { entry: captureCommandEntry() });
+    if (args.json) console.log(JSON.stringify({ schemaVersion: 1, ...result }));
+    else console.log(`root registration: ${result.changed ? 'retired reference forgotten' : 'unchanged'}; no capture history deleted`);
+    return finish(0);
+  } catch (error) {
+    if (args.json) console.log(JSON.stringify({ schemaVersion: 1, status: 'failed', code: error.code ?? 'E_CAPTURE_ROOTS_INVALID', error: error.message }));
+    else console.error(error.message);
+    return finish(1);
+  }
+}
 const ownerExplicit = args.owner !== undefined || process.env.TURN_RECORD_OWNER !== undefined;
 const owner = args.owner ?? process.env.TURN_RECORD_OWNER ?? hostname().split(".")[0];
 const quiet = Boolean(args.quiet || args.json && (args["reset-cursors"] || args["retry-set-aside"]));

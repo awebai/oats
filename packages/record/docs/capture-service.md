@@ -4,8 +4,8 @@ The record package owns source cursors, journal validation, indexing and capture
 status. Ordinary/source-selected capture and explicit retry use the fixed
 supervised worker. Explicit hooks launch a detached supervisor. Setup migrates
 supported service definitions through the preflight/apply gate described below;
-the package also owns offline installation/receipt/issue diagnosis. Root
-registration and real-manager qualification remain separate. Deployment doctor
+the package also owns offline installation/receipt/issue diagnosis. The package also owns configuration-derived root registration; real-manager
+qualification remains separate. Deployment doctor
 delegates to the package diagnosis through the bounded command boundary below.
 
 The integration described below is service A, which ships in the next release
@@ -244,13 +244,14 @@ capture creates it (with `index/`), and such a host has never set capture up.
 The selected root (`--root`, then `TURN_RECORD_ROOT`, then `~/.turn-record`)
 still has to be a directory when it exists. Readable foreign service files alone do not establish installation. No evidence
 means `ok`, no warnings and no root creation. That includes a host that runs
-capture by other means, or was set up with `--no-hooks --no-service`: health
-reads `ok` and withholds its history and backlog, even when a status file or
+capture by other means, or was set up with `--no-hooks --no-service` without a deployment root
+registration: health reads `ok` and withholds its history and backlog, even when a status file or
 set-aside inputs exist. Unreadable candidates, dangling
 links, malformed hook settings, observed changes or exceeded reader limits are
 unknown and fail diagnosis, even if another candidate establishes installation.
-Only named files and the top level of the caller home are inspected; source
-roots, journal content, network and managers are never visited. Definition bytes
+Only named files, the top level of the caller home and registered directory
+metadata are inspected; transcript trees, journal content, network and managers
+are never visited. Definition bytes
 show installation evidence, **not** registered/enabled scheduling. Even an `ok`
 receipt diagnosis does not certify a manager schedule or a permanent service PID.
 
@@ -1729,3 +1730,168 @@ Quoting qualification remains a hosted obligation.
 Health/doctor runtime qualification, final schema delivery and full service
 acceptance remain separate; audit allowance/reservation/storage/synchronization
 gates are unchanged.
+
+## Configuration-derived transcript roots (OATS 0.67)
+
+Run `oats setup` once in each deployment after upgrading and after changing a
+launch configuration's transcript location or the referenced environment value.
+The setup environment is the person's shell. Every effective named launch
+configuration contributes its native transcript directory, including unselected
+configurations. The record package retains its existing default/environment
+roots. Setup reads only `HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+`PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR` and pi session-directory
+arguments. References resolve against that setup environment. No executable,
+model, token, unrelated environment map or arbitrary argv is persisted.
+
+Claude uses its config directory plus `projects`; Codex uses its home plus
+`sessions`. Pi uses the last valid `--session-dir` (both spellings), then
+`PI_CODING_AGENT_SESSION_DIR`, then its agent directory plus `sessions`.
+Native empty-value fallbacks and pi `~/` expansion are preserved. Relative
+selectors are refused per configuration: launches resolve them from future
+instance homes, which setup cannot know. Use absolute locations. Unset
+references, malformed session arguments, explicit pi `--session` files and
+unsupported expansion are named refusals, without default-root substitution.
+An absent absolute directory is registered successfully; setup never creates
+transcript directories. Permission errors, dangling links and non-directories
+are unavailable, never proven absence. Known locations remain registered for
+later retry; unresolved locations retain configuration/selector/reason records.
+
+For a resolved unreadable root the diagnostic also requires `path`, equal to a
+normalized absolute root path in that deployment entry. It is allowed only with
+`reason: unreadable`; foreign/orphan paths and extra fields are refused. The
+configuration and selector labels retain their meanings. Unknown-location or
+unreadable-map diagnostics omit `path` and remain until setup refresh. The same
+bounded checked directory reader re-evaluates a path-bound diagnostic: readable
+or proven-absent outcomes suppress only that matching warning for this
+observation, without changing registry bytes. Two configurations sharing a path
+follow its outcome together; a fixed root cannot hide a different failure.
+Dangling links, permission errors and indeterminate reads remain unavailable.
+
+The kernel calls the same typed package setup entry as the standalone bin.
+Only a closed schema-version-1 request containing canonical deployment,
+`roots:[{source,path}]` and `unavailable:[{configuration,selector,reason,path?}]`
+crosses the boundary. Standalone `turn-record setup` passes no deployment
+request and preserves every registration. `--no-hooks` and `--no-service` still
+refresh registration; `--no-service` skips manager and unit inspection.
+`--dry-run` validates and describes changes but writes nothing, takes no lock
+and invokes no manager.
+
+Coverage warnings alone preserve **exit 0** after independent setup work
+succeeds. Text and one-document JSON summaries name registration, hooks,
+service and first-pass effects, plus configuration/selector/reason/remedy
+warnings. A pass can complete the known, registered/default root union and
+refresh `lastSuccess` while configuration/map/identity metadata warnings remain
+in health. This certifies work over that known union, not coverage of unresolved
+selectors, provider-generated locations or all historical transcripts. Invalid
+or guarded inventory and actual root/discovery/storage failures cannot certify
+completion or refresh `lastSuccess`; invalid inventory is a genuine failure,
+not a warning-only setup result. Unrelated hook/service/capture failures retain a nonzero exit and
+the root warnings. Registry-lock overlap or unsafe publication refuses before
+other registry/hooks/service/capture mutations, names the owning pass, and asks for retry after that pass
+finishes (automatic passes are bounded to 300 seconds). Existing-root busy
+admission has zero effects. A fresh record-root prefix may first be created
+through the shared checked parent helper, using the usual owner and umask. If a
+competing pass wins the claim, these exact `created setup parent ...` effects
+are reported as partial initialization with a nonzero exit, without rollback;
+no registry entry, hook, service or first capture is applied. The original
+snapshot and same checked creation map survive admission; EEXIST, vanished or
+replaced parents never authorize adoption or recursive re-creation. Later setup failure
+reports an already-published registration; rerunning is idempotent. A required
+sync failure is a real publication failure, including uncertainty after rename.
+
+### Registry lifecycle and recovery
+
+The package writes `<record-root>/capture-roots/<sha256(deployment-UTF8)>.json`
+in a private directory. Each closed version-1 entry records canonical
+`deployment`, decimal-string `deploymentIdentity:{dev,ino}`, current `roots`,
+`retiredRoots` and `unavailable` alongside `schemaVersion`. Roots are unique,
+disjoint and sorted by format/path. Setup replaces only that deployment's
+current set; omitted roots become retired and re-added roots become current.
+An explicit empty roots list retires the former set. Other deployments remain
+independent; a current reference wins over a retired reference in the union.
+Registration uses the existing record-root lock (`setup-roots`, setup trigger)
+and the shared checked, file-and-directory-synced setup publisher.
+
+Readable retired roots remain discoverable. Proven absent current or retired
+roots are optional for that pass, without backoff or permanent health failure;
+the inventory spelling stays for later reappearance. Absence proves neither
+final capture nor historical completeness. An absent deployment makes its old
+roots retired for discovery and optional required-root health. A different
+inode at its old path requires setup refresh before current registration is
+reactivated. Permission errors are never absence. Refresh deletes no transcript,
+journal, cursor, indexed history or native-history receipt.
+
+To stop a retired-root warning without accessing its transcript directory:
+
+```sh
+turn-record capture --forget-retired-root /absolute/transcripts \
+  --deployment /canonical/deployment --source pi --root /record/root --json
+```
+
+`oats capture` delegates the same command. All three selectors are mandatory;
+`--root` retains its existing default and must name an existing record root;
+a missing or changed record root refuses without creating it. The command takes the same lock with
+`forget-retired-root`/manual attribution, removes only that exact format/path
+from that deployment's retired list, and uses the shared durable publisher.
+The reader and forget command use the same bounded deployment identity checker.
+A stored current reference can be removed only when that deployment is proven
+absent or replaced by a different inode; its exact lifecycle observation is
+rechecked under the root lock immediately before publication. Active or
+indeterminate deployment identity refuses removal of a stored current reference.
+Its root warning asks for restored deployment access and setup refresh; it does
+not offer the forget command until absence or replacement can be established.
+Only path diagnostics orphaned by the exact removal are dropped; an other-source
+reference at the same path keeps its diagnostic. The recorded deployment identity,
+all other references and other deployments remain. A repeated forget is unchanged
+success; a reappearing deployment can register the path again through setup.
+The command never
+stats, reads, chmods or deletes the transcript directory or any capture history.
+A later explicit setup can register the path again. Ignore rules still match
+source files after root discovery and cannot dismiss root-discovery failures.
+
+### Inventory readers and health
+
+Only an admitted discovery worker merges registry roots with default/environment
+selection, under the record-root lock. The caller does not load roots or widen
+the worker environment. Source filters and the native-history and ignore guards
+still apply: registration establishes neither custody nor completeness. A
+selection fingerprint restarts derived enumeration when inventory or root
+lifecycle facts change, preserving committed capture and index history. Each
+registered root has independent discovery failure rotation, including peers of
+the same format. This preserves healthy-root progress within existing bounded
+workers; the 300-second/256-MiB/2-GiB policy is unchanged.
+
+Registry readers limit each entry to 1 MiB, the inventory to 16 MiB and 4096
+entry names. Future/corrupt entries, filename/deployment mismatches, nonregular
+entries, inventory races and exceeded guards produce incomplete coverage;
+no truncated union can certify success. Configuration/map and deployment identity
+warnings remain health-only when the known union itself can be enumerated.
+Health emits at most 100 root diagnostic
+rows plus one omission-count row in its existing schema-version-1 envelope:
+
+- `capture-roots-invalid`: unsafe, corrupt, future, mismatched or oversized
+  inventory. Inspect the named entry and run setup in its deployment.
+- `capture-roots-unavailable`: a configuration selector, deployment identity or
+  root cannot be resolved/read. Restore access or correct an absolute selector,
+  then refresh setup. A retired root's row prints the exact scoped forget
+  command above.
+- `capture-roots-refresh-required`: the deployment path now names a different
+  directory inode. Run setup there to refresh its identity and current roots.
+
+Stored registration is setup evidence even without hooks or a service. A host
+with no registration keeps its existing installation-evidence rules; mere
+absence of optional native defaults stays silent. Health reads registry,
+directory metadata and status facts only; it never enumerates transcript
+content, repairs, locks, runs setup or invokes a manager. Package envelope and
+kernel doctor readers render generic `code`/`message` rows. There is currently
+no Desktop/TUI/client consumer of these rows; any future consumer must render
+them generically without a `capture-roots-*` allow-list.
+
+Old binaries ignore this inventory and retain only their previous coverage.
+Rollback therefore loses the additional configuration-root coverage; it must
+not delete or reinterpret inventory or history. Upgrade and run setup again to
+restore it. Provider-generated locations and frozen homes whose recipes differ
+from the current effective map are outside this snapshot. Setup does not crawl
+instance metadata, interpret shell commands or register at native launch time.
+Relevant framework skill sources ship through a separately tagged framework
+release; existing instance homes do not update automatically.

@@ -50,7 +50,8 @@ function fixture(t, specs = [], { discover = false } = {}) {
           if(active)fs.appendFileSync(join(start.root,'discovery-replacements'),JSON.stringify({active,workerNonce:start.workerNonce})+'\\n');}
         finally{state.close();}
       }
-      const session=new CaptureWorkSession(start,{owner:'fixture',selection:'fixture',now:()=>start.options.now,roots:start.options.roots??null,
+      const session=new CaptureWorkSession(start,{owner:'fixture',selection:start.options.selection??'fixture',now:()=>start.options.now,roots:start.options.roots??null,
+        registeredRoots:start.options.registeredRoots??[],
         indexEnabled:start.options.indexEnabled??true,
         unit:{limit:start.options.limit??1,maxRecords:start.options.records??1,maxBytes:8388608,discoveryLimit:start.options.discoveryLimit??128}});
       if(start.options.indexEnabled===false && (session.index!==null||session.inventory||session.outcomes||session.reset))
@@ -159,7 +160,7 @@ function fixture(t, specs = [], { discover = false } = {}) {
       finally{session.close();}
     });
   `);
-  return { root, store, inputs, roots,
+  return { base, root, store, inputs, roots,
     run: (options = {}, transport = {}) => superviseCapturePass(root, { now, roots, ...options }, { workerPath,
       env: { HOME: base, TMPDIR: base, XDG_CACHE_HOME: base, PATH: process.env.PATH }, ...transport }),
     state(fn) { const state = new DerivedState(root); try { return fn(state); } finally { state.close(); } },
@@ -779,4 +780,21 @@ for (const indexEnabled of [true, false]) test(`a new pre-receipt failure cannot
     assert.equal(fs.existsSync(join(f.root, 'index/turns.db')), false);
     assert.equal(status.lastRun.counts.turnsIndexed, 0);
   }
+});
+
+test('registered multi-root capture uses small units, preserves turn IDs and invalidates only derived selection on refresh', async t => {
+  const f = fixture(t, [['cc', 'one', native(1) + native(2)]], { discover: true });
+  const second = join(f.base, 'other-cc'); fs.mkdirSync(second);
+  fs.writeFileSync(join(second, 'two.jsonl'), native(3) + native(4));
+  const registeredRoots = [{ source: 'cc', path: join(f.base, 'cc') }, { source: 'cc', path: second }];
+  const first = await f.run({ roots: [], registeredRoots, selection: 'registered-first', audit: true, records: 1, discoveryLimit: 1, units: 100 });
+  assert.equal(first.outcome, 'complete', f.diagnostic(first));
+  assert.equal(f.store.readStream('fixture~cc.one').length, 2); assert.equal(f.store.readStream('fixture~cc.two').length, 2);
+  const ids = ['one', 'two'].map(name => f.store.readStream(`fixture~cc.${name}`).map(turn => turn.id));
+  const scope = f.state(state => state.get('source-sweep', 'fixture').id);
+  const refreshed = await f.run({ roots: [], registeredRoots, selection: 'registered-refresh', audit: true, records: 1, discoveryLimit: 1, units: 100 });
+  assert.equal(refreshed.outcome, 'complete', f.diagnostic(refreshed));
+  assert.notEqual(f.state(state => state.get('source-sweep', 'fixture').id), scope);
+  assert.deepEqual(['one', 'two'].map(name => f.store.readStream(`fixture~cc.${name}`).map(turn => turn.id)), ids);
+  assert.equal(readCaptureStatus(f.root).lastRun.counts.turnsAppended, 0);
 });
