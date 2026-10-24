@@ -348,8 +348,8 @@ test("shell wiring: the footer shortcuts button carries the clash marker, recomp
 });
 
 // ── Spec A, PR 2: search, keycaps and markers ──────────────────────────────────────────────
-// Linux/Windows: the shipped defaults of these ids come from DEFAULT_KEYMAP (sidebar Ctrl+Shift+B,
-// Quick Open Ctrl+Alt+P, go to tab Ctrl+Alt+1, F6); focus mode has none.
+// Linux/Windows: the shipped defaults of these ids come from DEFAULT_KEYMAP, in the default family,
+// Alt (sidebar Ctrl+Shift+B, Quick Open Alt+P, go to tab Alt+1, F6); focus mode has none.
 function setupLinux(t, { isMac = false, extra = [] } = {}) {
   const dom = new JSDOM("<!doctype html><body>");
   const doc = dom.window.document;
@@ -396,11 +396,23 @@ test("search: focused on open; filters by label, by group name and by the chord 
     f.type(q);
     assert.deepEqual(f.shown(), ["Sidebar: show or hide"], `“${q}” finds Ctrl+Shift+B and nothing else`);
   }
-  // The keys typed need not be all of the chord's: Ctrl+P also finds Ctrl+Alt+P.
+  // The default family's chords: Alt+P, Alt+K. The Ctrl+Alt family's keys are no binding here.
+  f.type("alt+p");
+  assert.deepEqual(f.shown(), ["Quick open a soul"]);
+  f.type("p alt");
+  assert.deepEqual(f.shown(), ["Quick open a soul"], "in any order");
+  f.type("alt+k");
+  assert.deepEqual(f.shown(), ["Command palette"]);
+  f.type("ctrl+alt+k");
+  assert.deepEqual(f.shown(), [], "Ctrl+Alt+K is no binding in the Alt family");
+  // The keys typed need not be all of the chord's: in the Ctrl+Alt family, Ctrl+P also finds Ctrl+Alt+P.
+  t.after(() => setChordFamily("alt"));
+  setChordFamily("ctrl+alt");
   f.type("ctrl+p");
   assert.deepEqual(f.shown(), ["Quick open a soul"]);
   f.type("ctrl+alt+k");
   assert.deepEqual(f.shown(), ["Command palette"]);
+  setChordFamily("alt");
   f.type("f6");
   assert.deepEqual(f.shown(), ["Focus the next region"]);
   f.type("unbound");
@@ -647,8 +659,15 @@ const LEADER_EXTRA = [
   ["sidebar.key.help", "Edit keyboard shortcuts", "sidebar"],
 ];
 
+// The group moves as the shell registers them (shell.mjs), so the leader's Tab and Shift+Tab rows
+// carry their labels.
+const GROUP_MOVES = [
+  ["split.focusNextGroup", "Focus the next editor group", "tabs"],
+  ["split.focusPrevGroup", "Focus the previous editor group", "tabs"],
+];
+
 test("the editor opens on a Leader group, then Sidebar keys, then the groups as today", (t) => {
-  const f = setupLinux(t, { extra: LEADER_EXTRA });
+  const f = setupLinux(t, { extra: [...LEADER_EXTRA, ...GROUP_MOVES] });
   f.editor.open();
   const groups = [...f.doc.querySelectorAll(".kb-body > .kb-group")].map((g) => g.dataset.label);
   assert.deepEqual(groups, ["Leader", "Sidebar keys", "Global", "Tabs"]);
@@ -661,13 +680,27 @@ test("the editor opens on a Leader group, then Sidebar keys, then the groups as 
   assert.equal(f.marks("Leader: the commands that follow one key", "terminal"), "terminal");
   // Then one read-only row per entry of the table the Desktop runs: no m.
   const fixed = rows.slice(1);
-  assert.equal(fixed.length, 24, "25 rows of the TUI's table, less m");
+  assert.equal(fixed.length, 25, "26 rows of the TUI's table, less m");
   assert.ok(fixed.every((row) => row.classList.contains("kb-row-fixed") && !row.querySelector("button")), "read-only: no button to record or reset");
   const palette = fixed[0];
   assert.equal(palette.querySelector(".kb-label").textContent, "Command palette", "a key that runs one action shows its label");
   assert.equal(palette.querySelector(".kb-chord .sr-only").textContent, "Ctrl+X then K or Space, fixed");
   assert.deepEqual([...palette.querySelectorAll(".kb-keys kbd")].map((k) => k.textContent), ["Ctrl+X", "K", "Space"]);
   assert.ok(fixed.some((row) => row.querySelector(".kb-label").textContent === "Instance roster"), "Esc");
+  // ↑ / ↓ are the workspace moves, in the Desktop's words; the previous / next instance are no leader row (chords alone).
+  const labelled = (text) => fixed.find((row) => row.querySelector(".kb-label").textContent === text);
+  for (const [text, cap] of [["Show the previous workspace in the list", "↑"], ["Show the next workspace in the list", "↓"]]) {
+    assert.ok(labelled(text), text);
+    assert.deepEqual([...labelled(text).querySelectorAll(".kb-keys kbd")].map((k) => k.textContent), ["Ctrl+X", cap], text);
+  }
+  assert.equal(labelled("Open the previous instance's terminal") ?? labelled("Open the next instance's terminal") ?? null, null, "not the leader's");
+  // Tab and Shift+Tab are the next and the previous group, by their actions' labels, in the table's order.
+  for (const [text, caps] of [["Focus the next editor group", ["Ctrl+X", "Tab"]], ["Focus the previous editor group", ["Ctrl+X", "Shift+Tab"]]]) {
+    assert.ok(labelled(text), text);
+    assert.deepEqual([...labelled(text).querySelectorAll(".kb-keys kbd")].map((k) => k.textContent), caps, text);
+  }
+  assert.equal(fixed.indexOf(labelled("Focus the previous editor group")), fixed.indexOf(labelled("Focus the next editor group")) + 1, "Shift+Tab right after Tab");
+  assert.equal(labelled("Focus the previous editor group").querySelector(".kb-chord .sr-only").textContent, "Ctrl+X then Shift+Tab, fixed");
   // The quiet line: the leader is the TUI's, the direct chords are extras, and where 1 and 3 differ.
   const extras = leader.querySelector(".kb-extras");
   assert.match(extras.textContent, /the TUI's/);
@@ -683,12 +716,12 @@ test("the leader's rows are found by their keys and by \"leader\", and Up/Down r
   f.type("ctrl+x k");
   const found = () => [...f.doc.querySelectorAll(".kb-row")].filter((r) => !r.closest("[hidden]"))
     .map((r) => `${r.closest(".kb-group").dataset.label}: ${r.querySelector(".kb-label").textContent}`);
-  // The leader's row alone: no key of the palette's own chord Ctrl+Alt+K starts with "x".
+  // The leader's row alone: no key of the palette's own chord Alt+K starts with "x".
   assert.deepEqual(found().sort(), ["Leader: Command palette"]);
   f.type("ctrl+x shift+n");
   assert.ok(f.shown().includes("Spawn another of the instance's soul…"));
   f.type("leader");
-  assert.equal(f.shown().length, 25, "the group's name finds all of it");
+  assert.equal(f.shown().length, 26, "the group's name finds all of it");
   f.type("");
   // Arrow walk: the leader's row, then its fixed rows.
   const chords = [...f.doc.querySelectorAll('.kb-group[data-label="Leader"] .kb-chord')];
@@ -709,10 +742,11 @@ test("a rebind of the leader is shown everywhere the editor names it", (t) => {
   assert.deepEqual(f.shown(), ["Command palette"]);
 });
 
-// ── The chord family (keys.json; docs/desktop-keyboard.md, "Switch to Ctrl+Shift") ──────────────
-// On Linux/Windows the page's top holds a two-way choice; a change writes keys.json through main at
-// once and the keymap switches at once. `desk` stands for main: it answers, writes and fails as told.
-function familySetup(t, { isMac = false, answer = { family: "ctrl+alt", why: "missing", note: null }, fail = false } = {}) {
+// ── The chord family (keys.json; docs/desktop-keyboard.md, "The chord families") ────────────────
+// On Linux/Windows the page's top holds a three-way choice, Alt (the default), Ctrl+Alt or
+// Ctrl+Shift; a change writes keys.json through main at once and the keymap switches at once.
+// `desk` stands for main: it answers, writes and fails as told.
+function familySetup(t, { isMac = false, answer = { family: "alt", why: "missing", note: null }, fail = false } = {}) {
   const dom = new JSDOM("<!doctype html><body>");
   const doc = dom.window.document;
   resetAllBindings();
@@ -729,7 +763,7 @@ function familySetup(t, { isMac = false, answer = { family: "ctrl+alt", why: "mi
   };
   const chordFamily = createChordFamily({ desk, apply: setChordFamily });
   const editor = createKeybindingsEditor({ doc, isMac, chordFamily });
-  t.after(() => { editor.close(); for (const off of offs) off(); resetAllBindings(); setChordFamily("ctrl+alt"); dom.window.close(); });
+  t.after(() => { editor.close(); for (const off of offs) off(); resetAllBindings(); setChordFamily("alt"); dom.window.close(); });
   const choice = () => doc.querySelector(".kb-family");
   const radio = (family) => doc.querySelector(`.kb-family input[value="${family}"]`);
   const choose = async (family) => { radio(family).click(); for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r)); };
@@ -747,11 +781,15 @@ test("chord family: Linux/Windows shows the choice at the top, in its words, nam
   assert.equal(choice.tagName, "FIELDSET");
   assert.equal(choice.previousElementSibling.className, "kb-head", "at the top, under the head");
   assert.equal(choice.querySelector("legend").textContent, "Shortcut family, shared with oats tui");
-  assert.deepEqual([...choice.querySelectorAll("label")].map((l) => l.textContent.trim()), ["Ctrl+Alt (default)", "Ctrl+Shift (foot, Alacritty)"]);
-  assert.deepEqual({ ...CHORD_FAMILY_WORDS.options }, { "ctrl+alt": "Ctrl+Alt (default)", "ctrl+shift": "Ctrl+Shift (foot, Alacritty)" });
+  assert.deepEqual([...choice.querySelectorAll("label")].map((l) => l.textContent.trim()),
+    ["Alt (default)", "Ctrl+Alt (for programs that read Alt)", "Ctrl+Shift (foot, Alacritty)"]);
+  assert.deepEqual([...choice.querySelectorAll("input")].map((i) => i.value), ["alt", "ctrl+alt", "ctrl+shift"], "in that order");
+  assert.deepEqual({ ...CHORD_FAMILY_WORDS.options },
+    { alt: "Alt (default)", "ctrl+alt": "Ctrl+Alt (for programs that read Alt)", "ctrl+shift": "Ctrl+Shift (foot, Alacritty)" });
   assert.equal(f.radio("ctrl+shift").checked, true, "the family in use is the one chosen");
+  assert.equal(f.radio("alt").checked, false);
   assert.equal(f.radio("ctrl+alt").checked, false);
-  assert.equal(choice.querySelector(".kb-family-tui").textContent, "Both work here; pick the one your terminal passes to oats tui. oats tui uses it from its next start.");
+  assert.equal(choice.querySelector(".kb-family-tui").textContent, "All three work here; pick the one your terminal passes to oats tui. oats tui uses it from its next start.");
   assert.equal(choice.querySelector(".kb-family-note").hidden, true, "nothing more to say");
   assert.equal(f.chordOf("Command palette"), "Ctrl+Shift+K", "the rows show the family's keys");
 });
@@ -773,8 +811,9 @@ test("chord family: a change writes keys.json at once and the keymap switches at
   const f = familySetup(t);
   await f.chordFamily.start();
   f.editor.open();
-  assert.equal(f.radio("ctrl+alt").checked, true);
-  assert.equal(f.chordOf("Command palette"), "Ctrl+Alt+K");
+  assert.equal(f.radio("alt").checked, true, "no file: the default, Alt");
+  assert.equal(f.chordOf("Command palette"), "Alt+K");
+  assert.equal(f.chordOf("Close tab"), "Alt+W");
   await f.choose("ctrl+shift");
   assert.deepEqual(f.writes, ["ctrl+shift"], "written once, with the family chosen");
   assert.equal(activeChordFamily(), "ctrl+shift");
@@ -784,17 +823,35 @@ test("chord family: a change writes keys.json at once and the keymap switches at
   assert.equal(f.radio("ctrl+shift").checked, true);
   await f.choose("ctrl+alt");
   assert.deepEqual(f.writes, ["ctrl+shift", "ctrl+alt"]);
+  assert.equal(activeChordFamily(), "ctrl+alt");
+  assert.equal(f.chordOf("Command palette"), "Ctrl+Alt+K");
+  assert.equal(f.chordOf("Close tab"), "Ctrl+Alt+W");
+  assert.equal(f.radio("ctrl+alt").checked, true);
+  await f.choose("alt");
+  assert.deepEqual(f.writes, ["ctrl+shift", "ctrl+alt", "alt"], "Alt, chosen, is written too");
+  assert.equal(activeChordFamily(), "alt");
+  assert.equal(f.chordOf("Command palette"), "Alt+K");
+  assert.equal(f.radio("alt").checked, true);
+});
+
+test("chord family: a user who chose Ctrl+Alt sees it chosen, and its keys", async (t) => {
+  const f = familySetup(t, { answer: { family: "ctrl+alt", why: null, note: null } });
+  await f.chordFamily.start();
+  f.editor.open();
+  assert.equal(f.radio("ctrl+alt").checked, true);
+  assert.equal(f.radio("alt").checked, false);
+  assert.equal(f.choice().querySelector(".kb-family-note").hidden, true, "the file chose it: nothing to say");
   assert.equal(f.chordOf("Command palette"), "Ctrl+Alt+K");
 });
 
 test("chord family: the note main sends is shown under the choice", async (t) => {
-  const f = familySetup(t, { answer: { family: "ctrl+alt", why: "unknown-chords", note: "keys.json: unknown chords value, using Ctrl+Alt" } });
+  const f = familySetup(t, { answer: { family: "alt", why: "unknown-chords", note: "keys.json: unknown chords value, using Alt" } });
   await f.chordFamily.start();
   f.editor.open();
   const note = f.choice().querySelector(".kb-family-note");
   assert.equal(note.hidden, false);
-  assert.equal(note.textContent, "keys.json: unknown chords value, using Ctrl+Alt");
-  assert.equal(f.radio("ctrl+alt").checked, true);
+  assert.equal(note.textContent, "keys.json: unknown chords value, using Alt");
+  assert.equal(f.radio("alt").checked, true);
   // Chosen now, the file chose: nothing more to say.
   await f.choose("ctrl+shift");
   assert.equal(note.hidden, true);
@@ -806,11 +863,11 @@ test("chord family: a write that fails keeps the family in use, and says so", as
   f.editor.open();
   await f.choose("ctrl+shift");
   assert.deepEqual(f.writes, ["ctrl+shift"]);
-  assert.equal(activeChordFamily(), "ctrl+alt", "nothing switched");
-  assert.equal(f.radio("ctrl+alt").checked, true, "the choice is back on the family in use");
+  assert.equal(activeChordFamily(), "alt", "nothing switched");
+  assert.equal(f.radio("alt").checked, true, "the choice is back on the family in use");
   const note = f.choice().querySelector(".kb-family-note");
   assert.equal(note.hidden, false);
-  assert.equal(note.textContent, "Could not write keys.json: the shortcuts stay Ctrl+Alt. Fix or remove the file, then choose again.");
+  assert.equal(note.textContent, "Could not write keys.json: the shortcuts stay Alt. Fix or remove the file, then choose again.");
   assert.equal(note.getAttribute("role"), "status");
 });
 
@@ -819,7 +876,7 @@ test("chord family: a stored override on one of the seven keys shows its clash w
   await f.chordFamily.start();
   setBinding("sidebar.toggle", "Ctrl+Shift+K");
   f.editor.open();
-  assert.equal(f.doc.querySelector(".kb-clashes").hidden, true, "no clash under Ctrl+Alt");
+  assert.equal(f.doc.querySelector(".kb-clashes").hidden, true, "no clash under Alt, the default");
   await f.choose("ctrl+shift");
   const banner = f.doc.querySelector(".kb-clashes");
   assert.equal(banner.hidden, false);

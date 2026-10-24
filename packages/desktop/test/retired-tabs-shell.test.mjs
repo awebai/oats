@@ -13,7 +13,8 @@ import { JSDOM } from "jsdom";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate } from "../renderer/open-intent.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "../renderer/terminal-tab.mjs";
-import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "../renderer/tab-a11y.mjs";
+import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle } from "../renderer/tab-a11y.mjs";
+import { numberTabStrips } from "../renderer/tab-numbers.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createContextPanel } from "../renderer/context-panel.mjs";
 import { createInstanceGitPanel } from "../renderer/instance-git.mjs";
@@ -73,7 +74,7 @@ function shell(t, shellSource = source) {
     focusRoster() { c.tabOpenIntents.invalidate(); c.contextRosterEl.querySelector("input").focus(); },
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },
     updateSidebarControls() {}, // chrome is exercised by shell-design.test.mjs
-    resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart,
+    resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle,
     splitControlsState, instanceSplitPlan, instanceSplitIdentity, sameInstanceActionTarget, ...layout, ...workspaceTabs,
     projectSplitDom(els, ...args) { projections.push(els); return projectSplitDom(els, ...args); },
     terminalOptions, wireTerminalSelection: () => () => {}, fitTerminal, createGlyphRenderer, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}), terminalFontWeight: () => 400,
@@ -98,12 +99,12 @@ function shell(t, shellSource = source) {
   };
   c.tabOpenIntents = createSelectionOwnership(c);
   // Spec F: the shipped active-tab reveal runs too (jsdom has no layout or ResizeObserver).
-  c.revealInStrip = revealInStrip; c.tabStripResize = null;
+  c.revealInStrip = revealInStrip; c.tabStripResize = null; c.numberTabStrips = numberTabStrips; c.tabNumberObserver = null;
   c.splitOpenState = () => ({ split: c.split, activeId: c.activeTab, tabs: c.tabs, workspace: c.workspace, visible: c.tabLayerVisible });
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "closeStage", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "walkedTabs", "visibleTabEntries", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "showTerminalContext",
     "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal",
-    "syncContextPanel", "refreshPanelInstance", "syncTabNeedsInput", "closeRetiredTabs", "focusNextGroup"];
+    "syncContextPanel", "refreshPanelInstance", "syncTabNeedsInput", "closeRetiredTabs", "focusGroup"];
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];

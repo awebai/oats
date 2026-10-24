@@ -3,12 +3,12 @@
   "packages": {
     "oats.okf": {
       "url": "https://github.com/awebai/oats-okf.git",
-      "ref": "v5.2.1",
+      "ref": "v5.3.0",
       "path": "oats-package"
     },
     "oats.aweb": {
       "url": "https://github.com/awebai/oats-aweb.git",
-      "ref": "v1.30.0",
+      "ref": "v1.31.0",
       "path": "oats-package"
     },
     "oats.jira": {
@@ -28,7 +28,7 @@
     },
     "oats.engineering": {
       "url": "https://github.com/awebai/oats-engineering.git",
-      "ref": "v1.10.0",
+      "ref": "v1.11.0",
       "path": "oats-package"
     },
     "oats.cloning": {
@@ -43,7 +43,7 @@
     },
     "oats.framework": {
       "url": "https://github.com/awebai/oats.git",
-      "ref": "oats-framework/v1.14.0",
+      "ref": "oats-framework/v1.14.1",
       "path": "oats-package"
     }
   },
@@ -73,6 +73,7 @@
     "oats.setup": "oats.framework",
     "oats.okf-harvest": "oats.okf",
     "oats.okf-maintenance": "oats.okf",
+    "oats.aweb-tasks": "oats.aweb",
     "oats.engineering-expert": "oats.engineering",
     "oats.developer": "oats.engineering",
     "oats.code-review": "oats.engineering",

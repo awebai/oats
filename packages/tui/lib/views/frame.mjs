@@ -24,6 +24,7 @@ import { capabilitiesList, capabilitiesListed, capabilityDetail } from "./capabi
 import { spawn } from "./spawn.mjs";
 import { splitFits, splitRegions } from "./split.mjs";
 import { switcher } from "./switcher.mjs";
+import { workspaceRows } from "./workspaces.mjs";
 
 /** The frame is drawn from this size up (docs/tui.md); the design size is 80x24. */
 export const MIN_SIZE = Object.freeze({ cols: 60, rows: 15 });
@@ -53,11 +54,6 @@ const LIST_LEAST = 3;
 const SOUL_WORD = "soul";
 /** What the title says in the workspace's place while the switcher is shown. */
 const WORKSPACES = "workspaces";
-/** The TUI's word before the one machine of a view that holds no deployment of this machine. */
-const ON = "on";
-/** The cells the workspace's name keeps (all of them, when it is shorter) before the title says
- *  how many other machines it is on: under that the name comes first. */
-const NAME_MIN = 8;
 
 const BOLD = style({ bold: true });
 const DIM = style({ dim: true });
@@ -153,7 +149,7 @@ function openOf(m) {
  *  While a terminal is open (`terminal`) the sidebar keeps LIST_BESIDE cells at most, whether the
  *  terminal or the detail stands beside it, so the agent's screen keeps one size; a name longer
  *  than its row is cut there. */
-export function layout(notice, size, { note = null, ascii = false, outcome = null, terminal = false, open = "instances" } = {}) {
+export function layout(notice, size, { note = null, ascii = false, outcome = null, terminal = false, open = "instances", list = 1 } = {}) {
   const wide = size.cols >= WIDE;
   const listCols = !wide ? size.cols : terminal ? LIST_BESIDE : clamp(Math.floor(size.cols * 0.48), 36, 60);
   const across = Math.max(1, listCols - 2 * MARGIN);
@@ -168,51 +164,28 @@ export function layout(notice, size, { note = null, ascii = false, outcome = nul
   // view's list and the views after it, and one between the views before it and its heading.
   const at = VIEWS.findIndex((view) => view.id === open);
   const rules = 1 + (at < 0 ? 0 : (at > 0 ? 1 : 0) + (at < VIEWS.length - 1 ? 1 : 0));
-  const fixed = 1 + VIEWS.length + rules;
+  const fixed = list + VIEWS.length + rules;
   const said = (notice ? 1 + reason.length : 0) + noted.length + after.length;
   const above = Math.min(said, Math.max(0, size.rows - fixed - 1 - LIST_LEAST));
   const room = Math.max(0, size.rows - fixed - above);
   return { wide, listCols, reason, note: noted, outcome: after, above, open: at < 0 ? null : open, room, page: Math.max(1, room - 1), body: size.rows };
 }
 /** The layout the frame draws a model by. */
-const layoutOf = (m, size, given = {}) => layout(m.notice, size, { note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: panelOpen(m), open: openOf(m), ...given });
+const layoutOf = (m, size, given = {}) => layout(m.notice, size, { note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: panelOpen(m), open: openOf(m), list: listRows(m), ...given });
+/** The rows the top of the sidebar takes: the list of workspaces' (views/workspaces.mjs), else the title's. */
+const listRows = (m) => (m.workspaces ? Math.max(1, m.workspaces.lines.length + (m.workspaces.more > 0 ? 1 : 0)) : 1);
 
-/** The title, from `col` on in `room` cells: the workspace's name and, when the view
- *  holds other machines, what says so, in the TUI's words and dim:
- *    `+N machine(s)`  beside a deployment of this machine;
- *    `on <machine>`   the one machine of a view that holds no deployment of this machine (no
- *                     heading names it there);
- *    `N machines`     two or more of them and no deployment of this machine.
- *  Whether a deployment is this machine's is the shared entries' word (the model's `here`), and
- *  the machine's name is theirs. What stands after the name gives way before the name is cut
- *  short of NAME_MIN cells, and a machine's name is cut before the workspace's. While the
- *  switcher is shown no workspace is named: the title says what is listed instead. */
+/** The title, from `col` on in `room` cells, where the list of workspaces does not stand (nothing
+ *  is open, or the switcher is shown): the workspace's name, else what is listed. Its machines are
+ *  the workspace's own pages' to say (the list of instances' sections). */
 function nameSpans(m, col, room) {
   if (room <= 0) return [];
   if (m.under === "switcher") return [{ col, text: lit(WORKSPACES), width: room }];
-  const name = measured(m.workspace), alone = [{ col, text: name.text, width: room }];
-  if (!(m.machines > 0)) return alone;
-  const least = Math.min(name.width, NAME_MIN);
-  // Two cells between the name and what follows it.
-  const after = (width) => col + width + (width ? 2 : 0);
-  if (!m.here && m.machine !== null) {
-    const where = measured(m.machine), left = room - 2 - ON.length - 1;
-    // The machine's name is cut first, down to the cells that still say something: the
-    // workspace's name has what that leaves.
-    const kept = Math.min(where.width, NAME_MIN);
-    if (left - least < kept) return alone;
-    const width = Math.min(name.width, left - kept), at = after(width);
-    return [...(width ? [{ col, text: name.text, width }] : []), { col: at, text: lit(ON), style: DIM, width: ON.length }, { col: at + ON.length + 1, text: where.text, style: DIM, width: Math.min(where.width, left - width) }];
-  }
-  const more = `${m.here ? "+" : ""}${m.machines} ${m.machines === 1 ? "machine" : "machines"}`;
-  const left = room - 2 - more.length;
-  if (left < least) return alone;
-  const width = Math.min(name.width, left);
-  return [...(width ? [{ col, text: name.text, width }] : []), { col: after(width), text: lit(more), style: DIM, width: more.length }];
+  return [{ col, text: measured(m.workspace).text, width: room }];
 }
 
-/** The title, the sidebar's first row: the workspace's name in bold and what the view holds of
- *  other machines (nameSpans), or `workspaces` while the switcher is shown. */
+/** The title, the sidebar's first row where the list does not stand: the workspace's name in bold,
+ *  or `workspaces` while the switcher is shown (nameSpans). */
 function titleRow(m, cols) {
   return nameSpans(m, MARGIN, cols - 2 * MARGIN).map((span) => (span.style ? span : { ...span, style: BOLD }));
 }
@@ -285,9 +258,10 @@ function types(m) {
  *  the leader's table (views/help.mjs). While what is typed goes to
  *  the agent the TUI reads the leader and the chords only: the leader then Esc gives the list the
  *  focus, and the leader twice types the leader into the terminal; while the terminal confirms the
- *  kitty keyboard protocol the chords lead there (docs/tui.md, "Chords"; chordHints), the leader's
- *  hints after them, and the leader is the last given up; without it the leader's lead, and the
- *  Alt+Shift arrows, the chords that come then, follow them (the first given up). In the palette
+ *  kitty keyboard protocol, or in the Alt family, whose chords all come without it, the chords lead
+ *  there (docs/tui.md, "Chords"; chordHints), the leader's hints after them, and the leader is the
+ *  last given up; else the leader's lead, and the arrows, the chords that come then, follow them
+ *  (the first given up). In the palette
  *  (its group keys last, where the TUI has them, so the first given up: paletteGroups), the spawn prompt
  *  (spawnHints), a confirmation, the filter field, the help and the switcher, how to work them: the
  *  keys they read are their own, so they are the TUI's words, but for the confirmation's close key and the
@@ -300,7 +274,9 @@ function types(m) {
  *  and from it the marked soul. With the detail's focus the key that goes back to the list
  *  (`Tab back`) comes before it, and `spawn` after it where it spawns (the list of instances, the
  *  Souls view of a workspace of this machine), then in the Instances view `workspaces` (the
- *  switcher). An action with no key (tui.json may unbind one) has no hint. The views have no
+ *  list of workspaces' focus). With that focus: the open action's key opens, the up and down
+ *  actions' move, the close action's goes back, and `workspaces` again is the switcher (`all
+ *  workspaces`), each by its first key as tui.json binds it. An action with no key (tui.json may unbind one) has no hint. The views have no
  *  hint: the accordion names their keys. When rows are short the sheet
  *  gives up rows from its end (keptHints), down to the leader alone. */
 function cheatSheet(m) {
@@ -315,7 +291,7 @@ function cheatSheet(m) {
   if (listing && m.terminal?.focus === "terminal" && !m.palette && !m.spawn) {
     const label = backKeyLabel(m.detachKey), list = keyLabel(LEADER.find((entry) => entry.does === "list").keys[0]);
     const leader = [made("list", keyText(`${label} ${list}`), "the list"), made("again", keyText(`${label} ${label}`), types(m))];
-    return m.kitty ? [...chordHints(m), ...led(leader)] : [...led(leader), ...chordHints(m)];
+    return m.chordsLead ? [...chordHints(m), ...led(leader)] : [...led(leader), ...chordHints(m)];
   }
   if (m.palette) return led([own("run", "Enter", "run"), own("move", "Up/Down", "move"), own("close", "Esc", "close"), paletteGroups(m)]);
   if (m.spawn) return led(spawnHints(m.spawn, m.ascii));
@@ -330,6 +306,13 @@ function cheatSheet(m) {
   // Esc closes the switcher only onto a view, and there is none before a workspace is opened.
   // Remove stands on a row of this computer's deployments list only, after the keys that move about.
   if (m.view === "switcher") return led([hint("palette"), ...["open", "filter", ...(m.filter?.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])]), ...(m.switcher?.removable ? ["remove"] : [])].map((id) => hint(id)), hint("help"), hint("quit")]);
+  // The list of workspaces with the focus: its keys, and `w` again for the switcher.
+  // The keys are the actions' as tui.json binds them: an action with no key has no hint.
+  if (listing && m.workspaces?.focused) {
+    const moves = [action("up"), action("down")].filter(Boolean);
+    const move = moves.length ? made("move", keyText(keysTogether(moves.map((a) => a.keys[0]))), "move") : null;
+    return led([hint("open", "open"), move, hint("close", "back"), hint("workspaces", "all workspaces"), hint("help"), hint("quit")]);
+  }
   // A view's list or its detail: a small sheet; the rest is the leader's, the palette's and the help's.
   const asking = listing && m.opening?.phase === "preflight";
   const enter = asking ? [hint("close", "stop opening")] : listing && m.onTerminal ? [hint("open", "focus terminal")] : listing && m.openable ? [hint("open")]
@@ -348,7 +331,7 @@ function paletteGroups(m) {
   return pair === null ? null : own("group", keysTogether(pair), "group");
 }
 
-/** The chords a terminal's cheat sheet names under the kitty keyboard protocol, in this order, a
+/** The chords a terminal's cheat sheet names while they lead it (chordHints), in this order, a
  *  pair as one hint, each with the TUI's word: what is reached most from a terminal. */
 const SHEET_CHORDS = Object.freeze([
   Object.freeze([["palette"], "palette"]),
@@ -358,8 +341,8 @@ const SHEET_CHORDS = Object.freeze([
   Object.freeze([["zoom"], "zoom"]),
 ]);
 /** The chord hints of a terminal's focus (docs/tui.md, "Chords"): those of SHEET_CHORDS read now
- *  (the model's `chords`: tui.json may have taken a key; without the protocol the Alt+Shift
- *  arrows alone), the tabs' only
+ *  (the model's `chords`: tui.json may have taken a key; outside the Alt family, without the
+ *  protocol, the arrows alone), the tabs' only
  *  with two tabs or more, as the leader's table has them. A pair's keys share their modifiers:
  *  `Alt+Shift+Up/Down` (keysTogether). They stand in a block of their own (cheatRows). */
 function chordHints(m) {
@@ -413,10 +396,10 @@ function cheatRows(hints, cols) {
   });
 }
 
-/** The cheat sheet a title row carries (withKeys): without the kitty keyboard protocol the
- *  Alt+Shift arrows follow the leader's hints in the sheet's rows, but a title row keeps to the
- *  leader's; under it the chords lead there as in the rows. */
-const titleSheet = (m) => cheatSheet(m).filter((h) => m.kitty || h.block !== "chords");
+/** The cheat sheet a title row carries (withKeys): where only some chords are read (no kitty
+ *  keyboard protocol, a family other than Alt) the arrows follow the leader's hints in the sheet's
+ *  rows, but a title row keeps to the leader's; where all are, the chords lead there as in the rows. */
+const titleSheet = (m) => cheatSheet(m).filter((h) => m.chordsLead || h.block !== "chords");
 
 /** An overlay's or a detail page's first row on a narrow terminal, where it has the whole screen:
  *  its essential keys (the cheat sheet's, but for the leader, the palette, help and quit) at the
@@ -463,7 +446,8 @@ function sidebar(m, g, rows, list) {
   const cols = g.listCols;
   let r = 0;
   const put = (spans) => { if (r < rows.length) rows[r] = spans; r += 1; };
-  put(titleRow(m, cols));
+  if (m.workspaces) workspaceRows(m.workspaces, cols, { ascii: m.ascii, colour: m.colour }).forEach(put);
+  else put(titleRow(m, cols));
   sayings(m, g).forEach(put);
   let n = list.length;
   while (n > 0 && list[n - 1].length === 0) n -= 1;
@@ -564,7 +548,7 @@ function framed(m, size) {
   }
   // The help, under its top row (readRow).
   if (m.view === "help") {
-    const drawn = help(m.actions, { cols: main.cols, rows: size.rows - 1 }, { top: m.helpTop, ascii: m.ascii, detachKey: m.detachKey, chords: m.chords ?? null, chordsLead: m.kitty === true, paletteKeys: m.paletteKeys ?? null, keys: m.keys ?? null });
+    const drawn = help(m.actions, { cols: main.cols, rows: size.rows - 1 }, { top: m.helpTop, ascii: m.ascii, detachKey: m.detachKey, chords: m.chords ?? null, chordsLead: m.chordsLead === true, paletteKeys: m.paletteKeys ?? null, keys: m.keys ?? null });
     overlay([readRow(m), ...drawn.rows]);
     return { rows, page: Math.max(1, g.page), extent: drawn.extent, room: Math.max(1, size.rows - 1) };
   }
@@ -712,8 +696,14 @@ const tabDivider = (ascii) => (ascii ? "|" : "\u2502");
 const SHOWN_SIDES = Object.freeze(["[", "]"]);
 /** A hidden tab's look: dim. Its activity mark is not: it is what a glance looks for. */
 const HIDDEN = DIM;
-/** The machine of the shown tab while what is typed goes to it: dim, in the tab's reverse video. */
+/** The machine and the number of the shown tab while what is typed goes to it: dim, in the tab's
+ *  reverse video. */
 const FOCUSED_DIM = style({ dim: true, reverse: true });
+
+/** A tab's number at `index` in a strip of `count` tabs (docs/tui.md, "Tabs"): the N whose tab-N
+ *  chord shows it (store.mjs TAB_PICKS). The first eight are 1 to 8, the last of nine or more is 9,
+ *  and any other past the eighth has none (null). */
+export const tabNumber = (index, count) => (index < 8 ? index + 1 : index === count - 1 ? 9 : null);
 
 /** THE TAB BAR (docs/tui.md, "Tabs"), the top row of a group's region whenever it shows a tab, one
  *  or many, as a terminal's own tabs read: each tab in order, a dim `│` (`|` in ASCII) between two.
@@ -722,19 +712,29 @@ const FOCUSED_DIM = style({ dim: true, reverse: true });
  *  another machine's agent. The shown tab reads as the front one: `[` and `]` stand in its side
  *  cells (a mark no style is needed for: it holds under NO_COLOR and in ASCII), its name is bold,
  *  and the whole tab is in reverse video while what is typed goes to it; a hidden tab is dim.
+ *  Each tab ends with its number in its group's strip (tabNumber), after a blank cell and before
+ *  its closing side, dim (dim in the reverse video of the focused shown tab): a position, the same
+ *  in every chord family, drawn while a chord shows the Nth tab (`numbers`, the model's
+ *  `tabNumbers`: never on macOS, where none reaches the TUI). The numbers are drawn only while every tab fits
+ *  whole with them, its name and its machine; else no tab has one, and the row is cut as follows.
  *  What does not fit is cut in this order: the hidden tabs' machines, then their names, each to an
  *  equal share of what the shown tab leaves with `…`, then the shown tab's machine, then the hidden
  *  tabs farthest from the shown one are left out (each takes its divider with it). The shown tab's
  *  name stays whole while the row can hold it, and is cut last. */
-function stripRow(given, area, { focused, ascii }) {
+function stripRow(given, area, { focused, ascii, numbers = true }) {
   const mark = ascii ? "*" : ACTIVITY, dot = tabDot(ascii);
-  const tabs = given.map((tab) => ({ ...tab, name: measured(tab.name), machine: tab.machine ? measured(tab.machine) : null, mark: !tab.shown && tab.activity === true }));
+  const tabs = given.map((tab, i) => ({ ...tab, name: measured(tab.name), machine: tab.machine ? measured(tab.machine) : null, mark: !tab.shown && tab.activity === true, number: tabNumber(i, given.length) }));
   const machineCells = (tab) => (tab.machine ? 3 + tab.machine.width : 0);
-  const cellsOf = (tab, { machine, name = tab.name.width, dropped = false }) => (dropped ? 0 : 1 + name + (tab.mark ? 1 : 0) + (machine ? machineCells(tab) : 0) + 1);
+  // The numbers, while drawn: a blank cell and the digit.
+  let numbered = numbers;
+  const numberCells = (tab) => (numbered && tab.number !== null ? 2 : 0);
+  const cellsOf = (tab, { machine, name = tab.name.width, dropped = false }) => (dropped ? 0 : 1 + name + (tab.mark ? 1 : 0) + (machine ? machineCells(tab) : 0) + numberCells(tab) + 1);
   const plan = tabs.map((tab) => ({ machine: true, name: tab.name.width, dropped: false }));
   // Each drawn tab after the first has its divider before it.
   const total = () => tabs.reduce((sum, tab, i) => sum + cellsOf(tab, plan[i]), 0) + Math.max(0, plan.filter((p) => !p.dropped).length - 1);
   const fits = () => total() <= area.cols;
+  // The numbers go first and all together: every tab whole with them, or none has one.
+  if (!fits()) numbered = false;
   const shown = Math.max(0, tabs.findIndex((tab) => tab.shown));
   // The least a hidden tab is drawn in: a cell of its name (the cut mark), its mark, a cell each
   // side, and its divider.
@@ -787,6 +787,10 @@ function stripRow(given, area, { focused, ascii }) {
       put(null, 1, null);
       put(tab.machine.text, tab.machine.width, machineLook);
     }
+    if (numberCells(tab)) {
+      put(null, 1, null);
+      put(lit(String(tab.number)), 1, reversed ? FOCUSED_DIM : DIM);
+    }
     put(right, 1, look);
   });
   return row;
@@ -821,7 +825,7 @@ function regionRows(m, area) {
   const focused = area.focused && m.terminal?.focus === "terminal";
   // A model made by hand may name its terminal and no tabs: its one tab is that terminal.
   const tabs = group.tabs.length ? group.tabs : [{ name: m.terminal?.name, machine: m.terminal?.routed ? m.terminal.machine : null, shown: true, activity: false }];
-  const title = stripRow(tabs, area, { focused, ascii: m.ascii });
+  const title = stripRow(tabs, area, { focused, ascii: m.ascii, numbers: m.tabNumbers !== false });
   const screenOf = area.focused ? m.screen : m.screens?.get(group.shown) ?? null;
   const lines = screenOf?.lines ?? [];
   const body = Array.from({ length: area.rows }, (_, r) => (lines[r] ?? [])

@@ -15,8 +15,9 @@
  * family, which keep their own key id (`ctrl+alt+k`, `ctrl+shift+k`, kittyId), and the exact Alt
  * and Esc above. A Ctrl+Shift chord is read only from this event, whose Shift bit is its own: its
  * legacy bytes are Ctrl's alone (Ctrl+Shift+D is 0x04, EOF), and no legacy byte is ever one. What it types into an agent is those legacy bytes
- * (`legacyBytes`), so the agent's program gets what it gets without the protocol. The Alt+Shift
- * arrow chords need no exception: their legacy sequence is their own (LEGACY_CHORDS). */
+ * (`legacyBytes`), so the agent's program gets what it gets without the protocol. The Alt family's
+ * chords need no exception: an Alt arrow's legacy sequence is its own, and Alt with a letter or a
+ * digit is ESC and the character (legacyChordText). */
 
 /** The flags pushed (`CSI > flags u`): 1, disambiguate the escape codes, and 4, report alternate
  *  keys, so the shifted key a key with Shift makes on the person's layout comes with it. The
@@ -71,14 +72,31 @@ export function kittyId(key) {
   return code >= 0x31 && code <= 0x39 && !key.shift ? `ctrl+alt+${String.fromCharCode(code)}` : null;
 }
 
-/** The chords whose key has a sequence of its own without the protocol, and keeps it under it:
- *  Alt+Shift with an arrow, `CSI 1 ; 4 <final>` (xterm's modifier 4, Alt and Shift), key id -> final.
- *  They are read with the protocol or without it, in the list (term/keys.mjs reads the sequence as
- *  the key) and in a terminal (term/through.mjs). Ctrl+Alt+Shift with an arrow (`CSI 1 ; 8 A`) is
- *  another key, and no chord. */
-export const LEGACY_CHORDS = Object.freeze({ __proto__: null, "alt+shift+up": "A", "alt+shift+down": "B", "alt+shift+right": "C", "alt+shift+left": "D" });
-/** Whether the chord key id `id` is read without the protocol too (LEGACY_CHORDS). */
-export const legacyChord = (id) => typeof id === "string" && Object.hasOwn(LEGACY_CHORDS, id);
+/** The arrow chords, whose key has a sequence of its own without the protocol and keeps it under
+ *  it: Alt with an arrow, `CSI 1 ; 3 <final>` (xterm's modifier 3), and Alt+Shift with one,
+ *  `CSI 1 ; 4 <final>`; key id -> the bytes after `CSI`. Ctrl+Alt+Shift with an arrow (`CSI 1 ; 8 A`)
+ *  is another key, and no chord. */
+export const LEGACY_CHORDS = Object.freeze({
+  __proto__: null,
+  "alt+up": "1;3A", "alt+down": "1;3B", "alt+right": "1;3C", "alt+left": "1;3D",
+  "alt+shift+up": "1;4A", "alt+shift+down": "1;4B", "alt+shift+right": "1;4C", "alt+shift+left": "1;4D",
+});
+/** Alt with an ASCII letter or digit, as the TUI spells it: `alt+k`, and `alt+E` for Alt+Shift+E,
+ *  which a terminal sends as ESC and the capital (term/keys.mjs reads it so). */
+const ALT_CHARACTER = /^alt\+([a-zA-Z0-9])$/;
+/** The bytes after ESC that the chord key id `id` is without the protocol, as text, or null when it
+ *  has none of its own: an arrow chord's `[` and its sequence (LEGACY_CHORDS), or the character of
+ *  Alt with a letter or a digit. Every terminal sends these, with the protocol or without it (under
+ *  it the protocol's event for Alt+K reads as its legacy bytes, ESC `k`), so they are read in the
+ *  list (term/keys.mjs reads them as the key) and in a terminal (term/through.mjs) either way. A
+ *  Ctrl+Alt or Ctrl+Shift chord has none: it is read from the protocol's event alone (kittyId). */
+export function legacyChordText(id) {
+  if (typeof id !== "string") return null;
+  if (Object.hasOwn(LEGACY_CHORDS, id)) return `[${LEGACY_CHORDS[id]}`;
+  return ALT_CHARACTER.exec(id)?.[1] ?? null;
+}
+/** Whether the chord key id `id` is read without the protocol too (legacyChordText). */
+export const legacyChord = (id) => legacyChordText(id) !== null;
 
 const ESC = 0x1b;
 /** The functional keys of the protocol's private-use range the TUI forwards: the keypad, as the key

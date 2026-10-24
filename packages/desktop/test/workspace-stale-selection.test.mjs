@@ -193,10 +193,9 @@ test("shell roster: a stale stored selection adopts the served workspace, render
   assert.equal(common.currentWorkspace(), SERVED.id);
   assert.equal(stored(), SERVED.id, "persisted");
   assert.deepEqual(c.contextDeployments, [], "a reply naming no deployments groups by none (#482)");
-  // The switcher shows the served workspace active and another choice still switches.
-  document.getElementById("ws-trigger").click();
+  // The workspace list shows the served workspace current and another choice still switches.
   const options = [...document.querySelectorAll(".ws-option")];
-  assert.deepEqual(options.map((o) => [o.dataset.workspaceId, o.getAttribute("aria-selected")]), [[SERVED.id, "true"], [OTHER.id, "false"]]);
+  assert.deepEqual(options.map((o) => [o.dataset.workspaceId, o.getAttribute("aria-current")]), [[SERVED.id, "true"], [OTHER.id, null]]);
   options[1].click();
   assert.deepEqual(selected, [OTHER.id]);
 });

@@ -183,6 +183,147 @@ test('Workspace owned is split by repository, headed as on the Souls tab: the ho
   assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-group .souls-group-name')].map(el => el.textContent), ['data']);
 });
 
+// Workspace defaults (product owner, 2026-10-23): the Capabilities tab opens with what the workspace gives every
+// soul (status.defaults), never narrowed by the search; its "i" is built once, sits right after the section jump and
+// survives every repaint; leaving the tab closes its dialog without moving focus. Souls has its own "i".
+test('Capabilities: Workspace defaults first, the "i" after the jump across repaints, its dialog closes with the tab', async t => {
+  const defaults = { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null }, capabilities: [] };
+  const u = await setup(t, { status: { ...statusOf('workspace-status'), defaults } });
+  await u.tab('capabilities');
+  const lead = u.doc.querySelector('.ws-toolbar[data-tools=capabilities] .ws-toolbar-lead');
+  const info = lead.querySelector('.ws-info-button');
+  assert.deepEqual([...lead.children].map(el => el.className), ['capability-nav ws-segmented', 'ws-info-button'], 'right after the section jump');
+  assert.equal(info.getAttribute('aria-label'), 'About capabilities');
+  assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => el.dataset.jump), ['defaults', 'workspace', 'packages']);
+  assert.equal(u.doc.querySelector('.capability-section').dataset.section, 'defaults');
+  const slot = u.doc.querySelector('.ws-default-cell[data-slot=knowledge]');
+  assert.equal(slot.getAttribute('aria-label'), 'Knowledge: oats.okf, the workspace default — open its page');
+  // A repaint (a search) keeps the same "i", focused, and never narrows the defaults.
+  info.focus();
+  const search = u.doc.querySelector('.ws-toolbar[data-tools=capabilities] input');
+  search.value = 'no-such'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); await settle();
+  assert.equal(lead.querySelector('.ws-info-button'), info, 'the same element'); assert.equal(u.doc.activeElement, info, 'focus stays on it');
+  assert.equal(lead.lastElementChild, info, 'still after the jump');
+  assert.equal(u.doc.querySelectorAll('[data-group=core] .ws-default-cell').length, 3, 'the search does not narrow the defaults');
+  // A focused default column keeps focus across a repaint (its data-focus-key).
+  u.doc.querySelector('.ws-default-cell[data-slot=knowledge]').focus();
+  search.value = 'okf'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); await settle();
+  assert.equal(u.doc.activeElement?.dataset.focusKey, 'defaults:knowledge');
+  // The dialog: open, then leave the tab: it closes and focus is not moved.
+  info.click();
+  assert.ok(u.doc.querySelector('.about-dialog')); assert.equal(u.doc.activeElement.textContent, 'Close');
+  await u.tab('souls');
+  assert.equal(u.doc.querySelector('.about-dialog'), null, 'leaving Capabilities closes it');
+  assert.notEqual(u.doc.activeElement, info, 'no focus return: the person moved on');
+  // Souls: its own "i" at the end of its toolbar row.
+  const souls = u.doc.querySelector('.souls-bar .ws-info-button');
+  assert.equal(souls.getAttribute('aria-label'), 'About souls'); assert.equal(souls.previousElementSibling.classList.contains('souls-group-by'), true);
+  souls.click(); assert.ok(u.doc.querySelector('.about-dialog'));
+  await u.tab('capabilities');
+  assert.equal(u.doc.querySelector('.about-dialog'), null, 'leaving Souls closes its dialog');
+});
+
+// Back from a capability page lands on the control that opened it: a default (by its focus key) even when the search
+// hides that capability's catalog row; a catalog row, never a default that carries the same name.
+test('Capabilities: Back returns to the default that opened the page, filtered or not; a catalog row\'s Back skips its defaults', async t => {
+  const defaults = { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null },
+    capabilities: [{ name: 'oats.core', from: 'package', off: false }, { name: 'nw-house-style', from: null, off: true }] };
+  const u = await setup(t, { status: { ...statusOf('workspace-status'), defaults } });
+  await u.tab('capabilities');
+  const q = sel => u.doc.querySelector(sel);
+  const back = async how => {
+    const page = q('.workspace-cap-page'); assert.equal(page.hidden, false, 'the page is open');
+    const control = page.querySelector('.page-back');
+    if (how === 'escape') control.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); else control.click();
+    await settle();
+  };
+  const search = q('.ws-toolbar[data-tools=capabilities] input');
+  const find = text => { search.value = text; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); return settle(); };
+  await find('nw-');
+  assert.equal(u.rows().some(row => row.dataset.capability === 'oats.okf'), false, 'the search hides oats.okf\'s row');
+  const slot = q('.ws-default-cell[data-slot=knowledge]'); slot.focus(); slot.click(); await settle();
+  await back('click');
+  assert.equal(u.doc.activeElement?.dataset.focusKey, 'defaults:knowledge', 'Back lands on the Knowledge default');
+  const chip = q('[data-group=additional] button.ws-default-cell'); chip.focus(); chip.click(); await settle();
+  await back('escape');
+  assert.equal(u.doc.activeElement?.dataset.focusKey, 'defaults:cap:oats.core', 'Escape too, on the chip');
+  await find('');
+  for (const name of ['oats.core', 'nw-house-style']) {
+    const row = u.rows().find(el => el.dataset.capability === name); row.focus(); row.click(); await settle();
+    await back('click');
+    assert.equal(u.doc.activeElement, u.rows().find(el => el.dataset.capability === name), `${name}: Back lands on its catalog row`);
+  }
+});
+
+// A package default the catalog does not list yet names no package (its id is not its package's). Its page, once open,
+// follows a catalog refresh that lists it: the one package row of that name (spawn.mjs contentsRow).
+test('Capabilities: the page of an unlisted package default follows a catalog read that lists it', async t => {
+  const full = catalog('capabilities');
+  const without = { ...full, capabilities: { ...full.capabilities, capabilities: full.capabilities.capabilities.filter(c => c.name !== 'oats.okf') } };
+  let reads = 0;
+  const defaults = { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null }, capabilities: [] };
+  const u = await setup(t, { status: { ...statusOf('workspace-status'), defaults }, sync: () => (reads++ ? full : without) });
+  await u.tab('capabilities');
+  const slot = u.doc.querySelector('.ws-default-cell[data-slot=knowledge]');
+  assert.equal(slot.querySelector('.source-chip-name').textContent, 'package', 'unlisted: the kind alone');
+  slot.focus(); slot.click(); await settle();
+  const page = u.doc.querySelector('.workspace-cap-page');
+  assert.equal(page.hidden, false);
+  assert.equal(page.textContent.includes('2.1.3'), false, 'no version while the catalog does not list it');
+  // A CLI change re-reads the catalog, which now lists oats.okf in its package: the open page follows, in place.
+  await refreshCli({ api: async () => ({ ...CLI, version: `${CLI.version}-later` }) }); await settle();
+  assert.ok(reads >= 2, 'the catalog was read again');
+  assert.equal(page.hidden, false, 'the page stays open');
+  assert.ok(page.textContent.includes('2.1.3'), 'the listed package row\'s facts');
+  // Only a package row of that name, and only one: contentsRow never guesses.
+  const rows = full.capabilities.capabilities;
+  assert.equal(spawn.contentsRow({ name: 'oats.okf', kind: 'package' }, null, rows).package, 'oats.okf');
+  assert.equal(spawn.contentsRow({ name: 'nw-house-style', kind: 'package' }, null, rows), null, 'a member row of that name is not it');
+  assert.equal(spawn.contentsRow({ name: 'oats.okf', kind: 'package' }, null, [...rows, { ...rows.find(r => r.name === 'oats.okf'), package: 'other.pkg' }]), null, 'two packages: ambiguous, none');
+});
+
+// A default keeps its declaration's focus key wherever the panel draws it: a catalog refresh that moves a focused named
+// default from Additional into its Core cell keeps focus on it, and of two same-name declarations (the slot's, from one
+// repository; a named one, from another) Back returns to the one that opened the page.
+test('Capabilities: focus follows a default\'s declaration across a catalog refresh that moves it from Additional to Core', async t => {
+  const AGENTS = 'local//fixture/base/fx/remotes/agents.git';
+  const full = catalog('capabilities'), base = full.capabilities.capabilities;
+  const chat = repoKey => ({ ...base.find(c => c.name === 'nw-house-style'), name: 'nw-chat', repoKey, origin: `member ${repoKey}`, layer: 'messaging', path: 'capabilities/nw-chat' });
+  const withRows = rows => ({ ...full, capabilities: { ...full.capabilities, capabilities: rows } });
+  // The first read does not list nw-chat; the next one lists it with layer messaging.
+  let reads = 0;
+  {
+    const defaults = { slots: { knowledge: null, messaging: null, tasks: null }, capabilities: [{ name: 'nw-chat', from: 'here', off: false }] };
+    const u = await setup(t, { status: { ...statusOf('workspace-status'), defaults }, sync: () => (reads++ ? withRows([...base, chat(AGENTS)]) : full) });
+    await u.tab('capabilities');
+    const additional = u.doc.querySelector('[data-group=additional] button.ws-default-cell');
+    assert.equal(additional.dataset.defaultCapability, 'nw-chat'); additional.focus();
+    await refreshCli({ api: async () => ({ ...CLI, version: `${CLI.version}-later` }) }); await settle();
+    assert.ok(reads >= 2, 'the catalog was read again');
+    const messaging = u.doc.querySelector('.ws-default-cell[data-slot=messaging]');
+    assert.equal(messaging.querySelector('.ws-default-name').textContent, 'nw-chat', 'now in its Core cell');
+    assert.equal(u.doc.activeElement, messaging, 'focus followed it');
+    assert.equal(u.doc.querySelector('[data-group=additional] .ws-default-cell'), null);
+  }
+});
+test('Capabilities: Back from the second of two same-name defaults returns to it, not to the first', async t => {
+  const AGENTS = 'local//fixture/base/fx/remotes/agents.git', MARKETING = 'local//fixture/base/fx/remotes/marketing.git';
+  const full = catalog('capabilities'), base = full.capabilities.capabilities;
+  const chat = repoKey => ({ ...base.find(c => c.name === 'nw-house-style'), name: 'nw-chat', repoKey, origin: `member ${repoKey}`, layer: 'messaging', path: 'capabilities/nw-chat' });
+  const rows = { ...full, capabilities: { ...full.capabilities, capabilities: [...base, chat(AGENTS), chat(MARKETING)] } };
+  const defaults = { slots: { knowledge: null, messaging: { name: 'nw-chat', from: AGENTS }, tasks: null }, capabilities: [{ name: 'nw-chat', from: MARKETING, off: false }] };
+  const u = await setup(t, { status: { ...statusOf('workspace-status'), defaults }, sync: () => rows });
+  await u.tab('capabilities');
+  const entries = () => [...u.doc.querySelectorAll('.ws-default-cell[data-slot=messaging] button.ws-default-entry')];
+  assert.deepEqual(entries().map(e => e.querySelector('.source-chip-name').textContent), ['agents', 'marketing'], 'the slot\'s first');
+  entries()[1].focus(); entries()[1].click(); await settle();
+  const page = u.doc.querySelector('.workspace-cap-page');
+  assert.equal(page.hidden, false);
+  page.querySelector('.page-back').click(); await settle();
+  assert.equal(u.doc.activeElement, entries()[1], 'Back lands on the marketing declaration');
+  assert.equal(u.doc.activeElement.querySelector('.source-chip-name').textContent, 'marketing');
+});
+
 // Workspace v4 (human decision 2026-09-26; replaces the header search): the search is
 // the Capabilities view's own toolbar, above the sections.
 test('the view search narrows every section by capability name', async t => {
@@ -297,14 +438,14 @@ test('W2 Setup graph: this computer → the lock → the workspace → members a
   // The kernel's workspace warnings, verbatim (#185 warnings[]); a kernel before #185 sends none.
   assert.deepEqual(statusOf('workspace-status').warnings, []);
   assert.equal(statusOf('f7/workspace-status').warnings[0].code, 'unmapped-team-label');
-  // An unmapped team label is said on its team's row on the Teams tab (first, before Souls), in the
+  // An unmapped team label is said on its team's row on the Teams tab, in the
   // kernel's words; Teams carries the attention dot for it, and Setup neither repeats it nor counts it.
   assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-attn').hidden, false);
   assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-sr-only').textContent, ' — 2 items need attention', 'global and marketing');
   assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-attn').hidden, true);
   assert.equal([...u.doc.querySelectorAll('.catalog-note.warn')].some(el => /messaging\.byTeam/.test(el.textContent)), false, 'not a Setup note');
   await u.tab('teams');
-  assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.firstChild.textContent), ['Teams', 'Souls', 'Capabilities', 'Setup']);
+  assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.firstChild.textContent), ['Souls', 'Capabilities', 'Teams', 'Setup']);
   assert.deepEqual([...u.doc.querySelectorAll('.workspace-discovery .setup-box')].map(el => el.dataset.box), ['Teams']);
   assert.match(u.doc.querySelector('.setup-team[data-team=global] .setup-team-warn').textContent, /team "global" has no messaging\.byTeam entry/);
   assert.equal(u.doc.querySelector('.setup-team[data-team=engineering] .setup-team-warn'), null);
@@ -475,10 +616,15 @@ test('a failed catalog read names the failure and offers an explicit retry', asy
 const { teamsData } = await import('../../client/deployment-data.mjs');
 // The REAL 0.30 kernel's `oats teams` (K1 @bba0a9b8, test/fixtures/team-model-v2/teams-after, #269), decoded as the route answers it.
 const K1_TEAMS = () => teamsData(JSON.parse(readFileSync(new URL('./fixtures/team-model-v2/teams-after.json', import.meta.url), 'utf8')), dir);
-test('Teams tab (team-model-2): first, before Souls; the Teams page from oats teams; its problems light the dot; Setup has no teams', async t => {
+test('Teams tab (team-model-2): third, after Capabilities; the Teams page from oats teams; its problems light the dot; Setup has no teams', async t => {
   const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: K1_TEAMS() }) });
-  assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.id), ['workspace-tab-teams', 'workspace-tab-souls', 'workspace-tab-capabilities', 'workspace-tab-sources']);
+  // Souls, Capabilities, Teams, Setup (product owner, 2026-10-23, superseding 2026-09-28's "Teams first").
+  assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.id), ['workspace-tab-souls', 'workspace-tab-capabilities', 'workspace-tab-teams', 'workspace-tab-sources']);
   assert.equal(u.doc.getElementById('workspace-tab-souls').getAttribute('aria-selected'), 'true', 'Souls stays where the Workspace opens');
+  // The roving keys follow the order: Right from Capabilities is Teams, Left from Souls wraps to Setup, Home is Souls.
+  const key = name => { const tab = u.doc.querySelector('.workspace-tabs [aria-selected=true]'); tab.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true })); return u.doc.activeElement.id; };
+  assert.equal(key('ArrowRight'), 'workspace-tab-capabilities'); assert.equal(key('ArrowRight'), 'workspace-tab-teams');
+  assert.equal(key('Home'), 'workspace-tab-souls'); assert.equal(key('ArrowLeft'), 'workspace-tab-sources'); assert.equal(key('Home'), 'workspace-tab-souls');
   await u.tab('teams');
   const card = u.doc.querySelector('.workspace-discovery .computer-teams');
   assert.ok(card, 'the page'); assert.equal(card.dataset.box, 'Teams'); assert.equal(card.querySelector('.ct-title').textContent, 'Teams');

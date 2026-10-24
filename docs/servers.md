@@ -235,7 +235,7 @@ sent as text or on stdin, never as paths.
 
 | Command | Where it runs | The server must advertise |
 |---|---|---|
-| `spawn` | registered workspace | the requested harness, backend and yolo option; `launch-config` for `--launch-config`; `schedule` for a wake schedule; `spawn-preview-2` for `--preview`, and `spawn-suggest-name` for `--suggest-name` |
+| `spawn` | registered workspace | the requested harness, backend and yolo option; `launch-config` for `--launch-config`; `schedule` for a wake schedule; `spawn-name` for `--name`; `spawn-preview-2` for `--preview`; `spawn-suggest-name` for `--suggest-name` on a preview, `spawn-apply-suggest-name` on an apply |
 | `status` | registered workspace | |
 | `retire` | the instance's home | `retire-home` to retire by exact home |
 | `session inspect`, `session attach` | the instance's home | `session`; `session-attach-detach-key` for `attach --detach-key` |
@@ -250,6 +250,11 @@ sent as text or on stdin, never as paths.
 | `instance git`, `instance diff` | the instance's home; the Git runs there | `instance-git` (`instanceGitApi: 1`) |
 | `instance stop --plan\|--apply`, `retire --plan`, `retire --plan-revision … --idempotency-key …` | the instance's home | `lifecycle-plans` (`lifecycleApi: 1`) |
 | `instance color` | the instance's home | `instance-color` |
+
+`instance suggest-name` and `instance upgrade` are never routed: `--server` is
+`E_BAD_ARGS`. `instance suggest-name` names a spawn on the machine that asks,
+for a spawn that may land on another; the host it lands on makes the name
+unique, or names an unnamed spawn itself with `--suggest-name`.
 
 Before every routed command except `status`, the kernel reads the server's
 `oats version --json`. A remote OATS older than 0.22.1 is refused, and so is a

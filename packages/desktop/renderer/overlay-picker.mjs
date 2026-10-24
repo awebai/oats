@@ -1,7 +1,7 @@
 // oats desktop — shared overlay picker machinery (command palette family).
 // One input over a fuzzy-filtered listbox: type-to-filter, ArrowUp/Down,
 // Enter runs the active row, Esc/backdrop closes. Extracted from palette.mjs
-// so Quick Open (⌘P / Ctrl+Alt+P) and the palette (⌘K / Ctrl+Alt+K) share ONE overlay + fuzzy
+// so Quick Open (⌘P / Alt+P) and the palette (⌘K / Alt+K) share ONE overlay + fuzzy
 // implementation instead of duplicating chrome, a11y roles, and the
 // stale-load generation guard. The fuzzy matcher both filter with is the
 // shared home's subsequenceScore (packages/client/subsequence-score.mjs).

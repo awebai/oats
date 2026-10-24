@@ -14,6 +14,7 @@ import { renderCapabilities, renderCapabilitySections, renderRepoPills, repoChoi
 import { capabilitySections, hostKeyOf, memberNames } from "../../client/capability-rows.mjs";
 import { renderSetup, teamsBox } from "../renderer/workspace-setup.mjs";
 import { discoveryCSS } from "../renderer/workspace-discovery.mjs";
+import { ABOUT_COPY, createAboutDialog } from "../renderer/about-dialog.mjs";
 import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
 import { createTerminalSettings, settingsTerminalCSS } from '../renderer/settings-terminal.mjs';
 import { createForgePrPanel } from '../renderer/forge-pr.mjs';
@@ -626,6 +627,52 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   }
 });
 
+// Workspace › Capabilities' Workspace defaults panel (filled and empty core slots, additional defaults from a package
+// and a member repository, one the workspace turned off) and the "About capabilities" dialog in the lifecycle frame: every text on its computed surface.
+for (const [name] of palettes) test(`${name}: Workspace defaults and the About dialog use AA tokens on their computed surfaces`, t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><div class="sections"></div><div class="tools"></div></main></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, identityCSS, discoveryCSS, lifecycleCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  t.after(() => dom.window.close());
+  const rows = [{ name: 'oats.okf', kind: 'package', package: 'oats.okf', version: '2.1.3', layer: 'knowledge' }, { name: 'oats.core', kind: 'package', package: 'oats.core', version: '1.0.0' },
+    { name: 'house-style', kind: 'member', repoKey: 'github.com/nw/agents' }];
+  const status = { workspace: { key: 'github.com/nw/agents', name: 'northwind' }, members: [],
+    defaults: { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null },
+      capabilities: [{ name: 'oats.core', from: 'package', off: false }, { name: 'house-style', from: 'here', off: false }, { name: 'old-style', from: null, off: true }] } };
+  const sections = capabilitySections(rows);
+  renderCapabilitySections(doc.querySelector('.sections'), { sections, shown: sections.workspace, filterHost: null, privateListed: false, status, instances: [], onOpen() {} });
+  const about = createAboutDialog(doc, { copy: ABOUT_COPY.capabilities, id: 'about' });
+  doc.querySelector('.tools').append(about.button); about.open();
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.ws-defaults-scope', '.ws-defaults-panel', 'fg', 'surface'], ['.ws-defaults-sub', '.ws-defaults-panel', 'muted', 'surface'],
+    // The two groups' headings and leads, the one cell's words, its chip and tiles (core tints, an empty slot and a
+    // package neutral, a member capability clay), an additional default turned off.
+    ['.ws-defaults-group-head', '.ws-defaults-panel', 'fg', 'surface'], ['.ws-defaults-group-lead', '.ws-defaults-panel', 'muted', 'surface'],
+    ['button.ws-default-cell .ws-default-label', 'button.ws-default-cell', 'muted', 'surface'],
+    ['button.ws-default-cell .ws-default-name', 'button.ws-default-cell', 'fg', 'surface'],
+    ['button.ws-default-cell .source-chip', 'button.ws-default-cell', 'muted', 'surface'], ['button.ws-default-cell .source-chip-name', 'button.ws-default-cell', 'fg', 'surface'],
+    ['div.ws-default-cell .ws-default-none', 'div.ws-default-cell', 'muted', 'surface'], ['div.ws-default-cell .ws-default-note', 'div.ws-default-cell', 'muted', 'surface'],
+    ['.ws-default-tile[data-tint=slate]', '.ws-default-tile[data-tint=slate]', 'soul-slate-fg', 'soul-slate-bg'],
+    ['.ws-default-tile[data-tint=clay]', '.ws-default-tile[data-tint=clay]', 'soul-clay-fg', 'soul-clay-bg'],
+    ['.ws-default-tile:not([data-tint])', '.ws-default-tile:not([data-tint])', 'chip-fg', 'chip-bg'],
+    ['.ws-default-cell.off .ws-default-name', '.ws-default-cell.off', 'muted', 'surface'], ['.ws-default-cell.off .ws-default-note', '.ws-default-cell.off', 'muted', 'surface'],
+    ['.ws-info-button', '.ws-info-button', 'muted', 'surface'],
+    ['.about-dialog h2', '.about-dialog', 'fg', 'surface'], ['.about-dialog > p', '.about-dialog', 'fg', 'surface'],
+    ['.about-dialog .lifecycle-mark', '.about-dialog .lifecycle-mark', 'accent', 'surface-2'],
+    ['.about-terms dt', '.about-terms', 'fg', 'surface-2'], ['.about-terms dd', '.about-terms', 'muted', 'surface-2'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted);
+    assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
+    assert.ok(pairs.some(pair => pair[0] === fg && pair[1] === bg) || GRAPHIC_PAIRS.some(pair => pair[0] === fg && pair[1] === bg), `--${fg} on --${bg} is inventoried`);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector} on ${bg}`);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+  about.dispose();
+});
+
 // Schedules + Triggers (§2.3a): the list (header, toolbar, groups, rows, tags), the host
 // banner and the detail page, rendered from the captured kernel output (automations/kernel).
 for (const [name] of palettes) test(`${name}: Schedules and Triggers text uses AA tokens on its computed surfaces`, async t => {
@@ -937,7 +984,7 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
   }
 });
 
-for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel, disabled menu reasons, workspace metadata, explicit Open toast and the Needs input pill meet computed AA`, async t => {
+for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel, disabled menu reasons, workspace rows, explicit Open toast and the Needs input pill meet computed AA`, async t => {
   const dom = new JSDOM(readFileSync(new URL('index.html', renderer), 'utf8'), { pretendToBeVisual: true }), doc = dom.window.document;
   doc.documentElement.dataset.theme = name;
   for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), identityCSS, contextPanelCSS, notificationCSS, rosterPrCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
@@ -959,9 +1006,11 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
   const notifications = createNotificationCenter({ document: doc, workspace: () => 'team' });
   notifications.notify('dev-1 spawned', { descriptor: { kind: 'open-instance', target: instanceActionTarget('team', row), connectionEpoch: 0 }, activate: async () => {} });
   const switcher = createWorkspaceSwitcher({ document: doc, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}), openInNewWindow() {} });
-  switcher.begin()({ id: '/team', name: 'Team', team: { name: 'Organization' } }, []); switcher.openMenu();
+  // The workspace list, always shown: the current row (--sel), and another row at rest, with the needs-input dot.
+  const team = { id: '/team', name: 'Team', team: { name: 'Organization' } };
+  switcher.begin()(team, [team, { id: '/other', name: 'Other', waiting: true }]);
   const menu = instanceActions(doc, row, { extra: [{ action: 'open-split', label: 'Open in split', reason: 'Choose a terminal destination.' }], invoke: async () => {} }); doc.body.append(menu);
-  t.after(() => { panel.dispose(); notifications.dispose(); dom.window.close(); });
+  t.after(() => { panel.dispose(); notifications.dispose(); switcher.dispose(); dom.window.close(); });
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
     // Spec B: the reopen controls at rest sit on the main area's top bar: the tab strip (--bg) or a stage
@@ -970,9 +1019,11 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     ['#show-panel', '#sidebar', 'muted', 'surface'],
     ['.context-panel-tab-count', '#context-panel', 'muted', 'surface'], // W6: the Developer tab's thread count
     ['.ctx-instance-menu small', '.ctx-instance-menu button:disabled', 'muted', 'surface-2'],
-    ['.ws-option-meta', '.ws-option', 'muted', 'sel'],
-    // Open in new window (#481): the icon at rest on the menu (focused, it is --fg on --sel, as an option).
-    ['.ws-open-window', '#ws-menu', 'muted', 'surface'],
+    // The workspace list sits on the sidebar's --surface: a row is its name, on the current row's --sel or at
+    // rest (a row paints no fill of its own), and the head's Add local workspace… icon.
+    ['.ws-option[aria-current="true"] .ws-option-name', '.ws-option[aria-current="true"]', 'fg', 'sel'],
+    ['.ws-option:not([aria-current]) .ws-option-name', '#sidebar', 'fg', 'surface'],
+    ['#ws-add-open', '#sidebar', 'muted', 'surface'],
     ['.app-toast-open', '.app-toast-open', 'primary-fg', 'primary-bg'],
     ['.ctx-pr[data-pr-state=open]', '.ctx-pr[data-pr-state=open]', 'fg', 'tag-bg'],
     ['.ctx-pr[data-pr-state=merged]', '.ctx-pr[data-pr-state=merged]', 'fg', 'tag-bg'],
@@ -989,6 +1040,38 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     const fill = dom.window.getComputedStyle(surface); assert.equal(fill.background || fill.backgroundColor, `var(--${bg})`, painted);
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+  assert.equal(dom.window.getComputedStyle(doc.querySelector('.ws-option:not([aria-current])')).backgroundColor, 'rgba(0, 0, 0, 0)', 'a row at rest shows the sidebar under it');
+  // The needs-input dot is a non-text mark: a yellow fill (--attn-dot) in a --warn ring, hidden from assistive tech, its words in the row's
+  // name and tooltip; painted as it is, with no opacity on it or under it. It sits after the name, on the row's one line.
+  const dot = doc.querySelector('.ws-option[data-workspace-id="/other"] .ws-waiting'); assert.ok(dot, 'the waiting row carries the dot');
+  assert.equal(doc.querySelectorAll('.ws-waiting').length, 1, 'only the waiting row');
+  assert.equal(dot.parentElement, dot.closest('.ws-option'));
+  assert.deepEqual([...dot.parentElement.children].map(c => c.className), ['ws-option-name', 'sr-only', 'ws-waiting'], 'the name, its words, then the dot');
+  assert.equal(dom.window.getComputedStyle(dot).background, 'var(--attn-dot)');
+  assert.deepEqual([dom.window.getComputedStyle(dot).borderTopWidth, dom.window.getComputedStyle(dot).borderTopStyle], ['1px', 'solid'], 'its ring (its colour is pinned below)');
+  assert.equal(dot.getAttribute('aria-hidden'), 'true'); assert.equal(dot.textContent, '');
+  assert.match(dot.closest('.ws-option').textContent, /, needs input/); assert.match(dot.closest('.ws-option').title, /An instance here needs input/);
+  for (let parent = dot; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+});
+
+// The workspace list's needs-input dot is the only visible sign that a workspace waits (its words are for assistive
+// tech and the tooltip), so WCAG 1.4.11 holds it to 3:1 on every fill a row paints under it: the sidebar at rest
+// (--surface), a hovered row (--surface-2), the current or a focused row (--sel). The terminal tab's glyph (#558)
+// and an instance's dot (contrast-inventory.mjs GRAPHIC_PAIRS) are held the same way. Its fill is the yellow --attn-dot,
+// below 3:1 on these in White and Solarized, so its 1px ring carries the contrast: --warn, the needs-input colour of
+// the roster's pill and the tab's glyph.
+for (const [name, palette] of palettes) test(`${name}: the workspace list's needs-input dot meets 3:1 on every row fill`, () => {
+  const shellCss = readFileSync(new URL('shell.css', renderer), 'utf8');
+  assert.match(shellCss, /\.ws-waiting \{[^}]*background: var\(--attn-dot\); border-width: 1px; border-style: solid; border-color: var\(--warn\);/);
+  // A row's fills: none at rest (the sidebar's --surface shows), --surface-2 hovered, --sel current or focused.
+  assert.match(shellCss, /\.ws-option \{[^}]*background: transparent;/);
+  assert.match(shellCss, /\.ws-option:hover \{ background: var\(--surface-2\); \}/);
+  assert.match(shellCss, /\.ws-option:focus-visible \{ background: var\(--sel\); \}/);
+  assert.match(shellCss, /\.ws-option\[aria-current="true"\] \{ background: var\(--sel\); \}/);
+  for (const bg of ['surface', 'surface-2', 'sel']) {
+    const ratio = contrast(opaqueChannels(palette.get('warn')), backgroundChannels(bg, palette));
+    assert.ok(ratio >= GRAPHIC_CONTRAST, `${name} --warn on --${bg}: ${ratio.toFixed(2)}:1 < 3:1`);
   }
 });
 
@@ -1811,6 +1894,42 @@ for (const [name] of palettes) test(`${name}: the terminal tab's Needs input gly
     assert.ok(ratio >= 3, `--warn on --${bg}: ${ratio.toFixed(2)}`);
   }
   for (let parent = doc.querySelector('.tab-attn'); parent; parent = parent.parentElement) assert.equal(view.getComputedStyle(parent).opacity, '1');
+});
+
+// A tab's go-to-tab number (tab-numbers.mjs) is text, if decorative: its colour token must hold 4.5:1 on every
+// background a tab paints, the strip at rest (--bg, a split group's strip too), the active tab (--surface) and a
+// keyboard-focused trigger (--sel), in every palette, with nothing composited over it.
+import { createTabChrome as tabChrome } from '../renderer/tab-a11y.mjs';
+import { numberTabStrips } from '../renderer/tab-numbers.mjs';
+for (const [name, palette] of palettes) test(`${name}: a tab's number meets 4.5:1 on every tab background`, t => {
+  const dom = new JSDOM(readFileSync(new URL('index.html', renderer), 'utf8'), { pretendToBeVisual: true }), doc = dom.window.document;
+  t.after(() => dom.window.close());
+  doc.documentElement.dataset.theme = name;
+  const shellCss = readFileSync(new URL('shell.css', renderer), 'utf8');
+  for (const source of [css, shellCss]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const bar = doc.querySelector('#tabbar'), view = dom.window;
+  for (const active of [false, true]) {
+    const { tabEl } = tabChrome(doc, `n${active}`, 'oats-desktop-developer-tabs-palette', false, { dot: 'on' });
+    if (active) tabEl.classList.add('active');
+    bar.append(tabEl);
+  }
+  numberTabStrips([bar]);
+  const nums = [...doc.querySelectorAll('#tabbar .tab-num')];
+  assert.deepEqual(nums.map(num => [num.textContent, num.hidden]), [['1', false], ['2', false]]);
+  const token = view.getComputedStyle(nums[0]).color.match(/^var\(--([\w-]+)\)$/)?.[1];
+  assert.equal(token, 'faint', 'the number is quiet text: --faint');
+  for (const num of nums) assert.equal(view.getComputedStyle(num).color, `var(--${token})`);
+  const fill = el => { const s = view.getComputedStyle(el); return s.background || s.backgroundColor; };
+  assert.equal(fill(doc.querySelector('#tabstrip')), 'var(--bg)', 'a tab at rest shows the strip');
+  assert.equal(fill(doc.querySelector('.tab.active')), 'var(--surface)');
+  assert.match(shellCss, /\.tab-trigger:focus-visible \{ background: var\(--sel\); \}/);
+  assert.match(shellCss, /\.group-tabbar \{[^}]*background: var\(--bg\)/, 'a split group strip paints --bg too');
+  for (const bg of ['bg', 'surface', 'sel']) {
+    assert.ok(pairs.some(([f, b]) => f === token && b === bg), `--${token} on --${bg} is in the inventory`);
+    const ratio = contrast(opaqueChannels(palette.get(token)), backgroundChannels(bg, palette));
+    assert.ok(ratio >= TEXT_CONTRAST, `${name} --${token} on --${bg}: ${ratio.toFixed(2)}:1 < 4.5:1`);
+  }
+  for (const num of nums) for (let parent = num; parent; parent = parent.parentElement) assert.equal(view.getComputedStyle(parent).opacity, '1');
 });
 
 // Capability warnings (OATS 0.49.0, capability-warnings.mjs): one list, six hosts. In each, the list sits in the host's

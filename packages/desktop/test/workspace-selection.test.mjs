@@ -160,8 +160,8 @@ const choices = [
   ['keyboard Sources', u => u.key('End'), 'sources'],
   ['footer Sources', () => spawn.preselectWorkspaceTab('sources'), 'sources'],
   ['click current Souls', u => u.tab('souls'), 'souls'],
-  // Home now lands on Teams, the first tab (human, 2026-09-28); it replaces 'keyboard current Souls'.
-  ['keyboard Teams', u => u.key('Home'), 'teams'],
+  // Home lands on Souls, the first tab again (product owner, 2026-10-23: Souls, Capabilities, Teams, Setup).
+  ['keyboard current Souls', u => u.key('Home'), 'souls'],
   ['footer current Souls', () => spawn.preselectWorkspaceTab('souls'), 'souls'],
   ['Souls → Sources → Souls', u => { u.tab('sources'); u.tab('souls'); }, 'souls'],
 ];
@@ -373,7 +373,7 @@ test('a pending preselectCapability survives a failed catalog read and opens whe
 const newer = [
   ['click Sources', u => u.tab('sources'), 'sources', null],
   ['click current Capabilities', u => u.tab('capabilities'), 'capabilities', null],
-  ['keyboard Teams', u => u.key('Home'), 'teams', null],
+  ['keyboard Souls', u => u.key('Home'), 'souls', null],
   ['footer Souls', () => spawn.preselectWorkspaceTab('souls'), 'souls', null],
   ['a soul handoff', () => spawn.preselectSoul(soul('/b/agents')), 'souls', null],
   ['a home handoff', () => spawn.preselectHome(home), 'souls', null],

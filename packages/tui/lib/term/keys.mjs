@@ -8,7 +8,7 @@
  *   a paste       { paste }  or  { paste: "", truncated: true }
  *   an answer     { keyboard: flags }: the terminal's answer to the protocol's query (`CSI ? flags u`),
  *                 while the parser waits for one */
-import { confirmed, kittyId, kittyKey, legacyBytes, legacyParams } from "./kitty.mjs";
+import { confirmed, kittyId, kittyKey, legacyBytes, legacyChord, legacyParams } from "./kitty.mjs";
 
 export const ESC_TIMEOUT_MS = 50;
 export const PASTE_LIMIT = 1024 * 1024;
@@ -297,8 +297,10 @@ export function createKeyParser({ now, keyboard = null, chords = NO_CHORDS, lead
     if (bytes === null) { flush(); return; }
     const events = legacyEvents(bytes);
     // A key with an id of its own whose legacy bytes read as the leader (Ctrl+Shift+X is 0x18, as
-    // Ctrl+X) is its own key, which nothing binds: never the leader.
-    if (id !== null && leader !== null && events.length === 1 && keyId(events[0]) === leader) { emit(named(String.fromCharCode(key.code), key.ctrl, key.alt, key.shift)); return; }
+    // Ctrl+X) or as a chord of the family in force (Ctrl+Alt+1 is ESC 1, as Alt+1) is its own key,
+    // which nothing binds: never the leader, nor that chord.
+    const as = id !== null && events.length === 1 ? keyId(events[0]) : null;
+    if (as !== null && ((leader !== null && as === leader) || (legacyChord(as) && chords.has(as)))) { emit(named(String.fromCharCode(key.code), key.ctrl, key.alt, key.shift)); return; }
     for (const event of events) emit(event);
   };
 

@@ -82,6 +82,10 @@ membership certificates (`aw id team members`) and its workspaces
   (default-team or joined) whose team holds the recipient. aw resolves names
   through its service, so a name can resolve without being on the roster.
 
+Task coordination belongs to the deployment's tasks layer. When it is
+`oats.aweb-tasks`, load `/aweb-tasks` for `aw task` and `aw work`.
+`aw lock` and `aw roles` stay outside OATS. Conversation stays in messaging.
+
 ## 3. Send, reply, chat
 
 Always put the body in a file: inline `--body "…"` breaks on quotes,
@@ -378,9 +382,9 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
 | `claude-channel-mode-default` (warning, home readiness only) | a Claude `delivery: channel` home runs in development mode because nobody chose a mode: its captured settings have no `claudeChannelMode`, or have the manifest default (origin `manifest-default`). It can appear beside `channel-dev-confirmation`. Limit: a home whose record holds no setting origins (composed before OATS recorded them) cannot tell unset from an explicit `development`, so it stays silent | operator: set `settings.oats.aweb.claudeChannelMode` in `oats-local.yaml`, `approved` (the managed-settings route, `/oats-host-delivery`, Choice 1) or `development` explicitly, then respawn |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue. A never-ttl grant seat needs its custody to list `grant_never_ttl.v1`; an E2EE grant seat (the default) needs `mail_reply_continuation.v1`. "required custody operations are missing: <op>" for either means the custody runs code older than aw 1.36.32, where those ops arrived; the remedy names the client floor, 1.36.33. "custody status could not be read" means it could not be asked | human; for a missing op, restart the custody on aw 1.36.33 or later (upgrade aw, restart the custody service and the wake daemon, then `oats sync`) |
-| `grant-expiring` (warning, grant seats with a duration) | the grant recorded at the seat's last mint expires within 7 days; the message names the instant as recorded | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which renews a seat with a captured `identity.ttl` duration for another such duration (to stop it expiring, remove identity.ttl and respawn); respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
-| `grant-expired` (grant seats with a duration) | that grant's recorded expiry has passed: messaging is unavailable (aw reports `grant_expired`) | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which renews a seat with a captured `identity.ttl` duration for another such duration (to stop it expiring, remove identity.ttl and respawn); respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
-| `grant-expiry-unknown` (warning, grant seats) | the recorded grant has no readable expiry; readiness does not guess one | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which renews a seat with a captured `identity.ttl` duration for another such duration (to stop it expiring, remove identity.ttl and respawn); respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
+| `grant-expiring` (warning, grant seats with a finite expiry) | the grant recorded at the seat's last mint expires within 7 days; the message names the instant as recorded | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which requests another captured `identity.ttl` duration, subject to team or certificate limits (removing identity.ttl and respawning requests never; a team or certificate cap can still impose an expiry); a capped never seat restarts for renewal up to the team's limit; respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
+| `grant-expired` (grant seats with a finite expiry) | that grant's recorded expiry has passed: messaging is unavailable (aw reports `grant_expired`) | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which requests another captured `identity.ttl` duration, subject to team or certificate limits (removing identity.ttl and respawning requests never; a team or certificate cap can still impose an expiry); a capped never seat restarts for renewal up to the team's limit; respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
+| `grant-expiry-unknown` (warning, grant seats) | the recorded grant has no readable expiry; readiness does not guess one | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which requests another captured `identity.ttl` duration, subject to team or certificate limits (removing identity.ttl and respawning requests never; a team or certificate cap can still impose an expiry); a capped never seat restarts for renewal up to the team's limit; respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
 | `grant-revoke-pending` (warning, grant seats) | the custody's grant list shows an active grant of this seat other than the current one (a failed revoke, or a mint before a crash); it stays valid until revoked, or until its expiry; the message names it and the revoke command | human: run the named `aw id grant revoke <id>` in the resident's custody directory, or restart the seat: every start and retire revokes it |
 | `grant-revoke-unchecked` (warning, grant seats) | the custody's grant list could not be read, so readiness cannot tell whether this seat holds grants that stay valid | human: check the resident's custody and its aweb service; a retire fails until the list can be read |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |
@@ -591,10 +595,16 @@ certificates remain owner-pending; no recipe is inferred from a past customer cl
 
 ### GLOBAL residents and grant seats
 
-From provider 1.25.0, a new GLOBAL seat's grant **never expires**
-(`identity.ttl: never`, the default, #80): it ends only when revoked. What
-bounds it is its scopes, revocation at retire, and revocation by the
-resident's owner; a revoked grant's next request is refused at once, and an open
+A new GLOBAL seat requests `identity.ttl: never` by default. The team grant
+cap or issuing-certificate expiry can impose a finite deadline even on that
+request. The mint receipt's `expires_at` is the effective deadline, recorded
+as `identity.grant.expiresAt`; `expiresAt: "never"` records no deadline.
+The recorded expiry is an upper bound, not a guarantee: a lowered team cap or
+a later finite certificate expiry can end it sooner, even when recorded as
+"never". Readiness cannot predict this and keeps its expiry assessment; aw
+reports the grant error at runtime, and a restart remints.
+Scopes and revocation at retire or by the resident's owner also apply; a revoked
+grant's next request is refused at once, and an open
 notification stream ends within about 30 seconds. To keep a duration, set
 `identity.ttl` to a Go duration from 60s to 720h, for example
 `identity: { ttl: 720h }`; anything else refuses before effects with
@@ -610,7 +620,8 @@ background renewal.
 
 Every mint passes its ttl explicitly (`--ttl=never` or the duration) and records
 it, and the renew mode, as `identity.grant.ttl` and `identity.grant.renew`; a
-never-grant records `expiresAt: "never"`. A never seat's custody must list
+never request records `expiresAt: "never"` or the finite deadline returned
+by aw. A never seat's custody must list
 `grant_never_ttl.v1`. Every mint is labelled `oats:<instance>:<seat>` (a random
 seat id kept in `identity.seat`, and written to the home's `.oats-aweb/seat.json`
 before the first mint so a retire finds it even after a killed hook), and the
@@ -626,13 +637,16 @@ retire exits nonzero while a grant stays unrevoked or the list is unread.
 
 `oats readiness --home H --json` reads the grant recorded at the seat's last
 mint, asking neither aw nor custody. A never-grant gets no lifetime diagnostic
-(the agent's brief says it never expires); for a grant with a duration, `grant-expiring` within 7 days of its expiry,
+(the agent's brief says it never expires); for any finite recorded expiry,
+including a capped never request, `grant-expiring` within 7 days of its expiry,
 `grant-expired` once it has passed, and `grant-expiry-unknown` when the record
 has no readable expiry (section 7). The remedy follows the recorded renew mode
 and the captured `identity.ttl`: `renew: launch` restarts the seat
 (`oats session restart --home <home>`); a seat that captured an `identity.ttl`
-duration is renewed for another such duration by that restart, and stops
-expiring only once identity.ttl is removed and it is respawned; `renew: off`,
+duration requests another such duration by that restart. Removing identity.ttl
+and respawning requests never, but cannot remove a team or certificate cap.
+A capped never seat restarts for renewal up to the team's limit, still requesting
+`ttl: never`; `renew: off`,
 where a restart keeps the grant, respawns it. A grant minted before 1.25.0
 records no renew mode, and the message adds "if its identity.renew is off,
 respawn it instead".

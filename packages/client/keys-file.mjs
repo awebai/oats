@@ -1,7 +1,9 @@
 /** keys.json, the one preference both clients share about their keys: which chord family they bind
  * on Linux and Windows (packages/client/keymap.mjs CHORD_FAMILIES). It is `config/keys.json` in OATS's
  * own directory of this user, beside the TUI's tui.json, and resolved the same way: `$OATS_HOME_DIR`
- * when that is set and not empty, else `<home>/.oats`. Its shape: `{ "chords": "ctrl+alt" | "ctrl+shift" }`.
+ * when that is set and not empty, else `<home>/.oats`. Its shape: `{ "chords": "alt" | "ctrl+alt" | "ctrl+shift" }`.
+ * No file, or no `chords` in it, is no choice: the default, Alt. A `chords` written is a choice, and
+ * stays one when the default changes (a user who chose Ctrl+Alt keeps it).
  *
  * The file is the clients'; the kernel never reads it. Each client does its own IO and hands the text
  * here: the TUI at its start, the Desktop in its main process, which hands the family to its renderer
@@ -16,9 +18,11 @@
  * Both clients hand over the file's bytes, not their own reading of them, so the same bytes mean the
  * same family in both: UTF-8 (RFC 8259), a byte-order mark ignored, anything else not text.
  *
- * Every way the file can fail means the default, Ctrl+Alt: none is an error the user must clear. */
+ * Every way the file can fail means the default, Alt: none is an error the user must clear. An older
+ * client, which knows no `alt`, reads `"chords": "alt"` as an unknown value: its own default, with
+ * its note. */
 import { join } from "node:path";
-import { CHORD_FAMILIES, DEFAULT_CHORD_FAMILY } from "./keymap.mjs";
+import { CHORD_FAMILIES, CHORD_FAMILY_LABELS, DEFAULT_CHORD_FAMILY } from "./keymap.mjs";
 
 /** The most a client reads of the file, in bytes: anything longer is not a keys.json. */
 export const KEYS_LIMIT = 16384;
@@ -90,11 +94,11 @@ export function chordFamilyFrom(bytes, error = null) {
 }
 
 /** The line a client shows when keys.json was there and not taken ("keys.json: unknown chords value,
- *  using Ctrl+Alt"), or null: the file chose the family, or there is none, which is the default
+ *  using Alt", the default's label), or null: the file chose the family, or there is none, which is the default
  *  with nothing to say. `read` is what chordFamilyFrom answered. */
 export function chordFamilyNote(read) {
   if (!read || read.why === null || read.why === "missing" || !Object.hasOwn(KEYS_WHY, read.why)) return null;
-  return `${KEYS_WHY[read.why]}, using Ctrl+Alt`;
+  return `${KEYS_WHY[read.why]}, using ${CHORD_FAMILY_LABELS[DEFAULT_CHORD_FAMILY]}`;
 }
 
 /** The text of keys.json with `chords` set to `family`, from the file's current `bytes` (as

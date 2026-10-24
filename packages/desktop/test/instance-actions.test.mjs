@@ -348,22 +348,25 @@ test("actions are app buttons with keyboard navigation, dismissal and refresh re
 
 // On a row's actions trigger, ↑/↓ open the menu, but an arrow chord the keymap binds is the keymap's
 // (keybindings.mjs keymapTakes): Alt+Shift+↓ opens the next instance's terminal from there too, and a
-// rebind follows; an arrow chord bound to nothing still opens the menu. The open menu's items do the same.
+// rebind follows; so do the workspace steps (Alt+↑/↓ in every Linux/Windows family); an arrow chord bound to
+// nothing (Ctrl+↓) still opens the menu. The open menu's items do the same.
 test("the actions trigger gives way to the keymap's arrow chords, and only to those", t => {
-  pinPlatform(t); // the Linux and Windows keymap: Alt+Shift+↑/↓ (not the Mac's)
+  pinPlatform(t); // the Linux and Windows keymap: Alt+Shift+↑/↓ the instances, Alt+↑/↓ the workspaces (not the Mac's)
   const dom = menuDom(), doc = dom.window.document;
   const options = { invoke: assert.fail, openLifecycle: assert.fail, done() {}, report: assert.fail };
-  const offs = ["roster.openPrevious", "roster.openNext"].map(id => registerAction({ id, label: id, context: "global", run: () => {} }));
+  // The shell's global arrow chords (shell.mjs).
+  const offs = ["roster.openPrevious", "roster.openNext", "workspace.previous", "workspace.next"]
+    .map(id => registerAction({ id, label: id, context: "global", run: () => {} }));
   t.after(() => { offs.forEach(off => off()); resetBinding("roster.openNext"); dom.window.close(); });
   const control = instanceActions(doc, { instance: "menu-worker", home: "/menu/worker" }, options); doc.body.append(control);
   const trigger = triggerOf(control);
   const press = (init) => { const e = new dom.window.KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }); trigger.dispatchEvent(e); return e; };
-  for (const key of ["ArrowDown", "ArrowUp"]) {
-    const e = press({ key, altKey: true, shiftKey: true });
-    assert.equal(e.defaultPrevented, false, `Alt+Shift+${key} is left to the keymap`);
+  for (const key of ["ArrowDown", "ArrowUp"]) for (const mods of [{ altKey: true, shiftKey: true }, { altKey: true }]) {
+    const e = press({ key, ...mods });
+    assert.equal(e.defaultPrevented, false, `${JSON.stringify(mods)} ${key} is left to the keymap`);
     assert.equal(trigger.getAttribute("aria-expanded"), "false");
   }
-  assert.equal(press({ key: "ArrowDown", altKey: true }).defaultPrevented, true, "Alt+↓ is bound to nothing: it opens the menu");
+  assert.equal(press({ key: "ArrowDown", ctrlKey: true }).defaultPrevented, true, "Ctrl+↓ is bound to nothing: it opens the menu");
   assert.equal(trigger.getAttribute("aria-expanded"), "true");
   doc.activeElement.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
   setBinding("roster.openNext", "Ctrl+Shift+↓");
@@ -375,11 +378,11 @@ test("the actions trigger gives way to the keymap's arrow chords, and only to th
   const first = doc.activeElement;
   assert.equal(trigger.getAttribute("aria-expanded"), "true");
   const inMenu = (init) => { const e = new dom.window.KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }); doc.activeElement.dispatchEvent(e); return e; };
-  for (const key of ["ArrowDown", "ArrowUp"]) {
-    assert.equal(inMenu({ key, altKey: true, shiftKey: true }).defaultPrevented, false, `Alt+Shift+${key} in the menu is the keymap's`);
+  for (const key of ["ArrowDown", "ArrowUp"]) for (const mods of [{ altKey: true, shiftKey: true }, { altKey: true }]) {
+    assert.equal(inMenu({ key, ...mods }).defaultPrevented, false, `${JSON.stringify(mods)} ${key} in the menu is the keymap's`);
     assert.equal(doc.activeElement, first, "and moves no focus");
   }
-  assert.equal(inMenu({ key: "ArrowDown", altKey: true }).defaultPrevented, true, "Alt+↓, bound to nothing, walks the menu");
+  assert.equal(inMenu({ key: "ArrowDown", ctrlKey: true }).defaultPrevented, true, "Ctrl+↓, bound to nothing, walks the menu");
   assert.notEqual(doc.activeElement, first);
 });
 

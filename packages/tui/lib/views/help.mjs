@@ -2,13 +2,14 @@
 // text. Pure: no IO, no clock, no escape byte. The keys are generated from the table the reducer
 // acts on, so the help names every key that does something and no key that does not; the marks
 // are the ones the list and the switcher draw (views/instances.mjs, views/switcher.mjs).
-import { LEADER, backKeyLabel, keyLabel, keysTogether } from "../actions.mjs";
+import { LEADER, backKeyLabel, doesLabel, keyLabel, keysTogether } from "../actions.mjs";
 import { lit, ownEllipsis } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { NEEDS_INPUT, belowText, cutNote, marksOf, measured } from "./instances.mjs";
 import { windowOf } from "./scroll.mjs";
 import { SOUL_MARK } from "./souls.mjs";
 import { OPEN_MARK } from "./switcher.mjs";
+import { WAITING_DOT } from "./workspaces.mjs";
 
 const TITLE = style({ bold: true });
 const KEYS = style({ bold: true });
@@ -151,52 +152,71 @@ const sentences = (list, cols) => list.flatMap((sentence) => {
 export const LEADER_AGAIN = "the leader again: types it into the terminal that has the focus; with the list focused, cancels the leader";
 
 /** THE CHORDS (docs/tui.md, "Chords"): the chords read now, the extras of the leader, which is the
- *  key that always works. While the terminal confirms the kitty keyboard protocol they lead the
- *  help, first of all; without it only the Alt+Shift arrows are read, listed after the leader's
- *  section. What a
- *  terminal may take first is said, and where the table of terminals is, as sentences the help
- *  flows. */
+ *  key that always works. While every chord bound is read (under the kitty keyboard protocol, or
+ *  in the Alt family, whose keys need none) they lead the help, first of all; else only those with
+ *  bytes of their own are read (the arrows of the other two families), listed after the leader's
+ *  section. What a terminal may take first, how a program in a terminal still gets an Alt key the
+ *  TUI takes, and where the tables are, as sentences the help flows. */
 export const CHORD_RULES = Object.freeze([
-  "Your terminal may take some first: Windows Terminal takes Ctrl+Alt+1 to Ctrl+Alt+9 for its own tabs, and the Alt+Shift arrows while its panes are split.",
-  "Terminals without the kitty keyboard protocol (GNOME Terminal and the other VTE terminals, Konsole before 26.08, WezTerm unless enable_kitty_keyboard is set) send only the Alt+Shift arrows.",
-  "On a keyboard layout where AltGr is Ctrl+Alt (Windows), a Ctrl+Alt key that types a character types it.",
+  "Your terminal may take some first: GNOME Terminal and Konsole take Alt+1 to Alt+9 for their own tabs while they have two or more, and Ghostty when the tab changes; Windows Terminal takes the Alt and Alt+Shift arrows while its panes are split, and Ctrl+Alt+1 to Ctrl+Alt+9 for its own tabs.",
+  "A program in a terminal still gets an Alt key the TUI takes as Esc, then the key, where it reads Esc as Meta, as the shell does.",
+  "The Ctrl+Alt and Ctrl+Shift chords need the kitty keyboard protocol: terminals without it (GNOME Terminal and the other VTE terminals, Konsole before 26.08, WezTerm unless enable_kitty_keyboard is set) send only their arrows.",
+  "A key that types a character with AltGr types it.",
   "The leader works in every terminal.",
-  "docs/tui.md, \"Chords\", has the table of terminals.",
+  "docs/tui.md, \"Chords\", has the tables of terminals and of what the Alt family takes.",
 ]);
-/** THE FAMILY (docs/tui.md, "Switch to Ctrl+Shift"): the sentences that lead the chords' section,
- *  for `keys`, the model's `{ family, label, note }` (keys.json as lib/config.mjs loadKeys read it, and
+/** THE CHORDS ON MACOS (docs/tui.md, "Chords on macOS"): Alt (Option) with an arrow alone, read
+ *  where the terminal sends it as one (`CSI 1;3` and `CSI 1;4`), said Alt as the keys' labels are. What leads the chords' section
+ *  there, and what follows its rows in place of CHORD_RULES. */
+export const MAC_CHORD_LINE = "Shortcuts on macOS: Alt (Option) with an arrow, where your terminal sends it as one. Alt with a letter or a digit types a character, so none is a chord.";
+export const MAC_CHORD_RULES = Object.freeze([
+  "Terminal.app, Ghostty and VS Code's terminal send Alt+Left and Alt+Right as the shell's word moves, Esc then b or f: there those chords do not come, and the shell moves by word.",
+  "Where the chord comes, the TUI takes it from the agent.",
+  "The leader works in every terminal.",
+  "docs/tui.md, \"Chords on macOS\", has the terminals and their settings.",
+]);
+/** THE FAMILY (docs/tui.md, "Switch family"): the sentences that lead the chords' section, for
+ *  `keys`, the model's `{ family, label, note }` (keys.json as lib/config.mjs loadKeys read it, and
  *  the shared chordFamilyNote's line, or null), while the terminal confirms the kitty keyboard
- *  protocol (`confirmed`) or not. Which family is bound: Ctrl+Alt, with how to switch; Ctrl+Shift,
- *  from keys.json, and, without the protocol, that this terminal cannot send it, so the leader is
- *  the way (the Alt+Shift arrows still come). Then the note, when the file was there and not taken.
- *  No `keys` (a view drawn without a run): none. macOS has no chords, so no section and no line. */
+ *  protocol (`confirmed`) or not. Which family is bound: Alt, the default, with how to switch;
+ *  Ctrl+Alt or Ctrl+Shift, from keys.json, and, without the protocol, that this terminal cannot
+ *  send it, so the leader is the way (their arrows still come). Then the note, when the file was
+ *  there and not taken. No `keys` (a view drawn without a run): none. macOS (`keys.mac`) has no
+ *  family: MAC_CHORD_LINE. */
 export function chordFamilyLines(keys, confirmed) {
   if (!keys) return [];
-  const shift = "Ctrl+Shift";
-  const said = keys.family !== "ctrl+shift"
-    ? `Shortcuts: ${keys.label}. For ${shift} (foot, Alacritty), set "chords": "ctrl+shift" in keys.json and restart.`
-    : confirmed ? `Shortcuts: ${shift}, from keys.json.`
-      : `Shortcuts: ${shift}, from keys.json, but this terminal does not confirm the kitty keyboard protocol: use the leader.`;
+  if (keys.mac === true) return [MAC_CHORD_LINE];
+  const chosen = keys.family === "ctrl+alt" || keys.family === "ctrl+shift" ? keys.family : null;
+  const label = chosen === "ctrl+alt" ? "Ctrl+Alt" : chosen === "ctrl+shift" ? "Ctrl+Shift" : keys.label;
+  const said = chosen === null
+    ? `Shortcuts: ${label}. To leave Alt to the programs in your terminals, set "chords": "ctrl+alt" in keys.json (or "ctrl+shift", for foot and Alacritty) and restart.`
+    : confirmed ? `Shortcuts: ${label}, from keys.json.`
+      : `Shortcuts: ${label}, from keys.json, but this terminal does not confirm the kitty keyboard protocol: use the leader.`;
   return typeof keys.note === "string" ? [said, keys.note] : [said];
 }
 
 /** The chords listed on one row of their own, both keys first, their modifiers said once
- *  (`Alt+Shift+Up/Down`, actions.mjs keysTogether, as the cheat sheet says them): the leader's Up
- *  and Down, its Left and Right. The table's left column stays narrow enough for the help beside
- *  the sidebar at 80 columns. */
-const CHORD_PAIRS = Object.freeze([Object.freeze(["previous", "next"]), Object.freeze(["tab-previous", "tab-next"])]);
+ *  (`Alt+Shift+Up/Down`, actions.mjs keysTogether, as the cheat sheet says them): the instances,
+ *  the workspaces (the leader's Up and Down), the tabs (its Left and Right) and the groups (its
+ *  Shift+Tab and Tab). The table's left column stays narrow enough for the help beside the sidebar
+ *  at 80 columns. */
+const CHORD_PAIRS = Object.freeze([["previous", "next"], ["workspace-previous", "workspace-next"], ["tab-previous", "tab-next"], ["group-previous", "group-next"]].map((pair) => Object.freeze(pair)));
 /** The chords' own (actions.mjs CHORD_OWN), the Nth tab: one row for the nine, as the TUI's words. */
 const TAB_N = /^tab-([1-9])$/;
 const TABS_SAID = "the focused group's first to eighth tab, 9 its last";
+/** Whether keysTogether says the keys' modifiers once (`Alt+Shift+Up/Down`), not each key whole. */
+const sharesModifiers = (keys) => keysTogether(keys) !== keys.map(keyLabel).join("/");
 /** Two labels of the leader's table as one: `previous instance` and `next instance` are
  *  `previous and next instance`. */
 function bothSaid(a, b) {
   const [x, y] = [words(a), words(b)];
   return x.length > 1 && x.at(-1) === y.at(-1) ? `${x.slice(0, -1).join(" ")} and ${y.join(" ")}` : `${a} and ${b}`;
 }
-/** The chords' rows: `chords` are `[key id, does]` in the table's order, each said as the leader's
- *  table says its `does`, then `or <the leader> then <its key>` (`detachKey`'s label, when one is
- *  given); a pair of CHORD_PAIRS on one row, and the nine tab-N on one, `Ctrl+Alt+1 … Ctrl+Alt+9`
+/** The chords' rows: `chords` are `[key id, does]` in the table's order, each said by its label
+ *  (the shared doesLabel: the leader's table's, else the chord's own), then, for one the leader's
+ *  table has a key for, `or <the leader> then <its key>` (`detachKey`'s label, when one is given); a pair of CHORD_PAIRS on one row
+ *  where its keys share their modifiers (`Alt+Shift+Up/Down`; Ctrl+Alt+Shift+A and Ctrl+Alt+A, which do not, a row each, so the
+ *  keys' column stays narrow enough for the meanings beside it at 80 columns), and the nine tab-N on one, `Ctrl+Alt+1 … Ctrl+Alt+9`
  *  (`...` in ASCII), which no leader's key does. The family's lines lead them (chordFamilyLines:
  *  `keys`, under the protocol or not, `confirmed`). */
 function chordRows(chords, cols, detachKey, ascii, keys = null, confirmed = false) {
@@ -208,16 +228,16 @@ function chordRows(chords, cols, detachKey, ascii, keys = null, confirmed = fals
   const done = new Set(), rows = [];
   for (const [key, does] of chords) {
     if (done.has(does)) continue;
-    const pair = CHORD_PAIRS.find((each) => each.includes(does) && each.every((one) => keyOf.has(one)));
+    const pair = CHORD_PAIRS.find((each) => each.includes(does) && each.every((one) => keyOf.has(one)) && sharesModifiers(each.map((one) => keyOf.get(one))));
     if (pair) {
       pair.forEach((one) => done.add(one));
-      rows.push([keysTogether(pair.map((one) => keyOf.get(one))), `${bothSaid(by(pair[0]).label, by(pair[1]).label)}${then(pair)}`]);
+      rows.push([keysTogether(pair.map((one) => keyOf.get(one))), `${bothSaid(doesLabel(pair[0]), doesLabel(pair[1]))}${then(pair)}`]);
     } else if (TAB_N.test(does) && tabs.length === 9) {
       tabs.forEach(([, one]) => done.add(one));
       rows.push([ownEllipsis(`${keyLabel(tabs[0][0])} \u2026 ${keyLabel(tabs[8][0])}`, ascii), TABS_SAID]);
     } else {
       const n = TAB_N.exec(does)?.[1];
-      rows.push([keyLabel(key), n === undefined ? `${by(does)?.label ?? does}${then([does])}` : n === "9" ? "the focused group's last tab" : `the focused group's tab ${n}`]);
+      rows.push([keyLabel(key), n === undefined ? `${doesLabel(does) ?? does}${then([does])}` : n === "9" ? "the focused group's last tab" : `the focused group's tab ${n}`]);
     }
   }
   return [
@@ -226,7 +246,7 @@ function chordRows(chords, cols, detachKey, ascii, keys = null, confirmed = fals
     ...sentences(chordFamilyLines(keys, confirmed), cols),
     ...sentences(["One keypress each, from every focus, a terminal's too: none reaches the agent."], cols),
     ...table(rows.map(([keys, said]) => [keyText(keys), words(said)]), cols, KEYS),
-    ...sentences(CHORD_RULES, cols),
+    ...sentences(keys?.mac === true ? MAC_CHORD_RULES : CHORD_RULES, cols),
   ];
 }
 
@@ -335,6 +355,7 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = 
       ["N", `N instances folded away below it need input: ${belowText("N")} where the whole name fits`],
       [marks.selected, "the selected row, and the pane the movement keys act on"],
       [OPEN_MARK, "among the workspaces: the one that is open"],
+      [ascii ? WAITING_DOT.ascii : WAITING_DOT.utf8, ascii ? "among the workspaces: an instance there needs input" : `among the workspaces, in yellow: an instance there needs input (${WAITING_DOT.ascii} without colour)`],
       [ascii ? SOUL_MARK.ascii : SOUL_MARK.utf8, "among the souls: a soul, in its colour"],
       ["!", "among the souls: a spawn of it here would be refused"],
     ].map(([mark, meaning]) => [mark, words(meaning)]), cols),

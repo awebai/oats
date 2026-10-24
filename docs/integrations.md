@@ -15,7 +15,7 @@ For each soul, OATS resolves zero or one implementation per slot:
 | --- | --- | --- |
 | `knowledge` | [knowledge](layers.md#the-knowledge-contract) | `oats.okf` |
 | `messaging` | [communication](layers.md#the-communication-contract) | `oats.aweb` |
-| `tasks` | [tasks](layers.md#the-tasks-contract) | `oats.jira`, `oats.linear` |
+| `tasks` | [tasks](layers.md#the-tasks-contract) | `oats.aweb-tasks`, `oats.jira`, `oats.linear` |
 
 A capability becomes an integration by declaring exactly one `layer` in its
 manifest. Capabilities without `layer` compose additively.
@@ -40,8 +40,8 @@ arrives from.
 ```yaml
 # oats-workspace.yaml: one default per slot, for every soul
 packages:
-  oats.okf: v5.2.1
-  oats.aweb: v1.30.0
+  oats.okf: v5.3.0
+  oats.aweb: v1.31.0
   oats.linear: v1.0.1
   oats.jira: v1.0.1
 defaults:
@@ -57,7 +57,8 @@ tasks:
 # souls/support-triager/soul.yaml: opt out of one slot, replace another
 knowledge: none                            # empties the slot
 capabilities:
-  oats.jira: { from: package }             # its manifest says layer: tasks, so it replaces the default
+  oats.linear: off                         # removes the tasks default...
+  oats.jira: { from: package }             # ...so this one fills the slot (two would be E_SLOT_CONFLICT)
 ```
 
 - A soul's slot key is either `none` or that slot's payload (settings for the
@@ -80,6 +81,7 @@ operations in full.
 | --- | --- | --- | --- |
 | `knowledge` | `oats.okf` | `settings.oats.okf.bindings-file` and `state-dir` (absolute paths) in `oats-local.yaml`; `git` for Git-backed consultation, `git` and `gh` for proposal/review PRs; ordinary kernel/harness selection, no provider harvest-runtime setting | [awebai/oats-okf](https://github.com/awebai/oats-okf), [knowledge.md](knowledge.md) |
 | `messaging` | `oats.aweb` | the `aw` CLI at 1.36.33 or later; for channel delivery, `@awebai/pi` in pi or the `aweb-channel` plugin in Claude Code; host-only `root`, `roots` and `residents` in `oats-local.yaml` | [awebai/oats-aweb](https://github.com/awebai/oats-aweb) |
+| `tasks` | `oats.aweb-tasks` | the `aw` CLI at 1.36.33 or later, and `oats.aweb` as the soul's messaging: tasks act as the instance's own oats.aweb identity in its default team; nothing in `oats-local.yaml` | [awebai/oats-aweb](https://github.com/awebai/oats-aweb) |
 | `tasks` | `oats.jira` | `acli`, authenticated to the Jira site; `site` and `project` in the soul's `tasks:` payload or `settings.oats.jira` | [awebai/oats-jira](https://github.com/awebai/oats-jira) |
 | `tasks` | `oats.linear` | `LINEAR_API_KEY` in the environment (never in OATS config); `team` (and optionally `project`) in the soul's `tasks:` payload or `settings.oats.linear` | [awebai/oats-linear](https://github.com/awebai/oats-linear) |
 
@@ -91,6 +93,16 @@ operations in full.
   soul-only `knowledge: { harvest: off }` forbids harvest while retaining
   consultation. No host switch or automatic transcript/retire capture remains;
   `knowledge-maintainer` reviews the resulting Git PRs.
+- **`oats.aweb-tasks`** (in the `oats.aweb` package from 1.31.0) fills the
+  tasks slot with aweb tasks, acting as the instance's own `oats.aweb`
+  identity in its default team. **An existing workspace opts in** by pinning
+  `oats.aweb: v1.31.0` (or later), adding
+  `tasks: { oats.aweb-tasks: { from: package } }` to `defaults`, and running
+  `oats sync`. Only new spawns get it. A soul that names its own tasks
+  provider in `capabilities:` (`oats.jira`, `oats.linear`) then holds two and
+  fails with `E_SLOT_CONFLICT`: to keep its own, it adds
+  `oats.aweb-tasks: off` to its `capabilities:`. A soul opts out of tasks
+  entirely with `tasks: none`.
 - **`oats.aweb`** mints a messaging identity for each instance at spawn and
   removes it at retire, contributes the aweb messaging skills, and wires the
   channel so sessions are woken by mail. Under `delivery: channel`, Claude Code

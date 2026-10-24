@@ -206,7 +206,7 @@ test('rule 2 in the card CSS: hover restyles the border and surface; focus is th
   // The shell's :focus-visible (theme.css) is the keyboard's tint + 1px accent edge; a component rule would override it.
   assert.doesNotMatch(catalogCSS, /(catalog-row|capability-nav[^{]*button):focus/);
   // The repository pills: each chip has its own 1px frame. Its background out-ranks the global focus tint, so
-  // its one focus rule restates the shell's tint (as #ws-trigger does), and nothing else: the edge stays the shell's.
+  // its one focus rule restates the shell's tint (as .ws-option does), and nothing else: the edge stays the shell's.
   assert.match(catalogCSS, /\.catalog-pills button \{[^}]*border:1px solid var\(--border\); border-radius:7px; background:var\(--surface\); color:var\(--muted\)/);
   assert.deepEqual(catalogCSS.match(/[^{}\n]*catalog-pills[^{}\n]*:focus[^{}]*\{[^}]*\}/g).map(rule => rule.trim()), ['.oats-view .catalog-pills button:focus-visible { background:var(--sel); }']);
   assert.doesNotMatch(catalogCSS, /catalog-select|catalog-clear/, 'the Team and Repo dropdowns are gone');
@@ -221,7 +221,8 @@ test('the section jump is one ws-segmented group of navigation segments (aria-cu
   const u = mount(t);
   const sections = capabilitySections([...ROWS, { name: 'nw-runbook', kind: 'member', repoKey: 'github.com/awebai/oats', private: true, origin: 'member github.com/awebai/oats' }]);
   const opened = [];
-  renderCapabilitySections(u.$('.sections'), { sections, shown: sections.workspace, filterHost: null, privateListed: true, status: STATUS, instances: INSTANCES, onOpen: row => opened.push(row.name) });
+  // The catalog's own segments (Workspace defaults, which status.defaults adds first, is workspace-defaults.test.mjs's).
+  renderCapabilitySections(u.$('.sections'), { sections, shown: sections.workspace, filterHost: null, privateListed: true, status: { ...STATUS, defaults: undefined }, instances: INSTANCES, onOpen: row => opened.push(row.name) });
   const nav = u.$('.capability-nav');
   assert.ok(nav.classList.contains('ws-segmented'));
   assert.equal(u.css(nav).padding, '2px'); assert.equal(u.css(nav).borderRadius, '8px'); assert.equal(u.css(nav).gap, '2px');

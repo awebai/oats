@@ -46,8 +46,8 @@ not proof that an agent is enrolled. The official provider is `oats.aweb`.
 ### The tasks contract
 
 The tasks capability owns assignment, claims, status, blockers and handoff.
-`oats.jira` and `oats.linear` are the official providers. Messaging is
-conversation, not task state.
+The official providers are `oats.aweb-tasks` (from the `oats.aweb` package),
+`oats.jira` and `oats.linear`. Messaging is conversation, not task state.
 
 ## What the kernel does not own
 

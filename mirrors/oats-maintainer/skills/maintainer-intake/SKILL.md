@@ -14,6 +14,9 @@ only then decide what to do next.
 every PR's state, so another lane's PRs, verdicts and holds are read there when you need
 them and are never copied into your state. Alone, your lane is the whole project.
 
+**No lane yet?** A maintainer the lane map doesn't name joins first
+(`/cross-review-peer`, "Joining as a new maintainer") and sweeps nothing until it has a lane.
+
 ## When to sweep, and when not
 - **A full sweep:** at session start, after a compaction, and at least weekly.
 - **On a wake:** no sweep. Handle the event that woke you, and update the rows of your state

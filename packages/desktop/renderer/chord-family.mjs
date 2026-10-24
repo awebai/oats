@@ -1,11 +1,11 @@
 /* oats desktop — the chord family in the page (renderer side of chord-family.mjs).
 
-   Main reads keys.json and answers the family the shared chords bind on Linux/Windows: Ctrl+Alt,
-   the default, or Ctrl+Shift (packages/client/keymap.mjs CHORD_FAMILIES). This module asks main for
+   Main reads keys.json and answers the family the shared chords bind on Linux/Windows: Alt, the
+   default, Ctrl+Alt or Ctrl+Shift (packages/client/keymap.mjs CHORD_FAMILIES). This module asks main for
    it as the window starts, takes every change main pushes (another window's choice, a hand edit
    seen at app focus), and sets the Shortcuts page's choice through main, which writes the file.
    Each state taken is applied at once (`apply`: the engine's setChordFamily), so the keymap, its
-   hints and the editor follow without a restart (docs/desktop-keyboard.md, "Switch to Ctrl+Shift").
+   hints and the editor follow without a restart (docs/desktop-keyboard.md, "The chord families").
 
    The shell awaits `start()` before it listens to its first key, so no key is read in the default
    family while main's answer is on its way. Without the bridge, or when main does not answer, the

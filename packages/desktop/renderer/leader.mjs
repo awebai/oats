@@ -17,7 +17,9 @@
    too, and that key goes where it would have gone.
 
    The follow-up is read by `KeyboardEvent.key`, whatever Shift or AltGr produced it (Shift+x is
-   `X`, Shift+\ is `|`). A key held with Ctrl, ⌘ or Alt (AltGr aside) is not in the table, as in
+   `X`, Shift+\ is `|`). A named key that Shift moves, Tab or an arrow, Home, End, PgUp or PgDn, is
+   spelled with `shift+` held, as the TUI spells it (Shift+Tab is `shift+tab`, the previous
+   group; Shift+↑ is no row). A key held with Ctrl, ⌘ or Alt (AltGr aside) is not in the table, as in
    the TUI, which reads it as ctrl+/alt+ something.
 
    The engine listens on the window in the capture phase, before xterm's textarea and every
@@ -34,6 +36,8 @@ const NAMED = Object.freeze({
   Escape: "escape", Esc: "escape", " ": "space", Spacebar: "space", Tab: "tab", Enter: "enter",
   Home: "home", End: "end", PageUp: "pageup", PageDown: "pagedown",
 });
+/** The named keys a held Shift is part of (`shift+tab`); Space, Enter and Esc read the same with it. */
+const SHIFTED_NAMES = new Set(["tab", "up", "down", "left", "right", "home", "end", "pageup", "pagedown"]);
 const MODIFIERS = new Set(["Shift", "Control", "Alt", "AltGraph", "Meta", "OS", "Super", "Hyper",
   "CapsLock", "NumLock", "ScrollLock", "Fn", "FnLock", "Symbol", "SymbolLock"]);
 
@@ -50,7 +54,7 @@ export function followUpKey(e) {
   if (!altGraph && (e.ctrlKey || e.metaKey || e.altKey)) return null;
   if (e.isComposing) return null;
   const key = String(e.key ?? "");
-  if (NAMED[key]) return NAMED[key];
+  if (NAMED[key]) return e.shiftKey && SHIFTED_NAMES.has(NAMED[key]) ? `shift+${NAMED[key]}` : NAMED[key];
   return [...key].length === 1 ? key : null;
 }
 

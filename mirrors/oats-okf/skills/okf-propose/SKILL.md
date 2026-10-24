@@ -2,12 +2,16 @@
 name: okf-propose
 description: >-
   The compulsory harvest procedure for working instances with oats.okf:
-  keep instance knowledge current, judge durable claims at a finished task
-  or PR hand-over, write one proposal and launch one knowledge harvester.
-  Read at task start and before a harvest checkpoint. Covers the soul
-  opt-out, promotion and duplicate checks, memory pressure, one-at-a-time
-  spawning, proposal provenance, deferral and hand-back. The harvester's
-  own publication procedure is knowledge-harvest, not this skill.
+  keep instance knowledge current and, at every harvest checkpoint (a PR
+  handed over for review, a finished task, and in a long-lived role such as
+  a maintainer's a feature ready, a release or deploy shipped, or a direction
+  decision taken with the human), judge
+  durable claims, write one proposal and launch one knowledge harvester.
+  Read at task start and at each checkpoint. Covers the checkpoints, the
+  soul opt-out, promotion and duplicate checks, the checkpoint record,
+  one-at-a-time spawning, proposal provenance, carrying a proposal over and
+  hand-back. The harvester's own publication procedure is knowledge-harvest,
+  not this skill.
 ---
 
 # Propose knowledge at checkpoints
@@ -34,14 +38,29 @@ duty. The private `okf-harvest-policy.json` in home is written by the provider,
 not a user setting or a publication authorization; the harvester still checks
 the source independently.
 
-## When a checkpoint merits a harvest
+## When to harvest
 
-A **harvest checkpoint** is a finished task or a PR hand-over. Make **at most
-one proposal for that completed unit of work**: handing over its PR and then
-closing the same task are not two opportunities. Never launch per commit,
-per review round, on every decision, or merely because a PR was opened.
-Capture decisions and discoveries when they happen; collect them for the
-next harvest checkpoint. Most checkpoints propose nothing.
+A **harvest checkpoint** is any of these moments. Each one is yours to act
+on, and none waits for a task to close:
+
+- **You hand over a PR for review:** you open it, or mark it ready, and tell
+  its reviewer or maintainer. The work it carries is done enough to know
+  what it taught.
+- **You finish a task,** before you hand back or retire.
+- **In a long-lived role** whose task never finishes (a maintainer, an
+  expert holding an area, a support desk):
+  - **a feature is ready:** its last PR merged or approved;
+  - **you ship a release or a deploy;**
+  - **a direction decision is taken with your human.**
+
+These are not checkpoints: a commit, a review round or a new head of the
+same PR, and each decision you make while working (a direction decision taken
+with your human is the checkpoint above). Capture decisions and discoveries
+the moment they happen, in notes/; the next checkpoint carries them.
+
+**One proposal per checkpoint, carrying only what no earlier proposal
+carried.** A PR handed over and then the same task closing are two
+checkpoints, and the second proposes only what was learned since the first.
 
 At a checkpoint, first update STATE.md, log.md and the relevant notes. Then:
 
@@ -67,6 +86,10 @@ At a checkpoint, first update STATE.md, log.md and the relevant notes. Then:
    after a restart, compaction, a review fix or a hand-over acknowledgment.
    Recover an uncertain spawn's recorded result before any further action;
    a missing reply is not permission to spawn a duplicate.
+6. **Record the checkpoint in log.md, whatever its outcome:** what the
+   checkpoint was (`PR #123 handed over`, `v2.4.0 shipped`), and either the
+   proposal and its harvester, or `nothing to propose` with the reason in a
+   few words. A checkpoint with no line in log.md is a harvest skipped.
 
 ## Write one self-contained proposal
 
@@ -106,28 +129,53 @@ the person out. Naming the author of a published source you cite is fine.
 That covers the names you choose as well: a note's file name, a task ref and an
 instance's name are published as provenance when knowledge is harvested.
 
-## Launch only when the gates permit it
+## Launch the harvester
 
-A harvester is another model session on a shared host. These gates are
-instructions, not a scheduler or a resource reservation:
+**One harvester at a time per instance.** Read log.md for your last
+harvester's name, then `oats status`. While it still lists that harvester,
+do not spawn another, even if it has handed over or appears idle: retired is
+not the same as stopped. Keep the proposal instead (below).
 
-- **One harvester at a time per instance.** Read log.md for your last
-  harvester's name, then `oats status`. While it still lists that harvester,
-  do not spawn another, even if it has handed over or appears idle. Retired
-  is not the same as stopped. Keep new claims for the next eligible proposal.
-- **No spawn under memory pressure.** Immediately before spawning, run
-  `free -g` on Linux: if `available` is less than **8 GB**, do not spawn.
-  If the host is otherwise under memory pressure, do not spawn either. On
-  a host without `free`, use its documented available-memory check; if you
-  cannot establish at least 8 GB available, defer and report that limit.
-  Do not stop somebody else's instances or change host setup to make room.
-
-From your instance home, first append `--preview` to the following command
-and read the resolved harvester composition. When both gates permit it,
-run the command without `--preview`:
+**Name your harvester explicitly with `--name`.** Never leave it to the
+kernel's numbered default or use `--purpose`: a retired harvester's messaging
+alias can remain occupied even when no instance is listed. For each new
+proposal, run this once from instance home to print a fresh name:
 
 ```sh
-oats spawn oats.okf/knowledge-harvester --task-file <proposal> --relation unrelated
+node --input-type=module <<'JS'
+import { readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+const { instance } = JSON.parse(readFileSync('instance.json', 'utf8'));
+if (typeof instance !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(instance)) {
+  throw new Error('instance.json must name the source instance as a slug');
+}
+const prefix = instance.slice(0, 21).replace(/-+$/, '');
+console.log(`${prefix}-${randomUUID().replaceAll('-', '')}-harvester`);
+JS
+```
+
+The name is `<source-prefix>-<fresh-uuid-without-dashes>-harvester`: at most
+21 source characters + 1 dash + 32 UUID characters + 10 for `-harvester` =
+64, within both the kernel and aweb alias limits. Removing a trailing dash
+from the prefix keeps it a slug. The full random UUID distinguishes proposals,
+including ones from sources with the same truncated prefix; a timestamp alone
+can collide across hosts or within a minute. Use only non-sensitive source
+names, since the harvester name is also its messaging alias and provenance.
+
+Record the printed name with the proposal path in log.md **before preview**.
+Check `oats status` for that exact name (and `oats souls` for a soul-name
+conflict); it must be unused in the deployment. The kernel checks again at
+spawn: this check is not a reservation or proof that a messaging alias is free.
+Reuse this recorded name after interruption; do not regenerate it for the
+same proposal or between preview and apply.
+
+Replace `<harvester-name>` with that exact name and `<proposal>` with the
+proposal path. From instance home, first append `--preview` to this complete
+command and read the resolved harvester composition, then run the same
+command without `--preview`:
+
+```sh
+oats spawn oats.okf/knowledge-harvester --name <harvester-name> --task-file <proposal> --relation unrelated
 ```
 
 Use that relation exactly as written, without extra relation flags. The
@@ -138,11 +186,22 @@ Record the checkpoint, proposal path and returned harvester instance name
 in log.md; keep STATE.md's current picture up to date. Report a refused or
 uncertain spawn, do not retry it in a loop or spawn around it.
 
-If a gate blocks you, keep the proposal and its backing notes, record the
-reason in STATE.md and log.md, and name the deferred proposal and claims in
-your hand-back. Reconsider at a later natural task boundary, not by sleeping,
-polling or busy-waiting. If the last harvester is still listed at hand-back,
-name it and any claims still waiting. Do not wait for it to finish.
+On `E_INSTANCE_NAME_TAKEN`, stop, record the chosen name and refusal, and
+report it in your hand-back. Do not drop `--name`, switch to `--purpose`,
+append a counter, regenerate a UUID or launch a replacement in a retry loop.
+A later explicitly resolved attempt may choose and record a new unused name;
+first establish that this proposal has no harvester already started. For an
+uncertain result, recover the spawn/session record before any further action.
+A messaging identity-minting failure is not `E_INSTANCE_NAME_TAKEN`: report
+that exact failure to your spawner/operator and stop. Never remove a stale
+certificate, re-onboard an identity or rename around that failure yourself.
+
+**While your last harvester is still listed,** keep the proposal and its
+backing notes, and note it as pending in STATE.md and log.md. At your next
+checkpoint, add that checkpoint's claims to the pending proposal and launch
+it then, once the last harvester is gone. Never sleep, poll or busy-wait for
+it. If it is still listed at hand-back, name it, the pending proposal and
+its claims in your hand-back. Do not wait for it to finish.
 
 ## What happens after launch
 

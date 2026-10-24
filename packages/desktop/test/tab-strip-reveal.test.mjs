@@ -8,6 +8,8 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
+import { createTabChrome } from "../renderer/tab-a11y.mjs";
+import { numberTabStrips } from "../renderer/tab-numbers.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const shellFunction = name => {
@@ -102,6 +104,7 @@ function shell(t) {
   }
   const c = {
     tabbar: u.document.getElementById("tabbar"), tabhost: u.document.getElementById("tabhost"), revealInStrip, ResizeObserver,
+    tabNumberObserver: null, numberTabStrips, // the numbers have a test of their own, below
   };
   const resize = source.match(/^const tabStripResize = [^\n]+/m)[0];
   const api = runInNewContext(`${["tabStrips", "revealActiveTabs", "observeTabStrips"].map(shellFunction).join("\n")}
@@ -148,4 +151,45 @@ test("activation, closing a tab and every split projection reveal the active tab
   const chrome = readFileSync(new URL("../renderer/tab-a11y.mjs", import.meta.url), "utf8");
   assert.match(chrome, /revealInStrip\(tabEl\.parentElement, control\)/, "keyboard focus reveals within the strip too");
   assert.doesNotMatch(chrome, /scrollIntoView/);
+});
+
+// The tabs' numbers (tab-numbers.mjs) follow the strips the shell observes: observeTabStrips numbers every
+// current strip at once and watches each for its tabs coming, going and hiding; the observer renumbers on any
+// such change and ignores its own writes to a .tab-num.
+test("the shell numbers every current strip, and renumbers on a strip's change but not on its own number writes", t => {
+  const u = fixture(t, `<div id="tabbar"></div><div id="tabhost"><div class="group-cell"><div class="group-tabbar"></div></div></div>`);
+  const watched = [];
+  let notify = null;
+  class MutationObserver {
+    constructor(fn) { notify = fn; }
+    observe(el, options) { watched.push([el, options]); }
+    disconnect() { watched.length = 0; }
+  }
+  const c = { tabbar: u.document.getElementById("tabbar"), tabhost: u.document.getElementById("tabhost"), revealInStrip,
+    ResizeObserver: undefined, MutationObserver, numberTabStrips };
+  const lines = ["tabStripResize", "tabNumberObserver"].map(name => source.match(new RegExp(`^const ${name} = [^\\n]+`, "m"))[0]);
+  const api = runInNewContext(`${["tabStrips", "revealActiveTabs", "observeTabStrips"].map(shellFunction).join("\n")}
+${lines.join("\n")}
+({ observeTabStrips });`, c);
+  const group = u.document.querySelector(".group-tabbar");
+  const add = (strip, n) => Array.from({ length: n }, (_, i) => { const { tabEl } = createTabChrome(u.document, `${strip.className || strip.id}-${i}`, `tab ${i}`); strip.append(tabEl); return tabEl; });
+  const numbers = strip => [...strip.querySelectorAll(":scope > .tab .tab-num")].map(num => (num.hidden ? null : num.textContent));
+  const flat = add(c.tabbar, 3); add(group, 10);
+  api.observeTabStrips();
+  assert.deepEqual(watched.map(([el]) => el), [c.tabbar, group], "the flat strip and every group strip");
+  assert.equal(JSON.stringify(watched[0][1]), JSON.stringify({ childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] }));
+  assert.deepEqual(numbers(c.tabbar), ["1", "2", "3"]);
+  assert.deepEqual(numbers(group), ["1", "2", "3", "4", "5", "6", "7", "8", null, "9"], "each strip numbers its own; 9 is the last");
+  flat[0].hidden = true;
+  notify([{ target: flat[0] }]);
+  assert.deepEqual(numbers(c.tabbar), [null, "1", "2"], "a hidden tab loses its number, and the rest move up");
+  const own = flat[1].querySelector(".tab-num");
+  own.textContent = "7"; // as if a stale write landed: a record of the observer's own .tab-num is not a change of the strip
+  notify([{ target: own }]);
+  assert.equal(own.textContent, "7", "its own writes do not renumber");
+  notify([{ target: own }, { target: c.tabbar }]);
+  assert.deepEqual(numbers(c.tabbar), [null, "1", "2"]);
+  group.parentElement.remove();
+  api.observeTabStrips();
+  assert.deepEqual(watched.map(([el]) => el), [c.tabbar], "a group that goes away is no longer watched");
 });

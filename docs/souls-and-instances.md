@@ -341,6 +341,18 @@ so that user's name stays numbered (`harness-failed`). The preview then answers 
 only; any other harness, and any failure of the call, leaves the name numbered
 and says why
 ([The suggested name](desktop-cli-api.md#the-suggested-name-feature-spawn-suggest-name)).
+An apply takes `--suggest-name` too (without `--name` or `--purpose`): the
+machine that spawns makes the same call, names the instance
+`<descriptive>-<role>`, de-duplicated the same way, and numbers it on any
+failure; the result's `naming` says which, and the apply may take up to 20 s
+longer ([On an apply](desktop-cli-api.md#on-an-apply-feature-spawn-apply-suggest-name)).
+Without the flag an apply is numbered, as before.
+`oats instance suggest-name --soul <soul> --task-file <f>` asks for the same
+words on this machine for a spawn that will land on another (the Desktop's
+dialog, spawning through `--server`): the soul only gives the role and needn't
+exist here, nothing is written or reserved, and the name is not made unique,
+which the landing host does
+([A name for a spawn elsewhere](desktop-cli-api.md#a-name-for-a-spawn-elsewhere-oats-instance-suggest-name)).
 
 From a deployment (where `oats-local.yaml` is), a spawn: reads the local file →
 discovers the workspace over its remotes and confirms membership → finds the

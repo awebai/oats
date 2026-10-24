@@ -110,7 +110,7 @@ export function rowStrings(rows, cols) {
 // Everything below goes through the same calls the program makes (lib/client.mjs re-exports them):
 // a test that built an entry or a panel by hand would test its own idea of them.
 import { failedEntry, observedEntry, panelInstances, pendingEntry, rosterRows } from "../lib/client.mjs";
-import { model, outcomeOf, roster } from "../lib/model.mjs";
+import { listRowsOf, model, outcomeOf, roster } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { createScreen } from "../lib/term/screen.mjs";
 import { frame, layout, mainArea } from "../lib/views/frame.mjs";
@@ -153,9 +153,13 @@ export const pending = (at = "2026-10-11T09:59:59.000Z") => pendingEntry(null, a
  *  leader.test.mjs, and drawn in views.test.mjs. An option `detachKey` gives another (undefined: the
  *  default of the option `platform`). */
 export const TEST_LEADER = "C-\\";
+/** The platform the tests' states are made on, whatever platform runs them: Linux, whose chords
+ *  (the Alt family's) and tab numbers the tests draw. An option `platform` gives another (macOS's
+ *  are pinned with `platform: "darwin"`). */
+export const TEST_PLATFORM = "linux";
 /** The state of a run that took `entry` (pending when none is given). */
 export function stateOf(entry = null, options = {}) {
-  const first = initialState({ deployment: DEPLOYMENT, cli: CLI, home: "/home/u", entry: pending(), detachKey: TEST_LEADER, ...options });
+  const first = initialState({ deployment: DEPLOYMENT, cli: CLI, home: "/home/u", entry: pending(), detachKey: TEST_LEADER, platform: TEST_PLATFORM, ...options });
   return entry ? took(first, entry, 1) : first;
 }
 /** A state after the reader gave `entry` for the fixture's deployment, as cycle `number`. */
@@ -169,7 +173,7 @@ export function draw(state, size = { cols: 80, rows: 24 }, { now = NOW, utf8 = t
   const under = state.view === "help" || state.view === "act" ? state.back : state.view;
   const listing = under === "switcher";
   const r = listing ? { notice: null, note: null } : roster(state, at);
-  const g = layout(r.notice, size, { note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.tabs.length > 0, open: listing ? null : under });
+  const g = layout(r.notice, size, { note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.tabs.length > 0, open: listing ? null : under, list: listRowsOf(state, at) });
   // The switcher stands in the main area: the lines above its choices wrap to that area's width.
   const area = mainArea(g, size.cols).cols;
   const made = { ...frame({ ...model(state, { page: g.page, body: g.body, now, at, cols: g.listCols, area }), screen }, size), cols: g.listCols, area };

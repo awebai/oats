@@ -244,6 +244,16 @@ test("a row that changes only in a fill is rewritten like any other: a bar that 
   assert.deepEqual(sequences.filter((s) => s.kind === "position").map((s) => s.body), ["1;1H", "2;1H"], "the two rows that changed, and not the third");
 });
 
+test("a span drawn after the text before it follows that text as drawn: back over what a cut, or ? without UTF-8, left blank of its width; else at its column", () => {
+  const after = (col, text) => ({ ...span(col, text, undefined, 1), after: true });
+  // Wide characters cut at 4 cells: 中 and the mark take 3, so the ! moves back 1.
+  assert.equal(createScreen().render([[span(0, "中文字", undefined, 4), after(5, "!")]], size(10, 1)), whole(`${CSI}1;1H中… !${CSI}K`));
+  assert.equal(createScreen(glyphs({ LANG: "C" })).render([[{ col: 0, text: shown("中文"), width: 4 }, after(5, "!")]], size(10, 1)), whole(`${CSI}1;1H?? !${CSI}K`));
+  assert.equal(createScreen().render([[span(0, "abc", undefined, 3), after(4, "!")]], size(10, 1)), whole(`${CSI}1;1Habc !${CSI}K`), "text that fills its width: at its column");
+  assert.equal(createScreen().render([[span(0, "abc", undefined, 6), span(8, "x"), after(9, "!")]], size(12, 1)), whole(`${CSI}1;1Habc     x!${CSI}K`), "only the span just before counts, and one with no width leaves nothing blank");
+  assert.equal(createScreen().render([[fill(0, 6, REVERSE), after(3, "!")]], size(8, 1)).includes("!"), true, "after a fill, at its column");
+});
+
 test("cells() answers the frame as cells, one `{ text, width, style }` per column with the second cell of a wide grapheme empty and of no width, and writes nothing", () => {
   const bold = style({ bold: true }), screen = createScreen();
   const rows = [[span(0, "oats", bold)], [span(1, "中x"), fill(4, 9, REVERSE)]];

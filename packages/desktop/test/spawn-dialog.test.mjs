@@ -292,6 +292,93 @@ test('Run on an execution server: no local preview; the remote spawn carries the
   assert.equal(u.spawns().filter(b => b?.action).length, 0, 'never the local prepare/apply');
 });
 
+// awebai/oats#1490: a spawn on another machine takes the exact name as a local one does where this computer's CLI
+// advertises spawn-name and relays what each host is (server-probe-features), and the host's roster row names spawn-name.
+// Anything less (an older OATS on either side, a host whose features are unknown) is today's purpose with its prefix.
+const HOST = { id: 'build', label: 'Build host', sshHost: 'build.lan' };
+const hostFacts = (features) => ({ members: [], notReached: [], servers: [{ server: 'build', label: 'Build host', group: 'build:k1', deployment: 'remote:build:k1', reached: true, error: null, registered: true, features }] });
+const RELAYING = { ...structuredClone(CLI), features: [...CLI.features, 'server-probe-features'] };
+
+test('a spawn on a server whose host advertises spawn-name is named as a local one: no prefix, the final name, sent as name alone', async t => {
+  const remote = [];
+  const u = await mountSpawn(t, { spawnName: true, cli: RELAYING, servers: [HOST], teamMembers: hostFacts(['spawn-preview-2', 'spawn-name']),
+    remote: body => { remote.push(body); return { instance: 'api-v2-manager', server: 'build' }; } });
+  await u.open(); u.q('.spawn-advanced').open = true;
+  await u.change('.fserver', 'build'); const before = u.previews().length;
+  assert.ok(u.q('.spawn-name-input').classList.contains('unprefixed'), 'no <soul>- prefix');
+  assert.equal(u.q('.fpurpose').placeholder, 'e.g. desktop-improvements');
+  assert.equal(u.text('.spawn-name-result'), 'Named by build when it spawns.', 'neither this CLI nor the host names it from its task');
+  await u.type('.fpurpose', 'API-v2');
+  assert.equal(u.text('.spawn-name-result'), 'Instance name: api-v2-manager', 'lowercased, with the soul\'s role once');
+  assert.equal(u.previews().length, before, 'still decided on the host: no local preview');
+  await u.spawn();
+  assert.equal(remote.length, 1); assert.equal(remote[0].serverId, 'build');
+  assert.equal(remote[0].name, 'api-v2-manager'); assert.equal(Object.hasOwn(remote[0], 'purpose'), false, 'never a purpose beside the name');
+});
+
+test('a spawn on a server is a purpose with its prefix, as before, unless both sides are known to take an exact name', async t => {
+  for (const [why, opts] of [
+    ['the host does not advertise spawn-name', { spawnName: true, cli: RELAYING, teamMembers: hostFacts(['spawn-preview-2']) }],
+    ['the host\'s features are unknown', { spawnName: true, cli: RELAYING, teamMembers: hostFacts(null) }],
+    ['no roster row for the host', { spawnName: true, cli: RELAYING }],
+    ['this computer\'s CLI does not relay host features', { spawnName: true, teamMembers: hostFacts(['spawn-name']) }],
+    ['this computer\'s CLI has no spawn-name', { cli: RELAYING, teamMembers: hostFacts(['spawn-name']) }],
+  ]) {
+    const remote = [];
+    const u = await mountSpawn(t, { ...opts, servers: [HOST], remote: body => { remote.push(body); return { instance: 'release-manager-api-v2', server: 'build' }; } });
+    await u.open(); u.q('.spawn-advanced').open = true;
+    await u.change('.fserver', 'build'); await u.type('.fpurpose', 'api-v2');
+    assert.equal(u.q('.spawn-name-input').classList.contains('unprefixed'), false, why);
+    assert.equal(u.q('.fpurpose').placeholder, 'purpose, e.g. api-v2', why);
+    assert.equal(u.text('.spawn-name-result'), 'Named by build when it spawns.', why);
+    await u.spawn();
+    assert.equal(remote[0].purpose, 'api-v2', why); assert.equal(Object.hasOwn(remote[0], 'name'), false, why);
+  }
+});
+
+test('a soul listed from a server finds its host the same way: a host with spawn-name takes the exact name', async t => {
+  const remote = [];
+  const agents = [{ name: 'builder', description: 'Builds on the host', kind: 'persistent', work: 'worktree', agentsRoot: '/srv/team/agents', server: 'build', repoName: 'team' }];
+  const u = await mountSpawn(t, { agents, spawnName: true, cli: RELAYING, teamMembers: hostFacts(['spawn-name']),
+    remote: body => { remote.push(body); return { instance: 'nightly-builder', server: 'build' }; } });
+  await u.open('builder'); await settle(20);
+  assert.ok(u.q('.spawn-name-input').classList.contains('unprefixed'));
+  await u.type('.fpurpose', 'nightly');
+  assert.equal(u.text('.spawn-name-result'), 'Instance name: nightly-builder');
+  await u.spawn();
+  assert.equal(remote[0].name, 'nightly-builder'); assert.equal(Object.hasOwn(remote[0], 'purpose'), false);
+  assert.equal(u.previews().length, 0, 'still no local preview for a remote soul');
+});
+
+test('the host\'s name refusal is said next to the Name field, as a local one is; nothing is created and an edit clears it', async t => {
+  const message = 'instance name "api-v2-manager" is taken';
+  const u = await mountSpawn(t, { spawnName: true, cli: RELAYING, servers: [HOST], teamMembers: hostFacts(['spawn-name']),
+    remote: () => { throw Object.assign(new Error(message), { code: 'E_INSTANCE_NAME_TAKEN' }); } });
+  await u.open(); u.q('.spawn-advanced').open = true;
+  await u.change('.fserver', 'build'); await u.type('.fpurpose', 'api-v2');
+  await u.spawn();
+  assert.ok(u.q('.spawn-name-result').classList.contains('err'));
+  assert.equal(u.text('.spawn-name-result'), 'An instance with this name already exists. Choose another name.');
+  assert.equal(u.text('.fstatus'), `Couldn’t spawn on build: ${message}`); assert.equal(u.q('.fstatus').dataset.code, 'E_INSTANCE_NAME_TAKEN');
+  assert.equal(u.q('.fspawn').textContent, 'Spawn', 'nothing was created: Spawn is offered again');
+  await u.type('.fpurpose', 'api-v3');
+  assert.equal(u.q('.spawn-name-result').classList.contains('err'), false); assert.equal(u.text('.spawn-name-result'), 'Instance name: api-v3-manager');
+});
+
+test('a host\'s late name refusal speaks only for the name it refused: a name edited meanwhile is not marked taken', async t => {
+  const reply = deferred();
+  const u = await mountSpawn(t, { spawnName: true, cli: RELAYING, servers: [HOST], teamMembers: hostFacts(['spawn-name']), remote: () => reply.promise });
+  await u.open(); u.q('.spawn-advanced').open = true;
+  await u.change('.fserver', 'build'); await u.type('.fpurpose', 'api-v2');
+  const pressed = u.spawn();
+  await u.type('.fpurpose', 'api-v3');
+  reply.reject(Object.assign(new Error('instance name "api-v2-manager" is taken'), { code: 'E_INSTANCE_NAME_TAKEN' })); await pressed; await settle();
+  assert.equal(u.q('.fstatus').dataset.code, 'E_INSTANCE_NAME_TAKEN', 'the footer reports the refusal');
+  assert.equal(u.q('.spawn-name-result').classList.contains('err'), false); assert.equal(u.text('.spawn-name-result'), 'Instance name: api-v3-manager');
+  await u.type('.fpurpose', 'api-v2');
+  assert.equal(u.q('.spawn-name-result').classList.contains('err'), false, 'an edit clears it, as for a local refusal');
+});
+
 test('model suggestions follow the kernel\'s harness; "the harness\'s own default" is the native-default choice', async t => {
   const asked = [];
   const u = await mountSpawn(t, { models: body => { asked.push(body.harness); return { models: [{ id: 'anthropic/claude-sonnet', label: 'Sonnet' }] }; } });

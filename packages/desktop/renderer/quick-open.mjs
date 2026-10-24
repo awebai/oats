@@ -1,4 +1,4 @@
-// oats desktop — Quick Open for souls (⌘P / Ctrl+Alt+P): a VS Code Quick Open-style
+// oats desktop — Quick Open for souls (⌘P / Alt+P): a VS Code Quick Open-style
 // overlay to find a SOUL and instantiate it. Data source is the Spawn
 // view's roster (GET /api/agents); selecting a soul hands off to the Spawn
 // view's own form flow (no second spawn form here — CLI degradation is the
@@ -6,9 +6,10 @@
 //
 // Terminal policy (documented decision, #1217): app.quickOpenSouls is in the
 // engine's TERMINAL_ALLOWLIST. On macOS ⌘P fires inside xterm by the ⌘-chord
-// policy; on Linux/Windows its default is Ctrl+Alt+P, which xterm sends as
-// ESC Ctrl+P (Esc, then Ctrl+P sends the same), so plain Ctrl+P (shell history)
-// still reaches the pty.
+// policy; on Linux/Windows its default is Alt+P, which xterm sends as ESC P
+// (Esc, then P sends the same; Claude Code's own Alt+P, its model picker, is
+// reached that way, docs/desktop-keyboard.md), and Ctrl+Alt+P in the Ctrl+Alt
+// family, ESC Ctrl+P, so plain Ctrl+P (shell history) still reaches the pty.
 import { createOverlayPicker } from "./overlay-picker.mjs";
 import { subsequenceScore } from "../../client/subsequence-score.mjs";
 

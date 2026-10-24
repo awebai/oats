@@ -23,6 +23,8 @@ export function createWorkspaceTabMemory() {
         if (!states.has(to)) states.set(to, saved);
       }
     },
+    /** A workspace this window no longer has (another window took it over): its layout goes. */
+    forget(workspace) { states.delete(workspace); },
     recall(workspace, entries) {
       const saved = states.get(workspace);
       if (!saved) return { split: null, activeTab: null, sidebarMode: "overview", tabLayerVisible: false };

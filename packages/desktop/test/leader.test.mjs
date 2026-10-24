@@ -28,7 +28,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 // The keydown a keyboard reports for a key id of the table (key, code, keyCode, Shift).
 const KEYS = {
   up: ["ArrowUp", "ArrowUp", 38], down: ["ArrowDown", "ArrowDown", 40], left: ["ArrowLeft", "ArrowLeft", 37],
-  right: ["ArrowRight", "ArrowRight", 39], tab: ["Tab", "Tab", 9], escape: ["Escape", "Escape", 27], space: [" ", "Space", 32],
+  right: ["ArrowRight", "ArrowRight", 39], tab: ["Tab", "Tab", 9], "shift+tab": ["Tab", "Tab", 9, true], escape: ["Escape", "Escape", 27], space: [" ", "Space", 32],
   "|": ["|", "Backslash", 220, true], "-": ["-", "Minus", 189], "/": ["/", "Slash", 191], "?": ["?", "Slash", 191, true],
 };
 function keyInit(keyId) {
@@ -131,6 +131,25 @@ test("in a terminal: the leader and a table key reach the program in no phase", 
   // The harness sees the program's bytes: after the leader, the terminal is the program's again.
   r.press(r.textarea, keyInit("k"));
   assert.equal(r.data(), "k");
+});
+
+// The leader's ↑ / ↓ are the workspace moves (keymap.mjs LEADER_TABLE workspace-previous / workspace-next): ⌃X then
+// an arrow, on macOS and elsewhere, from a terminal and from a control, settles them, and the arrow reaches no program.
+for (const isMac of [false, true]) test(`${isMac ? "macOS" : "Linux/Windows"}: Ctrl+X then ↑ / ↓ settle the previous / next workspace, and no arrow reaches the terminal`, t => {
+  const r = rig(t, { isMac });
+  for (const [key, does] of [["up", "workspace-previous"], ["down", "workspace-next"]]) {
+    r.textarea.focus();
+    r.press(r.textarea, CTRL_X);
+    const phases = r.press(r.textarea, keyInit(key));
+    assert.equal(phases.down.defaultPrevented, true, `${key} is consumed`);
+    assert.deepEqual(r.log.at(-1), ["settle", does, "terminal"]);
+    assert.equal(r.data(), "", "no arrow sequence");
+    r.button.focus();
+    r.press(r.button, CTRL_X);
+    r.press(r.button, keyInit(key));
+    assert.deepEqual(r.log.at(-1), ["settle", does, "button"]);
+  }
+  assert.equal(r.log.some(([kind, does]) => kind === "settle" && (does === "previous" || does === "next")), false, "the leader steps no instance");
 });
 
 test("the leader twice in a terminal is not claimed: xterm sends the chord's own bytes", t => {
@@ -257,6 +276,24 @@ test("a follow-up held with Ctrl, Alt or ⌘ is not in the table; AltGr is", t =
   assert.equal(followUpKey({ key: "Escape" }), "escape");
   assert.equal(followUpKey({ key: "Tab" }), "tab");
   assert.equal(followUpKey({ key: "Process", isComposing: true }), null);
+});
+
+// The TUI's spelling (packages/tui/lib/term/keys.mjs keyId): a named key Shift moves carries `shift+`.
+test("a follow-up held with Shift: Shift+Tab is the previous group; Shift+an arrow is no row; Space, Enter and Esc read as themselves", t => {
+  assert.equal(followUpKey({ key: "Tab", shiftKey: true }), "shift+tab");
+  for (const [key, id] of [["ArrowUp", "up"], ["ArrowDown", "down"], ["ArrowLeft", "left"], ["ArrowRight", "right"], ["Home", "home"], ["End", "end"], ["PageUp", "pageup"], ["PageDown", "pagedown"]]) {
+    assert.equal(followUpKey({ key, shiftKey: true }), `shift+${id}`);
+  }
+  for (const [key, id] of [[" ", "space"], ["Enter", "enter"], ["Escape", "escape"]]) assert.equal(followUpKey({ key, shiftKey: true }), id);
+  const r = rig(t);
+  r.button.focus();
+  r.press(r.button, CTRL_X);
+  r.press(r.button, { key: "Tab", code: "Tab", keyCode: 9, shiftKey: true });
+  assert.deepEqual(r.log, [["open", "button"], ["close", "settled"], ["settle", "group-previous", "button"]]);
+  r.log.length = 0;
+  r.press(r.button, CTRL_X);
+  r.press(r.button, { key: "ArrowUp", code: "ArrowUp", keyCode: 38, shiftKey: true });
+  assert.deepEqual(r.log, [["open", "button"], ["close", "key"]], "Shift+↑ is no row: it cancels, as in the TUI");
 });
 
 test("a lone modifier settles nothing; the key after it does", t => {

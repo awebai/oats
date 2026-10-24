@@ -33,7 +33,10 @@ export function teamMembers({ deployments = [], groups = [] }) {
     for (const row of rows.filter(r => team(r))) members.push(member(row, { deployment, server: group.server, serverLabel: label }));
     servers.push({ server: group.server, label, group: group.id, deployment: deployment.id, reached: group.probe?.ok === true,
       error: group.probe?.ok === true ? null : text(group.probe?.error?.message) ?? 'Server is unreachable',
-      registered: group.registrationPresent === true });
+      registered: group.registrationPresent === true,
+      // The host's own kernel features as this computer's CLI relays them (server-probe-features): a list only
+      // when this read reached it and the list is one, else null (unknown, which is not supported).
+      features: group.probe?.ok === true && Array.isArray(group.probe.features) ? [...group.probe.features] : null });
     // A failed group holding no rows (last-known or current) is a server we have nothing to show for.
     if (group.probe?.ok !== true && !rows.length) notReached.push({ server: group.server, label, deployment: deployment.id });
   }

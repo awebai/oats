@@ -13,9 +13,10 @@
  * refused there (E_DECISION_STALE, read as drifted), never applied. */
 import { dirname } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { cliSpawnPreview } from './spawn-preview-cli.mjs';
+import { cliSpawnPreview, cliInstanceSuggestName } from './spawn-preview-cli.mjs';
 import { admitInstance } from './instance-admission.mjs';
-import { absolute, record, previewSelector, previewChoices, previewSupported, previewFailure, previewData, previewComposedFrom, suggestSupported, suggestTask } from './spawn-preview-contract.mjs';
+import { absolute, record, previewSelector, previewChoices, previewSupported, previewFailure, previewData, previewComposedFrom, suggestSupported, suggestTask,
+  instanceSuggestSupported, instanceSuggestRequest, instanceSuggestion } from './spawn-preview-contract.mjs';
 /** One preview's flights: its two-slot budget (`slots`), the flights in the air per invoker (`byInvoker`, where
  * exact duplicates coalesce), and the monotonic clock that stamps each flight's start (`started`). The cache is
  * given the same clock: it orders flight starts against invalidations, so a flight that started before its
@@ -182,11 +183,42 @@ export function createSpawnSuggestBoundary({ invoke = cliSpawnPreview, cache = n
     finally { if (lane && lanes.get(workspace) === lane) lanes.delete(workspace); }
   };
 }
+/** The suggest-name read (feature instance-suggest-name, awebai/oats#1490 §2): a name, chosen on this computer, for a spawn
+ * on another machine, `{ action: 'suggest-name', soul, task, harness?, model? }` (instanceSuggestRequest). It is addressed
+ * to one of this computer's deployments, whose launch configurations the kernel reads (`--dir`); nothing of the soul is
+ * admitted here (it is the host's). One read per deployment: a newer one ends the older (its CLI gets SIGTERM, which ends
+ * the kernel's naming call too) and the older answers E_SUPERSEDED. Nothing is cached here (the dialog caches by task).
+ * Answers `{ spawnPreviewViewApi: 1, status: 'available', workspace, data: { name?, naming }, reason: null }`. */
+export function createInstanceSuggestBoundary({ invoke = cliInstanceSuggestName, exec } = {}) {
+  const lanes = new Map(), io = exec ? [{ exec }] : [];
+  return async function suggestName(request, getContext) {
+    let lane = null, workspace = null;
+    try {
+      const asked = instanceSuggestRequest(request);
+      if (!asked) return previewFailure('E_BAD_ARGS');
+      const { workspace: w, cli } = getContext();
+      if (!w || typeof w.id !== 'string' || !w.id || !absolute(w.scope)) return previewFailure('E_WORKSPACE_UNKNOWN');
+      if (w.remote || w.server) return previewFailure('unsupported-remote-operation');
+      if (!instanceSuggestSupported(cli)) return previewFailure('E_UNSUPPORTED_OPTION');
+      workspace = w.id;
+      lanes.get(workspace)?.abort();
+      lane = new AbortController(); lanes.set(workspace, lane);
+      const envelope = await invoke(cli, { request: asked, dir: w.scope, signal: lane.signal }, ...io);
+      if (lane.signal.aborted) return previewFailure('E_SUPERSEDED');
+      if (envelope?.schemaVersion !== 1 || envelope.ok !== true) return previewFailure(envelope?.error?.code, null, envelope?.error?.message, envelope?.error?.details?.fix);
+      const data = instanceSuggestion(envelope.result);
+      if (!data) return previewFailure('E_CLI_PROTOCOL');
+      return { spawnPreviewViewApi: 1, status: 'available', workspace, data, reason: null };
+    } catch { return previewFailure('E_CLI_FAILED'); }
+    finally { if (lane && lanes.get(workspace) === lane) lanes.delete(workspace); }
+  };
+}
 export const PREVIEW_MAX_AGE_S = 60;
 /** One client's spawn preview: `{ read, prepareRead, suggest, cache }`.
  *   read         the dialog's read, through the cache; its kernel reads may reuse recent member heads (maxAge,
  *                where the CLI declares spawn-preview-max-age)
  *   suggest      the suggest read (createSpawnSuggestBoundary): its own lane, one per workspace, the newer ending the older
+ *   suggestName  the suggest-name read (createInstanceSuggestBoundary): a name chosen here for a spawn on another machine
  *   prepareRead  prepare's read (spawn-apply.mjs createSpawnApplyBoundary's `read`), through the same cache,
  *                taking a held answer up to `prepareReuseMs` old (PREPARE_REUSE_MS), never with maxAge; a reusing
  *                read and a live one never coalesce
@@ -204,6 +236,7 @@ export function createSpawnPreview({ invoke = cliSpawnPreview, exec, now = () =>
     read: createSpawnPreviewBoundary({ invoke, cache, maxAge, heldMs: ttlMs, flights, exec }),
     prepareRead: createSpawnPreviewBoundary({ invoke, cache, heldMs: prepareReuseMs, flights, exec }),
     suggest: createSpawnSuggestBoundary({ invoke, cache, maxAge, flights, exec }),
+    suggestName: createInstanceSuggestBoundary({ exec }),
     cache: { invalidate: workspace => cache.invalidate(workspace), size: () => cache.size() },
   };
 }
