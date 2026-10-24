@@ -3579,7 +3579,8 @@ async function sessionCmd() {
     if (args[1] === "attach") {
       if (JSON_MODE) throw Object.assign(new Error("session attach is interactive; omit --json"), { code: "E_BAD_ARGS" });
       // --detach-key (feature session-attach-detach-key): the one key that leaves this viewer, with
-      // status 20. Without it every key reaches the agent and there is no keyboard exit.
+      // status 20. Without it every key but the viewer's scrollback key reaches the agent and there is
+      // no keyboard exit.
       // What earlier attaches left (a viewer whose attach died without detaching): one line, on
       // stderr, before the client takes the terminal, and only when something was removed.
       const onSwept = ({ sessions, tables }) => {
@@ -5006,7 +5007,9 @@ Usage:
                                             a viewer of one instance. <key> (C-<letter>, M-<letter
                                             or digit>, F1 to F12; 'C-\\' is the suggested one)
                                             leaves it with exit status 20; without one no key
-                                            leaves it: every key goes to the agent
+                                            leaves it. Shift+PageUp scrolls back (tmux copy mode:
+                                            PageUp, PageDown, q leaves); every other key goes to
+                                            the agent
   oats schedule list|show <id>|test <id>|add <id> --file <spec.json>|update <id> --file <spec.json>
       enable|disable|run|remove|reconcile <id>   workspace-scoped, host-owned schedules (spawn,
       tick [--dry-run] [--host]                  command or wake jobs on a five-field cron with an

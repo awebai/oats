@@ -459,7 +459,9 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   sessions is said then.
 - **No scrollback but the viewer's own, and no mouse.** The panel shows
   what the agent's window shows now; what has scrolled away is reached as
-  the agent's own terminal reaches it.
+  the agent's own terminal reaches it. `Shift+PageUp` scrolls the viewer
+  back (tmux's copy mode, as in `oats session attach`): `PageUp` and
+  `PageDown` then move, and `q` leaves the scrollback.
 - **How it works.** The terminal is the kernel's own viewer,
   `oats session attach`, run in a pane of a tmux server private to this run
   of `oats tui`: its socket is in a directory of the run's own (mode 0700,
