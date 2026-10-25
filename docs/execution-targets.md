@@ -1198,7 +1198,12 @@ oats session attach --home /abs/home --detach-key 'C-\'
   no version it can read, the client starts as before. A routed attach
   (`--server`) runs the same viewer on the host, so the host's tmux decides.
 
-  **Scrolling back.** `Shift+PageUp` (tmux's `S-PageUp`) puts the agent's
+  **Scrolling back.** Every viewer, with or without a detach key, has the
+  mouse on in its own session (the agents' session and the operator's tmux
+  settings are untouched). The wheel then puts the agent's pane in tmux's
+  copy mode and scrolls it. An agent that has asked for mouse reports, as
+  Claude Code's fullscreen mode does, gets the wheel instead, and scrolls
+  its own screen. `Shift+PageUp` (tmux's `S-PageUp`) puts the agent's
   pane in tmux's copy mode, a page up, in every viewer, with or without a
   detach key, even when the agent has taken the mouse (Claude Code does, and
   then the wheel goes to it). In copy mode tmux's own copy-mode keys apply:
