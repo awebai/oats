@@ -96,6 +96,13 @@ test("a claim with no message says what it waits on in the TUI's words, from its
     assert.equal(d.lines[1].slice(31), ` Needs input  · 2 min ${said}`, reason);
     assert.equal(d.regions[0].rows, 38);
   }
+  // A message the display filter leaves nothing of, and a reason that is a name on every object,
+  // still give the row and the generic words.
+  for (const [reason, message] of [["question", "   "], ["__proto__", null], ["constructor", null]]) {
+    const d = draw(enter(team(claim(reason, message)), "dev-a"), S120);
+    assert.equal(d.lines[1].slice(31), ` Needs input  · 2 min ${reason === "question" ? "asked you a question" : "waiting for your input"}`, `${reason} ${JSON.stringify(message)}`);
+    assert.equal(d.regions[0].rows, 38);
+  }
 });
 
 test("a split with one waiting group: that group's shown agent has the row, the other group's region keeps its height; a hidden tab's claim adds no row", () => {

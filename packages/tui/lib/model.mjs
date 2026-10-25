@@ -425,12 +425,15 @@ const WAITING_UNSAID = "waiting for your input";
 /** The waiting row of a group whose shown agent is `id` (views/frame.mjs waitingRows): the
  *  agent's live claim, read through the shared gate as the list's `!` mark is, as `{ message, words,
  *  age }`: its message (agent text) or null, the TUI's words for a claim with none, and how long
- *  it has waited at `now`. Null for an empty group and an agent with no live claim. */
+ *  it has waited at `now`. A message the display filter leaves nothing of (only spaces) is none.
+ *  Null for an empty group and an agent with no live claim. */
 function waitingOf(r, id, now) {
   const row = id === null ? null : r.instances.find((each) => instanceId(each) === id) ?? null;
   const claim = row === null ? null : waitingClaim(row, { stale: r.stale(row) });
   if (claim === null) return null;
-  return Object.freeze({ message: text(claim.message) ? claim.message : null, words: WAITING_WORDS[claim.reason] ?? WAITING_UNSAID, age: waitedText(claim.since, now) });
+  const message = text(claim.message) && displayLine(claim.message) !== null ? claim.message : null;
+  const words = Object.hasOwn(WAITING_WORDS, claim.reason ?? "") ? WAITING_WORDS[claim.reason] : WAITING_UNSAID;
+  return Object.freeze({ message, words, age: waitedText(claim.since, now) });
 }
 /** A command in a line of the TUI's own: whole, never broken over two rows. */
 const command = (text) => Object.freeze({ own: `\`${text}\``, whole: true });
