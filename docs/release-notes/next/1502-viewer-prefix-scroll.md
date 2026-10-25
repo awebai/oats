@@ -6,7 +6,9 @@
   - **`C-b [`:** a viewer without `--detach-key` takes it to enter tmux's copy
     mode, as a tmux prefix does. It is the viewer's only `C-b` key. Any other
     key after `C-b` still reaches the agent as both keys (`C-b n`, `C-b c`,
-    `C-b C-b`), with no timeout.
+    `C-b C-b`), with no timeout. It needs tmux 3.3 or later, whose
+    `send-keys` can re-send the key after `C-b`. On an older tmux the viewer
+    has no `C-b` key, and the line names `Shift+PgUp` alone.
   - **The status line:** the viewer shows one line under the agent,
     `Shift+PgUp or C-b [ to scroll back`. It takes the terminal's last row.
   - **`--no-status-line`** (feature `session-attach-no-status-line`) drops

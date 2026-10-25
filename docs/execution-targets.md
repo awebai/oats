@@ -1221,7 +1221,18 @@ oats session attach --home /abs/home --detach-key 'C-\'
   `C-b` waits for the next key with no timeout: tmux holds the client in the
   viewer's `C-b` table, `oatsview-locked-prefix` (the server's one, as
   `oatsview-locked` is), for that one key. A keyed viewer has no `C-b` key;
-  its caller chooses its keys. Checked on tmux 3.8.
+  its caller chooses its keys.
+
+  **Only on tmux 3.3 and later** (`VIEWER_PREFIX_MIN_TMUX`). The forwarding
+  below needs a `send-keys` that names no key to send the key it is bound
+  to, which tmux has from 3.3 (its CHANGES, "3.2a to 3.3": "Make send-keys
+  without arguments send the key it is bound to (if bound to a key)"). On
+  tmux 3.0 to 3.2a such a `send-keys` sends nothing, and the key after `C-b`
+  would be lost. There the viewer has no `C-b` key: `C-b` reaches the agent
+  as any key does, and the wheel and `Shift+PageUp` scroll back. The viewer
+  asks `tmux -V` once, before it binds anything. A release `tmux X.Y` is
+  read as X.Y, and a development build `tmux next-X.Y` as X.Y too. Anything
+  else (`tmux master`, no answer) means no `C-b` key. Checked on tmux 3.8.
 
   How a key after `C-b` is forwarded, exactly (for a client that builds its
   own viewer, as the Desktop's local one does: `lib/session-viewer.mjs`
@@ -1241,8 +1252,9 @@ oats session attach --home /abs/home --detach-key 'C-\'
     bound to a key, then that key is used."
 
   **The status line.** A viewer without a detach key shows one line under
-  the agent, `Shift+PgUp or C-b [ to scroll back`, so the person reading
-  the agent can see how to scroll back: nobody guesses a key. It takes the
+  the agent, `Shift+PgUp or C-b [ to scroll back` (`Shift+PgUp to scroll
+  back` where it has no `C-b` key), so the person reading the agent can see
+  how to scroll back: nobody guesses a key. It takes the
   client's last row. `--no-status-line` (feature
   `session-attach-no-status-line`) drops it, for a caller that shows
   the keys itself (`oats tui`); the keys stay. A routed attach sends
