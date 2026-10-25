@@ -103,7 +103,7 @@ test("the reader re-validates a stored message and reason: an invalid one (a han
   assert.deepEqual(liveWaiting(w.home), { since: "2026-01-01T00:00:01.000Z", producer: "agent", reason: "attention", message: null });
   assert.equal(readEvents(w.home).waitingClaims[0].message, null);
   row({ waitingOnYou: true, reason: "attention\u001b[2J", message: "x".repeat(201) }, "2026-01-01T00:00:02.000Z");
-  assert.deepEqual(liveWaiting(w.home), { since: "2026-01-01T00:00:02.000Z", producer: "agent", reason: null, message: null }, "a reason that would print a control character reads as null too");
+  assert.deepEqual(liveWaiting(w.home), { since: "2026-01-01T00:00:02.000Z", producer: "agent", reason: null, message: `${"x".repeat(199)}…` }, "a reason that would print a control character reads as null too; a message over 200 is cut");
   row({ waitingOnYou: true, reason: "attention", message: "pay \u202eexe.txt" }, "2026-01-01T00:00:03.000Z");
   assert.deepEqual(liveWaiting(w.home), { since: "2026-01-01T00:00:03.000Z", producer: "agent", reason: "attention", message: null }, "a stored bidi control reads as null");
   assert.equal(readEvents(w.home).waitingClaims[0].message, null);
@@ -116,6 +116,32 @@ test("the reader re-validates a stored message and reason: an invalid one (a han
   assert.equal(liveWaiting(w.home).message, "zw\u200Cnj \u200Fmark", "a stored ZWNJ and RLM read as given");
   row({ waitingOnYou: true, reason: "review requested" }, "2026-01-01T00:00:04.000Z");
   assert.equal(liveWaiting(w.home).reason, null, "a reason outside permission | question | attention reads as null");
+});
+
+test("the reader cuts a stored message over 200 code points to 200, the last one …, for every producer and every old row; one of 200 reads as it is; the cut counts code points, so a surrogate pair is never split", (t) => {
+  const w = bare(t);
+  const row = (producer, message, at) => appendFileSync(join(w.home, ".oats-events.jsonl"), JSON.stringify({ eventsApi: 2, at, instance: "dev-1", home: w.home, incarnation: "2026-01-01T00:00:00.000Z", producer, kind: "waiting", data: { waitingOnYou: true, reason: "attention", message } }) + "\n");
+  const read = () => { const live = liveWaiting(w.home).message; assert.equal(readEvents(w.home).waitingOnYou.message, live, "instance events read the same"); return live; };
+  const cases = [
+    ["250 letters", "a".repeat(250), `${"a".repeat(199)}…`],
+    ["exactly 200", "b".repeat(200), "b".repeat(200)],
+    ["250 emoji, each a surrogate pair", "😀".repeat(250), `${"😀".repeat(199)}…`],
+    ["200 emoji", "😀".repeat(200), "😀".repeat(200)],
+    ["base letters and combining marks, 300 code points", "e\u0301".repeat(150), `${"e\u0301".repeat(99)}e…`],
+  ];
+  cases.forEach(([what, message, expected], i) => {
+    row(i % 2 ? "oats.core" : "agent", message, `2026-01-01T00:00:0${i + 1}.000Z`);
+    const got = read();
+    assert.equal(got, expected, what);
+    assert.ok([...got].length <= 200, `${what}: at most 200 code points`);
+    assert.equal(validWaitingMessage(got), true, `${what}: what the reader gives is a message the writer accepts`);
+  });
+  // A refused character anywhere, even past the cut, makes it no message (a home of its own: with
+  // the claims above, the newest with text would be shown in its place).
+  const v = bare(t);
+  appendFileSync(join(v.home, ".oats-events.jsonl"), JSON.stringify({ eventsApi: 2, at: "2026-01-01T00:00:09.000Z", instance: "dev-1", home: v.home, incarnation: "2026-01-01T00:00:00.000Z", producer: "agent", kind: "waiting", data: { waitingOnYou: true, reason: "attention", message: `${"c".repeat(250)}\u001b` } }) + "\n");
+  assert.equal(liveWaiting(v.home).message, null, "a refused character makes it no message, however long");
+  assert.equal(readEvents(v.home).waitingClaims[0].message, null);
 });
 
 test("a claim with no text never hides one with text (#1502): the newest claim with a message is shown, a text-less claim only fills its missing reason, and without any text the newest claim is shown", (t) => {

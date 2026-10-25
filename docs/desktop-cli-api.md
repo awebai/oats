@@ -4066,8 +4066,14 @@ oats instance attention [--message <text>] [--clear] --json
   only ever the message, never a flag (`--message=--clear` sets the message
   "--clear"). The spaced form `--message --deploy` reads `--deploy` as a
   flag and is `E_BAD_ARGS`. It is stored as given, only on a
-  positive claim. The reader applies the same rule again: an invalid stored
-  message (a hand-edited log) reads as `null`, and the claim still counts.
+  positive claim. The reader applies the same rule again, with one
+  difference: a stored message over 200 code points (a row from another
+  producer or an older writer, or a remote kernel's claim) is cut to 200, the
+  last one `…`. So `waitingOnYou.message` and each `waitingClaims[].message`
+  are never longer than 200 code points, whoever wrote them. The cut counts
+  code points: a surrogate pair is never split, but a combining mark may be
+  left out. A message that is still invalid after that (a refused character,
+  a hand-edited log) reads as `null`, and the claim still counts.
   A stored `reason` outside `permission`, `question`, `attention` reads as
   `null` too, and a row whose `producer` is neither `kernel` nor a valid
   producer id, or whose `at` is not a date, is no claim at all.
