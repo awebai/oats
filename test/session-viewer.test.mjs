@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DETACH_KEY_FEATURE, NO_STATUS_LINE_FEATURE, SESSION_DETACHED_EXIT, VIEWER_CLOSED_HOOK_INDEX, isDetachKey, prepareSessionViewer, requireDetachKey, tmuxHasClientFeatures } from "../lib/session-viewer.mjs";
+import { DETACH_KEY_FEATURE, LOCKED_PREFIX_BINDINGS, LOCKED_PREFIX_TABLE, NO_STATUS_LINE_FEATURE, PREFIX_KEY, SESSION_DETACHED_EXIT, VIEWER_BINDINGS, VIEWER_CLOSED_HOOK_INDEX, isDetachKey, prepareSessionViewer, requireDetachKey, tmuxHasClientFeatures } from "../lib/session-viewer.mjs";
 const target = { backend: "tmux", socket: "/tmp/owned.sock", session: "oats", window: "agent" };
 function fixture(failLink = false, { marker = "", version = "", sessions = "", keys = "" } = {}) {
   const calls = [], options = [];
@@ -280,6 +280,20 @@ test("without its status line (--no-status-line, #1502 part D) a locked viewer h
     prepareSessionViewer(target, { ...keyed, detachKey: "F12", statusLine });
     const own = keyed.calls.find((c) => c[0] === "new-session")[3];
     assert.deepEqual(keyed.calls.filter((c) => c[0] === "set-option" && c[3].startsWith("status")), [["set-option", "-t", own, "status", "off"]], String(statusLine));
+  }
+});
+
+test("the viewer's bindings are data a caller can pin its own table to (the Desktop's local viewer): every viewer's three, the locked viewer's C-b and its table's five, each a bind-key's arguments after the table", () => {
+  assert.deepEqual(VIEWER_BINDINGS, [
+    ["WheelUpPane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -e; send-keys -M"],
+    ["MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
+    ["S-PageUp", "copy-mode -u"],
+  ]);
+  assert.equal(PREFIX_KEY, "C-b");
+  assert.equal(LOCKED_PREFIX_TABLE, "oatsview-locked-prefix");
+  assert.deepEqual(LOCKED_PREFIX_BINDINGS, PREFIX_BINDINGS);
+  for (const list of [VIEWER_BINDINGS, LOCKED_PREFIX_BINDINGS]) {
+    assert.ok(Object.isFrozen(list) && list.every(Object.isFrozen), "frozen: a caller reads them, never changes the kernel's");
   }
 });
 

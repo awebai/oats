@@ -1223,6 +1223,23 @@ oats session attach --home /abs/home --detach-key 'C-\'
   `oatsview-locked` is), for that one key. A keyed viewer has no `C-b` key;
   its caller chooses its keys. Checked on tmux 3.8.
 
+  How a key after `C-b` is forwarded, exactly (for a client that builds its
+  own viewer, as the Desktop's local one does: `lib/session-viewer.mjs`
+  exports the tables as data, `VIEWER_BINDINGS`, `PREFIX_KEY`,
+  `LOCKED_PREFIX_TABLE` and `LOCKED_PREFIX_BINDINGS`):
+  - The locked table binds `C-b` to `switch-client -T oatsview-locked-prefix`.
+  - That table binds `[` to `copy-mode`. It binds `WheelUpPane`,
+    `MouseDrag1Pane` and `S-PageUp` to `send-keys C-b ;` followed by the
+    locked table's own command for that key.
+  - It binds `Any`, which tmux runs for every key with no binding of its
+    own, to
+    `send-keys C-b ; if-shell -F '#{!=:#{mouse_x},}' 'send-keys -M' 'send-keys'`.
+    The `C-b` goes to the agent first. A mouse event, the only key that sets
+    `mouse_x`, then goes as one with `-M`. Any other key goes through a
+    `send-keys` that names no key, which sends the key the command is bound
+    to. tmux(1) (3.8), `send-keys`: "If no keys are given and the command is
+    bound to a key, then that key is used."
+
   **The status line.** A viewer without a detach key shows one line under
   the agent, `Shift+PgUp or C-b [ to scroll back`, so the person reading
   the agent can see how to scroll back: nobody guesses a key. It takes the
