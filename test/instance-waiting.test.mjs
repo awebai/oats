@@ -118,6 +118,29 @@ test("the reader re-validates a stored message and reason: an invalid one (a han
   assert.equal(liveWaiting(w.home).reason, null, "a reason outside permission | question | attention reads as null");
 });
 
+test("a claim with no text never hides one with text (#1502): the newest claim with a message is shown, a text-less claim only fills its missing reason, and without any text the newest claim is shown", (t) => {
+  const w = bare(t);
+  const row = (producer, data, at) => appendFileSync(join(w.home, ".oats-events.jsonl"), JSON.stringify({ eventsApi: 2, at, instance: "dev-1", home: w.home, incarnation: "2026-01-01T00:00:00.000Z", producer, kind: "waiting", data }) + "\n");
+  const both = (expected, why) => { assert.deepEqual(liveWaiting(w.home), expected, why); assert.deepEqual(readEvents(w.home).waitingOnYou, expected, `${why} (instance events)`); };
+  const question = { since: "2026-01-01T00:00:01.000Z", producer: "agent", reason: "attention", message: "yes/no on upgrading Claude Code?" };
+  row("agent", { waitingOnYou: true, reason: "attention", message: question.message }, question.since);
+  row("oats.core", { waitingOnYou: true, reason: "permission" }, "2026-01-01T00:00:05.000Z");
+  both(question, "the agent's question stands over a later text-less permission claim");
+  assert.equal(readEvents(w.home).waitingClaims.length, 2, "both claims are still listed");
+  row("oats.core", { waitingOnYou: true, reason: "permission", message: "Claude needs your permission to use Bash" }, "2026-01-01T00:00:06.000Z");
+  both({ since: "2026-01-01T00:00:06.000Z", producer: "oats.core", reason: "permission", message: "Claude needs your permission to use Bash" }, "among claims with text, the newest is shown");
+  row("oats.core", { waitingOnYou: false }, "2026-01-01T00:00:07.000Z");
+  both(question, "the permission cleared: the question is shown again");
+  // A claim with text whose stored reason reads as null takes the reason of the newest text-less claim.
+  row("provider.x", { waitingOnYou: true, reason: "review requested", message: "review PR 42" }, "2026-01-01T00:00:08.000Z");
+  row("oats.core", { waitingOnYou: true, reason: "question" }, "2026-01-01T00:00:09.000Z");
+  both({ since: "2026-01-01T00:00:08.000Z", producer: "provider.x", reason: "question", message: "review PR 42" }, "the text-less claim adds only the reason the shown claim lacks");
+  // No claim with text: the newest one is shown, as before.
+  for (const p of ["agent", "provider.x"]) row(p, { waitingOnYou: false }, "2026-01-01T00:00:10.000Z");
+  row("agent", { waitingOnYou: true, reason: "attention" }, "2026-01-01T00:00:11.000Z");
+  both({ since: "2026-01-01T00:00:11.000Z", producer: "agent", reason: "attention", message: null }, "with no text anywhere, the newest claim is shown");
+});
+
 test("the reader admits a claim only from `kernel` or a valid producer id: a hand-edited producer is no claim at all", (t) => {
   const w = bare(t);
   const row = (producer, data, at) => appendFileSync(join(w.home, ".oats-events.jsonl"), JSON.stringify({ eventsApi: 2, at, instance: "dev-1", home: w.home, incarnation: "2026-01-01T00:00:00.000Z", producer, kind: "waiting", data }) + "\n");

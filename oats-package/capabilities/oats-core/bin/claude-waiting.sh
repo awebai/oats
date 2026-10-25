@@ -9,19 +9,24 @@
 # Run by the Claude Code hooks oats-core.mjs writes into <home>/.claude/settings.json.
 # It reports through `oats instance waiting set|clear --producer oats.core` that the
 # session waits on the human, and never touches producer `agent` (the agent's own claim).
+# A set carries the text of what the session waits on, as claude-waiting-message.mjs (beside
+# this script) reads it from the hook's input: an AskUserQuestion's question, or a
+# Notification's own words. No text (none in the input, or the reader failed) sets the claim
+# without one.
 #
 # It can NEVER hurt the Claude session: Claude reads a hook's stdout and exit code as
 # decisions, so this script writes nothing anywhere visible, always exits 0, never waits
 # for another hook, and stays well under Claude's 5 s hook timeout: no CLI call starts once
 # 2 s have passed since it began its work (an input read counts), and each call is killed
-# at 2 s, so the worst case is about 4 s. The hook's JSON input stays on fd 3 for the one
-# bounded read that needs it
-# (from_subagent); nothing else reads stdin.
+# at 2 s, so the worst case is about 4 s. The hook's JSON input stays on fd 3 for the bounded
+# reads that need it (from_subagent for a tool clear, message_of for a set); nothing else reads
+# stdin.
 #
 # The protocol (with a marker; without one every event just calls the CLI):
 #   <marker>          the INTENT: the latest event's wish, "permission", "question" or
-#                     "clear". Every hook writes it first.
-#   <marker>.applied  what the CLI last RECORDED: also "unknown" while a call is under way
+#                     "clear", on its first line; a set's text, when it has one, on the second.
+#                     Every hook writes it first.
+#   <marker>.applied  what the CLI last RECORDED, in the intent's two lines: also "unknown" while a call is under way
 #                     or after one failed (it may have written the claim). Absent is clear
 #                     (the launch hook removes it with the session's claims). Only the lock
 #                     holder writes it.
@@ -126,6 +131,35 @@ start_watchdog() {
   watchdog=$!
 }
 
+# The hook's input, once, into $input: at most 64 KiB, for at most 1 s.
+read_input() {
+  input=$(
+    head -c 65536 <&3 &
+    reader=$!
+    start_watchdog "$reader" 1
+    wait "$reader"
+    kill "$watchdog"
+  )
+}
+
+# The text of a set, from the hook's input, into $message: what claude-waiting-message.mjs
+# prints, under a 1 s watchdog; empty when it prints nothing, fails or is killed. Its output is
+# one line the kernel accepts as a --message.
+message_of() {
+  message=
+  read_input
+  [ -n "$input" ] && [ -f "$helper" ] || return 0
+  message=$(
+    printf '%s' "$input" | "$node" "$helper" &
+    pid=$!
+    start_watchdog "$pid" 1
+    wait "$pid"
+    status=$?
+    kill "$watchdog"
+    exit "$status"
+  ) || message=
+}
+
 # Whether this hook's input is a subagent's tool event (a background or parallel subagent
 # in the same session), from Claude Code 2.1.288's payload: compact one-line JSON whose
 # top-level keys put "agent_id" (subagents only) before "hook_event_name". Only the text
@@ -134,13 +168,7 @@ start_watchdog() {
 # (no key, another order, an input cut short before "hook_event_name", nothing read)
 # means the main thread: the clear goes ahead.
 from_subagent() {
-  input=$(
-    head -c 65536 <&3 &
-    reader=$!
-    start_watchdog "$reader" 1
-    wait "$reader"
-    kill "$watchdog"
-  )
+  read_input
   prefix=${input%%\"hook_event_name\"*}
   [ "$prefix" != "$input" ] || return 1
   case "$prefix" in *'"agent_id":"'[A-Za-z0-9_-]*|*'"agent_id": "'[A-Za-z0-9_-]*) return 0 ;; esac
@@ -164,6 +192,19 @@ state_of() {
   line=
   [ -f "$1" ] && IFS= read -r line < "$1"
   case "$line" in permission|question) printf '%s' "$line" ;; *) printf clear ;; esac
+}
+
+# A set's text: the second line of the intent or applied file $1, or empty.
+text_of() {
+  line=
+  [ -f "$1" ] && { IFS= read -r line; IFS= read -r line; } < "$1"
+  printf '%s' "$line"
+}
+
+# Write a claim (a reason, or clear, and the text) to file $2: the text on a second line only
+# when there is one.
+write_claim() {
+  if [ -n "$3" ]; then printf '%s\n%s\n' "$1" "$3" > "$2"; else printf '%s\n' "$1" > "$2"; fi
 }
 
 # What the CLI last recorded: absent is clear (nothing recorded this session); anything
@@ -261,7 +302,9 @@ reconcile() {
     settled=''
     while :; do
       want=$(state_of "$marker")
-      if [ ! -e "$force" ] && [ "$want" = "$(applied_of)" ]; then settled=1; break; fi
+      text=''
+      [ "$want" = clear ] || text=$(text_of "$marker")
+      if [ ! -e "$force" ] && [ "$want" = "$(applied_of)" ] && [ "$text" = "$(text_of "$applied")" ]; then settled=1; break; fi
       [ "$calls" -lt 3 ] && [ $(( $(date +%s) - began )) -lt 2 ] || break
       # This call applies the latest intent, so it answers every forced call asked so far;
       # one asked during it leaves the flag again for the next round.
@@ -273,26 +316,30 @@ reconcile() {
       if [ "$want" = clear ]; then
         run_cli clear --producer oats.core || break
       else
-        run_cli set --producer oats.core --reason "$want" || break
+        if [ -n "$text" ]; then run_cli set --producer oats.core --reason "$want" "--message=$text" || break
+        else run_cli set --producer oats.core --reason "$want" || break; fi
       fi
       # A holder whose lock was broken under it (it ran past 5 s: the machine slept)
       # acknowledges nothing and leaves the successor's lock alone.
       owns || return 0
-      printf '%s\n' "$want" > "$applied"
+      write_claim "$want" "$applied" "$text"
     done
     owns || return 0
     release "$lock"
     # A hook that found the lock held between our last read and here left its intent to us.
-    [ -n "$settled" ] && { [ -e "$force" ] || [ "$(state_of "$marker")" != "$(applied_of)" ]; } || return 0
+    [ -n "$settled" ] && { [ -e "$force" ] || [ "$(state_of "$marker")" != "$(applied_of)" ] || [ "$(text_of "$marker")" != "$(text_of "$applied")" ]; } || return 0
   done
 }
 
 # A subagent's tool call resolves nothing the human was asked by the main thread, so a
 # tool clear (clear-tool) from one is skipped (a permission Notification never says who
 # asked: see docs). It reads the input only when there is a claim to clear.
+helper=${0%/*}/claude-waiting-message.mjs
 if [ -z "$marker" ]; then
   if [ "$action" = set ]; then
-    run_cli set --producer oats.core --reason "$reason"
+    message_of
+    if [ -n "$message" ]; then run_cli set --producer oats.core --reason "$reason" "--message=$message"
+    else run_cli set --producer oats.core --reason "$reason"; fi
   else
     [ "$action" = clear-tool ] && from_subagent && exit 0
     run_cli clear --producer oats.core
@@ -307,7 +354,8 @@ if [ "$action" = set ]; then
   # open question.
   [ "$reason" = permission ] && [ "$intent" = question ] && exit 0
   began=$(date +%s)
-  printf '%s\n' "$reason" > "$marker"
+  message_of
+  write_claim "$reason" "$marker" "$message"
 elif [ "$action" = clear-tool ]; then
   # Nothing to clear (cleared and recorded so, no forced call due): no node process, no
   # input read. This is the hot path: every tool call runs it twice.

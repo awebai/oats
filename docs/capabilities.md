@@ -1091,10 +1091,28 @@ home. Before 2.4.1 it set and cleared the claim of the home its environment
 named, and its `Stop` and `SessionEnd` clears could erase that instance's
 real claim.
 
+**A set carries what the session waits on** (oats.core 2.8.0,
+[#1502](https://github.com/awebai/oats/issues/1502)). The script reads the
+hook's JSON input, at most 64 KiB and for at most 1 s, and its
+`bin/claude-waiting-message.mjs` makes the claim's `--message` from it. On
+Claude Code 2.1.300:
+- an `AskUserQuestion` gives its first question's own words
+  (`tool_input.questions[0].question`), with `(+N more)` when it asks
+  several;
+- a `Notification` gives its `message`: "Claude needs your permission to use
+  Bash" for a permission prompt, "Claude Code needs your input" for an
+  elicitation dialog.
+
+The text is made one line, the kernel's refused characters are replaced with
+U+FFFD, and it is cut to 200 code points with `…`, so the kernel accepts it.
+An input with no text, or a reader that fails or takes over 1 s, sets the
+claim without one. A new text for the same reason is a change, so the claim
+is set again.
+
 Claude Code shows an AskUserQuestion through its permission dialog, so that
 dialog's own `permission_prompt` follows the question's set: the script keeps
-the current reason in its marker, and a permission prompt never relabels an
-open question. A granted tool that fails fires `PostToolUseFailure`, not
+the current reason and text in its marker, and a permission prompt never
+relabels an open question or replaces its text. A granted tool that fails fires `PostToolUseFailure`, not
 `PostToolUse`, so that clears too.
 
 **Subagents' tool calls do not clear.** Background and parallel subagents

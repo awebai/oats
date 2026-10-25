@@ -11,7 +11,9 @@ import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { liveWaiting } from "../lib/instance-events.mjs";
+import { liveWaiting, validWaitingMessage } from "../lib/instance-events.mjs";
+import { REFUSED_TEXT } from "../lib/refused-text.mjs";
+import { MESSAGE_REFUSED, waitingMessageOf } from "../oats-package/capabilities/oats-core/bin/claude-waiting-message.mjs";
 import { claudeWaitingSettings, markerDir, markerDirPath, markerPath, mergeSettings, shq, waitingCommand } from "../oats-package/capabilities/oats-core/bin/oats-core.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -969,9 +971,9 @@ function realHomes() {
   };
   const clock = join(dep, "clock"); writeFileSync(clock, "1000\n");
   /** Run the command home `h`'s settings hold for a Claude Code event, in a session carrying `env`. */
-  const fire = (h, event, index, env) => {
+  const fire = (h, event, index, env, input = '{"session_id":"s","hook_event_name":"x"}') => {
     const command = readJson(settingsOf(h)).hooks[event][index].hooks[0].command;
-    const r = spawnSync("/bin/sh", ["-c", command], { encoding: "utf8", timeout: 60000, input: '{"session_id":"s","hook_event_name":"x"}', cwd: base,
+    const r = spawnSync("/bin/sh", ["-c", command], { encoding: "utf8", timeout: 60000, input, cwd: base,
       env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, FAKE_CLOCK: clock, PATH: `${SHIMS}:${process.env.PATH}`, OATS_INSTANCE: undefined, OATS_HOME: undefined, OATS_ROOT: undefined, PI_AGENTS_ROOT: undefined, TMUX: undefined, ...env }) });
     assert.equal(r.status, 0, `${event}[${index}]: ${r.stderr}`); assert.equal(r.stdout, "", `${event}[${index}]`);
   };
@@ -1048,8 +1050,76 @@ test("real script, real CLI: the home through a symlink spelling is the same hom
   assert.match(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: join(dep, "agents", "dev", "instances", "dev-none"), OATS_CLI_BIN: REAL_CLI }).warning, /OATS_INSTANCE_HOME .*cannot be resolved/);
 });
 
-test("packaging: the capability ships bin/oats-core.mjs and bin/claude-waiting.sh as regular files, wired as spawn and launch hooks", () => {
-  for (const f of ["bin/oats-core.mjs", "bin/claude-waiting.sh"]) assert.ok(lstatSync(join(CAP, f)).isFile(), f);
+// ---- the claim's text (awebai/oats#1502): what Claude Code's hook input says the session waits on,
+// as Claude Code 2.1.300 sends it: a Notification's `message`, an AskUserQuestion's questions.
+const notification = (type, message) => JSON.stringify({ session_id: "s", transcript_path: "/t.jsonl", cwd: "/c", hook_event_name: "Notification", message, notification_type: type });
+const askUser = (...questions) => JSON.stringify({ session_id: "s", hook_event_name: "PreToolUse", tool_name: "AskUserQuestion", tool_input: { questions: questions.map((question) => ({ question, header: "H", options: [{ label: "a", description: "" }, { label: "b", description: "" }], multiSelect: false })) }, tool_use_id: "toolu_1" });
+
+test("the claim's text: an AskUserQuestion's first question (and how many more), else a Notification's message; one line, the kernel's refused characters replaced, at most 200 code points; nothing for anything else", () => {
+  assert.equal(waitingMessageOf(notification("permission_prompt", "Claude needs your permission to use Bash")), "Claude needs your permission to use Bash");
+  assert.equal(waitingMessageOf(notification("elicitation_dialog", "Claude Code needs your input")), "Claude Code needs your input");
+  assert.equal(waitingMessageOf(askUser("Bump Claude Code to 2.1.309?")), "Bump Claude Code to 2.1.309?");
+  assert.equal(waitingMessageOf(askUser("Bump Claude Code?", "Remove the old mise installs?", "Restart?")), "Bump Claude Code? (+2 more)");
+  assert.equal(waitingMessageOf(askUser("  Which\n\tbranch?  ")), "Which branch?", "whitespace, line breaks and tabs are one space; the ends are trimmed");
+  assert.equal(waitingMessageOf(notification("permission_prompt", "pay \u202eexe.txt \u001b[2J now")), "pay \ufffdexe.txt \ufffd[2J now", "a refused character is U+FFFD");
+  const long = "é".repeat(300);
+  assert.equal(waitingMessageOf(notification("permission_prompt", long)), `${"é".repeat(199)}…`, "cut to 200 code points, ending in …");
+  assert.equal([...waitingMessageOf(askUser("👍".repeat(250), "more"))].length, 200, "code points, not UTF-16 units");
+  for (const [what, input] of [["not JSON", "{"], ["empty", ""], ["an array", "[]"], ["no message", JSON.stringify({ hook_event_name: "Notification" })], ["a blank message", notification("permission_prompt", " \n ")],
+    ["a message that is no string", notification("permission_prompt", 42)], ["AskUserQuestion with no questions", JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "AskUserQuestion", tool_input: {} })],
+    ["another tool", JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "ls" } })]]) {
+    assert.equal(waitingMessageOf(input), "", what);
+  }
+  // A question that is no string is passed over for the Notification rule, which a PreToolUse lacks.
+  assert.equal(waitingMessageOf(JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "AskUserQuestion", tool_input: { questions: [{ question: 7 }] } })), "");
+  for (const text of ["x".repeat(500), "a\u2028b", "zw\u200cnj", "\u{E0041}", "\u0000"]) assert.ok(validWaitingMessage(waitingMessageOf(notification("permission_prompt", text))), `${JSON.stringify(text)}: the kernel accepts what it makes`);
+});
+
+test("the capability's copy of the kernel's refused set is the kernel's set", () => {
+  assert.equal(MESSAGE_REFUSED.source, REFUSED_TEXT.source);
+  assert.equal(MESSAGE_REFUSED.flags, REFUSED_TEXT.flags);
+});
+
+test("set carries the hook input's text: `--message=<text>` after the reason; the marker holds it under the reason; the same claim again starts no CLI, a new text does; input with no text sets the claim without one", () => {
+  const h = home(), node = process.execPath;
+  const log = join(base, `argv-text-${n}.log`);
+  const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+  const set = (reason, input) => {
+    const r = spawnSync("/bin/sh", [SCRIPT, ...withMarker(["set", reason, node, FAKE_CLI], { OATS_INSTANCE_HOME: h })], { input, encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
+    assert.equal(r.status, 0); assert.equal(r.stdout, ""); assert.equal(r.stderr, "");
+  };
+  const bash = "Claude needs your permission to use Bash";
+  set("permission", notification("permission_prompt", bash));
+  assert.deepEqual(calls(), [["instance", "waiting", "set", "--producer", "oats.core", "--reason", "permission", `--message=${bash}`, "--home", h, "--json"]]);
+  assert.equal(readFileSync(markerOf(h), "utf8"), `permission\n${bash}\n`, "the intent: the reason, then the text");
+  assert.equal(readFileSync(`${markerOf(h)}.applied`, "utf8"), `permission\n${bash}\n`, "what the CLI recorded");
+  set("permission", notification("permission_prompt", bash));
+  assert.equal(calls().length, 1, "the same claim again is debounced");
+  set("permission", notification("permission_prompt", "Claude needs your permission to use Edit"));
+  assert.equal(calls()[1][7], "--message=Claude needs your permission to use Edit", "a new text is a change");
+  set("permission", "{");
+  assert.deepEqual(calls()[2], ["instance", "waiting", "set", "--producer", "oats.core", "--reason", "permission", "--home", h, "--json"], "no text: the claim without one");
+  assert.equal(readFileSync(markerOf(h), "utf8"), "permission\n");
+  set("question", askUser("--rm the old installs?"));
+  assert.equal(calls()[3][7], "--message=--rm the old installs?", "a text that starts with -- is still the message's value");
+  // An open question keeps its text through its own permission prompt.
+  set("permission", notification("permission_prompt", "Claude needs your permission"));
+  assert.equal(calls().length, 4);
+  assert.equal(readFileSync(markerOf(h), "utf8"), "question\n--rm the old installs?\n");
+});
+
+test("real script, real CLI: the text of the prompt reaches waitingOnYou, the question's own words for an AskUserQuestion", { timeout: 120000 }, () => {
+  const { a, fire } = realHomes();
+  fire(a, "Notification", 0, { OATS_INSTANCE_HOME: a }, notification("permission_prompt", "Claude needs your permission to use Bash"));
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "permission", message: "Claude needs your permission to use Bash" });
+  fire(a, "PreToolUse", 0, { OATS_INSTANCE_HOME: a }, askUser("Upgrade Claude Code and Codex, and remove the old mise installs?"));
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "question", message: "Upgrade Claude Code and Codex, and remove the old mise installs?" });
+  fire(a, "Stop", 0, { OATS_INSTANCE_HOME: a });
+  assert.equal(claimOf(a), null);
+});
+
+test("packaging: the capability ships bin/oats-core.mjs, bin/claude-waiting.sh and bin/claude-waiting-message.mjs as regular files, wired as spawn and launch hooks", () => {
+  for (const f of ["bin/oats-core.mjs", "bin/claude-waiting.sh", "bin/claude-waiting-message.mjs"]) assert.ok(lstatSync(join(CAP, f)).isFile(), f);
   const manifest = readJson(join(CAP, "oats.json"));
   assert.deepEqual(manifest.hooks, { spawn: "bin/oats-core.mjs spawn", launch: "bin/oats-core.mjs launch" });
   assert.equal(manifest.launchPreview, true);

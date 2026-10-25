@@ -4012,7 +4012,10 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   message}` per producer with a live claim in the current incarnation
   (cleared ones included). A producer's latest row with `data.waitingOnYou`
   decides. `waitingOnYou` is `{since, producer, reason, message}` of the
-  newest positive claim, or `null` (unknown, not "not waiting"). See
+  newest positive claim that has a message, so a claim with no text never
+  hides one with text; when its `reason` is `null`, the newest text-less
+  claim's reason fills it. With no message anywhere it is the newest
+  positive claim, or `null` (unknown, not "not waiting"). See
   [Waiting on you](#waiting-on-you) for the producers and the rules.
 - Errors: `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`,
   `E_BAD_ARGS`, `E_EVENTS_FAILED`.
