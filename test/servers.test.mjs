@@ -1718,8 +1718,14 @@ test("attachArgv with a detach key: validated before anything is asked of the ho
     const f12 = attachArgv("build", { home, detachKey: "S-F12" }, { ...h.io, skipVersionCheck });
     assert.equal(f12.argv.at(-1), `${plainWord} --detach-key S-F12`);
   }
-  // Without a key nothing changes: no probe where the version check is skipped, the same word.
+  // --no-status-line travels as it is, with or without a key: a host that does not know it
+  // ignores it and shows its status line, so it asks no probe of its own.
   let h = host(["operations", DETACH_FEATURE]);
+  assert.equal(attachArgv("build", { home, statusLine: false }, { ...h.io, skipVersionCheck: true }).argv.at(-1), `${plainWord} --no-status-line`);
+  assert.deepEqual(h.sent, [], "no probe for it");
+  assert.equal(attachArgv("build", { home, detachKey: DETACH_KEY, statusLine: false }, { ...h.io, skipVersionCheck: true }).argv.at(-1), `${keyedWord} --no-status-line`);
+  // Without a key nothing changes: no probe where the version check is skipped, the same word.
+  h = host(["operations", DETACH_FEATURE]);
   assert.equal(attachArgv("build", { home }, { ...h.io, skipVersionCheck: true }).argv.at(-1), plainWord);
   assert.deepEqual(h.sent, []);
   h = host(["operations"]);

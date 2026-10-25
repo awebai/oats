@@ -54,6 +54,12 @@ const VIEWER_KEYS = ["MouseDrag1Pane", "S-PPage", "WheelUpPane"];
 /** The keys a viewer's table holds: the viewer's own, and its detach key when it has one. */
 const bindings = (...keys) => [...VIEWER_KEYS, ...keys].sort();
 const LOCKED = "oatsview-locked";
+/** The locked viewer's C-b table: the server's one, as the locked table is (#1502 part D). */
+const LOCKED_PREFIX = "oatsview-locked-prefix";
+/** The keys the locked table holds: every viewer's, and the C-b that enters LOCKED_PREFIX. */
+const lockedBindings = () => bindings("C-b");
+/** The keys LOCKED_PREFIX holds: `[`, the viewer's own three after a C-b, and Any. */
+const PREFIX_KEYS = ["Any", "MouseDrag1Pane", "S-PPage", "WheelUpPane", "["].sort();
 /** After a test, whatever it left: a failed test must not fail the ones after it. Killing a viewer
  *  session ends its client, and so its command. */
 function sweep() {
@@ -61,7 +67,7 @@ function sweep() {
   for (const table of viewerTables()) { try { tmuxOn(AGENTS, "unbind-key", "-a", "-q", "-T", table); } catch { /* gone */ } }
 }
 /** The key tables viewers made for themselves: every `oatsview-` table but the locked one. */
-const viewerTables = () => Object.keys(keyTables()).filter((name) => name.startsWith("oatsview-") && name !== LOCKED);
+const viewerTables = () => Object.keys(keyTables()).filter((name) => name.startsWith("oatsview-") && name !== LOCKED && name !== LOCKED_PREFIX);
 function nothingLeft(what) {
   assert.deepEqual(viewerSessions(), [], `${what}: no viewer session is left`);
   assert.deepEqual(viewerTables(), [], `${what}: no viewer key table is left`);
@@ -115,7 +121,7 @@ function typed(a) {
 const inMode = (a) => tmuxOn(AGENTS, "display-message", "-p", "-t", a.target, "#{pane_in_mode}");
 /** Remove the locked table, which a plain viewer of an earlier test left on the server: what a
  *  test then finds there, its own viewers made. */
-const dropLockedTable = () => tmuxOn(AGENTS, "unbind-key", "-a", "-q", "-T", LOCKED);
+const dropLockedTable = () => { for (const table of [LOCKED, LOCKED_PREFIX]) tmuxOn(AGENTS, "unbind-key", "-a", "-q", "-T", table); };
 
 /** A tmux in front of the fixture's: `body` decides a call before the real one runs. */
 function tmuxInFront(name, body) {
@@ -133,11 +139,11 @@ let opened = 0;
  *  its own (the shell's job control), the terminal's foreground one, so that a signal to that group
  *  leaves the pane's shell to record the status; and the shell catches INT (its children do not
  *  inherit a handler), or bash would end itself with a job that INT ended, before recording it. */
-async function view(a, { key, front, attach = true, group = false } = {}) {
+async function view(a, { key, front, attach = true, group = false, extra = [] } = {}) {
   const id = `v${++opened}`;
   const statusFile = join(base, `${id}.status`);
   const before = new Set(viewerSessions());
-  const argv = [process.execPath, CLI, "session", "attach", "--home", a.home, ...(key === undefined ? [] : ["--detach-key", key])];
+  const argv = [process.execPath, CLI, "session", "attach", "--home", a.home, ...(key === undefined ? [] : ["--detach-key", key]), ...extra];
   const script = `${group ? "trap : INT; set -m; " : ""}${front ? `PATH=${shq(`${front}:${process.env.PATH}`)}; export PATH; ` : ""}${argv.map(shq).join(" ")}; echo $? > ${shq(statusFile)}`;
   const pane = tmuxOn(TERM, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=term:", "-n", id, "-c", base, script);
   const viewer = {
@@ -225,7 +231,7 @@ test("the kernel's own viewer, prepared with a key: its table holds the two mous
       const binding = lines(tmuxOn(AGENTS, "list-keys")).find((line) => line.includes(`-T ${session} `) && !VIEWER_KEYS.some((k) => line.includes(k)));
       assert.match(binding, /\sset-option @oats-detached 1 \\; set-hook -u client-detached \\; detach-client$/, "one binding of three commands");
       assert.equal(viewer.detached(), false, "prepared, never left");
-      assert.equal(LOCKED in keyTables(), false, "a keyed viewer makes no locked table");
+      assert.equal(LOCKED in keyTables() || LOCKED_PREFIX in keyTables(), false, "a keyed viewer makes no locked table and no C-b table");
     } finally { viewer.cleanup(); }
     nothingLeft(key);
   }
@@ -241,7 +247,8 @@ for (const order of ["keyed, then plain", "plain, then keyed"]) {
     else { plain = await view(plainAgent); keyed = await view(keyedAgent, { key: "C-\\" }); }
     const tables = () => { const all = keyTables(); return { locked: all[LOCKED], keyed: all[keyed.session] }; };
     // After the other viewer opened: the plain one emptied and bound the locked table again.
-    assert.deepEqual(tables(), { locked: bindings(), keyed: bindings("C-\\") });
+    assert.deepEqual(tables(), { locked: lockedBindings(), keyed: bindings("C-\\") });
+    assert.deepEqual(keyTables()[LOCKED_PREFIX], PREFIX_KEYS);
     assert.deepEqual(viewerTables(), [keyed.session], "the plain viewer has no table of its own");
 
     // The prefix is no prefix in a viewer: both keys go to the agent.
@@ -263,14 +270,15 @@ for (const order of ["keyed, then plain", "plain, then keyed"]) {
     assert.equal(plain.status(), null);
     assert.deepEqual(viewerSessions(), [plain.session]);
     assert.deepEqual(viewerTables(), [], "the keyed viewer's table went with it");
-    assert.deepEqual(keyTables()[LOCKED], bindings());
+    assert.deepEqual(keyTables()[LOCKED], lockedBindings());
     assert.equal(inMode(keyedAgent), "0");
 
     // A plain viewer ends when its agent's window does, as before: status 0.
     tmuxOn(AGENTS, "kill-window", "-t", plainAgent.target);
     assert.equal(await plain.ended(), 0, plain.shows());
     nothingLeft(order);
-    assert.deepEqual(keyTables()[LOCKED], bindings(), "the locked table is the server's and stays");
+    assert.deepEqual(keyTables()[LOCKED], lockedBindings(), "the locked table is the server's and stays");
+    assert.deepEqual(keyTables()[LOCKED_PREFIX], PREFIX_KEYS, "and so is its C-b table");
   });
 }
 
@@ -281,7 +289,7 @@ test("two keyed viewers on one server, with the same key and with different keys
   const first = await view(one, { key: "C-\\" }), second = await view(two, { key: "C-\\" }), third = await view(three, { key: "F12" });
   const all = keyTables();
   assert.deepEqual([all[first.session], all[second.session], all[third.session]], [bindings("C-\\"), bindings("C-\\"), bindings("F12")]);
-  assert.equal(LOCKED in all, false, "none of them made the locked table");
+  assert.equal(LOCKED in all || LOCKED_PREFIX in all, false, "none of them made the locked table or its C-b table");
 
   third.press("C-\\", "x"); // another viewer's key
   await waitUntil(() => typed(three) === "^\\x", `the F12 viewer's agent read C-\\ (it read ${JSON.stringify(typed(three))})`);
@@ -356,6 +364,60 @@ test("a viewer without a detach key scrolls back with the wheel: its session has
   tmuxOn(AGENTS, "kill-window", "-t", grabbing.target);
   assert.equal(await second.ended(), 0, second.shows());
   nothingLeft("the grabbing agent's window ended");
+});
+
+test("a viewer without a detach key: its status line names its scroll keys; C-b [ enters copy mode and the agent reads nothing; C-b with any other key reaches the agent as both keys, C-b C-b and a mouse report after C-b included; the lock holds; --no-status-line leaves the keys and drops the line (#1502 part D)", async (t) => {
+  t.after(sweep);
+  const sibling = await agent("prefix-sibling"), a = await agent("prefix-plain");
+  const viewer = await view(a);
+  await waitUntil(() => viewer.shows().includes("Shift+PgUp or C-b [ to scroll back"), `the status line shows the scroll keys; the terminal shows: ${viewer.shows()}`);
+  assert.equal(tmuxOn(AGENTS, "show-options", "-v", "-t", viewer.session, "status"), "on");
+  assert.deepEqual(keyTables()[LOCKED], lockedBindings());
+  assert.deepEqual(keyTables()[LOCKED_PREFIX], PREFIX_KEYS);
+  // C-b [ : copy mode, and q leaves it; the agent reads neither.
+  viewer.press("C-b", "[");
+  await waitUntil(() => inMode(a) === "1", `C-b [ put the pane in copy mode; the terminal shows: ${viewer.shows()}`);
+  viewer.press("q");
+  await waitUntil(() => inMode(a) === "0", "q left copy mode");
+  assert.equal(typed(a), "", "the agent read nothing of C-b [ or q");
+  // Every other key after C-b: both keys, in order, nothing lost and no timeout.
+  viewer.press("C-b", "n", "C-b", "c", "C-b", "C-b", "C-b", "Up", "z");
+  await waitUntil(() => typed(a) === "^Bn^Bc^B^B^B^[[Az", `the agent read every key (it read ${JSON.stringify(typed(a))})`);
+  // C-b then the wheel: the C-b reaches the agent, and the wheel scrolls as it does alone.
+  viewer.press("C-b"); viewer.send(WHEEL_UP);
+  await waitUntil(() => inMode(a) === "1", `the wheel after C-b put the pane in copy mode; the terminal shows: ${viewer.shows()}`);
+  viewer.press("q");
+  await waitUntil(() => inMode(a) === "0", "q left copy mode");
+  assert.equal(typed(a), "^Bn^Bc^B^B^B^[[Az^B");
+  // The lock: the viewer keeps one window, and its agent's window ending ends it.
+  assert.deepEqual(lines(tmuxOn(AGENTS, "list-windows", "-t", `=${viewer.session}`, "-F", "#{window_name}")), [a.name]);
+  assert.equal(viewer.isAttached(), true);
+  tmuxOn(AGENTS, "kill-window", "-t", a.target);
+  assert.equal(await viewer.ended(), 0, viewer.shows());
+  assert.equal(typed(sibling), "", "the sibling's pane read nothing");
+  nothingLeft("the plain viewer's agent window ended");
+  assert.deepEqual(keyTables()[LOCKED_PREFIX], PREFIX_KEYS, "the C-b table is the server's and stays");
+
+  // An agent that grabbed the mouse: after C-b it still reads the wheel, after the C-b.
+  const grabbing = await agent("prefix-grabbing", { program: grabbingProgram });
+  const second = await view(grabbing);
+  second.press("C-b"); second.send(WHEEL_UP);
+  await waitUntil(() => /^\^B\^\[\[<64;\d+;\d+M$/.test(typed(grabbing)), `the agent read C-b and the wheel (it read ${JSON.stringify(typed(grabbing))})`);
+  assert.equal(inMode(grabbing), "0");
+  tmuxOn(AGENTS, "kill-window", "-t", grabbing.target);
+  assert.equal(await second.ended(), 0, second.shows());
+
+  // --no-status-line: no line and no hint; the keys are the same.
+  const quiet = await agent("prefix-quiet");
+  const third = await view(quiet, { extra: ["--no-status-line"] });
+  assert.equal(tmuxOn(AGENTS, "show-options", "-v", "-t", third.session, "status"), "off");
+  third.press("C-b", "[");
+  await waitUntil(() => inMode(quiet) === "1", `C-b [ put the pane in copy mode; the terminal shows: ${third.shows()}`);
+  assert.equal(third.shows().includes("to scroll back"), false, "no hint is drawn");
+  tmuxOn(AGENTS, "send-keys", "-X", "-t", quiet.target, "cancel");
+  tmuxOn(AGENTS, "kill-window", "-t", quiet.target);
+  assert.equal(await third.ended(), 0, third.shows());
+  nothingLeft("the quiet viewer's agent window ended");
 });
 
 for (const mode of ["emacs", "vi"]) {

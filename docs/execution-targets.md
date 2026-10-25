@@ -1210,9 +1210,39 @@ oats session attach --home /abs/home --detach-key 'C-\'
   `PageUp` and `PageDown` move a page, and `q` leaves it. The agent never
   receives `Shift+PageUp` while a viewer is attached.
 
+  **`C-b [` in a viewer without a detach key**
+  ([#1502](https://github.com/awebai/oats/issues/1502)) also enters copy mode, as a tmux prefix does, for a keyboard that has no
+  PageUp. It is the viewer's only `C-b` key:
+  - every other key after `C-b` reaches the agent as both keys, in order:
+    `C-b n`, `C-b c` and `C-b C-b` arrive as typed;
+  - the wheel, a drag and `Shift+PageUp` after `C-b` send the `C-b`, then do
+    what they do alone;
+  - a mouse report after `C-b` reaches an agent that asked for one.
+  `C-b` waits for the next key with no timeout: tmux holds the client in the
+  viewer's `C-b` table, `oatsview-locked-prefix` (the server's one, as
+  `oatsview-locked` is), for that one key. A keyed viewer has no `C-b` key;
+  its caller chooses its keys. Checked on tmux 3.8.
+
+  **The status line.** A viewer without a detach key shows one line under
+  the agent, `Shift+PgUp or C-b [ to scroll back`, so the person reading
+  the agent can see how to scroll back: nobody guesses a key. It takes the
+  client's last row. `--no-status-line` (feature
+  `session-attach-no-status-line`) drops it, for a caller that shows
+  the keys itself (`oats tui`); the keys stay. A routed attach sends
+  `--no-status-line` as it is: a host without
+  `session-attach-no-status-line` ignores it and shows the line. A keyed
+  viewer has no status line.
+
+  **Copy mode is the pane's, not the viewer's.** It is a mode of the agent's
+  pane on the agents' tmux server. While one viewer is scrolled back, every
+  other viewer of that agent (the Desktop, a second `oats tui`, another
+  `oats session attach`) shows the same frozen screen, and keys typed in any
+  of them go to copy mode until it is left (`q`, or scrolling back to the
+  bottom).
+
   **Leaving the viewer.** Without `--detach-key` there is no keyboard exit:
-  every other key goes to the agent, the tmux prefix included. Close the
-  terminal.
+  every other key goes to the agent, the tmux prefix included (after `C-b`,
+  as both keys). Close the terminal.
   With `--detach-key <key>` (`--detach-key=<key>` is the same; feature
   `session-attach-detach-key`, OATS 0.51.0), pressing `<key>` detaches that
   viewer's client. The agent's window and every other viewer are untouched.
