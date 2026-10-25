@@ -628,3 +628,31 @@ for (const [platform, isMac] of [[null, false], ["Win32", false], ["MacIntel", t
     assert.deepEqual(log, ["open", "again"]);
   });
 }
+
+// Shift+PgUp / Shift+PgDn (#1502): xterm.js takes them to scroll its own viewport and sends nothing,
+// which on tmux's alternate screen scrolls nothing. Through the shell's key path (terminal-tab.mjs
+// writes the decision's byte to the pty), they reach tmux as S-PPage and S-NPage, and xterm sends nothing.
+test("Shift+PgUp and Shift+PgDn: xterm alone sends nothing; through the shell's key path tmux gets CSI 5;2 ~ and CSI 6;2 ~", t => {
+  const page = (key, init = {}) => ({ key, code: key, keyCode: key === "PageUp" ? 33 : 34, shiftKey: true, ...init });
+  const bare = xtermTerminal(t);
+  assert.equal(bare(page("PageUp")), "", "xterm keeps Shift+PgUp for its own viewport");
+  assert.equal(bare(page("PageDown")), "");
+  assert.equal(bare(page("PageUp", { shiftKey: false })), "\x1b[5~", "plain PgUp still reaches the program as xterm sends it");
+  const written = [];
+  const shellKeyPath = (event) => {
+    const { handled, byte } = terminalKeyDecision(event, () => false);
+    if (!handled) return true;
+    if (byte !== null) written.push(byte);
+    return false;
+  };
+  const press = xtermTerminal(t, { keyHandler: shellKeyPath });
+  for (const [key, bytes] of [["PageUp", "\x1b[5;2~"], ["PageDown", "\x1b[6;2~"]]) {
+    written.length = 0;
+    const { data } = press.sequence([["keydown", page(key)], ["keyup", page(key)]]);
+    assert.equal(data, "", `${key}: xterm sends nothing of its own`);
+    assert.deepEqual(written, [bytes], `Shift+${key}: the shell writes tmux's key, once`);
+  }
+  written.length = 0;
+  assert.equal(press(page("PageUp", { shiftKey: false })), "\x1b[5~", "plain PgUp is untouched");
+  assert.deepEqual(written, []);
+});
