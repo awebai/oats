@@ -177,6 +177,11 @@ test("CSS: the glyph fits the dot's slot (the label does not move), in --warn, n
   assert.match(css, /\.tab-attn > \.shell-icon \{ width: 12px; height: 12px; \}/);
 });
 
+test("shell: closing a tab ends its waiting row, so a tab closed while waiting leaves no pane observation (#1502)", () => {
+  assert.match(shell, /\n  syncWaitingRow\(t\.paneEl, null\);\n  t\.paneEl\.remove\(\);/);
+  assert.equal(shell.match(/paneEl\.remove\(\)/g).length, 1, "the one place a pane leaves the DOM");
+});
+
 test("shell: every roster paint syncs the tabs, and a new terminal tab syncs at once", () => {
   assert.match(shell, /function refreshPanelInstance\(instances, workspace\) \{\n  syncTabNeedsInput\(instances, workspace\);/);
   assert.match(shell, /lost a race to an identical tab\n[^\n]*\n  syncTabNeedsInput\(tabNeedsInputRoster\.instances, tabNeedsInputRoster\.workspace\);/);

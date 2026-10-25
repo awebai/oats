@@ -1958,6 +1958,7 @@ function closeTab(id, restoreFocus = false, { explicit = true, confirmed = false
     if (r && typeof r.then === "function" && t.key) reserveKey(t.key, r);
   } catch (e) { console.error(e); }
   t.tabEl.remove();
+  syncWaitingRow(t.paneEl, null);
   t.paneEl.remove();
   tabs.delete(id);
   revealActiveTabs(); // the remaining tabs widen: the active one may have moved out of view

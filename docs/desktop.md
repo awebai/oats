@@ -788,7 +788,9 @@ over its terminal:
   a tool approval".
 - The question wraps to at most three lines, and the row never takes more
   than a quarter of the pane; a longer question ends with "…". The tab's
-  tooltip and the sidebar's card have the whole of it.
+  tooltip and the sidebar's card have the whole of it. A pane too short
+  for even the first line shows no row: the tab's mark still says the
+  instance needs input.
 
 The terminal gives up exactly the row's height. It resizes only when the wait
 starts, ends or its text changes, never as the age ticks over. In a split,

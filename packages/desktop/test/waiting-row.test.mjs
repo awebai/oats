@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
-import { syncWaitingRow, fitWaitingLines, waitingLines, WAITING_LINES } from "../renderer/waiting-row.mjs";
+import { syncWaitingRow, fitWaitingLines, waitingFit, WAITING_LINES } from "../renderer/waiting-row.mjs";
 import { waitingLabel, waitedText } from "../../client/waiting-on-you.mjs";
 
 const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
@@ -101,45 +101,47 @@ test("geometry changes only when the claim starts, clears or its text changes: a
   observer.disconnect();
 });
 
-test("the message gets at most 3 lines, and never more than a quarter of the pane", () => {
+test("the message gets at most 3 lines, and the whole row never more than a quarter of the pane", () => {
   assert.equal(WAITING_LINES, 3);
-  // chrome: the row's padding, border and head line; line: the message's line height (shell.css, px).
-  for (const [pane, lines] of [[2000, 3], [400, 3], [4 * (30 + 3 * 18), 3], [4 * (30 + 3 * 18) - 1, 2], [4 * (30 + 2 * 18), 2], [4 * (30 + 18), 1],
-    [4 * (30 + 18) - 1, 0], [4 * 30, 0], [40, 0]]) {
-    assert.equal(waitingLines({ pane, chrome: 30, line: 18 }), lines, `pane ${pane}px`);
+  // chrome: the row's padding, border and head line (33px under shell.css, as Chromium lays it out);
+  // line: the message's line height (shell.css, 18px).
+  const C = 33, L = 18;
+  for (const [pane, fit] of [[2000, { row: true, lines: 3 }], [400, { row: true, lines: 3 }], [4 * (C + 3 * L), { row: true, lines: 3 }],
+    [4 * (C + 3 * L) - 1, { row: true, lines: 2 }], [4 * (C + 2 * L), { row: true, lines: 2 }], [4 * (C + L), { row: true, lines: 1 }],
+    [4 * (C + L) - 1, { row: true, lines: 0 }], [4 * C, { row: true, lines: 0 }], [4 * C - 1, { row: false, lines: 0 }], [100, { row: false, lines: 0 }],
+    [40, { row: false, lines: 0 }]]) {
+    assert.deepEqual(waitingFit({ pane, chrome: C, line: L }), fit, `pane ${pane}px`);
+    if (fit.row) assert.ok(C + fit.lines * L <= pane / 4, `the row fits a quarter of ${pane}px`);
   }
-  for (const pane of [0, -5, NaN, undefined]) assert.equal(waitingLines({ pane, chrome: 30, line: 18 }), null, `a hidden pane (${pane}) keeps what it had`);
-  assert.equal(waitingLines({ pane: 800, chrome: 30, line: 0 }), null, "an unmeasured line keeps what it had");
+  for (const pane of [0, -5, NaN, undefined]) assert.equal(waitingFit({ pane, chrome: C, line: L }), null, `a hidden pane (${pane}) keeps what it had`);
+  assert.equal(waitingFit({ pane: 800, chrome: C, line: 0 }), null, "an unmeasured line keeps what it had");
+  assert.equal(waitingFit({ pane: 800, chrome: 0, line: L }), null, "an unmeasured head keeps what it had");
 });
 
-test("fitWaitingLines clamps the message from the pane's measured height, and hides it when no line fits", t => {
+test("fitWaitingLines clamps the message from the pane's measured height, and hides what does not fit in a quarter", t => {
   const u = fixture(t);
   u.sync(claim());
   const row = rowOf(u.pane), message = part(u.pane, "message");
-  const geometry = (pane, rowHeight, messageHeight) => {
+  // Layout as Chromium gives it: a hidden element measures 0, so the row's own height is its chrome plus its shown lines.
+  const geometry = pane => {
     Object.defineProperty(u.pane, "clientHeight", { configurable: true, get: () => pane });
-    Object.defineProperty(row, "offsetHeight", { configurable: true, get: () => rowHeight });
-    Object.defineProperty(message, "offsetHeight", { configurable: true, get: () => messageHeight });
+    Object.defineProperty(message, "offsetHeight", { configurable: true, get: () => row.hidden || message.hidden ? 0 : 18 * Number(row.style.getPropertyValue("--waiting-lines") || 3) });
+    Object.defineProperty(row, "offsetHeight", { configurable: true, get: () => row.hidden ? 0 : 33 + message.offsetHeight });
   };
   message.style.lineHeight = "18px";
-  geometry(800, 30 + 54, 54);
-  fitWaitingLines(row);
-  assert.equal(row.style.getPropertyValue("--waiting-lines"), "3"); assert.equal(message.hidden, false);
-  geometry(4 * (30 + 18), 30 + 54, 54);
-  fitWaitingLines(row);
-  assert.equal(row.style.getPropertyValue("--waiting-lines"), "1", "a short pane: one line");
-  geometry(100, 30 + 18, 18);
-  fitWaitingLines(row);
-  assert.equal(message.hidden, true, "no line fits in a quarter: the head alone");
-  geometry(100, 30, 0);
-  fitWaitingLines(row);
-  assert.equal(message.hidden, true, "a hidden message still measures the same chrome");
-  geometry(800, 30, 0);
-  fitWaitingLines(row);
-  assert.equal(message.hidden, false); assert.equal(row.style.getPropertyValue("--waiting-lines"), "3");
-  geometry(0, 0, 0);
-  fitWaitingLines(row);
-  assert.equal(row.style.getPropertyValue("--waiting-lines"), "3", "a hidden pane keeps what it had");
+  const shown = () => ({ row: !row.hidden, message: !message.hidden, lines: row.style.getPropertyValue("--waiting-lines") });
+  geometry(800); fitWaitingLines(row);
+  assert.deepEqual(shown(), { row: true, message: true, lines: "3" });
+  geometry(4 * (33 + 18)); fitWaitingLines(row);
+  assert.deepEqual(shown(), { row: true, message: true, lines: "1" }, "a short pane: one line");
+  geometry(140); fitWaitingLines(row);
+  assert.deepEqual(shown(), { row: true, message: false, lines: "1" }, "no line fits: the head alone");
+  geometry(100); fitWaitingLines(row);
+  assert.equal(row.hidden, true, "not even the head fits in a quarter: no row, the terminal keeps the pane");
+  geometry(800); fitWaitingLines(row);
+  assert.deepEqual(shown(), { row: true, message: true, lines: "3" }, "a hidden row still knows its head's height, and comes back");
+  geometry(0); fitWaitingLines(row);
+  assert.deepEqual(shown(), { row: true, message: true, lines: "3" }, "a hidden pane keeps what it had");
 });
 
 test("the pane's size drives the clamp: the row observes its pane, never a timer", t => {
@@ -174,6 +176,7 @@ test("CSS: the row takes its rows from the terminal, wraps and cuts the message 
   assert.match(rule(".waiting-age"), /color: var\(--muted\)/);
   assert.match(rule(".waiting-age"), /white-space: pre/, "its leading space stays a space");
   assert.match(message, /margin: 0;/, "no margin of its own, so hiding it leaves the measured chrome as it was");
+  assert.match(css, /\.tab-pane > \.waiting-row\[hidden\] \{ display: none; \}/, "a row that does not fit leaves the pane to the terminal");
   assert.match(rule(".waiting-message.reason"), /color: var\(--muted\)/);
   for (const body of [row, head, message, rule(".waiting-age"), rule(".waiting-message.reason")]) {
     assert.doesNotMatch(body, /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|opacity|animation|transition/i, "tokens only, no opacity, no motion");
