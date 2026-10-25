@@ -83,6 +83,7 @@ import { registerSpawnDialogKeys } from "./spawn-dialog-keys.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
 import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../../client/waiting-on-you.mjs";
+import { syncWaitingRow } from "./waiting-row.mjs";
 import { createRosterPrs, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import { collapseKey, hasInstanceChildren, instanceRepoLabel, instanceVisibleInTree, waitingRollup, instanceId, rosterParentId, heldHome } from "../../client/instance-tree.mjs";
@@ -1552,7 +1553,8 @@ function refreshPanelInstance(instances, workspace) {
  * aria-label and the title's note (setTabTitle: the name and the tab's key stay their writers') — never
  * rebuilds the trigger or the tab — so strip focus, an open tab menu or a drag survive the poll. Cleared
  * (or unknown), the tab gets back exactly the mark and label it was drawn with, and no note. The same pass keeps the dot's colour (instance-dot.mjs) the row's, so a colour set
- * or cleared reaches an open tab; the dot's state stays as it was drawn. */
+ * or cleared reaches an open tab; the dot's state stays as it was drawn. The same claim draws the waiting row over the
+ * tab's terminal (waiting-row.mjs, #1502), so each group's shown tab carries its own. */
 let tabNeedsInputRoster = { instances: [], workspace: null };
 function syncTabNeedsInput(instances, workspace) {
   tabNeedsInputRoster = { instances, workspace };
@@ -1580,6 +1582,7 @@ function syncTabNeedsInput(instances, workspace) {
     }
     if (trigger.getAttribute("aria-label") !== label) trigger.setAttribute("aria-label", label);
     setTabTitle(trigger, { note });
+    syncWaitingRow(tab.paneEl, claim, now);
   }
 }
 const workspaceTabMemory = createWorkspaceTabMemory();

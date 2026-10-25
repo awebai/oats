@@ -209,6 +209,22 @@ validates the field and never synthesizes it.
   name and title are mutated (focus, an open tab menu or a drag survive the
   poll); cleared, the tab gets back the dot, name and title it was drawn with.
   The tab is matched by its qualified key (`terminalKey`), never a bare name.
+- **The waiting row** (#1502, `renderer/waiting-row.mjs`). The same pass
+  draws a row over the tab's terminal, inside its pane, so each split
+  group's shown tab carries its own. Its head is the pill and the age
+  (`waitedText`, " · 12 min") on one line that never wraps. Under it is the
+  message, set as text (`textContent`, `dir="auto"`) or, when it is null, the
+  reason in words (`waitingLabel`, muted). The message wraps to at most 3
+  lines, and the whole row stays within a quarter of the pane. It is cut with
+  "…" (`-webkit-line-clamp` from `--waiting-lines`), and hidden when not one
+  line fits. The pane turns into a column, and the terminal takes the rest of
+  it. The row's height therefore changes only when the claim starts or clears,
+  or its shown text changes. An age tick rewrites only the age, inside the
+  head's one line, so it never refits the terminal. The clamp follows the
+  pane's own height through one `ResizeObserver` on the pane, never a timer.
+  This departs on purpose from the TUI's row (#1502), where the age sits on
+  the message's first line: Desktop's text is proportional, so an age there
+  would reflow the message as it ticked.
 - **Display only.** Nothing in Desktop acts on a claim.
 
 The waited age is never painted into the row, so the roster signature changes
