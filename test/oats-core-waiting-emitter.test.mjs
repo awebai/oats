@@ -917,20 +917,35 @@ test("no watchdog sleep outlives the script: every sleep it starts is gone when 
     const child = spawn("/bin/sh", [SCRIPT, ...withMarker([...args, node, FAKE_CLI], env)], { stdio: [stdin, "ignore", "ignore"], env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
     return { child, exit: new Promise((done) => child.on("exit", done)) };
   };
-  const set = start(["set", "permission"], "ignore");
-  await until(() => existsSync(join(gate, "started.1")) && logged().length >= 1);
+  // Each input is held open until its read's watchdog has logged, so every watchdog is counted.
+  const set = start(["set", "permission"], "pipe");
+  await until(() => logged().length >= 1); // the set's input read
+  set.child.stdin.end(""); // no text: no reader of it
+  await until(() => existsSync(join(gate, "started.1")) && logged().length >= 2);
   writeFileSync(join(gate, "go.1"), "");
   assert.equal(await set.exit, 0);
   const clear = start(["clear-tool"], "pipe");
-  await until(() => logged().length >= 2); // the input read's watchdog
+  await until(() => logged().length >= 3); // the clear's input read
   clear.child.stdin.end(`{"session_id":"s","hook_event_name":"PostToolUse","tool_name":"Bash","tool_use_id":"t"}`);
-  await until(() => existsSync(join(gate, "started.2")) && logged().length >= 3);
+  await until(() => existsSync(join(gate, "started.2")) && logged().length >= 4);
   writeFileSync(join(gate, "go.2"), "");
   assert.equal(await clear.exit, 0);
   assert.equal(appliedOf(h), "clear");
   const pids = logged();
-  assert.equal(pids.length, 3, "a watchdog under the set's CLI, the input read and the clear's CLI");
+  assert.equal(pids.length, 4, "a watchdog under the set's input read and CLI, and under the clear's input read and CLI");
   await until(() => !pids.some(alive), 10000);
+  // A set whose input has text also runs the text reader under a watchdog: none outlives it either.
+  const texted = start(["set", "question"], "pipe");
+  await until(() => logged().length >= 5);
+  texted.child.stdin.end(`{"session_id":"s","hook_event_name":"Notification","message":"Claude needs your permission to use Bash","notification_type":"permission_prompt"}`);
+  // The CLI is held until its watchdog has logged; the text reader's may log before it or not at
+  // all (a reader that ends first has its watchdog stopped before it sleeps).
+  await until(() => existsSync(join(gate, "started.3")) && logged().length >= 6);
+  writeFileSync(join(gate, "go.3"), "");
+  assert.equal(await texted.exit, 0);
+  assert.equal(intentTextOf(h), "Claude needs your permission to use Bash");
+  const all = logged();
+  await until(() => !all.some(alive), 10000);
 });
 
 test("a temp file an interrupted write left in .claude is removed by the next pass (even an unchanged one); a live writer's, and anything else, is left alone", () => {
