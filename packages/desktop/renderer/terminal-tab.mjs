@@ -14,6 +14,14 @@ export function shiftEnterAction(ev) {
   if (ev.key !== 'Enter' || !ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return { suppress: false, byte: null };
   return { suppress: true, byte: ev.type === 'keydown' ? '\n' : null };
 }
+// Shift+PgUp and Shift+PgDn write tmux's S-PPage and S-NPage, which the viewer binds to scroll back
+// (#1502). xterm.js would scroll its own viewport for them and send nothing, and that viewport is
+// empty while tmux draws on the alternate screen. Every phase is claimed; the keys go on keydown.
+const SHIFT_PAGE_KEYS = { PageUp: '\x1b[5;2~', PageDown: '\x1b[6;2~' };
+export function shiftPageAction(ev) {
+  if (!Object.hasOwn(SHIFT_PAGE_KEYS, ev.key) || !ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return { suppress: false, byte: null };
+  return { suppress: true, byte: ev.type === 'keydown' ? SHIFT_PAGE_KEYS[ev.key] : null };
+}
 /** Fit a tab's terminal to its pane and centre it, as a native terminal
  * balances its window padding (the operator's review, 2026-10-02). FitAddon
  * reserves 15px on the right for xterm's scrollbar even where scrollbars
@@ -147,6 +155,9 @@ export function terminalKeyDecision(ev, interceptKey) {
   const { suppress, byte } = shiftEnterAction(ev);
   if (suppress) return { handled: true, byte };
   if (interceptKey && interceptKey(ev)) return { handled: true, byte: null };
+  // After the keymap: a chord the person bound to Shift+PgUp or Shift+PgDn stays theirs.
+  const page = shiftPageAction(ev);
+  if (page.suppress) return { handled: true, byte: page.byte };
   return { handled: false, byte: null };
 }
 

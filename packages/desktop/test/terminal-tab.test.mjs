@@ -368,6 +368,32 @@ test("terminalKeyDecision: Shift+Enter wins, then interception, else pass-throug
   assert.deepEqual(terminalKeyDecision(ev({}), undefined), { handled: false, byte: null }, "no hook, no claim");
 });
 
+// Shift+PgUp / Shift+PgDn (#1502): xterm.js scrolls its own viewport for them and sends the program
+// nothing, and that viewport is empty while tmux draws on the alternate screen. The shell sends tmux
+// the keys instead, which the viewer's key table binds to scroll back.
+import { shiftPageAction } from "../renderer/terminal-tab.mjs";
+
+test("shiftPageAction: Shift+PgUp and Shift+PgDn are tmux's S-PPage and S-NPage, written once, on keydown", () => {
+  const ev = (o) => ({ type: "keydown", key: "PageUp", shiftKey: true, ctrlKey: false, altKey: false, metaKey: false, ...o });
+  assert.deepEqual(shiftPageAction(ev({})), { suppress: true, byte: "\x1b[5;2~" });
+  assert.deepEqual(shiftPageAction(ev({ key: "PageDown" })), { suppress: true, byte: "\x1b[6;2~" });
+  for (const type of ["keypress", "keyup"]) {
+    assert.deepEqual(shiftPageAction(ev({ type })), { suppress: true, byte: null }, `${type}: claimed, no second write`);
+  }
+  assert.deepEqual(shiftPageAction(ev({ shiftKey: false })), { suppress: false, byte: null }, "plain PgUp is xterm's (CSI 5 ~)");
+  for (const mod of ["ctrlKey", "altKey", "metaKey"]) {
+    assert.deepEqual(shiftPageAction(ev({ [mod]: true })), { suppress: false, byte: null }, `Shift+${mod} PgUp is xterm's`);
+  }
+  assert.deepEqual(shiftPageAction(ev({ key: "ArrowUp" })), { suppress: false, byte: null }, "other shifted keys are xterm's");
+});
+
+test("terminalKeyDecision: a chord bound to Shift+PgUp is the keymap's; otherwise the shell sends it on", () => {
+  const ev = (o) => ({ type: "keydown", key: "PageUp", shiftKey: true, ctrlKey: false, altKey: false, metaKey: false, ...o });
+  assert.deepEqual(terminalKeyDecision(ev({}), () => false), { handled: true, byte: "\x1b[5;2~" });
+  assert.deepEqual(terminalKeyDecision(ev({ key: "PageDown" }), undefined), { handled: true, byte: "\x1b[6;2~" });
+  assert.deepEqual(terminalKeyDecision(ev({}), () => true), { handled: true, byte: null }, "a binding the person set wins, and sends nothing");
+});
+
 test("wired handler: an intercepted chord is suppressed in every phase and writes nothing to the pty", async () => {
   const d = makeDoubles(Promise.resolve(9));
   let handler = null;
