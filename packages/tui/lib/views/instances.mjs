@@ -78,12 +78,13 @@ export function markLook(mark, colour) {
  *  one cell), so the reverse video and the `!` carry it under NO_COLOR. On the selected row, which
  *  is in reverse already, it is the other way round: not reversed, a gap in the selection's bar.
  *  An instance's colour never draws it. */
-const WAITS = style({ fg: "yellow", bold: true, reverse: true });
+export const WAITS = style({ fg: "yellow", bold: true, reverse: true });
 const WAITS_SELECTED = style({ fg: "yellow", bold: true });
 
 /** The words for an instance that needs input: the shared home's for a claim that names no reason
  *  of its own (packages/client/waiting-on-you.mjs, waitingLabel, which the detail says; a test pins
- *  them equal), and the help's for the mark. A row says them by its mark, not in words. */
+ *  them equal), the help's for the mark, and the waiting row's (views/frame.mjs). A list row says
+ *  them by its mark, not in words. */
 export const NEEDS_INPUT = "Needs input";
 /** The roll-up tag's words, the Desktop's (packages/desktop/renderer/shell.mjs, needsInputMark; a
  *  test pins them equal): `N below` on a row that folds away N waiting rows, `99+ below` past 99,

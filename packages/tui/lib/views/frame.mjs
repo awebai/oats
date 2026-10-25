@@ -16,7 +16,7 @@ import { style } from "../term/style.mjs";
 import { act } from "./act.mjs";
 import { detail } from "./detail.mjs";
 import { help, keyText, paletteGroupKeys } from "./help.mjs";
-import { instances, measured } from "./instances.mjs";
+import { NEEDS_INPUT, WAITS, instances, measured } from "./instances.mjs";
 import { textWidth } from "../term/width.mjs";
 import { palette } from "./palette.mjs";
 import { soulDetail, soulsList, soulsListed } from "./souls.mjs";
@@ -690,8 +690,56 @@ function terminalAt(m, size, g) {
   const both = Boolean(m.split) && !zoom && groups.length === 2 && splitFits(m.split, { cols: panel.cols, rows: panel.rows + 1 });
   const [first, second, rule] = both ? splitRegions(panel, m.split) : [panel, null, null];
   const regions = (both ? [{ ...first, group: 0 }, { ...second, group: 1 }] : [{ ...panel, group: focused }])
-    .map((r) => ({ ...r, id: groups[r.group]?.shown ?? null, focused: r.group === focused, whole }));
+    .map((r) => waited({ ...r, id: groups[r.group]?.shown ?? null, focused: r.group === focused, whole }, groups[r.group]?.waiting ?? null, m.ascii));
   return { ...regions.find((r) => r.focused), panel, regions, rule };
+}
+
+/** THE WAITING ROW (docs/tui.md, "Tabs"; awebai/oats#1502), under a group's tab bar while its
+ *  shown agent has a live claim: `Needs input` in the list's needs-input look (reverse video in the
+ *  waiting colour, a cell of padding each side), then the claim's age dim after a dot (` · `,
+ *  ` - ` in ASCII), then its message, the agent's text through the shared filter, or, with none,
+ *  the TUI's words for its reason. The age stands before the message, so no cut removes it. The
+ *  message wraps to at most WAITING_ROWS rows and to no more than a quarter of the region's
+ *  height, the last row ending in the cut mark when more was left. */
+const WAITING_ROWS = 3;
+/** The cells before the age: the tag with its padding, a blank, the dot and a blank. */
+const WAITING_LEAD = NEEDS_INPUT.length + 2 + 3;
+/** The widest age the shared words give (packages/client/waiting-on-you.mjs waitedText). */
+const WAITING_AGE_WIDEST = "under a minute".length;
+/** The waiting row's text as rows: the first after the lead and the age (`age` cells of it), every
+ *  other from the region's second cell, each with a cell of margin at the end. */
+function waitingLines(waiting, cols, rows, age, ascii) {
+  const max = Math.max(1, Math.min(WAITING_ROWS, Math.floor(rows / 4)));
+  // The TUI's words are its own, and pass the shared filter as they are.
+  return shownLines(waiting.message ?? waiting.words, cols - 2, max, { ascii, first: cols - WAITING_LEAD - age - 2 });
+}
+/** A region with its waiting rows taken from the top of the agent's screen: `waiting` the rows
+ *  waitingRows draws, or null. How many is counted with the widest age, so the agent's pane is
+ *  resized when the claim starts, clears or changes its text, and never as its age grows. */
+function waited(region, waiting, ascii) {
+  if (waiting === null || region.id === null) return { ...region, waiting: null };
+  const taken = waitingLines(waiting, region.cols, region.rows, WAITING_AGE_WIDEST, ascii).length;
+  if (taken === 0) return { ...region, waiting: null };
+  return { ...region, top: region.top + taken, rows: region.rows - taken, waiting: { ...waiting, taken } };
+}
+/** The waiting rows of a region that has them (waited): `taken` rows, the first holding the tag
+ *  and the age. Drawn with the region's own age; a shorter one than the widest leaves the message
+ *  more room, never fewer rows than were taken: the rest stay blank. */
+function waitingRows(region, ascii) {
+  const { waiting } = region, col = region.col, end = col + region.cols;
+  const dot = ascii ? "-" : "\u00b7";
+  const lines = waitingLines(waiting, region.cols, region.rows + waiting.taken, waiting.age.length, ascii).slice(0, waiting.taken);
+  const first = [
+    { col, width: NEEDS_INPUT.length + 2, style: WAITS }, { col: col + 1, text: lit(NEEDS_INPUT), style: WAITS, width: NEEDS_INPUT.length },
+    { col: col + NEEDS_INPUT.length + 3, text: lit(dot), style: DIM, width: 1 },
+    { col: col + NEEDS_INPUT.length + 5, text: lit(waiting.age), style: DIM, width: waiting.age.length },
+  ];
+  const at = col + WAITING_LEAD + waiting.age.length + 1;
+  return Array.from({ length: waiting.taken }, (_, i) => {
+    const line = lines[i], start = i === 0 ? at : col + 1;
+    const spans = line ? [{ col: start, text: line, width: Math.max(0, Math.min(textWidth(textOf(line)), end - start)) }] : [];
+    return i === 0 ? [...first, ...spans] : spans;
+  });
 }
 
 /** A hidden tab's mark for output since it was last shown (docs/tui.md, "Tabs"). */
@@ -834,10 +882,11 @@ function regionRows(m, area) {
   // A model made by hand may name its terminal and no tabs: its one tab is that terminal.
   const tabs = group.tabs.length ? group.tabs : [{ name: m.terminal?.name, machine: m.terminal?.routed ? m.terminal.machine : null, shown: true, activity: false }];
   const title = stripRow(tabs, area, { focused, ascii: m.ascii, numbers: m.tabNumbers !== false });
+  const waiting = area.waiting ? waitingRows(area, m.ascii) : [];
   const screenOf = area.focused ? m.screen : m.screens?.get(group.shown) ?? null;
   const lines = screenOf?.lines ?? [];
   const body = Array.from({ length: area.rows }, (_, r) => (lines[r] ?? [])
     .filter((span) => span.col < area.cols)
     .map((span) => ({ ...span, col: area.col + span.col, width: Math.min(span.width ?? area.cols, area.cols - span.col) })));
-  return [title, ...body];
+  return [title, ...waiting, ...body];
 }

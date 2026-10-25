@@ -409,15 +409,28 @@ export const SPLIT_WORDS = Object.freeze({
   small: (dir, min) => [{ own: dir === "right" ? `No room to split side by side: each group needs ${min.cols} columns.` : `No room to split one above the other: each group needs ${min.rows} rows.` }],
 });
 /** The groups of the panel as the frame draws them (docs/tui.md, "Splits"): one, or two with a
- *  split, each `{ tabs, shown }`: its tabs in the strip's order (`{ id, name, machine, routed,
- *  shown, activity }`, `machine` only for another machine's) and its shown tab's id, or null for
- *  an empty group. */
-function groupsOf(state) {
+ *  split, each `{ tabs, shown, waiting }`: its tabs in the strip's order (`{ id, name, machine,
+ *  routed, shown, activity }`, `machine` only for another machine's), its shown tab's id, or null
+ *  for an empty group, and what its waiting row says (waitingOf). */
+function groupsOf(state, r, now) {
   return Array.from({ length: state.split === null ? 1 : 2 }, (_, g) => {
     const shown = g === state.group ? state.terminal?.id ?? null : state.aside;
     const tabs = state.tabs.filter((tab) => tab.group === g).map((tab) => ({ id: tab.id, name: tab.name, machine: tab.routed ? tab.machine : null, routed: tab.routed, shown: tab.id === shown, activity: tab.activity }));
-    return { tabs, shown };
+    return { tabs, shown, waiting: waitingOf(r, shown, now) };
   });
+}
+/** What a claim with no message waits on, in the TUI's words, by its reason (docs/tui.md, "Tabs"). */
+const WAITING_WORDS = Object.freeze({ permission: "waiting on a permission prompt", question: "asked you a question", attention: "asked for your attention" });
+const WAITING_UNSAID = "waiting for your input";
+/** The waiting row of a group whose shown agent is `id` (views/frame.mjs waitingRows): the
+ *  agent's live claim, read through the shared gate as the list's `!` mark is, as `{ message, words,
+ *  age }`: its message (agent text) or null, the TUI's words for a claim with none, and how long
+ *  it has waited at `now`. Null for an empty group and an agent with no live claim. */
+function waitingOf(r, id, now) {
+  const row = id === null ? null : r.instances.find((each) => instanceId(each) === id) ?? null;
+  const claim = row === null ? null : waitingClaim(row, { stale: r.stale(row) });
+  if (claim === null) return null;
+  return Object.freeze({ message: text(claim.message) ? claim.message : null, words: WAITING_WORDS[claim.reason] ?? WAITING_UNSAID, age: waitedText(claim.since, now) });
 }
 /** A command in a line of the TUI's own: whole, never broken over two rows. */
 const command = (text) => Object.freeze({ own: `\`${text}\``, whole: true });
@@ -909,8 +922,8 @@ export function model(state, { page, body = page, now, at, cols, area = cols }) 
     // The panel's groups (views/frame.mjs), the split and the focused group; the panel stands while
     // any tab is open. `tabs` is the focused group's strip: each tab in order, the shown one marked,
     // a hidden one's activity. A strip is drawn with two tabs or more; one reads as a title row.
-    split: state.split, group: state.group, panelOpen: state.tabs.length > 0, groups: groupsOf(state),
-    tabs: groupsOf(state)[state.group].tabs,
+    split: state.split, group: state.group, panelOpen: state.tabs.length > 0, groups: groupsOf(state, r, now),
+    tabs: groupsOf(state, r, now)[state.group].tabs,
     act: state.view === "act" && state.act ? actView(state) : null,
     // The palette, while it is open.
     palette: state.palette === null ? null : paletteView(state, body, at),
