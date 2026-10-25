@@ -32,7 +32,10 @@ const appliedOf = (h, tmp = TMP) => { try { return readFileSync(`${markerOf(h, t
 // Wait for a condition (an event under way), never for a fixed time.
 const until = async (cond, ms = 15000) => { const end = Date.now() + ms; while (!cond()) { if (Date.now() > end) throw new Error("timed out waiting for the race to be set up"); await new Promise((r) => setTimeout(r, 10)); } };
 const held = (h, tmp = TMP) => existsSync(`${markerOf(h, tmp)}.lock`);
-const intentOf = (h, tmp = TMP) => { try { return readFileSync(markerOf(h, tmp), "utf8").trim(); } catch { return null; } };
+// The intent's reason (its first line): a set's second line is its event id.
+const intentOf = (h, tmp = TMP) => { try { return readFileSync(markerOf(h, tmp), "utf8").split("\n")[0]; } catch { return null; } };
+// The text of the intent's set: the file named for its event id, or null.
+const intentTextOf = (h, tmp = TMP) => { try { const event = readFileSync(markerOf(h, tmp), "utf8").split("\n")[1]; return event ? readFileSync(`${markerOf(h, tmp)}.text-${event}`, "utf8").replace(/\n$/, "") : null; } catch { return null; } };
 const markerOf = (h, tmp = TMP) => join(tmp, WDIR, `${createHash("sha256").update(h).digest("hex").slice(0, 16)}.claude`);
 let n = 0;
 /** A fresh instance home: a directory with an instance.json. */
@@ -419,14 +422,14 @@ test("an open question is not relabelled by its own permission prompt: the marke
   const log = join(base, `argv-question-${n}.log`);
   const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
   runScript(["set", "question", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
-  assert.equal(readFileSync(markerOf(h), "utf8"), "question\n", "the marker holds the intent");
+  assert.equal(intentOf(h), "question", "the marker holds the intent");
   const r = runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
   assert.equal(r.status, 0); assert.equal(r.stdout, "");
   assert.deepEqual(calls().map((c) => c[6]), ["question"], "the permission prompt of an open question starts no CLI");
   runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
   runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
   assert.deepEqual(calls().map((c) => c[2] === "clear" ? "clear" : c[6]), ["question", "clear", "permission"], "after a clear, a permission prompt sets permission");
-  assert.equal(readFileSync(markerOf(h), "utf8"), "permission\n");
+  assert.equal(intentOf(h), "permission");
 });
 
 test("an unusable marker means no debounce, never a skipped claim: a symlinked marker directory or a marker path that is not a regular file is not followed, and set and clear always call the CLI", () => {
@@ -673,8 +676,11 @@ test("a lock whose holder is gone (pid dead, or taken over 5 s ago) is broken; a
   assert.equal(appliedOf(h), "clear"); assert.ok(!held(h));
   // The launch hook starts a new session with no marker state.
   lockAs(process.pid, 1000); mkdirSync(`${lock}.reap`); writeFileSync(join(`${lock}.reap`, "pid"), "1 1000\n"); writeFileSync(`${markerOf(h)}.force`, "");
+  for (const event of ["123-1000", "456-2000"]) writeFileSync(`${markerOf(h)}.text-${event}`, "an earlier session's text\n");
+  const other = `${markerOf(home())}.text-123-1000`; writeFileSync(other, "another home's\n");
   runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS });
-  for (const f of [markerOf(h), `${markerOf(h)}.applied`, `${markerOf(h)}.force`, lock, `${lock}.reap`]) assert.ok(!existsSync(f), `${f} reset at launch`);
+  for (const f of [markerOf(h), `${markerOf(h)}.applied`, `${markerOf(h)}.force`, lock, `${lock}.reap`, `${markerOf(h)}.text-123-1000`, `${markerOf(h)}.text-456-2000`]) assert.ok(!existsSync(f), `${f} reset at launch`);
+  assert.ok(existsSync(other), "another home's text is not this launch's");
 });
 
 test("a call that wrote the claim and then failed (or died) leaves applied unknown: the next event calls the CLI, even one whose intent matches what was recorded before", { timeout: 60000 }, async () => {
@@ -1091,7 +1097,7 @@ test("set carries the hook input's text: `--message=<text>` after the reason; th
   const bash = "Claude needs your permission to use Bash";
   set("permission", notification("permission_prompt", bash));
   assert.deepEqual(calls(), [["instance", "waiting", "set", "--producer", "oats.core", "--reason", "permission", `--message=${bash}`, "--home", h, "--json"]]);
-  assert.equal(readFileSync(markerOf(h), "utf8"), `permission\n${bash}\n`, "the intent: the reason, then the text");
+  assert.equal(intentOf(h), "permission"); assert.equal(intentTextOf(h), bash, "the intent's text, in the file of its event");
   assert.equal(readFileSync(`${markerOf(h)}.applied`, "utf8"), `permission\n${bash}\n`, "what the CLI recorded");
   set("permission", notification("permission_prompt", bash));
   assert.equal(calls().length, 1, "the same claim again is debounced");
@@ -1099,13 +1105,46 @@ test("set carries the hook input's text: `--message=<text>` after the reason; th
   assert.equal(calls()[1][7], "--message=Claude needs your permission to use Edit", "a new text is a change");
   set("permission", "{");
   assert.deepEqual(calls()[2], ["instance", "waiting", "set", "--producer", "oats.core", "--reason", "permission", "--home", h, "--json"], "no text: the claim without one");
-  assert.equal(readFileSync(markerOf(h), "utf8"), "permission\n");
+  assert.equal(intentOf(h), "permission"); assert.equal(intentTextOf(h), null);
   set("question", askUser("--rm the old installs?"));
   assert.equal(calls()[3][7], "--message=--rm the old installs?", "a text that starts with -- is still the message's value");
   // An open question keeps its text through its own permission prompt.
   set("permission", notification("permission_prompt", "Claude needs your permission"));
   assert.equal(calls().length, 4);
-  assert.equal(readFileSync(markerOf(h), "utf8"), "question\n--rm the old installs?\n");
+  assert.equal(intentOf(h), "question"); assert.equal(intentTextOf(h), "--rm the old installs?");
+});
+
+test("reading a set's text never reorders events: a clear or a question that comes while an earlier set is still reading its text stands, and the earlier text is never applied over it", { timeout: 60000 }, async () => {
+  // A node in front of the real one that holds the text reader of a hook run with FAKE_TEXT_GATE
+  // until the test creates go there; every other run (the CLI) is the real node at once.
+  const node = join(base, "node-held-text");
+  writeFileSync(node, `#!/bin/sh\ncase "$1" in */claude-waiting-message.mjs) if [ -n "$FAKE_TEXT_GATE" ]; then : > "$FAKE_TEXT_GATE/started"; while [ ! -e "$FAKE_TEXT_GATE/go" ]; do /bin/sleep 0.01; done; fi ;; esac\nexec ${shq(process.execPath)} "$@"\n`, { mode: 0o755 });
+  for (const later of ["clear", "question"]) {
+    const h = home(), gate = mkdtempSync(join(base, "text-gate-")), log = join(base, `argv-held-${n}.log`), state = join(base, `state-held-${n}.log`);
+    const env = { OATS_INSTANCE_HOME: h, FAKE_LOG: log, FAKE_STATE: state };
+    const first = spawn("/bin/sh", [SCRIPT, ...withMarker(["set", "permission", node, FAKE_CLI], env)], { env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env, FAKE_TEXT_GATE: gate }), stdio: ["pipe", "ignore", "ignore"] });
+    kids.add(first);
+    const ended = new Promise((done) => first.on("exit", (code) => { kids.delete(first); done(code); }));
+    first.stdin.end(notification("permission_prompt", "Claude needs your permission to use Bash"));
+    await until(() => existsSync(join(gate, "started")));
+    const args = later === "clear" ? ["clear", node, FAKE_CLI] : ["set", "question", node, FAKE_CLI];
+    const r = spawnSync("/bin/sh", [SCRIPT, ...withMarker(args, env)], { input: later === "clear" ? "" : askUser("Upgrade Claude Code?"), encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
+    assert.equal(r.status, 0);
+    writeFileSync(join(gate, "go"), "");
+    assert.equal(await ended, 0);
+    const states = readFileSync(state, "utf8").trim().split("\n");
+    const calls = readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    if (later === "clear") {
+      assert.equal(states.at(-1), "clear", `${later}: the claim the CLI was left with (${states})`);
+      assert.equal(intentOf(h), "clear"); assert.equal(appliedOf(h), "clear");
+    } else {
+      assert.equal(states.at(-1), "set question", `${later}: the claim the CLI was left with (${states})`);
+      assert.equal(calls.at(-1)[7], "--message=Upgrade Claude Code?", "with the question's own text");
+      assert.equal(intentOf(h), "question"); assert.equal(intentTextOf(h), "Upgrade Claude Code?");
+      assert.equal(readFileSync(`${markerOf(h)}.applied`, "utf8"), "question\nUpgrade Claude Code?\n");
+    }
+    assert.ok(!calls.some((c) => c.includes("--message=Claude needs your permission to use Bash")) || states.at(-1) !== "set permission", "the earlier set's text never lands last");
+  }
 });
 
 test("real script, real CLI: the text of the prompt reaches waitingOnYou, the question's own words for an AskUserQuestion", { timeout: 120000 }, () => {

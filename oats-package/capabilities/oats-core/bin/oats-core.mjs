@@ -33,7 +33,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const WAITING_SCRIPT = "claude-waiting.sh";
@@ -103,9 +103,10 @@ function hasAcl(dir) {
 export const markerPath = (home, dir) => join(dir, `${createHash("sha256").update(home).digest("hex").slice(0, 16)}.claude`);
 
 /** A new session starts with no claim (the kernel's session boundary voids them), so the
- *  marker state an earlier session left (intent, applied, a lock) is forgotten. */
+ *  marker state an earlier session left (intent, applied, a set's text, a lock) is forgotten. */
 export function resetMarker(marker) {
-  for (const f of [marker, `${marker}.applied`, `${marker}.force`, join(`${marker}.lock`, "pid"), join(`${marker}.lock.reap`, "pid")]) { try { unlinkSync(f); } catch { /* absent */ } }
+  const texts = (() => { try { return readdirSync(dirname(marker)).filter((name) => name.startsWith(`${basename(marker)}.text-`)).map((name) => join(dirname(marker), name)); } catch { return []; } })();
+  for (const f of [marker, `${marker}.applied`, `${marker}.force`, ...texts, join(`${marker}.lock`, "pid"), join(`${marker}.lock.reap`, "pid")]) { try { unlinkSync(f); } catch { /* absent */ } }
   for (const d of [`${marker}.lock`, `${marker}.lock.reap`]) { try { rmdirSync(d); } catch { /* absent */ } }
 }
 

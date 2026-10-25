@@ -340,7 +340,8 @@ oats.core's hooks report a pending permission prompt or question themselves
 question dialog, or a permission prompt, needs no claim of yours; set your own
 for a question you ask in text, by mail or by chat. Your attention claim is
 yours alone, and the emitter never clears it. A claim with text is shown over
-one without, so a later permission prompt does not hide your question.
+one without, so a later claim with no text does not hide your question. A later
+one with text, such as a permission prompt's, is shown in its place.
 
 ## Spawned by a trigger
 

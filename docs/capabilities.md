@@ -1107,12 +1107,15 @@ The text is made one line, the kernel's refused characters are replaced with
 U+FFFD, and it is cut to 200 code points with `…`, so the kernel accepts it.
 An input with no text, or a reader that fails or takes over 1 s, sets the
 claim without one. A new text for the same reason is a change, so the claim
-is set again.
+is set again. A set records its intent before it reads the text, and only
+the latest event's text is ever applied. So a clear or a question that comes
+while an earlier set is still reading stands, and the earlier text never
+lands over it.
 
 Claude Code shows an AskUserQuestion through its permission dialog, so that
 dialog's own `permission_prompt` follows the question's set: the script keeps
-the current reason and text in its marker, and a permission prompt never
-relabels an open question or replaces its text. A granted tool that fails fires `PostToolUseFailure`, not
+the current reason in its marker (and the text beside it), and a permission
+prompt never relabels an open question or replaces its text. A granted tool that fails fires `PostToolUseFailure`, not
 `PostToolUse`, so that clears too.
 
 **Subagents' tool calls do not clear.** Background and parallel subagents

@@ -24,9 +24,13 @@
 #
 # The protocol (with a marker; without one every event just calls the CLI):
 #   <marker>          the INTENT: the latest event's wish, "permission", "question" or
-#                     "clear", on its first line; a set's text, when it has one, on the second.
-#                     Every hook writes it first.
-#   <marker>.applied  what the CLI last RECORDED, in the intent's two lines: also "unknown" while a call is under way
+#                     "clear", on its first line; a set's event id ("<pid>-<began>") on the
+#                     second. Every hook writes it first, before it reads anything.
+#   <marker>.text-<event>  the text of the set whose event id that is, written once the set has
+#                     read it. Only the intent's own event's text is ever applied, so a set
+#                     still reading its text when a later event comes can never apply it.
+#   <marker>.applied  what the CLI last RECORDED: the reason, and the text on a second line when
+#                     it had one; also "unknown" while a call is under way
 #                     or after one failed (it may have written the claim). Absent is clear
 #                     (the launch hook removes it with the session's claims). Only the lock
 #                     holder writes it.
@@ -194,17 +198,34 @@ state_of() {
   case "$line" in permission|question) printf '%s' "$line" ;; *) printf clear ;; esac
 }
 
-# A set's text: the second line of the intent or applied file $1, or empty.
-text_of() {
+# What the CLI last recorded as the claim's text: the second line of the applied file, or empty.
+applied_text() {
   line=
-  [ -f "$1" ] && { IFS= read -r line; IFS= read -r line; } < "$1"
+  [ -f "$applied" ] && { IFS= read -r line; IFS= read -r line; } < "$applied"
   printf '%s' "$line"
 }
 
-# Write a claim (a reason, or clear, and the text) to file $2: the text on a second line only
+# The intent, read once into $want (as state_of) and $text: the text of the intent's own set,
+# from the file of its event id, or empty (a clear, a set with no text, or one still reading it).
+read_intent() {
+  want=clear text='' line='' event=''
+  [ -f "$marker" ] && { IFS= read -r line; IFS= read -r event; } < "$marker"
+  case "$line" in permission|question) want=$line ;; *) return 0 ;; esac
+  case "$event" in ''|*[!0-9-]*) return 0 ;; esac
+  [ -f "$marker.text-$event" ] && [ ! -L "$marker.text-$event" ] && IFS= read -r text < "$marker.text-$event"
+  return 0
+}
+
+# Whether the intent is what the CLI last recorded, its text included.
+intent_applied() {
+  read_intent
+  [ "$want" = "$(applied_of)" ] && [ "$text" = "$(applied_text)" ]
+}
+
+# Record what the CLI recorded: the reason (or clear) $1 and, on a second line, the text $2
 # when there is one.
-write_claim() {
-  if [ -n "$3" ]; then printf '%s\n%s\n' "$1" "$3" > "$2"; else printf '%s\n' "$1" > "$2"; fi
+write_applied() {
+  if [ -n "$2" ]; then printf '%s\n%s\n' "$1" "$2" > "$applied"; else printf '%s\n' "$1" > "$applied"; fi
 }
 
 # What the CLI last recorded: absent is clear (nothing recorded this session); anything
@@ -301,10 +322,7 @@ reconcile() {
   while take_lock; do
     settled=''
     while :; do
-      want=$(state_of "$marker")
-      text=''
-      [ "$want" = clear ] || text=$(text_of "$marker")
-      if [ ! -e "$force" ] && [ "$want" = "$(applied_of)" ] && [ "$text" = "$(text_of "$applied")" ]; then settled=1; break; fi
+      if intent_applied && [ ! -e "$force" ]; then settled=1; break; fi
       [ "$calls" -lt 3 ] && [ $(( $(date +%s) - began )) -lt 2 ] || break
       # This call applies the latest intent, so it answers every forced call asked so far;
       # one asked during it leaves the flag again for the next round.
@@ -322,12 +340,12 @@ reconcile() {
       # A holder whose lock was broken under it (it ran past 5 s: the machine slept)
       # acknowledges nothing and leaves the successor's lock alone.
       owns || return 0
-      write_claim "$want" "$applied" "$text"
+      write_applied "$want" "$text"
     done
     owns || return 0
     release "$lock"
     # A hook that found the lock held between our last read and here left its intent to us.
-    [ -n "$settled" ] && { [ -e "$force" ] || [ "$(state_of "$marker")" != "$(applied_of)" ] || [ "$(text_of "$marker")" != "$(text_of "$applied")" ]; } || return 0
+    [ -n "$settled" ] && { [ -e "$force" ] || ! intent_applied; } || return 0
   done
 }
 
@@ -354,8 +372,11 @@ if [ "$action" = set ]; then
   # open question.
   [ "$reason" = permission ] && [ "$intent" = question ] && exit 0
   began=$(date +%s)
+  # The intent first, so this event is ordered before anything later; its text after.
+  event="$$-$began"
+  printf '%s\n%s\n' "$reason" "$event" > "$marker"
   message_of
-  write_claim "$reason" "$marker" "$message"
+  [ -n "$message" ] && printf '%s\n' "$message" > "$marker.text-$event"
 elif [ "$action" = clear-tool ]; then
   # Nothing to clear (cleared and recorded so, no forced call due): no node process, no
   # input read. This is the hot path: every tool call runs it twice.
@@ -372,4 +393,11 @@ else
   : > "$force"
 fi
 reconcile
+# The texts of earlier sets, a minute old, but never the intent's own.
+if [ "$action" = set ]; then
+  read_intent
+  find "${marker%/*}" -name "${marker##*/}.text-*" -mmin +1 2>/dev/null | while IFS= read -r old; do
+    [ "$old" = "$marker.text-$event" ] || rm -f "$old"
+  done
+fi
 exit 0
