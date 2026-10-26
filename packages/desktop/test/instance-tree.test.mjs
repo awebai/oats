@@ -116,8 +116,8 @@ test("the roster filter matches a row's name, soul and repository, and nothing e
 });
 
 // Replaces the Redesign v3 group-header test: Workspace v4 marks agent groups
-// without a title or collapse control, by a separator: a 6px gap since
-// 2026-10-23 (it was 14px).
+// without a title or collapse control, by a separator: a 14px gap (6px from
+// 2026-10-23, 14px again since the product owner's return of 2026-10-26).
 test("agent-group separator: a titleless gap that still names the group for assistive technology", () => {
   const dom = new JSDOM("<!doctype html><body></body>");
   const gap = clusterSeparator(dom.window.document, { label: "docs-writer-1", count: 2 });

@@ -204,25 +204,26 @@ workspace on a server: `name — server`).
 
 ## Workspaces
 
-The sidebar has two sections: **Workspaces**, a heading over the list of
-workspaces, then, after a thin line, the current workspace's: its two main
-views, **Workspace** and **Deployments**, side by side, then **Instances**,
-a heading over its list. The two headings are the sidebar's largest type,
-above the smaller machine labels ("THIS MAC") in the list of instances; the
-workspaces' names are a little larger than body text. In a sidebar too
-narrow for both labels the views show their icons alone, each named in its
-tooltip. A window opens on the **Workspace** page: at launch, and after you
-choose a workspace for it. **Spawn instance** is the **+** at the end of the **Instances**
-heading, after the running count. The headings' **+** buttons, the
-workspaces' needs-input marks and the instances' harness marks line up in
-one column at the sidebar's right edge. The bottom bar shows the OATS mark
-at its left, and at its right the sidebar toggle (**Hide the sidebar**) and
-the settings cog, whose menu holds **Theme…** and **Keyboard shortcuts…**,
-each with its shortcut. Connections is in the command palette (**Settings:
-Connections…**), and the palette opens with its shortcut or Ctrl+X then `k`.
+The sidebar, top to bottom: the **Workspace** heading, with **Show only the
+current workspace** and **Add local workspace…** at its end, over the list of
+workspaces; a thin line; the two main views, **Workspace overview** and
+**Automations**, one under the other; another line; **Instances**, a heading
+with the running count over the list of instances; and, over a line, the
+foot, one bar: the OATS mark and the sidebar toggle (**Hide the sidebar**)
+after it, and at the bar's right **Spawn instance**, its words alone (a ground
+only on hover), which
+opens Quick Open (⌘P / Alt+P, named in its tooltip) to pick a soul and then
+the spawn dialog, and the settings cog, whose menu holds **Theme…** and **Keyboard
+shortcuts…**, each with its shortcut. A window opens on the **Workspace
+overview** page, on its **Souls** tab: at launch, and after you choose a
+workspace for it. Connections is in the command palette
+(**Settings: Connections…**), and the palette opens with its shortcut or
+Ctrl+X then `k`.
 The instances have no search field: to find one by name, type it in the
 command palette, which opens its terminal. ⌘F / Alt+F (**Focus the
-instance roster**) and `/` in the sidebar go to the roster's current row.
+instance roster**) and `/` in the sidebar go to the roster's current row;
+on an empty roster, to its one action, the foot's **Spawn instance**, where
+F6 lands too (a failed read's **Retry** comes first).
 
 The list of workspaces is always shown. Its heading holds **Add local
 workspace…** (the **+**). The list has one row per workspace this window can show, whatever
@@ -236,6 +237,17 @@ below, a line under the list says how many ("2 more below"), with the
 needs-input mark at its right when one of them has an instance that needs
 input.
 
+**Show only the current workspace** is the toggle before the **+** in the
+heading, for working in one workspace at a time. Pressed (its icon in the
+accent colour), the list shows the current workspace's row alone. Nothing
+stands for the others: no "N more" line, and no needs-input mark for one of
+them that waits. Press it again, or use ⌥⇧⌘O on macOS / Ctrl+Alt+Shift+O on
+Linux and Windows (the same in every chord family, and from a terminal) or the
+palette's **Show only the current workspace**, to see every workspace again.
+Ctrl+X then ↑ / ↓ still move to the previous / next workspace, which then
+shows alone. A window choosing a workspace shows them all. The choice is remembered on this
+computer.
+
 - **A row is one line: a circle and the workspace's name.** No icon, no
   machine, no state: a workspace's own pages show its machines and
   deployments. The circle is the one an instance row has, in the same place.
@@ -243,7 +255,7 @@ input.
 - **The current workspace** has its circle filled, like a running
   instance's, and its name in bold; the others have the ring a stopped
   instance has. It has no background of its own: the selection's background
-  marks the current page (Workspace or Deployments), so the
+  marks the current page (Workspace overview or Automations), so the
   sidebar fills one "you are here" row. A screen reader hears it as current,
   and the list's description names it, by the same name as its row.
 - **The needs-input mark.** A row has an exclamation mark (a small amber
@@ -302,7 +314,7 @@ button opens it again.
 
 Picking a workspace another window shows moves it to this window: a pick from
 the list, the workspace select of
-Deployments or Workspace, and a spawn whose new instance is in that workspace.
+the Workspace page, and a spawn whose new instance is in that workspace.
 Nothing else comes to the front. The other window lets the workspace go: it
 shows the workspace it showed most recently before that one among those the
 Desktop still serves and no other window shows, else no workspace ("Choose a
@@ -545,18 +557,21 @@ matched by the workspace each one reports (its repository key and default
 team, by the kernel's rules). It needs a CLI with the `workspace-identity`
 feature (OATS 0.36.0); without it each deployment has its own entry.
 
-- **Deployments.** The **Deployments** page (formerly the Active overview)
-  shows the workspace's overview trees. **All** stacks one section per
-  deployment, each headed by its machine and folder ("This Mac ·
-  ~/acme", "altair · ~/northwind"). Then each deployment has a tab of
-  its own, named by its machine ("altair"; "This Mac · oats-v2" when this Mac
-  holds two). A workspace with one deployment shows just that deployment's
-  tab. The tab you chose is remembered per workspace. The round **i** after
-  the tabs, **What is a deployment?**, explains in plain words what a
-  deployment is (click it, or Enter or Space on it; Esc or Close closes it). With two or more
-  deployments, the sidebar's instance list is grouped under one heading per
-  machine; with one, it has no headings.
-- **An instance's card.** Clicking an instance on the Deployments page shows
+- **Machines.** **Workspace › Machines** (once the Deployments page, and
+  the Active overview before that) shows the workspace's overview trees.
+  One sentence above them says what a machine is: "Each machine runs this
+  workspace in a folder of its own. The instances under a machine run on
+  that machine." **All** stacks one section per deployment, each headed by
+  its machine and folder ("This Mac · ~/acme", "altair · ~/northwind"),
+  with "Instances on this machine" or "Instances on altair" under it. Then
+  each deployment has a tab of its own, named by its machine ("altair";
+  "This Mac · oats-v2" when this Mac holds two). A workspace with one
+  deployment shows just that deployment's tab, its tree under the same
+heading. The tab you chose is
+  remembered per workspace. With two or more deployments, the sidebar's
+  instance list is grouped under one heading per machine; with one, it has
+  no headings.
+- **An instance's card.** Clicking an instance on the Machines tab shows
   what it reports and two buttons. **Go to instance** opens its terminal tab;
   for a stopped instance it reads **Start…** and opens the Start dialog.
   **Go to soul** opens the soul it was spawned from on the Workspace page. It
@@ -576,18 +591,18 @@ feature (OATS 0.36.0); without it each deployment has its own entry.
   altair"), with a mark when one of them isn't live.
 - **Not matched to a workspace.** A deployment that can't be matched is
   listed on its own under that heading in the list, with its machine and
-  a short reason; choosing it opens its tab on the Deployments page. When this
+  a short reason; choosing it opens its tab on the Machines tab. When this
   computer's OATS is too old to report workspaces, nothing can be matched:
   each deployment is listed on its own, as before, and its heading says to
   update OATS.
 - **Actions.** Everything you do to an instance goes to that instance's own
   deployment. Workspace-wide pages (Setup, Capabilities, Sync, Automations,
   Schedules, Teams configuration) act on the workspace's first deployment on
-  this Mac, else its first. No Workspace page names it: not Souls,
-  Capabilities, Automations, Teams or Setup, nor a soul's, a capability's or
-  a team's page. The side panel names it ("On This Mac · ~/acme", under a
-  soul's name) when there are two or more, as do Brain and the Sync sheet,
-  and the Deployments page shows each deployment on its own tab.
+  this Mac, else its first. None of them names it: not Souls,
+  Capabilities, Teams or Setup, nor the Automations page, nor a soul's, a
+  capability's or a team's page. The side panel names it ("On This Mac ·
+  ~/acme", under a soul's name) when there are two or more, as do Brain and
+  the Sync sheet, and the Machines tab shows each deployment on its own tab.
 - **Spawn.** With two or more deployments, the Spawn dialog asks first which
   one to spawn in (and says "Runs on" in its summary), starting on the one you last used in that workspace when it
   offers the soul, else the first that does (this Mac first). With one, it
@@ -599,8 +614,8 @@ deployment. Details are in
 
 ## Scheduling agents and wake messages
 
-Open **Workspace › Automations › Schedules** in the selected workspace (⌘3 /
-Ctrl+3 lands on Automations) to launch a new agent on a cron,
+Open **Automations › Schedules** in the selected workspace (the sidebar's
+**Automations**, or ⌘3 / Ctrl+3) to launch a new agent on a cron,
 wake an existing agent with a message, or harvest its knowledge. **Schedule…**
 on a Soul roster card preselects that soul. Choose the task or message, repeat
 pattern and time zone; new agent jobs also offer harness, model, permissions
@@ -667,7 +682,7 @@ member and what each member state means. Then **Shared through Git** lists
 what the workspace declares (Members, with the host first and tagged
 **Host**, Packages and Defaults). **This computer** lists what is not shared:
 this deployment's settings, lock, CLI and instances, the member clones, and
-the machines that run the workspace.
+the machines that run the workspace (**Registered machines**).
 
 ## A workspace's machines
 
@@ -675,7 +690,7 @@ A window offers only the machines that run its workspace: those whose
 registration reports the same workspace key as the window's deployment on this
 computer (OATS CLI with `servers-per-workspace` and `server-connect`). The
 spawn dialog's **Where to run** lists "This computer" and those machines; the
-Workspace › Setup tab lists them with their OATS version and whether they can
+Workspace › Setup tab's **Registered machines** lists them with their OATS version and whether they can
 be reached, with **Check** and **Remove**. Registrations whose key is not known
 yet are checked once in the background after the Desktop starts.
 

@@ -1,6 +1,7 @@
-// Roster PR badges (forge-roster, #234): each local instance's pull request on its
-// roster row — the number and state beside the name, the link in the row tools —
-// read at most once a minute, nothing when gh is unavailable, never a guess.
+// Roster PR badges (forge-roster, #234): each local instance's pull request for its
+// roster row — the number and state in the hover card, the link in the row tools (the meta
+// line holds the soul and the repository only, 2026-10-26) — read at most once a minute,
+// nothing when gh is unavailable, never a guess.
 import test from 'node:test';
 import { viewContext } from './helpers/view-context.mjs';
 import assert from 'node:assert/strict';
@@ -68,7 +69,7 @@ test('reads once a minute per workspace; gh unavailable clears; busy or failed k
   assert.equal(prs.get('/a'), null); assert.deepEqual(prs.get('/b'), pr('/b'));
 });
 
-test('the shipped roster row: the chip beside the name, the link in the row tools, the PR in the hover card', t => {
+test('the shipped roster row: no PR chip on the row (its meta line is the soul and the repository), the link in the row tools, the PR in the hover card', t => {
   const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), 'utf8');
   const source = read('shell.mjs').match(/function renderContextRoster\(instances\) \{[\s\S]*?\n\}/)?.[0];
   assert.ok(source, 'exercise the shipped roster composition');
@@ -94,23 +95,28 @@ test('the shipped roster row: the chip beside the name, the link in the row tool
   runInNewContext(`${source}\nrenderContextRoster`, context)(roster);
   const at = name => [...doc.querySelectorAll('.ctx-tree-row')].find(r => r.querySelector('.ctx-name').textContent === name);
   const withPr = at('with-pr');
-  // Human, 2026-09-29: the chip moved from the name line to the meta line, before the branch.
-  const chip = withPr.querySelector('.ctx-meta.ctx-meta-pr > .ctx-pr');
-  assert.equal(chip.textContent, '#231');
-  assert.equal(chip.previousElementSibling.className, 'ctx-meta-lead', 'after the repository');
-  assert.match(chip.previousElementSibling.textContent, / ·$/);
-  const branch = chip.nextElementSibling;
-  assert.ok(!branch || branch.className === 'ctx-meta-tail', 'the branch (if any) follows the chip');
+  const facts = name => tips.get(at(name).querySelector('.ctx-inst').dataset.treeInstance)?.().rows ?? [];
+  // The product owner, 2026-10-26: the chip left the meta line (it had moved there from the name line on 2026-09-29);
+  // the line is the soul and the repository, and the pull request is the hover card's and the row tools'.
+  assert.equal(withPr.querySelector('.ctx-pr'), null, 'no chip on the row');
+  const meta = withPr.querySelector('.ctx-meta');
+  assert.equal(meta.className, 'ctx-meta ctx-soul-repo', 'the meta line is not a PR line');
+  assert.deepEqual([...meta.children].map(el => el.className), ['ctx-meta-soul', 'ctx-meta-repo']);
+  assert.equal(meta.querySelector('.ctx-meta-lead, .ctx-meta-tail'), null);
+  assert.doesNotMatch(withPr.querySelector('.ctx-inst').textContent, /#231|b\/with-pr/, 'neither the number nor the branch on the row');
   assert.equal(withPr.querySelector('.ctx-copy').firstElementChild.className, 'ctx-name', 'the name line holds only the name');
   assert.equal(withPr.querySelector('.ctx-name').children.length, 0);
   assert.equal(withPr.querySelector('.ctx-inst a, .ctx-inst button'), null, 'the row button holds no nested control');
   const open = withPr.querySelector('.ctx-row-tools button.ctx-pr-open');
   assert.equal(open.getAttribute('aria-label'), "Open with-pr's pull request #231 · open on GitHub");
   open.click(); assert.deepEqual(opened, ['https://github.com/awebai/oats/pull/231']);
-  assert.deepEqual(tips.get(withPr.querySelector('.ctx-inst').dataset.treeInstance)().rows.at(-1), ['Pull request', '#231 · open', 'mono']);
+  assert.deepEqual(facts('with-pr').at(-1), ['Pull request', '#231 · open', 'mono']);
   const draft = at('draft-no-url');
-  assert.equal(draft.querySelector('.ctx-pr').dataset.prState, 'draft');
+  assert.equal(draft.querySelector('.ctx-pr'), null);
+  assert.deepEqual(facts('draft-no-url').at(-1), ['Pull request', '#7 · draft', 'mono'], 'its state in the hover card');
   assert.equal(draft.querySelector('.ctx-pr-open'), null, 'no web address: no link');
   assert.equal(at('none').querySelector('.ctx-pr, .ctx-pr-open, .ctx-meta-pr'), null, 'no PR: the row is unchanged');
-  assert.equal(at('remote').querySelector('.ctx-pr'), null, 'a remote instance never shows a local read');
+  assert.equal(facts('none').some(([k]) => k === 'Pull request'), false);
+  assert.equal(at('remote').querySelector('.ctx-pr, .ctx-pr-open'), null, 'a remote instance never shows a local read');
+  assert.equal(facts('remote').some(([k]) => k === 'Pull request'), false);
 });

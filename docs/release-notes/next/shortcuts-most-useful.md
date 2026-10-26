@@ -7,8 +7,9 @@
   then `?` for everything. The keys are read from the live keymap, so they
   follow your platform, your chord family and your rebinds. Where the family
   has no chord for a move, the leader's key is shown instead.
-- **What lost its sidebar button is in the shortcuts list:** the palette,
-  Connections ("Settings: Connections…", unbound and rebindable), Spawn
-  instance, and Deployments, Workspace and Workspace › Automations, each
-  with where it lands
-  ([desktop-keyboard.md](../../packages/desktop/docs/desktop-keyboard.md)).
+- **What has no sidebar button is in the shortcuts list:** the palette,
+  Connections ("Settings: Connections…", unbound and rebindable), and
+  Workspace › Machines (⌘1 / Ctrl+1), beside Workspace overview and
+  Automations, each with where it lands. The sidebar's Spawn instance is
+  Quick Open's row, and the settings cog's **Keyboard shortcuts…** opens the
+  list ([desktop-keyboard.md](../../packages/desktop/docs/desktop-keyboard.md)).

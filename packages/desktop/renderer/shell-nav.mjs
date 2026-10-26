@@ -9,19 +9,20 @@
  * shell's permanent sidebar roster (below the rail), not a rail destination
  * (scope correction of PR #29 — the human rejected the extra tab/sidebar). */
 export const NAV = [
-  // In the nav's order under the list of workspaces, Workspace first (2026-10-23); ⌘1 / Ctrl+1 stays Deployments (bound by id).
-  { name: "spawn", label: "Workspace", icon: "workspace", title: "Workspace" },
-  // #482 (UI spec): the Active overview became Deployments: the overview trees, split by deployment, one tab each.
-  { name: "hierarchy", label: "Deployments", icon: "layers", title: "Deployments" },
+  // The sidebar's two views (the product owner, 2026-10-26): the Workspace page, which opens on Souls, and
+  // Automations, a page of its own again. ⌘2 / Ctrl+2 and ⌘3 / Ctrl+3 stay theirs (bound by id).
+  { name: "spawn", label: "Workspace overview", icon: "workspace", title: "Workspace overview" },
+  // Schedules and Triggers are one destination with two subtabs (human, 2026-09-28).
+  { name: "automations", label: "Automations", icon: "automations", title: "Automations" },
 ];
 
-/** Destinations that are a tab of a NAV page, not a page of their own (2026-10-23): Automations
- * (Schedules | Triggers) is the Workspace page's Automations tab. Its action (`stage.automations`, ⌘3 /
- * Ctrl+3), its palette command and every open of the name land on that page and tab. Its `label` says
- * where that is, the page's label, then the tab's ("View: Workspace › Automations" in the palette and
- * the shortcuts editor). */
+/** Destinations that are a tab of a NAV page, not a page of their own (2026-10-26): Machines, the
+ * Deployments page of before (#482: the overview trees, split by deployment, one tab each), is a tab of
+ * the Workspace page, before Setup. Its action (`stage.hierarchy`, ⌘1 / Ctrl+1), its palette command and every
+ * open of the name land on that page and tab. Its `label` says where that is, the page's label, then the
+ * tab's ("View: Workspace › Machines" in the palette and the shortcuts editor). */
 export const NAV_TABS = [
-  { name: "automations", label: "Workspace › Automations", page: "spawn", tab: "automations" },
+  { name: "hierarchy", label: "Workspace › Machines", page: "spawn", tab: "machines" },
 ];
 
 /** The NAV_TABS entry `name` opens, or null for a page of its own (or nothing). */

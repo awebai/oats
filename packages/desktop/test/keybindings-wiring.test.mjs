@@ -28,7 +28,7 @@ test("shell registers global + tabs actions covered by the engine's DEFAULT_KEYM
     "terminal.fontBigger", "terminal.fontSmaller", "terminal.fontReset",
     "tabs.next", "tabs.prev", "tabs.close",
   ]) assert.match(src, new RegExp(`id: "${id.replace(".", "\\.")}"`), `action ${id} registered`);
-  assert.match(src, /\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(/, "stage actions derive from the nav manifest, the Workspace tabs (stage.automations) included");
+  assert.match(src, /\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(/, "stage actions derive from the nav manifest, the Workspace tabs (stage.hierarchy, the Machines tab) included");
   assert.match(src, /setActiveContexts/, "shell drives active contexts");
 });
 

@@ -113,11 +113,14 @@ test('createRosterLoading wires the shipped chrome: list region, head indicator,
   assert.equal(list.getAttribute('aria-busy'), null); assert.equal(list.querySelector('[data-skeleton]'), null);
   state.begin(); c.advance(REFRESHING_DELAY_MS);
   const indicator = rosterEl.querySelector('.ctx-head .loading-refreshing');
-  // After the count: appended last in the heading, after its Spawn instance +, which the CSS orders last (the
-  // sidebar layout, 2026-10-23: shell.css `.ctx-head > .ctx-head-add { order: 1 }`).
+  // After the count, closing the heading, which holds no control (2026-10-26: Spawn instance is the foot's), and shown
+  // in words beside it (shell.css `.ctx-head > .loading-refreshing { flex: none; margin-left: 6px; }`: no clipping).
   assert.equal(indicator.textContent, 'Refreshing…'); assert.equal(indicator.nextElementSibling, null, 'appended last');
-  assert.equal(indicator.previousElementSibling.id, 'sidebar-spawn'); assert.equal(indicator.previousElementSibling.previousElementSibling.className, 'ctx-count', 'after the count');
-  assert.match(readFileSync(new URL('../renderer/shell.css', import.meta.url), 'utf8'), /^\.ctx-head > \.ctx-head-add \{ order: 1; \}/m, 'the + shown after it');
+  assert.equal(indicator.previousElementSibling.className, 'ctx-count', 'after the count');
+  assert.deepEqual([...rosterEl.querySelectorAll('.ctx-head button')], [], 'the heading holds no control');
+  const css = readFileSync(new URL('../renderer/shell.css', import.meta.url), 'utf8');
+  assert.match(css, /^\.ctx-head > \.loading-refreshing \{ flex: none; margin-left: 6px; \}$/m, 'its words shown in full after the count');
+  assert.doesNotMatch(css, /\.ctx-head-add|\.loading-refreshing \{[^}]*(?:width|overflow)/, 'no + to order after, and no clipping to its dot');
   c.advance(30_000); state.fail(new Error('boom'));
   assert.equal(status.querySelector('.loading-notice-text').textContent, "Couldn't refresh instances · observed 30s ago");
   assert.equal(status.querySelector('.loading-retry').textContent, 'Retry');
@@ -126,11 +129,14 @@ test('createRosterLoading wires the shipped chrome: list region, head indicator,
   status.querySelector('.loading-retry').focus(); state.begin(); state.succeed({ observedAt: new Date(c.now()).toISOString() });
   assert.equal(doc.activeElement, list.querySelector('.ctx-inst[tabindex="0"]'));
   assert.equal(status.children.length, 0);
-  // With no rows (an empty roster): the list of workspaces' stop, else its Add local workspace…; never nothing.
+  // With no rows (an empty roster): its one action, the foot's Spawn instance (the shell's rosterEntry rule),
+  // else (no Spawn instance to take it) the list of workspaces' stop, else its Add local workspace…; never nothing.
   const retryAgain = () => { state.begin(); c.advance(1_000); state.fail(new Error('boom')); status.querySelector('.loading-retry').focus();
     state.begin(); state.succeed({ observedAt: new Date(c.now()).toISOString() }); };
   list.innerHTML = '<div class="ctx-empty">No instances.</div>';
   doc.getElementById('ws-options').innerHTML = '<ul class="ws-group"><li class="ws-option-row"><button type="button" class="ws-option" aria-current="true" tabindex="0">A</button></li></ul>';
+  retryAgain(); assert.equal(doc.activeElement, doc.getElementById('sidebar-spawn'), 'an empty roster: the foot\'s Spawn instance');
+  doc.getElementById('sidebar-spawn').hidden = true;
   retryAgain(); assert.equal(doc.activeElement, doc.querySelector('#ws-options .ws-option'));
   doc.getElementById('ws-options').innerHTML = '';
   retryAgain(); assert.equal(doc.activeElement, doc.getElementById('ws-add-open'));
@@ -290,8 +296,7 @@ test('refreshing keeps rows and focus; "Refreshing…" appears in the head only 
   s.c.advance(1);
   const indicator = s.rosterEl.querySelector('.ctx-head > .loading-refreshing');
   assert.equal(indicator.textContent, 'Refreshing…'); assert.equal(indicator.nextElementSibling, null, 'appended last');
-  assert.equal(indicator.previousElementSibling.id, 'sidebar-spawn', 'after the heading\'s +, which the CSS orders after it');
-  assert.equal(indicator.previousElementSibling.previousElementSibling, s.count(), 'and the count');
+  assert.equal(indicator.previousElementSibling, s.count(), 'right after the count (the heading holds no control)');
   await s.reply(1, panelOf('A', roster.map(r => ({ ...r }))));
   assert.equal(s.rosterEl.querySelector('.loading-refreshing'), null);
   assert.deepEqual(s.rows(), before, 'identical data: the very same nodes'); assert.equal(s.doc.activeElement, focused);
@@ -958,9 +963,9 @@ test('a read releases this window\'s retire only when it observed the row\'s dep
 });
 
 // The stale line's Retry hands focus to the last answer's row (focusFallback) as it goes, before this answer is
-// painted; that row may not survive the paint. Focus then goes to rosterEntry(): this answer's row, else the
-// heading's Add local workspace… (no workspace row in this fixture), never <body>.
-for (const [rows, expected] of [[[row('new-row')], 'the new row'], [[], 'Add local workspace…']]) test(`a stale Retry whose row the answer removes lands on ${expected}`, async t => {
+// painted; that row may not survive the paint. Focus then goes to rosterEntry(): this answer's row, else, the
+// roster now empty, its one action, the foot's Spawn instance; never <body>.
+for (const [rows, expected] of [[[row('new-row')], 'the new row'], [[], "the foot's Spawn instance"]]) test(`a stale Retry whose row the answer removes lands on ${expected}`, async t => {
   const s = shell(t);
   await s.reply(0, panelOf('A', [row('old-row')]));
   s.refreshContextRoster(); await s.fail(1, new Error('bridge down'));
@@ -968,7 +973,7 @@ for (const [rows, expected] of [[[row('new-row')], 'the new row'], [[], 'Add loc
   retry.focus(); retry.click(); assert.equal(s.doc.activeElement, retry);
   await s.reply(2, panelOf('A', rows));
   assert.equal(s.status().querySelector('.loading-notice'), null, 'the stale line went');
-  const want = rows.length ? s.list().querySelector('.ctx-inst') : s.doc.getElementById('ws-add-open');
+  const want = rows.length ? s.list().querySelector('.ctx-inst') : s.doc.getElementById('sidebar-spawn');
   assert.ok(want, expected);
   assert.equal(s.doc.activeElement, want);
   if (rows.length) assert.equal(s.list().querySelectorAll('.ctx-inst[tabindex="0"]').length, 1, 'one roving stop');

@@ -66,7 +66,7 @@ function deferred() {
 const flush = () => new Promise(setImmediate);
 
 function shell(t, { shellSource = source, ownership = createSelectionOwnership, terminal = createTerminalTab, leader = false } = {}) {
-  const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><aside id="sidebar"><div class="ctx-head ws-head"><button id="ws-add-open" class="ws-add-open" type="button">+</button></div><div id="ws-options"></div><nav id="nav"><button class="nav-item active">Deployments</button></nav><div id="instance-roster"><span class="ctx-count"></span><div class="ctx-list"></div></div><div id="nav-foot"></div></aside>`);
+  const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><aside id="sidebar"><div class="side-head"><span id="ws-heading" class="ws-heading">Workspace</span><button id="ws-add-open" class="ws-add-open side-icon-button" type="button">+</button></div><section id="ws-list"><div id="ws-options"></div></section><nav id="nav"><button class="nav-item active">Workspace overview</button></nav><section id="instance-roster"><div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div><div class="ctx-list"></div></section><div id="nav-foot"><div id="sidebar-bar" role="group" aria-label="Sidebar tools"><span class="sidebar-brand" aria-hidden="true"></span><button id="sidebar-toggle" class="side-icon-button" type="button" data-action="sidebar.toggle">Hide the sidebar</button><button id="sidebar-spawn" type="button" data-action="app.quickOpenSouls" aria-label="Spawn instance">Spawn instance</button><button id="sidebar-settings" class="side-icon-button sidebar-settings" type="button" aria-label="Settings"></button></div></div></aside>`);
   t.after(() => dom.window.close());
   const document = dom.window.document;
   // The shell's one window keydown listener (shell.mjs), on this harness's platform.
@@ -88,10 +88,10 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     wsActiveTerminal: new Map(), pendingTerms: new Set(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"),
-    stageHost: document.getElementById("stagehost"), stage: { name: "hierarchy" },
+    stageHost: document.getElementById("stagehost"), stage: { name: "automations" },
     navEl: document.getElementById("nav"), contextRosterEl: null,
     brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(),
-    workspaceLabel: { reset() {} }, stageSidebarMode: () => "overview", NAV: [{ name: "hierarchy" }], navTab /* the shipped NAV_TABS lookup: showStage reads it first */,
+    workspaceLabel: { reset() {} }, stageSidebarMode: () => "overview", NAV: [{ name: "automations" }] /* a page of its own; hierarchy is a tab of the Workspace page (2026-10-26) */, navTab /* the shipped NAV_TABS lookup: showStage reads it first */,
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     updateActiveContexts: (on = c.tabLayerVisible) => { c.tabLayerVisible = on; },
     // Panel behavior is covered with the real presenter in split-empty-shell.
@@ -419,7 +419,8 @@ for (const outcome of ["resolve", "reject"]) {
       assert.equal(s.document.activeElement, focused);
       if (action === "close-last") {
         assert.equal(s.c.tabLayerVisible, false);
-        assert.equal(focused, s.document.getElementById("ws-add-open"));
+        // The roster's entry (rosterEntry): with no rows, its one action, the foot's Spawn instance (2026-10-26).
+        assert.equal(focused, s.document.getElementById("sidebar-spawn"));
       }
     });
   }
@@ -555,8 +556,12 @@ test("sidebar.focusFilter's run focuses the roster's tab stop, else the sidebar'
   s.focusRoster();
   assert.equal(s.document.activeElement, rows[1], "the roving stop, not the first row");
   assert.deepEqual(rows.map(r => r.tabIndex), [-1, 0]);
-  // No instances: the list of workspaces' Add (always shown with the sidebar), never <body>.
+  // No instances: the roster's one action, the foot's Spawn instance (the product owner, 2026-10-26), never <body>.
   s.c.contextInstances = []; s.renderContextRoster([]);
+  s.focusRoster();
+  assert.equal(s.document.activeElement, s.document.getElementById("sidebar-spawn"));
+  // Spawn instance disabled: the list of workspaces' Add (always shown with the sidebar).
+  s.document.getElementById("sidebar-spawn").disabled = true;
   s.focusRoster();
   assert.equal(s.document.activeElement, s.document.getElementById("ws-add-open"));
 });

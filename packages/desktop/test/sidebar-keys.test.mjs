@@ -73,24 +73,28 @@ function rig(t) {
     return matchEvent(e, { isMac: false });
   };
   return { win, doc, row, nav, item, textarea, pressAt, ran, sidebarKeysLive, wsRow,
-    field, settings, heads: [...doc.querySelectorAll("#sidebar .ctx-head > button, #nav-foot > button")], main: doc.getElementById("show-panel") };
+    field, settings, controls: [...doc.querySelectorAll("#sidebar > .side-head > button, #sidebar .ctx-head button, #sidebar-bar > button")], main: doc.getElementById("show-panel") };
 }
 
-test("each sidebar key fires on a workspace list row, a roster row, a nav button, every heading control and the foot's two buttons, by its real (shifted) keydown", t => {
+test("each sidebar key fires on a workspace list row, a roster row, a nav button, the head's two controls and the foot's buttons, by its real (shifted) keydown", t => {
   const r = rig(t);
-  // The nav sits under the list; the headings hold Add local workspace… and Spawn instance; the foot the sidebar
-  // toggle and the settings cog.
-  assert.equal(r.doc.getElementById("nav").parentElement, r.doc.getElementById("ws-current"), "the nav opens the current workspace's section");
-  assert.equal(r.doc.getElementById("ws-current").previousElementSibling, r.doc.getElementById("ws-list"), "the nav sits under the list");
+  // The sidebar top to bottom (the product owner, 2026-10-26): the head (Show only the current workspace, Add local
+  // workspace…), the list, the nav under it, the instances (their heading holds no control), then the foot (its
+  // bar: the OATS mark, the sidebar toggle, Spawn instance and the settings cog).
+  const sidebar = r.doc.getElementById("sidebar");
+  assert.equal(r.doc.getElementById("ws-current"), null, "no current-workspace section any more");
+  assert.equal(r.doc.getElementById("nav").parentElement, sidebar, "the nav is the sidebar's own");
+  assert.equal(r.doc.getElementById("nav").previousElementSibling, r.doc.getElementById("ws-list"), "the nav sits under the list");
+  assert.equal(r.doc.getElementById("nav").nextElementSibling, r.doc.getElementById("instance-roster"), "the instances under the nav");
   assert.ok(r.doc.getElementById("nav").contains(r.nav));
-  assert.deepEqual(r.heads.map(b => b.id), ["ws-add-open", "sidebar-spawn", "sidebar-toggle", "sidebar-settings"]);
+  assert.deepEqual(r.controls.map(b => b.id), ["ws-current-only", "ws-add-open", "sidebar-toggle", "sidebar-spawn", "sidebar-settings"]);
   // The list is buttons, not a listbox, and the guard names no popup of it: the plain keys stay live there.
   assert.equal(r.doc.querySelector('#ws-list[role], #ws-options[role], .ws-group[role="listbox"]'), null);
   assert.doesNotMatch(shell.match(/function updateActiveContexts\([^]*?\n\}/)[0], /ws-menu/);
   for (const { id } of SIDEBAR_KEYS) {
     const chord = getBinding(id, false);
     assert.ok(chord, `${id} has a default`);
-    for (const [where, el] of [["workspace row", r.wsRow], ["row", r.row], ["nav", r.nav], ...r.heads.map(b => [b.id, b])]) {
+    for (const [where, el] of [["workspace row", r.wsRow], ["row", r.row], ["nav", r.nav], ...r.controls.map(b => [b.id, b])]) {
       assert.equal(r.pressAt(el, chord), id, `${id} (${chord}) on the ${where}`);
     }
   }
@@ -176,10 +180,11 @@ test("a key on a row's tool targets that row, not the active terminal's instance
   assert.equal(leaderTargetId(row), "/h/b");
   assert.equal(leaderTargetId(trigger), "/h/b", "the actions trigger");
   assert.equal(leaderTargetId(start), "/h/b", "Start…");
-  for (const id of ["sidebar-spawn", "sidebar-toggle", "sidebar-settings"]) assert.equal(leaderTargetId(doc.getElementById(id)), "/h/a", `${id} (a heading or foot control): the active terminal's`);
+  const foot = ["sidebar-toggle", "sidebar-spawn", "sidebar-settings"];
+  for (const id of foot) assert.equal(leaderTargetId(doc.getElementById(id)), "/h/a", `${id} (a foot control): the active terminal's`);
   context.activeTab = null;
   assert.equal(leaderTargetId(trigger), "/h/b", "with no terminal open too");
-  for (const id of ["sidebar-spawn", "sidebar-toggle", "sidebar-settings"]) assert.equal(leaderTargetId(doc.getElementById(id)), null, id);
+  for (const id of foot) assert.equal(leaderTargetId(doc.getElementById(id)), null, id);
   // Both paths hand it the focused element when their key is pressed: a sidebar key, and the key after the leader.
   assert.match(shell, /leaderDispatch\.run\(does, leaderOrigin\(e\?\.target \?\? document\.activeElement\)\)/);
   assert.match(shell, /else leaderDispatch\.run\(does, leaderOrigin\(document\.activeElement\)\)/);

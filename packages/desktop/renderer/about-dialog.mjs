@@ -1,7 +1,6 @@
 /** The Desktop's "i": a 28px round icon button that opens an explanation in a modal dialog.
- * Workspace › Capabilities ("About capabilities"), Workspace › Souls ("About souls") and the Deployments page
- * ("What is a deployment?", after its tabs) are its callers; each builds its button once and keeps it across
- * repaints (like the search field beside it).
+ * Workspace › Capabilities ("About capabilities") and Workspace › Souls ("About souls") are its callers; each
+ * builds its button once and keeps it across repaints (like the search field beside it).
  *
  * The dialog is the Stop/Retire/Forget frame (lifecycle-dialog.mjs lifecycleCSS: `palette-overlay
  * lifecycle-overlay` > `section.lifecycle-dialog`), widened by `.about-dialog`, with one Close button.
@@ -63,16 +62,6 @@ export const ABOUT_COPY = Object.freeze({
     body: Object.freeze([
       { p: ['A soul defines a kind of agent: the work it specialises in, and the capabilities it gets to do that work.'] },
       { p: ['A team organises its specialist agents as souls, and souls can also organise knowledge: what each one is responsible for knowing, and what it reads to get started. Each running agent is an instance of a soul. Every instance gets the workspace’s default capabilities first, then the soul’s own choices: a soul can add capabilities, turn a default off, or leave a core capability (knowledge, messaging or tasks) empty.'] },
-    ]),
-  }),
-  // The Deployments page's "i" (the product owner asked for an info icon that explains what a deployment is).
-  // Plain words: no file names, no code.
-  deployments: Object.freeze({
-    button: 'What is a deployment?',
-    title: 'What a deployment is',
-    body: Object.freeze([
-      { p: ['A deployment is this workspace set up in a folder on a machine, where its instances live and run.'] },
-      { p: ['A workspace can have several deployments, on one machine or on several. This page shows each one, with its machine and its instances.'] },
     ]),
   }),
 });

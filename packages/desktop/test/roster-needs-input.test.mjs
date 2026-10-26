@@ -93,13 +93,15 @@ test("a running, waiting row shows “Needs input” in place of its meta line: 
   const line = mark.parentElement;
   assert.equal(line.className, "ctx-meta ctx-attn-line");
   assert.deepEqual([...line.childNodes], [mark], "the mark in place of the line's text");
-  assert.equal(line.title, "Repository: desktop-repo\nBranch: feature/x", "the line keeps its own title");
+  assert.equal(line.title, "Soul: dev\nRepository: desktop-repo", "the line keeps its own title");
   assert.equal(line.previousElementSibling.className, "ctx-name", "under the name");
   assert.equal(u.row("dev-a").querySelector(".ctx-name-line"), null, "the name line is the name alone");
   assert.equal(u.row("dev-a").textContent, "dev-aNeeds input", "in the row button's name");
   // The repository and branch stay in the hover card.
   assert.deepEqual([u.fact("dev-a", "Repo"), u.fact("dev-a", "Branch")], ["desktop-repo", "feature/x"]);
-  assert.equal(u.row("dev-b").querySelector(".ctx-meta").textContent, "desktop-repo", "a row without a mark keeps its meta line");
+  const kept = u.row("dev-b").querySelector(".ctx-meta");
+  assert.equal(kept.className, "ctx-meta ctx-soul-repo", "a row without a mark keeps its meta line");
+  assert.deepEqual([...kept.children].map(el => [el.className, el.textContent]), [["ctx-meta-soul", "dev"], ["ctx-meta-repo", "desktop-repo"]]);
   assert.ok(u.row("dev-a").querySelector(".ctx-dot.on"), "the dot stays liveness");
   assert.equal(u.marks("dev-b").length, 0);
   assert.equal(u.row("dev-b").querySelector(".ctx-name-line"), null, "a row without marks keeps its plain name");
@@ -188,7 +190,7 @@ test("a waiting row with a pull request: the mark replaces the chip and the bran
   assert.ok(u.row("dev-a").parentElement.querySelector(".ctx-pr-open"), "its Open pull request tool stays");
 });
 
-test("a row with no card (unavailable) whose mark replaced its meta line says the repository and branch in its title and description", async t => {
+test("a row with no card (unavailable) whose mark replaced its meta line says the repository and branch in its description; the line keeps its soul and repository title", async t => {
   // A local root whose state is unknown (unavailable: no card), collapsed over a running, waiting child.
   const rows = [instance("root", undefined, { running: null, runtimeState: "unreachable", branch: "feature/root" }), instance("kid", "root", { waitingOnYou: claim() })];
   const u = fixture(t, { context: { collapsedInstances: new Set([tree.collapseKey("A", "/synthetic/root")]) } });
@@ -198,10 +200,59 @@ test("a row with no card (unavailable) whose mark replaced its meta line says th
   assert.equal(u.marks("root")[0].textContent, "1 below need input");
   assert.match(said, / · desktop-repo · feature\/root · 1 below need input: kid$/, "why, then where, then the wait");
   assert.equal(root.title, said);
-  assert.equal(root.querySelector(".ctx-attn-line").title, "Repository: desktop-repo\nBranch: feature/root");
+  assert.equal(root.querySelector(".ctx-attn-line").title, "Soul: dev\nRepository: desktop-repo");
   // A row whose line is its own (no mark) keeps its description as it was.
   u.render([instance("root", undefined, { running: null, runtimeState: "unreachable", branch: "feature/root" })]);
   assert.doesNotMatch(u.row("root").getAttribute("aria-description") ?? "", /desktop-repo/);
+});
+
+// The meta line (the product owner, 2026-10-26): the soul at the left, the repository at the right, in two spans; no
+// branch and no pull request chip on it (the hover card keeps both, the row tools the PR's link). Its title names
+// both. The needs-input mark still replaces the whole line. In CSS the soul is cut first; the repository keeps
+// min(10ch, 100%) of the line.
+test("the meta line: the soul left, the repository right, no branch and no PR chip; its title names both; the mark still replaces it", async t => {
+  const pr = { home: "/synthetic/dev-a", number: 317, state: "OPEN", isDraft: false, url: "https://github.com/o/r/pull/317" };
+  const u = fixture(t, { context: { prChip, prText, rosterPrs: { get: home => home === pr.home ? pr : null, refresh() {} } } });
+  u.render([instance("dev-a", undefined, { branch: "feature/x", agent: "desktop-dev" }),
+    instance("dev-u", undefined, { running: null, runtimeState: "unreachable", branch: "feature/u", repoName: "other-repo" }),
+    instance("dev-w", undefined, { waitingOnYou: claim(), branch: "feature/w" })]);
+  const meta = u.row("dev-a").querySelector(".ctx-meta");
+  assert.equal(meta.className, "ctx-meta ctx-soul-repo");
+  assert.equal(meta.previousElementSibling.className, "ctx-name", "under the name");
+  assert.deepEqual([...meta.childNodes].map(el => [el.className, el.textContent]),
+    [["ctx-meta-soul", "desktop-dev"], ["ctx-meta-repo", "desktop-repo"]], "the soul first (left), then the repository (right), nothing else");
+  assert.equal(meta.title, "Soul: desktop-dev\nRepository: desktop-repo");
+  assert.doesNotMatch(meta.textContent, /feature/, "no branch on the line");
+  assert.equal(meta.querySelector(".ctx-pr, .ctx-meta-lead, .ctx-meta-tail"), null, "no PR chip on the line");
+  assert.equal(u.row("dev-a").querySelector(".ctx-pr"), null, "nor anywhere on the row");
+  assert.doesNotMatch(u.row("dev-a").textContent, /#317|feature/);
+  // The hover card keeps the branch and the pull request; the row tools the PR's link.
+  assert.deepEqual([u.fact("dev-a", "Repo"), u.fact("dev-a", "Branch"), u.fact("dev-a", "Pull request")], ["desktop-repo", "feature/x", prText(pr)]);
+  assert.ok(u.row("dev-a").parentElement.querySelector(".ctx-pr-open"), "its Open pull request tool stays");
+  // A row's reason label follows the soul, on the soul's side; the repository stays on its own.
+  const unknown = u.row("dev-u").querySelector(".ctx-meta");
+  assert.deepEqual([...unknown.childNodes].map(el => [el.className, el.textContent]),
+    [["ctx-meta-soul", "dev · state unknown"], ["ctx-meta-repo", "other-repo"]]);
+  assert.equal(unknown.title, "Soul: dev\nRepository: other-repo");
+  // The needs-input mark replaces the whole line: no soul, no repository on it; the line keeps its title.
+  const line = u.row("dev-w").querySelector(".ctx-meta");
+  assert.equal(line.className, "ctx-meta ctx-attn-line");
+  assert.deepEqual([...line.childNodes].map(el => el.className), ["ctx-attn"]);
+  assert.equal(line.querySelector(".ctx-meta-soul, .ctx-meta-repo"), null);
+  assert.equal(line.textContent, "Needs input");
+  assert.equal(line.title, "Soul: dev\nRepository: desktop-repo");
+  // CSS: one flex line; the soul takes the left and is cut with an ellipsis (min-width 0), the repository sits at
+  // the right in the mono face and keeps min(10ch, 100%) before it is cut too.
+  const rule = selector => css.match(new RegExp(`^${selector.replace(/[.]/g, "\\.")} \\{([^}]*)\\}`, "m"))?.[1].replace(/\s+/g, " ");
+  const line_ = rule(".ctx-meta.ctx-soul-repo"), soul = rule(".ctx-meta-soul"), repo = rule(".ctx-meta-repo");
+  assert.ok(line_ && soul && repo, "the three rules are shipped");
+  assert.match(line_, /display: flex;/); assert.match(line_, /width: 100%;/);
+  assert.match(soul, /flex: 1 1000 auto;/, "the soul takes the line's left, and is cut first: its shrink is far above the repository's"); assert.match(soul, /min-width: 0;/, "and can be cut to nothing");
+  assert.match(repo, /flex: 0 1 auto;/); assert.match(repo, /min-width: min\(10ch, 100%\);/, "the repository keeps about 10ch");
+  assert.match(repo, /text-align: right;/); assert.match(repo, /font-family: var\(--mono\);/);
+  for (const r of [soul, repo]) {
+    assert.match(r, /overflow: hidden;/); assert.match(r, /text-overflow: ellipsis;/); assert.match(r, /white-space: nowrap;/);
+  }
 });
 
 test("a held home keeps its state on the meta line; its description says the wait", async t => {

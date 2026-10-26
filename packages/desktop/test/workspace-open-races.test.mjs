@@ -81,10 +81,12 @@ test("navigating to a stage cancels an older terminal open", async t => {
   const f = fixture(t, "terminal");
   const pendingTerminal = f.run("first");
   const navigate = runInNewContext(`${extract("closeStage")}\n(${extract("showStage")})`, withShellWindowGlobals({
-    ...f.context, NAV: [{ name: "hierarchy" }], navTab /* the shipped NAV_TABS lookup: showStage reads it first */, stage: { name: "hierarchy" },
+    // Automations, a page of its own (the product owner, 2026-10-26; hierarchy is now the Workspace page's Machines tab).
+    ...f.context, NAV: [{ name: "automations" }], navTab /* the shipped NAV_TABS lookup: showStage reads it first */, stage: { name: "automations" },
     stageSidebarMode: () => "overview", showTabLayer() {},
   }));
-  await navigate("hierarchy");
+  assert.equal(navTab("automations"), null, "a page, not a tab of one");
+  await navigate("automations");
   f.requests[0].resolve({ instances: ["first"] }); await pendingTerminal;
   assert.deepEqual(f.activated, []);
 });

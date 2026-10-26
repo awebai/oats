@@ -68,7 +68,8 @@ export function paletteRows(roster, commands, raw, { openTerminal } = {}) {
   const rows = [];
   if (!cmdMode) {
     // The house fuzzy matcher decides what matches; the tree path around a
-    // match is the sidebar's (identity-aware filterInstanceTree).
+    // match is kept by the identity-aware filterInstanceTree (the TUI's filter's
+    // too; the sidebar has no filter).
     const matches = (inst) => !q || subsequenceScore(`${inst.instance} ${inst.agent || ""} ${inst.repoName || ""}`, q) != null;
     // Relations resolve inside a deployment, over its full roster, as the sidebar's do (#482).
     const multi = isMultiDeployment(deployments);
