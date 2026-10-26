@@ -316,11 +316,11 @@ test("the C-b table only where tmux forwards a bound key (tmux 3.3: send-keys wi
     ["bind-key", "-T", "oatsview-locked", "MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
     ["bind-key", "-T", "oatsview-locked", "S-PageUp", "copy-mode -u"],
     ["bind-key", "-T", "oatsview-locked", "C-b", "switch-client -T oatsview-locked-prefix"],
-    // Bound again, never emptied: tmux returns every client reading a table it empties to its
-    // default table, so another viewer's pending C-b would be lost.
-    ...PREFIX_BINDINGS.map((binding) => ["bind-key", "-T", "oatsview-locked-prefix", ...binding]),
-    // Then what else the table holds (a server's, so anyone's) goes, key by key.
+    // What the table holds now (a server's, so anyone's): a key missing or different is bound,
+    // never the whole table again (tmux returns a client reading a table it changes to its
+    // default), and what is not the viewer's goes, key by key. Here it is empty: all five.
     ["list-keys"],
+    ...PREFIX_BINDINGS.map((binding) => ["bind-key", "-T", "oatsview-locked-prefix", ...binding]),
     ["set-option", "-t", name, "mouse", "on"],
   ]);
   assert.equal(on.calls.filter((c) => c[0] === "-V").length, 1, "one probe answers both questions");
@@ -375,9 +375,14 @@ test("setting the new viewer's key-table, which returns every client of the serv
     prepareSessionViewer(target, { ...io, detachKey });
     const name = io.calls.find((c) => c[0] === "new-session")[3];
     const set = io.calls.findIndex((c) => c[0] === "set-option" && c[3] === "key-table");
-    assert.deepEqual(io.calls.slice(set - 1, set + 3), [
+    assert.deepEqual(io.calls.slice(set - 1, set + 1), [
       ["list-clients", "-F", "#{client_name}\t#{client_key_table}"],
       ["set-option", "-t", name, "key-table", detachKey === undefined ? "oatsview-locked" : name],
+    ], String(detachKey));
+    // Switched back last, once every table is as it should be (binding a key of a table a client
+    // reads returns it to its default table on tmux 3.4).
+    const lastChange = io.calls.findLastIndex((c) => ["bind-key", "unbind-key", "set-option", "set-hook"].includes(c[0]));
+    assert.deepEqual(io.calls.slice(lastChange + 1, lastChange + 3), [
       ["switch-client", "-c", "/dev/pts/3", "-T", "oatsview-locked-prefix"],
       ["switch-client", "-c", "/dev/pts/6", "-T", "oatsview-locked-prefix"],
     ], String(detachKey));
@@ -387,6 +392,25 @@ test("setting the new viewer's key-table, which returns every client of the serv
   const old = fixture(false, { version: "tmux 3.2a\n", clients });
   prepareSessionViewer(target, old);
   assert.equal(old.calls.some((c) => c[0] === "list-clients" || c[0] === "switch-client"), false);
+});
+
+test("a C-b table already as the viewer binds it is not touched: a second viewer binds none of its keys (tmux 3.4 returns a client reading a table to its default when a key of it is bound again); one key that differs is bound, alone (#1502 part D, Linux CI)", () => {
+  // The table as tmux 3.8 lists it once a viewer bound it.
+  const listed = [
+    "bind-key    -T oatsview-locked-prefix [                         copy-mode",
+    'bind-key    -T oatsview-locked-prefix Any                       send-keys C-b \\; if-shell -F "#{!=:#{mouse_x},}" "send-keys -M" send-keys',
+    'bind-key    -T oatsview-locked-prefix MouseDrag1Pane            send-keys C-b \\; if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"',
+    'bind-key    -T oatsview-locked-prefix WheelUpPane               send-keys C-b \\; if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -e; send-keys -M"',
+    "bind-key    -T oatsview-locked-prefix S-PPage                   send-keys C-b \\; copy-mode -u",
+  ];
+  const io = fixture(false, { version: "tmux 3.4\n", keys: `${listed.join("\n")}\n` });
+  prepareSessionViewer(target, io);
+  assert.deepEqual(io.calls.filter((c) => c[0] === "bind-key" && c[2] === "oatsview-locked-prefix"), [], "no binding of the C-b table is made again");
+  assert.equal(io.calls.some((c) => c[0] === "unbind-key" && c.includes("oatsview-locked-prefix")), false, "and none removed");
+  // `[` bound to something else: that key alone is bound again.
+  const changed = fixture(false, { version: "tmux 3.4\n", keys: `${[...listed.slice(1), "bind-key    -T oatsview-locked-prefix [ kill-server"].join("\n")}\n` });
+  prepareSessionViewer(target, changed);
+  assert.deepEqual(changed.calls.filter((c) => c[0] === "bind-key" && c[2] === "oatsview-locked-prefix"), [["bind-key", "-T", "oatsview-locked-prefix", "[", "copy-mode"]]);
 });
 
 test("the constants a caller reads: the feature names and the status of a leave by the key", () => {

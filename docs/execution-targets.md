@@ -1223,11 +1223,13 @@ oats session attach --home /abs/home --detach-key 'C-\'
   `oatsview-locked` is), for that one key. Each locked viewer binds that
   table again, and never empties it: tmux returns every client reading a
   table it empties to its default table. So a viewer opened while another
-  waits after `C-b` leaves that `C-b` pending. For the same reason, since
-  setting a session's `key-table` returns every client of the server to
-  its default table, a viewer notes the clients reading that table just
-  before it sets its own, and switches them back to it just after. Once
-  its keys are bound, the
+  waits after `C-b` leaves that `C-b` pending. It binds there only a key
+  that is missing or bound to something else, since on tmux 3.4 binding a
+  key of a table again returns the clients reading it to their default
+  table too. And since setting a session's `key-table` returns every client
+  of the server to its default table, a viewer notes the clients reading
+  the `C-b` table before it sets its own, and switches them back to it once
+  every table is as it should be. Once its keys are bound, the
   viewer removes, key by key, every other key `list-keys` shows in that
   table (`unbind-key -q -T oatsview-locked-prefix <key>`, a key that ends in
   `;` written `\;`, since tmux reads a bare trailing `;` as the end of a
