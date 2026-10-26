@@ -49,7 +49,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "status-retire-state","session-inspect-size","session-inspect-running","deployments-list"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
- "capabilityShowApi":1}
+ "capabilityShowApi":1,"sessionViewer":{"prefixScroll":true}}
 ```
 
 - The Desktop accepts `desktopApi === 1` and a released `version` inside
@@ -65,6 +65,14 @@ see the [official catalog](official-catalog.md) for current pins.
   probe before a routed mutation. From 0.31: `readiness`, `instance-events`,
   `instance-git` and `lifecycle-plans` name the
   [routed reads and plans](#routed-reads-and-plans).
+- `sessionViewer` (feature `session-attach-prefix-scroll`) is a fact of
+  this host, not of the binary: `prefixScroll` is `true` when a viewer
+  without a detach key binds `C-b [` here, that is when the `tmux` on
+  `PATH` is 3.3 or later (`tmuxForwardsBoundKey`, lib/session-viewer.mjs),
+  and `false` with an older tmux or none. The kernel asks `tmux -V` afresh
+  at every run and keeps no answer, so read it again after a tmux upgrade.
+  The feature is in every kernel's list that has the field, whatever this
+  host's tmux: gate on the feature, then read the field.
 - In text mode the command prints `@awebai/oats <version> (desktop API v1)`.
 
 ### Features
@@ -130,6 +138,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `session-inspect-running` | `running` on every successful `session inspect --json` result: `true` exactly when `oats status --json` reads the same observation as `running: true` (a live non-shell process in the agent pane, a harness behind a wrapper shell included), `false` for a fallback shell, an absent or dead pane, a missing home and a home that never launched. It is endpoint activity, not health, readiness, busy or idle, the executable's identity or a consumed wake. A failed observation stays an error, never `false`, a gone tmux server included (status reads that row `running: false`; inspect answers `E_SESSION_UNAVAILABLE`); `state` and its enum are unchanged. `E_RUNTIME_AUTHORITY_MISMATCH` carries `details.fields`, the differing fields among `launched`, `tmux.session`, `tmux.window`, `tmux.socket`, never their values. Remote inspect relays the execution host's answer; a host without the feature omits `running`, and nothing adds it ([Inspect, input and attach](execution-targets.md#inspect-input-and-attach)) | |
 | `session-attach-detach-key` | `oats session attach … --detach-key <key>`, local and `--server`: the one key that detaches that viewer, and exit status 20 when it did, OATS 0.51.0 ([execution-targets.md](execution-targets.md#inspect-input-and-attach)). Gate on the probe and never try: a kernel without it ignores the flag and opens a viewer with no exit. A routed attach refuses a host without it (`E_REMOTE_INCOMPATIBLE`, `details: {"feature":"session-attach-detach-key"}`) | |
 | `session-attach-no-status-line` | `oats session attach … --no-status-line`, local and `--server`: a viewer without a detach key, without its status line (`Shift+PgUp or C-b [ to scroll back`), for a caller that shows the scroll keys itself ([execution-targets.md](execution-targets.md#inspect-input-and-attach)). Gate on the probe: a kernel without it ignores the flag and shows the line. A routed attach sends it to any host, with no probe of its own | |
+| `session-attach-prefix-scroll` | `sessionViewer: {prefixScroll}` on `oats version --json` and `oats status --json`, and `probe.sessionViewer` on each `oats server roster --json` group: whether that host's viewer without a detach key binds `C-b [` (tmux 3.3 and later), read afresh per host at each run. A kernel with the feature has the viewer's `Shift+PgUp` binding; one without it may not, so don't name the viewer's scroll keys for its tabs ([execution-targets.md](execution-targets.md#inspect-input-and-attach)) | |
 | `lifecycle-kernel-codes` | `oats retire`, `oats instance stop`, `oats session …` and `oats worktree add\|remove` answer kernel codes only (`^E_[A-Z0-9_]+$`), in `error.code` and in the codes inside their results, with one exception: a document with an unsafe mapping key or value is refused under its own name, `unsafe-config-key` or `unsafe-config-value`, by these commands as by every other; `error.details.cause` on an error that has a code which is not a kernel code (`{code, syscall}`) and on a defect of the kernel (`{name}`), and none on a refusal that has no code, which is answered with the command's general code and its message alone ([The envelope](#kernel-codes)); `error.details.reached` on every error of a retire apply once the retire of the home has begun, and its absence before that ([`error.details.reached`](#retire-reached)), OATS 0.52.0. Gate on the probe: a kernel without it can answer one of these commands with a system code (`ENOENT`, `EACCES`), and an absent `reached` there says nothing | |
 | `schedule-run-warnings` | a schedule run's record (`lastRun`, `recentRuns[]`) and a trigger fire's record and `lastRun` carry `warnings?`, the launch answer's warnings, when it had some; OATS 0.52.0 ([schedules and triggers](#schedules-and-triggers)) | |
 | `lifecycle-claim-stop` | `oats instance stop --apply` holds the claim of every target (the file one retire of a home at a time is ordered by), so a stop is refused beside a retire in flight (`E_INSTANCE_RETIRING`) or another stop (`E_LIFECYCLE_BUSY`), a retire beside a stop (`E_LIFECYCLE_BUSY`), and `oats worktree add` beside a retire (`E_INSTANCE_RETIRING`), each before any effect ([Commands that meet on one home](#lifecycle-pairs)); a stop that was killed refuses nothing afterwards, and `<home>/.oats-stop-pending.json` is no longer written or read: a client's own handling of a stale stop marker is not needed for a kernel that lists this; `error.details.action` (the holder's verb) on those refusals, and `error.details.holder` on every `E_LIFECYCLE_BUSY` ([`details.holder`](#busy-holder)); the codes a stop and a retire answer only before any effect, as one list ([the list](#before-effect-codes)), with two retire answers that came after an effect given codes outside it (`E_WORK_PRESERVATION_FAILED`, `E_RUNTIME_QUIESCE_FAILED`), OATS 0.52.0. Gate on the probe; routed with `--server`, on the host's list | |
@@ -3358,6 +3367,10 @@ its absence.
   relays a host's features from the status answer it already pulls. It is
   emitted at output time, never part of a reused observation. A kernel
   before 0.49.0 omits it.
+- **`sessionViewer`** (feature `session-attach-prefix-scroll`): this host's
+  `{prefixScroll}`, as `version --json` answers it, read afresh at each
+  run and never part of a reused observation, so a roster relays it from
+  the status answer it already pulls.
 - `problems`: the legacy-home rows ([dispatch errors](#dispatch-errors)).
   `warnings`: envelope warnings. `--team` is `E_BAD_ARGS` (an envelope).
 
@@ -3437,7 +3450,7 @@ route target:
 ```json
 {"id":"build:3f2a…","server":"build","label":"Build box","registrationPresent":true,
  "target":{"sshHost":"build-host","workspace":"/srv/team","oatsPath":"oats"},
- "probe":{"ok":true,"features":["retire-home","session-start","…","server-probe-features"]},"agentsRoot":"/srv/team/agents",
+ "probe":{"ok":true,"features":["retire-home","session-start","…","server-probe-features"],"sessionViewer":{"prefixScroll":true}},"agentsRoot":"/srv/team/agents",
  "workspace":{"reachable":true,"key":"github.com/acme/team","ref":"git:github.com/acme/team","keyFrom":"workspace","standalone":false,"defaultTeam":{"label":"default","team":"acme:team"},
               "teams":{"default":"acme:team"},"teamsFrom":"observed"},
  "souls":[{"name":"dev","harness":"claude","work":"worktree","agentsRoot":"/srv/team/agents"}],
@@ -3455,9 +3468,10 @@ route target:
  "retireFailures":[]}
 ```
 
-- **`probe`**: `{ok: true, features}` when the host's `status --json` was
-  pulled, else `{ok: false, error: {code, message}}` (ssh failed or timed
-  out, `E_SSH`; or the host answered `ok: false`), with no `features` key.
+- **`probe`**: `{ok: true, features, sessionViewer}` when the host's
+  `status --json` was pulled, else `{ok: false, error: {code, message}}`
+  (ssh failed or timed out, `E_SSH`; or the host answered `ok: false`),
+  with no `features` and no `sessionViewer` key.
   Every group is probed at once, each within its own deadline, so a group's
   `probe` depends only on its own host: one that does not answer in time is
   `E_SSH` with `ssh to <host> timed out: no answer within <n> s`, and every
@@ -3476,6 +3490,13 @@ route target:
   its version. Read it as `Array.isArray(probe?.features)`: not an array
   means unknown; `[]` is a valid answer (a host with no features), not
   unknown.
+- **`probe.sessionViewer`** (feature `session-attach-prefix-scroll`): the
+  host's `{prefixScroll}`, relayed from the `sessionViewer` of its
+  [`status --json`](#the-roster-oats-status---json), never probed. It is
+  relayed as a copy of `{prefixScroll}` only when that is a boolean;
+  anything else, or a host whose kernel predates the field, is `null`.
+  Read it only for a host whose `probe.features` lists
+  `session-attach-prefix-scroll`.
 - **`workspace`** (feature `workspace-identity`, OATS 0.36.0): the host's
   own `status --json` [`workspace` object](#workspace-identity-feature-workspace-identity-oats-0360),
   relayed verbatim, or `null` when the host reports none (a deployment

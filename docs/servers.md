@@ -394,6 +394,9 @@ answer, never a separate `version --json`, kept only when it is a valid list
 of feature names and otherwise `null` (unknown, as from a host before
 0.49.0); a failed probe has no `features` key
 ([the field](desktop-cli-api.md#the-remote-roster-oats-server-roster---json)).
+It relays the host's viewer fact the same way, `probe.sessionViewer`
+(`{prefixScroll}`, feature `session-attach-prefix-scroll`): whether that
+host's viewer takes `C-b [`, or `null` when unknown.
 
 **Harvest** runs the knowledge capability's `okf harvest --json` in the
 instance's saved home on the server and relays its envelope.

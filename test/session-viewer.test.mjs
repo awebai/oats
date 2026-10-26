@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DETACH_KEY_FEATURE, LOCKED_PREFIX_BINDINGS, NO_STATUS_LINE_FEATURE, PREFIX_TABLE_SUFFIX, PREFIX_KEY, SESSION_DETACHED_EXIT, VIEWER_BINDINGS, VIEWER_PREFIX_MIN_TMUX, VIEWER_SCROLL_HINT, VIEWER_SCROLL_HINT_WITHOUT_PREFIX, tmuxForwardsBoundKey, VIEWER_CLOSED_HOOK_INDEX, isDetachKey, prepareSessionViewer, requireDetachKey, tmuxHasClientFeatures } from "../lib/session-viewer.mjs";
+import { DETACH_KEY_FEATURE, LOCKED_PREFIX_BINDINGS, NO_STATUS_LINE_FEATURE, PREFIX_SCROLL_FEATURE, readSessionViewer, PREFIX_TABLE_SUFFIX, PREFIX_KEY, SESSION_DETACHED_EXIT, VIEWER_BINDINGS, VIEWER_PREFIX_MIN_TMUX, VIEWER_SCROLL_HINT, VIEWER_SCROLL_HINT_WITHOUT_PREFIX, tmuxForwardsBoundKey, VIEWER_CLOSED_HOOK_INDEX, isDetachKey, prepareSessionViewer, requireDetachKey, tmuxHasClientFeatures } from "../lib/session-viewer.mjs";
 const target = { backend: "tmux", socket: "/tmp/owned.sock", session: "oats", window: "agent" };
 function fixture(failLink = false, { marker = "", version = "", sessions = "", keys = "", clients = "" } = {}) {
   const calls = [], options = [];
@@ -453,4 +453,17 @@ test("a sweep that tmux refuses is not the attach's failure: what it could not r
     return "";
   } });
   assert.deepEqual(listing.swept, { sessions: 0, tables: 0 });
+});
+
+test("readSessionViewer answers this host's viewer fact, prefixScroll: a viewer without a detach key binds C-b [ here (tmux 3.3 and later, the viewer's own rule); it asks tmux -V afresh at every call, and no answer is false (feature session-attach-prefix-scroll)", () => {
+  assert.equal(PREFIX_SCROLL_FEATURE, "session-attach-prefix-scroll");
+  const calls = [];
+  const host = (answer) => (binary, args) => { calls.push([binary, ...args]); if (answer instanceof Error) throw answer; return answer; };
+  for (const [answer, prefixScroll] of [["tmux 3.4\n", true], ["tmux 3.3a\n", true], ["tmux next-3.6\n", true], ["tmux 3.2a\n", false], ["tmux master\n", false], ["", false], [new Error("spawnSync tmux ENOENT"), false]]) {
+    calls.length = 0;
+    const exec = host(answer);
+    assert.deepEqual(readSessionViewer({ exec }), { prefixScroll }, String(answer));
+    assert.deepEqual(readSessionViewer({ exec }), { prefixScroll }, String(answer));
+    assert.deepEqual(calls, [["tmux", "-V"], ["tmux", "-V"]], "probed fresh, never kept");
+  }
 });

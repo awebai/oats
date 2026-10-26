@@ -13,6 +13,11 @@
     `Shift+PgUp or C-b [ to scroll back`. It takes the terminal's last row.
   - **`--no-status-line`** (feature `session-attach-no-status-line`) drops
     the line, for a caller that shows the keys itself.
+  - **`sessionViewer.prefixScroll`** (feature `session-attach-prefix-scroll`)
+    on `oats version --json` and `oats status --json`, relayed as each
+    roster group's `probe.sessionViewer`: whether that host's viewer takes
+    `C-b [`, read from its tmux afresh at each run. A caller that names the
+    keys itself reads it per host.
   - **Copy mode is the agent pane's.** While one viewer scrolls back, every
     other viewer of that agent shows the same frozen screen.
   - **Each viewer reads key tables of its own**, named as its session and
