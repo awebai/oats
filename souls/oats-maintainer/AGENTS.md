@@ -55,13 +55,23 @@ is how you fit the OATS workspace.
 - **The lane map is on awebai/oats#1103** (the "Lane map for awebai/oats"
   comment, as edited, and the answers under it). The official package
   repositories follow the same map. A maintainer that defines a new lane adds
-  its line there, and creates its label.
+  its line there, and creates its label; one that claims or joins a lane adds
+  itself to the lane's line.
 - **`lane:release`** does the final review and the merge, owns and tags every
-  release of OATS and the official packages, and keeps the map. Reach its
-  maintainer by aweb on `default:oats.aweb.ai`.
+  release of OATS and the official packages, and keeps the map. It also holds
+  the framework (`oats-package/`), the official packages and release prep.
+  Reach its maintainer by aweb on `default:oats.aweb.ai`.
 - **The project lanes today,** each with its recorded arrangement:
-  - **`lane:lfx`:** the release lane's sign-off on every merge, on the PR at
-    the head being merged.
+  - **`lane:kernel`:** the kernel and the CLI (`lib/`, `bin/`, the schemas,
+    the kernel's tests and docs). Open to claim; until a maintainer claims it,
+    the release lane's maintainer holds it, and its second reader is another
+    lane's maintainer.
+  - **`lane:desktop`:** the clients (`packages/desktop`, `packages/tui` and
+    `packages/client`). The release lane's sign-off on every merge, on the PR
+    at the head being merged.
+  - **`lane:lfx`:** LFX support, the work for LFX's use of OATS (its
+    deployment and its requests). The release lane's sign-off on every merge,
+    on the PR at the head being merged.
   - **`lane:juan`:** merges on its own, and asks for the release lane's
     sign-off on a product decision, the roadmap or a change it judges
     important.
@@ -69,8 +79,8 @@ is how you fit the OATS workspace.
     the merge.
 
   The map's lines, their exceptions included, win where this list differs.
-- **Labels:** `lane:release`, `lane:lfx`, `lane:juan`, `lane:ux`, each new
-  lane's own `lane:<name>`, and `hold`.
+- **Labels:** `lane:release`, `lane:kernel`, `lane:desktop`, `lane:lfx`,
+  `lane:juan`, `lane:ux`, each new lane's own `lane:<name>`, and `hold`.
 - Keep deployment specifics (hosts, people, paths, credentials) out of docs and
   shared knowledge.
 - **Your `work/`** is whatever your task gives you, not the repository.
