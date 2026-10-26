@@ -2,9 +2,8 @@
 
 Status: proposed 2026-10-26 by the lane's expert; accepted by
 `oats-threaded-agent-ux-maintainer` on #1538 (2026-10-26) with one change
-(no mint at spawn), pending the release lane's final review. Direction:
-Joan, 2026-10-26; confirmed by the release lane on #1103 (comment
-6415693732). It supersedes the Desktop decision of 2026-07-22 "one input
+(no mint at spawn), pending the release lane's final review. Direction: Joan, 2026-10-26; approved by Pepe 2026-10-26, recorded by the
+release lane on #1103 (comment 6416165534). It supersedes the Desktop decision of 2026-07-22 "one input
 surface, the agent's own terminal input line" and the 2026-07-17 position
 "the messaging layer is the agents' channel, the app is the human's window".
 The terminal stays the native surface for driving the harness; it stops being
@@ -117,8 +116,8 @@ identities are (`aw init --join-from <root> --join-team <team> --name
 <alias>`), by the capability, into a directory it owns. Chosen over the two
 alternatives:
 
-- *Reusing the deployment root as the human* (the pattern
-  joanreyero/oats-whatsapp uses): rejected, because the root is the minting
+- *Reusing the deployment root as the human* (a pattern one
+  deployment uses): rejected, because the root is the minting
   authority; a persona signed by the key that mints identities cannot later
   be told apart from the operator's acts, and the root may not be the
   operator's own voice at all.
@@ -136,7 +135,7 @@ no retire touches it and no agent's `AWEB_IDENTITY_HOME` ever names it. No
 entry in `oats-local.yaml` is needed: the path is derived, and the identity
 is found by looking.
 
-**Alias.** `<os-user>-<host>` (`joan-falcon`), from the OS user running the
+**Alias.** `<os-user>-<host>` (`ada-laptop`), from the OS user running the
 command and the host's recorded name (`host.name` in `oats-local.yaml`, else
 the hostname), lowercased and reduced to `[a-z0-9-]`. Deterministic, so a
 re-mint after a lost directory yields the same name; distinct per computer,
