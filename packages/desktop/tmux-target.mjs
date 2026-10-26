@@ -140,6 +140,9 @@ export const LOCKED_PREFIX_BINDINGS = [
   ["S-PageUp", "send-keys C-b ; copy-mode -u"],
   ["Any", "send-keys C-b ; if-shell -F '#{!=:#{mouse_x},}' 'send-keys -M' 'send-keys'"],
 ];
+/** What a viewer's C-b table adds to its name: the kernel's (lib/session-viewer.mjs PREFIX_TABLE_SUFFIX),
+ * which a test pins. */
+export const PREFIX_TABLE_SUFFIX = "-prefix";
 /** A viewer's own two key tables (#1502), named after its session: its locked table and its C-b
  * table. Key tables are server-global; tables of its own are bound once, as the viewer is made, so
  * no other viewer, older app or user config shares them, and nothing need be cleared or kept. They
@@ -147,10 +150,10 @@ export const LOCKED_PREFIX_BINDINGS = [
  * source window, with a crashed app) leaves them to sweepViewers. tmux resets every client's key
  * table whenever any session's key-table option is set, so a C-b pending at the instant another
  * viewer opens is dropped: press it again. */
-export const viewerTables = (viewer) => [viewer, `${viewer}-prefix`];
+export const viewerTables = (viewer) => [viewer, `${viewer}${PREFIX_TABLE_SUFFIX}`];
 /** A table of a Desktop viewer: its session's name (oatsdesk-<pid>-<seq>-<random>), or that and
  * `-prefix`. An older Desktop's shared oatsdesk-locked table, which may still be in use, is not one. */
-const VIEWER_TABLE = /^oatsdesk-\d+-\d+-[0-9a-z]+(?:-prefix)?$/;
+const VIEWER_TABLE = new RegExp(`^oatsdesk-\\d+-\\d+-[0-9a-z]+(?:${PREFIX_TABLE_SUFFIX})?$`);
 /** The key tables a `tmux list-keys` names, once each, in the order it lists them. */
 export function listedTables(listing) {
   const tables = new Set();
@@ -286,7 +289,8 @@ export function sweepViewers(io) {
   }
   const live = new Set(sessions.filter((name) => !swept.includes(name)));
   for (const table of tables) {
-    if (!VIEWER_TABLE.test(table) || live.has(table) || (table.endsWith("-prefix") && live.has(table.slice(0, -"-prefix".length)))) continue;
+    if (!VIEWER_TABLE.test(table) || live.has(table)
+      || (table.endsWith(PREFIX_TABLE_SUFFIX) && live.has(table.slice(0, -PREFIX_TABLE_SUFFIX.length)))) continue;
     try { io.emptyTable(table); } catch { /* another sweep emptied it first */ }
   }
   return swept;

@@ -12,7 +12,7 @@ import { createRequire } from "node:module";
 import { tmpdir as systemTmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tmuxAttachTarget, openTerm, sweepViewers, viewerTables, listedTables, LOCKED_TABLE_BINDINGS, LOCKED_PREFIX_BINDINGS, PREFIX_KEY } from "../packages/desktop/tmux-target.mjs";
+import { tmuxAttachTarget, openTerm, sweepViewers, viewerTables, listedTables, LOCKED_TABLE_BINDINGS, LOCKED_PREFIX_BINDINGS, PREFIX_KEY, PREFIX_TABLE_SUFFIX } from "../packages/desktop/tmux-target.mjs";
 import { tmuxForwardsBoundKey } from "../packages/desktop/local-tmux-io.mjs";
 import * as kernelViewer from "../lib/session-viewer.mjs";
 import { isolateSessionEnvironment, isolatedTmuxTmpdir } from "./helpers/host-fixture.mjs";
@@ -432,6 +432,8 @@ test("pinned to the kernel's viewer (#1502): the same bindings, the same C-b tab
   assert.deepEqual(LOCKED_TABLE_BINDINGS, kernelViewer.VIEWER_BINDINGS.map(b => [...b]), "the locked table is the kernel viewer's");
   assert.deepEqual(LOCKED_PREFIX_BINDINGS, kernelViewer.LOCKED_PREFIX_BINDINGS.map(b => [...b]), "the C-b table is the kernel's");
   assert.equal(PREFIX_KEY, kernelViewer.PREFIX_KEY);
+  assert.equal(PREFIX_TABLE_SUFFIX, kernelViewer.PREFIX_TABLE_SUFFIX, "a viewer's C-b table is named as the kernel names its own");
+  assert.deepEqual(viewerTables("oatsdesk-1-2-ab"), ["oatsdesk-1-2-ab", `oatsdesk-1-2-ab${kernelViewer.PREFIX_TABLE_SUFFIX}`]);
   assert.equal(kernelViewer.VIEWER_PREFIX_MIN_TMUX, "3.3");
   for (const version of ["tmux 3.3", "tmux 3.3a", "tmux 3.2a", "tmux 3.2", "tmux 3.0", "tmux 2.9a", "tmux 3.4", "tmux 3.8", "tmux 3.10",
     "tmux 4.0", "tmux next-3.3", "tmux next-3.2", "tmux next-3.6", "tmux 10.1-rc", "tmux master", "tmux openbsd-7.4", "not tmux 3.4",
