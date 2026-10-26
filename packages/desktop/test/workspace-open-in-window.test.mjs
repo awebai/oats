@@ -40,12 +40,12 @@ function setup({ mac = true, openInNewWindow = true } = {}) {
 const option = (document, id) => document.querySelector(`.ws-option[data-workspace-id="${id}"]`);
 const menu = (document) => document.querySelector('.ws-row-menu');
 
-test('no per-row button: a row is its name alone', () => {
+test('no per-row button: a row is its circle and its name', () => {
   const { document } = setup();
   assert.equal(document.querySelector('.ws-open-window'), null);
   for (const [choice, label] of [[A, 'oats'], [B, 'tsm'], [LOOSE, 'rigel']]) {
     const row = option(document, choice.id);
-    assert.deepEqual([...row.children].map((child) => child.className), ['ws-option-name'], choice.id);
+    assert.deepEqual([...row.children].map((child) => child.className), [choice === A ? 'ctx-dot on' : 'ctx-dot off', 'ws-option-name'], choice.id);
     assert.equal(row.textContent, label);
     assert.equal(row.parentElement.querySelectorAll('button').length, 1, 'nothing beside the row either');
   }

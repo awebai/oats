@@ -31,7 +31,6 @@ import { DESKTOP_TERMS } from './desktop-terms.mjs';
 import { ageText } from './age-text.mjs';
 import { captureFocusState } from './loading.mjs';
 import { pageBar } from './capability-page.mjs';
-import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 
 /** The Desktop's teams routes (#269, packages/desktop/docs/desktop-teams.md): `{status: 'ok',
  * teams}` (/api/workspace-teams) or `{status: 'ok', soulTeams}` (/api/workspace-soul-teams) answer
@@ -90,7 +89,6 @@ export const computerTeamsCSS = `
 .computer-teams .ct-tag { align-self:center; display:inline-flex; align-items:center; height:20px; padding:0 7px; border-radius:5px; background:var(--sel); color:var(--accent); font:600 11.5px var(--sans,system-ui); white-space:nowrap; }
 .computer-teams .ct-from { color:var(--muted); font-size:12px; }
 /* On a team's page, in a view of two or more deployments: which deployment's configuration its actions edit. */
-.computer-teams .ct-head > .deployment-scope { grid-column:1; }
 .computer-teams .ct-desc { grid-column:1; margin:0; color:var(--muted); font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
 .computer-teams .ct-head > .ct-actions { grid-column:2; grid-row:1; align-self:center; }
 /* The facts: labelled rows (dt muted, dd body); the May join row and an empty value are muted; names bold. */
@@ -498,7 +496,7 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
   let current = null, pending = false, serial = 0, disposed = false;
   let rowError = null, cardError = null, confirming = null, adding = false, opener = 'head';
   const draft = { label: '', team: '', description: '' };
-  // The open team page (showTeam): { host, label, content, back, onGone, scope, signature }.
+  // The open team page (showTeam): { host, label, content, back, onGone, signature }.
   let shown = null;
 
   // The page head is static: the title, its one line, and the add button (the form opens below,
@@ -650,7 +648,7 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     if (team.default) id.append(el(doc, 'span', 'Default team', 'ct-tag'), el(doc, 'span', !model3(current) ? 'on this computer'
       : current.defaultTeam?.from === 'workspace' ? 'set by the workspace' : 'set on this deployment', 'ct-from'));
     header.append(id);
-    if (onPage && shown?.scope) header.append(shown.scope.element);
+    // The Workspace pages show no "On <deployment>" line (the product owner, 2026-10-23).
     if (text(team.description)) header.append(el(doc, 'p', team.description, 'ct-desc'));
     const actions = el(doc, 'div', null, 'ct-actions');
     // Make default writes oats-local.yaml's defaultTeam: only where this deployment may declare it.
@@ -931,9 +929,8 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     const content = el(doc, 'div', null, 'computer-teams ct-team-page'); content.dataset.team = label;
     host.replaceChildren(bar, content);
     forget();
-    // The Workspace header's scope line is hidden with it: the page says which deployment it edits under its heading.
-    const scope = createDeploymentScopeLine(doc, { inline: true });
-    shown = { host, label, content, back, onGone, scope, signature: null };
+    // It edits the view's primary deployment, without naming it (the Workspace pages, the product owner, 2026-10-23).
+    shown = { host, label, content, back, onGone, signature: null };
     paintTeam();
     return true;
   }
@@ -942,7 +939,7 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
    * confirmation it held ends with it, which releases the board's redraw barrier and takes it off the board's card. */
   function forget() {
     if (!shown) return;
-    shown.scope.dispose(); shown = null;
+    shown = null;
     if (confirming === null) return;
     confirming = null;
     if (!disposed && current) paintBoard();

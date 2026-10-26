@@ -122,21 +122,21 @@ test('shipped shell mints only inert spawn Open descriptors from complete curren
   assert.equal(opens.length, 1); assert.deepEqual(opens[0][0], action.descriptor.target); assert.equal(opens[0][1].valid, owns); assert.deepEqual(opens[0][1].expected, action.descriptor.target);
   assert.equal(opens[0][0].home, instance.home); assert.equal(opens[0][0].incarnation, birth);
 });
-test('workspace rows are the name alone, from reported words only; Add local, no Join/Manage/count/health invention', t => {
+test('workspace rows are the roster\'s circle and the name, from reported words only; Add local, no Join/Manage/count/health invention', t => {
   const html = readFileSync(new URL('../renderer/index.html', import.meta.url), 'utf8'), dom = new JSDOM(html), doc = dom.window.document; t.after(() => dom.window.close());
   const chosen = [], switcher = createWorkspaceSwitcher({ document: doc, selectWorkspace: v => chosen.push(v), discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) });
   const choices = [{ id: '/a/team', name: 'same', team: { name: 'Org' }, instances: 99 }, { id: '/b/team', name: 'same', server: 'peer', machines: ['peer'] }];
   t.after(() => switcher.dispose());
   switcher.begin()(choices[0], choices); // the list is always shown: no menu to open
   const first = doc.querySelector('.ws-option');
-  // No workspace mark and no machine line (pr3-simplify): one line, the name, its twin told apart by the label alone.
+  // No workspace mark and no machine line (pr3-simplify): one line, the roster's circle and the name, its twin told apart by the label alone.
   assert.equal(doc.querySelector('#ws-options .workspace-avatar, #ws-options .ws-option-meta'), null);
-  assert.deepEqual([...doc.querySelectorAll('.ws-option')].map(b => [...b.children].map(c => c.className)), [['ws-option-name'], ['ws-option-name']]);
+  assert.deepEqual([...doc.querySelectorAll('.ws-option')].map(b => [...b.children].map(c => c.className)), [['ctx-dot on', 'ws-option-name'], ['ctx-dot off', 'ws-option-name']]);
   assert.match(first.textContent, /Org/); assert.doesNotMatch(doc.querySelectorAll('.ws-option')[1].textContent, /peer/, 'never its machine, nor a Server: line (#482)');
   assert.doesNotMatch(doc.querySelector('#ws-options').textContent, /Server:|\/a\/team|\/b\/team/);
   // Add local workspace… is the head's icon button, named in words; the list invents nothing.
   assert.equal(doc.querySelector('#ws-add-open').getAttribute('aria-label'), 'Add local workspace…'); assert.equal(doc.querySelector('#ws-add-open').title, 'Add local workspace…');
-  assert.doesNotMatch(`${doc.querySelector('.side-head').textContent} ${doc.querySelector('#ws-list').textContent}`, /Join|Manage workspaces|99|offline|online/);
+  assert.doesNotMatch(`${doc.querySelector('.ws-head').textContent} ${doc.querySelector('#ws-list').textContent}`, /Join|Manage workspaces|99|offline|online/);
   const named = first.textContent;
   switcher.begin()(choices[0], [...choices].reverse()); assert.equal([...doc.querySelectorAll('.ws-option')].find(b => b.dataset.workspaceId === choices[0].id).textContent, named, 'a reorder keeps the row\'s name');
   // A row from an earlier paint opens nothing; the current row is already shown; the other one is chosen.

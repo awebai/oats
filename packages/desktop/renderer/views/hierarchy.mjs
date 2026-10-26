@@ -36,6 +36,9 @@
    Keyboard: arrows walk the tree, Enter/t go to the instance (Start… when
    stopped), s Workspace (the Spawn view), o action popover, +/- zoom, f fits,
    Escape clears.
+   The round "i" after the tabs (about-dialog.mjs, as on the Workspace page's
+   Souls and Capabilities tabs) opens "What a deployment is" in a modal dialog;
+   a workspace change or leaving the page closes it without moving focus.
    Loading (desktop/loading-states): the shared controller in loading.mjs owns
    the pending / refreshing presentation. Pending (no roster for this workspace
    yet) shows a skeleton pill in .hier-sum after 150ms, aria-busy on the view
@@ -76,6 +79,7 @@ import { DESKTOP_TERMS } from "../desktop-terms.mjs";
 import { ALL_TAB, deploymentTabs, selectedDeploymentTab, rememberDeploymentTab, onDeploymentTabRequest } from "../deployment-tabs.mjs";
 import { deploymentsPageCSS, createDeploymentTabBar, deploymentHead, deploymentReasonBlock, deploymentNeedsWords, deploymentHasWords } from "../deployments-page.mjs";
 import { paintDotColor } from "../instance-dot.mjs";
+import { aboutCSS, ABOUT_COPY, createAboutDialog } from "../about-dialog.mjs";
 
 export const hierarchyCSS = `
 .hier { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); color: var(--fg);
@@ -159,6 +163,9 @@ export const hierarchyCSS = `
 .hier-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
 ${deploymentsPageCSS}
 ${instanceEventsCSS}
+${aboutCSS}
+/* The "i" sits beside the tabs: the strip's own end padding and the bar's gap, not the room kept before the counts. */
+.hier-bar .hier-tabs:not([hidden]) + .ws-info-button { margin-left: -12px; }
 `;
 
 const NODE_W = 220, NODE_H = 60, GAP_X = 50, GAP_Y = 40, PAD = 40;
@@ -398,9 +405,14 @@ export function mount(el, ctx) {
   // The deployment tabs lead the bar (the Workspace page's tab component); the count line follows them.
   s.tabs = createDeploymentTabBar(el.ownerDocument, { idPrefix: s.domId, onSelect: (tab) => selectTab(s, tab) });
   s.q("hier-tabs-host").replaceWith(s.tabs.element);
+  const doc = el.ownerDocument;
+  // "What is a deployment?": the Workspace page's "i" and its About dialog, built once, after the tabs.
+  // Opening it is a newer intent: an act still in flight (Go to instance, Go to soul) no longer moves focus.
+  s.about = createAboutDialog(doc, { copy: ABOUT_COPY.deployments, id: `${s.domId}-about`,
+    onIntent: () => { s.actionTicket = (s.actionTicket || 0) + 1; } });
+  s.tabs.element.after(s.about.button);
   // The shared loading controller. The summary hosts the pending pill; the
   // view's own .hier-notice keeps the stale / failed copy, so no noticeHost.
-  const doc = el.ownerDocument;
   s.status = statusLine(doc, { visuallyHidden: true, className: 'hier-status' });
   s.q('hier-bar').after(s.status);
   s.load = createDataState({ doc, noun: ROSTER_NOUN, region: s.q('hier'), skeletonHost: s.q('hier-sum'),
@@ -483,7 +495,7 @@ export function mount(el, ctx) {
     id: a.id, label: a.label, context: "view:hierarchy", run: a.run, defaultChord: a.defaultChord,
   }));
 
-  s.unsubWs = onWorkspaceChange(() => { resetObservation(s); void refresh(s); });
+  s.unsubWs = onWorkspaceChange(() => { s.about?.close({ focus: "none" }); resetObservation(s); void refresh(s); });
   // A new connection (backend replaced, forge auth changed): the read in flight belongs to the old one.
   // A read on the new connection starts now; it revokes the old read's outcome and arms the new
   // subject's deadline (#461), so neither waits for the old read to settle.
@@ -517,6 +529,7 @@ function teardown(s) {
   s.load?.dispose(); s.load = null;
   s.pendingWatch?.dispose();
   s.tabs?.dispose?.();
+  s.about?.dispose();
   s.win.clearTimeout(s.clickResetTimer);
   s.timers.forEach(clearInterval);
   (s.disposers || []).forEach((off) => { try { off(); } catch {} });

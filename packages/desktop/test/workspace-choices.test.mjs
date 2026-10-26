@@ -181,7 +181,9 @@ function menu(t, list, { active = list[0] } = {}) {
     shown: () => options().map(o => ({ id: o.dataset.workspaceId, parts: [...o.children].map(c => c.className), label: o.querySelector('.ws-option-name').textContent, tooltip: o.title })) };
 }
 // A row is one line, its label (pr3-simplify): of the row's words, only the label is drawn, and it is the tooltip too.
-const drawnFrom = (rows) => [...rows.filter(r => !r.unattached), ...rows.filter(r => r.unattached)].map(r => ({ id: r.id, parts: ['ws-option-name'], label: r.label, tooltip: r.label }));
+// A row: the roster's circle (filled on the current workspace, list[0] by default) and the label.
+const drawnFrom = (rows, current = rows[0]?.id) => [...rows.filter(r => !r.unattached), ...rows.filter(r => r.unattached)]
+  .map(r => ({ id: r.id, parts: [r.id === current ? 'ctx-dot on' : 'ctx-dot off', 'ws-option-name'], label: r.label, tooltip: r.label }));
 
 test('the Desktop\'s list shows each row\'s label and nothing else of the choice', (t) => {
   const twin = { ...TSM, id: 'ws:dddddddddddddddddddd', key: 'github.com/other/tsm', machines: ['altair'], notLive: 2, deploymentLabels: ['altair · /srv/tsm'] };

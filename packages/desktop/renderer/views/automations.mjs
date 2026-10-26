@@ -20,14 +20,12 @@ import { iconElement } from '../shell-icons.mjs';
 import { harnessName } from '../identity-marks.mjs';
 import { postJson, ensureTheme, wsQuery, currentWorkspace, onWorkspaceChange } from './common.mjs';
 import { cliStatus, cliCard, cliKnownUnavailable, onCliChange } from './cli-status.mjs';
-import { createDeploymentScopeLine } from '../deployment-scope-line.mjs';
 
 export const automationsCSS = `
 .automations { display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; background:var(--bg); color:var(--fg); container-type:inline-size; }
 .automations[hidden], .automations [hidden] { display:none !important; }
 .auto-header { flex:none; display:flex; align-items:center; gap:12px; height:48px; padding:0 calc(16px + var(--main-trail-inset, 0px)) 0 calc(16px + var(--main-lead-inset, 0px)); box-sizing:border-box; border-bottom:1px solid var(--border); background:var(--surface); }
 .auto-header h2 { display:flex; align-items:baseline; gap:8px; margin:0; font-size:14px; font-weight:700; }
-.automations > .auto-scope { flex:none; padding:6px 16px; border-bottom:1px solid var(--border); background:var(--surface); }
 .auto-count { color:var(--muted); font:10.5px var(--mono,monospace); font-weight:400; }
 /* The Automations bar, in the Workspace's tab style: Schedules | Triggers, then the page's tools. */
 .auto-header.auto-framed { align-items:stretch; gap:22px; }
@@ -213,9 +211,8 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   if (heading) header.classList.add('auto-framed');
   header.append(heading || h2, node('span', undefined, 'auto-spacer'), scheduler, ...(headerActions ? headerActions(doc) : []), refreshButton);
   const body = node('div', undefined, 'auto-body'), page = node('div', undefined, 'auto-page'); page.hidden = true;
-  // #482: in a view of two or more deployments, the deployment these are read from (the primary).
-  const scope = createDeploymentScopeLine(doc, { className: 'auto-scope' });
-  root.append(style, header, scope.element, body, page); host.append(root);
+  // #482: these are read from the view's primary deployment; a Workspace tab does not name it (the product owner, 2026-10-23).
+  root.append(style, header, body, page); host.append(root);
 
   let alive = true, serial = 0, data = null, failure = '', loading = false, origin = 'all', query = '', openId = null, busy = false, notice = '';
   const tests = new Map(), statuses = new Map();
@@ -1019,7 +1016,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   const closeMenus = e => { for (const m of root.querySelectorAll('.auto-menu[open]')) if (!m.contains(e.target)) m.open = false; };
   doc.addEventListener('click', closeMenus);
   render(); void refresh();
-  return { refresh, open: openRow, describe: id => { const row = rowById(id); if (row) openDescribe(row); }, repaint() { render(); }, setNotice(text) { notice = text || ''; render(); }, setBusy(v) { busy = !!v; render(); }, dispose() { alive = false; revokeConfirm(); serial++; describeSerial++; scope.dispose(); doc.removeEventListener('click', closeMenus); root.remove(); } };
+  return { refresh, open: openRow, describe: id => { const row = rowById(id); if (row) openDescribe(row); }, repaint() { render(); }, setNotice(text) { notice = text || ''; render(); }, setBusy(v) { busy = !!v; render(); }, dispose() { alive = false; revokeConfirm(); serial++; describeSerial++; doc.removeEventListener('click', closeMenus); root.remove(); } };
 }
 
 /** The Desktop shows these pages only for an OATS that reports them (kernel 0.29.0). */
@@ -1110,11 +1107,18 @@ export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: 
   };
 }
 
-// ── The Automations stage: one nav item, Schedules | Triggers as subtabs (human, 2026-09-28) ──
+// ── The Automations stage: Schedules | Triggers as subtabs (human, 2026-09-28), the Workspace page's
+// Automations tab since the sidebar layout (2026-10-23; views/spawn.mjs mounts it there) ──
 export const AUTOMATION_KINDS = Object.freeze(['schedule', 'trigger']);
 let chosenKind = 'schedule', stage = null;
-/** Open the stage on a subtab (a soul's "Schedule…" opens Schedules); the choice persists for the session. */
-export function preselectAutomationsTab(kind) { if (AUTOMATION_KINDS.includes(kind)) chosenKind = kind; }
+const liveStages = new Set(); // every stage on screen, so a preselect reaches one already open
+/** Open the stage on a subtab (a soul's "Schedule…" opens Schedules); the choice persists for the session,
+ * and a stage already on screen shows it at once. */
+export function preselectAutomationsTab(kind) {
+  if (!AUTOMATION_KINDS.includes(kind)) return;
+  chosenKind = kind;
+  for (const live of [...liveStages]) void live.select(kind);
+}
 export function mount(el, ctx) { stage = createAutomationsStage(el, ctx); }
 export function unmount() { stage?.dispose(); stage = null; }
 
@@ -1135,7 +1139,7 @@ export function createAutomationsStage(el, ctx, { cli: readCli = cliStatus, subs
   }
   const frame = {
     heading(d) {
-      // No title in the bar (human, 2026-09-28): the sidebar already says Automations; the tabs lead.
+      // No title in the bar (human, 2026-09-28): the Workspace tab above already says Automations; the subtabs lead.
       const wrap = d.createElement('div'); wrap.className = 'auto-heading';
       const tabs = d.createElement('div'); tabs.className = 'auto-tabs'; tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Automations');
       for (const k of AUTOMATION_KINDS) {
@@ -1189,8 +1193,10 @@ export function createAutomationsStage(el, ctx, { cli: readCli = cliStatus, subs
   }
   const offWs = onWorkspaceChange(() => { counts.clear(); paintCounts(); void countOther(); });
   void select(kind, { force: true });
-  return {
+  const handle = {
     get kind() { return kind; }, select,
-    dispose() { alive = false; op++; countSerial++; offWs(); page?.dispose(); page = null; host.remove(); },
+    dispose() { alive = false; op++; countSerial++; liveStages.delete(handle); offWs(); page?.dispose(); page = null; host.remove(); },
   };
+  liveStages.add(handle);
+  return handle;
 }
