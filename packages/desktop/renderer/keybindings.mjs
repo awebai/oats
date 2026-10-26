@@ -690,7 +690,7 @@ export function findConflict(chord, context, excludeId = null, isMac = defaultIs
 /** Clashes that involve a stored rebind: pairs of actions whose effective chords
  * collide (findConflict's visibility rule) where at least one side is a user
  * override — e.g. a rebind that a new default now shares. Nothing is ever changed
- * silently; the shell marks the shortcuts button and the editor lists them. */
+ * silently; the shell marks the settings cog and its Keyboard shortcuts… item, and the editor lists them. */
 export function keymapConflicts(isMac = defaultIsMac()) {
   const own = (id) => Object.prototype.hasOwnProperty.call(overrides, id);
   const out = [], seen = new Set();

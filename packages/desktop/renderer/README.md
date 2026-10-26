@@ -13,7 +13,8 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   Automations mounts `automations.mjs` `createAutomationsStage` (Schedules | Triggers) while its
   tab is shown and disposes it on leaving (`syncAutomations`). It was a page of its own until
   The sidebar layout (2026-10-23): `shell-nav.mjs` NAV is Workspace and Deployments (the nav's order, under the list of workspaces), and its
-  NAV_TABS route `stage.automations` (⌘3 / Ctrl+3), the palette's **View: Automations** and
+  NAV_TABS route `stage.automations` (⌘3 / Ctrl+3), the palette's **View: Workspace › Automations**
+  (the entry's label names its page, as the shortcuts editor's row does) and
   every `showStage("automations")` / `ctx.openView("automations")` to this page on that tab.
   Souls come from `GET /api/agents` (the kernel's `oats souls` catalog),
   grouped by **Repo** (the default: the member repository, the host first,
@@ -1652,7 +1653,12 @@ section is the module map.
   and CLI pending/unavailable souls open their soul page instead, which says
   why. Dismissing the dialog returns to where the operator was
   (`surface-return.mjs`). No second spawn form exists.
-- **keybindings-editor.mjs** — the shortcuts editor dialog (`Mod+,`):
+- **keybindings-editor.mjs** — the shortcuts editor dialog (`Mod+,`). Its first section is
+  **Most useful** (`usefulRows`): a read-only table (a row header per action, then its keys) of
+  the shared keymap's most used rows, read from the live keymap at every render (platform,
+  chord family, rebinds), the leader's key standing in for an action with no chord, hidden
+  while a search shows the list; its rules are the module's own `usefulCSS`, injected with
+  the editor, its keycaps and words the list's. Then
   a search (focused on open; `shortcutMatches` filters by label, group name
   or the chord as shown, case- and separator-insensitive), actions grouped
   by context under sticky headings, the chord as keycaps (`chordKeys`; the
@@ -1664,6 +1670,10 @@ section is the module map.
   given the page's chord family, its top holds the family choice ("Shortcuts
   anywhere": Alt, Ctrl+Alt or Ctrl+Shift), which writes keys.json through main and
   switches the keymap at once, with main's note when the file was not taken.
+  What has no sidebar button is taught by its rows: the palette is the Leader group's first
+  key (the leader then K or Space) and a Global row with its chord; Connections (not in the
+  settings cog's menu) is the Global row **Settings: Connections…** (`app.connections`, the palette's name), unbound by default
+  and bound there; the stage rows say where they land (**View: Workspace › Automations**).
 - **chord-family.mjs** — the chord family in the page: asks main
   (`../chord-family.mjs`) as the window starts, follows its pushes, writes the
   Shortcuts page's choice through it, checks what main sends again, and applies

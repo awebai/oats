@@ -396,7 +396,7 @@ test("shell wiring: the new actions are registered, rebindable and discoverable"
 // Automations left the nav for a tab of the Workspace page (2026-10-23); its action did not move:
 // the shipped registration, run as shipped, still makes stage.automations a global, rebindable action
 // on Mod+3 with its label, and it opens the name (showStage routes it to the page and tab).
-test("stage.automations: registered from NAV_TABS as shipped, \"View: Automations\", Ctrl+3 / ⌘3, rebindable", t => {
+test("stage.automations: registered from NAV_TABS as shipped, \"View: Workspace › Automations\", Ctrl+3 / ⌘3, rebindable", t => {
   resetAllBindings();
   const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
   const statement = src.match(/\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(\{[^]*?\n\}\)\);/)?.[0];
@@ -407,7 +407,7 @@ test("stage.automations: registered from NAV_TABS as shipped, \"View: Automation
   const stages = listActions().filter(a => a.id.startsWith("stage.") && !a.id.includes(".", 6));
   assert.deepEqual(stages.map(a => [a.id, a.label, a.context]), [
     // In NAV's order, Workspace first since 2026-10-23; each keeps its own chord (bound by id).
-    ["stage.spawn", "View: Workspace", "global"], ["stage.hierarchy", "View: Deployments", "global"], ["stage.automations", "View: Automations", "global"],
+    ["stage.spawn", "View: Workspace", "global"], ["stage.hierarchy", "View: Deployments", "global"], ["stage.automations", "View: Workspace › Automations", "global"],
   ]);
   assert.deepEqual(["stage.hierarchy", "stage.spawn"].map(id => getBinding(id, false)), ["Mod+1", "Mod+2"], "⌘1 / Ctrl+1 is still Deployments");
   assert.equal(getBinding("stage.automations", false), "Mod+3"); assert.equal(getBinding("stage.automations", true), "Mod+3");
