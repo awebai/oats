@@ -44,7 +44,7 @@ const HERE = () => [
 const here = (options = {}) => stateOf(observed(HERE(), { cli: options.cli ?? KEYED }), { cli: KEYED, ...options });
 /** The state with `name` selected (from the first row, moving down). */
 function on(state, name, sz = S80) {
-  for (let i = 0; i < 20 && model(state, { page: 19, now: 0, at: new Date(0).toISOString(), cols: 38 }).list.find((item) => item?.selected)?.name !== name; i++) state = press(state, ["j"], sz).state;
+  for (let i = 0; i < 20 && rowOf(state)?.instance !== name; i++) state = press(state, ["j"], sz).state;
   assert.equal(rowOf(state).instance, name, `${name} is selected`);
   return state;
 }

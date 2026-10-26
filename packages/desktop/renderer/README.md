@@ -555,6 +555,14 @@ split into sections) is `packages/client/roster-sections.mjs`.
   decided on the full roster (a filter or a collapse moves no row, #971). The palette alone passes its
   last-focus record (`{ lastFocus }`): the clusters are ordered by `recencyOrder` first (#1383), and the
   sidebar and the TUI never pass it.
+- **A row's name is its words** (0.68.1, the product owner): `rosterName(doc, name)` (instance-tree-view.mjs)
+  builds `.ctx-name` for both row builders (shell.mjs `renderContextRoster` and `pendingSpawnRow`). Its first
+  child is `instanceDisplayName(name)` (`packages/client/instance-display-name.mjs`, the TUI's too:
+  "oats-expert-maintainer-lanes" shows "Oats expert maintainer lanes"), `aria-hidden`. Its second is the real
+  name in `.sr-only`, so the row's accessible name stays the real name, and `data-name` holds it as well. Find a row by
+  `.ctx-name`'s `dataset.name`, never its `textContent` (which holds both). Everything else that names an
+  instance keeps the real name: the hover card (`rosterTipFacts`), the row's tooltips and descriptions, the
+  palette's label and match, tabs, dialogs and copies. The `.ctx-name` rule (ellipsis, one line) is unchanged.
 - **The Machines tab** (the Workspace page's, before Setup; the Deployments page until 2026-10-26, and the Active
   overview before that; stage `hierarchy` opens it): tabs from
   `deployment-tabs.mjs` (All, then one per deployment; one deployment has only its own tab;

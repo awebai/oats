@@ -25,6 +25,7 @@ export { shortPath, deploymentLabel, machineLabels } from "../../client/deployme
 export { instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree, hasInstanceChildren, heldHome, instanceSiblings } from "../../client/instance-tree.mjs";
 export { rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment } from "../../client/roster-sections.mjs";
 export { runtimeState, runtimeCounts, originLead, siblingText, instanceColor } from "../../client/instance-presentation.mjs";
+export { instanceDisplayName } from "../../client/instance-display-name.mjs";
 export { waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText } from "../../client/waiting-on-you.mjs";
 export { instanceActs, openAct } from "../../client/instance-acts.mjs";
 export { rowReason } from "../../client/remote-address.mjs";

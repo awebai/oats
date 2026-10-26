@@ -125,10 +125,10 @@ test("roster, two deployments: a heading per deployment, by machine, in order, i
   assert.equal(heads[1].textContent, "altair", "one short line: no reason or note in the sidebar");
   // Order: heading, its groups and rows, then the next heading.
   const sequence = [...list.children].map((el) => el.classList.contains("ctx-deployment") ? `#${el.dataset.deployment}`
-    : el.classList.contains("ctx-group") ? `group:${el.dataset.group}` : el.querySelector(".ctx-name")?.textContent);
+    : el.classList.contains("ctx-group") ? `group:${el.dataset.group}` : el.querySelector(".ctx-name")?.dataset.name);
   assert.deepEqual(sequence, [`#${LOCAL.id}`, "group:lead", "lead", "dev", "group:independent", "near", `#${ALTAIR.id}`, "group:independent", "far"]);
   assert.equal(list.textContent.includes("oats ·"), false, "rows never repeat the workspace name");
-  const far = [...list.querySelectorAll(".ctx-tree-row")].find((r) => r.querySelector(".ctx-name").textContent === "far");
+  const far = [...list.querySelectorAll(".ctx-tree-row")].find((r) => r.querySelector(".ctx-name").dataset.name === "far");
   // The identity line (the product owner, 2026-10-26): the soul, then the repository; the host is the heading's.
   const meta = far.querySelector(".ctx-meta.ctx-soul-repo");
   assert.deepEqual([meta.querySelector(".ctx-meta-soul").textContent, meta.querySelector(".ctx-meta-repo").textContent], ["soul", "repo"], "the identity line: soul, then repository");
@@ -157,7 +157,7 @@ test("roster: a stale deployment (its last re-read failed) is marked in words, a
   const list = roster(t, [row("a", LOCAL, { running: false }), row("b", stale, { running: false })], [LOCAL, stale]);
   const heads = [...list.querySelectorAll(".ctx-deployment")];
   assert.deepEqual(heads.map((h) => h.querySelector(".deployment-mark")?.getAttribute("aria-label") ?? null), [null, "stale"]);
-  const start = (name) => [...list.querySelectorAll(".ctx-tree-row")].find((r) => r.querySelector(".ctx-name")?.textContent === name).querySelector(".ctx-start");
+  const start = (name) => [...list.querySelectorAll(".ctx-tree-row")].find((r) => r.querySelector(".ctx-name")?.dataset.name === name).querySelector(".ctx-start");
   assert.equal(start("b").getAttribute("aria-disabled"), "true", "the held row waits");
   assert.equal(start("a").hasAttribute("aria-disabled"), false, "the live deployment's row acts as before");
 });

@@ -1,8 +1,27 @@
 /** The Desktop's own half of the roster tree: the connectors it draws, its terminal tabs' keys, the
- * focus and scroll it keeps across a rebuild, the roster's count line and loading state. The tree
+ * focus and scroll it keeps across a rebuild, the roster's count line and loading state, and each row's name. The tree
  * itself (identity, relations, groups, order, visibility) is the shared packages/client/instance-tree.mjs. */
 import { createDataState, statusLine, skeleton, skeletonBlock, ROSTER_STALE_TITLE } from './loading.mjs';
 import { instanceId, resolveLinkId, findRosterInstance } from '../../client/instance-tree.mjs';
+import { instanceDisplayName } from '../../client/instance-display-name.mjs';
+
+/** An instance row's name (0.68.1, the product owner): the words shown (instanceDisplayName: "Oats expert maintainer
+ * lanes"), the real name kept where it identifies the instance. The words are hidden from assistive tech and a visually
+ * hidden copy of the real name is read in their place, so the row's accessible name is the name a search, a copy and
+ * the CLI use; the real name is also the element's data-name. The title, the hover card, Quick Open and tabs keep it. */
+export function rosterName(doc, instanceName) {
+  const name = doc.createElement("span");
+  name.className = "ctx-name";
+  name.dataset.name = instanceName;
+  const shown = doc.createElement("span");
+  shown.setAttribute("aria-hidden", "true");
+  shown.textContent = instanceDisplayName(instanceName) || instanceName;
+  const real = doc.createElement("span");
+  real.className = "sr-only";
+  real.textContent = instanceName;
+  name.append(shown, real);
+  return name;
+}
 
 /** Agent-group boundary for the instances sidebar (Workspace v4): no title,
  * a 6px gap (2026-10-23; was 14px), with the cluster's indent and its root,

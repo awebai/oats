@@ -208,7 +208,7 @@ function shell(t, { addResult = { ok: true, workspace: { id: 'A' } }, workspace 
   return {
     ...s, c, context, doc, dom, rosterEl, requests, list, adds,
     count: () => rosterEl.querySelector('.ctx-count'), status: () => rosterEl.querySelector('.ctx-status'), live: () => rosterEl.querySelector('[role="status"].loading-sr'),
-    rows: () => [...list().querySelectorAll('.ctx-tree-row:not(.skeleton-roster-row)')], /* the skeleton wears the row class too */ names: () => [...list().querySelectorAll('.ctx-name')].map(n => n.textContent),
+    rows: () => [...list().querySelectorAll('.ctx-tree-row:not(.skeleton-roster-row)')], /* the skeleton wears the row class too */ names: () => [...list().querySelectorAll('.ctx-name')].map(n => n.dataset.name),
     text: () => list().textContent,
     async reply(index, panel) { requests[index].resolve(panel); await tick(); },
     async fail(index, error) { requests[index].reject(error); await tick(); },
@@ -341,7 +341,7 @@ test('failure with data: rows kept, stale line with the observed age and Retry, 
   for (const trigger of s.list().querySelectorAll('.ctx-instance-actions')) { assert.equal(trigger.getAttribute('aria-disabled'), 'true'); assert.equal(trigger.disabled, false); assert.equal(trigger.title, tree.ROSTER_STALE_TITLE); assert.equal(trigger.getAttribute('aria-description'), tree.ROSTER_STALE_TITLE); }
   // The row itself: a running row still opens its terminal; a stopped row's activation (click, Enter) starts nothing and says why — the
   // roster may be wrong about running:false by now (the maintainer's return on #322).
-  const alphaRow = s.rows()[0].querySelector('.ctx-inst'), betaRow = s.rows().find(r => r.querySelector('.ctx-name').textContent === 'beta').querySelector('.ctx-inst');
+  const alphaRow = s.rows()[0].querySelector('.ctx-inst'), betaRow = s.rows().find(r => r.querySelector('.ctx-name').dataset.name === 'beta').querySelector('.ctx-inst');
   assert.equal(alphaRow.disabled, false); assert.equal(alphaRow.getAttribute('aria-description'), null, 'opening the existing terminal stays possible');
   assert.equal(betaRow.getAttribute('aria-description'), tree.ROSTER_STALE_TITLE); assert.equal(betaRow.title, tree.ROSTER_STALE_TITLE);
   betaRow.click(); // openInstanceStart is assert.fail in this shell: reaching it would fail the test
@@ -361,7 +361,7 @@ test('failure with data: rows kept, stale line with the observed age and Retry, 
   assert.equal(s.status().children.length, 0); assert.equal(s.context.rosterState.state, 'ready');
   assert.equal(s.list().querySelector('.ctx-start').getAttribute('aria-disabled'), null); assert.equal(s.list().querySelector('.ctx-start').title, '');
   for (const trigger of s.list().querySelectorAll('.ctx-instance-actions')) assert.equal(trigger.getAttribute('aria-disabled'), null);
-  assert.equal(s.rows().find(r => r.querySelector('.ctx-name').textContent === 'beta').querySelector('.ctx-inst').getAttribute('aria-description'), null, 'the stopped row is a Start again');
+  assert.equal(s.rows().find(r => r.querySelector('.ctx-name').dataset.name === 'beta').querySelector('.ctx-inst').getAttribute('aria-description'), null, 'the stopped row is a Start again');
   assert.equal(s.count().dataset.stale, undefined);
   assert.equal(s.live().textContent, 'Instances updated');
   assert.equal(s.doc.activeElement, s.list().querySelector('.ctx-inst[tabindex="0"]'), 'the vanished Retry hands focus to the roster\'s current row, not to nothing');
@@ -898,7 +898,7 @@ test('an empty deployment\'s observed answer, as the server sends it, settles to
 test('this window\'s retire reads Retiring… from its send, before any read; a refusal lets it go at once; only an observed read begun after the answer releases it', async t => {
   const s = shell(t, { inFlight: true }), c = s.context;
   await s.reply(0, panelOf('A', roster));
-  const button = name => [...s.list().querySelectorAll('.ctx-inst')].find(b => b.querySelector('.ctx-name')?.textContent === name);
+  const button = name => [...s.list().querySelectorAll('.ctx-inst')].find(b => b.querySelector('.ctx-name')?.dataset.name === name);
   const reads = name => button(name).querySelector('.ctx-meta').textContent;
   const menu = name => [...button(name).closest('.ctx-tree-row').querySelectorAll('[role=menuitem]')].map(item => item.dataset.action);
   const target = { workspace: 'A', instance: 'alpha', agent: 'dev', agentsRoot: '/synthetic/agents', home: '/synthetic/alpha', server: null };

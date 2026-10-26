@@ -9,13 +9,14 @@ import { instanceColor } from "../lib/client.mjs";
 import { style } from "../lib/term/style.mjs";
 import { LOOK, MARKS, markLook } from "../lib/views/instances.mjs";
 import { SOUL_COLOURS } from "../lib/views/souls.mjs";
-import { draw, instanceRow, observed, stateOf } from "./helpers.mjs";
+import { draw, drawnName, instanceRow, observed, stateOf } from "./helpers.mjs";
 
-/** The style of the state mark on the list row that names `name` (its mark, a space, the name). */
+/** The style of the state mark on the list row that names `name` (its mark, a space, the name as words). */
 function markStyle(d, name) {
-  const row = d.lines.findIndex((line) => new RegExp(`[●○◌?◆] ${name}(\\s|$)`, "u").test(line));
+  const words = drawnName(name);
+  const row = d.lines.findIndex((line) => new RegExp(`[●○◌?◆] ${words}(\\s|$)`, "u").test(line));
   assert.ok(row >= 0, `${name} is drawn in the list`);
-  const col = d.lines[row].indexOf(` ${name}`) - 1;
+  const col = d.lines[row].indexOf(` ${words}`) - 1;
   return { mark: d.lines[row][col], style: d.cells[row][col].style };
 }
 

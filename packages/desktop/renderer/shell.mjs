@@ -88,7 +88,7 @@ import { createPanelOwner } from "./panel-owner.mjs";
 import { collapseKey, hasInstanceChildren, instanceRepoLabel, instanceVisibleInTree, waitingRollup, instanceId, rosterParentId, heldHome } from "../../client/instance-tree.mjs";
 import { createRetiresInFlight, retiringRows } from "../../client/retire-in-flight.mjs";
 import { treeConnectors, treeGuides, captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
-  terminalKey, resolveTerminalOpen, createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE } from "./instance-tree-view.mjs";
+  terminalKey, resolveTerminalOpen, createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE, rosterName } from "./instance-tree-view.mjs";
 import {
   tabVisibleInContext, canActivateTab,
   fallbackTabForContext, restoreTerminalTab,
@@ -1054,9 +1054,7 @@ function renderContextRoster(instances) {
         paintDotColor(dot, i, state);
         const copy = document.createElement("span");
         copy.className = "ctx-copy";
-        const name = document.createElement("span");
-        name.className = "ctx-name";
-        name.textContent = i.instance;
+        const name = rosterName(document, i.instance);
         // The meta line (the product owner, 2026-10-26): the soul at the left, the repository at the right; the
         // soul is cut first, the repository keeps about 10ch. The branch and the pull request are the hover card's
         // (rosterTipFacts); the pull request's link stays in the row tools.
@@ -1236,9 +1234,7 @@ function pendingSpawnRow(i, items, instances, startedAt = null) {
   mark.className = unknown && !checking ? "ctx-dot unknown" : "ctx-spawn-spinner";
   const copy = document.createElement("span");
   copy.className = "ctx-copy";
-  const name = document.createElement("span");
-  name.className = "ctx-name";
-  name.textContent = i.instance;
+  const name = rosterName(document, i.instance);
   const meta = document.createElement("span");
   meta.className = "ctx-meta ctx-spawn-state";
   meta.textContent = settingUp ? held.state : checking ? "Checking result…" : unknown ? "Outcome unknown" : "Spawning…";
