@@ -217,7 +217,7 @@ test("a soul's row: its mark in its colour (uncoloured with none), its name, `!`
 });
 
 test("the colour table maps the soul palette's six names onto the terminal's sixteen, and the marks are ■ and #", () => {
-  assert.deepEqual(SOUL_COLOURS, { sand: "yellow", sage: "green", slate: "blue", mauve: "magenta", clay: "red", olive: "cyan" });
+  assert.deepEqual(SOUL_COLOURS, { sand: "white", sage: "green", slate: "blue", mauve: "magenta", clay: "red", olive: "cyan" });
   assert.equal(Object.isFrozen(SOUL_COLOURS), true);
   assert.deepEqual([SOUL_MARK.utf8, SOUL_MARK.ascii, COUNT_SIGN.utf8, COUNT_SIGN.ascii], ["■", "#", "·", "x"]);
   // Every colour of the table draws as itself.

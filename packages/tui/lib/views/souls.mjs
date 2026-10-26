@@ -25,8 +25,9 @@ export const SOULS_TEXT = Object.freeze({
 });
 
 /** A soul's colour (soul-colors.mjs's palette name) as one of the terminal's sixteen: the model
- *  maps a row's colour with it, and a name not here leaves the soul uncoloured. */
-export const SOUL_COLOURS = Object.freeze({ sand: "yellow", sage: "green", slate: "blue", mauve: "magenta", clay: "red", olive: "cyan" });
+ *  maps a row's colour with it, and a name not here leaves the soul uncoloured. `sand` is white, not
+ *  yellow: yellow says needs input, and only that. */
+export const SOUL_COLOURS = Object.freeze({ sand: "white", sage: "green", slate: "blue", mauve: "magenta", clay: "red", olive: "cyan" });
 
 /** A soul's mark, in UTF-8 and in ASCII, and the sign before a count of its instances. */
 export const SOUL_MARK = Object.freeze({ utf8: "■", ascii: "#" });

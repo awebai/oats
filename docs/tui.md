@@ -315,11 +315,9 @@ nothing is told by colour alone.
 colours its mark, in the list and in a soul's detail: a running mark in it, a
 stopped one and one with a shell left in it dim in it. `?` and `◆` keep their
 own look whatever the colour, and an instance with no colour looks as above.
-The six colours are the terminal's: `sand` yellow, `sage` green, `slate` blue,
-`mauve` magenta, `clay` red, `olive` cyan, the souls' own map. `sand` is
-yellow because it is the colour chosen for the soul, and the terminal has no
-other colour for it; needs input is not told from it by hue but by its own
-mark, the bold `!` in reverse video. Which colour a
+The six colours are the terminal's: `sand` white, `sage` green, `slate` blue,
+`mauve` magenta, `clay` red, `olive` cyan, the souls' own map. `sand` is not
+yellow, which says needs input and nothing else. Which colour a
 row shows is the Desktop's rule (`instanceColor` in `packages/client`); an
 older kernel reports none. Setting a colour from the TUI is not in this
 version.
@@ -2564,8 +2562,8 @@ alone. The next run removes the directory that is left, with its `tmux`,
   alone. **Yellow says needs input, and only that:** the `!` in place of a
   row's state mark and the dot in the list of workspaces. A state unknown,
   `?`, is dim in your terminal's foreground, and a warning (a failed read,
-  `Can't spawn here`, `· 1 on an older version`) is bold red. The one
-  other yellow is a soul's own colour, `sand` ([What it shows](#what-it-shows)).
+  `Can't spawn here`, `· 1 on an older version`) is bold red, and a soul's
+  `sand` is white ([What it shows](#what-it-shows)).
 - It draws its rules and marks in UTF-8 when `LC_ALL`, else `LC_CTYPE`, else
   `LANG` names UTF-8, and in ASCII otherwise or with `--ascii`. No icon font,
   no emoji. When the locale is not UTF-8, a character outside ASCII in text

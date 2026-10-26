@@ -26,6 +26,7 @@ test("instanceColor: a palette name exactly, else null", () => {
   assert.equal(instanceColor(null), null);
   assert.equal(instanceColor(undefined), null);
   assert.deepEqual(Object.keys(SOUL_COLOURS), ["sand", "sage", "slate", "mauve", "clay", "olive"], "every palette name has a terminal colour");
+  for (const [name, colour] of Object.entries(SOUL_COLOURS)) assert.equal(colour === "yellow" || colour === "brightYellow", false, `${name}: yellow says needs input, and only that`);
 });
 
 test("markLook: running, stopped and shell take the colour (the last two dim); unknown and held keep their own; no colour is LOOK", () => {
