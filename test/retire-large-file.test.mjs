@@ -102,6 +102,38 @@ test("#617 a file's stored digest is the one spelled out from its bytes read who
   }
 });
 
+// ---- A home's instance.json over the size its neutral form is read to ----
+// The stored digest of a home takes its instance.json without the fields the kernel writes after spawn,
+// which needs the whole file. It does so up to 16 MiB; a larger one is hashed raw, in pieces, as a work
+// tree's instance.json is.
+
+const NEUTRAL_CAP = 16 * MIB;
+/** A home holding only an instance.json: a JSON object with a field the kernel writes after spawn,
+ *  padded to `length` bytes. */
+function homeWithInstanceJson(length) {
+  const root = mkdtempSync(join(tmpdir(), "oats-neutral-cap-"));
+  temporaryDirectories.push(root);
+  const head = `{"instance":"x","spawnCompleted":"2026-01-01T00:00:00Z","padding":"`, tail = `"}`;
+  write(join(root, "instance.json"), `${head}${"p".repeat(length - head.length - tail.length)}${tail}`);
+  assert.equal(statSync(join(root, "instance.json")).size, length, "fixture premise: the size asked for");
+  return root;
+}
+
+test("#617 a home's instance.json at the cap is taken in its neutral form; one byte over it is hashed raw, in pieces", () => {
+  const at = homeWithInstanceJson(NEUTRAL_CAP);
+  for (const digest of [(root, o) => fingerprintTree(root, o), (root, o) => storedTreeDigest(root, 2, o)]) {
+    assert.notEqual(digest(at, { instanceHome: true }), digest(at), "at the cap the kernel's field is left out");
+  }
+  const over = homeWithInstanceJson(NEUTRAL_CAP + 1);
+  for (const digest of [(root, o) => fingerprintTree(root, o), (root, o) => storedTreeDigest(root, 2, o)]) {
+    assert.equal(digest(over, { instanceHome: true }), digest(over), "over the cap the bytes are hashed as they are");
+  }
+  // Raw and in pieces: the stream spelled out from the bytes, as a work tree's file is.
+  const path = join(over, "instance.json"), bytes = readFileSync(path);
+  const stream = Buffer.concat([Buffer.from(`tree\0${"instance.json".length}\0instance.json${statSync(path).mode & 0o7777}\0file\0${bytes.length}\0`), bytes]);
+  assert.equal(storedTreeDigest(over, 2, { instanceHome: true }), `sha256:${createHash("sha256").update(stream).digest("hex")}`);
+});
+
 // ---- A file that changes while it is read ----
 // A digest frames a file's bytes with their length, which it takes when it opens the file: the bytes
 // that follow are exactly that many.
