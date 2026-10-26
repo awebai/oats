@@ -1242,7 +1242,7 @@ test("a waiting claim on a stale deployment is not drawn: no mark on the row, no
     const stale = selecting(stateOf(failed(entry(), STALE("the mirror did not answer"))), KERNEL_DEV), d = draw(stale, sz);
     assert.equal(d.lines.some((line) => line.includes("input")), false);
     assert.equal(d.lines.some((line) => line.includes("Acme ledger developer note")), true, "the row is drawn");
-    for (const line of listLines(d)) assert.equal(/!\d*$/.test(line), false, `no waiting mark: ${line}`);
+    for (const r of listRows(d)) assert.equal(waitMarkAt(d, r), null, `no needs-input mark: ${cellText(d, r, 0, d.cols)}`);
     for (const line of d.lines) assert.equal(/\bneeds\b/.test(line), false, "no needs line");
     const page = draw(press(stale, ["tab"], S79).state, S79);
     assert.equal(page.lines.some((line) => line.trim().startsWith("soul ")), true, "the detail is drawn");
