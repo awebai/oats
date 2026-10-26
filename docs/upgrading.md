@@ -166,8 +166,7 @@ of the Desktop and the CLI, and an optional package pin. A change a script
 must follow is in its release's Upgrade section whether or not it is listed
 here.
 
-- **[0.68.0](release-notes/v0.68.0.md#upgrade), first published as
-  0.68.1:** the Desktop first, then the CLI: a 0.67 Desktop refuses a 0.68
+- **[0.68.0](release-notes/v0.68.0.md#upgrade):** the Desktop first, then the CLI: a 0.67 Desktop refuses a 0.68
   CLI. The catalog pins new package versions; after `oats sync`, a stopped
   home can move to them with `oats instance upgrade` instead of a respawn
   ([Moving existing homes](#moving-existing-homes-to-locked-package-versions)).
