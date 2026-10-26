@@ -400,7 +400,7 @@ test('keyboard: - and = zoom, 0 fits (the canvas has focus)', async t => {
   u.key('0'); assert.equal(zoom(), fitted, '0 fits again');
 });
 
-test('the Deployments stage in an unfocused window reads its roster at the blurred cadence (#481)', async t => {
+test('the Deployments view (Workspace › Machines) in an unfocused window reads its roster at the blurred cadence (#481)', async t => {
   const s = await setup(t);
   const reads = () => s.calls.filter(c => c.path.startsWith('/api/panel')).length;
   const before = reads();
@@ -417,7 +417,7 @@ test('the Deployments stage in an unfocused window reads its roster at the blurr
   assert.equal(reads(), before + 3, 'focused again: every tick');
 });
 
-test('a Deployments stage mounted in a window that is already unfocused starts at the blurred cadence (#481)', async t => {
+test('a Deployments view (Workspace › Machines) mounted in a window that is already unfocused starts at the blurred cadence (#481)', async t => {
   // A restored window can lose focus before its renderer mounts: no blur event ever reaches the stage.
   const s = await setup(t, { focused: false });
   const reads = () => s.calls.filter(c => c.path.startsWith('/api/panel')).length;

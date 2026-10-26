@@ -24,7 +24,7 @@ const ROW = 48, TOP = 60, HEIGHT = 120; // the list's top edge and its 120px scr
  * button sits inside it, 2px from each edge (the row's transparent borders), its tools on the right. */
 function fixture(t) {
   const rows = Array.from({ length: 6 }, (_, i) => `<div class="ctx-tree-row"><button class="ctx-inst" type="button" tabindex="${i ? -1 : 0}" data-tree-instance="i${i}" data-tree-control="terminal">i${i}</button><span class="ctx-row-tools"><button class="ctx-start" type="button">Start…</button></span></div>`).join("");
-  const dom = new JSDOM(`<!doctype html><body><div id="app"><aside id="sidebar"><nav id="nav"><button>Deployments</button></nav><section id="instance-roster"><div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div><div class="ctx-list">${rows}</div></section></aside><main id="main"><div id="stagehost"><button>Stage</button></div></main><aside id="context-panel" hidden></aside></div></body>`);
+  const dom = new JSDOM(`<!doctype html><body><div id="app"><aside id="sidebar"><nav id="nav"><button>Workspace overview</button></nav><section id="instance-roster"><div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div><div class="ctx-list">${rows}</div></section></aside><main id="main"><div id="stagehost"><button>Stage</button></div></main><aside id="context-panel" hidden></aside></div></body>`);
   t.after(() => dom.window.close());
   const doc = dom.window.document, list = doc.querySelector(".ctx-list"), sidebar = doc.getElementById("sidebar");
   // Only the list's scrollTop may move: never the sidebar, the page or the window.

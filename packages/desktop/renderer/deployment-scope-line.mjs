@@ -23,7 +23,6 @@ export const deploymentScopeCSS = `
 .deployment-scope { margin:0; padding:6px 16px 0; color:var(--muted); font-size:11.5px; line-height:1.4; font-weight:500;
   min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .deployment-scope[hidden] { display:none; }
-.deployment-scope.inline { padding:0; }
 `;
 
 function ensureCSS(doc) {
@@ -34,14 +33,14 @@ function ensureCSS(doc) {
 
 /**
  * A self-updating line. `workspace()` names the view (or deployment) the surface shows: the shell's
- * current workspace, or a pinned tab's own. `inline` drops the bar padding (a line inside a padded
- * page or dialog). Returns `{ element, update(), dispose() }`; the subscription also ends by itself
- * once a line that was on screen leaves the document.
+ * current workspace, or a pinned tab's own; `className` adds the surface's own class. Returns
+ * `{ element, update(), dispose() }`; the subscription also ends by itself once a line that was on
+ * screen leaves the document.
  */
-export function createDeploymentScopeLine(doc, { workspace = currentWorkspace, inline = false, className = '' } = {}) {
+export function createDeploymentScopeLine(doc, { workspace = currentWorkspace, className = '' } = {}) {
   ensureCSS(doc);
   const element = doc.createElement('p');
-  element.className = ['deployment-scope', inline ? 'inline' : '', className].filter(Boolean).join(' ');
+  element.className = ['deployment-scope', className].filter(Boolean).join(' ');
   let seen = false, off = null, offWorkspace = null;
   const update = () => {
     const label = deploymentScopeLabel(viewDeployments(typeof workspace === 'function' ? workspace() : workspace) || []);

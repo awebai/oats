@@ -1,7 +1,8 @@
 // Spec F, Part 4: F6 / Shift+F6 cycle the window's regions — the sidebar's, top to bottom
-// (workspaces → views, the nav under the list → instance roster), then main → instance panel (the sidebar
-// layout, 2026-10-23) — skipping hidden ones and landing on each region's current item, never <body>. The
-// sidebar's foot (the sidebar toggle, the settings cog) is not a region.
+// (workspaces → views, the nav under the list → instance roster), then main → instance panel (2026-10-26) —
+// skipping hidden ones and landing on each region's current item, never <body>. The sidebar's foot (the bar:
+// the OATS mark, the sidebar toggle, Spawn instance, the settings cog and its menu) is not a region, but an
+// empty roster's stop is its Spawn instance.
 // And "back to where you were" after a flow that moved the main surface.
 // The shipped index.html and shell.css (scripts are not run), so ids and hiding rules are real.
 import test from "node:test";
@@ -21,7 +22,7 @@ function shell(t, { tabs = false } = {}) {
   const doc = dom.window.document;
   const style = doc.createElement("style"); style.textContent = read("shell.css"); doc.head.append(style);
   // What the shell paints: the workspace list (one roving stop, the current row), the nav's items under the list
-  // from the shipped manifest (Workspace current), roster rows (one roving stop), a stage and a panel with tabs.
+  // from the shipped manifest (Workspace overview current), roster rows (one roving stop), a stage and a panel with tabs.
   doc.getElementById("ws-options").innerHTML = `<ul class="ws-group"><li class="ws-option-row"><button type="button" class="ws-option" aria-current="true" tabindex="0" data-workspace-id="/w/a">Team A</button></li><li class="ws-option-row"><button type="button" class="ws-option" tabindex="-1" data-workspace-id="/w/b">Team B</button></li></ul>`;
   doc.getElementById("nav").innerHTML = NAV.map(v => v.name === "spawn"
     ? `<button class="nav-item active" data-view="${v.name}" aria-current="page">${v.label}</button>`
@@ -40,8 +41,9 @@ function shell(t, { tabs = false } = {}) {
   }
   const regions = createFocusRegions({ doc, tabLayerVisible: () => layer, focusMainContent: () => { terminal?.focus(); return !!terminal; } });
   return { dom, doc, regions, terminal, setLayer: v => { layer = v; },
-    // Icon buttons have no text here (the shell mounts their icons): they read as their #id.
-    where: () => doc.activeElement === doc.body ? "body" : doc.activeElement.textContent || (doc.activeElement.id && `#${doc.activeElement.id}`) || doc.activeElement.className };
+    // Icon buttons have no text here (the shell mounts their icons): they read as their #id. Text is trimmed
+    // (Spawn instance's markup spans lines).
+    where: () => doc.activeElement === doc.body ? "body" : doc.activeElement.textContent.trim() || (doc.activeElement.id && `#${doc.activeElement.id}`) || doc.activeElement.className };
 }
 
 // The sidebar's order top to bottom, then the main area: the views (the nav) sit under the list of workspaces,
@@ -55,11 +57,11 @@ test("F6 order: workspaces → views → roster → main → panel → workspace
   }
   const visited = [];
   for (let i = 0; i < 6; i++) { assert.equal(s.regions.cycle(1), true); visited.push(s.where()); }
-  assert.deepEqual(visited, ["Team A", "Workspace", "b", "Souls", "Soul", "Team A"],
+  assert.deepEqual(visited, ["Team A", "Workspace overview", "b", "Souls", "Soul", "Team A"],
     "the list's tab stop, the current view's nav item, the selected roster row, the stage's first control, the panel's selected tab");
   const back = [];
   for (let i = 0; i < 5; i++) { s.regions.cycle(-1); back.push(s.where()); }
-  assert.deepEqual(back, ["Soul", "Souls", "b", "Workspace", "Team A"], "Shift+F6 walks it backwards");
+  assert.deepEqual(back, ["Soul", "Souls", "b", "Workspace overview", "Team A"], "Shift+F6 walks it backwards");
 });
 
 // Where each sidebar region lands when its first choice is missing: never <body>, never a control of
@@ -74,62 +76,95 @@ test("workspaces lands on the list's tab stop, else Add local workspace…; view
   assert.equal(s.regions.focusRegion("workspaces"), true); assert.equal(s.where(), "#ws-add-open");
   assert.equal(s.regions.regionOfFocus(), "workspaces");
   const nav = s.doc.getElementById("nav");
-  assert.equal(s.regions.focusRegion("views"), true); assert.equal(s.where(), "Workspace", "the current view's nav item");
+  assert.deepEqual([...nav.querySelectorAll("button")].map(b => b.textContent), ["Workspace overview", "Automations"],
+    "the views under the list: Workspace overview, then Automations (the product owner, 2026-10-26)");
+  assert.equal(s.regions.focusRegion("views"), true); assert.equal(s.where(), "Workspace overview", "the current view's nav item");
   nav.querySelector('[aria-current="page"]').removeAttribute("aria-current"); // a terminal in front: no current view
-  assert.equal(s.regions.focusRegion("views"), true); assert.equal(s.where(), "Workspace", "else the first nav item (Workspace, first since 2026-10-23)");
+  nav.querySelector(".nav-item:last-child").focus(); // focus elsewhere, so the landing is the region's, not where it was
+  assert.equal(s.regions.focusRegion("views"), true); assert.equal(s.where(), "Workspace overview", "else the first nav item (Workspace overview, first in NAV)");
   nav.innerHTML = "";
   const before = s.doc.activeElement;
   assert.equal(s.regions.focusRegion("views"), false, "no nav item: nothing to land on (never the foot's buttons)");
   assert.equal(s.doc.activeElement, before, "focus stays where it was, never <body>");
 });
 
-// A heading's control belongs to the section it heads: Add local workspace… to the workspaces, Spawn instance to
-// the roster. The views are the nav. The foot (the sidebar toggle, the settings cog and its menu) is no region.
-test("regionOfFocus: the head's + and the rows are workspaces; the nav items are views; Spawn instance is roster; the foot is none", t => {
+// The head's controls belong to the list they head: Show only the current workspace and Add local workspace… to the
+// workspaces. The views are the nav. The Instances heading holds no control; the foot (the bar: the OATS mark,
+// the sidebar toggle, Spawn instance, the settings cog and its menu) is no region.
+test("regionOfFocus: the head's toggle and +, and the rows, are workspaces; the nav items are views; the foot, Spawn instance with it, is none", t => {
   const s = shell(t);
-  assert.equal(s.doc.getElementById("sidebar-tools"), null, "the tools row is gone");
-  for (const el of [s.doc.getElementById("ws-add-open"), ...s.doc.querySelectorAll("#ws-options .ws-option")]) {
+  assert.equal(s.doc.getElementById("sidebar-tools"), null, "no tools row: the bar holds the toggle and the cog");
+  const head = s.doc.querySelector("#sidebar > .side-head");
+  assert.deepEqual([...head.querySelectorAll("button")].map(b => b.id), ["ws-current-only", "ws-add-open"], "the head's two controls");
+  for (const el of [s.doc.getElementById("ws-current-only"), s.doc.getElementById("ws-add-open"), ...s.doc.querySelectorAll("#ws-options .ws-option")]) {
     el.focus(); assert.equal(s.regions.regionOfFocus(), "workspaces", s.where());
   }
   for (const el of s.doc.querySelectorAll("#nav button")) { el.focus(); assert.equal(s.regions.regionOfFocus(), "views", s.where()); }
-  s.doc.getElementById("sidebar-spawn").focus(); assert.equal(s.regions.regionOfFocus(), "roster", "the Instances heading's +");
+  assert.deepEqual([...s.doc.querySelectorAll("#instance-roster .ctx-head button")], [], "the Instances heading holds no control");
+  const bar = s.doc.getElementById("sidebar-bar");
+  assert.equal(bar.getAttribute("role"), "group"); assert.equal(bar.getAttribute("aria-label"), "Sidebar tools");
+  assert.deepEqual([...s.doc.getElementById("nav-foot").children], [bar], "the foot holds only the bar");
+  assert.deepEqual([...bar.children].map(el => el.id || el.className), ["sidebar-brand", "sidebar-toggle", "sidebar-spawn", "sidebar-settings"],
+    "the bar: the OATS mark, the sidebar toggle after it, Spawn instance and the cog at the right (the product owner, 2026-10-26)");
+  assert.equal(bar.querySelector(".sidebar-brand").getAttribute("aria-hidden"), "true", "the OATS mark is decoration, no stop");
+  assert.equal(s.doc.querySelector("#sidebar-spawn kbd, #nav-foot kbd"), null, "no chord hint in Spawn instance: its chord is in its tooltip");
   // The cog's menu, as sidebar-settings.mjs mounts it: right after the cog, in the foot.
   const menu = s.doc.createElement("div"); menu.setAttribute("role", "menu");
   const item = s.doc.createElement("button"); item.setAttribute("role", "menuitem"); item.textContent = "Theme…"; menu.append(item);
   s.doc.getElementById("sidebar-settings").after(menu);
   const foot = [...s.doc.querySelectorAll("#nav-foot button")].map(b => b.id || b.textContent);
-  assert.deepEqual(foot, ["sidebar-toggle", "sidebar-settings", "Theme…"], "the foot: the toggle, the cog and its menu");
+  assert.deepEqual(foot, ["sidebar-toggle", "sidebar-spawn", "sidebar-settings", "Theme…"],
+    "the foot's buttons: the sidebar toggle, Spawn instance, the cog and its menu");
   for (const el of s.doc.querySelectorAll("#nav-foot button")) { el.focus(); assert.equal(s.regions.regionOfFocus(), null, `${s.where()}: no region`); }
+  // With rows to land on; an empty roster's stop is the foot's Spawn instance (below).
   assert.equal(REGIONS.some(name => s.regions.visible(name) && s.regions.currentItem(name)?.closest("#nav-foot")), false, "no region lands in the foot");
 });
 
-test("from a control inside a region (the workspace list, a row's tools, a heading's control) F6 moves on to the next region", t => {
+const FOOT = ["sidebar-toggle", "sidebar-spawn", "sidebar-settings"];
+
+test("from a control inside a region (the workspace list, a row's tools, a head's control) F6 moves on to the next region", t => {
   const s = shell(t);
   s.doc.querySelector('#ws-options .ws-option[aria-current="true"]').focus(); s.regions.cycle(1);
-  assert.equal(s.where(), "Workspace", "the workspace list is the first region: next are the views under it");
+  assert.equal(s.where(), "Workspace overview", "the workspace list is the first region: next are the views under it");
   s.doc.getElementById("ws-add-open").focus(); s.regions.cycle(1);
-  assert.equal(s.where(), "Workspace", "so is the heading's Add local workspace…");
+  assert.equal(s.where(), "Workspace overview", "so is the head's Add local workspace…");
   s.doc.getElementById("ws-add-open").focus(); s.regions.cycle(-1);
-  assert.equal(s.where(), "Soul", "Shift+F6 from the heading's + goes back to the panel");
+  assert.equal(s.where(), "Soul", "Shift+F6 from the head's + goes back to the panel");
+  s.doc.getElementById("ws-current-only").focus(); s.regions.cycle(1);
+  assert.equal(s.where(), "Workspace overview", "and from the head's Show only the current workspace");
   s.doc.querySelector('#ws-options .ws-option[tabindex="-1"]').focus(); s.regions.cycle(-1);
   assert.equal(s.where(), "Soul", "Shift+F6 from the list goes back to the panel");
   s.doc.querySelector(".ctx-start").focus(); s.regions.cycle(1);
   assert.equal(s.where(), "Souls", "from a roster row's tools, main");
-  s.doc.getElementById("sidebar-spawn").focus(); s.regions.cycle(1);
-  assert.equal(s.where(), "Souls", "from the Instances heading's +, main");
-  s.doc.getElementById("sidebar-spawn").focus(); s.regions.cycle(-1);
-  assert.equal(s.where(), "Workspace", "Shift+F6 from the Instances heading's + goes back to the views");
   s.doc.querySelector("#nav button:last-child").focus(); s.regions.cycle(1);
   assert.equal(s.where(), "b", "from a nav item, the roster");
   s.doc.querySelector("#nav button:last-child").focus(); s.regions.cycle(-1);
   assert.equal(s.where(), "Team A", "Shift+F6 from a nav item, the workspaces");
-  // The foot is below the roster and no region: F6 goes on to main, Shift+F6 back to the roster.
-  for (const id of ["sidebar-toggle", "sidebar-settings"]) {
+  // The foot is below the roster and no region: F6 goes on to main, Shift+F6 back to the roster (its row).
+  for (const id of FOOT) {
     s.doc.getElementById(id).focus(); s.regions.cycle(1);
     assert.equal(s.where(), "Souls", `from the foot's ${id}, main`);
     s.doc.getElementById(id).focus(); s.regions.cycle(-1);
     assert.equal(s.where(), "b", `Shift+F6 from the foot's ${id}, the roster`);
   }
+});
+
+// A window with no workspace hides the roster (shell.mjs): the foot, below where the roster would be, still
+// moves on as from there.
+test("F6 with the roster hidden: from the foot on to main, Shift+F6 back to the views, never the first region", t => {
+  const s = shell(t);
+  s.doc.getElementById("instance-roster").hidden = true;
+  assert.deepEqual(REGIONS.filter(s.regions.visible), ["workspaces", "views", "main", "panel"]);
+  for (const id of FOOT) {
+    s.doc.getElementById(id).focus(); assert.equal(s.regions.cycle(1), true);
+    assert.equal(s.where(), "Souls", `from the foot's ${id}, main (not the workspaces)`);
+    s.doc.getElementById(id).focus(); assert.equal(s.regions.cycle(-1), true);
+    assert.equal(s.where(), "Workspace overview", `Shift+F6 from the foot's ${id}, the views above the hidden roster`);
+  }
+  s.doc.querySelector("#nav button").focus(); s.regions.cycle(1);
+  assert.equal(s.where(), "Souls", "from the views past the hidden roster, main");
+  s.regions.cycle(-1);
+  assert.equal(s.where(), "Workspace overview", "and Shift+F6 from main back to the views");
 });
 
 test("hidden regions are skipped: a hidden sidebar, focus mode, an empty panel", t => {
@@ -172,30 +207,52 @@ test("a closed panel is out of the cycle (Spec B), the hidden-region rule; main 
   assert.equal(s.regions.regionOfFocus(), "main", "and so does Show sidebar");
 });
 
-// The roster's fallback after its tab stop: a control under the heading (a failed read's Retry), before the
-// heading's Spawn instance +, which comes first in the DOM; the + when the roster shows nothing else.
-test("the roster without a row stop lands on a control under its heading (a Retry), else its heading's Spawn instance, else it is passed over: it has no filter", t => {
+// The roster's fallback after its tab stop: a control it shows (a failed read's Retry), else, on an empty roster,
+// its one action, the foot's Spawn instance (2026-10-26; rosterEntry in shell.mjs agrees). From there F6 goes on as
+// from the roster and Shift+F6 back as from the roster, not as from the foot.
+test("the roster without a row stop lands on a control it shows (a Retry), else the foot's Spawn instance, else it is passed over: it has no filter", t => {
   const s = shell(t);
   const roster = s.doc.getElementById("instance-roster"), list = s.doc.querySelector(".ctx-list");
   assert.equal(roster.querySelector(".ctx-filter, input"), null, "the shipped roster has no filter field");
   assert.deepEqual([...roster.children].map(el => el.className), ["ctx-head", "ctx-list"], "its head, then its list");
-  assert.deepEqual([...roster.querySelector(".ctx-head").querySelectorAll("button")].map(b => b.id), ["sidebar-spawn"], "the heading's one control");
+  assert.deepEqual([...roster.querySelectorAll("button")].map(b => b.id || b.textContent), ["a", "b", "Start…"], "no control of its own besides the rows");
   // A failed first read: no rows, only the failed block's Retry.
   list.innerHTML = `<div class="loading-failed"><button type="button" class="act">Retry</button></div>`;
   assert.equal(s.regions.focusRegion("roster"), true);
-  assert.equal(s.where(), "Retry", "the Retry, not the heading's + before it");
+  assert.equal(s.where(), "Retry", "the Retry, not the foot's Spawn instance");
   // A stale notice's Retry sits between the heading and the list (instance-tree-view.mjs createRosterLoading).
   list.innerHTML = `<div class="ctx-empty">No instances.</div>`;
   const notice = s.doc.createElement("div"); notice.className = "ctx-status"; notice.innerHTML = '<button type="button" class="act">Retry</button>';
   list.before(notice);
   assert.equal(s.regions.focusRegion("roster"), true); assert.equal(s.doc.activeElement, notice.firstElementChild, "a stale notice's Retry");
   notice.remove();
-  // An empty roster: its one action, Spawn instance.
+  // An empty roster: its one action, the foot's Spawn instance.
+  const spawn = s.doc.getElementById("sidebar-spawn");
+  assert.ok(s.doc.getElementById("nav-foot").contains(spawn), "Spawn instance is the foot's");
   s.doc.querySelector("#nav button").focus();
   s.regions.cycle(1);
-  assert.equal(s.where(), "#sidebar-spawn", "from the views, the empty roster's Spawn instance");
-  // Nothing to focus at all: the region is skipped, never <body>.
-  s.doc.getElementById("sidebar-spawn").hidden = true;
+  assert.equal(s.doc.activeElement, spawn, "from the views, the empty roster's Spawn instance");
+  assert.equal(s.where(), "Spawn instance");
+  assert.equal(s.regions.currentItem("roster"), spawn);
+  s.regions.cycle(1);
+  assert.equal(s.where(), "Souls", "F6 from the empty roster's stop goes on as from the roster: main");
+  spawn.focus(); s.regions.cycle(-1);
+  assert.equal(s.where(), "Workspace overview", "Shift+F6 from the empty roster's stop goes back as from the roster: the views");
+  // The foot's other buttons stay below the roster: Shift+F6 from them is as from main, onto the roster's stop.
+  for (const id of ["sidebar-toggle", "sidebar-settings"]) {
+    s.doc.getElementById(id).focus(); s.regions.cycle(-1);
+    assert.equal(s.doc.activeElement, spawn, `Shift+F6 from the foot's ${id}, the empty roster's Spawn instance`);
+    s.doc.getElementById(id).focus(); s.regions.cycle(1);
+    assert.equal(s.where(), "Souls", `F6 from the foot's ${id}, main`);
+  }
+  // A disabled Spawn instance is no stop: the region is skipped, never <body>.
+  spawn.disabled = true;
+  s.doc.querySelector("#nav button").focus();
+  assert.equal(s.regions.focusRegion("roster"), false);
+  s.regions.cycle(1);
+  assert.equal(s.where(), "Souls", "from the views past the empty roster, main");
+  // Nor a hidden one.
+  spawn.disabled = false; spawn.hidden = true;
   s.doc.querySelector("#nav button").focus();
   assert.equal(s.regions.focusRegion("roster"), false);
   s.regions.cycle(1);
@@ -225,23 +282,23 @@ function surfaces(t, start) {
 }
 
 test("return: from a terminal tab, re-activate it with its terminal focused (and the stage under it)", async t => {
-  const u = surfaces(t, { stage: "hierarchy", tab: 1 });
+  const u = surfaces(t, { stage: "automations", tab: 1 });
   u.terminal.focus();
   const origin = u.back.capture(captureFocusReturn(u.doc));
   u.move();
   assert.equal(u.back.restore(origin), true);
-  assert.deepEqual(u.calls, [["stage", "hierarchy"], ["tab", 1, true]]);
+  assert.deepEqual(u.calls, [["stage", "automations"], ["tab", 1, true]]);
   assert.equal(u.doc.activeElement, u.terminal);
 });
 
 test("return: from a stage, the same stage and the control left, else that region's current item", async t => {
-  const u = surfaces(t, { stage: "hierarchy" });
+  const u = surfaces(t, { stage: "automations" });
   const filter = u.doc.querySelector("#stagehost .filter"); filter.id = "kept"; filter.focus();
   const origin = u.back.capture(captureFocusReturn(u.doc));
   u.move();
   assert.equal(u.back.restore(origin), true);
   await new Promise(setImmediate);
-  assert.deepEqual(u.calls, [["stage", "hierarchy"]]);
+  assert.deepEqual(u.calls, [["stage", "automations"]]);
   assert.equal(u.doc.activeElement, filter);
   // The control is gone after the stage remounts: the stage's first control instead.
   const again = u.back.capture(captureFocusReturn(u.doc));
@@ -260,43 +317,76 @@ test("return: from a roster row while a terminal was visible, the tab comes back
   assert.equal(u.doc.activeElement, row);
 });
 
-// Workspace › Automations: the dialog opens on Souls, and leaving Automations disposes its panel (syncAutomations).
-function onAutomations(t) {
-  const u = surfaces(t, { stage: "spawn", workspaceTab: "automations" });
+test("return: a terminal tab over Workspace › Machines comes back with Machines under it, not Souls", async t => {
+  // Workspace › Machines, a terminal tab opened over it, Quick Open, a soul picked (the dialog opens on Souls), Esc.
+  const u = surfaces(t, { stage: "spawn", tab: 1, workspaceTab: "machines" });
+  u.terminal.focus();
+  const origin = u.back.capture(captureFocusReturn(u.doc));
+  assert.equal(origin.workspaceTab, "machines", "the page under the tabs is part of where they were");
+  u.move();
+  assert.equal(u.back.restore(origin), true);
+  assert.deepEqual(u.calls, [["workspaceTab", "machines"], ["tab", 1, true]], "the page's tab first, then the terminal, focused");
+  assert.equal(u.doc.activeElement, u.terminal);
+  // Closing the terminal shows the stage under it: Machines, not the Souls tab the dialog opened on.
+  u.state.layer = false;
+  assert.equal(u.state.stage, "spawn");
+  assert.equal(u.state.workspaceTab, "machines");
+  // A tab the page can't show any more: the terminal still comes back (the page stays where it is).
+  const v = surfaces(t, { stage: "spawn", tab: 1, workspaceTab: "machines" });
+  v.terminal.focus();
+  const again = v.back.capture(captureFocusReturn(v.doc));
+  v.move(); v.hooks.selectable = false;
+  assert.equal(v.back.restore(again), true);
+  assert.deepEqual(v.calls, [["workspaceTab", "machines"], ["tab", 1, true]]);
+  assert.equal(v.doc.activeElement, v.terminal);
+  assert.equal(v.state.workspaceTab, "souls");
+  // Already on that tab: no tab switch.
+  const w = surfaces(t, { stage: "spawn", tab: 1, workspaceTab: "souls" });
+  w.terminal.focus();
+  const same = w.back.capture(captureFocusReturn(w.doc));
+  w.move();
+  assert.equal(w.back.restore(same), true);
+  assert.deepEqual(w.calls, [["tab", 1, true]]);
+});
+
+// Workspace › Machines: the dialog opens on Souls, and leaving Machines disposes its panel (views/spawn.mjs
+// syncMachines unmounts the Deployments view, views/hierarchy.mjs).
+function onMachines(t) {
+  const u = surfaces(t, { stage: "spawn", workspaceTab: "machines" });
   const tabs = u.doc.querySelector("#stagehost .workspace-tabs");
-  tabs.insertAdjacentHTML("beforeend", `<button role="tab" id="workspace-tab-automations" aria-selected="true" tabindex="0">Automations</button>`);
-  tabs.insertAdjacentHTML("afterend", `<div id="workspace-automations" role="tabpanel"></div>`);
-  const panel = u.doc.getElementById("workspace-automations");
-  const mount = () => { panel.innerHTML = `<button id="automations-tab-trigger" role="tab">Triggers</button><button class="auto-new">New</button>`; };
+  tabs.insertAdjacentHTML("beforeend", `<button role="tab" id="workspace-tab-machines" aria-selected="true" tabindex="0">Machines</button>`);
+  tabs.insertAdjacentHTML("afterend", `<div id="workspace-machines" class="workspace-machines-panel" role="tabpanel"></div>`);
+  const panel = u.doc.getElementById("workspace-machines");
+  const mount = () => { panel.innerHTML = `<button id="hier-tab-local" role="tab">This machine</button><button class="hier-retry">Retry</button>`; };
   mount();
-  // The dialog over Souls: Automations' panel is gone.
+  // The dialog over Souls: Machines' panel is gone.
   const moveAndDispose = () => { u.move(); panel.replaceChildren(); };
   return { ...u, panel, mount, moveAndDispose };
 }
 
-test("return within Workspace: back on the tab left (Automations), its panel remounted, on the control left", async t => {
-  const u = onAutomations(t);
-  u.doc.getElementById("automations-tab-trigger").focus();
+test("return within Workspace: back on the tab left (Machines), its panel remounted, on the control left", async t => {
+  const u = onMachines(t);
+  u.doc.getElementById("hier-tab-local").focus();
   const origin = u.back.capture(captureFocusReturn(u.doc));
-  assert.equal(origin.workspaceTab, "automations", "the page's tab is part of where they were");
+  assert.equal(origin.workspaceTab, "machines", "the page's tab is part of where they were");
   u.moveAndDispose();
   u.hooks.remount = () => u.mount();
   assert.equal(u.back.restore(origin), true);
-  assert.deepEqual(u.calls, [["workspaceTab", "automations"]], "no stage switch: the same stage, its tab");
-  assert.equal(u.state.workspaceTab, "automations");
-  assert.equal(u.doc.activeElement, u.doc.getElementById("automations-tab-trigger"), "the control left, by its identity, in the remounted panel");
+  assert.deepEqual(u.calls, [["workspaceTab", "machines"]], "no stage switch: the same stage, its tab");
+  assert.equal(u.state.workspaceTab, "machines");
+  assert.equal(u.doc.activeElement, u.doc.getElementById("hier-tab-local"), "the control left, by its identity, in the remounted panel");
 });
 
 test("return within Workspace: a panel still loading its controls lands on its tab, never a neighbour", async t => {
-  const u = onAutomations(t);
-  u.panel.querySelector(".auto-new").focus(); // no id: only its ancestors could find a replacement
+  const u = onMachines(t);
+  u.panel.querySelector(".hier-retry").focus(); // no id: only its ancestors could find a replacement
   const origin = u.back.capture(captureFocusReturn(u.doc));
   u.moveAndDispose();
   assert.equal(u.back.restore(origin), true);
-  assert.equal(u.doc.activeElement, u.doc.getElementById("workspace-tab-automations"), "the tab itself, not the Souls tab or the sidebar");
+  assert.equal(u.doc.activeElement, u.doc.getElementById("workspace-tab-machines"), "the tab itself, not the Souls tab or the sidebar");
   // A tab the page can't show any more: refused, the dialog restores focus itself.
-  const v = onAutomations(t);
-  v.doc.getElementById("automations-tab-trigger").focus();
+  const v = onMachines(t);
+  v.doc.getElementById("hier-tab-local").focus();
   const again = v.back.capture(captureFocusReturn(v.doc));
   v.moveAndDispose(); v.hooks.selectable = false;
   assert.equal(v.back.restore(again), false);
@@ -316,21 +406,21 @@ test("return is refused when the operator moved on: another workspace, a tab ove
     u => { u.state.layer = true; },
     u => { u.state.stage = "automations"; },
   ]) {
-    const u = surfaces(t, { stage: "hierarchy" });
+    const u = surfaces(t, { stage: "automations" });
     u.doc.querySelector("#stagehost .filter").focus();
     const origin = u.back.capture(captureFocusReturn(u.doc));
     u.move(); moveOn(u);
     assert.equal(u.back.restore(origin), false);
     assert.deepEqual(u.calls, [], "nothing is forced");
   }
-  const u = surfaces(t, { stage: "hierarchy", tab: 1 });
+  const u = surfaces(t, { stage: "automations", tab: 1 });
   const origin = u.back.capture(captureFocusReturn(u.doc));
   u.move(); origin.tab = 2; // a tab that no longer exists
   assert.equal(u.back.restore(origin), false);
 });
 
 test("a stage return that a newer action overtakes does not steal focus", async t => {
-  const u = surfaces(t, { stage: "hierarchy" });
+  const u = surfaces(t, { stage: "automations" });
   u.doc.querySelector("#stagehost .filter").focus();
   const origin = u.back.capture(captureFocusReturn(u.doc));
   u.move();

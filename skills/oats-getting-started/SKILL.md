@@ -311,7 +311,7 @@ name: acme
 members:
   - git:github.com/acme/acme-oats     # the host is a member too
 packages:
-  oats.framework: v1.13.5             # the installed CLI's catalog versions (below)
+  oats.framework: v1.14.1             # the installed CLI's catalog versions (below)
   oats.aweb: v1.31.0                  # messaging, and tasks: agent identities, mail, chat and tasks
 defaults:
   capabilities:
@@ -325,7 +325,7 @@ defaultTeam: acme                     # every soul starts in this team
 
 - **The versions** are the installed CLI's catalog's:
   `"$(oats root)/package-catalog.json"`, `packages."oats.framework".ref`
-  (for example `oats-framework/v1.13.5`: write the part after the `/`) and
+  (for example `oats-framework/v1.14.1`: write the part after the `/`) and
   `packages."oats.aweb".ref`, but never below `v1.31.0`: that release
   carries `oats.aweb-tasks`, and a bare version resolves through the
   catalog's tag convention even when the installed catalog names an older

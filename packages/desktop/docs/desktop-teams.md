@@ -121,8 +121,9 @@ Workspace header and tabs, and `s.teamOpen = { label, scrollTop }` keeps the boa
 hiding the board drops. The Teams controller paints it: `showTeam(host, label, { onBack, onGone })` puts
 the shared `pageBar` (Back, named "Back to Teams"; Workspace / Teams / the label) and the page's content
 in the host, and answers false when the document has no such team. Opening focuses Back, and claims the
-selection intent (`nextSelectionIntent`) as any explicit choice does, so an older handoff still waiting (a
-shell footer import, a preselect) cannot replace the page once it lands.
+selection intent (`nextSelectionIntent`) as any explicit choice does, so an older handoff still waiting (the
+shell opening a Workspace tab, such as ⌘N or ⌘1, while it imports the page; a preselect) cannot
+replace the page once it lands.
 
 The page, top to bottom:
 

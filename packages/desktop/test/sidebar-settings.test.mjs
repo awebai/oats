@@ -15,8 +15,8 @@ import { takePickerFocusReturn } from "../renderer/overlay-picker.mjs";
 // placement in the top layer are Chromium's, not this test's claim.
 function rig(t, { shortcut } = {}) {
   const dom = new JSDOM(`<!doctype html><body><aside id="sidebar"><div id="nav-foot" role="group" aria-label="Sidebar tools">
-    <button id="sidebar-toggle" class="ws-add-open icon-button" type="button" data-action="sidebar.toggle">S</button>
-    <button id="sidebar-settings" class="ws-add-open sidebar-settings icon-button" type="button" aria-label="Settings" title="Settings"></button>
+    <button id="sidebar-toggle" class="side-icon-button icon-button" type="button" data-action="sidebar.toggle">S</button>
+    <button id="sidebar-settings" class="side-icon-button sidebar-settings icon-button" type="button" aria-label="Settings" title="Settings"></button>
     </div></aside></body>`, { pretendToBeVisual: true });
   t.after(() => dom.window.close());
   const win = dom.window, doc = win.document, shown = new WeakSet(), pending = new WeakMap();

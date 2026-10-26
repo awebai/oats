@@ -37,18 +37,27 @@ body {
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
 }
+/* The head (2026-10-26): the Workspace heading over its list, with no line between them, the first row close under it:
+   the heading sits where it sat in the 48px bar (its centre 24px down), and the head ends 8px under it. */
+.side-head {
+  height: 40px; flex: none; display: flex; align-items: center; box-sizing: border-box;
+  padding: 8px 10px 0 17px; white-space: nowrap;
+}
 .side-kicker { color: var(--muted); font-size: 10px; line-height: 1.2; font-weight: 650; letter-spacing: .075em; text-transform: uppercase; }
 .shell-icon { display: block; width: 16px; height: 16px; flex: none; }
-/* The Workspaces heading is the Instances heading (.ctx-head), with Add local workspace… at its right end:
-   no logo, no bar of its own, no rule under the list (2026-10-23). */
-.ws-head > .ws-add-open { margin-left: auto; }
-/* The right-hand column (2026-10-23): the headings' + (their 28px boxes, the .ctx-head's 11px), the workspace rows'
-   needs-input mark and the instance rows' harness mark all centre 25px in from the sidebar's right edge. */
-.ctx-head > .ctx-head-add { order: 1; } /* last, after the count and "Refreshing…" */
-.ws-add-open { flex: none; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px;
-               background: transparent; color: var(--muted); cursor: pointer; }
-.ws-add-open:hover { background: var(--surface-2); color: var(--fg); }
-.ws-add-open:focus-visible { background: var(--sel); color: var(--fg); }
+/* The list's heading, then Show only the current workspace and Add local workspace… at the end. */
+.ws-heading { flex: 1; min-width: 0; color: var(--fg); font-size: 13.5px; line-height: 1.2; font-weight: 700;
+              overflow: hidden; text-overflow: ellipsis; }
+/* The sidebar's icon buttons, one control style: the head's Show only the current workspace and Add local
+   workspace…, and the bar's sidebar toggle and settings cog. */
+.side-icon-button { flex: none; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px;
+                    background: transparent; color: var(--muted); cursor: pointer; }
+.side-icon-button:hover { background: var(--surface-2); color: var(--fg); }
+.side-icon-button:focus-visible { background: var(--sel); color: var(--fg); }
+/* Show only the current workspace (2026-10-23): a toggle before Add. Pressed, its icon is the accent, as the
+   current nav item's, at rest, hovered and focused alike (the --accent pairs on --surface, --surface-2 and --sel:
+   theme-contrast). */
+.ws-current-only[aria-pressed="true"], .ws-current-only[aria-pressed="true"]:hover, .ws-current-only[aria-pressed="true"]:focus-visible { color: var(--accent); }
 .ws-modal[hidden] { display: none; }
 /* Bare search inputs (no wrapper): their own 1px border is the single frame (rule 3). */
 #ws-suggestion-search { width: 100%; height: 32px; padding: 0 9px; border: 1px solid var(--border);
@@ -57,7 +66,9 @@ body {
 #ws-suggestion-search::placeholder { color: var(--faint); }
 /* The workspace list (workspace-switcher.mjs): always shown under the sidebar's head, about six rows tall at
    most, then it scrolls inside itself, the current row kept in view. One workspace is one compact row. */
-.ws-list { flex: none; padding: 0 8px 6px; }
+/* The line under the list is a little bolder than the one before the instances (the product owner, 2026-10-26):
+   1.5px, 3 device pixels at 2x. */
+.ws-list { flex: none; padding: 0 8px 6px; border-bottom: 1.5px solid var(--border); }
 .ws-options { max-height: 276px; overflow-y: auto; scrollbar-width: none; } /* as the roster's: "N more below" says it */
 .ws-options::-webkit-scrollbar { display: none; }
 .ws-group { margin: 0; padding: 0; list-style: none; }
@@ -66,8 +77,8 @@ body {
 /* A row is one line: the instance roster's circle, the workspace's name, and at the far right the needs-input dot;
    no machine, no state. The circle is the roster's own .ctx-dot, its ring in the row's fill (--row-solid), in the
    column of the roster's top-level dots (the list's 8px and the row's 10px, as .ctx-list and .ctx-inst). */
-.ws-option { --row-solid: var(--surface); width: 100%; min-width: 0; display: flex; align-items: center; gap: 9px; padding: 6px 8px 6px 10px; border: 0;
-             border-radius: 6px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.ws-option { --row-solid: var(--surface); width: 100%; min-width: 0; display: flex; align-items: center; gap: 9px; padding: 4px 8px 4px 10px; border: 0;
+             min-height: 24px; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .ws-option:hover { --row-solid: var(--surface-2); background: var(--surface-2); }
 .ws-option:focus-visible { --row-solid: var(--sel); background: var(--sel); }
 /* The current workspace, by style alone (aria-current says it to assistive tech): its circle filled like a running
@@ -91,60 +102,48 @@ body {
 .ws-more { display: flex; align-items: center; gap: 9px; margin: 2px 8px 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .ws-more[hidden] { display: none; }
 /* A long name ends in an ellipsis; the tooltip holds the whole name. */
-.ws-option-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-                  font-size: 14px; font-weight: 500; } /* a bit more prominent than the body text (2026-10-23) */
+.ws-option-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A deployment status mark (#482, view-deployments.mjs deploymentMark): the warning shape in --warn,
    its words for assistive tech and as the tooltip, so the state is never colour alone. */
 .deployment-mark { flex: none; display: inline-flex; color: var(--warn); }
 .deployment-mark > .shell-icon { width: 12px; height: 12px; }
-/* The main views, under the list of workspaces (2026-10-23): Workspace and Deployments side by side, each its icon
-   and label, first in the current workspace's section (.ws-current, below), on the list's 8px sides, 8px under the
-   section's line and 8px before the Instances heading. A nav too
-   narrow for both labels shows the icons alone (the label stays the button's name, visually hidden; the title is
-   its tooltip), never a wrapped label. Each button starts from its own label's width, so the longer one
-   (Deployments; both are at 650) is not squeezed to half; both fit down to a nav of about 219px with the bundled
-   Linux UI font, and the 264px sidebar's nav is 247px (its 263px inside the border, less the 8px sides). The
-   cutoff sits above that fit, so a wider system font switches to icons before a label is cut. */
-#nav { display: flex; flex: none; flex-direction: row; gap: 4px; margin: 2px 8px 8px; container-type: inline-size; container-name: nav; }
-/* Compact (2026-10-23): the views 26px tall, their icons 14px. */
-#nav .nav-item .icon { width: 14px; }
-#nav .shell-icon { width: 14px; height: 14px; }
-#nav .nav-item { flex: 1 1 auto; min-width: 0; min-height: 26px; justify-content: center; gap: 6px; padding: 3px 6px; white-space: nowrap;
-                 font-weight: 650; } /* both always bold (2026-10-23): the current one is told by its fill and aria-current */
-#nav .nav-item .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-@container nav (max-width: 228px) {
-  #nav .nav-item .label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden;
-                          clip-path: inset(50%); white-space: nowrap; }
-}
-/* The foot (2026-10-23): the OATS mark at the left, then the sidebar toggle and the settings cog together at the
-   right, 24px boxes with 14px icons, 2px apart. The mark (20px) centres on the rows' circles (22px in: the foot's
-   12px and half its 20px), the cog in the right-hand column (25px in from the right: the foot's 13px and half its
-   24px), the toggle 2px left of it. */
-#nav-foot { margin-top: auto; flex: none; display: flex; align-items: center; gap: 2px;
-            padding: 4px 13px 4px 12px; border-top: 1px solid var(--border); }
-#nav-foot > .ws-add-open { width: 24px; height: 24px; border-radius: 5px; position: relative; }
+/* The same room above Workspace overview and below Automations, between the two lines (the product owner,
+   2026-10-26). */
+#nav { display: flex; flex: none; flex-direction: column; padding: 8px; gap: 1px; }
+/* The foot (2026-10-26): one bar. The OATS mark at the left with the sidebar toggle after it; Spawn instance, a small
+   button, at the right before the settings cog. The toggle and the cog are 24px boxes with 14px icons. The mark (20px) centres on
+   the rows' circles (22px in: the foot's 10px, the bar's 2px and half its 20px), the cog in the right-hand column (25px
+   in from the right: the foot's 10px, the bar's 3px and half its 24px). */
+#nav-foot { margin-top: auto; flex: none; display: flex; flex-direction: column; padding: 4px 10px;
+            border-top: 1px solid var(--border); }
+#sidebar-bar { display: flex; align-items: center; gap: 2px; padding: 0 3px 0 2px; }
+#sidebar-bar > .side-icon-button { width: 24px; height: 24px; border-radius: 5px; position: relative; }
 /* The supplied artwork (transparent ground) at 2x; decorative, so it holds no tab stop and no name. */
-.sidebar-brand { width: 20px; height: 20px; flex: none; display: grid; place-items: center; margin-right: auto; }
+.sidebar-brand { width: 20px; height: 20px; flex: none; display: grid; place-items: center; }
 .sidebar-brand-image { width: 20px; height: 20px; display: block; }
-#nav-foot .shell-icon { width: 14px; height: 14px; }
+#sidebar-bar .shell-icon { width: 14px; height: 14px; }
+/* The toggle 8px after the mark (the bar's 2px gap and 6px). Spawn instance: Quick Open (app.quickOpenSouls; the chord
+   is in its tooltip), its words alone, pushed to the right, 6px before the cog (the gap and 4px). Like the toggle and
+   the cog, it has no ground at rest: hover and keyboard focus give it theirs (the product owner, 2026-10-26). */
+#sidebar-bar > #sidebar-toggle { margin-left: 6px; }
+#sidebar-spawn { flex: none; display: flex; align-items: center; height: 24px; min-height: 24px; margin: 0 4px 0 auto;
+                 padding: 0 8px; border: 0; border-radius: 5px; background: transparent; color: var(--muted);
+                 font-family: inherit; font-size: 12px; line-height: 1; font-weight: 500; white-space: nowrap; cursor: pointer; }
 .shortcut-hint { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                  font: 500 10.5px var(--mono); }
 .shortcut-hint[hidden] { display: none; }
+#sidebar-spawn:hover:not(:disabled) { background: var(--surface-2); color: var(--fg); }
+#sidebar-spawn:focus-visible { background: var(--sel); color: var(--fg); }
+#sidebar-spawn:disabled { background: transparent; color: var(--faint); cursor: default; }
 
 /* ── persistent instance tree (the same shell sidebar, never a second) ── */
-#instance-roster { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-/* The current workspace's section (2026-10-23): the views (Workspace | Deployments), then the instances. The one
-   line is over it, under the list of workspaces, the sidebar's full width in the sidebar edge's own --border; none
-   under the Workspaces heading and none before Instances. */
-.ws-current { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.ws-current::before { content: ""; flex: none; border-top: 1px solid var(--border); }
-.ws-current > #nav { margin-top: 8px; }
+/* The line before the instances (the product owner, 2026-10-26): the roster's top border, the sidebar's full width. */
+#instance-roster { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
 /* A window with no workspace has no instances to list (#481, shell.mjs showChooser). */
 #instance-roster[hidden] { display: none; }
-/* The sections' headings (Workspaces, Instances) are the sidebar's top level: the nav items' 13px, bolder (650) and
-   in --fg, above the machine labels' 12px 400 muted capitals (2026-10-23). "● 4 running" only, the full breakdown in its title. */
-.ctx-head { height: 36px; flex: none; padding: 6px 11px 0 17px; display: flex; align-items: center; gap: 6px;
-            color: var(--fg); font-size: 13px; font-weight: 650; white-space: nowrap; }
+.ctx-head { height: 36px; flex: none; padding: 6px 12px 0 17px; display: flex; align-items: center; gap: 6px;
+            color: var(--nav-fg); font-size: 13px; font-weight: 500; }
+/* The head reads like the nav items above it (human, 2026-09-26); "● 4 running" only, the full breakdown in its title. */
 .ctx-count { margin-left: auto; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11.5px; font-weight: 500;
              white-space: nowrap; }
 .ctx-count-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent); }
@@ -154,29 +153,24 @@ body {
 .ctx-list { scrollbar-width: none; }
 .ctx-list::-webkit-scrollbar { display: none; }
 /* Loading states (renderer/loading.mjs): the stale line sits between the head and the list;
-   "Refreshing…" closes the head after the count (its dot only, below); the count's skeleton pill keeps its width. */
+   "Refreshing…" closes the head after the count; the count's skeleton pill keeps its width. */
 .ctx-status { flex: none; margin: 0 10px 6px; }
 .ctx-status:empty { display: none; }
-/* "Refreshing…" in the Instances heading shows its dot alone: the heading's count and its + leave no room for the
-   words, which stay in the element for assistive tech (clipped, not removed) and never move the + (review). */
-.ctx-head > .loading-refreshing { flex: none; width: 6px; overflow: hidden; white-space: nowrap; margin-left: 6px; }
+.ctx-head > .loading-refreshing { flex: none; margin-left: 6px; }
 .ctx-count .skeleton-pill { width: 5.5em; }
 .ctx-count-reserve { display: inline-block; width: 5.5em; height: 1em; } /* failed: the pill's box, nothing in it */
 /* A stale count is the last observation: muted, its dot no longer the live accent. */
 .ctx-count[data-stale] { color: var(--muted); }
 .ctx-count[data-stale] .ctx-count-dot { background: var(--muted); }
-/* Agent groups (Workspace v4): no title, and a 6px gap (2026-10-23; was 14px): a cluster's last row and the next
-   group's first are 10px apart, the rows' own 4px (each row's 2px transparent borders, its fill inside them) plus
-   it. Inside a group every step is those 4px, a parent to its child as one independent row to the next: no rule
-   spaces rows by depth (roster-spacing). The separator names the group for AT.
-   The first one sits just under the head (human, 2026-09-29). */
-.ctx-group { height: 6px; }
+/* Agent groups (Workspace v4): a 14px gap, no title; the separator names the group for AT.
+   The first one sits just under the head, so it is shorter (human, 2026-09-29). */
+.ctx-group { height: 14px; }
 .ctx-group:first-child { height: 7px; }
-/* Deployment headings (#482), only in a view of two or more deployments: the machine label in muted 12px
-   400 capitals, a step under the section headings (2026-10-23), a status mark beside it when not live, then
-   the deployment's agent groups as before. */
+/* Deployment headings (#482), only in a view of two or more deployments: the machine label in the
+   roster's group-label type (the agent clusters' "independent" / cluster-name label: muted 11px 650
+   uppercase), a status mark beside it when not live, then the deployment's agent groups as before. */
 .ctx-deployment { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 12px 6px 0; color: var(--muted);
-                  font-size: 12px; line-height: 1.3; font-weight: 400; text-transform: uppercase; letter-spacing: .06em; }
+                  font-size: 11px; line-height: 1.3; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; }
 .ctx-deployment:first-child { margin-top: 6px; }
 .ctx-deployment + .ctx-group { height: 4px; }
 .ctx-deployment-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -348,6 +342,13 @@ body {
 /* The mark in place of the meta line's text: the line keeps its place, so the row never reorders or grows (48px). */
 .ctx-meta.ctx-attn-line { display: flex; min-width: 0; }
 .ctx-repo-label { display: block; color: var(--muted); font-family: var(--mono); font-size: 11.5px; font-weight: 400; line-height: normal; }
+/* The meta line (2026-10-26): the soul at the left in the UI face, the repository at the right in the repo's
+   style; the soul is cut first (its far larger shrink), the repository keeps about 10ch before it is cut too. */
+.ctx-meta.ctx-soul-repo { display: flex; align-items: baseline; gap: 8px; width: 100%; color: var(--muted); font-size: 11.5px;
+                          font-weight: 400; line-height: normal; }
+.ctx-meta-soul { flex: 1 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-meta-repo { flex: 0 1 auto; min-width: min(10ch, 100%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                 font-family: var(--mono); text-align: right; }
 .ctx-runtime { width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 5px;
                font-size: 9.5px; font-weight: 700; }
 /* A stopped instance's provider mark dims (design): the chip pair, --chip-fg on

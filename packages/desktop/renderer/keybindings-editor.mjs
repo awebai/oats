@@ -18,7 +18,7 @@
 // command palette, the Leader group's first row (the leader then K or Space) and a Global row (its
 // chord in the family in use), and Connections (not in the settings cog's menu), the Global row
 // "Settings: Connections…", named as the palette names it, unbound by default and rebindable there. The stage rows say where they land
-// ("View: Workspace › Automations": NAV_TABS).
+// ("View: Workspace › Machines": NAV_TABS).
 //
 // On Linux/Windows its top holds the chord family (docs/desktop-keyboard.md, "The chord
 // families"): a three-way choice, "Shortcut family, shared with oats tui", Alt (the default), Ctrl+Alt or Ctrl+Shift, which
@@ -44,11 +44,11 @@ const CONTEXT_LABELS = {
   global: "Global",
   tabs: "Tabs",
   roster: "Instance roster",
-  "stage:hierarchy": "Deployments",
+  "stage:hierarchy": "Machines",
   "stage:spawn": "Soul roster",
   // view-local contexts: never activated for window dispatch — the actions
   // dispatch inside their view surface but stay editor-visible here.
-  "view:hierarchy": "Deployments",
+  "view:hierarchy": "Machines",
   "view:spawn": "Soul roster",
   // a modal dialog's own keys: dispatched only by the open dialog (spawn-dialog-keys.mjs)
   "spawn-dialog-local": "Spawn dialog",
@@ -412,7 +412,7 @@ export function createKeybindingsEditor({ doc = document, isMac, chordFamily = n
             const extras = doc.createElement("p");
             extras.className = "kb-extras";
             const stage = (id) => { const chord = getBinding(id, isMac); return chord ? formatChord(chord, isMac) : "unbound"; };
-            extras.textContent = `The leader and the keys after it are the TUI's; the direct shortcuts are Desktop extras. ${leaderText()} then 1 is Instances and ${leaderText()} then 3 is Capabilities, while ${stage("stage.hierarchy")} stays Deployments and ${stage("stage.automations")} stays Workspace › Automations.`;
+            extras.textContent = `The leader and the keys after it are the TUI's; the direct shortcuts are Desktop extras. ${leaderText()} then 1 is Instances and ${leaderText()} then 3 is Capabilities, while ${stage("stage.hierarchy")} stays Machines and ${stage("stage.automations")} stays Automations.`;
             h.after(extras);
             for (const leaderRow of supportedLeaderRows()) section.append(fixedRow(leaderRow));
           }

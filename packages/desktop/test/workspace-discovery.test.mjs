@@ -212,7 +212,7 @@ test('instance rows reflect exact root/host identity and open only read-only sna
 
 function tabGeometry(u) {
   const strip = u.doc.querySelector('.workspace-tabs');
-  // Five tabs: Souls, Capabilities, Automations, Teams, Setup (2026-10-23). Setup keeps its place and width, at
+  // Five tabs: Souls, Capabilities, Teams, Machines, Setup (2026-10-26). Setup keeps its place and width, at
   // 246px in a 287px strip, so 41px of it shows until the strip scrolls 32px.
   Object.defineProperties(strip, { clientWidth: { value: 287, configurable: true }, clientLeft: { value: 0 } });
   strip.getBoundingClientRect = () => ({ left: 100, right: 387, width: 287 });
@@ -349,13 +349,13 @@ test('Souls group by primary team or repository, and unconfirmed members explain
 });
 
 // #517: the Setup tab lists the workspace's machines when the CLI connects machines to a workspace.
-test('Setup: the Machines box follows the gates; it is read for this window and kept across repaints', async t => {
+test('Setup: the Registered machines box follows the gates; it is read for this window and kept across repaints', async t => {
   const gated = { ...CLI, features: [...CLI.features, 'servers-per-workspace', 'server-connect'] };
   const machine = { id: 'altair-team', label: 'altair', sshHost: 'altair', workspace: '/home/j/team', workspaceKey: 'github.com/acme/team', check: { reachable: true, version: '0.39.0', error: null } };
   const u = await setup(t, { cli: gated, servers: () => ({ servers: [machine], filtered: true, key: 'github.com/acme/team', deployment: '/team', aweb: false }) });
   u.tab('sources'); for (let i = 0; i < 6; i++) await tick();
   const box = u.doc.querySelector('.setup .setup-machines');
-  assert.ok(box, 'the Machines box');
+  assert.ok(box, 'the Registered machines box');
   assert.deepEqual([...box.querySelectorAll('[data-machine]')].map(r => r.dataset.machine), ['altair-team']);
   assert.ok(u.calls.some(c => c.path === `/api/servers?ws=${encodeURIComponent('/team')}`));
   assert.equal(box.querySelector('.machines-add').textContent, 'Add a machine to this workspace…');
@@ -363,7 +363,7 @@ test('Setup: the Machines box follows the gates; it is read for this window and 
   assert.equal(u.doc.querySelector('.setup .setup-machines'), box, 'the same box, in either view');
 });
 
-test('Setup: without servers-per-workspace and server-connect there is no Machines box and no Add a machine', async t => {
+test('Setup: without servers-per-workspace and server-connect there is no Registered machines box and no Add a machine', async t => {
   const u = await setup(t);
   u.tab('sources'); for (let i = 0; i < 6; i++) await tick();
   assert.ok(u.doc.querySelector('.setup'));

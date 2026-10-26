@@ -299,9 +299,16 @@ test('two parts: Workspace defaults first, then All capabilities with its segmen
   tops.workspace = -100; tops.packages = 10;
   syncCapabilityNav(u.$('.sections'), scroller, u.$('.lead'));
   assert.equal(u.$('.capability-nav [aria-current]').dataset.jump, 'packages');
-  // The nav is found in the sections when the toolbar holds none.
+  // Without a pinned toolbar the top is the scroller's own.
   tops.packages = 400; syncCapabilityNav(u.$('.sections'), scroller);
   assert.equal(u.$('.capability-nav [aria-current]').dataset.jump, 'workspace');
+  // Pinned (spec G), the toolbar's bottom edge is the top: a section under it is not in view.
+  tops.workspace = 200; tops.packages = 380;
+  const toolbar = u.$('.toolbar'); toolbar.classList.add('ws-sticky'); toolbar.getBoundingClientRect = () => ({ top: 0, bottom: 360 });
+  syncCapabilityNav(u.$('.sections'), scroller, u.$('.lead'));
+  assert.equal(u.$('.capability-nav [aria-current]').dataset.jump, 'packages', 'the section under the pinned toolbar is past');
+  syncCapabilityNav(u.$('.sections'), scroller);
+  assert.equal(u.$('.capability-nav [aria-current]').dataset.jump, 'workspace', 'measured from the scroller, Workspace owned is still in view');
 });
 
 test('without reported defaults All capabilities is the page\'s one part', t => {
