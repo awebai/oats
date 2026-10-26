@@ -12,9 +12,15 @@
 - **`oats-getting-started` sets up a machine's steward with a global
   address** when its prompt hands it a machine found-list (a found-list with
   `machine.platform` set, as oats-omarchy's installer writes):
-  - Step 1 asks, once and with defaults, for the namespace (the machine's
-    hostname, normalised) and the steward's name (`steward`). Enter accepts
-    both. No question comes after that round.
+  - Step 1 is the machine's own round. It asks once, with a default for
+    every value: the workspace and the namespace (both the machine's
+    hostname, normalised), the steward's name (`steward`), the deployment
+    directory, and the harness when the found-list names none. Enter
+    accepts them all. No question comes after that round: a step that would
+    ask tells the person what happened and stops.
+  - The person's harness is recorded as the steward's launch preference
+    (`oats soul launch set`), so harness trust, readiness and the spawn all
+    use it.
   - The new workspace is the machine's own. It pins `oats.machine`, and its
     setup soul is `oats.machine/steward`; no `<workspace>-oats-setup-expert`
     soul is written.
