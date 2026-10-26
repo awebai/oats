@@ -2,7 +2,7 @@
 // replaced by memory recorders; no renderer-selected program/environment.
 import { isAbsolute } from 'node:path';
 import { admitTerminalTarget } from './terminal-target.mjs';
-import { openTerm } from './tmux-target.mjs';
+import { openTerm, viewerTables } from './tmux-target.mjs';
 import { localTmuxIo, tmuxSocketArgs } from './local-tmux-io.mjs';
 import { remoteTerminalEnvironment } from './remote-target.mjs';
 import { prepareRemoteTerm } from '../client/session-attach.mjs';
@@ -73,6 +73,10 @@ export function createTerminalIo({ base, context, attachmentDirectory, spawnPty,
           catch (error) {
             const result = await run('tmux', [...prefix, 'list-sessions', '-F', '#{session_name}'], options);
             if (result.stdout.split('\n').includes(viewer)) throw error;
+          }
+          // Then its own key tables (#1502); one left behind is the orphan sweep's.
+          for (const table of viewerTables(viewer)) {
+            try { await run('tmux', [...prefix, 'unbind-key', '-a', '-q', '-T', table], options); } catch { /* swept later */ }
           }
         },
         preflight: target => { check(); return local.preflight(target); },

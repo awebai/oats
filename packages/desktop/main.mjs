@@ -27,7 +27,7 @@ import { forgeFailure } from "./renderer/forge-contract.mjs";
 import { lifecycleFailure } from '../client/lifecycle-contract.mjs';
 import { lifecycleFrameRefusal } from './renderer/lifecycle-frame.mjs';
 import { DESKTOP_TERMS } from './renderer/desktop-terms.mjs';
-import { sweepViewers } from "./tmux-target.mjs";
+import { sweepViewers, listedTables } from "./tmux-target.mjs";
 import { tmuxSocketArgs } from "./local-tmux-io.mjs";
 import { createTerminalOwnerBroker, installTerminalHandlers } from './terminal-owner.mjs';
 import { createTerminalIo } from './terminal-io.mjs';
@@ -757,12 +757,14 @@ const tmuxRun = (args) => execFileSync("tmux", args, { stdio: "ignore", timeout:
 function sweepOrphanViewers(socket) {
   try {
     const prefix = tmuxSocketArgs(socket);
-    const names = execFileSync("tmux", [...prefix, "list-sessions", "-F", "#{session_name}"], { encoding: "utf8", timeout: 4000, env: cliEnvironment(process.env) })
-      .split("\n").filter(Boolean);
+    const read = (args) => execFileSync("tmux", [...prefix, ...args], { encoding: "utf8", timeout: 4000, env: cliEnvironment(process.env) });
     const swept = sweepViewers({
-      listSessions: () => names,
+      // The tables first, then the sessions (sweepViewers says why).
+      listTables: () => listedTables(read(["list-keys"])),
+      listSessions: () => read(["list-sessions", "-F", "#{session_name}"]).split("\n").filter(Boolean),
       killSession: (name) => tmuxRun([...prefix, "kill-session", "-t", `=${name}`]),
       pidAlive: (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } },
+      emptyTable: (table) => tmuxRun([...prefix, "unbind-key", "-a", "-q", "-T", table]),
     });
     if (swept.length) console.log(`oats-desktop: swept ${swept.length} orphaned viewer session(s): ${swept.join(", ")}`);
   } catch { /* no tmux server — nothing to sweep */ }

@@ -16,7 +16,7 @@ test("saved socket follows preflight, viewer construction, PTY attach and cleanu
   assert.ok(calls.length > 5);
   for (const argv of calls) assert.deepEqual(argv.slice(0, 3), ["-u", "-S", "/saved/socket"]);
   assert.ok(calls[0].includes("=team:=minerva"));
-  assert.equal(calls.at(-1)[3], "kill-session");
+  assert.deepEqual(calls.slice(-3).map(argv => argv[3]), ["kill-session", "unbind-key", "unbind-key"], "the viewer, then its own two tables (#1502)");
   assert.deepEqual(attached[0].argv.slice(0, 4), ["-u", "-S", "/saved/socket", "attach-session"]);
   assert.equal(attached[0].opts.env.TMUX, undefined);
   assert.notEqual(terminalTargetKey("team", "minerva", "/saved/socket"), terminalTargetKey("team", "minerva", "/other/socket"));

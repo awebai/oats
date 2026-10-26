@@ -61,7 +61,11 @@ test("a local viewer: every tmux call and the PTY get the user's environment; th
   assert.equal(ptys[0].options.env.HERDR_SESSION, "local");
   assert.equal(ptys[0].options.cwd, "/home/fixture");
   await opened.killViewer();
-  assert.deepEqual(runs.map(call => call.args[3]), ["kill-session", "list-sessions"]);
+  // The session (already gone, so the inventory is read), then (#1502) both of the viewer's own tables, emptied.
+  const viewer = runs[0].args.at(-1).slice(1);
+  assert.match(viewer, /^oatsdesk-/);
+  assert.deepEqual(runs.map(call => call.args.slice(3)), [["kill-session", "-t", `=${viewer}`], ["list-sessions", "-F", "#{session_name}"],
+    ["unbind-key", "-a", "-q", "-T", viewer], ["unbind-key", "-a", "-q", "-T", `${viewer}-prefix`]]);
   for (const call of runs) {
     assertUserEnvironment(call.options.env, MOUNT, `cleanup tmux ${call.args[3]}`);
     assert.equal(call.options.timeout, 4000, "the call's own options are kept");

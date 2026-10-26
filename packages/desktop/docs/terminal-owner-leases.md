@@ -47,8 +47,17 @@ this is an algorithmic-shape measurement, not a native latency benchmark.
 - Established direct viewers survive app-backend replacement; dependent pending
   preparation is invalidated. No fallback target resolution or alternate source.
 - tmux component validation/anchors, saved socket, linked-window-only viewer,
-  source-death isolation and the provisioned locked key table (wheel scrollback
-  and drag-to-select) are unchanged.
+  source-death isolation and the provisioned locked key table (wheel scrollback,
+  drag-to-select and Shift+PgUp) are unchanged.
+  Each viewer has key tables of its own (#1502, `viewerTables` in
+  `tmux-target.mjs`), named after its session: its locked table, and, on tmux
+  3.3 and later, its C-b table, both bound once as it is made. Closing it kills
+  the session, then empties both tables. A viewer that dies another way (with its
+  source window, or with a crashed app) leaves them to the orphan sweep, which
+  runs at startup, at quit and on every terminal open. The sweep lists the tables
+  before the sessions and empties each viewer table whose session is gone. It
+  never touches another app's tables, or the shared `oatsdesk-locked` table an
+  older Desktop may still use. Nothing is set with `-g`.
   Each viewer is created with its own `detach-on-destroy on` (`-t <viewer>`,
   never `-g`): when the source window dies, tmux detaches the client and the
   PTY exits ("session ended"), instead of moving it to another session (often
