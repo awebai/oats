@@ -337,6 +337,7 @@ test("a stray binding in the C-b table (a tmux.conf's, another program's) is rem
     "bind-key -T oatsview-locked-prefix n next-window",
     "bind-key -T oatsview-locked-prefix C-c new-window",
     "bind-key -T oatsview-locked-prefix \\; display-message hi",
+    "bind-key -T oatsview-locked-prefix M-\\; display-message hi",
     "bind-key -T oatsview-locked-prefix \\[ copy-mode",
     "bind-key -T oatsview-locked-prefix S-PPage send-keys C-b \\; copy-mode -u",
     "bind-key -T oatsview-locked-prefix WheelUpPane send-keys C-b",
@@ -350,7 +351,9 @@ test("a stray binding in the C-b table (a tmux.conf's, another program's) is rem
   const at = (c) => io.calls.findIndex((x) => x.join("\u0000") === c.join("\u0000"));
   const lastBind = io.calls.findLastIndex((c) => c[0] === "bind-key" && c[2] === "oatsview-locked-prefix");
   const removals = io.calls.filter((c) => c[0] === "unbind-key" && c.includes("oatsview-locked-prefix"));
-  assert.deepEqual(removals, [["unbind-key", "-T", "oatsview-locked-prefix", "n"], ["unbind-key", "-T", "oatsview-locked-prefix", "C-c"], ["unbind-key", "-T", "oatsview-locked-prefix", ";"]], "the strays only, by the key tmux listed, never -a");
+  // A key that ends in `;` goes escaped: tmux takes a bare trailing `;` in its argv as the end of
+  // the command, and the unbind would have no key.
+  assert.deepEqual(removals, [["unbind-key", "-T", "oatsview-locked-prefix", "n"], ["unbind-key", "-T", "oatsview-locked-prefix", "C-c"], ["unbind-key", "-T", "oatsview-locked-prefix", "\\;"], ["unbind-key", "-T", "oatsview-locked-prefix", "M-\\;"]], "the strays only, by the key tmux listed, never -a");
   assert.ok(removals.every((c) => at(c) > lastBind), "after the viewer's own are bound");
   assert.equal(io.calls.some((c) => c[0] === "unbind-key" && c[1] === "-T" && c[2] === "root"), false, "another table is not touched");
 });

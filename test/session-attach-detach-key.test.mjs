@@ -372,6 +372,7 @@ test("a viewer without a detach key: its status line names its scroll keys; C-b 
   // A stray in the server's C-b table (a tmux.conf's, another program's): the viewer removes it.
   tmuxOn(AGENTS, "bind-key", "-T", LOCKED_PREFIX, "n", "next-window");
   tmuxOn(AGENTS, "bind-key", "-T", LOCKED_PREFIX, "c", "new-window");
+  tmuxOn(AGENTS, "bind-key", "-T", LOCKED_PREFIX, "\\;", "display-message", "a stray semicolon"); // removed as `\;`, never a bare separator
   const viewer = await view(a);
   await waitUntil(() => viewer.shows().includes("Shift+PgUp or C-b [ to scroll back"), `the status line shows the scroll keys; the terminal shows: ${viewer.shows()}`);
   assert.equal(tmuxOn(AGENTS, "show-options", "-v", "-t", viewer.session, "status"), "on");

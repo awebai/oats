@@ -1225,7 +1225,9 @@ oats session attach --home /abs/home --detach-key 'C-\'
   table it empties to its default table. So a viewer opened while another
   waits after `C-b` leaves that `C-b` pending. Once its keys are bound, the
   viewer removes, key by key, every other key `list-keys` shows in that
-  table (`unbind-key -T oatsview-locked-prefix <key>`). The table is the
+  table (`unbind-key -T oatsview-locked-prefix <key>`, a key that ends in
+  `;` written `\;`, since tmux reads a bare trailing `;` as the end of a
+  command). The table is the
   server's, so a tmux.conf or another program may have bound one there: a
   `C-b n` bound to `next-window` would break the lock. A keyed viewer has
   no `C-b` key; its caller chooses its keys.
