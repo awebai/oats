@@ -2372,7 +2372,10 @@ const palette = createPalette({
     { label: "Shortcuts: edit keyboard shortcuts…", detail: chordDetail("app.shortcuts"), run: () => openShortcutsEditor() },
     { label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: () => openConnections() },
     { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => focusWorkspaceList() },
-    { label: "Workspaces: show only the current workspace (on / off)", detail: chordDetail("workspaces.currentOnly"), run: () => runAction("workspaces.currentOnly") },
+    // The palette hands focus to its command: back where it was opened first (a row the toggle hides then passes it to
+    // the current row; a terminal keeps it), then the toggle, as its chord does from there.
+    { label: "Workspaces: show only the current workspace (on / off)", detail: chordDetail("workspaces.currentOnly"),
+      run: () => { takePickerFocusReturn(document)?.restore(); runAction("workspaces.currentOnly"); } },
     // One window per workspace (#481): on macOS also File → New Window ⌘⇧N; elsewhere no default chord.
     ...(typeof desktopBridge.windowOpenWorkspace === "function" ? [{ label: "Window: new window",
       detail: () => chordDetail("app.newWindow")() || (isMac ? formatChord("Mod+Shift+N", true) : ""), run: () => runAction("app.newWindow") }] : []),

@@ -7,6 +7,8 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import vm from 'node:vm';
 import { createWorkspaceSwitcher, openInNewWindowHint, OPEN_IN_NEW_WINDOW } from '../renderer/workspace-switcher.mjs';
+import { createPalette } from '../renderer/palette.mjs';
+import { takePickerFocusReturn } from '../renderer/overlay-picker.mjs';
 
 const html = readFileSync(new URL('../renderer/index.html', import.meta.url), 'utf8');
 const A = { id: 'ws:aaaaaaaaaaaaaaaaaaaa', name: 'oats' };
@@ -240,4 +242,35 @@ test('a row whose menu holds focus, hidden by Show only the current workspace: t
   document.getElementById('ws-add-open').focus();
   controller.toggleCurrentOnly();
   assert.equal(document.activeElement, document.getElementById('ws-add-open'), 'focus outside the list stays put');
+});
+
+// The palette's Show only the current workspace, as shipped (shell.mjs), activated through the real palette: the
+// palette hands focus to its command, which puts it back where the palette was opened before the toggle runs, so
+// a hidden row's focus goes on to the current row and a control elsewhere keeps it (review of PR 8).
+const shellSource = readFileSync(new URL('../renderer/shell.mjs', import.meta.url), 'utf8');
+const paletteEntry = shellSource.match(/^ {4}\{ label: "Workspaces: show only the current workspace \(on \/ off\)"[^]*?\} \},$/m)?.[0];
+async function viaPalette(s, opener) {
+  const entry = vm.runInNewContext(`[${paletteEntry}][0]`, { chordDetail: () => () => '', takePickerFocusReturn, document: s.document,
+    runAction: (id) => { assert.equal(id, 'workspaces.currentOnly'); s.controller.toggleCurrentOnly(); } });
+  const picker = createPalette({ loadInstances: async () => [], openTerminal() {}, commands: [entry], doc: s.document });
+  opener.focus();
+  await picker.open();
+  const input = s.document.querySelector('.palette-input');
+  input.value = '>show only'; input.dispatchEvent(new s.dom.window.Event('input', { bubbles: true }));
+  input.dispatchEvent(new s.dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  return picker;
+}
+test('the palette\'s entry, from a row it hides: focus goes to the current row; from another control: it stays there', async () => {
+  assert.ok(paletteEntry, 'the shipped entry');
+  const s = setup();
+  await viaPalette(s, option(s.document, B.id));
+  assert.equal(s.controller.currentOnly, true); assert.equal(option(s.document, B.id).hidden, true);
+  assert.equal(s.document.querySelector('.palette-input'), null, 'the palette closed');
+  assert.equal(s.document.activeElement, option(s.document, A.id), 'the current row, never <body>');
+  // Off again from a control outside the list (a terminal's stand-in): focus back on it.
+  const outside = s.document.createElement('textarea'); outside.className = 'xterm-helper-textarea'; s.document.getElementById('main').append(outside);
+  await viaPalette(s, outside);
+  assert.equal(s.controller.currentOnly, false);
+  assert.equal(s.document.activeElement, outside, 'where the palette was opened');
 });
