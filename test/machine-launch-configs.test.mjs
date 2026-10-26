@@ -104,6 +104,19 @@ test("a broken machine file is an error naming it, for listings, previews and sp
   assert.match(another.message, /schemaVersion/, "the unknown key is named");
 });
 
+test("doctor --soul composes the soul's instructions and reports a broken machine file without failing", (t) => {
+  const fx = fixture(t);
+  writeMachine(fx, "launch-configs: [\n");
+  const json = fx.cli(["doctor", "--soul", "dev", "--json"]);
+  assert.equal(json.status, 0, json.stdout + json.stderr);
+  const report = JSON.parse(json.stdout);
+  assert.deepEqual([report.machineLaunchConfigs.present, report.machineLaunchConfigs.ok], [true, false]);
+  assert.equal(typeof report.composedInstructions, "string", "the composition is still reported");
+  const human = fx.cli(["doctor", "--soul", "dev"]);
+  assert.equal(human.status, 0, human.stdout + human.stderr);
+  assert.ok(human.stdout.includes(machineFile(fx)), human.stdout);
+});
+
 test("doctor reports the machine file: its path, its entries and that it is valid, or that there is none", (t) => {
   const fx = fixture(t);
   const report = () => { const r = fx.cli(["doctor", "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr); return JSON.parse(r.stdout).machineLaunchConfigs; };
@@ -157,8 +170,28 @@ test("with no deployment in reach, listings show the machine's entries; launch-c
   ok(fx.cli(["launch-config", "remove", "auto", "--json"]), "remove");
   assert.equal(readFileSync(machineFile(fx), "utf8"), before);
   assert.deepEqual(byName(rows(fx)).auto.source, machineDir(fx), "removing the deployment's entry uncovers the machine's");
+  writeFileSync(join(fx.dep, "oats-local.yaml"), YAML.stringify({ ...YAML.parse(readFileSync(join(fx.dep, "oats-local.yaml"), "utf8")), "launch-configs": { mine: { harness: "codex" } } }));
+  const text = fx.cli(["launch-config", "list"]).stdout;
+  assert.ok(text.includes(`(from ${join(fx.dep, "oats-local.yaml")})`) && text.includes(`(from ${machineFile(fx)})`), `each row names the file that declares it: ${text}`);
   const outsideSet = fx.cli(["launch-config", "set", "x", "--file", def, "--json"], { cwd: outside }).json();
   assert.equal(outsideSet.error?.code, "E_LOCAL_MISSING", "no deployment: nothing to write, the machine file least of all");
+});
+
+test("saving a machine-only entry with --keep-env, as the Desktop does, writes a deployment entry that keeps the machine's environment", (t) => {
+  const fx = fixture(t);
+  writeMachine(fx, { "launch-configs": { auto: { harness: "claude", env: { CLAUDE_CONFIG_DIR: "/tmp/example-config" } } } });
+  const before = readFileSync(machineFile(fx), "utf8");
+  const def = join(fx.base, "def.json"); writeFileSync(def, JSON.stringify({ harness: "claude", model: "new-model" }));
+  ok(fx.cli(["launch-config", "set", "auto", "--file", def, "--keep-env", "--json"]), "set --keep-env");
+  assert.deepEqual(YAML.parse(readFileSync(join(fx.dep, "oats-local.yaml"), "utf8"))["launch-configs"].auto, { harness: "claude", env: { CLAUDE_CONFIG_DIR: "/tmp/example-config" }, model: "new-model" });
+  assert.equal(readFileSync(machineFile(fx), "utf8"), before, "the machine file is never written");
+  assert.deepEqual(byName(rows(fx)).auto.shadows, [machineFile(fx)]);
+  // A name neither file declares has no environment to keep; a broken machine file is named, not skipped.
+  const unknown = failed(fx.cli(["launch-config", "set", "other", "--file", def, "--keep-env", "--json"]), "keep-env of nothing");
+  assert.equal(unknown.code, "E_LAUNCH_CONFIG_UNKNOWN");
+  writeMachine(fx, "launch-configs: [\n");
+  const broken = failed(fx.cli(["launch-config", "set", "other", "--file", def, "--keep-env", "--json"]), "keep-env, broken machine file");
+  assert.deepEqual([broken.code, broken.message.includes(machineFile(fx))], ["E_LAUNCH_CONFIG_INVALID", true]);
 });
 
 test("the CLI takes the machine file from OATS_HOME_DIR in its environment", () => {
