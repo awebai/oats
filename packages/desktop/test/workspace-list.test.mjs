@@ -56,7 +56,7 @@ test("rows: the matched views, then the unattached ones, in one flat list with n
   s.controller.begin()(A, [LOOSE, A, HELD]); await tick();
   assert.deepEqual(s.rows().map(s.keyOf), [A.id, HELD.id, LOOSE.id], "matched first, in their order, then the unattached");
   const list = s.document.getElementById("ws-list");
-  assert.equal(s.document.getElementById(list.getAttribute("aria-labelledby")).textContent, "Workspaces");
+  assert.equal(s.document.getElementById(list.getAttribute("aria-labelledby")).textContent, "Workspace");
   const groups = [...s.document.querySelectorAll("#ws-options > *")];
   assert.equal(groups.length, 1, "one list");
   assert.equal(groups[0].tagName, "UL"); assert.ok(groups[0].classList.contains("ws-group"));
