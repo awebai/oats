@@ -65,7 +65,7 @@ export const contextPanelCSS = `
 #context-panel .context-panel-section > .context-panel-sublabel { margin-bottom:-4px; }
 /* The messaging ID: one mono line, ellipsis (the full value in its title), plus an icon Copy. */
 #context-panel .context-panel-idline { display:flex; align-items:center; gap:6px; min-width:0; }
-#context-panel .context-panel-id { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:12px/1.45 ui-monospace, Menlo, monospace; color:var(--fg); }
+#context-panel .context-panel-id { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:12px/1.45 var(--ui-font, ui-monospace, Menlo, monospace); color:var(--fg); }
 /* Work: one card — the work mode's tile and one sentence (it wraps, never truncates), then the closed Paths. */
 #context-panel .context-panel-work { min-width:0; border:1px solid var(--border); border-radius:9px; overflow:hidden; background:var(--surface); }
 #context-panel .context-panel-work-main { display:flex; align-items:flex-start; gap:10px; min-width:0; padding:10px 12px; }
@@ -73,7 +73,7 @@ export const contextPanelCSS = `
 #context-panel .context-panel-mode-tile[data-work="directory"], #context-panel .context-panel-mode-tile[data-work="workspace"] { background:var(--soul-slate-bg); color:var(--soul-slate-fg); }
 #context-panel .context-panel-work-sentence { flex:1; min-width:0; margin:0; align-self:center; font-size:12.5px; line-height:1.5; color:var(--fg); overflow-wrap:anywhere; }
 /* A fact inside the sentence (repo, branch, parent): the mono face, breaking inside only when it cannot fit a line. */
-#context-panel .context-panel-fact-code { font:12px/1.5 ui-monospace, Menlo, monospace; color:var(--fg); }
+#context-panel .context-panel-fact-code { font:12px/1.5 var(--ui-font, ui-monospace, Menlo, monospace); color:var(--fg); }
 #context-panel .context-panel-paths { min-width:0; border-top:1px solid var(--border); padding:8px 12px; }
 #context-panel .context-panel-paths > summary { cursor:pointer; font-size:11.5px; font-weight:600; color:var(--muted); }
 #context-panel .context-panel-paths[open] > summary { margin-bottom:8px; }
@@ -85,7 +85,7 @@ export const contextPanelCSS = `
 #context-panel .context-panel-facts [data-unreported] { color:var(--muted); }
 /* A path: one line, clipped at the start so its meaningful end shows (full value in the title), plus an icon Copy. */
 #context-panel .context-panel-pathline { display:flex; align-items:center; gap:6px; min-width:0; }
-#context-panel .context-panel-path { flex:1; min-width:0; font:12px/1.45 ui-monospace, Menlo, monospace; color:var(--fg); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-align:left; }
+#context-panel .context-panel-path { flex:1; min-width:0; font:12px/1.45 var(--ui-font, ui-monospace, Menlo, monospace); color:var(--fg); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-align:left; }
 /* "shared": the work folder is a link to a tree other instances share (its title says so). */
 #context-panel .context-panel-shared-tag { flex:none; padding:0 6px; border-radius:4px; background:var(--tag-bg); color:var(--muted); font-size:10.5px; font-weight:600; line-height:18px; white-space:nowrap; cursor:default; }
 #context-panel button.context-panel-copy { flex:none; display:grid; place-items:center; width:22px; height:22px; padding:0; border:0; border-radius:5px; background:transparent; color:var(--muted); cursor:pointer; }
@@ -109,7 +109,7 @@ export const contextPanelCSS = `
 #context-panel .context-panel-session-model { font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #context-panel .context-panel-session-from::before { content:' · '; }
 #context-panel .context-panel-session-side { display:flex; flex-direction:column; align-items:flex-end; flex:none; max-width:45%; font-size:11.5px; color:var(--muted); text-align:right; }
-#context-panel .context-panel-session-tmux { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:11.5px ui-monospace, Menlo, monospace; color:var(--fg); }
+#context-panel .context-panel-session-tmux { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:11.5px var(--ui-font, ui-monospace, Menlo, monospace); color:var(--fg); }
 #context-panel .context-panel-footer { display:flex; gap:8px; flex:none; padding:12px 16px; border-top:1px solid var(--border); background:var(--surface); }
 #context-panel .context-panel-footer-act { flex:1 1 0; min-width:0; height:32px; box-sizing:border-box; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12.5px/1 inherit; cursor:pointer; }
 #context-panel .context-panel-footer-act:hover:not(:disabled) { background:var(--surface-2); }
@@ -128,7 +128,7 @@ export const contextPanelCSS = `
 #context-panel .context-panel-tab:hover { background:none; color:var(--fg); }
 #context-panel .context-panel-tab[aria-selected="true"] { color:var(--fg); background:none; font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
 /* W6: the Developer tab's (Git and GitHub) count of unresolved review threads (design: "Developer 2"). */
-#context-panel .context-panel-tab-count { margin-left:5px; color:var(--muted); font:400 10.5px ui-monospace, Menlo, monospace; }
+#context-panel .context-panel-tab-count { margin-left:5px; color:var(--muted); font:400 10.5px var(--ui-font, ui-monospace, Menlo, monospace); }
 #context-panel .context-panel-tab-count:empty { display:none; }
 #context-panel .context-panel-stage.oats-view { display:flex; flex:1; flex-direction:column; width:100%; min-width:0; min-height:0; overflow:auto; background:var(--surface); }
 #context-panel .context-panel-stage > * { max-width:100%; box-sizing:border-box; }

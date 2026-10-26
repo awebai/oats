@@ -250,7 +250,8 @@ export function fontDraws(stack, doc = document) {
     if (!context) return true;
     context.font = `13px ${stack}`;
     const narrow = context.measureText("iiiiiiiiii").width, wide = context.measureText("MMMMMMMMMM").width;
-    return narrow > 0 && Math.abs(narrow - wide) <= 0.5 + 0.01 * wide;
+    // Both drawn (a width above zero), and equal within 1% of the wider: no absolute allowance on top.
+    return narrow > 0 && wide > 0 && Math.abs(narrow - wide) <= 0.01 * Math.max(narrow, wide);
   } catch { return true; }
 }
 

@@ -147,6 +147,13 @@ test("the fixed-width check's verdicts: a monospace face draws, a proportional f
   const verdict = (widths, opts) => { const doc = canvasDoc(widths, opts); return [theme.fontDraws("ui-monospace, monospace", doc), doc.fonts]; };
   assert.deepEqual(verdict({ i: 78, M: 78 }), [true, ["13px ui-monospace, monospace"]], "monospace (JetBrains Mono): the stack, at 13px");
   assert.equal(verdict({ i: 78.00003, M: 78.4 })[0], true, "within 1%: fractional advances");
+  // The bound is 1% of the wider, exactly: 0.79 of 79 is in, 0.80 is out, and 78 against 79.2 (1.5%) is out.
+  assert.equal(verdict({ i: 79, M: 79.79 })[0], true, "just inside 1%");
+  assert.equal(verdict({ i: 79, M: 79.81 })[0], false, "just outside 1%");
+  assert.equal(verdict({ i: 79.81, M: 79 })[0], false, "just outside 1%, the i's the wider");
+  assert.equal(verdict({ i: 78, M: 79.2 })[0], false, "1.5% apart");
+  assert.equal(verdict({ i: 78, M: 0 })[0], false, "the M's drew nothing");
+  assert.equal(verdict({ i: 0, M: 0.5 })[0], false, "the i's drew nothing");
   assert.equal(verdict({ i: 30, M: 110 })[0], false, "proportional (no monospace font: fontconfig's sans)");
   assert.equal(verdict({ i: 0, M: 0 })[0], false, "zero width (a bitmap font alone: nothing is drawn)");
   assert.equal(verdict(null)[0], true, "no canvas context: nothing to measure, the stack as it is");
@@ -236,15 +243,16 @@ test("the shell applies the font before its first await, with the platform; the 
   const firstAwait = shellSource.indexOf("await ");
   const init = shellSource.indexOf('initFont(navigator.platform.includes("Mac"));');
   assert.ok(init > 0 && init < firstAwait, "initFont runs before the window's first paint can wait on anything");
-  assert.match(shellSource, /createFontPicker\(\{ doc: document, fonts: fontChoices\(navigator\.platform\.includes\("Mac"\), fontFallsBack\(\)\), current: currentFont, choose: setFont,\n  subscribe: onFontChange,/);
+  assert.match(shellSource, /createFontPicker\(\{ doc: document, fonts: \(\) => fontChoices\(navigator\.platform\.includes\("Mac"\), fontFallsBack\(\)\), current: currentFont, choose: setFont,\n  subscribe: onFontChange,/);
   assert.match(shellSource, /\{ label: "Font: choose…", detail: chordDetail\("app\.fontPicker"\), run: \(\) => runAction\("app\.fontPicker"\) \}/);
   assert.match(shellSource, /registerAction\(\{ id: "app\.fontPicker", label: "Font: choose…", context: "global", run: \(e\) => \{ if \(!e\?\.repeat\) fontPicker\.toggle\(\); \} \}\);/);
   assert.doesNotMatch(shellSource, /location\.reload|webContents\.reload/, "a font change never reloads the window");
 });
 
-// Every font rule of the UI reads the choice: a sans stack appears only as var(--ui-font, …)'s fallback,
-// so System font (no --ui-font) is each rule's own stack exactly as before.
-test("every UI font rule follows the choice: no sans stack outside var(--ui-font, <its own stack>)", () => {
+// Every font rule of the UI reads the choice: a sans or a monospace stack appears only as var(--ui-font, …)'s
+// fallback (or is a font token, --mono or the terminals'), so System font (no --ui-font) is each rule's own stack
+// exactly as before, and Omarchy's font reaches code, ids, paths and tab numbers too.
+test("every UI font rule follows the choice: no sans or monospace stack outside var(--ui-font, <its own stack>)", () => {
   const dir = new URL("../renderer/", import.meta.url);
   const files = ["shell.css", "theme.css", ...readdirSync(dir).filter(name => name.endsWith(".mjs")),
     ...readdirSync(new URL("views/", dir)).filter(name => name.endsWith(".mjs")).map(name => `views/${name}`)];
@@ -254,6 +262,11 @@ test("every UI font rule follows the choice: no sans stack outside var(--ui-font
     const outside = text.replace(/var\(--ui-font,[^)]*\)/g, () => { follows++; return "var(--ui-font)"; });
     assert.doesNotMatch(outside, /-apple-system|BlinkMacSystemFont|system-ui|"Segoe UI"|sans-serif/, `${name}: a sans stack that does not follow the font`);
     assert.doesNotMatch(text, /var\(--sans\b/, `${name}: the old, never-defined --sans token`);
+    // A font declaration (not a custom property's definition) names a monospace face only inside a font token.
+    for (const [, value] of outside.matchAll(/(?<![-\w])font(?:-family)?\s*:\s*([^;{}]*)/g)) {
+      const bare = value.replace(/var\(--(?:ui-font|mono|term-font-family)\b[^)]*\)/g, "");
+      assert.doesNotMatch(bare, /monospace|Menlo|"SF Mono"|SFMono|Consolas|Monaco/, `${name}: a monospace stack that does not follow the font: ${value.trim()}`);
+    }
   }
   assert.ok(follows >= 20, `the UI's font rules read --ui-font (${follows})`);
   assert.match(shellCSS, /^body \{[^}]*font: 13px\/1\.45 var\(--ui-font, -apple-system, "Segoe UI", system-ui, sans-serif\);/m, "the body: today's stack as the fallback");

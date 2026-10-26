@@ -189,3 +189,38 @@ test('no saved font: Omarchy\'s font is current and not stored; choosing System 
   picker.open();
   assert.deepEqual([...doc.querySelectorAll('.theme-picker-row')].map(row => row.getAttribute('aria-current')), [null, 'true']);
 });
+
+// The Omarchy row's note follows the latest fixed-width verdict (theme.mjs fontDraws, fontFallsBack), in the same
+// window: the shell hands the picker its rows as a function, read at each open and on each font notification.
+test('the fallback note follows a changed verdict in the same window: at the next open, and in place while open', t => {
+  const shell = readFileSync(new URL('../renderer/shell.mjs', import.meta.url), 'utf8');
+  assert.match(shell, /createFontPicker\(\{ doc: document, fonts: \(\) => fontChoices\(navigator\.platform\.includes\("Mac"\), fontFallsBack\(\)\),/,
+    'the shell reads the rows at each open, not once at start');
+  const source = readFileSync(new URL('../renderer/theme.mjs', import.meta.url), 'utf8');
+  const dom = new JSDOM('<!doctype html><html><body><button id="opener">Font</button></body></html>');
+  t.after(() => dom.window.close());
+  const context = { document: dom.window.document, getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
+    localStorage: { getItem: () => null, setItem() {} } };
+  const theme = runInNewContext(`${source.replace(/\bexport /g, '')}\n({ initFont, currentFont, setFont, onFontChange, fontChoices, fontFallsBack, FONT_FALLBACK_NOTE })`, context);
+  let draws = true;
+  theme.initFont(false, () => draws);
+  const doc = dom.window.document;
+  const picker = createFontPicker({ doc, fonts: () => theme.fontChoices(false, theme.fontFallsBack()), current: theme.currentFont,
+    choose: theme.setFont, subscribe: theme.onFontChange });
+  t.after(() => picker.dispose());
+  const notes = () => [...doc.querySelectorAll('.theme-picker-row')].map(row => row.querySelector('.theme-picker-note')?.textContent ?? null);
+  doc.getElementById('opener').focus(); picker.open();
+  assert.deepEqual(notes(), ["This computer's monospace font", null], 'it draws');
+  picker.close();
+  // The font stops drawing at a fixed width; the next choice checks again.
+  draws = false; theme.setFont('omarchy');
+  assert.equal(theme.fontFallsBack(), true);
+  picker.open();
+  assert.deepEqual(notes(), [theme.FONT_FALLBACK_NOTE, null], 'the next open says so');
+  // While open: a notification (a choice made elsewhere: the palette, a chord) puts the note right in place.
+  const focused = doc.activeElement, rows = [...doc.querySelectorAll('.theme-picker-row')];
+  draws = true; theme.setFont('omarchy');
+  assert.deepEqual(notes(), ["This computer's monospace font", null], 'the inverse, in place');
+  assert.deepEqual([...doc.querySelectorAll('.theme-picker-row')], rows, 'the same rows');
+  assert.equal(doc.activeElement, focused, 'and focus stays');
+});

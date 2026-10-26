@@ -57,8 +57,9 @@ export function createFontPicker({ fonts, ...spec } = {}) {
  * @param {string} spec.kind  names the overlay's class (`<kind>-picker-overlay`) and the title's id
  * @param {string} spec.title  the dialog's heading and name
  * @param {string} spec.closeLabel  the close button's name
- * @param {ReadonlyArray<{id: string, label: string, note?: string}>} spec.choices  the rows, in order;
- *   a note is the row's muted second line
+ * @param {ReadonlyArray<{id: string, label: string, note?: string}> | (() => ReadonlyArray<{id: string, label: string, note?: string}>)} spec.choices
+ *   the rows, in order; a note is the row's muted second line. A function is read at each open and on each
+ *   notification, so a note that depends on the moment (the font's fallback, fontChoices) is never stale.
  * @param {() => string} spec.current  the current choice's id (currentTheme, currentFont)
  * @param {(id: string) => void} spec.choose  applies and stores a choice (setTheme, setFont)
  * @param {(fn: Function) => Function} [spec.subscribe]  onThemeChange, onFontChange; returns its unsubscribe
@@ -92,6 +93,19 @@ export function createChoicePicker({ doc, kind, title: heading, closeLabel, choi
     if (restoreFocus) applyFocus(() => { if (stillOpen(inDialog)) inDialog.focus(); else opener?.restore(); });
   }
 
+  const listChoices = () => (typeof choices === 'function' ? choices() : choices);
+  /** The notes follow the choices as they are now: each row's second line is set, replaced or removed in place. */
+  function annotate() {
+    let now = [];
+    try { now = listChoices(); } catch { return; }
+    for (const row of rows) {
+      const note = now.find(choice => choice.id === row.dataset.choiceId)?.note;
+      const text = row.querySelector('.theme-picker-text'), shown = text.querySelector('.theme-picker-note');
+      if (note && shown) { if (shown.textContent !== note) shown.textContent = note; }
+      else if (note) text.append(node('span', note, 'theme-picker-note'));
+      else shown?.remove();
+    }
+  }
   /** The marks follow the current choice; the rows and focus stay as they are. */
   function mark() {
     let id = null;
@@ -126,7 +140,7 @@ export function createChoicePicker({ doc, kind, title: heading, closeLabel, choi
     const list = node('ul', undefined, 'theme-picker-list');
     const owns = () => overlay && life === mounted;
     const pick = id => { if (!owns()) return; close(); choose(id); };
-    rows = choices.map(({ id, label, note }) => {
+    rows = listChoices().map(({ id, label, note }) => {
       const item = node('li'), row = node('button', undefined, 'theme-picker-row'); row.type = 'button'; row.dataset.choiceId = id;
       const text = node('span', undefined, 'theme-picker-text'); text.append(node('span', label, 'theme-picker-label'));
       if (note) text.append(node('span', note, 'theme-picker-note'));
@@ -163,6 +177,6 @@ export function createChoicePicker({ doc, kind, title: heading, closeLabel, choi
   }
 
   const toggle = () => { if (overlay) close(); else open(); };
-  const off = subscribe(() => { if (overlay) mark(); });
+  const off = subscribe(() => { if (overlay) { annotate(); mark(); } });
   return { open, close, toggle, isOpen, dispose() { close({ restoreFocus: false }); off(); } };
 }

@@ -215,7 +215,7 @@ export const MARKDOWN_CSS = `
                             background: var(--surface); color: var(--muted); border-radius: 6px;
                             font: 11px var(--ui-font, -apple-system, sans-serif); padding: 3px 9px; cursor: pointer; }
 .mdv pre.md-code .md-copy:hover { color: var(--fg); border-color: var(--accent); }
-.mdv code { font: 13px/1.55 "SF Mono", ui-monospace, Menlo, monospace; }
+.mdv code { font: 13px/1.55 var(--ui-font, "SF Mono", ui-monospace, Menlo, monospace); }
 /* Shared by fenced Markdown and read-only code files. Semantic foregrounds
    stay opaque; theme-contrast tests validate the composited md-code-bg. */
 .mdv .hljs { color: var(--fg); }
@@ -243,7 +243,7 @@ export const MARKDOWN_CSS = `
 .mdv img { max-width: 100%; border-radius: 6px; }
 .mdv hr { border: none; border-top: 1px solid var(--md-rule); margin: 24px 0; }
 .mdv li + li { margin-top: .18em; }
-.mdv .mdv-meta { font: 12px "SF Mono", ui-monospace, monospace; color: var(--muted); margin-bottom: 18px;
+.mdv .mdv-meta { font: 12px var(--ui-font, "SF Mono", ui-monospace, monospace); color: var(--muted); margin-bottom: 18px;
                  display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
 .mdv .mdv-meta .crumb { word-break: break-all; }
 .mdv .mdv-error { color: var(--danger); }

@@ -309,3 +309,32 @@ test("This computer: a pushed host theme updates both shell terminals' colours a
     assert.equal(term.options.theme.background, "#0a0d12", `${site}: Dark's own terminal background`);
   }
 });
+
+// The GitHub sign-in terminal (Settings: Connections…, connections.mjs) is the second creation site. A size or family
+// change keeps its mount's box, so its ResizeObserver need not fire: the shipped adapter tells its resize listeners
+// itself, and Connections' listener refits the grid and sends it to the sign-in PTY (forgeAuthResize).
+test("the sign-in terminal: a font or size change reaches its resize listeners (the refit and the PTY's new grid), never a disposed one", t => {
+  const u = fixture(t);
+  let typography = null, fits = 0;
+  const Terminal = class {
+    constructor(options) { this.options = { ...options }; }
+    loadAddon() {} open() {} dispose() {} onData() {} attachCustomKeyEventHandler() {}
+  };
+  const context = { ...u.theme, terminalOptions, Terminal, FitAddon: { FitAddon: class { fit() { fits++; } } },
+    onTerminalTypographyChange: fn => { typography = fn; return () => { typography = null; }; },
+    ResizeObserver: class { observe() {} disconnect() {} } };
+  const adapter = runInNewContext(`({ ${slice("terminalFactory: mount => {", "\n  },\n")} })`, context).terminalFactory({});
+  // Connections' own listener (connections.mjs resize): fit, then the grid to the PTY.
+  const sent = [];
+  const sub = adapter.onResize(() => { adapter.fit(); sent.push([adapter.cols, adapter.rows]); });
+  typography({ fontSize: 15, fontFamily: "ui-monospace, monospace" });
+  assert.equal(fits, 1, "a family change refits");
+  assert.equal(sent.length, 1, "and the grid goes to the PTY");
+  typography({ fontSize: 16, fontFamily: "ui-monospace, monospace" });
+  assert.equal(fits, 2, "a size change too");
+  sub.dispose();
+  typography({ fontSize: 17, fontFamily: "ui-monospace, monospace" });
+  assert.equal(fits, 2, "a disposed listener is not told");
+  adapter.dispose();
+  assert.equal(typography, null, "disposing the terminal stops listening");
+});

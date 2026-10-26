@@ -139,16 +139,23 @@ also carries `.theme-picker-overlay` or `.font-picker-overlay`.
 - **Every UI font rule follows it** by reading `var(--ui-font, <its own
   stack>)`: the body, `.oats-view`, the context panel, the Machines (hierarchy), brain
   and markdown views, and the rules that once read `var(--sans,system-ui)`, a
-  token nothing defined. theme.css never defines `--ui-font`, so with System font
-  each rule is its own stack exactly as before. `test/font-choice.test.mjs`
-  refuses a sans stack outside that fallback.
+  token nothing defined. The monospace rules do too: code in the markdown view,
+  the context panel's ids, paths and facts, the soul tab's meta and sources, PR
+  chips, team details, the tab hints and numbers, and the terminal search's
+  controls. theme.css never defines `--ui-font`, so with System font each rule
+  is its own stack exactly as before. `test/font-choice.test.mjs` refuses a sans
+  or monospace stack outside that fallback (or a font token: `--mono`,
+  `--term-font-family`).
 - **Stored per computer** under `oats.desktop.font` (like `oatsweb.theme`); a
   missing or unknown value is Omarchy's font, and the default is never stored.
   The shell calls `initFont(isMac)` before its first await, so the first paint
   is in it.
 - **Terminals** switch in place: `applyFont` notifies the terminal typography
   listeners, and each open terminal sets xterm's `fontFamily` and refits
-  (`fitTerminal`; the PTY follows the grid). A stored terminal family
+  (`fitTerminal`; the PTY follows the grid). The GitHub sign-in terminal
+  (Settings: Connections…) keeps its box when the font changes, so its adapter
+  (shell.mjs `terminalFactory`) tells its resize listeners itself: Connections
+  refits it and sends the new grid to the sign-in PTY (`forgeAuthResize`). A stored terminal family
   (`oats.desktop.terminal.fontFamily`) still wins, and the size is untouched.
 - **The fallback.** Omarchy's font is used only once its stack draws at a fixed
   width: `fontDraws(stack)` measures ten i's and ten M's on a canvas, wider than

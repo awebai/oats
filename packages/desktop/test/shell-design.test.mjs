@@ -337,13 +337,13 @@ test("the foot is one bar: the OATS mark, Spawn instance (Quick Open), the sideb
   // A click opens Quick Open, once, and supersedes a pending open; it opens no chooser.
   const pending = s.c.tabOpenIntents.begin(); spawn.click();
   assert.equal(pending(), false, "a click supersedes a pending open");
-  assert.deepEqual(s.events.slice(2), [["quickOpen"]], "one click, one Quick Open");
+  assert.deepEqual(s.events.slice(3), [["quickOpen"]], "one click, one Quick Open (after the menu's three)");
   assert.equal(s.loads.length, 0, "no chooser");
   // The chooser stays the registry's (app.chooseSoul, the palette's Spawn instance: choose a soul in Workspace…).
   const before = s.c.tabOpenIntents.begin(); runAction("app.chooseSoul");
   assert.equal(before(), false); assert.equal(s.loads.length, 1, "one run, one chooser");
   await s.settle(s.loads[0], "resolve");
-  assert.deepEqual(s.events.slice(3), [["tab", "souls"], ["stage", "spawn"]]);
+  assert.deepEqual(s.events.slice(4), [["tab", "souls"], ["stage", "spawn"]]);
   assert.match(source, /label: "Spawn instance: choose a soul in Workspace…", detail: chordDetail\("app.chooseSoul"\), run: \(\) => runAction\("app.chooseSoul"\)/);
 });
 
