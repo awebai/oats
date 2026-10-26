@@ -420,6 +420,27 @@ test("a viewer without a detach key: its status line names its scroll keys; C-b 
   nothingLeft("the quiet viewer's agent window ended");
 });
 
+test("another locked viewer opened while one waits after C-b leaves that C-b pending: the next key still reaches its agent as both keys, and [ still enters copy mode (#1502 part D, round 1 of the review)", async (t) => {
+  t.after(sweep);
+  const a = await agent("pending-a"), b = await agent("pending-b"), c = await agent("pending-c");
+  const viewer = await view(a);
+  viewer.press("C-b");
+  await waitUntil(() => tmuxOn(AGENTS, "list-clients", "-t", `=${viewer.session}`, "-F", "#{client_key_table}") === LOCKED_PREFIX, "A's client reads the C-b table");
+  const other = await view(b); // prepared while A's C-b is pending: it binds the C-b table again
+  viewer.press("n");
+  await waitUntil(() => typed(a) === "^Bn", `A's agent read C-b n (it read ${JSON.stringify(typed(a))})`);
+  viewer.press("C-b");
+  await waitUntil(() => tmuxOn(AGENTS, "list-clients", "-t", `=${viewer.session}`, "-F", "#{client_key_table}") === LOCKED_PREFIX, "A's client reads the C-b table again");
+  const third = await view(c);
+  viewer.press("[");
+  await waitUntil(() => inMode(a) === "1", `C-b [ put A's pane in copy mode; the terminal shows: ${viewer.shows()}`);
+  assert.equal(typed(a), "^Bn", "the [ was not the agent's");
+  tmuxOn(AGENTS, "send-keys", "-X", "-t", a.target, "cancel");
+  assert.deepEqual([typed(b), typed(c)], ["", ""], "the others read nothing");
+  for (const [v, x] of [[viewer, a], [other, b], [third, c]]) { tmuxOn(AGENTS, "kill-window", "-t", x.target); assert.equal(await v.ended(), 0, v.shows()); }
+  nothingLeft("three plain viewers");
+});
+
 for (const mode of ["emacs", "vi"]) {
   test(`scrolled back through the viewer's own wheel binding, mode-keys ${mode}: C-\\ and F12, which copy mode does not bind, detach from copy mode with status ${SESSION_DETACHED_EXIT}; C-e, which it binds, acts there and detaches once the mode is left`, async (t) => {
     t.after(sweep);

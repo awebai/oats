@@ -312,11 +312,13 @@ test("the C-b table only where tmux forwards a bound key (tmux 3.3: send-keys wi
     ["bind-key", "-T", "oatsview-locked", "MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
     ["bind-key", "-T", "oatsview-locked", "S-PageUp", "copy-mode -u"],
     ["bind-key", "-T", "oatsview-locked", "C-b", "switch-client -T oatsview-locked-prefix"],
-    ["unbind-key", "-a", "-q", "-T", "oatsview-locked-prefix"],
+    // Bound again, never emptied: tmux returns every client reading a table it empties to its
+    // default table, so another viewer's pending C-b would be lost.
     ...PREFIX_BINDINGS.map((binding) => ["bind-key", "-T", "oatsview-locked-prefix", ...binding]),
     ["set-option", "-t", name, "mouse", "on"],
   ]);
   assert.equal(on.calls.filter((c) => c[0] === "-V").length, 1, "one probe answers both questions");
+  assert.equal(on.calls.some((c) => c[0] === "unbind-key" && c.includes("oatsview-locked-prefix")), false, "the C-b table is never emptied");
   assert.deepEqual(viewer.args.slice(0, 5), ["-u", "-S", target.socket, "-T", "sync"]);
   assert.equal(VIEWER_SCROLL_HINT, "Shift+PgUp or C-b [ to scroll back");
   assert.equal(VIEWER_SCROLL_HINT_WITHOUT_PREFIX, "Shift+PgUp to scroll back");

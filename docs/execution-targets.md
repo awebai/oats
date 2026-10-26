@@ -1220,8 +1220,11 @@ oats session attach --home /abs/home --detach-key 'C-\'
   - a mouse report after `C-b` reaches an agent that asked for one.
   `C-b` waits for the next key with no timeout: tmux holds the client in the
   viewer's `C-b` table, `oatsview-locked-prefix` (the server's one, as
-  `oatsview-locked` is), for that one key. A keyed viewer has no `C-b` key;
-  its caller chooses its keys.
+  `oatsview-locked` is), for that one key. Each locked viewer binds that
+  table again, and never empties it: tmux returns every client reading a
+  table it empties to its default table. So a viewer opened while another
+  waits after `C-b` leaves that `C-b` pending. A keyed viewer has no `C-b`
+  key; its caller chooses its keys.
 
   **Only on tmux 3.3 and later** (`VIEWER_PREFIX_MIN_TMUX`). The forwarding
   below needs a `send-keys` that names no key to send the key it is bound
