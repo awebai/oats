@@ -1003,6 +1003,10 @@ function readLaunchConfigsModel(local) {
 }
 /** Whether the machine's launch configurations file declares `name`; a broken file declares nothing here
  *  (the launches it affects refuse it). */
+/** The file a launch configuration of this machine was declared in, from its `source` directory. */
+function launchConfigFile(source) {
+  return source === dirname(machineLaunchConfigsFile()) ? machineLaunchConfigsFile() : join(source, "oats-local.yaml");
+}
 function machineDeclares(name) {
   try { return Object.hasOwn(machineLaunchConfigs()?.configs ?? {}, name); } catch (e) { if (e?.code === "E_LAUNCH_CONFIG_INVALID") return false; throw e; }
 }
@@ -1117,7 +1121,7 @@ async function launchConfigCmd() {
     if (!configurations.length) { console.log(`No launch configurations are declared${file ? ` in ${shortPath(file)}` : ` (no oats-local.yaml in reach of ${dir})`} or in ${shortPath(machineLaunchConfigsFile())}`); return; }
     for (const c of configurations) {
       const env = Object.entries(c.env).map(([n, v]) => v.fromEnv ? `${n}=$${v.fromEnv}` : `${n}=<redacted>`).join(" ");
-      console.log(`${c.name}: ${c.harness}${c.default ? ` (this machine's ${c.harness} default)` : ""}${c.executable ? ` ${c.executable}` : ""}${c.args.length ? ` ${c.args.map((a) => JSON.stringify(a)).join(" ")}` : ""}${env ? ` [${env}]` : ""}${c.model ? ` model ${c.model}` : ""}${c.yolo !== null ? ` yolo ${c.yolo}` : ""}${c.source === dirname(machineLaunchConfigsFile()) ? ` (from ${shortPath(machineLaunchConfigsFile())})` : ""}${c.shadows.length ? ` (replaces ${c.shadows.map(shortPath).join(", ")}'s)` : ""}`);
+      console.log(`${c.name}: ${c.harness}${c.default ? ` (this machine's ${c.harness} default)` : ""}${c.executable ? ` ${c.executable}` : ""}${c.args.length ? ` ${c.args.map((a) => JSON.stringify(a)).join(" ")}` : ""}${env ? ` [${env}]` : ""}${c.model ? ` model ${c.model}` : ""}${c.yolo !== null ? ` yolo ${c.yolo}` : ""} (from ${shortPath(launchConfigFile(c.source))})${c.shadows.length ? ` (replaces ${c.shadows.map(shortPath).join(", ")}'s)` : ""}`);
     }
     return;
   }
@@ -1170,9 +1174,11 @@ async function launchConfigCmd() {
         if (keepEnv) {
           // An editor that saw only redacted values keeps the environment of the
           // declared definition of that name: a one-time copy into the complete
-          // replacement entry.
-          const current = declaredHere ? model[name] : undefined;
-          if (!current) throw refusal("E_LAUNCH_CONFIG_UNKNOWN", `--keep-env: no launch configuration ${name} is declared in ${shortPath(file)}, so there is no environment to keep; declare it with env`);
+          // replacement entry. A name only this machine declares keeps the machine
+          // entry's, so the first save of a machine row writes the entry that shadows it.
+          let current = declaredHere ? model[name] : undefined;
+          if (!current) { try { const machine = machineLaunchConfigs()?.configs ?? {}; if (Object.hasOwn(machine, name)) current = machine[name]; } catch (e) { throw refusal(e.code || "E_LAUNCH_CONFIG_INVALID", e.message, e.details); } }
+          if (!current) throw refusal("E_LAUNCH_CONFIG_UNKNOWN", `--keep-env: no launch configuration ${name} is declared in ${shortPath(file)} or in ${shortPath(machineLaunchConfigsFile())}, so there is no environment to keep; declare it with env`);
           if (Object.keys(current.env || {}).length) written = { ...entry, env: { ...current.env } };
           try { validateLaunchConfig(name, written, `--file ${f}`); } catch (e) { throw refusal(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
         }
@@ -2862,7 +2868,7 @@ function namingLine(naming) {
 function printSpawnPreview(r, { server, soulFetched = false } = {}) {
   // A host before 0.27 names the harness `runtime` (it still answers spawn-preview-2).
   const harness = r.harness ?? r.runtime;
-  console.log(`preview ${r.agent} → ${r.instance}${server ? ` on ${server}` : ""} (${r.work}${r.branch ? `, branch ${r.branch}${r.base ? ` from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}` : ""}) harness ${harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (${server ? "the server's" : "this machine's"} ${harness} default)` : ""}${!server && r.launchConfigSource === dirname(machineLaunchConfigsFile()) ? ` from ${shortPath(machineLaunchConfigsFile())}` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
+  console.log(`preview ${r.agent} → ${r.instance}${server ? ` on ${server}` : ""} (${r.work}${r.branch ? `, branch ${r.branch}${r.base ? ` from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}` : ""}) harness ${harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (${server ? "the server's" : "this machine's"} ${harness} default)` : ""}${r.launchConfigSource ? ` from ${server ? terminalText(r.launchConfigSource) : shortPath(launchConfigFile(r.launchConfigSource))}` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
   // Feature spawn-suggest-name: how the name was chosen.
   { const line = namingLine(r.naming); if (line) console.log(`name: ${line}`); }
   if (Array.isArray(r.worktreeHooks)) console.log(r.worktreeHooks.length ? `worktree hooks: ${r.worktreeHooks.map((h) => `${h.capability}${h.required ? " (required)" : ""}`).join(", ")}` : "worktree hooks: none");
