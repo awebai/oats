@@ -369,11 +369,14 @@ test("a viewer without a detach key scrolls back with the wheel: its session has
 test("a viewer without a detach key: its status line names its scroll keys; C-b [ enters copy mode and the agent reads nothing; C-b with any other key reaches the agent as both keys, C-b C-b and a mouse report after C-b included; the lock holds; --no-status-line leaves the keys and drops the line (#1502 part D)", async (t) => {
   t.after(sweep);
   const sibling = await agent("prefix-sibling"), a = await agent("prefix-plain");
+  // A stray in the server's C-b table (a tmux.conf's, another program's): the viewer removes it.
+  tmuxOn(AGENTS, "bind-key", "-T", LOCKED_PREFIX, "n", "next-window");
+  tmuxOn(AGENTS, "bind-key", "-T", LOCKED_PREFIX, "c", "new-window");
   const viewer = await view(a);
   await waitUntil(() => viewer.shows().includes("Shift+PgUp or C-b [ to scroll back"), `the status line shows the scroll keys; the terminal shows: ${viewer.shows()}`);
   assert.equal(tmuxOn(AGENTS, "show-options", "-v", "-t", viewer.session, "status"), "on");
   assert.deepEqual(keyTables()[LOCKED], lockedBindings());
-  assert.deepEqual(keyTables()[LOCKED_PREFIX], PREFIX_KEYS);
+  assert.deepEqual(keyTables()[LOCKED_PREFIX], PREFIX_KEYS, "the strays are gone, the viewer's own kept");
   // C-b [ : copy mode, and q leaves it; the agent reads neither.
   viewer.press("C-b", "[");
   await waitUntil(() => inMode(a) === "1", `C-b [ put the pane in copy mode; the terminal shows: ${viewer.shows()}`);

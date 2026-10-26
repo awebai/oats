@@ -315,6 +315,8 @@ test("the C-b table only where tmux forwards a bound key (tmux 3.3: send-keys wi
     // Bound again, never emptied: tmux returns every client reading a table it empties to its
     // default table, so another viewer's pending C-b would be lost.
     ...PREFIX_BINDINGS.map((binding) => ["bind-key", "-T", "oatsview-locked-prefix", ...binding]),
+    // Then what else the table holds (a server's, so anyone's) goes, key by key.
+    ["list-keys"],
     ["set-option", "-t", name, "mouse", "on"],
   ]);
   assert.equal(on.calls.filter((c) => c[0] === "-V").length, 1, "one probe answers both questions");
@@ -328,6 +330,29 @@ test("the C-b table only where tmux forwards a bound key (tmux 3.3: send-keys wi
     assert.equal(off.calls.some((c) => c.includes("C-b") || c.includes("oatsview-locked-prefix") || c.some((a) => String(a).includes("oatsview-locked-prefix"))), false, `${version}: no C-b and no C-b table`);
     assert.deepEqual(off.calls.find((c) => c[3] === "status-format[0]"), ["set-option", "-t", off.calls.find((c) => c[0] === "new-session")[3], "status-format[0]", VIEWER_SCROLL_HINT_WITHOUT_PREFIX], String(version));
   }
+});
+
+test("a stray binding in the C-b table (a tmux.conf's, another program's) is removed key by key once the viewer's are bound, so C-b n never runs next-window; the viewer's own are kept whatever tmux calls them; the table is never emptied", () => {
+  const keys = [
+    "bind-key -T oatsview-locked-prefix n next-window",
+    "bind-key -T oatsview-locked-prefix C-c new-window",
+    "bind-key -T oatsview-locked-prefix \\; display-message hi",
+    "bind-key -T oatsview-locked-prefix \\[ copy-mode",
+    "bind-key -T oatsview-locked-prefix S-PPage send-keys C-b \\; copy-mode -u",
+    "bind-key -T oatsview-locked-prefix WheelUpPane send-keys C-b",
+    "bind-key -T oatsview-locked-prefix MouseDrag1Pane send-keys C-b",
+    "bind-key -T oatsview-locked-prefix Any send-keys C-b",
+    "bind-key -T root n next-window",
+    "bind-key -T oatsview-locked C-b switch-client -T oatsview-locked-prefix",
+  ].join("\n") + "\n";
+  const io = fixture(false, { version: "tmux 3.8\n", keys });
+  prepareSessionViewer(target, io);
+  const at = (c) => io.calls.findIndex((x) => x.join("\u0000") === c.join("\u0000"));
+  const lastBind = io.calls.findLastIndex((c) => c[0] === "bind-key" && c[2] === "oatsview-locked-prefix");
+  const removals = io.calls.filter((c) => c[0] === "unbind-key" && c.includes("oatsview-locked-prefix"));
+  assert.deepEqual(removals, [["unbind-key", "-T", "oatsview-locked-prefix", "n"], ["unbind-key", "-T", "oatsview-locked-prefix", "C-c"], ["unbind-key", "-T", "oatsview-locked-prefix", ";"]], "the strays only, by the key tmux listed, never -a");
+  assert.ok(removals.every((c) => at(c) > lastBind), "after the viewer's own are bound");
+  assert.equal(io.calls.some((c) => c[0] === "unbind-key" && c[1] === "-T" && c[2] === "root"), false, "another table is not touched");
 });
 
 test("the constants a caller reads: the feature names and the status of a leave by the key", () => {
