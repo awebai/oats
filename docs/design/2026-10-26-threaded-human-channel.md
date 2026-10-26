@@ -235,50 +235,60 @@ mail through one shared module, channel-core (`awebai/aweb`
 `channel-core/src/terminal.ts`), which prints the body and acknowledges the
 mail on presentation. `oats.aweb` cannot change the text alone.
 
-**The change.** channel-core gains a presentation mode selected by an
-environment variable (name settled with the aweb project; working name
-`AWEB_WAKE_PRESENTATION=summary`). In summary mode a mail or chat awakening
-is one line, and the message is **not** acknowledged on presentation:
+**Two steps (aweb's answer, 2026-10-26, relayed by the lane's maintainer;
+binding for this record).**
+
+**(a) First cut: the one-line format, acknowledgement unchanged.**
+channel-core gains a presentation *format* selected by an environment
+variable the launch hook sets (name settled with the aweb project; working
+name `AWEB_WAKE_PRESENTATION=summary`). A mail or chat awakening is one line:
 
 ```text
 aweb mail waiting: "<subject>" from <alias> — read: aw mail show --conversation-id <id>; reply: aw mail reply <message-id>
 ```
 
 `<subject>` is sanitized the way channel-core already sanitizes summary
-components and truncated; the ids are validated as today. Reading leaves it
-unread; replying acknowledges it (`aw mail reply` acks the message
-replied to); `aw mail ack` is the explicit way to drop it without an answer.
-The agent's brief says so.
+components and truncated; the ids are validated as today. The mail is
+acknowledged on presentation exactly as today, so nothing about
+redelivery, the delivery store or session-delivery recovery changes.
+Consequence, stated so the UI says it too: `readAt` on a message the human
+sent, and so `unread` on the human's thread list, reflects *presentation to
+the agent*, not that the agent read or answered it; the answer in the thread
+is the only evidence of reading. The `threads` brief says the body is not in
+the wake and must be read with `aw mail show --conversation-id <id>`.
 
-**Redelivery and recovery (requirement on channel-core; the mechanism is
-aweb's to choose).** Today the acknowledgement on presentation is also what
-stops a mail from being presented again, and session-delivery recovery
-reads presented as read. Summary mode breaks that link, so channel-core must
-state and keep two things:
+**(b) Later: the no-ack mode** (aweb-acmp). Presenting without acknowledging
+needs a designed presented-cursor, recovery paging and the wake/reading
+interaction, approved on the aweb side first. No OATS work on it until
+then; when it comes, the requirements below hold for it, and the first-cut
+format is unchanged.
 
-- *Not re-presented.* A mail presented once in summary mode is not presented
-  again to the same home while it stays unread, on the live stream and on a
-  stream reopen alike. The record of what was presented is the client's own
-  (channel-core already keeps a per-home delivery store of presented message
-  ids; a presented-cursor is the obvious shape), not the server's read state.
+**Requirements on the no-ack mode (step b; the mechanism is aweb's).**
+Today the acknowledgement on presentation is also what stops a mail from
+being presented again, and session-delivery recovery reads presented as
+read. The no-ack mode breaks that link, so channel-core must state and keep
+two things:
+
+- *Not re-presented.* A mail presented once is not presented again to the
+  same home while it stays unread, on the live stream and on a stream
+  reopen alike, from the client's own presented record (a presented-cursor),
+  not the server's read state.
 - *Recovery is at-least-once, and reconciles against the thread.* After a
   crash or a restart that loses the presented record, unread mail is
   re-presented once more as a one-line wake; nothing is lost silently and
   nothing is read by proxy. The agent's recovery command is the thread read
-  (`aw mail show --conversation-id <id> --json`), which shows what was
-  answered and what was not; `read_at` on a message means the agent replied
-  or acknowledged it, not that it was presented. The `threads` brief and the
-  `oats-aweb` skill say so, replacing "presented = read" for these souls.
+  (`aw mail show --conversation-id <id> --json`); `read_at` then means
+  replied or acknowledged, not presented, and the brief and skill say so.
 
-**The selection.** For a `threads` soul the `oats.aweb` launch hook sets the
-variable in the launch environment on every delivery path (channel and
-broker), and leaves it unset for `terminal` souls. This is the delivery
-contract change condition 3 names: it ships as an `oats.aweb` release with
-its own release notes, raising the client floors to the versions that honour
-the variable (pi extension, Claude channel, `aw` for the broker). A `threads`
-spawn on a host below a floor fails closed at launch with the floor named,
-rather than starting a soul whose brief promises one-line wakes it will not
-get.
+**The selection (step a).** For a `threads` soul the `oats.aweb` launch hook
+sets the variable in the launch environment on every delivery path (channel
+and broker), and leaves it unset for `terminal` souls, which keep the full
+body. This is the delivery contract change condition 3 names: it ships as
+an `oats.aweb` release with its own release notes, raising the client floors
+to the versions that honour the variable (pi extension, Claude channel, `aw`
+for the broker). A `threads` spawn on a host below a floor fails closed at
+launch with the floor named, rather than starting a soul whose brief
+promises one-line wakes it will not get.
 
 ## 5. Desktop (owned by `oats-desktop-expert`)
 
@@ -312,21 +322,24 @@ fixes only the facts and the gates:
 
 ## Dependencies outside this lane
 
-Two `aw`-side items, which this record asks the maintainer to put to the
-aweb project before building on them:
+Two `aw`-side items, answered by the aweb project on 2026-10-26 (relayed by
+the lane's maintainer):
 
-1. **A conversation listing in the `aw` CLI** (`aw mail conversations
-   [--participant <alias|did>] [--type mail] --json`, over the existing
-   `/v1/conversations` client call, which the Go client already has for
-   auto-threading). Without it neither `threads list` nor `inbox` can be
-   built: `aw mail inbox` acknowledges everything it shows, so it is not a
-   read. `threads show`, `threads send` and `inbox show` need nothing new.
-2. **The summary presentation mode in channel-core** (section 4), released in
-   the pi extension, the Claude channel plugin and the `aw` broker.
+1. **`aw mail conversations`** (aweb-acmo): yes. A strictly read-only, thin
+   CLI over `/v1/conversations` whose tests prove no read-state change,
+   shipped in a normal `aw` release; the version follows. `threads list` and
+   `inbox` are built once it ships and pin their `aw` floor to that version.
+   Without it neither can be built: `aw mail inbox` acknowledges everything
+   it shows, so it is not a read. `threads show`, `threads send` and `inbox
+   show` need nothing new.
+2. **The one-line wake** (section 4): the format with acknowledgement
+   unchanged is the first cut, asked of aweb as an interim; the no-ack mode
+   (aweb-acmp) follows aweb's own design and approval, with no OATS work
+   before.
 
 Order: the `oats.aweb` manifest, setting, brief, meta and docs can land
 first (the setting is inert for Desktop until the verbs exist); the verbs
-and Desktop follow the `aw` listing; the wake follows channel-core. Desktop
+and Desktop follow the `aw` listing; the wake (step a) follows channel-core's one-line format. Desktop
 accepts the new shapes before `oats.aweb` emits them where they meet.
 
 ## Points decided by the maintainer (#1538, 2026-10-26)
@@ -334,9 +347,8 @@ accepts the new shapes before `oats.aweb` emits them where they meet.
 All accepted as written, with the one change recorded in section 2 (no mint
 at spawn):
 
-- The two `aw`-side dependencies above: the lane's maintainer carries them
-  to the aweb project and the release lane; nothing in this lane builds on
-  them until the aweb project has said yes.
+- The two `aw`-side dependencies above: carried by the lane's maintainer and
+  answered by the aweb project (Dependencies).
 - The alias scheme `<os-user>-<host>` and the derived directory, in place of
   an `oats-local.yaml` entry.
 - Documenting `interaction` as a meta key in `docs/integrations.md` (kernel
