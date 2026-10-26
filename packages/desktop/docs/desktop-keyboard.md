@@ -460,7 +460,10 @@ Scroll back in a terminal (#1502). Every pane, a local one or one on another
 machine, scrolls back with the wheel or touchpad, Shift+PgUp, or Ctrl+B then
 `[`. Each enters tmux's copy mode, where the copy-mode keys move (PgUp, PgDn,
 the arrows) and `q` leaves it. The shortcuts window lists them in the Tabs
-group, as one read-only row ("Scroll back in a terminal").
+group, as one read-only row ("Scroll back in a terminal"). So a terminal on
+another machine opens without the kernel viewer's own status line, which
+names the same keys (`--no-status-line`, asked only of a CLI that lists
+`session-attach-no-status-line`): that row goes to the agent.
 - **Shift+PgUp and Shift+PgDn reach tmux.** xterm.js would keep them to scroll
   its own viewport, which is empty while tmux draws on the alternate screen.
   The terminal's key path sends them on instead (CSI 5;2 ~ and CSI 6;2 ~,
