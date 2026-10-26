@@ -26,13 +26,15 @@ import { warningOf } from '../../client/capability-warnings-contract.mjs';
 import { createWarningsList, capabilityWarningsCSS } from './capability-warnings.mjs';
 import { displayLine } from '../../client/display-text.mjs';
 import { trackStickyTop, trackScrolledEdge } from './sticky-top.mjs';
-import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 
-export const workspaceTabs = ['souls', 'capabilities', 'teams', 'sources'];
-// What a person reads (the ids stay stable): Souls, Capabilities, Teams, Setup (product owner, 2026-10-23,
+export const workspaceTabs = ['souls', 'capabilities', 'automations', 'teams', 'sources'];
+// What a person reads (the ids stay stable): Souls, Capabilities, Automations, Teams, Setup (product owner, 2026-10-23,
 // superseding 2026-09-28's "Teams first"). Teams is who can work together; Setup is what the workspace is
-// built from (repos, packages, external souls).
-const TAB_LABELS = { teams: 'Teams', souls: 'Souls', capabilities: 'Capabilities', sources: 'Setup' };
+// built from (repos, packages, external souls). Automations (Schedules | Triggers) was a page of its own until
+// The sidebar layout (2026-10-23): its panel is the Workspace view's (views/spawn.mjs), as the Souls grid is.
+/** The tabs whose panel the Workspace view owns: this module shows and hides it, and paints nothing in it. */
+const OWN_PANELS = ['souls', 'automations'];
+const TAB_LABELS = { teams: 'Teams', souls: 'Souls', capabilities: 'Capabilities', automations: 'Automations', sources: 'Setup' };
 /** The Workspace page's tab bar rules for a selector: plain-text tabs, the selected one at 650 over a 2px
  * --live underline. Shared with the Deployments page's tabs (deployments-page.mjs), so the two never drift. */
 export const tabBarCSS = (sel) => `${sel} { display:flex; flex-wrap:nowrap; overflow-x:auto; gap:22px; min-width:0; scrollbar-width:none; }
@@ -53,8 +55,6 @@ ${syncCSS}
 ${capabilityWarningsCSS}
 .workspace-header { height:var(--bar-h); min-height:48px; flex:none; display:flex; align-items:stretch; flex-wrap:nowrap; gap:22px; padding:0 calc(16px + var(--main-trail-inset, 0px)) 0 calc(16px + var(--main-lead-inset, 0px)); border-bottom:1px solid var(--border); background:var(--surface); box-sizing:border-box; }
 .workspace-header[hidden] { display:none; }
-.workspace-header[hidden] + .deployment-scope { display:none; } /* a soul or capability page shows its own line */
-.workspace-header + .deployment-scope { flex:none; padding:6px 16px 6px; border-bottom:1px solid var(--border); background:var(--surface); }
 .oats-view .workspace-header .field { min-height:28px; height:28px; padding:4px 8px; font-size:12px; }
 ${tabBarCSS('.workspace-tabs')}
 .workspace-count { color:var(--muted); font:10.5px var(--mono,monospace); }
@@ -193,7 +193,7 @@ function catalogSkeleton(doc, rows = 6) {
 }
 
 /** `onCatalog`: the catalog changed (a read settled, the subject was reset): a page rendered from it refreshes in place. */
-export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, onIntent, onOpenCapability = null, onCatalog = null, onTeamMember = () => {}, onOpenTeam = null, rosterState = () => 'ready' }) {
+export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, automationsPanel = null, onTab, onIntent, onOpenCapability = null, onCatalog = null, onTeamMember = () => {}, onOpenTeam = null, rosterState = () => 'ready' }) {
   const doc = header.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
@@ -239,9 +239,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   header.className = 'workspace-header';
   // No title in the bar (human, 2026-09-28): the sidebar already says Workspace; the tabs lead.
   const tabs = node('div', undefined, 'workspace-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Workspace sections'); header.append(tabs);
-  // #482: in a view of two or more deployments, which one every Workspace tab reads (the primary).
-  const scope = createDeploymentScopeLine(doc);
-  header.after(scope.element);
+  // #482: every Workspace tab reads the view's primary deployment, without naming it (the product owner, 2026-10-23).
   const controls = new Map(), counts = new Map();
   const attns = new Map();
   for (const name of workspaceTabs) {
@@ -279,8 +277,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   // The Capabilities search lives in the view itself (human, 2026-09-26): a toolbar row above the sections.
   const capTools = node('div', undefined, 'ws-toolbar ws-sticky'); capTools.dataset.tools = 'capabilities';
   const capLead = node('div', undefined, 'ws-toolbar-lead'); capTools.append(capLead);
-  // "About capabilities": built once, right after the section jump (the repaint puts the jump before it), so a
-  // catalog repaint never rebuilds it under focus.
+  // "About capabilities": built once, in the toolbar's lead (the section jump is All capabilities' own now, under
+  // its title: workspace-catalog.mjs), so a catalog repaint never rebuilds it under focus.
   const about = createAboutDialog(doc, { copy: ABOUT_COPY.capabilities, id: 'workspace-capabilities-about', onIntent: () => onIntent?.() });
   capLead.append(about.button);
   const search = node('label', undefined, 'ws-search');
@@ -296,6 +294,11 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     for (const [id, button] of viewButtons) button.setAttribute('aria-pressed', String(id === setupView));
   }
   soulsPanel.id = 'workspace-souls'; soulsPanel.setAttribute('role', 'tabpanel'); soulsPanel.setAttribute('aria-labelledby', 'workspace-tab-souls');
+  if (automationsPanel) {
+    automationsPanel.id = 'workspace-automations'; automationsPanel.setAttribute('role', 'tabpanel');
+    automationsPanel.setAttribute('aria-labelledby', 'workspace-tab-automations');
+  }
+  const ownPanel = name => (name === 'souls' ? soulsPanel : name === 'automations' ? automationsPanel : null);
   panel.className = 'workspace-discovery'; panel.setAttribute('role', 'tabpanel'); panel.tabIndex = 0;
   // `status` says the gate (a CLI or deployment state, its own truthful copy); the catalog's loading
   // controller has its own line, stale-line host and skeleton / failed host, shown on Capabilities only.
@@ -349,13 +352,14 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     if (!workspaceTabs.includes(name) || !alive) return false;
     const changed = name !== tab; tab = name;
     if (tab !== 'capabilities') about.close({ focus: 'none' }); // leaving the tab closes its dialog, moving no focus
-    panel.id = `workspace-${name === 'souls' ? 'capabilities' : name}`; panel.dataset.tab = name;
+    panel.id = `workspace-${OWN_PANELS.includes(name) ? 'capabilities' : name}`; panel.dataset.tab = name;
     panel.setAttribute('aria-labelledby', `workspace-tab-${name}`);
     for (const [key, control] of controls) {
       control.setAttribute('aria-selected', String(key === tab)); control.tabIndex = key === tab ? 0 : -1;
-      control.setAttribute('aria-controls', key === 'souls' ? soulsPanel.id : panel.id);
+      control.setAttribute('aria-controls', ownPanel(key)?.id ?? panel.id);
     }
-    soulsPanel.hidden = tab !== 'souls'; panel.hidden = tab === 'souls'; syncTools();
+    soulsPanel.hidden = tab !== 'souls'; if (automationsPanel) automationsPanel.hidden = tab !== 'automations';
+    panel.hidden = OWN_PANELS.includes(tab); syncTools();
     if (changed) { onIntent?.(); onTab?.(tab); }
     render(); if (tab === 'capabilities' && !catalog && !loading && !failure) void load();
     revealTab(controls.get(tab));
@@ -419,7 +423,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     const restoreBody = tab === 'capabilities' ? captureFocusState(body, { scroller: null }) : null;
     notes.replaceChildren(); filterHost.replaceChildren(); body.replaceChildren(); filterHost.className = '';
     for (const child of [...capLead.children]) if (child !== about.button) child.remove(); // the "i" stays, focus and all
-    if (unavailable || tab === 'souls') return;
+    if (unavailable || OWN_PANELS.includes(tab)) return; // the view paints its own panels
     for (const note of deploymentNotes(deployment)) notes.append(node('p', note.text, `catalog-note${note.warn ? ' warn' : ''}`));
     if (tab === 'teams') {
       // Team model v2: this computer's teams (the kernel's `oats teams`), editable here. A workspace
@@ -467,9 +471,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     const shown = filterCapabilities(sections.workspace, { repo }, names, hostKey);
     renderRepoPills(filterHost, { repos, value: repo, total: sections.workspace.length, shown: matchCapabilities(shown, query).length,
       narrowed: !!repo || !!String(query || '').trim(), onChange: next => { repo = next; render(); refocusPill(repo ?? ''); } });
-    renderCapabilitySections(body, { sections, shown, filterHost, navHost: capLead, privateListed: privateListed(), query,
+    renderCapabilitySections(body, { sections, shown, filterHost, privateListed: privateListed(), query,
       status: s, instances, souls, composition: soulsComposition(cliStatus()), root: workspace?.id, rosterState: rosterState(), onOpen: onOpenCapability });
-    const jump = capLead.querySelector('.capability-nav'); if (jump) capLead.insertBefore(jump, about.button);
     restoreBody?.();
     if (focusedPill !== null) refocusPill(focusedPill);
     reveal();
@@ -554,6 +557,6 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
       serial++; rosterGen = null; workspace = null; deployment = null; instances = []; catalog = null; loading = false; failure = '';
       repo = null; sync.reset(); loadState.reset(); updateCounts('pending'); render(); onCatalog?.();
     },
-    dispose() { alive = false; serial++; about.dispose(); sync.dispose(); computerTeams?.dispose(); machines?.dispose(); loadState.dispose(); stickyTop.dispose(); soulsEdge.dispose(); scope.dispose(); scope.element.remove(); },
+    dispose() { alive = false; serial++; about.dispose(); sync.dispose(); computerTeams?.dispose(); machines?.dispose(); loadState.dispose(); stickyTop.dispose(); soulsEdge.dispose(); },
   };
 }

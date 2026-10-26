@@ -457,11 +457,16 @@ key's last segment.
 A view's **primary** deployment is its first local deployment, else its
 first. Deployment-level surfaces read and act on it: the Workspace header and
 Setup, Capabilities, Sync, Automations, Schedules, the Teams configuration,
-the soul inspector, Brain and launch configurations. In a view of two or more
-deployments each of them says which under its heading ("On This Mac ·
-~/acme"); a view of one shows no such line. The Deployments page has
-no primary: each deployment has its own tab, and nothing there is marked
-"primary".
+the soul inspector, Brain and launch configurations. The Workspace pages
+(the Workspace header and every tab, Automations and Schedules included, and
+a capability's, a team's and a soul's page) read it without naming it
+(2026-10-23): they send the view id, which
+the server answers from the primary, and offer no choice of deployment. In
+a view of two or more deployments the side panel's soul inspector says
+which under the soul's name ("On This Mac · ~/acme"), as do Brain and the
+Sync sheet; a view of one shows no such line. The
+Deployments page has no primary: each deployment has its own tab, named
+there, and nothing there is marked "primary".
 
 ### The panel
 

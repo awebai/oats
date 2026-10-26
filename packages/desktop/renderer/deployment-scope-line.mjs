@@ -1,7 +1,7 @@
-/** "On This Mac · ~/acme" (#482, expert decision Q1): a deployment-level surface (the
- * Workspace view, Automations, Schedules, the soul inspector, Brain, a capability page, the Sync
- * sheet) reads and acts on its view's PRIMARY deployment. In a view of two or more deployments it
- * says which, in one short line under its heading. A one-deployment view shows nothing (the line
+/** "On This Mac · ~/acme" (#482, expert decision Q1): a deployment-level surface reads and acts on
+ * its view's PRIMARY deployment. The side panel's soul inspector, Brain and the Sync sheet say which
+ * in a view of two or more deployments, in one short line under their heading; the Workspace pages
+ * (every tab, a capability's, a team's and a soul's page) do not (the product owner, 2026-10-23). A one-deployment view shows nothing (the line
  * stays hidden and takes no space): the surface looks exactly as before views.
  *
  * Surfaces do not read the panel themselves: the line follows the view store that every panel the

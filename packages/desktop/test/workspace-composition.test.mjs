@@ -11,6 +11,8 @@ import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.
 import { inspectorCSS } from '../renderer/soul-inspector.mjs';
 import { soulInspection } from './helpers/inspect-fixture.mjs';
 import { workspaceStatusData } from '../../client/deployment-data.mjs';
+import { preselectAutomationsTab } from '../renderer/views/automations.mjs';
+import { navTab } from '../renderer/shell-nav.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -23,7 +25,7 @@ const catalogReply = (capabilities = f2('capabilities').result.capabilities) => 
 const soul = { name: 'dev', agentsRoot: '/fixture/agents', repoName: 'fixture', runtime: 'pi', work: 'worktree', description: 'Build and review' };
 // operationsApi 2 soul inspection from the kernel capture.
 const inspection = soulInspection('dev', { instructions: { file: '/fixture/AGENTS.md', text: 'Saved instructions', truncated: false } });
-async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [soul], sync = null, instances = [] } = {}) {
+async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [soul], sync = null, instances = [], automations = null, route = () => {} } = {}) {
   const dom = new JSDOM('<body><div id="host"></div></body>', { url: 'http://localhost' });
   const doc = dom.window.document;
   const saved = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
@@ -33,7 +35,7 @@ async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [sou
   if (cli === null) resetCliStateForTests(); else await refreshCli({ api: async () => cli });
   const calls = [], files = [], views = [];
   let currentCli = cli;
-  const ctx = { hasWorkspaceSwitcher: true, openBrain: name => files.push(name), openView: name => views.push(name),
+  const ctx = { hasWorkspaceSwitcher: true, openBrain: name => files.push(name), openView: name => { views.push(name); route(name); },
     api: async (path, opts = {}) => {
       const body = opts.body && JSON.parse(opts.body); calls.push({ path, body });
       if (path === '/api/cli') { if (currentCli === null) throw new Error('Synthetic transport pending'); return currentCli; }
@@ -42,6 +44,7 @@ async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [sou
         ...(sync ? { deployment: { status: 'observed', root: '/fixture/agents', workspace: observedStatus.workspace, workspaceStatus: observedStatus, reachable: { reachable: true }, withheld: [] } } : {}) };
       if (path.startsWith('/api/workspace-sync') && sync) return sync(body);
       if (path.startsWith('/api/capabilities')) return inspect(body);
+      if (automations && path.startsWith('/api/automations')) return automations(body);
       if (path.startsWith('/api/servers')) return { servers: [] };
       throw new Error(`Unexpected fixture request: ${path}`);
     } };
@@ -68,10 +71,10 @@ test('03 (F7): a soul opens as a page in the main area — it replaces the grid,
   assert.equal(header.hidden, true, 'the page bar replaces the Workspace header while the page is open');
   assert.ok(page.querySelector('.page-bar .inspector-back'), 'the back control lives in the page bar');
   assert.equal(main.firstElementChild, header);
-  // #482: the "On <deployment>" line sits under the header; hidden (no box) in a one-deployment view.
-  const scope = header.nextElementSibling;
-  assert.ok(scope.classList.contains('deployment-scope')); assert.equal(scope.hidden, true); assert.equal(scope.textContent, '');
-  assert.equal(scope.nextElementSibling, u.get('.workspace-recovery'));
+  // No "On <deployment>" line under the header: the Workspace pages do not name the deployment they read (the
+  // product owner, 2026-10-23; #482's rule, docs/desktop-deployment-model.md); the side panel and Deployments do.
+  assert.equal(header.nextElementSibling, u.get('.workspace-recovery'));
+  assert.equal(main.querySelector('.deployment-scope'), null);
   assert.equal(u.get('.workspace-recovery').hidden, true, 'compatible CLI adds no visible row before the cards');
   // Workspace v4 (human decision 2026-09-26; replaces the header-placed filter): the
   // search and Team/Repo control are the view's own toolbar, directly above the cards.
@@ -184,6 +187,27 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   u.get('.workspace-soul-page .inspector-back').click();
   assert.equal(u.doc.activeElement, u.get('.soul-card'), 'back returns to the roving card');
   assert.equal(u.css('.souls-body').gridTemplateColumns, 'minmax(0,1fr)');
+});
+
+// A soul's Schedule… (the sidebar layout, 2026-10-23): Automations is the Workspace page's tab, so the view asks
+// the shell for 'automations' and the shell routes that name to this page on that tab (shell.mjs showStage → navTab →
+// openWorkspaceSouls → preselectWorkspaceTab; the shell's own tests pin that side). Here the shell's route is played
+// back on the mounted view: it ends on Automations, on Schedules, even when Triggers was the last subtab.
+test("a soul's Schedule… ends on the Workspace's Automations tab, on Schedules", async t => {
+  assert.deepEqual(navTab('automations'), { name: 'automations', label: 'Automations', page: 'spawn', tab: 'automations' }, 'the shell routes the name to this page, on this tab');
+  preselectAutomationsTab('trigger'); t.after(() => preselectAutomationsTab('schedule'));
+  const kernelList = kind => JSON.parse(readFileSync(new URL(`./fixtures/automations/kernel/${kind}-list.json`, import.meta.url), 'utf8')).result;
+  const u = await fixture(t, { cli: { ...CLI, scheduleApi: 2, automationsApi: 1, features: [...CLI.features, 'schedule', 'automations'] },
+    automations: body => ({ automationsViewApi: 1, status: 'ok', kind: body.kind, action: body.action, result: kernelList(body.kind), reason: null }),
+    route: name => { const to = navTab(name); if (to) spawn.preselectWorkspaceTab(to.tab); } });
+  u.get('.soul-card').click(); await tick();
+  u.click('Schedule…'); for (let i = 0; i < 6; i++) await tick();
+  assert.deepEqual(u.views, ['automations'], 'the view asked the shell for Automations');
+  assert.equal(u.get('#workspace-tab-automations').getAttribute('aria-selected'), 'true', 'the Automations tab');
+  assert.equal(u.get('#workspace-automations').hidden, false);
+  assert.equal(u.get('.workspace-soul-page').hidden, true, 'the soul page closed');
+  assert.equal(u.get('#workspace-automations .auto-tabs [aria-selected=true]').id, 'automations-tab-schedule', 'on Schedules');
+  assert.equal(u.get('#workspace-automations .automations').dataset.kind, 'schedule');
 });
 
 // Workspace v4 (W5) replaces the frame-04 grid (36px uppercase head, 56px rows, 32px marks, status chips, pills).

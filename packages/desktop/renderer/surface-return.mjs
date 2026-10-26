@@ -9,22 +9,30 @@
 // The return is refused (restore() answers false, and the dialog restores focus itself) when the
 // operator has moved on while the dialog was open: another workspace, a tab brought forward, or
 // a different stage than the one hosting the dialog.
+//
+// Within Workspace, the page's own tab is part of the surface: the dialog opens on Souls, and a tab
+// left behind may have disposed its panel (Automations, views/spawn.mjs syncAutomations). The return
+// goes back to that tab, then to the control they left or, while the tab's panel is still loading
+// its controls, to the tab itself.
 
 /**
  * @param {object} deps
  * @param {Document} deps.doc
  * @param {() => string} deps.currentWorkspace
  * @param {() => number} deps.workspaceGeneration
- * @param {() => {stage: string|null, tab: number|null, tabLayerVisible: boolean}} deps.surface
- *        the shell's current surface: the mounted stage, the active tab and whether tabs cover it
+ * @param {() => {stage: string|null, tab: number|null, tabLayerVisible: boolean, workspaceTab?: string|null}} deps.surface
+ *        the shell's current surface: the mounted stage, the active tab, whether tabs cover it and, on
+ *        the host stage, the Workspace page's tab
  * @param {(id: number) => HTMLElement|null} deps.tabPane  a tab's pane, or null when it is gone
  *        or not activatable in the current workspace
  * @param {(name: string) => Promise<void>} deps.showStage
  * @param {(id: number, opts: {focusContent: boolean}) => boolean} deps.selectTab
  * @param {(region: string) => boolean} deps.focusRegion  focus a region's current item
+ * @param {(name: string) => HTMLElement|null} [deps.selectWorkspaceTab]  show the host's page on its
+ *        tab `name` and answer that tab's control, or null when it can't
  * @param {string} deps.host  the stage that hosts the flow ("spawn": Workspace)
  */
-export function createSurfaceReturn({ doc, currentWorkspace, workspaceGeneration, surface, tabPane, showStage, selectTab, focusRegion, host }) {
+export function createSurfaceReturn({ doc, currentWorkspace, workspaceGeneration, surface, tabPane, showStage, selectTab, focusRegion, selectWorkspaceTab = () => null, host }) {
   /** Where the operator is now. `opener` is the focus-return handle of the control they left
    * (captureFocusReturn / takePickerFocusReturn); its original element is resolved here, while
    * it is still visible. */
@@ -34,6 +42,7 @@ export function createSurfaceReturn({ doc, currentWorkspace, workspaceGeneration
     return {
       workspace: currentWorkspace(), generation: workspaceGeneration(),
       stage: now.stage, tab: now.tabLayerVisible ? now.tab : null, opener, original,
+      workspaceTab: now.stage === host ? now.workspaceTab ?? null : null,
     };
   }
 
@@ -57,7 +66,15 @@ export function createSurfaceReturn({ doc, currentWorkspace, workspaceGeneration
       return true;
     }
     if (!origin.stage || origin.stage === now.stage) {
-      // Same stage (Workspace itself): only the control they left; else the dialog's own restore.
+      // Same stage (Workspace itself), another of its tabs: back on that tab, then the control they left
+      // (itself or its replacement, never a neighbour found through an ancestor), else the tab.
+      if (origin.workspaceTab && origin.workspaceTab !== now.workspaceTab) {
+        const control = selectWorkspaceTab(origin.workspaceTab);
+        if (!control) return false;
+        if (!origin.opener?.restoreExact?.()) control.focus();
+        return true;
+      }
+      // The same tab: only the control they left; else the dialog's own restore.
       return !!origin.opener?.restore();
     }
     const switching = showStage(origin.stage);
