@@ -982,8 +982,10 @@ A worktree that cannot be proven unchanged is copied without the read, so
 there the refusal comes from the copy, as `E_WORK_PRESERVATION_FAILED`.
 
 **A file in the worktree that cannot be read.** The same read refuses a file
-it cannot read: one without read permission, or one over 2 GiB, which a
-single read cannot take. Two kinds of file are read although they are nothing
+it cannot read: one without read permission, or one that ends before the
+size it had when it was opened, because it shrank while it was read. A
+file of any size is read in pieces of 1 MiB, so a file over 2 GiB is read
+like any other. Two kinds of file are read although they are nothing
 to preserve: a tracked file that is unchanged, and a file under a work root
 that a capability declared disposable (`retirement.disposable.work`). So a
 retire that has only the home to preserve refuses for such a file, with
@@ -992,10 +994,9 @@ retire that has only the home to preserve refuses for such a file, with
 or a FIFO refused before the hooks, the retire has already stopped the
 session of a launched instance by then, the instance is not retired, and its
 home is kept. The message is `could not read the worktree at <work>:
-<reason>`. For a file without read permission the reason names the file. For
-a file over 2 GiB it gives the size, and `find <work> -type f -size
-+2147483647c` finds the file. To continue, move the file out of the worktree
-or make it readable, then run `oats retire <instance>` again. With nothing to
+<reason>`. The reason names the file. To continue, make the file readable,
+move it out of the worktree, or stop what writes to it, then run
+`oats retire <instance>` again. With nothing to
 preserve, the files are not read and the retire goes through.
 
 **A home whose `instance.json` cannot be read.** The record is what
