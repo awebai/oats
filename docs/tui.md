@@ -100,7 +100,7 @@ runs.
  Instances                          1 │   state    running
 > ● Dev                               │   harness  claude, claude-opus-5-5 (so…
                                       │   work     worktree, agents/dev
-  ● Reviewer              Needs input │   team     eng
+  ! Reviewer                          │   team     eng
     ○ Helper                          │   started  11:00
 ──────────────────────────────────────│   home     …oy/agents/dev/instances/dev
  Souls                              2 │
@@ -183,26 +183,32 @@ while a terminal is open); under 80 columns it has the whole width.
   indent alone says which instance is under which: no mark is drawn for
   it. A row whose instances are folded away (`h`) says how many after its
   name: `+1`.
-- **Each row** is the mark of its state and the name, then, when it needs
-  input, a tag at its right edge in the Desktop's words: `Needs input`.
-  The row shows the name as words, as the Desktop's sidebar does: each `-`
+- **Each row** is the mark of its state and the name. A row that needs
+  input has the needs-input mark in place of its state mark: `!`, bold,
+  in reverse video in the waiting colour, a yellow cell with the `!` cut
+  out (the Desktop's mark in one cell), whatever the row's state and its
+  instance colour. On the selected row, which is in reverse video already,
+  it is the waiting colour not reversed, a gap in the selection's bar;
+  under `NO_COLOR` the reverse video and the `!` carry it, and in ASCII it
+  is the same `!`. The detail says it in words (its `needs` line, the
+  reason and how long it has waited), and so does the help. The row shows the name as words, as the Desktop's sidebar does: each `-`
   a space and the first letter upper-case, so `oats-expert-lead` reads
   `Oats expert lead`. Only the row does: the detail, the filter (`/` with
   `oats-expert` still finds the row), the palette, the tabs, the
   confirmations and everything sent to OATS keep the instance's name. A
   folded row with waiting instances among those it folds away says how
-  many: `3 below`, and `99+ below` past 99. A row that needs input itself
-  and folds waiting ones away says `Needs input`, as the Desktop's row
-  does: the detail's `below` line names the others. The tag is in reverse
-  video in the waiting colour, and on the selected row, which is in reverse
-  video already, it is the waiting colour not reversed, a gap in the
+  many in a tag at its right edge, in the Desktop's words: `3 below`, and
+  `99+ below` past 99, whether or not the row needs input itself: its mark
+  says its own claim, the tag the rest, and the detail's `below` line names
+  them. The tag is in reverse video in the waiting colour, and on the
+  selected row it is the waiting colour not reversed, a gap in the
   selection's bar; under `NO_COLOR` the reverse video alone carries it. On
   a narrow row the tag gives way first: it says its words only where the
   whole name, its `+1` and the row's word in its column all fit beside them,
-  and else shrinks to `!`, or the count alone (`3`, `99+`), still in
-  reverse video, in the cells every row keeps at its right edge. So the
-  tag never cuts a name, a word or a mark: those give way as on a row
-  that does not wait. The harness and the state in words are in
+  and else shrinks to the count alone (`3`, `99+`), still in reverse video,
+  in the cells every row keeps at its right edge. So the tag never cuts a
+  name, a word or a mark: those give way as on a row whose instances do
+  not wait. The harness and the state in words are in
   the detail. A row has a word, dim, only where its mark cannot say it: the
   state of a home a spawn or a retire holds (`Retire didn't finish`), or
   the shared words for why an instance cannot be reached or opened:
@@ -296,12 +302,13 @@ in its workspace for the rest of the run, also while it is not reached.
 | `?` | `?` | state unknown: the kernel or the terminal probe could not tell, or the instance's machine was not reached |
 | `◆` | `#` | held by a spawn or a retire: under way (Retiring…), failed or not finished ([below](#held-rows)) |
 | `+n` | `+n` | after a name: n instances folded away below it |
-| `Needs input` | `Needs input` | needs input: a tag in reverse video at the row's right edge, `!` where the whole name does not fit beside the words |
-| `N below` | `N below` | N instances folded away below it need input, `N` where the whole name does not fit beside the words |
+| `!` | `!` | needs input: in place of the state mark, in yellow and reverse video (not reversed on the selected row) |
+| `N below` | `N below` | N instances folded away below it need input: a tag in reverse video at the row's right edge, `N` where the whole name does not fit beside the words |
 | `>` | `>` | the selected row (also drawn in reverse video), and the pane the movement keys act on |
 | `*` | `*` | in the switcher: the workspace that is open |
 
-Every state has a mark of its own shape, so nothing is told by colour alone.
+Every state has a mark of its own shape, and so does needs input, so
+nothing is told by colour alone.
 
 **An instance's colour** (feature `instance-color`; set with
 `oats instance color <instance> <colour>`, [desktop-cli-api.md](desktop-cli-api.md#an-instances-colour-oats-instance-color))
