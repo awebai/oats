@@ -471,6 +471,18 @@ split into sections) is `packages/client/roster-sections.mjs`.
   workspace), the list of workspaces' stop, else **Add local workspace…**, so focus never falls to `<body>`.
   The same entry takes focus when the last terminal tab closes, and a focused Retry that goes on an empty
   answer hands focus to the same Spawn instance (instance-tree-view.mjs `focusFallback`).
+- **The sidebar's width** (`sidebar-width.mjs`): one custom property, `--sidebar-w` on `#app` (288px in
+  shell.css), which `#sidebar` takes as `width` and `min-width`. Its handle (`#sidebar-resizer`, the sidebar's last
+  child and last Tab stop, after the foot; focus-regions counts it as the foot) is the split panes' resizer:
+  `split-resize.mjs` builds both with `createResizeHandle` and drives both with `wireResizer` (pointer capture, the
+  keys, double-click), the split's in ratios, the sidebar's in px (8px steps, Shift 32px, Home/End to the bounds,
+  Enter and double-click to 288px; `sidebar.resetWidth`, no default chord, is the palette's **Sidebar: reset
+  width**). Bounds: 240px to `sidebarMax` = min(480px, 45% of `innerWidth`), the minimum winning. The chosen width
+  is stored as `oats.desktop.sidebarWidth` (a missing, invalid or out-of-bounds value, or storage that throws, reads
+  as 288) and applied clamped on every window resize, so a window that shrinks and grows gives it back. A drag
+  writes at most once per animation frame; terminals refit through their own ResizeObservers as on a hide, and
+  `holdTerminalResizes` (terminal-tab.mjs) keeps their PTY resizes from the program until the drag lets go (key
+  steps: until the keys rest 150ms), when each terminal that resized refits once more and sends its size.
 - **No deployments above the navigation.** The sidebar lists no deployments; the Workspace
   page's Machines tab and the roster headings say where things run (UI spec, after the operator rejected a
   deployments block under the workspace switcher). The list of workspaces lists views.

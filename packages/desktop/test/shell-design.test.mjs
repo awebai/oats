@@ -71,6 +71,7 @@ function shell(t, shellSource = source, { storage = {}, gitPanel } = {}) {
     THEMES, setTheme: id => events.push(["theme", id]),
     toggleTheme: () => events.push(["theme"]), themePicker: { toggle: () => events.push(["themePicker"]) },
     splitPane: orientation => events.push(["split", orientation]), closeSplit: () => events.push(["split", "close"]),
+    sidebarWidth: { reset: () => events.push(["sidebarWidth", "reset"]) },
     fileOpener: { choose() {}, dispose() {} },
     getBinding, formatChord, paletteGroupDirection, paletteGroupHint, isMac: false, contextRosterEl: document.getElementById("instance-roster"),
     activeTrigger: null, activeTabTrigger: () => c.activeTrigger, revealInScrollport,
@@ -696,6 +697,13 @@ test('the palette keeps focus mode reachable without the bar and names the insta
   assert.equal(focusCommand.detail(), '', 'no default chord');
   focusCommand.run(); assert.equal(s.contextPanel.isFocusMode(), true);
   focusCommand.run(); assert.equal(s.contextPanel.isFocusMode(), false);
+  // The resizable sidebar: its width goes back to its default from the palette too, through its action (no default chord).
+  const resetWidth = commands.find(item => item.label === 'Sidebar: reset width'); assert.ok(resetWidth);
+  assert.equal(getBinding('sidebar.resetWidth'), null, 'no default chord');
+  assert.equal(resetWidth.detail(), '');
+  assert.equal(listActions().find(action => action.id === 'sidebar.resetWidth')?.label, "Reset the sidebar's width");
+  resetWidth.run(); assert.deepEqual(s.events.at(-1), ['sidebarWidth', 'reset']);
+  assert.equal(commands.indexOf(resetWidth), commands.findIndex(item => item.label === 'Sidebar: toggle (hide/show)') + 1, 'listed after the toggle');
 });
 
 for (const hidden of [false, true]) test(`focus mode overrides but restores raw sidebar preference hidden=${hidden}`, t => {

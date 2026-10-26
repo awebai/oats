@@ -53,7 +53,8 @@ import { createThemePicker, themePickerCSS } from './theme-picker.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
-import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "./terminal-tab.mjs";
+import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer, holdTerminalResizes } from "./terminal-tab.mjs";
+import { createSidebarWidth } from "./sidebar-width.mjs";
 import { createTerminalAtlasRecovery } from "./terminal-atlas-recovery.mjs";
 import { attachClipboardWrite, attachSelectionCopy, copyTerminalSelection } from "./terminal-clipboard.mjs";
 import { attachTerminalMouse } from "./terminal-mouse.mjs";
@@ -2379,6 +2380,7 @@ const palette = createPalette({
     // The instance it acts on is the leader's target when the palette opened (paletteTargetId).
     { label: "Instance: name and colour…", detail: chordDetail("instance.edit"), run: () => openInstanceEdit(paletteTargetId) },
     { label: "Sidebar: toggle (hide/show)", detail: chordDetail("sidebar.toggle"), run: () => toggleSidebar() },
+    { label: "Sidebar: reset width", detail: chordDetail("sidebar.resetWidth"), run: () => runAction("sidebar.resetWidth") },
     { label: "Instance panel: show / hide", detail: chordDetail("panel.toggle"), run: () => runAction("panel.toggle") },
     { label: "Focus mode: toggle", detail: chordDetail("app.focusMode"), run: () => runAction("app.focusMode") },
     { label: "Split: terminal right (side by side)", detail: chordDetail("split.vertical"), run: () => splitPane("row") },
@@ -2662,6 +2664,10 @@ function toggleSidebar() {
 document.getElementById("show-sidebar").addEventListener("click", () => runAction("sidebar.toggle"));
 document.getElementById("show-panel").addEventListener("click", () => { runAction("panel.toggle"); contextPanel.focus(); });
 try { if (localStorage.getItem(SIDEBAR_HIDDEN_KEY) === "1") setSidebarHidden(true); } catch { /* storage-less */ }
+// The sidebar's width (sidebar-width.mjs): the handle on its right edge, kept on this computer beside the theme.
+// Hiding the sidebar leaves the width as it was.
+const sidebarWidth = createSidebarWidth({ doc: document, win: window, hold: holdTerminalResizes,
+  storage: (() => { try { return window.localStorage; } catch { return null; } })() });
 
 // Terminal copies (#672). Each open terminal tab's xterm, by its wrap, for terminal.copySelection.
 const terminalSelections = new Map();
@@ -2824,6 +2830,7 @@ registerAction({ id: "app.workspaces", label: "Focus the list of workspaces", co
 registerAction({ id: "workspaces.currentOnly", label: "Show only the current workspace", context: "global", run: () => workspaceLabel.toggleCurrentOnly() });
 registerAction({ id: "sidebar.focusFilter", label: "Focus the instance roster", context: "global", run: () => focusRoster() });
 registerAction({ id: "sidebar.toggle", label: "Toggle the sidebar", context: "global", run: () => toggleSidebar() });
+registerAction({ id: "sidebar.resetWidth", label: "Reset the sidebar's width", context: "global", run: () => sidebarWidth.reset() });
 registerAction({ id: "panel.toggle", label: "Show or hide the instance panel", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggle(); } });
 // Focus mode lives on the keyboard (rebindable, no default chord) and the palette.
 registerAction({ id: "app.focusMode", label: "Toggle focus mode (sidebar and instance panel)", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggleFocusMode(); } });
