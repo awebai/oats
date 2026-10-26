@@ -39,7 +39,7 @@ body {
 }
 .side-kicker { color: var(--muted); font-size: 10px; line-height: 1.2; font-weight: 650; letter-spacing: .075em; text-transform: uppercase; }
 .shell-icon { display: block; width: 16px; height: 16px; flex: none; }
-/* The Workspaces heading is the Instances heading (.ctx-head), with Add local workspace… at its right end:
+/* The Workspace heading is the Instances heading (.ctx-head), with Add local workspace… at its right end:
    no logo, no bar of its own, no rule under the list (2026-10-23). */
 .ws-head > .ws-add-open { margin-left: auto; }
 /* The right-hand column (2026-10-23): the headings' + (their 28px boxes, the .ctx-head's 11px), the workspace rows'
@@ -135,13 +135,13 @@ body {
 #instance-roster { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 /* The current workspace's section (2026-10-23): the views (Workspace | Deployments), then the instances. The one
    line is over it, under the list of workspaces, the sidebar's full width in the sidebar edge's own --border; none
-   under the Workspaces heading and none before Instances. */
+   under the Workspace heading and none before Instances. */
 .ws-current { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .ws-current::before { content: ""; flex: none; border-top: 1px solid var(--border); }
 .ws-current > #nav { margin-top: 8px; }
 /* A window with no workspace has no instances to list (#481, shell.mjs showChooser). */
 #instance-roster[hidden] { display: none; }
-/* The sections' headings (Workspaces, Instances) are the sidebar's top level: the nav items' 13px, bolder (650) and
+/* The sections' headings (Workspace, Instances) are the sidebar's top level: the nav items' 13px, bolder (650) and
    in --fg, above the machine labels' 12px 400 muted capitals (2026-10-23). "● 4 running" only, the full breakdown in its title. */
 .ctx-head { height: 36px; flex: none; padding: 6px 11px 0 17px; display: flex; align-items: center; gap: 6px;
             color: var(--fg); font-size: 13px; font-weight: 650; white-space: nowrap; }

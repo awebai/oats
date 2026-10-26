@@ -204,7 +204,7 @@ workspace on a server: `name — server`).
 
 ## Workspaces
 
-The sidebar has two sections: **Workspaces**, a heading over the list of
+The sidebar has two sections: **Workspace**, a heading over the list of
 workspaces, then, after a thin line, the current workspace's: its two main
 views, **Workspace** and **Deployments**, side by side, then **Instances**,
 a heading over its list. The two headings are the sidebar's largest type,

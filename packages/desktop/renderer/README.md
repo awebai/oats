@@ -430,7 +430,7 @@ A window shows a workspace **view**: one matched workspace identity across machi
 not read the panel. What they say (a deployment's state in words, the primary, the roster
 split into sections) is `packages/client/roster-sections.mjs`.
 
-- **The sidebar, top to bottom** (2026-10-23): the Workspaces heading (a `.ctx-head`, as
+- **The sidebar, top to bottom** (2026-10-23): the Workspace heading (a `.ctx-head`, as
   the Instances one, with **Add local workspace…** at its end; no logo, no rule) over the list; then the
   current workspace's section (`#ws-current`, a `section` labelled "Current workspace"): one 1px
   `--border` line over it (`.ws-current::before`, the sidebar's full width, under the list; none before

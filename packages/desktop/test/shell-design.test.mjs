@@ -111,7 +111,7 @@ function shell(t, shellSource = source, { storage = {}, gitPanel } = {}) {
   };
 }
 
-test("the Workspaces head is a plain section heading with Add local workspace…; the views under the list; the list's semantics and ids survive", t => {
+test("the Workspace head is a plain section heading with Add local workspace…; the views under the list; the list's semantics and ids survive", t => {
   const { document } = shell(t);
   const sidebar = document.getElementById("sidebar");
   const head = document.getElementById("ws-heading").parentElement;
@@ -120,14 +120,14 @@ test("the Workspaces head is a plain section heading with Add local workspace…
   assert.equal(head.parentElement, sidebar);
   assert.ok(head.classList.contains("ctx-head"), "the same heading style as Instances");
   assert.deepEqual([...head.children].map(el => el.id), ["ws-heading", "ws-add-open"]);
-  assert.match(html, /<div class="ctx-head ws-head">\s*<span id="ws-heading" class="ws-heading">Workspaces<\/span>\s*<button id="ws-add-open"/, "the markup says the same");
+  assert.match(html, /<div class="ctx-head ws-head">\s*<span id="ws-heading" class="ws-heading">Workspace<\/span>\s*<button id="ws-add-open"/, "the markup says the same");
   assert.equal(document.querySelector(".side-head, .ws-brand-mark, .ws-brand-image, .ws-brand-icon, [data-shell-icon=\"oats\"]"), null, "no logo or mark in the head");
   assert.equal(head.querySelector("img"), null, "the heading shows no artwork");
   assert.deepEqual([...sidebar.querySelectorAll("img")].map(img => img.className), ["sidebar-brand-image"], "the sidebar's one artwork: the bottom bar's mark");
   assert.equal(document.getElementById("ws-trigger"), null, "the dropdown's trigger is gone");
   assert.equal(document.getElementById("ws-menu"), null, "the dropdown's menu is gone");
   assert.equal(document.getElementById("ws-menu-search"), null, "the menu's search is gone");
-  assert.equal(document.getElementById("ws-heading").textContent, "Workspaces");
+  assert.equal(document.getElementById("ws-heading").textContent, "Workspace");
   const addOpen = document.getElementById("ws-add-open");
   assert.equal(addOpen.tagName, "BUTTON"); assert.equal(addOpen.type, "button");
   assert.equal(addOpen.getAttribute("aria-label"), "Add local workspace…");

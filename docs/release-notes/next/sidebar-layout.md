@@ -1,7 +1,7 @@
 ## Changed
 
 - **Desktop: a simpler sidebar.** Top to bottom:
-  - **Workspaces**, a plain heading with **+** and the list right under it,
+  - **Workspace**, a plain heading with **+** and the list right under it,
     the names a little larger;
   - a thin line, then the current workspace: **Workspace** and
     **Deployments** side by side, then **Instances**, with **Spawn

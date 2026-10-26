@@ -10,7 +10,7 @@ const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url
 const theme = read("theme.css"), shell = read("shell.css");
 const icon = shellIcon("workspace");
 const markup = `<div id="app"><aside id="sidebar">
-  <div class="ctx-head ws-head"><span id="ws-heading" class="ws-heading">Workspaces</span>
+  <div class="ctx-head ws-head"><span id="ws-heading" class="ws-heading">Workspace</span>
     <button id="ws-add-open" class="ws-add-open icon-button" type="button" aria-label="Add local workspace…">${icon}</button></div>
   <section id="ws-list" class="ws-list" aria-labelledby="ws-heading"><div id="ws-options" class="ws-options"><ul class="ws-group">
     <li class="ws-option-row"><button class="ws-option" aria-current="true"><span class="ctx-dot on" aria-hidden="true"></span><span class="ws-option-name">fixture</span><span class="sr-only">, needs input</span><span class="ws-waiting attn-mark" aria-hidden="true"></span></button></li>

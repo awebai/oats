@@ -39,7 +39,7 @@ function brainStyles() {
 }
 
 const markup = `<div id="app"><aside id="sidebar">
-  <div class="ctx-head ws-head"><span id="ws-heading" class="ws-heading">Workspaces</span>
+  <div class="ctx-head ws-head"><span id="ws-heading" class="ws-heading">Workspace</span>
     <button id="ws-add-open" class="ws-add-open icon-button" type="button" aria-label="Add local workspace…"></button></div>
   <section id="ws-list" class="ws-list"><div id="ws-options" class="ws-options"><ul class="ws-group">
     <li class="ws-option-row"><button class="ws-option ws-current" aria-current="true">One</button></li>
