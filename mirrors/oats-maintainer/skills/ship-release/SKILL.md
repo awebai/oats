@@ -1,6 +1,6 @@
 ---
 name: ship-release
-description: Ship a planned release as exact artifacts under explicit authority - pin the source, read the project's live release contract, tag, let the release run - then verify the publication item by item with the checklist, and handle a partial publication without hiding it. Use before and after any tag, and when diagnosing a release that half-ran.
+description: Ship a planned release as exact artifacts under explicit authority - pin the source, read the project's live release contract, tag, let the release run - then verify the publication item by item with the checklist, and handle a partial or failed publication without hiding it: re-run only the failed step from the same tag, never retag. Use before and after any tag, and when diagnosing a release that half-ran.
 ---
 
 # Ship a release
@@ -37,9 +37,12 @@ Go through [references/verify-release.md](references/verify-release.md) item by 
 report what you **observed**, with identifiers: versions, commits, digests, URLs. "No
 errors" is not verification.
 
-## Partial publication
+## Partial or failed publication
 - Observe what was actually published (versions, their source commits, their contents)
   before choosing how to recover.
+- Once you've observed what published and fixed the cause outside the tag (a credential, a
+  runner), re-run only the step that failed, from the same tag. Never retag; when the fault
+  is in the tagged source, the fix ships as the next version.
 - A failed later step doesn't undo earlier publication. A retry that skips a version that's
   already published doesn't prove that version came from this source: check it.
 - Never delete or move a published tag, never overwrite an immutable version, and never cut
@@ -47,7 +50,12 @@ errors" is not verification.
   content is uncertain, stop and report.
 - A same-name re-upload must match the reviewed artifacts byte for byte; a "replace"
   flag is not permission to replace unknown content.
-- Authentication, runner and protected-ref faults go to your human or the operator.
+- A credential fault goes to the human who owns the credential. Runner and protected-ref
+  faults go to your human or the operator.
+- While publication is blocked, whether to install from the artifacts CI built is the
+  human's call. If they choose it, say what differs: the registry and update checks still
+  show the old latest version until publication. When publication later ships those same
+  artifacts, nothing needs reinstalling.
 
 ## If the release is bad
 A published release that breaks users is fixed forward, never rewritten:
