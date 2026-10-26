@@ -549,6 +549,43 @@ test("font picker: a chord given in the shortcuts editor works as the explicit t
   assert.equal(matchEvent(space({ metaKey: true, shiftKey: true }), { isMac: true }), "app.themePicker", "without ⌥ it is the theme picker's");
 });
 
+// macOS reads ⌥ with ⌘ or ⌃ on Space as Space for every action (keybindings.mjs macOptionKey), not only the font
+// picker's: no default is such a chord, so every default matches as it did, and those presses still match nothing.
+test("macOS: ⌘⌥ / ⌃⌥ on Space read Space for any action, and no default's matching changed", t => {
+  registerAll(t);
+  inFamily(t, DEFAULT_CHORD_FAMILY);
+  const isMac = true;
+  const nbsp = (mods) => ev("\u00a0", { code: "Space", altKey: true, ...mods });
+  const presses = [{ metaKey: true }, { ctrlKey: true }, { metaKey: true, shiftKey: true }, { ctrlKey: true, shiftKey: true }, { metaKey: true, ctrlKey: true }];
+  for (const family of CHORD_FAMILIES) {
+    setChordFamily(family);
+    for (const id of IDS) {
+      const c = parseChord(getBinding(id, isMac));
+      assert.ok(!(c && c.key === "space" && c.alt && (c.mod || c.ctrl)), `${id} (${getBinding(id, isMac)}) holds ⌥ with ⌘ or ⌃ on Space, ${family}`);
+    }
+    for (const context of [["tabs"], ["sidebar"], []]) {
+      setActiveContexts(new Set(context));
+      for (const mods of presses) for (const insideTerminal of [false, true]) {
+        assert.equal(matchEvent(nbsp(mods), { isMac, insideTerminal }), null, `${JSON.stringify(mods)} matches no default, ${family}, ${context}, terminal=${insideTerminal}`);
+      }
+    }
+    setActiveContexts(new Set(["tabs"]));
+    // The other Space chords are as before: ⇧⌘Space is the theme picker's; ⌥Space alone is typing.
+    assert.equal(matchEvent(space({ metaKey: true, shiftKey: true }), { isMac }), "app.themePicker", family);
+    assert.equal(chordToString(chordFromEvent(nbsp({}), isMac)), "Alt+\u00a0", "plain ⌥Space is the character it types");
+    assert.equal(matchEvent(nbsp({}), { isMac, insideTerminal: true }), null);
+  }
+  // What the recorder stores (chordToString(chordFromEvent(e))), and any action given it matches its press.
+  assert.equal(chordToString(chordFromEvent(nbsp({ metaKey: true }), isMac)), "Mod+Alt+Space");
+  assert.equal(chordToString(chordFromEvent(nbsp({ ctrlKey: true, shiftKey: true }), isMac)), "Ctrl+Alt+Shift+Space");
+  t.after(() => resetBinding("app.shortcuts"));
+  setBinding("app.shortcuts", chordToString(chordFromEvent(nbsp({ metaKey: true }), isMac)));
+  assert.equal(matchEvent(nbsp({ metaKey: true }), { isMac, insideTerminal: false }), "app.shortcuts", "not only the font picker's");
+  // A rebind stored by the no-break space, as the editor recorded it before, still matches its press.
+  setBinding("app.shortcuts", "Mod+Alt+\u00a0");
+  assert.equal(matchEvent(nbsp({ metaKey: true }), { isMac, insideTerminal: false }), "app.shortcuts", "the typed character's rebind");
+});
+
 // Phase 3 (c4d4a391): the palette took Ctrl+Alt+K and Quick Open Ctrl+Alt+P (#1217's Ctrl+Shift+K and
 // Ctrl+Shift+P before); the Alt family, the default since 2026-10-22, gives them Alt+K and Alt+P. A
 // stored binding on the family's chord is kept, and the shortcuts editor's warning names the clash;
