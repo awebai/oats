@@ -1,4 +1,4 @@
-/** Workspace view header and its Teams / Capabilities / Setup (id: sources) tabs, natively on
+/** Workspace view header and its Capabilities / Teams / Setup (id: sources) tabs, natively on
  * workspace model v2. Facts come from the installed kernel only:
  *   - `oats workspace status` + `oats status` (the roster observation) for
  *     sources, lock state and which instances carry a module;
@@ -19,6 +19,8 @@ import { catalogCSS, renderCapabilitySections, renderRepoPills, rovePill, repoCh
 import { capabilitySections, matchCapabilities, hostKeyOf, memberNames, soulsComposition } from '../../client/capability-rows.mjs';
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 import { iconElement } from './shell-icons.mjs';
+import { defaultsCSS } from './workspace-defaults.mjs';
+import { aboutCSS, ABOUT_COPY, createAboutDialog } from './about-dialog.mjs';
 import { createDataState, skeleton, statusLine, captureFocusState } from './loading.mjs';
 import { warningOf } from '../../client/capability-warnings-contract.mjs';
 import { createWarningsList, capabilityWarningsCSS } from './capability-warnings.mjs';
@@ -26,9 +28,10 @@ import { displayLine } from '../../client/display-text.mjs';
 import { trackStickyTop, trackScrolledEdge } from './sticky-top.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 
-export const workspaceTabs = ['teams', 'souls', 'capabilities', 'sources'];
-// What a person reads (the ids stay stable): Teams is who can work together (human, 2026-09-28: first,
-// before Souls); Setup is what the workspace is built from (repos, packages, external souls).
+export const workspaceTabs = ['souls', 'capabilities', 'teams', 'sources'];
+// What a person reads (the ids stay stable): Souls, Capabilities, Teams, Setup (product owner, 2026-10-23,
+// superseding 2026-09-28's "Teams first"). Teams is who can work together; Setup is what the workspace is
+// built from (repos, packages, external souls).
 const TAB_LABELS = { teams: 'Teams', souls: 'Souls', capabilities: 'Capabilities', sources: 'Setup' };
 /** The Workspace page's tab bar rules for a selector: plain-text tabs, the selected one at 650 over a 2px
  * --live underline. Shared with the Deployments page's tabs (deployments-page.mjs), so the two never drift. */
@@ -41,6 +44,8 @@ ${sel} button[aria-selected=true] { color:var(--fg); font-weight:650; box-shadow
 ${sel} button:focus-visible { background:var(--sel); border-radius:6px; padding:0 6px; margin:0 -6px; }`;
 export const discoveryCSS = `
 ${catalogCSS}
+${defaultsCSS}
+${aboutCSS}
 ${setupCSS}
 ${machinesCSS}
 ${computerTeamsCSS}
@@ -77,6 +82,7 @@ ${tabBarCSS('.workspace-tabs')}
 .ws-toolbar[hidden] { display:none; }
 .ws-toolbar-lead { flex:1 1 auto; min-width:0; display:flex; align-items:center; }
 .ws-toolbar-lead .capability-nav { margin:0; }
+.ws-toolbar-lead .capability-nav + .ws-info-button { margin-left:8px; }
 .ws-toolbar-label { color:var(--muted); font-size:12px; }
 .ws-search { position:relative; display:flex; align-items:center; min-width:0; flex:0 1 220px; }
 .ws-search .shell-icon { position:absolute; left:10px; color:var(--muted); pointer-events:none; }
@@ -107,7 +113,7 @@ ${tabBarCSS('.workspace-tabs')}
 /* The Capabilities toolbar keeps its 16px below: 8px inside the edge, 7px + the 1px edge outside. */
 .workspace-discovery > .ws-toolbar.ws-sticky { padding-bottom:8px; margin-bottom:7px; }
 /* Jumping to a section or focusing a row never leaves it under the pinned block. */
-.workspace-discovery :is(.capability-section-title, .catalog-group, [data-capability], .catalog-row, .computer-teams .ct-body :is(button, a[href], input, select, textarea, [tabindex])) { scroll-margin-top:var(--ws-sticky-h, 60px); }
+.workspace-discovery :is(.capability-section-title, .catalog-group, [data-capability], .catalog-row, .ws-default-cell, .computer-teams .ct-body :is(button, a[href], input, select, textarea, [tabindex])) { scroll-margin-top:var(--ws-sticky-h, 60px); }
 .discovery-status { margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .discovery-status:empty { display:none; }
 .discovery-status[hidden] { display:none; }
@@ -273,6 +279,10 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   // The Capabilities search lives in the view itself (human, 2026-09-26): a toolbar row above the sections.
   const capTools = node('div', undefined, 'ws-toolbar ws-sticky'); capTools.dataset.tools = 'capabilities';
   const capLead = node('div', undefined, 'ws-toolbar-lead'); capTools.append(capLead);
+  // "About capabilities": built once, right after the section jump (the repaint puts the jump before it), so a
+  // catalog repaint never rebuilds it under focus.
+  const about = createAboutDialog(doc, { copy: ABOUT_COPY.capabilities, id: 'workspace-capabilities-about', onIntent: () => onIntent?.() });
+  capLead.append(about.button);
   const search = node('label', undefined, 'ws-search');
   const searchInput = node('input', undefined, 'field'); searchInput.type = 'search'; searchInput.placeholder = 'Search capabilities'; searchInput.autocomplete = 'off';
   searchInput.setAttribute('aria-label', 'Search capabilities');
@@ -338,6 +348,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   function setTab(name) {
     if (!workspaceTabs.includes(name) || !alive) return false;
     const changed = name !== tab; tab = name;
+    if (tab !== 'capabilities') about.close({ focus: 'none' }); // leaving the tab closes its dialog, moving no focus
     panel.id = `workspace-${name === 'souls' ? 'capabilities' : name}`; panel.dataset.tab = name;
     panel.setAttribute('aria-labelledby', `workspace-tab-${name}`);
     for (const [key, control] of controls) {
@@ -404,7 +415,10 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     // A focused pill is rebuilt below: focus returns to the same repository's pill (by its key).
     const focusedPill = filterHost.contains(doc.activeElement) ? doc.activeElement.closest('.catalog-pills button')?.dataset.repo ?? null : null;
     const restoreNotes = captureFocusState(notes, { scroller: null }); // a warning's Details or Open capability (by its focus key)
-    notes.replaceChildren(); filterHost.replaceChildren(); body.replaceChildren(); capLead.replaceChildren(); filterHost.className = '';
+    // A Workspace defaults column or chip (its data-focus-key) is found again after the sections are rebuilt.
+    const restoreBody = tab === 'capabilities' ? captureFocusState(body, { scroller: null }) : null;
+    notes.replaceChildren(); filterHost.replaceChildren(); body.replaceChildren(); filterHost.className = '';
+    for (const child of [...capLead.children]) if (child !== about.button) child.remove(); // the "i" stays, focus and all
     if (unavailable || tab === 'souls') return;
     for (const note of deploymentNotes(deployment)) notes.append(node('p', note.text, `catalog-note${note.warn ? ' warn' : ''}`));
     if (tab === 'teams') {
@@ -455,6 +469,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
       narrowed: !!repo || !!String(query || '').trim(), onChange: next => { repo = next; render(); refocusPill(repo ?? ''); } });
     renderCapabilitySections(body, { sections, shown, filterHost, navHost: capLead, privateListed: privateListed(), query,
       status: s, instances, souls, composition: soulsComposition(cliStatus()), root: workspace?.id, rosterState: rosterState(), onOpen: onOpenCapability });
+    const jump = capLead.querySelector('.capability-nav'); if (jump) capLead.insertBefore(jump, about.button);
+    restoreBody?.();
     if (focusedPill !== null) refocusPill(focusedPill);
     reveal();
   }
@@ -501,7 +517,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   function updateRoster(agents, panelAnswer) {
     const gen = workspaceGeneration();
     // Another workspace generation is another subject: the table is forgotten. Within one, it is never set to null.
-    if (rosterGen !== gen) { catalog = null; failure = ''; repo = null; setupMember = null; serial++; loading = false; loadState.reset(); }
+    if (rosterGen !== gen) { catalog = null; failure = ''; repo = null; setupMember = null; serial++; loading = false; loadState.reset(); about.close({ focus: 'none' }); }
     rosterGen = gen; workspace = panelAnswer.workspace || null; deployment = panelAnswer.deployment || null; souls = list(agents);
     instances = list(panelAnswer.instances);
     updateCounts(agents.length); render();
@@ -534,9 +550,10 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     rosterUnavailable() { if (soulsCount === 'pending') updateCounts(null); },
     reset() {
       machines?.dispose(); machines = null; machinesFor = null; // another workspace: its dialog and reads go with it
+      about.close({ focus: 'none' });
       serial++; rosterGen = null; workspace = null; deployment = null; instances = []; catalog = null; loading = false; failure = '';
       repo = null; sync.reset(); loadState.reset(); updateCounts('pending'); render(); onCatalog?.();
     },
-    dispose() { alive = false; serial++; sync.dispose(); computerTeams?.dispose(); machines?.dispose(); loadState.dispose(); stickyTop.dispose(); soulsEdge.dispose(); scope.dispose(); scope.element.remove(); },
+    dispose() { alive = false; serial++; about.dispose(); sync.dispose(); computerTeams?.dispose(); machines?.dispose(); loadState.dispose(); stickyTop.dispose(); soulsEdge.dispose(); scope.dispose(); scope.element.remove(); },
   };
 }

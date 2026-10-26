@@ -6,7 +6,7 @@ import {
   registerAction, listActions, setActiveContexts,
   getBinding, setBinding, resetBinding, resetAllBindings, onKeymapChange,
   matchEvent, handleKeydown, findConflict, keymapConflicts,
-  chordFromKeyId, letThrough, eventMatchesBinding, runAction,
+  chordFromKeyId, letThrough, eventMatchesBinding, runAction, pickerCycleDirection, setChordFamily, activeChordFamily,
 } from "../renderer/keybindings.mjs";
 
 // Minimal localStorage stub — the engine must survive without it too.
@@ -87,10 +87,10 @@ test("overrides persist to localStorage and reset cleanly", () => {
   assert.equal(getBinding("tabs.close", false), null);
   resetBinding("app.palette");
   assert.equal(getBinding("app.palette", true), "Mod+K");
-  assert.equal(getBinding("app.palette", false), "Ctrl+Alt+K");
+  assert.equal(getBinding("app.palette", false), "Alt+K");
   resetAllBindings();
   assert.equal(getBinding("tabs.close", true), "Mod+W");
-  assert.equal(getBinding("tabs.close", false), "Ctrl+Alt+W");
+  assert.equal(getBinding("tabs.close", false), "Alt+W");
   assert.equal(store.has("oats-desktop-keymap"), false, "empty overrides remove the key");
 });
 
@@ -125,13 +125,25 @@ function withActions(t, actions) {
 
 test("matchEvent: global action fires on its default chord (mac + non-mac)", (t) => {
   withActions(t, [{ id: "app.palette", label: "Palette", context: "global", run: () => {} }]);
+  t.after(() => setChordFamily("alt"));
+  assert.equal(activeChordFamily(), "alt");
   assert.equal(matchEvent(ev("k", { metaKey: true }), { isMac: true, insideTerminal: false }), "app.palette");
-  // Linux/Windows: Ctrl+Alt+K (the shared Ctrl+Alt family); plain Ctrl+K is the program's, and
-  // Ctrl+Shift+K, the palette's chord from #1217 to phase 3, is nothing now; Ctrl+Alt+P is Quick Open's.
-  assert.equal(matchEvent(ev("k", { ctrlKey: true, altKey: true }), { isMac: false, insideTerminal: false }), "app.palette");
-  assert.equal(matchEvent(ev("k", { ctrlKey: true }), { isMac: false, insideTerminal: false }), null);
-  assert.equal(matchEvent(ev("K", { ctrlKey: true, shiftKey: true }), { isMac: false, insideTerminal: false }), null);
-  assert.equal(matchEvent(ev("p", { ctrlKey: true, altKey: true }), { isMac: false, insideTerminal: false }), null);
+  // Linux/Windows: Alt+K (the default, the Alt family); plain Ctrl+K is the program's, Ctrl+Alt+K is
+  // the Ctrl+Alt family's key and no binding here, and Ctrl+Shift+K, the palette's chord from #1217
+  // to phase 3, is the Ctrl+Shift family's; Alt+P is Quick Open's.
+  const linux = { isMac: false, insideTerminal: false };
+  assert.equal(matchEvent(ev("k", { altKey: true }), linux), "app.palette");
+  assert.equal(matchEvent(ev("k", { ctrlKey: true }), linux), null);
+  assert.equal(matchEvent(ev("k", { ctrlKey: true, altKey: true }), linux), null);
+  assert.equal(matchEvent(ev("K", { ctrlKey: true, shiftKey: true }), linux), null);
+  assert.equal(matchEvent(ev("K", { altKey: true, shiftKey: true }), linux), null, "Shift is not part of it");
+  assert.equal(matchEvent(ev("p", { altKey: true }), linux), null);
+  // A user who chose Ctrl+Alt keeps Ctrl+Alt+K, and Alt+K is then the program's.
+  setChordFamily("ctrl+alt");
+  assert.equal(matchEvent(ev("k", { ctrlKey: true, altKey: true }), linux), "app.palette");
+  assert.equal(matchEvent(ev("k", { altKey: true }), linux), null);
+  assert.equal(matchEvent(ev("k", { metaKey: true }), { isMac: true, insideTerminal: false }), "app.palette", "macOS has no family");
+  setChordFamily("alt");
   assert.equal(matchEvent(ev("k"), { isMac: true, insideTerminal: false }), null);
   assert.equal(matchEvent(ev("k", { metaKey: true, shiftKey: true }), { isMac: true, insideTerminal: false }), null,
     "extra modifiers must not match");
@@ -187,10 +199,13 @@ test("terminal policy non-mac: only allowlisted action ids fire inside xterm", (
     { id: "app.themeToggle", label: "Theme", context: "global", run: () => {} },
   ]);
   const inTerm = { isMac: false, insideTerminal: true };
-  assert.equal(matchEvent(ev("k", { ctrlKey: true, altKey: true }), inTerm), "app.palette");
+  assert.equal(matchEvent(ev("k", { altKey: true }), inTerm), "app.palette");
   assert.equal(matchEvent(ev("Tab", { ctrlKey: true }), inTerm), "tabs.next");
   assert.equal(matchEvent(ev("Tab", { ctrlKey: true, shiftKey: true }), inTerm), "tabs.prev");
-  assert.equal(matchEvent(ev("w", { ctrlKey: true, altKey: true }), inTerm), "tabs.close");
+  assert.equal(matchEvent(ev("w", { altKey: true }), inTerm), "tabs.close");
+  // The Ctrl+Alt family's keys are no binding in the default family: the program gets them.
+  assert.equal(matchEvent(ev("k", { ctrlKey: true, altKey: true }), inTerm), null);
+  assert.equal(matchEvent(ev("w", { ctrlKey: true, altKey: true }), inTerm), null);
   // Ctrl+K / Ctrl+W are the program's (kill line, delete word): no default claims them.
   assert.equal(matchEvent(ev("k", { ctrlKey: true }), inTerm), null);
   assert.equal(matchEvent(ev("w", { ctrlKey: true }), inTerm), null);
@@ -201,7 +216,26 @@ test("terminal policy non-mac: only allowlisted action ids fire inside xterm", (
   // allowlist is action-id based, so it follows a rebind (the user's choice)
   setBinding("app.palette", "Ctrl+K");
   assert.equal(matchEvent(ev("k", { ctrlKey: true }), inTerm), "app.palette");
-  assert.equal(matchEvent(ev("k", { ctrlKey: true, altKey: true }), inTerm), null, "old chord no longer bound");
+  assert.equal(matchEvent(ev("k", { altKey: true }), inTerm), null, "old chord no longer bound");
+});
+
+// The palette's own chord, pressed again while it is open, moves the selection down; with Shift, up
+// (pickerCycleDirection). In the Alt family that is Alt+K and Alt+Shift+K; in the Ctrl+Alt family
+// Ctrl+Alt+K and Ctrl+Alt+Shift+K.
+test("pickerCycleDirection on Linux/Windows: the palette's chord in the active family cycles down, with Shift up", (t) => {
+  withActions(t, [{ id: "app.palette", label: "Palette", context: "global", run: () => {} }]);
+  t.after(() => setChordFamily("alt"));
+  assert.equal(activeChordFamily(), "alt");
+  assert.equal(pickerCycleDirection(ev("k", { altKey: true }), "app.palette", false), 1, "Alt+K moves down");
+  assert.equal(pickerCycleDirection(ev("K", { altKey: true, shiftKey: true }), "app.palette", false), -1, "Alt+Shift+K moves up");
+  assert.equal(pickerCycleDirection(ev("j", { altKey: true }), "app.palette", false), 0);
+  assert.equal(pickerCycleDirection(ev("k", { ctrlKey: true, altKey: true }), "app.palette", false), 0, "the Ctrl+Alt family's key is not the palette's here");
+  assert.equal(pickerCycleDirection(ev("k"), "app.palette", false), 0, "a plain K types in the palette's field");
+  setChordFamily("ctrl+alt");
+  assert.equal(pickerCycleDirection(ev("k", { ctrlKey: true, altKey: true }), "app.palette", false), 1, "Ctrl+Alt+K moves down");
+  assert.equal(pickerCycleDirection(ev("K", { ctrlKey: true, altKey: true, shiftKey: true }), "app.palette", false), -1, "Ctrl+Alt+Shift+K moves up");
+  assert.equal(pickerCycleDirection(ev("k", { altKey: true }), "app.palette", false), 0, "Alt+K is the program's there");
+  setChordFamily("alt");
 });
 
 test("the legacy palette chord check is gone: the engine is the one palette policy", async () => {
@@ -306,7 +340,7 @@ test("registerAction defaultChord: folds into the effective keymap (addendum 3)"
   // static DEFAULT_KEYMAP wins over a registration default for the same id
   const off2 = registerAction({ id: "app.palette", label: "P", context: "global", run: () => {}, defaultChord: "Mod+9" });
   assert.equal(getBinding("app.palette", true), "Mod+K");
-  assert.equal(getBinding("app.palette", false), "Ctrl+Alt+K");
+  assert.equal(getBinding("app.palette", false), "Alt+K");
   off2();
   // …including a static "no default" on a platform: never the registration's chord.
   const off4 = registerAction({ id: "app.themeToggle", label: "T", context: "global", run: () => {}, defaultChord: "Mod+Shift+T" });
@@ -500,4 +534,35 @@ test("a sidebar key and a tab shortcut on one chord clash: both contexts are on 
   assert.equal(findConflict("N", "view:hierarchy", "view.only", false), null, "a view's own keys stay local to the view");
   assert.deepEqual(keymapConflicts(false).map((c) => c.actions.map((a) => a.id).sort()), [["sidebar.key.spawn", "tabs.close"]]);
   assert.equal(getBinding("tabs.close", false), "N", "kept as set");
+});
+
+// A native control that opens its popup with Alt+↑ / Alt+↓ on Linux and Windows (a select's list, a datalist's
+// suggestions, a date or time picker) keeps those keys from the workspace moves' defaults; a user's own binding
+// of them still fires there, and the defaults fire from any other control. Brain's Agent selector is such a select.
+test("Alt+↑ / Alt+↓ stay with a focused select, datalist or picker input; a user's own binding still fires", (t) => {
+  installStorage(); resetAllBindings();
+  withActions(t, [
+    { id: "workspace.previous", label: "Previous workspace", context: "global", run: () => {} },
+    { id: "workspace.next", label: "Next workspace", context: "global", run: () => {} },
+  ]);
+  t.after(() => resetAllBindings());
+  const opts = { isMac: false, insideTerminal: false };
+  const press = (key, target, more = {}) => matchEvent({ ...ev(key, { altKey: true, ...more }), target }, opts);
+  const select = { tagName: "SELECT" };
+  const datalist = { tagName: "INPUT", type: "text", getAttribute: (name) => (name === "list" ? "souls" : null) };
+  const date = { tagName: "INPUT", type: "date", getAttribute: () => null };
+  for (const target of [select, datalist, date]) {
+    assert.equal(press("ArrowDown", target), null, `${target.tagName}/${target.type ?? ""}: its popup's key`);
+    assert.equal(press("ArrowUp", target), null);
+  }
+  // Any other control, and none: the defaults fire.
+  assert.equal(press("ArrowDown", { tagName: "INPUT", type: "text", getAttribute: () => null }), "workspace.next");
+  assert.equal(press("ArrowDown", { tagName: "BUTTON" }), "workspace.next");
+  assert.equal(press("ArrowUp", undefined), "workspace.previous");
+  // Another chord on a select is not left to it.
+  setBinding("workspace.next", "Alt+Shift+ArrowDown");
+  assert.equal(press("ArrowDown", select, { shiftKey: true }), "workspace.next", "only Alt alone with ↑ / ↓ is the popup's");
+  // A user's own binding of Alt+↓ fires on a select, as over a default anywhere.
+  setBinding("workspace.next", "Alt+ArrowDown");
+  assert.equal(press("ArrowDown", select), "workspace.next");
 });

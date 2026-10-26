@@ -1,14 +1,15 @@
 // What the leader's keys, and the sidebar's plain keys, mean in the Desktop (docs/desktop-keyboard.md,
 // "The leader", "Sidebar keys"): the rows that apply now and their words (renderer/leader-keys.mjs),
 // and what each `does` runs (leader-dispatch.mjs): the target, previous/next over the roster as
-// drawn, the acts as the row's menu offers them, N, Esc. Pure: no DOM.
+// drawn (the chords'), the workspace moves (the leader's ↑ / ↓), the acts as the row's menu offers them,
+// N, Esc. Pure: no DOM.
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  leaderApplies, leaderLabel, keyIdCaps, rowKeysText, supportedLeaderRows, LEADER_ACTIONS,
+  leaderApplies, leaderLabel, keyIdCaps, rowKeysText, supportedLeaderRows, LEADER_ACTIONS, LEADER_LABELS,
 } from "../renderer/leader-keys.mjs";
-import { createLeaderDispatch, rosterStep, actAvailability, NO_TARGET } from "../renderer/leader-dispatch.mjs";
-import { LEADER_TABLE } from "../../client/keymap.mjs";
+import { createLeaderDispatch, rosterStep, actAvailability, NO_TARGET, NO_WORKSPACE_ABOVE, NO_WORKSPACE_BELOW } from "../renderer/leader-dispatch.mjs";
+import { LEADER_TABLE, CHORDS } from "../../client/keymap.mjs";
 import { createLeader } from "../renderer/leader.mjs";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
@@ -26,10 +27,10 @@ test("the rows that apply: terminal rows with a terminal, tab keys with two tabs
   const does = (state) => LEADER_TABLE.filter(row => leaderApplies(row, state)).map(row => row.does);
   assert.deepEqual(does(STATE), LEADER_TABLE.map(row => row.does).filter(d => d !== "tab-move"));
   const none = does({});
-  assert.deepEqual(none, ["palette", "instances", "souls", "capabilities", "previous", "next", "stop", "restart", "start", "retire", "spawn", "spawn-another", "filter", "workspaces", "help", "list"]);
+  assert.deepEqual(none, ["palette", "instances", "souls", "capabilities", "workspace-previous", "workspace-next", "stop", "restart", "start", "retire", "spawn", "spawn-another", "filter", "workspaces", "help", "list"]);
   assert.ok(!does({ ...STATE, tabs: 1 }).includes("tab-previous") && !does({ ...STATE, tabs: 1 }).includes("tab-next"));
   assert.ok(!does({ ...STATE, canSplitRow: false }).includes("split-right") && does({ ...STATE, canSplitRow: false }).includes("split-down"));
-  assert.ok(!does({ ...STATE, split: false }).includes("group-next") && !does({ ...STATE, split: false }).includes("group-close"));
+  assert.ok(["group-next", "group-previous", "group-close"].every(row => !does({ ...STATE, split: false }).includes(row)), "Tab, Shift+Tab and x while split");
   assert.ok(does({ ...STATE, split: false }).includes("zoom") && does({ ...STATE, split: false }).includes("close-terminal"));
   assert.equal(leaderApplies({ does: "tab-move", terminal: true }, STATE), false);
   assert.deepEqual(supportedLeaderRows().map(row => row.does).includes("tab-move"), false);
@@ -41,6 +42,16 @@ test("labels: a key that runs one action shows that action's label; the rest the
   assert.equal(leaderLabel("group-close", id => labels[id]), "Close the split (single pane)");
   assert.equal(leaderLabel("list"), "Instance roster");
   assert.equal(leaderLabel("capabilities"), "Workspace › Capabilities");
+  // The leader's ↑ / ↓ are the workspace moves, in the Desktop's words; the previous / next instance keep theirs,
+  // now the chords' alone (no LEADER_TABLE row names them: their words are LEADER_LABELS', never the table's).
+  assert.equal(LEADER_LABELS["workspace-previous"], "Show the previous workspace in the list");
+  assert.equal(LEADER_LABELS["workspace-next"], "Show the next workspace in the list");
+  assert.equal(leaderLabel("workspace-previous", () => "an action's label"), "Show the previous workspace in the list", "no registered action: the Desktop's words");
+  assert.equal(leaderLabel("workspace-next"), "Show the next workspace in the list");
+  assert.deepEqual(["previous", "next"].map(does => leaderLabel(does)), ["Open the previous instance's terminal", "Open the next instance's terminal"]);
+  assert.deepEqual(LEADER_TABLE.filter(row => row.keys.includes("up") || row.keys.includes("down")).map(row => row.does), ["workspace-previous", "workspace-next"]);
+  assert.equal(LEADER_TABLE.some(row => row.does === "previous" || row.does === "next"), false, "the leader has no instance step");
+  assert.deepEqual(CHORDS.filter(entry => entry.does === "previous" || entry.does === "next").map(entry => entry.does), ["previous", "next"], "the chords keep it");
   for (const row of supportedLeaderRows()) assert.ok(leaderLabel(row.does) && leaderLabel(row.does) !== row.does || LEADER_ACTIONS[row.does], `${row.does} has words`);
 });
 
@@ -89,10 +100,12 @@ function dispatchRig(overrides = {}) {
   const d = createLeaderDispatch({
     say: op("say"), targetId: o => o.targetId ?? null, target: o => byId.get(o.targetId) ?? null,
     rosterRows: () => rows.map(row => ({ ...row, open: () => calls.push(["open", row.id]) })),
+    // The list's move (the shell's workspaceLabel.step): true when it showed a workspace, false at an end.
+    workspaceStep: delta => { calls.push(["workspace-step", delta]); return overrides.workspaceStep ? overrides.workspaceStep(delta) : true; },
     menuReason: i => (typeof overrides.menuReason === "function" ? overrides.menuReason(i) : overrides.menuReason ?? null),
     openAct: (verb, i) => calls.push(["act", verb, i.instance]), spawnSoul: i => calls.push(["spawn-soul", i.agent]),
     ...Object.fromEntries(["palette", "instances", "souls", "capabilities", "zoom", "closeTab", "tabPrevious", "tabNext", "splitRight",
-      "splitDown", "nextGroup", "closeSplit", "quickOpen", "filter", "workspaces", "help", "list", "refresh"].map(n => [n, op(n)])),
+      "splitDown", "nextGroup", "previousGroup", "closeSplit", "quickOpen", "filter", "workspaces", "help", "list", "refresh"].map(n => [n, op(n)])),
   });
   return { d, calls };
 }
@@ -125,6 +138,40 @@ test("dispatch: Up/Down open the neighbour's terminal; acts open the menu's dial
   assert.equal(d.supports("tab-move"), false, "m is not the Desktop's");
   for (const row of supportedLeaderRows()) assert.ok(d.supports(row.does), row.does);
   assert.ok(d.supports("refresh"), "the sidebar's r");
+});
+
+test("dispatch: the leader's ↑ / ↓ move between workspaces (workspaceStep ∓1), never over the roster; at an end one line says so", () => {
+  const ends = { [-1]: true, [1]: true };
+  const { d, calls } = dispatchRig({ instances: [inst("a"), inst("b")], rows: [{ id: "a", openable: true }, { id: "b", openable: true }],
+    workspaceStep: delta => ends[delta] });
+  d.run("workspace-next", { targetId: "a" });
+  d.run("workspace-previous", { targetId: "b" });
+  d.run("workspace-next", {});
+  assert.deepEqual(calls, [["workspace-step", 1], ["workspace-step", -1], ["workspace-step", 1]], "a move said nothing and opened no instance");
+  calls.length = 0;
+  ends[-1] = false; ends[1] = false;
+  d.run("workspace-previous", { targetId: "a" });
+  d.run("workspace-next", { targetId: "a" });
+  assert.deepEqual(calls, [["workspace-step", -1], ["say", NO_WORKSPACE_ABOVE], ["workspace-step", 1], ["say", NO_WORKSPACE_BELOW]]);
+  assert.equal(NO_WORKSPACE_ABOVE, "No workspace above this one.");
+  assert.equal(NO_WORKSPACE_BELOW, "No workspace below this one.");
+  // The chords' previous / next still step the roster, and touch no workspace.
+  calls.length = 0;
+  d.run("next", { targetId: "a" });
+  d.run("previous", { targetId: "b" });
+  assert.deepEqual(calls, [["open", "b"], ["open", "a"]]);
+  assert.ok(d.supports("workspace-previous") && d.supports("workspace-next") && d.supports("previous") && d.supports("next"));
+});
+
+test("dispatch: the leader's Tab and Shift+Tab run the next and the previous group", () => {
+  const { d, calls } = dispatchRig({ instances: [inst("a")] });
+  d.run("group-next", {});
+  d.run("group-previous", {});
+  assert.deepEqual(calls, [["nextGroup"], ["previousGroup"]]);
+  assert.ok(d.supports("group-previous"));
+  assert.equal(LEADER_TABLE.find(row => row.keys.includes("shift+tab"))?.does, "group-previous");
+  assert.equal(leaderLabel("group-previous", id => ({ "split.focusPrevGroup": "Focus the previous editor group" })[id] ?? null), "Focus the previous editor group",
+    "the label is split.focusPrevGroup's, as the Tab's is split.focusNextGroup's");
 });
 
 test("dispatch: an act the menu would not offer runs nothing and says why", () => {
@@ -173,23 +220,26 @@ test("a leader key whose row does not apply now says why; only an unsupported ke
   assert.equal(why("tab-next"), "There is no other tab.");
   state = { ...STATE, split: false };
   assert.equal(why("group-close"), "The tabs are not split.");
+  assert.equal(why("group-previous"), "The tabs are not split.", "the leader's Shift+Tab, as its Tab");
   assert.equal(why("palette"), null);
   assert.equal(why("refresh"), null, "a sidebar-only key has no row");
 });
 
-// The leader's ↑ / ↓ / z on chords of their own (packages/client/keymap.mjs CHORDS previous, next,
-// zoom): roster.openPrevious, roster.openNext and terminal.focusMode run the shipped runAsLeaderKey, as the
-// sidebar keys do. Driven here beside the leader's own settle (onSettle, as shipped and pinned above:
-// the origin read at the key, leaderOrigin, as shipped), over one roster. Both step from an open in flight.
-test("roster.openPrevious, roster.openNext and terminal.focusMode run what the leader's ↑, ↓ and z run", () => {
-  assert.match(shellSource, /for \(const \[id, does\] of \[\["roster\.openPrevious", "previous"\], \["roster\.openNext", "next"\], \["terminal\.focusMode", "zoom"\]\]\) \{\n  registerAction\(\{ id, label: leaderLabel\(does, actionLabel\), context: "global", when: \(\) => !modalOpen\(\), run: \(e\) => runAsLeaderKey\(does, e\) \}\);/);
+// The previous / next instance, the previous / next workspace and the leader's z on chords (packages/client/keymap.mjs
+// CHORDS previous, next, workspace-previous, workspace-next, zoom): roster.openPrevious, roster.openNext,
+// workspace.previous, workspace.next and terminal.focusMode run the shipped runAsLeaderKey, as the sidebar keys do. The instance steps have no leader key any more (the leader's ↑ / ↓ move between workspaces);
+// each chord runs the one dispatch exactly as the leader's settle would run that `does` (onSettle, as shipped and
+// pinned above: the origin read at the key, leaderOrigin, as shipped), over one roster. Both step from an open in flight.
+test("roster.openPrevious, roster.openNext, workspace.previous, workspace.next and terminal.focusMode run the dispatch's previous, next, workspace moves and zoom, as the leader's settle runs a key", () => {
+  assert.match(shellSource, /for \(const \[id, does\] of \[\["roster\.openPrevious", "previous"\], \["roster\.openNext", "next"\],\n  \["workspace\.previous", "workspace-previous"\], \["workspace\.next", "workspace-next"\], \["terminal\.focusMode", "zoom"\]\]\) \{\n  registerAction\(\{ id, label: leaderLabel\(does, actionLabel\), context: "global", when: \(\) => !modalOpen\(\), run: \(e\) => runAsLeaderKey\(does, e\) \}\);/);
   assert.match(shellSource, /run: \(\) => \{ leader\.start\(\); \} \}\);/, "the leader notes no target: its key reads it");
   assert.deepEqual(["previous", "next", "zoom"].map(does => leaderLabel(does)),
     ["Open the previous instance's terminal", "Open the next instance's terminal", "Focus mode on or off, in the active terminal"]);
   const calls = [];
   const rows = ["a", "b", "c"].map(id => ({ id, openable: id !== "b", open: () => calls.push(["open", id]) }));
   const d = createLeaderDispatch({ say: line => calls.push(["say", line]), targetId: origin => origin.targetId ?? null,
-    stepFrom: origin => origin.stepFromId ?? null, target: () => null, rosterRows: () => rows, zoom: () => calls.push(["zoom"]) });
+    stepFrom: origin => origin.stepFromId ?? null, target: () => null, rosterRows: () => rows, zoom: () => calls.push(["zoom"]),
+    workspaceStep: delta => { calls.push(["workspace", delta]); return delta < 0; } });
   let state = STATE, opening = null;
   const notApplicable = shellFunction("notApplicable", { LEADER_TABLE, leaderApplies, leaderState: () => state });
   const leaderTargetId = el => el?.instance ?? null;
@@ -208,6 +258,8 @@ test("roster.openPrevious, roster.openNext and terminal.focusMode run what the l
   assert.deepEqual(both("previous", null), [["open", "c"]], "no target: the last");
   assert.deepEqual(both("next", { instance: "c" }), [["say", "No instance below this one has a terminal to open."]]);
   assert.deepEqual(both("zoom", { instance: "a" }), [["zoom"]]);
+  assert.deepEqual(both("workspace-previous", { instance: "a" }), [["workspace", -1]]);
+  assert.deepEqual(both("workspace-next", null), [["workspace", 1], ["say", "No workspace below this one."]], "the last workspace: the line says so");
   opening = "a";
   assert.deepEqual(both("next", { instance: "c" }), [["open", "c"]], "an open of a in flight: the step is from a");
   opening = null;
@@ -250,7 +302,7 @@ test("rollover: another key going down while the follow-up is held releases none
   t.after(() => r.leader.dispose());
   r.leader.start({});
   assert.equal(r.fire("keydown", DOWN).defaultPrevented, true);
-  assert.deepEqual(r.settled, ["next"]);
+  assert.deepEqual(r.settled, ["workspace-next"], "the leader's ↓: the next workspace");
   assert.equal(r.fire("keydown", SHIFT).defaultPrevented, false, "the modifier is the focused control's");
   assert.equal(r.fire("keydown", { ...DOWN, repeat: true }).defaultPrevented, true, "Down's repeats stay consumed");
   assert.equal(r.fire("keyup", SHIFT).defaultPrevented, false);
@@ -266,7 +318,7 @@ test("rollover: another key going down while the follow-up is held releases none
   assert.equal(r.fire("keydown", { ...K, repeat: true }).defaultPrevented, true);
   assert.equal(r.fire("keyup", J).defaultPrevented, false);
   assert.equal(r.fire("keyup", K).defaultPrevented, true);
-  assert.deepEqual(r.settled, ["next", "palette"]);
+  assert.deepEqual(r.settled, ["workspace-next", "palette"]);
 });
 
 test("a window blur, which loses keyups, releases the consumed keys", t => {

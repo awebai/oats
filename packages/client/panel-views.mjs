@@ -45,6 +45,7 @@ import { publicDeployment } from './deployment-panel.mjs';
 import { teamMembers } from './team-members.mjs';
 import { requireTerms } from './client-terms.mjs';
 import { ROSTER_WORKSPACE_KEY } from './cli-adapter.mjs';
+import { waitingClaim } from './waiting-on-you.mjs';
 
 /** Roots come ONLY from the kernel's observed `status.root`; before (or
  * without) an observation there is nothing to act on. No layout guess. */
@@ -359,14 +360,25 @@ export function panelData(held, wsId, terms) {
   };
 }
 
+/** Whether deployment `d` (a `deployments` entry) is live and current and one of its instance rows has a
+ * claim a row may show (waiting-on-you.mjs `waitingClaim`). Its rows are its own panel's
+ * (`deploymentPanel`: a local entry's rows, a remote group's), read from what the client holds. Not live
+ * (`info.live`: a stale or kept-failure local entry, a kept or unreached remote group, a deployment not
+ * observed) is never waiting: what it last said is unknown now. */
+const deploymentWaits = (held, d, info) => info?.live === true && (deploymentPanel(held, d).instances || []).some((row) => waitingClaim(row) !== null);
+
 /** The switcher's list: views, not deployments. Each names its deployments (a client lets a caller
- * select any of these ids); an unattached view keeps today's remote fields and says why. `model` is a
- * view model already built for this call (`viewModel`); without one, it is built here. */
+ * select any of these ids); an unattached view keeps today's remote fields and says why. `waiting`
+ * (boolean): some deployment of the view is live and has an instance that needs input
+ * (`deploymentWaits`), from what the client holds, with no read: a view the client does not serve has no
+ * row here, and so no dot. `model` is a view model already built for this call (`viewModel`); without
+ * one, it is built here. */
 export function workspaceChoices(held, terms, model) {
   requireTerms(terms, 'workspaceChoices');
   if (model === undefined) model = viewModel(held, terms);
+  const served = deployments(held);
   return model.views.map((v) => {
-    const primary = deployments(held).find((w) => w.id === v.primary);
+    const primary = served.find((w) => w.id === v.primary);
     const remoteOnly = v.deployments.every((id) => !model.infos.get(id)?.local);
     // Without the CLI's workspace-identity feature nothing can match: every deployment keeps its own entry, listed as
     // before views, not as "not matched" (each deployment's own reason still says why).
@@ -377,6 +389,7 @@ export function workspaceChoices(held, terms, model) {
       // The switcher's one-liner (UI spec, #482): the machines, in order and once each, and how many deployments aren't live.
       machines: [...new Set(v.deployments.map((id) => model.infos.get(id)?.machine).filter(Boolean))],
       notLive: v.deployments.filter((id) => !model.infos.get(id)?.live).length,
+      waiting: v.deployments.some((id) => { const d = served.find((w) => w.id === id); return !!d && deploymentWaits(held, d, model.infos.get(id)); }),
       ...(v.key ? { key: v.key } : {}), ...(unmatched ? { unattached: true } : {}), ...(unmatched && v.reason ? { reason: v.reason } : {}), ...(unmatched && v.short ? { short: v.short } : {}), ...(unmatched && v.ref ? { ref: v.ref } : {}),
       ...(remoteOnly && primary?.remote ? { server: primary.server, remote: true } : {}) };
   });

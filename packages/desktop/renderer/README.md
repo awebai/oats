@@ -37,21 +37,42 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   re-probe triggers: launch, app focus, Retry, choose (contract).
 - **common.mjs** — shared helpers: escaping, mini-markdown, ctx.api JSON
   wrappers, roster grouping, and workspace switching (`?ws=`) — the selected
-  workspace is shared across this window's views via `onWorkspaceChange`, so a
-  shell-level switcher can drive it too. One window per workspace: the
+  workspace is shared across this window's views via `onWorkspaceChange`, so
+  the sidebar's list of workspaces can drive it too. One window per workspace: the
   window's workspace is its URL's hash (`#ws=<id>`, window-binding.mjs),
   rewritten with `history.replaceState`; localStorage only holds the default
-  a new window takes when main says no other window has it (`startWindow`).
+  a new window takes when main says no other window has it (`startWindow`;
+  a window with a hash confirms that binding there, and chooses when main
+  answers `open-elsewhere`: a take-over moved it while the page loaded).
   Every switch goes through `switchWorkspace`, which main binds first
   (`window:claim-workspace`): a workspace another window has brings that
-  window to the front and leaves this one unchanged. Claims run one at a
+  window to the front and leaves this one unchanged, unless the switch is a
+  take-over (`{ takeOver: true }`: a pick from the list of workspaces, the
+  Deployments and Workspace selects, spawn.mjs `handOff`). Then main asks the
+  holder to release it (`window:release-workspace { request, workspace,
+  workspaces }`), waits for its `window:release-answer` or 2 s, and moves the
+  binding here. The holder (shell.mjs `releaseTakenWorkspace`) answers, then
+  leaves it through `leaveTakenWorkspace`, queued behind any switch already
+  queued: the newest workspace of its session history (`noteShown`, at most
+  16) that main still serves and that no other window has, else `choosing`.
+  Then it closes its tabs of that workspace in the background
+  (`closeWorkspaceTabs`) and forgets its layout (`workspaceTabMemory.forget`).
+  A holder that answers late ends the same way. Its answer hands over the
+  workspace's terminals and split (`layout-handover.mjs`: `describeLayout`, a
+  closed shape main checks with `validLayout` and passes on whole or not at
+  all, in the claim answer's `layout`); the asking window reads it once
+  (`handedLayout`, during the switch's listeners) and shell.mjs
+  `restoreHandedLayout` opens those terminals again (fresh viewers) under one
+  intent ticket, then lays them out (`composeLayout`). A selection, a switch or
+  a new connection meanwhile stops what is left. File, brain and view tabs do
+  not move. Claims run one at a
   time and a switch commits only after main's yes (`setWorkspace`). Main may
   move a window ahead of it: a window bound to a deployment whose view is
   observed later is registered under the view at once (main's
   `noteServed`), and the window's next roster read follows it there. A
   window with no workspace is `choosing`
-  (`windowState`): the shell shows the switcher with main's choices and
-  reads nothing.
+  (`windowState`): the shell shows "Choose a workspace", focuses the list of
+  workspaces with main's choices, and reads nothing.
   A persisted selection the server no longer serves is **stale**
   (`staleWorkspaceSelection`: non-empty and absent from the reply's
   `workspaces` plus `workspace`); both roster paths (hierarchy refresh and
@@ -360,14 +381,14 @@ global part, views follow them in their own CSS). `test/control-rules.test.mjs` 
    1.52-3.38:1, on `--danger` about 1.1:1). `theme.css` lists those controls in one
    `:where(…):focus-visible` rule; a new opaque-fill control joins it. A control whose base rule has an
    id or two classes and should tint declares its own `:focus-visible { background:
-   var(--sel) }` (`#ws-trigger`, `#tab-actions button`, `.ws-dialog-foot .secondary`).
+   var(--sel) }` (`#tab-actions button`, `.ws-dialog-foot .secondary`).
    Do not add per-component `outline: 2px` rings. Large focusable panels (tabpanels,
    canvases, `pre` blocks) get the edge only. Padding-free text tabs and links
    (`.workspace-tabs`, `.auto-tabs`, Setup links) give the tint a layout-neutral inset
    on focus (`padding: 0 6px; margin: 0 -6px`) so it does not hug the label.
 3. **Search/filter fields have one border.** A wrapped field (`.ctx-filter-field`) turns
    its wrapper border accent on `:focus-within`; the `<input>` inside has `border: 0;
-   outline: none` in every state. A bare field (`.field`, `#ws-menu-search`, the palette
+   outline: none` in every state. A bare field (`.field`, `#ws-suggestion-search`, the palette
    input's bottom rule) turns its own border accent on `:focus-visible` and never outlines.
 4. **Native selects have one look.** Every `<select>` is `class="field"` and takes
    `theme.css`'s `select.field` rule, unscoped because Brain and the Settings overlay render
@@ -403,23 +424,52 @@ A window shows a workspace **view**: one matched workspace identity across machi
 not read the panel. What they say (a deployment's state in words, the primary, the roster
 split into sections) is `packages/client/roster-sections.mjs`.
 
-- **Nothing above the navigation.** The sidebar lists no deployments; the Deployments
+- **No deployments above the navigation.** The sidebar lists no deployments; the Deployments
   page and the roster headings say where things run (UI spec, after the operator rejected a
-  deployments block under the switcher).
-- **Switcher** (`workspace-switcher.mjs`): views first, then unattached views in a
-  "Not matched to a workspace" group (listbox → group → option). What an entry says is decided in
-  `packages/client/workspace-choices.mjs` (`workspaceChoiceRows`, and `choiceMatches` for the
-  filter); this module draws it. Each entry is its name and
-  ONE muted line: a view's machines (`choice.machines`, "This Mac · altair") with a status
-  mark (`deploymentMark`, words as its label) when `notLive > 0`; an unattached view's
-  machine and its `short` reason. Choosing an unattached entry also calls
-  `requestDeploymentTab`, so the Deployments page opens on its tab. Never an id, a path or a
-  reason sentence (paths only in tooltips); twins of one name show their key. Filtering
-  (shown text only) and Arrow/Home/End run over every shown option.
-  A window with no workspace adds the "On this computer" group: the saved entries and the rows of
-  this computer's deployments list that are not served (#1390). A stale row says its state in words
-  (`LISTED_STATE_TEXT`) beside a status mark and opens nothing; a list row has **Remove** beside it,
-  reached like Open in new window (Right Arrow; Left Arrow or Escape back).
+  deployments block under the workspace switcher). The list of workspaces above the
+  navigation lists views.
+- **The list of workspaces** (`workspace-switcher.mjs`, `#ws-list` under the sidebar's head,
+  always shown; docs/desktop.md, "Workspaces"): one row per served view, whatever machine it is
+  on, the matched views first, then the unattached ones, in ONE `<ul>` with no heading. A list
+  of buttons, not a listbox, so the sidebar's plain keys stay live on it (shell.mjs
+  `updateActiveContexts`). A row is one line, the name alone (`rowNames`: twins of one name
+  show their team and key, never a folder or a machine, which the shared `workspaceChoiceLabels`
+  falls back to for the TUI): no mark, no
+  muted line, no not-live mark, no per-row button. Its tooltip is the whole name (a long one is
+  cut by an ellipsis), never a path or a machine. Rows cut off below the bounded height are
+  counted under the list (`.ws-more`, `moreBelowText`, aria-hidden). `reset(current)` (a switch
+  landed) keeps the rows and marks `current`; a pick on its way (`pickedId`) is where `step`
+  goes on from, and a pick of the current row supersedes it. Choosing an unattached row also
+  calls `requestDeploymentTab`, so the Deployments page opens on its tab.
+  - The current row is `aria-current="true"`, marked by style alone (`--sel`, the name in
+    bold); the section's `aria-description` names the current workspace by its row's name, never a path.
+  - The dot: `choice.waiting`, only `true` draws it (`.ws-waiting` after the name, a yellow
+    `--attn-dot` fill in a 1px `--warn` ring, the needs-input colour of the roster and the tabs, which holds 3:1 on every row fill), with `WAITING_NAME` (", needs input", sr-only in the name) and
+    `WAITING_TITLE` in the tooltip. It reads only what the client observes (panel-views.mjs
+    `workspaceChoices`); it never reorders.
+  - Keys (`onListKey`): one roving stop (`stopKey`, the row last focused, else the current
+    one), Up/Down/Home/End over every row, Enter opens; ⌘Enter / Ctrl+Enter opens a row in a
+    new window (`aria-describedby` the hint). `focusList()` (the current row, else the stop) is `app.workspaces` (shell.mjs
+    `focusWorkspaceList`, which also leaves focus mode and shows a hidden sidebar).
+  - The row's context menu (a `contextmenu` event: a right-click, Shift+F10, the Menu key) is
+    the page's own `role="menu"` popover (`.ctx-instance-menu.ws-row-menu`, styled as the
+    instance menu) with one item, `OPEN_IN_NEW_WINDOW`; the event is default-prevented, so
+    main's native Copy/Paste menu never shows for a row. Esc or Tab close it, back on the row.
+    No IPC of its own: the item calls `openInNewWindow`, as ⌘Enter does.
+  - `step(±1)` is the leader's ↑ / ↓ (`workspace-previous` / `workspace-next`,
+    leader-dispatch.mjs, which says `NO_WORKSPACE_ABOVE` / `NO_WORKSPACE_BELOW` at an end):
+    `packages/client/workspace-step.mjs` over the rows as drawn (`drawn`, every one openable);
+    it opens the row as a click does.
+  - A pick (click, Enter, `step`) calls `selectWorkspace`, which the shell runs as
+    `switchWorkspace(id, { takeOver: true })` (see common.mjs above).
+  - **Add local workspace…** (`openModal(opener)`, focus back on `opener` when it closes): this
+    computer's deployments not served (`discoverSuggestions`, asked only as it opens), each a
+    button that adds it and opens it here (`runAdd`, the main-validated add); then the stale rows
+    of this computer's list, each its state in a word (`LISTED_STATE_WORD`, the sentence
+    `LISTED_STATE_TEXT` in its tooltip and sr-only), opening nothing, with **Remove** beside it
+    (`runRemove`, `removeListed`: Right Arrow reaches it, Left Arrow or Esc come back). One
+    roving stop over them (`suggestionStop`). `#ws-confirm` is Onboard's alone. A window with
+    no workspace opens it at once when nothing is served (shell.mjs `showChooser`).
 - **Grouping by deployment** only when a view has two or more deployments: the sidebar
   roster (`rosterSections`, a heading per deployment named by `machineLabels` in the
   cluster-label type, a status mark when not live, none for a deployment without rows) and
@@ -556,7 +606,7 @@ draws its own way; the dialog draws them. **Change soul** switches the same dial
 the **picker** (the soul chooser, grouped by source, alphabetical, externals
 last, keyed by `agentsRoot + name + server`); switching soul keeps the typed
 name and instruction, and a soul chosen there reopens in the picker. Quick
-Open (⌘P / Ctrl+Alt+P) opens the scoped layout too (`preselectSpawn`), and
+Open (⌘P / Alt+P) opens the scoped layout too (`preselectSpawn`), and
 dismissing that dialog returns to where the operator was.
 
 Keyboard (spec F; `../docs/desktop-keyboard.md`): Mod+Enter (`spawn.submit`)
@@ -1282,6 +1332,34 @@ workspace is observed through its server and never synced from here.
   member's `publishes` never absorbs its package's capabilities). A remembered
   repository the catalog stops offering falls back to All. "N of M shown" counts
   what the pill and the search leave.
+  **Workspace defaults** (`workspace-defaults.mjs`) is the first section and the
+  jump's first segment (**Defaults**, counting the filled slots plus the default
+  capabilities not turned off) whenever `oats workspace status` reports
+  `defaults`; without it there is no section and nothing is inferred. It is one
+  panel: a scope line, then two groups drawn with one cell (tile | slot label, id,
+  source chip). Core capabilities holds the three slots in a fixed order (Knowledge,
+  Messaging, Tasks), including a named default (`defaults.capabilities`) whose listed
+  catalog row has a core layer, as the kernel fills the slot by layer. A slot that is
+  declared both ways (the workspace's own conflict) shows both ids, each its own button.
+  Additional capabilities holds the rest (a layer the catalog does not report is not
+  guessed), or says there are none.
+  Each group's list is labelled by its heading. `defaultRow` matches each
+  default to a catalog row (`from: "package"` a package row, a member key that
+  member's row, `"here"` the host's) across every section, so the search and the
+  pills never narrow it. An unmatched default gets a minimal row whose source chip
+  names the member repository with no version (`source-chip.mjs` `version: false`),
+  or, for a package, only the kind ("package"): the package that holds it is not known
+  and a capability's id is not its package's. It still opens the page, which says the
+  capability is not listed. Focusable cells carry
+  `data-focus-key`s (`defaults:<slot>`, `defaults:cap:<name>`), which
+  the tab host restores after a repaint (`captureFocusState` on the sections).
+  The toolbar's round "i" (`about-dialog.mjs` `createAboutDialog`) is built
+  once by `workspace-discovery.mjs` and kept after the jump across repaints, as
+  the search field is. Workspace › Souls has its own "i", built once by
+  `views/spawn.mjs`. Both dialogs are the lifecycle dialog's frame, with focus
+  handling from `forget-dialog.mjs`: they join the overlay handoff, and leaving the
+  tab or the workspace closes them with `close({ focus: 'none' })`. All their
+  words live in `ABOUT_COPY`.
 - **Teams** (kernel feature `team-model-2` or `team-model-3`, `teamModelOf`;
   `computer-teams.mjs`) is the
   *Teams* page: *Shared with the workspace* (read-only, edited by PR) and
@@ -1371,7 +1449,7 @@ The keymap, its per-platform defaults, the terminal policy, the F6 regions and
 the keyboard audit are documented in `../docs/desktop-keyboard.md`; this
 section is the module map.
 
-- **⌘F / Ctrl+Alt+F** reveals the sidebar and focuses the instance filter; **⌘N /
+- **⌘F / Alt+F** reveals the sidebar and focuses the instance filter; **⌘N /
   Ctrl+Shift+N** opens Workspace's soul chooser, never automatically spawning
   an instance. Visible hints and tooltips follow the effective bindings
   (including explicit unbinds). Existing user overrides are retained.
@@ -1382,9 +1460,9 @@ section is the module map.
   `DEFAULT_KEYMAP` entry — override wins, explicit unbind kills it),
   `DEFAULT_KEYMAP` (one entry per action: a chord, or `{ mac, other }`
   when the platforms differ; `defaultBinding(id, isMac)`), one such keymap
-  per chord family (`DEFAULT_KEYMAPS`: Ctrl+Alt, the default and
-  `DEFAULT_KEYMAP`, and Ctrl+Shift, which moves the Linux/Windows key of seven
-  `CHORDS_READ` rows; `setChordFamily` binds one, from
+  per chord family (`DEFAULT_KEYMAPS`: Alt, the default and
+  `DEFAULT_KEYMAP`; Ctrl+Alt; and Ctrl+Shift, which moves the Linux/Windows key
+  of seven of Ctrl+Alt's `CHORDS_READ` rows; `setChordFamily` binds one, from
   `chord-family.mjs`, and every reader of a default follows at once), user overrides
   persisted under `localStorage["oats-desktop-keymap"]`, chord
   parse/format/match, and dispatch (`matchEvent`/`handleKeydown`).
@@ -1397,30 +1475,47 @@ section is the module map.
   spawn dialog's section keys among them). The engine
   skips already-consumed (`defaultPrevented`) events, and unmodified/
   shift-only chords never fire while an editable field (input, textarea,
-  select, contenteditable) has focus. Terminal
-  policy (a default chord never takes a key a terminal program reads):
+  select, contenteditable) has focus. Two defaults give way to the focused
+  control, a user's own binding of the same keys still firing: Alt+↑ / ↓ to a
+  select, a datalist input or a date picker (`opensOnAltArrow`), and on macOS ⌥
+  with an arrow, ⇧ or not, to a field of text, a terminal's textarea aside
+  (`movesCaretOnOption`: its word and paragraph moves). Terminal
+  policy (plain Ctrl+letter and the F-keys are the program's; the Alt
+  family's keys are taken on purpose, and the program still gets each from
+  Esc, then the key):
   inside `.xterm`, on macOS only ⌘-resolved chords fire, plus Ctrl+Tab for
-  tabs.next/prev and the leader's ⌃X (or ⌃\ bound back); on Linux/Windows only
+  tabs.next/prev, the leader's ⌃X (or ⌃\ bound back) and ⌥ with an arrow for
+  the moves between tabs, groups and workspaces (`MAC_ARROW_MOVES`; each by
+  action id and shape, `macStructuralChord`); on Linux/Windows only
   `TERMINAL_ALLOWLIST` action ids may
   fire (a default xterm sends nothing for, or a byte the program still gets
-  from a plainer key, or a named exception: the leader's Ctrl+X, whose 0x18 the
-  leader pressed twice gives the program, `focus.leaveTerminal` and the
-  Alt+Shift arrows; `test/terminal-xterm-bytes.test.mjs` pins each) —
-  every other plain Ctrl+letter, F6 and Alt+digit belong to the attached program, and
+  from a plainer key, or one of the Alt family's, or a named exception: the leader's
+  Ctrl+X, whose 0x18 the leader pressed twice gives the program, `focus.leaveTerminal`
+  and the Alt+Shift arrows; `test/terminal-xterm-bytes.test.mjs` pins each) —
+  every other plain Ctrl+letter, F6 and every Alt key no chord holds belong to the attached program, and
+  AltGr is never Alt (`chordFromEvent`), and
   `focus.leaveTerminal` (Mod+Shift+F6) is the way out. Outside a terminal on
   Linux/Windows the leader's Ctrl+X is a text field's Cut (`leaderLeftToField`). `keymapConflicts`
   lists clashes that involve a stored rebind; the shell marks the footer
   shortcuts button and the editor names them. The chords shared with the
   TUI (`CHORDS_READ`, read from `packages/client/keymap.mjs` CHORDS) all
-  fire from a focused terminal: `app.palette` (⌘K / Ctrl+Alt+K) and
-  `app.quickOpenSouls` (⌘P / Ctrl+Alt+P) among them, while plain Ctrl+K
+  fire from a focused terminal: `app.palette` (⌘K / Alt+K) and
+  `app.quickOpenSouls` (⌘P / Alt+P) among them, while plain Ctrl+K
   and Ctrl+P stay the program's (readline's kill-line, shell history).
-  The leader's ↑ ↓ z have actions of their own (`roster.openPrevious`,
-  `roster.openNext`, `terminal.focusMode`, shell.mjs `runAsLeaderKey`), which run
-  what the leader then that key runs. Both read their origin when the key is
-  pressed (`leaderOrigin`): the target (`leaderTargetId`), and for ↑ ↓ the
-  instance an open still in flight is opening (`openingInstanceId`, from
-  `openTerminalTabFlow`'s `terminalOpening`), so presses faster than an open each move.
+  The previous / next instance, the previous / next workspace and the leader's
+  `z` are chords of their own (`roster.openPrevious`, `roster.openNext`,
+  `workspace.previous`, `workspace.next`, `terminal.focusMode`, shell.mjs
+  `runAsLeaderKey`), which run the leader's dispatch (leader-dispatch.mjs
+  `previous`, `next`, `workspace-previous`, `workspace-next`, `zoom`); the
+  editor groups' are `split.focusNextGroup` / `split.focusPrevGroup`, the
+  leader's Tab / Shift+Tab (shell.mjs `focusGroup`). The instance steps have no
+  leader key: the leader's ↑ ↓ are `workspace-previous` / `workspace-next`, the list of
+  workspaces' `step` (their labels are leader-keys.mjs `LEADER_LABELS`, which
+  also names `previous` / `next` for the chords). All read their origin when
+  the key is pressed (`leaderOrigin`): the target (`leaderTargetId`), and for
+  the instance steps the instance an open still in flight is opening
+  (`openingInstanceId`, from `openTerminalTabFlow`'s `terminalOpening`), so
+  presses faster than an open each move.
   The leader's wait draws nothing (`leader-hint.mjs` `announce`, for a screen
   reader); its line says why a key could not act.
   `keymapTakes(e)` tells a view's own key handler that the keymap binds this
@@ -1472,7 +1567,7 @@ section is the module map.
   `onTerminalTypographyChange`), so every open terminal and the control follow
   each other. A typed size applies on Enter or on leaving the field, never per
   keystroke. The font family stays on the palette's prompt.
-- **quick-open.mjs** — Quick Open for souls (⌘P / Ctrl+Alt+P, also “Souls: quick
+- **quick-open.mjs** — Quick Open for souls (⌘P / Alt+P, also “Souls: quick
   open…” in the palette): fuzzy-find a soul from the Spawn view's data
   source and hand off through `views/spawn.mjs` `preselectSpawn()`: the
   spawn dialog scoped to that soul, as its card's Spawn opens it, with focus
@@ -1490,7 +1585,7 @@ section is the module map.
   differs from the default, click-to-record (Esc cancels, Backspace
   unbinds), conflict warnings via `findConflict`, reset-all. On Linux/Windows,
   given the page's chord family, its top holds the family choice ("Shortcuts
-  anywhere": Ctrl+Alt or Ctrl+Shift), which writes keys.json through main and
+  anywhere": Alt, Ctrl+Alt or Ctrl+Shift), which writes keys.json through main and
   switches the keymap at once, with main's note when the file was not taken.
 - **chord-family.mjs** — the chord family in the page: asks main
   (`../chord-family.mjs`) as the window starts, follows its pushes, writes the
@@ -1561,7 +1656,7 @@ with no plan, which sends `{server, instance}` once to `/api/server-forget`
 ([desktop-deployment-model.md](../docs/desktop-deployment-model.md#remote-rows)).
 
 An instance's colour (#1421 §2) has no row menu item: the palette's **Instance: name and
-colour…** and `instance.edit` (CHORDS `edit-instance`, Ctrl+Alt+R / ⌥⌘R) open
+colour…** and `instance.edit` (CHORDS `edit-instance`, Alt+R / ⌥⌘R) open
 `instance-color-dialog.mjs` for the leader's target (`leaderTargetId`; the palette captures
 it when it opens). The dialog is Forget's pattern: it asks `/api/instance-color` with
 `check: true` on open (nothing runs), then sends one `{instance, home, color}` at a time,
@@ -1815,6 +1910,25 @@ focus on a tab's trigger or close uses the same helper. In a group strip the spl
 buttons scroll with the tabs, so they are pinned to its end (`position: sticky`)
 and the strip declares their width as `scroll-padding-right`, which
 `revealInStrip` honours: a revealed tab never sits under them.
+**Each tab ends with its number** (`.tab-num`, aria-hidden, empty from
+`createTabChrome`): the N that go to tab reaches in its strip, 1–8 and 9 for
+the last of nine or more (`tab-numbers.mjs` `tabNumber`, `numberTabStrips`).
+`observeTabStrips()` numbers every current strip and points a
+`MutationObserver` (`tabNumberObserver`) at each, so a tab added, closed,
+hidden by context or moved between groups renumbers them; the observer ignores
+its own `.tab-num` writes. Harnesses that run `observeTabStrips` by its text give
+it `numberTabStrips` and `tabNumberObserver: null`. The number is aria-hidden, so
+the trigger's tooltip names the key it stands for, the live binding of
+`tabs.goto<N>` ("name (Alt+3)", "name (⌥⌘3)" on macOS); the shell renumbers on
+`onKeymapChange` too, so a rebind or a chord family switch shows there. The
+tooltip has three writers, each setting only its part through `tab-a11y.mjs`
+`setTabTitle`: the name (`createTabChrome`), the key (`numberTabStrips`) and the
+needs-input note (`syncTabNeedsInput`); harnesses that run `syncTabNeedsInput` by
+its text give it `setTabTitle`. The number never crowds out
+the name: the trigger wraps and shows only its first line, and the label's flex
+basis is `--tab-name-min` (102px, what the floor budgets the name), so line
+breaking sees the name at its minimum and the number wraps out of sight, whole,
+only when even that does not fit (`shell.css`, `.tab-trigger`).
 
 ### Workspace-local tab memory
 
@@ -1826,7 +1940,8 @@ are retained, not recreated. Empty layouts and their focused destinations are
 remembered too; only a workspace with neither open tabs nor a retained layout
 falls back to the stage. Restart restoration of tab layouts is not implemented yet.
 Memory is keyed by the view id; `rehome(map)` moves a deployment id's memory to its view
-(see "Workspace views").
+(see "Workspace views"). A workspace another window takes over is forgotten here
+(`forget(workspace)`, from shell.mjs `closeWorkspaceTabs`), its tabs closed first.
 
 All artifact tabs (terminal, brain, file) are workspace-scoped, including their
 activation boundary and deduplication keys. A retained brain tab has a pinned

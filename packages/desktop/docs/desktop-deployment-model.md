@@ -282,8 +282,8 @@ an entry is inert: it is never served, never reported as "not served" (that
 needs a deployment that validates), and never offered by the switcher. Each
 launch re-validates the persisted set, so a deployment that came back is served
 again. **Only an explicit remove drops a saved path**; nothing else does. Today
-that is the switcher's **Remove** on a row of this computer's deployments list
-that is not served (below); removing a served deployment is #476.
+that is the Add dialog's **Remove** on a row of this computer's deployments list
+that can't be opened (below); removing a served deployment is #476.
 
 - **Launch.** `restoreWorkspaceDirs` opens the saved deployments plus the
   launch directory (`--dir`, `OATS_DESKTOP_DIR` or the cwd) when that is one. A
@@ -356,31 +356,31 @@ probe's `deployments-list` feature. The shared reader
 (`packages/client/deployment-list.mjs`) turns the answer into rows of
 `{ path, name, state }`; a document it cannot read is refused whole.
 
-- **What the switcher shows.** A window with no workspace lists, under **On
-  this computer**, the saved entries that are not served and the list's rows
-  that are not served (`workspaceSuggestions`), read each time its menu opens.
-  The Add dialog's suggestions are the same minus the stale rows.
+- **What Add local workspace… shows.** The dialog lists the saved entries
+  that are not served and the list's rows that are not served
+  (`workspaceSuggestions`), asked of main each time it opens. The sidebar's
+  list of workspaces lists none of them: it is the served views alone.
   - A row the kernel calls `ok` is offered only while it validates here too,
-    and one click is the normal add.
-  - A stale row says its state in words, with a warning mark, and opens
-    nothing. The states are `missing` ("Missing: the folder is gone, or its
-    volume isn't mounted"), `not-a-deployment` ("Not a deployment any more: no
+    and one click (or Enter) is the normal add.
+  - A stale row comes after them, says its state in a word (the sentence is
+    its tooltip and what a screen reader hears), and opens nothing. The
+    states are `missing` ("Missing: the folder is gone, or its volume isn't
+    mounted"), `not-a-deployment` ("Not a deployment any more: no
     oats-local.yaml") and `unreadable` ("Can't be checked: OATS couldn't read
     this folder"). The words are `LISTED_STATE_TEXT` in
     `renderer/workspace-switcher.mjs`.
-  - Every list row has **Remove** beside it, reached as Open in new window
-    is: Right Arrow, then Enter; Left Arrow or Escape go back to the row.
-- **Without the feature** the section holds the saved entries and one line,
-  "This oats can't list this computer's deployments. Update oats." Nothing
-  falls back to looking at the disk. A read the kernel refused says "Couldn't
-  read this computer's deployments: <the kernel's message>". With no
-  compatible CLI the section says nothing more: the degradation card covers
-  that.
+  - Every stale list row has **Remove** beside it: Right Arrow, then Enter;
+    Left Arrow or Escape go back to the row.
+- **Without the feature** the dialog offers the saved entries and says "This
+  oats can't list this computer's deployments. Update oats." Nothing falls
+  back to looking at the disk. A read the kernel refused says "Couldn't read
+  this computer's deployments: <the kernel's message>". With no compatible
+  CLI the dialog says nothing more: the degradation card covers that.
 - **Remove** runs `oats deployments remove <path>` (the kernel keeps a
   tombstone, so nothing adds the row back on its own) and drops the path from
   the saved open set, or the row would still be offered as a saved entry. It
-  touches nothing on disk, so it asks nothing; the menu says what it did and
-  reads the list again.
+  touches nothing on disk, so it asks nothing; the dialog says what it did and
+  drops the row.
   - **Its channel**, `workspace:remove-listed(path)`, is a privileged IPC
     channel with the senderFrame guard (`guard`).
   - **Its provenance** (`createRemoveListed`): only a path that was offered as
@@ -475,12 +475,11 @@ answers the view that holds it; no `?ws=` answers the first view.
   deployment's.
 - `workspaces` is the switcher's list of views, each with its `deployments`
   ids, `deploymentLabels`, `machines` (each machine once, in order) and
-  `notLive` (how many of its deployments aren't live, stale ones included). The switcher shows the
-  name, one muted line of machines ("This Mac · altair") and a mark when
-  `notLive` is not zero: never a path, an id or a reason. Unattached views
-  carry `unattached`, their `reason`, `short` and the `ref` they report, and
-  are listed under "Not matched to a workspace" with the machine and the short
-  reason; choosing one opens its tab on the Deployments page
+  `notLive` (how many of its deployments aren't live, stale ones included). The Desktop's list
+  shows the name alone, one line, and the dot (`waiting`): never a machine, a
+  path, an id or a reason. Unattached views carry `unattached`, their
+  `reason`, `short` and the `ref` they report, and are listed after the
+  matched ones in the same list; choosing one opens its tab on the Deployments page
   (`requestDeploymentTab`, `renderer/deployment-tabs.mjs`). Those fields are
   sent only when this computer's CLI has `workspace-identity`: without it
   nothing could be matched, and the entries list as they did before views.
@@ -670,29 +669,56 @@ terminal owner).
 - **Binding.** A window switches through `window:claim-workspace`: main
   refuses a workspace another window holds and brings that window to the
   front (or, for a view that moved under a window, doesn't); a deployment id
-  is bound as the view that holds it. The renderer runs one claim at a time
+  is bound as the view that holds it. A take-over (`takeOver`: a pick from
+  the list of workspaces, a view's workspace select, going to an instance in
+  another workspace) is never refused for that: main asks the holder to
+  release it (`window:release-workspace`, answered once with
+  `window:release-answer`, from that window only, for its open request), and
+  moves the binding when it answers or after 2 seconds. The holder, bound to
+  nothing from then, leaves the workspace whenever its renderer runs, on time
+  or late: it shows its previous workspace, else the switcher, and closes its
+  tabs of it. Its answer may hand the workspace's terminals and split over
+  (`renderer/layout-handover.mjs`), passed on whole when valid, else not at
+  all; every index is checked, so an array with holes is not valid. A holder
+  whose page is loading or reloading still gets the ask: the preload keeps it
+  until the shell subscribes (`onWorkspaceRelease`). A page with a hash
+  confirms it with main at start (`startWindow`, a claim with focus false);
+  a holder's claim of the workspace it is being asked to release settles the
+  ask, with no layout, and is answered `open-elsewhere`, so it chooses and
+  unbinds itself (`chooseWorkspace`: main may still bind it there when the
+  asking window closed before the take-over landed). As a
+  backstop, main refuses every workspace-scoped read (409
+  `E_WINDOW_NOT_BOUND`) and terminal open (`E_TERM_FORBIDDEN_FRAME`, the
+  terminal owner's `admitFrame`) from a frame whose hash names a workspace
+  main doesn't bind its window to (`holdsHash`, through the view of a
+  deployment id), and a terminal open from a window with no workspace.
+  The renderer runs one claim at a time
   and commits a switch only after main's yes (`switchWorkspace` in
   `renderer/views/common.mjs`), so a switch never leaves its hash and main's
   registry apart.
 - **A view observed under a window.** A window bound to a deployment whose
   identity is observed later (its view gets a `ws:` id) is moved to that view
   in main as soon as the served list names it (`noteServed`), focusing
-  nothing, so no other window can take the workspace meanwhile. Its hash
+  nothing, so no other window can claim the workspace meanwhile (a take-over
+  still can). Its hash
   still names the deployment until its next roster read follows the view
   (the #482 rehome claim, a no-op in main by then); its requests stay
   valid in between, the deployment id being served. If another window
   already has the view, nothing moves, and that follow leaves this window
-  choosing.
+  choosing. A take-over in between names the view, which this window still
+  holds under the deployment id: its release matches every id the served
+  view holds (`takenWorkspaceIds`), so it leaves, hands over and closes the
+  same workspace.
 - **No workspace.** A New Window, a window whose view moved to a
   workspace another window has, or the first window of a launch with no
   local deployment to serve, is *choosing*: main's refusal carries the
   served choices, and the window reads nothing until it binds. Its choices
   follow what is served: its roster poll asks main (`window:choices`, which
   re-reads `/api/panel` and binds nothing), so the remote views served a few
-  seconds after launch appear. Its switcher menu also lists the suggestions
-  under **On this computer**, looked up each time the menu opens; one click
-  runs the normal add and opens the deployment in this window. Only with
-  nothing served and nothing suggested does it say no choices are reported.
+  seconds after launch appear. With nothing served, so its list is empty, it
+  opens Add local workspace… at once (`showChooser` in `renderer/shell.mjs`),
+  where one click runs the normal add and opens the deployment in this
+  window; closing the dialog leaves the chooser, whose button opens it again.
 - **Records.** `windows.json` (`window-records.mjs`) keeps each window's
   view id, the deployments that view held, its bounds and state, written
   atomically after moves settle. A launch restores the windows whose views

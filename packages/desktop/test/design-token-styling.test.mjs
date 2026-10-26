@@ -10,17 +10,15 @@ const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url
 const theme = read("theme.css"), shell = read("shell.css");
 const icon = shellIcon("workspace");
 const markup = `<div id="app"><aside id="sidebar">
-  <div class="side-head"><button id="ws-trigger" aria-expanded="false">
-    <span class="ws-brand-mark">${icon}</span><span class="ws-heading-copy">
-      <span id="ws-name">Workspace</span>
-    </span><span class="ws-chevron">${icon}</span></button></div>
-  <div class="ws-menu" hidden><input id="ws-menu-search"><div class="ws-options">
-    <button class="ws-option" aria-selected="true"><span class="ws-option-copy"><span class="ws-option-line"><span class="ws-option-name">fixture</span>
-      <span class="deployment-mark" role="img" aria-label="1 deployment not live">${icon}</span></span><span class="ws-option-meta">This Mac · altair</span></span><span class="ws-check">✓</span></button>
-  </div></div>
+  <div class="side-head"><span class="ws-brand-mark">${icon}</span><span id="ws-heading" class="ws-heading">Workspaces</span>
+    <button id="ws-add-open" class="ws-add-open icon-button" type="button" aria-label="Add local workspace…">${icon}</button></div>
+  <section id="ws-list" class="ws-list" aria-labelledby="ws-heading"><div id="ws-options" class="ws-options"><ul class="ws-group">
+    <li class="ws-option-row"><button class="ws-option" aria-current="true"><span class="ws-option-name">fixture</span><span class="sr-only">, needs input</span><span class="ws-waiting" aria-hidden="true"></span></button></li>
+    <li class="ws-option-row"><button class="ws-option"><span class="ws-option-name">other</span></button></li>
+  </ul></div></section>
   <nav id="nav"><button class="nav-item active"><span class="icon">${icon}</span>Workspace</button></nav>
   <section id="instance-roster"><div class="ctx-head">Instances</div><input class="ctx-filter">
-    <div class="ctx-list"><div class="ctx-deployment" role="heading" aria-level="3"><span class="ctx-deployment-label">altair</span></div><div class="ctx-tree-row"><button class="ctx-inst active"><span class="ctx-dot on"></span>
+    <div class="ctx-list"><div class="ctx-deployment" role="heading" aria-level="3"><span class="ctx-deployment-label">altair</span><span class="deployment-mark" role="img" aria-label="remembered">${icon}</span></div><div class="ctx-tree-row"><button class="ctx-inst active"><span class="ctx-dot on"></span>
       <span class="ctx-copy"><span class="ctx-name">Fixture instance</span><span class="ctx-repo-label">fixture</span></span>
     </button></div></div></section>
   <div id="nav-foot"><button id="sidebar-spawn" class="primary">${icon}Spawn instance</button>
@@ -33,7 +31,7 @@ const markup = `<div id="app"><aside id="sidebar">
     <div class="group-tabbar"></div><button class="split-empty">Open an instance in this panel</button>
   </div></div></main></div>
   <div class="ws-modal" hidden><section class="ws-dialog"><footer class="ws-dialog-foot">
-    <button class="primary">Add workspace</button></footer></section></div>
+    <button class="primary">Onboard</button></footer></section></div>
   <div class="oats-view"><button class="act primary">Primary</button><button class="act danger">Danger</button>
     <button class="act">Secondary</button><input class="field"><textarea class="field"></textarea><select class="field"><option>Fixture</option></select></div>
   <div class="ctx-instance-menu"><button data-action="retire">Retire instance</button></div>`;
@@ -67,23 +65,43 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, 24px brand and 16
   for (const selector of ["#tabstrip", ".group-tabbar"]) assert.equal(u.style(selector).boxSizing, "border-box", selector);
   assert.equal(u.style("#tabbar").height, "calc(var(--bar-h) - 1px)");
   assert.equal(u.style(".side-head").padding, "0px 10px 0px 12px");
-  assert.equal(u.style("#ws-trigger").gap, "9px");
-  assert.equal(u.style("#ws-trigger").height, "36px");
+  // The head: the 24px brand, the list's heading 9px after it, and Add local workspace… as a 28px icon button.
+  assert.equal(u.style(".ws-heading").marginLeft, "9px");
+  assert.equal(u.style(".ws-heading").flexGrow, "1");
+  assert.equal(u.style(".ws-heading").minWidth, "0px");
+  assert.deepEqual([u.style(".ws-add-open").width, u.style(".ws-add-open").height, u.style(".ws-add-open").flexShrink], ["28px", "28px", "0"]);
+  assert.equal(u.style(".ws-add-open").display, "grid");
+  assert.equal(u.style(".ws-add-open").color, "var(--muted)");
   for (const [selector, size] of [[".ws-brand-mark", "24px"], [".shell-icon", "16px"]]) {
     assert.equal(u.style(selector).width, size); assert.equal(u.style(selector).height, size);
     assert.equal(u.style(selector).flexShrink, "0");
   }
-  assert.equal(u.style(".ws-heading-copy").minWidth, "0px");
-  assert.equal(u.style(".ws-heading-copy").flexDirection, "column");
-  for (const selector of ["#ws-name", ".ws-option-name", ".ws-option-meta", ".ctx-deployment-label"]) {
+  for (const selector of [".ws-option-name", ".ctx-deployment-label"]) {
     assert.equal(u.style(selector).whiteSpace, "nowrap", selector);
     assert.equal(u.style(selector).textOverflow, "ellipsis", selector);
   }
-  assert.equal(u.style("#ws-name").fontSize, "13.5px");
-  // #482 UI spec: a switcher entry is its name (with a status mark beside it) and ONE muted line of machines.
-  assert.equal(u.style(".ws-option-line").display, "flex");
-  assert.equal(u.style(".ws-option-meta").fontSize, "10.5px"); assert.equal(u.style(".ws-option-meta").color, "var(--muted)");
-  // The mark: the warning shape in --warn at the 12px icon size the filter uses, never the 16px default.
+  assert.equal(u.style(".ws-heading").fontSize, "13.5px");
+  assert.equal(u.style(".ws-heading").textOverflow, "ellipsis");
+  // The list: always shown under the head, about six rows at most, then it scrolls inside itself.
+  assert.equal(u.style(".ws-list").flexShrink, "0");
+  assert.equal(u.rule(".ws-list").borderBottom, "1px solid var(--border)", "one rule between the list and the navigation");
+  assert.equal(u.style(".ws-options").maxHeight, "276px");
+  assert.equal(u.style(".ws-options").overflowY, "auto");
+  assert.equal(u.style(".ws-option").alignItems, "center");
+  assert.equal(u.style(".ws-option").padding, "6px 8px");
+  // The needs-input dot: the roster's attention token, a 7px graphic that never shrinks.
+  const dot = u.style(".ws-waiting");
+  assert.deepEqual([dot.width, dot.height, dot.boxSizing, dot.borderRadius, dot.flexShrink, dot.background, dot.borderTopWidth, dot.borderTopStyle],
+    ["8px", "8px", "border-box", "50%", "0", "var(--attn-dot)", "1px", "solid"], "a yellow fill in a ring (its --warn colour and 3:1: theme-contrast)");
+  // A row is one line (pr3-simplify): the name, which gives way and ends in an ellipsis, then the dot; the current
+  // row is told by style alone, its name in bold (and the --sel fill: theme-contrast).
+  assert.deepEqual([u.style(".ws-option").display, u.style(".ws-option").gap], ["flex", "6px"]);
+  const name = u.style(".ws-option-name");
+  assert.deepEqual([name.flexGrow, name.flexShrink, name.minWidth, name.overflow], ["0", "1", "0px", "hidden"]);
+  assert.equal(u.style('.ws-option[aria-current="true"] .ws-option-name').fontWeight, "650");
+  assert.notEqual(u.style('.ws-option:not([aria-current]) .ws-option-name').fontWeight, "650", "another row's name is not bold");
+  assert.equal(shell.match(/\.ws-option-(?:meta|line|copy|section)\b|\.ws-check\b|\.ws-open-window\b|\.ws-option \.workspace-avatar/), null, "no mark, machine line, check or button rules");
+  // The deployment mark (the roster's headings): the warning shape in --warn at the 12px icon size the filter uses, never the 16px default.
   assert.equal(u.style(".deployment-mark").color, "var(--warn)"); assert.equal(u.style(".deployment-mark").flexShrink, "0");
   assert.equal(u.style(".deployment-mark > .shell-icon").width, "12px");
   // Deployment headings in the roster's group-label type (the clusters' label on the Deployments page).
@@ -150,7 +168,8 @@ test("running indicators use accent, while success stays distinct", t => {
 
 test("component geometry: rounded popovers, 36px fields and persistent scrollable groups", t => {
   const u = fixture(t);
-  for (const selector of [".ws-menu", ".ctx-instance-menu"]) {
+  assert.equal(shell.match(/\.ws-menu\s*[,{]/), null, "no dropdown popover rule: the workspace list is always shown");
+  for (const selector of [".ctx-instance-menu"]) {
     assert.equal(u.style(selector).borderRadius, "9px");
     assert.equal(u.style(selector).padding, "6px");
     assert.equal(u.style(selector).boxShadow, "var(--shadow-popover)");
@@ -169,7 +188,8 @@ test("component geometry: rounded popovers, 36px fields and persistent scrollabl
   assert.equal(u.style("#tab-actions button").height, "28px");
   assert.equal(u.style(".group-cell.focused-group").outline, "1px solid var(--accent)");
   assert.equal(u.style(".split-empty").display, "flex", "empty panels remain visible");
-  for (const selector of [".ws-menu", ".ws-modal", "#tab-actions"]) {
+  assert.notEqual(u.style(".ws-list").display, "none", "the workspace list has no hidden state");
+  for (const selector of [".ws-modal", "#tab-actions"]) {
     assert.equal(u.style(selector).display, "none", `${selector} honors hidden`);
     u.get(selector).hidden = false;
     assert.notEqual(u.style(selector).display, "none", `${selector} can be revealed`);

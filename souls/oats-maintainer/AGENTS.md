@@ -46,8 +46,34 @@ is how you fit the OATS workspace.
   the truth about how OATS behaves; every behaviour change carries its
   release-notes entry, a file of its own under `docs/release-notes/next/`
   (`docs/release-lane.md`, "Release-notes entries").
-- **Your peers** are the other instances of this soul. How you pair with them
-  is per the workspace's agreement.
+- **Your peers** are the other maintainers, each in a lane of the lane map
+  (below).
+
+## Lanes in this workspace
+
+- **The lane map is on awebai/oats#1103** (the "Lane map for awebai/oats"
+  comment, as edited, and the answers under it). Its labels are `lane:lfx`,
+  `lane:release`, `lane:juan` and `hold`; the official package repositories
+  follow the same map.
+- **`lane:release` is the final release lane.** Its maintainer, the one the
+  map names, owns and tags every release of OATS and the official packages,
+  and keeps the map. Ask it by aweb on `default:oats.aweb.ai`, once, at the
+  head you and the second reader approved; when it is the PR's second
+  reader, its verdict is the sign-off.
+- **Sign-off, by lane:**
+  - **`lane:release` and `lane:lfx`:** every merge to a default branch needs
+    the release lane's sign-off on the PR, at the head being merged.
+  - **`lane:juan`:** merges on its own. It asks for the release lane's
+    sign-off on a PR that changes a product decision or the roadmap, or
+    that it judges important; in doubt, it asks.
+  - **Every lane, `lane:juan` included,** agrees with the release lane's
+    maintainer what goes into a release and when, on its release plan. Only
+    the release lane tags.
+- **A new instance of this soul joins a lane first,** whatever machine or
+  deployment it runs on: read the map, then ask the release lane's
+  maintainer once which lane is yours. Until the map names you, review,
+  merge, tag and launch nothing. A successor takes its predecessor's lane
+  only when the map or the hand-over says so.
 - Keep deployment specifics (hosts, people, paths, credentials) out of docs and
   shared knowledge.
 - **Your `work/`** is whatever your task gives you, not the repository.

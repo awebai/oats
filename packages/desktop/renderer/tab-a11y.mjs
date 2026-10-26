@@ -21,13 +21,33 @@ export function tabNameTailStart(name, soul = "") {
   return start > 0 && start < name.length ? start : null;
 }
 
+// A trigger's tooltip has three parts, each kept by its own writer: the tab's name (createTabChrome),
+// the key that goes to the tab (numberTabStrips, tab-numbers.mjs: "Alt+3", "⌥⌘3") and a note on its
+// own line (shell.mjs syncTabNeedsInput: "Needs input: …"). Each writer sets only its part, and the
+// title is rebuilt from all three, so no writer puts back a part another has since changed.
+const titleParts = new WeakMap();
+/** Set some of a tab trigger's tooltip parts ({ name, key, note }; null clears key or note) and write
+ * the title they make: "name (key)\nnote". A trigger not drawn by createTabChrome starts from its
+ * own title as the name. */
+export function setTabTitle(trigger, parts) {
+  const own = titleParts.get(trigger) ?? { name: trigger.title, key: null, note: null };
+  Object.assign(own, parts);
+  titleParts.set(trigger, own);
+  const title = `${own.name}${own.key ? ` (${own.key})` : ""}${own.note ? `\n${own.note}` : ""}`;
+  if (trigger.title !== title) trigger.title = title;
+}
+
 /** decor (all decorative; the accessible name stays the bare title):
  *  { kind } or { icon } an app icon for artifact tabs; { dot, detail } a
  *  live-state dot and the instance branch for terminal tabs (Redesign v3);
  *  { color } the instance's colour on that dot, a palette name (instance-dot.mjs);
  *  { tailAt, tailEnd } splits the title: a head that ellipsizes, the tail
  *  [tailAt, tailEnd) that never shrinks (tabNameTailStart), then any rest of
- *  the title (a remote tab's " · host"), which gives way before the head. */
+ *  the title (a remote tab's " · host"), which gives way before the head.
+ *  Every trigger ends with an empty, hidden .tab-num: the tab's go-to-tab
+ *  number, which numberTabStrips (tab-numbers.mjs) fills in once the tab is in
+ *  its strip; decorative too, and the tooltip names the key that number stands
+ *  for (setTabTitle). */
 export function createTabChrome(document, id, title, isMac = false, decor = {}) {
   const tabEl = document.createElement("div");
   tabEl.className = "tab";
@@ -67,7 +87,10 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
     const extra = document.createElement("span"); extra.className = "tab-detail"; extra.setAttribute("aria-hidden", "true");
     extra.textContent = detail; triggerEl.append(extra);
   }
-  triggerEl.title = title;
+  // The go-to-tab number, last and empty: tab-numbers.mjs numbers each strip's tabs.
+  const num = document.createElement("span"); num.className = "tab-num"; num.setAttribute("aria-hidden", "true"); num.hidden = true;
+  triggerEl.append(num);
+  setTabTitle(triggerEl, { name: title });
   triggerEl.setAttribute("aria-label", title);
 
   const closeEl = document.createElement("button");
@@ -75,7 +98,7 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
   closeEl.className = "close";
   closeEl.append(iconElement(document, "close", { size: 13 }));
   closeEl.setAttribute("aria-label", `Close ${title}`);
-  // The chord half is the keymap's tabs.close on this platform (⌘W / Ctrl+Alt+W), or none when unbound.
+  // The chord half is the keymap's tabs.close on this platform (⌘W / Alt+W), or none when unbound.
   const chord = getBinding("tabs.close", isMac);
   closeEl.title = `Close ${title} (${chord ? `Delete or ${formatChord(chord, isMac)}` : "Delete"})`;
   tabEl.append(triggerEl, closeEl);
@@ -98,7 +121,7 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
 
 export function tabKeyAction(event, index, count) {
   const key = event.key;
-  // Delete closes the focused tab. The close chord (⌘W / Ctrl+Alt+W) is the keymap's
+  // Delete closes the focused tab. The close chord (⌘W / Alt+W) is the keymap's
   // tabs.close, never hard-coded here: a rebind or unbind must hold on the strip too (spec F).
   if (key === "Delete" && !event.metaKey && !event.ctrlKey && !event.altKey) return { type: "close" };
   if (!count || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.defaultPrevented) return null;

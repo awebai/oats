@@ -48,12 +48,13 @@ import { proxyReadiness } from './readiness-proxy.mjs';
 import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
 import { proxyInstanceEvents } from './instance-events-proxy.mjs';
 import { proxySpawnApply } from './spawn-apply-proxy.mjs';
-import { startSingleInstance, launchDirectory, createLaunchOpener } from "./single-instance.mjs";
+import { startSingleInstance, launchDirectory, createLaunchOpener, createVersionHandoff, ownLaunch } from "./single-instance.mjs";
 import { createActivityNotifier, createViewsNotifier } from "./window-activity.mjs";
 import { createHostThemeSource, installHostThemeHandlers } from "./host-theme.mjs";
 import { createChordFamilySource, installChordFamilyHandlers } from "./chord-family.mjs";
 import { frameWorkspace, trustedRendererUrl, workspaceHash } from "./renderer/window-binding.mjs";
 import { validWorkspaceId } from "./renderer/workspace-id.mjs";
+import { validLayout } from "./renderer/layout-handover.mjs";
 import { createWindowSet } from "./window-set.mjs";
 import { parseWindowRecords, resolveView, restorePlan, clampBounds, windowTitle, createWindowRecords } from "./window-records.mjs";
 
@@ -296,8 +297,8 @@ const hostTheme = createHostThemeSource({
 installHostThemeHandlers({ ipc: ipcMain, guard, source: hostTheme });
 
 // ---- IPC: the chord family, keys.json (chord-family.mjs) -------------------
-// On Linux/Windows the shared chords are Ctrl+Alt or, by this user's keys.json (shared with the
-// TUI, beside tui.json), Ctrl+Shift. Main reads the file when a window asks and when the operator
+// On Linux/Windows the shared chords are Alt or, by this user's keys.json (shared with the
+// TUI, beside tui.json), Ctrl+Alt or Ctrl+Shift. Main reads the file when a window asks and when the operator
 // comes back to Desktop, writes it when the Shortcuts page changes the choice (only `chords`,
 // atomically), and hands the family to every window at once. Plain state only: no path, no content.
 const chordFamily = createChordFamilySource({
@@ -590,6 +591,11 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   if (windowWs === null && scopedRequest(pathname) && choosers.has(BrowserWindow.fromWebContents(e.sender))) {
     return { ok: false, status: 409, body: { error: "This window has no workspace yet.", code: "E_NO_WORKSPACE" } };
   }
+  // A window whose hash names a workspace main no longer binds it to (a take-over moved it while its page
+  // was loading or reloading, and the page has not followed yet) reads none of it (holdsHash).
+  if (windowWs !== null && scopedRequest(pathname) && !holdsHash(BrowserWindow.fromWebContents(e.sender), windowWs)) {
+    return { ok: false, status: 409, body: { error: "This window does not show that workspace any more.", code: "E_WINDOW_NOT_BOUND" } };
+  }
   // A workspace the server does not serve, asked by a bound window, is refused on every
   // workspace-scoped route — never answered with another workspace's data. Main learns what the
   // server advertises from panel replies, so it re-reads that first: a view observed since (its
@@ -725,7 +731,16 @@ installForgeAuthHandlers({ ipc: ipcMain, broker: forgeAuth, rendererUrl: RENDERE
 // The shared broker owns process-wide reservations, document principals,
 // current-owner output and confirmed cleanup. No numeric-ID IPC lane.
 const terminalContext = () => serverHost.inTransition() ? null : `${serverEpoch}:${base()}`;
-const terminalBroker = createTerminalOwnerBroker({ rendererUrl: RENDERER_URL, context: terminalContext,
+// A terminal opens only from a frame whose hash is the workspace main binds its window to (holdsHash), or from
+// one with no hash that is still adopting its first workspace: a window a take-over moved its workspace away
+// from, or one with no workspace (choosers), opens none.
+const terminalFrame = (e) => {
+  const id = (() => { try { return frameWorkspace(e?.senderFrame?.url, RENDERER_URL); } catch { return undefined; } })();
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (id === null) return !choosers.has(win);
+  return typeof id === "string" && holdsHash(win, id);
+};
+const terminalBroker = createTerminalOwnerBroker({ rendererUrl: RENDERER_URL, context: terminalContext, admitFrame: terminalFrame,
   io: createTerminalIo({ base, context: terminalContext,
     attachmentDirectory: () => join(app.getPath('userData'), 'attachments'),
     spawnPty: (...args) => pty.spawn(...args), execFileSync, sweep: sweepOrphanViewers,
@@ -780,6 +795,13 @@ const served = (key) => typeof key === "string" && advertisedNow().has(key);
 /** The view a served selector names (a deployment id is answered with the view that holds it, as the
  * server's viewFor does): the one key a workspace's window is registered under. */
 const viewKey = (id) => resolveView(id, servedList) ?? id;
+/** Whether main binds `win` to the workspace `id` its frame's hash names: the same key, or one view by
+ * the served list (a deployment id and the view that holds it, #482). False for a window main binds to
+ * nothing or to another workspace: a take-over moved it while the page had not followed yet. */
+function holdsHash(win, id) {
+  const key = win ? windows.keyOf(win) : undefined;
+  return typeof key === "string" && typeof id === "string" && (key === id || viewKey(key) === viewKey(id));
+}
 /** Bind a window to a workspace: its record and title follow (a restored record is rewritten to the view, Q6). */
 function bindWindow(win, key) {
   windowRecords?.bind(win, key, windowState(win), servedList);
@@ -817,7 +839,63 @@ function restoreWindows(launchKey = null) {
 // or not when `focus` is false (`open-elsewhere`). A New Window's first claim of the shared default
 // (`initial`) is refused with `choose`: it shows the switcher instead. A default the server does not
 // serve is refused with `not-served`. A refusal carries the served choices (the switcher's list), so
-// a window left choosing reads no workspace to offer them.
+// a window left choosing reads no workspace to offer them. `takeOver`: see takeOverWorkspace above.
+// A take-over (a pick from the list of workspaces, a view's workspace select, going to an instance in
+// another workspace): a workspace another window holds moves to the asking window instead of being
+// refused, and the holder is never focused. Main asks the holder to release it
+// (window:release-workspace, answered once with window:release-answer) and moves the binding when it
+// answers or after RELEASE_WAIT_MS, whichever comes first. Its answer may hand over the workspace's layout
+// (its terminals and its split: renderer/layout-handover.mjs), which goes on to the asking window when it is
+// valid, whole, and never in part. The holder is then bound to nothing: it
+// leaves that workspace whenever its renderer runs, on time or late (views/common.mjs
+// leaveTakenWorkspace), closing its tabs of it and showing its previous workspace, else the switcher.
+const RELEASE_WAIT_MS = 2000;
+const releases = new Map(); // request id -> { holder, settle(payload) }
+let releaseRequests = 0;
+/** Ask `holder` to release `key`; resolves with its answer's payload, or null when it did not answer in time. */
+function askRelease(holder, key) {
+  return new Promise((resolve) => {
+    const request = ++releaseRequests;
+    let timer = null;
+    const settle = (payload) => {
+      if (!releases.has(request)) return;
+      releases.delete(request); clearTimeout(timer); resolve(payload);
+    };
+    releases.set(request, { holder, key, settle });
+    timer = setTimeout(() => settle(null), RELEASE_WAIT_MS);
+    try { holder.webContents.send("window:release-workspace", { request, workspace: key, workspaces: servedList }); }
+    catch { settle(null); }
+  });
+}
+/** The layout a holder's answer hands over: `{ layout }` with a descriptor renderer/layout-handover.mjs
+ * accepts, else none. An answer of any other shape is refused whole, never in part; the take-over still
+ * happens, without it. */
+const handedLayout = (answer) => (answer !== null && typeof answer === "object" && !Array.isArray(answer)
+  && Object.keys(answer).length === 1 && validLayout(answer.layout) ? answer.layout : null);
+async function takeOverWorkspace(win, key) {
+  const from = windows.windowOf(key);
+  const layout = from && from !== win ? handedLayout(await askRelease(from, key)) : null;
+  const result = windows.takeOver(win, key, from);
+  if (!result.ok) return { ...result, workspaces: servedList };
+  const released = result.released;
+  if (released && !released.isDestroyed()) {
+    choosers.add(released); // it has nothing to read until it binds again
+    windowRecords?.close(released, { served: true }); // the workspace's record is the asking window's now
+    released.setTitle(windowTitle(null, servedList));
+  }
+  choosers.delete(win);
+  bindWindow(win, key);
+  return { ok: true, workspace: key, ...(layout ? { layout } : {}) };
+}
+// The holder's answer to a release: accepted once, from the window asked, for a request still open.
+ipcMain.handle("window:release-answer", (e, request, payload) => {
+  if (!trustedForgeFrame(e, RENDERER_URL)) return { ok: false, code: "forbidden" };
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const pending = Number.isSafeInteger(request) ? releases.get(request) : undefined;
+  if (!win || !pending || pending.holder !== win) return { ok: false, code: "unknown-request" };
+  pending.settle(payload ?? null);
+  return { ok: true };
+});
 ipcMain.handle("window:claim-workspace", (e, id, options) => {
   if (!trustedForgeFrame(e, RENDERER_URL)) return { ok: false, code: "forbidden" };
   const win = BrowserWindow.fromWebContents(e.sender);
@@ -835,6 +913,17 @@ ipcMain.handle("window:claim-workspace", (e, id, options) => {
   // the verified workspace and adopts the one served, as before, then binds that.
   if (options?.initial === true && !served(id)) return { ok: false, code: "not-served" };
   const key = viewKey(id);
+  // A holder claiming the workspace main is asking it to release: its page loaded or reloaded since the
+  // ask (a just-opened window, a Reload), so the ask's answer will never come. The release settles now,
+  // without a layout, and the window does not keep the workspace: it chooses, as it would have on the answer.
+  if (options?.takeOver !== true) {
+    for (const pending of releases.values()) {
+      if (pending.holder !== win || viewKey(pending.key) !== key) continue;
+      pending.settle(null);
+      return { ok: false, code: "open-elsewhere", workspaces: servedList };
+    }
+  }
+  if (options?.takeOver === true && options?.initial !== true) return takeOverWorkspace(win, key);
   const result = windows.claim(win, key, { focus: options?.focus !== false });
   if (!result.ok) {
     // A first claim refused because another window has the default: this window chooses from now on.
@@ -933,8 +1022,17 @@ const openLaunch = createLaunchOpener({
     if (!result?.ok) return null;
     return resolveView(result.workspace.id, (await panelWorkspaces()) ?? servedList);
   },
-  open: (key) => { openWorkspaceWindow(key); },
-  focusRecent: () => { windows.focusRecent(); },
+  open: (key) => openWorkspaceWindow(key).win,
+  focusRecent: () => windows.focusRecent(),
+});
+// A repeated launch of another version (an installer replaced while this app runs): after its window is
+// opened or focused, a box over that window says so and offers to restart into the launched copy.
+const offerVersionRestart = createVersionHandoff({
+  running: app.getVersion(),
+  ask: (win, box) => (win && !win.isDestroyed() ? dialog.showMessageBox(win, box) : dialog.showMessageBox(box)),
+  isRegularFile: (path) => statSync(path).isFile(),
+  relaunch: (options) => app.relaunch(options),
+  quit: () => app.quit(),
 });
 
 const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => openLaunch(launchDirectory(argv, workingDirectory)), async () => {
@@ -995,7 +1093,7 @@ const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => ope
   });
   app.on("browser-window-blur", noteWindowActivity);
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) restoreWindows(); });
-});
+}, ownLaunch(app), offerVersionRestart);
 
 if (primaryInstance) app.on("window-all-closed", () => { app.quit(); });
 

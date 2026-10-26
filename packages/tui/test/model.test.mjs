@@ -12,7 +12,7 @@ import {
   identityMemory, remoteRosterState, observeIdentities, viewModel, listedViews, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, isMultiDeployment,
   cliRemoteRoster, originLead, displayLine, DETAIL_WITHHELD, instanceSiblings, siblingText,
 } from "../lib/client.mjs";
-import { LIST_WORDS, OFFERED_SECTION, ROSTER_FAILED, SENTENCE_INDENT, WORD_MAX, clockTime, disclosure, heldOf as modelHeld, model, panelOf, roster, switcher, switcherLead } from "../lib/model.mjs";
+import { LIST_WORDS, OFFERED_SECTION, ROSTER_FAILED, SENTENCE_INDENT, WORD_MAX, clockTime, disclosure, heldOf as modelHeld, model, panelOf, roster, switcher, switcherLead, workspaceList, listChoice } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { shown, shownLines, textOf } from "../lib/term/text.mjs";
 import { windowOf } from "../lib/views/scroll.mjs";
@@ -404,7 +404,8 @@ test("the facts of a live deployment for the sidebar's title and the help's top 
   assert.equal(m.detail.title, "alpha-kid");
   assert.equal(view(stateOf(observed(TREE), { ascii: true })).ascii, true);
   // The time stands on the help's top row, at the start of the main area (no header holds it),
-  // and nowhere on the view's own frame; the title is the workspace's name.
+  // and nowhere on the view's own frame; the title is the list of workspaces' one row: the open
+  // workspace's name.
   const help = draw(press(state, ["?"]).state);
   assert.equal(help.lines[0].slice(help.cols + 1).trim(), "read 14:03:27");
   assert.equal(draw(state).lines.some((line) => line.includes("14:03:27")), false, "the view's frame shows no time of the read");
@@ -1189,7 +1190,7 @@ function walk() {
   return { near, failedFirst, answered, timedOut, again, thrown, gated, moved };
 }
 /** The view of the second workspace the switcher lists, opened with the keys a user has. */
-const second = (state) => press(state, ["w", "j", "enter"]).state;
+const second = (state) => press(state, ["w", "w", "j", "enter"]).state;
 
 // --- The roster's outcomes, step by step ------------------------------------------------
 
@@ -1437,7 +1438,7 @@ test("a kept row of a machine that was not reached reads `<machine> not reached`
 
 // --- The detail in a view of more than one deployment -----------------------------------
 
-test("the detail names the machine only in a view of two or more deployments, and under it says in the shared sentence why that deployment is not live", () => {
+test("the detail names the machine in a view of two or more deployments, and under it says in the shared sentence why that deployment is not live; in a view of one deployment only when it is another machine's", () => {
   const { near, answered, timedOut, moved } = walk();
   assert.equal(isMultiDeployment(sharedPanel(answered).deployments), true);
   assert.deepEqual(labels(detailOf(answered, "lead")).slice(0, 3), ["soul", "machine", "state"]);
@@ -1453,13 +1454,15 @@ test("the detail names the machine only in a view of two or more deployments, an
     assert.deepEqual(labels(detailOf(timedOut, name)).slice(0, 4), ["soul", "machine", "", "state"], name);
   }
   assert.equal(after(detailOf(timedOut, "lead"), "machine").label, "state");
-  // A view of one deployment: no such line, on this machine or on another.
+  // A view of one deployment: no such line on this machine; on another, the line, which nothing
+  // else names it by (no heading, and the list of workspaces' row is the workspace's name alone).
   assert.equal(fact(detailOf(near, "lead"), "machine"), null);
   assert.equal(fact(detailOf(moved, "lead"), "machine"), null);
   const there = second(moved);
   assert.equal(isMultiDeployment(sharedPanel(there).deployments), false);
-  assert.equal(fact(detailOf(there, "garnet-a"), "machine"), null);
-  assert.deepEqual(labels(detailOf(there, "garnet-a")).slice(0, 2), ["soul", "state"]);
+  assert.deepEqual(fact(detailOf(there, "garnet-a"), "machine"), { label: "machine", value: "garnet", form: "line" });
+  assert.equal(after(detailOf(there, "garnet-a"), "machine").label, "state", "no sentence under it: the state under the list says it");
+  assert.deepEqual(labels(detailOf(there, "garnet-a")).slice(0, 3), ["soul", "machine", "state"]);
 });
 
 test("a remote row that cannot be addressed: when its server was not reached its reason stands once, under its state after the words that say the read of other machines gave it, with no held line; on a reached machine the held line carries the shared sentence", () => {
@@ -1774,7 +1777,7 @@ test("the switcher is empty in two ways, none when there is nothing to list and 
   const m = seen(nothing);
   assert.deepEqual([m.under, m.open, m.switcher.empty, m.switcher.rows.length], ["switcher", false, "none", 0]);
   assert.equal(seen(asked(crowded(), "zzz")).switcher, null, "the Instances view has no switcher in its model");
-  assert.equal(seen(press(asked(crowded(), "zzz"), ["w"]).state).switcher.empty, "nomatch");
+  assert.equal(seen(press(asked(crowded(), "zzz"), ["w", "w"]).state).switcher.empty, "nomatch");
   // Started outside every deployment, with rows of the list only: they are the choices, and a
   // filter that keeps none of them is nomatch. A read that answered no row, or one that failed
   // before any answered, leaves nothing to list: none.
@@ -1793,7 +1796,7 @@ test("the switcher is empty in two ways, none when there is nothing to list and 
 });
 
 test("the model of the switcher: the rows of its window with the selected one marked, nothing of a workspace in the sidebar's title, the switcher's own filter, and the same under the help", () => {
-  const state = press(crowded(), ["w"]).state, s = switcher(state, AT), m = seen(state);
+  const state = press(crowded(), ["w", "w"]).state, s = switcher(state, AT), m = seen(state);
   assert.deepEqual([m.view, m.under, m.open], ["switcher", "switcher", true]);
   assert.deepEqual(m.switcher.rows, s.items.map((item) => (item.key === undefined ? item : { ...item, selected: item.key === s.selected })));
   assert.deepEqual(m.switcher.rows.filter((row) => row.selected).map((row) => row.label), ["acme-platform"]);
@@ -1832,7 +1835,7 @@ test("two hundred roster groups: the switcher lists every one in the order the s
   assert.deepEqual([rows.filter((r) => !r.unattached).length, rows.filter((r) => r.unattached).length], [101, 100]);
   assert.equal(s.items.length, 303, "every choice, the one indicator line of each of the 101 workspaces, and the one heading");
   assert.equal(new Set(s.keys).size, 201);
-  const state = press(read, ["w"]).state;
+  const state = press(read, ["w", "w"]).state;
   for (const page of [19, 5, 1]) {
     const m = seen(state, 80, page).switcher;
     assert.equal(m.rows.length <= page, true, `a pane of ${page} rows lays out ${m.rows.length}`);
@@ -1859,7 +1862,7 @@ test("two hundred roster groups: the switcher lists every one in the order the s
   // The switcher is an overlay: its window is as tall as `body`, the main area's rows, whatever the list's `page`.
   assert.equal(model(state, { page: 5, body: 19, now: NOW, at: AT, cols: 80 }).switcher.rows.length, 18);
   // With room to spare the line hides nothing.
-  const few = press(crowded(), ["w"]).state, told = Object.freeze({ ...few, switcher: Object.freeze({ ...few.switcher, line: "gone" }) });
+  const few = press(crowded(), ["w", "w"]).state, told = Object.freeze({ ...few, switcher: Object.freeze({ ...few.switcher, line: "gone" }) });
   assert.deepEqual([seen(told, 80, 11).switcher.rows.length, seen(told, 80, 11).switcher.below], [10, 0], "ten rows and the line fill a pane of eleven");
   assert.deepEqual([seen(few, 80, 10).switcher.rows.length, seen(told, 80, 10).switcher.rows.length, seen(told, 80, 10).switcher.below], [10, 8, 2], "one row short: the cut note takes another");
   // This workspace's own view holds none of them.
@@ -1913,10 +1916,37 @@ test("Pepe's shape: before the identity of ~/Work/lfx is read it is a row of its
 });
 
 test("Pepe's shape, drawn: the workspace rows with their dim lines under them, in the switcher's columns", () => {
-  const state = press(identityOf(pepe(), LFX_PATH, learnedOf(LFX)), ["w"]).state;
+  const state = press(identityOf(pepe(), LFX_PATH, learnedOf(LFX)), ["w", "w"]).state;
   const { lines, area } = draw(state, { cols: 100, rows: 24 });
   const main = lines.map((line) => line.slice(100 - area - 1).trimEnd()).filter(Boolean);
   assert.deepEqual(main.slice(0, 5), ["> * acme-platform", "      This machine", "      athenea", "    lfx", "      This machine · not opened"]);
+});
+
+test("Pepe's shape in the list of workspaces: one row per workspace, by its name, whatever its machines; ~/Work/lfx not opened is no row of its own, and once its identity is read lfx is one row, \"lfx\", whether athenea answered the last read or not", () => {
+  const labels = (state) => workspaceList(state, AT).lines.map((line) => line.label);
+  assert.deepEqual(labels(pepe()), ["acme-platform", "lfx-oats-workspace"], "athenea's lfx; this machine's ~/Work/lfx stays in the switcher");
+  const state = identityOf(pepe(), LFX_PATH, learnedOf(LFX));
+  assert.deepEqual(labels(state), ["acme-platform", "lfx"]);
+  assert.deepEqual(workspaceList(state, AT).lines.map((line) => Object.keys(line).sort()), [["current", "key", "label", "waiting"], ["current", "key", "label", "waiting"]], "a row is its name: no state, no place");
+  assert.deepEqual(labels(heard(state, { thrown: "the pipe closed" }, tick(1))), ["acme-platform", "lfx"], "athenea not reached: the same rows");
+  // A workspace only ~/Work/lfx is of is not a row: it is this computer's deployment not opened.
+  const own = identityOf(pepe(), LFX_PATH, learnedOf({ ...LFX, key: "github.com/josep-reyero/elsewhere" }));
+  assert.deepEqual(labels(own), ["acme-platform", "lfx-oats-workspace"]);
+  assert.equal(switcher(own, AT).keys.length, 3, "the switcher offers it");
+});
+
+test("the list of workspaces' cursor follows its row's deployments when an identity read changes the rows: on athenea's lfx, it stays on lfx's row once ~/Work/lfx joins it, and Enter opens what was under the cursor", () => {
+  const focused = press(pepe(), ["w", "down"]).state;
+  const athenea = focused.workspaceCursor;
+  assert.equal(listChoice(focused, athenea).label, "lfx-oats-workspace");
+  assert.deepEqual(press(focused, ["enter"]).effects.at(-1) !== undefined, true);
+  const placed = identityOf(focused, LFX_PATH, learnedOf(LFX));
+  const lfx = workspaceList(placed, AT).rows.find((row) => listChoice(placed, row.key)?.label === "lfx");
+  assert.equal(placed.workspaceCursor, lfx.key, "on lfx's row, which holds athenea's lfx and ~/Work/lfx now");
+  assert.match(draw(placed, { cols: 100, rows: 24 }).lines.find((line) => line.startsWith(">")), /^> lfx\b/);
+  assert.deepEqual(press(placed, ["enter"]).effects.at(-1), { join: { paths: [LFX_PATH], opens: [LFX_PATH, ATHENEA_LFX] } });
+  const away = identityOf(placed, LFX_PATH, { ok: true, workspace: null });
+  assert.equal(listChoice(away, away.workspaceCursor).label, "lfx-oats-workspace", "taken away again: back on athenea's");
 });
 
 test("a listed deployment whose identity read failed or timed out stays a row of its own, saying why; one whose identity attaches to no workspace says the shared reason; a stale row of the list is never matched", () => {
@@ -1937,7 +1967,7 @@ test("a listed deployment whose identity read failed or timed out stays a row of
 
 test("Enter on the lfx workspace opens ~/Work/lfx in this run and shows athenea (lfx) in the same view, before its first read: the identity read placed it; a folder that is no longer a deployment opens nothing", () => {
   const state = identityOf(pepe(), LFX_PATH, learnedOf(LFX));
-  const { state: asking, effects } = press(state, ["w", "j", "enter"]);
+  const { state: asking, effects } = press(state, ["w", "w", "j", "enter"]);
   assert.deepEqual(effects.at(-1), { join: { paths: [LFX_PATH], opens: [LFX_PATH, ATHENEA_LFX] } });
   assert.equal(asking.ctxs.includes(LFX_PATH), false, "nothing is served before it is admitted");
   // lib/main.mjs admits it (a deployment now) and answers.
@@ -1950,7 +1980,7 @@ test("Enter on the lfx workspace opens ~/Work/lfx in this run and shows athenea 
   assert.equal(panel.workspace.name, "lfx");
   assert.deepEqual(seen(opened).workspace, "lfx");
   // In the switcher now: the same row, its name kept, this machine's deployment opened (not observed yet), and the open mark on it.
-  const again = switcher(press(opened, ["w"]).state, AT);
+  const again = switcher(press(opened, ["w", "w"]).state, AT);
   assert.deepEqual(said(again.items).slice(3), [["lfx", null, null], "· This machine · not observed", "· athenea (lfx)"]);
   assert.deepEqual(again.items.filter((item) => item.key !== undefined).map((item) => [item.label, item.open, item.join]), [["acme-platform", false, []], ["lfx", true, []]]);
   // Its first read keeps it there, live. Served and read, it is named by the name its workspace gives
@@ -1966,13 +1996,13 @@ test("Enter on the lfx workspace opens ~/Work/lfx in this run and shows athenea 
 });
 
 test("a failed identity read's reason is drawn at 80 columns: the reason comes before the path, so the path is what a narrow row cuts", () => {
-  const failedRead = identityOf(press(pepe(), ["w"]).state, LFX_PATH, { ok: false, reason: { code: "E_CLI_TIMEOUT", message: "The deployment observation exceeded its time limit." } });
+  const failedRead = identityOf(press(pepe(), ["w", "w"]).state, LFX_PATH, { ok: false, reason: { code: "E_CLI_TIMEOUT", message: "The deployment observation exceeded its time limit." } });
   const row = draw(failedRead, { cols: 80, rows: 24 }).lines.find((line) => / lfx /.test(line) && !line.includes("· athenea"));
   assert.match(row, /lfx +Timed out/);
 });
 
 test("the switcher's selection follows the deployment it stood on: a listed row whose identity is learned is selected in its workspace's row, so Enter opens that workspace; when a later answer takes the workspace away the selection is back on the row", () => {
-  const before = press(pepe(), ["w", "j", "j"]).state;
+  const before = press(pepe(), ["w", "w", "j", "j"]).state;
   const chosen = (state) => { const s = switcher(state, AT); return s.items.find((item) => item.key === s.selected); };
   assert.equal(chosen(before).path, LFX_PATH);
   const learned = identityOf(before, LFX_PATH, learnedOf(LFX));
@@ -1988,7 +2018,7 @@ test("the switcher's selection follows the deployment it stood on: a listed row 
 
 test("Enter on the workspace already open from another machine, once its deployment of this machine is learned, opens that one in the same workspace and keeps its tabs; opening another workspace still closes them", () => {
   // The lfx workspace open on athenea, an agent's terminal open there as a tab.
-  let state = press(pepe(), ["w", "j", "enter"]).state;
+  let state = press(pepe(), ["w", "w", "j", "enter"]).state;
   assert.equal(state.open, ATHENEA_LFX);
   state = { ...state, cli: { ...state.cli, remote: ["roster", "session"] } };
   state = press(state, ["enter"]).state;
@@ -1999,13 +2029,13 @@ test("Enter on the workspace already open from another machine, once its deploym
   assert.equal(state.tabs.length, 1);
   const workspace = panelOf(state, AT).workspace.id;
   state = identityOf(state, LFX_PATH, learnedOf(LFX));
-  const asking = press(state, ["w", "enter"]);
+  const asking = press(state, ["w", "w", "enter"]);
   assert.deepEqual(asking.effects.at(-1), { join: { paths: [LFX_PATH], opens: [LFX_PATH, ATHENEA_LFX] } });
   const step = reduce(asking.state, { joined: { admitted: [LFX_PATH], opens: [LFX_PATH, ATHENEA_LFX] }, at: AT });
   assert.deepEqual([step.state.open, panelOf(step.state, AT).workspace.id, step.state.tabs.length], [LFX_PATH, workspace, 1]);
   assert.equal(step.effect.close, undefined, "no tab is closed");
   // The other workspace: its tabs go.
-  const other = press(step.state, ["w", "k", "enter"]);
+  const other = press(step.state, ["w", "w", "k", "enter"]);
   assert.deepEqual([other.state.open, other.state.tabs.length], [DEPLOYMENT, 0]);
   assert.equal(other.effects.some((effect) => effect?.close?.length === 1), true);
 });
@@ -2066,7 +2096,7 @@ test("a row of this computer's list is a choice of its own: its name, its short 
 });
 
 test("the model of the switcher says what stands above its rows: why the last read of the list failed, whether a Remove is asked and whether the selected row is one the remove key acts on", () => {
-  const state = press(crowded(), ["w"]).state, keys = switcher(state, AT).keys;
+  const state = press(crowded(), ["w", "w"]).state, keys = switcher(state, AT).keys;
   const sandbox = `path\u0000${LISTED[0].path}`;
   assert.deepEqual(keys.slice(-2), LISTED.map((listed_) => `path\u0000${listed_.path}`));
   // Removable: a row of the list is, a view is not, and nothing selected is not.
@@ -2100,7 +2130,7 @@ test("the model of the switcher says what stands above its rows: why the last re
 });
 
 test("switcherLead counts the rows above the switcher's choices at the width it is given: one for a line of the TUI's own, two for the question, and a sentence with the kernel's words wrapped, four rows at most", () => {
-  const state = press(crowded(), ["w"]).state;
+  const state = press(crowded(), ["w", "w"]).state;
   const lead = (changes, failure = null) => Object.freeze({ ...state, listed: Object.freeze({ ...state.listed, failure }), switcher: Object.freeze({ ...state.switcher, line: null, removing: null, ...changes }) });
   const at = (s) => [60, 80, 120, 200].map((cols) => switcherLead(s, cols));
   assert.deepEqual(at(lead({})), [0, 0, 0, 0], "nothing above the rows");
@@ -2143,7 +2173,7 @@ test("while the store says a list is loose the model's window is where the list 
   assert.deepEqual(cut(at(5000, true)), [291, 9, 0, "inst-291", false], "a top past the end is the last window");
   assert.equal(stateOf(observed(CROWD)).loose, false, "a list is not loose until a key made it so");
   // The switcher's rows, by the switcher's own flag.
-  const shown = press(crowded(), ["w"]).state;
+  const shown = press(crowded(), ["w", "w"]).state;
   const sw = (top, loose) => seen(Object.freeze({ ...shown, loose: !loose, switcher: Object.freeze({ ...shown.switcher, top, loose }) }), 80, 3).switcher;
   const rows = (s) => [s.above, s.rows.length, s.below, s.rows.some((row) => row.selected)];
   assert.equal(switcher(shown, AT).items.length, 10);
@@ -2760,7 +2790,7 @@ test("whatever shows another view than the instances gives the focus back to the
   const state = on(TWO(), "dev-a");
   const zoomed = key(leaderEscape(key(state, "enter").state).state, "z").state;
   assert.equal(zoomed.terminal.focus, "terminal");
-  const switched = key(zoomed, "w").state;
+  const switched = key(key(zoomed, "w").state, "w").state;
   assert.equal(switched.view, "switcher");
   assert.deepEqual([switched.terminal.focus, switched.terminal.zoom, switched.terminal.id], ["list", false, zoomed.terminal.id]);
 });

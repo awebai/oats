@@ -73,7 +73,7 @@ import { instanceEventsRequest } from './instance-events.mjs';
 import { eventsFailure } from '../../client/instance-events-contract.mjs';
 import { createSpawnApplyBoundary, ANSWER_WITHIN_MS } from '../../client/spawn-apply.mjs';
 import { spawnApplyFailure } from '../../client/spawn-apply-contract.mjs';
-import { previewFailure } from '../../client/spawn-preview-contract.mjs';
+import { previewFailure, namingOf, APPLY_SUGGEST_FEATURE } from '../../client/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { createReviewPaste } from "./review-paste.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
@@ -280,7 +280,7 @@ function spawnErrorPayload(e) {
 
 /** Execution-server spawn only (`--server`). A local spawn is always the
  * preview-bound prepare → apply of packages/client/spawn-apply.mjs. */
-async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, harness, backend, model, yolo, launchConfig, serverId, wake }) {
+async function spawnAgent({ agent, agentsRoot, task, purpose, name: instanceName, suggestName, relation, relativeTo, relativeRoot, harness, backend, model, yolo, launchConfig, serverId, wake }) {
   const name = String(agent || "");
   const root = resolve(String(agentsRoot || ""));
   const server = String(serverId);
@@ -304,6 +304,21 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   // is held to what the REMOTE advertises by the router (checkRemoteSupport),
   // and the local guard only needs the remote surface itself.
   locator.requireRemoteSupport(cliState, "spawn");
+  // An exact name (--name, feature spawn-name) or a purpose, never both; the host's own spawn-name is the
+  // route's check (E_REMOTE_INCOMPATIBLE), this computer's CLI must know the flag to forward it.
+  if (instanceName !== undefined && typeof instanceName !== "string") throw Object.assign(new Error("Invalid name"), { code: "E_BAD_ARGS" });
+  if (instanceName) {
+    if (purpose !== undefined && purpose !== null && purpose !== "") throw Object.assign(new Error("A spawn takes a name or a purpose, not both"), { code: "E_BAD_ARGS" });
+    if (!cliState.features?.includes("spawn-name")) throw Object.assign(new Error("Update OATS to give a spawn on another machine its exact name"), { code: "cli-no-spawn-name" });
+  }
+  // The host names it from its task (--suggest-name on an apply, feature spawn-apply-suggest-name): never beside a name or
+  // a purpose, and only where this computer's CLI knows the flag; the host's own feature is the route's check
+  // (E_REMOTE_INCOMPATIBLE), which the dialog reads first and never meets.
+  if (suggestName !== undefined && typeof suggestName !== "boolean") throw Object.assign(new Error("Invalid suggestName"), { code: "E_BAD_ARGS" });
+  if (suggestName) {
+    if (instanceName || purpose !== undefined && purpose !== null && purpose !== "") throw Object.assign(new Error("A spawn named from its task takes no name or purpose"), { code: "E_BAD_ARGS" });
+    if (!cliState.features?.includes(APPLY_SUGGEST_FEATURE)) throw Object.assign(new Error("Update OATS to have the other machine name the instance from its task"), { code: "cli-no-apply-suggest-name" });
+  }
   if (launchConfig !== undefined) {
     if (!cliState.features?.includes("launch-config")) throw Object.assign(new Error("Update OATS to choose a launch configuration"), { code: "cli-no-launch-config" });
     locator.requireRemoteSupport(cliState, "launch-config");
@@ -325,6 +340,8 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
     workspaceDir: ctxs[0] ?? homedir(), // SSH routes choose their own remote cwd
     task: task ? String(task) : "",
     purpose: purpose ? String(purpose) : undefined,
+    name: instanceName || undefined,
+    ...(suggestName ? { suggestName: true } : {}),
     relation: relation ? String(relation) : undefined,
     relativeTo: relativeTo ? String(relativeTo) : undefined,
     // Anchor disambiguation: the renderer picker knows each instance's
@@ -352,7 +369,9 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   const spawnedDeployment = remote.spawnedWorkspace(remoteGroups, r);
   // The renderer switches to the reply's workspace: the VIEW that holds the deployment, never a bare deployment id.
   const remoteWorkspaceId = spawnedDeployment ? viewFor(held(), spawnedDeployment, DESKTOP_TERMS)?.id ?? spawnedDeployment : undefined;
-  return { instance: r.instance, agent: r.agent, home: r.home, work: r.work,
+  // How the host named it (only with --suggest-name), re-validated as a preview's is.
+  const naming = suggestName && Object.hasOwn(r, "naming") ? namingOf(r.naming) : null;
+  return { instance: r.instance, agent: r.agent, home: r.home, work: r.work, ...(naming ? { naming } : {}),
     ...(r.wakeSchedule ? { wakeSchedule: r.wakeSchedule } : {}),
     ...(r.wakeScheduleError ? { wakeScheduleError: r.wakeScheduleError } : {}),
     ...(r.routeConflict ? { routeConflict: r.routeConflict } : {}),
@@ -1208,7 +1227,8 @@ const server = createServer(async (req, res) => {
         // A preview's body is at most 16 KiB. A suggest read (feature spawn-suggest-name, awebai/oats#1421 §3) also
         // carries the task, at most 32 KiB as at apply, so its body may take the apply's 64 KiB.
         const { body: request, bytes } = await readStrictBody(req, 65536, true);
-        const suggest = request.action === 'suggest';
+        // A suggest-name read (feature instance-suggest-name, awebai/oats#1490 §2) carries the task as well.
+        const suggest = request.action === 'suggest' || request.action === 'suggest-name';
         if (!suggest && bytes > 16384) throw new Error('body too large');
         const getContext = () => {
           const workspace = deploymentFor(held(), url.searchParams.get('ws'), DESKTOP_TERMS);
@@ -1218,6 +1238,7 @@ const server = createServer(async (req, res) => {
         // Settled answers are reused for 60 s here, and prepare takes them up to PREPARE_REUSE_MS old, the drift
         // fenced by apply's --expect-decision (packages/client/spawn-preview.mjs). A suggest read has its own lane: one
         // per workspace, a newer one ending the older (E_SUPERSEDED).
+        if (request.action === 'suggest-name') return send(res, 200, await spawnPreview.suggestName(request, getContext));
         if (suggest) return send(res, 200, await spawnPreview.suggest(request, getContext));
         return send(res, 200, await spawnPreview.read(request, getContext));
       } catch { return send(res, 400, previewFailure('E_BAD_ARGS')); }

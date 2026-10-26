@@ -345,13 +345,13 @@ export function loadConfig({ env = process.env, home = homedir(), io = NODE_IO, 
  *  file is never opened: a FIFO would hold the start until something wrote to it. */
 const NOT_A_FILE = Object.freeze({ reason: "not a regular file" });
 
-/** Read keys.json, once, at the start (docs/tui.md, "Switch to Ctrl+Shift"): the chord family the
+/** Read keys.json, once, at the start (docs/tui.md, "Switch family"): the chord family the
  *  TUI binds on Linux and Windows, as the shared reader (packages/client/keys-file.mjs
  *  chordFamilyFrom) says it, a frozen `{ family, why }`. The file is the clients' and the user's:
- *  `config/keys.json` beside tui.json (keysPath), `{ "chords": "ctrl+alt" | "ctrl+shift" }`. The
- *  TUI only reads it, and never refuses to start for it: no file, a file that cannot be read, one
+ *  `config/keys.json` beside tui.json (keysPath), `{ "chords": "alt" | "ctrl+alt" | "ctrl+shift" }`.
+ *  The TUI only reads it, and never refuses to start for it: no file, a file that cannot be read, one
  *  that is not a regular file, over KEYS_LIMIT, not JSON or naming no family it knows are all the
- *  default, Ctrl+Alt, with `why` saying which (the help says it: chordFamilyNote). A change is read
+ *  default, Alt, with `why` saying which (the help says it: chordFamilyNote). A change is read
  *  at the next start. macOS has no family; the answer is read there too, and ignored.
  *
  *  `io` is the file system (node:fs when omitted): `io.stat(path)` as loadConfig's, and

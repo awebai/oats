@@ -125,7 +125,7 @@ test("the picker at 80x24 and 120x40: over the main area from its top, the sideb
   const refused80 = "Can't spawn here · No launch…", refused120 = "Can't spawn here · No launch configuration matche…";
   for (const sz of [S80, S120]) {
     const at = `${sz.cols}x${sz.rows}`, d = drawSpawn(pickerOf(), sz), x = d.x;
-    assert.equal(d.lines[0].startsWith(" acme-platform"), true, `${at}: the sidebar stays beside the prompt`);
+    assert.equal(d.lines[0].startsWith("  acme-platform"), true, `${at}: the sidebar stays beside the prompt, the list of workspaces on top`);
     for (let r = 0; r < sz.rows; r++) assert.equal(d.cells[r][d.side].text, "│", `${at}: the sidebar's rule on row ${r}`);
     assert.deepEqual(bodyLines(d, sz).slice(0, 6), ["Spawn: pick a soul", "> o", ">   dev", `  ! ops  ${sz.cols === 80 ? refused80 : refused120}`, "    docs", ""], at);
     assert.equal(bodyLines(d, sz).slice(5).every((line) => line === ""), true, `${at}: nothing under the souls`);
@@ -399,8 +399,8 @@ test("the prompt is drawn over the main area as the palette is, the sidebar besi
   const palette = { query: "", rows: [], above: 0, below: 0, empty: true };
   const both = drawModel({ ...base, palette, spawn: pickerOf() }, S80);
   assert.equal(both.lines.some((line) => line.includes("Spawn: pick a soul")), false);
-  // The palette's own keys last where the TUI has them (not on macOS: the platform is the host's).
-  assert.deepEqual(sheet(both), hints(LEAD, ["Enter", "run"], ["Up/Down", "move"], ["Esc", "close"], ...(process.platform === "darwin" ? [] : [["Alt+Shift+Up/Down", "group"]])));
+  // The palette's own keys last (the states are Linux's: helpers.mjs TEST_PLATFORM).
+  assert.deepEqual(sheet(both), hints(LEAD, ["Enter", "run"], ["Up/Down", "move"], ["Esc", "close"], ["Alt+Shift+Up/Down", "group"]));
   // An open terminal with the focus: the prompt reads the keys, and the terminal is not drawn.
   const terminal = { name: "dev-a", focus: "terminal", zoom: false, machine: null, routed: false };
   const open = { ...base, terminal, spawn: previewOf() };

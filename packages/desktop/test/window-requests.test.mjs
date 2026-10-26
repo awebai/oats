@@ -110,8 +110,8 @@ import { shippedMainApi } from './helpers/shipped-main-api.mjs';
 import { classifyApiRoute } from '../api-url.mjs';
 import { NOT_SERVED_CODE } from '../renderer/deployment-header.mjs';
 
-const shippedApi = ({ window, advertised = ADVERTISED, reread = null, served = [], chooser = false }) =>
-  shippedMainApi({ window, chooser, base: BASE, wsId: VERIFIED, advertised, reread, served });
+const shippedApi = ({ window, advertised = ADVERTISED, reread = null, served = [], chooser = false, holds }) =>
+  shippedMainApi({ window, chooser, base: BASE, wsId: VERIFIED, advertised, reread, served, ...(holds ? { holds } : {}) });
 
 test('shipped api: a bound window\'s read for an unserved workspace is 404 E_WORKSPACE_NOT_SERVED on every route, never fetched', async () => {
   for (const path of SCOPED) {
@@ -188,6 +188,26 @@ test('shipped api: the refusal carries the served choices, so a window can find 
   const reply = await shippedApi({ window: 'ws:goneeeeeeeeeeeeeeeee', served }).call('/api/panel');
   assert.equal(reply.status, 404); assert.equal(reply.body.code, NOT_SERVED_CODE);
   assert.deepEqual(JSON.parse(JSON.stringify(reply.body.workspaces)), served);
+});
+
+// #1488: a take-over can move a window's binding while its page loads or reloads (the ask to release never
+// reached it); until the page follows (views/common.mjs startWindow), its hash still names the workspace.
+test('shipped api: a window whose hash names a workspace main no longer binds it to reads nothing of it, on any scoped route', async () => {
+  for (const path of SCOPED) {
+    const api = shippedApi({ window: WINDOW, holds: () => false });
+    const reply = await api.call(path);
+    assert.equal(reply.status, 409, path); assert.equal(reply.body.code, 'E_WINDOW_NOT_BOUND', path);
+    assert.deepEqual(api.fetched, [], `${path}: never fetched`);
+    assert.deepEqual(api.calls.holds, [WINDOW], `${path}: asked of the hash's workspace`);
+  }
+  const outside = shippedApi({ window: WINDOW, holds: () => false });
+  assert.equal((await outside.call('/api/cli')).status, 200, 'routes outside the workspace scope still answer');
+  const held = shippedApi({ window: WINDOW });
+  assert.equal((await held.call('/api/panel')).status, 200, 'a window main binds to its hash reads as before');
+  assert.equal(held.fetched[0].searchParams.get('ws'), WINDOW);
+  const unbound = shippedApi({ window: null, holds: () => false });
+  await unbound.call('/api/agents');
+  assert.equal(unbound.fetched[0].searchParams.get('ws'), VERIFIED, 'a window with no hash is not asked: it still adopts');
 });
 
 test('shipped api: a window with no workspace to read (choosing) gets no default workspace on any scoped route', async () => {

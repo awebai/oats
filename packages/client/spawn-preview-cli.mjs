@@ -1,7 +1,8 @@
 /** Fixed read-only API2 argv. Never dispatch API1 or fall back to spawn. */
 import { execFile } from 'node:child_process';
 import { parseEnvelope, writeTaskFile } from './cli-adapter.mjs';
-import { previewChoices, previewTarget, previewSupported, previewFailure, choiceArgv, suggestSupported, suggestTask } from './spawn-preview-contract.mjs';
+import { previewChoices, previewTarget, previewSupported, previewFailure, choiceArgv, suggestSupported, suggestTask, absolute,
+  instanceSuggestSupported, instanceSuggestRequest, instanceSuggestion } from './spawn-preview-contract.mjs';
 /** A refusal, in the kernel's own shape (`{ code, message, details: { fix } }`). `previewFailure` decides what of the
  *  kernel's travels: its message when that is printable and within the bound, and its `fix` only beside that message.
  *  No other key of `details` travels. */
@@ -48,6 +49,41 @@ export function cliSpawnPreview(cli, options = {}, io = {}) {
         if (doc?.ok === false) return resolve(failure(doc.error?.code, doc.error?.message, doc.error?.details?.fix));
         if (err) return resolve(failure('E_CLI_FAILED'));
         resolve(doc?.ok === true ? doc : failure('E_CLI_PROTOCOL'));
+      });
+    } catch { resolve(failure('E_CLI_FAILED')); }
+  });
+}
+
+/** `oats instance suggest-name` (feature instance-suggest-name, awebai/oats#1490 §2): a name for a spawn on another
+ *  machine, chosen here through this computer's harness and model. `request` is the dialog's (instanceSuggestRequest),
+ *  `dir` the local deployment whose launch configurations the kernel reads. The task travels in a private temporary
+ *  `--task-file`, removed on every path; never `--launch-config` (the dialog's configurations are the host's) and never
+ *  `--server` (the kernel refuses it: the name is decided here). `signal` ends it as it ends a suggest read. Answers the
+ *  kernel's envelope with its result re-validated (instanceSuggestion), or a failure in the kernel's shape. */
+export function cliInstanceSuggestName(cli, { request, dir, signal } = {}, io = {}) {
+  if (!instanceSuggestSupported(cli)) return Promise.resolve(failure('E_UNSUPPORTED_OPTION'));
+  const asked = instanceSuggestRequest(request);
+  if (!asked || !absolute(dir) || signal !== undefined && !(signal instanceof AbortSignal)) return Promise.resolve(failure('E_BAD_ARGS'));
+  if (signal?.aborted) return Promise.resolve(failure('E_SUPERSEDED'));
+  let taskFile;
+  try { taskFile = writeTaskFile(asked.task, io); } catch { return Promise.resolve(failure('E_CLI_FAILED')); }
+  const argv = ['instance', 'suggest-name', '--soul', asked.soul, '--task-file', taskFile.file,
+    ...(asked.harness ? ['--harness', asked.harness] : []), ...(asked.model ? ['--model', asked.model] : []), '--dir', dir, '--json'];
+  const env = { ...(io.env ?? process.env) };
+  for (const k of ['PI_AGENTS_ROOT', 'OATS_DEPLOYMENT', 'OATS_RESOLUTION', 'OATS_PREVIEW_PREFLIGHT_BUDGET_MS']) delete env[k];
+  return new Promise(done => {
+    const resolve = v => { taskFile.cleanup(); done(v); };
+    try {
+      // The kernel bounds its call at 20 s (NAMING_TIMEOUT_MS) and its output at 4 KiB; this deadline adds the process's own start.
+      (io.exec ?? execFile)(cli.bin, argv, { cwd: dir, env, shell: false, encoding: 'utf8', timeout: 30000, maxBuffer: 64 * 1024, ...(signal ? { signal } : {}) }, (err, stdout) => {
+        if (err?.name === 'AbortError' || signal?.aborted) return resolve(failure('E_SUPERSEDED'));
+        if (err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return resolve(failure('E_CLI_OUTPUT_LIMIT'));
+        if (err?.killed) return resolve(failure('E_CLI_TIMEOUT'));
+        const doc = parseEnvelope(stdout);
+        if (doc?.ok === false) return resolve(failure(doc.error?.code, doc.error?.message, doc.error?.details?.fix));
+        if (err) return resolve(failure('E_CLI_FAILED'));
+        const result = doc?.ok === true ? instanceSuggestion(doc.result) : null;
+        resolve(result ? { schemaVersion: 1, ok: true, result } : failure('E_CLI_PROTOCOL'));
       });
     } catch { resolve(failure('E_CLI_FAILED')); }
   });

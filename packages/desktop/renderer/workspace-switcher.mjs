@@ -1,24 +1,47 @@
-import { createWorkspaceMark } from "./identity-marks.mjs";
 import { iconElement } from "./shell-icons.mjs";
-import { deploymentMark } from "./view-deployments.mjs";
-import { pathTail } from "../../client/deployment-label.mjs";
+import { revealInScrollport } from "./reveal-in-scrollport.mjs";
+import { workspaceStep } from "../../client/workspace-step.mjs";
 import { requestDeploymentTab } from "./deployment-tabs.mjs";
-// What the menu says for a view (its name, its one line, its not-live count, its tooltip, the filter) is the
-// shared home's: this module draws it. LOCAL_SECTION, the new-window hint and adding a folder are its own.
-import { isLocalPath, workspaceChoiceLabels, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION } from "../../client/workspace-choices.mjs";
+// For a view no workspace matched, the deployment its pick opens is the shared home's (workspaceChoiceRows); the
+// row's name (rowNames), the needs-input words, the new-window hint and adding a folder are this module's.
+import { isLocalPath, workspaceChoiceRows } from "../../client/workspace-choices.mjs";
 
-/** The section a window with no workspace lists this computer's deployments under, to add with one click (#518). */
-export const LOCAL_SECTION = "On this computer";
+/* The workspace list (docs/desktop.md, "Workspaces"): always shown at the top of the sidebar, one row per
+   workspace this window can show, whatever machine it is on: the served views, remote-only ones included, then
+   the views no workspace identity matched, in the same flat list. A row is one line, the workspace's name: no
+   mark, no machine, no state. The current row is `aria-current` and marked by style alone; picking a row (a
+   click, Enter or a move) shows it in this window, taking it over from another window that shows it (#481 as
+   changed: never focus the other window). A row with an instance that needs input carries a dot after its name
+   (and the words, for assistive tech and in its tooltip), from the served views' roll-up alone.
+
+   A list of buttons, not a listbox (the sidebar's plain keys stay live on it): one tab stop (the current row,
+   else the row last focused), Up/Down/Home/End move, Enter opens. ⌘Enter / Ctrl+Enter opens a row in a new
+   window, and so does its context menu (a right-click, Shift+F10 or the Menu key): no button is drawn for it.
+   `step(±1)` (the leader's ↑/↓) selects the previous / next row, as a click does.
+
+   This computer's deployments not opened are not rows: Add local workspace… offers them, each one a button that
+   adds it and opens it here (#518), and after them the rows of this computer's list that can't be opened, each
+   with its state in a word and its Remove (#1390). */
+
+/** Below the list while rows are cut off below its bounded height (a sighted cue: every row is in the list). */
+export const moreBelowText = (count) => `${count} more below`;
+/** A workspace with an instance that needs input: the dot's words, in the row's name and as its tooltip. */
+export const WAITING_NAME = ", needs input";
+export const WAITING_TITLE = "An instance here needs input";
+/** The row's context-menu item (#481). */
+export const OPEN_IN_NEW_WINDOW = "Open in new window";
 /** A row of this computer's deployments list that can't be opened, in words (#1390): the kernel's state. */
 export const LISTED_STATE_TEXT = Object.freeze({
   missing: "Missing: the folder is gone, or its volume isn't mounted",
   "not-a-deployment": "Not a deployment any more: no oats-local.yaml",
   unreadable: "Can't be checked: OATS couldn't read this folder",
 });
-/** What the section says when this computer's list could not be read: its CLI has no list, or the read failed. */
+/** The same states in a word or two, the row's visible line (the sentence is its tooltip and is said). */
+export const LISTED_STATE_WORD = Object.freeze({ missing: "Missing", "not-a-deployment": "Not a deployment", unreadable: "Can't be checked" });
+/** What the dialog adds when this computer's list could not be read: its CLI has no list, or the read failed. */
 export const LIST_UNSUPPORTED_TEXT = "This oats can't list this computer's deployments. Update oats.";
 export const listFailedText = (message) => `Couldn't read this computer's deployments: ${message}`;
-/** The keyboard route to a row's Remove, said once for every removable option. */
+/** The keyboard route to a row's Remove, said once for every removable row. */
 export const REMOVE_HINT = "Press Right Arrow, then Enter, to remove it from this computer's list.";
 
 const text = (value) => String(value || "");
@@ -27,39 +50,67 @@ const candidateName = (candidate) => candidate?.name
   || candidateId(candidate).split("/").filter(Boolean).at(-1)
   || "Workspace";
 
-/** The keyboard route to a workspace's Open in new window action (#481), said once for every option. */
+/** Each row's name, in order: the workspace's name, else a local folder's last segment, else "Workspace". Two
+ * of one name are told apart by what names the workspace, its team and its key ("tsm — github.com/a/tsm"),
+ * never by where it is: no folder, no machine (the shared workspaceChoiceLabels falls back to those, for the
+ * TUI's switcher). Twins with nothing of the kind keep the same name. */
+export function rowNames(choices) {
+  const short = (value) => typeof value === "string" && value.length > 0 && value.length <= 512 ? value : "";
+  const base = choices.map((choice) => choice.name
+    || (isLocalPath(choice.id) ? String(choice.id).split("/").filter(Boolean).at(-1) : "")
+    || "Workspace");
+  const counts = new Map();
+  for (const name of base) counts.set(name, (counts.get(name) || 0) + 1);
+  return choices.map((choice, index) => {
+    if (counts.get(base[index]) === 1) return base[index];
+    const suffix = [short(choice.team?.name), short(choice.key)].filter(Boolean).join(" · ");
+    return suffix ? `${base[index]} — ${suffix}` : base[index];
+  });
+}
+
+/** The keyboard route to a workspace's Open in new window (#481), said once for every row. */
 export function openInNewWindowHint(mac) {
-  return `Press ${mac ? "⌘Enter" : "Ctrl+Enter"}, or Right Arrow then Enter, to open this workspace in a new window.`;
+  return `Press ${mac ? "⌘Enter" : "Ctrl+Enter"} to open this workspace in a new window.`;
 }
 
 export function createWorkspaceSwitcher({
   document, selectWorkspace, discoverSuggestions, addWorkspace, pickWorkspace, onboardWorkspace = null, onboarded = null,
-  // Remove a row of this computer's deployments list (#1390). Absent, no Remove.
+  // Remove a row of this computer's deployments list that can't be opened (#1390). Absent, no Remove.
   removeListed = null,
   // One window per workspace (#481): opens (or focuses) a workspace's own window. Absent, no action.
   openInNewWindow = null, mac = false,
 }) {
   const q = (id) => document.getElementById(id);
-  const trigger = q("ws-trigger"), currentName = q("ws-name"), menu = q("ws-menu");
-  const menuSearch = q("ws-menu-search"), options = q("ws-options"), addOpen = q("ws-add-open");
-  addOpen.replaceChildren(iconElement(document, 'plus', { size: 13 }), document.createTextNode('Add local workspace…')); addOpen.setAttribute('aria-label', 'Add local workspace…');
+  const section = q("ws-list"), options = q("ws-options"), addOpen = q("ws-add-open");
+  addOpen.replaceChildren(iconElement(document, 'plus', { size: 14 }));
+  addOpen.setAttribute('aria-label', 'Add local workspace…'); addOpen.title = 'Add local workspace…';
   const empty = document.createElement('p'); empty.className = 'ws-menu-empty'; empty.setAttribute('role', 'status'); empty.hidden = true;
   options.after(empty);
-  // What a one-click add from the menu is doing, or why it failed (#518).
-  const menuStatus = document.createElement('p'); menuStatus.className = 'ws-menu-status'; menuStatus.setAttribute('role', 'status'); menuStatus.tabIndex = -1;
-  menuStatus.hidden = true;
-  empty.after(menuStatus);
-  // The options' description: how to reach Open in new window from the keyboard (one hidden element).
+  const more = document.createElement('p'); more.className = 'ws-more'; more.setAttribute('aria-hidden', 'true'); more.hidden = true;
+  options.after(more);
+  // The rows' description: how to reach Open in new window from the keyboard (one hidden element).
   const hint = document.createElement('p'); hint.id = 'ws-open-window-hint'; hint.hidden = true; hint.textContent = openInNewWindowHint(mac);
   if (openInNewWindow) empty.after(hint);
-  const removeHint = document.createElement('p'); removeHint.id = 'ws-remove-hint'; removeHint.hidden = true; removeHint.textContent = REMOVE_HINT;
-  if (removeListed) empty.after(removeHint);
+  // A row's context menu (#481): one item, Open in new window. The page's own menu: the native one main
+  // draws (Copy, Paste) never shows for a row.
+  const rowMenu = document.createElement("div"); rowMenu.className = "ctx-instance-menu ws-row-menu"; rowMenu.tabIndex = -1;
+  rowMenu.setAttribute("popover", "auto"); rowMenu.setAttribute("role", "menu");
+  const openItem = document.createElement("button"); openItem.type = "button"; openItem.setAttribute("role", "menuitem");
+  openItem.dataset.action = "open-in-new-window";
+  const openLabel = document.createElement("span"); openLabel.textContent = OPEN_IN_NEW_WINDOW;
+  const openKeys = document.createElement("kbd"); openKeys.textContent = mac ? "⌘Enter" : "Ctrl+Enter";
+  openItem.append(openLabel, openKeys);
+  rowMenu.append(openItem);
+  if (openInNewWindow) section.append(rowMenu);
+  let menuFor = ""; // the row the open context menu is for, else ""
   const modal = q("ws-modal"), dialog = modal.querySelector(".ws-dialog");
   const modalSearch = q("ws-suggestion-search"), suggestionsEl = q("ws-suggestions");
   const status = q("ws-dialog-status"), confirm = q("ws-confirm"), browse = q("ws-browse");
   const cancel = q("ws-cancel"), closeButton = q("ws-dialog-close");
   const title = q("ws-dialog-title"), intro = modal.querySelector(".ws-dialog-intro");
-  const defaults = { title: title.textContent, intro: intro.textContent, confirm: confirm.textContent };
+  const defaults = { title: title.textContent, intro: intro.textContent };
+  const removeHint = document.createElement('p'); removeHint.id = 'ws-remove-hint'; removeHint.hidden = true; removeHint.textContent = REMOVE_HINT;
+  if (removeListed) suggestionsEl.after(removeHint);
   // Onboarding (workspace model v2): a picked folder without oats-local.yaml.
   // The folder is the one main offered; the renderer supplies only the ref.
   const onboardEl = document.createElement("div"); onboardEl.className = "ws-onboard"; onboardEl.hidden = true;
@@ -81,336 +132,205 @@ export function createWorkspaceSwitcher({
   status.after(pickEl);
   let pickOffer = null; // the refused pick's onboarding offer, entered only on request
   let generation = 0, modalGeneration = 0, discoveryGeneration = 0;
-  let activeId = "", workspaces = [], suggestions = [], selected = null, choosing = false;
+  // `suggestions`: the found deployments that can be opened; `stale`: this computer's list's rows that can't.
+  let activeId = "", workspaces = [], suggestions = [], stale = [], choosing = false, answered = false;
   let adding = false, discoveryState = { message: "", error: false };
-  // A window with no workspace: the deployments main suggests (saved and not served, and this computer's
-  // deployments list, #1390), looked up each time its menu opens; `localAdding` is the path a one-click add
-  // is adding (#518), `localRemoving` the row a Remove is removing. `listNote` is what the section says
-  // when the list could not be read.
-  let local = [], localLooking = false, localGeneration = 0, localAdding = "", localAddGeneration = 0;
-  let localRemoving = "", listNote = "";
+  // `stopKey`: the row that is the list's tab stop (the row last focused), else the current one. `suggestionStop`:
+  // the Add dialog's found deployment last focused, its tab stop.
+  let stopKey = "", suggestionStop = "";
+  // Where focus goes back when the Add dialog closes: what opened it.
+  let returnTo = null;
+  // The workspace last picked here while its switch is still on its way (main may be taking it over from another
+  // window), else "": the moves go on from it, and a pick of the current row supersedes it.
+  let pickedId = "";
 
   const setStatus = (message = "", error = false) => {
     status.textContent = message;
     status.classList.toggle("error", error);
   };
-  const closeMenu = (restore = false) => {
-    menu.hidden = true;
-    trigger.setAttribute("aria-expanded", "false");
-    if (restore) trigger.focus();
-  };
+  const rowKey = (button) => button?.dataset?.workspaceId || "";
   const menuItems = () => [...options.querySelectorAll(".ws-option:not([hidden])")];
-  const openInWindow = (id) => { closeMenu(true); openInNewWindow(id); };
-  const setMenuStatus = (message = "") => { menuStatus.textContent = message; menuStatus.hidden = !message; };
-  /** A newer choice in this window (a served workspace, an add or pick from the dialog) takes the pending
-   * one-click add's say over this window away, at once: the add still completes in main, but its
-   * outcome opens nothing here and shows nothing. A choices poll is not a choice. */
-  const supersedeLocalAdd = () => {
-    if (!localAdding) return;
-    localAddGeneration++;
-    localAdding = "";
-    setMenuStatus("");
+  const rowOf = (key) => menuItems().find((button) => rowKey(button) === key) || null;
+  /** Where focus goes in the list: its tab stop, else the current row, else the first row. */
+  const focusTarget = () => rowOf(stopKey) || rowOf(activeId) || menuItems()[0] || addOpen;
+  const openInWindow = (id) => { openInNewWindow(id); };
+  /** Pick `id` (selectWorkspace: the shell's switch, which may answer `{ ok }`). It is the pending pick until the
+   * switch lands here (reset) or is refused. */
+  let pickToken = 0;
+  const pick = (id) => {
+    // Each pick owns its own answer: a refused or superseded older pick never clears a newer one, even of the same id.
+    const mine = ++pickToken;
+    pickedId = id;
+    const done = () => { if (pickToken === mine) pickedId = ""; };
+    let answer;
+    try { answer = selectWorkspace(id); } catch { answer = { ok: false }; }
+    Promise.resolve(answer).then((r) => { if (r?.ok === false) done(); }, done);
   };
-  /** The suggestions not already a served choice: a view names the deployments it holds (#482). */
-  const offeredLocally = () => {
-    const served = new Set(workspaces.flatMap((workspace) => [workspace.id, ...(Array.isArray(workspace.deployments) ? workspace.deployments : [])]));
-    return local.filter((candidate) => candidateId(candidate) && !served.has(candidateId(candidate)));
-  };
-  // Views first; unattached views (a deployment no workspace identity matched) after them, in their
-  // own group under UNMATCHED_SECTION. Every entry is its name and ONE muted line (UI spec, #482): a
-  // view's machines, an unattached view's machine and short reason. A view with a deployment that is
-  // not live carries a status mark. Filtering and Arrow/Home/End run across both (menuItems() is
-  // every shown option).
-  const unmatchedHeadingId = `ws-unmatched-${Math.random().toString(36).slice(2, 8)}`;
+  /** The rows as drawn, for the moves: `{ key, openable, open() }`, in order. Every row can be opened (a row
+   * another window shows is taken over). */
+  let drawn = [];
   const renderOptions = () => {
-    const query = menuSearch.value.trim().toLocaleLowerCase();
-    const rows = workspaceChoiceRows(workspaces);
-    const focusedId = document.activeElement?.classList?.contains("ws-option")
-      ? document.activeElement.dataset.workspaceId || "" : "";
-    const focusedPath = document.activeElement?.classList?.contains("ws-local-option") ? document.activeElement.dataset.workspacePath : "";
-    // Focus on a served workspace's Open in new window action comes back to that action (#481, #521).
-    const focusedAction = document.activeElement?.classList?.contains("ws-open-window") ? document.activeElement.dataset.workspaceId : "";
-    const focusedRemove = document.activeElement?.classList?.contains("ws-remove-listed") ? document.activeElement.dataset.workspacePath : "";
+    const said = workspaceChoiceRows(workspaces), names = rowNames(workspaces);
+    const focused = options.contains(document.activeElement) ? document.activeElement : null;
+    const focusedKey = focused?.classList?.contains("ws-option") ? rowKey(focused) : "";
     options.replaceChildren();
-    const unmatched = document.createElement("div");
-    unmatched.className = "ws-option-group"; unmatched.setAttribute("role", "group"); unmatched.setAttribute("aria-labelledby", unmatchedHeadingId);
-    const unmatchedHead = document.createElement("div");
-    unmatchedHead.className = "ws-option-section"; unmatchedHead.id = unmatchedHeadingId; unmatchedHead.setAttribute("role", "presentation");
-    unmatchedHead.textContent = UNMATCHED_SECTION;
-    unmatched.append(unmatchedHead);
-    workspaces.forEach((workspace, index) => {
-      const said = rows[index];
-      if (!choiceMatches(said, query)) return;
+    drawn = [];
+    const list = document.createElement("ul"); list.className = "ws-group"; list.setAttribute("aria-label", "Workspaces");
+    // The views a workspace identity matched, then those none matched: one flat list, no heading.
+    const order = [...said.keys()].filter((i) => !said[i].unattached).concat([...said.keys()].filter((i) => said[i].unattached));
+    for (const index of order) {
+      const workspace = workspaces[index], row = said[index], label = names[index];
       const button = document.createElement("button");
-      button.type = "button";
-      button.className = "ws-option";
-      button.setAttribute("role", "option");
-      button.setAttribute("aria-selected", String(workspace.id === activeId));
+      button.type = "button"; button.className = "ws-option"; button.tabIndex = -1;
+      if (workspace.id === activeId) button.setAttribute("aria-current", "true");
       button.dataset.workspaceId = workspace.id;
-      if (said.tooltip) button.title = said.tooltip;
-      const check = document.createElement("span");
-      check.className = "ws-check";
-      check.setAttribute("aria-hidden", "true");
-      check.replaceChildren(...(workspace.id === activeId ? [iconElement(document, "check", { size: 14 })] : []));
-      const copy = document.createElement("span");
-      copy.className = "ws-option-copy";
-      const line = document.createElement("span");
-      line.className = "ws-option-line";
-      const name = document.createElement("span");
-      name.className = "ws-option-name";
-      name.textContent = said.label;
-      line.append(name);
-      if (said.notLive) line.append(deploymentMark(document, said.notLiveText));
-      const meta = document.createElement("span");
-      meta.className = "ws-option-meta";
-      meta.textContent = said.place;
-      meta.hidden = !said.place;
-      copy.append(line, meta);
-      button.append(createWorkspaceMark(document, workspace), copy, check);
-      // Open in new window (#481): a trailing button beside the option, never inside it.
-      const row = document.createElement("div");
-      row.className = "ws-option-row"; row.setAttribute("role", "none");
-      row.append(button);
-      if (openInNewWindow) {
-        button.setAttribute("aria-describedby", hint.id);
-        const open = document.createElement("button");
-        open.type = "button"; open.className = "ws-open-window"; open.tabIndex = -1;
-        open.dataset.workspaceId = workspace.id;
-        open.setAttribute("aria-label", `Open ${said.label} in a new window`);
-        open.title = `Open ${said.label} in a new window`;
-        open.append(iconElement(document, "newWindow", { size: 14 }));
-        open.addEventListener("click", () => {
-          if (menu.hidden || !open.isConnected || !options.contains(open)) return;
-          openInWindow(workspace.id);
-        });
-        row.append(open);
+      const name = document.createElement("span"); name.className = "ws-option-name"; name.textContent = label;
+      button.append(name);
+      // The dot (the view's `waiting === true`): after the name, and in the row's name and tooltip. Unknown is none.
+      let tooltip = label;
+      if (workspace.waiting === true) {
+        const words = document.createElement("span"); words.className = "sr-only"; words.textContent = WAITING_NAME;
+        const dot = document.createElement("span"); dot.className = "ws-waiting"; dot.setAttribute("aria-hidden", "true");
+        button.append(words, dot);
+        tooltip = `${tooltip}\n${WAITING_TITLE}`;
       }
-      button.addEventListener("click", () => {
-        if (menu.hidden || !button.isConnected || !options.contains(button)) return;
-        closeMenu(true);
-        supersedeLocalAdd();
-        if (workspace.id !== activeId) selectWorkspace(workspace.id);
+      // The whole name, for a name cut off: never a path or a machine.
+      button.title = tooltip;
+      if (openInNewWindow) button.setAttribute("aria-describedby", hint.id);
+      const choose = () => {
+        // Picked unless it is already what this window shows or is about to show: the current row while another
+        // pick is on its way supersedes that pick (the latest pick wins).
+        if (workspace.id !== (pickedId || activeId)) pick(workspace.id);
         // A deployment no workspace matched: the Deployments page opens on its tab, where the full
         // reason and its fix are.
-        if (said.deployment) requestDeploymentTab(workspace.id, said.deployment);
-      });
-      (said.unattached ? unmatched : options).append(row);
-    });
-    if (unmatched.querySelector(".ws-option")) options.append(unmatched);
-    const offered = choosing ? offeredLocally() : [];
-    const localGroup = renderLocalGroup(offered.filter((candidate) => !query
-      || `${candidateName(candidate)} ${pathTail(candidateId(candidate), 2)}`.toLocaleLowerCase().includes(query)), choosing ? listNote : "");
-    if (localGroup) options.append(localGroup);
-    empty.hidden = options.childElementCount > 0;
-    empty.textContent = empty.hidden ? '' : workspaces.length || offered.length ? 'No workspaces match this filter.'
-      : choosing && localLooking ? 'Looking for workspaces on this computer…' : 'No workspace choices reported.';
-    if (focusedAction && !menu.hidden) {
-      ([...options.querySelectorAll(".ws-open-window")].find((button) => button.dataset.workspaceId === focusedAction) || menuSearch).focus();
-    } else if (focusedRemove && !menu.hidden) {
-      ([...options.querySelectorAll(".ws-remove-listed")].find((button) => button.dataset.workspacePath === focusedRemove) || menuSearch).focus();
-    } else if ((focusedId || focusedPath) && !menu.hidden) {
-      (menuItems().find((button) => focusedId ? button.dataset.workspaceId === focusedId : button.dataset.workspacePath === focusedPath) || menuSearch).focus();
+        if (row.deployment) requestDeploymentTab(workspace.id, row.deployment);
+      };
+      button.addEventListener("click", () => { if (button.isConnected && options.contains(button)) choose(); });
+      const item = document.createElement("li"); item.className = "ws-option-row";
+      item.append(button);
+      list.append(item);
+      drawn.push({ key: workspace.id, openable: true, open: choose });
     }
+    if (list.childElementCount) options.append(list);
+    empty.hidden = !!menuItems().length || !answered;
+    empty.textContent = empty.hidden ? '' : 'No workspace choices reported.';
+    // The tab stop: the row last focused while it is still drawn, else the current row, else the first.
+    if (!rowOf(stopKey)) stopKey = "";
+    const stop = focusTarget();
+    if (stop?.classList?.contains("ws-option")) stop.tabIndex = 0;
+    if (focusedKey) (rowOf(focusedKey) || focusTarget()).focus();
+    else if (focused) focusTarget().focus();
+    // A context menu whose row is gone closes.
+    if (menuFor && !rowOf(menuFor)) closeRowMenu(false);
+    revealInScrollport(options, rowOf(activeId));
+    noteMore();
   };
-  // This computer's deployments, for a window with no workspace: each option adds its deployment and
-  // opens it in this window (the Add dialog's add, from the menu). A row of the list that can't be opened
-  // (missing, not a deployment any more, unreadable) says so in words and opens nothing; each list row has
-  // Remove beside it (#1390). `note`, when the list could not be read, is the section's one line. Null when
-  // there is nothing to show.
-  const localHeadingId = `ws-local-${Math.random().toString(36).slice(2, 8)}`;
-  const renderLocalGroup = (candidates, note) => {
-    if (!candidates.length && !note) return null;
-    const busy = !!(localAdding || localRemoving);
-    const group = document.createElement("div");
-    group.className = "ws-option-group ws-local-group"; group.setAttribute("role", "group"); group.setAttribute("aria-labelledby", localHeadingId);
-    group.setAttribute("aria-busy", String(busy));
-    const head = document.createElement("div");
-    head.className = "ws-option-section"; head.id = localHeadingId; head.setAttribute("role", "presentation");
-    head.textContent = LOCAL_SECTION;
-    group.append(head);
-    if (note) {
-      const line = document.createElement("p"); line.className = "ws-local-note"; line.textContent = note;
-      group.append(line);
-    }
-    for (const candidate of candidates) {
-      const path = candidateId(candidate), label = candidateName(candidate);
-      const stale = Object.hasOwn(LISTED_STATE_TEXT, candidate.state) ? LISTED_STATE_TEXT[candidate.state] : "";
-      const button = document.createElement("button");
-      button.type = "button"; button.className = "ws-option ws-local-option";
-      button.setAttribute("role", "option"); button.setAttribute("aria-selected", "false");
-      if (busy || stale) button.setAttribute("aria-disabled", "true");
-      button.dataset.workspacePath = path; button.title = stale ? `${path}\n${stale}` : path;
-      if (stale) button.dataset.listedState = candidate.state;
-      const check = document.createElement("span"); check.className = "ws-check"; check.setAttribute("aria-hidden", "true");
-      const copy = document.createElement("span"); copy.className = "ws-option-copy";
-      const line = document.createElement("span"); line.className = "ws-option-line";
-      const name = document.createElement("span"); name.className = "ws-option-name"; name.textContent = label;
-      line.append(name);
-      if (stale) line.append(deploymentMark(document, stale));
-      const meta = document.createElement("span"); meta.className = "ws-option-meta"; meta.textContent = stale || pathTail(path, 2);
-      if (stale) meta.classList.add("ws-listed-state");
-      copy.append(line, meta);
-      button.append(createWorkspaceMark(document, { id: path, name: label }), copy, check);
-      button.addEventListener("click", () => {
-        if (stale || menu.hidden || !button.isConnected || !options.contains(button)) return;
-        void addFromMenu(path, label);
-      });
-      const row = document.createElement("div"); row.className = "ws-option-row"; row.setAttribute("role", "none");
-      row.append(button);
-      if (removeListed && candidate.removable) {
-        button.setAttribute("aria-describedby", removeHint.id);
-        const remove = document.createElement("button");
-        remove.type = "button"; remove.className = "ws-remove-listed"; remove.tabIndex = -1;
-        remove.dataset.workspacePath = path; remove.textContent = "Remove";
-        remove.setAttribute("aria-label", `Remove ${label} from this computer's list`);
-        remove.title = `Remove ${label} from this computer's list. Nothing on disk changes.`;
-        if (busy) remove.setAttribute("aria-disabled", "true");
-        remove.addEventListener("click", () => {
-          if (menu.hidden || !remove.isConnected || !options.contains(remove)) return;
-          void removeFromMenu(path, label);
-        });
-        row.append(remove);
-      }
-      group.append(row);
-    }
-    return group;
-  };
-  /** Look up this computer's deployments for the chooser menu; only the latest lookup paints. */
-  const lookLocally = async () => {
-    const token = ++localGeneration;
-    localLooking = true;
-    let found = [], note = "";
-    try {
-      const result = await discoverSuggestions();
-      found = result?.stale ? [] : Array.isArray(result) ? result : (result?.suggestions || []);
-      if (!result?.stale) note = result?.list?.state === "unsupported" ? LIST_UNSUPPORTED_TEXT
-        : result?.list?.state === "failed" ? listFailedText(result.list.message || "the installed OATS CLI could not read it.") : "";
-    } catch { /* nothing found: the menu still offers Add local workspace… */ }
-    if (token !== localGeneration) return;
-    localLooking = false;
-    local = found.filter((candidate) => candidateId(candidate));
-    listNote = note;
-    renderOptions();
-  };
-  /** One click: add the deployment (main validates and serves it) and open it in this window. A failure
-   * stays in the menu, with focus back on the same deployment; an add superseded by a choice made
-   * meanwhile (the window bound, or no longer choosing) opens nothing here. */
-  const addFromMenu = async (path, label) => {
-    if (localAdding || localRemoving || adding) return;
-    const token = ++localAddGeneration;
-    localAdding = path;
-    setMenuStatus(`Adding ${label}…`);
-    renderOptions();
-    let result;
-    try { result = await addWorkspace(path); }
-    catch (error) { result = { ok: false, reason: error?.message || "Could not add that workspace." }; }
-    if (token !== localAddGeneration) return;
-    localAdding = "";
-    if (!choosing) { setMenuStatus(""); renderOptions(); return; }
-    if (result?.ok && result.workspace) {
-      setMenuStatus("");
-      closeMenu(true);
-      reconcileAddedWorkspace(result.workspace);
-      return;
-    }
-    setMenuStatus(result?.code === "superseded" ? "" : mutationFailureMessage(result, "Could not add that workspace."));
-    renderOptions();
-    if (!menu.hidden) (menuItems().find((button) => button.dataset.workspacePath === path) || menuSearch).focus();
-  };
-  /** Remove one row from this computer's list (#1390). It touches nothing on disk, so it asks nothing; the
-   * menu says what happened and reads the list again. Focus stays on the row's place: the next row, else
-   * the search field. */
-  const removeFromMenu = async (path, label) => {
-    if (localAdding || localRemoving || adding) return;
-    localRemoving = path;
-    setMenuStatus(`Removing ${label}…`);
-    renderOptions();
-    let result;
-    try { result = await removeListed(path); }
-    catch (error) { result = { ok: false, reason: error?.message || "Could not remove it from this computer's list." }; }
-    localRemoving = "";
-    if (!choosing) { setMenuStatus(""); renderOptions(); return; }
-    if (result?.ok) {
-      const rows = menuItems(), at = rows.findIndex((button) => button.dataset.workspacePath === path);
-      const after = rows.slice(at + 1).find((button) => button.dataset.workspacePath && button.dataset.workspacePath !== path)?.dataset.workspacePath || "";
-      local = local.filter((candidate) => candidateId(candidate) !== path);
-      setMenuStatus(`Removed ${label} from this computer's list.`);
-      renderOptions();
-      if (!menu.hidden) (menuItems().find((button) => button.dataset.workspacePath === after) || menuSearch).focus();
-      void lookLocally();
-      return;
-    }
-    setMenuStatus(result?.reason || "Could not remove it from this computer's list.");
-    renderOptions();
-    if (!menu.hidden) ([...options.querySelectorAll(".ws-remove-listed")].find((button) => button.dataset.workspacePath === path) || menuSearch).focus();
-  };
-  const openMenu = () => {
-    menu.hidden = false;
-    trigger.setAttribute("aria-expanded", "true");
-    menuSearch.value = "";
-    if (!localAdding && !localRemoving) setMenuStatus("");
-    if (choosing) void lookLocally();
-    renderOptions();
-    menuSearch.focus();
+  /** "N more below" while rows are cut off by the list's bounded height, at any scroll; none otherwise. */
+  const noteMore = () => {
+    const bottom = options.getBoundingClientRect().bottom;
+    const below = menuItems().filter((button) => button.getBoundingClientRect().bottom > bottom + 0.5).length;
+    more.hidden = !below;
+    more.textContent = below ? moreBelowText(below) : "";
   };
 
+  const menuOpen = () => { try { return rowMenu.matches(":popover-open"); } catch { return false; } };
+  function closeRowMenu(restore) {
+    const key = menuFor;
+    if (!key) return;
+    menuFor = "";
+    try { rowMenu.hidePopover?.(); } catch { /* already closed */ }
+    if (restore) (rowOf(key) || focusTarget()).focus();
+  }
+  /** Open `button`'s context menu: at the pointer when the pointer opened it on the row, else (a key) below the row. */
+  const openRowMenu = (button, event) => {
+    if (typeof rowMenu.showPopover !== "function") return;
+    menuFor = rowKey(button);
+    rowMenu.setAttribute("aria-label", button.querySelector(".ws-option-name")?.textContent || "Workspace");
+    if (!menuOpen()) rowMenu.showPopover();
+    const win = document.defaultView, row = button.getBoundingClientRect(), size = rowMenu.getBoundingClientRect();
+    const atPointer = event.clientX >= row.left && event.clientX <= row.right && event.clientY >= row.top && event.clientY <= row.bottom
+      && (event.clientX || event.clientY);
+    const x = atPointer ? event.clientX : row.left + 8, y = atPointer ? event.clientY : row.bottom;
+    rowMenu.style.left = `${Math.max(8, Math.min(x, win.innerWidth - size.width - 8))}px`;
+    rowMenu.style.top = `${Math.max(8, y + size.height + 8 <= win.innerHeight ? y : y - size.height - (atPointer ? 0 : row.height))}px`;
+    openItem.focus();
+  };
+
+  // The Add dialog's found deployments (#518): each one a button that adds it and opens it here, on a click or
+  // Enter. After them, this computer's list's rows that can't be opened (#1390): each says its state in a word
+  // (the sentence is its tooltip and is said), opens nothing, and has Remove beside it, reached with Right Arrow.
+  // One tab stop among them all (the one last focused, else the first); Up/Down move between them.
+  const matches = (query) => (candidate) => !query
+    || `${candidateName(candidate)} ${candidateId(candidate)} ${candidate.team?.name || ""} ${candidate.reason || ""}`.toLocaleLowerCase().includes(query);
   const renderSuggestions = (focusId = "") => {
     const query = modalSearch.value.trim().toLocaleLowerCase();
     suggestionsEl.replaceChildren();
-    const visible = suggestions.filter((candidate) => {
-      const haystack = `${candidateName(candidate)} ${candidateId(candidate)} ${candidate.team?.name || ""} ${candidate.reason || ""}`.toLocaleLowerCase();
-      return !query || haystack.includes(query);
-    });
-    let selectedId = candidateId(selected);
-    const selectedIsVisible = visible.some((candidate) => candidateId(candidate) === selectedId);
-    if (selected && !selectedIsVisible) {
-      selected = null;
-      selectedId = "";
-      confirm.disabled = true;
-    }
-    visible.forEach((candidate, index) => {
-      const id = candidateId(candidate);
+    const visible = suggestions.filter(matches(query)), staleVisible = stale.filter(matches(query));
+    const all = [...visible, ...staleVisible];
+    if (!all.some((candidate) => candidateId(candidate) === suggestionStop)) suggestionStop = candidateId(all[0]);
+    const entry = (candidate) => {
+      const id = candidateId(candidate), name = candidateName(candidate);
       const button = document.createElement("button");
       button.type = "button";
       button.className = "ws-suggestion";
       button.dataset.workspaceId = id;
-      button.setAttribute("role", "radio");
-      button.setAttribute("aria-checked", String(selectedId === id));
-      button.tabIndex = selectedId === id || (!selectedIsVisible && index === 0) ? 0 : -1;
+      button.tabIndex = id === suggestionStop ? 0 : -1;
       button.disabled = adding;
       button.title = id;
-      const radio = document.createElement("span");
-      radio.className = "ws-radio";
-      radio.setAttribute("aria-hidden", "true");
       const copy = document.createElement("span");
       copy.className = "ws-suggestion-copy";
       const title = document.createElement("span");
       title.className = "ws-suggestion-title";
-      title.textContent = candidateName(candidate);
+      title.textContent = name;
       const meta = document.createElement("span");
       meta.className = "ws-suggestion-meta";
       meta.textContent = `${candidate.team?.name ? `${candidate.team.name} · ` : ""}${id}`;
       copy.append(title, meta);
+      button.append(copy);
+      return { id, name, button, copy };
+    };
+    for (const candidate of visible) {
+      const { id, name, button, copy } = entry(candidate);
       if (candidate.reason) {
         const reason = document.createElement("span");
         reason.className = "ws-suggestion-reason";
         reason.textContent = candidate.reason;
         copy.append(reason);
       }
-      button.append(radio, copy);
-      button.addEventListener("click", () => {
-        if (adding) return;
-        selected = candidate;
-        confirm.disabled = false;
-        renderSuggestions(id);
-      });
+      button.addEventListener("click", () => { if (!adding) void runAdd(id, name, button); });
       suggestionsEl.append(button);
-    });
+    }
+    for (const candidate of staleVisible) {
+      const { id, name, button, copy } = entry(candidate);
+      const sentence = LISTED_STATE_TEXT[candidate.state];
+      button.classList.add("ws-suggestion-stale");
+      button.dataset.listedState = candidate.state;
+      button.setAttribute("aria-disabled", "true");
+      button.title = `${id}\n${sentence}`;
+      const word = document.createElement("span");
+      word.className = "ws-suggestion-reason ws-listed-state"; word.setAttribute("aria-hidden", "true");
+      word.textContent = LISTED_STATE_WORD[candidate.state];
+      const said = document.createElement("span"); said.className = "sr-only"; said.textContent = `, ${sentence}`;
+      copy.append(word, said);
+      const row = document.createElement("div"); row.className = "ws-suggestion-row";
+      row.append(button);
+      if (removeListed && candidate.removable) {
+        button.setAttribute("aria-describedby", removeHint.id);
+        const remove = document.createElement("button");
+        remove.type = "button"; remove.className = "ws-remove-listed"; remove.tabIndex = -1;
+        remove.dataset.workspacePath = id; remove.textContent = "Remove"; remove.disabled = adding;
+        remove.setAttribute("aria-label", `Remove ${name} from this computer's list`);
+        remove.title = `Remove ${name} from this computer's list. Nothing on disk changes.`;
+        remove.addEventListener("click", () => { if (!adding) void runRemove(id, name); });
+        row.append(remove);
+      }
+      suggestionsEl.append(row);
+    }
     if (focusId) {
       [...suggestionsEl.querySelectorAll(".ws-suggestion")]
         .find((button) => button.dataset.workspaceId === focusId)?.focus();
     }
-    if (!visible.length && !status.textContent) setStatus("No matching OATS workspaces found.");
+    if (!all.length && !status.textContent) setStatus("No matching OATS workspaces found.");
   };
 
   const paintDiscoveryState = () => {
@@ -467,25 +387,27 @@ export function createWorkspaceSwitcher({
     closeButton.disabled = value;
     modalSearch.disabled = value;
     refInput.disabled = value;
-    for (const suggestion of suggestionsEl.querySelectorAll(".ws-suggestion")) suggestion.disabled = value;
+    for (const button of suggestionsEl.querySelectorAll("button")) button.disabled = value;
     for (const button of pickEl.querySelectorAll("button")) button.disabled = value;
-    confirm.disabled = value || (onboarding ? !refInput.value.trim() : !selected);
+    confirm.disabled = value || !refInput.value.trim();
     if (value) status.focus();
   };
+  // The dialog's confirm is Onboard's alone: a found deployment adds on its own click.
   const enterOnboarding = (offer) => {
     onboarding = { token: offer.token, path: offer.path };
     title.textContent = "Onboard workspace";
     intro.textContent = "This folder has no oats-local.yaml yet. Name the workspace repository to realize here.";
     onboardPath.textContent = offer.path;
     modalSearch.hidden = true; suggestionsEl.hidden = true; onboardEl.hidden = false;
-    confirm.textContent = "Onboard";
+    confirm.hidden = false;
     confirm.disabled = !refInput.value.trim();
     refInput.focus();
   };
   const leaveOnboarding = () => {
     onboarding = null;
-    title.textContent = defaults.title; intro.textContent = defaults.intro; confirm.textContent = defaults.confirm;
+    title.textContent = defaults.title; intro.textContent = defaults.intro;
     modalSearch.hidden = false; suggestionsEl.hidden = false; onboardEl.hidden = true;
+    confirm.hidden = true;
     refInput.value = "";
   };
   const closeModal = (restore = true) => {
@@ -494,21 +416,23 @@ export function createWorkspaceSwitcher({
     modalGeneration++;
     discoveryGeneration++;
     modal.hidden = true;
-    selected = null;
     confirm.disabled = true;
-    if (restore) trigger.focus();
+    const back = returnTo;
+    returnTo = null;
+    if (restore) (back?.isConnected ? back : addOpen.isConnected ? addOpen : focusTarget())?.focus();
     return true;
   };
-  const openModal = async () => {
+  /** Open the Add dialog; `opener` (the header's button, the chooser's) gets focus back when it closes. */
+  const openModal = async (opener = null) => {
     if (adding) return;
-    closeMenu();
+    returnTo = opener && typeof opener.focus === "function" ? opener : addOpen;
     modalGeneration++;
     const discoveryToken = ++discoveryGeneration;
     modal.hidden = false;
     modalSearch.value = "";
     leaveOnboarding(); clearPick();
-    suggestions = [];
-    selected = null;
+    suggestions = []; stale = [];
+    suggestionStop = "";
     discoveryState = { message: "Finding OATS workspaces…", error: false };
     setAdding(false);
     paintDiscoveryState();
@@ -520,15 +444,18 @@ export function createWorkspaceSwitcher({
         discoveryState = { message: "No current workspace suggestions.", error: false };
       } else {
         const found = Array.isArray(result) ? result : (result?.suggestions || []);
-        // A deployment a view already holds is added too (#482): views name their deployments.
+        // A deployment a view already holds is not offered (#482): views name their deployments.
         const added = new Set(workspaces.flatMap((workspace) => [workspace.id, ...(Array.isArray(workspace.deployments) ? workspace.deployments : [])]));
-        // Only what can be opened: a stale row of this computer's list is the menu's to show and remove (#1390).
-        suggestions = found.filter((candidate) => candidateId(candidate) && !added.has(candidateId(candidate))
-          && (candidate.state === undefined || candidate.state === "ok"));
-        discoveryState = {
-          message: suggestions.length ? `${suggestions.length} suggested workspace${suggestions.length === 1 ? "" : "s"}` : "No additional OATS workspaces were discovered.",
-          error: false,
-        };
+        // What can be opened is offered; a row of this computer's list that is missing, not a deployment any more
+        // or unreadable is listed after them, to remove (#1390). Any other state is neither.
+        const offered = found.filter((candidate) => candidateId(candidate) && !added.has(candidateId(candidate)));
+        suggestions = offered.filter((candidate) => candidate.state === undefined || candidate.state === "ok");
+        stale = offered.filter((candidate) => Object.hasOwn(LISTED_STATE_TEXT, candidate.state));
+        // Without the list (an older oats, a refused read) what is found is the saved deployments alone: said so.
+        const note = result?.list?.state === "unsupported" ? LIST_UNSUPPORTED_TEXT
+          : result?.list?.state === "failed" ? listFailedText(result.list.message || "the installed OATS CLI could not read it.") : "";
+        const foundText = suggestions.length ? `${suggestions.length} suggested workspace${suggestions.length === 1 ? "" : "s"}` : "No additional OATS workspaces were discovered.";
+        discoveryState = { message: note ? `${foundText.replace(/\.?$/, ".")} ${note}` : foundText, error: false };
       }
       if (!adding) paintDiscoveryState();
     } catch (error) {
@@ -542,8 +469,10 @@ export function createWorkspaceSwitcher({
     const list = [...workspaces.filter((candidate) => candidate.id !== workspace.id), workspace];
     render(workspace, list);
     closeModal(false);
-    selectWorkspace(candidateId(workspace));
-    trigger.focus();
+    pick(candidateId(workspace));
+    // Focus on the added workspace's row, which becomes the list's tab stop, whatever row was it before.
+    stopKey = candidateId(workspace);
+    focusTarget()?.focus();
   };
   const resolvedMutation = (result) => {
     if (result?.ok && result.workspace) { reconcileAddedWorkspace(result.workspace); return true; }
@@ -555,7 +484,6 @@ export function createWorkspaceSwitcher({
     : result?.reason || fallback;
   const onBrowse = async () => {
     if (adding) return;
-    supersedeLocalAdd();
     const token = ++modalGeneration;
     clearPick();
     setAdding(true);
@@ -582,7 +510,6 @@ export function createWorkspaceSwitcher({
   const onOnboard = async () => {
     const ref = refInput.value.trim();
     if (!onboarding || adding || !ref) return;
-    supersedeLocalAdd();
     const token = ++modalGeneration, offer = onboarding;
     setAdding(true);
     setStatus(`Onboarding ${offer.path}… reading the workspace over Git.`);
@@ -615,93 +542,112 @@ export function createWorkspaceSwitcher({
   // same main-validated add; `returnFocus` gets focus back when it fails.
   const runAdd = async (path, name, returnFocus) => {
     if (adding) return;
-    supersedeLocalAdd();
     const token = ++modalGeneration;
     setAdding(true);
     setStatus(`Adding ${name}…`);
+    const failed = (message) => {
+      setAdding(false);
+      setStatus(message, true);
+      (returnFocus?.isConnected ? returnFocus : [...suggestionsEl.querySelectorAll(".ws-suggestion")].find((button) => button.dataset.workspaceId === path) || browse).focus();
+    };
     try {
       const result = await addWorkspace(path);
       if (token !== modalGeneration) return;
       setAdding(false);
       if (resolvedMutation(result)) return;
-      setStatus(mutationFailureMessage(result, "Could not add that workspace."), true);
-      (returnFocus?.isConnected ? returnFocus : confirm).focus();
+      failed(mutationFailureMessage(result, "Could not add that workspace."));
     } catch (error) {
       if (token !== modalGeneration) return;
-      setAdding(false);
-      setStatus(error?.message || "Could not add that workspace.", true);
-      (returnFocus?.isConnected ? returnFocus : confirm).focus();
+      failed(error?.message || "Could not add that workspace.");
     }
   };
-  const onConfirm = async () => {
-    if (onboarding) return onOnboard();
-    if (!selected || adding) return;
-    return runAdd(selected.path, candidateName(selected), confirm);
+
+  /** Remove one row of this computer's list (#1390). It touches nothing on disk, so it asks nothing; the dialog
+   * says what happened. Focus goes to the next row's place, else the first, else the filter; a failure keeps
+   * it on that Remove. */
+  const runRemove = async (path, name) => {
+    if (adding) return;
+    const token = ++modalGeneration;
+    const rows = [...suggestionsEl.querySelectorAll(".ws-suggestion")];
+    const at = rows.findIndex((button) => button.dataset.workspaceId === path);
+    const after = rows[at + 1]?.dataset.workspaceId || rows[at - 1]?.dataset.workspaceId || "";
+    setAdding(true);
+    setStatus(`Removing ${name}…`);
+    let result;
+    try { result = await removeListed(path); }
+    catch (error) { result = { ok: false, reason: error?.message || "Could not remove it from this computer's list." }; }
+    if (token !== modalGeneration) return;
+    setAdding(false);
+    if (result?.ok) {
+      stale = stale.filter((candidate) => candidateId(candidate) !== path);
+      setStatus(`Removed ${name} from this computer's list.`);
+      suggestionStop = after;
+      renderSuggestions(after);
+      if (!suggestionsEl.contains(document.activeElement)) modalSearch.focus();
+      return;
+    }
+    setStatus(result?.reason || "Could not remove it from this computer's list.", true);
+    renderSuggestions();
+    ([...suggestionsEl.querySelectorAll(".ws-remove-listed")].find((button) => button.dataset.workspacePath === path) || modalSearch).focus();
   };
 
   const render = (workspace, list = []) => {
     activeId = workspace?.id || "";
+    if (activeId && activeId === pickedId) pickedId = ""; // the pick has landed
     if (workspace) choosing = false; // a window showing a workspace is not choosing one
     workspaces = Array.isArray(list) ? [...list] : [];
     if (workspace && !workspaces.some((candidate) => candidate.id === activeId)) workspaces.unshift(workspace);
-    const labels = workspaceChoiceLabels(workspaces);
+    const labels = rowNames(workspaces);
     const activeIndex = workspaces.findIndex((candidate) => candidate.id === activeId);
     // A window with no workspace (#481) asks for one; otherwise, before the first answer, it is resolving.
-    currentName.textContent = workspace ? (labels[activeIndex] || candidateName(workspace)) : choosing ? "Choose a workspace" : "Resolving…";
-    trigger.title = activeId ? `Active workspace: ${isLocalPath(activeId) ? activeId : currentName.textContent}`
-      : choosing ? "This window has no workspace yet" : "Resolving active workspace";
+    const current = workspace ? (labels[activeIndex] || candidateName(workspace)) : choosing ? "none chosen yet" : "resolving";
+    section.setAttribute("aria-description", `Current workspace: ${current}`);
     renderOptions();
   };
 
-  const onTrigger = () => menu.hidden ? openMenu() : closeMenu(true);
-  const onDocumentPointer = (event) => {
-    if (!menu.hidden && !menu.contains(event.target) && !trigger.contains(event.target)) closeMenu();
-  };
-  const onMenuKey = (event) => {
-    // Open in new window (#481): the button beside an option is reached with ArrowRight and left with
-    // ArrowLeft or Escape; ⌘Enter (macOS) / Ctrl+Enter on the option opens it directly.
-    // A list row's Remove (#1390) is reached and left the same way.
-    const action = event.target?.closest?.(".ws-open-window, .ws-remove-listed");
-    const optionOf = (el) => el?.parentElement?.querySelector(":scope > .ws-option");
-    if (action && ["ArrowLeft", "Escape"].includes(event.key)) { event.preventDefault(); optionOf(action)?.focus(); return; }
+  const onListKey = (event) => {
     const focusedOption = event.target?.classList?.contains("ws-option") ? event.target : null;
-    if (focusedOption && event.key === "ArrowRight") {
-      const beside = focusedOption.parentElement.querySelector(":scope > .ws-open-window, :scope > .ws-remove-listed");
-      if (beside) { event.preventDefault(); beside.focus(); }
-      return;
-    }
+    // Open in new window (#481): ⌘Enter (macOS) / Ctrl+Enter on a row.
     if (openInNewWindow && focusedOption?.dataset.workspaceId && event.key === "Enter" && !event.shiftKey && !event.altKey
       && (mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)) {
       event.preventDefault(); openInWindow(focusedOption.dataset.workspaceId); return;
     }
-    if (event.key === "Escape") { event.preventDefault(); closeMenu(true); return; }
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    // Home/End in the search field move its caret.
-    if (event.target === menuSearch && ["Home", "End"].includes(event.key)) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
     const items = menuItems();
     if (!items.length) return;
     event.preventDefault();
-    const index = items.indexOf(action ? optionOf(action) : document.activeElement);
-    // Up from the first option goes back to the search field (spec F).
-    if (event.key === "ArrowUp" && index === 0) { menuSearch.focus(); return; }
+    const index = items.indexOf(document.activeElement);
     const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
       : event.key === "ArrowDown" ? Math.min(items.length - 1, index + 1) : Math.max(0, index < 0 ? 0 : index - 1);
     items[next].focus();
   };
+  const onRowMenuKey = (event) => {
+    if (event.key === "Tab") { closeRowMenu(true); return; }
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeRowMenu(true); return; }
+    // One item: the arrows stay on it, and never reach the list behind the menu.
+    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) { event.preventDefault(); event.stopPropagation(); openItem.focus(); }
+  };
   const onSuggestionKey = (event) => {
-    if (adding || !["ArrowDown", "ArrowUp", "ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
-    const target = event.target.closest?.(".ws-suggestion");
+    if (adding) return;
+    // A row's Remove (#1390): Right Arrow from the row reaches it; Left Arrow or Esc go back to the row.
+    const remove = event.target.closest?.(".ws-remove-listed");
+    const rowOfRemove = remove?.parentElement?.querySelector(":scope > .ws-suggestion");
+    if (remove && ["ArrowLeft", "Escape"].includes(event.key)) { event.preventDefault(); event.stopPropagation(); rowOfRemove?.focus(); return; }
+    if (event.key === "ArrowRight" && event.target.classList?.contains("ws-suggestion")) {
+      const beside = event.target.parentElement.querySelector(":scope > .ws-remove-listed");
+      if (beside) { event.preventDefault(); beside.focus(); }
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const target = remove ? rowOfRemove : event.target.closest?.(".ws-suggestion");
     if (!target) return;
     event.preventDefault();
     const items = [...suggestionsEl.querySelectorAll(".ws-suggestion")];
     const index = items.indexOf(target);
     const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
-      : ["ArrowDown", "ArrowRight"].includes(event.key) ? (index + 1) % items.length
+      : event.key === "ArrowDown" ? (index + 1) % items.length
         : (index - 1 + items.length) % items.length;
-    const id = items[next].dataset.workspaceId;
-    selected = suggestions.find((candidate) => candidateId(candidate) === id) || selected;
-    confirm.disabled = !selected;
-    renderSuggestions(id);
+    items[next].focus();
   };
   const onDialogKey = (event) => {
     if (event.key === "Escape") { event.preventDefault(); closeModal(); return; }
@@ -715,44 +661,95 @@ export function createWorkspaceSwitcher({
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
 
-  trigger.addEventListener("click", onTrigger);
-  trigger.addEventListener("keydown", (event) => {
-    if (["ArrowDown", "Enter", " "].includes(event.key) && menu.hidden) { event.preventDefault(); openMenu(); }
+  options.addEventListener("keydown", onListKey);
+  options.addEventListener("scroll", () => noteMore());
+  // A row's context menu (a right-click, Shift+F10, the Menu key): the page's own, never the native one.
+  options.addEventListener("contextmenu", (event) => {
+    const button = event.target?.closest?.(".ws-option");
+    if (!openInNewWindow || !button || !options.contains(button)) return;
+    event.preventDefault();
+    openRowMenu(button, event);
   });
-  menuSearch.addEventListener("input", renderOptions);
-  menu.addEventListener("keydown", onMenuKey);
-  // Tabbing out of the open menu closes it, like a click elsewhere (spec F).
-  menu.addEventListener("focusout", (event) => {
-    if (!menu.hidden && event.relatedTarget && !menu.contains(event.relatedTarget) && !trigger.contains(event.relatedTarget)) closeMenu();
+  rowMenu.addEventListener("keydown", onRowMenuKey);
+  // A light dismiss (a click outside, the window losing focus) closes it too: no row is its own any more.
+  rowMenu.addEventListener("toggle", (event) => { if (event.newState === "closed") menuFor = ""; });
+  openItem.addEventListener("click", () => {
+    const key = menuFor;
+    closeRowMenu(true);
+    if (key && rowOf(key)) openInWindow(key);
   });
-  addOpen.addEventListener("click", openModal);
-  modalSearch.addEventListener("input", renderSuggestions);
+  // The list's height changes with the window and the sidebar: what is cut off is measured again.
+  const resized = typeof (document.defaultView ?? globalThis).ResizeObserver === "function"
+    ? new (document.defaultView ?? globalThis).ResizeObserver(() => noteMore()) : null;
+  resized?.observe(options);
+  // The tab stop follows the row last focused (the roster's roving pattern).
+  options.addEventListener("focusin", (event) => {
+    const button = event.target?.closest?.(".ws-option");
+    if (!button || !options.contains(button)) return;
+    stopKey = rowKey(button);
+    for (const each of menuItems()) each.tabIndex = each === button ? 0 : -1;
+  });
+  suggestionsEl.addEventListener("focusin", (event) => {
+    const button = event.target?.closest?.(".ws-suggestion");
+    if (!button) return;
+    suggestionStop = button.dataset.workspaceId;
+    for (const each of suggestionsEl.querySelectorAll(".ws-suggestion")) each.tabIndex = each === button ? 0 : -1;
+  });
+  addOpen.addEventListener("click", () => { void openModal(addOpen); });
+  modalSearch.addEventListener("input", () => renderSuggestions());
   refInput.addEventListener("input", () => { if (!adding) confirm.disabled = !refInput.value.trim(); });
   refInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); void onOnboard(); } });
   suggestionsEl.addEventListener("keydown", onSuggestionKey);
   browse.addEventListener("click", onBrowse);
-  confirm.addEventListener("click", onConfirm);
+  confirm.addEventListener("click", () => { void onOnboard(); });
   cancel.addEventListener("click", () => closeModal());
   closeButton.addEventListener("click", () => closeModal());
   modal.addEventListener("mousedown", (event) => { if (event.target === modal) closeModal(); });
   dialog.addEventListener("keydown", onDialogKey);
-  document.addEventListener("mousedown", onDocumentPointer);
 
+  confirm.hidden = true;
   render(null);
   return {
     begin() {
       const token = ++generation;
       return (workspace, list) => {
         if (token !== generation) return false;
+        answered = true;
         render(workspace, list);
         return true;
       };
     },
-    reset() { generation++; choosing = false; render(null); },
-    /** This window has no workspace (#481): the served choices main gave it, none selected. Called again
-     * as main serves more (#521), it repaints the open menu in place. */
-    choose(list) { generation++; choosing = true; render(null, list); },
-    openMenu,
+    /** A switch landed here (shell.mjs restoreWorkspaceTabs): an older roster answer may not paint any more, and
+     * `current` (the workspace now selected) is marked current at once. The rows stay: the list never empties
+     * while the new workspace's roster is read, or when that read fails. */
+    reset(current = "") {
+      generation++;
+      choosing = false;
+      if (pickedId === current) pickedId = "";
+      const known = workspaces.find((candidate) => candidate.id === current) ?? null;
+      render(known, workspaces);
+      if (!known && current) { activeId = current; renderOptions(); }
+    },
+    /** This window has no workspace (#481): the served choices main gave it, none current. Called again
+     * as main serves more (#521), it repaints the list in place. */
+    choose(list) { generation++; choosing = true; answered = true; render(null, list); },
+    /** Focus the list's current row, else its tab stop (the `w` key, the leader's `o`, app.workspaces). */
+    focusList() { const target = rowOf(activeId) || focusTarget(); target?.focus(); revealInScrollport(options, target); noteMore(); return !!target; },
+    /** The leader's ↑/↓ (`step` -1 / 1): select the previous / next row, as a click does (a row another window
+     * shows is taken over). False at an end. */
+    step(delta) {
+      // From the pick still on its way, else the current row: presses faster than a switch make as many moves.
+      const key = workspaceStep(drawn.map(({ key, openable }) => ({ key, openable })), pickedId || activeId || null, delta);
+      const row = key === null ? null : drawn.find((entry) => entry.key === key);
+      if (!row) return false;
+      row.open();
+      return true;
+    },
+    /** Open the Add dialog (the chooser's button, a window with nothing to show); `opener` gets focus back. */
     openModal,
+    dispose() {
+      resized?.disconnect();
+      closeRowMenu(false);
+    },
   };
 }

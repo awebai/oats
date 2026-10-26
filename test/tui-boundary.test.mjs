@@ -80,6 +80,8 @@ const TAKEN = Object.freeze({
   "panel-views.mjs": ["panelData", "cliReadsRemotes", "workspaceChoices", "viewModel", "listedViews", "deployments"],
   // #482 in the switcher: a listed deployment's identity, read before it is opened, matched in by listedViews.
   "deployment-identity.mjs": ["cliDeploymentIdentity", "identityReadable", "identityTimedOut"],
+  // The leader's Up/Down between the list of workspaces' rows (PR 3): the shared pure step.
+  "workspace-step.mjs": ["workspaceStep"],
   "remote-roster.mjs": ["remoteRosterState"],
   "remote-identity-memory.mjs": ["observeIdentities", "identityMemory"],
   "workspace-choices.mjs": ["workspaceChoiceRows", "choiceMatches", "UNMATCHED_SECTION"],
@@ -125,7 +127,7 @@ const TAKEN = Object.freeze({
   // The keys the TUI shares with the Desktop (#1395): lib/actions.mjs builds its leader's table and its plain keys'
   // defaults from them, lib/config.mjs its default leader, and packages/tui/test/keymap.test.mjs pins all three to them.
   // PALETTE_KEYS: the palette's own keys, next and previous group (lib/actions.mjs paletteKeys).
-  "keymap.mjs": ["CHORDS", "CHORD_FAMILY_LABELS", "DEFAULT_CHORD_FAMILY", "LEADER_TABLE", "PALETTE_KEYS", "PLAIN_KEYS", "chordKeyOf", "leaderKey", "plainKeys"],
+  "keymap.mjs": ["CHORDS", "CHORD_FAMILY_LABELS", "DEFAULT_CHORD_FAMILY", "LEADER_TABLE", "PALETTE_KEYS", "PLAIN_KEYS", "chordKeyOf", "doesLabel", "leaderKey", "plainKeys"],
   "keys-file.mjs": ["KEYS_LIMIT", "chordFamilyFrom", "chordFamilyNote", "keysPath"],
 });
 /** Every clause of a source that takes names from a module of the shared home: [[module, names], …].
@@ -265,7 +267,7 @@ test("the views are pure: they import only the TUI's own text, style and action 
   const views = filesUnder("packages/tui/lib/views");
   assert.equal(views.length >= 2, true);
   // The views and the window they share; the switcher of workspaces, the confirmation of an act and the palette are held to the rule like the rest.
-  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["act.mjs", "capabilities.mjs", "detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "palette.mjs", "scroll.mjs", "souls.mjs", "spawn.mjs", "split.mjs", "switcher.mjs"]);
+  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["act.mjs", "capabilities.mjs", "detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "palette.mjs", "scroll.mjs", "souls.mjs", "spawn.mjs", "split.mjs", "switcher.mjs", "workspaces.mjs"]);
   for (const path of views) {
     for (const name of staticImports(read(path))) assert.match(name, /^(\.\.\/actions\.mjs|\.\.\/term\/(text|style|width)\.mjs|\.\/[a-z-]+\.mjs)$/, `${path} imports ${name}`);
     assert.doesNotMatch(code(read(path)), /\b(process|Date|setTimeout|setInterval|performance|console|fetch|require)\b/, path);

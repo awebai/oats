@@ -1,7 +1,8 @@
 // The list of instances: (model, pane) -> rows of spans. Pure: no IO, no clock, no escape byte.
 // Every name, word and reason in it is text the TUI did not write and goes through shown(); the
 // marks and the few words around them are the TUI's own. Nothing is told by colour alone: each
-// state has a mark of its own shape, the selected row carries `>` as well as reverse video, and a
+// state has a mark of its own shape, the selected row carries `>` as well as reverse video (the `>`
+// only while the list has the focus, not the list of workspaces: the model's `cursor`), and a
 // waiting row carries a tag in words, `Needs input`, in reverse video. A row is quiet: its mark
 // and its name, and a word only where the mark can't say it. Children stand under their parent by
 // indentation alone; a folded row says how many it folds away, `+n`, and how many of those wait,
@@ -128,7 +129,8 @@ function instanceRow(row, cols, wordWidth, marks) {
   const wordCol = left >= wordWidth ? end - wordWidth : nameCol + claim + 2;
   const nameEnd = wordCells ? wordCol - 2 : end;
   const spans = [];
-  if (row.selected) spans.push({ col: 0, width: cols, style: SELECTED }, { col: 0, text: lit(marks.selected), style: SELECTED, width: 1 });
+  if (row.selected) spans.push({ col: 0, width: cols, style: SELECTED });
+  if (row.selected && row.cursor !== false) spans.push({ col: 0, text: lit(marks.selected), style: SELECTED, width: 1 });
   spans.push({ col: MARK + at, text: lit(marks[row.mark] ?? marks.unknown), style: look(markLook(row.mark, row.color)), width: 1 });
   if (nameEnd > nameCol) {
     // The count and the gap before it, when there is room for them and for a cell of the name.

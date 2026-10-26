@@ -1,5 +1,5 @@
-/* oats desktop — command palette (app.palette: ⌘K on macOS, Ctrl+Alt+K on
-   Linux/Windows; the keymap engine owns the chord and its terminal policy).
+/* oats desktop — command palette (app.palette: ⌘K on macOS, Alt+K on
+   Linux/Windows by default; the keymap engine owns the chord and its terminal policy).
    One input, two result kinds: instances (default; jump-to-terminal) and
    commands (also matched by name — ">" prefix restricts to commands).
    Instances are the sidebar's tree ordered by last focus (#1383): the sidebar's

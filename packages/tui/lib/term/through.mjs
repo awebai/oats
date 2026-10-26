@@ -3,8 +3,9 @@
 // agent exactly as they came, and the scanner here looks for three things only: the back key's own
 // bytes (which take the focus back to the list), a bracketed paste (which goes to the agent as a
 // paste, so a back key inside it is pasted, not taken) and the chords (docs/tui.md, "Chords"): the
-// Alt+Shift arrows in every state, and under the kitty keyboard protocol the Ctrl+Alt ones too (or,
-// when keys.json chose that family, the Ctrl+Shift ones), every other key then typed as the bytes it sends without the protocol (see createThrough). Pure:
+// Alt family's (Alt with a letter, a digit or an arrow) and the Alt+Shift arrows in every state, and
+// under the kitty keyboard protocol the Ctrl+Alt ones too (or, when keys.json chose that family, the
+// Ctrl+Shift ones), every other key then typed as the bytes it sends without the protocol (see createThrough). Pure:
 // no IO; the clock is injected.
 //
 // The back key is tui.json's `open.detachKey`. Its grammar is THE TUI'S OWN: the keys it can take
@@ -12,9 +13,9 @@
 // (lib/session-viewer.mjs) and keeps its set and its spelling, so a tui.json written for PR 4 means
 // the same key; it is not tied to the kernel's, which never sees this key any more.
 import { ESC_TIMEOUT_MS, PASTE_LIMIT, PASTE_PAUSE_MS, createKeyParser, keyId, legacyEvents } from "./keys.mjs";
-import { LEGACY_CHORDS, confirmed, kittyId, kittyKey, legacyBytes, legacyChord, legacySequence } from "./kitty.mjs";
+import { confirmed, kittyId, kittyKey, legacyBytes, legacyChord, legacyChordText, legacySequence } from "./kitty.mjs";
 
-/** How long bytes held only as a beginning of the back key (or of an Alt+Shift arrow chord, see
+/** How long bytes held only as a beginning of the back key (or of a chord's own bytes, see
  *  createThrough) wait for the rest of it, in milliseconds: the back key counts only as ONE
  *  keypress (a terminal writes a key's bytes at once; a split read of them comes within this), so
  *  Esc and then `o` typed as two keys reach the agent as they were typed, and never as M-o. Bytes that may begin a paste's start marker wait
@@ -117,10 +118,11 @@ const decoder = () => new TextDecoder("utf-8", { fatal: false });
  *  A Ctrl+Shift chord is read only so, from its event's Shift bit: a Ctrl+Shift letter that is not
  *  among `chords` (every one under the default family) is typed as Ctrl and the letter
  *  (`CSI 100;6u` is 0x04, the agent's Ctrl+D), and a C0 byte typed is never a chord.
- *  The legacy bytes are read as the key they are: an Alt+Shift arrow among `chords`
- *  (term/kitty.mjs LEGACY_CHORDS) is the chord however the protocol reports the lock keys in its
- *  modifier (legacyParams: `CSI 1 ; 68 A` with Caps Lock is `CSI 1 ; 4 A`), and so is a keypad
- *  arrow whose legacy bytes are that sequence.
+ *  The legacy bytes are read as the key they are: a chord among `chords` with bytes of its own
+ *  (term/kitty.mjs legacyChordText: Alt with a letter, a digit or an arrow, an Alt+Shift arrow) is
+ *  the chord however the protocol reports the lock keys in its modifier (legacyParams: `CSI 1 ; 68 A`
+ *  with Caps Lock is `CSI 1 ; 4 A`), and so is a keypad arrow whose legacy bytes are that sequence;
+ *  Alt+K, `CSI 107 ; 3 u`, is ESC `k`.
  *  Without it (`keyboard` null or "asking") no `CSI u` key is read and no key is made legacy, and
  *  what follows holds. While
  *  "asking", the answer may arrive split across reads, and over a slow link late: a read that ends
@@ -131,26 +133,28 @@ const decoder = () => new TextDecoder("utf-8", { fatal: false });
  *  key with it. giveUp() hands on what is held for the answer.
  *  A Control back key's byte right after ESC in a read is Ctrl+Alt with that key (ESC 0x18 is
  *  Ctrl+Alt+X), as the key parser reads it: the agent's, never the back key.
- *  The Alt+Shift arrow chords among `chords` are taken as the back key is: their one legacy
- *  sequence exactly (`CSI 1 ; 4 A` to `D`, nothing but Alt and Shift in the modifier), with what
- *  came after it in the read handed on as the rest.
+ *  The chords among `chords` with bytes of their own (legacyChordText) are taken as the back key
+ *  is: those bytes exactly (ESC `k` for Alt+K, ESC `E` for Alt+Shift+E, `CSI 1 ; 3 A` for Alt+Up,
+ *  `CSI 1 ; 4 A` for Alt+Shift+Up, nothing but Alt, and Shift, in the modifier), with what came after
+ *  it in the read handed on as the rest. The back key's bytes come first: a back key M-k is the
+ *  back key, never the chord Alt+K.
  *  A read is never held back from the agent but for a beginning of the back key's own bytes or of
  *  such a chord's, or of a paste's start marker from its third byte: those wait for the next read,
  *  or until `timeoutAt()` (BACK_KEY_SPLIT_MS for a key's alone, the key parser's Esc timeout when
  *  they may begin a paste) hands them on as input, through `expire()` or the first read that comes
- *  later, which then never completes the key with them. An Alt+Shift arrow chord is one keypress,
- *  as the back key is: its bytes split across reads within BACK_KEY_SPLIT_MS are the chord, and
- *  split further apart they reach the agent as they came (Alt+Shift+Up for the agent's program),
- *  so a key of the agent's that begins as one does (Esc, `ESC [ 1`) waits no longer than that for
- *  its sake. A paste is held until its end marker; one that reaches PASTE_LIMIT is dropped whole, and one whose end has not come
+ *  later, which then never completes the key with them. A chord is one keypress, as the back key
+ *  is: its bytes split across reads within BACK_KEY_SPLIT_MS are the chord, and split further apart
+ *  they reach the agent as they came, so Esc and then `k` typed as two keys are the agent's (its
+ *  program reads them as M-k: the way to a key the Alt family takes), and a key of the agent's that
+ *  begins as one does (Esc, `ESC [ 1`) waits no longer than that for its sake. A paste is held until its end marker; one that reaches PASTE_LIMIT is dropped whole, and one whose end has not come
  *  when a read arrives PASTE_PAUSE_MS after the one before is given to the agent as what it held,
  *  and that read is scanned anew, as the key parser abandons a stalled paste. */
 export function createThrough({ sequences, now, keyboard = null, leader = null, chords = new Map(), answerBy = null }) {
   if (typeof now !== "function") throw new TypeError("createThrough needs an injected clock: { now: () => milliseconds }");
   if (!(keyboard === null || keyboard === "asking" || confirmed(keyboard))) throw new TypeError("keyboard is null, \"asking\" or flags that hold flag 1");
   const keys = sequences.map((seq) => Uint8Array.from(seq));
-  /** The Alt+Shift arrow chords, `[bytes, does]`: their legacy sequence, read without the protocol. */
-  const arrows = [...chords].filter(([id]) => legacyChord(id)).map(([id, does]) => [escaped(`[1;4${LEGACY_CHORDS[id]}`), does]);
+  /** The chords with bytes of their own, `[bytes, does]` (legacyChordText), read without the protocol. */
+  const owned = [...chords].filter(([id]) => legacyChord(id)).map(([id, does]) => [escaped(legacyChordText(id)), does]);
   let kb = keyboard;
   /** The bytes held for the next read, since when, and how long they may wait: BACK_KEY_SPLIT_MS
    *  when they are held only as a beginning of the back key, ESC_TIMEOUT_MS when they may begin a
@@ -240,17 +244,17 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
         out.push({ back: true, rest: data.subarray(i + key.length) });
         return;
       }
-      const arrow = b === ESC ? arrows.find(([seq]) => at(data, i, seq)) : undefined;
-      if (arrow) {
+      const chord = b === ESC ? owned.find(([seq]) => at(data, i, seq)) : undefined;
+      if (chord) {
         if (i > 0) out.push({ input: data.subarray(0, i) });
-        out.push({ chord: arrow[1], rest: data.subarray(i + arrow[0].length) });
+        out.push({ chord: chord[1], rest: data.subarray(i + chord[0].length) });
         return;
       }
-      // The read ends on what may be the beginning of the back key, of an Alt+Shift arrow chord, of
-      // a paste or of the answer awaited: held, as long as the longest that it may begin allows.
+      // The read ends on what may be the beginning of the back key, of a chord's own bytes, of a
+      // paste or of the answer awaited: held, as long as the longest that it may begin allows.
       const pasting = data.length - i >= PASTE_HELD_FROM && begins(data, i, PASTE_START);
       const answering = kb === "asking" && answerBegins(data, i);
-      const keying = keys.some((seq) => begins(data, i, seq)) || arrows.some(([seq]) => begins(data, i, seq));
+      const keying = keys.some((seq) => begins(data, i, seq)) || owned.some(([seq]) => begins(data, i, seq));
       if (pasting || answering || keying) {
         if (i > 0) out.push({ input: data.subarray(0, i) });
         held = Uint8Array.from(data.subarray(i));
@@ -297,12 +301,13 @@ export function createThrough({ sequences, now, keyboard = null, leader = null, 
         bytes = legacyBytes(key, kb);
       } else bytes = legacySequence(params, final);
       if (bytes === null) continue; // a key that sends nothing without the protocol: nothing
-      // What the bytes read as without the protocol: the back key, or an Alt+Shift arrow chord. A
-      // key with an id of its own (kittyId: Ctrl+Shift or Ctrl+Alt with a letter) is never the back
-      // key, though its legacy bytes may read as it (Ctrl+Shift+X is 0x18, as Ctrl+X): it types them.
+      // What the bytes read as without the protocol: the back key, or a chord with bytes of its own. A
+      // key with an id of its own (kittyId: Ctrl+Shift or Ctrl+Alt with a letter or a digit) is never
+      // either, though its legacy bytes may read as one (Ctrl+Shift+X is 0x18, as Ctrl+X; Ctrl+Alt+1
+      // is ESC 1, as Alt+1, which the Alt family binds): it types them.
       const events = legacyEvents(bytes), id = events.length === 1 ? keyId(events[0]) : null;
       if (id !== null && id === leader && own === null) { out.push({ back: true, rest: data.subarray(end) }); return; }
-      if (legacyChord(id) && chords.has(id)) { out.push({ chord: chords.get(id), rest: data.subarray(end) }); return; }
+      if (own === null && legacyChord(id) && chords.has(id)) { out.push({ chord: chords.get(id), rest: data.subarray(end) }); return; }
       out.push({ input: bytes });
     }
     handOn(data.length);

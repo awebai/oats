@@ -486,7 +486,7 @@ test("a view that goes away under an open confirmation closes it: the loop is to
   // garnet serves another workspace: its rows are a view of their own.
   const ledger = { ...group(), workspace: { ...IDENTITY, key: "github.com/acme/ledger" } };
   const read = heard(stateOf(reporting(NEAR()), { cli: REMOTE_CLI }), { envelope: { ok: true, result: { groups: [ledger] } } }, "2026-10-11T10:00:10.000Z");
-  const there = on(press(read, ["w", "j", "enter"]).state, FAR_A);
+  const there = on(press(read, ["w", "w", "j", "enter"]).state, FAR_A);
   assert.equal(there.open, GARNET);
   const opened = press(there, ["X"]).state;
   assert.equal(opened.view, "act");

@@ -43,7 +43,7 @@ test("the keys the TUI has beyond the shared ones stay its own", () => {
   const own = ACTIONS.filter((action) => !PLAIN_KEYS.some((entry) => entry.does === action.id)).map((action) => [action.id, action.keys]);
   assert.deepEqual(own, [
     ["detail", ["tab"]], ["palette", ["ctrl+k"]], ["remove", ["delete"]], ["soul-instances", ["i"]],
-    ["group-next", []], ["tab-move", []], ["group-close", []],
+    ["group-next", []], ["group-previous", []], ["tab-move", []], ["group-close", []],
     ["spawn-check", ["C"]], ["close", ["escape"]], ["quit", ["q", "ctrl+c"]], ["suspend", ["ctrl+z"]], ["redraw", ["ctrl+l"]],
   ]);
 });

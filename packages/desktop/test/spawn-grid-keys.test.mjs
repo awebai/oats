@@ -187,15 +187,17 @@ test("spawn MODAL controls are excluded from view-key dispatch: '/' and 'B' from
 
 // A card's arrows give way to the keymap only for a chord it binds (keybindings.mjs keymapTakes): the
 // shared Alt+Shift+↑/↓ open the previous / next instance's terminal from a card too, and a rebind
-// follows; an arrow chord bound to nothing (Alt+↓) still moves between the cards. The overview canvas
+// follows, as do the workspace steps (Alt+↑/↓); an arrow chord bound to nothing (Ctrl+↓) still moves between the cards. The overview canvas
 // (views/hierarchy.mjs) and the roster rows (roster-keys.mjs) give way the same way.
 test("spawn grid: the keymap's arrow chords pass the cards; an unbound arrow chord still moves", async (t) => {
-  pinPlatform(t); // the Linux and Windows keymap: Alt+Shift+↑/↓ (not the Mac's)
+  pinPlatform(t); // the Linux and Windows keymap, Alt family: Alt+Shift+↑/↓ the instances, Alt+↑/↓ the workspaces
   const dom = new JSDOM('<!doctype html><html><body><div id=host></div></body></html>', { url: "http://localhost" });
   const oldDoc = globalThis.document, oldWin = globalThis.window;
   const kb = await import("../renderer/keybindings.mjs");
   kb.resetAllBindings();
-  const offs = ["roster.openPrevious", "roster.openNext"].map(id => kb.registerAction({ id, label: id, context: "global", run: () => {} }));
+  // The shell's global arrow chords (shell.mjs); the tab and group moves are the tab layer's, not live on this page.
+  const offs = ["roster.openPrevious", "roster.openNext", "workspace.previous", "workspace.next"]
+    .map(id => kb.registerAction({ id, label: id, context: "global", run: () => {} }));
   let mounted = null;
   try {
     mounted = await mountSpawn(dom);
@@ -206,7 +208,10 @@ test("spawn grid: the keymap's arrow chords pass the cards; an unbound arrow cho
     assert.equal(chord.defaultPrevented, false, "Alt+Shift+↓ is the keymap's");
     assert.equal(doc.activeElement, cards[0], "the card keeps focus");
     const alt = key(doc, cards[0], "ArrowDown", { altKey: true });
-    assert.equal(alt.defaultPrevented, true, "Alt+↓ is bound to nothing: the grid's");
+    assert.equal(alt.defaultPrevented, false, "Alt+↓ (the next workspace) is the keymap's");
+    assert.equal(doc.activeElement, cards[0]);
+    const ctrl = key(doc, cards[0], "ArrowDown", { ctrlKey: true });
+    assert.equal(ctrl.defaultPrevented, true, "Ctrl+↓ is bound to nothing: the grid's");
     assert.equal(doc.activeElement, cards[1]);
     kb.setBinding("roster.openPrevious", "Ctrl+Shift+↑");
     const rebound = key(doc, cards[1], "ArrowUp", { ctrlKey: true, shiftKey: true });
