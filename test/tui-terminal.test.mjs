@@ -1310,10 +1310,16 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   // the agent's terminal and the leader's keys under it (whose rows depend on how the leader's label
   // wraps: one more with `Ctrl+X`, the default, than with `Alt+O`), the switcher's `remove`, `soul-instances`, the open terminal's keys, the
   // split's, the four acts with the rules of a confirmation under them, and the spawn's, each
-  // sentence wrapped to that width. The movement keys scroll the help: with either of those labels the line
-  // of `quit` is on the screen from 100 rows down to 121, and 110 rows down show it.
-  for (let i = 0; i < 110; i++) term.press("j");
-  await until(term, () => mainOf(term.screen()).some((row) => /^ *x {2,}quit$/.test(row)) && JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words(withX(HELP_SHEET))), "the help with x as the quit key, in it and in its cheat sheet, after a q that did not quit");
+  // sentence wrapped to that width. How many rows that is changes with any sentence of the help, so
+  // the help is scrolled a row at a time until the line of `quit` is on the screen: each `j` waited
+  // on until the help has moved, at most 300 (a help that stops moving first fails here, by name).
+  const quitShown = () => mainOf(term.screen()).some((row) => /^ *x {2,}quit$/.test(row));
+  for (let i = 0; i < 300 && !quitShown(); i++) {
+    const before = JSON.stringify(mainOf(term.screen()));
+    term.press("j");
+    await until(term, () => quitShown() || JSON.stringify(mainOf(term.screen())) !== before, `the help moved a row down at the ${i + 1}th j, towards its line of quit`);
+  }
+  await until(term, () => quitShown() && JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words(withX(HELP_SHEET))), "the help with x as the quit key, in it and in its cheat sheet, after a q that did not quit");
   assert.equal(mainOf(term.screen()).some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
   term.press("Escape");
   await run.view("after the help was closed");
