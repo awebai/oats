@@ -24,8 +24,8 @@
 
 ## Changed
 
-- **Desktop: the Workspace tabs read Souls, Capabilities, Automations, Teams,
-  Setup.** Teams was first, and Automations, its own page before, is a tab.
+- **Desktop: the Workspace tabs read Souls, Capabilities, Teams, Machines,
+  Setup.** Teams was first, and Machines is the Deployments page of before.
   The page still opens on Souls, and the arrow keys, Home and End follow the
   new order
   ([desktop-keyboard.md](../../packages/desktop/docs/desktop-keyboard.md)).

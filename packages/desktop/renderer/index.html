@@ -23,33 +23,34 @@
 <body>
   <div id="app">
     <aside id="sidebar">
-      <!-- Two sections, each a plain heading over its list: Workspaces (with Add local workspace…), the main views
-           under its list, then Instances (with Spawn instance). The foot: the OATS mark, then the sidebar toggle and
-           the settings cog at its right end. -->
-      <div class="ctx-head ws-head">
-        <span id="ws-heading" class="ws-heading">Workspaces</span>
-        <button id="ws-add-open" class="ws-add-open icon-button" type="button" aria-label="Add local workspace…" title="Add local workspace…"></button>
+      <!-- The sidebar (the product owner, 2026-10-26): the head (the Workspace heading, Show only the current workspace
+           and Add local workspace…), the list of workspaces, the main views, a line, the instances, then the foot: the
+           OATS mark, Spawn instance (Quick Open) beside it, and the sidebar toggle and the settings cog. -->
+      <div class="side-head">
+        <span id="ws-heading" class="ws-heading">Workspace</span>
+        <button id="ws-current-only" class="side-icon-button ws-current-only icon-button" type="button" aria-pressed="false" data-action="workspaces.currentOnly"></button>
+        <button id="ws-add-open" class="ws-add-open side-icon-button icon-button" type="button" aria-label="Add local workspace…" title="Add local workspace…"></button>
       </div>
       <!-- The workspace list (workspace-switcher.mjs): always shown, one row per workspace, a list of buttons. -->
       <section id="ws-list" class="ws-list" aria-labelledby="ws-heading">
         <div id="ws-options" class="ws-options"></div>
       </section>
-      <!-- The current workspace's own section: the main views (shell-nav.mjs NAV), then its instances. -->
-      <section id="ws-current" class="ws-current" aria-label="Current workspace">
-        <nav id="nav" aria-label="Main views"></nav>
-        <section id="instance-roster" aria-label="Instances">
-          <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span><button id="sidebar-spawn" class="ws-add-open ctx-head-add icon-button"
-            type="button" data-action="app.chooseSoul" title="Spawn instance" aria-label="Spawn instance"><span data-shell-icon="plus" aria-hidden="true"></span></button></div>
-          <div class="ctx-list"></div>
-        </section>
+      <nav id="nav" aria-label="Main views"></nav>
+      <section id="instance-roster" aria-label="Instances">
+        <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div>
+        <div class="ctx-list"></div>
       </section>
-      <!-- The foot: the OATS mark (decorative), then the sidebar toggle and the settings cog (sidebar-settings.mjs
-           builds its menu). -->
-      <div id="nav-foot" role="group" aria-label="Sidebar tools">
-        <span class="sidebar-brand" aria-hidden="true"><img class="sidebar-brand-image" src="../assets/brand/generated/sidebar-48.png" width="20" height="20" alt="" draggable="false"></span>
-        <button id="sidebar-toggle" class="ws-add-open icon-button" type="button" data-action="sidebar.toggle"
-                title="Hide the sidebar" aria-label="Hide the sidebar" aria-controls="sidebar" aria-expanded="true"><span data-shell-icon="sidebar" aria-hidden="true"></span></button>
-        <button id="sidebar-settings" class="ws-add-open sidebar-settings icon-button" type="button" aria-label="Settings" title="Settings"></button>
+      <!-- The foot: the OATS mark (decorative) and the sidebar toggle, then at the right Spawn instance and the
+           settings cog (sidebar-settings.mjs builds its menu). -->
+      <div id="nav-foot">
+        <div id="sidebar-bar" role="group" aria-label="Sidebar tools">
+          <span class="sidebar-brand" aria-hidden="true"><img class="sidebar-brand-image" src="../assets/brand/generated/sidebar-48.png" width="20" height="20" alt="" draggable="false"></span>
+          <button id="sidebar-toggle" class="side-icon-button icon-button" type="button" data-action="sidebar.toggle"
+                  title="Hide the sidebar" aria-label="Hide the sidebar" aria-controls="sidebar" aria-expanded="true"><span data-shell-icon="sidebar" aria-hidden="true"></span></button>
+          <button id="sidebar-spawn" type="button" data-action="app.quickOpenSouls"
+                  title="Spawn instance" aria-label="Spawn instance">Spawn instance</button>
+          <button id="sidebar-settings" class="side-icon-button sidebar-settings icon-button" type="button" aria-label="Settings" title="Settings"></button>
+        </div>
       </div>
     </aside>
     <div id="workbench">

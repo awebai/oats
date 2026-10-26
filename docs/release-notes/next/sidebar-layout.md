@@ -1,52 +1,55 @@
 ## Changed
 
-- **Desktop: a simpler sidebar.** Top to bottom:
-  - **Workspaces**, a plain heading with **+** and the list right under it,
-    the names a little larger;
-  - a thin line, then the current workspace: **Workspace** and
-    **Deployments** side by side, then **Instances**, with **Spawn
-    instance** as the **+** at the end of its heading;
-  - a bottom bar: the OATS mark at its left, the sidebar toggle and a
-    settings cog at its right; the cog's menu holds **Theme…** and
-    **Keyboard shortcuts…**.
-
-  The headings' **+** buttons, the workspaces' needs-input marks and the
-  instances' harness marks line up in one column on the right. The logo in
-  the heading, the palette button and the row of buttons at the foot are
-  gone: Connections is in the palette ("Settings: Connections…"), and the
-  palette is on ⌘K / its chord and Ctrl+X then `k`. The two headings are the sidebar's top level,
-  larger and heavier than the machine labels ("THIS MAC") under Instances.
-  The gap after an instance cluster is smaller, and a parent is as close
-  to its first child as any two instances.
-  A workspace whose instance needs input shows an exclamation mark at the
-  end of its row, and the instance's own **Needs input** pill leads with
-  the same mark.
-- **Desktop: a window opens on the Workspace page**, at launch and after you
-  choose a workspace, rather than on Deployments.
-- **Desktop: Workspace › Capabilities in two parts.** **Workspace defaults**
-  first, then **All capabilities**, each with its title; the segments that
-  jump to Workspace owned, Repo owned and Packages sit under the All
-  capabilities title, and there is no Defaults segment.
-- **Desktop: the Workspace pages name no deployment.** The "On This Mac ·
-  ~/…" line is gone from every Workspace tab, Automations included, and from
-  a capability's, a team's and a soul's page. They read the same deployment
-  as before; the side panel and the Deployments page still say which.
-- **Desktop: what a deployment is.** The Deployments page has a round **i**
-  after its tabs, **What is a deployment?**, that explains it in plain words.
+- **Desktop: Deployments is now Machines, a tab of the Workspace page.**
+  The sidebar's views are **Workspace overview** and **Automations**. The
+  Workspace page's tabs are Souls, Capabilities, Teams, **Machines** and
+  Setup. Machines says once what a machine is: each machine runs the
+  workspace in a folder of its own, and the instances under a machine run on
+  it. Each machine's tree has "Instances on this
+  machine" (or on the named machine) under its name. ⌘1 / Ctrl+1, the
+  palette's **View: Workspace › Machines** and every link that opened
+  Deployments open it there. A window opens on the Workspace page at launch
+  and after you choose a workspace. The Setup tab's machines box is now called
+  **Registered machines**.
+- **Desktop: the instance rows show the soul and the repository.** The line
+  under an instance's name is its soul at the left and its repository at the
+  right. The branch and the pull request are in the row's hover card.
+- **Desktop: the sidebar's foot.** One bar: the OATS mark at its left with the
+  sidebar toggle after it, and **Spawn instance** (its words alone, a ground
+  only on hover) and a
+  settings cog at its right. Spawn instance opens Quick Open (⌘P on macOS,
+  Alt+P on Linux and Windows), where you pick the soul. The cog's menu holds **Theme…** and **Keyboard
+  shortcuts…**. The logo in the heading, and the Settings, theme, shortcuts
+  and command-palette buttons, are gone. Connections is in the palette
+  (**Settings: Connections…**), and the palette is on ⌘K on macOS, Alt+K on
+  Linux and Windows, and Ctrl+X then `k`.
+- **Desktop: the sidebar's lines.** A line sets the list of workspaces apart
+  from the views, and another the views from the instances. There is no line
+  under the Workspace heading, and the list of workspaces sits closer under
+  it, its rows a little closer together.
 - **Desktop: the instances have no filter field.** To find an instance by
   name, type it in the command palette. ⌘F / Alt+F, renamed **Focus the
   instance roster** and still rebindable under its old id, goes to the
-  roster's current row. The TUI keeps its filter.
-- **Desktop: Automations is a tab of the Workspace page**, after Souls and
-  Capabilities. ⌘3 / Ctrl+3, the palette and every link to Automations open
-  it there.
+  roster's current row. On an empty roster it goes to **Spawn instance**, as
+  F6 does. The TUI keeps its filter.
+- **Desktop: Workspace › Capabilities in two parts.** **Workspace defaults**
+  comes first, then **All capabilities**, each with its title. The segments
+  that jump to Workspace owned, Repo owned and Packages sit under the All
+  capabilities title, and there is no Defaults segment.
+- **Desktop: the Workspace pages name no deployment.** The "On This Mac ·
+  ~/…" line is gone from every Workspace tab, from Automations, and from a
+  capability's, a team's and a soul's page. They read the same deployment as
+  before; the side panel and the Machines tab still say which.
 - **The list of workspaces, polished.**
-  - Desktop: every row has the circle an instance row has; the current
-    workspace's is filled and its name bold, so it no longer looks like the
-    current view. The needs-input mark sits at the row's right end, and on
-    "N more below" when a workspace cut off below waits.
-  - Desktop: the Add local workspace dialog is named as its button, counts
-    only what can be added, and lists the folders that can't be opened under
+  - Desktop: its heading reads **Workspace**. Every row has the circle an
+    instance row has; the current workspace's is filled and its name bold,
+    so it no longer looks like the current view.
+  - Desktop: a workspace whose instance needs input shows an exclamation mark
+    at the row's right end. "N more below" shows it too when a workspace cut
+    off below waits. An instance's **Needs input** pill leads with the same
+    mark.
+  - Desktop: the Add local workspace dialog is named as its button and counts
+    only what can be added. It lists the folders that can't be opened under
     their own heading.
   - TUI: at either end of the list, Ctrl+X ↑ / ↓ keep the focus in the list,
     and the "No workspace above / below" line moves nothing.

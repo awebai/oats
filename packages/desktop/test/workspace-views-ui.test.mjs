@@ -54,14 +54,18 @@ test("deploymentState says live, remembered, not reached and not observed in wor
   assert.deepEqual(vd.deploymentState({ ...LOCAL, reachable: false, reason: "Reading the deployment…" }), { key: "unobserved", text: "not observed", detail: "Reading the deployment…" });
 });
 
-// The sidebar layout (2026-10-23): the Workspaces heading, its list, the main views under it, then Instances; the foot last.
+// The sidebar (the product owner, 2026-10-26): the head (the Workspace heading), its list, the main views under it, then
+// Instances; the foot last. No section wraps the current workspace's views and Instances any more.
 test("UI spec: no deployments block in the sidebar; the workspace list sits under its heading, the nav under it, then the Instances", (t) => {
   const dom = new JSDOM(html); t.after(() => dom.window.close());
   const doc = dom.window.document;
   assert.equal(doc.getElementById("ws-deployments"), null);
-  assert.deepEqual([...doc.getElementById("sidebar").children].map((el) => el.id || el.className), ["ctx-head ws-head", "ws-list", "ws-current", "nav-foot"]);
-  assert.deepEqual([...doc.getElementById("ws-current").children].map((el) => el.id), ["nav", "instance-roster"], "the current workspace's section: its views, then its Instances");
-  assert.equal(doc.getElementById("ws-current").previousElementSibling, doc.getElementById("ws-list"), "the main views are under the list of workspaces");
+  assert.deepEqual([...doc.getElementById("sidebar").children].map((el) => el.id || el.className), ["side-head", "ws-list", "nav", "instance-roster", "nav-foot"]);
+  assert.equal(doc.getElementById("ws-current"), null, "no section around the current workspace's views and Instances");
+  assert.equal(doc.getElementById("ws-list").previousElementSibling, doc.querySelector(".side-head"), "the list sits under its heading");
+  assert.equal(doc.querySelector(".side-head #ws-heading").textContent, "Workspace");
+  assert.equal(doc.getElementById("nav").previousElementSibling, doc.getElementById("ws-list"), "the main views are under the list of workspaces");
+  assert.equal(doc.getElementById("instance-roster").previousElementSibling, doc.getElementById("nav"), "then the Instances");
   assert.equal(vd.renderDeploymentList, undefined, "the list renderer is gone");
   assert.doesNotMatch(`${css}\n${shellSource}`, /ws-deployment|renderDeploymentList|ctx-deployment-tag|ws-option-reason/);
 });
@@ -125,7 +129,10 @@ test("roster, two deployments: a heading per deployment, by machine, in order, i
   assert.deepEqual(sequence, [`#${LOCAL.id}`, "group:lead", "lead", "dev", "group:independent", "near", `#${ALTAIR.id}`, "group:independent", "far"]);
   assert.equal(list.textContent.includes("oats ·"), false, "rows never repeat the workspace name");
   const far = [...list.querySelectorAll(".ctx-tree-row")].find((r) => r.querySelector(".ctx-name").textContent === "far");
-  assert.match(far.querySelector(".ctx-meta").textContent, /^repo/, "the identity line is unchanged");
+  // The identity line (the product owner, 2026-10-26): the soul, then the repository; the host is the heading's.
+  const meta = far.querySelector(".ctx-meta.ctx-soul-repo");
+  assert.deepEqual([meta.querySelector(".ctx-meta-soul").textContent, meta.querySelector(".ctx-meta-repo").textContent], ["soul", "repo"], "the identity line: soul, then repository");
+  assert.equal(meta.title, "Soul: soul\nRepository: repo");
 });
 
 test("roster headings: one machine holding two deployments adds the path tail; not reached is marked in words", (t) => {
@@ -221,7 +228,7 @@ test("switcher entries from an older server (no machines): the name only, never 
   assert.equal(s.document.getElementById("ws-list").getAttribute("aria-description"), "Current workspace: far", "a remote id is never the description");
 });
 
-test("Not matched: a row by its name in the same flat list, no heading; selecting one opens the Deployments page on its deployment's tab", (t) => {
+test("Not matched: a row by its name in the same flat list, no heading; selecting one opens the Workspace page's Machines tab on its deployment's tab", (t) => {
   const s = switcher(t);
   s.sw.begin()(views[0], views);
   const listbox = s.document.getElementById("ws-options");
@@ -293,7 +300,7 @@ test("a deployment-level surface shows 'On <primary>' only in a view of two or m
   one.dispose(); two.dispose(); byDeployment.dispose();
 });
 
-// Automations is a Workspace tab, and no Workspace tab names the deployment it reads (the product owner, 2026-10-23).
+// Automations names no deployment it reads (the product owner, 2026-10-23), a page of its own again since 2026-10-26.
 test("Automations (and Schedules, the same view) carry no 'On <deployment>' line, even in a view of two", async (t) => {
   const dom = new JSDOM("<body><div id=host></div></body>"); t.after(() => dom.window.close());
   const doc = dom.window.document;

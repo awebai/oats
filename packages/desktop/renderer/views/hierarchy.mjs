@@ -36,9 +36,9 @@
    Keyboard: arrows walk the tree, Enter/t go to the instance (Start… when
    stopped), s Workspace (the Spawn view), o action popover, +/- zoom, f fits,
    Escape clears.
-   The round "i" after the tabs (about-dialog.mjs, as on the Workspace page's
-   Souls and Capabilities tabs) opens "What a deployment is" in a modal dialog;
-   a workspace change or leaving the page closes it without moving focus.
+   The Workspace page's Machines tab (2026-10-26; views/spawn.mjs mounts it):
+   one plain sentence under the bar says what a machine is, and each
+   machine's heading says the tree under it is the instances on it.
    Loading (desktop/loading-states): the shared controller in loading.mjs owns
    the pending / refreshing presentation. Pending (no roster for this workspace
    yet) shows a skeleton pill in .hier-sum after 150ms, aria-busy on the view
@@ -77,9 +77,8 @@ import { isMultiDeployment, splitByDeployment, rowStale } from "../../../client/
 import { deploymentLabel } from "../../../client/deployment-label.mjs";
 import { DESKTOP_TERMS } from "../desktop-terms.mjs";
 import { ALL_TAB, deploymentTabs, selectedDeploymentTab, rememberDeploymentTab, onDeploymentTabRequest } from "../deployment-tabs.mjs";
-import { deploymentsPageCSS, createDeploymentTabBar, deploymentHead, deploymentReasonBlock, deploymentNeedsWords, deploymentHasWords } from "../deployments-page.mjs";
+import { deploymentsPageCSS, createDeploymentTabBar, deploymentHead, deploymentReasonBlock, deploymentNeedsWords } from "../deployments-page.mjs";
 import { paintDotColor } from "../instance-dot.mjs";
-import { aboutCSS, ABOUT_COPY, createAboutDialog } from "../about-dialog.mjs";
 
 export const hierarchyCSS = `
 .hier { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); color: var(--fg);
@@ -163,9 +162,10 @@ export const hierarchyCSS = `
 .hier-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
 ${deploymentsPageCSS}
 ${instanceEventsCSS}
-${aboutCSS}
-/* The "i" sits beside the tabs: the strip's own end padding and the bar's gap, not the room kept before the counts. */
-.hier-bar .hier-tabs:not([hidden]) + .ws-info-button { margin-left: -12px; }
+/* What a machine is, once, under the bar (the Machines tab, 2026-10-26): plain words, not a dialog. */
+.hier-intro { flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface);
+  color: var(--muted); font-size: 12px; line-height: 1.5; }
+.hier-dhead .hier-dsub { color: var(--muted); font-size: 11px; line-height: 1.4; }
 `;
 
 const NODE_W = 220, NODE_H = 60, GAP_X = 50, GAP_Y = 40, PAD = 40;
@@ -351,14 +351,14 @@ export function layoutByDeployment(instances, deployments) {
 }
 
 /** What a tab shows: `{ rows, entries }`, `entries` being the headed sections (`[{ deployment, rows }]`)
- * or null for the unheaded overview (no deployments reported, or one live deployment). */
+ * or null for the unheaded overview (no deployments reported). One deployment is headed too: every machine's
+ * tree sits under its name and "Instances on …" (the Machines tab, 2026-10-26). */
 function tabContent(instances, deployments, tab) {
   const all = instances || [], list = Array.isArray(deployments) ? deployments : [];
   if (!list.length) return { rows: all, entries: null };
   const parts = splitByDeployment(list)(all);
   if (tab === ALL_TAB && isMultiDeployment(list)) return { rows: all, entries: list.map(deployment => ({ deployment, rows: parts.get(deployment.id) })) };
   const deployment = list.find(d => d.id === tab) || list[0], rows = parts.get(deployment.id);
-  if (list.length === 1 && !deploymentHasWords(deployment)) return { rows, entries: null };
   return { rows, entries: [{ deployment, rows }] };
 }
 
@@ -388,6 +388,7 @@ export function mount(el, ctx) {
         <span class="hier-sum"></span>
         <span class="hier-refreshing"></span>
       </div>
+      <p class="hier-intro">Each machine runs this workspace in a folder of its own. The instances under a machine run on that machine.</p>
       <div class="hier-notice" role="note" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button><button class="act hier-readd" type="button" hidden>Re-add workspace</button></div>
       <div class="hier-panel">
         <div class="hier-canvas" tabindex="0" role="tree" aria-label="Active agents by cluster">
@@ -406,11 +407,6 @@ export function mount(el, ctx) {
   s.tabs = createDeploymentTabBar(el.ownerDocument, { idPrefix: s.domId, onSelect: (tab) => selectTab(s, tab) });
   s.q("hier-tabs-host").replaceWith(s.tabs.element);
   const doc = el.ownerDocument;
-  // "What is a deployment?": the Workspace page's "i" and its About dialog, built once, after the tabs.
-  // Opening it is a newer intent: an act still in flight (Go to instance, Go to soul) no longer moves focus.
-  s.about = createAboutDialog(doc, { copy: ABOUT_COPY.deployments, id: `${s.domId}-about`,
-    onIntent: () => { s.actionTicket = (s.actionTicket || 0) + 1; } });
-  s.tabs.element.after(s.about.button);
   // The shared loading controller. The summary hosts the pending pill; the
   // view's own .hier-notice keeps the stale / failed copy, so no noticeHost.
   s.status = statusLine(doc, { visuallyHidden: true, className: 'hier-status' });
@@ -495,7 +491,7 @@ export function mount(el, ctx) {
     id: a.id, label: a.label, context: "view:hierarchy", run: a.run, defaultChord: a.defaultChord,
   }));
 
-  s.unsubWs = onWorkspaceChange(() => { s.about?.close({ focus: "none" }); resetObservation(s); void refresh(s); });
+  s.unsubWs = onWorkspaceChange(() => { resetObservation(s); void refresh(s); });
   // A new connection (backend replaced, forge auth changed): the read in flight belongs to the old one.
   // A read on the new connection starts now; it revokes the old read's outcome and arms the new
   // subject's deadline (#461), so neither waits for the old read to settle.
@@ -529,7 +525,6 @@ function teardown(s) {
   s.load?.dispose(); s.load = null;
   s.pendingWatch?.dispose();
   s.tabs?.dispose?.();
-  s.about?.dispose();
   s.win.clearTimeout(s.clickResetTimer);
   s.timers.forEach(clearInterval);
   (s.disposers || []).forEach((off) => { try { off(); } catch {} });

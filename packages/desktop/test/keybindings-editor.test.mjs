@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import {
-  registerAction, setBinding, resetAllBindings, getBinding, defaultBinding, keymapConflicts, setChordFamily, activeChordFamily,
+  registerAction, setBinding, resetAllBindings, getBinding, defaultBinding, keymapConflicts, setChordFamily, activeChordFamily, runAction, listActions,
 } from "../renderer/keybindings.mjs";
 import { createKeybindingsEditor, groupActions, shortcutMatches, CHORD_FAMILY_WORDS } from "../renderer/keybindings-editor.mjs";
 import { createChordFamily } from "../renderer/chord-family.mjs";
@@ -40,7 +40,7 @@ test("groupActions groups by context in stable order with labels", (t) => {
   const groups = groupActions();
   assert.deepEqual(groups.map((g) => g.context), ["global", "tabs", "stage:hierarchy"]);
   assert.equal(groups[0].label, "Global");
-  assert.equal(groups[2].label, "Deployments");
+  assert.equal(groups[2].label, "Machines"); // the Workspace page's Machines tab (the product owner, 2026-10-26)
 });
 
 test("editor renders an ARIA dialog listing every action with effective chords", (t) => {
@@ -663,16 +663,16 @@ test("a narrow window keeps every control inside the editor: the title gives way
 // ── The leader (docs/desktop-keyboard.md, "The leader"): help leads with it ─────────────────────
 const LEADER_EXTRA = [
   ["app.leader", "Leader: the commands that follow one key", "global"],
-  ["stage.hierarchy", "View: Deployments", "global"],
-  ["stage.automations", "View: Workspace › Automations", "global"],
+  ["stage.hierarchy", "View: Workspace › Machines", "global"],
+  ["stage.automations", "View: Automations", "global"],
   ["sidebar.key.instances", "Instances", "sidebar"],
   ["sidebar.key.help", "Edit keyboard shortcuts", "sidebar"],
 ];
 
 // The stage rows above are labelled as the shell labels them: `View: <label>` of NAV and NAV_TABS, so
-// Automations, now a tab of the Workspace page (NAV_TABS), reads "View: Workspace › Automations" in the
-// editor: where it lands, not a page of its own.
-test("the stage rows' labels are the shell's, Automations' from NAV_TABS", async () => {
+// Machines, a tab of the Workspace page (NAV_TABS, the product owner, 2026-10-26), reads "View: Workspace › Machines"
+// in the editor, and Automations, a page of its own again (NAV), "View: Automations".
+test("the stage rows' labels are the shell's, Machines' from NAV_TABS, Automations' from NAV", async () => {
   const { readFileSync } = await import("node:fs");
   const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
   assert.match(shell, /\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(\{\n  id: `stage\.\$\{v\.name\}`, label: `View: \$\{v\.label\}`/);
@@ -681,7 +681,9 @@ test("the stage rows' labels are the shell's, Automations' from NAV_TABS", async
     assert.ok(entry, `${id} is a shell destination`);
     assert.equal(label, `View: ${entry.label}`, id);
   }
-  assert.ok(NAV_TABS.some((v) => v.name === "automations"));
+  assert.deepEqual(NAV_TABS.map((v) => [v.name, v.page, v.tab]), [["hierarchy", "spawn", "machines"]]);
+  assert.ok(NAV.some((v) => v.name === "automations"), "Automations is a page again");
+  assert.equal(NAV.some((v) => v.name === "hierarchy"), false, "Machines is no page of its own");
 });
 
 // The group moves as the shell registers them (shell.mjs), so the leader's Tab and Shift+Tab rows
@@ -729,10 +731,10 @@ test("the editor opens on a Leader group, then Sidebar keys, then the groups as 
   // The quiet line: the leader is the TUI's, the direct chords are extras, and where 1 and 3 differ.
   const extras = leader.querySelector(".kb-extras");
   assert.match(extras.textContent, /the TUI's/);
-  assert.match(extras.textContent, /Ctrl\+X then 1 is Instances and Ctrl\+X then 3 is Capabilities, while Ctrl\+1 stays Deployments and Ctrl\+3 stays Workspace › Automations/);
+  assert.match(extras.textContent, /Ctrl\+X then 1 is Instances and Ctrl\+X then 3 is Capabilities, while Ctrl\+1 stays Machines and Ctrl\+3 stays Automations/);
   // The stage rows say it too.
-  assert.match(f.rowFor("View: Deployments").querySelector(".kb-note").textContent, /Ctrl\+X then 1 is Instances/);
-  assert.match(f.rowFor("View: Workspace › Automations").querySelector(".kb-note").textContent, /Ctrl\+X then 3 is Capabilities/);
+  assert.match(f.rowFor("View: Workspace › Machines").querySelector(".kb-note").textContent, /Ctrl\+X then 1 is Instances/);
+  assert.match(f.rowFor("View: Automations").querySelector(".kb-note").textContent, /Ctrl\+X then 3 is Capabilities/);
 });
 
 test("the leader's rows are found by their keys and by \"leader\", and Up/Down reach them", (t) => {
@@ -936,13 +938,14 @@ test("Settings: Connections is in the shortcuts list (Global, by its label) and 
 
 // ── What has no button (the sidebar's simpler foot) is taught by the editor's own rows ───────────
 // The palette and Connections have no button (the settings cog's menu holds Theme… and Keyboard
-// shortcuts… alone); Spawn instance, Deployments, Workspace and Automations are small buttons or tabs. The product owner: these are all taught in the shortcuts editor, by
+// shortcuts… alone); Machines is a tab of the Workspace page, and Spawn instance (Quick Open), Workspace overview and
+// Automations are small buttons (the product owner, 2026-10-26). These are all taught in the shortcuts editor, by
 // their rows alone (no line above them). The rows are the shipped registrations, run as shipped.
 async function shippedRows() {
   const { readFileSync } = await import("node:fs");
   const { runInNewContext } = await import("node:vm");
   const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
-  const statements = ["app.palette", "app.chooseSoul", "app.connections"]
+  const statements = ["app.palette", "app.quickOpenSouls", "app.chooseSoul", "app.connections"]
     .map((id) => src.match(new RegExp(`^registerAction\\(\\{ id: "${id.replace(".", "\\.")}", .*\\);$`, "m"))?.[0]);
   statements.push(src.match(/\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(\{[^]*?\n\}\)\);/)?.[0]);
   assert.ok(statements.every(Boolean), "the shipped registrations");
@@ -984,15 +987,21 @@ for (const [platform, isMac] of [["macOS", true], ["Linux", false]]) {
       assert.equal(settings.querySelector("button.kb-chord").getAttribute("aria-label"), "Change shortcut for Settings: Connections…, currently unbound");
       // Each lands where its row says, on its default chord in either family.
       const mod = (k) => (isMac ? ["⌘", k] : ["Ctrl", k]);
+      // The sidebar's Spawn instance runs Quick Open: its row, in the family in use.
+      assert.deepEqual(caps(rowIn("Global", "Quick open a soul to spawn")),
+        isMac ? ["⌘", "P"] : { alt: ["Alt", "P"], "ctrl+alt": ["Ctrl", "Alt", "P"], "ctrl+shift": ["Ctrl", "Shift", "P"] }[family]);
       assert.deepEqual(caps(rowIn("Global", "Spawn instance: choose a soul in Workspace")), isMac ? ["⌘", "N"] : ["Ctrl", "Shift", "N"]);
-      assert.deepEqual(caps(rowIn("Global", "View: Deployments")), mod("1"));
-      assert.deepEqual(caps(rowIn("Global", "View: Workspace")), mod("2"));
-      const automations = rowIn("Global", "View: Workspace › Automations");
-      assert.ok(automations, "Automations says it is the Workspace page's tab");
+      const machines = rowIn("Global", "View: Workspace › Machines");
+      assert.ok(machines, "Machines says it is the Workspace page's tab");
+      assert.deepEqual(caps(machines), mod("1"));
+      assert.equal(machines.querySelector(".kb-note").textContent, `${isMac ? "⌃X" : "Ctrl+X"} then 1 is Instances, as in the TUI`);
+      assert.deepEqual(caps(rowIn("Global", "View: Workspace overview")), mod("2"));
+      const automations = rowIn("Global", "View: Automations");
+      assert.ok(automations, "Automations is a page of its own");
       assert.deepEqual(caps(automations), mod("3"));
       assert.equal(automations.querySelector(".kb-note").textContent, `${isMac ? "⌃X" : "Ctrl+X"} then 3 is Capabilities, as in the TUI`);
-      assert.equal(f.rowFor("View: Automations"), undefined, "no standalone Automations page");
-      assert.match(f.doc.querySelector(".kb-extras").textContent, new RegExp(`${isMac ? "⌘3" : "Ctrl\\+3"} stays Workspace › Automations\\.$`));
+      assert.equal(f.rowFor("View: Workspace › Automations"), undefined, "no Automations tab");
+      assert.match(f.doc.querySelector(".kb-extras").textContent, new RegExp(`${isMac ? "⌘1" : "Ctrl\\+1"} stays Machines and ${isMac ? "⌘3" : "Ctrl\\+3"} stays Automations\\.$`));
       // The rows alone: nothing above them but the editor's own lines (the family choice on Linux/Windows when given).
       assert.deepEqual([...f.doc.querySelectorAll(".kb-editor > p")].map((p) => p.className), ["kb-hint", "kb-clashes", "kb-count sr-only"]);
       // Found by their names.
@@ -1001,7 +1010,7 @@ for (const [platform, isMac] of [["macOS", true], ["Linux", false]]) {
       f.type("palette");
       assert.deepEqual(f.shown(), ["Open the command palette", "Open the command palette"], "the leader's row and the chord's");
       f.type("automations");
-      assert.deepEqual(f.shown(), ["View: Workspace › Automations"]);
+      assert.deepEqual(f.shown(), ["View: Automations"]);
       f.type("");
       // Connections is rebound from its row, and its row then shows the chord.
       chord("Settings: Connections…").click();
@@ -1119,4 +1128,28 @@ test("Most useful follows a rebind, an unbind and a reset in the list below, the
   assert.equal(f.doc.querySelector(".kb-useful").hidden, true);
   f.type("");
   assert.equal(f.doc.querySelector(".kb-useful").hidden, false);
+});
+
+// Show only the current workspace (2026-10-23): the shell's own registration, run as shipped, is a Global row of the
+// shortcuts list with its label and default chord (⌥⇧⌘O on macOS, Ctrl+Alt+Shift+O elsewhere), found by search, in
+// the palette's list of actions, and running it toggles the list of workspaces (workspaceLabel.toggleCurrentOnly).
+for (const isMac of [true, false]) test(`Show only the current workspace: the shell's registration is a Global row (${isMac ? "macOS" : "Linux/Windows"}), and runs the toggle`, (t) => {
+  const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  const line = shell.match(/^registerAction\(\{ id: "workspaces\.currentOnly",[^\n]*\}\);$/m)?.[0];
+  assert.ok(line, "the shipped registration");
+  assert.match(line, /run: \(\) => workspaceLabel\.toggleCurrentOnly\(\)/);
+  const f = setupLinux(t, { isMac });
+  let toggled = 0;
+  const off = runInNewContext(line, { registerAction, workspaceLabel: { toggleCurrentOnly: () => { toggled++; } } });
+  t.after(off);
+  const action = listActions().find((a) => a.id === "workspaces.currentOnly");
+  assert.deepEqual([action?.label, action?.context], ["Show only the current workspace", "global"], "the palette lists it by this label");
+  f.editor.open();
+  const row = f.rowFor("Show only the current workspace");
+  assert.ok(row, "listed"); assert.equal(row.closest(".kb-group").dataset.label, "Global");
+  assert.equal(row.querySelector(".kb-chord").textContent, isMac ? "⌥⇧⌘O" : "CtrlAltShiftO", "its keycaps");
+  f.type("current workspace"); assert.ok(f.shown().includes("Show only the current workspace"));
+  assert.equal(toggled, 0, "listing it runs nothing");
+  runAction("workspaces.currentOnly"); runAction("workspaces.currentOnly");
+  assert.equal(toggled, 2, "each run toggles once");
 });

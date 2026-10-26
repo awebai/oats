@@ -82,7 +82,7 @@ import { registerSpawnDialogKeys } from "./spawn-dialog-keys.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
 import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../../client/waiting-on-you.mjs";
-import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
+import { createRosterPrs, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import { collapseKey, hasInstanceChildren, instanceRepoLabel, instanceVisibleInTree, waitingRollup, instanceId, rosterParentId, heldHome } from "../../client/instance-tree.mjs";
 import { createRetiresInFlight, retiringRows } from "../../client/retire-in-flight.mjs";
@@ -335,7 +335,7 @@ async function closeStage() {
 async function showStage(name) {
   // A window with no workspace shows only its choice (#481): no view may read with no workspace.
   if (windowState() === "choosing") { void showChooser(); return; }
-  // A destination that is a tab of a page (Automations, of Workspace): that page, on that tab.
+  // A destination that is a tab of a page (Machines, of Workspace): that page, on that tab.
   const asTab = navTab(name);
   if (asTab) return openWorkspaceSouls(asTab.tab);
   tabOpenIntents.invalidate(); // navigating away supersedes pending tab selections
@@ -423,7 +423,7 @@ async function showStageFocused(name) {
   if (!active || active === document.body || !isShown(active)) focusRegions.focusRegion("main");
 }
 
-// A request to open one deployment's tab of the Deployments page (the switcher's "Not matched" entries,
+// A request to open one deployment's tab of the Machines tab (the switcher's "Not matched" entries,
 // deployment-tabs.mjs) shows that stage; the page itself reads the requested tab.
 onDeploymentTabRequest(() => { void showStageFocused("hierarchy"); });
 
@@ -535,6 +535,7 @@ const workspaceLabel = createWorkspaceSwitcher({
   selectWorkspace: (id) => switchWorkspace(id, { takeOver: true }),
   openInNewWindow: typeof desktopBridge.windowOpenWorkspace === "function" ? (id) => { void desktopBridge.windowOpenWorkspace(id); } : null,
   mac: navigator.platform.includes("Mac"),
+  storage: (() => { try { return window.localStorage; } catch { return null; } })(),
   // Feature-detected while tui-dev lands the approved privileged contract.
   // The final adapter names are intentionally isolated to these three lines.
   discoverSuggestions: desktopBridge.workspaceSuggestions || unavailableWorkspaceService,
@@ -955,7 +956,7 @@ function renderContextRoster(instances) {
   const rowHeldStale = (row) => rosterStale || rowStale(row, contextDeployments);
   // Needs input (Spec D): waiting rows a collapse hides, on their nearest visible ancestor. Derived on every
   // paint over the full roster, so expanding the parent drops it and the children show their own marks.
-  const waitingBelow = waitingRollup(instances, collapsedInstances, ws, { filtering: false, stale: rowHeldStale, section: rowSection });
+  const waitingBelow = waitingRollup(instances, collapsedInstances, ws, { stale: rowHeldStale, section: rowSection });
   if (!visible.length) {
     listEl.innerHTML = `<div class="ctx-empty">No instances.</div>`;
     paintNote();
@@ -1055,18 +1056,17 @@ function renderContextRoster(instances) {
         const name = document.createElement("span");
         name.className = "ctx-name";
         name.textContent = i.instance;
+        // The meta line (the product owner, 2026-10-26): the soul at the left, the repository at the right; the
+        // soul is cut first, the repository keeps about 10ch. The branch and the pull request are the hover card's
+        // (rosterTipFacts); the pull request's link stays in the row tools.
         const meta = document.createElement("span");
-        meta.className = "ctx-meta ctx-repo-label";
-        meta.textContent = [instanceRepoLabel(i), i.branch, reason?.label].filter(Boolean).join(" · ");
-        meta.title = `Repository: ${instanceRepoLabel(i)}${i.branch ? `\nBranch: ${i.branch}` : ""}`;
-        if (pr) {
-          // Its pull request on the meta line, before the branch: "repo · #317 branch" (the name line
-          // holds only the name). The link itself sits in the row tools (a button holds no link).
-          const lead = document.createElement("span"); lead.className = "ctx-meta-lead"; lead.textContent = `${instanceRepoLabel(i)} ·`;
-          const rest = [i.branch, reason?.label].filter(Boolean).join(" · ");
-          meta.textContent = ""; meta.classList.add("ctx-meta-pr"); meta.append(lead, prChip(document, pr));
-          if (rest) { const tail = document.createElement("span"); tail.className = "ctx-meta-tail"; tail.textContent = rest; meta.append(tail); }
-        }
+        meta.className = "ctx-meta ctx-soul-repo";
+        const soulPart = document.createElement("span"); soulPart.className = "ctx-meta-soul";
+        soulPart.textContent = [i.agent, reason?.label].filter(Boolean).join(" · ");
+        const repoPart = document.createElement("span"); repoPart.className = "ctx-meta-repo";
+        repoPart.textContent = instanceRepoLabel(i) || "";
+        meta.append(soulPart, repoPart);
+        meta.title = `Soul: ${i.agent || "unknown"}\nRepository: ${instanceRepoLabel(i)}`;
         // #802: a quarantined home reads its state (text, never colour alone) and what finishes it, muted; its
         // repository and branch stay in the hover card.
         const heldLines = [];
@@ -2304,9 +2304,10 @@ for (const v of NAV) {
   navEl.append(b);
 }
 
-// The sidebar's other controls use exactly the same registry as keyboard actions (the nav's buttons run theirs
-// above): Spawn instance (the Instances heading's +), the foot's sidebar toggle and its settings cog's menu.
-for (const button of [document.getElementById("sidebar-spawn"), document.getElementById("sidebar-toggle")]) {
+// The foot's controls use exactly the same registry as keyboard actions (the nav's buttons run theirs above):
+// Spawn instance (Quick Open, app.quickOpenSouls: the product owner, 2026-10-26), the bar's sidebar toggle, and its
+// settings cog's menu.
+for (const button of document.querySelectorAll("#nav-foot [data-action]")) {
   button.addEventListener("click", () => runAction(button.dataset.action));
 }
 const settingsMenu = createSettingsMenu(document, document.getElementById("sidebar-settings"), {
@@ -2315,8 +2316,8 @@ const settingsMenu = createSettingsMenu(document, document.getElementById("sideb
 
 // This is a chooser entry, not a launch or an inspection preselection. Capture
 // workspace visit + selection before import, and contain stale rejections too.
-// The leader's 3 opens the same way on Capabilities (`tab`), and stage.automations on Automations.
-const WORKSPACE_TAB_NAMES = { souls: "Souls", capabilities: "Capabilities", automations: "Automations" };
+// The leader's 3 opens the same way on Capabilities (`tab`), and stage.hierarchy on Machines.
+const WORKSPACE_TAB_NAMES = { machines: "Machines", souls: "Souls", capabilities: "Capabilities" };
 async function openWorkspaceSouls(tab = "souls") {
   const selectionOwns = tabOpenIntents.begin();
   const owns = () => selectionOwns() && ![...document.querySelectorAll('[aria-modal="true"]')]
@@ -2371,6 +2372,10 @@ const palette = createPalette({
     { label: "Shortcuts: edit keyboard shortcuts…", detail: chordDetail("app.shortcuts"), run: () => openShortcutsEditor() },
     { label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: () => openConnections() },
     { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => focusWorkspaceList() },
+    // The palette hands focus to its command: back where it was opened first (a row the toggle hides then passes it to
+    // the current row; a terminal keeps it), then the toggle, as its chord does from there.
+    { label: "Workspaces: show only the current workspace (on / off)", detail: chordDetail("workspaces.currentOnly"),
+      run: () => { takePickerFocusReturn(document)?.restore(); runAction("workspaces.currentOnly"); } },
     // One window per workspace (#481): on macOS also File → New Window ⌘⇧N; elsewhere no default chord.
     ...(typeof desktopBridge.windowOpenWorkspace === "function" ? [{ label: "Window: new window",
       detail: () => chordDetail("app.newWindow")() || (isMac ? formatChord("Mod+Shift+N", true) : ""), run: () => runAction("app.newWindow") }] : []),
@@ -2593,18 +2598,24 @@ const themePicker = createThemePicker({ doc: document, themes: THEMES, current: 
 window.addEventListener('pagehide', () => themePicker.dispose(), { once: true });
 
 /** The sidebar's way into the instances, never nothing (the roster's filter was that once): the roster's current
- * row (the roving stop), else its first row, else a control the roster shows (Retry, after a failed read), else the
- * list of workspaces' stop, else its Add local workspace…, always shown with the sidebar. */
+ * row (the roving stop), else its first row, else a control the roster shows (Retry, after a failed read), else, on
+ * an empty roster, its one action, the foot's Spawn instance (F6's stop there too, focus-regions.mjs:
+ * one way into an empty roster), else, while the roster is hidden (no workspace), the list of workspaces' stop, else
+ * its Add local workspace…, always shown with the sidebar. */
 function rosterEntry() {
   const list = contextRosterEl?.querySelector(".ctx-list");
-  // A control the roster shows (Retry, in its notice or its failed block), never its heading's Spawn instance +.
+  const spawn = document.getElementById("sidebar-spawn");
+  // A control the roster shows (Retry, in its notice or its failed block) before the foot's Spawn instance.
   return list?.querySelector('.ctx-inst[tabindex="0"]') || list?.querySelector(".ctx-inst")
     || contextRosterEl?.querySelector(':scope > :not(.ctx-head) button:not([disabled])')
+    // Spawn instance is in the foot, shown with the sidebar: it is the roster's way in only while the roster is.
+    || (contextRosterEl && !contextRosterEl.hidden && spawn && !spawn.disabled ? spawn : null)
     || document.querySelector('#ws-options [tabindex="0"]') || document.getElementById("ws-add-open");
 }
 
 /** sidebar.focusFilter, kept under its id (a keys.json rebind still applies) since the roster's filter went
- * (the command palette finds an instance by name): focus the roster's current row, else rosterEntry's next best. */
+ * (the command palette finds an instance by name): focus the roster's current row, else rosterEntry's next best
+ * (an empty roster's Spawn instance). */
 function focusRoster() {
   tabOpenIntents.invalidate(); // also when the roster already has DOM focus
   contextPanel.setFocusMode(false);
@@ -2814,6 +2825,7 @@ THEMES.forEach(({ id, label }) => registerAction({
   id: `app.theme.${id}`, label: `Theme: ${label}`, context: "global", run: () => setTheme(id),
 }));
 registerAction({ id: "app.workspaces", label: "Focus the list of workspaces", context: "global", run: () => focusWorkspaceList() });
+registerAction({ id: "workspaces.currentOnly", label: "Show only the current workspace", context: "global", run: () => workspaceLabel.toggleCurrentOnly() });
 registerAction({ id: "sidebar.focusFilter", label: "Focus the instance roster", context: "global", run: () => focusRoster() });
 registerAction({ id: "sidebar.toggle", label: "Toggle the sidebar", context: "global", run: () => toggleSidebar() });
 registerAction({ id: "panel.toggle", label: "Show or hide the instance panel", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggle(); } });
@@ -3234,5 +3246,5 @@ import("./views/cli-status.mjs").then(({ refreshCli, reprobeCli }) => {
   desk.onAppFocus?.(() => reprobeCli(ctx));
 });
 
-// Home surface: the Workspace page (the product owner, 2026-10-23: Workspace, not Deployments, when no instance is open).
+// Home surface: the Workspace page (Workspace overview), on Souls, when no instance is open (the product owner, 2026-10-23).
 showStage("spawn");

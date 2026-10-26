@@ -1,6 +1,6 @@
 # Selected-instance activity (K7 API 2)
 
-The Deployments page (formerly the Active overview) reads **reported lifecycle activity** only after the user
+Workspace › Machines (formerly the Deployments page, and the Active overview before that) reads **reported lifecycle activity** only after the user
 selects an instance and presses **Load activity / Refresh activity**. Opening a
 card, polling the roster, moving the camera or changing selection never runs an
 events command. The shared shell CLI status enables the control; this view does
@@ -163,8 +163,8 @@ validates the field and never synthesizes it.
   - A last-known roster (an unreached server, a held-stale row) never shows
     it.
 - **The mark.** A "Needs input" pill (an alert icon and text, never colour
-  alone) takes the row's second line, in place of its repository, pull
-  request and branch, which stay in the card (a row with no card says them in
+  alone) takes the row's second line, in place of its soul and repository,
+  which stay in the card with its branch and pull request (a row with no card says them in
   its title and description, before the wait). The name line keeps the name
   at its full width, and "New" beside it. A held home's state wins that line:
   the mark is not shown, and the row's description says the wait. The mark

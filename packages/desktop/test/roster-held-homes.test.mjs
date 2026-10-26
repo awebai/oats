@@ -386,5 +386,7 @@ test("the same row reads every state of its retire in turn, and back to an ordin
   assert.deepEqual(read(retire("interrupted")), ["Retire didn't finish", "Retire didn't finish"]);
   const [meta, status] = read({});
   assert.equal(status, "running"); assert.doesNotMatch(meta, /Retir/);
+  assert.equal(u.row("dev-r").querySelector(".ctx-meta").className, "ctx-meta ctx-soul-repo", "its own meta line again: the soul and the repository");
+  assert.equal(meta, "devdesktop-repo");
   assert.deepEqual(u.menu("dev-r"), ["open-split", "open-pr", "inspect", "restart", "stop", "retire"]);
 });

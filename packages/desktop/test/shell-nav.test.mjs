@@ -23,31 +23,36 @@ import { workspaceTabs } from "../renderer/workspace-discovery.mjs";
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 const shellSource = () => readFileSync(join(PKG, "renderer", "shell.mjs"), "utf8");
 
-// The sidebar layout (2026-10-23): the footer's nav is two buttons side by side, Workspace then Deployments (the
-// product owner's order); Automations (Schedules | Triggers) became the Workspace page's Automations tab.
-test("NAV is exactly Workspace and Deployments, in that order, and keeps the instance roster in the sidebar", () => {
-  assert.deepEqual(NAV.map((v) => v.name), ["spawn", "hierarchy"],
-    "page destinations are Deployments (formerly Active overview) and Workspace; Automations is a tab of Workspace");
-  assert.deepEqual(NAV.map((v) => v.label), ["Workspace", "Deployments"],
+// The sidebar as before 2026-10-23 (the product owner, 2026-10-26): the nav under the list of workspaces is a
+// column of two views, Workspace overview then Automations (Schedules | Triggers), a page of its own again;
+// Deployments became the Workspace page's Machines tab.
+test("NAV is exactly Workspace overview and Automations, in that order, and keeps the instance roster in the sidebar", () => {
+  assert.deepEqual(NAV.map((v) => v.name), ["spawn", "automations"],
+    "page destinations are Workspace and Automations; Machines (formerly Deployments, formerly Active overview) is a tab of Workspace");
+  assert.deepEqual(NAV.map((v) => v.label), ["Workspace overview", "Automations"],
     "Knowledge/Tasks remain deferred; Workspace keeps the internal spawn route");
   for (const v of NAV) {
     assert.ok(v.label && v.icon && v.title, `${v.name} entry carries full rail chrome`);
   }
+  assert.deepEqual(NAV.map((v) => v.title), ["Workspace overview", "Automations"]);
 });
 
-// A destination that is a tab of a page keeps its name (stage.automations), says which page and tab it
-// opens, and its label says it too: the page's label, then the tab's ("View: Workspace › Automations").
-test("NAV_TABS maps automations to the Workspace page's Automations tab; navTab() finds it, and nothing else", () => {
-  assert.deepEqual(NAV_TABS, [{ name: "automations", label: "Workspace › Automations", page: "spawn", tab: "automations" }]);
-  assert.equal(navTab("automations"), NAV_TABS[0]);
-  for (const name of ["hierarchy", "spawn", "souls", "capabilities", undefined, null, ""]) assert.equal(navTab(name), null, String(name));
+// A destination that is a tab of a page keeps its name (stage.hierarchy, ⌘1 / Ctrl+1) and says which page and tab
+// it opens: "View: Workspace › Machines" in the palette and the shortcuts editor.
+test("NAV_TABS maps hierarchy to the Workspace page's Machines tab; navTab() finds it, and nothing else", () => {
+  assert.deepEqual(NAV_TABS, [{ name: "hierarchy", label: "Workspace › Machines", page: "spawn", tab: "machines" }]);
+  assert.equal(navTab("hierarchy"), NAV_TABS[0]);
+  for (const name of ["automations", "spawn", "machines", "souls", "capabilities", undefined, null, ""]) assert.equal(navTab(name), null, String(name));
   for (const entry of NAV_TABS) {
     assert.ok(NAV.some((v) => v.name === entry.page), `${entry.name}: its page is a NAV page`);
     assert.ok(!NAV.some((v) => v.name === entry.name), `${entry.name}: not a page of its own as well`);
     assert.ok(workspaceTabs.includes(entry.tab), `${entry.name}: a tab the Workspace page has`);
-    assert.ok(entry.label.startsWith(`${NAV.find((v) => v.name === entry.page).label} › `), `${entry.name}: its label names its page`);
+    // Its label names its page, by the page's own name: "Workspace › Machines" for the nav's "Workspace overview".
+    const [page, tab] = entry.label.split(" › ");
+    assert.ok(tab && NAV.find((v) => v.name === entry.page).label.startsWith(page), `${entry.name}: its label names its page`);
   }
-  assert.equal(workspaceTabs.indexOf("automations"), 2, "Souls, Capabilities, Automations, Teams, Setup");
+  assert.deepEqual(workspaceTabs, ["souls", "capabilities", "teams", "machines", "sources"], "Souls, Capabilities, Teams, Machines, Setup: no Automations tab");
+  assert.equal(workspaceTabs.indexOf("machines"), 3, "Machines before Setup; the page opens on Souls, its first tab");
 });
 
 test("every NAV destination loads a real mount-exporting view module", async () => {
@@ -61,6 +66,7 @@ test("every NAV destination loads a real mount-exporting view module", async () 
 test("stage sidebar pairing: spawn shows souls, others keep the overview tree", () => {
   assert.equal(stageSidebarMode("spawn"), "souls");
   assert.equal(stageSidebarMode("hierarchy"), "overview");
+  assert.equal(stageSidebarMode("automations"), "overview");
   assert.equal(stageSidebarMode(undefined), "overview", "no-stage fallback stays overview");
 });
 
@@ -76,11 +82,11 @@ test("shell.mjs consumes the manifest: rail built from shell-nav NAV, openView r
 test("palette view commands derive from NAV and NAV_TABS — no hard-coded destination list to drift", () => {
   const src = shellSource();
   assert.match(src, /\.\.\.\[\.\.\.NAV, \.\.\.NAV_TABS\]\.map\(\(v\) => \(\{ label: `View: \$\{v\.label\}`,.*run: \(\) => showStageFocused\(v\.name\) \}\)\)/,
-    "palette view commands (View: Workspace › Automations among them) are generated from the manifests");
+    "palette view commands (View: Workspace › Machines among them) are generated from the manifests");
   assert.ok(!/label:\s*"View: /.test(src), "no hard-coded View: palette entries remain");
 });
 
-// The stage actions too: stage.automations (⌘3 / Ctrl+3) still exists, from NAV_TABS.
+// The stage actions too: stage.hierarchy (⌘1 / Ctrl+1) still exists, from NAV_TABS, and stage.automations (⌘3 / Ctrl+3) from NAV.
 test("shell.mjs registers stage.<name> for every NAV page and NAV_TABS entry, each running showStageFocused", () => {
   assert.match(shellSource(), /\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(\{\n  id: `stage\.\$\{v\.name\}`, label: `View: \$\{v\.label\}`, context: "global",\n  run: \(\) => showStageFocused\(v\.name\),\n\}\)\);/);
 });
@@ -107,45 +113,44 @@ test("showStage routes a NAV_TABS name to openWorkspaceSouls(tab); showStageFocu
   assert.match(src, /workspaceTab: stage\?\.name === "spawn" \? stage\.mod\?\.currentWorkspaceTab\?\.\(\) \?\? null : null/);
   assert.match(src, /selectWorkspaceTab: name => stage\?\.name === "spawn" && stage\.mod\?\.preselectWorkspaceTab\?\.\(name\)\s*&& stage\.mod\.currentWorkspaceTab\?\.\(\) === name \? document\.getElementById\(`workspace-tab-\$\{name\}`\) : null/);
   assert.match(src, /const mounted = stage = \{ name, life, el, mod \};/);
-  assert.match(src, /const WORKSPACE_TAB_NAMES = \{ souls: "Souls", capabilities: "Capabilities", automations: "Automations" \};/);
+  assert.match(src, /const WORKSPACE_TAB_NAMES = \{ machines: "Machines", souls: "Souls", capabilities: "Capabilities" \};/);
 });
 
-// The nav sits under the list of workspaces; the sidebar's other controls (Spawn instance, the Instances heading's
-// +, the foot's sidebar toggle and its settings cog's menu) are wired by id, so a nav button runs its action once
-// (its own listener), not twice. The shipped nav build and that wiring, run on the shipped index.html.
-test("a nav button runs its stage action once; Spawn instance, the sidebar toggle and each settings item run their own once; the nav is under the list", () => {
+// The nav sits under the list of workspaces, outside the foot; the foot's bar's controls (Spawn instance, the sidebar
+// toggle; the settings cog builds its menu) are wired by one loop over the foot's [data-action], which
+// never reaches the nav, so a nav button runs its action once (its own listener), not twice. The shipped nav build
+// and that wiring, run on the shipped index.html.
+test("a nav button runs its stage action once; the sidebar toggle, Spawn instance and each settings item run their own once; the nav is under the list", () => {
   const src = shellSource();
-  assert.ok(!src.includes('querySelectorAll("#nav-foot [data-action]")'), "no footer-wide loop that would catch the nav too");
-  assert.ok(!src.includes("#sidebar-tools"), "the foot's tools row is gone");
   const block = src.slice(src.indexOf('const navEl = document.getElementById("nav");'), src.indexOf("// This is a chooser entry"));
-  assert.match(block, /for \(const button of \[document\.getElementById\("sidebar-spawn"\), document\.getElementById\("sidebar-toggle"\)\]\) \{\n  button\.addEventListener\("click", \(\) => runAction\(button\.dataset\.action\)\);\n\}/);
+  assert.match(block, /for \(const button of document\.querySelectorAll\("#nav-foot \[data-action\]"\)\) \{\n  button\.addEventListener\("click", \(\) => runAction\(button\.dataset\.action\)\);\n\}/);
   assert.match(block, /const settingsMenu = createSettingsMenu\(document, document\.getElementById\("sidebar-settings"\), \{\n  run: \(id\) => runAction\(id\),/);
+  assert.ok(!src.includes("#sidebar-tools"), "the tools row is gone");
   const dom = new JSDOM(readFileSync(join(PKG, "renderer", "index.html"), "utf8"));
   const document = dom.window.document, ran = [];
   const wired = runInNewContext(`${block}\n({ settingsMenu });`, { document, NAV, shellIcon, createSettingsMenu, runAction: (id) => ran.push(id),
     getBinding: () => null, formatChord: String, isMac: false });
   const nav = document.getElementById("nav");
-  assert.equal(nav.parentElement.id, "ws-current", "the nav opens the current workspace's section");
-  assert.equal(nav.parentElement.previousElementSibling, document.getElementById("ws-list"), "the nav sits under the list of workspaces");
+  assert.equal(nav.parentElement.id, "sidebar", "the nav is the sidebar's own child");
+  assert.equal(nav.previousElementSibling, document.getElementById("ws-list"), "the nav sits under the list of workspaces");
+  assert.equal(nav.nextElementSibling, document.getElementById("instance-roster"), "then the instances");
   assert.equal(document.getElementById("nav-foot").contains(nav), false, "not in the foot");
   const buttons = [...nav.querySelectorAll("button")];
   assert.deepEqual(buttons.map((b) => [b.dataset.view, b.dataset.action, b.querySelector(".label").textContent, b.title]),
-    [["spawn", "stage.spawn", "Workspace", "Workspace"], ["hierarchy", "stage.hierarchy", "Deployments", "Deployments"]]);
+    [["spawn", "stage.spawn", "Workspace overview", "Workspace overview"], ["automations", "stage.automations", "Automations", "Automations"]]);
   for (const b of buttons) {
     ran.length = 0; b.click();
     assert.deepEqual(ran, [b.dataset.action], `${b.dataset.view}: one run per click`);
   }
-  const spawn = document.getElementById("sidebar-spawn");
-  assert.equal(spawn.dataset.action, "app.chooseSoul");
-  for (let click = 1; click <= 2; click++) {
-    ran.length = 0; spawn.click();
-    assert.deepEqual(ran, ["app.chooseSoul"], `Spawn instance, click ${click}: one run`);
-  }
-  const toggle = document.getElementById("sidebar-toggle");
-  assert.equal(toggle.dataset.action, "sidebar.toggle");
-  for (let click = 1; click <= 2; click++) {
-    ran.length = 0; toggle.click();
-    assert.deepEqual(ran, ["sidebar.toggle"], `the sidebar toggle, click ${click}: one run`);
+  // The foot's actions, in the bar's order: the sidebar toggle after the mark, then Spawn instance (Quick Open) before
+  // the cog (the product owner, 2026-10-26).
+  const foot = [...document.querySelectorAll("#nav-foot [data-action]")];
+  assert.deepEqual(foot.map((b) => [b.id, b.dataset.action]), [["sidebar-toggle", "sidebar.toggle"], ["sidebar-spawn", "app.quickOpenSouls"]]);
+  for (const b of foot) {
+    for (let click = 1; click <= 2; click++) {
+      ran.length = 0; b.click();
+      assert.deepEqual(ran, [b.dataset.action], `${b.id}, click ${click}: one run`);
+    }
   }
   const items = wired.settingsMenu.items;
   assert.deepEqual(items.map((b) => b.dataset.menuAction), ["app.themePicker", "app.shortcuts"]);
@@ -168,7 +173,7 @@ test("inventory: the Instances stage view is gone and nothing references it", ()
   }
 });
 
-// The home surface (the product owner, 2026-10-23): the Workspace page, not Deployments, when no instance is open: at
+// The home surface (the product owner, 2026-10-23, kept 2026-10-26): the Workspace page (on Souls), when no instance is open: at
 // start, after choosing a workspace, and as the nav's fallback when the last terminal closes or a workspace switch
 // restores no stage.
 test("the home surface is the Workspace page: at start, after a choice, and as the nav's fallback", async () => {
@@ -176,7 +181,7 @@ test("the home surface is the Workspace page: at start, after a choice, and as t
   const topLevel = src.match(/^showStage\("[a-z]+"\);$/gm);
   assert.deepEqual(topLevel, ['showStage("spawn");'], "the shell's one start-up stage is Workspace");
   assert.ok(src.lastIndexOf('showStage("spawn");') > src.indexOf("// Home surface:"), "under its comment");
-  assert.doesNotMatch(src, /showStage\("hierarchy"\)/, "Deployments is never shown on its own");
+  assert.doesNotMatch(src, /showStage\("hierarchy"\)/, "Machines is never shown as a page of its own");
   const fallbacks = src.match(/setNavActive\(stage\?\.name \|\| "[a-z]+"\)/g);
   assert.deepEqual(fallbacks, ['setNavActive(stage?.name || "spawn")', 'setNavActive(stage?.name || "spawn")'],
     "the last terminal closing, and a workspace switch that restores no tab, mark Workspace");

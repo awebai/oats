@@ -150,7 +150,7 @@ test("the terminal allowlist is exactly the actions that must work in a terminal
     "tabs.close", "tabs.next", "tabs.nextPage", "tabs.prev", "tabs.prevPage",
     ...Array.from({ length: 9 }, (_, i) => `tabs.goto${i + 1}`),
     "terminal.copySelection", "terminal.fontBigger", "terminal.fontReset", "terminal.fontSmaller", "terminal.focusMode",
-    "workspace.next", "workspace.previous",
+    "workspace.next", "workspace.previous", "workspaces.currentOnly",
   ].sort());
   // Every shared chord works in a terminal (CHORDS_READ): the leader's keys are reachable from every focus.
   for (const { id } of CHORDS_READ) assert.ok(TERMINAL_ALLOWLIST.includes(id), `${id} is allowlisted`);
@@ -208,6 +208,8 @@ const FAMILY_PRESSES = {
 const SHARED_PRESSES = [
   [linux("N", { shiftKey: true }), "app.chooseSoul"], [linux("Tab"), "tabs.next"], [linux("Tab", { shiftKey: true }), "tabs.prev"],
   [linux("W", { shiftKey: true, altKey: true }), "split.close"], [linux("x"), "app.leader"],
+  // Show only the current workspace: Ctrl+Alt+Shift+O in every family.
+  [linux("O", { shiftKey: true, altKey: true }), "workspaces.currentOnly"],
   // The Alt+Shift arrows (no Ctrl) ↑ / ↓: the previous / next instance.
   [ev("ArrowUp", { altKey: true, shiftKey: true }), "roster.openPrevious"], [ev("ArrowDown", { altKey: true, shiftKey: true }), "roster.openNext"],
   [linux("F6", { shiftKey: true }), "focus.leaveTerminal"], [linux("C", { shiftKey: true }), "terminal.copySelection"],
@@ -390,13 +392,14 @@ test("shell wiring: the new actions are registered, rebindable and discoverable"
   const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
   for (const id of ["tabs.nextPage", "tabs.prevPage", "focus.nextRegion", "focus.prevRegion", "focus.leaveTerminal", "terminal.copySelection"]) assert.match(src, new RegExp(`id: "${id.replace(".", "\\.")}"`), id);
   assert.match(src, /id: `tabs\.goto\$\{n\}`/, "go to tab 1–9");
-  assert.match(src, /\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(\{\n  id: `stage\.\$\{v\.name\}`/, "stage.automations comes from the nav manifests (NAV_TABS)");
+  assert.match(src, /\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(\{\n  id: `stage\.\$\{v\.name\}`/, "stage.automations comes from the nav manifest (NAV), stage.hierarchy from NAV_TABS");
 });
 
-// Automations left the nav for a tab of the Workspace page (2026-10-23); its action did not move:
-// the shipped registration, run as shipped, still makes stage.automations a global, rebindable action
-// on Mod+3 with its label, and it opens the name (showStage routes it to the page and tab).
-test("stage.automations: registered from NAV_TABS as shipped, \"View: Workspace › Automations\", Ctrl+3 / ⌘3, rebindable", t => {
+// Machines, the Deployments page of before, is a tab of the Workspace page and Automations a page of its own again
+// (the product owner, 2026-10-26); neither action moved: the shipped registration, run as shipped, still makes
+// stage.hierarchy (from NAV_TABS) a global, rebindable action on Mod+1 with its label, and stage.automations (from
+// NAV) Mod+3; each opens its name (showStage routes Machines to the Workspace page's tab).
+test("stage.hierarchy: registered from NAV_TABS as shipped, \"View: Workspace › Machines\", Ctrl+1 / ⌘1, rebindable; stage.automations from NAV, Ctrl+3 / ⌘3", t => {
   resetAllBindings();
   const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
   const statement = src.match(/\[\.\.\.NAV, \.\.\.NAV_TABS\]\.forEach\(\(v\) => registerAction\(\{[^]*?\n\}\)\);/)?.[0];
@@ -406,23 +409,28 @@ test("stage.automations: registered from NAV_TABS as shipped, \"View: Workspace 
   t.after(() => { offs.forEach(off => off()); resetAllBindings(); });
   const stages = listActions().filter(a => a.id.startsWith("stage.") && !a.id.includes(".", 6));
   assert.deepEqual(stages.map(a => [a.id, a.label, a.context]), [
-    // In NAV's order, Workspace first since 2026-10-23; each keeps its own chord (bound by id).
-    ["stage.spawn", "View: Workspace", "global"], ["stage.hierarchy", "View: Deployments", "global"], ["stage.automations", "View: Workspace › Automations", "global"],
+    // NAV's order (Workspace overview, Automations), then NAV_TABS (Machines); each keeps its own chord (bound by id).
+    ["stage.spawn", "View: Workspace overview", "global"], ["stage.automations", "View: Automations", "global"],
+    ["stage.hierarchy", "View: Workspace › Machines", "global"],
   ]);
-  assert.deepEqual(["stage.hierarchy", "stage.spawn"].map(id => getBinding(id, false)), ["Mod+1", "Mod+2"], "⌘1 / Ctrl+1 is still Deployments");
-  assert.equal(getBinding("stage.automations", false), "Mod+3"); assert.equal(getBinding("stage.automations", true), "Mod+3");
+  assert.deepEqual(["stage.hierarchy", "stage.spawn", "stage.automations"].map(id => getBinding(id, false)), ["Mod+1", "Mod+2", "Mod+3"],
+    "⌘1 / Ctrl+1 is Machines, ⌘3 / Ctrl+3 Automations");
+  for (const isMac of [false, true]) assert.equal(getBinding("stage.hierarchy", isMac), "Mod+1");
   const out = { isMac: false, insideTerminal: false };
+  assert.equal(matchEvent(linux("1"), out), "stage.hierarchy");
+  assert.equal(matchEvent(ev("1", { metaKey: true }), { isMac: true, insideTerminal: true }), "stage.hierarchy", "⌘1, a terminal focused too");
   assert.equal(matchEvent(linux("3"), out), "stage.automations");
   assert.equal(matchEvent(ev("3", { metaKey: true }), { isMac: true, insideTerminal: true }), "stage.automations", "⌘3, a terminal focused too");
-  assert.equal(runAction("stage.automations"), true); assert.deepEqual(opened, ["automations"]);
+  assert.equal(runAction("stage.hierarchy"), true); assert.equal(runAction("stage.automations"), true);
+  assert.deepEqual(opened, ["hierarchy", "automations"]);
   // A chord no default takes, in any family (Ctrl+Alt+Shift+A is a split move's in the Ctrl+Alt family).
-  setBinding("stage.automations", "Ctrl+Alt+Shift+Y");
-  assert.equal(matchEvent(linux("Y", { altKey: true, shiftKey: true }), out), "stage.automations", "rebound");
-  assert.equal(matchEvent(linux("3"), out), null, "the old chord is free");
-  setBinding("stage.automations", null);
-  assert.equal(getBinding("stage.automations", false), null, "unbound");
-  resetBinding("stage.automations");
-  assert.equal(matchEvent(linux("3"), out), "stage.automations", "reset to Mod+3");
+  setBinding("stage.hierarchy", "Ctrl+Alt+Shift+Y");
+  assert.equal(matchEvent(linux("Y", { altKey: true, shiftKey: true }), out), "stage.hierarchy", "rebound");
+  assert.equal(matchEvent(linux("1"), out), null, "the old chord is free");
+  setBinding("stage.hierarchy", null);
+  assert.equal(getBinding("stage.hierarchy", false), null, "unbound");
+  resetBinding("stage.hierarchy");
+  assert.equal(matchEvent(linux("1"), out), "stage.hierarchy", "reset to Mod+1");
 });
 
 test("real targets: F6 cycles from text fields; in xterm's textarea F6 is the program's and Mod+Shift+F6 leaves", t => {
@@ -740,6 +748,35 @@ test("the leader is inert under a shown modal: the chord goes where it goes toda
   assert.equal(matchEvent(ctrlX, { isMac: false, insideTerminal: true }), null);
   assert.equal(handleKeydown(ctrlX, { isMac: false, insideTerminal: true }), false);
   assert.equal(ctrlX.defaultPrevented, false, "the program gets it");
+});
+
+// Show only the current workspace (2026-10-23): ⌥⇧⌘O on macOS, Ctrl+Alt+Shift+O elsewhere, the same in every family.
+// The chord is free: checked against the keymap's own defaults, every action on both platforms in every family,
+// in every context (it is global); and it works from a terminal (allowlisted), claimed before the pty.
+test("workspaces.currentOnly: ⌥⇧⌘O / Ctrl+Alt+Shift+O in every family, free of every other default, and fires from a terminal", t => {
+  registerAll(t);
+  inFamily(t, DEFAULT_CHORD_FAMILY);
+  assert.ok(TERMINAL_ALLOWLIST.includes("workspaces.currentOnly"), "allowlisted");
+  for (const family of CHORD_FAMILIES) {
+    setChordFamily(family);
+    for (const isMac of [false, true]) {
+      const chord = getBinding("workspaces.currentOnly", isMac);
+      assert.equal(chord, isMac ? "Mod+Alt+Shift+O" : "Ctrl+Alt+Shift+O", `mac=${isMac}, ${family}`);
+      assert.equal(defaultBinding("workspaces.currentOnly", isMac, family), chord);
+      assert.equal(findConflict(chord, "global", "workspaces.currentOnly", isMac), null, `mac=${isMac}, ${family}`);
+      for (const id of IDS) if (id !== "workspaces.currentOnly") assert.notEqual(getBinding(id, isMac), chord, `${id}, mac=${isMac}, ${family}`);
+      assert.deepEqual(keymapConflicts(isMac), [], `mac=${isMac}, ${family}`);
+      assert.equal(terminalAllows("workspaces.currentOnly", chord, isMac), true, `mac=${isMac}, ${family}`);
+    }
+    // From a terminal, by the real keydowns: Linux/Windows sends the upper-case letter with Shift; a Mac's ⌥⇧O types Ø.
+    const linuxPress = pressOf("Ctrl+Alt+Shift+O"), macPress = ev("Ø", { code: "KeyO", metaKey: true, altKey: true, shiftKey: true });
+    for (const [press, isMac] of [[linuxPress, false], [macPress, true]]) {
+      assert.equal(matchEvent(press, { isMac, insideTerminal: true }), "workspaces.currentOnly", `mac=${isMac}, ${family}`);
+      assert.equal(handleKeydown(press, { isMac, insideTerminal: true }), true); assert.equal(press.defaultPrevented, true, `claimed before the pty, mac=${isMac}, ${family}`);
+    }
+    // Without Shift it is still the workspace switcher's key, as before.
+    assert.equal(matchEvent(ev("ø", { code: "KeyO", metaKey: true, altKey: true }), { isMac: true, insideTerminal: true }), "app.workspaces");
+  }
 });
 
 test("the leader's, the sidebar's and the shared chords clash with no other default, in every family", t => {
