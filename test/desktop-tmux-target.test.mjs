@@ -98,6 +98,8 @@ const LISTING = [
   'bind-key    -T oatsdesk-locked-prefix  \\#           choose-tree',
   'bind-key    -T oatsdesk-locked-prefix  \\\\           kill-window',
   'bind-key    -T oatsdesk-locked-prefix  \\"           split-window',
+  'bind-key    -T oatsdesk-locked-prefix  "M-;"         kill-session',
+  'bind-key    -T oatsdesk-locked-prefix  C-\\\\           detach-client',
   'bind-key    -T oatsdesk-locked-prefixes  x           kill-server',
   'bind-key    -T prefix       n                         next-window',
 ].join("\n");
@@ -351,10 +353,13 @@ test("openTerm (#1502): below tmux 3.3 (or an unknown version) there is no C-b b
 });
 
 test("strayPrefixKeys (#1502): the C-b table's keys that are not the approved ones, as unbind-key takes them; other tables are never touched", () => {
-  assert.deepEqual(strayPrefixKeys(LISTING), ["n", "c", "\\;", "#", "\\", '"']);
+  // tmux quotes a key that holds a ; ("M-;") and escapes a \ in one (C-\\): unquoted and unescaped, a trailing ; as \;.
+  assert.deepEqual(strayPrefixKeys(LISTING), ["n", "c", "\\;", "#", "\\", '"', "M-\\;", "C-\\"]);
   assert.deepEqual(strayPrefixKeys(""), []);
-  assert.deepEqual(strayPrefixKeys(LISTING.split("\n").filter(line => !/ (n|c|\\.) /.test(line.split("oatsdesk-locked-prefix")[1] ?? "")).join("\n")), [],
-    "only approved keys: nothing to remove");
+  const approvedOnly = LISTING.split("\n").filter(line => !line.includes("-T oatsdesk-locked-prefix ")
+    || ["[", "Any", "MouseDrag1Pane", "S-PPage", "WheelUpPane"].includes(line.split("-T oatsdesk-locked-prefix")[1].trim().split(/\s+/)[0]));
+  assert.equal(approvedOnly.filter(line => line.includes("-T oatsdesk-locked-prefix ")).length, 5);
+  assert.deepEqual(strayPrefixKeys(approvedOnly.join("\n")), [], "only approved keys: nothing to remove");
 });
 
 test("openTerm (#1502): the C-b table is bound again and its strays removed one by one, never emptied, before C-b reaches it", () => {
@@ -362,7 +367,7 @@ test("openTerm (#1502): the C-b table is bound again and its strays removed one 
   openTerm({ session: "s", window: "w" }, fakeIo(calls, { listKeys: LISTING }));
   assert.ok(!calls.some(call => call.includes("unbind-key") && call.includes("-a") && call.includes("oatsdesk-locked-prefix")), "never unbind-key -a on the C-b table");
   const at = call => calls.findIndex(c => c.join("\0") === call.join("\0"));
-  const strays = ["n", "c", "\\;", "#", "\\", '"'].map(key => ["tmux", "unbind-key", "-q", "-T", "oatsdesk-locked-prefix", key]);
+  const strays = ["n", "c", "\\;", "#", "\\", '"', "M-\\;", "C-\\"].map(key => ["tmux", "unbind-key", "-q", "-T", "oatsdesk-locked-prefix", key]);
   for (const stray of strays) assert.ok(at(stray) > at(["tmuxOut", "list-keys"]), `${stray.at(-1)}: removed, after the listing`);
   const lastBind = Math.max(...LOCKED_PREFIX_BINDINGS.map(b => at(["tmux", "bind-key", "-T", "oatsdesk-locked-prefix", ...b])));
   assert.ok(lastBind < at(["tmuxOut", "list-keys"]), "the approved keys are bound first: the table is never empty");
@@ -533,6 +538,8 @@ test("live tmux (#1502): through a real attached client, C-b [ and Shift+PgUp sc
     await sleep(800); // more history than the pane is high
     // A stale binding in the (server-global) C-b table is cleared before the table is bound.
     T(["bind-key", "-T", "oatsdesk-locked-prefix", "n", "next-window"]);
+    T(["bind-key", "-T", "oatsdesk-locked-prefix", "M-\\;", "kill-session"]); // tmux lists it quoted: "M-;"
+    T(["bind-key", "-T", "oatsdesk-locked-prefix", "C-\\", "detach-client"]); // tmux lists it escaped: C-\\
     const r = openTerm({ session: "src", window: "instA", cols: 80, rows: 24 }, {
       preflight: (target) => T(["list-panes", "-t", target]),
       tmux: (args) => T(args),
@@ -598,7 +605,9 @@ test("live tmux (#1502): through a real attached client, C-b [ and Shift+PgUp sc
     await sleep(800);
     const screen = T(["capture-pane", "-p", "-t", "=src:=instA"], true);
     assert.match(screen, /\^Bn\^Bc\^Bl\^B1\^B\^B/, `the agent read C-b n, C-b c, C-b l, C-b 1 and C-b C-b:\n${screen}`);
-    assert.ok(!T(["list-keys"], true).split("\n").some(line => /-T oatsdesk-locked-prefix\s+n\s/.test(line)), "the stale binding was cleared");
+    const prefixTable = T(["list-keys"], true).split("\n").filter(line => /-T oatsdesk-locked-prefix\s/.test(line));
+    assert.deepEqual(prefixTable.map(line => line.trim().split(/\s+/)[3]).sort(), ["Any", "MouseDrag1Pane", "S-PPage", "WheelUpPane", "["],
+      `only the approved keys are left; the seeded strays (n, M-;, C-\\) are gone:\n${prefixTable.join("\n")}`);
     assert.deepEqual(T(["list-windows", "-t", `=${r.viewer}`, "-F", "#{window_name}"], true).split("\n"), ["instA"], "the viewer still holds only its linked window");
     assert.equal(T(["list-clients", "-F", "#{client_session}"], true), r.viewer, "the client never left the viewer");
     assert.equal(keyTable(), "oatsdesk-locked");

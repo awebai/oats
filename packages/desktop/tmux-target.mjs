@@ -149,15 +149,18 @@ export const LOCKED_PREFIX_BINDINGS = [
 const LISTED = new Map([["S-PageUp", "S-PPage"]]);
 const APPROVED_PREFIX_KEYS = new Set(LOCKED_PREFIX_BINDINGS.map(([key]) => LISTED.get(key) ?? key));
 /** The keys of LOCKED_PREFIX_TABLE in `tmux list-keys` output that are not the approved ones, each as
- * `unbind-key` takes it: tmux lists a special key escaped (`\#`, `\"`, `\\`), and takes `;` only as
- * `\;`, since a bare `;` ends a command. Another table's keys are never its. */
+ * `unbind-key` takes it. tmux lists a key that holds a `;` in double quotes (`"M-;"`) and escapes a
+ * special character with `\` (`\#`, `\"`, `C-\\`): unquoted and unescaped, it is the key's name. A key
+ * that ends in `;` is passed as `\;`, since tmux reads a bare trailing `;` as the end of the command.
+ * Another table's keys are never its. */
 export function strayPrefixKeys(listing) {
   const strays = [];
   for (const line of String(listing).split("\n")) {
     const match = /\s-T\s+(\S+)\s+(\S+)/.exec(line);
-    if (!match || match[1] !== LOCKED_PREFIX_TABLE || APPROVED_PREFIX_KEYS.has(match[2])) continue;
-    const key = /^\\.$/.test(match[2]) ? match[2][1] : match[2];
-    strays.push(key === ";" ? "\\;" : key);
+    if (!match || match[1] !== LOCKED_PREFIX_TABLE) continue;
+    const key = match[2].replace(/^"(.*)"$/, "$1").replace(/\\(.)/g, "$1");
+    if (APPROVED_PREFIX_KEYS.has(key)) continue;
+    strays.push(key.endsWith(";") ? `${key.slice(0, -1)}\\;` : key);
   }
   return strays;
 }
