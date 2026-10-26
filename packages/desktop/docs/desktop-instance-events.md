@@ -133,9 +133,11 @@ validates the field and never synthesizes it.
   drops a claim, which then reads as `null` (unknown). A missing or malformed
   `reason` becomes `null`, because the raw reason is never rendered. A
   malformed `message` becomes `null`. So does a note the unsafe-text rule
-  withholds (it holds a URL, or token-like text such as `token: …`): the
-  row, the card and the tab then show the reason in words and never
-  `[withheld]`. The activity view keeps that marker for the same
+  withholds (it holds a URL, or token-like text such as `token: …`), and a
+  note with no character but white space: the row, the card and the tab then
+  show the reason in words, never `[withheld]` or a blank line. An unknown
+  reason reads "Waiting for your input" (`waitingLabel`), never "Needs
+  input", which each of them already shows before it. The activity view keeps that marker for the same
   note. `waitingMessage` is the validator both share: it returns the marker
   (`EVENTS_WITHHELD`, its one literal, in `packages/client/instance-events-contract.mjs`),
   and "not null" is the kernel's validity answer, which a test pins.

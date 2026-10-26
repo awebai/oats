@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { syncWaitingRow, fitWaitingLines, waitingFit, WAITING_LINES } from "../renderer/waiting-row.mjs";
-import { waitingLabel, waitedText } from "../../client/waiting-on-you.mjs";
+import { waitingLabel, waitedText, waitingOnYouData } from "../../client/waiting-on-you.mjs";
 
 const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
 const SINCE = "2026-10-03T09:00:00.000Z", AT = Date.parse(SINCE) + 12 * 60e3;
@@ -62,6 +62,7 @@ test("a null message: the row says why in words, from the reason", t => {
     assert.ok(message.classList.contains("reason"), "our words, styled apart from agent text");
   }
   assert.equal(waitingLabel({ reason: "permission" }), "Waiting for a tool approval");
+  assert.equal(waitingLabel({ reason: "approval" }), "Waiting for your input", "an unknown reason never repeats the tag's words");
   u.sync(claim());
   assert.equal(part(u.pane, "message").classList.contains("reason"), false, "the agent's text again");
 });
@@ -180,5 +181,17 @@ test("CSS: the row takes its rows from the terminal, wraps and cuts the message 
   assert.match(rule(".waiting-message.reason"), /color: var\(--muted\)/);
   for (const body of [row, head, message, rule(".waiting-age"), rule(".waiting-message.reason")]) {
     assert.doesNotMatch(body, /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|opacity|animation|transition/i, "tokens only, no opacity, no motion");
+  }
+});
+
+test("#1502 follow-ups: an unknown reason never reads Needs input twice, and a message of only spaces reads the reason in words", t => {
+  const u = fixture(t);
+  u.sync(waitingOnYouData(claim({ message: null, reason: "approval" })));
+  assert.equal(rowOf(u.pane).textContent, "Needs input · 12 minWaiting for your input");
+  assert.equal(rowOf(u.pane).textContent.split("Needs input").length - 1, 1, "the tag's words once");
+  for (const message of ["   ", "\u00A0\u3000"]) {
+    u.sync(waitingOnYouData(claim({ message, reason: "question" })));
+    assert.equal(part(u.pane, "message").textContent, "Asked you a question", JSON.stringify(message));
+    assert.ok(part(u.pane, "message").classList.contains("reason"));
   }
 });

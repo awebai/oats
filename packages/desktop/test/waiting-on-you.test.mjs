@@ -107,12 +107,23 @@ test('the withheld marker is one literal: display-text.mjs exports it, the contr
   for (const name of ['instance-events-contract.mjs', 'readiness-contract.mjs', 'waiting-on-you.mjs']) assert.equal(source(name).includes(EVENTS_WITHHELD), false, name);
 });
 
-test('reasons map to fixed words; an unknown or null reason reads "Needs input" and the raw value is never returned', () => {
+test('reasons map to fixed words; an unknown or null reason reads "Waiting for your input" and the raw value is never returned', () => {
   assert.equal(waitingLabel({ reason: 'permission' }), 'Waiting for a tool approval');
   assert.equal(waitingLabel({ reason: 'question' }), 'Asked you a question');
   assert.equal(waitingLabel({ reason: 'attention' }), 'Asked for your attention');
-  for (const reason of ['approval', null, '', 'toString', '__proto__', 'constructor']) assert.equal(waitingLabel({ reason }), 'Needs input', String(reason));
-  assert.equal(waitingLabel(null), 'Needs input');
+  // Never the tag's own words: the row, the tab and the card put the label after "Needs input" (#1502).
+  for (const reason of ['approval', null, '', 'toString', '__proto__', 'constructor']) assert.equal(waitingLabel({ reason }), 'Waiting for your input', String(reason));
+  assert.equal(waitingLabel(null), 'Waiting for your input');
+});
+
+test('a message with no character but white space reads null in the claim, as a withheld one does; waitingMessage still accepts it (#1502)', () => {
+  for (const message of ['   ', ' ', '\u00A0\u00A0', '\u3000', ' \u2003 ', '\u2002\u200A', '\u202F']) {
+    assert.notEqual(waitingMessage(message), null, `${JSON.stringify(message)} is a valid note, as the kernel's rule says`);
+    const out = waitingOnYouData(claim({ message }));
+    assert.ok(out, 'the claim is kept'); assert.equal(out.message, null, JSON.stringify(message));
+  }
+  assert.equal(waitingOnYouData(claim({ message: '  Pick one?  ' })).message, '  Pick one?  ', 'text with spaces around it is kept verbatim');
+  assert.equal(waitingOnYouData(claim({ message: '\u00A0x' })).message, '\u00A0x');
 });
 
 test('waitedText floors into under a minute / min / h / d buckets; a future since reads under a minute', () => {
@@ -153,7 +164,7 @@ test('waitingSentence (unavailable rows) names the message or label and an absol
   assert.equal(waitingSentence(waitingOnYouData(claim({ message: null, reason: 'question' })), [], sameDay), ` · Needs input: Asked you a question since ${at}`);
   // A withheld note reads as the reason in words, never "[withheld]" (#584 finding 12).
   for (const [note, reason, label] of [['See https://github.com/awebai/oats/pull/552', 'attention', 'Asked for your attention'],
-    ['Which token: A or B?', 'question', 'Asked you a question'], ['api key: rotate now?', 'approval', 'Needs input']]) {
+    ['Which token: A or B?', 'question', 'Asked you a question'], ['api key: rotate now?', 'approval', 'Waiting for your input']]) {
     assert.equal(waitingSentence(waitingOnYouData(claim({ message: note, reason })), [], sameDay), ` · Needs input: ${label} since ${at}`, note);
   }
   // A start built from LOCAL fields, so its local date is known in any time zone.

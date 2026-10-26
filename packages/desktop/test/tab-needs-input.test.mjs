@@ -81,7 +81,7 @@ test("a withheld note: the tab's title reads the reason in words, never “[with
   const u = fixture(t), tab = u.open(row("dev-a")), trigger = tab.triggerEl;
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse(SINCE) + 60e3 });
   for (const [message, reason, label] of [["See https://github.com/awebai/oats/pull/552", "attention", "Asked for your attention"],
-    ["Which token: A or B?", "question", "Asked you a question"], ["api key: rotate now?", "approval", "Needs input"]]) {
+    ["Which token: A or B?", "question", "Asked you a question"], ["api key: rotate now?", "approval", "Waiting for your input"]]) {
     u.sync([row("dev-a", { waitingOnYou: claim({ message, reason }) })], "A");
     assert.ok(cue(tab), "the claim is kept");
     assert.equal(trigger.getAttribute("aria-label"), "dev-a, needs input");
