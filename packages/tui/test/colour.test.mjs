@@ -37,6 +37,11 @@ test("markLook: running, stopped and shell take the colour (the last two dim); u
   for (const mark of Object.keys(LOOK)) assert.deepEqual(markLook(mark, null), LOOK[mark], mark);
 });
 
+test("no state mark is yellow, which says needs input and only that: unknown is dim in the default foreground, its shape saying it", () => {
+  assert.deepEqual(LOOK.unknown, style({ dim: true }));
+  for (const [mark, look] of Object.entries(LOOK)) assert.equal(look.fg === "yellow" || look.fg === "brightYellow", false, mark);
+});
+
 test("the Instances list draws each row's mark in its colour, its shape still saying its state", () => {
   // The first row is the selected one, drawn in reverse video whatever its colour: none of the four.
   const rows = [

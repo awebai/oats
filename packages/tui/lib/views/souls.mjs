@@ -56,8 +56,9 @@ const PLAIN = style();
 const BOLD = style({ bold: true });
 const DIM = style({ dim: true });
 const SELECTED = style({ reverse: true });
-/** The refusal's warning style: it says "Can't spawn here" too, so the colour is not alone. */
-const WARN = style({ bold: true, fg: "yellow" });
+/** The refusal's warning style: it says "Can't spawn here" too, so the colour is not alone. Red, not
+ *  yellow: yellow says needs input, and only that. */
+const WARN = style({ bold: true, fg: "red" });
 
 const markOf = (ascii) => (ascii ? SOUL_MARK.ascii : SOUL_MARK.utf8);
 const countText = (count, ascii) => `${ascii ? COUNT_SIGN.ascii : COUNT_SIGN.utf8}${count}`;

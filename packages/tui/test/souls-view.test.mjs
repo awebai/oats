@@ -269,14 +269,14 @@ test("the detail holds every section, top to bottom: the bold name, the descript
       "    i shows them in the Instances view.",
     ], at);
     const row = (word) => rowWith(d, sz, word, x);
-    // The name is bold; the labels are dim; the refusal is bold yellow, and says what it is in words.
+    // The name is bold; the labels are dim; the refusal is bold red (yellow says needs input, and only that), and says what it is in words.
     assert.equal(d.cells[0][x + 2].style.bold, true, `${at}: the name is bold`);
     for (const label of ["from", "works", "harness", "teams", "capabilities", "instances here"]) {
       const r = row(`  ${label}`), col = cellIndexOf(d, r, label, x);
       assert.equal(d.cells[r].slice(col, col + label.length).every((cell) => cell.style.dim), true, `${at}: ${label} is dim`);
     }
     const refusal = row("Can't spawn here"), from = cellIndexOf(d, refusal, "Can't", x);
-    assert.deepEqual([d.cells[refusal][from].style.bold, d.cells[refusal][from].style.fg], [true, "yellow"], `${at}: the warning style`);
+    assert.deepEqual([d.cells[refusal][from].style.bold, d.cells[refusal][from].style.fg], [true, "red"], `${at}: the warning style`);
     // The note and the code are dim, the problem's lead bold, its kernel lines plain.
     assert.equal(d.cells[row("Set in soul.yaml")][x + 4].style.dim, true, `${at}: a note is dim`);
     assert.equal(d.cells[row("A spawn of this soul")][x + 4].style.bold, true, `${at}: the problem's lead is bold`);

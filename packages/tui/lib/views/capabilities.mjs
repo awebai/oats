@@ -44,8 +44,9 @@ const PLAIN = style();
 const BOLD = style({ bold: true });
 const DIM = style({ dim: true });
 const SELECTED = style({ reverse: true });
-/** The warning style: what it marks says so in words too. */
-const WARN = style({ bold: true, fg: "yellow" });
+/** The warning style: what it marks says so in words too. Red, not yellow: yellow says needs input,
+ *  and only that. */
+const WARN = style({ bold: true, fg: "red" });
 
 /** The mark between a group's name and its note, and before the instances on an older version. */
 const dotOf = (ascii) => (ascii ? "-" : "·");

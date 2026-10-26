@@ -53,8 +53,9 @@ const PLAIN = style();
 const BOLD = style({ bold: true });
 const DIM = style({ dim: true });
 const SELECTED = style({ reverse: true });
-/** The look of each state mark: the Souls view draws an instance's mark in its detail as the list does. */
-export const LOOK = Object.freeze({ running: style({ fg: "green" }), stopped: DIM, shell: DIM, unknown: style({ fg: "yellow" }), held: style({ fg: "magenta" }) });
+/** The look of each state mark: the Souls view draws an instance's mark in its detail as the list does.
+ *  No state is yellow: yellow says needs input, and only that. */
+export const LOOK = Object.freeze({ running: style({ fg: "green" }), stopped: DIM, shell: DIM, unknown: DIM, held: style({ fg: "magenta" }) });
 /** The marks an instance's colour (feature instance-color) draws: running in it, stopped and at its shell in
  *  it and dim. The shape still says the state; `unknown` and `held` keep their own look whatever the colour. */
 const COLOURED = Object.freeze({ running: false, stopped: true, shell: true });

@@ -9,4 +9,8 @@
   same `!`. A folded row keeps its `N below` tag for the waiting instances
   it folds away, whether or not it waits itself. The detail still says it
   in words, with the reason and how long it has waited, and the help lists
-  the mark. ([tui.md](../tui.md#what-it-shows))
+  the mark. Yellow now means needs input only: a state unknown (`?`) is
+  dim in the terminal's foreground, and the warnings of the Souls and
+  Capabilities views (a failed read, `Can't spawn here`, `· N on an older
+  version`) are bold red; a `sand` instance or soul keeps its colour.
+  ([tui.md](../tui.md#what-it-shows))
