@@ -356,7 +356,7 @@ test("a stored rebind's clash marks the settings cog and its Keyboard shortcutsâ
   clashes = [{}];
   mark();
   for (const el of [cog, item]) {
-    assert.equal(el.classList.contains("has-clash"), true, `${el.id || el.dataset.menuAction}: the warn dot`);
+    assert.equal(el.classList.contains("has-clash"), true, `${el.id || el.dataset.menuAction}: the clash dot`);
     assert.equal(el.getAttribute("aria-description"), "1 shortcut you set clashes with another: open Keyboard shortcutsâ€¦ to review");
   }
   assert.deepEqual(others(), [], "no other item is marked");

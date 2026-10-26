@@ -352,8 +352,9 @@ test("shell wiring: the settings cog and its Keyboard shortcuts… item carry th
     "the cog and the item, both");
   assert.match(src, /onKeymapChange\(\(\) => \{[^]*?markShortcutClashes\(\)/);
   const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
-  assert.match(css, /#sidebar-settings\.has-clash::after \{[^}]*background: var\(--warn\)/);
-  assert.match(css, /\.sidebar-settings-menu button\.has-clash > \.sidebar-settings-label::after \{[^}]*background: var\(--warn\)/);
+  // --danger: a key no longer does what it says (yellow means needs input only, 2026-10-26).
+  assert.match(css, /#sidebar-settings\.has-clash::after \{[^}]*background: var\(--danger\)/);
+  assert.match(css, /\.sidebar-settings-menu button\.has-clash > \.sidebar-settings-label::after \{[^}]*background: var\(--danger\)/);
   assert.doesNotMatch(css, /#sidebar-shortcuts/, "the foot's shortcuts button is gone");
 });
 

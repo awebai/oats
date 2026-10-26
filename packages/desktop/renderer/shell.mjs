@@ -869,13 +869,13 @@ function closeRetiredTabs(panel, read) {
   }
 }
 
-/** Spec D's row mark: a shape plus text, never colour alone. "Needs input" on a waiting row (its reason and
- * age live in the card); "N below" on a row whose collapse hides N waiting rows, with a visually hidden
- * " need input" so the row's accessible name says what the short text means. */
-function needsInputMark(below = 0) {
-  const mark = document.createElement("span"); mark.className = below ? "ctx-attn rollup" : "ctx-attn";
-  mark.append(iconElement(document, "attention", { size: 10, className: "shell-icon attn-mark" }), below ? `${below} below` : "Needs input");
-  if (below) { const said = document.createElement("span"); said.className = "sr-only"; said.textContent = " need input"; mark.append(said); }
+/** Spec D's roll-up: "N below" on a row whose collapse hides N waiting rows, a shape plus text, never colour
+ * alone, with a visually hidden " need input" so the row's accessible name says what the short text means.
+ * A waiting row's own mark is its dot (renderContextRoster), not a pill (the product owner, 2026-10-26). */
+function needsInputMark(below) {
+  const mark = document.createElement("span"); mark.className = "ctx-attn rollup";
+  mark.append(iconElement(document, "attention", { size: 10, className: "shell-icon attn-mark" }), `${below} below`);
+  const said = document.createElement("span"); said.className = "sr-only"; said.textContent = " need input"; mark.append(said);
   return mark;
 }
 
@@ -1035,11 +1035,12 @@ function renderContextRoster(instances) {
         const heldStale = rowHeldStale(i);
         // Needs input: this row's own claim (waitingClaim is the only gate), and the waiting rows hidden under it.
         const claim = waitingClaim(i, { stale: heldStale }), below = waitingBelow.get(instanceId(i)) || [];
-        // Spec D (human, 2026-10-20): the name line keeps the name, whole; a waiting row's mark takes the meta line
-        // in place of its text (the repository, pull request and branch stay in the hover card, as a held home's do;
-        // a row with no card says them in its title and description, and the line keeps its own title).
-        // A held home's state wins that line: its description says the wait. "New" stays beside the name.
-        const attn = held ? null : claim ? needsInputMark() : below.length ? needsInputMark(below.length) : null;
+        // Spec D (human, 2026-10-20): the name line keeps the name, whole; the roll-up takes the meta line in place
+        // of its text (the repository, pull request and branch stay in the hover card, as a held home's do; a row
+        // with no card says them in its title and description, and the line keeps its own title). A row's own
+        // claim marks its dot instead, so a waiting parent shows both. A held home's state wins that line: its
+        // description says the wait. "New" stays beside the name.
+        const attn = held || !below.length ? null : needsInputMark(below.length);
         if (unavailable) {
           const replaced = attn ? [instanceRepoLabel(i), pr ? prText(pr) : null, i.branch].filter(Boolean).map(part => ` · ${part}`).join("") : "";
           const said = why + replaced + waitingSentence(claim, below, Date.now()); row.title = said; row.setAttribute("aria-description", said);
@@ -1049,12 +1050,23 @@ function renderContextRoster(instances) {
           // A held home's state takes its meta line over the mark (below): its description says the wait.
           if (held) row.setAttribute("aria-description", why + waitingSentence(claim, below, Date.now()));
         }
+        // A waiting row's dot is the needs-input mark (the product owner, 2026-10-26): the --warn disc with its "!"
+        // cut out, the only yellow mark (unknown liveness is a --muted bullseye), whatever the liveness, never in the
+        // instance's colour. Its words are the visually hidden "Needs input" after the name (a held home's
+        // description says the wait), so the row's name reads as it did with the pill.
         const dot = document.createElement("span");
-        dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
-        paintDotColor(dot, i, state);
+        if (claim) {
+          dot.className = "ctx-dot waiting";
+          dot.append(iconElement(document, "attention", { size: 10, className: "shell-icon attn-mark" }));
+        } else {
+          dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
+          paintDotColor(dot, i, state);
+        }
         const copy = document.createElement("span");
         copy.className = "ctx-copy";
         const name = rosterName(document, i.instance);
+        const spoken = claim && !held ? document.createElement("span") : null;
+        if (spoken) { spoken.className = "sr-only"; spoken.textContent = " Needs input"; }
         // The meta line (the product owner, 2026-10-26): the soul at the left, the repository at the right; the
         // soul is cut first, the repository keeps about 10ch. The branch and the pull request are the hover card's
         // (rosterTipFacts); the pull request's link stays in the row tools.
@@ -1084,8 +1096,8 @@ function renderContextRoster(instances) {
           const mark = document.createElement("span"); mark.className = "ctx-new";
           const markDot = document.createElement("span"); markDot.className = "ctx-new-dot"; markDot.setAttribute("aria-hidden", "true");
           mark.append(markDot, "New"); line.append(name, mark);
-          copy.append(line, meta, ...heldLines);
-        } else copy.append(name, meta, ...heldLines);
+          copy.append(line, ...[spoken].filter(Boolean), meta, ...heldLines);
+        } else copy.append(name, ...[spoken].filter(Boolean), meta, ...heldLines);
         row.append(dot, copy);
         if (typeof i.harness === "string" && i.harness) {
           const runtime = createRuntimeBadge(document, i.harness);
