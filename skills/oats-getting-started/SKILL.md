@@ -123,7 +123,7 @@ a key. The use case, repositories and knowledge tools are not asked: the
 steward takes them up with the person later.
 - **The workspace:** a new one, the machine's own. Its name defaults to the
   hostname, lowercased, with every character outside `[a-z0-9-]` turned
-  into `-` (`Merak` gives `merak`). Its repository defaults to
+  into `-` (`Ada's-Laptop` gives `ada-s-laptop`). Its repository defaults to
   `<github.login>/<workspace>-oats`, private. Or an existing workspace's
   reference.
 - **The namespace `N`:** the part of every agent's address before the `/`,
