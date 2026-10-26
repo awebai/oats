@@ -152,8 +152,8 @@ let pendingWorkspaceTab = null;
 let selectionIntent = 0;
 function nextSelectionIntent() {
   // A newer choice in an already-mounted Workspace must also supersede a
-  // shell handoff still waiting on its module import (a Workspace tab opened
-  // from outside the page: Spawn instance's +, ⌘3, the palette; Quick Open;
+  // shell handoff still waiting on its module to load: a Workspace tab opened
+  // from outside the page (Spawn instance's +, ⌘3, the palette; Quick Open;
   // a roster row's Inspect). Shell handoffs check their ticket before
   // entering here; never mint a fresh ticket on behalf of an arrival that
   // has already lost foreground ownership.
