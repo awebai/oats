@@ -266,7 +266,7 @@ test('Messaging & Teams sits in the Instance tab under Session, injected: the Me
   assert.equal(head.nextElementSibling, id); assert.equal(id.querySelector('.context-panel-sublabel').textContent, 'Messaging ID');
   assert.equal(u.field('identity').className, 'context-panel-id'); assert.equal(u.field('identity').textContent, 'northwind/web-developer-1');
   assert.equal(u.field('identity').title, 'northwind/web-developer-1');
-  assert.match(contextPanelCSS, /\.context-panel-id \{[^}]*overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:12px\/1\.45 ui-monospace/);
+  assert.match(contextPanelCSS, /\.context-panel-id \{[^}]*overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:12px\/1\.45 var\(--ui-font, ui-monospace, Menlo, monospace\)/, "the id follows the font choice, its own stack the fallback");
   assert.match(contextPanelCSS, /\.context-panel-sublabel \{ font-size:11\.5px; font-weight:600; line-height:1\.45; color:var\(--muted\); \}/);
   assert.doesNotMatch(contextPanelCSS.match(/\.context-panel-sublabel \{[^}]*\}/)[0], /uppercase/);
   const copy = u.q('[data-copy="identity"]');
