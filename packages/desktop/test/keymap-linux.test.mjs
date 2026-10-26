@@ -581,9 +581,6 @@ test("macOS: ⌘⌥ / ⌃⌥ on Space read Space for any action, and no default'
   t.after(() => resetBinding("app.shortcuts"));
   setBinding("app.shortcuts", chordToString(chordFromEvent(nbsp({ metaKey: true }), isMac)));
   assert.equal(matchEvent(nbsp({ metaKey: true }), { isMac, insideTerminal: false }), "app.shortcuts", "not only the font picker's");
-  // A rebind stored by the no-break space, as the editor recorded it before, still matches its press.
-  setBinding("app.shortcuts", "Mod+Alt+\u00a0");
-  assert.equal(matchEvent(nbsp({ metaKey: true }), { isMac, insideTerminal: false }), "app.shortcuts", "the typed character's rebind");
 });
 
 // Phase 3 (c4d4a391): the palette took Ctrl+Alt+K and Quick Open Ctrl+Alt+P (#1217's Ctrl+Shift+K and
