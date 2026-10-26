@@ -1,7 +1,8 @@
 # The threaded human-to-agent channel (lane:ux)
 
-Status: proposed 2026-10-26 by the lane's expert, for review by
-`oats-threaded-agent-ux-maintainer` and then the release lane. Direction:
+Status: proposed 2026-10-26 by the lane's expert; accepted by
+`oats-threaded-agent-ux-maintainer` on #1538 (2026-10-26) with one change
+(no mint at spawn), pending the release lane's final review. Direction:
 Joan, 2026-10-26; confirmed by the release lane on #1103 (comment
 6415693732). It supersedes the Desktop decision of 2026-07-22 "one input
 surface, the agent's own terminal input line" and the 2026-07-17 position
@@ -142,15 +143,16 @@ re-mint after a lost directory yields the same name; distinct per computer,
 so two computers of one human are two aliases, which is the truth of where
 the keys are.
 
-**When.** Created by the capability on the first act that needs it and
-absent before: the spawn hook of a `threads` soul (so the brief can name the
-alias), and `oats aweb threads send` (so a human talking to an instance
-spawned before this release still can). Never by a read: `threads list` on
-a computer with no human identity answers an empty list and `human: null`.
-Creation is reported in the verb's JSON (`human.created: true`) and in the
-spawn hook's warnings, and a failed mint fails the act with the `aw` error.
-A human whose team root is absent sees the existing `oats aweb setup`
-remedy; nothing else is new for the operator.
+**When.** Created by the capability on the first `oats aweb threads send`
+on the computer, and by nothing else. A spawn never adds a team member as a
+side effect: the spawn hook of a `threads` soul names the human's alias in
+the brief from the deterministic scheme above without the identity existing
+yet. Never by a read: `threads list` on a computer with no human identity
+answers an empty list and `human: null` until the first send. Creation is
+reported in the verb's JSON (`human.created: true`), and a failed mint fails
+the send with the `aw` error. A human whose team root is absent sees the
+existing `oats aweb setup` remedy; nothing else is new for the operator.
+(Decided by the lane's maintainer on #1538, 2026-10-26: no mint at spawn.)
 
 **Who unlocks it.** The OS user, by file permission: the same custody class
 as every instance identity on the machine today. No passphrase, no agent
@@ -307,13 +309,14 @@ first (the setting is inert for Desktop until the verbs exist); the verbs
 and Desktop follow the `aw` listing; the wake follows channel-core. Desktop
 accepts the new shapes before `oats.aweb` emits them where they meet.
 
-## Points for the maintainer before building
+## Points decided by the maintainer (#1538, 2026-10-26)
 
-- The two `aw`-side dependencies above, and who carries them to the aweb
-  project.
-- Creating the human identity from the spawn hook of a `threads` soul: a new
-  team member appears as a side effect of a spawn. The alternative (only on
-  first send) keeps spawn pure but leaves the brief unable to name the alias.
+All accepted as written, with the one change recorded in section 2 (no mint
+at spawn):
+
+- The two `aw`-side dependencies above: the lane's maintainer carries them
+  to the aweb project and the release lane; nothing in this lane builds on
+  them until the aweb project has said yes.
 - The alias scheme `<os-user>-<host>` and the derived directory, in place of
   an `oats-local.yaml` entry.
 - Documenting `interaction` as a meta key in `docs/integrations.md` (kernel
