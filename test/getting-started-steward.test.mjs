@@ -59,7 +59,7 @@ test("the steward is spawned with the provider's printed grant-seat options", ()
   const options = `${spawn[1]}R`;
   assert.equal(options, "--provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=R");
   for (const verb of ["--preview", ""]) {
-    assert.ok(skill.includes(`oats spawn S --dir D --task-file D/.oats-handover.md --harness <harness> --name R ${options}${verb ? ` ${verb}` : ""}\n`), `the global spawn${verb ? " preview" : ""}`);
+    assert.ok(skill.includes(`oats spawn S --dir D --task-file D/.oats-handover.md --name R ${options}${verb ? ` ${verb}` : ""}\n`), `the global spawn${verb ? " preview" : ""}`);
   }
 });
 
@@ -76,10 +76,26 @@ test("the fallback names the floors, and says it in one line, with no question a
   }
 });
 
-test("the person chooses the namespace and the steward's name once, at step 1, each with a default", () => {
-  assert.ok(skill.includes("Enter, or \"yes\", accepts every\n  default. After this round there are no more questions, and never a key."));
-  assert.ok(skill.includes("lowercased, with every character outside\n    `[a-z0-9-]` turned into `-`"), "N defaults to the normalised hostname");
-  assert.ok(skill.includes("**The steward's name `R`:**") && skill.includes("Default: `steward`."), "R defaults to steward");
-  // R is the resident's name and the instance's, and the collision fallback keeps both equal.
-  assert.ok(skill.includes("`<hostname>-R` instead") && skill.includes("for the resident and the\ninstance alike"));
+test("on a machine found-list, step 1 is the machine's round, with a default for every value", () => {
+  assert.ok(skill.includes("On a machine found-list, ask the machine's round below instead of this list."));
+  const round = skill.slice(skill.indexOf("**The machine's round.**"), skill.indexOf("## 2. Check"));
+  assert.ok(round.includes("Enter, or\n\"yes\", accepts every default. Nothing is asked after this round, and never\na key."));
+  assert.ok(round.includes("lowercased, with every character outside `[a-z0-9-]` turned\n  into `-`"), "the workspace and N default to the normalised hostname");
+  for (const value of ["**The workspace:**", "**The namespace `N`:**", "`<workspace>-root`", "**The steward's name `R`:**", "Default: `steward`", "`<hostname>-steward`", "**The deployment directory `D`:** default `<home>/Agents/<workspace>`", "**OATS Desktop:** installed and started by default", "**The harness:** the found-list's `harness`"]) {
+    assert.ok(round.includes(value), `the machine's round gives ${value}`);
+  }
+});
+
+test("after step 1, a machine found-list asks nothing: a step that would ask tells and stops", () => {
+  assert.match(skill, /Wherever a later step says to ask the\s+person, on a machine found-list you tell them what happened, as it is, and\s+stop instead/);
+  assert.match(skill, /On a machine found-list, ask nothing: tell the person that the run\s+failed, most likely because `N` is taken, and stop\./);
+});
+
+test("the steward's harness is recorded before readiness and harness trust read it", () => {
+  const set = "oats soul launch set S --harness <harness> --dir D";
+  const plan = skill.indexOf(`${set} --plan\n`), apply = skill.indexOf(`${set}\n`);
+  assert.ok(plan > 0 && apply > plan, "planned, then applied");
+  assert.ok(apply < skill.indexOf("oats harness trust --dir D"), "before harness trust");
+  assert.ok(apply < skill.indexOf("oats readiness --soul S --dir D --json"), "before readiness");
+  assert.ok(apply < skill.indexOf("oats spawn S --dir D --task-file D/.oats-handover.md --name R"), "before the spawn, which then takes no --harness");
 });

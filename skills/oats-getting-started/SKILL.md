@@ -31,7 +31,9 @@ the machine's steward, `oats.machine/steward`, in place of a setup expert
 soul of its own, and the steward gets a global aweb address. Steps 1, 5, 6
 and 7 say what changes. When the found-list lists a deployment whose
 `steward` is `true`, this machine already has its workspace and steward:
-tell the person so, and stop.
+tell the person so, and stop. Wherever a later step says to ask the
+person, on a machine found-list you tell them what happened, as it is, and
+stop instead: the person answers nothing after step 1.
 
 **How to work.**
 - **Ask first, then run.** Ask everything in one round (step 1), then run the
@@ -77,6 +79,8 @@ tell the person so, and stop.
 
 ## 1. Ask, in one round
 
+On a machine found-list, ask the machine's round below instead of this list.
+
 - **The use case:** what they want agents to do.
 - **Their repositories and project:** which repositories agents should work
   in, where they are cloned on this machine, and which are private.
@@ -100,18 +104,6 @@ tell the person so, and stop.
     for this machine's messaging root, such as `<workspace>-root`.
   - Existing workspace that already has it: this machine needs it before the
     setup expert can spawn (step 7).
-- **On a machine found-list,** ask these choices together, each with its
-  default and one line on what it is. Enter, or "yes", accepts every
-  default. After this round there are no more questions, and never a key.
-  - **The namespace `N`:** the part of every agent's address before the
-    `/`, which other people's agents use to reach this machine's agents.
-    Default: the hostname, lowercased, with every character outside
-    `[a-z0-9-]` turned into `-` (`Merak` gives `merak`), so the namespace is
-    the machine's own.
-  - **The steward's name `R`:** its instance name here and the name in its
-    address, `N.aweb.ai/R`: lowercase letters and digits, words joined by
-    single `-`. Default: `steward`.
-  - **The harness,** only when the found-list does not already name it.
 - **The harness for the setup expert:** `claude`, `codex` or `pi`. Default:
   the one you are, if it is one of these.
 - **The deployment directory `D`:** where OATS lives on this machine. Any
@@ -123,6 +115,32 @@ tell the person so, and stop.
   which the shell does not expand inside quotes.
 - **OATS Desktop:** installed and started unless they decline. **The TUI**
   (`oats tui`, a terminal client, preview): opened for them or not.
+
+**The machine's round.** Read the found-list, then ask only these choices,
+together, each with its default and one line on what it is. Enter, or
+"yes", accepts every default. Nothing is asked after this round, and never
+a key. The use case, repositories and knowledge tools are not asked: the
+steward takes them up with the person later.
+- **The workspace:** a new one, the machine's own. Its name defaults to the
+  hostname, lowercased, with every character outside `[a-z0-9-]` turned
+  into `-` (`Merak` gives `merak`). Its repository defaults to
+  `<github.login>/<workspace>-oats`, private. Or an existing workspace's
+  reference.
+- **The namespace `N`:** the part of every agent's address before the `/`,
+  which other people's agents use to reach this machine's agents. Default:
+  the workspace's name, so the namespace is the machine's own. Messaging is
+  on, and the root's name `A` is `<workspace>-root`.
+- **The steward's name `R`:** its instance name here and the name in its
+  address, `N.aweb.ai/R`: lowercase letters and digits, words joined by
+  single `-`. Default: `steward`, or `<hostname>-steward` (the hostname
+  normalised as above) when the person says `N` is a namespace another
+  machine already uses, so that this machine never adopts the other
+  machine's resident.
+- **The deployment directory `D`:** default `<home>/Agents/<workspace>`,
+  with the home folder spelled out.
+- **OATS Desktop:** installed and started by default; the TUI not opened.
+- **The harness:** the found-list's `harness`. Ask only when it names none,
+  with the one you are as the default.
 
 ## 2. Check, and install what is missing
 
@@ -493,6 +511,15 @@ at `D/<repo name>`. A new workspace already has it (step 5). For an existing
 one, clone the repository that holds `S` with the `git clone` line
 `oats onboard` printed for it, if that line says it is missing.
 
+**On a machine found-list, record the steward's harness** on this machine
+first. Its soul names none, and without this every later check (readiness,
+harness trust) and the spawn would use the default, pi:
+
+```bash
+oats soul launch set S --harness <harness> --dir D --plan
+oats soul launch set S --harness <harness> --dir D
+```
+
 ## 7. Hand over to the setup expert
 
 **Messaging on this machine first, when the setup expert takes it.** Read
@@ -526,6 +553,8 @@ can't spawn on this machine until it has messaging too. Set it up now:
    `D/<repo>` change the team id in `oats-workspace.yaml` to
    `default:N.aweb.ai`, commit and push it, run `oats sync --dir D`, and run
    both lines again. Then skip items 3 and 4 and go to the check (item 5).
+   On a machine found-list, ask nothing: tell the person that the run
+   failed, most likely because `N` is taken, and stop.
 3. **Existing workspace: the person gets an invite token** from a member of `L`, who runs
    `oats aweb invite --soul <their soul> --label L --json` in their own
    deployment and passes the token to the person privately, never by
@@ -553,11 +582,8 @@ The setup expert does the rest of this machine's messaging
 **The steward's global address (machine found-list only).** The steward
 gets a global, contacts-only aweb address, `<namespace>/R`, made by the
 team root you just signed up, with no API key and nothing for the person to
-type. `R` is the steward's name from step 1 (`steward` by default). If the
-person chose an `N` that another machine already uses, `R` is
-`<hostname>-R` instead (the hostname as in step 1), for the resident and the
-instance alike, so that this machine never adopts the other machine's
-resident.
+type. `R` is the steward's name from step 1, for the resident and the
+instance alike.
 
 Without messaging there is no address to make: skip this. Otherwise it
 needs every one of these, and when one fails, take the fallback below:
@@ -643,12 +669,12 @@ oats spawn S --dir D --task-file D/.oats-handover.md --preview
 oats spawn S --dir D --task-file D/.oats-handover.md
 ```
 
-**On a machine found-list,** the steward's soul names no harness, so pass
-the person's, and name it `R`. With its global address:
+**On a machine found-list,** name the steward `R` (its harness was recorded
+in step 6). With its global address:
 
 ```bash
-oats spawn S --dir D --task-file D/.oats-handover.md --harness <harness> --name R --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=R --preview
-oats spawn S --dir D --task-file D/.oats-handover.md --harness <harness> --name R --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=R
+oats spawn S --dir D --task-file D/.oats-handover.md --name R --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=R --preview
+oats spawn S --dir D --task-file D/.oats-handover.md --name R --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=R
 ```
 
 In the fallback, or without messaging, leave out both `--provider` options.
