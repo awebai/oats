@@ -49,7 +49,9 @@ export function createTerminalIo({ base, context, attachmentDirectory, spawnPty,
     admit: admitTerminalTarget, copyAttachments: copyTerminalAttachments,
     async prepare(spec, control) {
       const cli = await readCli(control);
-      const prepared = await prepareRemoteTerm(cli, spec.remote, { run, ...control });
+      // No kernel status line where the CLI can leave it out: the Desktop teaches the scroll keys
+      // itself, in its shortcuts window (#1502), and the row is the agent's.
+      const prepared = await prepareRemoteTerm(cli, spec.remote, { run, ...control, statusLine: false });
       const fresh = await readCli(control);
       if (cliKey(cli) !== cliKey(fresh) || !control.current()) throw changed('E_TERM_CONTEXT_CHANGED');
       return prepared;
