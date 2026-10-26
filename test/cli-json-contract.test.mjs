@@ -94,7 +94,6 @@ test("oats version --json and oats status --json carry this host's sessionViewer
   }
   const fx = v2Deployment();
   t.after(() => fx.cleanup());
-  await fx.spawn("dev");
   const { sessionViewer } = JSON.parse(fx.cli(["version", "--json"]).stdout);
   const status = fx.cli(["status", "--json"]);
   assert.equal(status.status, 0, status.stderr);
