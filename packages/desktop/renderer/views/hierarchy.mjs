@@ -155,7 +155,7 @@ export const hierarchyCSS = `
 .hier-pop .pname { margin:0 0 8px; font-size:12.5px; font-weight:650; }
 .hier-pop .pstate, .hier-pop .pavailability, .hier-pop .pstatus { margin:0 0 8px; color:var(--muted); line-height:1.5; }
 .hier-pop .pstatus:empty { display:none; }
-.hier-pop .pidentity { color:var(--muted); font:11px/1.5 var(--mono,monospace); margin:0 0 8px; }
+.hier-pop .pidentity { color:var(--muted); font-weight:normal; font-size:11px; line-height:1.5; font-family:var(--mono,monospace); margin:0 0 8px; }
 .hier-pop .pidentity[hidden] { display:none; }
 .hier-pop .pchips { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 9px; }
 /* The two acts, one per row: each label whole at the popover's width (never cut, never letter by letter). */

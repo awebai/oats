@@ -63,7 +63,7 @@ test('the headings: the Souls tab grammar (icon, mono name, "member repo · host
     ['H3', 'repo', 'agents', 'member repo · host · 1 capability'], ['H3', 'repo', 'alpha', 'member repo · 2 capabilities'],
     ['H3', 'repo', 'zeta', 'member repo · 1 capability'], ['H3', 'external', 'external', 'not in a member repo · 2 capabilities']]);
   assert.ok(heads.every(h => h.classList.contains('souls-group-title')));
-  assert.match(groupHeadingCSS, /\.souls-group-name \{ font:650 13px var\(--mono,monospace\)/, 'the name in monospace');
+  assert.match(groupHeadingCSS, /\.souls-group-name \{ font-weight:650; font-size:13px; line-height:normal; font-family:var\(--mono,monospace\)/, 'the name in monospace');
   assert.equal(heads[3].querySelector('.souls-group-name').classList.contains('plain'), true, '"external" is a word, not a repository name');
   assert.equal(u.css(heads[0].querySelector('.souls-group-note')).color, 'var(--muted)');
   // The Souls tab builds its headings with the same helper and CSS.

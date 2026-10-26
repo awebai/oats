@@ -262,7 +262,8 @@ test('W5: the capability table follows the v4 grid — 32px head, 48px rows, mon
   assert.equal(u.css('button.catalog-row').gridTemplateColumns, '44px minmax(0,1fr) 120px 24px', 'tile | capability | used by | chevron');
   assert.equal(u.get('.catalog-row .source-chip'), null, 'the group heading names the source');
   assert.equal(u.css('.catalog-table').gap, '6px');
-  assert.match(u.css('.catalog-name').font, /650 13px var\(--mono/, 'mono 13px names');
+  const name = u.css('.catalog-name');
+  assert.deepEqual([name.fontWeight, name.fontSize, name.fontFamily], ['650', '13px', 'var(--mono,monospace)'], 'mono 13px names');
   const shipped = [...u.doc.querySelectorAll('style')].map(style => style.textContent).join('\n');
   assert.match(shipped, /\.catalog-used-marks \.identity-mark \{ width:20px; height:20px; margin-left:-1px; border-radius:6px;/, '20px used-by marks');
   assert.equal(u.get('.catalog-cap .identity-mark'), null, 'no capability monogram in the table');

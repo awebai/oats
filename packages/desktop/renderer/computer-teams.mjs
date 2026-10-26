@@ -100,7 +100,7 @@ export const computerTeamsCSS = `
 .computer-teams .ct-name { font-weight:650; }
 .computer-teams .ct-join { color:var(--fg); font-weight:650; }
 .computer-teams .ct-join.none { color:var(--muted); font-weight:400; }
-.computer-teams .ct-fact dd.ct-address { color:var(--muted); font:13.5px/1.45 var(--mono,monospace); }
+.computer-teams .ct-fact dd.ct-address { color:var(--muted); font-weight:normal; font-size:13.5px; line-height:1.45; font-family:var(--mono,monospace); }
 .computer-teams .ct-fact dd.ct-address.none { color:var(--warn); font-weight:normal; font-size:13px; line-height:1.45; font-family:var(--ui-font,system-ui); }
 /* A problem that blocks spawning: under the header, the 2px danger edge. */
 .computer-teams .ct-blocking { display:flex; flex-direction:column; gap:2px; padding-left:10px; border-left:2px solid var(--danger); color:var(--muted); font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
@@ -130,7 +130,7 @@ export const computerTeamsCSS = `
 .computer-teams .ct-error { border-left:2px solid var(--danger); padding-left:10px; color:var(--fg); font-size:13px; line-height:1.45; }
 .computer-teams .ct-error p { margin:0; overflow-wrap:anywhere; }
 .computer-teams .ct-error summary { color:var(--muted); font-size:12px; cursor:pointer; }
-.computer-teams .ct-error pre { margin:4px 0 0; color:var(--fg); font:13px var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
+.computer-teams .ct-error pre { margin:4px 0 0; color:var(--fg); font-weight:normal; font-size:13px; line-height:normal; font-family:var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
 /* The board card's foot: how many of your instances are on it, and the cue that the card opens. */
 .computer-teams .ct-foot { display:flex; align-items:center; gap:12px; padding:11px 20px; border-top:1px solid var(--border); min-width:0; }
 .computer-teams .ct-sum { flex:1; min-width:0; color:var(--muted); font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
@@ -151,11 +151,11 @@ export const computerTeamsCSS = `
 /* Rule 3: the field's one frame is the wrapper's; the input inside has none, in every state. */
 .computer-teams .ct-field { display:flex; align-items:center; height:28px; min-width:0; border:1px solid var(--border); border-radius:6px; background:var(--surface); }
 .computer-teams .ct-field:focus-within { border-color:var(--accent); }
-.oats-view .computer-teams .ct-field input { flex:1 1 auto; min-width:0; height:100%; padding:0 8px; box-sizing:border-box; border:0; outline:none; box-shadow:none; background:transparent; color:var(--fg); font:13px var(--mono,monospace); }
+.oats-view .computer-teams .ct-field input { flex:1 1 auto; min-width:0; height:100%; padding:0 8px; box-sizing:border-box; border:0; outline:none; box-shadow:none; background:transparent; color:var(--fg); font-weight:normal; font-size:13px; line-height:normal; font-family:var(--mono,monospace); }
 .oats-view .computer-teams .ct-field input:focus, .oats-view .computer-teams .ct-field input:focus-visible { border:0; outline:none; box-shadow:none; }
 .computer-teams .ct-form .ct-actions { grid-column:1 / -1; justify-content:flex-start; }
 .computer-teams .ct-hint { grid-column:1 / -1; margin:0; color:var(--muted); font-size:12px; line-height:1.45; }
-.computer-teams .ct-hint code { color:var(--fg); font:13px var(--mono,monospace); }
+.computer-teams .ct-hint code { color:var(--fg); font-weight:normal; font-size:13px; line-height:normal; font-family:var(--mono,monospace); }
 .computer-teams .ct-status { margin:0; color:var(--muted); font-size:12px; }
 .computer-teams .ct-status:empty { display:none; }
 .computer-teams .ct-reach { margin:0; color:var(--muted); font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
@@ -167,7 +167,7 @@ export const computerTeamsCSS = `
 .computer-teams .ct-souls th { padding:11px 20px 7px 0; color:var(--muted); font-size:12px; font-weight:600; text-align:left; }
 .computer-teams .ct-souls td { padding:9px 20px 9px 0; border-top:1px solid var(--border); color:var(--fg); font-size:13px; line-height:1.45; vertical-align:middle; overflow-wrap:anywhere; }
 .computer-teams .ct-souls :is(th, td):first-child { padding-left:20px; }
-.computer-teams .ct-pattern { color:var(--fg); font:600 14.5px/1.4 var(--mono,monospace); overflow-wrap:anywhere; }
+.computer-teams .ct-pattern { color:var(--fg); font-weight:600; font-size:14.5px; line-height:1.4; font-family:var(--mono,monospace); overflow-wrap:anywhere; }
 .computer-teams .ct-pattern-dir { color:var(--muted); font-weight:400; }
 .computer-teams .ct-every, .computer-teams .ct-souls .ct-none { color:var(--muted); }
 .computer-teams .ct-chip { display:inline-flex; align-items:center; height:20px; margin:2px 4px 2px 0; padding:0 7px; border-radius:5px; background:var(--tag-bg); color:var(--fg); font-weight:600; font-size:11.5px; line-height:normal; font-family:var(--ui-font,system-ui); white-space:nowrap; }
@@ -190,7 +190,7 @@ export const computerTeamsCSS = `
 .computer-teams .ct-mcard-head { grid-column:1 / -1; display:flex; align-items:center; gap:9px; min-width:0; margin:0; padding:11px 16px; background:var(--surface-2); border-bottom:1px solid var(--border); color:var(--muted); font-size:12.5px; font-weight:400; line-height:1.45; }
 .computer-teams .ct-mcard-head .shell-icon { flex:none; color:var(--muted); }
 .computer-teams .ct-machine { flex:none; color:var(--fg); font-size:15px; font-weight:700; white-space:nowrap; }
-.computer-teams .ct-path { min-width:0; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:13px var(--mono,monospace); }
+.computer-teams .ct-path { min-width:0; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:normal; font-size:13px; line-height:normal; font-family:var(--mono,monospace); }
 .computer-teams .ct-mcard-count { flex:none; color:var(--muted); margin-left:auto; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .computer-teams .ct-mcard.unreached :is(.ct-machine, .ct-mcard-count, .shell-icon) { color:var(--warn); }
 /* Names come first: from a 760px container the Instance cell is as wide as its name, so the name is whole whenever
