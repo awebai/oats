@@ -113,8 +113,8 @@ chosen keeps White. Views use tokens only, scoped under `.oats-view`. Orange
 selection is distinct from error/success.
 
 **The font** (the product owner's call, 2026-10-23) is a choice beside the theme:
-**Omarchy's font**, the default on every platform, or **System font**, the faces
-before it. The settings cog's **Font…** and the palette's **Font: choose…**
+**Omarchy's font**, the default on an Omarchy computer, or **System font**, the faces
+before it and the default everywhere else (2026-10-26). The settings cog's **Font…** and the palette's **Font: choose…**
 (`app.fontPicker`, the Desktop's own, with no default chord and not on
 `TERMINAL_ALLOWLIST`) open the font picker, the theme picker's module over the two fonts: `theme-picker.mjs`
 `createChoicePicker` is the picker (layer, focus containment, Escape, focus
@@ -149,9 +149,15 @@ also carries `.theme-picker-overlay` or `.font-picker-overlay`.
   or monospace stack outside that fallback (or a font token: `--mono`,
   `--term-font-family`).
 - **Stored per computer** under `oats.desktop.font` (like `oatsweb.theme`); a
-  missing or unknown value is Omarchy's font, and the default is never stored.
-  The shell calls `initFont(isMac)` before its first await, so the first paint
-  is in it.
+  missing or unknown value is `defaultFont()`, and the default is never stored.
+  The shell calls `initFont(isMac, undefined, { isOmarchy })` before its first
+  await, so the first paint is in it. `isOmarchy` is preload's constant
+  `oatsDesktop.isOmarchy` (only `true` counts): main checks Omarchy's presence
+  once with `host-theme.mjs` `omarchyHost` (Linux only; the "This computer"
+  theme's marker, Omarchy's `current/` directory; any error is false) and adds
+  `--oats-host-omarchy` to each window's `additionalArguments`, which preload
+  reads. No IPC channel carries it. It picks `defaultFont()` (Omarchy's font,
+  else System font) and `terminalDefaultSize()` (below), nothing else.
 - **Terminals** switch in place: `applyFont` notifies the terminal typography
   listeners, and each open terminal sets xterm's `fontFamily` and refits
   (`fitTerminal`; the PTY follows the grid). The GitHub sign-in terminal
@@ -283,7 +289,9 @@ source, version and checksum in `fonts/README.md`) so it is the same on every
 machine. `theme.css` declares it with `@font-face` (`font-display: block`) and puts
 it first in `--term-font-family` (the terminal) and `--mono` (the UI's code, paths
 and chord hints), ahead of the OS monospace stack. The terminal's default size is
-15px (`--term-font-size`, `TERMINAL_FONT_SIZE`; the operator's decision). A terminal
+`terminalDefaultSize()`: 15px (the operator's decision), and 13px on an Omarchy computer, whose
+terminals are in its font, JetBrains Mono by default (the product owner, 2026-10-26). theme.css seeds
+`--term-font-size: 15px`, and on Omarchy `initFont` sets it inline on the root to 13px. A terminal
 font or size the operator stored (`oats.desktop.terminal.fontFamily`, `…fontSize`)
 still wins. Reset typography (⌘0 / Ctrl+0, the palette) forgets both, and Settings →
 Terminal's "Reset to default" forgets the size, so the defaults apply again. Every

@@ -10,12 +10,15 @@
 
 ## Changed
 
-- **Desktop: the font is Omarchy's by default.** On Linux the window and its
-  terminals use the computer's monospace font, the one `omarchy font set`
-  changes (fontconfig's `monospace`); on Windows the system's monospace font.
-  On macOS the window uses JetBrains Mono, Omarchy's default face, and the
-  terminals keep Inconsolata. **System font** in the font picker brings back
-  the previous faces. A terminal font family set with **Terminal: set font
+- **Desktop: on Omarchy, the font is Omarchy's by default.** On a computer
+  that runs Omarchy, the window and its terminals use the computer's
+  monospace font, the one `omarchy font set` changes (fontconfig's
+  `monospace`), and the terminal's default size is 13px (JetBrains Mono,
+  Omarchy's default face, at 13px; 15px elsewhere). Everywhere else the
+  default stays **System font**, the previous faces; **Omarchy's font** can be
+  chosen there too (on Windows the system's monospace font; on macOS JetBrains
+  Mono, with the terminals keeping Inconsolata). A chosen font or terminal size
+  always wins. A terminal font family set with **Terminal: set font
   family…** still wins. Where the computer's monospace font does not draw at
   a fixed width (none installed, or a bitmap font), Omarchy's font shows
   System font's faces and its row in the picker says so.

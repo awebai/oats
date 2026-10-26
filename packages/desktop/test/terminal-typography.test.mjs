@@ -32,7 +32,7 @@ function fixture(t, { stored = {}, noStorage = false, palette, fonts } = {}) {
     window: { matchMedia: () => ({ matches: false, addEventListener() {} }) },
   };
   if (!noStorage) context.localStorage = { getItem: key => stored[key] ?? null, setItem: (key, value) => { stored[key] = String(value); }, removeItem: key => { delete stored[key]; } };
-  const theme = runInNewContext(`${themeSource.replace(/\bexport /g, "")}\n({ terminalTypography, onTerminalTypographyChange, setTerminalFontFamily, setTerminalFontSize, resetTerminalTypography, BUNDLED_MONO, TERMINAL_FONT_SIZE,
+  const theme = runInNewContext(`${themeSource.replace(/\bexport /g, "")}\n({ terminalTypography, onTerminalTypographyChange, setTerminalFontFamily, setTerminalFontSize, resetTerminalTypography, BUNDLED_MONO, terminalDefaultSize,
     terminalFontWeight, TERMINAL_FONT_WEIGHT, xtermTheme, applyTheme, onThemeChange, initTheme, setTheme, refreshHostTheme })`, context);
   const rule = selector => {
     for (const sheet of dom.window.document.styleSheets) {
@@ -58,7 +58,7 @@ test("theme.css seeds --term-font-size: 15px (the JS default agrees) and defines
   const u = fixture(t);
   const root = u.doc.defaultView.getComputedStyle(u.doc.documentElement);
   assert.equal(root.getPropertyValue("--term-font-size").trim(), "15px");
-  assert.equal(u.theme.TERMINAL_FONT_SIZE, 15, "the storage- and token-less fallback is the same size");
+  assert.equal(u.theme.terminalDefaultSize(), 15, "the storage- and token-less fallback is the same size");
   assert.equal(root.getPropertyValue("--term-line-height").trim(), "", "no --term-line-height token");
   assert.doesNotMatch(themeCSS, /--term-line-height/, "the token must not come back under another rule");
 });

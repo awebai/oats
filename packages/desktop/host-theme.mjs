@@ -20,6 +20,18 @@ import { mixHex } from "./renderer/host-theme.mjs";
 
 /** Omarchy hard-codes `$HOME/.local/state`; `XDG_STATE_HOME` is not consulted. */
 export const omarchyCurrentDir = home => join(home, ".local", "state", "omarchy", "current");
+/** The flag main adds to a window's arguments on an Omarchy computer (preload.cjs reads it as
+ * `oatsDesktop.isOmarchy`); preload, which cannot import this module, spells it the same. */
+export const OMARCHY_ARG = "--oats-host-omarchy";
+
+/** Whether this computer runs Omarchy, for the font's and the terminal size's defaults (the product owner,
+ * 2026-10-26): Linux, and Omarchy's `current/` (omarchyCurrentDir, the marker the host theme reads) is a
+ * directory. One stat, read-only, no program run; anything else, an error included, is false. */
+export function omarchyHost({ fs, home, platform }) {
+  if (platform !== "linux") return false;
+  try { return fs.statSync(omarchyCurrentDir(home)).isDirectory() === true; } catch { return false; }
+}
+
 /** The colours file is read up to this size; a larger one is unreadable. */
 export const HOST_THEME_MAX_BYTES = 64 * 1024;
 /** After an event on `current/`, wait this long for the change to settle. */

@@ -32,20 +32,38 @@ function runtime(t, { stored = {}, storage = true } = {}) {
     getItem: key => stored[key] ?? null, setItem: (key, value) => { writes.push([key, value]); stored[key] = String(value); },
     removeItem: key => { delete stored[key]; },
   };
-  const theme = runInNewContext(`${themeSource.replace(/\bexport /g, "")}\n({ FONTS, DEFAULT_FONT, fontStacks, fontChoices, initFont, setFont, currentFont, onFontChange,
+  const theme = runInNewContext(`${themeSource.replace(/\bexport /g, "")}\n({ FONTS, defaultFont, terminalDefaultSize, fontStacks, fontChoices, initFont, setFont, currentFont, onFontChange,
     fontDraws, fontFallsBack, FONT_FALLBACK_NOTE,
     terminalTypography, onTerminalTypographyChange, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography })`, context);
   const root = dom.window.document.documentElement;
   const token = name => dom.window.getComputedStyle(root).getPropertyValue(name);
   return { theme, dom, root, token, stored, writes, context };
 }
+/** initFont's options on a computer that runs Omarchy (preload's oatsDesktop.isOmarchy). */
+const OMARCHY = Object.freeze({ isOmarchy: true });
+/** The font stacks set inline on the root (the size token is not a font stack). */
+const inlineStacks = u => ["--ui-font", "--mono", "--term-font-family"].filter(name => u.root.style.getPropertyValue(name) !== "");
 
-test("the two fonts, and Omarchy's font is the default on every platform", t => {
+test("the two fonts; Omarchy's font is the default on an Omarchy computer and System font elsewhere (2026-10-26)", t => {
   const { theme } = runtime(t);
   // JSON: the runtime is another realm (runInNewContext), whose arrays deepEqual does not take as ours.
   assert.deepEqual(JSON.parse(JSON.stringify(theme.FONTS)), [{ id: "omarchy", label: "Omarchy's font" }, { id: "system", label: "System font" }]);
   assert.ok(Object.isFrozen(theme.FONTS) && theme.FONTS.every(Object.isFrozen));
-  assert.equal(theme.DEFAULT_FONT, "omarchy");
+  assert.equal(theme.defaultFont(true), "omarchy"); assert.equal(theme.defaultFont(false), "system");
+  assert.equal(theme.defaultFont(), "system", "before initFont is told otherwise: not Omarchy");
+  // One function of the host for the terminal's size too: JetBrains Mono at 13px on Omarchy, Inconsolata at 15px elsewhere.
+  assert.equal(theme.terminalDefaultSize(true), 13); assert.equal(theme.terminalDefaultSize(false), 15); assert.equal(theme.terminalDefaultSize(), 15);
+});
+
+test("off Omarchy: initFont is System font and the terminal's 15px, with nothing inline and nothing stored; only `true` is Omarchy", t => {
+  for (const options of [undefined, {}, { isOmarchy: false }, { isOmarchy: "true" }, { isOmarchy: 1 }]) {
+    for (const isMac of [false, true]) {
+      const u = runtime(t);
+      assert.equal(u.theme.initFont(isMac, undefined, options), "system", JSON.stringify(options));
+      assert.equal(u.root.getAttribute("style"), null, "nothing inline"); assert.deepEqual(u.writes, []);
+      assert.equal(u.theme.terminalTypography().fontSize, 15); assert.equal(u.theme.defaultFont(), "system");
+    }
+  }
 });
 
 test("the stacks per platform and per choice: fontconfig's monospace on Linux/Windows (UI and terminals), JetBrains Mono on macOS (UI only), none for System font", t => {
@@ -64,19 +82,27 @@ test("the stacks per platform and per choice: fontconfig's monospace on Linux/Wi
   assert.doesNotMatch(themeSource, /\.(ttf|otf|woff2?)\b/, "no font file is bundled for it");
 });
 
-test("Linux: initFont applies Omarchy's font to the UI, its code and the terminals, stores nothing, and marks the root", t => {
+test("Omarchy: initFont applies Omarchy's font to the UI, its code and the terminals at 13px, stores nothing, and marks the root", t => {
   const u = runtime(t);
-  assert.equal(u.theme.initFont(false), "omarchy");
+  assert.equal(u.theme.initFont(false, undefined, OMARCHY), "omarchy");
   assert.deepEqual(u.writes, [], "the default stays a default");
   assert.equal(u.root.dataset.font, "omarchy");
   for (const name of ["--ui-font", "--mono", "--term-font-family"]) assert.equal(stack(u.token(name)), "ui-monospace, monospace", name);
   assert.equal(stack(u.theme.terminalTypography().fontFamily), "ui-monospace, monospace", "new terminals start in it");
-  assert.equal(u.theme.terminalTypography().fontSize, 15, "the size is unchanged");
+  assert.equal(u.root.style.getPropertyValue("--term-font-size"), "13px", "the size token follows the default");
+  assert.equal(u.theme.terminalTypography().fontSize, 13, "Omarchy's terminal default");
+  // A stored size wins; a reset lands on Omarchy's default again.
+  u.theme.setTerminalFontSize(17); assert.equal(u.theme.terminalTypography().fontSize, 17);
+  u.theme.resetTerminalTypography(); assert.equal(u.theme.terminalTypography().fontSize, 13);
+  // A stored System font beats the Omarchy default; the size default stays Omarchy's.
+  const chosen = runtime(t, { stored: { "oats.desktop.font": "system" } });
+  assert.equal(chosen.theme.initFont(false, undefined, OMARCHY), "system"); assert.deepEqual(inlineStacks(chosen), []);
+  assert.equal(chosen.theme.terminalTypography().fontSize, 13);
 });
 
-test("macOS: Omarchy's font is the UI only; the terminals keep Inconsolata", t => {
-  const u = runtime(t);
-  u.theme.initFont(true);
+test("macOS: Omarchy's font, when chosen, is the UI only; the terminals keep Inconsolata", t => {
+  const u = runtime(t, { stored: { "oats.desktop.font": "omarchy" } });
+  assert.equal(u.theme.initFont(true), "omarchy", "a stored choice beats the default");
   assert.equal(stack(u.token("--ui-font")), MAC_UI); assert.equal(stack(u.token("--mono")), MAC_UI);
   assert.equal(stack(u.token("--term-font-family")), INCONSOLATA);
   assert.match(stack(u.theme.terminalTypography().fontFamily), /^"Inconsolata",/);
@@ -114,10 +140,11 @@ test("persistence: a choice is stored per computer and read back at the next sta
   assert.equal(second.theme.initFont(false), "system"); assert.equal(second.theme.currentFont(), "system");
   second.theme.setFont("omarchy");
   assert.equal(runtime(t, { stored }).theme.initFont(true), "omarchy");
-  assert.equal(runtime(t, { stored: { "oats.desktop.font": "comic" } }).theme.initFont(false), "omarchy", "an unknown saved value is the default");
-  assert.equal(first.theme.setFont("comic"), "omarchy", "an unknown choice is the default");
+  assert.equal(runtime(t, { stored: { "oats.desktop.font": "comic" } }).theme.initFont(false), "system", "an unknown saved value is the default");
+  assert.equal(runtime(t, { stored: { "oats.desktop.font": "comic" } }).theme.initFont(false, undefined, OMARCHY), "omarchy", "Omarchy's, on Omarchy");
+  assert.equal(first.theme.setFont("comic"), "system", "an unknown choice is the default");
   const none = runtime(t, { storage: false });
-  assert.equal(none.theme.initFont(false), "omarchy");
+  assert.equal(none.theme.initFont(false, undefined, OMARCHY), "omarchy");
   assert.equal(none.theme.setFont("system"), "system", "storage-less: the choice applies in memory");
   assert.equal(stack(none.token("--term-font-family")), INCONSOLATA);
   const throwing = runtime(t);
@@ -162,13 +189,14 @@ test("the fixed-width check's verdicts: a monospace face draws, a proportional f
 
 test("the fallback: where the monospace font does not draw at a fixed width, Omarchy's font shows System font's faces and stays chosen", t => {
   for (const isMac of [false, true]) {
-    const u = runtime(t), checked = [];
-    assert.equal(u.theme.initFont(isMac, stack => { checked.push(stack); return false; }), "omarchy");
+    // Linux: Omarchy's default; macOS (never Omarchy): Omarchy's font chosen.
+    const u = isMac ? runtime(t, { stored: { "oats.desktop.font": "omarchy" } }) : runtime(t), checked = [];
+    assert.equal(u.theme.initFont(isMac, stack => { checked.push(stack); return false; }, { isOmarchy: !isMac }), "omarchy");
     assert.deepEqual(checked, [u.theme.fontStacks("omarchy", isMac)["--ui-font"]], `Omarchy's UI stack is checked, mac=${isMac}`);
     assert.equal(u.theme.currentFont(), "omarchy", "still the choice"); assert.deepEqual(u.writes, [], "and nothing stored");
     assert.equal(u.theme.fontFallsBack(), true);
     assert.equal(u.root.dataset.font, "omarchy"); assert.equal(u.root.dataset.fontFallback, "system");
-    assert.equal(u.root.getAttribute("style"), null, "nothing inline: System font's faces");
+    assert.deepEqual(inlineStacks(u), [], "no font stack inline: System font's faces");
     assert.equal(u.token("--ui-font").trim(), ""); assert.equal(stack(u.token("--term-font-family")), INCONSOLATA);
     // The check runs on each choice, whichever is chosen.
     u.theme.setFont("system");
@@ -176,11 +204,11 @@ test("the fallback: where the monospace font does not draw at a fixed width, Oma
     assert.equal(u.root.dataset.fontFallback, undefined, "System font chosen: no fallback shown");
     u.theme.setFont("omarchy");
     assert.equal(checked.length, 3); assert.deepEqual(u.writes.at(-1), ["oats.desktop.font", "omarchy"], "the choice is stored as made");
-    assert.equal(u.root.getAttribute("style"), null); assert.equal(u.root.dataset.fontFallback, "system");
+    assert.deepEqual(inlineStacks(u), []); assert.equal(u.root.dataset.fontFallback, "system");
   }
   // A monospace font that draws: the stacks, and no fallback.
   const ok = runtime(t);
-  ok.theme.initFont(false, () => true);
+  ok.theme.initFont(false, () => true, OMARCHY);
   assert.equal(ok.theme.fontFallsBack(), false); assert.equal(ok.root.dataset.fontFallback, undefined);
   assert.equal(stack(ok.token("--ui-font")), "ui-monospace, monospace");
 });
@@ -211,7 +239,8 @@ function openTerminal(u) {
 test("open terminals switch family in place and refit (the grid and the PTY size follow); the size, a stored size and a stored family are kept", t => {
   assert.ok(tabListener, "the terminal tab's typography listener is where this test reads it");
   assert.match(tabListener, /term\.options\.fontFamily = next\.fontFamily;[^]*fitTerminal\(term, fit\)/, "family first, then the refit");
-  const u = runtime(t);
+  // Off Omarchy (15px), with Omarchy's font chosen.
+  const u = runtime(t, { stored: { "oats.desktop.font": "omarchy" } });
   u.theme.initFont(false);
   const a = openTerminal(u), b = openTerminal(u);
   assert.equal(stack(a.term.options.fontFamily), "ui-monospace, monospace");
@@ -241,7 +270,8 @@ test("open terminals switch family in place and refit (the grid and the PTY size
 
 test("the shell applies the font before its first await, with the platform; the picker, palette and action are wired", () => {
   const firstAwait = shellSource.indexOf("await ");
-  const init = shellSource.indexOf('initFont(navigator.platform.includes("Mac"));');
+  const init = shellSource.indexOf('initFont(navigator.platform.includes("Mac"), undefined, { isOmarchy: desk?.isOmarchy === true });');
+  assert.ok(shellSource.indexOf("const desk = window.oatsDesktop;") < init, "preload's constant, read where the shell reads its bridge");
   assert.ok(init > 0 && init < firstAwait, "initFont runs before the window's first paint can wait on anything");
   assert.match(shellSource, /createFontPicker\(\{ doc: document, fonts: \(\) => fontChoices\(navigator\.platform\.includes\("Mac"\), fontFallsBack\(\)\), current: currentFont, choose: setFont,\n  subscribe: onFontChange,/);
   assert.match(shellSource, /\{ label: "Font: choose…", detail: chordDetail\("app\.fontPicker"\), run: \(\) => runAction\("app\.fontPicker"\) \}/);

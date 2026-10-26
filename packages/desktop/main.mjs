@@ -50,7 +50,7 @@ import { proxyInstanceEvents } from './instance-events-proxy.mjs';
 import { proxySpawnApply } from './spawn-apply-proxy.mjs';
 import { startSingleInstance, launchDirectory, createLaunchOpener, createVersionHandoff, ownLaunch } from "./single-instance.mjs";
 import { createActivityNotifier, createViewsNotifier } from "./window-activity.mjs";
-import { createHostThemeSource, installHostThemeHandlers } from "./host-theme.mjs";
+import { createHostThemeSource, installHostThemeHandlers, omarchyHost, OMARCHY_ARG } from "./host-theme.mjs";
 import { createChordFamilySource, installChordFamilyHandlers } from "./chord-family.mjs";
 import { frameWorkspace, trustedRendererUrl, workspaceHash } from "./renderer/window-binding.mjs";
 import { validWorkspaceId } from "./renderer/workspace-id.mjs";
@@ -953,6 +953,14 @@ ipcMain.handle("window:open-workspace", (e, id) => {
   return { ok: true, ...(result.opened ? { opened: true } : { focused: true }) };
 });
 
+// Omarchy's presence, read once (host-theme.mjs omarchyHost): each window hears it as an argument its preload
+// reads (oatsDesktop.isOmarchy), so the first paint is already in the right font and terminal size.
+let isOmarchyHost = null;
+const omarchyArguments = () => {
+  isOmarchyHost ??= omarchyHost({ fs: { statSync }, home: homedir(), platform: process.platform });
+  return isOmarchyHost ? [OMARCHY_ARG] : [];
+};
+
 function createWindow(workspaceId, record = null) {
   const bounds = record ? clampBounds(record.bounds, screen.getAllDisplays()) : null;
   const win = new BrowserWindow({
@@ -964,6 +972,7 @@ function createWindow(workspaceId, record = null) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false, // preload needs require() for contextBridge; renderer stays isolated
+      additionalArguments: omarchyArguments(),
     },
   });
   // Register hooks before loadFile or any terminal request/preparation.

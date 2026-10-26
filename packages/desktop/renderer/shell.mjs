@@ -110,9 +110,10 @@ import { splitControlsState } from "./split-controls.mjs";
 import { projectSplitDom } from "./split-dom.mjs";
 
 const desk = window.oatsDesktop;
-// The font (Omarchy's font, the default, or System font; theme.mjs fontStacks), before the first
-// await, so the window's first paint is already in it.
-initFont(navigator.platform.includes("Mac"));
+// The font (Omarchy's font or System font; theme.mjs fontStacks) and the terminal size's default, both
+// defaulting by whether this is an Omarchy computer (main's check, preload's constant), before the first
+// await, so the window's first paint is already in them.
+initFont(navigator.platform.includes("Mac"), undefined, { isOmarchy: desk?.isOmarchy === true });
 // The chord family (keys.json, which main reads; renderer/chord-family.mjs): asked beside the window's
 // start and in place before the window listens to its first key, since the one keydown listener and
 // every terminal's key path are installed below these awaits. A change (the Shortcuts page, another

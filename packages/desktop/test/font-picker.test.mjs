@@ -167,7 +167,7 @@ test('opened from the palette: the palette is gone, and closing returns to the o
 });
 
 // With the real runtime (theme.mjs evaluated on its own, as theme-selection.test.mjs does).
-test('no saved font: Omarchy\'s font is current and not stored; choosing System font stores it and marks it', t => {
+test('no saved font on Omarchy: Omarchy\'s font is current and not stored; choosing System font stores it and marks it', t => {
   const source = readFileSync(new URL('../renderer/theme.mjs', import.meta.url), 'utf8');
   const dom = new JSDOM('<!doctype html><html><body><button id="opener">Font</button></body></html>');
   t.after(() => dom.window.close());
@@ -175,7 +175,7 @@ test('no saved font: Omarchy\'s font is current and not stored; choosing System 
   const context = { document: dom.window.document, getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
     localStorage: { getItem: () => saved, setItem: (key, value) => { writes.push([key, value]); saved = value; } } };
   const theme = runInNewContext(`${source.replace(/\bexport /g, '')}\n({ initFont, currentFont, setFont, onFontChange, fontChoices })`, context);
-  assert.equal(theme.initFont(false), 'omarchy'); assert.deepEqual(writes, [], 'the default is not stored');
+  assert.equal(theme.initFont(false, undefined, { isOmarchy: true }), 'omarchy'); assert.deepEqual(writes, [], 'the default is not stored');
   const doc = dom.window.document;
   const picker = createFontPicker({ doc, fonts: theme.fontChoices(false), current: theme.currentFont, choose: theme.setFont, subscribe: theme.onFontChange });
   t.after(() => picker.dispose());

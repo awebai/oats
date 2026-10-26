@@ -242,7 +242,7 @@ This computer, which follows the computer's own theme). The font has a picker
 of its own, the settings cog's **Font…** or **Font: choose…** in the palette (no
 shortcut unless you give it one in the shortcuts editor), with two choices:
 
-- **Omarchy's font**, the default. On Linux the whole window and its
+- **Omarchy's font**, the default on a computer that runs Omarchy. On Linux the whole window and its
   terminals use the computer's monospace font, the one `omarchy font current`
   names and `omarchy font set` changes (fontconfig's `monospace`, on any
   Linux). A font changed that way shows when Desktop next starts, at the
@@ -251,7 +251,15 @@ shortcut unless you give it one in the shortcuts editor), with two choices:
   face: the window uses it (or the system's monospace font where it is not
   installed), and the terminals keep Inconsolata.
 - **System font**, the faces Desktop had before: the system's interface font
-  for the window and Inconsolata in the terminals.
+  for the window and Inconsolata in the terminals. It is the default on every
+  computer that doesn't run Omarchy (other Linux, macOS and Windows).
+
+Desktop knows a computer runs Omarchy when Omarchy's theme directory
+(`~/.local/state/omarchy/current`) is there, the same one the **This computer**
+theme reads. A font you chose always wins over the default. On Omarchy the
+terminal's default size is also smaller, 13px (JetBrains Mono, Omarchy's
+default face, at 13px), where it is 15px elsewhere. A size you set wins, and
+resetting the size or the zoom goes back to the computer's default.
 
 The computer's monospace font is used only once it draws at a fixed width.
 Desktop checks it at start and on each choice in the picker. Where the

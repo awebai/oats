@@ -343,7 +343,7 @@ The three Linux / Windows columns are [the chord families](#the-chord-families):
 | Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | the same | the same | yes |
 | The leader, then one key (`app.leader`; see "The leader") | ⌃X | Ctrl+X | the same | the same | yes (a named exception, principle 2: it sends 0x18, which the leader pressed twice gives the program; on macOS by principle 3's exception; not in a text field on Linux/Windows, where Ctrl+X is Cut) |
 | Copy the terminal selection (`terminal.copySelection`) | ⌘C (Edit › Copy, the menu role; the action has no macOS default) | Ctrl+Shift+C | the same | the same | yes |
-| Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | the same | the same | yes |
+| Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on the default, 13px on Omarchy and 15px elsewhere) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | the same | the same | yes |
 | Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | the same | the same | no (Ctrl+O is a byte programs read) |
 | New window, with no workspace (`app.newWindow`) | ⌘⇧N (File → New Window, the menu's accelerator) | none (the palette's **Window: new window**) | none | none | – |
 | Cycle the app's windows | ⌘\` (macOS's own, Window menu) | none (the window manager's) | none | none | – |
