@@ -1001,16 +1001,16 @@ function readLaunchConfigsModel(local) {
   for (const [n, e] of Object.entries(map)) out[n] = normalizeLaunchConfig(e);
   return out;
 }
-/** What a GUI or an operator sees of one configuration. Environment values
- *  never leave the file: a literal is answered as {redacted: true} (literals
- *  are non-secret by contract, but no value is shown anywhere) and a
- *  reference as {fromEnv: NAME}. An editor keeps a literal it cannot see with
- *  `set --keep-env`. */
 /** Whether the machine's launch configurations file declares `name`; a broken file declares nothing here
  *  (the launches it affects refuse it). */
 function machineDeclares(name) {
   try { return Object.hasOwn(machineLaunchConfigs()?.configs ?? {}, name); } catch (e) { if (e?.code === "E_LAUNCH_CONFIG_INVALID") return false; throw e; }
 }
+/** What a GUI or an operator sees of one configuration. Environment values
+ *  never leave the file: a literal is answered as {redacted: true} (literals
+ *  are non-secret by contract, but no value is shown anywhere) and a
+ *  reference as {fromEnv: NAME}. An editor keeps a literal it cannot see with
+ *  `set --keep-env`. */
 function publicLaunchConfig(e, extra = {}) {
   const env = Object.fromEntries(Object.keys(e.env || {}).sort().map((n) => [n, typeof e.env[n] === "string" ? { redacted: true } : { fromEnv: e.env[n].fromEnv }]));
   return { harness: e.harness, executable: e.executable ?? null, args: [...(e.args || [])], env, model: e.model ?? null, yolo: e.yolo ?? null, default: e.default === true, ...extra };
