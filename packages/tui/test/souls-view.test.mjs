@@ -13,7 +13,7 @@ import { createScreen } from "../lib/term/screen.mjs";
 import { PLAIN, style } from "../lib/term/style.mjs";
 import { textWidth } from "../lib/term/width.mjs";
 import { WIDE, frame } from "../lib/views/frame.mjs";
-import { MARKS } from "../lib/views/instances.mjs";
+import { DEFAULT_FG, MARKS } from "../lib/views/instances.mjs";
 import { COUNT_SIGN, SOULS_TEXT, SOUL_COLOURS, SOUL_MARK } from "../lib/views/souls.mjs";
 import { CLI, NOW, catalogEntry, catalogSoul, draw, instanceRow, observed, press, soulsTold, stateOf } from "./helpers.mjs";
 
@@ -216,14 +216,14 @@ test("a soul's row: its mark in its colour (uncoloured with none), its name, `!`
   }
 });
 
-test("the colour table maps the soul palette's six names onto the terminal's sixteen, and the marks are ■ and #", () => {
-  assert.deepEqual(SOUL_COLOURS, { sand: "white", sage: "green", slate: "blue", mauve: "magenta", clay: "red", olive: "cyan" });
+test("the colour table maps the soul palette's six names onto the terminal's sixteen (sand onto its own foreground), and the marks are ■ and #", () => {
+  assert.deepEqual(SOUL_COLOURS, { sand: DEFAULT_FG, sage: "green", slate: "blue", mauve: "magenta", clay: "red", olive: "cyan" });
   assert.equal(Object.isFrozen(SOUL_COLOURS), true);
   assert.deepEqual([SOUL_MARK.utf8, SOUL_MARK.ascii, COUNT_SIGN.utf8, COUNT_SIGN.ascii], ["■", "#", "·", "x"]);
-  // Every colour of the table draws as itself.
+  // Every colour of the table draws as itself; sand's, the terminal's own foreground, with no colour at all.
   for (const colour of Object.values(SOUL_COLOURS)) {
     const d = drawModel(soulsModel({ list: [{ name: "one", color: colour, count: 1, refused: false, selected: false }] }), S80);
-    assert.equal(d.cells[listTop(d, S80)][2].style.fg, colour, colour);
+    assert.equal(d.cells[listTop(d, S80)][2].style.fg, colour === DEFAULT_FG ? null : colour, colour);
   }
 });
 

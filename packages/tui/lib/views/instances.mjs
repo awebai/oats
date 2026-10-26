@@ -10,7 +10,7 @@
 // and the sentences the model sets under one: a heading says in words what it is of.
 import { keyLabel } from "../actions.mjs";
 import { lit, shown, shownEnd, textOf } from "../term/text.mjs";
-import { style } from "../term/style.mjs";
+import { COLORS, style } from "../term/style.mjs";
 import { textWidth } from "../term/width.mjs";
 
 /** The marks, in UTF-8 and in ASCII (docs/tui.md lists them; the help view draws them from here).
@@ -59,10 +59,19 @@ export const LOOK = Object.freeze({ running: style({ fg: "green" }), stopped: DI
 /** The marks an instance's colour (feature instance-color) draws: running in it, stopped and at its shell in
  *  it and dim. The shape still says the state; `unknown` and `held` keep their own look whatever the colour. */
 const COLOURED = Object.freeze({ running: false, stopped: true, shell: true });
-/** A state mark's look for a row of colour `colour` (a terminal colour name, or null for none). */
+/** The colour that is the terminal's own foreground, no `fg` at all: `sand`'s (views/souls.mjs
+ *  SOUL_COLOURS), which can't be yellow and stays seen on a light theme as on a dark one. */
+export const DEFAULT_FG = "default";
+/** The look an instance's or a soul's colour draws, with `attributes` (`{ dim }`): `colour` a terminal
+ *  colour name or DEFAULT_FG; null for any other value, which draws no colour. */
+export function colourLook(colour, attributes = {}) {
+  if (colour === DEFAULT_FG) return style(attributes);
+  return typeof colour === "string" && COLORS.includes(colour) ? style({ fg: colour, ...attributes }) : null;
+}
+/** A state mark's look for a row of colour `colour` (a terminal colour name, DEFAULT_FG, or null for none). */
 export function markLook(mark, colour) {
-  if (colour && Object.hasOwn(COLOURED, mark)) return style({ fg: colour, dim: COLOURED[mark] });
-  return LOOK[mark] ?? LOOK.unknown;
+  const coloured = Object.hasOwn(COLOURED, mark) ? colourLook(colour, { dim: COLOURED[mark] }) : null;
+  return coloured ?? LOOK[mark] ?? LOOK.unknown;
 }
 /** The needs-input look, of a waiting row's mark and of the roll-up's tag: bold, in reverse video in
  *  the waiting colour (the mark is then a yellow cell with the `!` cut out, the Desktop's disc in

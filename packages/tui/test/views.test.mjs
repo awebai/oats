@@ -1142,11 +1142,11 @@ test("a waiting row's state mark is the needs-input mark whatever its state and 
   }
 });
 
-test("a sand instance's mark is white, not yellow, which says needs input and only that; waiting, it is the yellow `!` like any other", () => {
+test("a sand instance's mark is in the terminal's own foreground, not yellow, which says needs input and only that; waiting, it is the yellow `!` like any other", () => {
   // The first row is the selected one, drawn in reverse video whatever its colour.
   const rows = [instanceRow("soul", "aaa-selected"), instanceRow("soul", "dev-sand", { color: "sand" }), instanceRow("soul", "dev-waits", { color: "sand", waitingOnYou: { ...QUESTION } })];
   const d = draw(stateOf(observed(rows)), S120), mark = (name) => d.cells[rowOf(d, S120, name)][2];
-  assert.deepEqual([mark("dev-sand").text, mark("dev-sand").style.fg], ["●", "white"]);
+  assert.deepEqual([mark("dev-sand").text, mark("dev-sand").style], ["●", style()]);
   assert.deepEqual([mark("dev-waits").text, mark("dev-waits").style.fg, mark("dev-waits").style.reverse], ["!", "yellow", true]);
 });
 
