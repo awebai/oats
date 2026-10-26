@@ -136,8 +136,10 @@ also carries `.theme-picker-overlay` or `.font-picker-overlay`.
   `--mono` are `"JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace,
   SFMono-Regular, Menlo, monospace` (no file is bundled), and the terminals keep
   Inconsolata. System font sets nothing.
-- **Every UI font rule follows it** by reading `var(--ui-font, <its own
-  stack>)`: the body, `.oats-view`, the context panel, the Machines (hierarchy), brain
+- **Every UI font rule follows it** by reading `font-family: var(--ui-font,
+  <its own stack>)`, a longhand beside its size, weight and line-height (never
+  inside a `font` shorthand: jsdom drops a shorthand that holds `var()`, so a
+  test would read the parent's values): the body, `.oats-view`, the context panel, the Machines (hierarchy), brain
   and markdown views, and the rules that once read `var(--sans,system-ui)`, a
   token nothing defined. The monospace rules do too: code in the markdown view,
   the context panel's ids, paths and facts, the soul tab's meta and sources, PR

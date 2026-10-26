@@ -262,6 +262,9 @@ test("every UI font rule follows the choice: no sans or monospace stack outside 
     const outside = text.replace(/var\(--ui-font,[^)]*\)/g, () => { follows++; return "var(--ui-font)"; });
     assert.doesNotMatch(outside, /-apple-system|BlinkMacSystemFont|system-ui|"Segoe UI"|sans-serif/, `${name}: a sans stack that does not follow the font`);
     assert.doesNotMatch(text, /var\(--sans\b/, `${name}: the old, never-defined --sans token`);
+    // The choice is a longhand, font-family: var(--ui-font, …), never inside a font shorthand: jsdom drops a shorthand
+    // that holds var(), so a test would read the parent's size, weight and line-height (Chromium resolves it).
+    assert.doesNotMatch(text, /(?<![-\w])font\s*:[^;{}]*var\(--ui-font/, `${name}: a font shorthand with var(--ui-font): use longhands`);
     // A font declaration (not a custom property's definition) names a monospace face only inside a font token.
     for (const [, value] of outside.matchAll(/(?<![-\w])font(?:-family)?\s*:\s*([^;{}]*)/g)) {
       const bare = value.replace(/var\(--(?:ui-font|mono|term-font-family)\b[^)]*\)/g, "");
@@ -269,7 +272,7 @@ test("every UI font rule follows the choice: no sans or monospace stack outside 
     }
   }
   assert.ok(follows >= 20, `the UI's font rules read --ui-font (${follows})`);
-  assert.match(shellCSS, /^body \{[^}]*font: 13px\/1\.45 var\(--ui-font, -apple-system, "Segoe UI", system-ui, sans-serif\);/m, "the body: today's stack as the fallback");
-  assert.match(themeCSS, /\.oats-view \{[^}]*font: 13px\/1\.45 var\(--ui-font, -apple-system, "Segoe UI", system-ui, sans-serif\);/);
+  assert.match(shellCSS, /^body \{[^}]*font-weight: normal; font-size: 13px; line-height: 1\.45; font-family: var\(--ui-font, -apple-system, "Segoe UI", system-ui, sans-serif\);/m, "the body: today's stack as the fallback");
+  assert.match(themeCSS, /\.oats-view \{[^}]*font-weight: normal; font-size: 13px; line-height: 1\.45; font-family: var\(--ui-font, -apple-system, "Segoe UI", system-ui, sans-serif\);/);
   assert.doesNotMatch(themeCSS, /--ui-font\s*:/, "--ui-font is set by the choice alone, never by theme.css");
 });

@@ -31,7 +31,7 @@ export const teamsCSS = `
 .teams-panel .team-row > details, .teams-panel .team-row > .teams-problem { grid-column:1 / -1; }
 .teams-panel details { font-size:11.5px; color:var(--muted); }
 .teams-panel details > summary { cursor:pointer; }
-.teams-panel details pre { margin:4px 0 0; font:11px/1.55 var(--ui-font, ui-monospace, Menlo, monospace); white-space:pre-wrap; overflow-wrap:anywhere; color:var(--fg); }
+.teams-panel details pre { margin:4px 0 0; font-weight:normal; font-size:11px; line-height:1.55; font-family:var(--ui-font, ui-monospace, Menlo, monospace); white-space:pre-wrap; overflow-wrap:anywhere; color:var(--fg); }
 .teams-panel .teams-problem { border-left:2px solid var(--danger); padding-left:8px; font-size:12px; color:var(--fg); }
 .teams-panel .teams-problem > p { margin:0; }
 .teams-panel .team-main > .teams-problem { margin-top:4px; }

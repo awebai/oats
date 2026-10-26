@@ -362,10 +362,10 @@ test('the panel\'s look: one --surface panel, two headed groups of one 3-column 
   assert.match(defaultsCSS, /\.oats-view \.ws-default-cell, \.ws-default-cell \{[^}]*display:grid; grid-template-columns:24px minmax\(0,1fr\); column-gap:12px;[^}]*padding:10px 18px 12px;/);
   assert.match(defaultsCSS, /\.ws-default-tile \{[^}]*width:24px; height:24px; border-radius:6px; background:var\(--chip-bg\); color:var\(--chip-fg\); \}/);
   assert.match(defaultsCSS, /\.ws-default-tile\[data-tint=clay\] \{ background:var\(--soul-clay-bg\); color:var\(--soul-clay-fg\); \}/);
-  assert.match(defaultsCSS, /\.ws-default-label \{ height:24px; color:var\(--muted\); font:600 12px var\(--ui-font,system-ui\); line-height:24px; \}/);
+  assert.match(defaultsCSS, /\.ws-default-label \{ height:24px; color:var\(--muted\); font-weight:600; font-size:12px; font-family:var\(--ui-font,system-ui\); line-height:24px; \}/);
   assert.doesNotMatch(defaultsCSS, /uppercase|dashed/);
   assert.match(defaultsCSS, /\.ws-default-name \{[^}]*font:650 14px var\(--mono,monospace\); line-height:24px;/);
-  assert.match(defaultsCSS, /\.ws-default-none \{ color:var\(--muted\); font:500 14px/);
+  assert.match(defaultsCSS, /\.ws-default-none \{ color:var\(--muted\); font-weight:500; font-size:14px;/);
   assert.match(defaultsCSS, /\.ws-default-cell\.off \.ws-default-name \{ color:var\(--muted\); text-decoration:line-through; \}/);
   assert.match(defaultsCSS, /\.oats-view button\.ws-default-cell:focus-visible \{ background:var\(--sel\); \}/, 'keyboard focus keeps the shell tint');
   assert.deepEqual([DEFAULTS_COPY.core, DEFAULTS_COPY.coreLead, DEFAULTS_COPY.additional, DEFAULTS_COPY.additionalLead, DEFAULTS_COPY.additionalNone],

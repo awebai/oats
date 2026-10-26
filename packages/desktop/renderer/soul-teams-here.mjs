@@ -35,7 +35,7 @@ export const soulTeamsHereCSS = `
 .soul-teams-here .sth-meta { color:var(--muted); font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
 .soul-teams-here .sth-meta.warn { color:var(--warn); }
 .soul-teams-here .sth-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
-.oats-view .soul-teams-here button.sth-act { height:26px; min-height:26px; padding:0 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:600 11.5px var(--ui-font,system-ui); white-space:nowrap; cursor:pointer; }
+.oats-view .soul-teams-here button.sth-act { height:26px; min-height:26px; padding:0 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font-weight:600; font-size:11.5px; line-height:normal; font-family:var(--ui-font,system-ui); white-space:nowrap; cursor:pointer; }
 .oats-view .soul-teams-here button.sth-act:hover:not(:disabled):not([aria-disabled="true"]) { background:var(--surface-2); }
 .oats-view .soul-teams-here button.sth-act:disabled, .oats-view .soul-teams-here button.sth-act[aria-disabled="true"] { color:var(--muted); cursor:default; }
 .oats-view .soul-teams-here button.sth-act.primary:not(:disabled):not([aria-disabled="true"]) { background:var(--primary-bg); border-color:var(--primary-bg); color:var(--primary-fg); }

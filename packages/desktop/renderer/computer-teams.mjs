@@ -80,13 +80,13 @@ export const computerTeamsCSS = `
 .computer-teams .ct-id { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; min-width:0; }
 .computer-teams .ct-name-h { margin:0; min-width:0; font:inherit; }
 .computer-teams .ct-label { color:var(--fg); font-size:17px; font-weight:700; line-height:1.3; letter-spacing:-.01em; overflow-wrap:anywhere; }
-.oats-view .computer-teams button.ct-open { appearance:none; display:inline; height:auto; min-height:0; margin:0; padding:0; border:0; border-radius:4px; background:none; color:var(--fg); font:700 17px/1.3 var(--ui-font,system-ui); letter-spacing:-.01em; text-align:left; overflow-wrap:anywhere; cursor:pointer; }
+.oats-view .computer-teams button.ct-open { appearance:none; display:inline; height:auto; min-height:0; margin:0; padding:0; border:0; border-radius:4px; background:none; color:var(--fg); font-weight:700; font-size:17px; line-height:1.3; font-family:var(--ui-font,system-ui); letter-spacing:-.01em; text-align:left; overflow-wrap:anywhere; cursor:pointer; }
 .oats-view .computer-teams button.ct-open::after { content:''; position:absolute; inset:0; border-radius:10px; }
 .computer-teams .ct-card.ct-openable:hover .ct-open { text-decoration:underline; text-underline-offset:3px; }
 .computer-teams .ct-page-card .ct-head { padding-top:20px; }
 .computer-teams .ct-page-card .ct-id { align-items:center; }
 .computer-teams .ct-page-label { margin:0; color:var(--fg); font-size:24px; font-weight:700; line-height:1.2; letter-spacing:-.02em; overflow-wrap:anywhere; }
-.computer-teams .ct-tag { align-self:center; display:inline-flex; align-items:center; height:20px; padding:0 7px; border-radius:5px; background:var(--sel); color:var(--accent); font:600 11.5px var(--ui-font,system-ui); white-space:nowrap; }
+.computer-teams .ct-tag { align-self:center; display:inline-flex; align-items:center; height:20px; padding:0 7px; border-radius:5px; background:var(--sel); color:var(--accent); font-weight:600; font-size:11.5px; line-height:normal; font-family:var(--ui-font,system-ui); white-space:nowrap; }
 .computer-teams .ct-from { color:var(--muted); font-size:12px; }
 /* On a team's page, in a view of two or more deployments: which deployment's configuration its actions edit. */
 .computer-teams .ct-desc { grid-column:1; margin:0; color:var(--muted); font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
@@ -101,7 +101,7 @@ export const computerTeamsCSS = `
 .computer-teams .ct-join { color:var(--fg); font-weight:650; }
 .computer-teams .ct-join.none { color:var(--muted); font-weight:400; }
 .computer-teams .ct-fact dd.ct-address { color:var(--muted); font:13.5px/1.45 var(--mono,monospace); }
-.computer-teams .ct-fact dd.ct-address.none { color:var(--warn); font:13px/1.45 var(--ui-font,system-ui); }
+.computer-teams .ct-fact dd.ct-address.none { color:var(--warn); font-weight:normal; font-size:13px; line-height:1.45; font-family:var(--ui-font,system-ui); }
 /* A problem that blocks spawning: under the header, the 2px danger edge. */
 .computer-teams .ct-blocking { display:flex; flex-direction:column; gap:2px; padding-left:10px; border-left:2px solid var(--danger); color:var(--muted); font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
 .computer-teams .ct-card > .ct-blocking { margin:12px 20px 0; }
@@ -114,7 +114,7 @@ export const computerTeamsCSS = `
 .computer-teams .ct-why { color:var(--muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
 .computer-teams .ct-card > .ct-why { margin:0 20px 14px; }
 .computer-teams .ct-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
-.oats-view .computer-teams button.ct-act { height:28px; min-height:28px; padding:0 11px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12px var(--ui-font,system-ui); white-space:nowrap; cursor:pointer; }
+.oats-view .computer-teams button.ct-act { height:28px; min-height:28px; padding:0 11px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font-weight:600; font-size:12px; line-height:normal; font-family:var(--ui-font,system-ui); white-space:nowrap; cursor:pointer; }
 .oats-view .computer-teams button.ct-act:hover:not(:disabled) { background:var(--surface-2); }
 .oats-view .computer-teams button.ct-act:disabled { color:var(--muted); cursor:default; }
 .oats-view .computer-teams button.ct-act.primary:not(:disabled) { background:var(--primary-bg); border-color:var(--primary-bg); color:var(--primary-fg); }
@@ -170,7 +170,7 @@ export const computerTeamsCSS = `
 .computer-teams .ct-pattern { color:var(--fg); font:600 14.5px/1.4 var(--mono,monospace); overflow-wrap:anywhere; }
 .computer-teams .ct-pattern-dir { color:var(--muted); font-weight:400; }
 .computer-teams .ct-every, .computer-teams .ct-souls .ct-none { color:var(--muted); }
-.computer-teams .ct-chip { display:inline-flex; align-items:center; height:20px; margin:2px 4px 2px 0; padding:0 7px; border-radius:5px; background:var(--tag-bg); color:var(--fg); font:600 11.5px var(--ui-font,system-ui); white-space:nowrap; }
+.computer-teams .ct-chip { display:inline-flex; align-items:center; height:20px; margin:2px 4px 2px 0; padding:0 7px; border-radius:5px; background:var(--tag-bg); color:var(--fg); font-weight:600; font-size:11.5px; line-height:normal; font-family:var(--ui-font,system-ui); white-space:nowrap; }
 /* A team's page: the board's column, the team's card, then your instances on it. */
 .computer-teams.ct-team-page { gap:40px; max-width:1120px; margin:0 auto; padding:20px 24px 28px; }
 /* Your instances on it: the counts first, then one card per machine, each a table of its instances. */
@@ -205,7 +205,7 @@ export const computerTeamsCSS = `
 .computer-teams .ct-iname .identity-mark { width:24px; height:24px; border-radius:7px; font-size:10.5px; font-weight:700; flex:none; }
 /* The name shows the row: one line, cut with an ellipsis only past the row's room (the full name is its title); the
    soul's prefix steps back. */
-.oats-view .computer-teams button.ct-member-name { appearance:none; display:block; height:auto; min-height:0; min-width:0; margin:0; padding:0; border:0; background:none; color:var(--fg); font:650 14px/1.3 var(--ui-font,system-ui); text-align:left; max-width:var(--ct-name-room); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+.oats-view .computer-teams button.ct-member-name { appearance:none; display:block; height:auto; min-height:0; min-width:0; margin:0; padding:0; border:0; background:none; color:var(--fg); font-weight:650; font-size:14px; line-height:1.3; font-family:var(--ui-font,system-ui); text-align:left; max-width:var(--ct-name-room); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
 .computer-teams .ct-name-pre { color:var(--muted); font-weight:500; }
 .computer-teams .ct-name-tail { color:var(--fg); font-weight:650; }
 .oats-view .computer-teams button.ct-member-name:hover .ct-name-tail { text-decoration:underline; text-underline-offset:3px; }
@@ -221,7 +221,7 @@ export const computerTeamsCSS = `
 .computer-teams .ct-member-state.warn .ct-state-dot { border:0; background:var(--warn); }
 .computer-teams .ct-age { color:var(--muted); font-size:12.5px; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .computer-teams .ct-iact { justify-self:end; }
-.oats-view .computer-teams button.ct-member-term { display:inline-flex; align-items:center; gap:6px; height:28px; min-height:28px; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12px var(--ui-font,system-ui); white-space:nowrap; cursor:pointer; }
+.oats-view .computer-teams button.ct-member-term { display:inline-flex; align-items:center; gap:6px; height:28px; min-height:28px; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font-weight:600; font-size:12px; line-height:normal; font-family:var(--ui-font,system-ui); white-space:nowrap; cursor:pointer; }
 .oats-view .computer-teams button.ct-member-term:hover { border-color:var(--accent); color:var(--accent); }
 @container (max-width: 999.98px) {
  .computer-teams .ct-mcards { grid-template-columns:1fr minmax(0,.4fr) 200px 104px; --ct-name-room:calc(min(100cqi, 1120px) - 136px - 304px); }

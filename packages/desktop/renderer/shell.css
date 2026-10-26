@@ -11,7 +11,7 @@ body { position: relative; overflow: clip; }
 body {
   background: var(--bg);
   color: var(--fg);
-  font: 13px/1.45 var(--ui-font, -apple-system, "Segoe UI", system-ui, sans-serif); /* the font choice: theme.css */
+  font-weight: normal; font-size: 13px; line-height: 1.45; font-family: var(--ui-font, -apple-system, "Segoe UI", system-ui, sans-serif); /* the font choice: theme.css */
 }
 /* The sidebar's width (sidebar-width.mjs): one custom property, set inline by its handle within 240px and
    min(480px, 45% of the window); 288px until it is moved. */
@@ -562,9 +562,9 @@ body {
    a hidden branch takes no space from the name. */
 .tab-detail { min-width: 0; flex: 1 1 0px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
               margin-left: -8px; padding-left: 8px;
-              font: 400 11px var(--ui-font, ui-monospace, Menlo, monospace); color: var(--faint); }
+              font-weight: 400; font-size: 11px; line-height: normal; font-family: var(--ui-font, ui-monospace, Menlo, monospace); color: var(--faint); }
 /* The go-to-tab number, last: quiet text like the branch (--faint holds 4.5:1 on --bg, --surface and --sel). */
-.tab-num { flex: none; white-space: nowrap; font: 400 11px var(--ui-font, ui-monospace, Menlo, monospace); color: var(--faint); }
+.tab-num { flex: none; white-space: nowrap; font-weight: 400; font-size: 11px; line-height: normal; font-family: var(--ui-font, ui-monospace, Menlo, monospace); color: var(--faint); }
 .tab-num[hidden] { display: none; }
 .tab .close { display: grid; place-items: center; flex: none; width: 20px; height: 20px; color: var(--faint);
               margin: 0; padding: 0; border-radius: 4px; font-size: 13px; }
@@ -779,12 +779,12 @@ body {
 .kb-row .kb-chord {
   display: flex; align-items: center; padding: 3px 4px;
   border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--fg);
-  font: 12px/1 var(--ui-font, ui-monospace, monospace); cursor: pointer;
+  font-weight: normal; font-size: 12px; line-height: 1; font-family: var(--ui-font, ui-monospace, monospace); cursor: pointer;
 }
 .kb-row .kb-chord:focus-visible { background: transparent; outline: 1px solid var(--accent); outline-offset: 0; }
 .kb-keys { display: flex; gap: 3px; }
 .kb-keys kbd { min-width: 22px; padding: 3px 6px 2px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px;
-  background: var(--bg); color: var(--fg); font: 11.5px/1.2 var(--ui-font, ui-monospace, monospace); text-align: center; }
+  background: var(--bg); color: var(--fg); font-weight: normal; font-size: 11.5px; line-height: 1.2; font-family: var(--ui-font, ui-monospace, monospace); text-align: center; }
 .kb-chord:hover kbd, .kb-chord:focus-visible kbd { border-color: var(--accent); }
 .kb-row .kb-chord.kb-unbound { color: var(--faint); font-style: italic; }
 .kb-row .kb-chord.kb-recording { border-color: var(--accent); color: var(--accent); }

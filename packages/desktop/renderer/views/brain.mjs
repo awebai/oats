@@ -19,7 +19,7 @@ const esc = (s) => escapeHtml(s ?? ""); // the one content+attribute escaper
 
 const CSS = `
 .brain { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); color: var(--fg);
-         font: 13px/1.45 var(--ui-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); }
+         font-weight: normal; font-size: 13px; line-height: 1.45; font-family: var(--ui-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); }
 .brain-bar { display: flex; align-items: center; gap: 10px; height: var(--bar-h, 48px); flex: none; padding: 0 14px;
              border-bottom: 1px solid var(--border); background: var(--surface); }
 .brain-bar label { color: var(--muted); font-size: 12px; }

@@ -226,7 +226,7 @@ input:is([type="checkbox"], [type="radio"]):focus-visible { outline-offset: 1px;
 
 /* ── shared primitives ── */
 .oats-view { display: flex; min-height: 0; height: 100%; background: var(--bg); color: var(--fg);
-            font: 13px/1.45 var(--ui-font, -apple-system, "Segoe UI", system-ui, sans-serif);
+            font-weight: normal; font-size: 13px; line-height: 1.45; font-family: var(--ui-font, -apple-system, "Segoe UI", system-ui, sans-serif);
             -webkit-font-smoothing: antialiased; }
 .oats-view * { box-sizing: border-box; }
 .oats-view .chip { background: var(--chip-bg); color: var(--chip-fg); border-radius: 999px; font-size: 10.5px;
