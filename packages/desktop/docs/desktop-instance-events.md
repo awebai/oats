@@ -166,9 +166,10 @@ validates the field and never synthesizes it.
   needs-input mark (`.ctx-dot.waiting`: the `attention` icon, a `--warn` disc
   with the "!" cut out in `--surface`), whatever the liveness, never in the
   instance's colour. It is 10px, centred on the 8px dot's slot with the dot's
-  2px ring in the row's fill, so the name and the tree guides do not move. Its
-  shape, not its hue, tells it from the unknown state's plain `--warn` dot,
-  and it is the mark the terminal tab and the workspace list show. The row
+  2px ring in the row's fill, so the name and the tree guides do not move.
+  Yellow means needs input only: unknown liveness is a `--muted` bullseye
+  (`.ctx-dot.unknown`). The mark is also the one the terminal tab and the
+  workspace list show, and its "!" shape says it without the colour. The row
   keeps its second line (soul and repository) and "New" beside the name. A
   visually hidden " Needs input" follows the name, so the row's accessible
   name says it as the pill it replaced did. A held home's state still wins

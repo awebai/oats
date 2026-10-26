@@ -22,7 +22,7 @@
    Layout inside a cluster is a layered tidy tree, deliberately NOT
    force-directed: deterministic, no jitter.
    Node cards show reported runtime state (running = filled orange dot;
-   stopped = hollow dot + dashed card; unknown distinct). Activity is NOT
+   stopped = hollow dot + dashed card; unknown a muted bullseye, never yellow). Activity is NOT
    inferred from task/transcript prose: K7 reads are explicit and selected-only. Click
    selects and shows the action popover: its facts and exactly two acts, Go to
    instance (the terminal tab; Start… on a stopped row) and Go to soul (the
@@ -142,7 +142,9 @@ export const hierarchyCSS = `
                 text-overflow: ellipsis; white-space: nowrap; }
 .hdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .hdot.on { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
-.hdot.unknown { background: var(--warn); border: 1.5px dashed var(--fg); }
+/* Unknown: the roster's muted bullseye (shell.css .ctx-dot.unknown; yellow means needs input only), its ring and
+   2px centre with the card's own fill between them. */
+.hdot.unknown { box-sizing: border-box; border: 1.5px solid var(--muted); background: radial-gradient(circle, var(--muted) 1px, transparent 1px); }
 .hdot.off { box-sizing: border-box; background: transparent; border: 1.5px solid var(--faint); }
 /* An instance's colour (instance-dot.mjs): the running dot and its halo in it, the stopped ring in it. */
 .hdot.on[data-instance-color] { background: var(--instance-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--instance-color) 18%, transparent); }

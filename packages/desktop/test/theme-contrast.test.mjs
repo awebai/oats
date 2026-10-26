@@ -111,7 +111,7 @@ test("the shared inventory holds token names only, covers the 16 ANSI colours, a
   assert.equal(new Set(pairs.map(pair => pair.join(" on "))).size, pairs.length, "no pair twice");
   assert.equal(ansi.length, 16);
   for (const token of ansi) assert.ok(pairs.some(([fg, bg]) => fg === token && bg === "term-bg"), `--${token} is held on --term-bg`);
-  assert.deepEqual(GRAPHIC_PAIRS, [["graph-edge", "bg"], ["graph-edge", "surface"], ["graph-edge", "surface-2"], ["tree-link", "surface"], ["tree-link", "surface-2"], ["tree-link", "sel"], ["muted", "surface"], ["muted", "surface-2"], ["term-sel", "term-bg"], ["accent", "surface"],
+  assert.deepEqual(GRAPHIC_PAIRS, [["graph-edge", "bg"], ["graph-edge", "surface"], ["graph-edge", "surface-2"], ["tree-link", "surface"], ["tree-link", "surface-2"], ["tree-link", "sel"], ["muted", "surface"], ["muted", "surface-2"], ["term-sel", "term-bg"], ["accent", "surface"], ["danger", "sel"],
     ...soulTones.flatMap(tone => ["bg", "surface", "surface-2", "sel"].map(bg => [`instance-${tone}`, bg]))]);
   assert.deepEqual(PAINTED_OVER, [["md-code-bg", "bg"]]);
   assert.deepEqual(HOST_UNADJUSTED_PAIRS, ansi.map(token => [token, "term-bg"]), "the host theme's one exception: its terminal colours, unadjusted");
@@ -938,12 +938,13 @@ for (const [name] of palettes) test(`${name}: Add local workspace…, the sideba
   held(token(win.getComputedStyle(icon).color), menuBg, GRAPHIC_CONTRAST, "a settings item's icon");
   noOpacity(keys, "a settings item's chord"); noOpacity(icon, "a settings item's icon");
   assert.ok(menu.contains(item));
-  // The clash dot: --warn, on the cog's --surface (the sidebar) and on a menu item at rest and lit.
+  // The clash dot: --danger (a key no longer does what it says; yellow means needs input only), on the cog's --surface
+  // (the sidebar), hovered (--surface-2) and focused (--sel), and on a menu item at rest and lit.
   const cogDot = rule("#sidebar-settings.has-clash::after"), itemDot = rule(".sidebar-settings-menu button.has-clash > .sidebar-settings-label::after");
   assert.ok(cogDot && itemDot, "both clash dots ship");
   for (const [what, dot, on] of [["the cog's clash dot", cogDot, ["surface", "surface-2", "sel"]], ["the item's clash dot", itemDot, [menuBg, lit]]]) {
-    assert.equal(dot.background, "var(--warn)", what); assert.equal(dot.opacity, "", `${what}: no opacity`);
-    for (const bg of on) held("warn", bg, GRAPHIC_CONTRAST, `${what} on --${bg}`);
+    assert.equal(dot.background, "var(--danger)", what); assert.equal(dot.opacity, "", `${what}: no opacity`);
+    for (const bg of on) held("danger", bg, GRAPHIC_CONTRAST, `${what} on --${bg}`);
   }
 });
 
@@ -1309,6 +1310,41 @@ for (const [name, palette] of [...palettes, ...['tokyo-night', 'rose-pine', 'hac
   }
   const glyph = contrast(opaqueChannels(palette.get('surface')), opaqueChannels(palette.get('warn')));
   assert.ok(glyph >= GRAPHIC_CONTRAST, `${name} the "!" on the disc: ${glyph.toFixed(2)}:1 < 3:1`);
+});
+
+// Yellow means needs input, and only that (the product owner, 2026-10-26). The one solid yellow paint left is the
+// needs-input mark's disc (.attn-mark: the roster's waiting dot, its roll-up pill, the workspace list and the tab
+// glyph's own --warn colour); --warn stays for warning words and the lines beside them. The marks it left:
+// unknown liveness is a --muted bullseye (the roster, the palette and Quick Open, the overview card, a Computer →
+// Teams member that is not running or stopped), and the problem dots (a keybinding clash, Setup's and Teams'
+// attention, Automations' scheduler off and "doesn't run here") are --danger.
+test("yellow means needs input only: no shipped rule paints a dot, disc or fill in --warn or --attn-dot but the needs-input mark", () => {
+  const painted = [...allStyles.matchAll(/([^{}]*)\{([^{}]*)\}/g)]
+    .filter(([, , body]) => /(?:^|[;\s])(?:background(?:-color)?|fill)\s*:[^;]*var\(--(?:warn|attn-dot)\)/.test(body))
+    .map(([, selector]) => selector.trim().split("\n").at(-1).trim());
+  assert.deepEqual(painted, [".attn-mark .attn-disc"]);
+  const rule = selector => allStyles.match(new RegExp(`${selector.replace(/[.()[\]>]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1].replace(/\s+/g, " ");
+  // The unknown bullseye: a --muted ring and centre, the fill between them.
+  assert.match(rule(".ctx-dot.unknown"), /border-color: var\(--muted\); background: var\(--muted\); box-shadow: inset 0 0 0 1\.5px var\(--row-solid, var\(--surface\)\), 0 0 0 2px var\(--row-solid, var\(--surface\)\);/);
+  for (const selector of [".hdot.unknown", ".computer-teams .ct-member-state.warn .ct-state-dot"]) {
+    assert.match(rule(selector), /border(?:-color)?:[^;]*var\(--muted\);/, selector);
+    assert.match(rule(selector), /background:\s*radial-gradient\(circle, var\(--muted\) 1px, transparent 1px\);/, selector);
+    assert.doesNotMatch(rule(selector), /dashed/, `${selector}: not a dashed ring (stopped's, in slice 2)`);
+  }
+  // The problem dots.
+  for (const selector of ["#sidebar-settings.has-clash::after", ".sidebar-settings-menu button.has-clash > .sidebar-settings-label::after", ".workspace-attn", ".auto-dot.warn"])
+    assert.match(rule(selector), /background:\s*var\(--danger\);/, selector);
+});
+
+// Each mark that left yellow holds 3:1 on every fill it is drawn on, in the built-in themes and "This computer": the
+// bullseye's --muted on a row (--surface, --surface-2, --sel), a card (--surface, --surface-2) and a member pill
+// (--attn-bg); a problem dot's --danger on the page, the sidebar, a hovered row and a focused or lit one.
+for (const [name, palette] of [...palettes, ...['tokyo-night', 'rose-pine', 'hackerman', 'legacy'].map(f => [`This computer (${f})`, hostPalette(f)])]) test(`${name}: the unknown bullseye and the problem dots meet 3:1 on every fill they sit on`, () => {
+  for (const [graphic, fills] of [["muted", ["surface", "surface-2", "sel", "attn-bg"]], ["danger", ["bg", "surface", "surface-2", "sel"]]]) for (const bg of fills) {
+    const ratio = contrast(opaqueChannels(palette.get(graphic)), backgroundChannels(bg, palette));
+    assert.ok(ratio >= GRAPHIC_CONTRAST, `${name} --${graphic} on --${bg}: ${ratio.toFixed(2)}:1 < 3:1`);
+    assert.ok([...pairs, ...GRAPHIC_PAIRS].some(([fg, b]) => fg === graphic && b === bg), `the inventory holds --${graphic} on --${bg}, so "This computer" derives it`);
+  }
 });
 
 for (const [name] of palettes) test(`${name}: a waiting roster row's dot paints the mark on the row's own fill, with no opacity on it or under it`, () => {

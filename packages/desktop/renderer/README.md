@@ -1604,7 +1604,7 @@ section is the module map.
   `focus.leaveTerminal` (Mod+Shift+F6) is the way out. Outside a terminal on
   Linux/Windows the leader's Ctrl+X is a text field's Cut (`leaderLeftToField`). `keymapConflicts`
   lists clashes that involve a stored rebind; the shell marks the settings
-  cog and its **Keyboard shortcuts…** item (`markShortcutClashes`: a warn dot and an `aria-description`)
+  cog and its **Keyboard shortcuts…** item (`markShortcutClashes`: a `--danger` dot and an `aria-description`)
   and the editor names them. The chords shared with the
   TUI (`CHORDS_READ`, read from `packages/client/keymap.mjs` CHORDS) all
   fire from a focused terminal: `app.palette` (⌘K / Alt+K) and

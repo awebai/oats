@@ -1051,7 +1051,7 @@ function renderContextRoster(instances) {
           if (held) row.setAttribute("aria-description", why + waitingSentence(claim, below, Date.now()));
         }
         // A waiting row's dot is the needs-input mark (the product owner, 2026-10-26): the --warn disc with its "!"
-        // cut out, told from the unknown state's plain --warn dot by its shape, whatever the liveness, never in the
+        // cut out, the only yellow mark (unknown liveness is a --muted bullseye), whatever the liveness, never in the
         // instance's colour. Its words are the visually hidden "Needs input" after the name (a held home's
         // description says the wait), so the row's name reads as it did with the pill.
         const dot = document.createElement("span");

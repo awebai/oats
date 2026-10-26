@@ -43,7 +43,9 @@ export const automationsCSS = `
 .auto-scheduler { display:inline-flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .auto-dot { width:7px; height:7px; flex:none; border-radius:50%; background:var(--faint); }
 .auto-dot.ok { background:var(--ok); }
-.auto-dot.warn { background:var(--warn); }
+/* A problem (Scheduler off, Wrong account / Not trusted / Doesn't run here): a --danger dot, since yellow means needs
+   input only (the product owner, 2026-10-26); the words beside it say which. */
+.auto-dot.warn { background:var(--danger); }
 .oats-view .auto-header button.auto-icon { display:inline-grid; place-items:center; width:30px; height:30px; min-height:30px; padding:0; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); flex:none; }
 .oats-view .auto-header button.act:not(.auto-icon) { height:30px; min-height:30px; padding:0 12px; border-radius:7px; font-size:12.5px; font-weight:600; }
 .oats-view .auto-header button.act.primary:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }

@@ -295,10 +295,15 @@ body {
 .ctx-dot { position: relative; z-index: 1; box-sizing: border-box; width: 8px; height: 8px; flex: none; border-radius: 50%;
            border: 1.5px solid var(--faint); background: var(--surface); box-shadow: 0 0 0 2px var(--row-solid, var(--surface)); }
 .ctx-dot.on { border-color: var(--accent); background: var(--accent); }
-.ctx-dot.unknown { border-color: var(--warn); background: var(--warn); }
+/* Unknown liveness (the product owner, 2026-10-26: yellow means needs input, and only that): a --muted bullseye at
+   the same 8px, its ring and a 2px centre with the row's fill between them (an inset ring of --row-solid), so it is
+   neither filled, nor a plain or dashed ring, nor yellow. Its words ("state unknown", or the row's reason) are in the
+   row's description and the hover card. The palette's and Quick Open's rows draw the same dot (overlay-picker.mjs). */
+.ctx-dot.unknown { border-color: var(--muted); background: var(--muted);
+                   box-shadow: inset 0 0 0 1.5px var(--row-solid, var(--surface)), 0 0 0 2px var(--row-solid, var(--surface)); }
 /* An instance's colour (feature instance-color, #1421 §2; instance-dot.mjs): its dot, wherever it is drawn
    (the roster, a terminal tab, a palette row, the overview card), filled in the colour while running and a
-   ring in it while stopped; the shape still says the state, an unknown state keeps the warning dot (the
+   ring in it while stopped; the shape still says the state, an unknown state keeps its muted bullseye (the
    attribute is set only on a running or stopped dot), and the token is --instance-<colour> (theme.css: the soul palette's -fg, held at 3:1 by "This computer"). */
 [data-instance-color="sand"] { --instance-color: var(--instance-sand); }
 [data-instance-color="sage"] { --instance-color: var(--instance-sage); }
@@ -767,12 +772,12 @@ body {
 .kb-marks { flex: none; width: 112px; display: flex; justify-content: flex-end; gap: 8px; }
 .kb-mark { color: var(--muted); font-size: 11px; }
 .kb-clashes { margin: 0; padding: 8px 16px; color: var(--warn); font-size: 12px; border-bottom: 1px solid var(--border); }
-/* The settings cog and its Keyboard shortcuts… item, while a stored rebind clashes (keymapConflicts): a warn dot
-   (the words are their aria-description). */
+/* The settings cog and its Keyboard shortcuts… item, while a stored rebind clashes (keymapConflicts): a --danger dot,
+   since a key no longer does what it says (yellow means needs input only; the words are their aria-description). */
 #sidebar-settings.has-clash::after { content: ""; position: absolute; top: 4px; right: 4px; width: 7px; height: 7px;
-  border-radius: 50%; background: var(--warn); }
+  border-radius: 50%; background: var(--danger); }
 .sidebar-settings-menu button.has-clash > .sidebar-settings-label::after { content: ""; display: inline-block; width: 7px; height: 7px;
-  margin-left: 6px; border-radius: 50%; background: var(--warn); vertical-align: middle; }
+  margin-left: 6px; border-radius: 50%; background: var(--danger); vertical-align: middle; }
 /* The settings menu's items: the icon, the words, the chord. */
 .sidebar-settings-menu { width: 220px; }
 .ctx-instance-menu.sidebar-settings-menu button { grid-template-columns: 15px minmax(0, 1fr) auto; align-items: center; }
