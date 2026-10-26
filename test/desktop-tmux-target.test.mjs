@@ -12,7 +12,7 @@ import { createRequire } from "node:module";
 import { tmpdir as systemTmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tmuxAttachTarget, openTerm, sweepViewers, LOCKED_TABLE_BINDINGS, LOCKED_PREFIX_TABLE, LOCKED_PREFIX_BINDINGS, PREFIX_KEY } from "../packages/desktop/tmux-target.mjs";
+import { tmuxAttachTarget, openTerm, sweepViewers, strayPrefixKeys, LOCKED_TABLE_BINDINGS, LOCKED_PREFIX_TABLE, LOCKED_PREFIX_BINDINGS, PREFIX_KEY } from "../packages/desktop/tmux-target.mjs";
 import { tmuxForwardsBoundKey } from "../packages/desktop/local-tmux-io.mjs";
 import * as kernelViewer from "../lib/session-viewer.mjs";
 import { isolateSessionEnvironment, isolatedTmuxTmpdir } from "./helpers/host-fixture.mjs";
@@ -69,17 +69,38 @@ test("only undefined/null mean 'no window' — empty string fails closed", () =>
 const fakeIo = (calls, opts = {}) => ({
   preflight: (t) => { calls.push(["preflight", t]); if (opts.preflightFails) throw new Error("absent"); },
   tmux: (args) => { calls.push(["tmux", ...args]); if (opts.tmuxFails?.(args)) throw new Error("tmux failed"); },
-  tmuxOut: (args) => { calls.push(["tmuxOut", ...args]); return opts.windowId ?? "@7"; },
+  tmuxOut: (args) => { calls.push(["tmuxOut", ...args]); return args[0] === "list-keys" ? opts.listKeys ?? "" : opts.windowId ?? "@7"; },
   spawnPty: (t, c, r) => { calls.push(["spawn", t, c, r]); if (opts.spawnFails) throw new Error("pty failed"); return opts.pty ?? {}; },
   forwardsBoundKey: () => opts.forwardsBoundKey ?? true,
   uniqueName: () => "oatsdesk-test-1",
 });
-/** The C-b table's provisioning (#1502), where tmux sends a bound key on (3.3 and later). */
+/** The C-b table's provisioning (#1502), where tmux sends a bound key on (3.3 and later): bound again, then
+ * its strays removed one by one, never emptied (an emptied table drops another viewer's pending C-b), and
+ * only then is C-b bound in the locked table. */
 const PREFIX_CALLS = [
-  ["tmux", "bind-key", "-T", "oatsdesk-locked", "C-b", "switch-client -T oatsdesk-locked-prefix"], // the one switch-client: into the C-b table
-  ["tmux", "unbind-key", "-a", "-q", "-T", "oatsdesk-locked-prefix"],                            // server-global too: clear it first
   ...LOCKED_PREFIX_BINDINGS.map((b) => ["tmux", "bind-key", "-T", "oatsdesk-locked-prefix", ...b]),
+  ["tmuxOut", "list-keys"],                                                                      // what else the server-global table holds
+  ["tmux", "bind-key", "-T", "oatsdesk-locked", "C-b", "switch-client -T oatsdesk-locked-prefix"], // the one switch-client: into the C-b table
 ];
+/** `tmux list-keys` as tmux 3.8 prints it: the C-b table with the approved keys (Shift+PgUp listed as S-PPage) and
+ * strays (escaped as tmux escapes them), and other tables, whose keys are never this table's. */
+const LISTING = [
+  'bind-key    -T copy-mode    n                         send-keys -X search-again',
+  'bind-key    -T oatsdesk-locked  WheelUpPane           if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -e; send-keys -M"',
+  'bind-key    -T oatsdesk-locked-prefix  [             copy-mode',
+  'bind-key    -T oatsdesk-locked-prefix  Any           send-keys C-b \\; if-shell -F "#{!=:#{mouse_x},}" "send-keys -M" send-keys',
+  'bind-key    -T oatsdesk-locked-prefix  MouseDrag1Pane send-keys C-b',
+  'bind-key    -T oatsdesk-locked-prefix  S-PPage       send-keys C-b \\; copy-mode -u',
+  'bind-key    -T oatsdesk-locked-prefix  WheelUpPane   send-keys C-b',
+  'bind-key    -T oatsdesk-locked-prefix  n             next-window',
+  'bind-key -r -T oatsdesk-locked-prefix  c             new-window',
+  'bind-key    -T oatsdesk-locked-prefix  \\;           command-prompt',
+  'bind-key    -T oatsdesk-locked-prefix  \\#           choose-tree',
+  'bind-key    -T oatsdesk-locked-prefix  \\\\           kill-window',
+  'bind-key    -T oatsdesk-locked-prefix  \\"           split-window',
+  'bind-key    -T oatsdesk-locked-prefixes  x           kill-server',
+  'bind-key    -T prefix       n                         next-window',
+].join("\n");
 
 test("openTerm: failed preflight rejects before any viewer/pty exists", () => {
   const calls = [];
@@ -329,6 +350,27 @@ test("openTerm (#1502): below tmux 3.3 (or an unknown version) there is no C-b b
   assert.ok(!none.some(call => call.includes("C-b")), "an io that cannot say has no C-b");
 });
 
+test("strayPrefixKeys (#1502): the C-b table's keys that are not the approved ones, as unbind-key takes them; other tables are never touched", () => {
+  assert.deepEqual(strayPrefixKeys(LISTING), ["n", "c", "\\;", "#", "\\", '"']);
+  assert.deepEqual(strayPrefixKeys(""), []);
+  assert.deepEqual(strayPrefixKeys(LISTING.split("\n").filter(line => !/ (n|c|\\.) /.test(line.split("oatsdesk-locked-prefix")[1] ?? "")).join("\n")), [],
+    "only approved keys: nothing to remove");
+});
+
+test("openTerm (#1502): the C-b table is bound again and its strays removed one by one, never emptied, before C-b reaches it", () => {
+  const calls = [];
+  openTerm({ session: "s", window: "w" }, fakeIo(calls, { listKeys: LISTING }));
+  assert.ok(!calls.some(call => call.includes("unbind-key") && call.includes("-a") && call.includes("oatsdesk-locked-prefix")), "never unbind-key -a on the C-b table");
+  const at = call => calls.findIndex(c => c.join("\0") === call.join("\0"));
+  const strays = ["n", "c", "\\;", "#", "\\", '"'].map(key => ["tmux", "unbind-key", "-q", "-T", "oatsdesk-locked-prefix", key]);
+  for (const stray of strays) assert.ok(at(stray) > at(["tmuxOut", "list-keys"]), `${stray.at(-1)}: removed, after the listing`);
+  const lastBind = Math.max(...LOCKED_PREFIX_BINDINGS.map(b => at(["tmux", "bind-key", "-T", "oatsdesk-locked-prefix", ...b])));
+  assert.ok(lastBind < at(["tmuxOut", "list-keys"]), "the approved keys are bound first: the table is never empty");
+  const cb = at(["tmux", "bind-key", "-T", "oatsdesk-locked", "C-b", "switch-client -T oatsdesk-locked-prefix"]);
+  assert.ok(strays.every(stray => at(stray) < cb), "C-b reaches the table only once its strays are gone");
+  assert.ok(!calls.some(call => call.includes("unbind-key") && call.at(-1) === "S-PPage"), "the approved Shift+PgUp, listed as S-PPage, stays");
+});
+
 const FORBIDDEN = ["next-window", "previous-window", "last-window", "new-window", "select-window", "kill-window", "choose-",
   "command-prompt", "switch-client", "new-session", "attach-session", "detach-client", "kill-session", "run-shell", "source-file"];
 test("locked table provisions ONLY the approved bindings — no window management", () => {
@@ -520,6 +562,34 @@ test("live tmux (#1502): through a real attached client, C-b [ and Shift+PgUp sc
     assert.ok(Number(T(["display-message", "-p", "-t", r.viewer, "#{scroll_position}"], true)) > 0, "and scrolled back a page");
     client.write("q"); await sleep(400);
     assert.equal(mode(), "0");
+
+    // A C-b this client is waiting on survives another viewer opening: the C-b table is bound again, never emptied.
+    const second = openTerm({ session: "src", window: "instB", cols: 80, rows: 24 }, {
+      preflight: (target) => T(["list-panes", "-t", target]),
+      tmux: (args) => T(args),
+      tmuxOut: (args) => T(args, true),
+      forwardsBoundKey: () => true,
+      spawnPty: () => ({}),
+    });
+    T(["send-keys", "-t", "=src:=instA", "clear; cat -v", "Enter"]);
+    await sleep(500);
+    client.write("\x02");
+    await sleep(400);
+    assert.equal(keyTable(), "oatsdesk-locked-prefix", "waiting after C-b");
+    const third = openTerm({ session: "src", window: "instB", cols: 80, rows: 24 }, {
+      preflight: (target) => T(["list-panes", "-t", target]),
+      tmux: (args) => T(args),
+      tmuxOut: (args) => T(args, true),
+      forwardsBoundKey: () => true,
+      spawnPty: () => ({}),
+    });
+    assert.equal(keyTable(), "oatsdesk-locked-prefix", "still waiting after another viewer bound the table");
+    client.write("x\r");
+    await sleep(600);
+    assert.match(T(["capture-pane", "-p", "-t", "=src:=instA"], true), /\^Bx/, "the pending C-b reached the agent with the next key");
+    second.killViewer(); third.killViewer();
+    T(["send-keys", "-t", "=src:=instA", "C-c", ""]);
+    await sleep(300);
 
     // C-b then any other key: both keys reach the agent, as typed; nothing navigates.
     T(["send-keys", "-t", "=src:=instA", "clear; cat -v", "Enter"]);

@@ -132,7 +132,10 @@ export const LOCKED_TABLE_BINDINGS = [
  * key sends the key it is bound to), so C-b n or C-b C-b reaches the agent as typed. Nothing here
  * manages a window or a session. The bindings are the kernel viewer's
  * (lib/session-viewer.mjs LOCKED_PREFIX_BINDINGS), which a test pins; the table is the Desktop's own,
- * since key tables are server-global and a kernel viewer empties its own as it binds it. */
+ * since key tables are server-global. Each viewer binds it again but never empties it: tmux returns
+ * every client reading a table it empties to its default table, so a viewer opened while another
+ * waits after C-b would lose that C-b. A stray binding (a user's config, an older app) is removed
+ * key by key instead (strayPrefixKeys). */
 export const PREFIX_KEY = "C-b";
 export const LOCKED_PREFIX_TABLE = "oatsdesk-locked-prefix";
 export const LOCKED_PREFIX_BINDINGS = [
@@ -142,6 +145,22 @@ export const LOCKED_PREFIX_BINDINGS = [
   ["S-PageUp", "send-keys C-b ; copy-mode -u"],
   ["Any", "send-keys C-b ; if-shell -F '#{!=:#{mouse_x},}' 'send-keys -M' 'send-keys'"],
 ];
+/** An approved key as `tmux list-keys` names it: tmux lists S-PageUp as S-PPage. */
+const LISTED = new Map([["S-PageUp", "S-PPage"]]);
+const APPROVED_PREFIX_KEYS = new Set(LOCKED_PREFIX_BINDINGS.map(([key]) => LISTED.get(key) ?? key));
+/** The keys of LOCKED_PREFIX_TABLE in `tmux list-keys` output that are not the approved ones, each as
+ * `unbind-key` takes it: tmux lists a special key escaped (`\#`, `\"`, `\\`), and takes `;` only as
+ * `\;`, since a bare `;` ends a command. Another table's keys are never its. */
+export function strayPrefixKeys(listing) {
+  const strays = [];
+  for (const line of String(listing).split("\n")) {
+    const match = /\s-T\s+(\S+)\s+(\S+)/.exec(line);
+    if (!match || match[1] !== LOCKED_PREFIX_TABLE || APPROVED_PREFIX_KEYS.has(match[2])) continue;
+    const key = /^\\.$/.test(match[2]) ? match[2][1] : match[2];
+    strays.push(key === ";" ? "\\;" : key);
+  }
+  return strays;
+}
 
 export function openTerm(spec, io) {
   const target = tmuxAttachTarget(spec.session, spec.window);
@@ -200,11 +219,13 @@ export function openTerm(spec, io) {
       io.tmux(["bind-key", "-T", "oatsdesk-locked", ...binding]);
     }
     // C-b [ scrolls back where tmux sends a bound key on; below that there is no C-b binding and no
-    // C-b table, and C-b reaches the agent as before. The C-b table is server-global too: cleared first.
+    // C-b table, and C-b reaches the agent as before. The C-b table is server-global too: bound again
+    // (each binding replaces its key's, so it is never empty), then its strays removed one by one, and
+    // only then reachable from this viewer's C-b.
     if (io.forwardsBoundKey?.()) {
-      io.tmux(["bind-key", "-T", "oatsdesk-locked", PREFIX_KEY, `switch-client -T ${LOCKED_PREFIX_TABLE}`]);
-      io.tmux(["unbind-key", "-a", "-q", "-T", LOCKED_PREFIX_TABLE]);
       for (const binding of LOCKED_PREFIX_BINDINGS) io.tmux(["bind-key", "-T", LOCKED_PREFIX_TABLE, ...binding]);
+      for (const key of strayPrefixKeys(io.tmuxOut(["list-keys"]))) io.tmux(["unbind-key", "-q", "-T", LOCKED_PREFIX_TABLE, key]);
+      io.tmux(["bind-key", "-T", "oatsdesk-locked", PREFIX_KEY, `switch-client -T ${LOCKED_PREFIX_TABLE}`]);
     }
     // wheel needs tmux mouse handling in the viewer
     io.tmux(["set-option", "-t", viewer, "mouse", "on"]);
