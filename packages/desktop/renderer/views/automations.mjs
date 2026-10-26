@@ -211,7 +211,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   if (heading) header.classList.add('auto-framed');
   header.append(heading || h2, node('span', undefined, 'auto-spacer'), scheduler, ...(headerActions ? headerActions(doc) : []), refreshButton);
   const body = node('div', undefined, 'auto-body'), page = node('div', undefined, 'auto-page'); page.hidden = true;
-  // #482: these are read from the view's primary deployment; a Workspace tab does not name it (the product owner, 2026-10-23).
+  // #482: these are read from the view's primary deployment, which the page does not name (the product owner, 2026-10-23).
   root.append(style, header, body, page); host.append(root);
 
   let alive = true, serial = 0, data = null, failure = '', loading = false, origin = 'all', query = '', openId = null, busy = false, notice = '';
@@ -1107,8 +1107,8 @@ export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: 
   };
 }
 
-// ── The Automations stage: Schedules | Triggers as subtabs (human, 2026-09-28), the Workspace page's
-// Automations tab since the sidebar layout (2026-10-23; views/spawn.mjs mounts it there) ──
+// ── The Automations stage: one nav item, Schedules | Triggers as subtabs (human, 2026-09-28); a page of its
+// own again since 2026-10-26 (it was the Workspace page's Automations tab from 2026-10-23) ──
 export const AUTOMATION_KINDS = Object.freeze(['schedule', 'trigger']);
 let chosenKind = 'schedule', stage = null;
 const liveStages = new Set(); // every stage on screen, so a preselect reaches one already open
@@ -1139,7 +1139,7 @@ export function createAutomationsStage(el, ctx, { cli: readCli = cliStatus, subs
   }
   const frame = {
     heading(d) {
-      // No title in the bar (human, 2026-09-28): the Workspace tab above already says Automations; the subtabs lead.
+      // No title in the bar (human, 2026-09-28): the sidebar already says Automations; the subtabs lead.
       const wrap = d.createElement('div'); wrap.className = 'auto-heading';
       const tabs = d.createElement('div'); tabs.className = 'auto-tabs'; tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Automations');
       for (const k of AUTOMATION_KINDS) {

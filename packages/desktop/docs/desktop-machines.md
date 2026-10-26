@@ -1,7 +1,7 @@
 # A workspace's own machines (#517)
 
 A window shows one workspace, so it offers only the machines that run that
-workspace: **Where to run** in the spawn dialog, the **Machines** box of the
+workspace: **Where to run** in the spawn dialog, the **Registered machines** box of the
 Workspace › Setup tab, and **Add a machine to this workspace…** in both. Every
 read and change is the installed CLI's (`oats server … --json`, `oats aweb
 connect --json`); the Desktop keeps no registry.
@@ -12,7 +12,7 @@ The probe (`oats version --json`) must declare `servers-per-workspace` and
 `server-connect`. The messaging step also needs `capability-route`. Without
 them nothing here changes: `/api/servers` answers the registered list as
 before, Where to run lists every registered server, there is no Add entry and
-no Machines box (`machinesGated`, `awebConnectGated` in
+no Registered machines box (`machinesGated`, `awebConnectGated` in
 `packages/client/machine-contract.mjs`).
 
 ## The window's key
@@ -56,7 +56,7 @@ no Machines box (`machinesGated`, `awebConnectGated` in
   runs it again; by then only unreachable hosts are still unknown).
 - A registry that cannot be read is an answer, not a refusal: `servers: []`
   with `error: { code, message }` and the window's `deployment` and `aweb`
-  kept, so the Machines box says why with Retry and Add stays offered.
+  kept, so the Registered machines box says why with Retry and Add stays offered.
 - **`POST /api/server-check?ws=`** `{ id }`: an id whose key is the window's or
   is unknown. **`POST /api/server-remove?ws=`** `{ id }`: the window's key
   only. Both admit the id against a fresh `server list`
@@ -118,12 +118,12 @@ and is not selected.
   the phase, and focus waits on the status line. Close and Escape always work:
   the CLI finishes on its own and a late answer changes nothing.
 - The dialog belongs to its opener (`owns()`): the spawn dialog, or the
-  Machines box of one workspace generation. When the opener goes (the spawn
+  Registered machines box of one workspace generation. When the opener goes (the spawn
   dialog closes, the window changes workspace), the dialog closes, and an
   answer that arrives later neither renders, takes focus nor starts the
   messaging step.
 
-## The Machines box (`renderer/workspace-machines.mjs`)
+## The Registered machines box (`renderer/workspace-machines.mjs`)
 
 On the Setup tab, inside This computer in the List view and below the graph in
 the Graph view: each machine's name, host, folder, OATS

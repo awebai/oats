@@ -74,8 +74,9 @@ function shell(t) {
     rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null,
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"), contextRosterEl: document.getElementById("roster"),
-    stageHost: document.getElementById("stagehost"), stage: { name: "hierarchy" }, navEl: document.getElementById("nav"),
-    NAV: [{ name: "hierarchy" }], navTab /* the shipped NAV_TABS lookup: showStage reads it first */, stageSidebarMode: () => "overview",
+    stageHost: document.getElementById("stagehost"), stage: { name: "automations" }, navEl: document.getElementById("nav"),
+    // A page of its own (the product owner, 2026-10-26): hierarchy is now a tab of the Workspace page (NAV_TABS).
+    NAV: [{ name: "automations" }], navTab /* the shipped NAV_TABS lookup: showStage reads it first */, stageSidebarMode: () => "overview",
     brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(), workspaceLabel: { reset() {} },
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     updateActiveContexts: on => { c.tabLayerVisible = on; },

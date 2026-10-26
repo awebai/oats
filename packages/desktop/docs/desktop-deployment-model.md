@@ -458,14 +458,14 @@ A view's **primary** deployment is its first local deployment, else its
 first. Deployment-level surfaces read and act on it: the Workspace header and
 Setup, Capabilities, Sync, Automations, Schedules, the Teams configuration,
 the soul inspector, Brain and launch configurations. The Workspace pages
-(the Workspace header and every tab, Automations and Schedules included, and
-a capability's, a team's and a soul's page) read it without naming it
-(2026-10-23): they send the view id, which
+(the Workspace header and every tab but Machines, the Automations page with
+its Schedules, and a capability's, a team's and a soul's page) read it
+without naming it (2026-10-23): they send the view id, which
 the server answers from the primary, and offer no choice of deployment. In
 a view of two or more deployments the side panel's soul inspector says
 which under the soul's name ("On This Mac · ~/acme"), as do Brain and the
 Sync sheet; a view of one shows no such line. The
-Deployments page has no primary: each deployment has its own tab, named
+Machines tab has no primary: each deployment has its own tab, named
 there, and nothing there is marked "primary".
 
 ### The panel
@@ -481,10 +481,10 @@ answers the view that holds it; no `?ws=` answers the first view.
 - `workspaces` is the switcher's list of views, each with its `deployments`
   ids, `deploymentLabels`, `machines` (each machine once, in order) and
   `notLive` (how many of its deployments aren't live, stale ones included). The Desktop's list
-  shows the name alone, one line, and the dot (`waiting`): never a machine, a
+  shows the name alone, one line, and the needs-input mark (`waiting`): never a machine, a
   path, an id or a reason. Unattached views carry `unattached`, their
   `reason`, `short` and the `ref` they report, and are listed after the
-  matched ones in the same list; choosing one opens its tab on the Deployments page
+  matched ones in the same list; choosing one opens its tab on the Machines tab
   (`requestDeploymentTab`, `renderer/deployment-tabs.mjs`). Those fields are
   sent only when this computer's CLI has `workspace-identity`: without it
   nothing could be matched, and the entries list as they did before views.
@@ -526,13 +526,19 @@ answers the view that holds it; no `?ws=` answers the first view.
 
 The view's key (its primary local deployment's, `keyFrom: "workspace"` only)
 also chooses which registered servers the window offers: Where to run, the
-Setup tab's Machines box and Add a machine list only the registrations that
+Setup tab's Registered machines box and Add a machine list only the registrations that
 report that key. See [desktop-machines.md](desktop-machines.md).
 
-### The Deployments page
+### The Machines tab
 
-The former Active overview (stage `hierarchy`, Mod+1) shows the view's
-overview trees and nothing deployment-specific beyond them. Its tabs
+The Workspace page's **Machines** tab, between Teams and Setup (2026-10-26;
+the Deployments page before that, and the Active overview before that: stage
+`hierarchy`, Mod+1, which now opens the Workspace page on this tab), shows
+the view's overview trees and nothing deployment-specific beyond them. The
+page opens on Souls; `views/spawn.mjs` mounts the view (`views/hierarchy.mjs`)
+only while the Machines tab is shown. One sentence under its bar says what a machine is:
+"Each machine runs this workspace in a folder of its own. The instances
+under a machine run on that machine." It has no About dialog. Its tabs
 (`renderer/deployment-tabs.mjs`) are **All**, then one per deployment in
 served order, named by `machineLabels`; a view of one deployment has only
 that deployment's tab, so the machine is always named. The selected tab is
@@ -540,15 +546,20 @@ remembered per view in localStorage (`oats.desktop.deploymentTab`, ids only,
 at most 32 views). When the tabs overflow, the strip scrolls horizontally and
 the selected or focused tab is revealed, as in the terminal tab strip. The
 header's count line counts the selected tab and sits at the right of the
-header. The page has no Spawn button (Spec E): `S` on the canvas, the
-sidebar's Spawn instance, Quick Open and the soul cards spawn.
+header. The tab has no Spawn button (Spec E): `S` on the canvas (which goes
+to the Souls tab), the sidebar's Spawn instance, Quick Open and the soul
+cards spawn.
 
 - **All** stacks one section per deployment, headed by `deploymentLabel`
   (the full path in a tooltip) and its counts: the machine in the
   group-label style (uppercase), the `· path` in normal case in the muted
-  secondary style, like the counts; relations never cross
+  secondary style, like the counts, and under it "Instances on this
+  machine" (this computer) or "Instances on <machine>"
+  (`deployments-page.mjs` `deploymentHead`); relations never cross
   sections, and pan, zoom and fit work over the whole canvas.
-- **A deployment's tab** shows only that deployment's tree.
+- **A deployment's tab** shows only that deployment's tree, under its heading,
+  even when it is the view's only deployment: every machine's tree is under
+  its name and "Instances on …" (the Machines tab, 2026-10-26).
 - A non-live deployment's heading carries a state chip ("not reached",
   "remembered", "stale"; "not matched" for a reached one with a reason) and
   its `short` reason, with **How to fix** under it: the `fix` steps when
@@ -558,8 +569,8 @@ sidebar's Spawn instance, Quick Open and the soul cards spawn.
   state.
 - A live deployment's `note` (a remote that now reports another workspace, a
   standalone host's local teams) is said under **Details** on its heading,
-  with no chip and no mark. A view of one deployment with a note keeps that
-  heading; with no rows the note heads the usual empty message.
+  with no chip and no mark. With no rows, the note heads the usual empty
+  message.
 
 ### Scope per row
 
@@ -780,7 +791,7 @@ A window never waits silently on "Reading the deployment…":
   "pending" answer keeps the rows as they are, never an empty roster; past
   the bound they go stale with the no-answer reason.
 - **Where.** The sidebar roster uses the shared failed state
-  (`renderer/loading.mjs`, with a second action) and the Deployments page its
+  (`renderer/loading.mjs`, with a second action) and the Machines tab its
   notice: the message names the deployment path, Retry is always offered and
   **Re-add workspace** when the server does not serve a local deployment.
   Re-add sends that exact path through `workspace:add`, so it restarts the

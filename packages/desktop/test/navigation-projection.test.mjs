@@ -142,12 +142,12 @@ test("live-driver order: covered Souls stage → independent A/B splits → A ha
 
 async function restoredFile(t, context, shellSource = source) {
   const s = shell(t, shellSource), expected = context === "souls" ? ["spawn"] : [];
-  await s.stage(context === "souls" ? "spawn" : "hierarchy");
+  await s.stage(context === "souls" ? "spawn" : "automations");
   if (context === "instances") s.seed();
   const file = s.seed("file");
   assert.deepEqual(s.nav(), expected);
   s.listRow().focus();
-  s.switchTo("B"); await s.stage(context === "souls" ? "hierarchy" : "spawn");
+  s.switchTo("B"); await s.stage(context === "souls" ? "automations" : "spawn");
   s.switchTo("A");
   assert.equal(s.c.activeTab, file.id); assert.equal(s.c.sidebarMode, context);
   assert.deepEqual(s.nav(), expected, "file restoration must project remembered context instead of inheriting the other workspace's nav");
@@ -166,17 +166,17 @@ for (const context of ["instances", "souls"]) {
 
 test("brain restoration keeps Souls navigation; returning to a stage reflects the visible stage", async t => {
   const s = shell(t); await s.stage("spawn"); const brain = s.seed("brain");
-  s.switchTo("B"); await s.stage("hierarchy"); s.switchTo("A");
+  s.switchTo("B"); await s.stage("automations"); s.switchTo("A");
   assert.equal(s.c.activeTab, brain.id); assert.deepEqual(s.nav(), ["spawn"]);
-  await s.stage("hierarchy");
-  assert.equal(s.c.tabLayerVisible, false); assert.deepEqual(s.nav(), ["hierarchy"]);
-  assert.deepEqual(s.contexts, ["stage:hierarchy"]);
+  await s.stage("automations");
+  assert.equal(s.c.tabLayerVisible, false); assert.deepEqual(s.nav(), ["automations"]);
+  assert.deepEqual(s.contexts, ["stage:automations"]);
 });
 
 for (const boundary of ["load", "mount"]) for (const outcome of ["resolve", "reject"]) {
   test(`late stage ${boundary} ${outcome} cannot change restored terminal foreground/nav/focus`, async t => {
     const s = shell(t); await s.stage("spawn"); const a = s.seed();
-    const pending = s.showStage("hierarchy"); await tick();
+    const pending = s.showStage("automations"); await tick();
     const gate = boundary === "load" ? s.loads.at(-1) : deferred();
     if (boundary === "mount") { s.loads.at(-1).resolve({ mount: () => gate.promise }); await tick(); }
     s.selectTab(a.id); const row = s.listRow(); row.focus();
@@ -190,11 +190,11 @@ for (const boundary of ["load", "mount"]) for (const outcome of ["resolve", "rej
 }
 
 for (const boundary of ["load", "mount"]) for (const outcome of ["resolve", "reject"]) {
-  // Two pages remain (Deployments, Workspace): from no stage, the older switch and the newer one are
+  // Two pages of their own (Workspace overview, Automations; the product owner, 2026-10-26): from no stage, the older switch and the newer one are
   // three distinct states, so neither "the older one" nor "where it started" can pass for the newer.
   test(`late stage ${boundary} ${outcome} preserves a newer real stage selection (not a blanket nav reset)`, async t => {
     const s = shell(t);
-    const old = s.showStage("hierarchy"); await tick();
+    const old = s.showStage("automations"); await tick();
     const gate = boundary === "load" ? s.loads.at(-1) : deferred();
     if (boundary === "mount") { s.loads.at(-1).resolve({ mount: () => gate.promise }); await tick(); }
     const newer = s.showStage("spawn");
@@ -239,51 +239,67 @@ test("mutation: restored focusin must not re-enter tab selection", async t => {
   await assert.rejects(reentrantFocus(t, source.replace(guard, "isApplyingFocus: () => false,")), /restoring first input focus must not re-enter/);
 });
 
-// ── Automations is a tab of the Workspace page (2026-10-23) ─────────────────────────────
-// stage.automations (⌘3 / Ctrl+3), the palette's "View: Automations" and ctx.openView("automations")
-// all run showStage("automations"): the shipped showStage routes the NAV_TABS name through
-// openWorkspaceSouls, which preselects the tab and shows the Workspace page. No "automations" page loads.
-async function automationsFrom(t, start, shellSource = source) {
+// ── Machines is a tab of the Workspace page (the product owner, 2026-10-26) ─────────────
+// stage.hierarchy (⌘1 / Ctrl+1), the palette's "View: Workspace › Machines", a deployment tab request and
+// ctx.openView("hierarchy") all run showStage("hierarchy"): the shipped showStage routes the NAV_TABS name through
+// openWorkspaceSouls, which preselects the Machines tab and shows the Workspace page. No "hierarchy" page loads.
+async function machinesFrom(t, start, shellSource = source) {
   const s = shell(t, shellSource);
   if (start) await s.stage(start);
-  const before = s.loads.length, done = s.showStageFocused("automations");
+  const before = s.loads.length, done = s.showStageFocused("hierarchy");
   for (let i = 0; i < 3 && s.loads.length === before; i++) await tick();
   if (start !== "spawn") { assert.equal(s.loads.at(-1).name, "spawn"); s.loads.at(-1).resolve({ mount(el) { el.textContent = "spawn"; return () => {}; } }); }
   await done;
   return s;
 }
-for (const start of [null, "hierarchy"]) test(`stage.automations from ${start ?? "no stage"}: the Workspace page, its Automations tab preselected`, async t => {
-  const s = await automationsFrom(t, start);
-  assert.deepEqual(s.preselected, ["automations"], "the tab is chosen before the page shows");
+test("the sidebar's views: Workspace overview, then Automations, each a page; Machines is the Workspace page's tab", () => {
+  assert.deepEqual(NAV.map(v => [v.name, v.label]), [["spawn", "Workspace overview"], ["automations", "Automations"]]);
+  assert.deepEqual(NAV_TABS, [{ name: "hierarchy", label: "Workspace › Machines", page: "spawn", tab: "machines" }]);
+  assert.deepEqual(navTab("hierarchy"), NAV_TABS[0]);
+  assert.equal(navTab("automations"), null, "a page of its own again"); assert.equal(navTab("spawn"), null);
+});
+for (const start of [null, "automations"]) test(`stage.hierarchy from ${start ?? "no stage"}: the Workspace page, its Machines tab preselected`, async t => {
+  const s = await machinesFrom(t, start);
+  assert.deepEqual(s.preselected, ["machines"], "the tab is chosen before the page shows");
   assert.equal(s.c.stage.name, "spawn");
-  assert.ok(!s.loads.some(load => load.name === "automations"), "Automations is no page of its own");
-  assert.deepEqual(s.nav(), ["spawn"], "the Workspace nav item is the current one");
+  assert.ok(!s.loads.some(load => load.name === "hierarchy"), "Machines is no page of its own");
+  assert.deepEqual(s.nav(), ["spawn"], "the Workspace overview nav item is the current one");
   assert.equal(s.c.sidebarMode, "souls"); assert.deepEqual(s.contexts, ["stage:spawn"]);
   // showStageFocused compares the stage on screen with the PAGE (spawn), so a keyboard open keeps focus on a control.
   assert.deepEqual(s.regionCalls, ["main"], "focus was on <body>: the stage's first control");
 });
 
-test("stage.automations while the Workspace page is on screen switches its tab, without reloading the page", async t => {
-  const s = await automationsFrom(t, "spawn");
-  assert.deepEqual(s.preselected, ["automations"]);
+test("stage.hierarchy while the Workspace page is on screen switches its tab, without reloading the page", async t => {
+  const s = await machinesFrom(t, "spawn");
+  assert.deepEqual(s.preselected, ["machines"]);
   assert.equal(s.loads.length, 1, "the page already on screen stays mounted");
   assert.equal(s.c.stage.name, "spawn"); assert.deepEqual(s.nav(), ["spawn"]);
   assert.deepEqual(s.regionCalls, ["main"]);
 });
 
+test("stage.automations loads the Automations page itself: no tab of the Workspace page is preselected", async t => {
+  const s = shell(t); await s.stage("spawn");
+  const done = s.showStageFocused("automations"); await tick();
+  assert.equal(s.loads.at(-1).name, "automations", "its own page loads");
+  s.loads.at(-1).resolve({ mount(el) { el.textContent = "automations"; return () => {}; } }); await done;
+  assert.deepEqual(s.preselected, []);
+  assert.equal(s.c.stage.name, "automations"); assert.deepEqual(s.nav(), ["automations"]);
+  assert.equal(s.c.sidebarMode, "overview"); assert.deepEqual(s.contexts, ["stage:automations"]);
+});
+
 test("mutation: showStageFocused must compare the stage with the NAV_TABS page, not the name", async t => {
   const page = "page = navTab(name)?.page ?? name;";
   assert.ok(source.includes(page));
-  const s = await automationsFrom(t, "hierarchy", source.replace(page, "page = name;"));
+  const s = await machinesFrom(t, "automations", source.replace(page, "page = name;"));
   assert.equal(s.c.stage.name, "spawn");
-  assert.deepEqual(s.regionCalls, [], "comparing against \"automations\" leaves focus on <body>");
+  assert.deepEqual(s.regionCalls, [], "comparing against \"hierarchy\" leaves focus on <body>");
 });
 
 test("mutation: showStage must route a NAV_TABS name to its page", async t => {
   const route = "if (asTab) return openWorkspaceSouls(asTab.tab);";
   assert.ok(source.includes(route));
   const s = shell(t, source.replace(route, ""));
-  void s.showStage("automations"); await tick();
-  assert.equal(s.loads.at(-1).name, "automations", "without the route it would load a page that no longer exists");
+  void s.showStage("hierarchy"); await tick();
+  assert.equal(s.loads.at(-1).name, "hierarchy", "without the route it would load a page the sidebar no longer has");
   assert.deepEqual(s.preselected, []);
 });

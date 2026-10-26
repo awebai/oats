@@ -1,22 +1,23 @@
 // oats desktop — keyboard regions (spec F, Part 4): F6 / Shift+F6 move focus between the
-// window's regions, in the sidebar's order top to bottom, then the main area (the sidebar layout,
-// 2026-10-23): workspaces → views (the nav under the list) → instance roster → main → instance panel → back.
+// window's regions, in the sidebar's order top to bottom, then the main area (2026-10-26):
+// workspaces → views (the nav under the list) → instance roster → main → instance panel → back.
 //
 // A region that is hidden (the sidebar while hidden or in focus mode, the panel while closed or when
 // there is nothing to show) is skipped. Focus lands on the region's current item, never on <body>:
 //   workspaces  the list of workspaces' tab stop (the row last focused, else the current one), else
 //               the heading's Add local workspace…
-//   roster  the roster's tab stop (the selected row), else its first control under the heading (Retry after
-//           a failed read), else the heading's Spawn instance +
+//   roster  the roster's tab stop (the selected row), else its first control (Retry after a failed read),
+//           else, for an empty roster, the foot's Spawn instance (its one action; F6 goes on from there as
+//           from the roster)
 //   views   the current view's nav item (aria-current), else the first one
 //   main    the active tab's content (a terminal's input) through the shell's hook, else the
 //           stage's first control
 //   panel   its selected tab (or the first control of a stage's content). A closed panel is out
 //           of the cycle (Spec B): from a terminal, panel.toggle's chord opens it.
-// The tab strip, the split controls and Show sidebar / Show instance panel count as main. A heading's controls
-// count with their section: Add local workspace… as workspaces, Spawn instance (the Instances heading's +) as
-// roster. The sidebar's bottom bar (the OATS mark, the sidebar toggle, the settings cog and its menu) is not a region: Tab reaches it,
-// and F6 from there moves on as from between the roster and main (on to main, Shift+F6 back to the roster).
+// The tab strip, the split controls and Show sidebar / Show instance panel count as main. The head's controls
+// (Show only the current workspace, Add local workspace…) count as workspaces. The sidebar's foot (Spawn
+// instance, then the bar: the OATS mark, the sidebar toggle, the settings cog and its menu) is not a region: Tab reaches it, and F6 from there moves on as from between the
+// roster and main (on to main, Shift+F6 back to the roster).
 
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 
@@ -82,9 +83,8 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
     if (name === "roster") {
       const roster = byId("instance-roster");
       const stop = [...(roster?.querySelectorAll('.ctx-list [tabindex="0"]') || [])].find(focusable);
-      // Under the heading first: a Retry before the heading's Spawn instance +, which comes first in the DOM.
-      const body = [...(roster?.children || [])].filter(el => !el.classList.contains("ctx-head"));
-      return stop || body.map(firstTabbable).find(Boolean) || firstTabbable(roster);
+      const spawn = byId("sidebar-spawn");
+      return stop || firstTabbable(roster) || (focusable(spawn) ? spawn : null);
     }
     if (name === "panel") {
       const panel = byId("context-panel");
@@ -134,16 +134,21 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
     return null;
   }
 
-  /** Move to the next (delta 1) or previous (-1) visible region that can take focus. */
+  /** Move to the next (delta 1) or previous (-1) visible region that can take focus. The walk goes
+   * through every region in order from where focus is, skipping the hidden ones, so a hidden anchor
+   * keeps its place: F6 from the foot with the roster hidden (no workspace) goes on to main. */
   function cycle(delta) {
-    const order = REGIONS.filter(visible);
-    if (!order.length) return false;
-    // From the foot (below the roster): F6 goes on as from the roster, Shift+F6 back as from main.
+    if (!REGIONS.some(visible)) return false;
+    // From the foot (below the roster): F6 goes on as from the roster, Shift+F6 back as from main; from an empty
+    // roster's stop there (Spawn instance), Shift+F6 goes back as from the roster.
     const inFoot = !!byId("nav-foot")?.contains(doc.activeElement);
-    const at = inFoot ? order.indexOf(delta > 0 ? "roster" : "main") : order.indexOf(regionOfFocus());
-    for (let i = 1; i <= order.length; i++) {
-      const index = at < 0 ? (delta > 0 ? i - 1 : order.length - i) : (at + delta * i + order.length * i) % order.length;
-      if (focusRegion(order[index])) return true;
+    const rosterStop = inFoot && visible("roster") && currentItem("roster") === doc.activeElement;
+    const at = REGIONS.indexOf(inFoot ? (delta > 0 || rosterStop ? "roster" : "main") : regionOfFocus());
+    const n = REGIONS.length;
+    for (let i = 1; i <= n; i++) {
+      // Outside every region (body, a dialog): the first region F6 meets, or the last for Shift+F6.
+      const index = at < 0 ? (delta > 0 ? i - 1 : n - i) : (((at + delta * i) % n) + n) % n;
+      if (focusRegion(REGIONS[index])) return true;
     }
     return false;
   }

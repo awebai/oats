@@ -67,8 +67,8 @@ function shell(t, shellSource = source) {
     rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null, // roster loading state (renderContextRoster is stubbed)
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"), contextRosterEl: document.getElementById("roster"),
-    stageHost: document.getElementById("stagehost"), stage: { name: "hierarchy" }, navEl: document.getElementById("nav"),
-    NAV: [{ name: "hierarchy" }], navTab, stageSidebarMode: () => "overview", // the shipped tab-route lookup (hierarchy is a page of its own)
+    stageHost: document.getElementById("stagehost"), stage: { name: "automations" }, navEl: document.getElementById("nav"),
+    NAV: [{ name: "automations" }], navTab, stageSidebarMode: () => "overview", // the shipped tab-route lookup (automations is a page of its own, 2026-10-26; hierarchy is Workspace › Machines)
     brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(), workspaceLabel: { reset() {} },
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     updateActiveContexts: on => { c.tabLayerVisible = on; },
@@ -313,7 +313,8 @@ test("empty layout survives stage and workspace round-trip; old-cell callbacks c
   left.getBoundingClientRect = right.getBoundingClientRect = () => ({ width: 400, height: 200 });
   s.event(left.querySelector(".split-resizer"), "keydown", { key: "ArrowRight" });
   const saved = structuredClone(s.c.split), oldCell = right, oldEmpty = s.empty(2), oldCallbacks = s.projections.at(-1);
-  await s.showStage("hierarchy");
+  assert.equal(navTab("automations"), null, "a page of its own: showStage mounts it, no Workspace tab route");
+  await s.showStage("automations");
   const stageIntent = s.c.tabOpenIntents.begin(); s.event(oldEmpty, "pointerdown");
   assert.equal(stageIntent(), true); assert.equal(s.c.tabLayerVisible, false);
   s.actions.get("split.restore")();

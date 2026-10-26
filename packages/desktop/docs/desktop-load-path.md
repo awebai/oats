@@ -242,7 +242,7 @@ a current read (`rowStale`) and the switcher does not count it live, and
 of unknown key or from a saved route (`registrationPresent` false) that the
 answer does not list is gone.
 
-Each window's sidebar roster, and its Deployments page when shown, re-read
+Each window's sidebar roster, and its Workspace › Machines tab when shown, re-read
 every 4 s while that window is focused and every 30 s (the blurred cadence)
 while it is not (`renderer/roster-cadence.mjs`); focus returning reads the
 sidebar at once. The server

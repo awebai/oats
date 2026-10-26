@@ -156,11 +156,11 @@ test("Settings mounts Terminal after Connections, traps Tab through its field, a
   // (app.connections), both opening this dialog. The sidebar has no button for it, and the settings cog's menu
   // (Theme…, Keyboard shortcuts…) leaves it out.
   assert.doesNotMatch(html, /data-action="app\.connections"/);
-  assert.match(html, /<button id="sidebar-settings" class="ws-add-open sidebar-settings icon-button" type="button" aria-label="Settings" title="Settings"><\/button>/,
+  assert.match(html, /<button id="sidebar-settings" class="side-icon-button sidebar-settings icon-button" type="button" aria-label="Settings" title="Settings"><\/button>/,
     "the cog carries no action of its own: its menu does");
   assert.equal(SETTINGS_ITEMS.some(({ action }) => action === "app.connections"), false, "not in the cog's menu");
   assert.match(shell, /\{ label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: \(\) => openConnections\(\) \}/);
-  assert.match(shell, /registerAction\(\{ id: "app\.connections", label: "Settings: Connections", context: "global", run: \(\) => openConnections\(\) \}\);/);
+  assert.match(shell, /registerAction\(\{ id: "app\.connections", label: "Settings: Connections…", context: "global", run: \(\) => openConnections\(\) \}\);/);
   assert.match(shell, /sections: \[\(\) => createTerminalSettings\(\{ doc: document, chords: \{/);
   assert.match(shell, /connectionsCSS \+ settingsTerminalCSS/);
 });

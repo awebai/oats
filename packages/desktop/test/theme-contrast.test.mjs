@@ -746,29 +746,36 @@ for (const [name] of palettes) test(`${name}: automation summaries, argv, run st
   }
 });
 
-// The sidebar's one visible shortcut hint was the roster filter's ⌘F; it went with the filter. The sidebar paints
-// none now, so no hint ink sits on a sidebar surface (the spawn dialog's hints are held in spawn-dialog.test.mjs).
-// The sidebar's type and its one line (2026-10-23). The headings are text: --fg on the sidebar at AA (the computed
-// test below reads them). The machine labels step under them: smaller, lighter, muted. The line between the sections
-// is decorative, like the sidebar's own right edge, and in that edge's token: no minimum applies, and it shows in every
-// built-in theme at the edge's own ratio.
-for (const [name, palette] of palettes) test(`${name}: the sections' headings (the nav's 13px, bolder) over the machine labels; one full-width --border line between the sections, as visible as the sidebar's edge`, () => {
+// The sidebar's type and its lines (the product owner, 2026-10-26: as before 2026-10-23, the list of workspaces on top).
+// The Workspace heading is --fg at 13.5px 700; the Instances heading reads like the nav items over it (--nav-fg, 13px
+// 500); the machine labels step under them (muted 11px 650 capitals). The headings are text: AA on the sidebar (the
+// computed test below reads them). The lines are decorative, like the sidebar's own right edge, and in that edge's
+// token: one under the list, one before the instances, the foot's; none under the head and none under the Instances
+// heading (the product owner, 2026-10-26). No minimum applies, and they show in every built-in theme at the edge's own ratio.
+for (const [name, palette] of palettes) test(`${name}: the Workspace heading, the Instances heading (the nav's ink) over the machine labels; the sidebar's --border lines, as visible as its edge`, () => {
   const shellCss = readFileSync(new URL("shell.css", renderer), "utf8");
-  const rule = selector => shellCss.match(new RegExp(`^${selector.replace(/[.#()]/g, m => `\\${m}`)} \\{([^}]*)\\}`, "m"))?.[1] ?? "";
-  const head = rule(".ctx-head"), label = rule(".ctx-deployment");
-  assert.match(head, /color: var\(--fg\);/); assert.match(head, /font-size: 13px;/); assert.match(head, /font-weight: 650;/);
-  assert.match(head, /height: 36px;/, "the heading row keeps its height"); assert.match(head, /white-space: nowrap;/, "never wraps");
-  assert.match(label, /color: var\(--muted\);/); assert.match(label, /font-size: 12px;/); assert.match(label, /font-weight: 400;/);
+  const rule = selector => shellCss.match(new RegExp(`^${selector.replace(/[.#()>:]/g, m => `\\${m}`)} \\{([^}]*)\\}`, "m"))?.[1] ?? "";
+  const heading = rule(".ws-heading"), head = rule(".ctx-head"), label = rule(".ctx-deployment");
+  assert.match(heading, /color: var\(--fg\);/); assert.match(heading, /font-size: 13\.5px;/); assert.match(heading, /font-weight: 700;/);
+  assert.match(head, /color: var\(--nav-fg\);/); assert.match(head, /font-size: 13px;/); assert.match(head, /font-weight: 500;/);
+  assert.match(head, /height: 36px;/, "the heading row keeps its height");
+  assert.match(label, /color: var\(--muted\);/); assert.match(label, /font-size: 11px;/); assert.match(label, /font-weight: 650;/);
   assert.match(label, /text-transform: uppercase;/);
-  assert.match(rule(".ws-current::before"), /^ content: ""; flex: none; border-top: 1px solid var\(--border\); $/, "over the current workspace's section, under the list");
-  assert.equal(rule("#instance-roster::before"), "", "none before Instances");
-  assert.match(rule("#sidebar"), /border-right: 1px solid var\(--border\);/, "the sidebar's edge, the line's token");
-  assert.doesNotMatch(shellCss, /\.ws-head[^{]*\{[^}]*border|\.ws-list[^{]*\{[^}]*border|#ws-list[^{]*\{[^}]*border/, "nothing under the Workspaces heading or along the list");
+  assert.equal(shellCss.match(/\.ws-current::before|\.ws-current\s*\{/), null, "no current workspace's section, no line of its own");
+  assert.doesNotMatch(rule(".side-head"), /border(?:-bottom)?(?:-width|-style|-color)?\s*:/, "no line under the head: the heading sits over its list");
+  assert.match(rule(".ws-list"), /border-bottom: 1\.5px solid var\(--border\);/, "under the list, before the views");
+  assert.match(rule("#instance-roster"), /border-top: 1px solid var\(--border\);/, "before the instances");
+  assert.equal(shellCss.match(/#instance-roster > \.ctx-head(?:::after|::before)?\s*\{/), null, "no line under the Instances heading");
+  assert.match(rule("#nav-foot"), /border-top: 1px solid var\(--border\);/, "over the foot");
+  assert.match(rule("#sidebar"), /border-right: 1px solid var\(--border\);/, "the sidebar's edge, the lines' token");
   const ratio = contrast(opaqueChannels(palette.get("border")), opaqueChannels(palette.get("surface")));
-  assert.ok(ratio > 1.2, `${name}: the line shows on the sidebar (${ratio.toFixed(2)}:1)`);
-  assert.ok(contrast(opaqueChannels(palette.get("fg")), opaqueChannels(palette.get("surface"))) >= 4.5, `${name}: the headings`);
+  assert.ok(ratio > 1.2, `${name}: the lines show on the sidebar (${ratio.toFixed(2)}:1)`);
+  for (const ink of ["fg", "nav-fg"]) assert.ok(contrast(opaqueChannels(palette.get(ink)), opaqueChannels(palette.get("surface"))) >= 4.5, `${name}: the headings' --${ink}`);
 });
 
+// The sidebar's one visible shortcut hint was the roster filter's ⌘F; it went with the filter. The sidebar paints
+// none (the product owner, 2026-10-26: Spawn instance's chord is in its tooltip), so no hint ink sits on a sidebar
+// surface (the spawn dialog's hints are held in spawn-dialog.test.mjs).
 for (const [name] of palettes) test(`${name}: the shipped sidebar paints no shortcut hint, and a hidden hint takes no box`, t => {
   const dom = new JSDOM(readFileSync(new URL("index.html", renderer), "utf8"));
   t.after(() => dom.window.close());
@@ -776,17 +783,18 @@ for (const [name] of palettes) test(`${name}: the shipped sidebar paints no shor
   for (const source of [css, readFileSync(new URL("shell.css", renderer), "utf8")]) {
     const style = doc.createElement("style"); style.textContent = source; doc.head.append(style);
   }
-  assert.equal(doc.querySelector("#sidebar .shortcut-hint, #sidebar [data-shortcut], .ctx-filter-field, .ctx-filter"), null,
+  assert.equal(doc.querySelector("#sidebar .shortcut-hint, #sidebar [data-shortcut], #sidebar kbd, .ctx-filter-field, .ctx-filter"), null,
     "no hint and no filter field in the sidebar");
-  // The sidebar's icon buttons (Spawn instance, the foot's toggle and cog) carry no visible hint (a tooltip, the
-  // menu's own chords): nothing to paint there either.
-  assert.equal(doc.querySelector("#sidebar-spawn .shortcut-hint, #sidebar-settings .shortcut-hint, #nav-foot .shortcut-hint"), null);
+  // Spawn instance (the bar's words alone) names itself in words; its chord is the tooltip's.
+  const spawn = doc.getElementById("sidebar-spawn");
+  assert.equal(spawn.getAttribute("title"), "Spawn instance"); assert.equal(spawn.getAttribute("data-action"), "app.quickOpenSouls");
   const hint = doc.createElement("kbd"); hint.className = "shortcut-hint"; hint.hidden = true; doc.body.append(hint);
   assert.equal(dom.window.getComputedStyle(hint).display, "none");
 });
 
-// The sidebar layout (2026-10-23): the nav (Deployments, Workspace) sits under the list of workspaces on the sidebar's
-// --surface (the foot holds the sidebar toggle and the settings cog, below). Each one's ink, at rest, hovered, current
+// The sidebar (the product owner, 2026-10-26): the nav (Workspace overview, Automations) sits under the list of
+// workspaces on the sidebar's --surface (the foot holds the bar: the sidebar toggle, Spawn instance and the
+// settings cog, below). Each one's ink, at rest, hovered, current
 // and under the keyboard tint, is a token pair the inventory holds to AA (so "This computer" is held too,
 // host-theme.mjs), and meets it here on the effective colours, with no opacity on it or under it.
 for (const [name] of palettes) test(`${name}: the nav's items meet computed AA in every state`, t => {
@@ -795,8 +803,8 @@ for (const [name] of palettes) test(`${name}: the nav's items meet computed AA i
   const doc = dom.window.document, win = dom.window; doc.documentElement.dataset.theme = name;
   const shellCss = readFileSync(new URL("shell.css", renderer), "utf8");
   for (const source of [css, shellCss]) { const style = doc.createElement("style"); style.textContent = source; doc.head.append(style); }
-  // The nav's buttons as shell.mjs builds them from NAV: an icon, then the label; Deployments current.
-  for (const [label, current] of [["Deployments", true], ["Workspace", false]]) {
+  // The nav's buttons as shell.mjs builds them from NAV: an icon, then the label; Workspace overview current.
+  for (const [label, current] of [["Workspace overview", true], ["Automations", false]]) {
     const b = doc.createElement("button"); b.type = "button"; b.className = `nav-item${current ? " active" : ""}`;
     if (current) b.setAttribute("aria-current", "page");
     b.innerHTML = `<span class="icon"><svg class="shell-icon" aria-hidden="true"></svg></span><span class="label">${label}</span>`;
@@ -813,12 +821,12 @@ for (const [name] of palettes) test(`${name}: the nav's items meet computed AA i
   const sidebarBg = token(win.getComputedStyle(doc.getElementById("sidebar")).background);
   assert.equal(sidebarBg, "surface");
   assert.equal(doc.getElementById("sidebar-tools"), null, "the tools row is gone");
-  for (const id of ["nav-foot", "nav"]) {
+  for (const id of ["nav-foot", "sidebar-bar", "nav"]) {
     const bg = win.getComputedStyle(doc.getElementById(id)).background;
     assert.ok(!bg || /^(transparent|rgba\(0, 0, 0, 0\))$/.test(bg), `#${id} paints nothing of its own: the sidebar shows under it (${bg})`);
   }
   const controls = [...doc.querySelectorAll("#nav button")];
-  assert.deepEqual(controls.map(b => b.id || b.textContent), ["Deployments", "Workspace"]);
+  assert.deepEqual(controls.map(b => b.id || b.textContent), ["Workspace overview", "Automations"]);
   assert.equal(doc.getElementById("nav-title"), null, "no title over the views");
   for (const control of controls) {
     const what = control.id || control.textContent, current = control.classList.contains("active");
@@ -839,16 +847,18 @@ for (const [name] of palettes) test(`${name}: the nav's items meet computed AA i
   const focus = rule(":is(button, a, summary):focus-visible");
   assert.equal(focus.background, "var(--sel)");
   for (const ink of ["nav-fg", "fg", "accent"]) held(ink, "sel", ink === "accent" ? GRAPHIC_CONTRAST : TEXT_CONTRAST, `focused ${ink}`);
-  // Narrow, the labels are clipped away, never faded: the container rule has no opacity.
-  assert.doesNotMatch(shellCss.match(/@container nav[^{]*\{[^}]*\}/)?.[0] ?? "@container nav missing", /opacity|missing/);
+  // The labels are always shown (a column, as before 2026-10-23): no container rule hides or fades them.
+  assert.doesNotMatch(shellCss, /@container/);
+  for (const label of doc.querySelectorAll("#nav .label")) assert.notEqual(win.getComputedStyle(label).position, "absolute", label.textContent);
 });
 
-// The sidebar's icon buttons (2026-10-23): Add local workspace…, the Instances heading's Spawn instance +, and the foot's
-// sidebar toggle and settings cog are one control style (.ws-add-open): --muted on the sidebar's --surface at rest, --fg on
-// --surface-2 hovered, --fg on the --sel tint focused. The cog's menu (the instance actions' popover) holds its items in
+// The sidebar's icon buttons (the product owner, 2026-10-26): the head's Show only the current workspace and Add local
+// workspace…, and the bar's sidebar toggle and settings cog are one control style (.side-icon-button): --muted on the
+// sidebar's --surface at rest, --fg on --surface-2 hovered, --fg on the --sel tint focused. Spawn instance, the bar's
+// words alone, has the same tokens in rules of its own. The cog's menu (the instance actions' popover) holds its items in
 // --fg, their chords in --muted, on its --surface or the --sel of a hovered or focused item. A clash (keymapConflicts)
 // marks the cog and the menu's Keyboard shortcuts… with a --warn dot (WCAG 1.4.11, 3:1 on what it sits on).
-for (const [name] of palettes) test(`${name}: Add local workspace…, Spawn instance, the sidebar toggle, the settings cog and its menu meet computed AA in every state`, t => {
+for (const [name] of palettes) test(`${name}: Add local workspace…, the sidebar toggle, the settings cog and its menu, and Spawn instance meet computed AA in every state`, t => {
   const dom = new JSDOM(readFileSync(new URL("index.html", renderer), "utf8"));
   t.after(() => dom.window.close());
   const doc = dom.window.document, win = dom.window; doc.documentElement.dataset.theme = name;
@@ -866,21 +876,53 @@ for (const [name] of palettes) test(`${name}: Add local workspace…, Spawn inst
   const rule = selector => [...doc.styleSheets].flatMap(sheet => [...sheet.cssRules]).find(r => r.selectorText === selector)?.style;
   const noOpacity = (el, what) => { for (let node = el; node; node = node.parentElement) assert.equal(win.getComputedStyle(node).opacity, "1", `${what}: no opacity over it`); };
   assert.equal(token(win.getComputedStyle(doc.getElementById("sidebar")).background), "surface");
-  // One control style: each is a .ws-add-open, with no colour rule of its own.
-  const buttons = ["ws-add-open", "sidebar-spawn", "sidebar-toggle", "sidebar-settings"].map(id => doc.getElementById(id));
+  // One control style: each is a .side-icon-button, with no colour rule of its own.
+  const buttons = ["ws-current-only", "ws-add-open", "sidebar-toggle", "sidebar-settings"].map(id => doc.getElementById(id));
   for (const button of buttons) {
-    assert.ok(button.classList.contains("ws-add-open"), `${button.id}: the sidebar's icon-button style`);
+    assert.ok(button.classList.contains("side-icon-button"), `${button.id}: the sidebar's icon-button style`);
     const idle = win.getComputedStyle(button);
     assert.match(idle.background, /^(none|transparent|rgba\(0, 0, 0, 0\))?$/, `${button.id}: no fill at rest`);
     held(token(idle.color), "surface", TEXT_CONTRAST, `${button.id} at rest`);
     noOpacity(button, button.id);
   }
-  assert.deepEqual([...shellCss.matchAll(/^([^{}]*#sidebar-(?:settings|spawn|toggle)[^{}]*)\{([^}]*)\}/gm)].filter(m => /(^|[\s;])(color|background)\s*:/.test(m[2]) && !/has-clash/.test(m[1])).map(m => m[1].trim()), [],
-    "none has a colour of its own: the .ws-add-open tokens are theirs");
-  for (const [state, selector] of [["hovered", ".ws-add-open:hover"], ["focused", ".ws-add-open:focus-visible"]]) {
+  assert.deepEqual([...shellCss.matchAll(/^([^{}]*#sidebar-(?:settings|toggle)[^{}]*)\{([^}]*)\}/gm)].filter(m => /(^|[\s;])(color|background)\s*:/.test(m[2]) && !/has-clash/.test(m[1])).map(m => m[1].trim()), [],
+    "none has a colour of its own: the .side-icon-button tokens are theirs");
+  // Spawn instance (the product owner, 2026-10-26: its words alone, a ground only on hover): --muted on the sidebar at
+  // rest, --fg on --surface-2 hovered, --fg on --sel focused, as the icon buttons; no opacity; disabled, --faint.
+  const spawn = doc.getElementById("sidebar-spawn");
+  assert.equal(spawn.classList.contains("side-icon-button"), false); assert.equal(spawn.classList.contains("primary"), false);
+  assert.equal(spawn.querySelector("[data-shell-icon], svg"), null, "no icon: words alone");
+  const spawnIdle = win.getComputedStyle(spawn);
+  assert.match(spawnIdle.background, /^(none|transparent|rgba\(0, 0, 0, 0\))?$/, "Spawn instance: no fill at rest");
+  assert.equal(token(spawnIdle.color), "muted");
+  held("muted", "surface", TEXT_CONTRAST, "Spawn instance at rest");
+  for (const [state, selector, bg] of [["hovered", "#sidebar-spawn:hover:not(:disabled)", "surface-2"], ["focused", "#sidebar-spawn:focus-visible", "sel"]]) {
+    const r = rule(selector); assert.ok(r, selector);
+    assert.deepEqual([token(r.color), token(r.background)], ["fg", bg], `Spawn instance ${state}`);
+    held("fg", bg, TEXT_CONTRAST, `Spawn instance ${state}`);
+  }
+  noOpacity(spawn, "Spawn instance");
+  spawn.disabled = true;
+  assert.equal(token(win.getComputedStyle(spawn).color), "faint", "disabled");
+  assert.match(win.getComputedStyle(spawn).background, /^(none|transparent|rgba\(0, 0, 0, 0\))?$/, "disabled: no fill");
+  spawn.disabled = false;
+  for (const [state, selector] of [["hovered", ".side-icon-button:hover"], ["focused", ".side-icon-button:focus-visible"]]) {
     const r = rule(selector); assert.ok(r, selector);
     held(token(r.color), token(r.background), TEXT_CONTRAST, `the headings' icon buttons ${state}`);
   }
+  // Show only the current workspace, pressed: its icon in --accent (the current nav item's), on the sidebar at rest,
+  // and on the hover and focus fills, which keep it (3:1 for a graphic; the --accent pairs hold 4.5:1 too).
+  const toggle = doc.getElementById("ws-current-only");
+  toggle.setAttribute("aria-pressed", "true");
+  assert.equal(token(win.getComputedStyle(toggle).color), "accent", "pressed: the accent");
+  held("accent", "surface", GRAPHIC_CONTRAST, "the pressed toggle at rest");
+  const pressed = rule('.ws-current-only[aria-pressed="true"], .ws-current-only[aria-pressed="true"]:hover, .ws-current-only[aria-pressed="true"]:focus-visible');
+  assert.ok(pressed, "one rule for the pressed toggle in every state"); assert.equal(token(pressed.color), "accent");
+  for (const [state, selector] of [["hovered", ".side-icon-button:hover"], ["focused", ".side-icon-button:focus-visible"]]) {
+    held("accent", token(rule(selector).background), GRAPHIC_CONTRAST, `the pressed toggle ${state}`);
+  }
+  toggle.setAttribute("aria-pressed", "false");
+  assert.equal(token(win.getComputedStyle(toggle).color), "muted", "not pressed: the icon buttons' --muted");
   // The menu: its surface, its items' ink and their chords, at rest and on a hovered or focused item.
   const menu = settings.menu, menuBg = token(rule(".ctx-instance-menu").background);
   assert.equal(menuBg, "surface");
@@ -1158,10 +1200,12 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     ['.ws-option[aria-current="true"] .ws-option-name', '#sidebar', 'fg', 'surface'],
     ['.ws-option:not([aria-current]) .ws-option-name', '#sidebar', 'fg', 'surface'],
     ['#ws-add-open', '#sidebar', 'muted', 'surface'],
-    // The sidebar's other icon buttons (2026-10-23), on the same .ws-add-open tokens: Spawn instance, the foot's toggle and cog.
-    ['#sidebar-spawn', '#sidebar', 'muted', 'surface'], ['#sidebar-toggle', '#sidebar', 'muted', 'surface'], ['#sidebar-settings', '#sidebar', 'muted', 'surface'],
-    // The sections' headings, the sidebar's top level (14px 600): --fg on the sidebar.
-    ['.ctx-head.ws-head', '#sidebar', 'fg', 'surface'], ['#instance-roster > .ctx-head', '#sidebar', 'fg', 'surface'],
+    // The bar's buttons, on the same tokens: the sidebar toggle and the settings cog (.side-icon-button), and Spawn
+    // instance, its words alone with no fill at rest (the product owner, 2026-10-26).
+    ['#sidebar-toggle', '#sidebar', 'muted', 'surface'], ['#sidebar-settings', '#sidebar', 'muted', 'surface'],
+    ['#sidebar-spawn', '#sidebar', 'muted', 'surface'],
+    // The headings: the Workspace heading in --fg, the Instances heading in the nav's ink, on the sidebar.
+    ['.ws-heading', '#sidebar', 'fg', 'surface'], ['#instance-roster > .ctx-head', '#sidebar', 'nav-fg', 'surface'],
     ['.app-toast-open', '.app-toast-open', 'primary-fg', 'primary-bg'],
     ['.ctx-pr[data-pr-state=open]', '.ctx-pr[data-pr-state=open]', 'fg', 'tag-bg'],
     ['.ctx-pr[data-pr-state=merged]', '.ctx-pr[data-pr-state=merged]', 'fg', 'tag-bg'],
@@ -1978,10 +2022,10 @@ for (const [name] of palettes) test(`${name}: the soul page's Instructions secti
   section.dispose(); dom.window.close();
 });
 
-// #517: Add a machine (every step status) and the Setup tab's Machines box (a row, its states and the Remove confirmation).
+// #517: Add a machine (every step status) and the Setup tab's Registered machines box (a row, its states and the Remove confirmation).
 import { openAddMachineDialog, addMachineCSS } from '../renderer/add-machine-dialog.mjs';
 import { createWorkspaceMachines, machinesCSS, resetMachineChecks } from '../renderer/workspace-machines.mjs';
-for (const [name] of palettes) test(`${name}: Add a machine and the Machines box meet computed AA without opacity`, async t => {
+for (const [name] of palettes) test(`${name}: Add a machine and the Registered machines box meet computed AA without opacity`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div class="setup" id="setup"></div></div></body></html>`, { pretendToBeVisual: true });
   const doc = dom.window.document;
   for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), setupCSS, machinesCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
@@ -2015,7 +2059,7 @@ for (const [name] of palettes) test(`${name}: Add a machine and the Machines box
     ['.machine-step-code', '.machine-phase', 'muted', 'surface-2'], ['.machine-command code', '.machine-command code', 'fg', 'surface'],
     ['.machine-status', '.machine-dialog', 'muted', 'surface'], ['.machine-copy', '.machine-copy', 'fg', 'surface'],
     ['.machine-primary', '.machine-primary', 'primary-fg', 'primary-bg'], ['.machine-cancel', '.machine-cancel', 'fg', 'surface'],
-    // The Machines box: a solid --surface card (in Setup's This computer zone), Setup's members grammar.
+    // The Registered machines box: a solid --surface card (in Setup's This computer zone), Setup's members grammar.
     ['.setup-machines .setup-box-head h4', '.setup-machines', 'fg', 'surface'], ['.setup-machines .setup-box-lead', '.setup-machines', 'muted', 'surface'],
     ['[data-machine="up"] .machine-cell.name', '.setup-machines', 'fg', 'surface'], ['[data-machine="up"] .machine-cell.ssh', '.setup-machines', 'fg', 'surface'],
     ['[data-machine="up"] .machine-cell.folder', '.setup-machines', 'muted', 'surface'], ['[data-machine="up"] .machine-cell.version', '.setup-machines', 'muted', 'surface'],
@@ -2306,4 +2350,42 @@ for (const [name] of palettes) test(`${name}: the leader's hint meets AA on its 
   // The hint is opaque: its surface is a token, never a blend over the terminal behind it.
   assert.equal(dom.window.getComputedStyle(hint.element).background, "var(--surface-2)");
   assert.notEqual(dom.window.getComputedStyle(hint.element).clipPath, "inset(50%)", "a line is drawn");
+});
+
+// The shortcuts editor's Most useful section (its first): the heading, each action's name, the keycaps and the
+// leader's words, on the surfaces they are painted on, in every theme. Its rules are the editor's own (usefulCSS,
+// injected with it), on top of the list's keycaps and words in shell.css; nothing over its text is composited.
+for (const [name] of palettes) test(`${name}: the shortcuts editor's Most useful section meets computed AA`, async t => {
+  const { registerAction, resetAllBindings } = await import("../renderer/keybindings.mjs");
+  const { createKeybindingsEditor, usefulCSS } = await import("../renderer/keybindings-editor.mjs");
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, readFileSync(new URL("shell.css", renderer), "utf8")]) {
+    const style = doc.createElement("style"); style.textContent = source; doc.head.append(style);
+  }
+  resetAllBindings();
+  const offs = [registerAction({ id: "app.leader", label: "Leader", context: "global", run: () => {} })];
+  const editor = createKeybindingsEditor({ doc, isMac: false });
+  t.after(() => { editor.close(); offs.forEach(off => off()); resetAllBindings(); dom.window.close(); });
+  editor.open();
+  assert.equal(doc.querySelector("style[data-kb-useful]").textContent, usefulCSS, "its rules are on the page");
+  assert.doesNotMatch(usefulCSS, /#[0-9a-f]{3,8}\b|rgba?\(|opacity|color-mix/i, "tokens only, no compositing");
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const value = token => root.getPropertyValue(`--${token}`).trim();
+  for (const [selector, fg, painted, bg] of [
+    [".kb-useful .kb-context", "muted", ".kb-useful .kb-context", "surface"],
+    [".kb-useful-name", "fg", ".kb-editor", "surface"],
+    [".kb-useful kbd", "fg", ".kb-useful kbd", "bg"],
+    [".kb-useful .kb-then", "muted", ".kb-editor", "surface"],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
+    for (let node = el === surface ? null : el.parentElement; node && node !== surface; node = node.parentElement) {
+      assert.ok(["", "none", "transparent", "rgba(0, 0, 0, 0)"].includes(dom.window.getComputedStyle(node).background), `${selector}: nothing painted between it and ${painted}`);
+    }
+    assert.ok(pairs.some(([f, b]) => f === fg && b === bg), `--${fg} on --${bg} is in the inventory`);
+    assert.ok(contrast(opaqueChannels(value(fg)), opaqueChannels(value(bg))) >= 4.5, `${selector}: ${fg} on ${bg}`);
+    for (let node = el; node; node = node.parentElement) assert.equal(dom.window.getComputedStyle(node).opacity, "1", `${selector}: no opacity`);
+  }
 });

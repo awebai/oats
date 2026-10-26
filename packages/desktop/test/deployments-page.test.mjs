@@ -1,4 +1,5 @@
-// The Deployments page (UI spec, #482; it replaces the Active overview): its tabs (All, then one per
+// The Deployments view (UI spec, #482; it replaces the Active overview; the Workspace page's Machines tab since
+// 2026-10-26, views/spawn.mjs mounts it there, workspace-v2-view.test.mjs pins that side): its tabs (All, then one per
 // deployment), All as the overview canvas split into one section per deployment, and a deployment's tab
 // showing only that deployment's tree, or why it has none. DOM and computed-token checks in jsdom; no
 // Electron, HTTP or CLI. (The first tests moved here from workspace-views-ui.test.mjs.)
@@ -9,8 +10,7 @@ import { JSDOM } from "jsdom";
 import * as hierarchy from "../renderer/views/hierarchy.mjs";
 import { currentWorkspace, setWorkspace } from "../renderer/views/common.mjs";
 import { requestDeploymentTab, rememberDeploymentTab, rememberedDeploymentTab } from "../renderer/deployment-tabs.mjs";
-import { createDeploymentTabBar } from "../renderer/deployments-page.mjs";
-import { lifecycleCSS } from "../renderer/lifecycle-dialog.mjs";
+import { createDeploymentTabBar, deploymentHead } from "../renderer/deployments-page.mjs";
 
 const theme = readFileSync(new URL("../renderer/theme.css", import.meta.url), "utf8");
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -56,15 +56,18 @@ async function page(t, data, { before } = {}) {
   return { dom, doc, host, all, one, tabs, tab, key, poll, names: (el) => [...el.querySelectorAll(".hnode")].map((n) => n.dataset.name).sort() };
 }
 
-test("one deployment: only its own tab, no All, and the overview as before with no heading", async (t) => {
+test("one deployment: only its own tab, no All, and its tree under its machine's heading (the Machines tab, 2026-10-26)", async (t) => {
   const rows = [row("lead", LOCAL), row("dev", LOCAL, { parentInstance: "lead" }), row("solo", LOCAL)];
   const u = await page(t, panel([LOCAL], rows));
   assert.deepEqual(u.tabs().map((b) => b.textContent), ["This Mac"]);
   assert.equal(u.tabs()[0].getAttribute("aria-selected"), "true");
-  assert.equal(u.all(".hier-deployment").length, 0); assert.equal(u.all(".hier-dhead").length, 0);
+  assert.equal(u.all(".hier-deployment").length, 1); assert.equal(u.all(".hier-dhead").length, 1);
+  assert.deepEqual(u.all(".hier-dname").map((n) => n.textContent), ["This Mac · ~/Agents/oats"]);
+  assert.deepEqual(u.all(".hier-dsub").map((n) => n.textContent), ["Instances on This Mac"]);
+  assert.equal(u.one(".hier-dstate"), null, "live: no chip");
   assert.equal(u.all(".hier-cluster").length, 1); assert.equal(u.all(".hier-solo .hnode").length, 1);
-  assert.equal(hierarchy.layoutByDeployment(rows, [LOCAL]), null);
-  assert.ok(u.host.querySelector(".hier-stage > .hier-cluster"), "groups sit on the stage as always");
+  assert.deepEqual(u.names(u.one(".hier-deployment")).sort(), ["dev", "lead", "solo"], "the whole tree under the heading");
+  assert.equal(hierarchy.layoutByDeployment(rows, [LOCAL]), null, "no All tab's sections");
   assert.match(u.one(".hier-sum").textContent, /^3 running · 0 stopped · 1 group · 1 independent$/);
 });
 
@@ -290,9 +293,9 @@ test("a reached deployment that is not matched says why on its tab (the switcher
   assert.equal(block.querySelector(".hier-dshort").textContent, "OATS too old to report its workspace");
   assert.equal(block.querySelector(".hier-dfix > summary").textContent, "How to fix");
   assert.deepEqual([...block.querySelectorAll(".hier-dfix-steps li")].map((li) => li.textContent), ["Update OATS on rigel."]);
-  // A reached, matched deployment alone still draws the overview as it always was: no heading.
+  // A reached, matched deployment alone is headed with its machine and no chip (the Machines tab, 2026-10-26).
   const quiet = await page(t, panel([LOCAL], [row("lead", LOCAL)]));
-  assert.equal(quiet.all(".hier-dhead").length, 0);
+  assert.equal(quiet.all(".hier-dhead").length, 1); assert.equal(quiet.one(".hier-dstate"), null);
 });
 
 test("a live deployment's note (information, not a failure) is said under Details, with no chip and no mark, even when it is alone", async (t) => {
@@ -352,96 +355,84 @@ test("header: the counts sit at the right, never against the tabs, and no Spawn 
   assert.equal(win.getComputedStyle(u.one(".hier-sum")).whiteSpace, "nowrap");
 });
 
-/* ── "What is a deployment?" (the product owner asked for an info icon that explains what a deployment is):
-   the Workspace page's round "i" and its About dialog (about-dialog.mjs), after the tabs. ── */
-const DEPLOYMENT_TEXT = [
-  "A deployment is this workspace set up in a folder on a machine, where its instances live and run.",
-  "A workspace can have several deployments, on one machine or on several. This page shows each one, with its machine and its instances.",
-];
-const aboutOf = (u) => ({ button: u.one(".hier-bar .ws-info-button"), overlay: () => u.doc.querySelector(".palette-overlay.lifecycle-overlay"),
-  dialog: () => u.doc.querySelector("section.lifecycle-dialog.about-dialog"), close: () => u.doc.querySelector(".about-dialog .lifecycle-close") });
+/* ── What a machine is, in plain words (the Workspace page's Machines tab, the product owner, 2026-10-26): one
+   sentence under the bar, and under each machine's heading what the tree under it is. The round "i" and its
+   "What is a deployment?" dialog are gone. ── */
+const INTRO = "Each machine runs this workspace in a folder of its own. The instances under a machine run on that machine.";
 
-test('the "i": named "What is a deployment?", right after the tabs, the About pattern\'s 28px round button, closed until pressed', async (t) => {
-  const u = await page(t, THREE()), about = aboutOf(u), b = about.button;
-  assert.ok(b, "one info button in the page header");
-  assert.equal(u.all(".ws-info-button").length, 1);
-  assert.equal(b.tagName, "BUTTON"); assert.equal(b.type, "button");
-  assert.equal(b.getAttribute("aria-label"), "What is a deployment?", "its accessible name");
-  assert.equal(b.title, "What is a deployment?"); assert.equal(b.getAttribute("aria-haspopup"), "dialog");
-  assert.equal(b.querySelector("svg").getAttribute("width"), "15", "the About pattern's icon size");
-  assert.equal(b.previousElementSibling, u.one(".hier-tabs"), "beside the tabs, which lead the header");
-  const style = u.dom.window.getComputedStyle(b);
-  assert.equal(style.width, "28px"); assert.equal(style.height, "28px"); assert.equal(style.borderRadius, "50%");
-  assert.equal(style.marginLeft, "-12px", "against the strip, not the room kept before the counts");
-  assert.equal(about.overlay(), null, "closed until pressed");
-  // With no tabs (an older server reports no deployments) it leads the header, with no pull to the left.
+test('the intro: one plain sentence right under the bar, on every tab and with no tabs; no "i" and no About dialog', async (t) => {
+  const u = await page(t, THREE());
+  const intro = u.all(".hier-intro");
+  assert.equal(intro.length, 1, "one sentence");
+  assert.equal(intro[0].tagName, "P"); assert.equal(intro[0].textContent, INTRO);
+  assert.equal(intro[0].previousElementSibling, u.one(".hier-status"), "right under the bar, after only its visually hidden status line");
+  assert.equal(u.one(".hier-status").previousElementSibling, u.one(".hier-bar"));
+  assert.equal(intro[0].nextElementSibling, u.one(".hier-notice"), "above the notice and the canvas");
+  assert.equal(intro[0].querySelector("code, a, button"), null, "plain words: no code, no link, nothing to press");
+  assert.doesNotMatch(intro[0].textContent, /oats-local|\.yaml|`|deployment/, "plain words: no file names, no code, not the word deployment");
+  // No "i": no info button anywhere, nothing after the tabs, no About dialog to open.
+  assert.equal(u.doc.querySelector(".ws-info-button, [aria-haspopup=dialog]"), null, "no info button");
+  assert.equal(u.one(".hier-tabs").nextElementSibling?.classList.contains("ws-info-button") ?? false, false);
+  assert.deepEqual(u.all(".hier-bar button:not([role=tab])"), [], "the bar holds the tabs only");
+  assert.doesNotMatch(hierarchy.hierarchyCSS, /ws-info-button|about-dialog/, "no rule left for the \"i\" or its dialog");
+  for (const label of ["This Mac", "altair", "vega", "All"]) {
+    u.tab(label).click();
+    assert.deepEqual(u.all(".hier-intro").map((p) => p.textContent), [INTRO], `${label}: the same sentence`);
+  }
+  assert.equal(u.doc.querySelector(".palette-overlay, .about-dialog"), null, "no dialog opened along the way");
+  // With no tabs (an older server reports no deployments) the sentence stays under the bar.
   const old = await page(t, { instances: [row("lead", LOCAL)], workspace: view, workspaces: [view] });
-  const lone = aboutOf(old).button;
-  assert.ok(lone); assert.equal(old.one(".hier-tabs").hidden, true);
-  assert.equal(old.dom.window.getComputedStyle(lone).marginLeft, "0px");
+  assert.equal(old.one(".hier-tabs").hidden, true);
+  assert.equal(old.one(".hier-intro").previousElementSibling, old.one(".hier-status")); assert.equal(old.one(".hier-intro").textContent, INTRO);
+  assert.equal(old.doc.querySelector(".ws-info-button"), null);
 });
 
-test('"What is a deployment?": click opens the dialog with the text, Escape and Close close it back on the "i"', async (t) => {
-  const u = await page(t, THREE()), about = aboutOf(u);
-  about.button.focus(); about.button.click();
-  const dialog = about.dialog();
-  assert.ok(dialog, "the About dialog");
-  assert.equal(dialog.getAttribute("role"), "dialog"); assert.equal(dialog.getAttribute("aria-modal"), "true");
-  assert.equal(u.doc.getElementById(dialog.getAttribute("aria-labelledby")).textContent, "What a deployment is");
-  assert.deepEqual([...dialog.querySelectorAll(":scope > p")].map((p) => p.textContent), DEPLOYMENT_TEXT, "the text, in the dialog a screen reader reads");
-  assert.doesNotMatch(dialog.textContent, /oats-local|\.yaml|`/, "plain words: no file names, no code");
-  assert.equal(dialog.querySelector("code"), null);
-  assert.equal(u.doc.activeElement, about.close(), "opening focuses Close");
-  let outside = 0; u.doc.body.addEventListener("keydown", (e) => { if (e.key === "Escape") outside++; });
-  u.key(about.close(), "Escape");
-  assert.equal(about.overlay(), null, "Escape closes it"); assert.equal(outside, 0, "the Escape is the dialog's, not the canvas's");
-  assert.equal(u.doc.activeElement, about.button, "focus back on the \"i\"");
-  about.button.click(); about.close().click();
-  assert.equal(about.overlay(), null); assert.equal(u.doc.activeElement, about.button);
-  // The canvas keeps its own Escape: the page's keys are untouched by the "i".
-  assert.equal(u.all(".hnode").length, 4);
+test('each machine\'s heading says the tree under it: "Instances on <machine>", or "Instances on this machine" when it names none', async (t) => {
+  const u = await page(t, THREE());
+  const subs = () => u.all(".hier-dhead").map((h) => h.querySelector(".hier-dsub")?.textContent ?? null);
+  assert.deepEqual(subs(), ["Instances on This Mac", "Instances on altair", "Instances on vega"], "one line per heading, the machine named");
+  for (const head of u.all(".hier-dhead")) {
+    assert.equal(head.querySelectorAll(".hier-dsub").length, 1);
+    assert.equal(head.querySelector(".hier-dsub").previousElementSibling, head.querySelector(".hier-dline"), "right under the machine's name and counts");
+    assert.equal(head.querySelector(".hier-dline").contains(head.querySelector(".hier-dsub")), false, "its own line, not the aria-hidden one");
+  }
+  // A deployment's tab: its own heading's line; an empty, not reached one says it in its reason block.
+  u.tab("altair").click(); assert.deepEqual(subs(), ["Instances on altair"]);
+  u.tab("vega").click(); assert.equal(u.one(".hier-dreason .hier-dsub").textContent, "Instances on vega");
+  // A deployment that names no machine: "this machine", never an id or a path (deploymentHead, deployments-page.mjs).
+  const HERE = { id: "/Users/op/Agents/here", path: "/Users/op/Agents/here", label: "~/Agents/here", local: true, reachable: true, identityFrom: "reported", primary: true };
+  for (const machine of [undefined, ""]) {
+    const head = deploymentHead(u.doc, { deployment: { ...HERE, ...(machine === undefined ? {} : { machine }) }, rows: [] }).element;
+    assert.equal(head.querySelector(".hier-dsub").textContent, "Instances on this machine", `machine ${JSON.stringify(machine)}`);
+    assert.equal(head.querySelector(".hier-dmachine").textContent, "This Mac", "the heading keeps this machine's word");
+  }
+  assert.equal(deploymentHead(u.doc, { deployment: VEGA, rows: [] }).element.querySelector(".hier-dsub").textContent, "Instances on vega");
+  // Through the page, a local deployment the panel names no machine for is this machine's word (view-deployments.mjs).
+  const v = await page(t, panel([HERE, ALTAIR], [row("near", HERE), row("far", ALTAIR)]));
+  assert.deepEqual(v.all(".hier-dhead .hier-dsub").map((d) => d.textContent), ["Instances on This Mac", "Instances on altair"]);
+  // One deployment is headed too, with its line.
+  const one = await page(t, panel([LOCAL], [row("lead", LOCAL)]));
+  assert.deepEqual(one.all(".hier-dhead .hier-dsub").map((d) => d.textContent), ["Instances on This Mac"]);
+  // Computed type: the heading's muted 11px secondary line.
+  const style = u.dom.window.getComputedStyle(u.one(".hier-dsub"));
+  assert.equal(style.color, "var(--muted)"); assert.equal(style.fontSize, "11px");
 });
 
-test('"What is a deployment?": a workspace change closes it without moving focus; leaving the page removes it', async (t) => {
-  const u = await page(t, THREE()), about = aboutOf(u);
-  about.button.focus(); about.button.click(); assert.ok(about.overlay());
-  setWorkspace("ws:other");
-  assert.equal(about.overlay(), null, "closed by the workspace change");
-  assert.notEqual(u.doc.activeElement, about.button, "no focus return to the \"i\" (close({ focus: 'none' }))");
-  setWorkspace("ws:view"); await tick(); await tick();
-  aboutOf(u).button.click(); assert.ok(about.overlay());
-  hierarchy.unmount();
-  assert.equal(about.overlay(), null, "unmounting the page disposes its dialog");
-});
-
-for (const name of ["light", "solarized", "dark"]) test(`${name}: the "i", its focus tint and the dialog's text meet computed AA`, async (t) => {
+for (const name of ["light", "solarized", "dark"]) test(`${name}: the intro sentence and each heading's "Instances on …" line meet computed AA`, async (t) => {
   const u = await page(t, THREE());
   u.doc.documentElement.dataset.theme = name;
-  const frame = u.doc.createElement("style"); frame.textContent = lifecycleCSS; u.doc.head.append(frame); // the shell's sheet
-  const win = u.dom.window, root = win.getComputedStyle(u.doc.documentElement), about = aboutOf(u);
-  const pass = (fg, bg, what) => {
+  const empty = await page(t, THREE(), { before: (win) => rememberDeploymentTab("ws:view", VEGA.id, win.localStorage) });
+  empty.doc.documentElement.dataset.theme = name;
+  for (const [p, selector, fg] of [[u, ".hier-intro", "muted"], [u, ".hier-dhead .hier-dsub", "muted"], [empty, ".hier-dreason .hier-dsub", "muted"]]) {
+    const win = p.dom.window, el = p.one(selector); assert.ok(el, selector);
+    assert.equal(win.getComputedStyle(el).color, `var(--${fg})`, selector);
+    const bg = painted(win, el); assert.ok(bg, `${selector} sits on a painted token surface`);
+    const root = win.getComputedStyle(p.doc.documentElement);
     const r = ratio(root.getPropertyValue(`--${fg}`).trim(), root.getPropertyValue(`--${bg}`).trim());
-    assert.ok(r >= 4.5, `${what}: ${fg} on ${bg} is ${r.toFixed(2)}:1`);
-  };
-  const b = about.button;
-  assert.equal(win.getComputedStyle(b).color, "var(--muted)");
-  assert.equal(painted(win, b), "surface", "the button paints the header's surface");
-  pass("muted", "surface", "the \"i\"");
-  // Keyboard focus: the About pattern's --sel tint under the shell's 1px --accent ring (theme.css :focus-visible).
-  // (jsdom does not resolve :focus-visible: the declared rules are read.)
-  const rules = [...u.doc.styleSheets].flatMap((sheet) => [...sheet.cssRules]);
-  assert.ok(rules.some((r) => r.selectorText === ".oats-view button.ws-info-button:focus-visible" && r.style.background === "var(--sel)"), "the focus tint");
-  assert.ok(rules.some((r) => r.selectorText === ":focus-visible" && r.style.outline === "1px solid var(--accent)"), "the focus ring");
-  pass("muted", "sel", "the focused \"i\"");
-  for (let e = b; e; e = e.parentElement) assert.equal(win.getComputedStyle(e).opacity, "1", "no opacity over the icon");
-  b.click();
-  for (const el of [about.dialog().querySelector("h2"), ...about.dialog().querySelectorAll(":scope > p")]) {
-    assert.equal(win.getComputedStyle(el).color, "var(--fg)", el.textContent);
-    assert.equal(painted(win, el), "surface", el.textContent);
-    pass("fg", "surface", el.textContent);
-    for (let e = el; e; e = e.parentElement) assert.equal(win.getComputedStyle(e).opacity, "1", "no opacity over the text");
+    assert.ok(r >= 4.5, `${selector}: ${fg} on ${bg} is ${r.toFixed(2)}:1`);
+    for (let e = el; e; e = e.parentElement) assert.equal(win.getComputedStyle(e).opacity, "1", `${selector}: no opacity over text`);
   }
-  about.close().click();
+  assert.equal(painted(u.dom.window, u.one(".hier-intro")), "surface", "the intro paints its own surface");
 });
 
 test("tab strip overflow: a newly selected or focused tab is scrolled into the strip, and only the strip scrolls", () => {

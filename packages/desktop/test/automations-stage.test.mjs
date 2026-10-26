@@ -1,7 +1,7 @@
 // Automations (human 2026-09-28): ONE destination, with Schedules | Triggers as subtabs in the
 // Workspace's tab style — the bar holds (no title) the two tabs (each with its row count), then
-// the shown page's own tools. Since the sidebar layout (2026-10-23) the destination is the Workspace
-// page's Automations tab (views/spawn.mjs mounts this stage there; workspace-v2-view.test.mjs pins that side).
+// the shown page's own tools. A page of its own again since 2026-10-26 (from 2026-10-23 it was the Workspace
+// page's Automations tab; workspace-v2-view.test.mjs pins that the Workspace page has no such tab now).
 // On the captured kernel lists (test/fixtures/automations/kernel).
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -77,7 +77,7 @@ test("a soul's Schedule… opens Automations on Schedules; an older OATS gets ea
   assert.match(old.el.textContent, /Triggers need OATS 0\.29 or later/);
 });
 
-// The Workspace's Automations tab is reached while its stage may already be on screen: a preselect (a soul's
+// The Automations page is reached while its stage may already be on screen: a preselect (a soul's
 // Schedule…, the palette's View: Automations after a Triggers visit) switches the live stage at once, and a
 // disposed stage is no longer reached, so it reads nothing.
 test('preselectAutomationsTab switches a stage already on screen; a disposed one is not reached and reads nothing', async t => {

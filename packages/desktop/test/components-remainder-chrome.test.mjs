@@ -136,7 +136,7 @@ test('workspace rows are the roster\'s circle and the name, from reported words 
   assert.doesNotMatch(doc.querySelector('#ws-options').textContent, /Server:|\/a\/team|\/b\/team/);
   // Add local workspace… is the head's icon button, named in words; the list invents nothing.
   assert.equal(doc.querySelector('#ws-add-open').getAttribute('aria-label'), 'Add local workspace…'); assert.equal(doc.querySelector('#ws-add-open').title, 'Add local workspace…');
-  assert.doesNotMatch(`${doc.querySelector('.ws-head').textContent} ${doc.querySelector('#ws-list').textContent}`, /Join|Manage workspaces|99|offline|online/);
+  assert.doesNotMatch(`${doc.querySelector('.side-head').textContent} ${doc.querySelector('#ws-list').textContent}`, /Join|Manage workspaces|99|offline|online/);
   const named = first.textContent;
   switcher.begin()(choices[0], [...choices].reverse()); assert.equal([...doc.querySelectorAll('.ws-option')].find(b => b.dataset.workspaceId === choices[0].id).textContent, named, 'a reorder keeps the row\'s name');
   // A row from an earlier paint opens nothing; the current row is already shown; the other one is chosen.

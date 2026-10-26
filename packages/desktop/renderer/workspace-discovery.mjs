@@ -27,14 +27,13 @@ import { createWarningsList, capabilityWarningsCSS } from './capability-warnings
 import { displayLine } from '../../client/display-text.mjs';
 import { trackStickyTop, trackScrolledEdge } from './sticky-top.mjs';
 
-export const workspaceTabs = ['souls', 'capabilities', 'automations', 'teams', 'sources'];
-// What a person reads (the ids stay stable): Souls, Capabilities, Automations, Teams, Setup (product owner, 2026-10-23,
-// superseding 2026-09-28's "Teams first"). Teams is who can work together; Setup is what the workspace is
-// built from (repos, packages, external souls). Automations (Schedules | Triggers) was a page of its own until
-// The sidebar layout (2026-10-23): its panel is the Workspace view's (views/spawn.mjs), as the Souls grid is.
+export const workspaceTabs = ['souls', 'capabilities', 'teams', 'machines', 'sources'];
+// What a person reads (the ids stay stable): Souls, Capabilities, Teams, Machines, Setup (product owner, 2026-10-26).
+// Machines is the Deployments page of before (views/hierarchy.mjs): the instances on each machine. Teams is who can
+// work together; Setup is what the workspace is built from (repos, packages, external souls). The page opens on Souls.
 /** The tabs whose panel the Workspace view owns: this module shows and hides it, and paints nothing in it. */
-const OWN_PANELS = ['souls', 'automations'];
-const TAB_LABELS = { teams: 'Teams', souls: 'Souls', capabilities: 'Capabilities', automations: 'Automations', sources: 'Setup' };
+const OWN_PANELS = ['machines', 'souls'];
+const TAB_LABELS = { machines: 'Machines', teams: 'Teams', souls: 'Souls', capabilities: 'Capabilities', sources: 'Setup' };
 /** The Workspace page's tab bar rules for a selector: plain-text tabs, the selected one at 650 over a 2px
  * --live underline. Shared with the Deployments page's tabs (deployments-page.mjs), so the two never drift. */
 export const tabBarCSS = (sel) => `${sel} { display:flex; flex-wrap:nowrap; overflow-x:auto; gap:22px; min-width:0; scrollbar-width:none; }
@@ -193,7 +192,7 @@ function catalogSkeleton(doc, rows = 6) {
 }
 
 /** `onCatalog`: the catalog changed (a read settled, the subject was reset): a page rendered from it refreshes in place. */
-export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, automationsPanel = null, onTab, onIntent, onOpenCapability = null, onCatalog = null, onTeamMember = () => {}, onOpenTeam = null, rosterState = () => 'ready' }) {
+export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, machinesPanel = null, onTab, onIntent, onOpenCapability = null, onCatalog = null, onTeamMember = () => {}, onOpenTeam = null, rosterState = () => 'ready' }) {
   const doc = header.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
@@ -294,11 +293,11 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, autom
     for (const [id, button] of viewButtons) button.setAttribute('aria-pressed', String(id === setupView));
   }
   soulsPanel.id = 'workspace-souls'; soulsPanel.setAttribute('role', 'tabpanel'); soulsPanel.setAttribute('aria-labelledby', 'workspace-tab-souls');
-  if (automationsPanel) {
-    automationsPanel.id = 'workspace-automations'; automationsPanel.setAttribute('role', 'tabpanel');
-    automationsPanel.setAttribute('aria-labelledby', 'workspace-tab-automations');
+  if (machinesPanel) {
+    machinesPanel.id = 'workspace-machines'; machinesPanel.setAttribute('role', 'tabpanel');
+    machinesPanel.setAttribute('aria-labelledby', 'workspace-tab-machines');
   }
-  const ownPanel = name => (name === 'souls' ? soulsPanel : name === 'automations' ? automationsPanel : null);
+  const ownPanel = name => (name === 'souls' ? soulsPanel : name === 'machines' ? machinesPanel : null);
   panel.className = 'workspace-discovery'; panel.setAttribute('role', 'tabpanel'); panel.tabIndex = 0;
   // `status` says the gate (a CLI or deployment state, its own truthful copy); the catalog's loading
   // controller has its own line, stale-line host and skeleton / failed host, shown on Capabilities only.
@@ -358,7 +357,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, autom
       control.setAttribute('aria-selected', String(key === tab)); control.tabIndex = key === tab ? 0 : -1;
       control.setAttribute('aria-controls', ownPanel(key)?.id ?? panel.id);
     }
-    soulsPanel.hidden = tab !== 'souls'; if (automationsPanel) automationsPanel.hidden = tab !== 'automations';
+    soulsPanel.hidden = tab !== 'souls'; if (machinesPanel) machinesPanel.hidden = tab !== 'machines';
     panel.hidden = OWN_PANELS.includes(tab); syncTools();
     if (changed) { onIntent?.(); onTab?.(tab); }
     render(); if (tab === 'capabilities' && !catalog && !loading && !failure) void load();
