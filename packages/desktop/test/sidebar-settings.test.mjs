@@ -245,7 +245,7 @@ test("placed as the instance actions' menu: its right edge on the cog's, above t
   r.menu.getBoundingClientRect = () => box(0, 0, 220, 80);
   Object.defineProperty(r.win, "innerWidth", { value: 1200, configurable: true });
   Object.defineProperty(r.win, "innerHeight", { value: 800, configurable: true });
-  // The foot's cog in a 264px sidebar: 24px wide, its right edge 13px in from the sidebar's (250px), near the bottom.
+  // The foot's cog in a sidebar 264px wide (any width will do): 24px wide, its right edge 13px in from the sidebar's (250px), near the bottom.
   r.trigger.getBoundingClientRect = () => box(226, 768, 24, 24);
   r.trigger.focus(); r.key(r.trigger, { key: "ArrowDown" });
   assert.deepEqual([r.menu.style.left, r.menu.style.top], ["30px", "684px"], "right edges aligned (250 - 220), 4px above the cog");

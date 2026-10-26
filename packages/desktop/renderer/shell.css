@@ -13,7 +13,9 @@ body {
   color: var(--fg);
   font: 13px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
 }
-#app { display: flex; }
+/* The sidebar's width (sidebar-width.mjs): one custom property, set inline by its handle within 240px and
+   min(480px, 45% of the window); 288px until it is moved. */
+#app { display: flex; --sidebar-w: 288px; }
 #workbench { flex: 1; min-width: 0; min-height: 0; display: flex; container-type: inline-size; }
 /* Narrow workbenches stack details below the main surface, never over a live
    terminal or inside an editor group. The original groups/proportions survive. */
@@ -32,7 +34,7 @@ body {
 
 /* ── nav rail ── */
 #sidebar {
-  position: relative; width: 264px; min-width: 264px; flex: none;
+  position: relative; width: var(--sidebar-w); min-width: var(--sidebar-w); flex: none;
   background: var(--surface);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;

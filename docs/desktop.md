@@ -225,6 +225,17 @@ instance roster**) and `/` in the sidebar go to the roster's current row;
 on an empty roster, to its one action, the foot's **Spawn instance**, where
 F6 lands too (a failed read's **Retry** comes first).
 
+The sidebar is 288px wide, and you can make it wider or narrower: drag its
+right edge, between 240px and 480px (or 45% of the window, when that is
+less, so the terminals keep the rest). With the keyboard, Tab to that edge
+(after the settings cog) and use ← and → (8px a step, 32px with Shift), Home
+and End for the narrowest and the widest. A double-click on the edge, Enter
+on it, or the command palette's **Sidebar: reset width** put it back to 288px.
+The width is remembered on this computer, and kept while the sidebar is
+hidden; a window too narrow for it shows it narrower, and gives it back when
+the window grows again. The terminals refit as it moves, and their programs
+hear the new size once, when you let go.
+
 The list of workspaces is always shown. Its heading holds **Add local
 workspace…** (the **+**). The list has one row per workspace this window can show, whatever
 machine it is on: every workspace the Desktop serves, those only on servers
