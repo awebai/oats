@@ -1227,9 +1227,10 @@ oats session attach --home /abs/home --detach-key 'C-\'
   viewer removes, key by key, every other key `list-keys` shows in that
   table (`unbind-key -q -T oatsview-locked-prefix <key>`, a key that ends in
   `;` written `\;`, since tmux reads a bare trailing `;` as the end of a
-  command). The table is the
-  server's, so a tmux.conf or another program may have bound one there: a
-  `C-b n` bound to `next-window` would break the lock. A keyed viewer has
+  command). A key is read as `list-keys` writes it: without the double
+  quotes it puts around some (`"M-;"`), then unescaped (`\;`, `\#`). The
+  table is the server's, so a tmux.conf or another program may have bound
+  one there: a `C-b n` bound to `next-window` would break the lock. A keyed viewer has
   no `C-b` key; its caller chooses its keys.
 
   **Only on tmux 3.3 and later** (`VIEWER_PREFIX_MIN_TMUX`). The forwarding

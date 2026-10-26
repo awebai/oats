@@ -337,7 +337,8 @@ test("a stray binding in the C-b table (a tmux.conf's, another program's) is rem
     "bind-key -T oatsview-locked-prefix n next-window",
     "bind-key -T oatsview-locked-prefix C-c new-window",
     "bind-key -T oatsview-locked-prefix \\; display-message hi",
-    "bind-key -T oatsview-locked-prefix M-\\; display-message hi",
+    // tmux 3.8 lists a key holding `;` in double quotes.
+    "bind-key -T oatsview-locked-prefix \"M-;\" display-message hi",
     "bind-key -T oatsview-locked-prefix \\# display-message hi",
     "bind-key -T oatsview-locked-prefix \\\" display-message hi",
     "bind-key -T oatsview-locked-prefix \\\\ display-message hi",
