@@ -848,8 +848,11 @@ With nothing selected, Ctrl+Shift+C, ⌘C and Edit › Copy do nothing and leave
 the clipboard as it was, and Ctrl+C still interrupts the program in the pane. Copies trim trailing spaces at line ends, as native
 terminals do.
 
-A drag selects what is on the screen. To select older output, wheel up first
-(the pane scrolls back through tmux's history), then select. The wheel scrolls
+A drag selects what is on the screen. To select older output, scroll back
+first, then select. Wheel up, or press **Shift+PgUp**, or **Ctrl+B** then `[`:
+the pane scrolls back through tmux's history, and `q` returns to the bottom.
+Ctrl+B `[` needs tmux 3.3 or later on the computer the agent runs on. Ctrl+B
+followed by any other key still reaches the agent. The wheel scrolls
 as before, and a program that uses the mouse itself still receives the wheel.
 It no longer receives mouse clicks or drags from the Desktop: those always
 select.
@@ -988,7 +991,7 @@ unknown or unreported harness shows "?". Sources and licences are in
 | "This Desktop is older than the installed oats CLI" card | The CLI found is a released version above the range this Desktop works with, usually because the CLI was updated first. Install OATS Desktop of the version the card names; the card offers no npm command, since installing the CLI this Desktop pins would downgrade it. Reads and terminals keep working meanwhile; **Choose oats…** points at another, compatible CLI and **Retry** re-probes. |
 | Spawn disabled, no card | The probe hasn't settled yet (transient, resolves in ms). If it persists, the backend is unreachable — restart the app. |
 | Terminals fail to open ("could not attach") | tmux missing, or no live session for that instance. Install tmux (`tmux -V`); check `tmux -L oats ls` (the OATS tmux server, where instances run) and `tmux ls` (your default server, where an instance started by an earlier kernel may still be). |
-| Can't select/copy text in a terminal tab | A plain drag selects, and copying is a separate step: ⌘C / Edit › Copy (macOS), Ctrl+Shift+C (Linux/Windows) or right-click › Copy ([Copy from a terminal](#copy-from-a-terminal)). A drag selects only what is on screen: wheel up first for older output. In `oats session attach` in your own terminal, hold **Option** (iTerm2, Ghostty, Terminal.app) or **Shift** while dragging. |
+| Can't select/copy text in a terminal tab | A plain drag selects, and copying is a separate step: ⌘C / Edit › Copy (macOS), Ctrl+Shift+C (Linux/Windows) or right-click › Copy ([Copy from a terminal](#copy-from-a-terminal)). A drag selects only what is on screen: scroll back first (wheel up, Shift+PgUp or Ctrl+B then `[`) for older output. In `oats session attach` in your own terminal, hold **Option** (iTerm2, Ghostty, Terminal.app) or **Shift** while dragging. |
 | macOS "app is damaged / can't be opened" | Ad-hoc-signed (not notarized) build + quarantine. Right-click → Open, or clear the quarantine attribute (above). If it persists, verify the bundle: `codesign --verify --deep --strict --verbose=2 "/Applications/OATS Desktop.app"` — a non-zero exit means a broken artifact, report it. |
 | Log says `server on 4820 — this app's server at version X (this app is Y), not started by this app — left running — starting a dedicated one on 4821` | Another OATS Desktop server holds the default port: another installed version or a dev checkout that is running, or one an earlier Desktop left running. The app serves from the port it names and never stops a server it did not start. From 0.49.0 a server the app starts exits when the app ends, however it ends (quit, crash or kill). A server left by an earlier Desktop (seen on Linux, where it outlived the app in its own `app-…scope`) must be stopped once by hand: find it with `ss -ltnp 'sport = :4820'` (or `lsof -iTCP:4820 -sTCP:LISTEN` on macOS) and stop that pid, or its scope (`systemctl --user stop <scope>`), then restart the app. |
 | Roster empty | The opened directory isn't an OATS deployment (it needs `oats-local.yaml` and `agents/`). Use **Add local workspace…** (the **+** at the top of the sidebar) to select the right folder. |
