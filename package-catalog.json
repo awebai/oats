@@ -41,6 +41,11 @@
       "ref": "v1.0.0",
       "path": "oats-package"
     },
+    "oats.machine": {
+      "url": "https://github.com/awebai/oats-machine.git",
+      "ref": "v0.1.1",
+      "path": "oats-package"
+    },
     "oats.framework": {
       "url": "https://github.com/awebai/oats.git",
       "ref": "oats-framework/v1.13.5",
@@ -79,6 +84,7 @@
     "oats.code-review": "oats.engineering",
     "oats.maintainer": "oats.engineering",
     "oats.folio": "oats.apps",
-    "oats.library": "oats.apps"
+    "oats.library": "oats.apps",
+    "oats.machine-care": "oats.machine"
   }
 }
