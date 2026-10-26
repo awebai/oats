@@ -90,13 +90,14 @@ export function viewerPrefix(pid) {
  * @param {(args: string[]) => void} io.tmux        run a tmux command (throws on failure)
  * @param {(args: string[]) => string} io.tmuxOut    run a tmux command, return trimmed stdout
  * @param {(target: string, cols: number, rows: number) => any} io.spawnPty
+ * @param {() => boolean} [io.forwardsBoundKey]     this tmux sends a bound key on (3.3+): the C-b table; absent: none
  * @param {() => string} [io.uniqueName]            viewer session name (default: prefix+pid+counter+random)
  * @returns {{ target: string, viewer: string, pty: any,
  *             killViewer: () => void }}
  */
 let viewerSeq = 0;
 
-/** The locked key table's COMPLETE binding set — wheel scrollback and drag-to-select only.
+/** The locked key table's COMPLETE binding set — wheel scrollback, drag-to-select and Shift+PgUp.
  * An inert (nonexistent) table blocked window escape but also killed wheel
  * handling entirely: pi runs on the alternate screen, so scrollback history
  * belongs to tmux and the renderer cannot recover it — scrolling died.
@@ -108,6 +109,7 @@ let viewerSeq = 0;
  * forwards the wheel (copy-mode's own WheelUp/WheelDownPane then do 5-line
  * scrolling until -e exits at the bottom). NO window-management bindings
  * (next/last/new/select-window...) exist here — that is the lock.
+ * The kernel's viewer binds the same (lib/session-viewer.mjs VIEWER_BINDINGS), which a test pins.
  * Exported so tests can assert the exact provisioned set. */
 export const LOCKED_TABLE_BINDINGS = [
   // argv tail for: tmux bind-key -T oatsdesk-locked <key> <command...>
@@ -117,6 +119,28 @@ export const LOCKED_TABLE_BINDINGS = [
   // viewer (lib/session-viewer.mjs binds the same) and the renderer's far-side fallback only: a Desktop tab keeps
   // the mouse buttons for xterm's own selection (renderer/terminal-mouse.mjs, #672), so no drag reaches tmux there.
   ["MouseDrag1Pane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -M"],
+  // Shift+PgUp (#1476, #1502): copy mode, a page up. The renderer's key path sends tmux the key (CSI 5;2 ~),
+  // which xterm.js would otherwise keep to scroll its own, empty, viewport.
+  ["S-PageUp", "copy-mode -u"],
+];
+/** The locked table's C-b table (#1502), where this tmux sends a bound key on (3.3 and later,
+ * local-tmux-io.mjs tmuxForwardsBoundKey). The locked table binds PREFIX_KEY to the one
+ * `switch-client` it holds, `-T LOCKED_PREFIX_TABLE`: a key-table switch, never a session switch. The
+ * client reads its next key here, and tmux takes it back to the locked table after that key, with no
+ * timeout. `[` enters copy mode; the wheel, the drag and Shift+PgUp send the C-b on, then do what the
+ * locked table does; and any other key (`Any`) sends the C-b, then the key itself (`send-keys` with no
+ * key sends the key it is bound to), so C-b n or C-b C-b reaches the agent as typed. Nothing here
+ * manages a window or a session. The bindings are the kernel viewer's
+ * (lib/session-viewer.mjs LOCKED_PREFIX_BINDINGS), which a test pins; the table is the Desktop's own,
+ * since key tables are server-global and a kernel viewer empties its own as it binds it. */
+export const PREFIX_KEY = "C-b";
+export const LOCKED_PREFIX_TABLE = "oatsdesk-locked-prefix";
+export const LOCKED_PREFIX_BINDINGS = [
+  ["[", "copy-mode"],
+  ["WheelUpPane", "send-keys C-b ; if-shell -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' 'send-keys -M' 'copy-mode -e; send-keys -M'"],
+  ["MouseDrag1Pane", "send-keys C-b ; if-shell -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' 'send-keys -M' 'copy-mode -M'"],
+  ["S-PageUp", "send-keys C-b ; copy-mode -u"],
+  ["Any", "send-keys C-b ; if-shell -F '#{!=:#{mouse_x},}' 'send-keys -M' 'send-keys'"],
 ];
 
 export function openTerm(spec, io) {
@@ -160,8 +184,9 @@ export function openTerm(spec, io) {
     io.tmux(["kill-window", "-t", placeholderId]);
     // 4. lock the viewer's key handling: no prefix → no window-management
     //    bindings can run; the dedicated key-table carries ONLY the
-    //    provisioned wheel bindings (scrollback stays alive — tmux owns the
-    //    history). (set-option/bind-key targets don't accept '=' — the
+    //    provisioned scrollback bindings (the wheel, the drag, Shift+PgUp and,
+    //    on tmux 3.3+, C-b into the C-b table: scrollback stays alive — tmux
+    //    owns the history). (set-option/bind-key targets don't accept '=' — the
     //    unique random name cannot prefix-collide.)
     io.tmux(["set-option", "-t", viewer, "prefix", "None"]);
     io.tmux(["set-option", "-t", viewer, "prefix2", "None"]);
@@ -173,6 +198,13 @@ export function openTerm(spec, io) {
     io.tmux(["unbind-key", "-a", "-q", "-T", "oatsdesk-locked"]);
     for (const binding of LOCKED_TABLE_BINDINGS) {
       io.tmux(["bind-key", "-T", "oatsdesk-locked", ...binding]);
+    }
+    // C-b [ scrolls back where tmux sends a bound key on; below that there is no C-b binding and no
+    // C-b table, and C-b reaches the agent as before. The C-b table is server-global too: cleared first.
+    if (io.forwardsBoundKey?.()) {
+      io.tmux(["bind-key", "-T", "oatsdesk-locked", PREFIX_KEY, `switch-client -T ${LOCKED_PREFIX_TABLE}`]);
+      io.tmux(["unbind-key", "-a", "-q", "-T", LOCKED_PREFIX_TABLE]);
+      for (const binding of LOCKED_PREFIX_BINDINGS) io.tmux(["bind-key", "-T", LOCKED_PREFIX_TABLE, ...binding]);
     }
     // wheel needs tmux mouse handling in the viewer
     io.tmux(["set-option", "-t", viewer, "mouse", "on"]);

@@ -3,7 +3,7 @@
 // No real tmux: execFileSync and spawnPty are recorders.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { localTmuxIo, tmuxHasClientFeatures } from "../local-tmux-io.mjs";
+import { localTmuxIo, tmuxHasClientFeatures, tmuxForwardsBoundKey } from "../local-tmux-io.mjs";
 
 test("tmuxHasClientFeatures: tmux 3.2 and later, by release number; anything unparsed has none", () => {
   for (const version of ["tmux 3.2", "tmux 3.2a", "tmux 3.3a\n", "tmux 3.5", "tmux 3.7c", "tmux 3.10", "tmux 4.0", "tmux 10.1-rc"]) {
@@ -12,6 +12,26 @@ test("tmuxHasClientFeatures: tmux 3.2 and later, by release number; anything unp
   for (const version of ["tmux 3.0", "tmux 3.0a", "tmux 3.1", "tmux 3.1c", "tmux 2.9a", "tmux 1.8",
     "tmux next-3.6", "tmux master", "tmux openbsd-7.4", "not tmux 3.4", "tmux", "3.4", "", "  ", undefined, null, 3.4]) {
     assert.equal(tmuxHasClientFeatures(version), false, String(version));
+  }
+});
+
+test("tmuxForwardsBoundKey (#1502): tmux 3.3 and later, and a next-X.Y build as X.Y; anything unparsed does not", () => {
+  for (const version of ["tmux 3.3", "tmux 3.3a", "tmux 3.4\n", "tmux 3.8", "tmux 3.10", "tmux 4.0", "tmux next-3.3", "tmux next-3.6"]) {
+    assert.equal(tmuxForwardsBoundKey(version), true, version);
+  }
+  for (const version of ["tmux 3.2a", "tmux 3.2", "tmux 3.0", "tmux 2.9a", "tmux next-3.2", "tmux 10.1-rc", "tmux master",
+    "tmux openbsd-7.4", "not tmux 3.4", "tmux", "3.4", "", undefined, null]) {
+    assert.equal(tmuxForwardsBoundKey(version), false, String(version));
+  }
+});
+
+test("forwardsBoundKey: the io's tmux, from the same one `tmux -V` as the attach; a failed probe says no", () => {
+  for (const [version, forwards] of [["tmux 3.3a\n", true], ["tmux 3.2a\n", false], ["", false], [() => { throw new Error("ENOENT"); }, false]]) {
+    const { io, sync, ptys } = recorded(version);
+    assert.equal(io.forwardsBoundKey(), forwards, String(version));
+    io.spawnPty("=agents:=dev", 80, 24);
+    assert.equal(sync.filter(call => call.args.includes("-V")).length, 1, "asked once for both");
+    assert.equal(ptys[0].args.includes("sync"), typeof version === "string" && tmuxHasClientFeatures(version), "the attach reads the same answer");
   }
 });
 
@@ -53,7 +73,7 @@ test("spawnPty without a saved socket: -u -T sync attach-session", () => {
   assert.deepEqual(sync[0].args, ["-u", "-V"]);
 });
 
-test("the version is asked once per io, with run's own socket and environment, and only to attach", () => {
+test("the version is asked once per io, with run's own socket and environment, and only to build or attach a viewer", () => {
   const { io, sync, ptys } = recorded("tmux 3.4");
   io.preflight("=agents:=dev"); io.tmux(["set-option", "-t", "=v", "status", "off"]);
   assert.ok(!sync.some(call => call.args.includes("-V")), "nothing asked before an attach");
