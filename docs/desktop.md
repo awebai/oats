@@ -271,7 +271,7 @@ computer.
   and the list's description names it, by the same name as its row.
 - **The needs-input mark.** A row has an exclamation mark (a small amber
   disc with a "!") at its right end when an instance of that workspace needs
-  input, the same mark an instance's **Needs input** pill starts with: the claim the instance roster shows
+  input, the same mark a waiting instance's dot shows in the instance tree: the claim the instance roster shows
   for that instance, from a running session (OATS with the `waiting-on-you`
   feature), as the Desktop already reads it for the workspaces it serves.
   Every row can have it, the current one included. The row's name then ends
@@ -836,14 +836,27 @@ palette (which still finds the instance by its name), its terminal tab, a
 screen reader and the `oats` CLI all use the instance's real name. The TUI's
 sidebar shows the same words.
 
+A row's dot says the instance's state: filled while it runs, a ring when it is
+stopped, an amber dot when its state is unknown. An instance that needs input
+(a running session's claim, from OATS with the `waiting-on-you` feature) shows
+the needs-input mark in place of its dot: a slightly larger amber disc with a
+"!" cut out of it. Its shape, not only its colour, tells it from the unknown
+state's dot, and it is the mark its terminal tab and the workspace list show.
+The row keeps its soul and repository on its second line. A screen reader
+hears "Needs input" after the name, and the hover card gives the reason and
+how long it has waited. A collapsed parent shows "! N below" on its second
+line for the rows it hides that need input, beside its own mark when it waits
+too. Rows never move or grow, and nothing animates.
+
 ## An instance's colour
 
 An instance can have a colour, one of the soul palette's six (Sand, Sage,
 Slate, Mauve, Clay, Olive). Its dot shows it wherever the instance is listed:
 the sidebar, its terminal tab, the command palette and the overview. A running
 instance's dot is filled with the colour, a stopped one's is a ring in it. An
-instance whose state is unknown keeps the warning dot, and one without a colour
-looks as before. The shape says the state, never the colour alone.
+instance whose state is unknown keeps the warning dot, one that needs input
+shows the needs-input mark in the sidebar, never in its colour, and one without
+a colour looks as before. The shape says the state, never the colour alone.
 
 To set it, open **Instance: name and colour…** from the command palette, or
 press Alt+R (⌥⌘R on macOS; Ctrl+Alt+R in the Ctrl+Alt family). It acts on the instance of the terminal you

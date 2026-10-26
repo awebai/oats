@@ -92,9 +92,10 @@ body {
 /* A workspace with an instance that needs input: the needs-input mark (.attn-mark, below) at the row's far right,
    after the name, which is cut off before it (its words are in the name, sr-only, and the tooltip). */
 .ws-waiting { flex: none; margin-left: auto; margin-right: 2px; } /* 14px, centred in the right-hand column */
-/* The needs-input mark (2026-10-23; shell-icons.mjs OWN_ICONS.attention), on the workspace rows and in an instance's
-   Needs input pill: a --warn disc with the "!" cut out in --surface. Both hold 3:1 on every fill they sit on
-   (theme-contrast): the disc on the sidebar, a selected or hovered row and the pill's --attn-bg; the "!" on the disc. */
+/* The needs-input mark (2026-10-23; shell-icons.mjs OWN_ICONS.attention), on the workspace rows, as a waiting instance's
+   dot (.ctx-dot.waiting) and in the roster's roll-up pill: a --warn disc with the "!" cut out in --surface. Both hold
+   3:1 on every fill they sit on (theme-contrast): the disc on the sidebar, a selected or hovered row and the pill's
+   --attn-bg; the "!" on the disc. */
 .attn-mark { display: block; flex: none; stroke: none; }
 .attn-mark .attn-disc { fill: var(--warn); }
 .attn-mark .attn-glyph { fill: var(--surface); }
@@ -307,6 +308,11 @@ body {
 [data-instance-color="olive"] { --instance-color: var(--instance-olive); }
 .ctx-dot.on[data-instance-color] { border-color: var(--instance-color); background: var(--instance-color); }
 .ctx-dot.off[data-instance-color] { border-color: var(--instance-color); }
+/* A waiting row's dot (the product owner, 2026-10-26): the needs-input mark (.attn-mark) at 10px, centred on the 8px
+   dot's slot (-1px each side, as the spawn spinner), so the name and the guides keep their place. It keeps the dot's
+   2px ring in the row's fill, and paints that fill under the disc so no guide shows through its edge. */
+.ctx-dot.waiting { width: 10px; height: 10px; margin: 0 -1px; border: 0; background-color: var(--row-solid, var(--surface)); }
+.ctx-dot.waiting > .attn-mark { width: 10px; height: 10px; }
 /* A pending spawn (Spec C): a dot-sized spinner beside "Spawning…" (the text carries the state; the
    spinner only says it moves, and stands still under reduced motion). Its Check result stays visible. */
 .ctx-spawn-spinner { position: relative; z-index: 1; box-sizing: border-box; width: 10px; height: 10px; flex: none; margin: 0 -1px;
@@ -331,7 +337,7 @@ body {
 .ctx-name-line > .ctx-name { min-width: 0; }
 .ctx-new { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 10.5px; font-weight: 600; line-height: 15px; }
 .ctx-new-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent); }
-/* Spec D: Needs input. The pill paints its own opaque surface (--warn on --attn-bg passes AA), so it reads the same
+/* Spec D: Needs input, rolled up on a collapsed parent ("! N below"). The pill paints its own opaque surface (--warn on --attn-bg passes AA), so it reads the same
    over every row fill; background-color, never the shorthand (#549). No animation: the dot stays liveness. */
 .ctx-attn { flex: none; display: inline-flex; align-items: center; gap: 3px; padding: 0 5px; border: 1px solid var(--attn-border);
   border-radius: 999px; background-color: var(--attn-bg); color: var(--warn); font-size: 10.5px; font-weight: 600; line-height: 15px; white-space: nowrap; }

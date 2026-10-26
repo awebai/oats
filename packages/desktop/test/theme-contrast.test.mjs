@@ -24,6 +24,7 @@ import { prChip, rosterPrCSS } from '../renderer/roster-pr.mjs';
 import { createNotificationCenter, notificationCSS } from '../renderer/notifications.mjs';
 import { createWorkspaceSwitcher } from '../renderer/workspace-switcher.mjs';
 import { instanceActions } from '../renderer/instance-actions.mjs';
+import { iconElement } from '../renderer/shell-icons.mjs';
 import { createSettingsMenu } from '../renderer/sidebar-settings.mjs';
 import { instanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
@@ -1160,7 +1161,7 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
   }
 });
 
-for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel, disabled menu reasons, workspace rows, explicit Open toast and the Needs input pill meet computed AA`, async t => {
+for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel, disabled menu reasons, workspace rows, explicit Open toast and the Needs input roll-up pill meet computed AA`, async t => {
   const dom = new JSDOM(readFileSync(new URL('index.html', renderer), 'utf8'), { pretendToBeVisual: true }), doc = dom.window.document;
   doc.documentElement.dataset.theme = name;
   for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), identityCSS, contextPanelCSS, notificationCSS, rosterPrCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
@@ -1172,10 +1173,11 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     wrap.append(prChip(doc, { home: '/h', number: 1, state, isDraft: extra, url: null })); list.append(wrap);
   }
   const prOpen = doc.createElement('button'); prOpen.className = 'act ctx-pr-open'; list.append(prOpen);
-  // Spec D: the Needs input pill (and its "N below" roll-up) paints its own surface, on an idle and a selected row.
-  for (const [active, rollup] of [[false, false], [true, true]]) {
+  // Spec D: the "N below" roll-up pill paints its own surface, on an idle and a selected row (a waiting row's own mark
+  // is its dot since 2026-10-26: the test after the workspace rows').
+  for (const active of [false, true]) {
     const wrap = doc.createElement('div'); wrap.className = `ctx-tree-row${active ? ' active' : ''}`;
-    const pill = doc.createElement('span'); pill.className = `ctx-attn${rollup ? ' rollup' : ''}`; pill.textContent = rollup ? '2 below' : 'Needs input';
+    const pill = doc.createElement('span'); pill.className = 'ctx-attn rollup'; pill.textContent = '2 below';
     wrap.append(pill); list.append(wrap);
   }
   const panel = createContextPanel({ document: doc }); panel.setContext({ workspace: 'team', key: 'key', instance: row }); panel.setCollapsed(true);
@@ -1213,7 +1215,7 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
     ['.ctx-tree-row:not(.active) .ctx-pr[data-pr-state=draft]', '#sidebar', 'muted', 'surface'],
     ['.ctx-tree-row.active .ctx-pr[data-pr-state=draft]', '.ctx-tree-row.active', 'muted', 'sel'],
     ['.ctx-pr-open', '.ctx-pr-open', 'accent', 'surface'],
-    ['.ctx-tree-row:not(.active) .ctx-attn', '.ctx-tree-row:not(.active) .ctx-attn', 'warn', 'attn-bg'],
+    ['.ctx-tree-row:not(.active) .ctx-attn.rollup', '.ctx-tree-row:not(.active) .ctx-attn.rollup', 'warn', 'attn-bg'],
     ['.ctx-tree-row.active .ctx-attn.rollup', '.ctx-tree-row.active .ctx-attn.rollup', 'warn', 'attn-bg'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
@@ -1258,8 +1260,8 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
 // the roster's pill and the tab's glyph.
 for (const [name, palette] of palettes) test(`${name}: the needs-input mark and the workspace rows' circles meet 3:1 on every fill they sit on`, () => {
   const shellCss = readFileSync(new URL('shell.css', renderer), 'utf8');
-  // The needs-input mark (2026-10-23): a --warn disc with the "!" cut out in --surface, on the workspace rows and in an
-  // instance's Needs input pill (--attn-bg).
+  // The needs-input mark (2026-10-23): a --warn disc with the "!" cut out in --surface, on the workspace rows and in the
+  // roster's roll-up pill (--attn-bg); a waiting row's dot is held on the roster's row fills by its own test, below.
   assert.match(shellCss, /^\.attn-mark \.attn-disc \{ fill: var\(--warn\); \}/m);
   assert.match(shellCss, /^\.attn-mark \.attn-glyph \{ fill: var\(--surface\); \}/m);
   assert.match(shellCss, /^\.attn-mark \{[^}]*stroke: none;/m, 'no inherited stroke blurs the "!"');
@@ -1284,6 +1286,61 @@ for (const [name, palette] of palettes) test(`${name}: the needs-input mark and 
     const ratio = contrast(opaqueChannels(palette.get(mark)), backgroundChannels(bg, palette));
     assert.ok(ratio >= GRAPHIC_CONTRAST, `${name} --${mark} on --${bg}: ${ratio.toFixed(2)}:1 < 3:1`);
   }
+});
+
+// A waiting roster row's dot is the needs-input mark (the product owner, 2026-10-26): the --warn disc with its "!" cut out
+// in --surface, the one visible sign that the row waits (its words are for assistive tech and the hover card). WCAG
+// 1.4.11 holds it to 3:1 on every fill a roster row paints under it: the sidebar at rest (--surface), a hovered row
+// (--surface-2), a selected or active row (--sel). The mark paints the row's fill (--row-solid) under the disc and as
+// its 2px ring, with no opacity on it or under it, so the row's fill is its effective background. "This computer"
+// holds the same pairs: the disc on each fill is in the text inventory (--warn at 4.5:1), and contrast is symmetric,
+// so the "!" (--surface on --warn) is held there too; the Omarchy fixtures are computed here as well.
+const ROW_FILLS = ['surface', 'surface-2', 'sel'];
+const hostPalette = fixture => {
+  const state = hostState(fixture), base = state.mode === 'dark' ? dark : light, palette = new Map(base);
+  for (const [property, value] of Object.entries(deriveHostTokens(state.colors, state.mode, token => base.get(token)))) palette.set(property.slice(2), value);
+  return palette;
+};
+for (const [name, palette] of [...palettes, ...['tokyo-night', 'rose-pine', 'hackerman', 'legacy'].map(f => [`This computer (${f})`, hostPalette(f)])]) test(`${name}: a waiting roster row's needs-input mark meets 3:1 on the sidebar, a hovered, a selected and the active row`, () => {
+  for (const bg of ROW_FILLS) {
+    const disc = contrast(opaqueChannels(palette.get('warn')), backgroundChannels(bg, palette));
+    assert.ok(disc >= GRAPHIC_CONTRAST, `${name} the disc on --${bg}: ${disc.toFixed(2)}:1 < 3:1`);
+    assert.ok(pairs.some(([fg, b]) => fg === 'warn' && b === bg), `the inventory holds --warn on --${bg}, so "This computer" derives it`);
+  }
+  const glyph = contrast(opaqueChannels(palette.get('surface')), opaqueChannels(palette.get('warn')));
+  assert.ok(glyph >= GRAPHIC_CONTRAST, `${name} the "!" on the disc: ${glyph.toFixed(2)}:1 < 3:1`);
+});
+
+for (const [name] of palettes) test(`${name}: a waiting roster row's dot paints the mark on the row's own fill, with no opacity on it or under it`, () => {
+  const shellCss = readFileSync(new URL('shell.css', renderer), 'utf8');
+  const dom = new JSDOM(readFileSync(new URL('index.html', renderer), 'utf8'), { pretendToBeVisual: true }), doc = dom.window.document;
+  doc.documentElement.dataset.theme = name;
+  for (const source of [css, shellCss]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const list = doc.querySelector('#instance-roster .ctx-list');
+  // A row at rest, the active row and a revealed spawn (both --sel), each with the mark in its dot's slot.
+  for (const state of ['', ' active', ' ctx-spawn-revealed']) {
+    const wrap = doc.createElement('div'); wrap.className = `ctx-tree-row${state}`;
+    const row = doc.createElement('button'); row.className = 'ctx-inst';
+    const dot = doc.createElement('span'); dot.className = 'ctx-dot waiting';
+    dot.append(iconElement(doc, 'attention', { size: 10, className: 'shell-icon attn-mark' }));
+    row.append(dot); wrap.append(row); list.append(wrap);
+  }
+  for (const [selector, fill] of [['.ctx-tree-row:not(.active):not(.ctx-spawn-revealed)', null], ['.ctx-tree-row.active', 'sel'], ['.ctx-tree-row.ctx-spawn-revealed', 'sel']]) {
+    const wrap = doc.querySelector(selector), dot = wrap.querySelector('.ctx-dot.waiting');
+    if (fill) assert.equal(dom.window.getComputedStyle(wrap).backgroundColor, `var(--${fill})`, selector);
+    const paint = dom.window.getComputedStyle(dot);
+    assert.equal(paint.backgroundColor, 'var(--row-solid, var(--surface))', `${selector}: the row's fill under the disc`);
+    assert.equal(dom.window.getComputedStyle(dot.querySelector('.attn-disc')).fill, 'var(--warn)');
+    for (const glyph of dot.querySelectorAll('.attn-glyph')) assert.equal(dom.window.getComputedStyle(glyph).fill, 'var(--surface)');
+    for (let parent = dot.querySelector('.attn-disc'); parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1', selector);
+  }
+  // The fills behind it: --row-solid follows the row's own (JSDOM keeps no :hover, so the rules are pinned as text).
+  assert.match(shellCss, /^\.ctx-tree-row \{[^}]*--row-solid: var\(--surface\);/m);
+  assert.match(shellCss, /^\.ctx-tree-row:hover \{ --row-solid: var\(--surface-2\); background-color: var\(--surface-2\); \}/m);
+  assert.match(shellCss, /^\.ctx-tree-row\.active \{ --row-solid: var\(--sel\); background-color: var\(--sel\); \}/m);
+  assert.match(shellCss, /^\.ctx-dot \{[^}]*box-shadow: 0 0 0 2px var\(--row-solid, var\(--surface\)\);/m, 'its ring is the row fill');
+  assert.doesNotMatch(shellCss.match(/^\.ctx-dot\.waiting[^{]*\{[^}]*\}/gm)?.join('\n') ?? '', /opacity|animation|instance-color/, 'no opacity, no animation, never the instance colour');
+  dom.window.close();
 });
 
 // Replaces the old schedule-table test (the table left with the observation view, §3b): the

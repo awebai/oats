@@ -162,14 +162,20 @@ validates the field and never synthesizes it.
     ([the status row](../../../docs/desktop-cli-api.md#the-roster-oats-status---json)).
   - A last-known roster (an unreached server, a held-stale row) never shows
     it.
-- **The mark.** A "Needs input" pill (an alert icon and text, never colour
-  alone) takes the row's second line, in place of its soul and repository,
-  which stay in the card with its branch and pull request (a row with no card says them in
-  its title and description, before the wait). The name line keeps the name
-  at its full width, and "New" beside it. A held home's state wins that line:
-  the mark is not shown, and the row's description says the wait. The mark
-  becomes part of the row's accessible name. The dot stays liveness. Rows are
-  not reordered, keep their height, and nothing animates.
+- **The mark** (the product owner, 2026-10-26). The row's dot is the
+  needs-input mark (`.ctx-dot.waiting`: the `attention` icon, a `--warn` disc
+  with the "!" cut out in `--surface`), whatever the liveness, never in the
+  instance's colour. It is 10px, centred on the 8px dot's slot with the dot's
+  2px ring in the row's fill, so the name and the tree guides do not move. Its
+  shape, not its hue, tells it from the unknown state's plain `--warn` dot,
+  and it is the mark the terminal tab and the workspace list show. The row
+  keeps its second line (soul and repository) and "New" beside the name. A
+  visually hidden " Needs input" follows the name, so the row's accessible
+  name says it as the pill it replaced did. A held home's state still wins
+  its second line; its dot is the mark, and its description says the wait
+  instead of its name. Rows are not reordered, keep their height, and nothing
+  animates. This supersedes the earlier decision to keep the dot liveness
+  while a pill took the second line.
 - **The card** (hover or keyboard focus) adds `Waiting` (the reason in words,
   how long, and the local start time) and `Message`. A claim without a note
   (none, malformed or withheld) has no `Message` row: `Waiting` already says
@@ -180,7 +186,12 @@ validates the field and never synthesizes it.
   month table, like the rest of the copy), judged against the show or paint
   time.
 - **Collapsed parents.** A waiting row hidden by a collapse is counted on its
-  nearest visible ancestor as "N below", in the same place as the mark (`waitingRollup` in
+  nearest visible ancestor as "N below", a pill (the mark and text) that takes
+  that row's second line in place of its soul and repository, which stay in
+  the card (a row with no card says them in its title and description, before
+  the wait); a visually hidden " need input" completes its accessible name. A
+  parent that waits itself shows its own mark as its dot and the roll-up on
+  its second line (`waitingRollup` in
   `packages/client/instance-tree.mjs`, beside `instanceVisibleInTree`, which it mirrors), following the parent relation only
   (never across a remote server), and never outside the deployment section the
   waiting row is painted in. A collapse hides only rows of its own section
