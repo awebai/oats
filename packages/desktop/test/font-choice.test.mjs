@@ -69,13 +69,14 @@ test("off Omarchy: initFont is System font and the terminal's 15px, with nothing
 test("the stacks per platform and per choice: fontconfig's monospace on Linux/Windows (UI and terminals), JetBrains Mono on macOS (UI only), none for System font", t => {
   const { theme } = runtime(t);
   assert.deepEqual({ ...theme.fontStacks("omarchy", false) },
-    { "--ui-font": "ui-monospace, monospace", "--mono": "ui-monospace, monospace", "--term-font-family": "ui-monospace, monospace" });
-  assert.deepEqual({ ...theme.fontStacks("omarchy", true) }, { "--ui-font": MAC_UI, "--mono": MAC_UI }, "macOS: the terminals keep Inconsolata");
+    { "--ui-font": "ui-monospace, monospace", "--mono": "ui-monospace, monospace", "--term-font-family": "ui-monospace, monospace", "--name-size": "12px" });
+  assert.deepEqual({ ...theme.fontStacks("omarchy", true) }, { "--ui-font": MAC_UI, "--mono": MAC_UI, "--name-size": "12px" }, "macOS: the terminals keep Inconsolata");
   for (const isMac of [false, true]) {
     assert.deepEqual({ ...theme.fontStacks("system", isMac) }, {}, `System font sets nothing, mac=${isMac}`);
     assert.deepEqual({ ...theme.fontStacks("nonsense", isMac) }, {});
     // Never the bare generic: alone, `monospace` changes the default font size.
-    for (const value of Object.values(theme.fontStacks("omarchy", isMac))) {
+    for (const [name, value] of Object.entries(theme.fontStacks("omarchy", isMac))) {
+      if (name === "--name-size") continue; // a size, not a stack
       assert.notEqual(value.trim(), "monospace"); assert.match(value, /, monospace$/, "the generic last, so fontconfig's alias answers");
     }
   }
@@ -98,6 +99,36 @@ test("Omarchy: initFont applies Omarchy's font to the UI, its code and the termi
   const chosen = runtime(t, { stored: { "oats.desktop.font": "system" } });
   assert.equal(chosen.theme.initFont(false, undefined, OMARCHY), "system"); assert.deepEqual(inlineStacks(chosen), []);
   assert.equal(chosen.theme.terminalTypography().fontSize, 13);
+});
+
+// The product owner, 2026-10-26, on Omarchy's font: "can we make the instance name font on the sidebar and on the
+// tabs a bit smaller?" The names read --name-size: 12px in Omarchy's font, 12.5px (the rules' own) otherwise.
+test("an instance's name on its row and its tab: 12px in Omarchy's font, 12.5px with System font or the fallback", t => {
+  const sizes = u => {
+    const row = u.dom.window.document.createElement("span"); row.className = "ctx-name";
+    const tab = u.dom.window.document.createElement("div"); tab.className = "tab";
+    u.dom.window.document.body.append(row, tab);
+    // jsdom leaves var() in a computed font-size unresolved: resolve it against the root's token, as Chromium does.
+    return [row, tab].map(el => {
+      const declared = u.dom.window.getComputedStyle(el).fontSize, ref = declared.match(/^var\((--[\w-]+), ([^)]+)\)$/);
+      return ref ? (u.token(ref[1]).trim() || ref[2]) : declared;
+    });
+  };
+  for (const isMac of [false, true]) {
+    const omarchy = runtime(t, { stored: { "oats.desktop.font": "omarchy" } });
+    omarchy.theme.initFont(isMac, () => true);
+    assert.deepEqual(sizes(omarchy), ["12px", "12px"], `Omarchy's font, mac=${isMac}`);
+    omarchy.theme.setFont("system");
+    assert.deepEqual(sizes(omarchy), ["12.5px", "12.5px"], "System font: as before, in place");
+    assert.equal(omarchy.root.style.getPropertyValue("--name-size"), "", "nothing left inline");
+    const fallback = runtime(t, { stored: { "oats.desktop.font": "omarchy" } });
+    fallback.theme.initFont(isMac, () => false);
+    assert.deepEqual(sizes(fallback), ["12.5px", "12.5px"], "the fallback shows System font's faces, at their size");
+  }
+  // The rules read the token as a longhand beside their other properties (never a font shorthand).
+  for (const selector of [".ctx-name", ".tab"]) {
+    assert.match(shellCSS, new RegExp(`(^|\\n)\\${selector} \\{[^}]*font-size: var\\(--name-size, 12\\.5px\\);`), selector);
+  }
 });
 
 test("macOS: Omarchy's font, when chosen, is the UI only; the terminals keep Inconsolata", t => {

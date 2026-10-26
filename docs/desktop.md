@@ -249,7 +249,9 @@ shortcut unless you give it one in the shortcuts editor), with two choices:
   latest. On Windows it is the system's monospace font, for the window and the
   terminals. On macOS the choice is named **JetBrains Mono**, Omarchy's default
   face: the window uses it (or the system's monospace font where it is not
-  installed), and the terminals keep Inconsolata.
+  installed), and the terminals keep Inconsolata. On every platform, instance
+  names in the sidebar and on tabs are a little smaller in it (12px, from
+  12.5px), since a monospace face runs wider.
 - **System font**, the faces Desktop had before: the system's interface font
   for the window and Inconsolata in the terminals. It is the default on every
   computer that doesn't run Omarchy (other Linux, macOS and Windows).

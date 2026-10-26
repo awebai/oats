@@ -221,15 +221,21 @@ const FONTCONFIG_MONO = "ui-monospace, monospace";
 // macOS has no fontconfig alias to follow: Omarchy's default face by name, then the system's monospace.
 const MAC_OMARCHY_UI = `"JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace`;
 
+/** The size of an instance's name on its sidebar row and its tab (`.ctx-name`, `.tab`) in Omarchy's font,
+ * a monospace face that runs wider than the system's: 12px (the product owner, 2026-10-26: "a bit smaller");
+ * with System font the rules' own 12.5px. */
+const OMARCHY_NAME_SIZE = "12px";
+
 /** The custom properties a font choice sets on the root, on macOS (`isMac`) or elsewhere: none for
  * System font (theme.css's tokens apply). Omarchy's font is the UI and the terminals in fontconfig's
  * monospace on Linux and Windows (on Windows Chromium's `monospace` is its own default, Consolas), and
  * only the UI on macOS, where the terminals keep Inconsolata. --mono (the UI's code, paths and chord
- * hints) follows the UI, so the UI is one face. */
+ * hints) follows the UI, so the UI is one face; --name-size sets instance names a little smaller in it. */
 export function fontStacks(font, isMac) {
   if (font !== "omarchy") return Object.freeze({});
-  if (isMac) return Object.freeze({ "--ui-font": MAC_OMARCHY_UI, "--mono": MAC_OMARCHY_UI });
-  return Object.freeze({ "--ui-font": FONTCONFIG_MONO, "--mono": FONTCONFIG_MONO, "--term-font-family": FONTCONFIG_MONO });
+  if (isMac) return Object.freeze({ "--ui-font": MAC_OMARCHY_UI, "--mono": MAC_OMARCHY_UI, "--name-size": OMARCHY_NAME_SIZE });
+  return Object.freeze({ "--ui-font": FONTCONFIG_MONO, "--mono": FONTCONFIG_MONO, "--term-font-family": FONTCONFIG_MONO,
+    "--name-size": OMARCHY_NAME_SIZE });
 }
 
 /** The Omarchy row's note when this computer's monospace font does not draw at a fixed width (fontDraws). */

@@ -135,7 +135,10 @@ also carries `.theme-picker-overlay` or `.font-picker-overlay`.
   generic is Chromium's own default monospace. On macOS: `--ui-font` and
   `--mono` are `"JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace,
   SFMono-Regular, Menlo, monospace` (no file is bundled), and the terminals keep
-  Inconsolata. System font sets nothing.
+  Inconsolata. On every platform Omarchy's font also sets `--name-size: 12px`,
+  which an instance's name on its sidebar row (`.ctx-name`) and its tab (`.tab`)
+  read as `font-size: var(--name-size, 12.5px)`: the wider monospace face, a
+  little smaller (the product owner, 2026-10-26). System font sets nothing.
 - **Every UI font rule follows it** by reading `font-family: var(--ui-font,
   <its own stack>)`, a longhand beside its size, weight and line-height (never
   inside a `font` shorthand: jsdom drops a shorthand that holds `var()`, so a

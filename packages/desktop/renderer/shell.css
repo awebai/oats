@@ -318,7 +318,8 @@ body {
    meets AA on every row fill, never opacity. */
 .ctx-held-hint { color: var(--muted); font-size: 11.5px; line-height: normal; }
 .ctx-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
-.ctx-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; line-height: 15px; }
+/* An instance's name: 12.5px, or the font choice's --name-size (12px in Omarchy's font; theme.mjs fontStacks). */
+.ctx-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--name-size, 12.5px); font-weight: 600; line-height: 15px; }
 .ctx-meta { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Spec E: "New" on a just-spawned row the operator was not taken to: text and a dot, until it is first opened. */
 /* The one visually-hidden utility (#560): read by assistive technology, never painted. Anchored at its
@@ -498,7 +499,8 @@ body {
    never exceeds the design's 280px long-label cap. Under pressure they shrink
    evenly down to --tab-min; below that the strip scrolls. The full name stays in
    the trigger's title and accessible name.
-   --tab-min = 168px, measured live at 12.5px in the active tab's bold: less
+   --tab-min = 168px, measured live at 12.5px in the active tab's bold (System font; Omarchy's font names
+   are 12px, --name-size, so the same px budget holds more of a name): less
    --tab-chrome (51px) the trigger keeps 117px, the 7px status dot and its 8px
    gap, then 102px of name: the start and an ellipsis ("oats-…", 44px) and the
    protected 8-character tail (the widest real one, "awn-flow", is 57px), so a
@@ -510,7 +512,7 @@ body {
   --tab-name-min: 102px; /* the name the floor budgets: --tab-min less --tab-chrome less the dot and its gap (7 + 8) */
   display: flex; flex: 1 1 0px; align-items: center; gap: 8px; min-width: var(--tab-min); max-width: fit-content;
   white-space: nowrap; padding: 0 8px 0 14px; background: transparent; border-right: 1px solid var(--border);
-  color: var(--muted); font-size: 12.5px;
+  color: var(--muted); font-size: var(--name-size, 12.5px); /* 12px in Omarchy's font (theme.mjs fontStacks) */
 }
 .tab[hidden] { display: none; }
 .tab.active { background: var(--surface); color: var(--fg); box-shadow: inset 0 2px 0 var(--accent); font-weight: 600; }
