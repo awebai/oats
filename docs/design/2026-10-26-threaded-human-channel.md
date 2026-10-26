@@ -239,9 +239,10 @@ mail on presentation. `oats.aweb` cannot change the text alone.
 binding for this record).**
 
 **(a) First cut: the one-line format, acknowledgement unchanged.**
-channel-core gains a presentation *format* selected by an environment
-variable the launch hook sets (name settled with the aweb project; working
-name `AWEB_WAKE_PRESENTATION=summary`). A mail or chat awakening is one line:
+channel-core gains a presentation *format* selected by one environment
+variable the launch hook sets (aweb-acmq, confirmed by aweb 2026-10-26:
+proposed `AWEB_WAKE_PRESENTATION=line`, final after aweb's review; unset
+means today's full body). A mail or chat awakening is one line:
 
 ```text
 aweb mail waiting: "<subject>" from <alias> — read: aw mail show --conversation-id <id>; reply: aw mail reply <message-id>
@@ -257,7 +258,7 @@ the agent*, not that the agent read or answered it; the answer in the thread
 is the only evidence of reading. The `threads` brief says the body is not in
 the wake and must be read with `aw mail show --conversation-id <id>`.
 
-**(b) Later: the no-ack mode** (aweb-acmp). Presenting without acknowledging
+**(b) Only if aweb opens aweb-acmp: the no-ack mode.** Presenting without acknowledging
 needs a designed presented-cursor, recovery paging and the wake/reading
 interaction, approved on the aweb side first. No OATS work on it until
 then; when it comes, the requirements below hold for it, and the first-cut
@@ -333,9 +334,9 @@ the lane's maintainer):
    it shows, so it is not a read. `threads show`, `threads send` and `inbox
    show` need nothing new.
 2. **The one-line wake** (section 4): the format with acknowledgement
-   unchanged is the first cut, asked of aweb as an interim; the no-ack mode
-   (aweb-acmp) follows aweb's own design and approval, with no OATS work
-   before.
+   unchanged is confirmed (aweb-acmq); the variable's final name and the
+   client versions are mailed when shipped, and `oats.aweb` pins its floors
+   to them. The no-ack mode stays out unless aweb opens aweb-acmp.
 
 Order: the `oats.aweb` manifest, setting, brief, meta and docs can land
 first (the setting is inert for Desktop until the verbs exist); the verbs
