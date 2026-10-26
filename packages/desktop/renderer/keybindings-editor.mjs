@@ -610,7 +610,7 @@ export function createKeybindingsEditor({ doc = document, isMac, chordFamily = n
       return fixedRow({
         id: "terminal:scrollBack", label: "Scroll back in a terminal",
         parts: [{ word: "Wheel up," }, { cap: capText(shiftPgUp) }, { word: "or" }, { cap: capText(ctrlB) }, { word: "then" }, { cap: "[" }],
-        keys: [["Wheel up"], shiftPgUp, [...ctrlB, "["]],
+        keys: [["Wheel", "up"], shiftPgUp, [...ctrlB, "["]],
         said: `Wheel up, ${capText(shiftPgUp)} or ${capText(ctrlB)} then [, fixed`,
         title: "Ctrl+B [ needs tmux 3.3 or later on the computer the agent runs on",
       });

@@ -1180,7 +1180,7 @@ test("the Tabs group ends with a read-only row: scroll back with the wheel, Shif
 test("the scroll row is found by its words and each of its keys, and adds no match to another chord's search", (t) => {
   const f = setupLinux(t);
   f.editor.open();
-  for (const q of ["scroll", "wheel", "shift+pgup", "pgup", "ctrl+b", "ctrl b [", "terminal"]) {
+  for (const q of ["scroll", "wheel", "wheel up", "Wheel up", "shift+pgup", "pgup", "ctrl+b", "ctrl b [", "terminal"]) {
     f.type(q);
     assert.ok(f.shown().includes("Scroll back in a terminal"), q);
   }
@@ -1191,10 +1191,11 @@ test("the scroll row is found by its words and each of its keys, and adds no mat
 });
 
 test("shortcutMatches: a row whose keys are several chords matches when one chord does", () => {
-  const row = { label: "Scroll back in a terminal", group: "Tabs", keys: [["Wheel up"], ["Shift", "PgUp"], ["Ctrl", "B", "["]] };
+  const row = { label: "Scroll back in a terminal", group: "Tabs", keys: [["Wheel", "up"], ["Shift", "PgUp"], ["Ctrl", "B", "["]] };
   assert.equal(shortcutMatches(row, "shift pgup", false), true);
   assert.equal(shortcutMatches(row, "ctrl+b", false), true);
   assert.equal(shortcutMatches(row, "wheel", false), true);
+  assert.equal(shortcutMatches(row, "wheel up", false), true, "the gesture as shown");
   assert.equal(shortcutMatches(row, "ctrl+shift+b", false), false, "Ctrl and B from one chord, Shift from another, is no match");
   assert.equal(shortcutMatches(row, "ctrlb[", false), true, "a chord typed without separators");
   assert.equal(shortcutMatches({ ...row, keys: [] }, "ctrl", false), false);
