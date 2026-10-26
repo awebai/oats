@@ -9,12 +9,14 @@ Your overview is only as good as its last sweep. Memory drifts, and a compacted 
 loses detail. Rebuild the overview from the sources, write it down in one fixed shape, and
 only then decide what to do next.
 
-**The overview is of your lane.** With peer maintainers, each of you holds a lane
-(`/cross-review-peer`): you sweep, track and write down yours. The forge is the one copy of
-every PR's state, so another lane's PRs, verdicts and holds are read there when you need
-them and are never copied into your state. Alone, your lane is the whole project.
+**The overview is of your lane.** With peer maintainers, each of you is in a lane
+(`/cross-review-peer`): you sweep, track and write down yours. In a lane you share, that is
+the efforts you launched and the PRs handed to you. The release lane's overview also holds
+the PRs the project lanes handed it and the sign-offs asked of it. The forge is the one
+copy of every PR's state, so another lane's PRs, verdicts and holds are read there when you
+need them and are never copied into your state. Alone, your lane is the whole project.
 
-**No lane yet?** A maintainer the lane map doesn't name joins first
+**No lane yet?** A maintainer the lane map doesn't name takes, claims or defines one first
 (`/cross-review-peer`, "Joining as a new maintainer") and sweeps nothing until it has a lane.
 
 ## When to sweep, and when not
@@ -32,6 +34,8 @@ For each repository you maintain:
 1. **Your lane's open PRs** (by their lane label): number, author or owning expert, the
    exact head SHA, CI state, review state (yours, the second reader's, bots'), and any
    hold. Read the head from the remote, not from a local branch.
+   - **The release lane also sweeps** the PRs handed to it for the final review and the
+     sign-offs asked of it, each at its exact head.
 2. **Open PRs with no lane:** give each its lane from the lane map, by its label. Take the
    ones that are yours; leave the others to their maintainers.
 3. **Issues** in your lane: new, reopened or relabelled since the last sweep, and anything
@@ -54,8 +58,9 @@ Then the people:
    instance status first. Ask the lead only when something waits on the effort (a release,
    a dependent PR, the requester), and ask the one thing you need. Never ask for a progress
    report, and never set a lead or a helper up to send you one.
-9. **Your peer maintainers:** the second reads you owe and the ones you asked for
-   (`/cross-review-peer`). Nothing else of a peer's lane.
+9. **Your peer maintainers:** the second reads you owe and the ones you asked for, and the
+   hand-overs and sign-offs you are waiting on from the release lane (`/cross-review-peer`).
+   Nothing else of a peer's lane.
 10. **Your human:** decisions you asked for and haven't had, and instructions not yet
     carried out.
 
