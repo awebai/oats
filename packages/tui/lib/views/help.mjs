@@ -351,7 +351,7 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = 
       [marks.unknown, "state unknown"],
       [marks.held, ownEllipsis("held by a spawn or a retire: under way (Retiring\u2026), failed or not finished", ascii)],
       ["+N", "N instances folded away below it"],
-      [marks.waiting, `needs input, in reverse video: ${NEEDS_INPUT} where the whole name fits`],
+      [marks.waiting, `${NEEDS_INPUT}: in place of the state mark, in yellow and reverse video`],
       ["N", `N instances folded away below it need input: ${belowText("N")} where the whole name fits`],
       [marks.selected, "the selected row, and the pane the movement keys act on"],
       [OPEN_MARK, "among the workspaces: the one that is open"],
