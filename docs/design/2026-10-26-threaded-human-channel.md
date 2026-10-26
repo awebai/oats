@@ -238,7 +238,7 @@ mail on presentation. `oats.aweb` cannot change the text alone.
 **Two steps (aweb's answer, 2026-10-26, relayed by the lane's maintainer;
 binding for this record).**
 
-**(a) First cut: the one-line format, acknowledgement unchanged.**
+**(a) The first cut: the one-line format, acknowledgement unchanged.**
 channel-core gains a presentation *format* selected by one environment
 variable the launch hook sets (aweb-acmq, confirmed by aweb 2026-10-26:
 proposed `AWEB_WAKE_PRESENTATION=line`, final after aweb's review; unset
@@ -258,30 +258,15 @@ the agent*, not that the agent read or answered it; the answer in the thread
 is the only evidence of reading. The `threads` brief says the body is not in
 the wake and must be read with `aw mail show --conversation-id <id>`.
 
-**(b) Only if aweb opens aweb-acmp: the no-ack mode.** Presenting without acknowledging
-needs a designed presented-cursor, recovery paging and the wake/reading
-interaction, approved on the aweb side first. No OATS work on it until
-then; when it comes, the requirements below hold for it, and the first-cut
-format is unchanged.
+**(b) Note, not a requirement of this record.** aweb has not opened a
+no-ack mode (aweb-acmp stays closed unless a concrete flow appears). Under
+(a) "presented = read" stays true for `threads` souls, and the brief and
+skill keep saying so. If aweb ever opens it, that design would have to
+replace what the acknowledgement does today beyond read state (what stops
+re-presentation, what recovery after a lost presentation means); nothing in
+OATS is built for it before.
 
-**Requirements on the no-ack mode (step b; the mechanism is aweb's).**
-Today the acknowledgement on presentation is also what stops a mail from
-being presented again, and session-delivery recovery reads presented as
-read. The no-ack mode breaks that link, so channel-core must state and keep
-two things:
-
-- *Not re-presented.* A mail presented once is not presented again to the
-  same home while it stays unread, on the live stream and on a stream
-  reopen alike, from the client's own presented record (a presented-cursor),
-  not the server's read state.
-- *Recovery is at-least-once, and reconciles against the thread.* After a
-  crash or a restart that loses the presented record, unread mail is
-  re-presented once more as a one-line wake; nothing is lost silently and
-  nothing is read by proxy. The agent's recovery command is the thread read
-  (`aw mail show --conversation-id <id> --json`); `read_at` then means
-  replied or acknowledged, not presented, and the brief and skill say so.
-
-**The selection (step a).** For a `threads` soul the `oats.aweb` launch hook
+**The selection.** For a `threads` soul the `oats.aweb` launch hook
 sets the variable in the launch environment on every delivery path (channel
 and broker), and leaves it unset for `terminal` souls, which keep the full
 body. This is the delivery contract change condition 3 names: it ships as
