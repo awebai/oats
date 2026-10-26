@@ -35,7 +35,7 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   (see below), which previews through the kernel and applies through the
   confirmed `/api/spawn?ws=` transaction. An empty opening instruction waits
   for instructions; attached-mode souls cannot launch standalone. The shell's
-  `app.chooseSoul` (⌘N / Ctrl+Shift+N, **Spawn instance: choose a soul in Workspace**) navigates to soul
+  `app.chooseSoul` (⌘N / Ctrl+Shift+N, **Souls: choose a soul to spawn (Workspace › Souls)**) navigates to soul
   selection, and the sidebar foot's **Spawn instance** opens Quick Open (`app.quickOpenSouls`); neither launches.
   Capability facts and source provenance use negotiated read-only inspection,
   never inferred membership, installation or remote discovery. Shared CLI recovery

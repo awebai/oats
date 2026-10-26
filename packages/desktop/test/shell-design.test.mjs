@@ -339,12 +339,12 @@ test("the foot is one bar: the OATS mark, Spawn instance (Quick Open), the sideb
   assert.equal(pending(), false, "a click supersedes a pending open");
   assert.deepEqual(s.events.slice(3), [["quickOpen"]], "one click, one Quick Open (after the menu's three)");
   assert.equal(s.loads.length, 0, "no chooser");
-  // The chooser stays the registry's (app.chooseSoul, the palette's Spawn instance: choose a soul in Workspace…).
+  // The chooser stays the registry's: app.chooseSoul, the palette's "Souls: choose a soul to spawn (Workspace › Souls)".
   const before = s.c.tabOpenIntents.begin(); runAction("app.chooseSoul");
   assert.equal(before(), false); assert.equal(s.loads.length, 1, "one run, one chooser");
   await s.settle(s.loads[0], "resolve");
   assert.deepEqual(s.events.slice(4), [["tab", "souls"], ["stage", "spawn"]]);
-  assert.match(source, /label: "Spawn instance: choose a soul in Workspace…", detail: chordDetail\("app.chooseSoul"\), run: \(\) => runAction\("app.chooseSoul"\)/);
+  assert.match(source, /label: "Souls: choose a soul to spawn \(Workspace › Souls\)", detail: chordDetail\("app.chooseSoul"\), run: \(\) => runAction\("app.chooseSoul"\)/);
 });
 
 test("a stored rebind's clash marks the settings cog and its Keyboard shortcuts… item, and clears from both", t => {
