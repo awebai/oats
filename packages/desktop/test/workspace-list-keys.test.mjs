@@ -317,3 +317,20 @@ test("⌘K / Ctrl+Alt+K after A → B → A: A's instances most recently selecte
   assert.deepEqual(await s.palette(), ["a2", "a1", "a3", "a4"], "and is kept across another visit");
   assert.deepEqual([...s.c.instanceRecency.snapshot("B").keys()].map(id => id.split("/").at(-1)).sort(), ["b1", "b2"], "B's record is B's alone");
 });
+
+// The palette lists its own commands (shell.mjs createPalette's `commands`), not the keymap's registry: Show only
+// the current workspace has its entry there, with its live chord, and runs its action (review of PR 8).
+test("the palette has Show only the current workspace: the shipped entry, found by search, its chord, running workspaces.currentOnly", () => {
+  const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  const commands = src.slice(src.indexOf("  commands: [\n"), src.indexOf("\n  ],\n});", src.indexOf("  commands: [\n")));
+  const line = commands.match(/^ {4}\{ label: "Workspaces: show only the current workspace \(on \/ off\)"[^\n]+\},$/m)?.[0];
+  assert.ok(line, "an entry of the palette's commands");
+  const ran = [];
+  const entry = runInNewContext(`[${line}][0]`, { chordDetail: id => () => `chord of ${id}`, runAction: id => ran.push(id) });
+  assert.equal(entry.detail(), "chord of workspaces.currentOnly", "its detail is the action's live chord");
+  entry.run(); assert.deepEqual(ran, ["workspaces.currentOnly"]);
+  for (const query of [">show only", ">current workspace", "show only the current"]) {
+    const rows = paletteRows([], [entry], query, { openTerminal() {} });
+    assert.ok(rows.some(row => row.label === entry.label), `"${query}" finds it`);
+  }
+});

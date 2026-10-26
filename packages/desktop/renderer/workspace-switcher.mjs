@@ -193,6 +193,8 @@ export function createWorkspaceSwitcher({
     const said = workspaceChoiceRows(workspaces), names = rowNames(workspaces);
     const focused = options.contains(document.activeElement) ? document.activeElement : null;
     const focusedKey = focused?.classList?.contains("ws-option") ? rowKey(focused) : "";
+    // Focus in a row's open context menu (outside the list): the row it is for, should that row go.
+    const menuFocusKey = menuFor && rowMenu.contains(document.activeElement) ? menuFor : "";
     options.replaceChildren();
     drawn = [];
     const list = document.createElement("ul"); list.className = "ws-group"; list.setAttribute("aria-label", "Workspaces");
@@ -245,8 +247,9 @@ export function createWorkspaceSwitcher({
     if (stop?.classList?.contains("ws-option")) stop.tabIndex = 0;
     if (focusedKey) (rowOf(focusedKey) || focusTarget()).focus();
     else if (focused) focusTarget().focus();
-    // A context menu whose row is gone closes.
-    if (menuFor && !rowOf(menuFor)) closeRowMenu(false);
+    // A context menu whose row is gone closes; focus that was in it goes to the list's stop (the current row), never
+    // <body> (review: Show only the current workspace's chord from another row's menu).
+    if (menuFor && !rowOf(menuFor)) { closeRowMenu(false); if (menuFocusKey) focusTarget().focus(); }
     revealInScrollport(options, rowOf(activeId));
     noteMore();
   };

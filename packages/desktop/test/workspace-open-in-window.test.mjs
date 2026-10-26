@@ -222,3 +222,22 @@ test('a window with no workspace and nothing served: the stage opens the Add dia
   s.dom.window.close();
 });
 
+
+// Show only the current workspace turned on (its chord) while another row's context menu has focus: the row goes,
+// its menu closes, and focus lands on the current row, never <body> (review of PR 8).
+test('a row whose menu holds focus, hidden by Show only the current workspace: the menu closes, focus on the current row', () => {
+  const { document, controller, contextmenu, popovers } = setup();
+  const rowMenu = menu(document);
+  option(document, B.id).focus(); contextmenu(option(document, B.id));
+  assert.equal(document.activeElement, rowMenu.querySelector('[role="menuitem"]'), 'focus in B\'s menu');
+  controller.toggleCurrentOnly();
+  assert.equal(controller.currentOnly, true);
+  assert.equal(option(document, B.id).hidden, true, 'B is hidden');
+  assert.deepEqual(popovers.at(-1), ['hide', rowMenu], 'its menu closed');
+  assert.equal(document.activeElement, option(document, A.id), 'focus on the current row');
+  // Focus elsewhere is left where it is: off and on again with focus outside the list and its menu.
+  controller.toggleCurrentOnly();
+  document.getElementById('ws-add-open').focus();
+  controller.toggleCurrentOnly();
+  assert.equal(document.activeElement, document.getElementById('ws-add-open'), 'focus outside the list stays put');
+});
