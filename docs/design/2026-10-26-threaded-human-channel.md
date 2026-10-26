@@ -271,9 +271,12 @@ fixes only the facts and the gates:
   a composer at its foot; **New thread** asks for a subject, the effort's
   name) and **Agent's inbox** (read-only; the agent's conversations and
   their messages; no composer, no mark-read, and the UI says it is read-only).
-- The composer sends `threads send`; on `human.created: true` it says, once,
-  in plain words, that this computer can now message agents as you. No
-  identity vocabulary anywhere in the UI.
+- The composer sends `threads send`. Whatever the capability sets up on
+  first use happens silently: no notice, no step, no name to choose. The
+  human's own messages are labelled with their name (the OS account's
+  display name, else its user name); the alias and the word "identity"
+  appear nowhere in the UI. (Requirement from Joan, 2026-10-26, relayed by
+  the lane's maintainer.)
 - Refresh follows the existing per-instance read cadence; a send refreshes
   the thread it posted to.
 - A thread is an artifact of the instance, scoped to its workspace, like a
