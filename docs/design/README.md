@@ -26,6 +26,12 @@ successor, with a link to its full text.
   a stopped home's package modules to the locked versions, with plan, apply,
   provider adoption and undo (supersedes workspace model v2 items 10–11 for
   package modules).
+- [The threaded human-to-agent channel](2026-10-26-threaded-human-channel.md):
+  a human talks to a `threads` soul through aweb conversations rendered as
+  threads in Desktop; the soul declares `settings.oats.aweb.interaction`; the
+  human's identity on a computer is host-local and invisible; `threads`
+  souls get a one-line wake (supersedes the 2026-07-22 "one input surface"
+  Desktop decision).
 
 The Desktop's design brief for designers is in
 [packages/desktop/docs](../../packages/desktop/docs/design-brief.md).
