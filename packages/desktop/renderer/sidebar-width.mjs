@@ -65,6 +65,8 @@ export function createSidebarWidth({ doc, win, storage = null, hold = () => () =
     handle.setAttribute("aria-valuemax", String(sidebarMax(win.innerWidth)));
     handle.setAttribute("aria-valuenow", String(applied));
   }
+  // A reset chooses the default itself, even when the window can't show it now: it comes back as the window grows.
+  function chooseDefault() { chosen = SIDEBAR_DEFAULT; apply(); }
   function persist() {
     try { storage?.setItem(SIDEBAR_WIDTH_KEY, String(chosen)); } catch { /* storage-less */ }
   }
@@ -79,6 +81,7 @@ export function createSidebarWidth({ doc, win, storage = null, hold = () => () =
     measure: () => ({ value: applied, min: SIDEBAR_MIN, max: sidebarMax(win.innerWidth), step: SIDEBAR_STEP,
       big: SIDEBAR_BIG_STEP, reset: SIDEBAR_DEFAULT, scale: 1, row: true }),
     resize: (m, value) => { chosen = clampSidebarWidth(value, win.innerWidth); apply(); },
+    reset: chooseDefault,
     frame: fn => win.requestAnimationFrame(fn),
     onDragStart: () => { dragRelease?.(); dragRelease = hold(); },
     onDragEnd: () => { persist(); const release = dragRelease; dragRelease = null; release?.(); },
@@ -92,6 +95,6 @@ export function createSidebarWidth({ doc, win, storage = null, hold = () => () =
     /** The width applied now, in px. */
     get width() { return applied; },
     /** Back to the default width: sidebar.resetWidth, the palette's "Sidebar: reset width". */
-    reset() { chosen = SIDEBAR_DEFAULT; apply(); persist(); settleSoon(); },
+    reset() { chooseDefault(); persist(); settleSoon(); },
   };
 }

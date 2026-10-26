@@ -29,9 +29,10 @@ export function createResizeHandle(doc, { label, orientation }) {
  *        throttles them to frames); synchronous by default. The last one is written when the drag ends.
  * @param {() => void} [opts.onDragStart]
  * @param {() => void} [opts.onDragEnd]
+ * @param {(m) => void} [opts.reset]  Enter's and the double-click's reset; by default resize(m, m.reset)
  * @param {() => void} [opts.onStep]  after a key's or a double-click's change
  */
-export function wireResizer(handle, { measure, resize, frame = fn => fn(), onDragStart = () => {}, onDragEnd = () => {}, onStep = () => {} }) {
+export function wireResizer(handle, { measure, resize, reset = m => resize(m, m.reset), frame = fn => fn(), onDragStart = () => {}, onDragEnd = () => {}, onStep = () => {} }) {
   let drag = null, pending = null, scheduled = false;
   const flush = () => {
     if (!drag || pending === null) return;
@@ -59,10 +60,11 @@ export function wireResizer(handle, { measure, resize, frame = fn => fn(), onDra
     if (![previous, next, 'Home', 'End', 'Enter'].includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
     e.preventDefault(); e.stopPropagation();
     const step = e.shiftKey ? m.big ?? m.step : m.step;
-    resize(m, e.key === 'Enter' ? m.reset : e.key === 'Home' ? m.min : e.key === 'End' ? m.max : m.value + (e.key === next ? step : -step));
+    if (e.key === 'Enter') reset(m);
+    else resize(m, e.key === 'Home' ? m.min : e.key === 'End' ? m.max : m.value + (e.key === next ? step : -step));
     onStep();
   });
-  handle.addEventListener('dblclick', () => { const m = measure(); if (m) { resize(m, m.reset); onStep(); } });
+  handle.addEventListener('dblclick', () => { const m = measure(); if (m) { reset(m); onStep(); } });
 }
 
 export function updateSplitHandle(host, cell, orientation, hasNext, onResize) {

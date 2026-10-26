@@ -189,3 +189,21 @@ test("hiding the sidebar keeps its width", t => {
     app.classList.remove(cls); assert.equal(r.cssWidth(), "480px", cls);
   }
 });
+
+test("every reset chooses 288 even in a window too narrow to show it, and the width comes back as it grows", t => {
+  const resets = {
+    Enter: r => r.key("Enter"),
+    "double-click": r => r.h.dispatchEvent(new r.win.MouseEvent("dblclick", { bubbles: true })),
+    "Sidebar: reset width": r => r.sw.reset(),
+  };
+  for (const [name, reset] of Object.entries(resets)) {
+    const storage = memoryStorage({ [SIDEBAR_WIDTH_KEY]: "400" });
+    const r = rig(t, { width: 600, storage });
+    assert.equal(r.cssWidth(), "270px", `${name}: 45% of 600`);
+    reset(r);
+    assert.equal(r.cssWidth(), "270px", `${name}: still the most the window allows`);
+    assert.equal(storage.map.get(SIDEBAR_WIDTH_KEY), "288", `${name}: the default is stored`);
+    r.resizeWindow(1400);
+    assert.equal(r.cssWidth(), "288px", `${name}: and shown once the window grows`);
+  }
+});
