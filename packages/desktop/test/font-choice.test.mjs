@@ -1,7 +1,7 @@
 // The font choice (renderer/theme.mjs: FONTS, fontStacks, initFont, setFont; the product owner's call,
-// 2026-10-23): Omarchy's font, the default (fontconfig's monospace on Linux and Windows, UI and terminals;
-// JetBrains Mono for the UI only on macOS), or System font (the UI's own stacks and Inconsolata terminals,
-// exactly as before). The stacks per platform and choice, what is stored, what open terminals do, and
+// 2026-10-23): Omarchy's font (fontconfig's monospace on Linux and Windows, UI and terminals; JetBrains Mono
+// for the UI only on macOS), the default on an Omarchy computer, or System font (the UI's own stacks and
+// Inconsolata terminals, exactly as before), the default elsewhere (2026-10-26). The stacks per platform and choice, what is stored, what open terminals do, and
 // that every UI font rule follows the choice. theme.mjs evaluated on its own with the shipped CSS (jsdom
 // CSSOM); no browser layout, Electron or live app.
 import test from "node:test";
