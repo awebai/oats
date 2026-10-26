@@ -131,6 +131,10 @@ local login environment ([execution-targets.md](execution-targets.md)):
 - A registration of the same host and directory made before keeps the `path`
   and `oatsPath` it has; connect only fills in the ones it lacks (`register`
   `done`, "recorded …"), and `--replace` rewrites them with what it found.
+- The recorded `path` and `oatsPath` are a snapshot of the login shell at
+  connect time. On a host whose Node comes from a version manager (nvm,
+  asdf), a later Node upgrade can leave `oatsPath` pointing at a directory
+  that is gone; `oats server connect … --replace` reads them again.
 
 ### What connect runs on the host
 
