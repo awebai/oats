@@ -211,7 +211,7 @@ test("roster DOM contract: named group separators, identity, active state, hidde
   assert.equal(u.doc.querySelector(".ctx-count").textContent, "5 running");
   assert.equal(u.doc.querySelector(".ctx-count").title, "5 running · 0 stopped · 1 unknown");
   for (const row of u.rows) {
-    const button = row.querySelector(".ctx-inst"), name = row.querySelector(".ctx-name").textContent;
+    const button = row.querySelector(".ctx-inst"), name = row.querySelector(".ctx-name").dataset.name;
     assert.equal(button.dataset.treeInstance, `/synthetic/${name}`);
     assert.equal(button.hasAttribute("aria-expanded"), button.dataset.rosterChildren === "1", "only parents announce expansion");
     const trigger = row.querySelector(".ctx-instance-actions"), menu = row.querySelector(".ctx-instance-menu");
@@ -333,7 +333,7 @@ test('a row that cannot open says why on its meta line (text, not colour), with 
   ];
   u.render(rows.map(([row]) => row));
   for (const [row, label, sentence] of rows) {
-    const button = [...u.doc.querySelectorAll('.ctx-inst')].find(b => b.querySelector('.ctx-name').textContent === row.instance);
+    const button = [...u.doc.querySelectorAll('.ctx-inst')].find(b => b.querySelector('.ctx-name').dataset.name === row.instance);
     assert.ok(button, row.instance);
     const meta = button.querySelector('.ctx-meta-soul').textContent;
     assert.equal(meta, `dev · ${label}`, `${row.instance}: the meta line's soul side "${meta}" shows "${label}"`);

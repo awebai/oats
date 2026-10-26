@@ -98,10 +98,10 @@ runs.
   acme-platform                       │   dev
                                       │   soul     dev
  Instances                          1 │   state    running
-> ● dev                               │   harness  claude, claude-opus-5-5 (so…
+> ● Dev                               │   harness  claude, claude-opus-5-5 (so…
                                       │   work     worktree, agents/dev
-  ● reviewer              Needs input │   team     eng
-    ○ helper                          │   started  11:00
+  ● Reviewer              Needs input │   team     eng
+    ○ Helper                          │   started  11:00
 ──────────────────────────────────────│   home     …oy/agents/dev/instances/dev
  Souls                              2 │
  Capabilities                       3 │
@@ -184,7 +184,12 @@ while a terminal is open); under 80 columns it has the whole width.
   it. A row whose instances are folded away (`h`) says how many after its
   name: `+1`.
 - **Each row** is the mark of its state and the name, then, when it needs
-  input, a tag at its right edge in the Desktop's words: `Needs input`. A
+  input, a tag at its right edge in the Desktop's words: `Needs input`.
+  The row shows the name as words, as the Desktop's sidebar does: each `-`
+  a space and the first letter upper-case, so `oats-expert-lead` reads
+  `Oats expert lead`. Only the row does: the detail, the filter (`/` with
+  `oats-expert` still finds the row), the palette, the tabs, the
+  confirmations and everything sent to OATS keep the instance's name. A
   folded row with waiting instances among those it folds away says how
   many: `3 below`, and `99+ below` past 99. A row that needs input itself
   and folds waiting ones away says `Needs input`, as the Desktop's row

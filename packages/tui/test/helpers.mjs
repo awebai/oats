@@ -109,7 +109,7 @@ export function rowStrings(rows, cols) {
 // ── The Instances view: a deployment's entry made by the shared functions, and what is drawn for it.
 // Everything below goes through the same calls the program makes (lib/client.mjs re-exports them):
 // a test that built an entry or a panel by hand would test its own idea of them.
-import { failedEntry, observedEntry, panelInstances, pendingEntry, rosterRows } from "../lib/client.mjs";
+import { failedEntry, instanceDisplayName, observedEntry, panelInstances, pendingEntry, rosterRows } from "../lib/client.mjs";
 import { listRowsOf, model, outcomeOf, roster } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { createScreen } from "../lib/term/screen.mjs";
@@ -130,6 +130,10 @@ export function instanceRow(soul, name, extra = {}) {
     running: true, runtimeState: "running", tmux: { session: "oats-agents", window: name }, ...extra,
   };
 }
+/** What an instance row of the list draws for the instance `name`: its name as words, the shared
+ *  label (lib/model.mjs listRow), for a test that finds a row by its instance. A cell-for-cell test
+ *  writes the words out. */
+export const drawnName = (name) => instanceDisplayName(name) || name;
 /** A roster as the shared reader hands it on (deployment-data.mjs `deploymentStatusData`), from rows:
  *  one soul per distinct `agent`, in first-seen order. */
 export function rosterOf(rows, { withheld = [], team = "eng" } = {}) {

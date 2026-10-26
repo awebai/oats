@@ -7,7 +7,7 @@
 // in. What it adds is the TUI's: the window, the clock times, and which fact stands on which line.
 import {
   TERMS, panelData, displayLine, DETAIL_WITHHELD, originLead, instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree,
-  hasInstanceChildren, heldHome, instanceSiblings, siblingText, rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts, instanceColor,
+  hasInstanceChildren, heldHome, instanceSiblings, siblingText, rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts, instanceColor, instanceDisplayName,
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs, rowReason,
   identityMemory, viewModel, listedViews, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, machineLabels,
   openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
@@ -330,14 +330,23 @@ export function disclosure(state, r, item) {
   return !r.filtering && state.collapsed.has(collapseKey(state.open, item.id)) ? "closed" : "open";
 }
 
+/** An instance's name as its row draws it: the shared `instanceDisplayName`, the Desktop's sidebar
+ *  label (`oats-expert` is drawn "Oats expert"; a name of nothing but `-` as it is). The display
+ *  filter is asked about the name first, as it came: a name it withholds is passed on unchanged, so
+ *  shown() withholds it in the view, since the words could hide what made it unsafe (a `-` in a
+ *  credential's URL becomes a space; a control character at an end is trimmed). */
+const rowName = (name) => (displayLine(name) === DETAIL_WITHHELD ? name : instanceDisplayName(name) || name);
 /** One row of the list: its mark, its name, the word its mark cannot say (or null), whether it
  *  waits, and on a folded row only, how many instances are folded away under it (`folded`) and how
  *  many of those wait (`below`). A row that is not folded says nothing of its children: they
- *  stand under it, indented. `selected` the selected row, `cursor` whether it carries `>`. */
+ *  stand under it, indented. `selected` the selected row, `cursor` whether it carries `>`.
+ *  The name is drawn as words (rowName): it is what the row shows and nothing else. The filter, the
+ *  palette, the detail, the tabs, a confirmation and every change sent to the kernel keep the
+ *  instance's name. */
 function listRow(state, r, item) {
   const closed = disclosure(state, r, item) === "closed";
   return {
-    id: item.id, name: item.row.instance, depth: item.depth, selected: item.id === state.selected,
+    id: item.id, name: rowName(item.row.instance), depth: item.depth, selected: item.id === state.selected,
     // The selected row keeps its reverse video while the list of workspaces has the focus, but not the
     // cursor: only the region with the focus draws `>`.
     cursor: item.id === state.selected && state.focus !== "workspaces",

@@ -25,6 +25,7 @@ import { NO_ANSWER_CODE, unservedError } from "../renderer/deployment-header.mjs
 import { remotePanel, unavailableGroups } from "../../client/remote-roster.mjs";
 import { kernelRemoteRow, kernelRemoteGroup, remoteRows } from "./helpers/kernel-remote-row.mjs";
 import { SPEAKERS, HERDR, MARKUP, CONTROL, DETAIL_WITHHELD, shown } from "./helpers/speaker-cases.mjs";
+import { spokenText } from "./helpers/spoken-text.mjs";
 /** The time a remote panel is made at: remotePanel reads no clock, its caller gives the time. */
 const AT = "2026-10-11T12:00:00.000Z";
 
@@ -66,7 +67,7 @@ function fixture(t, extra = {}) {
   Object.defineProperty(context, "Date", { get: () => Date, enumerable: true });
   const { render, failRosterUnserved } = runInNewContext(`${source}\n({ render: renderContextRoster, failRosterUnserved })`, context);
   const list = doc.querySelector(".ctx-list");
-  const row = name => [...list.querySelectorAll(".ctx-inst")].find(b => b.querySelector(".ctx-name")?.textContent === name);
+  const row = name => [...list.querySelectorAll(".ctx-inst")].find(b => b.querySelector(".ctx-name")?.dataset.name === name);
   const marks = name => [...(row(name)?.querySelectorAll(".ctx-attn") || [])];
   const facts = name => tips.get(row(name)?.dataset.treeInstance)?.();
   const fact = (name, key) => facts(name)?.rows.find(([k]) => k === key)?.[1];
@@ -96,7 +97,7 @@ test("a running, waiting row shows “Needs input” in place of its meta line: 
   assert.equal(line.title, "Soul: dev\nRepository: desktop-repo", "the line keeps its own title");
   assert.equal(line.previousElementSibling.className, "ctx-name", "under the name");
   assert.equal(u.row("dev-a").querySelector(".ctx-name-line"), null, "the name line is the name alone");
-  assert.equal(u.row("dev-a").textContent, "dev-aNeeds input", "in the row button's name");
+  assert.equal(spokenText(u.row("dev-a")), "dev-aNeeds input", "in the row button's name");
   // The repository and branch stay in the hover card.
   assert.deepEqual([u.fact("dev-a", "Repo"), u.fact("dev-a", "Branch")], ["desktop-repo", "feature/x"]);
   const kept = u.row("dev-b").querySelector(".ctx-meta");
