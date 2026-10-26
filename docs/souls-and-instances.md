@@ -1054,7 +1054,10 @@ of the whole home.
 untracked and ignored files, have anything to preserve is decided against
 two digests the spawn baseline stores: one of the home (without `work/`, the
 provider-owned entries declared at spawn, the kernel's records above, and
-the fields the kernel writes into `instance.json` after spawn), and one of
+the fields the kernel writes into `instance.json` after spawn, for an
+`instance.json` of at most 16 MiB: a larger one is taken as its bytes, so a
+baseline that took it without those fields reads the home as changed and
+the retire copies the home to the recovery), and one of
 the worktree's untracked and ignored paths outside the roots a capability
 declared disposable. A spawn by 0.49.0 or later records `digestVersion: 2`
 in the baseline, and its digests order entries by the bytes of their names,
