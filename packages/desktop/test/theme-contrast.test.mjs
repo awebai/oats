@@ -6,7 +6,7 @@ import { JSDOM } from "jsdom";
 // to it, and the "This computer" derivation (renderer/host-theme.mjs) is computed from the same lists.
 import { TEXT_PAIRS as pairs, GRAPHIC_PAIRS, PAINTED_OVER, HOST_UNADJUSTED_PAIRS, ANSI_TOKENS as ansi, SOUL_TONES as soulTones, RUNTIMES as runtimes,
   TEXT_CONTRAST, GRAPHIC_CONTRAST } from "../renderer/contrast-inventory.mjs";
-import { deriveHostTokens } from "../renderer/host-theme.mjs";
+import { deriveHostTokens, mixHex } from "../renderer/host-theme.mjs";
 import { hostState } from "./helpers/host-theme-fixture.mjs";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../renderer/identity-marks.mjs";
 import { workspaceStatusData, syncData } from "../../client/deployment-data.mjs";
@@ -329,6 +329,24 @@ test("This computer: a low-contrast host accent is moved until it passes (Rosé 
   // A colour that already holds on every surface it is paired with is the host's own.
   const white = { ...state.colors, foreground: "#000000" };
   assert.equal(deriveHostTokens(white, "light", token => light.get(token))["--fg"], "#000000");
+});
+
+// A colour that is both text and a graphic is held to both at once: --danger's words at 4.5:1 on their surfaces, and the
+// problem dots at 3:1 on --sel (2026-10-26). A grey host whose selection is light enough that the red held for text
+// still sits under 3:1 on it: the derivation moves the red until both hold, without dropping either.
+test("This computer: --danger holds its text pairs and its graphic pair on --sel together, on a palette where text alone would not", () => {
+  const colors = { ...hostState("tokyo-night").colors, background: "#202020", canvas: "#202020", foreground: "#aaaaaa", brightForeground: "#ffffff", accent: "#ffffff" };
+  colors.ansi = [...colors.ansi]; colors.ansi[1] = "#cc0000";
+  const overrides = deriveHostTokens(colors, "dark", token => dark.get(token));
+  assert.ok(overrides, "the palette is accepted");
+  const on = (fg, bg) => contrast(opaqueChannels(overrides[`--${fg}`]), opaqueChannels(overrides[`--${bg}`]));
+  for (const [fg, bg] of pairs.filter(([fg]) => fg === "danger")) if (overrides[`--${bg}`]) assert.ok(on(fg, bg) >= TEXT_CONTRAST, `--danger on --${bg}: ${on(fg, bg).toFixed(2)}:1`);
+  assert.ok(on("danger", "sel") >= GRAPHIC_CONTRAST, `--danger on --sel: ${on("danger", "sel").toFixed(2)}:1`);
+  // A text pair alone would have stopped short: the red that holds 4.5:1 on the surfaces is under 3:1 on --sel.
+  const textOnly = ["surface", "surface-2", "bg"].map(bg => opaqueChannels(overrides[`--${bg}`]));
+  let red = colors.ansi[1];
+  for (let step = 1; textOnly.some(bg => contrast(opaqueChannels(red), bg) < TEXT_CONTRAST) && step <= 50; step++) red = mixHex(colors.ansi[1], "#ffffff", step / 50);
+  assert.ok(contrast(opaqueChannels(red), opaqueChannels(overrides["--sel"])) < GRAPHIC_CONTRAST, "the case the graphic pair exists for");
 });
 
 test("This computer: a palette that cannot be made to pass, or is not a palette, derives nothing at all", () => {

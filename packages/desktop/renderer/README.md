@@ -167,7 +167,10 @@ is dark, White when it is light, each exactly as it is, with nothing imported.
   from the host's selection colour and is moved until it holds 3:1 on the
   terminal's background, a UI state like the graph edges (`GRAPHIC_PAIRS`;
   Omarchy's selections are about 1.3:1); its text is then held to 4.5:1 on it
-  (#672).
+  (#672). Each token is moved until it holds every pair the inventory gives it
+  at once: 4.5:1 where it is text (`TEXT_PAIRS`), 3:1 where it is a graphic
+  (`GRAPHIC_PAIRS`). A colour that is both, like `--danger` (its words, and the
+  problem dots on `--sel`), never trades one for the other.
 - **First paint.** The last state shown is kept in `localStorage`
   (`oats.desktop.hostTheme`) and applied synchronously by `initTheme()`, then
   reconciled with main's answer, so a dark host does not flash White at launch.
