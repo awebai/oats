@@ -42,14 +42,16 @@ test("omarchyHost: off Linux it is false without looking", () => {
   }
 });
 
-test("main: one marker (the host theme's helper, no copy of its path), read once, passed to each window as an argument", () => {
+test("main: one marker (the host theme's helper, no copy of its path), read once at start, passed to each window as an argument", () => {
   const main = read("main.mjs");
   assert.match(main, /import \{[^}]*\bomarchyHost\b[^}]*\bOMARCHY_ARG\b[^}]*\} from "\.\/host-theme\.mjs";/);
   assert.doesNotMatch(main, /omarchy[/"', ]+current|\.local[/"', ]+state/, "no second copy of the marker's path");
-  assert.match(main, /isOmarchyHost \?\?= omarchyHost\(\{ fs: \{ statSync \}, home: homedir\(\), platform: process\.platform \}\);/);
-  assert.match(main, /return isOmarchyHost \? \[OMARCHY_ARG\] : \[\];/);
+  assert.match(main, /const omarchyArguments = Object\.freeze\(omarchyHost\(\{ fs: \{ statSync \}, home: homedir\(\), platform: process\.platform \}\) \? \[OMARCHY_ARG\] : \[\]\);/);
+  // Read at start, beside the host theme's source: outside the window and startup code the main harnesses run.
+  assert.ok(main.indexOf("const omarchyArguments =") > main.indexOf("installHostThemeHandlers({ ipc: ipcMain, guard, source: hostTheme });"));
+  assert.ok(main.indexOf("const omarchyArguments =") < main.indexOf("// ---- windows: one per workspace (#481)"));
   const window = main.slice(main.indexOf("function createWindow("));
-  assert.match(window.slice(0, window.indexOf("});")), /webPreferences: \{[^}]*additionalArguments: omarchyArguments\(\),[^}]*\}/);
+  assert.match(window.slice(0, window.indexOf("});")), /webPreferences: \{[^}]*additionalArguments: \[\.\.\.omarchyArguments\],[^}]*\}/);
   assert.doesNotMatch(main, /ipcMain\.(handle|on)\([^)]*omarchy/i, "no IPC channel carries it");
 });
 

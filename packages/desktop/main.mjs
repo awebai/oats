@@ -295,6 +295,10 @@ const hostTheme = createHostThemeSource({
   },
 });
 installHostThemeHandlers({ ipc: ipcMain, guard, source: hostTheme });
+// Omarchy's presence, read once at start (host-theme.mjs omarchyHost, the host theme's marker): each window
+// hears it as an argument its preload reads (oatsDesktop.isOmarchy), so its first paint is already in the
+// right font and terminal size.
+const omarchyArguments = Object.freeze(omarchyHost({ fs: { statSync }, home: homedir(), platform: process.platform }) ? [OMARCHY_ARG] : []);
 
 // ---- IPC: the chord family, keys.json (chord-family.mjs) -------------------
 // On Linux/Windows the shared chords are Alt or, by this user's keys.json (shared with the
@@ -953,14 +957,6 @@ ipcMain.handle("window:open-workspace", (e, id) => {
   return { ok: true, ...(result.opened ? { opened: true } : { focused: true }) };
 });
 
-// Omarchy's presence, read once (host-theme.mjs omarchyHost): each window hears it as an argument its preload
-// reads (oatsDesktop.isOmarchy), so the first paint is already in the right font and terminal size.
-let isOmarchyHost = null;
-const omarchyArguments = () => {
-  isOmarchyHost ??= omarchyHost({ fs: { statSync }, home: homedir(), platform: process.platform });
-  return isOmarchyHost ? [OMARCHY_ARG] : [];
-};
-
 function createWindow(workspaceId, record = null) {
   const bounds = record ? clampBounds(record.bounds, screen.getAllDisplays()) : null;
   const win = new BrowserWindow({
@@ -972,7 +968,7 @@ function createWindow(workspaceId, record = null) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false, // preload needs require() for contextBridge; renderer stays isolated
-      additionalArguments: omarchyArguments(),
+      additionalArguments: [...omarchyArguments],
     },
   });
   // Register hooks before loadFile or any terminal request/preparation.
