@@ -473,7 +473,10 @@ group, as one read-only row ("Scroll back in a terminal").
   C-b C-b and Emacs or readline's C-b still work. Ctrl+B [ needs tmux 3.3 or
   later on the computer the agent runs on, because tmux sends a bound key on
   only from then. With an older tmux, Ctrl+B reaches the agent as before, and
-  the wheel and Shift+PgUp still scroll back.
+  the wheel and Shift+PgUp still scroll back. One limitation: tmux resets
+  every client's key table when any terminal opens on the same tmux server, so
+  a Ctrl+B still waiting for its next key at that instant is dropped. Press it
+  again.
 - **A scrolling viewer pauses the pane for everyone.** Copy mode is the pane's
   own, so while one viewer of a shared pane scrolls back, the others see the
   same paused view until it leaves copy mode. The wheel has always done this.
