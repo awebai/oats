@@ -446,7 +446,7 @@ split into sections) is `packages/client/roster-sections.mjs`.
   `--fg` on `--sel`); the roster (`#instance-roster`, its top border the line before the instances) under its
   heading, a `.ctx-head` (13px 500 `--nav-fg`, read like the nav items) holding "Instances" and the count,
   with "Refreshing…" after the count when loading.mjs adds it; then the foot (`#nav-foot`, pushed to the
-  bottom, under a `--border` line, 4px 10px), one bar (`#sidebar-bar`, `role="group"` "Sidebar tools"),
+  bottom, under a `--border` line, 4px 10px 4px 6px), one bar (`#sidebar-bar`, `role="group"` "Sidebar tools"),
   `[mark][toggle] … [spawn][cog]`: the OATS mark (`.sidebar-brand`, the generated `sidebar-48.png` drawn at
   20px, decorative: `aria-hidden`, an empty alt, no tab stop); 8px after it the sidebar toggle
   (`#sidebar-toggle`, `sidebar.toggle`, its `aria-expanded` kept by `updateSidebarControls`); then at the right
@@ -456,8 +456,8 @@ split into sections) is `packages/client/roster-sections.mjs`.
   it the settings cog (`#sidebar-settings`, `sidebar-settings.mjs`: Theme…, Keyboard shortcuts…). The toggle
   and the cog are 24px `.side-icon-button` boxes with 14px icons. `.side-icon-button` is the sidebar's one icon-button style (box, colours, hover,
   focus), on the head's two buttons and the bar's two. Every `#nav-foot [data-action]` runs its action through
-  the same registry as the keys. The mark centres on the workspace rows' circles, 22px in (the foot's 10px,
-  the bar's 2px, half its 20px), and the cog 25px in from the right edge (the foot's 10px, the bar's 3px, half
+  the same registry as the keys. The mark centres on the workspace rows' circles, 18px in (the foot's 6px,
+  the bar's 2px, half its 20px; the lists' 4px, the row's 10px, half the circle), and the cog 25px in from the right edge (the foot's 10px, the bar's 3px, half
   its 24px). The workspace rows' names are the sidebar's 13px (the current one at 650), the roster's machine
   labels (`.ctx-deployment`) 11px 650 muted capitals, its agent groups 14px apart. The palette has no
   button: it has its own chord, and **Settings: Connections…** in it is Connections' only entry. The

@@ -115,7 +115,7 @@ body {
 #nav { display: flex; flex: none; flex-direction: column; padding: 8px; gap: 1px; }
 /* The foot (2026-10-26): one bar. The OATS mark at the left with the sidebar toggle after it; Spawn instance, a small
    button, at the right before the settings cog. The toggle and the cog are 24px boxes with 14px icons. The mark (20px) centres on
-   the rows' circles (22px in: the foot's 10px, the bar's 2px and half its 20px), the cog in the right-hand column (25px
+   the rows' circles (18px in: the foot's 6px, the bar's 2px and half its 20px), the cog in the right-hand column (25px
    in from the right: the foot's 10px, the bar's 3px and half its 24px). */
 #nav-foot { margin-top: auto; flex: none; display: flex; flex-direction: column; padding: 4px 10px 4px 6px;
             border-top: 1px solid var(--border); }

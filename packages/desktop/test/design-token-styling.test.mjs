@@ -277,9 +277,9 @@ test("the refreshing Instances heading shows the indicator's words after the cou
 });
 
 // The bar (the product owner, 2026-10-26): [mark][toggle] … [Spawn instance][cog], the foot's one row. The OATS mark's centre on the
-// workspace rows' circles (22px in from the left), the settings cog's in the right-hand column (25px in from the
+// workspace rows' circles (18px in from the left), the settings cog's in the right-hand column (25px in from the
 // right), the sidebar toggle 8px after the mark and Spawn instance 6px before the cog, all computed from the rules.
-test("the bar: the OATS mark on the rows' circles (22px in), the cog in the right-hand column (25px from the right), the toggle 8px after the mark, Spawn instance 6px before the cog", t => {
+test("the bar: the OATS mark on the rows' circles (18px in), the cog in the right-hand column (25px from the right), the toggle 8px after the mark, Spawn instance 6px before the cog", t => {
   const u = fixture(t), px = value => { assert.match(value, /^-?\d+(\.\d+)?px$/, value); return parseFloat(value); };
   const foot = u.style("#nav-foot"), bar = u.style("#sidebar-bar"), brand = u.style(".sidebar-brand"), image = u.style(".sidebar-brand-image");
   const toggle = u.style("#sidebar-toggle"), cog = u.style("#sidebar-settings");
@@ -292,7 +292,7 @@ test("the bar: the OATS mark on the rows' circles (22px in), the cog in the righ
   assert.deepEqual([image.width, image.height, image.display], ["20px", "20px", "block"]);
   for (const button of [toggle, cog]) assert.deepEqual([button.width, button.height], ["24px", "24px"]);
   for (const id of ["#sidebar-toggle", "#sidebar-settings"]) assert.equal(u.doc.defaultView.getComputedStyle(u.get(`${id} .shell-icon`)).width, "14px", `${id}: a 14px icon`);
-  // From the left: the foot's 10px, the bar's 2px and half the mark's 20px. From the right: the foot's 10px, the
+  // From the left: the foot's 6px, the bar's 2px and half the mark's 20px. From the right: the foot's 10px, the
   // bar's 3px and half the cog's 24px. The toggle starts the gap and its own 6px after the mark; Spawn instance ends
   // the gap and its own 4px before the cog.
   const markCentre = px(foot.paddingLeft) + px(bar.paddingLeft) + px(brand.width) / 2;
