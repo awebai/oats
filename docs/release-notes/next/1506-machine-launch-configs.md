@@ -12,7 +12,8 @@
   See [This machine's launch configurations](../configuration.md#this-machines-launch-configurations).
 - `oats launch-config list` gives each entry's `source` and `shadows`, and its
   text marks machine entries. `oats spawn --preview` names the machine file
-  when it supplied the configuration. `oats doctor` reports the file, and its
+  when it supplied the configuration, and its `--json` carries
+  `launchConfigSource`, the declaring file's directory. `oats doctor` reports the file, and its
   `--json` carries `machineLaunchConfigs` (`file`, `present`, `ok`,
   `configurations`, `error`).
 

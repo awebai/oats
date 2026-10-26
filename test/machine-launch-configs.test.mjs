@@ -136,8 +136,7 @@ test("a relative executable of a machine entry resolves against the machine file
   write(wrapper, "#!/bin/sh\nexit 0\n"); chmodSync(wrapper, 0o755);
   writeMachine(fx, { "launch-configs": { auto: { harness: "claude", executable: "bin/claude-auto", default: true } } });
   const preview = ok(fx.cli(["spawn", "writer", "--preview", "--json"]), "preview");
-  assert.equal(preview.executable.path, wrapper);
-  assert.equal(preview.executable.declared, "bin/claude-auto");
+  assert.equal(preview.executable, wrapper);
 });
 
 test("with no deployment in reach, listings show the machine's entries; launch-config writes only ever touch the deployment", (t) => {
