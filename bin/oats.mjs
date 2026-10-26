@@ -33,7 +33,7 @@ import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, machineLaunchConfigs, machineLaunchConfigsFile, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
 } from "../lib/core.mjs";
 import {
@@ -824,6 +824,19 @@ function doctorRetained(ws) {
   const kept = retainedWorktrees(deployment);
   return [retainedRecoveryLines(join(deployment, "agents"), kept), retainedWorktreeLines(kept)].filter((block) => block.length);
 }
+/** The machine's launch configurations file (awebai/oats#1506) as doctor reports it: its path, whether
+ *  it is there, its entries' names and whether it is valid. A broken file is reported, never a failure
+ *  of doctor; the launches it would affect refuse it. */
+function doctorMachineLaunchConfigs() {
+  const file = machineLaunchConfigsFile();
+  try {
+    const machine = machineLaunchConfigs();
+    return { file, present: machine !== null, ok: true, configurations: Object.keys(machine?.configs ?? {}).sort() };
+  } catch (e) {
+    if (e?.code !== "E_LAUNCH_CONFIG_INVALID") throw e;
+    return { file, present: true, ok: false, configurations: [], error: e.message };
+  }
+}
 async function doctorWorkspaceJson(ctx, soulName, ws) {
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg, details) => jsonFail(code, msg, details));
   const agentsRoot = join(dirname(ws.local.path), "agents");
@@ -839,6 +852,7 @@ async function doctorWorkspaceJson(ctx, soulName, ws) {
     workspace: { file: ws.local.path, ref: ws.local.workspace },
     workspaceError: ws.localError, lockFile: ws.lockFile, packages: ws.packages, lockError: ws.lockError,
     information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...localTeams.information, ...schedules.information, ...operator.information, ...launchPreferences.information, ...hookEvents.information, ...processScanInformation(), ...doctorRetained(ws).flat()],
+    machineLaunchConfigs: doctorMachineLaunchConfigs(),
     composedInstructions: composition?.text, instructionBlocks: composition?.blocks,
     ...(problems.length ? { problems } : {}),
     warnings: [...hookEvents.warnings, ...(soulName ? [] : doctorCaptureWarnings())],
@@ -876,6 +890,9 @@ async function doctor(dir) {
   doctorVersionSkew(dirname(ws.local.path));
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg) => die(`${msg} [${code}]`));
   printDoctorWorkspace(ws);
+  const machine = doctorMachineLaunchConfigs();
+  console.log("\nThis machine's launch configurations:");
+  console.log(`  ${shortPath(machine.file)}  ${!machine.present ? "(none: no file)" : machine.ok ? (machine.configurations.join(", ") || "(none declared)") : `ERROR: ${terminalText(machine.error)}`}`);
   const agentsRoot = join(dirname(ws.local.path), "agents");
   const localTeams = doctorLocalTeams(ws.local.value);
   for (const p of [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot)].filter(Boolean)) console.log(`\n! ${p.code}: ${p.message}`);
@@ -989,6 +1006,11 @@ function readLaunchConfigsModel(local) {
  *  are non-secret by contract, but no value is shown anywhere) and a
  *  reference as {fromEnv: NAME}. An editor keeps a literal it cannot see with
  *  `set --keep-env`. */
+/** Whether the machine's launch configurations file declares `name`; a broken file declares nothing here
+ *  (the launches it affects refuse it). */
+function machineDeclares(name) {
+  try { return Object.hasOwn(machineLaunchConfigs()?.configs ?? {}, name); } catch (e) { if (e?.code === "E_LAUNCH_CONFIG_INVALID") return false; throw e; }
+}
 function publicLaunchConfig(e, extra = {}) {
   const env = Object.fromEntries(Object.keys(e.env || {}).sort().map((n) => [n, typeof e.env[n] === "string" ? { redacted: true } : { fromEnv: e.env[n].fromEnv }]));
   return { harness: e.harness, executable: e.executable ?? null, args: [...(e.args || [])], env, model: e.model ?? null, yolo: e.yolo ?? null, default: e.default === true, ...extra };
@@ -1092,10 +1114,10 @@ async function launchConfigCmd() {
     let configurations;
     try { configurations = effective(); } catch (e) { bail(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
     if (JSON_MODE) { jsonOk({ context: dir, level, file, selected, configurations }); return; }
-    if (!configurations.length) { console.log(`No launch configurations are declared${file ? ` in ${shortPath(file)}` : ` (no oats-local.yaml in reach of ${dir})`}`); return; }
+    if (!configurations.length) { console.log(`No launch configurations are declared${file ? ` in ${shortPath(file)}` : ` (no oats-local.yaml in reach of ${dir})`} or in ${shortPath(machineLaunchConfigsFile())}`); return; }
     for (const c of configurations) {
       const env = Object.entries(c.env).map(([n, v]) => v.fromEnv ? `${n}=$${v.fromEnv}` : `${n}=<redacted>`).join(" ");
-      console.log(`${c.name}: ${c.harness}${c.default ? ` (this machine's ${c.harness} default)` : ""}${c.executable ? ` ${c.executable}` : ""}${c.args.length ? ` ${c.args.map((a) => JSON.stringify(a)).join(" ")}` : ""}${env ? ` [${env}]` : ""}${c.model ? ` model ${c.model}` : ""}${c.yolo !== null ? ` yolo ${c.yolo}` : ""}`);
+      console.log(`${c.name}: ${c.harness}${c.default ? ` (this machine's ${c.harness} default)` : ""}${c.executable ? ` ${c.executable}` : ""}${c.args.length ? ` ${c.args.map((a) => JSON.stringify(a)).join(" ")}` : ""}${env ? ` [${env}]` : ""}${c.model ? ` model ${c.model}` : ""}${c.yolo !== null ? ` yolo ${c.yolo}` : ""}${c.source === dirname(machineLaunchConfigsFile()) ? ` (from ${shortPath(machineLaunchConfigsFile())})` : ""}${c.shadows.length ? ` (replaces ${c.shadows.map(shortPath).join(", ")}'s)` : ""}`);
     }
     return;
   }
@@ -1141,7 +1163,7 @@ async function launchConfigCmd() {
       const declaredHere = Object.hasOwn(model, name);
       before = declaredHere ? publicLaunchConfig(model[name]) : null;
       if (sub === "remove") {
-        if (!declaredHere) throw refusal("E_LAUNCH_CONFIG_UNKNOWN", `${name} is not declared in ${shortPath(file)}`);
+        if (!declaredHere) throw refusal("E_LAUNCH_CONFIG_UNKNOWN", `${name} is not declared in ${shortPath(file)}${machineDeclares(name) ? `; it is this machine's, in ${shortPath(machineLaunchConfigsFile())}, which OATS never writes` : ""}`);
         delete model[name];
       } else {
         let written = entry;
@@ -2840,7 +2862,7 @@ function namingLine(naming) {
 function printSpawnPreview(r, { server, soulFetched = false } = {}) {
   // A host before 0.27 names the harness `runtime` (it still answers spawn-preview-2).
   const harness = r.harness ?? r.runtime;
-  console.log(`preview ${r.agent} → ${r.instance}${server ? ` on ${server}` : ""} (${r.work}${r.branch ? `, branch ${r.branch}${r.base ? ` from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}` : ""}) harness ${harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (${server ? "the server's" : "this machine's"} ${harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
+  console.log(`preview ${r.agent} → ${r.instance}${server ? ` on ${server}` : ""} (${r.work}${r.branch ? `, branch ${r.branch}${r.base ? ` from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}` : ""}) harness ${harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (${server ? "the server's" : "this machine's"} ${harness} default)` : ""}${!server && r.launchConfigSource === dirname(machineLaunchConfigsFile()) ? ` from ${shortPath(machineLaunchConfigsFile())}` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
   // Feature spawn-suggest-name: how the name was chosen.
   { const line = namingLine(r.naming); if (line) console.log(`name: ${line}`); }
   if (Array.isArray(r.worktreeHooks)) console.log(r.worktreeHooks.length ? `worktree hooks: ${r.worktreeHooks.map((h) => `${h.capability}${h.required ? " (required)" : ""}`).join(", ")}` : "worktree hooks: none");
