@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DETACH_KEY_FEATURE, LOCKED_PREFIX_BINDINGS, LOCKED_PREFIX_TABLE, NO_STATUS_LINE_FEATURE, PREFIX_KEY, SESSION_DETACHED_EXIT, VIEWER_BINDINGS, VIEWER_PREFIX_MIN_TMUX, VIEWER_SCROLL_HINT, VIEWER_SCROLL_HINT_WITHOUT_PREFIX, tmuxForwardsBoundKey, VIEWER_CLOSED_HOOK_INDEX, isDetachKey, prepareSessionViewer, requireDetachKey, tmuxHasClientFeatures } from "../lib/session-viewer.mjs";
 const target = { backend: "tmux", socket: "/tmp/owned.sock", session: "oats", window: "agent" };
-function fixture(failLink = false, { marker = "", version = "", sessions = "", keys = "" } = {}) {
+function fixture(failLink = false, { marker = "", version = "", sessions = "", keys = "", clients = "" } = {}) {
   const calls = [], options = [];
   return { calls, options, exec(bin, args, opts) {
     assert.equal(bin, "tmux");
@@ -11,6 +11,7 @@ function fixture(failLink = false, { marker = "", version = "", sessions = "", k
     const cmd = args.slice(3); calls.push(cmd); options.push(opts);
     if (cmd[0] === "list-panes") return "%1\t0\tcodex\t123\n";
     if (cmd[0] === "list-keys") return keys;
+    if (cmd[0] === "list-clients") return clients;
     if (cmd[0] === "list-sessions") return sessions;
     if (cmd[0] === "new-session") return "@98\n";
     if (cmd[0] === "link-window" && failLink) throw new Error("target disappeared");
@@ -124,8 +125,8 @@ test("without a detach key the viewer's tmux calls are exactly these, in this or
     ["kill-window", "-t", "@98"],
     ["set-option", "-t", name, "prefix", "None"],
     ["set-option", "-t", name, "prefix2", "None"],
-    ["set-option", "-t", name, "key-table", "oatsview-locked"],
     ["-V"],
+    ["set-option", "-t", name, "key-table", "oatsview-locked"],
     ["set-option", "-t", name, "status", "on"],
     ["set-option", "-t", name, "status-format[0]", "Shift+PgUp to scroll back"],
     ["set-option", "-t", name, "detach-on-destroy", "on"],
@@ -164,8 +165,8 @@ test("with a detach key the viewer reads a table of its own, named as its sessio
       ["kill-window", "-t", "@98"],
       ["set-option", "-t", name, "prefix", "None"],
       ["set-option", "-t", name, "prefix2", "None"],
-      ["set-option", "-t", name, "key-table", name],
       ["-V"],
+      ["set-option", "-t", name, "key-table", name],
       ["set-option", "-t", name, "status", "off"],
       ["set-option", "-t", name, "detach-on-destroy", "on"],
       ["unbind-key", "-a", "-q", "-T", name],
@@ -304,6 +305,9 @@ test("the C-b table only where tmux forwards a bound key (tmux 3.3: send-keys wi
   const name = viewer.session;
   assert.deepEqual(on.calls.slice(on.calls.findIndex((c) => c[0] === "-V")), [
     ["-V"],
+    // Who reads the C-b table now: setting key-table returns every client to its default table.
+    ["list-clients", "-F", "#{client_name}\t#{client_key_table}"],
+    ["set-option", "-t", name, "key-table", "oatsview-locked"],
     ["set-option", "-t", name, "status", "on"],
     ["set-option", "-t", name, "status-format[0]", VIEWER_SCROLL_HINT],
     ["set-option", "-t", name, "detach-on-destroy", "on"],
@@ -362,6 +366,27 @@ test("a stray binding in the C-b table (a tmux.conf's, another program's) is rem
   assert.deepEqual(removals, [un("n"), un("C-c"), un("\\;"), un("M-\\;"), un("#"), un('"'), un("\\")], "the strays only, by the key tmux listed, quietly, never -a");
   assert.ok(removals.every((c) => at(c) > lastBind), "after the viewer's own are bound");
   assert.equal(io.calls.some((c) => c[0] === "unbind-key" && c[1] === "-T" && c[2] === "root"), false, "another table is not touched");
+});
+
+test("setting the new viewer's key-table, which returns every client of the server to its default table, leaves another viewer's pending C-b pending: each client that read the C-b table just before is switched back to it, and no other (#1502 part D, Linux CI)", () => {
+  const clients = ["/dev/pts/3\toatsview-locked-prefix", "/dev/pts/4\toatsview-locked", "/dev/pts/5\troot", "/dev/pts/6\toatsview-locked-prefix", ""].join("\n");
+  for (const detachKey of [undefined, "F12"]) {
+    const io = fixture(false, { version: "tmux 3.4\n", clients });
+    prepareSessionViewer(target, { ...io, detachKey });
+    const name = io.calls.find((c) => c[0] === "new-session")[3];
+    const set = io.calls.findIndex((c) => c[0] === "set-option" && c[3] === "key-table");
+    assert.deepEqual(io.calls.slice(set - 1, set + 3), [
+      ["list-clients", "-F", "#{client_name}\t#{client_key_table}"],
+      ["set-option", "-t", name, "key-table", detachKey === undefined ? "oatsview-locked" : name],
+      ["switch-client", "-c", "/dev/pts/3", "-T", "oatsview-locked-prefix"],
+      ["switch-client", "-c", "/dev/pts/6", "-T", "oatsview-locked-prefix"],
+    ], String(detachKey));
+    assert.equal(io.calls.filter((c) => c[0] === "switch-client").length, 2, `${detachKey}: no other client is touched`);
+  }
+  // A tmux with no C-b table (before 3.3) has nothing to keep: no list, no switch.
+  const old = fixture(false, { version: "tmux 3.2a\n", clients });
+  prepareSessionViewer(target, old);
+  assert.equal(old.calls.some((c) => c[0] === "list-clients" || c[0] === "switch-client"), false);
 });
 
 test("the constants a caller reads: the feature names and the status of a leave by the key", () => {
