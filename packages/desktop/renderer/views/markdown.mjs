@@ -215,7 +215,7 @@ export const MARKDOWN_CSS = `
                             background: var(--surface); color: var(--muted); border-radius: 6px;
                             font-weight: normal; font-size: 11px; line-height: normal; font-family: var(--ui-font, -apple-system, sans-serif); padding: 3px 9px; cursor: pointer; }
 .mdv pre.md-code .md-copy:hover { color: var(--fg); border-color: var(--accent); }
-.mdv code { font-weight: normal; font-size: 13px; line-height: 1.55; font-family: var(--ui-font, "SF Mono", ui-monospace, Menlo, monospace); }
+.mdv code { font-style: normal; font-weight: normal; font-size: 13px; line-height: 1.55; font-family: var(--ui-font, "SF Mono", ui-monospace, Menlo, monospace); }
 /* Shared by fenced Markdown and read-only code files. Semantic foregrounds
    stay opaque; theme-contrast tests validate the composited md-code-bg. */
 .mdv .hljs { color: var(--fg); }

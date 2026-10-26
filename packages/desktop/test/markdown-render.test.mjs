@@ -155,3 +155,19 @@ test("MARKDOWN_CSS is the viewer stylesheet", () => {
   assert.match(MARKDOWN_CSS, /\.mdv pre\.md-code/);
   assert.match(MARKDOWN_CSS, /\.mdv \.hanchor/);
 });
+
+// Inline code keeps its own upright face inside emphasis: the font shorthand it once had reset font-style, and its
+// longhands say so (font-family: var(--ui-font, …) is a longhand, never in a shorthand jsdom would drop).
+test("inline code inside emphasis stays upright", (t) => {
+  const dom = new JSDOM("<!doctype html><body>");
+  t.after(() => dom.window.close());
+  const doc = dom.window.document;
+  const style = doc.createElement("style"); style.textContent = MARKDOWN_CSS; doc.head.append(style);
+  const host = doc.createElement("div"); host.className = "mdv";
+  host.innerHTML = renderMarkdownHtml("*try `oats status`*", newDoc(), { strict: true });
+  doc.body.append(host);
+  const code = host.querySelector("em code");
+  assert.ok(code, "the code is inside the emphasis");
+  assert.equal(dom.window.getComputedStyle(code).fontStyle, "normal");
+  assert.equal(dom.window.getComputedStyle(code).fontSize, "13px");
+});
