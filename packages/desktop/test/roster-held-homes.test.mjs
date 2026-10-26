@@ -78,7 +78,7 @@ function fixture(t, rows, extra = {}) {
   const paint = runInNewContext(`${source}\nrenderContextRoster`, context);
   const render = instances => { painted = instances; paint(instances); };
   const list = doc.querySelector(".ctx-list");
-  const row = name => [...list.querySelectorAll(".ctx-inst")].find(b => b.querySelector(".ctx-name")?.textContent === name);
+  const row = name => [...list.querySelectorAll(".ctx-inst")].find(b => b.querySelector(".ctx-name")?.dataset.name === name);
   const wrap = name => row(name).closest(".ctx-tree-row");
   const status = name => tips.get(row(name).dataset.treeInstance)?.().rows.find(([key]) => key === "Status")?.[1];
   const menu = name => [...wrap(name).querySelectorAll("[role=menuitem]")].map(item => item.dataset.action);

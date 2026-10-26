@@ -818,6 +818,13 @@ right of its parent, and related instances are grouped together. Siblings are
 joined by a dotted line through their dots. A parent's line to its children
 runs just to the right of the dotted line, so the two never merge.
 
+A row shows the instance's name as words: each `-` is a space, and the first
+letter is a capital, so `oats-expert-maintainer-lanes` reads "Oats expert
+maintainer lanes". Only the row's label changes. The hover card, the command
+palette (which still finds the instance by its name), its terminal tab, a
+screen reader and the `oats` CLI all use the instance's real name. The TUI's
+sidebar shows the same words.
+
 ## An instance's colour
 
 An instance can have a colour, one of the soul palette's six (Sand, Sage,

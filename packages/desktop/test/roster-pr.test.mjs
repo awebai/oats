@@ -93,7 +93,7 @@ test('the shipped roster row: no PR chip on the row (its meta line is the soul a
   context.splitOpenState = () => ({ split: null, activeId: null, tabs: context.tabs, workspace: 'A', visible: false });
   context.ownsInstanceTarget = target => roster.filter(r => sameInstanceActionTarget(target, r, 'A')).length === 1;
   runInNewContext(`${source}\nrenderContextRoster`, context)(roster);
-  const at = name => [...doc.querySelectorAll('.ctx-tree-row')].find(r => r.querySelector('.ctx-name').textContent === name);
+  const at = name => [...doc.querySelectorAll('.ctx-tree-row')].find(r => r.querySelector('.ctx-name').dataset.name === name);
   const withPr = at('with-pr');
   const facts = name => tips.get(at(name).querySelector('.ctx-inst').dataset.treeInstance)?.().rows ?? [];
   // The product owner, 2026-10-26: the chip left the meta line (it had moved there from the name line on 2026-09-29);
@@ -105,7 +105,9 @@ test('the shipped roster row: no PR chip on the row (its meta line is the soul a
   assert.equal(meta.querySelector('.ctx-meta-lead, .ctx-meta-tail'), null);
   assert.doesNotMatch(withPr.querySelector('.ctx-inst').textContent, /#231|b\/with-pr/, 'neither the number nor the branch on the row');
   assert.equal(withPr.querySelector('.ctx-copy').firstElementChild.className, 'ctx-name', 'the name line holds only the name');
-  assert.equal(withPr.querySelector('.ctx-name').children.length, 0);
+  // 0.68.1: the name's words, hidden from assistive tech, and the real name read in their place.
+  assert.deepEqual([...withPr.querySelector('.ctx-name').children].map(el => [el.className, el.getAttribute('aria-hidden'), el.textContent]),
+    [['', 'true', 'With pr'], ['sr-only', null, 'with-pr']]);
   assert.equal(withPr.querySelector('.ctx-inst a, .ctx-inst button'), null, 'the row button holds no nested control');
   const open = withPr.querySelector('.ctx-row-tools button.ctx-pr-open');
   assert.equal(open.getAttribute('aria-label'), "Open with-pr's pull request #231 · open on GitHub");
