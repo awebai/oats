@@ -250,6 +250,26 @@ unread; replying acknowledges it (`aw mail reply` acks the message
 replied to); `aw mail ack` is the explicit way to drop it without an answer.
 The agent's brief says so.
 
+**Redelivery and recovery (requirement on channel-core; the mechanism is
+aweb's to choose).** Today the acknowledgement on presentation is also what
+stops a mail from being presented again, and session-delivery recovery
+reads presented as read. Summary mode breaks that link, so channel-core must
+state and keep two things:
+
+- *Not re-presented.* A mail presented once in summary mode is not presented
+  again to the same home while it stays unread, on the live stream and on a
+  stream reopen alike. The record of what was presented is the client's own
+  (channel-core already keeps a per-home delivery store of presented message
+  ids; a presented-cursor is the obvious shape), not the server's read state.
+- *Recovery is at-least-once, and reconciles against the thread.* After a
+  crash or a restart that loses the presented record, unread mail is
+  re-presented once more as a one-line wake; nothing is lost silently and
+  nothing is read by proxy. The agent's recovery command is the thread read
+  (`aw mail show --conversation-id <id> --json`), which shows what was
+  answered and what was not; `read_at` on a message means the agent replied
+  or acknowledged it, not that it was presented. The `threads` brief and the
+  `oats-aweb` skill say so, replacing "presented = read" for these souls.
+
 **The selection.** For a `threads` soul the `oats.aweb` launch hook sets the
 variable in the launch environment on every delivery path (channel and
 broker), and leaves it unset for `terminal` souls. This is the delivery
