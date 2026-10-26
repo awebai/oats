@@ -67,6 +67,8 @@ is how you fit the OATS workspace.
     important.
   - **`lane:ux`:** hands each PR to the release lane for the final review and
     the merge.
+
+  The map's lines, their exceptions included, win where this list differs.
 - **Labels:** `lane:release`, `lane:lfx`, `lane:juan`, `lane:ux`, each new
   lane's own `lane:<name>`, and `hold`.
 - Keep deployment specifics (hosts, people, paths, credentials) out of docs and
