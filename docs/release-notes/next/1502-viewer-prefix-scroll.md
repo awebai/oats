@@ -15,5 +15,12 @@
     the line, for a caller that shows the keys itself.
   - **Copy mode is the agent pane's.** While one viewer scrolls back, every
     other viewer of that agent shows the same frozen screen.
+  - **Each viewer reads key tables of its own**, named as its session and
+    removed with it. Before, every viewer without a detach key shared one
+    server-wide table, `oatsview-locked`.
+  - **A tmux limitation:** a `C-b` pressed in the instant another viewer of
+    the same tmux server opens is dropped. tmux resets every client's key
+    table when any session sets `key-table`. The key after it reaches the
+    agent alone.
   - See
     [Inspect, input and attach](../execution-targets.md#inspect-input-and-attach).
